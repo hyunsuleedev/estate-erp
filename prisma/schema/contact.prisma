@@ -1,0 +1,112 @@
+// ============================================================
+// 연락처 (모든 사람의 기본 정보)
+// ============================================================
+
+model Contact {
+  id        String   @id @default(uuid()) @db.Uuid
+  officeId  String   @map("office_id") @db.Uuid
+  name      String
+  phone     String?
+  phone2    String?  @map("phone2")
+  email     String?
+  tags      String[]
+  memo      String?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  office             Office             @relation(fields: [officeId], references: [id])
+  propertyContacts   PropertyContact[]
+  buyerRequirements  BuyerRequirement[]
+  consultations      Consultation[]
+  tenants            Tenant[]
+  calendarEvents     CalendarEvent[]
+  dealsAsBuyer       Deal[]             @relation("DealBuyer")
+  dealsAsSeller      Deal[]             @relation("DealSeller")
+  contractsAsBuyer   Contract[]         @relation("ContractBuyer")
+  contractsAsSeller  Contract[]         @relation("ContractSeller")
+  // ContactRelation 양방향
+  relationsAsMain    ContactRelation[]  @relation("MainContact")
+  relationsAsRelated ContactRelation[]  @relation("RelatedContact")
+
+  @@index([officeId, phone])
+  @@map("contacts")
+}
+
+// ============================================================
+// 연락처 관계 (사람 ↔ 사람, 영구)
+// ============================================================
+
+model ContactRelation {
+  id               String   @id @default(uuid()) @db.Uuid
+  officeId         String   @map("office_id") @db.Uuid
+  contactId        String   @map("contact_id") @db.Uuid
+  relatedContactId String   @map("related_contact_id") @db.Uuid
+  relationType     String   @map("relation_type") // parent, spouse, child, sibling, lawyer, tax_agent, other
+  label            String? // 기타일 때 또는 보충 ("큰어머니", "담당 법무사")
+  memo             String?
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  office         Office  @relation(fields: [officeId], references: [id])
+  contact        Contact @relation("MainContact", fields: [contactId], references: [id])
+  relatedContact Contact @relation("RelatedContact", fields: [relatedContactId], references: [id])
+
+  @@unique([contactId, relatedContactId])
+  @@index([officeId])
+  @@map("contact_relations")
+}
+
+// ============================================================
+// 매물 관련 연락처 (매물 ↔ 사람, 역할별)
+// ============================================================
+
+model PropertyContact {
+  id         String   @id @default(uuid()) @db.Uuid
+  officeId   String   @map("office_id") @db.Uuid
+  contactId  String   @map("contact_id") @db.Uuid
+  propertyId String   @map("property_id") @db.Uuid
+  role       String // owner, co_owner, representative, lawyer, tax_agent
+  shareRatio Decimal? @map("share_ratio") @db.Decimal // owner/co_owner 지분비율 (%)
+  isResident Boolean  @default(false) @map("is_resident")
+  isPrimary  Boolean  @default(false) @map("is_primary") // 주 연락처
+  status     String   @default("active") // active, transferred, archived
+  memo       String?
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  office   Office   @relation(fields: [officeId], references: [id])
+  contact  Contact  @relation(fields: [contactId], references: [id])
+  property Property @relation(fields: [propertyId], references: [id])
+
+  @@unique([contactId, propertyId, role])
+  @@index([officeId])
+  @@index([propertyId])
+  @@map("property_contacts")
+}
+
+// ============================================================
+// 세입자 (매물별 현 거주자 + 계약정보)
+// ============================================================
+
+model Tenant {
+  id            String    @id @default(uuid()) @db.Uuid
+  officeId      String    @map("office_id") @db.Uuid
+  propertyId    String    @map("property_id") @db.Uuid
+  contactId     String    @map("contact_id") @db.Uuid
+  deposit       Int? // 보증금 (만원)
+  monthlyRent   Int?      @map("monthly_rent") // 월세 (만원)
+  contractStart DateTime? @map("contract_start")
+  contractEnd   DateTime? @map("contract_end")
+  moveOutDate   DateTime? @map("move_out_date")
+  status        String    @default("residing") // residing, moving_out, moved
+  memo          String?
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  office   Office   @relation(fields: [officeId], references: [id])
+  property Property @relation(fields: [propertyId], references: [id])
+  contact  Contact  @relation(fields: [contactId], references: [id])
+
+  @@index([officeId])
+  @@index([propertyId])
+  @@map("tenants")
+}

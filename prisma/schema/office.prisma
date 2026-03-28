@@ -1,0 +1,96 @@
+// ============================================================
+// 멀티테넌시 - 사무소 + 사용자/인증
+// ============================================================
+
+model Office {
+  id           String  @id @default(uuid()) @db.Uuid
+  code         String  @unique // 사무소 코드 (자동 생성, "GD7291" 등 — 직원 loginId 접두사)
+  name         String // 사무소명
+  licenseNo    String? @map("license_no") // 중개업 등록번호
+  ceoName      String? @map("ceo_name")
+  phone        String?
+  address      String?
+  subscription String  @default("basic") // basic, pro, premium
+  maxUsers     Int     @default(3) @map("max_users")
+  isActive     Boolean @default(true) @map("is_active")
+
+  // 수수료 배분 설정 (사장님이 세팅)
+  // { "distributionType": "percentage"|"fixed"|"custom",
+  //   "defaultAgentRate": 50,       // 기본 직원 배분율 (%)
+  //   "listingAgentRate": 50,       // 매도측 담당 기본 배분율
+  //   "buyingAgentRate": 50,        // 매수측 담당 기본 배분율
+  //   "dualAgentRate": 70,          // 단독중개(양측 모두 담당) 배분율
+  //   "managerRate": 10,            // 관리자 배분율
+  //   "closerBonus": 0 }            // 마감 담당 보너스 (만원)
+  commissionConfig Json? @map("commission_config") @db.JsonB
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  users             User[]
+  officeSites       OfficeSite[]
+  sites             Site[]
+  dongs             Dong[]
+  units             Unit[]
+  contacts          Contact[]
+  contactRelations  ContactRelation[]
+  propertyContacts  PropertyContact[]
+  tenants           Tenant[]
+  properties        Property[]
+  tasks             Task[]
+  consultations     Consultation[]
+  buyerRequirements BuyerRequirement[]
+  matches           Match[]
+  deals             Deal[]
+  contracts         Contract[]
+  dealParticipants  DealParticipant[]
+  insights          Insight[]
+  insightRules      InsightRule[]
+  calendarEvents    CalendarEvent[]
+
+  siteUnitTypes  SiteUnitType[]
+  priceHistories PriceHistory[]
+  activityLogs   ActivityLog[]
+  notifications  Notification[]
+
+  // 공동 중개망
+  createdRooms            NetworkRoom[]
+  networkRoomMembers      NetworkRoomMember[]
+  networkSharedProperties NetworkSharedProperty[]
+  networkInquiriesFrom    NetworkInquiry[]
+  networkMessages         NetworkMessage[]
+
+  @@map("offices")
+}
+
+model User {
+  id       String  @id @default(uuid()) @db.Uuid
+  officeId String  @map("office_id") @db.Uuid
+  loginId  String  @unique @map("login_id") // 로그인 ID (owner: 이메일, 직원: "GD7291-0001" 자동생성)
+  email    String? // owner 필수, 직원 선택
+  password String
+  name     String
+  phone    String?
+  role     String  @default("agent") // owner, manager, agent
+  isActive Boolean @default(true) @map("is_active")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  office               Office             @relation(fields: [officeId], references: [id])
+  assignedRequirements BuyerRequirement[] @relation("AssignedAgent")
+  consultations        Consultation[]     @relation("ConsultationCreator")
+  calendarEvents       CalendarEvent[]
+
+  priceHistories   PriceHistory[]
+  activityLogs     ActivityLog[]
+  notifications    Notification[]
+  dealParticipants DealParticipant[] @relation("DealParticipants")
+
+  // 공동 중개망
+  networkSharedProperties NetworkSharedProperty[]
+  networkInquiriesFrom    NetworkInquiry[]
+  networkMessages         NetworkMessage[]
+
+  @@map("users")
+}

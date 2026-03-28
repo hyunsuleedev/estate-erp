@@ -1,0 +1,109 @@
+import {
+  Controller,
+  Get,
+  Post,
+  Patch,
+  Delete,
+  Param,
+  Body,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
+import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
+import { ConsultationsService } from './consultations.service';
+import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import {
+  CurrentUser,
+  CurrentUserPayload,
+} from '../../common/decorators/current-user.decorator';
+
+@ApiTags('상담')
+@ApiBearerAuth()
+@Controller('consultations')
+@UseGuards(JwtAuthGuard)
+export class ConsultationsController {
+  constructor(private readonly service: ConsultationsService) {}
+
+  @Get('recent')
+  getRecent(
+    @Query('limit') limit: string,
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.service.getRecent(user.officeId, limit ? Number(limit) : undefined);
+  }
+
+  @Get()
+  findAll(
+    @Query('contactId') contactId: string,
+    @Query('propertyId') propertyId: string,
+    @Query('matchId') matchId: string,
+    @Query('buyerReqId') buyerReqId: string,
+    @Query('type') type: string,
+    @Query('createdById') createdById: string,
+    @Query('dateFrom') dateFrom: string,
+    @Query('dateTo') dateTo: string,
+    @Query('sortOrder') sortOrder: string,
+    @Query('page') page: string,
+    @Query('limit') limit: string,
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.service.findAll(user.officeId, {
+      contactId: contactId || undefined,
+      propertyId: propertyId || undefined,
+      matchId: matchId || undefined,
+      buyerReqId: buyerReqId || undefined,
+      type: type || undefined,
+      createdById: createdById || undefined,
+      dateFrom: dateFrom || undefined,
+      dateTo: dateTo || undefined,
+      sortOrder: (sortOrder as 'asc' | 'desc') || undefined,
+      page: page ? Number(page) : undefined,
+      limit: limit ? Number(limit) : undefined,
+    });
+  }
+
+  @Get(':id')
+  findOne(
+    @Param('id') id: string,
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.service.findOne(id, user.officeId);
+  }
+
+  @Post()
+  create(
+    @Body()
+    dto: {
+      contactId: string;
+      type: string;
+      content: string;
+      propertyId?: string;
+      matchId?: string;
+      buyerReqId?: string;
+    },
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.service.create(user.officeId, user.userId, dto);
+  }
+
+  @Patch(':id')
+  update(
+    @Param('id') id: string,
+    @Body()
+    dto: {
+      type?: string;
+      content?: string;
+    },
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.service.update(id, user.officeId, dto);
+  }
+
+  @Delete(':id')
+  remove(
+    @Param('id') id: string,
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.service.remove(id, user.officeId);
+  }
+}

@@ -1,0 +1,70 @@
+// ============================================================
+// 매물 (핵심)
+// ============================================================
+
+model Property {
+  id              String   @id @default(uuid()) @db.Uuid
+  officeId        String   @map("office_id") @db.Uuid
+  siteId          String   @map("site_id") @db.Uuid
+  unitId          String?  @map("unit_id") @db.Uuid // nullable (토지/단독은 null)
+  transactionType String   @map("transaction_type") // sale, jeonse, monthly
+  price           Int? // 만원 단위
+  deposit         Int? // 보증금 (만원)
+  monthlyRent     Int?     @map("monthly_rent") // 월세 (만원)
+  checkStatus     String   @default("unverified") @map("check_status")
+  isHidden        Boolean  @default(false) @map("is_hidden")
+  memo            String?
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  office           Office            @relation(fields: [officeId], references: [id])
+  site             Site              @relation(fields: [siteId], references: [id])
+  unit             Unit?             @relation(fields: [unitId], references: [id])
+  propertyContacts PropertyContact[]
+  tenants          Tenant[]
+  matches          Match[]
+  deals            Deal[]
+  consultations    Consultation[]
+  calendarEvents   CalendarEvent[]
+
+  priceHistories PriceHistory[]
+
+  // 공동 중개망
+  networkSharedProperties NetworkSharedProperty[]
+
+  @@index([officeId, checkStatus])
+  @@index([siteId])
+  @@map("properties")
+}
+
+// ============================================================
+// 가격 변경 이력
+// ============================================================
+
+/// 매물 가격 변경 시 자동 기록. 규칙 엔진의 가격변동 감지에 활용.
+model PriceHistory {
+  id         String  @id @default(uuid()) @db.Uuid
+  officeId   String  @map("office_id") @db.Uuid
+  propertyId String  @map("property_id") @db.Uuid
+  changedBy  String? @map("changed_by") @db.Uuid // FK → User (변경자)
+
+  // 변경 전 가격
+  priceBefore       Int? @map("price_before")
+  depositBefore     Int? @map("deposit_before")
+  monthlyRentBefore Int? @map("monthly_rent_before")
+
+  // 변경 후 가격
+  priceAfter       Int? @map("price_after")
+  depositAfter     Int? @map("deposit_after")
+  monthlyRentAfter Int? @map("monthly_rent_after")
+
+  reason    String? // 변경 사유 ("집주인 요청", "시세 반영" 등)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  office   Office   @relation(fields: [officeId], references: [id])
+  property Property @relation(fields: [propertyId], references: [id])
+  user     User?    @relation(fields: [changedBy], references: [id])
+
+  @@index([propertyId, createdAt])
+  @@map("price_histories")
+}

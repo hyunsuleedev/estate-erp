@@ -1,0 +1,240 @@
+// ============================================================
+// 상담 (순수 메모, context FK로 맥락 구분)
+// ============================================================
+
+model Consultation {
+  id          String @id @default(uuid()) @db.Uuid
+  officeId    String @map("office_id") @db.Uuid
+  contactId   String @map("contact_id") @db.Uuid
+  createdById String @map("created_by_id") @db.Uuid
+  type        String // phone, visit, online
+  content     String
+
+  // 컨텍스트 (어떤 맥락의 상담인지, 자동 연결)
+  propertyId String? @map("property_id") @db.Uuid
+  matchId    String? @map("match_id") @db.Uuid
+  buyerReqId String? @map("buyer_req_id") @db.Uuid
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  office           Office            @relation(fields: [officeId], references: [id])
+  contact          Contact           @relation(fields: [contactId], references: [id])
+  createdBy        User              @relation("ConsultationCreator", fields: [createdById], references: [id])
+  property         Property?         @relation(fields: [propertyId], references: [id])
+  match            Match?            @relation(fields: [matchId], references: [id])
+  buyerRequirement BuyerRequirement? @relation(fields: [buyerReqId], references: [id])
+
+  @@index([officeId, contactId])
+  @@index([officeId, propertyId])
+  @@map("consultations")
+}
+
+// ============================================================
+// 구매고객 희망조건
+// ============================================================
+
+model BuyerRequirement {
+  id               String    @id @default(uuid()) @db.Uuid
+  officeId         String    @map("office_id") @db.Uuid
+  contactId        String    @map("contact_id") @db.Uuid
+  status           String    @default("active") // active, matched, completed, inactive
+  urgency          String    @default("normal") // urgent, normal, flexible
+  transactionType  String?   @map("transaction_type")
+  siteTypes        String[]  @map("site_types")
+  regions          String[]
+  priceMin         Int?      @map("price_min")
+  priceMax         Int?      @map("price_max")
+  depositMin       Int?      @map("deposit_min")
+  depositMax       Int?      @map("deposit_max")
+  monthlyRentMax   Int?      @map("monthly_rent_max")
+  areaMin          Decimal?  @map("area_min") @db.Decimal
+  areaMax          Decimal?  @map("area_max") @db.Decimal
+  mustConditions   String[]  @map("must_conditions")
+  preferConditions String[]  @map("prefer_conditions")
+  moveInDate       DateTime? @map("move_in_date")
+  assignedToId     String?   @map("assigned_to_id") @db.Uuid
+  lastContactDate  DateTime? @map("last_contact_date")
+  nextContactDate  DateTime? @map("next_contact_date")
+  memo             String?
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  office        Office         @relation(fields: [officeId], references: [id])
+  contact       Contact        @relation(fields: [contactId], references: [id])
+  assignedTo    User?          @relation("AssignedAgent", fields: [assignedToId], references: [id])
+  matches       Match[]
+  consultations Consultation[]
+
+  @@index([officeId, status])
+  @@map("buyer_requirements")
+}
+
+// ============================================================
+// 매칭 파이프라인
+// ============================================================
+
+model Match {
+  id         String   @id @default(uuid()) @db.Uuid
+  officeId   String   @map("office_id") @db.Uuid
+  propertyId String   @map("property_id") @db.Uuid
+  buyerReqId String   @map("buyer_req_id") @db.Uuid
+  stage      String   @default("suggested") // MatchStage enum
+  memo       String?
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  office           Office           @relation(fields: [officeId], references: [id])
+  property         Property         @relation(fields: [propertyId], references: [id])
+  buyerRequirement BuyerRequirement @relation(fields: [buyerReqId], references: [id])
+  consultations    Consultation[]
+  calendarEvents   CalendarEvent[]
+
+  @@map("matches")
+}
+
+// ============================================================
+// 거래
+// ============================================================
+
+model Deal {
+  id         String @id @default(uuid()) @db.Uuid
+  officeId   String @map("office_id") @db.Uuid
+  propertyId String @map("property_id") @db.Uuid
+  stage      String @default("selection") // DealStage enum
+  price      Int? // 최종 거래가 (만원)
+
+  // 거래 당사자
+  buyerContactId  String? @map("buyer_contact_id") @db.Uuid // 매수인
+  sellerContactId String? @map("seller_contact_id") @db.Uuid // 매도인
+
+  // 매도측 수수료 (우리 사무소가 매도인에게서 받는 금액)
+  commissionSellerRate   Decimal? @map("commission_seller_rate") @db.Decimal // 수수료율 (%)
+  commissionSellerAmount Int?     @map("commission_seller_amount") // 수수료 (만원)
+
+  // 매수측 수수료 (우리 사무소가 매수인에게서 받는 금액)
+  commissionBuyerRate   Decimal? @map("commission_buyer_rate") @db.Decimal // 수수료율 (%)
+  commissionBuyerAmount Int?     @map("commission_buyer_amount") // 수수료 (만원)
+
+  // 합계
+  commissionTotal Int? @map("commission_total") // 수수료 총액 (만원, seller + buyer)
+  vat             Int? // 부가세 (만원)
+
+  // 공동중개
+  isJointBrokerage   Boolean @default(false) @map("is_joint_brokerage")
+  partnerBrokerName  String? @map("partner_broker_name") // 상대 중개사무소명
+  partnerBrokerPhone String? @map("partner_broker_phone") // 상대 중개사 연락처
+  partnerCommission  Int?    @map("partner_commission") // 상대 중개사 수수료 (만원)
+
+  memo      String?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  office         Office            @relation(fields: [officeId], references: [id])
+  property       Property          @relation(fields: [propertyId], references: [id])
+  buyerContact   Contact?          @relation("DealBuyer", fields: [buyerContactId], references: [id])
+  sellerContact  Contact?          @relation("DealSeller", fields: [sellerContactId], references: [id])
+  contract       Contract?
+  participants   DealParticipant[]
+  calendarEvents CalendarEvent[]
+
+  @@index([officeId, stage])
+  @@map("deals")
+}
+
+// ============================================================
+// 계약 상세 (Deal 1:1)
+// ============================================================
+
+/// 거래가 계약 단계에 도달하면 생성. 계약금/중도금/잔금 스케줄 + 특약.
+model Contract {
+  id       String @id @default(uuid()) @db.Uuid
+  officeId String @map("office_id") @db.Uuid
+  dealId   String @unique @map("deal_id") @db.Uuid
+
+  // 거래 유형 (Deal.property.transactionType과 별도 — 계약서 기준)
+  transactionType String @map("transaction_type") // sale, jeonse, monthly
+
+  // 당사자 (계약서상 기재되는 사람)
+  buyerContactId  String @map("buyer_contact_id") @db.Uuid // 매수인/임차인
+  sellerContactId String @map("seller_contact_id") @db.Uuid // 매도인/임대인
+
+  // 계약 금액
+  totalPrice  Int  @map("total_price") // 총 거래금액 (매매가/보증금, 만원)
+  monthlyRent Int? @map("monthly_rent") // 월세 (만원, monthly일 때만)
+
+  // 상태
+  status String @default("draft") // draft, signed, depositPaid, balancePaid, registered, cancelled
+
+  // 계약 일자
+  contractDate DateTime? @map("contract_date") // 계약일
+
+  // 계약금
+  contractDeposit     Int?      @map("contract_deposit") // 계약금 (만원)
+  contractDepositDate DateTime? @map("contract_deposit_date")
+  contractDepositPaid Boolean   @default(false) @map("contract_deposit_paid")
+
+  // 중도금
+  middlePayment     Int?      @map("middle_payment") // 중도금 (만원)
+  middlePaymentDate DateTime? @map("middle_payment_date")
+  middlePaymentPaid Boolean   @default(false) @map("middle_payment_paid")
+
+  // 잔금
+  finalPayment     Int?      @map("final_payment") // 잔금 (만원)
+  finalPaymentDate DateTime? @map("final_payment_date")
+  finalPaymentPaid Boolean   @default(false) @map("final_payment_paid")
+
+  // 입주/이전
+  moveInDate DateTime? @map("move_in_date") // 입주일
+
+  // 임대 기간 (전세/월세)
+  leaseStartDate DateTime? @map("lease_start_date")
+  leaseEndDate   DateTime? @map("lease_end_date")
+
+  // 특약/기타
+  specialTerms String? @map("special_terms") // 특약사항
+
+  // 첨부파일 (계약서 스캔본 등)
+  attachments String[] // S3/R2 URL 목록
+
+  memo String?
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  office        Office  @relation(fields: [officeId], references: [id])
+  deal          Deal    @relation(fields: [dealId], references: [id])
+  buyerContact  Contact @relation("ContractBuyer", fields: [buyerContactId], references: [id])
+  sellerContact Contact @relation("ContractSeller", fields: [sellerContactId], references: [id])
+
+  @@index([officeId])
+  @@index([officeId, status])
+  @@map("contracts")
+}
+
+// ============================================================
+// 거래 담당자 배정
+// ============================================================
+
+/// 거래에 참여한 직원별 역할. 정산은 별도 모듈에서 이 데이터 기반으로 계산.
+model DealParticipant {
+  id       String @id @default(uuid()) @db.Uuid
+  officeId String @map("office_id") @db.Uuid
+  dealId   String @map("deal_id") @db.Uuid
+  userId   String @map("user_id") @db.Uuid // 담당 직원
+
+  role String // listing_agent, buying_agent, dual_agent, manager, assistant, closer
+  side String // seller, buyer, both — 어느 측 담당인지
+
+  memo      String?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  office Office @relation(fields: [officeId], references: [id])
+  deal   Deal   @relation(fields: [dealId], references: [id])
+  user   User   @relation("DealParticipants", fields: [userId], references: [id])
+
+  @@unique([dealId, userId, role])
+  @@index([officeId, userId])
+  @@map("deal_participants")
+}

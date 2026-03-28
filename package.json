@@ -1,0 +1,39 @@
+{
+  "name": "estate-erp",
+  "version": "0.0.1",
+  "private": true,
+  "description": "부동산 중개사 전용 SaaS ERP 시스템",
+  "engines": {
+    "node": ">=23.0.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@nestjs/core",
+      "@prisma/client",
+      "@prisma/engines",
+      "bcrypt",
+      "prisma",
+      "msgpackr-extract",
+      "esbuild"
+    ]
+  },
+  "scripts": {
+    "dev:server": "pnpm --filter @estate-erp/server dev",
+    "dev:desktop": "pnpm --filter @estate-erp/desktop dev",
+    "dev:web": "pnpm --filter @estate-erp/web dev",
+    "build": "pnpm -r build",
+    "build:server": "pnpm --filter @estate-erp/server build",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "lint": "pnpm -r lint",
+    "prisma:migrate": "pnpm --filter @estate-erp/server prisma:migrate",
+    "prisma:generate": "pnpm --filter @estate-erp/server prisma:generate",
+    "prisma:studio": "pnpm --filter @estate-erp/server prisma:studio"
+  },
+  "devDependencies": {
+    "prisma": "6.19.2"
+  },
+  "dependencies": {
+    "@prisma/client": "6.19.2"
+  }
+}

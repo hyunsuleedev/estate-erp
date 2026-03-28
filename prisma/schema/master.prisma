@@ -1,0 +1,38 @@
+// ============================================================
+// 법정동 코드 마스터 (공공데이터포털 import)
+// ============================================================
+
+/// 시도 (서울특별시, 경기도 등)
+model Province {
+  code      String     @id @db.VarChar(2) // "11" = 서울
+  name      String     @unique // 서울특별시
+  districts District[]
+
+  @@map("provinces")
+}
+
+/// 시군구 (강동구, 성남시 등)
+model District {
+  code         String @id @db.VarChar(5) // "11740" = 강동구
+  provinceCode String @map("province_code") @db.VarChar(2)
+  name         String // 강동구
+
+  province Province @relation(fields: [provinceCode], references: [code])
+  wards    Ward[]
+
+  @@unique([provinceCode, name])
+  @@map("districts")
+}
+
+/// 읍면동 (고덕동, 명일동 등) — 법정동 최하위
+model Ward {
+  code         String @id @db.VarChar(10) // "1174010100" = 고덕동
+  districtCode String @map("district_code") @db.VarChar(5)
+  name         String // 고덕동
+
+  district District @relation(fields: [districtCode], references: [code])
+  sites    Site[]
+
+  @@unique([districtCode, name])
+  @@map("wards")
+}

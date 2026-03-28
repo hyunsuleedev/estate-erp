@@ -1,0 +1,29 @@
+// ============================================================
+// 알림 (인앱 + 푸시)
+// ============================================================
+
+/// 인앱 알림. WebSocket으로 실시간 전달 + DB에 영구 저장 (오프라인 사용자용).
+model Notification {
+  id       String @id @default(uuid()) @db.Uuid
+  officeId String @map("office_id") @db.Uuid
+  userId   String @map("user_id") @db.Uuid // 수신자
+
+  type    String // inquiry_received, match_suggested, deal_stage_changed, insight, network_join_request, task_assigned, verification_due, price_changed
+  title   String
+  content String?
+
+  // 클릭 시 이동할 엔티티 (선택)
+  linkType String? @map("link_type") // "property", "match", "deal", "network_inquiry", "task" 등
+  linkId   String? @map("link_id") @db.Uuid
+
+  isRead    Boolean   @default(false) @map("is_read")
+  readAt    DateTime? @map("read_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  office Office @relation(fields: [officeId], references: [id])
+  user   User   @relation(fields: [userId], references: [id])
+
+  @@index([userId, isRead])
+  @@index([officeId, createdAt])
+  @@map("notifications")
+}

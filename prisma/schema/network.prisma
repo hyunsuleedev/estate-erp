@@ -1,0 +1,117 @@
+// ============================================================
+// 공동 중개망 (킬러 피쳐)
+// ============================================================
+
+/// 중개방 — 카카오톡 그룹방처럼 운영되는 매물 공유 방
+model NetworkRoom {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String // 방 이름 ("강동구 공동중개")
+  description String?
+  type        String   @default("private") // public, private
+  createdBy   String   @map("created_by") @db.Uuid // 방 생성 사무소
+  region      String? // 지역 태그 (강동구, 송파구 등)
+  maxMembers  Int?     @map("max_members") // null = 무제한
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  createdByOffice  Office                  @relation(fields: [createdBy], references: [id])
+  members          NetworkRoomMember[]
+  sharedProperties NetworkSharedProperty[]
+  messages         NetworkMessage[]
+
+  @@map("network_rooms")
+}
+
+/// 중개방 참여자
+model NetworkRoomMember {
+  id        String    @id @default(uuid()) @db.Uuid
+  roomId    String    @map("room_id") @db.Uuid
+  officeId  String    @map("office_id") @db.Uuid
+  role      String    @default("member") // admin, member
+  status    String    @default("pending") // pending, approved, rejected, left
+  joinedAt  DateTime? @map("joined_at") // 승인 시점
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  room   NetworkRoom @relation(fields: [roomId], references: [id])
+  office Office      @relation(fields: [officeId], references: [id])
+
+  @@unique([roomId, officeId])
+  @@map("network_room_members")
+}
+
+/// 공유 매물 — 기존 properties에서 선택, 필드별 마스킹
+model NetworkSharedProperty {
+  id         String @id @default(uuid()) @db.Uuid
+  roomId     String @map("room_id") @db.Uuid
+  propertyId String @map("property_id") @db.Uuid
+  officeId   String @map("office_id") @db.Uuid // 공유한 사무소
+  sharedBy   String @map("shared_by") @db.Uuid // 공유한 사용자
+
+  // 공개 항목 선택 (마스킹)
+  showSiteName Boolean @default(true) @map("show_site_name")
+  showDong     Boolean @default(false) @map("show_dong")
+  showUnit     Boolean @default(false) @map("show_unit")
+  showPrice    Boolean @default(true) @map("show_price")
+  showArea     Boolean @default(true) @map("show_area")
+  showFloor    Boolean @default(false) @map("show_floor")
+  showMemo     Boolean @default(false) @map("show_memo")
+  showPhotos   Boolean @default(false) @map("show_photos")
+
+  // 공유자 연락처
+  contactName  String? @map("contact_name")
+  contactPhone String? @map("contact_phone")
+  description  String? // 공유 코멘트 ("급매" 등)
+
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  room         NetworkRoom      @relation(fields: [roomId], references: [id])
+  property     Property         @relation(fields: [propertyId], references: [id])
+  office       Office           @relation(fields: [officeId], references: [id])
+  sharedByUser User             @relation(fields: [sharedBy], references: [id])
+  inquiries    NetworkInquiry[]
+  messages     NetworkMessage[]
+
+  @@unique([roomId, propertyId])
+  @@map("network_shared_properties")
+}
+
+/// 공유 매물 문의
+model NetworkInquiry {
+  id               String    @id @default(uuid()) @db.Uuid
+  sharedPropertyId String    @map("shared_property_id") @db.Uuid
+  fromOfficeId     String    @map("from_office_id") @db.Uuid
+  fromUserId       String    @map("from_user_id") @db.Uuid
+  status           String    @default("pending") // pending, accepted, rejected, expired
+  message          String?
+  response         String?
+  respondedAt      DateTime? @map("responded_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+
+  sharedProperty NetworkSharedProperty @relation(fields: [sharedPropertyId], references: [id])
+  fromOffice     Office                @relation(fields: [fromOfficeId], references: [id])
+  fromUser       User                  @relation(fields: [fromUserId], references: [id])
+
+  @@map("network_inquiries")
+}
+
+/// 중개방 채팅
+model NetworkMessage {
+  id               String   @id @default(uuid()) @db.Uuid
+  roomId           String   @map("room_id") @db.Uuid
+  officeId         String   @map("office_id") @db.Uuid
+  userId           String   @map("user_id") @db.Uuid
+  content          String
+  sharedPropertyId String?  @map("shared_property_id") @db.Uuid // 매물 카드 첨부
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  room           NetworkRoom            @relation(fields: [roomId], references: [id])
+  office         Office                 @relation(fields: [officeId], references: [id])
+  user           User                   @relation(fields: [userId], references: [id])
+  sharedProperty NetworkSharedProperty? @relation(fields: [sharedPropertyId], references: [id])
+
+  @@index([roomId, createdAt])
+  @@map("network_messages")
+}

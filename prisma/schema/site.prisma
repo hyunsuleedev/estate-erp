@@ -1,0 +1,181 @@
+// ============================================================
+// 사이트/주소 계층 (정규화)
+// ============================================================
+
+model Site {
+  id       String  @id @default(uuid()) @db.Uuid
+  officeId String? @map("office_id") @db.Uuid // null = 공공데이터 import
+  isPublic Boolean @default(false) @map("is_public") // true = 모든 사무소 열람 가능
+  isLocked Boolean @default(false) @map("is_locked") // 공공데이터 수정 보호
+  type     String // apartment, officetel, villa, house, commercial, land, living_accommodation
+  name     String // 단지명/건물명
+
+  // 법정동 코드 체계 (마스터 테이블 FK)
+  wardCode String @map("ward_code") @db.VarChar(10)
+
+  // 도로명주소
+  roadName         String? @map("road_name")
+  roadBuildingMain Int?    @map("road_building_main")
+  roadBuildingSub  Int?    @map("road_building_sub")
+  roadAddress      String? @map("road_address") // 전체 도로명주소 (표시용)
+
+  // 지번주소
+  jibunMain    String? @map("jibun_main")
+  jibunSub     String? @map("jibun_sub")
+  jibunAddress String? @map("jibun_address") // 전체 지번주소 (표시용)
+
+  // 좌표 — PostGIS geometry는 migration SQL에서 추가
+  // ALTER TABLE sites ADD COLUMN location geometry(Point, 5179);
+  // CREATE INDEX idx_sites_location ON sites USING GIST(location);
+  lat Decimal? @db.Decimal
+  lng Decimal? @db.Decimal
+
+  // 외부 연동 코드 (자체 UUID가 PK, 외부 코드는 매핑용)
+  kaptComplexCode  String? @map("kapt_complex_code") // K-apt (아파트만)
+  naverComplexCode String? @map("naver_complex_code") // 네이버 부동산 (아파트+오피스텔+빌라)
+  kbComplexCode    String? @map("kb_complex_code") // KB 부동산
+  zipCode          String? @map("zip_code")
+
+  // 공통 부가정보
+  builtYear  Int? @map("built_year")
+  totalUnits Int? @map("total_units")
+  totalDongs Int? @map("total_dongs")
+
+  // 타입별 가변 속성 (JSONB)
+  // 아파트: { parkingCount, heatingType, floorAreaRatio, buildingCoverageRatio }
+  // 토지:   { landUseZone, landCategory, landArea }
+  // 상가:   { floorInfo, mainUse }
+  metadata Json? @db.JsonB
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  office        Office?        @relation(fields: [officeId], references: [id])
+  ward          Ward           @relation(fields: [wardCode], references: [code])
+  officeSites   OfficeSite[]
+  siteUnitTypes SiteUnitType[]
+  dongs         Dong[]
+  units         Unit[]
+  properties    Property[]
+
+  @@index([officeId])
+  @@index([wardCode])
+  @@index([type])
+  @@index([kaptComplexCode])
+  @@index([naverComplexCode])
+  @@index([kbComplexCode])
+  @@index([name(ops: raw("gin_trgm_ops"))], type: Gin) // 단지명 퍼지 검색
+  @@map("sites")
+}
+
+// ============================================================
+// 사무소별 관리 단지 (즐겨찾기)
+// ============================================================
+
+model OfficeSite {
+  id        String   @id @default(uuid()) @db.Uuid
+  officeId  String   @map("office_id") @db.Uuid
+  siteId    String   @map("site_id") @db.Uuid
+  memo      String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  office Office @relation(fields: [officeId], references: [id])
+  site   Site   @relation(fields: [siteId], references: [id])
+
+  @@unique([officeId, siteId])
+  @@map("office_sites")
+}
+
+// ============================================================
+// 단지별 평형 카탈로그 (네이버 pyeongList 대응)
+// ============================================================
+
+/// 단지별 평형 타입 정의. 84A, 59B 등 타입별 면적/방수/욕실수 관리.
+/// 네이버 부동산 pyeongList API와 1:1 대응.
+model SiteUnitType {
+  id       String  @id @default(uuid()) @db.Uuid
+  officeId String? @map("office_id") @db.Uuid // null = 공공데이터
+  siteId   String  @map("site_id") @db.Uuid
+
+  name     String // 타입명 (84A, 59B, 133A 등)
+  nameType String? @map("name_type") // 변형 문자 (A, B, C, D)
+
+  // 면적 (m² 기준)
+  exclusiveAreaM2 Decimal? @map("exclusive_area_m2") @db.Decimal // 전용면적
+  supplyAreaM2    Decimal? @map("supply_area_m2") @db.Decimal // 공급면적
+  contractAreaM2  Decimal? @map("contract_area_m2") @db.Decimal // 계약면적
+
+  // 구조
+  roomCount     Int? @map("room_count") // 방 수
+  bathRoomCount Int? @map("bath_room_count") // 욕실 수
+
+  // 세대 수
+  householdCount Int? @map("household_count") // 해당 타입 총 세대수
+
+  // 부가 정보
+  entranceType String? @map("entrance_type") // 주출입(10) / 부출입(20)
+  direction    String? // 향 (SS=남남, ES=동남, WS=서남 등)
+  isDuplex     Boolean @default(false) @map("is_duplex") // 복층 여부
+
+  // 외부 연동
+  naverPyeongNo String? @map("naver_pyeong_no") // 네이버 평형번호
+
+  // 평면도 이미지 URL (JSONB)
+  floorPlanUrls Json? @map("floor_plan_urls") @db.JsonB
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  office Office? @relation(fields: [officeId], references: [id])
+  site   Site    @relation(fields: [siteId], references: [id])
+  units  Unit[]
+
+  @@unique([siteId, name])
+  @@index([siteId])
+  @@map("site_unit_types")
+}
+
+model Dong {
+  id        String   @id @default(uuid()) @db.Uuid
+  officeId  String?  @map("office_id") @db.Uuid // null = 중앙 데이터
+  siteId    String   @map("site_id") @db.Uuid
+  name      String // 동 이름 (101동)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  office Office? @relation(fields: [officeId], references: [id])
+  site   Site    @relation(fields: [siteId], references: [id])
+  units  Unit[]
+
+  @@map("dongs")
+}
+
+model Unit {
+  id             String  @id @default(uuid()) @db.Uuid
+  officeId       String? @map("office_id") @db.Uuid // null = 중앙 데이터
+  siteId         String  @map("site_id") @db.Uuid
+  dongId         String? @map("dong_id") @db.Uuid
+  siteUnitTypeId String? @map("site_unit_type_id") @db.Uuid // FK → SiteUnitType (평형 타입)
+
+  name   String // 호수 (3501호)
+  floor  Int? // 층 (35)
+  lineNo Int?   @map("line_no") // 라인번호 (네이버 그리드 컬럼, 같은 타입 수직 스택)
+
+  // 면적 — SiteUnitType에서 가져오는 것이 정석이나, 타입 미지정 호실용 fallback
+  exclusiveAreaM2 Decimal? @map("exclusive_area_m2") @db.Decimal
+  supplyAreaM2    Decimal? @map("supply_area_m2") @db.Decimal
+
+  isPiloti Boolean @default(false) @map("is_piloti") // 필로티 여부
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  office       Office?       @relation(fields: [officeId], references: [id])
+  site         Site          @relation(fields: [siteId], references: [id])
+  dong         Dong?         @relation(fields: [dongId], references: [id])
+  siteUnitType SiteUnitType? @relation(fields: [siteUnitTypeId], references: [id])
+  properties   Property[]
+
+  @@index([siteId, dongId, floor])
+  @@map("units")
+}
