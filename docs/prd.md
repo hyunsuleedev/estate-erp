@@ -1085,6 +1085,10 @@ Phase 1에서는 DealParticipant(거래 담당자 배정)와 ActivityLog(기여 
 
 코드 구조와 설계 패턴 수준에서 직접 참고할 수 있는 오픈소스 CRM 프로젝트.
 
+**로컬 참고자료 위치:**
+- Twenty CRM: `~/Documents/reference-crm/twenty/` (full clone)
+- Frappe CRM: `~/Documents/reference-crm/frappe-crm/` (shallow clone)
+
 #### Twenty CRM (github.com/twentyhq/twenty) — 핵심 참고 대상
 
 **Estate ERP와 거의 동일한 기술 스택**: NestJS + TypeORM + PostgreSQL + Redis + BullMQ + Passport.js + JWT + S3/R2 + Resend + React.

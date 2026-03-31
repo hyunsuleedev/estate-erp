@@ -21,10 +21,8 @@ export interface PropertySearchQuery {
   // 면적 범위 (m²) - unit의 exclusiveAreaM2 기준
   areaMin?: number;
   areaMax?: number;
-  // 지역 필터
-  sido?: string;
-  sigungu?: string;
-  eupmyeondong?: string;
+  // 지역 필터 (법정동 코드 기반)
+  wardCode?: string;
   // 사이트 ID 필터
   siteId?: string;
   // 텍스트 검색 (사이트명, 메모)
@@ -90,16 +88,8 @@ export class PropertiesService {
       siteFilter.type = query.siteType;
       hasSiteFilter = true;
     }
-    if (query.sido) {
-      siteFilter.sido = query.sido;
-      hasSiteFilter = true;
-    }
-    if (query.sigungu) {
-      siteFilter.sigungu = query.sigungu;
-      hasSiteFilter = true;
-    }
-    if (query.eupmyeondong) {
-      siteFilter.eupmyeondong = query.eupmyeondong;
+    if (query.wardCode) {
+      siteFilter.wardCode = query.wardCode;
       hasSiteFilter = true;
     }
     if (query.siteId) {

@@ -6,5 +6,5 @@ generator client {
 datasource db {
   provider   = "postgresql"
   url        = env("DATABASE_URL")
-  extensions = [postgis]
+  extensions = [pg_trgm] // postgis는 설치 후 추가
 }

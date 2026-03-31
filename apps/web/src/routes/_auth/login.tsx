@@ -13,7 +13,7 @@ export const Route = createFileRoute('/_auth/login')({
 function LoginPage() {
   const { login } = useAuth();
   const navigate = useNavigate();
-  const [email, setEmail] = useState('');
+  const [loginId, setLoginId] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -23,10 +23,10 @@ function LoginPage() {
     setError('');
     setLoading(true);
     try {
-      await login(email, password);
+      await login(loginId, password);
       navigate({ to: '/dashboard' });
     } catch {
-      setError('이메일 또는 비밀번호가 올바르지 않습니다.');
+      setError('아이디 또는 비밀번호가 올바르지 않습니다.');
     } finally {
       setLoading(false);
     }
@@ -54,14 +54,14 @@ function LoginPage() {
             )}
 
             <div className="space-y-1.5">
-              <Label htmlFor="email" className="text-xs font-medium text-muted-foreground">이메일</Label>
+              <Label htmlFor="loginId" className="text-xs font-medium text-muted-foreground">아이디</Label>
               <Input
-                id="email"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                id="loginId"
+                type="text"
+                value={loginId}
+                onChange={(e) => setLoginId(e.target.value)}
                 required
-                placeholder="example@email.com"
+                placeholder="아이디를 입력하세요"
                 className="h-9"
               />
             </div>

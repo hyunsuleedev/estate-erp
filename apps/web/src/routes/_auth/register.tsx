@@ -14,6 +14,7 @@ function RegisterPage() {
   const { register } = useAuth();
   const navigate = useNavigate();
   const [form, setForm] = useState({
+    loginId: '',
     email: '',
     password: '',
     name: '',
@@ -30,10 +31,15 @@ function RegisterPage() {
     setError('');
     setLoading(true);
     try {
-      await register(form.email, form.password, form.name, form.officeName);
+      await register(form.loginId, form.email, form.password, form.name, form.officeName);
       navigate({ to: '/dashboard' });
-    } catch {
-      setError('회원가입에 실패했습니다. 다시 시도해 주세요.');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : '';
+      if (message.includes('409') || message.includes('이미 사용')) {
+        setError('이미 사용 중인 아이디입니다.');
+      } else {
+        setError('회원가입에 실패했습니다. 다시 시도해 주세요.');
+      }
     } finally {
       setLoading(false);
     }
@@ -76,6 +82,20 @@ function RegisterPage() {
             <div className="space-y-1.5">
               <Label htmlFor="name" className="text-xs font-medium text-muted-foreground">이름</Label>
               <Input id="name" type="text" value={form.name} onChange={update('name')} required className="h-9" />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="loginId" className="text-xs font-medium text-muted-foreground">아이디</Label>
+              <Input
+                id="loginId"
+                type="text"
+                value={form.loginId}
+                onChange={update('loginId')}
+                required
+                placeholder="사용할 아이디 (영문, 숫자)"
+                className="h-9"
+              />
+              <p className="text-[11px] text-muted-foreground">직원 계정은 이 아이디 기반으로 자동 생성됩니다 (예: {form.loginId || 'myid'}-001)</p>
             </div>
 
             <div className="space-y-1.5">

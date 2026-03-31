@@ -39,13 +39,18 @@ export interface CreateSiteDto {
   totalDongs?: number;
 }
 
+export interface SiteDetail extends Site {
+  dongs: import('./dongs.js').Dong[];
+  units: import('./units.js').Unit[];
+}
+
 export function createSitesApi(request: RequestFn) {
   return {
     findAll: () =>
       request<Site[]>('/sites'),
 
     findOne: (id: string) =>
-      request<Site>(`/sites/${id}`),
+      request<SiteDetail>(`/sites/${id}`),
 
     create: (dto: CreateSiteDto) =>
       request<Site>('/sites', { method: 'POST', body: dto }),

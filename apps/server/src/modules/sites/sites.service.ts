@@ -21,8 +21,49 @@ export class SitesService {
     const site = await this.prisma.site.findFirst({
       where,
       include: {
-        dongs: { include: { units: true } },
-        units: true,
+        dongs: {
+          include: {
+            units: {
+              include: {
+                siteUnitType: true,
+                properties: {
+                  include: {
+                    propertyContacts: {
+                      where: { role: 'owner', status: 'active' },
+                      include: { contact: true },
+                    },
+                    tenants: {
+                      where: { status: 'residing' },
+                      include: { contact: true },
+                    },
+                    consultations: {
+                      orderBy: { createdAt: 'desc' },
+                      take: 1,
+                      include: { contact: true },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+        units: {
+          include: {
+            siteUnitType: true,
+            properties: {
+              include: {
+                propertyContacts: {
+                  where: { role: 'owner', status: 'active' },
+                  include: { contact: true },
+                },
+                tenants: {
+                  where: { status: 'residing' },
+                  include: { contact: true },
+                },
+              },
+            },
+          },
+        },
       },
     });
     if (!site) throw new NotFoundException('Site not found');
@@ -34,10 +75,7 @@ export class SitesService {
     dto: {
       type: string;
       name: string;
-      sido: string;
-      sigungu: string;
-      eupmyeondong: string;
-      ri?: string;
+      wardCode: string;
       roadAddress?: string;
       jibunAddress?: string;
       lat?: number;

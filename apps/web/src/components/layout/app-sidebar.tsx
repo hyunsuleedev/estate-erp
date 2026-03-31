@@ -5,6 +5,14 @@ import {
   ListTodo,
   CalendarDays,
   Map,
+  Handshake,
+  GitBranch,
+  MessageSquare,
+  UserSearch,
+  Globe,
+  FileText,
+  Users,
+  Settings,
 } from 'lucide-react'
 import { useAuth } from '@/providers/auth-provider'
 import { NavMain } from '@/components/nav-main'
@@ -44,6 +52,26 @@ const navItems = [
     ],
   },
   {
+    title: '거래관리',
+    url: '/deals',
+    icon: Handshake,
+  },
+  {
+    title: '매칭',
+    url: '/matches',
+    icon: GitBranch,
+  },
+  {
+    title: '상담기록',
+    url: '/consultations',
+    icon: MessageSquare,
+  },
+  {
+    title: '구매고객',
+    url: '/buyer-requirements',
+    icon: UserSearch,
+  },
+  {
     title: '업무',
     url: '/tasks',
     icon: ListTodo,
@@ -57,6 +85,26 @@ const navItems = [
     title: '관리단지',
     url: '/sites',
     icon: Map,
+  },
+  {
+    title: '계약서 관리',
+    url: '/contracts',
+    icon: FileText,
+  },
+  {
+    title: '네트워크',
+    url: '/network',
+    icon: Globe,
+  },
+  {
+    title: '직원관리',
+    url: '/employees',
+    icon: Users,
+  },
+  {
+    title: '설정',
+    url: '/settings',
+    icon: Settings,
   },
 ]
 

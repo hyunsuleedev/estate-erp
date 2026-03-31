@@ -1,11 +1,12 @@
 import type { RequestFn } from '../client.js';
 
 export interface LoginDto {
-  email: string;
+  loginId: string;
   password: string;
 }
 
 export interface RegisterDto {
+  loginId: string;
   email: string;
   password: string;
   name: string;
@@ -17,26 +18,26 @@ export interface AuthResponse {
   refreshToken: string;
   user: {
     id: string;
-    email: string;
+    loginId: string;
+    email: string | null;
     name: string;
     role: string;
   };
   office: {
     id: string;
     name: string;
-    code: string;
   };
 }
 
 export interface MeResponse {
   id: string;
-  email: string;
+  loginId: string;
+  email: string | null;
   name: string;
   role: string;
   office: {
     id: string;
     name: string;
-    code: string;
   };
 }
 

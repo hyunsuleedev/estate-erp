@@ -42,10 +42,7 @@ export class SitesController {
     dto: {
       type: string;
       name: string;
-      sido: string;
-      sigungu: string;
-      eupmyeondong: string;
-      ri?: string;
+      wardCode: string;
       roadAddress?: string;
       jibunAddress?: string;
       lat?: number;

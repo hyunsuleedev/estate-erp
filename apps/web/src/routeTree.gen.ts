@@ -17,9 +17,17 @@ import { Route as AuthRegisterRouteImport } from './routes/_auth/register'
 import { Route as AuthLoginRouteImport } from './routes/_auth/login'
 import { Route as AuthenticatedTasksIndexRouteImport } from './routes/_authenticated/tasks/index'
 import { Route as AuthenticatedSitesIndexRouteImport } from './routes/_authenticated/sites/index'
+import { Route as AuthenticatedSettingsIndexRouteImport } from './routes/_authenticated/settings/index'
 import { Route as AuthenticatedPropertiesIndexRouteImport } from './routes/_authenticated/properties/index'
+import { Route as AuthenticatedNetworkIndexRouteImport } from './routes/_authenticated/network/index'
+import { Route as AuthenticatedMatchesIndexRouteImport } from './routes/_authenticated/matches/index'
+import { Route as AuthenticatedEmployeesIndexRouteImport } from './routes/_authenticated/employees/index'
+import { Route as AuthenticatedDealsIndexRouteImport } from './routes/_authenticated/deals/index'
+import { Route as AuthenticatedContractsIndexRouteImport } from './routes/_authenticated/contracts/index'
 import { Route as AuthenticatedContactsIndexRouteImport } from './routes/_authenticated/contacts/index'
+import { Route as AuthenticatedConsultationsIndexRouteImport } from './routes/_authenticated/consultations/index'
 import { Route as AuthenticatedCalendarIndexRouteImport } from './routes/_authenticated/calendar/index'
+import { Route as AuthenticatedBuyerRequirementsIndexRouteImport } from './routes/_authenticated/buyer-requirements/index'
 import { Route as AuthenticatedPropertiesNewRouteImport } from './routes/_authenticated/properties/new'
 import { Route as AuthenticatedPropertiesIdRouteImport } from './routes/_authenticated/properties/$id'
 import { Route as AuthenticatedContactsNewRouteImport } from './routes/_authenticated/contacts/new'
@@ -63,10 +71,45 @@ const AuthenticatedSitesIndexRoute = AuthenticatedSitesIndexRouteImport.update({
   path: '/sites/',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const AuthenticatedSettingsIndexRoute =
+  AuthenticatedSettingsIndexRouteImport.update({
+    id: '/settings/',
+    path: '/settings/',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedPropertiesIndexRoute =
   AuthenticatedPropertiesIndexRouteImport.update({
     id: '/properties/',
     path: '/properties/',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedNetworkIndexRoute =
+  AuthenticatedNetworkIndexRouteImport.update({
+    id: '/network/',
+    path: '/network/',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedMatchesIndexRoute =
+  AuthenticatedMatchesIndexRouteImport.update({
+    id: '/matches/',
+    path: '/matches/',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedEmployeesIndexRoute =
+  AuthenticatedEmployeesIndexRouteImport.update({
+    id: '/employees/',
+    path: '/employees/',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedDealsIndexRoute = AuthenticatedDealsIndexRouteImport.update({
+  id: '/deals/',
+  path: '/deals/',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
+const AuthenticatedContractsIndexRoute =
+  AuthenticatedContractsIndexRouteImport.update({
+    id: '/contracts/',
+    path: '/contracts/',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
 const AuthenticatedContactsIndexRoute =
@@ -75,10 +118,22 @@ const AuthenticatedContactsIndexRoute =
     path: '/contacts/',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const AuthenticatedConsultationsIndexRoute =
+  AuthenticatedConsultationsIndexRouteImport.update({
+    id: '/consultations/',
+    path: '/consultations/',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedCalendarIndexRoute =
   AuthenticatedCalendarIndexRouteImport.update({
     id: '/calendar/',
     path: '/calendar/',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedBuyerRequirementsIndexRoute =
+  AuthenticatedBuyerRequirementsIndexRouteImport.update({
+    id: '/buyer-requirements/',
+    path: '/buyer-requirements/',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
 const AuthenticatedPropertiesNewRoute =
@@ -114,9 +169,17 @@ export interface FileRoutesByFullPath {
   '/contacts/new': typeof AuthenticatedContactsNewRoute
   '/properties/$id': typeof AuthenticatedPropertiesIdRoute
   '/properties/new': typeof AuthenticatedPropertiesNewRoute
+  '/buyer-requirements/': typeof AuthenticatedBuyerRequirementsIndexRoute
   '/calendar/': typeof AuthenticatedCalendarIndexRoute
+  '/consultations/': typeof AuthenticatedConsultationsIndexRoute
   '/contacts/': typeof AuthenticatedContactsIndexRoute
+  '/contracts/': typeof AuthenticatedContractsIndexRoute
+  '/deals/': typeof AuthenticatedDealsIndexRoute
+  '/employees/': typeof AuthenticatedEmployeesIndexRoute
+  '/matches/': typeof AuthenticatedMatchesIndexRoute
+  '/network/': typeof AuthenticatedNetworkIndexRoute
   '/properties/': typeof AuthenticatedPropertiesIndexRoute
+  '/settings/': typeof AuthenticatedSettingsIndexRoute
   '/sites/': typeof AuthenticatedSitesIndexRoute
   '/tasks/': typeof AuthenticatedTasksIndexRoute
 }
@@ -129,9 +192,17 @@ export interface FileRoutesByTo {
   '/contacts/new': typeof AuthenticatedContactsNewRoute
   '/properties/$id': typeof AuthenticatedPropertiesIdRoute
   '/properties/new': typeof AuthenticatedPropertiesNewRoute
+  '/buyer-requirements': typeof AuthenticatedBuyerRequirementsIndexRoute
   '/calendar': typeof AuthenticatedCalendarIndexRoute
+  '/consultations': typeof AuthenticatedConsultationsIndexRoute
   '/contacts': typeof AuthenticatedContactsIndexRoute
+  '/contracts': typeof AuthenticatedContractsIndexRoute
+  '/deals': typeof AuthenticatedDealsIndexRoute
+  '/employees': typeof AuthenticatedEmployeesIndexRoute
+  '/matches': typeof AuthenticatedMatchesIndexRoute
+  '/network': typeof AuthenticatedNetworkIndexRoute
   '/properties': typeof AuthenticatedPropertiesIndexRoute
+  '/settings': typeof AuthenticatedSettingsIndexRoute
   '/sites': typeof AuthenticatedSitesIndexRoute
   '/tasks': typeof AuthenticatedTasksIndexRoute
 }
@@ -147,9 +218,17 @@ export interface FileRoutesById {
   '/_authenticated/contacts/new': typeof AuthenticatedContactsNewRoute
   '/_authenticated/properties/$id': typeof AuthenticatedPropertiesIdRoute
   '/_authenticated/properties/new': typeof AuthenticatedPropertiesNewRoute
+  '/_authenticated/buyer-requirements/': typeof AuthenticatedBuyerRequirementsIndexRoute
   '/_authenticated/calendar/': typeof AuthenticatedCalendarIndexRoute
+  '/_authenticated/consultations/': typeof AuthenticatedConsultationsIndexRoute
   '/_authenticated/contacts/': typeof AuthenticatedContactsIndexRoute
+  '/_authenticated/contracts/': typeof AuthenticatedContractsIndexRoute
+  '/_authenticated/deals/': typeof AuthenticatedDealsIndexRoute
+  '/_authenticated/employees/': typeof AuthenticatedEmployeesIndexRoute
+  '/_authenticated/matches/': typeof AuthenticatedMatchesIndexRoute
+  '/_authenticated/network/': typeof AuthenticatedNetworkIndexRoute
   '/_authenticated/properties/': typeof AuthenticatedPropertiesIndexRoute
+  '/_authenticated/settings/': typeof AuthenticatedSettingsIndexRoute
   '/_authenticated/sites/': typeof AuthenticatedSitesIndexRoute
   '/_authenticated/tasks/': typeof AuthenticatedTasksIndexRoute
 }
@@ -164,9 +243,17 @@ export interface FileRouteTypes {
     | '/contacts/new'
     | '/properties/$id'
     | '/properties/new'
+    | '/buyer-requirements/'
     | '/calendar/'
+    | '/consultations/'
     | '/contacts/'
+    | '/contracts/'
+    | '/deals/'
+    | '/employees/'
+    | '/matches/'
+    | '/network/'
     | '/properties/'
+    | '/settings/'
     | '/sites/'
     | '/tasks/'
   fileRoutesByTo: FileRoutesByTo
@@ -179,9 +266,17 @@ export interface FileRouteTypes {
     | '/contacts/new'
     | '/properties/$id'
     | '/properties/new'
+    | '/buyer-requirements'
     | '/calendar'
+    | '/consultations'
     | '/contacts'
+    | '/contracts'
+    | '/deals'
+    | '/employees'
+    | '/matches'
+    | '/network'
     | '/properties'
+    | '/settings'
     | '/sites'
     | '/tasks'
   id:
@@ -196,9 +291,17 @@ export interface FileRouteTypes {
     | '/_authenticated/contacts/new'
     | '/_authenticated/properties/$id'
     | '/_authenticated/properties/new'
+    | '/_authenticated/buyer-requirements/'
     | '/_authenticated/calendar/'
+    | '/_authenticated/consultations/'
     | '/_authenticated/contacts/'
+    | '/_authenticated/contracts/'
+    | '/_authenticated/deals/'
+    | '/_authenticated/employees/'
+    | '/_authenticated/matches/'
+    | '/_authenticated/network/'
     | '/_authenticated/properties/'
+    | '/_authenticated/settings/'
     | '/_authenticated/sites/'
     | '/_authenticated/tasks/'
   fileRoutesById: FileRoutesById
@@ -267,11 +370,53 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedSitesIndexRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/settings/': {
+      id: '/_authenticated/settings/'
+      path: '/settings'
+      fullPath: '/settings/'
+      preLoaderRoute: typeof AuthenticatedSettingsIndexRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/properties/': {
       id: '/_authenticated/properties/'
       path: '/properties'
       fullPath: '/properties/'
       preLoaderRoute: typeof AuthenticatedPropertiesIndexRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/network/': {
+      id: '/_authenticated/network/'
+      path: '/network'
+      fullPath: '/network/'
+      preLoaderRoute: typeof AuthenticatedNetworkIndexRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/matches/': {
+      id: '/_authenticated/matches/'
+      path: '/matches'
+      fullPath: '/matches/'
+      preLoaderRoute: typeof AuthenticatedMatchesIndexRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/employees/': {
+      id: '/_authenticated/employees/'
+      path: '/employees'
+      fullPath: '/employees/'
+      preLoaderRoute: typeof AuthenticatedEmployeesIndexRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/deals/': {
+      id: '/_authenticated/deals/'
+      path: '/deals'
+      fullPath: '/deals/'
+      preLoaderRoute: typeof AuthenticatedDealsIndexRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/contracts/': {
+      id: '/_authenticated/contracts/'
+      path: '/contracts'
+      fullPath: '/contracts/'
+      preLoaderRoute: typeof AuthenticatedContractsIndexRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/contacts/': {
@@ -281,11 +426,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedContactsIndexRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/consultations/': {
+      id: '/_authenticated/consultations/'
+      path: '/consultations'
+      fullPath: '/consultations/'
+      preLoaderRoute: typeof AuthenticatedConsultationsIndexRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/calendar/': {
       id: '/_authenticated/calendar/'
       path: '/calendar'
       fullPath: '/calendar/'
       preLoaderRoute: typeof AuthenticatedCalendarIndexRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/buyer-requirements/': {
+      id: '/_authenticated/buyer-requirements/'
+      path: '/buyer-requirements'
+      fullPath: '/buyer-requirements/'
+      preLoaderRoute: typeof AuthenticatedBuyerRequirementsIndexRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/properties/new': {
@@ -337,9 +496,17 @@ interface AuthenticatedRouteChildren {
   AuthenticatedContactsNewRoute: typeof AuthenticatedContactsNewRoute
   AuthenticatedPropertiesIdRoute: typeof AuthenticatedPropertiesIdRoute
   AuthenticatedPropertiesNewRoute: typeof AuthenticatedPropertiesNewRoute
+  AuthenticatedBuyerRequirementsIndexRoute: typeof AuthenticatedBuyerRequirementsIndexRoute
   AuthenticatedCalendarIndexRoute: typeof AuthenticatedCalendarIndexRoute
+  AuthenticatedConsultationsIndexRoute: typeof AuthenticatedConsultationsIndexRoute
   AuthenticatedContactsIndexRoute: typeof AuthenticatedContactsIndexRoute
+  AuthenticatedContractsIndexRoute: typeof AuthenticatedContractsIndexRoute
+  AuthenticatedDealsIndexRoute: typeof AuthenticatedDealsIndexRoute
+  AuthenticatedEmployeesIndexRoute: typeof AuthenticatedEmployeesIndexRoute
+  AuthenticatedMatchesIndexRoute: typeof AuthenticatedMatchesIndexRoute
+  AuthenticatedNetworkIndexRoute: typeof AuthenticatedNetworkIndexRoute
   AuthenticatedPropertiesIndexRoute: typeof AuthenticatedPropertiesIndexRoute
+  AuthenticatedSettingsIndexRoute: typeof AuthenticatedSettingsIndexRoute
   AuthenticatedSitesIndexRoute: typeof AuthenticatedSitesIndexRoute
   AuthenticatedTasksIndexRoute: typeof AuthenticatedTasksIndexRoute
 }
@@ -350,9 +517,18 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedContactsNewRoute: AuthenticatedContactsNewRoute,
   AuthenticatedPropertiesIdRoute: AuthenticatedPropertiesIdRoute,
   AuthenticatedPropertiesNewRoute: AuthenticatedPropertiesNewRoute,
+  AuthenticatedBuyerRequirementsIndexRoute:
+    AuthenticatedBuyerRequirementsIndexRoute,
   AuthenticatedCalendarIndexRoute: AuthenticatedCalendarIndexRoute,
+  AuthenticatedConsultationsIndexRoute: AuthenticatedConsultationsIndexRoute,
   AuthenticatedContactsIndexRoute: AuthenticatedContactsIndexRoute,
+  AuthenticatedContractsIndexRoute: AuthenticatedContractsIndexRoute,
+  AuthenticatedDealsIndexRoute: AuthenticatedDealsIndexRoute,
+  AuthenticatedEmployeesIndexRoute: AuthenticatedEmployeesIndexRoute,
+  AuthenticatedMatchesIndexRoute: AuthenticatedMatchesIndexRoute,
+  AuthenticatedNetworkIndexRoute: AuthenticatedNetworkIndexRoute,
   AuthenticatedPropertiesIndexRoute: AuthenticatedPropertiesIndexRoute,
+  AuthenticatedSettingsIndexRoute: AuthenticatedSettingsIndexRoute,
   AuthenticatedSitesIndexRoute: AuthenticatedSitesIndexRoute,
   AuthenticatedTasksIndexRoute: AuthenticatedTasksIndexRoute,
 }

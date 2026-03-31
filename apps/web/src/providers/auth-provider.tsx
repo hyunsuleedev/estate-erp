@@ -10,8 +10,8 @@ interface AuthState {
 }
 
 interface AuthContextValue extends AuthState {
-  login: (email: string, password: string) => Promise<void>;
-  register: (email: string, password: string, name: string, officeName: string) => Promise<void>;
+  login: (loginId: string, password: string) => Promise<void>;
+  register: (loginId: string, email: string, password: string, name: string, officeName: string) => Promise<void>;
   logout: () => void;
 }
 
@@ -38,15 +38,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
   }, []);
 
-  const login = useCallback(async (email: string, password: string) => {
-    const res = await api.auth.login({ email, password });
+  const login = useCallback(async (loginId: string, password: string) => {
+    const res = await api.auth.login({ loginId, password });
     setToken(res.accessToken);
     const user = await api.auth.me();
     setState({ user, isLoading: false, isAuthenticated: true });
   }, []);
 
-  const register = useCallback(async (email: string, password: string, name: string, officeName: string) => {
-    const res = await api.auth.register({ email, password, name, officeName });
+  const register = useCallback(async (loginId: string, email: string, password: string, name: string, officeName: string) => {
+    const res = await api.auth.register({ loginId, email, password, name, officeName });
     setToken(res.accessToken);
     const user = await api.auth.me();
     setState({ user, isLoading: false, isAuthenticated: true });

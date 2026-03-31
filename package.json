@@ -14,10 +14,13 @@
       "bcrypt",
       "prisma",
       "msgpackr-extract",
-      "esbuild"
+      "esbuild",
+      "electron",
+      "electron-winstaller"
     ]
   },
   "scripts": {
+    "dev": "pnpm --parallel --filter @estate-erp/server --filter @estate-erp/desktop dev",
     "dev:server": "pnpm --filter @estate-erp/server dev",
     "dev:desktop": "pnpm --filter @estate-erp/desktop dev",
     "dev:web": "pnpm --filter @estate-erp/web dev",
@@ -31,7 +34,8 @@
     "prisma:studio": "pnpm --filter @estate-erp/server prisma:studio"
   },
   "devDependencies": {
-    "prisma": "6.19.2"
+    "prisma": "6.19.2",
+    "tsx": "^4.21.0"
   },
   "dependencies": {
     "@prisma/client": "6.19.2"

@@ -40,7 +40,7 @@ export class OfficeSitesService {
           { name: { contains: query, mode: 'insensitive' } },
           { roadAddress: { contains: query, mode: 'insensitive' } },
           { jibunAddress: { contains: query, mode: 'insensitive' } },
-          { eupmyeondong: { contains: query, mode: 'insensitive' } },
+          { ward: { name: { contains: query, mode: 'insensitive' } } },
         ],
       },
       include: { _count: { select: { dongs: true, units: true } } },

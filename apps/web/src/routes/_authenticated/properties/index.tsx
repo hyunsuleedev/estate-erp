@@ -1,30 +1,36 @@
-import { createFileRoute, Link } from '@tanstack/react-router';
-import { useQuery } from '@tanstack/react-query';
-import { useState } from 'react';
-import { Plus, Search } from 'lucide-react';
+import { createFileRoute, Link, useNavigate } from '@tanstack/react-router';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useState, useCallback, useMemo } from 'react';
+import { Plus } from 'lucide-react';
+import type { ColumnDef, SortingState } from '@tanstack/react-table';
 import { api } from '@/lib/api';
-import { formatPrice, sqmToPyeong } from '@estate-erp/shared';
-import { cn } from '@/lib/utils';
+import type { Property } from '@estate-erp/api-client';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Label } from '@/components/ui/label';
-import { Skeleton } from '@/components/ui/skeleton';
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
+  DataTable,
+  ViewBar,
+  PriceCell,
+  AreaCell,
+  StatusBadgeCell,
+  TransactionTypeCell,
+  DateCell,
+  TextCell,
+  HiddenIndicator,
+  CellEditProvider,
+  EditableCell,
+  type FilterDefinition,
+  type ActiveFilter,
+  type SortDefinition,
+} from '@/components/data-table';
 
-const transactionTypeLabels: Record<string, string> = {
-  sale: '매매', jeonse: '전세', monthly: '월세',
-};
+// ── Labels & Colors ─────────────────────────────────────────────
 
 const checkStatusLabels: Record<string, string> = {
-  unverified: '미확인', verified: '확인', in_contract: '계약중', hold: '보류', done: '완료',
+  unverified: '미확인',
+  verified: '확인',
+  in_contract: '계약중',
+  hold: '보류',
+  done: '완료',
 };
 
 const checkStatusColors: Record<string, string> = {
@@ -35,215 +41,339 @@ const checkStatusColors: Record<string, string> = {
   done: 'bg-gray-50 text-gray-400',
 };
 
+// ── Filter definitions (Twenty-inspired) ────────────────────────
+
+const filterDefinitions: FilterDefinition[] = [
+  {
+    id: 'transactionType',
+    field: 'transactionType',
+    label: '거래유형',
+    type: 'select',
+    operators: ['is'],
+    options: [
+      { label: '매매', value: 'sale', color: 'bg-rose-400' },
+      { label: '전세', value: 'jeonse', color: 'bg-blue-400' },
+      { label: '월세', value: 'monthly', color: 'bg-violet-400' },
+    ],
+  },
+  {
+    id: 'checkStatus',
+    field: 'checkStatus',
+    label: '상태',
+    type: 'select',
+    operators: ['is'],
+    options: [
+      { label: '미확인', value: 'unverified', color: 'bg-gray-400' },
+      { label: '확인', value: 'verified', color: 'bg-emerald-400' },
+      { label: '계약중', value: 'in_contract', color: 'bg-blue-400' },
+      { label: '보류', value: 'hold', color: 'bg-amber-400' },
+      { label: '완료', value: 'done', color: 'bg-gray-300' },
+    ],
+  },
+  {
+    id: 'includeHidden',
+    field: 'includeHidden',
+    label: '숨김 매물 포함',
+    type: 'boolean',
+    operators: ['is'],
+  },
+];
+
+const sortDefinitions = [
+  { field: 'price', label: '가격' },
+  { field: 'createdAt', label: '등록일' },
+  { field: 'updatedAt', label: '수정일' },
+];
+
+// ── Route ───────────────────────────────────────────────────────
+
 export const Route = createFileRoute('/_authenticated/properties/')({
   component: PropertiesPage,
 });
 
 function PropertiesPage() {
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+
+  // ── State ─────────────────────────────────────────────────────
   const [page, setPage] = useState(1);
-  const [filters, setFilters] = useState({
-    transactionType: '',
-    checkStatus: '',
-    search: '',
-    includeHidden: false,
+  const [search, setSearch] = useState('');
+  const [activeFilters, setActiveFilters] = useState<ActiveFilter[]>([]);
+  const [activeSorts, setActiveSorts] = useState<SortDefinition[]>([
+    { field: 'createdAt', label: '등록일', direction: 'desc' },
+  ]);
+  const [sorting, setSorting] = useState<SortingState>([
+    { id: 'createdAt', desc: true },
+  ]);
+
+  // ── Derive API params from filters ────────────────────────────
+  const apiParams = useMemo(() => {
+    const params: Record<string, string | number | boolean | undefined> = {
+      page,
+      limit: 20,
+      search: search || undefined,
+    };
+
+    for (const filter of activeFilters) {
+      if (filter.field === 'transactionType') params.transactionType = filter.value;
+      if (filter.field === 'checkStatus') params.checkStatus = filter.value;
+      if (filter.field === 'includeHidden') params.includeHidden = true;
+    }
+
+    if (activeSorts.length > 0) {
+      params.sortBy = activeSorts[0].field;
+      params.sortOrder = activeSorts[0].direction;
+    }
+
+    return params;
+  }, [page, search, activeFilters, activeSorts]);
+
+  // ── Query ─────────────────────────────────────────────────────
+  const { data, isLoading } = useQuery({
+    queryKey: ['properties', apiParams],
+    queryFn: () => api.properties.findAll(apiParams as any),
   });
 
-  const { data, isLoading } = useQuery({
-    queryKey: ['properties', page, filters],
-    queryFn: () =>
-      api.properties.findAll({
-        page,
-        limit: 20,
-        transactionType: filters.transactionType || undefined,
-        checkStatus: filters.checkStatus || undefined,
-        search: filters.search || undefined,
-        includeHidden: filters.includeHidden || undefined,
-        sortBy: 'createdAt',
-        sortOrder: 'desc',
-      }),
+  // ── Inline edit mutation ──────────────────────────────────────
+  const updateMutation = useMutation({
+    mutationFn: ({ id, field, value }: { id: string; field: string; value: unknown }) =>
+      api.properties.update(id, { [field]: value }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['properties'] });
+    },
   });
+
+  const handleCellSave = useCallback(
+    (recordId: string, field: string, value: unknown) => {
+      updateMutation.mutate({ id: recordId, field, value });
+    },
+    [updateMutation],
+  );
+
+  // ── Filter handlers ───────────────────────────────────────────
+  const handleFilterAdd = useCallback((filter: ActiveFilter) => {
+    setActiveFilters((prev) => {
+      // For select filters, replace existing filter on same field
+      const filtered = prev.filter((f) => !(f.field === filter.field && f.operator === 'is'));
+      return [...filtered, filter];
+    });
+    setPage(1);
+  }, []);
+
+  const handleFilterRemove = useCallback((filterId: string) => {
+    setActiveFilters((prev) => prev.filter((f) => f.id !== filterId));
+    setPage(1);
+  }, []);
+
+  const handleFiltersReset = useCallback(() => {
+    setActiveFilters([]);
+    setActiveSorts([{ field: 'createdAt', label: '등록일', direction: 'desc' }]);
+    setSearch('');
+    setPage(1);
+  }, []);
+
+  const handleSortAdd = useCallback((sort: SortDefinition) => {
+    setActiveSorts([sort]); // single sort for now
+    setSorting([{ id: sort.field, desc: sort.direction === 'desc' }]);
+    setPage(1);
+  }, []);
+
+  const handleSortRemove = useCallback((_field: string) => {
+    setActiveSorts([]);
+    setSorting([]);
+  }, []);
+
+  const handleSortingChange = useCallback((newSorting: SortingState) => {
+    setSorting(newSorting);
+    if (newSorting.length > 0) {
+      const s = newSorting[0];
+      setActiveSorts([{
+        field: s.id,
+        label: sortDefinitions.find((d) => d.field === s.id)?.label ?? s.id,
+        direction: s.desc ? 'desc' : 'asc',
+      }]);
+    } else {
+      setActiveSorts([]);
+    }
+    setPage(1);
+  }, []);
+
+  // ── Column definitions (Twenty-inspired field routing) ────────
+  const columns = useMemo<ColumnDef<Property, unknown>[]>(
+    () => [
+      {
+        accessorKey: 'site.name',
+        header: '단지/건물',
+        size: 200,
+        enableSorting: false,
+        cell: ({ row }) => {
+          const p = row.original;
+          return (
+            <div className="flex items-center gap-1.5">
+              <HiddenIndicator isHidden={p.isHidden} />
+              <Link
+                to="/properties/$id"
+                params={{ id: p.id }}
+                className="font-medium text-foreground hover:text-primary hover:underline"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {p.site?.name ?? '-'}
+              </Link>
+            </div>
+          );
+        },
+      },
+      {
+        accessorKey: 'unit.name',
+        header: '호실',
+        size: 80,
+        enableSorting: false,
+        cell: ({ row }) => (
+          <TextCell value={row.original.unit?.name ?? null} muted />
+        ),
+      },
+      {
+        accessorKey: 'transactionType',
+        header: '거래',
+        size: 70,
+        enableSorting: false,
+        cell: ({ row }) => (
+          <TransactionTypeCell value={row.original.transactionType} />
+        ),
+      },
+      {
+        accessorKey: 'price',
+        header: '가격',
+        size: 160,
+        enableSorting: true,
+        cell: ({ row }) => {
+          const p = row.original;
+          return (
+            <EditableCell
+              recordId={p.id}
+              field="price"
+              value={p.price}
+              onSave={handleCellSave}
+              editType="number"
+            >
+              <PriceCell
+                transactionType={p.transactionType}
+                price={p.price}
+                deposit={p.deposit}
+                monthlyRent={p.monthlyRent}
+              />
+            </EditableCell>
+          );
+        },
+      },
+      {
+        accessorKey: 'area',
+        header: '면적',
+        size: 80,
+        enableSorting: false,
+        cell: ({ row }) => (
+          <AreaCell exclusiveAreaM2={row.original.unit?.exclusiveAreaM2} />
+        ),
+      },
+      {
+        accessorKey: 'checkStatus',
+        header: '상태',
+        size: 80,
+        enableSorting: false,
+        cell: ({ row }) => {
+          const p = row.original;
+          return (
+            <EditableCell
+              recordId={p.id}
+              field="checkStatus"
+              value={p.checkStatus}
+              onSave={handleCellSave}
+              editType="select"
+              selectOptions={[
+                { label: '미확인', value: 'unverified' },
+                { label: '확인', value: 'verified' },
+                { label: '계약중', value: 'in_contract' },
+                { label: '보류', value: 'hold' },
+                { label: '완료', value: 'done' },
+              ]}
+            >
+              <StatusBadgeCell
+                value={p.checkStatus}
+                labels={checkStatusLabels}
+                colors={checkStatusColors}
+              />
+            </EditableCell>
+          );
+        },
+      },
+      {
+        accessorKey: 'createdAt',
+        header: '등록일',
+        size: 80,
+        enableSorting: true,
+        cell: ({ row }) => (
+          <DateCell value={row.original.createdAt} relative />
+        ),
+      },
+    ],
+    [handleCellSave],
+  );
 
   return (
-    <div className="flex flex-col gap-4">
-      {/* Header bar */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <h1 className="text-lg font-semibold tracking-tight">매물관리</h1>
-          <span className="text-xs text-muted-foreground">
-            {data?.pagination?.total ?? 0}건
-          </span>
-        </div>
-        <Button size="sm" asChild>
-          <Link to="/properties/new">
-            <Plus className="size-4" />
-            매물 등록
-          </Link>
-        </Button>
-      </div>
-
-      {/* Filter + Table panel */}
-      <div className="rounded-xl bg-muted/50">
-        {/* Filter bar */}
-        <div className="flex items-center gap-2 border-b border-border/40 px-4 py-2.5">
-          <Search className="size-4 text-muted-foreground" />
-          <Input
-            type="text"
-            placeholder="검색..."
-            value={filters.search}
-            onChange={(e) => {
-              setFilters((f) => ({ ...f, search: e.target.value }));
-              setPage(1);
-            }}
-            className="h-7 w-40 border-0 bg-transparent px-1 text-sm shadow-none focus-visible:ring-0"
-          />
-          <div className="h-4 w-px bg-border/60" />
-          <select
-            value={filters.transactionType}
-            onChange={(e) => {
-              setFilters((f) => ({ ...f, transactionType: e.target.value }));
-              setPage(1);
-            }}
-            className="h-7 rounded border-0 bg-transparent px-1 text-sm text-muted-foreground focus:outline-none"
-          >
-            <option value="">전체 거래유형</option>
-            <option value="sale">매매</option>
-            <option value="jeonse">전세</option>
-            <option value="monthly">월세</option>
-          </select>
-          <div className="h-4 w-px bg-border/60" />
-          <select
-            value={filters.checkStatus}
-            onChange={(e) => {
-              setFilters((f) => ({ ...f, checkStatus: e.target.value }));
-              setPage(1);
-            }}
-            className="h-7 rounded border-0 bg-transparent px-1 text-sm text-muted-foreground focus:outline-none"
-          >
-            <option value="">전체 상태</option>
-            <option value="unverified">미확인</option>
-            <option value="verified">확인</option>
-            <option value="in_contract">계약중</option>
-            <option value="hold">보류</option>
-            <option value="done">완료</option>
-          </select>
-          <div className="h-4 w-px bg-border/60" />
-          <div className="flex items-center gap-1.5">
-            <Checkbox
-              id="includeHidden"
-              checked={filters.includeHidden}
-              onCheckedChange={(checked) =>
-                setFilters((f) => ({ ...f, includeHidden: checked === true }))
-              }
-              className="size-3.5"
-            />
-            <Label htmlFor="includeHidden" className="text-xs font-normal text-muted-foreground">
-              숨김
-            </Label>
+    <CellEditProvider>
+      <div className="flex flex-col gap-4">
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <h1 className="text-lg font-semibold tracking-tight">매물관리</h1>
+            <span className="text-xs text-muted-foreground">
+              {data?.pagination?.total?.toLocaleString() ?? 0}건
+            </span>
           </div>
+          <Button size="sm" asChild>
+            <Link to="/properties/new">
+              <Plus className="size-4" />
+              매물 등록
+            </Link>
+          </Button>
         </div>
 
-        {/* Table */}
-        <Table>
-          <TableHeader>
-            <TableRow className="hover:bg-transparent">
-              <TableHead className="text-[11px] font-medium uppercase tracking-wider">단지/건물</TableHead>
-              <TableHead className="text-[11px] font-medium uppercase tracking-wider">호실</TableHead>
-              <TableHead className="text-[11px] font-medium uppercase tracking-wider">거래유형</TableHead>
-              <TableHead className="text-[11px] font-medium uppercase tracking-wider">가격</TableHead>
-              <TableHead className="text-[11px] font-medium uppercase tracking-wider">면적</TableHead>
-              <TableHead className="text-[11px] font-medium uppercase tracking-wider">상태</TableHead>
-              <TableHead className="text-[11px] font-medium uppercase tracking-wider">등록일</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {isLoading ? (
-              Array.from({ length: 5 }).map((_, i) => (
-                <TableRow key={i}>
-                  {Array.from({ length: 7 }).map((_, j) => (
-                    <TableCell key={j}><Skeleton className="h-4 w-full" /></TableCell>
-                  ))}
-                </TableRow>
-              ))
-            ) : data?.items.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={7} className="h-24 text-center text-sm text-muted-foreground">
-                  매물이 없습니다.
-                </TableCell>
-              </TableRow>
-            ) : (
-              data?.items.map((p) => (
-                <TableRow key={p.id} className="group">
-                  <TableCell className="text-sm">
-                    <Link
-                      to="/properties/$id"
-                      params={{ id: p.id }}
-                      className="font-medium text-foreground hover:text-primary"
-                    >
-                      {p.site?.name ?? '-'}
-                    </Link>
-                  </TableCell>
-                  <TableCell className="text-sm text-muted-foreground">{p.unit?.name ?? '-'}</TableCell>
-                  <TableCell className="text-sm">
-                    {transactionTypeLabels[p.transactionType] ?? p.transactionType}
-                  </TableCell>
-                  <TableCell className="text-sm tabular-nums">
-                    {p.transactionType === 'monthly'
-                      ? `${p.deposit ? formatPrice(p.deposit) : '-'} / ${p.monthlyRent ? formatPrice(p.monthlyRent) : '-'}`
-                      : p.price
-                        ? formatPrice(p.price)
-                        : p.deposit
-                          ? formatPrice(p.deposit)
-                          : '-'}
-                  </TableCell>
-                  <TableCell className="text-sm tabular-nums text-muted-foreground">
-                    {p.unit?.exclusiveAreaM2
-                      ? `${sqmToPyeong(Number(p.unit.exclusiveAreaM2))}평`
-                      : '-'}
-                  </TableCell>
-                  <TableCell>
-                    <span className={cn(
-                      'inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium',
-                      checkStatusColors[p.checkStatus] ?? 'bg-gray-100 text-gray-600',
-                    )}>
-                      {checkStatusLabels[p.checkStatus] ?? p.checkStatus}
-                    </span>
-                  </TableCell>
-                  <TableCell className="text-xs text-muted-foreground">
-                    {new Date(p.createdAt).toLocaleDateString('ko-KR')}
-                  </TableCell>
-                </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
+        {/* ViewBar + Table panel */}
+        <div className="rounded-xl border border-border/60 bg-background">
+          {/* View Bar */}
+          <ViewBar
+            search={search}
+            onSearchChange={(v) => { setSearch(v); setPage(1); }}
+            searchPlaceholder="단지명, 주소, 메모..."
+            filterDefinitions={filterDefinitions}
+            activeFilters={activeFilters}
+            onFilterAdd={handleFilterAdd}
+            onFilterRemove={handleFilterRemove}
+            onFiltersReset={handleFiltersReset}
+            sortDefinitions={sortDefinitions}
+            activeSorts={activeSorts}
+            onSortAdd={handleSortAdd}
+            onSortRemove={handleSortRemove}
+          />
+
+          {/* Data Table */}
+          <DataTable
+            columns={columns}
+            data={data?.items ?? []}
+            totalCount={data?.pagination?.total ?? 0}
+            pageCount={data?.pagination?.totalPages ?? 1}
+            page={page}
+            onPageChange={setPage}
+            pageSize={20}
+            sorting={sorting}
+            onSortingChange={handleSortingChange}
+            enableRowSelection
+            onRowClick={(row) => navigate({ to: '/properties/$id', params: { id: row.id } })}
+            isLoading={isLoading}
+            emptyMessage="매물이 없습니다."
+          />
+        </div>
       </div>
-
-      {/* Pagination */}
-      {data?.pagination && data.pagination.totalPages > 1 && (
-        <div className="flex items-center justify-center gap-1.5">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 text-xs"
-            onClick={() => setPage((p) => Math.max(1, p - 1))}
-            disabled={page === 1}
-          >
-            이전
-          </Button>
-          <span className="px-2 text-xs text-muted-foreground">
-            {page} / {data.pagination.totalPages}
-          </span>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 text-xs"
-            onClick={() => setPage((p) => Math.min(data.pagination.totalPages, p + 1))}
-            disabled={page === data.pagination.totalPages}
-          >
-            다음
-          </Button>
-        </div>
-      )}
-    </div>
+    </CellEditProvider>
   );
 }

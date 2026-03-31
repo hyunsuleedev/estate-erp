@@ -16,6 +16,7 @@ export class AuthController {
   register(
     @Body()
     dto: {
+      loginId: string;
       email: string;
       password: string;
       name: string;
@@ -26,8 +27,8 @@ export class AuthController {
   }
 
   @Post('login')
-  login(@Body() dto: { email: string; password: string }) {
-    return this.authService.login(dto.email, dto.password);
+  login(@Body() dto: { loginId: string; password: string }) {
+    return this.authService.login(dto.loginId, dto.password);
   }
 
   @Get('me')

@@ -17,15 +17,23 @@ import {
 
 const routeLabels: Record<string, string> = {
   '/_authenticated/dashboard': '대시보드',
+  '/_authenticated/buyer-requirements/': '구매고객',
+  '/_authenticated/consultations/': '상담기록',
   '/_authenticated/properties/': '매물관리',
   '/_authenticated/properties/$id': '매물 상세',
   '/_authenticated/properties/new': '매물 등록',
   '/_authenticated/contacts/': '연락처',
   '/_authenticated/contacts/$id': '연락처 상세',
   '/_authenticated/contacts/new': '연락처 추가',
+  '/_authenticated/deals/': '거래관리',
+  '/_authenticated/matches/': '매칭',
   '/_authenticated/tasks/': '업무',
   '/_authenticated/calendar/': '캘린더',
   '/_authenticated/sites/': '관리단지',
+  '/_authenticated/contracts/': '계약서 관리',
+  '/_authenticated/network/': '네트워크',
+  '/_authenticated/employees/': '직원관리',
+  '/_authenticated/settings/': '설정',
 };
 
 export const Route = createFileRoute('/_authenticated')({
