@@ -19,6 +19,7 @@ model Contact {
   buyerRequirements  BuyerRequirement[]
   consultations      Consultation[]
   tenants            Tenant[]
+  tasks              Task[]
   calendarEvents     CalendarEvent[]
   dealsAsBuyer       Deal[]             @relation("DealBuyer")
   dealsAsSeller      Deal[]             @relation("DealSeller")

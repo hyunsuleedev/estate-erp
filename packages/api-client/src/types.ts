@@ -21,7 +21,15 @@ export class ApiError extends Error {
     public statusCode: number,
     public body: unknown,
   ) {
-    super(`API Error ${statusCode}`);
+    const message =
+      typeof body === 'object' &&
+      body !== null &&
+      'message' in body &&
+      typeof body.message === 'string'
+        ? body.message
+        : `API Error ${statusCode}`;
+
+    super(message);
     this.name = 'ApiError';
   }
 }

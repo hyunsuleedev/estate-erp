@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 
 @Injectable()
@@ -10,42 +14,167 @@ export class OfficeSitesService {
       where: { officeId },
       include: {
         site: {
-          include: { _count: { select: { dongs: true, units: true, properties: true } } },
+          include: {
+            ward: {
+              include: {
+                district: {
+                  include: {
+                    province: true,
+                  },
+                },
+              },
+            },
+            _count: { select: { dongs: true, units: true, properties: true } },
+          },
         },
       },
       orderBy: { createdAt: 'desc' },
     });
   }
 
+  async findOne(id: string, officeId: string) {
+    const officeSite = await this.prisma.officeSite.findFirst({
+      where: { id, officeId },
+      include: {
+        site: {
+          include: {
+            ward: {
+              include: {
+                district: {
+                  include: {
+                    province: true,
+                  },
+                },
+              },
+            },
+            _count: { select: { dongs: true, units: true, properties: true } },
+          },
+        },
+      },
+    });
+
+    if (!officeSite) {
+      throw new NotFoundException('OfficeSite not found');
+    }
+
+    return officeSite;
+  }
+
   async add(officeId: string, dto: { siteId: string; memo?: string }) {
-    return this.prisma.officeSite.create({
-      data: { officeId, ...dto },
-      include: { site: true },
+    await this.findAccessibleSite(dto.siteId, officeId);
+
+    return this.prisma.officeSite.upsert({
+      where: {
+        officeId_siteId: {
+          officeId,
+          siteId: dto.siteId,
+        },
+      },
+      update: {
+        memo: dto.memo,
+      },
+      create: { officeId, ...dto },
+      include: {
+        site: {
+          include: {
+            ward: {
+              include: {
+                district: {
+                  include: {
+                    province: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+  }
+
+  async update(id: string, officeId: string, dto: { memo?: string | null }) {
+    const officeSite = await this.findOne(id, officeId);
+
+    return this.prisma.officeSite.update({
+      where: { id: officeSite.id },
+      data: dto,
+      include: {
+        site: {
+          include: {
+            ward: {
+              include: {
+                district: {
+                  include: {
+                    province: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
     });
   }
 
   async remove(id: string, officeId: string) {
-    const os = await this.prisma.officeSite.findFirst({
-      where: { id, officeId },
-    });
-    if (!os) throw new NotFoundException('OfficeSite not found');
-    return this.prisma.officeSite.delete({ where: { id } });
+    const officeSite = await this.findOne(id, officeId);
+
+    return this.prisma.officeSite.delete({ where: { id: officeSite.id } });
   }
 
   async searchCentralSites(query: string) {
+    const searchTerm = query.trim();
+
+    if (searchTerm.length === 0) {
+      throw new BadRequestException('q is required');
+    }
+
     return this.prisma.site.findMany({
       where: {
-        officeId: null,
+        isPublic: true,
         OR: [
-          { name: { contains: query, mode: 'insensitive' } },
-          { roadAddress: { contains: query, mode: 'insensitive' } },
-          { jibunAddress: { contains: query, mode: 'insensitive' } },
-          { ward: { name: { contains: query, mode: 'insensitive' } } },
+          { name: { contains: searchTerm, mode: 'insensitive' } },
+          { roadAddress: { contains: searchTerm, mode: 'insensitive' } },
+          { jibunAddress: { contains: searchTerm, mode: 'insensitive' } },
+          { ward: { name: { contains: searchTerm, mode: 'insensitive' } } },
+          {
+            ward: {
+              district: {
+                name: { contains: searchTerm, mode: 'insensitive' },
+              },
+            },
+          },
         ],
       },
-      include: { _count: { select: { dongs: true, units: true } } },
+      include: {
+        ward: {
+          include: {
+            district: {
+              include: {
+                province: true,
+              },
+            },
+          },
+        },
+        _count: { select: { dongs: true, units: true } },
+      },
       take: 20,
       orderBy: { name: 'asc' },
     });
+  }
+
+  private async findAccessibleSite(id: string, officeId: string) {
+    const site = await this.prisma.site.findFirst({
+      where: {
+        id,
+        OR: [{ officeId }, { isPublic: true }],
+      },
+    });
+
+    if (!site) {
+      throw new NotFoundException('Site not found');
+    }
+
+    return site;
   }
 }

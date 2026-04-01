@@ -58,7 +58,7 @@
 |------|------|------|
 | id | UUID | PK |
 | officeId | UUID | FK → Office |
-| loginId | String | 로그인 ID (unique, owner는 이메일, 직원은 "GD7291-0001" 자동생성) |
+| loginId | String | 로그인 ID (unique, owner/직원 모두 별도 아이디 사용 가능) |
 | email | String? | 이메일 (nullable, owner 필수, 직원 선택) |
 | password | String | 해시된 비밀번호 |
 | name | String | 이름 |

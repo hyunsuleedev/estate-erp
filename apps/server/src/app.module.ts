@@ -1,6 +1,7 @@
-import { Module } from '@nestjs/common';
+import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { PrismaModule } from './prisma/prisma.module';
+import { validateEnv } from './config/env.validation';
 import { AuthModule } from './modules/auth/auth.module';
 import { PropertiesModule } from './modules/properties/properties.module';
 import { ContactsModule } from './modules/contacts/contacts.module';
@@ -17,10 +18,15 @@ import { BuyerRequirementsModule } from './modules/buyer-requirements/buyer-requ
 import { ConsultationsModule } from './modules/consultations/consultations.module';
 import { OfficeSitesModule } from './modules/office-sites/office-sites.module';
 import { CalendarEventsModule } from './modules/calendar-events/calendar-events.module';
+import { RequestContextMiddleware } from './common/request-context/request-context.middleware';
 
 @Module({
   imports: [
-    ConfigModule.forRoot({ isGlobal: true }),
+    ConfigModule.forRoot({
+      isGlobal: true,
+      cache: true,
+      validate: validateEnv,
+    }),
     PrismaModule,
     AuthModule,
     SitesModule,
@@ -40,4 +46,8 @@ import { CalendarEventsModule } from './modules/calendar-events/calendar-events.
     CalendarEventsModule,
   ],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer.apply(RequestContextMiddleware).forRoutes('*');
+  }
+}

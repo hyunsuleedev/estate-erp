@@ -6,11 +6,15 @@ export interface LoginDto {
 }
 
 export interface RegisterDto {
-  loginId: string;
+  loginId?: string;
   email: string;
   password: string;
   name: string;
   officeName: string;
+}
+
+export interface RefreshDto {
+  refreshToken: string;
 }
 
 export interface AuthResponse {
@@ -25,6 +29,7 @@ export interface AuthResponse {
   };
   office: {
     id: string;
+    code: string;
     name: string;
   };
 }
@@ -37,6 +42,7 @@ export interface MeResponse {
   role: string;
   office: {
     id: string;
+    code: string;
     name: string;
   };
 }
@@ -48,6 +54,12 @@ export function createAuthApi(request: RequestFn) {
 
     register: (dto: RegisterDto) =>
       request<AuthResponse>('/auth/register', { method: 'POST', body: dto }),
+
+    refresh: (dto: RefreshDto) =>
+      request<AuthResponse>('/auth/refresh', { method: 'POST', body: dto }),
+
+    logout: () =>
+      request<{ success: true }>('/auth/logout', { method: 'POST' }),
 
     me: () =>
       request<MeResponse>('/auth/me'),

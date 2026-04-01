@@ -47,9 +47,13 @@ export class UnitsController {
     dto: {
       siteId: string;
       dongId?: string;
+      siteUnitTypeId?: string;
       name: string;
-      exclusiveAreaM2?: number;
-      supplyAreaM2?: number;
+      floor?: number;
+      lineNo?: number;
+      exclusiveAreaM2?: number | null;
+      supplyAreaM2?: number | null;
+      isPiloti?: boolean;
     },
     @CurrentUser() user: CurrentUserPayload,
   ) {
@@ -62,9 +66,13 @@ export class UnitsController {
     @Body()
     dto: {
       name?: string;
-      dongId?: string;
-      exclusiveAreaM2?: number;
-      supplyAreaM2?: number;
+      dongId?: string | null;
+      siteUnitTypeId?: string | null;
+      floor?: number | null;
+      lineNo?: number | null;
+      exclusiveAreaM2?: number | null;
+      supplyAreaM2?: number | null;
+      isPiloti?: boolean;
     },
     @CurrentUser() user: CurrentUserPayload,
   ) {

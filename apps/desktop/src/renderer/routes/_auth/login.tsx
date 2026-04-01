@@ -25,8 +25,9 @@ function LoginPage() {
     try {
       await login(loginId, password);
       navigate({ to: '/dashboard' });
-    } catch {
-      setError('아이디 또는 비밀번호가 올바르지 않습니다.');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : '';
+      setError(message || '아이디 또는 비밀번호가 올바르지 않습니다.');
     } finally {
       setLoading(false);
     }

@@ -25,6 +25,7 @@ model Property {
   matches          Match[]
   deals            Deal[]
   consultations    Consultation[]
+  tasks            Task[]
   calendarEvents   CalendarEvent[]
 
   priceHistories PriceHistory[]

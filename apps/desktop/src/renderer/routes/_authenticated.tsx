@@ -34,6 +34,7 @@ const routeLabels: Record<string, string> = {
   '/_authenticated/sites/': '관리단지',
   '/_authenticated/contracts/': '계약서 관리',
   '/_authenticated/network/': '네트워크',
+  '/_authenticated/ai-operations/': 'AI 운영',
   '/_authenticated/employees/': '직원관리',
   '/_authenticated/settings/': '설정',
 };

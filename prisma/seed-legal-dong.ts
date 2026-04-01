@@ -16,8 +16,6 @@ import { PrismaClient } from '@prisma/client';
 import * as fs from 'fs';
 import * as path from 'path';
 
-const prisma = new PrismaClient();
-
 interface LegalDongEntry {
   code: string;
   name: string;
@@ -42,7 +40,7 @@ function parseLegalDongFile(filePath: string): LegalDongEntry[] {
     });
 }
 
-async function main() {
+export async function seedLegalDong(prisma: PrismaClient) {
   const dataPath = path.resolve(
     __dirname,
     'data/legal_dong_code.txt',
@@ -196,11 +194,15 @@ async function main() {
   console.log(`  합계: ${pCount + dCount + wCount}개`);
 }
 
-main()
-  .catch((e) => {
-    console.error('Seed 실패:', e);
-    process.exit(1);
-  })
-  .finally(async () => {
-    await prisma.$disconnect();
-  });
+if (require.main === module) {
+  const prisma = new PrismaClient();
+
+  seedLegalDong(prisma)
+    .catch((e) => {
+      console.error('Seed 실패:', e);
+      process.exit(1);
+    })
+    .finally(async () => {
+      await prisma.$disconnect();
+    });
+}

@@ -30,6 +30,8 @@
     "test": "pnpm -r test",
     "lint": "pnpm -r lint",
     "prisma:migrate": "pnpm --filter @estate-erp/server prisma:migrate",
+    "prisma:reset": "pnpm --filter @estate-erp/server prisma:reset",
+    "prisma:seed": "pnpm --filter @estate-erp/server prisma:seed",
     "prisma:generate": "pnpm --filter @estate-erp/server prisma:generate",
     "prisma:studio": "pnpm --filter @estate-erp/server prisma:studio"
   },

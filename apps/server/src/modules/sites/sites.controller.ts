@@ -43,13 +43,23 @@ export class SitesController {
       type: string;
       name: string;
       wardCode: string;
-      roadAddress?: string;
-      jibunAddress?: string;
-      lat?: number;
-      lng?: number;
-      builtYear?: number;
-      totalUnits?: number;
-      totalDongs?: number;
+      roadName?: string | null;
+      roadBuildingMain?: number | null;
+      roadBuildingSub?: number | null;
+      roadAddress?: string | null;
+      jibunMain?: string | null;
+      jibunSub?: string | null;
+      jibunAddress?: string | null;
+      lat?: number | null;
+      lng?: number | null;
+      kaptComplexCode?: string | null;
+      naverComplexCode?: string | null;
+      kbComplexCode?: string | null;
+      zipCode?: string | null;
+      builtYear?: number | null;
+      totalUnits?: number | null;
+      totalDongs?: number | null;
+      metadata?: Record<string, unknown> | null;
     },
     @CurrentUser() user: CurrentUserPayload,
   ) {
@@ -59,7 +69,29 @@ export class SitesController {
   @Patch(':id')
   update(
     @Param('id') id: string,
-    @Body() dto: Record<string, unknown>,
+    @Body()
+    dto: {
+      type?: string;
+      name?: string;
+      wardCode?: string;
+      roadName?: string | null;
+      roadBuildingMain?: number | null;
+      roadBuildingSub?: number | null;
+      roadAddress?: string | null;
+      jibunMain?: string | null;
+      jibunSub?: string | null;
+      jibunAddress?: string | null;
+      lat?: number | null;
+      lng?: number | null;
+      kaptComplexCode?: string | null;
+      naverComplexCode?: string | null;
+      kbComplexCode?: string | null;
+      zipCode?: string | null;
+      builtYear?: number | null;
+      totalUnits?: number | null;
+      totalDongs?: number | null;
+      metadata?: Record<string, unknown> | null;
+    },
     @CurrentUser() user: CurrentUserPayload,
   ) {
     return this.sitesService.update(id, user.officeId, dto);

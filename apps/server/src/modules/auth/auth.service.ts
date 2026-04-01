@@ -2,82 +2,164 @@ import {
   Injectable,
   UnauthorizedException,
   ConflictException,
+  InternalServerErrorException,
+  BadRequestException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
+import type { StringValue } from 'ms';
+import { Prisma } from '@prisma/client';
+import { randomInt } from 'node:crypto';
 import { PrismaService } from '../../prisma/prisma.service';
+import {
+  AuthenticatedUser,
+  AuthTokenPayload,
+  UserRole,
+} from './auth.types';
+
+type UserWithOffice = Prisma.UserGetPayload<{
+  include: { office: true };
+}>;
 
 @Injectable()
 export class AuthService {
+  private static readonly OFFICE_CODE_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  private static readonly PASSWORD_SALT_ROUNDS = 10;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
+    private readonly config: ConfigService,
   ) {}
 
   async register(dto: {
-    loginId: string;
+    loginId?: string;
     email: string;
     password: string;
     name: string;
     officeName: string;
   }) {
+    const email = this.normalizeEmail(dto.email);
+    const loginId = this.normalizeLoginId(dto.loginId ?? email);
+
+    if (!loginId) {
+      throw new BadRequestException('아이디는 필수입니다.');
+    }
+
+    if (!email) {
+      throw new BadRequestException('이메일은 필수입니다.');
+    }
+
     const existing = await this.prisma.user.findUnique({
-      where: { loginId: dto.loginId },
-    });
-    if (existing) throw new ConflictException('이미 사용 중인 아이디입니다.');
-
-    const hashedPassword = await bcrypt.hash(dto.password, 10);
-
-    const office = await this.prisma.office.create({
-      data: { name: dto.officeName },
+      where: { loginId },
     });
 
-    const user = await this.prisma.user.create({
-      data: {
-        loginId: dto.loginId,
-        email: dto.email,
-        password: hashedPassword,
-        name: dto.name,
-        officeId: office.id,
-        role: 'owner',
-      },
-    });
+    if (existing) {
+      throw new ConflictException('이미 사용 중인 아이디입니다.');
+    }
 
-    return {
-      ...this.generateTokens(user.id, user.officeId),
-      user: {
-        id: user.id,
-        loginId: user.loginId,
-        email: user.email,
-        name: user.name,
-        role: user.role,
-      },
-      office: { id: office.id, name: office.name },
-    };
+    const hashedPassword = await bcrypt.hash(
+      dto.password,
+      AuthService.PASSWORD_SALT_ROUNDS,
+    );
+
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const officeCode = this.generateOfficeCode();
+
+      try {
+        return await this.prisma.$transaction(async (tx) => {
+          const office = await tx.office.create({
+            data: { code: officeCode, name: dto.officeName },
+          });
+
+          const user = await tx.user.create({
+            data: {
+              loginId,
+              email,
+              password: hashedPassword,
+              name: dto.name,
+              officeId: office.id,
+              role: 'owner',
+            },
+          });
+
+          const authenticatedUser = this.toAuthenticatedUser({
+            ...user,
+            office,
+          });
+          const tokens = this.generateTokens(authenticatedUser);
+
+          await this.storeRefreshTokenHash(user.id, tokens.refreshToken, tx);
+
+          return this.toAuthResponse(authenticatedUser, tokens);
+        });
+      } catch (error) {
+        if (error instanceof Prisma.PrismaClientKnownRequestError) {
+          const target = this.getUniqueConstraintTarget(error);
+
+          if (target.includes('code')) {
+            continue;
+          }
+
+          if (target.includes('login_id') || target.includes('loginId')) {
+            throw new ConflictException('이미 사용 중인 아이디입니다.');
+          }
+        }
+
+        throw error;
+      }
+    }
+
+    throw new InternalServerErrorException(
+      '사무소 코드 생성에 실패했습니다. 다시 시도해주세요.',
+    );
   }
 
-  async login(loginId: string, password: string) {
+  async validateUser(loginId: string, password: string) {
     const user = await this.prisma.user.findUnique({
-      where: { loginId },
+      where: { loginId: this.normalizeLoginId(loginId) },
       include: { office: true },
     });
-    if (!user) throw new UnauthorizedException('아이디 또는 비밀번호가 올바르지 않습니다.');
+
+    if (!user) {
+      throw new UnauthorizedException('아이디 또는 비밀번호가 올바르지 않습니다.');
+    }
 
     const isValid = await bcrypt.compare(password, user.password);
-    if (!isValid)
-      throw new UnauthorizedException('아이디 또는 비밀번호가 올바르지 않습니다.');
 
-    return {
-      ...this.generateTokens(user.id, user.officeId),
-      user: {
-        id: user.id,
-        loginId: user.loginId,
-        email: user.email,
-        name: user.name,
-        role: user.role,
-      },
-      office: { id: user.office.id, name: user.office.name },
-    };
+    if (!isValid) {
+      throw new UnauthorizedException('아이디 또는 비밀번호가 올바르지 않습니다.');
+    }
+
+    this.ensureUserIsActive(user);
+
+    return this.toAuthenticatedUser(user);
+  }
+
+  async login(user: AuthenticatedUser) {
+    const tokens = this.generateTokens(user);
+
+    await this.storeRefreshTokenHash(user.userId, tokens.refreshToken);
+
+    return this.toAuthResponse(user, tokens);
+  }
+
+  async refresh(user: AuthenticatedUser) {
+    const tokens = this.generateTokens(user);
+
+    await this.storeRefreshTokenHash(user.userId, tokens.refreshToken);
+
+    return this.toAuthResponse(user, tokens);
+  }
+
+  async logout(userId: string) {
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { refreshTokenHash: null },
+    });
+
+    return { success: true };
   }
 
   async me(userId: string) {
@@ -85,22 +167,190 @@ export class AuthService {
       where: { id: userId },
       include: { office: true },
     });
-    if (!user) throw new UnauthorizedException('User not found');
+
+    if (!user) {
+      throw new UnauthorizedException('User not found');
+    }
+
+    this.ensureUserIsActive(user);
+
+    const authenticatedUser = this.toAuthenticatedUser(user);
+
     return {
-      id: user.id,
-      loginId: user.loginId,
-      email: user.email,
-      name: user.name,
-      role: user.role,
-      office: { id: user.office.id, name: user.office.name },
+      id: authenticatedUser.userId,
+      loginId: authenticatedUser.loginId,
+      email: authenticatedUser.email,
+      name: authenticatedUser.name,
+      role: authenticatedUser.role,
+      office: {
+        id: authenticatedUser.office.id,
+        code: authenticatedUser.office.code,
+        name: authenticatedUser.office.name,
+      },
     };
   }
 
-  private generateTokens(userId: string, officeId: string) {
-    const payload = { sub: userId, officeId };
+  async validateRefreshToken(
+    payload: AuthTokenPayload,
+    refreshToken: string,
+  ) {
+    if (payload.type !== 'refresh') {
+      throw new UnauthorizedException('유효한 리프레시 토큰이 아닙니다.');
+    }
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: payload.sub },
+      include: { office: true },
+    });
+
+    if (!user) {
+      throw new UnauthorizedException('유효한 리프레시 토큰이 아닙니다.');
+    }
+
+    this.ensureUserIsActive(user);
+
+    if (
+      user.officeId !== payload.officeId ||
+      user.role !== payload.role ||
+      !user.refreshTokenHash
+    ) {
+      throw new UnauthorizedException('유효한 리프레시 토큰이 아닙니다.');
+    }
+
+    const isValid = await bcrypt.compare(refreshToken, user.refreshTokenHash);
+
+    if (!isValid) {
+      throw new UnauthorizedException('유효한 리프레시 토큰이 아닙니다.');
+    }
+
+    return this.toAuthenticatedUser(user);
+  }
+
+  private generateTokens(
+    user: Pick<AuthenticatedUser, 'userId' | 'officeId' | 'role'>,
+  ) {
     return {
-      accessToken: this.jwtService.sign(payload),
-      refreshToken: this.jwtService.sign(payload, { expiresIn: '7d' }),
+      accessToken: this.jwtService.sign({
+        sub: user.userId,
+        officeId: user.officeId,
+        role: user.role,
+        type: 'access',
+      } satisfies AuthTokenPayload),
+      refreshToken: this.jwtService.sign(
+        {
+          sub: user.userId,
+          officeId: user.officeId,
+          role: user.role,
+          type: 'refresh',
+        } satisfies AuthTokenPayload,
+        {
+          secret: this.getRefreshTokenSecret(),
+          expiresIn: this.getRefreshTokenExpiresIn(),
+        },
+      ),
     };
+  }
+
+  private generateOfficeCode(): string {
+    const letters = AuthService.OFFICE_CODE_ALPHABET;
+
+    return `${letters[randomInt(letters.length)]}${letters[randomInt(letters.length)]}${randomInt(1000, 10000)}`;
+  }
+
+  private getUniqueConstraintTarget(
+    error: Prisma.PrismaClientKnownRequestError,
+  ): string {
+    if (error.code !== 'P2002') {
+      return '';
+    }
+
+    const target = error.meta?.target;
+
+    if (Array.isArray(target)) {
+      return target.join(',');
+    }
+
+    return typeof target === 'string' ? target : '';
+  }
+
+  private getRefreshTokenSecret() {
+    return (
+      this.config.get<string>('JWT_REFRESH_SECRET') ??
+      this.config.get<string>('JWT_SECRET') ??
+      'fallback-secret'
+    );
+  }
+
+  private getRefreshTokenExpiresIn() {
+    return (this.config.get<string>('JWT_REFRESH_EXPIRES_IN') ??
+      '7d') as StringValue;
+  }
+
+  private async storeRefreshTokenHash(
+    userId: string,
+    refreshToken: string,
+    client: Prisma.TransactionClient | PrismaService = this.prisma,
+  ) {
+    const refreshTokenHash = await bcrypt.hash(
+      refreshToken,
+      AuthService.PASSWORD_SALT_ROUNDS,
+    );
+
+    await client.user.update({
+      where: { id: userId },
+      data: { refreshTokenHash },
+    });
+  }
+
+  private normalizeEmail(email: string) {
+    return typeof email === 'string' ? email.trim().toLowerCase() : '';
+  }
+
+  private normalizeLoginId(loginId: string) {
+    return typeof loginId === 'string' ? loginId.trim().toLowerCase() : '';
+  }
+
+  private toAuthenticatedUser(user: UserWithOffice): AuthenticatedUser {
+    return {
+      userId: user.id,
+      officeId: user.officeId,
+      loginId: user.loginId,
+      email: user.email,
+      name: user.name,
+      role: user.role as UserRole,
+      office: {
+        id: user.office.id,
+        code: user.office.code,
+        name: user.office.name,
+        isActive: user.office.isActive,
+      },
+    };
+  }
+
+  private toAuthResponse(
+    user: AuthenticatedUser,
+    tokens: { accessToken: string; refreshToken: string },
+  ) {
+    return {
+      ...tokens,
+      user: {
+        id: user.userId,
+        loginId: user.loginId,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+      },
+      office: {
+        id: user.office.id,
+        code: user.office.code,
+        name: user.office.name,
+      },
+    };
+  }
+
+  private ensureUserIsActive(user: UserWithOffice) {
+    if (!user.isActive || !user.office.isActive) {
+      throw new UnauthorizedException('비활성화된 계정입니다.');
+    }
   }
 }

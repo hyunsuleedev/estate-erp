@@ -78,19 +78,32 @@ export class PropertiesController {
     return this.propertiesService.findOne(id, user.officeId);
   }
 
+  @Patch(':id/check-status')
+  transitionCheckStatus(
+    @Param('id') id: string,
+    @Body() dto: { checkStatus: string },
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.propertiesService.transitionCheckStatus(
+      id,
+      user.officeId,
+      dto.checkStatus,
+    );
+  }
+
   @Post()
   create(
     @Body()
     dto: {
       siteId: string;
-      unitId?: string;
+      unitId?: string | null;
       transactionType: string;
-      price?: number;
-      deposit?: number;
-      monthlyRent?: number;
+      price?: number | null;
+      deposit?: number | null;
+      monthlyRent?: number | null;
       ownerName?: string;
       ownerPhone?: string;
-      memo?: string;
+      memo?: string | null;
     },
     @CurrentUser() user: CurrentUserPayload,
   ) {
@@ -102,13 +115,15 @@ export class PropertiesController {
     @Param('id') id: string,
     @Body()
     dto: {
+      siteId?: string;
+      unitId?: string | null;
       transactionType?: string;
-      price?: number;
-      deposit?: number;
-      monthlyRent?: number;
+      price?: number | null;
+      deposit?: number | null;
+      monthlyRent?: number | null;
       checkStatus?: string;
       isHidden?: boolean;
-      memo?: string;
+      memo?: string | null;
     },
     @CurrentUser() user: CurrentUserPayload,
   ) {

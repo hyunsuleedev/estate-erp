@@ -1,12 +1,8 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
-
-export interface JwtPayload {
-  sub: string;
-  officeId: string;
-}
+import { AuthTokenPayload } from './auth.types';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
@@ -18,7 +14,15 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     });
   }
 
-  validate(payload: JwtPayload) {
-    return { userId: payload.sub, officeId: payload.officeId };
+  validate(payload: AuthTokenPayload) {
+    if (payload.type !== 'access') {
+      throw new UnauthorizedException('유효한 액세스 토큰이 아닙니다.');
+    }
+
+    return {
+      userId: payload.sub,
+      officeId: payload.officeId,
+      role: payload.role,
+    };
   }
 }

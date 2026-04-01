@@ -24,6 +24,7 @@ model Consultation {
   property         Property?         @relation(fields: [propertyId], references: [id])
   match            Match?            @relation(fields: [matchId], references: [id])
   buyerRequirement BuyerRequirement? @relation(fields: [buyerReqId], references: [id])
+  tasks            Task[]
 
   @@index([officeId, contactId])
   @@index([officeId, propertyId])
@@ -225,6 +226,10 @@ model DealParticipant {
 
   role String // listing_agent, buying_agent, dual_agent, manager, assistant, closer
   side String // seller, buyer, both — 어느 측 담당인지
+  commissionAmount Int?     @map("commission_amount") // 배분 금액 (만원)
+  commissionRate   Decimal? @map("commission_rate") @db.Decimal // 배분 비율 (%)
+  settlementStatus String   @default("unsettled") @map("settlement_status")
+  settlementDate   DateTime? @map("settlement_date")
 
   memo      String?
   createdAt DateTime @default(now()) @map("created_at")

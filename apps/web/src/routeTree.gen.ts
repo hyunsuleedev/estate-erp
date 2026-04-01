@@ -28,6 +28,7 @@ import { Route as AuthenticatedContactsIndexRouteImport } from './routes/_authen
 import { Route as AuthenticatedConsultationsIndexRouteImport } from './routes/_authenticated/consultations/index'
 import { Route as AuthenticatedCalendarIndexRouteImport } from './routes/_authenticated/calendar/index'
 import { Route as AuthenticatedBuyerRequirementsIndexRouteImport } from './routes/_authenticated/buyer-requirements/index'
+import { Route as AuthenticatedAiOperationsIndexRouteImport } from './routes/_authenticated/ai-operations/index'
 import { Route as AuthenticatedPropertiesNewRouteImport } from './routes/_authenticated/properties/new'
 import { Route as AuthenticatedPropertiesIdRouteImport } from './routes/_authenticated/properties/$id'
 import { Route as AuthenticatedContactsNewRouteImport } from './routes/_authenticated/contacts/new'
@@ -136,6 +137,12 @@ const AuthenticatedBuyerRequirementsIndexRoute =
     path: '/buyer-requirements/',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const AuthenticatedAiOperationsIndexRoute =
+  AuthenticatedAiOperationsIndexRouteImport.update({
+    id: '/ai-operations/',
+    path: '/ai-operations/',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedPropertiesNewRoute =
   AuthenticatedPropertiesNewRouteImport.update({
     id: '/properties/new',
@@ -169,6 +176,7 @@ export interface FileRoutesByFullPath {
   '/contacts/new': typeof AuthenticatedContactsNewRoute
   '/properties/$id': typeof AuthenticatedPropertiesIdRoute
   '/properties/new': typeof AuthenticatedPropertiesNewRoute
+  '/ai-operations/': typeof AuthenticatedAiOperationsIndexRoute
   '/buyer-requirements/': typeof AuthenticatedBuyerRequirementsIndexRoute
   '/calendar/': typeof AuthenticatedCalendarIndexRoute
   '/consultations/': typeof AuthenticatedConsultationsIndexRoute
@@ -192,6 +200,7 @@ export interface FileRoutesByTo {
   '/contacts/new': typeof AuthenticatedContactsNewRoute
   '/properties/$id': typeof AuthenticatedPropertiesIdRoute
   '/properties/new': typeof AuthenticatedPropertiesNewRoute
+  '/ai-operations': typeof AuthenticatedAiOperationsIndexRoute
   '/buyer-requirements': typeof AuthenticatedBuyerRequirementsIndexRoute
   '/calendar': typeof AuthenticatedCalendarIndexRoute
   '/consultations': typeof AuthenticatedConsultationsIndexRoute
@@ -218,6 +227,7 @@ export interface FileRoutesById {
   '/_authenticated/contacts/new': typeof AuthenticatedContactsNewRoute
   '/_authenticated/properties/$id': typeof AuthenticatedPropertiesIdRoute
   '/_authenticated/properties/new': typeof AuthenticatedPropertiesNewRoute
+  '/_authenticated/ai-operations/': typeof AuthenticatedAiOperationsIndexRoute
   '/_authenticated/buyer-requirements/': typeof AuthenticatedBuyerRequirementsIndexRoute
   '/_authenticated/calendar/': typeof AuthenticatedCalendarIndexRoute
   '/_authenticated/consultations/': typeof AuthenticatedConsultationsIndexRoute
@@ -243,6 +253,7 @@ export interface FileRouteTypes {
     | '/contacts/new'
     | '/properties/$id'
     | '/properties/new'
+    | '/ai-operations/'
     | '/buyer-requirements/'
     | '/calendar/'
     | '/consultations/'
@@ -266,6 +277,7 @@ export interface FileRouteTypes {
     | '/contacts/new'
     | '/properties/$id'
     | '/properties/new'
+    | '/ai-operations'
     | '/buyer-requirements'
     | '/calendar'
     | '/consultations'
@@ -291,6 +303,7 @@ export interface FileRouteTypes {
     | '/_authenticated/contacts/new'
     | '/_authenticated/properties/$id'
     | '/_authenticated/properties/new'
+    | '/_authenticated/ai-operations/'
     | '/_authenticated/buyer-requirements/'
     | '/_authenticated/calendar/'
     | '/_authenticated/consultations/'
@@ -447,6 +460,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedBuyerRequirementsIndexRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/ai-operations/': {
+      id: '/_authenticated/ai-operations/'
+      path: '/ai-operations'
+      fullPath: '/ai-operations/'
+      preLoaderRoute: typeof AuthenticatedAiOperationsIndexRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/properties/new': {
       id: '/_authenticated/properties/new'
       path: '/properties/new'
@@ -496,6 +516,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedContactsNewRoute: typeof AuthenticatedContactsNewRoute
   AuthenticatedPropertiesIdRoute: typeof AuthenticatedPropertiesIdRoute
   AuthenticatedPropertiesNewRoute: typeof AuthenticatedPropertiesNewRoute
+  AuthenticatedAiOperationsIndexRoute: typeof AuthenticatedAiOperationsIndexRoute
   AuthenticatedBuyerRequirementsIndexRoute: typeof AuthenticatedBuyerRequirementsIndexRoute
   AuthenticatedCalendarIndexRoute: typeof AuthenticatedCalendarIndexRoute
   AuthenticatedConsultationsIndexRoute: typeof AuthenticatedConsultationsIndexRoute
@@ -517,6 +538,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedContactsNewRoute: AuthenticatedContactsNewRoute,
   AuthenticatedPropertiesIdRoute: AuthenticatedPropertiesIdRoute,
   AuthenticatedPropertiesNewRoute: AuthenticatedPropertiesNewRoute,
+  AuthenticatedAiOperationsIndexRoute: AuthenticatedAiOperationsIndexRoute,
   AuthenticatedBuyerRequirementsIndexRoute:
     AuthenticatedBuyerRequirementsIndexRoute,
   AuthenticatedCalendarIndexRoute: AuthenticatedCalendarIndexRoute,

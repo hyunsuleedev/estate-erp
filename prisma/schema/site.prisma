@@ -27,8 +27,9 @@ model Site {
   // 좌표 — PostGIS geometry는 migration SQL에서 추가
   // ALTER TABLE sites ADD COLUMN location geometry(Point, 5179);
   // CREATE INDEX idx_sites_location ON sites USING GIST(location);
-  lat Decimal? @db.Decimal
-  lng Decimal? @db.Decimal
+  lat      Decimal?                              @db.Decimal
+  lng      Decimal?                              @db.Decimal
+  location Unsupported("geometry(Point, 5179)")? @map("location")
 
   // 외부 연동 코드 (자체 UUID가 PK, 외부 코드는 매핑용)
   kaptComplexCode  String? @map("kapt_complex_code") // K-apt (아파트만)
@@ -64,6 +65,7 @@ model Site {
   @@index([kaptComplexCode])
   @@index([naverComplexCode])
   @@index([kbComplexCode])
+  @@index([location], type: Gist)
   @@index([name(ops: raw("gin_trgm_ops"))], type: Gin) // 단지명 퍼지 검색
   @@map("sites")
 }

@@ -19,8 +19,15 @@ model Task {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  office Office @relation(fields: [officeId], references: [id])
+  office       Office        @relation(fields: [officeId], references: [id])
+  contact      Contact?      @relation(fields: [contactId], references: [id])
+  property     Property?     @relation(fields: [propertyId], references: [id])
+  consultation Consultation? @relation(fields: [consultationId], references: [id])
 
+  @@index([officeId, isDone, dueDate])
+  @@index([contactId])
+  @@index([propertyId])
+  @@index([consultationId])
   @@map("tasks")
 }
 

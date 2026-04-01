@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Patch,
   Delete,
   Param,
   Body,
@@ -33,12 +34,29 @@ export class OfficeSitesController {
     return this.service.searchCentralSites(query || '');
   }
 
+  @Get(':id')
+  findOne(
+    @Param('id') id: string,
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.service.findOne(id, user.officeId);
+  }
+
   @Post()
   add(
     @Body() dto: { siteId: string; memo?: string },
     @CurrentUser() user: CurrentUserPayload,
   ) {
     return this.service.add(user.officeId, dto);
+  }
+
+  @Patch(':id')
+  update(
+    @Param('id') id: string,
+    @Body() dto: { memo?: string | null },
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.service.update(id, user.officeId, dto);
   }
 
   @Delete(':id')

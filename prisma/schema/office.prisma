@@ -4,6 +4,7 @@
 
 model Office {
   id           String  @id @default(uuid()) @db.Uuid
+  code         String  @unique // 사무소 코드 (자동 생성, "GD7291" 등)
   name         String // 사무소명
   licenseNo    String? @map("license_no") // 중개업 등록번호
   ceoName      String? @map("ceo_name")
@@ -65,9 +66,10 @@ model Office {
 model User {
   id       String  @id @default(uuid()) @db.Uuid
   officeId String  @map("office_id") @db.Uuid
-  loginId  String  @unique @map("login_id") // 로그인 ID (owner: 사용자 지정 고유 ID, 직원: "{ownerLoginId}-001" 자동생성)
+  loginId  String  @unique @map("login_id") // 로그인 ID (owner/직원 모두 별도 아이디 사용 가능)
   email    String? // owner 필수, 직원 선택
   password String
+  refreshTokenHash String? @map("refresh_token_hash")
   name     String
   phone    String?
   role     String  @default("agent") // owner, manager, agent

@@ -13,6 +13,7 @@ import {
   FileText,
   Users,
   Settings,
+  Bot,
 } from 'lucide-react'
 import { useAuth } from '@/providers/auth-provider'
 import { NavMain } from '@/components/nav-main'
@@ -95,6 +96,11 @@ const navItems = [
     title: '네트워크',
     url: '/network',
     icon: Globe,
+  },
+  {
+    title: 'AI 운영',
+    url: '/ai-operations',
+    icon: Bot,
   },
   {
     title: '직원관리',
