@@ -42,6 +42,7 @@ export interface CreateSiteDto {
 export interface SiteDetail extends Site {
   dongs: import('./dongs.js').Dong[];
   units: import('./units.js').Unit[];
+  siteUnitTypes: import('./units.js').SiteUnitType[];
 }
 
 export function createSitesApi(request: RequestFn) {

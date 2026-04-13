@@ -1,0 +1,66 @@
+// ============================================================
+// 공적장부 (PublicDocument)
+// Property/Site 단위로 발급한 공적장부 파일을 추적.
+// 등기부등본(유료), 건축물대장, 토지대장, 지적도, 토지이용계획(무료).
+// 파일은 S3/R2에 저장, DB에는 메타데이터만.
+// ============================================================
+
+model PublicDocument {
+  id       String @id @default(uuid()) @db.Uuid
+  officeId String @map("office_id") @db.Uuid
+
+  /// 매물 단위 연결 (있으면 Property 상세에서 조회)
+  propertyId String? @map("property_id") @db.Uuid
+  /// 단지/장소 단위 연결 (Property 없이 Site 에서 직접 발급 시)
+  siteId     String  @map("site_id") @db.Uuid
+
+  /// registry: 등기부등본
+  /// building_ledger: 건축물대장
+  /// land_ledger: 토지/임야대장
+  /// cadastral_map: 지적도/임야도
+  /// land_use_plan: 토지이용계획확인서
+  /// land_register: 대지권등록부
+  type String
+
+  title    String  // "등기부등본 (집합건물)", "건축물대장 총괄표제부" 등
+  subtitle String? // "현재유효사항" / "말소사항포함" 등 옵션 표시
+
+  /// S3/R2 파일 URL
+  fileUrl  String? @map("file_url")
+  /// 파일 크기 (bytes)
+  fileSize Int?    @map("file_size")
+  /// MIME type (application/pdf 등)
+  mimeType String? @map("mime_type")
+
+  /// 발급일
+  issuedAt DateTime @map("issued_at")
+  /// 유효기간 (등기부등본은 발급일 기준 의미, 장부마다 다름)
+  expiresAt DateTime? @map("expires_at")
+
+  /// 발급 비용 (원 단위, 등기 700원, 나머지 0)
+  cost Int @default(0)
+
+  /// 발급 상태: pending → completed → failed
+  status String @default("pending")
+  /// 실패 시 에러 메시지
+  errorMessage String? @map("error_message")
+
+  /// 발급 요청자
+  requestedById String @map("requested_by_id") @db.Uuid
+
+  /// 외부 API 응답 참조번호 (업체별 트랜잭션 ID)
+  externalRefId String? @map("external_ref_id")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  office      Office    @relation(fields: [officeId], references: [id])
+  property    Property? @relation(fields: [propertyId], references: [id])
+  site        Site      @relation(fields: [siteId], references: [id])
+  requestedBy User      @relation("DocumentRequester", fields: [requestedById], references: [id])
+
+  @@index([officeId, propertyId])
+  @@index([officeId, siteId])
+  @@index([officeId, type, issuedAt])
+  @@map("public_documents")
+}

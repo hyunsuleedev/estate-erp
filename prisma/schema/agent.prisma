@@ -1,0 +1,116 @@
+// ============================================================
+// AI Employee — Rule Engine + Proposal Queue
+// ============================================================
+//
+// 설계 문서: docs/ai-employee-architecture.md
+//
+// Rule   — 규칙 엔진의 규칙 레코드.
+//          isSystem=true: 법 기반 (사용자 편집 불가, seed로 삽입)
+//          isSystem=false: 임계값 기반 (사무소가 config 조정)
+//          triggerType=schedule | event
+//
+// Proposal — 규칙이 생성하는 제안. 단일 승인 큐(inbox)에 모인다.
+//            generatedBy 접두사: "rule:{name}:{version}" / "mcp:{tool}"
+//            trustTier: auto | approval_required | inform_only
+// ============================================================
+
+model Rule {
+  id          String  @id @default(uuid()) @db.Uuid
+  officeId    String  @map("office_id") @db.Uuid
+
+  /// 코드 레벨 식별자 (예: "ad_takedown", "lease_expiry").
+  /// 같은 officeId 안에서 unique.
+  name        String
+  /// UI 표시용 이름 (예: "광고 내림 감지").
+  displayName String  @map("display_name")
+  description String?
+
+  /// "schedule" | "event"
+  triggerType String  @map("trigger_type")
+  /// triggerType=schedule 일 때 크론 표현식. NestJS @Cron 호환.
+  schedule    String?
+  /// triggerType=event 일 때 EventEmitter2 이벤트명.
+  eventName   String? @map("event_name")
+
+  /// 규칙 파라미터. 법 기반 규칙은 비어있거나 메타 정보만.
+  /// 임계값 기반 규칙은 { "daysSinceRegister": 14, ... } 형태.
+  config      Json    @default("{}") @db.JsonB
+
+  /// 활성 여부 (사무소가 토글 가능, 단 isSystem 규칙도 끌 수 있음)
+  isActive    Boolean @default(true) @map("is_active")
+  /// true: 시스템이 seed/startup에 자동 등록. 사용자 삭제 불가.
+  /// false: 사무소가 생성한 커스텀 규칙.
+  isSystem    Boolean @default(false) @map("is_system")
+
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  office      Office   @relation(fields: [officeId], references: [id])
+
+  @@unique([officeId, name])
+  @@index([officeId, isActive, triggerType])
+  @@map("rules")
+}
+
+model Proposal {
+  id        String @id @default(uuid()) @db.Uuid
+  officeId  String @map("office_id") @db.Uuid
+
+  /// 제안 유형 (예: "ad_takedown", "lease_renewal_notice")
+  type        String
+  title       String
+  description String
+  /// 왜 이 제안이 생성됐는지(법적 근거, 데이터 근거). inbox UI에 표시.
+  reasoning   String?
+
+  /// pending | approved | rejected | expired | executed | failed | auto_resolved
+  status    String @default("pending")
+  /// urgent | normal | low
+  priority  String @default("normal")
+  /// auto | approval_required | inform_only
+  trustTier String @map("trust_tier")
+
+  /// 승인 시 실행할 액션 이름. ExecutorService가 dispatch.
+  actionType    String? @map("action_type")
+  actionPayload Json?   @map("action_payload") @db.JsonB
+
+  /// "rule:ad_takedown:v1" / "mcp:update_listing_price" / "event:listing.price.changed"
+  generatedBy String  @map("generated_by")
+  /// 중복 방지 키. 같은 officeId + dedupeKey + status IN (pending, approved) 존재하면 skip.
+  dedupeKey   String? @map("dedupe_key")
+
+  /// MCP로 들어온 제안일 때 요청한 사용자 (Phase 2). 규칙 제안은 null.
+  createdByUserId String? @map("created_by_user_id") @db.Uuid
+
+  // 컨텍스트 링크 — inbox 카드에서 한눈에 파악할 수 있게
+  listingId  String? @map("listing_id") @db.Uuid
+  propertyId String? @map("property_id") @db.Uuid
+  contactId  String? @map("contact_id") @db.Uuid
+  dealId     String? @map("deal_id") @db.Uuid
+  contractId String? @map("contract_id") @db.Uuid
+  tenantId   String? @map("tenant_id") @db.Uuid
+
+  // 라이프사이클
+  proposedAt     DateTime  @default(now()) @map("proposed_at")
+  expiresAt      DateTime? @map("expires_at")
+  decidedAt      DateTime? @map("decided_at")
+  decidedBy      String?   @map("decided_by") @db.Uuid
+  decisionNote   String?   @map("decision_note")
+  executedAt     DateTime? @map("executed_at")
+  executionError String?   @map("execution_error")
+
+  office    Office    @relation(fields: [officeId], references: [id])
+  listing   Listing?  @relation(fields: [listingId], references: [id])
+  property  Property? @relation(fields: [propertyId], references: [id])
+  contact   Contact?  @relation(fields: [contactId], references: [id])
+  deal      Deal?     @relation(fields: [dealId], references: [id])
+  contract  Contract? @relation(fields: [contractId], references: [id])
+  tenant    Tenant?   @relation(fields: [tenantId], references: [id])
+
+  @@index([officeId, status, priority, proposedAt])
+  @@index([officeId, type, status])
+  @@index([officeId, dedupeKey])
+  @@index([listingId])
+  @@index([propertyId])
+  @@map("proposals")
+}

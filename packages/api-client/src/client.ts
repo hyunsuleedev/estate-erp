@@ -2,6 +2,7 @@ import type { ApiClientConfig } from './types.js';
 import { ApiError } from './types.js';
 import { createAuthApi } from './modules/auth.js';
 import { createPropertiesApi } from './modules/properties.js';
+import { createListingsApi } from './modules/listings.js';
 import { createContactsApi } from './modules/contacts.js';
 import { createSitesApi } from './modules/sites.js';
 import { createDongsApi } from './modules/dongs.js';
@@ -9,6 +10,7 @@ import { createUnitsApi } from './modules/units.js';
 import { createTasksApi } from './modules/tasks.js';
 import { createMatchesApi } from './modules/matches.js';
 import { createDealsApi } from './modules/deals.js';
+import { createContractsApi } from './modules/contracts.js';
 import { createConsultationsApi } from './modules/consultations.js';
 import { createBuyerRequirementsApi } from './modules/buyer-requirements.js';
 import { createCalendarEventsApi } from './modules/calendar-events.js';
@@ -16,6 +18,14 @@ import { createPropertyContactsApi } from './modules/property-contacts.js';
 import { createContactRelationsApi } from './modules/contact-relations.js';
 import { createTenantsApi } from './modules/tenants.js';
 import { createOfficeSitesApi } from './modules/office-sites.js';
+import { createEmployeesApi } from './modules/employees.js';
+import { createOfficesApi } from './modules/offices.js';
+import { createExternalListingsApi } from './modules/external-listings.js';
+import { createProposalsApi } from './modules/proposals.js';
+import { createRulesApi } from './modules/rules.js';
+import { createFinanceApi } from './modules/finance.js';
+import { createPublicDocumentsApi } from './modules/public-documents.js';
+import { createPropertyPhotosApi } from './modules/property-photos.js';
 
 export type HttpMethod = 'GET' | 'POST' | 'PATCH' | 'DELETE';
 
@@ -77,6 +87,7 @@ export function createApiClient(config: ApiClientConfig) {
   return {
     auth: createAuthApi(req),
     properties: createPropertiesApi(req),
+    listings: createListingsApi(req),
     contacts: createContactsApi(req),
     sites: createSitesApi(req),
     dongs: createDongsApi(req),
@@ -84,6 +95,7 @@ export function createApiClient(config: ApiClientConfig) {
     tasks: createTasksApi(req),
     matches: createMatchesApi(req),
     deals: createDealsApi(req),
+    contracts: createContractsApi(req),
     consultations: createConsultationsApi(req),
     buyerRequirements: createBuyerRequirementsApi(req),
     calendarEvents: createCalendarEventsApi(req),
@@ -91,6 +103,14 @@ export function createApiClient(config: ApiClientConfig) {
     contactRelations: createContactRelationsApi(req),
     tenants: createTenantsApi(req),
     officeSites: createOfficeSitesApi(req),
+    employees: createEmployeesApi(req),
+    offices: createOfficesApi(req),
+    externalListings: createExternalListingsApi(req),
+    proposals: createProposalsApi(req),
+    rules: createRulesApi(req),
+    finance: createFinanceApi(req),
+    publicDocuments: createPublicDocumentsApi(req),
+    propertyPhotos: createPropertyPhotosApi(req),
   };
 }
 

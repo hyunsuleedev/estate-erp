@@ -18,6 +18,9 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src/renderer'),
     },
   },
+  optimizeDeps: {
+    exclude: ['@estate-erp/api-client'],
+  },
   server: {
     port: 5174,
     proxy: {

@@ -1,0 +1,33 @@
+- generic [ref=e4]:
+  - generic [ref=e5]:
+    - img [ref=e7]
+    - heading "회원가입" [level=1] [ref=e9]
+    - paragraph [ref=e10]: 사무소 정보와 계정을 생성합니다
+  - generic [ref=e11]:
+    - generic [ref=e13]:
+      - generic [ref=e14]:
+        - generic [ref=e15]: 사무소명
+        - textbox "사무소명" [active] [ref=e16]:
+          - /placeholder: OO 공인중개사사무소
+      - generic [ref=e17]:
+        - generic [ref=e18]: 이름
+        - textbox "이름" [ref=e19]: 테스터
+      - generic [ref=e20]:
+        - generic [ref=e21]: 아이디
+        - textbox "아이디" [ref=e22]:
+          - /placeholder: 사용할 아이디 (영문, 숫자)
+          - text: aiops0401
+        - paragraph [ref=e23]: "직원 계정은 이 아이디 기반으로 자동 생성됩니다 (예: aiops0401-001)"
+      - generic [ref=e24]:
+        - generic [ref=e25]: 이메일
+        - textbox "이메일" [ref=e26]:
+          - /placeholder: example@email.com
+          - text: 테스트부동산aiops0401@example.com
+      - generic [ref=e27]:
+        - generic [ref=e28]: 비밀번호
+        - textbox "비밀번호" [ref=e29]: Password123!
+      - button "가입하기" [ref=e30]
+    - paragraph [ref=e32]:
+      - text: 이미 계정이 있으신가요?
+      - link "로그인" [ref=e33] [cursor=pointer]:
+        - /url: /login

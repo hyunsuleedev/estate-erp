@@ -1,41 +1,80 @@
 // ============================================================
-// 매물 (핵심)
+// Property (사무소가 관리하는 부동산 단위)
+// 소유자/세입자 정보의 앵커. 매물(Listing)과 독립적으로 존재.
 // ============================================================
 
 model Property {
-  id              String   @id @default(uuid()) @db.Uuid
-  officeId        String   @map("office_id") @db.Uuid
-  siteId          String   @map("site_id") @db.Uuid
-  unitId          String?  @map("unit_id") @db.Uuid // nullable (토지/단독은 null)
-  transactionType String   @map("transaction_type") // sale, jeonse, monthly
-  price           Int? // 만원 단위
-  deposit         Int? // 보증금 (만원)
-  monthlyRent     Int?     @map("monthly_rent") // 월세 (만원)
-  checkStatus     String   @default("unverified") @map("check_status")
-  isHidden        Boolean  @default(false) @map("is_hidden")
-  memo            String?
-  createdAt       DateTime @default(now()) @map("created_at")
-  updatedAt       DateTime @updatedAt @map("updated_at")
+  id       String  @id @default(uuid()) @db.Uuid
+  officeId String  @map("office_id") @db.Uuid
+  siteId   String  @map("site_id") @db.Uuid
+  unitId   String? @map("unit_id") @db.Uuid // nullable (토지/단독은 null)
+  memo     String?
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   office           Office            @relation(fields: [officeId], references: [id])
   site             Site              @relation(fields: [siteId], references: [id])
   unit             Unit?             @relation(fields: [unitId], references: [id])
   propertyContacts PropertyContact[]
   tenants          Tenant[]
-  matches          Match[]
-  deals            Deal[]
+  listings         Listing[]
   consultations    Consultation[]
   tasks            Task[]
   calendarEvents   CalendarEvent[]
+  proposals        Proposal[]
+  publicDocuments  PublicDocument[]
+  photos           PropertyPhoto[]
 
+  @@unique([officeId, siteId, unitId])
+  @@index([officeId])
+  @@index([siteId])
+  @@map("properties")
+}
+
+// ============================================================
+// Listing (매물 = 거래 정보)
+// Property에서 파생. 하나의 Property에 여러 Listing 가능.
+// (예: 같은 호실을 매매 + 전세로 동시에 내놓는 경우)
+// ============================================================
+
+model Listing {
+  id              String  @id @default(uuid()) @db.Uuid
+  officeId        String  @map("office_id") @db.Uuid
+  propertyId      String  @map("property_id") @db.Uuid
+  transactionType String  @map("transaction_type") // sale, jeonse, monthly
+  price           Int? // 매매가/전세가 (만원)
+  deposit         Int? // 보증금 (만원, monthly일 때)
+  monthlyRent     Int?    @map("monthly_rent") // 월세 (만원)
+  checkStatus     String  @default("unverified") @map("check_status")
+  isHidden        Boolean @default(false) @map("is_hidden")
+  memo            String?
+
+  /// checkStatus 가 마지막으로 전이된 시각. Prisma middleware가 자동 갱신.
+  /// AdTakedownRule의 "거래 후 N시간 경과" 데드라인 계산에 사용.
+  checkStatusChangedAt DateTime? @map("check_status_changed_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  office   Office   @relation(fields: [officeId], references: [id])
+  property Property @relation(fields: [propertyId], references: [id])
+
+  matches        Match[]
+  deals          Deal[]
+  consultations  Consultation[]
+  tasks          Task[]
+  calendarEvents CalendarEvent[]
   priceHistories PriceHistory[]
+  proposals      Proposal[]
 
   // 공동 중개망
   networkSharedProperties NetworkSharedProperty[]
 
   @@index([officeId, checkStatus])
-  @@index([siteId])
-  @@map("properties")
+  @@index([officeId, checkStatus, checkStatusChangedAt])
+  @@index([propertyId])
+  @@map("listings")
 }
 
 // ============================================================
@@ -44,10 +83,10 @@ model Property {
 
 /// 매물 가격 변경 시 자동 기록. 규칙 엔진의 가격변동 감지에 활용.
 model PriceHistory {
-  id         String  @id @default(uuid()) @db.Uuid
-  officeId   String  @map("office_id") @db.Uuid
-  propertyId String  @map("property_id") @db.Uuid
-  changedBy  String? @map("changed_by") @db.Uuid // FK → User (변경자)
+  id        String  @id @default(uuid()) @db.Uuid
+  officeId  String  @map("office_id") @db.Uuid
+  listingId String  @map("listing_id") @db.Uuid
+  changedBy String? @map("changed_by") @db.Uuid // FK → User (변경자)
 
   // 변경 전 가격
   priceBefore       Int? @map("price_before")
@@ -62,10 +101,10 @@ model PriceHistory {
   reason    String? // 변경 사유 ("집주인 요청", "시세 반영" 등)
   createdAt DateTime @default(now()) @map("created_at")
 
-  office   Office   @relation(fields: [officeId], references: [id])
-  property Property @relation(fields: [propertyId], references: [id])
-  user     User?    @relation(fields: [changedBy], references: [id])
+  office  Office  @relation(fields: [officeId], references: [id])
+  listing Listing @relation(fields: [listingId], references: [id])
+  user    User?   @relation(fields: [changedBy], references: [id])
 
-  @@index([propertyId, createdAt])
+  @@index([listingId, createdAt])
   @@map("price_histories")
 }

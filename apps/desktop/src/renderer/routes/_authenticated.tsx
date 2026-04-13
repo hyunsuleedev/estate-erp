@@ -1,5 +1,5 @@
 import { createFileRoute, Outlet, Navigate, useMatches } from '@tanstack/react-router';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuth } from '@/providers/auth-provider';
 import { AppSidebar } from '@/components/layout/app-sidebar';
 import {
@@ -59,9 +59,25 @@ function ElectronSidebarBridge() {
   return null;
 }
 
+/** Tracks macOS fullscreen state — traffic lights disappear in fullscreen */
+function useFullscreen() {
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  useEffect(() => {
+    // Get initial state
+    window.electronBridge?.isFullscreen().then(setIsFullscreen);
+    // Listen for changes
+    const cleanup = window.electronBridge?.onFullscreenChanged(setIsFullscreen);
+    return cleanup;
+  }, []);
+
+  return isFullscreen;
+}
+
 function AuthenticatedLayout() {
   const { isAuthenticated, isLoading } = useAuth();
   const matches = useMatches();
+  const isFullscreen = useFullscreen();
 
   if (isLoading) {
     return (
@@ -81,6 +97,9 @@ function AuthenticatedLayout() {
     ? routeLabels[matches[matches.length - 2]?.routeId]
     : undefined;
 
+  // macOS windowed: 80px for traffic lights, fullscreen/other platforms: 16px
+  const titlebarLeftPadding = isMac && !isFullscreen ? 'pl-[80px]' : 'pl-4';
+
   return (
     <SidebarProvider>
       <ElectronSidebarBridge />
@@ -88,7 +107,7 @@ function AuthenticatedLayout() {
         {/* Titlebar: spans full width, above sidebar + content */}
         <header className="app-titlebar flex h-12 shrink-0 items-center border-b border-border bg-sidebar">
           <div
-            className={`flex items-center gap-1 ${isMac ? 'pl-[80px]' : 'pl-4'}`}
+            className={`flex items-center gap-1 ${titlebarLeftPadding}`}
             style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
           >
             <SidebarTrigger className="-ml-1" />

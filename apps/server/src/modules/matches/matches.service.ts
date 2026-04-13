@@ -1,48 +1,53 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+
+const matchInclude = {
+  listing: { include: { property: { include: { site: true, unit: true } } } },
+  buyerRequirement: { include: { contact: true } },
+} satisfies Prisma.MatchInclude;
+
+type MatchWithRelations = Prisma.MatchGetPayload<{ include: typeof matchInclude }>;
 
 @Injectable()
 export class MatchesService {
   constructor(private readonly prisma: PrismaService) {}
 
+  private readonly matchInclude = matchInclude;
+
   async findAll(officeId: string) {
-    return this.prisma.match.findMany({
+    const matches = await this.prisma.match.findMany({
       where: { officeId },
-      include: {
-        property: { include: { site: true } },
-        buyerRequirement: { include: { contact: true } },
-      },
+      include: this.matchInclude,
       orderBy: { createdAt: 'desc' },
     });
+
+    return matches.map((match) => this.withPropertyContext(match));
   }
 
   async findOne(id: string, officeId: string) {
     const match = await this.prisma.match.findFirst({
       where: { id, officeId },
-      include: {
-        property: { include: { site: true, unit: true } },
-        buyerRequirement: { include: { contact: true } },
-      },
+      include: this.matchInclude,
     });
     if (!match) throw new NotFoundException('Match not found');
-    return match;
+    return this.withPropertyContext(match);
   }
 
   async create(
     officeId: string,
     dto: {
-      propertyId: string;
+      listingId: string;
       buyerReqId: string;
       memo?: string;
     },
   ) {
-    return this.prisma.match.create({
+    const match = await this.prisma.match.create({
       data: { officeId, ...dto },
-      include: {
-        property: { include: { site: true } },
-        buyerRequirement: { include: { contact: true } },
-      },
+      include: this.matchInclude,
     });
+
+    return this.withPropertyContext(match);
   }
 
   async updateStage(
@@ -51,14 +56,27 @@ export class MatchesService {
     dto: { stage: string; memo?: string },
   ) {
     await this.findOne(id, officeId);
-    return this.prisma.match.update({
+    const match = await this.prisma.match.update({
       where: { id },
       data: dto,
+      include: this.matchInclude,
     });
+
+    return this.withPropertyContext(match);
   }
 
   async remove(id: string, officeId: string) {
     await this.findOne(id, officeId);
     return this.prisma.match.delete({ where: { id } });
+  }
+
+  private withPropertyContext(match: MatchWithRelations) {
+    const property = match.listing.property;
+
+    return {
+      ...match,
+      propertyId: property.id,
+      property,
+    };
   }
 }

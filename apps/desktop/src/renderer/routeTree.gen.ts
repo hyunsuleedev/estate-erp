@@ -22,17 +22,30 @@ import { Route as AuthenticatedPropertiesIndexRouteImport } from './routes/_auth
 import { Route as AuthenticatedNetworkIndexRouteImport } from './routes/_authenticated/network/index'
 import { Route as AuthenticatedMatchesIndexRouteImport } from './routes/_authenticated/matches/index'
 import { Route as AuthenticatedEmployeesIndexRouteImport } from './routes/_authenticated/employees/index'
+import { Route as AuthenticatedDocumentsIndexRouteImport } from './routes/_authenticated/documents/index'
 import { Route as AuthenticatedDealsIndexRouteImport } from './routes/_authenticated/deals/index'
 import { Route as AuthenticatedContractsIndexRouteImport } from './routes/_authenticated/contracts/index'
 import { Route as AuthenticatedContactsIndexRouteImport } from './routes/_authenticated/contacts/index'
 import { Route as AuthenticatedConsultationsIndexRouteImport } from './routes/_authenticated/consultations/index'
+import { Route as AuthenticatedCashflowIndexRouteImport } from './routes/_authenticated/cashflow/index'
 import { Route as AuthenticatedCalendarIndexRouteImport } from './routes/_authenticated/calendar/index'
 import { Route as AuthenticatedBuyerRequirementsIndexRouteImport } from './routes/_authenticated/buyer-requirements/index'
 import { Route as AuthenticatedAiOperationsIndexRouteImport } from './routes/_authenticated/ai-operations/index'
 import { Route as AuthenticatedPropertiesNewRouteImport } from './routes/_authenticated/properties/new'
+import { Route as AuthenticatedPropertiesNaverMyAdsRouteImport } from './routes/_authenticated/properties/naver-my-ads'
+import { Route as AuthenticatedPropertiesExternalListingsRouteImport } from './routes/_authenticated/properties/external-listings'
 import { Route as AuthenticatedPropertiesIdRouteImport } from './routes/_authenticated/properties/$id'
+import { Route as AuthenticatedDocumentsPhotosRouteImport } from './routes/_authenticated/documents/photos'
 import { Route as AuthenticatedContactsNewRouteImport } from './routes/_authenticated/contacts/new'
 import { Route as AuthenticatedContactsIdRouteImport } from './routes/_authenticated/contacts/$id'
+import { Route as AuthenticatedCashflowPaymentsRouteImport } from './routes/_authenticated/cashflow/payments'
+import { Route as AuthenticatedCashflowExpensesRouteImport } from './routes/_authenticated/cashflow/expenses'
+import { Route as AuthenticatedCashflowCalendarRouteImport } from './routes/_authenticated/cashflow/calendar'
+import { Route as AuthenticatedAiOperationsSettingsRouteImport } from './routes/_authenticated/ai-operations/settings'
+import { Route as AuthenticatedAiOperationsRulesRouteImport } from './routes/_authenticated/ai-operations/rules'
+import { Route as AuthenticatedAiOperationsProposalsRouteImport } from './routes/_authenticated/ai-operations/proposals'
+import { Route as AuthenticatedAiOperationsHistoryRouteImport } from './routes/_authenticated/ai-operations/history'
+import { Route as AuthenticatedAiOperationsAgentRouteImport } from './routes/_authenticated/ai-operations/agent'
 
 const AuthenticatedRoute = AuthenticatedRouteImport.update({
   id: '/_authenticated',
@@ -102,6 +115,12 @@ const AuthenticatedEmployeesIndexRoute =
     path: '/employees/',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const AuthenticatedDocumentsIndexRoute =
+  AuthenticatedDocumentsIndexRouteImport.update({
+    id: '/documents/',
+    path: '/documents/',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedDealsIndexRoute = AuthenticatedDealsIndexRouteImport.update({
   id: '/deals/',
   path: '/deals/',
@@ -123,6 +142,12 @@ const AuthenticatedConsultationsIndexRoute =
   AuthenticatedConsultationsIndexRouteImport.update({
     id: '/consultations/',
     path: '/consultations/',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedCashflowIndexRoute =
+  AuthenticatedCashflowIndexRouteImport.update({
+    id: '/cashflow/',
+    path: '/cashflow/',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
 const AuthenticatedCalendarIndexRoute =
@@ -149,10 +174,28 @@ const AuthenticatedPropertiesNewRoute =
     path: '/properties/new',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const AuthenticatedPropertiesNaverMyAdsRoute =
+  AuthenticatedPropertiesNaverMyAdsRouteImport.update({
+    id: '/properties/naver-my-ads',
+    path: '/properties/naver-my-ads',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedPropertiesExternalListingsRoute =
+  AuthenticatedPropertiesExternalListingsRouteImport.update({
+    id: '/properties/external-listings',
+    path: '/properties/external-listings',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedPropertiesIdRoute =
   AuthenticatedPropertiesIdRouteImport.update({
     id: '/properties/$id',
     path: '/properties/$id',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedDocumentsPhotosRoute =
+  AuthenticatedDocumentsPhotosRouteImport.update({
+    id: '/documents/photos',
+    path: '/documents/photos',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
 const AuthenticatedContactsNewRoute =
@@ -166,23 +209,84 @@ const AuthenticatedContactsIdRoute = AuthenticatedContactsIdRouteImport.update({
   path: '/contacts/$id',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const AuthenticatedCashflowPaymentsRoute =
+  AuthenticatedCashflowPaymentsRouteImport.update({
+    id: '/cashflow/payments',
+    path: '/cashflow/payments',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedCashflowExpensesRoute =
+  AuthenticatedCashflowExpensesRouteImport.update({
+    id: '/cashflow/expenses',
+    path: '/cashflow/expenses',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedCashflowCalendarRoute =
+  AuthenticatedCashflowCalendarRouteImport.update({
+    id: '/cashflow/calendar',
+    path: '/cashflow/calendar',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedAiOperationsSettingsRoute =
+  AuthenticatedAiOperationsSettingsRouteImport.update({
+    id: '/ai-operations/settings',
+    path: '/ai-operations/settings',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedAiOperationsRulesRoute =
+  AuthenticatedAiOperationsRulesRouteImport.update({
+    id: '/ai-operations/rules',
+    path: '/ai-operations/rules',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedAiOperationsProposalsRoute =
+  AuthenticatedAiOperationsProposalsRouteImport.update({
+    id: '/ai-operations/proposals',
+    path: '/ai-operations/proposals',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedAiOperationsHistoryRoute =
+  AuthenticatedAiOperationsHistoryRouteImport.update({
+    id: '/ai-operations/history',
+    path: '/ai-operations/history',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedAiOperationsAgentRoute =
+  AuthenticatedAiOperationsAgentRouteImport.update({
+    id: '/ai-operations/agent',
+    path: '/ai-operations/agent',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/login': typeof AuthLoginRoute
   '/register': typeof AuthRegisterRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
+  '/ai-operations/agent': typeof AuthenticatedAiOperationsAgentRoute
+  '/ai-operations/history': typeof AuthenticatedAiOperationsHistoryRoute
+  '/ai-operations/proposals': typeof AuthenticatedAiOperationsProposalsRoute
+  '/ai-operations/rules': typeof AuthenticatedAiOperationsRulesRoute
+  '/ai-operations/settings': typeof AuthenticatedAiOperationsSettingsRoute
+  '/cashflow/calendar': typeof AuthenticatedCashflowCalendarRoute
+  '/cashflow/expenses': typeof AuthenticatedCashflowExpensesRoute
+  '/cashflow/payments': typeof AuthenticatedCashflowPaymentsRoute
   '/contacts/$id': typeof AuthenticatedContactsIdRoute
   '/contacts/new': typeof AuthenticatedContactsNewRoute
+  '/documents/photos': typeof AuthenticatedDocumentsPhotosRoute
   '/properties/$id': typeof AuthenticatedPropertiesIdRoute
+  '/properties/external-listings': typeof AuthenticatedPropertiesExternalListingsRoute
+  '/properties/naver-my-ads': typeof AuthenticatedPropertiesNaverMyAdsRoute
   '/properties/new': typeof AuthenticatedPropertiesNewRoute
   '/ai-operations/': typeof AuthenticatedAiOperationsIndexRoute
   '/buyer-requirements/': typeof AuthenticatedBuyerRequirementsIndexRoute
   '/calendar/': typeof AuthenticatedCalendarIndexRoute
+  '/cashflow/': typeof AuthenticatedCashflowIndexRoute
   '/consultations/': typeof AuthenticatedConsultationsIndexRoute
   '/contacts/': typeof AuthenticatedContactsIndexRoute
   '/contracts/': typeof AuthenticatedContractsIndexRoute
   '/deals/': typeof AuthenticatedDealsIndexRoute
+  '/documents/': typeof AuthenticatedDocumentsIndexRoute
   '/employees/': typeof AuthenticatedEmployeesIndexRoute
   '/matches/': typeof AuthenticatedMatchesIndexRoute
   '/network/': typeof AuthenticatedNetworkIndexRoute
@@ -196,17 +300,30 @@ export interface FileRoutesByTo {
   '/login': typeof AuthLoginRoute
   '/register': typeof AuthRegisterRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
+  '/ai-operations/agent': typeof AuthenticatedAiOperationsAgentRoute
+  '/ai-operations/history': typeof AuthenticatedAiOperationsHistoryRoute
+  '/ai-operations/proposals': typeof AuthenticatedAiOperationsProposalsRoute
+  '/ai-operations/rules': typeof AuthenticatedAiOperationsRulesRoute
+  '/ai-operations/settings': typeof AuthenticatedAiOperationsSettingsRoute
+  '/cashflow/calendar': typeof AuthenticatedCashflowCalendarRoute
+  '/cashflow/expenses': typeof AuthenticatedCashflowExpensesRoute
+  '/cashflow/payments': typeof AuthenticatedCashflowPaymentsRoute
   '/contacts/$id': typeof AuthenticatedContactsIdRoute
   '/contacts/new': typeof AuthenticatedContactsNewRoute
+  '/documents/photos': typeof AuthenticatedDocumentsPhotosRoute
   '/properties/$id': typeof AuthenticatedPropertiesIdRoute
+  '/properties/external-listings': typeof AuthenticatedPropertiesExternalListingsRoute
+  '/properties/naver-my-ads': typeof AuthenticatedPropertiesNaverMyAdsRoute
   '/properties/new': typeof AuthenticatedPropertiesNewRoute
   '/ai-operations': typeof AuthenticatedAiOperationsIndexRoute
   '/buyer-requirements': typeof AuthenticatedBuyerRequirementsIndexRoute
   '/calendar': typeof AuthenticatedCalendarIndexRoute
+  '/cashflow': typeof AuthenticatedCashflowIndexRoute
   '/consultations': typeof AuthenticatedConsultationsIndexRoute
   '/contacts': typeof AuthenticatedContactsIndexRoute
   '/contracts': typeof AuthenticatedContractsIndexRoute
   '/deals': typeof AuthenticatedDealsIndexRoute
+  '/documents': typeof AuthenticatedDocumentsIndexRoute
   '/employees': typeof AuthenticatedEmployeesIndexRoute
   '/matches': typeof AuthenticatedMatchesIndexRoute
   '/network': typeof AuthenticatedNetworkIndexRoute
@@ -223,17 +340,30 @@ export interface FileRoutesById {
   '/_auth/login': typeof AuthLoginRoute
   '/_auth/register': typeof AuthRegisterRoute
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
+  '/_authenticated/ai-operations/agent': typeof AuthenticatedAiOperationsAgentRoute
+  '/_authenticated/ai-operations/history': typeof AuthenticatedAiOperationsHistoryRoute
+  '/_authenticated/ai-operations/proposals': typeof AuthenticatedAiOperationsProposalsRoute
+  '/_authenticated/ai-operations/rules': typeof AuthenticatedAiOperationsRulesRoute
+  '/_authenticated/ai-operations/settings': typeof AuthenticatedAiOperationsSettingsRoute
+  '/_authenticated/cashflow/calendar': typeof AuthenticatedCashflowCalendarRoute
+  '/_authenticated/cashflow/expenses': typeof AuthenticatedCashflowExpensesRoute
+  '/_authenticated/cashflow/payments': typeof AuthenticatedCashflowPaymentsRoute
   '/_authenticated/contacts/$id': typeof AuthenticatedContactsIdRoute
   '/_authenticated/contacts/new': typeof AuthenticatedContactsNewRoute
+  '/_authenticated/documents/photos': typeof AuthenticatedDocumentsPhotosRoute
   '/_authenticated/properties/$id': typeof AuthenticatedPropertiesIdRoute
+  '/_authenticated/properties/external-listings': typeof AuthenticatedPropertiesExternalListingsRoute
+  '/_authenticated/properties/naver-my-ads': typeof AuthenticatedPropertiesNaverMyAdsRoute
   '/_authenticated/properties/new': typeof AuthenticatedPropertiesNewRoute
   '/_authenticated/ai-operations/': typeof AuthenticatedAiOperationsIndexRoute
   '/_authenticated/buyer-requirements/': typeof AuthenticatedBuyerRequirementsIndexRoute
   '/_authenticated/calendar/': typeof AuthenticatedCalendarIndexRoute
+  '/_authenticated/cashflow/': typeof AuthenticatedCashflowIndexRoute
   '/_authenticated/consultations/': typeof AuthenticatedConsultationsIndexRoute
   '/_authenticated/contacts/': typeof AuthenticatedContactsIndexRoute
   '/_authenticated/contracts/': typeof AuthenticatedContractsIndexRoute
   '/_authenticated/deals/': typeof AuthenticatedDealsIndexRoute
+  '/_authenticated/documents/': typeof AuthenticatedDocumentsIndexRoute
   '/_authenticated/employees/': typeof AuthenticatedEmployeesIndexRoute
   '/_authenticated/matches/': typeof AuthenticatedMatchesIndexRoute
   '/_authenticated/network/': typeof AuthenticatedNetworkIndexRoute
@@ -249,17 +379,30 @@ export interface FileRouteTypes {
     | '/login'
     | '/register'
     | '/dashboard'
+    | '/ai-operations/agent'
+    | '/ai-operations/history'
+    | '/ai-operations/proposals'
+    | '/ai-operations/rules'
+    | '/ai-operations/settings'
+    | '/cashflow/calendar'
+    | '/cashflow/expenses'
+    | '/cashflow/payments'
     | '/contacts/$id'
     | '/contacts/new'
+    | '/documents/photos'
     | '/properties/$id'
+    | '/properties/external-listings'
+    | '/properties/naver-my-ads'
     | '/properties/new'
     | '/ai-operations/'
     | '/buyer-requirements/'
     | '/calendar/'
+    | '/cashflow/'
     | '/consultations/'
     | '/contacts/'
     | '/contracts/'
     | '/deals/'
+    | '/documents/'
     | '/employees/'
     | '/matches/'
     | '/network/'
@@ -273,17 +416,30 @@ export interface FileRouteTypes {
     | '/login'
     | '/register'
     | '/dashboard'
+    | '/ai-operations/agent'
+    | '/ai-operations/history'
+    | '/ai-operations/proposals'
+    | '/ai-operations/rules'
+    | '/ai-operations/settings'
+    | '/cashflow/calendar'
+    | '/cashflow/expenses'
+    | '/cashflow/payments'
     | '/contacts/$id'
     | '/contacts/new'
+    | '/documents/photos'
     | '/properties/$id'
+    | '/properties/external-listings'
+    | '/properties/naver-my-ads'
     | '/properties/new'
     | '/ai-operations'
     | '/buyer-requirements'
     | '/calendar'
+    | '/cashflow'
     | '/consultations'
     | '/contacts'
     | '/contracts'
     | '/deals'
+    | '/documents'
     | '/employees'
     | '/matches'
     | '/network'
@@ -299,17 +455,30 @@ export interface FileRouteTypes {
     | '/_auth/login'
     | '/_auth/register'
     | '/_authenticated/dashboard'
+    | '/_authenticated/ai-operations/agent'
+    | '/_authenticated/ai-operations/history'
+    | '/_authenticated/ai-operations/proposals'
+    | '/_authenticated/ai-operations/rules'
+    | '/_authenticated/ai-operations/settings'
+    | '/_authenticated/cashflow/calendar'
+    | '/_authenticated/cashflow/expenses'
+    | '/_authenticated/cashflow/payments'
     | '/_authenticated/contacts/$id'
     | '/_authenticated/contacts/new'
+    | '/_authenticated/documents/photos'
     | '/_authenticated/properties/$id'
+    | '/_authenticated/properties/external-listings'
+    | '/_authenticated/properties/naver-my-ads'
     | '/_authenticated/properties/new'
     | '/_authenticated/ai-operations/'
     | '/_authenticated/buyer-requirements/'
     | '/_authenticated/calendar/'
+    | '/_authenticated/cashflow/'
     | '/_authenticated/consultations/'
     | '/_authenticated/contacts/'
     | '/_authenticated/contracts/'
     | '/_authenticated/deals/'
+    | '/_authenticated/documents/'
     | '/_authenticated/employees/'
     | '/_authenticated/matches/'
     | '/_authenticated/network/'
@@ -418,6 +587,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedEmployeesIndexRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/documents/': {
+      id: '/_authenticated/documents/'
+      path: '/documents'
+      fullPath: '/documents/'
+      preLoaderRoute: typeof AuthenticatedDocumentsIndexRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/deals/': {
       id: '/_authenticated/deals/'
       path: '/deals'
@@ -444,6 +620,13 @@ declare module '@tanstack/react-router' {
       path: '/consultations'
       fullPath: '/consultations/'
       preLoaderRoute: typeof AuthenticatedConsultationsIndexRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/cashflow/': {
+      id: '/_authenticated/cashflow/'
+      path: '/cashflow'
+      fullPath: '/cashflow/'
+      preLoaderRoute: typeof AuthenticatedCashflowIndexRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/calendar/': {
@@ -474,11 +657,32 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedPropertiesNewRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/properties/naver-my-ads': {
+      id: '/_authenticated/properties/naver-my-ads'
+      path: '/properties/naver-my-ads'
+      fullPath: '/properties/naver-my-ads'
+      preLoaderRoute: typeof AuthenticatedPropertiesNaverMyAdsRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/properties/external-listings': {
+      id: '/_authenticated/properties/external-listings'
+      path: '/properties/external-listings'
+      fullPath: '/properties/external-listings'
+      preLoaderRoute: typeof AuthenticatedPropertiesExternalListingsRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/properties/$id': {
       id: '/_authenticated/properties/$id'
       path: '/properties/$id'
       fullPath: '/properties/$id'
       preLoaderRoute: typeof AuthenticatedPropertiesIdRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/documents/photos': {
+      id: '/_authenticated/documents/photos'
+      path: '/documents/photos'
+      fullPath: '/documents/photos'
+      preLoaderRoute: typeof AuthenticatedDocumentsPhotosRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/contacts/new': {
@@ -493,6 +697,62 @@ declare module '@tanstack/react-router' {
       path: '/contacts/$id'
       fullPath: '/contacts/$id'
       preLoaderRoute: typeof AuthenticatedContactsIdRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/cashflow/payments': {
+      id: '/_authenticated/cashflow/payments'
+      path: '/cashflow/payments'
+      fullPath: '/cashflow/payments'
+      preLoaderRoute: typeof AuthenticatedCashflowPaymentsRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/cashflow/expenses': {
+      id: '/_authenticated/cashflow/expenses'
+      path: '/cashflow/expenses'
+      fullPath: '/cashflow/expenses'
+      preLoaderRoute: typeof AuthenticatedCashflowExpensesRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/cashflow/calendar': {
+      id: '/_authenticated/cashflow/calendar'
+      path: '/cashflow/calendar'
+      fullPath: '/cashflow/calendar'
+      preLoaderRoute: typeof AuthenticatedCashflowCalendarRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/ai-operations/settings': {
+      id: '/_authenticated/ai-operations/settings'
+      path: '/ai-operations/settings'
+      fullPath: '/ai-operations/settings'
+      preLoaderRoute: typeof AuthenticatedAiOperationsSettingsRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/ai-operations/rules': {
+      id: '/_authenticated/ai-operations/rules'
+      path: '/ai-operations/rules'
+      fullPath: '/ai-operations/rules'
+      preLoaderRoute: typeof AuthenticatedAiOperationsRulesRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/ai-operations/proposals': {
+      id: '/_authenticated/ai-operations/proposals'
+      path: '/ai-operations/proposals'
+      fullPath: '/ai-operations/proposals'
+      preLoaderRoute: typeof AuthenticatedAiOperationsProposalsRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/ai-operations/history': {
+      id: '/_authenticated/ai-operations/history'
+      path: '/ai-operations/history'
+      fullPath: '/ai-operations/history'
+      preLoaderRoute: typeof AuthenticatedAiOperationsHistoryRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/ai-operations/agent': {
+      id: '/_authenticated/ai-operations/agent'
+      path: '/ai-operations/agent'
+      fullPath: '/ai-operations/agent'
+      preLoaderRoute: typeof AuthenticatedAiOperationsAgentRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
   }
@@ -512,17 +772,30 @@ const AuthRouteWithChildren = AuthRoute._addFileChildren(AuthRouteChildren)
 
 interface AuthenticatedRouteChildren {
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
+  AuthenticatedAiOperationsAgentRoute: typeof AuthenticatedAiOperationsAgentRoute
+  AuthenticatedAiOperationsHistoryRoute: typeof AuthenticatedAiOperationsHistoryRoute
+  AuthenticatedAiOperationsProposalsRoute: typeof AuthenticatedAiOperationsProposalsRoute
+  AuthenticatedAiOperationsRulesRoute: typeof AuthenticatedAiOperationsRulesRoute
+  AuthenticatedAiOperationsSettingsRoute: typeof AuthenticatedAiOperationsSettingsRoute
+  AuthenticatedCashflowCalendarRoute: typeof AuthenticatedCashflowCalendarRoute
+  AuthenticatedCashflowExpensesRoute: typeof AuthenticatedCashflowExpensesRoute
+  AuthenticatedCashflowPaymentsRoute: typeof AuthenticatedCashflowPaymentsRoute
   AuthenticatedContactsIdRoute: typeof AuthenticatedContactsIdRoute
   AuthenticatedContactsNewRoute: typeof AuthenticatedContactsNewRoute
+  AuthenticatedDocumentsPhotosRoute: typeof AuthenticatedDocumentsPhotosRoute
   AuthenticatedPropertiesIdRoute: typeof AuthenticatedPropertiesIdRoute
+  AuthenticatedPropertiesExternalListingsRoute: typeof AuthenticatedPropertiesExternalListingsRoute
+  AuthenticatedPropertiesNaverMyAdsRoute: typeof AuthenticatedPropertiesNaverMyAdsRoute
   AuthenticatedPropertiesNewRoute: typeof AuthenticatedPropertiesNewRoute
   AuthenticatedAiOperationsIndexRoute: typeof AuthenticatedAiOperationsIndexRoute
   AuthenticatedBuyerRequirementsIndexRoute: typeof AuthenticatedBuyerRequirementsIndexRoute
   AuthenticatedCalendarIndexRoute: typeof AuthenticatedCalendarIndexRoute
+  AuthenticatedCashflowIndexRoute: typeof AuthenticatedCashflowIndexRoute
   AuthenticatedConsultationsIndexRoute: typeof AuthenticatedConsultationsIndexRoute
   AuthenticatedContactsIndexRoute: typeof AuthenticatedContactsIndexRoute
   AuthenticatedContractsIndexRoute: typeof AuthenticatedContractsIndexRoute
   AuthenticatedDealsIndexRoute: typeof AuthenticatedDealsIndexRoute
+  AuthenticatedDocumentsIndexRoute: typeof AuthenticatedDocumentsIndexRoute
   AuthenticatedEmployeesIndexRoute: typeof AuthenticatedEmployeesIndexRoute
   AuthenticatedMatchesIndexRoute: typeof AuthenticatedMatchesIndexRoute
   AuthenticatedNetworkIndexRoute: typeof AuthenticatedNetworkIndexRoute
@@ -534,18 +807,35 @@ interface AuthenticatedRouteChildren {
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
+  AuthenticatedAiOperationsAgentRoute: AuthenticatedAiOperationsAgentRoute,
+  AuthenticatedAiOperationsHistoryRoute: AuthenticatedAiOperationsHistoryRoute,
+  AuthenticatedAiOperationsProposalsRoute:
+    AuthenticatedAiOperationsProposalsRoute,
+  AuthenticatedAiOperationsRulesRoute: AuthenticatedAiOperationsRulesRoute,
+  AuthenticatedAiOperationsSettingsRoute:
+    AuthenticatedAiOperationsSettingsRoute,
+  AuthenticatedCashflowCalendarRoute: AuthenticatedCashflowCalendarRoute,
+  AuthenticatedCashflowExpensesRoute: AuthenticatedCashflowExpensesRoute,
+  AuthenticatedCashflowPaymentsRoute: AuthenticatedCashflowPaymentsRoute,
   AuthenticatedContactsIdRoute: AuthenticatedContactsIdRoute,
   AuthenticatedContactsNewRoute: AuthenticatedContactsNewRoute,
+  AuthenticatedDocumentsPhotosRoute: AuthenticatedDocumentsPhotosRoute,
   AuthenticatedPropertiesIdRoute: AuthenticatedPropertiesIdRoute,
+  AuthenticatedPropertiesExternalListingsRoute:
+    AuthenticatedPropertiesExternalListingsRoute,
+  AuthenticatedPropertiesNaverMyAdsRoute:
+    AuthenticatedPropertiesNaverMyAdsRoute,
   AuthenticatedPropertiesNewRoute: AuthenticatedPropertiesNewRoute,
   AuthenticatedAiOperationsIndexRoute: AuthenticatedAiOperationsIndexRoute,
   AuthenticatedBuyerRequirementsIndexRoute:
     AuthenticatedBuyerRequirementsIndexRoute,
   AuthenticatedCalendarIndexRoute: AuthenticatedCalendarIndexRoute,
+  AuthenticatedCashflowIndexRoute: AuthenticatedCashflowIndexRoute,
   AuthenticatedConsultationsIndexRoute: AuthenticatedConsultationsIndexRoute,
   AuthenticatedContactsIndexRoute: AuthenticatedContactsIndexRoute,
   AuthenticatedContractsIndexRoute: AuthenticatedContractsIndexRoute,
   AuthenticatedDealsIndexRoute: AuthenticatedDealsIndexRoute,
+  AuthenticatedDocumentsIndexRoute: AuthenticatedDocumentsIndexRoute,
   AuthenticatedEmployeesIndexRoute: AuthenticatedEmployeesIndexRoute,
   AuthenticatedMatchesIndexRoute: AuthenticatedMatchesIndexRoute,
   AuthenticatedNetworkIndexRoute: AuthenticatedNetworkIndexRoute,

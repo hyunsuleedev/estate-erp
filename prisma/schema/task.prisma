@@ -3,30 +3,41 @@
 // ============================================================
 
 model Task {
-  id       String    @id @default(uuid()) @db.Uuid
-  officeId String    @map("office_id") @db.Uuid
-  title    String
-  content  String?
-  source   String    @default("manual") // manual, system, ai
-  isDone   Boolean   @default(false) @map("is_done")
-  dueDate  DateTime? @map("due_date")
+  id        String    @id @default(uuid()) @db.Uuid
+  officeId  String    @map("office_id") @db.Uuid
+  title     String
+  content   String?
+  source    String    @default("manual") // manual, system, ai
+  status    String    @default("pending") // pending, in_progress, completed, cancelled
+  priority  String    @default("medium") // urgent, high, medium, low
+  category  String    @default("other") // property, buyer, match, deal, contract, consultation, viewing, admin, other, advertisement, call, document, verify
+  sortOrder Int       @default(0) @map("sort_order")
+  dueDate   DateTime? @map("due_date")
+
+  // 담당자
+  assignedToId String? @map("assigned_to_id") @db.Uuid
 
   // 관련 컨텍스트 (상담에서 할 일 생성 시 자동 연결)
   contactId      String? @map("contact_id") @db.Uuid
   propertyId     String? @map("property_id") @db.Uuid
+  listingId      String? @map("listing_id") @db.Uuid
   consultationId String? @map("consultation_id") @db.Uuid
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
   office       Office        @relation(fields: [officeId], references: [id])
+  assignedTo   User?         @relation("TaskAssignee", fields: [assignedToId], references: [id])
   contact      Contact?      @relation(fields: [contactId], references: [id])
   property     Property?     @relation(fields: [propertyId], references: [id])
+  listing      Listing?      @relation(fields: [listingId], references: [id])
   consultation Consultation? @relation(fields: [consultationId], references: [id])
 
-  @@index([officeId, isDone, dueDate])
+  @@index([officeId, status, dueDate])
+  @@index([officeId, assignedToId])
   @@index([contactId])
   @@index([propertyId])
+  @@index([listingId])
   @@index([consultationId])
   @@map("tasks")
 }
@@ -49,19 +60,9 @@ model Insight {
   @@map("insights")
 }
 
-model InsightRule {
-  id        String   @id @default(uuid()) @db.Uuid
-  officeId  String   @map("office_id") @db.Uuid
-  type      String // 규칙 유형
-  config    Json // 규칙 설정 JSON
-  isActive  Boolean  @default(true) @map("is_active")
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  office Office @relation(fields: [officeId], references: [id])
-
-  @@map("insight_rules")
-}
+// InsightRule는 prisma/schema/agent.prisma 의 Rule 모델로 대체됐다.
+// 임계값/이벤트 기반 규칙은 Rule 테이블이 담당하고,
+// 체커/룰 엔진 전체 설계는 docs/ai-employee-architecture.md 참조.
 
 // ============================================================
 // 캘린더 이벤트
@@ -81,6 +82,7 @@ model CalendarEvent {
 
   // 관련 엔티티 연결 (선택)
   propertyId String? @map("property_id") @db.Uuid
+  listingId  String? @map("listing_id") @db.Uuid
   contactId  String? @map("contact_id") @db.Uuid
   matchId    String? @map("match_id") @db.Uuid
   dealId     String? @map("deal_id") @db.Uuid
@@ -91,6 +93,7 @@ model CalendarEvent {
   office   Office    @relation(fields: [officeId], references: [id])
   user     User      @relation(fields: [userId], references: [id])
   property Property? @relation(fields: [propertyId], references: [id])
+  listing  Listing?  @relation(fields: [listingId], references: [id])
   contact  Contact?  @relation(fields: [contactId], references: [id])
   match    Match?    @relation(fields: [matchId], references: [id])
   deal     Deal?     @relation(fields: [dealId], references: [id])
@@ -116,7 +119,7 @@ model ActivityLog {
 
   // 뭘 했는지
   action     String // "create", "update", "delete"
-  entityType String @map("entity_type") // "property", "contact", "deal" 등
+  entityType String @map("entity_type") // "property", "listing", "contact", "deal" 등
   entityId   String @map("entity_id") @db.Uuid
 
   // 변경 내용

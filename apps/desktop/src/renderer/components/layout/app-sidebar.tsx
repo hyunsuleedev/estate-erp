@@ -14,6 +14,7 @@ import {
   Users,
   Settings,
   Bot,
+  Wallet,
 } from 'lucide-react'
 import { useAuth } from '@/providers/auth-provider'
 import { NavMain } from '@/components/nav-main'
@@ -40,7 +41,8 @@ const navItems = [
     icon: Building,
     items: [
       { title: '매물 목록', url: '/properties' },
-      { title: '매물 등록', url: '/properties/new' },
+      { title: '광고노트', url: '/properties/external-listings' },
+      { title: '내광고관리', url: '/properties/naver-my-ads' },
     ],
   },
   {
@@ -49,13 +51,23 @@ const navItems = [
     icon: BookUser,
     items: [
       { title: '연락처 목록', url: '/contacts' },
-      { title: '연락처 추가', url: '/contacts/new' },
     ],
   },
   {
     title: '거래관리',
     url: '/deals',
     icon: Handshake,
+  },
+  {
+    title: '수수료/정산',
+    url: '/cashflow',
+    icon: Wallet,
+    items: [
+      { title: '캐시플로우', url: '/cashflow' },
+      { title: '수금 캘린더', url: '/cashflow/calendar' },
+      { title: '수금 관리', url: '/cashflow/payments' },
+      { title: '고정비 설정', url: '/cashflow/expenses' },
+    ],
   },
   {
     title: '매칭',
@@ -88,9 +100,14 @@ const navItems = [
     icon: Map,
   },
   {
-    title: '계약서 관리',
+    title: '자료관리',
     url: '/contracts',
     icon: FileText,
+    items: [
+      { title: '계약서', url: '/contracts' },
+      { title: '공적장부', url: '/documents' },
+      { title: '매물 사진', url: '/documents/photos' },
+    ],
   },
   {
     title: '네트워크',
@@ -101,6 +118,14 @@ const navItems = [
     title: 'AI 운영',
     url: '/ai-operations',
     icon: Bot,
+    items: [
+      { title: '개요', url: '/ai-operations' },
+      { title: '에이전트', url: '/ai-operations/agent' },
+      { title: 'AI 제안', url: '/ai-operations/proposals' },
+      { title: '규칙 관리', url: '/ai-operations/rules' },
+      { title: '실행 이력', url: '/ai-operations/history' },
+      { title: '설정', url: '/ai-operations/settings' },
+    ],
   },
   {
     title: '직원관리',

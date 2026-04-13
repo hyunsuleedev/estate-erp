@@ -293,7 +293,9 @@ function UnitLayoutBoard({
                           }
 
                           const { unit } = positionedUnit;
-                          const hasListing = (unit.properties?.length ?? 0) > 0;
+                          const hasListing = (unit.properties ?? []).some(
+                            (property) => (property.listings?.length ?? 0) > 0,
+                          );
                           const hasConsultation = (unit.properties ?? []).some(
                             (property) => (property.consultations?.length ?? 0) > 0,
                           );
@@ -585,7 +587,7 @@ function SitesPage() {
   });
 
   const addUnitMutation = useMutation({
-    mutationFn: (dto: { siteId: string; dongId?: string; name: string; exclusiveAreaM2?: number }) =>
+    mutationFn: (dto: { siteId: string; dongId: string; name: string; exclusiveAreaM2?: number }) =>
       api.units.create(dto),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['sites', selectedSiteId] });
@@ -726,13 +728,15 @@ function SitesPage() {
         .map((tenant) => tenant.contact.name)[0] ?? '';
 
     const getListingLabel = (unit: Unit) => {
-      const primary = unit.properties?.[0];
-      if (!primary) return '';
+      const primaryListing = (unit.properties ?? [])
+        .flatMap((property) => property.listings ?? [])
+        [0];
+      if (!primaryListing) return '';
       return formatPriceLabel(
-        primary.transactionType,
-        primary.price,
-        primary.deposit,
-        primary.monthlyRent,
+        primaryListing.transactionType,
+        primaryListing.price,
+        primaryListing.deposit,
+        primaryListing.monthlyRent,
       );
     };
 
@@ -871,9 +875,14 @@ function SitesPage() {
 
   const handleAddUnit = () => {
     if (!newUnit.name.trim() || !selectedSiteId) return;
+    // 동이 미선택이면 placeholder Dong(단일 동 건물) 또는 첫 번째 Dong으로 자동 할당
+    const fallbackDongId =
+      dongs.find((d) => d.isPlaceholder)?.id ?? dongs[0]?.id;
+    const dongId = newUnit.dongId || fallbackDongId;
+    if (!dongId) return; // Site에 Dong이 하나도 없으면 생성 불가
     addUnitMutation.mutate({
       siteId: selectedSiteId,
-      dongId: newUnit.dongId || undefined,
+      dongId,
       name: newUnit.name.trim(),
       exclusiveAreaM2: newUnit.area ? Number(newUnit.area) : undefined,
     });
@@ -1012,10 +1021,10 @@ function SitesPage() {
       width: 170,
       sortable: true,
       renderCell: (unit) => {
-        const properties = unit.properties ?? [];
-        if (!properties.length) return <span className="text-[12px] text-muted-foreground">-</span>;
+        const listings = (unit.properties ?? []).flatMap((property) => property.listings ?? []);
+        if (!listings.length) return <span className="text-[12px] text-muted-foreground">-</span>;
 
-        const primary = properties[0];
+        const primary = listings[0];
         return (
           <div className="flex min-w-0 items-center gap-2">
             <Badge variant="outline" className="h-5 px-1.5 text-[10px] font-normal">
@@ -1029,6 +1038,11 @@ function SitesPage() {
                 primary.monthlyRent,
               )}
             </span>
+            {listings.length > 1 && (
+              <Badge variant="secondary" className="h-4 px-1 text-[9px] font-normal">
+                +{listings.length - 1}
+              </Badge>
+            )}
           </div>
         );
       },
@@ -1086,6 +1100,7 @@ function SitesPage() {
   };
 
   const selectedUnitProperties = selectedUnit?.properties ?? [];
+  const selectedUnitListings = selectedUnitProperties.flatMap((property) => property.listings ?? []);
   const selectedUnitOwners = selectedUnitProperties
     .flatMap((property) => property.propertyContacts)
     .filter((propertyContact) => propertyContact.role === 'owner')
@@ -1425,7 +1440,7 @@ function SitesPage() {
                     </DropdownMenuContent>
                   </DropdownMenu>
                   <div className="ml-auto flex items-center gap-2 text-[11px] text-muted-foreground">
-                    <span>{selectedUnitProperties.length}개 매물</span>
+                    <span>{selectedUnitListings.length}개 매물</span>
                     <span>·</span>
                     <span>{selectedUnitConsultations.length}건 상담</span>
                   </div>
@@ -1496,28 +1511,28 @@ function SitesPage() {
                             등록 매물
                           </h3>
                           <Badge variant="secondary" className="text-[10px] font-normal">
-                            {selectedUnitProperties.length}건
+                            {selectedUnitListings.length}건
                           </Badge>
                         </div>
-                        {selectedUnitProperties.length > 0 ? (
+                        {selectedUnitListings.length > 0 ? (
                           <div className="grid gap-3 lg:grid-cols-2">
-                            {selectedUnitProperties.map((property) => (
-                              <div key={property.id} className="rounded-lg border p-4">
+                            {selectedUnitListings.map((listing) => (
+                              <div key={listing.id} className="rounded-lg border p-4">
                                 <div className="mb-2 flex items-center gap-2">
                                   <Badge variant="outline" className="text-[10px] font-normal">
-                                    {transactionTypeLabels[property.transactionType] ?? property.transactionType}
+                                    {transactionTypeLabels[listing.transactionType] ?? listing.transactionType}
                                   </Badge>
                                   <span className="text-sm font-medium">
                                     {formatPriceLabel(
-                                      property.transactionType,
-                                      property.price,
-                                      property.deposit,
-                                      property.monthlyRent,
+                                      listing.transactionType,
+                                      listing.price,
+                                      listing.deposit,
+                                      listing.monthlyRent,
                                     )}
                                   </span>
                                 </div>
                                 <div className="text-xs text-muted-foreground">
-                                  상태: {property.checkStatus}
+                                  상태: {listing.checkStatus}
                                 </div>
                               </div>
                             ))}

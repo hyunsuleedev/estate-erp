@@ -48,23 +48,30 @@ export interface UnitConsultation {
   contact: UnitContact;
 }
 
-export interface UnitProperty {
+export interface UnitListing {
   id: string;
   transactionType: string;
   price: number | null;
   deposit: number | null;
   monthlyRent: number | null;
   checkStatus: string;
+  isHidden: boolean;
+}
+
+export interface UnitProperty {
+  id: string;
+  memo: string | null;
   propertyContacts: UnitPropertyContact[];
   tenants: UnitTenant[];
   consultations: UnitConsultation[];
+  listings: UnitListing[];
 }
 
 export interface Unit {
   id: string;
   officeId: string | null;
   siteId: string;
-  dongId: string | null;
+  dongId: string;
   siteUnitTypeId: string | null;
   name: string;
   floor: number | null;
@@ -80,7 +87,7 @@ export interface Unit {
 
 export interface CreateUnitDto {
   siteId: string;
-  dongId?: string;
+  dongId: string;
   name: string;
   exclusiveAreaM2?: number;
   supplyAreaM2?: number;

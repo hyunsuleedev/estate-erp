@@ -64,7 +64,7 @@ export class BuyerRequirementsService {
       include: {
         contact: true,
         assignedTo: { select: { id: true, name: true } },
-        matches: { include: { property: { include: { site: true } } } },
+        matches: { include: { listing: { include: { property: { include: { site: true } } } } } },
         consultations: { orderBy: { createdAt: 'desc' }, take: 10 },
       },
     });

@@ -17,7 +17,7 @@ import {
   CurrentUserPayload,
 } from '../../common/decorators/current-user.decorator';
 
-@ApiTags('매물')
+@ApiTags('관리 호실')
 @ApiBearerAuth()
 @Controller('properties')
 @UseGuards(JwtAuthGuard)
@@ -26,21 +26,10 @@ export class PropertiesController {
 
   @Get()
   findAll(
-    @Query('transactionType') transactionType: string,
     @Query('siteType') siteType: string,
-    @Query('checkStatus') checkStatus: string,
-    @Query('priceMin') priceMin: string,
-    @Query('priceMax') priceMax: string,
-    @Query('depositMin') depositMin: string,
-    @Query('depositMax') depositMax: string,
-    @Query('monthlyRentMin') monthlyRentMin: string,
-    @Query('monthlyRentMax') monthlyRentMax: string,
-    @Query('areaMin') areaMin: string,
-    @Query('areaMax') areaMax: string,
     @Query('wardCode') wardCode: string,
     @Query('siteId') siteId: string,
     @Query('search') search: string,
-    @Query('includeHidden') includeHidden: string,
     @Query('sortBy') sortBy: string,
     @Query('sortOrder') sortOrder: string,
     @Query('page') page: string,
@@ -48,22 +37,11 @@ export class PropertiesController {
     @CurrentUser() user: CurrentUserPayload,
   ) {
     return this.propertiesService.findAll(user.officeId, {
-      transactionType: transactionType || undefined,
       siteType: siteType || undefined,
-      checkStatus: checkStatus || undefined,
-      priceMin: priceMin ? Number(priceMin) : undefined,
-      priceMax: priceMax ? Number(priceMax) : undefined,
-      depositMin: depositMin ? Number(depositMin) : undefined,
-      depositMax: depositMax ? Number(depositMax) : undefined,
-      monthlyRentMin: monthlyRentMin ? Number(monthlyRentMin) : undefined,
-      monthlyRentMax: monthlyRentMax ? Number(monthlyRentMax) : undefined,
-      areaMin: areaMin ? Number(areaMin) : undefined,
-      areaMax: areaMax ? Number(areaMax) : undefined,
       wardCode: wardCode || undefined,
       siteId: siteId || undefined,
       search: search || undefined,
-      includeHidden: includeHidden === 'true',
-      sortBy: (sortBy as 'price' | 'createdAt' | 'updatedAt') || undefined,
+      sortBy: (sortBy as 'createdAt' | 'updatedAt') || undefined,
       sortOrder: (sortOrder as 'asc' | 'desc') || undefined,
       page: page ? Number(page) : undefined,
       limit: limit ? Number(limit) : undefined,
@@ -78,29 +56,12 @@ export class PropertiesController {
     return this.propertiesService.findOne(id, user.officeId);
   }
 
-  @Patch(':id/check-status')
-  transitionCheckStatus(
-    @Param('id') id: string,
-    @Body() dto: { checkStatus: string },
-    @CurrentUser() user: CurrentUserPayload,
-  ) {
-    return this.propertiesService.transitionCheckStatus(
-      id,
-      user.officeId,
-      dto.checkStatus,
-    );
-  }
-
   @Post()
   create(
     @Body()
     dto: {
       siteId: string;
       unitId?: string | null;
-      transactionType: string;
-      price?: number | null;
-      deposit?: number | null;
-      monthlyRent?: number | null;
       ownerName?: string;
       ownerPhone?: string;
       memo?: string | null;
@@ -117,12 +78,6 @@ export class PropertiesController {
     dto: {
       siteId?: string;
       unitId?: string | null;
-      transactionType?: string;
-      price?: number | null;
-      deposit?: number | null;
-      monthlyRent?: number | null;
-      checkStatus?: string;
-      isHidden?: boolean;
       memo?: string | null;
     },
     @CurrentUser() user: CurrentUserPayload,

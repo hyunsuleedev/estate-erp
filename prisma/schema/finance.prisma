@@ -1,0 +1,85 @@
+// ============================================================
+// 수수료 수금 (CommissionPayment)
+// Deal → CommissionPayment 1:N (보통 2~3건: seller/buyer/partner)
+// ============================================================
+
+model CommissionPayment {
+  id       String @id @default(uuid()) @db.Uuid
+  officeId String @map("office_id") @db.Uuid
+  dealId   String @map("deal_id") @db.Uuid
+
+  /// seller: 매도인이 지급, buyer: 매수인이 지급, partner: 공동중개 상대방
+  side String // seller, buyer, partner
+
+  /// 수수료 지급자 (매도인/매수인/상대 중개사 연락처)
+  payerContactId String? @map("payer_contact_id") @db.Uuid
+
+  /// 확정 금액 (만원) — Deal 생성 시 자동 계산
+  expectedAmount Int @map("expected_amount")
+  /// 실수금액 (만원) — null 이면 미수금, 할인 시 expectedAmount 와 다름
+  actualAmount Int? @map("actual_amount")
+
+  /// 수금 예정일 — 보통 Contract.finalPaymentDate 와 동일
+  dueDate DateTime? @map("due_date")
+  /// 실제 입금일
+  paidAt DateTime? @map("paid_at")
+
+  /// pending → collected | overdue | partial | waived
+  status String @default("pending")
+
+  /// cash | transfer | card
+  method String?
+
+  // 세금계산서 추적
+  /// none → issued → sent
+  taxInvoiceStatus String @default("none") @map("tax_invoice_status")
+  taxInvoiceNo     String? @map("tax_invoice_no")
+  taxInvoiceDate   DateTime? @map("tax_invoice_date")
+
+  note String?
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  office       Office   @relation(fields: [officeId], references: [id])
+  deal         Deal     @relation(fields: [dealId], references: [id])
+  payerContact Contact? @relation("CommissionPayer", fields: [payerContactId], references: [id])
+
+  @@index([officeId, status])
+  @@index([officeId, dueDate])
+  @@index([dealId])
+  @@map("commission_payments")
+}
+
+// ============================================================
+// 사무소 고정비 템플릿 (OfficeExpenseTemplate)
+// 한번 등록 → 매월 자동 반영 (대시보드 집계용)
+// ============================================================
+
+model OfficeExpenseTemplate {
+  id       String @id @default(uuid()) @db.Uuid
+  officeId String @map("office_id") @db.Uuid
+
+  title    String // "네이버 부동산 광고", "사무실 임대료"
+  /// rent | ad | telecom | insurance | association | supplies | vehicle | other
+  category String
+  /// 금액 (만원)
+  amount   Int
+  /// monthly | quarterly | yearly
+  frequency  String @default("monthly")
+  /// 매월 결제일 (1~31)
+  dayOfMonth Int? @map("day_of_month")
+  /// 세금 공제 가능 여부 (부가세 매입세액 공제)
+  taxDeductible Boolean @default(false) @map("tax_deductible")
+
+  isActive Boolean @default(true) @map("is_active")
+  note     String?
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  office Office @relation(fields: [officeId], references: [id])
+
+  @@index([officeId, isActive])
+  @@map("office_expense_templates")
+}

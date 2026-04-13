@@ -1,0 +1,183 @@
+// ============================================================
+// 외부 시장 매물 레이어 (ExternalListing)
+// ============================================================
+//
+// 네이버 등 외부 플랫폼의 매물 데이터를 사무소별로 수집·저장하는 영역.
+// 서버는 직접 크롤링하지 않고 사무소의 로컬 크롤러·MCP·수동 입력만 수신한다.
+// 법적 책임은 입력 주체(사무소) 측에 있으며, Estate ERP는 입력 API만 제공.
+//
+// 매칭 모델 — electron-estate 방식:
+//   - ExternalListingGroup = 호실 단위의 경쟁 매물 묶음 (= HouseProperty 대응)
+//   - ExternalListing      = 개별 매물 1건 (= Offer 대응, articleNo 고유)
+//   - 같은 articleNo 재등장 또는 네이버 sameAddr 그룹 내 다른 articleNo가
+//     DB에 있으면 기존 그룹에 자동 합류 → memo·unitId·inferredHo 승계.
+//   - 호수 자동 추정은 Phase 1에서 하지 않음. unitId 매칭은 사용자가 UI에서
+//     수동으로 Unit에 링크하는 방식(느슨한 연결).
+//   - ActivityLog 추적 대상 아님. 크롤러 upsert가 감사 로그를 오염시키지 않도록
+//     분리.
+
+/// 호실 단위 외부 매물 그룹. 네이버 sameAddr 그룹 + 사용자가 확인한 호수·메모를
+/// 기억하는 중간 레이어. 그룹에 속한 모든 ExternalListing이 사라져도 그룹 자체는
+/// 유지되며, 사용자가 확정한 unitId·memo는 크롤러가 덮어쓸 수 없다.
+model ExternalListingGroup {
+  id       String @id @default(uuid()) @db.Uuid
+  officeId String @map("office_id") @db.Uuid
+
+  // 매칭 대상 (느슨한 연결)
+  siteId String  @map("site_id") @db.Uuid // 단지는 거의 항상 식별 가능
+  unitId String? @map("unit_id") @db.Uuid // null = 호수 미매칭, 값 = 사용자가 수동 링크
+
+  // 네이버 원본 힌트 (호수 매칭 실패 시 사용자가 보고 판단)
+  buildingName    String?  @map("building_name") // "101동" 등 네이버 원문
+  inferredHo      String?  @map("inferred_ho") // 사용자가 기록한 추정 호수 ("1503호" 등)
+  areaName        String?  @map("area_name") // "84A" 평형명
+  exclusiveAreaM2 Decimal? @map("exclusive_area_m2") @db.Decimal
+  transactionType String   @map("transaction_type") // sale / jeonse / monthly
+
+  // 사용자 메모 — 크롤러가 절대 덮어쓰지 않음
+  memo   String?
+  status String  @default("unmatched") // unmatched / matched / verified / on_hold
+
+  // 대표 매물 (electron-estate의 HouseProperty.mainOfferId 대응)
+  mainExternalListingId String? @unique @map("main_external_listing_id") @db.Uuid
+
+  firstSeenAt DateTime @default(now()) @map("first_seen_at")
+  lastSeenAt  DateTime @default(now()) @map("last_seen_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  office              Office            @relation(fields: [officeId], references: [id])
+  site                Site              @relation(fields: [siteId], references: [id])
+  unit                Unit?             @relation(fields: [unitId], references: [id])
+  mainExternalListing ExternalListing?  @relation("GroupMainListing", fields: [mainExternalListingId], references: [id])
+  listings            ExternalListing[] @relation("GroupListings")
+
+  @@index([officeId, siteId])
+  @@index([officeId, unitId])
+  @@index([officeId, status])
+  @@index([officeId, lastSeenAt])
+  @@map("external_listing_groups")
+}
+
+/// 개별 외부 매물 1건. 네이버 articleNo 기준으로 고유. 같은 사무소가
+/// 같은 플랫폼의 같은 매물을 중복 등록하지 못한다. 사용자 확정 필드는 Group에 저장되고,
+/// 이 테이블은 크롤러 갱신 대상(가격, 순위, 노출 등) 위주.
+model ExternalListing {
+  id       String @id @default(uuid()) @db.Uuid
+  officeId String @map("office_id") @db.Uuid
+  groupId  String @map("group_id") @db.Uuid
+
+  // 원본 식별
+  source         String  @default("naver") // naver / kb / manual 등
+  articleNo      String  @map("article_no") // 네이버 매물번호
+  sourceUrl      String? @map("source_url")
+  cpName         String? @map("cp_name") // 네이버/직방/부동산114 등
+  cpid           String? @map("cpid")
+  cpPcArticleUrl String? @map("cp_pc_article_url")
+
+  // 네이버 sameAddr 그룹 메타 (매칭 로직에 사용)
+  representativeArticleNo String? @map("representative_article_no")
+  sameAddrCnt             Int?    @map("same_addr_cnt")
+  sameAddrDirectCnt       Int?    @map("same_addr_direct_cnt")
+  sameAddrMaxPrc          String? @map("same_addr_max_prc")
+  sameAddrMinPrc          String? @map("same_addr_min_prc")
+
+  // 거래 조건 (만원 단위)
+  transactionType String @map("transaction_type") // sale / jeonse / monthly
+  price           Int?
+  deposit         Int?
+  monthlyRent     Int?   @map("monthly_rent")
+
+  // 물건 정보 (네이버 원본)
+  articleName        String?  @map("article_name")
+  articleFeatureDesc String?  @map("article_feature_desc") @db.Text
+  detailDescription  String?  @map("detail_description") @db.Text
+  articleConfirmYmd  String?  @map("article_confirm_ymd") // 네이버 매물 확인일
+  floorInfo          String?  @map("floor_info") // "저/중/고/23" 마스킹 원본
+  exclusiveAreaM2    Decimal? @map("exclusive_area_m2") @db.Decimal
+  supplyAreaM2       Decimal? @map("supply_area_m2") @db.Decimal
+  direction          String?
+  tagList            Json?    @map("tag_list") @db.JsonB
+
+  // 소유주 확인
+  verificationTypeCode String? @map("verification_type_code") // OWNER / NDOC1 / ...
+
+  // 등록 중개사
+  realtorId           String? @map("realtor_id")
+  realtorName         String? @map("realtor_name")
+  originalRealtorName String? @map("original_realtor_name")
+  representativeTelNo String? @map("representative_tel_no")
+  cellPhoneNo         String? @map("cell_phone_no")
+
+  // 광고 운영 지표 (광고노트의 본질)
+  ranking        Int?
+  isSharedRank   Boolean @default(false) @map("is_shared_rank")
+  sharedRank     Int?    @map("shared_rank")
+  sameRankNum    Int?    @map("same_rank_num")
+  seango         Boolean @default(false) // 선광고 (유료 상단 노출)
+  epju           Boolean @default(false) // e편주 (유료 광고 상품)
+  exposeStartYmd Int?    @map("expose_start_ymd")
+  exposeEndYmd   Int?    @map("expose_end_ymd")
+
+  // 가격 변동 상태
+  priceChangeState    String? @map("price_change_state")
+  isPriceModification Boolean @default(false) @map("is_price_modification")
+
+  // 원본 보존
+  raw Json? @db.JsonB
+
+  // 관측 메타
+  firstSeenAt DateTime @default(now()) @map("first_seen_at")
+  lastSeenAt  DateTime @default(now()) @map("last_seen_at")
+  isActive    Boolean  @default(true) @map("is_active")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  office      Office                @relation(fields: [officeId], references: [id])
+  group       ExternalListingGroup  @relation("GroupListings", fields: [groupId], references: [id], onDelete: Cascade)
+  mainOfGroup ExternalListingGroup? @relation("GroupMainListing")
+
+  @@unique([officeId, source, articleNo])
+  @@index([officeId, groupId])
+  @@index([officeId, lastSeenAt])
+  @@index([officeId, isActive])
+  @@index([officeId, ranking])
+  @@map("external_listings")
+}
+
+/// 외부 매물 스냅샷 세션. "이번 수집분"과 "이전 수집분"을 구분하기 위한 lightweight
+/// 락. 사용자가 "수동 입력 → 새 스냅샷" 또는 크롤러 스크립트가 세션을 열고, 해당
+/// (office, site, transactionType) 스코프에 대한 batchUpsert들을 마친 뒤 완료를
+/// 호출하면, 세션 시작 이후 한 번도 touch되지 않은 external_listings 행이
+/// is_active=false로 소프트 삭제된다. Group 행은 절대 삭제하지 않는다 (사용자가
+/// 확정한 unitId·memo·inferredHo 보존).
+///
+/// 동시성: 같은 스코프에 active 세션이 하나만 존재할 수 있도록 부분 유니크 인덱스로
+/// 강제한다 (migration SQL에서 직접 추가 — Prisma는 부분 인덱스를 표현 못 함).
+/// 자동 만료 없음. 명시적 complete/cancel만.
+model ExternalListingSnapshotSession {
+  id              String @id @default(uuid()) @db.Uuid
+  officeId        String @map("office_id") @db.Uuid
+  siteId          String @map("site_id") @db.Uuid
+  transactionType String @map("transaction_type") // sale / jeonse / monthly
+
+  status              String    @default("active") // active / completed / cancelled
+  startedAt           DateTime  @default(now()) @map("started_at")
+  startedById         String    @map("started_by_id") @db.Uuid
+  completedAt         DateTime? @map("completed_at")
+  completedById       String?   @map("completed_by_id") @db.Uuid
+  staleListingsMarked Int?      @map("stale_listings_marked")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  office      Office @relation(fields: [officeId], references: [id])
+  site        Site   @relation(fields: [siteId], references: [id])
+  startedBy   User   @relation("SnapshotSessionStartedBy", fields: [startedById], references: [id])
+  completedBy User?  @relation("SnapshotSessionCompletedBy", fields: [completedById], references: [id])
+
+  @@index([officeId, siteId, transactionType, status])
+  @@index([officeId, startedAt])
+  @@map("external_listing_snapshot_sessions")
+}

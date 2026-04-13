@@ -5,6 +5,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 export interface ConsultationSearchQuery {
   contactId?: string;
   propertyId?: string;
+  listingId?: string;
   matchId?: string;
   buyerReqId?: string;
   type?: string;
@@ -22,7 +23,8 @@ export class ConsultationsService {
 
   private readonly defaultInclude = {
     contact: { select: { id: true, name: true, phone: true } },
-    property: { select: { id: true, transactionType: true, price: true, site: { select: { name: true } } } },
+    property: { select: { id: true, memo: true, site: { select: { name: true } } } },
+    listing: { select: { id: true, transactionType: true, price: true, checkStatus: true } },
     match: { select: { id: true, stage: true } },
     buyerRequirement: { select: { id: true, status: true, transactionType: true } },
     createdBy: { select: { id: true, name: true } },
@@ -33,6 +35,7 @@ export class ConsultationsService {
 
     if (query.contactId) where.contactId = query.contactId;
     if (query.propertyId) where.propertyId = query.propertyId;
+    if (query.listingId) where.listingId = query.listingId;
     if (query.matchId) where.matchId = query.matchId;
     if (query.buyerReqId) where.buyerReqId = query.buyerReqId;
     if (query.type) where.type = query.type;
@@ -83,17 +86,19 @@ export class ConsultationsService {
       type: string;
       content: string;
       propertyId?: string;
+      listingId?: string;
       matchId?: string;
       buyerReqId?: string;
     },
   ) {
-    const { propertyId, matchId, buyerReqId, ...rest } = dto;
+    const { propertyId, listingId, matchId, buyerReqId, ...rest } = dto;
     return this.prisma.consultation.create({
       data: {
         officeId,
         createdById: userId,
         ...rest,
         propertyId: propertyId || undefined,
+        listingId: listingId || undefined,
         matchId: matchId || undefined,
         buyerReqId: buyerReqId || undefined,
       },

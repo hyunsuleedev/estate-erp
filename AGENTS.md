@@ -61,10 +61,11 @@ prisma/
 - User.role: owner / manager / agent
 - NestJS @Roles 데코레이터 + Guard 패턴 RBAC
 
-### Site → Unit 체인
-- Site → Dong → Unit → Property (아파트/오피스텔 풀 체인)
-- Site → Unit → Property (빌라, dong 생략)
-- Site → Property (단독주택/토지, unit/dong 없음)
+### Site → Dong → Unit 체인
+- Site → Dong → Unit → Property (모든 건물형: 아파트/오피스텔/빌라/상가/지식산업센터)
+- Site → Property (단독주택/토지)
+- 단일 동 건물은 `isPlaceholder=true`인 Dong 하나 자동 생성 (체인 통일)
+- Unit.dongId는 NOT NULL
 - SiteUnitType: 평형 카탈로그 (84A, 59B 등), 네이버 pyeongList 1:1 대응
 - Unit.floor + Unit.lineNo → 동별 호실 그리드 (네이버 스타일)
 

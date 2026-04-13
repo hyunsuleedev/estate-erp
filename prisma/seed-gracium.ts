@@ -210,7 +210,7 @@ async function main() {
   let unitBatch: Array<{
     officeId: string | null;
     siteId: string;
-    dongId: string | null;
+    dongId: string;
     siteUnitTypeId: string | null;
     name: string;
     floor: number | null;

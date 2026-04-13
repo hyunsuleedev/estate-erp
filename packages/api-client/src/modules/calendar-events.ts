@@ -12,11 +12,27 @@ export interface CalendarEvent {
   end: string | null;
   color: string | null;
   propertyId: string | null;
+  listingId: string | null;
   contactId: string | null;
   matchId: string | null;
   dealId: string | null;
   createdAt: string;
   updatedAt: string;
+  user?: { id: string; name: string } | null;
+  contact?: { id: string; name: string; phone: string | null } | null;
+  property?: {
+    id: string;
+    memo: string | null;
+    site?: { name: string | null } | null;
+  } | null;
+  listing?: {
+    id: string;
+    transactionType: string;
+    price: number | null;
+    checkStatus: string;
+  } | null;
+  match?: { id: string; stage: string } | null;
+  deal?: { id: string; stage: string } | null;
 }
 
 export interface CalendarEventsFilter {
@@ -35,6 +51,7 @@ export interface CreateCalendarEventDto {
   end?: string;
   color?: string;
   propertyId?: string;
+  listingId?: string;
   contactId?: string;
   matchId?: string;
   dealId?: string;
@@ -49,6 +66,7 @@ export interface UpdateCalendarEventDto {
   end?: string;
   color?: string;
   propertyId?: string | null;
+  listingId?: string | null;
   contactId?: string | null;
   matchId?: string | null;
   dealId?: string | null;

@@ -3,61 +3,32 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { CheckStatus, SiteType, TransactionType } from '@estate-erp/shared';
+import { SiteType } from '@estate-erp/shared';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 
-const VALID_TRANSACTION_TYPES: ReadonlySet<string> = new Set(
-  Object.values(TransactionType),
-);
-const VALID_CHECK_STATUSES: ReadonlySet<string> = new Set(
-  Object.values(CheckStatus),
-);
 const VALID_SITE_TYPES: ReadonlySet<string> = new Set(Object.values(SiteType));
-const UNIT_REQUIRED_SITE_TYPES: ReadonlySet<string> = new Set([
-  SiteType.APARTMENT,
-  SiteType.OFFICETEL,
-]);
+// 토지/단독은 Unit 자체가 없음 → property는 siteId만으로 식별
 const UNIT_FORBIDDEN_SITE_TYPES: ReadonlySet<string> = new Set([
   SiteType.HOUSE,
   SiteType.LAND,
 ]);
+// 나머지(아파트/오피스텔/빌라/상가/숙박시설 등)는 모두 Unit 필수
+const UNIT_REQUIRED_SITE_TYPES: ReadonlySet<string> = new Set(
+  Object.values(SiteType).filter((t) => !UNIT_FORBIDDEN_SITE_TYPES.has(t)),
+);
 const VALID_SORT_FIELDS: ReadonlySet<string> = new Set([
-  'price',
   'createdAt',
   'updatedAt',
 ]);
 const VALID_SORT_ORDERS: ReadonlySet<string> = new Set(['asc', 'desc']);
 
-const CHECK_STATUS_TRANSITIONS: Record<string, string[]> = {
-  [CheckStatus.UNVERIFIED]: [CheckStatus.VERIFIED, CheckStatus.HOLD],
-  [CheckStatus.VERIFIED]: [CheckStatus.IN_CONTRACT, CheckStatus.HOLD],
-  [CheckStatus.IN_CONTRACT]: [CheckStatus.HOLD, CheckStatus.DONE],
-  [CheckStatus.HOLD]: [
-    CheckStatus.VERIFIED,
-    CheckStatus.IN_CONTRACT,
-    CheckStatus.DONE,
-  ],
-  [CheckStatus.DONE]: [],
-};
-
 export interface PropertySearchQuery {
-  transactionType?: string;
   siteType?: string;
-  checkStatus?: string;
-  priceMin?: number;
-  priceMax?: number;
-  depositMin?: number;
-  depositMax?: number;
-  monthlyRentMin?: number;
-  monthlyRentMax?: number;
-  areaMin?: number;
-  areaMax?: number;
   wardCode?: string;
   siteId?: string;
   search?: string;
-  includeHidden?: boolean;
-  sortBy?: 'price' | 'createdAt' | 'updatedAt';
+  sortBy?: 'createdAt' | 'updatedAt';
   sortOrder?: 'asc' | 'desc';
   page?: number;
   limit?: number;
@@ -66,10 +37,6 @@ export interface PropertySearchQuery {
 interface PropertyCreateDto {
   siteId: string;
   unitId?: string | null;
-  transactionType: string;
-  price?: number | null;
-  deposit?: number | null;
-  monthlyRent?: number | null;
   memo?: string | null;
   ownerName?: string;
   ownerPhone?: string;
@@ -78,12 +45,6 @@ interface PropertyCreateDto {
 interface PropertyUpdateDto {
   siteId?: string;
   unitId?: string | null;
-  transactionType?: string;
-  price?: number | null;
-  deposit?: number | null;
-  monthlyRent?: number | null;
-  checkStatus?: string;
-  isHidden?: boolean;
   memo?: string | null;
 }
 
@@ -92,65 +53,11 @@ export class PropertiesService {
   constructor(private readonly prisma: PrismaService) {}
 
   async findAll(officeId: string, query: PropertySearchQuery = {}) {
-    if (query.transactionType) {
-      this.assertValidTransactionType(query.transactionType);
-    }
-
-    if (query.checkStatus) {
-      this.assertValidCheckStatus(query.checkStatus);
-    }
-
     if (query.siteType) {
       this.assertValidSiteType(query.siteType);
     }
 
     const filters: Prisma.PropertyWhereInput[] = [{ officeId }];
-
-    if (!query.includeHidden) {
-      filters.push({ isHidden: false });
-    }
-
-    if (query.transactionType) {
-      filters.push({ transactionType: query.transactionType });
-    }
-
-    if (query.checkStatus) {
-      filters.push({ checkStatus: query.checkStatus });
-    }
-
-    if (query.priceMin !== undefined || query.priceMax !== undefined) {
-      filters.push({
-        price: {
-          ...(query.priceMin !== undefined && { gte: query.priceMin }),
-          ...(query.priceMax !== undefined && { lte: query.priceMax }),
-        },
-      });
-    }
-
-    if (query.depositMin !== undefined || query.depositMax !== undefined) {
-      filters.push({
-        deposit: {
-          ...(query.depositMin !== undefined && { gte: query.depositMin }),
-          ...(query.depositMax !== undefined && { lte: query.depositMax }),
-        },
-      });
-    }
-
-    if (
-      query.monthlyRentMin !== undefined ||
-      query.monthlyRentMax !== undefined
-    ) {
-      filters.push({
-        monthlyRent: {
-          ...(query.monthlyRentMin !== undefined && {
-            gte: query.monthlyRentMin,
-          }),
-          ...(query.monthlyRentMax !== undefined && {
-            lte: query.monthlyRentMax,
-          }),
-        },
-      });
-    }
 
     if (query.siteId) {
       filters.push({ siteId: query.siteId });
@@ -162,20 +69,6 @@ export class PropertiesService {
           ...(query.siteType && { type: query.siteType }),
           ...(query.wardCode && { wardCode: query.wardCode }),
         },
-      });
-    }
-
-    if (query.areaMin !== undefined || query.areaMax !== undefined) {
-      const areaFilter = {
-        ...(query.areaMin !== undefined && { gte: query.areaMin }),
-        ...(query.areaMax !== undefined && { lte: query.areaMax }),
-      };
-
-      filters.push({
-        OR: [
-          { unit: { exclusiveAreaM2: areaFilter } },
-          { unit: { siteUnitType: { exclusiveAreaM2: areaFilter } } },
-        ],
       });
     }
 
@@ -255,9 +148,8 @@ export class PropertiesService {
             },
           },
           propertyContacts: { include: { contact: true } },
-          priceHistories: {
+          listings: {
             orderBy: { createdAt: 'desc' },
-            take: 5,
           },
         },
         orderBy: { [sortBy]: sortOrder },
@@ -306,14 +198,11 @@ export class PropertiesService {
           include: { contact: true },
           orderBy: { createdAt: 'desc' },
         },
-        matches: true,
-        deals: true,
-        consultations: {
-          include: { contact: true },
+        listings: {
           orderBy: { createdAt: 'desc' },
         },
-        priceHistories: {
-          include: { user: true },
+        consultations: {
+          include: { contact: true },
           orderBy: { createdAt: 'desc' },
         },
       },
@@ -327,8 +216,6 @@ export class PropertiesService {
   }
 
   async create(officeId: string, dto: PropertyCreateDto) {
-    this.assertValidTransactionType(dto.transactionType);
-
     const site = await this.findAccessibleSite(dto.siteId, officeId);
     const unit = await this.resolveUnit(site.id, officeId, dto.unitId ?? null);
 
@@ -341,9 +228,9 @@ export class PropertiesService {
         const property = await tx.property.create({
           data: {
             officeId,
-            ...propertyData,
             siteId: site.id,
             unitId: unit?.id ?? null,
+            memo: propertyData.memo,
           },
         });
 
@@ -392,9 +279,9 @@ export class PropertiesService {
     return this.prisma.property.create({
       data: {
         officeId,
-        ...propertyData,
         siteId: site.id,
         unitId: unit?.id ?? null,
+        memo: propertyData.memo,
       },
       include: {
         site: true,
@@ -421,18 +308,6 @@ export class PropertiesService {
       throw new NotFoundException('Property not found');
     }
 
-    const nextTransactionType =
-      dto.transactionType ?? existingProperty.transactionType;
-    this.assertValidTransactionType(nextTransactionType);
-
-    if (dto.checkStatus) {
-      this.assertValidCheckStatus(dto.checkStatus);
-      this.assertCheckStatusTransition(
-        existingProperty.checkStatus,
-        dto.checkStatus,
-      );
-    }
-
     const nextSite = dto.siteId
       ? await this.findAccessibleSite(dto.siteId, officeId)
       : existingProperty.site;
@@ -445,10 +320,9 @@ export class PropertiesService {
     return this.prisma.property.update({
       where: { id },
       data: {
-        ...dto,
-        transactionType: nextTransactionType,
         siteId: nextSite.id,
         unitId: nextUnit?.id ?? null,
+        memo: dto.memo,
       },
       include: {
         site: true,
@@ -460,10 +334,6 @@ export class PropertiesService {
         },
       },
     });
-  }
-
-  async transitionCheckStatus(id: string, officeId: string, checkStatus: string) {
-    return this.update(id, officeId, { checkStatus });
   }
 
   async remove(id: string, officeId: string) {
@@ -480,57 +350,25 @@ export class PropertiesService {
     return VALID_SORT_ORDERS.has(sortOrder || '') ? (sortOrder as 'asc' | 'desc') : 'desc';
   }
 
-  private assertValidTransactionType(transactionType: string) {
-    if (!VALID_TRANSACTION_TYPES.has(transactionType as TransactionType)) {
-      throw new BadRequestException('Invalid transactionType');
-    }
-  }
-
-  private assertValidCheckStatus(checkStatus: string) {
-    if (!VALID_CHECK_STATUSES.has(checkStatus as CheckStatus)) {
-      throw new BadRequestException('Invalid checkStatus');
-    }
-  }
-
   private assertValidSiteType(siteType: string) {
     if (!VALID_SITE_TYPES.has(siteType as SiteType)) {
       throw new BadRequestException('Invalid siteType');
     }
   }
 
-  private assertCheckStatusTransition(current: string, next: string) {
-    if (current === next) {
-      return;
-    }
-
-    const allowedTransitions = CHECK_STATUS_TRANSITIONS[current] ?? [];
-
-    if (!allowedTransitions.includes(next)) {
-      throw new BadRequestException(
-        `Invalid checkStatus transition: ${current} -> ${next}`,
-      );
-    }
-  }
-
   private assertValidSiteUnitChain(
     siteType: string,
-    unit: { id: string; dongId: string | null } | null,
+    unit: { id: string } | null,
   ) {
     if (UNIT_REQUIRED_SITE_TYPES.has(siteType) && !unit) {
       throw new BadRequestException(
-        'unitId is required for apartment/officetel properties',
+        'unitId is required for building-type properties',
       );
     }
 
     if (UNIT_FORBIDDEN_SITE_TYPES.has(siteType) && unit) {
       throw new BadRequestException(
         'unitId is not allowed for house/land properties',
-      );
-    }
-
-    if (UNIT_REQUIRED_SITE_TYPES.has(siteType) && unit && !unit.dongId) {
-      throw new BadRequestException(
-        'Apartment/officetel units must belong to a dong',
       );
     }
   }
@@ -570,7 +408,6 @@ export class PropertiesService {
       },
       select: {
         id: true,
-        dongId: true,
       },
     });
 

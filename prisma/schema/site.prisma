@@ -59,6 +59,10 @@ model Site {
   units         Unit[]
   properties    Property[]
 
+  publicDocuments                 PublicDocument[]
+  externalListingGroups           ExternalListingGroup[]
+  externalListingSnapshotSessions ExternalListingSnapshotSession[]
+
   @@index([officeId])
   @@index([wardCode])
   @@index([type])
@@ -137,26 +141,32 @@ model SiteUnitType {
   @@map("site_unit_types")
 }
 
+/// 동(棟). 단일 동 건물도 placeholder Dong 하나를 생성해 체인을 통일한다
+/// (isPlaceholder = true). Site → Dong → Unit → Property는 토지/단독을
+/// 제외한 모든 건물형 자산에서 항상 성립.
 model Dong {
-  id        String   @id @default(uuid()) @db.Uuid
-  officeId  String?  @map("office_id") @db.Uuid // null = 중앙 데이터
-  siteId    String   @map("site_id") @db.Uuid
-  name      String // 동 이름 (101동)
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  id            String   @id @default(uuid()) @db.Uuid
+  officeId      String?  @map("office_id") @db.Uuid // null = 중앙 데이터
+  siteId        String   @map("site_id") @db.Uuid
+  name          String // 동 이름 (101동, A동, 단일 동 건물은 "-" 등)
+  isPlaceholder Boolean  @default(false) @map("is_placeholder") // true = 실제 동 구분 없음, UI에서 숨김
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
 
   office Office? @relation(fields: [officeId], references: [id])
   site   Site    @relation(fields: [siteId], references: [id])
   units  Unit[]
 
+  @@index([siteId])
   @@map("dongs")
 }
 
+/// 호실. 모든 건물형 자산은 반드시 Dong에 속한다 (단일 동 건물도 placeholder Dong 사용).
 model Unit {
   id             String  @id @default(uuid()) @db.Uuid
   officeId       String? @map("office_id") @db.Uuid // null = 중앙 데이터
   siteId         String  @map("site_id") @db.Uuid
-  dongId         String? @map("dong_id") @db.Uuid
+  dongId         String  @map("dong_id") @db.Uuid // NOT NULL — 단일 동은 placeholder Dong
   siteUnitTypeId String? @map("site_unit_type_id") @db.Uuid // FK → SiteUnitType (평형 타입)
 
   name   String // 호수 (3501호)
@@ -174,9 +184,11 @@ model Unit {
 
   office       Office?       @relation(fields: [officeId], references: [id])
   site         Site          @relation(fields: [siteId], references: [id])
-  dong         Dong?         @relation(fields: [dongId], references: [id])
+  dong         Dong          @relation(fields: [dongId], references: [id])
   siteUnitType SiteUnitType? @relation(fields: [siteUnitTypeId], references: [id])
   properties   Property[]
+
+  externalListingGroups ExternalListingGroup[]
 
   @@index([siteId, dongId, floor])
   @@map("units")

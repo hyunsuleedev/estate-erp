@@ -36,6 +36,7 @@ export class ConsultationsController {
   findAll(
     @Query('contactId') contactId: string,
     @Query('propertyId') propertyId: string,
+    @Query('listingId') listingId: string,
     @Query('matchId') matchId: string,
     @Query('buyerReqId') buyerReqId: string,
     @Query('type') type: string,
@@ -50,6 +51,7 @@ export class ConsultationsController {
     return this.service.findAll(user.officeId, {
       contactId: contactId || undefined,
       propertyId: propertyId || undefined,
+      listingId: listingId || undefined,
       matchId: matchId || undefined,
       buyerReqId: buyerReqId || undefined,
       type: type || undefined,
@@ -78,6 +80,7 @@ export class ConsultationsController {
       type: string;
       content: string;
       propertyId?: string;
+      listingId?: string;
       matchId?: string;
       buyerReqId?: string;
     },

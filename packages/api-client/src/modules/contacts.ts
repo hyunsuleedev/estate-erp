@@ -1,5 +1,15 @@
 import type { RequestFn } from '../client.js';
 import type { PaginatedResponse } from '../types.js';
+import type { BuyerRequirement } from './buyer-requirements.js';
+import type { Consultation } from './consultations.js';
+import type { ContactRelation } from './contact-relations.js';
+import type { PropertyContact } from './property-contacts.js';
+
+export interface ContactCounts {
+  propertyContacts: number;
+  buyerRequirements: number;
+  consultations: number;
+}
 
 export interface Contact {
   id: string;
@@ -12,6 +22,15 @@ export interface Contact {
   memo: string | null;
   createdAt: string;
   updatedAt: string;
+  _count?: ContactCounts;
+}
+
+export interface ContactDetail extends Contact {
+  propertyContacts: PropertyContact[];
+  buyerRequirements: BuyerRequirement[];
+  consultations: Consultation[];
+  relationsAsMain: ContactRelation[];
+  relationsAsRelated: ContactRelation[];
 }
 
 export interface ContactsFilter {
@@ -51,19 +70,19 @@ export function createContactsApi(request: RequestFn) {
       }),
 
     findByPhone: (phone: string) =>
-      request<Contact | null>('/contacts/search-by-phone', { params: { phone } }),
+      request<Contact[]>('/contacts/search-by-phone', { params: { phone } }),
 
     findOne: (id: string) =>
-      request<Contact>(`/contacts/${id}`),
+      request<ContactDetail>(`/contacts/${id}`),
 
     getPropertyContacts: (id: string) =>
-      request<unknown[]>(`/contacts/${id}/property-contacts`),
+      request<PropertyContact[]>(`/contacts/${id}/property-contacts`),
 
     getBuyerRequirements: (id: string) =>
-      request<unknown[]>(`/contacts/${id}/buyer-requirements`),
+      request<BuyerRequirement[]>(`/contacts/${id}/buyer-requirements`),
 
     getConsultations: (id: string) =>
-      request<unknown[]>(`/contacts/${id}/consultations`),
+      request<Consultation[]>(`/contacts/${id}/consultations`),
 
     create: (dto: CreateContactDto) =>
       request<Contact>('/contacts', { method: 'POST', body: dto }),

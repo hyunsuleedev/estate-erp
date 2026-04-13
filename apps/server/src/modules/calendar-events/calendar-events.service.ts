@@ -3,7 +3,8 @@ import { PrismaService } from '../../prisma/prisma.service';
 
 const defaultInclude = {
   user: { select: { id: true, name: true } },
-  property: { select: { id: true, memo: true, transactionType: true, site: { select: { name: true } } } },
+  property: { select: { id: true, memo: true, site: { select: { name: true } } } },
+  listing: { select: { id: true, transactionType: true, price: true, checkStatus: true } },
   contact: { select: { id: true, name: true, phone: true } },
   match: { select: { id: true, stage: true } },
   deal: { select: { id: true, stage: true } },
@@ -66,6 +67,7 @@ export class CalendarEventsService {
       end?: string;
       color?: string;
       propertyId?: string;
+      listingId?: string;
       contactId?: string;
       matchId?: string;
       dealId?: string;
@@ -83,6 +85,7 @@ export class CalendarEventsService {
         end: dto.end ? new Date(dto.end) : undefined,
         color: dto.color,
         propertyId: dto.propertyId,
+        listingId: dto.listingId,
         contactId: dto.contactId,
         matchId: dto.matchId,
         dealId: dto.dealId,
@@ -106,6 +109,7 @@ export class CalendarEventsService {
       end?: string;
       color?: string;
       propertyId?: string | null;
+      listingId?: string | null;
       contactId?: string | null;
       matchId?: string | null;
       dealId?: string | null;

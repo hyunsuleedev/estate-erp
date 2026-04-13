@@ -38,18 +38,24 @@ function NewPropertyPage() {
   });
 
   const mutation = useMutation({
-    mutationFn: () =>
-      api.properties.create({
+    mutationFn: async () => {
+      const property = await api.properties.create({
         siteId: form.siteId,
         unitId: form.unitId || undefined,
+        memo: form.memo || undefined,
+      });
+      await api.listings.create({
+        propertyId: property.id,
         transactionType: form.transactionType,
         price: form.price ? Number(form.price) : undefined,
         deposit: form.deposit ? Number(form.deposit) : undefined,
         monthlyRent: form.monthlyRent ? Number(form.monthlyRent) : undefined,
-        memo: form.memo || undefined,
-      }),
+      });
+      return property;
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['properties'] });
+      queryClient.invalidateQueries({ queryKey: ['listings'] });
       navigate({ to: '/properties' });
     },
     onError: () => {

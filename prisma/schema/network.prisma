@@ -40,13 +40,13 @@ model NetworkRoomMember {
   @@map("network_room_members")
 }
 
-/// 공유 매물 — 기존 properties에서 선택, 필드별 마스킹
+/// 공유 매물 — 기존 listings에서 선택, 필드별 마스킹
 model NetworkSharedProperty {
-  id         String @id @default(uuid()) @db.Uuid
-  roomId     String @map("room_id") @db.Uuid
-  propertyId String @map("property_id") @db.Uuid
-  officeId   String @map("office_id") @db.Uuid // 공유한 사무소
-  sharedBy   String @map("shared_by") @db.Uuid // 공유한 사용자
+  id        String @id @default(uuid()) @db.Uuid
+  roomId    String @map("room_id") @db.Uuid
+  listingId String @map("listing_id") @db.Uuid
+  officeId  String @map("office_id") @db.Uuid // 공유한 사무소
+  sharedBy  String @map("shared_by") @db.Uuid // 공유한 사용자
 
   // 공개 항목 선택 (마스킹)
   showSiteName Boolean @default(true) @map("show_site_name")
@@ -68,13 +68,13 @@ model NetworkSharedProperty {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   room         NetworkRoom      @relation(fields: [roomId], references: [id])
-  property     Property         @relation(fields: [propertyId], references: [id])
+  listing      Listing          @relation(fields: [listingId], references: [id])
   office       Office           @relation(fields: [officeId], references: [id])
   sharedByUser User             @relation(fields: [sharedBy], references: [id])
   inquiries    NetworkInquiry[]
   messages     NetworkMessage[]
 
-  @@unique([roomId, propertyId])
+  @@unique([roomId, listingId])
   @@map("network_shared_properties")
 }
 

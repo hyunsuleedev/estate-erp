@@ -1,6 +1,15 @@
-import { createFileRoute } from '@tanstack/react-router';
+import { createFileRoute, Link } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
-import { Building, BookUser, Handshake, FileText, ListTodo, CalendarDays } from 'lucide-react';
+import {
+  Building,
+  BookUser,
+  Handshake,
+  FileText,
+  ListTodo,
+  CalendarDays,
+  Wallet,
+  ArrowRight,
+} from 'lucide-react';
 import { api } from '@/lib/api';
 import { Skeleton } from '@/components/ui/skeleton';
 
@@ -8,39 +17,42 @@ export const Route = createFileRoute('/_authenticated/dashboard')({
   component: DashboardPage,
 });
 
+function toEok(manwon: number): string {
+  if (manwon >= 10000) return `${(manwon / 10000).toFixed(1)}억`;
+  return `${manwon.toLocaleString()}만`;
+}
+
 function DashboardPage() {
   const properties = useQuery({
     queryKey: ['properties', 'count'],
     queryFn: () => api.properties.findAll({ limit: 1 }),
   });
-
   const contacts = useQuery({
     queryKey: ['contacts', 'count'],
     queryFn: () => api.contacts.findAll({ limit: 1 }),
   });
-
   const matches = useQuery({
     queryKey: ['matches'],
     queryFn: () => api.matches.findAll(),
   });
-
   const deals = useQuery({
     queryKey: ['deals'],
     queryFn: () => api.deals.findAll(),
   });
-
   const tasks = useQuery({
     queryKey: ['tasks'],
     queryFn: () => api.tasks.findAll(),
   });
-
   const today = new Date();
   const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate()).toISOString();
   const todayEnd = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1).toISOString();
-
   const events = useQuery({
     queryKey: ['calendar-events', 'today'],
     queryFn: () => api.calendarEvents.findAll({ start: todayStart, end: todayEnd }),
+  });
+  const cashflow = useQuery({
+    queryKey: ['cashflow'],
+    queryFn: () => api.finance.cashflow.summary(),
   });
 
   const isLoading = properties.isLoading || contacts.isLoading;
@@ -50,7 +62,7 @@ function DashboardPage() {
     { label: '연락처', value: contacts.data?.pagination?.total ?? 0, icon: BookUser },
     { label: '진행 매칭', value: matches.data ? matches.data.filter((m) => m.stage !== 'closed').length : 0, icon: Handshake },
     { label: '진행 거래', value: deals.data ? deals.data.filter((d) => d.stage !== 'closed').length : 0, icon: FileText },
-    { label: '미완료 업무', value: tasks.data ? tasks.data.filter((t) => !t.isDone).length : 0, icon: ListTodo },
+    { label: '미완료 업무', value: tasks.data ? tasks.data.filter((t) => t.status !== 'completed' && t.status !== 'cancelled').length : 0, icon: ListTodo },
     { label: '오늘 일정', value: events.data?.length ?? 0, icon: CalendarDays },
   ];
 
@@ -73,6 +85,40 @@ function DashboardPage() {
         ))}
       </div>
 
+      {/* Cashflow summary (compact) → link to full page */}
+      {cashflow.isLoading ? (
+        <Skeleton className="h-20 rounded-xl" />
+      ) : cashflow.data ? (
+        <Link to="/cashflow" className="block">
+          <div className="flex items-center justify-between rounded-xl bg-muted/50 p-4 transition-colors hover:bg-muted/70">
+            <div className="flex items-center gap-3">
+              <Wallet className="size-5 text-muted-foreground" />
+              <div className="flex gap-6 text-sm">
+                <div>
+                  <span className="text-muted-foreground">수금 완료 </span>
+                  <span className="font-semibold">{toEok(cashflow.data.collected)}</span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">수금 예정 </span>
+                  <span className="font-semibold">{toEok(cashflow.data.pending)}</span>
+                </div>
+                {cashflow.data.overdue > 0 && (
+                  <div>
+                    <span className="text-red-600">미수금 </span>
+                    <span className="font-semibold text-red-600">{toEok(cashflow.data.overdue)}</span>
+                  </div>
+                )}
+                <div>
+                  <span className="text-muted-foreground">순이익 </span>
+                  <span className="font-semibold">{toEok(cashflow.data.netProfit)}</span>
+                </div>
+              </div>
+            </div>
+            <ArrowRight className="size-4 text-muted-foreground" />
+          </div>
+        </Link>
+      ) : null}
+
       {/* Bottom panels */}
       <div className="grid gap-4 md:grid-cols-2">
         <div className="rounded-xl bg-muted/50">
@@ -80,12 +126,12 @@ function DashboardPage() {
             <h2 className="text-sm font-semibold">미완료 업무</h2>
           </div>
           <div className="px-4 pb-4">
-            {tasks.data?.filter((t) => !t.isDone).length === 0 ? (
+            {tasks.data?.filter((t) => t.status !== 'completed' && t.status !== 'cancelled').length === 0 ? (
               <p className="text-sm text-muted-foreground">모든 업무를 완료했습니다.</p>
             ) : (
               <ul className="space-y-2.5">
                 {tasks.data
-                  ?.filter((t) => !t.isDone)
+                  ?.filter((t) => t.status !== 'completed' && t.status !== 'cancelled')
                   .slice(0, 5)
                   .map((task) => (
                     <li key={task.id} className="flex items-center gap-2.5 text-[13px]">

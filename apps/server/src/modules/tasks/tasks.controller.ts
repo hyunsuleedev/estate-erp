@@ -43,7 +43,15 @@ export class TasksController {
       title: string;
       content?: string;
       source?: string;
+      status?: string;
+      priority?: string;
+      category?: string;
       dueDate?: string;
+      assignedToId?: string;
+      contactId?: string;
+      propertyId?: string;
+      listingId?: string;
+      consultationId?: string;
     },
     @CurrentUser() user: CurrentUserPayload,
   ) {
@@ -57,12 +65,39 @@ export class TasksController {
     dto: {
       title?: string;
       content?: string;
-      isDone?: boolean;
-      dueDate?: string;
+      status?: string;
+      priority?: string;
+      category?: string;
+      dueDate?: string | null;
+      assignedToId?: string | null;
     },
     @CurrentUser() user: CurrentUserPayload,
   ) {
     return this.tasksService.update(id, user.officeId, dto);
+  }
+
+  @Post('reorder')
+  reorder(
+    @Body() dto: { orderedIds: string[] },
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.tasksService.reorder(user.officeId, dto.orderedIds);
+  }
+
+  @Post('bulk-status')
+  bulkUpdateStatus(
+    @Body() dto: { ids: string[]; status: string },
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.tasksService.bulkUpdateStatus(dto.ids, user.officeId, dto.status);
+  }
+
+  @Post('bulk-delete')
+  bulkDelete(
+    @Body() dto: { ids: string[] },
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.tasksService.bulkDelete(dto.ids, user.officeId);
   }
 
   @Delete(':id')

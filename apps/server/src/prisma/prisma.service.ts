@@ -31,6 +31,7 @@ const TENANT_SCOPED_MODELS = new Set([
 
 const AUDITED_MODELS = new Set([
   'Property',
+  'Listing',
   'Contact',
   'PropertyContact',
   'Tenant',
@@ -126,7 +127,7 @@ export class PrismaService
 
               const shouldReadBefore =
                 !!model &&
-                (AUDITED_MODELS.has(model) || model === 'Property') &&
+                AUDITED_MODELS.has(model) &&
                 ['update', 'delete', 'upsert'].includes(operation);
               const beforeRecord = shouldReadBefore
                 ? await PrismaService.readRecord(baseClient, model!, nextArgs)
@@ -147,7 +148,7 @@ export class PrismaService
                 PrismaService.extractString(beforeRecord?.officeId) ??
                 officeId;
 
-              if (model === 'Property' && operation !== 'delete' && resolvedOfficeId) {
+              if (model === 'Listing' && operation !== 'delete' && resolvedOfficeId) {
                 await PrismaService.createPriceHistoryIfNeeded(
                   baseClient,
                   beforeRecord,
@@ -304,16 +305,16 @@ export class PrismaService
       return;
     }
 
-    const propertyId = PrismaService.extractString(afterRecord.id);
+    const listingId = PrismaService.extractString(afterRecord.id);
 
-    if (!propertyId) {
+    if (!listingId) {
       return;
     }
 
     await client.priceHistory.create({
       data: {
         officeId,
-        propertyId,
+        listingId,
         changedBy: userId,
         priceBefore: PrismaService.toOptionalNumber(beforeRecord.price),
         priceAfter: PrismaService.toOptionalNumber(afterRecord.price),

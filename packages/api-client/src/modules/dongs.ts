@@ -5,6 +5,8 @@ export interface Dong {
   officeId: string | null;
   siteId: string;
   name: string;
+  /** 단일 동 건물의 자동 생성 placeholder Dong. UI에서 동 선택/표시를 숨긴다. */
+  isPlaceholder: boolean;
   createdAt: string;
   updatedAt: string;
 }

@@ -20,6 +20,10 @@
     ]
   },
   "scripts": {
+    "infra:up": "docker compose -f docker-compose.dev.yml up -d",
+    "infra:down": "docker compose -f docker-compose.dev.yml down",
+    "infra:logs": "docker compose -f docker-compose.dev.yml logs -f",
+    "infra:ps": "docker compose -f docker-compose.dev.yml ps",
     "dev": "pnpm --parallel --filter @estate-erp/server --filter @estate-erp/desktop dev",
     "dev:server": "pnpm --filter @estate-erp/server dev",
     "dev:desktop": "pnpm --filter @estate-erp/desktop dev",
@@ -40,6 +44,7 @@
     "tsx": "^4.21.0"
   },
   "dependencies": {
+    "@dnd-kit/modifiers": "7.0.0",
     "@prisma/client": "6.19.2"
   }
 }

@@ -7,7 +7,7 @@ paths:
 
 # Database Rules
 
-## 테이블 구조 (33개)
+## 테이블 구조 (35개)
 
 ### 법정동 코드 마스터 (공공데이터 import, 읽기 전용)
 - `provinces` → `districts` → `wards` (시도 → 시군구 → 읍면동)
@@ -44,9 +44,10 @@ paths:
 - 추적 대상: 핵심 10개 (Property, Contact, PropertyContact, Tenant, BuyerRequirement, Match, Deal, Consultation, Task, NetworkSharedProperty)
 
 ### 매물 유형별 연결
-- 아파트/오피스텔: site → dong → unit → property (풀 체인)
-- 빌라/다세대: site → unit → property (dong 생략)
+- 건물형 전체 (아파트/오피스텔/빌라/다세대/상가/지식산업센터): site → dong → unit → property
 - 단독주택/토지: site → property (unit/dong 없음)
+- 단일 동 건물은 `dongs.is_placeholder = true`인 Dong 하나 자동 생성 → 체인 항상 통일
+- `units.dong_id`는 NOT NULL (단일 동은 placeholder Dong 참조)
 
 ### 연락처 체계
 - `contacts` — 모든 사람 (소유주/매수자/세입자 구분 없이)
@@ -67,6 +68,19 @@ paths:
 - `deal_participants` — 거래 참여 직원 (역할/side/수수료 배분/정산)
 - Office.commissionConfig JSONB — 사장님이 설정하는 기본 수수료 배분 규칙
 - `notifications` — 인앱 알림 (WebSocket push + DB 저장)
+
+### 외부 시장 매물 (광고노트)
+- `external_listing_groups` — 호실 단위 외부 매물 그룹 (electron-estate HouseProperty 대응). 사용자가 확인한 unitId·memo·inferredHo를 기억. 크롤러가 덮어쓰지 못함.
+- `external_listings` — 개별 외부 매물 1건 (electron-estate Offer 대응). 네이버 articleNo 기준 unique `[officeId, source, articleNo]`.
+- **멀티테넌시**: 모든 외부 매물은 `office_id` NOT NULL. 사무소가 자기 책임으로 수집·입력한 데이터를 자기 네임스페이스에만 저장.
+- **법적 회피**: 서버는 크롤링하지 않음. 입력 경로는 (a) Electron 로컬 크롤러, (b) MCP 도구 `external_listing.create`, (c) 수동 UI — 모두 동일 API 엔드포인트.
+- **매칭 로직 (electron-estate 방식)**:
+  1. 새 `articleNo`가 DB에 있으면 해당 그룹에 병합
+  2. 없으면 네이버 `sameAddr` 그룹(`representativeArticleNo` + 묶인 매물들) 내 다른 articleNo 중 DB에 있는 것 찾아 그룹 병합
+  3. 둘 다 없으면 새 그룹 생성 (`unitId = null`, 사용자가 UI에서 수동 링크)
+- **호수 추정**: Phase 1에서는 자동 추정 없음. 사용자가 UI에서 `inferredHo` 텍스트 입력 또는 `unitId` 수동 링크.
+- **ActivityLog 제외**: 외부 매물은 감사 추적 대상 아님 (크롤러 upsert로 activity_logs 오염 방지).
+- Group → Listing 1:N, Group의 `main_external_listing_id`로 대표 매물 지정 (네이버 representative 대응).
 
 ### 핵심 Enums
 - `SiteType`: apartment, officetel, villa, house, commercial, land, living_accommodation

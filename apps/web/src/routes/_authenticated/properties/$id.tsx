@@ -87,6 +87,9 @@ function PropertyDetailPage() {
     return <div className="py-12 text-center text-sm text-muted-foreground">매물을 찾을 수 없습니다.</div>;
   }
 
+  const listings = property.listings ?? [];
+  const primaryListing = listings[0];
+
   return (
     <div className="flex flex-col gap-4">
       {/* Header */}
@@ -102,13 +105,15 @@ function PropertyDetailPage() {
         {property.unit && (
           <span className="text-sm text-muted-foreground">{property.unit.name}</span>
         )}
-        <span className={cn(
-          'inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium',
-          checkStatusColors[property.checkStatus] ?? 'bg-gray-100 text-gray-600',
-        )}>
-          {checkStatusLabels[property.checkStatus]}
-        </span>
-        {property.isHidden && (
+        {primaryListing && (
+          <span className={cn(
+            'inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium',
+            checkStatusColors[primaryListing.checkStatus] ?? 'bg-gray-100 text-gray-600',
+          )}>
+            {checkStatusLabels[primaryListing.checkStatus]}
+          </span>
+        )}
+        {listings.some((l) => l.isHidden) && (
           <span className="inline-flex rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-500">
             숨김
           </span>
@@ -134,16 +139,6 @@ function PropertyDetailPage() {
                 value={property.site?.roadAddress || property.site?.jibunAddress || '-'}
                 className="sm:col-span-2"
               />
-              <Field label="거래유형" value={transactionTypeLabels[property.transactionType]} />
-              {property.price != null && (
-                <Field label="매매가/전세가" value={formatPrice(property.price)} mono />
-              )}
-              {property.deposit != null && (
-                <Field label="보증금" value={formatPrice(property.deposit)} mono />
-              )}
-              {property.monthlyRent != null && (
-                <Field label="월세" value={formatPrice(property.monthlyRent)} mono />
-              )}
               {property.unit?.exclusiveAreaM2 && (
                 <Field
                   label="전용면적"
@@ -163,6 +158,46 @@ function PropertyDetailPage() {
                 </div>
               )}
             </dl>
+
+            {/* Listings */}
+            {listings.length > 0 && (
+              <div className="mt-6">
+                <h3 className="mb-3 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                  등록 매물 ({listings.length}건)
+                </h3>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {listings.map((listing) => (
+                    <div key={listing.id} className="rounded-lg bg-background p-4">
+                      <div className="mb-2 flex items-center gap-2">
+                        <span className={cn(
+                          'inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium',
+                          checkStatusColors[listing.checkStatus] ?? 'bg-gray-100 text-gray-600',
+                        )}>
+                          {checkStatusLabels[listing.checkStatus]}
+                        </span>
+                        {listing.isHidden && (
+                          <span className="inline-flex rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-500">
+                            숨김
+                          </span>
+                        )}
+                      </div>
+                      <dl className="grid gap-2 text-sm">
+                        <Field label="거래유형" value={transactionTypeLabels[listing.transactionType]} />
+                        {listing.price != null && (
+                          <Field label="매매가/전세가" value={formatPrice(listing.price)} mono />
+                        )}
+                        {listing.deposit != null && (
+                          <Field label="보증금" value={formatPrice(listing.deposit)} mono />
+                        )}
+                        {listing.monthlyRent != null && (
+                          <Field label="월세" value={formatPrice(listing.monthlyRent)} mono />
+                        )}
+                      </dl>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </TabsContent>
 
@@ -207,7 +242,7 @@ function PropertyDetailPage() {
         <TabsContent value="price-history">
           <PriceHistoryTab
             history={priceHistory ?? []}
-            transactionType={property.transactionType}
+            transactionType={primaryListing?.transactionType ?? 'sale'}
           />
         </TabsContent>
       </Tabs>

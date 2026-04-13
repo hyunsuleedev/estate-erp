@@ -11,6 +11,7 @@ export interface ContactRelation {
   createdAt: string;
   updatedAt: string;
   relatedContact?: { id: string; name: string; phone: string | null };
+  contact?: { id: string; name: string; phone: string | null };
 }
 
 export interface CreateContactRelationDto {

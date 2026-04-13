@@ -40,7 +40,7 @@ export class MatchesController {
   create(
     @Body()
     dto: {
-      propertyId: string;
+      listingId: string;
       buyerReqId: string;
       memo?: string;
     },

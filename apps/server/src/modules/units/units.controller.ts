@@ -46,7 +46,7 @@ export class UnitsController {
     @Body()
     dto: {
       siteId: string;
-      dongId?: string;
+      dongId: string;
       siteUnitTypeId?: string;
       name: string;
       floor?: number;
@@ -66,7 +66,7 @@ export class UnitsController {
     @Body()
     dto: {
       name?: string;
-      dongId?: string | null;
+      dongId?: string;
       siteUnitTypeId?: string | null;
       floor?: number | null;
       lineNo?: number | null;

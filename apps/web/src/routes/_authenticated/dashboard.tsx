@@ -77,7 +77,7 @@ function DashboardPage() {
   // Active deals (not closed)
   const activeDeals = deals.data?.filter((d) => d.stage !== 'closed') ?? [];
   const activeMatches = matches.data?.filter((m) => m.stage !== 'closed') ?? [];
-  const pendingTasks = tasks.data?.filter((t) => !t.isDone) ?? [];
+  const pendingTasks = tasks.data?.filter((t) => t.status !== 'completed' && t.status !== 'cancelled') ?? [];
 
   // Pipeline counts by stage
   const dealsByStage = dealStages.map((s) => ({

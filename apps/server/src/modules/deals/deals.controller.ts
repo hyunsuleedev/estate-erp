@@ -40,7 +40,8 @@ export class DealsController {
   create(
     @Body()
     dto: {
-      propertyId: string;
+      propertyId?: string;
+      listingId?: string;
       price?: number;
       memo?: string;
     },

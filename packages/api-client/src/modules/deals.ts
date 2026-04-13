@@ -1,9 +1,13 @@
 import type { RequestFn } from '../client.js';
+import type { Contact } from './contacts.js';
+import type { Listing } from './listings.js';
+import type { Property } from './properties.js';
 
 export interface Deal {
   id: string;
   officeId: string;
   propertyId: string;
+  listingId: string;
   stage: string;
   price: number | null;
   buyerContactId: string | null;
@@ -21,11 +25,15 @@ export interface Deal {
   memo: string | null;
   createdAt: string;
   updatedAt: string;
-  property?: unknown;
+  property?: Property;
+  listing?: Listing | null;
+  buyerContact?: Contact | null;
+  sellerContact?: Contact | null;
 }
 
 export interface CreateDealDto {
-  propertyId: string;
+  propertyId?: string;
+  listingId?: string;
   price?: number;
   memo?: string;
 }

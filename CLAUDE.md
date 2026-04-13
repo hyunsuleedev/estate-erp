@@ -61,15 +61,20 @@ prisma/
 - User.role: owner / manager / agent
 - NestJS @Roles 데코레이터 + Guard 패턴 RBAC
 
-### Site → Unit 체인
-- Site → Dong → Unit → Property (아파트/오피스텔 풀 체인)
-- Site → Unit → Property (빌라, dong 생략)
-- Site → Property (단독주택/토지, unit/dong 없음)
+### Site → Dong → Unit → Property → Listing 체인
+- Site → Dong → Unit → Property → Listing (모든 건물형: 아파트/오피스텔/빌라/상가/지식산업센터)
+- Site → Property → Listing (단독주택/토지)
+- 단일 동 건물(빌라, 단일동 오피스텔, 단일동 상가 등)은 `isPlaceholder=true`인 Dong 하나를 자동 생성해 체인을 통일
+- Unit.dongId는 NOT NULL — 모든 호실은 반드시 Dong에 속함
+- UI는 `Dong.isPlaceholder === true`면 동 선택 UI를 숨기고 바로 호실 그리드 표시
+- Property: 사무소가 관리하는 부동산 단위 (siteId, unitId, memo, PropertyContact/Tenant 연결)
+- Listing: 매물 거래 정보 (propertyId FK, transactionType, price, checkStatus, isHidden)
+- Property 1:N Listing (같은 호실을 매매+전세로 동시에 내놓는 경우)
 - SiteUnitType: 평형 카탈로그 (84A, 59B 등), 네이버 pyeongList 1:1 대응
 - Unit.floor + Unit.lineNo → 동별 호실 그리드 (네이버 스타일)
 
 ### Deal → Contract → DealParticipant
-- Deal: 거래 진행 관리 (파이프라인 + 수수료 총괄)
+- Deal: 거래 진행 관리 (listingId FK, 파이프라인 + 수수료 총괄)
 - Contract: 계약서 상세 (Deal 1:1, 계약금/중도금/잔금 스케줄, 당사자, 임대기간)
 - DealParticipant: 거래 참여 직원별 역할/수수료 배분/정산
 - 수수료: 매도측(commissionSeller*) + 매수측(commissionBuyer*) 항상 분리
@@ -78,7 +83,7 @@ prisma/
 - ContractStatus: draft → signed → depositPaid → balancePaid → registered → cancelled
 
 ### Activity Tracking
-- PriceHistory: 매물 가격 변경 이력 자동 추적 (before/after)
+- PriceHistory: Listing 가격 변경 이력 자동 추적 (listingId FK, before/after)
 - ActivityLog: 모든 비즈니스 데이터 변경 감사 추적 (Prisma Middleware 자동 로깅)
 - ActivityLog.actor: "user" | "mcp:claude" | "system:rule_engine"
 - ActivityLog.source: "web" | "mcp" | "system"
@@ -107,21 +112,22 @@ pnpm prisma:generate   # Generate Prisma client
 **Phase 1 (현재)**: NestJS 서버 + CRM MCP Server
 - API 설계, CRUD, Auth + 멀티테넌시, WebSocket, 규칙 엔진
 
-## Database (33 tables)
+## Database (36 tables)
 
 - 법정동 마스터 3: Province, District, Ward
 - 멀티테넌시 2: Office, User
 - 장소 5: Site, SiteUnitType, Dong, Unit, OfficeSite
-- 매물 2: Property, PriceHistory
+- 매물 3: Property, Listing, PriceHistory
 - 연락처 4: Contact, ContactRelation, PropertyContact, Tenant
 - CRM 6: BuyerRequirement, Consultation, Match, Deal, Contract, DealParticipant
 - 업무 5: Task, Insight, InsightRule, CalendarEvent, ActivityLog
 - 알림 1: Notification
 - 네트워크 5: NetworkRoom, NetworkRoomMember, NetworkSharedProperty, NetworkInquiry, NetworkMessage
+- 외부 매물 2: ExternalListingGroup, ExternalListing (광고노트, 사무소별 크롤링 데이터)
 
 ## Key Pipelines
 
-- CheckStatus: unverified → verified → in_contract → hold → done
+- CheckStatus (Listing): unverified → verified → in_contract → hold → done
 - MatchStage: suggested → buyerContacted → viewing → ownerContacted → negotiating → dealCreated → closed
 - DealStage: selection → deposit → contract → completed → closed
 - TaskSource: manual / system / ai
@@ -129,7 +135,9 @@ pnpm prisma:generate   # Generate Prisma client
 ## Important Notes
 
 - Node.js >= 23.0.0
-- Property `isHidden` controls visibility in listing views
+- Listing `isHidden` controls visibility in listing views
+- UI 개발 / 레이아웃 확인은 항상 Playwright(Chromium)로 먼저 확인한다 (`apps/desktop`도 Vite 렌더러는 브라우저로 확인 가능)
+- Electron은 IPC, preload, 시스템 트레이, 네이티브 메뉴, CTI 등 Electron 전용 동작 검증이 필요할 때만 확인한다
 - 복잡한 쿼리 (거리 계산, 통계)는 Prisma `$queryRaw` 사용
 - Enum 정의는 `packages/shared/src/enums.ts` 참조
 

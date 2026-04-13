@@ -9,16 +9,30 @@ export interface Consultation {
   type: string;
   content: string;
   propertyId: string | null;
+  listingId: string | null;
   matchId: string | null;
   buyerReqId: string | null;
   createdAt: string;
   updatedAt: string;
   contact?: { id: string; name: string; phone: string | null };
+  createdBy?: { id: string; name: string } | null;
+  property?: {
+    id: string;
+    memo: string | null;
+    site?: { name: string | null } | null;
+  } | null;
+  listing?: {
+    id: string;
+    transactionType: string;
+    price: number | null;
+    checkStatus: string;
+  } | null;
 }
 
 export interface ConsultationsFilter {
   contactId?: string;
   propertyId?: string;
+  listingId?: string;
   matchId?: string;
   buyerReqId?: string;
   type?: string;
@@ -35,6 +49,7 @@ export interface CreateConsultationDto {
   type: string;
   content: string;
   propertyId?: string;
+  listingId?: string;
   matchId?: string;
   buyerReqId?: string;
 }

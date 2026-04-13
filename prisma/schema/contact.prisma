@@ -25,11 +25,13 @@ model Contact {
   dealsAsSeller      Deal[]             @relation("DealSeller")
   contractsAsBuyer   Contract[]         @relation("ContractBuyer")
   contractsAsSeller  Contract[]         @relation("ContractSeller")
+  proposals            Proposal[]
+  commissionPayments   CommissionPayment[] @relation("CommissionPayer")
   // ContactRelation 양방향
   relationsAsMain    ContactRelation[]  @relation("MainContact")
   relationsAsRelated ContactRelation[]  @relation("RelatedContact")
 
-  @@index([officeId, phone])
+  @@unique([officeId, phone])
   @@map("contacts")
 }
 
@@ -106,8 +108,10 @@ model Tenant {
   office   Office   @relation(fields: [officeId], references: [id])
   property Property @relation(fields: [propertyId], references: [id])
   contact  Contact  @relation(fields: [contactId], references: [id])
+  proposals Proposal[]
 
   @@index([officeId])
+  @@index([officeId, status, contractEnd])
   @@index([propertyId])
   @@map("tenants")
 }

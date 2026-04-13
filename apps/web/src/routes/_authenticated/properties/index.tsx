@@ -4,7 +4,7 @@ import { useState, useCallback, useMemo } from 'react';
 import { Plus } from 'lucide-react';
 import type { ColumnDef, SortingState } from '@tanstack/react-table';
 import { api } from '@/lib/api';
-import type { Property } from '@estate-erp/api-client';
+import type { Listing } from '@estate-erp/api-client';
 import { Button } from '@/components/ui/button';
 import {
   DataTable,
@@ -130,16 +130,16 @@ function PropertiesPage() {
 
   // ── Query ─────────────────────────────────────────────────────
   const { data, isLoading } = useQuery({
-    queryKey: ['properties', apiParams],
-    queryFn: () => api.properties.findAll(apiParams as any),
+    queryKey: ['listings', apiParams],
+    queryFn: () => api.listings.findAll(apiParams as any),
   });
 
   // ── Inline edit mutation ──────────────────────────────────────
   const updateMutation = useMutation({
     mutationFn: ({ id, field, value }: { id: string; field: string; value: unknown }) =>
-      api.properties.update(id, { [field]: value }),
+      api.listings.update(id, { [field]: value }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['properties'] });
+      queryClient.invalidateQueries({ queryKey: ['listings'] });
     },
   });
 
@@ -199,37 +199,37 @@ function PropertiesPage() {
   }, []);
 
   // ── Column definitions (Twenty-inspired field routing) ────────
-  const columns = useMemo<ColumnDef<Property, unknown>[]>(
+  const columns = useMemo<ColumnDef<Listing, unknown>[]>(
     () => [
       {
-        accessorKey: 'site.name',
+        accessorKey: 'property.site.name',
         header: '단지/건물',
         size: 200,
         enableSorting: false,
         cell: ({ row }) => {
-          const p = row.original;
+          const listing = row.original;
           return (
             <div className="flex items-center gap-1.5">
-              <HiddenIndicator isHidden={p.isHidden} />
+              <HiddenIndicator isHidden={listing.isHidden} />
               <Link
                 to="/properties/$id"
-                params={{ id: p.id }}
+                params={{ id: listing.propertyId }}
                 className="font-medium text-foreground hover:text-primary hover:underline"
                 onClick={(e) => e.stopPropagation()}
               >
-                {p.site?.name ?? '-'}
+                {listing.property?.site?.name ?? '-'}
               </Link>
             </div>
           );
         },
       },
       {
-        accessorKey: 'unit.name',
+        accessorKey: 'property.unit.name',
         header: '호실',
         size: 80,
         enableSorting: false,
         cell: ({ row }) => (
-          <TextCell value={row.original.unit?.name ?? null} muted />
+          <TextCell value={row.original.property?.unit?.name ?? null} muted />
         ),
       },
       {
@@ -247,20 +247,20 @@ function PropertiesPage() {
         size: 160,
         enableSorting: true,
         cell: ({ row }) => {
-          const p = row.original;
+          const listing = row.original;
           return (
             <EditableCell
-              recordId={p.id}
+              recordId={listing.id}
               field="price"
-              value={p.price}
+              value={listing.price}
               onSave={handleCellSave}
               editType="number"
             >
               <PriceCell
-                transactionType={p.transactionType}
-                price={p.price}
-                deposit={p.deposit}
-                monthlyRent={p.monthlyRent}
+                transactionType={listing.transactionType}
+                price={listing.price}
+                deposit={listing.deposit}
+                monthlyRent={listing.monthlyRent}
               />
             </EditableCell>
           );
@@ -272,7 +272,7 @@ function PropertiesPage() {
         size: 80,
         enableSorting: false,
         cell: ({ row }) => (
-          <AreaCell exclusiveAreaM2={row.original.unit?.exclusiveAreaM2} />
+          <AreaCell exclusiveAreaM2={row.original.property?.unit?.exclusiveAreaM2} />
         ),
       },
       {
@@ -281,12 +281,12 @@ function PropertiesPage() {
         size: 80,
         enableSorting: false,
         cell: ({ row }) => {
-          const p = row.original;
+          const listing = row.original;
           return (
             <EditableCell
-              recordId={p.id}
+              recordId={listing.id}
               field="checkStatus"
-              value={p.checkStatus}
+              value={listing.checkStatus}
               onSave={handleCellSave}
               editType="select"
               selectOptions={[
@@ -298,7 +298,7 @@ function PropertiesPage() {
               ]}
             >
               <StatusBadgeCell
-                value={p.checkStatus}
+                value={listing.checkStatus}
                 labels={checkStatusLabels}
                 colors={checkStatusColors}
               />
@@ -368,7 +368,7 @@ function PropertiesPage() {
             sorting={sorting}
             onSortingChange={handleSortingChange}
             enableRowSelection
-            onRowClick={(row) => navigate({ to: '/properties/$id', params: { id: row.id } })}
+            onRowClick={(row) => navigate({ to: '/properties/$id', params: { id: row.propertyId } })}
             isLoading={isLoading}
             emptyMessage="매물이 없습니다."
           />

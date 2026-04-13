@@ -24,6 +24,22 @@ model Office {
   //   "closerBonus": 0 }            // 마감 담당 보너스 (만원)
   commissionConfig Json? @map("commission_config") @db.JsonB
 
+  // ─── AI 직원 설정 ──────────────────────────────────────────
+  /// AI 직원(Rule Engine + Proposal 루프) 전체 on/off
+  agentEnabled Boolean @default(true) @map("agent_enabled")
+
+  /// Proposal 타입별 trust tier 오버라이드.
+  /// 예: { "ad_takedown": "approval_required", "lease_renewal_notice": "auto" }
+  /// 키가 없으면 Rule/Proposal의 기본값을 사용.
+  agentTrustConfig Json @default("{}") @map("agent_trust_config") @db.JsonB
+
+  /// MCP 권한의 역할별 기본값. User.mcpPermissions가 없을 때 fallback.
+  /// 예: { "owner": { "listing_write": "execute", ... },
+  ///       "manager": { "listing_write": "propose", ... },
+  ///       "agent": { "listing_write": "propose", ... } }
+  /// Phase 1: 필드만 존재, Phase 2에 실제 해석 로직 붙음.
+  mcpPermissionDefaults Json @default("{}") @map("mcp_permission_defaults") @db.JsonB
+
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
@@ -37,6 +53,7 @@ model Office {
   propertyContacts  PropertyContact[]
   tenants           Tenant[]
   properties        Property[]
+  listings          Listing[]
   tasks             Task[]
   consultations     Consultation[]
   buyerRequirements BuyerRequirement[]
@@ -45,13 +62,26 @@ model Office {
   contracts         Contract[]
   dealParticipants  DealParticipant[]
   insights          Insight[]
-  insightRules      InsightRule[]
+  rules             Rule[]
+  proposals         Proposal[]
   calendarEvents    CalendarEvent[]
 
   siteUnitTypes  SiteUnitType[]
   priceHistories PriceHistory[]
   activityLogs   ActivityLog[]
   notifications  Notification[]
+
+  externalListings                ExternalListing[]
+  externalListingGroups           ExternalListingGroup[]
+  externalListingSnapshotSessions ExternalListingSnapshotSession[]
+
+  // 재무
+  commissionPayments     CommissionPayment[]
+  officeExpenseTemplates OfficeExpenseTemplate[]
+
+  // 공적장부 / 사진
+  publicDocuments PublicDocument[]
+  propertyPhotos  PropertyPhoto[]
 
   // 공동 중개망
   createdRooms            NetworkRoom[]
@@ -64,22 +94,36 @@ model Office {
 }
 
 model User {
-  id       String  @id @default(uuid()) @db.Uuid
-  officeId String  @map("office_id") @db.Uuid
-  loginId  String  @unique @map("login_id") // 로그인 ID (owner/직원 모두 별도 아이디 사용 가능)
-  email    String? // owner 필수, 직원 선택
-  password String
+  id               String  @id @default(uuid()) @db.Uuid
+  officeId         String  @map("office_id") @db.Uuid
+  loginId          String  @unique @map("login_id") // 로그인 ID (owner/직원 모두 별도 아이디 사용 가능)
+  email            String? // owner 필수, 직원 선택
+  password         String
   refreshTokenHash String? @map("refresh_token_hash")
-  name     String
-  phone    String?
-  role     String  @default("agent") // owner, manager, agent
-  isActive Boolean @default(true) @map("is_active")
+  name             String
+  phone            String?
+  role             String  @default("agent") // owner, manager, agent
+  isActive         Boolean @default(true) @map("is_active")
+
+  /// MCP 권한 사용자별 오버라이드. null이면 Office.mcpPermissionDefaults의
+  /// role별 기본값을 사용한다. 예: { "listing_write": "execute", ... }
+  /// Phase 1: 필드만 존재, Phase 2에 실제 해석 로직 붙음.
+  mcpPermissions Json? @map("mcp_permissions") @db.JsonB
+
+  // ─── 급여/수수료 배분 ──────────────────────────────────────
+  /// fixed: 고정급만, mixed: 고정급+수수료, commission_only: 순수 수수료제
+  payType        String   @default("mixed") @map("pay_type")
+  /// 월 기본급 (만원). commission_only 이면 0 또는 null.
+  baseSalary     Int?     @map("base_salary")
+  /// 개인 수수료 배분율 (%). null 이면 Office.commissionConfig 기본값.
+  commissionRate Decimal? @map("commission_rate") @db.Decimal
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
   office               Office             @relation(fields: [officeId], references: [id])
   assignedRequirements BuyerRequirement[] @relation("AssignedAgent")
+  assignedTasks        Task[]             @relation("TaskAssignee")
   consultations        Consultation[]     @relation("ConsultationCreator")
   calendarEvents       CalendarEvent[]
 
@@ -92,6 +136,13 @@ model User {
   networkSharedProperties NetworkSharedProperty[]
   networkInquiriesFrom    NetworkInquiry[]
   networkMessages         NetworkMessage[]
+
+  // 공적장부
+  requestedDocuments PublicDocument[] @relation("DocumentRequester")
+
+  // 외부 매물 스냅샷 세션
+  externalListingSessionsStarted   ExternalListingSnapshotSession[] @relation("SnapshotSessionStartedBy")
+  externalListingSessionsCompleted ExternalListingSnapshotSession[] @relation("SnapshotSessionCompletedBy")
 
   @@map("users")
 }

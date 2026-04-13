@@ -4,6 +4,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { validateEnv } from './config/env.validation';
 import { AuthModule } from './modules/auth/auth.module';
 import { PropertiesModule } from './modules/properties/properties.module';
+import { ListingsModule } from './modules/listings/listings.module';
 import { ContactsModule } from './modules/contacts/contacts.module';
 import { TasksModule } from './modules/tasks/tasks.module';
 import { MatchesModule } from './modules/matches/matches.module';
@@ -18,6 +19,14 @@ import { BuyerRequirementsModule } from './modules/buyer-requirements/buyer-requ
 import { ConsultationsModule } from './modules/consultations/consultations.module';
 import { OfficeSitesModule } from './modules/office-sites/office-sites.module';
 import { CalendarEventsModule } from './modules/calendar-events/calendar-events.module';
+import { ContractsModule } from './modules/contracts/contracts.module';
+import { EmployeesModule } from './modules/employees/employees.module';
+import { OfficesModule } from './modules/offices/offices.module';
+import { ExternalListingsModule } from './modules/external-listings/external-listings.module';
+import { AgentModule } from './modules/agent/agent.module';
+import { FinanceModule } from './modules/finance/finance.module';
+import { PublicDocumentsModule } from './modules/public-documents/public-documents.module';
+import { PropertyPhotosModule } from './modules/property-photos/property-photos.module';
 import { RequestContextMiddleware } from './common/request-context/request-context.middleware';
 
 @Module({
@@ -34,6 +43,7 @@ import { RequestContextMiddleware } from './common/request-context/request-conte
     DongsModule,
     UnitsModule,
     PropertiesModule,
+    ListingsModule,
     ContactsModule,
     ContactRelationsModule,
     PropertyContactsModule,
@@ -43,7 +53,15 @@ import { RequestContextMiddleware } from './common/request-context/request-conte
     TasksModule,
     MatchesModule,
     DealsModule,
+    ContractsModule,
+    EmployeesModule,
+    OfficesModule,
     CalendarEventsModule,
+    ExternalListingsModule,
+    AgentModule,
+    FinanceModule,
+    PublicDocumentsModule,
+    PropertyPhotosModule,
   ],
 })
 export class AppModule implements NestModule {

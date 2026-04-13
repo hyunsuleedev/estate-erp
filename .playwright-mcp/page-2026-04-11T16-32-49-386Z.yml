@@ -1,0 +1,19 @@
+- generic [ref=e4]:
+  - generic [ref=e5]:
+    - img [ref=e7]
+    - heading "Estate ERP" [level=1] [ref=e9]
+    - paragraph [ref=e10]: 부동산 중개사 전용 ERP
+  - generic [ref=e11]:
+    - generic [ref=e13]:
+      - generic [ref=e14]:
+        - generic [ref=e15]: 아이디
+        - textbox "아이디" [ref=e16]:
+          - /placeholder: 아이디를 입력하세요
+      - generic [ref=e17]:
+        - generic [ref=e18]: 비밀번호
+        - textbox "비밀번호" [ref=e19]
+      - button "로그인" [ref=e20]
+    - paragraph [ref=e22]:
+      - text: 계정이 없으신가요?
+      - link "회원가입" [ref=e23] [cursor=pointer]:
+        - /url: /register

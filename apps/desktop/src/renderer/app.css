@@ -2,13 +2,21 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* Tailwind v4: border-* utilities default to currentColor.
+   Override so bare border-b / border etc. use our theme border color. */
+*,
+::after,
+::before {
+  border-color: var(--color-border);
+}
+
 @theme {
   /* Attio-inspired clean design system */
   --color-background: #ffffff;
   --color-foreground: #111827;
   --color-muted: #f8f9fa;
   --color-muted-foreground: #6b7280;
-  --color-border: #e8eaed;
+  --color-border: #f3f4f6;
   --color-input: #e8eaed;
   --color-ring: #4f46e5;
   --color-primary: #4f46e5;

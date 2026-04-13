@@ -14,6 +14,20 @@ export interface PropertyContact {
   createdAt: string;
   updatedAt: string;
   contact?: { id: string; name: string; phone: string | null };
+  property?: {
+    id: string;
+    memo: string | null;
+    site?: {
+      id: string;
+      name: string | null;
+      roadAddress?: string | null;
+      jibunAddress?: string | null;
+    } | null;
+    unit?: {
+      id: string;
+      name: string | null;
+    } | null;
+  };
 }
 
 export interface CreatePropertyContactDto {

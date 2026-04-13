@@ -1,20 +1,25 @@
 import type { RequestFn } from '../client.js';
+import type { BuyerRequirement } from './buyer-requirements.js';
+import type { Listing } from './listings.js';
+import type { Property } from './properties.js';
 
 export interface Match {
   id: string;
   officeId: string;
+  listingId: string;
   propertyId: string;
   buyerReqId: string;
   stage: string;
   memo: string | null;
   createdAt: string;
   updatedAt: string;
-  property?: unknown;
-  buyerRequirement?: unknown;
+  property?: Property;
+  listing?: Listing;
+  buyerRequirement?: BuyerRequirement;
 }
 
 export interface CreateMatchDto {
-  propertyId: string;
+  listingId: string;
   buyerReqId: string;
   memo?: string;
 }

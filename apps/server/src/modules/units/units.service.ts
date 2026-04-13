@@ -6,11 +6,9 @@ import {
 import { SiteType } from '@estate-erp/shared';
 import { PrismaService } from '../../prisma/prisma.service';
 
-const DONG_REQUIRED_SITE_TYPES: ReadonlySet<string> = new Set([
-  SiteType.APARTMENT,
-  SiteType.OFFICETEL,
-]);
-
+// 토지/단독주택은 Unit 자체를 만들지 않는다.
+// 그 외(아파트/오피스텔/빌라/상가/지식산업센터 등 건물형)는 모두
+// Site → Dong → Unit 체인을 사용하며, 단일 동 건물은 placeholder Dong을 사용한다.
 const UNIT_DISABLED_SITE_TYPES: ReadonlySet<string> = new Set([
   SiteType.HOUSE,
   SiteType.LAND,
@@ -72,7 +70,7 @@ export class UnitsService {
     officeId: string,
     dto: {
       siteId: string;
-      dongId?: string;
+      dongId: string;
       siteUnitTypeId?: string;
       name: string;
       floor?: number;
@@ -83,19 +81,16 @@ export class UnitsService {
     },
   ) {
     const site = await this.findEditableSite(dto.siteId, officeId);
-    const dongId = dto.dongId ?? null;
 
     if (UNIT_DISABLED_SITE_TYPES.has(site.type)) {
       throw new BadRequestException('This site type does not support units');
     }
 
-    if (DONG_REQUIRED_SITE_TYPES.has(site.type) && !dongId) {
-      throw new BadRequestException('dongId is required for apartment/officetel units');
+    if (!dto.dongId) {
+      throw new BadRequestException('dongId is required (use placeholder Dong for single-building sites)');
     }
 
-    if (dongId) {
-      await this.findOwnedDong(dongId, officeId, site.id);
-    }
+    await this.findOwnedDong(dto.dongId, officeId, site.id);
 
     if (dto.siteUnitTypeId) {
       await this.findOwnedSiteUnitType(dto.siteUnitTypeId, site.id, officeId);
@@ -112,7 +107,7 @@ export class UnitsService {
     officeId: string,
     dto: {
       name?: string;
-      dongId?: string | null;
+      dongId?: string;
       siteUnitTypeId?: string | null;
       floor?: number | null;
       lineNo?: number | null;
@@ -123,7 +118,7 @@ export class UnitsService {
   ) {
     const existingUnit = await this.findOwnedUnit(id, officeId);
     const site = await this.findEditableSite(existingUnit.siteId, officeId);
-    const nextDongId = dto.dongId === undefined ? existingUnit.dongId : dto.dongId;
+    const nextDongId = dto.dongId ?? existingUnit.dongId;
     const nextSiteUnitTypeId =
       dto.siteUnitTypeId === undefined
         ? existingUnit.siteUnitTypeId
@@ -133,13 +128,7 @@ export class UnitsService {
       throw new BadRequestException('This site type does not support units');
     }
 
-    if (DONG_REQUIRED_SITE_TYPES.has(site.type) && !nextDongId) {
-      throw new BadRequestException('dongId is required for apartment/officetel units');
-    }
-
-    if (nextDongId) {
-      await this.findOwnedDong(nextDongId, officeId, site.id);
-    }
+    await this.findOwnedDong(nextDongId, officeId, site.id);
 
     if (nextSiteUnitTypeId) {
       await this.findOwnedSiteUnitType(nextSiteUnitTypeId, site.id, officeId);

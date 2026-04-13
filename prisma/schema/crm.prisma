@@ -11,7 +11,8 @@ model Consultation {
   content     String
 
   // 컨텍스트 (어떤 맥락의 상담인지, 자동 연결)
-  propertyId String? @map("property_id") @db.Uuid
+  propertyId String? @map("property_id") @db.Uuid // 호실 맥락 (소유자/세입자 상담)
+  listingId  String? @map("listing_id") @db.Uuid // 매물 맥락 (거래 상담)
   matchId    String? @map("match_id") @db.Uuid
   buyerReqId String? @map("buyer_req_id") @db.Uuid
 
@@ -22,12 +23,14 @@ model Consultation {
   contact          Contact           @relation(fields: [contactId], references: [id])
   createdBy        User              @relation("ConsultationCreator", fields: [createdById], references: [id])
   property         Property?         @relation(fields: [propertyId], references: [id])
+  listing          Listing?          @relation(fields: [listingId], references: [id])
   match            Match?            @relation(fields: [matchId], references: [id])
   buyerRequirement BuyerRequirement? @relation(fields: [buyerReqId], references: [id])
   tasks            Task[]
 
   @@index([officeId, contactId])
   @@index([officeId, propertyId])
+  @@index([officeId, listingId])
   @@map("consultations")
 }
 
@@ -78,7 +81,7 @@ model BuyerRequirement {
 model Match {
   id         String   @id @default(uuid()) @db.Uuid
   officeId   String   @map("office_id") @db.Uuid
-  propertyId String   @map("property_id") @db.Uuid
+  listingId  String   @map("listing_id") @db.Uuid
   buyerReqId String   @map("buyer_req_id") @db.Uuid
   stage      String   @default("suggested") // MatchStage enum
   memo       String?
@@ -86,7 +89,7 @@ model Match {
   updatedAt  DateTime @updatedAt @map("updated_at")
 
   office           Office           @relation(fields: [officeId], references: [id])
-  property         Property         @relation(fields: [propertyId], references: [id])
+  listing          Listing          @relation(fields: [listingId], references: [id])
   buyerRequirement BuyerRequirement @relation(fields: [buyerReqId], references: [id])
   consultations    Consultation[]
   calendarEvents   CalendarEvent[]
@@ -99,11 +102,11 @@ model Match {
 // ============================================================
 
 model Deal {
-  id         String @id @default(uuid()) @db.Uuid
-  officeId   String @map("office_id") @db.Uuid
-  propertyId String @map("property_id") @db.Uuid
-  stage      String @default("selection") // DealStage enum
-  price      Int? // 최종 거래가 (만원)
+  id        String @id @default(uuid()) @db.Uuid
+  officeId  String @map("office_id") @db.Uuid
+  listingId String @map("listing_id") @db.Uuid
+  stage     String @default("selection") // DealStage enum
+  price     Int? // 최종 거래가 (만원)
 
   // 거래 당사자
   buyerContactId  String? @map("buyer_contact_id") @db.Uuid // 매수인
@@ -131,13 +134,15 @@ model Deal {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  office         Office            @relation(fields: [officeId], references: [id])
-  property       Property          @relation(fields: [propertyId], references: [id])
-  buyerContact   Contact?          @relation("DealBuyer", fields: [buyerContactId], references: [id])
-  sellerContact  Contact?          @relation("DealSeller", fields: [sellerContactId], references: [id])
-  contract       Contract?
-  participants   DealParticipant[]
-  calendarEvents CalendarEvent[]
+  office              Office               @relation(fields: [officeId], references: [id])
+  listing             Listing              @relation(fields: [listingId], references: [id])
+  buyerContact        Contact?             @relation("DealBuyer", fields: [buyerContactId], references: [id])
+  sellerContact       Contact?             @relation("DealSeller", fields: [sellerContactId], references: [id])
+  contract            Contract?
+  participants        DealParticipant[]
+  commissionPayments  CommissionPayment[]
+  calendarEvents      CalendarEvent[]
+  proposals           Proposal[]
 
   @@index([officeId, stage])
   @@map("deals")
@@ -153,7 +158,7 @@ model Contract {
   officeId String @map("office_id") @db.Uuid
   dealId   String @unique @map("deal_id") @db.Uuid
 
-  // 거래 유형 (Deal.property.transactionType과 별도 — 계약서 기준)
+  // 거래 유형 (계약서 기준)
   transactionType String @map("transaction_type") // sale, jeonse, monthly
 
   // 당사자 (계약서상 기재되는 사람)
@@ -207,6 +212,7 @@ model Contract {
   deal          Deal    @relation(fields: [dealId], references: [id])
   buyerContact  Contact @relation("ContractBuyer", fields: [buyerContactId], references: [id])
   sellerContact Contact @relation("ContractSeller", fields: [sellerContactId], references: [id])
+  proposals     Proposal[]
 
   @@index([officeId])
   @@index([officeId, status])
@@ -224,11 +230,11 @@ model DealParticipant {
   dealId   String @map("deal_id") @db.Uuid
   userId   String @map("user_id") @db.Uuid // 담당 직원
 
-  role String // listing_agent, buying_agent, dual_agent, manager, assistant, closer
-  side String // seller, buyer, both — 어느 측 담당인지
-  commissionAmount Int?     @map("commission_amount") // 배분 금액 (만원)
-  commissionRate   Decimal? @map("commission_rate") @db.Decimal // 배분 비율 (%)
-  settlementStatus String   @default("unsettled") @map("settlement_status")
+  role             String // listing_agent, buying_agent, dual_agent, manager, assistant, closer
+  side             String // seller, buyer, both — 어느 측 담당인지
+  commissionAmount Int?      @map("commission_amount") // 배분 금액 (만원)
+  commissionRate   Decimal?  @map("commission_rate") @db.Decimal // 배분 비율 (%)
+  settlementStatus String    @default("unsettled") @map("settlement_status")
   settlementDate   DateTime? @map("settlement_date")
 
   memo      String?

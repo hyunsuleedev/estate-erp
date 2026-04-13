@@ -1,0 +1,435 @@
+- generic [ref=e6]:
+  - banner [ref=e7]:
+    - generic [ref=e8]:
+      - button "Toggle Sidebar" [ref=e9]:
+        - img
+        - generic [ref=e10]: Toggle Sidebar
+      - navigation "breadcrumb":
+        - list:
+          - listitem:
+            - link [disabled]
+  - generic [ref=e11]:
+    - generic [ref=e14]:
+      - list [ref=e16]:
+        - listitem [ref=e17]:
+          - button "Estate ERP 김영공인중개사사무소" [ref=e18]:
+            - img [ref=e20]
+            - generic [ref=e22]:
+              - generic [ref=e23]: Estate ERP
+              - generic [ref=e24]: 김영공인중개사사무소
+      - generic [ref=e25]:
+        - generic [ref=e26]:
+          - generic [ref=e27]: 메뉴
+          - list [ref=e28]:
+            - listitem [ref=e29]:
+              - link "대시보드" [ref=e30] [cursor=pointer]:
+                - /url: /dashboard
+                - img [ref=e31]
+                - generic [ref=e34]: 대시보드
+            - listitem [ref=e35]:
+              - button "매물관리" [expanded] [ref=e36]:
+                - img [ref=e37]
+                - generic [ref=e40]: 매물관리
+                - img [ref=e41]
+              - list [ref=e44]:
+                - listitem [ref=e45]:
+                  - link "매물 목록" [ref=e46] [cursor=pointer]:
+                    - /url: /properties
+                    - generic [ref=e47]: 매물 목록
+                - listitem [ref=e48]:
+                  - link "광고노트" [ref=e49] [cursor=pointer]:
+                    - /url: /properties/external-listings
+                    - generic [ref=e50]: 광고노트
+                - listitem [ref=e51]:
+                  - link "내광고관리" [ref=e52] [cursor=pointer]:
+                    - /url: /properties/naver-my-ads
+                    - generic [ref=e53]: 내광고관리
+            - listitem [ref=e54]:
+              - button "연락처" [ref=e55]:
+                - img [ref=e56]
+                - generic [ref=e60]: 연락처
+                - img [ref=e61]
+            - listitem [ref=e63]:
+              - link "거래관리" [ref=e64] [cursor=pointer]:
+                - /url: /deals
+                - img [ref=e65]
+                - generic [ref=e70]: 거래관리
+            - listitem [ref=e71]:
+              - link "매칭" [ref=e72] [cursor=pointer]:
+                - /url: /matches
+                - img [ref=e73]
+                - generic [ref=e77]: 매칭
+            - listitem [ref=e78]:
+              - link "상담기록" [ref=e79] [cursor=pointer]:
+                - /url: /consultations
+                - img [ref=e80]
+                - generic [ref=e82]: 상담기록
+            - listitem [ref=e83]:
+              - link "구매고객" [ref=e84] [cursor=pointer]:
+                - /url: /buyer-requirements
+                - img [ref=e85]
+                - generic [ref=e90]: 구매고객
+            - listitem [ref=e91]:
+              - link "업무" [ref=e92] [cursor=pointer]:
+                - /url: /tasks
+                - img [ref=e93]
+                - generic [ref=e96]: 업무
+            - listitem [ref=e97]:
+              - link "캘린더" [ref=e98] [cursor=pointer]:
+                - /url: /calendar
+                - img [ref=e99]
+                - generic [ref=e101]: 캘린더
+            - listitem [ref=e102]:
+              - link "관리단지" [ref=e103] [cursor=pointer]:
+                - /url: /sites
+                - img [ref=e104]
+                - generic [ref=e106]: 관리단지
+            - listitem [ref=e107]:
+              - link "계약서 관리" [ref=e108] [cursor=pointer]:
+                - /url: /contracts
+                - img [ref=e109]
+                - generic [ref=e112]: 계약서 관리
+            - listitem [ref=e113]:
+              - link "네트워크" [ref=e114] [cursor=pointer]:
+                - /url: /network
+                - img [ref=e115]
+                - generic [ref=e118]: 네트워크
+            - listitem [ref=e119]:
+              - link "AI 운영" [ref=e120] [cursor=pointer]:
+                - /url: /ai-operations
+                - img [ref=e121]
+                - generic [ref=e124]: AI 운영
+            - listitem [ref=e125]:
+              - link "직원관리" [ref=e126] [cursor=pointer]:
+                - /url: /employees
+                - img [ref=e127]
+                - generic [ref=e132]: 직원관리
+            - listitem [ref=e133]:
+              - link "설정" [ref=e134] [cursor=pointer]:
+                - /url: /settings
+                - img [ref=e135]
+                - generic [ref=e138]: 설정
+        - generic [ref=e139]:
+          - generic [ref=e140]: 즐겨찾기 단지
+          - list [ref=e141]:
+            - listitem [ref=e142]:
+              - link "고덕그라시움" [ref=e143] [cursor=pointer]:
+                - /url: /sites
+                - img [ref=e144]
+                - generic [ref=e145]: 고덕그라시움
+      - list [ref=e147]:
+        - listitem [ref=e148]:
+          - button "김 김영" [ref=e149]:
+            - generic [ref=e151]: 김
+            - generic [ref=e153]: 김영
+            - img [ref=e154]
+      - button "Toggle Sidebar" [ref=e157]
+    - main [ref=e158]:
+      - generic [ref=e160]:
+        - generic [ref=e161]:
+          - generic [ref=e162]:
+            - heading "광고노트" [level=1] [ref=e163]
+            - generic [ref=e164]: 10건
+          - paragraph [ref=e165]: 내 단지에 올라온 외부 매물을 거래유형·단지별로 추적합니다.
+        - generic [ref=e166]:
+          - generic [ref=e168]:
+            - generic [ref=e169]:
+              - paragraph [ref=e170]: 전체
+              - paragraph [ref=e171]: 10건
+              - paragraph [ref=e172]: 현재 필터 기준
+            - img [ref=e174]
+          - generic [ref=e179]:
+            - generic [ref=e180]:
+              - paragraph [ref=e181]: 미매칭
+              - paragraph [ref=e182]: 6건
+              - paragraph [ref=e183]: 호수 확인 필요
+            - img [ref=e185]
+          - generic [ref=e188]:
+            - generic [ref=e189]:
+              - paragraph [ref=e190]: 확정
+              - paragraph [ref=e191]: 4건
+              - paragraph [ref=e192]: 호수 매칭 완료
+            - img [ref=e194]
+          - generic [ref=e198]:
+            - generic [ref=e199]:
+              - paragraph [ref=e200]: 유료 광고
+              - paragraph [ref=e201]: 5건
+              - paragraph [ref=e202]: 선광고 / e편주
+            - img [ref=e204]
+        - generic [ref=e206]:
+          - tablist [ref=e207]:
+            - tab "매매" [selected] [ref=e208]
+            - tab "전세" [ref=e209]
+            - tab "월세" [ref=e210]
+          - generic [ref=e211]:
+            - generic [ref=e212]:
+              - generic [ref=e213]:
+                - generic [ref=e214]:
+                  - img
+                  - textbox "동·호수·메모·단지명 검색" [ref=e215]
+                - generic [ref=e216]:
+                  - img [ref=e217]
+                  - combobox [ref=e219]:
+                    - generic [ref=e220]: 관리 단지 선택
+                    - generic [ref=e221]:
+                      - img
+              - generic [ref=e222]:
+                - button "전체" [ref=e223]
+                - button "미매칭" [ref=e224]
+                - button "매칭" [ref=e225]
+                - button "확정" [ref=e226]
+                - button "보류" [ref=e227]
+            - tabpanel "매매" [ref=e228]:
+              - table [ref=e230]:
+                - rowgroup [ref=e231]:
+                  - row "단지 동·호 평형 매매가 매물 수 최근 순위 상태 최근 관측 원본" [ref=e232]:
+                    - columnheader "단지" [ref=e233]
+                    - columnheader "동·호" [ref=e234]
+                    - columnheader "평형" [ref=e235]
+                    - columnheader "매매가" [ref=e236]
+                    - columnheader "매물 수" [ref=e237]
+                    - columnheader "최근 순위" [ref=e238]
+                    - columnheader "상태" [ref=e239]
+                    - columnheader "최근 관측" [ref=e240]
+                    - columnheader "원본" [ref=e241]
+                - rowgroup [ref=e242]:
+                  - row "고덕그라시움 104동 호수 미확인 84A 84.97㎡ 22억 5,000만 1 1위 유료 미매칭 4월 11일 네이버" [ref=e243]:
+                    - cell "고덕그라시움" [ref=e244]:
+                      - generic [ref=e246]: 고덕그라시움
+                    - cell "104동 호수 미확인" [ref=e247]:
+                      - generic [ref=e248]:
+                        - generic [ref=e249]: 104동
+                        - generic [ref=e250]: 호수 미확인
+                    - cell "84A 84.97㎡" [ref=e251]:
+                      - generic [ref=e252]:
+                        - generic [ref=e253]: 84A
+                        - generic [ref=e254]: 84.97㎡
+                    - cell "22억 5,000만" [ref=e255]
+                    - cell "1" [ref=e256]
+                    - cell "1위 유료" [ref=e257]:
+                      - generic [ref=e258]:
+                        - generic [ref=e259]: 1위
+                        - generic [ref=e260]: 유료
+                    - cell "미매칭" [ref=e261]:
+                      - generic [ref=e262]: 미매칭
+                    - cell "4월 11일" [ref=e263]
+                    - cell "네이버" [ref=e264]:
+                      - link "네이버" [ref=e265] [cursor=pointer]:
+                        - /url: https://land.naver.com/article/2340000006
+                        - img
+                        - text: 네이버
+                  - row "고덕그라시움 107동 2101 84A 84.97㎡ 21억 6,000만 1 2위 유료 확정 4월 11일 네이버" [ref=e266]:
+                    - cell "고덕그라시움" [ref=e267]:
+                      - generic [ref=e269]: 고덕그라시움
+                    - cell "107동 2101" [ref=e270]:
+                      - generic [ref=e271]:
+                        - generic [ref=e272]: 107동
+                        - generic [ref=e273]: "2101"
+                    - cell "84A 84.97㎡" [ref=e274]:
+                      - generic [ref=e275]:
+                        - generic [ref=e276]: 84A
+                        - generic [ref=e277]: 84.97㎡
+                    - cell "21억 6,000만" [ref=e278]
+                    - cell "1" [ref=e279]
+                    - cell "2위 유료" [ref=e280]:
+                      - generic [ref=e281]:
+                        - generic [ref=e282]: 2위
+                        - generic [ref=e283]: 유료
+                    - cell "확정" [ref=e284]:
+                      - generic [ref=e285]: 확정
+                    - cell "4월 11일" [ref=e286]
+                    - cell "네이버" [ref=e287]:
+                      - link "네이버" [ref=e288] [cursor=pointer]:
+                        - /url: https://land.naver.com/article/2340000010
+                        - img
+                        - text: 네이버
+                  - row "고덕그라시움 101동 3401 84A 84.97㎡ 21억 5,000만 3 1위 유료 확정 4월 11일 네이버" [ref=e289]:
+                    - cell "고덕그라시움" [ref=e290]:
+                      - generic [ref=e292]: 고덕그라시움
+                    - cell "101동 3401" [ref=e293]:
+                      - generic [ref=e294]:
+                        - generic [ref=e295]: 101동
+                        - generic [ref=e296]: "3401"
+                    - cell "84A 84.97㎡" [ref=e297]:
+                      - generic [ref=e298]:
+                        - generic [ref=e299]: 84A
+                        - generic [ref=e300]: 84.97㎡
+                    - cell "21억 5,000만" [ref=e301]
+                    - cell "3" [ref=e302]
+                    - cell "1위 유료" [ref=e303]:
+                      - generic [ref=e304]:
+                        - generic [ref=e305]: 1위
+                        - generic [ref=e306]: 유료
+                    - cell "확정" [ref=e307]:
+                      - generic [ref=e308]: 확정
+                    - cell "4월 11일" [ref=e309]
+                    - cell "네이버" [ref=e310]:
+                      - link "네이버" [ref=e311] [cursor=pointer]:
+                        - /url: https://land.naver.com/article/2340000001
+                        - img
+                        - text: 네이버
+                  - row "고덕그라시움 101동 3501 84A 84.97㎡ 21억 8,000만 1 1위 유료 확정 4월 11일 네이버" [ref=e312]:
+                    - cell "고덕그라시움" [ref=e313]:
+                      - generic [ref=e315]: 고덕그라시움
+                    - cell "101동 3501" [ref=e316]:
+                      - generic [ref=e317]:
+                        - generic [ref=e318]: 101동
+                        - generic [ref=e319]: "3501"
+                    - cell "84A 84.97㎡" [ref=e320]:
+                      - generic [ref=e321]:
+                        - generic [ref=e322]: 84A
+                        - generic [ref=e323]: 84.97㎡
+                    - cell "21억 8,000만" [ref=e324]
+                    - cell "1" [ref=e325]
+                    - cell "1위 유료" [ref=e326]:
+                      - generic [ref=e327]:
+                        - generic [ref=e328]: 1위
+                        - generic [ref=e329]: 유료
+                    - cell "확정" [ref=e330]:
+                      - generic [ref=e331]: 확정
+                    - cell "4월 11일" [ref=e332]
+                    - cell "네이버" [ref=e333]:
+                      - link "네이버" [ref=e334] [cursor=pointer]:
+                        - /url: https://land.naver.com/article/2340000000
+                        - img
+                        - text: 네이버
+                  - row "고덕그라시움 106동 호수 미확인 84B 84.52㎡ 21억 2,000만 2 3위 미매칭 4월 11일 네이버" [ref=e335]:
+                    - cell "고덕그라시움" [ref=e336]:
+                      - generic [ref=e338]: 고덕그라시움
+                    - cell "106동 호수 미확인" [ref=e339]:
+                      - generic [ref=e340]:
+                        - generic [ref=e341]: 106동
+                        - generic [ref=e342]: 호수 미확인
+                    - cell "84B 84.52㎡" [ref=e343]:
+                      - generic [ref=e344]:
+                        - generic [ref=e345]: 84B
+                        - generic [ref=e346]: 84.52㎡
+                    - cell "21억 2,000만" [ref=e347]
+                    - cell "2" [ref=e348]
+                    - cell "3위" [ref=e349]:
+                      - generic [ref=e351]: 3위
+                    - cell "미매칭" [ref=e352]:
+                      - generic [ref=e353]: 미매칭
+                    - cell "4월 11일" [ref=e354]
+                    - cell "네이버" [ref=e355]:
+                      - link "네이버" [ref=e356] [cursor=pointer]:
+                        - /url: https://land.naver.com/article/2340000008
+                        - img
+                        - text: 네이버
+                  - row "고덕그라시움 108동 호수 미확인 59A 59.99㎡ 13억 5,000만 1 8위 미매칭 4월 11일 네이버" [ref=e357]:
+                    - cell "고덕그라시움" [ref=e358]:
+                      - generic [ref=e360]: 고덕그라시움
+                    - cell "108동 호수 미확인" [ref=e361]:
+                      - generic [ref=e362]:
+                        - generic [ref=e363]: 108동
+                        - generic [ref=e364]: 호수 미확인
+                    - cell "59A 59.99㎡" [ref=e365]:
+                      - generic [ref=e366]:
+                        - generic [ref=e367]: 59A
+                        - generic [ref=e368]: 59.99㎡
+                    - cell "13억 5,000만" [ref=e369]
+                    - cell "1" [ref=e370]
+                    - cell "8위" [ref=e371]:
+                      - generic [ref=e373]: 8위
+                    - cell "미매칭" [ref=e374]:
+                      - generic [ref=e375]: 미매칭
+                    - cell "4월 11일" [ref=e376]
+                    - cell "네이버" [ref=e377]:
+                      - link "네이버" [ref=e378] [cursor=pointer]:
+                        - /url: https://land.naver.com/article/2340000011
+                        - img
+                        - text: 네이버
+                  - row "고덕그라시움 105동 호수 미확인 115A 115.55㎡ 29억 5,000만 1 1위 미매칭 4월 11일 네이버" [ref=e379]:
+                    - cell "고덕그라시움" [ref=e380]:
+                      - generic [ref=e382]: 고덕그라시움
+                    - cell "105동 호수 미확인" [ref=e383]:
+                      - generic [ref=e384]:
+                        - generic [ref=e385]: 105동
+                        - generic [ref=e386]: 호수 미확인
+                    - cell "115A 115.55㎡" [ref=e387]:
+                      - generic [ref=e388]:
+                        - generic [ref=e389]: 115A
+                        - generic [ref=e390]: 115.55㎡
+                    - cell "29억 5,000만" [ref=e391]
+                    - cell "1" [ref=e392]
+                    - cell "1위" [ref=e393]:
+                      - generic [ref=e395]: 1위
+                    - cell "미매칭" [ref=e396]:
+                      - generic [ref=e397]: 미매칭
+                    - cell "4월 11일" [ref=e398]
+                    - cell "네이버" [ref=e399]:
+                      - link "네이버" [ref=e400] [cursor=pointer]:
+                        - /url: https://land.naver.com/article/2340000007
+                        - img
+                        - text: 네이버
+                  - row "고덕그라시움 103동 3201 84A 84.97㎡ 21억 1 2위 확정 4월 11일 네이버" [ref=e401]:
+                    - cell "고덕그라시움" [ref=e402]:
+                      - generic [ref=e404]: 고덕그라시움
+                    - cell "103동 3201" [ref=e405]:
+                      - generic [ref=e406]:
+                        - generic [ref=e407]: 103동
+                        - generic [ref=e408]: "3201"
+                    - cell "84A 84.97㎡" [ref=e409]:
+                      - generic [ref=e410]:
+                        - generic [ref=e411]: 84A
+                        - generic [ref=e412]: 84.97㎡
+                    - cell "21억" [ref=e413]
+                    - cell "1" [ref=e414]
+                    - cell "2위" [ref=e415]:
+                      - generic [ref=e417]: 2위
+                    - cell "확정" [ref=e418]:
+                      - generic [ref=e419]: 확정
+                    - cell "4월 11일" [ref=e420]
+                    - cell "네이버" [ref=e421]:
+                      - link "네이버" [ref=e422] [cursor=pointer]:
+                        - /url: https://land.naver.com/article/2340000005
+                        - img
+                        - text: 네이버
+                  - row "고덕그라시움 109동 호수 미확인 84A 84.97㎡ 22억 3 1위 유료 미매칭 4월 11일 네이버" [ref=e423]:
+                    - cell "고덕그라시움" [ref=e424]:
+                      - generic [ref=e426]: 고덕그라시움
+                    - cell "109동 호수 미확인" [ref=e427]:
+                      - generic [ref=e428]:
+                        - generic [ref=e429]: 109동
+                        - generic [ref=e430]: 호수 미확인
+                    - cell "84A 84.97㎡" [ref=e431]:
+                      - generic [ref=e432]:
+                        - generic [ref=e433]: 84A
+                        - generic [ref=e434]: 84.97㎡
+                    - cell "22억" [ref=e435]
+                    - cell "3" [ref=e436]
+                    - cell "1위 유료" [ref=e437]:
+                      - generic [ref=e438]:
+                        - generic [ref=e439]: 1위
+                        - generic [ref=e440]: 유료
+                    - cell "미매칭" [ref=e441]:
+                      - generic [ref=e442]: 미매칭
+                    - cell "4월 11일" [ref=e443]
+                    - cell "네이버" [ref=e444]:
+                      - link "네이버" [ref=e445] [cursor=pointer]:
+                        - /url: https://land.naver.com/article/2340000012
+                        - img
+                        - text: 네이버
+                  - row "고덕그라시움 102동 호수 미확인 59B 59.95㎡ 13억 8,000만 1 5위 미매칭 4월 11일 네이버" [ref=e446]:
+                    - cell "고덕그라시움" [ref=e447]:
+                      - generic [ref=e449]: 고덕그라시움
+                    - cell "102동 호수 미확인" [ref=e450]:
+                      - generic [ref=e451]:
+                        - generic [ref=e452]: 102동
+                        - generic [ref=e453]: 호수 미확인
+                    - cell "59B 59.95㎡" [ref=e454]:
+                      - generic [ref=e455]:
+                        - generic [ref=e456]: 59B
+                        - generic [ref=e457]: 59.95㎡
+                    - cell "13억 8,000만" [ref=e458]
+                    - cell "1" [ref=e459]
+                    - cell "5위" [ref=e460]:
+                      - generic [ref=e462]: 5위
+                    - cell "미매칭" [ref=e463]:
+                      - generic [ref=e464]: 미매칭
+                    - cell "4월 11일" [ref=e465]
+                    - cell "네이버" [ref=e466]:
+                      - link "네이버" [ref=e467] [cursor=pointer]:
+                        - /url: https://land.naver.com/article/2340000004
+                        - img
+                        - text: 네이버

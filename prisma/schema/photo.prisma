@@ -1,0 +1,34 @@
+// ============================================================
+// 매물 사진 (PropertyPhoto)
+// Property 단위로 사진 관리. S3/R2 에 파일 저장, DB 에 메타만.
+// 검색: Property → Unit → SiteUnitType 체인으로 타입별 사진 조회.
+// ============================================================
+
+model PropertyPhoto {
+  id         String @id @default(uuid()) @db.Uuid
+  officeId   String @map("office_id") @db.Uuid
+  propertyId String @map("property_id") @db.Uuid
+
+  fileUrl  String @map("file_url")
+  fileName String @map("file_name")
+  fileSize Int?   @map("file_size")
+  mimeType String @default("image/jpeg") @map("mime_type")
+
+  /// exterior | living | kitchen | bathroom | bedroom | balcony | entrance | parking | view | floorplan | other
+  category String @default("other")
+
+  /// 표시 순서 (drag & drop)
+  sortOrder Int @default(0) @map("sort_order")
+
+  memo String?
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  office   Office   @relation(fields: [officeId], references: [id])
+  property Property @relation(fields: [propertyId], references: [id])
+
+  @@index([officeId, propertyId])
+  @@index([propertyId, sortOrder])
+  @@map("property_photos")
+}

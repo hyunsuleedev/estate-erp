@@ -1,0 +1,191 @@
+- generic [ref=e4]:
+  - banner [ref=e5]:
+    - generic [ref=e6]:
+      - button "Toggle Sidebar" [ref=e7]:
+        - img
+        - generic [ref=e8]: Toggle Sidebar
+      - navigation "breadcrumb":
+        - list:
+          - listitem:
+            - link [disabled]
+  - generic [ref=e9]:
+    - generic [ref=e12]:
+      - list [ref=e14]:
+        - listitem [ref=e15]:
+          - button "Estate ERP 김영공인중개사사무소" [ref=e16]:
+            - img [ref=e18]
+            - generic [ref=e20]:
+              - generic [ref=e21]: Estate ERP
+              - generic [ref=e22]: 김영공인중개사사무소
+      - generic [ref=e23]:
+        - generic [ref=e24]:
+          - generic [ref=e25]: 메뉴
+          - list [ref=e26]:
+            - listitem [ref=e27]:
+              - link "대시보드" [ref=e28] [cursor=pointer]:
+                - /url: /dashboard
+                - img [ref=e29]
+                - generic [ref=e32]: 대시보드
+            - listitem [ref=e33]:
+              - button "매물관리" [expanded] [ref=e34]:
+                - img [ref=e35]
+                - generic [ref=e38]: 매물관리
+                - img [ref=e39]
+              - list [ref=e42]:
+                - listitem [ref=e43]:
+                  - link "매물 목록" [ref=e44] [cursor=pointer]:
+                    - /url: /properties
+                    - generic [ref=e45]: 매물 목록
+                - listitem [ref=e46]:
+                  - link "광고노트" [ref=e47] [cursor=pointer]:
+                    - /url: /properties/external-listings
+                    - generic [ref=e48]: 광고노트
+                - listitem [ref=e49]:
+                  - link "내광고관리" [ref=e50] [cursor=pointer]:
+                    - /url: /properties/naver-my-ads
+                    - generic [ref=e51]: 내광고관리
+            - listitem [ref=e52]:
+              - button "연락처" [ref=e53]:
+                - img [ref=e54]
+                - generic [ref=e58]: 연락처
+                - img [ref=e59]
+            - listitem [ref=e61]:
+              - link "거래관리" [ref=e62] [cursor=pointer]:
+                - /url: /deals
+                - img [ref=e63]
+                - generic [ref=e68]: 거래관리
+            - listitem [ref=e69]:
+              - link "매칭" [ref=e70] [cursor=pointer]:
+                - /url: /matches
+                - img [ref=e71]
+                - generic [ref=e75]: 매칭
+            - listitem [ref=e76]:
+              - link "상담기록" [ref=e77] [cursor=pointer]:
+                - /url: /consultations
+                - img [ref=e78]
+                - generic [ref=e80]: 상담기록
+            - listitem [ref=e81]:
+              - link "구매고객" [ref=e82] [cursor=pointer]:
+                - /url: /buyer-requirements
+                - img [ref=e83]
+                - generic [ref=e88]: 구매고객
+            - listitem [ref=e89]:
+              - link "업무" [ref=e90] [cursor=pointer]:
+                - /url: /tasks
+                - img [ref=e91]
+                - generic [ref=e94]: 업무
+            - listitem [ref=e95]:
+              - link "캘린더" [ref=e96] [cursor=pointer]:
+                - /url: /calendar
+                - img [ref=e97]
+                - generic [ref=e99]: 캘린더
+            - listitem [ref=e100]:
+              - link "관리단지" [ref=e101] [cursor=pointer]:
+                - /url: /sites
+                - img [ref=e102]
+                - generic [ref=e104]: 관리단지
+            - listitem [ref=e105]:
+              - link "계약서 관리" [ref=e106] [cursor=pointer]:
+                - /url: /contracts
+                - img [ref=e107]
+                - generic [ref=e110]: 계약서 관리
+            - listitem [ref=e111]:
+              - link "네트워크" [ref=e112] [cursor=pointer]:
+                - /url: /network
+                - img [ref=e113]
+                - generic [ref=e116]: 네트워크
+            - listitem [ref=e117]:
+              - link "AI 운영" [ref=e118] [cursor=pointer]:
+                - /url: /ai-operations
+                - img [ref=e119]
+                - generic [ref=e122]: AI 운영
+            - listitem [ref=e123]:
+              - link "직원관리" [ref=e124] [cursor=pointer]:
+                - /url: /employees
+                - img [ref=e125]
+                - generic [ref=e130]: 직원관리
+            - listitem [ref=e131]:
+              - link "설정" [ref=e132] [cursor=pointer]:
+                - /url: /settings
+                - img [ref=e133]
+                - generic [ref=e136]: 설정
+        - generic [ref=e137]:
+          - generic [ref=e138]: 즐겨찾기 단지
+          - list [ref=e139]:
+            - listitem [ref=e140]:
+              - link "고덕그라시움" [ref=e141] [cursor=pointer]:
+                - /url: /sites
+                - img [ref=e142]
+                - generic [ref=e143]: 고덕그라시움
+      - list [ref=e145]:
+        - listitem [ref=e146]:
+          - button "김 김영" [ref=e147]:
+            - generic [ref=e149]: 김
+            - generic [ref=e151]: 김영
+            - img [ref=e152]
+      - button "Toggle Sidebar" [ref=e155]
+    - main [ref=e156]:
+      - generic [ref=e158]:
+        - generic [ref=e159]:
+          - generic [ref=e160]:
+            - heading "광고노트" [level=1] [ref=e161]
+            - generic [ref=e162]: 0건
+          - paragraph [ref=e163]: 내 단지에 올라온 외부 매물을 거래유형·단지별로 추적합니다.
+        - generic [ref=e164]:
+          - generic [ref=e166]:
+            - generic [ref=e167]:
+              - paragraph [ref=e168]: 전체
+              - paragraph [ref=e169]: 0건
+              - paragraph [ref=e170]: 현재 필터 기준
+            - img [ref=e172]
+          - generic [ref=e177]:
+            - generic [ref=e178]:
+              - paragraph [ref=e179]: 미매칭
+              - paragraph [ref=e180]: 0건
+              - paragraph [ref=e181]: 호수 확인 필요
+            - img [ref=e183]
+          - generic [ref=e186]:
+            - generic [ref=e187]:
+              - paragraph [ref=e188]: 확정
+              - paragraph [ref=e189]: 0건
+              - paragraph [ref=e190]: 호수 매칭 완료
+            - img [ref=e192]
+          - generic [ref=e196]:
+            - generic [ref=e197]:
+              - paragraph [ref=e198]: 유료 광고
+              - paragraph [ref=e199]: 0건
+              - paragraph [ref=e200]: 선광고 / e편주
+            - img [ref=e202]
+        - generic [ref=e204]:
+          - tablist [ref=e205]:
+            - tab "매매" [ref=e206]
+            - tab "전세" [ref=e207]
+            - tab "월세" [active] [selected] [ref=e208]
+          - generic [ref=e209]:
+            - generic [ref=e210]:
+              - generic [ref=e211]:
+                - generic [ref=e212]:
+                  - img
+                  - textbox "동·호수·메모·단지명 검색" [ref=e213]
+                - generic [ref=e214]:
+                  - img [ref=e215]
+                  - combobox [ref=e217]:
+                    - generic [ref=e236]:
+                      - text: 고덕그라시움
+                      - button [ref=e237]:
+                        - img
+                    - generic [ref=e219]:
+                      - button [ref=e238]:
+                        - img
+                      - img
+              - generic [ref=e220]:
+                - button "전체" [ref=e221]
+                - button "미매칭" [ref=e222]
+                - button "매칭" [ref=e223]
+                - button "확정" [ref=e224]
+                - button "보류" [ref=e225]
+            - tabpanel "월세" [ref=e239]:
+              - generic [ref=e240]:
+                - img [ref=e241]
+                - paragraph [ref=e245]: 표시할 외부 매물이 없습니다.
+                - paragraph [ref=e246]: 선택한 단지에 수집된 매물이 없습니다. 단지 선택을 조정해보세요.

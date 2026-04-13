@@ -25,8 +25,8 @@ function TasksPage() {
   });
 
   const toggleMutation = useMutation({
-    mutationFn: ({ id, isDone }: { id: string; isDone: boolean }) =>
-      api.tasks.update(id, { isDone }),
+    mutationFn: ({ id, completed }: { id: string; completed: boolean }) =>
+      api.tasks.update(id, { status: completed ? 'completed' : 'pending' }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['tasks'] }),
   });
 
@@ -38,7 +38,8 @@ function TasksPage() {
     },
   });
 
-  const filtered = tasks?.filter((t) => showDone || !t.isDone) ?? [];
+  const isCompleted = (t: { status: string }) => t.status === 'completed' || t.status === 'cancelled';
+  const filtered = tasks?.filter((t) => showDone || !isCompleted(t)) ?? [];
 
   return (
     <div className="flex flex-col gap-4">
@@ -47,7 +48,7 @@ function TasksPage() {
         <div className="flex items-center gap-3">
           <h1 className="text-lg font-semibold tracking-tight">업무</h1>
           <span className="text-xs text-muted-foreground">
-            {tasks ? tasks.filter((t) => !t.isDone).length : 0}건 미완료
+            {tasks ? tasks.filter((t) => !isCompleted(t)).length : 0}건 미완료
           </span>
         </div>
         <div className="flex items-center gap-1.5">
@@ -106,36 +107,39 @@ function TasksPage() {
           </div>
         ) : (
           <ul className="divide-y divide-border/40">
-            {filtered.map((task) => (
-              <li
-                key={task.id}
-                className={cn(
-                  'flex items-center gap-3 px-4 py-3 transition-colors hover:bg-muted/80',
-                  task.isDone && 'opacity-50',
-                )}
-              >
-                <Checkbox
-                  checked={task.isDone}
-                  onCheckedChange={(checked) =>
-                    toggleMutation.mutate({ id: task.id, isDone: checked === true })
-                  }
-                  className="size-4"
-                />
-                <div className="flex-1 min-w-0">
-                  <p className={cn('text-sm font-medium', task.isDone && 'line-through text-muted-foreground')}>
-                    {task.title}
-                  </p>
-                  {task.content && (
-                    <p className="mt-0.5 truncate text-xs text-muted-foreground">{task.content}</p>
+            {filtered.map((task) => {
+              const done = isCompleted(task);
+              return (
+                <li
+                  key={task.id}
+                  className={cn(
+                    'flex items-center gap-3 px-4 py-3 transition-colors hover:bg-muted/80',
+                    done && 'opacity-50',
                   )}
-                </div>
-                {task.dueDate && (
-                  <span className="shrink-0 text-xs text-muted-foreground">
-                    {new Date(task.dueDate).toLocaleDateString('ko-KR')}
-                  </span>
-                )}
-              </li>
-            ))}
+                >
+                  <Checkbox
+                    checked={done}
+                    onCheckedChange={(checked) =>
+                      toggleMutation.mutate({ id: task.id, completed: checked === true })
+                    }
+                    className="size-4"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <p className={cn('text-sm font-medium', done && 'line-through text-muted-foreground')}>
+                      {task.title}
+                    </p>
+                    {task.content && (
+                      <p className="mt-0.5 truncate text-xs text-muted-foreground">{task.content}</p>
+                    )}
+                  </div>
+                  {task.dueDate && (
+                    <span className="shrink-0 text-xs text-muted-foreground">
+                      {new Date(task.dueDate).toLocaleDateString('ko-KR')}
+                    </span>
+                  )}
+                </li>
+              );
+            })}
           </ul>
         )}
       </div>
