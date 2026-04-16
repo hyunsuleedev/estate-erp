@@ -110,6 +110,10 @@ model User {
   /// Phase 1: 필드만 존재, Phase 2에 실제 해석 로직 붙음.
   mcpPermissions Json? @map("mcp_permissions") @db.JsonB
 
+  /// MCP/외부 AI 연결용 장기 API 키 (1인 1키). JWT 대신 사용.
+  apiKeyHash   String? @map("api_key_hash")
+  apiKeyPrefix String? @map("api_key_prefix") @db.VarChar(12)
+
   // ─── 급여/수수료 배분 ──────────────────────────────────────
   /// fixed: 고정급만, mixed: 고정급+수수료, commission_only: 순수 수수료제
   payType        String   @default("mixed") @map("pay_type")

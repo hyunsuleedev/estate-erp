@@ -27,6 +27,7 @@ import { AgentModule } from './modules/agent/agent.module';
 import { FinanceModule } from './modules/finance/finance.module';
 import { PublicDocumentsModule } from './modules/public-documents/public-documents.module';
 import { PropertyPhotosModule } from './modules/property-photos/property-photos.module';
+import { McpModule } from './modules/mcp/mcp.module';
 import { RequestContextMiddleware } from './common/request-context/request-context.middleware';
 
 @Module({
@@ -62,6 +63,7 @@ import { RequestContextMiddleware } from './common/request-context/request-conte
     FinanceModule,
     PublicDocumentsModule,
     PropertyPhotosModule,
+    McpModule,
   ],
 })
 export class AppModule implements NestModule {

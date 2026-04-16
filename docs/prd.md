@@ -4,7 +4,7 @@
 
 - 작성일: 2026년 3월 25일
 - 작성자: Hyunsu
-- 최종 수정: 2026년 4월 2일
+- 최종 수정: 2026년 4월 13일
 
 이 문서는 제품 범위와 우선순위를 빠르게 이해하기 위한 PRD다. 상세 설계와 전략 메모는 별도 문서로 분리한다.
 
@@ -66,11 +66,12 @@ Estate ERP는 대한민국 부동산 중개사무소를 위한 통합 ERP다. �
 - CTI Bridge, 로컬 MCP 호스팅, 시스템 트레이, OS 알림 등 로컬 기능이 필요하다.
 - 장기적으로 모바일/웹보다 데스크톱 중심의 업무 흐름이 더 자연스럽다.
 
-### 3.2 CRM이 먼저고 AI는 연결 계층이다
+### 3.2 CRM이 먼저고 AI는 두 계층으로 연결한다
 
-- 제품 안에 독자 AI를 내장하지 않는다.
-- CRM 서버를 MCP 서버처럼 설계해 Claude/ChatGPT/Codex가 직접 연결하도록 한다.
-- AI 비용과 모델 선택은 외부 AI 도구가 담당하고, Estate ERP는 신뢰 가능한 업무 시스템 역할에 집중한다.
+- **Phase 1**: CRM 서버를 MCP 서버로 설계해 외부 AI(Claude Desktop/ChatGPT 등)가 직접 연결하도록 한다.
+- **Phase 2**: 앱 내부에 AI 챗을 도입한다. Claude API를 호출하되, MCP와 동일한 도구를 재사용한다.
+- AI 도구(함수) 정의를 한번만 하면 외부 MCP 연결과 내부 AI 챗이 동시에 사용한다.
+- AI 비용은 외부 API 호출 기반(건당 ~20원)이며, 자체 LLM 호스팅은 사무소 1,000개 이상에서 검토한다.
 
 ### 3.3 멀티테넌시는 기본 전제다
 
@@ -88,15 +89,22 @@ Estate ERP는 대한민국 부동산 중개사무소를 위한 통합 ERP다. �
 
 ### 4.1 Phase 1 범위
 
-현재 집중 범위는 **NestJS 서버 + CRM MCP Server**다.
+현재 집중 범위는 **NestJS 서버 + Electron 데스크톱 앱 + AWS 배포**다.
 
 - 인증, 사무소, 사용자, 역할 관리
 - 멀티테넌시 격리
 - 매물/연락처/상담/매칭/거래/태스크/일정 CRUD
 - Listing 중심 파이프라인 설계
 - ActivityLog 기반 감사 추적
-- BullMQ 기반 규칙 엔진 기반 구조
-- 외부 AI가 호출 가능한 CRM MCP 인터페이스
+- AI 직원: Rule Engine (`@nestjs/schedule` cron) + Proposal 승인 큐
+- 수수료/캐시플로우: CommissionPayment + 타임라인/칸반/리스트 뷰 + 수금 캘린더
+- 고정비 관리: OfficeExpenseTemplate
+- 공적장부 발급 UI 스캐폴딩 (유료 API 업체 연동 포함)
+- 매물 사진 관리 스캐폴딩 (S3 업로드는 Phase 2)
+- 리모트 MCP Server 엔드포인트 (`/mcp/sse`, JWT 인증)
+- AWS 인프라 배포 (ECS Fargate + ALB + RDS + ElastiCache + S3 + ECR)
+- GitHub Actions CI/CD
+- Electron 자동 업데이트 (electron-updater + S3 + 커스텀 알림 UI)
 
 현재는 아래 항목을 구현 범위에서 제외한다.
 
@@ -104,20 +112,24 @@ Estate ERP는 대한민국 부동산 중개사무소를 위한 통합 ERP다. �
 - 인바운드/아웃바운드 콜 세션 처리
 - 데스크톱 실시간 통화 팝업
 - CTI 연동을 전제로 한 상담 시작 흐름
+- 내부 AI 챗 (Phase 2)
+- pgvector 기반 의미 매칭 (Phase 2)
 
 ### 4.2 Phase 2 범위
 
-- Electron 데스크톱 앱
+- **내부 AI 챗**: Claude API + 도구 호출 + 대화 기억 (ChatSession/ChatMessage)
+- **pgvector 의미 매칭**: 매물 설명 임베딩 → SQL 필터 + 벡터 검색 + LLM 판단 3단계
 - 웹 앱(Vite SPA)
-- 관리자/직원용 CRM UI
-- 목록/상세/대시보드/업무 흐름 화면
-- 알림, 실시간 동기화, 시스템 트레이
+- 관리자/직원용 CRM UI 고도화
+- 사진 업로드 (S3 presigned URL + drag & drop)
+- 공적장부 실제 API 연동 (틸코 등)
+- 알림, 실시간 동기화 (Socket.io + Redis Adapter), 시스템 트레이
 - `Call Workspace`를 포함한 desktop 전화 응대 UI 구현
 - 전화 기반 상담 기록 진입 흐름 정리
 
 ### 4.3 Phase 3 범위
 
-- 로컬 MCP 서버
+- 로컬 MCP 서버 (Electron 호스팅)
 - 네이버/외부 데이터 연동
 - CTI Bridge
 - Electron과 CTI Bridge 간 로컬 통신
@@ -176,7 +188,54 @@ Estate ERP는 대한민국 부동산 중개사무소를 위한 통합 ERP다. �
 
 - 직원별 활동 추적
 - 거래/업무/일정 집계
-- 향후 수수료/정산 확장 기반 확보
+- 직원 급여 유형 관리 (고정급/혼합/수수료제)
+
+### 5.6 수수료/캐시플로우
+
+- CommissionPayment: Deal별 수수료 수금 추적 (매도측/매수측/공동중개 분리)
+- 수금 상태 파이프라인: pending → collected / overdue / partial / waived
+- 세금계산서 발행 추적 (none → issued → sent)
+- OfficeExpenseTemplate: 사무소 고정비 템플릿 (한번 등록 → 매월 자동 반영)
+- 캐시플로우 대시보드: 타임라인(월별 시간순) / 칸반(단계별) / 리스트(테이블) 3가지 뷰
+- 수금 캘린더: 잔금일/수금 예정일을 월별 달력에 표시
+- 순이익 추정: 수금 완료 - 고정비 자동 계산
+
+### 5.7 공적장부 발급
+
+- 6종 장부: 등기부등본(유료 700원), 건축물대장, 토지/임야대장, 지적도, 토지이용계획확인서, 대지권등록부(무료)
+- 유료 API 업체 연동 (틸코 / 코리아크레딧뷰로 등)
+- 발급 결과 S3/R2 저장 + PublicDocument 메타데이터 DB 관리
+- Property 상세 페이지에서 원클릭 발급
+- 자료관리 페이지에서 전체 발급 이력 통합 조회
+
+### 5.8 MCP Server
+
+- **리모트 MCP (Estate ERP)**: NestJS SSE 엔드포인트 (`/mcp/sse`). Claude Desktop/ChatGPT 등 외부 AI가 직접 연결.
+- **크롤러 MCP (별도 패키지)**: 네이버 부동산 HTML 파싱 전용. `packages/mcp-crawler`로 분리, `npx @estate-erp/mcp-crawler`로 실행. 사용자 PC에서 로컬 실행 (IP 자연스러움 + 법적 분리).
+- **로컬 MCP** (Phase 3): Electron에서 호스팅. 크롤러 MCP 통합 등 로컬 전용 기능.
+- 인증: JWT 또는 API Key (`X-API-Key` 헤더). API Key는 만료 없이 자동화 전용.
+- 도구 목록: search_listings, get_property, create_task, create_consultation, search_buyers, get_deal, upsert_external_listings 등
+- MCP → Proposal 연동: 쓰기 권한이 없는 사용자의 MCP 요청은 Proposal(승인 큐)로 전환
+
+**크롤러 연동 흐름**:
+
+```
+Claude Desktop
+  ├── 크롤러 MCP (로컬): crawl_naver_listings → 매물 raw 데이터 반환
+  └── Estate ERP MCP (리모트): upsert_external_listings → 광고노트에 등록
+  Claude가 크롤러 결과를 ERP 형식에 맞게 자동 변환 (스키마 가이드 기반)
+```
+
+**n8n/Zapier 연동**: API Key 인증으로 REST API 직접 호출 가능. 고급 사용자용.
+
+### 5.9 내부 AI 챗 (Phase 2)
+
+- AI Chat Service: NestJS 모듈, Claude API 호출 + 도구 실행
+- 도구: MCP와 동일한 함수 재사용 (search_listings, create_task 등). LLM은 SQL을 직접 생성하지 않고 구조화된 함수만 호출.
+- 대화 기억: ChatSession / ChatMessage DB 저장. 최근 20개 메시지 + 이전 대화 요약으로 컨텍스트 관리.
+- 시스템 프롬프트: 부동산 업무 범위로 제한. 관련 없는 질문은 거부.
+- 의미 매칭: SQL 필터(숫자/지역) + pgvector(텍스트 유사도) + LLM(최종 판단) 3단계 파이프라인
+- 비용: ~$0.015/회 (~20원), 사무소당 월 ~3만원 추정
 
 ---
 
@@ -257,19 +316,22 @@ selection
 - 외부 AI가 MCP를 통해 읽기/쓰기 액션을 수행할 수 있다.
 - 데스크톱 앱이 일상 업무의 메인 진입점이 된다.
 - 공동 중개 네트워크가 “부가 기능”이 아니라 실제 사용되는 업무 채널이 된다.
+- 수수료 캐시플로우가 사장님의 월간 재무 파악 도구가 된다.
+- 내부 AI 챗이 매물 검색/매칭 제안을 정확히 수행한다. (Phase 2)
 
 ---
 
 ## 9. 가격 및 사업 모델
 
-SaaS 구독형 모델을 전제로 한다.
+SaaS 구독형 모델을 전제로 한다. 광고 노출 기능이 없는 업무 효율화 도구이므로 경쟁사(중개왕 3만원, 부기사 3만원) 대비 낮은 진입 가격으로 시작하고 기능 추가에 따라 인상한다.
 
-| 플랜 | 대상 | 포지션 |
-|------|------|------|
-| 기본 | 1인 중개사 | 핵심 CRM |
-| 프로 | 팀/법인 | 직원 관리 + 자동화 |
-| 프리미엄 | 대형 법인 | MCP/CTI/고급 분석 |
+| 플랜 | 월 가격 | 광고노트 단지 | 핵심 기능 |
+|------|--------|------------|----------|
+| 무료 | 0원 | 2개 | CRM 기본 (매물/고객/상담/거래) |
+| 기본 | 9,900원 | 20개 | 수수료 정산 + 광고노트 + 공적장부 |
+| 프로 | 29,900원 | 무제한 | AI 직원 + 직원관리 + 내부 AI 챗 + MCP |
 
+Phase 1은 기본(9,900원)으로 출시. CTI/공적장부 API 연동이 완료되는 Phase 2에서 가격 재검토.
 가격, 패키징, 세부 상업 정책은 [PRODUCT_STRATEGY.md](./PRODUCT_STRATEGY.md)에서 관리한다.
 
 ---
@@ -285,6 +347,8 @@ SaaS 구독형 모델을 전제로 한다.
 | Electron 보안/운영 부담 | 자동 업데이트, 보안 기준 유지 |
 | 개발 범위 과대 | Phase별 축소, 코어 흐름 우선 |
 | 단순 CRM으로 차별화 실패 | 네트워크 공유 + MCP 연결에 집중 |
+| AI API 비용 증가 | 사무소당 월 ~3만원 추정, 플랜 가격에 반영 |
+| 광고노트 서버 부하 | 사무소당 단지 수 제한 (무료 2개 / 유료 20개), 30일 이상 비활성 매물 자동 삭제 |
 
 상세 전략과 경쟁 환경은 [PRODUCT_STRATEGY.md](./PRODUCT_STRATEGY.md)를 참조한다.
 
@@ -294,7 +358,8 @@ SaaS 구독형 모델을 전제로 한다.
 
 초기 단계에서 바로 하지 않는 것:
 
-- 제품 내부의 독자 AI 에이전트 플랫폼
+- 자체 LLM 호스팅 (GPU 서버) — 사무소 1,000개 이상에서 검토
+- Text-to-SQL (LLM이 SQL 직접 생성) — 보안 리스크, 구조화된 함수 호출로 대체
 - 노코드 자동화 빌더 UI
 - 고객용 대시보드의 정식 출시
 - 음성 AI 기반 자동 상담 요약 상용화
@@ -308,9 +373,56 @@ SaaS 구독형 모델을 전제로 한다.
 
 ---
 
-## 12. 참고 메모
+## 12. 인프라 아키텍처
+
+### 12.1 AWS 구성 (Step 3)
+
+```
+[GitHub Actions] → Docker 빌드 → [ECR] → [ECS Fargate] 배포
+                                            │
+[ALB] ← HTTPS + 도메인                       │
+  │                                          │
+  ├── /api/*    → REST API (앱용)             │
+  ├── /mcp/*    → MCP SSE (외부 AI 연결)       │
+  └── /ai/*     → 내부 AI 챗 (Phase 2)        │
+                                            │
+  ├──→ [RDS PostgreSQL 15 + PostGIS + pgvector] (Private Subnet)
+  ├──→ [ElastiCache Redis 7] (Private Subnet, BullMQ + Socket.io Adapter)
+  └──→ [S3] (공적장부 PDF / 매물 사진 / Electron 업데이트 파일)
+```
+
+네트워크: VPC 내 Public Subnet(ECS) + Private Subnet(RDS/Redis) 분리. 보안그룹으로 DB/Redis 는 ECS 에서만 접근 가능.
+
+### 12.2 비용 추정
+
+| 사무소 수 | 월 서버비 | 사무소당 |
+|----------|---------|---------|
+| 10개 | ~$15 (프리티어) | ~$1.5 |
+| 50개 | ~$60 | ~$1.2 |
+| 200개 | ~$150 | ~$0.75 |
+| 1,000개 | ~$600 | ~$0.6 |
+
+### 12.3 Electron 자동 업데이트
+
+- `electron-updater` + S3 feed (`latest.yml` + 설치파일)
+- `autoDownload: false` → 사용자 확인 후 다운로드
+- 커스텀 알림 UI: Main 프로세스에서 이벤트 발생 → IPC → Renderer(React)에서 shadcn 기반 토스트/모달 표시
+- 프로그레스 바 + "지금 재시작" 버튼
+- `electron-forge` maker (Squirrel.Windows + ZIP.macOS) + publisher-s3
+
+### 12.4 광고노트 서버 부하 관리
+
+- 사무소당 광고노트 단지 수 제한: 무료 2개 / 기본 20개 / 프로 무제한
+- batch upsert (최대 200건/요청) + 스냅샷 세션 기반
+- `isActive=false` + `lastSeenAt` 30일 이전 → ExternalListing 자동 삭제
+- `raw` JSONB 7일 후 null 처리 (용량 70% 절감)
+
+---
+
+## 13. 참고 메모
 
 - 상세 시스템 구조: [ARCHITECTURE.md](./ARCHITECTURE.md)
 - 상세 데이터 구조: [DATA_STRUCTURE.md](./DATA_STRUCTURE.md)
 - 시장/AI 전략: [PRODUCT_STRATEGY.md](./PRODUCT_STRATEGY.md)
 - 결정 및 TODO: [DECISIONS.md](./DECISIONS.md)
+- AI 직원 설계: [ai-employee-architecture.md](./ai-employee-architecture.md)

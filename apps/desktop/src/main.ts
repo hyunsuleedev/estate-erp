@@ -186,7 +186,10 @@ type CodexStartArgs = {
 function buildCodexArgs(args: CodexStartArgs): string[] {
   const cliArgs: string[] = ['exec', '--json'];
 
-  if (args.dangerouslyBypass) {
+  // When auth token is present, codex needs full bypass to call MCP tools
+  // without interactive approval. This mirrors Paperclip's approach.
+  // Without auth token, respect the user-chosen sandbox mode.
+  if (args.dangerouslyBypass || args.authToken) {
     cliArgs.push('--dangerously-bypass-approvals-and-sandbox');
   } else if (args.sandbox) {
     cliArgs.push('--sandbox', args.sandbox);
