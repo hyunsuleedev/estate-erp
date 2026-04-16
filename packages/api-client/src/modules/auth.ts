@@ -29,7 +29,6 @@ export interface AuthResponse {
   };
   office: {
     id: string;
-    code: string;
     name: string;
   };
 }
@@ -42,7 +41,6 @@ export interface MeResponse {
   role: string;
   office: {
     id: string;
-    code: string;
     name: string;
   };
 }

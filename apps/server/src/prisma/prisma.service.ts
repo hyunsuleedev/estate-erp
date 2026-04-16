@@ -18,8 +18,6 @@ const TENANT_SCOPED_MODELS = new Set([
   'Contract',
   'DealParticipant',
   'Task',
-  'Insight',
-  'InsightRule',
   'CalendarEvent',
   'ActivityLog',
   'Notification',

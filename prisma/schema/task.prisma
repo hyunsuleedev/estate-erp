@@ -42,27 +42,8 @@ model Task {
   @@map("tasks")
 }
 
-// ============================================================
-// 인사이트 / 규칙 엔진
-// ============================================================
-
-model Insight {
-  id        String   @id @default(uuid()) @db.Uuid
-  officeId  String   @map("office_id") @db.Uuid
-  type      String // price_change, verification_due, match_found, contract_due, ad_rank_change
-  title     String
-  content   String?
-  isRead    Boolean  @default(false) @map("is_read")
-  createdAt DateTime @default(now()) @map("created_at")
-
-  office Office @relation(fields: [officeId], references: [id])
-
-  @@map("insights")
-}
-
-// InsightRule는 prisma/schema/agent.prisma 의 Rule 모델로 대체됐다.
-// 임계값/이벤트 기반 규칙은 Rule 테이블이 담당하고,
-// 체커/룰 엔진 전체 설계는 docs/ai-employee-architecture.md 참조.
+// InsightRule/Insight는 agent.prisma의 Rule + Proposal로 대체됨.
+// 설계 문서: docs/ai-employee-architecture.md
 
 // ============================================================
 // 캘린더 이벤트

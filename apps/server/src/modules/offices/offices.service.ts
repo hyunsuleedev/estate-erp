@@ -120,7 +120,6 @@ export class OfficesService {
 
   private toOfficeProfile(office: {
     id: string;
-    code: string;
     name: string;
     licenseNo: string | null;
     ceoName: string | null;
@@ -146,7 +145,6 @@ export class OfficesService {
 
     return {
       id: office.id,
-      code: office.code,
       name: office.name,
       licenseNo: office.licenseNo,
       ceoName: office.ceoName,

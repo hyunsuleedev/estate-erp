@@ -70,10 +70,6 @@ model Proposal {
   /// auto | approval_required | inform_only
   trustTier String @map("trust_tier")
 
-  /// 승인 시 실행할 액션 이름. ExecutorService가 dispatch.
-  actionType    String? @map("action_type")
-  actionPayload Json?   @map("action_payload") @db.JsonB
-
   /// "rule:ad_takedown:v1" / "mcp:update_listing_price" / "event:listing.price.changed"
   generatedBy String  @map("generated_by")
   /// 중복 방지 키. 같은 officeId + dedupeKey + status IN (pending, approved) 존재하면 skip.
@@ -106,6 +102,7 @@ model Proposal {
   deal      Deal?     @relation(fields: [dealId], references: [id])
   contract  Contract? @relation(fields: [contractId], references: [id])
   tenant    Tenant?   @relation(fields: [tenantId], references: [id])
+  actions   ProposalAction[]
 
   @@index([officeId, status, priority, proposedAt])
   @@index([officeId, type, status])
@@ -113,4 +110,30 @@ model Proposal {
   @@index([listingId])
   @@index([propertyId])
   @@map("proposals")
+}
+
+/// Proposal 내 개별 실행 단위.
+model ProposalAction {
+  id         String @id @default(uuid()) @db.Uuid
+  proposalId String @map("proposal_id") @db.Uuid
+
+  /// MCP 도구명 ("update_listing_price", "create_task" 등)
+  tool   String
+  /// 실행 인자
+  args   Json   @db.JsonB
+
+  /// pending | executed | failed
+  status String  @default("pending")
+  /// 실행 성공 시 결과
+  result Json?   @db.JsonB
+  /// 실행 실패 시 에러
+  error  String?
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  proposal Proposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+
+  @@index([proposalId])
+  @@map("proposal_actions")
 }

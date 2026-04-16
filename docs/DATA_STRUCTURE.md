@@ -32,7 +32,11 @@
 │  └── Consultation (상담 기록)                                     │
 ├─────────────────────────────────────────────────────────────────┤
 │  Task (업무)                                                     │
-│  Insight / InsightRule (인사이트 + 규칙 엔진)                     │
+│  Rule (규칙 엔진) / Proposal (AI 제안 큐)                        │
+├─────────────────────────────────────────────────────────────────┤
+│  ServiceVendor (업체) ── officeId nullable (Site 패턴)            │
+│  ├── VendorContact (담당자/연락처, 1:N)                          │
+│  └── ServiceCategory (카테고리 마스터: 배관, 도배, 청소...)        │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -44,7 +48,6 @@
 | 필드 | 타입 | 설명 |
 |------|------|------|
 | id | UUID | PK |
-| code | String | 사무소 코드 (unique, 자동 생성 "GD7291" 등, 직원 loginId 접두사) |
 | name | String | 사무소명 |
 | licenseNo | String? | 중개업 등록번호 |
 | ceoName | String? | 대표자명 |
@@ -584,20 +587,42 @@ draft → signed → depositPaid → balancePaid → registered → cancelled
 
 > 상담 후 "할 일 추가" → Task 생성 시 contactId, propertyId, listingId 자동 전달
 
-### Insight (인사이트)
-| 필드 | 타입 | 설명 |
-|------|------|------|
-| type | String | price_change, verification_due, match_found, contract_due, ad_rank_change |
-| title | String | 제목 |
-| content | String? | 내용 |
-| isRead | Boolean | 읽음 여부 |
+### Rule (규칙 엔진)
+Insight/InsightRule을 대체. agent.prisma에 정의. 설계 문서: docs/ai-employee-architecture.md
 
-### InsightRule (규칙 엔진)
 | 필드 | 타입 | 설명 |
 |------|------|------|
-| type | String | 규칙 유형 |
-| config | JSON | 규칙 설정 |
+| id | UUID | PK |
+| officeId | UUID | FK → Office |
+| name | String | 코드 식별자 ("ad_takedown", "lease_expiry") |
+| displayName | String | UI 표시명 |
+| triggerType | String | "schedule" \| "event" |
+| schedule | String? | 크론 표현식 (schedule일 때) |
+| eventName | String? | 이벤트명 (event일 때) |
+| config | JSON | 규칙 파라미터 |
 | isActive | Boolean | 활성 여부 |
+| isSystem | Boolean | 시스템 규칙 (seed, 삭제 불가) |
+
+> unique: [officeId, name]
+
+### Proposal (AI 제안 큐)
+규칙이 생성하는 제안. 단일 승인 큐(inbox).
+
+| 필드 | 타입 | 설명 |
+|------|------|------|
+| id | UUID | PK |
+| officeId | UUID | FK → Office |
+| type | String | 제안 유형 ("ad_takedown" 등) |
+| title | String | 제목 |
+| description | String | 설명 |
+| reasoning | String? | 생성 근거 |
+| status | String | pending \| approved \| rejected \| expired \| executed \| failed |
+| priority | String | urgent \| normal \| low |
+| trustTier | String | auto \| approval_required \| inform_only |
+| generatedBy | String | "rule:ad_takedown:v1" 등 |
+| listingId | UUID? | 컨텍스트 링크 |
+| propertyId | UUID? | 컨텍스트 링크 |
+| contactId | UUID? | 컨텍스트 링크 |
 
 ---
 
@@ -622,7 +647,7 @@ draft → signed → depositPaid → balancePaid → registered → cancelled
 | createdAt | DateTime | 변경 기록일 |
 
 > 자동 추적: Listing의 price/deposit/monthlyRent가 변경되면 middleware에서 PriceHistory 레코드 자동 생성
-> 규칙 엔진: BullMQ에서 감지 → Insight 생성 → 앱에서 알림
+> 규칙 엔진: Rule이 감지 → Proposal 생성 → 앱에서 승인/실행
 
 ---
 
@@ -876,7 +901,124 @@ async function upsertExternalListing(officeId, naverArticle, sameAddrSiblings) {
 
 ---
 
-## 테이블 목록 (총 36개)
+## 14. 업체 디렉토리
+
+거래 후 하자/수리 이슈 발생 시 업체를 빠르게 찾을 수 있는 서비스 업체 관리. Contact(사람)와 별도 테이블로 분리.
+
+### 공용 데이터 vs 사무소 데이터
+
+```
+officeId = null   →  공용 업체 풀 (플랫폼이 등록/관리)
+officeId = UUID   →  사장님이 직접 등록한 단골 업체
+```
+
+- Site 테이블과 동일한 패턴
+- 쿼리: `WHERE office_id = ? OR office_id IS NULL`
+- 공용 업체 풀은 광고비 없음 (순수 편의 기능)
+
+### ServiceCategory (서비스 카테고리 마스터)
+읽기 전용 마스터 데이터. 대분류 → 세부 서비스 트리 구조.
+
+| 필드 | 타입 | 설명 |
+|------|------|------|
+| id | UUID | PK |
+| parentId | UUID? | FK → ServiceCategory (대분류면 null) |
+| name | String | 카테고리명 ("배관/수도", "누수 수리") |
+| slug | String | 코드명 ("plumbing", "leak_repair") |
+| sortOrder | Int | 정렬 순서 |
+
+> 대분류 예시: 배관/수도, 보일러/난방, 전기/조명, 도배/장판, 방수/방충, 타일/욕실, 잠금/보안, 청소, 인테리어, 이사, 전문가
+> 세부 예시: 배관/수도 > 누수 수리, 배관 교체, 하수구 뚫음, 수전 교체, 동파 복구
+
+### ServiceVendor (업체)
+서비스 업체 정보. 1인 업체부터 법인까지.
+
+| 필드 | 타입 | 설명 |
+|------|------|------|
+| id | UUID | PK |
+| officeId | UUID? | null = 공용 풀 / UUID = 사무소 개인 등록 |
+| name | String | 업체명 ("김사장수리", "(주)한솔설비") |
+| address | String? | 사무실/작업장 주소 |
+| serviceCategories | String[] | 서비스 카테고리 slug 목록 (["plumbing", "leak_repair"]) |
+| coverageDistricts | String[] | 서비스 가능 지역 districtCode 목록 (["11740", "11710"]) |
+| priceNote | String? | 대략적 단가 메모 ("누수 15~25만, 출장비 별도") |
+| memo | String? | 메모 ("야간 긴급 가능, 작업 깔끔") |
+| tags | String[] | 사용자 정의 태그 (["단골", "저렴"]) |
+| isActive | Boolean | 활성 여부 |
+| createdAt | DateTime | 생성일 |
+| updatedAt | DateTime | 수정일 |
+
+> index: [officeId]
+> index: coverageDistricts GIN (지역 검색)
+> index: serviceCategories GIN (카테고리 검색)
+
+> **지역 커버리지**: districtCode(구 단위) 기반. "강동구, 송파구"처럼 선택. 읍면동 단위는 업체 등록이 번거롭고, 시 단위는 너무 넓음.
+
+> **카테고리**: ServiceCategory 마스터의 slug를 String[]로 저장. 대분류와 세부 모두 포함 가능 ("plumbing" + "leak_repair").
+
+### VendorContact (업체 담당자/연락처)
+업체별 연락처 목록. 대표번호, 기사별 직통 등.
+
+| 필드 | 타입 | 설명 |
+|------|------|------|
+| id | UUID | PK |
+| vendorId | UUID | FK → ServiceVendor |
+| name | String | 담당자명 또는 연락처명 ("김기사", "대표번호", "사무실") |
+| phone | String | 전화번호 |
+| role | String? | 역할 ("배관 담당", "대표", "야간 긴급") |
+| memo | String? | 메모 |
+| createdAt | DateTime | 생성일 |
+
+> index: [vendorId]
+> index: [phone] (CTI 검색용)
+> 1인 업체: VendorContact 1개 (사장님 본인 번호)
+> 법인 업체: VendorContact N개 (대표번호 + 기사별 + 사무실)
+
+### 연락처 통합 검색 (DB View)
+
+Contact(사람)와 VendorContact(업체 담당자)를 통합 검색하기 위한 DB View.
+
+```sql
+CREATE VIEW all_contacts_view AS
+-- 사람
+SELECT id, office_id, name, phone, phone2,
+       'person' as source_type, NULL as vendor_id, NULL as vendor_name
+FROM contacts
+
+UNION ALL
+
+-- 업체 담당자
+SELECT vc.id, sv.office_id, vc.name, vc.phone, NULL as phone2,
+       'vendor' as source_type, sv.id as vendor_id, sv.name as vendor_name
+FROM vendor_contacts vc
+JOIN service_vendors sv ON vc.vendor_id = sv.id;
+```
+
+> CTI 전화 팝업: `SELECT * FROM all_contacts_view WHERE phone = ?`
+> 통합 검색: `SELECT * FROM all_contacts_view WHERE name LIKE ? AND (office_id = ? OR office_id IS NULL)`
+
+### 업체 검색 흐름
+
+```
+매물 주소 → districtCode 추출 (강동구 = 11740)
+카테고리 선택 (배관/수도 > 누수 수리)
+    ↓
+SELECT sv.*, vc.*
+FROM service_vendors sv
+LEFT JOIN vendor_contacts vc ON vc.vendor_id = sv.id
+WHERE '11740' = ANY(sv.coverage_districts)
+  AND 'leak_repair' = ANY(sv.service_categories)
+  AND (sv.office_id = ? OR sv.office_id IS NULL)
+ORDER BY
+  CASE WHEN sv.office_id IS NOT NULL THEN 0 ELSE 1 END,  -- 내 업체 우선
+  sv.name;
+```
+
+> 내 사무소 업체가 먼저, 공용 풀 업체가 보조로 노출
+
+---
+
+## 테이블 목록 (총 39개)
 
 | # | 테이블 | DB명 | 설명 |
 |---|--------|------|------|
@@ -910,8 +1052,8 @@ async function upsertExternalListing(officeId, naverArticle, sameAddrSiblings) {
 | 23 | DealParticipant | deal_participants | 거래 참여자 (직원별 역할/수수료/정산) |
 | — | **업무/인사이트** | | |
 | 24 | Task | tasks | 업무 |
-| 25 | Insight | insights | 인사이트 알림 |
-| 26 | InsightRule | insight_rules | 규칙 엔진 |
+| 25 | Rule | rules | 규칙 엔진 (InsightRule 대체) |
+| 26 | Proposal | proposals | AI 제안 큐 (Insight 대체) |
 | 27 | CalendarEvent | calendar_events | 캘린더 |
 | 28 | ActivityLog | activity_logs | 활동 로그 (감사 추적) |
 | — | **알림** | | |
@@ -925,3 +1067,7 @@ async function upsertExternalListing(officeId, naverArticle, sameAddrSiblings) {
 | — | **외부 시장 매물 (광고노트)** | | |
 | 35 | ExternalListingGroup | external_listing_groups | 호실 단위 외부 매물 그룹 (HouseProperty 대응, 사용자 기억 보존) |
 | 36 | ExternalListing | external_listings | 개별 외부 매물 1건 (Offer 대응, articleNo 기준 unique) |
+| — | **업체 디렉토리** | | |
+| 37 | ServiceCategory | service_categories | 서비스 카테고리 마스터 (대분류→세부) |
+| 38 | ServiceVendor | service_vendors | 업체 (officeId nullable, 공용 풀 + 사무소별) |
+| 39 | VendorContact | vendor_contacts | 업체 담당자/연락처 (1:N) |

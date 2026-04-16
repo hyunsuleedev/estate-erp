@@ -2,7 +2,6 @@ import {
   Injectable,
   UnauthorizedException,
   ConflictException,
-  InternalServerErrorException,
   BadRequestException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -10,7 +9,6 @@ import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import type { StringValue } from 'ms';
 import { Prisma } from '@prisma/client';
-import { randomInt } from 'node:crypto';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
   AuthenticatedUser,
@@ -24,7 +22,6 @@ type UserWithOffice = Prisma.UserGetPayload<{
 
 @Injectable()
 export class AuthService {
-  private static readonly OFFICE_CODE_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
   private static readonly PASSWORD_SALT_ROUNDS = 10;
 
   constructor(
@@ -64,56 +61,44 @@ export class AuthService {
       AuthService.PASSWORD_SALT_ROUNDS,
     );
 
-    for (let attempt = 0; attempt < 5; attempt += 1) {
-      const officeCode = this.generateOfficeCode();
-
-      try {
-        return await this.prisma.$transaction(async (tx) => {
-          const office = await tx.office.create({
-            data: { code: officeCode, name: dto.officeName },
-          });
-
-          const user = await tx.user.create({
-            data: {
-              loginId,
-              email,
-              password: hashedPassword,
-              name: dto.name,
-              officeId: office.id,
-              role: 'owner',
-            },
-          });
-
-          const authenticatedUser = this.toAuthenticatedUser({
-            ...user,
-            office,
-          });
-          const tokens = this.generateTokens(authenticatedUser);
-
-          await this.storeRefreshTokenHash(user.id, tokens.refreshToken, tx);
-
-          return this.toAuthResponse(authenticatedUser, tokens);
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const office = await tx.office.create({
+          data: { name: dto.officeName },
         });
-      } catch (error) {
-        if (error instanceof Prisma.PrismaClientKnownRequestError) {
-          const target = this.getUniqueConstraintTarget(error);
 
-          if (target.includes('code')) {
-            continue;
-          }
+        const user = await tx.user.create({
+          data: {
+            loginId,
+            email,
+            password: hashedPassword,
+            name: dto.name,
+            officeId: office.id,
+            role: 'owner',
+          },
+        });
 
-          if (target.includes('login_id') || target.includes('loginId')) {
-            throw new ConflictException('이미 사용 중인 아이디입니다.');
-          }
+        const authenticatedUser = this.toAuthenticatedUser({
+          ...user,
+          office,
+        });
+        const tokens = this.generateTokens(authenticatedUser);
+
+        await this.storeRefreshTokenHash(user.id, tokens.refreshToken, tx);
+
+        return this.toAuthResponse(authenticatedUser, tokens);
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError) {
+        const target = this.getUniqueConstraintTarget(error);
+
+        if (target.includes('login_id') || target.includes('loginId')) {
+          throw new ConflictException('이미 사용 중인 아이디입니다.');
         }
-
-        throw error;
       }
-    }
 
-    throw new InternalServerErrorException(
-      '사무소 코드 생성에 실패했습니다. 다시 시도해주세요.',
-    );
+      throw error;
+    }
   }
 
   async validateUser(loginId: string, password: string) {
@@ -184,7 +169,6 @@ export class AuthService {
       role: authenticatedUser.role,
       office: {
         id: authenticatedUser.office.id,
-        code: authenticatedUser.office.code,
         name: authenticatedUser.office.name,
       },
     };
@@ -251,12 +235,6 @@ export class AuthService {
     };
   }
 
-  private generateOfficeCode(): string {
-    const letters = AuthService.OFFICE_CODE_ALPHABET;
-
-    return `${letters[randomInt(letters.length)]}${letters[randomInt(letters.length)]}${randomInt(1000, 10000)}`;
-  }
-
   private getUniqueConstraintTarget(
     error: Prisma.PrismaClientKnownRequestError,
   ): string {
@@ -320,7 +298,6 @@ export class AuthService {
       role: user.role as UserRole,
       office: {
         id: user.office.id,
-        code: user.office.code,
         name: user.office.name,
         isActive: user.office.isActive,
       },
@@ -342,7 +319,6 @@ export class AuthService {
       },
       office: {
         id: user.office.id,
-        code: user.office.code,
         name: user.office.name,
       },
     };

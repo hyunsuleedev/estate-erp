@@ -11,7 +11,6 @@ export interface OfficeUserSummary {
 
 export interface OfficeProfile {
   id: string;
-  code: string;
   name: string;
   licenseNo: string | null;
   ceoName: string | null;

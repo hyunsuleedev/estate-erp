@@ -18,8 +18,7 @@ paths:
 - `offices` — 모든 데이터의 최상위. 모든 테이블에 `office_id` FK 필수.
 
 ### 멀티테넌시 상세
-- `offices` — code 필드 (자동 생성 "GD7291" 등, 직원 loginId 접두사)
-- `users` — loginId (owner: 이메일, 직원: "GD7291-0001"), role (owner/manager/agent)
+- `users` — loginId (사용자가 직접 생성, unique), role (owner/manager/agent)
 
 ### 장소/매물 체인
 - `sites` → `dongs` → `units` → `properties`

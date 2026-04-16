@@ -47,7 +47,6 @@ const employeeDetailInclude = {
   office: {
     select: {
       id: true,
-      code: true,
       name: true,
       commissionConfig: true,
     },
@@ -191,7 +190,6 @@ export class EmployeesService {
       where: { id: actor.officeId },
       select: {
         id: true,
-        code: true,
       },
     });
 
@@ -204,7 +202,7 @@ export class EmployeesService {
 
     const loginId = dto.loginId
       ? this.normalizeLoginId(dto.loginId)
-      : await this.generateNextLoginId(actor.officeId, office.code);
+      : '';
 
     if (!loginId) {
       throw new BadRequestException('로그인 ID를 생성할 수 없습니다.');
@@ -429,25 +427,6 @@ export class EmployeesService {
       recentConsultations: employee.consultations,
       recentActivities: employee.activityLogs,
     };
-  }
-
-  private async generateNextLoginId(officeId: string, officeCode: string) {
-    const users = await this.prisma.user.findMany({
-      where: { officeId },
-      select: { loginId: true },
-    });
-
-    const prefix = `${officeCode.toLowerCase()}-`;
-    const nextIndex =
-      users.reduce((maxValue, user) => {
-        const suffix = user.loginId.startsWith(prefix)
-          ? Number.parseInt(user.loginId.slice(prefix.length), 10)
-          : Number.NaN;
-
-        return Number.isFinite(suffix) ? Math.max(maxValue, suffix) : maxValue;
-      }, 0) + 1;
-
-    return `${prefix}${String(nextIndex).padStart(4, '0')}`;
   }
 
   private assertCanManageTarget(actorRole: string, targetRole: string) {

@@ -55,9 +55,8 @@ prisma/
 - Prisma middleware로 격리
 
 ### Auth & User
-- Office.code: 사무소 코드 (자동 생성, "GD7291" 등)
-- User.loginId: owner는 이메일, 직원은 자동생성 ("GD7291-0001")
-- User.email: owner 필수, 직원 선택
+- User.loginId: 모든 사용자가 직접 생성 (unique)
+- User.email: 선택 (nullable)
 - User.role: owner / manager / agent
 - NestJS @Roles 데코레이터 + Guard 패턴 RBAC
 
@@ -112,7 +111,7 @@ pnpm prisma:generate   # Generate Prisma client
 **Phase 1 (현재)**: NestJS 서버 + CRM MCP Server
 - API 설계, CRUD, Auth + 멀티테넌시, WebSocket, 규칙 엔진
 
-## Database (36 tables)
+## Database (39 tables)
 
 - 법정동 마스터 3: Province, District, Ward
 - 멀티테넌시 2: Office, User
@@ -120,10 +119,11 @@ pnpm prisma:generate   # Generate Prisma client
 - 매물 3: Property, Listing, PriceHistory
 - 연락처 4: Contact, ContactRelation, PropertyContact, Tenant
 - CRM 6: BuyerRequirement, Consultation, Match, Deal, Contract, DealParticipant
-- 업무 5: Task, Insight, InsightRule, CalendarEvent, ActivityLog
+- 업무/AI 5: Task, Rule, Proposal, CalendarEvent, ActivityLog
 - 알림 1: Notification
 - 네트워크 5: NetworkRoom, NetworkRoomMember, NetworkSharedProperty, NetworkInquiry, NetworkMessage
 - 외부 매물 2: ExternalListingGroup, ExternalListing (광고노트, 사무소별 크롤링 데이터)
+- 업체 3: ServiceCategory, ServiceVendor, VendorContact
 
 ## Key Pipelines
 

@@ -53,7 +53,6 @@ export interface EmployeeDealParticipant {
 export interface EmployeeDetail extends Omit<Employee, 'latestActivityAt'> {
   office: {
     id: string;
-    code: string;
     name: string;
     commissionConfig: unknown;
   };
