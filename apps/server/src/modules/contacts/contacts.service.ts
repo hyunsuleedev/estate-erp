@@ -92,13 +92,15 @@ export class ContactsService {
       memo?: string;
     },
   ) {
-    const data = {
-      officeId,
-      ...dto,
-      phone: dto.phone ? this.normalizePhone(dto.phone) : undefined,
-      phone2: dto.phone2 ? this.normalizePhone(dto.phone2) : undefined,
-    };
-    return this.prisma.contact.create({ data });
+    const { phone, phone2, ...rest } = dto;
+    return this.prisma.contact.create({
+      data: {
+        officeId,
+        ...rest,
+        phone: phone ? this.normalizePhone(phone) : null,
+        phone2: phone2 ? this.normalizePhone(phone2) : null,
+      },
+    });
   }
 
   async update(
@@ -194,14 +196,16 @@ export class ContactsService {
     }));
   }
 
-  async findByPhone(officeId: string, phone: string) {
+  async findByPhone(officeId: string, phone?: string) {
+    if (!phone) return [];
     const normalized = this.normalizePhone(phone);
+    if (normalized.length < 4) return [];
     const contacts = await this.prisma.contact.findMany({
       where: {
         officeId,
         OR: [
-          { phone: { contains: normalized } },
-          { phone2: { contains: normalized } },
+          { phone: normalized },
+          { phone2: normalized },
         ],
       },
       select: {

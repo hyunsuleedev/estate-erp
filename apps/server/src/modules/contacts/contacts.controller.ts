@@ -58,6 +58,7 @@ export class ContactsController {
     @Query('phone') phone: string,
     @CurrentUser() user: CurrentUserPayload,
   ) {
+    if (!phone?.trim() || phone.trim().length < 4) return [];
     return this.contactsService.findByPhone(user.officeId, phone);
   }
 
