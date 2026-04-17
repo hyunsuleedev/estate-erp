@@ -92,7 +92,13 @@ export class ContactsService {
       memo?: string;
     },
   ) {
-    return this.prisma.contact.create({ data: { officeId, ...dto } });
+    const data = {
+      officeId,
+      ...dto,
+      phone: dto.phone ? this.normalizePhone(dto.phone) : undefined,
+      phone2: dto.phone2 ? this.normalizePhone(dto.phone2) : undefined,
+    };
+    return this.prisma.contact.create({ data });
   }
 
   async update(
@@ -108,7 +114,12 @@ export class ContactsService {
     },
   ) {
     await this.findOne(id, officeId);
-    return this.prisma.contact.update({ where: { id }, data: dto });
+    const data = {
+      ...dto,
+      ...(dto.phone !== undefined && { phone: dto.phone ? this.normalizePhone(dto.phone) : null }),
+      ...(dto.phone2 !== undefined && { phone2: dto.phone2 ? this.normalizePhone(dto.phone2) : null }),
+    };
+    return this.prisma.contact.update({ where: { id }, data });
   }
 
   async remove(id: string, officeId: string) {
@@ -116,21 +127,139 @@ export class ContactsService {
     return this.prisma.contact.delete({ where: { id } });
   }
 
-  async findByPhone(officeId: string, phone: string) {
-    return this.prisma.contact.findMany({
+  async getPhoneIndex(officeId: string) {
+    const contacts = await this.prisma.contact.findMany({
       where: {
         officeId,
         OR: [
-          { phone: { contains: phone } },
-          { phone2: { contains: phone } },
+          { phone: { not: null } },
+          { phone2: { not: null } },
         ],
       },
-      include: {
-        propertyContacts: { include: { property: { include: { site: true } } } },
-        buyerRequirements: { where: { status: 'active' } },
-        relationsAsMain: { include: { relatedContact: true } },
+      select: {
+        id: true,
+        name: true,
+        phone: true,
+        phone2: true,
+        tags: true,
+        propertyContacts: {
+          where: { role: 'owner', status: 'active' },
+          take: 3,
+          select: {
+            role: true,
+            property: {
+              select: {
+                site: { select: { name: true } },
+                unit: { select: { name: true, dong: { select: { name: true, isPlaceholder: true } } } },
+              },
+            },
+          },
+        },
+        consultations: {
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+          select: {
+            content: true,
+            type: true,
+            createdAt: true,
+          },
+        },
       },
     });
+
+    return contacts.map((c) => ({
+      id: c.id,
+      name: c.name,
+      phone: c.phone,
+      phone2: c.phone2,
+      tags: c.tags,
+      ownedProperties: c.propertyContacts.map((pc) => {
+        const site = pc.property.site;
+        const unit = pc.property.unit;
+        const dong = unit?.dong;
+        const unitLabel = unit
+          ? `${dong && !dong.isPlaceholder ? dong.name + ' ' : ''}${unit.name}호`
+          : null;
+        return { siteName: site.name, unitLabel };
+      }),
+      latestConsultation: c.consultations[0]
+        ? {
+            content: c.consultations[0].content.length > 80
+              ? c.consultations[0].content.substring(0, 80) + '…'
+              : c.consultations[0].content,
+            type: c.consultations[0].type,
+            createdAt: c.consultations[0].createdAt,
+          }
+        : null,
+    }));
+  }
+
+  async findByPhone(officeId: string, phone: string) {
+    const normalized = this.normalizePhone(phone);
+    const contacts = await this.prisma.contact.findMany({
+      where: {
+        officeId,
+        OR: [
+          { phone: { contains: normalized } },
+          { phone2: { contains: normalized } },
+        ],
+      },
+      select: {
+        id: true,
+        name: true,
+        phone: true,
+        phone2: true,
+        tags: true,
+        propertyContacts: {
+          where: { role: 'owner', status: 'active' },
+          take: 3,
+          select: {
+            role: true,
+            property: {
+              select: {
+                site: { select: { name: true } },
+                unit: { select: { name: true, dong: { select: { name: true, isPlaceholder: true } } } },
+              },
+            },
+          },
+        },
+        consultations: {
+          orderBy: { createdAt: 'desc' as const },
+          take: 1,
+          select: {
+            content: true,
+            type: true,
+            createdAt: true,
+          },
+        },
+      },
+    });
+
+    return contacts.map((c) => ({
+      id: c.id,
+      name: c.name,
+      phone: c.phone,
+      phone2: c.phone2,
+      tags: c.tags,
+      ownedProperties: c.propertyContacts.map((pc) => {
+        const site = pc.property.site;
+        const unit = pc.property.unit;
+        const dong = unit?.dong;
+        const unitLabel = unit
+          ? `${dong && !dong.isPlaceholder ? dong.name + ' ' : ''}${unit.name}호`
+          : null;
+        return { siteName: site.name, unitLabel };
+      }),
+      latestConsultation: c.consultations[0]
+        ? {
+            content: c.consultations[0].content.length > 80
+              ? c.consultations[0].content.substring(0, 80) + '…'
+              : c.consultations[0].content,
+            type: c.consultations[0].type,
+            createdAt: c.consultations[0].createdAt,
+          }
+        : null,
+    }));
   }
 
   async getPropertyContacts(id: string, officeId: string) {
@@ -160,5 +289,13 @@ export class ContactsService {
       },
       orderBy: { createdAt: 'desc' },
     });
+  }
+
+  /** 전화번호 정규화 — 하이픈/공백/괄호 제거, +82 → 0 변환 */
+  private normalizePhone(phone: string): string {
+    let cleaned = phone.replace(/[\s\-()]/g, '');
+    if (cleaned.startsWith('+82')) cleaned = '0' + cleaned.substring(3);
+    if (cleaned.startsWith('82') && cleaned.length > 10) cleaned = '0' + cleaned.substring(2);
+    return cleaned;
   }
 }

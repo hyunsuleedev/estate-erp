@@ -221,7 +221,10 @@ export class PropertiesService {
 
     this.assertValidSiteUnitChain(site.type, unit);
 
-    const { ownerName, ownerPhone, ...propertyData } = dto;
+    const { ownerName, ownerPhone: rawOwnerPhone, ...propertyData } = dto;
+    const ownerPhone = rawOwnerPhone
+      ? rawOwnerPhone.replace(/[\s\-()]/g, '')
+      : undefined;
 
     if (ownerName?.trim()) {
       return this.prisma.$transaction(async (tx) => {

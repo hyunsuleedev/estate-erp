@@ -48,6 +48,11 @@ export class ContactsController {
     });
   }
 
+  @Get('phone-index')
+  getPhoneIndex(@CurrentUser() user: CurrentUserPayload) {
+    return this.contactsService.getPhoneIndex(user.officeId);
+  }
+
   @Get('search-by-phone')
   findByPhone(
     @Query('phone') phone: string,
