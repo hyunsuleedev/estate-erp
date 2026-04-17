@@ -8,7 +8,10 @@ import {
   Body,
   Query,
   UseGuards,
+  UseInterceptors,
+  UploadedFile,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { ConsultationsService } from './consultations.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
@@ -108,5 +111,29 @@ export class ConsultationsController {
     @CurrentUser() user: CurrentUserPayload,
   ) {
     return this.service.remove(id, user.officeId);
+  }
+
+  @Post('with-recording')
+  @UseInterceptors(FileInterceptor('file'))
+  createWithRecording(
+    @UploadedFile() file: Express.Multer.File,
+    @Body('contactId') contactId: string,
+    @Body('type') type: string,
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.service.createWithRecording(
+      user.officeId,
+      user.userId,
+      { contactId, type: type || 'phone' },
+      file,
+    );
+  }
+
+  @Get(':id/stt-status')
+  getSttStatus(
+    @Param('id') id: string,
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.service.getSttStatus(id, user.officeId);
   }
 }
