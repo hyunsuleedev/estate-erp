@@ -13,15 +13,14 @@ export interface Contract {
   monthlyRent: number | null;
   status: string;
   contractDate: string | null;
-  contractDeposit: number | null;
-  contractDepositDate: string | null;
-  contractDepositPaid: boolean;
-  middlePayment: number | null;
-  middlePaymentDate: string | null;
-  middlePaymentPaid: boolean;
-  finalPayment: number | null;
-  finalPaymentDate: string | null;
-  finalPaymentPaid: boolean;
+  /// 계약서 상 계약금 (만원). 실제 입금은 DealPayment(kind='contract') 참조.
+  statedDeposit: number | null;
+  /// 계약서 상 중도금 (만원).
+  statedInterimPayment: number | null;
+  statedInterimDate: string | null;
+  /// 계약서 상 잔금 (만원).
+  statedBalance: number | null;
+  statedBalanceDate: string | null;
   moveInDate: string | null;
   leaseStartDate: string | null;
   leaseEndDate: string | null;
@@ -47,15 +46,11 @@ export interface CreateContractDto {
   monthlyRent?: number;
   status?: string;
   contractDate?: string;
-  contractDeposit?: number;
-  contractDepositDate?: string;
-  contractDepositPaid?: boolean;
-  middlePayment?: number;
-  middlePaymentDate?: string;
-  middlePaymentPaid?: boolean;
-  finalPayment?: number;
-  finalPaymentDate?: string;
-  finalPaymentPaid?: boolean;
+  statedDeposit?: number;
+  statedInterimPayment?: number;
+  statedInterimDate?: string;
+  statedBalance?: number;
+  statedBalanceDate?: string;
   moveInDate?: string;
   leaseStartDate?: string;
   leaseEndDate?: string;
@@ -72,15 +67,11 @@ export interface UpdateContractDto {
   monthlyRent?: number | null;
   status?: string;
   contractDate?: string | null;
-  contractDeposit?: number | null;
-  contractDepositDate?: string | null;
-  contractDepositPaid?: boolean;
-  middlePayment?: number | null;
-  middlePaymentDate?: string | null;
-  middlePaymentPaid?: boolean;
-  finalPayment?: number | null;
-  finalPaymentDate?: string | null;
-  finalPaymentPaid?: boolean;
+  statedDeposit?: number | null;
+  statedInterimPayment?: number | null;
+  statedInterimDate?: string | null;
+  statedBalance?: number | null;
+  statedBalanceDate?: string | null;
   moveInDate?: string | null;
   leaseStartDate?: string | null;
   leaseEndDate?: string | null;

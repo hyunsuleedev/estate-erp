@@ -616,8 +616,9 @@ async function seedMatches(
 }
 
 // ─────────────────────────────────────────────────────────────
-// Deal — 3 개 (selection / contract / completed)
-// Contract 는 contract/completed 단계에만 생성
+// Deal — 3 개 (selection / contracted / completed)
+// Contract 는 contracted/completed 단계에만 생성
+// DealPayment 는 stage 에 맞게 각 거래의 대금 흐름 표현
 // DealParticipant 는 모든 Deal 에 listing_agent + manager 형태로
 // ─────────────────────────────────────────────────────────────
 async function seedDeals(
@@ -645,7 +646,8 @@ async function seedDeals(
       officeId: ctx.officeId,
       listingId: listings[0].id,
       stage: 'selection',
-      price: 268000,
+      transactionType: 'sale',
+      agreedPrice: 268000,
       buyerContactId: buyers[0].id,
       sellerContactId: owners[0].id,
       commissionSellerRate: new Prisma.Decimal(0.4),
@@ -680,15 +682,18 @@ async function seedDeals(
     ],
   });
 
-  // Deal 2: contract 단계 — Contract 동반 생성
+  // Deal 2: contracted 단계 — Contract 동반 생성, 계약금 입금 완료
   const deal2 = await ctx.prisma.deal.create({
     data: {
       officeId: ctx.officeId,
       listingId: listings[3].id,
-      stage: 'contract',
-      price: 198000,
+      stage: 'contracted',
+      stageChangedAt: daysAgo(5),
+      transactionType: 'sale',
+      agreedPrice: 198000,
       buyerContactId: buyers[2].id,
       sellerContactId: owners[3].id,
+      specialTerms: `${DEMO_TAG} 전세 승계 · 에어컨 4대 포함`,
       commissionSellerRate: new Prisma.Decimal(0.5),
       commissionSellerAmount: 990,
       commissionBuyerRate: new Prisma.Decimal(0.5),
@@ -708,18 +713,49 @@ async function seedDeals(
       totalPrice: 198000,
       status: 'depositPaid',
       contractDate: daysAgo(5),
-      contractDeposit: 19800,
-      contractDepositDate: daysAgo(5),
-      contractDepositPaid: true,
-      middlePayment: 79200,
-      middlePaymentDate: daysFromNow(30),
-      finalPayment: 99000,
-      finalPaymentDate: daysFromNow(60),
+      statedDeposit: 19800,
+      statedInterimPayment: 79200,
+      statedInterimDate: daysFromNow(30),
+      statedBalance: 99000,
+      statedBalanceDate: daysFromNow(60),
       moveInDate: daysFromNow(62),
       specialTerms: `${DEMO_TAG} 전세 승계 · 에어컨 4대 포함`,
       attachments: [],
       memo: `${DEMO_TAG} 계약금 완료`,
     },
+  });
+  // Deal 2 DealPayment: 계약금 완료, 중도금/잔금 예정
+  await ctx.prisma.dealPayment.createMany({
+    data: [
+      {
+        officeId: ctx.officeId,
+        dealId: deal2.id,
+        kind: 'contract',
+        scheduledAmount: 19800,
+        scheduledDate: daysAgo(5),
+        paidAmount: 19800,
+        paidAt: daysAgo(5),
+        status: 'paid',
+        method: 'transfer',
+        memo: `${DEMO_TAG} 계약금 입금 완료`,
+      },
+      {
+        officeId: ctx.officeId,
+        dealId: deal2.id,
+        kind: 'interim',
+        scheduledAmount: 79200,
+        scheduledDate: daysFromNow(30),
+        status: 'pending',
+      },
+      {
+        officeId: ctx.officeId,
+        dealId: deal2.id,
+        kind: 'balance',
+        scheduledAmount: 99000,
+        scheduledDate: daysFromNow(60),
+        status: 'pending',
+      },
+    ],
   });
   await ctx.prisma.dealParticipant.createMany({
     data: [
@@ -750,9 +786,12 @@ async function seedDeals(
       officeId: ctx.officeId,
       listingId: listings[1].id,
       stage: 'completed',
-      price: 242000,
+      stageChangedAt: daysAgo(2),
+      transactionType: 'sale',
+      agreedPrice: 242000,
       buyerContactId: buyers[3].id,
       sellerContactId: owners[1].id,
+      specialTerms: `${DEMO_TAG} 잔금일 이사 · 관리비 정산`,
       commissionSellerRate: new Prisma.Decimal(0.4),
       commissionSellerAmount: 968,
       commissionBuyerRate: new Prisma.Decimal(0.4),
@@ -760,6 +799,7 @@ async function seedDeals(
       commissionTotal: 1936,
       vat: 193,
       isJointBrokerage: true,
+      ourSide: 'seller',
       partnerBrokerName: '고덕공인중개',
       partnerBrokerPhone: '02-555-1234',
       partnerCommission: 968,
@@ -776,20 +816,54 @@ async function seedDeals(
       totalPrice: 242000,
       status: 'registered',
       contractDate: daysAgo(45),
-      contractDeposit: 24200,
-      contractDepositDate: daysAgo(45),
-      contractDepositPaid: true,
-      middlePayment: 96800,
-      middlePaymentDate: daysAgo(15),
-      middlePaymentPaid: true,
-      finalPayment: 121000,
-      finalPaymentDate: daysAgo(2),
-      finalPaymentPaid: true,
+      statedDeposit: 24200,
+      statedInterimPayment: 96800,
+      statedInterimDate: daysAgo(15),
+      statedBalance: 121000,
+      statedBalanceDate: daysAgo(2),
       moveInDate: daysAgo(2),
       specialTerms: `${DEMO_TAG} 잔금일 이사 · 관리비 정산`,
       attachments: [],
       memo: `${DEMO_TAG} 등기 완료`,
     },
+  });
+  // Deal 3 DealPayment: 모든 입금 완료
+  await ctx.prisma.dealPayment.createMany({
+    data: [
+      {
+        officeId: ctx.officeId,
+        dealId: deal3.id,
+        kind: 'contract',
+        scheduledAmount: 24200,
+        scheduledDate: daysAgo(45),
+        paidAmount: 24200,
+        paidAt: daysAgo(45),
+        status: 'paid',
+        method: 'transfer',
+      },
+      {
+        officeId: ctx.officeId,
+        dealId: deal3.id,
+        kind: 'interim',
+        scheduledAmount: 96800,
+        scheduledDate: daysAgo(15),
+        paidAmount: 96800,
+        paidAt: daysAgo(15),
+        status: 'paid',
+        method: 'transfer',
+      },
+      {
+        officeId: ctx.officeId,
+        dealId: deal3.id,
+        kind: 'balance',
+        scheduledAmount: 121000,
+        scheduledDate: daysAgo(2),
+        paidAmount: 121000,
+        paidAt: daysAgo(2),
+        status: 'paid',
+        method: 'transfer',
+      },
+    ],
   });
   await ctx.prisma.dealParticipant.createMany({
     data: [

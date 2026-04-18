@@ -10,6 +10,7 @@ const dealInclude = {
   listing: { include: { property: { include: { site: true, unit: true } } } },
   buyerContact: true,
   sellerContact: true,
+  payments: { orderBy: [{ kind: 'asc' }, { sequence: 'asc' }] },
 } satisfies Prisma.DealInclude;
 
 type DealWithRelations = Prisma.DealGetPayload<{ include: typeof dealInclude }>;
@@ -44,17 +45,38 @@ export class DealsService {
     dto: {
       propertyId?: string;
       listingId?: string;
-      price?: number;
+      matchId?: string;
+      transactionType?: string;
+      agreedPrice?: number;
+      agreedDeposit?: number;
+      agreedMonthlyRent?: number;
+      agreedMoveInDate?: string;
+      specialTerms?: string;
+      buyerContactId?: string;
+      sellerContactId?: string;
       memo?: string;
     },
   ) {
-    const listingId = await this.resolveListingId(officeId, dto);
+    const { listingId, transactionType } = await this.resolveListing(
+      officeId,
+      dto,
+    );
 
     const deal = await this.prisma.deal.create({
       data: {
         officeId,
         listingId,
-        price: dto.price,
+        matchId: dto.matchId,
+        transactionType,
+        agreedPrice: dto.agreedPrice,
+        agreedDeposit: dto.agreedDeposit,
+        agreedMonthlyRent: dto.agreedMonthlyRent,
+        agreedMoveInDate: dto.agreedMoveInDate
+          ? new Date(dto.agreedMoveInDate)
+          : undefined,
+        specialTerms: dto.specialTerms,
+        buyerContactId: dto.buyerContactId,
+        sellerContactId: dto.sellerContactId,
         memo: dto.memo,
       },
       include: this.dealInclude,
@@ -66,12 +88,68 @@ export class DealsService {
   async updateStage(
     id: string,
     officeId: string,
-    dto: { stage: string; price?: number; memo?: string },
+    dto: {
+      stage: string;
+      agreedPrice?: number;
+      agreedDeposit?: number;
+      agreedMonthlyRent?: number;
+      memo?: string;
+    },
   ) {
-    await this.findOne(id, officeId);
+    const existing = await this.findOne(id, officeId);
+
+    // stage 가 contracted 이상이면 Contract 필수
+    const contractRequiredStages = new Set([
+      'contracted',
+      'settling',
+      'completed',
+      'closed',
+    ]);
+    if (contractRequiredStages.has(dto.stage)) {
+      const contract = await this.prisma.contract.findUnique({
+        where: { dealId: id },
+        select: { id: true },
+      });
+      if (!contract) {
+        throw new BadRequestException(
+          `Contract 가 존재해야 stage='${dto.stage}' 로 전이할 수 있습니다.`,
+        );
+      }
+    }
+
+    const stageChanged = dto.stage !== existing.stage;
+
     const deal = await this.prisma.deal.update({
       where: { id },
-      data: dto,
+      data: {
+        stage: dto.stage,
+        stageChangedAt: stageChanged ? new Date() : undefined,
+        agreedPrice: dto.agreedPrice,
+        agreedDeposit: dto.agreedDeposit,
+        agreedMonthlyRent: dto.agreedMonthlyRent,
+        memo: dto.memo,
+      },
+      include: this.dealInclude,
+    });
+
+    return this.withPropertyContext(deal);
+  }
+
+  async cancel(
+    id: string,
+    officeId: string,
+    dto: { cancelReason?: string; cancelledBy?: string },
+  ) {
+    await this.findOne(id, officeId);
+
+    const deal = await this.prisma.deal.update({
+      where: { id },
+      data: {
+        isCancelled: true,
+        cancelledAt: new Date(),
+        cancelReason: dto.cancelReason,
+        cancelledBy: dto.cancelledBy,
+      },
       include: this.dealInclude,
     });
 
@@ -84,37 +162,50 @@ export class DealsService {
   }
 
   private withPropertyContext(deal: DealWithRelations) {
-    const property = deal.listing.property;
+    const property = deal.listing?.property ?? null;
 
     return {
       ...deal,
-      propertyId: property.id,
+      propertyId: property?.id ?? null,
       property,
     };
   }
 
-  private async resolveListingId(
+  private async resolveListing(
     officeId: string,
-    dto: { propertyId?: string; listingId?: string },
-  ) {
+    dto: { propertyId?: string; listingId?: string; transactionType?: string },
+  ): Promise<{ listingId: string | undefined; transactionType: string }> {
     if (dto.listingId) {
-      return dto.listingId;
+      const listing = await this.prisma.listing.findFirst({
+        where: { id: dto.listingId, officeId },
+        select: { id: true, transactionType: true },
+      });
+      if (!listing) throw new NotFoundException('Listing not found');
+      return {
+        listingId: listing.id,
+        transactionType: dto.transactionType ?? listing.transactionType,
+      };
     }
 
-    if (!dto.propertyId) {
-      throw new BadRequestException('listingId is required');
+    if (dto.propertyId) {
+      const listing = await this.prisma.listing.findFirst({
+        where: { officeId, propertyId: dto.propertyId },
+        orderBy: { createdAt: 'desc' },
+        select: { id: true, transactionType: true },
+      });
+      if (!listing) throw new NotFoundException('Listing not found');
+      return {
+        listingId: listing.id,
+        transactionType: dto.transactionType ?? listing.transactionType,
+      };
     }
 
-    const listing = await this.prisma.listing.findFirst({
-      where: { officeId, propertyId: dto.propertyId },
-      orderBy: { createdAt: 'desc' },
-      select: { id: true },
-    });
-
-    if (!listing) {
-      throw new NotFoundException('Listing not found');
+    if (!dto.transactionType) {
+      throw new BadRequestException(
+        'listingId, propertyId, 또는 transactionType 중 하나는 필요합니다.',
+      );
     }
 
-    return listing.id;
+    return { listingId: undefined, transactionType: dto.transactionType };
   }
 }

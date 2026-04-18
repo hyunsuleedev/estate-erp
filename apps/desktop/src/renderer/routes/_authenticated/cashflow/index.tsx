@@ -95,7 +95,12 @@ function classifyDeal(deal: PipelineDeal): StageKey {
   if (hasOverdue) return 'overdue';
   if (allCollected) return 'collected';
   if (deal.stage === 'completed' || deal.stage === 'closed') return 'balanceWaiting';
-  if (deal.stage === 'contract' || deal.stage === 'deposit') return 'contract';
+  if (
+    deal.stage === 'contracted' ||
+    deal.stage === 'settling' ||
+    deal.stage === 'preContract'
+  )
+    return 'contract';
   return 'negotiating';
 }
 
@@ -104,7 +109,7 @@ function dealsByStage(deals: PipelineDeal[], stageKey: StageKey): PipelineDeal[]
 }
 
 function getDealDate(deal: PipelineDeal): Date | null {
-  if (deal.finalPaymentDate) return new Date(deal.finalPaymentDate);
+  if (deal.balanceDueDate) return new Date(deal.balanceDueDate);
   const dueDates = deal.payments
     .filter((p) => p.dueDate)
     .map((p) => new Date(p.dueDate!));
@@ -504,8 +509,8 @@ function TimelineDealRow({ deal }: { deal: PipelineDeal }) {
               {config.label}
             </span>
           </div>
-          {deal.price && (
-            <span className="shrink-0 text-sm text-muted-foreground">{toEok(deal.price)}</span>
+          {deal.agreedPrice && (
+            <span className="shrink-0 text-sm text-muted-foreground">{toEok(deal.agreedPrice)}</span>
           )}
         </div>
 
@@ -725,13 +730,13 @@ function ListRow({ deal }: { deal: PipelineDeal }) {
       <td className="px-3 py-2.5">
         <Badge variant="outline" className="text-[10px]">{txLabel[deal.transactionType] ?? deal.transactionType}</Badge>
       </td>
-      <td className="px-3 py-2.5 text-right">{deal.price ? toEok(deal.price) : '-'}</td>
+      <td className="px-3 py-2.5 text-right">{deal.agreedPrice ? toEok(deal.agreedPrice) : '-'}</td>
       <td className="px-3 py-2.5 text-right font-medium">{toEok(deal.commissionTotal ?? 0)}</td>
       <td className="px-3 py-2.5 text-right">
         {collectedSum > 0 ? <span className="text-emerald-600">{toEok(collectedSum)}</span> : <span className="text-muted-foreground">-</span>}
       </td>
       <td className="px-3 py-2.5 text-xs text-muted-foreground">
-        {deal.finalPaymentDate ? new Date(deal.finalPaymentDate).toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' }) : '-'}
+        {deal.balanceDueDate ? new Date(deal.balanceDueDate).toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' }) : '-'}
       </td>
       <td className="px-3 py-2.5">
         <div className="flex gap-1">
@@ -787,17 +792,17 @@ function DealCard({ deal, isOverdue }: { deal: PipelineDeal; isOverdue?: boolean
           <span className="font-medium leading-snug">{location}</span>
           <Badge variant="outline" className="shrink-0 text-[10px]">{txLabel[deal.transactionType] ?? deal.transactionType}</Badge>
         </div>
-        {deal.price && <div className="text-muted-foreground">{toEok(deal.price)}</div>}
+        {deal.agreedPrice && <div className="text-muted-foreground">{toEok(deal.agreedPrice)}</div>}
         <div className="flex items-center justify-between">
           <span className="text-muted-foreground">수수료</span>
           <span className="font-semibold">
             {collectedSum > 0 && totalExpected > 0 ? `${toEok(collectedSum)} / ${toEok(totalExpected)}` : toEok(deal.commissionTotal ?? 0)}
           </span>
         </div>
-        {deal.finalPaymentDate && (
+        {deal.balanceDueDate && (
           <div className="flex items-center justify-between text-muted-foreground">
             <span>잔금일</span>
-            <span>{new Date(deal.finalPaymentDate).toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' })}</span>
+            <span>{new Date(deal.balanceDueDate).toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' })}</span>
           </div>
         )}
         {deal.payments.length > 0 && (

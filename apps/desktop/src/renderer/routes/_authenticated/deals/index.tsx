@@ -33,17 +33,27 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 
 const dealStageMeta: Record<string, { label: string; headerClassName: string; badgeClassName: string }> = {
   selection: {
-    label: '최종 선택',
+    label: '매물 선정',
     headerClassName: 'bg-slate-100 text-slate-700',
     badgeClassName: 'bg-slate-100 text-slate-700',
   },
-  deposit: {
-    label: '가계약금',
+  negotiating: {
+    label: '조건 협상',
+    headerClassName: 'bg-slate-100 text-slate-700',
+    badgeClassName: 'bg-slate-100 text-slate-700',
+  },
+  preContract: {
+    label: '가계약',
     headerClassName: 'bg-amber-50 text-amber-700',
     badgeClassName: 'bg-amber-50 text-amber-700',
   },
-  contract: {
+  contracted: {
     label: '본계약',
+    headerClassName: 'bg-sky-50 text-sky-700',
+    badgeClassName: 'bg-sky-50 text-sky-700',
+  },
+  settling: {
+    label: '중도/잔금',
     headerClassName: 'bg-sky-50 text-sky-700',
     badgeClassName: 'bg-sky-50 text-sky-700',
   },
@@ -59,7 +69,14 @@ const dealStageMeta: Record<string, { label: string; headerClassName: string; ba
   },
 };
 
-const dealPipelineStages = ['selection', 'deposit', 'contract', 'completed'] as const;
+const dealPipelineStages = [
+  'selection',
+  'negotiating',
+  'preContract',
+  'contracted',
+  'settling',
+  'completed',
+] as const;
 const dealStageOrder = [...dealPipelineStages, 'closed'] as const;
 const transactionTypeOptions = ['all', 'sale', 'jeonse', 'monthly'] as const;
 
@@ -554,23 +571,24 @@ function getNextDealStage(stage: string) {
 }
 
 function formatDealAmount(deal: Deal) {
-  if (deal.price) {
-    return formatPrice(deal.price);
+  const type = deal.transactionType ?? deal.listing?.transactionType;
+
+  if (type === 'monthly') {
+    const deposit =
+      deal.agreedDeposit ?? deal.listing?.deposit;
+    const monthlyRent =
+      deal.agreedMonthlyRent ?? deal.listing?.monthlyRent;
+    const depositStr = deposit ? formatPrice(deposit) : '-';
+    const rentStr = monthlyRent ? formatPrice(monthlyRent) : '-';
+    return `${depositStr} / ${rentStr}`;
   }
 
-  const listing = deal.listing;
-  if (!listing?.transactionType) {
-    return '-';
-  }
-
-  if (listing.transactionType === 'monthly') {
-    const deposit = listing.deposit ? formatPrice(listing.deposit) : '-';
-    const monthlyRent = listing.monthlyRent ? formatPrice(listing.monthlyRent) : '-';
-    return `${deposit} / ${monthlyRent}`;
-  }
-
-  const amount = listing.price ?? listing.deposit;
-  return amount ? formatPrice(amount) : '-';
+  const price =
+    deal.agreedPrice ??
+    deal.agreedDeposit ??
+    deal.listing?.price ??
+    deal.listing?.deposit;
+  return price ? formatPrice(price) : '-';
 }
 
 function formatShortDate(value: string) {

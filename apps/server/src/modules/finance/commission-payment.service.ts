@@ -24,7 +24,10 @@ export class CommissionPaymentService {
           select: {
             id: true,
             stage: true,
-            price: true,
+            agreedPrice: true,
+            agreedDeposit: true,
+            agreedMonthlyRent: true,
+            transactionType: true,
             listing: {
               select: {
                 id: true,

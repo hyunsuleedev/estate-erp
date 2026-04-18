@@ -31,6 +31,49 @@ type ContractWithRelations = Prisma.ContractGetPayload<{
   include: typeof contractInclude;
 }>;
 
+type ContractCreateDto = {
+  dealId: string;
+  transactionType?: string;
+  buyerContactId?: string;
+  sellerContactId?: string;
+  totalPrice?: number;
+  monthlyRent?: number;
+  status?: string;
+  contractDate?: string;
+  statedDeposit?: number;
+  statedInterimPayment?: number;
+  statedInterimDate?: string;
+  statedBalance?: number;
+  statedBalanceDate?: string;
+  moveInDate?: string;
+  leaseStartDate?: string;
+  leaseEndDate?: string;
+  specialTerms?: string;
+  attachments?: string[];
+  memo?: string;
+};
+
+type ContractUpdateDto = {
+  transactionType?: string;
+  buyerContactId?: string;
+  sellerContactId?: string;
+  totalPrice?: number;
+  monthlyRent?: number | null;
+  status?: string;
+  contractDate?: string | null;
+  statedDeposit?: number | null;
+  statedInterimPayment?: number | null;
+  statedInterimDate?: string | null;
+  statedBalance?: number | null;
+  statedBalanceDate?: string | null;
+  moveInDate?: string | null;
+  leaseStartDate?: string | null;
+  leaseEndDate?: string | null;
+  specialTerms?: string | null;
+  attachments?: string[];
+  memo?: string | null;
+};
+
 @Injectable()
 export class ContractsService {
   constructor(private readonly prisma: PrismaService) {}
@@ -60,34 +103,7 @@ export class ContractsService {
     return this.enrichContract(contract);
   }
 
-  async create(
-    officeId: string,
-    dto: {
-      dealId: string;
-      transactionType?: string;
-      buyerContactId?: string;
-      sellerContactId?: string;
-      totalPrice?: number;
-      monthlyRent?: number;
-      status?: string;
-      contractDate?: string;
-      contractDeposit?: number;
-      contractDepositDate?: string;
-      contractDepositPaid?: boolean;
-      middlePayment?: number;
-      middlePaymentDate?: string;
-      middlePaymentPaid?: boolean;
-      finalPayment?: number;
-      finalPaymentDate?: string;
-      finalPaymentPaid?: boolean;
-      moveInDate?: string;
-      leaseStartDate?: string;
-      leaseEndDate?: string;
-      specialTerms?: string;
-      attachments?: string[];
-      memo?: string;
-    },
-  ) {
+  async create(officeId: string, dto: ContractCreateDto) {
     const deal = await this.prisma.deal.findFirst({
       where: { id: dto.dealId, officeId },
       include: {
@@ -106,7 +122,12 @@ export class ContractsService {
       throw new BadRequestException('이미 계약서가 생성된 거래입니다.');
     }
 
-    const transactionType = dto.transactionType ?? deal.listing.transactionType;
+    const transactionType =
+      dto.transactionType ?? deal.transactionType ?? deal.listing?.transactionType;
+    if (!transactionType) {
+      throw new BadRequestException('거래 유형이 지정되지 않았습니다.');
+    }
+
     const buyerContactId = dto.buyerContactId ?? deal.buyerContactId;
     const sellerContactId = dto.sellerContactId ?? deal.sellerContactId;
 
@@ -130,22 +151,18 @@ export class ContractsService {
         buyerContactId,
         sellerContactId,
         totalPrice,
-        monthlyRent: dto.monthlyRent ?? deal.listing.monthlyRent,
+        monthlyRent: dto.monthlyRent ?? deal.agreedMonthlyRent ?? deal.listing?.monthlyRent,
         status: dto.status ?? 'draft',
         contractDate: this.toDate(dto.contractDate),
-        contractDeposit: dto.contractDeposit,
-        contractDepositDate: this.toDate(dto.contractDepositDate),
-        contractDepositPaid: dto.contractDepositPaid ?? false,
-        middlePayment: dto.middlePayment,
-        middlePaymentDate: this.toDate(dto.middlePaymentDate),
-        middlePaymentPaid: dto.middlePaymentPaid ?? false,
-        finalPayment: dto.finalPayment,
-        finalPaymentDate: this.toDate(dto.finalPaymentDate),
-        finalPaymentPaid: dto.finalPaymentPaid ?? false,
+        statedDeposit: dto.statedDeposit,
+        statedInterimPayment: dto.statedInterimPayment,
+        statedInterimDate: this.toDate(dto.statedInterimDate),
+        statedBalance: dto.statedBalance,
+        statedBalanceDate: this.toDate(dto.statedBalanceDate),
         moveInDate: this.toDate(dto.moveInDate),
         leaseStartDate: this.toDate(dto.leaseStartDate),
         leaseEndDate: this.toDate(dto.leaseEndDate),
-        specialTerms: dto.specialTerms,
+        specialTerms: dto.specialTerms ?? deal.specialTerms ?? undefined,
         attachments: dto.attachments ?? [],
         memo: dto.memo,
       },
@@ -155,34 +172,7 @@ export class ContractsService {
     return this.enrichContract(contract);
   }
 
-  async update(
-    id: string,
-    officeId: string,
-    dto: {
-      transactionType?: string;
-      buyerContactId?: string;
-      sellerContactId?: string;
-      totalPrice?: number;
-      monthlyRent?: number | null;
-      status?: string;
-      contractDate?: string | null;
-      contractDeposit?: number | null;
-      contractDepositDate?: string | null;
-      contractDepositPaid?: boolean;
-      middlePayment?: number | null;
-      middlePaymentDate?: string | null;
-      middlePaymentPaid?: boolean;
-      finalPayment?: number | null;
-      finalPaymentDate?: string | null;
-      finalPaymentPaid?: boolean;
-      moveInDate?: string | null;
-      leaseStartDate?: string | null;
-      leaseEndDate?: string | null;
-      specialTerms?: string | null;
-      attachments?: string[];
-      memo?: string | null;
-    },
-  ) {
+  async update(id: string, officeId: string, dto: ContractUpdateDto) {
     await this.findOne(id, officeId);
 
     const contract = await this.prisma.contract.update({
@@ -195,15 +185,11 @@ export class ContractsService {
         monthlyRent: dto.monthlyRent,
         status: dto.status,
         contractDate: this.toNullableDate(dto.contractDate),
-        contractDeposit: dto.contractDeposit,
-        contractDepositDate: this.toNullableDate(dto.contractDepositDate),
-        contractDepositPaid: dto.contractDepositPaid,
-        middlePayment: dto.middlePayment,
-        middlePaymentDate: this.toNullableDate(dto.middlePaymentDate),
-        middlePaymentPaid: dto.middlePaymentPaid,
-        finalPayment: dto.finalPayment,
-        finalPaymentDate: this.toNullableDate(dto.finalPaymentDate),
-        finalPaymentPaid: dto.finalPaymentPaid,
+        statedDeposit: dto.statedDeposit,
+        statedInterimPayment: dto.statedInterimPayment,
+        statedInterimDate: this.toNullableDate(dto.statedInterimDate),
+        statedBalance: dto.statedBalance,
+        statedBalanceDate: this.toNullableDate(dto.statedBalanceDate),
         moveInDate: this.toNullableDate(dto.moveInDate),
         leaseStartDate: this.toNullableDate(dto.leaseStartDate),
         leaseEndDate: this.toNullableDate(dto.leaseEndDate),
@@ -234,8 +220,9 @@ export class ContractsService {
 
   private resolveTotalPrice(
     deal: {
-      price: number | null;
-      listing: { price: number | null; deposit: number | null };
+      agreedPrice: number | null;
+      agreedDeposit: number | null;
+      listing: { price: number | null; deposit: number | null } | null;
     },
     explicitTotalPrice?: number,
   ) {
@@ -243,7 +230,13 @@ export class ContractsService {
       return explicitTotalPrice;
     }
 
-    return deal.price ?? deal.listing.price ?? deal.listing.deposit ?? null;
+    return (
+      deal.agreedPrice ??
+      deal.agreedDeposit ??
+      deal.listing?.price ??
+      deal.listing?.deposit ??
+      null
+    );
   }
 
   private toDate(value?: string) {

@@ -58,6 +58,7 @@ model Office {
   buyerRequirements BuyerRequirement[]
   matches           Match[]
   deals             Deal[]
+  dealPayments      DealPayment[]
   contracts         Contract[]
   dealParticipants  DealParticipant[]
   rules             Rule[]

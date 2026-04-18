@@ -57,15 +57,14 @@ type ContractForm = {
   totalPrice: string;
   monthlyRent: string;
   contractDate: string;
-  contractDeposit: string;
-  contractDepositDate: string;
-  contractDepositPaid: boolean;
-  middlePayment: string;
-  middlePaymentDate: string;
-  middlePaymentPaid: boolean;
-  finalPayment: string;
-  finalPaymentDate: string;
-  finalPaymentPaid: boolean;
+  /// 계약서 상 계약금
+  statedDeposit: string;
+  /// 계약서 상 중도금
+  statedInterimPayment: string;
+  statedInterimDate: string;
+  /// 계약서 상 잔금
+  statedBalance: string;
+  statedBalanceDate: string;
   moveInDate: string;
   leaseStartDate: string;
   leaseEndDate: string;
@@ -179,15 +178,11 @@ function ContractsPage() {
           ? toOptionalNumber(detailForm.monthlyRent)
           : null,
         contractDate: emptyDateToNull(detailForm.contractDate),
-        contractDeposit: toNullableNumber(detailForm.contractDeposit),
-        contractDepositDate: emptyDateToNull(detailForm.contractDepositDate),
-        contractDepositPaid: detailForm.contractDepositPaid,
-        middlePayment: toNullableNumber(detailForm.middlePayment),
-        middlePaymentDate: emptyDateToNull(detailForm.middlePaymentDate),
-        middlePaymentPaid: detailForm.middlePaymentPaid,
-        finalPayment: toNullableNumber(detailForm.finalPayment),
-        finalPaymentDate: emptyDateToNull(detailForm.finalPaymentDate),
-        finalPaymentPaid: detailForm.finalPaymentPaid,
+        statedDeposit: toNullableNumber(detailForm.statedDeposit),
+        statedInterimPayment: toNullableNumber(detailForm.statedInterimPayment),
+        statedInterimDate: emptyDateToNull(detailForm.statedInterimDate),
+        statedBalance: toNullableNumber(detailForm.statedBalance),
+        statedBalanceDate: emptyDateToNull(detailForm.statedBalanceDate),
         moveInDate: emptyDateToNull(detailForm.moveInDate),
         leaseStartDate: emptyDateToNull(detailForm.leaseStartDate),
         leaseEndDate: emptyDateToNull(detailForm.leaseEndDate),
@@ -219,16 +214,24 @@ function ContractsPage() {
 
     setCreateForm((prev) => ({
       ...prev,
-      transactionType: selectedCreateDeal.listing?.transactionType ?? prev.transactionType ?? 'sale',
+      transactionType:
+        selectedCreateDeal.transactionType ??
+        selectedCreateDeal.listing?.transactionType ??
+        prev.transactionType ??
+        'sale',
       totalPrice:
         prev.totalPrice ??
-        selectedCreateDeal.price ??
+        selectedCreateDeal.agreedPrice ??
+        selectedCreateDeal.agreedDeposit ??
         selectedCreateDeal.listing?.price ??
         selectedCreateDeal.listing?.deposit ??
         undefined,
       monthlyRent:
+        selectedCreateDeal.transactionType === 'monthly' ||
         selectedCreateDeal.listing?.transactionType === 'monthly'
-          ? selectedCreateDeal.listing?.monthlyRent ?? prev.monthlyRent
+          ? selectedCreateDeal.agreedMonthlyRent ??
+            selectedCreateDeal.listing?.monthlyRent ??
+            prev.monthlyRent
           : undefined,
     }));
   }, [selectedCreateDeal]);
@@ -565,8 +568,8 @@ function ContractDetailCard({
             <MetricTile label="총 거래금액" value={formatPrice(Number(form.totalPrice || 0))} />
             <MetricTile label="문서 수" value={`${attachments.length}건`} />
             <MetricTile
-              label="계약금/중도금/잔금"
-              value={`${countPaid(form)} / 3 완료`}
+              label="계약 상태"
+              value={statusMeta[form.status]?.label ?? form.status}
             />
             <MetricTile
               label="자료 누락"
@@ -654,57 +657,32 @@ function ContractDetailCard({
             </CardHeader>
             <CardContent className="grid gap-4 px-5 md:grid-cols-2">
               <PaymentFieldGroup
-                title="계약금"
-                amount={form.contractDeposit}
-                date={form.contractDepositDate}
-                paid={form.contractDepositPaid}
+                title="계약금 (계약서 명목)"
+                amount={form.statedDeposit}
                 onAmountChange={(value) =>
-                  onFormChange((prev) => ({ ...prev, contractDeposit: value }))
-                }
-                onDateChange={(value) =>
-                  onFormChange((prev) => ({ ...prev, contractDepositDate: value }))
-                }
-                onPaidToggle={() =>
-                  onFormChange((prev) => ({
-                    ...prev,
-                    contractDepositPaid: !prev.contractDepositPaid,
-                  }))
+                  onFormChange((prev) => ({ ...prev, statedDeposit: value }))
                 }
               />
               <PaymentFieldGroup
-                title="중도금"
-                amount={form.middlePayment}
-                date={form.middlePaymentDate}
-                paid={form.middlePaymentPaid}
+                title="중도금 (계약서 명목)"
+                amount={form.statedInterimPayment}
+                date={form.statedInterimDate}
                 onAmountChange={(value) =>
-                  onFormChange((prev) => ({ ...prev, middlePayment: value }))
+                  onFormChange((prev) => ({ ...prev, statedInterimPayment: value }))
                 }
                 onDateChange={(value) =>
-                  onFormChange((prev) => ({ ...prev, middlePaymentDate: value }))
-                }
-                onPaidToggle={() =>
-                  onFormChange((prev) => ({
-                    ...prev,
-                    middlePaymentPaid: !prev.middlePaymentPaid,
-                  }))
+                  onFormChange((prev) => ({ ...prev, statedInterimDate: value }))
                 }
               />
               <PaymentFieldGroup
-                title="잔금"
-                amount={form.finalPayment}
-                date={form.finalPaymentDate}
-                paid={form.finalPaymentPaid}
+                title="잔금 (계약서 명목)"
+                amount={form.statedBalance}
+                date={form.statedBalanceDate}
                 onAmountChange={(value) =>
-                  onFormChange((prev) => ({ ...prev, finalPayment: value }))
+                  onFormChange((prev) => ({ ...prev, statedBalance: value }))
                 }
                 onDateChange={(value) =>
-                  onFormChange((prev) => ({ ...prev, finalPaymentDate: value }))
-                }
-                onPaidToggle={() =>
-                  onFormChange((prev) => ({
-                    ...prev,
-                    finalPaymentPaid: !prev.finalPaymentPaid,
-                  }))
+                  onFormChange((prev) => ({ ...prev, statedBalanceDate: value }))
                 }
               />
 
@@ -871,32 +849,32 @@ function PaymentFieldGroup({
   title,
   amount,
   date,
-  paid,
   onAmountChange,
   onDateChange,
-  onPaidToggle,
 }: {
   title: string;
   amount: string;
-  date: string;
-  paid: boolean;
+  date?: string;
   onAmountChange: (value: string) => void;
-  onDateChange: (value: string) => void;
-  onPaidToggle: () => void;
+  onDateChange?: (value: string) => void;
 }) {
   return (
     <div className="space-y-4 rounded-xl border border-border/60 p-4">
-      <div className="flex items-center justify-between">
-        <p className="text-sm font-medium">{title}</p>
-        <Button type="button" size="xs" variant={paid ? 'default' : 'outline'} onClick={onPaidToggle}>
-          {paid ? '입금완료' : '입금대기'}
-        </Button>
-      </div>
+      <p className="text-sm font-medium">{title}</p>
       <NumberField label="금액" value={amount} onChange={onAmountChange} suffix="만원" />
-      <div className="space-y-2">
-        <Label>예정일</Label>
-        <Input type="date" value={date} onChange={(event) => onDateChange(event.target.value)} />
-      </div>
+      {onDateChange ? (
+        <div className="space-y-2">
+          <Label>예정일</Label>
+          <Input
+            type="date"
+            value={date ?? ''}
+            onChange={(event) => onDateChange(event.target.value)}
+          />
+        </div>
+      ) : null}
+      <p className="text-[11px] text-muted-foreground">
+        계약서에 기재되는 명목 금액입니다. 실제 입금 이력은 거래 대금 탭에서 관리합니다.
+      </p>
     </div>
   );
 }
@@ -969,15 +947,11 @@ function emptyContractForm(): ContractForm {
     totalPrice: '',
     monthlyRent: '',
     contractDate: '',
-    contractDeposit: '',
-    contractDepositDate: '',
-    contractDepositPaid: false,
-    middlePayment: '',
-    middlePaymentDate: '',
-    middlePaymentPaid: false,
-    finalPayment: '',
-    finalPaymentDate: '',
-    finalPaymentPaid: false,
+    statedDeposit: '',
+    statedInterimPayment: '',
+    statedInterimDate: '',
+    statedBalance: '',
+    statedBalanceDate: '',
     moveInDate: '',
     leaseStartDate: '',
     leaseEndDate: '',
@@ -994,15 +968,13 @@ function toContractForm(contract: Contract): ContractForm {
     totalPrice: contract.totalPrice ? String(contract.totalPrice) : '',
     monthlyRent: contract.monthlyRent ? String(contract.monthlyRent) : '',
     contractDate: toDateInput(contract.contractDate),
-    contractDeposit: contract.contractDeposit ? String(contract.contractDeposit) : '',
-    contractDepositDate: toDateInput(contract.contractDepositDate),
-    contractDepositPaid: contract.contractDepositPaid,
-    middlePayment: contract.middlePayment ? String(contract.middlePayment) : '',
-    middlePaymentDate: toDateInput(contract.middlePaymentDate),
-    middlePaymentPaid: contract.middlePaymentPaid,
-    finalPayment: contract.finalPayment ? String(contract.finalPayment) : '',
-    finalPaymentDate: toDateInput(contract.finalPaymentDate),
-    finalPaymentPaid: contract.finalPaymentPaid,
+    statedDeposit: contract.statedDeposit ? String(contract.statedDeposit) : '',
+    statedInterimPayment: contract.statedInterimPayment
+      ? String(contract.statedInterimPayment)
+      : '',
+    statedInterimDate: toDateInput(contract.statedInterimDate),
+    statedBalance: contract.statedBalance ? String(contract.statedBalance) : '',
+    statedBalanceDate: toDateInput(contract.statedBalanceDate),
     moveInDate: toDateInput(contract.moveInDate),
     leaseStartDate: toDateInput(contract.leaseStartDate),
     leaseEndDate: toDateInput(contract.leaseEndDate),
@@ -1049,10 +1021,6 @@ function toDateInput(value: string | null | undefined) {
 
 function todayInput() {
   return new Date().toISOString().slice(0, 10);
-}
-
-function countPaid(form: ContractForm) {
-  return [form.contractDepositPaid, form.middlePaymentPaid, form.finalPaymentPaid].filter(Boolean).length;
 }
 
 function formatDateTime(value: string) {

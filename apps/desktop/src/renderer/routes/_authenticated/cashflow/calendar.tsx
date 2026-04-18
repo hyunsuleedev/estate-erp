@@ -325,8 +325,8 @@ function buildEntries(data: CashflowSummary): CalendarEntry[] {
       }
     }
 
-    // Contract payment schedule dates
-    if (deal.finalPaymentDate) {
+    // Deal 잔금 예정일 (DealPayment kind='balance')
+    if (deal.balanceDueDate) {
       const allCollected =
         deal.payments.length > 0 &&
         deal.payments.every(
@@ -334,7 +334,7 @@ function buildEntries(data: CashflowSummary): CalendarEntry[] {
         );
       if (!allCollected) {
         entries.push({
-          date: new Date(deal.finalPaymentDate),
+          date: new Date(deal.balanceDueDate),
           type: 'final_payment',
           label: '잔금일',
           amount: deal.commissionTotal ?? 0,

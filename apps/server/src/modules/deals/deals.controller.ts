@@ -42,7 +42,15 @@ export class DealsController {
     dto: {
       propertyId?: string;
       listingId?: string;
-      price?: number;
+      matchId?: string;
+      transactionType?: string;
+      agreedPrice?: number;
+      agreedDeposit?: number;
+      agreedMonthlyRent?: number;
+      agreedMoveInDate?: string;
+      specialTerms?: string;
+      buyerContactId?: string;
+      sellerContactId?: string;
       memo?: string;
     },
     @CurrentUser() user: CurrentUserPayload,
@@ -53,10 +61,26 @@ export class DealsController {
   @Patch(':id/stage')
   updateStage(
     @Param('id') id: string,
-    @Body() dto: { stage: string; price?: number; memo?: string },
+    @Body()
+    dto: {
+      stage: string;
+      agreedPrice?: number;
+      agreedDeposit?: number;
+      agreedMonthlyRent?: number;
+      memo?: string;
+    },
     @CurrentUser() user: CurrentUserPayload,
   ) {
     return this.dealsService.updateStage(id, user.officeId, dto);
+  }
+
+  @Patch(':id/cancel')
+  cancel(
+    @Param('id') id: string,
+    @Body() dto: { cancelReason?: string; cancelledBy?: string },
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.dealsService.cancel(id, user.officeId, dto);
   }
 
   @Delete(':id')

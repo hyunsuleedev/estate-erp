@@ -137,6 +137,7 @@ model ExternalListing {
   office      Office                @relation(fields: [officeId], references: [id])
   group       ExternalListingGroup  @relation("GroupListings", fields: [groupId], references: [id], onDelete: Cascade)
   mainOfGroup ExternalListingGroup? @relation("GroupMainListing")
+  deals       Deal[]
 
   @@unique([officeId, source, articleNo])
   @@index([officeId, groupId])

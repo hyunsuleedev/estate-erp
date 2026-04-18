@@ -28,16 +28,23 @@ suggested        매칭 제안 (자동/수동)
 ## 거래 파이프라인 (Deal)
 
 ```
-selection   매물 선정
-→ deposit   계약금 입금
-→ contract  계약 체결
-→ completed 잔금/이전 완료
-→ closed    거래 종료
+selection    매물 선정/임장
+→ negotiating 조건 협상 (가격/특약 변동)
+→ preContract 가계약금 수령 (Contract 아직 없음)
+→ contracted  본계약 체결 (Contract 생성 — 계약서 작성 자체가 트리거)
+→ settling    중도금/잔금 진행
+→ completed   잔금 완료 + 등기이전
+→ closed      수수료 정산까지 종료
 ```
 
-- Deal 생성 시 `matchId` 연결 필수
-- contract 단계에서 Contract 레코드 생성
-- completed 시 Property.checkStatus → 'done'
+- 취소는 stage 와 직교하는 `isCancelled` flag 로 추적 (stage 는 취소 시점 값 유지)
+- `contracted` 이상 stage 는 Contract 레코드가 반드시 존재해야 함 (service layer 강제)
+- Deal 합의 조건은 `agreedPrice`/`agreedDeposit`/`agreedMonthlyRent` 에 저장, 변동 이력은 ActivityLog 가 담당
+- 실제 돈 흐름(가계약금/계약금/중도금/잔금/환불)은 `DealPayment[]` 의 row 단위 이벤트로 기록
+- 계약서 상 명목 금액(`Contract.statedDeposit` / `statedInterimPayment` / `statedBalance`)과 실제 입금(`DealPayment`)은 분리 — 계약서 문구 ≠ 실제 현금 흐름
+- 가계약금이 계약금으로 승계되면 `Deal.preContractCarriedOver = true`, 본계약 시점에 `DealPayment(kind='contract')` 생성 안 함
+- Deal 생성 시 `matchId` 연결 권장 (실적 역추적)
+- completed 진입 시 Listing.checkStatus → 'done'
 
 ## 매물 확인 상태 (Property.checkStatus)
 

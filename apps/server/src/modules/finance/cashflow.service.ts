@@ -5,15 +5,16 @@ import { OfficeExpenseService } from './office-expense.service';
 export interface PipelineDeal {
   id: string;
   stage: string;
-  price: number | null;
-  siteName: string;
+  isCancelled: boolean;
+  agreedPrice: number | null;
+  siteName: string | null;
   dongName: string | null;
   unitName: string | null;
   transactionType: string;
   commissionTotal: number | null;
   buyerContactName: string | null;
   sellerContactName: string | null;
-  finalPaymentDate: string | null;
+  balanceDueDate: string | null;
   payments: Array<{
     id: string;
     side: string;
@@ -58,6 +59,22 @@ export interface CashflowSummary {
   }>;
 }
 
+// Deal 파이프라인에서 "활성" 구간으로 볼 stage 값
+const ACTIVE_STAGES = [
+  'selection',
+  'negotiating',
+  'preContract',
+  'contracted',
+  'settling',
+  'completed',
+] as const;
+
+// 본계약 이후 단계 (계약서 체결됨)
+const CONTRACT_STAGES = new Set(['contracted', 'settling']);
+
+// 잔금 대기 단계
+const BALANCE_WAITING_STAGES = new Set(['completed', 'closed']);
+
 @Injectable()
 export class CashflowService {
   constructor(
@@ -73,12 +90,12 @@ export class CashflowService {
     const startOfMonth = new Date(year, month - 1, 1);
     const endOfMonth = new Date(year, month, 0, 23, 59, 59, 999);
 
-    // 활성 거래 (selection ~ completed) + 이번 달 closed
+    // 활성 거래 + 이번 달 closed
     const deals = await this.prisma.deal.findMany({
       where: {
         officeId,
         OR: [
-          { stage: { in: ['selection', 'deposit', 'contract', 'completed'] } },
+          { stage: { in: [...ACTIVE_STAGES] } },
           {
             stage: 'closed',
             updatedAt: { gte: startOfMonth, lte: endOfMonth },
@@ -104,7 +121,11 @@ export class CashflowService {
         },
         buyerContact: { select: { name: true } },
         sellerContact: { select: { name: true } },
-        contract: { select: { finalPaymentDate: true } },
+        payments: {
+          where: { kind: 'balance' },
+          orderBy: { sequence: 'asc' },
+          take: 1,
+        },
         commissionPayments: {
           orderBy: { createdAt: 'asc' },
         },
@@ -133,20 +154,24 @@ export class CashflowService {
     const pipelineDeals: PipelineDeal[] = [];
 
     for (const deal of deals) {
-      const prop = deal.listing.property;
+      const prop = deal.listing?.property ?? null;
+      const balancePayment = deal.payments[0] ?? null;
+      const balanceDueDate =
+        balancePayment?.scheduledDate?.toISOString() ?? null;
 
       const pDeal: PipelineDeal = {
         id: deal.id,
         stage: deal.stage,
-        price: deal.price,
-        siteName: prop.site.name,
-        dongName: prop.unit?.dong?.name ?? null,
-        unitName: prop.unit?.name ?? null,
-        transactionType: deal.listing.transactionType,
+        isCancelled: deal.isCancelled,
+        agreedPrice: deal.agreedPrice,
+        siteName: prop?.site.name ?? null,
+        dongName: prop?.unit?.dong?.name ?? null,
+        unitName: prop?.unit?.name ?? null,
+        transactionType: deal.transactionType,
         commissionTotal: deal.commissionTotal,
         buyerContactName: deal.buyerContact?.name ?? null,
         sellerContactName: deal.sellerContact?.name ?? null,
-        finalPaymentDate: deal.contract?.finalPaymentDate?.toISOString() ?? null,
+        balanceDueDate,
         payments: deal.commissionPayments.map((p) => ({
           id: p.id,
           side: p.side,
@@ -197,9 +222,13 @@ export class CashflowService {
           p.status === 'overdue' ||
           (p.status === 'pending' && p.dueDate && p.dueDate < now),
       );
-      const allCollected = deal.commissionPayments.length > 0 &&
+      const allCollected =
+        deal.commissionPayments.length > 0 &&
         deal.commissionPayments.every(
-          (p) => p.status === 'collected' || p.status === 'partial' || p.status === 'waived',
+          (p) =>
+            p.status === 'collected' ||
+            p.status === 'partial' ||
+            p.status === 'waived',
         );
 
       if (hasOverdue) {
@@ -208,10 +237,13 @@ export class CashflowService {
       } else if (allCollected) {
         pipelineCounts.collected.count++;
         pipelineCounts.collected.amount += dealCommission;
-      } else if (deal.stage === 'completed' || deal.stage === 'closed') {
+      } else if (BALANCE_WAITING_STAGES.has(deal.stage)) {
         pipelineCounts.balanceWaiting.count++;
         pipelineCounts.balanceWaiting.amount += dealCommission;
-      } else if (deal.stage === 'contract' || deal.stage === 'deposit') {
+      } else if (
+        CONTRACT_STAGES.has(deal.stage) ||
+        deal.stage === 'preContract'
+      ) {
         pipelineCounts.contract.count++;
         pipelineCounts.contract.amount += dealCommission;
       } else {
@@ -219,16 +251,6 @@ export class CashflowService {
         pipelineCounts.negotiating.amount += dealCommission;
       }
     }
-
-    // 협상중 deals (아직 Deal 이 안 만들어진 Match.stage = negotiating 도 포함)
-    const negotiatingMatches = await this.prisma.match.count({
-      where: {
-        officeId,
-        stage: { in: ['negotiating', 'ownerContacted'] },
-      },
-    });
-    // 이미 Deal 이 있는 건 위에서 포함됐으므로, Match 만 있는 건만 추가
-    // (정확한 금액은 모르므로 count 만 보정)
 
     const expected = pending + pipelineCounts.negotiating.amount;
     const monthlyExpense = await this.expenseService.getMonthlyTotal(officeId);
@@ -268,7 +290,15 @@ export class CashflowService {
     for (let i = months - 1; i >= 0; i--) {
       const d = new Date(year, month - 1 - i, 1);
       const startOfM = new Date(d.getFullYear(), d.getMonth(), 1);
-      const endOfM = new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59, 999);
+      const endOfM = new Date(
+        d.getFullYear(),
+        d.getMonth() + 1,
+        0,
+        23,
+        59,
+        59,
+        999,
+      );
 
       const result = await this.prisma.commissionPayment.aggregate({
         where: {

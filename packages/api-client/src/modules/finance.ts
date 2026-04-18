@@ -64,15 +64,17 @@ export interface PipelineDealParticipant {
 export interface PipelineDeal {
   id: string;
   stage: string;
-  price: number | null;
-  siteName: string;
+  isCancelled: boolean;
+  agreedPrice: number | null;
+  siteName: string | null;
   dongName: string | null;
   unitName: string | null;
   transactionType: string;
   commissionTotal: number | null;
   buyerContactName: string | null;
   sellerContactName: string | null;
-  finalPaymentDate: string | null;
+  /// 잔금 예정일 (DealPayment kind='balance' 의 scheduledDate)
+  balanceDueDate: string | null;
   payments: PipelineDealPayment[];
   participants: PipelineDealParticipant[];
 }

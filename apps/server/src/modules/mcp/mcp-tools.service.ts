@@ -354,24 +354,61 @@ export class McpToolsService {
     this.add(
       'create_deal',
       '새 거래를 시작합니다.',
-      obj({ listingId: str('매물 ID'), price: num('거래가 (만원)'), memo: str('메모') }, ['listingId']),
+      obj(
+        {
+          listingId: str('매물 ID'),
+          matchId: str('매칭 ID'),
+          transactionType: strEnum('거래 유형', ['sale', 'jeonse', 'monthly']),
+          agreedPrice: num('합의된 거래가 / 전세금 (만원)'),
+          agreedDeposit: num('합의된 보증금 (만원, 월세)'),
+          agreedMonthlyRent: num('합의된 월세 (만원)'),
+          specialTerms: str('특약'),
+          memo: str('메모'),
+        },
+        ['listingId'],
+      ),
       async (a, c) =>
         this.deals.create(c.officeId, {
           listingId: a.listingId as string,
-          price: a.price as number,
-          memo: a.memo as string,
+          matchId: a.matchId as string | undefined,
+          transactionType: a.transactionType as string | undefined,
+          agreedPrice: a.agreedPrice as number | undefined,
+          agreedDeposit: a.agreedDeposit as number | undefined,
+          agreedMonthlyRent: a.agreedMonthlyRent as number | undefined,
+          specialTerms: a.specialTerms as string | undefined,
+          memo: a.memo as string | undefined,
         }),
     );
 
     this.add(
       'update_deal_stage',
-      '거래 단계를 변경합니다.',
-      obj({ id: str('거래 ID'), stage: strEnum('단계', ['selection', 'deposit', 'contract', 'completed', 'closed']), price: num('가격'), memo: str('메모') }, ['id', 'stage']),
+      '거래 단계를 변경합니다. `contracted` 이상 단계는 Contract 가 존재해야 합니다.',
+      obj(
+        {
+          id: str('거래 ID'),
+          stage: strEnum('단계', [
+            'selection',
+            'negotiating',
+            'preContract',
+            'contracted',
+            'settling',
+            'completed',
+            'closed',
+          ]),
+          agreedPrice: num('합의가 (만원)'),
+          agreedDeposit: num('보증금 (만원)'),
+          agreedMonthlyRent: num('월세 (만원)'),
+          memo: str('메모'),
+        },
+        ['id', 'stage'],
+      ),
       async (a, c) =>
         this.deals.updateStage(a.id as string, c.officeId, {
           stage: a.stage as string,
-          price: a.price as number,
-          memo: a.memo as string,
+          agreedPrice: a.agreedPrice as number | undefined,
+          agreedDeposit: a.agreedDeposit as number | undefined,
+          agreedMonthlyRent: a.agreedMonthlyRent as number | undefined,
+          memo: a.memo as string | undefined,
         }),
     );
 
