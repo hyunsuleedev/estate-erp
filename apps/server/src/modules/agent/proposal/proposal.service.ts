@@ -96,8 +96,6 @@ export class ProposalService {
           status: initialStatus,
           priority: draft.priority,
           trustTier: draft.trustTier,
-          actionType: draft.actionType ?? null,
-          actionPayload: (draft.actionPayload as object | undefined) ?? undefined,
           generatedBy,
           dedupeKey: draft.dedupeKey ?? null,
           listingId: draft.listingId ?? null,
@@ -107,6 +105,14 @@ export class ProposalService {
           contractId: draft.contractId ?? null,
           tenantId: draft.tenantId ?? null,
           expiresAt,
+          actions: draft.actions?.length
+            ? {
+                create: draft.actions.map((a) => ({
+                  tool: a.tool,
+                  args: a.args as object,
+                })),
+              }
+            : undefined,
         },
       });
 

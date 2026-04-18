@@ -71,8 +71,7 @@ export interface ProposalDraft {
    */
   trustTier: TrustTier;
 
-  actionType?: string;
-  actionPayload?: Record<string, unknown>;
+  actions?: { tool: string; args: Record<string, unknown> }[];
 
   // 컨텍스트 링크
   listingId?: string;

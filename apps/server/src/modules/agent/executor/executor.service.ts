@@ -7,23 +7,6 @@ import { PrismaService } from '../../../prisma/prisma.service';
 import { TasksService } from '../../tasks/tasks.service';
 import { AssignmentService, AssignmentContext } from './assignment.service';
 
-/**
- * ExecutorService
- *
- * 승인된 Proposal 의 actionPayload 를 실제 도메인 서비스 호출로 번역한다.
- * ProposalService.approve() 가 성공적으로 상태를 approved 로 바꾼 직후,
- * 그리고 Rule 이 auto tier 로 바로 approved 상태로 만든 경우에도 이 함수가 호출된다.
- *
- * Phase 1 지원 actionType:
- *   - create_task: AssignmentService 로 담당자 결정 후 Task 생성
- *   - mark_ad_takedown: 다음 단계 구현 (현재 TODO)
- *
- * 실행 결과를 다시 Proposal 에 기록:
- *   - 성공: status = 'executed', executedAt 설정
- *   - 실패: status = 'failed', executionError 기록
- *
- * 새 actionType 을 Phase 2 이후에 추가하려면 executeAction() 의 switch 에 한 줄 추가.
- */
 @Injectable()
 export class ExecutorService {
   private readonly logger = new Logger(ExecutorService.name);
@@ -37,6 +20,7 @@ export class ExecutorService {
   async execute(proposalId: string): Promise<void> {
     const proposal = await this.prisma.proposal.findUnique({
       where: { id: proposalId },
+      include: { actions: true },
     });
     if (!proposal) {
       this.logger.warn(`Execute called on missing proposal: ${proposalId}`);
@@ -48,8 +32,9 @@ export class ExecutorService {
       );
       return;
     }
-    if (!proposal.actionType) {
-      // inform_only 제안은 actionType 이 없다. 실행할 것이 없음.
+
+    const actions = proposal.actions.filter((a) => a.status === 'pending');
+    if (actions.length === 0) {
       await this.prisma.proposal.update({
         where: { id: proposalId },
         data: { status: 'executed', executedAt: new Date() },
@@ -57,55 +42,65 @@ export class ExecutorService {
       return;
     }
 
-    try {
-      await this.executeAction(
-        proposal.actionType,
-        proposal.officeId,
-        (proposal.actionPayload as Record<string, unknown>) ?? {},
-        proposal,
-      );
-      await this.prisma.proposal.update({
-        where: { id: proposalId },
-        data: { status: 'executed', executedAt: new Date() },
-      });
-      this.logger.log(
-        `Executed proposal ${proposalId} (${proposal.type} / ${proposal.actionType})`,
-      );
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      this.logger.error(
-        `Failed to execute proposal ${proposalId}: ${message}`,
-        err instanceof Error ? err.stack : undefined,
-      );
-      await this.prisma.proposal.update({
-        where: { id: proposalId },
-        data: {
-          status: 'failed',
-          executionError: message.slice(0, 2000),
-        },
-      });
+    let allSucceeded = true;
+    for (const action of actions) {
+      try {
+        const result = await this.executeAction(
+          action.tool,
+          proposal.officeId,
+          (action.args as Record<string, unknown>) ?? {},
+          proposal,
+        );
+        await this.prisma.proposalAction.update({
+          where: { id: action.id },
+          data: { status: 'executed', result: (result as any) ?? undefined },
+        });
+      } catch (err) {
+        allSucceeded = false;
+        const message = err instanceof Error ? err.message : String(err);
+        await this.prisma.proposalAction.update({
+          where: { id: action.id },
+          data: { status: 'failed', error: message.slice(0, 2000) },
+        });
+        this.logger.error(
+          `Failed action ${action.id} (${action.tool}) for proposal ${proposalId}: ${message}`,
+          err instanceof Error ? err.stack : undefined,
+        );
+      }
     }
+
+    await this.prisma.proposal.update({
+      where: { id: proposalId },
+      data: {
+        status: allSucceeded ? 'executed' : 'failed',
+        executedAt: new Date(),
+        executionError: allSucceeded ? null : 'One or more actions failed',
+      },
+    });
+    this.logger.log(
+      `Executed proposal ${proposalId} (${proposal.type}): ${allSucceeded ? 'success' : 'partial failure'}`,
+    );
   }
 
   private async executeAction(
-    actionType: string,
+    tool: string,
     officeId: string,
-    payload: Record<string, unknown>,
+    args: Record<string, unknown>,
     proposal: { listingId: string | null; propertyId: string | null; contactId: string | null; dealId: string | null },
-  ): Promise<void> {
-    switch (actionType) {
+  ): Promise<object | null> {
+    switch (tool) {
       case 'create_task':
-        return this.handleCreateTask(officeId, payload, proposal);
+        await this.handleCreateTask(officeId, args, proposal);
+        return null;
 
       case 'mark_ad_takedown':
-        // TODO(Phase 1 다음 단계): AdTakedownRule 이 실제 구현되면 함께 구현.
         this.logger.warn(
           `mark_ad_takedown action not yet implemented (office=${officeId})`,
         );
-        return;
+        return null;
 
       default:
-        throw new BadRequestException(`Unknown actionType: ${actionType}`);
+        throw new BadRequestException(`Unknown action tool: ${tool}`);
     }
   }
 

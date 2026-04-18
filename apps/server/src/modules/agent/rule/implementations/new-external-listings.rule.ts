@@ -156,19 +156,19 @@ export class NewExternalListingsRule implements Rule {
           `관리 단지(OfficeSite) 내 신규 ExternalListingGroup ${count}건 (firstSeenAt ≥ ${since.toISOString()}).`,
         priority: count >= 5 ? 'normal' : 'low',
         trustTier: ctx.trustTierFor('new_external_listings', 'approval_required'),
-        actionType: 'create_task',
-        actionPayload: {
-          title: `${bucket.siteName} 신규 광고 ${count}건 검토`,
-          content:
-            `광고노트에서 새로 감지된 매물이에요. 시세 변화와 고객 조건 매칭 여부 확인이 필요합니다.\n\n${samples}`,
-          category: 'advertisement',
-          priority: count >= 5 ? 'high' : 'medium',
-          propertyId: null, // Site 단위라 특정 Property 없음
-          listingId: null,
-          // AssignmentService 가 propertyId 가 없으면 office owner 로 fallback.
-          // 미래에 "Site 담당자" 개념이 생기면 suggestedAssigneeId 로 전달.
-          assignmentHint: `관리 단지 ${bucket.siteName} 의 담당 직원`,
-        },
+        actions: [
+          {
+            tool: 'create_task',
+            args: {
+              title: `${bucket.siteName} 신규 광고 ${count}건 검토`,
+              content:
+                `광고노트에서 새로 감지된 매물이에요. 시세 변화와 고객 조건 매칭 여부 확인이 필요합니다.\n\n${samples}`,
+              category: 'advertisement',
+              priority: count >= 5 ? 'high' : 'medium',
+              assignmentHint: `관리 단지 ${bucket.siteName} 의 담당 직원`,
+            },
+          },
+        ],
         expiresInHours: 48,
         dedupeKey: `new_ext_listings:${siteId}:${today}`,
       });
