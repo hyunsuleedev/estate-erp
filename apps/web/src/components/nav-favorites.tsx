@@ -6,6 +6,7 @@ import {
 } from "lucide-react"
 
 import { api } from '@/lib/api'
+import { useTranslation } from 'react-i18next'
 import {
   SidebarGroup,
   SidebarGroupLabel,
@@ -15,6 +16,7 @@ import {
 } from "@/components/ui/sidebar"
 
 export function NavFavorites() {
+  const { t } = useTranslation('sidebar')
   const { data: officeSites } = useQuery({
     queryKey: ['office-sites'],
     queryFn: () => api.officeSites.findAll(),
@@ -24,7 +26,7 @@ export function NavFavorites() {
 
   return (
     <SidebarGroup className="group-data-[collapsible=icon]:hidden">
-      <SidebarGroupLabel>즐겨찾기 단지</SidebarGroupLabel>
+      <SidebarGroupLabel>{t('favorites')}</SidebarGroupLabel>
       <SidebarMenu>
         {sites.length === 0 ? (
           <SidebarMenuItem>

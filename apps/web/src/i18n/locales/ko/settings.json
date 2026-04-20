@@ -1,0 +1,50 @@
+{
+  "title": "설정",
+  "description": "사무소 기본 정보와 운영 정책을 관리합니다.",
+  "sections": {
+    "language": "언어",
+    "languageDescription": "인터페이스 표시 언어를 선택합니다.",
+    "office": "사무소 정보",
+    "officeDescription": "사무소 기본 정보와 공인중개사 등록번호.",
+    "commission": "기본 수수료 배분",
+    "commissionDescription": "거래 생성 시 자동 적용되는 배분 규칙.",
+    "mcp": "MCP 연결 키",
+    "mcpDescription": "Claude Desktop 등 외부 AI 도구가 이 사무소에 접근할 때 사용하는 API 키입니다."
+  },
+  "languageOptions": {
+    "ko": "한국어",
+    "en": "English"
+  },
+  "labels": {
+    "officeName": "사무소명",
+    "licenseNo": "중개업 등록번호",
+    "ceoName": "대표자명",
+    "phone": "전화번호",
+    "address": "주소",
+    "distributionType": "배분 방식",
+    "defaultAgentRate": "담당자 기본 비율 (%)",
+    "listingAgentRate": "매도 담당 비율 (%)",
+    "buyingAgentRate": "매수 담당 비율 (%)",
+    "dualAgentRate": "단독중개 비율 (%)",
+    "managerRate": "매니저 비율 (%)",
+    "closerBonus": "마감 보너스 (%)"
+  },
+  "mcp": {
+    "empty": "아직 발급된 키가 없습니다.",
+    "generate": "새 키 발급",
+    "generating": "발급 중…",
+    "revoke": "키 폐기",
+    "revoking": "폐기 중…",
+    "revokeConfirm": "키를 폐기하면 연결된 모든 AI 도구가 접근 권한을 잃습니다. 진행하시겠습니까?",
+    "currentPrefix": "현재 키",
+    "justGenerated": "새 키가 발급되었습니다. 지금 복사해 안전한 곳에 보관하세요. 이 화면을 닫으면 다시 볼 수 없습니다.",
+    "copy": "복사",
+    "copied": "복사됨",
+    "dismiss": "확인했어요",
+    "guideTitle": "Claude Desktop 연결 방법",
+    "guideStep1": "Claude Desktop 의 설정 → Developer 탭에서 \"Edit Config\" 를 엽니다.",
+    "guideStep2": "아래 JSON 을 mcpServers 에 추가하고 Claude Desktop 을 재시작합니다.",
+    "endpointLabel": "엔드포인트",
+    "ownerOnly": "소유자(owner) 권한이 있어야 키를 발급할 수 있습니다."
+  }
+}

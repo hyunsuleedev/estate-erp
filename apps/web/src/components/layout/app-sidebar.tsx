@@ -8,6 +8,7 @@ import {
   Handshake,
   GitBranch,
   MessageSquare,
+  PhoneCall,
   UserSearch,
   Globe,
   FileText,
@@ -15,6 +16,7 @@ import {
   Settings,
   Bot,
   Wallet,
+  Inbox,
 } from 'lucide-react'
 import { useAuth } from '@/providers/auth-provider'
 import { NavMain } from '@/components/nav-main'
@@ -28,111 +30,123 @@ import {
   SidebarHeader,
   SidebarRail,
 } from '@/components/ui/sidebar'
-
-const navItems = [
-  {
-    title: '대시보드',
-    url: '/dashboard',
-    icon: SquareTerminal,
-  },
-  {
-    title: '매물관리',
-    url: '/properties',
-    icon: Building,
-    items: [
-      { title: '매물 목록', url: '/properties' },
-      { title: '매물 등록', url: '/properties/new' },
-    ],
-  },
-  {
-    title: '연락처',
-    url: '/contacts',
-    icon: BookUser,
-    items: [
-      { title: '연락처 목록', url: '/contacts' },
-      { title: '연락처 추가', url: '/contacts/new' },
-    ],
-  },
-  {
-    title: '거래관리',
-    url: '/deals',
-    icon: Handshake,
-  },
-  {
-    title: '매칭',
-    url: '/matches',
-    icon: GitBranch,
-  },
-  {
-    title: '상담기록',
-    url: '/consultations',
-    icon: MessageSquare,
-  },
-  {
-    title: '구매고객',
-    url: '/buyer-requirements',
-    icon: UserSearch,
-  },
-  {
-    title: '업무',
-    url: '/tasks',
-    icon: ListTodo,
-  },
-  {
-    title: '캘린더',
-    url: '/calendar',
-    icon: CalendarDays,
-  },
-  {
-    title: '관리단지',
-    url: '/sites',
-    icon: Map,
-  },
-  {
-    title: '계약서 관리',
-    url: '/contracts',
-    icon: FileText,
-  },
-  {
-    title: '수수료/정산',
-    url: '/cashflow',
-    icon: Wallet,
-    items: [
-      { title: '캐시플로우', url: '/cashflow' },
-      { title: '수금 원장', url: '/cashflow/ledger' },
-      { title: '공동중개 파트너', url: '/partner-brokers' },
-      { title: '고정비 설정', url: '/cashflow/expenses' },
-    ],
-  },
-  {
-    title: '자료관리',
-    url: '/documents',
-    icon: FileText,
-  },
-  {
-    title: '네트워크',
-    url: '/network',
-    icon: Globe,
-  },
-  {
-    title: 'AI 운영',
-    url: '/ai-operations',
-    icon: Bot,
-  },
-  {
-    title: '직원관리',
-    url: '/employees',
-    icon: Users,
-  },
-  {
-    title: '설정',
-    url: '/settings',
-    icon: Settings,
-  },
-]
+import { useTranslation } from 'react-i18next'
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const { user, logout } = useAuth()
+  const { t } = useTranslation('sidebar')
+
+  const navItems = [
+    {
+      title: t('items.dashboard'),
+      url: '/dashboard',
+      icon: SquareTerminal,
+    },
+    {
+      title: t('items.inbox'),
+      url: '/inbox',
+      icon: Inbox,
+    },
+    {
+      title: t('items.properties'),
+      url: '/properties',
+      icon: Building,
+      items: [
+        { title: t('items.propertiesList'), url: '/properties' },
+        { title: t('items.propertiesNew'), url: '/properties/new' },
+      ],
+    },
+    {
+      title: t('items.contacts'),
+      url: '/contacts',
+      icon: BookUser,
+      items: [
+        { title: t('items.contactsList'), url: '/contacts' },
+        { title: t('items.contactsNew'), url: '/contacts/new' },
+      ],
+    },
+    {
+      title: t('items.deals'),
+      url: '/deals',
+      icon: Handshake,
+    },
+    {
+      title: t('items.matches'),
+      url: '/matches',
+      icon: GitBranch,
+    },
+    {
+      title: t('items.consultations'),
+      url: '/consultations',
+      icon: MessageSquare,
+    },
+    {
+      title: t('items.calls'),
+      url: '/calls',
+      icon: PhoneCall,
+    },
+    {
+      title: t('items.buyerRequirements'),
+      url: '/buyer-requirements',
+      icon: UserSearch,
+    },
+    {
+      title: t('items.tasks'),
+      url: '/tasks',
+      icon: ListTodo,
+    },
+    {
+      title: t('items.calendar'),
+      url: '/calendar',
+      icon: CalendarDays,
+    },
+    {
+      title: t('items.sites'),
+      url: '/sites',
+      icon: Map,
+    },
+    {
+      title: t('items.contracts'),
+      url: '/contracts',
+      icon: FileText,
+    },
+    {
+      title: t('items.cashflow'),
+      url: '/cashflow',
+      icon: Wallet,
+      items: [
+        { title: t('items.cashflowDashboard'), url: '/cashflow' },
+        { title: t('items.cashflowLedger'), url: '/cashflow/ledger' },
+        { title: t('items.partnerBrokers'), url: '/partner-brokers' },
+        { title: t('items.expenses'), url: '/cashflow/expenses' },
+      ],
+    },
+    {
+      title: t('items.documents'),
+      url: '/documents',
+      icon: FileText,
+    },
+    {
+      title: t('items.network'),
+      url: '/network',
+      icon: Globe,
+    },
+    {
+      title: t('items.aiOperations'),
+      url: '/ai-operations',
+      icon: Bot,
+    },
+    {
+      title: t('items.employees'),
+      url: '/employees',
+      icon: Users,
+    },
+    {
+      title: t('items.settings'),
+      url: '/settings',
+      icon: Settings,
+    },
+  ]
 
   return (
     <Sidebar collapsible="icon" {...props}>
