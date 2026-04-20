@@ -54,6 +54,8 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       items: [
         { title: t('items.propertiesList'), url: '/properties' },
         { title: t('items.propertiesNew'), url: '/properties/new' },
+        { title: t('items.propertiesExternalListings'), url: '/properties/external-listings' },
+        { title: t('items.propertiesNaverMyAds'), url: '/properties/naver-my-ads' },
       ],
     },
     {
