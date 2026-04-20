@@ -23,6 +23,7 @@ import {
 } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { LedgerView } from './-ledger';
 
 export const Route = createFileRoute('/_authenticated/cashflow/')({
   component: CashflowPage,
@@ -202,7 +203,7 @@ function CashflowView({ data }: { data: CashflowSummary }) {
           <KanbanView data={data} />
         </TabsContent>
         <TabsContent value="list" className="mt-3">
-          <ListView data={data} />
+          <LedgerView />
         </TabsContent>
       </Tabs>
 

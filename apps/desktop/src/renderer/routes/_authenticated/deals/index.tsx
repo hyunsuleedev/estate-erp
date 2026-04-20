@@ -133,8 +133,8 @@ function DealsPage() {
         deal.buyerContact?.phone,
         deal.sellerContact?.name,
         deal.sellerContact?.phone,
-        deal.partnerBrokerName,
-        deal.partnerBrokerPhone,
+        deal.partnerBroker?.name,
+        deal.partnerBroker?.phone,
         deal.memo,
       ]
         .filter(Boolean)
@@ -146,7 +146,7 @@ function DealsPage() {
 
   const activeDeals = filteredDeals.filter((deal) => deal.stage !== 'closed');
   const closedDeals = filteredDeals.filter((deal) => deal.stage === 'closed');
-  const activeCommission = activeDeals.reduce((sum, deal) => sum + (deal.commissionTotal ?? 0), 0);
+  const activeCommission = activeDeals.reduce((sum, deal) => sum + (deal.commissionSummary?.billed ?? 0), 0);
   const completedDeals = activeDeals.filter((deal) => deal.stage === 'completed').length;
   const jointDeals = activeDeals.filter((deal) => deal.isJointBrokerage).length;
 
@@ -367,7 +367,7 @@ function DealCard({
 
       <div className="mt-3 grid grid-cols-2 gap-2 rounded-lg bg-muted/40 p-2">
         <MiniStat label="거래가" value={formatDealAmount(deal)} emphasis />
-        <MiniStat label="수수료" value={deal.commissionTotal ? formatPrice(deal.commissionTotal) : '-'} />
+        <MiniStat label="수수료" value={deal.commissionSummary?.billed ? formatPrice(deal.commissionSummary.billed) : '-'} />
       </div>
 
       <div className="mt-3 space-y-2">
@@ -375,10 +375,10 @@ function DealCard({
         <PartyRow label="매도" name={deal.sellerContact?.name} />
       </div>
 
-      {deal.partnerBrokerName && (
+      {deal.partnerBroker && (
         <div className="mt-3 flex items-center gap-1.5 text-xs text-muted-foreground">
           <Handshake className="size-3.5" />
-          <span>{deal.partnerBrokerName}</span>
+          <span>{deal.partnerBroker.name}</span>
         </div>
       )}
 
@@ -432,7 +432,7 @@ function ClosedDealRow({
         <div className="text-right">
           <p className="text-sm font-medium">{formatDealAmount(deal)}</p>
           <p className="text-xs text-muted-foreground">
-            수수료 {deal.commissionTotal ? formatPrice(deal.commissionTotal) : '-'}
+            수수료 {deal.commissionSummary?.billed ? formatPrice(deal.commissionSummary.billed) : '-'}
           </p>
         </div>
 

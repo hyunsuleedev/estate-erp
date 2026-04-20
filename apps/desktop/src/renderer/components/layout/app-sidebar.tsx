@@ -66,6 +66,7 @@ const navItems = [
       { title: '캐시플로우', url: '/cashflow' },
       { title: '수금 캘린더', url: '/cashflow/calendar' },
       { title: '수금 관리', url: '/cashflow/payments' },
+      { title: '공동중개 파트너', url: '/partner-brokers' },
       { title: '고정비 설정', url: '/cashflow/expenses' },
     ],
   },

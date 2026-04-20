@@ -19,6 +19,7 @@ import { Route as AuthenticatedTasksIndexRouteImport } from './routes/_authentic
 import { Route as AuthenticatedSitesIndexRouteImport } from './routes/_authenticated/sites/index'
 import { Route as AuthenticatedSettingsIndexRouteImport } from './routes/_authenticated/settings/index'
 import { Route as AuthenticatedPropertiesIndexRouteImport } from './routes/_authenticated/properties/index'
+import { Route as AuthenticatedPartnerBrokersIndexRouteImport } from './routes/_authenticated/partner-brokers/index'
 import { Route as AuthenticatedNetworkIndexRouteImport } from './routes/_authenticated/network/index'
 import { Route as AuthenticatedMatchesIndexRouteImport } from './routes/_authenticated/matches/index'
 import { Route as AuthenticatedEmployeesIndexRouteImport } from './routes/_authenticated/employees/index'
@@ -95,6 +96,12 @@ const AuthenticatedPropertiesIndexRoute =
   AuthenticatedPropertiesIndexRouteImport.update({
     id: '/properties/',
     path: '/properties/',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedPartnerBrokersIndexRoute =
+  AuthenticatedPartnerBrokersIndexRouteImport.update({
+    id: '/partner-brokers/',
+    path: '/partner-brokers/',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
 const AuthenticatedNetworkIndexRoute =
@@ -290,6 +297,7 @@ export interface FileRoutesByFullPath {
   '/employees/': typeof AuthenticatedEmployeesIndexRoute
   '/matches/': typeof AuthenticatedMatchesIndexRoute
   '/network/': typeof AuthenticatedNetworkIndexRoute
+  '/partner-brokers/': typeof AuthenticatedPartnerBrokersIndexRoute
   '/properties/': typeof AuthenticatedPropertiesIndexRoute
   '/settings/': typeof AuthenticatedSettingsIndexRoute
   '/sites/': typeof AuthenticatedSitesIndexRoute
@@ -327,6 +335,7 @@ export interface FileRoutesByTo {
   '/employees': typeof AuthenticatedEmployeesIndexRoute
   '/matches': typeof AuthenticatedMatchesIndexRoute
   '/network': typeof AuthenticatedNetworkIndexRoute
+  '/partner-brokers': typeof AuthenticatedPartnerBrokersIndexRoute
   '/properties': typeof AuthenticatedPropertiesIndexRoute
   '/settings': typeof AuthenticatedSettingsIndexRoute
   '/sites': typeof AuthenticatedSitesIndexRoute
@@ -367,6 +376,7 @@ export interface FileRoutesById {
   '/_authenticated/employees/': typeof AuthenticatedEmployeesIndexRoute
   '/_authenticated/matches/': typeof AuthenticatedMatchesIndexRoute
   '/_authenticated/network/': typeof AuthenticatedNetworkIndexRoute
+  '/_authenticated/partner-brokers/': typeof AuthenticatedPartnerBrokersIndexRoute
   '/_authenticated/properties/': typeof AuthenticatedPropertiesIndexRoute
   '/_authenticated/settings/': typeof AuthenticatedSettingsIndexRoute
   '/_authenticated/sites/': typeof AuthenticatedSitesIndexRoute
@@ -406,6 +416,7 @@ export interface FileRouteTypes {
     | '/employees/'
     | '/matches/'
     | '/network/'
+    | '/partner-brokers/'
     | '/properties/'
     | '/settings/'
     | '/sites/'
@@ -443,6 +454,7 @@ export interface FileRouteTypes {
     | '/employees'
     | '/matches'
     | '/network'
+    | '/partner-brokers'
     | '/properties'
     | '/settings'
     | '/sites'
@@ -482,6 +494,7 @@ export interface FileRouteTypes {
     | '/_authenticated/employees/'
     | '/_authenticated/matches/'
     | '/_authenticated/network/'
+    | '/_authenticated/partner-brokers/'
     | '/_authenticated/properties/'
     | '/_authenticated/settings/'
     | '/_authenticated/sites/'
@@ -564,6 +577,13 @@ declare module '@tanstack/react-router' {
       path: '/properties'
       fullPath: '/properties/'
       preLoaderRoute: typeof AuthenticatedPropertiesIndexRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/partner-brokers/': {
+      id: '/_authenticated/partner-brokers/'
+      path: '/partner-brokers'
+      fullPath: '/partner-brokers/'
+      preLoaderRoute: typeof AuthenticatedPartnerBrokersIndexRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/network/': {
@@ -799,6 +819,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedEmployeesIndexRoute: typeof AuthenticatedEmployeesIndexRoute
   AuthenticatedMatchesIndexRoute: typeof AuthenticatedMatchesIndexRoute
   AuthenticatedNetworkIndexRoute: typeof AuthenticatedNetworkIndexRoute
+  AuthenticatedPartnerBrokersIndexRoute: typeof AuthenticatedPartnerBrokersIndexRoute
   AuthenticatedPropertiesIndexRoute: typeof AuthenticatedPropertiesIndexRoute
   AuthenticatedSettingsIndexRoute: typeof AuthenticatedSettingsIndexRoute
   AuthenticatedSitesIndexRoute: typeof AuthenticatedSitesIndexRoute
@@ -839,6 +860,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedEmployeesIndexRoute: AuthenticatedEmployeesIndexRoute,
   AuthenticatedMatchesIndexRoute: AuthenticatedMatchesIndexRoute,
   AuthenticatedNetworkIndexRoute: AuthenticatedNetworkIndexRoute,
+  AuthenticatedPartnerBrokersIndexRoute: AuthenticatedPartnerBrokersIndexRoute,
   AuthenticatedPropertiesIndexRoute: AuthenticatedPropertiesIndexRoute,
   AuthenticatedSettingsIndexRoute: AuthenticatedSettingsIndexRoute,
   AuthenticatedSitesIndexRoute: AuthenticatedSitesIndexRoute,

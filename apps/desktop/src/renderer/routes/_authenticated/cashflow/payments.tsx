@@ -94,7 +94,7 @@ function PaymentsPage() {
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-medium">{location}</span>
                       <Badge variant="outline" className="text-[10px]">
-                        {sideLabel[payment.side] ?? payment.side}
+                        {sideLabel[payment.clientSide] ?? payment.clientSide}
                       </Badge>
                       <span
                         className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ${statusColor[payment.status] ?? ''}`}
