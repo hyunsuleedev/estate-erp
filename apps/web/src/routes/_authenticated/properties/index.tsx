@@ -207,17 +207,17 @@ function PropertiesPage() {
         size: 200,
         enableSorting: false,
         cell: ({ row }) => {
-          const listing = row.original;
+          const l = row.original;
           return (
             <div className="flex items-center gap-1.5">
-              <HiddenIndicator isHidden={listing.isHidden} />
+              <HiddenIndicator isHidden={l.isHidden} />
               <Link
                 to="/properties/$id"
-                params={{ id: listing.propertyId }}
+                params={{ id: l.propertyId }}
                 className="font-medium text-foreground hover:text-primary hover:underline"
                 onClick={(e) => e.stopPropagation()}
               >
-                {listing.property?.site?.name ?? '-'}
+                {l.property?.site?.name ?? '-'}
               </Link>
             </div>
           );
@@ -247,20 +247,20 @@ function PropertiesPage() {
         size: 160,
         enableSorting: true,
         cell: ({ row }) => {
-          const listing = row.original;
+          const l = row.original;
           return (
             <EditableCell
-              recordId={listing.id}
+              recordId={l.id}
               field="price"
-              value={listing.price}
+              value={l.price}
               onSave={handleCellSave}
               editType="number"
             >
               <PriceCell
-                transactionType={listing.transactionType}
-                price={listing.price}
-                deposit={listing.deposit}
-                monthlyRent={listing.monthlyRent}
+                transactionType={l.transactionType}
+                price={l.price}
+                deposit={l.deposit}
+                monthlyRent={l.monthlyRent}
               />
             </EditableCell>
           );
@@ -281,12 +281,12 @@ function PropertiesPage() {
         size: 80,
         enableSorting: false,
         cell: ({ row }) => {
-          const listing = row.original;
+          const l = row.original;
           return (
             <EditableCell
-              recordId={listing.id}
+              recordId={l.id}
               field="checkStatus"
-              value={listing.checkStatus}
+              value={l.checkStatus}
               onSave={handleCellSave}
               editType="select"
               selectOptions={[
@@ -298,7 +298,7 @@ function PropertiesPage() {
               ]}
             >
               <StatusBadgeCell
-                value={listing.checkStatus}
+                value={l.checkStatus}
                 labels={checkStatusLabels}
                 colors={checkStatusColors}
               />

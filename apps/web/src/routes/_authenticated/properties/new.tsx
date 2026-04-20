@@ -18,11 +18,13 @@ function NewPropertyPage() {
   const [form, setForm] = useState({
     siteId: '',
     unitId: '',
+    memo: '',
+    // Listing fields (optional: create listing alongside property)
     transactionType: 'sale',
     price: '',
     deposit: '',
     monthlyRent: '',
-    memo: '',
+    createListing: true,
   });
   const [error, setError] = useState('');
 
@@ -39,18 +41,22 @@ function NewPropertyPage() {
 
   const mutation = useMutation({
     mutationFn: async () => {
+      // Step 1: Create Property (managed unit record)
       const property = await api.properties.create({
         siteId: form.siteId,
         unitId: form.unitId || undefined,
         memo: form.memo || undefined,
       });
-      await api.listings.create({
-        propertyId: property.id,
-        transactionType: form.transactionType,
-        price: form.price ? Number(form.price) : undefined,
-        deposit: form.deposit ? Number(form.deposit) : undefined,
-        monthlyRent: form.monthlyRent ? Number(form.monthlyRent) : undefined,
-      });
+      // Step 2: Optionally create Listing (transaction data)
+      if (form.createListing) {
+        await api.listings.create({
+          propertyId: property.id,
+          transactionType: form.transactionType,
+          price: form.price ? Number(form.price) : undefined,
+          deposit: form.deposit ? Number(form.deposit) : undefined,
+          monthlyRent: form.monthlyRent ? Number(form.monthlyRent) : undefined,
+        });
+      }
       return property;
     },
     onSuccess: () => {
@@ -121,44 +127,61 @@ function NewPropertyPage() {
             </FormField>
           )}
 
-          <FormField label="거래유형">
-            <select
-              value={form.transactionType}
-              onChange={update('transactionType')}
-              className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-xs focus:outline-none focus:ring-1 focus:ring-ring"
-            >
-              <option value="sale">매매</option>
-              <option value="jeonse">전세</option>
-              <option value="monthly">월세</option>
-            </select>
-          </FormField>
-
-          {(form.transactionType === 'sale' || form.transactionType === 'jeonse') && (
-            <FormField label={`${form.transactionType === 'sale' ? '매매가' : '전세가'} (만원)`}>
-              <Input
-                type="number"
-                value={form.price}
-                onChange={update('price')}
-                placeholder="예: 158000 (15.8억)"
-                className="h-9"
-              />
-            </FormField>
-          )}
-
-          {form.transactionType === 'monthly' && (
-            <>
-              <FormField label="보증금 (만원)">
-                <Input type="number" value={form.deposit} onChange={update('deposit')} className="h-9" />
-              </FormField>
-              <FormField label="월세 (만원)">
-                <Input type="number" value={form.monthlyRent} onChange={update('monthlyRent')} className="h-9" />
-              </FormField>
-            </>
-          )}
-
           <FormField label="메모">
             <Textarea value={form.memo} onChange={update('memo')} rows={3} />
           </FormField>
+
+          {/* Listing (transaction data) section */}
+          <div className="border-t pt-4 mt-2">
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={form.createListing}
+                onChange={(e) => setForm((prev) => ({ ...prev, createListing: e.target.checked }))}
+                className="rounded"
+              />
+              매물(거래 정보)도 함께 등록
+            </label>
+          </div>
+
+          {form.createListing && (
+            <>
+              <FormField label="거래유형">
+                <select
+                  value={form.transactionType}
+                  onChange={update('transactionType')}
+                  className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-xs focus:outline-none focus:ring-1 focus:ring-ring"
+                >
+                  <option value="sale">매매</option>
+                  <option value="jeonse">전세</option>
+                  <option value="monthly">월세</option>
+                </select>
+              </FormField>
+
+              {(form.transactionType === 'sale' || form.transactionType === 'jeonse') && (
+                <FormField label={`${form.transactionType === 'sale' ? '매매가' : '전세가'} (만원)`}>
+                  <Input
+                    type="number"
+                    value={form.price}
+                    onChange={update('price')}
+                    placeholder="예: 158000 (15.8억)"
+                    className="h-9"
+                  />
+                </FormField>
+              )}
+
+              {form.transactionType === 'monthly' && (
+                <>
+                  <FormField label="보증금 (만원)">
+                    <Input type="number" value={form.deposit} onChange={update('deposit')} className="h-9" />
+                  </FormField>
+                  <FormField label="월세 (만원)">
+                    <Input type="number" value={form.monthlyRent} onChange={update('monthlyRent')} className="h-9" />
+                  </FormField>
+                </>
+              )}
+            </>
+          )}
 
           <Button type="submit" className="w-full" disabled={mutation.isPending}>
             {mutation.isPending ? '등록 중...' : '등록'}

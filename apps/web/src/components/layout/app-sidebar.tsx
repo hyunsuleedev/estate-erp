@@ -14,6 +14,7 @@ import {
   Users,
   Settings,
   Bot,
+  Wallet,
 } from 'lucide-react'
 import { useAuth } from '@/providers/auth-provider'
 import { NavMain } from '@/components/nav-main'
@@ -90,6 +91,22 @@ const navItems = [
   {
     title: '계약서 관리',
     url: '/contracts',
+    icon: FileText,
+  },
+  {
+    title: '수수료/정산',
+    url: '/cashflow',
+    icon: Wallet,
+    items: [
+      { title: '캐시플로우', url: '/cashflow' },
+      { title: '수금 원장', url: '/cashflow/ledger' },
+      { title: '공동중개 파트너', url: '/partner-brokers' },
+      { title: '고정비 설정', url: '/cashflow/expenses' },
+    ],
+  },
+  {
+    title: '자료관리',
+    url: '/documents',
     icon: FileText,
   },
   {

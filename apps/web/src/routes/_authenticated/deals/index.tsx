@@ -1,324 +1,93 @@
 import { createFileRoute } from '@tanstack/react-router';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useState, useMemo } from 'react';
-import { LayoutGrid, List, Building, X, Users, TrendingUp, CreditCard } from 'lucide-react';
-import type { ColumnDef } from '@tanstack/react-table';
-import { api } from '@/lib/api';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useDeferredValue, useMemo, useState } from 'react';
+import {
+  Archive,
+  ArrowRight,
+  Building2,
+  ChevronDown,
+  ChevronUp,
+  CircleDollarSign,
+  Handshake,
+  MoreVertical,
+  Search,
+  Users,
+} from 'lucide-react';
 import type { Deal } from '@estate-erp/api-client';
 import { formatPrice } from '@estate-erp/shared';
-import { Button } from '@/components/ui/button';
+import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
-import { Separator } from '@/components/ui/separator';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import {
-  DataTable,
-  ViewBar,
-  StatusBadgeCell,
-  DateCell,
-  TextCell,
-  type FilterDefinition,
-  type ActiveFilter,
-} from '@/components/data-table';
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { Input } from '@/components/ui/input';
+import { ScrollArea } from '@/components/ui/scroll-area';
 
-// ── Stage config ────────────────────────────────────────────────
-
-const stages = [
-  { key: 'selection', label: '매물선정', color: 'border-t-slate-400', barColor: 'bg-slate-400' },
-  { key: 'deposit', label: '계약금', color: 'border-t-amber-400', barColor: 'bg-amber-400' },
-  { key: 'contract', label: '계약', color: 'border-t-blue-400', barColor: 'bg-blue-400' },
-  { key: 'completed', label: '완료', color: 'border-t-emerald-400', barColor: 'bg-emerald-400' },
-  { key: 'closed', label: '종료', color: 'border-t-gray-300', barColor: 'bg-gray-300' },
-];
-
-const stageLabels: Record<string, string> = Object.fromEntries(stages.map((s) => [s.key, s.label]));
-
-const stageColors: Record<string, string> = {
-  selection: 'bg-gray-100 text-gray-700',
-  deposit: 'bg-amber-50 text-amber-700',
-  contract: 'bg-blue-50 text-blue-700',
-  completed: 'bg-emerald-50 text-emerald-700',
-  closed: 'bg-gray-50 text-gray-400',
+const dealStageMeta: Record<string, { label: string; headerClassName: string; badgeClassName: string }> = {
+  selection: {
+    label: '매물 선정',
+    headerClassName: 'bg-slate-100 text-slate-700',
+    badgeClassName: 'bg-slate-100 text-slate-700',
+  },
+  negotiating: {
+    label: '조건 협상',
+    headerClassName: 'bg-slate-100 text-slate-700',
+    badgeClassName: 'bg-slate-100 text-slate-700',
+  },
+  preContract: {
+    label: '가계약',
+    headerClassName: 'bg-amber-50 text-amber-700',
+    badgeClassName: 'bg-amber-50 text-amber-700',
+  },
+  contracted: {
+    label: '본계약',
+    headerClassName: 'bg-sky-50 text-sky-700',
+    badgeClassName: 'bg-sky-50 text-sky-700',
+  },
+  settling: {
+    label: '중도/잔금',
+    headerClassName: 'bg-sky-50 text-sky-700',
+    badgeClassName: 'bg-sky-50 text-sky-700',
+  },
+  completed: {
+    label: '완료',
+    headerClassName: 'bg-emerald-50 text-emerald-700',
+    badgeClassName: 'bg-emerald-50 text-emerald-700',
+  },
+  closed: {
+    label: '종료',
+    headerClassName: 'bg-zinc-100 text-zinc-600',
+    badgeClassName: 'bg-zinc-100 text-zinc-600',
+  },
 };
 
-const filterDefinitions: FilterDefinition[] = [
-  {
-    id: 'stage',
-    field: 'stage',
-    label: '거래 단계',
-    type: 'select',
-    operators: ['is'],
-    options: stages.map(({ key, label, barColor }) => ({
-      value: key,
-      label,
-      color: barColor,
-    })),
-  },
-];
+const dealPipelineStages = [
+  'selection',
+  'negotiating',
+  'preContract',
+  'contracted',
+  'settling',
+  'completed',
+] as const;
+const dealStageOrder = [...dealPipelineStages, 'closed'] as const;
+const transactionTypeOptions = ['all', 'sale', 'jeonse', 'monthly'] as const;
 
-// ── Deal detail panel ───────────────────────────────────────────
+const transactionTypeMeta: Record<string, { label: string; className: string }> = {
+  sale: { label: '매매', className: 'bg-rose-50 text-rose-700' },
+  jeonse: { label: '전세', className: 'bg-blue-50 text-blue-700' },
+  monthly: { label: '월세', className: 'bg-violet-50 text-violet-700' },
+};
 
-function DealDetailPanel({ deal, onClose, onStageChange }: {
-  deal: Deal;
-  onClose: () => void;
-  onStageChange: (id: string, stage: string) => void;
-}) {
-  const property = deal.property as any;
-  const stageIdx = stages.findIndex((s) => s.key === deal.stage);
-  const nextStage = stageIdx < stages.length - 1 ? stages[stageIdx + 1] : null;
-  const prevStage = stageIdx > 0 ? stages[stageIdx - 1] : null;
-
-  return (
-    <div className="flex flex-col h-full">
-      {/* Header */}
-      <div className="flex items-start justify-between px-5 py-4 border-b border-border/60">
-        <div>
-          <h3 className="text-sm font-semibold">{property?.site?.name ?? '매물 상세'}</h3>
-          {property?.unit && (
-            <p className="text-xs text-muted-foreground mt-0.5">{property.unit.name}</p>
-          )}
-        </div>
-        <button onClick={onClose} className="text-muted-foreground hover:text-foreground mt-0.5">
-          <X className="size-4" />
-        </button>
-      </div>
-
-      <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
-        {/* Stage progress */}
-        <div>
-          <p className="text-[11px] font-medium text-muted-foreground mb-2">거래 단계</p>
-          <div className="flex items-center gap-1">
-            {stages.filter((s) => s.key !== 'closed').map((s, i, arr) => (
-              <div key={s.key} className="flex items-center gap-1 flex-1">
-                <button
-                  onClick={() => onStageChange(deal.id, s.key)}
-                  className={cn(
-                    'flex-1 h-1.5 rounded-full transition-all',
-                    deal.stage === 'closed'
-                      ? 'bg-muted'
-                      : stages.findIndex((x) => x.key === deal.stage) >= stages.findIndex((x) => x.key === s.key)
-                      ? s.barColor
-                      : 'bg-muted',
-                  )}
-                  title={s.label}
-                />
-              </div>
-            ))}
-          </div>
-          <div className="flex items-center justify-between mt-1.5">
-            <span className={cn(
-              'inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium',
-              stageColors[deal.stage],
-            )}>
-              {stageLabels[deal.stage]}
-            </span>
-            <div className="flex items-center gap-1">
-              {prevStage && (
-                <button
-                  onClick={() => onStageChange(deal.id, prevStage.key)}
-                  className="text-[11px] text-muted-foreground hover:text-foreground px-2 py-1 rounded hover:bg-muted"
-                >
-                  ← 이전
-                </button>
-              )}
-              {nextStage && (
-                <button
-                  onClick={() => onStageChange(deal.id, nextStage.key)}
-                  className="text-[11px] font-medium text-primary hover:text-primary/80 px-2 py-1 rounded hover:bg-primary/10"
-                >
-                  {nextStage.label} 진행 →
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-
-        <Separator />
-
-        {/* Price & Commission */}
-        <div>
-          <div className="flex items-center gap-1.5 mb-2.5">
-            <TrendingUp className="size-3.5 text-muted-foreground" />
-            <p className="text-[12px] font-semibold">거래 금액</p>
-          </div>
-          <dl className="space-y-2">
-            {deal.price && (
-              <div className="flex justify-between">
-                <dt className="text-[12px] text-muted-foreground">거래가</dt>
-                <dd className="text-[12px] font-medium tabular-nums">{formatPrice(deal.price)}</dd>
-              </div>
-            )}
-            {deal.commissionSellerAmount && (
-              <div className="flex justify-between">
-                <dt className="text-[12px] text-muted-foreground">매도측 수수료</dt>
-                <dd className="text-[12px] tabular-nums">{formatPrice(deal.commissionSellerAmount)}</dd>
-              </div>
-            )}
-            {deal.commissionBuyerAmount && (
-              <div className="flex justify-between">
-                <dt className="text-[12px] text-muted-foreground">매수측 수수료</dt>
-                <dd className="text-[12px] tabular-nums">{formatPrice(deal.commissionBuyerAmount)}</dd>
-              </div>
-            )}
-            {deal.commissionTotal ? (
-              <div className="flex justify-between border-t border-border/40 pt-2 mt-1">
-                <dt className="text-[12px] font-medium">수수료 합계</dt>
-                <dd className="text-[12px] font-semibold tabular-nums text-emerald-600">{formatPrice(deal.commissionTotal)}</dd>
-              </div>
-            ) : null}
-          </dl>
-        </div>
-
-        {/* Joint brokerage */}
-        {deal.isJointBrokerage && (
-          <>
-            <Separator />
-            <div>
-              <div className="flex items-center gap-1.5 mb-2.5">
-                <Users className="size-3.5 text-muted-foreground" />
-                <p className="text-[12px] font-semibold">공동중개</p>
-              </div>
-              <dl className="space-y-2">
-                {deal.partnerBrokerName && (
-                  <div className="flex justify-between">
-                    <dt className="text-[12px] text-muted-foreground">파트너 사무소</dt>
-                    <dd className="text-[12px]">{deal.partnerBrokerName}</dd>
-                  </div>
-                )}
-                {deal.partnerBrokerPhone && (
-                  <div className="flex justify-between">
-                    <dt className="text-[12px] text-muted-foreground">연락처</dt>
-                    <dd className="text-[12px] tabular-nums">{deal.partnerBrokerPhone}</dd>
-                  </div>
-                )}
-                {deal.partnerCommission && (
-                  <div className="flex justify-between">
-                    <dt className="text-[12px] text-muted-foreground">파트너 수수료</dt>
-                    <dd className="text-[12px] tabular-nums">{formatPrice(deal.partnerCommission)}</dd>
-                  </div>
-                )}
-              </dl>
-            </div>
-          </>
-        )}
-
-        {/* Payment schedule (placeholder for contract data) */}
-        <Separator />
-        <div>
-          <div className="flex items-center gap-1.5 mb-2.5">
-            <CreditCard className="size-3.5 text-muted-foreground" />
-            <p className="text-[12px] font-semibold">계약 일정</p>
-          </div>
-          <p className="text-[12px] text-muted-foreground">
-            계약서가 생성되면 일정이 표시됩니다.
-          </p>
-        </div>
-
-        {/* Memo */}
-        {deal.memo && (
-          <>
-            <Separator />
-            <div>
-              <p className="text-[11px] font-medium text-muted-foreground mb-1.5">메모</p>
-              <p className="text-[12px] leading-relaxed whitespace-pre-wrap">{deal.memo}</p>
-            </div>
-          </>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ── Deal Kanban Card ────────────────────────────────────────────
-
-function DealCard({ deal, isSelected, onClick }: {
-  deal: Deal;
-  isSelected: boolean;
-  onClick: () => void;
-}) {
-  const property = deal.property as any;
-  const propertyName = property?.site?.name ?? '매물';
-
-  return (
-    <button
-      onClick={onClick}
-      className={cn(
-        'w-full rounded-lg border text-left p-3 shadow-sm transition-all',
-        isSelected
-          ? 'border-primary/50 bg-primary/5'
-          : 'border-border/60 bg-background hover:border-border',
-      )}
-    >
-      {/* Property name */}
-      <div className="flex items-center gap-1.5 mb-1.5">
-        <Building className="size-3 shrink-0 text-muted-foreground" />
-        <span className="text-[13px] font-medium truncate">{propertyName}</span>
-      </div>
-      {/* Price */}
-      {deal.price && (
-        <p className="text-[12px] tabular-nums text-muted-foreground mb-1.5">
-          {formatPrice(deal.price)}
-        </p>
-      )}
-      {/* Commission + joint */}
-      <div className="flex items-center justify-between">
-        {deal.commissionTotal ? (
-          <span className="text-[11px] font-medium text-emerald-600 tabular-nums">
-            수수료 {formatPrice(deal.commissionTotal)}
-          </span>
-        ) : (
-          <span />
-        )}
-        {deal.isJointBrokerage && (
-          <span className="text-[10px] bg-violet-50 text-violet-600 px-1.5 py-0.5 rounded-full">공동</span>
-        )}
-      </div>
-    </button>
-  );
-}
-
-// ── Kanban Column ───────────────────────────────────────────────
-
-function DealKanbanColumn({
-  stage,
-  deals,
-  selectedId,
-  onSelect,
-}: {
-  stage: (typeof stages)[number];
-  deals: Deal[];
-  selectedId: string | null;
-  onSelect: (deal: Deal) => void;
-}) {
-  const totalCommission = deals.reduce((sum, d) => sum + (d.commissionTotal ?? 0), 0);
-
-  return (
-    <div className="flex w-52 shrink-0 flex-col">
-      <div className={cn('rounded-t-lg border-t-2 border-x border-border/60 bg-muted/30 px-3 py-2', stage.color)}>
-        <div className="flex items-center justify-between">
-          <span className="text-[12px] font-semibold">{stage.label}</span>
-          <span className="text-[11px] text-muted-foreground tabular-nums">{deals.length}</span>
-        </div>
-        {totalCommission > 0 && (
-          <p className="text-[10px] text-emerald-600 tabular-nums mt-0.5">{formatPrice(totalCommission)}</p>
-        )}
-      </div>
-      <div className="flex-1 rounded-b-lg border-x border-b border-border/60 bg-muted/10 p-2 space-y-2 min-h-[120px]">
-        {deals.map((d) => (
-          <DealCard
-            key={d.id}
-            deal={d}
-            isSelected={selectedId === d.id}
-            onClick={() => onSelect(d)}
-          />
-        ))}
-        {deals.length === 0 && (
-          <p className="py-6 text-center text-[11px] text-muted-foreground">없음</p>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ── Route ───────────────────────────────────────────────────────
+type DealPipelineStage = (typeof dealPipelineStages)[number];
+type DealTransactionFilter = (typeof transactionTypeOptions)[number];
 
 export const Route = createFileRoute('/_authenticated/deals/')({
   component: DealsPage,
@@ -326,204 +95,509 @@ export const Route = createFileRoute('/_authenticated/deals/')({
 
 function DealsPage() {
   const queryClient = useQueryClient();
-  const [viewMode, setViewMode] = useState<'kanban' | 'table'>('kanban');
-  const [activeFilters, setActiveFilters] = useState<ActiveFilter[]>([]);
-  const [selectedDeal, setSelectedDeal] = useState<Deal | null>(null);
-  const [showClosed, setShowClosed] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [transactionTypeFilter, setTransactionTypeFilter] = useState<DealTransactionFilter>('all');
+  const [showClosedDeals, setShowClosedDeals] = useState(false);
+  const deferredSearch = useDeferredValue(searchQuery);
 
-  const { data, isLoading } = useQuery({
+  const { data: deals = [], isLoading } = useQuery({
     queryKey: ['deals'],
     queryFn: () => api.deals.findAll(),
   });
 
   const stageMutation = useMutation({
-    mutationFn: ({ id, stage }: { id: string; stage: string }) =>
-      api.deals.updateStage(id, { stage }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['deals'] }),
+    mutationFn: ({ id, stage }: { id: string; stage: string }) => api.deals.updateStage(id, { stage }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['deals'] });
+    },
   });
 
-  const handleStageChange = (id: string, stage: string) => {
-    stageMutation.mutate({ id, stage });
-    // Update selected deal if it's the one being changed
-    if (selectedDeal?.id === id) {
-      setSelectedDeal((d) => d ? { ...d, stage } : d);
-    }
-  };
+  const filteredDeals = useMemo(() => {
+    const query = deferredSearch.trim().toLowerCase();
 
-  const filteredData = useMemo(() => {
-    let items = data ?? [];
-    if (!showClosed) items = items.filter((d) => d.stage !== 'closed');
-    for (const filter of activeFilters) {
-      if (filter.field === 'stage') items = items.filter((d) => d.stage === filter.value);
-    }
-    return items;
-  }, [data, activeFilters, showClosed]);
+    return deals.filter((deal) => {
+      const transactionType = deal.listing?.transactionType;
+      if (transactionTypeFilter !== 'all' && transactionType !== transactionTypeFilter) {
+        return false;
+      }
 
-  const visibleStages = showClosed ? stages : stages.filter((s) => s.key !== 'closed');
+      if (!query) {
+        return true;
+      }
 
-  // Total commission across active deals
-  const totalCommission = filteredData.reduce((sum, d) => sum + (d.commissionTotal ?? 0), 0);
+      return [
+        getDealTitle(deal),
+        deal.property?.site?.roadAddress,
+        deal.property?.site?.jibunAddress,
+        deal.buyerContact?.name,
+        deal.buyerContact?.phone,
+        deal.sellerContact?.name,
+        deal.sellerContact?.phone,
+        deal.partnerBroker?.name,
+        deal.partnerBroker?.phone,
+        deal.memo,
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase()
+        .includes(query);
+    });
+  }, [deals, deferredSearch, transactionTypeFilter]);
 
-  // ── Table columns ────────────────────────────────────────────
-  const columns = useMemo<ColumnDef<Deal, unknown>[]>(
-    () => [
-      {
-        accessorKey: 'property',
-        header: '매물',
-        size: 200,
-        cell: ({ row }) => (
-          <TextCell value={(row.original.property as any)?.site?.name ?? `매물 ${row.original.propertyId.slice(0, 8)}...`} bold />
-        ),
-      },
-      {
-        accessorKey: 'stage',
-        header: '단계',
-        size: 100,
-        cell: ({ row }) => (
-          <StatusBadgeCell value={row.original.stage} labels={stageLabels} colors={stageColors} />
-        ),
-      },
-      {
-        accessorKey: 'price',
-        header: '거래가',
-        size: 120,
-        cell: ({ row }) => (
-          <span className="tabular-nums text-sm font-medium">
-            {row.original.price ? formatPrice(row.original.price) : '-'}
-          </span>
-        ),
-      },
-      {
-        accessorKey: 'commissionTotal',
-        header: '수수료 합계',
-        size: 120,
-        cell: ({ row }) => (
-          <span className="tabular-nums text-sm">
-            {row.original.commissionTotal ? formatPrice(row.original.commissionTotal) : '-'}
-          </span>
-        ),
-      },
-      {
-        accessorKey: 'isJointBrokerage',
-        header: '공동중개',
-        size: 80,
-        cell: ({ row }) => (
-          <span className="text-xs text-muted-foreground">
-            {row.original.isJointBrokerage ? '공동' : '단독'}
-          </span>
-        ),
-      },
-      {
-        accessorKey: 'createdAt',
-        header: '등록일',
-        size: 80,
-        cell: ({ row }) => <DateCell value={row.original.createdAt} relative />,
-      },
-    ],
-    [],
-  );
+  const activeDeals = filteredDeals.filter((deal) => deal.stage !== 'closed');
+  const closedDeals = filteredDeals.filter((deal) => deal.stage === 'closed');
+  const activeCommission = activeDeals.reduce((sum, deal) => sum + (deal.commissionSummary?.billed ?? 0), 0);
+  const completedDeals = activeDeals.filter((deal) => deal.stage === 'completed').length;
+  const jointDeals = activeDeals.filter((deal) => deal.isJointBrokerage).length;
 
   return (
-    <div className="flex flex-col gap-4">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <h1 className="text-lg font-semibold tracking-tight">거래관리</h1>
-          <span className="text-xs text-muted-foreground">{filteredData.length}건</span>
-          {totalCommission > 0 && (
-            <span className="text-[11px] text-emerald-600 font-medium">
-              예상 수수료 합계 {formatPrice(totalCommission)}
-            </span>
-          )}
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setShowClosed((v) => !v)}
-            className={cn(
-              'text-[11px] px-2.5 py-1 rounded-md border transition-colors',
-              showClosed
-                ? 'border-border bg-muted text-foreground'
-                : 'border-border/50 text-muted-foreground hover:text-foreground',
-            )}
-          >
-            종료 포함
-          </button>
-          <div className="flex rounded-lg border border-border/60 overflow-hidden">
-            <Button
-              variant="ghost"
-              size="sm"
-              className={cn('h-8 rounded-none px-2.5', viewMode === 'kanban' && 'bg-muted')}
-              onClick={() => setViewMode('kanban')}
-            >
-              <LayoutGrid className="size-3.5" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className={cn('h-8 rounded-none px-2.5', viewMode === 'table' && 'bg-muted')}
-              onClick={() => setViewMode('table')}
-            >
-              <List className="size-3.5" />
-            </Button>
+    <div className="flex min-h-0 flex-col gap-4">
+      <div className="flex items-end justify-between gap-4">
+        <div className="space-y-1">
+          <div className="flex items-center gap-3">
+            <h1 className="text-lg font-semibold tracking-tight">거래관리</h1>
+            <span className="text-xs text-muted-foreground">{filteredDeals.length}건</span>
           </div>
+          <p className="text-sm text-muted-foreground">
+            estate-crm 흐름처럼 거래 단계를 보드 기준으로 관리합니다.
+          </p>
         </div>
       </div>
 
-      {viewMode === 'kanban' ? (
-        /* Kanban + detail panel */
-        <div className={cn('flex gap-4 transition-all', selectedDeal ? 'items-start' : '')}>
-          <div className="flex-1 overflow-x-auto pb-4">
-            {isLoading ? (
-              <div className="flex gap-3">
-                {[1, 2, 3, 4].map((i) => (
-                  <div key={i} className="w-52 shrink-0 h-64 rounded-lg bg-muted/30 animate-pulse" />
-                ))}
-              </div>
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <MetricTile
+          icon={Users}
+          label="진행 거래"
+          value={`${activeDeals.length}건`}
+          hint="selection ~ completed"
+        />
+        <MetricTile
+          icon={CircleDollarSign}
+          label="예상 수수료"
+          value={activeCommission ? formatPrice(activeCommission) : '-'}
+          hint="진행 거래 기준"
+        />
+        <MetricTile
+          icon={Building2}
+          label="완료 단계"
+          value={`${completedDeals}건`}
+          hint="정산 직전 거래"
+        />
+        <MetricTile
+          icon={Handshake}
+          label="공동중개"
+          value={`${jointDeals}건`}
+          hint="협업 거래"
+        />
+      </div>
+
+      <section className="rounded-xl border border-border/60 bg-background">
+        <div className="flex flex-col gap-3 border-b border-border/60 px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="relative w-full max-w-md">
+            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+              placeholder="매물명, 연락처, 공동중개사로 검색"
+              className="pl-9"
+            />
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            {transactionTypeOptions.map((value) => (
+              <Button
+                key={value}
+                type="button"
+                variant={transactionTypeFilter === value ? 'default' : 'outline'}
+                size="xs"
+                onClick={() => setTransactionTypeFilter(value)}
+              >
+                {value === 'all' ? '전체' : transactionTypeMeta[value].label}
+              </Button>
+            ))}
+          </div>
+        </div>
+
+        <ScrollArea className="w-full">
+          <div className="flex min-w-max gap-4 p-4">
+            {dealPipelineStages.map((stage) => (
+              <DealColumn
+                key={stage}
+                stage={stage}
+                deals={activeDeals.filter((deal) => deal.stage === stage)}
+                onStageChange={(id, nextStage) => stageMutation.mutate({ id, stage: nextStage })}
+                isUpdating={stageMutation.isPending}
+              />
+            ))}
+          </div>
+        </ScrollArea>
+
+        {!isLoading && activeDeals.length === 0 && (
+          <div className="border-t border-border/60 px-4 py-10 text-center text-sm text-muted-foreground">
+            조건에 맞는 진행 거래가 없습니다.
+          </div>
+        )}
+      </section>
+
+      <section className="rounded-xl border border-border/60 bg-background">
+        <button
+          type="button"
+          className="flex w-full items-center justify-between px-4 py-3 text-left"
+          onClick={() => setShowClosedDeals((prev) => !prev)}
+        >
+          <div className="flex items-center gap-3">
+            <h2 className="text-sm font-semibold text-foreground">종료 거래</h2>
+            <Badge variant="secondary">{closedDeals.length}</Badge>
+          </div>
+          {showClosedDeals ? (
+            <ChevronUp className="size-4 text-muted-foreground" />
+          ) : (
+            <ChevronDown className="size-4 text-muted-foreground" />
+          )}
+        </button>
+
+        {showClosedDeals && (
+          <div className="border-t border-border/60">
+            {closedDeals.length === 0 ? (
+              <div className="px-4 py-8 text-sm text-muted-foreground">종료된 거래가 없습니다.</div>
             ) : (
-              <div className="flex gap-3 min-w-max">
-                {visibleStages.map((stage) => (
-                  <DealKanbanColumn
-                    key={stage.key}
-                    stage={stage}
-                    deals={filteredData.filter((d) => d.stage === stage.key)}
-                    selectedId={selectedDeal?.id ?? null}
-                    onSelect={(deal) => setSelectedDeal((prev) => prev?.id === deal.id ? null : deal)}
+              <div className="divide-y divide-border/60">
+                {closedDeals.map((deal) => (
+                  <ClosedDealRow
+                    key={deal.id}
+                    deal={deal}
+                    onStageChange={(id, stage) => stageMutation.mutate({ id, stage })}
+                    isUpdating={stageMutation.isPending}
                   />
                 ))}
               </div>
             )}
           </div>
-
-          {/* Detail side panel */}
-          {selectedDeal && (
-            <div className="w-80 shrink-0 rounded-xl border border-border/60 bg-background overflow-hidden">
-              <DealDetailPanel
-                deal={selectedDeal}
-                onClose={() => setSelectedDeal(null)}
-                onStageChange={handleStageChange}
-              />
-            </div>
-          )}
-        </div>
-      ) : (
-        /* Table view */
-        <div className="rounded-xl border border-border/60 bg-background">
-          <ViewBar
-            filterDefinitions={filterDefinitions}
-            activeFilters={activeFilters}
-            onFilterAdd={(f) => setActiveFilters((prev) => [...prev.filter((p) => p.field !== f.field), f])}
-            onFilterRemove={(id) => setActiveFilters((prev) => prev.filter((f) => f.id !== id))}
-            onFiltersReset={() => setActiveFilters([])}
-          />
-          <DataTable
-            columns={columns}
-            data={filteredData}
-            onRowClick={(row) => setSelectedDeal((prev) => prev?.id === row.id ? null : row)}
-            isLoading={isLoading}
-            emptyMessage="거래가 없습니다."
-          />
-        </div>
-      )}
+        )}
+      </section>
     </div>
   );
+}
+
+function DealColumn({
+  stage,
+  deals,
+  onStageChange,
+  isUpdating,
+}: {
+  stage: DealPipelineStage;
+  deals: Deal[];
+  onStageChange: (id: string, stage: string) => void;
+  isUpdating: boolean;
+}) {
+  const meta = dealStageMeta[stage];
+
+  return (
+    <section className="flex w-[320px] shrink-0 flex-col overflow-hidden rounded-xl border border-border/60 bg-muted/20">
+      <div className={cn('flex items-center justify-between px-4 py-3 text-sm font-medium', meta.headerClassName)}>
+        <span>{meta.label}</span>
+        <Badge variant="secondary" className="bg-background/80 text-foreground">
+          {deals.length}
+        </Badge>
+      </div>
+
+      <div className="flex min-h-[440px] flex-1 flex-col gap-3 p-3">
+        {deals.length === 0 ? (
+          <div className="flex min-h-[180px] items-center justify-center rounded-lg border border-dashed border-border/80 bg-background/70 text-sm text-muted-foreground">
+            해당 단계의 거래가 없습니다.
+          </div>
+        ) : (
+          deals.map((deal) => (
+            <DealCard
+              key={deal.id}
+              deal={deal}
+              onStageChange={onStageChange}
+              isUpdating={isUpdating}
+            />
+          ))
+        )}
+      </div>
+    </section>
+  );
+}
+
+function DealCard({
+  deal,
+  onStageChange,
+  isUpdating,
+}: {
+  deal: Deal;
+  onStageChange: (id: string, stage: string) => void;
+  isUpdating: boolean;
+}) {
+  const transactionType = deal.listing?.transactionType;
+  const nextStage = getNextDealStage(deal.stage);
+
+  return (
+    <article className="rounded-xl border border-border/60 bg-background p-3 shadow-xs">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 space-y-2">
+          <div className="flex flex-wrap items-center gap-2">
+            {transactionType && (
+              <Badge className={cn('border-0', transactionTypeMeta[transactionType]?.className)}>
+                {transactionTypeMeta[transactionType]?.label ?? transactionType}
+              </Badge>
+            )}
+            {deal.isJointBrokerage && (
+              <Badge variant="outline" className="text-[11px] text-muted-foreground">
+                공동중개
+              </Badge>
+            )}
+          </div>
+
+          <div>
+            <p className="truncate text-sm font-semibold">{getDealTitle(deal)}</p>
+            <p className="truncate text-xs text-muted-foreground">
+              {deal.property?.site?.roadAddress ?? deal.property?.site?.jibunAddress ?? '주소 정보 없음'}
+            </p>
+          </div>
+        </div>
+
+        <DealActionsMenu
+          currentStage={deal.stage}
+          onStageChange={(stage) => onStageChange(deal.id, stage)}
+          disabled={isUpdating}
+        />
+      </div>
+
+      <div className="mt-3 grid grid-cols-2 gap-2 rounded-lg bg-muted/40 p-2">
+        <MiniStat label="거래가" value={formatDealAmount(deal)} emphasis />
+        <MiniStat label="수수료" value={deal.commissionSummary?.billed ? formatPrice(deal.commissionSummary.billed) : '-'} />
+      </div>
+
+      <div className="mt-3 space-y-2">
+        <PartyRow label="매수" name={deal.buyerContact?.name} />
+        <PartyRow label="매도" name={deal.sellerContact?.name} />
+      </div>
+
+      {deal.partnerBroker && (
+        <div className="mt-3 flex items-center gap-1.5 text-xs text-muted-foreground">
+          <Handshake className="size-3.5" />
+          <span>{deal.partnerBroker.name}</span>
+        </div>
+      )}
+
+      {deal.memo && (
+        <p className="mt-3 line-clamp-2 text-xs leading-5 text-muted-foreground">{deal.memo}</p>
+      )}
+
+      <div className="mt-4 flex items-center justify-between gap-2">
+        <span className="text-[11px] text-muted-foreground">업데이트 {formatShortDate(deal.updatedAt)}</span>
+        {nextStage && (
+          <Button
+            type="button"
+            variant="outline"
+            size="xs"
+            onClick={() => onStageChange(deal.id, nextStage)}
+            disabled={isUpdating}
+          >
+            다음 단계
+            <ArrowRight className="size-3" />
+          </Button>
+        )}
+      </div>
+    </article>
+  );
+}
+
+function ClosedDealRow({
+  deal,
+  onStageChange,
+  isUpdating,
+}: {
+  deal: Deal;
+  onStageChange: (id: string, stage: string) => void;
+  isUpdating: boolean;
+}) {
+  return (
+    <div className="flex flex-col gap-3 px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
+      <div className="min-w-0 space-y-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="truncate text-sm font-medium">{getDealTitle(deal)}</p>
+          <Badge className={cn('border-0', dealStageMeta.closed.badgeClassName)}>
+            {dealStageMeta.closed.label}
+          </Badge>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          매수 {deal.buyerContact?.name ?? '미지정'} · 매도 {deal.sellerContact?.name ?? '미지정'}
+        </p>
+      </div>
+
+      <div className="flex items-center gap-3">
+        <div className="text-right">
+          <p className="text-sm font-medium">{formatDealAmount(deal)}</p>
+          <p className="text-xs text-muted-foreground">
+            수수료 {deal.commissionSummary?.billed ? formatPrice(deal.commissionSummary.billed) : '-'}
+          </p>
+        </div>
+
+        <DealActionsMenu
+          currentStage={deal.stage}
+          onStageChange={(stage) => onStageChange(deal.id, stage)}
+          disabled={isUpdating}
+        />
+      </div>
+    </div>
+  );
+}
+
+function DealActionsMenu({
+  currentStage,
+  onStageChange,
+  disabled,
+}: {
+  currentStage: string;
+  onStageChange: (stage: string) => void;
+  disabled: boolean;
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button type="button" variant="ghost" size="icon-xs" disabled={disabled}>
+          <MoreVertical className="size-3.5" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-44">
+        <DropdownMenuLabel className="text-xs text-muted-foreground">단계 변경</DropdownMenuLabel>
+        {dealStageOrder.slice(0, -1).map((stage) => (
+          <DropdownMenuItem
+            key={stage}
+            onSelect={() => onStageChange(stage)}
+            className={cn(stage === currentStage && 'font-medium text-foreground')}
+          >
+            {dealStageMeta[stage].label}
+          </DropdownMenuItem>
+        ))}
+        <DropdownMenuSeparator />
+        <DropdownMenuItem
+          variant="destructive"
+          onSelect={() => onStageChange('closed')}
+        >
+          <Archive className="size-4" />
+          거래 종료
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function MetricTile({
+  icon: Icon,
+  label,
+  value,
+  hint,
+}: {
+  icon: typeof Users;
+  label: string;
+  value: string;
+  hint: string;
+}) {
+  return (
+    <div className="rounded-xl border border-border/60 bg-background px-4 py-3">
+      <div className="flex items-start justify-between gap-3">
+        <div className="space-y-1">
+          <p className="text-xs text-muted-foreground">{label}</p>
+          <p className="text-lg font-semibold tracking-tight">{value}</p>
+          <p className="text-xs text-muted-foreground">{hint}</p>
+        </div>
+        <div className="rounded-lg bg-muted/60 p-2 text-muted-foreground">
+          <Icon className="size-4" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MiniStat({
+  label,
+  value,
+  emphasis = false,
+}: {
+  label: string;
+  value: string;
+  emphasis?: boolean;
+}) {
+  return (
+    <div className="space-y-1">
+      <p className="text-[11px] text-muted-foreground">{label}</p>
+      <p className={cn('text-sm', emphasis && 'font-semibold')}>{value}</p>
+    </div>
+  );
+}
+
+function PartyRow({
+  label,
+  name,
+}: {
+  label: string;
+  name: string | null | undefined;
+}) {
+  const displayName = name?.trim() || '미지정';
+
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-lg border border-border/60 px-2.5 py-2">
+      <div className="flex min-w-0 items-center gap-2">
+        <Avatar size="sm">
+          <AvatarFallback>{getInitials(displayName)}</AvatarFallback>
+        </Avatar>
+        <div className="min-w-0">
+          <p className="text-[11px] text-muted-foreground">{label}</p>
+          <p className="truncate text-sm font-medium">{displayName}</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function getDealTitle(deal: Deal) {
+  return [deal.property?.site?.name, deal.property?.unit?.name].filter(Boolean).join(' ') || '매물 정보 없음';
+}
+
+function getDealStageIndex(stage: string) {
+  return dealPipelineStages.indexOf(stage as DealPipelineStage);
+}
+
+function getNextDealStage(stage: string) {
+  const currentIndex = getDealStageIndex(stage);
+  if (currentIndex < 0 || currentIndex >= dealPipelineStages.length - 1) {
+    return null;
+  }
+  return dealPipelineStages[currentIndex + 1];
+}
+
+function formatDealAmount(deal: Deal) {
+  const type = deal.transactionType ?? deal.listing?.transactionType;
+
+  if (type === 'monthly') {
+    const deposit =
+      deal.agreedDeposit ?? deal.listing?.deposit;
+    const monthlyRent =
+      deal.agreedMonthlyRent ?? deal.listing?.monthlyRent;
+    const depositStr = deposit ? formatPrice(deposit) : '-';
+    const rentStr = monthlyRent ? formatPrice(monthlyRent) : '-';
+    return `${depositStr} / ${rentStr}`;
+  }
+
+  const price =
+    deal.agreedPrice ??
+    deal.agreedDeposit ??
+    deal.listing?.price ??
+    deal.listing?.deposit;
+  return price ? formatPrice(price) : '-';
+}
+
+function formatShortDate(value: string) {
+  return new Date(value).toLocaleDateString('ko-KR', {
+    month: 'short',
+    day: 'numeric',
+  });
+}
+
+function getInitials(name: string) {
+  return name.slice(0, 2);
 }

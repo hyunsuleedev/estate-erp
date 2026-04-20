@@ -19,6 +19,7 @@ import {
   Layers,
   Calendar,
   ArrowUpRight,
+  LayoutGrid,
   X,
 } from 'lucide-react';
 import { api } from '@/lib/api';
@@ -144,6 +145,238 @@ interface MultiSelectOption {
   value: string;
   label: string;
   helper?: string;
+}
+
+interface PositionedUnit {
+  unit: Unit;
+  floor: number;
+  lineNo: number;
+}
+
+interface LayoutSection {
+  key: string;
+  label: string;
+  floors: number[];
+  lineNos: number[];
+  cellMap: Map<string, PositionedUnit>;
+  unpositionedUnits: Unit[];
+}
+
+function parseUnitPlacement(unit: Unit): { floor: number | null; lineNo: number | null } {
+  const digits = unit.name.replace(/\D/g, '');
+  const fallbackFloor = digits.length >= 3 ? Number.parseInt(digits.slice(0, -2), 10) : null;
+  const fallbackLineNo = digits.length >= 2 ? Number.parseInt(digits.slice(-2), 10) : null;
+
+  return {
+    floor: unit.floor ?? (Number.isNaN(fallbackFloor) ? null : fallbackFloor),
+    lineNo: unit.lineNo ?? (Number.isNaN(fallbackLineNo) ? null : fallbackLineNo),
+  };
+}
+
+function formatFloorLabel(floor: number): string {
+  if (floor === 0) return 'P';
+  if (floor < 0) return `B${Math.abs(floor)}`;
+  return `${floor}`;
+}
+
+function UnitLayoutBoard({
+  sections,
+  selectedUnitId,
+  onUnitOpen,
+}: {
+  sections: LayoutSection[];
+  selectedUnitId?: string | null;
+  onUnitOpen?: (unit: Unit) => void;
+}) {
+  const hasPositionedUnits = sections.some((section) => section.floors.length > 0 && section.lineNos.length > 0);
+
+  if (!hasPositionedUnits) {
+    const allUnits = sections.flatMap((section) => section.unpositionedUnits);
+
+    return (
+      <div className="flex h-full items-center justify-center p-6">
+        <div className="max-w-lg space-y-4 text-center">
+          <div className="mx-auto flex size-12 items-center justify-center rounded-full bg-muted">
+            <LayoutGrid className="size-5 text-muted-foreground" />
+          </div>
+          <div className="space-y-1">
+            <h3 className="text-sm font-medium">배치표를 그릴 수 있는 층/라인 정보가 없습니다</h3>
+            <p className="text-xs text-muted-foreground">
+              현재 호수 데이터에 `floor` 또는 `lineNo`가 비어 있습니다. 호수명 숫자도 함께
+              파싱했지만, 배치 기준을 만들 수 있는 데이터가 부족합니다.
+            </p>
+          </div>
+          {allUnits.length > 0 && (
+            <div className="flex flex-wrap justify-center gap-1.5">
+              {allUnits.slice(0, 16).map((unit) => (
+                <Badge key={unit.id} variant="secondary" className="text-[10px] font-normal">
+                  {unit.name}
+                </Badge>
+              ))}
+              {allUnits.length > 16 && (
+                <Badge variant="outline" className="text-[10px] font-normal">
+                  +{allUnits.length - 16}개
+                </Badge>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex h-full flex-col overflow-auto px-4 py-4">
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <Badge variant="outline" className="text-[10px] font-normal">
+          일반
+        </Badge>
+        <Badge variant="secondary" className="text-[10px] font-normal">
+          상담 있음
+        </Badge>
+        <Badge className="bg-violet-500/15 text-[10px] font-normal text-violet-700 hover:bg-violet-500/15 dark:text-violet-200">
+          매물 있음
+        </Badge>
+      </div>
+
+      <div className="space-y-6">
+        {sections.map((section) => {
+          const showTitle = sections.length > 1 || section.label !== '전체';
+          return (
+            <section key={section.key} className="space-y-3">
+              {showTitle && (
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-medium">{section.label}</h3>
+                  <span className="text-xs text-muted-foreground">
+                    {section.floors.length}층 · {section.lineNos.length}라인
+                  </span>
+                </div>
+              )}
+
+              {section.floors.length > 0 && section.lineNos.length > 0 ? (
+                <div className="overflow-auto rounded-xl border border-border/60 bg-muted/10 p-3">
+                  <div
+                    className="grid gap-1.5"
+                    style={{
+                      gridTemplateColumns: `56px repeat(${section.lineNos.length}, minmax(88px, 1fr))`,
+                      minWidth: 56 + section.lineNos.length * 88,
+                    }}
+                  >
+                    <div />
+                    {section.lineNos.map((lineNo) => (
+                      <div
+                        key={`header-${section.key}-${lineNo}`}
+                        className="flex h-7 items-center justify-center rounded-md text-[10px] font-medium text-muted-foreground"
+                      >
+                        {String(lineNo).padStart(2, '0')}
+                      </div>
+                    ))}
+
+                    {section.floors.map((floor) => (
+                      <>
+                        <div
+                          key={`floor-${section.key}-${floor}`}
+                          className="flex min-h-16 items-center justify-center rounded-md bg-muted text-xs font-medium text-muted-foreground"
+                        >
+                          {formatFloorLabel(floor)}F
+                        </div>
+                        {section.lineNos.map((lineNo) => {
+                          const positionedUnit = section.cellMap.get(`${floor}:${lineNo}`);
+
+                          if (!positionedUnit) {
+                            return (
+                              <div
+                                key={`empty-${section.key}-${floor}-${lineNo}`}
+                                className="min-h-16 rounded-lg border border-dashed border-border/60 bg-background/30"
+                              />
+                            );
+                          }
+
+                          const { unit } = positionedUnit;
+                          const hasListing = (unit.properties ?? []).some(
+                            (property) => (property.listings?.length ?? 0) > 0,
+                          );
+                          const hasConsultation = (unit.properties ?? []).some(
+                            (property) => (property.consultations?.length ?? 0) > 0,
+                          );
+                          const isSelected = selectedUnitId === unit.id;
+
+                          return (
+                            <button
+                              key={unit.id}
+                              type="button"
+                              onClick={() => onUnitOpen?.(unit)}
+                              className={cn(
+                                'group flex min-h-16 flex-col items-center justify-center rounded-lg border px-2 py-1 text-center transition-colors',
+                                isSelected &&
+                                  'border-primary bg-primary text-primary-foreground shadow-sm',
+                                !isSelected &&
+                                  hasListing &&
+                                  'border-violet-500/30 bg-violet-500/12 hover:bg-violet-500/16',
+                                !isSelected &&
+                                  !hasListing &&
+                                  hasConsultation &&
+                                  'border-sky-500/30 bg-sky-500/10 hover:bg-sky-500/14',
+                                !isSelected &&
+                                  !hasListing &&
+                                  !hasConsultation &&
+                                  'border-border/70 bg-background hover:bg-accent/60',
+                              )}
+                            >
+                              <span className="text-sm font-semibold leading-none">{unit.name}</span>
+                              <span
+                                className={cn(
+                                  'mt-1 text-[10px] leading-none',
+                                  isSelected
+                                    ? 'text-primary-foreground/80'
+                                    : 'text-muted-foreground',
+                                )}
+                              >
+                                {unit.siteUnitType?.name ?? formatAreaPyeong(unit.exclusiveAreaM2)}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="rounded-lg border border-dashed border-border/60 p-6 text-center text-xs text-muted-foreground">
+                  이 동은 배치 가능한 층/라인 정보가 없습니다.
+                </div>
+              )}
+
+              {section.unpositionedUnits.length > 0 && (
+                <div className="space-y-2">
+                  <div className="text-[11px] font-medium text-muted-foreground">
+                    배치 불가 호수
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {section.unpositionedUnits.map((unit) => (
+                      <button
+                        key={`${section.key}-unplaced-${unit.id}`}
+                        type="button"
+                        onClick={() => onUnitOpen?.(unit)}
+                        className={cn(
+                          'rounded-md border px-2 py-1 text-[11px] transition-colors',
+                          selectedUnitId === unit.id
+                            ? 'border-primary bg-primary text-primary-foreground'
+                            : 'border-border/60 bg-background hover:bg-accent',
+                        )}
+                      >
+                        {unit.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </section>
+          );
+        })}
+      </div>
+    </div>
+  );
 }
 
 function MultiSelectFilter({
@@ -291,6 +524,7 @@ function SitesPage() {
   const [unitSearch, setUnitSearch] = useState('');
   const [consultationSearch, setConsultationSearch] = useState('');
   const [unitSort, setUnitSort] = useState<EstateGridSortState | null>(null);
+  const [unitViewMode, setUnitViewMode] = useState<'table' | 'layout'>('table');
 
   // ── Modal state ───────────────────────────────────────────────
   const [showAddSiteDialog, setShowAddSiteDialog] = useState(false);
@@ -353,7 +587,7 @@ function SitesPage() {
   });
 
   const addUnitMutation = useMutation({
-    mutationFn: (dto: { siteId: string; dongId?: string; name: string; exclusiveAreaM2?: number }) =>
+    mutationFn: (dto: { siteId: string; dongId: string; name: string; exclusiveAreaM2?: number }) =>
       api.units.create(dto),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['sites', selectedSiteId] });
@@ -489,16 +723,20 @@ function SitesPage() {
         .map((propertyContact) => propertyContact.contact.name)[0] ?? '';
 
     const getTenantLabel = (unit: Unit) =>
-      (unit.properties ?? []).flatMap((property) => property.tenants ?? []).map((tenant) => tenant.contact.name)[0] ?? '';
+      (unit.properties ?? [])
+        .flatMap((property) => property.tenants ?? [])
+        .map((tenant) => tenant.contact.name)[0] ?? '';
 
     const getListingLabel = (unit: Unit) => {
-      const listing = (unit.properties ?? []).flatMap((p) => p.listings ?? [])[0];
-      if (!listing) return '';
+      const primaryListing = (unit.properties ?? [])
+        .flatMap((property) => property.listings ?? [])
+        [0];
+      if (!primaryListing) return '';
       return formatPriceLabel(
-        listing.transactionType,
-        listing.price,
-        listing.deposit,
-        listing.monthlyRent,
+        primaryListing.transactionType,
+        primaryListing.price,
+        primaryListing.deposit,
+        primaryListing.monthlyRent,
       );
     };
 
@@ -538,6 +776,74 @@ function SitesPage() {
     });
   }, [allUnits, consultationSearch, selectedDongIds, selectedUnitTypeIds, unitSearch, unitSort]);
 
+  const layoutSections = useMemo<LayoutSection[]>(() => {
+    const sectionMap = new Map<
+      string,
+      {
+        key: string;
+        label: string;
+        positionedUnits: PositionedUnit[];
+        unpositionedUnits: Unit[];
+      }
+    >();
+
+    for (const unit of filteredUnits) {
+      const sectionKey = dongs.length > 0 ? unit.dongId ?? '__no_dong__' : '__site__';
+      const sectionLabel =
+        dongs.length > 0 ? getDongName(unit.dongId) || '미지정 동' : '전체';
+
+      if (!sectionMap.has(sectionKey)) {
+        sectionMap.set(sectionKey, {
+          key: sectionKey,
+          label: sectionLabel,
+          positionedUnits: [],
+          unpositionedUnits: [],
+        });
+      }
+
+      const section = sectionMap.get(sectionKey)!;
+      const placement = parseUnitPlacement(unit);
+
+      if (placement.floor == null || placement.lineNo == null) {
+        section.unpositionedUnits.push(unit);
+        continue;
+      }
+
+      section.positionedUnits.push({
+        unit,
+        floor: placement.floor,
+        lineNo: placement.lineNo,
+      });
+    }
+
+    return Array.from(sectionMap.values())
+      .sort((a, b) => a.label.localeCompare(b.label, 'ko', { numeric: true }))
+      .map((section) => {
+        const floors = Array.from(
+          new Set(section.positionedUnits.map((item) => item.floor)),
+        ).sort((a, b) => b - a);
+        const lineNos = Array.from(
+          new Set(section.positionedUnits.map((item) => item.lineNo)),
+        ).sort((a, b) => a - b);
+        const cellMap = new Map<string, PositionedUnit>();
+
+        for (const item of section.positionedUnits) {
+          cellMap.set(`${item.floor}:${item.lineNo}`, item);
+        }
+
+        return {
+          key: section.key,
+          label: section.label,
+          floors,
+          lineNos,
+          cellMap,
+          unpositionedUnits: section.unpositionedUnits.sort((a, b) =>
+            a.name.localeCompare(b.name, 'ko', { numeric: true }),
+          ),
+        };
+      });
+  }, [dongs.length, filteredUnits, getDongName]);
+
   // ── Handlers ──────────────────────────────────────────────────
 
   const handleSelectSite = (os: OfficeSite) => {
@@ -569,9 +875,14 @@ function SitesPage() {
 
   const handleAddUnit = () => {
     if (!newUnit.name.trim() || !selectedSiteId) return;
+    // 동이 미선택이면 placeholder Dong(단일 동 건물) 또는 첫 번째 Dong으로 자동 할당
+    const fallbackDongId =
+      dongs.find((d) => d.isPlaceholder)?.id ?? dongs[0]?.id;
+    const dongId = newUnit.dongId || fallbackDongId;
+    if (!dongId) return; // Site에 Dong이 하나도 없으면 생성 불가
     addUnitMutation.mutate({
       siteId: selectedSiteId,
-      dongId: newUnit.dongId || undefined,
+      dongId,
       name: newUnit.name.trim(),
       exclusiveAreaM2: newUnit.area ? Number(newUnit.area) : undefined,
     });
@@ -613,11 +924,11 @@ function SitesPage() {
           id: 'dong',
           header: '동',
           width: 90,
-      pinned: 'left' as const,
-      sortable: true,
-      renderCell: (unit: Unit) => (
-        <span className="text-[13px]">{getDongName(unit.dongId) || '-'}</span>
-      ),
+          pinned: 'left' as const,
+          sortable: true,
+          renderCell: (unit: Unit) => (
+            <span className="text-[13px]">{getDongName(unit.dongId) || '-'}</span>
+          ),
         }]
       : []),
     {
@@ -710,7 +1021,7 @@ function SitesPage() {
       width: 170,
       sortable: true,
       renderCell: (unit) => {
-        const listings = (unit.properties ?? []).flatMap((p) => p.listings ?? []);
+        const listings = (unit.properties ?? []).flatMap((property) => property.listings ?? []);
         if (!listings.length) return <span className="text-[12px] text-muted-foreground">-</span>;
 
         const primary = listings[0];
@@ -728,9 +1039,9 @@ function SitesPage() {
               )}
             </span>
             {listings.length > 1 && (
-              <span className="shrink-0 text-[10px] text-muted-foreground">
+              <Badge variant="secondary" className="h-4 px-1 text-[9px] font-normal">
                 +{listings.length - 1}
-              </span>
+              </Badge>
             )}
           </div>
         );
@@ -803,7 +1114,7 @@ function SitesPage() {
   // ── JSX ───────────────────────────────────────────────────────
 
   return (
-    <div className="relative flex flex-1 min-h-0 -mx-4 -mb-4">
+    <div className="relative flex flex-1 min-h-0 -m-4">
       {/* ─── Sidebar (단지 Nav) ──────────────────────────────── */}
       <div
         className={cn(
@@ -989,6 +1300,26 @@ function SitesPage() {
                     초기화
                   </Button>
                 )}
+                <div className="ml-auto flex items-center rounded-md border border-border/60 bg-background p-0.5">
+                  <Button
+                    variant={unitViewMode === 'table' ? 'secondary' : 'ghost'}
+                    size="sm"
+                    className="h-7 gap-1.5 px-2 text-xs"
+                    onClick={() => setUnitViewMode('table')}
+                  >
+                    <LayoutList className="size-3.5" />
+                    테이블
+                  </Button>
+                  <Button
+                    variant={unitViewMode === 'layout' ? 'secondary' : 'ghost'}
+                    size="sm"
+                    className="h-7 gap-1.5 px-2 text-xs"
+                    onClick={() => setUnitViewMode('layout')}
+                  >
+                    <LayoutGrid className="size-3.5" />
+                    배치표
+                  </Button>
+                </div>
               </div>
 
               {hasActiveUnitFilters && (
@@ -1020,16 +1351,24 @@ function SitesPage() {
               )}
             </div>
 
-            {/* EstateGrid */}
+            {/* Units View */}
             <div className="flex-1 overflow-auto">
-              <EstateGrid
-                columns={unitColumns}
-                rows={filteredUnits}
-                sort={unitSort}
-                onSortChange={setUnitSort}
-                onRowOpen={handleSelectUnit}
-                emptyMessage={unitSearch ? '검색 결과가 없습니다' : '등록된 호수가 없습니다'}
-              />
+              {unitViewMode === 'table' ? (
+                <EstateGrid
+                  columns={unitColumns}
+                  rows={filteredUnits}
+                  sort={unitSort}
+                  onSortChange={setUnitSort}
+                  onRowOpen={handleSelectUnit}
+                  emptyMessage={unitSearch ? '검색 결과가 없습니다' : '등록된 호수가 없습니다'}
+                />
+              ) : (
+                <UnitLayoutBoard
+                  sections={layoutSections}
+                  selectedUnitId={selectedUnit?.id}
+                  onUnitOpen={handleSelectUnit}
+                />
+              )}
             </div>
           </div>
         </div>
