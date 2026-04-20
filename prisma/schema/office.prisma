@@ -63,6 +63,8 @@ model Office {
   dealParticipants  DealParticipant[]
   rules             Rule[]
   proposals         Proposal[]
+  entityDrafts      EntityDraft[]
+  entityDraftComments EntityDraftComment[]
   calendarEvents    CalendarEvent[]
 
   siteUnitTypes  SiteUnitType[]

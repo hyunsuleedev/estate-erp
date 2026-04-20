@@ -114,6 +114,9 @@ async function main() {
     console.log('8. Consultation insert...');
     await seedConsultations(ctx, contacts, properties, listings, matches, buyerReqs);
 
+    console.log('8b. CallRecording insert...');
+    await seedCallRecordings(ctx, contacts);
+
     console.log('9. Task insert...');
     await seedTasks(ctx, contacts, properties, listings);
 
@@ -145,6 +148,30 @@ async function wipe({ prisma, officeId }: Ctx) {
   await prisma.task.deleteMany({
     where: { officeId, title: demoLike },
   });
+
+  // CallRecording — messages 는 cascade 로 지워지지만, consultation FK 는 먼저 끊어야 함.
+  //   (consultation.recordingId → callRecording. consultation 쪽 삭제가 뒤에 오므로 순서 OK)
+  const demoRecordings = await prisma.callRecording.findMany({
+    where: {
+      officeId,
+      OR: [{ fileName: demoLike }, { phoneNumber: { startsWith: '010-7777' } }],
+    },
+    select: { id: true },
+  });
+  const recordingIds = demoRecordings.map((r) => r.id);
+  if (recordingIds.length > 0) {
+    // consultation.callRecordingId 가 null 이 아닌 경우 FK 끊기
+    await prisma.consultation.updateMany({
+      where: { callRecordingId: { in: recordingIds } },
+      data: { callRecordingId: null },
+    });
+    await prisma.callRecordingMessage.deleteMany({
+      where: { recordingId: { in: recordingIds } },
+    });
+    await prisma.callRecording.deleteMany({
+      where: { id: { in: recordingIds } },
+    });
+  }
 
   // Consultation (demo 태그 있는 것)
   await prisma.consultation.deleteMany({
@@ -1796,6 +1823,344 @@ async function seedCalendarEvents(
         matchId: def.matchId ?? null,
       },
     });
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
+// CallRecording — 모바일 앱에서 업로드된 통화 기록 데모 데이터
+// 수신/발신 다양한 상태(completed / processing / none / failed) + STT 메시지
+// 전화번호는 DEMO 구분용으로 010-7777-XXXX 패턴을 사용해 wipe 에서 매칭
+// ─────────────────────────────────────────────────────────────
+async function seedCallRecordings(
+  ctx: Ctx,
+  contacts: Awaited<ReturnType<typeof seedContacts>>,
+) {
+  const owners = contacts.slice(0, 4);
+  const buyers = contacts.slice(4, 8);
+
+  const now = new Date();
+  const minutesAgo = (n: number) => new Date(now.getTime() - n * 60 * 1000);
+  const hoursAgo = (n: number) => new Date(now.getTime() - n * 60 * 60 * 1000);
+  const daysAgoFn = (n: number) =>
+    new Date(now.getTime() - n * 24 * 60 * 60 * 1000);
+
+  type MessageDef = {
+    speaker: number;
+    label: string;
+    text: string;
+    startSec: number;
+    endSec: number;
+  };
+
+  type CallDef = {
+    contact: (typeof contacts)[number] | null;
+    user: string;
+    direction: 'inbound' | 'outbound';
+    phoneNumber: string;
+    durationSec: number;
+    sttStatus: 'completed' | 'processing' | 'none' | 'failed';
+    calledAt: Date;
+    fileName?: string;
+    analysis?: {
+      summary: string;
+      customerNeed?: string;
+      nextActions?: string[];
+    } | null;
+    messages?: MessageDef[];
+  };
+
+  const defs: CallDef[] = [
+    // 1) 오늘 수신 — 완료, AI 요약 + 대화
+    {
+      contact: buyers[0],
+      user: ctx.agentUserId,
+      direction: 'inbound',
+      phoneNumber: buyers[0].phone ?? '010-7777-0001',
+      durationSec: 248,
+      sttStatus: 'completed',
+      calledAt: hoursAgo(3),
+      fileName: '[DEMO] 고덕그라시움_문의_250420.m4a',
+      analysis: {
+        summary:
+          '고덕그라시움 30평대 매매 문의. 20억 이하 희망, 즉시 입주 가능 필수.',
+        customerNeed:
+          '강동구 내 학군 좋은 30평대. 자녀 초등학교 진학 시점(2027년 3월) 전까지 입주 완료 원함.',
+        nextActions: [
+          '고덕그라시움 33평 매물 3건 브리핑',
+          '토요일 오후 임장 일정 조율',
+          '유사 단지(래미안솔베뉴) 물건 추가 확인',
+        ],
+      },
+      messages: [
+        {
+          speaker: 0,
+          label: '나',
+          text: '네 김영공인중개사사무소입니다.',
+          startSec: 0,
+          endSec: 2,
+        },
+        {
+          speaker: 1,
+          label: '고객',
+          text: '안녕하세요, 고덕그라시움 매물 문의드리려고요.',
+          startSec: 3,
+          endSec: 7,
+        },
+        {
+          speaker: 0,
+          label: '나',
+          text: '네 어떤 평형 찾으세요?',
+          startSec: 8,
+          endSec: 10,
+        },
+        {
+          speaker: 1,
+          label: '고객',
+          text: '33평대로 20억 이하면 좋겠어요. 즉시 입주 가능해야 하고요.',
+          startSec: 11,
+          endSec: 17,
+        },
+        {
+          speaker: 0,
+          label: '나',
+          text: '현재 33평 매물 3건 있습니다. 가격대 18.5억부터 19.8억까지.',
+          startSec: 18,
+          endSec: 25,
+        },
+        {
+          speaker: 1,
+          label: '고객',
+          text: '토요일에 임장 가능할까요?',
+          startSec: 26,
+          endSec: 29,
+        },
+      ],
+    },
+    // 2) 어제 발신 — 완료, AI 요약
+    {
+      contact: owners[3],
+      user: ctx.managerUserId,
+      direction: 'outbound',
+      phoneNumber: owners[3].phone ?? '010-7777-0002',
+      durationSec: 163,
+      sttStatus: 'completed',
+      calledAt: hoursAgo(26),
+      fileName: '[DEMO] 집주인_잔금일_조율.m4a',
+      analysis: {
+        summary:
+          '잔금일 5월 2일로 확정. 매수자 측 자금 일정 맞춰 협상 성공.',
+        nextActions: ['계약서 잔금일 수정', '법무사에 등기 일정 공유'],
+      },
+      messages: [
+        {
+          speaker: 0,
+          label: '나',
+          text: '안녕하세요 사장님, 잔금일 관련 전화드렸어요.',
+          startSec: 0,
+          endSec: 4,
+        },
+        {
+          speaker: 1,
+          label: '고객',
+          text: '네, 5월 초순으로 하자 얘기 있었죠.',
+          startSec: 5,
+          endSec: 10,
+        },
+        {
+          speaker: 0,
+          label: '나',
+          text: '매수 측에서 5월 2일 금요일 선호합니다. 가능하실까요?',
+          startSec: 11,
+          endSec: 17,
+        },
+        {
+          speaker: 1,
+          label: '고객',
+          text: '그날로 하시죠. 오전에 법무사 예약 잡아주세요.',
+          startSec: 18,
+          endSec: 23,
+        },
+      ],
+    },
+    // 3) 이번 주 수신 — 부재중 (5초 미만)
+    {
+      contact: null,
+      user: ctx.agentUserId,
+      direction: 'inbound',
+      phoneNumber: '010-7777-4040',
+      durationSec: 2,
+      sttStatus: 'none',
+      calledAt: daysAgoFn(2),
+      analysis: null,
+      messages: [],
+    },
+    // 4) 이번 주 발신 — 완료, 상가 문의
+    {
+      contact: buyers[2],
+      user: ctx.agentUserId,
+      direction: 'outbound',
+      phoneNumber: buyers[2].phone ?? '010-7777-0003',
+      durationSec: 412,
+      sttStatus: 'completed',
+      calledAt: daysAgoFn(3),
+      fileName: '[DEMO] 투자자_상가_브리핑.m4a',
+      analysis: {
+        summary:
+          '명일역 푸르지오 2층 상가 브리핑. 수익률 5.2% 어필, 방문 의사 확정.',
+        customerNeed:
+          '월세 수익형 부동산. 5% 이상 수익률 + 역세권 1급지 선호.',
+        nextActions: [
+          '임차인 계약 만기일 정확한 날짜 조회',
+          '인근 상권 공실률 데이터 준비',
+        ],
+      },
+      messages: [
+        {
+          speaker: 0,
+          label: '나',
+          text: '안녕하세요, 지난번 문의주신 상가 관련해서 전화드렸습니다.',
+          startSec: 0,
+          endSec: 5,
+        },
+        {
+          speaker: 1,
+          label: '고객',
+          text: '네, 명일역 근처 물건이죠?',
+          startSec: 6,
+          endSec: 9,
+        },
+        {
+          speaker: 0,
+          label: '나',
+          text: '맞습니다. 월세 250에 보증금 5천, 연 수익률 계산해보니 5.2% 나와요.',
+          startSec: 10,
+          endSec: 18,
+        },
+        {
+          speaker: 1,
+          label: '고객',
+          text: '임차인 계약 기간은요?',
+          startSec: 19,
+          endSec: 22,
+        },
+        {
+          speaker: 0,
+          label: '나',
+          text: '내년 2월까지 있습니다. 한번 보러 가시죠. 언제 편하세요?',
+          startSec: 23,
+          endSec: 30,
+        },
+      ],
+    },
+    // 5) 방금 전 수신 — 처리 중
+    {
+      contact: owners[1],
+      user: ctx.agentUserId,
+      direction: 'inbound',
+      phoneNumber: owners[1].phone ?? '010-7777-0004',
+      durationSec: 87,
+      sttStatus: 'processing',
+      calledAt: minutesAgo(15),
+      fileName: '[DEMO] 임대료_인상_문의.m4a',
+      analysis: null,
+      messages: [],
+    },
+    // 6) 이번 주 수신 — STT 실패
+    {
+      contact: buyers[1],
+      user: ctx.managerUserId,
+      direction: 'inbound',
+      phoneNumber: buyers[1].phone ?? '010-7777-0005',
+      durationSec: 34,
+      sttStatus: 'failed',
+      calledAt: daysAgoFn(1),
+      fileName: '[DEMO] 잡음_많은_녹음.m4a',
+      analysis: null,
+      messages: [],
+    },
+    // 7) 이번 주 발신 — 완료, 짧은 확인 통화
+    {
+      contact: owners[0],
+      user: ctx.agentUserId,
+      direction: 'outbound',
+      phoneNumber: owners[0].phone ?? '010-7777-0006',
+      durationSec: 52,
+      sttStatus: 'completed',
+      calledAt: daysAgoFn(4),
+      fileName: '[DEMO] 세입자_확인.m4a',
+      analysis: {
+        summary: '래미안고덕 세입자 재계약 의사 확인. 수락.',
+        nextActions: ['재계약서 초안 준비', '보증금 인상분 조율'],
+      },
+      messages: [
+        {
+          speaker: 0,
+          label: '나',
+          text: '세입자분 재계약 의사 있다고 하네요.',
+          startSec: 0,
+          endSec: 4,
+        },
+        {
+          speaker: 1,
+          label: '고객',
+          text: '다행이네요. 보증금은 그대로 할까요?',
+          startSec: 5,
+          endSec: 10,
+        },
+        {
+          speaker: 0,
+          label: '나',
+          text: '5% 정도 인상 제안드려볼게요.',
+          startSec: 11,
+          endSec: 15,
+        },
+      ],
+    },
+    // 8) 저번 주 수신 — 이번 주 필터에선 제외됨 (이번 달 탭에선 보임)
+    {
+      contact: null,
+      user: ctx.agentUserId,
+      direction: 'inbound',
+      phoneNumber: '010-7777-9090',
+      durationSec: 18,
+      sttStatus: 'none',
+      calledAt: daysAgoFn(10),
+      analysis: null,
+      messages: [],
+    },
+  ];
+
+  for (const def of defs) {
+    const recording = await ctx.prisma.callRecording.create({
+      data: {
+        officeId: ctx.officeId,
+        contactId: def.contact?.id ?? null,
+        userId: def.user,
+        direction: def.direction,
+        phoneNumber: def.phoneNumber,
+        durationSec: def.durationSec,
+        fileName: def.fileName ?? null,
+        fileSize: def.fileName ? 200_000 + def.durationSec * 8_000 : null,
+        sttStatus: def.sttStatus,
+        analysis: def.analysis ?? Prisma.JsonNull,
+        analysisStatus: def.analysis ? 'completed' : 'none',
+        calledAt: def.calledAt,
+      },
+    });
+
+    if (def.messages && def.messages.length > 0) {
+      await ctx.prisma.callRecordingMessage.createMany({
+        data: def.messages.map((m, idx) => ({
+          recordingId: recording.id,
+          speaker: m.speaker,
+          speakerLabel: m.label,
+          text: m.text,
+          startMs: m.startSec * 1000,
+          endMs: m.endSec * 1000,
+          seq: idx,
+        })),
+      });
+    }
   }
 }
 
