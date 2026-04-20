@@ -23,6 +23,7 @@ import { FinanceModule } from '../finance/finance.module';
 import { PublicDocumentsModule } from '../public-documents/public-documents.module';
 import { PropertyPhotosModule } from '../property-photos/property-photos.module';
 import { AgentModule } from '../agent/agent.module';
+import { InboxModule } from '../inbox/inbox.module';
 import { McpController } from './mcp.controller';
 import { McpProtocolService } from './mcp-protocol.service';
 import { McpToolsService } from './mcp-tools.service';
@@ -56,6 +57,7 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
     PublicDocumentsModule,
     PropertyPhotosModule,
     AgentModule,
+    InboxModule,
   ],
   controllers: [McpController],
   providers: [

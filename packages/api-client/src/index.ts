@@ -63,6 +63,31 @@ export type {
   PhotoCategory,
 } from './modules/property-photos.js';
 export type {
+  SttStatus,
+  AnalysisStatus,
+  CallDirection,
+  CallRecordingMessage,
+  CallRecordingAnalysis,
+  CallRecordingListItem,
+  CallRecordingDetail,
+  CallRecordingsListResponse,
+} from './modules/call-recordings.js';
+export type {
+  McpApiKeyStatus,
+  McpApiKeyGenerateResponse,
+} from './modules/mcp.js';
+export type {
+  DraftEntityType,
+  DraftOperation,
+  DraftStatus,
+  DraftDecisionMode,
+  DraftExecutor,
+  DraftPriority,
+  InboxItem,
+  InboxComment,
+  ListInboxOptions,
+} from './modules/inbox.js';
+export type {
   CommissionPayment,
   CommissionPaymentStatus,
   CommissionClientSide,

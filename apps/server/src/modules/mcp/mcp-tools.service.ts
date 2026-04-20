@@ -28,6 +28,14 @@ import { PublicDocumentsService } from '../public-documents/public-documents.ser
 import { PropertyPhotosService } from '../property-photos/property-photos.service';
 import { ProposalService } from '../agent/proposal/proposal.service';
 import type { ProposalStatus } from '../agent/proposal/proposal.types';
+import { InboxService } from '../inbox/inbox.service';
+import type {
+  DraftDecisionMode,
+  DraftEntityType,
+  DraftExecutor,
+  DraftOperation,
+  DraftPriority,
+} from '../inbox/inbox.types';
 
 export interface ToolDefinition {
   name: string;
@@ -112,6 +120,7 @@ export class McpToolsService {
     private readonly publicDocs: PublicDocumentsService,
     private readonly propertyPhotos: PropertyPhotosService,
     private readonly proposals: ProposalService,
+    private readonly inbox: InboxService,
   ) {
     this.registerAll();
   }
@@ -1057,6 +1066,207 @@ export class McpToolsService {
       'AI 제안 상세.',
       obj({ id: str('제안 ID') }, ['id']),
       async (a, c) => this.proposals.getById(a.id as string, c.officeId),
+    );
+
+    // ═══════════════════════════════════════════════════════════
+    // 업무함 (Inbox / EntityDraft) — AI 워크플로우 전체 루프
+    //
+    // 1) AI 가 초안 생성 → inbox_create_draft
+    // 2) 사장님이 업무함에서 확인/승인 또는 코멘트로 재작성 요청
+    //    - 코멘트 달리면 status='processing' 으로 자동 전이
+    // 3) OpenClaw heartbeat:
+    //    - inbox_list_processing 으로 재작성 대상 가져옴
+    //    - 재작성 후 inbox_submit_revision 으로 반영 → pending 복귀
+    // 4) 승인 + executor='agent' 인 경우:
+    //    - inbox_list_agent_pending 으로 approved 작업 조회
+    //    - inbox_claim 으로 executing 전이
+    //    - 실제 실행 (ex: 네이버 광고 게재)
+    //    - inbox_report_execution 으로 executed/failed 결과 보고
+    // ═══════════════════════════════════════════════════════════
+
+    this.add(
+      'inbox_list',
+      '업무함(EntityDraft) 목록 조회. scope 로 탭 필터: pending(처리 대기), processing(재처리), approved(승인·실행 대기), resolved(종결), all.',
+      obj({
+        scope: strEnum('조회 범위', [
+          'pending',
+          'processing',
+          'approved',
+          'resolved',
+          'all',
+        ]),
+        decisionMode: strEnum('확인/승인 필터', ['confirm', 'approval']),
+        priority: strEnum('우선순위', ['urgent', 'normal', 'low']),
+        category: str('카테고리 (contract_draft, ad_takedown 등)'),
+        limit: num('최대 개수 (기본 100)'),
+      }),
+      async (a, c) =>
+        this.inbox.list(c.officeId, {
+          scope: a.scope as
+            | 'pending'
+            | 'processing'
+            | 'approved'
+            | 'resolved'
+            | 'all'
+            | undefined,
+          decisionMode: a.decisionMode as string,
+          priority: a.priority as DraftPriority | undefined,
+          category: a.category as string,
+          limit: a.limit as number,
+        }),
+    );
+
+    this.add(
+      'inbox_get',
+      '업무함 항목 상세. 코멘트(AI 수정 지시) 포함.',
+      obj({ id: str('draft ID') }, ['id']),
+      async (a, c) => this.inbox.getById(a.id as string, c.officeId),
+    );
+
+    this.add(
+      'inbox_create_draft',
+      '업무함에 AI 제안 초안을 등록. 사장님이 업무함에서 확인·승인한 뒤 실제 반영된다. decisionMode=confirm 은 "결과 검토 후 저장", approval 은 "실행 승인". executor=server(서버가 DB 작업 직접 수행), agent(AI 가 직접 실행, ex: 네이버 광고 게재), manual(사장님이 직접 처리).',
+      obj(
+        {
+          entityType: strEnum('대상 엔티티', [
+            'listing',
+            'contract',
+            'task',
+            'commission_payment',
+            'match',
+            'consultation',
+            'property',
+            'action',
+          ]),
+          operation: strEnum('작업', ['create', 'update', 'delete', 'action']),
+          entityId: str('기존 엔티티 ID (update/delete 일 때)'),
+          proposedChanges: {
+            type: 'object',
+            description:
+              '제안된 변경 내용 (DB 저장 형식). 렌더링 메타는 _ 접두 키에 넣으면 저장 전에 제거됨.',
+          },
+          category: str(
+            '업무 카테고리 (contract_draft, ad_takedown, post_naver_ad, naver_ad_repost, followup_task 등)',
+          ),
+          title: str('카드 제목'),
+          summary: str('한 줄 요약'),
+          reasoning: str('제안 근거'),
+          priority: strEnum('우선순위', ['urgent', 'normal', 'low']),
+          decisionMode: strEnum('결정 모드', ['confirm', 'approval']),
+          executor: strEnum('실행자', ['server', 'agent', 'manual']),
+          generatedBy: str(
+            '생성 주체 식별자 (예: "mcp:claude", "rule:ad_takedown:v1")',
+          ),
+          dedupeKey: str('중복 방지 키 (같은 officeId + dedupeKey 활성 건이 있으면 생성 스킵)'),
+          expiresAt: str('만료 일시 (ISO 8601)'),
+          listingId: str('연결된 매물 ID'),
+          propertyId: str('연결된 호실 ID'),
+          contactId: str('연결된 연락처 ID'),
+          dealId: str('연결된 거래 ID'),
+          contractId: str('연결된 계약 ID'),
+          paymentId: str('연결된 수금 ID'),
+        },
+        [
+          'entityType',
+          'operation',
+          'proposedChanges',
+          'category',
+          'title',
+          'summary',
+          'decisionMode',
+          'generatedBy',
+        ],
+      ),
+      async (a, c) =>
+        this.inbox.create({
+          officeId: c.officeId,
+          entityType: a.entityType as DraftEntityType,
+          operation: a.operation as DraftOperation,
+          entityId: a.entityId as string | undefined,
+          proposedChanges: a.proposedChanges as Record<string, unknown>,
+          category: a.category as string,
+          title: a.title as string,
+          summary: a.summary as string,
+          reasoning: a.reasoning as string | undefined,
+          priority: a.priority as DraftPriority | undefined,
+          decisionMode: a.decisionMode as DraftDecisionMode,
+          executor: a.executor as DraftExecutor | undefined,
+          generatedBy: a.generatedBy as string,
+          dedupeKey: a.dedupeKey as string | undefined,
+          expiresAt: a.expiresAt ? new Date(a.expiresAt as string) : undefined,
+          listingId: a.listingId as string | undefined,
+          propertyId: a.propertyId as string | undefined,
+          contactId: a.contactId as string | undefined,
+          dealId: a.dealId as string | undefined,
+          contractId: a.contractId as string | undefined,
+          paymentId: a.paymentId as string | undefined,
+        }),
+    );
+
+    this.add(
+      'inbox_list_processing',
+      '사장님이 코멘트로 재작성을 요청한 draft 목록 (status=processing). OpenClaw heartbeat 가 주기적으로 조회해서 재작성 후 inbox_submit_revision 으로 반영한다.',
+      obj({ limit: num('최대 개수 (기본 20)') }),
+      async (a, c) =>
+        this.inbox.listProcessing(c.officeId, a.limit as number),
+    );
+
+    this.add(
+      'inbox_submit_revision',
+      'AI 재작성 결과 제출. proposedChanges 를 교체하고 미읽음 코멘트를 읽음 처리, status=pending 으로 복귀시켜 사장님이 다시 검토할 수 있게 한다.',
+      obj(
+        {
+          id: str('draft ID'),
+          proposedChanges: {
+            type: 'object',
+            description: '재작성된 제안 내용 전체 (기존 값 완전 교체).',
+          },
+          readCommentIds: strArr(
+            '읽음 처리할 코멘트 ID 배열. 생략 시 해당 draft 의 모든 미읽음 코멘트가 읽음 처리됨.',
+          ),
+        },
+        ['id', 'proposedChanges'],
+      ),
+      async (a, c) =>
+        this.inbox.submitRevision(a.id as string, c.officeId, {
+          proposedChanges: a.proposedChanges as Record<string, unknown>,
+          readCommentIds: a.readCommentIds as string[] | undefined,
+        }),
+    );
+
+    this.add(
+      'inbox_list_agent_pending',
+      'Agent 가 실행할 승인 완료 작업 목록 (executor=agent, status=approved). OpenClaw heartbeat 가 조회해서 inbox_claim 으로 집어간다.',
+      obj({ limit: num('최대 개수 (기본 20)') }),
+      async (a, c) =>
+        this.inbox.listAgentPending(c.officeId, a.limit as number),
+    );
+
+    this.add(
+      'inbox_claim',
+      'Agent 가 승인된 작업을 집어감. approved → executing 으로 전이. 같은 draft 를 이미 다른 agent 가 claim 했으면 실패한다.',
+      obj({ id: str('draft ID') }, ['id']),
+      async (a, c) => this.inbox.claimForAgent(a.id as string, c.officeId),
+    );
+
+    this.add(
+      'inbox_report_execution',
+      'Agent 가 실행 결과를 보고. executing → executed (성공) 또는 failed (실패). 실패 시 executionError 에 이유를 남긴다.',
+      obj(
+        {
+          id: str('draft ID'),
+          status: strEnum('실행 결과', ['executed', 'failed']),
+          resultEntityId: str('실행 결과 생성/수정된 엔티티 ID'),
+          executionError: str('실패 사유 (status=failed 일 때)'),
+        },
+        ['id', 'status'],
+      ),
+      async (a, c) =>
+        this.inbox.reportAgentExecution(a.id as string, c.officeId, {
+          status: a.status as 'executed' | 'failed',
+          resultEntityId: a.resultEntityId as string | undefined,
+          executionError: a.executionError as string | undefined,
+        }),
     );
   }
 }

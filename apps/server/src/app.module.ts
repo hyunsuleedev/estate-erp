@@ -29,6 +29,7 @@ import { PartnerBrokersModule } from './modules/partner-brokers/partner-brokers.
 import { PublicDocumentsModule } from './modules/public-documents/public-documents.module';
 import { PropertyPhotosModule } from './modules/property-photos/property-photos.module';
 import { McpModule } from './modules/mcp/mcp.module';
+import { InboxModule } from './modules/inbox/inbox.module';
 import { RequestContextMiddleware } from './common/request-context/request-context.middleware';
 
 @Module({
@@ -61,6 +62,7 @@ import { RequestContextMiddleware } from './common/request-context/request-conte
     CalendarEventsModule,
     ExternalListingsModule,
     AgentModule,
+    InboxModule,
     FinanceModule,
     PartnerBrokersModule,
     PublicDocumentsModule,

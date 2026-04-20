@@ -27,6 +27,9 @@ import { createFinanceApi } from './modules/finance.js';
 import { createPartnerBrokersApi } from './modules/partner-brokers.js';
 import { createPublicDocumentsApi } from './modules/public-documents.js';
 import { createPropertyPhotosApi } from './modules/property-photos.js';
+import { createCallRecordingsApi } from './modules/call-recordings.js';
+import { createInboxApi } from './modules/inbox.js';
+import { createMcpApi } from './modules/mcp.js';
 
 export type HttpMethod = 'GET' | 'POST' | 'PATCH' | 'DELETE';
 
@@ -113,6 +116,9 @@ export function createApiClient(config: ApiClientConfig) {
     partnerBrokers: createPartnerBrokersApi(req),
     publicDocuments: createPublicDocumentsApi(req),
     propertyPhotos: createPropertyPhotosApi(req),
+    callRecordings: createCallRecordingsApi(req),
+    inbox: createInboxApi(req),
+    mcp: createMcpApi(req),
   };
 }
 
