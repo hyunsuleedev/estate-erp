@@ -21,7 +21,12 @@ export class LedgerController {
     @Query('year') year?: string,
     @Query('month') month?: string,
   ) {
-    const validPresets: LedgerPreset[] = ['upcoming', 'month', 'all'];
+    const validPresets: LedgerPreset[] = [
+      'upcoming',
+      'this-month',
+      'month',
+      'all',
+    ];
     const resolvedPreset: LedgerPreset = validPresets.includes(
       preset as LedgerPreset,
     )

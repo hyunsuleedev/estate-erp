@@ -236,7 +236,7 @@ export interface LedgerDealGroup {
   payments: LedgerPayment[];
 }
 
-export type LedgerPreset = 'upcoming' | 'month' | 'all';
+export type LedgerPreset = 'upcoming' | 'this-month' | 'month' | 'all';
 
 export interface LedgerView {
   preset: LedgerPreset;

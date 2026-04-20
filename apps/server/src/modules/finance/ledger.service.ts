@@ -66,7 +66,7 @@ export interface LedgerDealGroup {
   }>;
 }
 
-export type LedgerPreset = 'upcoming' | 'month' | 'all';
+export type LedgerPreset = 'upcoming' | 'this-month' | 'month' | 'all';
 
 export interface LedgerView {
   preset: LedgerPreset;
@@ -120,7 +120,18 @@ export class LedgerService {
     const startOfMonth = new Date(year, month - 1, 1);
     const endOfMonth = new Date(year, month, 0, 23, 59, 59, 999);
 
+    // 이번 달 범위 (현재 시점 기준 캘린더 월)
+    const nowYear = today.getFullYear();
+    const nowMonth = today.getMonth();
+    const startOfThisMonth = new Date(nowYear, nowMonth, 1);
+    const endOfThisMonth = new Date(nowYear, nowMonth + 1, 0, 23, 59, 59, 999);
+
     // 원장은 draft(협상 단계 선생성 시뮬레이션) payment 는 제외
+    //
+    // - upcoming: 앞으로 받을 것 + 이미 연체 (시간 무관 미완료 전부 + 최근 30일 수금)
+    // - this-month: 이번 달 진행 페이스 — 이번 달 dueDate/paidAt + 이월된 연체/미수
+    // - month: 특정 월 스냅샷 — 해당 월 내 활동만 (감사 용도, 이월 연체 미포함)
+    // - all: draft 외 전체
     const presetWhere: Prisma.CommissionPaymentWhereInput =
       preset === 'upcoming'
         ? {
@@ -132,20 +143,29 @@ export class LedgerService {
               },
             ],
           }
-        : preset === 'month'
+        : preset === 'this-month'
           ? {
               OR: [
-                { dueDate: { gte: startOfMonth, lte: endOfMonth } },
-                { paidAt: { gte: startOfMonth, lte: endOfMonth } },
-                // fallback: 해당 월에 생성된 것
-                {
-                  createdAt: { gte: startOfMonth, lte: endOfMonth },
-                  dueDate: null,
-                  paidAt: null,
-                },
+                { dueDate: { gte: startOfThisMonth, lte: endOfThisMonth } },
+                { paidAt: { gte: startOfThisMonth, lte: endOfThisMonth } },
+                // 이월된 연체/미수 — 이번 달에 해결해야 할 과거 잔여
+                { status: { in: ['overdue', 'partial', 'pending'] } },
               ],
             }
-          : {}; // all
+          : preset === 'month'
+            ? {
+                OR: [
+                  { dueDate: { gte: startOfMonth, lte: endOfMonth } },
+                  { paidAt: { gte: startOfMonth, lte: endOfMonth } },
+                  // fallback: 해당 월에 생성된 것
+                  {
+                    createdAt: { gte: startOfMonth, lte: endOfMonth },
+                    dueDate: null,
+                    paidAt: null,
+                  },
+                ],
+              }
+            : {}; // all
 
     const paymentWhere: Prisma.CommissionPaymentWhereInput = {
       AND: [{ status: { not: 'draft' } }, presetWhere],
@@ -166,7 +186,9 @@ export class LedgerService {
             ? 'upcoming'
             : preset === 'all'
               ? 'all'
-              : `${year}-${String(month).padStart(2, '0')}`,
+              : preset === 'this-month'
+                ? `${nowYear}-${String(nowMonth + 1).padStart(2, '0')}`
+                : `${year}-${String(month).padStart(2, '0')}`,
         periodLabel: this.buildPeriodLabel(preset, year, month),
         summary: {
           paymentCount: 0,
@@ -345,7 +367,9 @@ export class LedgerService {
           ? 'upcoming'
           : preset === 'all'
             ? 'all'
-            : `${year}-${String(month).padStart(2, '0')}`,
+            : preset === 'this-month'
+              ? `${nowYear}-${String(nowMonth + 1).padStart(2, '0')}`
+              : `${year}-${String(month).padStart(2, '0')}`,
       periodLabel: this.buildPeriodLabel(preset, year, month),
       summary: {
         paymentCount,
@@ -386,6 +410,10 @@ export class LedgerService {
   ): string {
     if (preset === 'upcoming') return '오늘부터 전체';
     if (preset === 'all') return '전체 기간';
+    if (preset === 'this-month') {
+      const now = new Date();
+      return `${now.getFullYear()}년 ${now.getMonth() + 1}월 진행 (이월 연체 포함)`;
+    }
     return `${year}년 ${month}월`;
   }
 }

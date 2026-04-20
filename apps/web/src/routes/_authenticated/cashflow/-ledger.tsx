@@ -985,7 +985,8 @@ function AdjustmentDecisionDialog({
 // ─────────────────────────────────────────────────────────────
 
 const presetLabels: Record<LedgerPreset | 'custom_month', string> = {
-  upcoming: '오늘부터 전체',
+  upcoming: '다가오는 수금',
+  'this-month': '이번 달 진행',
   month: '이번 달',
   all: '전체 기간',
   custom_month: '특정 월 선택…',
@@ -1024,18 +1025,12 @@ function PeriodPicker({
   const handleSelect = (value: string) => {
     if (value === 'upcoming') {
       onPresetChange('upcoming');
-    } else if (value === 'month') {
-      // "이번 달" 선택 시 현재 월로 리셋
-      onMonthChange(today.getFullYear(), today.getMonth() + 1);
-      onPresetChange('month');
+    } else if (value === 'this-month') {
+      onPresetChange('this-month');
     } else if (value === 'all') {
       onPresetChange('all');
     } else if (value === 'custom_month') {
       // "특정 월 선택..." — preset 은 month, 월은 현재 상태 유지
-      onPresetChange('month');
-    } else if (value === 'last_month') {
-      const d = new Date(today.getFullYear(), today.getMonth() - 1, 1);
-      onMonthChange(d.getFullYear(), d.getMonth() + 1);
       onPresetChange('month');
     }
   };
@@ -1043,13 +1038,12 @@ function PeriodPicker({
   return (
     <div className="inline-flex items-center gap-2">
       <Select value={effectiveKey} onValueChange={handleSelect}>
-        <SelectTrigger className="h-9 w-[150px]">
+        <SelectTrigger className="h-9 w-[170px]">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="upcoming">오늘부터 전체</SelectItem>
-          <SelectItem value="month">이번 달</SelectItem>
-          <SelectItem value="last_month">지난 달</SelectItem>
+          <SelectItem value="upcoming">다가오는 수금</SelectItem>
+          <SelectItem value="this-month">이번 달 진행</SelectItem>
           <SelectItem value="custom_month">특정 월 선택…</SelectItem>
           <SelectItem value="all">전체 기간</SelectItem>
         </SelectContent>
@@ -1359,9 +1353,23 @@ function DealGroupRow({
           />
         </td>
         {visibleColumns.dueDate && (
-          <td className="px-3 py-3 align-top text-xs text-muted-foreground">
+          <td
+            className={cn(
+              'px-3 py-3 align-top font-mono text-[11px]',
+              worstStatus === 'overdue'
+                ? 'font-semibold text-red-700 dark:text-red-300'
+                : 'text-foreground/80',
+            )}
+          >
             {toDateLabel(deal.balanceDueDate)}
-            <div className="text-[10px]">
+            <div
+              className={cn(
+                'mt-0.5 text-[10px] font-normal',
+                worstStatus === 'overdue'
+                  ? 'text-red-600 dark:text-red-400'
+                  : 'text-muted-foreground',
+              )}
+            >
               {relativeDateLabel(deal.balanceDueDate)}
             </div>
           </td>
@@ -1387,7 +1395,7 @@ function DealGroupRow({
         {visibleColumns.partner && (
           <td className="px-3 py-3 align-top">
             {deal.partnerBroker ? (
-              <span className="inline-flex items-center gap-1 rounded-full bg-violet-50 px-2 py-0.5 text-[11px] text-violet-700 dark:bg-violet-950/40 dark:text-violet-300">
+              <span className="inline-flex items-center gap-1 rounded-full border bg-muted/60 px-2 py-0.5 text-[11px] text-muted-foreground">
                 <Handshake className="size-3" />
                 {deal.partnerBroker.name}
               </span>
@@ -1463,46 +1471,52 @@ function PaymentRow({
             className="size-3.5 cursor-pointer rounded border-muted-foreground/30"
           />
         </td>
-        <td className="px-2 py-2.5 align-top" />
+        <td className="px-2 py-2.5 align-top">
+          {/* L자 트리 가이드 */}
+          <div
+            aria-hidden
+            className="ml-[6px] mt-[-2px] size-[10px] rounded-bl-[3px] border-b border-l border-border"
+          />
+        </td>
         <td
           className="cursor-pointer px-3 py-2.5 align-top hover:bg-muted/30"
           onClick={onOpen}
         >
-          <div className="flex items-center gap-2 pl-4">
-            <Badge
-              variant="outline"
+          <div className="flex items-center gap-2">
+            <span
               className={cn(
-                'border-0 text-[10px]',
+                'inline-flex items-center gap-1.5 rounded px-2 py-0.5 text-[11px] font-medium',
                 payment.clientSide === 'seller'
-                  ? 'bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300'
-                  : 'bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300',
+                  ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300'
+                  : 'bg-sky-50 text-sky-700 dark:bg-sky-950/40 dark:text-sky-300',
               )}
             >
               {sideLabel}
-            </Badge>
-            {payment.code && (
-              <span className="font-mono text-[11px] text-muted-foreground underline-offset-2 hover:underline">
-                {payment.code}
+              {payment.code && (
+                <span className="font-mono text-[10px] font-normal opacity-70">
+                  {payment.code}
+                </span>
+              )}
+            </span>
+            {payment.collectedByOffice === 'partner' && (
+              <span className="text-[10px] text-muted-foreground">
+                파트너 수금
               </span>
             )}
           </div>
           {visibleColumns.memo && payment.note && (
-            <div className="mt-1 pl-4 text-[11px] text-muted-foreground">
+            <div className="mt-1 text-[11px] text-muted-foreground">
               {payment.note}
             </div>
           )}
         </td>
         {visibleColumns.pipeline && (
           <td className="px-3 py-2.5 align-top">
-            {payment.collectedByOffice === 'partner' ? (
-              <span className="text-[11px] text-muted-foreground">
-                파트너 수금
-              </span>
-            ) : (
-              <span className="text-[11px] text-muted-foreground">
-                우리 수금
-              </span>
-            )}
+            <div className="text-[10px] italic text-muted-foreground">
+              {payment.clientSide === 'seller'
+                ? '매도인에 청구'
+                : '매수인에 청구'}
+            </div>
           </td>
         )}
         <td className="px-3 py-2.5 align-top">
@@ -1559,8 +1573,20 @@ function PaymentRow({
           />
         </td>
         {visibleColumns.dueDate && (
-          <td className="px-3 py-2.5 align-top text-xs text-muted-foreground">
+          <td
+            className={cn(
+              'px-3 py-2.5 align-top font-mono text-[11px]',
+              payment.status === 'overdue'
+                ? 'font-semibold text-red-700 dark:text-red-300'
+                : 'text-muted-foreground',
+            )}
+          >
             {toDateLabel(payment.dueDate)}
+            {payment.status === 'partial' && payment.agreedRemainingDate && (
+              <div className="mt-0.5 text-[10px] font-normal text-amber-700 dark:text-amber-400">
+                잔여 {toDateLabel(payment.agreedRemainingDate)}
+              </div>
+            )}
           </td>
         )}
         {visibleColumns.assignee && <td className="px-3 py-2.5 align-top" />}
@@ -1776,6 +1802,40 @@ function CollectionProgressBar({
     : overdue
       ? 'var(--color-red-500, #ef4444)'
       : 'var(--color-amber-500, #f59e0b)';
+
+  // 수금 0 + 연체 아님 = "예정" 상태. 촘촘한 대시 패턴 + 수금 예정 텍스트.
+  if (isEmpty && !overdue) {
+    return (
+      <div className="mt-1.5 flex items-center gap-1.5 text-muted-foreground">
+        <div
+          className="h-[3px] flex-1"
+          style={{
+            backgroundImage:
+              'repeating-linear-gradient(to right, color-mix(in oklch, currentColor 75%, transparent) 0, color-mix(in oklch, currentColor 75%, transparent) 3px, transparent 3px, transparent 5px)',
+          }}
+        />
+        <span className="font-mono text-[10px]">수금 예정</span>
+      </div>
+    );
+  }
+
+  // 100% 완료 = 얇은 초록 실선 + 전액 수금 인라인 (예정 바와 동일 레이아웃)
+  if (isFull) {
+    return (
+      <div className="mt-1.5 flex items-center gap-1.5 text-emerald-700 dark:text-emerald-300">
+        <div
+          className="h-[3px] flex-1 rounded-sm"
+          style={{
+            background: 'var(--color-emerald-500, #10b981)',
+            opacity: 0.8,
+          }}
+        />
+        <span className="font-mono text-[10px]">전액 수금</span>
+      </div>
+    );
+  }
+
+  // 부분/연체 = 진행 바 + 하단 텍스트
   return (
     <div className="mt-1.5 space-y-1">
       <div
@@ -1795,11 +1855,9 @@ function CollectionProgressBar({
         <div
           className={cn(
             'text-[10px] font-mono',
-            isFull
-              ? 'text-emerald-700 dark:text-emerald-300'
-              : overdue
-                ? 'text-red-700 dark:text-red-300'
-                : 'text-amber-700 dark:text-amber-300',
+            overdue
+              ? 'text-red-700 dark:text-red-300'
+              : 'text-amber-700 dark:text-amber-300',
           )}
         >
           수금 {toManwon(collected)} · {Math.round(pct)}%
