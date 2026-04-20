@@ -40,9 +40,8 @@ import { Route as AuthenticatedPropertiesIdRouteImport } from './routes/_authent
 import { Route as AuthenticatedDocumentsPhotosRouteImport } from './routes/_authenticated/documents/photos'
 import { Route as AuthenticatedContactsNewRouteImport } from './routes/_authenticated/contacts/new'
 import { Route as AuthenticatedContactsIdRouteImport } from './routes/_authenticated/contacts/$id'
-import { Route as AuthenticatedCashflowPaymentsRouteImport } from './routes/_authenticated/cashflow/payments'
+import { Route as AuthenticatedCashflowLedgerRouteImport } from './routes/_authenticated/cashflow/ledger'
 import { Route as AuthenticatedCashflowExpensesRouteImport } from './routes/_authenticated/cashflow/expenses'
-import { Route as AuthenticatedCashflowCalendarRouteImport } from './routes/_authenticated/cashflow/calendar'
 
 const AuthenticatedRoute = AuthenticatedRouteImport.update({
   id: '/_authenticated',
@@ -216,10 +215,10 @@ const AuthenticatedContactsIdRoute = AuthenticatedContactsIdRouteImport.update({
   path: '/contacts/$id',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
-const AuthenticatedCashflowPaymentsRoute =
-  AuthenticatedCashflowPaymentsRouteImport.update({
-    id: '/cashflow/payments',
-    path: '/cashflow/payments',
+const AuthenticatedCashflowLedgerRoute =
+  AuthenticatedCashflowLedgerRouteImport.update({
+    id: '/cashflow/ledger',
+    path: '/cashflow/ledger',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
 const AuthenticatedCashflowExpensesRoute =
@@ -228,21 +227,14 @@ const AuthenticatedCashflowExpensesRoute =
     path: '/cashflow/expenses',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
-const AuthenticatedCashflowCalendarRoute =
-  AuthenticatedCashflowCalendarRouteImport.update({
-    id: '/cashflow/calendar',
-    path: '/cashflow/calendar',
-    getParentRoute: () => AuthenticatedRoute,
-  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/login': typeof AuthLoginRoute
   '/register': typeof AuthRegisterRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
-  '/cashflow/calendar': typeof AuthenticatedCashflowCalendarRoute
   '/cashflow/expenses': typeof AuthenticatedCashflowExpensesRoute
-  '/cashflow/payments': typeof AuthenticatedCashflowPaymentsRoute
+  '/cashflow/ledger': typeof AuthenticatedCashflowLedgerRoute
   '/contacts/$id': typeof AuthenticatedContactsIdRoute
   '/contacts/new': typeof AuthenticatedContactsNewRoute
   '/documents/photos': typeof AuthenticatedDocumentsPhotosRoute
@@ -274,9 +266,8 @@ export interface FileRoutesByTo {
   '/login': typeof AuthLoginRoute
   '/register': typeof AuthRegisterRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
-  '/cashflow/calendar': typeof AuthenticatedCashflowCalendarRoute
   '/cashflow/expenses': typeof AuthenticatedCashflowExpensesRoute
-  '/cashflow/payments': typeof AuthenticatedCashflowPaymentsRoute
+  '/cashflow/ledger': typeof AuthenticatedCashflowLedgerRoute
   '/contacts/$id': typeof AuthenticatedContactsIdRoute
   '/contacts/new': typeof AuthenticatedContactsNewRoute
   '/documents/photos': typeof AuthenticatedDocumentsPhotosRoute
@@ -311,9 +302,8 @@ export interface FileRoutesById {
   '/_auth/login': typeof AuthLoginRoute
   '/_auth/register': typeof AuthRegisterRoute
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
-  '/_authenticated/cashflow/calendar': typeof AuthenticatedCashflowCalendarRoute
   '/_authenticated/cashflow/expenses': typeof AuthenticatedCashflowExpensesRoute
-  '/_authenticated/cashflow/payments': typeof AuthenticatedCashflowPaymentsRoute
+  '/_authenticated/cashflow/ledger': typeof AuthenticatedCashflowLedgerRoute
   '/_authenticated/contacts/$id': typeof AuthenticatedContactsIdRoute
   '/_authenticated/contacts/new': typeof AuthenticatedContactsNewRoute
   '/_authenticated/documents/photos': typeof AuthenticatedDocumentsPhotosRoute
@@ -347,9 +337,8 @@ export interface FileRouteTypes {
     | '/login'
     | '/register'
     | '/dashboard'
-    | '/cashflow/calendar'
     | '/cashflow/expenses'
-    | '/cashflow/payments'
+    | '/cashflow/ledger'
     | '/contacts/$id'
     | '/contacts/new'
     | '/documents/photos'
@@ -381,9 +370,8 @@ export interface FileRouteTypes {
     | '/login'
     | '/register'
     | '/dashboard'
-    | '/cashflow/calendar'
     | '/cashflow/expenses'
-    | '/cashflow/payments'
+    | '/cashflow/ledger'
     | '/contacts/$id'
     | '/contacts/new'
     | '/documents/photos'
@@ -417,9 +405,8 @@ export interface FileRouteTypes {
     | '/_auth/login'
     | '/_auth/register'
     | '/_authenticated/dashboard'
-    | '/_authenticated/cashflow/calendar'
     | '/_authenticated/cashflow/expenses'
-    | '/_authenticated/cashflow/payments'
+    | '/_authenticated/cashflow/ledger'
     | '/_authenticated/contacts/$id'
     | '/_authenticated/contacts/new'
     | '/_authenticated/documents/photos'
@@ -672,11 +659,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedContactsIdRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
-    '/_authenticated/cashflow/payments': {
-      id: '/_authenticated/cashflow/payments'
-      path: '/cashflow/payments'
-      fullPath: '/cashflow/payments'
-      preLoaderRoute: typeof AuthenticatedCashflowPaymentsRouteImport
+    '/_authenticated/cashflow/ledger': {
+      id: '/_authenticated/cashflow/ledger'
+      path: '/cashflow/ledger'
+      fullPath: '/cashflow/ledger'
+      preLoaderRoute: typeof AuthenticatedCashflowLedgerRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/cashflow/expenses': {
@@ -684,13 +671,6 @@ declare module '@tanstack/react-router' {
       path: '/cashflow/expenses'
       fullPath: '/cashflow/expenses'
       preLoaderRoute: typeof AuthenticatedCashflowExpensesRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
-    '/_authenticated/cashflow/calendar': {
-      id: '/_authenticated/cashflow/calendar'
-      path: '/cashflow/calendar'
-      fullPath: '/cashflow/calendar'
-      preLoaderRoute: typeof AuthenticatedCashflowCalendarRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
   }
@@ -710,9 +690,8 @@ const AuthRouteWithChildren = AuthRoute._addFileChildren(AuthRouteChildren)
 
 interface AuthenticatedRouteChildren {
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
-  AuthenticatedCashflowCalendarRoute: typeof AuthenticatedCashflowCalendarRoute
   AuthenticatedCashflowExpensesRoute: typeof AuthenticatedCashflowExpensesRoute
-  AuthenticatedCashflowPaymentsRoute: typeof AuthenticatedCashflowPaymentsRoute
+  AuthenticatedCashflowLedgerRoute: typeof AuthenticatedCashflowLedgerRoute
   AuthenticatedContactsIdRoute: typeof AuthenticatedContactsIdRoute
   AuthenticatedContactsNewRoute: typeof AuthenticatedContactsNewRoute
   AuthenticatedDocumentsPhotosRoute: typeof AuthenticatedDocumentsPhotosRoute
@@ -742,9 +721,8 @@ interface AuthenticatedRouteChildren {
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
-  AuthenticatedCashflowCalendarRoute: AuthenticatedCashflowCalendarRoute,
   AuthenticatedCashflowExpensesRoute: AuthenticatedCashflowExpensesRoute,
-  AuthenticatedCashflowPaymentsRoute: AuthenticatedCashflowPaymentsRoute,
+  AuthenticatedCashflowLedgerRoute: AuthenticatedCashflowLedgerRoute,
   AuthenticatedContactsIdRoute: AuthenticatedContactsIdRoute,
   AuthenticatedContactsNewRoute: AuthenticatedContactsNewRoute,
   AuthenticatedDocumentsPhotosRoute: AuthenticatedDocumentsPhotosRoute,
