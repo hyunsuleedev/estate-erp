@@ -1,0 +1,50 @@
+{
+  "title": "Settings",
+  "description": "Manage office basic information and operating policies.",
+  "sections": {
+    "language": "Language",
+    "languageDescription": "Choose the display language for the interface.",
+    "office": "Office Information",
+    "officeDescription": "Office basic info and brokerage license number.",
+    "commission": "Default Commission Distribution",
+    "commissionDescription": "Default distribution rules applied when creating a Deal.",
+    "mcp": "MCP Connection Key",
+    "mcpDescription": "API key used by external AI tools (Claude Desktop, etc.) to access this office."
+  },
+  "languageOptions": {
+    "ko": "한국어",
+    "en": "English"
+  },
+  "labels": {
+    "officeName": "Office Name",
+    "licenseNo": "Brokerage License No.",
+    "ceoName": "CEO Name",
+    "phone": "Phone",
+    "address": "Address",
+    "distributionType": "Distribution Type",
+    "defaultAgentRate": "Default Agent Rate (%)",
+    "listingAgentRate": "Listing Agent Rate (%)",
+    "buyingAgentRate": "Buying Agent Rate (%)",
+    "dualAgentRate": "Dual Agent Rate (%)",
+    "managerRate": "Manager Rate (%)",
+    "closerBonus": "Closer Bonus (%)"
+  },
+  "mcp": {
+    "empty": "No key issued yet.",
+    "generate": "Generate Key",
+    "generating": "Generating…",
+    "revoke": "Revoke Key",
+    "revoking": "Revoking…",
+    "revokeConfirm": "Revoking will disconnect all AI tools using this key. Continue?",
+    "currentPrefix": "Current Key",
+    "justGenerated": "New key issued. Copy it now and store it safely — it cannot be shown again after closing this panel.",
+    "copy": "Copy",
+    "copied": "Copied",
+    "dismiss": "I've saved it",
+    "guideTitle": "Connect from Claude Desktop",
+    "guideStep1": "Open Claude Desktop → Settings → Developer → \"Edit Config\".",
+    "guideStep2": "Add the JSON below under mcpServers and restart Claude Desktop.",
+    "endpointLabel": "Endpoint",
+    "ownerOnly": "Only the office owner can issue keys."
+  }
+}
