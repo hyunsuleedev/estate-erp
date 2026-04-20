@@ -1,7 +1,24 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
-import { Building2, Save, ShieldCheck, Users } from 'lucide-react';
+import {
+  Building2,
+  Check,
+  Copy,
+  Globe,
+  KeyRound,
+  Save,
+  ShieldCheck,
+  Trash2,
+  Users,
+} from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import {
+  changeLocale,
+  currentLocale,
+  SUPPORTED_LOCALES,
+  type SupportedLocale,
+} from '@/i18n';
 import { api } from '@/lib/api';
 import { useAuth } from '@/providers/auth-provider';
 import { Badge } from '@/components/ui/badge';
@@ -49,6 +66,12 @@ function SettingsPage() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const canEdit = user?.role === 'owner' || user?.role === 'manager';
+  const { t } = useTranslation('settings');
+  const [locale, setLocale] = useState<SupportedLocale>(currentLocale());
+  const handleLocaleChange = (next: SupportedLocale) => {
+    setLocale(next);
+    changeLocale(next);
+  };
 
   const { data: office, isLoading } = useQuery({
     queryKey: ['office-profile'],
@@ -162,6 +185,34 @@ function SettingsPage() {
           <Badge variant="secondary">읽기 전용</Badge>
         ) : null}
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Globe className="size-4" />
+            {t('sections.language')}
+          </CardTitle>
+          <CardDescription>{t('sections.languageDescription')}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex max-w-xs items-center gap-2">
+            <Select value={locale} onValueChange={(v) => handleLocaleChange(v as SupportedLocale)}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {SUPPORTED_LOCALES.map((l) => (
+                  <SelectItem key={l} value={l}>
+                    {t(`languageOptions.${l}`)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </CardContent>
+      </Card>
+
+      <McpApiKeyCard canEdit={canEdit} />
 
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         {metricCards.map((metric) => (
@@ -481,4 +532,160 @@ function toNumber(value: string, fallback: number) {
 function emptyToNull(value: string) {
   const trimmed = value.trim();
   return trimmed ? trimmed : null;
+}
+
+function McpApiKeyCard({ canEdit }: { canEdit: boolean }) {
+  const { t } = useTranslation('settings');
+  const qc = useQueryClient();
+  const [freshKey, setFreshKey] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const { data: status } = useQuery({
+    queryKey: ['mcp-api-key'],
+    queryFn: () => api.mcp.getApiKeyStatus(),
+  });
+
+  const generateMutation = useMutation({
+    mutationFn: () => api.mcp.generateApiKey(),
+    onSuccess: (res) => {
+      setFreshKey(res.key);
+      qc.invalidateQueries({ queryKey: ['mcp-api-key'] });
+    },
+  });
+
+  const revokeMutation = useMutation({
+    mutationFn: () => api.mcp.revokeApiKey(),
+    onSuccess: () => {
+      setFreshKey(null);
+      qc.invalidateQueries({ queryKey: ['mcp-api-key'] });
+    },
+  });
+
+  const handleCopy = async () => {
+    if (!freshKey) return;
+    await navigator.clipboard.writeText(freshKey);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
+
+  const handleRevoke = () => {
+    if (!window.confirm(t('mcp.revokeConfirm'))) return;
+    revokeMutation.mutate();
+  };
+
+  const endpoint = `${window.location.origin.replace(/:\d+$/, ':3000')}/mcp`;
+  const configJson = freshKey
+    ? JSON.stringify(
+        {
+          mcpServers: {
+            'estate-erp': {
+              url: endpoint,
+              headers: { Authorization: `Bearer ${freshKey}` },
+            },
+          },
+        },
+        null,
+        2,
+      )
+    : null;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <KeyRound className="size-4" />
+          {t('sections.mcp')}
+        </CardTitle>
+        <CardDescription>{t('sections.mcpDescription')}</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {freshKey ? (
+          <div className="space-y-3 rounded-md border border-amber-200 bg-amber-50/60 p-3 text-[13px] dark:border-amber-900/60 dark:bg-amber-950/20">
+            <p className="text-amber-800 dark:text-amber-200">
+              {t('mcp.justGenerated')}
+            </p>
+            <div className="flex items-center gap-2">
+              <code className="flex-1 overflow-x-auto rounded bg-background px-2 py-1.5 font-mono text-[12px]">
+                {freshKey}
+              </code>
+              <Button size="sm" variant="outline" onClick={handleCopy} className="gap-1">
+                {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+                {copied ? t('mcp.copied') : t('mcp.copy')}
+              </Button>
+            </div>
+
+            <div className="space-y-2 rounded-md bg-background p-3">
+              <p className="text-[12px] font-semibold">{t('mcp.guideTitle')}</p>
+              <ol className="list-decimal space-y-1 pl-5 text-[12px] text-muted-foreground">
+                <li>{t('mcp.guideStep1')}</li>
+                <li>{t('mcp.guideStep2')}</li>
+              </ol>
+              <pre className="overflow-x-auto rounded bg-muted/60 p-2 text-[11px]">
+                {configJson}
+              </pre>
+              <p className="text-[11px] text-muted-foreground">
+                <span className="font-semibold">{t('mcp.endpointLabel')}:</span>{' '}
+                <code>{endpoint}</code>
+              </p>
+            </div>
+
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => {
+                setFreshKey(null);
+                setCopied(false);
+              }}
+            >
+              {t('mcp.dismiss')}
+            </Button>
+          </div>
+        ) : status?.hasKey ? (
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="space-y-0.5">
+              <p className="text-[11px] text-muted-foreground">
+                {t('mcp.currentPrefix')}
+              </p>
+              <code className="rounded bg-muted px-2 py-1 font-mono text-[12px]">
+                {status.prefix}···
+              </code>
+            </div>
+            {canEdit && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-1 text-destructive"
+                onClick={handleRevoke}
+                disabled={revokeMutation.isPending}
+              >
+                <Trash2 className="size-3.5" />
+                {revokeMutation.isPending ? t('mcp.revoking') : t('mcp.revoke')}
+              </Button>
+            )}
+          </div>
+        ) : (
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="text-[13px] text-muted-foreground">{t('mcp.empty')}</p>
+            {canEdit ? (
+              <Button
+                size="sm"
+                onClick={() => generateMutation.mutate()}
+                disabled={generateMutation.isPending}
+                className="gap-1"
+              >
+                <KeyRound className="size-3.5" />
+                {generateMutation.isPending
+                  ? t('mcp.generating')
+                  : t('mcp.generate')}
+              </Button>
+            ) : (
+              <p className="text-[12px] text-muted-foreground">
+                {t('mcp.ownerOnly')}
+              </p>
+            )}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
 }
