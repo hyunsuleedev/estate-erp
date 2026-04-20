@@ -113,18 +113,31 @@ export class ConsultationsController {
     return this.service.remove(id, user.officeId);
   }
 
+  // ================================================================
+  // 녹음 + STT
+  // ================================================================
+
   @Post('with-recording')
   @UseInterceptors(FileInterceptor('file'))
   createWithRecording(
     @UploadedFile() file: Express.Multer.File,
     @Body('contactId') contactId: string,
     @Body('type') type: string,
+    @Body('direction') direction: string,
+    @Body('phoneNumber') phoneNumber: string,
+    @Body('durationSec') durationSec: string,
     @CurrentUser() user: CurrentUserPayload,
   ) {
     return this.service.createWithRecording(
       user.officeId,
       user.userId,
-      { contactId, type: type || 'phone' },
+      {
+        contactId,
+        type: type || 'phone',
+        direction: direction || 'inbound',
+        phoneNumber: phoneNumber || '',
+        durationSec: durationSec ? Number(durationSec) : 0,
+      },
       file,
     );
   }
@@ -135,5 +148,50 @@ export class ConsultationsController {
     @CurrentUser() user: CurrentUserPayload,
   ) {
     return this.service.getSttStatus(id, user.officeId);
+  }
+
+  // ================================================================
+  // CallRecording 조회
+  // ================================================================
+
+  @Post('recordings')
+  createRecording(
+    @Body()
+    dto: {
+      direction: string;
+      phoneNumber: string;
+      durationSec?: number;
+      contactId?: string;
+      result?: string;
+    },
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.service.createRecordingLog(
+      user.officeId,
+      user.userId,
+      dto,
+    );
+  }
+
+  @Get('recordings/list')
+  findRecordings(
+    @Query('contactId') contactId: string,
+    @Query('page') page: string,
+    @Query('limit') limit: string,
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.service.findRecordings(user.officeId, {
+      contactId: contactId || undefined,
+      page: page ? Number(page) : undefined,
+      limit: limit ? Number(limit) : undefined,
+    });
+  }
+
+  @Get('recordings/:id')
+  findRecording(
+    @Param('id') id: string,
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.service.findRecording(id, user.officeId);
   }
 }

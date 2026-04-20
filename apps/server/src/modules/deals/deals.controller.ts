@@ -51,6 +51,9 @@ export class DealsController {
       specialTerms?: string;
       buyerContactId?: string;
       sellerContactId?: string;
+      isJointBrokerage?: boolean;
+      ourSide?: 'seller' | 'buyer' | 'both';
+      partnerBrokerId?: string;
       memo?: string;
     },
     @CurrentUser() user: CurrentUserPayload,

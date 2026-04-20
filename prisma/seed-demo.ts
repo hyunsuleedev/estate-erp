@@ -146,10 +146,24 @@ async function wipe({ prisma, officeId }: Ctx) {
     where: { officeId, title: demoLike },
   });
 
-  // Consultation
+  // Consultation (demo 태그 있는 것)
   await prisma.consultation.deleteMany({
     where: { officeId, content: demoLike },
   });
+
+  // Consultation 이 참조하는 demo Contact 이 있으면 먼저 FK 를 끊어준다.
+  // (seed-test-office 가 만든 consultation 이 demo Contact 을 참조할 수 있음)
+  const demoContactIds = (
+    await prisma.contact.findMany({
+      where: { officeId, memo: demoLike },
+      select: { id: true },
+    })
+  ).map((c) => c.id);
+  if (demoContactIds.length > 0) {
+    await prisma.consultation.deleteMany({
+      where: { contactId: { in: demoContactIds } },
+    });
+  }
 
   // Match (memo 기준)
   await prisma.match.deleteMany({
@@ -161,22 +175,41 @@ async function wipe({ prisma, officeId }: Ctx) {
     where: { officeId, note: demoLike },
   });
 
-  // CommissionPayment → Contract → DealParticipant → Deal
+  // CommissionAdjustment → CommissionDistribution → CommissionPayment → Contract → DealPayment → DealParticipant → Deal
   const demoDeals = await prisma.deal.findMany({
     where: { officeId, memo: demoLike },
     select: { id: true },
   });
   const dealIds = demoDeals.map((d) => d.id);
   if (dealIds.length > 0) {
+    const demoPayments = await prisma.commissionPayment.findMany({
+      where: { dealId: { in: dealIds } },
+      select: { id: true },
+    });
+    const paymentIds = demoPayments.map((p) => p.id);
+    if (paymentIds.length > 0) {
+      await prisma.commissionAdjustment.deleteMany({
+        where: { paymentId: { in: paymentIds } },
+      });
+      await prisma.commissionDistribution.deleteMany({
+        where: { paymentId: { in: paymentIds } },
+      });
+    }
     await prisma.commissionPayment.deleteMany({
       where: { dealId: { in: dealIds } },
     });
+    await prisma.dealPayment.deleteMany({ where: { dealId: { in: dealIds } } });
     await prisma.contract.deleteMany({ where: { dealId: { in: dealIds } } });
     await prisma.dealParticipant.deleteMany({
       where: { dealId: { in: dealIds } },
     });
     await prisma.deal.deleteMany({ where: { id: { in: dealIds } } });
   }
+
+  // PartnerBroker (memo 기준)
+  await prisma.partnerBroker.deleteMany({
+    where: { officeId, memo: demoLike },
+  });
 
   // BuyerRequirement
   await prisma.buyerRequirement.deleteMany({
@@ -640,6 +673,16 @@ async function seedDeals(
     return d;
   };
 
+  // PartnerBroker: Deal 3 에서 쓸 공동중개 상대 사무소 (미리 생성)
+  const partnerGodeok = await ctx.prisma.partnerBroker.create({
+    data: {
+      officeId: ctx.officeId,
+      name: '고덕공인중개',
+      phone: '02-555-1234',
+      memo: `${DEMO_TAG} 공동중개 파트너`,
+    },
+  });
+
   // Deal 1: selection 단계 (계약 전 고민 중)
   const deal1 = await ctx.prisma.deal.create({
     data: {
@@ -650,12 +693,6 @@ async function seedDeals(
       agreedPrice: 268000,
       buyerContactId: buyers[0].id,
       sellerContactId: owners[0].id,
-      commissionSellerRate: new Prisma.Decimal(0.4),
-      commissionSellerAmount: 1072,
-      commissionBuyerRate: new Prisma.Decimal(0.4),
-      commissionBuyerAmount: 1072,
-      commissionTotal: 2144,
-      vat: 214,
       memo: `${DEMO_TAG} 선정 단계`,
     },
   });
@@ -694,12 +731,6 @@ async function seedDeals(
       buyerContactId: buyers[2].id,
       sellerContactId: owners[3].id,
       specialTerms: `${DEMO_TAG} 전세 승계 · 에어컨 4대 포함`,
-      commissionSellerRate: new Prisma.Decimal(0.5),
-      commissionSellerAmount: 990,
-      commissionBuyerRate: new Prisma.Decimal(0.5),
-      commissionBuyerAmount: 990,
-      commissionTotal: 1980,
-      vat: 198,
       memo: `${DEMO_TAG} 계약 진행중`,
     },
   });
@@ -780,7 +811,7 @@ async function seedDeals(
     ],
   });
 
-  // Deal 3: completed — Contract registered
+  // Deal 3: completed — Contract registered (공동중개)
   const deal3 = await ctx.prisma.deal.create({
     data: {
       officeId: ctx.officeId,
@@ -792,17 +823,12 @@ async function seedDeals(
       buyerContactId: buyers[3].id,
       sellerContactId: owners[1].id,
       specialTerms: `${DEMO_TAG} 잔금일 이사 · 관리비 정산`,
-      commissionSellerRate: new Prisma.Decimal(0.4),
-      commissionSellerAmount: 968,
-      commissionBuyerRate: new Prisma.Decimal(0.4),
-      commissionBuyerAmount: 968,
-      commissionTotal: 1936,
-      vat: 193,
+      // 공동중개: 매도측 우리가 담당 (seller 청구 968). 매수측 청구(968)는
+      // 파트너 사무소 DB 에 있으며 우리 DB 엔 row 없음.
+      // 수수료 집계는 CommissionPayment + CommissionDistribution 으로 계산.
       isJointBrokerage: true,
       ourSide: 'seller',
-      partnerBrokerName: '고덕공인중개',
-      partnerBrokerPhone: '02-555-1234',
-      partnerCommission: 968,
+      partnerBrokerId: partnerGodeok.id,
       memo: `${DEMO_TAG} 공동중개 완료`,
     },
   });
@@ -893,97 +919,465 @@ async function seedDeals(
   });
 
   // ── CommissionPayment 생성 ──────────────────────────────────
+  // 각 청구마다 CommissionDistribution 동반 생성 (단독중개: our_office 100%)
 
-  // Deal 1 (selection): 수금 예정만 → pending
-  await ctx.prisma.commissionPayment.createMany({
+  // Deal 1 (selection): 수금 예정만 → pending · 단독중개
+  const d1seller = await ctx.prisma.commissionPayment.create({
+    data: {
+      officeId: ctx.officeId,
+      dealId: deal1.id,
+      code: 'P-2604-01',
+      clientSide: 'seller',
+      collectedByOffice: 'us',
+      payerContactId: owners[0].id,
+      baseAmount: 268000,
+      rate: new Prisma.Decimal(0.4),
+      expectedAmount: 1072,
+      dueDate: daysFromNow(60),
+      status: 'pending',
+      note: `${DEMO_TAG}`,
+    },
+  });
+  const d1buyer = await ctx.prisma.commissionPayment.create({
+    data: {
+      officeId: ctx.officeId,
+      dealId: deal1.id,
+      code: 'P-2604-02',
+      clientSide: 'buyer',
+      collectedByOffice: 'us',
+      payerContactId: buyers[0].id,
+      baseAmount: 268000,
+      rate: new Prisma.Decimal(0.4),
+      expectedAmount: 1072,
+      dueDate: daysFromNow(60),
+      status: 'pending',
+      note: `${DEMO_TAG}`,
+    },
+  });
+  await ctx.prisma.commissionDistribution.createMany({
     data: [
       {
         officeId: ctx.officeId,
-        dealId: deal1.id,
-        side: 'seller',
-        payerContactId: owners[0].id,
-        expectedAmount: 1072,
-        dueDate: daysFromNow(60),
-        status: 'pending',
-        note: `${DEMO_TAG}`,
+        paymentId: d1seller.id,
+        recipientType: 'our_office',
+        shareRatio: new Prisma.Decimal(100),
+        shareAmount: 1072,
       },
       {
         officeId: ctx.officeId,
-        dealId: deal1.id,
-        side: 'buyer',
-        payerContactId: buyers[0].id,
-        expectedAmount: 1072,
-        dueDate: daysFromNow(60),
-        status: 'pending',
-        note: `${DEMO_TAG}`,
+        paymentId: d1buyer.id,
+        recipientType: 'our_office',
+        shareRatio: new Prisma.Decimal(100),
+        shareAmount: 1072,
       },
     ],
   });
 
-  // Deal 2 (contract): seller 수금 완료, buyer 는 대기
-  await ctx.prisma.commissionPayment.createMany({
+  // Deal 2 (contracted): seller 수금 완료, buyer 는 대기 · 단독중개
+  const d2seller = await ctx.prisma.commissionPayment.create({
+    data: {
+      officeId: ctx.officeId,
+      dealId: deal2.id,
+      code: 'P-2604-03',
+      clientSide: 'seller',
+      collectedByOffice: 'us',
+      payerContactId: owners[3].id,
+      baseAmount: 198000,
+      rate: new Prisma.Decimal(0.5),
+      expectedAmount: 990,
+      actualAmount: 990,
+      dueDate: daysFromNow(30),
+      paidAt: daysAgo(2),
+      status: 'collected',
+      method: 'transfer',
+      taxInvoiceStatus: 'issued',
+      taxInvoiceNo: '2026-04-00042',
+      taxInvoiceDate: daysAgo(2),
+      note: `${DEMO_TAG}`,
+    },
+  });
+  const d2buyer = await ctx.prisma.commissionPayment.create({
+    data: {
+      officeId: ctx.officeId,
+      dealId: deal2.id,
+      code: 'P-2604-04',
+      clientSide: 'buyer',
+      collectedByOffice: 'us',
+      payerContactId: buyers[2].id,
+      baseAmount: 198000,
+      rate: new Prisma.Decimal(0.5),
+      expectedAmount: 990,
+      dueDate: daysFromNow(30),
+      status: 'pending',
+      note: `${DEMO_TAG}`,
+    },
+  });
+  await ctx.prisma.commissionDistribution.createMany({
     data: [
       {
         officeId: ctx.officeId,
-        dealId: deal2.id,
-        side: 'seller',
-        payerContactId: owners[3].id,
-        expectedAmount: 990,
-        actualAmount: 990,
-        dueDate: daysFromNow(30),
-        paidAt: daysAgo(2),
-        status: 'collected',
-        method: 'transfer',
-        taxInvoiceStatus: 'issued',
-        taxInvoiceNo: '2026-04-00042',
-        taxInvoiceDate: daysAgo(2),
-        note: `${DEMO_TAG}`,
+        paymentId: d2seller.id,
+        recipientType: 'our_office',
+        shareRatio: new Prisma.Decimal(100),
+        shareAmount: 990,
+        status: 'settled',
+        settledAt: daysAgo(2),
       },
       {
         officeId: ctx.officeId,
-        dealId: deal2.id,
-        side: 'buyer',
-        payerContactId: buyers[2].id,
-        expectedAmount: 990,
-        dueDate: daysFromNow(30),
-        status: 'pending',
-        note: `${DEMO_TAG}`,
+        paymentId: d2buyer.id,
+        recipientType: 'our_office',
+        shareRatio: new Prisma.Decimal(100),
+        shareAmount: 990,
       },
     ],
   });
 
-  // Deal 3 (completed): 양측 모두 수금 완료, buyer 는 할인 적용
-  await ctx.prisma.commissionPayment.createMany({
+  // Deal 3 (completed): 공동중개 side-split — 우리 매도측 968 수금, buyer 측은
+  // 파트너 고덕공인중개가 수금 → 우리 DB 엔 seller 청구 1건만 존재.
+  const d3seller = await ctx.prisma.commissionPayment.create({
+    data: {
+      officeId: ctx.officeId,
+      dealId: deal3.id,
+      code: 'P-2604-05',
+      clientSide: 'seller',
+      collectedByOffice: 'us',
+      payerContactId: owners[1].id,
+      baseAmount: 242000,
+      rate: new Prisma.Decimal(0.4),
+      expectedAmount: 968,
+      actualAmount: 968,
+      dueDate: daysAgo(2),
+      paidAt: daysAgo(2),
+      status: 'collected',
+      method: 'transfer',
+      taxInvoiceStatus: 'issued',
+      taxInvoiceNo: '2026-04-00038',
+      taxInvoiceDate: daysAgo(1),
+      note: `${DEMO_TAG} 공동중개 매도측`,
+    },
+  });
+  await ctx.prisma.commissionDistribution.create({
+    data: {
+      officeId: ctx.officeId,
+      paymentId: d3seller.id,
+      recipientType: 'our_office',
+      shareRatio: new Prisma.Decimal(100),
+      shareAmount: 968,
+      status: 'settled',
+      settledAt: daysAgo(1),
+    },
+  });
+
+  // ───────────────────────────────────────────────────────────
+  // 추가 더미: 다양한 상태 표현을 위해 Deal 4개 + CommissionPayment 8개
+  // ───────────────────────────────────────────────────────────
+
+  // Deal 4: settling 단계, 매도측 일부수금 + 잔여 독촉 예정
+  const deal4 = await ctx.prisma.deal.create({
+    data: {
+      officeId: ctx.officeId,
+      listingId: listings[4].id,
+      stage: 'settling',
+      stageChangedAt: daysAgo(10),
+      transactionType: 'jeonse',
+      agreedPrice: 88000, // 8.8억 전세
+      buyerContactId: buyers[1].id,
+      sellerContactId: owners[2].id,
+      specialTerms: `${DEMO_TAG} 세입자 승계`,
+      memo: `${DEMO_TAG} 잔금일 임박, 일부수금 진행중`,
+    },
+  });
+  const d4seller = await ctx.prisma.commissionPayment.create({
+    data: {
+      officeId: ctx.officeId,
+      dealId: deal4.id,
+      code: 'P-2604-06',
+      clientSide: 'seller',
+      collectedByOffice: 'us',
+      payerContactId: owners[2].id,
+      baseAmount: 88000,
+      rate: new Prisma.Decimal(0.4),
+      expectedAmount: 352,
+      actualAmount: 200,
+      dueDate: daysAgo(4),
+      paidAt: daysAgo(4),
+      agreedRemainingDate: daysFromNow(10),
+      status: 'partial',
+      method: 'transfer',
+      note: `${DEMO_TAG} 1차 200만 수금, 잔여 152만 ${daysFromNow(10).toISOString().slice(5, 10)} 지급 약정`,
+    },
+  });
+  const d4buyer = await ctx.prisma.commissionPayment.create({
+    data: {
+      officeId: ctx.officeId,
+      dealId: deal4.id,
+      code: 'P-2604-07',
+      clientSide: 'buyer',
+      collectedByOffice: 'us',
+      payerContactId: buyers[1].id,
+      baseAmount: 88000,
+      rate: new Prisma.Decimal(0.4),
+      expectedAmount: 352,
+      dueDate: daysAgo(1),
+      status: 'overdue',
+      note: `${DEMO_TAG} 매수인 연체`,
+    },
+  });
+  await ctx.prisma.commissionDistribution.createMany({
     data: [
       {
         officeId: ctx.officeId,
-        dealId: deal3.id,
-        side: 'seller',
-        payerContactId: owners[1].id,
-        expectedAmount: 968,
-        actualAmount: 968,
-        dueDate: daysAgo(2),
-        paidAt: daysAgo(2),
-        status: 'collected',
-        method: 'transfer',
-        taxInvoiceStatus: 'issued',
-        taxInvoiceNo: '2026-04-00038',
-        taxInvoiceDate: daysAgo(1),
-        note: `${DEMO_TAG}`,
+        paymentId: d4seller.id,
+        recipientType: 'our_office',
+        shareRatio: new Prisma.Decimal(100),
+        shareAmount: 352,
       },
       {
         officeId: ctx.officeId,
-        dealId: deal3.id,
-        side: 'buyer',
-        payerContactId: buyers[3].id,
-        expectedAmount: 968,
-        actualAmount: 920,
-        dueDate: daysAgo(2),
-        paidAt: daysAgo(1),
-        status: 'partial',
-        method: 'cash',
-        taxInvoiceStatus: 'none',
-        note: `${DEMO_TAG} 48만원 할인 적용`,
+        paymentId: d4buyer.id,
+        recipientType: 'our_office',
+        shareRatio: new Prisma.Decimal(100),
+        shareAmount: 352,
+      },
+    ],
+  });
+
+  // Deal 5: negotiating 단계 — 수수료는 draft(협상 단계 선생성). 원장에서 숨김.
+  const deal5 = await ctx.prisma.deal.create({
+    data: {
+      officeId: ctx.officeId,
+      listingId: listings[2].id,
+      stage: 'negotiating',
+      stageChangedAt: daysAgo(3),
+      transactionType: 'sale',
+      agreedPrice: 175000, // 17.5억
+      buyerContactId: buyers[0].id,
+      sellerContactId: owners[1].id,
+      memo: `${DEMO_TAG} 가격 협상중 17.5억 — 수수료 미확정`,
+    },
+  });
+  const d5seller = await ctx.prisma.commissionPayment.create({
+    data: {
+      officeId: ctx.officeId,
+      dealId: deal5.id,
+      code: 'P-2604-08',
+      clientSide: 'seller',
+      collectedByOffice: 'us',
+      payerContactId: owners[1].id,
+      baseAmount: 175000,
+      rate: new Prisma.Decimal(0.6),
+      expectedAmount: 1050,
+      status: 'draft',
+      note: `${DEMO_TAG} 협상 단계 선생성`,
+    },
+  });
+  const d5buyer = await ctx.prisma.commissionPayment.create({
+    data: {
+      officeId: ctx.officeId,
+      dealId: deal5.id,
+      code: 'P-2604-09',
+      clientSide: 'buyer',
+      collectedByOffice: 'us',
+      payerContactId: buyers[0].id,
+      baseAmount: 175000,
+      rate: new Prisma.Decimal(0.6),
+      expectedAmount: 1050,
+      status: 'draft',
+      note: `${DEMO_TAG} 협상 단계 선생성`,
+    },
+  });
+  await ctx.prisma.commissionDistribution.createMany({
+    data: [
+      {
+        officeId: ctx.officeId,
+        paymentId: d5seller.id,
+        recipientType: 'our_office',
+        shareRatio: new Prisma.Decimal(100),
+        shareAmount: 1050,
+      },
+      {
+        officeId: ctx.officeId,
+        paymentId: d5buyer.id,
+        recipientType: 'our_office',
+        shareRatio: new Prisma.Decimal(100),
+        shareAmount: 1050,
+      },
+    ],
+  });
+
+  // Deal 6: 공동중개 월세 (우리 매도측, 파트너 매수측) · 완료
+  const deal6 = await ctx.prisma.deal.create({
+    data: {
+      officeId: ctx.officeId,
+      listingId: listings[5].id,
+      stage: 'completed',
+      stageChangedAt: daysAgo(8),
+      transactionType: 'monthly',
+      agreedDeposit: 3000,
+      agreedMonthlyRent: 120,
+      buyerContactId: buyers[2].id,
+      sellerContactId: owners[3].id,
+      isJointBrokerage: true,
+      ourSide: 'seller',
+      partnerBrokerId: partnerGodeok.id,
+      memo: `${DEMO_TAG} 공동중개 월세 성사`,
+    },
+  });
+  const d6seller = await ctx.prisma.commissionPayment.create({
+    data: {
+      officeId: ctx.officeId,
+      dealId: deal6.id,
+      code: 'P-2604-10',
+      clientSide: 'seller',
+      collectedByOffice: 'us',
+      payerContactId: owners[3].id,
+      baseAmount: 15000, // 3000 + 120*100 = 15000
+      rate: new Prisma.Decimal(0.4),
+      expectedAmount: 60,
+      actualAmount: 60,
+      dueDate: daysAgo(8),
+      paidAt: daysAgo(8),
+      status: 'collected',
+      method: 'transfer',
+      taxInvoiceStatus: 'issued',
+      taxInvoiceNo: '2026-04-00051',
+      taxInvoiceDate: daysAgo(7),
+      note: `${DEMO_TAG} 공동중개 매도측 수금 완료`,
+    },
+  });
+  await ctx.prisma.commissionDistribution.create({
+    data: {
+      officeId: ctx.officeId,
+      paymentId: d6seller.id,
+      recipientType: 'our_office',
+      shareRatio: new Prisma.Decimal(100),
+      shareAmount: 60,
+      status: 'settled',
+      settledAt: daysAgo(7),
+    },
+  });
+
+  // Deal 7: contracted, pool-split 50:50 공동중개 (양쪽 다 우리가 수금, 반반 분배)
+  const deal7 = await ctx.prisma.deal.create({
+    data: {
+      officeId: ctx.officeId,
+      listingId: listings[6].id,
+      stage: 'contracted',
+      stageChangedAt: daysAgo(6),
+      transactionType: 'sale',
+      agreedPrice: 132000,
+      buyerContactId: buyers[3].id,
+      sellerContactId: owners[0].id,
+      isJointBrokerage: true,
+      ourSide: 'both',
+      partnerBrokerId: partnerGodeok.id,
+      memo: `${DEMO_TAG} 공동중개 pool-split 50:50`,
+    },
+  });
+  const d7seller = await ctx.prisma.commissionPayment.create({
+    data: {
+      officeId: ctx.officeId,
+      dealId: deal7.id,
+      code: 'P-2604-11',
+      clientSide: 'seller',
+      collectedByOffice: 'us',
+      payerContactId: owners[0].id,
+      baseAmount: 132000,
+      rate: new Prisma.Decimal(0.5),
+      expectedAmount: 660,
+      actualAmount: 660,
+      dueDate: daysAgo(6),
+      paidAt: daysAgo(6),
+      status: 'collected',
+      method: 'transfer',
+      taxInvoiceStatus: 'issued',
+      taxInvoiceNo: '2026-04-00063',
+      taxInvoiceDate: daysAgo(5),
+      note: `${DEMO_TAG} pool-split, 파트너에 330만 송금 필요`,
+    },
+  });
+  const d7buyer = await ctx.prisma.commissionPayment.create({
+    data: {
+      officeId: ctx.officeId,
+      dealId: deal7.id,
+      code: 'P-2604-12',
+      clientSide: 'buyer',
+      collectedByOffice: 'us',
+      payerContactId: buyers[3].id,
+      baseAmount: 132000,
+      rate: new Prisma.Decimal(0.5),
+      expectedAmount: 660,
+      dueDate: daysFromNow(14),
+      status: 'pending',
+      note: `${DEMO_TAG}`,
+    },
+  });
+  await ctx.prisma.commissionDistribution.createMany({
+    data: [
+      // seller 청구: 우리 50% / 파트너 50%
+      {
+        officeId: ctx.officeId,
+        paymentId: d7seller.id,
+        recipientType: 'our_office',
+        shareRatio: new Prisma.Decimal(50),
+        shareAmount: 330,
+        status: 'settled',
+        settledAt: daysAgo(5),
+      },
+      {
+        officeId: ctx.officeId,
+        paymentId: d7seller.id,
+        recipientType: 'partner_broker',
+        partnerBrokerId: partnerGodeok.id,
+        shareRatio: new Prisma.Decimal(50),
+        shareAmount: 330,
+        status: 'pending', // 아직 파트너에게 송금 안 함
+      },
+      // buyer 청구: 동일 분배
+      {
+        officeId: ctx.officeId,
+        paymentId: d7buyer.id,
+        recipientType: 'our_office',
+        shareRatio: new Prisma.Decimal(50),
+        shareAmount: 330,
+      },
+      {
+        officeId: ctx.officeId,
+        paymentId: d7buyer.id,
+        recipientType: 'partner_broker',
+        partnerBrokerId: partnerGodeok.id,
+        shareRatio: new Prisma.Decimal(50),
+        shareAmount: 330,
+      },
+    ],
+  });
+
+  // ───────────────────────────────────────────────────────────
+  // CommissionAdjustment 승인 대기 2건 (배너 표시용)
+  // ───────────────────────────────────────────────────────────
+
+  await ctx.prisma.commissionAdjustment.createMany({
+    data: [
+      {
+        officeId: ctx.officeId,
+        paymentId: d4buyer.id, // 연체된 매수측
+        code: 'ADJ-001',
+        type: 'discount',
+        amount: -100,
+        reason: `${DEMO_TAG} 매수인 협의 — 100만 할인 요청`,
+        status: 'requested',
+        requestedById: ctx.agentUserId,
+      },
+      {
+        officeId: ctx.officeId,
+        paymentId: d4buyer.id,
+        code: 'ADJ-002',
+        type: 'bad_debt',
+        amount: -352,
+        reason: `${DEMO_TAG} 매수인 연락두절 — 대손 처리 검토`,
+        status: 'requested',
+        requestedById: ctx.managerUserId,
       },
     ],
   });

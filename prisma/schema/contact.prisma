@@ -27,6 +27,8 @@ model Contact {
   contractsAsSeller  Contract[]         @relation("ContractSeller")
   proposals            Proposal[]
   commissionPayments   CommissionPayment[] @relation("CommissionPayer")
+  // 통화 녹음
+  callRecordings     CallRecording[]
   // ContactRelation 양방향
   relationsAsMain    ContactRelation[]  @relation("MainContact")
   relationsAsRelated ContactRelation[]  @relation("RelatedContact")

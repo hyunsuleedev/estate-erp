@@ -28,6 +28,7 @@ export interface PropertySearchQuery {
   wardCode?: string;
   siteId?: string;
   search?: string;
+  hasListing?: boolean;
   sortBy?: 'createdAt' | 'updatedAt';
   sortOrder?: 'asc' | 'desc';
   page?: number;
@@ -70,6 +71,10 @@ export class PropertiesService {
           ...(query.wardCode && { wardCode: query.wardCode }),
         },
       });
+    }
+
+    if (query.hasListing) {
+      filters.push({ listings: { some: {} } });
     }
 
     if (query.search) {

@@ -47,17 +47,18 @@ export interface Deal {
   agreedMoveInDate: string | null;
   specialTerms: string | null;
   preContractCarriedOver: boolean;
-  commissionSellerRate: number | null;
-  commissionSellerAmount: number | null;
-  commissionBuyerRate: number | null;
-  commissionBuyerAmount: number | null;
-  commissionTotal: number | null;
-  vat: number | null;
+  /// 서버가 include 로 payment 를 같이 조회할 때 응답에 동봉하는 계산 요약.
+  /// DB 컬럼이 아니므로 목록 응답 구성 시 서버에서 채워서 내려보낸다.
+  commissionSummary?: {
+    billed: number;
+    ourShare: number;
+    partnerShare: number;
+    collected: number;
+  } | null;
+  // 공동중개
   isJointBrokerage: boolean;
   ourSide: string | null;
-  partnerBrokerName: string | null;
-  partnerBrokerPhone: string | null;
-  partnerCommission: number | null;
+  partnerBrokerId: string | null;
   memo: string | null;
   createdAt: string;
   updatedAt: string;
@@ -65,6 +66,7 @@ export interface Deal {
   listing?: Listing | null;
   buyerContact?: Contact | null;
   sellerContact?: Contact | null;
+  partnerBroker?: { id: string; name: string; phone: string | null } | null;
   payments?: DealPayment[];
 }
 

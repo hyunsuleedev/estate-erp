@@ -10,6 +10,9 @@ model Consultation {
   type        String // phone, visit, online
   content     String
 
+  // 통화 녹음 연결 (nullable — 녹음 없는 상담도 있음)
+  callRecordingId String? @map("call_recording_id") @db.Uuid
+
   // 컨텍스트 (어떤 맥락의 상담인지, 자동 연결)
   propertyId String? @map("property_id") @db.Uuid // 호실 맥락 (소유자/세입자 상담)
   listingId  String? @map("listing_id") @db.Uuid // 매물 맥락 (거래 상담)
@@ -22,6 +25,7 @@ model Consultation {
   office           Office            @relation(fields: [officeId], references: [id])
   contact          Contact           @relation(fields: [contactId], references: [id])
   createdBy        User              @relation("ConsultationCreator", fields: [createdById], references: [id])
+  callRecording    CallRecording?    @relation(fields: [callRecordingId], references: [id])
   property         Property?         @relation(fields: [propertyId], references: [id])
   listing          Listing?          @relation(fields: [listingId], references: [id])
   match            Match?            @relation(fields: [matchId], references: [id])
@@ -151,22 +155,19 @@ model Deal {
   /// 금액은 기재되지만 DealPayment(kind='contract') 는 생성되지 않음.
   preContractCarriedOver Boolean @default(false) @map("pre_contract_carried_over")
 
-  // ─── 수수료 (estimate, Contract 생성 시 확정 권장) ─────────
-  /// 수수료율 (%, 법정 상한 내)
-  commissionSellerRate   Decimal? @map("commission_seller_rate") @db.Decimal
-  commissionBuyerRate    Decimal? @map("commission_buyer_rate") @db.Decimal
-  commissionSellerAmount Int?     @map("commission_seller_amount") // 만원
-  commissionBuyerAmount  Int?     @map("commission_buyer_amount")
-  commissionTotal        Int?     @map("commission_total")
-  vat                    Int?
+  // ─── 수수료 요약 ──────────────────────────────────────────
+  // 의도적으로 캐시 필드를 두지 않는다.
+  // 원천: CommissionPayment + CommissionDistribution. Deal 1건당 payment 2~5행
+  // 수준이라 include + 서버 유틸(computeDealCommissionSummary) 로 매 조회 시
+  // 계산하는 것이 동기화 복잡도보다 싸다.
 
-  // ─── 공동중개 (Phase 2 에서 PartnerBroker 엔티티로 승격 고려) ─
-  isJointBrokerage   Boolean @default(false) @map("is_joint_brokerage")
-  /// 공동중개 시 우리 측이 seller 인지 buyer 인지 (수수료 계산에 필수)
-  ourSide            String? @map("our_side")
-  partnerBrokerName  String? @map("partner_broker_name")
-  partnerBrokerPhone String? @map("partner_broker_phone")
-  partnerCommission  Int?    @map("partner_commission")
+  // ─── 공동중개 ──────────────────────────────────────────────
+  isJointBrokerage Boolean @default(false) @map("is_joint_brokerage")
+  /// 주 파트너 사무소 (FK). 여러 파트너가 있을 수 있지만 대표 하나만 링크.
+  /// 상세 분배는 CommissionDistribution 으로 표현.
+  partnerBrokerId  String? @map("partner_broker_id") @db.Uuid
+  /// 공동중개 시 우리 측이 seller 인지 buyer 인지 both 인지
+  ourSide          String? @map("our_side")
 
   memo      String?
   createdAt DateTime @default(now()) @map("created_at")
@@ -178,6 +179,7 @@ model Deal {
   match           Match?           @relation(fields: [matchId], references: [id])
   buyerContact    Contact?         @relation("DealBuyer", fields: [buyerContactId], references: [id])
   sellerContact   Contact?         @relation("DealSeller", fields: [sellerContactId], references: [id])
+  partnerBroker   PartnerBroker?   @relation(fields: [partnerBrokerId], references: [id])
 
   contract           Contract?
   payments           DealPayment[]
@@ -190,6 +192,7 @@ model Deal {
   @@index([officeId, isCancelled, stage])
   @@index([listingId])
   @@index([matchId])
+  @@index([partnerBrokerId])
   @@map("deals")
 }
 

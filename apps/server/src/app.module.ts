@@ -25,6 +25,7 @@ import { OfficesModule } from './modules/offices/offices.module';
 import { ExternalListingsModule } from './modules/external-listings/external-listings.module';
 import { AgentModule } from './modules/agent/agent.module';
 import { FinanceModule } from './modules/finance/finance.module';
+import { PartnerBrokersModule } from './modules/partner-brokers/partner-brokers.module';
 import { PublicDocumentsModule } from './modules/public-documents/public-documents.module';
 import { PropertyPhotosModule } from './modules/property-photos/property-photos.module';
 import { McpModule } from './modules/mcp/mcp.module';
@@ -61,6 +62,7 @@ import { RequestContextMiddleware } from './common/request-context/request-conte
     ExternalListingsModule,
     AgentModule,
     FinanceModule,
+    PartnerBrokersModule,
     PublicDocumentsModule,
     PropertyPhotosModule,
     McpModule,

@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   Param,
+  Patch,
   Post,
   Query,
   UseGuards,
@@ -13,7 +14,10 @@ import {
   CurrentUser,
   CurrentUserPayload,
 } from '../../common/decorators/current-user.decorator';
-import { CommissionPaymentService } from './commission-payment.service';
+import {
+  CommissionPaymentService,
+  DistributionInput,
+} from './commission-payment.service';
 
 @ApiTags('Finance / Commission Payment')
 @ApiBearerAuth()
@@ -56,6 +60,15 @@ export class CommissionPaymentController {
     return this.service.waive(id, user.officeId, body.note);
   }
 
+  @Post(':id/confirm')
+  confirmDraft(
+    @Param('id') id: string,
+    @CurrentUser() user: CurrentUserPayload,
+    @Body() body: { dueDate?: string },
+  ) {
+    return this.service.confirmDraft(id, user.officeId, body);
+  }
+
   @Post(':id/tax-invoice')
   issueTaxInvoice(
     @Param('id') id: string,
@@ -63,5 +76,27 @@ export class CommissionPaymentController {
     @Body() body: { taxInvoiceNo: string; taxInvoiceDate?: string },
   ) {
     return this.service.issueTaxInvoice(id, user.officeId, body);
+  }
+
+  @Patch(':id/distributions')
+  replaceDistributions(
+    @Param('id') id: string,
+    @CurrentUser() user: CurrentUserPayload,
+    @Body() body: { items: DistributionInput[] },
+  ) {
+    return this.service.replaceDistributions(id, user.officeId, body.items);
+  }
+
+  @Patch('deal/:dealId/distributions')
+  applyDistributionsToDeal(
+    @Param('dealId') dealId: string,
+    @CurrentUser() user: CurrentUserPayload,
+    @Body() body: { items: DistributionInput[] },
+  ) {
+    return this.service.applyDistributionsToDeal(
+      dealId,
+      user.officeId,
+      body.items,
+    );
   }
 }

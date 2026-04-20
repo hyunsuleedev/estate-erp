@@ -1,39 +1,70 @@
 // ============================================================
-// 수수료 수금 (CommissionPayment)
-// Deal → CommissionPayment 1:N (보통 2~3건: seller/buyer/partner)
+// 수수료 청구 (CommissionPayment)
 // ============================================================
+//
+// 한 Deal 에서 발생하는 "수수료 청구 건" 하나를 표현한다.
+// (clientSide='seller' → 매도인에 청구, clientSide='buyer' → 매수인에 청구)
+//
+// 한 청구는 여러 사무소로 분배될 수 있다 → CommissionDistribution[] 참조.
+// - 단독중개: 분배 1건 (우리 100%)
+// - 공동중개 side-split: 각 청구를 한 사무소가 100% 가져감
+// - 공동중개 pool-split: 한 청구를 여러 사무소가 비율대로 나눠 가짐
+//
+// 돈이 실제 이동하는 "거래 대금" (가계약금/계약금/중도금/잔금) 은 DealPayment
+// 에서 추적하며, CommissionPayment 와는 다른 축이다. CommissionPayment 는
+// 중개사↔고객 간 "수수료" 청구·수금 이벤트만 담당.
 
 model CommissionPayment {
   id       String @id @default(uuid()) @db.Uuid
   officeId String @map("office_id") @db.Uuid
   dealId   String @map("deal_id") @db.Uuid
 
-  /// seller: 매도인이 지급, buyer: 매수인이 지급, partner: 공동중개 상대방
-  side String // seller, buyer, partner
+  /// 사람이 읽는 식별자 (예: "P-2604-01"). 자동 생성.
+  code String?
 
-  /// 수수료 지급자 (매도인/매수인/상대 중개사 연락처)
+  /// 청구 대상: seller | buyer
+  /// "매도인에게 청구하는 돈인가 / 매수인에게 청구하는 돈인가"
+  clientSide String @map("client_side")
+
+  /// 실제로 누가 수금하는가: us | partner
+  /// partner 일 때 원본 청구는 파트너 사무소가 받고, 우리는 distribution 으로만 몫 받음.
+  collectedByOffice String @default("us") @map("collected_by_office")
+
+  /// 지급자 연락처 (매도인/매수인)
   payerContactId String? @map("payer_contact_id") @db.Uuid
 
-  /// 확정 금액 (만원) — Deal 생성 시 자동 계산
+  // ─── 요율 계산 기록 (추후 감사/재계산용) ─────────────────────
+  /// 요율 계산 기준 금액 (만원). 매매가 또는 환산가(월세: 보증금 + 월세×100).
+  baseAmount Int? @map("base_amount")
+  /// 적용 요율 (%). 예: 0.4
+  rate       Decimal? @db.Decimal
+
+  // ─── 금액 (만원) ───────────────────────────────────────────
+  /// 청구 확정 금액. baseAmount × rate 로 계산됐거나 수동 입력.
   expectedAmount Int @map("expected_amount")
-  /// 실수금액 (만원) — null 이면 미수금, 할인 시 expectedAmount 와 다름
-  actualAmount Int? @map("actual_amount")
+  /// 실제 수금 금액 (부분수금 시 expectedAmount 보다 작음).
+  actualAmount   Int? @map("actual_amount")
 
-  /// 수금 예정일 — 보통 Contract.finalPaymentDate 와 동일
-  dueDate DateTime? @map("due_date")
+  // ─── 일정 ────────────────────────────────────────────────
+  /// 수금 예정일 (보통 Deal 잔금일)
+  dueDate             DateTime? @map("due_date")
   /// 실제 입금일
-  paidAt DateTime? @map("paid_at")
+  paidAt              DateTime? @map("paid_at")
+  /// 일부수금 후 잔여 지급 약정일 (예: "1차 4/14 수금, 잔여 4/28 지급약정")
+  agreedRemainingDate DateTime? @map("agreed_remaining_date")
 
-  /// pending → collected | overdue | partial | waived
-  status String @default("pending")
+  /// draft / pending / partial / collected / overdue / waived / cancelled
+  /// - draft: Deal 협상 단계에 선생성된 시뮬레이션. 원장에서 숨김. contracted 전이 시 pending 으로 전환.
+  /// - pending: 계약 확정 후 수금 대기
+  status String @default("draft")
 
   /// cash | transfer | card
   method String?
 
-  // 세금계산서 추적
+  // ─── 세금계산서 ───────────────────────────────────────────
   /// none → issued → sent
-  taxInvoiceStatus String @default("none") @map("tax_invoice_status")
-  taxInvoiceNo     String? @map("tax_invoice_no")
+  taxInvoiceStatus String    @default("none") @map("tax_invoice_status")
+  taxInvoiceNo     String?   @map("tax_invoice_no")
   taxInvoiceDate   DateTime? @map("tax_invoice_date")
 
   note String?
@@ -45,10 +76,111 @@ model CommissionPayment {
   deal         Deal     @relation(fields: [dealId], references: [id])
   payerContact Contact? @relation("CommissionPayer", fields: [payerContactId], references: [id])
 
+  distributions CommissionDistribution[]
+  adjustments   CommissionAdjustment[]
+
   @@index([officeId, status])
   @@index([officeId, dueDate])
+  @@index([officeId, code])
   @@index([dealId])
   @@map("commission_payments")
+}
+
+// ============================================================
+// 수수료 분배 (CommissionDistribution)
+// ============================================================
+//
+// CommissionPayment 한 건을 "누가 얼마 가져가는지" 표현. 공동중개의 다양한
+// 배분 실무 (side-split / pool-split / 비대칭 분배 / 소개비 등) 를 하나의
+// 모델로 표현.
+//
+// 단독중개: row 1개 (recipientType='our_office', shareRatio=100)
+// 공동중개 pool-split 반반: 같은 payment 에 row 2개
+//   - (recipientType='our_office',    shareRatio=50)
+//   - (recipientType='partner_broker', partnerBrokerId=..., shareRatio=50)
+// 소개비: row 2개 (우리 90%, 파트너 10%)
+//
+// recipientType='our_office' 는 사무소 내부 몫. 이 금액은 다시 DealParticipant
+// 에서 직원별로 배분됨 (2층 구조).
+
+model CommissionDistribution {
+  id        String @id @default(uuid()) @db.Uuid
+  officeId  String @map("office_id") @db.Uuid
+  paymentId String @map("payment_id") @db.Uuid
+
+  /// our_office | partner_broker
+  recipientType   String  @map("recipient_type")
+  /// recipientType='partner_broker' 일 때 FK.
+  partnerBrokerId String? @map("partner_broker_id") @db.Uuid
+
+  /// 이 청구 중 이 수취인이 가져가는 비율 (%). 같은 payment 의 ratio 합은 100.
+  shareRatio  Decimal @map("share_ratio") @db.Decimal
+  /// 캐시된 금액 (expectedAmount × shareRatio / 100). 실정산은 actualAmount 기반.
+  shareAmount Int     @map("share_amount")
+
+  /// pending (분배 예정) | settled (정산 완료 — 파트너에게 송금했거나 수취 완료)
+  status        String    @default("pending")
+  settledAt     DateTime? @map("settled_at")
+  settlementMemo String?  @map("settlement_memo")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  office        Office            @relation(fields: [officeId], references: [id])
+  payment       CommissionPayment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  partnerBroker PartnerBroker?    @relation(fields: [partnerBrokerId], references: [id])
+
+  @@index([officeId, status])
+  @@index([paymentId])
+  @@index([partnerBrokerId])
+  @@map("commission_distributions")
+}
+
+// ============================================================
+// 수수료 조정 (CommissionAdjustment)
+// ============================================================
+//
+// 담당자가 수수료 할인·면제·대손 요청 → 사장님(owner) 승인·반려 워크플로우.
+// 수금 원장 UI 의 "ADJ-001 할인 합의 -200만" 같은 항목이 여기에 해당.
+
+model CommissionAdjustment {
+  id        String @id @default(uuid()) @db.Uuid
+  officeId  String @map("office_id") @db.Uuid
+  paymentId String @map("payment_id") @db.Uuid
+
+  /// 사람이 읽는 식별자 (예: "ADJ-001"). 자동 생성.
+  code String?
+
+  /// discount | waive | bad_debt
+  /// discount: 고객과 할인 합의 / waive: 면제(서비스) / bad_debt: 대손처리
+  type String
+
+  /// 조정 금액 (만원). 수수료를 깎는 방향이므로 보통 음수 저장.
+  amount Int
+
+  reason String
+
+  /// requested → approved / rejected
+  status String @default("requested")
+
+  requestedById String    @map("requested_by_id") @db.Uuid
+  requestedAt   DateTime  @default(now()) @map("requested_at")
+  decidedById   String?   @map("decided_by_id") @db.Uuid
+  decidedAt     DateTime? @map("decided_at")
+  decisionNote  String?   @map("decision_note")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  office      Office            @relation(fields: [officeId], references: [id])
+  payment     CommissionPayment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  requestedBy User              @relation("AdjustmentRequester", fields: [requestedById], references: [id])
+  decidedBy   User?             @relation("AdjustmentDecider", fields: [decidedById], references: [id])
+
+  @@index([officeId, status])
+  @@index([officeId, code])
+  @@index([paymentId])
+  @@map("commission_adjustments")
 }
 
 // ============================================================

@@ -24,6 +24,7 @@ import { createExternalListingsApi } from './modules/external-listings.js';
 import { createProposalsApi } from './modules/proposals.js';
 import { createRulesApi } from './modules/rules.js';
 import { createFinanceApi } from './modules/finance.js';
+import { createPartnerBrokersApi } from './modules/partner-brokers.js';
 import { createPublicDocumentsApi } from './modules/public-documents.js';
 import { createPropertyPhotosApi } from './modules/property-photos.js';
 
@@ -109,6 +110,7 @@ export function createApiClient(config: ApiClientConfig) {
     proposals: createProposalsApi(req),
     rules: createRulesApi(req),
     finance: createFinanceApi(req),
+    partnerBrokers: createPartnerBrokersApi(req),
     publicDocuments: createPublicDocumentsApi(req),
     propertyPhotos: createPropertyPhotosApi(req),
   };

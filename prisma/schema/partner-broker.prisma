@@ -1,0 +1,50 @@
+// ============================================================
+// 공동중개 상대 사무소 (PartnerBroker)
+// ============================================================
+//
+// 내 사무소(officeId)의 주소록 관점에서 저장되는 "거래 상대 사무소" 엔트리.
+// Estate ERP 미가입 외부 사무소가 대부분이므로 Office 엔티티로 억지로
+// 통합하지 않고 별도 테이블로 둔다.
+//
+// - linkedOfficeId = null: 외부 사무소 (Estate ERP 미가입)
+// - linkedOfficeId = UUID: Estate ERP 가입 사무소 (Phase 2 네트워크 연동 시
+//   NetworkRoom 에서 추가되면 자동으로 채워짐)
+//
+// 같은 파트너와 여러 Deal 을 해도 이 엔트리 하나를 재사용한다.
+// Deal.partnerBrokerId 로 FK 연결.
+
+model PartnerBroker {
+  id       String @id @default(uuid()) @db.Uuid
+  officeId String @map("office_id") @db.Uuid // 소유 사무소 (내 주소록)
+
+  // 기본 정보
+  name      String // 사무소명 (필수)
+  phone     String? // 대표 전화
+  ceoName   String? @map("ceo_name")
+  licenseNo String? @map("license_no")
+  email     String?
+  address   String?
+  memo      String?
+
+  /// Estate ERP 가입 사무소면 연결. Phase 1 은 전부 null.
+  linkedOfficeId String? @map("linked_office_id") @db.Uuid
+
+  /// 집계 캐시 — 이 파트너와 진행한 Deal 수. Deal upsert 시 갱신.
+  dealCount Int @default(0) @map("deal_count")
+
+  isActive Boolean @default(true) @map("is_active")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  office       Office  @relation("OfficePartnerBrokers", fields: [officeId], references: [id])
+  linkedOffice Office? @relation("LinkedAsPartner", fields: [linkedOfficeId], references: [id])
+
+  deals         Deal[]
+  distributions CommissionDistribution[]
+
+  @@index([officeId, name])
+  @@index([officeId, isActive])
+  @@index([linkedOfficeId])
+  @@map("partner_brokers")
+}

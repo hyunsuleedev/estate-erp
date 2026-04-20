@@ -95,6 +95,68 @@ export const DealPaymentMethod = {
 export type DealPaymentMethod =
   (typeof DealPaymentMethod)[keyof typeof DealPaymentMethod];
 
+/** 수수료 청구 대상 (법적 청구 측) */
+export const CommissionClientSide = {
+  SELLER: 'seller',
+  BUYER: 'buyer',
+} as const;
+export type CommissionClientSide =
+  (typeof CommissionClientSide)[keyof typeof CommissionClientSide];
+
+/** 수수료 수금 주체 */
+export const CommissionCollectedBy = {
+  US: 'us',           // 우리 사무소가 수금
+  PARTNER: 'partner', // 파트너 사무소가 수금, 우리는 분배로만 몫 수취
+} as const;
+export type CommissionCollectedBy =
+  (typeof CommissionCollectedBy)[keyof typeof CommissionCollectedBy];
+
+/** 수수료 청구 상태 */
+export const CommissionPaymentStatus = {
+  PENDING: 'pending',
+  PARTIAL: 'partial',
+  COLLECTED: 'collected',
+  OVERDUE: 'overdue',
+  WAIVED: 'waived',
+  CANCELLED: 'cancelled',
+} as const;
+export type CommissionPaymentStatus =
+  (typeof CommissionPaymentStatus)[keyof typeof CommissionPaymentStatus];
+
+/** 수수료 분배 수취 주체 */
+export const CommissionRecipientType = {
+  OUR_OFFICE: 'our_office',
+  PARTNER_BROKER: 'partner_broker',
+} as const;
+export type CommissionRecipientType =
+  (typeof CommissionRecipientType)[keyof typeof CommissionRecipientType];
+
+/** 수수료 분배 정산 상태 */
+export const CommissionDistributionStatus = {
+  PENDING: 'pending',
+  SETTLED: 'settled',
+} as const;
+export type CommissionDistributionStatus =
+  (typeof CommissionDistributionStatus)[keyof typeof CommissionDistributionStatus];
+
+/** 수수료 조정 유형 */
+export const CommissionAdjustmentType = {
+  DISCOUNT: 'discount',   // 고객과 할인 합의
+  WAIVE: 'waive',         // 면제(서비스)
+  BAD_DEBT: 'bad_debt',   // 대손 처리
+} as const;
+export type CommissionAdjustmentType =
+  (typeof CommissionAdjustmentType)[keyof typeof CommissionAdjustmentType];
+
+/** 수수료 조정 승인 상태 */
+export const CommissionAdjustmentStatus = {
+  REQUESTED: 'requested',
+  APPROVED: 'approved',
+  REJECTED: 'rejected',
+} as const;
+export type CommissionAdjustmentStatus =
+  (typeof CommissionAdjustmentStatus)[keyof typeof CommissionAdjustmentStatus];
+
 /** 계약 상태 */
 export const ContractStatus = {
   DRAFT: 'draft',                // 작성 중

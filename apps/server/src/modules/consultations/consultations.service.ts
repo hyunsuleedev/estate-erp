@@ -139,43 +139,101 @@ export class ConsultationsService {
     });
   }
 
+  // ================================================================
+  // CallRecording + STT
+  // ================================================================
+
+  /**
+   * 녹음 파일 업로드 → CallRecording 생성 → 비동기 VITO STT
+   */
   async createWithRecording(
     officeId: string,
     userId: string,
-    dto: { contactId: string; type: string },
+    dto: {
+      contactId: string;
+      type: string;
+      direction?: string;
+      phoneNumber?: string;
+      durationSec?: number;
+    },
     file: Express.Multer.File,
   ) {
-    // 1. 상담 기록 생성 (내용은 STT 결과로 나중에 채워짐)
-    const consultation = await this.prisma.consultation.create({
+    // 1. CallRecording 생성
+    const recording = await this.prisma.callRecording.create({
       data: {
         officeId,
-        createdById: userId,
+        userId,
         contactId: dto.contactId,
-        type: dto.type,
-        content: '[녹음 분석 중...]',
+        direction: dto.direction || 'inbound',
+        phoneNumber: dto.phoneNumber || '',
+        durationSec: dto.durationSec || 0,
+        fileName: file.originalname,
+        fileSize: file.size,
+        sttStatus: 'processing',
+        calledAt: new Date(),
       },
-      include: this.defaultInclude,
     });
 
     // 2. 비동기 STT 처리 시작
-    // TODO: VITO API 키 발급 후 실제 연동
-    // 현재는 3초 후 더미 결과로 업데이트
-    this.processSTT(consultation.id, file);
+    this.processSTT(recording.id, officeId, file);
 
     return {
-      consultation,
+      recording: {
+        id: recording.id,
+        sttStatus: recording.sttStatus,
+        fileName: recording.fileName,
+        fileSize: recording.fileSize,
+      },
+      // 하위 호환: 기존 앱이 consultation 필드를 기대하므로
+      consultation: { id: recording.id, content: '[녹음 분석 중...]' },
       sttStatus: 'processing',
       recordingFileName: file.originalname,
       recordingSize: file.size,
     };
   }
 
+  /**
+   * CallRecording의 STT 상태 + 메시지 조회
+   */
   async getSttStatus(id: string, officeId: string) {
+    // CallRecording에서 먼저 찾기
+    const recording = await this.prisma.callRecording.findFirst({
+      where: { id, officeId },
+      include: {
+        messages: { orderBy: { seq: 'asc' } },
+      },
+    });
+
+    if (recording) {
+      const textContent = recording.messages.length > 0
+        ? recording.messages
+            .map(m => `${m.speakerLabel || `화자${m.speaker + 1}`}: ${m.text}`)
+            .join('\n')
+        : '';
+
+      return {
+        id: recording.id,
+        sttStatus: recording.sttStatus,
+        analysisStatus: recording.analysisStatus,
+        analysis: recording.analysis,
+        content: textContent,
+        messages: recording.messages.map(m => ({
+          speaker: m.speaker,
+          speakerLabel: m.speakerLabel,
+          text: m.text,
+          startMs: m.startMs,
+          endMs: m.endMs,
+          seq: m.seq,
+        })),
+      };
+    }
+
+    // 하위 호환: 기존 consultation ID로 조회 시도
     const consultation = await this.prisma.consultation.findFirst({
       where: { id, officeId },
       select: { id: true, content: true },
     });
-    if (!consultation) throw new NotFoundException('Consultation not found');
+    if (!consultation) throw new NotFoundException('Recording not found');
 
     return {
       id: consultation.id,
@@ -183,22 +241,122 @@ export class ConsultationsService {
         ? 'processing'
         : 'completed',
       content: consultation.content,
+      messages: [],
     };
   }
+
+  /**
+   * CallRecording 목록 조회
+   */
+  async findRecordings(officeId: string, query: { contactId?: string; page?: number; limit?: number } = {}) {
+    const where: Prisma.CallRecordingWhereInput = { officeId };
+    if (query.contactId) where.contactId = query.contactId;
+
+    const page = Math.max(1, query.page || 1);
+    const limit = Math.min(100, Math.max(1, query.limit || 20));
+    const skip = (page - 1) * limit;
+
+    const [items, total] = await Promise.all([
+      this.prisma.callRecording.findMany({
+        where,
+        include: {
+          contact: { select: { id: true, name: true, phone: true } },
+          user: { select: { id: true, name: true } },
+          messages: { orderBy: { seq: 'asc' } },
+          _count: { select: { messages: true } },
+        },
+        orderBy: { calledAt: 'desc' },
+        skip,
+        take: limit,
+      }),
+      this.prisma.callRecording.count({ where }),
+    ]);
+
+    return {
+      items,
+      pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+    };
+  }
+
+  /**
+   * CallRecording 1건 상세 (메시지 포함)
+   */
+  async findRecording(id: string, officeId: string) {
+    const recording = await this.prisma.callRecording.findFirst({
+      where: { id, officeId },
+      include: {
+        contact: { select: { id: true, name: true, phone: true } },
+        user: { select: { id: true, name: true } },
+        messages: { orderBy: { seq: 'asc' } },
+        consultations: {
+          select: { id: true, content: true, type: true, createdAt: true },
+        },
+      },
+    });
+    if (!recording) throw new NotFoundException('Recording not found');
+    return recording;
+  }
+
+  /**
+   * 녹음 없이 통화 기록만 생성 (통화 종료 시 앱에서 자동 전송)
+   */
+  async createRecordingLog(
+    officeId: string,
+    userId: string,
+    dto: {
+      direction: string;
+      phoneNumber: string;
+      durationSec?: number;
+      contactId?: string;
+      result?: string;
+    },
+  ) {
+    // 전화번호로 연락처 자동 매칭
+    let contactId = dto.contactId || null;
+    if (!contactId && dto.phoneNumber) {
+      const contact = await this.prisma.contact.findFirst({
+        where: { officeId, phone: dto.phoneNumber },
+        select: { id: true },
+      });
+      contactId = contact?.id || null;
+    }
+
+    const recording = await this.prisma.callRecording.create({
+      data: {
+        officeId,
+        userId,
+        contactId,
+        direction: dto.direction || 'inbound',
+        phoneNumber: dto.phoneNumber || '',
+        durationSec: dto.durationSec || 0,
+        sttStatus: 'none',
+        calledAt: new Date(),
+      },
+      include: {
+        contact: { select: { id: true, name: true, phone: true } },
+      },
+    });
+
+    return recording;
+  }
+
+  // ================================================================
+  // VITO STT 처리
+  // ================================================================
 
   /**
    * VITO STT 비동기 처리
    * 1. VITO 인증 → 토큰 발급
    * 2. 녹음 파일 업로드 → transcribe ID 발급
-   * 3. 폴링으로 결과 대기 → consultation.content 업데이트
+   * 3. 폴링으로 결과 대기 → CallRecordingMessage 생성
    */
-  private async processSTT(consultationId: string, file: Express.Multer.File) {
+  private async processSTT(recordingId: string, officeId: string, file: Express.Multer.File) {
     const clientId = process.env.VITO_CLIENT_ID;
     const clientSecret = process.env.VITO_CLIENT_SECRET;
 
     if (!clientId || !clientSecret) {
       this.logger.warn('VITO credentials not configured, using dummy STT');
-      await this.fallbackDummySTT(consultationId, file);
+      await this.fallbackDummySTT(recordingId, file);
       return;
     }
 
@@ -221,7 +379,7 @@ export class ConsultationsService {
         filename: file.originalname,
         contentType: file.mimetype || 'audio/mpeg',
       });
-      form.append('config', JSON.stringify({ use_diarization: true }));
+      form.append('config', JSON.stringify({ use_diarization: true, spk_count: 2 }));
 
       const transcribeRes = await fetch('https://openapi.vito.ai/v1/transcribe', {
         method: 'POST',
@@ -236,7 +394,7 @@ export class ConsultationsService {
         throw new Error('VITO transcribe failed');
       }
       const transcribeId = transcribeData.id;
-      this.logger.log(`VITO STT started: ${transcribeId}`);
+      this.logger.log(`VITO STT started: ${transcribeId} for recording ${recordingId}`);
 
       // 3. 폴링 (최대 5분, 3초 간격)
       const maxAttempts = 100;
@@ -248,20 +406,45 @@ export class ConsultationsService {
         });
         const statusData = await statusRes.json() as {
           status: string;
-          results?: { utterances: Array<{ spk: number; msg: string }> };
+          results?: {
+            utterances: Array<{
+              spk: number;
+              msg: string;
+              start_at: number;
+              duration: number;
+            }>;
+          };
         };
 
         if (statusData.status === 'completed') {
           const utterances = statusData.results?.utterances || [];
-          const text = utterances.length > 0
-            ? utterances.map(u => `화자${u.spk + 1}: ${u.msg}`).join('\n')
-            : '[음성이 감지되지 않았습니다]';
 
-          await this.prisma.consultation.update({
-            where: { id: consultationId },
-            data: { content: text },
+          // CallRecordingMessage로 각 발화 저장
+          if (utterances.length > 0) {
+            await this.prisma.callRecordingMessage.createMany({
+              data: utterances.map((u, idx) => ({
+                recordingId,
+                speaker: u.spk,
+                text: u.msg,
+                startMs: Math.round(u.start_at),
+                endMs: Math.round(u.start_at + u.duration),
+                seq: idx,
+              })),
+            });
+          }
+
+          // CallRecording 상태 업데이트
+          await this.prisma.callRecording.update({
+            where: { id: recordingId },
+            data: { sttStatus: 'completed' },
           });
-          this.logger.log(`VITO STT completed: ${consultationId}`);
+
+          this.logger.log(`VITO STT completed: ${recordingId}, ${utterances.length} messages`);
+
+          // STT 완료 → Gemini 분석 시작
+          if (utterances.length > 0) {
+            this.analyzeWithGemini(recordingId, officeId);
+          }
           return;
         }
 
@@ -273,25 +456,159 @@ export class ConsultationsService {
       throw new Error('VITO STT timeout');
     } catch (e) {
       const errMsg = e instanceof Error ? e.message : String(e);
-      this.logger.error(`STT failed for ${consultationId}: ${errMsg}`);
-      await this.prisma.consultation.update({
-        where: { id: consultationId },
-        data: { content: `[STT 분석 실패] ${errMsg}` },
+      this.logger.error(`STT failed for ${recordingId}: ${errMsg}`);
+      await this.prisma.callRecording.update({
+        where: { id: recordingId },
+        data: { sttStatus: 'failed' },
       }).catch(() => {});
     }
   }
 
-  private async fallbackDummySTT(consultationId: string, file: Express.Multer.File) {
+  private async fallbackDummySTT(recordingId: string, file: Express.Multer.File) {
     setTimeout(async () => {
       try {
-        await this.prisma.consultation.update({
-          where: { id: consultationId },
-          data: {
-            content: `[STT 스텁] 파일: ${file.originalname} (${Math.round(file.size / 1024)}KB)\n`
-              + `VITO API 키가 설정되지 않아 더미 결과를 반환합니다.`,
-          },
+        // 더미 메시지 생성
+        await this.prisma.callRecordingMessage.createMany({
+          data: [
+            { recordingId, speaker: 0, text: '여보세요, 거기 부동산이죠?', startMs: 0, endMs: 3000, seq: 0 },
+            { recordingId, speaker: 1, text: '네 안녕하세요, 김영공인중개사입니다.', startMs: 3000, endMs: 6500, seq: 1 },
+            { recordingId, speaker: 0, text: `[더미 STT] 파일: ${file.originalname} (${Math.round(file.size / 1024)}KB)`, startMs: 6500, endMs: 10000, seq: 2 },
+          ],
         });
+        await this.prisma.callRecording.update({
+          where: { id: recordingId },
+          data: { sttStatus: 'completed' },
+        });
+        // 더미에서도 분석 시도
+        this.analyzeWithGemini(recordingId, '');
       } catch (_) {}
     }, 3000);
+  }
+
+  // ================================================================
+  // Gemini 통화 분석
+  // ================================================================
+
+  /**
+   * STT 메시지를 Gemini API로 분석하여 상담 요약/고객 요구사항/다음 액션 추출
+   */
+  private async analyzeWithGemini(recordingId: string, officeId: string) {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      this.logger.warn('GEMINI_API_KEY not configured, skipping analysis');
+      return;
+    }
+
+    try {
+      // 분석 상태 업데이트
+      await this.prisma.callRecording.update({
+        where: { id: recordingId },
+        data: { analysisStatus: 'processing' },
+      });
+
+      // 메시지 조회
+      const messages = await this.prisma.callRecordingMessage.findMany({
+        where: { recordingId },
+        orderBy: { seq: 'asc' },
+      });
+
+      if (messages.length === 0) {
+        await this.prisma.callRecording.update({
+          where: { id: recordingId },
+          data: { analysisStatus: 'none' },
+        });
+        return;
+      }
+
+      // 대화 텍스트 구성
+      const transcript = messages
+        .map(m => `화자${m.speaker + 1}: ${m.text}`)
+        .join('\n');
+
+      // Gemini API 호출
+      const prompt = `당신은 부동산 중개사무소의 전화 통화 내용을 분석하는 전문가입니다.
+통화는 매물 문의, 소유주 연락, 세입자 문의, 가격 협상, 일정 조율, 업체 통화, 공동 중개, 기타 등 다양한 유형이 있습니다.
+
+아래 통화 내용을 분석하여 JSON 형식으로 응답하세요. 반드시 아래 JSON 형식만 출력하고 다른 텍스트는 포함하지 마세요.
+
+통화 내용:
+${transcript}
+
+응답 형식:
+{
+  "summary": "통화 상황을 2~3문장으로 요약. 누가 누구에게 왜 전화했고, 어떤 결론이 났는지.",
+  "keyPoints": ["통화에서 나온 핵심 정보를 항목별로 정리 (지역, 매물, 가격, 조건, 일정 등 언급된 것만)"],
+  "nextActions": ["통화 결과 중개사가 해야 할 다음 행동 (없으면 빈 배열)"],
+  "callType": "매물문의 | 소유주연락 | 세입자문의 | 가격협상 | 일정조율 | 계약관련 | 하자수리 | 업체통화 | 공동중개 | 기타",
+  "sentiment": "positive | neutral | negative"
+}`;
+
+      const geminiRes = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${apiKey}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: {
+              temperature: 0.2,
+              maxOutputTokens: 1024,
+              responseMimeType: 'application/json',
+            },
+          }),
+        },
+      );
+
+      const geminiData = await geminiRes.json() as {
+        candidates?: Array<{
+          content?: { parts?: Array<{ text?: string }> };
+        }>;
+        error?: { message?: string };
+      };
+
+      if (geminiData.error) {
+        throw new Error(`Gemini API error: ${geminiData.error.message}`);
+      }
+
+      const responseText = geminiData.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!responseText) {
+        throw new Error('Gemini returned empty response');
+      }
+
+      // JSON 파싱
+      let analysis: Record<string, unknown>;
+      try {
+        analysis = JSON.parse(responseText);
+      } catch {
+        // JSON이 아닌 경우 텍스트에서 JSON 추출 시도
+        const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          analysis = JSON.parse(jsonMatch[0]);
+        } else {
+          throw new Error('Failed to parse Gemini response as JSON');
+        }
+      }
+
+      // DB 업데이트
+      await this.prisma.callRecording.update({
+        where: { id: recordingId },
+        data: {
+          analysis: analysis as any,
+          analysisStatus: 'completed',
+        },
+      });
+
+      this.logger.log(`Gemini analysis completed: ${recordingId}`);
+    } catch (e) {
+      const errMsg = e instanceof Error ? e.message : String(e);
+      this.logger.error(`Gemini analysis failed for ${recordingId}: ${errMsg}`);
+      await this.prisma.callRecording.update({
+        where: { id: recordingId },
+        data: {
+          analysisStatus: 'failed',
+          analysis: { error: errMsg } as any,
+        },
+      }).catch(() => {});
+    }
   }
 }

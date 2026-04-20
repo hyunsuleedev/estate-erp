@@ -159,6 +159,15 @@ export class CashflowService {
       const balanceDueDate =
         balancePayment?.scheduledDate?.toISOString() ?? null;
 
+      // commissionPayments 집계 — Deal 본체에 캐시 필드 없으므로 현장 계산
+      const billed = deal.commissionPayments.reduce(
+        (sum, p) =>
+          p.status === 'waived' || p.status === 'cancelled'
+            ? sum
+            : sum + p.expectedAmount,
+        0,
+      );
+
       const pDeal: PipelineDeal = {
         id: deal.id,
         stage: deal.stage,
@@ -168,13 +177,13 @@ export class CashflowService {
         dongName: prop?.unit?.dong?.name ?? null,
         unitName: prop?.unit?.name ?? null,
         transactionType: deal.transactionType,
-        commissionTotal: deal.commissionTotal,
+        commissionTotal: billed,
         buyerContactName: deal.buyerContact?.name ?? null,
         sellerContactName: deal.sellerContact?.name ?? null,
         balanceDueDate,
         payments: deal.commissionPayments.map((p) => ({
           id: p.id,
-          side: p.side,
+          side: p.clientSide,
           expectedAmount: p.expectedAmount,
           actualAmount: p.actualAmount,
           dueDate: p.dueDate?.toISOString() ?? null,
@@ -216,7 +225,7 @@ export class CashflowService {
       }
 
       // pipeline categorization
-      const dealCommission = deal.commissionTotal ?? 0;
+      const dealCommission = billed;
       const hasOverdue = deal.commissionPayments.some(
         (p) =>
           p.status === 'overdue' ||

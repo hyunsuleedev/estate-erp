@@ -1,0 +1,76 @@
+// ============================================================
+// 통화 녹음 + STT (발화 메시지 단위 저장)
+// ============================================================
+
+model CallRecording {
+  id       String @id @default(uuid()) @db.Uuid
+  officeId String @map("office_id") @db.Uuid
+
+  /// 통화 상대 연락처 (null = 미등록 번호)
+  contactId String? @map("contact_id") @db.Uuid
+  /// 통화한 중개사
+  userId    String  @map("user_id") @db.Uuid
+
+  /// inbound (수신) / outbound (발신)
+  direction   String
+  phoneNumber String  @map("phone_number")
+  durationSec Int     @default(0) @map("duration_sec")
+
+  /// 녹음 파일 정보
+  fileName String? @map("file_name")
+  fileUrl  String? @map("file_url") // S3 업로드 후
+  fileSize Int?    @map("file_size")
+
+  /// STT 상태: none / pending / processing / completed / failed
+  sttStatus String @default("pending") @map("stt_status")
+
+  /// LLM 분석 결과 (Gemini)
+  /// { summary, customerNeed, nextActions }
+  analysis     Json?   @db.JsonB
+  /// 분석 상태: none / processing / completed / failed
+  analysisStatus String @default("none") @map("analysis_status")
+
+  /// 통화 시각
+  calledAt DateTime @map("called_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  office        Office                 @relation(fields: [officeId], references: [id])
+  contact       Contact?               @relation(fields: [contactId], references: [id])
+  user          User                   @relation(fields: [userId], references: [id])
+  messages      CallRecordingMessage[]
+  consultations Consultation[]
+
+  @@index([officeId, calledAt])
+  @@index([officeId, phoneNumber])
+  @@index([contactId])
+  @@map("call_recordings")
+}
+
+model CallRecordingMessage {
+  id          String @id @default(uuid()) @db.Uuid
+  recordingId String @map("recording_id") @db.Uuid
+
+  /// 화자 번호 (VITO: 0, 1, ...)
+  speaker      Int
+  /// 화자 라벨 (null → 나중에 "나"/"고객" 등으로 업데이트)
+  speakerLabel String? @map("speaker_label")
+
+  /// 발화 텍스트
+  text String
+
+  /// 음성 구간 (ms) — 구간 재생용
+  startMs Int @map("start_ms")
+  endMs   Int @map("end_ms")
+
+  /// 순서 (0부터)
+  seq Int
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  recording CallRecording @relation(fields: [recordingId], references: [id], onDelete: Cascade)
+
+  @@index([recordingId, seq])
+  @@map("call_recording_messages")
+}
