@@ -17,3 +17,14 @@ prisma/*.db
 .vscode/
 *.swp
 *.swo
+
+# TS build info
+*.tsbuildinfo
+
+# Playwright / Claude tooling scratch
+.playwright-mcp/
+.claude/worktrees/
+.claude/scheduled_tasks.lock
+
+# Local-only screenshots (root-level PNGs)
+/*.png
