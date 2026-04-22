@@ -35,8 +35,9 @@ model ExternalListingGroup {
   transactionType String   @map("transaction_type") // sale / jeonse / monthly
 
   // 사용자 메모 — 크롤러가 절대 덮어쓰지 않음
-  memo   String?
-  status String  @default("unmatched") // unmatched / matched / verified / on_hold
+  memo     String?
+  favorite Boolean @default(false) // 별표 토글 (electron-estate HouseProperty.favorite 대응)
+  status   String  @default("unmatched") // unmatched / matched / verified / on_hold
 
   // 대표 매물 (electron-estate의 HouseProperty.mainOfferId 대응)
   mainExternalListingId String? @unique @map("main_external_listing_id") @db.Uuid

@@ -72,6 +72,7 @@ export interface ExternalListingGroup {
   exclusiveAreaM2: number | null;
   transactionType: ExternalListingTransactionType;
   memo: string | null;
+  favorite: boolean;
   status: ExternalListingGroupStatus;
   mainExternalListingId: string | null;
   firstSeenAt: string;
@@ -83,6 +84,14 @@ export interface ExternalListingGroup {
   mainExternalListing?: ExternalListing | null;
   listings?: ExternalListing[];
   listingCount?: number;
+  // ── Aggregates computed by the server for table display ─────────
+  priceMin?: number | null;
+  priceMax?: number | null;
+  minYmd?: string | null;
+  maxYmd?: string | null;
+  confirmDateDiff?: number | null;
+  ownerVerified?: boolean;
+  offerRanking?: number | null;
 }
 
 export interface ExternalListingGroupsFilter {
@@ -129,6 +138,7 @@ export interface UpdateExternalListingGroupDto {
   inferredHo?: string | null;
   memo?: string | null;
   status?: ExternalListingGroupStatus;
+  favorite?: boolean;
 }
 
 export interface BatchListingItem {

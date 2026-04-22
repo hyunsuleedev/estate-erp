@@ -2,18 +2,20 @@ import { createFileRoute } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import {
-  AlertCircle,
   Building2,
-  CheckCircle2,
   CheckCircle,
+  ChevronDown,
+  ChevronUp,
   ExternalLink,
   Filter,
   Lock,
   Plus,
+  RotateCcw,
   Search,
-  Sparkles,
+  Star,
   XCircle,
 } from 'lucide-react';
+import type { ColumnDef } from '@tanstack/react-table';
 import type {
   ExternalListingGroup,
   ExternalListingGroupStatus,
@@ -21,11 +23,13 @@ import type {
   SnapshotSession,
 } from '@estate-erp/api-client';
 import { formatPrice } from '@estate-erp/shared';
+import { DataTable } from '@/components/data-table';
 import { useAuth } from '@/providers/auth-provider';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -112,6 +116,16 @@ function ExternalListingsPage() {
     'all',
   );
   const [searchQuery, setSearchQuery] = useState('');
+  const [isFilterOpen, setIsFilterOpen] = useState(false);
+  const [buildingQuery, setBuildingQuery] = useState('');
+  const [hoQuery, setHoQuery] = useState('');
+  const [featureQuery, setFeatureQuery] = useState('');
+  const [onlyOwner, setOnlyOwner] = useState(false);
+  const [onlyAd, setOnlyAd] = useState(false);
+  const [onlySeango, setOnlySeango] = useState(false);
+  const [onlyFavorite, setOnlyFavorite] = useState(false);
+  const [priceMin, setPriceMin] = useState('');
+  const [priceMax, setPriceMax] = useState('');
   const [showManualDialog, setShowManualDialog] = useState(false);
   const [innerTab, setInnerTab] = useState<'new' | 'old'>('new');
   const [showStartConfirm, setShowStartConfirm] = useState(false);
@@ -248,6 +262,156 @@ function ExternalListingsPage() {
     },
   });
 
+  // ── Inline group updates (favorite / status / memo / inferredHo) ─
+  const updateGroupMutation = useMutation({
+    mutationFn: ({
+      id,
+      dto,
+    }: {
+      id: string;
+      dto: {
+        favorite?: boolean;
+        status?: ExternalListingGroupStatus;
+        memo?: string | null;
+        inferredHo?: string | null;
+      };
+    }) => api.externalListings.updateGroup(id, dto),
+    // Optimistic update so the table feels instant.
+    onMutate: async ({ id, dto }) => {
+      await queryClient.cancelQueries({ queryKey: ['external-listing-groups'] });
+      const snapshots = queryClient.getQueriesData<ExternalListingGroup[]>({
+        queryKey: ['external-listing-groups'],
+      });
+      for (const [key, prev] of snapshots) {
+        if (!prev) continue;
+        queryClient.setQueryData(
+          key,
+          prev.map((g) => (g.id === id ? { ...g, ...dto } : g)),
+        );
+      }
+      return { snapshots };
+    },
+    onError: (_err, _vars, ctx) => {
+      if (!ctx) return;
+      for (const [key, prev] of ctx.snapshots) {
+        queryClient.setQueryData(key, prev);
+      }
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['external-listing-groups'] });
+    },
+  });
+
+  // ── Client-side filters (서버 검색과 별개로 즉시 반응) ────────────
+  const filteredGroups = useMemo(() => {
+    const bq = buildingQuery.trim().toLowerCase();
+    const hq = hoQuery.trim().toLowerCase();
+    const fq = featureQuery.trim().toLowerCase();
+    const pMin =
+      priceMin.trim() && Number.isFinite(Number(priceMin))
+        ? Number(priceMin)
+        : null;
+    const pMax =
+      priceMax.trim() && Number.isFinite(Number(priceMax))
+        ? Number(priceMax)
+        : null;
+    // 우선 가격은 main.price(매매)나 deposit(전세/월세) 기준으로 범위 체크.
+    const priceOf = (g: ExternalListingGroup): number | null => {
+      const m = g.mainExternalListing;
+      if (!m) return null;
+      if (transactionType === 'sale') return m.price ?? null;
+      return m.deposit ?? null;
+    };
+
+    return groups.filter((g) => {
+      // 동 필터: buildingName 문자열
+      if (bq) {
+        const dongText = (g.buildingName ?? '').toLowerCase();
+        if (!dongText.includes(bq)) return false;
+      }
+      // 호수 필터: inferredHo 또는 unit.name
+      if (hq) {
+        const hoText = (g.inferredHo ?? g.unit?.name ?? '').toLowerCase();
+        if (!hoText.includes(hq)) return false;
+      }
+      // 매물특징 필터: articleFeatureDesc + memo
+      if (fq) {
+        const descText =
+          (g.mainExternalListing?.articleFeatureDesc ?? '').toLowerCase();
+        const memoText = (g.memo ?? '').toLowerCase();
+        if (!descText.includes(fq) && !memoText.includes(fq)) return false;
+      }
+      // 즐겨찾기
+      if (onlyFavorite && !g.favorite) return false;
+      // 집주인(소유주 확인된 매물만)
+      if (onlyOwner && !g.ownerVerified) return false;
+      // 광고 O만 (= mainExternalListing.isActive)
+      if (onlyAd && !g.mainExternalListing?.isActive) return false;
+      // 세안고
+      if (onlySeango) {
+        const desc = g.mainExternalListing?.articleFeatureDesc ?? '';
+        if (!hasSeangoMarker(desc) && !hasSeangoMarker(g.memo)) return false;
+      }
+      // 가격 범위
+      if (pMin != null || pMax != null) {
+        const p = priceOf(g);
+        if (p == null) return false;
+        if (pMin != null && p < pMin) return false;
+        if (pMax != null && p > pMax) return false;
+      }
+      return true;
+    });
+  }, [
+    groups,
+    buildingQuery,
+    hoQuery,
+    featureQuery,
+    onlyFavorite,
+    onlyOwner,
+    onlyAd,
+    onlySeango,
+    priceMin,
+    priceMax,
+    transactionType,
+  ]);
+
+  const activeFilterCount =
+    (buildingQuery.trim() ? 1 : 0) +
+    (hoQuery.trim() ? 1 : 0) +
+    (featureQuery.trim() ? 1 : 0) +
+    (onlyFavorite ? 1 : 0) +
+    (onlyOwner ? 1 : 0) +
+    (onlyAd ? 1 : 0) +
+    (onlySeango ? 1 : 0) +
+    (priceMin.trim() || priceMax.trim() ? 1 : 0);
+
+  const resetFilters = () => {
+    setBuildingQuery('');
+    setHoQuery('');
+    setFeatureQuery('');
+    setOnlyFavorite(false);
+    setOnlyOwner(false);
+    setOnlyAd(false);
+    setOnlySeango(false);
+    setPriceMin('');
+    setPriceMax('');
+  };
+
+  const columns = useMemo(
+    () =>
+      buildColumns(transactionType, {
+        onToggleFavorite: (id, favorite) =>
+          updateGroupMutation.mutate({ id, dto: { favorite } }),
+        onUpdateStatus: (id, status) =>
+          updateGroupMutation.mutate({ id, dto: { status } }),
+        onUpdateMemo: (id, memo) =>
+          updateGroupMutation.mutate({ id, dto: { memo: memo || null } }),
+        onUpdateInferredHo: (id, ho) =>
+          updateGroupMutation.mutate({ id, dto: { inferredHo: ho || null } }),
+      }),
+    [transactionType, updateGroupMutation],
+  );
+
   const handleManualButtonClick = () => {
     if (!scopeSiteId) {
       setSessionError('수동 입력을 시작하려면 단지를 1개만 선택하세요.');
@@ -260,69 +424,8 @@ function ExternalListingsPage() {
     }
   };
 
-  const metrics = useMemo(() => {
-    const total = groups.length;
-    const unmatched = groups.filter((g) => g.status === 'unmatched').length;
-    const verified = groups.filter((g) => g.status === 'verified').length;
-    const paidAds = groups.filter(
-      (g) => g.mainExternalListing?.seango || g.mainExternalListing?.epju,
-    ).length;
-    return { total, unmatched, verified, paidAds };
-  }, [groups]);
-
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex items-start justify-between gap-4">
-        <div className="space-y-1">
-          <div className="flex items-center gap-3">
-            <h1 className="text-lg font-semibold tracking-tight">광고노트</h1>
-            <span className="text-xs text-muted-foreground">
-              {isLoading ? '...' : `${groups.length}건`}
-            </span>
-          </div>
-          <p className="text-sm text-muted-foreground">
-            내 단지에 올라온 외부 매물을 거래유형·단지별로 추적합니다.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          {activeSession && (
-            <>
-              <Button
-                size="sm"
-                variant="default"
-                disabled={
-                  !canManageSession || completeSessionMutation.isPending
-                }
-                onClick={() => setShowCompleteConfirm(true)}
-                title={
-                  canManageSession
-                    ? undefined
-                    : '권한 부족: 본인 세션 또는 매니저/오너만 완료 가능'
-                }
-              >
-                <CheckCircle className="mr-1 size-4" />
-                완료
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={
-                  !canManageSession || cancelSessionMutation.isPending
-                }
-                onClick={() => setShowCancelConfirm(true)}
-              >
-                <XCircle className="mr-1 size-4" />
-                취소
-              </Button>
-            </>
-          )}
-          <Button size="sm" onClick={handleManualButtonClick}>
-            <Plus className="mr-1 size-4" />
-            수동 입력
-          </Button>
-        </div>
-      </div>
-
+    <div className="-m-4 flex flex-1 flex-col gap-4 p-4 min-h-0">
       {activeSession && (
         <div className="flex items-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm">
           <Lock className="size-4 text-amber-700" />
@@ -347,79 +450,119 @@ function ExternalListingsPage() {
         </div>
       )}
 
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        <MetricTile
-          icon={Building2}
-          label="전체"
-          value={`${metrics.total}건`}
-          hint="현재 필터 기준"
-        />
-        <MetricTile
-          icon={AlertCircle}
-          label="미매칭"
-          value={`${metrics.unmatched}건`}
-          hint="호수 확인 필요"
-        />
-        <MetricTile
-          icon={CheckCircle2}
-          label="확정"
-          value={`${metrics.verified}건`}
-          hint="호수 매칭 완료"
-        />
-        <MetricTile
-          icon={Sparkles}
-          label="유료 광고"
-          value={`${metrics.paidAds}건`}
-          hint="선광고 / e편주"
-        />
-      </div>
-
       <Tabs
         value={transactionType}
         onValueChange={(v) =>
           setTransactionType(v as ExternalListingTransactionType)
         }
-        className="flex flex-col gap-3"
+        className="flex flex-1 flex-col gap-3 min-h-0"
       >
-        <TabsList className="self-start">
-          {transactionTypes.map((t) => (
-            <TabsTrigger key={t.value} value={t.value} className="px-6">
-              {t.label}
-            </TabsTrigger>
-          ))}
-        </TabsList>
+        <div className="flex items-center gap-3">
+          <TabsList>
+            {transactionTypes.map((t) => (
+              <TabsTrigger key={t.value} value={t.value} className="px-6">
+                {t.label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+          {!isLoading && (
+            <span className="text-xs text-muted-foreground tabular-nums">
+              {activeFilterCount > 0 &&
+              filteredGroups.length !== groups.length
+                ? `${filteredGroups.length}/${groups.length}건`
+                : `${groups.length}건`}
+            </span>
+          )}
+          <div className="ml-auto flex items-center gap-2">
+            {activeSession && (
+              <>
+                <Button
+                  size="sm"
+                  variant="default"
+                  disabled={
+                    !canManageSession || completeSessionMutation.isPending
+                  }
+                  onClick={() => setShowCompleteConfirm(true)}
+                  title={
+                    canManageSession
+                      ? undefined
+                      : '권한 부족: 본인 세션 또는 매니저/오너만 완료 가능'
+                  }
+                >
+                  <CheckCircle className="mr-1 size-4" />
+                  완료
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={
+                    !canManageSession || cancelSessionMutation.isPending
+                  }
+                  onClick={() => setShowCancelConfirm(true)}
+                >
+                  <XCircle className="mr-1 size-4" />
+                  취소
+                </Button>
+              </>
+            )}
+            <Button size="sm" onClick={handleManualButtonClick}>
+              <Plus className="mr-1 size-4" />
+              수동 입력
+            </Button>
+          </div>
+        </div>
 
-        <section className="rounded-xl border border-border/60 bg-background">
-          <div className="flex flex-col gap-3 border-b border-border/60 px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
-            <div className="flex flex-1 flex-wrap items-center gap-2">
-              <div className="relative min-w-[220px] flex-1 max-w-md">
-                <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  value={searchQuery}
-                  onChange={(event) => setSearchQuery(event.target.value)}
-                  placeholder="동·호수·메모·단지명 검색"
-                  className="pl-9"
-                />
-              </div>
-              <div className="flex items-center gap-2">
-                <Filter className="size-4 text-muted-foreground" />
-                <MultiSelect
-                  options={siteOptions}
-                  selected={selectedSiteIds}
-                  onChange={setSelectedSiteIds}
-                  placeholder="관리 단지 선택"
-                  className="min-w-[220px]"
-                />
-              </div>
+        {/* 필터 카드 — 테이블과 시각적으로 분리 */}
+        <div className="flex flex-col gap-2 rounded-xl border border-border/60 bg-muted/20 p-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative min-w-[220px] flex-1 max-w-md">
+              <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                placeholder="단지·메모 검색 (서버)"
+                className="h-9 bg-background pl-9"
+              />
             </div>
+            <MultiSelect
+              options={siteOptions}
+              selected={selectedSiteIds}
+              onChange={setSelectedSiteIds}
+              placeholder="관리 단지 선택"
+              className="min-w-[220px] bg-background"
+            />
+            <Button
+              type="button"
+              variant={isFilterOpen ? 'default' : 'outline'}
+              size="sm"
+              className={cn(!isFilterOpen && 'bg-background')}
+              onClick={() => setIsFilterOpen((v) => !v)}
+            >
+              <Filter className="mr-1 size-4" />
+              상세 필터
+              {activeFilterCount > 0 && (
+                <Badge
+                  variant="secondary"
+                  className="ml-2 h-5 px-1.5 text-[10px]"
+                >
+                  {activeFilterCount}
+                </Badge>
+              )}
+              {isFilterOpen ? (
+                <ChevronUp className="ml-1 size-4" />
+              ) : (
+                <ChevronDown className="ml-1 size-4" />
+              )}
+            </Button>
 
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="ml-auto flex flex-wrap items-center gap-1">
               {statusFilters.map((s) => (
                 <Button
                   key={s.value}
                   type="button"
                   variant={status === s.value ? 'default' : 'outline'}
                   size="xs"
+                  className={cn(status !== s.value && 'bg-background')}
                   onClick={() => setStatus(s.value)}
                 >
                   {s.label}
@@ -428,6 +571,140 @@ function ExternalListingsPage() {
             </div>
           </div>
 
+          {isFilterOpen && (
+            <div className="mt-1 flex flex-col gap-3 rounded-lg border border-border/60 bg-background px-3 py-3">
+              {/* Row 1: 동/호수/매물특징 */}
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="flex items-center gap-2">
+                  <Label
+                    htmlFor="filter-building"
+                    className="w-12 text-xs text-muted-foreground"
+                  >
+                    동
+                  </Label>
+                  <Input
+                    id="filter-building"
+                    value={buildingQuery}
+                    onChange={(e) => setBuildingQuery(e.target.value)}
+                    placeholder="101"
+                    className="h-8 w-[120px]"
+                  />
+                </div>
+                <div className="flex items-center gap-2">
+                  <Label
+                    htmlFor="filter-ho"
+                    className="w-10 text-xs text-muted-foreground"
+                  >
+                    호수
+                  </Label>
+                  <Input
+                    id="filter-ho"
+                    value={hoQuery}
+                    onChange={(e) => setHoQuery(e.target.value)}
+                    placeholder="1503"
+                    className="h-8 w-[120px]"
+                  />
+                </div>
+                <div className="flex flex-1 items-center gap-2 min-w-[240px]">
+                  <Label
+                    htmlFor="filter-feature"
+                    className="w-16 text-xs text-muted-foreground"
+                  >
+                    매물특징
+                  </Label>
+                  <Input
+                    id="filter-feature"
+                    value={featureQuery}
+                    onChange={(e) => setFeatureQuery(e.target.value)}
+                    placeholder="급매·올수리·세안고 등"
+                    className="h-8"
+                  />
+                </div>
+              </div>
+
+              {/* Row 2: 토글 4개 */}
+              <div className="flex flex-wrap items-center gap-4">
+                <label className="flex cursor-pointer items-center gap-2 text-xs">
+                  <Checkbox
+                    checked={onlyOwner}
+                    onCheckedChange={(v) => setOnlyOwner(v === true)}
+                  />
+                  <span>집주인</span>
+                </label>
+                <label className="flex cursor-pointer items-center gap-2 text-xs">
+                  <Checkbox
+                    checked={onlyAd}
+                    onCheckedChange={(v) => setOnlyAd(v === true)}
+                  />
+                  <span>광고 O만</span>
+                </label>
+                <label className="flex cursor-pointer items-center gap-2 text-xs">
+                  <Checkbox
+                    checked={onlySeango}
+                    onCheckedChange={(v) => setOnlySeango(v === true)}
+                  />
+                  <span>세안고</span>
+                </label>
+                <label className="flex cursor-pointer items-center gap-2 text-xs">
+                  <Checkbox
+                    checked={onlyFavorite}
+                    onCheckedChange={(v) => setOnlyFavorite(v === true)}
+                  />
+                  <span className="flex items-center gap-1">
+                    <Star
+                      className={cn(
+                        'size-3.5',
+                        onlyFavorite
+                          ? 'fill-yellow-400 text-yellow-400'
+                          : 'text-muted-foreground',
+                      )}
+                    />
+                    즐겨찾기
+                  </span>
+                </label>
+              </div>
+
+              {/* Row 3: 가격 범위 + 초기화 */}
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="flex items-center gap-2">
+                  <Label className="w-12 text-xs text-muted-foreground">
+                    가격
+                  </Label>
+                  <Input
+                    type="number"
+                    value={priceMin}
+                    onChange={(e) => setPriceMin(e.target.value)}
+                    placeholder="최소"
+                    className="h-8 w-[110px] tabular-nums"
+                  />
+                  <span className="text-xs text-muted-foreground">~</span>
+                  <Input
+                    type="number"
+                    value={priceMax}
+                    onChange={(e) => setPriceMax(e.target.value)}
+                    placeholder="최대"
+                    className="h-8 w-[110px] tabular-nums"
+                  />
+                  <span className="text-xs text-muted-foreground">만원</span>
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="ml-auto"
+                  onClick={resetFilters}
+                  disabled={activeFilterCount === 0}
+                >
+                  <RotateCcw className="mr-1 size-3.5" />
+                  초기화
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* 테이블 카드 */}
+        <section className="flex flex-1 flex-col min-h-0 overflow-hidden rounded-xl border border-border/60 bg-background">
           {activeSession && (
             <div className="flex items-center gap-1 border-b border-border/60 px-4 py-2">
               <Button
@@ -451,15 +728,26 @@ function ExternalListingsPage() {
           )}
 
           {transactionTypes.map((t) => (
-            <TabsContent key={t.value} value={t.value} className="m-0">
-              {isLoading ? (
-                <div className="px-4 py-10 text-center text-sm text-muted-foreground">
-                  불러오는 중...
-                </div>
-              ) : groups.length === 0 ? (
+            <TabsContent
+              key={t.value}
+              value={t.value}
+              className="m-0 flex flex-1 flex-col min-h-0"
+            >
+              {!isLoading && groups.length === 0 ? (
                 <EmptyState hasSiteFilter={selectedSiteIds.length > 0} />
               ) : (
-                <GroupTable groups={groups} transactionType={t.value} />
+                <DataTable
+                  columns={columns}
+                  data={filteredGroups}
+                  layout="full-height"
+                  rowHeight={60}
+                  isLoading={isLoading}
+                  emptyMessage={
+                    activeFilterCount > 0
+                      ? '필터에 맞는 매물이 없습니다'
+                      : '매물이 없습니다'
+                  }
+                />
               )}
             </TabsContent>
           ))}
@@ -573,165 +861,528 @@ function EmptyState({ hasSiteFilter }: { hasSiteFilter: boolean }) {
   );
 }
 
-function GroupTable({
-  groups,
-  transactionType,
-}: {
-  groups: ExternalListingGroup[];
-  transactionType: ExternalListingTransactionType;
-}) {
-  return (
-    <div className="overflow-x-auto">
-      <table className="w-full min-w-[960px] text-sm">
-        <thead className="border-b border-border/60 bg-muted/30 text-xs text-muted-foreground">
-          <tr>
-            <th className="px-4 py-2 text-left font-medium">단지</th>
-            <th className="px-3 py-2 text-left font-medium">동·호</th>
-            <th className="px-3 py-2 text-left font-medium">평형</th>
-            <PriceHeader transactionType={transactionType} />
-            <th className="px-3 py-2 text-left font-medium">매물 수</th>
-            <th className="px-3 py-2 text-left font-medium">최근 순위</th>
-            <th className="px-3 py-2 text-left font-medium">상태</th>
-            <th className="px-3 py-2 text-left font-medium">최근 관측</th>
-            <th className="px-3 py-2 text-left font-medium">원본</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-border/60">
-          {groups.map((group) => (
-            <GroupRow
-              key={group.id}
-              group={group}
-              transactionType={transactionType}
-            />
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
+// ── Helpers ─────────────────────────────────────────────────────
+
+function sqmToPyeong(sqm: number | string | null | undefined): number | null {
+  if (sqm == null) return null;
+  const n = typeof sqm === 'string' ? parseFloat(sqm) : sqm;
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return Math.round(n / 3.305785);
 }
 
-function PriceHeader({
-  transactionType,
-}: {
-  transactionType: ExternalListingTransactionType;
-}) {
-  if (transactionType === 'monthly') {
-    return <th className="px-3 py-2 text-left font-medium">보증금 / 월세</th>;
-  }
-  if (transactionType === 'jeonse') {
-    return <th className="px-3 py-2 text-left font-medium">전세가</th>;
-  }
-  return <th className="px-3 py-2 text-left font-medium">매매가</th>;
+function formatYmd(dateStr: string | null | undefined): string {
+  if (!dateStr || dateStr.length !== 8) return '-';
+  return `${dateStr.slice(2, 4)}-${dateStr.slice(4, 6)}-${dateStr.slice(6, 8)}`;
 }
 
-function GroupRow({
-  group,
-  transactionType,
-}: {
-  group: ExternalListingGroup;
-  transactionType: ExternalListingTransactionType;
-}) {
-  const main = group.mainExternalListing;
-  const meta = statusMeta[group.status];
+const SEANGO_REGEX = /세\s*안\s*고|갭\s*투\s*자?/;
+function hasSeangoMarker(text: string | null | undefined): boolean {
+  return !!text && SEANGO_REGEX.test(text);
+}
 
-  return (
-    <tr className="hover:bg-muted/20">
-      <td className="px-4 py-3">
-        <div className="flex flex-col">
-          <span className="font-medium">{group.site?.name ?? '-'}</span>
-          {group.site?.roadAddress && (
-            <span className="text-xs text-muted-foreground">
-              {group.site.roadAddress}
-            </span>
+// ── Table column factory (electron-estate parity) ──────────────────
+
+interface ColumnFactoryContext {
+  onToggleFavorite: (groupId: string, next: boolean) => void;
+  onUpdateStatus: (groupId: string, status: ExternalListingGroupStatus) => void;
+  onUpdateMemo: (groupId: string, memo: string) => void;
+  onUpdateInferredHo: (groupId: string, ho: string) => void;
+}
+
+function buildColumns(
+  transactionType: ExternalListingTransactionType,
+  ctx: ColumnFactoryContext,
+): ColumnDef<ExternalListingGroup, unknown>[] {
+  const columns: ColumnDef<ExternalListingGroup, unknown>[] = [];
+
+  // ── 1. 즐겨찾기(★) ─────────────────────────────────────────
+  columns.push({
+    id: 'favorite',
+    header: '',
+    size: 44,
+    enableResizing: false,
+    cell: ({ row }) => {
+      const g = row.original;
+      return (
+        <button
+          type="button"
+          aria-label={g.favorite ? '즐겨찾기 해제' : '즐겨찾기'}
+          onClick={(e) => {
+            e.stopPropagation();
+            ctx.onToggleFavorite(g.id, !g.favorite);
+          }}
+          className={cn(
+            'flex items-center justify-center transition-transform hover:scale-110',
+            g.favorite ? 'text-yellow-400' : 'text-muted-foreground/60',
           )}
-        </div>
-      </td>
-      <td className="px-3 py-3">
-        <div className="flex flex-col">
-          <span>{group.buildingName ?? '-'}</span>
-          <span className="text-xs text-muted-foreground">
-            {group.unit?.name ?? group.inferredHo ?? '호수 미확인'}
-          </span>
-        </div>
-      </td>
-      <td className="px-3 py-3">
-        <div className="flex flex-col">
-          <span>{group.areaName ?? '-'}</span>
-          {group.exclusiveAreaM2 != null && (
-            <span className="text-xs text-muted-foreground">
-              {Number(group.exclusiveAreaM2).toFixed(2)}㎡
-            </span>
-          )}
-        </div>
-      </td>
-      <td className="px-3 py-3">
-        {main ? formatListingPrice(main, transactionType) : '-'}
-      </td>
-      <td className="px-3 py-3 text-center">{group.listingCount ?? '-'}</td>
-      <td className="px-3 py-3">
-        {main?.ranking != null ? (
-          <div className="flex items-center gap-1">
-            <span className="font-medium">{main.ranking}위</span>
-            {(main.seango || main.epju) && (
-              <Badge className="border-0 bg-fuchsia-50 text-fuchsia-700">
-                유료
-              </Badge>
+        >
+          <Star
+            className={cn('size-5', g.favorite && 'fill-yellow-400')}
+            strokeWidth={1.5}
+          />
+        </button>
+      );
+    },
+  });
+
+  // ── 2. 정보 (광고 · 집주인 · 매물개수/순위) ───────────────────
+  columns.push({
+    id: 'info',
+    header: '정보',
+    size: 110,
+    cell: ({ row }) => {
+      const g = row.original;
+      const main = g.mainExternalListing;
+      const isActive = !!main?.isActive;
+      const ranking = g.offerRanking ?? null;
+      const sameAddrCnt = main?.sameAddrCnt ?? g.listingCount ?? null;
+      return (
+        <div className="flex items-stretch gap-1.5">
+          <div className="flex flex-col gap-0.5">
+            <Badge
+              className={cn(
+                'border-0 px-1.5 py-0.5 text-center text-[10px] font-semibold text-white',
+                isActive ? 'bg-blue-500' : 'bg-red-500',
+              )}
+            >
+              {isActive ? '광고 O' : '광고 X'}
+            </Badge>
+            <Badge
+              className={cn(
+                'border-0 px-1.5 py-0.5 text-center text-[10px] font-semibold text-white',
+                g.ownerVerified ? 'bg-green-500' : 'bg-gray-500',
+              )}
+            >
+              {g.ownerVerified ? '집주인' : '중개사'}
+            </Badge>
+          </div>
+          <div className="flex min-h-[40px] w-7 flex-col items-center justify-center rounded border border-border text-[10px]">
+            {ranking ? (
+              <>
+                <div className="font-semibold tabular-nums">{ranking}/</div>
+                <div className="font-semibold tabular-nums">
+                  {sameAddrCnt ?? '-'}
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="font-semibold tabular-nums">
+                  {sameAddrCnt ?? '-'}
+                </div>
+                <div className="text-muted-foreground">개</div>
+              </>
             )}
           </div>
-        ) : (
-          <span className="text-muted-foreground">-</span>
-        )}
-      </td>
-      <td className="px-3 py-3">
-        <Badge className={cn('border-0', meta.className)}>{meta.label}</Badge>
-      </td>
-      <td className="px-3 py-3 text-xs text-muted-foreground">
-        {formatShortDate(group.lastSeenAt)}
-      </td>
-      <td className="px-3 py-3">
-        {main?.cpPcArticleUrl ? (
-          <Button asChild variant="outline" size="xs">
-            <a
-              href={main.cpPcArticleUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              <ExternalLink className="mr-1 size-3" />
-              네이버
-            </a>
-          </Button>
-        ) : (
-          <span className="text-xs text-muted-foreground">-</span>
-        )}
-      </td>
-    </tr>
+        </div>
+      );
+    },
+  });
+
+  // ── 3. 아파트 (단지명) ─────────────────────────────────────
+  columns.push({
+    id: 'site',
+    header: '아파트',
+    size: 200,
+    cell: ({ row }) => (
+      <span className="truncate text-[13px] font-medium">
+        {row.original.site?.name ?? '-'}
+      </span>
+    ),
+  });
+
+  // ── 4. 타입 (areaName + pyeong/pyeong) ─────────────────────
+  columns.push({
+    id: 'type',
+    header: '타입',
+    size: 80,
+    cell: ({ row }) => {
+      const g = row.original;
+      const main = g.mainExternalListing;
+      const exclusivePyeong = sqmToPyeong(
+        main?.exclusiveAreaM2 ?? g.exclusiveAreaM2,
+      );
+      const supplyPyeong = sqmToPyeong(main?.supplyAreaM2);
+      return (
+        <div className="flex min-w-0 flex-col text-[12px]">
+          <span className="truncate">{g.areaName ?? '-'}</span>
+          {exclusivePyeong != null && (
+            <span className="truncate text-muted-foreground tabular-nums">
+              {exclusivePyeong}/{supplyPyeong ?? '-'}평
+            </span>
+          )}
+        </div>
+      );
+    },
+  });
+
+  // ── 5. 동 ────────────────────────────────────────────────
+  columns.push({
+    id: 'dong',
+    header: '동',
+    size: 70,
+    cell: ({ row }) => (
+      <span className="truncate text-[13px]">
+        {row.original.buildingName ?? '-'}
+      </span>
+    ),
+  });
+
+  // ── 6. 호 (+ floorInfo, 인라인 편집) ──────────────────────
+  columns.push({
+    id: 'ho',
+    header: '호',
+    size: 80,
+    cell: ({ row }) => {
+      const g = row.original;
+      const main = g.mainExternalListing;
+      // If a Unit is linked, the ho is authoritative (read-only). Otherwise
+      // show an editable input bound to inferredHo.
+      if (g.unit?.name) {
+        return (
+          <div
+            className="flex min-w-0 flex-col text-[12px]"
+            title="호실이 확정되어 수정할 수 없습니다. 수정하려면 Unit 링크를 해제하세요."
+          >
+            <span className="truncate font-medium">{g.unit.name}</span>
+            {main?.floorInfo && (
+              <span className="truncate text-muted-foreground">
+                {main.floorInfo}
+              </span>
+            )}
+          </div>
+        );
+      }
+      return (
+        <div className="flex min-w-0 flex-col gap-0.5">
+          <HoInput
+            groupId={g.id}
+            initial={g.inferredHo}
+            onSave={ctx.onUpdateInferredHo}
+          />
+          {main?.floorInfo && (
+            <span className="truncate text-[11px] text-muted-foreground">
+              {main.floorInfo}
+            </span>
+          )}
+        </div>
+      );
+    },
+  });
+
+  // ── 7. 상태 (인라인 Select) ──────────────────────────────
+  columns.push({
+    id: 'status',
+    header: '상태',
+    size: 100,
+    cell: ({ row }) => {
+      const g = row.original;
+      return (
+        <Select
+          value={g.status}
+          onValueChange={(v) =>
+            ctx.onUpdateStatus(g.id, v as ExternalListingGroupStatus)
+          }
+        >
+          <SelectTrigger
+            className="h-7 w-full border-border/60 px-2 text-[11px]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {Object.entries(statusMeta).map(([value, meta]) => (
+              <SelectItem key={value} value={value} className="text-xs">
+                {meta.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      );
+    },
+  });
+
+  // ── 8. 가격 (탭별 다름) ───────────────────────────────────
+  if (transactionType === 'sale') {
+    columns.push({
+      id: 'price',
+      header: '매매가',
+      size: 110,
+      cell: ({ row }) => (
+        <span className="text-[13px] font-medium tabular-nums">
+          {row.original.mainExternalListing?.price
+            ? formatPrice(row.original.mainExternalListing.price)
+            : '-'}
+        </span>
+      ),
+    });
+  } else if (transactionType === 'jeonse') {
+    columns.push({
+      id: 'deposit',
+      header: '전세가',
+      size: 110,
+      cell: ({ row }) => (
+        <span className="text-[13px] font-medium tabular-nums">
+          {row.original.mainExternalListing?.deposit
+            ? formatPrice(row.original.mainExternalListing.deposit)
+            : '-'}
+        </span>
+      ),
+    });
+  } else {
+    columns.push({
+      id: 'deposit',
+      header: '보증금',
+      size: 95,
+      cell: ({ row }) => (
+        <span className="text-[13px] tabular-nums">
+          {row.original.mainExternalListing?.deposit
+            ? formatPrice(row.original.mainExternalListing.deposit)
+            : '-'}
+        </span>
+      ),
+    });
+    columns.push({
+      id: 'monthlyRent',
+      header: '월세',
+      size: 80,
+      cell: ({ row }) => (
+        <span className="text-[13px] tabular-nums">
+          {row.original.mainExternalListing?.monthlyRent
+            ? formatPrice(row.original.mainExternalListing.monthlyRent)
+            : '-'}
+        </span>
+      ),
+    });
+  }
+
+  // ── 9. 최소최대 (같은 주소 가격 범위) ──────────────────────
+  columns.push({
+    id: 'minMax',
+    header: '최소최대',
+    size: 110,
+    cell: ({ row }) => {
+      const g = row.original;
+      const main = g.mainExternalListing;
+      const max =
+        main?.sameAddrMaxPrc ??
+        (g.priceMax != null ? formatPrice(g.priceMax) : null);
+      const min =
+        main?.sameAddrMinPrc ??
+        (g.priceMin != null ? formatPrice(g.priceMin) : null);
+      if (!max && !min) {
+        return <span className="text-[12px] text-muted-foreground">-</span>;
+      }
+      return (
+        <div className="flex flex-col gap-0.5 text-[11px]">
+          <Badge variant="outline" className="justify-start px-1.5 py-0 tabular-nums">
+            {max ?? '-'}
+          </Badge>
+          <Badge variant="outline" className="justify-start px-1.5 py-0 tabular-nums">
+            {min ?? '-'}
+          </Badge>
+        </div>
+      );
+    },
+  });
+
+  // ── 10. 방향 ────────────────────────────────────────────
+  columns.push({
+    id: 'direction',
+    header: '방향',
+    size: 60,
+    cell: ({ row }) => (
+      <span className="text-[13px]">
+        {row.original.mainExternalListing?.direction ?? '-'}
+      </span>
+    ),
+  });
+
+  // ── 11. 날짜 (maxYmd/minYmd + 경과일) ─────────────────────
+  columns.push({
+    id: 'dates',
+    header: '날짜',
+    size: 150,
+    cell: ({ row }) => {
+      const g = row.original;
+      return (
+        <div className="flex items-center gap-1.5">
+          <div className="flex flex-col gap-0.5 text-[11px]">
+            <Badge variant="outline" className="justify-start px-1.5 py-0 tabular-nums">
+              {formatYmd(g.maxYmd)}
+            </Badge>
+            <Badge variant="outline" className="justify-start px-1.5 py-0 tabular-nums">
+              {formatYmd(g.minYmd)}
+            </Badge>
+          </div>
+          <div className="flex min-h-[40px] w-8 flex-col items-center justify-center rounded border border-border text-[10px]">
+            <div className="font-semibold tabular-nums">
+              {g.confirmDateDiff ?? '-'}
+            </div>
+            <div className="text-muted-foreground">일</div>
+          </div>
+        </div>
+      );
+    },
+  });
+
+  // ── 12. 부동산 ──────────────────────────────────────────
+  columns.push({
+    id: 'realtor',
+    header: '부동산',
+    size: 130,
+    cell: ({ row }) => (
+      <span className="truncate text-[12px]">
+        {row.original.mainExternalListing?.realtorName ?? '-'}
+      </span>
+    ),
+  });
+
+  // ── 13. 링크 (네이버 외부 이동) ────────────────────────────
+  columns.push({
+    id: 'link',
+    header: '링크',
+    size: 60,
+    cell: ({ row }) => {
+      const main = row.original.mainExternalListing;
+      if (!main?.cpPcArticleUrl) {
+        return <span className="text-[12px] text-muted-foreground">-</span>;
+      }
+      return (
+        <Button
+          asChild
+          size="xs"
+          className="h-6 bg-green-500 px-2 text-[11px] hover:bg-green-600"
+        >
+          <a
+            href={main.cpPcArticleUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+          >
+            N
+          </a>
+        </Button>
+      );
+    },
+  });
+
+  // ── 14. 매물특징 + 메모(인라인) ────────────────────────────
+  columns.push({
+    id: 'features',
+    header: '매물특징',
+    size: 400,
+    minSize: 280,
+    cell: ({ row }) => {
+      const g = row.original;
+      const main = g.mainExternalListing;
+      const desc = main?.articleFeatureDesc ?? '';
+      const seango = hasSeangoMarker(desc) || hasSeangoMarker(g.memo);
+      return (
+        <div className="flex flex-col gap-1">
+          <div
+            className="text-[11px] whitespace-pre-line leading-snug text-foreground/80"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {seango && (
+              <span className="mr-1 inline-block rounded bg-blue-500 px-1.5 py-[2px] text-[10px] font-semibold text-white">
+                세안고
+              </span>
+            )}
+            {desc || '-'}
+          </div>
+          <CommentInput
+            groupId={g.id}
+            initial={g.memo}
+            onSave={ctx.onUpdateMemo}
+          />
+        </div>
+      );
+    },
+  });
+
+  return columns;
+}
+
+// ── Inline ho (호수) editor — only used when unit is not yet linked ──
+
+function HoInput({
+  groupId,
+  initial,
+  onSave,
+}: {
+  groupId: string;
+  initial: string | null;
+  onSave: (groupId: string, ho: string) => void;
+}) {
+  const [value, setValue] = useState(initial ?? '');
+  useEffect(() => {
+    setValue(initial ?? '');
+  }, [initial]);
+
+  const commit = () => {
+    const next = value.trim();
+    if ((initial ?? '') === next) return;
+    onSave(groupId, next);
+  };
+
+  return (
+    <Input
+      value={value}
+      onChange={(e) => setValue(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') e.currentTarget.blur();
+        if (e.key === 'Escape') {
+          setValue(initial ?? '');
+          e.currentTarget.blur();
+        }
+      }}
+      onClick={(e) => e.stopPropagation()}
+      placeholder="호수"
+      className="h-6 border-border/40 px-1.5 py-0 text-[12px] shadow-none tabular-nums"
+    />
   );
 }
 
-function MetricTile({
-  icon: Icon,
-  label,
-  value,
-  hint,
+// ── Inline comment editor ──────────────────────────────────────────
+
+function CommentInput({
+  groupId,
+  initial,
+  onSave,
 }: {
-  icon: typeof Building2;
-  label: string;
-  value: string;
-  hint: string;
+  groupId: string;
+  initial: string | null;
+  onSave: (groupId: string, memo: string) => void;
 }) {
+  const [value, setValue] = useState(initial ?? '');
+  useEffect(() => {
+    setValue(initial ?? '');
+  }, [initial]);
+
+  const commit = () => {
+    if ((initial ?? '') === value) return;
+    onSave(groupId, value);
+  };
+
   return (
-    <div className="rounded-xl border border-border/60 bg-background px-4 py-3">
-      <div className="flex items-start justify-between gap-3">
-        <div className="space-y-1">
-          <p className="text-xs text-muted-foreground">{label}</p>
-          <p className="text-lg font-semibold tracking-tight">{value}</p>
-          <p className="text-xs text-muted-foreground">{hint}</p>
-        </div>
-        <div className="rounded-lg bg-muted/60 p-2 text-muted-foreground">
-          <Icon className="size-4" />
-        </div>
-      </div>
-    </div>
+    <Input
+      value={value}
+      onChange={(e) => setValue(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          e.currentTarget.blur();
+        }
+        if (e.key === 'Escape') {
+          setValue(initial ?? '');
+          e.currentTarget.blur();
+        }
+      }}
+      onClick={(e) => e.stopPropagation()}
+      placeholder="메모 입력..."
+      className="h-6 border-border/40 px-2 text-[11px] shadow-none"
+    />
   );
 }
 

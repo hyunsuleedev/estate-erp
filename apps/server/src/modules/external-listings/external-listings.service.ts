@@ -42,6 +42,7 @@ export interface UpdateGroupDto {
   inferredHo?: string | null;
   memo?: string | null;
   status?: string;
+  favorite?: boolean;
 }
 
 export interface BatchListingItem {
@@ -202,16 +203,82 @@ export class ExternalListingsService {
         site: true,
         unit: true,
         mainExternalListing: true,
+        // Pull all listings so we can compute group-level aggregates
+        // (price min/max, confirm-date min/max, offer ranking) without
+        // extra round-trips. Groups generally have < 20 listings each.
+        listings: {
+          where: { isActive: true },
+          select: {
+            id: true,
+            price: true,
+            deposit: true,
+            monthlyRent: true,
+            transactionType: true,
+            articleConfirmYmd: true,
+            verificationTypeCode: true,
+            ranking: true,
+            seango: true,
+            epju: true,
+          },
+        },
         _count: { select: { listings: true } },
       },
       orderBy: { lastSeenAt: 'desc' },
     });
 
-    return groups.map((group) => ({
-      ...group,
-      listingCount: group._count.listings,
-      _count: undefined,
-    }));
+    return groups.map((group) => {
+      const listings = group.listings ?? [];
+      // Pick the right price field for this group's transactionType
+      const priceField: 'price' | 'deposit' =
+        group.transactionType === 'sale' ? 'price' : 'deposit';
+      const prices = listings
+        .map((l) => l[priceField])
+        .filter((v): v is number => v != null && v > 0);
+      const priceMin = prices.length ? Math.min(...prices) : null;
+      const priceMax = prices.length ? Math.max(...prices) : null;
+
+      // Confirm dates (YYYYMMDD string). Max = most recent confirm.
+      const ymds = listings
+        .map((l) => l.articleConfirmYmd)
+        .filter((v): v is string => !!v && v.length === 8);
+      ymds.sort();
+      const minYmd = ymds[0] ?? null;
+      const maxYmd = ymds[ymds.length - 1] ?? null;
+      let confirmDateDiff: number | null = null;
+      if (maxYmd) {
+        const y = Number(maxYmd.slice(0, 4));
+        const m = Number(maxYmd.slice(4, 6));
+        const d = Number(maxYmd.slice(6, 8));
+        const confirmDate = new Date(y, m - 1, d);
+        confirmDateDiff = Math.max(
+          0,
+          Math.floor(
+            (Date.now() - confirmDate.getTime()) / (1000 * 60 * 60 * 24),
+          ),
+        );
+      }
+
+      // Owner-verified if main listing has OWNER-family verification.
+      const main = group.mainExternalListing;
+      const ownerVerified =
+        !!main?.verificationTypeCode &&
+        main.verificationTypeCode.startsWith('OWNER');
+
+      return {
+        ...group,
+        listings: undefined,
+        listingCount: group._count.listings,
+        _count: undefined,
+        // ── Aggregates for the row ────────────────────────────────
+        priceMin,
+        priceMax,
+        minYmd,
+        maxYmd,
+        confirmDateDiff,
+        ownerVerified,
+        offerRanking: main?.ranking ?? null,
+      };
+    });
   }
 
   // ─────────────────────────────────────────────────────────────
@@ -472,6 +539,7 @@ export class ExternalListingsService {
     if (dto.inferredHo !== undefined) data.inferredHo = dto.inferredHo;
     if (dto.memo !== undefined) data.memo = dto.memo;
     if (dto.status !== undefined) data.status = dto.status;
+    if (dto.favorite !== undefined) data.favorite = dto.favorite;
 
     return this.prisma.externalListingGroup.update({
       where: { id },
