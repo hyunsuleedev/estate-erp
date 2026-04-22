@@ -18,6 +18,7 @@ import { Route as AuthLoginRouteImport } from './routes/_auth/login'
 import { Route as AuthenticatedTasksIndexRouteImport } from './routes/_authenticated/tasks/index'
 import { Route as AuthenticatedSitesIndexRouteImport } from './routes/_authenticated/sites/index'
 import { Route as AuthenticatedSettingsIndexRouteImport } from './routes/_authenticated/settings/index'
+import { Route as AuthenticatedServiceVendorsIndexRouteImport } from './routes/_authenticated/service-vendors/index'
 import { Route as AuthenticatedPropertiesIndexRouteImport } from './routes/_authenticated/properties/index'
 import { Route as AuthenticatedPartnerBrokersIndexRouteImport } from './routes/_authenticated/partner-brokers/index'
 import { Route as AuthenticatedNetworkIndexRouteImport } from './routes/_authenticated/network/index'
@@ -86,6 +87,12 @@ const AuthenticatedSettingsIndexRoute =
   AuthenticatedSettingsIndexRouteImport.update({
     id: '/settings/',
     path: '/settings/',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedServiceVendorsIndexRoute =
+  AuthenticatedServiceVendorsIndexRouteImport.update({
+    id: '/service-vendors/',
+    path: '/service-vendors/',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
 const AuthenticatedPropertiesIndexRoute =
@@ -265,6 +272,7 @@ export interface FileRoutesByFullPath {
   '/network/': typeof AuthenticatedNetworkIndexRoute
   '/partner-brokers/': typeof AuthenticatedPartnerBrokersIndexRoute
   '/properties/': typeof AuthenticatedPropertiesIndexRoute
+  '/service-vendors/': typeof AuthenticatedServiceVendorsIndexRoute
   '/settings/': typeof AuthenticatedSettingsIndexRoute
   '/sites/': typeof AuthenticatedSitesIndexRoute
   '/tasks/': typeof AuthenticatedTasksIndexRoute
@@ -299,6 +307,7 @@ export interface FileRoutesByTo {
   '/network': typeof AuthenticatedNetworkIndexRoute
   '/partner-brokers': typeof AuthenticatedPartnerBrokersIndexRoute
   '/properties': typeof AuthenticatedPropertiesIndexRoute
+  '/service-vendors': typeof AuthenticatedServiceVendorsIndexRoute
   '/settings': typeof AuthenticatedSettingsIndexRoute
   '/sites': typeof AuthenticatedSitesIndexRoute
   '/tasks': typeof AuthenticatedTasksIndexRoute
@@ -336,6 +345,7 @@ export interface FileRoutesById {
   '/_authenticated/network/': typeof AuthenticatedNetworkIndexRoute
   '/_authenticated/partner-brokers/': typeof AuthenticatedPartnerBrokersIndexRoute
   '/_authenticated/properties/': typeof AuthenticatedPropertiesIndexRoute
+  '/_authenticated/service-vendors/': typeof AuthenticatedServiceVendorsIndexRoute
   '/_authenticated/settings/': typeof AuthenticatedSettingsIndexRoute
   '/_authenticated/sites/': typeof AuthenticatedSitesIndexRoute
   '/_authenticated/tasks/': typeof AuthenticatedTasksIndexRoute
@@ -372,6 +382,7 @@ export interface FileRouteTypes {
     | '/network/'
     | '/partner-brokers/'
     | '/properties/'
+    | '/service-vendors/'
     | '/settings/'
     | '/sites/'
     | '/tasks/'
@@ -406,6 +417,7 @@ export interface FileRouteTypes {
     | '/network'
     | '/partner-brokers'
     | '/properties'
+    | '/service-vendors'
     | '/settings'
     | '/sites'
     | '/tasks'
@@ -442,6 +454,7 @@ export interface FileRouteTypes {
     | '/_authenticated/network/'
     | '/_authenticated/partner-brokers/'
     | '/_authenticated/properties/'
+    | '/_authenticated/service-vendors/'
     | '/_authenticated/settings/'
     | '/_authenticated/sites/'
     | '/_authenticated/tasks/'
@@ -516,6 +529,13 @@ declare module '@tanstack/react-router' {
       path: '/settings'
       fullPath: '/settings/'
       preLoaderRoute: typeof AuthenticatedSettingsIndexRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/service-vendors/': {
+      id: '/_authenticated/service-vendors/'
+      path: '/service-vendors'
+      fullPath: '/service-vendors/'
+      preLoaderRoute: typeof AuthenticatedServiceVendorsIndexRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/properties/': {
@@ -735,6 +755,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedNetworkIndexRoute: typeof AuthenticatedNetworkIndexRoute
   AuthenticatedPartnerBrokersIndexRoute: typeof AuthenticatedPartnerBrokersIndexRoute
   AuthenticatedPropertiesIndexRoute: typeof AuthenticatedPropertiesIndexRoute
+  AuthenticatedServiceVendorsIndexRoute: typeof AuthenticatedServiceVendorsIndexRoute
   AuthenticatedSettingsIndexRoute: typeof AuthenticatedSettingsIndexRoute
   AuthenticatedSitesIndexRoute: typeof AuthenticatedSitesIndexRoute
   AuthenticatedTasksIndexRoute: typeof AuthenticatedTasksIndexRoute
@@ -770,6 +791,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedNetworkIndexRoute: AuthenticatedNetworkIndexRoute,
   AuthenticatedPartnerBrokersIndexRoute: AuthenticatedPartnerBrokersIndexRoute,
   AuthenticatedPropertiesIndexRoute: AuthenticatedPropertiesIndexRoute,
+  AuthenticatedServiceVendorsIndexRoute: AuthenticatedServiceVendorsIndexRoute,
   AuthenticatedSettingsIndexRoute: AuthenticatedSettingsIndexRoute,
   AuthenticatedSitesIndexRoute: AuthenticatedSitesIndexRoute,
   AuthenticatedTasksIndexRoute: AuthenticatedTasksIndexRoute,

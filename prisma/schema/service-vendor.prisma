@@ -1,0 +1,105 @@
+// ============================================================
+// 협력업체 (ServiceVendor)
+// ============================================================
+//
+// 거래 후 하자 수리, 이사, 청소, 법무 등 서비스 업체 디렉토리.
+// Site 테이블과 동일한 공용/개인 패턴을 따른다.
+//   - officeId = null  → 공용 풀 (플랫폼 운영자가 등록/관리)
+//   - officeId = UUID  → 사무소 개인 단골 (해당 사무소만 본다)
+//
+// 광고 상품:
+//   - 공용 풀 업체는 adTier(premium/basic/none)로 광고비 구조화.
+//   - 정렬: 내 개인 업체 > 공용 광고 > 공용 일반. 즐겨찾기는 별도 배지/필터.
+//
+// VendorContact (담당자):
+//   - 1인 업체: 레코드 1개 (업체 본인).
+//   - 법인: 대표번호/기사1/기사2 등 N개.
+//
+// 연락처 통합 (CTI):
+//   - 전화 걸려오면 Contact + VendorContact 양쪽 병렬 조회.
+//   - 동일 번호라도 맥락이 다르니 중복 아님 (소유주 vs 배관공).
+
+/// 서비스 업체. 플랫폼 공용 풀 또는 사무소 개인 단골.
+model ServiceVendor {
+  id       String  @id @default(uuid()) @db.Uuid
+  officeId String? @map("office_id") @db.Uuid // null=공용풀, UUID=사무소개인
+
+  name              String
+  businessType      String? @map("business_type") // sole_proprietor | individual | corporate
+  serviceCategories String[] @map("service_categories") // 카테고리 slug 배열 (packages/shared enums)
+  coverageDistricts String[] @map("coverage_districts") // districtCode 배열
+  priceNote         String? @map("price_note") // "누수 15~25만, 출장비 별도"
+  description       String? // 고객 대상 설명 (공용 업체에 주로 사용)
+  memo              String? // 플랫폼 운영자 또는 사무소 내부 메모
+  tags              String[] // 사용자 정의 태그 ["24시간", "야간가능", ...]
+
+  // ─── 광고 상품 (공용 업체만 의미. 개인 업체는 'none' 고정 강제) ─
+  /// 광고 플랜. none(무료), basic, premium.
+  adTier      String    @default("none") @map("ad_tier")
+  /// 광고 시작일 (운영자가 백오피스에서 조정).
+  adStartDate DateTime? @map("ad_start_date")
+  /// 광고 종료일. null이면 무기한/계속 노출.
+  adEndDate   DateTime? @map("ad_end_date")
+  /// 같은 tier 내 정렬 우선순위. 큰 수일수록 위.
+  adPriority  Int       @default(0) @map("ad_priority")
+
+  // ─── 플랫폼 운영 ─────────────────────────────────────────
+  isActive   Boolean   @default(true) @map("is_active")
+  /// 플랫폼이 검증한 업체 여부. UI에 체크 뱃지 표시.
+  isVerified Boolean   @default(false) @map("is_verified")
+  verifiedAt DateTime? @map("verified_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  office         Office?                @relation(fields: [officeId], references: [id])
+  vendorContacts VendorContact[]
+  favorites      OfficeVendorFavorite[]
+
+  @@index([officeId])
+  @@index([isActive, adTier, adPriority])
+  @@map("service_vendors")
+}
+
+/// 업체 소속 담당자/연락처. 1:N.
+/// 1인 업체는 1개, 법인은 대표/기사별 여러 개.
+model VendorContact {
+  id       String @id @default(uuid()) @db.Uuid
+  vendorId String @map("vendor_id") @db.Uuid
+
+  name      String // "김철수", "대표번호", "김기사"
+  phone     String
+  role      String? // "대표" | "배관기사" | "야간긴급"
+  memo      String?
+  /// 한 업체 내 표시 순서. 작을수록 위.
+  sortOrder Int @default(0) @map("sort_order")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  vendor ServiceVendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+
+  @@index([vendorId])
+  // CTI 전화 번호 검색용
+  @@index([phone])
+  @@map("vendor_contacts")
+}
+
+/// 사무소의 업체 즐겨찾기. 해석 2: 정렬 영향 없음, UI 배지 + "즐겨찾기만" 필터용.
+/// 공용 풀 업체 또는 내 사무소 개인 업체만 즐겨찾기 가능
+/// (다른 사무소의 개인 업체를 즐겨찾기하면 안 됨 — API에서 체크).
+model OfficeVendorFavorite {
+  id       String  @id @default(uuid()) @db.Uuid
+  officeId String  @map("office_id") @db.Uuid
+  vendorId String  @map("vendor_id") @db.Uuid
+  memo     String? // "김기사 친절함, 새벽도 가능"
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  office Office        @relation(fields: [officeId], references: [id])
+  vendor ServiceVendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+
+  @@unique([officeId, vendorId])
+  @@index([officeId])
+  @@map("office_vendor_favorites")
+}

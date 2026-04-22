@@ -64,7 +64,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       icon: BookUser,
       items: [
         { title: t('items.contactsList'), url: '/contacts' },
-        { title: t('items.contactsNew'), url: '/contacts/new' },
+        { title: t('items.serviceVendors'), url: '/service-vendors' },
       ],
     },
     {

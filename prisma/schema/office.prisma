@@ -100,6 +100,10 @@ model Office {
   networkInquiriesFrom    NetworkInquiry[]
   networkMessages         NetworkMessage[]
 
+  // 협력업체
+  serviceVendors  ServiceVendor[]
+  vendorFavorites OfficeVendorFavorite[]
+
   @@map("offices")
 }
 
@@ -114,6 +118,11 @@ model User {
   phone            String?
   role             String  @default("agent") // owner, manager, agent
   isActive         Boolean @default(true) @map("is_active")
+
+  /// 플랫폼 운영자 여부. true인 사용자만 공용 업체(ServiceVendor with officeId = null)를
+  /// 생성/수정/삭제할 수 있다. 승격은 API로 self-promote 불가 — 수동 SQL 또는
+  /// 기존 platform_admin 만이 다른 사용자를 승격할 수 있다.
+  isPlatformAdmin Boolean @default(false) @map("is_platform_admin")
 
   /// MCP 권한 사용자별 오버라이드. null이면 Office.mcpPermissionDefaults의
   /// role별 기본값을 사용한다. 예: { "listing_write": "execute", ... }

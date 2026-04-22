@@ -206,3 +206,67 @@ export const NetworkInquiryStatus = {
 } as const;
 export type NetworkInquiryStatus =
   (typeof NetworkInquiryStatus)[keyof typeof NetworkInquiryStatus];
+
+/** 협력업체 서비스 카테고리 (slug). DATA_STRUCTURE.md 14장의 대분류 11개. */
+export const ServiceCategory = {
+  PLUMBING: 'plumbing', // 배관/수도
+  HEATING: 'heating', // 보일러/난방
+  ELECTRICAL: 'electrical', // 전기/조명
+  WALLPAPER: 'wallpaper', // 도배/장판
+  WATERPROOF: 'waterproof', // 방수/방충
+  TILE_BATH: 'tile_bath', // 타일/욕실
+  LOCK_SECURITY: 'lock_security', // 잠금/보안
+  CLEANING: 'cleaning', // 청소
+  INTERIOR: 'interior', // 인테리어
+  MOVING: 'moving', // 이사
+  PROFESSIONAL: 'professional', // 법무사/세무사/감정평가사 등
+} as const;
+export type ServiceCategory =
+  (typeof ServiceCategory)[keyof typeof ServiceCategory];
+
+/** 카테고리 slug → 한글 라벨. UI 표시 + 필터 매핑에 사용. */
+export const SERVICE_CATEGORY_LABEL: Record<ServiceCategory, string> = {
+  plumbing: '배관/수도',
+  heating: '보일러/난방',
+  electrical: '전기/조명',
+  wallpaper: '도배/장판',
+  waterproof: '방수/방충',
+  tile_bath: '타일/욕실',
+  lock_security: '잠금/보안',
+  cleaning: '청소',
+  interior: '인테리어',
+  moving: '이사',
+  professional: '전문가',
+};
+
+/** 카테고리 표시 순서 (UI 드롭다운에 이 순서로 출력). */
+export const SERVICE_CATEGORY_ORDER: ServiceCategory[] = [
+  'plumbing',
+  'heating',
+  'electrical',
+  'wallpaper',
+  'waterproof',
+  'tile_bath',
+  'lock_security',
+  'cleaning',
+  'interior',
+  'moving',
+  'professional',
+];
+
+/** 협력업체 광고 티어. */
+export const VendorAdTier = {
+  NONE: 'none',
+  BASIC: 'basic',
+  PREMIUM: 'premium',
+} as const;
+export type VendorAdTier = (typeof VendorAdTier)[keyof typeof VendorAdTier];
+
+/** 협력업체 사업자 유형. */
+export const VendorBusinessType = {
+  INDIVIDUAL: 'individual', // 개인 (무등록)
+  SOLE_PROPRIETOR: 'sole_proprietor', // 개인사업자
+  CORPORATE: 'corporate', // 법인
+} as const;
+export type VendorBusinessType =
+  (typeof VendorBusinessType)[keyof typeof VendorBusinessType];

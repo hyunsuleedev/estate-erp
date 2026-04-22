@@ -167,6 +167,7 @@ export class AuthService {
       email: authenticatedUser.email,
       name: authenticatedUser.name,
       role: authenticatedUser.role,
+      isPlatformAdmin: !!user.isPlatformAdmin,
       office: {
         id: authenticatedUser.office.id,
         name: authenticatedUser.office.name,

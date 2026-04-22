@@ -30,6 +30,8 @@ import { createPropertyPhotosApi } from './modules/property-photos.js';
 import { createCallRecordingsApi } from './modules/call-recordings.js';
 import { createInboxApi } from './modules/inbox.js';
 import { createMcpApi } from './modules/mcp.js';
+import { createRegionsApi } from './modules/regions.js';
+import { createServiceVendorsApi } from './modules/service-vendors.js';
 
 export type HttpMethod = 'GET' | 'POST' | 'PATCH' | 'DELETE';
 
@@ -119,6 +121,8 @@ export function createApiClient(config: ApiClientConfig) {
     callRecordings: createCallRecordingsApi(req),
     inbox: createInboxApi(req),
     mcp: createMcpApi(req),
+    regions: createRegionsApi(req),
+    serviceVendors: createServiceVendorsApi(req),
   };
 }
 

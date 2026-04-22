@@ -39,6 +39,7 @@ export interface MeResponse {
   email: string | null;
   name: string;
   role: string;
+  isPlatformAdmin: boolean;
   office: {
     id: string;
     name: string;

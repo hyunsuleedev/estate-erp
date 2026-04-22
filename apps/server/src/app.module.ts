@@ -31,6 +31,7 @@ import { PropertyPhotosModule } from './modules/property-photos/property-photos.
 import { McpModule } from './modules/mcp/mcp.module';
 import { InboxModule } from './modules/inbox/inbox.module';
 import { RegionsModule } from './modules/regions/regions.module';
+import { ServiceVendorsModule } from './modules/service-vendors/service-vendors.module';
 import { RequestContextMiddleware } from './common/request-context/request-context.middleware';
 
 @Module({
@@ -69,6 +70,7 @@ import { RequestContextMiddleware } from './common/request-context/request-conte
     PartnerBrokersModule,
     PublicDocumentsModule,
     PropertyPhotosModule,
+    ServiceVendorsModule,
     McpModule,
   ],
 })

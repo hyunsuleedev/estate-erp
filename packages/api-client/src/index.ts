@@ -16,7 +16,14 @@ export type { Match, CreateMatchDto } from './modules/matches.js';
 export type { Deal, CreateDealDto } from './modules/deals.js';
 export type { Contract, CreateContractDto, UpdateContractDto } from './modules/contracts.js';
 export type { Consultation, ConsultationsFilter, CreateConsultationDto, UpdateConsultationDto } from './modules/consultations.js';
-export type { BuyerRequirement, BuyerRequirementsFilter, CreateBuyerRequirementDto } from './modules/buyer-requirements.js';
+export type {
+  BuyerRequirement,
+  BuyerRequirementPreferredSite,
+  BuyerRequirementPreferredRegion,
+  BuyerRequirementsFilter,
+  CreateBuyerRequirementDto,
+} from './modules/buyer-requirements.js';
+export type { RegionLevel, RegionSearchResult } from './modules/regions.js';
 export type { CalendarEvent, CalendarEventsFilter, CreateCalendarEventDto, UpdateCalendarEventDto } from './modules/calendar-events.js';
 export type { PropertyContact, CreatePropertyContactDto, UpdatePropertyContactDto } from './modules/property-contacts.js';
 export type { ContactRelation, CreateContactRelationDto } from './modules/contact-relations.js';
@@ -87,6 +94,17 @@ export type {
   InboxComment,
   ListInboxOptions,
 } from './modules/inbox.js';
+export type {
+  ServiceVendor,
+  VendorContact,
+  VendorAdTier,
+  VendorBusinessType,
+  ServiceVendorFilter,
+  CreateServiceVendorDto,
+  UpdateServiceVendorDto,
+  CreateVendorContactDto,
+  UpdateVendorContactDto,
+} from './modules/service-vendors.js';
 export type {
   CommissionPayment,
   CommissionPaymentStatus,
