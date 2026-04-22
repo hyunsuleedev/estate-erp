@@ -18,17 +18,13 @@ import {
   Ruler,
   Layers,
   Calendar,
-  ArrowUpRight,
   LayoutGrid,
   X,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import type { Dong, Unit, OfficeSite } from '@estate-erp/api-client';
-import {
-  EstateGrid,
-  type EstateGridColumn,
-  type EstateGridSortState,
-} from '@/components/estate-grid';
+import type { ColumnDef, SortingState } from '@tanstack/react-table';
+import { DataTable } from '@/components/data-table';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -379,122 +375,129 @@ function UnitLayoutBoard({
   );
 }
 
-function MultiSelectFilter({
+
+// ── Inline filter dropdown (동/타입) ────────────────────────────
+
+interface MultiFilterOption {
+  value: string;
+  label: string;
+}
+
+function MultiFilterDropdown({
   label,
-  placeholder,
   options,
   values,
   onChange,
-  emptyLabel = '선택 가능한 항목이 없습니다',
 }: {
   label: string;
-  placeholder: string;
-  options: MultiSelectOption[];
+  options: MultiFilterOption[];
   values: string[];
   onChange: (values: string[]) => void;
-  emptyLabel?: string;
 }) {
   const [query, setQuery] = useState('');
-
-  const filteredOptions = useMemo(() => {
-    if (!query.trim()) return options;
-    const q = query.trim().toLowerCase();
-    return options.filter((option) => option.label.toLowerCase().includes(q));
-  }, [options, query]);
-
-  const selectedLabels = useMemo(
-    () =>
-      options
-        .filter((option) => values.includes(option.value))
-        .map((option) => option.label),
-    [options, values],
-  );
-
-  const toggleValue = (value: string) => {
-    if (values.includes(value)) {
-      onChange(values.filter((item) => item !== value));
-      return;
-    }
-    onChange([...values, value]);
+  const isAll = values.length === 0;
+  const selectedLabels = options.filter((o) => values.includes(o.value)).map((o) => o.label);
+  const trigger = (() => {
+    if (isAll) return `전체 ${label}`;
+    if (selectedLabels.length === 1) return selectedLabels[0];
+    return `${selectedLabels[0]} 외 ${selectedLabels.length - 1}`;
+  })();
+  const toggle = (value: string) => {
+    onChange(values.includes(value) ? values.filter((v) => v !== value) : [...values, value]);
   };
-
-  const triggerLabel =
-    selectedLabels.length === 0
-      ? placeholder
-      : selectedLabels.length <= 2
-        ? selectedLabels.join(', ')
-        : `${label} ${selectedLabels.length}개`;
-
+  const filteredOptions = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return options;
+    return options.filter((o) => o.label.toLowerCase().includes(q));
+  }, [options, query]);
   return (
-    <DropdownMenu>
+    <DropdownMenu onOpenChange={(open) => !open && setQuery('')}>
       <DropdownMenuTrigger asChild>
         <Button
-          variant={values.length > 0 ? 'secondary' : 'ghost'}
+          variant={isAll ? 'ghost' : 'secondary'}
           size="sm"
-          className="h-7 justify-start gap-2 px-2 text-xs"
+          className="h-7 gap-1 px-2 text-xs"
         >
-          <span className="truncate">{triggerLabel}</span>
-          {values.length > 0 && (
-            <span className="flex size-4 items-center justify-center rounded-full bg-background text-[10px] text-foreground">
-              {values.length}
-            </span>
-          )}
+          <span className="text-muted-foreground">{label}</span>
+          <span className="max-w-24 truncate">{trigger}</span>
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent
         align="start"
-        className="w-64"
-        onCloseAutoFocus={(event) => event.preventDefault()}
+        className="w-64 p-0"
+        onCloseAutoFocus={(e) => e.preventDefault()}
       >
-        <DropdownMenuLabel className="flex items-center justify-between text-xs font-normal text-muted-foreground">
-          <span>{label} 선택</span>
-          {values.length > 0 && (
-            <button
-              type="button"
-              className="text-[11px] hover:text-foreground"
-              onClick={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                onChange([]);
-              }}
-            >
-              초기화
-            </button>
-          )}
-        </DropdownMenuLabel>
-        <div className="px-1 pb-2">
-          <Input
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            onKeyDown={(event) => event.stopPropagation()}
-            placeholder={`${label} 검색...`}
-            className="h-8 text-xs"
-          />
-        </div>
-        <DropdownMenuSeparator />
-        <div className="max-h-64 overflow-y-auto">
-          {filteredOptions.length > 0 ? (
-            filteredOptions.map((option) => (
-              <DropdownMenuCheckboxItem
-                key={option.value}
-                checked={values.includes(option.value)}
-                onSelect={(event) => event.preventDefault()}
-                onCheckedChange={() => toggleValue(option.value)}
-                className="gap-2 text-xs"
+        <div className="border-b border-border/60 p-2">
+          <div className="relative">
+            <Search className="absolute left-2 top-1/2 -translate-y-1/2 size-3 text-muted-foreground" />
+            <Input
+              autoFocus
+              placeholder={`${label} 검색`}
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              className="h-7 border-border/60 pl-6 pr-6 text-xs"
+            />
+            {query && (
+              <button
+                type="button"
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                onClick={() => setQuery('')}
               >
-                <div className="flex min-w-0 flex-1 items-center justify-between gap-3">
-                  <span className="truncate">{option.label}</span>
-                  {option.helper && (
-                    <span className="shrink-0 text-[10px] text-muted-foreground">
-                      {option.helper}
+                <X className="size-3" />
+              </button>
+            )}
+          </div>
+        </div>
+        <div className="p-2">
+          <button
+            type="button"
+            className={cn(
+              'mb-1 flex w-full items-center gap-2 rounded-md px-2 py-1 text-xs transition-colors',
+              isAll ? 'bg-accent font-medium' : 'hover:bg-accent/60',
+            )}
+            onClick={() => onChange([])}
+          >
+            <span
+              className={cn(
+                'flex size-3.5 items-center justify-center rounded-sm border',
+                isAll ? 'border-primary bg-primary text-primary-foreground' : 'border-border',
+              )}
+            >
+              {isAll && '✓'}
+            </span>
+            전체 {label}
+          </button>
+          <div className="max-h-64 overflow-y-auto">
+            {filteredOptions.length === 0 ? (
+              <div className="px-2 py-3 text-center text-[11px] text-muted-foreground">
+                검색 결과 없음
+              </div>
+            ) : (
+              filteredOptions.map((option) => {
+                const checked = values.includes(option.value);
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-xs tabular-nums hover:bg-accent/60"
+                    onClick={() => toggle(option.value)}
+                  >
+                    <span
+                      className={cn(
+                        'flex size-3.5 items-center justify-center rounded-sm border text-[10px]',
+                        checked
+                          ? 'border-primary bg-primary text-primary-foreground'
+                          : 'border-border',
+                      )}
+                    >
+                      {checked && '✓'}
                     </span>
-                  )}
-                </div>
-              </DropdownMenuCheckboxItem>
-            ))
-          ) : (
-            <div className="px-2 py-3 text-xs text-muted-foreground">{emptyLabel}</div>
-          )}
+                    {option.label}
+                  </button>
+                );
+              })
+            )}
+          </div>
         </div>
       </DropdownMenuContent>
     </DropdownMenu>
@@ -521,9 +524,8 @@ function SitesPage() {
   const [selectedUnit, setSelectedUnit] = useState<Unit | null>(null);
   const [selectedDongIds, setSelectedDongIds] = useState<string[]>([]);
   const [selectedUnitTypeIds, setSelectedUnitTypeIds] = useState<string[]>([]);
-  const [unitSearch, setUnitSearch] = useState('');
-  const [consultationSearch, setConsultationSearch] = useState('');
-  const [unitSort, setUnitSort] = useState<EstateGridSortState | null>(null);
+  const [query, setQuery] = useState('');
+  const [unitSort, setUnitSort] = useState<SortingState>([]);
   const [unitViewMode, setUnitViewMode] = useState<'table' | 'layout'>('table');
 
   // ── Modal state ───────────────────────────────────────────────
@@ -668,8 +670,7 @@ function SitesPage() {
   const hasActiveUnitFilters =
     selectedDongIds.length > 0 ||
     selectedUnitTypeIds.length > 0 ||
-    unitSearch.trim().length > 0 ||
-    consultationSearch.trim().length > 0;
+    query.trim().length > 0;
 
   const filteredUnits = useMemo(() => {
     let units = allUnits;
@@ -684,25 +685,29 @@ function SitesPage() {
       );
     }
 
-    if (unitSearch) {
-      const q = unitSearch.toLowerCase();
-      units = units.filter((unit) => unit.name.toLowerCase().includes(q));
-    }
-
-    if (consultationSearch) {
-      const q = consultationSearch.toLowerCase();
-      units = units.filter((unit) =>
-        (unit.properties ?? []).some((property) =>
-          (property.consultations ?? []).some((consultation) => {
-            const phone = consultation.contact.phone?.toLowerCase() ?? '';
-            return (
-              consultation.content.toLowerCase().includes(q) ||
-              consultation.contact.name.toLowerCase().includes(q) ||
-              phone.includes(q)
-            );
-          }),
-        ),
-      );
+    const q = query.trim().toLowerCase();
+    if (q) {
+      units = units.filter((unit) => {
+        if (unit.name.toLowerCase().includes(q)) return true;
+        const properties = unit.properties ?? [];
+        for (const property of properties) {
+          for (const pc of property.propertyContacts ?? []) {
+            if (pc.contact.name.toLowerCase().includes(q)) return true;
+            if (pc.contact.phone?.toLowerCase().includes(q)) return true;
+            if (pc.contact.phone2?.toLowerCase().includes(q)) return true;
+          }
+          for (const tenant of property.tenants ?? []) {
+            if (tenant.contact.name.toLowerCase().includes(q)) return true;
+            if (tenant.contact.phone?.toLowerCase().includes(q)) return true;
+          }
+          for (const consultation of property.consultations ?? []) {
+            if (consultation.content.toLowerCase().includes(q)) return true;
+            if (consultation.contact.name.toLowerCase().includes(q)) return true;
+            if (consultation.contact.phone?.toLowerCase().includes(q)) return true;
+          }
+        }
+        return false;
+      });
     }
 
     const defaultSort = (a: Unit, b: Unit) => {
@@ -712,7 +717,8 @@ function SitesPage() {
       return (a.floor ?? 0) - (b.floor ?? 0) || a.name.localeCompare(b.name, 'ko', { numeric: true });
     };
 
-    if (!unitSort) {
+    const activeSort = unitSort[0];
+    if (!activeSort) {
       return units.sort(defaultSort);
     }
 
@@ -747,34 +753,45 @@ function SitesPage() {
       return latest ? new Date(latest.createdAt).getTime() : 0;
     };
 
+    const getOwnerContact = (unit: Unit) =>
+      (unit.properties ?? [])
+        .flatMap((property) => property.propertyContacts)
+        .filter((pc) => pc.role === 'owner')
+        .map((pc) => pc.contact)[0];
+
     const comparators: Record<string, (a: Unit, b: Unit) => number> = {
       dong: (a, b) => getDongName(a.dongId).localeCompare(getDongName(b.dongId), 'ko', { numeric: true }),
       name: (a, b) => a.name.localeCompare(b.name, 'ko', { numeric: true }),
-      area: (a, b) =>
-        (a.exclusiveAreaM2 ?? a.siteUnitType?.exclusiveAreaM2 ?? 0) -
-        (b.exclusiveAreaM2 ?? b.siteUnitType?.exclusiveAreaM2 ?? 0),
+      supplyArea: (a, b) =>
+        Number(a.supplyAreaM2 ?? a.siteUnitType?.supplyAreaM2 ?? 0) -
+        Number(b.supplyAreaM2 ?? b.siteUnitType?.supplyAreaM2 ?? 0),
+      exclusiveArea: (a, b) =>
+        Number(a.exclusiveAreaM2 ?? a.siteUnitType?.exclusiveAreaM2 ?? 0) -
+        Number(b.exclusiveAreaM2 ?? b.siteUnitType?.exclusiveAreaM2 ?? 0),
       unitType: (a, b) =>
         (a.siteUnitType?.name ?? '').localeCompare(b.siteUnitType?.name ?? '', 'ko', { numeric: true }),
       owner: (a, b) => getOwnerLabel(a).localeCompare(getOwnerLabel(b), 'ko', { numeric: true }),
       tenant: (a, b) => getTenantLabel(a).localeCompare(getTenantLabel(b), 'ko', { numeric: true }),
       listing: (a, b) => getListingLabel(a).localeCompare(getListingLabel(b), 'ko', { numeric: true }),
       lastConsultation: (a, b) => getConsultationDate(a) - getConsultationDate(b),
+      lastConsultationDate: (a, b) => getConsultationDate(a) - getConsultationDate(b),
     };
 
-    const comparator = comparators[unitSort.columnId];
+    const comparator = comparators[activeSort.id];
     if (!comparator) {
       return units.sort(defaultSort);
     }
 
+    const direction: 'asc' | 'desc' = activeSort.desc ? 'desc' : 'asc';
     return units.sort((a, b) => {
       const result = comparator(a, b);
       if (result !== 0) {
-        return unitSort.direction === 'asc' ? result : -result;
+        return direction === 'asc' ? result : -result;
       }
       const fallback = defaultSort(a, b);
-      return unitSort.direction === 'asc' ? fallback : -fallback;
+      return direction === 'asc' ? fallback : -fallback;
     });
-  }, [allUnits, consultationSearch, selectedDongIds, selectedUnitTypeIds, unitSearch, unitSort]);
+  }, [allUnits, query, selectedDongIds, selectedUnitTypeIds, unitSort]);
 
   const layoutSections = useMemo<LayoutSection[]>(() => {
     const sectionMap = new Map<
@@ -851,9 +868,8 @@ function SitesPage() {
     setSelectedUnit(null);
     setSelectedDongIds([]);
     setSelectedUnitTypeIds([]);
-    setUnitSearch('');
-    setConsultationSearch('');
-    setUnitSort(null);
+    setQuery('');
+    setUnitSort([]);
   };
 
   const handleSelectUnit = useCallback((unit: Unit) => {
@@ -891,105 +907,84 @@ function SitesPage() {
   const resetUnitFilters = () => {
     setSelectedDongIds([]);
     setSelectedUnitTypeIds([]);
-    setUnitSearch('');
-    setConsultationSearch('');
+    setQuery('');
   };
 
   // ── Render helpers ────────────────────────────────────────────
 
-  const unitColumns: EstateGridColumn<Unit>[] = useMemo(() => [
-    {
-      id: 'open',
-      header: '',
-      width: 52,
-      pinned: 'left',
-      align: 'center',
-      renderCell: (unit) => (
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          className="size-7 p-0"
-          onClick={(event) => {
-            event.stopPropagation();
-            handleSelectUnit(unit);
-          }}
-        >
-          <ArrowUpRight className="size-3.5" />
-        </Button>
-      ),
-    },
+  const unitColumns: ColumnDef<Unit>[] = useMemo(() => [
     ...(dongs.length > 0
       ? [{
           id: 'dong',
           header: '동',
-          width: 90,
-          pinned: 'left' as const,
-          sortable: true,
-          renderCell: (unit: Unit) => (
-            <span className="text-[13px]">{getDongName(unit.dongId) || '-'}</span>
+          size: 80,
+          enableSorting: true,
+          cell: ({ row }) => (
+            <span className="text-[13px]">{getDongName(row.original.dongId) || '-'}</span>
           ),
-        }]
+        } satisfies ColumnDef<Unit>]
       : []),
     {
       id: 'name',
       header: '호수',
-      width: 110,
-      pinned: 'left',
-      sortable: true,
-      renderCell: (unit) => (
-        <span className="text-[13px] font-medium">{unit.name}</span>
+      size: 90,
+      enableSorting: true,
+      cell: ({ row }) => (
+        <span className="text-[13px] font-medium tabular-nums">{row.original.name}</span>
       ),
     },
     {
-      id: 'area',
-      header: '전용면적',
-      width: 170,
-      sortable: true,
-      renderCell: (unit) => {
+      id: 'supplyArea',
+      header: '공급',
+      size: 80,
+      enableSorting: true,
+      cell: ({ row }) => {
+        const unit = row.original;
+        const m2 = unit.supplyAreaM2 ?? unit.siteUnitType?.supplyAreaM2;
+        if (!m2) return <span className="text-[13px] text-muted-foreground">-</span>;
+        return <span className="text-[13px] tabular-nums">{formatAreaPyeong(m2)}</span>;
+      },
+    },
+    {
+      id: 'exclusiveArea',
+      header: '전용',
+      size: 80,
+      enableSorting: true,
+      cell: ({ row }) => {
+        const unit = row.original;
         const m2 = unit.exclusiveAreaM2 ?? unit.siteUnitType?.exclusiveAreaM2;
-        if (!m2) return <span className="text-muted-foreground">-</span>;
-        return (
-          <span className="text-[13px] tabular-nums">
-            {formatAreaPyeong(m2)}
-            <span className="ml-1 text-[11px] text-muted-foreground">
-              ({Number(m2)}m²)
-            </span>
-          </span>
-        );
+        if (!m2) return <span className="text-[13px] text-muted-foreground">-</span>;
+        return <span className="text-[13px] tabular-nums">{formatAreaPyeong(m2)}</span>;
       },
     },
     {
       id: 'unitType',
       header: '타입',
-      width: 90,
-      sortable: true,
-      renderCell: (unit) => {
-        const typeName = unit.siteUnitType?.name;
+      size: 70,
+      enableSorting: true,
+      cell: ({ row }) => {
+        const typeName = row.original.siteUnitType?.name;
         return typeName
           ? <span className="text-[13px]">{typeName}</span>
-          : <span className="text-muted-foreground">-</span>;
+          : <span className="text-[13px] text-muted-foreground">-</span>;
       },
     },
     {
       id: 'owner',
       header: '소유자',
-      width: 190,
-      sortable: true,
-      renderCell: (unit) => {
-        const owners = (unit.properties ?? [])
+      size: 200,
+      enableSorting: true,
+      cell: ({ row }) => {
+        const contact = (row.original.properties ?? [])
           .flatMap((property) => property.propertyContacts)
-          .filter((propertyContact) => propertyContact.role === 'owner')
-          .map((propertyContact) => propertyContact.contact);
-
-        if (!owners.length) return <span className="text-[12px] text-muted-foreground">-</span>;
-
-        const primary = owners[0];
+          .filter((pc) => pc.role === 'owner')
+          .map((pc) => pc.contact)[0];
+        if (!contact) return <span className="text-[13px] text-muted-foreground">-</span>;
         return (
           <div className="flex min-w-0 items-center gap-1.5">
-            <span className="truncate text-[13px]">{primary.name}</span>
-            {primary.phone && (
-              <span className="shrink-0 text-[11px] text-muted-foreground">{primary.phone}</span>
+            <span className="truncate text-[13px]">{contact.name}</span>
+            {contact.phone && (
+              <span className="shrink-0 text-[12px] tabular-nums text-muted-foreground">{contact.phone}</span>
             )}
           </div>
         );
@@ -998,18 +993,18 @@ function SitesPage() {
     {
       id: 'tenant',
       header: '세입자',
-      width: 190,
-      sortable: true,
-      renderCell: (unit) => {
-        const tenants = (unit.properties ?? []).flatMap((property) => property.tenants ?? []);
-        if (!tenants.length) return <span className="text-[12px] text-muted-foreground">-</span>;
+      size: 170,
+      enableSorting: true,
+      cell: ({ row }) => {
+        const tenants = (row.original.properties ?? []).flatMap((property) => property.tenants ?? []);
+        if (!tenants.length) return <span className="text-[13px] text-muted-foreground">-</span>;
 
         const primary = tenants[0];
         return (
           <div className="flex min-w-0 items-center gap-1.5">
             <span className="truncate text-[13px]">{primary.contact.name}</span>
             {primary.contact.phone && (
-              <span className="shrink-0 text-[11px] text-muted-foreground">{primary.contact.phone}</span>
+              <span className="shrink-0 text-[12px] text-muted-foreground tabular-nums">{primary.contact.phone}</span>
             )}
           </div>
         );
@@ -1018,19 +1013,19 @@ function SitesPage() {
     {
       id: 'listing',
       header: '등록 매물',
-      width: 170,
-      sortable: true,
-      renderCell: (unit) => {
-        const listings = (unit.properties ?? []).flatMap((property) => property.listings ?? []);
-        if (!listings.length) return <span className="text-[12px] text-muted-foreground">-</span>;
+      size: 160,
+      enableSorting: true,
+      cell: ({ row }) => {
+        const listings = (row.original.properties ?? []).flatMap((property) => property.listings ?? []);
+        if (!listings.length) return <span className="text-[13px] text-muted-foreground">-</span>;
 
         const primary = listings[0];
         return (
-          <div className="flex min-w-0 items-center gap-2">
-            <Badge variant="outline" className="h-5 px-1.5 text-[10px] font-normal">
+          <div className="flex min-w-0 items-center gap-1.5">
+            <Badge variant="outline" className="h-4 px-1 text-[10px] font-normal">
               {transactionTypeLabels[primary.transactionType] ?? primary.transactionType}
             </Badge>
-            <span className="truncate text-[12px]">
+            <span className="truncate text-[13px]">
               {formatPriceLabel(
                 primary.transactionType,
                 primary.price,
@@ -1050,27 +1045,39 @@ function SitesPage() {
     {
       id: 'lastConsultation',
       header: '최근 상담',
-      width: 260,
-      sortable: true,
-      renderCell: (unit) => {
-        const consultations = (unit.properties ?? [])
+      size: 260,
+      enableSorting: true,
+      cell: ({ row }) => {
+        const latest = (row.original.properties ?? [])
           .flatMap((property) => property.consultations ?? [])
-          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-
-        if (!consultations.length) return <span className="text-[12px] text-muted-foreground">-</span>;
-
-        const latest = consultations[0];
+          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
+        if (!latest) return <span className="text-[13px] text-muted-foreground">-</span>;
+        return <span className="truncate text-[13px]">{latest.content}</span>;
+      },
+    },
+    {
+      id: 'lastConsultationDate',
+      header: '상담일',
+      size: 96,
+      enableSorting: true,
+      cell: ({ row }) => {
+        const latest = (row.original.properties ?? [])
+          .flatMap((property) => property.consultations ?? [])
+          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
+        if (!latest) return <span className="text-[13px] text-muted-foreground">-</span>;
         return (
-          <div className="flex min-w-0 items-center gap-1.5">
-            <span className="shrink-0 text-[11px] text-muted-foreground">
-              {formatShortDate(latest.createdAt)}
-            </span>
-            <span className="truncate text-[12px]">{latest.content}</span>
-          </div>
+          <span className="text-[12px] tabular-nums text-muted-foreground">
+            {formatShortDate(latest.createdAt)}
+          </span>
         );
       },
     },
   ], [dongs, handleSelectUnit]);
+
+  const unitPinnedColumns = useMemo(
+    () => (dongs.length > 0 ? ['dong', 'name'] : ['name']),
+    [dongs.length],
+  );
 
   const renderSiteItem = (os: OfficeSite) => {
     const site = os.site;
@@ -1235,7 +1242,7 @@ function SitesPage() {
 
       {/* ─── Main area (list + sheet) ────────────────────────── */}
       {selectedOfficeSite && siteDetail ? (
-        <div className="flex-1 flex flex-col min-w-0 p-4 overflow-auto">
+        <div className="flex-1 flex flex-col min-w-0 min-h-0 p-4 overflow-hidden">
           {/* ViewBar-style panel + Grid */}
           <div className="rounded-xl border border-border/60 bg-background flex-1 flex flex-col min-h-0">
             {/* Filter bar (ViewBar pattern) */}
@@ -1252,43 +1259,48 @@ function SitesPage() {
                   <PanelLeftIcon className="size-4" />
                 </Button>
                 <Separator orientation="vertical" className="h-4" />
-                {dongs.length > 0 && (
-                  <MultiSelectFilter
+
+                {/* 동 / 타입 필터 */}
+                {dongOptions.length > 0 && (
+                  <MultiFilterDropdown
                     label="동"
-                    placeholder="전체 동"
                     options={dongOptions}
                     values={selectedDongIds}
                     onChange={setSelectedDongIds}
                   />
                 )}
                 {unitTypeOptions.length > 0 && (
-                  <MultiSelectFilter
+                  <MultiFilterDropdown
                     label="타입"
-                    placeholder="전체 타입"
                     options={unitTypeOptions}
                     values={selectedUnitTypeIds}
                     onChange={setSelectedUnitTypeIds}
                   />
                 )}
+
                 <Separator orientation="vertical" className="mx-1 h-4" />
-                <div className="relative min-w-52 flex-1">
+
+                {/* 통합 검색창 */}
+                <div className="relative min-w-0 flex-1">
                   <Search className="absolute left-2 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
                   <Input
-                    placeholder="호수 검색..."
-                    value={unitSearch}
-                    onChange={(e) => setUnitSearch(e.target.value)}
-                    className="h-8 border-0 bg-transparent pl-7 text-xs shadow-none focus-visible:ring-0"
+                    placeholder="호수 · 이름 · 전화 · 상담내용 검색"
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    className="h-8 border-0 bg-transparent pl-7 pr-7 text-xs shadow-none focus-visible:ring-0"
                   />
+                  {query && (
+                    <button
+                      type="button"
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                      onClick={() => setQuery('')}
+                      aria-label="검색어 지우기"
+                    >
+                      <X className="size-3" />
+                    </button>
+                  )}
                 </div>
-                <div className="relative min-w-52 flex-1">
-                  <Search className="absolute left-2 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
-                  <Input
-                    placeholder="상담내역 검색..."
-                    value={consultationSearch}
-                    onChange={(e) => setConsultationSearch(e.target.value)}
-                    className="h-8 border-0 bg-transparent pl-7 text-xs shadow-none focus-visible:ring-0"
-                  />
-                </div>
+
                 {hasActiveUnitFilters && (
                   <Button
                     variant="ghost"
@@ -1300,6 +1312,7 @@ function SitesPage() {
                     초기화
                   </Button>
                 )}
+
                 <div className="ml-auto flex items-center rounded-md border border-border/60 bg-background p-0.5">
                   <Button
                     variant={unitViewMode === 'table' ? 'secondary' : 'ghost'}
@@ -1321,46 +1334,56 @@ function SitesPage() {
                   </Button>
                 </div>
               </div>
-
-              {hasActiveUnitFilters && (
-                <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                  {selectedDongIds.map((dongId) => (
-                    <Badge key={dongId} variant="secondary" className="text-[10px] font-normal">
-                      동 · {getDongName(dongId)}
-                    </Badge>
-                  ))}
-                  {selectedUnitTypeIds.map((typeId) => {
-                    const label = unitTypeOptions.find((option) => option.value === typeId)?.label ?? typeId;
-                    return (
-                      <Badge key={typeId} variant="secondary" className="text-[10px] font-normal">
-                        타입 · {label}
-                      </Badge>
-                    );
-                  })}
-                  {unitSearch && (
-                    <Badge variant="outline" className="text-[10px] font-normal">
-                      호수 검색 · {unitSearch}
-                    </Badge>
-                  )}
-                  {consultationSearch && (
-                    <Badge variant="outline" className="text-[10px] font-normal">
-                      상담 검색 · {consultationSearch}
-                    </Badge>
-                  )}
-                </div>
-              )}
             </div>
 
             {/* Units View */}
-            <div className="flex-1 overflow-auto">
+            <div className="flex-1 min-h-0 overflow-hidden">
               {unitViewMode === 'table' ? (
-                <EstateGrid
+                <DataTable
                   columns={unitColumns}
-                  rows={filteredUnits}
-                  sort={unitSort}
-                  onSortChange={setUnitSort}
-                  onRowOpen={handleSelectUnit}
-                  emptyMessage={unitSearch ? '검색 결과가 없습니다' : '등록된 호수가 없습니다'}
+                  data={filteredUnits}
+                  sorting={unitSort}
+                  onSortingChange={setUnitSort}
+                  onRowClick={handleSelectUnit}
+                  layout="full-height"
+                  rowHeight={36}
+                  pinnedColumns={unitPinnedColumns}
+                  enableRowSelection
+                  emptyMessage={hasActiveUnitFilters ? '검색 결과가 없습니다' : '등록된 호수가 없습니다'}
+                  renderStatusBar={({ focusedRow, totalCount }) => {
+                    if (!focusedRow) {
+                      return (
+                        <span className="tabular-nums">
+                          총 {totalCount.toLocaleString()}개 호수
+                        </span>
+                      );
+                    }
+                    const dongName = getDongName(focusedRow.dongId);
+                    const owner = (focusedRow.properties ?? [])
+                      .flatMap((property) => property.propertyContacts)
+                      .filter((pc) => pc.role === 'owner')
+                      .map((pc) => pc.contact)[0];
+                    return (
+                      <>
+                        <span className="tabular-nums text-foreground/80">
+                          {totalCount.toLocaleString()}개 호수
+                        </span>
+                        <span className="text-border">|</span>
+                        <span className="font-medium text-foreground">
+                          {selectedOfficeSite?.site?.name} {dongName} {focusedRow.name}호
+                        </span>
+                        {owner && (
+                          <>
+                            <span className="text-border">|</span>
+                            <span>소유자: {owner.name}</span>
+                            {owner.phone && (
+                              <span className="tabular-nums text-foreground/70">{owner.phone}</span>
+                            )}
+                          </>
+                        )}
+                      </>
+                    );
+                  }}
                 />
               ) : (
                 <UnitLayoutBoard

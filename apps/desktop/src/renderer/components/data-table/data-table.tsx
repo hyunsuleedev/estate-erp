@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import {
   flexRender,
   getCoreRowModel,
@@ -7,7 +7,9 @@ import {
   type SortingState,
   type RowSelectionState,
   type ColumnResizeMode,
+  type ColumnPinningState,
 } from '@tanstack/react-table';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { cn } from '@/lib/utils';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -15,8 +17,10 @@ import { ArrowUp, ArrowDown } from 'lucide-react';
 import type { DataTableProps } from './types';
 import { DataTablePagination } from './data-table-pagination';
 
-// ── Constants (Twenty-inspired) ─────────────────────────────────
-const ROW_HEIGHT = 32; // px — matches Twenty's RECORD_TABLE_ROW_HEIGHT
+const DEFAULT_ROW_HEIGHT = 32;
+// Only virtualize when rows are worth virtualizing. Below this threshold the
+// overhead of padding rows + absolute positioning outweighs the savings.
+const VIRTUALIZE_THRESHOLD = 50;
 
 export function DataTable<TData extends { id: string }>({
   columns,
@@ -35,11 +39,26 @@ export function DataTable<TData extends { id: string }>({
   isLoading = false,
   enableKeyboardNav = true,
   emptyMessage = '데이터가 없습니다.',
+  layout = 'paginated',
+  rowHeight = DEFAULT_ROW_HEIGHT,
+  pinnedColumns,
+  renderBulkActions,
+  renderStatusBar,
 }: DataTableProps<TData>) {
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
   const [focusedCell, setFocusedCell] = useState<{ row: number; col: number } | null>(null);
   const [columnResizeMode] = useState<ColumnResizeMode>('onChange');
   const tableRef = useRef<HTMLTableElement>(null);
+  const scrollerRef = useRef<HTMLDivElement>(null);
+
+  const resolvedPinning = useMemo<ColumnPinningState>(() => {
+    const left: string[] = [];
+    if (enableRowSelection) left.push('_select');
+    if (pinnedColumns) left.push(...pinnedColumns);
+    return { left, right: [] };
+  }, [enableRowSelection, pinnedColumns]);
+
+  const rowCellHeight = rowHeight === 'auto' ? undefined : rowHeight;
 
   // ── Build column defs with optional selection column ──────────
   const allColumns: ColumnDef<TData, unknown>[] = [];
@@ -82,6 +101,7 @@ export function DataTable<TData extends { id: string }>({
     state: {
       sorting: sorting ?? [],
       rowSelection,
+      columnPinning: resolvedPinning,
     },
     onSortingChange: (updater) => {
       const next = typeof updater === 'function' ? updater(sorting ?? []) : updater;
@@ -98,6 +118,7 @@ export function DataTable<TData extends { id: string }>({
     manualPagination: true,
     manualFiltering: true,
     enableRowSelection,
+    enableColumnPinning: true,
     columnResizeMode,
     getRowId: (row) => row.id,
   });
@@ -172,18 +193,90 @@ export function DataTable<TData extends { id: string }>({
     [enableKeyboardNav, focusedCell, onRowClick, enableRowSelection, table, allColumns.length],
   );
 
+  const isFullHeight = layout === 'full-height';
+
+  // Virtualize only for full-height mode with a meaningful row count.
+  // Paginated views are small (pageSize ~20) and auto-height rows can't be
+  // measured up front, so we skip virtualization there.
+  const rows = table.getRowModel().rows;
+  const canVirtualize =
+    isFullHeight && rows.length >= VIRTUALIZE_THRESHOLD && typeof rowCellHeight === 'number';
+
+  const rowVirtualizer = useVirtualizer({
+    count: canVirtualize ? rows.length : 0,
+    getScrollElement: () => scrollerRef.current,
+    estimateSize: () => rowCellHeight ?? DEFAULT_ROW_HEIGHT,
+    overscan: 10,
+  });
+
+  const virtualRows = canVirtualize ? rowVirtualizer.getVirtualItems() : [];
+  const totalVirtualSize = canVirtualize ? rowVirtualizer.getTotalSize() : 0;
+  const paddingTop = canVirtualize && virtualRows.length > 0 ? virtualRows[0].start : 0;
+  const paddingBottom =
+    canVirtualize && virtualRows.length > 0
+      ? totalVirtualSize - virtualRows[virtualRows.length - 1].end
+      : 0;
+
   // ── Scroll focused row into view ──────────────────────────────
   useEffect(() => {
-    if (focusedCell === null || !tableRef.current) return;
-    const rows = tableRef.current.querySelectorAll('tbody tr');
-    rows[focusedCell.row]?.scrollIntoView({ block: 'nearest' });
-  }, [focusedCell]);
+    if (focusedCell === null) return;
+    if (canVirtualize) {
+      rowVirtualizer.scrollToIndex(focusedCell.row, { align: 'auto' });
+      return;
+    }
+    if (!tableRef.current) return;
+    const trs = tableRef.current.querySelectorAll('tbody tr');
+    trs[focusedCell.row]?.scrollIntoView({ block: 'nearest' });
+  }, [focusedCell, canVirtualize, rowVirtualizer]);
+
+  const getPinStyle = (column: ReturnType<typeof table.getAllLeafColumns>[number]) => {
+    if (column.getIsPinned() !== 'left') return {};
+    return {
+      position: 'sticky' as const,
+      left: column.getStart('left'),
+      zIndex: 1,
+    };
+  };
+
+  const selectedRows = useMemo(
+    () =>
+      Object.keys(rowSelection)
+        .filter((k) => rowSelection[k])
+        .map((id) => data.find((d) => d.id === id))
+        .filter((v): v is TData => !!v),
+    [rowSelection, data],
+  );
+  const focusedRow =
+    focusedCell !== null && rows[focusedCell.row]?.original ? rows[focusedCell.row].original : null;
 
   return (
-    <div className="flex flex-col">
+    <div className={cn('flex flex-col', isFullHeight && 'h-full min-h-0')}>
+      {/* Bulk actions toolbar — visible when at least one row is selected */}
+      {renderBulkActions && selectedRows.length > 0 && (
+        <div className="flex items-center gap-2 border-b border-border/60 bg-accent/40 px-3 py-1.5 text-xs">
+          <span className="font-medium">{selectedRows.length}개 선택됨</span>
+          <div className="mx-1 h-3 w-px bg-border/60" />
+          {renderBulkActions(selectedRows)}
+          <button
+            type="button"
+            className="ml-auto text-muted-foreground hover:text-foreground"
+            onClick={() => {
+              setRowSelection({});
+              onRowSelectionChange?.([]);
+            }}
+          >
+            선택 해제
+          </button>
+        </div>
+      )}
+
       {/* Table */}
       <div
-        className="relative w-full overflow-auto"
+        ref={scrollerRef}
+        className={cn(
+          'relative w-full overflow-auto',
+          isFullHeight && 'flex-1 min-h-0',
+        )}
         tabIndex={0}
         onKeyDown={handleKeyDown}
       >
@@ -193,13 +286,41 @@ export function DataTable<TData extends { id: string }>({
           style={{ minWidth: table.getTotalSize() }}
         >
           {/* Header */}
-          <thead className="sticky top-0 z-10 bg-background">
+          <thead className="sticky top-0 z-20 bg-background">
             {table.getHeaderGroups().map((headerGroup) => (
               <tr key={headerGroup.id}>
                 {headerGroup.headers.map((header, colIndex) => {
-                  const canSort = header.column.getCanSort();
-                  const sorted = header.column.getIsSorted();
+                  // Under manualSorting, TanStack's getCanSort() requires an accessor
+                  // and returns false for id-only columns. We treat any column whose
+                  // def doesn't opt out (enableSorting !== false) as sortable when a
+                  // sort callback is wired up by the parent.
+                  const canSort =
+                    header.column.columnDef.enableSorting !== false &&
+                    !!onSortingChange &&
+                    header.id !== '_select';
+                  const activeSort = (sorting ?? [])[0];
+                  const sorted: false | 'asc' | 'desc' =
+                    activeSort?.id === header.column.id
+                      ? activeSort.desc
+                        ? 'desc'
+                        : 'asc'
+                      : false;
                   const isLast = colIndex === headerGroup.headers.length - 1;
+                  const isPinned = header.column.getIsPinned() === 'left';
+                  const handleSortToggle = () => {
+                    if (!canSort) return;
+                    const current = sorting ?? [];
+                    const active = current[0];
+                    let next: SortingState;
+                    if (!active || active.id !== header.column.id) {
+                      next = [{ id: header.column.id, desc: false }];
+                    } else if (!active.desc) {
+                      next = [{ id: header.column.id, desc: true }];
+                    } else {
+                      next = [];
+                    }
+                    onSortingChange?.(next);
+                  };
                   return (
                     <th
                       key={header.id}
@@ -208,9 +329,15 @@ export function DataTable<TData extends { id: string }>({
                         'border-b border-border/60',
                         !isLast && 'border-r border-r-border/40',
                         canSort && 'cursor-pointer select-none hover:text-foreground',
+                        isPinned && 'bg-background',
                       )}
-                      style={{ width: header.getSize() }}
-                      onClick={canSort ? header.column.getToggleSortingHandler() : undefined}
+                      style={{
+                        width: header.getSize(),
+                        ...(isPinned
+                          ? { position: 'sticky', left: header.column.getStart('left'), zIndex: 30 }
+                          : {}),
+                      }}
+                      onClick={canSort ? handleSortToggle : undefined}
                     >
                       <div className="flex items-center gap-1">
                         {header.isPlaceholder
@@ -241,35 +368,38 @@ export function DataTable<TData extends { id: string }>({
 
           {/* Body */}
           <tbody>
-            {isLoading ? (
-              // Skeleton rows
-              Array.from({ length: 8 }).map((_, i) => (
-                <tr key={`skel-${i}`}>
-                  {allColumns.map((_, j) => (
+            {(() => {
+              if (isLoading) {
+                return Array.from({ length: 8 }).map((_, i) => (
+                  <tr key={`skel-${i}`}>
+                    {allColumns.map((_, j) => (
+                      <td
+                        key={j}
+                        className={cn(
+                          'px-3 border-b border-border/30',
+                          j < allColumns.length - 1 && 'border-r border-r-border/30',
+                        )}
+                        style={{ height: rowCellHeight }}
+                      >
+                        <Skeleton className="h-4 w-full" />
+                      </td>
+                    ))}
+                  </tr>
+                ));
+              }
+              if (rows.length === 0) {
+                return (
+                  <tr>
                     <td
-                      key={j}
-                      className={cn(
-                        'px-3 border-b border-border/30',
-                        j < allColumns.length - 1 && 'border-r border-r-border/30',
-                      )}
-                      style={{ height: ROW_HEIGHT }}
+                      colSpan={allColumns.length}
+                      className="h-32 text-center text-sm text-muted-foreground"
                     >
-                      <Skeleton className="h-4 w-full" />
+                      {emptyMessage}
                     </td>
-                  ))}
-                </tr>
-              ))
-            ) : table.getRowModel().rows.length === 0 ? (
-              <tr>
-                <td
-                  colSpan={allColumns.length}
-                  className="h-32 text-center text-sm text-muted-foreground"
-                >
-                  {emptyMessage}
-                </td>
-              </tr>
-            ) : (
-              table.getRowModel().rows.map((row, rowIndex) => (
+                  </tr>
+                );
+              }
+              const renderRow = (row: (typeof rows)[number], rowIndex: number) => (
                 <tr
                   key={row.id}
                   data-state={row.getIsSelected() ? 'selected' : undefined}
@@ -280,6 +410,7 @@ export function DataTable<TData extends { id: string }>({
                     const isFocused =
                       focusedCell?.row === rowIndex && focusedCell?.col === colIndex;
                     const isRowFocused = focusedCell?.row === rowIndex;
+                    const isPinned = cell.column.getIsPinned() === 'left';
                     return (
                       <td
                         key={cell.id}
@@ -289,20 +420,17 @@ export function DataTable<TData extends { id: string }>({
                           'relative px-3 align-middle select-none',
                           'border-b border-border/30',
                           !isLastCol && 'border-r border-r-border/30',
-                          // Row hover
                           'group-hover:bg-muted/40',
-                          // Selected row
                           'group-data-[state=selected]:bg-primary/5',
-                          // Focused cell highlight (Twenty pattern)
                           isFocused && 'bg-accent/60 outline outline-1 -outline-offset-1 outline-primary/30',
-                          // Active row subtle highlight
                           isRowFocused && !isFocused && 'bg-accent/30',
-                          // Clickable
                           onRowClick && 'cursor-pointer',
+                          isPinned && 'bg-background group-hover:bg-muted/40 group-data-[state=selected]:bg-primary/5',
                         )}
                         style={{
                           width: cell.column.getSize(),
-                          height: ROW_HEIGHT,
+                          height: rowCellHeight,
+                          ...getPinStyle(cell.column),
                         }}
                         onClick={() => {
                           setFocusedCell({ row: rowIndex, col: colIndex });
@@ -314,14 +442,32 @@ export function DataTable<TData extends { id: string }>({
                     );
                   })}
                 </tr>
-              ))
-            )}
+              );
+              if (canVirtualize) {
+                return (
+                  <>
+                    {paddingTop > 0 && (
+                      <tr aria-hidden="true">
+                        <td colSpan={allColumns.length} style={{ height: paddingTop, padding: 0, border: 0 }} />
+                      </tr>
+                    )}
+                    {virtualRows.map((virtualRow) => renderRow(rows[virtualRow.index], virtualRow.index))}
+                    {paddingBottom > 0 && (
+                      <tr aria-hidden="true">
+                        <td colSpan={allColumns.length} style={{ height: paddingBottom, padding: 0, border: 0 }} />
+                      </tr>
+                    )}
+                  </>
+                );
+              }
+              return rows.map(renderRow);
+            })()}
           </tbody>
         </table>
       </div>
 
       {/* Pagination */}
-      {pageCount > 1 && (
+      {!isFullHeight && pageCount > 1 && (
         <DataTablePagination
           page={page}
           pageCount={pageCount}
@@ -330,6 +476,13 @@ export function DataTable<TData extends { id: string }>({
           onPageChange={onPageChange}
           onPageSizeChange={onPageSizeChange}
         />
+      )}
+
+      {/* Status bar — shows focused row summary */}
+      {renderStatusBar && (
+        <div className="flex min-h-7 items-center gap-2 border-t border-border/60 bg-muted/30 px-3 text-[11px] text-muted-foreground">
+          {renderStatusBar({ focusedRow, totalCount: rows.length })}
+        </div>
       )}
     </div>
   );
