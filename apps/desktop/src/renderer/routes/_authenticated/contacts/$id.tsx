@@ -631,7 +631,12 @@ function BuyerRequirementCard({ requirement }: { requirement: BuyerRequirement }
           <p className="text-sm font-medium">{formatBudgetSummary(requirement)}</p>
           <p className="text-sm text-muted-foreground">
             {formatAreaSummary(requirement)}
-            {requirement.regions.length > 0 ? ` · ${requirement.regions.join(', ')}` : ''}
+            {(() => {
+              const regions = (requirement.preferredRegions ?? [])
+                .map((r) => r.ward?.name ?? r.district?.name ?? r.province?.name ?? '')
+                .filter(Boolean);
+              return regions.length > 0 ? ` · ${regions.join(', ')}` : '';
+            })()}
           </p>
         </div>
         <div className="text-right text-xs text-muted-foreground">

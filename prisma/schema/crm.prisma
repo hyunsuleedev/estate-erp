@@ -50,7 +50,6 @@ model BuyerRequirement {
   urgency          String    @default("normal") // urgent, normal, flexible
   transactionType  String?   @map("transaction_type")
   siteTypes        String[]  @map("site_types")
-  regions          String[]
   priceMin         Int?      @map("price_min")
   priceMax         Int?      @map("price_max")
   depositMin       Int?      @map("deposit_min")
@@ -68,14 +67,56 @@ model BuyerRequirement {
   createdAt        DateTime  @default(now()) @map("created_at")
   updatedAt        DateTime  @updatedAt @map("updated_at")
 
-  office        Office         @relation(fields: [officeId], references: [id])
-  contact       Contact        @relation(fields: [contactId], references: [id])
-  assignedTo    User?          @relation("AssignedAgent", fields: [assignedToId], references: [id])
-  matches       Match[]
-  consultations Consultation[]
+  office           Office                    @relation(fields: [officeId], references: [id])
+  contact          Contact                   @relation(fields: [contactId], references: [id])
+  assignedTo       User?                     @relation("AssignedAgent", fields: [assignedToId], references: [id])
+  matches          Match[]
+  consultations    Consultation[]
+  preferredSites   BuyerRequirementSite[]
+  preferredRegions BuyerRequirementRegion[]
 
   @@index([officeId, status])
   @@map("buyer_requirements")
+}
+
+/// 구매고객이 원하는 구체적 단지 (Site 참조)
+model BuyerRequirementSite {
+  id         String   @id @default(uuid()) @db.Uuid
+  buyerReqId String   @map("buyer_req_id") @db.Uuid
+  siteId     String   @map("site_id") @db.Uuid
+  priority   Int?
+  memo       String?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  buyerRequirement BuyerRequirement @relation(fields: [buyerReqId], references: [id], onDelete: Cascade)
+  site             Site             @relation(fields: [siteId], references: [id])
+
+  @@unique([buyerReqId, siteId])
+  @@index([siteId])
+  @@map("buyer_requirement_sites")
+}
+
+/// 구매고객이 원하는 지역 — 법정동 코드 기반.
+/// province/district/ward 중 가장 구체적인 레벨을 원하는 만큼만 채운다.
+/// 예: 강동구 전체 → districtCode="11740", wardCode=null
+///     고덕동     → districtCode="11740", wardCode="1174010100"
+model BuyerRequirementRegion {
+  id           String   @id @default(uuid()) @db.Uuid
+  buyerReqId   String   @map("buyer_req_id") @db.Uuid
+  provinceCode String?  @map("province_code") @db.VarChar(2)
+  districtCode String?  @map("district_code") @db.VarChar(5)
+  wardCode     String?  @map("ward_code") @db.VarChar(10)
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  buyerRequirement BuyerRequirement @relation(fields: [buyerReqId], references: [id], onDelete: Cascade)
+  province         Province?        @relation(fields: [provinceCode], references: [code])
+  district         District?        @relation(fields: [districtCode], references: [code])
+  ward             Ward?            @relation(fields: [wardCode], references: [code])
+
+  @@index([buyerReqId])
+  @@index([wardCode])
+  @@index([districtCode])
+  @@map("buyer_requirement_regions")
 }
 
 // ============================================================

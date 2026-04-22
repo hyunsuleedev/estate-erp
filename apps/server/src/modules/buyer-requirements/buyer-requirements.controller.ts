@@ -34,22 +34,55 @@ export class BuyerRequirementsController {
     @Query('status') status: string,
     @Query('urgency') urgency: string,
     @Query('transactionType') transactionType: string,
+    @Query('siteTypes') siteTypes: string,
     @Query('contactId') contactId: string,
     @Query('assignedToId') assignedToId: string,
+    @Query('preferredSiteIds') preferredSiteIds: string,
+    @Query('provinceCodes') provinceCodes: string,
+    @Query('districtCodes') districtCodes: string,
+    @Query('wardCodes') wardCodes: string,
+    @Query('priceMin') priceMin: string,
+    @Query('priceMax') priceMax: string,
+    @Query('depositMin') depositMin: string,
+    @Query('depositMax') depositMax: string,
+    @Query('monthlyRentMax') monthlyRentMax: string,
+    @Query('areaMin') areaMin: string,
+    @Query('areaMax') areaMax: string,
+    @Query('nextContactAfter') nextContactAfter: string,
     @Query('nextContactBefore') nextContactBefore: string,
+    @Query('moveInAfter') moveInAfter: string,
+    @Query('moveInBefore') moveInBefore: string,
+    @Query('search') search: string,
     @Query('sortBy') sortBy: string,
     @Query('sortOrder') sortOrder: string,
     @Query('page') page: string,
     @Query('limit') limit: string,
     @CurrentUser() user: CurrentUserPayload,
   ) {
+    const num = (v: string) => (v ? Number(v) : undefined);
     return this.service.findAll(user.officeId, {
       status: status || undefined,
       urgency: urgency || undefined,
       transactionType: transactionType || undefined,
+      siteTypes: siteTypes || undefined,
       contactId: contactId || undefined,
       assignedToId: assignedToId || undefined,
+      preferredSiteIds: preferredSiteIds || undefined,
+      provinceCodes: provinceCodes || undefined,
+      districtCodes: districtCodes || undefined,
+      wardCodes: wardCodes || undefined,
+      priceMin: num(priceMin),
+      priceMax: num(priceMax),
+      depositMin: num(depositMin),
+      depositMax: num(depositMax),
+      monthlyRentMax: num(monthlyRentMax),
+      areaMin: num(areaMin),
+      areaMax: num(areaMax),
+      nextContactAfter: nextContactAfter || undefined,
       nextContactBefore: nextContactBefore || undefined,
+      moveInAfter: moveInAfter || undefined,
+      moveInBefore: moveInBefore || undefined,
+      search: search || undefined,
       sortBy: (sortBy as 'createdAt' | 'nextContactDate' | 'urgency') || undefined,
       sortOrder: (sortOrder as 'asc' | 'desc') || undefined,
       page: page ? Number(page) : undefined,
@@ -72,7 +105,6 @@ export class BuyerRequirementsController {
       contactId: string;
       transactionType?: string;
       siteTypes?: string[];
-      regions?: string[];
       priceMin?: number;
       priceMax?: number;
       depositMin?: number;
@@ -86,6 +118,12 @@ export class BuyerRequirementsController {
       urgency?: string;
       assignedToId?: string;
       memo?: string;
+      preferredSites?: { siteId: string; priority?: number; memo?: string }[];
+      preferredRegions?: {
+        provinceCode?: string;
+        districtCode?: string;
+        wardCode?: string;
+      }[];
     },
     @CurrentUser() user: CurrentUserPayload,
   ) {

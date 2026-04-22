@@ -1285,9 +1285,13 @@ function formatRequirementSummary(match: Match) {
 function formatRequirementSummaryFromBuyerRequirement(
   requirement: NonNullable<Match['buyerRequirement']>,
 ) {
-  const regionText = requirement.regions.length > 0 ? requirement.regions.join(', ') : '지역 협의';
-  const siteTypeText = requirement.siteTypes.length > 0
-    ? requirement.siteTypes.map((type) => siteTypeLabel[type] ?? type).join(', ')
+  const regionLabels = (requirement.preferredRegions ?? [])
+    .map((r) => r.ward?.name ?? r.district?.name ?? r.province?.name ?? '')
+    .filter(Boolean);
+  const regionText = regionLabels.length > 0 ? regionLabels.join(', ') : '지역 협의';
+  const siteTypes = requirement.siteTypes ?? [];
+  const siteTypeText = siteTypes.length > 0
+    ? siteTypes.map((type) => siteTypeLabel[type] ?? type).join(', ')
     : '유형 협의';
 
   return `${regionText} · ${siteTypeText} · ${formatBudgetSummary(requirement)}`;
