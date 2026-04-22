@@ -135,8 +135,8 @@ function AuthenticatedLayout() {
         {/* Sidebar + Content below titlebar */}
         <div className="flex flex-1 overflow-hidden">
           <AppSidebar />
-          <SidebarInset>
-            <div className="flex flex-1 flex-col gap-4 p-4 overflow-auto">
+          <SidebarInset className="flex-1 min-h-0 min-w-0">
+            <div className="flex flex-1 flex-col gap-4 p-4 min-h-0 min-w-0 overflow-auto">
               <Outlet />
             </div>
           </SidebarInset>
