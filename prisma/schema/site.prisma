@@ -51,13 +51,14 @@ model Site {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  office        Office?        @relation(fields: [officeId], references: [id])
-  ward          Ward           @relation(fields: [wardCode], references: [code])
-  officeSites   OfficeSite[]
-  siteUnitTypes SiteUnitType[]
-  dongs         Dong[]
-  units         Unit[]
-  properties    Property[]
+  office            Office?                @relation(fields: [officeId], references: [id])
+  ward              Ward                   @relation(fields: [wardCode], references: [code])
+  officeSites       OfficeSite[]
+  siteUnitTypes     SiteUnitType[]
+  dongs             Dong[]
+  units             Unit[]
+  properties        Property[]
+  buyerRequirements BuyerRequirementSite[]
 
   publicDocuments                 PublicDocument[]
   externalListingGroups           ExternalListingGroup[]
