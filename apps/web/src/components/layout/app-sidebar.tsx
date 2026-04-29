@@ -35,6 +35,7 @@ import { useTranslation } from 'react-i18next'
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const { user, logout } = useAuth()
   const { t } = useTranslation('sidebar')
+  const isManagerOrOwner = user?.role === 'owner' || user?.role === 'manager'
 
   const navItems = [
     {
@@ -53,7 +54,6 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       icon: Building,
       items: [
         { title: t('items.propertiesList'), url: '/properties' },
-        { title: t('items.propertiesNew'), url: '/properties/new' },
         { title: t('items.propertiesExternalListings'), url: '/properties/external-listings' },
         { title: t('items.propertiesNaverMyAds'), url: '/properties/naver-my-ads' },
       ],
@@ -64,6 +64,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       icon: BookUser,
       items: [
         { title: t('items.contactsList'), url: '/contacts' },
+        { title: t('items.partnerBrokers'), url: '/partner-brokers' },
         { title: t('items.serviceVendors'), url: '/service-vendors' },
       ],
     },
@@ -117,10 +118,18 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       url: '/cashflow',
       icon: Wallet,
       items: [
-        { title: t('items.cashflowDashboard'), url: '/cashflow' },
-        { title: t('items.cashflowLedger'), url: '/cashflow/ledger' },
-        { title: t('items.partnerBrokers'), url: '/partner-brokers' },
-        { title: t('items.expenses'), url: '/cashflow/expenses' },
+        ...(isManagerOrOwner
+          ? [
+              { title: t('items.cashflowDashboard'), url: '/cashflow' },
+              { title: t('items.cashflowLedger'), url: '/cashflow/ledger' },
+              { title: t('items.partnerCommissions'), url: '/cashflow/partner-commissions' },
+              { title: t('items.employeeSettlements'), url: '/cashflow/employee-settlements' },
+            ]
+          : []),
+        { title: t('items.mySettlement'), url: '/cashflow/my-settlement' },
+        ...(isManagerOrOwner
+          ? [{ title: t('items.expenses'), url: '/cashflow/expenses' }]
+          : []),
       ],
     },
     {

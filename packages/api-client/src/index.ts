@@ -29,7 +29,14 @@ export type { PropertyContact, CreatePropertyContactDto, UpdatePropertyContactDt
 export type { ContactRelation, CreateContactRelationDto } from './modules/contact-relations.js';
 export type { Tenant, CreateTenantDto, UpdateTenantDto } from './modules/tenants.js';
 export type { OfficeSite } from './modules/office-sites.js';
-export type { Employee, EmployeeDetail, CreateEmployeeDto, UpdateEmployeeDto, EmployeePerformance } from './modules/employees.js';
+export type {
+  Employee,
+  EmployeeDetail,
+  EmployeeDealParticipant,
+  CreateEmployeeDto,
+  UpdateEmployeeDto,
+  EmployeePerformance,
+} from './modules/employees.js';
 export type { OfficeProfile, UpdateOfficeDto, CommissionConfigDto } from './modules/offices.js';
 export type {
   ExternalListing,
