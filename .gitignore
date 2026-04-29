@@ -28,3 +28,8 @@ prisma/*.db
 
 # Local-only screenshots (root-level PNGs)
 /*.png
+
+# Reference material (extracted Hanbang binaries — local analysis only)
+docs/reference/hanbang/app/
+docs/reference/hanbang/fonts/
+docs/reference/hanbang/*.exe
