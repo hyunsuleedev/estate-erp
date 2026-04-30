@@ -40,6 +40,7 @@ export function DataTable<TData extends { id: string }>({
   enableKeyboardNav = true,
   emptyMessage = '데이터가 없습니다.',
   layout = 'paginated',
+  variant = 'default',
   rowHeight = DEFAULT_ROW_HEIGHT,
   pinnedColumns,
   renderBulkActions,
@@ -194,6 +195,7 @@ export function DataTable<TData extends { id: string }>({
   );
 
   const isFullHeight = layout === 'full-height';
+  const isNotion = variant === 'notion';
 
   // Virtualize only for full-height mode with a meaningful row count.
   // Paginated views are small (pageSize ~20) and auto-height rows can't be
@@ -276,17 +278,18 @@ export function DataTable<TData extends { id: string }>({
         className={cn(
           'relative w-full overflow-auto',
           isFullHeight && 'flex-1 min-h-0',
+          isNotion && 'bg-white',
         )}
         tabIndex={0}
         onKeyDown={handleKeyDown}
       >
         <table
           ref={tableRef}
-          className="w-full caption-bottom text-sm"
+          className={cn('w-full caption-bottom text-sm', isNotion && 'border-separate border-spacing-0')}
           style={{ minWidth: table.getTotalSize() }}
         >
           {/* Header */}
-          <thead className="sticky top-0 z-20 bg-background">
+          <thead className={cn('sticky top-0 z-20 bg-background', isNotion && 'bg-white')}>
             {table.getHeaderGroups().map((headerGroup) => (
               <tr key={headerGroup.id}>
                 {headerGroup.headers.map((header, colIndex) => {
@@ -325,11 +328,13 @@ export function DataTable<TData extends { id: string }>({
                     <th
                       key={header.id}
                       className={cn(
-                        'relative h-8 px-3 text-left align-middle text-[11px] font-medium uppercase tracking-wider text-muted-foreground',
-                        'border-b border-border/60',
-                        !isLast && 'border-r border-r-border/40',
+                        'relative text-left align-middle font-medium text-muted-foreground',
+                        isNotion
+                          ? 'h-9 border-b border-slate-200 px-2.5 text-[13px] normal-case tracking-normal'
+                          : 'h-8 border-b border-border/60 px-3 text-[11px] uppercase tracking-wider',
+                        !isLast && (isNotion ? 'border-r border-r-slate-200' : 'border-r border-r-border/40'),
                         canSort && 'cursor-pointer select-none hover:text-foreground',
-                        isPinned && 'bg-background',
+                        isPinned && (isNotion ? 'bg-white' : 'bg-background'),
                       )}
                       style={{
                         width: header.getSize(),
@@ -339,7 +344,7 @@ export function DataTable<TData extends { id: string }>({
                       }}
                       onClick={canSort ? handleSortToggle : undefined}
                     >
-                      <div className="flex items-center gap-1">
+                      <div className={cn('flex items-center gap-1', isNotion && 'min-w-0 text-slate-500')}>
                         {header.isPlaceholder
                           ? null
                           : flexRender(header.column.columnDef.header, header.getContext())}
@@ -376,8 +381,8 @@ export function DataTable<TData extends { id: string }>({
                       <td
                         key={j}
                         className={cn(
-                          'px-3 border-b border-border/30',
-                          j < allColumns.length - 1 && 'border-r border-r-border/30',
+                          isNotion ? 'border-b border-slate-200 px-2.5' : 'border-b border-border/30 px-3',
+                          j < allColumns.length - 1 && (isNotion ? 'border-r border-r-slate-200' : 'border-r border-r-border/30'),
                         )}
                         style={{ height: rowCellHeight }}
                       >
@@ -417,15 +422,15 @@ export function DataTable<TData extends { id: string }>({
                         data-table-col={colIndex}
                         data-table-row={rowIndex}
                         className={cn(
-                          'relative px-3 align-middle select-none',
-                          'border-b border-border/30',
-                          !isLastCol && 'border-r border-r-border/30',
-                          'group-hover:bg-muted/40',
+                          'relative align-middle select-none',
+                          isNotion ? 'border-b border-slate-200 px-2.5 text-[13px]' : 'border-b border-border/30 px-3',
+                          !isLastCol && (isNotion ? 'border-r border-r-slate-200' : 'border-r border-r-border/30'),
+                          isNotion ? 'group-hover:bg-slate-50/70' : 'group-hover:bg-muted/40',
                           'group-data-[state=selected]:bg-primary/5',
-                          isFocused && 'bg-accent/60 outline outline-1 -outline-offset-1 outline-primary/30',
-                          isRowFocused && !isFocused && 'bg-accent/30',
+                          isFocused && (isNotion ? 'bg-blue-50/60 outline outline-1 -outline-offset-1 outline-blue-500/30' : 'bg-accent/60 outline outline-1 -outline-offset-1 outline-primary/30'),
+                          isRowFocused && !isFocused && (isNotion ? 'bg-slate-50' : 'bg-accent/30'),
                           onRowClick && 'cursor-pointer',
-                          isPinned && 'bg-background group-hover:bg-muted/40 group-data-[state=selected]:bg-primary/5',
+                          isPinned && (isNotion ? 'bg-white group-hover:bg-slate-50/70 group-data-[state=selected]:bg-primary/5' : 'bg-background group-hover:bg-muted/40 group-data-[state=selected]:bg-primary/5'),
                         )}
                         style={{
                           width: cell.column.getSize(),

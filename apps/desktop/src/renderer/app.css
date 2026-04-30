@@ -11,20 +11,20 @@
 }
 
 @theme {
-  /* Attio-inspired clean design system */
+  /* Linear-inspired shadcn design system */
   --color-background: #ffffff;
   --color-foreground: #111827;
-  --color-muted: #f8f9fa;
+  --color-muted: #f8fafc;
   --color-muted-foreground: #6b7280;
-  --color-border: #f3f4f6;
-  --color-input: #e8eaed;
-  --color-ring: #4f46e5;
-  --color-primary: #4f46e5;
+  --color-border: #e5e7eb;
+  --color-input: #e5e7eb;
+  --color-ring: #2563eb;
+  --color-primary: #111827;
   --color-primary-foreground: #ffffff;
   --color-secondary: #f3f4f6;
   --color-secondary-foreground: #374151;
-  --color-accent: #eef2ff;
-  --color-accent-foreground: #4338ca;
+  --color-accent: #f4f4f5;
+  --color-accent-foreground: #111827;
   --color-destructive: #ef4444;
   --color-destructive-foreground: #ffffff;
   --color-card: #ffffff;
@@ -83,7 +83,7 @@ body {
   --sidebar-accent: hsl(240 4.8% 95.9%);
   --sidebar-accent-foreground: hsl(240 5.9% 10%);
   --sidebar-border: hsl(220 13% 93%);
-  --sidebar-ring: hsl(217.2 91.2% 59.8%);
+  --sidebar-ring: hsl(221.2 83.2% 53.3%);
 }
 
 .dark {

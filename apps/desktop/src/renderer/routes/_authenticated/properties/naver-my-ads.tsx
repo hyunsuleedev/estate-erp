@@ -21,7 +21,7 @@ const checkStatusMeta: Record<string, { label: string; className: string }> = {
 const transactionTypeMeta: Record<string, { label: string; className: string }> = {
   sale: { label: '매매', className: 'bg-rose-50 text-rose-700' },
   jeonse: { label: '전세', className: 'bg-blue-50 text-blue-700' },
-  monthly: { label: '월세', className: 'bg-violet-50 text-violet-700' },
+  monthly: { label: '월세', className: 'bg-cyan-50 text-cyan-700' },
 };
 
 const managementFilterOptions = ['all', 'ready', 'review', 'excluded'] as const;

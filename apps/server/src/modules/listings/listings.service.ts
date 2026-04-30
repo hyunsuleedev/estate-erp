@@ -42,6 +42,8 @@ export interface ListingSearchQuery {
   depositMax?: number;
   monthlyRentMin?: number;
   monthlyRentMax?: number;
+  areaMin?: number;
+  areaMax?: number;
   siteType?: string;
   wardCode?: string;
   siteId?: string;
@@ -137,6 +139,24 @@ export class ListingsService {
       });
     }
 
+    if (query.areaMin !== undefined || query.areaMax !== undefined) {
+      const areaRange = {
+        ...(query.areaMin !== undefined && { gte: query.areaMin }),
+        ...(query.areaMax !== undefined && { lte: query.areaMax }),
+      };
+
+      filters.push({
+        property: {
+          unit: {
+            OR: [
+              { exclusiveAreaM2: areaRange },
+              { siteUnitType: { exclusiveAreaM2: areaRange } },
+            ],
+          },
+        },
+      });
+    }
+
     if (query.siteId || query.siteType || query.wardCode) {
       filters.push({
         property: {
@@ -171,6 +191,44 @@ export class ListingsService {
             property: {
               site: {
                 ward: { name: { contains: query.search, mode: 'insensitive' } },
+              },
+            },
+          },
+          {
+            property: {
+              unit: {
+                name: { contains: query.search, mode: 'insensitive' },
+              },
+            },
+          },
+          {
+            property: {
+              unit: {
+                dong: {
+                  name: { contains: query.search, mode: 'insensitive' },
+                },
+              },
+            },
+          },
+          {
+            property: {
+              propertyContacts: {
+                some: {
+                  contact: {
+                    name: { contains: query.search, mode: 'insensitive' },
+                  },
+                },
+              },
+            },
+          },
+          {
+            property: {
+              propertyContacts: {
+                some: {
+                  contact: {
+                    phone: { contains: query.search },
+                  },
+                },
               },
             },
           },

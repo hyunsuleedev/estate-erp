@@ -32,7 +32,28 @@ export interface Listing {
       floor: number | null;
       exclusiveAreaM2: number | null;
       supplyAreaM2: number | null;
+      dong?: {
+        id: string;
+        name: string;
+        isPlaceholder?: boolean;
+      } | null;
+      siteUnitType?: {
+        id: string;
+        name: string;
+        exclusiveAreaM2: number | null;
+        supplyAreaM2: number | null;
+      } | null;
     } | null;
+    propertyContacts?: Array<{
+      id: string;
+      role: string;
+      status: string;
+      contact?: {
+        id: string;
+        name: string;
+        phone: string | null;
+      } | null;
+    }>;
   };
 }
 

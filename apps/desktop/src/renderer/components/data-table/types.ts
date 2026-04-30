@@ -121,6 +121,9 @@ export interface DataTableProps<TData> {
   // Layout mode: 'paginated' renders fixed-height rows with pagination footer,
   // 'full-height' fills the parent and lets the tbody scroll (no pagination).
   layout?: 'paginated' | 'full-height';
+  // Visual density/style. 'notion' renders a flat database grid with lighter
+  // typography and visible cell dividers.
+  variant?: 'default' | 'notion';
   // Row height in px. Defaults to 32. Set to 'auto' for content-driven height.
   rowHeight?: number | 'auto';
   // Column pinning (left only for now).

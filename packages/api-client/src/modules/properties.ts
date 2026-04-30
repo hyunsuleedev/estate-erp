@@ -1,5 +1,8 @@
 import type { RequestFn } from '../client.js';
 import type { PaginatedResponse } from '../types.js';
+import type { Consultation } from './consultations.js';
+import type { PropertyContact } from './property-contacts.js';
+import type { Tenant } from './tenants.js';
 
 export interface PropertyListing {
   id: string;
@@ -35,7 +38,21 @@ export interface Property {
     floor: number | null;
     exclusiveAreaM2: number | null;
     supplyAreaM2: number | null;
+    dong?: {
+      id: string;
+      name: string;
+      isPlaceholder?: boolean;
+    } | null;
+    siteUnitType?: {
+      id: string;
+      name: string;
+      exclusiveAreaM2: number | null;
+      supplyAreaM2: number | null;
+    } | null;
   } | null;
+  propertyContacts?: PropertyContact[];
+  tenants?: Tenant[];
+  consultations?: Consultation[];
   listings?: PropertyListing[];
 }
 

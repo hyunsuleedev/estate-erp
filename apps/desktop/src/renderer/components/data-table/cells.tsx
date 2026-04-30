@@ -84,7 +84,7 @@ export function StatusBadgeCell({ value, labels, colors }: StatusBadgeCellProps)
 const txTypeStyles: Record<string, string> = {
   sale: 'bg-rose-50 text-rose-700',
   jeonse: 'bg-blue-50 text-blue-700',
-  monthly: 'bg-violet-50 text-violet-700',
+  monthly: 'bg-cyan-50 text-cyan-700',
 };
 
 const txTypeLabels: Record<string, string> = {
