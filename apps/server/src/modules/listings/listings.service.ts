@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -72,6 +73,16 @@ interface ListingUpdateDto {
   checkStatus?: string;
   isHidden?: boolean;
   memo?: string | null;
+}
+
+interface ListingFilterSite {
+  id: string;
+  name: string;
+  type: string;
+  roadAddress: string | null;
+  jibunAddress: string | null;
+  listingCount: number;
+  propertyCount: number;
 }
 
 @Injectable()
@@ -271,6 +282,21 @@ export class ListingsService {
                 },
               },
               propertyContacts: { include: { contact: true } },
+              listings: {
+                orderBy: { createdAt: 'desc' },
+                select: {
+                  id: true,
+                  transactionType: true,
+                  price: true,
+                  deposit: true,
+                  monthlyRent: true,
+                  checkStatus: true,
+                  isHidden: true,
+                  memo: true,
+                  createdAt: true,
+                  updatedAt: true,
+                },
+              },
             },
           },
           priceHistories: {
@@ -294,6 +320,70 @@ export class ListingsService {
         totalPages: Math.ceil(total / limit),
       },
     };
+  }
+
+  async findFilterSites(
+    officeId: string,
+    query: { includeHidden?: boolean } = {},
+  ) {
+    const listings = await this.prisma.listing.findMany({
+      where: {
+        officeId,
+        ...(!query.includeHidden ? { isHidden: false } : {}),
+      },
+      select: {
+        propertyId: true,
+        property: {
+          select: {
+            site: {
+              select: {
+                id: true,
+                name: true,
+                type: true,
+                roadAddress: true,
+                jibunAddress: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    const sitesById = new Map<
+      string,
+      ListingFilterSite & { propertyIds: Set<string> }
+    >();
+
+    listings.forEach((listing) => {
+      const site = listing.property.site;
+      const existing = sitesById.get(site.id);
+
+      if (existing) {
+        existing.listingCount += 1;
+        existing.propertyIds.add(listing.propertyId);
+        existing.propertyCount = existing.propertyIds.size;
+        return;
+      }
+
+      sitesById.set(site.id, {
+        ...site,
+        listingCount: 1,
+        propertyCount: 1,
+        propertyIds: new Set([listing.propertyId]),
+      });
+    });
+
+    return Array.from(sitesById.values())
+      .map((site) => ({
+        id: site.id,
+        name: site.name,
+        type: site.type,
+        roadAddress: site.roadAddress,
+        jibunAddress: site.jibunAddress,
+        listingCount: site.listingCount,
+        propertyCount: site.propertyCount,
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name, 'ko'));
   }
 
   async findOne(id: string, officeId: string) {
@@ -360,6 +450,12 @@ export class ListingsService {
       throw new NotFoundException('Property not found');
     }
 
+    await this.assertNoDuplicateTransactionType(
+      officeId,
+      dto.propertyId,
+      dto.transactionType,
+    );
+
     return this.prisma.listing.create({
       data: {
         officeId,
@@ -398,6 +494,15 @@ export class ListingsService {
     const nextTransactionType =
       dto.transactionType ?? existingListing.transactionType;
     this.assertValidTransactionType(nextTransactionType);
+
+    if (nextTransactionType !== existingListing.transactionType) {
+      await this.assertNoDuplicateTransactionType(
+        officeId,
+        existingListing.propertyId,
+        nextTransactionType,
+        id,
+      );
+    }
 
     if (dto.checkStatus) {
       this.assertValidCheckStatus(dto.checkStatus);
@@ -450,6 +555,29 @@ export class ListingsService {
   private assertValidTransactionType(transactionType: string) {
     if (!VALID_TRANSACTION_TYPES.has(transactionType as TransactionType)) {
       throw new BadRequestException('Invalid transactionType');
+    }
+  }
+
+  private async assertNoDuplicateTransactionType(
+    officeId: string,
+    propertyId: string,
+    transactionType: string,
+    excludeListingId?: string,
+  ) {
+    const duplicateListing = await this.prisma.listing.findFirst({
+      where: {
+        officeId,
+        propertyId,
+        transactionType,
+        ...(excludeListingId ? { id: { not: excludeListingId } } : {}),
+      },
+      select: { id: true },
+    });
+
+    if (duplicateListing) {
+      throw new ConflictException(
+        '같은 매물에는 동일한 거래 유형의 매물을 중복 등록할 수 없습니다.',
+      );
     }
   }
 

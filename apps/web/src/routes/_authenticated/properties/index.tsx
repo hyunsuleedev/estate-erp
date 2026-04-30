@@ -1,16 +1,17 @@
-import { createFileRoute, Link, useNavigate } from '@tanstack/react-router';
-import { useQuery, useMutation, useQueryClient, useQueries } from '@tanstack/react-query';
+import { createFileRoute, Link } from '@tanstack/react-router';
+import { keepPreviousData, useInfiniteQuery, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState, useCallback, useMemo, type ReactNode } from 'react';
 import {
-  Building2,
   CalendarDays,
   Check,
   ChevronDown,
   CircleDollarSign,
-  Download,
+  ExternalLink,
   FileText,
   Hash,
-  Home,
+  MapPin,
+  MessageSquare,
+  Phone,
   Plus,
   RotateCcw,
   Ruler,
@@ -23,11 +24,26 @@ import {
 } from 'lucide-react';
 import type { ColumnDef, SortingState } from '@tanstack/react-table';
 import { api } from '@/lib/api';
-import type { Listing, Site } from '@estate-erp/api-client';
-import { Badge } from '@/components/ui/badge';
+import type {
+  Consultation,
+  Listing,
+  ListingFilterSite,
+  Property,
+  PropertyContact,
+  PropertyListing,
+  Tenant,
+} from '@estate-erp/api-client';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
+import { Skeleton } from '@/components/ui/skeleton';
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   DropdownMenu,
@@ -47,18 +63,26 @@ import {
 
 // ── Labels & Colors ─────────────────────────────────────────────
 
-const checkStatusMeta: Record<string, { label: string; dotClassName: string; textClassName: string }> = {
-  unverified: { label: '미확인', dotClassName: 'bg-slate-400', textClassName: 'text-slate-700' },
-  verified: { label: '확인완료', dotClassName: 'bg-emerald-600', textClassName: 'text-slate-900' },
-  in_contract: { label: '거래중', dotClassName: 'bg-blue-600', textClassName: 'text-slate-900' },
-  hold: { label: '보류', dotClassName: 'bg-amber-600', textClassName: 'text-slate-900' },
-  done: { label: '종료', dotClassName: 'bg-slate-300', textClassName: 'text-slate-500' },
+const checkStatusMeta: Record<string, { label: string; dotClassName: string; pillClassName: string }> = {
+  unverified: { label: '미확인', dotClassName: 'bg-[#9b9a97]', pillClassName: 'bg-[#f1f1ef] text-[#5f5e5b]' },
+  verified: { label: '확인완료', dotClassName: 'bg-[#6c9b7a]', pillClassName: 'bg-[#eef3ed] text-[#44745a]' },
+  in_contract: { label: '거래중', dotClassName: 'bg-[#529cca]', pillClassName: 'bg-[#e7f3f8] text-[#337ea9]' },
+  hold: { label: '보류', dotClassName: 'bg-[#dfab01]', pillClassName: 'bg-[#fbf3db] text-[#9f6b00]' },
+  done: { label: '종료', dotClassName: 'bg-[#b4b4b1]', pillClassName: 'bg-[#f1f1ef] text-[#787774]' },
 };
 
 const transactionTypeMeta: Record<string, { label: string; className: string }> = {
-  sale: { label: '매매', className: 'bg-[#fdebec] text-[#d44c47]' },
+  sale: { label: '매매', className: 'bg-[#fdebec] text-[#8f4b46]' },
   jeonse: { label: '전세', className: 'bg-[#e7f3f8] text-[#337ea9]' },
-  monthly: { label: '월세', className: 'bg-[#fbf3db] text-[#dfab01]' },
+  monthly: { label: '월세', className: 'bg-[#fbf3db] text-[#8f6b1f]' },
+};
+
+const contactRoleLabels: Record<string, string> = {
+  owner: '소유주',
+  co_owner: '공동소유',
+  representative: '대리인',
+  lawyer: '법무사',
+  tax_agent: '세무사',
 };
 
 const sortDefinitions = [
@@ -68,20 +92,16 @@ const sortDefinitions = [
 ];
 
 const sortOptions = [
-  { value: 'createdAt:desc', field: 'createdAt', label: '등록일 최신순', direction: 'desc' },
-  { value: 'updatedAt:desc', field: 'updatedAt', label: '확인일 최신순', direction: 'desc' },
   { value: 'price:asc', field: 'price', label: '가격 낮은순', direction: 'asc' },
   { value: 'price:desc', field: 'price', label: '가격 높은순', direction: 'desc' },
 ] satisfies Array<{ value: string; field: string; label: string; direction: 'asc' | 'desc' }>;
 
-const statusTabs = [
-  { value: 'all', label: '전체' },
-  { value: 'verified', label: '확인완료' },
-  { value: 'unverified', label: '미확인' },
-  { value: 'in_contract', label: '거래중' },
-  { value: 'hold', label: '보류' },
-  { value: 'done', label: '종료' },
-] as const;
+const sortFilterOptions = [
+  { value: '', label: '정렬' },
+  ...sortOptions.map((option) => ({ value: option.value, label: option.label })),
+];
+
+const LISTINGS_PAGE_SIZE = 50;
 
 const checkStatusOptions = [
   { label: '미확인', value: 'unverified' },
@@ -98,6 +118,11 @@ const transactionTypeOptions = [
   { value: 'monthly', label: '월세' },
 ] as const;
 
+const checkStatusFilterOptions = [
+  { value: 'all', label: '전체' },
+  ...checkStatusOptions,
+] as const;
+
 const siteTypeOptions = [
   { value: 'all', label: '전체' },
   { value: 'apartment', label: '아파트' },
@@ -111,7 +136,7 @@ const siteTypeOptions = [
 
 interface PropertyFilterState {
   siteId: string;
-  transactionType: string;
+  checkStatus: string;
   siteType: string;
   priceMin: string;
   priceMax: string;
@@ -126,7 +151,7 @@ interface PropertyFilterState {
 
 const initialPropertyFilters: PropertyFilterState = {
   siteId: '',
-  transactionType: 'all',
+  checkStatus: 'all',
   siteType: 'all',
   priceMin: '',
   priceMax: '',
@@ -139,6 +164,38 @@ const initialPropertyFilters: PropertyFilterState = {
   includeHidden: false,
 };
 
+type ListingSummary = Pick<
+  Listing,
+  | 'id'
+  | 'transactionType'
+  | 'price'
+  | 'deposit'
+  | 'monthlyRent'
+  | 'checkStatus'
+  | 'isHidden'
+  | 'memo'
+  | 'createdAt'
+  | 'updatedAt'
+>;
+type ListingProperty = NonNullable<Listing['property']>;
+
+interface PropertyListingGroup {
+  id: string;
+  propertyId: string;
+  property?: ListingProperty;
+  representative: Listing;
+  listings: ListingSummary[];
+  matchedListings: Listing[];
+}
+
+type PropertySheetNoticeTone = 'danger' | 'warning' | 'neutral';
+
+interface PropertySheetNotice {
+  title: string;
+  detail: string;
+  tone: PropertySheetNoticeTone;
+}
+
 // ── Route ───────────────────────────────────────────────────────
 
 export const Route = createFileRoute('/_authenticated/properties/')({
@@ -146,44 +203,42 @@ export const Route = createFileRoute('/_authenticated/properties/')({
 });
 
 function PropertiesPage() {
-  const navigate = useNavigate();
   const queryClient = useQueryClient();
 
   // ── State ─────────────────────────────────────────────────────
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
-  const [selectedStatus, setSelectedStatus] = useState<(typeof statusTabs)[number]['value']>('all');
+  const [selectedTransactionType, setSelectedTransactionType] =
+    useState<(typeof transactionTypeOptions)[number]['value']>('all');
   const [propertyFilters, setPropertyFilters] = useState<PropertyFilterState>(initialPropertyFilters);
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const [activeSorts, setActiveSorts] = useState<SortDefinition[]>([
-    { field: 'createdAt', label: '등록일', direction: 'desc' },
-  ]);
-  const [sorting, setSorting] = useState<SortingState>([
-    { id: 'createdAt', desc: true },
-  ]);
+  const [selectedPropertyId, setSelectedPropertyId] = useState<string | null>(null);
+  const [activeSorts, setActiveSorts] = useState<SortDefinition[]>([]);
+  const [sorting, setSorting] = useState<SortingState>([]);
 
-  const { data: sites = [], isLoading: isSitesLoading } = useQuery({
-    queryKey: ['sites', 'property-filter'],
-    queryFn: () => api.sites.findAll(),
+  const { data: filterSites = [], isLoading: isFilterSitesLoading } = useQuery({
+    queryKey: ['listings', 'filter-sites', propertyFilters.includeHidden],
+    queryFn: () => api.listings.filterSites({
+      includeHidden: propertyFilters.includeHidden || undefined,
+    }),
     staleTime: 5 * 60_000,
   });
 
   const sitesById = useMemo(
-    () => new Map(sites.map((site) => [site.id, site])),
-    [sites],
+    () => new Map(filterSites.map((site) => [site.id, site])),
+    [filterSites],
   );
 
   // ── Derive API params from filters ────────────────────────────
   const apiParams = useMemo(() => {
     const params: Record<string, string | number | boolean | undefined> = {
-      page,
-      limit: 100,
+      limit: LISTINGS_PAGE_SIZE,
       search: search.trim() || undefined,
       ...buildListingFilterParams(propertyFilters),
     };
 
-    if (selectedStatus !== 'all') {
-      params.checkStatus = selectedStatus;
+    if (selectedTransactionType !== 'all') {
+      params.transactionType = selectedTransactionType;
     }
 
     if (activeSorts.length > 0) {
@@ -192,47 +247,48 @@ function PropertiesPage() {
     }
 
     return params;
-  }, [page, search, propertyFilters, selectedStatus, activeSorts]);
+  }, [page, search, propertyFilters, selectedTransactionType, activeSorts]);
 
   // ── Query ─────────────────────────────────────────────────────
-  const { data, isLoading } = useQuery({
+  const {
+    data,
+    isLoading,
+    isFetchingNextPage,
+    fetchNextPage,
+    hasNextPage,
+  } = useInfiniteQuery({
     queryKey: ['listings', apiParams],
-    queryFn: () => api.listings.findAll(apiParams as any),
+    queryFn: ({ pageParam }) =>
+      api.listings.findAll({ ...apiParams, page: pageParam } as any),
+    initialPageParam: 1,
+    getNextPageParam: (lastPage) => {
+      const { page: currentPage, totalPages } = lastPage.pagination;
+      return currentPage < totalPages ? currentPage + 1 : undefined;
+    },
+    placeholderData: keepPreviousData,
   });
 
-  const countBaseParams = useMemo(() => {
-    const params: Record<string, string | number | boolean | undefined> = {
-      page: 1,
-      limit: 1,
-      search: search.trim() || undefined,
-      ...buildListingFilterParams(propertyFilters),
-    };
+  const listings = useMemo(
+    () => data?.pages.flatMap((pageData) => pageData.items) ?? [],
+    [data?.pages],
+  );
+  const totalListings = data?.pages[0]?.pagination.total ?? 0;
+  const loadedListings = listings.length;
 
-    return params;
-  }, [search, propertyFilters]);
+  const propertyGroups = useMemo(
+    () => buildPropertyListingGroups(listings),
+    [listings],
+  );
 
-  const statusCountQueries = useQueries({
-    queries: statusTabs.map((tab) => ({
-      queryKey: ['listings', 'status-count', tab.value, countBaseParams],
-      queryFn: () =>
-        api.listings.findAll({
-          ...countBaseParams,
-          ...(tab.value !== 'all' ? { checkStatus: tab.value } : {}),
-        } as any),
-      staleTime: 30_000,
-    })),
-  });
-
-  const totalListings =
-    statusCountQueries[0]?.data?.pagination?.total ?? data?.pagination?.total ?? 0;
   const activeFilterChips = useMemo(
     () => buildActiveFilterChips(search, propertyFilters, sitesById),
     [search, propertyFilters, sitesById],
   );
   const selectedSortValue =
-    activeSorts.length > 0
+    activeSorts.length > 0 &&
+    sortOptions.some((option) => option.value === `${activeSorts[0].field}:${activeSorts[0].direction}`)
       ? `${activeSorts[0].field}:${activeSorts[0].direction}`
-      : 'createdAt:desc';
+      : '';
 
   // ── Inline edit mutation ──────────────────────────────────────
   const updateMutation = useMutation({
@@ -246,9 +302,24 @@ function PropertiesPage() {
           if (!old?.items) return old;
           return {
             ...old,
-            items: old.items.map((listing) =>
-              listing.id === id ? { ...listing, [field]: value } : listing,
-            ),
+            items: old.items.map((listing) => {
+              const nextListing =
+                listing.id === id ? { ...listing, [field]: value } : listing;
+              const relatedListings = listing.property?.listings?.map((relatedListing) =>
+                relatedListing.id === id
+                  ? { ...relatedListing, [field]: value }
+                  : relatedListing,
+              );
+
+              if (!relatedListings || !nextListing.property) return nextListing;
+              return {
+                ...nextListing,
+                property: {
+                  ...nextListing.property,
+                  listings: relatedListings,
+                },
+              };
+            }),
           };
         },
       );
@@ -281,14 +352,21 @@ function PropertiesPage() {
 
   const handleFiltersReset = useCallback(() => {
     setPropertyFilters(initialPropertyFilters);
-    setSelectedStatus('all');
-    setActiveSorts([{ field: 'createdAt', label: '등록일', direction: 'desc' }]);
+    setSelectedTransactionType('all');
+    setActiveSorts([]);
     setSearch('');
-    setSorting([{ id: 'createdAt', desc: true }]);
+    setSorting([]);
     setPage(1);
   }, []);
 
   const handleSortSelect = useCallback((value: string) => {
+    if (!value) {
+      setActiveSorts([]);
+      setSorting([]);
+      setPage(1);
+      return;
+    }
+
     const option = sortOptions.find((item) => item.value === value) ?? sortOptions[0];
     setActiveSorts([{ field: option.field, label: option.label, direction: option.direction }]);
     setSorting([{ id: option.field, desc: option.direction === 'desc' }]);
@@ -310,45 +388,26 @@ function PropertiesPage() {
     setPage(1);
   }, []);
 
-  const handleStatusTabChange = useCallback((status: string) => {
-    setSelectedStatus(status as (typeof statusTabs)[number]['value']);
+  const handleTransactionTabChange = useCallback((transactionType: string) => {
+    setSelectedTransactionType(transactionType as (typeof transactionTypeOptions)[number]['value']);
     setPage(1);
   }, []);
 
-  const getStatusCount = useCallback((index: number) => {
-    const queryTotal = statusCountQueries[index]?.data?.pagination?.total;
-    return typeof queryTotal === 'number' ? queryTotal : 0;
-  }, [statusCountQueries]);
+  const handleEndReached = useCallback(() => {
+    if (hasNextPage && !isFetchingNextPage) {
+      void fetchNextPage();
+    }
+  }, [fetchNextPage, hasNextPage, isFetchingNextPage]);
 
-  // ── Column definitions (ad-note style operational grid) ───────
-  const columns = useMemo<ColumnDef<Listing, unknown>[]>(
+  // ── Column definitions (property-grouped operational grid) ────
+  const columns = useMemo<ColumnDef<PropertyListingGroup, unknown>[]>(
     () => [
       {
         id: 'info',
         header: () => <TableHeaderLabel icon={<Tag className="size-4" />} label="거래" />,
-        size: 86,
+        size: 118,
         enableSorting: false,
-        cell: ({ row }) => {
-          const listing = row.original;
-          const transactionMeta = transactionTypeMeta[listing.transactionType];
-          return (
-            <div className="flex flex-col items-start gap-1">
-              <Badge
-                className={cn(
-                  'rounded-[4px] border-transparent px-1.5 py-0.5 text-[12px] font-medium shadow-none',
-                  transactionMeta?.className ?? 'bg-[#f1f1ef] text-[#787774]',
-                )}
-              >
-                {transactionMeta?.label ?? listing.transactionType}
-              </Badge>
-              {listing.isHidden && (
-                <Badge className="border-0 bg-red-50 px-1.5 py-0.5 text-[10px] font-semibold text-red-700">
-                  숨김
-                </Badge>
-              )}
-            </div>
-          );
-        },
+        cell: ({ row }) => <TransactionStack listings={row.original.listings} />,
       },
       {
         id: 'site',
@@ -356,37 +415,15 @@ function PropertiesPage() {
         size: 260,
         enableSorting: false,
         cell: ({ row }) => {
-          const l = row.original;
+          const group = row.original;
           return (
             <div className="flex min-w-0 items-center">
               <span className="truncate text-[14px] font-semibold text-slate-900">
-                {l.property?.site?.name ?? '매물 정보 없음'}
+                {group.property?.site?.name ?? '매물 정보 없음'}
               </span>
             </div>
           );
         },
-      },
-      {
-        id: 'type',
-        header: () => <TableHeaderLabel icon={<Home className="size-4" />} label="유형" />,
-        size: 110,
-        enableSorting: false,
-        cell: ({ row }) => (
-          <span className="truncate text-[13px] font-medium text-slate-800">
-            {getSiteTypeLabel(row.original.property?.site?.type)}
-          </span>
-        ),
-      },
-      {
-        id: 'exclusiveArea',
-        header: () => <TableHeaderLabel icon={<Ruler className="size-4" />} label="전용면적" />,
-        size: 96,
-        enableSorting: false,
-        cell: ({ row }) => (
-          <span className="truncate text-[13px] text-slate-700 tabular-nums">
-            {formatAreaPyeong(row.original.property?.unit?.exclusiveAreaM2)}
-          </span>
-        ),
       },
       {
         id: 'dong',
@@ -395,7 +432,7 @@ function PropertiesPage() {
         enableSorting: false,
         cell: ({ row }) => (
           <span className="truncate text-[13px] text-slate-800">
-            {getDongName(row.original)}
+            {getDongName(row.original.property)}
           </span>
         ),
       },
@@ -411,44 +448,47 @@ function PropertiesPage() {
         ),
       },
       {
-        accessorKey: 'checkStatus',
-        header: () => <TableHeaderLabel icon={<Tag className="size-4" />} label="상태" />,
-        size: 106,
+        id: 'unitType',
+        header: () => <TableHeaderLabel icon={<Type className="size-4" />} label="타입" />,
+        size: 88,
         enableSorting: false,
-        cell: ({ row }) => {
-          const l = row.original;
-          return (
-            <StatusDropdown
-              value={l.checkStatus}
-              onChange={(value) => handleCellSave(l.id, 'checkStatus', value)}
-            />
-          );
-        },
+        cell: ({ row }) => (
+          <span className="truncate text-[13px] text-slate-700">
+            {getUnitTypeName(row.original.property)}
+          </span>
+        ),
       },
       {
-        accessorKey: 'price',
+        id: 'exclusiveArea',
+        header: () => <TableHeaderLabel icon={<Ruler className="size-4" />} label="전용면적" />,
+        size: 96,
+        enableSorting: false,
+        cell: ({ row }) => (
+          <span className="truncate text-[13px] text-slate-700 tabular-nums">
+            {formatAreaPyeong(getExclusiveAreaM2(row.original.property))}
+          </span>
+        ),
+      },
+      {
+        id: 'checkStatus',
+        header: () => <TableHeaderLabel icon={<Tag className="size-4" />} label="상태" />,
+        size: 156,
+        enableSorting: false,
+        cell: ({ row }) => (
+          <ListingStatusStack
+            listings={row.original.listings}
+            onChange={(listingId, value) => handleCellSave(listingId, 'checkStatus', value)}
+          />
+        ),
+      },
+      {
+        id: 'price',
         header: () => <TableHeaderLabel icon={<CircleDollarSign className="size-4" />} label="가격" />,
-        size: 150,
+        size: 184,
         enableSorting: true,
-        cell: ({ row }) => {
-          const l = row.original;
-          return (
-            <EditableCell
-              recordId={l.id}
-              field="price"
-              value={l.price}
-              onSave={handleCellSave}
-              editType="number"
-            >
-              <PriceCell
-                transactionType={l.transactionType}
-                price={l.price}
-                deposit={l.deposit}
-                monthlyRent={l.monthlyRent}
-              />
-            </EditableCell>
-          );
-        },
+        cell: ({ row }) => (
+          <ListingPriceStack listings={row.original.listings} onSave={handleCellSave} />
+        ),
       },
       {
         id: 'owner',
@@ -456,7 +496,7 @@ function PropertiesPage() {
         size: 150,
         enableSorting: false,
         cell: ({ row }) => {
-          const owner = getOwnerContact(row.original);
+          const owner = getOwnerContact(row.original.property);
           return (
             <div className="flex min-w-0 flex-col gap-0.5">
               <span className="truncate text-[13px] font-medium text-slate-800">
@@ -472,12 +512,12 @@ function PropertiesPage() {
         },
       },
       {
-        accessorKey: 'updatedAt',
+        id: 'updatedAt',
         header: () => <TableHeaderLabel icon={<CalendarDays className="size-4" />} label="확인일" />,
         size: 92,
         enableSorting: true,
         cell: ({ row }) => (
-          <DateCell value={row.original.updatedAt} relative />
+          <DateCell value={getLatestListingUpdatedAt(row.original)} relative />
         ),
       },
       {
@@ -488,7 +528,7 @@ function PropertiesPage() {
         enableSorting: false,
         cell: ({ row }) => (
           <p className="line-clamp-2 text-[11px] leading-snug text-slate-600">
-            {getListingMemo(row.original)}
+            {getGroupMemo(row.original)}
           </p>
         ),
       },
@@ -499,66 +539,49 @@ function PropertiesPage() {
   return (
     <CellEditProvider>
       <div className="flex h-[calc(100svh-6rem)] min-h-0 flex-col bg-white">
-        <section className="border-b border-slate-200 bg-white px-6 pt-5">
-          <div className="flex items-center justify-between">
-            <div className="flex flex-col gap-1">
-              <p className="text-xs text-slate-500">매물관리 · 목록</p>
-              <h1 className="text-[22px] font-semibold leading-7 tracking-[-0.01em] text-slate-900">
-                매물 {totalListings.toLocaleString()}건
-              </h1>
-            </div>
-            <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm" asChild>
-                <Link to="/properties/external-listings">
-                  <Download className="size-3.5" />
-                  매물 가져오기
-                </Link>
-              </Button>
-              <Button size="sm" asChild>
-                <Link to="/properties/new">
-                  <Plus className="size-3.5" />
-                  새 매물 등록
-                </Link>
-              </Button>
-            </div>
-          </div>
-
-          <Tabs value={selectedStatus} onValueChange={handleStatusTabChange} className="mt-5 gap-0">
-            <TabsList
-              variant="line"
-              className="h-10 max-w-full justify-start overflow-x-auto rounded-none p-0"
-            >
-              {statusTabs.map((tab, index) => {
-                const active = selectedStatus === tab.value;
-                return (
-                  <TabsTrigger
-                    key={tab.value}
-                    value={tab.value}
-                    className="h-10 flex-none rounded-none border-0 px-3 text-[13px] data-[state=active]:bg-transparent data-[state=active]:text-slate-950"
-                  >
-                    <span>{tab.label}</span>
-                    <span
-                      className={cn(
-                        'rounded-full px-1.5 py-0.5 text-[11px] leading-none tabular-nums',
-                        active ? 'bg-slate-950 text-white' : 'bg-slate-100 text-slate-500',
-                      )}
+        <section className="border-b border-slate-200 bg-white px-6 pb-2 pt-3">
+          <div className="flex items-start justify-between gap-4">
+            <Tabs value={selectedTransactionType} onValueChange={handleTransactionTabChange} className="min-w-0 flex-1 gap-0">
+              <TabsList
+                variant="line"
+                className="h-10 max-w-full justify-start overflow-x-auto rounded-none p-0"
+              >
+                {transactionTypeOptions.map((tab) => {
+                  return (
+                    <TabsTrigger
+                      key={tab.value}
+                      value={tab.value}
+                      className="h-10 flex-none rounded-none border-0 px-3 text-[13px] data-[state=active]:bg-transparent data-[state=active]:text-slate-950"
                     >
-                      {getStatusCount(index).toLocaleString()}
-                    </span>
-                  </TabsTrigger>
-                );
-              })}
-            </TabsList>
-          </Tabs>
+                      <span>{tab.label}</span>
+                    </TabsTrigger>
+                  );
+                })}
+              </TabsList>
+            </Tabs>
+            <Button size="sm" asChild className="mt-1 shrink-0 px-3.5">
+              <Link to="/properties/new">
+                <Plus className="size-3.5" />
+                새 매물 등록
+              </Link>
+            </Button>
+          </div>
         </section>
 
         <section className="border-b border-slate-200 bg-white px-6 py-2.5">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-2 text-[15px] font-semibold text-slate-900">
-              <Building2 className="size-4 text-slate-700" />
-              매물 테이블
-            </div>
+            <div />
             <div className="flex flex-wrap items-center justify-end gap-1.5">
+              <div className="w-56 max-w-full">
+                <SiteSearchFilter
+                  sites={filterSites}
+                  value={propertyFilters.siteId}
+                  onChange={(value) => updatePropertyFilter('siteId', value)}
+                  isLoading={isFilterSitesLoading}
+                  placeholder="단지 선택"
+                  showCounts
+                />
+              </div>
               <div className="relative w-64 max-w-full">
                 <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-slate-400" />
                 <Input
@@ -582,7 +605,7 @@ function PropertiesPage() {
                 <SelectFilter
                   value={selectedSortValue}
                   onChange={handleSortSelect}
-                  options={sortOptions.map((option) => ({ value: option.value, label: option.label }))}
+                  options={sortFilterOptions}
                 />
               </div>
               <Button
@@ -612,21 +635,14 @@ function PropertiesPage() {
           >
             <FilterSection
               title="단지 / 매물"
-              description="특정 단지로 먼저 좁히고, 거래 방식과 매물 유형을 고릅니다."
+              description="특정 단지로 먼저 좁히고, 매물 유형과 확인 상태를 고릅니다."
             >
               <FilterField label="단지 검색" className="md:col-span-2 xl:col-span-3">
                 <SiteSearchFilter
-                  sites={sites}
+                  sites={filterSites}
                   value={propertyFilters.siteId}
                   onChange={(value) => updatePropertyFilter('siteId', value)}
-                  isLoading={isSitesLoading}
-                />
-              </FilterField>
-              <FilterField label="거래">
-                <SelectFilter
-                  value={propertyFilters.transactionType}
-                  onChange={(value) => updatePropertyFilter('transactionType', value)}
-                  options={transactionTypeOptions}
+                  isLoading={isFilterSitesLoading}
                 />
               </FilterField>
               <FilterField label="매물유형">
@@ -634,6 +650,13 @@ function PropertiesPage() {
                   value={propertyFilters.siteType}
                   onChange={(value) => updatePropertyFilter('siteType', value)}
                   options={siteTypeOptions}
+                />
+              </FilterField>
+              <FilterField label="상태">
+                <SelectFilter
+                  value={propertyFilters.checkStatus}
+                  onChange={(value) => updatePropertyFilter('checkStatus', value)}
+                  options={checkStatusFilterOptions}
                 />
               </FilterField>
             </FilterSection>
@@ -707,28 +730,41 @@ function PropertiesPage() {
         </section>
 
         <section className="flex min-h-0 flex-1 bg-white px-6 py-0">
-          <div className="flex min-h-0 flex-1 flex-col overflow-hidden border-t border-slate-200 bg-white">
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-white">
             {/* Data Table */}
             <DataTable
               columns={columns}
-              data={data?.items ?? []}
-              totalCount={data?.pagination?.total ?? 0}
-              pageCount={data?.pagination?.totalPages ?? 1}
+              data={propertyGroups}
+              totalCount={totalListings}
+              pageCount={1}
               page={page}
               onPageChange={setPage}
-              pageSize={100}
+              pageSize={LISTINGS_PAGE_SIZE}
               sorting={sorting}
               onSortingChange={handleSortingChange}
               enableRowSelection
               layout="full-height"
               variant="notion"
-              rowHeight={44}
-              onRowClick={(row) => navigate({ to: '/properties/$id', params: { id: row.propertyId } })}
+              rowHeight="auto"
+              onRowClick={(row) => setSelectedPropertyId(row.propertyId)}
               isLoading={isLoading}
+              isLoadingMore={isFetchingNextPage}
+              onEndReached={handleEndReached}
               emptyMessage="매물이 없습니다."
+              renderStatusBar={() => (
+                <span>
+                  거래 {loadedListings.toLocaleString()} / {totalListings.toLocaleString()}건 표시
+                  {hasNextPage && !isFetchingNextPage ? ' · 아래로 스크롤하면 더 불러옵니다' : ''}
+                  {isFetchingNextPage ? ' · 더 불러오는 중...' : ''}
+                </span>
+              )}
             />
           </div>
         </section>
+        <PropertyQuickSheet
+          propertyId={selectedPropertyId}
+          onClose={() => setSelectedPropertyId(null)}
+        />
       </div>
     </CellEditProvider>
   );
@@ -743,19 +779,415 @@ function TableHeaderLabel({ icon, label }: { icon: ReactNode; label: string }) {
   );
 }
 
+function PropertyQuickSheet({
+  propertyId,
+  onClose,
+}: {
+  propertyId: string | null;
+  onClose: () => void;
+}) {
+  const { data: property, isLoading } = useQuery({
+    queryKey: ['properties', 'quick-sheet', propertyId],
+    queryFn: () => api.properties.findOne(propertyId as string),
+    enabled: Boolean(propertyId),
+  });
+
+  return (
+    <Sheet open={Boolean(propertyId)} onOpenChange={(open) => !open && onClose()}>
+      <SheetContent
+        side="right"
+        className="!w-full !max-w-full !gap-0 overflow-hidden p-0 sm:!max-w-[720px]"
+      >
+        {propertyId && isLoading && <PropertySheetSkeleton />}
+        {propertyId && !isLoading && property && <PropertySheetContent property={property} />}
+        {propertyId && !isLoading && !property && (
+          <div className="flex h-full items-center justify-center text-sm text-slate-500">
+            매물을 찾을 수 없습니다.
+          </div>
+        )}
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+function PropertySheetSkeleton() {
+  return (
+    <div className="flex h-full flex-col">
+      <SheetHeader className="border-b px-6 py-5">
+        <Skeleton className="h-5 w-24" />
+        <Skeleton className="h-7 w-72" />
+        <Skeleton className="h-4 w-full max-w-md" />
+      </SheetHeader>
+      <div className="space-y-5 p-6">
+        <Skeleton className="h-28 rounded-lg" />
+        <Skeleton className="h-40 rounded-lg" />
+        <Skeleton className="h-32 rounded-lg" />
+      </div>
+    </div>
+  );
+}
+
+function PropertySheetContent({ property }: { property: Property }) {
+  const listings = (property.listings ?? []).slice().sort(comparePropertyListing);
+  const contacts = property.propertyContacts ?? [];
+  const tenants = property.tenants ?? [];
+  const consultations = property.consultations ?? [];
+  const title = property.site?.name ?? '매물 상세';
+  const unitLabel = getPropertySheetUnitLabel(property);
+  const unitTypeName = property.unit?.siteUnitType?.name;
+  const floorLabel = property.unit?.floor ? `${property.unit.floor}층` : null;
+  const unitSummaryItems = [
+    unitTypeName ? `${unitTypeName}타입` : null,
+    floorLabel,
+  ].filter(Boolean);
+  const address = property.site?.roadAddress ?? property.site?.jibunAddress ?? '주소 미등록';
+  const owner = contacts.find((contact) => contact.role === 'owner') ?? contacts[0];
+  const ownerPhone = owner?.contact?.phone;
+  const areaLabel = formatPropertySheetArea(property);
+  const latestUpdatedAt = getLatestPropertyListingUpdatedAt(property);
+  const notices = getPropertySheetNotices(property);
+  const memo = property.memo?.trim() || listings.find((listing) => listing.memo?.trim())?.memo?.trim();
+
+  return (
+    <div className="flex h-full min-h-0 flex-col bg-white">
+      <SheetHeader className="space-y-4 border-b border-[#eeeeec] px-6 py-5">
+        <div className="flex items-center justify-between gap-3 pr-8">
+          <div className="text-xs font-medium text-slate-500">빠른 확인</div>
+          <Button variant="ghost" size="sm" className="h-8 gap-1.5 px-2.5 text-xs" asChild>
+            <Link to="/properties/$id" params={{ id: property.id }}>
+              전체 페이지로 열기
+              <ExternalLink className="size-3.5" />
+            </Link>
+          </Button>
+        </div>
+        <div className="space-y-2">
+          <SheetTitle className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1 text-[24px] font-semibold leading-7 tracking-[-0.01em] text-slate-950">
+            <span>{title}</span>
+            {unitLabel && <span className="text-slate-950">{unitLabel}</span>}
+          </SheetTitle>
+          {unitSummaryItems.length > 0 && (
+            <div className="text-[15px] font-medium leading-6 text-slate-800">
+              {unitSummaryItems.join(' · ')}
+            </div>
+          )}
+          <SheetDescription className="space-y-2 text-xs text-slate-500">
+            <span className="flex min-w-0 items-center gap-1.5">
+              <MapPin className="size-3.5 shrink-0" />
+              <span className="truncate">{address}</span>
+            </span>
+            <span className="flex flex-wrap items-center gap-x-4 gap-y-1">
+              <span className="inline-flex items-center gap-1.5">
+                <Ruler className="size-3.5" />
+                {areaLabel}
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <CalendarDays className="size-3.5" />
+                확인 {formatDateShort(latestUpdatedAt)}
+              </span>
+            </span>
+          </SheetDescription>
+          <div className="flex flex-wrap items-center gap-1.5">
+            {listings.map((listing) => (
+              <TransactionBadge key={listing.id} transactionType={listing.transactionType} />
+            ))}
+            {listings[0] && <StatusIndicator value={listings[0].checkStatus} />}
+          </div>
+        </div>
+
+        <div className="grid gap-2 sm:grid-cols-2">
+          <SheetActionButton
+            icon={<Phone className="size-4" />}
+            label={ownerPhone ? `${owner?.contact?.name ?? '소유주'} 전화` : '소유주 연락처 없음'}
+            href={ownerPhone ? `tel:${ownerPhone}` : undefined}
+            disabled={!ownerPhone}
+            emphasis
+          />
+          <Button variant="outline" size="sm" className="h-9 gap-2 px-3 text-sm font-medium" asChild>
+            <Link to="/properties/$id" params={{ id: property.id }}>
+              <MessageSquare className="size-4" />
+              상담 기록 보기
+              <ExternalLink className="size-3.5" />
+            </Link>
+          </Button>
+        </div>
+      </SheetHeader>
+
+      <div className="min-h-0 flex-1 space-y-6 overflow-y-auto p-6">
+        <SheetSection title="지금 확인할 것">
+          {notices.length > 0 ? (
+            <div className="space-y-2">
+              {notices.map((notice) => (
+                <PropertySheetNoticeRow key={`${notice.title}-${notice.detail}`} notice={notice} />
+              ))}
+            </div>
+          ) : (
+            <SheetEmptyState text="즉시 확인할 운영 이슈가 없습니다." compact />
+          )}
+        </SheetSection>
+
+        <SheetSection title={`거래 카드 ${listings.length}`}>
+          {listings.length > 0 ? (
+            <div className="grid gap-2">
+              {listings.map((listing) => (
+                <PropertySheetListingCard key={listing.id} listing={listing} />
+              ))}
+            </div>
+          ) : (
+            <SheetEmptyState text="등록된 거래 정보가 없습니다." />
+          )}
+        </SheetSection>
+
+        <SheetSection title={`연락처 ${contacts.length + tenants.length}`}>
+          {contacts.length > 0 || tenants.length > 0 ? (
+            <div className="divide-y divide-[#eeeeec] rounded-md border border-[#eeeeec]">
+              {contacts.map((contact) => (
+                <PropertySheetContactRow key={contact.id} propertyContact={contact} />
+              ))}
+              {tenants.map((tenant) => (
+                <PropertySheetTenantRow key={tenant.id} tenant={tenant} />
+              ))}
+            </div>
+          ) : (
+            <SheetEmptyState text="등록된 소유주, 대리인, 임차인이 없습니다." />
+          )}
+        </SheetSection>
+
+        <SheetSection title="최근 상담 / 메모">
+          <div className="space-y-2">
+            {memo && (
+              <div className="rounded-md border border-[#eeeeec] bg-slate-50/60 p-3">
+                <div className="mb-1 text-[11px] font-medium text-slate-500">매물 메모</div>
+                <p className="whitespace-pre-wrap text-sm leading-6 text-slate-700">{memo}</p>
+              </div>
+            )}
+            {consultations.slice(0, 3).map((consultation) => (
+              <PropertySheetConsultationRow key={consultation.id} consultation={consultation} />
+            ))}
+            {!memo && consultations.length === 0 && (
+              <SheetEmptyState text="상담 기록과 메모가 없습니다." compact />
+            )}
+          </div>
+        </SheetSection>
+      </div>
+    </div>
+  );
+}
+
+function SheetSection({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="space-y-3">
+      <h3 className="text-[12px] font-semibold text-slate-500">{title}</h3>
+      {children}
+    </section>
+  );
+}
+
+function PropertySheetNoticeRow({ notice }: { notice: PropertySheetNotice }) {
+  return (
+    <div className={cn(
+      'rounded-md border px-3 py-2.5',
+      notice.tone === 'danger' && 'border-red-100 bg-red-50/70',
+      notice.tone === 'warning' && 'border-amber-100 bg-amber-50/70',
+      notice.tone === 'neutral' && 'border-[#eeeeec] bg-slate-50/70',
+    )}>
+      <div className={cn(
+        'text-sm font-semibold',
+        notice.tone === 'danger' && 'text-red-800',
+        notice.tone === 'warning' && 'text-amber-800',
+        notice.tone === 'neutral' && 'text-slate-800',
+      )}>
+        {notice.title}
+      </div>
+      <p className="mt-0.5 text-xs leading-5 text-slate-600">{notice.detail}</p>
+    </div>
+  );
+}
+
+function PropertySheetListingCard({ listing }: { listing: PropertyListing }) {
+  return (
+    <div className="rounded-md border border-[#eeeeec] bg-white p-3">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <TransactionBadge transactionType={listing.transactionType} />
+          <StatusIndicator value={listing.checkStatus} />
+          {listing.isHidden && (
+            <span className="inline-flex rounded-[4px] bg-[#fbe4e4] px-1.5 py-0.5 text-[11px] font-medium leading-5 text-[#9f5555]">
+              숨김
+            </span>
+          )}
+        </div>
+        <span className="shrink-0 text-[11px] text-slate-500">
+          확인 {formatDateShort(listing.updatedAt)}
+        </span>
+      </div>
+      <div className="mt-2 text-[17px] font-semibold text-slate-950">
+        <PriceCell
+          transactionType={listing.transactionType}
+          price={listing.price}
+          deposit={listing.deposit}
+          monthlyRent={listing.monthlyRent}
+        />
+      </div>
+      <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-slate-500">
+        <span>등록 {formatDateShort(listing.createdAt)}</span>
+        <span>확인 {formatDaysAgo(listing.updatedAt)}</span>
+      </div>
+      {listing.memo?.trim() && (
+        <p className="mt-2 line-clamp-2 rounded bg-slate-50 px-2 py-1.5 text-xs leading-5 text-slate-600">
+          {listing.memo.trim()}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function PropertySheetContactRow({ propertyContact }: { propertyContact: PropertyContact }) {
+  const name = propertyContact.contact?.name ?? '이름 없음';
+  const phone = propertyContact.contact?.phone;
+  return (
+    <div className="flex items-center justify-between gap-3 px-3 py-3">
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="truncate text-sm font-medium text-slate-900">{name}</span>
+          <span className="rounded-[4px] bg-[#f1f1ef] px-1.5 py-0.5 text-[11px] text-[#5f5e5b]">
+            {getContactRoleLabel(propertyContact.role)}
+          </span>
+          {propertyContact.isPrimary && (
+            <span className="rounded-[4px] bg-[#e7f3f8] px-1.5 py-0.5 text-[11px] text-[#337ea9]">
+              주 연락처
+            </span>
+          )}
+        </div>
+        <p className="mt-0.5 truncate text-xs text-slate-500">
+          {phone ?? '연락처 없음'}
+          {propertyContact.memo ? ` · ${propertyContact.memo}` : ''}
+        </p>
+      </div>
+      {phone && (
+        <Button variant="ghost" size="icon-sm" asChild>
+          <a href={`tel:${phone}`} aria-label={`${name} 전화`}>
+            <Phone className="size-3.5" />
+          </a>
+        </Button>
+      )}
+    </div>
+  );
+}
+
+function PropertySheetTenantRow({ tenant }: { tenant: Tenant }) {
+  const name = tenant.contact?.name ?? '이름 없음';
+  const phone = tenant.contact?.phone;
+  return (
+    <div className="flex items-center justify-between gap-3 px-3 py-3">
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="truncate text-sm font-medium text-slate-900">{name}</span>
+          <span className="rounded-[4px] bg-[#f1f1ef] px-1.5 py-0.5 text-[11px] text-[#5f5e5b]">
+            임차인
+          </span>
+          <span className="rounded-[4px] bg-[#fbf3db] px-1.5 py-0.5 text-[11px] text-[#8f6b1f]">
+            {getTenantStatusLabel(tenant.status)}
+          </span>
+        </div>
+        <p className="mt-0.5 truncate text-xs text-slate-500">
+          {phone ?? '연락처 없음'} · {getTenantPeriodLabel(tenant)}
+        </p>
+      </div>
+      {phone && (
+        <Button variant="ghost" size="icon-sm" asChild>
+          <a href={`tel:${phone}`} aria-label={`${name} 전화`}>
+            <Phone className="size-3.5" />
+          </a>
+        </Button>
+      )}
+    </div>
+  );
+}
+
+function PropertySheetConsultationRow({ consultation }: { consultation: Consultation }) {
+  return (
+    <div className="rounded-md border border-[#eeeeec] px-3 py-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="rounded-[4px] bg-[#f1f1ef] px-1.5 py-0.5 text-[11px] text-[#5f5e5b]">
+          {consultation.type}
+        </span>
+        <span className="text-[11px] text-slate-500">{formatDateTime(consultation.createdAt)}</span>
+        {consultation.contact?.name && (
+          <span className="text-[11px] text-slate-500">· {consultation.contact.name}</span>
+        )}
+      </div>
+      <p className="mt-2 line-clamp-3 text-sm leading-6 text-slate-700">{consultation.content}</p>
+    </div>
+  );
+}
+
+function SheetActionButton({
+  icon,
+  label,
+  href,
+  disabled,
+  emphasis,
+}: {
+  icon: ReactNode;
+  label: string;
+  href?: string;
+  disabled?: boolean;
+  emphasis?: boolean;
+}) {
+  const className = cn(
+    'flex h-9 items-center justify-center gap-2 rounded-md border px-3 text-sm font-medium transition-colors',
+    emphasis
+      ? 'border-slate-950 bg-slate-950 text-white hover:bg-slate-800'
+      : 'border-[#eeeeec] bg-white text-slate-700 hover:bg-slate-50',
+    disabled && 'pointer-events-none opacity-45',
+  );
+
+  if (href) {
+    return (
+      <a className={className} href={href}>
+        {icon}
+        <span className="truncate">{label}</span>
+      </a>
+    );
+  }
+
+  return (
+    <button type="button" className={className} disabled={disabled}>
+      {icon}
+      <span className="truncate">{label}</span>
+    </button>
+  );
+}
+
+function SheetEmptyState({ text, compact = false }: { text: string; compact?: boolean }) {
+  return (
+    <div className={cn(
+      'rounded-md border border-dashed border-[#e3e2df] px-3 text-center text-sm text-slate-500',
+      compact ? 'py-4' : 'py-8',
+    )}>
+      {text}
+    </div>
+  );
+}
+
 function StatusDropdown({
   value,
   onChange,
+  compact = false,
 }: {
   value: string;
   onChange: (value: string) => void;
+  compact?: boolean;
 }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          className="inline-flex h-8 items-center rounded-md border border-transparent px-2.5 text-left transition-colors hover:border-slate-200 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/30"
+          className={cn(
+            'inline-flex items-center rounded-[4px] text-left transition-colors hover:bg-slate-100/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/30',
+            compact ? 'p-px' : 'p-0.5',
+          )}
           onClick={(event) => event.stopPropagation()}
         >
           <StatusIndicator value={value} />
@@ -782,14 +1214,119 @@ function StatusDropdown({
 function StatusIndicator({ value }: { value: string }) {
   const meta = checkStatusMeta[value] ?? {
     label: value,
-    dotClassName: 'bg-slate-300',
-    textClassName: 'text-slate-700',
+    dotClassName: 'bg-[#b4b4b1]',
+    pillClassName: 'bg-[#f1f1ef] text-[#5f5e5b]',
   };
 
   return (
-    <span className="inline-flex items-center gap-1">
+    <span
+      className={cn(
+        'inline-flex max-w-full items-center gap-1 rounded-[4px] px-1.5 py-0.5 text-[12px] font-medium leading-5',
+        meta.pillClassName,
+      )}
+    >
       <span className={cn('size-1.5 rounded-full', meta.dotClassName)} />
-      <span className={cn('text-xs', meta.textClassName)}>{meta.label}</span>
+      <span className="truncate">{meta.label}</span>
+    </span>
+  );
+}
+
+function TransactionStack({ listings }: { listings: ListingSummary[] }) {
+  return (
+    <div className="flex flex-wrap items-center gap-1.5 py-1">
+      {listings.map((listing) => (
+        <div key={listing.id} className="flex items-center gap-1">
+          <TransactionBadge transactionType={listing.transactionType} />
+          {listing.isHidden && (
+            <span className="inline-flex rounded-[4px] bg-[#fbe4e4] px-1.5 py-0.5 text-[11px] font-medium leading-5 text-[#9f5555]">
+              숨김
+            </span>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ListingStatusStack({
+  listings,
+  onChange,
+}: {
+  listings: ListingSummary[];
+  onChange: (listingId: string, value: string) => void;
+}) {
+  return (
+    <div className="flex flex-col items-start gap-1 py-1" onClick={(event) => event.stopPropagation()}>
+      {listings.map((listing) => (
+        <div key={listing.id} className="flex items-center gap-1.5">
+          {listings.length > 1 && <TransactionMiniLabel transactionType={listing.transactionType} />}
+          <StatusDropdown
+            value={listing.checkStatus}
+            onChange={(value) => onChange(listing.id, value)}
+            compact
+          />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ListingPriceStack({
+  listings,
+  onSave,
+}: {
+  listings: ListingSummary[];
+  onSave: (recordId: string, field: string, value: unknown) => void;
+}) {
+  return (
+    <div className="flex min-w-0 flex-col gap-1 py-1" onClick={(event) => event.stopPropagation()}>
+      {listings.map((listing) => (
+        <div key={listing.id} className="flex min-w-0 items-center gap-1.5">
+          {listings.length > 1 && <TransactionMiniLabel transactionType={listing.transactionType} />}
+          <EditableCell
+            recordId={listing.id}
+            field="price"
+            value={listing.price}
+            onSave={onSave}
+            editType="number"
+          >
+            <PriceCell
+              transactionType={listing.transactionType}
+              price={listing.price}
+              deposit={listing.deposit}
+              monthlyRent={listing.monthlyRent}
+            />
+          </EditableCell>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function TransactionBadge({ transactionType }: { transactionType: string }) {
+  const transactionMeta = transactionTypeMeta[transactionType];
+  return (
+    <span
+      className={cn(
+        'inline-flex max-w-full rounded-[4px] px-1.5 py-0.5 text-[12px] font-medium leading-5',
+        transactionMeta?.className ?? 'bg-[#f1f1ef] text-[#787774]',
+      )}
+    >
+      {transactionMeta?.label ?? transactionType}
+    </span>
+  );
+}
+
+function TransactionMiniLabel({ transactionType }: { transactionType: string }) {
+  const transactionMeta = transactionTypeMeta[transactionType];
+  return (
+    <span
+      className={cn(
+        'inline-flex min-w-8 justify-center rounded-[4px] px-1.5 py-0.5 text-[11px] font-medium leading-5',
+        transactionMeta?.className ?? 'bg-[#f1f1ef] text-[#787774]',
+      )}
+    >
+      {transactionMeta?.label ?? transactionType}
     </span>
   );
 }
@@ -838,11 +1375,15 @@ function SiteSearchFilter({
   value,
   onChange,
   isLoading,
+  placeholder = '단지명 또는 주소 검색',
+  showCounts = false,
 }: {
-  sites: Site[];
+  sites: ListingFilterSite[];
   value: string;
   onChange: (value: string) => void;
   isLoading: boolean;
+  placeholder?: string;
+  showCounts?: boolean;
 }) {
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
@@ -885,7 +1426,7 @@ function SiteSearchFilter({
           setOpen(true);
         }}
         onBlur={() => window.setTimeout(() => setOpen(false), 120)}
-        placeholder={isLoading ? '단지 불러오는 중...' : '단지명 또는 주소 검색'}
+        placeholder={isLoading ? '단지 불러오는 중...' : placeholder}
         className="h-8 bg-white pl-8 pr-8 text-[13px]"
       />
       {(selectedSite || query) && (
@@ -922,7 +1463,14 @@ function SiteSearchFilter({
                   value === site.id && 'bg-slate-50',
                 )}
               >
-                <span className="truncate text-[13px] font-medium text-slate-900">{site.name}</span>
+                <span className="flex min-w-0 items-center justify-between gap-2">
+                  <span className="truncate text-[13px] font-medium text-slate-900">{site.name}</span>
+                  {showCounts && (
+                    <span className="shrink-0 text-[11px] text-slate-400">
+                      {site.propertyCount}건
+                    </span>
+                  )}
+                </span>
                 <span className="truncate text-[11px] text-slate-500">
                   {site.roadAddress ?? site.jibunAddress ?? getSiteTypeLabel(site.type)}
                 </span>
@@ -1007,7 +1555,7 @@ function buildListingFilterParams(filters: PropertyFilterState) {
   const params: Record<string, string | number | boolean | undefined> = {};
 
   if (filters.siteId) params.siteId = filters.siteId;
-  if (filters.transactionType !== 'all') params.transactionType = filters.transactionType;
+  if (filters.checkStatus !== 'all') params.checkStatus = filters.checkStatus;
   if (filters.siteType !== 'all') params.siteType = filters.siteType;
   if (filters.includeHidden) params.includeHidden = true;
 
@@ -1029,7 +1577,7 @@ function buildListingFilterParams(filters: PropertyFilterState) {
 function buildActiveFilterChips(
   search: string,
   filters: PropertyFilterState,
-  sitesById: Map<string, Site>,
+  sitesById: Map<string, ListingFilterSite>,
 ) {
   const chips: string[] = [];
   const trimmedSearch = search.trim();
@@ -1038,11 +1586,11 @@ function buildActiveFilterChips(
   if (filters.siteId) {
     chips.push(`단지: ${sitesById.get(filters.siteId)?.name ?? '선택한 단지'}`);
   }
-  if (filters.transactionType !== 'all') {
-    chips.push(`거래: ${getOptionLabel(transactionTypeOptions, filters.transactionType)}`);
-  }
   if (filters.siteType !== 'all') {
     chips.push(`유형: ${getOptionLabel(siteTypeOptions, filters.siteType)}`);
+  }
+  if (filters.checkStatus !== 'all') {
+    chips.push(`상태: ${getOptionLabel(checkStatusFilterOptions, filters.checkStatus)}`);
   }
 
   addRangeChip(chips, '가격', filters.priceMin, filters.priceMax, '만원');
@@ -1096,16 +1644,95 @@ function getOptionLabel(
   return options.find((option) => option.value === value)?.label ?? value;
 }
 
-function getOwnerContact(listing: Listing) {
-  const contacts = listing.property?.propertyContacts ?? [];
+function buildPropertyListingGroups(listings: Listing[]) {
+  const groups = new Map<string, PropertyListingGroup>();
+
+  listings.forEach((listing) => {
+    const existing = groups.get(listing.propertyId);
+    if (existing) {
+      existing.matchedListings.push(listing);
+      existing.listings = mergeListingSummaries(existing.listings, collectPropertyListings(listing));
+      return;
+    }
+
+    groups.set(listing.propertyId, {
+      id: listing.propertyId,
+      propertyId: listing.propertyId,
+      property: listing.property,
+      representative: listing,
+      matchedListings: [listing],
+      listings: collectPropertyListings(listing),
+    });
+  });
+
+  return Array.from(groups.values());
+}
+
+function collectPropertyListings(listing: Listing) {
+  return mergeListingSummaries(
+    [toListingSummary(listing)],
+    (listing.property?.listings ?? []).map(toListingSummary),
+  );
+}
+
+function mergeListingSummaries(
+  baseListings: ListingSummary[],
+  incomingListings: ListingSummary[],
+) {
+  const byId = new Map<string, ListingSummary>();
+  [...baseListings, ...incomingListings].forEach((listing) => {
+    byId.set(listing.id, listing);
+  });
+
+  return Array.from(byId.values()).sort(compareListingSummary);
+}
+
+function toListingSummary(listing: ListingSummary): ListingSummary {
+  return {
+    id: listing.id,
+    transactionType: listing.transactionType,
+    price: listing.price,
+    deposit: listing.deposit,
+    monthlyRent: listing.monthlyRent,
+    checkStatus: listing.checkStatus,
+    isHidden: listing.isHidden,
+    memo: listing.memo,
+    createdAt: listing.createdAt,
+    updatedAt: listing.updatedAt,
+  };
+}
+
+function compareListingSummary(a: ListingSummary, b: ListingSummary) {
+  const typeOrder = getTransactionTypeOrder(a.transactionType) - getTransactionTypeOrder(b.transactionType);
+  if (typeOrder !== 0) return typeOrder;
+  return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+}
+
+function getTransactionTypeOrder(value: string) {
+  if (value === 'sale') return 0;
+  if (value === 'jeonse') return 1;
+  if (value === 'monthly') return 2;
+  return 99;
+}
+
+function getOwnerContact(property?: ListingProperty) {
+  const contacts = property?.propertyContacts ?? [];
   const owner = contacts.find((propertyContact) => propertyContact.role === 'owner');
   return owner?.contact ?? null;
 }
 
-function getDongName(listing: Listing) {
-  const dong = listing.property?.unit?.dong;
+function getDongName(property?: ListingProperty) {
+  const dong = property?.unit?.dong;
   if (!dong || dong.isPlaceholder) return '-';
   return dong.name;
+}
+
+function getExclusiveAreaM2(property?: ListingProperty) {
+  return property?.unit?.exclusiveAreaM2 ?? property?.unit?.siteUnitType?.exclusiveAreaM2;
+}
+
+function getUnitTypeName(property?: ListingProperty) {
+  return property?.unit?.siteUnitType?.name ?? '-';
 }
 
 function getSiteTypeLabel(value?: string | null) {
@@ -1113,8 +1740,204 @@ function getSiteTypeLabel(value?: string | null) {
   return getOptionLabel(siteTypeOptions, value);
 }
 
-function getListingMemo(listing: Listing) {
-  return listing.memo?.trim() || listing.property?.memo?.trim() || '-';
+function getPropertySheetUnitLabel(property: Property) {
+  const dongName =
+    property.unit?.dong && !property.unit.dong.isPlaceholder ? property.unit.dong.name : '';
+  return [dongName, property.unit?.name].filter(Boolean).join(' ');
+}
+
+function getPropertySheetExclusiveAreaM2(property: Property) {
+  return property.unit?.exclusiveAreaM2 ?? property.unit?.siteUnitType?.exclusiveAreaM2;
+}
+
+function getPropertySheetSupplyAreaM2(property: Property) {
+  return property.unit?.supplyAreaM2 ?? property.unit?.siteUnitType?.supplyAreaM2;
+}
+
+function formatPropertySheetArea(property: Property) {
+  const exclusive = getPropertySheetExclusiveAreaM2(property);
+  const supply = getPropertySheetSupplyAreaM2(property);
+
+  if (exclusive && supply) {
+    return `전용 ${formatAreaPyeong(exclusive)} · 공급 ${formatAreaPyeong(supply)}`;
+  }
+  if (exclusive) return `전용 ${formatAreaPyeong(exclusive)}`;
+  if (supply) return `공급 ${formatAreaPyeong(supply)}`;
+  return '-';
+}
+
+function getLatestPropertyListingUpdatedAt(property: Property) {
+  const latestListingUpdatedAt = (property.listings ?? []).reduce<string | null>((latest, listing) => {
+    if (!latest) return listing.updatedAt;
+    return new Date(listing.updatedAt).getTime() > new Date(latest).getTime()
+      ? listing.updatedAt
+      : latest;
+  }, null);
+
+  return latestListingUpdatedAt ?? property.updatedAt;
+}
+
+function comparePropertyListing(a: PropertyListing, b: PropertyListing) {
+  const typeOrder = getTransactionTypeOrder(a.transactionType) - getTransactionTypeOrder(b.transactionType);
+  if (typeOrder !== 0) return typeOrder;
+  return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+}
+
+function getPropertySheetNotices(property: Property): PropertySheetNotice[] {
+  const listings = property.listings ?? [];
+  const contacts = property.propertyContacts ?? [];
+  const tenants = property.tenants ?? [];
+  const consultations = property.consultations ?? [];
+  const notices: PropertySheetNotice[] = [];
+  const owner = contacts.find((contact) => contact.role === 'owner') ?? contacts[0];
+  const latestUpdatedAt = getLatestPropertyListingUpdatedAt(property);
+  const daysSinceLatestCheck = getDaysSince(latestUpdatedAt);
+  const unverifiedListings = listings.filter((listing) => listing.checkStatus === 'unverified');
+  const hiddenListings = listings.filter((listing) => listing.isHidden);
+  const expiringTenant = tenants.find((tenant) => {
+    if (!tenant.contractEnd) return false;
+    const daysUntilEnd = getDaysUntil(tenant.contractEnd);
+    return daysUntilEnd >= 0 && daysUntilEnd <= 45;
+  });
+
+  if (listings.length === 0) {
+    notices.push({
+      title: '거래 정보 없음',
+      detail: '매매, 전세, 월세 중 등록된 거래 카드가 없습니다.',
+      tone: 'danger',
+    });
+  }
+
+  if (unverifiedListings.length > 0) {
+    notices.push({
+      title: '확인 필요한 거래',
+      detail: `${formatTransactionTypeList(unverifiedListings)} ${unverifiedListings.length}건이 미확인 상태입니다.`,
+      tone: 'warning',
+    });
+  }
+
+  if (!owner?.contact?.phone) {
+    notices.push({
+      title: '소유주 연락처 없음',
+      detail: '목록에서 바로 전화할 수 있도록 소유주 또는 대리인 번호를 등록해야 합니다.',
+      tone: 'danger',
+    });
+  }
+
+  if (daysSinceLatestCheck !== null && daysSinceLatestCheck >= 30) {
+    notices.push({
+      title: '확인일 오래됨',
+      detail: `마지막 확인이 ${daysSinceLatestCheck}일 전입니다. 광고 유지 전 소유주 확인이 필요합니다.`,
+      tone: 'warning',
+    });
+  }
+
+  if (hiddenListings.length > 0) {
+    notices.push({
+      title: '숨김 거래 포함',
+      detail: `${formatTransactionTypeList(hiddenListings)} 거래가 목록에서 숨김 처리되어 있습니다.`,
+      tone: 'neutral',
+    });
+  }
+
+  if (expiringTenant?.contractEnd) {
+    notices.push({
+      title: '임차 계약 만기 임박',
+      detail: `${expiringTenant.contact?.name ?? '임차인'} 계약 종료가 ${formatDateShort(expiringTenant.contractEnd)}입니다.`,
+      tone: 'warning',
+    });
+  }
+
+  if (!property.memo?.trim() && consultations.length === 0) {
+    notices.push({
+      title: '상담 기록 없음',
+      detail: '최근 통화나 확인 메모가 없어 매물 히스토리를 판단하기 어렵습니다.',
+      tone: 'neutral',
+    });
+  }
+
+  return notices.slice(0, 5);
+}
+
+function formatDateShort(value?: string | null) {
+  if (!value) return '-';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '-';
+  return date.toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric' });
+}
+
+function formatDateTime(value?: string | null) {
+  if (!value) return '-';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '-';
+  return date.toLocaleString('ko-KR', {
+    month: 'numeric',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+function getContactRoleLabel(role: string) {
+  return contactRoleLabels[role] ?? role;
+}
+
+function getTenantPeriodLabel(tenant: Tenant) {
+  if (!tenant.contractStart && !tenant.contractEnd) return '계약 기간 미등록';
+  return `${formatDateShort(tenant.contractStart)} - ${formatDateShort(tenant.contractEnd)}`;
+}
+
+function getTenantStatusLabel(status: string) {
+  if (status === 'residing') return '거주중';
+  if (status === 'moving_out') return '퇴거예정';
+  if (status === 'moved') return '퇴거완료';
+  return status;
+}
+
+function getDaysSince(value?: string | null) {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  const diffMs = Date.now() - date.getTime();
+  return Math.max(0, Math.floor(diffMs / 86_400_000));
+}
+
+function getDaysUntil(value?: string | null) {
+  if (!value) return Number.POSITIVE_INFINITY;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return Number.POSITIVE_INFINITY;
+  return Math.ceil((date.getTime() - Date.now()) / 86_400_000);
+}
+
+function formatDaysAgo(value?: string | null) {
+  const days = getDaysSince(value);
+  if (days === null) return '-';
+  if (days === 0) return '오늘';
+  return `${days}일 전`;
+}
+
+function formatTransactionTypeList(listings: Pick<PropertyListing, 'transactionType'>[]) {
+  const labels = Array.from(
+    new Set(listings.map((listing) => transactionTypeMeta[listing.transactionType]?.label ?? listing.transactionType)),
+  );
+  return labels.join(', ');
+}
+
+function getGroupMemo(group: PropertyListingGroup) {
+  return (
+    group.listings.find((listing) => listing.memo?.trim())?.memo?.trim() ||
+    group.property?.memo?.trim() ||
+    '-'
+  );
+}
+
+function getLatestListingUpdatedAt(group: PropertyListingGroup) {
+  return group.listings.reduce<string | null>((latest, listing) => {
+    if (!latest) return listing.updatedAt;
+    return new Date(listing.updatedAt).getTime() > new Date(latest).getTime()
+      ? listing.updatedAt
+      : latest;
+  }, null);
 }
 
 function formatAreaPyeong(value?: number | null) {

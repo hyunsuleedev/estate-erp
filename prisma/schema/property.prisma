@@ -71,6 +71,7 @@ model Listing {
   // 공동 중개망
   networkSharedProperties NetworkSharedProperty[]
 
+  @@unique([propertyId, transactionType])
   @@index([officeId, checkStatus])
   @@index([officeId, checkStatus, checkStatusChangedAt])
   @@index([propertyId])

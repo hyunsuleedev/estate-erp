@@ -6,7 +6,14 @@ export type { ApiClientConfig, PaginatedResponse } from './types.js';
 // Module types
 export type { LoginDto, RegisterDto, AuthResponse, MeResponse } from './modules/auth.js';
 export type { Property, PropertyListing, PropertiesFilter, CreatePropertyDto, UpdatePropertyDto } from './modules/properties.js';
-export type { Listing, ListingsFilter, CreateListingDto, UpdateListingDto } from './modules/listings.js';
+export type {
+  Listing,
+  ListingFilterSite,
+  ListingFilterSitesParams,
+  ListingsFilter,
+  CreateListingDto,
+  UpdateListingDto,
+} from './modules/listings.js';
 export type { Contact, ContactCounts, ContactDetail, ContactsFilter, CreateContactDto, UpdateContactDto } from './modules/contacts.js';
 export type { Site, SiteDetail, CreateSiteDto } from './modules/sites.js';
 export type { Dong } from './modules/dongs.js';

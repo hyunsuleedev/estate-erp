@@ -114,6 +114,9 @@ export interface DataTableProps<TData> {
   onRowClick?: (row: TData) => void;
   // Loading
   isLoading?: boolean;
+  isLoadingMore?: boolean;
+  onEndReached?: () => void;
+  endReachedThreshold?: number;
   // Keyboard nav
   enableKeyboardNav?: boolean;
   // Empty state

@@ -72,6 +72,16 @@ export class ListingsController {
     });
   }
 
+  @Get('filter-sites')
+  findFilterSites(
+    @Query('includeHidden') includeHidden: string,
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.listingsService.findFilterSites(user.officeId, {
+      includeHidden: includeHidden === 'true',
+    });
+  }
+
   @Get(':id')
   findOne(
     @Param('id') id: string,

@@ -37,6 +37,9 @@ export function DataTable<TData extends { id: string }>({
   onRowSelectionChange,
   onRowClick,
   isLoading = false,
+  isLoadingMore = false,
+  onEndReached,
+  endReachedThreshold = 320,
   enableKeyboardNav = true,
   emptyMessage = '데이터가 없습니다.',
   layout = 'paginated',
@@ -251,6 +254,19 @@ export function DataTable<TData extends { id: string }>({
   const focusedRow =
     focusedCell !== null && rows[focusedCell.row]?.original ? rows[focusedCell.row].original : null;
 
+  const handleScroll = useCallback(
+    (event: React.UIEvent<HTMLDivElement>) => {
+      if (!onEndReached || isLoading || isLoadingMore) return;
+
+      const target = event.currentTarget;
+      const distanceToBottom = target.scrollHeight - target.scrollTop - target.clientHeight;
+      if (distanceToBottom <= endReachedThreshold) {
+        onEndReached();
+      }
+    },
+    [endReachedThreshold, isLoading, isLoadingMore, onEndReached],
+  );
+
   return (
     <div className={cn('flex flex-col', isFullHeight && 'h-full min-h-0')}>
       {/* Bulk actions toolbar — visible when at least one row is selected */}
@@ -282,6 +298,7 @@ export function DataTable<TData extends { id: string }>({
         )}
         tabIndex={0}
         onKeyDown={handleKeyDown}
+        onScroll={handleScroll}
       >
         <table
           ref={tableRef}
@@ -330,9 +347,9 @@ export function DataTable<TData extends { id: string }>({
                       className={cn(
                         'relative text-left align-middle font-medium text-muted-foreground',
                         isNotion
-                          ? 'h-9 border-b border-slate-200 px-2.5 text-[13px] normal-case tracking-normal'
+                          ? 'h-9 border-b border-[#eeeeec] px-2.5 text-[13px] normal-case tracking-normal'
                           : 'h-8 border-b border-border/60 px-3 text-[11px] uppercase tracking-wider',
-                        !isLast && (isNotion ? 'border-r border-r-slate-200' : 'border-r border-r-border/40'),
+                        !isLast && (isNotion ? 'border-r border-r-[#eeeeec]' : 'border-r border-r-border/40'),
                         canSort && 'cursor-pointer select-none hover:text-foreground',
                         isPinned && (isNotion ? 'bg-white' : 'bg-background'),
                       )}
@@ -381,8 +398,8 @@ export function DataTable<TData extends { id: string }>({
                       <td
                         key={j}
                         className={cn(
-                          isNotion ? 'border-b border-slate-200 px-2.5' : 'border-b border-border/30 px-3',
-                          j < allColumns.length - 1 && (isNotion ? 'border-r border-r-slate-200' : 'border-r border-r-border/30'),
+                          isNotion ? 'border-b border-[#eeeeec] px-2.5' : 'border-b border-border/30 px-3',
+                          j < allColumns.length - 1 && (isNotion ? 'border-r border-r-[#eeeeec]' : 'border-r border-r-border/30'),
                         )}
                         style={{ height: rowCellHeight }}
                       >
@@ -423,8 +440,8 @@ export function DataTable<TData extends { id: string }>({
                         data-table-row={rowIndex}
                         className={cn(
                           'relative align-middle select-none',
-                          isNotion ? 'border-b border-slate-200 px-2.5 text-[13px]' : 'border-b border-border/30 px-3',
-                          !isLastCol && (isNotion ? 'border-r border-r-slate-200' : 'border-r border-r-border/30'),
+                          isNotion ? 'border-b border-[#eeeeec] px-2.5 text-[13px]' : 'border-b border-border/30 px-3',
+                          !isLastCol && (isNotion ? 'border-r border-r-[#eeeeec]' : 'border-r border-r-border/30'),
                           isNotion ? 'group-hover:bg-slate-50/70' : 'group-hover:bg-muted/40',
                           'group-data-[state=selected]:bg-primary/5',
                           isFocused && (isNotion ? 'bg-blue-50/60 outline outline-1 -outline-offset-1 outline-blue-500/30' : 'bg-accent/60 outline outline-1 -outline-offset-1 outline-primary/30'),
@@ -462,10 +479,28 @@ export function DataTable<TData extends { id: string }>({
                         <td colSpan={allColumns.length} style={{ height: paddingBottom, padding: 0, border: 0 }} />
                       </tr>
                     )}
+                    {isLoadingMore && (
+                      <tr>
+                        <td colSpan={allColumns.length} className="h-10 px-3 text-center text-xs text-muted-foreground">
+                          더 불러오는 중...
+                        </td>
+                      </tr>
+                    )}
                   </>
                 );
               }
-              return rows.map(renderRow);
+              return (
+                <>
+                  {rows.map(renderRow)}
+                  {isLoadingMore && (
+                    <tr>
+                      <td colSpan={allColumns.length} className="h-10 px-3 text-center text-xs text-muted-foreground">
+                        더 불러오는 중...
+                      </td>
+                    </tr>
+                  )}
+                </>
+              );
             })()}
           </tbody>
         </table>

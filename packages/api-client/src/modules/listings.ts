@@ -54,6 +54,18 @@ export interface Listing {
         phone: string | null;
       } | null;
     }>;
+    listings?: Array<{
+      id: string;
+      transactionType: string;
+      price: number | null;
+      deposit: number | null;
+      monthlyRent: number | null;
+      checkStatus: string;
+      isHidden: boolean;
+      memo: string | null;
+      createdAt: string;
+      updatedAt: string;
+    }>;
   };
 }
 
@@ -82,6 +94,20 @@ export interface ListingsFilter {
   limit?: number;
 }
 
+export interface ListingFilterSite {
+  id: string;
+  name: string;
+  type: string;
+  roadAddress: string | null;
+  jibunAddress: string | null;
+  listingCount: number;
+  propertyCount: number;
+}
+
+export interface ListingFilterSitesParams {
+  includeHidden?: boolean;
+}
+
 export interface CreateListingDto {
   propertyId: string;
   transactionType: string;
@@ -105,6 +131,11 @@ export function createListingsApi(request: RequestFn) {
   return {
     findAll: (filters?: ListingsFilter) =>
       request<PaginatedResponse<Listing>>('/listings', {
+        params: filters as Record<string, string | number | boolean | undefined>,
+      }),
+
+    filterSites: (filters?: ListingFilterSitesParams) =>
+      request<ListingFilterSite[]>('/listings/filter-sites', {
         params: filters as Record<string, string | number | boolean | undefined>,
       }),
 

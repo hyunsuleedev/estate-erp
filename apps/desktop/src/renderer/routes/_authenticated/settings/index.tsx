@@ -153,7 +153,6 @@ function SettingsPage() {
     if (!office) return [];
 
     return [
-      { label: '사무소 코드', value: office.code, icon: Building2 },
       { label: '활성 직원', value: `${office.counts.activeUsers}명`, icon: Users },
       { label: '매니저 수', value: `${office.counts.managers}명`, icon: ShieldCheck },
       { label: '플랜', value: office.subscription, icon: Building2 },
@@ -175,7 +174,6 @@ function SettingsPage() {
         <div className="space-y-1">
           <div className="flex items-center gap-3">
             <h1 className="text-lg font-semibold tracking-tight">설정</h1>
-            {office ? <Badge variant="outline">{office.code}</Badge> : null}
           </div>
           <p className="text-sm text-muted-foreground">
             사무소 기본 정보와 수수료 배분 규칙을 관리합니다.
@@ -235,7 +233,7 @@ function SettingsPage() {
           <CardHeader>
             <CardTitle>사무소 정보</CardTitle>
             <CardDescription>
-              대표 정보와 운영 식별값을 관리합니다.
+              대표 정보와 기본 연락처를 관리합니다.
             </CardDescription>
           </CardHeader>
           <CardContent className="grid gap-4 md:grid-cols-2">
@@ -245,7 +243,6 @@ function SettingsPage() {
               onChange={(value) => setOfficeForm((prev) => ({ ...prev, name: value }))}
               disabled={!canEdit}
             />
-            <StaticField label="사무소 코드" value={office?.code ?? '-'} />
             <Field
               label="대표명"
               value={officeForm.ceoName}

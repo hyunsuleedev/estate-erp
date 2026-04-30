@@ -63,6 +63,7 @@ function EmployeesPage() {
   const [resetPassword, setResetPassword] = useState('');
   const [createForm, setCreateForm] = useState<CreateEmployeeDto>({
     name: '',
+    loginId: '',
     phone: '',
     email: '',
     role: 'agent',
@@ -83,11 +84,6 @@ function EmployeesPage() {
     queryKey: ['employee-performance', selectedEmployeeId],
     queryFn: () => api.employees.getPerformance(selectedEmployeeId as string),
     enabled: !!selectedEmployeeId,
-  });
-
-  const { data: office } = useQuery({
-    queryKey: ['office-profile'],
-    queryFn: () => api.offices.getMe(),
   });
 
   const filteredEmployees = useMemo(() => {
@@ -152,6 +148,7 @@ function EmployeesPage() {
       setIsCreateOpen(false);
       setCreateForm({
         name: '',
+        loginId: '',
         phone: '',
         email: '',
         role: user?.role === 'manager' ? 'agent' : 'agent',
@@ -218,11 +215,6 @@ function EmployeesPage() {
       },
     ];
   }, [employees]);
-
-  const loginPreview = useMemo(
-    () => getNextLoginPreview(user?.office.code, employees),
-    [employees, user?.office.code],
-  );
 
   const roleOptions = user?.role === 'manager' ? ['agent'] : ['agent', 'manager'];
 
@@ -364,7 +356,7 @@ function EmployeesPage() {
           <DialogHeader>
             <DialogTitle>새 직원 추가</DialogTitle>
             <DialogDescription>
-              로그인 ID는 사무소 코드 기준으로 자동 발급됩니다.
+              직원이 사용할 로그인 ID와 초기 비밀번호를 입력합니다.
             </DialogDescription>
           </DialogHeader>
 
@@ -374,7 +366,11 @@ function EmployeesPage() {
               value={createForm.name ?? ''}
               onChange={(value) => setCreateForm((prev) => ({ ...prev, name: value }))}
             />
-            <StaticField label="발급 예정 ID" value={loginPreview} />
+            <Field
+              label="로그인 ID"
+              value={createForm.loginId ?? ''}
+              onChange={(value) => setCreateForm((prev) => ({ ...prev, loginId: value }))}
+            />
             <Field
               label="휴대폰"
               value={createForm.phone ?? ''}
@@ -424,6 +420,7 @@ function EmployeesPage() {
               disabled={
                 createMutation.isPending ||
                 !createForm.name?.trim() ||
+                !createForm.loginId?.trim() ||
                 !createForm.password?.trim()
               }
             >
@@ -799,20 +796,6 @@ function formatDateTime(value: string) {
     hour: '2-digit',
     minute: '2-digit',
   }).format(new Date(value));
-}
-
-function getNextLoginPreview(officeCode: string | undefined, employees: Employee[]) {
-  if (!officeCode) return '-';
-
-  const prefix = `${officeCode.toLowerCase()}-`;
-  const maxIndex =
-    employees.reduce((maxValue, employee) => {
-      if (!employee.loginId.startsWith(prefix)) return maxValue;
-      const nextValue = Number.parseInt(employee.loginId.slice(prefix.length), 10);
-      return Number.isFinite(nextValue) ? Math.max(maxValue, nextValue) : maxValue;
-    }, 0) + 1;
-
-  return `${prefix}${String(maxIndex).padStart(4, '0')}`;
 }
 
 function getCommissionNumber(
