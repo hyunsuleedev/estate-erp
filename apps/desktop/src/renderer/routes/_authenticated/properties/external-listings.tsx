@@ -1,6 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   Building2,
   CheckCircle,
@@ -67,36 +67,25 @@ const transactionTypes: Array<{
   { value: 'monthly', label: '월세' },
 ];
 
-const statusFilters: Array<{
-  value: 'all' | ExternalListingGroupStatus;
-  label: string;
-}> = [
-  { value: 'all', label: '전체' },
-  { value: 'unmatched', label: '미매칭' },
-  { value: 'matched', label: '매칭' },
-  { value: 'verified', label: '확정' },
-  { value: 'on_hold', label: '보류' },
-];
-
 const statusMeta: Record<
   ExternalListingGroupStatus,
   { label: string; className: string }
 > = {
   unmatched: {
     label: '미매칭',
-    className: 'bg-amber-50 text-amber-700',
+    className: 'bg-[#f1f1ef] text-[#5f5e5b]',
   },
   matched: {
     label: '매칭',
-    className: 'bg-blue-50 text-blue-700',
+    className: 'bg-[#e7f3f8] text-[#337ea9]',
   },
   verified: {
     label: '확정',
-    className: 'bg-emerald-50 text-emerald-700',
+    className: 'bg-[#eef3ed] text-[#44745a]',
   },
   on_hold: {
     label: '보류',
-    className: 'bg-zinc-100 text-zinc-600',
+    className: 'bg-[#fbf3db] text-[#9f6b00]',
   },
 };
 
@@ -112,9 +101,6 @@ function ExternalListingsPage() {
   const [transactionType, setTransactionType] =
     useState<ExternalListingTransactionType>('sale');
   const [selectedSiteIds, setSelectedSiteIds] = useState<string[]>([]);
-  const [status, setStatus] = useState<'all' | ExternalListingGroupStatus>(
-    'all',
-  );
   const [searchQuery, setSearchQuery] = useState('');
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [buildingQuery, setBuildingQuery] = useState('');
@@ -175,7 +161,6 @@ function ExternalListingsPage() {
       'external-listing-groups',
       transactionType,
       selectedSiteIds,
-      status,
       searchQuery,
       activeSession?.id,
       innerTab,
@@ -186,7 +171,6 @@ function ExternalListingsPage() {
         // 세션 모드면 siteId 단일 스코프, 아니면 기존 siteIds 멀티
         siteId: activeSession ? scopeSiteId : undefined,
         siteIds: activeSession ? undefined : selectedSiteIds,
-        status: status === 'all' ? undefined : status,
         search: searchQuery.trim() || undefined,
         bucket: activeSession ? innerTab : undefined,
       }),
@@ -400,8 +384,6 @@ function ExternalListingsPage() {
   const columns = useMemo(
     () =>
       buildColumns(transactionType, {
-        onToggleFavorite: (id, favorite) =>
-          updateGroupMutation.mutate({ id, dto: { favorite } }),
         onUpdateStatus: (id, status) =>
           updateGroupMutation.mutate({ id, dto: { status } }),
         onUpdateMemo: (id, memo) =>
@@ -414,7 +396,7 @@ function ExternalListingsPage() {
 
   const handleManualButtonClick = () => {
     if (!scopeSiteId) {
-      setSessionError('수동 입력을 시작하려면 단지를 1개만 선택하세요.');
+      setSessionError('입력을 시작하려면 단지를 1개만 선택하세요.');
       return;
     }
     if (activeSession) {
@@ -425,9 +407,9 @@ function ExternalListingsPage() {
   };
 
   return (
-    <div className="-m-4 flex flex-1 flex-col gap-4 p-4 min-h-0">
+    <div className="-m-4 flex min-h-0 flex-1 flex-col bg-white px-6 py-5">
       {activeSession && (
-        <div className="flex items-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm">
+        <div className="mb-3 flex items-center gap-2 rounded-md border border-amber-100 bg-amber-50/70 px-3 py-2 text-sm">
           <Lock className="size-4 text-amber-700" />
           <span className="text-amber-900">
             스냅샷 세션 진행 중 —{' '}
@@ -438,7 +420,7 @@ function ExternalListingsPage() {
       )}
 
       {sessionError && (
-        <div className="flex items-center justify-between rounded-md border border-muted px-3 py-2 text-xs">
+        <div className="mb-3 flex items-center justify-between rounded-md border border-[#eeeeec] px-3 py-2 text-xs">
           <span>{sessionError}</span>
           <Button
             size="xs"
@@ -455,18 +437,22 @@ function ExternalListingsPage() {
         onValueChange={(v) =>
           setTransactionType(v as ExternalListingTransactionType)
         }
-        className="flex flex-1 flex-col gap-3 min-h-0"
+        className="flex min-h-0 flex-1 flex-col gap-0"
       >
-        <div className="flex items-center gap-3">
-          <TabsList>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-[#eeeeec] pb-3">
+          <TabsList className="bg-slate-100/70">
             {transactionTypes.map((t) => (
-              <TabsTrigger key={t.value} value={t.value} className="px-6">
+              <TabsTrigger
+                key={t.value}
+                value={t.value}
+                className="border-0 px-3 shadow-none data-[state=active]:border data-[state=active]:border-[#d9d9d6] data-[state=active]:bg-white data-[state=active]:shadow-sm"
+              >
                 {t.label}
               </TabsTrigger>
             ))}
           </TabsList>
           {!isLoading && (
-            <span className="text-xs text-muted-foreground tabular-nums">
+            <span className="text-xs tabular-nums text-slate-500">
               {activeFilterCount > 0 &&
               filteredGroups.length !== groups.length
                 ? `${filteredGroups.length}/${groups.length}건`
@@ -505,23 +491,23 @@ function ExternalListingsPage() {
                 </Button>
               </>
             )}
-            <Button size="sm" onClick={handleManualButtonClick}>
+            <Button size="sm" className="mb-2 h-8 px-3 text-xs" onClick={handleManualButtonClick}>
               <Plus className="mr-1 size-4" />
-              수동 입력
+              입력
             </Button>
           </div>
         </div>
 
         {/* 필터 카드 — 테이블과 시각적으로 분리 */}
-        <div className="flex flex-col gap-2 rounded-xl border border-border/60 bg-muted/20 p-3">
+        <div className="border-b border-[#eeeeec] py-3">
           <div className="flex flex-wrap items-center gap-2">
             <div className="relative min-w-[220px] flex-1 max-w-md">
-              <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-slate-400" />
               <Input
                 value={searchQuery}
                 onChange={(event) => setSearchQuery(event.target.value)}
                 placeholder="단지·메모 검색 (서버)"
-                className="h-9 bg-background pl-9"
+                className="h-8 bg-white pl-8 text-[13px]"
               />
             </div>
             <MultiSelect
@@ -529,13 +515,13 @@ function ExternalListingsPage() {
               selected={selectedSiteIds}
               onChange={setSelectedSiteIds}
               placeholder="관리 단지 선택"
-              className="min-w-[220px] bg-background"
+              className="min-w-[220px] bg-white"
             />
             <Button
               type="button"
-              variant={isFilterOpen ? 'default' : 'outline'}
+              variant="outline"
               size="sm"
-              className={cn(!isFilterOpen && 'bg-background')}
+              className={cn('h-8 bg-white px-2.5 text-xs', isFilterOpen && 'border-slate-400 bg-slate-50')}
               onClick={() => setIsFilterOpen((v) => !v)}
             >
               <Filter className="mr-1 size-4" />
@@ -554,25 +540,10 @@ function ExternalListingsPage() {
                 <ChevronDown className="ml-1 size-4" />
               )}
             </Button>
-
-            <div className="ml-auto flex flex-wrap items-center gap-1">
-              {statusFilters.map((s) => (
-                <Button
-                  key={s.value}
-                  type="button"
-                  variant={status === s.value ? 'default' : 'outline'}
-                  size="xs"
-                  className={cn(status !== s.value && 'bg-background')}
-                  onClick={() => setStatus(s.value)}
-                >
-                  {s.label}
-                </Button>
-              ))}
-            </div>
           </div>
 
           {isFilterOpen && (
-            <div className="mt-1 flex flex-col gap-3 rounded-lg border border-border/60 bg-background px-3 py-3">
+            <div className="mt-3 flex flex-col gap-3 rounded-md border border-[#eeeeec] bg-slate-50/60 px-3 py-3">
               {/* Row 1: 동/호수/매물특징 */}
               <div className="flex flex-wrap items-center gap-3">
                 <div className="flex items-center gap-2">
@@ -587,7 +558,7 @@ function ExternalListingsPage() {
                     value={buildingQuery}
                     onChange={(e) => setBuildingQuery(e.target.value)}
                     placeholder="101"
-                    className="h-8 w-[120px]"
+                    className="h-8 w-[120px] bg-white text-[13px]"
                   />
                 </div>
                 <div className="flex items-center gap-2">
@@ -602,7 +573,7 @@ function ExternalListingsPage() {
                     value={hoQuery}
                     onChange={(e) => setHoQuery(e.target.value)}
                     placeholder="1503"
-                    className="h-8 w-[120px]"
+                    className="h-8 w-[120px] bg-white text-[13px]"
                   />
                 </div>
                 <div className="flex flex-1 items-center gap-2 min-w-[240px]">
@@ -617,7 +588,7 @@ function ExternalListingsPage() {
                     value={featureQuery}
                     onChange={(e) => setFeatureQuery(e.target.value)}
                     placeholder="급매·올수리·세안고 등"
-                    className="h-8"
+                    className="h-8 bg-white text-[13px]"
                   />
                 </div>
               </div>
@@ -675,7 +646,7 @@ function ExternalListingsPage() {
                     value={priceMin}
                     onChange={(e) => setPriceMin(e.target.value)}
                     placeholder="최소"
-                    className="h-8 w-[110px] tabular-nums"
+                    className="h-8 w-[110px] bg-white text-[13px] tabular-nums"
                   />
                   <span className="text-xs text-muted-foreground">~</span>
                   <Input
@@ -683,7 +654,7 @@ function ExternalListingsPage() {
                     value={priceMax}
                     onChange={(e) => setPriceMax(e.target.value)}
                     placeholder="최대"
-                    className="h-8 w-[110px] tabular-nums"
+                    className="h-8 w-[110px] bg-white text-[13px] tabular-nums"
                   />
                   <span className="text-xs text-muted-foreground">만원</span>
                 </div>
@@ -704,9 +675,9 @@ function ExternalListingsPage() {
         </div>
 
         {/* 테이블 카드 */}
-        <section className="flex flex-1 flex-col min-h-0 overflow-hidden rounded-xl border border-border/60 bg-background">
+        <section className="flex min-h-0 flex-1 flex-col overflow-hidden bg-white">
           {activeSession && (
-            <div className="flex items-center gap-1 border-b border-border/60 px-4 py-2">
+            <div className="flex items-center gap-1 border-b border-[#eeeeec] px-2 py-2">
               <Button
                 size="xs"
                 variant={innerTab === 'new' ? 'default' : 'ghost'}
@@ -731,7 +702,7 @@ function ExternalListingsPage() {
             <TabsContent
               key={t.value}
               value={t.value}
-              className="m-0 flex flex-1 flex-col min-h-0"
+              className="m-0 flex min-h-0 flex-1 flex-col"
             >
               {!isLoading && groups.length === 0 ? (
                 <EmptyState hasSiteFilter={selectedSiteIds.length > 0} />
@@ -740,8 +711,27 @@ function ExternalListingsPage() {
                   columns={columns}
                   data={filteredGroups}
                   layout="full-height"
-                  rowHeight={60}
+                  variant="notion"
+                  rowHeight="auto"
+                  enableRowSelection
+                  renderSelectionAccessory={(group) => (
+                    <FavoriteToggle
+                      favorite={group.favorite}
+                      onToggle={() =>
+                        updateGroupMutation.mutate({
+                          id: group.id,
+                          dto: { favorite: !group.favorite },
+                        })
+                      }
+                    />
+                  )}
                   isLoading={isLoading}
+                  renderStatusBar={() => (
+                    <span>
+                      광고 {filteredGroups.length.toLocaleString()}건 표시
+                      {groups.length !== filteredGroups.length ? ` · 전체 ${groups.length.toLocaleString()}건` : ''}
+                    </span>
+                  )}
                   emptyMessage={
                     activeFilterCount > 0
                       ? '필터에 맞는 매물이 없습니다'
@@ -875,15 +865,75 @@ function formatYmd(dateStr: string | null | undefined): string {
   return `${dateStr.slice(2, 4)}-${dateStr.slice(4, 6)}-${dateStr.slice(6, 8)}`;
 }
 
+function getExternalSourceLabel(source: string | null | undefined): string {
+  const normalized = source?.trim().toLowerCase();
+  if (!normalized) return '출처';
+  if (normalized.includes('naver')) return '네이버';
+  if (normalized.includes('asil')) return '아실';
+  if (normalized.includes('manual') || normalized.includes('수동')) return '입력';
+  return source ?? '출처';
+}
+
 const SEANGO_REGEX = /세\s*안\s*고|갭\s*투\s*자?/;
 function hasSeangoMarker(text: string | null | undefined): boolean {
   return !!text && SEANGO_REGEX.test(text);
 }
 
+function NotionTag({
+  children,
+  className,
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <span
+      className={cn(
+        'inline-flex max-w-full items-center rounded-[4px] px-1.5 py-0.5 text-[11px] font-medium leading-5',
+        className,
+      )}
+    >
+      <span className="truncate">{children}</span>
+    </span>
+  );
+}
+
+function StatusTag({ status }: { status: ExternalListingGroupStatus }) {
+  const meta = statusMeta[status];
+  return <NotionTag className={meta.className}>{meta.label}</NotionTag>;
+}
+
+function FavoriteToggle({
+  favorite,
+  onToggle,
+}: {
+  favorite: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={favorite ? '즐겨찾기 해제' : '즐겨찾기'}
+      onClick={(e) => {
+        e.stopPropagation();
+        onToggle();
+      }}
+      className={cn(
+        'flex size-4 items-center justify-center rounded-[3px] transition-colors hover:bg-[#f1f1ef] hover:text-yellow-500',
+        favorite ? 'text-yellow-400' : 'text-muted-foreground/55',
+      )}
+    >
+      <Star
+        className={cn('size-3.5', favorite && 'fill-yellow-400')}
+        strokeWidth={1.6}
+      />
+    </button>
+  );
+}
+
 // ── Table column factory (electron-estate parity) ──────────────────
 
 interface ColumnFactoryContext {
-  onToggleFavorite: (groupId: string, next: boolean) => void;
   onUpdateStatus: (groupId: string, status: ExternalListingGroupStatus) => void;
   onUpdateMemo: (groupId: string, memo: string) => void;
   onUpdateInferredHo: (groupId: string, ho: string) => void;
@@ -895,85 +945,48 @@ function buildColumns(
 ): ColumnDef<ExternalListingGroup, unknown>[] {
   const columns: ColumnDef<ExternalListingGroup, unknown>[] = [];
 
-  // ── 1. 즐겨찾기(★) ─────────────────────────────────────────
-  columns.push({
-    id: 'favorite',
-    header: '',
-    size: 44,
-    enableResizing: false,
-    cell: ({ row }) => {
-      const g = row.original;
-      return (
-        <button
-          type="button"
-          aria-label={g.favorite ? '즐겨찾기 해제' : '즐겨찾기'}
-          onClick={(e) => {
-            e.stopPropagation();
-            ctx.onToggleFavorite(g.id, !g.favorite);
-          }}
-          className={cn(
-            'flex items-center justify-center transition-transform hover:scale-110',
-            g.favorite ? 'text-yellow-400' : 'text-muted-foreground/60',
-          )}
-        >
-          <Star
-            className={cn('size-5', g.favorite && 'fill-yellow-400')}
-            strokeWidth={1.5}
-          />
-        </button>
-      );
-    },
-  });
-
-  // ── 2. 정보 (광고 · 집주인 · 매물개수/순위) ───────────────────
+  // ── 정보 (광고 · 집주인) ───────────────────────────────────
   columns.push({
     id: 'info',
     header: '정보',
-    size: 110,
+    size: 72,
     cell: ({ row }) => {
       const g = row.original;
       const main = g.mainExternalListing;
       const isActive = !!main?.isActive;
-      const ranking = g.offerRanking ?? null;
-      const sameAddrCnt = main?.sameAddrCnt ?? g.listingCount ?? null;
       return (
-        <div className="flex items-stretch gap-1.5">
-          <div className="flex flex-col gap-0.5">
-            <Badge
-              className={cn(
-                'border-0 px-1.5 py-0.5 text-center text-[10px] font-semibold text-white',
-                isActive ? 'bg-blue-500' : 'bg-red-500',
-              )}
-            >
-              {isActive ? '광고 O' : '광고 X'}
-            </Badge>
-            <Badge
-              className={cn(
-                'border-0 px-1.5 py-0.5 text-center text-[10px] font-semibold text-white',
-                g.ownerVerified ? 'bg-green-500' : 'bg-gray-500',
-              )}
-            >
-              {g.ownerVerified ? '집주인' : '중개사'}
-            </Badge>
-          </div>
-          <div className="flex min-h-[40px] w-7 flex-col items-center justify-center rounded border border-border text-[10px]">
-            {ranking ? (
-              <>
-                <div className="font-semibold tabular-nums">{ranking}/</div>
-                <div className="font-semibold tabular-nums">
-                  {sameAddrCnt ?? '-'}
-                </div>
-              </>
-            ) : (
-              <>
-                <div className="font-semibold tabular-nums">
-                  {sameAddrCnt ?? '-'}
-                </div>
-                <div className="text-muted-foreground">개</div>
-              </>
-            )}
-          </div>
+        <div className="flex flex-col gap-1 py-1">
+          <NotionTag className={isActive ? 'bg-[#e7f3f8] text-[#337ea9]' : 'bg-[#fbe4e4] text-[#9f5555]'}>
+            {isActive ? '광고 O' : '광고 X'}
+          </NotionTag>
+          <NotionTag className={g.ownerVerified ? 'bg-[#eef3ed] text-[#44745a]' : 'bg-[#f1f1ef] text-[#787774]'}>
+            {g.ownerVerified ? '집주인' : '중개사'}
+          </NotionTag>
         </div>
+      );
+    },
+  });
+
+  // ── 중복 (순위/동일주소 개수) ─────────────────────────────
+  columns.push({
+    id: 'duplicate',
+    header: '중복',
+    size: 54,
+    cell: ({ row }) => {
+      const g = row.original;
+      const ranking = g.offerRanking ?? null;
+      const sameAddrCnt =
+        g.mainExternalListing?.sameAddrCnt ?? g.listingCount ?? null;
+      const label =
+        ranking && sameAddrCnt
+          ? `${ranking}/${sameAddrCnt}`
+          : sameAddrCnt != null
+            ? `${sameAddrCnt}개`
+            : '-';
+      return (
+        <NotionTag className="bg-[#f1f1ef] text-[#5f5e5b] tabular-nums">
+          {label}
+        </NotionTag>
       );
     },
   });
@@ -1003,10 +1016,10 @@ function buildColumns(
       );
       const supplyPyeong = sqmToPyeong(main?.supplyAreaM2);
       return (
-        <div className="flex min-w-0 flex-col text-[12px]">
-          <span className="truncate">{g.areaName ?? '-'}</span>
+        <div className="flex min-w-0 flex-col gap-1 text-[12px]">
+          <span className="truncate font-medium text-slate-800">{g.areaName ?? '-'}</span>
           {exclusivePyeong != null && (
-            <span className="truncate text-muted-foreground tabular-nums">
+            <span className="truncate text-[11px] tabular-nums text-slate-500">
               {exclusivePyeong}/{supplyPyeong ?? '-'}평
             </span>
           )}
@@ -1043,9 +1056,9 @@ function buildColumns(
             className="flex min-w-0 flex-col text-[12px]"
             title="호실이 확정되어 수정할 수 없습니다. 수정하려면 Unit 링크를 해제하세요."
           >
-            <span className="truncate font-medium">{g.unit.name}</span>
+            <span className="truncate font-medium text-slate-800">{g.unit.name}</span>
             {main?.floorInfo && (
-              <span className="truncate text-muted-foreground">
+              <span className="truncate text-[11px] text-slate-500">
                 {main.floorInfo}
               </span>
             )}
@@ -1060,7 +1073,7 @@ function buildColumns(
             onSave={ctx.onUpdateInferredHo}
           />
           {main?.floorInfo && (
-            <span className="truncate text-[11px] text-muted-foreground">
+            <span className="truncate text-[11px] text-slate-500">
               {main.floorInfo}
             </span>
           )}
@@ -1084,15 +1097,15 @@ function buildColumns(
           }
         >
           <SelectTrigger
-            className="h-7 w-full border-border/60 px-2 text-[11px]"
+            className="h-auto w-fit border-0 bg-transparent p-0 shadow-none focus-visible:ring-0 [&>svg]:hidden"
             onClick={(e) => e.stopPropagation()}
           >
-            <SelectValue />
+            <StatusTag status={g.status} />
           </SelectTrigger>
-          <SelectContent>
+          <SelectContent align="start">
             {Object.entries(statusMeta).map(([value, meta]) => (
               <SelectItem key={value} value={value} className="text-xs">
-                {meta.label}
+                <NotionTag className={meta.className}>{meta.label}</NotionTag>
               </SelectItem>
             ))}
           </SelectContent>
@@ -1108,7 +1121,7 @@ function buildColumns(
       header: '매매가',
       size: 110,
       cell: ({ row }) => (
-        <span className="text-[13px] font-medium tabular-nums">
+        <span className="text-[13px] font-medium tabular-nums text-slate-950">
           {row.original.mainExternalListing?.price
             ? formatPrice(row.original.mainExternalListing.price)
             : '-'}
@@ -1121,7 +1134,7 @@ function buildColumns(
       header: '전세가',
       size: 110,
       cell: ({ row }) => (
-        <span className="text-[13px] font-medium tabular-nums">
+        <span className="text-[13px] font-medium tabular-nums text-slate-950">
           {row.original.mainExternalListing?.deposit
             ? formatPrice(row.original.mainExternalListing.deposit)
             : '-'}
@@ -1134,7 +1147,7 @@ function buildColumns(
       header: '보증금',
       size: 95,
       cell: ({ row }) => (
-        <span className="text-[13px] tabular-nums">
+        <span className="text-[13px] tabular-nums text-slate-950">
           {row.original.mainExternalListing?.deposit
             ? formatPrice(row.original.mainExternalListing.deposit)
             : '-'}
@@ -1146,7 +1159,7 @@ function buildColumns(
       header: '월세',
       size: 80,
       cell: ({ row }) => (
-        <span className="text-[13px] tabular-nums">
+        <span className="text-[13px] tabular-nums text-slate-950">
           {row.original.mainExternalListing?.monthlyRent
             ? formatPrice(row.original.mainExternalListing.monthlyRent)
             : '-'}
@@ -1172,14 +1185,23 @@ function buildColumns(
       if (!max && !min) {
         return <span className="text-[12px] text-muted-foreground">-</span>;
       }
+      if (!max || max === min) {
+        return (
+          <span className="text-[12px] tabular-nums text-slate-700">
+            {max ?? min}
+          </span>
+        );
+      }
       return (
-        <div className="flex flex-col gap-0.5 text-[11px]">
-          <Badge variant="outline" className="justify-start px-1.5 py-0 tabular-nums">
-            {max ?? '-'}
-          </Badge>
-          <Badge variant="outline" className="justify-start px-1.5 py-0 tabular-nums">
+        <div className="flex flex-col gap-0.5 text-[12px] leading-4 tabular-nums">
+          <span className="whitespace-nowrap text-slate-700">
+            <span className="mr-1 text-[10px] text-slate-400">최고</span>
+            {max}
+          </span>
+          <span className="whitespace-nowrap text-slate-700">
+            <span className="mr-1 text-[10px] text-slate-400">최저</span>
             {min ?? '-'}
-          </Badge>
+          </span>
         </div>
       );
     },
@@ -1191,35 +1213,41 @@ function buildColumns(
     header: '방향',
     size: 60,
     cell: ({ row }) => (
-      <span className="text-[13px]">
+      <span className="text-[13px] text-slate-800">
         {row.original.mainExternalListing?.direction ?? '-'}
       </span>
     ),
   });
 
-  // ── 11. 날짜 (maxYmd/minYmd + 경과일) ─────────────────────
+  // ── 11. 확인일 (최신/최초 + 경과일) ───────────────────────
   columns.push({
     id: 'dates',
-    header: '날짜',
-    size: 150,
+    header: '확인일',
+    size: 112,
     cell: ({ row }) => {
       const g = row.original;
+      const latest = formatYmd(g.maxYmd);
+      const first = formatYmd(g.minYmd);
+      const hasLatest = latest !== '-';
+      const hasFirst = first !== '-';
+      const showFirst = hasFirst && first !== latest;
+      const subText = [
+        showFirst ? `최초 ${first}` : null,
+        g.confirmDateDiff != null ? `${g.confirmDateDiff}일` : null,
+      ]
+        .filter(Boolean)
+        .join(' · ');
+
+      if (!hasLatest && !hasFirst && !subText) {
+        return <span className="text-[12px] text-muted-foreground">-</span>;
+      }
+
       return (
-        <div className="flex items-center gap-1.5">
-          <div className="flex flex-col gap-0.5 text-[11px]">
-            <Badge variant="outline" className="justify-start px-1.5 py-0 tabular-nums">
-              {formatYmd(g.maxYmd)}
-            </Badge>
-            <Badge variant="outline" className="justify-start px-1.5 py-0 tabular-nums">
-              {formatYmd(g.minYmd)}
-            </Badge>
-          </div>
-          <div className="flex min-h-[40px] w-8 flex-col items-center justify-center rounded border border-border text-[10px]">
-            <div className="font-semibold tabular-nums">
-              {g.confirmDateDiff ?? '-'}
-            </div>
-            <div className="text-muted-foreground">일</div>
-          </div>
+        <div className="flex flex-col gap-0.5 text-[12px] leading-4 tabular-nums">
+          <span className="text-slate-800">{hasLatest ? latest : first}</span>
+          {subText && (
+            <span className="text-[11px] text-slate-400">{subText}</span>
+          )}
         </div>
       );
     },
@@ -1229,39 +1257,46 @@ function buildColumns(
   columns.push({
     id: 'realtor',
     header: '부동산',
-    size: 130,
+    size: 100,
+    minSize: 88,
+    maxSize: 180,
     cell: ({ row }) => (
-      <span className="truncate text-[12px]">
+      <span className="block w-full whitespace-normal break-words text-[12px] leading-4 text-slate-700">
         {row.original.mainExternalListing?.realtorName ?? '-'}
       </span>
     ),
   });
 
-  // ── 13. 링크 (네이버 외부 이동) ────────────────────────────
+  // ── 13. 출처 (외부 링크) ──────────────────────────────────
   columns.push({
     id: 'link',
-    header: '링크',
-    size: 60,
+    header: '출처',
+    size: 64,
     cell: ({ row }) => {
       const main = row.original.mainExternalListing;
-      if (!main?.cpPcArticleUrl) {
+      if (!main) {
         return <span className="text-[12px] text-muted-foreground">-</span>;
       }
+      const href = main.cpPcArticleUrl ?? main.sourceUrl;
+      const sourceLabel = getExternalSourceLabel(main.source);
+      if (!href) {
+        return (
+          <NotionTag className="bg-[#f1f1ef] text-[#787774]">
+            {sourceLabel}
+          </NotionTag>
+        );
+      }
       return (
-        <Button
-          asChild
-          size="xs"
-          className="h-6 bg-green-500 px-2 text-[11px] hover:bg-green-600"
+        <a
+          href={href}
+          target="_blank"
+          rel="noopener noreferrer"
+          title={`${sourceLabel} 링크 열기`}
+          onClick={(e) => e.stopPropagation()}
+          className="inline-flex max-w-full items-center rounded-[4px] bg-[#e7f3f8] px-1.5 py-0.5 text-[11px] font-medium leading-5 text-[#337ea9] hover:bg-[#dcecf3] hover:underline"
         >
-          <a
-            href={main.cpPcArticleUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={(e) => e.stopPropagation()}
-          >
-            N
-          </a>
-        </Button>
+          <span className="truncate">{sourceLabel}</span>
+        </a>
       );
     },
   });
@@ -1283,11 +1318,7 @@ function buildColumns(
             className="text-[11px] whitespace-pre-line leading-snug text-foreground/80"
             onClick={(e) => e.stopPropagation()}
           >
-            {seango && (
-              <span className="mr-1 inline-block rounded bg-blue-500 px-1.5 py-[2px] text-[10px] font-semibold text-white">
-                세안고
-              </span>
-            )}
+            {seango && <NotionTag className="mr-1 bg-[#e7f3f8] text-[#337ea9]">세안고</NotionTag>}
             {desc || '-'}
           </div>
           <CommentInput
@@ -1339,7 +1370,7 @@ function HoInput({
       }}
       onClick={(e) => e.stopPropagation()}
       placeholder="호수"
-      className="h-6 border-border/40 px-1.5 py-0 text-[12px] shadow-none tabular-nums"
+      className="h-6 border-transparent bg-transparent px-1.5 py-0 text-[12px] shadow-none tabular-nums hover:border-[#eeeeec] focus-visible:border-slate-300 focus-visible:ring-0"
     />
   );
 }
@@ -1381,7 +1412,7 @@ function CommentInput({
       }}
       onClick={(e) => e.stopPropagation()}
       placeholder="메모 입력..."
-      className="h-6 border-border/40 px-2 text-[11px] shadow-none"
+      className="h-6 border-transparent bg-transparent px-2 text-[11px] shadow-none hover:border-[#eeeeec] focus-visible:border-slate-300 focus-visible:ring-0"
     />
   );
 }
@@ -1597,7 +1628,7 @@ function ManualEntryDialog({
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-xl">
         <DialogHeader>
-          <DialogTitle>외부 매물 수동 입력</DialogTitle>
+          <DialogTitle>외부 매물 입력</DialogTitle>
         </DialogHeader>
         <div className="max-h-[60vh] overflow-y-auto pr-1">
           <div className="grid grid-cols-2 gap-3">

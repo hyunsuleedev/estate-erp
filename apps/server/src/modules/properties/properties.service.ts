@@ -153,9 +153,26 @@ export class PropertiesService {
             },
           },
           propertyContacts: { include: { contact: true } },
-          listings: {
+          tenants: {
+            include: { contact: true },
             orderBy: { createdAt: 'desc' },
           },
+          listings: {
+            orderBy: { createdAt: 'desc' },
+            include: {
+            advertisements: {
+              orderBy: { createdAt: 'desc' },
+              take: 5,
+            },
+            jointBrokeragePartner: {
+              select: {
+                id: true,
+                name: true,
+                phone: true,
+              },
+            },
+          },
+        },
         },
         orderBy: { [sortBy]: sortOrder },
         skip,
@@ -205,6 +222,23 @@ export class PropertiesService {
         },
         listings: {
           orderBy: { createdAt: 'desc' },
+          include: {
+            advertisements: {
+              orderBy: { createdAt: 'desc' },
+              take: 5,
+            },
+            priceHistories: {
+              orderBy: { createdAt: 'desc' },
+              take: 10,
+            },
+            jointBrokeragePartner: {
+              select: {
+                id: true,
+                name: true,
+                phone: true,
+              },
+            },
+          },
         },
         consultations: {
           include: { contact: true },

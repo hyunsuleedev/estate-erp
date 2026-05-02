@@ -1,6 +1,7 @@
 import type { RequestFn } from '../client.js';
 import type { PaginatedResponse } from '../types.js';
 import type { Consultation } from './consultations.js';
+import type { ListingAdvertisement, ListingPriceHistory } from './listings.js';
 import type { PropertyContact } from './property-contacts.js';
 import type { Tenant } from './tenants.js';
 
@@ -10,11 +11,23 @@ export interface PropertyListing {
   price: number | null;
   deposit: number | null;
   monthlyRent: number | null;
+  moveInAvailableType: string | null;
+  moveInAvailableFrom: string | null;
+  moveInAvailableTo: string | null;
+  isJointBrokerageRequired: boolean;
+  jointBrokeragePartnerId: string | null;
   checkStatus: string;
   isHidden: boolean;
   memo: string | null;
   createdAt: string;
   updatedAt: string;
+  advertisements?: ListingAdvertisement[];
+  priceHistories?: ListingPriceHistory[];
+  jointBrokeragePartner?: {
+    id: string;
+    name: string;
+    phone: string | null;
+  } | null;
 }
 
 export interface Property {

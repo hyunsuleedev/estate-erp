@@ -53,6 +53,7 @@ model Office {
   tenants           Tenant[]
   properties        Property[]
   listings          Listing[]
+  listingAdvertisements ListingAdvertisement[]
   tasks             Task[]
   consultations     Consultation[]
   buyerRequirements BuyerRequirement[]

@@ -1,5 +1,45 @@
 import type { RequestFn } from '../client.js';
 import type { PaginatedResponse } from '../types.js';
+import type { Tenant } from './tenants.js';
+
+export type ListingAdvertisementStatus = 'planned' | 'draft' | 'active' | 'paused' | 'ended' | 'error';
+export type ListingAdvertisementSource = 'manual' | 'external_observed' | 'cp_sync';
+
+export interface ListingAdvertisement {
+  id: string;
+  officeId: string;
+  listingId: string;
+  channel: string;
+  status: ListingAdvertisementStatus | string;
+  source: ListingAdvertisementSource | string;
+  advertisedPrice: number | null;
+  advertisedDeposit: number | null;
+  advertisedMonthlyRent: number | null;
+  startedAt: string | null;
+  endedAt: string | null;
+  url: string | null;
+  memo: string | null;
+  externalAdId: string | null;
+  lastCheckedAt: string | null;
+  lastSyncedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ListingPriceHistory {
+  id: string;
+  officeId: string;
+  listingId: string;
+  changedBy: string | null;
+  priceBefore: number | null;
+  depositBefore: number | null;
+  monthlyRentBefore: number | null;
+  priceAfter: number | null;
+  depositAfter: number | null;
+  monthlyRentAfter: number | null;
+  reason: string | null;
+  createdAt: string;
+}
 
 export interface Listing {
   id: string;
@@ -9,11 +49,23 @@ export interface Listing {
   price: number | null;
   deposit: number | null;
   monthlyRent: number | null;
+  moveInAvailableType: string | null;
+  moveInAvailableFrom: string | null;
+  moveInAvailableTo: string | null;
+  isJointBrokerageRequired: boolean;
+  jointBrokeragePartnerId: string | null;
   checkStatus: string;
   isHidden: boolean;
   memo: string | null;
   createdAt: string;
   updatedAt: string;
+  advertisements?: ListingAdvertisement[];
+  priceHistories?: ListingPriceHistory[];
+  jointBrokeragePartner?: {
+    id: string;
+    name: string;
+    phone: string | null;
+  } | null;
   property?: {
     id: string;
     siteId: string;
@@ -54,17 +106,30 @@ export interface Listing {
         phone: string | null;
       } | null;
     }>;
+    tenants?: Tenant[];
     listings?: Array<{
       id: string;
       transactionType: string;
       price: number | null;
       deposit: number | null;
       monthlyRent: number | null;
+      moveInAvailableType: string | null;
+      moveInAvailableFrom: string | null;
+      moveInAvailableTo: string | null;
+      isJointBrokerageRequired: boolean;
+      jointBrokeragePartnerId: string | null;
       checkStatus: string;
       isHidden: boolean;
       memo: string | null;
       createdAt: string;
       updatedAt: string;
+      advertisements?: ListingAdvertisement[];
+      priceHistories?: ListingPriceHistory[];
+      jointBrokeragePartner?: {
+        id: string;
+        name: string;
+        phone: string | null;
+      } | null;
     }>;
   };
 }
@@ -114,6 +179,11 @@ export interface CreateListingDto {
   price?: number;
   deposit?: number;
   monthlyRent?: number;
+  moveInAvailableType?: string;
+  moveInAvailableFrom?: string;
+  moveInAvailableTo?: string;
+  isJointBrokerageRequired?: boolean;
+  jointBrokeragePartnerId?: string;
   memo?: string;
 }
 
@@ -122,6 +192,11 @@ export interface UpdateListingDto {
   price?: number;
   deposit?: number;
   monthlyRent?: number;
+  moveInAvailableType?: string | null;
+  moveInAvailableFrom?: string | null;
+  moveInAvailableTo?: string | null;
+  isJointBrokerageRequired?: boolean;
+  jointBrokeragePartnerId?: string | null;
   checkStatus?: string;
   isHidden?: boolean;
   memo?: string;

@@ -35,6 +35,7 @@ export function DataTable<TData extends { id: string }>({
   onSortingChange,
   enableRowSelection = false,
   onRowSelectionChange,
+  renderSelectionAccessory,
   onRowClick,
   isLoading = false,
   isLoadingMore = false,
@@ -70,9 +71,9 @@ export function DataTable<TData extends { id: string }>({
   if (enableRowSelection) {
     allColumns.push({
       id: '_select',
-      size: 32,
-      minSize: 32,
-      maxSize: 32,
+      size: 36,
+      minSize: 36,
+      maxSize: 36,
       enableResizing: false,
       header: ({ table }) => (
         <Checkbox
@@ -85,12 +86,15 @@ export function DataTable<TData extends { id: string }>({
         />
       ),
       cell: ({ row }) => (
-        <Checkbox
-          checked={row.getIsSelected()}
-          onCheckedChange={(v) => row.toggleSelected(!!v)}
-          onClick={(e) => e.stopPropagation()}
-          className="size-3.5"
-        />
+        <div className="flex flex-col items-center justify-center gap-1 py-1">
+          <Checkbox
+            checked={row.getIsSelected()}
+            onCheckedChange={(v) => row.toggleSelected(!!v)}
+            onClick={(e) => e.stopPropagation()}
+            className="size-3.5"
+          />
+          {renderSelectionAccessory?.(row.original)}
+        </div>
       ),
     });
   }
@@ -126,6 +130,7 @@ export function DataTable<TData extends { id: string }>({
     columnResizeMode,
     getRowId: (row) => row.id,
   });
+  const tableTotalSize = table.getTotalSize();
 
   // ── Keyboard navigation (Twenty-inspired cell nav) ────────────
   const handleKeyDown = useCallback(
@@ -302,8 +307,8 @@ export function DataTable<TData extends { id: string }>({
       >
         <table
           ref={tableRef}
-          className={cn('w-full caption-bottom text-sm', isNotion && 'border-separate border-spacing-0')}
-          style={{ minWidth: table.getTotalSize() }}
+          className={cn('w-full table-fixed caption-bottom text-sm', isNotion && 'border-separate border-spacing-0')}
+          style={{ width: tableTotalSize, minWidth: tableTotalSize }}
         >
           {/* Header */}
           <thead className={cn('sticky top-0 z-20 bg-background', isNotion && 'bg-white')}>
@@ -327,6 +332,7 @@ export function DataTable<TData extends { id: string }>({
                       : false;
                   const isLast = colIndex === headerGroup.headers.length - 1;
                   const isPinned = header.column.getIsPinned() === 'left';
+                  const isLastPinned = isPinned && header.column.getIsLastColumn('left');
                   const handleSortToggle = () => {
                     if (!canSort) return;
                     const current = sorting ?? [];
@@ -352,6 +358,7 @@ export function DataTable<TData extends { id: string }>({
                         !isLast && (isNotion ? 'border-r border-r-[#eeeeec]' : 'border-r border-r-border/40'),
                         canSort && 'cursor-pointer select-none hover:text-foreground',
                         isPinned && (isNotion ? 'bg-white' : 'bg-background'),
+                        isLastPinned && 'shadow-[1px_0_0_0_#d9d9d6]',
                       )}
                       style={{
                         width: header.getSize(),
@@ -433,6 +440,7 @@ export function DataTable<TData extends { id: string }>({
                       focusedCell?.row === rowIndex && focusedCell?.col === colIndex;
                     const isRowFocused = focusedCell?.row === rowIndex;
                     const isPinned = cell.column.getIsPinned() === 'left';
+                    const isLastPinned = isPinned && cell.column.getIsLastColumn('left');
                     return (
                       <td
                         key={cell.id}
@@ -448,6 +456,7 @@ export function DataTable<TData extends { id: string }>({
                           isRowFocused && !isFocused && (isNotion ? 'bg-slate-50' : 'bg-accent/30'),
                           onRowClick && 'cursor-pointer',
                           isPinned && (isNotion ? 'bg-white group-hover:bg-slate-50/70 group-data-[state=selected]:bg-primary/5' : 'bg-background group-hover:bg-muted/40 group-data-[state=selected]:bg-primary/5'),
+                          isLastPinned && 'shadow-[1px_0_0_0_#d9d9d6]',
                         )}
                         style={{
                           width: cell.column.getSize(),

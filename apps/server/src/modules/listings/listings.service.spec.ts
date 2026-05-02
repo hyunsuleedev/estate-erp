@@ -25,6 +25,7 @@ describe('ListingsService', () => {
       listing: {
         findFirst: jest.fn(),
         findMany: jest.fn(),
+        count: jest.fn(),
         create: jest.fn(),
         update: jest.fn(),
       },
@@ -156,5 +157,48 @@ describe('ListingsService', () => {
         },
       },
     });
+  });
+
+  it('loads tenant and advertisement records for property list rows', async () => {
+    const { prisma, service } = createService();
+    prisma.listing.findMany.mockResolvedValue([]);
+    prisma.listing.count.mockResolvedValue(0);
+
+    await service.findAll('office-1');
+
+    expect(prisma.listing.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        include: expect.objectContaining({
+          advertisements: expect.objectContaining({
+            orderBy: { createdAt: 'desc' },
+            take: 5,
+          }),
+          property: expect.objectContaining({
+            include: expect.objectContaining({
+              tenants: expect.objectContaining({
+                include: { contact: true },
+                orderBy: { createdAt: 'desc' },
+              }),
+              listings: expect.objectContaining({
+                select: expect.objectContaining({
+                  moveInAvailableType: true,
+                  moveInAvailableFrom: true,
+                  moveInAvailableTo: true,
+                  isJointBrokerageRequired: true,
+                  jointBrokeragePartnerId: true,
+                  jointBrokeragePartner: expect.objectContaining({
+                    select: { id: true, name: true, phone: true },
+                  }),
+                  advertisements: expect.objectContaining({
+                    orderBy: { createdAt: 'desc' },
+                    take: 5,
+                  }),
+                }),
+              }),
+            }),
+          }),
+        }),
+      }),
+    );
   });
 });

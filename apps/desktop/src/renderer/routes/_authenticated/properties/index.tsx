@@ -6,10 +6,13 @@ import {
   Check,
   ChevronDown,
   CircleDollarSign,
+  DoorOpen,
   ExternalLink,
   FileText,
+  Handshake,
   Hash,
   MapPin,
+  Megaphone,
   MessageSquare,
   Phone,
   Plus,
@@ -33,6 +36,7 @@ import type {
   PropertyListing,
   Tenant,
 } from '@estate-erp/api-client';
+import { formatPrice } from '@estate-erp/shared';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
@@ -75,6 +79,24 @@ const transactionTypeMeta: Record<string, { label: string; className: string }> 
   sale: { label: '매매', className: 'bg-[#fdebec] text-[#8f4b46]' },
   jeonse: { label: '전세', className: 'bg-[#e7f3f8] text-[#337ea9]' },
   monthly: { label: '월세', className: 'bg-[#fbf3db] text-[#8f6b1f]' },
+};
+
+const adStatusMeta: Record<string, { label: string; className: string }> = {
+  planned: { label: '보류', className: 'bg-[#f1f1ef] text-[#5f5e5b]' },
+  draft: { label: '준비', className: 'bg-[#f1f1ef] text-[#787774]' },
+  active: { label: '광고중', className: 'bg-[#eef3ed] text-[#44745a]' },
+  paused: { label: '중단', className: 'bg-[#fbf3db] text-[#8f6b1f]' },
+  ended: { label: '종료', className: 'bg-[#f1f1ef] text-[#787774]' },
+  error: { label: '오류', className: 'bg-[#fbe4e4] text-[#9f5555]' },
+};
+
+const adChannelLabels: Record<string, string> = {
+  naver: '네이버',
+  asil: '아실',
+  zigbang: '직방',
+  dabang: '다방',
+  hanbang: '한방',
+  etc: '기타',
 };
 
 const contactRoleLabels: Record<string, string> = {
@@ -171,11 +193,19 @@ type ListingSummary = Pick<
   | 'price'
   | 'deposit'
   | 'monthlyRent'
+  | 'moveInAvailableType'
+  | 'moveInAvailableFrom'
+  | 'moveInAvailableTo'
+  | 'isJointBrokerageRequired'
+  | 'jointBrokeragePartnerId'
+  | 'jointBrokeragePartner'
   | 'checkStatus'
   | 'isHidden'
   | 'memo'
   | 'createdAt'
   | 'updatedAt'
+  | 'advertisements'
+  | 'priceHistories'
 >;
 type ListingProperty = NonNullable<Listing['property']>;
 
@@ -405,7 +435,7 @@ function PropertiesPage() {
       {
         id: 'info',
         header: () => <TableHeaderLabel icon={<Tag className="size-4" />} label="거래" />,
-        size: 118,
+        size: 60,
         enableSorting: false,
         cell: ({ row }) => <TransactionStack listings={row.original.listings} />,
       },
@@ -491,6 +521,20 @@ function PropertiesPage() {
         ),
       },
       {
+        id: 'advertisement',
+        header: () => <TableHeaderLabel icon={<Megaphone className="size-4" />} label="광고" />,
+        size: 138,
+        enableSorting: false,
+        cell: ({ row }) => <ListingAdStack listings={row.original.listings} />,
+      },
+      {
+        id: 'moveInAvailable',
+        header: () => <TableHeaderLabel icon={<DoorOpen className="size-4" />} label="입주가능일" />,
+        size: 130,
+        enableSorting: false,
+        cell: ({ row }) => <MoveInAvailableStack listings={row.original.listings} />,
+      },
+      {
         id: 'owner',
         header: () => <TableHeaderLabel icon={<User className="size-4" />} label="소유주" />,
         size: 150,
@@ -521,6 +565,13 @@ function PropertiesPage() {
         ),
       },
       {
+        id: 'jointBrokerage',
+        header: () => <TableHeaderLabel icon={<Handshake className="size-4" />} label="공동중개" />,
+        size: 154,
+        enableSorting: false,
+        cell: ({ row }) => <JointBrokerageStack listings={row.original.listings} />,
+      },
+      {
         id: 'memo',
         header: () => <TableHeaderLabel icon={<FileText className="size-4" />} label="메모" />,
         size: 320,
@@ -538,20 +589,17 @@ function PropertiesPage() {
 
   return (
     <CellEditProvider>
-      <div className="flex h-[calc(100svh-6rem)] min-h-0 flex-col bg-white">
+      <div className="flex h-[calc(100svh-5rem)] min-h-0 flex-col bg-white">
         <section className="border-b border-slate-200 bg-white px-6 pb-2 pt-3">
           <div className="flex items-start justify-between gap-4">
             <Tabs value={selectedTransactionType} onValueChange={handleTransactionTabChange} className="min-w-0 flex-1 gap-0">
-              <TabsList
-                variant="line"
-                className="h-10 max-w-full justify-start overflow-x-auto rounded-none p-0"
-              >
+              <TabsList className="max-w-full justify-start overflow-x-auto bg-slate-100/70">
                 {transactionTypeOptions.map((tab) => {
                   return (
                     <TabsTrigger
                       key={tab.value}
                       value={tab.value}
-                      className="h-10 flex-none rounded-none border-0 px-3 text-[13px] data-[state=active]:bg-transparent data-[state=active]:text-slate-950"
+                      className="flex-none border-0 px-3 text-[13px] shadow-none data-[state=active]:border data-[state=active]:border-[#d9d9d6] data-[state=active]:bg-white data-[state=active]:text-slate-950 data-[state=active]:shadow-sm"
                     >
                       <span>{tab.label}</span>
                     </TabsTrigger>
@@ -743,6 +791,7 @@ function PropertiesPage() {
               sorting={sorting}
               onSortingChange={handleSortingChange}
               enableRowSelection
+              pinnedColumns={['info', 'site', 'dong', 'unit']}
               layout="full-height"
               variant="notion"
               rowHeight="auto"
@@ -937,6 +986,14 @@ function PropertySheetContent({ property }: { property: Property }) {
           )}
         </SheetSection>
 
+        <SheetSection title={`가격 변경 ${getPropertySheetPriceHistoryCount(listings)}`}>
+          <PropertySheetPriceHistoryList listings={listings} />
+        </SheetSection>
+
+        <SheetSection title={`광고 ${getPropertySheetAdvertisementCount(listings)}`}>
+          <PropertySheetAdvertisementList listings={listings} />
+        </SheetSection>
+
         <SheetSection title={`연락처 ${contacts.length + tenants.length}`}>
           {contacts.length > 0 || tenants.length > 0 ? (
             <div className="divide-y divide-[#eeeeec] rounded-md border border-[#eeeeec]">
@@ -1010,6 +1067,7 @@ function PropertySheetListingCard({ listing }: { listing: PropertyListing }) {
         <div className="flex flex-wrap items-center gap-1.5">
           <TransactionBadge transactionType={listing.transactionType} />
           <StatusIndicator value={listing.checkStatus} />
+          <JointBrokerageBadge listing={listing} />
           {listing.isHidden && (
             <span className="inline-flex rounded-[4px] bg-[#fbe4e4] px-1.5 py-0.5 text-[11px] font-medium leading-5 text-[#9f5555]">
               숨김
@@ -1035,6 +1093,162 @@ function PropertySheetListingCard({ listing }: { listing: PropertyListing }) {
       {listing.memo?.trim() && (
         <p className="mt-2 line-clamp-2 rounded bg-slate-50 px-2 py-1.5 text-xs leading-5 text-slate-600">
           {listing.memo.trim()}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function PropertySheetPriceHistoryList({ listings }: { listings: PropertyListing[] }) {
+  const historyRows = listings
+    .flatMap((listing) =>
+      (listing.priceHistories ?? []).map((history) => ({
+        listing,
+        history,
+      })),
+    )
+    .sort((a, b) => new Date(b.history.createdAt).getTime() - new Date(a.history.createdAt).getTime());
+
+  if (historyRows.length === 0) {
+    return <SheetEmptyState text="등록된 가격 변경 이력이 없습니다." compact />;
+  }
+
+  return (
+    <div className="divide-y divide-[#eeeeec] rounded-md border border-[#eeeeec]">
+      {historyRows.map(({ listing, history }) => (
+        <PropertySheetPriceHistoryRow
+          key={history.id}
+          listing={listing}
+          history={history}
+        />
+      ))}
+    </div>
+  );
+}
+
+function PropertySheetPriceHistoryRow({
+  listing,
+  history,
+}: {
+  listing: PropertyListing;
+  history: NonNullable<PropertyListing['priceHistories']>[number];
+}) {
+  const beforePrice = formatPriceHistorySnapshot(listing.transactionType, {
+    price: history.priceBefore,
+    deposit: history.depositBefore,
+    monthlyRent: history.monthlyRentBefore,
+  });
+  const afterPrice = formatPriceHistorySnapshot(listing.transactionType, {
+    price: history.priceAfter,
+    deposit: history.depositAfter,
+    monthlyRent: history.monthlyRentAfter,
+  });
+
+  return (
+    <div className="px-3 py-3">
+      <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+        <TransactionBadge transactionType={listing.transactionType} />
+        <span className="text-[11px] text-slate-500">{formatDateTime(history.createdAt)}</span>
+      </div>
+      <div className="mt-2 flex min-w-0 flex-wrap items-center gap-2 text-sm">
+        <span className="font-medium tabular-nums text-slate-500">{beforePrice}</span>
+        <span className="text-slate-300">→</span>
+        <span className="font-semibold tabular-nums text-slate-950">{afterPrice}</span>
+      </div>
+      {history.reason?.trim() && (
+        <p className="mt-1.5 line-clamp-2 text-xs leading-5 text-slate-500">
+          {history.reason.trim()}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function PropertySheetAdvertisementList({ listings }: { listings: PropertyListing[] }) {
+  const advertisementRows = listings.flatMap((listing) =>
+    (listing.advertisements ?? []).map((advertisement) => ({
+      listing,
+      advertisement,
+    })),
+  );
+
+  if (advertisementRows.length === 0) {
+    return <SheetEmptyState text="등록된 광고 기록이 없습니다." compact />;
+  }
+
+  return (
+    <div className="divide-y divide-[#eeeeec] rounded-md border border-[#eeeeec]">
+      {advertisementRows.map(({ listing, advertisement }) => (
+        <PropertySheetAdvertisementRow
+          key={advertisement.id}
+          listing={listing}
+          advertisement={advertisement}
+        />
+      ))}
+    </div>
+  );
+}
+
+function PropertySheetAdvertisementRow({
+  listing,
+  advertisement,
+}: {
+  listing: PropertyListing;
+  advertisement: NonNullable<PropertyListing['advertisements']>[number];
+}) {
+  const statusMeta = adStatusMeta[advertisement.status] ?? adStatusMeta.draft;
+  const priceLabel = formatAdvertisementPrice(listing, advertisement);
+  const dateItems = [
+    advertisement.startedAt ? `시작 ${formatDateShort(advertisement.startedAt)}` : null,
+    advertisement.endedAt ? `종료 ${formatDateShort(advertisement.endedAt)}` : null,
+    advertisement.lastCheckedAt ? `확인 ${formatDateShort(advertisement.lastCheckedAt)}` : null,
+    advertisement.lastSyncedAt ? `동기화 ${formatDateShort(advertisement.lastSyncedAt)}` : null,
+  ].filter(Boolean);
+
+  return (
+    <div className="px-3 py-3">
+      <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+        <TransactionBadge transactionType={listing.transactionType} />
+        <span
+          className={cn(
+            'inline-flex rounded-[4px] px-1.5 py-0.5 text-[11px] font-medium leading-5',
+            statusMeta.className,
+          )}
+        >
+          {statusMeta.label}
+        </span>
+        {advertisement.url ? (
+          <a
+            href={advertisement.url}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex min-w-0 items-center gap-1 rounded-[4px] bg-[#f1f1ef] px-1.5 py-0.5 text-[11px] font-medium leading-5 text-[#5f5e5b] hover:bg-[#e9e9e7]"
+          >
+            <span className="truncate">{getAdChannelLabel(advertisement.channel)}</span>
+            <ExternalLink className="size-3" />
+          </a>
+        ) : (
+          <span className="inline-flex rounded-[4px] bg-[#f1f1ef] px-1.5 py-0.5 text-[11px] font-medium leading-5 text-[#5f5e5b]">
+            {getAdChannelLabel(advertisement.channel)}
+          </span>
+        )}
+        <span className="rounded-[4px] bg-[#f8f5f0] px-1.5 py-0.5 text-[11px] leading-5 text-[#8f6b1f]">
+          {getAdvertisementSourceLabel(advertisement.source)}
+        </span>
+      </div>
+      <div className="mt-2 grid gap-2 text-xs text-slate-600 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
+        <div className="min-w-0">
+          <span className="text-slate-400">광고가 </span>
+          <span className="font-medium text-slate-900">{priceLabel}</span>
+        </div>
+        <div className="min-w-0 truncate">
+          <span className="text-slate-400">기간 </span>
+          <span>{dateItems.length > 0 ? dateItems.join(' · ') : '-'}</span>
+        </div>
+      </div>
+      {advertisement.memo?.trim() && (
+        <p className="mt-2 line-clamp-2 text-xs leading-5 text-slate-500">
+          {advertisement.memo.trim()}
         </p>
       )}
     </div>
@@ -1248,6 +1462,32 @@ function TransactionStack({ listings }: { listings: ListingSummary[] }) {
   );
 }
 
+function JointBrokerageStack({ listings }: { listings: ListingSummary[] }) {
+  const jointRequiredListings = listings.filter((listing) => listing.isJointBrokerageRequired);
+
+  if (jointRequiredListings.length === 0) {
+    return <span className="text-[12px] text-slate-400">-</span>;
+  }
+
+  return (
+    <div className="flex min-w-0 flex-col items-start gap-1 py-1">
+      {jointRequiredListings.map((listing) => (
+        <div key={listing.id} className="flex min-w-0 items-start gap-1.5">
+          {listings.length > 1 && <TransactionMiniLabel transactionType={listing.transactionType} />}
+          <div className="flex min-w-0 flex-col gap-0.5">
+            <span className="w-fit rounded-[4px] bg-[#fbf3db] px-1.5 py-0.5 text-[12px] font-medium leading-5 text-[#8f6b1f]">
+              공동필수
+            </span>
+            <span className="truncate text-[11px] leading-5 text-slate-500">
+              {listing.jointBrokeragePartner?.name ?? '파트너 미지정'}
+            </span>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function ListingStatusStack({
   listings,
   onChange,
@@ -1303,6 +1543,89 @@ function ListingPriceStack({
   );
 }
 
+function ListingAdStack({ listings }: { listings: ListingSummary[] }) {
+  return (
+    <div className="flex min-w-0 flex-col items-start gap-1 py-1">
+      {listings.map((listing) => (
+        <div key={listing.id} className="flex min-w-0 items-center gap-1.5">
+          {listings.length > 1 && <TransactionMiniLabel transactionType={listing.transactionType} />}
+          <AdIndicator advertisements={listing.advertisements ?? []} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function AdIndicator({
+  advertisements,
+}: {
+  advertisements: NonNullable<ListingSummary['advertisements']>;
+}) {
+  const primaryAd = getPrimaryAdvertisement(advertisements);
+
+  if (!primaryAd) {
+    return (
+      <span className="inline-flex rounded-[4px] bg-[#f1f1ef] px-1.5 py-0.5 text-[12px] font-medium leading-5 text-[#787774]">
+        미등록
+      </span>
+    );
+  }
+
+  const activeCount = advertisements.filter((advertisement) => advertisement.status === 'active').length;
+  const statusMeta = adStatusMeta[primaryAd.status] ?? adStatusMeta.draft;
+  const channelLabel = getAdChannelLabel(primaryAd.channel);
+  const label = activeCount > 1 && primaryAd.status === 'active'
+    ? `${channelLabel} 외 ${activeCount - 1}`
+    : channelLabel;
+
+  return (
+    <span className="inline-flex min-w-0 items-center gap-1">
+      <span
+        className={cn(
+          'inline-flex max-w-[72px] rounded-[4px] px-1.5 py-0.5 text-[12px] font-medium leading-5',
+          statusMeta.className,
+        )}
+      >
+        <span className="truncate">{label}</span>
+      </span>
+      <span className="truncate text-[11px] text-slate-500">{statusMeta.label}</span>
+    </span>
+  );
+}
+
+function MoveInAvailableStack({ listings }: { listings: ListingSummary[] }) {
+  return (
+    <div className="flex min-w-0 flex-col items-start gap-1 py-1">
+      {listings.map((listing) => (
+        <div key={listing.id} className="flex min-w-0 items-center gap-1.5">
+          {listings.length > 1 && <TransactionMiniLabel transactionType={listing.transactionType} />}
+          <MoveInAvailableSummary listing={listing} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function MoveInAvailableSummary({ listing }: { listing: ListingSummary }) {
+  const summary = getMoveInAvailability(listing);
+
+  return (
+    <div className="flex min-w-0 flex-col gap-0.5 py-1">
+      <span
+        className={cn(
+          'w-fit rounded-[4px] px-1.5 py-0.5 text-[12px] font-medium leading-5',
+          summary.className,
+        )}
+      >
+        {summary.label}
+      </span>
+      {summary.detail && (
+        <span className="truncate text-[11px] text-slate-500">{summary.detail}</span>
+      )}
+    </div>
+  );
+}
+
 function TransactionBadge({ transactionType }: { transactionType: string }) {
   const transactionMeta = transactionTypeMeta[transactionType];
   return (
@@ -1327,6 +1650,26 @@ function TransactionMiniLabel({ transactionType }: { transactionType: string }) 
       )}
     >
       {transactionMeta?.label ?? transactionType}
+    </span>
+  );
+}
+
+function JointBrokerageBadge({
+  listing,
+  compact = false,
+}: {
+  listing: Pick<ListingSummary, 'isJointBrokerageRequired' | 'jointBrokeragePartner'>;
+  compact?: boolean;
+}) {
+  if (!listing.isJointBrokerageRequired) return null;
+
+  const label = compact
+    ? '공동'
+    : `공동필수${listing.jointBrokeragePartner?.name ? ` · ${listing.jointBrokeragePartner.name}` : ''}`;
+
+  return (
+    <span className="inline-flex max-w-full rounded-[4px] bg-[#fbf3db] px-1.5 py-0.5 text-[11px] font-medium leading-5 text-[#8f6b1f]">
+      <span className="truncate">{label}</span>
     </span>
   );
 }
@@ -1694,11 +2037,19 @@ function toListingSummary(listing: ListingSummary): ListingSummary {
     price: listing.price,
     deposit: listing.deposit,
     monthlyRent: listing.monthlyRent,
+    moveInAvailableType: listing.moveInAvailableType,
+    moveInAvailableFrom: listing.moveInAvailableFrom,
+    moveInAvailableTo: listing.moveInAvailableTo,
+    isJointBrokerageRequired: listing.isJointBrokerageRequired,
+    jointBrokeragePartnerId: listing.jointBrokeragePartnerId,
+    jointBrokeragePartner: listing.jointBrokeragePartner,
     checkStatus: listing.checkStatus,
     isHidden: listing.isHidden,
     memo: listing.memo,
     createdAt: listing.createdAt,
     updatedAt: listing.updatedAt,
+    advertisements: listing.advertisements,
+    priceHistories: listing.priceHistories,
   };
 }
 
@@ -1719,6 +2070,144 @@ function getOwnerContact(property?: ListingProperty) {
   const contacts = property?.propertyContacts ?? [];
   const owner = contacts.find((propertyContact) => propertyContact.role === 'owner');
   return owner?.contact ?? null;
+}
+
+function getPrimaryAdvertisement(
+  advertisements: NonNullable<ListingSummary['advertisements']>,
+) {
+  return advertisements
+    .slice()
+    .sort((a, b) => getAdStatusOrder(a.status) - getAdStatusOrder(b.status) || new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0] ?? null;
+}
+
+function getAdStatusOrder(status: string) {
+  if (status === 'active') return 0;
+  if (status === 'paused') return 1;
+  if (status === 'planned') return 2;
+  if (status === 'draft') return 3;
+  if (status === 'error') return 4;
+  if (status === 'ended') return 5;
+  return 9;
+}
+
+function getAdChannelLabel(channel: string) {
+  return adChannelLabels[channel] ?? channel;
+}
+
+function getAdvertisementSourceLabel(source: string) {
+  if (source === 'manual') return '입력';
+  if (source === 'external_observed') return '외부확인';
+  if (source === 'cp_sync') return 'CP연동';
+  return source;
+}
+
+function getPropertySheetAdvertisementCount(listings: PropertyListing[]) {
+  return listings.reduce((total, listing) => total + (listing.advertisements?.length ?? 0), 0);
+}
+
+function getPropertySheetPriceHistoryCount(listings: PropertyListing[]) {
+  return listings.reduce((total, listing) => total + (listing.priceHistories?.length ?? 0), 0);
+}
+
+function formatPriceHistorySnapshot(
+  transactionType: string,
+  value: { price: number | null; deposit: number | null; monthlyRent: number | null },
+) {
+  if (transactionType === 'monthly') {
+    const deposit = value.deposit ? formatPrice(value.deposit) : '-';
+    const monthlyRent = value.monthlyRent ? formatPrice(value.monthlyRent) : '-';
+    return `${deposit} / ${monthlyRent}`;
+  }
+
+  const price = value.price ?? value.deposit;
+  return price ? formatPrice(price) : '-';
+}
+
+function formatAdvertisementPrice(
+  listing: Pick<PropertyListing, 'transactionType'>,
+  advertisement: NonNullable<PropertyListing['advertisements']>[number],
+) {
+  if (listing.transactionType === 'monthly') {
+    const deposit = advertisement.advertisedDeposit
+      ? formatPrice(advertisement.advertisedDeposit)
+      : '-';
+    const monthlyRent = advertisement.advertisedMonthlyRent
+      ? formatPrice(advertisement.advertisedMonthlyRent)
+      : '-';
+    return `${deposit} / ${monthlyRent}`;
+  }
+
+  const price = advertisement.advertisedPrice ?? advertisement.advertisedDeposit;
+  return price ? formatPrice(price) : '-';
+}
+
+function getMoveInAvailability(
+  listing: Pick<ListingSummary, 'moveInAvailableType' | 'moveInAvailableFrom' | 'moveInAvailableTo'>,
+) {
+  const type = listing.moveInAvailableType ?? 'unknown';
+  const from = listing.moveInAvailableFrom;
+  const to = listing.moveInAvailableTo;
+
+  if (type === 'immediate') {
+    return {
+      label: '즉시',
+      detail: null,
+      className: 'bg-[#eef3ed] text-[#44745a]',
+    };
+  }
+
+  if (type === 'date') {
+    return {
+      label: from ? `${formatDateShort(from)} 이후` : '확인 필요',
+      detail: null,
+      className: from ? 'bg-[#e7f3f8] text-[#337ea9]' : 'bg-[#f1f1ef] text-[#787774]',
+    };
+  }
+
+  if (type === 'range') {
+    return {
+      label: formatMoveInRange(from, to),
+      detail: '기간 협의',
+      className: 'bg-[#fbf3db] text-[#8f6b1f]',
+    };
+  }
+
+  if (type === 'negotiable') {
+    return {
+      label: '협의',
+      detail: null,
+      className: 'bg-[#fbf3db] text-[#8f6b1f]',
+    };
+  }
+
+  if (type === 'by_balance') {
+    return {
+      label: '잔금일 협의',
+      detail: null,
+      className: 'bg-[#f8f5f0] text-[#8f6b1f]',
+    };
+  }
+
+  if (type === 'after_tenant_move_out') {
+    return {
+      label: '퇴거 후',
+      detail: null,
+      className: 'bg-[#f1f1ef] text-[#5f5e5b]',
+    };
+  }
+
+  return {
+    label: '확인 필요',
+    detail: null,
+    className: 'bg-[#f1f1ef] text-[#787774]',
+  };
+}
+
+function formatMoveInRange(from?: string | null, to?: string | null) {
+  if (from && to) return `${formatDateShort(from)}~${formatDateShort(to)}`;
+  if (from) return `${formatDateShort(from)}~`;
+  if (to) return `~${formatDateShort(to)}`;
+  return '협의';
 }
 
 function getDongName(property?: ListingProperty) {
@@ -1794,6 +2283,7 @@ function getPropertySheetNotices(property: Property): PropertySheetNotice[] {
   const daysSinceLatestCheck = getDaysSince(latestUpdatedAt);
   const unverifiedListings = listings.filter((listing) => listing.checkStatus === 'unverified');
   const hiddenListings = listings.filter((listing) => listing.isHidden);
+  const jointRequiredListings = listings.filter((listing) => listing.isJointBrokerageRequired);
   const expiringTenant = tenants.find((tenant) => {
     if (!tenant.contractEnd) return false;
     const daysUntilEnd = getDaysUntil(tenant.contractEnd);
@@ -1812,6 +2302,14 @@ function getPropertySheetNotices(property: Property): PropertySheetNotice[] {
     notices.push({
       title: '확인 필요한 거래',
       detail: `${formatTransactionTypeList(unverifiedListings)} ${unverifiedListings.length}건이 미확인 상태입니다.`,
+      tone: 'warning',
+    });
+  }
+
+  if (jointRequiredListings.length > 0) {
+    notices.push({
+      title: '공동중개 필수',
+      detail: `${formatJointBrokerageRequirementList(jointRequiredListings)} 조건을 확인해야 합니다.`,
       tone: 'warning',
     });
   }
@@ -1921,6 +2419,19 @@ function formatTransactionTypeList(listings: Pick<PropertyListing, 'transactionT
     new Set(listings.map((listing) => transactionTypeMeta[listing.transactionType]?.label ?? listing.transactionType)),
   );
   return labels.join(', ');
+}
+
+function formatJointBrokerageRequirementList(
+  listings: Pick<PropertyListing, 'transactionType' | 'jointBrokeragePartner'>[],
+) {
+  return listings
+    .map((listing) => {
+      const transactionLabel = transactionTypeMeta[listing.transactionType]?.label ?? listing.transactionType;
+      return listing.jointBrokeragePartner?.name
+        ? `${transactionLabel} ${listing.jointBrokeragePartner.name}`
+        : `${transactionLabel} 파트너 미지정`;
+    })
+    .join(', ');
 }
 
 function getGroupMemo(group: PropertyListingGroup) {

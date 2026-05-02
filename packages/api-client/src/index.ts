@@ -8,6 +8,10 @@ export type { LoginDto, RegisterDto, AuthResponse, MeResponse } from './modules/
 export type { Property, PropertyListing, PropertiesFilter, CreatePropertyDto, UpdatePropertyDto } from './modules/properties.js';
 export type {
   Listing,
+  ListingAdvertisement,
+  ListingAdvertisementSource,
+  ListingAdvertisementStatus,
+  ListingPriceHistory,
   ListingFilterSite,
   ListingFilterSitesParams,
   ListingsFilter,

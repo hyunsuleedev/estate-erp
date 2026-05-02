@@ -46,6 +46,11 @@ model Listing {
   price           Int? // 매매가/전세가 (만원)
   deposit         Int? // 보증금 (만원, monthly일 때)
   monthlyRent     Int?    @map("monthly_rent") // 월세 (만원)
+  moveInAvailableType String?   @map("move_in_available_type") // immediate, date, range, negotiable, by_balance, after_tenant_move_out, unknown
+  moveInAvailableFrom DateTime? @map("move_in_available_from")
+  moveInAvailableTo   DateTime? @map("move_in_available_to")
+  isJointBrokerageRequired Boolean @default(false) @map("is_joint_brokerage_required")
+  jointBrokeragePartnerId  String? @map("joint_brokerage_partner_id") @db.Uuid
   checkStatus     String  @default("unverified") @map("check_status")
   isHidden        Boolean @default(false) @map("is_hidden")
   memo            String?
@@ -59,6 +64,7 @@ model Listing {
 
   office   Office   @relation(fields: [officeId], references: [id])
   property Property @relation(fields: [propertyId], references: [id])
+  jointBrokeragePartner PartnerBroker? @relation("ListingJointBrokeragePartner", fields: [jointBrokeragePartnerId], references: [id])
 
   matches        Match[]
   deals          Deal[]
@@ -66,6 +72,7 @@ model Listing {
   tasks          Task[]
   calendarEvents CalendarEvent[]
   priceHistories PriceHistory[]
+  advertisements ListingAdvertisement[]
   proposals      Proposal[]
 
   // 공동 중개망
@@ -75,7 +82,48 @@ model Listing {
   @@index([officeId, checkStatus])
   @@index([officeId, checkStatus, checkStatusChangedAt])
   @@index([propertyId])
+  @@index([jointBrokeragePartnerId])
   @@map("listings")
+}
+
+// ============================================================
+// ListingAdvertisement (내 사무소의 광고 집행 기록)
+// 크롤링된 외부 매물이 아니라, 실제 광고를 어디에/언제/얼마로 올렸는지 기록.
+// 수동 확인은 lastCheckedAt, 향후 CP 연동 동기화는 lastSyncedAt으로 분리한다.
+// ============================================================
+
+model ListingAdvertisement {
+  id        String @id @default(uuid()) @db.Uuid
+  officeId  String @map("office_id") @db.Uuid
+  listingId String @map("listing_id") @db.Uuid
+
+  channel String // naver, asil, zigbang, dabang, hanbang, etc
+  status  String @default("active") // planned, draft, active, paused, ended, error
+  source  String @default("manual") // manual, external_observed, cp_sync
+
+  advertisedPrice       Int? @map("advertised_price")
+  advertisedDeposit     Int? @map("advertised_deposit")
+  advertisedMonthlyRent Int? @map("advertised_monthly_rent")
+
+  startedAt DateTime? @map("started_at")
+  endedAt   DateTime? @map("ended_at")
+  url       String?
+  memo      String?
+
+  externalAdId String?   @map("external_ad_id")
+  lastCheckedAt DateTime? @map("last_checked_at")
+  lastSyncedAt DateTime? @map("last_synced_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  office  Office  @relation(fields: [officeId], references: [id])
+  listing Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+
+  @@index([officeId])
+  @@index([listingId, status])
+  @@index([officeId, channel, status])
+  @@map("listing_advertisements")
 }
 
 // ============================================================

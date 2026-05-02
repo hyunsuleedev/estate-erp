@@ -62,6 +62,11 @@ interface ListingCreateDto {
   price?: number | null;
   deposit?: number | null;
   monthlyRent?: number | null;
+  moveInAvailableType?: string | null;
+  moveInAvailableFrom?: Date | string | null;
+  moveInAvailableTo?: Date | string | null;
+  isJointBrokerageRequired?: boolean;
+  jointBrokeragePartnerId?: string | null;
   memo?: string | null;
 }
 
@@ -70,6 +75,11 @@ interface ListingUpdateDto {
   price?: number | null;
   deposit?: number | null;
   monthlyRent?: number | null;
+  moveInAvailableType?: string | null;
+  moveInAvailableFrom?: Date | string | null;
+  moveInAvailableTo?: Date | string | null;
+  isJointBrokerageRequired?: boolean;
+  jointBrokeragePartnerId?: string | null;
   checkStatus?: string;
   isHidden?: boolean;
   memo?: string | null;
@@ -282,6 +292,10 @@ export class ListingsService {
                 },
               },
               propertyContacts: { include: { contact: true } },
+              tenants: {
+                include: { contact: true },
+                orderBy: { createdAt: 'desc' },
+              },
               listings: {
                 orderBy: { createdAt: 'desc' },
                 select: {
@@ -290,14 +304,41 @@ export class ListingsService {
                   price: true,
                   deposit: true,
                   monthlyRent: true,
+                  moveInAvailableType: true,
+                  moveInAvailableFrom: true,
+                  moveInAvailableTo: true,
+                  isJointBrokerageRequired: true,
+                  jointBrokeragePartnerId: true,
                   checkStatus: true,
                   isHidden: true,
                   memo: true,
                   createdAt: true,
                   updatedAt: true,
+                  advertisements: {
+                    orderBy: { createdAt: 'desc' },
+                    take: 5,
+                  },
+                  jointBrokeragePartner: {
+                    select: {
+                      id: true,
+                      name: true,
+                      phone: true,
+                    },
+                  },
                 },
               },
             },
+          },
+          jointBrokeragePartner: {
+            select: {
+              id: true,
+              name: true,
+              phone: true,
+            },
+          },
+          advertisements: {
+            orderBy: { createdAt: 'desc' },
+            take: 5,
           },
           priceHistories: {
             orderBy: { createdAt: 'desc' },
@@ -416,7 +457,34 @@ export class ListingsService {
               include: { contact: true },
               orderBy: { createdAt: 'desc' },
             },
+            listings: {
+              orderBy: { createdAt: 'desc' },
+              include: {
+                advertisements: {
+                  orderBy: { createdAt: 'desc' },
+                  take: 5,
+                },
+                jointBrokeragePartner: {
+                  select: {
+                    id: true,
+                    name: true,
+                    phone: true,
+                  },
+                },
+              },
+            },
           },
+        },
+        jointBrokeragePartner: {
+          select: {
+            id: true,
+            name: true,
+            phone: true,
+          },
+        },
+        advertisements: {
+          orderBy: { createdAt: 'desc' },
+          take: 5,
         },
         matches: true,
         deals: true,
@@ -455,6 +523,10 @@ export class ListingsService {
       dto.propertyId,
       dto.transactionType,
     );
+    await this.assertAccessiblePartnerBroker(
+      officeId,
+      dto.jointBrokeragePartnerId,
+    );
 
     return this.prisma.listing.create({
       data: {
@@ -464,6 +536,11 @@ export class ListingsService {
         price: dto.price,
         deposit: dto.deposit,
         monthlyRent: dto.monthlyRent,
+        moveInAvailableType: dto.moveInAvailableType,
+        moveInAvailableFrom: dto.moveInAvailableFrom,
+        moveInAvailableTo: dto.moveInAvailableTo,
+        isJointBrokerageRequired: dto.isJointBrokerageRequired,
+        jointBrokeragePartnerId: dto.jointBrokeragePartnerId,
         memo: dto.memo,
       },
       include: {
@@ -476,6 +553,13 @@ export class ListingsService {
                 siteUnitType: true,
               },
             },
+          },
+        },
+        jointBrokeragePartner: {
+          select: {
+            id: true,
+            name: true,
+            phone: true,
           },
         },
       },
@@ -511,6 +595,10 @@ export class ListingsService {
         dto.checkStatus,
       );
     }
+    await this.assertAccessiblePartnerBroker(
+      officeId,
+      dto.jointBrokeragePartnerId,
+    );
 
     return this.prisma.listing.update({
       where: { id },
@@ -528,6 +616,13 @@ export class ListingsService {
                 siteUnitType: true,
               },
             },
+          },
+        },
+        jointBrokeragePartner: {
+          select: {
+            id: true,
+            name: true,
+            phone: true,
           },
         },
       },
@@ -578,6 +673,22 @@ export class ListingsService {
       throw new ConflictException(
         '같은 매물에는 동일한 거래 유형의 매물을 중복 등록할 수 없습니다.',
       );
+    }
+  }
+
+  private async assertAccessiblePartnerBroker(
+    officeId: string,
+    partnerBrokerId?: string | null,
+  ) {
+    if (!partnerBrokerId) return;
+
+    const partnerBroker = await this.prisma.partnerBroker.findFirst({
+      where: { id: partnerBrokerId, officeId },
+      select: { id: true },
+    });
+
+    if (!partnerBroker) {
+      throw new NotFoundException('PartnerBroker not found');
     }
   }
 

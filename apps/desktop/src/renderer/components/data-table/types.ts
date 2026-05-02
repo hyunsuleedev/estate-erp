@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import type { ColumnDef, SortingState, ColumnFiltersState } from '@tanstack/react-table';
 
 // ── Filter types (Twenty-inspired) ──────────────────────────────
@@ -110,6 +111,7 @@ export interface DataTableProps<TData> {
   // Selection
   enableRowSelection?: boolean;
   onRowSelectionChange?: (selectedIds: string[]) => void;
+  renderSelectionAccessory?: (row: TData) => ReactNode;
   // Row click
   onRowClick?: (row: TData) => void;
   // Loading
