@@ -25,6 +25,7 @@ prisma/*.db
 .playwright-mcp/
 .claude/worktrees/
 .claude/scheduled_tasks.lock
+.superpowers/
 
 # Local-only screenshots (root-level PNGs)
 /*.png
