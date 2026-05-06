@@ -16,29 +16,48 @@ model Task {
 
   // 담당자
   assignedToId String? @map("assigned_to_id") @db.Uuid
+  createdById  String? @map("created_by_id") @db.Uuid
+  assignedById String? @map("assigned_by_id") @db.Uuid
+  assignedAt   DateTime? @map("assigned_at")
 
   // 관련 컨텍스트 (상담에서 할 일 생성 시 자동 연결)
   contactId      String? @map("contact_id") @db.Uuid
   propertyId     String? @map("property_id") @db.Uuid
   listingId      String? @map("listing_id") @db.Uuid
   consultationId String? @map("consultation_id") @db.Uuid
+  buyerReqId     String? @map("buyer_req_id") @db.Uuid
+  matchId        String? @map("match_id") @db.Uuid
+  dealId         String? @map("deal_id") @db.Uuid
+  contractId     String? @map("contract_id") @db.Uuid
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
   office       Office        @relation(fields: [officeId], references: [id])
   assignedTo   User?         @relation("TaskAssignee", fields: [assignedToId], references: [id])
+  createdBy    User?         @relation("TaskCreator", fields: [createdById], references: [id])
+  assignedBy   User?         @relation("TaskAssigner", fields: [assignedById], references: [id])
   contact      Contact?      @relation(fields: [contactId], references: [id])
   property     Property?     @relation(fields: [propertyId], references: [id])
   listing      Listing?      @relation(fields: [listingId], references: [id])
   consultation Consultation? @relation(fields: [consultationId], references: [id])
+  buyerRequirement BuyerRequirement? @relation(fields: [buyerReqId], references: [id])
+  match       Match?        @relation(fields: [matchId], references: [id])
+  deal        Deal?         @relation(fields: [dealId], references: [id])
+  contract    Contract?     @relation(fields: [contractId], references: [id])
 
   @@index([officeId, status, dueDate])
   @@index([officeId, assignedToId])
+  @@index([officeId, createdById])
+  @@index([officeId, assignedById])
   @@index([contactId])
   @@index([propertyId])
   @@index([listingId])
   @@index([consultationId])
+  @@index([buyerReqId])
+  @@index([matchId])
+  @@index([dealId])
+  @@index([contractId])
   @@map("tasks")
 }
 

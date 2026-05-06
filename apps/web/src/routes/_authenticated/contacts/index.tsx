@@ -1,38 +1,33 @@
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router';
-import { useQueries, useQuery } from '@tanstack/react-query';
-import { useCallback, useDeferredValue, useMemo, useState, type ComponentType } from 'react';
+import { useInfiniteQuery } from '@tanstack/react-query';
+import { useCallback, useDeferredValue, useMemo, useState, type ReactNode } from 'react';
 import type { ColumnDef, SortingState } from '@tanstack/react-table';
 import type { Contact } from '@estate-erp/api-client';
 import {
-  BriefcaseBusiness,
   Building2,
-  Home,
-  MessageSquare,
-  MessageSquareText,
+  CalendarDays,
+  FileText,
+  Phone,
   Plus,
   Target,
   UserRound,
-  Users,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import {
-  CONTACT_GROUPS,
   CONTACT_GROUP_TAGS,
   formatPhoneNumber,
+  isContactTagVisible,
 } from '@/lib/contacts';
 import { cn } from '@/lib/utils';
 import {
   DataTable,
   DateCell,
-  TextCell,
   ViewBar,
   type ActiveFilter,
   type FilterDefinition,
   type SortDefinition,
 } from '@/components/data-table';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { ScrollArea } from '@/components/ui/scroll-area';
 
 const baseFilterDefinitions: FilterDefinition[] = [
   {
@@ -57,14 +52,7 @@ const sortDefinitions = [
   { field: 'name', label: '이름' },
 ];
 
-const contactGroupIcons: Record<string, ComponentType<{ className?: string }>> = {
-  '매수/투자': Target,
-  임차: Home,
-  매물상담: MessageSquareText,
-  소유자: UserRound,
-  거래처: BriefcaseBusiness,
-  중개사무소: Building2,
-};
+const CONTACTS_PAGE_SIZE = 50;
 
 export const Route = createFileRoute('/_authenticated/contacts/')({
   component: ContactsPage,
@@ -72,10 +60,8 @@ export const Route = createFileRoute('/_authenticated/contacts/')({
 
 function ContactsPage() {
   const navigate = useNavigate();
-  const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const deferredSearch = useDeferredValue(search);
-  const [selectedGroupTag, setSelectedGroupTag] = useState<string | null>(null);
   const [activeFilters, setActiveFilters] = useState<ActiveFilter[]>([]);
   const [activeSorts, setActiveSorts] = useState<SortDefinition[]>([
     { field: 'updatedAt', label: '최근 수정', direction: 'desc' },
@@ -84,35 +70,14 @@ function ContactsPage() {
     { id: 'updatedAt', desc: true },
   ]);
 
-  const totalCountQuery = useQuery({
-    queryKey: ['contacts', 'sidebar-total-count'],
-    queryFn: () => api.contacts.findAll({ page: 1, limit: 1 }),
-    staleTime: 60_000,
-  });
-
-  const groupCountQueries = useQueries({
-    queries: CONTACT_GROUPS.map((group) => ({
-      queryKey: ['contacts', 'sidebar-group-count', group.tag],
-      queryFn: () => api.contacts.findAll({ page: 1, limit: 1, tags: group.tag }),
-      staleTime: 60_000,
-    })),
-  });
-
   const apiParams = useMemo(() => {
     const customTagFilters = activeFilters
       .filter((filter) => filter.field === 'tags')
       .map((filter) => filter.value);
 
-    const tags = Array.from(
-      new Set([
-        ...(selectedGroupTag ? [selectedGroupTag] : []),
-        ...customTagFilters,
-      ]),
-    );
+    const tags = Array.from(new Set(customTagFilters));
 
     return {
-      page,
-      limit: 20,
       search: deferredSearch.trim() || undefined,
       tags: tags.length > 0 ? tags.join(',') : undefined,
       hasPropertyContact: activeFilters.some((filter) => filter.field === 'hasPropertyContact') || undefined,
@@ -120,23 +85,37 @@ function ContactsPage() {
       sortBy: activeSorts[0]?.field as 'name' | 'createdAt' | 'updatedAt' | undefined,
       sortOrder: activeSorts[0]?.direction ?? 'desc',
     };
-  }, [activeFilters, activeSorts, deferredSearch, page, selectedGroupTag]);
+  }, [activeFilters, activeSorts, deferredSearch]);
 
-  const { data, isLoading } = useQuery({
-    queryKey: ['contacts', apiParams],
-    queryFn: () => api.contacts.findAll(apiParams),
+  const {
+    data,
+    isLoading,
+    isFetchingNextPage,
+    hasNextPage,
+    fetchNextPage,
+  } = useInfiniteQuery({
+    queryKey: ['contacts', 'infinite', apiParams],
+    initialPageParam: 1,
+    queryFn: ({ pageParam }) =>
+      api.contacts.findAll({
+        ...apiParams,
+        page: pageParam,
+        limit: CONTACTS_PAGE_SIZE,
+      }),
+    getNextPageParam: (lastPage) => {
+      const { page, totalPages } = lastPage.pagination;
+      return page < totalPages ? page + 1 : undefined;
+    },
   });
 
-  const groupCounts = CONTACT_GROUPS.reduce<Record<string, number | undefined>>((acc, group, index) => {
-    acc[group.tag] = groupCountQueries[index]?.data?.pagination?.total;
-    return acc;
-  }, {});
+  const contacts = useMemo(() => data?.pages.flatMap((page) => page.items) ?? [], [data?.pages]);
+  const totalContacts = data?.pages[0]?.pagination.total ?? 0;
 
   const filterDefinitions = useMemo<FilterDefinition[]>(() => {
     const uniqueCustomTags = Array.from(new Set([
-      ...(data?.items ?? [])
+      ...contacts
         .flatMap((contact) => contact.tags)
-        .filter((tag) => !CONTACT_GROUP_TAGS.includes(tag)),
+        .filter((tag) => !CONTACT_GROUP_TAGS.includes(tag) && isContactTagVisible(tag)),
       ...activeFilters
         .filter((filter) => filter.field === 'tags')
         .map((filter) => filter.value),
@@ -155,78 +134,46 @@ function ContactsPage() {
         options: uniqueCustomTags.map((tag) => ({ label: tag, value: tag })),
       },
     ];
-  }, [activeFilters, data?.items]);
+  }, [activeFilters, contacts]);
 
   const columns = useMemo<ColumnDef<Contact, unknown>[]>(
     () => [
       {
         accessorKey: 'name',
-        header: '이름',
-        size: 180,
+        header: () => <ContactHeaderLabel icon={<UserRound className="size-4" />} label="이름" />,
+        size: 220,
         enableSorting: true,
-        cell: ({ row }) => (
-          <Link
-            to="/contacts/$id"
-            params={{ id: row.original.id }}
-            className="font-medium text-foreground hover:text-primary hover:underline"
-            onClick={(event) => event.stopPropagation()}
-          >
-            {row.original.name}
-          </Link>
-        ),
+        cell: ({ row }) => <ContactNameCell contact={row.original} />,
       },
       {
         accessorKey: 'phone',
-        header: '연락처',
-        size: 200,
-        cell: ({ row }) => {
-          const phones = [row.original.phone, row.original.phone2]
-            .filter(Boolean)
-            .map((phone) => formatPhoneNumber(phone));
-
-          return (
-            <TextCell
-              value={phones.length > 0 ? phones.join(' · ') : '-'}
-              muted={phones.length === 0}
-            />
-          );
-        },
-      },
-      {
-        accessorKey: 'tags',
-        header: '그룹/태그',
-        size: 220,
-        enableSorting: false,
-        cell: ({ row }) => <TagPreview tags={row.original.tags} />,
+        header: () => <ContactHeaderLabel icon={<Phone className="size-4" />} label="전화번호" />,
+        size: 180,
+        cell: ({ row }) => <PhoneStack contact={row.original} />,
       },
       {
         accessorKey: 'connections',
-        header: '연결 현황',
-        size: 190,
+        header: () => <ContactHeaderLabel icon={<Building2 className="size-4" />} label="연결" />,
+        size: 180,
         enableSorting: false,
         cell: ({ row }) => (
           <ConnectionSummary
             propertyCount={row.original._count?.propertyContacts ?? 0}
             buyerReqCount={row.original._count?.buyerRequirements ?? 0}
-            consultationCount={row.original._count?.consultations ?? 0}
           />
         ),
       },
       {
-        accessorKey: 'memo',
-        header: '메모',
-        size: 260,
+        accessorKey: 'latestConsultation',
+        header: () => <ContactHeaderLabel icon={<FileText className="size-4" />} label="최근 상담" />,
+        size: 420,
         enableSorting: false,
-        cell: ({ row }) => (
-          <span className="block truncate text-sm text-muted-foreground">
-            {row.original.memo ?? '-'}
-          </span>
-        ),
+        cell: ({ row }) => <LatestConsultationCell contact={row.original} />,
       },
       {
         accessorKey: 'updatedAt',
-        header: '최근 수정',
-        size: 90,
+        header: () => <ContactHeaderLabel icon={<CalendarDays className="size-4" />} label="수정일" />,
+        size: 100,
         enableSorting: true,
         cell: ({ row }) => <DateCell value={row.original.updatedAt} relative />,
       },
@@ -248,12 +195,10 @@ function ContactsPage() {
         filter,
       ];
     });
-    setPage(1);
   }, []);
 
   const handleFilterRemove = useCallback((filterId: string) => {
     setActiveFilters((previous) => previous.filter((filter) => filter.id !== filterId));
-    setPage(1);
   }, []);
 
   const handleFiltersReset = useCallback(() => {
@@ -261,273 +206,203 @@ function ContactsPage() {
     setActiveSorts([{ field: 'updatedAt', label: '최근 수정', direction: 'desc' }]);
     setSorting([{ id: 'updatedAt', desc: true }]);
     setSearch('');
-    setPage(1);
   }, []);
 
   const handleSortAdd = useCallback((sort: SortDefinition) => {
     setActiveSorts([sort]);
     setSorting([{ id: sort.field, desc: sort.direction === 'desc' }]);
-    setPage(1);
   }, []);
 
-  const emptyMessage = selectedGroupTag
-    ? `${selectedGroupTag} 그룹에 해당하는 연락처가 없습니다.`
-    : deferredSearch.trim() || activeFilters.length > 0
+  const handleEndReached = useCallback(() => {
+    if (!hasNextPage || isFetchingNextPage) return;
+    void fetchNextPage();
+  }, [fetchNextPage, hasNextPage, isFetchingNextPage]);
+
+  const emptyMessage = deferredSearch.trim() || activeFilters.length > 0
       ? '조건에 맞는 연락처가 없습니다.'
       : '등록된 연락처가 없습니다.';
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <h1 className="text-lg font-semibold tracking-tight">연락처</h1>
-          <span className="text-xs text-muted-foreground">
-            {data?.pagination?.total ?? 0}건
-          </span>
-          {selectedGroupTag && (
-            <Badge>{selectedGroupTag}</Badge>
+    <div className="flex h-[calc(100svh-5rem)] min-h-0 flex-col bg-white">
+      <section className="border-b border-slate-200 bg-white px-3 py-0">
+        <ViewBar
+          search={search}
+          onSearchChange={(value) => {
+            setSearch(value);
+          }}
+          searchPlaceholder="이름, 전화번호 검색..."
+          filterDefinitions={filterDefinitions}
+          activeFilters={activeFilters}
+          onFilterAdd={handleFilterAdd}
+          onFilterRemove={handleFilterRemove}
+          onFiltersReset={handleFiltersReset}
+          sortDefinitions={sortDefinitions}
+          activeSorts={activeSorts}
+          onSortAdd={handleSortAdd}
+          onSortRemove={() => {
+            setActiveSorts([]);
+            setSorting([]);
+          }}
+          actions={(
+            <Button size="sm" asChild className="h-7 gap-1.5 px-2.5 text-xs">
+              <Link to="/contacts/new">
+                <Plus className="size-3.5" />
+                연락처 추가
+              </Link>
+            </Button>
           )}
-        </div>
-      </div>
+        />
+      </section>
 
-      <div className="overflow-hidden rounded-xl border border-border/60 bg-background">
-        <div className="grid min-h-[720px] grid-cols-[260px_minmax(0,1fr)]">
-          <ContactGroupSidebar
-            selectedGroupTag={selectedGroupTag}
-            onSelectGroup={(tag) => {
-              setSelectedGroupTag(tag);
-              setPage(1);
-            }}
-            totalCount={totalCountQuery.data?.pagination?.total}
-            groupCounts={groupCounts}
-          />
-
-          <div className="flex min-w-0 flex-col">
-            <ViewBar
-              search={search}
-              onSearchChange={(value) => {
-                setSearch(value);
-                setPage(1);
-              }}
-              searchPlaceholder="이름, 전화번호, 이메일 검색..."
-              filterDefinitions={filterDefinitions}
-              activeFilters={activeFilters}
-              onFilterAdd={handleFilterAdd}
-              onFilterRemove={handleFilterRemove}
-              onFiltersReset={handleFiltersReset}
-              sortDefinitions={sortDefinitions}
-              activeSorts={activeSorts}
-              onSortAdd={handleSortAdd}
-              onSortRemove={() => {
+      <section className="flex min-h-0 flex-1 bg-white px-6 py-0">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-white">
+          <DataTable
+            columns={columns}
+            data={contacts}
+            totalCount={totalContacts}
+            pageSize={CONTACTS_PAGE_SIZE}
+            sorting={sorting}
+            onSortingChange={(nextSorting) => {
+              setSorting(nextSorting);
+              if (nextSorting.length === 0) {
                 setActiveSorts([]);
-                setSorting([]);
-                setPage(1);
-              }}
-              actions={(
-                <Button size="sm" asChild>
-                  <Link to="/contacts/new">
-                    <Plus className="size-4" />
-                    연락처 추가
-                  </Link>
-                </Button>
-              )}
-            />
+                return;
+              }
 
-            <div className="border-t border-border/50" />
-
-            <DataTable
-              columns={columns}
-              data={data?.items ?? []}
-              totalCount={data?.pagination?.total ?? 0}
-              pageCount={data?.pagination?.totalPages ?? 1}
-              page={page}
-              onPageChange={setPage}
-              pageSize={20}
-              sorting={sorting}
-              onSortingChange={(nextSorting) => {
-                setSorting(nextSorting);
-                if (nextSorting.length === 0) {
-                  setActiveSorts([]);
-                  return;
-                }
-
-                const next = nextSorting[0];
-                setActiveSorts([
-                  {
-                    field: next.id,
-                    label: sortDefinitions.find((definition) => definition.field === next.id)?.label ?? next.id,
-                    direction: next.desc ? 'desc' : 'asc',
-                  },
-                ]);
-                setPage(1);
-              }}
-              isLoading={isLoading}
-              emptyMessage={emptyMessage}
-              onRowClick={(contact) => {
-                navigate({
-                  to: '/contacts/$id',
-                  params: { id: contact.id },
-                });
-              }}
-            />
-          </div>
+              const next = nextSorting[0];
+              setActiveSorts([
+                {
+                  field: next.id,
+                  label: sortDefinitions.find((definition) => definition.field === next.id)?.label ?? next.id,
+                  direction: next.desc ? 'desc' : 'asc',
+                },
+              ]);
+            }}
+            layout="full-height"
+            variant="notion"
+            rowHeight="auto"
+            isLoading={isLoading}
+            isLoadingMore={isFetchingNextPage}
+            onEndReached={handleEndReached}
+            emptyMessage={emptyMessage}
+            renderStatusBar={() => (
+              <span>
+                연락처 {contacts.length.toLocaleString()} / {totalContacts.toLocaleString()}건 표시
+                {hasNextPage && !isFetchingNextPage ? ' · 아래로 스크롤하면 더 불러옵니다' : ''}
+                {isFetchingNextPage ? ' · 더 불러오는 중...' : ''}
+              </span>
+            )}
+            onRowClick={(contact) => {
+              navigate({
+                to: '/contacts/$id',
+                params: { id: contact.id },
+              });
+            }}
+          />
         </div>
-      </div>
+      </section>
     </div>
   );
 }
 
-function ContactGroupSidebar({
-  selectedGroupTag,
-  onSelectGroup,
-  totalCount,
-  groupCounts,
-}: {
-  selectedGroupTag: string | null;
-  onSelectGroup: (tag: string | null) => void;
-  totalCount?: number;
-  groupCounts: Record<string, number | undefined>;
-}) {
+function ContactHeaderLabel({ icon, label }: { icon: ReactNode; label: string }) {
   return (
-    <aside className="border-r border-border/60 bg-muted/10">
-      <div className="flex h-full flex-col">
-        <div className="border-b border-border/60 px-4 py-4">
-          <p className="text-sm font-semibold">연락처 그룹</p>
-          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-            고정 카테고리로 빠르게 연락처를 분류하고 조회합니다.
-          </p>
-        </div>
-
-        <ScrollArea className="flex-1">
-          <div className="space-y-1 p-3">
-            <SidebarItem
-              label="전체 연락처"
-              description="그룹 필터 없이 전체 목록"
-              count={totalCount}
-              selected={selectedGroupTag === null}
-              onClick={() => onSelectGroup(null)}
-              icon={Users}
-            />
-
-            {CONTACT_GROUPS.map((group) => (
-              <SidebarItem
-                key={group.id}
-                label={group.label}
-                description={group.description}
-                count={groupCounts[group.tag]}
-                selected={selectedGroupTag === group.tag}
-                onClick={() => onSelectGroup(group.tag)}
-                icon={contactGroupIcons[group.tag] ?? Target}
-              />
-            ))}
-          </div>
-        </ScrollArea>
-      </div>
-    </aside>
+    <span className="inline-flex min-w-0 items-center gap-1.5 text-slate-500">
+      <span className="shrink-0 text-slate-400">{icon}</span>
+      <span className="truncate">{label}</span>
+    </span>
   );
 }
 
-function SidebarItem({
-  label,
-  description,
-  count,
-  selected,
-  onClick,
-  icon: Icon,
-}: {
-  label: string;
-  description: string;
-  count?: number;
-  selected: boolean;
-  onClick: () => void;
-  icon: ComponentType<{ className?: string }>;
-}) {
+function ContactNameCell({ contact }: { contact: Contact }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        'flex w-full items-start gap-3 rounded-xl border px-3 py-3 text-left transition-colors',
-        selected
-          ? 'border-primary bg-primary/6'
-          : 'border-transparent bg-background/70 hover:bg-accent/60',
-      )}
+    <Link
+      to="/contacts/$id"
+      params={{ id: contact.id }}
+      className="block min-w-0 text-[13px] font-medium text-slate-900 hover:underline"
+      onClick={(event) => event.stopPropagation()}
     >
-      <div className={cn(
-        'mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg',
-        selected ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground',
-      )}>
-        <Icon className="size-4" />
-      </div>
-
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center justify-between gap-3">
-          <span className="truncate text-sm font-medium">{label}</span>
-          <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-            {count ?? '-'}
-          </span>
-        </div>
-        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-          {description}
-        </p>
-      </div>
-    </button>
+      <span className="block truncate">{contact.name}</span>
+    </Link>
   );
 }
 
-function TagPreview({ tags }: { tags: string[] }) {
-  if (tags.length === 0) {
-    return <span className="text-sm text-muted-foreground">-</span>;
+function PhoneStack({ contact }: { contact: Contact }) {
+  const phones = [contact.phone, contact.phone2].filter(Boolean);
+
+  if (phones.length === 0) {
+    return <span className="text-[13px] text-slate-400">-</span>;
   }
 
-  const groupTags = CONTACT_GROUPS
-    .map((group) => group.tag)
-    .filter((tag) => tags.includes(tag));
-  const customTags = tags.filter((tag) => !CONTACT_GROUP_TAGS.includes(tag));
-  const visibleTags = [...groupTags, ...customTags].slice(0, 3);
-  const hiddenCount = tags.length - visibleTags.length;
-
   return (
-    <div className="flex items-center gap-1 overflow-hidden">
-      {visibleTags.map((tag) => (
-        <Badge
-          key={tag}
-          variant={CONTACT_GROUP_TAGS.includes(tag) ? 'default' : 'secondary'}
-          className="max-w-[84px] truncate px-2 py-0"
+    <div className="flex min-w-0 flex-col gap-0.5 py-1">
+      {phones.map((phone, index) => (
+        <span
+          key={`${phone}-${index}`}
+          className={cn(
+            'truncate text-[13px] tabular-nums',
+            index === 0 ? 'font-medium text-slate-800' : 'text-slate-500',
+          )}
         >
-          {tag}
-        </Badge>
+          {formatPhoneNumber(phone)}
+        </span>
       ))}
-      {hiddenCount > 0 && (
-        <span className="text-xs text-muted-foreground">+{hiddenCount}</span>
-      )}
     </div>
   );
+}
+
+function LatestConsultationCell({ contact }: { contact: Contact }) {
+  const consultation = contact.latestConsultation;
+
+  if (!consultation) {
+    return <span className="text-[13px] text-slate-400">-</span>;
+  }
+
+  return (
+    <div className="flex min-w-0 flex-col gap-0.5 py-1">
+      <span className="text-[11px] text-slate-400">
+        {formatContactDateShort(consultation.createdAt)}
+      </span>
+      <span className="line-clamp-2 text-[13px] leading-snug text-slate-700">
+        {consultation.content}
+      </span>
+    </div>
+  );
+}
+
+function formatContactDateShort(value?: string | null) {
+  if (!value) return '-';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '-';
+  return date.toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric' });
 }
 
 function ConnectionSummary({
   propertyCount,
   buyerReqCount,
-  consultationCount,
 }: {
   propertyCount: number;
   buyerReqCount: number;
-  consultationCount: number;
 }) {
   return (
-    <div className="flex items-center gap-3 text-xs text-muted-foreground">
-      <span className="inline-flex items-center gap-1">
-        <Building2 className="size-3.5" />
-        {propertyCount}
-      </span>
-      <span className="inline-flex items-center gap-1">
-        <Target className="size-3.5" />
-        {buyerReqCount}
-      </span>
-      <span className="inline-flex items-center gap-1">
-        <MessageSquare className="size-3.5" />
-        {consultationCount}
-      </span>
+    <div className="flex min-w-0 flex-wrap items-center gap-1 py-1">
+      <ConnectionPill icon={<Building2 className="size-3" />} label="매물" count={propertyCount} />
+      <ConnectionPill icon={<Target className="size-3" />} label="요건" count={buyerReqCount} />
     </div>
+  );
+}
+
+function ConnectionPill({ icon, label, count }: { icon: ReactNode; label: string; count: number }) {
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center gap-1 rounded-[4px] px-1.5 py-0.5 text-[12px] leading-5',
+        count > 0 ? 'bg-[#f1f1ef] text-[#5f5e5b]' : 'bg-transparent text-slate-400',
+      )}
+    >
+      {icon}
+      <span>{label}</span>
+      <span className="tabular-nums">{count}</span>
+    </span>
   );
 }

@@ -10,7 +10,7 @@ export const SiteType = {
 } as const;
 export type SiteType = (typeof SiteType)[keyof typeof SiteType];
 
-/** 매물 거래 유형 */
+/** 매물 거래 유형 (Listing 등록 단계) */
 export const TransactionType = {
   SALE: 'sale',
   JEONSE: 'jeonse',
@@ -18,6 +18,37 @@ export const TransactionType = {
 } as const;
 export type TransactionType =
   (typeof TransactionType)[keyof typeof TransactionType];
+
+/**
+ * 계약서 거래 유형 (Contract 단계).
+ * Listing 의 3종에 더해 교환·전대·권리양도·권리승계를 추가로 표현한다.
+ * 매물 등록 UX 는 단순하게 두고, 계약서 작성 시점에만 확장 유형을 선택한다.
+ * 마이스파이더 V2 의 Tran_Clsf 01~07 과 1:1 매핑.
+ */
+export const ContractTransactionType = {
+  SALE: 'sale',
+  JEONSE: 'jeonse',
+  MONTHLY: 'monthly',
+  EXCHANGE: 'exchange',
+  SUBLEASE: 'sublease',
+  TRANSFER: 'transfer',
+  SUCCESSION: 'succession',
+} as const;
+export type ContractTransactionType =
+  (typeof ContractTransactionType)[keyof typeof ContractTransactionType];
+
+export const CONTRACT_TRANSACTION_TYPE_LABELS: Record<
+  ContractTransactionType,
+  string
+> = {
+  sale: '매매',
+  jeonse: '전세',
+  monthly: '월세',
+  exchange: '교환',
+  sublease: '전대',
+  transfer: '권리양도',
+  succession: '권리승계',
+};
 
 /** 매물 확인 상태 */
 export const CheckStatus = {

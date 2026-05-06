@@ -22,10 +22,42 @@ export type { Contact, ContactCounts, ContactDetail, ContactsFilter, CreateConta
 export type { Site, SiteDetail, CreateSiteDto } from './modules/sites.js';
 export type { Dong } from './modules/dongs.js';
 export type { SiteUnitType, Unit, CreateUnitDto, UpdateUnitDto } from './modules/units.js';
-export type { Task, TaskAssignee, TaskContact, CreateTaskDto, UpdateTaskDto } from './modules/tasks.js';
+export type {
+  Task,
+  TaskAssignee,
+  TaskBuyerRequirementSummary,
+  TaskContact,
+  TaskConsultationSummary,
+  TaskContractSummary,
+  TaskDealSummary,
+  TaskListingSummary,
+  TaskMatchSummary,
+  TaskPropertySummary,
+  CreateTaskDto,
+  UpdateTaskDto,
+} from './modules/tasks.js';
 export type { Match, CreateMatchDto } from './modules/matches.js';
 export type { Deal, CreateDealDto } from './modules/deals.js';
-export type { Contract, CreateContractDto, UpdateContractDto } from './modules/contracts.js';
+export type {
+  Contract,
+  ContractClauseTemplate,
+  ContractClauseTemplateFilter,
+  ContractDocument,
+  ContractDocumentStatus,
+  ContractDocumentTemplate,
+  ContractDocumentTemplateFilter,
+  ContractDocumentType,
+  CreateContractClauseTemplateDto,
+  CreateContractDocumentDto,
+  CreateContractDto,
+  CreateOfficePrintTemplateDto,
+  OfficePrintTemplate,
+  OfficePrintTemplateFilter,
+  UpdateContractClauseTemplateDto,
+  UpdateContractDocumentDto,
+  UpdateContractDto,
+  UpdateOfficePrintTemplateDto,
+} from './modules/contracts.js';
 export type { Consultation, ConsultationsFilter, CreateConsultationDto, UpdateConsultationDto } from './modules/consultations.js';
 export type {
   BuyerRequirement,

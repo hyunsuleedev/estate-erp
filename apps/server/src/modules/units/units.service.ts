@@ -14,6 +14,17 @@ const UNIT_DISABLED_SITE_TYPES: ReadonlySet<string> = new Set([
   SiteType.LAND,
 ]);
 
+const UNIT_CELL_TYPES = [
+  'unit',
+  'empty',
+  'piloti',
+  'common_facility',
+  'commercial_facility',
+  'safety_area',
+] as const;
+
+const UNIT_CELL_TYPE_SET: ReadonlySet<string> = new Set(UNIT_CELL_TYPES);
+
 @Injectable()
 export class UnitsService {
   constructor(private readonly prisma: PrismaService) {}
@@ -78,6 +89,7 @@ export class UnitsService {
       exclusiveAreaM2?: number | null;
       supplyAreaM2?: number | null;
       isPiloti?: boolean;
+      cellType?: string;
     },
   ) {
     const site = await this.findEditableSite(dto.siteId, officeId);
@@ -87,7 +99,9 @@ export class UnitsService {
     }
 
     if (!dto.dongId) {
-      throw new BadRequestException('dongId is required (use placeholder Dong for single-building sites)');
+      throw new BadRequestException(
+        'dongId is required (use placeholder Dong for single-building sites)',
+      );
     }
 
     await this.findOwnedDong(dto.dongId, officeId, site.id);
@@ -96,8 +110,10 @@ export class UnitsService {
       await this.findOwnedSiteUnitType(dto.siteUnitTypeId, site.id, officeId);
     }
 
+    const data = this.normalizeUnitCell(dto);
+
     return this.prisma.unit.create({
-      data: { officeId, ...dto },
+      data: { officeId, ...data },
       include: { site: true, dong: true, siteUnitType: true },
     });
   }
@@ -114,6 +130,7 @@ export class UnitsService {
       exclusiveAreaM2?: number | null;
       supplyAreaM2?: number | null;
       isPiloti?: boolean;
+      cellType?: string;
     },
   ) {
     const existingUnit = await this.findOwnedUnit(id, officeId);
@@ -134,9 +151,11 @@ export class UnitsService {
       await this.findOwnedSiteUnitType(nextSiteUnitTypeId, site.id, officeId);
     }
 
+    const data = this.normalizeUnitCell(dto);
+
     return this.prisma.unit.update({
       where: { id },
-      data: dto,
+      data,
       include: { site: true, dong: true, siteUnitType: true },
     });
   }
@@ -159,6 +178,38 @@ export class UnitsService {
     }
 
     return site;
+  }
+
+  private normalizeUnitCell<T extends { cellType?: string; isPiloti?: boolean }>(
+    dto: T,
+  ): T {
+    if (dto.cellType !== undefined && !UNIT_CELL_TYPE_SET.has(dto.cellType)) {
+      throw new BadRequestException(
+        `cellType must be one of: ${UNIT_CELL_TYPES.join(', ')}`,
+      );
+    }
+
+    if (dto.cellType === 'piloti' && dto.isPiloti === false) {
+      throw new BadRequestException('cellType=piloti requires isPiloti=true');
+    }
+
+    if (
+      dto.cellType !== undefined &&
+      dto.cellType !== 'piloti' &&
+      dto.isPiloti === true
+    ) {
+      throw new BadRequestException('isPiloti=true requires cellType=piloti');
+    }
+
+    if (dto.cellType !== undefined) {
+      return { ...dto, isPiloti: dto.cellType === 'piloti' };
+    }
+
+    if (dto.isPiloti !== undefined) {
+      return { ...dto, cellType: dto.isPiloti ? 'piloti' : 'unit' };
+    }
+
+    return dto;
   }
 
   private async findEditableSite(id: string, officeId: string) {

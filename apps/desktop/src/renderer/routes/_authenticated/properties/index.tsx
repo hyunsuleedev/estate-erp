@@ -556,6 +556,13 @@ function PropertiesPage() {
         },
       },
       {
+        id: 'tenant',
+        header: () => <TableHeaderLabel icon={<User className="size-4" />} label="세입자" />,
+        size: 154,
+        enableSorting: false,
+        cell: ({ row }) => <TenantCell tenant={getCurrentTenant(row.original.property)} />,
+      },
+      {
         id: 'updatedAt',
         header: () => <TableHeaderLabel icon={<CalendarDays className="size-4" />} label="확인일" />,
         size: 92,
@@ -1318,6 +1325,30 @@ function PropertySheetTenantRow({ tenant }: { tenant: Tenant }) {
   );
 }
 
+function TenantCell({ tenant }: { tenant?: Tenant | null }) {
+  if (!tenant) {
+    return <span className="text-[13px] text-slate-400">-</span>;
+  }
+
+  const phone = tenant.contact?.phone;
+
+  return (
+    <div className="flex min-w-0 flex-col gap-0.5">
+      <span className="truncate text-[13px] font-medium text-slate-800">
+        {tenant.contact?.name ?? '세입자'}
+      </span>
+      {phone && (
+        <span className="truncate text-[12px] text-slate-500 tabular-nums">
+          {phone}
+        </span>
+      )}
+      <span className="truncate text-[12px] text-slate-500">
+        {getTenantListDetail(tenant)}
+      </span>
+    </div>
+  );
+}
+
 function PropertySheetConsultationRow({ consultation }: { consultation: Consultation }) {
   return (
     <div className="rounded-md border border-[#eeeeec] px-3 py-3">
@@ -1545,9 +1576,9 @@ function ListingPriceStack({
 
 function ListingAdStack({ listings }: { listings: ListingSummary[] }) {
   return (
-    <div className="flex min-w-0 flex-col items-start gap-1 py-1">
+    <div className="flex min-w-0 max-w-full flex-col items-start gap-1 overflow-hidden py-1">
       {listings.map((listing) => (
-        <div key={listing.id} className="flex min-w-0 items-center gap-1.5">
+        <div key={listing.id} className="flex min-w-0 max-w-full items-center gap-1.5 overflow-hidden">
           {listings.length > 1 && <TransactionMiniLabel transactionType={listing.transactionType} />}
           <AdIndicator advertisements={listing.advertisements ?? []} />
         </div>
@@ -1565,7 +1596,7 @@ function AdIndicator({
 
   if (!primaryAd) {
     return (
-      <span className="inline-flex rounded-[4px] bg-[#f1f1ef] px-1.5 py-0.5 text-[12px] font-medium leading-5 text-[#787774]">
+      <span className="inline-flex max-w-full rounded-[4px] bg-[#f1f1ef] px-1.5 py-0.5 text-[12px] font-medium leading-5 text-[#787774]">
         미등록
       </span>
     );
@@ -1579,16 +1610,16 @@ function AdIndicator({
     : channelLabel;
 
   return (
-    <span className="inline-flex min-w-0 items-center gap-1">
+    <span className="inline-flex min-w-0 max-w-full flex-1 items-center gap-1 overflow-hidden">
       <span
         className={cn(
-          'inline-flex max-w-[72px] rounded-[4px] px-1.5 py-0.5 text-[12px] font-medium leading-5',
+          'inline-flex min-w-0 max-w-[64px] shrink rounded-[4px] px-1.5 py-0.5 text-[12px] font-medium leading-5',
           statusMeta.className,
         )}
       >
         <span className="truncate">{label}</span>
       </span>
-      <span className="truncate text-[11px] text-slate-500">{statusMeta.label}</span>
+      <span className="min-w-0 flex-1 truncate text-[11px] text-slate-500">{statusMeta.label}</span>
     </span>
   );
 }
@@ -2383,6 +2414,41 @@ function getContactRoleLabel(role: string) {
 function getTenantPeriodLabel(tenant: Tenant) {
   if (!tenant.contractStart && !tenant.contractEnd) return '계약 기간 미등록';
   return `${formatDateShort(tenant.contractStart)} - ${formatDateShort(tenant.contractEnd)}`;
+}
+
+function getCurrentTenant(property?: ListingProperty) {
+  const activeTenants = (property?.tenants ?? []).filter((tenant) => tenant.status !== 'moved');
+  if (activeTenants.length === 0) return null;
+
+  return [...activeTenants].sort((a, b) => {
+    const priorityDiff = getTenantListPriority(a) - getTenantListPriority(b);
+    if (priorityDiff !== 0) return priorityDiff;
+    return getTenantSortTime(a.contractEnd) - getTenantSortTime(b.contractEnd);
+  })[0];
+}
+
+function getTenantListPriority(tenant: Tenant) {
+  if (tenant.status === 'moving_out') return 0;
+  if (tenant.status === 'residing') return 1;
+  return 2;
+}
+
+function getTenantSortTime(value?: string | null) {
+  if (!value) return Number.POSITIVE_INFINITY;
+  const time = new Date(value).getTime();
+  return Number.isNaN(time) ? Number.POSITIVE_INFINITY : time;
+}
+
+function getTenantListDetail(tenant: Tenant) {
+  if (tenant.status === 'moving_out' && tenant.moveOutDate) {
+    return `퇴거 ${formatDateShort(tenant.moveOutDate)}`;
+  }
+
+  if (tenant.contractEnd) {
+    return `만기 ${formatDateShort(tenant.contractEnd)}`;
+  }
+
+  return getTenantStatusLabel(tenant.status);
 }
 
 function getTenantStatusLabel(status: string) {

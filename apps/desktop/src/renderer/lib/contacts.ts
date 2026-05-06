@@ -36,15 +36,14 @@ export const CONTACT_GROUPS: ContactGroupDefinition[] = [
     tag: '거래처',
     description: '법무사, 세무사, 협력 업체',
   },
-  {
-    id: 'broker-office',
-    label: '중개사무소',
-    tag: '중개사무소',
-    description: '타 중개사 및 중개 법인',
-  },
 ];
 
 export const CONTACT_GROUP_TAGS = CONTACT_GROUPS.map((group) => group.tag);
+export const CONTACT_DEPRECATED_TAGS = ['중개사무소'];
+
+export function isContactTagVisible(tag: string) {
+  return !CONTACT_DEPRECATED_TAGS.includes(tag);
+}
 
 export function normalizePhone(value?: string | null) {
   return value?.replace(/\D/g, '') ?? '';
@@ -77,7 +76,7 @@ export function parseContactTags(value: string) {
       value
         .split(',')
         .map((tag) => tag.trim())
-        .filter(Boolean),
+        .filter((tag) => Boolean(tag) && isContactTagVisible(tag)),
     ),
   );
 }
@@ -91,7 +90,9 @@ export function splitContactTags(tags: string[]) {
     .map((group) => group.tag)
     .filter((tag) => tags.includes(tag));
 
-  const customTags = tags.filter((tag) => !CONTACT_GROUP_TAGS.includes(tag));
+  const customTags = tags.filter(
+    (tag) => !CONTACT_GROUP_TAGS.includes(tag) && isContactTagVisible(tag),
+  );
 
   return { groupTags, customTags };
 }

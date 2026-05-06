@@ -17,6 +17,20 @@ export interface DealDisplayGroup {
   dotClassName: string;
 }
 
+export interface DealNotionListRow {
+  rowNumber: number;
+  deal: DealListItem;
+}
+
+export interface DealNotionListGroup {
+  group: DealDisplayGroup;
+  rows: DealNotionListRow[];
+  summary: {
+    count: number;
+    amountTotal: number;
+  };
+}
+
 export const dealDisplayGroups: DealDisplayGroup[] = [
   {
     key: 'coordination',
@@ -135,6 +149,45 @@ export function getNextDealPaymentSummary(
     daysUntil,
     isUrgent: daysUntil !== null && daysUntil <= 3,
   };
+}
+
+export function sortDealsForDisplay(
+  deals: DealListItem[],
+  referenceDate = new Date(),
+) {
+  return deals.slice().sort((left, right) => {
+    const leftPayment = getNextDealPaymentSummary(left, referenceDate);
+    const rightPayment = getNextDealPaymentSummary(right, referenceDate);
+    const leftDays = leftPayment?.daysUntil ?? Number.POSITIVE_INFINITY;
+    const rightDays = rightPayment?.daysUntil ?? Number.POSITIVE_INFINITY;
+
+    if (leftDays !== rightDays) return leftDays - rightDays;
+    return new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime();
+  });
+}
+
+export function getDealNotionListGroups(
+  deals: DealListItem[],
+  referenceDate = new Date(),
+): DealNotionListGroup[] {
+  return dealDisplayGroups.map((group) => {
+    const groupDeals = sortDealsForDisplay(
+      deals.filter((deal) => getDealDisplayGroupKey(deal.stage) === group.key),
+      referenceDate,
+    );
+
+    return {
+      group,
+      rows: groupDeals.map((deal, index) => ({
+        rowNumber: index + 1,
+        deal,
+      })),
+      summary: {
+        count: groupDeals.length,
+        amountTotal: groupDeals.reduce((sum, deal) => sum + getDealAmountValue(deal), 0),
+      },
+    };
+  });
 }
 
 function differenceInCalendarDays(target: Date, reference: Date) {

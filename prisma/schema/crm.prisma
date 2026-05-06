@@ -72,6 +72,7 @@ model BuyerRequirement {
   assignedTo       User?                     @relation("AssignedAgent", fields: [assignedToId], references: [id])
   matches          Match[]
   consultations    Consultation[]
+  tasks            Task[]
   preferredSites   BuyerRequirementSite[]
   preferredRegions BuyerRequirementRegion[]
 
@@ -138,6 +139,7 @@ model Match {
   buyerRequirement BuyerRequirement @relation(fields: [buyerReqId], references: [id])
   consultations    Consultation[]
   calendarEvents   CalendarEvent[]
+  tasks            Task[]
   deals            Deal[]
 
   @@map("matches")
@@ -227,6 +229,7 @@ model Deal {
   participants       DealParticipant[]
   commissionPayments CommissionPayment[]
   calendarEvents     CalendarEvent[]
+  tasks              Task[]
   proposals          Proposal[]
 
   @@index([officeId, stage])
@@ -357,11 +360,154 @@ model Contract {
   deal          Deal       @relation(fields: [dealId], references: [id])
   buyerContact  Contact    @relation("ContractBuyer", fields: [buyerContactId], references: [id])
   sellerContact Contact    @relation("ContractSeller", fields: [sellerContactId], references: [id])
+  tasks         Task[]
   proposals     Proposal[]
+  documents     ContractDocument[]
 
   @@index([officeId])
   @@index([officeId, status])
   @@map("contracts")
+}
+
+// ============================================================
+// 계약 문서 자동화
+// ContractDocumentTemplate: 계약 유형별 필수/선택 문서 템플릿
+// ContractDocument: 실제 생성·업로드·서명·신고된 문서 파일 추적
+// ============================================================
+
+model ContractDocumentTemplate {
+  id       String  @id @default(uuid()) @db.Uuid
+  /// null 이면 시스템 기본 템플릿, 값이 있으면 사무소 커스텀 템플릿
+  officeId String? @map("office_id") @db.Uuid
+
+  /// lease_contract / sale_contract / identity / broker_explanation / transaction_report 등
+  code  String
+  title String
+
+  /// contract / identity / explanation / report / receipt / attachment
+  category String
+
+  /// 적용 거래 유형. 비어 있으면 전체 적용.
+  transactionTypes String[] @default([]) @map("transaction_types")
+
+  isRequired Boolean @default(false) @map("is_required")
+  isActive   Boolean @default(true) @map("is_active")
+  sortOrder  Int     @default(0) @map("sort_order")
+
+  metadata Json @default("{}") @db.JsonB
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  office    Office?            @relation(fields: [officeId], references: [id], onDelete: Cascade)
+  documents ContractDocument[]
+
+  @@unique([officeId, code])
+  @@index([officeId, isActive, sortOrder])
+  @@map("contract_document_templates")
+}
+
+model ContractDocument {
+  id         String  @id @default(uuid()) @db.Uuid
+  officeId   String  @map("office_id") @db.Uuid
+  contractId String  @map("contract_id") @db.Uuid
+  templateId String? @map("template_id") @db.Uuid
+
+  /// generated / uploaded / external
+  type String
+  /// contract / identity / explanation / report / receipt / attachment
+  category String
+  title    String
+
+  /// draft / generated / signed / submitted / archived / cancelled
+  status String @default("draft")
+
+  fileUrl  String? @map("file_url")
+  fileSize Int?    @map("file_size")
+  mimeType String? @map("mime_type")
+
+  generatedAt DateTime? @map("generated_at")
+  signedAt    DateTime? @map("signed_at")
+  submittedAt DateTime? @map("submitted_at")
+
+  generatedById String? @map("generated_by_id") @db.Uuid
+  externalRefId String? @map("external_ref_id")
+
+  metadata Json @default("{}") @db.JsonB
+  memo     String?
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  office      Office                    @relation(fields: [officeId], references: [id])
+  contract    Contract                  @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  template    ContractDocumentTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  generatedBy User?                     @relation("ContractDocumentGenerator", fields: [generatedById], references: [id], onDelete: SetNull)
+
+  @@index([officeId, contractId])
+  @@index([officeId, status])
+  @@index([templateId])
+  @@map("contract_documents")
+}
+
+model OfficePrintTemplate {
+  id       String @id @default(uuid()) @db.Uuid
+  officeId String @map("office_id") @db.Uuid
+
+  /// contract_cover / receipt / ledger_print / settlement / office_notice
+  type  String
+  title String
+
+  /// 적용 거래 유형. 비어 있으면 전체 적용.
+  transactionTypes String[] @default([]) @map("transaction_types")
+
+  isDefault Boolean @default(false) @map("is_default")
+  isActive  Boolean @default(true) @map("is_active")
+
+  /// 표지, 영수증, 거래대장, 정산서 등 출력 옵션 JSON.
+  data Json @default("{}") @db.JsonB
+
+  createdById String? @map("created_by_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  office    Office @relation(fields: [officeId], references: [id])
+  createdBy User?  @relation("OfficePrintTemplateCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([officeId, type, isActive])
+  @@index([officeId, isDefault])
+  @@map("office_print_templates")
+}
+
+model ContractClauseTemplate {
+  id       String @id @default(uuid()) @db.Uuid
+  officeId String @map("office_id") @db.Uuid
+
+  /// contract_clause / special_terms_clause / confirmation_clause / office_notice
+  type String
+  /// base_contract / standard_lease_contract / broker_explanation 등 문서 종류.
+  contractKind String? @map("contract_kind")
+
+  /// 적용 거래 유형. 비어 있으면 전체 적용.
+  transactionTypes String[] @default([]) @map("transaction_types")
+
+  title   String
+  content String
+
+  isDefault Boolean @default(false) @map("is_default")
+  isActive  Boolean @default(true) @map("is_active")
+  sortOrder Int     @default(0) @map("sort_order")
+
+  createdById String? @map("created_by_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  office    Office @relation(fields: [officeId], references: [id])
+  createdBy User?  @relation("ContractClauseTemplateCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([officeId, type, isActive, sortOrder])
+  @@index([officeId, contractKind])
+  @@map("contract_clause_templates")
 }
 
 // ============================================================

@@ -4,11 +4,17 @@ import { PrismaService } from '../../prisma/prisma.service';
 import FormData = require('form-data');
 
 export interface ConsultationSearchQuery {
+  q?: string;
   contactId?: string;
   propertyId?: string;
+  siteId?: string;
+  dongId?: string;
+  unitId?: string;
   listingId?: string;
   matchId?: string;
   buyerReqId?: string;
+  context?: 'property' | 'listing' | 'match' | 'buyerRequirement' | 'unlinked';
+  outcome?: 'actionRequired' | 'confirmed' | 'held';
   type?: string;
   createdById?: string;
   dateFrom?: string;
@@ -26,7 +32,22 @@ export class ConsultationsService {
 
   private readonly defaultInclude = {
     contact: { select: { id: true, name: true, phone: true } },
-    property: { select: { id: true, memo: true, site: { select: { name: true } } } },
+    property: {
+      select: {
+        id: true,
+        memo: true,
+        site: { select: { name: true } },
+        unit: {
+          select: {
+            id: true,
+            name: true,
+            floor: true,
+            lineNo: true,
+            dong: { select: { id: true, name: true, isPlaceholder: true } },
+          },
+        },
+      },
+    },
     listing: { select: { id: true, transactionType: true, price: true, checkStatus: true } },
     match: { select: { id: true, stage: true } },
     buyerRequirement: { select: { id: true, status: true, transactionType: true } },
@@ -34,22 +55,55 @@ export class ConsultationsService {
   };
 
   async findAll(officeId: string, query: ConsultationSearchQuery = {}) {
-    const where: Prisma.ConsultationWhereInput = { officeId };
+    const filters: Prisma.ConsultationWhereInput[] = [{ officeId }];
 
-    if (query.contactId) where.contactId = query.contactId;
-    if (query.propertyId) where.propertyId = query.propertyId;
-    if (query.listingId) where.listingId = query.listingId;
-    if (query.matchId) where.matchId = query.matchId;
-    if (query.buyerReqId) where.buyerReqId = query.buyerReqId;
-    if (query.type) where.type = query.type;
-    if (query.createdById) where.createdById = query.createdById;
+    if (query.contactId) filters.push({ contactId: query.contactId });
+    if (query.propertyId) filters.push({ propertyId: query.propertyId });
+    if (query.siteId) filters.push({ property: { siteId: query.siteId } });
+    if (query.dongId) filters.push({ property: { unit: { dongId: query.dongId } } });
+    if (query.unitId) filters.push({ property: { unitId: query.unitId } });
+    if (query.listingId) filters.push({ listingId: query.listingId });
+    if (query.matchId) filters.push({ matchId: query.matchId });
+    if (query.buyerReqId) filters.push({ buyerReqId: query.buyerReqId });
+    if (query.type) filters.push({ type: query.type });
+    if (query.createdById) filters.push({ createdById: query.createdById });
 
-    if (query.dateFrom || query.dateTo) {
-      where.createdAt = {};
-      if (query.dateFrom) where.createdAt.gte = new Date(query.dateFrom);
-      if (query.dateTo) where.createdAt.lte = new Date(query.dateTo);
+    if (query.context) {
+      filters.push(this.buildContextFilter(query.context));
     }
 
+    if (query.outcome) {
+      filters.push(this.buildOutcomeFilter(query.outcome));
+    }
+
+    if (query.dateFrom || query.dateTo) {
+      filters.push({
+        createdAt: {
+          ...(query.dateFrom && { gte: new Date(query.dateFrom) }),
+          ...(query.dateTo && { lte: new Date(query.dateTo) }),
+        },
+      });
+    }
+
+    const q = query.q?.trim();
+    if (q) {
+      filters.push({
+        OR: [
+          { content: { contains: q, mode: 'insensitive' } },
+          { contact: { name: { contains: q, mode: 'insensitive' } } },
+          { contact: { phone: { contains: q, mode: 'insensitive' } } },
+          { contact: { phone2: { contains: q, mode: 'insensitive' } } },
+          { property: { memo: { contains: q, mode: 'insensitive' } } },
+          { property: { site: { name: { contains: q, mode: 'insensitive' } } } },
+          { property: { unit: { name: { contains: q, mode: 'insensitive' } } } },
+          { property: { unit: { dong: { name: { contains: q, mode: 'insensitive' } } } } },
+          { listing: { transactionType: { contains: q, mode: 'insensitive' } } },
+        ],
+      });
+    }
+
+    const where =
+      filters.length === 1 ? filters[0] : ({ AND: filters } as Prisma.ConsultationWhereInput);
     const sortOrder = query.sortOrder || 'desc';
     const page = Math.max(1, query.page || 1);
     const limit = Math.min(100, Math.max(1, query.limit || 20));
@@ -69,6 +123,34 @@ export class ConsultationsService {
     return {
       items,
       pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+    };
+  }
+
+  private buildContextFilter(context: NonNullable<ConsultationSearchQuery['context']>): Prisma.ConsultationWhereInput {
+    if (context === 'property') return { propertyId: { not: null } };
+    if (context === 'listing') return { listingId: { not: null } };
+    if (context === 'match') return { matchId: { not: null } };
+    if (context === 'buyerRequirement') return { buyerReqId: { not: null } };
+    return {
+      propertyId: null,
+      listingId: null,
+      matchId: null,
+      buyerReqId: null,
+    };
+  }
+
+  private buildOutcomeFilter(outcome: NonNullable<ConsultationSearchQuery['outcome']>): Prisma.ConsultationWhereInput {
+    const keywords =
+      outcome === 'actionRequired'
+        ? ['필요', '요청', '문의', '어떻게', '여부']
+        : outcome === 'confirmed'
+          ? ['확정', '수락', '입금 확인', '완료', '결정']
+          : ['거절', '취소', '보류', '불가'];
+
+    return {
+      OR: keywords.map((keyword) => ({
+        content: { contains: keyword, mode: 'insensitive' },
+      })),
     };
   }
 

@@ -600,6 +600,7 @@ function OverdueRow({
         priority: 'urgent',
         source: 'system',
         dueDate: new Date().toISOString(),
+        dealId: item.dealId,
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['tasks'] });

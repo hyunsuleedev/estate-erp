@@ -54,6 +54,7 @@ export class UnitsController {
       exclusiveAreaM2?: number | null;
       supplyAreaM2?: number | null;
       isPiloti?: boolean;
+      cellType?: string;
     },
     @CurrentUser() user: CurrentUserPayload,
   ) {
@@ -73,6 +74,7 @@ export class UnitsController {
       exclusiveAreaM2?: number | null;
       supplyAreaM2?: number | null;
       isPiloti?: boolean;
+      cellType?: string;
     },
     @CurrentUser() user: CurrentUserPayload,
   ) {

@@ -210,11 +210,12 @@ officeId = UUID, isPublic = false  →  사무소가 등록한 비공개 단지 
 | exclusiveAreaM2 | Decimal? | 전용면적 (m², 타입 미지정 시 fallback) |
 | supplyAreaM2 | Decimal? | 공급면적 (m², 타입 미지정 시 fallback) |
 | isPiloti | Boolean | 필로티 여부 |
+| cellType | String | 호실 그리드 표시 타입 (`unit`, `empty`, `piloti`, `common_facility`, `commercial_facility`, `safety_area`) |
 
 > 면적은 m² 기준 저장. 평 변환: m² × 0.3025
 > 면적은 SiteUnitType에서 가져오는 것이 정석. Unit의 면적 필드는 타입이 미지정된 호실(빌라, 비정형 등)용 fallback.
 
-> **네이버 대응**: `GET /api/complexes/{id}/buildings/pyeongtype?dongNo={dongNo}`의 각 호실(hoNo)이 Unit 1개에 대응. `pyeongNo` → `siteUnitTypeId`, `lineNo` → `lineNo`, `hoFloor` → `floor`, `existHo: "N"`인 셀은 Unit 레코드를 만들지 않음.
+> **네이버 대응**: `GET /api/complexes/{id}/buildings/pyeongtype?dongNo={dongNo}`의 각 호실(hoNo)이 Unit 1개에 대응. `pyeongNo` → `siteUnitTypeId`, `lineNo` → `lineNo`, `hoFloor` → `floor`. `existHo: "N"`인 셀은 기본적으로 Unit 레코드를 만들지 않되, 필로티/공용시설/상가/대피공간처럼 그리드에 표시해야 하는 칸은 `cellType`으로 구분해 Unit 레코드를 만든다.
 
 > **그리드 UI**: Dong의 Unit 목록을 floor(행) × lineNo(열)로 배치하면 네이버와 동일한 동별 호실 그리드 구현 가능.
 

@@ -39,6 +39,10 @@ const AUDITED_MODELS = new Set([
   'Consultation',
   'Task',
   'NetworkSharedProperty',
+  'Contract',
+  'ContractDocument',
+  'ContractClauseTemplate',
+  'OfficePrintTemplate',
 ]);
 
 const AUDITED_OPERATIONS = new Set<PrismaOperation>([

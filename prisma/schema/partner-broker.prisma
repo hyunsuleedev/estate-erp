@@ -21,6 +21,7 @@ model PartnerBroker {
   name      String // 사무소명 (필수)
   phone     String? // 대표 전화
   ceoName   String? @map("ceo_name")
+  ceoPhone  String? @map("ceo_phone")
   licenseNo String? @map("license_no")
   email     String?
   address   String?

@@ -10,13 +10,10 @@ import {
   MessageSquare,
   PhoneCall,
   UserSearch,
-  Globe,
   FileText,
   Users,
   Settings,
-  Bot,
   Wallet,
-  Inbox,
 } from 'lucide-react'
 import { useAuth } from '@/providers/auth-provider'
 import { NavMain } from '@/components/nav-main'
@@ -44,18 +41,12 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       icon: SquareTerminal,
     },
     {
-      title: t('items.inbox'),
-      url: '/inbox',
-      icon: Inbox,
-    },
-    {
       title: t('items.properties'),
       url: '/properties',
       icon: Building,
       items: [
         { title: t('items.propertiesList'), url: '/properties' },
         { title: t('items.propertiesExternalListings'), url: '/properties/external-listings' },
-        { title: t('items.propertiesNaverMyAds'), url: '/properties/naver-my-ads' },
       ],
     },
     {
@@ -131,21 +122,6 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           ? [{ title: t('items.expenses'), url: '/cashflow/expenses' }]
           : []),
       ],
-    },
-    {
-      title: t('items.documents'),
-      url: '/documents',
-      icon: FileText,
-    },
-    {
-      title: t('items.network'),
-      url: '/network',
-      icon: Globe,
-    },
-    {
-      title: t('items.aiOperations'),
-      url: '/ai-operations',
-      icon: Bot,
     },
     {
       title: t('items.employees'),

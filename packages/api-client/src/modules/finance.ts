@@ -82,6 +82,7 @@ export interface PartnerBroker {
   name: string;
   phone: string | null;
   ceoName: string | null;
+  ceoPhone: string | null;
   licenseNo: string | null;
   email: string | null;
   address: string | null;
@@ -97,6 +98,7 @@ export interface CreatePartnerBrokerDto {
   name: string;
   phone?: string;
   ceoName?: string;
+  ceoPhone?: string;
   licenseNo?: string;
   email?: string;
   address?: string;

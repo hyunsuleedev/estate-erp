@@ -1,5 +1,6 @@
 import type { RequestFn } from '../client.js';
 import type { BuyerRequirement } from './buyer-requirements.js';
+import type { CalendarEvent } from './calendar-events.js';
 import type { Listing } from './listings.js';
 import type { Property } from './properties.js';
 
@@ -16,6 +17,7 @@ export interface Match {
   property?: Property;
   listing?: Listing;
   buyerRequirement?: BuyerRequirement;
+  calendarEvents?: CalendarEvent[];
 }
 
 export interface CreateMatchDto {

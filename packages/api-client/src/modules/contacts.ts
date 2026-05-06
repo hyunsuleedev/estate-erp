@@ -11,6 +11,12 @@ export interface ContactCounts {
   consultations: number;
 }
 
+export interface ContactLatestConsultation {
+  content: string;
+  type: string;
+  createdAt: string;
+}
+
 export interface Contact {
   id: string;
   officeId: string;
@@ -23,6 +29,7 @@ export interface Contact {
   createdAt: string;
   updatedAt: string;
   _count?: ContactCounts;
+  latestConsultation?: ContactLatestConsultation | null;
 }
 
 export interface ContactDetail extends Contact {

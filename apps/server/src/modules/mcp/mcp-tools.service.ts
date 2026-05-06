@@ -635,6 +635,10 @@ export class McpToolsService {
         propertyId: str('관련 매물 ID'),
         listingId: str('관련 리스팅 ID'),
         consultationId: str('관련 상담 ID'),
+        buyerReqId: str('관련 구매조건 ID'),
+        matchId: str('관련 매칭 ID'),
+        dealId: str('관련 거래 ID'),
+        contractId: str('관련 계약 ID'),
       }, ['title']),
       async (a, c) =>
         this.tasks.create(c.officeId, {
@@ -649,7 +653,11 @@ export class McpToolsService {
           propertyId: a.propertyId as string,
           listingId: a.listingId as string,
           consultationId: a.consultationId as string,
-        }),
+          buyerReqId: a.buyerReqId as string,
+          matchId: a.matchId as string,
+          dealId: a.dealId as string,
+          contractId: a.contractId as string,
+        }, c.userId),
     );
 
     this.add(

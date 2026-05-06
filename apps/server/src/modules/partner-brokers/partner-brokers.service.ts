@@ -26,6 +26,7 @@ export class PartnerBrokersService {
       name: string;
       phone?: string;
       ceoName?: string;
+      ceoPhone?: string;
       licenseNo?: string;
       email?: string;
       address?: string;
@@ -39,6 +40,7 @@ export class PartnerBrokersService {
         name: dto.name,
         phone: dto.phone,
         ceoName: dto.ceoName,
+        ceoPhone: dto.ceoPhone,
         licenseNo: dto.licenseNo,
         email: dto.email,
         address: dto.address,
@@ -55,6 +57,7 @@ export class PartnerBrokersService {
       name: string;
       phone: string | null;
       ceoName: string | null;
+      ceoPhone: string | null;
       licenseNo: string | null;
       email: string | null;
       address: string | null;

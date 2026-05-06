@@ -1,53 +1,48 @@
 import { PrismaClient } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
+import {
+  seedContractTemplateBodies,
+  seedOfficeContractTemplateDefaults,
+} from './contract-template-catalog';
 
 const DEMO_PASSWORD = 'estate1234';
+const TEST_OFFICE_LICENSE_NO = '11740-2026-0001';
+
+const TEST_OFFICE_DATA = {
+  name: '강동 부동산',
+  licenseNo: TEST_OFFICE_LICENSE_NO,
+  ceoName: '홍대표',
+  phone: '02-1234-5678',
+  address: '서울특별시 강동구 고덕로 123',
+  subscription: 'pro',
+  maxUsers: 10,
+  isActive: true,
+  commissionConfig: {
+    distributionType: 'percentage',
+    defaultAgentRate: 50,
+    listingAgentRate: 50,
+    buyingAgentRate: 50,
+    dualAgentRate: 70,
+    managerRate: 10,
+    closerBonus: 0,
+  },
+};
 
 export async function seedTestOffice(prisma: PrismaClient) {
   console.log('\n4. 테스트 사무소/사용자 seed...');
 
-  const office = await prisma.office.upsert({
-    where: { code: 'GD7291' },
-    update: {
-      name: '강동 부동산',
-      licenseNo: '11740-2026-0001',
-      ceoName: '홍대표',
-      phone: '02-1234-5678',
-      address: '서울특별시 강동구 고덕로 123',
-      subscription: 'pro',
-      maxUsers: 10,
-      isActive: true,
-      commissionConfig: {
-        distributionType: 'percentage',
-        defaultAgentRate: 50,
-        listingAgentRate: 50,
-        buyingAgentRate: 50,
-        dualAgentRate: 70,
-        managerRate: 10,
-        closerBonus: 0,
-      },
-    },
-    create: {
-      code: 'GD7291',
-      name: '강동 부동산',
-      licenseNo: '11740-2026-0001',
-      ceoName: '홍대표',
-      phone: '02-1234-5678',
-      address: '서울특별시 강동구 고덕로 123',
-      subscription: 'pro',
-      maxUsers: 10,
-      isActive: true,
-      commissionConfig: {
-        distributionType: 'percentage',
-        defaultAgentRate: 50,
-        listingAgentRate: 50,
-        buyingAgentRate: 50,
-        dualAgentRate: 70,
-        managerRate: 10,
-        closerBonus: 0,
-      },
-    },
+  const existingOffice = await prisma.office.findFirst({
+    where: { licenseNo: TEST_OFFICE_LICENSE_NO },
   });
+
+  const office = existingOffice
+    ? await prisma.office.update({
+        where: { id: existingOffice.id },
+        data: TEST_OFFICE_DATA,
+      })
+    : await prisma.office.create({
+        data: TEST_OFFICE_DATA,
+      });
 
   const password = await bcrypt.hash(DEMO_PASSWORD, 10);
 
@@ -75,8 +70,9 @@ export async function seedTestOffice(prisma: PrismaClient) {
     },
   ] as const;
 
+  const seededUsers = [];
   for (const user of demoUsers) {
-    await prisma.user.upsert({
+    const seededUser = await prisma.user.upsert({
       where: { loginId: user.loginId },
       update: {
         officeId: office.id,
@@ -98,9 +94,14 @@ export async function seedTestOffice(prisma: PrismaClient) {
         isActive: true,
       },
     });
+    seededUsers.push(seededUser);
   }
 
-  console.log(`   사무소: ${office.name} (${office.code})`);
+  const owner = seededUsers.find((user) => user.role === 'owner') ?? seededUsers[0];
+  await seedContractTemplateBodies(prisma);
+  await seedOfficeContractTemplateDefaults(prisma, office.id, owner?.id ?? null);
+
+  console.log(`   사무소: ${office.name}`);
   console.log(`   사용자: ${demoUsers.map((user) => user.loginId).join(', ')}`);
   console.log(`   공통 비밀번호: ${DEMO_PASSWORD}`);
 }

@@ -5,9 +5,11 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import type { Prisma } from '@prisma/client';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import {
   CurrentUser,
@@ -25,6 +27,205 @@ export class ContractsController {
   @Get()
   findAll(@CurrentUser() user: CurrentUserPayload) {
     return this.contractsService.findAll(user.officeId);
+  }
+
+  @Get('document-templates')
+  getDocumentTemplates(
+    @CurrentUser() user: CurrentUserPayload,
+    @Query('transactionType') transactionType?: string,
+    @Query('category') category?: string,
+    @Query('requiredOnly') requiredOnly?: string,
+  ) {
+    return this.contractsService.getDocumentTemplates(user.officeId, {
+      transactionType,
+      category,
+      requiredOnly: requiredOnly === 'true' ? true : undefined,
+    });
+  }
+
+  @Get('print-templates')
+  listPrintTemplates(
+    @CurrentUser() user: CurrentUserPayload,
+    @Query('type') type?: string,
+    @Query('transactionType') transactionType?: string,
+    @Query('activeOnly') activeOnly?: string,
+  ) {
+    return this.contractsService.listPrintTemplates(user.officeId, {
+      type,
+      transactionType,
+      activeOnly: activeOnly === 'false' ? false : undefined,
+    });
+  }
+
+  @Post('print-templates')
+  createPrintTemplate(
+    @Body()
+    dto: {
+      type: string;
+      title: string;
+      transactionTypes?: string[];
+      isDefault?: boolean;
+      isActive?: boolean;
+      data?: Prisma.InputJsonValue;
+    },
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.contractsService.createPrintTemplate(
+      user.officeId,
+      user.userId,
+      dto,
+    );
+  }
+
+  @Patch('print-templates/:templateId')
+  updatePrintTemplate(
+    @Param('templateId') templateId: string,
+    @Body()
+    dto: {
+      type?: string;
+      title?: string;
+      transactionTypes?: string[];
+      isDefault?: boolean;
+      isActive?: boolean;
+      data?: Prisma.InputJsonValue;
+    },
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.contractsService.updatePrintTemplate(
+      templateId,
+      user.officeId,
+      dto,
+    );
+  }
+
+  @Get('clause-templates')
+  listClauseTemplates(
+    @CurrentUser() user: CurrentUserPayload,
+    @Query('type') type?: string,
+    @Query('contractKind') contractKind?: string,
+    @Query('transactionType') transactionType?: string,
+    @Query('activeOnly') activeOnly?: string,
+  ) {
+    return this.contractsService.listClauseTemplates(user.officeId, {
+      type,
+      contractKind,
+      transactionType,
+      activeOnly: activeOnly === 'false' ? false : undefined,
+    });
+  }
+
+  @Post('clause-templates')
+  createClauseTemplate(
+    @Body()
+    dto: {
+      type: string;
+      contractKind?: string | null;
+      transactionTypes?: string[];
+      title: string;
+      content: string;
+      isDefault?: boolean;
+      isActive?: boolean;
+      sortOrder?: number;
+    },
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.contractsService.createClauseTemplate(
+      user.officeId,
+      user.userId,
+      dto,
+    );
+  }
+
+  @Patch('clause-templates/:templateId')
+  updateClauseTemplate(
+    @Param('templateId') templateId: string,
+    @Body()
+    dto: {
+      type?: string;
+      contractKind?: string | null;
+      transactionTypes?: string[];
+      title?: string;
+      content?: string;
+      isDefault?: boolean;
+      isActive?: boolean;
+      sortOrder?: number;
+    },
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.contractsService.updateClauseTemplate(
+      templateId,
+      user.officeId,
+      dto,
+    );
+  }
+
+  @Get(':id/documents')
+  listDocuments(
+    @Param('id') id: string,
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.contractsService.listDocuments(id, user.officeId);
+  }
+
+  @Post(':id/documents')
+  createDocument(
+    @Param('id') id: string,
+    @Body()
+    dto: {
+      templateId?: string;
+      type?: string;
+      category?: string;
+      title?: string;
+      status?: string;
+      fileUrl?: string;
+      fileSize?: number;
+      mimeType?: string;
+      generatedAt?: string;
+      signedAt?: string;
+      submittedAt?: string;
+      externalRefId?: string;
+      metadata?: Prisma.InputJsonValue;
+      memo?: string;
+    },
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.contractsService.createDocument(
+      id,
+      user.officeId,
+      user.userId,
+      dto,
+    );
+  }
+
+  @Patch(':id/documents/:documentId')
+  updateDocument(
+    @Param('id') id: string,
+    @Param('documentId') documentId: string,
+    @Body()
+    dto: {
+      templateId?: string | null;
+      type?: string;
+      category?: string;
+      title?: string;
+      status?: string;
+      fileUrl?: string | null;
+      fileSize?: number | null;
+      mimeType?: string | null;
+      generatedAt?: string | null;
+      signedAt?: string | null;
+      submittedAt?: string | null;
+      externalRefId?: string | null;
+      metadata?: Prisma.InputJsonValue;
+      memo?: string | null;
+    },
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.contractsService.updateDocument(
+      id,
+      documentId,
+      user.officeId,
+      dto,
+    );
   }
 
   @Get(':id')

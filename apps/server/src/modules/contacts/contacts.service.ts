@@ -52,6 +52,15 @@ export class ContactsService {
         where,
         include: {
           _count: { select: { propertyContacts: true, buyerRequirements: true, consultations: true } },
+          consultations: {
+            orderBy: { createdAt: 'desc' },
+            take: 1,
+            select: {
+              content: true,
+              type: true,
+              createdAt: true,
+            },
+          },
         },
         orderBy: { [sortBy]: sortOrder },
         skip,
@@ -61,7 +70,10 @@ export class ContactsService {
     ]);
 
     return {
-      items,
+      items: items.map(({ consultations, ...contact }) => ({
+        ...contact,
+        latestConsultation: this.formatLatestConsultation(consultations[0]),
+      })),
       pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
     };
   }
@@ -301,5 +313,19 @@ export class ContactsService {
     if (cleaned.startsWith('+82')) cleaned = '0' + cleaned.substring(3);
     if (cleaned.startsWith('82') && cleaned.length > 10) cleaned = '0' + cleaned.substring(2);
     return cleaned;
+  }
+
+  private formatLatestConsultation(
+    consultation?: { content: string; type: string; createdAt: Date } | null,
+  ) {
+    if (!consultation) return null;
+
+    return {
+      content: consultation.content.length > 120
+        ? consultation.content.substring(0, 120) + '…'
+        : consultation.content,
+      type: consultation.type,
+      createdAt: consultation.createdAt,
+    };
   }
 }

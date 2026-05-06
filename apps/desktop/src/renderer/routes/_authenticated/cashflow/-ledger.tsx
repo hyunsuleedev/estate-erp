@@ -698,6 +698,7 @@ function BulkActionBar({
       payment: LedgerPayment;
       location: string;
       code: string | null;
+      dealId: string;
     }> = [];
     for (const g of groups) {
       for (const p of g.payments) {
@@ -709,6 +710,7 @@ function BulkActionBar({
                 .filter(Boolean)
                 .join(' ') || '매물 미지정',
             code: p.code,
+            dealId: g.deal.id,
           });
         }
       }
@@ -740,6 +742,7 @@ function BulkActionBar({
             priority: 'urgent',
             source: 'system',
             dueDate: new Date().toISOString(),
+            dealId: it.dealId,
           }),
         ),
       );

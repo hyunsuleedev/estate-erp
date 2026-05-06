@@ -3,8 +3,21 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 
 const matchInclude = {
-  listing: { include: { property: { include: { site: true, unit: true } } } },
+  listing: {
+    include: {
+      property: {
+        include: {
+          site: true,
+          unit: { include: { dong: true } },
+        },
+      },
+    },
+  },
   buyerRequirement: { include: { contact: true } },
+  calendarEvents: {
+    where: { type: 'viewing' },
+    orderBy: { start: 'asc' },
+  },
 } satisfies Prisma.MatchInclude;
 
 type MatchWithRelations = Prisma.MatchGetPayload<{ include: typeof matchInclude }>;

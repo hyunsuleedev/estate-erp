@@ -20,6 +20,17 @@ export interface Consultation {
     id: string;
     memo: string | null;
     site?: { name: string | null } | null;
+    unit?: {
+      id: string;
+      name: string;
+      floor: number | null;
+      lineNo: number | null;
+      dong?: {
+        id: string;
+        name: string;
+        isPlaceholder: boolean;
+      } | null;
+    } | null;
   } | null;
   listing?: {
     id: string;
@@ -27,14 +38,29 @@ export interface Consultation {
     price: number | null;
     checkStatus: string;
   } | null;
+  match?: {
+    id: string;
+    stage: string;
+  } | null;
+  buyerRequirement?: {
+    id: string;
+    status: string;
+    transactionType: string | null;
+  } | null;
 }
 
 export interface ConsultationsFilter {
+  q?: string;
   contactId?: string;
   propertyId?: string;
+  siteId?: string;
+  dongId?: string;
+  unitId?: string;
   listingId?: string;
   matchId?: string;
   buyerReqId?: string;
+  context?: 'property' | 'listing' | 'match' | 'buyerRequirement' | 'unlinked';
+  outcome?: 'actionRequired' | 'confirmed' | 'held';
   type?: string;
   createdById?: string;
   dateFrom?: string;

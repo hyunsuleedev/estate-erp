@@ -179,6 +179,7 @@ model Unit {
   supplyAreaM2    Decimal? @map("supply_area_m2") @db.Decimal
 
   isPiloti Boolean @default(false) @map("is_piloti") // 필로티 여부
+  cellType String  @default("unit") @map("cell_type") // unit/empty/piloti/common_facility/commercial_facility/safety_area
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")

@@ -4,6 +4,7 @@ import { describe, it } from 'node:test';
 import {
   dealDisplayGroups,
   getDealDisplayGroupKey,
+  getDealNotionListGroups,
   getDealProgressStep,
   getNextDealPaymentSummary,
   summarizeDealGroup,
@@ -46,6 +47,32 @@ describe('deal view utilities', () => {
       count: 2,
       amountTotal: 193000,
     });
+  });
+
+  it('builds Notion-style list groups with row numbers scoped per stage group', () => {
+    const groups = getDealNotionListGroups([
+      deal({ id: 'settling-1', stage: 'settling', agreedPrice: 132000 }),
+      deal({ id: 'selection-1', stage: 'selection', agreedPrice: 268000 }),
+      deal({ id: 'selection-2', stage: 'negotiating', agreedPrice: 88000 }),
+    ]);
+
+    const coordination = groups.find((group) => group.group.key === 'coordination');
+    const settling = groups.find((group) => group.group.key === 'settling');
+
+    assert.deepEqual(
+      coordination?.rows.map((row) => ({ rowNumber: row.rowNumber, id: row.deal.id })),
+      [
+        { rowNumber: 1, id: 'selection-1' },
+        { rowNumber: 2, id: 'selection-2' },
+      ],
+    );
+    assert.equal(coordination?.summary.count, 2);
+    assert.equal(coordination?.summary.amountTotal, 356000);
+
+    assert.deepEqual(
+      settling?.rows.map((row) => ({ rowNumber: row.rowNumber, id: row.deal.id })),
+      [{ rowNumber: 1, id: 'settling-1' }],
+    );
   });
 
   it('selects the nearest unpaid payment and marks urgent schedules', () => {

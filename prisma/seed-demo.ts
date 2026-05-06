@@ -16,6 +16,11 @@
 import { PrismaClient, Prisma } from '@prisma/client';
 
 const DEMO_TAG = '[DEMO]';
+const REGION_BY_NAME = {
+  강동구: { provinceCode: '11', districtCode: '11740' },
+  송파구: { provinceCode: '11', districtCode: '11710' },
+  고덕동: { provinceCode: '11', districtCode: '11740', wardCode: '1174010200' },
+} as const;
 
 interface Ctx {
   prisma: PrismaClient;
@@ -40,7 +45,7 @@ async function main() {
         `활성 Office 가 없습니다. 먼저 사무소 / 사용자를 생성해주세요.`,
       );
     }
-    console.log(`대상 사무소: ${office.name} (${office.code})`);
+    console.log(`대상 사무소: ${office.name}`);
 
     const users = await prisma.user.findMany({
       where: { officeId: office.id, isActive: true },
@@ -609,6 +614,7 @@ async function seedBuyerRequirements(
 
   const created = [];
   for (const def of defs) {
+    const preferredRegions = toPreferredRegions(def.regions);
     const br = await ctx.prisma.buyerRequirement.create({
       data: {
         officeId: ctx.officeId,
@@ -617,7 +623,6 @@ async function seedBuyerRequirements(
         urgency: def.urgency,
         transactionType: def.transactionType,
         siteTypes: def.siteTypes,
-        regions: def.regions,
         priceMin: def.priceMin,
         priceMax: def.priceMax,
         mustConditions: def.mustConditions,
@@ -626,11 +631,20 @@ async function seedBuyerRequirements(
         lastContactDate: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000),
         nextContactDate: def.nextContactDate,
         memo: def.memo,
+        preferredRegions: { create: preferredRegions },
       },
     });
     created.push(br);
   }
   return created;
+}
+
+function toPreferredRegions(names: string[]) {
+  return names.map((name) => {
+    const region = REGION_BY_NAME[name as keyof typeof REGION_BY_NAME];
+    if (!region) throw new Error(`Unknown demo region: ${name}`);
+    return { ...region };
+  });
 }
 
 // ─────────────────────────────────────────────────────────────

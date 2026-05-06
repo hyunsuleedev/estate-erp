@@ -138,6 +138,10 @@ export class ExecutorService {
       contactId: context.contactId ?? undefined,
       propertyId: context.propertyId ?? undefined,
       listingId: context.listingId ?? undefined,
+      buyerReqId: context.buyerReqId ?? undefined,
+      matchId: stringField(payload, 'matchId') ?? undefined,
+      dealId: context.dealId ?? undefined,
+      contractId: stringField(payload, 'contractId') ?? undefined,
     });
 
     this.logger.log(

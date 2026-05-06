@@ -26,6 +26,7 @@ prisma/*.db
 .claude/worktrees/
 .claude/scheduled_tasks.lock
 .superpowers/
+.tanstack/
 
 # Local-only screenshots (root-level PNGs)
 /*.png

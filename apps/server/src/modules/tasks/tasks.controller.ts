@@ -52,10 +52,14 @@ export class TasksController {
       propertyId?: string;
       listingId?: string;
       consultationId?: string;
+      buyerReqId?: string;
+      matchId?: string;
+      dealId?: string;
+      contractId?: string;
     },
     @CurrentUser() user: CurrentUserPayload,
   ) {
-    return this.tasksService.create(user.officeId, dto);
+    return this.tasksService.create(user.officeId, dto, user.userId);
   }
 
   @Patch(':id')
@@ -70,10 +74,18 @@ export class TasksController {
       category?: string;
       dueDate?: string | null;
       assignedToId?: string | null;
+      contactId?: string | null;
+      propertyId?: string | null;
+      listingId?: string | null;
+      consultationId?: string | null;
+      buyerReqId?: string | null;
+      matchId?: string | null;
+      dealId?: string | null;
+      contractId?: string | null;
     },
     @CurrentUser() user: CurrentUserPayload,
   ) {
-    return this.tasksService.update(id, user.officeId, dto);
+    return this.tasksService.update(id, user.officeId, dto, user.userId);
   }
 
   @Post('reorder')

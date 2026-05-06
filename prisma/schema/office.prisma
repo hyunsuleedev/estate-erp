@@ -61,6 +61,10 @@ model Office {
   deals             Deal[]
   dealPayments      DealPayment[]
   contracts         Contract[]
+  contractDocumentTemplates ContractDocumentTemplate[]
+  contractDocuments ContractDocument[]
+  officePrintTemplates OfficePrintTemplate[]
+  contractClauseTemplates ContractClauseTemplate[]
   dealParticipants  DealParticipant[]
   rules             Rule[]
   proposals         Proposal[]
@@ -148,6 +152,8 @@ model User {
   office               Office             @relation(fields: [officeId], references: [id])
   assignedRequirements BuyerRequirement[] @relation("AssignedAgent")
   assignedTasks        Task[]             @relation("TaskAssignee")
+  createdTasks         Task[]             @relation("TaskCreator")
+  assignedTaskRequests Task[]             @relation("TaskAssigner")
   consultations        Consultation[]     @relation("ConsultationCreator")
   calendarEvents       CalendarEvent[]
 
@@ -170,6 +176,11 @@ model User {
 
   // 공적장부
   requestedDocuments PublicDocument[] @relation("DocumentRequester")
+
+  // 계약 문서 생성 이력
+  generatedContractDocuments ContractDocument[] @relation("ContractDocumentGenerator")
+  createdOfficePrintTemplates OfficePrintTemplate[] @relation("OfficePrintTemplateCreator")
+  createdContractClauseTemplates ContractClauseTemplate[] @relation("ContractClauseTemplateCreator")
 
   // 외부 매물 스냅샷 세션
   externalListingSessionsStarted   ExternalListingSnapshotSession[] @relation("SnapshotSessionStartedBy")

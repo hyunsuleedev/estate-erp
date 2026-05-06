@@ -216,6 +216,7 @@ async function main() {
     floor: number | null;
     lineNo: number | null;
     isPiloti: boolean;
+    cellType: string;
   }> = [];
 
   for (const [dongName, dongDetail] of Object.entries(data.dongs)) {
@@ -244,6 +245,7 @@ async function main() {
           floor: ho.hoFloor,
           lineNo: parseInt(ho.lineNo),
           isPiloti: ho.pilotiYn === 'Y',
+          cellType: ho.pilotiYn === 'Y' ? 'piloti' : 'unit',
         });
 
         if (unitBatch.length >= batchSize) {

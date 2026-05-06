@@ -37,11 +37,17 @@ export class ConsultationsController {
 
   @Get()
   findAll(
+    @Query('q') q: string,
     @Query('contactId') contactId: string,
     @Query('propertyId') propertyId: string,
+    @Query('siteId') siteId: string,
+    @Query('dongId') dongId: string,
+    @Query('unitId') unitId: string,
     @Query('listingId') listingId: string,
     @Query('matchId') matchId: string,
     @Query('buyerReqId') buyerReqId: string,
+    @Query('context') context: string,
+    @Query('outcome') outcome: string,
     @Query('type') type: string,
     @Query('createdById') createdById: string,
     @Query('dateFrom') dateFrom: string,
@@ -52,11 +58,17 @@ export class ConsultationsController {
     @CurrentUser() user: CurrentUserPayload,
   ) {
     return this.service.findAll(user.officeId, {
+      q: q || undefined,
       contactId: contactId || undefined,
       propertyId: propertyId || undefined,
+      siteId: siteId || undefined,
+      dongId: dongId || undefined,
+      unitId: unitId || undefined,
       listingId: listingId || undefined,
       matchId: matchId || undefined,
       buyerReqId: buyerReqId || undefined,
+      context: (context as 'property' | 'listing' | 'match' | 'buyerRequirement' | 'unlinked') || undefined,
+      outcome: (outcome as 'actionRequired' | 'confirmed' | 'held') || undefined,
       type: type || undefined,
       createdById: createdById || undefined,
       dateFrom: dateFrom || undefined,

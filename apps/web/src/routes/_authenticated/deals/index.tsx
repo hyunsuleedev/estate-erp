@@ -43,9 +43,12 @@ import {
   getDealAmountValue,
   getDealDisplayGroupKey,
   getDealProgressStep,
+  getDealNotionListGroups,
   getNextDealPaymentSummary,
   summarizeDealGroup,
+  sortDealsForDisplay,
   type DealDisplayGroup,
+  type DealNotionListRow,
 } from './-deal-view-utils';
 
 const dealStageMeta: Record<string, { label: string; badgeClassName: string }> = {
@@ -523,18 +526,18 @@ function DealListView({
   onStageChange: (id: string, stage: string) => void;
   isUpdating: boolean;
 }) {
+  const groups = getDealNotionListGroups(deals, referenceDate);
+
   return (
-    <section className="space-y-5">
+    <section>
       <ScrollArea className="w-full">
-        <div className="min-w-[1120px] space-y-5">
-          {dealDisplayGroups.map((group) => (
+        <div className="min-w-[1120px]">
+          {groups.map((group) => (
             <DealListGroup
-              key={group.key}
-              group={group}
-              deals={sortDealsForDisplay(
-                deals.filter((deal) => getDealDisplayGroupKey(deal.stage) === group.key),
-                referenceDate,
-              )}
+              key={group.group.key}
+              group={group.group}
+              rows={group.rows}
+              summary={group.summary}
               selectedDealId={selectedDealId}
               referenceDate={referenceDate}
               onSelectDeal={onSelectDeal}
@@ -550,7 +553,8 @@ function DealListView({
 
 function DealListGroup({
   group,
-  deals,
+  rows,
+  summary,
   selectedDealId,
   referenceDate,
   onSelectDeal,
@@ -558,80 +562,101 @@ function DealListGroup({
   isUpdating,
 }: {
   group: DealDisplayGroup;
-  deals: Deal[];
+  rows: DealNotionListRow[];
+  summary: {
+    count: number;
+    amountTotal: number;
+  };
   selectedDealId: string | null;
   referenceDate: Date;
   onSelectDeal: (id: string) => void;
   onStageChange: (id: string, stage: string) => void;
   isUpdating: boolean;
 }) {
-  const summary = summarizeDealGroup(deals, group.key);
+  const [isCollapsed, setIsCollapsed] = useState(false);
 
   return (
-    <section className="overflow-hidden rounded-[10px] border border-slate-200 bg-background">
-      <div className="flex items-center gap-2 border-b border-slate-200 bg-slate-50 px-4 py-3">
-        <span className="text-[10px] text-slate-400">▼</span>
+    <section className="mb-6">
+      <button
+        type="button"
+        className="flex w-full items-center gap-2 rounded py-2 text-left hover:bg-muted/30"
+        onClick={() => setIsCollapsed(!isCollapsed)}
+      >
+        <span className={cn('text-xs text-slate-400 transition-transform', !isCollapsed && 'rotate-90')}>▶</span>
         <span className={cn('size-2 rounded-full', group.dotClassName)} />
-        <h2 className="text-sm font-semibold text-slate-900">{group.label}</h2>
-        <Badge variant="outline" className="rounded-lg bg-background text-[11px] text-slate-500">
-          {summary.count}건
-        </Badge>
-        <span className="ml-auto text-xs text-slate-500">
+        <h2 className="text-sm font-medium text-foreground">{group.label}</h2>
+        <span className="text-sm text-muted-foreground">{summary.count}</span>
+        <span className="ml-auto pr-2 text-xs text-muted-foreground">
           합계 {summary.amountTotal ? formatPrice(summary.amountTotal) : '-'}
         </span>
-      </div>
+      </button>
 
-      <DealListHeader />
+      {!isCollapsed ? (
+        <>
+          <DealListHeader />
 
-      {deals.length === 0 ? (
-        <div className="px-4 py-8 text-sm text-muted-foreground">해당 단계의 거래가 없습니다.</div>
-      ) : (
-        deals.map((deal) => (
-          <DealListRow
-            key={deal.id}
-            deal={deal}
-            selected={deal.id === selectedDealId}
-            referenceDate={referenceDate}
-            onSelect={() => onSelectDeal(deal.id)}
-            onStageChange={(stage) => onStageChange(deal.id, stage)}
-            isUpdating={isUpdating}
-          />
-        ))
-      )}
+          <div className="min-h-10 rounded transition-colors">
+            {rows.length === 0 ? (
+              <div className="border-b border-border/40 py-4 text-center text-xs text-muted-foreground">
+                이 단계로 거래를 이동하면 여기에 표시됩니다.
+              </div>
+            ) : (
+              rows.map((row) => (
+                <DealListRow
+                  key={row.deal.id}
+                  row={row}
+                  selected={row.deal.id === selectedDealId}
+                  referenceDate={referenceDate}
+                  onSelect={() => onSelectDeal(row.deal.id)}
+                  onStageChange={(stage) => onStageChange(row.deal.id, stage)}
+                  isUpdating={isUpdating}
+                />
+              ))
+            )}
+          </div>
+
+          <div className="py-2 text-center text-xs text-muted-foreground">
+            거래 {rows.length}건
+          </div>
+        </>
+      ) : null}
     </section>
   );
 }
 
 function DealListHeader() {
   return (
-    <div className="flex items-center border-b border-slate-100 bg-background px-4 py-2.5">
-      <div className="w-[340px] shrink-0 text-[10px] font-semibold uppercase tracking-[0.05em] text-slate-500">매물</div>
-      <div className="w-[90px] shrink-0 text-[10px] font-semibold uppercase tracking-[0.05em] text-slate-500">매도</div>
-      <div className="w-[90px] shrink-0 text-[10px] font-semibold uppercase tracking-[0.05em] text-slate-500">매수</div>
-      <div className="w-[120px] shrink-0 text-right text-[10px] font-semibold uppercase tracking-[0.05em] text-slate-500">금액</div>
-      <div className="w-[170px] shrink-0 pl-4 text-[10px] font-semibold uppercase tracking-[0.05em] text-slate-500">다음 일정</div>
-      <div className="w-[90px] shrink-0 text-[10px] font-semibold uppercase tracking-[0.05em] text-slate-500">담당</div>
-      <div className="flex-1 text-[10px] font-semibold uppercase tracking-[0.05em] text-slate-500">태그</div>
-      <div className="w-8 shrink-0" />
+    <div className="flex items-center border-b border-border/40 text-xs text-muted-foreground">
+      <div className="w-[50px] shrink-0 px-3 py-2 font-medium">No</div>
+      <div className="w-[280px] shrink-0 px-3 py-2 font-medium">매물</div>
+      <div className="w-[92px] shrink-0 px-3 py-2 font-medium">단계</div>
+      <div className="w-[90px] shrink-0 px-3 py-2 font-medium">매도</div>
+      <div className="w-[90px] shrink-0 px-3 py-2 font-medium">매수</div>
+      <div className="w-[120px] shrink-0 px-3 py-2 text-right font-medium">금액</div>
+      <div className="w-[150px] shrink-0 px-3 py-2 font-medium">다음 일정</div>
+      <div className="w-[88px] shrink-0 px-3 py-2 font-medium">담당</div>
+      <div className="flex-1 px-3 py-2 font-medium">태그</div>
+      <div className="w-10 shrink-0" />
     </div>
   );
 }
 
 function DealListRow({
-  deal,
+  row,
   selected,
   referenceDate,
   onSelect,
   onStageChange,
   isUpdating,
 }: {
-  deal: Deal;
+  row: DealNotionListRow;
   selected: boolean;
   referenceDate: Date;
   onSelect: () => void;
   onStageChange: (stage: string) => void;
   isUpdating: boolean;
 }) {
+  const { deal, rowNumber } = row;
   const transactionType = deal.transactionType ?? deal.listing?.transactionType;
   const nextPayment = getNextDealPaymentSummary(deal, referenceDate);
   const urgent = nextPayment?.isUrgent;
@@ -639,52 +664,74 @@ function DealListRow({
   return (
     <div
       className={cn(
-        'relative flex cursor-pointer items-center border-b border-slate-100 px-4 py-3 text-left outline-none last:border-b-0 hover:bg-slate-50',
-        selected && 'bg-violet-50/70',
+        'group/row relative flex cursor-pointer items-center border-b border-border/40 text-sm transition-colors hover:bg-muted/30',
+        selected && 'bg-muted/40',
         urgent && !selected && 'bg-red-50/30',
       )}
       onClick={onSelect}
     >
       {urgent ? <span className="absolute inset-y-0 left-0 w-0.5 bg-red-600" /> : null}
 
-      <div className="w-[340px] shrink-0 space-y-1">
-        <div className="flex items-center gap-1.5">
-          {transactionType ? (
-            <Badge className={cn('h-5 rounded px-1.5 text-[10px] leading-none', transactionTypeMeta[transactionType]?.className)}>
-              {transactionTypeMeta[transactionType]?.label ?? transactionType}
-            </Badge>
-          ) : null}
-          <span className="font-mono text-[10px] text-slate-400">{getDealShortCode(deal.id)}</span>
-        </div>
-        <p className="truncate text-[13px] font-medium leading-4 text-slate-900">{getDealTitle(deal)}</p>
-        <p className="truncate text-[11px] leading-3.5 text-slate-500">{getDealLocationLine(deal)}</p>
+      <div className="w-[50px] shrink-0 border-r border-border/40 px-3 py-2 text-muted-foreground">
+        {rowNumber}
       </div>
 
-      <div className="w-[90px] shrink-0 truncate text-xs text-slate-700">{deal.sellerContact?.name ?? '미지정'}</div>
-      <div className="w-[90px] shrink-0 truncate text-xs text-slate-700">{deal.buyerContact?.name ?? '미지정'}</div>
-      <div className="w-[120px] shrink-0 text-right text-[13px] font-semibold tabular-nums text-slate-950">
+      <div className="flex w-[280px] shrink-0 items-center gap-2 border-r border-border/40 px-3 py-2">
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-medium text-foreground">{getDealTitle(deal)}</p>
+          <p className="truncate text-[11px] leading-4 text-muted-foreground">{getDealLocationLine(deal)}</p>
+        </div>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-xs"
+          className="opacity-0 transition-opacity group-hover/row:opacity-100"
+          onClick={(event) => {
+            event.stopPropagation();
+            onSelect();
+          }}
+        >
+          <ArrowRight className="size-3.5" />
+        </Button>
+      </div>
+
+      <div className="w-[92px] shrink-0 border-r border-border/40 px-3 py-2">
+        <Badge className={cn('h-5 rounded-md px-1.5 text-[10px] leading-none', dealStageMeta[deal.stage]?.badgeClassName)}>
+          {dealStageMeta[deal.stage]?.label ?? deal.stage}
+        </Badge>
+      </div>
+      <div className="w-[90px] shrink-0 truncate border-r border-border/40 px-3 py-2 text-xs text-slate-700">
+        {deal.sellerContact?.name ?? '미지정'}
+      </div>
+      <div className="w-[90px] shrink-0 truncate border-r border-border/40 px-3 py-2 text-xs text-slate-700">
+        {deal.buyerContact?.name ?? '미지정'}
+      </div>
+      <div className="w-[120px] shrink-0 border-r border-border/40 px-3 py-2 text-right text-[13px] font-semibold tabular-nums text-slate-950">
         {formatDealAmount(deal)}
       </div>
-      <div className="w-[170px] shrink-0 pl-4">
-        <div className={cn('text-xs leading-4', urgent ? 'font-medium text-red-600' : 'text-slate-700')}>
+      <div className="w-[150px] shrink-0 border-r border-border/40 px-3 py-2">
+        <div className={cn('truncate text-xs leading-4', urgent ? 'font-medium text-red-600' : 'text-slate-700')}>
           {formatNextPaymentName(nextPayment)}
         </div>
         <div className={cn('mt-1 inline-flex rounded px-1.5 py-0.5 text-[10px]', urgent ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-500')}>
           {formatDaysLabel(nextPayment?.daysUntil ?? null)}
         </div>
       </div>
-      <div className="w-[90px] shrink-0">
+      <div className="w-[88px] shrink-0 border-r border-border/40 px-3 py-2">
         <AssigneeStack deal={deal} size="md" />
       </div>
-      <div className="flex flex-1 flex-wrap gap-1">
-        <Badge className={cn('rounded px-1.5 text-[10px]', dealStageMeta[deal.stage]?.badgeClassName)}>
-          {dealStageMeta[deal.stage]?.label ?? deal.stage}
-        </Badge>
+      <div className="flex flex-1 flex-wrap gap-1 px-3 py-2">
+        {transactionType ? (
+          <Badge className={cn('h-5 rounded px-1.5 text-[10px] leading-none', transactionTypeMeta[transactionType]?.className)}>
+            {transactionTypeMeta[transactionType]?.label ?? transactionType}
+          </Badge>
+        ) : null}
+        <span className="font-mono text-[10px] leading-5 text-slate-400">{getDealShortCode(deal.id)}</span>
         {deal.isJointBrokerage ? (
-          <Badge className="rounded bg-violet-50 px-1.5 text-[10px] text-violet-700">공동</Badge>
+          <Badge className="h-5 rounded bg-violet-50 px-1.5 text-[10px] text-violet-700">공동</Badge>
         ) : null}
       </div>
-      <div className="w-8 shrink-0" onClick={(event) => event.stopPropagation()}>
+      <div className="w-10 shrink-0 px-1 py-2" onClick={(event) => event.stopPropagation()}>
         <DealActionsMenu currentStage={deal.stage} onStageChange={onStageChange} disabled={isUpdating} />
       </div>
     </div>
@@ -1178,18 +1225,6 @@ function getNextActions(stage: string) {
     return ['수수료 수금 확인', '직원 배분 정산', '거래 자료 보관'];
   }
   return ['거래 상태 확인', '후속 업무 정리'];
-}
-
-function sortDealsForDisplay(deals: Deal[], referenceDate: Date) {
-  return deals.slice().sort((left, right) => {
-    const leftPayment = getNextDealPaymentSummary(left, referenceDate);
-    const rightPayment = getNextDealPaymentSummary(right, referenceDate);
-    const leftDays = leftPayment?.daysUntil ?? Number.POSITIVE_INFINITY;
-    const rightDays = rightPayment?.daysUntil ?? Number.POSITIVE_INFINITY;
-
-    if (leftDays !== rightDays) return leftDays - rightDays;
-    return new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime();
-  });
 }
 
 function getDealTitle(deal: Deal) {

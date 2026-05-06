@@ -1,4 +1,5 @@
 import { PrismaClient } from '@prisma/client';
+import { seedContractTemplates } from './seed-contract-templates';
 import { seedLegalDong } from './seed-legal-dong';
 import { seedTestOffice } from './seed-test-office';
 
@@ -8,6 +9,7 @@ async function main() {
   try {
     await seedLegalDong(prisma);
     await seedTestOffice(prisma);
+    await seedContractTemplates(prisma);
   } finally {
     await prisma.$disconnect();
   }

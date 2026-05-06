@@ -53,7 +53,7 @@ import {
   X,
   XCircle,
 } from 'lucide-react';
-import type { Task, CreateTaskDto } from '@estate-erp/api-client';
+import type { Task, CreateTaskDto, Employee } from '@estate-erp/api-client';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/providers/auth-provider';
@@ -137,6 +137,55 @@ const boardColumns: { status: TaskStatus; title: string; dotColor: string; bgCol
 
 type ViewMode = 'category' | 'board' | 'list' | 'status';
 type DueDateFilter = 'all' | 'overdue' | 'today' | 'week' | 'none';
+type TaskUpdatePatch = {
+  status?: string;
+  priority?: string;
+  dueDate?: string | null;
+  assignedToId?: string | null;
+};
+type TaskContextItem = {
+  key: string;
+  label: string;
+  detail?: string;
+  icon: React.ReactNode;
+  className: string;
+};
+
+const ASSIGNEE_ALL = 'all';
+const ASSIGNEE_UNASSIGNED = 'unassigned';
+
+const transactionTypeLabels: Record<string, string> = {
+  sale: '매매',
+  jeonse: '전세',
+  monthly: '월세',
+};
+
+const matchStageLabels: Record<string, string> = {
+  suggested: '추천',
+  buyerContacted: '매수 연락',
+  viewing: '방문',
+  ownerContacted: '소유자 연락',
+  negotiating: '협상',
+  dealCreated: '거래 생성',
+  closed: '종료',
+};
+
+const dealStageLabels: Record<string, string> = {
+  selection: '선정',
+  deposit: '입금',
+  contract: '계약',
+  completed: '완료',
+  closed: '종료',
+};
+
+const contractStatusLabels: Record<string, string> = {
+  draft: '초안',
+  signed: '서명',
+  depositPaid: '계약금',
+  balancePaid: '잔금',
+  registered: '등록',
+  cancelled: '취소',
+};
 
 // ─── Helpers ──────────────────────────────────────────────
 
@@ -173,6 +222,178 @@ function formatDateRange(date: string | null): string | null {
   return `${d.getFullYear()}년 ${d.getMonth() + 1}월 ${d.getDate()}일`;
 }
 
+function formatManwon(value: number | null | undefined): string | null {
+  if (!value) return null;
+  if (value >= 10000) {
+    const eok = Math.floor(value / 10000);
+    const man = value % 10000;
+    return man ? `${eok}억 ${man.toLocaleString()}만` : `${eok}억`;
+  }
+  return `${value.toLocaleString()}만`;
+}
+
+function formatListingAmount(listing: NonNullable<Task['listing']>): string | null {
+  if (listing.transactionType === 'monthly') {
+    const deposit = formatManwon(listing.deposit);
+    const monthlyRent = formatManwon(listing.monthlyRent);
+    if (deposit && monthlyRent) return `${deposit}/${monthlyRent}`;
+    return deposit ?? monthlyRent;
+  }
+  return formatManwon(listing.price);
+}
+
+function getPropertyLabel(task: Task): string {
+  const siteName = task.property?.site?.name;
+  const unitName = task.property?.unit?.name;
+  if (siteName && unitName) return `${siteName} ${unitName}`;
+  if (siteName) return siteName;
+  if (unitName) return unitName;
+  return '매물';
+}
+
+function getListingLabel(task: Task): string {
+  if (!task.listing) return '리스팅';
+  const transactionType = transactionTypeLabels[task.listing.transactionType] ?? task.listing.transactionType;
+  const amount = formatListingAmount(task.listing);
+  return amount ? `${transactionType} ${amount}` : transactionType;
+}
+
+function buildTaskContextItems(task: Task): TaskContextItem[] {
+  const items: TaskContextItem[] = [];
+
+  if (task.contact || task.contactId) {
+    items.push({
+      key: 'contact',
+      label: task.contact?.name ?? '연락처',
+      detail: task.contact?.phone ?? undefined,
+      icon: <User className="size-3" />,
+      className: 'border-teal-200 bg-teal-50 text-teal-700',
+    });
+  }
+
+  if (task.property || task.propertyId) {
+    items.push({
+      key: 'property',
+      label: getPropertyLabel(task),
+      detail: task.property?.site?.roadAddress ?? task.property?.site?.jibunAddress ?? undefined,
+      icon: <Building2 className="size-3" />,
+      className: 'border-blue-200 bg-blue-50 text-blue-700',
+    });
+  }
+
+  if (task.listing || task.listingId) {
+    items.push({
+      key: 'listing',
+      label: getListingLabel(task),
+      detail: task.listing?.checkStatus,
+      icon: <FileText className="size-3" />,
+      className: 'border-slate-200 bg-slate-50 text-slate-700',
+    });
+  }
+
+  if (task.buyerRequirement || task.buyerReqId) {
+    items.push({
+      key: 'buyerRequirement',
+      label: task.buyerRequirement?.contact?.name ? `요청 ${task.buyerRequirement.contact.name}` : '구매요청',
+      detail: task.buyerRequirement?.status,
+      icon: <Search className="size-3" />,
+      className: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+    });
+  }
+
+  if (task.match || task.matchId) {
+    const stage = task.match?.stage;
+    items.push({
+      key: 'match',
+      label: stage ? `매칭 ${matchStageLabels[stage] ?? stage}` : '매칭',
+      icon: <Link2 className="size-3" />,
+      className: 'border-violet-200 bg-violet-50 text-violet-700',
+    });
+  }
+
+  if (task.deal || task.dealId) {
+    const stage = task.deal?.stage;
+    items.push({
+      key: 'deal',
+      label: stage ? `거래 ${dealStageLabels[stage] ?? stage}` : '거래',
+      detail: task.deal?.transactionType ? transactionTypeLabels[task.deal.transactionType] ?? task.deal.transactionType : undefined,
+      icon: <Layers className="size-3" />,
+      className: 'border-amber-200 bg-amber-50 text-amber-700',
+    });
+  }
+
+  if (task.contract || task.contractId) {
+    const status = task.contract?.status;
+    items.push({
+      key: 'contract',
+      label: status ? `계약 ${contractStatusLabels[status] ?? status}` : '계약',
+      detail: task.contract?.contractDate ?? undefined,
+      icon: <FileSignature className="size-3" />,
+      className: 'border-indigo-200 bg-indigo-50 text-indigo-700',
+    });
+  }
+
+  if (task.consultation || task.consultationId) {
+    items.push({
+      key: 'consultation',
+      label: task.consultation?.type ? `상담 ${task.consultation.type}` : '상담',
+      icon: <MessageSquare className="size-3" />,
+      className: 'border-cyan-200 bg-cyan-50 text-cyan-700',
+    });
+  }
+
+  return items;
+}
+
+function TaskContextChips({
+  task,
+  className,
+  compact = false,
+}: {
+  task: Task;
+  className?: string;
+  compact?: boolean;
+}) {
+  const items = buildTaskContextItems(task);
+  if (items.length === 0) return null;
+
+  return (
+    <div className={cn('flex min-w-0 flex-wrap items-center gap-1', className)}>
+      {items.map((item) => (
+        <Badge
+          key={item.key}
+          variant="outline"
+          title={item.detail ? `${item.label} · ${item.detail}` : item.label}
+          className={cn(
+            'max-w-full gap-1 px-1.5 py-0 text-[11px] font-normal leading-5',
+            '[&>svg]:size-3',
+            compact ? 'max-w-[150px] text-[10px] leading-4' : 'max-w-[240px]',
+            item.className,
+          )}
+        >
+          {item.icon}
+          <span className="truncate">{item.label}</span>
+        </Badge>
+      ))}
+    </div>
+  );
+}
+
+function TaskContextPanel({ task }: { task: Task }) {
+  const items = buildTaskContextItems(task);
+  if (items.length === 0) return null;
+
+  return (
+    <div className="grid gap-2 rounded-md border border-dashed border-border bg-muted/20 p-3">
+      <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+        <Link2 className="size-3.5" />
+        연결 문맥
+      </div>
+      <TaskContextChips task={task} />
+    </div>
+  );
+}
+
 // ─── Main Page ────────────────────────────────────────────
 
 function TasksPage() {
@@ -186,6 +407,7 @@ function TasksPage() {
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [dueDateFilter, setDueDateFilter] = useState<DueDateFilter>('all');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
+  const [assigneeFilter, setAssigneeFilter] = useState<string>(ASSIGNEE_ALL);
   const [showOnlyMyTasks, setShowOnlyMyTasks] = useState(false);
 
   // 선택 (리스트 뷰)
@@ -195,6 +417,16 @@ function TasksPage() {
     queryKey: ['tasks'],
     queryFn: () => api.tasks.findAll(),
   });
+
+  const { data: employees = [] } = useQuery({
+    queryKey: ['employees'],
+    queryFn: () => api.employees.findAll(),
+  });
+
+  const activeEmployees = useMemo(
+    () => employees.filter((employee) => employee.isActive),
+    [employees],
+  );
 
   const createMutation = useMutation({
     mutationFn: (dto: CreateTaskDto) => api.tasks.create(dto),
@@ -271,22 +503,39 @@ function TasksPage() {
         if (categoryFilter !== 'all' && task.category !== categoryFilter) return false;
         if (!matchesDueDateFilter(task)) return false;
         if (showOnlyMyTasks && user && task.assignedToId !== user.id) return false;
+        if (assigneeFilter === ASSIGNEE_UNASSIGNED && task.assignedToId) return false;
+        if (
+          assigneeFilter !== ASSIGNEE_ALL &&
+          assigneeFilter !== ASSIGNEE_UNASSIGNED &&
+          task.assignedToId !== assigneeFilter
+        ) return false;
         return true;
       })
       .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
-  }, [tasks, statusFilter, categoryFilter, dueDateFilter, showOnlyMyTasks, user]);
+  }, [tasks, statusFilter, categoryFilter, dueDateFilter, showOnlyMyTasks, user, assigneeFilter]);
 
-  const handleInlineUpdate = (id: string, dto: { status?: string; priority?: string; dueDate?: string | null; assignedToId?: string | null }) => {
+  const handleInlineUpdate = (id: string, dto: TaskUpdatePatch) => {
     updateMutation.mutate({ id, dto });
   };
 
-  const hasActiveFilters = statusFilter !== 'all' || dueDateFilter !== 'all' || categoryFilter !== 'all' || showOnlyMyTasks;
+  const hasActiveFilters = statusFilter !== 'all' || dueDateFilter !== 'all' || categoryFilter !== 'all' || assigneeFilter !== ASSIGNEE_ALL || showOnlyMyTasks;
 
   const resetFilters = () => {
     setStatusFilter('all');
     setDueDateFilter('all');
     setCategoryFilter('all');
+    setAssigneeFilter(ASSIGNEE_ALL);
     setShowOnlyMyTasks(false);
+  };
+
+  const handleMyTasksChange = (checked: boolean) => {
+    setShowOnlyMyTasks(checked);
+    if (checked) setAssigneeFilter(ASSIGNEE_ALL);
+  };
+
+  const handleAssigneeFilterChange = (value: string) => {
+    setAssigneeFilter(value);
+    if (value !== ASSIGNEE_ALL) setShowOnlyMyTasks(false);
   };
 
   // 선택 관련
@@ -319,11 +568,11 @@ function TasksPage() {
           <Switch
             size="sm"
             checked={showOnlyMyTasks}
-            onCheckedChange={setShowOnlyMyTasks}
+            onCheckedChange={handleMyTasksChange}
           />
           <label
             className="text-xs font-medium cursor-pointer select-none text-muted-foreground"
-            onClick={() => setShowOnlyMyTasks(!showOnlyMyTasks)}
+            onClick={() => handleMyTasksChange(!showOnlyMyTasks)}
           >
             <User className="size-3 inline mr-1" />
             내 업무
@@ -380,6 +629,23 @@ function TasksPage() {
                   {icon}
                   {label}
                 </span>
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        {/* 담당자 필터 */}
+        <Select value={assigneeFilter} onValueChange={handleAssigneeFilterChange}>
+          <SelectTrigger className="h-8 gap-1.5 text-xs border-dashed">
+            <User className="size-3" />
+            <SelectValue placeholder="담당자" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={ASSIGNEE_ALL}>전체 담당자</SelectItem>
+            <SelectItem value={ASSIGNEE_UNASSIGNED}>미배정</SelectItem>
+            {activeEmployees.map((employee) => (
+              <SelectItem key={employee.id} value={employee.id}>
+                {employee.name}
               </SelectItem>
             ))}
           </SelectContent>
@@ -503,6 +769,7 @@ function TasksPage() {
             onDelete={(id) => deleteMutation.mutate(id)}
             onUpdate={handleInlineUpdate}
             onReorder={(orderedIds) => reorderMutation.mutate(orderedIds)}
+            employeeOptions={activeEmployees}
           />
         )
       )}
@@ -523,6 +790,7 @@ function TasksPage() {
                   onStatusChange={(id, status) => updateStatusMutation.mutate({ id, status })}
                   onDelete={(id) => deleteMutation.mutate(id)}
                   onUpdate={handleInlineUpdate}
+                  employeeOptions={activeEmployees}
                 />
               );
             })}
@@ -571,6 +839,7 @@ function TasksPage() {
                     onStatusChange={(id, status) => updateStatusMutation.mutate({ id, status })}
                     onDelete={(id) => deleteMutation.mutate(id)}
                     onUpdate={handleInlineUpdate}
+                    employeeOptions={activeEmployees}
                     showCategory
                     showCheckbox
                     isSelected={selectedTasks.has(task.id)}
@@ -588,6 +857,7 @@ function TasksPage() {
         isOpen={isCreateModalOpen || !!editingTask}
         onClose={() => { setIsCreateModalOpen(false); setEditingTask(null); }}
         task={editingTask}
+        employeeOptions={activeEmployees}
         onSubmit={(data) => {
           if (editingTask) {
             updateMutation.mutate({ id: editingTask.id, dto: data });
@@ -645,7 +915,8 @@ type NotionRowProps = {
   onRowClick: (task: Task) => void;
   onStatusChange: (id: string, status: string) => void;
   onDelete: (id: string) => void;
-  onUpdate?: (id: string, dto: { status?: string; priority?: string; dueDate?: string | null; assignedToId?: string | null }) => void;
+  onUpdate?: (id: string, dto: TaskUpdatePatch) => void;
+  employeeOptions: Employee[];
   showCategory?: boolean;
   showCheckbox?: boolean;
   isSelected?: boolean;
@@ -659,6 +930,7 @@ function NotionTableRow({
   onStatusChange,
   onDelete,
   onUpdate,
+  employeeOptions,
   showCategory = true,
   showCheckbox = false,
   isSelected = false,
@@ -679,7 +951,7 @@ function NotionTableRow({
           <Checkbox checked={isSelected} onCheckedChange={() => onToggleSelect?.(task.id)} />
         </td>
       )}
-      <NotionTableRowCells task={task} index={index} onRowClick={onRowClick} onStatusChange={onStatusChange} onDelete={onDelete} onUpdate={onUpdate} showCategory={showCategory} />
+      <NotionTableRowCells task={task} index={index} onRowClick={onRowClick} onStatusChange={onStatusChange} onDelete={onDelete} onUpdate={onUpdate} employeeOptions={employeeOptions} showCategory={showCategory} />
     </tr>
   );
 }
@@ -691,6 +963,7 @@ function NotionTableRowCells({
   onStatusChange,
   onDelete,
   onUpdate,
+  employeeOptions,
   showCategory = true,
 }: {
   task: Task;
@@ -698,7 +971,8 @@ function NotionTableRowCells({
   onRowClick: (task: Task) => void;
   onStatusChange: (id: string, status: string) => void;
   onDelete: (id: string) => void;
-  onUpdate?: (id: string, dto: { status?: string; priority?: string; dueDate?: string | null; assignedToId?: string | null }) => void;
+  onUpdate?: (id: string, dto: TaskUpdatePatch) => void;
+  employeeOptions: Employee[];
   showCategory?: boolean;
 }) {
   const sCfg = statusConfig[task.status as TaskStatus];
@@ -710,16 +984,19 @@ function NotionTableRowCells({
     <>
       <td className="py-2 px-3 text-muted-foreground border-r border-border/40">{index}</td>
       <td className="py-2 px-3 border-r border-border/40">
-        <div className="flex items-center gap-1">
-          <span className={cn('flex-1', task.status === 'completed' ? 'line-through text-muted-foreground' : '')}>{task.title}</span>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="size-6 p-0 opacity-0 group-hover/row:opacity-100 transition-opacity shrink-0"
-            onClick={() => onRowClick(task)}
-          >
-            <Edit className="size-3.5" />
-          </Button>
+        <div className="grid gap-1">
+          <div className="flex items-center gap-1">
+            <span className={cn('flex-1', task.status === 'completed' ? 'line-through text-muted-foreground' : '')}>{task.title}</span>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="size-6 p-0 opacity-0 group-hover/row:opacity-100 transition-opacity shrink-0"
+              onClick={() => onRowClick(task)}
+            >
+              <Edit className="size-3.5" />
+            </Button>
+          </div>
+          <TaskContextChips task={task} />
         </div>
       </td>
 
@@ -756,46 +1033,11 @@ function NotionTableRowCells({
 
       {/* 담당자 — 클릭 시 인라인 표시 */}
       <td className="py-2 px-3 border-r border-border/40">
-        <Popover>
-          <PopoverTrigger asChild>
-            <button className="inline-flex items-center rounded-md hover:ring-2 hover:ring-ring/20 transition-all w-full">
-              {task.assignedTo ? (
-                <div className="flex items-center gap-1.5">
-                  <Avatar className="size-5">
-                    <AvatarFallback className="text-[10px]">{task.assignedTo.name.charAt(0)}</AvatarFallback>
-                  </Avatar>
-                  <span className="text-xs text-muted-foreground truncate">{task.assignedTo.name}</span>
-                </div>
-              ) : (
-                <span className="text-xs text-muted-foreground">—</span>
-              )}
-            </button>
-          </PopoverTrigger>
-          <PopoverContent className="w-[180px] p-2" align="start">
-            <div className="flex flex-col gap-1">
-              <p className="text-xs font-medium text-muted-foreground px-1 mb-1">담당자</p>
-              {task.assignedTo ? (
-                <>
-                  <div className="flex items-center gap-2 px-1 py-1 text-xs">
-                    <Avatar className="size-5">
-                      <AvatarFallback className="text-[10px]">{task.assignedTo.name.charAt(0)}</AvatarFallback>
-                    </Avatar>
-                    <span>{task.assignedTo.name}</span>
-                  </div>
-                  <button
-                    className="flex items-center gap-2 px-2 py-1.5 text-xs rounded-sm hover:bg-accent transition-colors text-left text-red-600"
-                    onClick={() => onUpdate?.(task.id, { assignedToId: null })}
-                  >
-                    <X className="size-3" />
-                    담당자 해제
-                  </button>
-                </>
-              ) : (
-                <p className="text-xs text-muted-foreground px-1">담당자 없음</p>
-              )}
-            </div>
-          </PopoverContent>
-        </Popover>
+        <TaskAssigneePicker
+          task={task}
+          employeeOptions={employeeOptions}
+          onUpdate={onUpdate}
+        />
       </td>
 
       {/* 마감일 — 클릭 시 인라인 날짜 선택 */}
@@ -902,6 +1144,74 @@ function NotionTableRowCells({
   );
 }
 
+function TaskAssigneePicker({
+  task,
+  employeeOptions,
+  onUpdate,
+}: {
+  task: Task;
+  employeeOptions: Employee[];
+  onUpdate?: (id: string, dto: TaskUpdatePatch) => void;
+}) {
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button className="inline-flex items-center rounded-md hover:ring-2 hover:ring-ring/20 transition-all w-full">
+          {task.assignedTo ? (
+            <div className="flex items-center gap-1.5 min-w-0">
+              <Avatar className="size-5 shrink-0">
+                <AvatarFallback className="text-[10px]">
+                  {task.assignedTo.name.charAt(0)}
+                </AvatarFallback>
+              </Avatar>
+              <span className="text-xs text-muted-foreground truncate">
+                {task.assignedTo.name}
+              </span>
+            </div>
+          ) : (
+            <span className="text-xs text-muted-foreground">미배정</span>
+          )}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[200px] p-2" align="start">
+        <div className="flex flex-col gap-1">
+          <p className="text-xs font-medium text-muted-foreground px-1 mb-1">담당자</p>
+          <button
+            className={cn(
+              'flex items-center gap-2 px-2 py-1.5 text-xs rounded-sm hover:bg-accent transition-colors text-left',
+              !task.assignedToId && 'bg-accent',
+            )}
+            onClick={() => onUpdate?.(task.id, { assignedToId: null })}
+          >
+            <User className="size-3" />
+            미배정
+          </button>
+          {employeeOptions.map((employee) => (
+            <button
+              key={employee.id}
+              className={cn(
+                'flex items-center gap-2 px-2 py-1.5 text-xs rounded-sm hover:bg-accent transition-colors text-left',
+                task.assignedToId === employee.id && 'bg-accent',
+              )}
+              onClick={() => onUpdate?.(task.id, { assignedToId: employee.id })}
+            >
+              <Avatar className="size-5">
+                <AvatarFallback className="text-[10px]">
+                  {employee.name.charAt(0)}
+                </AvatarFallback>
+              </Avatar>
+              <span className="truncate">{employee.name}</span>
+            </button>
+          ))}
+          {employeeOptions.length === 0 && (
+            <p className="text-xs text-muted-foreground px-1 py-1">활성 직원 없음</p>
+          )}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 // ─── Status View (상위 DndContext — 크로스 그룹 이동 지원) ──
 
 function StatusView({
@@ -911,13 +1221,15 @@ function StatusView({
   onDelete,
   onUpdate,
   onReorder,
+  employeeOptions,
 }: {
   filteredTasks: Task[];
   onRowClick: (task: Task) => void;
   onStatusChange: (id: string, status: string) => void;
   onDelete: (id: string) => void;
-  onUpdate?: (id: string, dto: { status?: string; priority?: string; dueDate?: string | null; assignedToId?: string | null }) => void;
+  onUpdate?: (id: string, dto: TaskUpdatePatch) => void;
   onReorder?: (orderedIds: string[]) => void;
+  employeeOptions: Employee[];
 }) {
   const [activeId, setActiveId] = useState<string | null>(null);
 
@@ -1041,6 +1353,7 @@ function StatusView({
             onStatusChange={onStatusChange}
             onDelete={onDelete}
             onUpdate={onUpdate}
+            employeeOptions={employeeOptions}
           />
         ))}
       </div>
@@ -1067,13 +1380,15 @@ function StatusGroup({
   onStatusChange,
   onDelete,
   onUpdate,
+  employeeOptions,
 }: {
   column: typeof boardColumns[number];
   tasks: Task[];
   onRowClick: (task: Task) => void;
   onStatusChange: (id: string, status: string) => void;
   onDelete: (id: string) => void;
-  onUpdate?: (id: string, dto: { status?: string; priority?: string; dueDate?: string | null; assignedToId?: string | null }) => void;
+  onUpdate?: (id: string, dto: TaskUpdatePatch) => void;
+  employeeOptions: Employee[];
 }) {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const { setNodeRef, isOver } = useDroppable({ id: column.status });
@@ -1107,7 +1422,7 @@ function StatusGroup({
           <div ref={setNodeRef} className={cn('min-h-[40px] transition-colors rounded', isOver && 'bg-accent/50')}>
             <SortableContext items={tasks.map((t) => t.id)} strategy={verticalListSortingStrategy}>
               {tasks.map((task, idx) => (
-                <SortableTableRow key={task.id} task={task} index={idx + 1} onRowClick={onRowClick} onStatusChange={onStatusChange} onDelete={onDelete} onUpdate={onUpdate} showCategory />
+                <SortableTableRow key={task.id} task={task} index={idx + 1} onRowClick={onRowClick} onStatusChange={onStatusChange} onDelete={onDelete} onUpdate={onUpdate} employeeOptions={employeeOptions} showCategory />
               ))}
               {tasks.length === 0 && (
                 <div className="py-4 text-center text-xs text-muted-foreground">
@@ -1133,7 +1448,8 @@ function SortableTableRow(props: {
   onRowClick: (task: Task) => void;
   onStatusChange: (id: string, status: string) => void;
   onDelete: (id: string) => void;
-  onUpdate?: (id: string, dto: { status?: string; priority?: string; dueDate?: string | null; assignedToId?: string | null }) => void;
+  onUpdate?: (id: string, dto: TaskUpdatePatch) => void;
+  employeeOptions: Employee[];
   showCategory?: boolean;
 }) {
   const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({ id: props.task.id });
@@ -1170,16 +1486,19 @@ function SortableTableRow(props: {
       {/* No */}
       <div className="py-2 px-3 text-muted-foreground w-[50px] shrink-0 border-r border-border/40">{props.index}</div>
       {/* 작업 */}
-      <div className="py-2 px-3 flex-1 flex items-center gap-1 border-r border-border/40 min-w-0">
-        <span className={cn('flex-1 truncate', props.task.status === 'completed' ? 'line-through text-muted-foreground' : '')}>{props.task.title}</span>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="size-6 p-0 opacity-0 group-hover/row:opacity-100 transition-opacity shrink-0"
-          onClick={() => props.onRowClick(props.task)}
-        >
-          <Edit className="size-3.5" />
-        </Button>
+      <div className="py-2 px-3 flex-1 border-r border-border/40 min-w-0">
+        <div className="flex items-center gap-1">
+          <span className={cn('flex-1 truncate', props.task.status === 'completed' ? 'line-through text-muted-foreground' : '')}>{props.task.title}</span>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="size-6 p-0 opacity-0 group-hover/row:opacity-100 transition-opacity shrink-0"
+            onClick={() => props.onRowClick(props.task)}
+          >
+            <Edit className="size-3.5" />
+          </Button>
+        </div>
+        <TaskContextChips task={props.task} compact className="mt-1" />
       </div>
       {/* 상태 */}
       <div className="py-2 px-3 w-[90px] shrink-0 border-r border-border/40">
@@ -1210,46 +1529,11 @@ function SortableTableRow(props: {
       </div>
       {/* 담당자 */}
       <div className="py-2 px-3 w-[80px] shrink-0 border-r border-border/40">
-        <Popover>
-          <PopoverTrigger asChild>
-            <button className="inline-flex items-center rounded-md hover:ring-2 hover:ring-ring/20 transition-all w-full">
-              {props.task.assignedTo ? (
-                <div className="flex items-center gap-1.5">
-                  <Avatar className="size-5">
-                    <AvatarFallback className="text-[10px]">{props.task.assignedTo.name.charAt(0)}</AvatarFallback>
-                  </Avatar>
-                  <span className="text-xs text-muted-foreground truncate">{props.task.assignedTo.name}</span>
-                </div>
-              ) : (
-                <span className="text-xs text-muted-foreground">—</span>
-              )}
-            </button>
-          </PopoverTrigger>
-          <PopoverContent className="w-[180px] p-2" align="start">
-            <div className="flex flex-col gap-1">
-              <p className="text-xs font-medium text-muted-foreground px-1 mb-1">담당자</p>
-              {props.task.assignedTo ? (
-                <>
-                  <div className="flex items-center gap-2 px-1 py-1 text-xs">
-                    <Avatar className="size-5">
-                      <AvatarFallback className="text-[10px]">{props.task.assignedTo.name.charAt(0)}</AvatarFallback>
-                    </Avatar>
-                    <span>{props.task.assignedTo.name}</span>
-                  </div>
-                  <button
-                    className="flex items-center gap-2 px-2 py-1.5 text-xs rounded-sm hover:bg-accent transition-colors text-left text-red-600"
-                    onClick={() => props.onUpdate?.(props.task.id, { assignedToId: null })}
-                  >
-                    <X className="size-3" />
-                    담당자 해제
-                  </button>
-                </>
-              ) : (
-                <p className="text-xs text-muted-foreground px-1">담당자 없음</p>
-              )}
-            </div>
-          </PopoverContent>
-        </Popover>
+        <TaskAssigneePicker
+          task={props.task}
+          employeeOptions={props.employeeOptions}
+          onUpdate={props.onUpdate}
+        />
       </div>
       {/* 마감일 */}
       <div className="py-2 px-3 w-[100px] shrink-0 border-r border-border/40">
@@ -1361,13 +1645,15 @@ function CategoryTaskTable({
   onStatusChange,
   onDelete,
   onUpdate,
+  employeeOptions,
 }: {
   categoryData: { label: string; icon: React.ReactNode; color: string };
   tasks: Task[];
   onRowClick: (task: Task) => void;
   onStatusChange: (id: string, status: string) => void;
   onDelete: (id: string) => void;
-  onUpdate?: (id: string, dto: { status?: string; priority?: string; dueDate?: string | null; assignedToId?: string | null }) => void;
+  onUpdate?: (id: string, dto: TaskUpdatePatch) => void;
+  employeeOptions: Employee[];
 }) {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const completedCount = tasks.filter((t) => t.status === 'completed').length;
@@ -1391,7 +1677,7 @@ function CategoryTaskTable({
             </thead>
             <tbody>
               {tasks.map((task, idx) => (
-                <NotionTableRow key={task.id} task={task} index={idx + 1} onRowClick={onRowClick} onStatusChange={onStatusChange} onDelete={onDelete} onUpdate={onUpdate} showCategory={false} />
+                <NotionTableRow key={task.id} task={task} index={idx + 1} onRowClick={onRowClick} onStatusChange={onStatusChange} onDelete={onDelete} onUpdate={onUpdate} employeeOptions={employeeOptions} showCategory={false} />
               ))}
             </tbody>
           </table>
@@ -1479,6 +1765,8 @@ function KanbanCard({
         </p>
       )}
 
+      <TaskContextChips task={task} compact className="mb-3" />
+
       {/* 우선순위 배지 */}
       <div className="mb-3">
         <Badge className={cn(pCfg?.color, 'text-xs')}>{pCfg?.label}</Badge>
@@ -1510,12 +1798,14 @@ function TaskFormModal({
   isOpen,
   onClose,
   task,
+  employeeOptions,
   onSubmit,
   isLoading,
 }: {
   isOpen: boolean;
   onClose: () => void;
   task: Task | null;
+  employeeOptions: Employee[];
   onSubmit: (data: any) => void;
   isLoading: boolean;
 }) {
@@ -1524,6 +1814,7 @@ function TaskFormModal({
   const [category, setCategory] = useState<string>('other');
   const [priority, setPriority] = useState<string>('medium');
   const [dueDate, setDueDate] = useState('');
+  const [assignedToId, setAssignedToId] = useState<string>(ASSIGNEE_UNASSIGNED);
 
   useEffect(() => {
     setTitle(task?.title ?? '');
@@ -1531,11 +1822,15 @@ function TaskFormModal({
     setCategory(task?.category ?? 'other');
     setPriority(task?.priority ?? 'medium');
     setDueDate(task?.dueDate ? task.dueDate.substring(0, 10) : '');
+    setAssignedToId(task?.assignedToId ?? ASSIGNEE_UNASSIGNED);
   }, [task]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim()) return;
+    const nextAssignedToId =
+      assignedToId === ASSIGNEE_UNASSIGNED ? (task ? null : undefined) : assignedToId;
+
     onSubmit({
       title: title.trim(),
       content: content.trim() || undefined,
@@ -1543,6 +1838,7 @@ function TaskFormModal({
       priority,
       status: task?.status ?? 'pending',
       dueDate: dueDate || undefined,
+      assignedToId: nextAssignedToId,
     });
   };
 
@@ -1567,6 +1863,7 @@ function TaskFormModal({
               <Label htmlFor="content">설명</Label>
               <Textarea id="content" value={content} onChange={(e) => setContent(e.target.value)} placeholder="상세 설명을 입력하세요" rows={3} />
             </div>
+            {task && <TaskContextPanel task={task} />}
             <div className="grid grid-cols-2 gap-4">
               <div className="grid gap-2">
                 <Label>카테고리</Label>
@@ -1592,6 +1889,20 @@ function TaskFormModal({
                   </SelectContent>
                 </Select>
               </div>
+            </div>
+            <div className="grid gap-2">
+              <Label>담당자</Label>
+              <Select value={assignedToId} onValueChange={setAssignedToId}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={ASSIGNEE_UNASSIGNED}>미배정</SelectItem>
+                  {employeeOptions.map((employee) => (
+                    <SelectItem key={employee.id} value={employee.id}>
+                      {employee.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="grid gap-2">
               <Label htmlFor="dueDate">마감일</Label>

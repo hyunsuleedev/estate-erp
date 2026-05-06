@@ -2,9 +2,33 @@ import { createFileRoute } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
-import { CirclePlus, FileText, Landmark, ReceiptText } from 'lucide-react';
-import type { Contract, CreateContractDto, Deal } from '@estate-erp/api-client';
+import {
+  CirclePlus,
+  ClipboardList,
+  FileCheck2,
+  FilePenLine,
+  FileText,
+  Printer,
+} from 'lucide-react';
+import type {
+  Contract,
+  ContractDocument,
+  ContractDocumentTemplate,
+  CreateContractDocumentDto,
+  CreateContractDto,
+  Deal,
+  UpdateContractDocumentDto,
+} from '@estate-erp/api-client';
 import { formatPrice } from '@estate-erp/shared';
+import {
+  buildContractDocumentEngineDraft,
+  getContractDocumentEngineFieldGroups,
+  getContractDocumentEngineSections,
+  mergeContractDocumentEngineMetadata,
+  type ContractDocumentEngineFieldDefinition,
+  type ContractDocumentEngineFields,
+  type ContractDocumentEngineWorkflow,
+} from './-document-engine';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
@@ -34,6 +58,28 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 
 const statusMeta: Record<string, { label: string; className: string }> = {
@@ -49,6 +95,41 @@ const transactionTypeMeta: Record<string, { label: string; className: string }> 
   sale: { label: '매매', className: 'bg-rose-50 text-rose-700' },
   jeonse: { label: '전세', className: 'bg-blue-50 text-blue-700' },
   monthly: { label: '월세', className: 'bg-violet-50 text-violet-700' },
+  exchange: { label: '교환', className: 'bg-amber-50 text-amber-700' },
+  sublease: { label: '전대', className: 'bg-cyan-50 text-cyan-700' },
+  transfer: { label: '권리양도', className: 'bg-fuchsia-50 text-fuchsia-700' },
+  succession: { label: '권리승계', className: 'bg-indigo-50 text-indigo-700' },
+};
+
+const CONTRACT_TRANSACTION_TYPES: Array<{ value: string; label: string }> = [
+  { value: 'sale', label: '매매' },
+  { value: 'jeonse', label: '전세' },
+  { value: 'monthly', label: '월세' },
+  { value: 'exchange', label: '교환' },
+  { value: 'sublease', label: '전대' },
+  { value: 'transfer', label: '권리양도' },
+  { value: 'succession', label: '권리승계' },
+];
+
+const documentStatusMeta: Record<string, { label: string; className: string }> = {
+  draft: { label: '초안', className: 'bg-slate-100 text-slate-700' },
+  generated: { label: '작성됨', className: 'bg-blue-50 text-blue-700' },
+  signed: { label: '서명완료', className: 'bg-emerald-50 text-emerald-700' },
+  submitted: { label: '제출완료', className: 'bg-violet-50 text-violet-700' },
+  archived: { label: '보관', className: 'bg-zinc-100 text-zinc-700' },
+  cancelled: { label: '취소', className: 'bg-rose-50 text-rose-700' },
+};
+
+const documentCategoryLabels: Record<string, string> = {
+  agreement: '동의서',
+  attachment: '첨부',
+  confirmation: '확인서',
+  contract: '계약서',
+  explanation: '확인설명',
+  guarantee: '보증',
+  identity: '신분',
+  receipt: '영수증',
+  report: '신고',
 };
 
 type ContractForm = {
@@ -73,6 +154,20 @@ type ContractForm = {
   attachmentsText: string;
 };
 
+type DocumentEditorForm = {
+  documentId?: string;
+  templateId?: string;
+  type: string;
+  category: string;
+  title: string;
+  status: string;
+  fileUrl: string;
+  memo: string;
+  metadata: Record<string, unknown>;
+  workflow: ContractDocumentEngineWorkflow;
+  engineFields: ContractDocumentEngineFields;
+};
+
 export const Route = createFileRoute('/_authenticated/contracts/')({
   component: ContractsPage,
 });
@@ -84,6 +179,12 @@ function ContractsPage() {
   const [statusFilter, setStatusFilter] = useState('all');
   const [typeFilter, setTypeFilter] = useState('all');
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [isDetailOpen, setIsDetailOpen] = useState(false);
+  const [isDocumentEditorOpen, setIsDocumentEditorOpen] = useState(false);
+  const [documentFormError, setDocumentFormError] = useState<string | null>(null);
+  const [documentEditorForm, setDocumentEditorForm] = useState<DocumentEditorForm>(
+    emptyDocumentEditorForm(),
+  );
   const [createForm, setCreateForm] = useState<CreateContractDto>({
     dealId: '',
     transactionType: 'sale',
@@ -127,24 +228,19 @@ function ContractsPage() {
     });
   }, [contracts, search, statusFilter, typeFilter]);
 
-  useEffect(() => {
-    if (!selectedContractId && filteredContracts.length > 0) {
-      setSelectedContractId(filteredContracts[0].id);
-    }
-
-    if (
-      selectedContractId &&
-      filteredContracts.length > 0 &&
-      !filteredContracts.some((contract) => contract.id === selectedContractId)
-    ) {
-      setSelectedContractId(filteredContracts[0].id);
-    }
-  }, [filteredContracts, selectedContractId]);
-
   const { data: contractDetail } = useQuery({
     queryKey: ['contract', selectedContractId],
     queryFn: () => api.contracts.findOne(selectedContractId as string),
     enabled: !!selectedContractId,
+  });
+
+  const { data: documentTemplates = [], isLoading: isDocumentTemplatesLoading } = useQuery({
+    queryKey: ['contract-document-templates', contractDetail?.transactionType],
+    queryFn: () =>
+      api.contracts.documentTemplates({
+        transactionType: contractDetail?.transactionType,
+      }),
+    enabled: !!contractDetail?.transactionType,
   });
 
   useEffect(() => {
@@ -157,6 +253,7 @@ function ContractsPage() {
     onSuccess: (created) => {
       queryClient.invalidateQueries({ queryKey: ['contracts'] });
       setSelectedContractId(created.id);
+      setIsDetailOpen(true);
       setIsCreateOpen(false);
       setCreateForm({
         dealId: '',
@@ -199,6 +296,44 @@ function ContractsPage() {
     },
   });
 
+  const saveDocumentMutation = useMutation({
+    mutationFn: ({
+      documentId,
+      dto,
+    }: {
+      documentId?: string;
+      dto: CreateContractDocumentDto | UpdateContractDocumentDto;
+    }) => {
+      if (!selectedContractId) {
+        throw new Error('계약을 먼저 선택해주세요.');
+      }
+
+      if (documentId) {
+        return api.contracts.updateDocument(
+          selectedContractId,
+          documentId,
+          dto as UpdateContractDocumentDto,
+        );
+      }
+
+      return api.contracts.createDocument(
+        selectedContractId,
+        dto as CreateContractDocumentDto,
+      );
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['contracts'] });
+      queryClient.invalidateQueries({ queryKey: ['contract', selectedContractId] });
+      setIsDocumentEditorOpen(false);
+      setDocumentEditorForm(emptyDocumentEditorForm());
+    },
+    onError: (error) => {
+      setDocumentFormError(
+        error instanceof Error ? error.message : '문서를 저장하지 못했습니다.',
+      );
+    },
+  });
+
   const availableDeals = useMemo(() => {
     const contractedDealIds = new Set(contracts.map((contract) => contract.dealId));
     return deals.filter((deal) => !contractedDealIds.has(deal.id));
@@ -215,9 +350,9 @@ function ContractsPage() {
     setCreateForm((prev) => ({
       ...prev,
       transactionType:
+        prev.transactionType ??
         selectedCreateDeal.transactionType ??
         selectedCreateDeal.listing?.transactionType ??
-        prev.transactionType ??
         'sale',
       totalPrice:
         prev.totalPrice ??
@@ -236,26 +371,48 @@ function ContractsPage() {
     }));
   }, [selectedCreateDeal]);
 
-  const metrics = useMemo(() => {
-    return [
-      { label: '전체 계약', value: `${contracts.length}건`, icon: FileText },
-      {
-        label: '진행 계약',
-        value: `${contracts.filter((contract) => contract.status !== 'cancelled').length}건`,
-        icon: Landmark,
+  function openDocumentEditor(
+    template: ContractDocumentTemplate,
+    document?: ContractDocument,
+  ) {
+    if (!contractDetail) return;
+
+    setDocumentFormError(null);
+    setDocumentEditorForm(toDocumentEditorForm(contractDetail, template, document));
+    setIsDetailOpen(false);
+    setIsDocumentEditorOpen(true);
+  }
+
+  function openContractDetail(contractId: string) {
+    setSelectedContractId(contractId);
+    setIsDetailOpen(true);
+  }
+
+  function saveDocument() {
+    setDocumentFormError(null);
+
+    const metadata = mergeContractDocumentEngineMetadata(
+      documentEditorForm.metadata,
+      documentEditorForm.engineFields,
+    );
+    const title =
+      documentEditorForm.engineFields.documentTitle.trim() ||
+      documentEditorForm.title;
+
+    saveDocumentMutation.mutate({
+      documentId: documentEditorForm.documentId,
+      dto: {
+        templateId: documentEditorForm.templateId,
+        type: documentEditorForm.type,
+        category: documentEditorForm.category,
+        title,
+        status: documentEditorForm.status,
+        fileUrl: emptyStringToUndefined(documentEditorForm.fileUrl),
+        memo: emptyStringToNull(documentEditorForm.memo),
+        metadata,
       },
-      {
-        label: '서명 완료',
-        value: `${contracts.filter((contract) => contract.status === 'signed').length}건`,
-        icon: ReceiptText,
-      },
-      {
-        label: '자료 누락',
-        value: `${contracts.filter((contract) => (contract.missingDocumentCount ?? 0) > 0).length}건`,
-        icon: FileText,
-      },
-    ];
-  }, [contracts]);
+    });
+  }
 
   return (
     <div className="flex flex-col gap-5">
@@ -275,124 +432,181 @@ function ContractsPage() {
         </Button>
       </div>
 
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        {metrics.map((metric) => (
-          <Card key={metric.label} className="gap-3 py-4">
-            <CardContent className="flex items-center justify-between px-4">
-              <div className="space-y-1">
-                <p className="text-xs text-muted-foreground">{metric.label}</p>
-                <p className="text-xl font-semibold tracking-tight">{metric.value}</p>
-              </div>
-              <div className="flex size-10 items-center justify-center rounded-2xl bg-primary/10 text-primary">
-                <metric.icon className="size-4" />
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-
-      <div className="grid min-h-[780px] gap-4 xl:grid-cols-[360px_minmax(0,1fr)]">
-        <Card className="min-h-0">
-          <CardHeader>
-            <CardTitle>계약 목록</CardTitle>
-            <CardDescription>상태, 거래유형, 문서 준비 수준으로 필터링합니다.</CardDescription>
-          </CardHeader>
-          <CardContent className="flex min-h-0 flex-1 flex-col gap-3 px-4 pb-4">
+      <Card className="min-h-0">
+        <CardHeader className="gap-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <CardTitle>계약 목록</CardTitle>
+              <CardDescription>
+                계약을 누르면 상세 정보와 문서 허브를 모달에서 확인합니다.
+              </CardDescription>
+            </div>
+            <span className="text-sm text-muted-foreground">
+              {filteredContracts.length} / {contracts.length}건
+            </span>
+          </div>
+          <div className="grid gap-2 lg:grid-cols-[minmax(260px,1fr)_180px_180px]">
             <Input
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               placeholder="매물명, 당사자, 메모 검색"
             />
-            <div className="grid gap-2 md:grid-cols-2">
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="계약 상태" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">전체 상태</SelectItem>
-                  {Object.entries(statusMeta).map(([key, meta]) => (
-                    <SelectItem key={key} value={key}>
-                      {meta.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Select value={typeFilter} onValueChange={setTypeFilter}>
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="거래 유형" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">전체 유형</SelectItem>
-                  {Object.entries(transactionTypeMeta).map(([key, meta]) => (
-                    <SelectItem key={key} value={key}>
-                      {meta.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <ScrollArea className="h-[600px] rounded-lg border border-border/60">
-              <div className="space-y-2 p-2">
-                {filteredContracts.map((contract) => (
-                  <button
-                    key={contract.id}
-                    type="button"
-                    onClick={() => setSelectedContractId(contract.id)}
-                    className={cn(
-                      'w-full rounded-xl border border-transparent px-3 py-3 text-left transition-colors',
-                      selectedContractId === contract.id
-                        ? 'border-primary/30 bg-primary/5'
-                        : 'hover:bg-muted/40',
-                    )}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="text-sm font-medium">
-                          {contract.deal?.property?.site?.name ?? '계약'}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          {contract.deal?.property?.unit?.name ?? '호실 미지정'}
-                        </p>
-                      </div>
-                      <Badge className={cn('border-0', statusMeta[contract.status]?.className)}>
-                        {statusMeta[contract.status]?.label ?? contract.status}
-                      </Badge>
-                    </div>
-                    <div className="mt-3 flex flex-wrap items-center gap-2">
-                      <Badge
-                        variant="outline"
-                        className={cn('border-0', transactionTypeMeta[contract.transactionType]?.className)}
-                      >
-                        {transactionTypeMeta[contract.transactionType]?.label ?? contract.transactionType}
-                      </Badge>
-                      <span className="text-xs text-muted-foreground">
-                        {contract.buyerContact?.name ?? '매수인 미지정'} / {contract.sellerContact?.name ?? '매도인 미지정'}
-                      </span>
-                    </div>
-                    <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
-                      <span>{formatPrice(contract.totalPrice)}</span>
-                      <span>문서 {contract.documentCount ?? contract.attachments.length}</span>
-                    </div>
-                  </button>
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="계약 상태" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">전체 상태</SelectItem>
+                {Object.entries(statusMeta).map(([key, meta]) => (
+                  <SelectItem key={key} value={key}>
+                    {meta.label}
+                  </SelectItem>
                 ))}
-                {filteredContracts.length === 0 ? (
-                  <div className="px-3 py-8 text-center text-sm text-muted-foreground">
-                    조건에 맞는 계약이 없습니다.
-                  </div>
-                ) : null}
-              </div>
-            </ScrollArea>
-          </CardContent>
-        </Card>
+              </SelectContent>
+            </Select>
+            <Select value={typeFilter} onValueChange={setTypeFilter}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="거래 유형" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">전체 유형</SelectItem>
+                {Object.entries(transactionTypeMeta).map(([key, meta]) => (
+                  <SelectItem key={key} value={key}>
+                    {meta.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </CardHeader>
+        <CardContent className="px-4 pb-4">
+          <div className="overflow-hidden rounded-lg border border-border/60">
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="min-w-28">계약일</TableHead>
+                    <TableHead className="min-w-36">계약</TableHead>
+                    <TableHead className="min-w-36">매물</TableHead>
+                    <TableHead className="min-w-40">당사자</TableHead>
+                    <TableHead className="min-w-28 text-right">금액</TableHead>
+                    <TableHead className="min-w-24">상태</TableHead>
+                    <TableHead className="min-w-28">문서</TableHead>
+                    <TableHead className="min-w-28">수정일</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredContracts.map((contract) => {
+                    const missingCount = contract.missingDocumentCount ?? 0;
 
-        <ContractDetailCard
-          contract={contractDetail}
-          form={detailForm}
-          onFormChange={setDetailForm}
-          onSave={() => updateMutation.mutate()}
-          isSaving={updateMutation.isPending}
-        />
-      </div>
+                    return (
+                      <TableRow
+                        key={contract.id}
+                        tabIndex={0}
+                        onClick={() => openContractDetail(contract.id)}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault();
+                            openContractDetail(contract.id);
+                          }
+                        }}
+                        className="cursor-pointer outline-none hover:bg-muted/40 focus-visible:bg-muted/50"
+                      >
+                        <TableCell className="font-medium">
+                          {formatDate(contract.contractDate)}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <Badge
+                              variant="outline"
+                              className={cn(
+                                'border-0',
+                                transactionTypeMeta[contract.transactionType]?.className,
+                              )}
+                            >
+                              {transactionTypeMeta[contract.transactionType]?.label ??
+                                contract.transactionType}
+                            </Badge>
+                            <span className="text-sm text-muted-foreground">
+                              #{contract.id.slice(0, 8)}
+                            </span>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-medium">
+                              {contract.deal?.property?.site?.name ?? '계약'}
+                            </p>
+                            <p className="truncate text-xs text-muted-foreground">
+                              {contract.deal?.property?.unit?.name ?? '호실 미지정'}
+                            </p>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="text-sm">
+                            {contract.buyerContact?.name ?? '매수인 미지정'} /{' '}
+                            {contract.sellerContact?.name ?? '매도인 미지정'}
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-right font-medium">
+                          {formatPrice(contract.totalPrice)}
+                          {contract.transactionType === 'monthly' && contract.monthlyRent ? (
+                            <span className="block text-xs text-muted-foreground">
+                              월 {formatPrice(contract.monthlyRent)}
+                            </span>
+                          ) : null}
+                        </TableCell>
+                        <TableCell>
+                          <Badge className={cn('border-0', statusMeta[contract.status]?.className)}>
+                            {statusMeta[contract.status]?.label ?? contract.status}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={missingCount > 0 ? 'outline' : 'secondary'}>
+                            {missingCount > 0
+                              ? `누락 ${missingCount}건`
+                              : `완료 ${contract.documentCount ?? 0}건`}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-sm text-muted-foreground">
+                          {formatDateTime(contract.updatedAt)}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                  {filteredContracts.length === 0 ? (
+                    <TableRow>
+                      <TableCell
+                        colSpan={8}
+                        className="h-40 text-center text-sm text-muted-foreground"
+                      >
+                        조건에 맞는 계약이 없습니다.
+                      </TableCell>
+                    </TableRow>
+                  ) : null}
+                </TableBody>
+              </Table>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Dialog open={isDetailOpen} onOpenChange={setIsDetailOpen}>
+        <DialogContent
+          className="h-[calc(100vh-32px)] max-h-[calc(100vh-32px)] w-[calc(100vw-32px)] max-w-none gap-0 overflow-hidden p-0 sm:max-w-none xl:w-[1180px]"
+        >
+          <ContractDetailCard
+            contract={contractDetail}
+            documentTemplates={documentTemplates}
+            isDocumentTemplatesLoading={isDocumentTemplatesLoading}
+            form={detailForm}
+            onFormChange={setDetailForm}
+            onSave={() => updateMutation.mutate()}
+            isSaving={updateMutation.isPending}
+            onOpenDocument={openDocumentEditor}
+          />
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
         <DialogContent className="sm:max-w-2xl">
@@ -435,9 +649,11 @@ function ContractsPage() {
                   <SelectValue placeholder="유형 선택" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="sale">매매</SelectItem>
-                  <SelectItem value="jeonse">전세</SelectItem>
-                  <SelectItem value="monthly">월세</SelectItem>
+                  {CONTRACT_TRANSACTION_TYPES.map((type) => (
+                    <SelectItem key={type.value} value={type.value}>
+                      {type.label}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -501,47 +717,62 @@ function ContractsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <DocumentEditorSheet
+        open={isDocumentEditorOpen}
+        form={documentEditorForm}
+        error={documentFormError}
+        isSaving={saveDocumentMutation.isPending}
+        onOpenChange={setIsDocumentEditorOpen}
+        onFormChange={setDocumentEditorForm}
+        onSave={saveDocument}
+      />
     </div>
   );
 }
 
 function ContractDetailCard({
   contract,
+  documentTemplates,
+  isDocumentTemplatesLoading,
   form,
   onFormChange,
   onSave,
   isSaving,
+  onOpenDocument,
 }: {
   contract?: Contract;
+  documentTemplates: ContractDocumentTemplate[];
+  isDocumentTemplatesLoading: boolean;
   form: ContractForm;
   onFormChange: Dispatch<SetStateAction<ContractForm>>;
   onSave: () => void;
   isSaving: boolean;
+  onOpenDocument: (
+    template: ContractDocumentTemplate,
+    document?: ContractDocument,
+  ) => void;
 }) {
   if (!contract) {
     return (
-      <Card>
-        <CardContent className="flex min-h-[540px] items-center justify-center text-sm text-muted-foreground">
-          계약을 선택하면 상세 정보가 표시됩니다.
-        </CardContent>
-      </Card>
+      <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+        계약 상세 정보를 불러오는 중입니다.
+      </div>
     );
   }
 
-  const attachments = form.attachmentsText
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean);
-
-  const missingDocuments = (contract.requiredDocuments ?? []).slice(attachments.length);
+  const availableTemplates =
+    documentTemplates.length > 0
+      ? documentTemplates
+      : contract.requiredDocumentTemplates ?? [];
 
   return (
-    <Card className="min-h-0">
-      <CardHeader>
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="border-b px-6 py-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="space-y-1">
             <div className="flex items-center gap-2">
-              <CardTitle>{contract.deal?.property?.site?.name ?? '계약'}</CardTitle>
+              <DialogTitle>{contract.deal?.property?.site?.name ?? '계약'}</DialogTitle>
               <Badge className={cn('border-0', statusMeta[form.status]?.className)}>
                 {statusMeta[form.status]?.label ?? form.status}
               </Badge>
@@ -552,296 +783,850 @@ function ContractDetailCard({
                 {transactionTypeMeta[form.transactionType]?.label ?? form.transactionType}
               </Badge>
             </div>
-            <CardDescription>
+            <DialogDescription>
               {contract.deal?.property?.unit?.name ?? '호실 미지정'} · 업데이트 {formatDateTime(contract.updatedAt)}
-            </CardDescription>
+            </DialogDescription>
           </div>
-          <Button onClick={onSave} disabled={isSaving}>
+          <Button className="mr-8" onClick={onSave} disabled={isSaving}>
             저장
           </Button>
         </div>
-      </CardHeader>
+      </div>
 
-      <CardContent className="grid min-h-0 gap-4 xl:grid-cols-[1.1fr_0.9fr]">
-        <div className="space-y-4">
-          <div className="grid gap-3 md:grid-cols-2">
-            <MetricTile label="총 거래금액" value={formatPrice(Number(form.totalPrice || 0))} />
-            <MetricTile label="문서 수" value={`${attachments.length}건`} />
-            <MetricTile
-              label="계약 상태"
-              value={statusMeta[form.status]?.label ?? form.status}
-            />
-            <MetricTile
-              label="자료 누락"
-              value={`${Math.max((contract.requiredDocuments?.length ?? 0) - attachments.length, 0)}건`}
-            />
-          </div>
-
-          <Card className="gap-4 py-5">
-            <CardHeader className="px-5">
-              <CardTitle className="text-base">계약 기본 정보</CardTitle>
-            </CardHeader>
-            <CardContent className="grid gap-4 px-5 md:grid-cols-2">
-              <div className="space-y-2">
-                <Label>계약 상태</Label>
-                <Select
-                  value={form.status}
-                  onValueChange={(value) => onFormChange((prev) => ({ ...prev, status: value }))}
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="상태 선택" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {Object.entries(statusMeta).map(([key, meta]) => (
-                      <SelectItem key={key} value={key}>
-                        {meta.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label>거래 유형</Label>
-                <Select
-                  value={form.transactionType}
-                  onValueChange={(value) =>
-                    onFormChange((prev) => ({ ...prev, transactionType: value }))
-                  }
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="유형 선택" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="sale">매매</SelectItem>
-                    <SelectItem value="jeonse">전세</SelectItem>
-                    <SelectItem value="monthly">월세</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <StaticField label="매수인/임차인" value={contract.buyerContact?.name ?? '-'} />
-              <StaticField label="매도인/임대인" value={contract.sellerContact?.name ?? '-'} />
-
-              <NumberField
-                label="총 거래금액"
-                value={form.totalPrice}
-                onChange={(value) => onFormChange((prev) => ({ ...prev, totalPrice: value }))}
-                suffix="만원"
-              />
-
-              <NumberField
-                label="월세"
-                value={form.monthlyRent}
-                onChange={(value) => onFormChange((prev) => ({ ...prev, monthlyRent: value }))}
-                suffix="만원"
-                disabled={form.transactionType !== 'monthly'}
-              />
-
-              <div className="space-y-2">
-                <Label>계약일</Label>
-                <Input
-                  type="date"
-                  value={form.contractDate}
-                  onChange={(event) =>
-                    onFormChange((prev) => ({ ...prev, contractDate: event.target.value }))
-                  }
-                />
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="gap-4 py-5">
-            <CardHeader className="px-5">
-              <CardTitle className="text-base">지급 일정</CardTitle>
-            </CardHeader>
-            <CardContent className="grid gap-4 px-5 md:grid-cols-2">
-              <PaymentFieldGroup
-                title="계약금 (계약서 명목)"
-                amount={form.statedDeposit}
-                onAmountChange={(value) =>
-                  onFormChange((prev) => ({ ...prev, statedDeposit: value }))
-                }
-              />
-              <PaymentFieldGroup
-                title="중도금 (계약서 명목)"
-                amount={form.statedInterimPayment}
-                date={form.statedInterimDate}
-                onAmountChange={(value) =>
-                  onFormChange((prev) => ({ ...prev, statedInterimPayment: value }))
-                }
-                onDateChange={(value) =>
-                  onFormChange((prev) => ({ ...prev, statedInterimDate: value }))
-                }
-              />
-              <PaymentFieldGroup
-                title="잔금 (계약서 명목)"
-                amount={form.statedBalance}
-                date={form.statedBalanceDate}
-                onAmountChange={(value) =>
-                  onFormChange((prev) => ({ ...prev, statedBalance: value }))
-                }
-                onDateChange={(value) =>
-                  onFormChange((prev) => ({ ...prev, statedBalanceDate: value }))
-                }
-              />
-
-              <div className="space-y-4 rounded-xl border border-border/60 p-4">
-                <div className="space-y-2">
-                  <Label>입주일</Label>
-                  <Input
-                    type="date"
-                    value={form.moveInDate}
-                    onChange={(event) =>
-                      onFormChange((prev) => ({ ...prev, moveInDate: event.target.value }))
-                    }
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>임대 시작일</Label>
-                  <Input
-                    type="date"
-                    value={form.leaseStartDate}
-                    onChange={(event) =>
-                      onFormChange((prev) => ({ ...prev, leaseStartDate: event.target.value }))
-                    }
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>임대 종료일</Label>
-                  <Input
-                    type="date"
-                    value={form.leaseEndDate}
-                    onChange={(event) =>
-                      onFormChange((prev) => ({ ...prev, leaseEndDate: event.target.value }))
-                    }
-                  />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="gap-4 py-5">
-            <CardHeader className="px-5">
-              <CardTitle className="text-base">특약 및 메모</CardTitle>
-            </CardHeader>
-            <CardContent className="grid gap-4 px-5">
-              <div className="space-y-2">
-                <Label>특약사항</Label>
-                <Textarea
-                  rows={5}
-                  value={form.specialTerms}
-                  onChange={(event) =>
-                    onFormChange((prev) => ({ ...prev, specialTerms: event.target.value }))
-                  }
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>내부 메모</Label>
-                <Textarea
-                  rows={4}
-                  value={form.memo}
-                  onChange={(event) =>
-                    onFormChange((prev) => ({ ...prev, memo: event.target.value }))
-                  }
-                />
-              </div>
-            </CardContent>
-          </Card>
+      <Tabs defaultValue="summary" className="min-h-0 flex-1 gap-0">
+        <div className="border-b px-6 py-3">
+          <TabsList>
+            <TabsTrigger value="summary">요약</TabsTrigger>
+            <TabsTrigger value="contract">계약 정보</TabsTrigger>
+            <TabsTrigger value="documents">문서 허브</TabsTrigger>
+            <TabsTrigger value="deal">거래 정보</TabsTrigger>
+          </TabsList>
         </div>
 
-        <div className="space-y-4">
-          <Card className="gap-4 py-5">
-            <CardHeader className="px-5">
-              <CardTitle className="text-base">문서 허브</CardTitle>
-              <CardDescription>
-                첨부 URL을 한 줄에 하나씩 입력합니다.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4 px-5">
-              <div className="space-y-2">
-                <Label>첨부 문서</Label>
-                <Textarea
-                  rows={8}
-                  value={form.attachmentsText}
-                  onChange={(event) =>
-                    onFormChange((prev) => ({
-                      ...prev,
-                      attachmentsText: event.target.value,
-                    }))
-                  }
-                  placeholder="https://...pdf"
+        <ScrollArea className="min-h-0 flex-1">
+          <div className="p-6">
+            <TabsContent value="summary" className="m-0 space-y-4">
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                <MetricTile label="총 거래금액" value={formatPrice(Number(form.totalPrice || 0))} />
+                <MetricTile label="문서 수" value={`${contract.documentCount ?? 0}건`} />
+                <MetricTile
+                  label="계약 상태"
+                  value={statusMeta[form.status]?.label ?? form.status}
+                />
+                <MetricTile
+                  label="자료 누락"
+                  value={`${contract.missingDocumentCount ?? 0}건`}
                 />
               </div>
-              <div className="space-y-2">
-                <p className="text-xs font-medium text-muted-foreground">현재 문서</p>
-                {attachments.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">등록된 첨부 문서가 없습니다.</p>
-                ) : (
-                  attachments.map((attachment) => (
-                    <div
-                      key={attachment}
-                      className="rounded-lg border border-border/60 px-3 py-2 text-sm"
-                    >
-                      {attachment}
-                    </div>
-                  ))
-                )}
-              </div>
-            </CardContent>
-          </Card>
 
-          <Card className="gap-4 py-5">
-            <CardHeader className="px-5">
-              <CardTitle className="text-base">준비 서류 상태</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2 px-5">
-              {(contract.requiredDocuments ?? []).map((item, index) => {
-                const ready = index < attachments.length;
-                return (
-                  <div
-                    key={item}
-                    className="flex items-center justify-between rounded-lg border border-border/60 px-3 py-2"
-                  >
-                    <span className="text-sm">{item}</span>
-                    <Badge variant={ready ? 'secondary' : 'outline'}>
-                      {ready ? '준비됨' : '대기'}
-                    </Badge>
-                  </div>
-                );
-              })}
-              {missingDocuments.length === 0 ? (
-                <p className="pt-2 text-sm text-emerald-600">필수 서류가 모두 준비되었습니다.</p>
+              <div className="grid gap-4 lg:grid-cols-2">
+                <Card className="gap-4 py-5">
+                  <CardHeader className="px-5">
+                    <CardTitle className="text-base">계약 요약</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-2 px-5">
+                    <SummaryRow label="계약일" value={formatDate(contract.contractDate)} />
+                    <SummaryRow
+                      label="거래 유형"
+                      value={transactionTypeMeta[form.transactionType]?.label ?? form.transactionType}
+                    />
+                    <SummaryRow label="매수인/임차인" value={contract.buyerContact?.name ?? '-'} />
+                    <SummaryRow label="매도인/임대인" value={contract.sellerContact?.name ?? '-'} />
+                    <SummaryRow label="금액" value={formatPrice(Number(form.totalPrice || 0))} />
+                  </CardContent>
+                </Card>
+
+                <Card className="gap-4 py-5">
+                  <CardHeader className="px-5">
+                    <CardTitle className="text-base">문서 준비</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-2 px-5">
+                    <SummaryRow label="필수 문서" value={`${contract.requiredDocumentTemplates?.length ?? 0}건`} />
+                    <SummaryRow label="작성 문서" value={`${contract.documentCount ?? 0}건`} />
+                    <SummaryRow label="누락 문서" value={`${contract.missingDocumentCount ?? 0}건`} />
+                    <SummaryRow label="최근 수정" value={formatDateTime(contract.updatedAt)} />
+                  </CardContent>
+                </Card>
+              </div>
+
+              {form.specialTerms ? (
+                <Card className="gap-4 py-5">
+                  <CardHeader className="px-5">
+                    <CardTitle className="text-base">특약 미리보기</CardTitle>
+                  </CardHeader>
+                  <CardContent className="px-5">
+                    <p className="whitespace-pre-wrap text-sm leading-6 text-muted-foreground">
+                      {form.specialTerms}
+                    </p>
+                  </CardContent>
+                </Card>
               ) : null}
-            </CardContent>
-          </Card>
+            </TabsContent>
 
-          <Card className="gap-4 py-5">
-            <CardHeader className="px-5">
-              <CardTitle className="text-base">연결 거래 정보</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2 px-5 text-sm">
-              <SummaryRow
-                label="매물"
-                value={contract.deal?.property?.site?.name ?? '-'}
+            <TabsContent value="contract" className="m-0 space-y-4">
+              <Card className="gap-4 py-5">
+                <CardHeader className="px-5">
+                  <CardTitle className="text-base">계약 기본 정보</CardTitle>
+                </CardHeader>
+                <CardContent className="grid gap-4 px-5 md:grid-cols-2 xl:grid-cols-3">
+                  <div className="space-y-2">
+                    <Label>계약 상태</Label>
+                    <Select
+                      value={form.status}
+                      onValueChange={(value) => onFormChange((prev) => ({ ...prev, status: value }))}
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="상태 선택" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {Object.entries(statusMeta).map(([key, meta]) => (
+                          <SelectItem key={key} value={key}>
+                            {meta.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>거래 유형</Label>
+                    <Select
+                      value={form.transactionType}
+                      onValueChange={(value) =>
+                        onFormChange((prev) => ({ ...prev, transactionType: value }))
+                      }
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="유형 선택" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {CONTRACT_TRANSACTION_TYPES.map((type) => (
+                          <SelectItem key={type.value} value={type.value}>
+                            {type.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <StaticField label="매수인/임차인" value={contract.buyerContact?.name ?? '-'} />
+                  <StaticField label="매도인/임대인" value={contract.sellerContact?.name ?? '-'} />
+
+                  <NumberField
+                    label="총 거래금액"
+                    value={form.totalPrice}
+                    onChange={(value) => onFormChange((prev) => ({ ...prev, totalPrice: value }))}
+                    suffix="만원"
+                  />
+
+                  <NumberField
+                    label="월세"
+                    value={form.monthlyRent}
+                    onChange={(value) => onFormChange((prev) => ({ ...prev, monthlyRent: value }))}
+                    suffix="만원"
+                    disabled={form.transactionType !== 'monthly'}
+                  />
+
+                  <div className="space-y-2">
+                    <Label>계약일</Label>
+                    <Input
+                      type="date"
+                      value={form.contractDate}
+                      onChange={(event) =>
+                        onFormChange((prev) => ({ ...prev, contractDate: event.target.value }))
+                      }
+                    />
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="gap-4 py-5">
+                <CardHeader className="px-5">
+                  <CardTitle className="text-base">지급 일정</CardTitle>
+                </CardHeader>
+                <CardContent className="grid gap-4 px-5 md:grid-cols-2 xl:grid-cols-4">
+                  <PaymentFieldGroup
+                    title="계약금 (계약서 명목)"
+                    amount={form.statedDeposit}
+                    onAmountChange={(value) =>
+                      onFormChange((prev) => ({ ...prev, statedDeposit: value }))
+                    }
+                  />
+                  <PaymentFieldGroup
+                    title="중도금 (계약서 명목)"
+                    amount={form.statedInterimPayment}
+                    date={form.statedInterimDate}
+                    onAmountChange={(value) =>
+                      onFormChange((prev) => ({ ...prev, statedInterimPayment: value }))
+                    }
+                    onDateChange={(value) =>
+                      onFormChange((prev) => ({ ...prev, statedInterimDate: value }))
+                    }
+                  />
+                  <PaymentFieldGroup
+                    title="잔금 (계약서 명목)"
+                    amount={form.statedBalance}
+                    date={form.statedBalanceDate}
+                    onAmountChange={(value) =>
+                      onFormChange((prev) => ({ ...prev, statedBalance: value }))
+                    }
+                    onDateChange={(value) =>
+                      onFormChange((prev) => ({ ...prev, statedBalanceDate: value }))
+                    }
+                  />
+
+                  <div className="space-y-4 rounded-xl border border-border/60 p-4">
+                    <div className="space-y-2">
+                      <Label>입주일</Label>
+                      <Input
+                        type="date"
+                        value={form.moveInDate}
+                        onChange={(event) =>
+                          onFormChange((prev) => ({ ...prev, moveInDate: event.target.value }))
+                        }
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>임대 시작일</Label>
+                      <Input
+                        type="date"
+                        value={form.leaseStartDate}
+                        onChange={(event) =>
+                          onFormChange((prev) => ({ ...prev, leaseStartDate: event.target.value }))
+                        }
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>임대 종료일</Label>
+                      <Input
+                        type="date"
+                        value={form.leaseEndDate}
+                        onChange={(event) =>
+                          onFormChange((prev) => ({ ...prev, leaseEndDate: event.target.value }))
+                        }
+                      />
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="gap-4 py-5">
+                <CardHeader className="px-5">
+                  <CardTitle className="text-base">특약 및 메모</CardTitle>
+                </CardHeader>
+                <CardContent className="grid gap-4 px-5">
+                  <div className="space-y-2">
+                    <Label>특약사항</Label>
+                    <Textarea
+                      rows={5}
+                      value={form.specialTerms}
+                      onChange={(event) =>
+                        onFormChange((prev) => ({ ...prev, specialTerms: event.target.value }))
+                      }
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>내부 메모</Label>
+                    <Textarea
+                      rows={4}
+                      value={form.memo}
+                      onChange={(event) =>
+                        onFormChange((prev) => ({ ...prev, memo: event.target.value }))
+                      }
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>기타 첨부 URL</Label>
+                    <Textarea
+                      rows={4}
+                      value={form.attachmentsText}
+                      onChange={(event) =>
+                        onFormChange((prev) => ({
+                          ...prev,
+                          attachmentsText: event.target.value,
+                        }))
+                      }
+                      placeholder="https://...pdf"
+                    />
+                  </div>
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="documents" className="m-0">
+              <DocumentHub
+                contract={contract}
+                templates={availableTemplates}
+                isLoading={isDocumentTemplatesLoading}
+                onOpenDocument={onOpenDocument}
               />
-              <SummaryRow
-                label="호실"
-                value={contract.deal?.property?.unit?.name ?? '-'}
-              />
-              <SummaryRow
-                label="거래 단계"
-                value={contract.deal?.stage ?? '-'}
-              />
-              <SummaryRow
-                label="거래 메모"
-                value={contract.deal?.memo ?? '-'}
-              />
-            </CardContent>
-          </Card>
+            </TabsContent>
+
+            <TabsContent value="deal" className="m-0">
+              <Card className="gap-4 py-5">
+                <CardHeader className="px-5">
+                  <CardTitle className="text-base">연결 거래 정보</CardTitle>
+                </CardHeader>
+                <CardContent className="grid gap-2 px-5 text-sm md:grid-cols-2">
+                  <SummaryRow
+                    label="매물"
+                    value={contract.deal?.property?.site?.name ?? '-'}
+                  />
+                  <SummaryRow
+                    label="호실"
+                    value={contract.deal?.property?.unit?.name ?? '-'}
+                  />
+                  <SummaryRow
+                    label="거래 단계"
+                    value={contract.deal?.stage ?? '-'}
+                  />
+                  <SummaryRow
+                    label="거래 메모"
+                    value={contract.deal?.memo ?? '-'}
+                  />
+                </CardContent>
+              </Card>
+            </TabsContent>
+          </div>
+        </ScrollArea>
+      </Tabs>
+    </div>
+  );
+}
+
+function DocumentHub({
+  contract,
+  templates,
+  isLoading,
+  onOpenDocument,
+}: {
+  contract: Contract;
+  templates: ContractDocumentTemplate[];
+  isLoading: boolean;
+  onOpenDocument: (
+    template: ContractDocumentTemplate,
+    document?: ContractDocument,
+  ) => void;
+}) {
+  const documents = contract.documents ?? [];
+  const rows = templates.map((template) => ({
+    template,
+    document: findDocumentByTemplate(documents, template.id),
+  }));
+  const requiredRows = rows.filter(({ template }) => template.isRequired);
+  const optionalRows = rows.filter(({ template }) => !template.isRequired);
+
+  return (
+    <Card className="gap-4 py-5">
+      <CardHeader className="px-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="space-y-1">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <ClipboardList className="size-4" />
+              문서 허브
+            </CardTitle>
+            <CardDescription>
+              필수 문서 {requiredRows.length}건 · 누락 {contract.missingDocumentCount ?? 0}건
+            </CardDescription>
+          </div>
+          <Badge variant={(contract.missingDocumentCount ?? 0) > 0 ? 'outline' : 'secondary'}>
+            {(contract.missingDocumentCount ?? 0) > 0 ? '확인 필요' : '준비 완료'}
+          </Badge>
         </div>
+      </CardHeader>
+      <CardContent className="space-y-5 px-5">
+        <DocumentRowsTable
+          title="필수 문서"
+          rows={requiredRows}
+          emptyText={isLoading ? '문서 템플릿을 불러오는 중입니다.' : '필수 문서가 없습니다.'}
+          onOpenDocument={onOpenDocument}
+        />
+        <DocumentRowsTable
+          title="선택 문서"
+          rows={optionalRows}
+          emptyText={isLoading ? '문서 템플릿을 불러오는 중입니다.' : '선택 문서가 없습니다.'}
+          onOpenDocument={onOpenDocument}
+        />
       </CardContent>
     </Card>
+  );
+}
+
+function DocumentRowsTable({
+  title,
+  rows,
+  emptyText,
+  onOpenDocument,
+}: {
+  title: string;
+  rows: Array<{
+    template: ContractDocumentTemplate;
+    document?: ContractDocument;
+  }>;
+  emptyText: string;
+  onOpenDocument: (
+    template: ContractDocumentTemplate,
+    document?: ContractDocument,
+  ) => void;
+}) {
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <p className="text-sm font-medium">{title}</p>
+        <span className="text-xs text-muted-foreground">{rows.length}건</span>
+      </div>
+      <div className="overflow-hidden rounded-lg border border-border/60">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>문서</TableHead>
+              <TableHead className="w-24">상태</TableHead>
+              <TableHead className="w-20 text-right">작업</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {rows.map(({ template, document }) => (
+              <TableRow key={template.id}>
+                <TableCell className="whitespace-normal">
+                  <div className="flex min-w-0 items-start gap-2">
+                    {document ? (
+                      <FileCheck2 className="mt-0.5 size-4 shrink-0 text-emerald-600" />
+                    ) : (
+                      <FileText className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+                    )}
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium leading-5">{template.title}</p>
+                      <p className="truncate text-xs text-muted-foreground">
+                        {template.code}
+                      </p>
+                    </div>
+                  </div>
+                </TableCell>
+                <TableCell>
+                  <Badge
+                    className={cn(
+                      'border-0',
+                      document
+                        ? documentStatusMeta[document.status]?.className
+                        : 'bg-muted text-muted-foreground',
+                    )}
+                  >
+                    {document
+                      ? documentStatusMeta[document.status]?.label ?? document.status
+                      : '대기'}
+                  </Badge>
+                </TableCell>
+                <TableCell className="text-right">
+                  <Button
+                    size="sm"
+                    variant={document ? 'outline' : 'default'}
+                    onClick={() => onOpenDocument(template, document)}
+                  >
+                    <FilePenLine className="size-3.5" />
+                    {document ? '수정' : '작성'}
+                  </Button>
+                </TableCell>
+              </TableRow>
+            ))}
+            {rows.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={3} className="h-20 text-center text-sm text-muted-foreground">
+                  {emptyText}
+                </TableCell>
+              </TableRow>
+            ) : null}
+          </TableBody>
+        </Table>
+      </div>
+    </div>
+  );
+}
+
+function DocumentEditorSheet({
+  open,
+  form,
+  error,
+  isSaving,
+  onOpenChange,
+  onFormChange,
+  onSave,
+}: {
+  open: boolean;
+  form: DocumentEditorForm;
+  error: string | null;
+  isSaving: boolean;
+  onOpenChange: (open: boolean) => void;
+  onFormChange: Dispatch<SetStateAction<DocumentEditorForm>>;
+  onSave: () => void;
+}) {
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+  const fieldGroups = getContractDocumentEngineFieldGroups(form.category);
+  const sections = getContractDocumentEngineSections(form.category, form.engineFields);
+  const documentTitle = form.engineFields.documentTitle || form.title || '계약 문서';
+
+  function updateEngineField(key: string, value: string) {
+    onFormChange((prev) => ({
+      ...prev,
+      engineFields: {
+        ...prev.engineFields,
+        [key]: value,
+      },
+    }));
+  }
+
+  return (
+    <>
+      <Sheet open={open} onOpenChange={onOpenChange}>
+        <SheetContent
+          side="right"
+          className="w-[calc(100vw-24px)] gap-0 overflow-hidden p-0 sm:max-w-none xl:w-[calc(100vw-64px)]"
+        >
+          <SheetHeader className="border-b px-6 py-5">
+            <div className="flex items-start justify-between gap-6 pr-8">
+              <div className="space-y-1">
+                <SheetTitle>{form.workflow.formTitle}</SheetTitle>
+                <SheetDescription>
+                  {form.workflow.inputFormName} · {form.workflow.reportName}
+                </SheetDescription>
+              </div>
+              <Badge className={cn('border-0', documentStatusMeta[form.status]?.className)}>
+                {documentStatusMeta[form.status]?.label ?? form.status}
+              </Badge>
+            </div>
+          </SheetHeader>
+
+          <ScrollArea className="min-h-0 flex-1">
+            <div className="grid min-h-full gap-5 bg-slate-100/70 p-5 lg:grid-cols-[minmax(0,1fr)_340px] xl:grid-cols-[minmax(0,1fr)_380px]">
+              <main className="min-w-0 space-y-4">
+                <section className="rounded-lg border border-border/60 bg-background p-5">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="text-base font-semibold tracking-tight">
+                        문서별 입력폼
+                      </p>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        값을 입력한 뒤 출력 미리보기에서 리포트 형태를 확인합니다.
+                      </p>
+                    </div>
+                    <Badge variant="outline">{form.workflow.inputFormName}</Badge>
+                  </div>
+                </section>
+
+                {fieldGroups.map((group) => (
+                  <DocumentInputFormSection
+                    key={group.title}
+                    title={group.title}
+                    fields={group.fields}
+                    values={form.engineFields}
+                    onFieldChange={updateEngineField}
+                  />
+                ))}
+              </main>
+
+              <aside className="space-y-4">
+                <section className="rounded-lg border border-border/60 bg-background p-4">
+                  <p className="text-sm font-medium">출력 리포트</p>
+                  <div className="mt-3 space-y-2">
+                    <SummaryRow label="입력폼" value={form.workflow.inputFormName} />
+                    <SummaryRow label="리포트" value={form.workflow.reportName} />
+                    <SummaryRow
+                      label="분류"
+                      value={documentCategoryLabels[form.category] ?? form.category}
+                    />
+                    <SummaryRow
+                      label="상태"
+                      value={documentStatusMeta[form.status]?.label ?? form.status}
+                    />
+                  </div>
+                  <Button
+                    type="button"
+                    className="mt-4 w-full"
+                    onClick={() => setIsPreviewOpen(true)}
+                  >
+                    <FileText className="size-4" />
+                    출력 미리보기
+                  </Button>
+                </section>
+
+                <section className="rounded-lg border border-border/60 bg-background p-4">
+                  <p className="text-sm font-medium">문서 설정</p>
+                  <div className="mt-4 grid gap-4">
+                    <div className="space-y-2">
+                      <Label>문서 상태</Label>
+                      <Select
+                        value={form.status}
+                        onValueChange={(value) =>
+                          onFormChange((prev) => ({ ...prev, status: value }))
+                        }
+                      >
+                        <SelectTrigger className="w-full">
+                          <SelectValue placeholder="상태 선택" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {Object.entries(documentStatusMeta).map(([key, meta]) => (
+                            <SelectItem key={key} value={key}>
+                              {meta.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label>작업 유형</Label>
+                      <Select
+                        value={form.type}
+                        onValueChange={(value) =>
+                          onFormChange((prev) => ({ ...prev, type: value }))
+                        }
+                      >
+                        <SelectTrigger className="w-full">
+                          <SelectValue placeholder="유형 선택" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="generated">작성</SelectItem>
+                          <SelectItem value="uploaded">첨부</SelectItem>
+                          <SelectItem value="external">외부 제출</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label>파일 URL</Label>
+                      <Input
+                        value={form.fileUrl}
+                        onChange={(event) =>
+                          onFormChange((prev) => ({ ...prev, fileUrl: event.target.value }))
+                        }
+                        placeholder="https://...pdf"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label>내부 메모</Label>
+                      <Textarea
+                        rows={4}
+                        value={form.memo}
+                        onChange={(event) =>
+                          onFormChange((prev) => ({ ...prev, memo: event.target.value }))
+                        }
+                      />
+                    </div>
+                  </div>
+                </section>
+
+                {error ? (
+                  <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                    {error}
+                  </p>
+                ) : null}
+              </aside>
+            </div>
+          </ScrollArea>
+
+          <SheetFooter className="border-t px-6 py-4">
+            <div className="flex flex-row justify-end gap-2">
+              <Button variant="outline" onClick={() => onOpenChange(false)}>
+                닫기
+              </Button>
+              <Button variant="outline" onClick={() => setIsPreviewOpen(true)}>
+                출력 미리보기
+              </Button>
+              <Button
+                onClick={onSave}
+                disabled={isSaving || !documentTitle || !form.category}
+              >
+                저장
+              </Button>
+            </div>
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
+
+      <Dialog open={isPreviewOpen} onOpenChange={setIsPreviewOpen}>
+        <DialogContent className="h-[calc(100vh-32px)] w-[calc(100vw-32px)] max-w-none gap-0 overflow-hidden p-0 sm:max-w-none xl:w-[1040px]">
+          <div className="border-b px-6 py-5">
+            <DialogHeader>
+              <DialogTitle>{form.workflow.previewTitle}</DialogTitle>
+              <DialogDescription>{form.workflow.reportName}</DialogDescription>
+            </DialogHeader>
+          </div>
+          <ScrollArea className="min-h-0 flex-1 bg-slate-100/70">
+            <div className="p-6">
+              <ContractDocumentPage
+                title={documentTitle}
+                templateCode={form.workflow.reportName}
+                status={documentStatusMeta[form.status]?.label ?? form.status}
+                fields={form.engineFields}
+                sections={sections}
+              />
+            </div>
+          </ScrollArea>
+          <DialogFooter className="border-t px-6 py-4">
+            <Button variant="outline" onClick={() => setIsPreviewOpen(false)}>
+              닫기
+            </Button>
+            <Button onClick={() => window.print()}>
+              <Printer className="size-4" />
+              인쇄
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
+function DocumentInputFormSection({
+  title,
+  fields,
+  values,
+  onFieldChange,
+}: {
+  title: string;
+  fields: ContractDocumentEngineFieldDefinition[];
+  values: ContractDocumentEngineFields;
+  onFieldChange: (key: string, value: string) => void;
+}) {
+  return (
+    <section className="rounded-lg border border-border/60 bg-background p-5">
+      <p className="text-sm font-semibold">{title}</p>
+      <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        {fields.map((field) => (
+          <div key={field.key} className={field.multiline ? 'md:col-span-2 xl:col-span-3' : ''}>
+            <DocumentEngineFieldControl
+              field={field}
+              value={values[field.key] ?? ''}
+              onChange={(value) => onFieldChange(field.key, value)}
+            />
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function DocumentEngineFieldControl({
+  field,
+  value,
+  onChange,
+}: {
+  field: ContractDocumentEngineFieldDefinition;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div className="space-y-2">
+      <Label>{field.label}</Label>
+      {field.multiline ? (
+        <Textarea
+          rows={4}
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+        />
+      ) : (
+        <Input value={value} onChange={(event) => onChange(event.target.value)} />
+      )}
+    </div>
+  );
+}
+
+function ContractDocumentPage({
+  title,
+  templateCode,
+  status,
+  fields,
+  sections,
+}: {
+  title: string;
+  templateCode: string;
+  status: string;
+  fields: ContractDocumentEngineFields;
+  sections: ReturnType<typeof getContractDocumentEngineSections>;
+}) {
+  return (
+    <div className="mx-auto min-h-[1123px] w-full max-w-[794px] border border-slate-200 bg-white px-14 py-12 text-slate-950 shadow-sm print:shadow-none">
+      <div className="flex items-start justify-between gap-4 text-[11px] text-slate-500">
+        <span>{templateCode || 'contract-document'}</span>
+        <span>{status}</span>
+      </div>
+
+      <header className="mt-10 text-center">
+        <h2 className="text-2xl font-semibold tracking-normal">{title}</h2>
+        <p className="mt-4 text-sm leading-6 text-slate-600">
+          본 문서는 계약 정보와 문서별 입력값을 기준으로 작성되었습니다.
+        </p>
+      </header>
+
+      <div className="mt-10 rounded-md border border-slate-300">
+        <DocumentPreviewRow label="작성일" value={fields.writtenDate} />
+        <DocumentPreviewRow label="거래유형" value={fields.transactionTypeText} />
+        <DocumentPreviewRow label="대상물" value={fields.propertyLabel} />
+      </div>
+
+      <div className="mt-8 space-y-8">
+        {sections.map((section) => (
+          <section key={section.title} className="break-inside-avoid">
+            <h3 className="border-b border-slate-900 pb-2 text-sm font-semibold">
+              {section.title}
+            </h3>
+            <div className="mt-3 rounded-md border border-slate-300">
+              {section.rows.map((row) => (
+                <DocumentPreviewRow
+                  key={`${section.title}-${row.label}`}
+                  label={row.label}
+                  value={row.value}
+                  multiline={row.multiline}
+                />
+              ))}
+            </div>
+          </section>
+        ))}
+      </div>
+
+      <div className="mt-14 grid gap-6 text-sm sm:grid-cols-2">
+        <SignatureBlock role={fields.partyOneRole} name={fields.partyOneName} />
+        <SignatureBlock role={fields.partyTwoRole} name={fields.partyTwoName} />
+      </div>
+    </div>
+  );
+}
+
+function DocumentPreviewRow({
+  label,
+  value,
+  multiline,
+}: {
+  label: string;
+  value: string;
+  multiline?: boolean;
+}) {
+  return (
+    <div className="grid grid-cols-[112px_minmax(0,1fr)] border-b border-slate-200 last:border-b-0">
+      <div className="bg-slate-50 px-3 py-2 text-xs font-medium text-slate-600">
+        {label}
+      </div>
+      <div
+        className={cn(
+          'min-h-9 px-3 py-2 text-sm leading-6',
+          multiline ? 'whitespace-pre-wrap' : 'truncate',
+        )}
+      >
+        {value || '\u00A0'}
+      </div>
+    </div>
+  );
+}
+
+function SignatureBlock({ role, name }: { role: string; name: string }) {
+  return (
+    <div className="rounded-md border border-slate-300 p-4">
+      <p className="text-xs text-slate-500">{role}</p>
+      <div className="mt-6 flex items-end justify-between gap-3">
+        <span className="text-base font-medium">{name || '\u00A0'}</span>
+        <span className="text-sm text-slate-500">(인)</span>
+      </div>
+    </div>
   );
 }
 
@@ -961,6 +1746,89 @@ function emptyContractForm(): ContractForm {
   };
 }
 
+function emptyDocumentEditorForm(): DocumentEditorForm {
+  return {
+    type: 'generated',
+    category: 'contract',
+    title: '',
+    status: 'generated',
+    fileUrl: '',
+    memo: '',
+    metadata: {},
+    workflow: emptyDocumentEngineWorkflow(),
+    engineFields: emptyDocumentEngineFields(),
+  };
+}
+
+function toDocumentEditorForm(
+  contract: Contract,
+  template: ContractDocumentTemplate,
+  document?: ContractDocument,
+): DocumentEditorForm {
+  const draft = buildContractDocumentEngineDraft({
+    contract,
+    template,
+    document,
+  });
+
+  return {
+    documentId: document?.id,
+    templateId: template.id,
+    type: document?.type ?? 'generated',
+    category: document?.category ?? template.category,
+    title: draft.title,
+    status: document?.status ?? 'generated',
+    fileUrl: document?.fileUrl ?? '',
+    memo: document?.memo ?? '',
+    metadata: document?.metadata ?? template.metadata ?? {},
+    workflow: draft.workflow,
+    engineFields: draft.fields,
+  };
+}
+
+function emptyDocumentEngineWorkflow(): ContractDocumentEngineWorkflow {
+  return {
+    inputFormName: 'ContractInputForm',
+    reportName: 'AnnexedReport',
+    formTitle: '계약 문서 입력',
+    previewTitle: '계약 문서 출력 미리보기',
+  };
+}
+
+function emptyDocumentEngineFields(): ContractDocumentEngineFields {
+  return {
+    documentTitle: '',
+    writtenDate: '',
+    contractDateText: '',
+    propertyLabel: '',
+    propertyAddress: '',
+    propertyAreaText: '',
+    partyOneRole: '',
+    partyOneName: '',
+    partyOneAddress: '',
+    partyOnePhone: '',
+    partyTwoRole: '',
+    partyTwoName: '',
+    partyTwoAddress: '',
+    partyTwoPhone: '',
+    transactionTypeText: '',
+    totalPriceText: '',
+    monthlyRentText: '',
+    paymentSchedule: '',
+    leasePeriod: '',
+    moveInDateText: '',
+    bodyText: '',
+    legalBasisText: '',
+    sourceNotice: '',
+    specialTerms: '',
+    officeNotice: '',
+    confirmationMemo: '',
+    receiptMemo: '',
+    ledgerMemo: '',
+    settlementMemo: '',
+  };
+}
+
 function toContractForm(contract: Contract): ContractForm {
   return {
     transactionType: contract.transactionType,
@@ -1015,12 +1883,37 @@ function emptyStringToNull(value: string) {
   return trimmed ? trimmed : null;
 }
 
+function emptyStringToUndefined(value: string) {
+  const trimmed = value.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+function findDocumentByTemplate(
+  documents: ContractDocument[],
+  templateId: string,
+) {
+  return documents.find(
+    (document) =>
+      document.templateId === templateId && document.status !== 'cancelled',
+  );
+}
+
 function toDateInput(value: string | null | undefined) {
   return value ? new Date(value).toISOString().slice(0, 10) : '';
 }
 
 function todayInput() {
   return new Date().toISOString().slice(0, 10);
+}
+
+function formatDate(value: string | null | undefined) {
+  if (!value) return '-';
+
+  return new Intl.DateTimeFormat('ko-KR', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date(value));
 }
 
 function formatDateTime(value: string) {
