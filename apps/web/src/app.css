@@ -11,54 +11,54 @@
 }
 
 @theme {
-  /* Linear-inspired shadcn design system */
+  /* Notion-inspired warm neutral palette — single source of truth */
   --color-background: #ffffff;
-  --color-foreground: #111827;
-  --color-muted: #f8fafc;
-  --color-muted-foreground: #6b7280;
-  --color-border: #e5e7eb;
-  --color-input: #e5e7eb;
-  --color-ring: #2563eb;
-  --color-primary: #111827;
+  --color-foreground: #37352f;
+  --color-muted: #f7f6f3;
+  --color-muted-foreground: #787774;
+  --color-border: #e9e9e7;
+  --color-input: #e9e9e7;
+  --color-ring: #2383e2;
+  --color-primary: #37352f;
   --color-primary-foreground: #ffffff;
-  --color-secondary: #f3f4f6;
-  --color-secondary-foreground: #374151;
-  --color-accent: #f4f4f5;
-  --color-accent-foreground: #111827;
-  --color-destructive: #ef4444;
+  --color-secondary: #f1f1ef;
+  --color-secondary-foreground: #37352f;
+  --color-accent: #f1f1ef;
+  --color-accent-foreground: #37352f;
+  --color-destructive: #e03e3e;
   --color-destructive-foreground: #ffffff;
   --color-card: #ffffff;
-  --color-card-foreground: #111827;
+  --color-card-foreground: #37352f;
   --color-popover: #ffffff;
-  --color-popover-foreground: #111827;
-  --color-sidebar: #fafbfc;
-  --color-sidebar-foreground: #374151;
-  --color-sidebar-accent: #f3f4f6;
-  --color-sidebar-accent-foreground: #111827;
-  --color-sidebar-border: #f0f0f0;
-  --radius-sm: 0.375rem;
-  --radius-md: 0.5rem;
-  --radius-lg: 0.625rem;
+  --color-popover-foreground: #37352f;
+  --color-sidebar: #f7f6f3;
+  --color-sidebar-foreground: #37352f;
+  --color-sidebar-accent: #ebebea;
+  --color-sidebar-accent-foreground: #37352f;
+  --color-sidebar-border: #e9e9e7;
+  --radius-sm: 0.25rem;
+  --radius-md: 0.375rem;
+  --radius-lg: 0.5rem;
 }
 
 body {
   font-family:
-    "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI",
-    "Noto Sans KR", sans-serif;
+    "Pretendard", "Pretendard Variable", -apple-system, BlinkMacSystemFont,
+    "Apple SD Gothic Neo", "Segoe UI", "Noto Sans KR", sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  color: var(--color-foreground);
 }
 
 :root {
-  --sidebar: #fafbfc;
-  --sidebar-foreground: hsl(220 9% 30%);
-  --sidebar-primary: hsl(240 5.9% 10%);
-  --sidebar-primary-foreground: hsl(0 0% 98%);
-  --sidebar-accent: hsl(240 4.8% 95.9%);
-  --sidebar-accent-foreground: hsl(240 5.9% 10%);
-  --sidebar-border: hsl(220 13% 93%);
-  --sidebar-ring: hsl(221.2 83.2% 53.3%);
+  --sidebar: #f7f6f3;
+  --sidebar-foreground: #37352f;
+  --sidebar-primary: #37352f;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #ebebea;
+  --sidebar-accent-foreground: #37352f;
+  --sidebar-border: #e9e9e7;
+  --sidebar-ring: #2383e2;
 }
 
 .dark {
