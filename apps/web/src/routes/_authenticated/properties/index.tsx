@@ -1553,6 +1553,15 @@ function JointBrokerageStack({ listings }: { listings: ListingSummary[] }) {
   );
 }
 
+const checkStatusChipOptions = checkStatusOptions.map((option) => {
+  const meta = checkStatusMeta[option.value];
+  return {
+    value: option.value,
+    label: option.label,
+    className: meta?.pillClassName,
+  };
+});
+
 function ListingStatusStack({
   listings,
   onChange,
@@ -1560,16 +1569,33 @@ function ListingStatusStack({
   listings: ListingSummary[];
   onChange: (listingId: string, value: string) => void;
 }) {
+  const hasMultiple = listings.length > 1;
   return (
-    <div className="flex flex-col items-start gap-1 py-1" onClick={(event) => event.stopPropagation()}>
+    <div
+      className={cn(
+        '-mx-2.5 flex h-full flex-col items-stretch',
+        hasMultiple && 'divide-y divide-[#d9d9d6]',
+      )}
+      onClick={(event) => event.stopPropagation()}
+    >
       {listings.map((listing) => (
-        <div key={listing.id} className="flex items-center gap-1.5">
-          {listings.length > 1 && <TransactionMiniLabel transactionType={listing.transactionType} />}
-          <StatusDropdown
+        <div
+          key={listing.id}
+          className="flex flex-1 items-stretch"
+        >
+          <EditableCell
+            recordId={listing.id}
+            field="checkStatus"
             value={listing.checkStatus}
-            onChange={(value) => onChange(listing.id, value)}
-            compact
-          />
+            onSave={(_id, _field, value) => onChange(listing.id, value as string)}
+            editType="select-chip"
+            chipOptions={checkStatusChipOptions}
+          >
+            <span className="flex h-full w-full items-center gap-1.5 px-2.5">
+              {hasMultiple && <TransactionMiniLabel transactionType={listing.transactionType} />}
+              <StatusIndicator value={listing.checkStatus} />
+            </span>
+          </EditableCell>
         </div>
       ))}
     </div>
@@ -1583,11 +1609,20 @@ function ListingPriceStack({
   listings: ListingSummary[];
   onSave: (recordId: string, field: string, value: unknown) => void;
 }) {
+  const hasMultiple = listings.length > 1;
   return (
-    <div className="flex min-w-0 flex-col gap-1 py-1" onClick={(event) => event.stopPropagation()}>
+    <div
+      className={cn(
+        '-mx-2.5 flex h-full min-w-0 flex-col items-stretch',
+        hasMultiple && 'divide-y divide-[#d9d9d6]',
+      )}
+      onClick={(event) => event.stopPropagation()}
+    >
       {listings.map((listing) => (
-        <div key={listing.id} className="flex min-w-0 items-center gap-1.5">
-          {listings.length > 1 && <TransactionMiniLabel transactionType={listing.transactionType} />}
+        <div
+          key={listing.id}
+          className="flex min-w-0 flex-1 items-stretch"
+        >
           <EditableCell
             recordId={listing.id}
             field="price"
@@ -1595,12 +1630,15 @@ function ListingPriceStack({
             onSave={onSave}
             editType="number"
           >
-            <PriceCell
-              transactionType={listing.transactionType}
-              price={listing.price}
-              deposit={listing.deposit}
-              monthlyRent={listing.monthlyRent}
-            />
+            <span className="flex h-full w-full items-center gap-1.5 px-2.5">
+              {hasMultiple && <TransactionMiniLabel transactionType={listing.transactionType} />}
+              <PriceCell
+                transactionType={listing.transactionType}
+                price={listing.price}
+                deposit={listing.deposit}
+                monthlyRent={listing.monthlyRent}
+              />
+            </span>
           </EditableCell>
         </div>
       ))}
@@ -1609,11 +1647,20 @@ function ListingPriceStack({
 }
 
 function ListingAdStack({ listings }: { listings: ListingSummary[] }) {
+  const hasMultiple = listings.length > 1;
   return (
-    <div className="flex min-w-0 max-w-full flex-col items-start gap-1 overflow-hidden py-1">
+    <div
+      className={cn(
+        '-mx-2.5 flex h-full min-w-0 flex-col items-stretch',
+        hasMultiple && 'divide-y divide-[#d9d9d6]',
+      )}
+    >
       {listings.map((listing) => (
-        <div key={listing.id} className="flex min-w-0 max-w-full items-center gap-1.5 overflow-hidden">
-          {listings.length > 1 && <TransactionMiniLabel transactionType={listing.transactionType} />}
+        <div
+          key={listing.id}
+          className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden px-2.5"
+        >
+          {hasMultiple && <TransactionMiniLabel transactionType={listing.transactionType} />}
           <AdIndicator advertisements={listing.advertisements ?? []} />
         </div>
       ))}
@@ -1674,10 +1721,18 @@ function MoveInAvailableStack({
   onSave: (recordId: string, field: string, value: unknown) => void;
 }) {
   return (
-    <div className="flex min-w-0 flex-col items-start gap-1 py-1" onClick={(event) => event.stopPropagation()}>
+    <div
+      className={cn(
+        '-mx-2.5 flex h-full min-w-0 flex-col items-stretch',
+        listings.length > 1 && 'divide-y divide-[#d9d9d6]',
+      )}
+      onClick={(event) => event.stopPropagation()}
+    >
       {listings.map((listing) => (
-        <div key={listing.id} className="flex min-w-0 items-center gap-1.5">
-          {listings.length > 1 && <TransactionMiniLabel transactionType={listing.transactionType} />}
+        <div
+          key={listing.id}
+          className="flex min-w-0 flex-1 items-stretch"
+        >
           <EditableCell
             recordId={listing.id}
             field="moveInAvailableType"
@@ -1686,7 +1741,10 @@ function MoveInAvailableStack({
             editType="select-chip"
             chipOptions={moveInAvailableChipOptions}
           >
-            <MoveInAvailableSummary listing={listing} />
+            <span className="flex h-full w-full items-center gap-1.5 px-2.5">
+              {listings.length > 1 && <TransactionMiniLabel transactionType={listing.transactionType} />}
+              <MoveInAvailableSummary listing={listing} />
+            </span>
           </EditableCell>
         </div>
       ))}

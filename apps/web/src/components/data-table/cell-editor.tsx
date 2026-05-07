@@ -88,7 +88,7 @@ export function EditableCell({
     <div
       ref={cellRef}
       className={cn(
-        'relative min-h-[24px] cursor-text rounded-sm transition-colors',
+        'relative flex h-full min-h-[24px] w-full cursor-text items-center rounded-sm transition-colors',
         !isEditing && 'hover:bg-muted/50',
         isEditing && editType !== 'select-chip' && 'bg-white',
       )}
