@@ -63,6 +63,7 @@ import {
   CellEditProvider,
   EditableCell,
   type SortDefinition,
+  type ChipOption,
 } from '@/components/data-table';
 
 // ── Labels & Colors ─────────────────────────────────────────────
@@ -532,7 +533,7 @@ function PropertiesPage() {
         header: () => <TableHeaderLabel icon={<DoorOpen className="size-4" />} label="입주가능일" />,
         size: 130,
         enableSorting: false,
-        cell: ({ row }) => <MoveInAvailableStack listings={row.original.listings} />,
+        cell: ({ row }) => <MoveInAvailableStack listings={row.original.listings} onSave={handleCellSave} />,
       },
       {
         id: 'owner',
@@ -1624,13 +1625,87 @@ function AdIndicator({
   );
 }
 
-function MoveInAvailableStack({ listings }: { listings: ListingSummary[] }) {
+const moveInAvailableChipOptions: ChipOption[] = [
+  { value: 'immediate', label: '즉시', className: 'bg-[#eef3ed] text-[#44745a]' },
+  {
+    value: 'date',
+    label: '특정일 이후',
+    className: 'bg-[#e7f3f8] text-[#337ea9]',
+    picker: 'date',
+    fromField: 'moveInAvailableFrom',
+    getPreselect: (rowValue) => {
+      const listing = rowValue as ListingSummary | undefined;
+      const raw = listing?.moveInAvailableFrom;
+      if (!raw) return undefined;
+      const d = new Date(raw);
+      return Number.isNaN(d.getTime()) ? undefined : d;
+    },
+  },
+  {
+    value: 'range',
+    label: '기간 협의',
+    className: 'bg-[#fbf3db] text-[#8f6b1f]',
+    picker: 'range',
+    fromField: 'moveInAvailableFrom',
+    toField: 'moveInAvailableTo',
+    getPreselect: (rowValue) => {
+      const listing = rowValue as ListingSummary | undefined;
+      const fromRaw = listing?.moveInAvailableFrom;
+      const toRaw = listing?.moveInAvailableTo;
+      const from = fromRaw ? new Date(fromRaw) : undefined;
+      const to = toRaw ? new Date(toRaw) : undefined;
+      return {
+        from: from && !Number.isNaN(from.getTime()) ? from : undefined,
+        to: to && !Number.isNaN(to.getTime()) ? to : undefined,
+      };
+    },
+  },
+  { value: 'negotiable', label: '협의', className: 'bg-[#fbf3db] text-[#8f6b1f]' },
+  { value: 'unknown', label: '확인 필요', className: 'bg-[#f1f1ef] text-[#787774]' },
+];
+
+function MoveInAvailableStack({
+  listings,
+  onSave,
+}: {
+  listings: ListingSummary[];
+  onSave: (recordId: string, field: string, value: unknown) => void;
+}) {
   return (
-    <div className="flex min-w-0 flex-col items-start gap-1 py-1">
+    <div
+      className={cn(
+        '-mx-2.5 flex h-full min-w-0 flex-col items-stretch',
+        listings.length > 1 && 'divide-y divide-[#d9d9d6]',
+      )}
+      onClick={(event) => event.stopPropagation()}
+    >
       {listings.map((listing) => (
-        <div key={listing.id} className="flex min-w-0 items-center gap-1.5">
-          {listings.length > 1 && <TransactionMiniLabel transactionType={listing.transactionType} />}
-          <MoveInAvailableSummary listing={listing} />
+        <div
+          key={listing.id}
+          className="flex min-w-0 flex-1 items-stretch"
+        >
+          <EditableCell
+            recordId={listing.id}
+            field="moveInAvailableType"
+            value={listing}
+            chipValueOf={(v) => (v as ListingSummary | undefined)?.moveInAvailableType ?? 'unknown'}
+            onSave={onSave}
+            onChipSave={(recordId, payload) => {
+              onSave(recordId, 'moveInAvailableType', payload.type);
+              if (payload.dateWrites) {
+                for (const write of payload.dateWrites) {
+                  onSave(recordId, write.field, write.value);
+                }
+              }
+            }}
+            editType="select-chip"
+            chipOptions={moveInAvailableChipOptions}
+          >
+            <span className="flex h-full w-full items-center gap-1.5 px-2.5">
+              {listings.length > 1 && <TransactionMiniLabel transactionType={listing.transactionType} />}
+              <MoveInAvailableSummary listing={listing} />
+            </span>
+          </EditableCell>
         </div>
       ))}
     </div>
@@ -1644,11 +1719,11 @@ function MoveInAvailableSummary({ listing }: { listing: ListingSummary }) {
     <div className="flex min-w-0 flex-col gap-0.5 py-1">
       <span
         className={cn(
-          'w-fit rounded-[4px] px-1.5 py-0.5 text-[12px] font-medium leading-5',
+          'inline-flex w-fit max-w-full whitespace-nowrap rounded-md px-1.5 py-0.5 text-[12px] font-medium leading-5',
           summary.className,
         )}
       >
-        {summary.label}
+        <span className="truncate">{summary.label}</span>
       </span>
       {summary.detail && (
         <span className="truncate text-[11px] text-slate-500">{summary.detail}</span>
@@ -2208,22 +2283,6 @@ function getMoveInAvailability(
       label: '협의',
       detail: null,
       className: 'bg-[#fbf3db] text-[#8f6b1f]',
-    };
-  }
-
-  if (type === 'by_balance') {
-    return {
-      label: '잔금일 협의',
-      detail: null,
-      className: 'bg-[#f8f5f0] text-[#8f6b1f]',
-    };
-  }
-
-  if (type === 'after_tenant_move_out') {
-    return {
-      label: '퇴거 후',
-      detail: null,
-      className: 'bg-[#f1f1ef] text-[#5f5e5b]',
     };
   }
 

@@ -12,6 +12,7 @@ export {
   HiddenIndicator,
 } from './cells';
 export { CellEditProvider, EditableCell, useCellEdit } from './cell-editor';
+export type { ChipOption, ChipSavePayload, DateWrite } from './cell-editor';
 export type {
   FilterDefinition,
   ActiveFilter,
