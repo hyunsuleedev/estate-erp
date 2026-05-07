@@ -22,24 +22,27 @@ function Calendar({
       classNames={{
         ...defaultClassNames,
         root: cn(defaultClassNames.root, 'w-fit'),
-        months: cn(defaultClassNames.months, 'flex flex-col sm:flex-row gap-2'),
+        months: cn(defaultClassNames.months, 'relative flex flex-col sm:flex-row gap-2'),
         month: cn(defaultClassNames.month, 'flex flex-col gap-3'),
         month_caption: cn(
           defaultClassNames.month_caption,
-          'flex h-7 items-center justify-center pt-1 relative',
+          'flex h-7 items-center justify-center',
         ),
         caption_label: cn(
           defaultClassNames.caption_label,
           'text-[13px] font-medium text-foreground',
         ),
-        nav: cn(defaultClassNames.nav, 'flex items-center gap-1 absolute inset-x-1 top-0'),
+        nav: cn(
+          defaultClassNames.nav,
+          'absolute inset-x-0 top-0 h-7 flex items-center justify-between pointer-events-none z-10',
+        ),
         button_previous: cn(
           buttonVariants({ variant: 'ghost' }),
-          'size-7 bg-transparent p-0 opacity-70 hover:opacity-100',
+          'size-7 bg-transparent p-0 opacity-70 hover:opacity-100 pointer-events-auto',
         ),
         button_next: cn(
           buttonVariants({ variant: 'ghost' }),
-          'size-7 bg-transparent p-0 opacity-70 hover:opacity-100 ml-auto',
+          'size-7 bg-transparent p-0 opacity-70 hover:opacity-100 pointer-events-auto',
         ),
         chevron: 'size-4',
         month_grid: cn(defaultClassNames.month_grid, 'w-full border-collapse'),
