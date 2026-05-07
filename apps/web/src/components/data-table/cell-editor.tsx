@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback, createContext, useContext } from 'react';
 import { createPortal } from 'react-dom';
+import type { DateRange } from 'react-day-picker';
 import { Input } from '@/components/ui/input';
 import {
   Select,
@@ -58,26 +59,45 @@ export interface ChipOption {
   label: string;
   value: string;
   className?: string;
-  /** When true, picking this option transitions the popover into a date picker. */
-  requiresDate?: boolean;
-  /** Field name used when saving the date for this option. Defaults to undefined (no date). */
-  dateField?: string;
+  /** When set, picking this option transitions the popover into a date picker.
+   *  - 'date'  → single date, saved into `fromField`
+   *  - 'range' → date range, saved into `fromField` + `toField` */
+  picker?: 'date' | 'range';
+  /** Date field name (single-date or range start). */
+  fromField?: string;
+  /** Range end field name. Required when picker='range'. */
+  toField?: string;
+  /** Optional preselect callback. Receives the cell's full record value
+   *  (when callers pass it via `value`); returns the date(s) to preselect. */
+  getPreselect?: (rowValue: unknown) =>
+    | Date
+    | undefined
+    | { from?: Date; to?: Date };
 }
 
-export type ChipSavePayload =
-  | { type: string }
-  | { type: string; dateField: string; date: string };
+export interface DateWrite {
+  field: string;
+  value: string;
+}
+
+export interface ChipSavePayload {
+  type: string;
+  dateWrites?: DateWrite[];
+}
 
 interface EditableCellProps {
   recordId: string;
   field: string;
   value: unknown;
   onSave: (recordId: string, field: string, value: unknown) => void;
-  /** Optional richer save callback for select-chip cells that may also save a date. */
+  /** Optional richer save callback for select-chip cells that may also save dates. */
   onChipSave?: (recordId: string, payload: ChipSavePayload) => void;
   editType: 'text' | 'number' | 'select' | 'select-chip';
   selectOptions?: { label: string; value: string }[];
   chipOptions?: ChipOption[];
+  /** For select-chip: extracts the currently-selected option value from the cell's `value`.
+   *  Useful when `value` is the full record (so chip pickers can preselect dates). */
+  chipValueOf?: (value: unknown) => string | undefined;
   children: React.ReactNode;
 }
 
@@ -90,6 +110,7 @@ export function EditableCell({
   editType,
   selectOptions,
   chipOptions,
+  chipValueOf,
   children,
 }: EditableCellProps) {
   const { editingCell, startEdit, stopEdit } = useCellEdit();
@@ -118,6 +139,7 @@ export function EditableCell({
         <CellEditPortal
           anchorEl={cellRef.current}
           value={value}
+          chipValueOf={chipValueOf}
           editType={editType}
           selectOptions={selectOptions}
           chipOptions={chipOptions}
@@ -147,6 +169,7 @@ export function EditableCell({
 interface CellEditPortalProps {
   anchorEl: HTMLElement;
   value: unknown;
+  chipValueOf?: (value: unknown) => string | undefined;
   editType: 'text' | 'number' | 'select' | 'select-chip';
   selectOptions?: { label: string; value: string }[];
   chipOptions?: ChipOption[];
@@ -155,9 +178,20 @@ interface CellEditPortalProps {
   onCancel: () => void;
 }
 
+function formatLocalDate(d: Date): string {
+  // Save as midnight UTC of the local Y-M-D the user picked.
+  // Building from local Y/M/D avoids the timezone shift you'd get from d.toISOString()
+  // when the user is east of UTC and picks late evening (which would roll back a day).
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}T00:00:00.000Z`;
+}
+
 function CellEditPortal({
   anchorEl,
   value,
+  chipValueOf,
   editType,
   selectOptions,
   chipOptions,
@@ -165,10 +199,23 @@ function CellEditPortal({
   onChipSave,
   onCancel,
 }: CellEditPortalProps) {
-  const [draft, setDraft] = useState(String(value ?? ''));
+  const initialDraft =
+    editType === 'select-chip' ? (chipValueOf?.(value) ?? '') : String(value ?? '');
+  const [draft, setDraft] = useState(initialDraft);
   const [pendingDateOption, setPendingDateOption] = useState<ChipOption | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const rect = anchorEl.getBoundingClientRect();
+
+  // Preselect for date/range pickers, derived from the cell's value via getPreselect.
+  const preselect = pendingDateOption?.getPreselect?.(value);
+  const pendingSingleDate =
+    pendingDateOption?.picker === 'date' && preselect instanceof Date ? preselect : undefined;
+  const initialRange: DateRange | undefined =
+    pendingDateOption?.picker === 'range' && preselect && !(preselect instanceof Date) && preselect.from
+      ? { from: preselect.from, to: preselect.to }
+      : undefined;
+  const [pendingRange, setPendingRange] = useState<DateRange | undefined>(initialRange);
+  const pendingRangeDefaultMonth = initialRange?.from ?? new Date();
 
   // Auto-focus on mount (skip for select/chip — has its own focus management)
   useEffect(() => {
@@ -279,7 +326,13 @@ function CellEditPortal({
                 key={opt.value}
                 type="button"
                 onClick={() => {
-                  if (opt.requiresDate && opt.dateField && onChipSave) {
+                  if (opt.picker && onChipSave) {
+                    const pre = opt.getPreselect?.(value);
+                    if (opt.picker === 'range' && pre && !(pre instanceof Date) && pre.from) {
+                      setPendingRange({ from: pre.from, to: pre.to });
+                    } else {
+                      setPendingRange(undefined);
+                    }
                     setPendingDateOption(opt);
                     return;
                   }
@@ -319,7 +372,10 @@ function CellEditPortal({
             <button
               type="button"
               className="text-[11px] font-medium uppercase tracking-[0.06em] text-muted-foreground hover:text-foreground"
-              onClick={() => setPendingDateOption(null)}
+              onClick={() => {
+                setPendingDateOption(null);
+                setPendingRange(undefined);
+              }}
             >
               ← 옵션
             </button>
@@ -327,18 +383,46 @@ function CellEditPortal({
               {pendingDateOption.label}
             </span>
           </div>
-          <Calendar
-            mode="single"
-            onSelect={(date) => {
-              if (!date || !pendingDateOption.dateField) return;
-              const iso = date.toISOString().slice(0, 10);
-              onChipSave?.({
-                type: pendingDateOption.value,
-                dateField: pendingDateOption.dateField,
-                date: iso,
-              });
-            }}
-          />
+          {pendingDateOption.picker === 'range' ? (
+            <Calendar
+              mode="range"
+              defaultMonth={pendingRangeDefaultMonth}
+              selected={pendingRange}
+              onSelect={(range) => {
+                setPendingRange(range);
+                // react-day-picker emits {from, to: from} on the first click in range mode.
+                // Wait until the user clicks a second, distinct day so we save a real range.
+                if (!range?.from || !range?.to) return;
+                if (range.from.getTime() === range.to.getTime()) return;
+                const fromField = pendingDateOption.fromField;
+                const toField = pendingDateOption.toField;
+                if (!fromField || !toField) return;
+                const writes: DateWrite[] = [
+                  { field: fromField, value: formatLocalDate(range.from) },
+                  { field: toField, value: formatLocalDate(range.to) },
+                ];
+                onChipSave?.({
+                  type: pendingDateOption.value,
+                  dateWrites: writes,
+                });
+              }}
+            />
+          ) : (
+            <Calendar
+              mode="single"
+              defaultMonth={pendingSingleDate}
+              selected={pendingSingleDate}
+              onSelect={(date) => {
+                if (!date) return;
+                const fromField = pendingDateOption.fromField;
+                if (!fromField) return;
+                onChipSave?.({
+                  type: pendingDateOption.value,
+                  dateWrites: [{ field: fromField, value: formatLocalDate(date) }],
+                });
+              }}
+            />
+          )}
         </div>
       )}
     </>

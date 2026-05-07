@@ -70,6 +70,7 @@ import {
   CellEditProvider,
   EditableCell,
   type SortDefinition,
+  type ChipOption,
 } from '@/components/data-table';
 
 // ── Labels & Colors ─────────────────────────────────────────────
@@ -1704,18 +1705,42 @@ function AdIndicator({
   );
 }
 
-const moveInAvailableChipOptions = [
+const moveInAvailableChipOptions: ChipOption[] = [
   { value: 'immediate', label: '즉시', className: 'bg-[#eef3ed] text-[#44745a]' },
   {
     value: 'date',
     label: '특정일 이후',
     className: 'bg-[#e7f3f8] text-[#337ea9]',
-    requiresDate: true,
-    dateField: 'moveInAvailableFrom',
+    picker: 'date',
+    fromField: 'moveInAvailableFrom',
+    getPreselect: (rowValue) => {
+      const listing = rowValue as ListingSummary | undefined;
+      const raw = listing?.moveInAvailableFrom;
+      if (!raw) return undefined;
+      const d = new Date(raw);
+      return Number.isNaN(d.getTime()) ? undefined : d;
+    },
   },
-  { value: 'range', label: '기간 협의', className: 'bg-[#fbf3db] text-[#8f6b1f]' },
+  {
+    value: 'range',
+    label: '기간 협의',
+    className: 'bg-[#fbf3db] text-[#8f6b1f]',
+    picker: 'range',
+    fromField: 'moveInAvailableFrom',
+    toField: 'moveInAvailableTo',
+    getPreselect: (rowValue) => {
+      const listing = rowValue as ListingSummary | undefined;
+      const fromRaw = listing?.moveInAvailableFrom;
+      const toRaw = listing?.moveInAvailableTo;
+      const from = fromRaw ? new Date(fromRaw) : undefined;
+      const to = toRaw ? new Date(toRaw) : undefined;
+      return {
+        from: from && !Number.isNaN(from.getTime()) ? from : undefined,
+        to: to && !Number.isNaN(to.getTime()) ? to : undefined,
+      };
+    },
+  },
   { value: 'negotiable', label: '협의', className: 'bg-[#fbf3db] text-[#8f6b1f]' },
-  { value: 'by_balance', label: '잔금일 협의', className: 'bg-[#f8f5f0] text-[#8f6b1f]' },
   { value: 'unknown', label: '확인 필요', className: 'bg-[#f1f1ef] text-[#787774]' },
 ];
 
@@ -1742,12 +1767,15 @@ function MoveInAvailableStack({
           <EditableCell
             recordId={listing.id}
             field="moveInAvailableType"
-            value={listing.moveInAvailableType ?? 'unknown'}
+            value={listing}
+            chipValueOf={(v) => (v as ListingSummary | undefined)?.moveInAvailableType ?? 'unknown'}
             onSave={onSave}
             onChipSave={(recordId, payload) => {
               onSave(recordId, 'moveInAvailableType', payload.type);
-              if ('dateField' in payload) {
-                onSave(recordId, payload.dateField, payload.date);
+              if (payload.dateWrites) {
+                for (const write of payload.dateWrites) {
+                  onSave(recordId, write.field, write.value);
+                }
               }
             }}
             editType="select-chip"
@@ -2347,22 +2375,6 @@ function getMoveInAvailability(
       label: '협의',
       detail: null,
       className: 'bg-[#fbf3db] text-[#8f6b1f]',
-    };
-  }
-
-  if (type === 'by_balance') {
-    return {
-      label: '잔금일 협의',
-      detail: null,
-      className: 'bg-[#f8f5f0] text-[#8f6b1f]',
-    };
-  }
-
-  if (type === 'after_tenant_move_out') {
-    return {
-      label: '퇴거 후',
-      detail: null,
-      className: 'bg-[#f1f1ef] text-[#5f5e5b]',
     };
   }
 

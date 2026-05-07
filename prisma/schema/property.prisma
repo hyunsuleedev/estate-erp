@@ -46,7 +46,7 @@ model Listing {
   price           Int? // 매매가/전세가 (만원)
   deposit         Int? // 보증금 (만원, monthly일 때)
   monthlyRent     Int?    @map("monthly_rent") // 월세 (만원)
-  moveInAvailableType String?   @map("move_in_available_type") // immediate, date, range, negotiable, by_balance, after_tenant_move_out, unknown
+  moveInAvailableType String?   @map("move_in_available_type") // immediate, date, range, negotiable, unknown
   moveInAvailableFrom DateTime? @map("move_in_available_from")
   moveInAvailableTo   DateTime? @map("move_in_available_to")
   isJointBrokerageRequired Boolean @default(false) @map("is_joint_brokerage_required")
