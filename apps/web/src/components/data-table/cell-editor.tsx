@@ -410,6 +410,7 @@ function CellEditPortal({
           ) : (
             <Calendar
               mode="single"
+              required
               defaultMonth={pendingSingleDate}
               selected={pendingSingleDate}
               onSelect={(date) => {
