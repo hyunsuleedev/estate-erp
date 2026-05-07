@@ -1706,7 +1706,13 @@ function AdIndicator({
 
 const moveInAvailableChipOptions = [
   { value: 'immediate', label: '즉시', className: 'bg-[#eef3ed] text-[#44745a]' },
-  { value: 'date', label: '특정일 이후', className: 'bg-[#e7f3f8] text-[#337ea9]' },
+  {
+    value: 'date',
+    label: '특정일 이후',
+    className: 'bg-[#e7f3f8] text-[#337ea9]',
+    requiresDate: true,
+    dateField: 'moveInAvailableFrom',
+  },
   { value: 'range', label: '기간 협의', className: 'bg-[#fbf3db] text-[#8f6b1f]' },
   { value: 'negotiable', label: '협의', className: 'bg-[#fbf3db] text-[#8f6b1f]' },
   { value: 'by_balance', label: '잔금일 협의', className: 'bg-[#f8f5f0] text-[#8f6b1f]' },
@@ -1738,6 +1744,12 @@ function MoveInAvailableStack({
             field="moveInAvailableType"
             value={listing.moveInAvailableType ?? 'unknown'}
             onSave={onSave}
+            onChipSave={(recordId, payload) => {
+              onSave(recordId, 'moveInAvailableType', payload.type);
+              if ('dateField' in payload) {
+                onSave(recordId, payload.dateField, payload.date);
+              }
+            }}
             editType="select-chip"
             chipOptions={moveInAvailableChipOptions}
           >

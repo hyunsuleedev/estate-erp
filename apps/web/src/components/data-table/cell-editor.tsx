@@ -8,6 +8,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Calendar } from '@/components/ui/calendar';
 import { cn } from '@/lib/utils';
 
 
@@ -57,13 +58,23 @@ export interface ChipOption {
   label: string;
   value: string;
   className?: string;
+  /** When true, picking this option transitions the popover into a date picker. */
+  requiresDate?: boolean;
+  /** Field name used when saving the date for this option. Defaults to undefined (no date). */
+  dateField?: string;
 }
+
+export type ChipSavePayload =
+  | { type: string }
+  | { type: string; dateField: string; date: string };
 
 interface EditableCellProps {
   recordId: string;
   field: string;
   value: unknown;
   onSave: (recordId: string, field: string, value: unknown) => void;
+  /** Optional richer save callback for select-chip cells that may also save a date. */
+  onChipSave?: (recordId: string, payload: ChipSavePayload) => void;
   editType: 'text' | 'number' | 'select' | 'select-chip';
   selectOptions?: { label: string; value: string }[];
   chipOptions?: ChipOption[];
@@ -75,6 +86,7 @@ export function EditableCell({
   field,
   value,
   onSave,
+  onChipSave,
   editType,
   selectOptions,
   chipOptions,
@@ -113,6 +125,14 @@ export function EditableCell({
             onSave(recordId, field, newValue);
             stopEdit();
           }}
+          onChipSave={(payload) => {
+            if (onChipSave) {
+              onChipSave(recordId, payload);
+            } else {
+              onSave(recordId, field, payload.type);
+            }
+            stopEdit();
+          }}
           onCancel={stopEdit}
         />
       )}
@@ -131,6 +151,7 @@ interface CellEditPortalProps {
   selectOptions?: { label: string; value: string }[];
   chipOptions?: ChipOption[];
   onSave: (value: unknown) => void;
+  onChipSave?: (payload: ChipSavePayload) => void;
   onCancel: () => void;
 }
 
@@ -141,9 +162,11 @@ function CellEditPortal({
   selectOptions,
   chipOptions,
   onSave,
+  onChipSave,
   onCancel,
 }: CellEditPortalProps) {
   const [draft, setDraft] = useState(String(value ?? ''));
+  const [pendingDateOption, setPendingDateOption] = useState<ChipOption | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const rect = anchorEl.getBoundingClientRect();
 
@@ -238,7 +261,7 @@ function CellEditPortal({
           )}
         </div>
       )}
-      {editType === 'select-chip' && chipOptions && (
+      {editType === 'select-chip' && chipOptions && !pendingDateOption && (
         <div
           ref={popoverRef}
           className="fixed z-50 w-[220px] rounded-md border border-border bg-popover p-1 shadow-lg"
@@ -255,7 +278,13 @@ function CellEditPortal({
               <button
                 key={opt.value}
                 type="button"
-                onClick={() => onSave(opt.value)}
+                onClick={() => {
+                  if (opt.requiresDate && opt.dateField && onChipSave) {
+                    setPendingDateOption(opt);
+                    return;
+                  }
+                  onSave(opt.value);
+                }}
                 className={cn(
                   'flex items-center justify-between rounded-sm px-2 py-1.5 text-left transition-colors hover:bg-muted',
                   draft === opt.value && 'bg-muted/60',
@@ -275,6 +304,41 @@ function CellEditPortal({
               </button>
             ))}
           </div>
+        </div>
+      )}
+      {editType === 'select-chip' && pendingDateOption && (
+        <div
+          ref={popoverRef}
+          className="fixed z-50 w-[280px] rounded-md border border-border bg-popover shadow-lg"
+          style={{
+            top: rect.bottom + 4,
+            left: Math.min(rect.left, window.innerWidth - 280 - 12),
+          }}
+        >
+          <div className="flex items-center gap-1.5 border-b border-border px-3 py-2">
+            <button
+              type="button"
+              className="text-[11px] font-medium uppercase tracking-[0.06em] text-muted-foreground hover:text-foreground"
+              onClick={() => setPendingDateOption(null)}
+            >
+              ← 옵션
+            </button>
+            <span className="ml-auto text-[12px] text-muted-foreground">
+              {pendingDateOption.label}
+            </span>
+          </div>
+          <Calendar
+            mode="single"
+            onSelect={(date) => {
+              if (!date || !pendingDateOption.dateField) return;
+              const iso = date.toISOString().slice(0, 10);
+              onChipSave?.({
+                type: pendingDateOption.value,
+                dateField: pendingDateOption.dateField,
+                date: iso,
+              });
+            }}
+          />
         </div>
       )}
     </>
