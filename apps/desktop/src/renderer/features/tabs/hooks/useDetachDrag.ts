@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect } from 'react';
 import type { Tab } from '@estate-erp/shared';
 import { useTabStore } from '../store/useTabStore';
 
@@ -69,13 +69,9 @@ export function useDetachDrag(tabBarRef: React.RefObject<HTMLDivElement | null>)
         },
         detached: false,
       };
-
-      // 마우스 capture: source 창 밖으로 나가도 pointermove를 source에 계속 보냄
-      try {
-        tabBar.setPointerCapture(e.pointerId);
-      } catch {
-        // ignore
-      }
+      // 여기서는 setPointerCapture를 하지 않는다. dnd-kit sortable이 자식
+      // Tab 컴포넌트에서 pointermove/capture를 가져갈 수 있게 둔다. detach
+      // 임계값을 넘는 순간 그 시점에 capture를 잡는다.
     };
 
     const onPointerMove = (e: PointerEvent) => {
@@ -95,6 +91,13 @@ export function useDetachDrag(tabBarRef: React.RefObject<HTMLDivElement | null>)
           return;
         }
         session.detached = true;
+        // detach 시작 시점에 capture를 가져온다. 이렇게 해야 source 창 밖
+        // (다른 모니터/데스크톱)으로 끌어도 pointermove가 계속 들어옴.
+        try {
+          tabBar.setPointerCapture(e.pointerId);
+        } catch {
+          // ignore
+        }
         void beginDrag(tab, screen, session.mouseOffset);
         return;
       }
