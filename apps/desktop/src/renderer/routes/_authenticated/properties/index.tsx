@@ -72,6 +72,8 @@ import {
   type SortDefinition,
   type ChipOption,
 } from '@/components/data-table';
+import { useTabStore } from '@/features/tabs/store/useTabStore';
+import { getRouteMeta } from '@/features/tabs/lib/routeMeta';
 
 // ── Labels & Colors ─────────────────────────────────────────────
 
@@ -869,10 +871,18 @@ function PropertyQuickSheet({
         className="!w-full !max-w-full !gap-0 overflow-hidden p-0 sm:!max-w-[720px]"
       >
         {propertyId && isLoading && <PropertySheetSkeleton />}
-        {propertyId && !isLoading && property && <PropertySheetContent property={property} />}
+        {propertyId && !isLoading && property && (
+          <PropertySheetContent property={property} onClose={onClose} />
+        )}
         {propertyId && !isLoading && !property && (
-          <div className="flex h-full items-center justify-center text-sm text-slate-500">
-            매물을 찾을 수 없습니다.
+          <div className="flex h-full flex-col">
+            <SheetHeader className="sr-only">
+              <SheetTitle>매물을 찾을 수 없습니다</SheetTitle>
+              <SheetDescription>요청하신 매물 정보가 존재하지 않습니다.</SheetDescription>
+            </SheetHeader>
+            <div className="flex flex-1 items-center justify-center text-sm text-slate-500">
+              매물을 찾을 수 없습니다.
+            </div>
           </div>
         )}
       </SheetContent>
@@ -883,11 +893,15 @@ function PropertyQuickSheet({
 function PropertySheetSkeleton() {
   return (
     <div className="flex h-full flex-col">
-      <SheetHeader className="border-b px-6 py-5">
+      <SheetHeader className="sr-only">
+        <SheetTitle>매물 빠른 확인</SheetTitle>
+        <SheetDescription>매물 정보를 불러오는 중입니다.</SheetDescription>
+      </SheetHeader>
+      <div className="space-y-3 border-b px-6 py-5">
         <Skeleton className="h-5 w-24" />
         <Skeleton className="h-7 w-72" />
         <Skeleton className="h-4 w-full max-w-md" />
-      </SheetHeader>
+      </div>
       <div className="space-y-5 p-6">
         <Skeleton className="h-28 rounded-lg" />
         <Skeleton className="h-40 rounded-lg" />
@@ -897,7 +911,14 @@ function PropertySheetSkeleton() {
   );
 }
 
-function PropertySheetContent({ property }: { property: Property }) {
+function PropertySheetContent({
+  property,
+  onClose,
+}: {
+  property: Property;
+  onClose: () => void;
+}) {
+  const openTab = useTabStore((s) => s.openTab);
   const listings = (property.listings ?? []).slice().sort(comparePropertyListing);
   const contacts = property.propertyContacts ?? [];
   const tenants = property.tenants ?? [];
@@ -929,12 +950,16 @@ function PropertySheetContent({ property }: { property: Property }) {
             variant="ghost"
             size="sm"
             className="h-7 gap-1.5 px-2 text-[12px] text-muted-foreground hover:text-foreground"
-            asChild
+            onClick={() => {
+              const route = `/properties/${property.id}`;
+              const meta = getRouteMeta(route);
+              const tabTitle = [title, unitLabel].filter(Boolean).join(' ') || meta.title;
+              onClose();
+              openTab({ route, kind: meta.kind, title: tabTitle });
+            }}
           >
-            <Link to="/properties/$id" params={{ id: property.id }}>
-              전체 페이지로 열기
-              <ExternalLink className="size-3.5" />
-            </Link>
+            전체 페이지로 열기
+            <ExternalLink className="size-3.5" />
           </Button>
         </div>
         <div className="space-y-3">
