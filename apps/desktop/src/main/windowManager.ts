@@ -67,7 +67,23 @@ interface DragState {
   windowId: number;
   /** 마우스가 새 창의 좌측 상단으로부터 떨어진 offset (= 탭 mouseOffset) */
   mouseOffset: { x: number; y: number };
+  /** updateDragPosition이 일정 시간 동안 안 오면 강제 종료 — pointer capture 분실 대비 */
+  staleTimer: NodeJS.Timeout | null;
 }
+
+/**
+ * updateDragPosition이 이 시간 동안 안 오면 endDrag 자동 호출.
+ *
+ * 동작 원리: ghost drag 중에는 사용자가 마우스를 끌고 있으므로 매 프레임 pointermove가 발생.
+ * 마우스를 떼는 순간 정상 경로는 source의 pointerup → endSession → endDrag IPC로 정리됨.
+ * 그러나 이 경로가 누락되는 케이스(pointer capture 분실, OS alt-tab, source 창 blur 등)가
+ * 종종 발생해 새 창이 ignoreMouseEvents(true) 상태로 영원히 남아 클릭이 안 먹는 버그가 됨.
+ *
+ * 이 상수는 release 후 fallback 정리 시간이다. 너무 짧으면 정상 ghost drag 중 잠시 멈췄을 때
+ * 오인 발동, 너무 길면 클릭 안 되는 시간이 길어짐. 500ms = 사람이 마우스를 떼고 0.5초 안에
+ * 새 창을 클릭할 일은 거의 없는 + 잠시 멈춰도 충분히 견디는 균형점.
+ */
+const DRAG_STALE_TIMEOUT_MS = 500;
 
 export class WindowManager {
   private windows = new Map<number, WindowEntry>();
@@ -206,12 +222,17 @@ export class WindowManager {
     win.on('closed', () => {
       this.windows.delete(win.id);
       if (this.dragState?.windowId === win.id) {
+        if (this.dragState.staleTimer) clearTimeout(this.dragState.staleTimer);
         this.dragState = null;
       }
     });
 
     this.windows.set(win.id, { kind: 'detached', initialTab: tab });
-    this.dragState = { windowId: win.id, mouseOffset };
+    this.dragState = {
+      windowId: win.id,
+      mouseOffset,
+      staleTimer: this.scheduleStaleTimer(),
+    };
     return { windowId: win.id };
   }
 
@@ -226,9 +247,35 @@ export class WindowManager {
       this.dragState = null;
       return;
     }
-    const x = Math.round(pointerScreen.x - this.dragState.mouseOffset.x);
-    const y = Math.round(pointerScreen.y - this.dragState.mouseOffset.y);
-    win.setPosition(x, y, false);
+    // payload 방어: undefined/NaN/Infinity가 들어오면 setPosition이 throw하므로 무시.
+    if (
+      !pointerScreen ||
+      typeof pointerScreen.x !== 'number' ||
+      typeof pointerScreen.y !== 'number' ||
+      !Number.isFinite(pointerScreen.x) ||
+      !Number.isFinite(pointerScreen.y)
+    ) {
+      return;
+    }
+    const offset = this.dragState.mouseOffset;
+    if (
+      !offset ||
+      !Number.isFinite(offset.x) ||
+      !Number.isFinite(offset.y)
+    ) {
+      return;
+    }
+    const x = Math.round(pointerScreen.x - offset.x);
+    const y = Math.round(pointerScreen.y - offset.y);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+    try {
+      win.setPosition(x, y, false);
+    } catch {
+      // setPosition이 OS 단계에서 거부할 수 있음 (음수/너무 큰 좌표 등). 무시.
+    }
+    // 이동이 들어왔으니 stale timer 리셋
+    if (this.dragState.staleTimer) clearTimeout(this.dragState.staleTimer);
+    this.dragState.staleTimer = this.scheduleStaleTimer();
   }
 
   /**
@@ -236,6 +283,7 @@ export class WindowManager {
    */
   endDrag() {
     if (!this.dragState) return;
+    if (this.dragState.staleTimer) clearTimeout(this.dragState.staleTimer);
     const win = BrowserWindow.fromId(this.dragState.windowId);
     if (win && !win.isDestroyed()) {
       win.setIgnoreMouseEvents(false);
@@ -243,6 +291,14 @@ export class WindowManager {
       win.focus();
     }
     this.dragState = null;
+  }
+
+  private scheduleStaleTimer(): NodeJS.Timeout {
+    return setTimeout(() => {
+      // updateDragPosition / endDrag 가 일정 시간 동안 오지 않으면 안전하게 정리.
+      // pointer capture 분실, source 창 blur, OS의 alt-tab 등으로 인한 이벤트 누락 대비.
+      this.endDrag();
+    }, DRAG_STALE_TIMEOUT_MS);
   }
 
   getKind(windowId: number): WindowKind {

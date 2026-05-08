@@ -49,11 +49,20 @@ export function useDetachDrag(tabBarRef: React.RefObject<HTMLDivElement | null>)
 
     let session: DragSession | null = null;
 
+    /**
+     * dnd-kit sortable이 자식 Tab에 listener를 걸기 때문에 element-level pointermove는
+     * dnd-kit한테 빼앗길 수 있다. document level + capture phase로 등록해 dnd-kit보다
+     * 먼저 받는다. 임계값 넘기 전엔 그대로 두고(가로 reorder는 dnd-kit이 처리),
+     * 임계값 넘는 순간 detach 발동 + 그 이후 이벤트는 dnd-kit으로 가지 않게 차단.
+     */
+
     const onPointerDown = (e: PointerEvent) => {
       if (e.button !== 0) return;
       const target = e.target as HTMLElement | null;
       const tabEl = target?.closest('[data-tab-id]') as HTMLElement | null;
       if (!tabEl) return;
+      // tabBar 영역 안의 탭에서만 발동
+      if (!tabBar.contains(tabEl)) return;
 
       const tabId = tabEl.dataset.tabId;
       if (!tabId) return;
@@ -69,9 +78,8 @@ export function useDetachDrag(tabBarRef: React.RefObject<HTMLDivElement | null>)
         },
         detached: false,
       };
-      // 여기서는 setPointerCapture를 하지 않는다. dnd-kit sortable이 자식
-      // Tab 컴포넌트에서 pointermove/capture를 가져갈 수 있게 둔다. detach
-      // 임계값을 넘는 순간 그 시점에 capture를 잡는다.
+      // pointerdown 시점에는 setPointerCapture / preventDefault 하지 않는다.
+      // dnd-kit sortable이 자유롭게 가로 reorder를 처리하게 둔다.
     };
 
     const onPointerMove = (e: PointerEvent) => {
@@ -85,33 +93,41 @@ export function useDetachDrag(tabBarRef: React.RefObject<HTMLDivElement | null>)
         // 수직 임계값(아래로 8px)에서만 detach. 수평 이동은 dnd-kit sortable이 처리.
         if (dy < DETACH_THRESHOLD) return;
 
-        const tab = useTabStore.getState().tabs.find((t) => t.id === session!.tabId);
+        const tab = useTabStore.getState().tabs.find(
+          (t) => t.id === session!.tabId,
+        );
         if (!tab) {
           session = null;
           return;
         }
         session.detached = true;
+        // detach 발동 시점부터는 이 이벤트와 후속 이벤트가 dnd-kit으로 가지 않게 한다.
+        // capture phase에서 stopImmediatePropagation()을 부르면 이후 listener 모두 차단.
+        e.stopImmediatePropagation();
+        e.preventDefault();
         // detach 시작 시점에 capture를 가져온다. 이렇게 해야 source 창 밖
         // (다른 모니터/데스크톱)으로 끌어도 pointermove가 계속 들어옴.
         try {
           tabBar.setPointerCapture(e.pointerId);
         } catch {
-          // ignore
+          // ignore — capture 실패해도 document listener가 이벤트는 받음
         }
         void beginDrag(tab, screen, session.mouseOffset);
         return;
       }
 
-      // 이미 detached — 새 창 위치 갱신
+      // 이미 detached — 새 창 위치 갱신, 이벤트는 dnd-kit으로 가지 않게 차단
+      e.stopImmediatePropagation();
       window.electronBridge?.tabs.updateDragPosition(screen);
     };
 
     const endSession = () => {
       if (!session) return;
       const wasDetached = session.detached;
+      const pointerId = session.pointerId;
       try {
-        if (tabBar.hasPointerCapture(session.pointerId)) {
-          tabBar.releasePointerCapture(session.pointerId);
+        if (tabBar.hasPointerCapture(pointerId)) {
+          tabBar.releasePointerCapture(pointerId);
         }
       } catch {
         // ignore
@@ -124,7 +140,12 @@ export function useDetachDrag(tabBarRef: React.RefObject<HTMLDivElement | null>)
 
     const onPointerUp = (e: PointerEvent) => {
       if (!session || e.pointerId !== session.pointerId) return;
+      const wasDetached = session.detached;
       endSession();
+      if (wasDetached) {
+        // detached 상태였다면 dnd-kit이 drop 처리하지 않게 차단
+        e.stopImmediatePropagation();
+      }
     };
 
     const onPointerCancel = (e: PointerEvent) => {
@@ -132,18 +153,22 @@ export function useDetachDrag(tabBarRef: React.RefObject<HTMLDivElement | null>)
       endSession();
     };
 
-    tabBar.addEventListener('pointerdown', onPointerDown);
-    tabBar.addEventListener('pointermove', onPointerMove);
-    tabBar.addEventListener('pointerup', onPointerUp);
-    tabBar.addEventListener('pointercancel', onPointerCancel);
+    // document level + capture phase. dnd-kit보다 먼저 받음.
+    document.addEventListener('pointerdown', onPointerDown, true);
+    document.addEventListener('pointermove', onPointerMove, true);
+    document.addEventListener('pointerup', onPointerUp, true);
+    document.addEventListener('pointercancel', onPointerCancel, true);
     // capture 중에도 lostpointercapture가 발생할 수 있음
-    tabBar.addEventListener('lostpointercapture', onPointerCancel as EventListener);
+    tabBar.addEventListener(
+      'lostpointercapture',
+      onPointerCancel as EventListener,
+    );
 
     return () => {
-      tabBar.removeEventListener('pointerdown', onPointerDown);
-      tabBar.removeEventListener('pointermove', onPointerMove);
-      tabBar.removeEventListener('pointerup', onPointerUp);
-      tabBar.removeEventListener('pointercancel', onPointerCancel);
+      document.removeEventListener('pointerdown', onPointerDown, true);
+      document.removeEventListener('pointermove', onPointerMove, true);
+      document.removeEventListener('pointerup', onPointerUp, true);
+      document.removeEventListener('pointercancel', onPointerCancel, true);
       tabBar.removeEventListener(
         'lostpointercapture',
         onPointerCancel as EventListener,
