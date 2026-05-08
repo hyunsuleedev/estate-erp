@@ -52,7 +52,7 @@ export function TabBar({ className }: Props) {
   return (
     <div
       ref={tabBarRef}
-      className={cn('flex min-w-0 flex-1 items-center', className)}
+      className={cn('flex h-full min-w-0 flex-1 items-center', className)}
     >
       <DndContext
         sensors={sensors}
@@ -63,16 +63,22 @@ export function TabBar({ className }: Props) {
           items={tabs.map((t) => t.id)}
           strategy={horizontalListSortingStrategy}
         >
-          <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto [&::-webkit-scrollbar]:hidden">
-            {tabs.map((tab) => (
-              <Tab
-                key={tab.id}
-                tab={tab}
-                isActive={tab.id === activeTabId}
-                onActivate={() => activateTab(tab.id)}
-                onClose={() => closeTab(tab.id)}
-              />
-            ))}
+          <div className="flex h-full min-w-0 flex-1 items-center gap-0 overflow-x-auto [&::-webkit-scrollbar]:hidden">
+            {tabs.map((tab, idx) => {
+              const isActive = tab.id === activeTabId;
+              const prevIsActive = idx > 0 && tabs[idx - 1].id === activeTabId;
+              const hideDivider = isActive || prevIsActive || idx === 0;
+              return (
+                <Tab
+                  key={tab.id}
+                  tab={tab}
+                  isActive={isActive}
+                  hideDivider={hideDivider}
+                  onActivate={() => activateTab(tab.id)}
+                  onClose={() => closeTab(tab.id)}
+                />
+              );
+            })}
             <NewTabButton />
           </div>
         </SortableContext>

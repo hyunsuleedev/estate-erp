@@ -64,10 +64,10 @@ body {
   -webkit-app-region: no-drag;
 }
 
-/* Push sidebar below the fixed titlebar (48px = h-12) */
+/* Push sidebar below the fixed titlebar (40px = h-10) */
 [data-slot="sidebar-container"] {
-  top: 48px !important;
-  height: calc(100svh - 48px) !important;
+  top: 40px !important;
+  height: calc(100svh - 40px) !important;
 }
 
 /* Sidebar wrapper: fill remaining height, not full viewport */

@@ -17,7 +17,8 @@ function getBaseWindowOptions(): Electron.BrowserWindowConstructorOptions {
   const platformOptions: Partial<Electron.BrowserWindowConstructorOptions> = isMac
     ? {
         titleBarStyle: 'hiddenInset',
-        trafficLightPosition: { x: 16, y: 16 },
+        // 헤더 h-10 (40px) 기준 traffic light 가운데 정렬
+        trafficLightPosition: { x: 16, y: 12 },
       }
     : isWin
       ? {
@@ -25,7 +26,8 @@ function getBaseWindowOptions(): Electron.BrowserWindowConstructorOptions {
           titleBarOverlay: {
             color: '#00000000',
             symbolColor: nativeTheme.shouldUseDarkColors ? '#ffffff' : '#1f1f1f',
-            height: 48,
+            // 헤더 h-10 (40px)와 동기화
+            height: 40,
           },
         }
       : {};
