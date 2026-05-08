@@ -19,6 +19,10 @@ contextBridge.exposeInMainWorld('electronBridge', {
   isFullscreen: () => ipcRenderer.invoke('is-fullscreen'),
   tabs: {
     detach: (payload: unknown) => ipcRenderer.invoke('tabs:detach', payload),
+    beginDrag: (payload: unknown) => ipcRenderer.invoke('tabs:beginDrag', payload),
+    updateDragPosition: (pointerScreen: { x: number; y: number }) =>
+      ipcRenderer.send('tabs:updateDragPosition', pointerScreen),
+    endDrag: () => ipcRenderer.send('tabs:endDrag'),
     broadcastInvalidate: (queryKey: readonly unknown[]) =>
       ipcRenderer.send('tabs:invalidate', queryKey),
     onInvalidate: (

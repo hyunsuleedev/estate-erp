@@ -64,10 +64,22 @@ interface TabBridgeDetachPayload {
   size?: { width: number; height: number };
 }
 
+interface TabBridgeBeginDragPayload {
+  tab: TabBridgePayloadTab;
+  pointerScreen: { x: number; y: number };
+  mouseOffset: { x: number; y: number };
+  size?: { width: number; height: number };
+}
+
 interface TabsBridge {
   detach: (
     payload: TabBridgeDetachPayload,
   ) => Promise<{ ok: boolean; windowId?: number; error?: string }>;
+  beginDrag: (
+    payload: TabBridgeBeginDragPayload,
+  ) => Promise<{ ok: boolean; windowId?: number; error?: string }>;
+  updateDragPosition: (pointerScreen: { x: number; y: number }) => void;
+  endDrag: () => void;
   broadcastInvalidate: (queryKey: readonly unknown[]) => void;
   onInvalidate: (
     callback: (payload: { queryKey: readonly unknown[]; sourceWindowId: number }) => void,
