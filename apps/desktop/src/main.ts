@@ -1,83 +1,28 @@
-import { app, BrowserWindow, ipcMain, nativeTheme } from 'electron';
-import path from 'node:path';
+import { app, BrowserWindow, ipcMain } from 'electron';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import started from 'electron-squirrel-startup';
+import { WindowManager, registerTabIpcHandlers } from './main/windowManager';
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (started) {
   app.quit();
 }
 
-function getWindowOptions(): Electron.BrowserWindowConstructorOptions {
-  const isMac = process.platform === 'darwin';
-  const isWin = process.platform === 'win32';
-
-  const platformOptions: Partial<Electron.BrowserWindowConstructorOptions> = isMac
-    ? {
-        titleBarStyle: 'hiddenInset',
-        trafficLightPosition: { x: 16, y: 16 },
-      }
-    : isWin
-      ? {
-          titleBarStyle: 'hidden',
-          titleBarOverlay: {
-            color: '#00000000',
-            symbolColor: nativeTheme.shouldUseDarkColors ? '#ffffff' : '#1f1f1f',
-            height: 36,
-          },
-        }
-      : {};
-
-  return {
-    width: 1440,
-    height: 900,
-    minWidth: 1200,
-    minHeight: 760,
-    backgroundColor: '#f8f9fa',
-    webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
-    },
-    ...platformOptions,
-  };
-}
-
-let mainWindow: BrowserWindow | null = null;
+const windowManager = new WindowManager();
 
 const createWindow = () => {
-  mainWindow = new BrowserWindow(getWindowOptions());
-
-  if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
-    mainWindow.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
-  } else {
-    mainWindow.loadFile(
-      path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`),
-    );
-  }
-
-  if (!app.isPackaged) {
-    mainWindow.webContents.openDevTools({ mode: 'detach' });
-  }
-
-  // Notify renderer when fullscreen state changes
-  mainWindow.on('enter-full-screen', () => {
-    mainWindow?.webContents.send('fullscreen-changed', true);
-  });
-  mainWindow.on('leave-full-screen', () => {
-    mainWindow?.webContents.send('fullscreen-changed', false);
-  });
-
-  mainWindow.on('closed', () => {
-    mainWindow = null;
-  });
+  windowManager.createMainWindow();
 };
 
 // IPC: send message to renderer
 ipcMain.on('toggle-sidebar', () => {
-  mainWindow?.webContents.send('toggle-sidebar');
+  windowManager.getMainWindow()?.webContents.send('toggle-sidebar');
 });
 
 ipcMain.handle('get-platform', () => process.platform);
-ipcMain.handle('is-fullscreen', () => mainWindow?.isFullScreen() ?? false);
+ipcMain.handle('is-fullscreen', () => windowManager.getMainWindow()?.isFullScreen() ?? false);
+
+registerTabIpcHandlers(windowManager);
 
 // Known-harmless codex-internal stderr lines to suppress in the UI. Follows
 // Paperclip's `stripCodexRolloutNoise` pattern but extends it: Paperclip only
@@ -159,7 +104,7 @@ type CodexRun = {
 const codexRuns = new Map<string, CodexRun>();
 
 function sendCodex(runId: string, payload: unknown) {
-  mainWindow?.webContents.send('codex:event', { runId, ...(payload as object) });
+  windowManager.getMainWindow()?.webContents.send('codex:event', { runId, ...(payload as object) });
 }
 
 function flushLines(buf: string, emit: (line: string) => void): string {
