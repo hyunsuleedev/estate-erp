@@ -55,6 +55,13 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 import {
   DataTable,
@@ -474,7 +481,7 @@ function PropertiesPage() {
         enableSorting: false,
         cell: ({ row }) => (
           <span className="truncate text-[13px] font-medium text-slate-900">
-            {row.original.property?.unit?.name ?? '-'}
+            {row.original.property?.unit?.name ?? ''}
           </span>
         ),
       },
@@ -483,22 +490,28 @@ function PropertiesPage() {
         header: () => <TableHeaderLabel icon={<Type className="size-4" />} label="타입" />,
         size: 88,
         enableSorting: false,
-        cell: ({ row }) => (
-          <span className="truncate text-[13px] text-slate-700">
-            {getUnitTypeName(row.original.property)}
-          </span>
-        ),
+        cell: ({ row }) => {
+          const value = getUnitTypeName(row.original.property);
+          return (
+            <span className="truncate text-[13px] text-slate-700">
+              {value === '-' ? '' : value}
+            </span>
+          );
+        },
       },
       {
         id: 'exclusiveArea',
         header: () => <TableHeaderLabel icon={<Ruler className="size-4" />} label="전용면적" />,
         size: 96,
         enableSorting: false,
-        cell: ({ row }) => (
-          <span className="truncate text-[13px] text-slate-700 tabular-nums">
-            {formatAreaPyeong(getExclusiveAreaM2(row.original.property))}
-          </span>
-        ),
+        cell: ({ row }) => {
+          const value = formatAreaPyeong(getExclusiveAreaM2(row.original.property));
+          return (
+            <span className="truncate text-[13px] text-slate-700 tabular-nums">
+              {value === '-' ? '' : value}
+            </span>
+          );
+        },
       },
       {
         id: 'checkStatus',
@@ -545,7 +558,7 @@ function PropertiesPage() {
           return (
             <div className="flex min-w-0 flex-col gap-0.5">
               <span className="truncate text-[13px] font-medium text-slate-800">
-                {owner?.name ?? '-'}
+                {owner?.name ?? ''}
               </span>
               {owner?.phone && (
                 <span className="truncate text-[12px] text-slate-500 tabular-nums">
@@ -598,10 +611,10 @@ function PropertiesPage() {
   return (
     <CellEditProvider>
       <div className="flex h-[calc(100svh-5rem)] min-h-0 flex-col bg-white">
-        <section className="border-b border-slate-200 bg-white px-6 pb-2 pt-3">
+        <section className="border-b border-border bg-white px-8 pb-2 pt-3">
           <div className="flex items-start justify-between gap-4">
             <Tabs value={selectedTransactionType} onValueChange={handleTransactionTabChange} className="min-w-0 flex-1 gap-0">
-              <TabsList className="max-w-full justify-start overflow-x-auto bg-slate-100/70">
+              <TabsList className="max-w-full justify-start bg-muted">
                 {transactionTypeOptions.map((tab) => {
                   return (
                     <TabsTrigger
@@ -624,7 +637,7 @@ function PropertiesPage() {
           </div>
         </section>
 
-        <section className="border-b border-slate-200 bg-white px-6 py-2.5">
+        <section className="border-b border-border bg-white px-8 py-2.5">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div />
             <div className="flex flex-wrap items-center justify-end gap-1.5">
@@ -639,12 +652,12 @@ function PropertiesPage() {
                 />
               </div>
               <div className="relative w-64 max-w-full">
-                <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-slate-400" />
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   value={search}
                   onChange={(event) => handleSearchChange(event.target.value)}
                   placeholder="검색"
-                  className="h-8 border-transparent bg-white pl-8 pr-8 text-[13px] shadow-none hover:border-slate-200 focus:border-slate-300"
+                  className="h-8 border-transparent bg-white pl-8 pr-8 text-[13px] shadow-none hover:border-border focus:border-input"
                 />
                 {search && (
                   <button
@@ -802,7 +815,7 @@ function PropertiesPage() {
               pinnedColumns={['info', 'site', 'dong', 'unit']}
               layout="full-height"
               variant="notion"
-              rowHeight="auto"
+              rowHeight={32}
               onRowClick={(row) => setSelectedPropertyId(row.propertyId)}
               isLoading={isLoading}
               isLoadingMore={isFetchingNextPage}
@@ -829,8 +842,8 @@ function PropertiesPage() {
 
 function TableHeaderLabel({ icon, label }: { icon: ReactNode; label: string }) {
   return (
-    <span className="inline-flex min-w-0 items-center gap-1.5 text-slate-500">
-      <span className="shrink-0 text-slate-400">{icon}</span>
+    <span className="inline-flex min-w-0 items-center gap-1 text-[12px] font-normal text-muted-foreground">
+      <span className="shrink-0 [&>svg]:size-3 [&>svg]:text-muted-foreground/70">{icon}</span>
       <span className="truncate">{label}</span>
     </span>
   );
@@ -907,43 +920,48 @@ function PropertySheetContent({ property }: { property: Property }) {
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-white">
-      <SheetHeader className="space-y-4 border-b border-[#eeeeec] px-6 py-5">
+      <SheetHeader className="space-y-5 border-b border-border px-8 pb-6 pt-5">
         <div className="flex items-center justify-between gap-3 pr-8">
-          <div className="text-xs font-medium text-slate-500">빠른 확인</div>
-          <Button variant="ghost" size="sm" className="h-8 gap-1.5 px-2.5 text-xs" asChild>
+          <div className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+            빠른 확인
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 gap-1.5 px-2 text-[12px] text-muted-foreground hover:text-foreground"
+            asChild
+          >
             <Link to="/properties/$id" params={{ id: property.id }}>
               전체 페이지로 열기
               <ExternalLink className="size-3.5" />
             </Link>
           </Button>
         </div>
-        <div className="space-y-2">
-          <SheetTitle className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1 text-[24px] font-semibold leading-7 tracking-[-0.01em] text-slate-950">
+        <div className="space-y-3">
+          <SheetTitle className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1 text-[28px] font-bold leading-tight tracking-[-0.02em] text-foreground">
             <span>{title}</span>
-            {unitLabel && <span className="text-slate-950">{unitLabel}</span>}
+            {unitLabel && <span className="text-foreground">{unitLabel}</span>}
           </SheetTitle>
           {unitSummaryItems.length > 0 && (
-            <div className="text-[15px] font-medium leading-6 text-slate-800">
+            <div className="text-[14px] leading-6 text-muted-foreground">
               {unitSummaryItems.join(' · ')}
             </div>
           )}
-          <SheetDescription className="space-y-2 text-xs text-slate-500">
-            <span className="flex min-w-0 items-center gap-1.5">
+          <SheetDescription className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-muted-foreground">
+            <span className="inline-flex min-w-0 items-center gap-1.5">
               <MapPin className="size-3.5 shrink-0" />
               <span className="truncate">{address}</span>
             </span>
-            <span className="flex flex-wrap items-center gap-x-4 gap-y-1">
-              <span className="inline-flex items-center gap-1.5">
-                <Ruler className="size-3.5" />
-                {areaLabel}
-              </span>
-              <span className="inline-flex items-center gap-1.5">
-                <CalendarDays className="size-3.5" />
-                확인 {formatDateShort(latestUpdatedAt)}
-              </span>
+            <span className="inline-flex items-center gap-1.5">
+              <Ruler className="size-3.5" />
+              {areaLabel}
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <CalendarDays className="size-3.5" />
+              확인 {formatDateShort(latestUpdatedAt)}
             </span>
           </SheetDescription>
-          <div className="flex flex-wrap items-center gap-1.5">
+          <div className="flex flex-wrap items-center gap-1.5 pt-1">
             {listings.map((listing) => (
               <TransactionBadge key={listing.id} transactionType={listing.transactionType} />
             ))}
@@ -951,19 +969,35 @@ function PropertySheetContent({ property }: { property: Property }) {
           </div>
         </div>
 
-        <div className="grid gap-2 sm:grid-cols-2">
-          <SheetActionButton
-            icon={<Phone className="size-4" />}
-            label={ownerPhone ? `${owner?.contact?.name ?? '소유주'} 전화` : '소유주 연락처 없음'}
-            href={ownerPhone ? `tel:${ownerPhone}` : undefined}
+        <div className="flex flex-wrap items-center gap-1.5">
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 gap-1.5 px-3 text-[13px] font-medium"
             disabled={!ownerPhone}
-            emphasis
-          />
-          <Button variant="outline" size="sm" className="h-9 gap-2 px-3 text-sm font-medium" asChild>
+            asChild={!!ownerPhone}
+          >
+            {ownerPhone ? (
+              <a href={`tel:${ownerPhone}`}>
+                <Phone className="size-3.5" />
+                {owner?.contact?.name ?? '소유주'} 전화
+              </a>
+            ) : (
+              <span>
+                <Phone className="size-3.5" />
+                소유주 연락처 없음
+              </span>
+            )}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 gap-1.5 px-3 text-[13px] font-medium"
+            asChild
+          >
             <Link to="/properties/$id" params={{ id: property.id }}>
-              <MessageSquare className="size-4" />
-              상담 기록 보기
-              <ExternalLink className="size-3.5" />
+              <MessageSquare className="size-3.5" />
+              상담 기록
             </Link>
           </Button>
         </div>
@@ -1040,8 +1074,10 @@ function PropertySheetContent({ property }: { property: Property }) {
 
 function SheetSection({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <section className="space-y-3">
-      <h3 className="text-[12px] font-semibold text-slate-500">{title}</h3>
+    <section className="space-y-2.5">
+      <h3 className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+        {title}
+      </h3>
       {children}
     </section>
   );
@@ -1049,44 +1085,42 @@ function SheetSection({ title, children }: { title: string; children: ReactNode 
 
 function PropertySheetNoticeRow({ notice }: { notice: PropertySheetNotice }) {
   return (
-    <div className={cn(
-      'rounded-md border px-3 py-2.5',
-      notice.tone === 'danger' && 'border-red-100 bg-red-50/70',
-      notice.tone === 'warning' && 'border-amber-100 bg-amber-50/70',
-      notice.tone === 'neutral' && 'border-[#eeeeec] bg-slate-50/70',
-    )}>
-      <div className={cn(
-        'text-sm font-semibold',
-        notice.tone === 'danger' && 'text-red-800',
-        notice.tone === 'warning' && 'text-amber-800',
-        notice.tone === 'neutral' && 'text-slate-800',
-      )}>
-        {notice.title}
+    <div className="flex items-start gap-2.5 rounded-md border border-border bg-muted/40 px-3 py-2.5">
+      <span
+        className={cn(
+          'mt-1.5 size-1.5 shrink-0 rounded-full',
+          notice.tone === 'danger' && 'bg-[#e03e3e]',
+          notice.tone === 'warning' && 'bg-[#dfab01]',
+          notice.tone === 'neutral' && 'bg-[#9b9a97]',
+        )}
+      />
+      <div className="min-w-0 flex-1">
+        <div className="text-[13px] font-medium text-foreground">{notice.title}</div>
+        <p className="mt-0.5 text-[12px] leading-5 text-muted-foreground">{notice.detail}</p>
       </div>
-      <p className="mt-0.5 text-xs leading-5 text-slate-600">{notice.detail}</p>
     </div>
   );
 }
 
 function PropertySheetListingCard({ listing }: { listing: PropertyListing }) {
   return (
-    <div className="rounded-md border border-[#eeeeec] bg-white p-3">
+    <div className="rounded-md border border-border bg-white p-3 transition-colors hover:bg-muted/30">
       <div className="flex items-start justify-between gap-3">
         <div className="flex flex-wrap items-center gap-1.5">
           <TransactionBadge transactionType={listing.transactionType} />
           <StatusIndicator value={listing.checkStatus} />
           <JointBrokerageBadge listing={listing} />
           {listing.isHidden && (
-            <span className="inline-flex rounded-[4px] bg-[#fbe4e4] px-1.5 py-0.5 text-[11px] font-medium leading-5 text-[#9f5555]">
+            <span className="inline-flex rounded-md bg-[#fbe4e4] px-1.5 py-0.5 text-[11px] font-medium leading-5 text-[#9f5555]">
               숨김
             </span>
           )}
         </div>
-        <span className="shrink-0 text-[11px] text-slate-500">
+        <span className="shrink-0 text-[11px] text-muted-foreground">
           확인 {formatDateShort(listing.updatedAt)}
         </span>
       </div>
-      <div className="mt-2 text-[17px] font-semibold text-slate-950">
+      <div className="mt-2 text-[18px] font-semibold tracking-[-0.01em] text-foreground">
         <PriceCell
           transactionType={listing.transactionType}
           price={listing.price}
@@ -1094,12 +1128,12 @@ function PropertySheetListingCard({ listing }: { listing: PropertyListing }) {
           monthlyRent={listing.monthlyRent}
         />
       </div>
-      <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-slate-500">
+      <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[12px] text-muted-foreground">
         <span>등록 {formatDateShort(listing.createdAt)}</span>
         <span>확인 {formatDaysAgo(listing.updatedAt)}</span>
       </div>
       {listing.memo?.trim() && (
-        <p className="mt-2 line-clamp-2 rounded bg-slate-50 px-2 py-1.5 text-xs leading-5 text-slate-600">
+        <p className="mt-2.5 line-clamp-2 border-l-2 border-border pl-2.5 text-[12px] leading-5 text-muted-foreground">
           {listing.memo.trim()}
         </p>
       )}
@@ -1520,6 +1554,15 @@ function JointBrokerageStack({ listings }: { listings: ListingSummary[] }) {
   );
 }
 
+const checkStatusChipOptions = checkStatusOptions.map((option) => {
+  const meta = checkStatusMeta[option.value];
+  return {
+    value: option.value,
+    label: option.label,
+    className: meta?.pillClassName,
+  };
+});
+
 function ListingStatusStack({
   listings,
   onChange,
@@ -1527,16 +1570,33 @@ function ListingStatusStack({
   listings: ListingSummary[];
   onChange: (listingId: string, value: string) => void;
 }) {
+  const hasMultiple = listings.length > 1;
   return (
-    <div className="flex flex-col items-start gap-1 py-1" onClick={(event) => event.stopPropagation()}>
+    <div
+      className={cn(
+        '-mx-2.5 flex h-full flex-col items-stretch',
+        hasMultiple && 'divide-y divide-[#d9d9d6]',
+      )}
+      onClick={(event) => event.stopPropagation()}
+    >
       {listings.map((listing) => (
-        <div key={listing.id} className="flex items-center gap-1.5">
-          {listings.length > 1 && <TransactionMiniLabel transactionType={listing.transactionType} />}
-          <StatusDropdown
+        <div
+          key={listing.id}
+          className="flex flex-1 items-stretch"
+        >
+          <EditableCell
+            recordId={listing.id}
+            field="checkStatus"
             value={listing.checkStatus}
-            onChange={(value) => onChange(listing.id, value)}
-            compact
-          />
+            onSave={(_id, _field, value) => onChange(listing.id, value as string)}
+            editType="select-chip"
+            chipOptions={checkStatusChipOptions}
+          >
+            <span className="flex h-full w-full items-center gap-1.5 px-2.5">
+              {hasMultiple && <TransactionMiniLabel transactionType={listing.transactionType} />}
+              <StatusIndicator value={listing.checkStatus} />
+            </span>
+          </EditableCell>
         </div>
       ))}
     </div>
@@ -1550,11 +1610,20 @@ function ListingPriceStack({
   listings: ListingSummary[];
   onSave: (recordId: string, field: string, value: unknown) => void;
 }) {
+  const hasMultiple = listings.length > 1;
   return (
-    <div className="flex min-w-0 flex-col gap-1 py-1" onClick={(event) => event.stopPropagation()}>
+    <div
+      className={cn(
+        '-mx-2.5 flex h-full min-w-0 flex-col items-stretch',
+        hasMultiple && 'divide-y divide-[#d9d9d6]',
+      )}
+      onClick={(event) => event.stopPropagation()}
+    >
       {listings.map((listing) => (
-        <div key={listing.id} className="flex min-w-0 items-center gap-1.5">
-          {listings.length > 1 && <TransactionMiniLabel transactionType={listing.transactionType} />}
+        <div
+          key={listing.id}
+          className="flex min-w-0 flex-1 items-stretch"
+        >
           <EditableCell
             recordId={listing.id}
             field="price"
@@ -1562,12 +1631,15 @@ function ListingPriceStack({
             onSave={onSave}
             editType="number"
           >
-            <PriceCell
-              transactionType={listing.transactionType}
-              price={listing.price}
-              deposit={listing.deposit}
-              monthlyRent={listing.monthlyRent}
-            />
+            <span className="flex h-full w-full items-center gap-1.5 px-2.5">
+              {hasMultiple && <TransactionMiniLabel transactionType={listing.transactionType} />}
+              <PriceCell
+                transactionType={listing.transactionType}
+                price={listing.price}
+                deposit={listing.deposit}
+                monthlyRent={listing.monthlyRent}
+              />
+            </span>
           </EditableCell>
         </div>
       ))}
@@ -1576,11 +1648,20 @@ function ListingPriceStack({
 }
 
 function ListingAdStack({ listings }: { listings: ListingSummary[] }) {
+  const hasMultiple = listings.length > 1;
   return (
-    <div className="flex min-w-0 max-w-full flex-col items-start gap-1 overflow-hidden py-1">
+    <div
+      className={cn(
+        '-mx-2.5 flex h-full min-w-0 flex-col items-stretch',
+        hasMultiple && 'divide-y divide-[#d9d9d6]',
+      )}
+    >
       {listings.map((listing) => (
-        <div key={listing.id} className="flex min-w-0 max-w-full items-center gap-1.5 overflow-hidden">
-          {listings.length > 1 && <TransactionMiniLabel transactionType={listing.transactionType} />}
+        <div
+          key={listing.id}
+          className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden px-2.5"
+        >
+          {hasMultiple && <TransactionMiniLabel transactionType={listing.transactionType} />}
           <AdIndicator advertisements={listing.advertisements ?? []} />
         </div>
       ))}
@@ -1614,13 +1695,12 @@ function AdIndicator({
     <span className="inline-flex min-w-0 max-w-full flex-1 items-center gap-1 overflow-hidden">
       <span
         className={cn(
-          'inline-flex min-w-0 max-w-[64px] shrink rounded-[4px] px-1.5 py-0.5 text-[12px] font-medium leading-5',
+          'inline-flex min-w-0 max-w-[96px] shrink rounded-md px-1.5 py-0.5 text-[12px] font-medium leading-5',
           statusMeta.className,
         )}
       >
         <span className="truncate">{label}</span>
       </span>
-      <span className="min-w-0 flex-1 truncate text-[11px] text-slate-500">{statusMeta.label}</span>
     </span>
   );
 }
@@ -1945,18 +2025,30 @@ function SelectFilter({
   onChange: (value: string) => void;
   options: ReadonlyArray<{ value: string; label: string }>;
 }) {
+  const SENTINEL = '__all__';
   return (
-    <select
-      value={value}
-      onChange={(event) => onChange(event.target.value)}
-      className="h-8 w-full rounded-md border border-slate-200 bg-white px-2 text-[13px] text-slate-800 shadow-xs outline-none transition-colors focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
+    <Select
+      value={value === '' ? SENTINEL : value}
+      onValueChange={(next) => onChange(next === SENTINEL ? '' : next)}
     >
-      {options.map((option) => (
-        <option key={option.value} value={option.value}>
-          {option.label}
-        </option>
-      ))}
-    </select>
+      <SelectTrigger
+        size="sm"
+        className="w-full border-border bg-white text-[13px] text-foreground"
+      >
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {options.map((option) => (
+          <SelectItem
+            key={option.value}
+            value={option.value === '' ? SENTINEL : option.value}
+            className="text-[13px]"
+          >
+            {option.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   );
 }
 
