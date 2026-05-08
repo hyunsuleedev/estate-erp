@@ -612,8 +612,8 @@ function PropertiesPage() {
 
   return (
     <CellEditProvider>
-      <div className="flex h-[calc(100svh-5rem)] min-h-0 flex-col bg-white">
-        <section className="border-b border-border bg-white px-8 pb-2 pt-3">
+      <div className="-m-4 flex min-h-0 flex-1 flex-col bg-white">
+        <section className="border-b border-border bg-white px-3 py-2">
           <div className="flex items-start justify-between gap-4">
             <Tabs value={selectedTransactionType} onValueChange={handleTransactionTabChange} className="min-w-0 flex-1 gap-0">
               <TabsList className="max-w-full justify-start bg-muted">
@@ -639,7 +639,7 @@ function PropertiesPage() {
           </div>
         </section>
 
-        <section className="border-b border-border bg-white px-8 py-2.5">
+        <section className="border-b border-border bg-white px-3 py-2.5">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div />
             <div className="flex flex-wrap items-center justify-end gap-1.5">
@@ -800,7 +800,7 @@ function PropertiesPage() {
           )}
         </section>
 
-        <section className="flex min-h-0 flex-1 bg-white px-6 py-0">
+        <section className="flex min-h-0 flex-1 bg-white px-0 py-0">
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-white">
             {/* Data Table */}
             <DataTable
