@@ -45,12 +45,43 @@ interface CodexBridge {
   onEvent: (callback: (payload: CodexEventPayload) => void) => () => void;
 }
 
+interface TabBridgeDetachPayload {
+  tab: {
+    id: string;
+    kind: string;
+    title: string;
+    route: string;
+    routeParams?: Record<string, unknown>;
+    uiState?: {
+      scrollY?: number;
+      formDraft?: Record<string, unknown>;
+    };
+    createdAt: number;
+  };
+  position: { x: number; y: number };
+  size?: { width: number; height: number };
+}
+
+interface TabsBridge {
+  detach: (payload: TabBridgeDetachPayload) => Promise<{ ok: boolean; windowId?: number; error?: string }>;
+  broadcastInvalidate: (queryKey: readonly unknown[]) => void;
+  onInvalidate: (
+    callback: (payload: { queryKey: readonly unknown[]; sourceWindowId: number }) => void,
+  ) => () => void;
+  getWindowKind: () => Promise<'main' | 'detached'>;
+  getInitialTab: () => Promise<TabBridgeDetachPayload['tab'] | null>;
+  closeWindow: () => void;
+  openInMainWindow: (route: string) => Promise<{ ok: boolean; error?: string }>;
+  onOpenRoute: (callback: (route: string) => void) => () => void;
+}
+
 interface ElectronBridge {
   platform: string;
   onToggleSidebar: (callback: () => void) => () => void;
   onFullscreenChanged: (callback: (isFullscreen: boolean) => void) => () => void;
   getPlatform: () => Promise<string>;
   isFullscreen: () => Promise<boolean>;
+  tabs: TabsBridge;
   codex: CodexBridge;
 }
 

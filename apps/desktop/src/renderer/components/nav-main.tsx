@@ -17,6 +17,46 @@ import {
   SidebarMenuSubButton,
   SidebarMenuSubItem,
 } from "@/components/ui/sidebar"
+import { useTabStore } from '@/features/tabs/store/useTabStore'
+import { getRouteMeta } from '@/features/tabs/lib/routeMeta'
+
+/**
+ * 사이드바 메뉴 클릭 동작:
+ * - 일반 클릭 → 현재 활성 탭의 route 변경 (TanStack Link 기본 동작 + TabContent가 활성 탭 route 동기화)
+ * - Cmd/Ctrl 클릭 또는 미들 클릭 → 새 탭으로 열기
+ */
+function useTabAwareLinkHandlers(url: string) {
+  const openTab = useTabStore((s) => s.openTab)
+
+  const openInNewTab = () => {
+    const meta = getRouteMeta(url)
+    openTab({ route: url, kind: meta.kind, title: meta.title })
+  }
+
+  return {
+    onClick: (e: React.MouseEvent) => {
+      if (e.metaKey || e.ctrlKey) {
+        e.preventDefault()
+        openInNewTab()
+      }
+    },
+    onAuxClick: (e: React.MouseEvent) => {
+      if (e.button === 1) {
+        e.preventDefault()
+        openInNewTab()
+      }
+    },
+  }
+}
+
+function TabAwareLink({ to, children }: { to: string; children: React.ReactNode }) {
+  const handlers = useTabAwareLinkHandlers(to)
+  return (
+    <Link to={to} {...handlers}>
+      {children}
+    </Link>
+  )
+}
 
 export function NavMain({
   items,
@@ -73,9 +113,9 @@ export function NavMain({
                       return (
                         <SidebarMenuSubItem key={subItem.title}>
                           <SidebarMenuSubButton asChild isActive={isActive}>
-                            <Link to={subItem.url}>
+                            <TabAwareLink to={subItem.url}>
                               <span>{subItem.title}</span>
-                            </Link>
+                            </TabAwareLink>
                           </SidebarMenuSubButton>
                         </SidebarMenuSubItem>
                       );
@@ -91,10 +131,10 @@ export function NavMain({
                 isActive={!!matchRoute({ to: item.url, fuzzy: true })}
                 tooltip={item.title}
               >
-                <Link to={item.url}>
+                <TabAwareLink to={item.url}>
                   {item.icon && <item.icon />}
                   <span>{item.title}</span>
-                </Link>
+                </TabAwareLink>
               </SidebarMenuButton>
             </SidebarMenuItem>
           )
