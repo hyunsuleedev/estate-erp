@@ -868,6 +868,7 @@ function PropertyQuickSheet({
     <Sheet open={Boolean(propertyId)} onOpenChange={(open) => !open && onClose()}>
       <SheetContent
         side="right"
+        showCloseButton={false}
         className="!w-full !max-w-full !gap-0 overflow-hidden p-0 sm:!max-w-[720px]"
       >
         {propertyId && isLoading && <PropertySheetSkeleton />}
@@ -941,27 +942,37 @@ function PropertySheetContent({
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-white">
-      <SheetHeader className="space-y-5 border-b border-border px-8 pb-6 pt-5">
-        <div className="flex items-center justify-between gap-3 pr-8">
-          <div className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
-            빠른 확인
-          </div>
+      <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border bg-white px-8 py-3">
+        <span className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+          빠른 확인
+        </span>
+        <div className="flex items-center gap-2">
           <Button
-            variant="ghost"
+            variant="outline"
             size="sm"
-            className="h-7 gap-1.5 px-2 text-[12px] text-muted-foreground hover:text-foreground"
             onClick={() => {
               const route = `/properties/${property.id}`;
               const meta = getRouteMeta(route);
-              const tabTitle = [title, unitLabel].filter(Boolean).join(' ') || meta.title;
+              const tabTitle =
+                [title, unitLabel].filter(Boolean).join(' ') || meta.title;
               onClose();
               openTab({ route, kind: meta.kind, title: tabTitle });
             }}
           >
+            <ExternalLink />
             전체 페이지로 열기
-            <ExternalLink className="size-3.5" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={onClose}
+            aria-label="닫기"
+          >
+            <X />
           </Button>
         </div>
+      </div>
+      <SheetHeader className="space-y-5 border-b border-border px-8 pb-6 pt-5">
         <div className="space-y-3">
           <SheetTitle className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1 text-[28px] font-bold leading-tight tracking-[-0.02em] text-foreground">
             <span>{title}</span>

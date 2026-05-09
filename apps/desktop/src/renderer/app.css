@@ -64,6 +64,15 @@ body {
   -webkit-app-region: no-drag;
 }
 
+/* Radix Sheet/Dialog는 portal로 document.body에 떠있어도 macOS hiddenInset의
+   OS-level draggable 영역(창 최상단)과 겹치면 클릭이 차단됨. 항상 no-drag로 강제. */
+[data-slot="sheet-content"],
+[data-slot="sheet-overlay"],
+[data-slot="dialog-content"],
+[data-slot="dialog-overlay"] {
+  -webkit-app-region: no-drag;
+}
+
 /* Push sidebar below the fixed titlebar (40px = h-10) */
 [data-slot="sidebar-container"] {
   top: 40px !important;
