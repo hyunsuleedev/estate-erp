@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from '@tanstack/react-router';
 import { keepPreviousData, useInfiniteQuery, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useState, useCallback, useMemo, type ReactNode } from 'react';
+import { useState, useCallback, useEffect, useMemo, type ReactNode } from 'react';
 import {
   CalendarDays,
   Check,
@@ -864,6 +864,21 @@ function PropertyQuickSheet({
     enabled: Boolean(propertyId),
   });
 
+  // shadcn Sheet의 open animation은 500ms (data-[state=open]:duration-500).
+  // animation 동안 무거운 PropertySheetContent (헤더/거래카드/임차/타임라인 등 큰
+  // React 트리)를 mount하면 메인 스레드가 점유되어 CSS slide가 frame drop.
+  // animation이 완전히 끝난 뒤(550ms)에만 무거운 트리 mount + 그 전에는 가벼운
+  // Skeleton만. 닫힐 때 즉시 reset해 다음 open에서도 deferred 동작.
+  const [contentReady, setContentReady] = useState(false);
+  useEffect(() => {
+    if (!propertyId) {
+      setContentReady(false);
+      return;
+    }
+    const timer = window.setTimeout(() => setContentReady(true), 550);
+    return () => window.clearTimeout(timer);
+  }, [propertyId]);
+
   return (
     <Sheet open={Boolean(propertyId)} onOpenChange={(open) => !open && onClose()}>
       <SheetContent
@@ -871,11 +886,11 @@ function PropertyQuickSheet({
         showCloseButton={false}
         className="!w-full !max-w-full !gap-0 overflow-hidden p-0 sm:!max-w-[720px]"
       >
-        {propertyId && isLoading && <PropertySheetSkeleton />}
-        {propertyId && !isLoading && property && (
+        {propertyId && (!contentReady || isLoading) && <PropertySheetSkeleton />}
+        {propertyId && contentReady && !isLoading && property && (
           <PropertySheetContent property={property} onClose={onClose} />
         )}
-        {propertyId && !isLoading && !property && (
+        {propertyId && contentReady && !isLoading && !property && (
           <div className="flex h-full flex-col">
             <SheetHeader className="sr-only">
               <SheetTitle>매물을 찾을 수 없습니다</SheetTitle>
