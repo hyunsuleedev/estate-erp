@@ -1,7 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import type { Property, PropertyContact, Tenant } from '@estate-erp/api-client';
+import type {
+  Match,
+  Property,
+  PropertyContact,
+  Tenant,
+} from '@estate-erp/api-client';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -29,6 +34,9 @@ interface Props {
   property: Property;
   propertyContacts: PropertyContact[];
   tenants: Tenant[];
+  matches?: Match[];
+  /** 다이얼로그를 열 때 미리 선택할 contactId (인물 카드의 "이 사람과 상담 추가") */
+  preselectedContactId?: string;
 }
 
 export function AddConsultationDialog({
@@ -37,6 +45,8 @@ export function AddConsultationDialog({
   property,
   propertyContacts,
   tenants,
+  matches = [],
+  preselectedContactId,
 }: Props) {
   const queryClient = useQueryClient();
   const [type, setType] = useState<string>('phone');
@@ -45,8 +55,10 @@ export function AddConsultationDialog({
 
   const contactOptions = useMemo(() => {
     const list: Array<{ value: string; label: string }> = [];
+    const seen = new Set<string>();
     for (const pc of propertyContacts) {
-      if (pc.contact?.id) {
+      if (pc.contact?.id && !seen.has(pc.contact.id)) {
+        seen.add(pc.contact.id);
         const role = roleLabels[pc.role] ?? pc.role;
         list.push({
           value: pc.contact.id,
@@ -55,27 +67,41 @@ export function AddConsultationDialog({
       }
     }
     for (const t of tenants) {
-      if (t.contact?.id) {
+      if (t.contact?.id && !seen.has(t.contact.id)) {
+        seen.add(t.contact.id);
         list.push({
           value: t.contact.id,
           label: `${t.contact.name} · 세입자`,
         });
       }
     }
+    for (const m of matches) {
+      const buyer = m.buyerRequirement?.contact;
+      if (buyer?.id && !seen.has(buyer.id)) {
+        seen.add(buyer.id);
+        list.push({
+          value: buyer.id,
+          label: `${buyer.name ?? '이름 없음'} · 매수 고객`,
+        });
+      }
+    }
     return list;
-  }, [propertyContacts, tenants]);
+  }, [propertyContacts, tenants, matches]);
 
-  // dialog 열릴 때 초기 contactId 자동 채움 (소유자 또는 첫 번째)
+  // dialog 열릴 때 초기 contactId 자동 채움.
+  // preselectedContactId가 들어오면 그 사람을 선택, 아니면 contactOptions 첫 번째 (보통 소유자)
   useEffect(() => {
     if (!open) return;
     setType('phone');
     setContent('');
-    if (contactOptions.length > 0) {
+    if (preselectedContactId && contactOptions.some((o) => o.value === preselectedContactId)) {
+      setContactId(preselectedContactId);
+    } else if (contactOptions.length > 0) {
       setContactId(contactOptions[0].value);
     } else {
       setContactId('');
     }
-  }, [open, contactOptions]);
+  }, [open, contactOptions, preselectedContactId]);
 
   const mutation = useMutation({
     mutationFn: () =>

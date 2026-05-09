@@ -5,14 +5,11 @@ import type { PropertyListing } from '@estate-erp/api-client';
 import { api } from '@/lib/api';
 import { Skeleton } from '@/components/ui/skeleton';
 import { PropertyDetailHeader } from './-detail/PropertyDetailHeader';
-import { LocationCard } from './-detail/cards/LocationCard';
-import { SpecsCard } from './-detail/cards/SpecsCard';
-import { RelatedPeopleCard } from './-detail/cards/RelatedPeopleCard';
 import { MemoCard } from './-detail/cards/MemoCard';
 import { ExpiryCard } from './-detail/cards/ExpiryCard';
 import { ListingsSection } from './-detail/sections/ListingsSection';
 import { TenancySection } from './-detail/sections/TenancySection';
-import { DetailSpecsSection } from './-detail/sections/DetailSpecsSection';
+import { PeopleConsultationsSection } from './-detail/sections/PeopleConsultationsSection';
 import { ActivityTimelineSection } from './-detail/sections/ActivityTimelineSection';
 import { ActiveMatchesSection } from './-detail/sections/ActiveMatchesSection';
 import { QuickActionsPanel } from './-detail/actions/QuickActionsPanel';
@@ -63,10 +60,12 @@ function PropertyDetailPage() {
   });
 
   // Dialog state
-  const [consultationOpen, setConsultationOpen] = useState(false);
   const [matchOpen, setMatchOpen] = useState(false);
   const [priceDialogListing, setPriceDialogListing] =
     useState<PropertyListing | null>(null);
+  const [consultationDialog, setConsultationDialog] = useState<
+    { open: boolean; preselectedContactId: string }
+  >({ open: false, preselectedContactId: '' });
 
   if (isLoading) {
     return (
@@ -76,7 +75,7 @@ function PropertyDetailPage() {
           <Skeleton className="mt-3 h-7 w-72" />
           <Skeleton className="mt-2 h-3 w-96" />
         </div>
-        <div className="grid flex-1 grid-cols-[280px_minmax(0,1fr)_320px] gap-3 p-3">
+        <div className="grid flex-1 grid-cols-[260px_minmax(0,1fr)_320px] gap-3 p-3">
           <Skeleton className="h-full rounded" />
           <Skeleton className="h-full rounded" />
           <Skeleton className="h-full rounded" />
@@ -111,6 +110,9 @@ function PropertyDetailPage() {
     setPriceDialogListing(sortedListings[0]);
   };
 
+  const openConsultationDialog = (preselectedContactId = '') =>
+    setConsultationDialog({ open: true, preselectedContactId });
+
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-muted/20">
       <PropertyDetailHeader
@@ -122,36 +124,31 @@ function PropertyDetailPage() {
         }}
       />
 
-      <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 overflow-auto p-3 lg:grid-cols-[280px_minmax(0,1fr)] xl:grid-cols-[280px_minmax(0,1fr)_320px]">
-        {/* Left rail */}
+      <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 overflow-auto p-3 lg:grid-cols-[260px_minmax(0,1fr)] xl:grid-cols-[260px_minmax(0,1fr)_320px]">
+        {/* Left rail — 운영 메타만 (헤더와 중복 회피) */}
         <aside className="space-y-2">
-          <LocationCard property={property} />
-          <SpecsCard property={property} />
-          <RelatedPeopleCard
-            propertyContacts={relatedContacts}
-            tenants={activeTenants}
-          />
           <MemoCard property={property} />
           <ExpiryCard listings={listings} tenants={activeTenants} />
         </aside>
 
-        {/* Main */}
+        {/* Main — 인물·상담 중심 */}
         <main className="space-y-4">
           <ListingsSection
             listings={listings}
             onEditPrice={(listing) => setPriceDialogListing(listing)}
           />
+          <PeopleConsultationsSection
+            propertyContacts={relatedContacts}
+            tenants={activeTenants}
+            matches={matches}
+            consultations={consultations}
+            onAddConsultationFor={(contactId) => openConsultationDialog(contactId)}
+          />
           {activeTenants.length > 0 && (
             <TenancySection tenants={activeTenants} />
           )}
-          <DetailSpecsSection property={property} />
-          <ActivityTimelineSection
-            consultations={consultations}
-            listings={listings}
-            matches={matches}
-            onAddConsultation={() => setConsultationOpen(true)}
-          />
           <ActiveMatchesSection matches={matches} />
+          <ActivityTimelineSection listings={listings} matches={matches} />
         </main>
 
         {/* Right rail */}
@@ -161,7 +158,7 @@ function PropertyDetailPage() {
             onCallOwner={() => {
               /* CTI Phase */
             }}
-            onAddConsultation={() => setConsultationOpen(true)}
+            onAddConsultation={() => openConsultationDialog()}
             onCreateMatch={() => setMatchOpen(true)}
             onEditPrice={handleEditPriceForFirstListing}
             onShareNetwork={() => {
@@ -177,11 +174,15 @@ function PropertyDetailPage() {
 
       {/* Dialogs */}
       <AddConsultationDialog
-        open={consultationOpen}
-        onOpenChange={setConsultationOpen}
+        open={consultationDialog.open}
+        onOpenChange={(open) =>
+          setConsultationDialog((s) => ({ ...s, open }))
+        }
         property={property}
         propertyContacts={relatedContacts}
         tenants={activeTenants}
+        matches={matches}
+        preselectedContactId={consultationDialog.preselectedContactId}
       />
       <EditListingPriceDialog
         open={priceDialogListing !== null}
