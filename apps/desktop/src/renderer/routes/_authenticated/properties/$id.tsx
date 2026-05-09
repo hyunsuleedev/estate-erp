@@ -14,9 +14,6 @@ import { ActivityTimelineSection } from './-detail/sections/ActivityTimelineSect
 import { ActiveMatchesSection } from './-detail/sections/ActiveMatchesSection';
 import { QuickActionsPanel } from './-detail/actions/QuickActionsPanel';
 import { AdStatusPanel } from './-detail/actions/AdStatusPanel';
-import { PhotoPreviewPanel } from './-detail/actions/PhotoPreviewPanel';
-import { DocumentsPanel } from './-detail/actions/DocumentsPanel';
-import { ExternalListingPanel } from './-detail/actions/ExternalListingPanel';
 import { AddConsultationDialog } from './-detail/dialogs/AddConsultationDialog';
 import { EditListingPriceDialog } from './-detail/dialogs/EditListingPriceDialog';
 import { CreateMatchDialog } from './-detail/dialogs/CreateMatchDialog';
@@ -166,9 +163,6 @@ function PropertyDetailPage() {
             }}
           />
           <AdStatusPanel />
-          <PhotoPreviewPanel propertyId={id} />
-          <DocumentsPanel propertyId={id} />
-          <ExternalListingPanel />
         </aside>
       </div>
 
