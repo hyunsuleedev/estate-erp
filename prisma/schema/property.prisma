@@ -8,7 +8,6 @@ model Property {
   officeId String  @map("office_id") @db.Uuid
   siteId   String  @map("site_id") @db.Uuid
   unitId   String? @map("unit_id") @db.Uuid // nullable (토지/단독은 null)
-  memo     String?
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")

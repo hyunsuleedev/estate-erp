@@ -45,9 +45,8 @@ function NewPropertyPage() {
       const property = await api.properties.create({
         siteId: form.siteId,
         unitId: form.unitId || undefined,
-        memo: form.memo || undefined,
       });
-      // Step 2: Optionally create Listing (transaction data)
+      // Step 2: Optionally create Listing (transaction data + memo)
       if (form.createListing) {
         await api.listings.create({
           propertyId: property.id,
@@ -55,6 +54,7 @@ function NewPropertyPage() {
           price: form.price ? Number(form.price) : undefined,
           deposit: form.deposit ? Number(form.deposit) : undefined,
           monthlyRent: form.monthlyRent ? Number(form.monthlyRent) : undefined,
+          memo: form.memo || undefined,
         });
       }
       return property;

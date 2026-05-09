@@ -66,7 +66,6 @@ export class PropertiesController {
       unitId?: string | null;
       ownerName?: string;
       ownerPhone?: string;
-      memo?: string | null;
     },
     @CurrentUser() user: CurrentUserPayload,
   ) {
@@ -80,7 +79,6 @@ export class PropertiesController {
     dto: {
       siteId?: string;
       unitId?: string | null;
-      memo?: string | null;
     },
     @CurrentUser() user: CurrentUserPayload,
   ) {

@@ -259,11 +259,14 @@ async function wipe({ prisma, officeId }: Ctx) {
   });
 
   // Tenant, PropertyContact → Property
-  const demoProps = await prisma.property.findMany({
+  // memo 컬럼이 사라졌으므로 데모 Property 는 PropertyContact 의 memo 태그로 식별.
+  const demoPropertyContacts = await prisma.propertyContact.findMany({
     where: { officeId, memo: demoLike },
-    select: { id: true },
+    select: { propertyId: true },
   });
-  const propIds = demoProps.map((p) => p.id);
+  const propIds = Array.from(
+    new Set(demoPropertyContacts.map((pc) => pc.propertyId)),
+  );
   if (propIds.length > 0) {
     await prisma.tenant.deleteMany({ where: { propertyId: { in: propIds } } });
     await prisma.propertyContact.deleteMany({
@@ -326,10 +329,11 @@ async function seedProperties(
   const owners = contacts.slice(0, 4);
   const tenants = contacts.slice(8, 10);
   // 6개 Property 에 owner 를 라운드로빈으로 배치.
+  // memo 는 PropertyContact 에만 남기고, cleanup 도 PropertyContact.memo 태그로 한다.
   const propertyDefs = [0, 1, 2, 3, 4, 5].map((i) => ({
     unitIdx: i,
     ownerIdx: i % owners.length,
-    memo: `${DEMO_TAG} Property #${i + 1}`,
+    label: `Property #${i + 1}`,
   }));
 
   const created = [];
@@ -339,7 +343,6 @@ async function seedProperties(
         officeId: ctx.officeId,
         siteId: ctx.siteId,
         unitId: ctx.unitIds[def.unitIdx],
-        memo: def.memo,
       },
     });
     await ctx.prisma.propertyContact.create({
@@ -351,7 +354,7 @@ async function seedProperties(
         shareRatio: new Prisma.Decimal(100),
         isPrimary: true,
         status: 'active',
-        memo: `${DEMO_TAG} owner link`,
+        memo: `${DEMO_TAG} owner link · ${def.label}`,
       },
     });
     created.push(property);

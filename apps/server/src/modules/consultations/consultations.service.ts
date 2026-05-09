@@ -93,11 +93,11 @@ export class ConsultationsService {
           { contact: { name: { contains: q, mode: 'insensitive' } } },
           { contact: { phone: { contains: q, mode: 'insensitive' } } },
           { contact: { phone2: { contains: q, mode: 'insensitive' } } },
-          { property: { memo: { contains: q, mode: 'insensitive' } } },
           { property: { site: { name: { contains: q, mode: 'insensitive' } } } },
           { property: { unit: { name: { contains: q, mode: 'insensitive' } } } },
           { property: { unit: { dong: { name: { contains: q, mode: 'insensitive' } } } } },
           { listing: { transactionType: { contains: q, mode: 'insensitive' } } },
+          { listing: { memo: { contains: q, mode: 'insensitive' } } },
         ],
       });
     }

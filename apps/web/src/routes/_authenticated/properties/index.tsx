@@ -935,7 +935,7 @@ function PropertySheetContent({
   const areaLabel = formatPropertySheetArea(property);
   const latestUpdatedAt = getLatestPropertyListingUpdatedAt(property);
   const notices = getPropertySheetNotices(property);
-  const memo = property.memo?.trim() || listings.find((listing) => listing.memo?.trim())?.memo?.trim();
+  const memo = listings.find((listing) => listing.memo?.trim())?.memo?.trim();
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-white">
@@ -2548,7 +2548,8 @@ function getPropertySheetNotices(property: Property): PropertySheetNotice[] {
     });
   }
 
-  if (!property.memo?.trim() && consultations.length === 0) {
+  const hasAnyListingMemo = (property.listings ?? []).some((listing) => listing.memo?.trim());
+  if (!hasAnyListingMemo && consultations.length === 0) {
     notices.push({
       title: '상담 기록 없음',
       detail: '최근 통화나 확인 메모가 없어 매물 히스토리를 판단하기 어렵습니다.',
@@ -2673,9 +2674,7 @@ function formatJointBrokerageRequirementList(
 
 function getGroupMemo(group: PropertyListingGroup) {
   return (
-    group.listings.find((listing) => listing.memo?.trim())?.memo?.trim() ||
-    group.property?.memo?.trim() ||
-    '-'
+    group.listings.find((listing) => listing.memo?.trim())?.memo?.trim() || '-'
   );
 }
 

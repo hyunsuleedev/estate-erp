@@ -299,7 +299,7 @@ export class ContactsService {
     return this.prisma.consultation.findMany({
       where: { contactId: id, officeId },
       include: {
-        property: { select: { id: true, memo: true, site: { select: { name: true } } } },
+        property: { select: { id: true, site: { select: { name: true } } } },
         listing: { select: { id: true, transactionType: true, price: true, checkStatus: true } },
         createdBy: { select: { id: true, name: true } },
       },

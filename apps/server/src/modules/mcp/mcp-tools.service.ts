@@ -333,13 +333,12 @@ export class McpToolsService {
 
     this.add(
       'create_property',
-      '새 관리매물을 등록합니다. 단지(siteId)는 필수, 호실(unitId)은 선택.',
-      obj({ siteId: str('단지 ID'), unitId: str('호실 ID'), memo: str('메모') }, ['siteId']),
+      '새 관리매물을 등록합니다. 단지(siteId)는 필수, 호실(unitId)은 선택. 의뢰 메모는 매물(Listing) 단위에서 별도로 기록한다.',
+      obj({ siteId: str('단지 ID'), unitId: str('호실 ID') }, ['siteId']),
       async (a, c) =>
         this.properties.create(c.officeId, {
           siteId: a.siteId as string,
           unitId: a.unitId as string,
-          memo: a.memo as string,
         }),
     );
 

@@ -38,7 +38,6 @@ export interface PropertySearchQuery {
 interface PropertyCreateDto {
   siteId: string;
   unitId?: string | null;
-  memo?: string | null;
   ownerName?: string;
   ownerPhone?: string;
 }
@@ -46,7 +45,6 @@ interface PropertyCreateDto {
 interface PropertyUpdateDto {
   siteId?: string;
   unitId?: string | null;
-  memo?: string | null;
 }
 
 @Injectable()
@@ -116,7 +114,6 @@ export class PropertiesService {
               },
             },
           },
-          { memo: { contains: query.search, mode: 'insensitive' } },
         ],
       });
     }
@@ -260,7 +257,7 @@ export class PropertiesService {
 
     this.assertValidSiteUnitChain(site.type, unit);
 
-    const { ownerName, ownerPhone: rawOwnerPhone, ...propertyData } = dto;
+    const { ownerName, ownerPhone: rawOwnerPhone } = dto;
     const ownerPhone = rawOwnerPhone
       ? rawOwnerPhone.replace(/[\s\-()]/g, '')
       : undefined;
@@ -272,7 +269,6 @@ export class PropertiesService {
             officeId,
             siteId: site.id,
             unitId: unit?.id ?? null,
-            memo: propertyData.memo,
           },
         });
 
@@ -323,7 +319,6 @@ export class PropertiesService {
         officeId,
         siteId: site.id,
         unitId: unit?.id ?? null,
-        memo: propertyData.memo,
       },
       include: {
         site: true,
@@ -364,7 +359,6 @@ export class PropertiesService {
       data: {
         siteId: nextSite.id,
         unitId: nextUnit?.id ?? null,
-        memo: dto.memo,
       },
       include: {
         site: true,

@@ -291,12 +291,6 @@ function PropertyDetailPage() {
                     ['입주 가능', getMoveInLabel(activeTenants[0])],
                   ]}
                 />
-                {property.memo && (
-                  <div className="border-t px-5 py-4">
-                    <div className="text-xs font-medium text-muted-foreground">메모</div>
-                    <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-700">{property.memo}</p>
-                  </div>
-                )}
               </SectionPanel>
 
               <SectionPanel title={`소유주 · 관련인 ${relatedContacts.length}`} action="+ 관련인 추가">

@@ -35,7 +35,6 @@ export interface Property {
   officeId: string;
   siteId: string;
   unitId: string | null;
-  memo: string | null;
   createdAt: string;
   updatedAt: string;
   site?: {
@@ -85,11 +84,11 @@ export interface PropertiesFilter {
 export interface CreatePropertyDto {
   siteId: string;
   unitId?: string;
-  memo?: string;
 }
 
 export interface UpdatePropertyDto {
-  memo?: string;
+  siteId?: string;
+  unitId?: string | null;
 }
 
 export function createPropertiesApi(request: RequestFn) {

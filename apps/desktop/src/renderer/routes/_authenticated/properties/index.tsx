@@ -596,15 +596,11 @@ function PropertiesPage() {
       },
       {
         id: 'memo',
-        header: () => <TableHeaderLabel icon={<FileText className="size-4" />} label="메모" />,
+        header: () => <TableHeaderLabel icon={<FileText className="size-4" />} label="의뢰 메모" />,
         size: 320,
         minSize: 220,
         enableSorting: false,
-        cell: ({ row }) => (
-          <p className="line-clamp-2 text-[11px] leading-snug text-slate-600">
-            {getGroupMemo(row.original)}
-          </p>
-        ),
+        cell: ({ row }) => <ListingMemoStack listings={row.original.listings} />,
       },
     ],
     [handleCellSave],
@@ -953,7 +949,8 @@ function PropertySheetContent({
   const areaLabel = formatPropertySheetArea(property);
   const latestUpdatedAt = getLatestPropertyListingUpdatedAt(property);
   const notices = getPropertySheetNotices(property);
-  const memo = property.memo?.trim() || listings.find((listing) => listing.memo?.trim())?.memo?.trim();
+  // 메모는 listing(거래 의뢰) 단위. property.memo는 더 이상 UI에서 사용하지 않음.
+  const memo = listings.find((listing) => listing.memo?.trim())?.memo?.trim();
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-white">
@@ -1714,6 +1711,34 @@ function ListingAdStack({ listings }: { listings: ListingSummary[] }) {
         >
           {hasMultiple && <TransactionMiniLabel transactionType={listing.transactionType} />}
           <AdIndicator advertisements={listing.advertisements ?? []} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ListingMemoStack({ listings }: { listings: ListingSummary[] }) {
+  const hasMultiple = listings.length > 1;
+  return (
+    <div
+      className={cn(
+        '-mx-2.5 flex h-full min-w-0 flex-col items-stretch',
+        hasMultiple && 'divide-y divide-[#d9d9d6]',
+      )}
+    >
+      {listings.map((listing) => (
+        <div
+          key={listing.id}
+          className="flex min-w-0 flex-1 items-start gap-1.5 px-2.5 py-1"
+        >
+          {hasMultiple && (
+            <TransactionMiniLabel transactionType={listing.transactionType} />
+          )}
+          <p className="line-clamp-2 min-w-0 flex-1 text-[11px] leading-snug text-slate-600">
+            {listing.memo?.trim() || (
+              <span className="text-slate-400">-</span>
+            )}
+          </p>
         </div>
       ))}
     </div>
@@ -2579,7 +2604,8 @@ function getPropertySheetNotices(property: Property): PropertySheetNotice[] {
     });
   }
 
-  if (!property.memo?.trim() && consultations.length === 0) {
+  const hasAnyListingMemo = listings.some((listing) => listing.memo?.trim());
+  if (!hasAnyListingMemo && consultations.length === 0) {
     notices.push({
       title: '상담 기록 없음',
       detail: '최근 통화나 확인 메모가 없어 매물 히스토리를 판단하기 어렵습니다.',
@@ -2702,13 +2728,6 @@ function formatJointBrokerageRequirementList(
     .join(', ');
 }
 
-function getGroupMemo(group: PropertyListingGroup) {
-  return (
-    group.listings.find((listing) => listing.memo?.trim())?.memo?.trim() ||
-    group.property?.memo?.trim() ||
-    '-'
-  );
-}
 
 function getLatestListingUpdatedAt(group: PropertyListingGroup) {
   return group.listings.reduce<string | null>((latest, listing) => {

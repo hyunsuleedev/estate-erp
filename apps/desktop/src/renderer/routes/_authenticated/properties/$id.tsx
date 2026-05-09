@@ -5,7 +5,6 @@ import type { PropertyListing } from '@estate-erp/api-client';
 import { api } from '@/lib/api';
 import { Skeleton } from '@/components/ui/skeleton';
 import { PropertyDetailHeader } from './-detail/PropertyDetailHeader';
-import { MemoCard } from './-detail/cards/MemoCard';
 import { ExpiryCard } from './-detail/cards/ExpiryCard';
 import { ListingsSection } from './-detail/sections/ListingsSection';
 import { TenancySection } from './-detail/sections/TenancySection';
@@ -13,7 +12,6 @@ import { PeopleConsultationsSection } from './-detail/sections/PeopleConsultatio
 import { ActivityTimelineSection } from './-detail/sections/ActivityTimelineSection';
 import { ActiveMatchesSection } from './-detail/sections/ActiveMatchesSection';
 import { QuickActionsPanel } from './-detail/actions/QuickActionsPanel';
-import { AdStatusPanel } from './-detail/actions/AdStatusPanel';
 import { AddConsultationDialog } from './-detail/dialogs/AddConsultationDialog';
 import { EditListingPriceDialog } from './-detail/dialogs/EditListingPriceDialog';
 import { CreateMatchDialog } from './-detail/dialogs/CreateMatchDialog';
@@ -72,8 +70,7 @@ function PropertyDetailPage() {
           <Skeleton className="mt-3 h-7 w-72" />
           <Skeleton className="mt-2 h-3 w-96" />
         </div>
-        <div className="grid flex-1 grid-cols-[260px_minmax(0,1fr)_320px] gap-3 p-3">
-          <Skeleton className="h-full rounded" />
+        <div className="grid flex-1 grid-cols-[260px_minmax(0,1fr)] gap-3 p-3">
           <Skeleton className="h-full rounded" />
           <Skeleton className="h-full rounded" />
         </div>
@@ -121,10 +118,21 @@ function PropertyDetailPage() {
         }}
       />
 
-      <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 overflow-auto p-3 lg:grid-cols-[260px_minmax(0,1fr)] xl:grid-cols-[260px_minmax(0,1fr)_320px]">
-        {/* Left rail — 운영 메타만 (헤더와 중복 회피) */}
+      <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 overflow-auto p-3 lg:grid-cols-[260px_minmax(0,1fr)]">
+        {/* Left rail — 빠른 액션 + 운영 메타 */}
         <aside className="space-y-2">
-          <MemoCard property={property} />
+          <QuickActionsPanel
+            ownerPhone={ownerPhone}
+            onCallOwner={() => {
+              /* CTI Phase */
+            }}
+            onAddConsultation={() => openConsultationDialog()}
+            onCreateMatch={() => setMatchOpen(true)}
+            onEditPrice={handleEditPriceForFirstListing}
+            onShareNetwork={() => {
+              /* Network Phase */
+            }}
+          />
           <ExpiryCard listings={listings} tenants={activeTenants} />
         </aside>
 
@@ -132,6 +140,7 @@ function PropertyDetailPage() {
         <main className="space-y-4">
           <ListingsSection
             listings={listings}
+            propertyId={id}
             onEditPrice={(listing) => setPriceDialogListing(listing)}
           />
           <PeopleConsultationsSection
@@ -147,23 +156,6 @@ function PropertyDetailPage() {
           <ActiveMatchesSection matches={matches} />
           <ActivityTimelineSection listings={listings} matches={matches} />
         </main>
-
-        {/* Right rail */}
-        <aside className="hidden space-y-2 xl:block">
-          <QuickActionsPanel
-            ownerPhone={ownerPhone}
-            onCallOwner={() => {
-              /* CTI Phase */
-            }}
-            onAddConsultation={() => openConsultationDialog()}
-            onCreateMatch={() => setMatchOpen(true)}
-            onEditPrice={handleEditPriceForFirstListing}
-            onShareNetwork={() => {
-              /* Network Phase */
-            }}
-          />
-          <AdStatusPanel />
-        </aside>
       </div>
 
       {/* Dialogs */}
