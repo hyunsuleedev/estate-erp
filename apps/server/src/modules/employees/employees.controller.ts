@@ -8,6 +8,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { RolesGuard } from '../../common/guards/roles.guard';
@@ -98,15 +99,35 @@ export class EmployeesController {
     return this.employeesService.updateRole(id, user, dto.role);
   }
 
+  /**
+   * 사장님이 직원 비번 재설정 (옵션 1).
+   * 분당 5회 제한 — 사장님 1명이 빠르게 여러 직원 처리하는 시나리오 고려.
+   */
   @Post(':id/reset-password')
   @Roles('owner', 'manager')
   @UseGuards(RolesGuard)
+  @Throttle({ auth: { limit: 5, ttl: 60_000 } })
   resetPassword(
     @Param('id') id: string,
     @Body() dto: { newPassword: string },
     @CurrentUser() user: CurrentUserPayload,
   ) {
     return this.employeesService.resetPassword(id, user, dto.newPassword);
+  }
+
+  /**
+   * 직원 본인 비번 변경 (첫 로그인 후 강제 변경 or 평소 변경).
+   * - 현재 비번 검증 → 새 비번 설정 → mustChangePassword: false
+   *
+   * 분당 5회 — 현재 비번 추측을 위한 오프라인 brute force 방어.
+   */
+  @Post('me/change-password')
+  @Throttle({ auth: { limit: 5, ttl: 60_000 } })
+  changeMyPassword(
+    @Body() dto: { currentPassword: string; newPassword: string },
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.employeesService.changeMyPassword(user, dto);
   }
 
   @Get(':id/performance')

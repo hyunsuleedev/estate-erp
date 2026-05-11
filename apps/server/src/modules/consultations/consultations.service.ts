@@ -33,9 +33,10 @@ export class ConsultationsService {
   private readonly defaultInclude = {
     contact: { select: { id: true, name: true, phone: true } },
     property: {
+      // NOTE: Property 모델에는 memo 필드가 schema상 존재하지 않음 (docs/DATA_STRUCTURE.md와 불일치).
+      // 별도 task로 추적 중. schema 기준으로 select 제한.
       select: {
         id: true,
-        memo: true,
         site: { select: { name: true } },
         unit: {
           select: {

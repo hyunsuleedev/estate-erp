@@ -1,6 +1,9 @@
 generator client {
   provider        = "prisma-client-js"
   previewFeatures = ["postgresqlExtensions"]
+  // Docker(Alpine musl amd64 — EB t3.small = x86_64) + 로컬 dev(native)
+  // 로컬 Mac arm64에서 빌드해도 linux-musl-arm64는 EB에서 안 쓰므로 제외 → engine 크기 절약
+  binaryTargets   = ["native", "linux-musl-openssl-3.0.x"]
 }
 
 datasource db {

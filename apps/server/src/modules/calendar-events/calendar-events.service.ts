@@ -3,7 +3,9 @@ import { PrismaService } from '../../prisma/prisma.service';
 
 const defaultInclude = {
   user: { select: { id: true, name: true } },
-  property: { select: { id: true, memo: true, site: { select: { name: true } } } },
+  // NOTE: Property 모델에는 memo 필드가 schema상 존재하지 않음 (docs/DATA_STRUCTURE.md와 불일치).
+  // 별도 task로 추적 중. schema 기준으로 select 제한.
+  property: { select: { id: true, site: { select: { name: true } } } },
   listing: { select: { id: true, transactionType: true, price: true, checkStatus: true } },
   contact: { select: { id: true, name: true, phone: true } },
   match: { select: { id: true, stage: true } },
