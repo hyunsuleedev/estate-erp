@@ -46,6 +46,7 @@ export interface ToolDefinition {
 export interface ToolCallResult {
   content: Array<{ type: 'text'; text: string }>;
   isError: boolean;
+  [key: string]: unknown;
 }
 
 interface McpContext {
