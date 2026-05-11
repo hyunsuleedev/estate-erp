@@ -1,0 +1,65 @@
+# Dependencies — Docker가 install 다시 함
+node_modules
+**/node_modules
+.pnpm-store
+**/.pnpm-store
+
+# Build outputs — Docker가 다시 빌드
+dist
+**/dist
+build
+**/build
+.next
+**/.next
+out
+**/out
+**/tsconfig.tsbuildinfo
+
+# Environment — Secrets Manager로 주입, 이미지에 포함 X
+.env
+**/.env
+**/.env.local
+**/.env.*.local
+!**/.env.example
+
+# Git / IDE
+.git
+.gitignore
+.vscode
+.idea
+.DS_Store
+**/.DS_Store
+
+# Tests / CI 산출물
+**/__tests__
+**/coverage
+**/.nyc_output
+
+# Docs / 무관 파일
+docs
+docs-archive
+README.md
+**/*.md
+!apps/server/README.md
+
+# Electron 빌드 산출물 (server 이미지에 불필요)
+apps/desktop/release
+apps/desktop/dist
+apps/desktop/out
+
+# Mobile / Web 산출물 (server 이미지에 불필요)
+apps/web/dist
+apps/mobile
+
+# CTI bridge / MCP server 패키지 (Phase 1 server image에 불필요)
+apps/cti-bridge
+packages/mcp-server
+
+# Logs / 임시 파일
+*.log
+*.tmp
+.playwright-mcp
+.claude
+
+# CI 산출물
+.github/workflows/*.yml.bak
