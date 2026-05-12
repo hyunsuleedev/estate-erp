@@ -11,8 +11,8 @@ if [ -n "$SEED_SCRIPT" ]; then
     exit 2
   fi
   echo "[entrypoint] Running one-off seed: $SCRIPT_PATH"
-  # tsx 는 server workspace 의 dependency 이므로 거기 .bin 을 사용한다.
-  exec apps/server/node_modules/.bin/tsx "$SCRIPT_PATH"
+  # pnpm hoisted layout: tsx 는 root node_modules/.bin 에 들어간다 (workspace 의존성).
+  exec node_modules/.bin/tsx "$SCRIPT_PATH"
 fi
 
 # Prisma migrate deploy — task 부팅 시 자동 실행
