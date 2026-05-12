@@ -25,6 +25,7 @@ import { PropertyPhotosModule } from '../property-photos/property-photos.module'
 import { AgentModule } from '../agent/agent.module';
 import { InboxModule } from '../inbox/inbox.module';
 import { McpController } from './mcp.controller';
+import { OAuthDiscoveryController } from './oauth-discovery.controller';
 import { McpServerFactory } from './mcp-server.factory';
 import { McpToolsService } from './mcp-tools.service';
 import { McpAuthGuard } from './mcp-auth.guard';
@@ -59,7 +60,7 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
     AgentModule,
     InboxModule,
   ],
-  controllers: [McpController],
+  controllers: [McpController, OAuthDiscoveryController],
   providers: [
     McpServerFactory,
     McpToolsService,

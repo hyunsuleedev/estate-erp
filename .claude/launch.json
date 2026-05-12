@@ -19,6 +19,12 @@
       "runtimeExecutable": "pnpm",
       "runtimeArgs": ["--filter", "@estate-erp/desktop", "exec", "vite", "--config", "vite.renderer.config.ts"],
       "port": 5174
+    },
+    {
+      "name": "estaitt-web",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--dir", "../estaitt-web", "dev"],
+      "port": 4000
     }
   ]
 }
