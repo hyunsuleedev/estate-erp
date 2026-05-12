@@ -1,0 +1,174 @@
+name: Seed RDS (one-off)
+
+# 운영 RDS 에 일회성 시드를 돌리는 워크플로우.
+# 현재 배포 중인 task definition 의 마지막 revision 을 재사용하여 ECS run-task 로 단일 task 를 띄운다.
+# 컨테이너의 entrypoint 는 SEED_SCRIPT 환경변수가 설정되면 마이그레이트를 스킵하고 prisma/<script>.ts 만 실행한다.
+#
+# 사용법: GitHub Actions UI 에서 Run workflow → script_name 입력 → Run.
+# 허용 스크립트는 보안상 화이트리스트로 묶는다.
+
+on:
+  workflow_dispatch:
+    inputs:
+      script_name:
+        description: 'prisma/<script_name>.ts (확장자 제외)'
+        type: choice
+        required: true
+        options:
+          - seed-legal-dong
+          - seed-public-sites-test
+
+concurrency:
+  group: seed-rds
+  cancel-in-progress: false
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: ap-northeast-2
+  AWS_ACCOUNT_ID: '724090280734'
+  ECS_CLUSTER: estate-erp
+  TASK_FAMILY: estate-erp-server
+  CONTAINER_NAME: server
+
+jobs:
+  run-seed:
+    name: Run seed via ECS run-task
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ env.AWS_ACCOUNT_ID }}:role/estate-erp-gha-deploy-role
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Resolve latest task definition + service network config
+        id: resolve
+        run: |
+          set -euo pipefail
+
+          TASK_DEF_ARN=$(aws ecs describe-task-definition \
+            --task-definition ${{ env.TASK_FAMILY }} \
+            --query 'taskDefinition.taskDefinitionArn' \
+            --output text)
+          echo "task_def_arn=$TASK_DEF_ARN" >> "$GITHUB_OUTPUT"
+          echo "Resolved task definition: $TASK_DEF_ARN"
+
+          SUBNETS=$(aws ecs describe-services \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --services estate-erp-server \
+            --query 'services[0].networkConfiguration.awsvpcConfiguration.subnets' \
+            --output json)
+          SG=$(aws ecs describe-services \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --services estate-erp-server \
+            --query 'services[0].networkConfiguration.awsvpcConfiguration.securityGroups' \
+            --output json)
+          ASSIGN_IP=$(aws ecs describe-services \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --services estate-erp-server \
+            --query 'services[0].networkConfiguration.awsvpcConfiguration.assignPublicIp' \
+            --output text)
+
+          NET_CFG=$(jq -nc \
+            --argjson subnets "$SUBNETS" \
+            --argjson sg "$SG" \
+            --arg ip "$ASSIGN_IP" \
+            '{awsvpcConfiguration: {subnets: $subnets, securityGroups: $sg, assignPublicIp: $ip}}')
+          echo "net_cfg<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$NET_CFG" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+          echo "Network config: $NET_CFG"
+
+      - name: Run one-off seed task
+        id: run
+        run: |
+          set -euo pipefail
+
+          OVERRIDES=$(jq -nc \
+            --arg name "${{ env.CONTAINER_NAME }}" \
+            --arg script "${{ inputs.script_name }}" \
+            '{containerOverrides: [{name: $name, environment: [{name: "SEED_SCRIPT", value: $script}]}]}')
+
+          echo "Starting task with overrides: $OVERRIDES"
+
+          TASK_ARN=$(aws ecs run-task \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --task-definition "${{ steps.resolve.outputs.task_def_arn }}" \
+            --launch-type FARGATE \
+            --platform-version LATEST \
+            --network-configuration '${{ steps.resolve.outputs.net_cfg }}' \
+            --overrides "$OVERRIDES" \
+            --started-by "gha-seed-${{ github.run_id }}" \
+            --query 'tasks[0].taskArn' \
+            --output text)
+
+          echo "task_arn=$TASK_ARN" >> "$GITHUB_OUTPUT"
+          echo "Started task: $TASK_ARN"
+
+      - name: Wait for task to stop
+        id: wait
+        run: |
+          set -euo pipefail
+          aws ecs wait tasks-stopped \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --tasks "${{ steps.run.outputs.task_arn }}"
+
+          DETAILS=$(aws ecs describe-tasks \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --tasks "${{ steps.run.outputs.task_arn }}" \
+            --query 'tasks[0]' \
+            --output json)
+
+          EXIT_CODE=$(echo "$DETAILS" | jq -r '.containers[0].exitCode // "null"')
+          STOP_REASON=$(echo "$DETAILS" | jq -r '.stoppedReason // ""')
+          CONTAINER_REASON=$(echo "$DETAILS" | jq -r '.containers[0].reason // ""')
+
+          echo "exit_code=$EXIT_CODE" >> "$GITHUB_OUTPUT"
+          echo "stop_reason=$STOP_REASON" >> "$GITHUB_OUTPUT"
+          echo "container_reason=$CONTAINER_REASON" >> "$GITHUB_OUTPUT"
+
+          echo "## Seed task result" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Script**: \`${{ inputs.script_name }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Task ARN**: \`${{ steps.run.outputs.task_arn }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Exit code**: $EXIT_CODE" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Stop reason**: $STOP_REASON" >> "$GITHUB_STEP_SUMMARY"
+          [ -n "$CONTAINER_REASON" ] && echo "- **Container reason**: $CONTAINER_REASON" >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$EXIT_CODE" != "0" ]; then
+            echo "Seed task failed (exit_code=$EXIT_CODE)" >&2
+            exit 1
+          fi
+
+      - name: Print task logs (best effort)
+        if: always()
+        run: |
+          set +e
+          TASK_ID="${{ steps.run.outputs.task_arn }}"
+          TASK_ID="${TASK_ID##*/}"
+
+          LOG_CONFIG=$(aws ecs describe-task-definition \
+            --task-definition ${{ env.TASK_FAMILY }} \
+            --query 'taskDefinition.containerDefinitions[0].logConfiguration' \
+            --output json)
+          LOG_GROUP=$(echo "$LOG_CONFIG" | jq -r '.options["awslogs-group"] // empty')
+          LOG_PREFIX=$(echo "$LOG_CONFIG" | jq -r '.options["awslogs-stream-prefix"] // empty')
+
+          if [ -z "$LOG_GROUP" ] || [ -z "$LOG_PREFIX" ]; then
+            echo "logConfiguration 에 awslogs-group/prefix 가 설정되어 있지 않아 로그를 가져올 수 없습니다."
+            exit 0
+          fi
+
+          LOG_STREAM="${LOG_PREFIX}/${{ env.CONTAINER_NAME }}/${TASK_ID}"
+          echo "Fetching logs from: $LOG_GROUP / $LOG_STREAM"
+          aws logs get-log-events \
+            --log-group-name "$LOG_GROUP" \
+            --log-stream-name "$LOG_STREAM" \
+            --start-from-head \
+            --query 'events[*].message' \
+            --output text | tr '\t' '\n'

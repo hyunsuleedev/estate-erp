@@ -274,6 +274,9 @@ importers:
       rxjs:
         specifier: ^7.8.0
         version: 7.8.2
+      tsx:
+        specifier: ^4.21.0
+        version: 4.21.0
       zod:
         specifier: ^4.4.3
         version: 4.4.3
