@@ -89,13 +89,23 @@ interface NaverComplex {
 }
 
 async function main() {
-  const jsonPath = path.resolve(
-    process.argv[2] ||
-      path.join(
-        process.env.HOME || '~',
-        'Documents/naver-read/gracium_all.json',
-      ),
+  // 기본 경로: prisma/data/gracium_all.json (Docker 이미지 내 위치).
+  // argv 또는 HOME 경로도 fallback 으로 지원해서 로컬 개발 호환.
+  const defaultPath = path.resolve(__dirname, 'data/gracium_all.json');
+  const homeFallback = path.join(
+    process.env.HOME || '~',
+    'Documents/naver-read/gracium_all.json',
   );
+  const candidates = [process.argv[2], defaultPath, homeFallback].filter(
+    (p): p is string => !!p,
+  );
+  const jsonPath = candidates.find((p) => fs.existsSync(p));
+  if (!jsonPath) {
+    console.error(
+      `JSON 파일을 찾을 수 없습니다. 다음 경로들을 확인했습니다:\n${candidates.join('\n')}`,
+    );
+    process.exit(1);
+  }
   console.log(`Loading: ${jsonPath}`);
   const data: NaverComplex = JSON.parse(fs.readFileSync(jsonPath, 'utf-8'));
 
@@ -111,39 +121,92 @@ async function main() {
   console.log(`1. 법정동 확인: ${data.complexDetail.complex.cortarAddress} (${wardCode})`);
 
   // ============================================================
-  // 2. Site (고덕그라시움)
+  // 2. Site (고덕그라시움) — idempotent
+  //    1) naverComplexCode 로 찾음
+  //    2) 없으면 (name + wardCode + officeId=null + isPublic=true) 로 fallback
+  //       (seed-public-sites-test.ts 로 만든 stub row 흡수용)
+  //    3) 그래도 없으면 신규 생성
   // ============================================================
-  console.log('2. Site 생성...');
+  console.log('2. Site 생성/확인...');
 
   const builtYear = data.overview.useApproveYmd
     ? parseInt(data.overview.useApproveYmd.slice(0, 4))
     : null;
 
-  // 네이버 단지코드로 기존 site 확인
-  const existingSite = await prisma.site.findFirst({
+  let site = await prisma.site.findFirst({
     where: { naverComplexCode: data.complexNo },
   });
 
-  const site = existingSite || await prisma.site.create({
-    data: {
-      officeId: null,
-      isPublic: true,
-      isLocked: true,
-      type: 'apartment',
-      name: data.complexName,
-      wardCode: wardCode,
-      lat: data.overview.latitude,
-      lng: data.overview.longitude,
-      roadAddress: data.complexDetail.complex.roadAddress ?? null,
-      jibunAddress: data.complexDetail.complex.cortarAddress ?? null,
-      naverComplexCode: data.complexNo,
-      builtYear: builtYear,
-      totalUnits: data.overview.totalHouseHoldCount,
-      totalDongs: data.overview.totalDongCount,
-    },
-  });
+  if (!site) {
+    const stub = await prisma.site.findFirst({
+      where: {
+        name: data.complexName,
+        wardCode,
+        officeId: null,
+        isPublic: true,
+      },
+    });
+    if (stub) {
+      console.log(
+        `   기존 stub Site 발견 (id: ${stub.id}, naverComplexCode: ${stub.naverComplexCode ?? 'null'}). 메타데이터 갱신`,
+      );
+      site = await prisma.site.update({
+        where: { id: stub.id },
+        data: {
+          naverComplexCode: data.complexNo,
+          lat: data.overview.latitude,
+          lng: data.overview.longitude,
+          roadAddress: data.complexDetail.complex.roadAddress ?? null,
+          jibunAddress: data.complexDetail.complex.cortarAddress ?? null,
+          builtYear: builtYear,
+          totalUnits: data.overview.totalHouseHoldCount,
+          totalDongs: data.overview.totalDongCount,
+        },
+      });
+    }
+  }
 
-  console.log(`   Site: ${site.name} (id: ${site.id})${existingSite ? ' (기존)' : ''}`);
+  if (!site) {
+    site = await prisma.site.create({
+      data: {
+        officeId: null,
+        isPublic: true,
+        isLocked: true,
+        type: 'apartment',
+        name: data.complexName,
+        wardCode: wardCode,
+        lat: data.overview.latitude,
+        lng: data.overview.longitude,
+        roadAddress: data.complexDetail.complex.roadAddress ?? null,
+        jibunAddress: data.complexDetail.complex.cortarAddress ?? null,
+        naverComplexCode: data.complexNo,
+        builtYear: builtYear,
+        totalUnits: data.overview.totalHouseHoldCount,
+        totalDongs: data.overview.totalDongCount,
+      },
+    });
+    console.log(`   Site: ${site.name} 신규 생성 (id: ${site.id})`);
+  } else {
+    console.log(`   Site: ${site.name} (id: ${site.id}) — 재사용`);
+  }
+
+  // 이미 Dong 이 채워져 있으면 호실 import 스킵 (idempotency)
+  const existingDongCount = await prisma.dong.count({
+    where: { siteId: site.id },
+  });
+  if (existingDongCount > 0) {
+    console.log(
+      `   Site 에 이미 Dong ${existingDongCount}개 존재 — 호실 import 스킵 (안전한 중복 방지)`,
+    );
+    const existingUnitCount = await prisma.unit.count({
+      where: { siteId: site.id },
+    });
+    console.log(`\n=== Import 스킵 (이미 채워져 있음) ===`);
+    console.log(`Site: ${site.name} (${site.id})`);
+    console.log(`  Dong: ${existingDongCount}개`);
+    console.log(`  Unit: ${existingUnitCount}개`);
+    return;
+  }
 
   // ============================================================
   // 3. SiteUnitType (평형 카탈로그)

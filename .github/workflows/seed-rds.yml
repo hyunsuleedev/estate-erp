@@ -16,7 +16,7 @@ on:
         required: true
         options:
           - seed-legal-dong
-          - seed-public-sites-test
+          - seed-gracium
 
 concurrency:
   group: seed-rds
