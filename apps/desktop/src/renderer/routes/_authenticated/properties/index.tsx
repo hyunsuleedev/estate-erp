@@ -617,7 +617,7 @@ function PropertiesPage() {
       {
         id: 'moveInAvailable',
         header: () => <TableHeaderLabel icon={<DoorOpen className="size-4" />} label="입주가능일" />,
-        size: 130,
+        size: 140,
         enableSorting: false,
         cell: ({ row }) => <MoveInAvailableStack listings={row.original.listings} onSave={handleCellSave} />,
       },
