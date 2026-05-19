@@ -1,5 +1,22 @@
 import type { RequestFn } from '../client.js';
-import type { ListingAdvertisement } from './listings.js';
+import type { PaginatedResponse } from '../types.js';
+import type { Listing, ListingAdvertisement } from './listings.js';
+
+export type ListingAdvertisementWithListing = ListingAdvertisement & {
+  listing?: Listing;
+};
+
+export interface ListingAdvertisementsFilter {
+  listingId?: string;
+  channel?: string;
+  status?: string;
+  source?: string;
+  search?: string;
+  sortBy?: 'createdAt' | 'updatedAt' | 'startedAt' | 'lastCheckedAt';
+  sortOrder?: 'asc' | 'desc';
+  page?: number;
+  limit?: number;
+}
 
 export interface CreateListingAdvertisementDto {
   listingId: string;
@@ -36,6 +53,11 @@ export interface UpdateListingAdvertisementDto {
 
 export function createListingAdvertisementsApi(request: RequestFn) {
   return {
+    findAll: (filters?: ListingAdvertisementsFilter) =>
+      request<PaginatedResponse<ListingAdvertisementWithListing>>('/listing-advertisements', {
+        params: filters as Record<string, string | number | boolean | undefined>,
+      }),
+
     create: (dto: CreateListingAdvertisementDto) =>
       request<ListingAdvertisement>('/listing-advertisements', {
         method: 'POST',

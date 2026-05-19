@@ -34,7 +34,7 @@ const STATIC_ROUTES: Record<string, RouteMeta> = {
   '/properties': { title: '매물관리', kind: 'property', icon: Building },
   '/properties/new': { title: '매물 등록', kind: 'property', icon: Building },
   '/properties/external-listings': { title: '광고노트', kind: 'property', icon: Building },
-  '/properties/naver-my-ads': { title: '네이버 내 광고', kind: 'property', icon: Building },
+  '/properties/my-ads': { title: '내광고관리', kind: 'property', icon: Building },
   '/contacts': { title: '연락처', kind: 'contact', icon: BookUser },
   '/contacts/new': { title: '연락처 추가', kind: 'contact', icon: BookUser },
   '/partner-brokers': { title: '파트너 중개사', kind: 'contact', icon: Handshake },

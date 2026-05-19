@@ -9,6 +9,7 @@ import {
   ListingAdvertisementSource,
   ListingAdvertisementStatus,
 } from '@estate-erp/shared';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 
 const VALID_STATUSES: ReadonlySet<string> = new Set(
@@ -54,9 +55,148 @@ interface UpdateDto {
   lastSyncedAt?: Date | string | null;
 }
 
+interface FindAllQuery {
+  listingId?: string;
+  channel?: string;
+  status?: string;
+  source?: string;
+  search?: string;
+  sortBy?: 'createdAt' | 'updatedAt' | 'startedAt' | 'lastCheckedAt';
+  sortOrder?: 'asc' | 'desc';
+  page?: number;
+  limit?: number;
+}
+
 @Injectable()
 export class ListingAdvertisementsService {
   constructor(private readonly prisma: PrismaService) {}
+
+  async findAll(officeId: string, query: FindAllQuery = {}) {
+    if (query.status) {
+      this.assertValidStatus(query.status);
+    }
+    if (query.source) {
+      this.assertValidSource(query.source);
+    }
+    if (query.channel) {
+      this.assertKnownChannelShape(query.channel);
+    }
+
+    const filters: Prisma.ListingAdvertisementWhereInput[] = [{ officeId }];
+
+    if (query.listingId) {
+      filters.push({ listingId: query.listingId });
+    }
+    if (query.channel) {
+      filters.push({ channel: query.channel });
+    }
+    if (query.status) {
+      filters.push({ status: query.status });
+    }
+    if (query.source) {
+      filters.push({ source: query.source });
+    }
+    if (query.search) {
+      filters.push({
+        OR: [
+          { channel: { contains: query.search, mode: 'insensitive' } },
+          { status: { contains: query.search, mode: 'insensitive' } },
+          { source: { contains: query.search, mode: 'insensitive' } },
+          { memo: { contains: query.search, mode: 'insensitive' } },
+          { externalAdId: { contains: query.search, mode: 'insensitive' } },
+          { url: { contains: query.search, mode: 'insensitive' } },
+          {
+            listing: {
+              property: {
+                site: {
+                  name: { contains: query.search, mode: 'insensitive' },
+                },
+              },
+            },
+          },
+          {
+            listing: {
+              property: {
+                site: {
+                  roadAddress: { contains: query.search, mode: 'insensitive' },
+                },
+              },
+            },
+          },
+          {
+            listing: {
+              property: {
+                site: {
+                  jibunAddress: { contains: query.search, mode: 'insensitive' },
+                },
+              },
+            },
+          },
+          {
+            listing: {
+              property: {
+                unit: {
+                  name: { contains: query.search, mode: 'insensitive' },
+                },
+              },
+            },
+          },
+        ],
+      });
+    }
+
+    const where =
+      filters.length === 1 ? filters[0] : ({ AND: filters } as Prisma.ListingAdvertisementWhereInput);
+    const sortBy = this.resolveSortField(query.sortBy);
+    const sortOrder = this.resolveSortOrder(query.sortOrder);
+    const page = Math.max(1, query.page || 1);
+    const limit = Math.min(100, Math.max(1, query.limit || 20));
+    const skip = (page - 1) * limit;
+
+    const [items, total] = await Promise.all([
+      this.prisma.listingAdvertisement.findMany({
+        where,
+        include: {
+          listing: {
+            include: {
+              property: {
+                include: {
+                  site: true,
+                  unit: {
+                    include: {
+                      dong: true,
+                      siteUnitType: true,
+                    },
+                  },
+                },
+              },
+              jointBrokeragePartner: {
+                select: {
+                  id: true,
+                  name: true,
+                  phone: true,
+                },
+              },
+            },
+          },
+        },
+        orderBy: { [sortBy]: sortOrder },
+        skip,
+        take: limit,
+      }),
+      this.prisma.listingAdvertisement.count({ where }),
+    ]);
+
+    return {
+      items,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
+  }
 
   async create(officeId: string, dto: CreateDto) {
     if (!dto.listingId) {
@@ -216,6 +356,16 @@ export class ListingAdvertisementsService {
         'channel must be lowercase slug (a-z, 0-9, _, -)',
       );
     }
+  }
+
+  private resolveSortField(sortBy?: FindAllQuery['sortBy']) {
+    return sortBy && ['createdAt', 'updatedAt', 'startedAt', 'lastCheckedAt'].includes(sortBy)
+      ? sortBy
+      : 'updatedAt';
+  }
+
+  private resolveSortOrder(sortOrder?: FindAllQuery['sortOrder']) {
+    return sortOrder === 'asc' ? 'asc' : 'desc';
   }
 
   /** 같은 (officeId, listingId, channel) 위에 또 다른 active 광고가 있으면 409. */

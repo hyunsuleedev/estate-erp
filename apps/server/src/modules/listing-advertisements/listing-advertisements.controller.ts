@@ -2,9 +2,11 @@ import {
   Body,
   Controller,
   Delete,
+  Get,
   Param,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
@@ -21,6 +23,32 @@ import { ListingAdvertisementsService } from './listing-advertisements.service';
 @UseGuards(JwtAuthGuard)
 export class ListingAdvertisementsController {
   constructor(private readonly service: ListingAdvertisementsService) {}
+
+  @Get()
+  findAll(
+    @CurrentUser() user: CurrentUserPayload,
+    @Query('listingId') listingId: string,
+    @Query('channel') channel: string,
+    @Query('status') status: string,
+    @Query('source') source: string,
+    @Query('search') search: string,
+    @Query('sortBy') sortBy: string,
+    @Query('sortOrder') sortOrder: string,
+    @Query('page') page: string,
+    @Query('limit') limit: string,
+  ) {
+    return this.service.findAll(user.officeId, {
+      listingId: listingId || undefined,
+      channel: channel || undefined,
+      status: status || undefined,
+      source: source || undefined,
+      search: search || undefined,
+      sortBy: (sortBy as 'createdAt' | 'updatedAt' | 'startedAt' | 'lastCheckedAt') || undefined,
+      sortOrder: (sortOrder as 'asc' | 'desc') || undefined,
+      page: page ? Number(page) : undefined,
+      limit: limit ? Number(limit) : undefined,
+    });
+  }
 
   @Post()
   create(
