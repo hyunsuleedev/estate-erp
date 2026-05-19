@@ -473,7 +473,7 @@ function PropertiesPage() {
         size: 72,
         enableSorting: false,
         cell: ({ row }) => (
-          <span className="truncate text-[13px] text-slate-800">
+          <span className="truncate text-[13px] font-medium text-slate-900">
             {getDongName(row.original.property)}
           </span>
         ),
