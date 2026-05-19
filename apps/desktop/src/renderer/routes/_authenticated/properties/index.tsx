@@ -470,7 +470,7 @@ function PropertiesPage() {
       {
         id: 'dong',
         header: () => <TableHeaderLabel icon={<Hash className="size-4" />} label="동" />,
-        size: 72,
+        size: 58,
         enableSorting: false,
         cell: ({ row }) => (
           <span className="truncate text-[13px] font-medium text-slate-900">
