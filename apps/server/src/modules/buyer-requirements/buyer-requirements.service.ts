@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { normalizePhone } from '../contacts/contact-phone.utils';
 
 export interface BuyerRequirementSearchQuery {
   // Multi-value filters (comma-separated or arrays). Single string is treated
@@ -156,10 +157,11 @@ export class BuyerRequirementsService {
     // ── Free-text search ────────────────────────────────────────
     if (query.search && query.search.trim()) {
       const q = query.search.trim();
+      const normalized = normalizePhone(q);
       AND.push({
         OR: [
           { contact: { name: { contains: q, mode: 'insensitive' } } },
-          { contact: { phone: { contains: q } } },
+          { contact: { phones: { some: { normalizedPhone: { contains: normalized } } } } },
           { memo: { contains: q, mode: 'insensitive' } },
           { preferredSites: { some: { site: { name: { contains: q, mode: 'insensitive' } } } } },
         ],

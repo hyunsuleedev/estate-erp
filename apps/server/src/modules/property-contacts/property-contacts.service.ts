@@ -1,16 +1,22 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import {
+  contactPhonesIncludeOrdered,
+  normalizePhone,
+  withPrimaryContactPhone,
+} from '../contacts/contact-phone.utils';
 
 @Injectable()
 export class PropertyContactsService {
   constructor(private readonly prisma: PrismaService) {}
 
   async findByProperty(officeId: string, propertyId: string) {
-    return this.prisma.propertyContact.findMany({
+    const items = await this.prisma.propertyContact.findMany({
       where: { officeId, propertyId },
-      include: { contact: true },
+      include: { contact: { include: { phones: contactPhonesIncludeOrdered } } },
       orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }],
     });
+    return items.map(withPrimaryContactPhone);
   }
 
   async findByContact(officeId: string, contactId: string) {
@@ -24,10 +30,10 @@ export class PropertyContactsService {
   async findOne(id: string, officeId: string) {
     const pc = await this.prisma.propertyContact.findFirst({
       where: { id, officeId },
-      include: { contact: true, property: { include: { site: true } } },
+      include: { contact: { include: { phones: contactPhonesIncludeOrdered } }, property: { include: { site: true } } },
     });
     if (!pc) throw new NotFoundException('PropertyContact not found');
-    return pc;
+    return withPrimaryContactPhone(pc);
   }
 
   async create(
@@ -44,8 +50,8 @@ export class PropertyContactsService {
   ) {
     return this.prisma.propertyContact.create({
       data: { officeId, ...dto },
-      include: { contact: true },
-    });
+      include: { contact: { include: { phones: contactPhonesIncludeOrdered } } },
+    }).then(withPrimaryContactPhone);
   }
 
   async createWithNewContact(
@@ -63,21 +69,39 @@ export class PropertyContactsService {
   ) {
     const { name, phone, ...pcData } = dto;
     return this.prisma.$transaction(async (tx) => {
+      const normalizedPhone = phone ? normalizePhone(phone) : null;
       // 같은 사무소 내 동일 전화번호 Contact 검색
-      let contact = phone
-        ? await tx.contact.findFirst({ where: { officeId, phone } })
+      let contact = normalizedPhone
+        ? await tx.contact.findFirst({
+            where: { officeId, phones: { some: { normalizedPhone, isActive: true } } },
+          })
         : null;
 
       if (!contact) {
         contact = await tx.contact.create({
-          data: { officeId, name, phone },
+          data: {
+            officeId,
+            name,
+            phones: normalizedPhone
+              ? {
+                  create: [{
+                    phone: phone as string,
+                    normalizedPhone,
+                    label: 'mobile',
+                    isPrimary: true,
+                    isActive: true,
+                    office: { connect: { id: officeId } },
+                  }],
+                }
+              : undefined,
+          },
         });
       }
 
       return tx.propertyContact.create({
         data: { officeId, contactId: contact.id, ...pcData },
-        include: { contact: true },
-      });
+        include: { contact: { include: { phones: contactPhonesIncludeOrdered } } },
+      }).then(withPrimaryContactPhone);
     });
   }
 
@@ -97,8 +121,8 @@ export class PropertyContactsService {
     return this.prisma.propertyContact.update({
       where: { id },
       data: dto,
-      include: { contact: true },
-    });
+      include: { contact: { include: { phones: contactPhonesIncludeOrdered } } },
+    }).then(withPrimaryContactPhone);
   }
 
   async remove(id: string, officeId: string) {

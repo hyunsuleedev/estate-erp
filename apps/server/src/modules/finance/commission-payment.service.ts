@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { contactPhonesSelectOrdered } from '../contacts/contact-phone.utils';
 
 export interface DistributionInput {
   recipientType: 'our_office' | 'partner_broker';
@@ -28,7 +29,7 @@ export class CommissionPaymentService {
     return this.prisma.commissionPayment.findMany({
       where: { officeId, dealId },
       include: {
-        payerContact: { select: { id: true, name: true, phone: true } },
+        payerContact: { select: { id: true, name: true, phones: contactPhonesSelectOrdered } },
         distributions: {
           include: {
             partnerBroker: { select: { id: true, name: true } },
@@ -70,7 +71,7 @@ export class CommissionPaymentService {
             },
           },
         },
-        payerContact: { select: { id: true, name: true, phone: true } },
+        payerContact: { select: { id: true, name: true, phones: contactPhonesSelectOrdered } },
       },
       orderBy: { dueDate: 'asc' },
     });
@@ -346,7 +347,7 @@ export class CommissionPaymentService {
     return this.prisma.commissionPayment.findFirst({
       where: { id, officeId },
       include: {
-        payerContact: { select: { id: true, name: true, phone: true } },
+        payerContact: { select: { id: true, name: true, phones: contactPhonesSelectOrdered } },
         distributions: {
           include: {
             partnerBroker: { select: { id: true, name: true } },

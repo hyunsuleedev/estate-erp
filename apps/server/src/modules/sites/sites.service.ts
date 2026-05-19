@@ -5,6 +5,10 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import {
+  contactPhonesIncludeOrdered,
+  withPrimaryPhone,
+} from '../contacts/contact-phone.utils';
 
 interface SiteWriteDto {
   type?: string;
@@ -87,16 +91,16 @@ export class SitesService {
                   include: {
                     propertyContacts: {
                       where: { role: 'owner', status: 'active' },
-                      include: { contact: true },
+                      include: { contact: { include: { phones: contactPhonesIncludeOrdered } } },
                     },
                     tenants: {
                       where: { status: 'residing' },
-                      include: { contact: true },
+                      include: { contact: { include: { phones: contactPhonesIncludeOrdered } } },
                     },
                     consultations: {
                       orderBy: { createdAt: 'desc' },
                       take: 1,
-                      include: { contact: true },
+                      include: { contact: { include: { phones: contactPhonesIncludeOrdered } } },
                     },
                   },
                 },
@@ -115,11 +119,11 @@ export class SitesService {
               include: {
                 propertyContacts: {
                   where: { role: 'owner', status: 'active' },
-                  include: { contact: true },
+                  include: { contact: { include: { phones: contactPhonesIncludeOrdered } } },
                 },
                 tenants: {
                   where: { status: 'residing' },
-                  include: { contact: true },
+                  include: { contact: { include: { phones: contactPhonesIncludeOrdered } } },
                 },
               },
             },
@@ -128,6 +132,48 @@ export class SitesService {
       },
     });
     if (!site) throw new NotFoundException('Site not found');
+    return this.withContactPhones(site);
+  }
+
+  private withContactPhones<T>(site: T): T {
+    const hydrateProperty = (property: {
+      propertyContacts?: Array<{ contact?: { phones?: [] } | null }>;
+      tenants?: Array<{ contact?: { phones?: [] } | null }>;
+      consultations?: Array<{ contact?: { phones?: [] } | null }>;
+    }) => {
+      if (property.propertyContacts) {
+        property.propertyContacts = property.propertyContacts.map((propertyContact) => ({
+          ...propertyContact,
+          contact: propertyContact.contact ? withPrimaryPhone(propertyContact.contact) : propertyContact.contact,
+        }));
+      }
+      if (property.tenants) {
+        property.tenants = property.tenants.map((tenant) => ({
+          ...tenant,
+          contact: tenant.contact ? withPrimaryPhone(tenant.contact) : tenant.contact,
+        }));
+      }
+      if (property.consultations) {
+        property.consultations = property.consultations.map((consultation) => ({
+          ...consultation,
+          contact: consultation.contact ? withPrimaryPhone(consultation.contact) : consultation.contact,
+        }));
+      }
+    };
+
+    const draft = site as Record<string, unknown>;
+    for (const unit of (draft.units as Array<{ properties?: unknown[] }> | undefined) ?? []) {
+      for (const property of unit.properties ?? []) {
+        hydrateProperty(property as Parameters<typeof hydrateProperty>[0]);
+      }
+    }
+    for (const dong of (draft.dongs as Array<{ units?: Array<{ properties?: unknown[] }> }> | undefined) ?? []) {
+      for (const unit of dong.units ?? []) {
+        for (const property of unit.properties ?? []) {
+          hydrateProperty(property as Parameters<typeof hydrateProperty>[0]);
+        }
+      }
+    }
     return site;
   }
 

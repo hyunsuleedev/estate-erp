@@ -1,6 +1,12 @@
 import { Injectable, NotFoundException, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import {
+  contactPhonesSelectOrdered,
+  normalizePhone,
+  withPrimaryContactPhone,
+  withPrimaryPhone,
+} from '../contacts/contact-phone.utils';
 import FormData = require('form-data');
 
 export interface ConsultationSearchQuery {
@@ -32,7 +38,7 @@ export class ConsultationsService {
   constructor(private readonly prisma: PrismaService) {}
 
   private readonly defaultInclude = {
-    contact: { select: { id: true, name: true, phone: true } },
+    contact: { select: { id: true, name: true, phones: contactPhonesSelectOrdered } },
     property: {
       // NOTE: Property 모델에는 memo 필드가 schema상 존재하지 않음 (docs/DATA_STRUCTURE.md와 불일치).
       // 별도 task로 추적 중. schema 기준으로 select 제한.
@@ -102,8 +108,7 @@ export class ConsultationsService {
         OR: [
           { content: { contains: q, mode: 'insensitive' } },
           { contact: { name: { contains: q, mode: 'insensitive' } } },
-          { contact: { phone: { contains: q, mode: 'insensitive' } } },
-          { contact: { phones: { some: { normalizedPhone: { contains: q.replace(/[\s\-()]/g, '') } } } } },
+          { contact: { phones: { some: { normalizedPhone: { contains: normalizePhone(q) } } } } },
           { property: { site: { name: { contains: q, mode: 'insensitive' } } } },
           { property: { unit: { name: { contains: q, mode: 'insensitive' } } } },
           { property: { unit: { dong: { name: { contains: q, mode: 'insensitive' } } } } },
@@ -132,7 +137,7 @@ export class ConsultationsService {
     ]);
 
     return {
-      items,
+      items: items.map(withPrimaryContactPhone),
       pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
     };
   }
@@ -173,7 +178,7 @@ export class ConsultationsService {
       include: this.defaultInclude,
     });
     if (!consultation) throw new NotFoundException('Consultation not found');
-    return consultation;
+    return withPrimaryContactPhone(consultation);
   }
 
   async create(
@@ -204,7 +209,7 @@ export class ConsultationsService {
         buyerReqId: buyerReqId || undefined,
       },
       include: this.defaultInclude,
-    });
+    }).then(withPrimaryContactPhone);
   }
 
   async update(
@@ -220,7 +225,7 @@ export class ConsultationsService {
       where: { id },
       data: dto,
       include: this.defaultInclude,
-    });
+    }).then(withPrimaryContactPhone);
   }
 
   async remove(id: string, officeId: string) {
@@ -229,12 +234,13 @@ export class ConsultationsService {
   }
 
   async getRecent(officeId: string, limit = 10) {
-    return this.prisma.consultation.findMany({
+    const consultations = await this.prisma.consultation.findMany({
       where: { officeId },
       include: this.defaultInclude,
       orderBy: { createdAt: 'desc' },
       take: limit,
     });
+    return consultations.map(withPrimaryContactPhone);
   }
 
   // ================================================================
@@ -358,7 +364,7 @@ export class ConsultationsService {
       this.prisma.callRecording.findMany({
         where,
         include: {
-          contact: { select: { id: true, name: true, phone: true } },
+          contact: { select: { id: true, name: true, phones: contactPhonesSelectOrdered } },
           user: { select: { id: true, name: true } },
           messages: { orderBy: { seq: 'asc' } },
           _count: { select: { messages: true } },
@@ -371,7 +377,7 @@ export class ConsultationsService {
     ]);
 
     return {
-      items,
+      items: items.map(withPrimaryContactPhone),
       pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
     };
   }
@@ -383,7 +389,7 @@ export class ConsultationsService {
     const recording = await this.prisma.callRecording.findFirst({
       where: { id, officeId },
       include: {
-        contact: { select: { id: true, name: true, phone: true } },
+        contact: { select: { id: true, name: true, phones: contactPhonesSelectOrdered } },
         user: { select: { id: true, name: true } },
         messages: { orderBy: { seq: 'asc' } },
         consultations: {
@@ -392,7 +398,7 @@ export class ConsultationsService {
       },
     });
     if (!recording) throw new NotFoundException('Recording not found');
-    return recording;
+    return withPrimaryContactPhone(recording);
   }
 
   /**
@@ -413,7 +419,7 @@ export class ConsultationsService {
     let contactId = dto.contactId || null;
     if (!contactId && dto.phoneNumber) {
       const contact = await this.prisma.contact.findFirst({
-        where: { officeId, phone: dto.phoneNumber },
+        where: { officeId, phones: { some: { normalizedPhone: normalizePhone(dto.phoneNumber), isActive: true } } },
         select: { id: true },
       });
       contactId = contact?.id || null;
@@ -431,11 +437,11 @@ export class ConsultationsService {
         calledAt: new Date(),
       },
       include: {
-        contact: { select: { id: true, name: true, phone: true } },
+        contact: { select: { id: true, name: true, phones: contactPhonesSelectOrdered } },
       },
     });
 
-    return recording;
+    return withPrimaryContactPhone(recording);
   }
 
   // ================================================================

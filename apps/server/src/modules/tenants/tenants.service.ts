@@ -1,28 +1,34 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import {
+  contactPhonesIncludeOrdered,
+  normalizePhone,
+  withPrimaryContactPhone,
+} from '../contacts/contact-phone.utils';
 
 @Injectable()
 export class TenantsService {
   constructor(private readonly prisma: PrismaService) {}
 
   async findByProperty(officeId: string, propertyId: string) {
-    return this.prisma.tenant.findMany({
+    const tenants = await this.prisma.tenant.findMany({
       where: { officeId, propertyId },
-      include: { contact: true },
+      include: { contact: { include: { phones: contactPhonesIncludeOrdered } } },
       orderBy: { createdAt: 'desc' },
     });
+    return tenants.map(withPrimaryContactPhone);
   }
 
   async findOne(id: string, officeId: string) {
     const tenant = await this.prisma.tenant.findFirst({
       where: { id, officeId },
       include: {
-        contact: true,
+        contact: { include: { phones: contactPhonesIncludeOrdered } },
         property: { include: { site: true, unit: true } },
       },
     });
     if (!tenant) throw new NotFoundException('Tenant not found');
-    return tenant;
+    return withPrimaryContactPhone(tenant);
   }
 
   async create(
@@ -47,8 +53,8 @@ export class TenantsService {
         contractEnd: contractEnd ? new Date(contractEnd) : undefined,
         moveOutDate: moveOutDate ? new Date(moveOutDate) : undefined,
       },
-      include: { contact: true },
-    });
+      include: { contact: { include: { phones: contactPhonesIncludeOrdered } } },
+    }).then(withPrimaryContactPhone);
   }
 
   async createWithNewContact(
@@ -67,13 +73,31 @@ export class TenantsService {
   ) {
     const { name, phone, contractStart, contractEnd, moveOutDate, ...rest } = dto;
     return this.prisma.$transaction(async (tx) => {
-      let contact = phone
-        ? await tx.contact.findFirst({ where: { officeId, phone } })
+      const normalizedPhone = phone ? normalizePhone(phone) : null;
+      let contact = normalizedPhone
+        ? await tx.contact.findFirst({
+            where: { officeId, phones: { some: { normalizedPhone, isActive: true } } },
+          })
         : null;
 
       if (!contact) {
         contact = await tx.contact.create({
-          data: { officeId, name, phone },
+          data: {
+            officeId,
+            name,
+            phones: normalizedPhone
+              ? {
+                  create: [{
+                    phone: phone as string,
+                    normalizedPhone,
+                    label: 'mobile',
+                    isPrimary: true,
+                    isActive: true,
+                    office: { connect: { id: officeId } },
+                  }],
+                }
+              : undefined,
+          },
         });
       }
 
@@ -86,8 +110,8 @@ export class TenantsService {
           contractEnd: contractEnd ? new Date(contractEnd) : undefined,
           moveOutDate: moveOutDate ? new Date(moveOutDate) : undefined,
         },
-        include: { contact: true },
-      });
+        include: { contact: { include: { phones: contactPhonesIncludeOrdered } } },
+      }).then(withPrimaryContactPhone);
     });
   }
 
@@ -114,8 +138,8 @@ export class TenantsService {
         contractEnd: contractEnd ? new Date(contractEnd) : undefined,
         moveOutDate: moveOutDate ? new Date(moveOutDate) : undefined,
       },
-      include: { contact: true },
-    });
+      include: { contact: { include: { phones: contactPhonesIncludeOrdered } } },
+    }).then(withPrimaryContactPhone);
   }
 
   async remove(id: string, officeId: string) {

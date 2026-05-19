@@ -11,11 +11,12 @@ import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { SupabaseService } from '../supabase/supabase.service';
+import { contactPhonesSelectOrdered } from '../contacts/contact-phone.utils';
 
 const PASSWORD_SALT_ROUNDS = 10;
 
 const taskInclude = {
-  contact: { select: { id: true, name: true, phone: true } },
+  contact: { select: { id: true, name: true, phones: contactPhonesSelectOrdered } },
   property: { include: { site: true, unit: true } },
   listing: true,
   consultation: true,
@@ -38,7 +39,7 @@ const dealInclude = {
 } as const;
 
 const consultationInclude = {
-  contact: { select: { id: true, name: true, phone: true } },
+  contact: { select: { id: true, name: true, phones: contactPhonesSelectOrdered } },
   // NOTE: Property 모델에는 memo 필드가 schema상 존재하지 않음 (docs/DATA_STRUCTURE.md와 불일치).
   // schema 기준으로 select 제한.
   property: { select: { id: true, site: { select: { name: true } } } },
@@ -62,7 +63,7 @@ const employeeDetailInclude = {
   },
   assignedRequirements: {
     include: {
-      contact: { select: { id: true, name: true, phone: true } },
+      contact: { select: { id: true, name: true, phones: contactPhonesSelectOrdered } },
     },
     orderBy: [{ nextContactDate: 'asc' }, { createdAt: 'desc' }],
     take: 20,

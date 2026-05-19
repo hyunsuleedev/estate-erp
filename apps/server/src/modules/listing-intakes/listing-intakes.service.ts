@@ -8,6 +8,11 @@ import { CheckStatus, TransactionType } from '@estate-erp/shared';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ListingsService } from '../listings/listings.service';
+import {
+  contactPhonesIncludeOrdered,
+  normalizePhone,
+  withPrimaryPhone,
+} from '../contacts/contact-phone.utils';
 
 const ACTIVE_INTAKE_STATUS = 'active';
 const VALID_INTAKE_STATUSES = new Set([
@@ -496,6 +501,7 @@ export class ListingIntakesService {
   }
 
   private buildSearchFilter(search: string): Prisma.ListingIntakeWhereInput {
+    const normalizedSearch = normalizePhone(search);
     return {
       OR: [
         { property: { site: { name: { contains: search, mode: 'insensitive' } } } },
@@ -552,7 +558,7 @@ export class ListingIntakesService {
             propertyContacts: {
               some: {
                 contact: {
-                  phone: { contains: search },
+                  phones: { some: { normalizedPhone: { contains: normalizedSearch } } },
                 },
               },
             },
@@ -580,7 +586,33 @@ export class ListingIntakesService {
     void viewingMemo;
     void rightsMemo;
     void fieldMemo;
-    return rest;
+    const response = rest as Record<string, unknown>;
+    const property = response.property as
+      | {
+          propertyContacts?: Array<{ contact?: { phones?: [] } | null }>;
+          tenants?: Array<{ contact?: { phones?: [] } | null }>;
+        }
+      | undefined;
+    if (property?.propertyContacts) {
+      property.propertyContacts = property.propertyContacts.map((propertyContact) => ({
+        ...propertyContact,
+        contact: propertyContact.contact ? withPrimaryPhone(propertyContact.contact) : propertyContact.contact,
+      }));
+    }
+    if (property?.tenants) {
+      property.tenants = property.tenants.map((tenant) => ({
+        ...tenant,
+        contact: tenant.contact ? withPrimaryPhone(tenant.contact) : tenant.contact,
+      }));
+    }
+    const consultations = response.consultations as Array<{ contact?: { phones?: [] } | null }> | undefined;
+    if (consultations) {
+      response.consultations = consultations.map((consultation) => ({
+        ...consultation,
+        contact: consultation.contact ? withPrimaryPhone(consultation.contact) : consultation.contact,
+      }));
+    }
+    return response;
   }
 
   private buildListInclude(listingWhere: Prisma.ListingWhereInput) {
@@ -606,9 +638,9 @@ export class ListingIntakesService {
               siteUnitType: true,
             },
           },
-          propertyContacts: { include: { contact: true } },
+          propertyContacts: { include: { contact: { include: { phones: contactPhonesIncludeOrdered } } } },
           tenants: {
-            include: { contact: true },
+            include: { contact: { include: { phones: contactPhonesIncludeOrdered } } },
             orderBy: { createdAt: 'desc' as const },
           },
         },
@@ -644,7 +676,7 @@ export class ListingIntakesService {
     return {
       ...this.buildListInclude({}),
       consultations: {
-        include: { contact: true },
+        include: { contact: { include: { phones: contactPhonesIncludeOrdered } } },
         orderBy: { createdAt: 'desc' as const },
       },
       tasks: {

@@ -7,6 +7,11 @@ import {
 import { CheckStatus, TransactionType } from '@estate-erp/shared';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import {
+  contactPhonesIncludeOrdered,
+  normalizePhone,
+  withPrimaryPhone,
+} from '../contacts/contact-phone.utils';
 
 const VALID_TRANSACTION_TYPES: ReadonlySet<string> = new Set(
   Object.values(TransactionType),
@@ -193,6 +198,7 @@ export class ListingsService {
     }
 
     if (query.search) {
+      const normalizedSearch = normalizePhone(query.search);
       filters.push({
         OR: [
           { property: { site: { name: { contains: query.search, mode: 'insensitive' } } } },
@@ -249,7 +255,7 @@ export class ListingsService {
               propertyContacts: {
                 some: {
                   contact: {
-                    phone: { contains: query.search },
+                    phones: { some: { normalizedPhone: { contains: normalizedSearch } } },
                   },
                 },
               },
@@ -293,9 +299,9 @@ export class ListingsService {
                   siteUnitType: true,
                 },
               },
-              propertyContacts: { include: { contact: true } },
+              propertyContacts: { include: { contact: { include: { phones: contactPhonesIncludeOrdered } } } },
               tenants: {
-                include: { contact: true },
+                include: { contact: { include: { phones: contactPhonesIncludeOrdered } } },
                 orderBy: { createdAt: 'desc' },
               },
               listings: {
@@ -356,7 +362,7 @@ export class ListingsService {
     ]);
 
     return {
-      items,
+      items: items.map((listing) => this.withContactPhones(listing)),
       pagination: {
         page,
         limit,
@@ -455,9 +461,9 @@ export class ListingsService {
                 siteUnitType: true,
               },
             },
-            propertyContacts: { include: { contact: true } },
+            propertyContacts: { include: { contact: { include: { phones: contactPhonesIncludeOrdered } } } },
             tenants: {
-              include: { contact: true },
+              include: { contact: { include: { phones: contactPhonesIncludeOrdered } } },
               orderBy: { createdAt: 'desc' },
             },
             listings: {
@@ -506,7 +512,7 @@ export class ListingsService {
       throw new NotFoundException('Listing not found');
     }
 
-    return listing;
+    return this.withContactPhones(listing);
   }
 
   async create(officeId: string, dto: ListingCreateDto) {
@@ -655,6 +661,29 @@ export class ListingsService {
 
   private resolveSortOrder(sortOrder?: string) {
     return VALID_SORT_ORDERS.has(sortOrder || '') ? (sortOrder as 'asc' | 'desc') : 'desc';
+  }
+
+  private withContactPhones<T>(listing: T): T {
+    const draft = listing as Record<string, unknown>;
+    const property = draft.property as
+      | {
+          propertyContacts?: Array<{ contact?: { phones?: [] } | null }>;
+          tenants?: Array<{ contact?: { phones?: [] } | null }>;
+        }
+      | undefined;
+    if (property?.propertyContacts) {
+      property.propertyContacts = property.propertyContacts.map((propertyContact) => ({
+        ...propertyContact,
+        contact: propertyContact.contact ? withPrimaryPhone(propertyContact.contact) : propertyContact.contact,
+      }));
+    }
+    if (property?.tenants) {
+      property.tenants = property.tenants.map((tenant) => ({
+        ...tenant,
+        contact: tenant.contact ? withPrimaryPhone(tenant.contact) : tenant.contact,
+      }));
+    }
+    return listing;
   }
 
   private assertValidTransactionType(transactionType: string) {

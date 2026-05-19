@@ -6,6 +6,11 @@ import {
 import { SiteType } from '@estate-erp/shared';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import {
+  contactPhonesIncludeOrdered,
+  normalizePhone,
+  withPrimaryPhone,
+} from '../contacts/contact-phone.utils';
 
 const VALID_SITE_TYPES: ReadonlySet<string> = new Set(Object.values(SiteType));
 // 토지/단독은 Unit 자체가 없음 → property는 siteId만으로 식별
@@ -154,9 +159,9 @@ export class PropertiesService {
               siteUnitType: true,
             },
           },
-          propertyContacts: { include: { contact: true } },
+          propertyContacts: { include: { contact: { include: { phones: contactPhonesIncludeOrdered } } } },
           tenants: {
-            include: { contact: true },
+            include: { contact: { include: { phones: contactPhonesIncludeOrdered } } },
             orderBy: { createdAt: 'desc' },
           },
           listings: {
@@ -184,7 +189,7 @@ export class PropertiesService {
     ]);
 
     return {
-      items,
+      items: items.map((property) => this.withContactPhones(property)),
       pagination: {
         page,
         limit,
@@ -217,9 +222,9 @@ export class PropertiesService {
             siteUnitType: true,
           },
         },
-        propertyContacts: { include: { contact: true } },
+        propertyContacts: { include: { contact: { include: { phones: contactPhonesIncludeOrdered } } } },
         tenants: {
-          include: { contact: true },
+          include: { contact: { include: { phones: contactPhonesIncludeOrdered } } },
           orderBy: { createdAt: 'desc' },
         },
         listings: {
@@ -243,7 +248,7 @@ export class PropertiesService {
           },
         },
         consultations: {
-          include: { contact: true },
+          include: { contact: { include: { phones: contactPhonesIncludeOrdered } } },
           orderBy: { createdAt: 'desc' },
         },
       },
@@ -253,7 +258,7 @@ export class PropertiesService {
       throw new NotFoundException('Property not found');
     }
 
-    return property;
+    return this.withContactPhones(property);
   }
 
   async create(officeId: string, dto: PropertyCreateDto) {
@@ -264,7 +269,7 @@ export class PropertiesService {
 
     const { ownerName, ownerPhone: rawOwnerPhone } = dto;
     const ownerPhone = rawOwnerPhone
-      ? rawOwnerPhone.replace(/[\s\-()]/g, '')
+      ? normalizePhone(rawOwnerPhone)
       : undefined;
 
     if (ownerName?.trim()) {
@@ -279,7 +284,7 @@ export class PropertiesService {
 
         let contact = ownerPhone
           ? await tx.contact.findFirst({
-              where: { officeId, phone: ownerPhone },
+              where: { officeId, phones: { some: { normalizedPhone: ownerPhone, isActive: true } } },
             })
           : null;
 
@@ -288,7 +293,18 @@ export class PropertiesService {
             data: {
               officeId,
               name: ownerName.trim(),
-              phone: ownerPhone,
+              phones: ownerPhone && rawOwnerPhone
+                ? {
+                    create: [{
+                      phone: rawOwnerPhone,
+                      normalizedPhone: ownerPhone,
+                      label: 'mobile',
+                      isPrimary: true,
+                      isActive: true,
+                      office: { connect: { id: officeId } },
+                    }],
+                  }
+                : undefined,
             },
           });
         }
@@ -313,9 +329,9 @@ export class PropertiesService {
                 siteUnitType: true,
               },
             },
-            propertyContacts: { include: { contact: true } },
+            propertyContacts: { include: { contact: { include: { phones: contactPhonesIncludeOrdered } } } },
           },
-        });
+        }).then((created) => created ? this.withContactPhones(created) : created);
       });
     }
 
@@ -389,6 +405,32 @@ export class PropertiesService {
 
   private resolveSortOrder(sortOrder?: string) {
     return VALID_SORT_ORDERS.has(sortOrder || '') ? (sortOrder as 'asc' | 'desc') : 'desc';
+  }
+
+  private withContactPhones<T>(property: T): T {
+    const draft = property as Record<string, unknown>;
+    const propertyContacts = draft.propertyContacts as Array<{ contact?: { phones?: [] } | null }> | undefined;
+    if (propertyContacts) {
+      draft.propertyContacts = propertyContacts.map((propertyContact) => ({
+        ...propertyContact,
+        contact: propertyContact.contact ? withPrimaryPhone(propertyContact.contact) : propertyContact.contact,
+      }));
+    }
+    const tenants = draft.tenants as Array<{ contact?: { phones?: [] } | null }> | undefined;
+    if (tenants) {
+      draft.tenants = tenants.map((tenant) => ({
+        ...tenant,
+        contact: tenant.contact ? withPrimaryPhone(tenant.contact) : tenant.contact,
+      }));
+    }
+    const consultations = draft.consultations as Array<{ contact?: { phones?: [] } | null }> | undefined;
+    if (consultations) {
+      draft.consultations = consultations.map((consultation) => ({
+        ...consultation,
+        contact: consultation.contact ? withPrimaryPhone(consultation.contact) : consultation.contact,
+      }));
+    }
+    return property;
   }
 
   private assertValidSiteType(siteType: string) {

@@ -1,5 +1,10 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import {
+  contactPhonesIncludeOrdered,
+  normalizePhone,
+  withPrimaryPhone,
+} from '../contacts/contact-phone.utils';
 
 @Injectable()
 export class ContactRelationsService {
@@ -9,14 +14,23 @@ export class ContactRelationsService {
     const [asMain, asRelated] = await Promise.all([
       this.prisma.contactRelation.findMany({
         where: { officeId, contactId },
-        include: { relatedContact: true },
+        include: { relatedContact: { include: { phones: contactPhonesIncludeOrdered } } },
       }),
       this.prisma.contactRelation.findMany({
         where: { officeId, relatedContactId: contactId },
-        include: { contact: true },
+        include: { contact: { include: { phones: contactPhonesIncludeOrdered } } },
       }),
     ]);
-    return { relations: asMain, relatedBy: asRelated };
+    return {
+      relations: asMain.map((relation) => ({
+        ...relation,
+        relatedContact: withPrimaryPhone(relation.relatedContact),
+      })),
+      relatedBy: asRelated.map((relation) => ({
+        ...relation,
+        contact: withPrimaryPhone(relation.contact),
+      })),
+    };
   }
 
   async create(
@@ -31,8 +45,11 @@ export class ContactRelationsService {
   ) {
     return this.prisma.contactRelation.create({
       data: { officeId, ...dto },
-      include: { relatedContact: true },
-    });
+      include: { relatedContact: { include: { phones: contactPhonesIncludeOrdered } } },
+    }).then((relation) => ({
+      ...relation,
+      relatedContact: withPrimaryPhone(relation.relatedContact),
+    }));
   }
 
   async createWithNewContact(
@@ -49,9 +66,10 @@ export class ContactRelationsService {
     const { contactId, relationType, label, phone, name, memo } = dto;
 
     return this.prisma.$transaction(async (tx) => {
+      const normalizedPhone = normalizePhone(phone);
       // 같은 사무소 내 동일 전화번호 검색
       let relatedContact = await tx.contact.findFirst({
-        where: { officeId, phone },
+        where: { officeId, phones: { some: { normalizedPhone, isActive: true } } },
       });
 
       if (!relatedContact) {
@@ -67,7 +85,20 @@ export class ContactRelationsService {
         };
         const autoName = name || label || RELATION_LABELS[relationType] || '관련인';
         relatedContact = await tx.contact.create({
-          data: { officeId, name: autoName, phone },
+          data: {
+            officeId,
+            name: autoName,
+            phones: {
+              create: [{
+                phone,
+                normalizedPhone,
+                label: 'mobile',
+                isPrimary: true,
+                isActive: true,
+                office: { connect: { id: officeId } },
+              }],
+            },
+          },
         });
       }
 
@@ -80,10 +111,13 @@ export class ContactRelationsService {
           label,
           memo,
         },
-        include: { relatedContact: true },
+        include: { relatedContact: { include: { phones: contactPhonesIncludeOrdered } } },
       });
 
-      return relation;
+      return {
+        ...relation,
+        relatedContact: withPrimaryPhone(relation.relatedContact),
+      };
     });
   }
 
