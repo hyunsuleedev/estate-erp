@@ -807,7 +807,7 @@ function PropertiesPage() {
               ) : totalIntakes === 0 && hasActiveFilters ? (
                 <span>조건을 줄이거나 초기화해 보세요.</span>
               ) : (
-                <span>행 클릭 시 빠른 확인 패널을 엽니다.</span>
+                <span>행 더블클릭 시 빠른 확인 패널을 엽니다.</span>
               )}
             </div>
             {/* Data Table */}

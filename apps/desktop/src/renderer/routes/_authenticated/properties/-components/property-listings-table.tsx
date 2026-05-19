@@ -303,7 +303,7 @@ export function PropertyListingsTable({
               'group-data-[state=selected]:bg-primary/5',
               isFocused && 'bg-blue-50/60 outline outline-1 -outline-offset-1 outline-blue-500/30',
               isRowFocused && !isFocused && 'bg-slate-50',
-              onRowClick && 'cursor-pointer',
+              onRowClick && 'cursor-default',
               isPinned && 'bg-white group-hover:bg-slate-50/70 group-data-[state=selected]:bg-primary/5',
               isLastPinned && 'shadow-[1px_0_0_0_#d9d9d6]',
             )}
@@ -312,6 +312,9 @@ export function PropertyListingsTable({
               ...getPinStyle(cell.column),
             }}
             onClick={() => {
+              setFocusedCell({ row: rowIndex, col: colIndex });
+            }}
+            onDoubleClick={() => {
               setFocusedCell({ row: rowIndex, col: colIndex });
               onRowClick?.(row.original);
             }}
