@@ -36,7 +36,7 @@ import { Route as AuthenticatedCalendarIndexRouteImport } from './routes/_authen
 import { Route as AuthenticatedBuyerRequirementsIndexRouteImport } from './routes/_authenticated/buyer-requirements/index'
 import { Route as AuthenticatedAiOperationsIndexRouteImport } from './routes/_authenticated/ai-operations/index'
 import { Route as AuthenticatedPropertiesNewRouteImport } from './routes/_authenticated/properties/new'
-import { Route as AuthenticatedPropertiesNaverMyAdsRouteImport } from './routes/_authenticated/properties/naver-my-ads'
+import { Route as AuthenticatedPropertiesMyAdsRouteImport } from './routes/_authenticated/properties/my-ads'
 import { Route as AuthenticatedPropertiesExternalListingsRouteImport } from './routes/_authenticated/properties/external-listings'
 import { Route as AuthenticatedPropertiesIdRouteImport } from './routes/_authenticated/properties/$id'
 import { Route as AuthenticatedDocumentsPhotosRouteImport } from './routes/_authenticated/documents/photos'
@@ -197,10 +197,10 @@ const AuthenticatedPropertiesNewRoute =
     path: '/properties/new',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
-const AuthenticatedPropertiesNaverMyAdsRoute =
-  AuthenticatedPropertiesNaverMyAdsRouteImport.update({
-    id: '/properties/naver-my-ads',
-    path: '/properties/naver-my-ads',
+const AuthenticatedPropertiesMyAdsRoute =
+  AuthenticatedPropertiesMyAdsRouteImport.update({
+    id: '/properties/my-ads',
+    path: '/properties/my-ads',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
 const AuthenticatedPropertiesExternalListingsRoute =
@@ -278,7 +278,7 @@ export interface FileRoutesByFullPath {
   '/documents/photos': typeof AuthenticatedDocumentsPhotosRoute
   '/properties/$id': typeof AuthenticatedPropertiesIdRoute
   '/properties/external-listings': typeof AuthenticatedPropertiesExternalListingsRoute
-  '/properties/naver-my-ads': typeof AuthenticatedPropertiesNaverMyAdsRoute
+  '/properties/my-ads': typeof AuthenticatedPropertiesMyAdsRoute
   '/properties/new': typeof AuthenticatedPropertiesNewRoute
   '/ai-operations/': typeof AuthenticatedAiOperationsIndexRoute
   '/buyer-requirements/': typeof AuthenticatedBuyerRequirementsIndexRoute
@@ -316,7 +316,7 @@ export interface FileRoutesByTo {
   '/documents/photos': typeof AuthenticatedDocumentsPhotosRoute
   '/properties/$id': typeof AuthenticatedPropertiesIdRoute
   '/properties/external-listings': typeof AuthenticatedPropertiesExternalListingsRoute
-  '/properties/naver-my-ads': typeof AuthenticatedPropertiesNaverMyAdsRoute
+  '/properties/my-ads': typeof AuthenticatedPropertiesMyAdsRoute
   '/properties/new': typeof AuthenticatedPropertiesNewRoute
   '/ai-operations': typeof AuthenticatedAiOperationsIndexRoute
   '/buyer-requirements': typeof AuthenticatedBuyerRequirementsIndexRoute
@@ -357,7 +357,7 @@ export interface FileRoutesById {
   '/_authenticated/documents/photos': typeof AuthenticatedDocumentsPhotosRoute
   '/_authenticated/properties/$id': typeof AuthenticatedPropertiesIdRoute
   '/_authenticated/properties/external-listings': typeof AuthenticatedPropertiesExternalListingsRoute
-  '/_authenticated/properties/naver-my-ads': typeof AuthenticatedPropertiesNaverMyAdsRoute
+  '/_authenticated/properties/my-ads': typeof AuthenticatedPropertiesMyAdsRoute
   '/_authenticated/properties/new': typeof AuthenticatedPropertiesNewRoute
   '/_authenticated/ai-operations/': typeof AuthenticatedAiOperationsIndexRoute
   '/_authenticated/buyer-requirements/': typeof AuthenticatedBuyerRequirementsIndexRoute
@@ -397,7 +397,7 @@ export interface FileRouteTypes {
     | '/documents/photos'
     | '/properties/$id'
     | '/properties/external-listings'
-    | '/properties/naver-my-ads'
+    | '/properties/my-ads'
     | '/properties/new'
     | '/ai-operations/'
     | '/buyer-requirements/'
@@ -435,7 +435,7 @@ export interface FileRouteTypes {
     | '/documents/photos'
     | '/properties/$id'
     | '/properties/external-listings'
-    | '/properties/naver-my-ads'
+    | '/properties/my-ads'
     | '/properties/new'
     | '/ai-operations'
     | '/buyer-requirements'
@@ -475,7 +475,7 @@ export interface FileRouteTypes {
     | '/_authenticated/documents/photos'
     | '/_authenticated/properties/$id'
     | '/_authenticated/properties/external-listings'
-    | '/_authenticated/properties/naver-my-ads'
+    | '/_authenticated/properties/my-ads'
     | '/_authenticated/properties/new'
     | '/_authenticated/ai-operations/'
     | '/_authenticated/buyer-requirements/'
@@ -696,11 +696,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedPropertiesNewRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
-    '/_authenticated/properties/naver-my-ads': {
-      id: '/_authenticated/properties/naver-my-ads'
-      path: '/properties/naver-my-ads'
-      fullPath: '/properties/naver-my-ads'
-      preLoaderRoute: typeof AuthenticatedPropertiesNaverMyAdsRouteImport
+    '/_authenticated/properties/my-ads': {
+      id: '/_authenticated/properties/my-ads'
+      path: '/properties/my-ads'
+      fullPath: '/properties/my-ads'
+      preLoaderRoute: typeof AuthenticatedPropertiesMyAdsRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/properties/external-listings': {
@@ -800,7 +800,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedDocumentsPhotosRoute: typeof AuthenticatedDocumentsPhotosRoute
   AuthenticatedPropertiesIdRoute: typeof AuthenticatedPropertiesIdRoute
   AuthenticatedPropertiesExternalListingsRoute: typeof AuthenticatedPropertiesExternalListingsRoute
-  AuthenticatedPropertiesNaverMyAdsRoute: typeof AuthenticatedPropertiesNaverMyAdsRoute
+  AuthenticatedPropertiesMyAdsRoute: typeof AuthenticatedPropertiesMyAdsRoute
   AuthenticatedPropertiesNewRoute: typeof AuthenticatedPropertiesNewRoute
   AuthenticatedAiOperationsIndexRoute: typeof AuthenticatedAiOperationsIndexRoute
   AuthenticatedBuyerRequirementsIndexRoute: typeof AuthenticatedBuyerRequirementsIndexRoute
@@ -840,8 +840,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedPropertiesIdRoute: AuthenticatedPropertiesIdRoute,
   AuthenticatedPropertiesExternalListingsRoute:
     AuthenticatedPropertiesExternalListingsRoute,
-  AuthenticatedPropertiesNaverMyAdsRoute:
-    AuthenticatedPropertiesNaverMyAdsRoute,
+  AuthenticatedPropertiesMyAdsRoute: AuthenticatedPropertiesMyAdsRoute,
   AuthenticatedPropertiesNewRoute: AuthenticatedPropertiesNewRoute,
   AuthenticatedAiOperationsIndexRoute: AuthenticatedAiOperationsIndexRoute,
   AuthenticatedBuyerRequirementsIndexRoute:

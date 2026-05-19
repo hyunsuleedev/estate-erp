@@ -37,6 +37,8 @@ describe('ListingAdvertisementsService', () => {
       },
       listingAdvertisement: {
         findFirst: jest.fn(),
+        findMany: jest.fn(),
+        count: jest.fn(),
         create: jest.fn(),
         update: jest.fn(),
         delete: jest.fn(),
@@ -47,6 +49,39 @@ describe('ListingAdvertisementsService', () => {
       service: new ListingAdvertisementsService(prisma as never),
     };
   }
+
+  // ---- findAll ----
+
+  it('returns advertisement rows for the office with linked listing context', async () => {
+    const { prisma, service } = createService();
+    prisma.listingAdvertisement.findMany.mockResolvedValue([{ id: 'ad-1' }]);
+    prisma.listingAdvertisement.count.mockResolvedValue(1);
+
+    const result = await service.findAll('office-1', {
+      page: 1,
+      limit: 50,
+      sortBy: 'updatedAt',
+      sortOrder: 'desc',
+    });
+
+    expect(result).toEqual({
+      items: [{ id: 'ad-1' }],
+      pagination: { page: 1, limit: 50, total: 1, totalPages: 1 },
+    });
+    expect(prisma.listingAdvertisement.findMany).toHaveBeenCalledWith({
+      where: { officeId: 'office-1' },
+      include: expect.objectContaining({
+        listing: expect.objectContaining({
+          include: expect.objectContaining({
+            property: expect.any(Object),
+          }),
+        }),
+      }),
+      orderBy: { updatedAt: 'desc' },
+      skip: 0,
+      take: 50,
+    });
+  });
 
   // ---- create ----
 

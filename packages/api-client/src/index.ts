@@ -28,6 +28,8 @@ export type {
   UpdateListingDto,
 } from './modules/listings.js';
 export type {
+  ListingAdvertisementsFilter,
+  ListingAdvertisementWithListing,
   CreateListingAdvertisementDto,
   UpdateListingAdvertisementDto,
 } from './modules/listing-advertisements.js';
