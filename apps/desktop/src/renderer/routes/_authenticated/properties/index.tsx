@@ -107,6 +107,16 @@ const adStatusMeta: Record<string, { label: string; className: string }> = {
   error: { label: '오류', className: 'bg-[#fbe4e4] text-[#9f5555]' },
 };
 
+const intakeStatusMeta: Record<string, { label: string; className: string }> = {
+  unverified: { label: '미확인', className: 'bg-[#f1f1ef] text-[#5f5e5b]' },
+  active: { label: '관리중', className: 'bg-[#eef3ed] text-[#44745a]' },
+  alive: { label: '살아있음', className: 'bg-[#eef3ed] text-[#44745a]' },
+  paused: { label: '보류', className: 'bg-[#fbf3db] text-[#8f6b1f]' },
+  unavailable: { label: '불가', className: 'bg-[#fbe4e4] text-[#9f5555]' },
+  completed: { label: '완료', className: 'bg-[#f1f1ef] text-[#787774]' },
+  cancelled: { label: '취소', className: 'bg-[#f1f1ef] text-[#787774]' },
+};
+
 const adChannelLabels: Record<string, string> = {
   naver: '네이버',
   asil: '아실',
@@ -528,6 +538,13 @@ function PropertiesPage() {
         cell: ({ row }) => (
           <IntakeConfirmedAtCell intake={row.original.representative} />
         ),
+      },
+      {
+        id: 'intakeStatus',
+        header: () => <TableHeaderLabel icon={<Tag className="size-4" />} label="상태" />,
+        size: 86,
+        enableSorting: false,
+        cell: ({ row }) => <IntakeStatusCell intake={row.original.representative} />,
       },
       {
         id: 'price',
@@ -1584,6 +1601,24 @@ function IntakeConfirmedAtCell({ intake }: { intake: ListingIntake }) {
         </span>
       )}
     </div>
+  );
+}
+
+function IntakeStatusCell({ intake }: { intake: ListingIntake }) {
+  const meta = intakeStatusMeta[intake.status] ?? {
+    label: intake.status,
+    className: 'bg-[#f1f1ef] text-[#5f5e5b]',
+  };
+
+  return (
+    <span
+      className={cn(
+        'inline-flex max-w-full rounded-[4px] px-1.5 py-0.5 text-[12px] font-medium leading-5',
+        meta.className,
+      )}
+    >
+      <span className="truncate">{meta.label}</span>
+    </span>
   );
 }
 
