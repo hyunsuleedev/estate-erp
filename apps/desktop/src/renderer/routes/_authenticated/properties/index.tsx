@@ -2450,7 +2450,7 @@ function formatAdvertisementPrice(
 function getDongName(property?: ListingProperty) {
   const dong = property?.unit?.dong;
   if (!dong || dong.isPlaceholder) return '-';
-  return dong.name;
+  return dong.name.replace(/\s*동$/, '');
 }
 
 function getExclusiveAreaM2(property?: ListingProperty) {
