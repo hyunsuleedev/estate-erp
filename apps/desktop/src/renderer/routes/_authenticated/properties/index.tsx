@@ -67,6 +67,7 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
+import { formatPhoneNumber } from '@/lib/contacts';
 import {
   PriceCell,
   CellEditProvider,
@@ -629,15 +630,15 @@ function PropertiesPage() {
         cell: ({ row }) => {
           const owner = getOwnerContact(row.original.property);
           return (
-            <div className="flex min-w-0 flex-col gap-0.5">
-              <span className="truncate text-[13px] font-medium text-slate-800">
-                {owner?.name ?? ''}
-              </span>
+            <div className="flex min-w-0 flex-col justify-center leading-none">
               {owner?.phone && (
-                <span className="truncate text-[12px] text-slate-500 tabular-nums">
-                  {owner.phone}
+                <span className="truncate text-[13px] font-semibold leading-4 text-slate-900 tabular-nums">
+                  {formatPhoneNumber(owner.phone)}
                 </span>
               )}
+              <span className="truncate text-[11px] font-medium leading-3 text-slate-500">
+                {owner?.name ?? '미등록'}
+              </span>
             </div>
           );
         },
