@@ -118,6 +118,13 @@ const intakeStatusMeta: Record<string, { label: string; className: string }> = {
   cancelled: { label: '취소', className: 'bg-[#f1f1ef] text-[#787774]' },
 };
 
+const intakeStatusOptions = [
+  { value: 'active', label: '관리중' },
+  { value: 'paused', label: '보류' },
+  { value: 'completed', label: '완료' },
+  { value: 'cancelled', label: '취소' },
+] as const;
+
 const adChannelLabels: Record<string, string> = {
   naver: '네이버',
   asil: '아실',
@@ -362,6 +369,16 @@ function PropertiesPage() {
       }
     },
   });
+  const intakeStatusMutation = useMutation({
+    mutationFn: ({ intakeId, status }: { intakeId: string; status: string }) =>
+      api.listingIntakes.updateStatus(intakeId, status),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['listing-intakes'] });
+      if (selectedPropertyId) {
+        queryClient.invalidateQueries({ queryKey: ['properties', 'quick-sheet', selectedPropertyId] });
+      }
+    },
+  });
 
   const handleCellSave = useCallback(
     (recordId: string, field: string, value: unknown) => {
@@ -383,6 +400,12 @@ function PropertiesPage() {
       confirmMutation.mutate({ intakeId, result });
     },
     [confirmMutation],
+  );
+  const handleIntakeStatusChange = useCallback(
+    (intakeId: string, status: string) => {
+      intakeStatusMutation.mutate({ intakeId, status });
+    },
+    [intakeStatusMutation],
   );
 
   // ── Filter handlers ───────────────────────────────────────────
@@ -551,7 +574,13 @@ function PropertiesPage() {
         header: () => <TableHeaderLabel icon={<Tag className="size-4" />} label="상태" />,
         size: 86,
         enableSorting: false,
-        cell: ({ row }) => <IntakeStatusCell intake={row.original.representative} />,
+        cell: ({ row }) => (
+          <IntakeStatusCell
+            intake={row.original.representative}
+            onChange={handleIntakeStatusChange}
+            isPending={intakeStatusMutation.isPending}
+          />
+        ),
       },
       {
         id: 'price',
@@ -624,7 +653,14 @@ function PropertiesPage() {
         cell: ({ row }) => <IntakeMemoCell memo={row.original.representative.memo} />,
       },
     ],
-    [handleCellSave, handleIntakeConfirm, handleListingPatch, confirmMutation.isPending],
+    [
+      handleCellSave,
+      handleIntakeConfirm,
+      handleIntakeStatusChange,
+      handleListingPatch,
+      confirmMutation.isPending,
+      intakeStatusMutation.isPending,
+    ],
   );
 
   return (
@@ -1615,21 +1651,69 @@ function IntakeConfirmedAtCell({ intake }: { intake: ListingIntake }) {
   );
 }
 
-function IntakeStatusCell({ intake }: { intake: ListingIntake }) {
+function IntakeStatusCell({
+  intake,
+  onChange,
+  isPending,
+}: {
+  intake: ListingIntake;
+  onChange: (intakeId: string, status: string) => void;
+  isPending?: boolean;
+}) {
   const meta = intakeStatusMeta[intake.status] ?? {
     label: intake.status,
     className: 'bg-[#f1f1ef] text-[#5f5e5b]',
   };
 
   return (
-    <span
-      className={cn(
-        'inline-flex max-w-full rounded-[4px] px-1.5 py-0.5 text-[12px] font-medium leading-5',
-        meta.className,
-      )}
-    >
-      <span className="truncate">{meta.label}</span>
-    </span>
+    <div className="flex items-center py-1" onClick={(event) => event.stopPropagation()}>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            disabled={isPending}
+            className={cn(
+              'inline-flex max-w-full rounded-[4px] px-1.5 py-0.5 text-left text-[12px] font-medium leading-5 transition-opacity disabled:cursor-not-allowed disabled:opacity-50',
+              meta.className,
+            )}
+          >
+            <span className="truncate">{meta.label}</span>
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="w-32">
+          {intakeStatusOptions.map((option) => {
+            const optionMeta = intakeStatusMeta[option.value] ?? {
+              label: option.label,
+              className: 'bg-[#f1f1ef] text-[#5f5e5b]',
+            };
+            const isSelected = option.value === intake.status;
+
+            return (
+              <DropdownMenuItem
+                key={option.value}
+                className="gap-2 text-xs"
+                disabled={isSelected}
+                onSelect={() => {
+                  if (!isSelected) {
+                    onChange(intake.id, option.value);
+                  }
+                }}
+              >
+                <span
+                  className={cn(
+                    'inline-flex rounded-[4px] px-1.5 py-0.5 text-[12px] font-medium leading-5',
+                    optionMeta.className,
+                  )}
+                >
+                  {optionMeta.label}
+                </span>
+                {isSelected && <Check className="ml-auto size-3.5 text-slate-500" />}
+              </DropdownMenuItem>
+            );
+          })}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
   );
 }
 
