@@ -20,6 +20,7 @@ const VALID_SORT_FIELDS: ReadonlySet<string> = new Set([
   'updatedAt',
 ]);
 const VALID_SORT_ORDERS: ReadonlySet<string> = new Set(['asc', 'desc']);
+const ACTIVE_INTAKE_STATUS = 'active';
 
 const CHECK_STATUS_TRANSITIONS: Record<string, string[]> = {
   [CheckStatus.UNVERIFIED]: [CheckStatus.VERIFIED, CheckStatus.HOLD],
@@ -58,6 +59,7 @@ export interface ListingSearchQuery {
 
 interface ListingCreateDto {
   propertyId: string;
+  intakeId?: string | null;
   transactionType: string;
   price?: number | null;
   deposit?: number | null;
@@ -300,6 +302,7 @@ export class ListingsService {
                 orderBy: { createdAt: 'desc' },
                 select: {
                   id: true,
+                  intakeId: true,
                   transactionType: true,
                   price: true,
                   deposit: true,
@@ -518,9 +521,15 @@ export class ListingsService {
       throw new NotFoundException('Property not found');
     }
 
-    await this.assertNoDuplicateTransactionType(
+    const intake = await this.resolveActiveIntakeForCreate(
       officeId,
       dto.propertyId,
+      dto.intakeId,
+    );
+
+    await this.assertNoDuplicateTransactionType(
+      officeId,
+      intake.id,
       dto.transactionType,
     );
     await this.assertAccessiblePartnerBroker(
@@ -532,6 +541,7 @@ export class ListingsService {
       data: {
         officeId,
         propertyId: dto.propertyId,
+        intakeId: intake.id,
         transactionType: dto.transactionType,
         price: dto.price,
         deposit: dto.deposit,
@@ -582,7 +592,7 @@ export class ListingsService {
     if (nextTransactionType !== existingListing.transactionType) {
       await this.assertNoDuplicateTransactionType(
         officeId,
-        existingListing.propertyId,
+        existingListing.intakeId,
         nextTransactionType,
         id,
       );
@@ -655,14 +665,14 @@ export class ListingsService {
 
   private async assertNoDuplicateTransactionType(
     officeId: string,
-    propertyId: string,
+    intakeId: string,
     transactionType: string,
     excludeListingId?: string,
   ) {
     const duplicateListing = await this.prisma.listing.findFirst({
       where: {
         officeId,
-        propertyId,
+        intakeId,
         transactionType,
         ...(excludeListingId ? { id: { not: excludeListingId } } : {}),
       },
@@ -674,6 +684,51 @@ export class ListingsService {
         '같은 매물에는 동일한 거래 유형의 매물을 중복 등록할 수 없습니다.',
       );
     }
+  }
+
+  private async resolveActiveIntakeForCreate(
+    officeId: string,
+    propertyId: string,
+    intakeId?: string | null,
+  ) {
+    if (intakeId) {
+      const intake = await this.prisma.listingIntake.findFirst({
+        where: {
+          id: intakeId,
+          officeId,
+          propertyId,
+          status: ACTIVE_INTAKE_STATUS,
+        },
+        select: { id: true },
+      });
+
+      if (!intake) {
+        throw new NotFoundException('Active ListingIntake not found');
+      }
+
+      return intake;
+    }
+
+    const existingIntake = await this.prisma.listingIntake.findFirst({
+      where: {
+        officeId,
+        propertyId,
+        status: ACTIVE_INTAKE_STATUS,
+      },
+      select: { id: true },
+    });
+
+    if (existingIntake) {
+      return existingIntake;
+    }
+
+    return this.prisma.listingIntake.create({
+      data: {
+        officeId,
+        propertyId,
+      },
+      select: { id: true },
+    });
   }
 
   private async assertAccessiblePartnerBroker(

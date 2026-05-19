@@ -7,6 +7,15 @@ export type { ApiClientConfig, PaginatedResponse } from './types.js';
 export type { LoginDto, RegisterDto, AuthResponse, MeResponse } from './modules/auth.js';
 export type { Property, PropertyListing, PropertiesFilter, CreatePropertyDto, UpdatePropertyDto } from './modules/properties.js';
 export type {
+  ListingIntake,
+  ListingIntakeListing,
+  ListingIntakeStatus,
+  ListingIntakesFilter,
+  CreateListingForIntakeDto,
+  CreateListingIntakeDto,
+  UpdateListingIntakeDto,
+} from './modules/listing-intakes.js';
+export type {
   Listing,
   ListingAdvertisement,
   ListingAdvertisementSource,
@@ -18,6 +27,10 @@ export type {
   CreateListingDto,
   UpdateListingDto,
 } from './modules/listings.js';
+export type {
+  CreateListingAdvertisementDto,
+  UpdateListingAdvertisementDto,
+} from './modules/listing-advertisements.js';
 export type { Contact, ContactCounts, ContactDetail, ContactsFilter, CreateContactDto, UpdateContactDto } from './modules/contacts.js';
 export type { Site, SiteDetail, CreateSiteDto } from './modules/sites.js';
 export type { Dong } from './modules/dongs.js';
@@ -30,6 +43,7 @@ export type {
   TaskConsultationSummary,
   TaskContractSummary,
   TaskDealSummary,
+  TaskListingIntakeSummary,
   TaskListingSummary,
   TaskMatchSummary,
   TaskPropertySummary,

@@ -7,6 +7,7 @@ import type { Tenant } from './tenants.js';
 
 export interface PropertyListing {
   id: string;
+  intakeId: string;
   transactionType: string;
   price: number | null;
   deposit: number | null;
@@ -71,6 +72,7 @@ export interface Property {
 export interface PropertiesFilter {
   siteType?: string;
   siteId?: string;
+  unitId?: string;
   sido?: string;
   sigungu?: string;
   eupmyeondong?: string;

@@ -734,9 +734,9 @@ function SitesPage() {
         .map((tenant) => tenant.contact.name)[0] ?? '';
 
     const getListingLabel = (unit: Unit) => {
-      const primaryListing = (unit.properties ?? [])
-        .flatMap((property) => property.listings ?? [])
-        [0];
+      const primaryListing = (unit.properties ?? []).flatMap(
+        (property) => property.listings ?? [],
+      )[0];
       if (!primaryListing) return '';
       return formatPriceLabel(
         primaryListing.transactionType,

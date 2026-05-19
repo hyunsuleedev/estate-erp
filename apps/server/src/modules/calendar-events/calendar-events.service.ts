@@ -6,6 +6,14 @@ const defaultInclude = {
   // NOTE: Property 모델에는 memo 필드가 schema상 존재하지 않음 (docs/DATA_STRUCTURE.md와 불일치).
   // 별도 task로 추적 중. schema 기준으로 select 제한.
   property: { select: { id: true, site: { select: { name: true } } } },
+  listingIntake: {
+    select: {
+      id: true,
+      status: true,
+      propertyId: true,
+      receivedAt: true,
+    },
+  },
   listing: { select: { id: true, transactionType: true, price: true, checkStatus: true } },
   contact: { select: { id: true, name: true, phone: true } },
   match: { select: { id: true, stage: true } },
@@ -69,6 +77,7 @@ export class CalendarEventsService {
       end?: string;
       color?: string;
       propertyId?: string;
+      listingIntakeId?: string;
       listingId?: string;
       contactId?: string;
       matchId?: string;
@@ -87,6 +96,7 @@ export class CalendarEventsService {
         end: dto.end ? new Date(dto.end) : undefined,
         color: dto.color,
         propertyId: dto.propertyId,
+        listingIntakeId: dto.listingIntakeId,
         listingId: dto.listingId,
         contactId: dto.contactId,
         matchId: dto.matchId,
@@ -111,6 +121,7 @@ export class CalendarEventsService {
       end?: string;
       color?: string;
       propertyId?: string | null;
+      listingIntakeId?: string | null;
       listingId?: string | null;
       contactId?: string | null;
       matchId?: string | null;

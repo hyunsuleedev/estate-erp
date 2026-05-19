@@ -66,6 +66,7 @@ describe('ConsultationsService', () => {
           { officeId: 'office-1' },
           {
             propertyId: null,
+            listingIntakeId: null,
             listingId: null,
             matchId: null,
             buyerReqId: null,

@@ -23,6 +23,7 @@ model Task {
   // 관련 컨텍스트 (상담에서 할 일 생성 시 자동 연결)
   contactId      String? @map("contact_id") @db.Uuid
   propertyId     String? @map("property_id") @db.Uuid
+  listingIntakeId String? @map("listing_intake_id") @db.Uuid
   listingId      String? @map("listing_id") @db.Uuid
   consultationId String? @map("consultation_id") @db.Uuid
   buyerReqId     String? @map("buyer_req_id") @db.Uuid
@@ -39,6 +40,7 @@ model Task {
   assignedBy   User?         @relation("TaskAssigner", fields: [assignedById], references: [id])
   contact      Contact?      @relation(fields: [contactId], references: [id])
   property     Property?     @relation(fields: [propertyId], references: [id])
+  listingIntake ListingIntake? @relation(fields: [listingIntakeId], references: [id])
   listing      Listing?      @relation(fields: [listingId], references: [id])
   consultation Consultation? @relation(fields: [consultationId], references: [id])
   buyerRequirement BuyerRequirement? @relation(fields: [buyerReqId], references: [id])
@@ -52,6 +54,7 @@ model Task {
   @@index([officeId, assignedById])
   @@index([contactId])
   @@index([propertyId])
+  @@index([listingIntakeId])
   @@index([listingId])
   @@index([consultationId])
   @@index([buyerReqId])
@@ -81,11 +84,12 @@ model CalendarEvent {
   color       String? // FullCalendar backgroundColor (hex)
 
   // 관련 엔티티 연결 (선택)
-  propertyId String? @map("property_id") @db.Uuid
-  listingId  String? @map("listing_id") @db.Uuid
-  contactId  String? @map("contact_id") @db.Uuid
-  matchId    String? @map("match_id") @db.Uuid
-  dealId     String? @map("deal_id") @db.Uuid
+  propertyId      String? @map("property_id") @db.Uuid
+  listingIntakeId String? @map("listing_intake_id") @db.Uuid
+  listingId       String? @map("listing_id") @db.Uuid
+  contactId       String? @map("contact_id") @db.Uuid
+  matchId         String? @map("match_id") @db.Uuid
+  dealId          String? @map("deal_id") @db.Uuid
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -93,6 +97,7 @@ model CalendarEvent {
   office   Office    @relation(fields: [officeId], references: [id])
   user     User      @relation(fields: [userId], references: [id])
   property Property? @relation(fields: [propertyId], references: [id])
+  listingIntake ListingIntake? @relation(fields: [listingIntakeId], references: [id])
   listing  Listing?  @relation(fields: [listingId], references: [id])
   contact  Contact?  @relation(fields: [contactId], references: [id])
   match    Match?    @relation(fields: [matchId], references: [id])
@@ -100,6 +105,7 @@ model CalendarEvent {
 
   @@index([officeId, start])
   @@index([officeId, userId])
+  @@index([listingIntakeId])
   @@map("calendar_events")
 }
 

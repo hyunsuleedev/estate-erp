@@ -10,10 +10,11 @@ export interface ConsultationSearchQuery {
   siteId?: string;
   dongId?: string;
   unitId?: string;
+  listingIntakeId?: string;
   listingId?: string;
   matchId?: string;
   buyerReqId?: string;
-  context?: 'property' | 'listing' | 'match' | 'buyerRequirement' | 'unlinked';
+  context?: 'property' | 'listingIntake' | 'listing' | 'match' | 'buyerRequirement' | 'unlinked';
   outcome?: 'actionRequired' | 'confirmed' | 'held';
   type?: string;
   createdById?: string;
@@ -49,6 +50,14 @@ export class ConsultationsService {
         },
       },
     },
+    listingIntake: {
+      select: {
+        id: true,
+        status: true,
+        propertyId: true,
+        receivedAt: true,
+      },
+    },
     listing: { select: { id: true, transactionType: true, price: true, checkStatus: true } },
     match: { select: { id: true, stage: true } },
     buyerRequirement: { select: { id: true, status: true, transactionType: true } },
@@ -63,6 +72,7 @@ export class ConsultationsService {
     if (query.siteId) filters.push({ property: { siteId: query.siteId } });
     if (query.dongId) filters.push({ property: { unit: { dongId: query.dongId } } });
     if (query.unitId) filters.push({ property: { unitId: query.unitId } });
+    if (query.listingIntakeId) filters.push({ listingIntakeId: query.listingIntakeId });
     if (query.listingId) filters.push({ listingId: query.listingId });
     if (query.matchId) filters.push({ matchId: query.matchId });
     if (query.buyerReqId) filters.push({ buyerReqId: query.buyerReqId });
@@ -129,11 +139,13 @@ export class ConsultationsService {
 
   private buildContextFilter(context: NonNullable<ConsultationSearchQuery['context']>): Prisma.ConsultationWhereInput {
     if (context === 'property') return { propertyId: { not: null } };
+    if (context === 'listingIntake') return { listingIntakeId: { not: null } };
     if (context === 'listing') return { listingId: { not: null } };
     if (context === 'match') return { matchId: { not: null } };
     if (context === 'buyerRequirement') return { buyerReqId: { not: null } };
     return {
       propertyId: null,
+      listingIntakeId: null,
       listingId: null,
       matchId: null,
       buyerReqId: null,
@@ -168,22 +180,25 @@ export class ConsultationsService {
     officeId: string,
     userId: string,
     dto: {
-      contactId: string;
-      type: string;
-      content: string;
+	      contactId: string;
+	      type: string;
+	      purpose?: string;
+	      content: string;
       propertyId?: string;
+      listingIntakeId?: string;
       listingId?: string;
       matchId?: string;
       buyerReqId?: string;
     },
   ) {
-    const { propertyId, listingId, matchId, buyerReqId, ...rest } = dto;
+    const { propertyId, listingIntakeId, listingId, matchId, buyerReqId, ...rest } = dto;
     return this.prisma.consultation.create({
       data: {
         officeId,
         createdById: userId,
         ...rest,
         propertyId: propertyId || undefined,
+        listingIntakeId: listingIntakeId || undefined,
         listingId: listingId || undefined,
         matchId: matchId || undefined,
         buyerReqId: buyerReqId || undefined,

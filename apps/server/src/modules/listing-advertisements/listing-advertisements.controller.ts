@@ -1,0 +1,80 @@
+import {
+  Body,
+  Controller,
+  Delete,
+  Param,
+  Patch,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import {
+  CurrentUser,
+  CurrentUserPayload,
+} from '../../common/decorators/current-user.decorator';
+import { ListingAdvertisementsService } from './listing-advertisements.service';
+
+@ApiTags('광고 게재')
+@ApiBearerAuth()
+@Controller('listing-advertisements')
+@UseGuards(JwtAuthGuard)
+export class ListingAdvertisementsController {
+  constructor(private readonly service: ListingAdvertisementsService) {}
+
+  @Post()
+  create(
+    @CurrentUser() user: CurrentUserPayload,
+    @Body()
+    body: {
+      listingId: string;
+      channel: string;
+      status?: string;
+      source?: string;
+      advertisedPrice?: number | null;
+      advertisedDeposit?: number | null;
+      advertisedMonthlyRent?: number | null;
+      startedAt?: string | null;
+      endedAt?: string | null;
+      url?: string | null;
+      memo?: string | null;
+      externalAdId?: string | null;
+      lastCheckedAt?: string | null;
+      lastSyncedAt?: string | null;
+    },
+  ) {
+    return this.service.create(user.officeId, body);
+  }
+
+  @Patch(':id')
+  update(
+    @Param('id') id: string,
+    @CurrentUser() user: CurrentUserPayload,
+    @Body()
+    body: Partial<{
+      channel: string;
+      status: string;
+      source: string;
+      advertisedPrice: number | null;
+      advertisedDeposit: number | null;
+      advertisedMonthlyRent: number | null;
+      startedAt: string | null;
+      endedAt: string | null;
+      url: string | null;
+      memo: string | null;
+      externalAdId: string | null;
+      lastCheckedAt: string | null;
+      lastSyncedAt: string | null;
+    }>,
+  ) {
+    return this.service.update(id, user.officeId, body);
+  }
+
+  @Delete(':id')
+  remove(
+    @Param('id') id: string,
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.service.remove(id, user.officeId);
+  }
+}

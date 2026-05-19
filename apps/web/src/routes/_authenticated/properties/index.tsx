@@ -72,6 +72,7 @@ import {
   type SortDefinition,
   type ChipOption,
 } from '@/components/data-table';
+import { getMoveInAvailability, getTenantPhoneLine } from './-property-list-view-utils';
 
 // ── Labels & Colors ─────────────────────────────────────────────
 
@@ -1385,21 +1386,25 @@ function TenantCell({ tenant }: { tenant?: Tenant | null }) {
     return <span className="text-[13px] text-slate-400">-</span>;
   }
 
-  const phone = tenant.contact?.phone;
+  const phoneLine = getTenantPhoneLine(tenant);
+  const detail = getTenantListDetail(tenant);
+  const shouldShowDetail = !phoneLine?.includes('만기 ') || !detail.startsWith('만기 ');
 
   return (
     <div className="flex min-w-0 flex-col gap-0.5">
       <span className="truncate text-[13px] font-medium text-slate-800">
         {tenant.contact?.name ?? '세입자'}
       </span>
-      {phone && (
+      {phoneLine && (
         <span className="truncate text-[12px] text-slate-500 tabular-nums">
-          {phone}
+          {phoneLine}
         </span>
       )}
-      <span className="truncate text-[12px] text-slate-500">
-        {getTenantListDetail(tenant)}
-      </span>
+      {shouldShowDetail && (
+        <span className="truncate text-[12px] text-slate-500">
+          {detail}
+        </span>
+      )}
     </div>
   );
 }
@@ -2357,59 +2362,6 @@ function formatAdvertisementPrice(
 
   const price = advertisement.advertisedPrice ?? advertisement.advertisedDeposit;
   return price ? formatPrice(price) : '-';
-}
-
-function getMoveInAvailability(
-  listing: Pick<ListingSummary, 'moveInAvailableType' | 'moveInAvailableFrom' | 'moveInAvailableTo'>,
-) {
-  const type = listing.moveInAvailableType ?? 'unknown';
-  const from = listing.moveInAvailableFrom;
-  const to = listing.moveInAvailableTo;
-
-  if (type === 'immediate') {
-    return {
-      label: '즉시',
-      detail: null,
-      className: 'bg-[#eef3ed] text-[#44745a]',
-    };
-  }
-
-  if (type === 'date') {
-    return {
-      label: from ? `${formatDateShort(from)} 이후` : '확인 필요',
-      detail: null,
-      className: from ? 'bg-[#e7f3f8] text-[#337ea9]' : 'bg-[#f1f1ef] text-[#787774]',
-    };
-  }
-
-  if (type === 'range') {
-    return {
-      label: formatMoveInRange(from, to),
-      detail: '기간 협의',
-      className: 'bg-[#fbf3db] text-[#8f6b1f]',
-    };
-  }
-
-  if (type === 'negotiable') {
-    return {
-      label: '협의',
-      detail: null,
-      className: 'bg-[#fbf3db] text-[#8f6b1f]',
-    };
-  }
-
-  return {
-    label: '확인 필요',
-    detail: null,
-    className: 'bg-[#f1f1ef] text-[#787774]',
-  };
-}
-
-function formatMoveInRange(from?: string | null, to?: string | null) {
-  if (from && to) return `${formatDateShort(from)}~${formatDateShort(to)}`;
-  if (from) return `${formatDateShort(from)}~`;
-  if (to) return `~${formatDateShort(to)}`;
-  return '협의';
 }
 
 function getDongName(property?: ListingProperty) {

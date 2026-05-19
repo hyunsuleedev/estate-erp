@@ -43,6 +43,7 @@ export class ConsultationsController {
     @Query('siteId') siteId: string,
     @Query('dongId') dongId: string,
     @Query('unitId') unitId: string,
+    @Query('listingIntakeId') listingIntakeId: string,
     @Query('listingId') listingId: string,
     @Query('matchId') matchId: string,
     @Query('buyerReqId') buyerReqId: string,
@@ -64,10 +65,11 @@ export class ConsultationsController {
       siteId: siteId || undefined,
       dongId: dongId || undefined,
       unitId: unitId || undefined,
+      listingIntakeId: listingIntakeId || undefined,
       listingId: listingId || undefined,
       matchId: matchId || undefined,
       buyerReqId: buyerReqId || undefined,
-      context: (context as 'property' | 'listing' | 'match' | 'buyerRequirement' | 'unlinked') || undefined,
+      context: (context as 'property' | 'listingIntake' | 'listing' | 'match' | 'buyerRequirement' | 'unlinked') || undefined,
       outcome: (outcome as 'actionRequired' | 'confirmed' | 'held') || undefined,
       type: type || undefined,
       createdById: createdById || undefined,
@@ -93,8 +95,10 @@ export class ConsultationsController {
     dto: {
       contactId: string;
       type: string;
+      purpose?: string;
       content: string;
       propertyId?: string;
+      listingIntakeId?: string;
       listingId?: string;
       matchId?: string;
       buyerReqId?: string;

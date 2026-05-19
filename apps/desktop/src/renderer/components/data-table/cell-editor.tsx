@@ -25,8 +25,8 @@ interface CellEditContextType {
 
 const CellEditContext = createContext<CellEditContextType>({
   editingCell: null,
-  startEdit: () => {},
-  stopEdit: () => {},
+  startEdit: () => undefined,
+  stopEdit: () => undefined,
 });
 
 export function CellEditProvider({ children }: { children: React.ReactNode }) {
@@ -431,4 +431,3 @@ function CellEditPortal({
 
   return createPortal(portalContent, document.body);
 }
-

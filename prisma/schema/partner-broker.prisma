@@ -43,6 +43,7 @@ model PartnerBroker {
 
   deals         Deal[]
   distributions CommissionDistribution[]
+  jointRequiredIntakes ListingIntake[] @relation("ListingIntakeJointBrokeragePartner")
   jointRequiredListings Listing[] @relation("ListingJointBrokeragePartner")
 
   @@index([officeId, name])

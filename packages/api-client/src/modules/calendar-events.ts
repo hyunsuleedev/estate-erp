@@ -12,6 +12,7 @@ export interface CalendarEvent {
   end: string | null;
   color: string | null;
   propertyId: string | null;
+  listingIntakeId: string | null;
   listingId: string | null;
   contactId: string | null;
   matchId: string | null;
@@ -24,6 +25,12 @@ export interface CalendarEvent {
     id: string;
     memo: string | null;
     site?: { name: string | null } | null;
+  } | null;
+  listingIntake?: {
+    id: string;
+    status: string;
+    propertyId: string;
+    receivedAt: string;
   } | null;
   listing?: {
     id: string;
@@ -51,6 +58,7 @@ export interface CreateCalendarEventDto {
   end?: string;
   color?: string;
   propertyId?: string;
+  listingIntakeId?: string;
   listingId?: string;
   contactId?: string;
   matchId?: string;
@@ -66,6 +74,7 @@ export interface UpdateCalendarEventDto {
   end?: string;
   color?: string;
   propertyId?: string | null;
+  listingIntakeId?: string | null;
   listingId?: string | null;
   contactId?: string | null;
   matchId?: string | null;

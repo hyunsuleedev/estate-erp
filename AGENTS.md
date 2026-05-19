@@ -103,6 +103,13 @@ pnpm prisma:migrate    # Run Prisma migrations
 pnpm prisma:generate   # Generate Prisma client
 ```
 
+## Desktop UI Verification
+
+- Electron 화면 검수/테스트 요청이 있으면 반드시 `electron` skill을 사용한다.
+- `pnpm dev:desktop` 또는 실행 중인 Electron 앱을 remote debugging port로 열고 `agent-browser`로 연결해 실제 화면을 조작한다.
+- 데스크톱 UI 변경 후에는 `agent-browser snapshot`, `click`, `fill`, `screenshot` 등으로 핵심 사용자 흐름을 확인한다.
+- 단순 `pnpm test`, `typecheck`, `lint`만으로 Electron 화면 테스트를 완료했다고 보지 않는다.
+
 ## Current Phase
 
 **Phase 1 (현재)**: NestJS 서버 + CRM MCP Server

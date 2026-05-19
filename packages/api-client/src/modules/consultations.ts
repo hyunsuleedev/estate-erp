@@ -7,8 +7,10 @@ export interface Consultation {
   contactId: string;
   createdById: string;
   type: string;
+  purpose: string;
   content: string;
   propertyId: string | null;
+  listingIntakeId: string | null;
   listingId: string | null;
   matchId: string | null;
   buyerReqId: string | null;
@@ -31,6 +33,12 @@ export interface Consultation {
         isPlaceholder: boolean;
       } | null;
     } | null;
+  } | null;
+  listingIntake?: {
+    id: string;
+    status: string;
+    propertyId: string;
+    receivedAt: string;
   } | null;
   listing?: {
     id: string;
@@ -56,10 +64,11 @@ export interface ConsultationsFilter {
   siteId?: string;
   dongId?: string;
   unitId?: string;
+  listingIntakeId?: string;
   listingId?: string;
   matchId?: string;
   buyerReqId?: string;
-  context?: 'property' | 'listing' | 'match' | 'buyerRequirement' | 'unlinked';
+  context?: 'property' | 'listingIntake' | 'listing' | 'match' | 'buyerRequirement' | 'unlinked';
   outcome?: 'actionRequired' | 'confirmed' | 'held';
   type?: string;
   createdById?: string;
@@ -73,8 +82,10 @@ export interface ConsultationsFilter {
 export interface CreateConsultationDto {
   contactId: string;
   type: string;
+  purpose?: string;
   content: string;
   propertyId?: string;
+  listingIntakeId?: string;
   listingId?: string;
   matchId?: string;
   buyerReqId?: string;

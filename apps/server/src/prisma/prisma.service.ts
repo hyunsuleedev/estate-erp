@@ -10,6 +10,8 @@ const TENANT_SCOPED_MODELS = new Set([
   'PropertyContact',
   'Tenant',
   'Property',
+  'ListingIntake',
+  'Listing',
   'PriceHistory',
   'BuyerRequirement',
   'Consultation',
@@ -29,6 +31,7 @@ const TENANT_SCOPED_MODELS = new Set([
 
 const AUDITED_MODELS = new Set([
   'Property',
+  'ListingIntake',
   'Listing',
   'Contact',
   'PropertyContact',

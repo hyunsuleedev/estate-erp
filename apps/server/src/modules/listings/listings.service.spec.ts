@@ -29,6 +29,10 @@ describe('ListingsService', () => {
         create: jest.fn(),
         update: jest.fn(),
       },
+      listingIntake: {
+        findFirst: jest.fn(),
+        create: jest.fn(),
+      },
     };
 
     return {
@@ -37,9 +41,75 @@ describe('ListingsService', () => {
     };
   }
 
-  it('rejects creating a duplicate transaction type for the same property', async () => {
+  it('creates an active intake when creating the first listing for a property', async () => {
     const { prisma, service } = createService();
     prisma.property.findFirst.mockResolvedValue({ id: 'property-1' });
+    prisma.listingIntake.findFirst.mockResolvedValue(null);
+    prisma.listingIntake.create.mockResolvedValue({ id: 'intake-1' });
+    prisma.listing.findFirst.mockResolvedValue(null);
+    prisma.listing.create.mockResolvedValue({ id: 'listing-1' });
+
+    await service.create('office-1', {
+      propertyId: 'property-1',
+      transactionType: 'sale',
+      price: 150000,
+    });
+
+    expect(prisma.listingIntake.create).toHaveBeenCalledWith({
+      data: {
+        officeId: 'office-1',
+        propertyId: 'property-1',
+      },
+      select: { id: true },
+    });
+    expect(prisma.listing.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          intakeId: 'intake-1',
+          propertyId: 'property-1',
+          transactionType: 'sale',
+          price: 150000,
+        }),
+      }),
+    );
+  });
+
+  it('adds a new transaction option to the existing active intake', async () => {
+    const { prisma, service } = createService();
+    prisma.property.findFirst.mockResolvedValue({ id: 'property-1' });
+    prisma.listingIntake.findFirst.mockResolvedValue({ id: 'intake-1' });
+    prisma.listing.findFirst.mockResolvedValue(null);
+    prisma.listing.create.mockResolvedValue({ id: 'listing-2' });
+
+    await service.create('office-1', {
+      propertyId: 'property-1',
+      transactionType: 'jeonse',
+      price: 90000,
+    });
+
+    expect(prisma.listingIntake.create).not.toHaveBeenCalled();
+    expect(prisma.listing.findFirst).toHaveBeenCalledWith({
+      where: {
+        officeId: 'office-1',
+        intakeId: 'intake-1',
+        transactionType: 'jeonse',
+      },
+      select: { id: true },
+    });
+    expect(prisma.listing.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          intakeId: 'intake-1',
+          transactionType: 'jeonse',
+        }),
+      }),
+    );
+  });
+
+  it('rejects creating a duplicate transaction type for the same active intake', async () => {
+    const { prisma, service } = createService();
+    prisma.property.findFirst.mockResolvedValue({ id: 'property-1' });
+    prisma.listingIntake.findFirst.mockResolvedValue({ id: 'intake-1' });
     prisma.listing.findFirst.mockResolvedValue({ id: 'listing-1' });
     prisma.listing.create.mockResolvedValue({ id: 'listing-2' });
 
@@ -51,6 +121,14 @@ describe('ListingsService', () => {
     ).rejects.toBeInstanceOf(ConflictException);
 
     expect(prisma.listing.create).not.toHaveBeenCalled();
+    expect(prisma.listing.findFirst).toHaveBeenCalledWith({
+      where: {
+        officeId: 'office-1',
+        intakeId: 'intake-1',
+        transactionType: 'sale',
+      },
+      select: { id: true },
+    });
   });
 
   it('rejects changing a listing to a transaction type that already exists on the property', async () => {
@@ -60,6 +138,7 @@ describe('ListingsService', () => {
         id: 'listing-1',
         officeId: 'office-1',
         propertyId: 'property-1',
+        intakeId: 'intake-1',
         transactionType: 'jeonse',
         checkStatus: 'unverified',
       })

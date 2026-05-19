@@ -1,7 +1,13 @@
 import { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import type { ReactNode } from 'react';
 import type { MeResponse } from '@estate-erp/api-client';
-import { api, setToken, removeToken, getToken } from '@/lib/api';
+import {
+  api,
+  setTokens,
+  removeToken,
+  getToken,
+  setAuthFailureHandler,
+} from '@/lib/api';
 
 interface AuthState {
   user: MeResponse | null;
@@ -24,30 +30,43 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     isAuthenticated: false,
   });
 
+  const handleAuthFailure = useCallback(() => {
+    removeToken();
+    setState({ user: null, isLoading: false, isAuthenticated: false });
+  }, []);
+
+  // api-client의 onAuthFailure가 호출되면 React 상태를 비로그인으로 전환.
+  useEffect(() => {
+    setAuthFailureHandler(handleAuthFailure);
+    return () => setAuthFailureHandler(null);
+  }, [handleAuthFailure]);
+
   useEffect(() => {
     const token = getToken();
     if (!token) return;
 
+    // 만료된 access token이라도 api-client 인터셉터가 자동 refresh 시도.
+    // 둘 다 만료/폐기면 onAuthFailure → handleAuthFailure로 떨어진다.
     api.auth.me()
       .then((user) => {
         setState({ user, isLoading: false, isAuthenticated: true });
       })
       .catch(() => {
-        removeToken();
-        setState({ user: null, isLoading: false, isAuthenticated: false });
+        // onAuthFailure가 이미 처리했을 수 있지만, network 에러 등 다른 실패도 동일하게 처리.
+        handleAuthFailure();
       });
-  }, []);
+  }, [handleAuthFailure]);
 
   const login = useCallback(async (loginId: string, password: string, remember = true) => {
     const res = await api.auth.login({ loginId, password });
-    setToken(res.accessToken, remember);
+    setTokens(res.accessToken, res.refreshToken, remember);
     const user = await api.auth.me();
     setState({ user, isLoading: false, isAuthenticated: true });
   }, []);
 
   const register = useCallback(async (loginId: string, email: string, password: string, name: string, officeName: string) => {
     const res = await api.auth.register({ loginId, email, password, name, officeName });
-    setToken(res.accessToken);
+    setTokens(res.accessToken, res.refreshToken);
     const user = await api.auth.me();
     setState({ user, isLoading: false, isAuthenticated: true });
   }, []);

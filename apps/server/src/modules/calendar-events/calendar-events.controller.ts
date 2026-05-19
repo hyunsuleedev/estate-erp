@@ -56,6 +56,7 @@ export class CalendarEventsController {
       end?: string;
       color?: string;
       propertyId?: string;
+      listingIntakeId?: string;
       listingId?: string;
       contactId?: string;
       matchId?: string;
@@ -83,6 +84,7 @@ export class CalendarEventsController {
       end?: string;
       color?: string;
       propertyId?: string | null;
+      listingIntakeId?: string | null;
       listingId?: string | null;
       contactId?: string | null;
       matchId?: string | null;

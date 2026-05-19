@@ -45,6 +45,7 @@ export interface Listing {
   id: string;
   officeId: string;
   propertyId: string;
+  intakeId: string;
   transactionType: string;
   price: number | null;
   deposit: number | null;
@@ -109,6 +110,7 @@ export interface Listing {
     tenants?: Tenant[];
     listings?: Array<{
       id: string;
+      intakeId: string;
       transactionType: string;
       price: number | null;
       deposit: number | null;
@@ -175,6 +177,7 @@ export interface ListingFilterSitesParams {
 
 export interface CreateListingDto {
   propertyId: string;
+  intakeId?: string | null;
   transactionType: string;
   price?: number;
   deposit?: number;

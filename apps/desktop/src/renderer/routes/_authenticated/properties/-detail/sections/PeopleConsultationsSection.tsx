@@ -177,7 +177,20 @@ export function PeopleConsultationsSection({
       }
     >
       {people.length === 0 ? (
-        <MainSectionEmpty text="등록된 관련인이 없습니다." />
+        <MainSectionEmpty
+          text="등록된 소유자, 임차인, 매수 고객이 없습니다. 우선 상담 기록을 남기거나 매물 등록 화면에서 관련인을 추가하세요."
+          action={
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 gap-1 px-2 text-[11px]"
+              onClick={() => onAddConsultationFor('')}
+            >
+              <Plus className="size-3" />
+              상담부터 추가
+            </Button>
+          }
+        />
       ) : (
         <div className="grid gap-2 sm:grid-cols-2">
           {people.map((person) => (

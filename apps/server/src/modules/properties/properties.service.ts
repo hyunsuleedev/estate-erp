@@ -27,6 +27,7 @@ export interface PropertySearchQuery {
   siteType?: string;
   wardCode?: string;
   siteId?: string;
+  unitId?: string;
   search?: string;
   hasListing?: boolean;
   sortBy?: 'createdAt' | 'updatedAt';
@@ -60,6 +61,10 @@ export class PropertiesService {
 
     if (query.siteId) {
       filters.push({ siteId: query.siteId });
+    }
+
+    if (query.unitId) {
+      filters.push({ unitId: query.unitId });
     }
 
     if (query.siteType || query.wardCode) {

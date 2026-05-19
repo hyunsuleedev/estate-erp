@@ -8,16 +8,18 @@ model Consultation {
   contactId   String @map("contact_id") @db.Uuid
   createdById String @map("created_by_id") @db.Uuid
   type        String // phone, visit, online
+  purpose     String @default("general") // general, listing_confirm, buyer_consult, deal_followup
   content     String
 
   // 통화 녹음 연결 (nullable — 녹음 없는 상담도 있음)
   callRecordingId String? @map("call_recording_id") @db.Uuid
 
   // 컨텍스트 (어떤 맥락의 상담인지, 자동 연결)
-  propertyId String? @map("property_id") @db.Uuid // 호실 맥락 (소유자/세입자 상담)
-  listingId  String? @map("listing_id") @db.Uuid // 매물 맥락 (거래 상담)
-  matchId    String? @map("match_id") @db.Uuid
-  buyerReqId String? @map("buyer_req_id") @db.Uuid
+  propertyId      String? @map("property_id") @db.Uuid // 호실 맥락 (소유자/세입자 상담)
+  listingIntakeId String? @map("listing_intake_id") @db.Uuid // 의뢰 맥락 (방문/권리/현장 메모 등)
+  listingId       String? @map("listing_id") @db.Uuid // 매물 맥락 (거래 상담)
+  matchId         String? @map("match_id") @db.Uuid
+  buyerReqId      String? @map("buyer_req_id") @db.Uuid
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -27,13 +29,17 @@ model Consultation {
   createdBy        User              @relation("ConsultationCreator", fields: [createdById], references: [id])
   callRecording    CallRecording?    @relation(fields: [callRecordingId], references: [id])
   property         Property?         @relation(fields: [propertyId], references: [id])
+  listingIntake    ListingIntake?    @relation(fields: [listingIntakeId], references: [id])
   listing          Listing?          @relation(fields: [listingId], references: [id])
   match            Match?            @relation(fields: [matchId], references: [id])
   buyerRequirement BuyerRequirement? @relation(fields: [buyerReqId], references: [id])
   tasks            Task[]
+  lastConfirmedIntakes ListingIntake[] @relation("ListingIntakeLastConfirmConsultation")
 
   @@index([officeId, contactId])
+  @@index([officeId, purpose])
   @@index([officeId, propertyId])
+  @@index([officeId, listingIntakeId])
   @@index([officeId, listingId])
   @@map("consultations")
 }

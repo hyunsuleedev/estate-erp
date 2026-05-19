@@ -50,6 +50,39 @@ export const CONTRACT_TRANSACTION_TYPE_LABELS: Record<
   succession: '권리승계',
 };
 
+/** 내 사무소의 광고 게재 상태 (ListingAdvertisement.status) */
+export const ListingAdvertisementStatus = {
+  PLANNED: 'planned',
+  DRAFT: 'draft',
+  ACTIVE: 'active',
+  PAUSED: 'paused',
+  ENDED: 'ended',
+  ERROR: 'error',
+} as const;
+export type ListingAdvertisementStatus =
+  (typeof ListingAdvertisementStatus)[keyof typeof ListingAdvertisementStatus];
+
+/** 광고 레코드 출처 (ListingAdvertisement.source) */
+export const ListingAdvertisementSource = {
+  MANUAL: 'manual',
+  EXTERNAL_OBSERVED: 'external_observed',
+  CP_SYNC: 'cp_sync',
+} as const;
+export type ListingAdvertisementSource =
+  (typeof ListingAdvertisementSource)[keyof typeof ListingAdvertisementSource];
+
+/** 광고 채널 (ListingAdvertisement.channel) — 자주 쓰이는 채널 슬러그. 자유텍스트도 허용. */
+export const ListingAdvertisementChannel = {
+  NAVER: 'naver',
+  ASIL: 'asil',
+  ZIGBANG: 'zigbang',
+  DABANG: 'dabang',
+  HANBANG: 'hanbang',
+  ETC: 'etc',
+} as const;
+export type ListingAdvertisementChannel =
+  (typeof ListingAdvertisementChannel)[keyof typeof ListingAdvertisementChannel];
+
 /** 매물 확인 상태 */
 export const CheckStatus = {
   UNVERIFIED: 'unverified',

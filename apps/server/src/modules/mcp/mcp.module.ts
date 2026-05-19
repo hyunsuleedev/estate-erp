@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ListingsModule } from '../listings/listings.module';
+import { ListingIntakesModule } from '../listing-intakes/listing-intakes.module';
 import { ContactsModule } from '../contacts/contacts.module';
 import { PropertiesModule } from '../properties/properties.module';
 import { DealsModule } from '../deals/deals.module';
@@ -35,6 +36,7 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 @Module({
   imports: [
     ListingsModule,
+    ListingIntakesModule,
     ContactsModule,
     PropertiesModule,
     DealsModule,

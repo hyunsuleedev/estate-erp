@@ -6,7 +6,9 @@ import { PrismaModule } from './prisma/prisma.module';
 import { validateEnv } from './config/env.validation';
 import { AuthModule } from './modules/auth/auth.module';
 import { PropertiesModule } from './modules/properties/properties.module';
+import { ListingIntakesModule } from './modules/listing-intakes/listing-intakes.module';
 import { ListingsModule } from './modules/listings/listings.module';
+import { ListingAdvertisementsModule } from './modules/listing-advertisements/listing-advertisements.module';
 import { ContactsModule } from './modules/contacts/contacts.module';
 import { TasksModule } from './modules/tasks/tasks.module';
 import { MatchesModule } from './modules/matches/matches.module';
@@ -72,7 +74,9 @@ import { RequestContextMiddleware } from './common/request-context/request-conte
     DongsModule,
     UnitsModule,
     PropertiesModule,
+    ListingIntakesModule,
     ListingsModule,
+    ListingAdvertisementsModule,
     ContactsModule,
     ContactRelationsModule,
     PropertyContactsModule,

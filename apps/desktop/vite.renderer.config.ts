@@ -5,6 +5,7 @@ import tailwindcss from '@tailwindcss/vite';
 import { TanStackRouterVite } from '@tanstack/router-plugin/vite';
 
 export default defineConfig({
+  envDir: __dirname,
   plugins: [
     TanStackRouterVite({
       routesDirectory: './src/renderer/routes',

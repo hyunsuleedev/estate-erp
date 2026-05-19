@@ -8,6 +8,14 @@ if (started) {
   app.quit();
 }
 
+// Enable Chrome DevTools Protocol in development so agent-browser / Playwright
+// can attach to the renderer. Must run before app.on('ready').
+if (!app.isPackaged) {
+  const port = process.env.ELECTRON_REMOTE_DEBUGGING_PORT ?? '9333';
+  app.commandLine.appendSwitch('remote-debugging-port', port);
+  app.commandLine.appendSwitch('remote-allow-origins', '*');
+}
+
 const windowManager = new WindowManager();
 
 const createWindow = () => {

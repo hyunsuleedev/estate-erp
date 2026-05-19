@@ -11,6 +11,14 @@ export class TasksService {
     assignedBy: { select: { id: true, name: true } },
     contact: { select: { id: true, name: true, phone: true } },
     property: { include: { site: true, unit: true } },
+    listingIntake: {
+      select: {
+        id: true,
+        status: true,
+        propertyId: true,
+        receivedAt: true,
+      },
+    },
     listing: true,
     consultation: true,
     buyerRequirement: {
@@ -73,6 +81,7 @@ export class TasksService {
       assignedToId?: string;
       contactId?: string;
       propertyId?: string;
+      listingIntakeId?: string;
       listingId?: string;
       consultationId?: string;
       buyerReqId?: string;
@@ -98,6 +107,7 @@ export class TasksService {
         assignedAt: dto.assignedToId ? new Date() : undefined,
         contactId: dto.contactId,
         propertyId: dto.propertyId,
+        listingIntakeId: dto.listingIntakeId,
         listingId: dto.listingId,
         consultationId: dto.consultationId,
         buyerReqId: dto.buyerReqId,
@@ -132,6 +142,7 @@ export class TasksService {
       assignedToId?: string | null;
       contactId?: string | null;
       propertyId?: string | null;
+      listingIntakeId?: string | null;
       listingId?: string | null;
       consultationId?: string | null;
       buyerReqId?: string | null;
@@ -156,6 +167,7 @@ export class TasksService {
         ...assignmentData,
         contactId: dto.contactId,
         propertyId: dto.propertyId,
+        listingIntakeId: dto.listingIntakeId,
         listingId: dto.listingId,
         consultationId: dto.consultationId,
         buyerReqId: dto.buyerReqId,

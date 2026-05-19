@@ -80,6 +80,7 @@ model Proposal {
 
   // 컨텍스트 링크 — inbox 카드에서 한눈에 파악할 수 있게
   listingId  String? @map("listing_id") @db.Uuid
+  listingIntakeId String? @map("listing_intake_id") @db.Uuid
   propertyId String? @map("property_id") @db.Uuid
   contactId  String? @map("contact_id") @db.Uuid
   dealId     String? @map("deal_id") @db.Uuid
@@ -97,6 +98,7 @@ model Proposal {
 
   office    Office    @relation(fields: [officeId], references: [id])
   listing   Listing?  @relation(fields: [listingId], references: [id])
+  listingIntake ListingIntake? @relation(fields: [listingIntakeId], references: [id])
   property  Property? @relation(fields: [propertyId], references: [id])
   contact   Contact?  @relation(fields: [contactId], references: [id])
   deal      Deal?     @relation(fields: [dealId], references: [id])
@@ -108,6 +110,7 @@ model Proposal {
   @@index([officeId, type, status])
   @@index([officeId, dedupeKey])
   @@index([listingId])
+  @@index([listingIntakeId])
   @@index([propertyId])
   @@map("proposals")
 }
@@ -246,6 +249,7 @@ model EntityDraft {
 
   // 컨텍스트 링크 (inbox 카드에서 한눈에 파악, 도메인으로 점프)
   listingId  String? @map("listing_id") @db.Uuid
+  listingIntakeId String? @map("listing_intake_id") @db.Uuid
   propertyId String? @map("property_id") @db.Uuid
   contactId  String? @map("contact_id") @db.Uuid
   dealId     String? @map("deal_id") @db.Uuid
@@ -263,6 +267,7 @@ model EntityDraft {
   @@index([officeId, decisionMode, status])
   @@index([entityType, entityId])
   @@index([listingId])
+  @@index([listingIntakeId])
   @@index([dealId])
   @@map("entity_drafts")
 }

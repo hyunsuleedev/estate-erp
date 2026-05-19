@@ -36,6 +36,14 @@ export const useTabStore = create<TabStore>((set, get) => ({
   activeTabId: null,
 
   openTab(input) {
+    const existing = get().tabs.find((tab) => tab.route === input.route);
+    if (existing) {
+      if (input.activate !== false) {
+        set({ activeTabId: existing.id });
+      }
+      return existing.id;
+    }
+
     const id = genId();
     const tab: Tab = {
       id,

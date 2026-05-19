@@ -50,6 +50,7 @@ export class TasksController {
       assignedToId?: string;
       contactId?: string;
       propertyId?: string;
+      listingIntakeId?: string;
       listingId?: string;
       consultationId?: string;
       buyerReqId?: string;
@@ -76,6 +77,7 @@ export class TasksController {
       assignedToId?: string | null;
       contactId?: string | null;
       propertyId?: string | null;
+      listingIntakeId?: string | null;
       listingId?: string | null;
       consultationId?: string | null;
       buyerReqId?: string | null;

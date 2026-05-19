@@ -52,6 +52,7 @@ model Office {
   propertyContacts  PropertyContact[]
   tenants           Tenant[]
   properties        Property[]
+  listingIntakes    ListingIntake[]
   listings          Listing[]
   listingAdvertisements ListingAdvertisement[]
   tasks             Task[]

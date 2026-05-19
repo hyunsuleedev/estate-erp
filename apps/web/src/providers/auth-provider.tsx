@@ -1,7 +1,13 @@
 import { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import type { ReactNode } from 'react';
 import type { MeResponse } from '@estate-erp/api-client';
-import { api, setToken, removeToken, getToken } from '@/lib/api';
+import {
+  api,
+  setTokens,
+  removeToken,
+  getToken,
+  setAuthFailureHandler,
+} from '@/lib/api';
 
 interface AuthState {
   user: MeResponse | null;
@@ -24,6 +30,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     isAuthenticated: false,
   });
 
+  const handleAuthFailure = useCallback(() => {
+    removeToken();
+    setState({ user: null, isLoading: false, isAuthenticated: false });
+  }, []);
+
+  useEffect(() => {
+    setAuthFailureHandler(handleAuthFailure);
+    return () => setAuthFailureHandler(null);
+  }, [handleAuthFailure]);
+
   useEffect(() => {
     const token = getToken();
     if (!token) return;
@@ -33,21 +49,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setState({ user, isLoading: false, isAuthenticated: true });
       })
       .catch(() => {
-        removeToken();
-        setState({ user: null, isLoading: false, isAuthenticated: false });
+        handleAuthFailure();
       });
-  }, []);
+  }, [handleAuthFailure]);
 
   const login = useCallback(async (loginId: string, password: string, remember = true) => {
     const res = await api.auth.login({ loginId, password });
-    setToken(res.accessToken, remember);
+    setTokens(res.accessToken, res.refreshToken, remember);
     const user = await api.auth.me();
     setState({ user, isLoading: false, isAuthenticated: true });
   }, []);
 
   const register = useCallback(async (loginId: string, email: string, password: string, name: string, officeName: string) => {
     const res = await api.auth.register({ loginId, email, password, name, officeName });
-    setToken(res.accessToken);
+    setTokens(res.accessToken, res.refreshToken);
     const user = await api.auth.me();
     setState({ user, isLoading: false, isAuthenticated: true });
   }, []);

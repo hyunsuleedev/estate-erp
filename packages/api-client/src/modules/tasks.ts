@@ -42,6 +42,7 @@ export interface TaskListingSummary {
   id: string;
   officeId: string;
   propertyId: string;
+  intakeId: string;
   transactionType: string;
   price: number | null;
   deposit: number | null;
@@ -67,11 +68,19 @@ export interface TaskConsultationSummary {
   type: string;
   content: string;
   propertyId: string | null;
+  listingIntakeId: string | null;
   listingId: string | null;
   matchId: string | null;
   buyerReqId: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface TaskListingIntakeSummary {
+  id: string;
+  status: string;
+  propertyId: string;
+  receivedAt: string;
 }
 
 export interface TaskBuyerRequirementSummary {
@@ -127,6 +136,8 @@ export interface Task {
   contactId: string | null;
   property: TaskPropertySummary | null;
   propertyId: string | null;
+  listingIntake: TaskListingIntakeSummary | null;
+  listingIntakeId: string | null;
   listing: TaskListingSummary | null;
   listingId: string | null;
   consultation: TaskConsultationSummary | null;
@@ -154,6 +165,7 @@ export interface CreateTaskDto {
   assignedToId?: string;
   contactId?: string;
   propertyId?: string;
+  listingIntakeId?: string;
   listingId?: string;
   consultationId?: string;
   buyerReqId?: string;
@@ -172,6 +184,7 @@ export interface UpdateTaskDto {
   assignedToId?: string | null;
   contactId?: string | null;
   propertyId?: string | null;
+  listingIntakeId?: string | null;
   listingId?: string | null;
   consultationId?: string | null;
   buyerReqId?: string | null;

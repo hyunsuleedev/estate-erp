@@ -1,5 +1,6 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { ListingsService } from '../listings/listings.service';
+import { ListingIntakesService } from '../listing-intakes/listing-intakes.service';
 import { ContactsService } from '../contacts/contacts.service';
 import { PropertiesService } from '../properties/properties.service';
 import { DealsService } from '../deals/deals.service';
@@ -90,6 +91,24 @@ const obj = (
   properties,
   ...(required?.length ? { required } : {}),
 });
+const listingInput = obj(
+  {
+    transactionType: strEnum('거래유형', ['sale', 'jeonse', 'monthly']),
+    price: num('매매가/전세가 (만원)'),
+    deposit: num('보증금 (만원)'),
+    monthlyRent: num('월세 (만원)'),
+    moveInAvailableType: str('입주가능 유형'),
+    moveInAvailableFrom: str('입주가능 시작일 (ISO)'),
+    moveInAvailableTo: str('입주가능 종료일 (ISO)'),
+    memo: str('메모'),
+  },
+  ['transactionType'],
+);
+const listingInputs = {
+  type: 'array' as const,
+  items: listingInput,
+  description: '의뢰건에 포함할 listing rows',
+};
 
 @Injectable()
 export class McpToolsService {
@@ -122,6 +141,7 @@ export class McpToolsService {
     private readonly propertyPhotos: PropertyPhotosService,
     private readonly proposals: ProposalService,
     private readonly inbox: InboxService,
+    private readonly listingIntakes: ListingIntakesService,
   ) {
     this.registerAll();
   }
@@ -172,6 +192,163 @@ export class McpToolsService {
 
   private registerAll() {
     // ═══════════════════════════════════════════════════════════
+    // 매물 의뢰 (ListingIntakes) - table CRUD for MCP testing
+    // ═══════════════════════════════════════════════════════════
+    this.add(
+      'find_listing_intakes',
+      '매물 의뢰(ListingIntake) 목록을 검색합니다.',
+      obj({
+        status: strEnum('의뢰 상태', ['active', 'paused', 'completed', 'cancelled']),
+        confirmStatus: strEnum('생존 확인 상태', ['unknown', 'alive', 'price_changed', 'unavailable', 'no_answer', 'pending']),
+        nextConfirmFrom: str('다음 확인 예정 시작일 (ISO)'),
+        nextConfirmTo: str('다음 확인 예정 종료일 (ISO)'),
+        includeInactive: bool('비활성 의뢰 포함'),
+        includeHidden: bool('숨김 listing 포함'),
+        propertyId: str('관리매물 ID'),
+        transactionType: strEnum('거래유형', ['sale', 'jeonse', 'monthly']),
+        checkStatus: strEnum('확인상태', ['unverified', 'verified', 'in_contract', 'hold', 'done']),
+        siteId: str('단지 ID'),
+        siteType: str('매물유형'),
+        wardCode: str('법정동코드'),
+        search: str('검색어'),
+        priceMin: num('최소 가격 (만원)'),
+        priceMax: num('최대 가격 (만원)'),
+        depositMin: num('최소 보증금 (만원)'),
+        depositMax: num('최대 보증금 (만원)'),
+        monthlyRentMin: num('최소 월세 (만원)'),
+        monthlyRentMax: num('최대 월세 (만원)'),
+        areaMin: num('최소 면적 (m²)'),
+        areaMax: num('최대 면적 (m²)'),
+        sortBy: strEnum('정렬 필드', ['receivedAt', 'updatedAt', 'createdAt', 'price']),
+        sortOrder: strEnum('정렬 방향', ['asc', 'desc']),
+        ...page,
+      }),
+      async (a, c) =>
+        this.listingIntakes.findAll(c.officeId, {
+          status: a.status as string,
+          confirmStatus: a.confirmStatus as string,
+          nextConfirmFrom: a.nextConfirmFrom as string,
+          nextConfirmTo: a.nextConfirmTo as string,
+          includeInactive: a.includeInactive as boolean,
+          includeHidden: a.includeHidden as boolean,
+          propertyId: a.propertyId as string,
+          transactionType: a.transactionType as string,
+          checkStatus: a.checkStatus as string,
+          siteId: a.siteId as string,
+          siteType: a.siteType as string,
+          wardCode: a.wardCode as string,
+          search: a.search as string,
+          priceMin: a.priceMin as number,
+          priceMax: a.priceMax as number,
+          depositMin: a.depositMin as number,
+          depositMax: a.depositMax as number,
+          monthlyRentMin: a.monthlyRentMin as number,
+          monthlyRentMax: a.monthlyRentMax as number,
+          areaMin: a.areaMin as number,
+          areaMax: a.areaMax as number,
+          sortBy: a.sortBy as 'receivedAt' | 'updatedAt' | 'createdAt' | 'price',
+          sortOrder: a.sortOrder as 'asc' | 'desc',
+          page: (a.page as number) ?? 1,
+          limit: this.clampLimit(a),
+        }),
+    );
+
+    this.add(
+      'get_listing_intake',
+      '특정 매물 의뢰(ListingIntake)를 조회합니다.',
+      obj({ id: str('의뢰 ID') }, ['id']),
+      async (a, c) => this.listingIntakes.findOne(a.id as string, c.officeId),
+    );
+
+    this.add(
+      'create_listing_intake',
+      '새 매물 의뢰(ListingIntake) row를 등록합니다. 테스트용 table CRUD 도구이므로 listings는 선택입니다.',
+      obj(
+        {
+          propertyId: str('관리매물 ID'),
+          status: strEnum('의뢰 상태', ['active', 'paused', 'completed', 'cancelled']),
+          receivedAt: str('접수일 (ISO)'),
+          confirmedAt: str('확인일 (ISO)'),
+          isJointBrokerageRequired: bool('공동중개 필요 여부'),
+          jointBrokeragePartnerId: str('공동중개 거래처 ID'),
+          memo: str('의뢰 메모'),
+          listings: listingInputs,
+        },
+        ['propertyId'],
+      ),
+      async (a, c) =>
+        this.listingIntakes.create(c.officeId, {
+          propertyId: a.propertyId as string,
+          status: a.status as string,
+          receivedAt: a.receivedAt as string | null,
+          confirmedAt: a.confirmedAt as string | null,
+          isJointBrokerageRequired: a.isJointBrokerageRequired as boolean,
+          jointBrokeragePartnerId: a.jointBrokeragePartnerId as string | null,
+          memo: a.memo as string | null,
+          listings: a.listings as never,
+        }),
+    );
+
+    this.add(
+      'update_listing_intake',
+      '매물 의뢰(ListingIntake) row를 수정합니다.',
+      obj(
+        {
+          id: str('의뢰 ID'),
+          status: strEnum('의뢰 상태', ['active', 'paused', 'completed', 'cancelled']),
+          receivedAt: str('접수일 (ISO)'),
+          confirmedAt: str('확인일 (ISO)'),
+          isJointBrokerageRequired: bool('공동중개 필요 여부'),
+          jointBrokeragePartnerId: str('공동중개 거래처 ID'),
+          memo: str('의뢰 메모'),
+        },
+        ['id'],
+      ),
+      async (a, c) =>
+        this.listingIntakes.update(a.id as string, c.officeId, {
+          status: a.status as string,
+          receivedAt: a.receivedAt as string | null,
+          confirmedAt: a.confirmedAt as string | null,
+          isJointBrokerageRequired: a.isJointBrokerageRequired as boolean,
+          jointBrokeragePartnerId: a.jointBrokeragePartnerId as string | null,
+          memo: a.memo as string | null,
+        }),
+    );
+
+    this.add(
+      'confirm_listing_intake',
+      '매물 의뢰의 생존 여부를 확인하고 최신 확인 상태를 갱신합니다. 가능하면 Consultation 히스토리도 함께 남깁니다.',
+      obj(
+        {
+          id: str('의뢰 ID'),
+          result: strEnum('확인 결과', ['alive', 'price_changed', 'unavailable', 'no_answer', 'pending']),
+          channel: strEnum('확인 채널', ['phone', 'sms', 'visit', 'owner_message', 'note', 'mcp']),
+          memo: str('확인 메모'),
+          checkedAt: str('확인 시각 (ISO)'),
+          nextConfirmAt: str('다음 확인 예정일 (ISO)'),
+          contactId: str('확인 대상 연락처 ID'),
+        },
+        ['id', 'result'],
+      ),
+      async (a, c) =>
+        this.listingIntakes.confirm(a.id as string, c.officeId, c.userId, {
+          result: a.result as string,
+          channel: (a.channel as string) ?? 'mcp',
+          memo: a.memo as string | null,
+          checkedAt: a.checkedAt as string | null,
+          nextConfirmAt: a.nextConfirmAt as string | null,
+          contactId: a.contactId as string | null,
+        }),
+    );
+
+    this.add(
+      'delete_listing_intake',
+      '매물 의뢰(ListingIntake)를 삭제 요청합니다. 현재 API 구현은 cancelled 상태로 전환합니다.',
+      obj({ id: str('의뢰 ID') }, ['id']),
+      async (a, c) => this.listingIntakes.remove(a.id as string, c.officeId),
+    );
+
+    // ═══════════════════════════════════════════════════════════
     // 매물 (Listings)
     // ═══════════════════════════════════════════════════════════
     this.add(
@@ -213,6 +390,7 @@ export class McpToolsService {
       '새 매물을 등록합니다. Property에 거래 조건을 추가합니다.',
       obj(
         {
+          intakeId: str('의뢰 ID'),
           propertyId: str('관리매물 ID'),
           transactionType: strEnum('거래유형', ['sale', 'jeonse', 'monthly']),
           price: num('매매가/전세가 (만원)'),
@@ -220,17 +398,23 @@ export class McpToolsService {
           monthlyRent: num('월세 (만원)'),
           memo: str('메모'),
         },
-        ['propertyId', 'transactionType'],
+        ['intakeId', 'propertyId', 'transactionType'],
       ),
-      async (a, c) =>
-        this.listings.create(c.officeId, {
+      async (a, c) => {
+        if (!a.intakeId) {
+          throw new BadRequestException('intakeId is required');
+        }
+
+        return this.listings.create(c.officeId, {
+          intakeId: a.intakeId as string,
           propertyId: a.propertyId as string,
           transactionType: a.transactionType as string,
           price: a.price as number,
           deposit: a.deposit as number,
           monthlyRent: a.monthlyRent as number,
           memo: a.memo as string,
-        }),
+        });
+      },
     );
 
     this.add(
@@ -497,11 +681,18 @@ export class McpToolsService {
     this.add(
       'find_consultations',
       '상담기록 목록. 연락처, 매물, 매칭별 필터.',
-      obj({ contactId: str('연락처 ID'), propertyId: str('매물 ID'), listingId: str('리스팅 ID'), ...page }),
+      obj({
+        contactId: str('연락처 ID'),
+        propertyId: str('매물 ID'),
+        listingIntakeId: str('의뢰 ID'),
+        listingId: str('리스팅 ID'),
+        ...page,
+      }),
       async (a, c) =>
         this.consultations.findAll(c.officeId, {
           contactId: a.contactId as string,
           propertyId: a.propertyId as string,
+          listingIntakeId: a.listingIntakeId as string,
           listingId: a.listingId as string,
           page: (a.page as number) ?? 1,
           limit: this.clampLimit(a),
@@ -523,6 +714,7 @@ export class McpToolsService {
         type: strEnum('상담유형', ['phone', 'visit', 'online']),
         content: str('메모 내용'),
         propertyId: str('관련 매물 ID'),
+        listingIntakeId: str('관련 의뢰 ID'),
         listingId: str('관련 리스팅 ID'),
         matchId: str('관련 매칭 ID'),
         buyerReqId: str('관련 구매조건 ID'),
@@ -533,6 +725,7 @@ export class McpToolsService {
           type: a.type as string,
           content: a.content as string,
           propertyId: a.propertyId as string,
+          listingIntakeId: a.listingIntakeId as string,
           listingId: a.listingId as string,
           matchId: a.matchId as string,
           buyerReqId: a.buyerReqId as string,
@@ -633,6 +826,7 @@ export class McpToolsService {
         assignedToId: str('담당자 ID'),
         contactId: str('관련 연락처 ID'),
         propertyId: str('관련 매물 ID'),
+        listingIntakeId: str('관련 의뢰 ID'),
         listingId: str('관련 리스팅 ID'),
         consultationId: str('관련 상담 ID'),
         buyerReqId: str('관련 구매조건 ID'),
@@ -651,6 +845,7 @@ export class McpToolsService {
           assignedToId: a.assignedToId as string,
           contactId: a.contactId as string,
           propertyId: a.propertyId as string,
+          listingIntakeId: a.listingIntakeId as string,
           listingId: a.listingId as string,
           consultationId: a.consultationId as string,
           buyerReqId: a.buyerReqId as string,
@@ -702,6 +897,7 @@ export class McpToolsService {
         end: str('종료 (ISO)'),
         contactId: str('연락처 ID'),
         propertyId: str('매물 ID'),
+        listingIntakeId: str('의뢰 ID'),
         listingId: str('리스팅 ID'),
         dealId: str('거래 ID'),
       }, ['title', 'start']),
@@ -715,6 +911,7 @@ export class McpToolsService {
           end: a.end as string,
           contactId: a.contactId as string,
           propertyId: a.propertyId as string,
+          listingIntakeId: a.listingIntakeId as string,
           listingId: a.listingId as string,
           dealId: a.dealId as string,
         }),

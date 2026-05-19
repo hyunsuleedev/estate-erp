@@ -34,10 +34,17 @@ export function MainSection({
   );
 }
 
-export function MainSectionEmpty({ text }: { text: string }) {
+export function MainSectionEmpty({
+  text,
+  action,
+}: {
+  text: string;
+  action?: ReactNode;
+}) {
   return (
     <div className="rounded-lg border border-dashed border-border bg-muted/20 px-4 py-6 text-center text-[12px] text-muted-foreground">
-      {text}
+      <div>{text}</div>
+      {action && <div className="mt-3 flex justify-center">{action}</div>}
     </div>
   );
 }

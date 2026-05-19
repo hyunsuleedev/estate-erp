@@ -16,6 +16,7 @@ model Contact {
 
   office             Office             @relation(fields: [officeId], references: [id])
   propertyContacts   PropertyContact[]
+  listingIntakesRequested ListingIntake[]
   buyerRequirements  BuyerRequirement[]
   consultations      Consultation[]
   tenants            Tenant[]

@@ -2,6 +2,12 @@
 export interface ApiClientConfig {
   baseUrl: string;
   getToken?: () => string | null;
+  /** 저장된 refresh token (Supabase) — 401 발생 시 access token 재발급에 사용 */
+  getRefreshToken?: () => string | null;
+  /** Refresh 성공 시 호출. Supabase는 refresh token도 회전시키므로 둘 다 저장해야 함. */
+  setTokens?: (accessToken: string, refreshToken: string) => void;
+  /** Refresh 자체가 실패한 경우 (refresh token 만료/폐기). 호스트 앱은 여기서 로그아웃 + 라우팅 처리. */
+  onAuthFailure?: () => void;
 }
 
 /** 페이지네이션 응답 */

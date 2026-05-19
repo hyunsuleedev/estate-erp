@@ -108,10 +108,16 @@ export class ListingsController {
     @Body()
     dto: {
       propertyId: string;
+      intakeId?: string | null;
       transactionType: string;
       price?: number | null;
       deposit?: number | null;
       monthlyRent?: number | null;
+      moveInAvailableType?: string;
+      moveInAvailableFrom?: string;
+      moveInAvailableTo?: string;
+      isJointBrokerageRequired?: boolean;
+      jointBrokeragePartnerId?: string;
       memo?: string | null;
     },
     @CurrentUser() user: CurrentUserPayload,
@@ -128,6 +134,11 @@ export class ListingsController {
       price?: number | null;
       deposit?: number | null;
       monthlyRent?: number | null;
+      moveInAvailableType?: string | null;
+      moveInAvailableFrom?: string | null;
+      moveInAvailableTo?: string | null;
+      isJointBrokerageRequired?: boolean;
+      jointBrokeragePartnerId?: string | null;
       checkStatus?: string;
       isHidden?: boolean;
       memo?: string | null;

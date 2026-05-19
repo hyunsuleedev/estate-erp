@@ -17,6 +17,7 @@ model Property {
   unit             Unit?             @relation(fields: [unitId], references: [id])
   propertyContacts PropertyContact[]
   tenants          Tenant[]
+  listingIntakes   ListingIntake[]
   listings         Listing[]
   consultations    Consultation[]
   tasks            Task[]
@@ -32,6 +33,59 @@ model Property {
 }
 
 // ============================================================
+// ListingIntake (의뢰/접수 단위)
+// 같은 의뢰 안에서 매매/전세/월세 Listing을 여러 개 가질 수 있다.
+// 점유/방문/권리/현장 메모처럼 거래 옵션에 공통으로 걸리는 정보의 앵커.
+// ============================================================
+
+model ListingIntake {
+  id         String @id @default(uuid()) @db.Uuid
+  officeId   String @map("office_id") @db.Uuid
+  propertyId String @map("property_id") @db.Uuid
+
+  requesterContactId String? @map("requester_contact_id") @db.Uuid
+  status             String  @default("active") // active, paused, completed, cancelled
+
+  receivedAt  DateTime  @default(now()) @map("received_at")
+  confirmedAt DateTime? @map("confirmed_at")
+
+  occupancyStatus String? @map("occupancy_status")
+  viewingMemo     String? @map("viewing_memo") @db.Text
+  rightsMemo      String? @map("rights_memo") @db.Text
+  fieldMemo       String? @map("field_memo") @db.Text
+  isJointBrokerageRequired Boolean @default(false) @map("is_joint_brokerage_required")
+  jointBrokeragePartnerId  String? @map("joint_brokerage_partner_id") @db.Uuid
+  confirmStatus   String  @default("unknown") @map("confirm_status")
+  nextConfirmAt   DateTime? @map("next_confirm_at")
+  lastConfirmMemo String? @map("last_confirm_memo") @db.Text
+  lastConfirmConsultationId String? @map("last_confirm_consultation_id") @db.Uuid
+  memo            String? @db.Text
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  office           Office          @relation(fields: [officeId], references: [id])
+  property         Property        @relation(fields: [propertyId], references: [id])
+  requesterContact Contact?        @relation(fields: [requesterContactId], references: [id])
+  jointBrokeragePartner PartnerBroker? @relation("ListingIntakeJointBrokeragePartner", fields: [jointBrokeragePartnerId], references: [id])
+  lastConfirmConsultation Consultation? @relation("ListingIntakeLastConfirmConsultation", fields: [lastConfirmConsultationId], references: [id])
+  listings         Listing[]
+  consultations    Consultation[]
+  tasks            Task[]
+  calendarEvents   CalendarEvent[]
+  proposals        Proposal[]
+
+  @@index([officeId, status, updatedAt])
+  @@index([propertyId])
+  @@index([requesterContactId])
+  @@index([jointBrokeragePartnerId])
+  @@index([officeId, confirmStatus, nextConfirmAt])
+  @@index([nextConfirmAt])
+  @@index([lastConfirmConsultationId])
+  @@map("listing_intakes")
+}
+
+// ============================================================
 // Listing (매물 = 거래 정보)
 // Property에서 파생. 하나의 Property에 여러 Listing 가능.
 // (예: 같은 호실을 매매 + 전세로 동시에 내놓는 경우)
@@ -41,6 +95,7 @@ model Listing {
   id              String  @id @default(uuid()) @db.Uuid
   officeId        String  @map("office_id") @db.Uuid
   propertyId      String  @map("property_id") @db.Uuid
+  intakeId        String  @map("intake_id") @db.Uuid
   transactionType String  @map("transaction_type") // sale, jeonse, monthly
   price           Int? // 매매가/전세가 (만원)
   deposit         Int? // 보증금 (만원, monthly일 때)
@@ -63,6 +118,7 @@ model Listing {
 
   office   Office   @relation(fields: [officeId], references: [id])
   property Property @relation(fields: [propertyId], references: [id])
+  intake   ListingIntake @relation(fields: [intakeId], references: [id])
   jointBrokeragePartner PartnerBroker? @relation("ListingJointBrokeragePartner", fields: [jointBrokeragePartnerId], references: [id])
 
   matches        Match[]
@@ -77,10 +133,11 @@ model Listing {
   // 공동 중개망
   networkSharedProperties NetworkSharedProperty[]
 
-  @@unique([propertyId, transactionType])
+  @@unique([intakeId, transactionType])
   @@index([officeId, checkStatus])
   @@index([officeId, checkStatus, checkStatusChangedAt])
   @@index([propertyId])
+  @@index([intakeId])
   @@index([jointBrokeragePartnerId])
   @@map("listings")
 }
