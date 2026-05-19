@@ -254,6 +254,7 @@ function PropertiesPage() {
     const params: Record<string, string | number | boolean | undefined> = {
       limit: LISTINGS_PAGE_SIZE,
       search: search.trim() || undefined,
+      includeInactive: true,
       ...buildListingFilterParams(propertyFilters),
     };
 
