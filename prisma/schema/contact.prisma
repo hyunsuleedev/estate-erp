@@ -6,8 +6,8 @@ model Contact {
   id        String   @id @default(uuid()) @db.Uuid
   officeId  String   @map("office_id") @db.Uuid
   name      String
+  // 대표 전화번호 캐시. 실제 여러 전화번호 원본은 ContactPhone에 저장한다.
   phone     String?
-  phone2    String?  @map("phone2")
   email     String?
   tags      String[]
   memo      String?
@@ -15,6 +15,7 @@ model Contact {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   office             Office             @relation(fields: [officeId], references: [id])
+  phones             ContactPhone[]
   propertyContacts   PropertyContact[]
   listingIntakesRequested ListingIntake[]
   buyerRequirements  BuyerRequirement[]
@@ -36,6 +37,32 @@ model Contact {
 
   @@unique([officeId, phone])
   @@map("contacts")
+}
+
+// ============================================================
+// 연락처 전화번호 (한 사람 ↔ 여러 번호)
+// ============================================================
+
+model ContactPhone {
+  id              String   @id @default(uuid()) @db.Uuid
+  officeId        String   @map("office_id") @db.Uuid
+  contactId       String   @map("contact_id") @db.Uuid
+  phone           String
+  normalizedPhone String   @map("normalized_phone")
+  label           String   @default("mobile") // mobile, home, work, office, fax, old, other
+  isPrimary       Boolean  @default(false) @map("is_primary")
+  isActive        Boolean  @default(true) @map("is_active")
+  memo            String?
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  office  Office  @relation(fields: [officeId], references: [id])
+  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@unique([officeId, contactId, normalizedPhone])
+  @@index([officeId, normalizedPhone])
+  @@index([contactId])
+  @@map("contact_phones")
 }
 
 // ============================================================

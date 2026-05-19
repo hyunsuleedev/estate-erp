@@ -10,7 +10,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
-import { ContactsService } from './contacts.service';
+import { ContactPhoneInput, ContactsService } from './contacts.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import {
   CurrentUser,
@@ -100,7 +100,7 @@ export class ContactsController {
     dto: {
       name: string;
       phone?: string;
-      phone2?: string;
+      phones?: ContactPhoneInput[];
       email?: string;
       tags?: string[];
       memo?: string;
@@ -117,7 +117,7 @@ export class ContactsController {
     dto: {
       name?: string;
       phone?: string;
-      phone2?: string;
+      phones?: ContactPhoneInput[];
       email?: string;
       tags?: string[];
       memo?: string;

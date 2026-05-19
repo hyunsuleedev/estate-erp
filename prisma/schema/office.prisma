@@ -48,6 +48,7 @@ model Office {
   dongs             Dong[]
   units             Unit[]
   contacts          Contact[]
+  contactPhones     ContactPhone[]
   contactRelations  ContactRelation[]
   propertyContacts  PropertyContact[]
   tenants           Tenant[]

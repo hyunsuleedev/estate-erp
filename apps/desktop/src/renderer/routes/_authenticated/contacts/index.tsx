@@ -328,7 +328,9 @@ function ContactNameCell({ contact }: { contact: Contact }) {
 }
 
 function PhoneStack({ contact }: { contact: Contact }) {
-  const phones = [contact.phone, contact.phone2].filter(Boolean);
+  const phones = contact.phones?.length
+    ? contact.phones.map((item) => item.phone)
+    : [contact.phone].filter(Boolean);
 
   if (phones.length === 0) {
     return <span className="text-[13px] text-slate-400">-</span>;

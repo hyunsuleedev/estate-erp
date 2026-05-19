@@ -13,6 +13,23 @@ export interface ContactSearchQuery {
   limit?: number;
 }
 
+export interface ContactPhoneInput {
+  phone: string;
+  label?: string;
+  isPrimary?: boolean;
+  isActive?: boolean;
+  memo?: string | null;
+}
+
+export interface ContactWriteInput {
+  name?: string;
+  phone?: string | null;
+  phones?: ContactPhoneInput[];
+  email?: string | null;
+  tags?: string[];
+  memo?: string | null;
+}
+
 @Injectable()
 export class ContactsService {
   constructor(private readonly prisma: PrismaService) {}
@@ -21,10 +38,11 @@ export class ContactsService {
     const where: Prisma.ContactWhereInput = { officeId };
 
     if (query.search) {
+      const normalizedSearch = this.normalizePhone(query.search);
       where.OR = [
         { name: { contains: query.search, mode: 'insensitive' } },
         { phone: { contains: query.search } },
-        { phone2: { contains: query.search } },
+        { phones: { some: { normalizedPhone: { contains: normalizedSearch } } } },
         { email: { contains: query.search, mode: 'insensitive' } },
       ];
     }
@@ -52,6 +70,7 @@ export class ContactsService {
         where,
         include: {
           _count: { select: { propertyContacts: true, buyerRequirements: true, consultations: true } },
+          phones: this.contactPhonesInclude(),
           consultations: {
             orderBy: { createdAt: 'desc' },
             take: 1,
@@ -82,11 +101,12 @@ export class ContactsService {
     const contact = await this.prisma.contact.findFirst({
       where: { id, officeId },
       include: {
+        phones: this.contactPhonesInclude(),
         propertyContacts: { include: { property: { include: { site: true } } } },
         buyerRequirements: { where: { status: 'active' } },
         consultations: { orderBy: { createdAt: 'desc' }, take: 10, include: { createdBy: { select: { id: true, name: true } } } },
-        relationsAsMain: { include: { relatedContact: true } },
-        relationsAsRelated: { include: { contact: true } },
+        relationsAsMain: { include: { relatedContact: { include: { phones: this.contactPhonesInclude() } } } },
+        relationsAsRelated: { include: { contact: { include: { phones: this.contactPhonesInclude() } } } },
       },
     });
     if (!contact) throw new NotFoundException('Contact not found');
@@ -95,45 +115,61 @@ export class ContactsService {
 
   async create(
     officeId: string,
-    dto: {
-      name: string;
-      phone?: string;
-      phone2?: string;
-      email?: string;
-      tags?: string[];
-      memo?: string;
-    },
+    dto: ContactWriteInput & { name: string },
   ) {
-    const { phone, phone2, ...rest } = dto;
+    const { phones, primaryPhone } = this.prepareContactPhones(dto);
     return this.prisma.contact.create({
       data: {
         officeId,
-        ...rest,
-        phone: phone ? this.normalizePhone(phone) : null,
-        phone2: phone2 ? this.normalizePhone(phone2) : null,
+        name: dto.name,
+        email: dto.email ?? null,
+        tags: dto.tags ?? [],
+        memo: dto.memo ?? null,
+        phone: primaryPhone,
+        phones: phones.length > 0
+          ? {
+              create: phones.map((phone) => ({
+                ...phone,
+                office: { connect: { id: officeId } },
+              })),
+            }
+          : undefined,
       },
+      include: { phones: this.contactPhonesInclude() },
     });
   }
 
   async update(
     id: string,
     officeId: string,
-    dto: {
-      name?: string;
-      phone?: string;
-      phone2?: string;
-      email?: string;
-      tags?: string[];
-      memo?: string;
-    },
+    dto: ContactWriteInput,
   ) {
     await this.findOne(id, officeId);
-    const data = {
-      ...dto,
-      ...(dto.phone !== undefined && { phone: dto.phone ? this.normalizePhone(dto.phone) : null }),
-      ...(dto.phone2 !== undefined && { phone2: dto.phone2 ? this.normalizePhone(dto.phone2) : null }),
+    const shouldReplacePhones = dto.phones !== undefined || dto.phone !== undefined;
+    const { phones, primaryPhone } = this.prepareContactPhones(dto);
+
+    const data: Prisma.ContactUpdateInput = {
+      ...(dto.name !== undefined && { name: dto.name }),
+      ...(dto.email !== undefined && { email: dto.email }),
+      ...(dto.tags !== undefined && { tags: dto.tags }),
+      ...(dto.memo !== undefined && { memo: dto.memo }),
+      ...(shouldReplacePhones && { phone: primaryPhone }),
+      ...(shouldReplacePhones && {
+        phones: {
+          deleteMany: {},
+          create: phones.map((phone) => ({
+            ...phone,
+            office: { connect: { id: officeId } },
+          })),
+        },
+      }),
     };
-    return this.prisma.contact.update({ where: { id }, data });
+
+    return this.prisma.contact.update({
+      where: { id },
+      data,
+      include: { phones: this.contactPhonesInclude() },
+    });
   }
 
   async remove(id: string, officeId: string) {
@@ -145,16 +181,13 @@ export class ContactsService {
     const contacts = await this.prisma.contact.findMany({
       where: {
         officeId,
-        OR: [
-          { phone: { not: null } },
-          { phone2: { not: null } },
-        ],
+        phones: { some: { isActive: true } },
       },
       select: {
         id: true,
         name: true,
         phone: true,
-        phone2: true,
+        phones: this.contactPhonesSelect(),
         tags: true,
         propertyContacts: {
           where: { role: 'owner', status: 'active' },
@@ -185,7 +218,7 @@ export class ContactsService {
       id: c.id,
       name: c.name,
       phone: c.phone,
-      phone2: c.phone2,
+      phones: c.phones,
       tags: c.tags,
       ownedProperties: c.propertyContacts.map((pc) => {
         const site = pc.property.site;
@@ -217,14 +250,14 @@ export class ContactsService {
         officeId,
         OR: [
           { phone: normalized },
-          { phone2: normalized },
+          { phones: { some: { normalizedPhone: normalized, isActive: true } } },
         ],
       },
       select: {
         id: true,
         name: true,
         phone: true,
-        phone2: true,
+        phones: this.contactPhonesSelect(),
         tags: true,
         propertyContacts: {
           where: { role: 'owner', status: 'active' },
@@ -255,7 +288,7 @@ export class ContactsService {
       id: c.id,
       name: c.name,
       phone: c.phone,
-      phone2: c.phone2,
+      phones: c.phones,
       tags: c.tags,
       ownedProperties: c.propertyContacts.map((pc) => {
         const site = pc.property.site;
@@ -295,10 +328,16 @@ export class ContactsService {
   }
 
   async getConsultations(id: string, officeId: string) {
-    await this.findOne(id, officeId);
+    const contact = await this.findOne(id, officeId);
+    const relatedContactIds = [
+      ...contact.relationsAsMain.map((relation) => relation.relatedContactId),
+      ...contact.relationsAsRelated.map((relation) => relation.contactId),
+    ];
+
     return this.prisma.consultation.findMany({
-      where: { contactId: id, officeId },
+      where: { contactId: { in: [id, ...relatedContactIds] }, officeId },
       include: {
+        contact: { select: { id: true, name: true, phone: true } },
         property: { select: { id: true, site: { select: { name: true } } } },
         listing: { select: { id: true, transactionType: true, price: true, checkStatus: true } },
         createdBy: { select: { id: true, name: true } },
@@ -313,6 +352,77 @@ export class ContactsService {
     if (cleaned.startsWith('+82')) cleaned = '0' + cleaned.substring(3);
     if (cleaned.startsWith('82') && cleaned.length > 10) cleaned = '0' + cleaned.substring(2);
     return cleaned;
+  }
+
+  private prepareContactPhones(dto: ContactWriteInput) {
+    const sourcePhones = dto.phones !== undefined
+      ? dto.phones
+      : dto.phone
+        ? [{ phone: dto.phone, label: 'mobile', isPrimary: true }]
+        : [];
+
+    const seen = new Set<string>();
+    const phones = sourcePhones
+      .map((item) => {
+        const rawPhone = item.phone.trim();
+        const normalizedPhone = this.normalizePhone(rawPhone);
+        if (!rawPhone || !normalizedPhone || seen.has(normalizedPhone)) return null;
+        seen.add(normalizedPhone);
+        return {
+          phone: rawPhone,
+          normalizedPhone,
+          label: item.label?.trim() || 'mobile',
+          isPrimary: item.isPrimary ?? false,
+          isActive: item.isActive ?? true,
+          memo: item.memo?.trim() || null,
+        };
+      })
+      .filter((item): item is NonNullable<typeof item> => item !== null);
+
+    if (phones.length > 0 && !phones.some((phone) => phone.isPrimary)) {
+      const firstActive = phones.find((phone) => phone.isActive) ?? phones[0];
+      firstActive.isPrimary = true;
+    }
+
+    const primary = phones.find((phone) => phone.isPrimary && phone.isActive)
+      ?? phones.find((phone) => phone.isPrimary)
+      ?? phones[0];
+
+    return {
+      phones,
+      primaryPhone: primary?.normalizedPhone ?? null,
+    };
+  }
+
+  private contactPhonesInclude() {
+    return {
+      orderBy: [
+        { isPrimary: 'desc' as const },
+        { isActive: 'desc' as const },
+        { createdAt: 'asc' as const },
+      ],
+    };
+  }
+
+  private contactPhonesSelect() {
+    return {
+      orderBy: [
+        { isPrimary: 'desc' as const },
+        { isActive: 'desc' as const },
+        { createdAt: 'asc' as const },
+      ],
+      select: {
+        id: true,
+        phone: true,
+        normalizedPhone: true,
+        label: true,
+        isPrimary: true,
+        isActive: true,
+        memo: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    };
   }
 
   private formatLatestConsultation(

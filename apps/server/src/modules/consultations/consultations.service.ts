@@ -103,7 +103,7 @@ export class ConsultationsService {
           { content: { contains: q, mode: 'insensitive' } },
           { contact: { name: { contains: q, mode: 'insensitive' } } },
           { contact: { phone: { contains: q, mode: 'insensitive' } } },
-          { contact: { phone2: { contains: q, mode: 'insensitive' } } },
+          { contact: { phones: { some: { normalizedPhone: { contains: q.replace(/[\s\-()]/g, '') } } } } },
           { property: { site: { name: { contains: q, mode: 'insensitive' } } } },
           { property: { unit: { name: { contains: q, mode: 'insensitive' } } } },
           { property: { unit: { dong: { name: { contains: q, mode: 'insensitive' } } } } },

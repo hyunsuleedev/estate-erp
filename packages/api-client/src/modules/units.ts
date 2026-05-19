@@ -21,7 +21,6 @@ export interface UnitContact {
   id: string;
   name: string;
   phone: string | null;
-  phone2: string | null;
 }
 
 export interface UnitPropertyContact {

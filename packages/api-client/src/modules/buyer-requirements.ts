@@ -43,7 +43,7 @@ export interface BuyerRequirement {
   memo: string | null;
   createdAt: string;
   updatedAt: string;
-  contact?: { id: string; name: string; phone: string | null; phone2?: string | null };
+  contact?: { id: string; name: string; phone: string | null };
   preferredSites?: BuyerRequirementPreferredSite[];
   preferredRegions?: BuyerRequirementPreferredRegion[];
 }

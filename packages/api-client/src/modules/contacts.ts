@@ -17,12 +17,32 @@ export interface ContactLatestConsultation {
   createdAt: string;
 }
 
+export interface ContactPhone {
+  id: string;
+  phone: string;
+  normalizedPhone: string;
+  label: string;
+  isPrimary: boolean;
+  isActive: boolean;
+  memo: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ContactPhoneInput {
+  phone: string;
+  label?: string;
+  isPrimary?: boolean;
+  isActive?: boolean;
+  memo?: string | null;
+}
+
 export interface Contact {
   id: string;
   officeId: string;
   name: string;
   phone: string | null;
-  phone2: string | null;
+  phones?: ContactPhone[];
   email: string | null;
   tags: string[];
   memo: string | null;
@@ -54,7 +74,7 @@ export interface ContactsFilter {
 export interface CreateContactDto {
   name: string;
   phone?: string;
-  phone2?: string;
+  phones?: ContactPhoneInput[];
   email?: string;
   tags?: string[];
   memo?: string;
@@ -63,7 +83,7 @@ export interface CreateContactDto {
 export interface UpdateContactDto {
   name?: string;
   phone?: string;
-  phone2?: string;
+  phones?: ContactPhoneInput[];
   email?: string;
   tags?: string[];
   memo?: string;

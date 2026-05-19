@@ -12,6 +12,7 @@ import {
   MessageSquare,
   Pencil,
   Phone,
+  Plus,
   Target,
   Trash2,
   UserRound,
@@ -91,7 +92,7 @@ const roleLabels: Record<string, string> = {
 type ContactEditForm = {
   name: string;
   phone: string;
-  phone2: string;
+  extraPhones: Array<{ phone: string; label: string; isActive: boolean }>;
   email: string;
   groupTags: string[];
   customTagsInput: string;
@@ -112,7 +113,7 @@ function ContactDetailPage() {
   const [editForm, setEditForm] = useState<ContactEditForm>({
     name: '',
     phone: '',
-    phone2: '',
+    extraPhones: [],
     email: '',
     groupTags: [],
     customTagsInput: '',
@@ -311,10 +312,7 @@ function ContactDetailPage() {
                 <div className="border-b border-border/60 px-5 py-5 xl:border-r xl:border-b-0">
                   <div className="grid gap-5 sm:grid-cols-2">
                   <InfoField label="이름" value={contact.name} icon={UserRound} />
-                  <InfoField label="전화번호" value={formatPhoneNumber(contact.phone)} icon={Phone} mono />
-                  {contact.phone2 && (
-                    <InfoField label="보조 전화" value={formatPhoneNumber(contact.phone2)} icon={Phone} mono />
-                  )}
+                  <InfoField label="전화번호" value={formatContactPhones(contact)} icon={Phone} mono />
                   <InfoField label="이메일" value={contact.email ?? '-'} icon={Mail} />
                   <InfoField label="등록일" value={formatDateTime(contact.createdAt)} icon={Clock3} />
                   <InfoField label="수정일" value={formatDateTime(contact.updatedAt)} icon={Clock3} />
@@ -468,7 +466,19 @@ function ContactDetailPage() {
               updateMutation.mutate({
                 name,
                 phone: editForm.phone.trim() || undefined,
-                phone2: editForm.phone2.trim() || undefined,
+                phones: [
+                  ...(editForm.phone.trim()
+                    ? [{ phone: editForm.phone.trim(), label: 'mobile', isPrimary: true, isActive: true }]
+                    : []),
+                  ...editForm.extraPhones
+                    .filter((item) => item.phone.trim())
+                    .map((item) => ({
+                      phone: item.phone.trim(),
+                      label: item.label,
+                      isPrimary: false,
+                      isActive: item.isActive,
+                    })),
+                ],
                 email: editForm.email.trim() || undefined,
                 tags: mergeContactTags(editForm.groupTags, editForm.customTagsInput),
                 memo: editForm.memo.trim() || undefined,
@@ -498,14 +508,91 @@ function ContactDetailPage() {
                 />
               </FormField>
 
-              <FormField label="보조 전화">
-                <Input
-                  type="tel"
-                  value={editForm.phone2}
-                  onChange={(event) => setEditForm((previous) => ({ ...previous, phone2: event.target.value }))}
-                />
+              <FormField label="추가 번호">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full justify-start"
+                  onClick={() =>
+                    setEditForm((previous) => ({
+                      ...previous,
+                      extraPhones: [...previous.extraPhones, { phone: '', label: 'home', isActive: true }],
+                    }))
+                  }
+                >
+                  <Plus className="mr-2 size-4" />
+                  번호 추가
+                </Button>
               </FormField>
             </div>
+
+            {editForm.extraPhones.length > 0 && (
+              <div className="space-y-2">
+                {editForm.extraPhones.map((item, index) => (
+                  <div key={index} className="grid grid-cols-[112px_minmax(0,1fr)_84px_36px] gap-2">
+                    <select
+                      value={item.label}
+                      onChange={(event) =>
+                        setEditForm((previous) => ({
+                          ...previous,
+                          extraPhones: previous.extraPhones.map((phone, phoneIndex) =>
+                            phoneIndex === index ? { ...phone, label: event.target.value } : phone,
+                          ),
+                        }))
+                      }
+                      className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                    >
+                      <option value="home">집전화</option>
+                      <option value="work">업무폰</option>
+                      <option value="office">회사</option>
+                      <option value="fax">팩스</option>
+                      <option value="old">예전번호</option>
+                      <option value="other">기타</option>
+                    </select>
+                    <Input
+                      type="tel"
+                      value={item.phone}
+                      onChange={(event) =>
+                        setEditForm((previous) => ({
+                          ...previous,
+                          extraPhones: previous.extraPhones.map((phone, phoneIndex) =>
+                            phoneIndex === index ? { ...phone, phone: event.target.value } : phone,
+                          ),
+                        }))
+                      }
+                    />
+                    <Button
+                      type="button"
+                      variant={item.isActive ? 'outline' : 'secondary'}
+                      onClick={() =>
+                        setEditForm((previous) => ({
+                          ...previous,
+                          extraPhones: previous.extraPhones.map((phone, phoneIndex) =>
+                            phoneIndex === index ? { ...phone, isActive: !phone.isActive } : phone,
+                          ),
+                        }))
+                      }
+                    >
+                      {item.isActive ? '활성' : '비활성'}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      onClick={() =>
+                        setEditForm((previous) => ({
+                          ...previous,
+                          extraPhones: previous.extraPhones.filter((_, phoneIndex) => phoneIndex !== index),
+                        }))
+                      }
+                      aria-label="번호 삭제"
+                    >
+                      <Trash2 className="size-4" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
 
             <FormField label="이메일">
               <Input
@@ -663,6 +750,9 @@ function ConsultationCard({ consultation }: { consultation: ContactDetail['consu
             <Badge className={cn('border-transparent', consultationTypeColors[consultation.type] ?? 'bg-gray-100 text-gray-700')}>
               {consultationTypeLabels[consultation.type] ?? consultation.type}
             </Badge>
+            {consultation.contact?.name && (
+              <Badge variant="secondary">{consultation.contact.name}</Badge>
+            )}
             {consultation.property?.site?.name && (
               <Badge variant="outline">{consultation.property.site.name}</Badge>
             )}
@@ -735,7 +825,7 @@ function InfoField({
         <Icon className="size-3.5" />
         {label}
       </p>
-      <p className={cn('text-sm font-medium', mono && 'tabular-nums')}>{value}</p>
+      <p className={cn('whitespace-pre-line text-sm font-medium', mono && 'tabular-nums')}>{value}</p>
     </div>
   );
 }
@@ -799,16 +889,37 @@ function SectionHeading({ title, description }: { title: string; description: st
 
 function toEditForm(contact: ContactDetail): ContactEditForm {
   const { groupTags, customTags } = splitContactTags(contact.tags);
+  const phones = contact.phones ?? [];
+  const primaryPhone = phones.find((phone) => phone.isPrimary)?.phone ?? contact.phone ?? '';
+  const extraPhones = phones
+    .filter((phone) => phone.phone !== primaryPhone)
+    .map((phone) => ({
+      phone: phone.phone,
+      label: phone.label,
+      isActive: phone.isActive,
+    }));
 
   return {
     name: contact.name,
-    phone: contact.phone ?? '',
-    phone2: contact.phone2 ?? '',
+    phone: primaryPhone,
+    extraPhones,
     email: contact.email ?? '',
     groupTags,
     customTagsInput: stringifyContactTags(customTags),
     memo: contact.memo ?? '',
   };
+}
+
+function formatContactPhones(contact: ContactDetail) {
+  const phones = contact.phones?.length
+    ? contact.phones.map((item) => item.phone)
+    : contact.phone
+      ? [contact.phone]
+      : [];
+
+  return phones.length > 0
+    ? phones.map((phone) => formatPhoneNumber(phone)).join('\n')
+    : '-';
 }
 
 function formatDate(value: string) {

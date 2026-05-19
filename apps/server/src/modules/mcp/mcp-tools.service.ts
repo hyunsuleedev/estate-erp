@@ -465,12 +465,11 @@ export class McpToolsService {
     this.add(
       'create_contact',
       '새 연락처를 등록합니다.',
-      obj({ name: str('이름'), phone: str('전화번호'), phone2: str('보조 전화'), email: str('이메일'), tags: strArr('태그'), memo: str('메모') }, ['name']),
+      obj({ name: str('이름'), phone: str('대표 전화번호'), email: str('이메일'), tags: strArr('태그'), memo: str('메모') }, ['name']),
       async (a, c) =>
         this.contacts.create(c.officeId, {
           name: a.name as string,
           phone: a.phone as string,
-          phone2: a.phone2 as string,
           email: a.email as string,
           tags: a.tags as string[],
           memo: a.memo as string,

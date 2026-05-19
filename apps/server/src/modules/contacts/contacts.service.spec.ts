@@ -24,7 +24,7 @@ describe('ContactsService', () => {
         officeId: 'office-1',
         name: '홍길동',
         phone: '01012345678',
-        phone2: null,
+        phones: [],
         email: null,
         tags: [],
         memo: '고정 메모',

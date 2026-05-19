@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDeferredValue, useMemo, useState, type ComponentType, type ReactNode } from 'react';
-import { AlertTriangle, ArrowLeft, CheckCircle2, Phone } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, CheckCircle2, Phone, Plus, Trash2 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { formatPhoneNumber, mergeContactTags, normalizePhone, parseContactTags } from '@/lib/contacts';
 import { ContactGroupSelector } from '@/components/contacts/contact-group-selector';
@@ -22,11 +22,11 @@ function NewContactPage() {
   const [form, setForm] = useState({
     name: '',
     phone: '',
-    phone2: '',
     email: '',
     customTagsInput: '',
     memo: '',
   });
+  const [extraPhones, setExtraPhones] = useState<Array<{ phone: string; label: string }>>([]);
   const [selectedGroupTags, setSelectedGroupTags] = useState<string[]>([]);
   const [error, setError] = useState('');
   const deferredPhone = useDeferredValue(form.phone);
@@ -45,7 +45,19 @@ function NewContactPage() {
       api.contacts.create({
         name: form.name.trim(),
         phone: form.phone.trim() || undefined,
-        phone2: form.phone2.trim() || undefined,
+        phones: [
+          ...(form.phone.trim()
+            ? [{ phone: form.phone.trim(), label: 'mobile', isPrimary: true, isActive: true }]
+            : []),
+          ...extraPhones
+            .filter((item) => item.phone.trim())
+            .map((item) => ({
+              phone: item.phone.trim(),
+              label: item.label,
+              isPrimary: false,
+              isActive: item.label !== 'old',
+            })),
+        ],
         email: form.email.trim() || undefined,
         tags: mergeContactTags(selectedGroupTags, form.customTagsInput),
         memo: form.memo.trim() || undefined,
@@ -124,16 +136,66 @@ function NewContactPage() {
                   />
                 </FormField>
 
-                <FormField label="보조 전화">
-                  <Input
-                    id="phone2"
-                    type="tel"
-                    value={form.phone2}
-                    onChange={(event) => setForm((previous) => ({ ...previous, phone2: event.target.value }))}
-                    placeholder="02-123-4567"
-                  />
+                <FormField label="추가 번호">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="w-full justify-start"
+                    onClick={() => setExtraPhones((previous) => [...previous, { phone: '', label: 'home' }])}
+                  >
+                    <Plus className="mr-2 size-4" />
+                    번호 추가
+                  </Button>
                 </FormField>
               </div>
+
+              {extraPhones.length > 0 && (
+                <div className="space-y-2">
+                  {extraPhones.map((item, index) => (
+                    <div key={index} className="grid grid-cols-[120px_minmax(0,1fr)_36px] gap-2">
+                      <select
+                        value={item.label}
+                        onChange={(event) =>
+                          setExtraPhones((previous) =>
+                            previous.map((phone, phoneIndex) =>
+                              phoneIndex === index ? { ...phone, label: event.target.value } : phone,
+                            ),
+                          )
+                        }
+                        className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                      >
+                        <option value="home">집전화</option>
+                        <option value="work">업무폰</option>
+                        <option value="office">회사</option>
+                        <option value="fax">팩스</option>
+                        <option value="old">예전번호</option>
+                        <option value="other">기타</option>
+                      </select>
+                      <Input
+                        type="tel"
+                        value={item.phone}
+                        onChange={(event) =>
+                          setExtraPhones((previous) =>
+                            previous.map((phone, phoneIndex) =>
+                              phoneIndex === index ? { ...phone, phone: event.target.value } : phone,
+                            ),
+                          )
+                        }
+                        placeholder="추가 전화번호"
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => setExtraPhones((previous) => previous.filter((_, phoneIndex) => phoneIndex !== index))}
+                        aria-label="번호 삭제"
+                      >
+                        <Trash2 className="size-4" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
 
               <FormField label="이메일">
                 <Input
@@ -249,8 +311,7 @@ function NewContactPage() {
                             {contact.name}
                           </Link>
                           <p className="text-sm text-muted-foreground">
-                            {formatPhoneNumber(contact.phone)}
-                            {contact.phone2 ? ` · ${formatPhoneNumber(contact.phone2)}` : ''}
+                            {formatContactPhones(contact)}
                           </p>
                           {contact.email && <p className="text-sm text-muted-foreground">{contact.email}</p>}
                         </div>
@@ -290,6 +351,18 @@ function FormField({ label, children }: { label: string; children: ReactNode }) 
       {children}
     </div>
   );
+}
+
+function formatContactPhones(contact: { phone: string | null; phones?: Array<{ phone: string }> }) {
+  const phones = contact.phones?.length
+    ? contact.phones.map((item) => item.phone)
+    : contact.phone
+      ? [contact.phone]
+      : [];
+
+  return phones.length > 0
+    ? phones.map((phone) => formatPhoneNumber(phone)).join(' · ')
+    : '-';
 }
 
 function StatusNotice({
