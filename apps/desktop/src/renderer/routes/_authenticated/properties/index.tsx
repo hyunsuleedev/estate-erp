@@ -508,6 +508,19 @@ function PropertiesPage() {
         },
       },
       {
+        id: 'confirmAction',
+        header: () => <TableHeaderLabel icon={<Check className="size-4" />} label="확인" />,
+        size: 78,
+        enableSorting: false,
+        cell: ({ row }) => (
+          <IntakeConfirmButton
+            intake={row.original.representative}
+            onConfirm={handleIntakeConfirm}
+            isPending={confirmMutation.isPending}
+          />
+        ),
+      },
+      {
         id: 'price',
         header: () => <TableHeaderLabel icon={<CircleDollarSign className="size-4" />} label="가격" />,
         size: 184,
@@ -561,14 +574,10 @@ function PropertiesPage() {
       {
         id: 'updatedAt',
         header: () => <TableHeaderLabel icon={<CalendarDays className="size-4" />} label="확인일" />,
-        size: 132,
+        size: 96,
         enableSorting: true,
         cell: ({ row }) => (
-          <IntakeConfirmCell
-            intake={row.original.representative}
-            onConfirm={handleIntakeConfirm}
-            isPending={confirmMutation.isPending}
-          />
+          <IntakeConfirmedAtCell intake={row.original.representative} />
         ),
       },
       {
@@ -1563,7 +1572,22 @@ function TransactionStack({ listings }: { listings: ListingSummary[] }) {
   );
 }
 
-function IntakeConfirmCell({
+function IntakeConfirmedAtCell({ intake }: { intake: ListingIntake }) {
+  return (
+    <div className="flex min-w-0 flex-col py-1">
+      <span className="truncate text-[12px] font-medium leading-5 text-slate-800">
+        {intake.confirmedAt ? formatDaysAgo(intake.confirmedAt) : '미확인'}
+      </span>
+      {intake.nextConfirmAt && (
+        <span className="truncate text-[11px] leading-4 text-slate-400">
+          다음 {formatDateShort(intake.nextConfirmAt)}
+        </span>
+      )}
+    </div>
+  );
+}
+
+function IntakeConfirmButton({
   intake,
   onConfirm,
   isPending,
@@ -1575,27 +1599,16 @@ function IntakeConfirmCell({
   ) => void;
   isPending?: boolean;
 }) {
-  const statusMeta = getConfirmStatusMeta(intake.confirmStatus);
-
   return (
-    <div className="flex min-w-0 items-center justify-between gap-1.5 py-1">
-      <div className="min-w-0">
-        <div className="truncate text-[12px] font-medium leading-5 text-slate-800">
-          {intake.confirmedAt ? formatDaysAgo(intake.confirmedAt) : '미확인'}
-        </div>
-        <div className={cn('truncate text-[11px] leading-4', statusMeta.className)}>
-          {statusMeta.label}
-        </div>
-      </div>
-
+    <div className="flex items-center py-1" onClick={(event) => event.stopPropagation()}>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button
             type="button"
             disabled={isPending}
-            onClick={(event) => event.stopPropagation()}
-            className="shrink-0 rounded-[4px] border border-slate-200 bg-white px-1.5 py-0.5 text-[11px] font-medium leading-5 text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex h-7 items-center gap-1 rounded-[4px] border border-slate-200 bg-white px-2 text-[12px] font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
           >
+            <Check className="size-3.5 text-slate-500" />
             확인
           </button>
         </DropdownMenuTrigger>
