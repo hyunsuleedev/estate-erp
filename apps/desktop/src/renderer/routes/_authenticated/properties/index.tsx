@@ -179,9 +179,15 @@ const siteTypeOptions = [
   { value: 'living_accommodation', label: '생활숙박' },
 ] as const;
 
+const intakeStatusFilterOptions = [
+  { value: 'all', label: '전체' },
+  ...intakeStatusOptions,
+] as const;
+
 interface PropertyFilterState {
   siteId: string;
   siteType: string;
+  intakeStatus: string;
   priceMin: string;
   priceMax: string;
   depositMin: string;
@@ -196,6 +202,7 @@ interface PropertyFilterState {
 const initialPropertyFilters: PropertyFilterState = {
   siteId: '',
   siteType: 'all',
+  intakeStatus: 'all',
   priceMin: '',
   priceMax: '',
   depositMin: '',
@@ -328,6 +335,7 @@ function PropertiesPage() {
     search.trim() ||
       propertyFilters.siteId ||
       propertyFilters.siteType !== 'all' ||
+      propertyFilters.intakeStatus !== 'all' ||
       propertyFilters.priceMin ||
       propertyFilters.priceMax ||
       propertyFilters.depositMin ||
@@ -746,6 +754,21 @@ function PropertiesPage() {
                   value={propertyFilters.siteType}
                   onChange={(value) => updatePropertyFilter('siteType', value)}
                   options={siteTypeOptions}
+                />
+              </div>
+            </FilterPopoverChip>
+
+            <FilterPopoverChip
+              label="상태"
+              value={getOptionLabel(intakeStatusFilterOptions, propertyFilters.intakeStatus)}
+              active={propertyFilters.intakeStatus !== 'all'}
+            >
+              <div className="space-y-2">
+                <PopoverTitle title="상태" description="의뢰 묶음의 관리 상태로 매물을 좁힙니다." />
+                <SelectFilter
+                  value={propertyFilters.intakeStatus}
+                  onChange={(value) => updatePropertyFilter('intakeStatus', value)}
+                  options={intakeStatusFilterOptions}
                 />
               </div>
             </FilterPopoverChip>
@@ -2448,6 +2471,7 @@ function buildListingFilterParams(filters: PropertyFilterState) {
 
   if (filters.siteId) params.siteId = filters.siteId;
   if (filters.siteType !== 'all') params.siteType = filters.siteType;
+  if (filters.intakeStatus !== 'all') params.status = filters.intakeStatus;
   if (filters.includeHidden) params.includeHidden = true;
 
   addNumberParam(params, 'priceMin', filters.priceMin);
