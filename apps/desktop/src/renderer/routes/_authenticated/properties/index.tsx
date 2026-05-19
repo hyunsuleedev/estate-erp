@@ -1777,8 +1777,12 @@ function MonthlyRentPriceEditor({
         <button
           type="button"
           className="flex h-full w-full items-center gap-1.5 rounded-sm px-2.5 text-left hover:bg-muted/50"
-          onClick={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+          }}
           onDoubleClick={(event) => {
+            event.preventDefault();
             event.stopPropagation();
             setOpen(true);
           }}
