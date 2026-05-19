@@ -151,7 +151,7 @@ const sortFilterOptions = [
 ];
 
 const LISTINGS_PAGE_SIZE = 50;
-const PROPERTY_LISTING_STACK_ITEM_HEIGHT = 39;
+const PROPERTY_LISTING_STACK_ITEM_HEIGHT = 40;
 
 const transactionTypeOptions = [
   { value: 'all', label: '전체' },

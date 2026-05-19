@@ -17,7 +17,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 
 const VIRTUALIZE_THRESHOLD = 50;
-const PROPERTY_LISTING_ITEM_HEIGHT = 39;
+const PROPERTY_LISTING_ITEM_HEIGHT = 40;
 const END_REACHED_THRESHOLD = 320;
 
 type ListingProperty = NonNullable<ListingIntake['property']>;
