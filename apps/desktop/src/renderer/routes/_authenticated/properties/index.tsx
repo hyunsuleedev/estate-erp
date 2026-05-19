@@ -143,24 +143,11 @@ const sortFilterOptions = [
 const LISTINGS_PAGE_SIZE = 50;
 const PROPERTY_LISTING_STACK_ITEM_HEIGHT = 39;
 
-const checkStatusOptions = [
-  { label: '미확인', value: 'unverified' },
-  { label: '확인완료', value: 'verified' },
-  { label: '거래중', value: 'in_contract' },
-  { label: '보류', value: 'hold' },
-  { label: '종료', value: 'done' },
-] as const;
-
 const transactionTypeOptions = [
   { value: 'all', label: '전체' },
   { value: 'sale', label: '매매' },
   { value: 'jeonse', label: '전세' },
   { value: 'monthly', label: '월세' },
-] as const;
-
-const checkStatusFilterOptions = [
-  { value: 'all', label: '전체' },
-  ...checkStatusOptions,
 ] as const;
 
 const siteTypeOptions = [
@@ -176,7 +163,6 @@ const siteTypeOptions = [
 
 interface PropertyFilterState {
   siteId: string;
-  checkStatus: string;
   siteType: string;
   priceMin: string;
   priceMax: string;
@@ -191,7 +177,6 @@ interface PropertyFilterState {
 
 const initialPropertyFilters: PropertyFilterState = {
   siteId: '',
-  checkStatus: 'all',
   siteType: 'all',
   priceMin: '',
   priceMax: '',
@@ -324,7 +309,6 @@ function PropertiesPage() {
     search.trim() ||
       propertyFilters.siteId ||
       propertyFilters.siteType !== 'all' ||
-      propertyFilters.checkStatus !== 'all' ||
       propertyFilters.priceMin ||
       propertyFilters.priceMax ||
       propertyFilters.depositMin ||
@@ -524,18 +508,6 @@ function PropertiesPage() {
         },
       },
       {
-        id: 'checkStatus',
-        header: () => <TableHeaderLabel icon={<Tag className="size-4" />} label="상태" />,
-        size: 156,
-        enableSorting: false,
-        cell: ({ row }) => (
-          <ListingStatusStack
-            listings={row.original.listings}
-            onChange={(listingId, value) => handleCellSave(listingId, 'checkStatus', value)}
-          />
-        ),
-      },
-      {
         id: 'price',
         header: () => <TableHeaderLabel icon={<CircleDollarSign className="size-4" />} label="가격" />,
         size: 184,
@@ -682,21 +654,6 @@ function PropertiesPage() {
                   onChange={(value) => updatePropertyFilter('siteId', value)}
                   isLoading={isFilterSitesLoading}
                   showCounts
-                />
-              </div>
-            </FilterPopoverChip>
-
-            <FilterPopoverChip
-              label="상태"
-              value={getOptionLabel(checkStatusFilterOptions, propertyFilters.checkStatus)}
-              active={propertyFilters.checkStatus !== 'all'}
-            >
-              <div className="space-y-2">
-                <PopoverTitle title="상태" description="확인, 거래중, 보류 상태를 기준으로 봅니다." />
-                <SelectFilter
-                  value={propertyFilters.checkStatus}
-                  onChange={(value) => updatePropertyFilter('checkStatus', value)}
-                  options={checkStatusFilterOptions}
                 />
               </div>
             </FilterPopoverChip>
@@ -1544,47 +1501,6 @@ function SheetEmptyState({
   );
 }
 
-function StatusDropdown({
-  value,
-  onChange,
-  compact = false,
-}: {
-  value: string;
-  onChange: (value: string) => void;
-  compact?: boolean;
-}) {
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <button
-          type="button"
-          className={cn(
-            'inline-flex items-center rounded-[4px] text-left transition-colors hover:bg-slate-100/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/30',
-            compact ? 'p-px' : 'p-0.5',
-          )}
-          onClick={(event) => event.stopPropagation()}
-        >
-          <StatusIndicator value={value} />
-        </button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-36" onClick={(event) => event.stopPropagation()}>
-        {checkStatusOptions.map((option) => (
-          <DropdownMenuItem
-            key={option.value}
-            className="text-xs"
-            onSelect={() => {
-              if (option.value !== value) onChange(option.value);
-            }}
-          >
-            <StatusIndicator value={option.value} />
-            {option.value === value && <Check className="ml-auto size-3.5 text-slate-500" />}
-          </DropdownMenuItem>
-        ))}
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
-
 function StatusIndicator({ value }: { value: string }) {
   const meta = checkStatusMeta[value] ?? {
     label: value,
@@ -1713,56 +1629,6 @@ function JointBrokerageCell({ intake }: { intake: ListingIntake }) {
       <span className="truncate text-[11px] leading-5 text-slate-500">
         {intake.jointBrokeragePartner?.name ?? '파트너 미지정'}
       </span>
-    </div>
-  );
-}
-
-const checkStatusChipOptions = checkStatusOptions.map((option) => {
-  const meta = checkStatusMeta[option.value];
-  return {
-    value: option.value,
-    label: option.label,
-    className: meta?.pillClassName,
-  };
-});
-
-function ListingStatusStack({
-  listings,
-  onChange,
-}: {
-  listings: ListingSummary[];
-  onChange: (listingId: string, value: string) => void;
-}) {
-  const hasMultiple = listings.length > 1;
-  return (
-    <div
-      className={cn(
-        '-mx-2.5 flex h-full flex-col items-stretch',
-        hasMultiple && 'divide-y divide-[#d9d9d6]',
-      )}
-      style={getListingStackStyle(listings)}
-      onClick={(event) => event.stopPropagation()}
-    >
-      {listings.map((listing) => (
-        <div
-          key={listing.id}
-          className="flex flex-1 items-center"
-        >
-          <EditableCell
-            recordId={listing.id}
-            field="checkStatus"
-            value={listing.checkStatus}
-            onSave={(_id, _field, value) => onChange(listing.id, value as string)}
-            editType="select-chip"
-            chipOptions={checkStatusChipOptions}
-          >
-            <span className="flex h-full w-full items-center gap-1.5 px-2.5">
-              {hasMultiple && <TransactionMiniLabel transactionType={listing.transactionType} />}
-              <StatusIndicator value={listing.checkStatus} />
-            </span>
-          </EditableCell>
-        </div>
-      ))}
     </div>
   );
 }
@@ -2313,7 +2179,6 @@ function buildListingFilterParams(filters: PropertyFilterState) {
   const params: Record<string, string | number | boolean | undefined> = {};
 
   if (filters.siteId) params.siteId = filters.siteId;
-  if (filters.checkStatus !== 'all') params.checkStatus = filters.checkStatus;
   if (filters.siteType !== 'all') params.siteType = filters.siteType;
   if (filters.includeHidden) params.includeHidden = true;
 
@@ -2373,9 +2238,6 @@ function getActiveFilterSummary({
   }
   if (trimmedSearch) summary.push(`검색 ${trimmedSearch}`);
   if (propertyFilters.siteId) summary.push(selectedSiteName ?? '선택 단지');
-  if (propertyFilters.checkStatus !== 'all') {
-    summary.push(getOptionLabel(checkStatusFilterOptions, propertyFilters.checkStatus));
-  }
   if (propertyFilters.siteType !== 'all') {
     summary.push(getOptionLabel(siteTypeOptions, propertyFilters.siteType));
   }
