@@ -521,6 +521,15 @@ function PropertiesPage() {
         ),
       },
       {
+        id: 'updatedAt',
+        header: () => <TableHeaderLabel icon={<CalendarDays className="size-4" />} label="확인일" />,
+        size: 96,
+        enableSorting: true,
+        cell: ({ row }) => (
+          <IntakeConfirmedAtCell intake={row.original.representative} />
+        ),
+      },
+      {
         id: 'price',
         header: () => <TableHeaderLabel icon={<CircleDollarSign className="size-4" />} label="가격" />,
         size: 184,
@@ -570,15 +579,6 @@ function PropertiesPage() {
         size: 154,
         enableSorting: false,
         cell: ({ row }) => <TenantCell tenant={getCurrentTenant(row.original.property)} />,
-      },
-      {
-        id: 'updatedAt',
-        header: () => <TableHeaderLabel icon={<CalendarDays className="size-4" />} label="확인일" />,
-        size: 96,
-        enableSorting: true,
-        cell: ({ row }) => (
-          <IntakeConfirmedAtCell intake={row.original.representative} />
-        ),
       },
       {
         id: 'jointBrokerage',
