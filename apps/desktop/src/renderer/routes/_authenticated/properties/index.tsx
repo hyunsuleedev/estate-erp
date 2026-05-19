@@ -239,7 +239,7 @@ function PropertiesPage() {
   const [selectedTransactionType, setSelectedTransactionType] =
     useState<(typeof transactionTypeOptions)[number]['value']>('all');
   const [propertyFilters, setPropertyFilters] = useState<PropertyFilterState>(initialPropertyFilters);
-  const [selectedPropertyId, setSelectedPropertyId] = useState<string | null>(null);
+  const [selectedIntakeId, setSelectedIntakeId] = useState<string | null>(null);
   const [activeSorts, setActiveSorts] = useState<SortDefinition[]>([]);
   const [sorting, setSorting] = useState<SortingState>([]);
 
@@ -373,8 +373,8 @@ function PropertiesPage() {
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['listing-intakes'] });
-      if (selectedPropertyId) {
-        queryClient.invalidateQueries({ queryKey: ['properties', 'quick-sheet', selectedPropertyId] });
+      if (selectedIntakeId) {
+        queryClient.invalidateQueries({ queryKey: ['listing-intakes', 'quick-sheet', selectedIntakeId] });
       }
     },
   });
@@ -383,8 +383,8 @@ function PropertiesPage() {
       api.listingIntakes.updateStatus(intakeId, status),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['listing-intakes'] });
-      if (selectedPropertyId) {
-        queryClient.invalidateQueries({ queryKey: ['properties', 'quick-sheet', selectedPropertyId] });
+      if (selectedIntakeId) {
+        queryClient.invalidateQueries({ queryKey: ['listing-intakes', 'quick-sheet', selectedIntakeId] });
       }
     },
   });
@@ -892,7 +892,7 @@ function PropertiesPage() {
               pageSize={LISTINGS_PAGE_SIZE}
               sorting={sorting}
               onSortingChange={handleSortingChange}
-              onRowClick={(row) => setSelectedPropertyId(row.propertyId)}
+              onRowClick={(row) => setSelectedIntakeId(row.intakeId)}
               isLoading={isLoading}
               isLoadingMore={isFetchingNextPage}
               onEndReached={handleEndReached}
@@ -909,8 +909,8 @@ function PropertiesPage() {
           </div>
         </section>
         <PropertyQuickSheet
-          propertyId={selectedPropertyId}
-          onClose={() => setSelectedPropertyId(null)}
+          intakeId={selectedIntakeId}
+          onClose={() => setSelectedIntakeId(null)}
         />
       </div>
     </CellEditProvider>
@@ -927,16 +927,16 @@ function TableHeaderLabel({ icon, label }: { icon: ReactNode; label: string }) {
 }
 
 function PropertyQuickSheet({
-  propertyId,
+  intakeId,
   onClose,
 }: {
-  propertyId: string | null;
+  intakeId: string | null;
   onClose: () => void;
 }) {
-  const { data: property, isLoading } = useQuery({
-    queryKey: ['properties', 'quick-sheet', propertyId],
-    queryFn: () => api.properties.findOne(propertyId as string),
-    enabled: Boolean(propertyId),
+  const { data: intake, isLoading } = useQuery({
+    queryKey: ['listing-intakes', 'quick-sheet', intakeId],
+    queryFn: () => api.listingIntakes.findOne(intakeId as string),
+    enabled: Boolean(intakeId),
   });
 
   // shadcn Sheet의 open animation은 500ms (data-[state=open]:duration-500).
@@ -946,33 +946,37 @@ function PropertyQuickSheet({
   // Skeleton만. 닫힐 때 즉시 reset해 다음 open에서도 deferred 동작.
   const [contentReady, setContentReady] = useState(false);
   useEffect(() => {
-    if (!propertyId) {
+    if (!intakeId) {
       setContentReady(false);
       return;
     }
     const timer = window.setTimeout(() => setContentReady(true), 550);
     return () => window.clearTimeout(timer);
-  }, [propertyId]);
+  }, [intakeId]);
 
   return (
-    <Sheet open={Boolean(propertyId)} onOpenChange={(open) => !open && onClose()}>
+    <Sheet open={Boolean(intakeId)} onOpenChange={(open) => !open && onClose()}>
       <SheetContent
         side="right"
         showCloseButton={false}
         className="!w-full !max-w-full !gap-0 overflow-hidden p-0 sm:!max-w-[720px]"
       >
-        {propertyId && (!contentReady || isLoading) && <PropertySheetSkeleton />}
-        {propertyId && contentReady && !isLoading && property && (
-          <PropertySheetContent property={property} onClose={onClose} />
+        {intakeId && (!contentReady || isLoading) && <PropertySheetSkeleton />}
+        {intakeId && contentReady && !isLoading && intake?.property && (
+          <PropertySheetContent
+            intake={intake}
+            property={{ ...intake.property, listings: intake.listings ?? [] }}
+            onClose={onClose}
+          />
         )}
-        {propertyId && contentReady && !isLoading && !property && (
+        {intakeId && contentReady && !isLoading && !intake?.property && (
           <div className="flex h-full flex-col">
             <SheetHeader className="sr-only">
-              <SheetTitle>매물을 찾을 수 없습니다</SheetTitle>
-              <SheetDescription>요청하신 매물 정보가 존재하지 않습니다.</SheetDescription>
+              <SheetTitle>의뢰를 찾을 수 없습니다</SheetTitle>
+              <SheetDescription>요청하신 의뢰 정보가 존재하지 않습니다.</SheetDescription>
             </SheetHeader>
             <div className="flex flex-1 items-center justify-center text-sm text-slate-500">
-              매물을 찾을 수 없습니다.
+              의뢰를 찾을 수 없습니다.
             </div>
           </div>
         )}
@@ -985,8 +989,8 @@ function PropertySheetSkeleton() {
   return (
     <div className="flex h-full flex-col">
       <SheetHeader className="sr-only">
-        <SheetTitle>매물 빠른 확인</SheetTitle>
-        <SheetDescription>매물 정보를 불러오는 중입니다.</SheetDescription>
+        <SheetTitle>의뢰 빠른 확인</SheetTitle>
+        <SheetDescription>의뢰 정보를 불러오는 중입니다.</SheetDescription>
       </SheetHeader>
       <div className="space-y-3 border-b px-6 py-5">
         <Skeleton className="h-5 w-24" />
@@ -1003,9 +1007,11 @@ function PropertySheetSkeleton() {
 }
 
 function PropertySheetContent({
+  intake,
   property,
   onClose,
 }: {
+  intake: ListingIntake;
   property: Property;
   onClose: () => void;
 }) {
@@ -1026,16 +1032,22 @@ function PropertySheetContent({
   const owner = contacts.find((contact) => contact.role === 'owner') ?? contacts[0];
   const ownerPhone = owner?.contact?.phone;
   const areaLabel = formatPropertySheetArea(property);
-  const latestUpdatedAt = getLatestPropertyListingUpdatedAt(property);
   const notices = getPropertySheetNotices(property);
-  // 메모는 listing(거래 의뢰) 단위. property.memo는 더 이상 UI에서 사용하지 않음.
-  const memo = listings.find((listing) => listing.memo?.trim())?.memo?.trim();
+  const intakeStatus = intakeStatusMeta[intake.status] ?? {
+    label: intake.status,
+    className: 'bg-[#f1f1ef] text-[#5f5e5b]',
+  };
+  const confirmStatus = intakeStatusMeta[intake.confirmStatus] ?? {
+    label: intake.confirmStatus === 'unknown' ? '미확인' : intake.confirmStatus,
+    className: 'bg-[#f1f1ef] text-[#5f5e5b]',
+  };
+  const memo = intake.memo?.trim() || listings.find((listing) => listing.memo?.trim())?.memo?.trim();
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-white">
       <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border bg-white px-8 py-3">
         <span className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
-          빠른 확인
+          의뢰 빠른 확인
         </span>
         <div className="flex items-center gap-2">
           <Button
@@ -1085,14 +1097,30 @@ function PropertySheetContent({
             </span>
             <span className="inline-flex items-center gap-1.5">
               <CalendarDays className="size-3.5" />
-              확인 {formatDateShort(latestUpdatedAt)}
+              확인 {intake.confirmedAt ? formatDateShort(intake.confirmedAt) : '미확인'}
             </span>
+            <span>접수 {formatDateShort(intake.receivedAt)}</span>
           </SheetDescription>
           <div className="flex flex-wrap items-center gap-1.5 pt-1">
             {listings.map((listing) => (
               <TransactionBadge key={listing.id} transactionType={listing.transactionType} />
             ))}
-            {listings[0] && <StatusIndicator value={listings[0].checkStatus} />}
+            <span
+              className={cn(
+                'inline-flex max-w-full rounded-[4px] px-1.5 py-0.5 text-[12px] font-medium leading-5',
+                intakeStatus.className,
+              )}
+            >
+              {intakeStatus.label}
+            </span>
+            <span
+              className={cn(
+                'inline-flex max-w-full rounded-[4px] px-1.5 py-0.5 text-[12px] font-medium leading-5',
+                confirmStatus.className,
+              )}
+            >
+              {confirmStatus.label}
+            </span>
           </div>
         </div>
 
@@ -1193,7 +1221,7 @@ function PropertySheetContent({
           <div className="space-y-2">
             {memo && (
               <div className="rounded-md border border-[#eeeeec] bg-slate-50/60 p-3">
-                <div className="mb-1 text-[11px] font-medium text-slate-500">매물 메모</div>
+                <div className="mb-1 text-[11px] font-medium text-slate-500">의뢰 메모</div>
                 <p className="whitespace-pre-wrap text-sm leading-6 text-slate-700">{memo}</p>
               </div>
             )}

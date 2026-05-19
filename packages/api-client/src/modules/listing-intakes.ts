@@ -17,12 +17,19 @@ export interface ListingIntakeListing {
   moveInAvailableType: string | null;
   moveInAvailableFrom: string | null;
   moveInAvailableTo: string | null;
+  isJointBrokerageRequired: boolean;
+  jointBrokeragePartnerId: string | null;
   checkStatus: string;
   isHidden: boolean;
   memo: string | null;
   checkStatusChangedAt?: string | null;
   createdAt: string;
   updatedAt: string;
+  jointBrokeragePartner?: {
+    id: string;
+    name: string;
+    phone: string | null;
+  } | null;
   advertisements?: ListingAdvertisement[];
   priceHistories?: ListingPriceHistory[];
 }
