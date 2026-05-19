@@ -1576,7 +1576,7 @@ function IntakeConfirmedAtCell({ intake }: { intake: ListingIntake }) {
   return (
     <div className="flex min-w-0 flex-col py-1">
       <span className="truncate text-[12px] font-medium leading-5 text-slate-800">
-        {intake.confirmedAt ? formatDaysAgo(intake.confirmedAt) : '미확인'}
+        {intake.confirmedAt ? formatDateShort(intake.confirmedAt) : '미확인'}
       </span>
       {intake.nextConfirmAt && (
         <span className="truncate text-[11px] leading-4 text-slate-400">
