@@ -1666,18 +1666,22 @@ function IntakeStatusCell({
   };
 
   return (
-    <div className="flex items-center py-1" onClick={(event) => event.stopPropagation()}>
+    <div className="-mx-2.5 flex h-10 items-center" onClick={(event) => event.stopPropagation()}>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button
             type="button"
             disabled={isPending}
-            className={cn(
-              'inline-flex max-w-full rounded-[4px] px-1.5 py-0.5 text-left text-[12px] font-medium leading-5 transition-opacity disabled:cursor-not-allowed disabled:opacity-50',
-              meta.className,
-            )}
+            className="flex h-full w-full items-center px-2.5 text-left transition-opacity disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <span className="truncate">{meta.label}</span>
+            <span
+              className={cn(
+                'inline-flex max-w-full rounded-[4px] px-1.5 py-0.5 text-[12px] font-medium leading-5',
+                meta.className,
+              )}
+            >
+              <span className="truncate">{meta.label}</span>
+            </span>
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="w-32">
