@@ -578,7 +578,10 @@ function PropertiesPage() {
           <IntakeStatusCell
             intake={row.original.representative}
             onChange={handleIntakeStatusChange}
-            isPending={intakeStatusMutation.isPending}
+            isPending={
+              intakeStatusMutation.isPending &&
+              intakeStatusMutation.variables?.intakeId === row.original.representative.id
+            }
           />
         ),
       },
