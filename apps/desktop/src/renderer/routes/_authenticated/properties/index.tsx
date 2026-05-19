@@ -77,7 +77,7 @@ import {
 } from '@/components/data-table';
 import { useTabStore } from '@/features/tabs/store/useTabStore';
 import { getRouteMeta } from '@/features/tabs/lib/routeMeta';
-import { getMoveInAvailability, getTenantPhoneLine } from './-property-list-view-utils';
+import { getMoveInAvailability } from './-property-list-view-utils';
 import {
   PropertyListingsTable,
   type ListingSummary,
@@ -1532,24 +1532,30 @@ function TenantCell({ tenant }: { tenant?: Tenant | null }) {
     return <span className="text-[13px] text-slate-400">-</span>;
   }
 
-  const phoneLine = getTenantPhoneLine(tenant);
   const detail = getTenantListDetail(tenant);
-  const shouldShowDetail = !phoneLine?.includes('만기 ') || !detail.startsWith('만기 ');
+  const name = tenant.contact?.name ?? '세입자';
+  const phone = tenant.contact?.phone;
 
   return (
-    <div className="flex min-w-0 flex-col gap-0.5">
-      <span className="truncate text-[13px] font-medium text-slate-800">
-        {tenant.contact?.name ?? '세입자'}
-      </span>
-      {phoneLine && (
-        <span className="truncate text-[12px] text-slate-500 tabular-nums">
-          {phoneLine}
-        </span>
-      )}
-      {shouldShowDetail && (
-        <span className="truncate text-[12px] text-slate-500">
-          {detail}
-        </span>
+    <div className="flex min-w-0 flex-col justify-center leading-none">
+      {phone ? (
+        <>
+          <span className="truncate text-[13px] font-semibold leading-4 text-slate-900 tabular-nums">
+            {formatPhoneNumber(phone)}
+          </span>
+          <span className="truncate text-[11px] font-medium leading-3 text-slate-500">
+            {name} · {detail}
+          </span>
+        </>
+      ) : (
+        <>
+          <span className="truncate text-[13px] font-semibold leading-4 text-slate-900">
+            {name}
+          </span>
+          <span className="truncate text-[11px] font-medium leading-3 text-slate-500">
+            {detail}
+          </span>
+        </>
       )}
     </div>
   );
