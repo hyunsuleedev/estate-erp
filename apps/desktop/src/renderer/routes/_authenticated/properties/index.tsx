@@ -1724,6 +1724,7 @@ function ListingPriceStack({
               value={listing.price}
               onSave={onSave}
               editType="number"
+              activation="doubleClick"
             >
               <span className="flex h-full w-full items-center gap-1.5 px-2.5">
                 {hasMultiple && <TransactionMiniLabel transactionType={listing.transactionType} />}
@@ -1777,7 +1778,10 @@ function MonthlyRentPriceEditor({
           type="button"
           className="flex h-full w-full items-center gap-1.5 rounded-sm px-2.5 text-left hover:bg-muted/50"
           onClick={(event) => event.stopPropagation()}
-          onDoubleClick={(event) => event.stopPropagation()}
+          onDoubleClick={(event) => {
+            event.stopPropagation();
+            setOpen(true);
+          }}
         >
           {showTransactionLabel && <TransactionMiniLabel transactionType={listing.transactionType} />}
           <PriceCell

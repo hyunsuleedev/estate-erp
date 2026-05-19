@@ -98,6 +98,7 @@ interface EditableCellProps {
   /** For select-chip: extracts the currently-selected option value from the cell's `value`.
    *  Useful when `value` is the full record (so chip pickers can preselect dates). */
   chipValueOf?: (value: unknown) => string | undefined;
+  activation?: 'click' | 'doubleClick';
   children: React.ReactNode;
 }
 
@@ -111,6 +112,7 @@ export function EditableCell({
   selectOptions,
   chipOptions,
   chipValueOf,
+  activation = 'click',
   children,
 }: EditableCellProps) {
   const { editingCell, startEdit, stopEdit } = useCellEdit();
@@ -126,8 +128,13 @@ export function EditableCell({
         isEditing && editType !== 'select-chip' && 'bg-white',
       )}
       onClick={(event) => {
-        if (isEditing) return;
         event.stopPropagation();
+        if (activation !== 'click' || isEditing) return;
+        startEdit(recordId, field);
+      }}
+      onDoubleClick={(event) => {
+        event.stopPropagation();
+        if (activation !== 'doubleClick' || isEditing) return;
         startEdit(recordId, field);
       }}
     >
