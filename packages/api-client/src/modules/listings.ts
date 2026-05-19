@@ -179,9 +179,9 @@ export interface CreateListingDto {
   propertyId: string;
   intakeId?: string | null;
   transactionType: string;
-  price?: number;
-  deposit?: number;
-  monthlyRent?: number;
+  price?: number | null;
+  deposit?: number | null;
+  monthlyRent?: number | null;
   moveInAvailableType?: string;
   moveInAvailableFrom?: string;
   moveInAvailableTo?: string;
@@ -192,9 +192,9 @@ export interface CreateListingDto {
 
 export interface UpdateListingDto {
   transactionType?: string;
-  price?: number;
-  deposit?: number;
-  monthlyRent?: number;
+  price?: number | null;
+  deposit?: number | null;
+  monthlyRent?: number | null;
   moveInAvailableType?: string | null;
   moveInAvailableFrom?: string | null;
   moveInAvailableTo?: string | null;

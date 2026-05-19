@@ -34,6 +34,7 @@ import type {
   PropertyContact,
   PropertyListing,
   Tenant,
+  UpdateListingDto,
 } from '@estate-erp/api-client';
 import { formatPrice } from '@estate-erp/shared';
 import { Button } from '@/components/ui/button';
@@ -333,8 +334,8 @@ function PropertiesPage() {
 
   // ── Inline edit mutation ──────────────────────────────────────
   const updateMutation = useMutation({
-    mutationFn: ({ id, field, value }: { id: string; field: string; value: unknown }) =>
-      api.listings.update(id, { [field]: value }),
+    mutationFn: ({ id, patch }: { id: string; patch: UpdateListingDto }) =>
+      api.listings.update(id, patch),
     onMutate: async () => {
       await queryClient.cancelQueries({ queryKey: ['listing-intakes'] });
     },
@@ -364,7 +365,13 @@ function PropertiesPage() {
 
   const handleCellSave = useCallback(
     (recordId: string, field: string, value: unknown) => {
-      updateMutation.mutate({ id: recordId, field, value });
+      updateMutation.mutate({ id: recordId, patch: { [field]: value } as UpdateListingDto });
+    },
+    [updateMutation],
+  );
+  const handleListingPatch = useCallback(
+    (recordId: string, patch: UpdateListingDto) => {
+      updateMutation.mutate({ id: recordId, patch });
     },
     [updateMutation],
   );
@@ -552,7 +559,11 @@ function PropertiesPage() {
         size: 184,
         enableSorting: true,
         cell: ({ row }) => (
-          <ListingPriceStack listings={row.original.listings} onSave={handleCellSave} />
+          <ListingPriceStack
+            listings={row.original.listings}
+            onSave={handleCellSave}
+            onPatch={handleListingPatch}
+          />
         ),
       },
       {
@@ -613,7 +624,7 @@ function PropertiesPage() {
         cell: ({ row }) => <IntakeMemoCell memo={row.original.representative.memo} />,
       },
     ],
-    [handleCellSave, handleIntakeConfirm, confirmMutation.isPending],
+    [handleCellSave, handleIntakeConfirm, handleListingPatch, confirmMutation.isPending],
   );
 
   return (
@@ -1679,9 +1690,11 @@ function JointBrokerageCell({ intake }: { intake: ListingIntake }) {
 function ListingPriceStack({
   listings,
   onSave,
+  onPatch,
 }: {
   listings: ListingSummary[];
   onSave: (recordId: string, field: string, value: unknown) => void;
+  onPatch: (recordId: string, patch: UpdateListingDto) => void;
 }) {
   const hasMultiple = listings.length > 1;
   return (
@@ -1698,27 +1711,139 @@ function ListingPriceStack({
           key={listing.id}
           className="flex min-w-0 flex-1 items-center"
         >
-          <EditableCell
-            recordId={listing.id}
-            field="price"
-            value={listing.price}
-            onSave={onSave}
-            editType="number"
-          >
-            <span className="flex h-full w-full items-center gap-1.5 px-2.5">
-              {hasMultiple && <TransactionMiniLabel transactionType={listing.transactionType} />}
-              <PriceCell
-                transactionType={listing.transactionType}
-                price={listing.price}
-                deposit={listing.deposit}
-                monthlyRent={listing.monthlyRent}
-              />
-            </span>
-          </EditableCell>
+          {listing.transactionType === 'monthly' ? (
+            <MonthlyRentPriceEditor
+              listing={listing}
+              showTransactionLabel={hasMultiple}
+              onSave={(patch) => onPatch(listing.id, patch)}
+            />
+          ) : (
+            <EditableCell
+              recordId={listing.id}
+              field="price"
+              value={listing.price}
+              onSave={onSave}
+              editType="number"
+            >
+              <span className="flex h-full w-full items-center gap-1.5 px-2.5">
+                {hasMultiple && <TransactionMiniLabel transactionType={listing.transactionType} />}
+                <PriceCell
+                  transactionType={listing.transactionType}
+                  price={listing.price}
+                  deposit={listing.deposit}
+                  monthlyRent={listing.monthlyRent}
+                />
+              </span>
+            </EditableCell>
+          )}
         </div>
       ))}
     </div>
   );
+}
+
+function MonthlyRentPriceEditor({
+  listing,
+  showTransactionLabel,
+  onSave,
+}: {
+  listing: ListingSummary;
+  showTransactionLabel: boolean;
+  onSave: (patch: UpdateListingDto) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [deposit, setDeposit] = useState(() => formatEditorNumber(listing.deposit));
+  const [monthlyRent, setMonthlyRent] = useState(() => formatEditorNumber(listing.monthlyRent));
+
+  useEffect(() => {
+    if (!open) {
+      setDeposit(formatEditorNumber(listing.deposit));
+      setMonthlyRent(formatEditorNumber(listing.monthlyRent));
+    }
+  }, [listing.deposit, listing.monthlyRent, open]);
+
+  const save = () => {
+    onSave({
+      deposit: parseEditorNumber(deposit),
+      monthlyRent: parseEditorNumber(monthlyRent),
+    });
+    setOpen(false);
+  };
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className="flex h-full w-full items-center gap-1.5 rounded-sm px-2.5 text-left hover:bg-muted/50"
+          onClick={(event) => event.stopPropagation()}
+          onDoubleClick={(event) => event.stopPropagation()}
+        >
+          {showTransactionLabel && <TransactionMiniLabel transactionType={listing.transactionType} />}
+          <PriceCell
+            transactionType={listing.transactionType}
+            price={listing.price}
+            deposit={listing.deposit}
+            monthlyRent={listing.monthlyRent}
+          />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent
+        align="start"
+        className="w-64 p-3"
+        onClick={(event) => event.stopPropagation()}
+        onDoubleClick={(event) => event.stopPropagation()}
+      >
+        <div className="space-y-3">
+          <PopoverTitle title="월세 조건" description="만원 단위로 입력합니다." />
+          <div className="grid grid-cols-[56px_1fr] items-center gap-2">
+            <span className="text-[12px] text-muted-foreground">보증금</span>
+            <Input
+              value={deposit}
+              onChange={(event) => setDeposit(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') save();
+              }}
+              type="number"
+              inputMode="numeric"
+              className="h-8 px-2 text-[13px]"
+              autoFocus
+            />
+            <span className="text-[12px] text-muted-foreground">월세</span>
+            <Input
+              value={monthlyRent}
+              onChange={(event) => setMonthlyRent(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') save();
+              }}
+              type="number"
+              inputMode="numeric"
+              className="h-8 px-2 text-[13px]"
+            />
+          </div>
+          <div className="flex justify-end gap-1.5">
+            <Button variant="ghost" size="sm" className="h-8 px-2.5" onClick={() => setOpen(false)}>
+              취소
+            </Button>
+            <Button size="sm" className="h-8 px-3" onClick={save}>
+              저장
+            </Button>
+          </div>
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+function formatEditorNumber(value?: number | null) {
+  return value === null || value === undefined ? '' : String(value);
+}
+
+function parseEditorNumber(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const parsed = Number(trimmed);
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 function ListingAdStack({ listings }: { listings: ListingSummary[] }) {
