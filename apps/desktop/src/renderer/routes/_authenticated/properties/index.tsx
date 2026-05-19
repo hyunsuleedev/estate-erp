@@ -600,7 +600,7 @@ function PropertiesPage() {
       {
         id: 'jointBrokerage',
         header: () => <TableHeaderLabel icon={<Handshake className="size-4" />} label="공동중개" />,
-        size: 154,
+        size: 88,
         enableSorting: false,
         cell: ({ row }) => <JointBrokerageCell intake={row.original.representative} />,
       },
@@ -1670,14 +1670,9 @@ function JointBrokerageCell({ intake }: { intake: ListingIntake }) {
   }
 
   return (
-    <div className="flex min-w-0 flex-col items-start gap-0.5 py-1">
-      <span className="w-fit rounded-[4px] bg-[#fbf3db] px-1.5 py-0.5 text-[12px] font-medium leading-5 text-[#8f6b1f]">
-        공동필수
-      </span>
-      <span className="truncate text-[11px] leading-5 text-slate-500">
-        {intake.jointBrokeragePartner?.name ?? '파트너 미지정'}
-      </span>
-    </div>
+    <span className="inline-flex rounded-[4px] bg-[#fbf3db] px-1.5 py-0.5 text-[12px] font-medium leading-5 text-[#8f6b1f]">
+      필수
+    </span>
   );
 }
 
