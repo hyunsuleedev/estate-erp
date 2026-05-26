@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from '@tanstack/react-router';
-import { keepPreviousData, useInfiniteQuery, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState, useCallback, useEffect, useMemo, type ReactNode } from 'react';
 import { toast } from 'sonner';
 import {
@@ -306,7 +306,6 @@ function PropertiesPage() {
       const { page: currentPage, totalPages } = lastPage.pagination;
       return currentPage < totalPages ? currentPage + 1 : undefined;
     },
-    placeholderData: keepPreviousData,
   });
 
   const listingIntakes = useMemo(
