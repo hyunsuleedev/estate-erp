@@ -115,21 +115,6 @@ export class EmployeesController {
     return this.employeesService.resetPassword(id, user, dto.newPassword);
   }
 
-  /**
-   * 직원 본인 비번 변경 (첫 로그인 후 강제 변경 or 평소 변경).
-   * - 현재 비번 검증 → 새 비번 설정 → mustChangePassword: false
-   *
-   * 분당 5회 — 현재 비번 추측을 위한 오프라인 brute force 방어.
-   */
-  @Post('me/change-password')
-  @Throttle({ auth: { limit: 5, ttl: 60_000 } })
-  changeMyPassword(
-    @Body() dto: { currentPassword: string; newPassword: string },
-    @CurrentUser() user: CurrentUserPayload,
-  ) {
-    return this.employeesService.changeMyPassword(user, dto);
-  }
-
   @Get(':id/performance')
   @Roles(...USER_ROLES)
   @UseGuards(RolesGuard)

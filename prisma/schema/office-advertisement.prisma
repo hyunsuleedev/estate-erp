@@ -1,0 +1,107 @@
+// ============================================================
+// OfficeAdvertisement (내 사무소 외부 광고 인벤토리)
+// ============================================================
+//
+// 네이버 등 외부 플랫폼에서 가져온 "내 광고" 전체를 저장한다.
+// ExternalListingGroup은 관심 단지 시장 관찰용이고, 이 모델은 사무소가
+// 실제로 올린 광고와 그 연관/중복 광고를 내부 ListingAdvertisement로
+// 확정하기 전 보관하는 계층이다.
+
+model OfficeAdvertisementGroup {
+  id       String @id @default(uuid()) @db.Uuid
+  officeId String @map("office_id") @db.Uuid
+
+  source String @default("naver")
+
+  // 내부 연결 대상. 호수 확인 전에는 null일 수 있다.
+  listingId               String? @map("listing_id") @db.Uuid
+  listingAdvertisementId  String? @unique @map("listing_advertisement_id") @db.Uuid
+
+  // 외부 원본 힌트. 단지가 ERP에 등록되어 있지 않아도 먼저 저장한다.
+  siteName     String? @map("site_name")
+  buildingName String? @map("building_name")
+  dongHint     String? @map("dong_hint")
+  hoHint       String? @map("ho_hint")
+  floorInfo    String? @map("floor_info")
+  areaName     String? @map("area_name")
+  exclusiveAreaM2 Decimal? @map("exclusive_area_m2") @db.Decimal
+  supplyAreaM2    Decimal? @map("supply_area_m2") @db.Decimal
+  transactionType String?  @map("transaction_type") // sale / jeonse / monthly
+
+  // 그룹 대표 광고. 보통 우리 사무소의 네이버 article이다.
+  mainAdvertisementId String? @unique @map("main_advertisement_id") @db.Uuid
+
+  status String @default("needs_unit_confirmation") // needs_unit_confirmation / linked / ignored
+  memo   String? @db.Text
+
+  ownPrice       Int? @map("own_price")
+  ownDeposit     Int? @map("own_deposit")
+  ownMonthlyRent Int? @map("own_monthly_rent")
+  relatedPriceMin Int? @map("related_price_min")
+  relatedPriceMax Int? @map("related_price_max")
+  relatedCount    Int  @default(0) @map("related_count")
+
+  firstSeenAt DateTime @default(now()) @map("first_seen_at")
+  lastSeenAt  DateTime @default(now()) @map("last_seen_at")
+  lastSyncedAt DateTime? @map("last_synced_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  office               Office @relation(fields: [officeId], references: [id])
+  listing              Listing? @relation(fields: [listingId], references: [id])
+  listingAdvertisement ListingAdvertisement? @relation(fields: [listingAdvertisementId], references: [id])
+  mainAdvertisement    OfficeAdvertisement? @relation("OfficeAdvertisementGroupMain", fields: [mainAdvertisementId], references: [id])
+  advertisements       OfficeAdvertisement[] @relation("OfficeAdvertisementGroupAdvertisements")
+
+  @@index([officeId, source, status])
+  @@index([officeId, listingId])
+  @@index([officeId, lastSeenAt])
+  @@map("office_advertisement_groups")
+}
+
+model OfficeAdvertisement {
+  id       String @id @default(uuid()) @db.Uuid
+  officeId String @map("office_id") @db.Uuid
+  groupId  String @map("group_id") @db.Uuid
+
+  source    String @default("naver")
+  articleNo String @map("article_no")
+  sourceUrl String? @map("source_url")
+  cpPcArticleUrl String? @map("cp_pc_article_url")
+
+  isMine Boolean @default(false) @map("is_mine")
+  isMain Boolean @default(false) @map("is_main")
+  isActive Boolean @default(true) @map("is_active")
+
+  articleName String? @map("article_name")
+  realtorName String? @map("realtor_name")
+  realtorId   String? @map("realtor_id")
+  representativeTelNo String? @map("representative_tel_no")
+
+  price       Int?
+  deposit     Int?
+  monthlyRent Int? @map("monthly_rent")
+  ranking     Int?
+  sameAddrCnt Int? @map("same_addr_cnt")
+  articleConfirmYmd String? @map("article_confirm_ymd")
+
+  seango Boolean @default(false)
+  epju   Boolean @default(false)
+  raw    Json? @db.JsonB
+
+  firstSeenAt DateTime @default(now()) @map("first_seen_at")
+  lastSeenAt  DateTime @default(now()) @map("last_seen_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  office      Office @relation(fields: [officeId], references: [id])
+  group       OfficeAdvertisementGroup @relation("OfficeAdvertisementGroupAdvertisements", fields: [groupId], references: [id], onDelete: Cascade)
+  mainOfGroup OfficeAdvertisementGroup? @relation("OfficeAdvertisementGroupMain")
+
+  @@unique([officeId, source, articleNo])
+  @@index([officeId, groupId])
+  @@index([officeId, isMine])
+  @@index([officeId, isActive])
+  @@index([officeId, lastSeenAt])
+  @@map("office_advertisements")
+}

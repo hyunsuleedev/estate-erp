@@ -4,7 +4,7 @@ export { ApiError } from './types.js';
 export type { ApiClientConfig, PaginatedResponse } from './types.js';
 
 // Module types
-export type { LoginDto, RegisterDto, AuthResponse, MeResponse } from './modules/auth.js';
+export type { MeResponse } from './modules/auth.js';
 export type { Property, PropertyListing, PropertiesFilter, CreatePropertyDto, UpdatePropertyDto } from './modules/properties.js';
 export type {
   ListingIntake,
@@ -33,6 +33,18 @@ export type {
   CreateListingAdvertisementDto,
   UpdateListingAdvertisementDto,
 } from './modules/listing-advertisements.js';
+export type {
+  OfficeAdvertisement,
+  OfficeAdvertisementGroup,
+  OfficeAdvertisementGroupStatus,
+  OfficeAdvertisementGroupsFilter,
+  OfficeAdvertisementBatchItemDto,
+  OfficeAdvertisementBatchGroupDto,
+  OfficeAdvertisementBatchUpsertDto,
+  OfficeAdvertisementBatchUpsertResult,
+  UpdateOfficeAdvertisementGroupDto,
+  LinkOfficeAdvertisementGroupDto,
+} from './modules/office-advertisements.js';
 export type { Contact, ContactCounts, ContactDetail, ContactsFilter, CreateContactDto, UpdateContactDto } from './modules/contacts.js';
 export type { Site, SiteDetail, CreateSiteDto } from './modules/sites.js';
 export type { Dong } from './modules/dongs.js';

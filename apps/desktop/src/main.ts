@@ -36,7 +36,7 @@ registerTabIpcHandlers(windowManager);
 // Paperclip's `stripCodexRolloutNoise` pattern but extends it: Paperclip only
 // filters the rollout state-db warning; we also filter the rmcp transport
 // worker noise that leaks when a user's registered MCP server has a broken
-// auth token (e.g. Supabase MCP OAuth refresh failing). Raw stderr is still
+// auth token. Raw stderr is still
 // preserved for unknown-session detection.
 const CODEX_STDERR_NOISE_PATTERNS: RegExp[] = [
   // codex_core::rollout::list state db missing rollout path (Paperclip upstream)

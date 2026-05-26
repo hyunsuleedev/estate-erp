@@ -4,11 +4,8 @@
  * Phase 1 scope: only the discovery surface
  *   (/.well-known/oauth-protected-resource + WWW-Authenticate header)
  *
- * Audience-binding (RFC 8707) is intentionally deferred. We may migrate
- * the Authorization Server from Supabase to Auth0/Clerk later, and tying
- * a custom token hook to Supabase right now would be wasted work. JWKS-
- * based signature + issuer verification stays as the trust boundary for
- * the time being.
+ * Audience-binding (RFC 8707) is intentionally deferred. Clerk session
+ * tokens remain the trust boundary for the time being.
  */
 
 /**

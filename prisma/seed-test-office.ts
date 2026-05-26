@@ -1,11 +1,9 @@
 import { PrismaClient } from '@prisma/client';
-import * as bcrypt from 'bcrypt';
 import {
   seedContractTemplateBodies,
   seedOfficeContractTemplateDefaults,
 } from './contract-template-catalog';
 
-const DEMO_PASSWORD = 'estate1234';
 const TEST_OFFICE_LICENSE_NO = '11740-2026-0001';
 
 const TEST_OFFICE_DATA = {
@@ -44,8 +42,6 @@ export async function seedTestOffice(prisma: PrismaClient) {
         data: TEST_OFFICE_DATA,
       });
 
-  const password = await bcrypt.hash(DEMO_PASSWORD, 10);
-
   const demoUsers = [
     {
       loginId: 'owner@gd7291.test',
@@ -77,7 +73,6 @@ export async function seedTestOffice(prisma: PrismaClient) {
       update: {
         officeId: office.id,
         email: user.email,
-        password,
         name: user.name,
         phone: user.phone,
         role: user.role,
@@ -87,7 +82,6 @@ export async function seedTestOffice(prisma: PrismaClient) {
         officeId: office.id,
         loginId: user.loginId,
         email: user.email,
-        password,
         name: user.name,
         phone: user.phone,
         role: user.role,
@@ -103,7 +97,6 @@ export async function seedTestOffice(prisma: PrismaClient) {
 
   console.log(`   사무소: ${office.name}`);
   console.log(`   사용자: ${demoUsers.map((user) => user.loginId).join(', ')}`);
-  console.log(`   공통 비밀번호: ${DEMO_PASSWORD}`);
 }
 
 if (require.main === module) {

@@ -5,6 +5,7 @@ import { createPropertiesApi } from './modules/properties.js';
 import { createListingIntakesApi } from './modules/listing-intakes.js';
 import { createListingsApi } from './modules/listings.js';
 import { createListingAdvertisementsApi } from './modules/listing-advertisements.js';
+import { createOfficeAdvertisementsApi } from './modules/office-advertisements.js';
 import { createContactsApi } from './modules/contacts.js';
 import { createSitesApi } from './modules/sites.js';
 import { createDongsApi } from './modules/dongs.js';
@@ -41,52 +42,6 @@ export interface RequestOptions {
   method?: HttpMethod;
   body?: unknown;
   params?: Record<string, string | number | boolean | undefined>;
-}
-
-/**
- * 진행 중인 refresh 요청을 모듈 레벨에서 공유.
- *
- * 동시에 여러 요청이 401을 받았을 때 (예: dashboard 7개 useQuery 동시 발사),
- * 각자 /auth/refresh를 따로 호출하면 Supabase가 refresh token을 회전시키기 때문에
- * 두 번째부터는 stale token으로 실패한다. 첫 401만 refresh를 시작하고
- * 나머지는 같은 Promise를 await해서 새 access token을 받는다.
- */
-let refreshPromise: Promise<string> | null = null;
-
-interface RefreshResponse {
-  accessToken: string;
-  refreshToken: string;
-}
-
-async function performRefresh(config: ApiClientConfig): Promise<string> {
-  const refreshToken = config.getRefreshToken?.();
-  if (!refreshToken) {
-    throw new ApiError(401, { message: 'No refresh token' });
-  }
-
-  const res = await fetch(`${config.baseUrl}/auth/refresh`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ refreshToken }),
-  });
-
-  if (!res.ok) {
-    const errorBody = await res.json().catch(() => null);
-    throw new ApiError(res.status, errorBody);
-  }
-
-  const data = (await res.json()) as RefreshResponse;
-  config.setTokens?.(data.accessToken, data.refreshToken);
-  return data.accessToken;
-}
-
-async function getOrStartRefresh(config: ApiClientConfig): Promise<string> {
-  if (!refreshPromise) {
-    refreshPromise = performRefresh(config).finally(() => {
-      refreshPromise = null;
-    });
-  }
-  return refreshPromise;
 }
 
 async function executeRequest<T>(
@@ -129,13 +84,6 @@ export async function request<T>(
     if (qs) url += `?${qs}`;
   }
 
-  // /auth/refresh 자체는 인터셉터를 거치지 않는다 — 무한 재귀 방지.
-  // (호출 경로는 performRefresh()가 직접 fetch.)
-  const isRefreshCall = path === '/auth/refresh';
-  const canRetry =
-    !isRefreshCall &&
-    Boolean(config.getRefreshToken && config.setTokens);
-
   let res = await executeRequest(
     config,
     url,
@@ -144,15 +92,8 @@ export async function request<T>(
     (await config.getToken?.()) ?? null,
   );
 
-  if (res.status === 401 && canRetry) {
-    try {
-      const newAccessToken = await getOrStartRefresh(config);
-      res = await executeRequest(config, url, method, body, newAccessToken);
-    } catch {
-      // Refresh 실패 = refresh token도 만료/폐기. 호스트 앱에 알리고 원래 401을 그대로 throw.
-      config.onAuthFailure?.();
-      throw new ApiError(401, { message: 'Authentication required' });
-    }
+  if (res.status === 401) {
+    config.onAuthFailure?.();
   }
 
   if (!res.ok) {
@@ -175,6 +116,7 @@ export function createApiClient(config: ApiClientConfig) {
     listingIntakes: createListingIntakesApi(req),
     listings: createListingsApi(req),
     listingAdvertisements: createListingAdvertisementsApi(req),
+    officeAdvertisements: createOfficeAdvertisementsApi(req),
     contacts: createContactsApi(req),
     sites: createSitesApi(req),
     dongs: createDongsApi(req),

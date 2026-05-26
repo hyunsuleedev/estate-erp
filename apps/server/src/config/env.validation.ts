@@ -1,4 +1,4 @@
-const REQUIRED_ENV_VARS = ['DATABASE_URL', 'JWT_SECRET'] as const;
+const REQUIRED_ENV_VARS = ['DATABASE_URL', 'CLERK_SECRET_KEY'] as const;
 
 export function validateEnv(config: Record<string, unknown>) {
   const env = config as Record<string, string | undefined>;

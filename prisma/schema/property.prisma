@@ -128,6 +128,7 @@ model Listing {
   calendarEvents CalendarEvent[]
   priceHistories PriceHistory[]
   advertisements ListingAdvertisement[]
+  officeAdvertisementGroups OfficeAdvertisementGroup[]
   proposals      Proposal[]
 
   // 공동 중개망
@@ -175,6 +176,7 @@ model ListingAdvertisement {
 
   office  Office  @relation(fields: [officeId], references: [id])
   listing Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  officeAdvertisementGroup OfficeAdvertisementGroup?
 
   @@index([officeId])
   @@index([listingId, status])

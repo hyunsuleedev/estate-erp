@@ -9,6 +9,7 @@ import { PropertiesModule } from './modules/properties/properties.module';
 import { ListingIntakesModule } from './modules/listing-intakes/listing-intakes.module';
 import { ListingsModule } from './modules/listings/listings.module';
 import { ListingAdvertisementsModule } from './modules/listing-advertisements/listing-advertisements.module';
+import { OfficeAdvertisementsModule } from './modules/office-advertisements/office-advertisements.module';
 import { ContactsModule } from './modules/contacts/contacts.module';
 import { TasksModule } from './modules/tasks/tasks.module';
 import { MatchesModule } from './modules/matches/matches.module';
@@ -33,7 +34,6 @@ import { PartnerBrokersModule } from './modules/partner-brokers/partner-brokers.
 import { PublicDocumentsModule } from './modules/public-documents/public-documents.module';
 import { PropertyPhotosModule } from './modules/property-photos/property-photos.module';
 import { McpModule } from './modules/mcp/mcp.module';
-import { SupabaseModule } from './modules/supabase/supabase.module';
 import { InboxModule } from './modules/inbox/inbox.module';
 import { RegionsModule } from './modules/regions/regions.module';
 import { ServiceVendorsModule } from './modules/service-vendors/service-vendors.module';
@@ -48,10 +48,10 @@ import { RealtimeModule } from './realtime/realtime.module';
       validate: validateEnv,
     }),
     /**
-     * Throttler — Brute Force 방어 추가 레이어 (Supabase 자체 rate limit 위에).
+     * Throttler — 인증/쓰기 API 보호용 rate limit.
      *
      * - default: 일반 API 60 req/min/IP
-     * - auth: 로그인/refresh/logout 등 민감 endpoint는 컨트롤러에서 @Throttle({ auth: ... }) 명시
+     * - auth: 민감 endpoint는 컨트롤러에서 @Throttle({ auth: ... }) 명시
      *
      * Phase 2+: Redis storage로 전환 (`ThrottlerStorageRedisService`) — 멀티 인스턴스 환경 대비.
      */
@@ -69,7 +69,6 @@ import { RealtimeModule } from './realtime/realtime.module';
     ]),
     PrismaModule,
     RealtimeModule,
-    SupabaseModule,
     AuthModule,
     SitesModule,
     OfficeSitesModule,
@@ -79,6 +78,7 @@ import { RealtimeModule } from './realtime/realtime.module';
     ListingIntakesModule,
     ListingsModule,
     ListingAdvertisementsModule,
+    OfficeAdvertisementsModule,
     ContactsModule,
     ContactRelationsModule,
     PropertyContactsModule,
