@@ -1,11 +1,18 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { ApiError } from '@estate-erp/api-client';
 import { useEffect, useRef, type ReactNode } from 'react';
 
 export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       staleTime: 1000 * 60,
-      retry: 1,
+      refetchOnWindowFocus: false,
+      retry: (failureCount, error) => {
+        if (error instanceof ApiError && error.statusCode === 429) {
+          return false;
+        }
+        return failureCount < 1;
+      },
     },
   },
 });

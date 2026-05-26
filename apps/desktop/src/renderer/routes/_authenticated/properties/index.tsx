@@ -254,6 +254,7 @@ function PropertiesPage() {
   const [selectedIntakeId, setSelectedIntakeId] = useState<string | null>(null);
   const [activeSorts, setActiveSorts] = useState<SortDefinition[]>([]);
   const [sorting, setSorting] = useState<SortingState>([]);
+  const debouncedSearch = useDebouncedValue(search, 300);
 
   const { data: filterSites = [], isLoading: isFilterSitesLoading } = useQuery({
     queryKey: ['listings', 'filter-sites', propertyFilters.includeHidden],
@@ -272,7 +273,7 @@ function PropertiesPage() {
   const apiParams = useMemo(() => {
     const params: Record<string, string | number | boolean | undefined> = {
       limit: LISTINGS_PAGE_SIZE,
-      search: search.trim() || undefined,
+      search: debouncedSearch.trim() || undefined,
       includeInactive: true,
       ...buildListingFilterParams(propertyFilters),
     };
@@ -287,7 +288,7 @@ function PropertiesPage() {
     }
 
     return params;
-  }, [page, search, propertyFilters, selectedTransactionType, activeSorts]);
+  }, [debouncedSearch, propertyFilters, selectedTransactionType, activeSorts]);
 
   // ── Query ─────────────────────────────────────────────────────
   const {
@@ -995,6 +996,17 @@ function TableHeaderLabel({ icon, label }: { icon: ReactNode; label: string }) {
       <span className="truncate">{label}</span>
     </span>
   );
+}
+
+function useDebouncedValue<T>(value: T, delayMs: number) {
+  const [debouncedValue, setDebouncedValue] = useState(value);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedValue(value), delayMs);
+    return () => window.clearTimeout(timer);
+  }, [delayMs, value]);
+
+  return debouncedValue;
 }
 
 function PropertyQuickSheet({

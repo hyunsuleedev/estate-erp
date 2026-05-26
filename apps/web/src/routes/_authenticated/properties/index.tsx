@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router';
 import { keepPreviousData, useInfiniteQuery, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useState, useCallback, useMemo, type ReactNode } from 'react';
+import { useState, useCallback, useEffect, useMemo, type ReactNode } from 'react';
 import {
   CalendarDays,
   Check,
@@ -261,6 +261,7 @@ function PropertiesPage() {
   const [selectedPropertyId, setSelectedPropertyId] = useState<string | null>(null);
   const [activeSorts, setActiveSorts] = useState<SortDefinition[]>([]);
   const [sorting, setSorting] = useState<SortingState>([]);
+  const debouncedSearch = useDebouncedValue(search, 300);
 
   const { data: filterSites = [], isLoading: isFilterSitesLoading } = useQuery({
     queryKey: ['listings', 'filter-sites', propertyFilters.includeHidden],
@@ -279,7 +280,7 @@ function PropertiesPage() {
   const apiParams = useMemo(() => {
     const params: Record<string, string | number | boolean | undefined> = {
       limit: LISTINGS_PAGE_SIZE,
-      search: search.trim() || undefined,
+      search: debouncedSearch.trim() || undefined,
       ...buildListingFilterParams(propertyFilters),
     };
 
@@ -293,7 +294,7 @@ function PropertiesPage() {
     }
 
     return params;
-  }, [page, search, propertyFilters, selectedTransactionType, activeSorts]);
+  }, [debouncedSearch, propertyFilters, selectedTransactionType, activeSorts]);
 
   // ── Query ─────────────────────────────────────────────────────
   const {
@@ -855,6 +856,17 @@ function TableHeaderLabel({ icon, label }: { icon: ReactNode; label: string }) {
       <span className="truncate">{label}</span>
     </span>
   );
+}
+
+function useDebouncedValue<T>(value: T, delayMs: number) {
+  const [debouncedValue, setDebouncedValue] = useState(value);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedValue(value), delayMs);
+    return () => window.clearTimeout(timer);
+  }, [delayMs, value]);
+
+  return debouncedValue;
 }
 
 function PropertyQuickSheet({
