@@ -292,6 +292,46 @@ describe('ListingsService', () => {
     });
   });
 
+  it('skips listings without a usable site when building filter sites', async () => {
+    const { prisma, service } = createService();
+    prisma.listing.findMany.mockResolvedValue([
+      {
+        propertyId: 'property-1',
+        property: {
+          site: {
+            id: 'site-1',
+            name: '고덕그라시움',
+            type: 'apartment',
+            roadAddress: '서울시 강동구 고덕로',
+            jibunAddress: null,
+          },
+        },
+      },
+      {
+        propertyId: 'property-without-site',
+        property: {
+          site: null,
+        },
+      },
+      {
+        propertyId: 'property-without-relation',
+        property: null,
+      },
+    ]);
+
+    await expect(service.findFilterSites('office-1')).resolves.toEqual([
+      {
+        id: 'site-1',
+        name: '고덕그라시움',
+        type: 'apartment',
+        roadAddress: '서울시 강동구 고덕로',
+        jibunAddress: null,
+        listingCount: 1,
+        propertyCount: 1,
+      },
+    ]);
+  });
+
   it('loads tenant and advertisement records for property list rows', async () => {
     const { prisma, service } = createService();
     prisma.listing.findMany.mockResolvedValue([]);

@@ -411,7 +411,12 @@ export class ListingsService {
     >();
 
     listings.forEach((listing) => {
-      const site = listing.property.site;
+      const site = listing.property?.site;
+
+      if (!site) {
+        return;
+      }
+
       const existing = sitesById.get(site.id);
 
       if (existing) {
