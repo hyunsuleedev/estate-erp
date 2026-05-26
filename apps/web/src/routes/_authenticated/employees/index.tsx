@@ -1,8 +1,25 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
-import type { Dispatch, SetStateAction } from 'react';
-import { CirclePlus, KeyRound, ShieldCheck, UserCog, Users } from 'lucide-react';
+import type { Dispatch, ReactNode, SetStateAction } from 'react';
+import {
+  Activity,
+  BriefcaseBusiness,
+  CalendarClock,
+  CircleDollarSign,
+  CirclePlus,
+  ClipboardList,
+  KeyRound,
+  ListFilter,
+  Mail,
+  Phone,
+  Search,
+  UserCheck,
+  UserCog,
+  Users,
+  UserX,
+} from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import type {
   CreateEmployeeDto,
   Employee,
@@ -14,13 +31,6 @@ import { useAuth } from '@/providers/auth-provider';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
 import {
   Dialog,
   DialogContent,
@@ -41,9 +51,9 @@ import {
 import { ScrollArea } from '@/components/ui/scroll-area';
 
 const roleMeta: Record<string, { label: string; className: string }> = {
-  owner: { label: 'Owner', className: 'bg-amber-50 text-amber-700' },
-  manager: { label: 'Manager', className: 'bg-blue-50 text-blue-700' },
-  agent: { label: 'Agent', className: 'bg-emerald-50 text-emerald-700' },
+  owner: { label: '대표', className: 'border-amber-200 bg-amber-50 text-amber-700' },
+  manager: { label: '매니저', className: 'border-sky-200 bg-sky-50 text-sky-700' },
+  agent: { label: '중개사', className: 'border-emerald-200 bg-emerald-50 text-emerald-700' },
 };
 
 export const Route = createFileRoute('/_authenticated/employees/')({
@@ -201,17 +211,18 @@ function EmployeesPage() {
     const activeEmployees = employees.filter((employee) => employee.isActive);
 
     return [
-      { label: '전체 직원', value: `${employees.length}명`, icon: Users },
-      { label: '활성 직원', value: `${activeEmployees.length}명`, icon: ShieldCheck },
+      { label: '전체', value: `${employees.length}명`, icon: Users },
+      { label: '활성', value: `${activeEmployees.length}명`, icon: UserCheck },
+      { label: '비활성', value: `${employees.length - activeEmployees.length}명`, icon: UserX },
       {
         label: '매니저',
         value: `${employees.filter((employee) => employee.role === 'manager').length}명`,
         icon: UserCog,
       },
       {
-        label: '진행 거래 담당',
+        label: '거래 담당',
         value: `${employees.filter((employee) => employee.counts.activeDealCount > 0).length}명`,
-        icon: Users,
+        icon: BriefcaseBusiness,
       },
     ];
   }, [employees]);
@@ -219,113 +230,146 @@ function EmployeesPage() {
   const roleOptions = user?.role === 'manager' ? ['agent'] : ['agent', 'manager'];
 
   return (
-    <div className="flex flex-col gap-5">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div className="space-y-1">
-          <div className="flex items-center gap-3">
-            <h1 className="text-lg font-semibold tracking-tight">직원관리</h1>
-            <span className="text-xs text-muted-foreground">{employees.length}명</span>
+    <div className="flex min-h-0 flex-col gap-4">
+      <div className="rounded-lg border border-border/70 bg-background">
+        <div className="flex flex-wrap items-center justify-between gap-4 border-b border-border/70 px-5 py-4">
+          <div className="min-w-0">
+            <div className="flex items-center gap-3">
+              <h1 className="text-xl font-semibold tracking-tight">직원관리</h1>
+              <Badge variant="outline" className="h-6 rounded-md px-2 text-xs">
+                {employees.length}명
+              </Badge>
+            </div>
+            <p className="mt-1 text-sm text-muted-foreground">
+              계정, 권한, 재직 상태와 담당 현황을 한 화면에서 관리합니다.
+            </p>
           </div>
-          <p className="text-sm text-muted-foreground">
-            계정, 권한, 재직 상태와 담당 현황을 한 번에 관리합니다.
-          </p>
+          <Button onClick={() => setIsCreateOpen(true)} disabled={!canManage}>
+            <CirclePlus className="size-4" />
+            직원 추가
+          </Button>
         </div>
-        <Button onClick={() => setIsCreateOpen(true)} disabled={!canManage}>
-          <CirclePlus className="size-4" />
-          직원 추가
-        </Button>
-      </div>
 
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        {metrics.map((metric) => (
-          <Card key={metric.label} className="gap-3 py-4">
-            <CardContent className="flex items-center justify-between px-4">
-              <div className="space-y-1">
-                <p className="text-xs text-muted-foreground">{metric.label}</p>
-                <p className="text-xl font-semibold tracking-tight">{metric.value}</p>
-              </div>
-              <div className="flex size-10 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+        <div className="grid divide-y divide-border/70 md:grid-cols-5 md:divide-x md:divide-y-0">
+          {metrics.map((metric) => (
+            <div key={metric.label} className="flex items-center gap-3 px-5 py-3">
+              <div className="flex size-9 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
                 <metric.icon className="size-4" />
               </div>
-            </CardContent>
-          </Card>
-        ))}
+              <div className="min-w-0">
+                <p className="text-xs text-muted-foreground">{metric.label}</p>
+                <p className="text-lg font-semibold tracking-tight">{metric.value}</p>
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
 
-      <div className="grid min-h-[720px] gap-4 xl:grid-cols-[360px_minmax(0,1fr)]">
-        <Card className="min-h-0">
-          <CardHeader>
-            <CardTitle>직원 목록</CardTitle>
-            <CardDescription>역할과 현재 작업량 기준으로 빠르게 훑습니다.</CardDescription>
-          </CardHeader>
-          <CardContent className="flex min-h-0 flex-1 flex-col gap-3 px-4 pb-4">
-            <Input
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="이름, 로그인 ID, 연락처 검색"
-            />
-            <div className="grid gap-2 md:grid-cols-2">
-              <Select value={roleFilter} onValueChange={setRoleFilter}>
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="역할" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">전체 역할</SelectItem>
-                  <SelectItem value="owner">Owner</SelectItem>
-                  <SelectItem value="manager">Manager</SelectItem>
-                  <SelectItem value="agent">Agent</SelectItem>
-                </SelectContent>
-              </Select>
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="상태" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">전체 상태</SelectItem>
-                  <SelectItem value="active">활성</SelectItem>
-                  <SelectItem value="inactive">비활성</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <ScrollArea className="h-[520px] rounded-lg border border-border/60">
-              <div className="space-y-2 p-2">
-                {filteredEmployees.map((employee) => (
-                  <button
-                    key={employee.id}
-                    type="button"
-                    onClick={() => setSelectedEmployeeId(employee.id)}
-                    className={cn(
-                      'w-full rounded-xl border border-transparent px-3 py-3 text-left transition-colors',
-                      selectedEmployeeId === employee.id
-                        ? 'border-primary/30 bg-primary/5'
-                        : 'hover:bg-muted/40',
-                    )}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="text-sm font-medium">{employee.name}</p>
-                        <p className="text-xs text-muted-foreground">{employee.loginId}</p>
-                      </div>
-                      <Badge className={cn('border-0', roleMeta[employee.role]?.className)}>
-                        {roleMeta[employee.role]?.label ?? employee.role}
-                      </Badge>
-                    </div>
-                    <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
-                      <span>업무 {employee.counts.activeTaskCount}</span>
-                      <span>거래 {employee.counts.activeDealCount}</span>
-                      <span>{employee.isActive ? '활성' : '비활성'}</span>
-                    </div>
-                  </button>
-                ))}
-                {!isLoading && filteredEmployees.length === 0 ? (
-                  <div className="px-3 py-8 text-center text-sm text-muted-foreground">
-                    조건에 맞는 직원이 없습니다.
-                  </div>
-                ) : null}
+      <div className="grid min-h-[720px] overflow-hidden rounded-lg border border-border/70 bg-background xl:grid-cols-[380px_minmax(0,1fr)]">
+        <aside className="flex min-h-0 flex-col border-b border-border/70 xl:border-b-0 xl:border-r">
+          <div className="border-b border-border/70 px-4 py-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h2 className="text-sm font-semibold">직원 디렉터리</h2>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {filteredEmployees.length}명 표시 중
+                </p>
               </div>
-            </ScrollArea>
-          </CardContent>
-        </Card>
+              <ListFilter className="size-4 text-muted-foreground" />
+            </div>
+            <div className="mt-4 space-y-2">
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder="이름, 로그인 ID, 연락처 검색"
+                  className="pl-9"
+                />
+              </div>
+              <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
+                <Select value={roleFilter} onValueChange={setRoleFilter}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="역할" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">전체 역할</SelectItem>
+                    <SelectItem value="owner">대표</SelectItem>
+                    <SelectItem value="manager">매니저</SelectItem>
+                    <SelectItem value="agent">중개사</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select value={statusFilter} onValueChange={setStatusFilter}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="상태" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">전체 상태</SelectItem>
+                    <SelectItem value="active">활성</SelectItem>
+                    <SelectItem value="inactive">비활성</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </div>
+
+          <ScrollArea className="min-h-0 flex-1">
+            <div className="space-y-1 p-2">
+              {filteredEmployees.map((employee) => (
+                <button
+                  key={employee.id}
+                  type="button"
+                  onClick={() => setSelectedEmployeeId(employee.id)}
+                  className={cn(
+                    'group w-full rounded-md border px-3 py-3 text-left transition-colors',
+                    selectedEmployeeId === employee.id
+                      ? 'border-primary/30 bg-primary/5 shadow-sm'
+                      : 'border-transparent hover:border-border/70 hover:bg-muted/35',
+                  )}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex min-w-0 items-start gap-3">
+                      <div className="flex size-9 shrink-0 items-center justify-center rounded-md bg-muted text-sm font-semibold text-muted-foreground group-hover:bg-background">
+                        {employee.name.charAt(0)}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium">{employee.name}</p>
+                        <p className="truncate text-xs text-muted-foreground">
+                          {employee.loginId}
+                        </p>
+                      </div>
+                    </div>
+                    <Badge
+                      variant="outline"
+                      className={cn('rounded-md', roleMeta[employee.role]?.className)}
+                    >
+                      {roleMeta[employee.role]?.label ?? employee.role}
+                    </Badge>
+                  </div>
+                  <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
+                    <DirectoryStat label="업무" value={employee.counts.activeTaskCount} />
+                    <DirectoryStat label="거래" value={employee.counts.activeDealCount} />
+                    <span
+                      className={cn(
+                        'flex h-7 items-center justify-center rounded-md border text-xs',
+                        employee.isActive
+                          ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                          : 'border-rose-200 bg-rose-50 text-rose-700',
+                      )}
+                    >
+                      {employee.isActive ? '활성' : '비활성'}
+                    </span>
+                  </div>
+                </button>
+              ))}
+              {!isLoading && filteredEmployees.length === 0 ? (
+                <div className="px-3 py-12 text-center text-sm text-muted-foreground">
+                  조건에 맞는 직원이 없습니다.
+                </div>
+              ) : null}
+            </div>
+          </ScrollArea>
+        </aside>
 
         <EmployeeDetailCard
           employee={employeeDetail}
@@ -473,51 +517,77 @@ function EmployeeDetailCard({
 }) {
   if (!employee) {
     return (
-      <Card>
-        <CardContent className="flex min-h-[540px] items-center justify-center text-sm text-muted-foreground">
+      <main className="flex min-h-[540px] items-center justify-center text-sm text-muted-foreground">
           직원을 선택하면 상세 정보가 표시됩니다.
-        </CardContent>
-      </Card>
+      </main>
     );
   }
 
   return (
-    <Card className="min-h-0">
-      <CardHeader>
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2">
-              <CardTitle>{employee.name}</CardTitle>
-              <Badge className={cn('border-0', roleMeta[employee.role]?.className)}>
+    <main className="min-w-0">
+      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-border/70 px-5 py-4">
+        <div className="flex min-w-0 items-center gap-4">
+          <div className="flex size-12 shrink-0 items-center justify-center rounded-md bg-foreground text-lg font-semibold text-background">
+            {employee.name.charAt(0)}
+          </div>
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="truncate text-xl font-semibold tracking-tight">{employee.name}</h2>
+              <Badge
+                variant="outline"
+                className={cn('rounded-md', roleMeta[employee.role]?.className)}
+              >
                 {roleMeta[employee.role]?.label ?? employee.role}
               </Badge>
-              <Badge variant={employee.isActive ? 'secondary' : 'destructive'}>
-                {employee.isActive ? '활성' : '비활성'}
-              </Badge>
+              <StatusBadge isActive={employee.isActive} />
             </div>
-            <CardDescription>{employee.loginId}</CardDescription>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Button variant="outline" disabled={!canManage || isSaving} onClick={onStatusToggle}>
-              {employee.isActive ? '비활성화' : '재활성화'}
-            </Button>
-            <Button disabled={!canManage || isSaving} onClick={onSave}>
-              저장
-            </Button>
+            <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+              <span>{employee.loginId}</span>
+              {employee.phone ? (
+                <span className="inline-flex items-center gap-1">
+                  <Phone className="size-3" />
+                  {employee.phone}
+                </span>
+              ) : null}
+              {employee.email ? (
+                <span className="inline-flex items-center gap-1">
+                  <Mail className="size-3" />
+                  {employee.email}
+                </span>
+              ) : null}
+            </div>
           </div>
         </div>
-      </CardHeader>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" disabled={!canManage || isSaving} onClick={onStatusToggle}>
+            {employee.isActive ? '비활성화' : '재활성화'}
+          </Button>
+          <Button disabled={!canManage || isSaving} onClick={onSave}>
+            저장
+          </Button>
+        </div>
+      </div>
 
-      <CardContent className="grid min-h-0 gap-4 xl:grid-cols-[1.1fr_0.9fr]">
-        <div className="space-y-4">
-          <div className="grid gap-3 md:grid-cols-2">
-            <MetricTile label="진행 업무" value={`${employee.counts.activeTaskCount}건`} />
-            <MetricTile label="진행 거래" value={`${employee.counts.activeDealCount}건`} />
+      <div className="grid min-h-0 gap-0 xl:grid-cols-[minmax(0,1fr)_360px]">
+        <section className="min-w-0 space-y-5 p-5">
+          <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-4">
             <MetricTile
+              icon={ClipboardList}
+              label="진행 업무"
+              value={`${employee.counts.activeTaskCount}건`}
+            />
+            <MetricTile
+              icon={BriefcaseBusiness}
+              label="진행 거래"
+              value={`${employee.counts.activeDealCount}건`}
+            />
+            <MetricTile
+              icon={Users}
               label="담당 고객"
               value={`${employee.counts.activeBuyerRequirementCount}건`}
             />
             <MetricTile
+              icon={CircleDollarSign}
               label="미정산 참여"
               value={`${employee.counts.unsettledDealCount}건`}
             />
@@ -525,8 +595,13 @@ function EmployeeDetailCard({
 
           {performance ? (
             <div className="grid gap-3 md:grid-cols-2">
-              <MetricTile label="누적 상담" value={`${performance.consultationCount}건`} />
               <MetricTile
+                icon={Activity}
+                label="누적 상담"
+                value={`${performance.consultationCount}건`}
+              />
+              <MetricTile
+                icon={CircleDollarSign}
                 label="참여 수수료"
                 value={
                   performance.commissionAmountTotal
@@ -537,11 +612,8 @@ function EmployeeDetailCard({
             </div>
           ) : null}
 
-          <Card className="gap-4 py-5">
-            <CardHeader className="px-5">
-              <CardTitle className="text-base">기본 정보</CardTitle>
-            </CardHeader>
-            <CardContent className="grid gap-4 px-5 md:grid-cols-2">
+          <SectionPanel title="기본 정보">
+            <div className="grid gap-4 md:grid-cols-2">
               <Field
                 label="이름"
                 value={detailForm.name}
@@ -581,15 +653,14 @@ function EmployeeDetailCard({
                 </Select>
               </div>
               <StaticField label="생성일" value={formatDate(employee.createdAt)} />
-            </CardContent>
-          </Card>
+            </div>
+          </SectionPanel>
 
-          <Card className="gap-4 py-5">
-            <CardHeader className="px-5">
-              <CardTitle className="text-base">비밀번호 초기화</CardTitle>
-              <CardDescription>초기 비밀번호를 즉시 다시 발급합니다.</CardDescription>
-            </CardHeader>
-            <CardContent className="flex flex-col gap-3 px-5 md:flex-row">
+          <SectionPanel
+            title="보안"
+            description="초기 비밀번호를 즉시 다시 발급합니다."
+          >
+            <div className="flex flex-col gap-3 md:flex-row">
               <Input
                 type="password"
                 value={resetPassword}
@@ -605,11 +676,12 @@ function EmployeeDetailCard({
                 <KeyRound className="size-4" />
                 재설정
               </Button>
-            </CardContent>
-          </Card>
+            </div>
+          </SectionPanel>
 
           <ListSection
             title="담당 업무"
+            icon={ClipboardList}
             items={employee.assignedTasks.map((task) => ({
               id: task.id,
               title: task.title,
@@ -620,6 +692,7 @@ function EmployeeDetailCard({
 
           <ListSection
             title="담당 고객/요구조건"
+            icon={Users}
             items={employee.assignedBuyerRequirements.map((requirement) => ({
               id: requirement.id,
               title: requirement.contact?.name ?? '고객',
@@ -627,11 +700,12 @@ function EmployeeDetailCard({
             }))}
             emptyMessage="담당 고객이 없습니다."
           />
-        </div>
+        </section>
 
-        <div className="space-y-4">
+        <aside className="space-y-5 border-t border-border/70 bg-muted/20 p-5 xl:border-l xl:border-t-0">
           <ListSection
             title="거래 참여/배분"
+            icon={BriefcaseBusiness}
             items={employee.dealParticipants.map((participant) => ({
               id: participant.id,
               title: participant.deal.property?.site?.name ?? '거래',
@@ -642,6 +716,7 @@ function EmployeeDetailCard({
 
           <ListSection
             title="최근 상담"
+            icon={CalendarClock}
             items={employee.recentConsultations.map((consultation) => ({
               id: consultation.id,
               title: consultation.contact?.name ?? consultation.type,
@@ -652,6 +727,7 @@ function EmployeeDetailCard({
 
           <ListSection
             title="최근 활동"
+            icon={Activity}
             items={employee.recentActivities.map((activity) => ({
               id: activity.id,
               title: `${activity.entityType} ${activity.action}`,
@@ -660,11 +736,8 @@ function EmployeeDetailCard({
             emptyMessage="최근 활동 로그가 없습니다."
           />
 
-          <Card className="gap-4 py-5">
-            <CardHeader className="px-5">
-              <CardTitle className="text-base">사무소 배분 정책</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2 px-5 text-sm">
+          <SectionPanel title="사무소 배분 정책" compact>
+            <div className="space-y-2 text-sm">
               <SummaryRow
                 label="기본 직원 배분"
                 value={`${getCommissionNumber(employee.office.commissionConfig, 'defaultAgentRate', 50)}%`}
@@ -681,34 +754,35 @@ function EmployeeDetailCard({
                 label="단독중개"
                 value={`${getCommissionNumber(employee.office.commissionConfig, 'dualAgentRate', 70)}%`}
               />
-            </CardContent>
-          </Card>
-        </div>
-      </CardContent>
-    </Card>
+            </div>
+          </SectionPanel>
+        </aside>
+      </div>
+    </main>
   );
 }
 
 function ListSection({
   title,
+  icon: Icon,
   items,
   emptyMessage,
 }: {
   title: string;
+  icon?: LucideIcon;
   items: Array<{ id: string; title: string; description: string }>;
   emptyMessage: string;
 }) {
   return (
-    <Card className="gap-4 py-5">
-      <CardHeader className="px-5">
-        <CardTitle className="text-base">{title}</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-2 px-5">
+    <SectionPanel title={title} icon={Icon} compact>
+      <div className="space-y-2">
         {items.length === 0 ? (
-          <p className="text-sm text-muted-foreground">{emptyMessage}</p>
+          <p className="rounded-md border border-dashed border-border/80 px-3 py-5 text-center text-sm text-muted-foreground">
+            {emptyMessage}
+          </p>
         ) : (
           items.map((item) => (
-            <div key={item.id} className="rounded-lg border border-border/60 px-3 py-3">
+            <div key={item.id} className="rounded-md border border-border/70 bg-background px-3 py-3">
               <p className="text-sm font-medium">{item.title}</p>
               <p className="mt-1 text-xs leading-5 text-muted-foreground">
                 {item.description}
@@ -716,17 +790,81 @@ function ListSection({
             </div>
           ))
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </SectionPanel>
   );
 }
 
-function MetricTile({ label, value }: { label: string; value: string }) {
+function MetricTile({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: LucideIcon;
+  label: string;
+  value: string;
+}) {
   return (
-    <div className="rounded-xl border border-border/60 bg-muted/20 px-4 py-3">
-      <p className="text-xs text-muted-foreground">{label}</p>
-      <p className="mt-1 text-lg font-semibold tracking-tight">{value}</p>
+    <div className="rounded-md border border-border/70 bg-background px-4 py-3">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-xs text-muted-foreground">{label}</p>
+        <Icon className="size-4 text-muted-foreground" />
+      </div>
+      <p className="mt-2 text-lg font-semibold tracking-tight">{value}</p>
     </div>
+  );
+}
+
+function SectionPanel({
+  title,
+  description,
+  icon: Icon,
+  compact,
+  children,
+}: {
+  title: string;
+  description?: string;
+  icon?: LucideIcon;
+  compact?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <section className="rounded-lg border border-border/70 bg-background">
+      <div className={cn('border-b border-border/70', compact ? 'px-4 py-3' : 'px-5 py-4')}>
+        <div className="flex items-center gap-2">
+          {Icon ? <Icon className="size-4 text-muted-foreground" /> : null}
+          <h3 className="text-sm font-semibold">{title}</h3>
+        </div>
+        {description ? (
+          <p className="mt-1 text-xs text-muted-foreground">{description}</p>
+        ) : null}
+      </div>
+      <div className={compact ? 'p-4' : 'p-5'}>{children}</div>
+    </section>
+  );
+}
+
+function DirectoryStat({ label, value }: { label: string; value: number }) {
+  return (
+    <span className="flex h-7 items-center justify-center rounded-md border border-border/70 bg-background text-muted-foreground">
+      {label} <span className="ml-1 font-medium text-foreground">{value}</span>
+    </span>
+  );
+}
+
+function StatusBadge({ isActive }: { isActive: boolean }) {
+  return (
+    <Badge
+      variant="outline"
+      className={cn(
+        'rounded-md',
+        isActive
+          ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+          : 'border-rose-200 bg-rose-50 text-rose-700',
+      )}
+    >
+      {isActive ? '활성' : '비활성'}
+    </Badge>
   );
 }
 

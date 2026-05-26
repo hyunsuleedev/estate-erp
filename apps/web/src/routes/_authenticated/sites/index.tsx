@@ -694,7 +694,6 @@ function SitesPage() {
           for (const pc of property.propertyContacts ?? []) {
             if (pc.contact.name.toLowerCase().includes(q)) return true;
             if (pc.contact.phone?.toLowerCase().includes(q)) return true;
-            if (pc.contact.phone2?.toLowerCase().includes(q)) return true;
           }
           for (const tenant of property.tenants ?? []) {
             if (tenant.contact.name.toLowerCase().includes(q)) return true;

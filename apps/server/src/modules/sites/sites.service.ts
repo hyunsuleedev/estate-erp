@@ -50,13 +50,13 @@ export class SitesService {
             },
           },
         },
-        _count: { select: { dongs: true, units: true, properties: true } },
+        _count: { select: { dongs: true, units: true, properties: { where: { officeId } } } },
       },
       orderBy: { name: 'asc' },
     });
   }
 
-  async findOne(id: string, officeId?: string) {
+  async findOne(id: string, officeId?: string, includeUnits = true) {
     const where = officeId
       ? { id, OR: [{ officeId }, { isPublic: true }] }
       : { id };
@@ -79,60 +79,143 @@ export class SitesService {
           where: {
             OR: officeId ? [{ officeId }, { officeId: null }] : undefined,
           },
+          orderBy: { name: 'asc' },
           include: {
-            units: {
-              where: {
-                OR: officeId ? [{ officeId }, { officeId: null }] : undefined,
-              },
-              orderBy: [{ floor: 'desc' }, { lineNo: 'asc' }, { name: 'asc' }],
-              include: {
-                siteUnitType: true,
-                properties: {
-                  include: {
-                    propertyContacts: {
-                      where: { role: 'owner', status: 'active' },
-                      include: { contact: { include: { phones: contactPhonesIncludeOrdered } } },
-                    },
-                    tenants: {
-                      where: { status: 'residing' },
-                      include: { contact: { include: { phones: contactPhonesIncludeOrdered } } },
-                    },
-                    consultations: {
-                      orderBy: { createdAt: 'desc' },
-                      take: 1,
-                      include: { contact: { include: { phones: contactPhonesIncludeOrdered } } },
+            _count: { select: { units: true } },
+          },
+        },
+        ...(includeUnits
+          ? {
+              units: {
+                where: {
+                  OR: officeId ? [{ officeId }, { officeId: null }] : undefined,
+                },
+                orderBy: [{ floor: 'desc' }, { lineNo: 'asc' }, { name: 'asc' }],
+                include: {
+                  siteUnitType: true,
+                  properties: {
+                    where: officeId ? { officeId } : undefined,
+                    include: {
+                      propertyContacts: {
+                        where: {
+                          ...(officeId ? { officeId } : {}),
+                          role: 'owner',
+                          status: 'active',
+                        },
+                        include: { contact: { include: { phones: contactPhonesIncludeOrdered } } },
+                      },
+                      tenants: {
+                        where: {
+                          ...(officeId ? { officeId } : {}),
+                          status: 'residing',
+                        },
+                        include: { contact: { include: { phones: contactPhonesIncludeOrdered } } },
+                      },
+                      consultations: {
+                        where: officeId ? { officeId } : undefined,
+                        orderBy: { createdAt: 'desc' },
+                        take: 1,
+                        include: { contact: { include: { phones: contactPhonesIncludeOrdered } } },
+                      },
+                      listings: {
+                        where: {
+                          ...(officeId ? { officeId } : {}),
+                          isHidden: false,
+                        },
+                        orderBy: { updatedAt: 'desc' },
+                      },
                     },
                   },
                 },
               },
+            }
+          : {}),
+      },
+    });
+    if (!site) throw new NotFoundException('Site not found');
+    return this.withContactPhones(site);
+  }
+
+  async overview(id: string, officeId: string) {
+    const site = await this.prisma.site.findFirst({
+      where: { id, OR: [{ officeId }, { isPublic: true }] },
+      include: {
+        ward: {
+          include: {
+            district: {
+              include: {
+                province: true,
+              },
             },
           },
         },
-        units: {
+        siteUnitTypes: {
+          orderBy: { name: 'asc' },
+        },
+        dongs: {
           where: {
-            OR: officeId ? [{ officeId }, { officeId: null }] : undefined,
+            OR: [{ officeId }, { officeId: null }],
           },
-          orderBy: [{ floor: 'desc' }, { lineNo: 'asc' }, { name: 'asc' }],
+          orderBy: { name: 'asc' },
           include: {
-            siteUnitType: true,
-            properties: {
-              include: {
-                propertyContacts: {
-                  where: { role: 'owner', status: 'active' },
-                  include: { contact: { include: { phones: contactPhonesIncludeOrdered } } },
-                },
-                tenants: {
-                  where: { status: 'residing' },
-                  include: { contact: { include: { phones: contactPhonesIncludeOrdered } } },
-                },
-              },
+            _count: { select: { units: true } },
+          },
+        },
+        _count: { select: { dongs: true, units: true, properties: { where: { officeId } } } },
+      },
+    });
+    if (!site) throw new NotFoundException('Site not found');
+
+    const defaultDongId = site.dongs[0]?.id ?? null;
+    const units = defaultDongId
+      ? await this.findUnitsForOverview(id, officeId, defaultDongId)
+      : [];
+
+    return this.withContactPhones({
+      ...site,
+      defaultDongId,
+      units,
+    });
+  }
+
+  private findUnitsForOverview(siteId: string, officeId: string, dongId: string) {
+    return this.prisma.unit.findMany({
+      where: {
+        siteId,
+        dongId,
+        OR: [{ officeId }, { officeId: null }],
+        site: {
+          OR: [{ officeId }, { isPublic: true }],
+        },
+      },
+      orderBy: [{ floor: 'desc' }, { lineNo: 'asc' }, { name: 'asc' }],
+      include: {
+        siteUnitType: true,
+        properties: {
+          where: { officeId },
+          include: {
+            propertyContacts: {
+              where: { officeId, role: 'owner', status: 'active' },
+              include: { contact: { include: { phones: contactPhonesIncludeOrdered } } },
+            },
+            tenants: {
+              where: { officeId, status: 'residing' },
+              include: { contact: { include: { phones: contactPhonesIncludeOrdered } } },
+            },
+            consultations: {
+              where: { officeId },
+              orderBy: { createdAt: 'desc' },
+              take: 1,
+              include: { contact: { include: { phones: contactPhonesIncludeOrdered } } },
+            },
+            listings: {
+              where: { officeId, isHidden: false },
+              orderBy: { updatedAt: 'desc' },
             },
           },
         },
       },
     });
-    if (!site) throw new NotFoundException('Site not found');
-    return this.withContactPhones(site);
   }
 
   private withContactPhones<T>(site: T): T {

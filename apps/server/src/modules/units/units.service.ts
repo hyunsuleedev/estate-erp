@@ -5,6 +5,10 @@ import {
 } from '@nestjs/common';
 import { SiteType } from '@estate-erp/shared';
 import { PrismaService } from '../../prisma/prisma.service';
+import {
+  contactPhonesIncludeOrdered,
+  withPrimaryPhone,
+} from '../contacts/contact-phone.utils';
 
 // 토지/단독주택은 Unit 자체를 만들지 않는다.
 // 그 외(아파트/오피스텔/빌라/상가/지식산업센터 등 건물형)는 모두
@@ -38,7 +42,7 @@ export class UnitsService {
       await this.findAccessibleDong(query.dongId, officeId);
     }
 
-    return this.prisma.unit.findMany({
+    const units = await this.prisma.unit.findMany({
       where: {
         OR: [{ officeId }, { officeId: null }],
         ...(query.siteId && { siteId: query.siteId }),
@@ -51,10 +55,34 @@ export class UnitsService {
         site: true,
         dong: true,
         siteUnitType: true,
-        _count: { select: { properties: true } },
+        properties: {
+          where: { officeId },
+          include: {
+            propertyContacts: {
+              where: { officeId, role: 'owner', status: 'active' },
+              include: { contact: { include: { phones: contactPhonesIncludeOrdered } } },
+            },
+            tenants: {
+              where: { officeId, status: 'residing' },
+              include: { contact: { include: { phones: contactPhonesIncludeOrdered } } },
+            },
+            consultations: {
+              where: { officeId },
+              orderBy: { createdAt: 'desc' },
+              take: 1,
+              include: { contact: { include: { phones: contactPhonesIncludeOrdered } } },
+            },
+            listings: {
+              where: { officeId, isHidden: false },
+              orderBy: { updatedAt: 'desc' },
+            },
+          },
+        },
       },
       orderBy: [{ floor: 'desc' }, { lineNo: 'asc' }, { name: 'asc' }],
     });
+
+    return this.withContactPhones(units);
   }
 
   async findOne(id: string, officeId: string) {
@@ -70,7 +98,7 @@ export class UnitsService {
         site: true,
         dong: true,
         siteUnitType: true,
-        properties: true,
+        properties: { where: { officeId } },
       },
     });
     if (!unit) throw new NotFoundException('Unit not found');
@@ -210,6 +238,31 @@ export class UnitsService {
     }
 
     return dto;
+  }
+
+  private withContactPhones<T extends Array<{ properties?: Array<{
+    propertyContacts?: Array<{ contact?: { phones?: [] } | null }>;
+    tenants?: Array<{ contact?: { phones?: [] } | null }>;
+    consultations?: Array<{ contact?: { phones?: [] } | null }>;
+  }> }>>(units: T): T {
+    return units.map((unit) => ({
+      ...unit,
+      properties: unit.properties?.map((property) => ({
+        ...property,
+        propertyContacts: property.propertyContacts?.map((propertyContact) => ({
+          ...propertyContact,
+          contact: propertyContact.contact ? withPrimaryPhone(propertyContact.contact) : propertyContact.contact,
+        })),
+        tenants: property.tenants?.map((tenant) => ({
+          ...tenant,
+          contact: tenant.contact ? withPrimaryPhone(tenant.contact) : tenant.contact,
+        })),
+        consultations: property.consultations?.map((consultation) => ({
+          ...consultation,
+          contact: consultation.contact ? withPrimaryPhone(consultation.contact) : consultation.contact,
+        })),
+      })),
+    })) as T;
   }
 
   private async findEditableSite(id: string, officeId: string) {

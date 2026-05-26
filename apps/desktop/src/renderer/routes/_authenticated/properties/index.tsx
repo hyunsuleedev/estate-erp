@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from '@tanstack/react-router';
 import { keepPreviousData, useInfiniteQuery, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState, useCallback, useEffect, useMemo, type ReactNode } from 'react';
+import { toast } from 'sonner';
 import {
   CalendarDays,
   Check,
@@ -26,6 +27,7 @@ import {
 } from 'lucide-react';
 import type { ColumnDef, SortingState } from '@tanstack/react-table';
 import { api } from '@/lib/api';
+import { ApiError } from '@estate-erp/api-client';
 import type {
   Consultation,
   ListingIntake,
@@ -160,6 +162,15 @@ const sortFilterOptions = [
 ];
 
 const LISTINGS_PAGE_SIZE = 50;
+
+function handleMutationError(error: unknown) {
+  if (error instanceof ApiError && error.statusCode === 409) {
+    toast.error('다른 사용자가 먼저 수정했습니다. 최신 내용으로 다시 불러옵니다.');
+    return;
+  }
+
+  toast.error('저장에 실패했습니다.');
+}
 const PROPERTY_LISTING_STACK_ITEM_HEIGHT = 40;
 
 const transactionTypeOptions = [
@@ -307,6 +318,22 @@ function PropertiesPage() {
     () => listingIntakes.reduce((total, intake) => total + (intake.listings?.length ?? 0), 0),
     [listingIntakes],
   );
+  const listingUpdatedAtById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const intake of listingIntakes) {
+      for (const listing of intake.listings ?? []) {
+        map.set(listing.id, listing.updatedAt);
+      }
+    }
+    return map;
+  }, [listingIntakes]);
+  const intakeUpdatedAtById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const intake of listingIntakes) {
+      map.set(intake.id, intake.updatedAt);
+    }
+    return map;
+  }, [listingIntakes]);
 
   const propertyGroups = useMemo(
     () => buildPropertyListingGroups(listingIntakes),
@@ -359,18 +386,25 @@ function PropertiesPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['listing-intakes'] });
     },
+    onError: (error) => {
+      handleMutationError(error);
+      queryClient.invalidateQueries({ queryKey: ['listing-intakes'] });
+    },
   });
   const confirmMutation = useMutation({
     mutationFn: ({
       intakeId,
       result,
+      expectedUpdatedAt,
     }: {
       intakeId: string;
       result: 'alive' | 'price_changed' | 'unavailable' | 'no_answer' | 'pending';
+      expectedUpdatedAt?: string | null;
     }) =>
       api.listingIntakes.confirm(intakeId, {
         result,
         channel: 'note',
+        expectedUpdatedAt,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['listing-intakes'] });
@@ -378,44 +412,80 @@ function PropertiesPage() {
         queryClient.invalidateQueries({ queryKey: ['listing-intakes', 'quick-sheet', selectedIntakeId] });
       }
     },
+    onError: (error) => {
+      handleMutationError(error);
+      queryClient.invalidateQueries({ queryKey: ['listing-intakes'] });
+    },
   });
   const intakeStatusMutation = useMutation({
-    mutationFn: ({ intakeId, status }: { intakeId: string; status: string }) =>
-      api.listingIntakes.updateStatus(intakeId, status),
+    mutationFn: ({
+      intakeId,
+      status,
+      expectedUpdatedAt,
+    }: {
+      intakeId: string;
+      status: string;
+      expectedUpdatedAt?: string | null;
+    }) =>
+      api.listingIntakes.updateStatus(intakeId, status, { expectedUpdatedAt }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['listing-intakes'] });
       if (selectedIntakeId) {
         queryClient.invalidateQueries({ queryKey: ['listing-intakes', 'quick-sheet', selectedIntakeId] });
       }
     },
+    onError: (error) => {
+      handleMutationError(error);
+      queryClient.invalidateQueries({ queryKey: ['listing-intakes'] });
+    },
   });
 
   const handleCellSave = useCallback(
     (recordId: string, field: string, value: unknown) => {
-      updateMutation.mutate({ id: recordId, patch: { [field]: value } as UpdateListingDto });
+      updateMutation.mutate({
+        id: recordId,
+        patch: {
+          [field]: value,
+          expectedUpdatedAt: listingUpdatedAtById.get(recordId),
+        } as UpdateListingDto,
+      });
     },
-    [updateMutation],
+    [listingUpdatedAtById, updateMutation],
   );
   const handleListingPatch = useCallback(
     (recordId: string, patch: UpdateListingDto) => {
-      updateMutation.mutate({ id: recordId, patch });
+      updateMutation.mutate({
+        id: recordId,
+        patch: {
+          ...patch,
+          expectedUpdatedAt: patch.expectedUpdatedAt ?? listingUpdatedAtById.get(recordId),
+        },
+      });
     },
-    [updateMutation],
+    [listingUpdatedAtById, updateMutation],
   );
   const handleIntakeConfirm = useCallback(
     (
       intakeId: string,
       result: 'alive' | 'price_changed' | 'unavailable' | 'no_answer' | 'pending',
     ) => {
-      confirmMutation.mutate({ intakeId, result });
+      confirmMutation.mutate({
+        intakeId,
+        result,
+        expectedUpdatedAt: intakeUpdatedAtById.get(intakeId),
+      });
     },
-    [confirmMutation],
+    [confirmMutation, intakeUpdatedAtById],
   );
   const handleIntakeStatusChange = useCallback(
     (intakeId: string, status: string) => {
-      intakeStatusMutation.mutate({ intakeId, status });
+      intakeStatusMutation.mutate({
+        intakeId,
+        status,
+        expectedUpdatedAt: intakeUpdatedAtById.get(intakeId),
+      });
     },
-    [intakeStatusMutation],
+    [intakeStatusMutation, intakeUpdatedAtById],
   );
 
   // ── Filter handlers ───────────────────────────────────────────

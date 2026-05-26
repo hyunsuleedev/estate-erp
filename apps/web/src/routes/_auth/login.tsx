@@ -47,7 +47,7 @@ function LoginPage() {
         </header>
 
         <div className="flex flex-1 items-center justify-center py-10">
-          <SignIn signUpUrl="/register" />
+          <SignIn signUpUrl="/register" forceRedirectUrl="/" fallbackRedirectUrl="/" />
         </div>
 
         <footer className="text-center text-[11px] text-muted-foreground sm:text-left">

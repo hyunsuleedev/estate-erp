@@ -1,5 +1,9 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import {
+  contactPhonesSelectOrdered,
+  withPrimaryPhone,
+} from '../contacts/contact-phone.utils';
 
 @Injectable()
 export class TasksService {
@@ -9,7 +13,7 @@ export class TasksService {
     assignedTo: { select: { id: true, name: true } },
     createdBy: { select: { id: true, name: true } },
     assignedBy: { select: { id: true, name: true } },
-    contact: { select: { id: true, name: true, phone: true } },
+    contact: { select: { id: true, name: true, phones: contactPhonesSelectOrdered } },
     property: { include: { site: true, unit: true } },
     listingIntake: {
       select: {
@@ -25,7 +29,7 @@ export class TasksService {
       select: {
         id: true,
         status: true,
-        contact: { select: { id: true, name: true, phone: true } },
+        contact: { select: { id: true, name: true, phones: contactPhonesSelectOrdered } },
       },
     },
     match: { select: { id: true, stage: true, listingId: true, buyerReqId: true } },
@@ -52,11 +56,12 @@ export class TasksService {
   } as const;
 
   async findAll(officeId: string) {
-    return this.prisma.task.findMany({
+    const tasks = await this.prisma.task.findMany({
       where: { officeId },
       include: this.taskInclude,
       orderBy: [{ status: 'asc' }, { sortOrder: 'asc' }, { createdAt: 'desc' }],
     });
+    return tasks.map((task) => this.withContactPhones(task));
   }
 
   async findOne(id: string, officeId: string) {
@@ -65,7 +70,7 @@ export class TasksService {
       include: this.taskInclude,
     });
     if (!task) throw new NotFoundException('Task not found');
-    return task;
+    return this.withContactPhones(task);
   }
 
   async create(
@@ -126,7 +131,7 @@ export class TasksService {
       actorUserId,
     );
 
-    return task;
+    return this.withContactPhones(task);
   }
 
   async update(
@@ -265,5 +270,26 @@ export class TasksService {
         linkId: taskId,
       },
     });
+  }
+
+  private withContactPhones<T>(task: T): T {
+    const draft = task as Record<string, unknown>;
+    const contact = draft.contact as ({ phones?: [] } & Record<string, unknown>) | null | undefined;
+    if (contact) {
+      draft.contact = withPrimaryPhone(contact);
+    }
+
+    const buyerRequirement = draft.buyerRequirement as
+      | ({ contact?: ({ phones?: [] } & Record<string, unknown>) | null } & Record<string, unknown>)
+      | null
+      | undefined;
+    if (buyerRequirement?.contact) {
+      draft.buyerRequirement = {
+        ...buyerRequirement,
+        contact: withPrimaryPhone(buyerRequirement.contact),
+      };
+    }
+
+    return task;
   }
 }

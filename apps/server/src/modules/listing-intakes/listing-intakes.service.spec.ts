@@ -5,6 +5,7 @@ describe('ListingIntakesService', () => {
     const tx = {
       listingIntake: {
         update: jest.fn().mockResolvedValue({ id: 'intake-1' }),
+        updateMany: jest.fn(),
       },
       consultation: {
         create: jest.fn().mockResolvedValue({ id: 'consultation-1' }),
@@ -14,6 +15,7 @@ describe('ListingIntakesService', () => {
       listingIntake: {
         findFirst: jest.fn(),
         update: jest.fn(),
+        updateMany: jest.fn(),
       },
       consultation: {
         create: jest.fn(),
@@ -33,6 +35,27 @@ describe('ListingIntakesService', () => {
 
     return { prisma, service, tx };
   }
+
+  it('rejects a stale intake update when expectedUpdatedAt no longer matches', async () => {
+    const { prisma, service } = createService();
+    prisma.listingIntake.findFirst.mockResolvedValue({
+      id: 'intake-1',
+      officeId: 'office-1',
+      propertyId: 'property-1',
+      status: 'active',
+      updatedAt: new Date('2026-05-20T01:00:00.000Z'),
+    });
+    prisma.listingIntake.updateMany.mockResolvedValue({ count: 0 });
+
+    await expect(
+      service.update('intake-1', 'office-1', {
+        status: 'paused',
+        expectedUpdatedAt: '2026-05-20T00:00:00.000Z',
+      }),
+    ).rejects.toThrow('다른 사용자가 먼저 수정했습니다.');
+
+    expect(prisma.listingIntake.update).not.toHaveBeenCalled();
+  });
 
   it('records a successful intake confirmation on the intake and consultation history', async () => {
     const { prisma, service, tx } = createService();
@@ -87,5 +110,28 @@ describe('ListingIntakesService', () => {
         confirmStatus: 'alive',
       }),
     );
+  });
+
+  it('rejects a stale intake confirmation when expectedUpdatedAt no longer matches', async () => {
+    const { prisma, service, tx } = createService();
+    prisma.listingIntake.findFirst.mockResolvedValue({
+      id: 'intake-1',
+      officeId: 'office-1',
+      propertyId: 'property-1',
+      status: 'active',
+      confirmedAt: null,
+      property: { propertyContacts: [] },
+    });
+    tx.listingIntake.updateMany.mockResolvedValue({ count: 0 });
+
+    await expect(
+      service.confirm('intake-1', 'office-1', 'user-1', {
+        result: 'alive',
+        channel: 'phone',
+        expectedUpdatedAt: '2026-05-20T00:00:00.000Z',
+      }),
+    ).rejects.toThrow('다른 사용자가 먼저 수정했습니다.');
+
+    expect(tx.listingIntake.update).not.toHaveBeenCalled();
   });
 });

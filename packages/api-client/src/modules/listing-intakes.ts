@@ -134,6 +134,7 @@ export interface UpdateListingIntakeDto {
   isJointBrokerageRequired?: boolean;
   jointBrokeragePartnerId?: string | null;
   memo?: string | null;
+  expectedUpdatedAt?: string | null;
 }
 
 export interface ConfirmListingIntakeDto {
@@ -143,6 +144,7 @@ export interface ConfirmListingIntakeDto {
   checkedAt?: string | null;
   nextConfirmAt?: string | null;
   contactId?: string | null;
+  expectedUpdatedAt?: string | null;
 }
 
 export function createListingIntakesApi(request: RequestFn) {
@@ -161,10 +163,14 @@ export function createListingIntakesApi(request: RequestFn) {
     update: (id: string, dto: UpdateListingIntakeDto) =>
       request<ListingIntake>(`/listing-intakes/${id}`, { method: 'PATCH', body: dto }),
 
-    updateStatus: (id: string, status: ListingIntakeStatus | string) =>
+    updateStatus: (
+      id: string,
+      status: ListingIntakeStatus | string,
+      options?: { expectedUpdatedAt?: string | null },
+    ) =>
       request<ListingIntake>(`/listing-intakes/${id}/status`, {
         method: 'PATCH',
-        body: { status },
+        body: { status, expectedUpdatedAt: options?.expectedUpdatedAt },
       }),
 
     confirm: (id: string, dto: ConfirmListingIntakeDto) =>

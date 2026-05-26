@@ -45,13 +45,25 @@ export interface SiteDetail extends Site {
   siteUnitTypes: import('./units.js').SiteUnitType[];
 }
 
+export interface SiteOverview extends SiteDetail {
+  defaultDongId: string | null;
+  _count?: {
+    dongs: number;
+    units: number;
+    properties: number;
+  };
+}
+
 export function createSitesApi(request: RequestFn) {
   return {
     findAll: () =>
       request<Site[]>('/sites'),
 
-    findOne: (id: string) =>
-      request<SiteDetail>(`/sites/${id}`),
+    findOne: (id: string, options?: { includeUnits?: boolean }) =>
+      request<SiteDetail>(`/sites/${id}`, { params: { includeUnits: options?.includeUnits } }),
+
+    overview: (id: string) =>
+      request<SiteOverview>(`/sites/${id}/overview`),
 
     create: (dto: CreateSiteDto) =>
       request<Site>('/sites', { method: 'POST', body: dto }),

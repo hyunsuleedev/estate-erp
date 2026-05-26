@@ -7,13 +7,16 @@ import {
 import { Request, Response } from 'express';
 import { MCP_PROTECTED_RESOURCE_METADATA_URL } from '@estate-erp/shared';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { setRequestContext } from '../../common/request-context/request-context';
+import { ClerkAuthService } from '../auth/clerk-auth.service';
 import { ApiKeyService } from './api-key.service';
 
 @Injectable()
 export class McpAuthGuard implements CanActivate {
   constructor(
     private readonly jwtGuard: JwtAuthGuard,
+    private readonly clerkAuth: ClerkAuthService,
     private readonly apiKeyService: ApiKeyService,
   ) {}
 
@@ -38,31 +41,52 @@ export class McpAuthGuard implements CanActivate {
         throw new UnauthorizedException('유효하지 않은 API 키입니다.');
       }
 
-      // Mimic what JwtAuthGuard does: set request.user + request context
-      (request as any).user = {
+      this.setMcpContext(request, {
         userId: resolved.userId,
         officeId: resolved.officeId,
         role: resolved.role,
-      };
-
-      setRequestContext({
-        userId: resolved.userId,
-        officeId: resolved.officeId,
-        role: resolved.role,
-        actor: 'mcp:claude',
       });
 
       return true;
     }
 
-    // JWT path: delegate to existing guard. If it rejects, attach the
+    // OAuth access token path: Clerk acts as the OAuth authorization server
+    // for browser-based MCP authorization code flows.
+    try {
+      const currentUser = await this.clerkAuth.authenticateOAuthAccessToken(token);
+      this.setMcpContext(request, currentUser);
+      return true;
+    } catch {
+      // Fall through to Clerk session JWT support. This keeps Electron's
+      // internal Codex launcher working while external MCP clients use OAuth.
+    }
+
+    // Session JWT path: delegate to existing guard. If it rejects, attach the
     // challenge header so MCP clients can discover the resource metadata.
     try {
-      return (await this.jwtGuard.canActivate(context)) as boolean;
+      const ok = (await this.jwtGuard.canActivate(context)) as boolean;
+      const user = (request as unknown as { user?: CurrentUserPayload }).user;
+      if (user) {
+        this.setMcpContext(request, user);
+      }
+      return ok;
     } catch (err) {
       this.setBearerChallenge(response, 'invalid_token');
       throw err;
     }
+  }
+
+  private setMcpContext(
+    request: Request,
+    user: CurrentUserPayload,
+  ) {
+    (request as unknown as { user: CurrentUserPayload }).user = user;
+    setRequestContext({
+      userId: user.userId,
+      officeId: user.officeId,
+      role: user.role,
+      actor: 'mcp:claude',
+    });
   }
 
   /**

@@ -22,5 +22,13 @@ export function validateEnv(config: Record<string, unknown>) {
     throw new Error('PORT must be a valid number');
   }
 
+  if (
+    env.REDIS_URL &&
+    !env.REDIS_URL.startsWith('redis://') &&
+    !env.REDIS_URL.startsWith('rediss://')
+  ) {
+    throw new Error('REDIS_URL must be a Redis connection string');
+  }
+
   return config;
 }

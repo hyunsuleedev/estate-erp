@@ -3,6 +3,7 @@ import {
   ConflictException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { CheckStatus, TransactionType } from '@estate-erp/shared';
 import { Prisma } from '@prisma/client';
@@ -13,6 +14,7 @@ import {
   normalizePhone,
   withPrimaryPhone,
 } from '../contacts/contact-phone.utils';
+import { RealtimeService } from '../../realtime/realtime.service';
 
 const ACTIVE_INTAKE_STATUS = 'active';
 const VALID_INTAKE_STATUSES = new Set([
@@ -100,6 +102,7 @@ interface ListingIntakeUpdateDto {
   isJointBrokerageRequired?: boolean;
   jointBrokeragePartnerId?: string | null;
   memo?: string | null;
+  expectedUpdatedAt?: Date | string | null;
 }
 
 interface ListingIntakeConfirmDto {
@@ -109,6 +112,7 @@ interface ListingIntakeConfirmDto {
   checkedAt?: Date | string | null;
   nextConfirmAt?: Date | string | null;
   contactId?: string | null;
+  expectedUpdatedAt?: Date | string | null;
 }
 
 @Injectable()
@@ -116,6 +120,7 @@ export class ListingIntakesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly listings: ListingsService,
+    @Optional() private readonly realtime?: RealtimeService,
   ) {}
 
   async findAll(officeId: string, query: ListingIntakeSearchQuery = {}) {
@@ -307,6 +312,7 @@ export class ListingIntakesService {
   }
 
   async update(id: string, officeId: string, dto: ListingIntakeUpdateDto) {
+    const { expectedUpdatedAt, ...patch } = dto;
     const existing = await this.prisma.listingIntake.findFirst({
       where: { id, officeId },
     });
@@ -315,11 +321,11 @@ export class ListingIntakesService {
       throw new NotFoundException('ListingIntake not found');
     }
 
-    const nextStatus = dto.status ?? existing.status;
+    const nextStatus = patch.status ?? existing.status;
     this.assertValidIntakeStatus(nextStatus);
     await this.assertAccessiblePartnerBroker(
       officeId,
-      dto.isJointBrokerageRequired === false ? null : dto.jointBrokeragePartnerId,
+      patch.isJointBrokerageRequired === false ? null : patch.jointBrokeragePartnerId,
     );
 
     if (
@@ -329,20 +335,43 @@ export class ListingIntakesService {
       await this.assertNoActiveIntake(officeId, existing.propertyId, id);
     }
 
-    const intake = await this.prisma.listingIntake.update({
-      where: { id },
-      data: {
-        status: nextStatus,
-        receivedAt: dto.receivedAt ?? undefined,
-        confirmedAt: dto.confirmedAt,
-        isJointBrokerageRequired: dto.isJointBrokerageRequired,
-        jointBrokeragePartnerId:
-          dto.isJointBrokerageRequired === false
-            ? null
-            : dto.jointBrokeragePartnerId,
-        memo: dto.memo,
-      },
-      select: { id: true },
+    const data = {
+      status: nextStatus,
+      receivedAt: patch.receivedAt ?? undefined,
+      confirmedAt: patch.confirmedAt,
+      isJointBrokerageRequired: patch.isJointBrokerageRequired,
+      jointBrokeragePartnerId:
+        patch.isJointBrokerageRequired === false
+          ? null
+          : patch.jointBrokeragePartnerId,
+      memo: patch.memo,
+    };
+    let intake: { id: string };
+
+    if (expectedUpdatedAt) {
+      const expectedUpdatedAtDate = this.parseExpectedUpdatedAt(expectedUpdatedAt);
+      const result = await this.prisma.listingIntake.updateMany({
+        where: { id, officeId, updatedAt: expectedUpdatedAtDate },
+        data,
+      });
+
+      if (result.count === 0) {
+        throw new ConflictException('다른 사용자가 먼저 수정했습니다.');
+      }
+
+      intake = { id };
+    } else {
+      intake = await this.prisma.listingIntake.update({
+        where: { id },
+        data,
+        select: { id: true },
+      });
+    }
+
+    this.realtime?.emitListingIntakeUpdated({
+      officeId,
+      intakeId: intake.id,
+      propertyId: existing.propertyId,
     });
 
     return this.findOne(intake.id, officeId);
@@ -433,18 +462,44 @@ export class ListingIntakesService {
           })
         : null;
 
+      const data = {
+        status: nextStatus,
+        confirmStatus: dto.result,
+        confirmedAt: shouldUpdateConfirmedAt ? checkedAt : undefined,
+        nextConfirmAt,
+        lastConfirmMemo: dto.memo ?? null,
+        lastConfirmConsultationId: consultation?.id ?? null,
+      };
+
+      if (dto.expectedUpdatedAt) {
+        const result = await tx.listingIntake.updateMany({
+          where: {
+            id,
+            officeId,
+            updatedAt: this.parseExpectedUpdatedAt(dto.expectedUpdatedAt),
+          },
+          data,
+        });
+
+        if (result.count === 0) {
+          throw new ConflictException('다른 사용자가 먼저 수정했습니다.');
+        }
+
+        return { id };
+      }
+
       return tx.listingIntake.update({
         where: { id },
-        data: {
-          status: nextStatus,
-          confirmStatus: dto.result,
-          confirmedAt: shouldUpdateConfirmedAt ? checkedAt : undefined,
-          nextConfirmAt,
-          lastConfirmMemo: dto.memo ?? null,
-          lastConfirmConsultationId: consultation?.id ?? null,
-        },
+        data,
         select: { id: true },
       });
+    });
+
+    this.realtime?.emitListingIntakeUpdated({
+      officeId,
+      intakeId: updated.id,
+      propertyId: intake.propertyId,
+      actorUserId: userId,
     });
 
     return this.findOne(updated.id, officeId);
@@ -756,6 +811,14 @@ export class ListingIntakesService {
     const date = value instanceof Date ? value : new Date(value);
     if (Number.isNaN(date.getTime())) {
       throw new BadRequestException('Invalid date');
+    }
+    return date;
+  }
+
+  private parseExpectedUpdatedAt(value: Date | string) {
+    const date = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(date.getTime())) {
+      throw new BadRequestException('expectedUpdatedAt must be a valid date');
     }
     return date;
   }

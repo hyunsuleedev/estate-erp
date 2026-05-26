@@ -312,8 +312,13 @@ function ContactDetailPage() {
                   <div className="grid gap-5 sm:grid-cols-2">
                   <InfoField label="이름" value={contact.name} icon={UserRound} />
                   <InfoField label="전화번호" value={formatPhoneNumber(contact.phone)} icon={Phone} mono />
-                  {contact.phone2 && (
-                    <InfoField label="보조 전화" value={formatPhoneNumber(contact.phone2)} icon={Phone} mono />
+                  {getSecondaryPhone(contact) && (
+                    <InfoField
+                      label="보조 전화"
+                      value={formatPhoneNumber(getSecondaryPhone(contact))}
+                      icon={Phone}
+                      mono
+                    />
                   )}
                   <InfoField label="이메일" value={contact.email ?? '-'} icon={Mail} />
                   <InfoField label="등록일" value={formatDateTime(contact.createdAt)} icon={Clock3} />
@@ -465,10 +470,12 @@ function ContactDetailPage() {
               }
 
               setEditError('');
+              const phone = editForm.phone.trim();
+              const phone2 = editForm.phone2.trim();
               updateMutation.mutate({
                 name,
-                phone: editForm.phone.trim() || undefined,
-                phone2: editForm.phone2.trim() || undefined,
+                phone: phone || undefined,
+                phones: buildPhonesInput(phone, phone2),
                 email: editForm.email.trim() || undefined,
                 tags: mergeContactTags(editForm.groupTags, editForm.customTagsInput),
                 memo: editForm.memo.trim() || undefined,
@@ -803,12 +810,36 @@ function toEditForm(contact: ContactDetail): ContactEditForm {
   return {
     name: contact.name,
     phone: contact.phone ?? '',
-    phone2: contact.phone2 ?? '',
+    phone2: getSecondaryPhone(contact) ?? '',
     email: contact.email ?? '',
     groupTags,
     customTagsInput: stringifyContactTags(customTags),
     memo: contact.memo ?? '',
   };
+}
+
+/**
+ * Contact.phones[]에서 주 연락처가 아닌 첫 보조 전화번호를 반환.
+ * phones 배열이 비어있고 legacy contact.phone만 있는 경우 null.
+ */
+function getSecondaryPhone(contact: { phones?: { phone: string; isPrimary: boolean }[] | null }): string | null {
+  const list = contact.phones ?? [];
+  const secondary = list.find((phone) => !phone.isPrimary && phone.phone);
+  if (secondary) return secondary.phone;
+  // primary 표시가 없을 때 두 번째 항목 폴백
+  if (list.length >= 2) return list[1].phone || null;
+  return null;
+}
+
+/**
+ * 편집 폼의 phone(주) + phone2(보조) → ContactPhoneInput[] 입력 변환.
+ * primary=true 1건 + (있다면) primary=false 1건.
+ */
+function buildPhonesInput(primary: string, secondary: string) {
+  const phones: { phone: string; isPrimary: boolean; label?: string }[] = [];
+  if (primary) phones.push({ phone: primary, isPrimary: true });
+  if (secondary) phones.push({ phone: secondary, isPrimary: false, label: '보조' });
+  return phones.length > 0 ? phones : undefined;
 }
 
 function formatDate(value: string) {

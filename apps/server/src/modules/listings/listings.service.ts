@@ -3,6 +3,7 @@ import {
   ConflictException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { CheckStatus, TransactionType } from '@estate-erp/shared';
 import { Prisma } from '@prisma/client';
@@ -12,6 +13,7 @@ import {
   normalizePhone,
   withPrimaryPhone,
 } from '../contacts/contact-phone.utils';
+import { RealtimeService } from '../../realtime/realtime.service';
 
 const VALID_TRANSACTION_TYPES: ReadonlySet<string> = new Set(
   Object.values(TransactionType),
@@ -90,6 +92,7 @@ interface ListingUpdateDto {
   checkStatus?: string;
   isHidden?: boolean;
   memo?: string | null;
+  expectedUpdatedAt?: Date | string | null;
 }
 
 interface ListingFilterSite {
@@ -104,7 +107,10 @@ interface ListingFilterSite {
 
 @Injectable()
 export class ListingsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() private readonly realtime?: RealtimeService,
+  ) {}
 
   async findAll(officeId: string, query: ListingSearchQuery = {}) {
     if (query.transactionType) {
@@ -583,6 +589,7 @@ export class ListingsService {
   }
 
   async update(id: string, officeId: string, dto: ListingUpdateDto) {
+    const { expectedUpdatedAt, ...patch } = dto;
     const existingListing = await this.prisma.listing.findFirst({
       where: { id, officeId },
     });
@@ -592,7 +599,7 @@ export class ListingsService {
     }
 
     const nextTransactionType =
-      dto.transactionType ?? existingListing.transactionType;
+      patch.transactionType ?? existingListing.transactionType;
     this.assertValidTransactionType(nextTransactionType);
 
     if (nextTransactionType !== existingListing.transactionType) {
@@ -604,45 +611,72 @@ export class ListingsService {
       );
     }
 
-    if (dto.checkStatus) {
-      this.assertValidCheckStatus(dto.checkStatus);
+    if (patch.checkStatus) {
+      this.assertValidCheckStatus(patch.checkStatus);
       this.assertCheckStatusTransition(
         existingListing.checkStatus,
-        dto.checkStatus,
+        patch.checkStatus,
       );
     }
     await this.assertAccessiblePartnerBroker(
       officeId,
-      dto.jointBrokeragePartnerId,
+      patch.jointBrokeragePartnerId,
     );
 
-    return this.prisma.listing.update({
-      where: { id },
-      data: {
-        ...dto,
-        transactionType: nextTransactionType,
-      },
-      include: {
-        property: {
-          include: {
-            site: true,
-            unit: {
-              include: {
-                dong: true,
-                siteUnitType: true,
+    let listing;
+    if (expectedUpdatedAt) {
+      const expectedUpdatedAtDate = this.parseExpectedUpdatedAt(expectedUpdatedAt);
+      const result = await this.prisma.listing.updateMany({
+        where: { id, officeId, updatedAt: expectedUpdatedAtDate },
+        data: {
+          ...patch,
+          transactionType: nextTransactionType,
+        },
+      });
+
+      if (result.count === 0) {
+        throw new ConflictException('다른 사용자가 먼저 수정했습니다.');
+      }
+
+      listing = await this.findOne(id, officeId);
+    } else {
+      listing = await this.prisma.listing.update({
+        where: { id },
+        data: {
+          ...patch,
+          transactionType: nextTransactionType,
+        },
+        include: {
+          property: {
+            include: {
+              site: true,
+              unit: {
+                include: {
+                  dong: true,
+                  siteUnitType: true,
+                },
               },
             },
           },
-        },
-        jointBrokeragePartner: {
-          select: {
-            id: true,
-            name: true,
-            phone: true,
+          jointBrokeragePartner: {
+            select: {
+              id: true,
+              name: true,
+              phone: true,
+            },
           },
         },
-      },
+      });
+    }
+
+    this.realtime?.emitListingUpdated({
+      officeId,
+      listingId: listing.id,
+      propertyId: listing.propertyId,
+      intakeId: listing.intakeId,
     });
+
+    return listing;
   }
 
   async transitionCheckStatus(id: string, officeId: string, checkStatus: string) {
@@ -794,5 +828,13 @@ export class ListingsService {
         `Invalid checkStatus transition: ${current} -> ${next}`,
       );
     }
+  }
+
+  private parseExpectedUpdatedAt(value: Date | string) {
+    const date = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(date.getTime())) {
+      throw new BadRequestException('expectedUpdatedAt must be a valid date');
+    }
+    return date;
   }
 }

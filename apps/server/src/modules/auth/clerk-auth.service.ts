@@ -42,6 +42,29 @@ export class ClerkAuthService {
     };
   }
 
+  async authenticateOAuthAccessToken(token: string) {
+    const oauthToken = await this.getClient().idPOAuthAccessToken.verify(token);
+    if (oauthToken.revoked || oauthToken.expired) {
+      throw new UnauthorizedException('Invalid Clerk OAuth access token');
+    }
+
+    const user = await this.findOrLinkUser(oauthToken.subject);
+
+    if (!user.isActive || !user.office.isActive) {
+      throw new UnauthorizedException('비활성화된 계정입니다.');
+    }
+
+    return {
+      userId: user.id,
+      clerkUserId: oauthToken.subject,
+      supabaseUserId: user.supabaseId ?? undefined,
+      officeId: user.officeId,
+      role: user.role as UserRole,
+      scopes: oauthToken.scopes,
+      oauthClientId: oauthToken.clientId,
+    };
+  }
+
   private async findOrLinkUser(clerkUserId: string) {
     const existing = await this.prisma.user.findUnique({
       where: { clerkId: clerkUserId },

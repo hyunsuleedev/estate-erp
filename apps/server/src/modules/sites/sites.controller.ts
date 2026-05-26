@@ -5,6 +5,7 @@ import {
   Patch,
   Delete,
   Param,
+  Query,
   Body,
   UseGuards,
 } from '@nestjs/common';
@@ -28,12 +29,21 @@ export class SitesController {
     return this.sitesService.findAll(user.officeId);
   }
 
-  @Get(':id')
-  findOne(
+  @Get(':id/overview')
+  overview(
     @Param('id') id: string,
     @CurrentUser() user: CurrentUserPayload,
   ) {
-    return this.sitesService.findOne(id, user.officeId);
+    return this.sitesService.overview(id, user.officeId);
+  }
+
+  @Get(':id')
+  findOne(
+    @Param('id') id: string,
+    @Query('includeUnits') includeUnits: string | undefined,
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.sitesService.findOne(id, user.officeId, includeUnits !== 'false');
   }
 
   @Post()

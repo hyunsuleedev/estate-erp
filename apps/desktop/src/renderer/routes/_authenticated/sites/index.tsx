@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from '@tanstack/react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import {
   Search,
   Plus,
@@ -523,6 +523,7 @@ function SitesPage() {
   const [selectedOfficeSite, setSelectedOfficeSite] = useState<OfficeSite | null>(null);
   const [selectedUnit, setSelectedUnit] = useState<Unit | null>(null);
   const [selectedDongIds, setSelectedDongIds] = useState<string[]>([]);
+  const [defaultDongSiteId, setDefaultDongSiteId] = useState<string | null>(null);
   const [selectedUnitTypeIds, setSelectedUnitTypeIds] = useState<string[]>([]);
   const [query, setQuery] = useState('');
   const [unitSort, setUnitSort] = useState<SortingState>([]);
@@ -546,8 +547,8 @@ function SitesPage() {
   const selectedSiteId = selectedOfficeSite?.siteId;
 
   const { data: siteDetail } = useQuery({
-    queryKey: ['sites', selectedSiteId],
-    queryFn: () => api.sites.findOne(selectedSiteId!),
+    queryKey: ['sites', 'overview', selectedSiteId],
+    queryFn: () => api.sites.overview(selectedSiteId!),
     enabled: !!selectedSiteId,
   });
 
@@ -582,7 +583,7 @@ function SitesPage() {
   const addDongMutation = useMutation({
     mutationFn: (dto: { siteId: string; name: string }) => api.dongs.create(dto),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['sites', selectedSiteId] });
+      queryClient.invalidateQueries({ queryKey: ['sites', 'overview', selectedSiteId] });
       setNewDongName('');
       setShowAddDongDialog(false);
     },
@@ -592,7 +593,8 @@ function SitesPage() {
     mutationFn: (dto: { siteId: string; dongId: string; name: string; exclusiveAreaM2?: number }) =>
       api.units.create(dto),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['sites', selectedSiteId] });
+      queryClient.invalidateQueries({ queryKey: ['sites', 'overview', selectedSiteId] });
+      queryClient.invalidateQueries({ queryKey: ['site-units', selectedSiteId] });
       setNewUnit({ name: '', area: '', dongId: '' });
       setShowAddUnitDialog(false);
     },
@@ -633,7 +635,6 @@ function SitesPage() {
   }, [filteredSites, groupBy]);
 
   const dongs: Dong[] = siteDetail?.dongs ?? [];
-  const allUnits: Unit[] = siteDetail?.units ?? [];
 
   const getDongName = (dongId: string | null) =>
     dongs.find((d) => d.id === dongId)?.name ?? '';
@@ -643,10 +644,52 @@ function SitesPage() {
       dongs.map((dong) => ({
         value: dong.id,
         label: dong.name,
-        helper: `${allUnits.filter((unit) => unit.dongId === dong.id).length}호`,
+        helper: `${((dong as { _count?: { units?: number } })._count?.units ?? 0).toLocaleString()}호`,
       })),
-    [allUnits, dongs],
+    [dongs],
   );
+
+  useEffect(() => {
+    if (!selectedSiteId || defaultDongSiteId === selectedSiteId || dongOptions.length === 0) {
+      return;
+    }
+
+    setSelectedDongIds([siteDetail?.defaultDongId ?? dongOptions[0].value]);
+    setDefaultDongSiteId(selectedSiteId);
+  }, [defaultDongSiteId, dongOptions, selectedSiteId, siteDetail?.defaultDongId]);
+
+  const isUsingOverviewUnits =
+    selectedDongIds.length === 1 &&
+    !!siteDetail?.defaultDongId &&
+    selectedDongIds[0] === siteDetail.defaultDongId;
+
+  const shouldLoadUnits =
+    !!selectedSiteId &&
+    !!siteDetail &&
+    !isUsingOverviewUnits &&
+    (dongs.length === 0 || selectedDongIds.length > 0 || defaultDongSiteId === selectedSiteId);
+
+  const { data: loadedUnits = [], isFetching: isLoadingUnits } = useQuery({
+    queryKey: ['site-units', selectedSiteId, selectedDongIds],
+    queryFn: async () => {
+      if (!selectedSiteId) return [];
+      if (selectedDongIds.length === 0) {
+        return api.units.findAll({ siteId: selectedSiteId });
+      }
+
+      const groups = await Promise.all(
+        selectedDongIds.map((dongId) => api.units.findAll({ siteId: selectedSiteId, dongId })),
+      );
+      return groups.flat();
+    },
+    enabled: shouldLoadUnits,
+  });
+
+  const allUnits: Unit[] = isUsingOverviewUnits ? (siteDetail.units ?? []) : loadedUnits;
+  const totalUnitCount =
+    (siteDetail as { _count?: { units?: number } } | undefined)?._count?.units ??
+    siteDetail?.totalUnits ??
+    allUnits.length;
 
   const unitTypeOptions = useMemo<MultiSelectOption[]>(() => {
     const typeMap = new Map<string, MultiSelectOption>();
@@ -673,7 +716,7 @@ function SitesPage() {
     query.trim().length > 0;
 
   const filteredUnits = useMemo(() => {
-    let units = allUnits;
+    let units = [...allUnits];
 
     if (selectedDongIds.length > 0) {
       units = units.filter((unit) => !!unit.dongId && selectedDongIds.includes(unit.dongId));
@@ -866,6 +909,7 @@ function SitesPage() {
     setSelectedOfficeSite(os);
     setSelectedUnit(null);
     setSelectedDongIds([]);
+    setDefaultDongSiteId(null);
     setSelectedUnitTypeIds([]);
     setQuery('');
     setUnitSort([]);
@@ -904,7 +948,7 @@ function SitesPage() {
   };
 
   const resetUnitFilters = () => {
-    setSelectedDongIds([]);
+    setSelectedDongIds(dongOptions[0] ? [dongOptions[0].value] : []);
     setSelectedUnitTypeIds([]);
     setQuery('');
   };
@@ -1244,9 +1288,9 @@ function SitesPage() {
         <div className="flex-1 flex flex-col min-w-0 min-h-0 p-4 overflow-hidden">
           {/* ViewBar-style panel + Grid */}
           <div className="rounded-xl border border-border/60 bg-background flex-1 flex flex-col min-h-0">
-            {/* Filter bar (ViewBar pattern) */}
+            {/* Site context bar */}
             <div className="border-b border-border/40 px-3 py-2">
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="flex items-center gap-2">
                 <Button
                   type="button"
                   variant="ghost"
@@ -1258,6 +1302,47 @@ function SitesPage() {
                   <PanelLeftIcon className="size-4" />
                 </Button>
                 <Separator orientation="vertical" className="h-4" />
+                <div className="min-w-0 flex-1">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <h2 className="truncate text-sm font-semibold">
+                      {siteDetail.name}
+                    </h2>
+                    <Badge variant="outline" className="shrink-0 text-[10px] font-normal">
+                      {siteTypeLabels[siteDetail.type] ?? siteDetail.type}
+                    </Badge>
+                  </div>
+                  <div className="truncate text-[11px] text-muted-foreground">
+                    {siteDetail.roadAddress || siteDetail.jibunAddress || '-'}
+                  </div>
+                </div>
+                <div className="hidden items-center gap-2 text-[11px] text-muted-foreground lg:flex">
+                  <span className="tabular-nums">{dongs.length.toLocaleString()}개 동</span>
+                  <span className="text-border">|</span>
+                  <span className="tabular-nums">{totalUnitCount.toLocaleString()}개 호수</span>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 shrink-0 gap-1.5 px-2.5 text-xs"
+                  onClick={() => setShowAddDongDialog(true)}
+                >
+                  <Plus className="size-3.5" />
+                  동 추가
+                </Button>
+                <Button
+                  size="sm"
+                  className="h-8 shrink-0 gap-1.5 px-2.5 text-xs"
+                  onClick={() => setShowAddUnitDialog(true)}
+                >
+                  <Plus className="size-3.5" />
+                  호수 추가
+                </Button>
+              </div>
+            </div>
+
+            {/* Unit filters */}
+            <div className="border-b border-border/40 px-3 py-2">
+              <div className="flex flex-wrap items-center gap-2">
 
                 {/* 동 / 타입 필터 */}
                 {dongOptions.length > 0 && (
@@ -1348,7 +1433,13 @@ function SitesPage() {
                   rowHeight={36}
                   pinnedColumns={unitPinnedColumns}
                   enableRowSelection
-                  emptyMessage={hasActiveUnitFilters ? '검색 결과가 없습니다' : '등록된 호수가 없습니다'}
+                  emptyMessage={
+                    isLoadingUnits
+                      ? '호수를 불러오는 중입니다'
+                      : hasActiveUnitFilters
+                        ? '검색 결과가 없습니다'
+                        : '등록된 호수가 없습니다'
+                  }
                   renderStatusBar={({ focusedRow, totalCount }) => {
                     if (!focusedRow) {
                       return (

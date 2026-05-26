@@ -41,15 +41,21 @@ function NewContactPage() {
   const parsedTags = useMemo(() => parseContactTags(form.customTagsInput), [form.customTagsInput]);
 
   const mutation = useMutation({
-    mutationFn: () =>
-      api.contacts.create({
+    mutationFn: () => {
+      const primaryPhone = form.phone.trim();
+      const secondaryPhone = form.phone2.trim();
+      const phones: { phone: string; isPrimary: boolean; label?: string }[] = [];
+      if (primaryPhone) phones.push({ phone: primaryPhone, isPrimary: true });
+      if (secondaryPhone) phones.push({ phone: secondaryPhone, isPrimary: false, label: '보조' });
+      return api.contacts.create({
         name: form.name.trim(),
-        phone: form.phone.trim() || undefined,
-        phone2: form.phone2.trim() || undefined,
+        phone: primaryPhone || undefined,
+        phones: phones.length > 0 ? phones : undefined,
         email: form.email.trim() || undefined,
         tags: mergeContactTags(selectedGroupTags, form.customTagsInput),
         memo: form.memo.trim() || undefined,
-      }),
+      });
+    },
     onSuccess: async (created) => {
       await queryClient.invalidateQueries({ queryKey: ['contacts'] });
       navigate({
@@ -250,7 +256,12 @@ function NewContactPage() {
                           </Link>
                           <p className="text-sm text-muted-foreground">
                             {formatPhoneNumber(contact.phone)}
-                            {contact.phone2 ? ` · ${formatPhoneNumber(contact.phone2)}` : ''}
+                            {(() => {
+                              const secondary = (contact.phones ?? []).find(
+                                (phone) => !phone.isPrimary && phone.phone,
+                              )?.phone;
+                              return secondary ? ` · ${formatPhoneNumber(secondary)}` : '';
+                            })()}
                           </p>
                           {contact.email && <p className="text-sm text-muted-foreground">{contact.email}</p>}
                         </div>

@@ -72,6 +72,18 @@ import {
   type SortDefinition,
   type ChipOption,
 } from '@/components/data-table';
+import {
+  SheetSection,
+  SheetEmptyState,
+  SheetNoticeRow,
+  formatDateShort,
+  formatDateTime,
+  formatDaysAgo,
+  getDaysSince,
+  getDaysUntil,
+  type QuickSheetNotice,
+  type QuickSheetNoticeTone,
+} from '@/components/quick-sheet';
 import { getMoveInAvailability, getTenantPhoneLine } from './-property-list-view-utils';
 
 // ── Labels & Colors ─────────────────────────────────────────────
@@ -227,13 +239,8 @@ interface PropertyListingGroup {
   matchedListings: Listing[];
 }
 
-type PropertySheetNoticeTone = 'danger' | 'warning' | 'neutral';
-
-interface PropertySheetNotice {
-  title: string;
-  detail: string;
-  tone: PropertySheetNoticeTone;
-}
+type PropertySheetNoticeTone = QuickSheetNoticeTone;
+type PropertySheetNotice = QuickSheetNotice;
 
 // ── Route ───────────────────────────────────────────────────────
 
@@ -1029,7 +1036,7 @@ function PropertySheetContent({
           {notices.length > 0 ? (
             <div className="space-y-2">
               {notices.map((notice) => (
-                <PropertySheetNoticeRow key={`${notice.title}-${notice.detail}`} notice={notice} />
+                <SheetNoticeRow key={`${notice.title}-${notice.detail}`} notice={notice} />
               ))}
             </div>
           ) : (
@@ -1093,35 +1100,7 @@ function PropertySheetContent({
   );
 }
 
-function SheetSection({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <section className="space-y-2.5">
-      <h3 className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
-        {title}
-      </h3>
-      {children}
-    </section>
-  );
-}
-
-function PropertySheetNoticeRow({ notice }: { notice: PropertySheetNotice }) {
-  return (
-    <div className="flex items-start gap-2.5 rounded-md border border-border bg-muted/40 px-3 py-2.5">
-      <span
-        className={cn(
-          'mt-1.5 size-1.5 shrink-0 rounded-full',
-          notice.tone === 'danger' && 'bg-[#e03e3e]',
-          notice.tone === 'warning' && 'bg-[#dfab01]',
-          notice.tone === 'neutral' && 'bg-[#9b9a97]',
-        )}
-      />
-      <div className="min-w-0 flex-1">
-        <div className="text-[13px] font-medium text-foreground">{notice.title}</div>
-        <p className="mt-0.5 text-[12px] leading-5 text-muted-foreground">{notice.detail}</p>
-      </div>
-    </div>
-  );
-}
+// SheetSection / SheetEmptyState / SheetNoticeRow / 날짜 헬퍼는 @/components/quick-sheet 에서 import.
 
 function PropertySheetListingCard({ listing }: { listing: PropertyListing }) {
   return (
@@ -1461,17 +1440,6 @@ function SheetActionButton({
       {icon}
       <span className="truncate">{label}</span>
     </button>
-  );
-}
-
-function SheetEmptyState({ text, compact = false }: { text: string; compact?: boolean }) {
-  return (
-    <div className={cn(
-      'rounded-md border border-dashed border-[#e3e2df] px-3 text-center text-sm text-slate-500',
-      compact ? 'py-4' : 'py-8',
-    )}>
-      {text}
-    </div>
   );
 }
 
@@ -2512,25 +2480,6 @@ function getPropertySheetNotices(property: Property): PropertySheetNotice[] {
   return notices.slice(0, 5);
 }
 
-function formatDateShort(value?: string | null) {
-  if (!value) return '-';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '-';
-  return date.toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric' });
-}
-
-function formatDateTime(value?: string | null) {
-  if (!value) return '-';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '-';
-  return date.toLocaleString('ko-KR', {
-    month: 'numeric',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-}
-
 function getContactRoleLabel(role: string) {
   return contactRoleLabels[role] ?? role;
 }
@@ -2580,28 +2529,6 @@ function getTenantStatusLabel(status: string) {
   if (status === 'moving_out') return '퇴거예정';
   if (status === 'moved') return '퇴거완료';
   return status;
-}
-
-function getDaysSince(value?: string | null) {
-  if (!value) return null;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return null;
-  const diffMs = Date.now() - date.getTime();
-  return Math.max(0, Math.floor(diffMs / 86_400_000));
-}
-
-function getDaysUntil(value?: string | null) {
-  if (!value) return Number.POSITIVE_INFINITY;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return Number.POSITIVE_INFINITY;
-  return Math.ceil((date.getTime() - Date.now()) / 86_400_000);
-}
-
-function formatDaysAgo(value?: string | null) {
-  const days = getDaysSince(value);
-  if (days === null) return '-';
-  if (days === 0) return '오늘';
-  return `${days}일 전`;
 }
 
 function formatTransactionTypeList(listings: Pick<PropertyListing, 'transactionType'>[]) {

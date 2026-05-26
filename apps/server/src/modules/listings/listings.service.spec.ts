@@ -28,6 +28,7 @@ describe('ListingsService', () => {
         count: jest.fn(),
         create: jest.fn(),
         update: jest.fn(),
+        updateMany: jest.fn(),
       },
       listingIntake: {
         findFirst: jest.fn(),
@@ -152,6 +153,59 @@ describe('ListingsService', () => {
     expect(prisma.listing.update).not.toHaveBeenCalled();
   });
 
+  it('emits a realtime listing update after updating a listing', async () => {
+    const { prisma } = createService();
+    const realtime = {
+      emitListingUpdated: jest.fn(),
+    };
+    const service = new ListingsService(prisma as never, realtime as never);
+    const updatedListing = {
+      id: 'listing-1',
+      officeId: 'office-1',
+      propertyId: 'property-1',
+      intakeId: 'intake-1',
+      transactionType: 'sale',
+      checkStatus: 'verified',
+    };
+    prisma.listing.findFirst.mockResolvedValue({
+      ...updatedListing,
+      checkStatus: 'unverified',
+    });
+    prisma.listing.update.mockResolvedValue(updatedListing);
+
+    await service.update('listing-1', 'office-1', { checkStatus: 'verified' });
+
+    expect(realtime.emitListingUpdated).toHaveBeenCalledWith({
+      officeId: 'office-1',
+      listingId: 'listing-1',
+      propertyId: 'property-1',
+      intakeId: 'intake-1',
+    });
+  });
+
+  it('rejects a stale listing update when expectedUpdatedAt no longer matches', async () => {
+    const { prisma, service } = createService();
+    prisma.listing.findFirst.mockResolvedValue({
+      id: 'listing-1',
+      officeId: 'office-1',
+      propertyId: 'property-1',
+      intakeId: 'intake-1',
+      transactionType: 'sale',
+      checkStatus: 'unverified',
+      updatedAt: new Date('2026-05-20T01:00:00.000Z'),
+    });
+    prisma.listing.updateMany.mockResolvedValue({ count: 0 });
+
+    await expect(
+      service.update('listing-1', 'office-1', {
+        price: 270000,
+        expectedUpdatedAt: '2026-05-20T00:00:00.000Z',
+      }),
+    ).rejects.toBeInstanceOf(ConflictException);
+
+    expect(prisma.listing.update).not.toHaveBeenCalled();
+  });
+
   it('returns distinct filter sites from visible listings with counts', async () => {
     const { prisma, service } = createService();
     prisma.listing.findMany.mockResolvedValue([
@@ -255,7 +309,13 @@ describe('ListingsService', () => {
           property: expect.objectContaining({
             include: expect.objectContaining({
               tenants: expect.objectContaining({
-                include: { contact: true },
+                include: {
+                  contact: expect.objectContaining({
+                    include: expect.objectContaining({
+                      phones: expect.any(Object),
+                    }),
+                  }),
+                },
                 orderBy: { createdAt: 'desc' },
               }),
               listings: expect.objectContaining({

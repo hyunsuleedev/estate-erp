@@ -5,9 +5,16 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { apiReference } from '@scalar/nestjs-api-reference';
 import { json, urlencoded } from 'express';
 import { AppModule } from './app.module';
+import { RedisIoAdapter } from './realtime/redis-io.adapter';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
+
+  if (process.env.REDIS_URL) {
+    const redisIoAdapter = new RedisIoAdapter(app);
+    await redisIoAdapter.connectToRedis(process.env.REDIS_URL);
+    app.useWebSocketAdapter(redisIoAdapter);
+  }
 
   // 외부 매물 배치 업서트에서 raw JSONB 페이로드가 커질 수 있어 body size 확장.
   app.use(json({ limit: '10mb' }));

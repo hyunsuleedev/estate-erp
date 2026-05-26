@@ -1,5 +1,9 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import {
+  contactPhonesSelectOrdered,
+  withPrimaryPhone,
+} from '../contacts/contact-phone.utils';
 
 const defaultInclude = {
   user: { select: { id: true, name: true } },
@@ -15,7 +19,7 @@ const defaultInclude = {
     },
   },
   listing: { select: { id: true, transactionType: true, price: true, checkStatus: true } },
-  contact: { select: { id: true, name: true, phone: true } },
+  contact: { select: { id: true, name: true, phones: contactPhonesSelectOrdered } },
   match: { select: { id: true, stage: true } },
   deal: { select: { id: true, stage: true } },
 };
@@ -49,11 +53,12 @@ export class CalendarEventsService {
     if (filters.userId) where.userId = filters.userId;
     if (filters.type) where.type = filters.type;
 
-    return this.prisma.calendarEvent.findMany({
+    const events = await this.prisma.calendarEvent.findMany({
       where,
       include: defaultInclude,
       orderBy: { start: 'asc' },
     });
+    return events.map((event) => this.withContactPhone(event));
   }
 
   async findOne(id: string, officeId: string) {
@@ -62,7 +67,7 @@ export class CalendarEventsService {
       include: defaultInclude,
     });
     if (!event) throw new NotFoundException('Calendar event not found');
-    return event;
+    return this.withContactPhone(event);
   }
 
   async create(
@@ -84,7 +89,7 @@ export class CalendarEventsService {
       dealId?: string;
     },
   ) {
-    return this.prisma.calendarEvent.create({
+    const event = await this.prisma.calendarEvent.create({
       data: {
         officeId,
         userId,
@@ -104,6 +109,7 @@ export class CalendarEventsService {
       },
       include: defaultInclude,
     });
+    return this.withContactPhone(event);
   }
 
   /**
@@ -136,15 +142,25 @@ export class CalendarEventsService {
     // null 전달 시 연결 해제
     if (dto.end === undefined) delete data.end;
 
-    return this.prisma.calendarEvent.update({
+    const event = await this.prisma.calendarEvent.update({
       where: { id },
       data,
       include: defaultInclude,
     });
+    return this.withContactPhone(event);
   }
 
   async remove(id: string, officeId: string) {
     await this.findOne(id, officeId);
     return this.prisma.calendarEvent.delete({ where: { id } });
+  }
+
+  private withContactPhone<T>(event: T): T {
+    const draft = event as Record<string, unknown>;
+    const contact = draft.contact as ({ phones?: [] } & Record<string, unknown>) | null | undefined;
+    if (contact) {
+      draft.contact = withPrimaryPhone(contact);
+    }
+    return event;
   }
 }

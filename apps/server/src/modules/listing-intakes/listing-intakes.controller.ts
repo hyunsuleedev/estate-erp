@@ -144,6 +144,7 @@ export class ListingIntakesController {
       isJointBrokerageRequired?: boolean;
       jointBrokeragePartnerId?: string | null;
       memo?: string | null;
+      expectedUpdatedAt?: string | null;
     },
     @CurrentUser() user: CurrentUserPayload,
   ) {
@@ -153,10 +154,13 @@ export class ListingIntakesController {
   @Patch(':id/status')
   updateStatus(
     @Param('id') id: string,
-    @Body() dto: { status: string },
+    @Body() dto: { status: string; expectedUpdatedAt?: string | null },
     @CurrentUser() user: CurrentUserPayload,
   ) {
-    return this.listingIntakes.updateStatus(id, user.officeId, dto.status);
+    return this.listingIntakes.update(id, user.officeId, {
+      status: dto.status,
+      expectedUpdatedAt: dto.expectedUpdatedAt,
+    });
   }
 
   @Post(':id/confirm')
@@ -170,6 +174,7 @@ export class ListingIntakesController {
       checkedAt?: string | null;
       nextConfirmAt?: string | null;
       contactId?: string | null;
+      expectedUpdatedAt?: string | null;
     },
     @CurrentUser() user: CurrentUserPayload,
   ) {

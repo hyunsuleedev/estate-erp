@@ -203,6 +203,7 @@ export interface UpdateListingDto {
   checkStatus?: string;
   isHidden?: boolean;
   memo?: string;
+  expectedUpdatedAt?: string | null;
 }
 
 export function createListingsApi(request: RequestFn) {

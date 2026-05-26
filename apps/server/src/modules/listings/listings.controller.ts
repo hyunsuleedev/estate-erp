@@ -142,6 +142,7 @@ export class ListingsController {
       checkStatus?: string;
       isHidden?: boolean;
       memo?: string | null;
+      expectedUpdatedAt?: string | null;
     },
     @CurrentUser() user: CurrentUserPayload,
   ) {
