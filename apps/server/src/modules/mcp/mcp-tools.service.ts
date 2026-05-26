@@ -27,6 +27,7 @@ import { CommissionPaymentService } from '../finance/commission-payment.service'
 import { CashflowService } from '../finance/cashflow.service';
 import { PublicDocumentsService } from '../public-documents/public-documents.service';
 import { PropertyPhotosService } from '../property-photos/property-photos.service';
+import { ListingAdvertisementsService } from '../listing-advertisements/listing-advertisements.service';
 import { ProposalService } from '../agent/proposal/proposal.service';
 import type { ProposalStatus } from '../agent/proposal/proposal.types';
 import { InboxService } from '../inbox/inbox.service';
@@ -141,6 +142,7 @@ export class McpToolsService {
     private readonly propertyPhotos: PropertyPhotosService,
     private readonly proposals: ProposalService,
     private readonly inbox: InboxService,
+    private readonly listingAdvertisements: ListingAdvertisementsService,
     private readonly listingIntakes: ListingIntakesService,
   ) {
     this.registerAll();
@@ -430,6 +432,124 @@ export class McpToolsService {
           isHidden: a.isHidden as boolean,
           memo: a.memo as string,
         }),
+    );
+
+    // ═══════════════════════════════════════════════════════════
+    // 내부 광고 row (ListingAdvertisements)
+    // ═══════════════════════════════════════════════════════════
+    this.add(
+      'find_listing_advertisements',
+      '내부 광고 row(ListingAdvertisement) 목록을 검색합니다. listingId, 채널, 상태, 출처, 검색어로 필터링.',
+      obj({
+        listingId: str('매물 ID'),
+        channel: str('광고 채널 slug (naver, asil, zigbang 등)'),
+        status: strEnum('광고 상태', ['planned', 'draft', 'active', 'paused', 'ended', 'error']),
+        source: strEnum('광고 row 출처', ['manual', 'external_observed', 'cp_sync']),
+        search: str('검색어 (채널, URL, 메모, 단지명 등)'),
+        sortBy: strEnum('정렬 필드', ['createdAt', 'updatedAt', 'startedAt', 'lastCheckedAt']),
+        sortOrder: strEnum('정렬 방향', ['asc', 'desc']),
+        ...page,
+      }),
+      async (a, c) =>
+        this.listingAdvertisements.findAll(c.officeId, {
+          listingId: a.listingId as string,
+          channel: a.channel as string,
+          status: a.status as string,
+          source: a.source as string,
+          search: a.search as string,
+          sortBy: a.sortBy as 'createdAt' | 'updatedAt' | 'startedAt' | 'lastCheckedAt',
+          sortOrder: a.sortOrder as 'asc' | 'desc',
+          page: (a.page as number) ?? 1,
+          limit: this.clampLimit(a),
+        }),
+    );
+
+    this.add(
+      'create_listing_advertisement',
+      '내부 광고 row(ListingAdvertisement)를 생성합니다. 같은 listingId+channel에 active 광고가 있으면 서비스에서 거절합니다.',
+      obj(
+        {
+          listingId: str('매물 ID'),
+          channel: str('광고 채널 slug (naver, asil, zigbang 등)'),
+          status: strEnum('광고 상태', ['planned', 'draft', 'active', 'paused', 'ended', 'error']),
+          source: strEnum('광고 row 출처', ['manual', 'external_observed', 'cp_sync']),
+          advertisedPrice: num('광고 매매가/전세가 (만원)'),
+          advertisedDeposit: num('광고 보증금 (만원)'),
+          advertisedMonthlyRent: num('광고 월세 (만원)'),
+          startedAt: str('광고 시작일 (ISO)'),
+          endedAt: str('광고 종료일 (ISO)'),
+          url: str('광고 URL'),
+          memo: str('광고 메모'),
+          externalAdId: str('외부 광고 ID'),
+          lastCheckedAt: str('마지막 확인일 (ISO)'),
+          lastSyncedAt: str('마지막 동기화일 (ISO)'),
+        },
+        ['listingId', 'channel'],
+      ),
+      async (a, c) =>
+        this.listingAdvertisements.create(c.officeId, {
+          listingId: a.listingId as string,
+          channel: a.channel as string,
+          status: a.status as string,
+          source: a.source as string,
+          advertisedPrice: a.advertisedPrice as number | null,
+          advertisedDeposit: a.advertisedDeposit as number | null,
+          advertisedMonthlyRent: a.advertisedMonthlyRent as number | null,
+          startedAt: a.startedAt as string | null,
+          endedAt: a.endedAt as string | null,
+          url: a.url as string | null,
+          memo: a.memo as string | null,
+          externalAdId: a.externalAdId as string | null,
+          lastCheckedAt: a.lastCheckedAt as string | null,
+          lastSyncedAt: a.lastSyncedAt as string | null,
+        }),
+    );
+
+    this.add(
+      'update_listing_advertisement',
+      '내부 광고 row(ListingAdvertisement)를 수정합니다. 정상 광고 내림은 status=ended를 사용하세요.',
+      obj(
+        {
+          id: str('광고 row ID'),
+          channel: str('광고 채널 slug (naver, asil, zigbang 등)'),
+          status: strEnum('광고 상태', ['planned', 'draft', 'active', 'paused', 'ended', 'error']),
+          source: strEnum('광고 row 출처', ['manual', 'external_observed', 'cp_sync']),
+          advertisedPrice: num('광고 매매가/전세가 (만원)'),
+          advertisedDeposit: num('광고 보증금 (만원)'),
+          advertisedMonthlyRent: num('광고 월세 (만원)'),
+          startedAt: str('광고 시작일 (ISO)'),
+          endedAt: str('광고 종료일 (ISO)'),
+          url: str('광고 URL'),
+          memo: str('광고 메모'),
+          externalAdId: str('외부 광고 ID'),
+          lastCheckedAt: str('마지막 확인일 (ISO)'),
+          lastSyncedAt: str('마지막 동기화일 (ISO)'),
+        },
+        ['id'],
+      ),
+      async (a, c) =>
+        this.listingAdvertisements.update(a.id as string, c.officeId, {
+          channel: a.channel as string,
+          status: a.status as string,
+          source: a.source as string,
+          advertisedPrice: a.advertisedPrice as number | null,
+          advertisedDeposit: a.advertisedDeposit as number | null,
+          advertisedMonthlyRent: a.advertisedMonthlyRent as number | null,
+          startedAt: a.startedAt as string | null,
+          endedAt: a.endedAt as string | null,
+          url: a.url as string | null,
+          memo: a.memo as string | null,
+          externalAdId: a.externalAdId as string | null,
+          lastCheckedAt: a.lastCheckedAt as string | null,
+          lastSyncedAt: a.lastSyncedAt as string | null,
+        }),
+    );
+
+    this.add(
+      'delete_listing_advertisement',
+      '잘못 등록한 내부 광고 row(ListingAdvertisement)를 삭제합니다. 정상 광고 내림은 update_listing_advertisement(status=ended)를 사용하세요.',
+      obj({ id: str('광고 row ID') }, ['id']),
+      async (a, c) => this.listingAdvertisements.remove(a.id as string, c.officeId),
     );
 
     // ═══════════════════════════════════════════════════════════

@@ -23,6 +23,7 @@ import { ExternalListingsModule } from '../external-listings/external-listings.m
 import { FinanceModule } from '../finance/finance.module';
 import { PublicDocumentsModule } from '../public-documents/public-documents.module';
 import { PropertyPhotosModule } from '../property-photos/property-photos.module';
+import { ListingAdvertisementsModule } from '../listing-advertisements/listing-advertisements.module';
 import { AgentModule } from '../agent/agent.module';
 import { InboxModule } from '../inbox/inbox.module';
 import { McpController } from './mcp.controller';
@@ -59,6 +60,7 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
     FinanceModule,
     PublicDocumentsModule,
     PropertyPhotosModule,
+    ListingAdvertisementsModule,
     AgentModule,
     InboxModule,
   ],

@@ -7,6 +7,12 @@ describe('McpToolsService', () => {
     const listings = {
       create: jest.fn().mockResolvedValue({ id: 'listing-1' }),
     };
+    const listingAdvertisements = {
+      findAll: jest.fn().mockResolvedValue({ items: [], pagination: { total: 0 } }),
+      create: jest.fn().mockResolvedValue({ id: 'ad-1' }),
+      update: jest.fn().mockResolvedValue({ id: 'ad-1' }),
+      remove: jest.fn().mockResolvedValue({ id: 'ad-1' }),
+    };
     const listingIntakes = {
       findAll: jest.fn().mockResolvedValue({ items: [], pagination: { total: 0 } }),
       findOne: jest.fn().mockResolvedValue({ id: 'intake-1' }),
@@ -43,10 +49,11 @@ describe('McpToolsService', () => {
       noop,
       noop,
       noop,
+      listingAdvertisements,
       listingIntakes,
     ) as McpToolsService;
 
-    return { service, listings, listingIntakes };
+    return { service, listings, listingAdvertisements, listingIntakes };
   }
 
   it('registers listing intake table CRUD tools', () => {
@@ -123,6 +130,75 @@ describe('McpToolsService', () => {
         propertyId: 'property-1',
         status: 'active',
         memo: '테스트 의뢰',
+      }),
+    );
+  });
+
+  it('registers listing advertisement MCP tools', () => {
+    const { service } = createService();
+
+    const toolNames = service.getToolDefinitions().map((tool) => tool.name);
+
+    expect(toolNames).toEqual(
+      expect.arrayContaining([
+        'find_listing_advertisements',
+        'create_listing_advertisement',
+        'update_listing_advertisement',
+        'delete_listing_advertisement',
+      ]),
+    );
+  });
+
+  it('delegates create_listing_advertisement to the listing advertisement service', async () => {
+    const { service, listingAdvertisements } = createService();
+
+    await service.executeTool(
+      'create_listing_advertisement',
+      {
+        listingId: 'listing-1',
+        channel: 'naver',
+        status: 'active',
+        source: 'manual',
+        advertisedPrice: 150000,
+        url: 'https://example.com/ad',
+      },
+      ctx,
+    );
+
+    expect(listingAdvertisements.create).toHaveBeenCalledWith(
+      'office-1',
+      expect.objectContaining({
+        listingId: 'listing-1',
+        channel: 'naver',
+        status: 'active',
+        source: 'manual',
+        advertisedPrice: 150000,
+        url: 'https://example.com/ad',
+      }),
+    );
+  });
+
+  it('delegates update_listing_advertisement to the listing advertisement service', async () => {
+    const { service, listingAdvertisements } = createService();
+
+    await service.executeTool(
+      'update_listing_advertisement',
+      {
+        id: 'ad-1',
+        status: 'ended',
+        endedAt: '2026-05-26T10:00:00.000Z',
+        memo: '광고 내림',
+      },
+      ctx,
+    );
+
+    expect(listingAdvertisements.update).toHaveBeenCalledWith(
+      'ad-1',
+      'office-1',
+      expect.objectContaining({
+        status: 'ended',
+        endedAt: '2026-05-26T10:00:00.000Z',
+        memo: '광고 내림',
       }),
     );
   });

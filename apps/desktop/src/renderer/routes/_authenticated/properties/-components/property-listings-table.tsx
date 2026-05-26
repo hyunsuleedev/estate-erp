@@ -473,7 +473,7 @@ function LoadingRows({ columns }: { columns: number }) {
             <td
               key={j}
               className={cn(
-                'border-b border-[#eeeeec] px-2.5',
+                'h-10 border-b border-[#eeeeec] px-2.5 align-middle',
                 j < columns - 1 && 'border-r border-r-[#eeeeec]',
               )}
             >
