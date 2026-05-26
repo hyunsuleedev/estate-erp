@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import type { ReactNode } from 'react';
 import { useAuth as useClerkAuth, useClerk } from '@clerk/react';
-import type { MeResponse } from '@estate-erp/api-client';
+import { ApiError, type MeResponse } from '@estate-erp/api-client';
 import {
   api,
   removeToken,
@@ -65,9 +65,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (cancelled) return;
         setState({ user, isLoading: false, isAuthenticated: true });
       })
-      .catch(() => {
+      .catch((error) => {
         if (cancelled) return;
-        handleAuthFailure();
+        if (error instanceof ApiError && error.statusCode === 401) {
+          handleAuthFailure();
+          return;
+        }
+        setState((prev) => ({ ...prev, isLoading: false }));
       });
     return () => {
       cancelled = true;
