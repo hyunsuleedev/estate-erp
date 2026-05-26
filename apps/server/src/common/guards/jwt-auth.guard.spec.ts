@@ -61,4 +61,23 @@ describe('JwtAuthGuard', () => {
       },
     });
   });
+
+  it('allows office-less users to create an office using the full request URL', async () => {
+    const guard = createGuard({
+      userId: 'user-1',
+      officeId: '',
+      role: 'owner',
+    });
+
+    await expect(
+      guard.canActivate(
+        createContext({
+          headers: { authorization: 'Bearer token' },
+          method: 'POST',
+          route: { path: '/me' },
+          url: '/offices/me',
+        }),
+      ),
+    ).resolves.toBe(true);
+  });
 });

@@ -53,7 +53,7 @@ export class JwtAuthGuard implements CanActivate {
     const method = request.method?.toUpperCase();
     const routePath = request.route?.path;
     const urlPath = request.url?.split('?')[0];
-    const path = routePath ?? urlPath ?? '';
+    const path = urlPath ?? routePath ?? '';
 
     return (
       (method === 'GET' && path === '/auth/me') ||
