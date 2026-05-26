@@ -141,7 +141,7 @@ export async function request<T>(
     url,
     method,
     body,
-    config.getToken?.() ?? null,
+    (await config.getToken?.()) ?? null,
   );
 
   if (res.status === 401 && canRetry) {

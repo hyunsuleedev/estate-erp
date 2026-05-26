@@ -1,26 +1,32 @@
 import {
+  CanActivate,
   ExecutionContext,
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
-import { AuthGuard } from '@nestjs/passport';
 import { setRequestContext } from '../request-context/request-context';
 import { CurrentUserPayload } from '../decorators/current-user.decorator';
+import { ClerkAuthService } from '../../modules/auth/clerk-auth.service';
 
 @Injectable()
-export class JwtAuthGuard extends AuthGuard('jwt') {
-  handleRequest<TUser = CurrentUserPayload>(
-    err: unknown,
-    user: TUser,
-    _info: unknown,
-    _context: ExecutionContext,
-    _status?: unknown,
-  ): TUser {
-    if (err || !user) {
-      throw (err as Error) ?? new UnauthorizedException();
+export class JwtAuthGuard implements CanActivate {
+  constructor(private readonly clerkAuth: ClerkAuthService) {}
+
+  async canActivate(context: ExecutionContext): Promise<boolean> {
+    const request = context.switchToHttp().getRequest<{
+      headers: { authorization?: string };
+      user?: CurrentUserPayload;
+    }>();
+    const authHeader = request.headers.authorization;
+
+    if (!authHeader?.startsWith('Bearer ')) {
+      throw new UnauthorizedException();
     }
 
-    const currentUser = user as unknown as CurrentUserPayload;
+    const currentUser = await this.clerkAuth.authenticateBearerToken(
+      authHeader.slice(7),
+    );
+    request.user = currentUser;
 
     setRequestContext({
       userId: currentUser.userId,
@@ -29,6 +35,6 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
       actor: 'user',
     });
 
-    return user;
+    return true;
   }
 }

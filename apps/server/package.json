@@ -20,6 +20,7 @@
     "prisma:studio": "prisma studio --schema ../../prisma/schema"
   },
   "dependencies": {
+    "@clerk/backend": "^3.4.13",
     "@estate-erp/shared": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@nestjs/bullmq": "^11.0.0",
@@ -36,6 +37,7 @@
     "@nestjs/websockets": "^11.0.0",
     "@prisma/client": "^6.0.0",
     "@scalar/nestjs-api-reference": "^1.1.5",
+    "@socket.io/redis-adapter": "^8.3.0",
     "@supabase/supabase-js": "^2.105.4",
     "bcrypt": "^5.1.0",
     "bullmq": "^5.0.0",

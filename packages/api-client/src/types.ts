@@ -1,7 +1,9 @@
+type MaybePromise<T> = T | Promise<T>;
+
 /** API 클라이언트 설정 */
 export interface ApiClientConfig {
   baseUrl: string;
-  getToken?: () => string | null;
+  getToken?: () => MaybePromise<string | null>;
   /** 저장된 refresh token (Supabase) — 401 발생 시 access token 재발급에 사용 */
   getRefreshToken?: () => string | null;
   /** Refresh 성공 시 호출. Supabase는 refresh token도 회전시키므로 둘 다 저장해야 함. */

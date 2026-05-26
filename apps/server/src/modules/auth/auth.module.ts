@@ -1,9 +1,9 @@
-import { Module } from '@nestjs/common';
-import { PassportModule } from '@nestjs/passport';
+import { Global, Module } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
-import { JwtStrategy } from './jwt.strategy';
+import { ClerkAuthService } from './clerk-auth.service';
 import { RolesGuard } from '../../common/guards/roles.guard';
+import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 
 /**
  * AuthModule — Supabase Auth 통합 (단일 토큰 + sub만 신뢰).
@@ -15,10 +15,10 @@ import { RolesGuard } from '../../common/guards/roles.guard';
  *
  * 자체 JWT 발급은 더 이상 안 함 (Supabase JWT 그대로 사용).
  */
+@Global()
 @Module({
-  imports: [PassportModule.register({ defaultStrategy: 'jwt', session: false })],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy, RolesGuard],
-  exports: [AuthService],
+  providers: [AuthService, ClerkAuthService, JwtAuthGuard, RolesGuard],
+  exports: [AuthService, ClerkAuthService, JwtAuthGuard],
 })
 export class AuthModule {}

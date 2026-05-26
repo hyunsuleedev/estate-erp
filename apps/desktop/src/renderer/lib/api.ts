@@ -2,12 +2,21 @@ import { createApiClient } from '@estate-erp/api-client';
 
 const TOKEN_KEY = 'estate-erp-token';
 const REFRESH_TOKEN_KEY = 'estate-erp-refresh';
+type TokenProvider = () => Promise<string | null>;
+let tokenProvider: TokenProvider | null = null;
 const defaultBaseUrl =
   window.location.protocol === 'file:' ? 'http://localhost:3000' : '/api';
 
 const baseUrl = import.meta.env.VITE_API_BASE_URL ?? defaultBaseUrl;
 
-export function getToken(): string | null {
+export function setTokenProvider(provider: TokenProvider | null): void {
+  tokenProvider = provider;
+}
+
+export async function getToken(): Promise<string | null> {
+  if (tokenProvider) {
+    return tokenProvider();
+  }
   return localStorage.getItem(TOKEN_KEY) ?? sessionStorage.getItem(TOKEN_KEY);
 }
 

@@ -4,7 +4,9 @@ export interface CurrentUserPayload {
   /** 자체 DB User.id (모든 비즈니스 로직에서 userId로 사용) */
   userId: string;
   /** Supabase auth.users.id (logout, admin API 호출 시) */
-  supabaseUserId: string;
+  supabaseUserId?: string;
+  /** Clerk user.id */
+  clerkUserId?: string;
   officeId: string;
   role: string;
 }

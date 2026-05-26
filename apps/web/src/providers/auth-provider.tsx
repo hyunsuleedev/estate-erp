@@ -1,11 +1,11 @@
 import { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import type { ReactNode } from 'react';
+import { useAuth as useClerkAuth, useClerk } from '@clerk/react';
 import type { MeResponse } from '@estate-erp/api-client';
 import {
   api,
-  setTokens,
   removeToken,
-  getToken,
+  setTokenProvider,
   setAuthFailureHandler,
 } from '@/lib/api';
 
@@ -24,13 +24,16 @@ interface AuthContextValue extends AuthState {
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const { isLoaded, isSignedIn, getToken } = useClerkAuth();
+  const { signOut, openSignIn, openSignUp } = useClerk();
   const [state, setState] = useState<AuthState>({
     user: null,
-    isLoading: !!getToken(),
+    isLoading: true,
     isAuthenticated: false,
   });
 
   const handleAuthFailure = useCallback(() => {
+    setTokenProvider(null);
     removeToken();
     setState({ user: null, isLoading: false, isAuthenticated: false });
   }, []);
@@ -41,36 +44,56 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [handleAuthFailure]);
 
   useEffect(() => {
-    const token = getToken();
-    if (!token) return;
+    if (!isLoaded) {
+      setState((prev) => ({ ...prev, isLoading: true }));
+      return;
+    }
+
+    if (!isSignedIn) {
+      handleAuthFailure();
+      return;
+    }
+
+    let cancelled = false;
+    setTokenProvider(() => getToken());
+    setState((prev) => ({ ...prev, isLoading: true }));
 
     api.auth.me()
       .then((user) => {
+        if (cancelled) return;
         setState({ user, isLoading: false, isAuthenticated: true });
       })
       .catch(() => {
+        if (cancelled) return;
         handleAuthFailure();
       });
-  }, [handleAuthFailure]);
+    return () => {
+      cancelled = true;
+    };
+  }, [getToken, handleAuthFailure, isLoaded, isSignedIn]);
 
   const login = useCallback(async (loginId: string, password: string, remember = true) => {
-    const res = await api.auth.login({ loginId, password });
-    setTokens(res.accessToken, res.refreshToken, remember);
-    const user = await api.auth.me();
-    setState({ user, isLoading: false, isAuthenticated: true });
-  }, []);
+    void loginId;
+    void password;
+    void remember;
+    openSignIn();
+  }, [openSignIn]);
 
   const register = useCallback(async (loginId: string, email: string, password: string, name: string, officeName: string) => {
-    const res = await api.auth.register({ loginId, email, password, name, officeName });
-    setTokens(res.accessToken, res.refreshToken);
-    const user = await api.auth.me();
-    setState({ user, isLoading: false, isAuthenticated: true });
-  }, []);
+    void loginId;
+    void email;
+    void password;
+    void name;
+    void officeName;
+    openSignUp();
+  }, [openSignUp]);
 
-  const logout = useCallback(() => {
+  const logout = useCallback(async () => {
+    setTokenProvider(null);
     removeToken();
     setState({ user: null, isLoading: false, isAuthenticated: false });
-  }, []);
+    await signOut();
+  }, [signOut]);
 
   return (
     <AuthContext.Provider value={{ ...state, login, register, logout }}>

@@ -10,6 +10,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@clerk/localizations": "^4.6.8",
+    "@clerk/react": "^6.7.1",
     "@estate-erp/api-client": "workspace:*",
     "@estate-erp/shared": "workspace:*",
     "@tanstack/react-query": "^5.65.0",

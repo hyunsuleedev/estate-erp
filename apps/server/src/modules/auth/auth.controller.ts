@@ -64,6 +64,9 @@ export class AuthController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(...USER_ROLES)
   logout(@CurrentUser() user: CurrentUserPayload) {
+    if (!user.supabaseUserId) {
+      return { success: true };
+    }
     return this.authService.logout(user.supabaseUserId);
   }
 
