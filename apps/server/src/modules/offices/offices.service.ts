@@ -1,9 +1,81 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 
 @Injectable()
 export class OfficesService {
   constructor(private readonly prisma: PrismaService) {}
+
+  async createForCurrentUser(
+    userId: string,
+    dto: {
+      name: string;
+      licenseNo?: string | null;
+      ceoName?: string | null;
+      phone?: string | null;
+      address?: string | null;
+    },
+  ) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, officeId: true, role: true },
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    if (user.officeId) {
+      throw new ConflictException('이미 사무소에 소속된 사용자입니다.');
+    }
+    if (user.role !== 'owner') {
+      throw new ForbiddenException('사무소 생성 권한이 없습니다.');
+    }
+
+    const office = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.office.create({
+        data: {
+          name: dto.name,
+          licenseNo: dto.licenseNo ?? null,
+          ceoName: dto.ceoName ?? null,
+          phone: dto.phone ?? null,
+          address: dto.address ?? null,
+        },
+        select: { id: true },
+      });
+
+      await tx.user.update({
+        where: { id: userId },
+        data: { officeId: created.id, role: 'owner' },
+      });
+
+      return tx.office.findUnique({
+        where: { id: created.id },
+        include: {
+          users: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              phone: true,
+              role: true,
+              isActive: true,
+            },
+            orderBy: [{ role: 'asc' }, { createdAt: 'asc' }],
+          },
+        },
+      });
+    });
+
+    if (!office) {
+      throw new NotFoundException('Office not found');
+    }
+
+    return this.toOfficeProfile(office);
+  }
 
   async getMe(officeId: string) {
     const office = await this.prisma.office.findUnique({

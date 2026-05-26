@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as AuthRouteImport } from './routes/_auth'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as OnboardingOfficeRouteImport } from './routes/onboarding.office'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
 import { Route as AuthRegisterRouteImport } from './routes/_auth/register'
 import { Route as AuthLoginRouteImport } from './routes/_auth/login'
@@ -59,6 +60,11 @@ const AuthRoute = AuthRouteImport.update({
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OnboardingOfficeRoute = OnboardingOfficeRouteImport.update({
+  id: '/onboarding/office',
+  path: '/onboarding/office',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthenticatedDashboardRoute = AuthenticatedDashboardRouteImport.update({
@@ -268,6 +274,7 @@ export interface FileRoutesByFullPath {
   '/login': typeof AuthLoginRoute
   '/register': typeof AuthRegisterRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
+  '/onboarding/office': typeof OnboardingOfficeRoute
   '/cashflow/employee-settlements': typeof AuthenticatedCashflowEmployeeSettlementsRoute
   '/cashflow/expenses': typeof AuthenticatedCashflowExpensesRoute
   '/cashflow/ledger': typeof AuthenticatedCashflowLedgerRoute
@@ -306,6 +313,7 @@ export interface FileRoutesByTo {
   '/login': typeof AuthLoginRoute
   '/register': typeof AuthRegisterRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
+  '/onboarding/office': typeof OnboardingOfficeRoute
   '/cashflow/employee-settlements': typeof AuthenticatedCashflowEmployeeSettlementsRoute
   '/cashflow/expenses': typeof AuthenticatedCashflowExpensesRoute
   '/cashflow/ledger': typeof AuthenticatedCashflowLedgerRoute
@@ -347,6 +355,7 @@ export interface FileRoutesById {
   '/_auth/login': typeof AuthLoginRoute
   '/_auth/register': typeof AuthRegisterRoute
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
+  '/onboarding/office': typeof OnboardingOfficeRoute
   '/_authenticated/cashflow/employee-settlements': typeof AuthenticatedCashflowEmployeeSettlementsRoute
   '/_authenticated/cashflow/expenses': typeof AuthenticatedCashflowExpensesRoute
   '/_authenticated/cashflow/ledger': typeof AuthenticatedCashflowLedgerRoute
@@ -387,6 +396,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/register'
     | '/dashboard'
+    | '/onboarding/office'
     | '/cashflow/employee-settlements'
     | '/cashflow/expenses'
     | '/cashflow/ledger'
@@ -425,6 +435,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/register'
     | '/dashboard'
+    | '/onboarding/office'
     | '/cashflow/employee-settlements'
     | '/cashflow/expenses'
     | '/cashflow/ledger'
@@ -465,6 +476,7 @@ export interface FileRouteTypes {
     | '/_auth/login'
     | '/_auth/register'
     | '/_authenticated/dashboard'
+    | '/onboarding/office'
     | '/_authenticated/cashflow/employee-settlements'
     | '/_authenticated/cashflow/expenses'
     | '/_authenticated/cashflow/ledger'
@@ -503,6 +515,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthRoute: typeof AuthRouteWithChildren
   AuthenticatedRoute: typeof AuthenticatedRouteWithChildren
+  OnboardingOfficeRoute: typeof OnboardingOfficeRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -526,6 +539,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/onboarding/office': {
+      id: '/onboarding/office'
+      path: '/onboarding/office'
+      fullPath: '/onboarding/office'
+      preLoaderRoute: typeof OnboardingOfficeRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_authenticated/dashboard': {
@@ -873,6 +893,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthRoute: AuthRouteWithChildren,
   AuthenticatedRoute: AuthenticatedRouteWithChildren,
+  OnboardingOfficeRoute: OnboardingOfficeRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

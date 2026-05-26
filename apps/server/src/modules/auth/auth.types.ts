@@ -6,7 +6,7 @@ export type JwtTokenType = 'access' | 'refresh';
 
 export interface AuthenticatedUser {
   userId: string;
-  officeId: string;
+  officeId: string | null;
   loginId: string;
   email: string | null;
   name: string;
@@ -15,12 +15,12 @@ export interface AuthenticatedUser {
     id: string;
     name: string;
     isActive: boolean;
-  };
+  } | null;
 }
 
 export interface AuthTokenPayload {
   sub: string;
-  officeId: string;
+  officeId?: string | null;
   role: UserRole;
   type: JwtTokenType;
 }

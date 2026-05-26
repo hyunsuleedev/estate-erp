@@ -56,6 +56,8 @@ model Office {
   listingIntakes    ListingIntake[]
   listings          Listing[]
   listingAdvertisements ListingAdvertisement[]
+  officeAdvertisementGroups OfficeAdvertisementGroup[]
+  officeAdvertisements      OfficeAdvertisement[]
   tasks             Task[]
   consultations     Consultation[]
   buyerRequirements BuyerRequirement[]
@@ -116,38 +118,17 @@ model Office {
 
 model User {
   id               String  @id @default(uuid()) @db.Uuid
-  officeId         String  @map("office_id") @db.Uuid
+  officeId         String? @map("office_id") @db.Uuid
   loginId          String  @unique @map("login_id") // 로그인 ID (owner/직원 모두 별도 아이디 사용 가능)
-  email            String? // owner 필수, 직원 선택 (Supabase Auth로는 합성 이메일 별도 사용)
-  password         String  // (Supabase Auth 도입 후 미사용, 마이그레이션 잔재)
-  refreshTokenHash String? @map("refresh_token_hash")
+  email            String? // owner 필수, 직원 선택
   name             String
   phone            String?
   role             String  @default("agent") // owner, manager, agent
   isActive         Boolean @default(true) @map("is_active")
 
-  /// Supabase Auth user.id 매핑. 사장님 발급 모델 (모델 B):
-  /// - 사장님이 admin.createUser로 직원 발급 시 자체 DB User + Supabase auth.users 동시 생성
-  /// - JWT 검증 후 sub(=Supabase user.id) → 자체 User 조회용 인덱스
-  supabaseId String? @unique @map("supabase_id") @db.Uuid
-
   /// Clerk user.id 매핑. Clerk session JWT의 sub(user_xxx)로 자체 User를 조회한다.
   /// 기존 사용자 전환을 위해 첫 Clerk 로그인 시 email이 일치하면 자동 연결한다.
   clerkId String? @unique @map("clerk_id")
-
-  /// Supabase Auth용 합성 이메일 (예: kim_manager@estate-erp.local).
-  /// Supabase는 email 필수 + unique이지만 estate-erp 사용자는 loginId만 입력하므로
-  /// `{loginId}@{SUPABASE_SYNTHETIC_DOMAIN}` 형태로 합성해서 저장.
-  /// 직원이 진짜 이메일 가지면 `email` 필드에 별도 저장.
-  syntheticEmail String? @unique @map("synthetic_email")
-
-  /// 첫 로그인 시 비번 변경 강제 플래그.
-  /// 사장님이 admin.createUser 또는 reset-password로 임시 비번 발급 시 true.
-  /// 직원이 본인 비번 변경 후 false.
-  mustChangePassword Boolean @default(true) @map("must_change_password")
-
-  /// 마지막 비번 변경 시각 (정책 만료 등에 활용 가능).
-  passwordChangedAt DateTime? @map("password_changed_at")
 
   /// 마지막 로그인 시각 (audit, 비활성 계정 추적).
   lastLoginAt DateTime? @map("last_login_at")
@@ -177,7 +158,7 @@ model User {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  office               Office             @relation(fields: [officeId], references: [id])
+  office               Office?            @relation(fields: [officeId], references: [id])
   assignedRequirements BuyerRequirement[] @relation("AssignedAgent")
   assignedTasks        Task[]             @relation("TaskAssignee")
   createdTasks         Task[]             @relation("TaskCreator")

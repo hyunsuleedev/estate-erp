@@ -6,7 +6,7 @@ export const Route = createFileRoute('/_auth')({
 });
 
 function AuthLayout() {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { user, isAuthenticated, isLoading } = useAuth();
 
   if (isLoading) {
     return (
@@ -17,6 +17,9 @@ function AuthLayout() {
   }
 
   if (isAuthenticated) {
+    if (!user?.office) {
+      return <Navigate to="/onboarding/office" />;
+    }
     return <Navigate to="/dashboard" />;
   }
 

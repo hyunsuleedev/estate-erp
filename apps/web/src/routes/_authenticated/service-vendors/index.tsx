@@ -77,7 +77,7 @@ function ServiceVendorsPage() {
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const isPlatformAdmin = !!user?.isPlatformAdmin;
-  const myOfficeId = user?.office.id;
+  const myOfficeId = user?.office?.id;
 
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [districtQuery, setDistrictQuery] = useState('');

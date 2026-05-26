@@ -3,7 +3,6 @@ import { ConfigService } from '@nestjs/config';
 import { createClerkClient, verifyToken } from '@clerk/backend';
 import type { ClerkClient } from '@clerk/backend';
 import { Prisma } from '@prisma/client';
-import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../../prisma/prisma.service';
 import { UserRole } from './auth.types';
 
@@ -13,7 +12,6 @@ type ClerkUserForProvisioning = Awaited<
 
 @Injectable()
 export class ClerkAuthService {
-  private static readonly PASSWORD_SALT_ROUNDS = 10;
   private clerkClient: ClerkClient | null = null;
 
   constructor(
@@ -29,15 +27,14 @@ export class ClerkAuthService {
     const clerkUserId = this.getSubject(payload);
     const user = await this.findOrLinkUser(clerkUserId);
 
-    if (!user.isActive || !user.office.isActive) {
+    if (!user.isActive || user.office?.isActive === false) {
       throw new UnauthorizedException('비활성화된 계정입니다.');
     }
 
     return {
       userId: user.id,
       clerkUserId,
-      supabaseUserId: user.supabaseId ?? undefined,
-      officeId: user.officeId,
+      officeId: user.officeId ?? '',
       role: user.role as UserRole,
     };
   }
@@ -50,19 +47,56 @@ export class ClerkAuthService {
 
     const user = await this.findOrLinkUser(oauthToken.subject);
 
-    if (!user.isActive || !user.office.isActive) {
+    if (!user.isActive || user.office?.isActive === false) {
       throw new UnauthorizedException('비활성화된 계정입니다.');
     }
 
     return {
       userId: user.id,
       clerkUserId: oauthToken.subject,
-      supabaseUserId: user.supabaseId ?? undefined,
-      officeId: user.officeId,
+      officeId: user.officeId ?? '',
       role: user.role as UserRole,
       scopes: oauthToken.scopes,
       oauthClientId: oauthToken.clientId,
     };
+  }
+
+  async createUser(params: {
+    loginId: string;
+    password: string;
+    email?: string | null;
+    name: string;
+    officeId: string;
+    role: string;
+  }) {
+    const email = params.email?.trim().toLowerCase();
+
+    return this.getClient().users.createUser({
+      username: params.loginId,
+      password: params.password,
+      ...(email ? { emailAddress: [email] } : {}),
+      firstName: params.name,
+      skipLegalChecks: true,
+      privateMetadata: {
+        officeId: params.officeId,
+        role: params.role,
+        loginId: params.loginId,
+      },
+      publicMetadata: {
+        role: params.role,
+      },
+    });
+  }
+
+  async updateUserPassword(clerkUserId: string, password: string) {
+    return this.getClient().users.updateUser(clerkUserId, {
+      password,
+      signOutOfOtherSessions: true,
+    });
+  }
+
+  async deleteUser(clerkUserId: string) {
+    return this.getClient().users.deleteUser(clerkUserId);
   }
 
   private async findOrLinkUser(clerkUserId: string) {
@@ -93,25 +127,13 @@ export class ClerkAuthService {
         if (existing) return existing;
 
         const name = this.getDisplayName(clerkUser);
-        const office = await tx.office.create({
-          data: { name: this.getOfficeName(clerkUser, name) },
-        });
-        const password = await bcrypt.hash(
-          this.randomString(32),
-          ClerkAuthService.PASSWORD_SALT_ROUNDS,
-        );
-
         return tx.user.create({
           data: {
             clerkId: clerkUserId,
             loginId: await this.generateLoginId(tx, clerkUser, email),
             email,
-            password,
             name,
-            officeId: office.id,
             role: 'owner',
-            mustChangePassword: false,
-            passwordChangedAt: new Date(),
             lastLoginAt: new Date(),
           },
           include: { office: { select: { isActive: true } } },
@@ -158,26 +180,6 @@ export class ClerkAuthService {
       .join(' ')
       .trim();
     return fullName || clerkUser.username || '새 사용자';
-  }
-
-  private getOfficeName(
-    clerkUser: ClerkUserForProvisioning,
-    fallbackName: string,
-  ) {
-    const metadataOfficeName =
-      this.getMetadataString(clerkUser.unsafeMetadata, 'officeName') ??
-      this.getMetadataString(clerkUser.publicMetadata, 'officeName') ??
-      this.getMetadataString(clerkUser.privateMetadata, 'officeName');
-
-    return metadataOfficeName ?? `${fallbackName} 사무소`;
-  }
-
-  private getMetadataString(metadata: unknown, key: string) {
-    if (!metadata || typeof metadata !== 'object' || !(key in metadata)) {
-      return null;
-    }
-    const value = (metadata as Record<string, unknown>)[key];
-    return typeof value === 'string' && value.trim() ? value.trim() : null;
   }
 
   private normalizeLoginId(value: string) {

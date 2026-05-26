@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Patch, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Patch, Post, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -15,6 +15,21 @@ import { OfficesService } from './offices.service';
 @UseGuards(JwtAuthGuard)
 export class OfficesController {
   constructor(private readonly officesService: OfficesService) {}
+
+  @Post('me')
+  createForCurrentUser(
+    @Body()
+    dto: {
+      name: string;
+      licenseNo?: string | null;
+      ceoName?: string | null;
+      phone?: string | null;
+      address?: string | null;
+    },
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.officesService.createForCurrentUser(user.userId, dto);
+  }
 
   @Get('me')
   getMe(@CurrentUser() user: CurrentUserPayload) {

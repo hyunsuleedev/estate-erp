@@ -17,7 +17,12 @@ function RegisterPage() {
         <p className="text-sm text-muted-foreground">Clerk 계정을 생성합니다</p>
       </div>
 
-      <SignUp signInUrl="/login" forceRedirectUrl="/" fallbackRedirectUrl="/" />
+      <SignUp
+        signInUrl="/login"
+        forceRedirectUrl="/"
+        fallbackRedirectUrl="/"
+        appearance={{ options: { showOptionalFields: true } }}
+      />
 
       <p className="mt-4 text-xs text-muted-foreground">
         이미 계정이 있으신가요?{' '}

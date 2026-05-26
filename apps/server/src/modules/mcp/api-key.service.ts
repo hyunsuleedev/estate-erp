@@ -74,7 +74,7 @@ export class ApiKeyService {
       select: { id: true, officeId: true, role: true },
     });
 
-    if (!user) return null;
+    if (!user?.officeId) return null;
 
     return { userId: user.id, officeId: user.officeId, role: user.role };
   }

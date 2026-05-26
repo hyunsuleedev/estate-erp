@@ -39,6 +39,14 @@ export interface UpdateOfficeDto {
   address?: string | null;
 }
 
+export interface CreateOfficeDto {
+  name: string;
+  licenseNo?: string | null;
+  ceoName?: string | null;
+  phone?: string | null;
+  address?: string | null;
+}
+
 export interface CommissionConfigDto {
   distributionType?: string;
   defaultAgentRate?: number;
@@ -51,6 +59,8 @@ export interface CommissionConfigDto {
 
 export function createOfficesApi(request: RequestFn) {
   return {
+    createForCurrentUser: (dto: CreateOfficeDto) =>
+      request<OfficeProfile>('/offices/me', { method: 'POST', body: dto }),
     getMe: () => request<OfficeProfile>('/offices/me'),
     updateMe: (dto: UpdateOfficeDto) =>
       request<OfficeProfile>('/offices/me', { method: 'PATCH', body: dto }),

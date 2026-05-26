@@ -17,6 +17,10 @@ const router = createRouter({
 });
 const localization = {
   ...koKR,
+  unstable__errors: {
+    ...koKR.unstable__errors,
+    form_identifier_exists__username: '이미 사용 중인 아이디입니다. 다른 아이디를 입력해 주세요.',
+  },
   formFieldInputPlaceholder__username: '아이디를 입력하세요',
   formFieldInputPlaceholder__password: '비밀번호를 입력하세요',
   formFieldInputPlaceholder__signUpPassword: '비밀번호를 만드세요',

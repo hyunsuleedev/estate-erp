@@ -42,7 +42,7 @@ export const Route = createFileRoute('/_authenticated')({
 });
 
 function AuthenticatedLayout() {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { user, isAuthenticated, isLoading } = useAuth();
   const matches = useMatches();
 
   if (isLoading) {
@@ -55,6 +55,10 @@ function AuthenticatedLayout() {
 
   if (!isAuthenticated) {
     return <Navigate to="/login" />;
+  }
+
+  if (!user?.office) {
+    return <Navigate to="/onboarding/office" />;
   }
 
   const currentMatch = matches[matches.length - 1];

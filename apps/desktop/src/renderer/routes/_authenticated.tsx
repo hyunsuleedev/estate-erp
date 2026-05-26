@@ -60,7 +60,7 @@ function useWindowKind(): 'main' | 'detached' | null {
 }
 
 function AuthenticatedLayout() {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { user, isAuthenticated, isLoading } = useAuth();
   const isFullscreen = useFullscreen();
   const windowKind = useWindowKind();
 
@@ -77,6 +77,10 @@ function AuthenticatedLayout() {
 
   if (!isAuthenticated) {
     return <Navigate to="/login" />;
+  }
+
+  if (!user?.office) {
+    return <Navigate to="/onboarding/office" />;
   }
 
   // macOS windowed: 80px for traffic lights, fullscreen/other platforms: 16px
