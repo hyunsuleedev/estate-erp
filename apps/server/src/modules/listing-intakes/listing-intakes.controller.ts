@@ -27,7 +27,6 @@ export class ListingIntakesController {
   @Get()
   findAll(
     @Query('status') status: string,
-    @Query('confirmStatus') confirmStatus: string,
     @Query('nextConfirmFrom') nextConfirmFrom: string,
     @Query('nextConfirmTo') nextConfirmTo: string,
     @Query('includeInactive') includeInactive: string,
@@ -55,7 +54,6 @@ export class ListingIntakesController {
   ) {
     return this.listingIntakes.findAll(user.officeId, {
       status: status || undefined,
-      confirmStatus: confirmStatus || undefined,
       nextConfirmFrom: nextConfirmFrom || undefined,
       nextConfirmTo: nextConfirmTo || undefined,
       includeInactive: includeInactive === 'true',

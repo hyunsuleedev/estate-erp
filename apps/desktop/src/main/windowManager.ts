@@ -5,6 +5,12 @@ import type { BeginDragPayload, DetachPayload, Tab, WindowKind } from '@estate-e
 declare const MAIN_WINDOW_VITE_DEV_SERVER_URL: string | undefined;
 declare const MAIN_WINDOW_VITE_NAME: string;
 
+let packagedRendererBaseUrl: string | null = null;
+
+export function setPackagedRendererBaseUrl(baseUrl: string | null) {
+  packagedRendererBaseUrl = baseUrl;
+}
+
 interface WindowEntry {
   kind: WindowKind;
   initialTab?: Tab;
@@ -56,6 +62,11 @@ function rendererUrlFor(searchParams?: Record<string, string>): {
     return { isDev: true, url };
   }
 
+  if (packagedRendererBaseUrl) {
+    const url = `${packagedRendererBaseUrl}/${hashSegments}`;
+    return { isDev: false, url };
+  }
+
   return {
     isDev: false,
     filePath: path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`),
@@ -102,6 +113,8 @@ export class WindowManager {
     const target = rendererUrlFor();
     if (target.isDev && target.url) {
       win.loadURL(target.url);
+    } else if (target.url) {
+      win.loadURL(target.url);
     } else if (target.filePath) {
       win.loadFile(target.filePath);
     }
@@ -146,6 +159,8 @@ export class WindowManager {
 
     const target = rendererUrlFor({ window: 'detached', tabId: tab.id });
     if (target.isDev && target.url) {
+      win.loadURL(target.url);
+    } else if (target.url) {
       win.loadURL(target.url);
     } else if (target.filePath) {
       win.loadFile(target.filePath, { hash: target.hash });
@@ -203,6 +218,8 @@ export class WindowManager {
 
     const target = rendererUrlFor({ window: 'detached', tabId: tab.id });
     if (target.isDev && target.url) {
+      win.loadURL(target.url);
+    } else if (target.url) {
       win.loadURL(target.url);
     } else if (target.filePath) {
       win.loadFile(target.filePath, { hash: target.hash });

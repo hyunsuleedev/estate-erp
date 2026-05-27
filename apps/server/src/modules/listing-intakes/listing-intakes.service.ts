@@ -16,12 +16,16 @@ import {
 } from '../contacts/contact-phone.utils';
 import { RealtimeService } from '../../realtime/realtime.service';
 
-const ACTIVE_INTAKE_STATUS = 'active';
-const VALID_INTAKE_STATUSES = new Set([
+const DEFAULT_INTAKE_STATUS = 'unverified';
+const OPEN_INTAKE_STATUSES = [
+  'unverified',
   'active',
-  'paused',
-  'completed',
-  'cancelled',
+  'in_contract',
+  'hold',
+] as const;
+const VALID_INTAKE_STATUSES = new Set([
+  ...OPEN_INTAKE_STATUSES,
+  'done',
 ]);
 const VALID_TRANSACTION_TYPES: ReadonlySet<string> = new Set(
   Object.values(TransactionType),
@@ -47,7 +51,6 @@ const VALID_CONFIRM_CHANNELS = new Set([
 
 export interface ListingIntakeSearchQuery {
   status?: string;
-  confirmStatus?: string;
   nextConfirmFrom?: Date | string;
   nextConfirmTo?: Date | string;
   includeInactive?: boolean;
@@ -132,12 +135,7 @@ export class ListingIntakesService {
     if (query.status) {
       filters.push({ status: query.status });
     } else if (!query.includeInactive) {
-      filters.push({ status: ACTIVE_INTAKE_STATUS });
-    }
-
-    if (query.confirmStatus) {
-      this.assertValidConfirmStatus(query.confirmStatus);
-      filters.push({ confirmStatus: query.confirmStatus });
+      filters.push({ status: { in: [...OPEN_INTAKE_STATUSES, 'active', 'paused'] } });
     }
 
     if (query.nextConfirmFrom || query.nextConfirmTo) {
@@ -239,7 +237,7 @@ export class ListingIntakesService {
   }
 
   async create(officeId: string, dto: ListingIntakeCreateDto) {
-    const status = dto.status ?? ACTIVE_INTAKE_STATUS;
+    const status = dto.status ?? DEFAULT_INTAKE_STATUS;
     this.assertValidIntakeStatus(status);
     this.assertValidListingInputs(dto.listings ?? []);
     await this.assertAccessiblePartnerBroker(
@@ -256,8 +254,8 @@ export class ListingIntakesService {
       throw new NotFoundException('Property not found');
     }
 
-    if (status === ACTIVE_INTAKE_STATUS) {
-      await this.assertNoActiveIntake(officeId, dto.propertyId);
+    if (this.isOpenIntakeStatus(status)) {
+      await this.assertNoOpenIntake(officeId, dto.propertyId);
     }
 
     const duplicateTypes = new Set<string>();
@@ -329,10 +327,10 @@ export class ListingIntakesService {
     );
 
     if (
-      nextStatus === ACTIVE_INTAKE_STATUS &&
-      existing.status !== ACTIVE_INTAKE_STATUS
+      this.isOpenIntakeStatus(nextStatus) &&
+      !this.isOpenIntakeStatus(existing.status)
     ) {
-      await this.assertNoActiveIntake(officeId, existing.propertyId, id);
+      await this.assertNoOpenIntake(officeId, existing.propertyId, id);
     }
 
     const data = {
@@ -393,8 +391,8 @@ export class ListingIntakesService {
       throw new NotFoundException('ListingIntake not found');
     }
 
-    if (intake.status !== ACTIVE_INTAKE_STATUS) {
-      throw new BadRequestException('Only active intakes can add listings');
+    if (!this.isOpenIntakeStatus(intake.status)) {
+      throw new BadRequestException('Only open intakes can add listings');
     }
 
     return this.listings.create(officeId, {
@@ -443,32 +441,29 @@ export class ListingIntakesService {
     const shouldUpdateConfirmedAt =
       dto.result === 'alive' || dto.result === 'price_changed';
     const nextStatus =
-      dto.result === 'unavailable' ? 'completed' : intake.status;
+      dto.result === 'unavailable' ? 'done' : intake.status;
 
     const updated = await this.prisma.$transaction(async (tx) => {
-      const consultation = contactId
-        ? await tx.consultation.create({
-            data: {
-              officeId,
-              createdById: userId,
-              contactId,
-              type: consultationType,
-              purpose: 'listing_confirm',
-              content,
-              propertyId: intake.propertyId,
-              listingIntakeId: intake.id,
-            },
-            select: { id: true },
-          })
-        : null;
+      if (contactId) {
+        await tx.consultation.create({
+          data: {
+            officeId,
+            createdById: userId,
+            contactId,
+            type: consultationType,
+            purpose: 'listing_confirm',
+            content,
+            propertyId: intake.propertyId,
+            listingIntakeId: intake.id,
+          },
+          select: { id: true },
+        });
+      }
 
       const data = {
         status: nextStatus,
-        confirmStatus: dto.result,
         confirmedAt: shouldUpdateConfirmedAt ? checkedAt : undefined,
         nextConfirmAt,
-        lastConfirmMemo: dto.memo ?? null,
-        lastConfirmConsultationId: consultation?.id ?? null,
       };
 
       if (dto.expectedUpdatedAt) {
@@ -506,7 +501,7 @@ export class ListingIntakesService {
   }
 
   async remove(id: string, officeId: string) {
-    return this.updateStatus(id, officeId, 'cancelled');
+    return this.updateStatus(id, officeId, 'done');
   }
 
   private buildListingWhere(query: ListingIntakeSearchQuery) {
@@ -770,9 +765,6 @@ export class ListingIntakesService {
       throw new BadRequestException('Invalid checkStatus');
     }
 
-    if (query.confirmStatus) {
-      this.assertValidConfirmStatus(query.confirmStatus);
-    }
   }
 
   private assertValidListingInputs(listings: ListingInputDto[]) {
@@ -793,11 +785,6 @@ export class ListingIntakesService {
     if (!VALID_CONFIRM_RESULTS.has(result)) {
       throw new BadRequestException('Invalid confirmation result');
     }
-  }
-
-  private assertValidConfirmStatus(status: string) {
-    if (status === 'unknown') return;
-    this.assertValidConfirmResult(status);
   }
 
   private assertValidConfirmChannel(channel?: string | null) {
@@ -879,7 +866,13 @@ export class ListingIntakesService {
     return 'online';
   }
 
-  private async assertNoActiveIntake(
+  private isOpenIntakeStatus(status: string) {
+    return OPEN_INTAKE_STATUSES.includes(
+      status as (typeof OPEN_INTAKE_STATUSES)[number],
+    );
+  }
+
+  private async assertNoOpenIntake(
     officeId: string,
     propertyId: string,
     excludeIntakeId?: string,
@@ -888,7 +881,7 @@ export class ListingIntakesService {
       where: {
         officeId,
         propertyId,
-        status: ACTIVE_INTAKE_STATUS,
+        status: { in: [...OPEN_INTAKE_STATUSES] },
         ...(excludeIntakeId ? { id: { not: excludeIntakeId } } : {}),
       },
       select: { id: true },

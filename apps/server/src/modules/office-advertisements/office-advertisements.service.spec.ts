@@ -25,9 +25,6 @@ describe('OfficeAdvertisementsService', () => {
         upsert: jest.fn(),
         findMany: jest.fn(),
       },
-      listing: {
-        findFirst: jest.fn(),
-      },
       listingAdvertisement: {
         findFirst: jest.fn(),
         create: jest.fn(),
@@ -190,7 +187,7 @@ describe('OfficeAdvertisementsService', () => {
     expect(prisma.officeAdvertisementGroup.create).not.toHaveBeenCalled();
   });
 
-  it('links a group to an owned listing and creates a listing advertisement', async () => {
+  it('links a group to an owned listing advertisement without creating a new internal ad', async () => {
     const { prisma, service } = createService();
     prisma.officeAdvertisementGroup.findFirst.mockResolvedValue({
       id: 'group-1',
@@ -207,38 +204,23 @@ describe('OfficeAdvertisementsService', () => {
         articleConfirmYmd: '20260526',
       },
     });
-    prisma.listing.findFirst.mockResolvedValue({
-      id: 'listing-1',
-      transactionType: 'sale',
-      price: 150000,
-      deposit: null,
-      monthlyRent: null,
+    prisma.listingAdvertisement.findFirst.mockResolvedValue({
+      id: 'listing-ad-1',
+      listingId: 'listing-1',
+      officeId: 'office-1',
     });
-    prisma.listingAdvertisement.findFirst.mockResolvedValue(null);
-    prisma.listingAdvertisement.create.mockResolvedValue({ id: 'listing-ad-1' });
     prisma.officeAdvertisementGroup.update.mockResolvedValue({ id: 'group-1', status: 'linked' });
 
-    const result = await service.linkGroupToListing('group-1', 'office-1', {
-      listingId: 'listing-1',
+    const result = await service.linkGroupToListingAdvertisement('group-1', 'office-1', {
+      listingAdvertisementId: 'listing-ad-1',
       hoHint: '702',
     });
 
     expect(result).toEqual({ id: 'group-1', status: 'linked' });
-    expect(prisma.listingAdvertisement.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({
-        officeId: 'office-1',
-        listingId: 'listing-1',
-        channel: 'naver',
-        source: 'external_observed',
-        externalAdId: '100',
-        url: 'https://land.naver.com/article/100',
-      }),
-      select: { id: true },
-    });
+    expect(prisma.listingAdvertisement.create).not.toHaveBeenCalled();
     expect(prisma.officeAdvertisementGroup.update).toHaveBeenCalledWith({
       where: { id: 'group-1' },
       data: expect.objectContaining({
-        listingId: 'listing-1',
         listingAdvertisementId: 'listing-ad-1',
         hoHint: '702',
         status: 'linked',
@@ -247,16 +229,18 @@ describe('OfficeAdvertisementsService', () => {
     });
   });
 
-  it('rejects linking a group to a listing from another office', async () => {
+  it('rejects linking a group to a listing advertisement from another office', async () => {
     const { prisma, service } = createService();
     prisma.officeAdvertisementGroup.findFirst.mockResolvedValue({
       id: 'group-1',
       mainAdvertisement: null,
     });
-    prisma.listing.findFirst.mockResolvedValue(null);
+    prisma.listingAdvertisement.findFirst.mockResolvedValue(null);
 
     await expect(
-      service.linkGroupToListing('group-1', 'office-1', { listingId: 'other-listing' }),
+      service.linkGroupToListingAdvertisement('group-1', 'office-1', {
+        listingAdvertisementId: 'other-listing-ad',
+      }),
     ).rejects.toBeInstanceOf(NotFoundException);
 
     expect(prisma.listingAdvertisement.create).not.toHaveBeenCalled();

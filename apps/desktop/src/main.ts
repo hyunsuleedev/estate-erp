@@ -1,7 +1,27 @@
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, ipcMain, net, protocol } from 'electron';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import started from 'electron-squirrel-startup';
-import { WindowManager, registerTabIpcHandlers } from './main/windowManager';
+import {
+  WindowManager,
+  registerTabIpcHandlers,
+  setPackagedRendererBaseUrl,
+} from './main/windowManager';
+
+const APP_PROTOCOL = 'estate-erp';
+
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: APP_PROTOCOL,
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      corsEnabled: true,
+    },
+  },
+]);
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (started) {
@@ -17,8 +37,45 @@ if (!app.isPackaged) {
 }
 
 const windowManager = new WindowManager();
+let packagedRendererProtocolRegistered = false;
+
+function registerPackagedRendererProtocol() {
+  if (!app.isPackaged) return null;
+  if (packagedRendererProtocolRegistered) return `${APP_PROTOCOL}://app`;
+
+  const rendererRoot = path.join(
+    app.getAppPath(),
+    '.vite',
+    'renderer',
+    'main_window',
+  );
+
+  protocol.handle(APP_PROTOCOL, (request) => {
+    const requestUrl = new URL(request.url);
+    const decodedPath = decodeURIComponent(requestUrl.pathname || '/');
+    const relativePath = decodedPath === '/' ? 'index.html' : decodedPath.slice(1);
+    const requestedPath = path.normalize(path.join(rendererRoot, relativePath));
+    const pathFromRendererRoot = path.relative(rendererRoot, requestedPath);
+
+    if (
+      pathFromRendererRoot.startsWith('..') ||
+      path.isAbsolute(pathFromRendererRoot)
+    ) {
+      return new Response('Forbidden', { status: 403 });
+    }
+
+    return net.fetch(pathToFileURL(requestedPath).toString())
+      .then((response) => (response.ok
+        ? response
+        : net.fetch(pathToFileURL(path.join(rendererRoot, 'index.html')).toString())));
+  });
+  packagedRendererProtocolRegistered = true;
+
+  return `${APP_PROTOCOL}://app`;
+}
 
 const createWindow = () => {
+  setPackagedRendererBaseUrl(registerPackagedRendererProtocol());
   windowManager.createMainWindow();
 };
 

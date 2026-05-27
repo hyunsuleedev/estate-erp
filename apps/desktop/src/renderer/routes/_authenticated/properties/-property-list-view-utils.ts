@@ -11,6 +11,16 @@ type TenantPhoneLineInput = {
   contractEnd?: string | null;
 };
 
+export function getListingIntakeStatusOptions() {
+  return [
+    { label: '미확인', value: 'unverified' },
+    { label: '활성', value: 'active' },
+    { label: '거래중', value: 'in_contract' },
+    { label: '보류', value: 'hold' },
+    { label: '종료', value: 'done' },
+  ] as const;
+}
+
 export function getMoveInAvailability(listing: MoveInAvailabilityInput) {
   const type = listing.moveInAvailableType ?? 'unknown';
   const from = listing.moveInAvailableFrom;

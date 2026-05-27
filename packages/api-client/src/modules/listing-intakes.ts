@@ -3,7 +3,12 @@ import type { PaginatedResponse } from '../types.js';
 import type { ListingAdvertisement, ListingPriceHistory } from './listings.js';
 import type { Property } from './properties.js';
 
-export type ListingIntakeStatus = 'active' | 'paused' | 'completed' | 'cancelled';
+export type ListingIntakeStatus =
+  | 'unverified'
+  | 'active'
+  | 'in_contract'
+  | 'hold'
+  | 'done';
 
 export interface ListingIntakeListing {
   id: string;
@@ -41,10 +46,7 @@ export interface ListingIntake {
   status: ListingIntakeStatus | string;
   receivedAt: string;
   confirmedAt: string | null;
-  confirmStatus: ListingIntakeConfirmStatus | string;
   nextConfirmAt: string | null;
-  lastConfirmMemo: string | null;
-  lastConfirmConsultationId: string | null;
   isJointBrokerageRequired: boolean;
   jointBrokeragePartnerId: string | null;
   memo: string | null;
@@ -59,8 +61,7 @@ export interface ListingIntake {
   listings?: ListingIntakeListing[];
 }
 
-export type ListingIntakeConfirmStatus =
-  | 'unknown'
+export type ListingIntakeConfirmResult =
   | 'alive'
   | 'price_changed'
   | 'unavailable'
@@ -77,7 +78,6 @@ export type ListingIntakeConfirmChannel =
 
 export interface ListingIntakesFilter {
   status?: string;
-  confirmStatus?: ListingIntakeConfirmStatus | string;
   nextConfirmFrom?: string;
   nextConfirmTo?: string;
   includeInactive?: boolean;
@@ -138,7 +138,7 @@ export interface UpdateListingIntakeDto {
 }
 
 export interface ConfirmListingIntakeDto {
-  result: Exclude<ListingIntakeConfirmStatus, 'unknown'> | string;
+  result: ListingIntakeConfirmResult | string;
   channel?: ListingIntakeConfirmChannel | string;
   memo?: string | null;
   checkedAt?: string | null;

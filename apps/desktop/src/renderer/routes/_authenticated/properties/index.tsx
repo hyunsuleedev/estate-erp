@@ -79,7 +79,7 @@ import {
 } from '@/components/data-table';
 import { useTabStore } from '@/features/tabs/store/useTabStore';
 import { getRouteMeta } from '@/features/tabs/lib/routeMeta';
-import { getMoveInAvailability } from './-property-list-view-utils';
+import { getListingIntakeStatusOptions, getMoveInAvailability } from './-property-list-view-utils';
 import {
   PropertyListingsTable,
   type ListingSummary,
@@ -113,20 +113,16 @@ const adStatusMeta: Record<string, { label: string; className: string }> = {
 
 const intakeStatusMeta: Record<string, { label: string; className: string }> = {
   unverified: { label: '미확인', className: 'bg-[#f1f1ef] text-[#5f5e5b]' },
-  active: { label: '관리중', className: 'bg-[#eef3ed] text-[#44745a]' },
+  active: { label: '활성', className: 'bg-[#eef3ed] text-[#44745a]' },
+  in_contract: { label: '거래중', className: 'bg-[#e7f3f8] text-[#337ea9]' },
+  hold: { label: '보류', className: 'bg-[#fbf3db] text-[#8f6b1f]' },
+  done: { label: '종료', className: 'bg-[#f1f1ef] text-[#787774]' },
   alive: { label: '살아있음', className: 'bg-[#eef3ed] text-[#44745a]' },
-  paused: { label: '보류', className: 'bg-[#fbf3db] text-[#8f6b1f]' },
+  price_changed: { label: '가격변경', className: 'bg-[#fbf3db] text-[#8f6b1f]' },
   unavailable: { label: '불가', className: 'bg-[#fbe4e4] text-[#9f5555]' },
-  completed: { label: '완료', className: 'bg-[#f1f1ef] text-[#787774]' },
-  cancelled: { label: '취소', className: 'bg-[#f1f1ef] text-[#787774]' },
+  no_answer: { label: '부재중', className: 'bg-[#f1f1ef] text-[#787774]' },
+  pending: { label: '답변대기', className: 'bg-[#e7f3f8] text-[#337ea9]' },
 };
-
-const intakeStatusOptions = [
-  { value: 'active', label: '관리중' },
-  { value: 'paused', label: '보류' },
-  { value: 'completed', label: '완료' },
-  { value: 'cancelled', label: '취소' },
-] as const;
 
 const adChannelLabels: Record<string, string> = {
   naver: '네이버',
@@ -162,6 +158,7 @@ const sortFilterOptions = [
 ];
 
 const LISTINGS_PAGE_SIZE = 50;
+const intakeStatusOptions = getListingIntakeStatusOptions();
 
 function handleMutationError(error: unknown) {
   if (error instanceof ApiError && error.statusCode === 409) {
@@ -244,6 +241,7 @@ export const Route = createFileRoute('/_authenticated/properties/')({
 
 function PropertiesPage() {
   const queryClient = useQueryClient();
+  const openTab = useTabStore((s) => s.openTab);
 
   // ── State ─────────────────────────────────────────────────────
   const [page, setPage] = useState(1);
@@ -439,7 +437,6 @@ function PropertiesPage() {
       queryClient.invalidateQueries({ queryKey: ['listing-intakes'] });
     },
   });
-
   const handleCellSave = useCallback(
     (recordId: string, field: string, value: unknown) => {
       updateMutation.mutate({
@@ -487,7 +484,6 @@ function PropertiesPage() {
     },
     [intakeStatusMutation, intakeUpdatedAtById],
   );
-
   // ── Filter handlers ───────────────────────────────────────────
   const updatePropertyFilter = useCallback(
     <K extends keyof PropertyFilterState>(field: K, value: PropertyFilterState[K]) => {
@@ -652,7 +648,7 @@ function PropertiesPage() {
       {
         id: 'intakeStatus',
         header: () => <TableHeaderLabel icon={<Tag className="size-4" />} label="상태" />,
-        size: 86,
+        size: 110,
         enableSorting: false,
         cell: ({ row }) => (
           <IntakeStatusCell
@@ -766,11 +762,17 @@ function PropertiesPage() {
                 })}
               </TabsList>
             </Tabs>
-            <Button size="sm" asChild className="mt-1 shrink-0 px-3.5">
-              <Link to="/properties/new">
-                <Plus className="size-3.5" />
-                새 매물 등록
-              </Link>
+            <Button
+              size="sm"
+              className="mt-1 shrink-0 px-3.5"
+              onClick={() => {
+                const route = '/properties/new';
+                const meta = getRouteMeta(route);
+                openTab({ route, kind: meta.kind, title: meta.title });
+              }}
+            >
+              <Plus className="size-3.5" />
+              새 매물 등록
             </Button>
           </div>
         </section>
@@ -835,7 +837,7 @@ function PropertiesPage() {
               active={propertyFilters.intakeStatus !== 'all'}
             >
               <div className="space-y-2">
-                <PopoverTitle title="상태" description="의뢰 묶음의 관리 상태로 매물을 좁힙니다." />
+                <PopoverTitle title="상태" description="의뢰 상태로 매물을 좁힙니다." />
                 <SelectFilter
                   value={propertyFilters.intakeStatus}
                   onChange={(value) => updatePropertyFilter('intakeStatus', value)}
@@ -1119,10 +1121,6 @@ function PropertySheetContent({
     label: intake.status,
     className: 'bg-[#f1f1ef] text-[#5f5e5b]',
   };
-  const confirmStatus = intakeStatusMeta[intake.confirmStatus] ?? {
-    label: intake.confirmStatus === 'unknown' ? '미확인' : intake.confirmStatus,
-    className: 'bg-[#f1f1ef] text-[#5f5e5b]',
-  };
   const memo = intake.memo?.trim() || listings.find((listing) => listing.memo?.trim())?.memo?.trim();
 
   return (
@@ -1194,14 +1192,6 @@ function PropertySheetContent({
               )}
             >
               {intakeStatus.label}
-            </span>
-            <span
-              className={cn(
-                'inline-flex max-w-full rounded-[4px] px-1.5 py-0.5 text-[12px] font-medium leading-5',
-                confirmStatus.className,
-              )}
-            >
-              {confirmStatus.label}
             </span>
           </div>
         </div>
@@ -1878,30 +1868,15 @@ function IntakeConfirmButton({
 }) {
   return (
     <div className="flex items-center py-1" onClick={(event) => event.stopPropagation()}>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <button
-            type="button"
-            disabled={isPending}
-            className="inline-flex h-7 items-center gap-1 rounded-[4px] border border-slate-200 bg-white px-2 text-[12px] font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            <Check className="size-3.5 text-slate-500" />
-            확인
-          </button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-36">
-          {confirmResultOptions.map((option) => (
-            <DropdownMenuItem
-              key={option.value}
-              className="text-xs"
-              onClick={(event) => event.stopPropagation()}
-              onSelect={() => onConfirm(intake.id, option.value)}
-            >
-              {option.label}
-            </DropdownMenuItem>
-          ))}
-        </DropdownMenuContent>
-      </DropdownMenu>
+      <button
+        type="button"
+        disabled={isPending}
+        className="inline-flex h-7 items-center gap-1 rounded-[4px] border border-slate-200 bg-white px-2 text-[12px] font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+        onClick={() => onConfirm(intake.id, 'alive')}
+      >
+        <Check className="size-3.5 text-slate-500" />
+        확인
+      </button>
     </div>
   );
 }
@@ -2191,14 +2166,6 @@ const moveInAvailableChipOptions: ChipOption[] = [
   { value: 'negotiable', label: '협의', className: 'bg-[#fbf3db] text-[#8f6b1f]' },
   { value: 'unknown', label: '확인 필요', className: 'bg-[#f1f1ef] text-[#787774]' },
 ];
-
-const confirmResultOptions = [
-  { label: '살아있음', value: 'alive' },
-  { label: '가격변경', value: 'price_changed' },
-  { label: '거래완료/불가', value: 'unavailable' },
-  { label: '부재중', value: 'no_answer' },
-  { label: '답변대기', value: 'pending' },
-] as const;
 
 function MoveInAvailableStack({
   listings,

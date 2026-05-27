@@ -200,8 +200,7 @@ export class McpToolsService {
       'find_listing_intakes',
       '매물 의뢰(ListingIntake) 목록을 검색합니다.',
       obj({
-        status: strEnum('의뢰 상태', ['active', 'paused', 'completed', 'cancelled']),
-        confirmStatus: strEnum('생존 확인 상태', ['unknown', 'alive', 'price_changed', 'unavailable', 'no_answer', 'pending']),
+        status: strEnum('의뢰 상태', ['unverified', 'active', 'in_contract', 'hold', 'done']),
         nextConfirmFrom: str('다음 확인 예정 시작일 (ISO)'),
         nextConfirmTo: str('다음 확인 예정 종료일 (ISO)'),
         includeInactive: bool('비활성 의뢰 포함'),
@@ -228,7 +227,6 @@ export class McpToolsService {
       async (a, c) =>
         this.listingIntakes.findAll(c.officeId, {
           status: a.status as string,
-          confirmStatus: a.confirmStatus as string,
           nextConfirmFrom: a.nextConfirmFrom as string,
           nextConfirmTo: a.nextConfirmTo as string,
           includeInactive: a.includeInactive as boolean,
@@ -268,7 +266,7 @@ export class McpToolsService {
       obj(
         {
           propertyId: str('관리매물 ID'),
-          status: strEnum('의뢰 상태', ['active', 'paused', 'completed', 'cancelled']),
+          status: strEnum('의뢰 상태', ['unverified', 'active', 'in_contract', 'hold', 'done']),
           receivedAt: str('접수일 (ISO)'),
           confirmedAt: str('확인일 (ISO)'),
           isJointBrokerageRequired: bool('공동중개 필요 여부'),
@@ -297,7 +295,7 @@ export class McpToolsService {
       obj(
         {
           id: str('의뢰 ID'),
-          status: strEnum('의뢰 상태', ['active', 'paused', 'completed', 'cancelled']),
+          status: strEnum('의뢰 상태', ['unverified', 'active', 'in_contract', 'hold', 'done']),
           receivedAt: str('접수일 (ISO)'),
           confirmedAt: str('확인일 (ISO)'),
           isJointBrokerageRequired: bool('공동중개 필요 여부'),
@@ -345,7 +343,7 @@ export class McpToolsService {
 
     this.add(
       'delete_listing_intake',
-      '매물 의뢰(ListingIntake)를 삭제 요청합니다. 현재 API 구현은 cancelled 상태로 전환합니다.',
+      '매물 의뢰(ListingIntake)를 삭제 요청합니다. 현재 API 구현은 done 상태로 전환합니다.',
       obj({ id: str('의뢰 ID') }, ['id']),
       async (a, c) => this.listingIntakes.remove(a.id as string, c.officeId),
     );

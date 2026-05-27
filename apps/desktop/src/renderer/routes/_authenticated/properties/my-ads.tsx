@@ -2,13 +2,9 @@ import { createFileRoute, Link } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import { useMemo, useState, type ReactNode } from 'react';
 import {
-  AlertCircle,
-  Building2,
   ExternalLink,
   Link2,
-  Megaphone,
   Search,
-  Sparkles,
 } from 'lucide-react';
 import type {
   ListingAdvertisementWithListing,
@@ -20,6 +16,7 @@ import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 const advertisementStatusMeta: Record<string, { label: string; className: string }> = {
   planned: { label: '예정', className: 'bg-[#f1f1ef] text-[#5f5e5b]' },
@@ -41,8 +38,15 @@ type ManagementFilter = (typeof managementFilterOptions)[number];
 const myAdsViewOptions = ['internal', 'naver_pending', 'naver_linked', 'naver_ignored'] as const;
 type MyAdsView = (typeof myAdsViewOptions)[number];
 
+const myAdsViewLabels: Record<MyAdsView, string> = {
+  internal: '내부광고',
+  naver_pending: '네이버 확인필요',
+  naver_linked: '연결완료',
+  naver_ignored: '무시됨',
+};
+
 const officeAdvertisementStatusMeta: Record<OfficeAdvertisementGroupStatus, { label: string; className: string }> = {
-  needs_unit_confirmation: { label: '호수확인', className: 'bg-[#fbf3db] text-[#8f6b1f]' },
+  needs_unit_confirmation: { label: '확인필요', className: 'bg-[#fbf3db] text-[#8f6b1f]' },
   linked: { label: '연결완료', className: 'bg-[#eef3ed] text-[#44745a]' },
   ignored: { label: '무시됨', className: 'bg-[#f1f1ef] text-[#787774]' },
 };
@@ -96,47 +100,29 @@ function MyAdsPage() {
     });
   }, [advertisements, filter]);
 
-  const visibleCount = view === 'internal' ? filteredAdvertisements.length : officeAdvertisementGroups.length;
+  const handleViewTabChange = (value: string) => {
+    if (myAdsViewOptions.includes(value as MyAdsView)) {
+      setView(value as MyAdsView);
+    }
+  };
 
   return (
     <div className="-m-4 flex min-h-0 flex-1 flex-col bg-white">
-      <section className="border-b border-[#eeeeec] bg-white px-3 py-3">
-        <div className="space-y-1">
-          <div className="flex items-center gap-3">
-            <h1 className="text-lg font-semibold tracking-tight">내광고관리</h1>
-            <NotionTag className="bg-[#f1f1ef] text-[#787774]">{visibleCount}건</NotionTag>
-          </div>
-          <p className="text-sm text-muted-foreground">
-            내 사무소의 광고 기록을 기준으로 게재 중, 검토 필요, 종료 광고를 관리합니다.
-          </p>
-        </div>
-      </section>
-
-      <section className="grid border-b border-[#eeeeec] bg-white md:grid-cols-2 xl:grid-cols-4 xl:divide-x xl:divide-[#eeeeec]">
-        <MetricTile
-          icon={Megaphone}
-          label="광고중"
-          value={`${advertisements.filter((ad) => getAdManagementBucket(ad) === 'active').length}건`}
-          hint="현재 게재 중"
-        />
-        <MetricTile
-          icon={AlertCircle}
-          label="검토 필요"
-          value={`${officeAdvertisementGroups.filter((group) => group.status === 'needs_unit_confirmation').length}건`}
-          hint="네이버 호수 확인"
-        />
-        <MetricTile
-          icon={Sparkles}
-          label="광고 메모 있음"
-          value={`${officeAdvertisementGroups.filter((group) => group.relatedCount > 0).length}건`}
-          hint="연관 광고 비교 가능"
-        />
-        <MetricTile
-          icon={Building2}
-          label="종료"
-          value={`${advertisements.filter((ad) => getAdManagementBucket(ad) === 'ended').length}건`}
-          hint="내림 완료"
-        />
+      <section className="border-b border-border bg-white px-3 py-2">
+        <Tabs value={view} onValueChange={handleViewTabChange} className="min-w-0 gap-0">
+          <TabsList className="max-w-full justify-start bg-muted">
+            {myAdsViewOptions.map((tab) => (
+              <TabsTrigger
+                key={tab}
+                value={tab}
+                onClick={() => setView(tab)}
+                className="flex-none border-0 px-3 text-[13px] shadow-none data-[state=active]:border data-[state=active]:border-[#d9d9d6] data-[state=active]:bg-white data-[state=active]:text-slate-950 data-[state=active]:shadow-sm"
+              >
+                <span>{myAdsViewLabels[tab]}</span>
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
       </section>
 
       <section className="border-b border-[#eeeeec] bg-white px-3 py-2.5">
@@ -149,13 +135,6 @@ function MyAdsPage() {
               placeholder="광고 채널, 매물명, 주소, 메모로 검색"
               className="h-8 border-transparent bg-[#f7f7f5] pl-8 text-[13px] shadow-none hover:border-[#d9d9d6] focus:border-[#d9d9d6] focus:bg-white"
             />
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            <MyAdsViewButton current={view} value="internal" label="내부광고" onClick={setView} />
-            <MyAdsViewButton current={view} value="naver_pending" label="네이버 확인필요" onClick={setView} />
-            <MyAdsViewButton current={view} value="naver_linked" label="연결완료" onClick={setView} />
-            <MyAdsViewButton current={view} value="naver_ignored" label="무시됨" onClick={setView} />
           </div>
 
           {view === 'internal' && (
@@ -242,7 +221,7 @@ function OfficeAdvertisementGroupsTable({
               <tr>
                 <td colSpan={11} className="h-32 border-b border-[#eeeeec] px-4 text-center text-sm text-muted-foreground">
                   {view === 'naver_pending'
-                    ? '호수 확인이 필요한 네이버 내 광고가 없습니다.'
+                    ? '내부 광고 연결이 필요한 네이버 내 광고가 없습니다.'
                     : '해당 네이버 내 광고 그룹이 없습니다.'}
                 </td>
               </tr>
@@ -255,7 +234,7 @@ function OfficeAdvertisementGroupsTable({
       <div className="flex min-h-7 items-center gap-2 border-t border-border/60 bg-muted/30 px-3 text-[11px] text-muted-foreground">
         <span>총 {groups.length}그룹</span>
         <span className="text-[#b4b4b1]">/</span>
-        <span>호수확인 {groups.filter((group) => group.status === 'needs_unit_confirmation').length}건</span>
+        <span>확인필요 {groups.filter((group) => group.status === 'needs_unit_confirmation').length}건</span>
         <span>연관 광고 {groups.reduce((sum, group) => sum + group.relatedCount, 0)}건</span>
       </div>
     </div>
@@ -330,7 +309,7 @@ function OfficeAdvertisementGroupRow({ group }: { group: OfficeAdvertisementGrou
               </a>
             </Button>
           )}
-          <Button variant="outline" size="xs" disabled title="내부 매물 선택 연결은 다음 단계에서 활성화됩니다.">
+          <Button variant="outline" size="xs" disabled title="내부 광고 선택 연결은 다음 단계에서 활성화됩니다.">
             <Link2 className="mr-1 size-3" />
             연결
           </Button>
@@ -508,33 +487,6 @@ function NotionTag({ children, className }: { children: ReactNode; className?: s
   );
 }
 
-function MetricTile({
-  icon: Icon,
-  label,
-  value,
-  hint,
-}: {
-  icon: typeof Megaphone;
-  label: string;
-  value: string;
-  hint: string;
-}) {
-  return (
-    <div className="px-3 py-2.5">
-      <div className="flex items-start justify-between gap-3">
-        <div className="space-y-1">
-          <p className="text-xs text-muted-foreground">{label}</p>
-          <p className="text-lg font-semibold tracking-tight">{value}</p>
-          <p className="text-xs text-muted-foreground">{hint}</p>
-        </div>
-        <div className="rounded-[3px] bg-[#f1f1ef] p-1.5 text-[#787774]">
-          <Icon className="size-4" />
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function ManagementFilterButton({
   current,
   value,
@@ -545,33 +497,6 @@ function ManagementFilterButton({
   value: ManagementFilter;
   label: string;
   onClick: (value: ManagementFilter) => void;
-}) {
-  return (
-    <Button
-      type="button"
-      variant="ghost"
-      size="xs"
-      className={cn(
-        'h-7 rounded-[3px] px-2 text-[12px] text-[#5f5e5b] hover:bg-[#f1f1ef]',
-        current === value && 'bg-[#37352f] text-white hover:bg-[#37352f] hover:text-white',
-      )}
-      onClick={() => onClick(value)}
-    >
-      {label}
-    </Button>
-  );
-}
-
-function MyAdsViewButton({
-  current,
-  value,
-  label,
-  onClick,
-}: {
-  current: MyAdsView;
-  value: MyAdsView;
-  label: string;
-  onClick: (value: MyAdsView) => void;
 }) {
   return (
     <Button

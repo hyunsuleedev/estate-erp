@@ -27,10 +27,8 @@ describe('ListingIntakesService', () => {
 
     jest.spyOn(service, 'findOne').mockResolvedValue({
       id: 'intake-1',
-      confirmStatus: 'alive',
       confirmedAt: '2026-05-19T00:00:00.000Z',
       nextConfirmAt: '2026-05-26T00:00:00.000Z',
-      lastConfirmConsultationId: 'consultation-1',
     } as never);
 
     return { prisma, service, tx };
@@ -49,7 +47,7 @@ describe('ListingIntakesService', () => {
 
     await expect(
       service.update('intake-1', 'office-1', {
-        status: 'paused',
+        status: 'hold',
         expectedUpdatedAt: '2026-05-20T00:00:00.000Z',
       }),
     ).rejects.toThrow('다른 사용자가 먼저 수정했습니다.');
@@ -57,7 +55,75 @@ describe('ListingIntakesService', () => {
     expect(prisma.listingIntake.update).not.toHaveBeenCalled();
   });
 
-  it('records a successful intake confirmation on the intake and consultation history', async () => {
+  it('accepts active as the open ListingIntake status', async () => {
+    const { prisma, service } = createService();
+    prisma.listingIntake.findFirst.mockResolvedValue({
+      id: 'intake-1',
+      officeId: 'office-1',
+      propertyId: 'property-1',
+      status: 'unverified',
+      updatedAt: new Date('2026-05-20T00:00:00.000Z'),
+    });
+    prisma.listingIntake.update.mockResolvedValue({ id: 'intake-1' });
+
+    await service.updateStatus('intake-1', 'office-1', 'active');
+
+    expect(prisma.listingIntake.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ status: 'active' }),
+      }),
+    );
+  });
+
+  it('rejects verified as a ListingIntake status', async () => {
+    const { prisma, service } = createService();
+    prisma.listingIntake.findFirst.mockResolvedValue({
+      id: 'intake-1',
+      officeId: 'office-1',
+      propertyId: 'property-1',
+      status: 'unverified',
+      updatedAt: new Date('2026-05-20T00:00:00.000Z'),
+    });
+
+    await expect(
+      service.updateStatus('intake-1', 'office-1', 'verified'),
+    ).rejects.toThrow('Invalid ListingIntake status');
+
+    expect(prisma.listingIntake.update).not.toHaveBeenCalled();
+  });
+
+  it('creates new intakes as unverified by default', async () => {
+    const { prisma, service } = createService();
+    prisma.listingIntake.findFirst.mockResolvedValue(null);
+    prisma.listingIntake.update.mockResolvedValue({ id: 'intake-1' });
+    (prisma as any).property = {
+      findFirst: jest.fn().mockResolvedValue({ id: 'property-1' }),
+    };
+    (prisma as any).partnerBroker = {
+      findFirst: jest.fn(),
+    };
+    const tx = {
+      listingIntake: {
+        create: jest.fn().mockResolvedValue({ id: 'intake-1' }),
+      },
+      listing: {
+        create: jest.fn(),
+      },
+    };
+    prisma.$transaction.mockImplementationOnce(async (fn) => fn(tx));
+
+    await service.create('office-1', {
+      propertyId: 'property-1',
+    });
+
+    expect(tx.listingIntake.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ status: 'unverified' }),
+      }),
+    );
+  });
+
+  it('records confirmation timing on the intake and detail in consultation history', async () => {
     const { prisma, service, tx } = createService();
     prisma.listingIntake.findFirst.mockResolvedValue({
       id: 'intake-1',
@@ -95,19 +161,17 @@ describe('ListingIntakesService', () => {
     expect(tx.listingIntake.update).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: 'intake-1' },
-        data: expect.objectContaining({
-          confirmStatus: 'alive',
+        data: {
+          status: undefined,
           confirmedAt: new Date('2026-05-19T00:00:00.000Z'),
           nextConfirmAt: new Date('2026-05-26T00:00:00.000Z'),
-          lastConfirmMemo: '가격 그대로 유지',
-          lastConfirmConsultationId: 'consultation-1',
-        }),
+        },
       }),
     );
     expect(result).toEqual(
       expect.objectContaining({
         id: 'intake-1',
-        confirmStatus: 'alive',
+        confirmedAt: '2026-05-19T00:00:00.000Z',
       }),
     );
   });
@@ -118,7 +182,7 @@ describe('ListingIntakesService', () => {
       id: 'intake-1',
       officeId: 'office-1',
       propertyId: 'property-1',
-      status: 'active',
+      status: 'hold',
       confirmedAt: null,
       property: { propertyContacts: [] },
     });

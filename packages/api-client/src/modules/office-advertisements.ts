@@ -40,7 +40,6 @@ export interface OfficeAdvertisementGroup {
   id: string;
   officeId: string;
   source: string;
-  listingId: string | null;
   listingAdvertisementId: string | null;
   siteName: string | null;
   buildingName: string | null;
@@ -67,8 +66,7 @@ export interface OfficeAdvertisementGroup {
   updatedAt: string;
   mainAdvertisement?: OfficeAdvertisement | null;
   advertisements?: OfficeAdvertisement[];
-  listing?: Listing | null;
-  listingAdvertisement?: ListingAdvertisement | null;
+  listingAdvertisement?: (ListingAdvertisement & { listing?: Listing }) | null;
 }
 
 export interface OfficeAdvertisementGroupsFilter {
@@ -139,7 +137,7 @@ export interface UpdateOfficeAdvertisementGroupDto {
 }
 
 export interface LinkOfficeAdvertisementGroupDto {
-  listingId: string;
+  listingAdvertisementId: string;
   hoHint?: string | null;
   memo?: string | null;
 }
@@ -157,8 +155,8 @@ export function createOfficeAdvertisementsApi(request: RequestFn) {
         body: dto,
       }),
 
-    linkGroupToListing: (id: string, dto: LinkOfficeAdvertisementGroupDto) =>
-      request<OfficeAdvertisementGroup>(`/office-advertisements/groups/${id}/link-listing`, {
+    linkGroupToListingAdvertisement: (id: string, dto: LinkOfficeAdvertisementGroupDto) =>
+      request<OfficeAdvertisementGroup>(`/office-advertisements/groups/${id}/link-listing-advertisement`, {
         method: 'POST',
         body: dto,
       }),

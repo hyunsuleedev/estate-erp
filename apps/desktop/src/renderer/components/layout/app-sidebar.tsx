@@ -17,7 +17,6 @@ import {
 } from 'lucide-react'
 import { useAuth } from '@/providers/auth-provider'
 import { NavMain } from '@/components/nav-main'
-import { NavFavorites } from '@/components/nav-favorites'
 import { NavUser } from '@/components/nav-user'
 import { OfficeSwitcher } from '@/components/team-switcher'
 import {
@@ -145,7 +144,6 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       </SidebarHeader>
       <SidebarContent>
         <NavMain items={navItems} />
-        <NavFavorites />
       </SidebarContent>
       <SidebarFooter>
         <NavUser
