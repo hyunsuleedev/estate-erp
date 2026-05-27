@@ -13,8 +13,7 @@ model OfficeAdvertisementGroup {
 
   source String @default("naver")
 
-  // 내부 연결 대상. 호수 확인 전에는 null일 수 있다.
-  listingId               String? @map("listing_id") @db.Uuid
+  // 내부 연결 대상. 연결되면 해당 내부 광고가 가진 Listing/Property/Unit으로 호수가 확정된다.
   listingAdvertisementId  String? @unique @map("listing_advertisement_id") @db.Uuid
 
   // 외부 원본 힌트. 단지가 ERP에 등록되어 있지 않아도 먼저 저장한다.
@@ -48,13 +47,11 @@ model OfficeAdvertisementGroup {
   updatedAt   DateTime @updatedAt @map("updated_at")
 
   office               Office @relation(fields: [officeId], references: [id])
-  listing              Listing? @relation(fields: [listingId], references: [id])
   listingAdvertisement ListingAdvertisement? @relation(fields: [listingAdvertisementId], references: [id])
   mainAdvertisement    OfficeAdvertisement? @relation("OfficeAdvertisementGroupMain", fields: [mainAdvertisementId], references: [id])
   advertisements       OfficeAdvertisement[] @relation("OfficeAdvertisementGroupAdvertisements")
 
   @@index([officeId, source, status])
-  @@index([officeId, listingId])
   @@index([officeId, lastSeenAt])
   @@map("office_advertisement_groups")
 }

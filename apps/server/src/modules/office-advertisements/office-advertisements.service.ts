@@ -3,7 +3,6 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { ListingAdvertisementChannel, ListingAdvertisementSource } from '@estate-erp/shared';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 
@@ -72,7 +71,7 @@ export interface UpdateOfficeAdvertisementGroupDto {
 }
 
 export interface LinkOfficeAdvertisementGroupDto {
-  listingId: string;
+  listingAdvertisementId: string;
   hoHint?: string | null;
   memo?: string | null;
 }
@@ -279,84 +278,39 @@ export class OfficeAdvertisementsService {
     };
   }
 
-  async linkGroupToListing(
+  async linkGroupToListingAdvertisement(
     id: string,
     officeId: string,
     dto: LinkOfficeAdvertisementGroupDto,
   ) {
-    if (!dto.listingId) throw new BadRequestException('listingId is required');
+    if (!dto.listingAdvertisementId) {
+      throw new BadRequestException('listingAdvertisementId is required');
+    }
 
-    const [group, listing] = await Promise.all([
+    const [group, listingAdvertisement] = await Promise.all([
       this.prisma.officeAdvertisementGroup.findFirst({
         where: { id, officeId },
         include: { mainAdvertisement: true },
       }),
-      this.prisma.listing.findFirst({
-        where: { id: dto.listingId, officeId },
+      this.prisma.listingAdvertisement.findFirst({
+        where: { id: dto.listingAdvertisementId, officeId },
         select: {
           id: true,
-          transactionType: true,
-          price: true,
-          deposit: true,
-          monthlyRent: true,
+          listingId: true,
+          officeId: true,
         },
       }),
     ]);
 
     if (!group) throw new NotFoundException('OfficeAdvertisementGroup not found');
-    if (!listing) throw new NotFoundException('Listing not found');
-
-    const main = group.mainAdvertisement;
-    const externalAdId = main?.articleNo ?? null;
-    const existingByExternalId = externalAdId
-      ? await this.prisma.listingAdvertisement.findFirst({
-          where: {
-            officeId,
-            channel: ListingAdvertisementChannel.NAVER,
-            externalAdId,
-          },
-          select: { id: true },
-        })
-      : null;
-    const existingActiveForListing = await this.prisma.listingAdvertisement.findFirst({
-      where: {
-        officeId,
-        listingId: listing.id,
-        channel: ListingAdvertisementChannel.NAVER,
-        status: 'active',
-      },
-      select: { id: true },
-    });
-
-    const listingAdvertisementId =
-      existingByExternalId?.id ??
-      existingActiveForListing?.id ??
-      (
-        await this.prisma.listingAdvertisement.create({
-          data: {
-            officeId,
-            listingId: listing.id,
-            channel: ListingAdvertisementChannel.NAVER,
-            status: 'active',
-            source: ListingAdvertisementSource.EXTERNAL_OBSERVED,
-            advertisedPrice: main?.price ?? listing.price,
-            advertisedDeposit: main?.deposit ?? listing.deposit,
-            advertisedMonthlyRent: main?.monthlyRent ?? listing.monthlyRent,
-            url: main?.cpPcArticleUrl ?? main?.sourceUrl ?? null,
-            memo: dto.memo ?? group.memo ?? null,
-            externalAdId,
-            lastCheckedAt: this.parseYmd(main?.articleConfirmYmd),
-            lastSyncedAt: new Date(),
-          },
-          select: { id: true },
-        })
-      ).id;
+    if (!listingAdvertisement) {
+      throw new NotFoundException('ListingAdvertisement not found');
+    }
 
     return this.prisma.officeAdvertisementGroup.update({
       where: { id },
       data: {
-        listingId: listing.id,
-        listingAdvertisementId,
+        listingAdvertisementId: listingAdvertisement.id,
         hoHint: dto.hoHint ?? group.hoHint,
         memo: dto.memo ?? group.memo,
         status: 'linked',
@@ -371,17 +325,20 @@ export class OfficeAdvertisementsService {
       advertisements: {
         orderBy: [{ isMine: 'desc' as const }, { ranking: 'asc' as const }],
       },
-      listing: {
+      listingAdvertisement: {
         include: {
-          property: {
+          listing: {
             include: {
-              site: true,
-              unit: { include: { dong: true, siteUnitType: true } },
+              property: {
+                include: {
+                  site: true,
+                  unit: { include: { dong: true, siteUnitType: true } },
+                },
+              },
             },
           },
         },
       },
-      listingAdvertisement: true,
     };
   }
 
@@ -527,13 +484,5 @@ export class OfficeAdvertisementsService {
         relatedPriceMax: relatedAmounts.length > 0 ? Math.max(...relatedAmounts) : null,
       },
     });
-  }
-
-  private parseYmd(value?: string | null) {
-    if (!value || !/^\d{8}$/.test(value)) return null;
-    const year = Number(value.slice(0, 4));
-    const month = Number(value.slice(4, 6));
-    const day = Number(value.slice(6, 8));
-    return new Date(Date.UTC(year, month - 1, day));
   }
 }

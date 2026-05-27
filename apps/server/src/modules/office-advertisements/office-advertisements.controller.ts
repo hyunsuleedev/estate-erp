@@ -57,13 +57,13 @@ export class OfficeAdvertisementsController {
     return this.service.updateGroup(id, user.officeId, dto);
   }
 
-  @Post('groups/:id/link-listing')
-  linkGroupToListing(
+  @Post('groups/:id/link-listing-advertisement')
+  linkGroupToListingAdvertisement(
     @Param('id') id: string,
     @Body() dto: LinkOfficeAdvertisementGroupDto,
     @CurrentUser() user: CurrentUserPayload,
   ) {
-    return this.service.linkGroupToListing(id, user.officeId, dto);
+    return this.service.linkGroupToListingAdvertisement(id, user.officeId, dto);
   }
 
   @Post('batch')

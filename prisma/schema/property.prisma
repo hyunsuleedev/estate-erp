@@ -44,7 +44,7 @@ model ListingIntake {
   propertyId String @map("property_id") @db.Uuid
 
   requesterContactId String? @map("requester_contact_id") @db.Uuid
-  status             String  @default("active") // active, paused, completed, cancelled
+  status             String  @default("unverified") // unverified, active, in_contract, hold, done
 
   receivedAt  DateTime  @default(now()) @map("received_at")
   confirmedAt DateTime? @map("confirmed_at")
@@ -55,10 +55,7 @@ model ListingIntake {
   fieldMemo       String? @map("field_memo") @db.Text
   isJointBrokerageRequired Boolean @default(false) @map("is_joint_brokerage_required")
   jointBrokeragePartnerId  String? @map("joint_brokerage_partner_id") @db.Uuid
-  confirmStatus   String  @default("unknown") @map("confirm_status")
   nextConfirmAt   DateTime? @map("next_confirm_at")
-  lastConfirmMemo String? @map("last_confirm_memo") @db.Text
-  lastConfirmConsultationId String? @map("last_confirm_consultation_id") @db.Uuid
   memo            String? @db.Text
 
   createdAt DateTime @default(now()) @map("created_at")
@@ -68,7 +65,6 @@ model ListingIntake {
   property         Property        @relation(fields: [propertyId], references: [id])
   requesterContact Contact?        @relation(fields: [requesterContactId], references: [id])
   jointBrokeragePartner PartnerBroker? @relation("ListingIntakeJointBrokeragePartner", fields: [jointBrokeragePartnerId], references: [id])
-  lastConfirmConsultation Consultation? @relation("ListingIntakeLastConfirmConsultation", fields: [lastConfirmConsultationId], references: [id])
   listings         Listing[]
   consultations    Consultation[]
   tasks            Task[]
@@ -79,9 +75,8 @@ model ListingIntake {
   @@index([propertyId])
   @@index([requesterContactId])
   @@index([jointBrokeragePartnerId])
-  @@index([officeId, confirmStatus, nextConfirmAt])
+  @@index([officeId, nextConfirmAt])
   @@index([nextConfirmAt])
-  @@index([lastConfirmConsultationId])
   @@map("listing_intakes")
 }
 
@@ -128,7 +123,6 @@ model Listing {
   calendarEvents CalendarEvent[]
   priceHistories PriceHistory[]
   advertisements ListingAdvertisement[]
-  officeAdvertisementGroups OfficeAdvertisementGroup[]
   proposals      Proposal[]
 
   // 공동 중개망

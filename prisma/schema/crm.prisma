@@ -34,7 +34,6 @@ model Consultation {
   match            Match?            @relation(fields: [matchId], references: [id])
   buyerRequirement BuyerRequirement? @relation(fields: [buyerReqId], references: [id])
   tasks            Task[]
-  lastConfirmedIntakes ListingIntake[] @relation("ListingIntakeLastConfirmConsultation")
 
   @@index([officeId, contactId])
   @@index([officeId, purpose])
