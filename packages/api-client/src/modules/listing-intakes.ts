@@ -3,7 +3,12 @@ import type { PaginatedResponse } from '../types.js';
 import type { ListingAdvertisement, ListingPriceHistory } from './listings.js';
 import type { Property } from './properties.js';
 
-export type ListingIntakeStatus = 'active' | 'paused' | 'completed' | 'cancelled';
+export type ListingIntakeStatus =
+  | 'unverified'
+  | 'verified'
+  | 'in_contract'
+  | 'hold'
+  | 'done';
 
 export interface ListingIntakeListing {
   id: string;

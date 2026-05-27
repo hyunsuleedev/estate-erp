@@ -79,7 +79,7 @@ import {
 } from '@/components/data-table';
 import { useTabStore } from '@/features/tabs/store/useTabStore';
 import { getRouteMeta } from '@/features/tabs/lib/routeMeta';
-import { getMoveInAvailability } from './-property-list-view-utils';
+import { getListingIntakeStatusOptions, getMoveInAvailability } from './-property-list-view-utils';
 import {
   PropertyListingsTable,
   type ListingSummary,
@@ -113,20 +113,20 @@ const adStatusMeta: Record<string, { label: string; className: string }> = {
 
 const intakeStatusMeta: Record<string, { label: string; className: string }> = {
   unverified: { label: '미확인', className: 'bg-[#f1f1ef] text-[#5f5e5b]' },
-  active: { label: '관리중', className: 'bg-[#eef3ed] text-[#44745a]' },
-  alive: { label: '살아있음', className: 'bg-[#eef3ed] text-[#44745a]' },
+  verified: { label: '확인완료', className: 'bg-[#eef3ed] text-[#44745a]' },
+  in_contract: { label: '거래중', className: 'bg-[#e7f3f8] text-[#337ea9]' },
+  hold: { label: '보류', className: 'bg-[#fbf3db] text-[#8f6b1f]' },
+  done: { label: '종료', className: 'bg-[#f1f1ef] text-[#787774]' },
+  active: { label: '미확인', className: 'bg-[#f1f1ef] text-[#5f5e5b]' },
   paused: { label: '보류', className: 'bg-[#fbf3db] text-[#8f6b1f]' },
+  completed: { label: '종료', className: 'bg-[#f1f1ef] text-[#787774]' },
+  cancelled: { label: '종료', className: 'bg-[#f1f1ef] text-[#787774]' },
+  alive: { label: '살아있음', className: 'bg-[#eef3ed] text-[#44745a]' },
+  price_changed: { label: '가격변경', className: 'bg-[#fbf3db] text-[#8f6b1f]' },
   unavailable: { label: '불가', className: 'bg-[#fbe4e4] text-[#9f5555]' },
-  completed: { label: '완료', className: 'bg-[#f1f1ef] text-[#787774]' },
-  cancelled: { label: '취소', className: 'bg-[#f1f1ef] text-[#787774]' },
+  no_answer: { label: '부재중', className: 'bg-[#f1f1ef] text-[#787774]' },
+  pending: { label: '답변대기', className: 'bg-[#e7f3f8] text-[#337ea9]' },
 };
-
-const intakeStatusOptions = [
-  { value: 'active', label: '관리중' },
-  { value: 'paused', label: '보류' },
-  { value: 'completed', label: '완료' },
-  { value: 'cancelled', label: '취소' },
-] as const;
 
 const adChannelLabels: Record<string, string> = {
   naver: '네이버',
@@ -162,6 +162,7 @@ const sortFilterOptions = [
 ];
 
 const LISTINGS_PAGE_SIZE = 50;
+const intakeStatusOptions = getListingIntakeStatusOptions();
 
 function handleMutationError(error: unknown) {
   if (error instanceof ApiError && error.statusCode === 409) {
@@ -652,7 +653,7 @@ function PropertiesPage() {
       {
         id: 'intakeStatus',
         header: () => <TableHeaderLabel icon={<Tag className="size-4" />} label="상태" />,
-        size: 86,
+        size: 110,
         enableSorting: false,
         cell: ({ row }) => (
           <IntakeStatusCell
@@ -835,7 +836,7 @@ function PropertiesPage() {
               active={propertyFilters.intakeStatus !== 'all'}
             >
               <div className="space-y-2">
-                <PopoverTitle title="상태" description="의뢰 묶음의 관리 상태로 매물을 좁힙니다." />
+                <PopoverTitle title="상태" description="의뢰 상태로 매물을 좁힙니다." />
                 <SelectFilter
                   value={propertyFilters.intakeStatus}
                   onChange={(value) => updatePropertyFilter('intakeStatus', value)}

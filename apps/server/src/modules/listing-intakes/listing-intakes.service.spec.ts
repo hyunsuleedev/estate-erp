@@ -57,6 +57,57 @@ describe('ListingIntakesService', () => {
     expect(prisma.listingIntake.update).not.toHaveBeenCalled();
   });
 
+  it('accepts Listing status values when updating ListingIntake status', async () => {
+    const { prisma, service } = createService();
+    prisma.listingIntake.findFirst.mockResolvedValue({
+      id: 'intake-1',
+      officeId: 'office-1',
+      propertyId: 'property-1',
+      status: 'unverified',
+      updatedAt: new Date('2026-05-20T00:00:00.000Z'),
+    });
+    prisma.listingIntake.update.mockResolvedValue({ id: 'intake-1' });
+
+    await service.updateStatus('intake-1', 'office-1', 'verified');
+
+    expect(prisma.listingIntake.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ status: 'verified' }),
+      }),
+    );
+  });
+
+  it('creates new intakes as unverified by default', async () => {
+    const { prisma, service } = createService();
+    prisma.listingIntake.findFirst.mockResolvedValue(null);
+    prisma.listingIntake.update.mockResolvedValue({ id: 'intake-1' });
+    (prisma as any).property = {
+      findFirst: jest.fn().mockResolvedValue({ id: 'property-1' }),
+    };
+    (prisma as any).partnerBroker = {
+      findFirst: jest.fn(),
+    };
+    const tx = {
+      listingIntake: {
+        create: jest.fn().mockResolvedValue({ id: 'intake-1' }),
+      },
+      listing: {
+        create: jest.fn(),
+      },
+    };
+    prisma.$transaction.mockImplementationOnce(async (fn) => fn(tx));
+
+    await service.create('office-1', {
+      propertyId: 'property-1',
+    });
+
+    expect(tx.listingIntake.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ status: 'unverified' }),
+      }),
+    );
+  });
+
   it('records a successful intake confirmation on the intake and consultation history', async () => {
     const { prisma, service, tx } = createService();
     prisma.listingIntake.findFirst.mockResolvedValue({

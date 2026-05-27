@@ -44,7 +44,7 @@ model ListingIntake {
   propertyId String @map("property_id") @db.Uuid
 
   requesterContactId String? @map("requester_contact_id") @db.Uuid
-  status             String  @default("active") // active, paused, completed, cancelled
+  status             String  @default("unverified") // unverified, verified, in_contract, hold, done
 
   receivedAt  DateTime  @default(now()) @map("received_at")
   confirmedAt DateTime? @map("confirmed_at")

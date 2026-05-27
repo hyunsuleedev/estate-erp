@@ -200,7 +200,7 @@ export class McpToolsService {
       'find_listing_intakes',
       '매물 의뢰(ListingIntake) 목록을 검색합니다.',
       obj({
-        status: strEnum('의뢰 상태', ['active', 'paused', 'completed', 'cancelled']),
+        status: strEnum('의뢰 상태', ['unverified', 'verified', 'in_contract', 'hold', 'done']),
         confirmStatus: strEnum('생존 확인 상태', ['unknown', 'alive', 'price_changed', 'unavailable', 'no_answer', 'pending']),
         nextConfirmFrom: str('다음 확인 예정 시작일 (ISO)'),
         nextConfirmTo: str('다음 확인 예정 종료일 (ISO)'),
@@ -268,7 +268,7 @@ export class McpToolsService {
       obj(
         {
           propertyId: str('관리매물 ID'),
-          status: strEnum('의뢰 상태', ['active', 'paused', 'completed', 'cancelled']),
+          status: strEnum('의뢰 상태', ['unverified', 'verified', 'in_contract', 'hold', 'done']),
           receivedAt: str('접수일 (ISO)'),
           confirmedAt: str('확인일 (ISO)'),
           isJointBrokerageRequired: bool('공동중개 필요 여부'),
@@ -297,7 +297,7 @@ export class McpToolsService {
       obj(
         {
           id: str('의뢰 ID'),
-          status: strEnum('의뢰 상태', ['active', 'paused', 'completed', 'cancelled']),
+          status: strEnum('의뢰 상태', ['unverified', 'verified', 'in_contract', 'hold', 'done']),
           receivedAt: str('접수일 (ISO)'),
           confirmedAt: str('확인일 (ISO)'),
           isJointBrokerageRequired: bool('공동중개 필요 여부'),

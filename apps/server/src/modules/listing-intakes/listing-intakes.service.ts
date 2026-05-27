@@ -16,8 +16,15 @@ import {
 } from '../contacts/contact-phone.utils';
 import { RealtimeService } from '../../realtime/realtime.service';
 
-const ACTIVE_INTAKE_STATUS = 'active';
+const DEFAULT_INTAKE_STATUS = CheckStatus.UNVERIFIED;
+const OPEN_INTAKE_STATUSES = [
+  CheckStatus.UNVERIFIED,
+  CheckStatus.VERIFIED,
+  CheckStatus.IN_CONTRACT,
+  CheckStatus.HOLD,
+] as const;
 const VALID_INTAKE_STATUSES = new Set([
+  ...Object.values(CheckStatus),
   'active',
   'paused',
   'completed',
@@ -132,7 +139,7 @@ export class ListingIntakesService {
     if (query.status) {
       filters.push({ status: query.status });
     } else if (!query.includeInactive) {
-      filters.push({ status: ACTIVE_INTAKE_STATUS });
+      filters.push({ status: { in: [...OPEN_INTAKE_STATUSES, 'active', 'paused'] } });
     }
 
     if (query.confirmStatus) {
@@ -239,7 +246,7 @@ export class ListingIntakesService {
   }
 
   async create(officeId: string, dto: ListingIntakeCreateDto) {
-    const status = dto.status ?? ACTIVE_INTAKE_STATUS;
+    const status = dto.status ?? DEFAULT_INTAKE_STATUS;
     this.assertValidIntakeStatus(status);
     this.assertValidListingInputs(dto.listings ?? []);
     await this.assertAccessiblePartnerBroker(
@@ -256,8 +263,8 @@ export class ListingIntakesService {
       throw new NotFoundException('Property not found');
     }
 
-    if (status === ACTIVE_INTAKE_STATUS) {
-      await this.assertNoActiveIntake(officeId, dto.propertyId);
+    if (this.isOpenIntakeStatus(status)) {
+      await this.assertNoOpenIntake(officeId, dto.propertyId);
     }
 
     const duplicateTypes = new Set<string>();
@@ -329,10 +336,10 @@ export class ListingIntakesService {
     );
 
     if (
-      nextStatus === ACTIVE_INTAKE_STATUS &&
-      existing.status !== ACTIVE_INTAKE_STATUS
+      this.isOpenIntakeStatus(nextStatus) &&
+      !this.isOpenIntakeStatus(existing.status)
     ) {
-      await this.assertNoActiveIntake(officeId, existing.propertyId, id);
+      await this.assertNoOpenIntake(officeId, existing.propertyId, id);
     }
 
     const data = {
@@ -393,8 +400,8 @@ export class ListingIntakesService {
       throw new NotFoundException('ListingIntake not found');
     }
 
-    if (intake.status !== ACTIVE_INTAKE_STATUS) {
-      throw new BadRequestException('Only active intakes can add listings');
+    if (!this.isOpenIntakeStatus(intake.status)) {
+      throw new BadRequestException('Only open intakes can add listings');
     }
 
     return this.listings.create(officeId, {
@@ -879,7 +886,15 @@ export class ListingIntakesService {
     return 'online';
   }
 
-  private async assertNoActiveIntake(
+  private isOpenIntakeStatus(status: string) {
+    return (
+      OPEN_INTAKE_STATUSES.includes(status as (typeof OPEN_INTAKE_STATUSES)[number]) ||
+      status === 'active' ||
+      status === 'paused'
+    );
+  }
+
+  private async assertNoOpenIntake(
     officeId: string,
     propertyId: string,
     excludeIntakeId?: string,
@@ -888,7 +903,7 @@ export class ListingIntakesService {
       where: {
         officeId,
         propertyId,
-        status: ACTIVE_INTAKE_STATUS,
+        status: { in: [...OPEN_INTAKE_STATUSES, 'active', 'paused'] },
         ...(excludeIntakeId ? { id: { not: excludeIntakeId } } : {}),
       },
       select: { id: true },
