@@ -1,7 +1,7 @@
-import { createFileRoute, Link, useNavigate } from '@tanstack/react-router';
+import { createFileRoute, Link } from '@tanstack/react-router';
 import { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Building2, Check, ChevronsUpDown, Search } from 'lucide-react';
+import { Building2, Check, ChevronsUpDown, Search } from 'lucide-react';
 import { formatPrice, sqmToPyeong } from '@estate-erp/shared';
 import type { Property, PropertyListing } from '@estate-erp/api-client';
 import { api } from '@/lib/api';
@@ -22,6 +22,13 @@ import {
 } from '@/components/ui/command';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
+import { useTabStore } from '@/features/tabs/store/useTabStore';
+import { getRouteMeta } from '@/features/tabs/lib/routeMeta';
+import {
+  getNewPropertySuccessTabAction,
+  toggleTransactionType,
+  type NewPropertyTransactionType,
+} from './-new-property-view-utils';
 
 export const Route = createFileRoute('/_authenticated/properties/new')({
   component: NewPropertyPage,
@@ -56,7 +63,7 @@ const MOVE_IN_TYPES = [
   { value: 'unknown', label: '미정' },
 ] as const;
 
-type TransactionType = 'sale' | 'jeonse' | 'monthly';
+type TransactionType = NewPropertyTransactionType;
 type MoveInType = (typeof MOVE_IN_TYPES)[number]['value'];
 
 interface FormState {
@@ -70,9 +77,10 @@ interface FormState {
   unitId: string;
 
   // Step 3: Listing
-  transactionType: TransactionType;
-  price: string;
-  deposit: string;
+  transactionTypes: TransactionType[];
+  salePrice: string;
+  jeonsePrice: string;
+  monthlyDeposit: string;
   monthlyRent: string;
   moveInAvailableType: MoveInType;
   moveInAvailableFrom: string;
@@ -102,9 +110,10 @@ const initialForm: FormState = {
   siteType: '',
   dongId: '',
   unitId: '',
-  transactionType: 'sale',
-  price: '',
-  deposit: '',
+  transactionTypes: ['sale'],
+  salePrice: '',
+  jeonsePrice: '',
+  monthlyDeposit: '',
   monthlyRent: '',
   moveInAvailableType: 'negotiable',
   moveInAvailableFrom: '',
@@ -125,8 +134,10 @@ const initialForm: FormState = {
 };
 
 function NewPropertyPage() {
-  const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const activeTabId = useTabStore((s) => s.activeTabId);
+  const openTab = useTabStore((s) => s.openTab);
+  const closeTab = useTabStore((s) => s.closeTab);
   const [form, setForm] = useState<FormState>(initialForm);
   const [error, setError] = useState('');
 
@@ -169,6 +180,10 @@ function NewPropertyPage() {
     () => units?.find((u) => u.id === form.unitId),
     [units, form.unitId],
   );
+  const selectedDong = useMemo(
+    () => visibleDongs.find((dong) => dong.id === effectiveDongId) ?? null,
+    [effectiveDongId, visibleDongs],
+  );
 
   // Detect existing Property for the same Site/Unit (find-or-create)
   const siteUnitKeyReady =
@@ -192,13 +207,12 @@ function NewPropertyPage() {
     return items.find((p) => p.unitId === form.unitId) ?? null;
   }, [existingProperties, form.unitId, needsUnit]);
 
-  const txConflict = useMemo<PropertyListing | null>(() => {
-    if (!existingProperty) return null;
-    const dup = (existingProperty.listings ?? []).find(
-      (l) => l.transactionType === form.transactionType,
+  const txConflicts = useMemo<PropertyListing[]>(() => {
+    if (!existingProperty) return [];
+    return (existingProperty.listings ?? []).filter(
+      (l) => form.transactionTypes.includes(l.transactionType as TransactionType),
     );
-    return dup ?? null;
-  }, [existingProperty, form.transactionType]);
+  }, [existingProperty, form.transactionTypes]);
 
   const { data: activeIntakes } = useQuery({
     queryKey: ['listing-intakes', 'active', existingProperty?.id],
@@ -219,15 +233,18 @@ function NewPropertyPage() {
       if (!form.siteId) throw new Error('단지를 선택하세요.');
       if (needsUnit && !form.unitId)
         throw new Error('호실을 선택하세요. (없으면 단지 상세에서 먼저 등록)');
-      if (form.transactionType === 'sale' || form.transactionType === 'jeonse') {
-        if (!form.price) throw new Error('가격을 입력하세요.');
+      if (form.transactionTypes.includes('sale') && !form.salePrice) {
+        throw new Error('매매가를 입력하세요.');
       }
-      if (form.transactionType === 'monthly') {
-        if (!form.monthlyRent) throw new Error('월세를 입력하세요.');
+      if (form.transactionTypes.includes('jeonse') && !form.jeonsePrice) {
+        throw new Error('전세가를 입력하세요.');
       }
-      if (txConflict) {
+      if (form.transactionTypes.includes('monthly') && !form.monthlyRent) {
+        throw new Error('월세를 입력하세요.');
+      }
+      if (txConflicts.length > 0) {
         throw new Error(
-          `같은 호실에 이미 ${TX_LABELS[form.transactionType]} 매물이 있습니다. 매물 상세에서 수정하세요.`,
+          `같은 호실에 이미 ${txConflicts.map((listing) => TX_LABELS[listing.transactionType as TransactionType]).join(', ')} 매물이 있습니다. 매물 상세에서 수정하세요.`,
         );
       }
 
@@ -240,15 +257,7 @@ function NewPropertyPage() {
           });
 
       // 2) ListingIntake + Listing
-      const listingPayload = {
-        transactionType: form.transactionType,
-        price: form.price ? Number(form.price) : undefined,
-        deposit: form.deposit ? Number(form.deposit) : undefined,
-        monthlyRent: form.monthlyRent ? Number(form.monthlyRent) : undefined,
-        moveInAvailableType: form.moveInAvailableType,
-        moveInAvailableFrom: form.moveInAvailableFrom || undefined,
-        moveInAvailableTo: form.moveInAvailableTo || undefined,
-      };
+      const listingPayloads = buildListingPayloads(form);
       const intakePayload = {
         memo: form.memo || undefined,
         isJointBrokerageRequired: form.isJointBrokerageRequired,
@@ -260,12 +269,14 @@ function NewPropertyPage() {
 
       if (activeIntake) {
         await api.listingIntakes.update(activeIntake.id, intakePayload);
-        await api.listingIntakes.addListing(activeIntake.id, listingPayload);
+        for (const listingPayload of listingPayloads) {
+          await api.listingIntakes.addListing(activeIntake.id, listingPayload);
+        }
       } else {
         await api.listingIntakes.create({
           propertyId: property.id,
           ...intakePayload,
-          listings: [listingPayload],
+          listings: listingPayloads,
         });
       }
 
@@ -301,28 +312,43 @@ function NewPropertyPage() {
       queryClient.invalidateQueries({ queryKey: ['properties'] });
       queryClient.invalidateQueries({ queryKey: ['listings'] });
       queryClient.invalidateQueries({ queryKey: ['listing-intakes'] });
-      navigate({ to: '/properties/$id', params: { id: property.id } });
+      const action = getNewPropertySuccessTabAction({
+        propertyId: property.id,
+        registrationTabId: activeTabId,
+      });
+      const meta = getRouteMeta(action.detailRoute);
+      openTab({ route: action.detailRoute, kind: meta.kind, title: meta.title });
+      if (action.closeTabId) {
+        closeTab(action.closeTabId);
+      }
     },
     onError: (e: Error) => {
       setError(e.message || '매물 등록에 실패했습니다.');
     },
   });
 
-  const showPrice =
-    form.transactionType === 'sale' || form.transactionType === 'jeonse';
-  const showRent = form.transactionType === 'monthly';
+  const submitLabel = existingProperty ? '기존 매물에 거래 추가' : '매물 등록';
+  const handleCancel = () => {
+    if (activeTabId) {
+      closeTab(activeTabId);
+      return;
+    }
+    const meta = getRouteMeta('/properties');
+    openTab({ route: '/properties', kind: meta.kind, title: meta.title });
+  };
 
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 pb-12">
-      {/* Header */}
-      <div className="flex items-center gap-3">
-        <Button variant="ghost" size="icon" className="size-7" asChild>
-          <Link to="/properties">
-            <ArrowLeft className="size-4" />
-          </Link>
-        </Button>
-        <h1 className="text-lg font-semibold tracking-tight">매물 등록</h1>
-      </div>
+    <div className="-m-4 flex min-h-0 flex-1 flex-col bg-slate-50">
+      <header className="border-b border-border bg-white px-6 py-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h1 className="text-xl font-semibold tracking-tight text-slate-950">매물 등록</h1>
+          </div>
+          <Badge variant="outline" className="mt-1 rounded-md bg-white">
+            가격 단위: 만원
+          </Badge>
+        </div>
+      </header>
 
       <form
         onSubmit={(e) => {
@@ -330,323 +356,315 @@ function NewPropertyPage() {
           setError('');
           mutation.mutate();
         }}
-        className="flex flex-col gap-6"
+        className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_320px] gap-5 overflow-auto px-6 py-5"
       >
-        {error && (
-          <div className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
-            {error}
-          </div>
-        )}
-
-        {/* Section 1: 단지/호실 */}
-        <Section
-          step={1}
-          title="단지 / 호실"
-          subtitle="관리 중인 단지에서 선택하거나, 전체 단지에서 검색해 추가하세요."
-        >
-          <FieldRow label="단지" required>
-            <SitePicker
-              value={form.siteId}
-              displayName={form.siteName}
-              onChange={(site) => {
-                set('siteId', site.id);
-                set('siteName', site.name);
-                set('siteType', site.type);
-                set('dongId', '');
-                set('unitId', '');
-              }}
-            />
-          </FieldRow>
-
-          {form.siteId && (
-            <p className="text-xs text-muted-foreground">
-              유형:{' '}
-              <span className="font-medium text-foreground">
-                {SITE_TYPE_LABELS[form.siteType] ?? form.siteType}
-              </span>
-              {!needsUnit && (
-                <>
-                  {' '}— 이 유형은 호실 구분 없이 Property 한 건으로 관리합니다.
-                </>
-              )}
-            </p>
+        <div className="min-w-0 space-y-5">
+          {error && (
+            <div className="rounded-lg border border-destructive/20 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              {error}
+            </div>
           )}
 
-          {form.siteId && needsUnit && !isPlaceholderOnly && (
-            <FieldRow label="동" required>
-              <Select
-                value={form.dongId}
-                onValueChange={(v) => {
-                  set('dongId', v);
-                  set('unitId', '');
-                }}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="동 선택" />
-                </SelectTrigger>
-                <SelectContent>
-                  {visibleDongs.map((d) => (
-                    <SelectItem key={d.id} value={d.id}>
-                      {d.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </FieldRow>
-          )}
+          <div className="grid items-start gap-5 xl:grid-cols-2">
+            <Section
+              step={1}
+              title="단지 / 호실"
+              subtitle="관리 중인 단지 또는 전체 단지에서 선택합니다."
+            >
+              <FieldRow label="단지" required>
+                <SitePicker
+                  value={form.siteId}
+                  displayName={form.siteName}
+                  onChange={(site) => {
+                    set('siteId', site.id);
+                    set('siteName', site.name);
+                    set('siteType', site.type);
+                    set('dongId', '');
+                    set('unitId', '');
+                  }}
+                />
+              </FieldRow>
 
-          {form.siteId && needsUnit && effectiveDongId && (
-            <FieldRow label="호실" required>
-              <Select value={form.unitId} onValueChange={(v) => set('unitId', v)}>
-                <SelectTrigger>
-                  <SelectValue placeholder="호실 선택" />
-                </SelectTrigger>
-                <SelectContent>
-                  {(units ?? []).map((u) => (
-                    <SelectItem key={u.id} value={u.id}>
-                      {u.name}
-                      {u.floor != null ? ` · ${u.floor}층` : ''}
-                      {u.siteUnitType?.name ? ` · ${u.siteUnitType.name}` : ''}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {selectedUnit && (
-                <p className="mt-1.5 text-xs text-muted-foreground">
-                  {selectedUnit.siteUnitType?.exclusiveAreaM2 != null && (
-                    <>
-                      전용{' '}
-                      {sqmToPyeong(Number(selectedUnit.siteUnitType.exclusiveAreaM2))}평
-                      (
-                      {Number(selectedUnit.siteUnitType.exclusiveAreaM2).toFixed(1)}
-                      m²)
-                    </>
-                  )}
-                  {selectedUnit.siteUnitType?.roomCount != null && (
-                    <> · {selectedUnit.siteUnitType.roomCount}룸</>
-                  )}
-                  {selectedUnit.siteUnitType?.bathRoomCount != null && (
-                    <>/{selectedUnit.siteUnitType.bathRoomCount}욕실</>
-                  )}
+              {form.siteId && (
+                <p className="text-xs text-muted-foreground">
+                  유형:{' '}
+                  <span className="font-medium text-foreground">
+                    {SITE_TYPE_LABELS[form.siteType] ?? form.siteType}
+                  </span>
+                  {!needsUnit && <> — 호실 구분 없이 Property 한 건으로 관리합니다.</>}
                 </p>
               )}
-              {units && units.length === 0 && (
-                <p className="mt-1.5 text-xs text-amber-600">
-                  등록된 호실이 없습니다.{' '}
-                  <Link to="/sites" className="underline">
-                    단지 관리에서 호실을 먼저 추가하세요.
-                  </Link>
-                </p>
-              )}
-            </FieldRow>
-          )}
 
-          {existingProperty && (
-            <ExistingPropertyNotice
-              property={existingProperty}
-              needsUnit={needsUnit}
-            />
-          )}
-        </Section>
-
-        {/* Section 2: 거래 정보 */}
-        <Section step={2} title="거래 정보" subtitle="가격은 만원 단위로 입력합니다.">
-          <FieldRow label="거래유형" required>
-            <div className="flex gap-2">
-              {(['sale', 'jeonse', 'monthly'] as TransactionType[]).map((t) => {
-                const hasExisting = (existingProperty?.listings ?? []).some(
-                  (l) => l.transactionType === t,
-                );
-                return (
-                  <button
-                    key={t}
-                    type="button"
-                    onClick={() => set('transactionType', t)}
-                    className={`relative flex-1 rounded-md border px-3 py-2 text-sm font-medium transition ${
-                      form.transactionType === t
-                        ? 'border-primary bg-primary text-primary-foreground'
-                        : 'border-input bg-background hover:bg-muted'
-                    }`}
+              {form.siteId && needsUnit && !isPlaceholderOnly && (
+                <FieldRow label="동" required>
+                  <Select
+                    value={form.dongId}
+                    onValueChange={(v) => {
+                      set('dongId', v);
+                      set('unitId', '');
+                    }}
                   >
-                    {TX_LABELS[t]}
-                    {hasExisting && (
-                      <span
-                        className="ml-1.5 text-[10px] opacity-70"
-                        title="이미 등록된 거래"
+                    <SelectTrigger>
+                      <SelectValue placeholder="동 선택" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {visibleDongs.map((d) => (
+                        <SelectItem key={d.id} value={d.id}>
+                          {d.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </FieldRow>
+              )}
+
+              {form.siteId && needsUnit && effectiveDongId && (
+                <FieldRow label="호실" required>
+                  <Select value={form.unitId} onValueChange={(v) => set('unitId', v)}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="호실 선택" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(units ?? []).map((u) => (
+                        <SelectItem key={u.id} value={u.id}>
+                          {u.name}
+                          {u.floor != null ? ` · ${u.floor}층` : ''}
+                          {u.siteUnitType?.name ? ` · ${u.siteUnitType.name}` : ''}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {selectedUnit && (
+                    <p className="mt-1.5 text-xs text-muted-foreground">
+                      {selectedUnit.siteUnitType?.exclusiveAreaM2 != null && (
+                        <>
+                          전용 {sqmToPyeong(Number(selectedUnit.siteUnitType.exclusiveAreaM2))}평
+                          ({Number(selectedUnit.siteUnitType.exclusiveAreaM2).toFixed(1)}m²)
+                        </>
+                      )}
+                      {selectedUnit.siteUnitType?.roomCount != null && (
+                        <> · {selectedUnit.siteUnitType.roomCount}룸</>
+                      )}
+                      {selectedUnit.siteUnitType?.bathRoomCount != null && (
+                        <>/{selectedUnit.siteUnitType.bathRoomCount}욕실</>
+                      )}
+                    </p>
+                  )}
+                  {units && units.length === 0 && (
+                    <p className="mt-1.5 text-xs text-amber-600">
+                      등록된 호실이 없습니다.{' '}
+                      <Link to="/sites" className="underline">
+                        단지 관리에서 호실을 먼저 추가하세요.
+                      </Link>
+                    </p>
+                  )}
+                </FieldRow>
+              )}
+
+              {existingProperty && (
+                <ExistingPropertyNotice property={existingProperty} needsUnit={needsUnit} />
+              )}
+            </Section>
+
+            <Section step={2} title="거래 정보" subtitle="가격은 만원 단위입니다.">
+              <FieldRow label="거래유형" required>
+                <div className="flex gap-2">
+                  {(['sale', 'jeonse', 'monthly'] as TransactionType[]).map((t) => {
+                    const hasExisting = (existingProperty?.listings ?? []).some(
+                      (l) => l.transactionType === t,
+                    );
+                    const selected = form.transactionTypes.includes(t);
+                    return (
+                      <button
+                        key={t}
+                        type="button"
+                        onClick={() => set('transactionTypes', toggleTransactionType(form.transactionTypes, t))}
+                        className={`relative flex-1 rounded-md border px-3 py-2 text-sm font-medium transition ${
+                          selected
+                            ? 'border-primary bg-primary text-primary-foreground'
+                            : 'border-input bg-background hover:bg-muted'
+                        }`}
                       >
-                        ●
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          </FieldRow>
-          {txConflict && (
-            <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-              이 호실에 이미 <b>{TX_LABELS[form.transactionType]}</b> 매물이 있습니다.
-              새로 만들 수 없어요. 다른 거래유형을 선택하거나, 기존 매물을 수정하세요.
-            </div>
-          )}
-
-          {showPrice && (
-            <FieldRow
-              label={`${form.transactionType === 'sale' ? '매매가' : '전세가'} (만원)`}
-              required
-              hint={
-                form.price
-                  ? formatPrice(Number(form.price))
-                  : '예: 158000 = 15억 8천만'
-              }
-            >
-              <Input
-                type="number"
-                inputMode="numeric"
-                aria-label={`${form.transactionType === 'sale' ? '매매가' : '전세가'} 만원`}
-                value={form.price}
-                onChange={(e) => set('price', e.target.value)}
-                placeholder="158000"
-              />
-            </FieldRow>
-          )}
-
-          {showRent && (
-            <div className="grid grid-cols-2 gap-3">
-              <FieldRow
-                label="보증금 (만원)"
-                hint={form.deposit ? formatPrice(Number(form.deposit)) : undefined}
-              >
-                <Input
-                  type="number"
-                  inputMode="numeric"
-                  aria-label="월세 보증금 만원"
-                  value={form.deposit}
-                  onChange={(e) => set('deposit', e.target.value)}
-                  placeholder="3000"
-                />
+                        {TX_LABELS[t]}
+                        {hasExisting && (
+                          <span className="ml-1.5 text-[10px] opacity-70" title="이미 등록된 거래">
+                            ●
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
               </FieldRow>
-              <FieldRow
-                label="월세 (만원)"
-                required
-                hint={
-                  form.monthlyRent
-                    ? `${Number(form.monthlyRent).toLocaleString()}만/월`
-                    : undefined
-                }
-              >
-                <Input
-                  type="number"
-                  inputMode="numeric"
-                  aria-label="월세 만원"
-                  value={form.monthlyRent}
-                  onChange={(e) => set('monthlyRent', e.target.value)}
-                  placeholder="80"
-                />
+              {txConflicts.length > 0 && (
+                <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                  이 호실에 이미 <b>{txConflicts.map((listing) => TX_LABELS[listing.transactionType as TransactionType]).join(', ')}</b> 매물이 있습니다.
+                  다른 거래유형을 선택하거나 기존 매물을 수정하세요.
+                </div>
+              )}
+
+              {form.transactionTypes.includes('sale') && (
+                <FieldRow
+                  label="매매가 (만원)"
+                  required
+                  hint={form.salePrice ? formatPrice(Number(form.salePrice)) : '예: 158000 = 15억 8천만'}
+                >
+                  <Input
+                    type="number"
+                    inputMode="numeric"
+                    aria-label="매매가 만원"
+                    value={form.salePrice}
+                    onChange={(e) => set('salePrice', e.target.value)}
+                    placeholder="158000"
+                  />
+                </FieldRow>
+              )}
+
+              {form.transactionTypes.includes('jeonse') && (
+                <FieldRow
+                  label="전세가 (만원)"
+                  required
+                  hint={form.jeonsePrice ? formatPrice(Number(form.jeonsePrice)) : '예: 75000 = 7억 5천만'}
+                >
+                  <Input
+                    type="number"
+                    inputMode="numeric"
+                    aria-label="전세가 만원"
+                    value={form.jeonsePrice}
+                    onChange={(e) => set('jeonsePrice', e.target.value)}
+                    placeholder="75000"
+                  />
+                </FieldRow>
+              )}
+
+              {form.transactionTypes.includes('monthly') && (
+                <div className="grid grid-cols-2 gap-3">
+                  <FieldRow
+                    label="보증금 (만원)"
+                    hint={form.monthlyDeposit ? formatPrice(Number(form.monthlyDeposit)) : undefined}
+                  >
+                    <Input
+                      type="number"
+                      inputMode="numeric"
+                      aria-label="월세 보증금 만원"
+                      value={form.monthlyDeposit}
+                      onChange={(e) => set('monthlyDeposit', e.target.value)}
+                      placeholder="3000"
+                    />
+                  </FieldRow>
+                  <FieldRow
+                    label="월세 (만원)"
+                    required
+                    hint={form.monthlyRent ? `${Number(form.monthlyRent).toLocaleString()}만/월` : undefined}
+                  >
+                    <Input
+                      type="number"
+                      inputMode="numeric"
+                      aria-label="월세 만원"
+                      value={form.monthlyRent}
+                      onChange={(e) => set('monthlyRent', e.target.value)}
+                      placeholder="80"
+                    />
+                  </FieldRow>
+                </div>
+              )}
+
+              <FieldRow label="입주 가능">
+                <Select
+                  value={form.moveInAvailableType}
+                  onValueChange={(v) => set('moveInAvailableType', v as MoveInType)}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {MOVE_IN_TYPES.map((m) => (
+                      <SelectItem key={m.value} value={m.value}>
+                        {m.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </FieldRow>
-            </div>
-          )}
 
-          <FieldRow label="입주 가능">
-            <Select
-              value={form.moveInAvailableType}
-              onValueChange={(v) => set('moveInAvailableType', v as MoveInType)}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {MOVE_IN_TYPES.map((m) => (
-                  <SelectItem key={m.value} value={m.value}>
-                    {m.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </FieldRow>
+              {form.moveInAvailableType === 'date' && (
+                <FieldRow label="입주 가능일">
+                  <Input
+                    type="date"
+                    aria-label="입주 가능일"
+                    value={form.moveInAvailableFrom}
+                    onChange={(e) => set('moveInAvailableFrom', e.target.value)}
+                  />
+                </FieldRow>
+              )}
 
-          {form.moveInAvailableType === 'date' && (
-            <FieldRow label="입주 가능일">
-              <Input
-                type="date"
-                aria-label="입주 가능일"
-                value={form.moveInAvailableFrom}
-                onChange={(e) => set('moveInAvailableFrom', e.target.value)}
-              />
-            </FieldRow>
-          )}
+              {form.moveInAvailableType === 'range' && (
+                <div className="grid grid-cols-2 gap-3">
+                  <FieldRow label="시작">
+                    <Input
+                      type="date"
+                      aria-label="입주 가능 시작일"
+                      value={form.moveInAvailableFrom}
+                      onChange={(e) => set('moveInAvailableFrom', e.target.value)}
+                    />
+                  </FieldRow>
+                  <FieldRow label="종료">
+                    <Input
+                      type="date"
+                      aria-label="입주 가능 종료일"
+                      value={form.moveInAvailableTo}
+                      onChange={(e) => set('moveInAvailableTo', e.target.value)}
+                    />
+                  </FieldRow>
+                </div>
+              )}
 
-          {form.moveInAvailableType === 'range' && (
-            <div className="grid grid-cols-2 gap-3">
-              <FieldRow label="시작">
-                <Input
-                  type="date"
-                  aria-label="입주 가능 시작일"
-                  value={form.moveInAvailableFrom}
-                  onChange={(e) => set('moveInAvailableFrom', e.target.value)}
+              <Separator className="my-1" />
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="text-sm font-medium">공동중개 필수</div>
+                  <p className="text-xs text-muted-foreground">특정 파트너와 진행해야 할 때 켜세요.</p>
+                </div>
+                <Switch
+                  aria-label="공동중개 필수"
+                  checked={form.isJointBrokerageRequired}
+                  onCheckedChange={(v) => set('isJointBrokerageRequired', v)}
                 />
-              </FieldRow>
-              <FieldRow label="종료">
-                <Input
-                  type="date"
-                  aria-label="입주 가능 종료일"
-                  value={form.moveInAvailableTo}
-                  onChange={(e) => set('moveInAvailableTo', e.target.value)}
-                />
-              </FieldRow>
-            </div>
-          )}
-
-          {/* 공동중개 */}
-          <Separator className="my-1" />
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <div className="text-sm font-medium">공동중개 필수</div>
-              <p className="text-xs text-muted-foreground">
-                특정 파트너 중개사와만 함께 진행해야 하는 매물일 때 켜세요.
-              </p>
-            </div>
-            <Switch
-              aria-label="공동중개 필수"
-              checked={form.isJointBrokerageRequired}
-              onCheckedChange={(v) => set('isJointBrokerageRequired', v)}
-            />
+              </div>
+              {form.isJointBrokerageRequired && (
+                <FieldRow label="파트너 중개사">
+                  <Select
+                    value={form.jointBrokeragePartnerId}
+                    onValueChange={(v) => set('jointBrokeragePartnerId', v)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="선택 안 함" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(partners ?? []).map((p) => (
+                        <SelectItem key={p.id} value={p.id}>
+                          {p.name}
+                          {p.phone ? ` · ${p.phone}` : ''}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </FieldRow>
+              )}
+            </Section>
           </div>
-          {form.isJointBrokerageRequired && (
-            <FieldRow label="파트너 중개사">
-              <Select
-                value={form.jointBrokeragePartnerId}
-                onValueChange={(v) => set('jointBrokeragePartnerId', v)}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="선택 안 함" />
-                </SelectTrigger>
-                <SelectContent>
-                  {(partners ?? []).map((p) => (
-                    <SelectItem key={p.id} value={p.id}>
-                      {p.name}
-                      {p.phone ? ` · ${p.phone}` : ''}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </FieldRow>
-          )}
-        </Section>
 
-        {/* Section 3: 메모 */}
-        <Section step={3} title="메모" subtitle="매물·집주인 특이사항을 자유롭게.">
-          <Textarea
-            value={form.memo}
-            onChange={(e) => set('memo', e.target.value)}
-            rows={3}
-            placeholder="예) 남향, 풀옵션, 6월 이사 가능, 집주인 연락 잦음"
-          />
-        </Section>
+          <Section step={3} title="메모" subtitle="매물·집주인 특이사항을 자유롭게.">
+            <Textarea
+              value={form.memo}
+              onChange={(e) => set('memo', e.target.value)}
+              rows={3}
+              placeholder="예) 남향, 풀옵션, 6월 이사 가능, 집주인 연락 잦음"
+            />
+          </Section>
 
-        {/* Section 4: 관련인 (옵션) */}
-        <Section step={4} title="관련인" subtitle="등록 안 해도 나중에 추가할 수 있어요.">
-          {/* Owner */}
-          <div className="rounded-lg border bg-card">
+          <Section step={4} title="관련인" subtitle="등록 안 해도 나중에 추가할 수 있어요.">
+          <div className="rounded-lg border bg-white">
             <div className="flex items-center justify-between p-3">
               <div>
                 <div className="text-sm font-medium">집주인 / 소유자</div>
@@ -682,8 +700,7 @@ function NewPropertyPage() {
             )}
           </div>
 
-          {/* Tenant */}
-          <div className="rounded-lg border bg-card">
+          <div className="rounded-lg border bg-white">
             <div className="flex items-center justify-between p-3">
               <div>
                 <div className="text-sm font-medium">현재 임차인</div>
@@ -752,27 +769,177 @@ function NewPropertyPage() {
               </div>
             )}
           </div>
-        </Section>
-
-        {/* Footer */}
-        <div className="sticky bottom-0 -mx-1 flex items-center justify-end gap-2 border-t bg-background/95 px-1 py-3 backdrop-blur">
-          <Button variant="ghost" type="button" asChild>
-            <Link to="/properties">취소</Link>
-          </Button>
-          <Button
-            type="submit"
-            disabled={mutation.isPending || !!txConflict}
-          >
-            {mutation.isPending
-              ? '등록 중...'
-              : existingProperty
-                ? '기존 매물에 거래 추가'
-                : '매물 등록'}
-          </Button>
+          </Section>
         </div>
+
+        <RegistrationSummaryPanel
+          form={form}
+          needsUnit={needsUnit}
+          selectedDongName={selectedDong?.isPlaceholder ? '' : selectedDong?.name}
+          selectedUnitName={selectedUnit?.name}
+          existingProperty={existingProperty}
+          activeIntakeExists={Boolean(activeIntake)}
+          txConflicts={txConflicts}
+          isSubmitting={mutation.isPending}
+          submitLabel={submitLabel}
+          onCancel={handleCancel}
+        />
       </form>
     </div>
   );
+}
+
+function RegistrationSummaryPanel({
+  form,
+  needsUnit,
+  selectedDongName,
+  selectedUnitName,
+  existingProperty,
+  activeIntakeExists,
+  txConflicts,
+  isSubmitting,
+  submitLabel,
+  onCancel,
+}: {
+  form: FormState;
+  needsUnit: boolean;
+  selectedDongName?: string;
+  selectedUnitName?: string;
+  existingProperty: Property | null;
+  activeIntakeExists: boolean;
+  txConflicts: PropertyListing[];
+  isSubmitting: boolean;
+  submitLabel: string;
+  onCancel: () => void;
+}) {
+  const siteLabel = form.siteName || '단지 미선택';
+  const unitLabel = needsUnit
+    ? [selectedDongName, selectedUnitName].filter(Boolean).join(' ') || '호실 미선택'
+    : SITE_TYPE_LABELS[form.siteType] ?? '호실 구분 없음';
+  const amountLabel = getListingAmountLabel(form);
+  const moveInLabel =
+    MOVE_IN_TYPES.find((option) => option.value === form.moveInAvailableType)?.label ?? '미정';
+
+  return (
+    <aside className="min-w-0">
+      <div className="sticky top-0 space-y-3 rounded-xl border bg-white p-4 shadow-xs">
+        <div>
+          <h2 className="text-sm font-semibold text-slate-950">등록 요약</h2>
+          <p className="mt-1 text-xs text-muted-foreground">
+            저장하면 매물 상세 탭이 열리고 이 등록 탭은 닫힙니다.
+          </p>
+        </div>
+
+        <Separator />
+
+        <dl className="space-y-3 text-sm">
+          <SummaryRow label="위치" value={siteLabel} muted={!form.siteId} />
+          <SummaryRow label="호실" value={unitLabel} muted={needsUnit && !selectedUnitName} />
+          <SummaryRow label="거래" value={form.transactionTypes.map((type) => TX_LABELS[type]).join(', ')} />
+          <SummaryRow label="금액" value={amountLabel} muted={!amountLabel} />
+          <SummaryRow label="입주" value={moveInLabel} />
+        </dl>
+
+        <div className="space-y-2 rounded-lg bg-slate-50 p-3 text-xs text-slate-600">
+          {existingProperty ? (
+            <p>기존 Property에 새 거래를 추가합니다.</p>
+          ) : (
+            <p>저장 시 새 Property와 거래 의뢰가 함께 생성됩니다.</p>
+          )}
+          {activeIntakeExists && <p>진행 중인 의뢰 묶음에 거래가 추가됩니다.</p>}
+          {form.addOwner && <p>소유자 연락처가 함께 생성됩니다.</p>}
+          {form.hasTenant && <p>현재 임차인 정보가 함께 생성됩니다.</p>}
+        </div>
+
+        {txConflicts.length > 0 && (
+          <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900">
+            같은 거래유형이 이미 있어 저장할 수 없습니다.
+          </div>
+        )}
+
+        <div className="flex flex-col gap-2 pt-1">
+          <Button type="submit" disabled={isSubmitting || txConflicts.length > 0}>
+            {isSubmitting ? '등록 중...' : submitLabel}
+          </Button>
+          <Button type="button" variant="outline" onClick={onCancel}>
+            취소
+          </Button>
+        </div>
+      </div>
+    </aside>
+  );
+}
+
+function SummaryRow({
+  label,
+  value,
+  muted,
+}: {
+  label: string;
+  value: string;
+  muted?: boolean;
+}) {
+  return (
+    <div className="grid grid-cols-[64px_minmax(0,1fr)] gap-3">
+      <dt className="text-xs font-medium text-muted-foreground">{label}</dt>
+      <dd className={muted ? 'truncate text-slate-400' : 'truncate text-slate-900'}>
+        {value || '-'}
+      </dd>
+    </div>
+  );
+}
+
+function getListingAmountLabel(form: FormState) {
+  const parts: string[] = [];
+
+  if (form.transactionTypes.includes('sale') && form.salePrice) {
+    parts.push(`매매 ${formatPrice(Number(form.salePrice))}`);
+  }
+
+  if (form.transactionTypes.includes('jeonse') && form.jeonsePrice) {
+    parts.push(`전세 ${formatPrice(Number(form.jeonsePrice))}`);
+  }
+
+  if (form.transactionTypes.includes('monthly') && (form.monthlyDeposit || form.monthlyRent)) {
+    parts.push(`월세 보증금 ${form.monthlyDeposit ? formatPrice(Number(form.monthlyDeposit)) : '-'} / 월 ${
+      form.monthlyRent ? `${Number(form.monthlyRent).toLocaleString()}만` : '-'
+    }`);
+  }
+
+  return parts.join(' · ');
+}
+
+function buildListingPayloads(form: FormState) {
+  const common = {
+    moveInAvailableType: form.moveInAvailableType,
+    moveInAvailableFrom: form.moveInAvailableFrom || undefined,
+    moveInAvailableTo: form.moveInAvailableTo || undefined,
+  };
+
+  return form.transactionTypes.map((transactionType) => {
+    if (transactionType === 'sale') {
+      return {
+        ...common,
+        transactionType,
+        price: Number(form.salePrice),
+      };
+    }
+
+    if (transactionType === 'jeonse') {
+      return {
+        ...common,
+        transactionType,
+        price: Number(form.jeonsePrice),
+      };
+    }
+
+    return {
+      ...common,
+      transactionType,
+      deposit: form.monthlyDeposit ? Number(form.monthlyDeposit) : undefined,
+      monthlyRent: Number(form.monthlyRent),
+    };
+  });
 }
 
 // ============================================================
@@ -848,8 +1015,8 @@ function Section({
   children: React.ReactNode;
 }) {
   return (
-    <section className="rounded-xl border bg-card p-5 shadow-xs">
-      <header className="mb-4 flex items-baseline gap-2">
+    <section className="rounded-xl border bg-card p-4 shadow-xs">
+      <header className="mb-3 flex items-baseline gap-2">
         <Badge variant="outline" className="rounded-md">
           {step}
         </Badge>

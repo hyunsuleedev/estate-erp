@@ -330,7 +330,7 @@ export function PropertyListingsTable({
     <div className="flex h-full min-h-0 flex-col">
       <div
         ref={scrollerRef}
-        className="relative min-h-0 w-full flex-1 overflow-auto bg-white"
+        className="property-listings-scrollbar relative min-h-0 w-full flex-1 overflow-auto bg-white"
         tabIndex={0}
         onKeyDown={handleKeyDown}
         onScroll={handleScroll}

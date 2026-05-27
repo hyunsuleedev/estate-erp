@@ -15,6 +15,25 @@ const router = createRouter({
   history:
     window.location.protocol === 'file:' ? createHashHistory() : undefined,
 });
+const isFileProtocol = window.location.protocol === 'file:';
+
+function normalizeClerkNavigationTarget(to: string): string {
+  if (!isFileProtocol) return to;
+
+  if (!to || to === '/') return '/';
+  if (to.startsWith('#')) return to.slice(1) || '/';
+
+  try {
+    const url = new URL(to);
+    if (url.protocol === 'file:') {
+      return url.hash.replace(/^#/, '') || '/';
+    }
+  } catch {
+    // Clerk may pass relative paths. TanStack Router can handle those directly.
+  }
+
+  return to;
+}
 const localization = {
   ...koKR,
   unstable__errors: {
@@ -37,6 +56,15 @@ createRoot(document.getElementById('root')!).render(
     <ClerkProvider
       publishableKey={import.meta.env.VITE_CLERK_PUBLISHABLE_KEY}
       localization={localization}
+      routerPush={(to) =>
+        router.navigate({ to: normalizeClerkNavigationTarget(to) })
+      }
+      routerReplace={(to) =>
+        router.navigate({
+          to: normalizeClerkNavigationTarget(to),
+          replace: true,
+        })
+      }
     >
       <RouterProvider router={router} />
     </ClerkProvider>
