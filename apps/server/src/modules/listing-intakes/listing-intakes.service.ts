@@ -743,7 +743,8 @@ export class ListingIntakesService {
     const order = sortOrder === 'asc' ? 'asc' : 'desc';
     if (sortBy === 'createdAt') return { createdAt: order };
     if (sortBy === 'receivedAt') return { receivedAt: order };
-    return { updatedAt: order };
+    if (sortBy === 'updatedAt') return { updatedAt: order };
+    return { receivedAt: order };
   }
 
   private assertValidQuery(query: ListingIntakeSearchQuery) {

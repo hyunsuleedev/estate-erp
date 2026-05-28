@@ -297,7 +297,7 @@ export function DataTable<TData extends { id: string }>({
       <div
         ref={scrollerRef}
         className={cn(
-          'relative w-full overflow-auto',
+          'relative w-full overflow-auto outline-none focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0',
           isFullHeight && 'flex-1 min-h-0',
           isNotion && 'bg-white',
         )}
