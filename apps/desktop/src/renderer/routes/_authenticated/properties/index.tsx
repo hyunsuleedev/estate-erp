@@ -648,7 +648,7 @@ function PropertiesPage() {
       {
         id: 'intakeStatus',
         header: () => <TableHeaderLabel icon={<Tag className="size-4" />} label="상태" />,
-        size: 110,
+        size: 70,
         enableSorting: false,
         cell: ({ row }) => (
           <IntakeStatusCell

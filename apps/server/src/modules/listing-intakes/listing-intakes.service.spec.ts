@@ -14,6 +14,8 @@ describe('ListingIntakesService', () => {
     const prisma = {
       listingIntake: {
         findFirst: jest.fn(),
+        findMany: jest.fn().mockResolvedValue([]),
+        count: jest.fn().mockResolvedValue(0),
         update: jest.fn(),
         updateMany: jest.fn(),
       },
@@ -33,6 +35,18 @@ describe('ListingIntakesService', () => {
 
     return { prisma, service, tx };
   }
+
+  it('sorts intakes by receivedAt descending by default', async () => {
+    const { prisma, service } = createService();
+
+    await service.findAll('office-1');
+
+    expect(prisma.listingIntake.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orderBy: { receivedAt: 'desc' },
+      }),
+    );
+  });
 
   it('rejects a stale intake update when expectedUpdatedAt no longer matches', async () => {
     const { prisma, service } = createService();
