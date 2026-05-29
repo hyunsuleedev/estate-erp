@@ -685,7 +685,7 @@ function PropertiesPage() {
         header: () => <TableHeaderLabel icon={<DoorOpen className="size-4" />} label="입주가능일" />,
         size: 140,
         enableSorting: false,
-        cell: ({ row }) => <MoveInAvailableStack listings={row.original.listings} onSave={handleCellSave} />,
+        cell: ({ row }) => <MoveInAvailableStack listings={row.original.listings} onPatch={handleListingPatch} />,
       },
       {
         id: 'jointBrokerage',
@@ -2012,7 +2012,6 @@ function ListingAdStack({ listings }: { listings: ListingSummary[] }) {
           key={listing.id}
           className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden px-2.5"
         >
-          {hasMultiple && <TransactionMiniLabel transactionType={listing.transactionType} />}
           <AdIndicator advertisements={listing.advertisements ?? []} />
         </div>
       ))}
@@ -2106,10 +2105,10 @@ const moveInAvailableChipOptions: ChipOption[] = [
 
 function MoveInAvailableStack({
   listings,
-  onSave,
+  onPatch,
 }: {
   listings: ListingSummary[];
-  onSave: (recordId: string, field: string, value: unknown) => void;
+  onPatch: (recordId: string, patch: UpdateListingDto) => void;
 }) {
   return (
     <div
@@ -2130,20 +2129,22 @@ function MoveInAvailableStack({
             field="moveInAvailableType"
             value={listing}
             chipValueOf={(v) => (v as ListingSummary | undefined)?.moveInAvailableType ?? 'unknown'}
-            onSave={onSave}
+            onSave={(recordId, field, value) => {
+              onPatch(recordId, { [field]: value } as UpdateListingDto);
+            }}
             onChipSave={(recordId, payload) => {
-              onSave(recordId, 'moveInAvailableType', payload.type);
+              const patch: UpdateListingDto = { moveInAvailableType: payload.type };
               if (payload.dateWrites) {
                 for (const write of payload.dateWrites) {
-                  onSave(recordId, write.field, write.value);
+                  Object.assign(patch, { [write.field]: write.value });
                 }
               }
+              onPatch(recordId, patch);
             }}
             editType="select-chip"
             chipOptions={moveInAvailableChipOptions}
           >
             <span className="flex h-full w-full items-center gap-1.5 px-2.5">
-              {listings.length > 1 && <TransactionMiniLabel transactionType={listing.transactionType} />}
               <MoveInAvailableSummary listing={listing} />
             </span>
           </EditableCell>

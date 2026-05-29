@@ -1608,7 +1608,6 @@ function ListingAdStack({ listings }: { listings: ListingSummary[] }) {
           key={listing.id}
           className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden px-2.5"
         >
-          {hasMultiple && <TransactionMiniLabel transactionType={listing.transactionType} />}
           <AdIndicator advertisements={listing.advertisements ?? []} />
         </div>
       ))}
@@ -1729,7 +1728,6 @@ function MoveInAvailableStack({
             chipOptions={moveInAvailableChipOptions}
           >
             <span className="flex h-full w-full items-center gap-1.5 px-2.5">
-              {listings.length > 1 && <TransactionMiniLabel transactionType={listing.transactionType} />}
               <MoveInAvailableSummary listing={listing} />
             </span>
           </EditableCell>
