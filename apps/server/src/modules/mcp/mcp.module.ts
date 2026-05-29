@@ -24,6 +24,7 @@ import { FinanceModule } from '../finance/finance.module';
 import { PublicDocumentsModule } from '../public-documents/public-documents.module';
 import { PropertyPhotosModule } from '../property-photos/property-photos.module';
 import { ListingAdvertisementsModule } from '../listing-advertisements/listing-advertisements.module';
+import { OfficeAdvertisementsModule } from '../office-advertisements/office-advertisements.module';
 import { AgentModule } from '../agent/agent.module';
 import { InboxModule } from '../inbox/inbox.module';
 import { McpController } from './mcp.controller';
@@ -61,6 +62,7 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
     PublicDocumentsModule,
     PropertyPhotosModule,
     ListingAdvertisementsModule,
+    OfficeAdvertisementsModule,
     AgentModule,
     InboxModule,
   ],

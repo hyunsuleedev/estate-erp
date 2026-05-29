@@ -4,6 +4,7 @@ describe('ListingIntakesService', () => {
   function createService() {
     const tx = {
       listingIntake: {
+        create: jest.fn().mockResolvedValue({ id: 'intake-1' }),
         update: jest.fn().mockResolvedValue({ id: 'intake-1' }),
         updateMany: jest.fn(),
       },
@@ -18,6 +19,12 @@ describe('ListingIntakesService', () => {
         count: jest.fn().mockResolvedValue(0),
         update: jest.fn(),
         updateMany: jest.fn(),
+      },
+      property: {
+        findFirst: jest.fn(),
+      },
+      partnerBroker: {
+        findFirst: jest.fn(),
       },
       consultation: {
         create: jest.fn(),
@@ -135,6 +142,35 @@ describe('ListingIntakesService', () => {
         data: expect.objectContaining({ status: 'unverified' }),
       }),
     );
+  });
+
+  it('emits a realtime intake update after creating an intake', async () => {
+    const { prisma, tx } = createService();
+    const realtime = {
+      emitListingIntakeUpdated: jest.fn(),
+    };
+    const service = new ListingIntakesService(
+      prisma as never,
+      {} as never,
+      realtime as never,
+    );
+    jest.spyOn(service, 'findOne').mockResolvedValue({
+      id: 'intake-1',
+      propertyId: 'property-1',
+    } as never);
+    prisma.property.findFirst.mockResolvedValue({ id: 'property-1' });
+    prisma.listingIntake.findFirst.mockResolvedValue(null);
+    tx.listingIntake.create.mockResolvedValue({ id: 'intake-1' });
+
+    await service.create('office-1', {
+      propertyId: 'property-1',
+    });
+
+    expect(realtime.emitListingIntakeUpdated).toHaveBeenCalledWith({
+      officeId: 'office-1',
+      intakeId: 'intake-1',
+      propertyId: 'property-1',
+    });
   });
 
   it('records confirmation timing on the intake and detail in consultation history', async () => {

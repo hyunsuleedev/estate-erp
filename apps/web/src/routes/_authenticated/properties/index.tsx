@@ -22,7 +22,6 @@ import {
   SlidersHorizontal,
   Tag,
   Type,
-  User,
   X,
 } from 'lucide-react';
 import type { ColumnDef, SortingState } from '@tanstack/react-table';
@@ -84,7 +83,7 @@ import {
   type QuickSheetNotice,
   type QuickSheetNoticeTone,
 } from '@/components/quick-sheet';
-import { getMoveInAvailability, getTenantPhoneLine } from './-property-list-view-utils';
+import { getMoveInAvailability } from './-property-list-view-utils';
 
 // ── Labels & Colors ─────────────────────────────────────────────
 
@@ -555,34 +554,6 @@ function PropertiesPage() {
         size: 130,
         enableSorting: false,
         cell: ({ row }) => <MoveInAvailableStack listings={row.original.listings} onSave={handleCellSave} />,
-      },
-      {
-        id: 'owner',
-        header: () => <TableHeaderLabel icon={<User className="size-4" />} label="소유주" />,
-        size: 150,
-        enableSorting: false,
-        cell: ({ row }) => {
-          const owner = getOwnerContact(row.original.property);
-          return (
-            <div className="flex min-w-0 flex-col gap-0.5">
-              <span className="truncate text-[13px] font-medium text-slate-800">
-                {owner?.name ?? ''}
-              </span>
-              {owner?.phone && (
-                <span className="truncate text-[12px] text-slate-500 tabular-nums">
-                  {owner.phone}
-                </span>
-              )}
-            </div>
-          );
-        },
-      },
-      {
-        id: 'tenant',
-        header: () => <TableHeaderLabel icon={<User className="size-4" />} label="세입자" />,
-        size: 154,
-        enableSorting: false,
-        cell: ({ row }) => <TenantCell tenant={getCurrentTenant(row.original.property)} />,
       },
       {
         id: 'updatedAt',
@@ -1366,34 +1337,6 @@ function PropertySheetTenantRow({ tenant }: { tenant: Tenant }) {
             <Phone className="size-3.5" />
           </a>
         </Button>
-      )}
-    </div>
-  );
-}
-
-function TenantCell({ tenant }: { tenant?: Tenant | null }) {
-  if (!tenant) {
-    return <span className="text-[13px] text-slate-400">-</span>;
-  }
-
-  const phoneLine = getTenantPhoneLine(tenant);
-  const detail = getTenantListDetail(tenant);
-  const shouldShowDetail = !phoneLine?.includes('만기 ') || !detail.startsWith('만기 ');
-
-  return (
-    <div className="flex min-w-0 flex-col gap-0.5">
-      <span className="truncate text-[13px] font-medium text-slate-800">
-        {tenant.contact?.name ?? '세입자'}
-      </span>
-      {phoneLine && (
-        <span className="truncate text-[12px] text-slate-500 tabular-nums">
-          {phoneLine}
-        </span>
-      )}
-      {shouldShowDetail && (
-        <span className="truncate text-[12px] text-slate-500">
-          {detail}
-        </span>
       )}
     </div>
   );
@@ -2498,41 +2441,6 @@ function getContactRoleLabel(role: string) {
 function getTenantPeriodLabel(tenant: Tenant) {
   if (!tenant.contractStart && !tenant.contractEnd) return '계약 기간 미등록';
   return `${formatDateShort(tenant.contractStart)} - ${formatDateShort(tenant.contractEnd)}`;
-}
-
-function getCurrentTenant(property?: ListingProperty) {
-  const activeTenants = (property?.tenants ?? []).filter((tenant) => tenant.status !== 'moved');
-  if (activeTenants.length === 0) return null;
-
-  return [...activeTenants].sort((a, b) => {
-    const priorityDiff = getTenantListPriority(a) - getTenantListPriority(b);
-    if (priorityDiff !== 0) return priorityDiff;
-    return getTenantSortTime(a.contractEnd) - getTenantSortTime(b.contractEnd);
-  })[0];
-}
-
-function getTenantListPriority(tenant: Tenant) {
-  if (tenant.status === 'moving_out') return 0;
-  if (tenant.status === 'residing') return 1;
-  return 2;
-}
-
-function getTenantSortTime(value?: string | null) {
-  if (!value) return Number.POSITIVE_INFINITY;
-  const time = new Date(value).getTime();
-  return Number.isNaN(time) ? Number.POSITIVE_INFINITY : time;
-}
-
-function getTenantListDetail(tenant: Tenant) {
-  if (tenant.status === 'moving_out' && tenant.moveOutDate) {
-    return `퇴거 ${formatDateShort(tenant.moveOutDate)}`;
-  }
-
-  if (tenant.contractEnd) {
-    return `만기 ${formatDateShort(tenant.contractEnd)}`;
-  }
-
-  return getTenantStatusLabel(tenant.status);
 }
 
 function getTenantStatusLabel(status: string) {

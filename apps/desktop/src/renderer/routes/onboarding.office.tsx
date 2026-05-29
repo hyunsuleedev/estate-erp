@@ -9,6 +9,7 @@ import {
   LogOut,
   ShieldCheck,
 } from 'lucide-react';
+import { SplashScreen } from '@/components/layout/splash-screen';
 import { api } from '@/lib/api';
 import { useAuth } from '@/providers/auth-provider';
 import { Button } from '@/components/ui/button';
@@ -31,11 +32,7 @@ function OfficeOnboardingPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   if (isLoading) {
-    return (
-      <div className="flex h-screen items-center justify-center">
-        <div className="text-muted-foreground">로딩 중...</div>
-      </div>
-    );
+    return <SplashScreen />;
   }
 
   if (!isAuthenticated) {

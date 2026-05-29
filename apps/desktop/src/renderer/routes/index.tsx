@@ -1,4 +1,5 @@
 import { createFileRoute, Navigate } from '@tanstack/react-router';
+import { SplashScreen } from '@/components/layout/splash-screen';
 import { useAuth } from '@/providers/auth-provider';
 
 export const Route = createFileRoute('/')({
@@ -9,11 +10,7 @@ function IndexPage() {
   const { user, isAuthenticated, isLoading } = useAuth();
 
   if (isLoading) {
-    return (
-      <div className="flex h-screen items-center justify-center">
-        <div className="text-muted-foreground">로딩 중...</div>
-      </div>
-    );
+    return <SplashScreen />;
   }
 
   if (isAuthenticated) {

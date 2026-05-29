@@ -554,7 +554,7 @@ export class ListingsService {
       dto.jointBrokeragePartnerId,
     );
 
-    return this.prisma.listing.create({
+    const listing = await this.prisma.listing.create({
       data: {
         officeId,
         propertyId: dto.propertyId,
@@ -591,6 +591,15 @@ export class ListingsService {
         },
       },
     });
+
+    this.realtime?.emitListingUpdated({
+      officeId,
+      listingId: listing.id,
+      propertyId: listing.propertyId,
+      intakeId: listing.intakeId,
+    });
+
+    return listing;
   }
 
   async update(id: string, officeId: string, dto: ListingUpdateDto) {
@@ -689,9 +698,18 @@ export class ListingsService {
   }
 
   async remove(id: string, officeId: string) {
-    await this.findOne(id, officeId);
+    const listing = await this.findOne(id, officeId);
 
-    return this.prisma.listing.delete({ where: { id } });
+    const deleted = await this.prisma.listing.delete({ where: { id } });
+
+    this.realtime?.emitListingUpdated({
+      officeId,
+      listingId: listing.id,
+      propertyId: listing.propertyId,
+      intakeId: listing.intakeId,
+    });
+
+    return deleted;
   }
 
   private resolveSortField(sortBy?: string) {

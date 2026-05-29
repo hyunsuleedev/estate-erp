@@ -41,6 +41,7 @@ function invalidateListing(event: ListingUpdatedEvent) {
 }
 
 function invalidateListingIntake(event: ListingIntakeUpdatedEvent) {
+  queryClient.invalidateQueries({ queryKey: ['listings'] });
   queryClient.invalidateQueries({ queryKey: ['listing-intakes'] });
   queryClient.invalidateQueries({ queryKey: ['properties'] });
   queryClient.invalidateQueries({ queryKey: ['properties', event.propertyId] });

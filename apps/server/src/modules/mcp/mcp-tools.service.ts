@@ -28,6 +28,10 @@ import { CashflowService } from '../finance/cashflow.service';
 import { PublicDocumentsService } from '../public-documents/public-documents.service';
 import { PropertyPhotosService } from '../property-photos/property-photos.service';
 import { ListingAdvertisementsService } from '../listing-advertisements/listing-advertisements.service';
+import {
+  OfficeAdvertisementsService,
+  type OfficeAdvertisementBatchGroupDto,
+} from '../office-advertisements/office-advertisements.service';
 import { ProposalService } from '../agent/proposal/proposal.service';
 import type { ProposalStatus } from '../agent/proposal/proposal.types';
 import { InboxService } from '../inbox/inbox.service';
@@ -143,6 +147,7 @@ export class McpToolsService {
     private readonly proposals: ProposalService,
     private readonly inbox: InboxService,
     private readonly listingAdvertisements: ListingAdvertisementsService,
+    private readonly officeAdvertisements: OfficeAdvertisementsService,
     private readonly listingIntakes: ListingIntakesService,
   ) {
     this.registerAll();
@@ -548,6 +553,152 @@ export class McpToolsService {
       '잘못 등록한 내부 광고 row(ListingAdvertisement)를 삭제합니다. 정상 광고 내림은 update_listing_advertisement(status=ended)를 사용하세요.',
       obj({ id: str('광고 row ID') }, ['id']),
       async (a, c) => this.listingAdvertisements.remove(a.id as string, c.officeId),
+    );
+
+    // ═══════════════════════════════════════════════════════════
+    // 내 사무소 외부 광고 인벤토리 (OfficeAdvertisements)
+    // ═══════════════════════════════════════════════════════════
+    this.add(
+      'find_office_advertisement_groups',
+      '내 사무소 외부 광고 그룹(OfficeAdvertisementGroup) 목록을 검색합니다. 네이버 등 외부 플랫폼에서 가져온 "내 광고" 인벤토리. status/source/검색어/미연결 필터 지원.',
+      obj({
+        source: str('출처 (기본 naver)'),
+        status: strEnum('그룹 상태', [
+          'needs_unit_confirmation',
+          'linked',
+          'ignored',
+        ]),
+        search: str('검색어 (단지명, 동 힌트, 호 힌트, 메모, articleNo, 매물명, 중개사명)'),
+        onlyUnlinked: bool('아직 내부 ListingAdvertisement에 연결되지 않은 그룹만 (ignored 제외)'),
+        ...page,
+      }),
+      async (a, c) =>
+        this.officeAdvertisements.findAllGroups(c.officeId, {
+          source: a.source as string,
+          status: a.status as string,
+          search: a.search as string,
+          onlyUnlinked: a.onlyUnlinked as boolean,
+          page: (a.page as number) ?? 1,
+          limit: this.clampLimit(a),
+        }),
+    );
+
+    this.add(
+      'update_office_advertisement_group',
+      '내 광고 그룹의 상태/메모/호 힌트/동 힌트를 수정합니다. status 값: needs_unit_confirmation | linked | ignored.',
+      obj(
+        {
+          id: str('그룹 ID'),
+          status: strEnum('그룹 상태', [
+            'needs_unit_confirmation',
+            'linked',
+            'ignored',
+          ]),
+          memo: str('메모'),
+          hoHint: str('호수 추정 힌트 (예: 1503호)'),
+          dongHint: str('동 추정 힌트 (예: 101동)'),
+        },
+        ['id'],
+      ),
+      async (a, c) =>
+        this.officeAdvertisements.updateGroup(a.id as string, c.officeId, {
+          status: a.status as string,
+          memo: a.memo as string | null,
+          hoHint: a.hoHint as string | null,
+          dongHint: a.dongHint as string | null,
+        }),
+    );
+
+    this.add(
+      'link_office_advertisement_group_to_listing_advertisement',
+      '내 광고 그룹을 내부 ListingAdvertisement에 연결합니다. 연결 시 그룹 status는 자동으로 linked가 됩니다.',
+      obj(
+        {
+          id: str('그룹 ID'),
+          listingAdvertisementId: str('연결할 ListingAdvertisement ID'),
+          hoHint: str('호수 힌트 (선택)'),
+          memo: str('메모 (선택)'),
+        },
+        ['id', 'listingAdvertisementId'],
+      ),
+      async (a, c) =>
+        this.officeAdvertisements.linkGroupToListingAdvertisement(
+          a.id as string,
+          c.officeId,
+          {
+            listingAdvertisementId: a.listingAdvertisementId as string,
+            hoHint: a.hoHint as string | null,
+            memo: a.memo as string | null,
+          },
+        ),
+    );
+
+    this.add(
+      'batch_upsert_office_advertisements',
+      '내 사무소 외부 광고를 그룹 단위로 일괄 upsert합니다. 같은 articleNo가 있는 그룹은 재사용, 없으면 새 그룹 생성. groups는 최대 100개. 각 그룹은 advertisements 1개 이상 필수.',
+      obj(
+        {
+          source: str('출처 (기본 naver). 그룹별 source가 없으면 이 값을 사용.'),
+          groups: {
+            type: 'array' as const,
+            description: '광고 그룹 배열 (최대 100)',
+            items: obj(
+              {
+                source: str('그룹별 출처 override'),
+                siteName: str('단지명 (네이버 원본)'),
+                buildingName: str('건물명/동명 원본'),
+                dongHint: str('동 힌트'),
+                hoHint: str('호 힌트'),
+                floorInfo: str('층 정보 (저/중/고/숫자)'),
+                areaName: str('평형명 (예: 84A)'),
+                exclusiveAreaM2: num('전용면적 (m²)'),
+                supplyAreaM2: num('공급면적 (m²)'),
+                transactionType: strEnum('거래유형', [
+                  'sale',
+                  'jeonse',
+                  'monthly',
+                ]),
+                memo: str('메모'),
+                advertisements: {
+                  type: 'array' as const,
+                  description: '그룹에 속하는 개별 광고 (1개 이상 필수)',
+                  items: obj(
+                    {
+                      articleNo: str('네이버 등 외부 매물 번호'),
+                      sourceUrl: str('원본 URL'),
+                      cpPcArticleUrl: str('CP PC 상세 URL'),
+                      isMine: bool('내 사무소 광고 여부'),
+                      isMain: bool('그룹 대표 광고 여부'),
+                      isActive: bool('활성 여부 (기본 true)'),
+                      articleName: str('매물명'),
+                      realtorName: str('등록 중개사명'),
+                      realtorId: str('등록 중개사 ID'),
+                      representativeTelNo: str('대표 번호'),
+                      price: num('매매가/전세가 (만원)'),
+                      deposit: num('보증금 (만원)'),
+                      monthlyRent: num('월세 (만원)'),
+                      ranking: num('노출 순위'),
+                      sameAddrCnt: num('같은 주소 매물 수'),
+                      articleConfirmYmd: str('네이버 매물 확인일 (YYYYMMDD)'),
+                      seango: bool('선광고 여부'),
+                      epju: bool('e편주 여부'),
+                      raw: { type: 'object', description: '원본 응답 JSON' },
+                    },
+                    ['articleNo'],
+                  ),
+                },
+              },
+              ['advertisements'],
+            ),
+          },
+        },
+        ['groups'],
+      ),
+      async (a, c) =>
+        this.officeAdvertisements.batchUpsert(c.officeId, {
+          source: a.source as string,
+          groups: a.groups as OfficeAdvertisementBatchGroupDto[],
+        }),
     );
 
     // ═══════════════════════════════════════════════════════════

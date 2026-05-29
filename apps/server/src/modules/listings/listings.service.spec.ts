@@ -29,6 +29,7 @@ describe('ListingsService', () => {
         create: jest.fn(),
         update: jest.fn(),
         updateMany: jest.fn(),
+        delete: jest.fn(),
       },
       listingIntake: {
         findFirst: jest.fn(),
@@ -174,6 +175,66 @@ describe('ListingsService', () => {
     prisma.listing.update.mockResolvedValue(updatedListing);
 
     await service.update('listing-1', 'office-1', { checkStatus: 'verified' });
+
+    expect(realtime.emitListingUpdated).toHaveBeenCalledWith({
+      officeId: 'office-1',
+      listingId: 'listing-1',
+      propertyId: 'property-1',
+      intakeId: 'intake-1',
+    });
+  });
+
+  it('emits a realtime listing update after creating a listing', async () => {
+    const { prisma } = createService();
+    const realtime = {
+      emitListingUpdated: jest.fn(),
+    };
+    const service = new ListingsService(prisma as never, realtime as never);
+    const createdListing = {
+      id: 'listing-1',
+      officeId: 'office-1',
+      propertyId: 'property-1',
+      intakeId: 'intake-1',
+      transactionType: 'sale',
+      checkStatus: 'unverified',
+    };
+    prisma.property.findFirst.mockResolvedValue({ id: 'property-1' });
+    prisma.listingIntake.findFirst.mockResolvedValue({ id: 'intake-1' });
+    prisma.listing.findFirst.mockResolvedValue(null);
+    prisma.listing.create.mockResolvedValue(createdListing);
+
+    await service.create('office-1', {
+      propertyId: 'property-1',
+      transactionType: 'sale',
+      price: 150000,
+    });
+
+    expect(realtime.emitListingUpdated).toHaveBeenCalledWith({
+      officeId: 'office-1',
+      listingId: 'listing-1',
+      propertyId: 'property-1',
+      intakeId: 'intake-1',
+    });
+  });
+
+  it('emits a realtime listing update after deleting a listing', async () => {
+    const { prisma } = createService();
+    const realtime = {
+      emitListingUpdated: jest.fn(),
+    };
+    const service = new ListingsService(prisma as never, realtime as never);
+    const listing = {
+      id: 'listing-1',
+      officeId: 'office-1',
+      propertyId: 'property-1',
+      intakeId: 'intake-1',
+      transactionType: 'sale',
+      checkStatus: 'unverified',
+    };
+    prisma.listing.findFirst.mockResolvedValue(listing);
+    prisma.listing.delete.mockResolvedValue(listing);
+
+    await service.remove('listing-1', 'office-1');
 
     expect(realtime.emitListingUpdated).toHaveBeenCalledWith({
       officeId: 'office-1',

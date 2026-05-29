@@ -1,4 +1,5 @@
 import { createFileRoute, Outlet, Navigate, useMatches } from '@tanstack/react-router';
+import { SplashScreen } from '@/components/layout/splash-screen';
 import { useAuth } from '@/providers/auth-provider';
 import { AppSidebar } from '@/components/layout/app-sidebar';
 import {
@@ -46,11 +47,7 @@ function AuthenticatedLayout() {
   const matches = useMatches();
 
   if (isLoading) {
-    return (
-      <div className="flex h-screen items-center justify-center">
-        <div className="text-muted-foreground">로딩 중...</div>
-      </div>
-    );
+    return <SplashScreen />;
   }
 
   if (!isAuthenticated) {

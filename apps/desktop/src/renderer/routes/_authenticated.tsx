@@ -1,5 +1,6 @@
 import { createFileRoute, Navigate } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
+import { SplashScreen } from '@/components/layout/splash-screen';
 import { useAuth } from '@/providers/auth-provider';
 import { AppSidebar } from '@/components/layout/app-sidebar';
 import {
@@ -68,11 +69,7 @@ function AuthenticatedLayout() {
   useDetachedInitialTab(windowKind === 'detached');
 
   if (isLoading || windowKind === null) {
-    return (
-      <div className="flex h-screen items-center justify-center">
-        <div className="text-muted-foreground">로딩 중...</div>
-      </div>
-    );
+    return <SplashScreen />;
   }
 
   if (!isAuthenticated) {

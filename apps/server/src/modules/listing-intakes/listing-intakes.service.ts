@@ -306,6 +306,12 @@ export class ListingIntakesService {
       return created;
     });
 
+    this.realtime?.emitListingIntakeUpdated({
+      officeId,
+      intakeId: intake.id,
+      propertyId: dto.propertyId,
+    });
+
     return this.findOne(intake.id, officeId);
   }
 
