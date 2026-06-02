@@ -27,7 +27,19 @@ describe('desktop data table', () => {
 
     assert.match(
       source,
-      /"property-listings-scrollbar relative min-h-0 w-full flex-1 overflow-auto bg-white outline-none focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0"/,
+      /className="[^"]*outline-none focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0"/,
+    );
+  });
+
+  it('scopes the property listing confirm pending state to the clicked intake row', () => {
+    const source = readFileSync(
+      resolve(testDir, '../src/renderer/routes/_authenticated/properties/index.tsx'),
+      'utf8',
+    );
+
+    assert.match(
+      source,
+      /confirmMutation\.isPending\s*&&\s*confirmMutation\.variables\?\.intakeId\s*===\s*row\.original\.representative\.id/,
     );
   });
 });

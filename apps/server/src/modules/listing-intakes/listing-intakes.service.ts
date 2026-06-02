@@ -674,32 +674,7 @@ export class ListingIntakesService {
   private buildListInclude(listingWhere: Prisma.ListingWhereInput) {
     return {
       property: {
-        include: {
-          site: {
-            include: {
-              ward: {
-                include: {
-                  district: {
-                    include: {
-                      province: true,
-                    },
-                  },
-                },
-              },
-            },
-          },
-          unit: {
-            include: {
-              dong: true,
-              siteUnitType: true,
-            },
-          },
-          propertyContacts: { include: { contact: { include: { phones: contactPhonesIncludeOrdered } } } },
-          tenants: {
-            include: { contact: { include: { phones: contactPhonesIncludeOrdered } } },
-            orderBy: { createdAt: 'desc' as const },
-          },
-        },
+        include: this.buildListPropertyInclude(),
       },
       jointBrokeragePartner: {
         select: {
@@ -731,6 +706,9 @@ export class ListingIntakesService {
   private buildDetailInclude() {
     return {
       ...this.buildListInclude({}),
+      property: {
+        include: this.buildDetailPropertyInclude(),
+      },
       consultations: {
         include: { contact: { include: { phones: contactPhonesIncludeOrdered } } },
         orderBy: { createdAt: 'desc' as const },
@@ -740,6 +718,41 @@ export class ListingIntakesService {
         take: 20,
       },
     } satisfies Prisma.ListingIntakeInclude;
+  }
+
+  private buildListPropertyInclude() {
+    return {
+      site: {
+        include: {
+          ward: {
+            include: {
+              district: {
+                include: {
+                  province: true,
+                },
+              },
+            },
+          },
+        },
+      },
+      unit: {
+        include: {
+          dong: true,
+          siteUnitType: true,
+        },
+      },
+    } satisfies Prisma.PropertyInclude;
+  }
+
+  private buildDetailPropertyInclude() {
+    return {
+      ...this.buildListPropertyInclude(),
+      propertyContacts: { include: { contact: { include: { phones: contactPhonesIncludeOrdered } } } },
+      tenants: {
+        include: { contact: { include: { phones: contactPhonesIncludeOrdered } } },
+        orderBy: { createdAt: 'desc' as const },
+      },
+    } satisfies Prisma.PropertyInclude;
   }
 
   private resolveOrderBy(

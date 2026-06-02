@@ -534,17 +534,26 @@ function PropertiesPage() {
       },
       {
         id: 'price',
-        header: () => <TableHeaderLabel icon={<CircleDollarSign className="size-4" />} label="가격" />,
-        size: 184,
+        header: () => <TableHeaderLabel icon={<CircleDollarSign className="size-4" />} label="가격/보증금" />,
+        size: 155,
         enableSorting: true,
         cell: ({ row }) => (
-          <ListingPriceStack listings={row.original.listings} onSave={handleCellSave} />
+          <ListingPriceDepositStack listings={row.original.listings} onSave={handleCellSave} />
+        ),
+      },
+      {
+        id: 'monthlyRent',
+        header: () => <TableHeaderLabel icon={<CircleDollarSign className="size-4" />} label="월세" />,
+        size: 82,
+        enableSorting: false,
+        cell: ({ row }) => (
+          <ListingMonthlyRentStack listings={row.original.listings} onSave={handleCellSave} />
         ),
       },
       {
         id: 'advertisement',
         header: () => <TableHeaderLabel icon={<Megaphone className="size-4" />} label="광고" />,
-        size: 138,
+        size: 100,
         enableSorting: false,
         cell: ({ row }) => <ListingAdStack listings={row.original.listings} />,
       },
@@ -566,8 +575,8 @@ function PropertiesPage() {
       },
       {
         id: 'jointBrokerage',
-        header: () => <TableHeaderLabel icon={<Handshake className="size-4" />} label="공동중개" />,
-        size: 154,
+        header: () => <TableHeaderLabel icon={<Handshake className="size-4" />} label="공동" />,
+        size: 60,
         enableSorting: false,
         cell: ({ row }) => <JointBrokerageStack listings={row.original.listings} />,
       },
@@ -1550,7 +1559,7 @@ function ListingStatusStack({
   );
 }
 
-function ListingPriceStack({
+function ListingPriceDepositStack({
   listings,
   onSave,
 }: {
@@ -1573,24 +1582,81 @@ function ListingPriceStack({
         >
           <EditableCell
             recordId={listing.id}
-            field="price"
-            value={listing.price}
+            field={listing.transactionType === 'monthly' ? 'deposit' : 'price'}
+            value={listing.transactionType === 'monthly' ? listing.deposit : listing.price}
             onSave={onSave}
             editType="number"
           >
             <span className="flex h-full w-full items-center gap-1.5 px-2.5">
               {hasMultiple && <TransactionMiniLabel transactionType={listing.transactionType} />}
-              <PriceCell
-                transactionType={listing.transactionType}
-                price={listing.price}
-                deposit={listing.deposit}
-                monthlyRent={listing.monthlyRent}
-              />
+              <PriceDepositValue listing={listing} />
             </span>
           </EditableCell>
         </div>
       ))}
     </div>
+  );
+}
+
+function ListingMonthlyRentStack({
+  listings,
+  onSave,
+}: {
+  listings: ListingSummary[];
+  onSave: (recordId: string, field: string, value: unknown) => void;
+}) {
+  const hasMultiple = listings.length > 1;
+  return (
+    <div
+      className={cn(
+        '-mx-2.5 flex h-full min-w-0 flex-col items-stretch',
+        hasMultiple && 'divide-y divide-[#d9d9d6]',
+      )}
+      onClick={(event) => event.stopPropagation()}
+    >
+      {listings.map((listing) => (
+        <div
+          key={listing.id}
+          className="flex min-w-0 flex-1 items-stretch"
+        >
+          {listing.transactionType === 'monthly' ? (
+            <EditableCell
+              recordId={listing.id}
+              field="monthlyRent"
+              value={listing.monthlyRent}
+              onSave={onSave}
+              editType="number"
+            >
+              <span className="flex h-full w-full items-center px-2.5">
+                <MonthlyRentValue listing={listing} />
+              </span>
+            </EditableCell>
+          ) : (
+            <span className="flex h-full w-full items-center px-2.5 text-[13px] text-muted-foreground">-</span>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function PriceDepositValue({ listing }: { listing: ListingSummary }) {
+  const value = listing.transactionType === 'monthly'
+    ? listing.deposit
+    : listing.price ?? listing.deposit;
+
+  return (
+    <span className="tabular-nums text-sm font-medium">
+      {value ? formatPrice(value) : '-'}
+    </span>
+  );
+}
+
+function MonthlyRentValue({ listing }: { listing: ListingSummary }) {
+  return (
+    <span className="tabular-nums text-sm font-medium">
+      {listing.monthlyRent ? formatPrice(listing.monthlyRent) : '-'}
+    </span>
   );
 }
 

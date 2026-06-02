@@ -249,6 +249,7 @@ function PropertiesPage() {
     useState<(typeof transactionTypeOptions)[number]['value']>('all');
   const [propertyFilters, setPropertyFilters] = useState<PropertyFilterState>(initialPropertyFilters);
   const [selectedIntakeId, setSelectedIntakeId] = useState<string | null>(null);
+  const [isSiteFilterOpen, setIsSiteFilterOpen] = useState(false);
   const [activeSorts, setActiveSorts] = useState<SortDefinition[]>([]);
   const [sorting, setSorting] = useState<SortingState>([]);
   const debouncedSearch = useDebouncedValue(search, 300);
@@ -258,6 +259,7 @@ function PropertiesPage() {
     queryFn: () => api.listings.filterSites({
       includeHidden: propertyFilters.includeHidden || undefined,
     }),
+    enabled: isSiteFilterOpen || Boolean(propertyFilters.siteId),
     staleTime: 5 * 60_000,
   });
 
@@ -631,14 +633,17 @@ function PropertiesPage() {
           <IntakeConfirmButton
             intake={row.original.representative}
             onConfirm={handleIntakeConfirm}
-            isPending={confirmMutation.isPending}
+            isPending={
+              confirmMutation.isPending &&
+              confirmMutation.variables?.intakeId === row.original.representative.id
+            }
           />
         ),
       },
       {
         id: 'updatedAt',
         header: () => <TableHeaderLabel icon={<CalendarDays className="size-4" />} label="확인일" />,
-        size: 96,
+        size: 70,
         enableSorting: true,
         cell: ({ row }) => (
           <IntakeConfirmedAtCell intake={row.original.representative} />
@@ -662,11 +667,11 @@ function PropertiesPage() {
       },
       {
         id: 'price',
-        header: () => <TableHeaderLabel icon={<CircleDollarSign className="size-4" />} label="가격" />,
-        size: 184,
+        header: () => <TableHeaderLabel icon={<CircleDollarSign className="size-4" />} label="가격/보증금" />,
+        size: 155,
         enableSorting: true,
         cell: ({ row }) => (
-          <ListingPriceStack
+          <ListingPriceDepositStack
             listings={row.original.listings}
             onSave={handleCellSave}
             onPatch={handleListingPatch}
@@ -674,23 +679,35 @@ function PropertiesPage() {
         ),
       },
       {
+        id: 'monthlyRent',
+        header: () => <TableHeaderLabel icon={<CircleDollarSign className="size-4" />} label="월세" />,
+        size: 82,
+        enableSorting: false,
+        cell: ({ row }) => (
+          <ListingMonthlyRentStack
+            listings={row.original.listings}
+            onPatch={handleListingPatch}
+          />
+        ),
+      },
+      {
         id: 'advertisement',
         header: () => <TableHeaderLabel icon={<Megaphone className="size-4" />} label="광고" />,
-        size: 138,
+        size: 100,
         enableSorting: false,
         cell: ({ row }) => <ListingAdStack listings={row.original.listings} />,
       },
       {
         id: 'moveInAvailable',
         header: () => <TableHeaderLabel icon={<DoorOpen className="size-4" />} label="입주가능일" />,
-        size: 140,
+        size: 120,
         enableSorting: false,
         cell: ({ row }) => <MoveInAvailableStack listings={row.original.listings} onPatch={handleListingPatch} />,
       },
       {
         id: 'jointBrokerage',
-        header: () => <TableHeaderLabel icon={<Handshake className="size-4" />} label="공동중개" />,
-        size: 88,
+        header: () => <TableHeaderLabel icon={<Handshake className="size-4" />} label="공동" />,
+        size: 60,
         enableSorting: false,
         cell: ({ row }) => <JointBrokerageCell intake={row.original.representative} />,
       },
@@ -709,6 +726,7 @@ function PropertiesPage() {
       handleIntakeStatusChange,
       handleListingPatch,
       confirmMutation.isPending,
+      confirmMutation.variables?.intakeId,
       intakeStatusMutation.isPending,
     ],
   );
@@ -774,6 +792,7 @@ function PropertiesPage() {
               label="단지"
               value={selectedSite?.name ?? '전체'}
               active={Boolean(propertyFilters.siteId)}
+              onOpenChange={setIsSiteFilterOpen}
             >
               <div className="space-y-2">
                 <PopoverTitle title="단지" description="단지명 또는 주소로 매물을 좁힙니다." />
@@ -1708,15 +1727,10 @@ function TransactionStack({ listings }: { listings: ListingSummary[] }) {
 
 function IntakeConfirmedAtCell({ intake }: { intake: ListingIntake }) {
   return (
-    <div className="flex min-w-0 flex-col py-1">
+    <div className="flex min-w-0 items-center py-1">
       <span className="truncate text-[12px] font-medium leading-5 text-slate-800">
-        {intake.confirmedAt ? formatDateShort(intake.confirmedAt) : '미확인'}
+        {intake.confirmedAt ? formatDateShort(intake.confirmedAt) : '-'}
       </span>
-      {intake.nextConfirmAt && (
-        <span className="truncate text-[11px] leading-4 text-slate-400">
-          다음 {formatDateShort(intake.nextConfirmAt)}
-        </span>
-      )}
     </div>
   );
 }
@@ -1808,10 +1822,9 @@ function IntakeConfirmButton({
       <button
         type="button"
         disabled={isPending}
-        className="inline-flex h-7 items-center gap-1 rounded-[4px] border border-slate-200 bg-white px-2 text-[12px] font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+        className="inline-flex h-7 items-center rounded-[4px] border border-slate-200 bg-white px-2 text-[12px] font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
         onClick={() => onConfirm(intake.id, 'alive')}
       >
-        <Check className="size-3.5 text-slate-500" />
         확인
       </button>
     </div>
@@ -1830,7 +1843,7 @@ function JointBrokerageCell({ intake }: { intake: ListingIntake }) {
   );
 }
 
-function ListingPriceStack({
+function ListingPriceDepositStack({
   listings,
   onSave,
   onPatch,
@@ -1858,6 +1871,7 @@ function ListingPriceStack({
             <MonthlyRentPriceEditor
               listing={listing}
               showTransactionLabel={hasMultiple}
+              displayPart="deposit"
               onSave={(patch) => onPatch(listing.id, patch)}
             />
           ) : (
@@ -1871,14 +1885,47 @@ function ListingPriceStack({
             >
               <span className="flex h-full w-full items-center gap-1.5 px-2.5">
                 {hasMultiple && <TransactionMiniLabel transactionType={listing.transactionType} />}
-                <PriceCell
-                  transactionType={listing.transactionType}
-                  price={listing.price}
-                  deposit={listing.deposit}
-                  monthlyRent={listing.monthlyRent}
-                />
+                <PriceDepositValue listing={listing} />
               </span>
             </EditableCell>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ListingMonthlyRentStack({
+  listings,
+  onPatch,
+}: {
+  listings: ListingSummary[];
+  onPatch: (recordId: string, patch: UpdateListingDto) => void;
+}) {
+  const hasMultiple = listings.length > 1;
+  return (
+    <div
+      className={cn(
+        '-mx-2.5 flex h-full min-w-0 flex-col items-stretch',
+        hasMultiple && 'divide-y divide-[#d9d9d6]',
+      )}
+      style={getListingStackStyle(listings)}
+      onClick={(event) => event.stopPropagation()}
+    >
+      {listings.map((listing) => (
+        <div
+          key={listing.id}
+          className="flex min-w-0 flex-1 items-center"
+        >
+          {listing.transactionType === 'monthly' ? (
+            <MonthlyRentPriceEditor
+              listing={listing}
+              showTransactionLabel={false}
+              displayPart="monthlyRent"
+              onSave={(patch) => onPatch(listing.id, patch)}
+            />
+          ) : (
+            <span className="flex h-full w-full items-center px-2.5 text-[13px] text-muted-foreground">-</span>
           )}
         </div>
       ))}
@@ -1889,10 +1936,12 @@ function ListingPriceStack({
 function MonthlyRentPriceEditor({
   listing,
   showTransactionLabel,
+  displayPart,
   onSave,
 }: {
   listing: ListingSummary;
   showTransactionLabel: boolean;
+  displayPart: 'deposit' | 'monthlyRent';
   onSave: (patch: UpdateListingDto) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -1931,12 +1980,11 @@ function MonthlyRentPriceEditor({
           }}
         >
           {showTransactionLabel && <TransactionMiniLabel transactionType={listing.transactionType} />}
-          <PriceCell
-            transactionType={listing.transactionType}
-            price={listing.price}
-            deposit={listing.deposit}
-            monthlyRent={listing.monthlyRent}
-          />
+          {displayPart === 'deposit' ? (
+            <PriceDepositValue listing={listing} />
+          ) : (
+            <MonthlyRentValue listing={listing} />
+          )}
         </button>
       </PopoverTrigger>
       <PopoverContent
@@ -1983,6 +2031,26 @@ function MonthlyRentPriceEditor({
         </div>
       </PopoverContent>
     </Popover>
+  );
+}
+
+function PriceDepositValue({ listing }: { listing: ListingSummary }) {
+  const value = listing.transactionType === 'monthly'
+    ? listing.deposit
+    : listing.price ?? listing.deposit;
+
+  return (
+    <span className="tabular-nums text-sm font-medium">
+      {value ? formatPrice(value) : '-'}
+    </span>
+  );
+}
+
+function MonthlyRentValue({ listing }: { listing: ListingSummary }) {
+  return (
+    <span className="tabular-nums text-sm font-medium">
+      {listing.monthlyRent ? formatPrice(listing.monthlyRent) : '-'}
+    </span>
   );
 }
 
@@ -2226,17 +2294,19 @@ function FilterPopoverChip({
   label,
   value,
   active,
+  onOpenChange,
   contentClassName,
   children,
 }: {
   label: string;
   value: string;
   active?: boolean;
+  onOpenChange?: (open: boolean) => void;
   contentClassName?: string;
   children: ReactNode;
 }) {
   return (
-    <Popover>
+    <Popover onOpenChange={onOpenChange}>
       <PopoverTrigger asChild>
         <Button
           variant="ghost"
