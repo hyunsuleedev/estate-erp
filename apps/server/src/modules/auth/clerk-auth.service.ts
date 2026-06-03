@@ -10,9 +10,23 @@ type ClerkUserForProvisioning = Awaited<
   ReturnType<ClerkClient['users']['getUser']>
 >;
 
+type AuthenticatedBearerUser = {
+  userId: string;
+  clerkUserId: string;
+  officeId: string;
+  role: UserRole;
+};
+
+const BEARER_AUTH_CACHE_TTL_MS = 30_000;
+const BEARER_AUTH_CACHE_EXPIRY_SKEW_MS = 5_000;
+
 @Injectable()
 export class ClerkAuthService {
   private clerkClient: ClerkClient | null = null;
+  private readonly bearerAuthCache = new Map<
+    string,
+    { expiresAt: number; user: AuthenticatedBearerUser }
+  >();
 
   constructor(
     private readonly config: ConfigService,
@@ -20,9 +34,13 @@ export class ClerkAuthService {
   ) {}
 
   async authenticateBearerToken(token: string) {
+    const cached = this.getCachedBearerAuth(token);
+    if (cached) return cached;
+
     const secretKey = this.getSecretKey();
     const payload = (await verifyToken(token, { secretKey })) as {
       sub?: unknown;
+      exp?: unknown;
     };
     const clerkUserId = this.getSubject(payload);
     const user = await this.findOrLinkUser(clerkUserId);
@@ -31,12 +49,15 @@ export class ClerkAuthService {
       throw new UnauthorizedException('비활성화된 계정입니다.');
     }
 
-    return {
+    const authenticatedUser = {
       userId: user.id,
       clerkUserId,
       officeId: user.officeId ?? '',
       role: user.role as UserRole,
     };
+    this.cacheBearerAuth(token, authenticatedUser, payload.exp);
+
+    return authenticatedUser;
   }
 
   async authenticateOAuthAccessToken(token: string) {
@@ -223,5 +244,34 @@ export class ClerkAuthService {
       throw new UnauthorizedException('Invalid Clerk JWT: missing sub');
     }
     return payload.sub;
+  }
+
+  private getCachedBearerAuth(token: string) {
+    const cached = this.bearerAuthCache.get(token);
+    if (!cached) return null;
+
+    if (cached.expiresAt <= Date.now()) {
+      this.bearerAuthCache.delete(token);
+      return null;
+    }
+
+    return cached.user;
+  }
+
+  private cacheBearerAuth(
+    token: string,
+    user: AuthenticatedBearerUser,
+    tokenExpiresAtSeconds: unknown,
+  ) {
+    const now = Date.now();
+    const tokenExpiresAt =
+      typeof tokenExpiresAtSeconds === 'number'
+        ? tokenExpiresAtSeconds * 1000 - BEARER_AUTH_CACHE_EXPIRY_SKEW_MS
+        : Number.POSITIVE_INFINITY;
+    const expiresAt = Math.min(now + BEARER_AUTH_CACHE_TTL_MS, tokenExpiresAt);
+
+    if (expiresAt > now) {
+      this.bearerAuthCache.set(token, { expiresAt, user });
+    }
   }
 }
