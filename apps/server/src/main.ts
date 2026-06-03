@@ -28,7 +28,11 @@ async function bootstrap() {
     }),
   );
 
-  app.enableCors();
+  app.enableCors({
+    allowedHeaders: ['Authorization', 'Content-Type'],
+    maxAge: 600,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  });
 
   // Swagger + Scalar API Docs
   const config = new DocumentBuilder()
