@@ -350,8 +350,8 @@ function PropertiesPage() {
       api.listingIntakes.findAll({ ...apiParams, page: pageParam } as any),
     initialPageParam: 1,
     getNextPageParam: (lastPage) => {
-      const { page: currentPage, totalPages } = lastPage.pagination;
-      return currentPage < totalPages ? currentPage + 1 : undefined;
+      const { page: currentPage, hasNextPage: hasMore } = lastPage.pagination;
+      return hasMore ? currentPage + 1 : undefined;
     },
   });
 
@@ -359,8 +359,8 @@ function PropertiesPage() {
     () => data?.pages.flatMap((pageData) => pageData.items) ?? [],
     [data?.pages],
   );
-  const totalIntakes = data?.pages[0]?.pagination.total ?? 0;
   const loadedIntakes = listingIntakes.length;
+  const intakeCountLabel = `${loadedIntakes.toLocaleString()}${hasNextPage ? '+' : ''}`;
   const loadedListings = useMemo(
     () => listingIntakes.reduce((total, intake) => total + (intake.listings?.length ?? 0), 0),
     [listingIntakes],
@@ -1150,7 +1150,7 @@ function PropertiesPage() {
                 <span className="font-medium text-foreground">
                   매물 {propertyGroups.length.toLocaleString()}개
                 </span>
-                <span>의뢰 {loadedIntakes.toLocaleString()} / {totalIntakes.toLocaleString()}건 · 거래 {loadedListings.toLocaleString()}건</span>
+                <span>의뢰 {intakeCountLabel}건 · 거래 {loadedListings.toLocaleString()}건</span>
                 {activeFilterSummary.length > 0 ? (
                   <span className="min-w-0 truncate">
                     필터: {activeFilterSummary.join(' · ')}
@@ -1161,7 +1161,7 @@ function PropertiesPage() {
               </div>
               {isLoading ? (
                 <span>불러오는 중</span>
-              ) : totalIntakes === 0 && hasActiveFilters ? (
+              ) : loadedIntakes === 0 && hasActiveFilters ? (
                 <span>조건을 줄이거나 초기화해 보세요.</span>
               ) : (
                 <span>행 더블클릭 시 빠른 확인 패널을 엽니다.</span>
@@ -1171,7 +1171,7 @@ function PropertiesPage() {
             <PropertyListingsTable
               columns={columns}
               data={propertyGroups}
-              totalCount={totalIntakes}
+              totalCount={loadedIntakes}
               pageSize={LISTINGS_PAGE_SIZE}
               sorting={sorting}
               onSortingChange={handleSortingChange}
@@ -1182,7 +1182,7 @@ function PropertiesPage() {
               emptyMessage={hasActiveFilters ? '조건에 맞는 매물이 없습니다.' : '등록된 매물이 없습니다.'}
               renderStatusBar={() => (
                 <span>
-                  의뢰 {loadedIntakes.toLocaleString()} / {totalIntakes.toLocaleString()}건 표시
+                  의뢰 {intakeCountLabel}건 표시
                   {loadedListings > 0 ? ` · 거래 ${loadedListings.toLocaleString()}건` : ''}
                   {hasNextPage && !isFetchingNextPage ? ' · 아래로 스크롤하면 더 불러옵니다' : ''}
                   {isFetchingNextPage ? ' · 더 불러오는 중...' : ''}

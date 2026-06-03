@@ -16,7 +16,12 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
+      '@estate-erp/api-client': path.resolve(__dirname, '../../packages/api-client/src/index.ts'),
+      '@estate-erp/shared': path.resolve(__dirname, '../../packages/shared/src/index.ts'),
     },
+  },
+  optimizeDeps: {
+    exclude: ['@estate-erp/api-client', '@estate-erp/shared'],
   },
   server: {
     port: 5173,

@@ -132,6 +132,7 @@ model Listing {
   @@unique([intakeId, transactionType])
   @@index([officeId, checkStatus])
   @@index([officeId, checkStatus, checkStatusChangedAt])
+  @@index([officeId, transactionType, intakeId])
   @@index([propertyId])
   @@index([intakeId])
   @@index([jointBrokeragePartnerId])

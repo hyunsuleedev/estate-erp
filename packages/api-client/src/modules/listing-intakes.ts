@@ -1,5 +1,4 @@
 import type { RequestFn } from '../client.js';
-import type { PaginatedResponse } from '../types.js';
 import type { ListingAdvertisement, ListingPriceHistory } from './listings.js';
 import type { Property } from './properties.js';
 
@@ -112,6 +111,17 @@ export interface ListingIntakesFilter {
   limit?: number;
 }
 
+export interface ListingIntakesResponse {
+  items: ListingIntake[];
+  pagination: {
+    page: number;
+    limit: number;
+    hasNextPage: boolean;
+    total: number | null;
+    totalPages: number | null;
+  };
+}
+
 export interface CreateListingForIntakeDto {
   transactionType: string;
   price?: number | null;
@@ -157,7 +167,7 @@ export interface ConfirmListingIntakeDto {
 export function createListingIntakesApi(request: RequestFn) {
   return {
     findAll: (filters?: ListingIntakesFilter) =>
-      request<PaginatedResponse<ListingIntake>>('/listing-intakes', {
+      request<ListingIntakesResponse>('/listing-intakes', {
         params: filters as Record<string, string | number | boolean | undefined>,
       }),
 

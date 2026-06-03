@@ -81,6 +81,32 @@ describe('ListingIntakesService', () => {
     });
   });
 
+  it('uses limit plus one instead of count for list pagination', async () => {
+    const { prisma, service } = createService();
+    prisma.listingIntake.findMany.mockResolvedValue([
+      { id: 'intake-1' },
+      { id: 'intake-2' },
+      { id: 'intake-3' },
+    ]);
+
+    const result = await service.findAll('office-1', { limit: 2 });
+
+    expect(prisma.listingIntake.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        take: 3,
+      }),
+    );
+    expect(prisma.listingIntake.count).not.toHaveBeenCalled();
+    expect(result.items).toHaveLength(2);
+    expect(result.pagination).toEqual({
+      page: 1,
+      limit: 2,
+      hasNextPage: true,
+      total: null,
+      totalPages: null,
+    });
+  });
+
   it('filters by advertisement presence', async () => {
     const { prisma, service } = createService();
 

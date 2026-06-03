@@ -253,24 +253,24 @@ export class ListingIntakesService {
     const orderBy = this.resolveOrderBy(query.sortBy, query.sortOrder);
     const includedListingWhere = {};
 
-    const [items, total] = await Promise.all([
-      this.prisma.listingIntake.findMany({
-        where,
-        select: this.buildListSelect(includedListingWhere),
-        orderBy,
-        skip,
-        take: limit,
-      }),
-      this.prisma.listingIntake.count({ where }),
-    ]);
+    const rows = await this.prisma.listingIntake.findMany({
+      where,
+      select: this.buildListSelect(includedListingWhere),
+      orderBy,
+      skip,
+      take: limit + 1,
+    });
+    const hasNextPage = rows.length > limit;
+    const items = hasNextPage ? rows.slice(0, limit) : rows;
 
     return {
       items: items.map((item) => this.toResponse(item)),
       pagination: {
         page,
         limit,
-        total,
-        totalPages: Math.ceil(total / limit),
+        hasNextPage,
+        total: null,
+        totalPages: null,
       },
     };
   }

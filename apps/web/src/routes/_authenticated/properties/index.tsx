@@ -37,7 +37,6 @@ import type {
 } from '@estate-erp/api-client';
 import { formatPrice } from '@estate-erp/shared';
 import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
@@ -188,7 +187,6 @@ interface PropertyFilterState {
   monthlyRentMax: string;
   areaMin: string;
   areaMax: string;
-  includeHidden: boolean;
 }
 
 const initialPropertyFilters: PropertyFilterState = {
@@ -203,7 +201,6 @@ const initialPropertyFilters: PropertyFilterState = {
   monthlyRentMax: '',
   areaMin: '',
   areaMax: '',
-  includeHidden: false,
 };
 
 type ListingSummary = Pick<
@@ -263,10 +260,8 @@ function PropertiesPage() {
   const debouncedSearch = useDebouncedValue(search, 300);
 
   const { data: filterSites = [], isLoading: isFilterSitesLoading } = useQuery({
-    queryKey: ['listings', 'filter-sites', propertyFilters.includeHidden],
-    queryFn: () => api.listings.filterSites({
-      includeHidden: propertyFilters.includeHidden || undefined,
-    }),
+    queryKey: ['listings', 'filter-sites'],
+    queryFn: () => api.listings.filterSites(),
     staleTime: 5 * 60_000,
   });
 
@@ -749,8 +744,8 @@ function PropertiesPage() {
             </FilterSection>
 
             <FilterSection
-              title="면적 / 보기"
-              description="전용면적은 평으로 입력하고, 숨김 매물 포함 여부를 조정합니다."
+              title="면적"
+              description="전용면적은 평으로 입력합니다."
             >
               <RangeFilter
                 label="전용면적"
@@ -760,15 +755,6 @@ function PropertiesPage() {
                 onMinChange={(value) => updatePropertyFilter('areaMin', value)}
                 onMaxChange={(value) => updatePropertyFilter('areaMax', value)}
               />
-              <FilterField label="표시 옵션">
-                <label className="flex h-8 items-center gap-2 rounded-md border border-slate-200 bg-white px-2.5 text-xs text-slate-600">
-                  <Checkbox
-                    checked={propertyFilters.includeHidden}
-                    onCheckedChange={(checked) => updatePropertyFilter('includeHidden', checked === true)}
-                  />
-                  숨김 매물 포함
-                </label>
-              </FilterField>
             </FilterSection>
           </div>
 
@@ -2109,7 +2095,6 @@ function buildListingFilterParams(filters: PropertyFilterState) {
   if (filters.siteId) params.siteId = filters.siteId;
   if (filters.checkStatus !== 'all') params.checkStatus = filters.checkStatus;
   if (filters.siteType !== 'all') params.siteType = filters.siteType;
-  if (filters.includeHidden) params.includeHidden = true;
 
   addNumberParam(params, 'priceMin', filters.priceMin);
   addNumberParam(params, 'priceMax', filters.priceMax);
@@ -2149,7 +2134,6 @@ function buildActiveFilterChips(
   addRangeChip(chips, '전용면적', filters.areaMin, filters.areaMax, '평');
   addRangeChip(chips, '보증금', filters.depositMin, filters.depositMax, '만원');
   addRangeChip(chips, '월세', filters.monthlyRentMin, filters.monthlyRentMax, '만원');
-  if (filters.includeHidden) chips.push('숨김 포함');
 
   return chips;
 }

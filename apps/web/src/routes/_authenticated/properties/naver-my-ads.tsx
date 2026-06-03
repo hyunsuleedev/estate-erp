@@ -42,7 +42,6 @@ function NaverMyAdsPage() {
       api.listings.findAll({
         page: 1,
         limit: 200,
-        includeHidden: true,
         sortBy: 'updatedAt',
         sortOrder: 'desc',
       }),
