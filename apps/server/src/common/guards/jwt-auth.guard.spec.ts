@@ -3,11 +3,16 @@ import { JwtAuthGuard } from './jwt-auth.guard';
 
 describe('JwtAuthGuard', () => {
   function createContext(request: Record<string, unknown>) {
+    const response = {
+      setHeader: jest.fn(),
+    };
     return {
       switchToHttp: () => ({
         getRequest: () => request,
+        getResponse: () => response,
       }),
-    } as ExecutionContext;
+      response,
+    } as ExecutionContext & { response: typeof response };
   }
 
   function createGuard(currentUser: {
@@ -15,8 +20,9 @@ describe('JwtAuthGuard', () => {
     officeId: string;
     role: string;
   }) {
+    const authenticateBearerToken = jest.fn().mockResolvedValue(currentUser);
     return new JwtAuthGuard({
-      authenticateBearerToken: jest.fn().mockResolvedValue(currentUser),
+      authenticateBearerToken,
     } as never);
   }
 
@@ -79,5 +85,42 @@ describe('JwtAuthGuard', () => {
         }),
       ),
     ).resolves.toBe(true);
+  });
+
+  it('exposes auth timing details on successful requests', async () => {
+    const currentUser = {
+      userId: 'user-1',
+      officeId: 'office-1',
+      role: 'owner',
+    };
+    const authenticateBearerToken = jest
+      .fn()
+      .mockImplementation(async (_token: string, timings: { verifyTokenMs?: number; userLookupMs?: number }) => {
+        timings.verifyTokenMs = 7;
+        timings.userLookupMs = 3;
+        return currentUser;
+      });
+    const guard = new JwtAuthGuard({ authenticateBearerToken } as never);
+    const context = createContext({
+      headers: { authorization: 'Bearer token' },
+      method: 'GET',
+      route: { path: '/contacts' },
+      url: '/contacts?limit=1',
+    });
+
+    await expect(guard.canActivate(context)).resolves.toBe(true);
+
+    expect(authenticateBearerToken).toHaveBeenCalledWith(
+      'token',
+      expect.any(Object),
+    );
+    expect(context.response.setHeader).toHaveBeenCalledWith(
+      'Server-Timing',
+      expect.stringContaining('clerk_verify;dur=7'),
+    );
+    expect(context.response.setHeader).toHaveBeenCalledWith(
+      'Server-Timing',
+      expect.stringContaining('auth_user;dur=3'),
+    );
   });
 });

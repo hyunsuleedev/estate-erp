@@ -17,6 +17,12 @@ type AuthenticatedBearerUser = {
   role: UserRole;
 };
 
+export type BearerAuthTimings = {
+  cacheHit?: boolean;
+  verifyTokenMs?: number;
+  userLookupMs?: number;
+};
+
 const BEARER_AUTH_CACHE_TTL_MS = 30_000;
 const BEARER_AUTH_CACHE_EXPIRY_SKEW_MS = 5_000;
 
@@ -33,17 +39,25 @@ export class ClerkAuthService {
     private readonly prisma: PrismaService,
   ) {}
 
-  async authenticateBearerToken(token: string) {
+  async authenticateBearerToken(token: string, timings?: BearerAuthTimings) {
     const cached = this.getCachedBearerAuth(token);
-    if (cached) return cached;
+    if (cached) {
+      if (timings) timings.cacheHit = true;
+      return cached;
+    }
 
     const secretKey = this.getSecretKey();
+    const verifyStartedAt = Date.now();
     const payload = (await verifyToken(token, { secretKey })) as {
       sub?: unknown;
       exp?: unknown;
     };
+    if (timings) timings.verifyTokenMs = Date.now() - verifyStartedAt;
     const clerkUserId = this.getSubject(payload);
+
+    const userLookupStartedAt = Date.now();
     const user = await this.findOrLinkUser(clerkUserId);
+    if (timings) timings.userLookupMs = Date.now() - userLookupStartedAt;
 
     if (!user.isActive || user.office?.isActive === false) {
       throw new UnauthorizedException('비활성화된 계정입니다.');

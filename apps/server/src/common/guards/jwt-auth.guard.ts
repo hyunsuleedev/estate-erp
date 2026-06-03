@@ -7,7 +7,10 @@ import {
 } from '@nestjs/common';
 import { setRequestContext } from '../request-context/request-context';
 import { CurrentUserPayload } from '../decorators/current-user.decorator';
-import { ClerkAuthService } from '../../modules/auth/clerk-auth.service';
+import {
+  BearerAuthTimings,
+  ClerkAuthService,
+} from '../../modules/auth/clerk-auth.service';
 
 type AuthenticatedRequest = {
   headers: { authorization?: string };
@@ -17,21 +20,30 @@ type AuthenticatedRequest = {
   user?: CurrentUserPayload;
 };
 
+type TimingResponse = {
+  setHeader?: (name: string, value: string) => void;
+};
+
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
   constructor(private readonly clerkAuth: ClerkAuthService) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
+    const response = context.switchToHttp().getResponse<TimingResponse>();
     const authHeader = request.headers.authorization;
 
     if (!authHeader?.startsWith('Bearer ')) {
       throw new UnauthorizedException();
     }
 
+    const authStartedAt = Date.now();
+    const authTimings: BearerAuthTimings = {};
     const currentUser = await this.clerkAuth.authenticateBearerToken(
       authHeader.slice(7),
+      authTimings,
     );
+    this.setServerTimingHeader(response, Date.now() - authStartedAt, authTimings);
 
     if (!currentUser.officeId && !this.allowsOfficeLessAccess(request)) {
       throw new ForbiddenException('사무소 생성이 필요합니다.');
@@ -60,5 +72,20 @@ export class JwtAuthGuard implements CanActivate {
       (method === 'POST' && path === '/offices/me') ||
       (method === 'POST' && path === '/auth/logout')
     );
+  }
+
+  private setServerTimingHeader(
+    response: TimingResponse,
+    authMs: number,
+    timings: BearerAuthTimings,
+  ) {
+    const parts = [`auth;dur=${authMs}`];
+    if (timings.cacheHit) {
+      parts.push('auth_cache;desc="hit"');
+    } else {
+      parts.push(`clerk_verify;dur=${timings.verifyTokenMs ?? 0}`);
+      parts.push(`auth_user;dur=${timings.userLookupMs ?? 0}`);
+    }
+    response.setHeader?.('Server-Timing', parts.join(', '));
   }
 }

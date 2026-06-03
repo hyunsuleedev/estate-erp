@@ -30,6 +30,7 @@ async function bootstrap() {
 
   app.enableCors({
     allowedHeaders: ['Authorization', 'Content-Type'],
+    exposedHeaders: ['Server-Timing'],
     maxAge: 600,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   });
