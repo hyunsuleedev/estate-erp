@@ -220,7 +220,6 @@ function NewPropertyPage() {
       api.listingIntakes.findAll({
         propertyId: existingProperty!.id,
         status: 'active',
-        includeHidden: true,
         limit: 1,
       }),
     enabled: !!existingProperty?.id,

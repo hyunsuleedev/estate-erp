@@ -54,7 +54,6 @@ export interface ListingIntakeSearchQuery {
   nextConfirmFrom?: Date | string;
   nextConfirmTo?: Date | string;
   includeInactive?: boolean;
-  includeHidden?: boolean;
   propertyId?: string;
   transactionType?: string;
   checkStatus?: string;
@@ -66,10 +65,18 @@ export interface ListingIntakeSearchQuery {
   monthlyRentMax?: number;
   areaMin?: number;
   areaMax?: number;
+  hasAdvertisement?: boolean;
+  isJointBrokerage?: boolean;
   siteType?: string;
+  provinceCode?: string;
+  districtCode?: string;
   wardCode?: string;
   siteId?: string;
   search?: string;
+  dong?: string;
+  unit?: string;
+  moveInFrom?: Date | string;
+  moveInTo?: Date | string;
   sortBy?: 'receivedAt' | 'updatedAt' | 'createdAt' | 'price';
   sortOrder?: 'asc' | 'desc';
   page?: number;
@@ -153,8 +160,22 @@ export class ListingIntakesService {
 
     if (Object.keys(listingWhere).length > 0) {
       filters.push({ listings: { some: listingWhere } });
-    } else if (!query.includeHidden) {
-      filters.push({ listings: { some: { isHidden: false } } });
+    }
+
+    if (query.isJointBrokerage !== undefined) {
+      filters.push(
+        query.isJointBrokerage
+          ? {
+              OR: [
+                { isJointBrokerageRequired: true },
+                { listings: { some: { isJointBrokerageRequired: true } } },
+              ],
+            }
+          : {
+              isJointBrokerageRequired: false,
+              listings: { none: { isJointBrokerageRequired: true } },
+            },
+      );
     }
 
     if (query.areaMin !== undefined || query.areaMax !== undefined) {
@@ -175,13 +196,44 @@ export class ListingIntakesService {
       });
     }
 
-    if (query.siteId || query.siteType || query.wardCode) {
+    if (query.siteId || query.siteType || query.provinceCode || query.districtCode || query.wardCode) {
       filters.push({
         property: {
           ...(query.siteId && { siteId: query.siteId }),
           site: {
             ...(query.siteType && { type: query.siteType }),
             ...(query.wardCode && { wardCode: query.wardCode }),
+            ...(!query.wardCode && (query.districtCode || query.provinceCode) && {
+              ward: {
+                ...(query.districtCode && { districtCode: query.districtCode }),
+                ...(!query.districtCode && query.provinceCode && {
+                  district: { provinceCode: query.provinceCode },
+                }),
+              },
+            }),
+          },
+        },
+      });
+    }
+
+    if (query.dong || query.unit) {
+      filters.push({
+        property: {
+          unit: {
+            AND: [
+              ...(query.dong
+                ? [{
+                    dong: {
+                      name: { equals: query.dong.trim(), mode: 'insensitive' as const },
+                    },
+                  }]
+                : []),
+              ...(query.unit
+                ? [{
+                    name: { equals: query.unit.trim(), mode: 'insensitive' as const },
+                  }]
+                : []),
+            ],
           },
         },
       });
@@ -199,12 +251,12 @@ export class ListingIntakesService {
     const limit = Math.min(100, Math.max(1, query.limit || 20));
     const skip = (page - 1) * limit;
     const orderBy = this.resolveOrderBy(query.sortBy, query.sortOrder);
-    const includedListingWhere = query.includeHidden ? {} : { isHidden: false };
+    const includedListingWhere = {};
 
     const [items, total] = await Promise.all([
       this.prisma.listingIntake.findMany({
         where,
-        include: this.buildListInclude(includedListingWhere),
+        select: this.buildListSelect(includedListingWhere),
         orderBy,
         skip,
         take: limit,
@@ -513,10 +565,6 @@ export class ListingIntakesService {
   private buildListingWhere(query: ListingIntakeSearchQuery) {
     const where: Prisma.ListingWhereInput = {};
 
-    if (!query.includeHidden) {
-      where.isHidden = false;
-    }
-
     if (query.transactionType) {
       where.transactionType = query.transactionType;
     }
@@ -551,6 +599,18 @@ export class ListingIntakesService {
           lte: query.monthlyRentMax,
         }),
       };
+    }
+
+    if (query.hasAdvertisement !== undefined) {
+      where.advertisements = query.hasAdvertisement ? { some: {} } : { none: {} };
+    }
+
+    if (query.moveInFrom || query.moveInTo) {
+      const range = {
+        ...(query.moveInFrom && { gte: this.resolveDate(query.moveInFrom) ?? undefined }),
+        ...(query.moveInTo && { lte: this.resolveDate(query.moveInTo) ?? undefined }),
+      };
+      where.moveInAvailableFrom = range;
     }
 
     return where;
@@ -671,6 +731,67 @@ export class ListingIntakesService {
     return response;
   }
 
+  private buildListSelect(listingWhere: Prisma.ListingWhereInput) {
+    return {
+      id: true,
+      officeId: true,
+      propertyId: true,
+      status: true,
+      receivedAt: true,
+      confirmedAt: true,
+      isJointBrokerageRequired: true,
+      jointBrokeragePartnerId: true,
+      nextConfirmAt: true,
+      memo: true,
+      createdAt: true,
+      updatedAt: true,
+      property: {
+        select: this.buildListPropertySelect(),
+      },
+      jointBrokeragePartner: {
+        select: {
+          id: true,
+          name: true,
+          phone: true,
+        },
+      },
+      listings: {
+        where: listingWhere,
+        orderBy: { createdAt: 'desc' as const },
+        select: {
+          id: true,
+          officeId: true,
+          propertyId: true,
+          intakeId: true,
+          transactionType: true,
+          price: true,
+          deposit: true,
+          monthlyRent: true,
+          moveInAvailableType: true,
+          moveInAvailableFrom: true,
+          moveInAvailableTo: true,
+          isJointBrokerageRequired: true,
+          jointBrokeragePartnerId: true,
+          checkStatus: true,
+          checkStatusChangedAt: true,
+          memo: true,
+          createdAt: true,
+          updatedAt: true,
+          advertisements: {
+            orderBy: { createdAt: 'desc' as const },
+            take: 5,
+            select: {
+              id: true,
+              channel: true,
+              status: true,
+              createdAt: true,
+            },
+          },
+        },
+      },
+    } satisfies Prisma.ListingIntakeSelect;
+  }
+
   private buildListInclude(listingWhere: Prisma.ListingWhereInput) {
     return {
       property: {
@@ -742,6 +863,69 @@ export class ListingIntakesService {
         },
       },
     } satisfies Prisma.PropertyInclude;
+  }
+
+  private buildListPropertySelect() {
+    return {
+      id: true,
+      officeId: true,
+      siteId: true,
+      unitId: true,
+      createdAt: true,
+      updatedAt: true,
+      site: {
+        select: {
+          id: true,
+          name: true,
+          type: true,
+          roadAddress: true,
+          jibunAddress: true,
+          wardCode: true,
+          ward: {
+            select: {
+              code: true,
+              name: true,
+              district: {
+                select: {
+                  code: true,
+                  name: true,
+                  province: {
+                    select: {
+                      code: true,
+                      name: true,
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      unit: {
+        select: {
+          id: true,
+          name: true,
+          floor: true,
+          exclusiveAreaM2: true,
+          supplyAreaM2: true,
+          dong: {
+            select: {
+              id: true,
+              name: true,
+              isPlaceholder: true,
+            },
+          },
+          siteUnitType: {
+            select: {
+              id: true,
+              name: true,
+              exclusiveAreaM2: true,
+              supplyAreaM2: true,
+            },
+          },
+        },
+      },
+    } satisfies Prisma.PropertySelect;
   }
 
   private buildDetailPropertyInclude() {

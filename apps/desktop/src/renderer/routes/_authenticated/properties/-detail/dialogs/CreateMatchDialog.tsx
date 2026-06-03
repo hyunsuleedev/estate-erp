@@ -45,9 +45,7 @@ export function CreateMatchDialog({
   const [memo, setMemo] = useState<string>('');
   const [search, setSearch] = useState<string>('');
 
-  const eligibleListings = listings.filter(
-    (l) => !l.isHidden && l.checkStatus !== 'done',
-  );
+  const eligibleListings = listings.filter((l) => l.checkStatus !== 'done');
 
   // dialog 열릴 때 첫 listing 자동 선택
   useEffect(() => {

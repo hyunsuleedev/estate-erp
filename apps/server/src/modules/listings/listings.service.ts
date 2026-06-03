@@ -57,7 +57,6 @@ export interface ListingSearchQuery {
   wardCode?: string;
   siteId?: string;
   search?: string;
-  includeHidden?: boolean;
   sortBy?: 'price' | 'createdAt' | 'updatedAt';
   sortOrder?: 'asc' | 'desc';
   page?: number;
@@ -90,7 +89,6 @@ interface ListingUpdateDto {
   isJointBrokerageRequired?: boolean;
   jointBrokeragePartnerId?: string | null;
   checkStatus?: string;
-  isHidden?: boolean;
   memo?: string | null;
   expectedUpdatedAt?: Date | string | null;
 }
@@ -122,10 +120,6 @@ export class ListingsService {
     }
 
     const filters: Prisma.ListingWhereInput[] = [{ officeId }];
-
-    if (!query.includeHidden) {
-      filters.push({ isHidden: false });
-    }
 
     if (query.propertyId) {
       filters.push({ propertyId: query.propertyId });
@@ -325,7 +319,6 @@ export class ListingsService {
                   isJointBrokerageRequired: true,
                   jointBrokeragePartnerId: true,
                   checkStatus: true,
-                  isHidden: true,
                   memo: true,
                   createdAt: true,
                   updatedAt: true,
@@ -378,14 +371,10 @@ export class ListingsService {
     };
   }
 
-  async findFilterSites(
-    officeId: string,
-    query: { includeHidden?: boolean } = {},
-  ) {
+  async findFilterSites(officeId: string) {
     const listings = await this.prisma.listing.findMany({
       where: {
         officeId,
-        ...(!query.includeHidden ? { isHidden: false } : {}),
       },
       select: {
         propertyId: true,

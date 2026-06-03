@@ -22,7 +22,6 @@ export type {
   ListingAdvertisementStatus,
   ListingPriceHistory,
   ListingFilterSite,
-  ListingFilterSitesParams,
   ListingsFilter,
   CreateListingDto,
   UpdateListingDto,
@@ -87,6 +86,7 @@ export type {
   UpdateOfficePrintTemplateDto,
 } from './modules/contracts.js';
 export type { Consultation, ConsultationsFilter, CreateConsultationDto, UpdateConsultationDto } from './modules/consultations.js';
+export type { DistrictOption, ProvinceOption, RegionLevel, RegionSearchResult, WardOption } from './modules/regions.js';
 export type {
   BuyerRequirement,
   BuyerRequirementPreferredSite,
@@ -94,7 +94,6 @@ export type {
   BuyerRequirementsFilter,
   CreateBuyerRequirementDto,
 } from './modules/buyer-requirements.js';
-export type { RegionLevel, RegionSearchResult } from './modules/regions.js';
 export type { CalendarEvent, CalendarEventsFilter, CreateCalendarEventDto, UpdateCalendarEventDto } from './modules/calendar-events.js';
 export type { PropertyContact, CreatePropertyContactDto, UpdatePropertyContactDto } from './modules/property-contacts.js';
 export type { ContactRelation, CreateContactRelationDto } from './modules/contact-relations.js';

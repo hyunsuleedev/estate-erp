@@ -10,6 +10,21 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 export class RegionsController {
   constructor(private readonly service: RegionsService) {}
 
+  @Get('provinces')
+  findProvinces() {
+    return this.service.findProvinces();
+  }
+
+  @Get('districts')
+  findDistricts(@Query('provinceCode') provinceCode?: string) {
+    return this.service.findDistricts(provinceCode || undefined);
+  }
+
+  @Get('wards')
+  findWards(@Query('districtCode') districtCode?: string) {
+    return this.service.findWards(districtCode || undefined);
+  }
+
   @Get('search')
   search(@Query('q') q: string, @Query('limit') limit?: string) {
     return this.service.search(q ?? '', limit ? Number(limit) : undefined);

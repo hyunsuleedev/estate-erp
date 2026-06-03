@@ -71,6 +71,7 @@ model ListingIntake {
   calendarEvents   CalendarEvent[]
   proposals        Proposal[]
 
+  @@index([officeId, receivedAt])
   @@index([officeId, status, updatedAt])
   @@index([propertyId])
   @@index([requesterContactId])

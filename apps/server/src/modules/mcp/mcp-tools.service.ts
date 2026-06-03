@@ -209,7 +209,6 @@ export class McpToolsService {
         nextConfirmFrom: str('다음 확인 예정 시작일 (ISO)'),
         nextConfirmTo: str('다음 확인 예정 종료일 (ISO)'),
         includeInactive: bool('비활성 의뢰 포함'),
-        includeHidden: bool('숨김 listing 포함'),
         propertyId: str('관리매물 ID'),
         transactionType: strEnum('거래유형', ['sale', 'jeonse', 'monthly']),
         checkStatus: strEnum('확인상태', ['unverified', 'verified', 'in_contract', 'hold', 'done']),
@@ -235,7 +234,6 @@ export class McpToolsService {
           nextConfirmFrom: a.nextConfirmFrom as string,
           nextConfirmTo: a.nextConfirmTo as string,
           includeInactive: a.includeInactive as boolean,
-          includeHidden: a.includeHidden as boolean,
           propertyId: a.propertyId as string,
           transactionType: a.transactionType as string,
           checkStatus: a.checkStatus as string,
@@ -366,7 +364,6 @@ export class McpToolsService {
         search: str('검색어 (단지명, 주소)'),
         priceMin: num('최소 가격 (만원)'),
         priceMax: num('최대 가격 (만원)'),
-        includeHidden: bool('숨김 매물 포함'),
         ...page,
       }),
       async (a, c) =>
@@ -377,7 +374,6 @@ export class McpToolsService {
           search: a.search as string,
           priceMin: a.priceMin as number,
           priceMax: a.priceMax as number,
-          includeHidden: a.includeHidden as boolean,
           page: (a.page as number) ?? 1,
           limit: this.clampLimit(a),
         }),
@@ -425,14 +421,13 @@ export class McpToolsService {
     this.add(
       'update_listing',
       '매물 정보를 수정합니다. 가격, 거래유형, 확인상태, 메모 등.',
-      obj({ id: str('매물 ID'), price: num('가격'), deposit: num('보증금'), monthlyRent: num('월세'), checkStatus: strEnum('확인상태', ['unverified', 'verified', 'in_contract', 'hold', 'done']), isHidden: bool('숨김'), memo: str('메모') }, ['id']),
+      obj({ id: str('매물 ID'), price: num('가격'), deposit: num('보증금'), monthlyRent: num('월세'), checkStatus: strEnum('확인상태', ['unverified', 'verified', 'in_contract', 'hold', 'done']), memo: str('메모') }, ['id']),
       async (a, c) =>
         this.listings.update(a.id as string, c.officeId, {
           price: a.price as number,
           deposit: a.deposit as number,
           monthlyRent: a.monthlyRent as number,
           checkStatus: a.checkStatus as string,
-          isHidden: a.isHidden as boolean,
           memo: a.memo as string,
         }),
     );

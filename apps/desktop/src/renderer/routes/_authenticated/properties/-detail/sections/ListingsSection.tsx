@@ -112,11 +112,6 @@ function ListingCard({
           >
             {checkStatusLabels[listing.checkStatus] ?? listing.checkStatus}
           </Badge>
-          {listing.isHidden && (
-            <Badge variant="outline" className="text-[11px]">
-              숨김
-            </Badge>
-          )}
         </div>
         <Button
           variant="ghost"

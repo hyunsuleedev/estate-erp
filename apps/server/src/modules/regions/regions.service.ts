@@ -11,9 +11,60 @@ export interface RegionSearchResult {
   fullName: string;
 }
 
+export interface ProvinceOption {
+  code: string;
+  name: string;
+}
+
+export interface DistrictOption {
+  code: string;
+  provinceCode: string;
+  name: string;
+}
+
+export interface WardOption {
+  code: string;
+  districtCode: string;
+  name: string;
+}
+
 @Injectable()
 export class RegionsService {
   constructor(private readonly prisma: PrismaService) {}
+
+  async findProvinces(): Promise<ProvinceOption[]> {
+    return this.prisma.province.findMany({
+      orderBy: { code: 'asc' },
+      select: {
+        code: true,
+        name: true,
+      },
+    });
+  }
+
+  async findDistricts(provinceCode?: string): Promise<DistrictOption[]> {
+    return this.prisma.district.findMany({
+      where: provinceCode ? { provinceCode } : undefined,
+      orderBy: { code: 'asc' },
+      select: {
+        code: true,
+        provinceCode: true,
+        name: true,
+      },
+    });
+  }
+
+  async findWards(districtCode?: string): Promise<WardOption[]> {
+    return this.prisma.ward.findMany({
+      where: districtCode ? { districtCode } : undefined,
+      orderBy: { code: 'asc' },
+      select: {
+        code: true,
+        districtCode: true,
+        name: true,
+      },
+    });
+  }
 
   async search(q: string, limit = 20): Promise<RegionSearchResult[]> {
     const query = q.trim();

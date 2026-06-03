@@ -30,7 +30,6 @@ export class ListingIntakesController {
     @Query('nextConfirmFrom') nextConfirmFrom: string,
     @Query('nextConfirmTo') nextConfirmTo: string,
     @Query('includeInactive') includeInactive: string,
-    @Query('includeHidden') includeHidden: string,
     @Query('propertyId') propertyId: string,
     @Query('transactionType') transactionType: string,
     @Query('siteType') siteType: string,
@@ -43,9 +42,17 @@ export class ListingIntakesController {
     @Query('monthlyRentMax') monthlyRentMax: string,
     @Query('areaMin') areaMin: string,
     @Query('areaMax') areaMax: string,
+    @Query('hasAdvertisement') hasAdvertisement: string,
+    @Query('isJointBrokerage') isJointBrokerage: string,
+    @Query('provinceCode') provinceCode: string,
+    @Query('districtCode') districtCode: string,
     @Query('wardCode') wardCode: string,
     @Query('siteId') siteId: string,
     @Query('search') search: string,
+    @Query('dong') dong: string,
+    @Query('unit') unit: string,
+    @Query('moveInFrom') moveInFrom: string,
+    @Query('moveInTo') moveInTo: string,
     @Query('sortBy') sortBy: string,
     @Query('sortOrder') sortOrder: string,
     @Query('page') page: string,
@@ -57,7 +64,6 @@ export class ListingIntakesController {
       nextConfirmFrom: nextConfirmFrom || undefined,
       nextConfirmTo: nextConfirmTo || undefined,
       includeInactive: includeInactive === 'true',
-      includeHidden: includeHidden === 'true',
       propertyId: propertyId || undefined,
       transactionType: transactionType || undefined,
       siteType: siteType || undefined,
@@ -70,9 +76,17 @@ export class ListingIntakesController {
       monthlyRentMax: monthlyRentMax ? Number(monthlyRentMax) : undefined,
       areaMin: areaMin ? Number(areaMin) : undefined,
       areaMax: areaMax ? Number(areaMax) : undefined,
+      hasAdvertisement: parseBooleanQuery(hasAdvertisement),
+      isJointBrokerage: parseBooleanQuery(isJointBrokerage),
+      provinceCode: provinceCode || undefined,
+      districtCode: districtCode || undefined,
       wardCode: wardCode || undefined,
       siteId: siteId || undefined,
       search: search || undefined,
+      dong: dong || undefined,
+      unit: unit || undefined,
+      moveInFrom: moveInFrom || undefined,
+      moveInTo: moveInTo || undefined,
       sortBy: (sortBy as 'receivedAt' | 'updatedAt' | 'createdAt' | 'price') || undefined,
       sortOrder: (sortOrder as 'asc' | 'desc') || undefined,
       page: page ? Number(page) : undefined,
@@ -183,4 +197,10 @@ export class ListingIntakesController {
   remove(@Param('id') id: string, @CurrentUser() user: CurrentUserPayload) {
     return this.listingIntakes.remove(id, user.officeId);
   }
+}
+
+function parseBooleanQuery(value?: string) {
+  if (value === 'true') return true;
+  if (value === 'false') return false;
+  return undefined;
 }

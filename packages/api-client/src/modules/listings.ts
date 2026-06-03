@@ -154,7 +154,6 @@ export interface ListingsFilter {
   eupmyeondong?: string;
   siteId?: string;
   search?: string;
-  includeHidden?: boolean;
   sortBy?: 'price' | 'createdAt' | 'updatedAt';
   sortOrder?: 'asc' | 'desc';
   page?: number;
@@ -169,10 +168,6 @@ export interface ListingFilterSite {
   jibunAddress: string | null;
   listingCount: number;
   propertyCount: number;
-}
-
-export interface ListingFilterSitesParams {
-  includeHidden?: boolean;
 }
 
 export interface CreateListingDto {
@@ -201,7 +196,6 @@ export interface UpdateListingDto {
   isJointBrokerageRequired?: boolean;
   jointBrokeragePartnerId?: string | null;
   checkStatus?: string;
-  isHidden?: boolean;
   memo?: string;
   expectedUpdatedAt?: string | null;
 }
@@ -213,10 +207,7 @@ export function createListingsApi(request: RequestFn) {
         params: filters as Record<string, string | number | boolean | undefined>,
       }),
 
-    filterSites: (filters?: ListingFilterSitesParams) =>
-      request<ListingFilterSite[]>('/listings/filter-sites', {
-        params: filters as Record<string, string | number | boolean | undefined>,
-      }),
+    filterSites: () => request<ListingFilterSite[]>('/listings/filter-sites'),
 
     findOne: (id: string) =>
       request<Listing>(`/listings/${id}`),

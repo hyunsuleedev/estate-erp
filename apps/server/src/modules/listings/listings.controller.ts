@@ -41,7 +41,6 @@ export class ListingsController {
     @Query('wardCode') wardCode: string,
     @Query('siteId') siteId: string,
     @Query('search') search: string,
-    @Query('includeHidden') includeHidden: string,
     @Query('sortBy') sortBy: string,
     @Query('sortOrder') sortOrder: string,
     @Query('page') page: string,
@@ -64,7 +63,6 @@ export class ListingsController {
       wardCode: wardCode || undefined,
       siteId: siteId || undefined,
       search: search || undefined,
-      includeHidden: includeHidden === 'true',
       sortBy: (sortBy as 'price' | 'createdAt' | 'updatedAt') || undefined,
       sortOrder: (sortOrder as 'asc' | 'desc') || undefined,
       page: page ? Number(page) : undefined,
@@ -74,12 +72,9 @@ export class ListingsController {
 
   @Get('filter-sites')
   findFilterSites(
-    @Query('includeHidden') includeHidden: string,
     @CurrentUser() user: CurrentUserPayload,
   ) {
-    return this.listingsService.findFilterSites(user.officeId, {
-      includeHidden: includeHidden === 'true',
-    });
+    return this.listingsService.findFilterSites(user.officeId);
   }
 
   @Get(':id')
@@ -140,7 +135,6 @@ export class ListingsController {
       isJointBrokerageRequired?: boolean;
       jointBrokeragePartnerId?: string | null;
       checkStatus?: string;
-      isHidden?: boolean;
       memo?: string | null;
       expectedUpdatedAt?: string | null;
     },

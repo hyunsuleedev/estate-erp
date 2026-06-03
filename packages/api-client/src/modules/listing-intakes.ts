@@ -81,7 +81,6 @@ export interface ListingIntakesFilter {
   nextConfirmFrom?: string;
   nextConfirmTo?: string;
   includeInactive?: boolean;
-  includeHidden?: boolean;
   propertyId?: string;
   transactionType?: string;
   siteType?: string;
@@ -94,11 +93,19 @@ export interface ListingIntakesFilter {
   monthlyRentMax?: number;
   areaMin?: number;
   areaMax?: number;
+  hasAdvertisement?: boolean;
+  isJointBrokerage?: boolean;
+  provinceCode?: string;
+  districtCode?: string;
   sido?: string;
   sigungu?: string;
   eupmyeondong?: string;
   siteId?: string;
   search?: string;
+  dong?: string;
+  unit?: string;
+  moveInFrom?: string;
+  moveInTo?: string;
   sortBy?: 'receivedAt' | 'createdAt' | 'updatedAt' | 'price';
   sortOrder?: 'asc' | 'desc';
   page?: number;

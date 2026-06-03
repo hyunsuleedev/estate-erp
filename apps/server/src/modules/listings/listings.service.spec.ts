@@ -332,7 +332,6 @@ describe('ListingsService', () => {
     expect(prisma.listing.findMany).toHaveBeenCalledWith({
       where: {
         officeId: 'office-1',
-        isHidden: false,
       },
       select: {
         propertyId: true,

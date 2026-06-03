@@ -44,7 +44,6 @@ export type ListingSummary = Pick<
   | 'moveInAvailableFrom'
   | 'moveInAvailableTo'
   | 'checkStatus'
-  | 'isHidden'
   | 'memo'
   | 'createdAt'
   | 'updatedAt'

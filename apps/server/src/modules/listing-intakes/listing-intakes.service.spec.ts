@@ -55,6 +55,206 @@ describe('ListingIntakesService', () => {
     );
   });
 
+  it('uses a narrowed select for list queries', async () => {
+    const { prisma, service } = createService();
+
+    await service.findAll('office-1');
+
+    const args = prisma.listingIntake.findMany.mock.calls[0][0];
+    expect(args).toHaveProperty('select');
+    expect(args).not.toHaveProperty('include');
+    expect(args.select.property.select.site.select).toEqual(
+      expect.objectContaining({
+        id: true,
+        name: true,
+        type: true,
+        roadAddress: true,
+        jibunAddress: true,
+      }),
+    );
+    expect(args.select.property.select.site.select).not.toHaveProperty('metadata');
+    expect(args.select.listings.select.advertisements.select).toEqual({
+      id: true,
+      channel: true,
+      status: true,
+      createdAt: true,
+    });
+  });
+
+  it('filters by advertisement presence', async () => {
+    const { prisma, service } = createService();
+
+    await service.findAll('office-1', { hasAdvertisement: true });
+
+    expect(prisma.listingIntake.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          AND: expect.arrayContaining([
+            { listings: { some: expect.objectContaining({ advertisements: { some: {} } }) } },
+          ]),
+        }),
+      }),
+    );
+  });
+
+  it('filters by joint brokerage absence across intake and visible listings', async () => {
+    const { prisma, service } = createService();
+
+    await service.findAll('office-1', { isJointBrokerage: false });
+
+    expect(prisma.listingIntake.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          AND: expect.arrayContaining([
+            expect.objectContaining({
+              isJointBrokerageRequired: false,
+              listings: { none: { isJointBrokerageRequired: true } },
+            }),
+          ]),
+        }),
+      }),
+    );
+  });
+
+  it('filters dong and unit as separate typed terms', async () => {
+    const { prisma, service } = createService();
+
+    await service.findAll('office-1', { dong: '101', unit: '1004' });
+
+    expect(prisma.listingIntake.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          AND: expect.arrayContaining([
+            {
+              property: {
+                unit: {
+                  AND: [
+                    {
+                      dong: {
+                        name: { equals: '101', mode: 'insensitive' },
+                      },
+                    },
+                    {
+                      name: { equals: '1004', mode: 'insensitive' },
+                    },
+                  ],
+                },
+              },
+            },
+          ]),
+        }),
+      }),
+    );
+  });
+
+  it('filters by province code through site legal-dong hierarchy', async () => {
+    const { prisma, service } = createService();
+
+    await service.findAll('office-1', {
+      provinceCode: '11',
+    });
+
+    expect(prisma.listingIntake.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          AND: expect.arrayContaining([
+            {
+              property: {
+                site: {
+                  ward: {
+                    district: {
+                      provinceCode: '11',
+                    },
+                  },
+                },
+              },
+            },
+          ]),
+        }),
+      }),
+    );
+  });
+
+  it('filters by district code through site legal-dong hierarchy', async () => {
+    const { prisma, service } = createService();
+
+    await service.findAll('office-1', {
+      districtCode: '11740',
+    });
+
+    expect(prisma.listingIntake.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          AND: expect.arrayContaining([
+            {
+              property: {
+                site: {
+                  ward: {
+                    districtCode: '11740',
+                  },
+                },
+              },
+            },
+          ]),
+        }),
+      }),
+    );
+  });
+
+  it('uses ward code as the most specific region filter', async () => {
+    const { prisma, service } = createService();
+
+    await service.findAll('office-1', {
+      provinceCode: '11',
+      districtCode: '11740',
+      wardCode: '1174010100',
+    });
+
+    expect(prisma.listingIntake.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          AND: expect.arrayContaining([
+            {
+              property: {
+                site: {
+                  wardCode: '1174010100',
+                },
+              },
+            },
+          ]),
+        }),
+      }),
+    );
+  });
+
+  it('filters by move-in available date range', async () => {
+    const { prisma, service } = createService();
+
+    await service.findAll('office-1', {
+      moveInFrom: '2026-06-01',
+      moveInTo: '2026-06-30',
+    });
+
+    expect(prisma.listingIntake.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          AND: expect.arrayContaining([
+            {
+              listings: {
+                some: expect.objectContaining({
+                  moveInAvailableFrom: {
+                    gte: new Date('2026-06-01'),
+                    lte: new Date('2026-06-30'),
+                  },
+                }),
+              },
+            },
+          ]),
+        }),
+      }),
+    );
+  });
+
   it('rejects a stale intake update when expectedUpdatedAt no longer matches', async () => {
     const { prisma, service } = createService();
     prisma.listingIntake.findFirst.mockResolvedValue({

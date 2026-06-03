@@ -62,6 +62,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
 import {
   Popover,
   PopoverContent,
@@ -194,6 +195,11 @@ const intakeStatusFilterOptions = [
 
 interface PropertyFilterState {
   siteId: string;
+  provinceCode: string;
+  districtCode: string;
+  wardCode: string;
+  dongSearch: string;
+  unitSearch: string;
   siteType: string;
   intakeStatus: string;
   priceMin: string;
@@ -204,11 +210,19 @@ interface PropertyFilterState {
   monthlyRentMax: string;
   areaMin: string;
   areaMax: string;
-  includeHidden: boolean;
+  moveInFrom: string;
+  moveInTo: string;
+  hasAdvertisement: boolean;
+  isJointBrokerage: boolean;
 }
 
 const initialPropertyFilters: PropertyFilterState = {
   siteId: '',
+  provinceCode: '',
+  districtCode: '',
+  wardCode: '',
+  dongSearch: '',
+  unitSearch: '',
   siteType: 'all',
   intakeStatus: 'all',
   priceMin: '',
@@ -219,7 +233,10 @@ const initialPropertyFilters: PropertyFilterState = {
   monthlyRentMax: '',
   areaMin: '',
   areaMax: '',
-  includeHidden: false,
+  moveInFrom: '',
+  moveInTo: '',
+  hasAdvertisement: false,
+  isJointBrokerage: false,
 };
 
 type ListingProperty = NonNullable<ListingIntake['property']>;
@@ -253,12 +270,12 @@ function PropertiesPage() {
   const [activeSorts, setActiveSorts] = useState<SortDefinition[]>([]);
   const [sorting, setSorting] = useState<SortingState>([]);
   const debouncedSearch = useDebouncedValue(search, 300);
+  const debouncedDongSearch = useDebouncedValue(propertyFilters.dongSearch, 300);
+  const debouncedUnitSearch = useDebouncedValue(propertyFilters.unitSearch, 300);
 
   const { data: filterSites = [], isLoading: isFilterSitesLoading } = useQuery({
-    queryKey: ['listings', 'filter-sites', propertyFilters.includeHidden],
-    queryFn: () => api.listings.filterSites({
-      includeHidden: propertyFilters.includeHidden || undefined,
-    }),
+    queryKey: ['listings', 'filter-sites'],
+    queryFn: () => api.listings.filterSites(),
     enabled: isSiteFilterOpen || Boolean(propertyFilters.siteId),
     staleTime: 5 * 60_000,
   });
@@ -267,12 +284,43 @@ function PropertiesPage() {
     () => new Map(filterSites.map((site) => [site.id, site])),
     [filterSites],
   );
+  const { data: provinces = [] } = useQuery({
+    queryKey: ['regions', 'provinces'],
+    queryFn: () => api.regions.findProvinces(),
+    staleTime: 24 * 60_000,
+  });
+  const { data: districts = [] } = useQuery({
+    queryKey: ['regions', 'districts', propertyFilters.provinceCode],
+    queryFn: () => api.regions.findDistricts(propertyFilters.provinceCode || undefined),
+    enabled: Boolean(propertyFilters.provinceCode),
+    staleTime: 24 * 60_000,
+  });
+  const { data: wards = [] } = useQuery({
+    queryKey: ['regions', 'wards', propertyFilters.districtCode],
+    queryFn: () => api.regions.findWards(propertyFilters.districtCode || undefined),
+    enabled: Boolean(propertyFilters.districtCode),
+    staleTime: 24 * 60_000,
+  });
+  const provinceOptions = useMemo(
+    () => [{ value: '', label: '전체' }, ...provinces.map((province) => ({ value: province.code, label: province.name }))],
+    [provinces],
+  );
+  const districtOptions = useMemo(
+    () => [{ value: '', label: '전체' }, ...districts.map((district) => ({ value: district.code, label: district.name }))],
+    [districts],
+  );
+  const wardOptions = useMemo(
+    () => [{ value: '', label: '전체' }, ...wards.map((ward) => ({ value: ward.code, label: ward.name }))],
+    [wards],
+  );
 
   // ── Derive API params from filters ────────────────────────────
   const apiParams = useMemo(() => {
     const params: Record<string, string | number | boolean | undefined> = {
       limit: LISTINGS_PAGE_SIZE,
       search: debouncedSearch.trim() || undefined,
+      dong: debouncedDongSearch.trim() || undefined,
+      unit: debouncedUnitSearch.trim() || undefined,
       includeInactive: true,
       ...buildListingFilterParams(propertyFilters),
     };
@@ -287,7 +335,7 @@ function PropertiesPage() {
     }
 
     return params;
-  }, [debouncedSearch, propertyFilters, selectedTransactionType, activeSorts]);
+  }, [debouncedDongSearch, debouncedSearch, debouncedUnitSearch, propertyFilters, selectedTransactionType, activeSorts]);
 
   // ── Query ─────────────────────────────────────────────────────
   const {
@@ -345,6 +393,15 @@ function PropertiesPage() {
     selectedSiteName: propertyFilters.siteId
       ? sitesById.get(propertyFilters.siteId)?.name
       : undefined,
+    selectedProvinceName: propertyFilters.provinceCode
+      ? provinces.find((province) => province.code === propertyFilters.provinceCode)?.name
+      : undefined,
+    selectedDistrictName: propertyFilters.districtCode
+      ? districts.find((district) => district.code === propertyFilters.districtCode)?.name
+      : undefined,
+    selectedWardName: propertyFilters.wardCode
+      ? wards.find((ward) => ward.code === propertyFilters.wardCode)?.name
+      : undefined,
     activeSorts,
   });
 
@@ -356,11 +413,27 @@ function PropertiesPage() {
   const selectedSite = propertyFilters.siteId
     ? sitesById.get(propertyFilters.siteId)
     : undefined;
-  const amountFilterSummary = getAmountFilterSummary(propertyFilters);
+  const selectedProvince = propertyFilters.provinceCode
+    ? provinces.find((province) => province.code === propertyFilters.provinceCode)
+    : undefined;
+  const selectedDistrict = propertyFilters.districtCode
+    ? districts.find((district) => district.code === propertyFilters.districtCode)
+    : undefined;
+  const selectedWard = propertyFilters.wardCode
+    ? wards.find((ward) => ward.code === propertyFilters.wardCode)
+    : undefined;
+  const priceDepositFilterSummary = getPriceDepositFilterSummary(propertyFilters);
+  const monthlyRentFilterSummary = getRangeSummary(propertyFilters.monthlyRentMin, propertyFilters.monthlyRentMax, '만원');
   const areaFilterSummary = getRangeSummary(propertyFilters.areaMin, propertyFilters.areaMax, '평');
+  const moveInFilterSummary = getDateRangeSummary(propertyFilters.moveInFrom, propertyFilters.moveInTo);
   const hasActiveFilters = Boolean(
     search.trim() ||
       propertyFilters.siteId ||
+      propertyFilters.provinceCode ||
+      propertyFilters.districtCode ||
+      propertyFilters.wardCode ||
+      propertyFilters.dongSearch.trim() ||
+      propertyFilters.unitSearch.trim() ||
       propertyFilters.siteType !== 'all' ||
       propertyFilters.intakeStatus !== 'all' ||
       propertyFilters.priceMin ||
@@ -371,7 +444,10 @@ function PropertiesPage() {
       propertyFilters.monthlyRentMax ||
       propertyFilters.areaMin ||
       propertyFilters.areaMax ||
-      propertyFilters.includeHidden ||
+      propertyFilters.moveInFrom ||
+      propertyFilters.moveInTo ||
+      propertyFilters.hasAdvertisement ||
+      propertyFilters.isJointBrokerage ||
       activeSorts.length > 0,
   );
 
@@ -493,6 +569,23 @@ function PropertiesPage() {
     },
     [],
   );
+  const handleProvinceFilterChange = useCallback((value: string) => {
+    setPropertyFilters((prev) => ({
+      ...prev,
+      provinceCode: value,
+      districtCode: '',
+      wardCode: '',
+    }));
+    setPage(1);
+  }, []);
+  const handleDistrictFilterChange = useCallback((value: string) => {
+    setPropertyFilters((prev) => ({
+      ...prev,
+      districtCode: value,
+      wardCode: '',
+    }));
+    setPage(1);
+  }, []);
 
   const handleSearchChange = useCallback((value: string) => {
     setSearch(value);
@@ -627,7 +720,7 @@ function PropertiesPage() {
       {
         id: 'confirmAction',
         header: () => <TableHeaderLabel icon={<Check className="size-4" />} label="확인" />,
-        size: 78,
+        size: 65,
         enableSorting: false,
         cell: ({ row }) => (
           <IntakeConfirmButton
@@ -768,12 +861,12 @@ function PropertiesPage() {
 
         <section className="border-b border-border bg-white px-3 py-2.5">
           <div className="flex flex-wrap items-center gap-1.5">
-            <div className="relative mr-1 w-64 max-w-full">
+            <div className="relative mr-1 w-56 max-w-full">
               <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
               <Input
                 value={search}
                 onChange={(event) => handleSearchChange(event.target.value)}
-                placeholder="검색"
+                placeholder="단지, 주소, 연락처"
                 className="h-8 border-transparent bg-white pl-8 pr-8 text-[13px] shadow-none hover:border-border focus:border-input"
               />
               {search && (
@@ -788,8 +881,46 @@ function PropertiesPage() {
               )}
             </div>
 
+            <div className="relative w-20">
+              <Input
+                value={propertyFilters.dongSearch}
+                onChange={(event) => updatePropertyFilter('dongSearch', event.target.value)}
+                placeholder="동"
+                className="h-8 border-transparent bg-white px-2 pr-6 text-[13px] shadow-none hover:border-border focus:border-input"
+              />
+              {propertyFilters.dongSearch && (
+                <button
+                  type="button"
+                  aria-label="동 검색 지우기"
+                  onClick={() => updatePropertyFilter('dongSearch', '')}
+                  className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded-sm p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                >
+                  <X className="size-3.5" />
+                </button>
+              )}
+            </div>
+
+            <div className="relative w-20">
+              <Input
+                value={propertyFilters.unitSearch}
+                onChange={(event) => updatePropertyFilter('unitSearch', event.target.value)}
+                placeholder="호"
+                className="h-8 border-transparent bg-white px-2 pr-6 text-[13px] shadow-none hover:border-border focus:border-input"
+              />
+              {propertyFilters.unitSearch && (
+                <button
+                  type="button"
+                  aria-label="호 검색 지우기"
+                  onClick={() => updatePropertyFilter('unitSearch', '')}
+                  className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded-sm p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                >
+                  <X className="size-3.5" />
+                </button>
+              )}
+            </div>
+
             <FilterPopoverChip
-              label="단지"
+              label="단지/지역"
               value={selectedSite?.name ?? '전체'}
               active={Boolean(propertyFilters.siteId)}
               onOpenChange={setIsSiteFilterOpen}
@@ -802,6 +933,54 @@ function PropertiesPage() {
                   onChange={(value) => updatePropertyFilter('siteId', value)}
                   isLoading={isFilterSitesLoading}
                   showCounts
+                />
+              </div>
+            </FilterPopoverChip>
+
+            <FilterPopoverChip
+              label="시도"
+              value={selectedProvince?.name ?? '전체'}
+              active={Boolean(propertyFilters.provinceCode)}
+              contentClassName="w-[220px]"
+            >
+              <div className="space-y-2">
+                <PopoverTitle title="시도" description="시도 단위로 지역을 좁힙니다." />
+                <SelectFilter
+                  value={propertyFilters.provinceCode}
+                  onChange={handleProvinceFilterChange}
+                  options={provinceOptions}
+                />
+              </div>
+            </FilterPopoverChip>
+
+            <FilterPopoverChip
+              label="시군구"
+              value={selectedDistrict?.name ?? '전체'}
+              active={Boolean(propertyFilters.districtCode)}
+              contentClassName="w-[220px]"
+            >
+              <div className="space-y-2">
+                <PopoverTitle title="시군구" description="시도를 먼저 선택한 뒤 시군구를 선택합니다." />
+                <SelectFilter
+                  value={propertyFilters.districtCode}
+                  onChange={handleDistrictFilterChange}
+                  options={districtOptions}
+                />
+              </div>
+            </FilterPopoverChip>
+
+            <FilterPopoverChip
+              label="법정동"
+              value={selectedWard?.name ?? '전체'}
+              active={Boolean(propertyFilters.wardCode)}
+              contentClassName="w-[220px]"
+            >
+              <div className="space-y-2">
+                <PopoverTitle title="읍면동/법정동" description="시군구를 먼저 선택한 뒤 법정동을 선택합니다." />
+                <SelectFilter
+                  value={propertyFilters.wardCode}
+                  onChange={(value) => updatePropertyFilter('wardCode', value)}
+                  options={wardOptions}
                 />
               </div>
             </FilterPopoverChip>
@@ -837,13 +1016,13 @@ function PropertiesPage() {
             </FilterPopoverChip>
 
             <FilterPopoverChip
-              label="금액"
-              value={amountFilterSummary ?? '전체'}
-              active={Boolean(amountFilterSummary)}
-              contentClassName="w-[360px]"
+              label="가격/보증금"
+              value={priceDepositFilterSummary ?? '전체'}
+              active={Boolean(priceDepositFilterSummary)}
+              contentClassName="w-[340px]"
             >
               <div className="space-y-3">
-                <PopoverTitle title="금액" description="만원 단위로 입력합니다." />
+                <PopoverTitle title="가격/보증금" description="만원 단위로 입력합니다." />
                 <RangeFilter
                   label="가격"
                   unit="만원"
@@ -860,6 +1039,17 @@ function PropertiesPage() {
                   onMinChange={(value) => updatePropertyFilter('depositMin', value)}
                   onMaxChange={(value) => updatePropertyFilter('depositMax', value)}
                 />
+              </div>
+            </FilterPopoverChip>
+
+            <FilterPopoverChip
+              label="월세"
+              value={monthlyRentFilterSummary ?? '전체'}
+              active={Boolean(monthlyRentFilterSummary)}
+              contentClassName="w-[320px]"
+            >
+              <div className="space-y-3">
+                <PopoverTitle title="월세" description="만원 단위로 입력합니다." />
                 <RangeFilter
                   label="월세"
                   unit="만원"
@@ -890,20 +1080,50 @@ function PropertiesPage() {
               </div>
             </FilterPopoverChip>
 
-            <Button
-              variant={propertyFilters.includeHidden ? 'secondary' : 'ghost'}
-              size="sm"
-              className={cn(
-                'h-8 gap-1.5 px-2.5 text-xs',
-                propertyFilters.includeHidden
-                  ? 'border border-border bg-muted text-foreground'
-                  : 'text-muted-foreground',
-              )}
-              onClick={() => updatePropertyFilter('includeHidden', !propertyFilters.includeHidden)}
+            <FilterPopoverChip
+              label="입주일"
+              value={moveInFilterSummary ?? '전체'}
+              active={Boolean(moveInFilterSummary)}
+              contentClassName="w-[320px]"
             >
-              {propertyFilters.includeHidden && <Check className="size-3.5" />}
-              숨김 포함
-            </Button>
+              <div className="space-y-3">
+                <PopoverTitle title="입주일" description="입주가능일 시작 날짜 기준으로 검색합니다." />
+                <DateRangeFilter
+                  fromValue={propertyFilters.moveInFrom}
+                  toValue={propertyFilters.moveInTo}
+                  onFromChange={(value) => updatePropertyFilter('moveInFrom', value)}
+                  onToChange={(value) => updatePropertyFilter('moveInTo', value)}
+                />
+              </div>
+            </FilterPopoverChip>
+
+            <label className={cn(
+              'flex h-8 items-center gap-2 rounded-md border px-3 text-xs',
+              propertyFilters.hasAdvertisement
+                ? 'border-border bg-muted text-foreground'
+                : 'border-transparent bg-white text-muted-foreground',
+            )}>
+              <Switch
+                size="sm"
+                checked={propertyFilters.hasAdvertisement}
+                onCheckedChange={(checked) => updatePropertyFilter('hasAdvertisement', checked)}
+              />
+              광고
+            </label>
+
+            <label className={cn(
+              'flex h-8 items-center gap-2 rounded-md border px-3 text-xs',
+              propertyFilters.isJointBrokerage
+                ? 'border-border bg-muted text-foreground'
+                : 'border-transparent bg-white text-muted-foreground',
+            )}>
+              <Switch
+                size="sm"
+                checked={propertyFilters.isJointBrokerage}
+                onCheckedChange={(checked) => updatePropertyFilter('isJointBrokerage', checked)}
+              />
+              공동
+            </label>
 
             <div className="ml-auto flex items-center gap-1.5">
               <div className="w-40">
@@ -1338,11 +1558,6 @@ function PropertySheetListingCard({ listing }: { listing: PropertyListing }) {
           <TransactionBadge transactionType={listing.transactionType} />
           <StatusIndicator value={listing.checkStatus} />
           <JointBrokerageBadge listing={listing} />
-          {listing.isHidden && (
-            <span className="inline-flex rounded-md bg-[#fbe4e4] px-1.5 py-0.5 text-[11px] font-medium leading-5 text-[#9f5555]">
-              숨김
-            </span>
-          )}
         </div>
         <span className="shrink-0 text-[11px] text-muted-foreground">
           확인 {formatDateShort(listing.updatedAt)}
@@ -1714,11 +1929,6 @@ function TransactionStack({ listings }: { listings: ListingSummary[] }) {
       {listings.map((listing) => (
         <div key={listing.id} className="flex items-center gap-1">
           <TransactionBadge transactionType={listing.transactionType} />
-          {listing.isHidden && (
-            <span className="inline-flex rounded-[4px] bg-[#fbe4e4] px-1.5 py-0.5 text-[11px] font-medium leading-5 text-[#9f5555]">
-              숨김
-            </span>
-          )}
         </div>
       ))}
     </div>
@@ -2557,20 +2767,58 @@ function RangeFilter({
   );
 }
 
+function DateRangeFilter({
+  fromValue,
+  toValue,
+  onFromChange,
+  onToChange,
+}: {
+  fromValue: string;
+  toValue: string;
+  onFromChange: (value: string) => void;
+  onToChange: (value: string) => void;
+}) {
+  return (
+    <FilterField label="입주가능일">
+      <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-1.5">
+        <Input
+          type="date"
+          value={fromValue}
+          onChange={(event) => onFromChange(event.target.value)}
+          className="h-8 bg-white px-2 text-[13px]"
+        />
+        <span className="text-xs text-slate-400">~</span>
+        <Input
+          type="date"
+          value={toValue}
+          onChange={(event) => onToChange(event.target.value)}
+          className="h-8 bg-white px-2 text-[13px]"
+        />
+      </div>
+    </FilterField>
+  );
+}
+
 function buildListingFilterParams(filters: PropertyFilterState) {
   const params: Record<string, string | number | boolean | undefined> = {};
 
   if (filters.siteId) params.siteId = filters.siteId;
+  if (filters.provinceCode) params.provinceCode = filters.provinceCode;
+  if (filters.districtCode) params.districtCode = filters.districtCode;
+  if (filters.wardCode) params.wardCode = filters.wardCode;
   if (filters.siteType !== 'all') params.siteType = filters.siteType;
   if (filters.intakeStatus !== 'all') params.status = filters.intakeStatus;
-  if (filters.includeHidden) params.includeHidden = true;
-
   addNumberParam(params, 'priceMin', filters.priceMin);
   addNumberParam(params, 'priceMax', filters.priceMax);
   addNumberParam(params, 'depositMin', filters.depositMin);
   addNumberParam(params, 'depositMax', filters.depositMax);
   addNumberParam(params, 'monthlyRentMin', filters.monthlyRentMin);
   addNumberParam(params, 'monthlyRentMax', filters.monthlyRentMax);
+
+  if (filters.hasAdvertisement) params.hasAdvertisement = true;
+  if (filters.isJointBrokerage) params.isJointBrokerage = true;
+  if (filters.moveInFrom) params.moveInFrom = filters.moveInFrom;
+  if (filters.moveInTo) params.moveInTo = filters.moveInTo;
 
   const areaMin = parseNumberFilter(filters.areaMin);
   const areaMax = parseNumberFilter(filters.areaMax);
@@ -2605,12 +2853,18 @@ function getActiveFilterSummary({
   selectedTransactionType,
   propertyFilters,
   selectedSiteName,
+  selectedProvinceName,
+  selectedDistrictName,
+  selectedWardName,
   activeSorts,
 }: {
   search: string;
   selectedTransactionType: (typeof transactionTypeOptions)[number]['value'];
   propertyFilters: PropertyFilterState;
   selectedSiteName?: string;
+  selectedProvinceName?: string;
+  selectedDistrictName?: string;
+  selectedWardName?: string;
   activeSorts: SortDefinition[];
 }) {
   const summary: string[] = [];
@@ -2621,15 +2875,25 @@ function getActiveFilterSummary({
   }
   if (trimmedSearch) summary.push(`검색 ${trimmedSearch}`);
   if (propertyFilters.siteId) summary.push(selectedSiteName ?? '선택 단지');
+  if (propertyFilters.provinceCode) summary.push(selectedProvinceName ?? '선택 시도');
+  if (propertyFilters.districtCode) summary.push(selectedDistrictName ?? '선택 시군구');
+  if (propertyFilters.wardCode) summary.push(selectedWardName ?? '선택 법정동');
+  if (propertyFilters.dongSearch.trim()) summary.push(`동 ${propertyFilters.dongSearch.trim()}`);
+  if (propertyFilters.unitSearch.trim()) summary.push(`호 ${propertyFilters.unitSearch.trim()}`);
   if (propertyFilters.siteType !== 'all') {
     summary.push(getOptionLabel(siteTypeOptions, propertyFilters.siteType));
   }
 
-  const amount = getAmountFilterSummary(propertyFilters);
+  const priceDeposit = getPriceDepositFilterSummary(propertyFilters);
+  const monthlyRent = getRangeSummary(propertyFilters.monthlyRentMin, propertyFilters.monthlyRentMax, '만원');
   const area = getRangeSummary(propertyFilters.areaMin, propertyFilters.areaMax, '평');
-  if (amount) summary.push(amount);
+  const moveIn = getDateRangeSummary(propertyFilters.moveInFrom, propertyFilters.moveInTo);
+  if (priceDeposit) summary.push(priceDeposit);
+  if (monthlyRent) summary.push(`월세 ${monthlyRent}`);
   if (area) summary.push(area);
-  if (propertyFilters.includeHidden) summary.push('숨김 포함');
+  if (moveIn) summary.push(`입주 ${moveIn}`);
+  if (propertyFilters.hasAdvertisement) summary.push('광고 있음');
+  if (propertyFilters.isJointBrokerage) summary.push('공동 있음');
   if (activeSorts[0]) summary.push(`정렬 ${activeSorts[0].label}`);
 
   return summary;
@@ -2644,14 +2908,21 @@ function getRangeSummary(minValue: string, maxValue: string, unit: string) {
   return `${max}${unit} 이하`;
 }
 
-function getAmountFilterSummary(filters: PropertyFilterState) {
+function getDateRangeSummary(fromValue: string, toValue: string) {
+  const from = fromValue.trim();
+  const to = toValue.trim();
+  if (!from && !to) return null;
+  if (from && to) return `${from}~${to}`;
+  if (from) return `${from} 이후`;
+  return `${to} 이전`;
+}
+
+function getPriceDepositFilterSummary(filters: PropertyFilterState) {
   const price = getRangeSummary(filters.priceMin, filters.priceMax, '만원');
   const deposit = getRangeSummary(filters.depositMin, filters.depositMax, '만원');
-  const monthly = getRangeSummary(filters.monthlyRentMin, filters.monthlyRentMax, '만원');
   const summaries = [
     price && `가격 ${price}`,
     deposit && `보증금 ${deposit}`,
-    monthly && `월세 ${monthly}`,
   ].filter(Boolean);
 
   if (summaries.length === 0) return null;
@@ -2690,7 +2961,6 @@ function toListingSummary(listing: ListingSummary): ListingSummary {
     moveInAvailableFrom: listing.moveInAvailableFrom,
     moveInAvailableTo: listing.moveInAvailableTo,
     checkStatus: listing.checkStatus,
-    isHidden: listing.isHidden,
     memo: listing.memo,
     createdAt: listing.createdAt,
     updatedAt: listing.updatedAt,
@@ -2859,7 +3129,6 @@ function getPropertySheetNotices(property: Property): PropertySheetNotice[] {
   const latestUpdatedAt = getLatestPropertyListingUpdatedAt(property);
   const daysSinceLatestCheck = getDaysSince(latestUpdatedAt);
   const unverifiedListings = listings.filter((listing) => listing.checkStatus === 'unverified');
-  const hiddenListings = listings.filter((listing) => listing.isHidden);
   const jointRequiredListings = listings.filter((listing) => listing.isJointBrokerageRequired);
   const expiringTenant = tenants.find((tenant) => {
     if (!tenant.contractEnd) return false;
@@ -2904,14 +3173,6 @@ function getPropertySheetNotices(property: Property): PropertySheetNotice[] {
       title: '확인일 오래됨',
       detail: `마지막 확인이 ${daysSinceLatestCheck}일 전입니다. 광고 유지 전 소유주 확인이 필요합니다.`,
       tone: 'warning',
-    });
-  }
-
-  if (hiddenListings.length > 0) {
-    notices.push({
-      title: '숨김 거래 포함',
-      detail: `${formatTransactionTypeList(hiddenListings)} 거래가 목록에서 숨김 처리되어 있습니다.`,
-      tone: 'neutral',
     });
   }
 
