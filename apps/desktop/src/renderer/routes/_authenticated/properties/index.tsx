@@ -1719,37 +1719,43 @@ function buildPropertyMapClusters(
   }
 
   const projection = map.getProjection();
-  const clusterMap = new Map<string, PropertyMapCluster>();
+  const clusters: Array<PropertyMapCluster & { offsetX: number; offsetY: number }> = [];
+  const clusterRadiusSquared = PROPERTY_MAP_CLUSTER_GRID_SIZE ** 2;
 
   for (const point of points) {
     const coord = new mapsApi.LatLng(point.lat, point.lng);
     const offset = projection.fromCoordToOffset(coord);
-    const key = [
-      Math.floor(offset.x / PROPERTY_MAP_CLUSTER_GRID_SIZE),
-      Math.floor(offset.y / PROPERTY_MAP_CLUSTER_GRID_SIZE),
-    ].join(':');
-    const existing = clusterMap.get(key);
+    const existing = clusters.find((cluster) => {
+      const distanceX = cluster.offsetX - offset.x;
+      const distanceY = cluster.offsetY - offset.y;
+      return (distanceX * distanceX) + (distanceY * distanceY) <= clusterRadiusSquared;
+    });
 
     if (existing) {
+      const previousPointCount = existing.points.length;
       existing.points.push(point);
       existing.groupCount += point.groups.length;
       existing.listingCount += point.listingCount;
-      existing.lat = getAverage(existing.points, 'lat');
-      existing.lng = getAverage(existing.points, 'lng');
+      existing.lat = getWeightedAverage(existing.lat, point.lat, previousPointCount);
+      existing.lng = getWeightedAverage(existing.lng, point.lng, previousPointCount);
+      existing.offsetX = getWeightedAverage(existing.offsetX, offset.x, previousPointCount);
+      existing.offsetY = getWeightedAverage(existing.offsetY, offset.y, previousPointCount);
       continue;
     }
 
-    clusterMap.set(key, {
-      id: key,
+    clusters.push({
+      id: point.id,
       lat: point.lat,
       lng: point.lng,
+      offsetX: offset.x,
+      offsetY: offset.y,
       points: [point],
       groupCount: point.groups.length,
       listingCount: point.listingCount,
     });
   }
 
-  return Array.from(clusterMap.values());
+  return clusters.map(({ offsetX, offsetY, ...cluster }) => cluster);
 }
 
 function buildSinglePropertyMapCluster(point: PropertyMapPoint): PropertyMapCluster {
@@ -1763,8 +1769,8 @@ function buildSinglePropertyMapCluster(point: PropertyMapPoint): PropertyMapClus
   };
 }
 
-function getAverage<T extends 'lat' | 'lng'>(points: PropertyMapPoint[], field: T) {
-  return points.reduce((sum, point) => sum + point[field], 0) / points.length;
+function getWeightedAverage(currentAverage: number, nextValue: number, previousCount: number) {
+  return ((currentAverage * previousCount) + nextValue) / (previousCount + 1);
 }
 
 function getReadyNaverMapsApi() {
