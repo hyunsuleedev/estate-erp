@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+  type ReactNode,
+} from 'react';
 import {
   flexRender,
   getCoreRowModel,
@@ -30,6 +38,11 @@ export type PropertyListingGroup = {
   representative: ListingIntake;
   listings: ListingSummary[];
   matchedIntakes: ListingIntake[];
+};
+
+type PropertyListingColumnMeta = {
+  cellClassName?: string;
+  onCellDoubleClick?: (group: PropertyListingGroup, event: ReactMouseEvent<HTMLTableCellElement>) => void;
 };
 
 export type ListingSummary = Pick<
@@ -290,6 +303,8 @@ export function PropertyListingsTable({
         const isPinned = cell.column.getIsPinned() === 'left';
         const isLastPinned = isPinned && cell.column.getIsLastColumn('left');
 
+        const columnMeta = cell.column.columnDef.meta as PropertyListingColumnMeta | undefined;
+
         return (
           <td
             key={cell.id}
@@ -305,6 +320,7 @@ export function PropertyListingsTable({
               onRowClick && 'cursor-default',
               isPinned && 'bg-white group-hover:bg-slate-50/70 group-data-[state=selected]:bg-primary/5',
               isLastPinned && 'shadow-[1px_0_0_0_#d9d9d6]',
+              columnMeta?.cellClassName,
             )}
             style={{
               width: cell.column.getSize(),
@@ -313,8 +329,12 @@ export function PropertyListingsTable({
             onClick={() => {
               setFocusedCell({ row: rowIndex, col: colIndex });
             }}
-            onDoubleClick={() => {
+            onDoubleClick={(event) => {
               setFocusedCell({ row: rowIndex, col: colIndex });
+              if (columnMeta?.onCellDoubleClick) {
+                columnMeta.onCellDoubleClick(row.original, event);
+                return;
+              }
               onRowClick?.(row.original);
             }}
           >

@@ -1,6 +1,13 @@
 import { createFileRoute, Link } from '@tanstack/react-router';
 import { useInfiniteQuery, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useState, useCallback, useEffect, useMemo, type ReactNode } from 'react';
+import {
+  useState,
+  useCallback,
+  useEffect,
+  useMemo,
+  type MouseEvent as ReactMouseEvent,
+  type ReactNode,
+} from 'react';
 import { toast } from 'sonner';
 import {
   CalendarDays,
@@ -763,6 +770,15 @@ function PropertiesPage() {
         header: () => <TableHeaderLabel icon={<CircleDollarSign className="size-4" />} label="가격/보증금" />,
         size: 155,
         enableSorting: true,
+        meta: {
+          cellClassName: 'hover:bg-muted/50',
+          onCellDoubleClick: (
+            _group: PropertyListingGroup,
+            event: ReactMouseEvent<HTMLTableCellElement>,
+          ) => {
+            triggerStackCellEditor(event);
+          },
+        },
         cell: ({ row }) => (
           <ListingPriceDepositStack
             listings={row.original.listings}
@@ -776,6 +792,15 @@ function PropertiesPage() {
         header: () => <TableHeaderLabel icon={<CircleDollarSign className="size-4" />} label="월세" />,
         size: 82,
         enableSorting: false,
+        meta: {
+          cellClassName: 'hover:bg-muted/50',
+          onCellDoubleClick: (
+            _group: PropertyListingGroup,
+            event: ReactMouseEvent<HTMLTableCellElement>,
+          ) => {
+            triggerStackCellEditor(event);
+          },
+        },
         cell: ({ row }) => (
           <ListingMonthlyRentStack
             listings={row.original.listings}
@@ -1923,6 +1948,43 @@ function getListingStackStyle(listings: ListingSummary[]) {
     : undefined;
 }
 
+function triggerStackCellEditor(event: ReactMouseEvent<HTMLTableCellElement>) {
+  const target = event.target instanceof Element ? event.target : null;
+  const directEditor = target?.closest('.cursor-text');
+  const editors = Array.from(event.currentTarget.querySelectorAll<HTMLElement>('.cursor-text'));
+  const editor =
+    directEditor instanceof HTMLElement && event.currentTarget.contains(directEditor)
+      ? directEditor
+      : getNearestEditorByY(editors, event.clientY);
+
+  if (!editor) return;
+
+  event.preventDefault();
+  event.stopPropagation();
+  editor.dispatchEvent(
+    new MouseEvent('dblclick', {
+      bubbles: true,
+      cancelable: true,
+      view: window,
+      clientX: event.clientX,
+      clientY: event.clientY,
+    }),
+  );
+}
+
+function getNearestEditorByY(editors: HTMLElement[], y: number) {
+  if (editors.length <= 1) return editors[0] ?? null;
+
+  return editors.reduce<HTMLElement | null>((nearest, editor) => {
+    if (!nearest) return editor;
+    const editorRect = editor.getBoundingClientRect();
+    const nearestRect = nearest.getBoundingClientRect();
+    const editorDistance = Math.abs(y - (editorRect.top + editorRect.height / 2));
+    const nearestDistance = Math.abs(y - (nearestRect.top + nearestRect.height / 2));
+    return editorDistance < nearestDistance ? editor : nearest;
+  }, null);
+}
+
 function TransactionStack({ listings }: { listings: ListingSummary[] }) {
   return (
     <div className="flex flex-wrap items-center gap-1.5 py-1">
@@ -2078,12 +2140,23 @@ function ListingPriceDepositStack({
           className="flex min-w-0 flex-1 items-center"
         >
           {listing.transactionType === 'monthly' ? (
-            <MonthlyRentPriceEditor
-              listing={listing}
-              showTransactionLabel={hasMultiple}
-              displayPart="deposit"
-              onSave={(patch) => onPatch(listing.id, patch)}
-            />
+            <EditableCell
+              recordId={listing.id}
+              field="deposit"
+              value={listing.deposit}
+              onSave={(recordId, field, value) => {
+                onPatch(recordId, { [field]: parseEditorCellValue(value) } as UpdateListingDto);
+              }}
+              editType="number"
+              activation="doubleClick"
+              portalAnchor={hasMultiple ? 'self' : 'tableCell'}
+              hoverHighlight={false}
+            >
+              <span className="flex h-full w-full items-center gap-1.5 px-2.5">
+                {hasMultiple && <TransactionMiniLabel transactionType={listing.transactionType} />}
+                <PriceDepositValue listing={listing} />
+              </span>
+            </EditableCell>
           ) : (
             <EditableCell
               recordId={listing.id}
@@ -2092,6 +2165,8 @@ function ListingPriceDepositStack({
               onSave={onSave}
               editType="number"
               activation="doubleClick"
+              portalAnchor={hasMultiple ? 'self' : 'tableCell'}
+              hoverHighlight={false}
             >
               <span className="flex h-full w-full items-center gap-1.5 px-2.5">
                 {hasMultiple && <TransactionMiniLabel transactionType={listing.transactionType} />}
@@ -2128,119 +2203,28 @@ function ListingMonthlyRentStack({
           className="flex min-w-0 flex-1 items-center"
         >
           {listing.transactionType === 'monthly' ? (
-            <MonthlyRentPriceEditor
-              listing={listing}
-              showTransactionLabel={false}
-              displayPart="monthlyRent"
-              onSave={(patch) => onPatch(listing.id, patch)}
-            />
+            <EditableCell
+              recordId={listing.id}
+              field="monthlyRent"
+              value={listing.monthlyRent}
+              onSave={(recordId, field, value) => {
+                onPatch(recordId, { [field]: parseEditorCellValue(value) } as UpdateListingDto);
+              }}
+              editType="number"
+              activation="doubleClick"
+              portalAnchor={hasMultiple ? 'self' : 'tableCell'}
+              hoverHighlight={false}
+            >
+              <span className="flex h-full w-full items-center px-2.5">
+                <MonthlyRentValue listing={listing} />
+              </span>
+            </EditableCell>
           ) : (
             <span className="flex h-full w-full items-center px-2.5 text-[13px] text-muted-foreground">-</span>
           )}
         </div>
       ))}
     </div>
-  );
-}
-
-function MonthlyRentPriceEditor({
-  listing,
-  showTransactionLabel,
-  displayPart,
-  onSave,
-}: {
-  listing: ListingSummary;
-  showTransactionLabel: boolean;
-  displayPart: 'deposit' | 'monthlyRent';
-  onSave: (patch: UpdateListingDto) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const [deposit, setDeposit] = useState(() => formatEditorNumber(listing.deposit));
-  const [monthlyRent, setMonthlyRent] = useState(() => formatEditorNumber(listing.monthlyRent));
-
-  useEffect(() => {
-    if (!open) {
-      setDeposit(formatEditorNumber(listing.deposit));
-      setMonthlyRent(formatEditorNumber(listing.monthlyRent));
-    }
-  }, [listing.deposit, listing.monthlyRent, open]);
-
-  const save = () => {
-    onSave({
-      deposit: parseEditorNumber(deposit),
-      monthlyRent: parseEditorNumber(monthlyRent),
-    });
-    setOpen(false);
-  };
-
-  return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          className="flex h-full w-full items-center gap-1.5 rounded-sm px-2.5 text-left hover:bg-muted/50"
-          onClick={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-          }}
-          onDoubleClick={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            setOpen(true);
-          }}
-        >
-          {showTransactionLabel && <TransactionMiniLabel transactionType={listing.transactionType} />}
-          {displayPart === 'deposit' ? (
-            <PriceDepositValue listing={listing} />
-          ) : (
-            <MonthlyRentValue listing={listing} />
-          )}
-        </button>
-      </PopoverTrigger>
-      <PopoverContent
-        align="start"
-        className="w-64 p-3"
-        onClick={(event) => event.stopPropagation()}
-        onDoubleClick={(event) => event.stopPropagation()}
-      >
-        <div className="space-y-3">
-          <PopoverTitle title="월세 조건" description="만원 단위로 입력합니다." />
-          <div className="grid grid-cols-[56px_1fr] items-center gap-2">
-            <span className="text-[12px] text-muted-foreground">보증금</span>
-            <Input
-              value={deposit}
-              onChange={(event) => setDeposit(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter') save();
-              }}
-              type="number"
-              inputMode="numeric"
-              className="h-8 px-2 text-[13px]"
-              autoFocus
-            />
-            <span className="text-[12px] text-muted-foreground">월세</span>
-            <Input
-              value={monthlyRent}
-              onChange={(event) => setMonthlyRent(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter') save();
-              }}
-              type="number"
-              inputMode="numeric"
-              className="h-8 px-2 text-[13px]"
-            />
-          </div>
-          <div className="flex justify-end gap-1.5">
-            <Button variant="ghost" size="sm" className="h-8 px-2.5" onClick={() => setOpen(false)}>
-              취소
-            </Button>
-            <Button size="sm" className="h-8 px-3" onClick={save}>
-              저장
-            </Button>
-          </div>
-        </div>
-      </PopoverContent>
-    </Popover>
   );
 }
 
@@ -2264,12 +2248,8 @@ function MonthlyRentValue({ listing }: { listing: ListingSummary }) {
   );
 }
 
-function formatEditorNumber(value?: number | null) {
-  return value === null || value === undefined ? '' : String(value);
-}
-
-function parseEditorNumber(value: string) {
-  const trimmed = value.trim();
+function parseEditorCellValue(value: unknown) {
+  const trimmed = String(value ?? '').trim();
   if (!trimmed) return null;
   const parsed = Number(trimmed);
   return Number.isFinite(parsed) ? parsed : null;

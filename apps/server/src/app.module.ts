@@ -40,6 +40,9 @@ import { ServiceVendorsModule } from './modules/service-vendors/service-vendors.
 import { RequestContextMiddleware } from './common/request-context/request-context.middleware';
 import { RealtimeModule } from './realtime/realtime.module';
 
+const GENERAL_API_RATE_LIMIT_PER_MINUTE = 600;
+const AUTH_RATE_LIMIT_PER_MINUTE = 10;
+
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -50,7 +53,7 @@ import { RealtimeModule } from './realtime/realtime.module';
     /**
      * Throttler — 인증/쓰기 API 보호용 rate limit.
      *
-     * - default: 일반 API 60 req/min/IP
+     * - default: 일반 API 600 req/min/IP
      * - auth: 민감 endpoint는 컨트롤러에서 @Throttle({ auth: ... }) 명시
      *
      * Phase 2+: Redis storage로 전환 (`ThrottlerStorageRedisService`) — 멀티 인스턴스 환경 대비.
@@ -59,12 +62,12 @@ import { RealtimeModule } from './realtime/realtime.module';
       {
         name: 'default',
         ttl: 60_000, // 1분
-        limit: 60,
+        limit: GENERAL_API_RATE_LIMIT_PER_MINUTE,
       },
       {
         name: 'auth',
         ttl: 60_000, // 1분
-        limit: 10, // 로그인 시도 분당 10회
+        limit: AUTH_RATE_LIMIT_PER_MINUTE, // 로그인 시도 분당 10회
       },
     ]),
     PrismaModule,

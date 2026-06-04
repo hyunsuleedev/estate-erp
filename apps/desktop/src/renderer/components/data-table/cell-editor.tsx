@@ -1,4 +1,13 @@
-import { useState, useRef, useEffect, useCallback, createContext, useContext } from 'react';
+import {
+  useState,
+  useRef,
+  useEffect,
+  useCallback,
+  useMemo,
+  useSyncExternalStore,
+  createContext,
+  useContext,
+} from 'react';
 import { createPortal } from 'react-dom';
 import type { DateRange } from 'react-day-picker';
 import { Input } from '@/components/ui/input';
@@ -18,30 +27,59 @@ import { cn } from '@/lib/utils';
 // Draft value is separate from persisted value.
 
 interface CellEditContextType {
-  editingCell: { recordId: string; field: string } | null;
+  getEditingCell: () => { recordId: string; field: string } | null;
+  subscribe: (listener: () => void) => () => void;
   startEdit: (recordId: string, field: string) => void;
   stopEdit: () => void;
 }
 
 const CellEditContext = createContext<CellEditContextType>({
-  editingCell: null,
+  getEditingCell: () => null,
+  subscribe: () => () => undefined,
   startEdit: () => undefined,
   stopEdit: () => undefined,
 });
 
 export function CellEditProvider({ children }: { children: React.ReactNode }) {
-  const [editingCell, setEditingCell] = useState<{ recordId: string; field: string } | null>(null);
+  const editingCellRef = useRef<{ recordId: string; field: string } | null>(null);
+  const listenersRef = useRef(new Set<() => void>());
+
+  const notify = useCallback(() => {
+    for (const listener of listenersRef.current) {
+      listener();
+    }
+  }, []);
 
   const startEdit = useCallback((recordId: string, field: string) => {
-    setEditingCell({ recordId, field });
-  }, []);
+    const current = editingCellRef.current;
+    if (current?.recordId === recordId && current.field === field) return;
+    editingCellRef.current = { recordId, field };
+    notify();
+  }, [notify]);
 
   const stopEdit = useCallback(() => {
-    setEditingCell(null);
-  }, []);
+    if (editingCellRef.current === null) return;
+    editingCellRef.current = null;
+    notify();
+  }, [notify]);
+
+  const value = useMemo<CellEditContextType>(
+    () => ({
+      getEditingCell: () => editingCellRef.current,
+      subscribe: (listener) => {
+        listenersRef.current.add(listener);
+        return () => {
+          listenersRef.current.delete(listener);
+        };
+      },
+      startEdit,
+      stopEdit,
+    }),
+    [startEdit, stopEdit],
+  );
 
   return (
-    <CellEditContext.Provider value={{ editingCell, startEdit, stopEdit }}>
+    <CellEditContext.Provider value={value}>
       {children}
     </CellEditContext.Provider>
   );
@@ -99,6 +137,8 @@ interface EditableCellProps {
    *  Useful when `value` is the full record (so chip pickers can preselect dates). */
   chipValueOf?: (value: unknown) => string | undefined;
   activation?: 'click' | 'doubleClick';
+  portalAnchor?: 'self' | 'tableCell';
+  hoverHighlight?: boolean;
   children: React.ReactNode;
 }
 
@@ -113,18 +153,31 @@ export function EditableCell({
   chipOptions,
   chipValueOf,
   activation = 'click',
+  portalAnchor = 'self',
+  hoverHighlight = true,
   children,
 }: EditableCellProps) {
-  const { editingCell, startEdit, stopEdit } = useCellEdit();
+  const { getEditingCell, subscribe, startEdit, stopEdit } = useCellEdit();
   const cellRef = useRef<HTMLDivElement>(null);
-  const isEditing = editingCell?.recordId === recordId && editingCell?.field === field;
+  const isEditing = useSyncExternalStore(
+    subscribe,
+    () => {
+      const editingCell = getEditingCell();
+      return editingCell?.recordId === recordId && editingCell?.field === field;
+    },
+    () => false,
+  );
+  const anchorEl =
+    portalAnchor === 'tableCell'
+      ? cellRef.current?.closest<HTMLElement>('td') ?? cellRef.current
+      : cellRef.current;
 
   return (
     <div
       ref={cellRef}
       className={cn(
         'relative flex h-full min-h-[24px] w-full cursor-text items-center rounded-sm transition-colors',
-        !isEditing && 'hover:bg-muted/50',
+        hoverHighlight && !isEditing && 'hover:bg-muted/50',
         isEditing && editType !== 'select-chip' && 'bg-white',
       )}
       onClick={(event) => {
@@ -142,9 +195,9 @@ export function EditableCell({
       {children}
 
       {/* Edit mode — portal overlay */}
-      {isEditing && cellRef.current && (
+      {isEditing && anchorEl && (
         <CellEditPortal
-          anchorEl={cellRef.current}
+          anchorEl={anchorEl}
           value={value}
           chipValueOf={chipValueOf}
           editType={editType}
@@ -211,7 +264,65 @@ function CellEditPortal({
   const [draft, setDraft] = useState(initialDraft);
   const [pendingDateOption, setPendingDateOption] = useState<ChipOption | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const rect = anchorEl.getBoundingClientRect();
+  const [rect, setRect] = useState(() => {
+    const initialRect = anchorEl.getBoundingClientRect();
+    return {
+      top: initialRect.top,
+      bottom: initialRect.bottom,
+      left: initialRect.left,
+      width: initialRect.width,
+      height: initialRect.height,
+    };
+  });
+
+  useEffect(() => {
+    let animationFrame: number | null = null;
+
+    const readRect = () => {
+      animationFrame = null;
+      if (!anchorEl.isConnected) {
+        onCancel();
+        return;
+      }
+
+      const nextRect = anchorEl.getBoundingClientRect();
+      setRect((current) => {
+        if (
+          current.top === nextRect.top &&
+          current.bottom === nextRect.bottom &&
+          current.left === nextRect.left &&
+          current.width === nextRect.width &&
+          current.height === nextRect.height
+        ) {
+          return current;
+        }
+
+        return {
+          top: nextRect.top,
+          bottom: nextRect.bottom,
+          left: nextRect.left,
+          width: nextRect.width,
+          height: nextRect.height,
+        };
+      });
+    };
+
+    const scheduleRead = () => {
+      if (animationFrame !== null) return;
+      animationFrame = window.requestAnimationFrame(readRect);
+    };
+
+    window.addEventListener('scroll', scheduleRead, true);
+    window.addEventListener('resize', scheduleRead);
+
+    return () => {
+      if (animationFrame !== null) {
+        window.cancelAnimationFrame(animationFrame);
+      }
+      window.removeEventListener('scroll', scheduleRead, true);
+      window.removeEventListener('resize', scheduleRead);
+    };
+  }, [anchorEl, onCancel]);
 
   // Preselect for date/range pickers, derived from the cell's value via getPreselect.
   const preselect = pendingDateOption?.getPreselect?.(value);
@@ -253,20 +364,28 @@ function CellEditPortal({
     return () => document.removeEventListener('keydown', handler);
   }, [onCancel]);
 
+  const commitDraft = () => {
+    const finalValue = editType === 'number' ? Number(draft) : draft;
+    onSave(finalValue);
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
+    if (e.nativeEvent.isComposing) return;
+
+    if (e.key === 'Enter' || e.key === 'NumpadEnter') {
       e.preventDefault();
-      const finalValue = editType === 'number' ? Number(draft) : draft;
-      onSave(finalValue);
+      e.stopPropagation();
+      commitDraft();
     }
     if (e.key === 'Escape') {
       e.preventDefault();
+      e.stopPropagation();
       onCancel();
     }
     if (e.key === 'Tab') {
       e.preventDefault();
-      const finalValue = editType === 'number' ? Number(draft) : draft;
-      onSave(finalValue);
+      e.stopPropagation();
+      commitDraft();
       // TODO: move to next cell
     }
   };
@@ -275,7 +394,8 @@ function CellEditPortal({
     <>
       {editType !== 'select-chip' && (
         <div
-          className="fixed z-50 overflow-hidden rounded-sm bg-background outline outline-2 -outline-offset-1 outline-[#2383e2]"
+          ref={popoverRef}
+          className="fixed z-50 overflow-hidden rounded-none bg-background outline outline-2 -outline-offset-1 outline-[#2383e2]"
           style={{
             top: rect.top,
             left: rect.left,
