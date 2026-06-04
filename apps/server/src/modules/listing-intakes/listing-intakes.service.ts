@@ -880,6 +880,8 @@ export class ListingIntakesService {
           type: true,
           roadAddress: true,
           jibunAddress: true,
+          lat: true,
+          lng: true,
           wardCode: true,
           ward: {
             select: {
