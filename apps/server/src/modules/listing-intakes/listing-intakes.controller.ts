@@ -94,6 +94,11 @@ export class ListingIntakesController {
     });
   }
 
+  @Get('map')
+  findMap(@Query() query: Record<string, string>, @CurrentUser() user: CurrentUserPayload) {
+    return this.listingIntakes.findMapIntakes(user.officeId, parseListingIntakeQuery(query));
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string, @CurrentUser() user: CurrentUserPayload) {
     return this.listingIntakes.findOne(id, user.officeId);
@@ -203,4 +208,38 @@ function parseBooleanQuery(value?: string) {
   if (value === 'true') return true;
   if (value === 'false') return false;
   return undefined;
+}
+
+function parseListingIntakeQuery(query: Record<string, string>) {
+  return {
+    status: query.status || undefined,
+    nextConfirmFrom: query.nextConfirmFrom || undefined,
+    nextConfirmTo: query.nextConfirmTo || undefined,
+    includeInactive: query.includeInactive === 'true',
+    propertyId: query.propertyId || undefined,
+    transactionType: query.transactionType || undefined,
+    siteType: query.siteType || undefined,
+    checkStatus: query.checkStatus || undefined,
+    priceMin: query.priceMin ? Number(query.priceMin) : undefined,
+    priceMax: query.priceMax ? Number(query.priceMax) : undefined,
+    depositMin: query.depositMin ? Number(query.depositMin) : undefined,
+    depositMax: query.depositMax ? Number(query.depositMax) : undefined,
+    monthlyRentMin: query.monthlyRentMin ? Number(query.monthlyRentMin) : undefined,
+    monthlyRentMax: query.monthlyRentMax ? Number(query.monthlyRentMax) : undefined,
+    areaMin: query.areaMin ? Number(query.areaMin) : undefined,
+    areaMax: query.areaMax ? Number(query.areaMax) : undefined,
+    hasAdvertisement: parseBooleanQuery(query.hasAdvertisement),
+    isJointBrokerage: parseBooleanQuery(query.isJointBrokerage),
+    provinceCode: query.provinceCode || undefined,
+    districtCode: query.districtCode || undefined,
+    wardCode: query.wardCode || undefined,
+    siteId: query.siteId || undefined,
+    search: query.search || undefined,
+    dong: query.dong || undefined,
+    unit: query.unit || undefined,
+    moveInFrom: query.moveInFrom || undefined,
+    moveInTo: query.moveInTo || undefined,
+    sortBy: (query.sortBy as 'receivedAt' | 'updatedAt' | 'createdAt' | 'price') || undefined,
+    sortOrder: (query.sortOrder as 'asc' | 'desc') || undefined,
+  };
 }

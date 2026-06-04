@@ -48,6 +48,7 @@ const VALID_CONFIRM_CHANNELS = new Set([
   'note',
   'mcp',
 ]);
+const MAP_INTAKES_LIMIT = 5000;
 
 export interface ListingIntakeSearchQuery {
   status?: string;
@@ -136,117 +137,7 @@ export class ListingIntakesService {
   async findAll(officeId: string, query: ListingIntakeSearchQuery = {}) {
     this.assertValidQuery(query);
 
-    const listingWhere = this.buildListingWhere(query);
-    const filters: Prisma.ListingIntakeWhereInput[] = [{ officeId }];
-
-    if (query.status) {
-      filters.push({ status: query.status });
-    } else if (!query.includeInactive) {
-      filters.push({ status: { in: [...OPEN_INTAKE_STATUSES, 'active', 'paused'] } });
-    }
-
-    if (query.nextConfirmFrom || query.nextConfirmTo) {
-      filters.push({
-        nextConfirmAt: {
-          ...(query.nextConfirmFrom && { gte: this.resolveDate(query.nextConfirmFrom) ?? undefined }),
-          ...(query.nextConfirmTo && { lte: this.resolveDate(query.nextConfirmTo) ?? undefined }),
-        },
-      });
-    }
-
-    if (query.propertyId) {
-      filters.push({ propertyId: query.propertyId });
-    }
-
-    if (Object.keys(listingWhere).length > 0) {
-      filters.push({ listings: { some: listingWhere } });
-    }
-
-    if (query.isJointBrokerage !== undefined) {
-      filters.push(
-        query.isJointBrokerage
-          ? {
-              OR: [
-                { isJointBrokerageRequired: true },
-                { listings: { some: { isJointBrokerageRequired: true } } },
-              ],
-            }
-          : {
-              isJointBrokerageRequired: false,
-              listings: { none: { isJointBrokerageRequired: true } },
-            },
-      );
-    }
-
-    if (query.areaMin !== undefined || query.areaMax !== undefined) {
-      const areaRange = {
-        ...(query.areaMin !== undefined && { gte: query.areaMin }),
-        ...(query.areaMax !== undefined && { lte: query.areaMax }),
-      };
-
-      filters.push({
-        property: {
-          unit: {
-            OR: [
-              { exclusiveAreaM2: areaRange },
-              { siteUnitType: { exclusiveAreaM2: areaRange } },
-            ],
-          },
-        },
-      });
-    }
-
-    if (query.siteId || query.siteType || query.provinceCode || query.districtCode || query.wardCode) {
-      filters.push({
-        property: {
-          ...(query.siteId && { siteId: query.siteId }),
-          site: {
-            ...(query.siteType && { type: query.siteType }),
-            ...(query.wardCode && { wardCode: query.wardCode }),
-            ...(!query.wardCode && (query.districtCode || query.provinceCode) && {
-              ward: {
-                ...(query.districtCode && { districtCode: query.districtCode }),
-                ...(!query.districtCode && query.provinceCode && {
-                  district: { provinceCode: query.provinceCode },
-                }),
-              },
-            }),
-          },
-        },
-      });
-    }
-
-    if (query.dong || query.unit) {
-      filters.push({
-        property: {
-          unit: {
-            AND: [
-              ...(query.dong
-                ? [{
-                    dong: {
-                      name: { equals: query.dong.trim(), mode: 'insensitive' as const },
-                    },
-                  }]
-                : []),
-              ...(query.unit
-                ? [{
-                    name: { equals: query.unit.trim(), mode: 'insensitive' as const },
-                  }]
-                : []),
-            ],
-          },
-        },
-      });
-    }
-
-    if (query.search) {
-      filters.push(this.buildSearchFilter(query.search));
-    }
-
-    const where =
-      filters.length === 1
-        ? filters[0]
-        : ({ AND: filters } as Prisma.ListingIntakeWhereInput);
+    const { where, listingWhere } = this.buildFindManyWhere(officeId, query);
     const page = Math.max(1, query.page || 1);
     const limit = Math.min(100, Math.max(1, query.limit || 20));
     const skip = (page - 1) * limit;
@@ -272,6 +163,26 @@ export class ListingIntakesService {
         total: null,
         totalPages: null,
       },
+    };
+  }
+
+  async findMapIntakes(officeId: string, query: ListingIntakeSearchQuery = {}) {
+    this.assertValidQuery(query);
+
+    const { where, listingWhere } = this.buildFindManyWhere(officeId, query);
+    const rows = await this.prisma.listingIntake.findMany({
+      where,
+      select: this.buildMapSelect(listingWhere),
+      orderBy: this.resolveOrderBy(query.sortBy, query.sortOrder),
+      take: MAP_INTAKES_LIMIT + 1,
+    });
+    const truncated = rows.length > MAP_INTAKES_LIMIT;
+    const items = truncated ? rows.slice(0, MAP_INTAKES_LIMIT) : rows;
+
+    return {
+      items: items.map((item) => this.toResponse(item)),
+      truncated,
+      limit: MAP_INTAKES_LIMIT,
     };
   }
 
@@ -562,6 +473,122 @@ export class ListingIntakesService {
     return this.updateStatus(id, officeId, 'done');
   }
 
+  private buildFindManyWhere(officeId: string, query: ListingIntakeSearchQuery) {
+    const listingWhere = this.buildListingWhere(query);
+    const filters: Prisma.ListingIntakeWhereInput[] = [{ officeId }];
+
+    if (query.status) {
+      filters.push({ status: query.status });
+    } else if (!query.includeInactive) {
+      filters.push({ status: { in: [...OPEN_INTAKE_STATUSES, 'active', 'paused'] } });
+    }
+
+    if (query.nextConfirmFrom || query.nextConfirmTo) {
+      filters.push({
+        nextConfirmAt: {
+          ...(query.nextConfirmFrom && { gte: this.resolveDate(query.nextConfirmFrom) ?? undefined }),
+          ...(query.nextConfirmTo && { lte: this.resolveDate(query.nextConfirmTo) ?? undefined }),
+        },
+      });
+    }
+
+    if (query.propertyId) {
+      filters.push({ propertyId: query.propertyId });
+    }
+
+    if (Object.keys(listingWhere).length > 0) {
+      filters.push({ listings: { some: listingWhere } });
+    }
+
+    if (query.isJointBrokerage !== undefined) {
+      filters.push(
+        query.isJointBrokerage
+          ? {
+              OR: [
+                { isJointBrokerageRequired: true },
+                { listings: { some: { isJointBrokerageRequired: true } } },
+              ],
+            }
+          : {
+              isJointBrokerageRequired: false,
+              listings: { none: { isJointBrokerageRequired: true } },
+            },
+      );
+    }
+
+    if (query.areaMin !== undefined || query.areaMax !== undefined) {
+      const areaRange = {
+        ...(query.areaMin !== undefined && { gte: query.areaMin }),
+        ...(query.areaMax !== undefined && { lte: query.areaMax }),
+      };
+
+      filters.push({
+        property: {
+          unit: {
+            OR: [
+              { exclusiveAreaM2: areaRange },
+              { siteUnitType: { exclusiveAreaM2: areaRange } },
+            ],
+          },
+        },
+      });
+    }
+
+    if (query.siteId || query.siteType || query.provinceCode || query.districtCode || query.wardCode) {
+      filters.push({
+        property: {
+          ...(query.siteId && { siteId: query.siteId }),
+          site: {
+            ...(query.siteType && { type: query.siteType }),
+            ...(query.wardCode && { wardCode: query.wardCode }),
+            ...(!query.wardCode && (query.districtCode || query.provinceCode) && {
+              ward: {
+                ...(query.districtCode && { districtCode: query.districtCode }),
+                ...(!query.districtCode && query.provinceCode && {
+                  district: { provinceCode: query.provinceCode },
+                }),
+              },
+            }),
+          },
+        },
+      });
+    }
+
+    if (query.dong || query.unit) {
+      filters.push({
+        property: {
+          unit: {
+            AND: [
+              ...(query.dong
+                ? [{
+                    dong: {
+                      name: { equals: query.dong.trim(), mode: 'insensitive' as const },
+                    },
+                  }]
+                : []),
+              ...(query.unit
+                ? [{
+                    name: { equals: query.unit.trim(), mode: 'insensitive' as const },
+                  }]
+                : []),
+            ],
+          },
+        },
+      });
+    }
+
+    if (query.search) {
+      filters.push(this.buildSearchFilter(query.search));
+    }
+
+    return {
+      listingWhere,
+      where: filters.length === 1
+        ? filters[0]
+        : ({ AND: filters } as Prisma.ListingIntakeWhereInput),
+    };
+  }
+
   private buildListingWhere(query: ListingIntakeSearchQuery) {
     const where: Prisma.ListingWhereInput = {};
 
@@ -787,6 +814,50 @@ export class ListingIntakesService {
               createdAt: true,
             },
           },
+        },
+      },
+    } satisfies Prisma.ListingIntakeSelect;
+  }
+
+  private buildMapSelect(listingWhere: Prisma.ListingWhereInput) {
+    return {
+      id: true,
+      officeId: true,
+      propertyId: true,
+      status: true,
+      receivedAt: true,
+      confirmedAt: true,
+      isJointBrokerageRequired: true,
+      jointBrokeragePartnerId: true,
+      nextConfirmAt: true,
+      memo: true,
+      createdAt: true,
+      updatedAt: true,
+      property: {
+        select: this.buildListPropertySelect(),
+      },
+      listings: {
+        where: listingWhere,
+        orderBy: { createdAt: 'desc' as const },
+        select: {
+          id: true,
+          officeId: true,
+          propertyId: true,
+          intakeId: true,
+          transactionType: true,
+          price: true,
+          deposit: true,
+          monthlyRent: true,
+          moveInAvailableType: true,
+          moveInAvailableFrom: true,
+          moveInAvailableTo: true,
+          isJointBrokerageRequired: true,
+          jointBrokeragePartnerId: true,
+          checkStatus: true,
+          checkStatusChangedAt: true,
+          memo: true,
+          createdAt: true,
+          updatedAt: true,
         },
       },
     } satisfies Prisma.ListingIntakeSelect;
