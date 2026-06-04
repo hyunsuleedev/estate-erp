@@ -99,8 +99,8 @@ describe('desktop data table', () => {
     assert.match(source, /new mapsApi\.Marker/);
     assert.match(source, /buildPropertyMapClusters/);
     assert.match(source, /PROPERTY_MAP_CLUSTER_GRID_SIZE/);
-    assert.match(source, /clusterRadiusSquared/);
-    assert.match(source, /getWeightedAverage/);
+    assert.match(source, /buildPropertyMapClustersFromOffsets/);
+    assert.match(source, /clusterRadius: PROPERTY_MAP_CLUSTER_GRID_SIZE/);
   });
 
   it('selects site coordinates for property map view', () => {

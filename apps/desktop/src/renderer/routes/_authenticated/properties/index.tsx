@@ -95,6 +95,10 @@ import {
   type ListingSummary,
   type PropertyListingGroup,
 } from './-components/property-listings-table';
+import {
+  buildPropertyMapClustersFromOffsets,
+  type PropertyMapClusterSource,
+} from './-property-map-utils';
 
 // ── Labels & Colors ─────────────────────────────────────────────
 
@@ -293,7 +297,7 @@ const initialPropertyFilters: PropertyFilterState = {
 
 type ListingProperty = NonNullable<ListingIntake['property']>;
 type PropertyViewMode = 'list' | 'map';
-interface PropertyMapPoint {
+interface PropertyMapPoint extends PropertyMapClusterSource {
   id: string;
   siteId: string;
   siteName: string;
@@ -301,6 +305,7 @@ interface PropertyMapPoint {
   lat: number;
   lng: number;
   groups: PropertyListingGroup[];
+  groupCount: number;
   listingCount: number;
 }
 interface PropertyMapCluster {
@@ -1719,43 +1724,21 @@ function buildPropertyMapClusters(
   }
 
   const projection = map.getProjection();
-  const clusters: Array<PropertyMapCluster & { offsetX: number; offsetY: number }> = [];
-  const clusterRadiusSquared = PROPERTY_MAP_CLUSTER_GRID_SIZE ** 2;
-
-  for (const point of points) {
+  const offsetPoints = points.map((point) => {
     const coord = new mapsApi.LatLng(point.lat, point.lng);
     const offset = projection.fromCoordToOffset(coord);
-    const existing = clusters.find((cluster) => {
-      const distanceX = cluster.offsetX - offset.x;
-      const distanceY = cluster.offsetY - offset.y;
-      return (distanceX * distanceX) + (distanceY * distanceY) <= clusterRadiusSquared;
-    });
-
-    if (existing) {
-      const previousPointCount = existing.points.length;
-      existing.points.push(point);
-      existing.groupCount += point.groups.length;
-      existing.listingCount += point.listingCount;
-      existing.lat = getWeightedAverage(existing.lat, point.lat, previousPointCount);
-      existing.lng = getWeightedAverage(existing.lng, point.lng, previousPointCount);
-      existing.offsetX = getWeightedAverage(existing.offsetX, offset.x, previousPointCount);
-      existing.offsetY = getWeightedAverage(existing.offsetY, offset.y, previousPointCount);
-      continue;
-    }
-
-    clusters.push({
-      id: point.id,
-      lat: point.lat,
-      lng: point.lng,
+    return {
+      point,
       offsetX: offset.x,
       offsetY: offset.y,
-      points: [point],
-      groupCount: point.groups.length,
-      listingCount: point.listingCount,
-    });
-  }
+    };
+  });
 
-  return clusters.map(({ offsetX, offsetY, ...cluster }) => cluster);
+  return buildPropertyMapClustersFromOffsets(offsetPoints, {
+    zoom,
+    maxZoom: PROPERTY_MAP_CLUSTER_MAX_ZOOM,
+    clusterRadius: PROPERTY_MAP_CLUSTER_GRID_SIZE,
+  });
 }
 
 function buildSinglePropertyMapCluster(point: PropertyMapPoint): PropertyMapCluster {
@@ -1764,13 +1747,9 @@ function buildSinglePropertyMapCluster(point: PropertyMapPoint): PropertyMapClus
     lat: point.lat,
     lng: point.lng,
     points: [point],
-    groupCount: point.groups.length,
+    groupCount: point.groupCount,
     listingCount: point.listingCount,
   };
-}
-
-function getWeightedAverage(currentAverage: number, nextValue: number, previousCount: number) {
-  return ((currentAverage * previousCount) + nextValue) / (previousCount + 1);
 }
 
 function getReadyNaverMapsApi() {
@@ -3685,6 +3664,7 @@ function buildPropertyMapPoints(groups: PropertyListingGroup[]) {
     const existing = pointMap.get(key);
     if (existing) {
       existing.groups.push(group);
+      existing.groupCount += 1;
       existing.listingCount += group.listings.length;
       continue;
     }
@@ -3697,6 +3677,7 @@ function buildPropertyMapPoints(groups: PropertyListingGroup[]) {
       lat,
       lng,
       groups: [group],
+      groupCount: 1,
       listingCount: group.listings.length,
     });
   }
