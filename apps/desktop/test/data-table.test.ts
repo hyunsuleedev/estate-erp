@@ -101,6 +101,8 @@ describe('desktop data table', () => {
     assert.match(source, /PROPERTY_MAP_CLUSTER_GRID_SIZE/);
     assert.match(source, /buildPropertyMapClustersFromOffsets/);
     assert.match(source, /clusterRadius: PROPERTY_MAP_CLUSTER_GRID_SIZE/);
+    assert.match(source, /placeholderData: keepPreviousData/);
+    assert.match(source, /hasAutoFittedRef/);
   });
 
   it('selects site coordinates for property map view', () => {

@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from '@tanstack/react-router';
-import { useInfiniteQuery, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { keepPreviousData, useInfiniteQuery, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   useState,
   useCallback,
@@ -426,6 +426,7 @@ function PropertiesPage() {
     queryFn: ({ pageParam }) =>
       api.listingIntakes.findAll({ ...apiParams, page: pageParam } as any),
     initialPageParam: 1,
+    placeholderData: keepPreviousData,
     getNextPageParam: (lastPage) => {
       const { page: currentPage, hasNextPage: hasMore } = lastPage.pagination;
       return hasMore ? currentPage + 1 : undefined;
@@ -477,6 +478,7 @@ function PropertiesPage() {
     queryKey: ['listing-intakes', 'map', mapApiParams],
     queryFn: () => api.listingIntakes.map(mapApiParams as any),
     enabled: viewMode === 'map',
+    placeholderData: keepPreviousData,
   });
   const mapIntakes = mapData?.items ?? listingIntakes;
   const mapGroups = useMemo(
@@ -1534,6 +1536,7 @@ function NaverPropertyMap({
   const markersRef = useRef<Array<InstanceType<NaverMapsApi['Marker']>>>([]);
   const listenersRef = useRef<unknown[]>([]);
   const clusterListenersRef = useRef<unknown[]>([]);
+  const hasAutoFittedRef = useRef(false);
   const [mapsApi, setMapsApi] = useState<NaverMapsApi | null>(() => getReadyNaverMapsApi());
   const [loadState, setLoadState] = useState<'idle' | 'loading' | 'ready' | 'error'>(
     getReadyNaverMapsApi() ? 'ready' : 'idle',
@@ -1637,23 +1640,22 @@ function NaverPropertyMap({
       mapsApi.Event.addListener(map, 'zoom_changed', renderClusters),
     ];
 
-    if (points.length === 1) {
-      map.setCenter(new mapsApi.LatLng(points[0].lat, points[0].lng));
-      map.setZoom(16);
-      return () => {
-        clearMarkers();
-        clearClusterListeners();
-      };
+    if (!hasAutoFittedRef.current) {
+      hasAutoFittedRef.current = true;
+      if (points.length === 1) {
+        map.setCenter(new mapsApi.LatLng(points[0].lat, points[0].lng));
+        map.setZoom(16);
+      } else {
+        const bounds = getMapBounds(points);
+        map.fitBounds?.(
+          new mapsApi.LatLngBounds(
+            new mapsApi.LatLng(bounds.minLat, bounds.minLng),
+            new mapsApi.LatLng(bounds.maxLat, bounds.maxLng),
+          ),
+          { top: 64, right: 64, bottom: 64, left: 64 },
+        );
+      }
     }
-
-    const bounds = getMapBounds(points);
-    map.fitBounds?.(
-      new mapsApi.LatLngBounds(
-        new mapsApi.LatLng(bounds.minLat, bounds.minLng),
-        new mapsApi.LatLng(bounds.maxLat, bounds.maxLng),
-      ),
-      { top: 64, right: 64, bottom: 64, left: 64 },
-    );
 
     return () => {
       clearMarkers();
