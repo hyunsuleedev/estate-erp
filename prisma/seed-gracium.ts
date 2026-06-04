@@ -255,7 +255,7 @@ async function main() {
       data: {
         officeId: null,
         siteId: site.id,
-        name: `${dongOverview.bildName}동`,
+        name: dongOverview.bildName,
       },
     });
     dongNameToId[dongOverview.bildName] = dong.id;

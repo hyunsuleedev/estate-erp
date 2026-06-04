@@ -5,6 +5,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   type MouseEvent as ReactMouseEvent,
   type ReactNode,
 } from 'react';
@@ -19,6 +20,8 @@ import {
   FileText,
   Handshake,
   Hash,
+  List,
+  Map as MapIcon,
   MapPin,
   Megaphone,
   MessageSquare,
@@ -166,6 +169,46 @@ const sortFilterOptions = [
 
 const LISTINGS_PAGE_SIZE = 50;
 const intakeStatusOptions = getListingIntakeStatusOptions();
+const NAVER_MAPS_NCP_KEY_ID = import.meta.env.VITE_NAVER_MAPS_NCP_KEY_ID as string | undefined;
+
+type NaverMapsApi = {
+  LatLng: new (lat: number, lng: number) => NaverLatLng;
+  LatLngBounds: new (sw: unknown, ne: unknown) => unknown;
+  Point: new (x: number, y: number) => NaverPoint;
+  Map: new (element: HTMLElement, options?: Record<string, unknown>) => {
+    setCenter: (coord: unknown) => void;
+    setZoom: (zoom: number) => void;
+    getZoom: () => number;
+    getProjection: () => {
+      fromCoordToOffset: (coord: unknown) => NaverPoint;
+    };
+    fitBounds?: (bounds: unknown, options?: Record<string, number>) => void;
+  };
+  Marker: new (options: Record<string, unknown>) => {
+    setMap: (map: unknown | null) => void;
+  };
+  Event: {
+    addListener: (target: unknown, eventName: string, handler: () => void) => unknown;
+    removeListener?: (listener: unknown) => void;
+  };
+};
+
+interface NaverLatLng {
+  lat?: () => number;
+  lng?: () => number;
+}
+
+interface NaverPoint {
+  x: number;
+  y: number;
+}
+
+declare global {
+  interface Window {
+    naver?: { maps?: NaverMapsApi };
+    __estateErpNaverMapsPromise?: Promise<NaverMapsApi>;
+  }
+}
 
 function handleMutationError(error: unknown) {
   if (error instanceof ApiError && error.statusCode === 409) {
@@ -176,6 +219,8 @@ function handleMutationError(error: unknown) {
   toast.error('저장에 실패했습니다.');
 }
 const PROPERTY_LISTING_STACK_ITEM_HEIGHT = 40;
+const PROPERTY_MAP_CLUSTER_GRID_SIZE = 84;
+const PROPERTY_MAP_CLUSTER_MAX_ZOOM = 17;
 
 const transactionTypeOptions = [
   { value: 'all', label: '전체' },
@@ -247,6 +292,25 @@ const initialPropertyFilters: PropertyFilterState = {
 };
 
 type ListingProperty = NonNullable<ListingIntake['property']>;
+type PropertyViewMode = 'list' | 'map';
+interface PropertyMapPoint {
+  id: string;
+  siteId: string;
+  siteName: string;
+  address: string;
+  lat: number;
+  lng: number;
+  groups: PropertyListingGroup[];
+  listingCount: number;
+}
+interface PropertyMapCluster {
+  id: string;
+  lat: number;
+  lng: number;
+  points: PropertyMapPoint[];
+  groupCount: number;
+  listingCount: number;
+}
 
 type PropertySheetNoticeTone = 'danger' | 'warning' | 'neutral';
 
@@ -273,6 +337,7 @@ function PropertiesPage() {
     useState<(typeof transactionTypeOptions)[number]['value']>('all');
   const [propertyFilters, setPropertyFilters] = useState<PropertyFilterState>(initialPropertyFilters);
   const [selectedIntakeId, setSelectedIntakeId] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<PropertyViewMode>('list');
   const [isSiteFilterOpen, setIsSiteFilterOpen] = useState(false);
   const [activeSorts, setActiveSorts] = useState<SortDefinition[]>([]);
   const [sorting, setSorting] = useState<SortingState>([]);
@@ -393,6 +458,30 @@ function PropertiesPage() {
     () => buildPropertyListingGroups(listingIntakes),
     [listingIntakes],
   );
+  const mapApiParams = useMemo(() => {
+    const { limit, page, ...params } = apiParams;
+    void limit;
+    void page;
+    return params;
+  }, [apiParams]);
+  const {
+    data: mapData,
+    isLoading: isMapDataLoading,
+    isError: isMapDataError,
+  } = useQuery({
+    queryKey: ['listing-intakes', 'map', mapApiParams],
+    queryFn: () => api.listingIntakes.map(mapApiParams as any),
+    enabled: viewMode === 'map',
+  });
+  const mapIntakes = mapData?.items ?? listingIntakes;
+  const mapGroups = useMemo(
+    () => buildPropertyListingGroups(mapIntakes),
+    [mapIntakes],
+  );
+  const mapPoints = useMemo(
+    () => buildPropertyMapPoints(mapGroups),
+    [mapGroups],
+  );
   const activeFilterSummary = getActiveFilterSummary({
     search,
     selectedTransactionType,
@@ -429,6 +518,7 @@ function PropertiesPage() {
   const selectedWard = propertyFilters.wardCode
     ? wards.find((ward) => ward.code === propertyFilters.wardCode)
     : undefined;
+  const selectedRegionName = selectedWard?.name ?? selectedDistrict?.name ?? selectedProvince?.name;
   const priceDepositFilterSummary = getPriceDepositFilterSummary(propertyFilters);
   const monthlyRentFilterSummary = getRangeSummary(propertyFilters.monthlyRentMin, propertyFilters.monthlyRentMax, '만원');
   const areaFilterSummary = getRangeSummary(propertyFilters.areaMin, propertyFilters.areaMax, '평');
@@ -521,6 +611,31 @@ function PropertiesPage() {
       queryClient.invalidateQueries({ queryKey: ['listing-intakes'] });
     },
   });
+  const intakeMemoMutation = useMutation({
+    mutationFn: ({
+      intakeId,
+      memo,
+      expectedUpdatedAt,
+    }: {
+      intakeId: string;
+      memo: string | null;
+      expectedUpdatedAt?: string | null;
+    }) =>
+      api.listingIntakes.update(intakeId, {
+        memo,
+        expectedUpdatedAt,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['listing-intakes'] });
+      if (selectedIntakeId) {
+        queryClient.invalidateQueries({ queryKey: ['listing-intakes', 'quick-sheet', selectedIntakeId] });
+      }
+    },
+    onError: (error) => {
+      handleMutationError(error);
+      queryClient.invalidateQueries({ queryKey: ['listing-intakes'] });
+    },
+  });
   const handleCellSave = useCallback(
     (recordId: string, field: string, value: unknown) => {
       updateMutation.mutate({
@@ -567,6 +682,17 @@ function PropertiesPage() {
       });
     },
     [intakeStatusMutation, intakeUpdatedAtById],
+  );
+  const handleIntakeMemoSave = useCallback(
+    (intakeId: string, value: unknown) => {
+      const memo = parseEditorTextValue(value);
+      intakeMemoMutation.mutate({
+        intakeId,
+        memo,
+        expectedUpdatedAt: intakeUpdatedAtById.get(intakeId),
+      });
+    },
+    [intakeMemoMutation, intakeUpdatedAtById],
   );
   // ── Filter handlers ───────────────────────────────────────────
   const updatePropertyFilter = useCallback(
@@ -835,12 +961,27 @@ function PropertiesPage() {
         size: 320,
         minSize: 220,
         enableSorting: false,
-        cell: ({ row }) => <IntakeMemoCell memo={row.original.representative.memo} />,
+        meta: {
+          cellClassName: 'hover:bg-muted/50',
+          onCellDoubleClick: (
+            _group: PropertyListingGroup,
+            event: ReactMouseEvent<HTMLTableCellElement>,
+          ) => {
+            triggerStackCellEditor(event);
+          },
+        },
+        cell: ({ row }) => (
+          <IntakeMemoCell
+            intake={row.original.representative}
+            onSave={handleIntakeMemoSave}
+          />
+        ),
       },
     ],
     [
       handleCellSave,
       handleIntakeConfirm,
+      handleIntakeMemoSave,
       handleIntakeStatusChange,
       handleListingPatch,
       confirmMutation.isPending,
@@ -853,25 +994,106 @@ function PropertiesPage() {
     <CellEditProvider>
       <div className="-m-4 flex min-h-0 flex-1 flex-col bg-white">
         <section className="border-b border-border bg-white px-3 py-2">
-          <div className="flex items-start justify-between gap-4">
-            <Tabs value={selectedTransactionType} onValueChange={handleTransactionTabChange} className="min-w-0 flex-1 gap-0">
-              <TabsList className="max-w-full justify-start bg-muted">
-                {transactionTypeOptions.map((tab) => {
-                  return (
-                    <TabsTrigger
-                      key={tab.value}
-                      value={tab.value}
-                      className="flex-none border-0 px-3 text-[13px] shadow-none data-[state=active]:border data-[state=active]:border-[#d9d9d6] data-[state=active]:bg-white data-[state=active]:text-slate-950 data-[state=active]:shadow-sm"
-                    >
-                      <span>{tab.label}</span>
-                    </TabsTrigger>
-                  );
-                })}
-              </TabsList>
-            </Tabs>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+              <Tabs value={selectedTransactionType} onValueChange={handleTransactionTabChange} className="min-w-0 gap-0">
+                <TabsList className="max-w-full justify-start bg-muted">
+                  {transactionTypeOptions.map((tab) => {
+                    return (
+                      <TabsTrigger
+                        key={tab.value}
+                        value={tab.value}
+                        className="flex-none border-0 px-3 text-[13px] shadow-none data-[state=active]:border data-[state=active]:border-[#d9d9d6] data-[state=active]:bg-white data-[state=active]:text-slate-950 data-[state=active]:shadow-sm"
+                      >
+                        <span>{tab.label}</span>
+                      </TabsTrigger>
+                    );
+                  })}
+                </TabsList>
+              </Tabs>
+
+              <FilterPopoverChip
+                label="단지"
+                value={selectedSite?.name ?? '전체'}
+                active={Boolean(propertyFilters.siteId)}
+                onOpenChange={setIsSiteFilterOpen}
+                contentClassName="w-[360px]"
+              >
+                <div className="space-y-2">
+                  <PopoverTitle title="단지" description="단지명 또는 주소로 매물을 좁힙니다." />
+                  <SiteSearchFilter
+                    sites={filterSites}
+                    value={propertyFilters.siteId}
+                    onChange={(value) => updatePropertyFilter('siteId', value)}
+                    isLoading={isFilterSitesLoading}
+                    placeholder="단지 검색"
+                    showCounts
+                  />
+                </div>
+              </FilterPopoverChip>
+
+              <div className="relative w-20">
+                <Input
+                  value={propertyFilters.dongSearch}
+                  onChange={(event) => updatePropertyFilter('dongSearch', event.target.value)}
+                  placeholder="동"
+                  className="h-8 border-transparent bg-white px-2 pr-6 text-[13px] shadow-none hover:border-border focus:border-input"
+                />
+                {propertyFilters.dongSearch && (
+                  <button
+                    type="button"
+                    aria-label="동 검색 지우기"
+                    onClick={() => updatePropertyFilter('dongSearch', '')}
+                    className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded-sm p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                  >
+                    <X className="size-3.5" />
+                  </button>
+                )}
+              </div>
+
+              <div className="relative w-20">
+                <Input
+                  value={propertyFilters.unitSearch}
+                  onChange={(event) => updatePropertyFilter('unitSearch', event.target.value)}
+                  placeholder="호"
+                  className="h-8 border-transparent bg-white px-2 pr-6 text-[13px] shadow-none hover:border-border focus:border-input"
+                />
+                {propertyFilters.unitSearch && (
+                  <button
+                    type="button"
+                    aria-label="호 검색 지우기"
+                    onClick={() => updatePropertyFilter('unitSearch', '')}
+                    className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded-sm p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                  >
+                    <X className="size-3.5" />
+                  </button>
+                )}
+              </div>
+
+              <div className="relative ml-1 w-56 max-w-full">
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={search}
+                  onChange={(event) => handleSearchChange(event.target.value)}
+                  placeholder="주소, 연락처, 메모"
+                  className="h-8 border-transparent bg-white pl-8 pr-8 text-[13px] shadow-none hover:border-border focus:border-input"
+                />
+                {search && (
+                  <button
+                    type="button"
+                    aria-label="검색어 지우기"
+                    onClick={() => handleSearchChange('')}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 rounded-sm p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                  >
+                    <X className="size-3.5" />
+                  </button>
+                )}
+              </div>
+            </div>
+
             <Button
               size="sm"
-              className="mt-1 shrink-0 px-3.5"
+              className="shrink-0 px-3.5"
               onClick={() => {
                 const route = '/properties/new';
                 const meta = getRouteMeta(route);
@@ -886,127 +1108,37 @@ function PropertiesPage() {
 
         <section className="border-b border-border bg-white px-3 py-2.5">
           <div className="flex flex-wrap items-center gap-1.5">
-            <div className="relative mr-1 w-56 max-w-full">
-              <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                value={search}
-                onChange={(event) => handleSearchChange(event.target.value)}
-                placeholder="단지, 주소, 연락처"
-                className="h-8 border-transparent bg-white pl-8 pr-8 text-[13px] shadow-none hover:border-border focus:border-input"
-              />
-              {search && (
-                <button
-                  type="button"
-                  aria-label="검색어 지우기"
-                  onClick={() => handleSearchChange('')}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded-sm p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-                >
-                  <X className="size-3.5" />
-                </button>
-              )}
-            </div>
-
-            <div className="relative w-20">
-              <Input
-                value={propertyFilters.dongSearch}
-                onChange={(event) => updatePropertyFilter('dongSearch', event.target.value)}
-                placeholder="동"
-                className="h-8 border-transparent bg-white px-2 pr-6 text-[13px] shadow-none hover:border-border focus:border-input"
-              />
-              {propertyFilters.dongSearch && (
-                <button
-                  type="button"
-                  aria-label="동 검색 지우기"
-                  onClick={() => updatePropertyFilter('dongSearch', '')}
-                  className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded-sm p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-                >
-                  <X className="size-3.5" />
-                </button>
-              )}
-            </div>
-
-            <div className="relative w-20">
-              <Input
-                value={propertyFilters.unitSearch}
-                onChange={(event) => updatePropertyFilter('unitSearch', event.target.value)}
-                placeholder="호"
-                className="h-8 border-transparent bg-white px-2 pr-6 text-[13px] shadow-none hover:border-border focus:border-input"
-              />
-              {propertyFilters.unitSearch && (
-                <button
-                  type="button"
-                  aria-label="호 검색 지우기"
-                  onClick={() => updatePropertyFilter('unitSearch', '')}
-                  className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded-sm p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-                >
-                  <X className="size-3.5" />
-                </button>
-              )}
-            </div>
-
             <FilterPopoverChip
-              label="단지/지역"
-              value={selectedSite?.name ?? '전체'}
-              active={Boolean(propertyFilters.siteId)}
-              onOpenChange={setIsSiteFilterOpen}
+              label="지역"
+              value={selectedRegionName ?? '전체'}
+              active={Boolean(propertyFilters.provinceCode || propertyFilters.districtCode || propertyFilters.wardCode)}
+              contentClassName="w-[360px]"
             >
-              <div className="space-y-2">
-                <PopoverTitle title="단지" description="단지명 또는 주소로 매물을 좁힙니다." />
-                <SiteSearchFilter
-                  sites={filterSites}
-                  value={propertyFilters.siteId}
-                  onChange={(value) => updatePropertyFilter('siteId', value)}
-                  isLoading={isFilterSitesLoading}
-                  showCounts
-                />
-              </div>
-            </FilterPopoverChip>
-
-            <FilterPopoverChip
-              label="시도"
-              value={selectedProvince?.name ?? '전체'}
-              active={Boolean(propertyFilters.provinceCode)}
-              contentClassName="w-[220px]"
-            >
-              <div className="space-y-2">
-                <PopoverTitle title="시도" description="시도 단위로 지역을 좁힙니다." />
-                <SelectFilter
-                  value={propertyFilters.provinceCode}
-                  onChange={handleProvinceFilterChange}
-                  options={provinceOptions}
-                />
-              </div>
-            </FilterPopoverChip>
-
-            <FilterPopoverChip
-              label="시군구"
-              value={selectedDistrict?.name ?? '전체'}
-              active={Boolean(propertyFilters.districtCode)}
-              contentClassName="w-[220px]"
-            >
-              <div className="space-y-2">
-                <PopoverTitle title="시군구" description="시도를 먼저 선택한 뒤 시군구를 선택합니다." />
-                <SelectFilter
-                  value={propertyFilters.districtCode}
-                  onChange={handleDistrictFilterChange}
-                  options={districtOptions}
-                />
-              </div>
-            </FilterPopoverChip>
-
-            <FilterPopoverChip
-              label="법정동"
-              value={selectedWard?.name ?? '전체'}
-              active={Boolean(propertyFilters.wardCode)}
-              contentClassName="w-[220px]"
-            >
-              <div className="space-y-2">
-                <PopoverTitle title="읍면동/법정동" description="시군구를 먼저 선택한 뒤 법정동을 선택합니다." />
-                <SelectFilter
-                  value={propertyFilters.wardCode}
-                  onChange={(value) => updatePropertyFilter('wardCode', value)}
-                  options={wardOptions}
-                />
+              <div className="space-y-3">
+                <PopoverTitle title="지역" description="시도, 시군구, 법정동을 한 번에 좁힙니다." />
+                <div className="grid grid-cols-3 gap-2">
+                  <FilterField label="시도">
+                    <SelectFilter
+                      value={propertyFilters.provinceCode}
+                      onChange={handleProvinceFilterChange}
+                      options={provinceOptions}
+                    />
+                  </FilterField>
+                  <FilterField label="시군구">
+                    <SelectFilter
+                      value={propertyFilters.districtCode}
+                      onChange={handleDistrictFilterChange}
+                      options={districtOptions}
+                    />
+                  </FilterField>
+                  <FilterField label="법정동">
+                    <SelectFilter
+                      value={propertyFilters.wardCode}
+                      onChange={(value) => updatePropertyFilter('wardCode', value)}
+                      options={wardOptions}
+                    />
+                  </FilterField>
+                </div>
               </div>
             </FilterPopoverChip>
 
@@ -1151,6 +1283,7 @@ function PropertiesPage() {
             </label>
 
             <div className="ml-auto flex items-center gap-1.5">
+              <ViewModeSwitch value={viewMode} onChange={setViewMode} />
               <div className="w-40">
                 <SelectFilter
                   value={selectedSortValue}
@@ -1192,28 +1325,40 @@ function PropertiesPage() {
                 <span>행 더블클릭 시 빠른 확인 패널을 엽니다.</span>
               )}
             </div>
-            {/* Data Table */}
-            <PropertyListingsTable
-              columns={columns}
-              data={propertyGroups}
-              totalCount={loadedIntakes}
-              pageSize={LISTINGS_PAGE_SIZE}
-              sorting={sorting}
-              onSortingChange={handleSortingChange}
-              onRowClick={(row) => setSelectedIntakeId(row.intakeId)}
-              isLoading={isLoading}
-              isLoadingMore={isFetchingNextPage}
-              onEndReached={handleEndReached}
-              emptyMessage={hasActiveFilters ? '조건에 맞는 매물이 없습니다.' : '등록된 매물이 없습니다.'}
-              renderStatusBar={() => (
-                <span>
-                  의뢰 {intakeCountLabel}건 표시
-                  {loadedListings > 0 ? ` · 거래 ${loadedListings.toLocaleString()}건` : ''}
-                  {hasNextPage && !isFetchingNextPage ? ' · 아래로 스크롤하면 더 불러옵니다' : ''}
-                  {isFetchingNextPage ? ' · 더 불러오는 중...' : ''}
-                </span>
-              )}
-            />
+            {viewMode === 'list' ? (
+              <PropertyListingsTable
+                columns={columns}
+                data={propertyGroups}
+                totalCount={loadedIntakes}
+                pageSize={LISTINGS_PAGE_SIZE}
+                sorting={sorting}
+                onSortingChange={handleSortingChange}
+                onRowClick={(row) => setSelectedIntakeId(row.intakeId)}
+                isLoading={isLoading}
+                isLoadingMore={isFetchingNextPage}
+                onEndReached={handleEndReached}
+                emptyMessage={hasActiveFilters ? '조건에 맞는 매물이 없습니다.' : '등록된 매물이 없습니다.'}
+                renderStatusBar={() => (
+                  <span>
+                    의뢰 {intakeCountLabel}건 표시
+                    {loadedListings > 0 ? ` · 거래 ${loadedListings.toLocaleString()}건` : ''}
+                    {hasNextPage && !isFetchingNextPage ? ' · 아래로 스크롤하면 더 불러옵니다' : ''}
+                    {isFetchingNextPage ? ' · 더 불러오는 중...' : ''}
+                  </span>
+                )}
+              />
+            ) : (
+              <PropertyMapView
+                points={mapPoints.points}
+                missingGroups={mapPoints.missingGroups}
+                isLoading={isLoading || (viewMode === 'map' && isMapDataLoading && listingIntakes.length === 0)}
+                isFallback={isMapDataError}
+                truncated={Boolean(mapData?.truncated)}
+                limit={mapData?.limit}
+                hasActiveFilters={hasActiveFilters}
+                onSelectIntake={setSelectedIntakeId}
+              />
+            )}
           </div>
         </section>
         <PropertyQuickSheet
@@ -1231,6 +1376,569 @@ function TableHeaderLabel({ icon, label }: { icon: ReactNode; label: string }) {
       <span className="shrink-0 [&>svg]:size-3 [&>svg]:text-muted-foreground/70">{icon}</span>
       <span className="truncate">{label}</span>
     </span>
+  );
+}
+
+function ViewModeSwitch({
+  value,
+  onChange,
+}: {
+  value: PropertyViewMode;
+  onChange: (value: PropertyViewMode) => void;
+}) {
+  return (
+    <div className="flex h-8 items-center rounded-md border border-border bg-white p-0.5">
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className={cn(
+          'h-7 gap-1.5 rounded-[5px] px-2.5 text-xs font-medium',
+          value === 'list' && 'bg-muted text-foreground shadow-sm',
+        )}
+        onClick={() => onChange('list')}
+        aria-pressed={value === 'list'}
+      >
+        <List className="size-3.5" />
+        목록
+      </Button>
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className={cn(
+          'h-7 gap-1.5 rounded-[5px] px-2.5 text-xs font-medium',
+          value === 'map' && 'bg-muted text-foreground shadow-sm',
+        )}
+        onClick={() => onChange('map')}
+        aria-pressed={value === 'map'}
+      >
+        <MapIcon className="size-3.5" />
+        지도
+      </Button>
+    </div>
+  );
+}
+
+function PropertyMapView({
+  points,
+  missingGroups,
+  isLoading,
+  isFallback,
+  truncated,
+  limit,
+  hasActiveFilters,
+  onSelectIntake,
+}: {
+  points: PropertyMapPoint[];
+  missingGroups: PropertyListingGroup[];
+  isLoading: boolean;
+  isFallback: boolean;
+  truncated: boolean;
+  limit?: number;
+  hasActiveFilters: boolean;
+  onSelectIntake: (intakeId: string) => void;
+}) {
+  if (isLoading) {
+    return <PropertyMapSkeleton />;
+  }
+
+  if (points.length === 0 && missingGroups.length === 0) {
+    return (
+      <div className="flex min-h-0 flex-1 items-center justify-center bg-white text-sm text-muted-foreground">
+        {hasActiveFilters ? '조건에 맞는 매물이 없습니다.' : '등록된 매물이 없습니다.'}
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_320px] bg-white">
+      <div className="relative min-h-0 overflow-hidden border-r border-border bg-[#f7f7f5]">
+        <NaverPropertyMap
+          points={points}
+          missingCount={missingGroups.length}
+          onSelectIntake={onSelectIntake}
+        />
+      </div>
+
+      <aside className="flex min-h-0 flex-col bg-white">
+        <div className="shrink-0 border-b border-border px-3 py-2">
+          <div className="text-[12px] font-medium text-foreground">지도 매물</div>
+          <div className="mt-0.5 text-[11px] text-muted-foreground">
+            좌표 있는 단지 {points.length.toLocaleString()}곳
+            {truncated && limit ? ` · 최대 ${limit.toLocaleString()}건` : ''}
+            {isFallback ? ' · 목록 기준' : ''}
+          </div>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          {points.flatMap((point) =>
+            point.groups.map((group) => (
+              <MapPropertyRow
+                key={group.id}
+                group={group}
+                point={point}
+                onClick={() => onSelectIntake(group.intakeId)}
+              />
+            )),
+          )}
+          {missingGroups.length > 0 && (
+            <div className="border-t border-border bg-muted/20 px-3 py-2 text-[11px] font-medium text-muted-foreground">
+              좌표 미등록 {missingGroups.length.toLocaleString()}건
+            </div>
+          )}
+          {missingGroups.map((group) => (
+            <MapPropertyRow
+              key={group.id}
+              group={group}
+              onClick={() => onSelectIntake(group.intakeId)}
+              muted
+            />
+          ))}
+        </div>
+      </aside>
+    </div>
+  );
+}
+
+function PropertyMapSkeleton() {
+  return (
+    <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_320px] bg-white">
+      <div className="relative border-r border-border bg-muted/30 p-4">
+        <Skeleton className="h-full w-full rounded-none" />
+      </div>
+      <div className="space-y-2 p-3">
+        {Array.from({ length: 8 }).map((_, index) => (
+          <Skeleton key={index} className="h-16 rounded-md" />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function NaverPropertyMap({
+  points,
+  missingCount,
+  onSelectIntake,
+}: {
+  points: PropertyMapPoint[];
+  missingCount: number;
+  onSelectIntake: (intakeId: string) => void;
+}) {
+  const mapElementRef = useRef<HTMLDivElement | null>(null);
+  const mapRef = useRef<InstanceType<NaverMapsApi['Map']> | null>(null);
+  const markersRef = useRef<Array<InstanceType<NaverMapsApi['Marker']>>>([]);
+  const listenersRef = useRef<unknown[]>([]);
+  const clusterListenersRef = useRef<unknown[]>([]);
+  const [mapsApi, setMapsApi] = useState<NaverMapsApi | null>(() => getReadyNaverMapsApi());
+  const [loadState, setLoadState] = useState<'idle' | 'loading' | 'ready' | 'error'>(
+    getReadyNaverMapsApi() ? 'ready' : 'idle',
+  );
+
+  useEffect(() => {
+    if (mapsApi || !NAVER_MAPS_NCP_KEY_ID) return;
+
+    let cancelled = false;
+    setLoadState('loading');
+    loadNaverMaps(NAVER_MAPS_NCP_KEY_ID)
+      .then((loadedMapsApi) => {
+        if (cancelled) return;
+        setMapsApi(loadedMapsApi);
+        setLoadState('ready');
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setLoadState('error');
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [mapsApi]);
+
+  useEffect(() => {
+    if (!mapsApi || !mapElementRef.current || mapRef.current) return;
+
+    const centerPoint = points[0] ?? { lat: 37.5665, lng: 126.9780 };
+    mapRef.current = new mapsApi.Map(mapElementRef.current, {
+      center: new mapsApi.LatLng(centerPoint.lat, centerPoint.lng),
+      zoom: points.length > 0 ? 15 : 11,
+      mapDataControl: false,
+      scaleControl: true,
+      zoomControl: true,
+    });
+  }, [mapsApi, points]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!mapsApi || !map) return;
+
+    const clearMarkers = () => {
+      for (const listener of listenersRef.current) {
+        mapsApi.Event.removeListener?.(listener);
+      }
+      for (const marker of markersRef.current) {
+        marker.setMap(null);
+      }
+      listenersRef.current = [];
+      markersRef.current = [];
+    };
+
+    const clearClusterListeners = () => {
+      for (const listener of clusterListenersRef.current) {
+        mapsApi.Event.removeListener?.(listener);
+      }
+      clusterListenersRef.current = [];
+    };
+
+    clearMarkers();
+    clearClusterListeners();
+
+    if (points.length === 0) return;
+
+    const renderClusters = () => {
+      clearMarkers();
+
+      const clusters = buildPropertyMapClusters(points, map, mapsApi);
+
+      for (const cluster of clusters) {
+        const position = new mapsApi.LatLng(cluster.lat, cluster.lng);
+        const isCluster = cluster.points.length > 1;
+        const marker = new mapsApi.Marker({
+          map,
+          position,
+          title: isCluster ? `${cluster.groupCount}건` : cluster.points[0].siteName,
+          icon: {
+            content: isCluster ? getNaverClusterMarkerHtml(cluster) : getNaverMarkerHtml(cluster.points[0]),
+            anchor: isCluster ? new mapsApi.Point(24, 24) : new mapsApi.Point(18, 42),
+          },
+        });
+        const listener = mapsApi.Event.addListener(marker, 'click', () => {
+          if (isCluster) {
+            map.setCenter(position);
+            map.setZoom(Math.min(map.getZoom() + 2, 19));
+            return;
+          }
+
+          onSelectIntake(cluster.points[0].groups[0].intakeId);
+        });
+        markersRef.current.push(marker);
+        listenersRef.current.push(listener);
+      }
+    };
+
+    renderClusters();
+    clusterListenersRef.current = [
+      mapsApi.Event.addListener(map, 'idle', renderClusters),
+      mapsApi.Event.addListener(map, 'zoom_changed', renderClusters),
+    ];
+
+    if (points.length === 1) {
+      map.setCenter(new mapsApi.LatLng(points[0].lat, points[0].lng));
+      map.setZoom(16);
+      return () => {
+        clearMarkers();
+        clearClusterListeners();
+      };
+    }
+
+    const bounds = getMapBounds(points);
+    map.fitBounds?.(
+      new mapsApi.LatLngBounds(
+        new mapsApi.LatLng(bounds.minLat, bounds.minLng),
+        new mapsApi.LatLng(bounds.maxLat, bounds.maxLng),
+      ),
+      { top: 64, right: 64, bottom: 64, left: 64 },
+    );
+
+    return () => {
+      clearMarkers();
+      clearClusterListeners();
+    };
+  }, [mapsApi, onSelectIntake, points]);
+
+  return (
+    <div className="relative h-full min-h-0 w-full">
+      <div ref={mapElementRef} className="h-full w-full" />
+      <div className="absolute left-4 top-4 z-10 rounded-md border border-border bg-white/95 px-3 py-2 shadow-sm">
+        <div className="text-[12px] font-medium text-foreground">
+          지도 표시 {points.length.toLocaleString()}곳
+        </div>
+        <div className="mt-0.5 text-[11px] text-muted-foreground">
+          좌표 없음 {missingCount.toLocaleString()}건
+        </div>
+      </div>
+      {!NAVER_MAPS_NCP_KEY_ID && (
+        <NaverMapOverlayMessage title="네이버 지도 키가 필요합니다" detail="VITE_NAVER_MAPS_NCP_KEY_ID를 설정하면 지도가 표시됩니다." />
+      )}
+      {NAVER_MAPS_NCP_KEY_ID && loadState === 'loading' && (
+        <NaverMapOverlayMessage title="네이버 지도를 불러오는 중입니다" detail="Maps JavaScript SDK를 초기화하고 있습니다." />
+      )}
+      {NAVER_MAPS_NCP_KEY_ID && loadState === 'error' && (
+        <NaverMapOverlayMessage
+          title="네이버 지도 로딩 실패"
+          detail={
+            <>
+              Web 서비스 URL 등록값과 ncpKeyId를 확인해 주세요.
+              <br />
+              현재 URL: {getNaverMapsServiceUrl()}
+            </>
+          }
+        />
+      )}
+      {NAVER_MAPS_NCP_KEY_ID && loadState === 'ready' && points.length === 0 && (
+        <NaverMapOverlayMessage title="좌표가 등록된 매물이 없습니다" detail="단지 좌표가 있는 매물부터 지도에 표시됩니다." />
+      )}
+    </div>
+  );
+}
+
+function NaverMapOverlayMessage({ title, detail }: { title: string; detail: ReactNode }) {
+  return (
+    <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/65">
+      <div className="rounded-md border border-border bg-white px-4 py-3 text-center shadow-sm">
+        <div className="text-sm font-medium text-foreground">{title}</div>
+        <div className="mt-1 text-xs text-muted-foreground">{detail}</div>
+      </div>
+    </div>
+  );
+}
+
+function getNaverMapsServiceUrl() {
+  return window.location.href;
+}
+
+function buildPropertyMapClusters(
+  points: PropertyMapPoint[],
+  map: InstanceType<NaverMapsApi['Map']>,
+  mapsApi: NaverMapsApi,
+): PropertyMapCluster[] {
+  if (points.length === 0) return [];
+  const zoom = map.getZoom();
+  if (zoom > PROPERTY_MAP_CLUSTER_MAX_ZOOM) {
+    return points.map((point) => buildSinglePropertyMapCluster(point));
+  }
+
+  const projection = map.getProjection();
+  const clusterMap = new Map<string, PropertyMapCluster>();
+
+  for (const point of points) {
+    const coord = new mapsApi.LatLng(point.lat, point.lng);
+    const offset = projection.fromCoordToOffset(coord);
+    const key = [
+      Math.floor(offset.x / PROPERTY_MAP_CLUSTER_GRID_SIZE),
+      Math.floor(offset.y / PROPERTY_MAP_CLUSTER_GRID_SIZE),
+    ].join(':');
+    const existing = clusterMap.get(key);
+
+    if (existing) {
+      existing.points.push(point);
+      existing.groupCount += point.groups.length;
+      existing.listingCount += point.listingCount;
+      existing.lat = getAverage(existing.points, 'lat');
+      existing.lng = getAverage(existing.points, 'lng');
+      continue;
+    }
+
+    clusterMap.set(key, {
+      id: key,
+      lat: point.lat,
+      lng: point.lng,
+      points: [point],
+      groupCount: point.groups.length,
+      listingCount: point.listingCount,
+    });
+  }
+
+  return Array.from(clusterMap.values());
+}
+
+function buildSinglePropertyMapCluster(point: PropertyMapPoint): PropertyMapCluster {
+  return {
+    id: point.id,
+    lat: point.lat,
+    lng: point.lng,
+    points: [point],
+    groupCount: point.groups.length,
+    listingCount: point.listingCount,
+  };
+}
+
+function getAverage<T extends 'lat' | 'lng'>(points: PropertyMapPoint[], field: T) {
+  return points.reduce((sum, point) => sum + point[field], 0) / points.length;
+}
+
+function getReadyNaverMapsApi() {
+  const mapsApi = window.naver?.maps;
+  if (
+    mapsApi &&
+    typeof mapsApi.LatLng === 'function' &&
+    typeof mapsApi.LatLngBounds === 'function' &&
+    typeof mapsApi.Point === 'function' &&
+    typeof mapsApi.Map === 'function' &&
+    typeof mapsApi.Marker === 'function' &&
+    mapsApi.Event &&
+    typeof mapsApi.Event.addListener === 'function'
+  ) {
+    return mapsApi;
+  }
+
+  return null;
+}
+
+function loadNaverMaps(ncpKeyId: string) {
+  const readyMapsApi = getReadyNaverMapsApi();
+  if (readyMapsApi) {
+    return Promise.resolve(readyMapsApi);
+  }
+  if (window.__estateErpNaverMapsPromise) {
+    return window.__estateErpNaverMapsPromise;
+  }
+
+  window.__estateErpNaverMapsPromise = new Promise<NaverMapsApi>((resolve, reject) => {
+    const existingScript = document.getElementById('naver-maps-js-sdk') as HTMLScriptElement | null;
+
+    const handleLoad = () => {
+      const loadedMapsApi = getReadyNaverMapsApi();
+      if (loadedMapsApi) {
+        resolve(loadedMapsApi);
+        return;
+      }
+      reject(new Error('NAVER Maps SDK loaded without ready maps API'));
+    };
+
+    if (existingScript) {
+      const loadedMapsApi = getReadyNaverMapsApi();
+      if (loadedMapsApi) {
+        resolve(loadedMapsApi);
+        return;
+      }
+      if (existingScript.dataset.loadState === 'loaded') {
+        reject(new Error('NAVER Maps SDK is present but not ready'));
+        return;
+      }
+      existingScript.addEventListener('load', handleLoad, { once: true });
+      existingScript.addEventListener('error', () => reject(new Error('NAVER Maps SDK failed to load')), { once: true });
+      return;
+    }
+
+    const script = document.createElement('script');
+    script.id = 'naver-maps-js-sdk';
+    script.async = true;
+    script.src = `https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=${encodeURIComponent(ncpKeyId)}`;
+    script.addEventListener('load', () => {
+      script.dataset.loadState = 'loaded';
+      handleLoad();
+    }, { once: true });
+    script.addEventListener('error', () => reject(new Error('NAVER Maps SDK failed to load')), { once: true });
+    document.head.appendChild(script);
+  });
+
+  return window.__estateErpNaverMapsPromise;
+}
+
+function getNaverMarkerHtml(point: PropertyMapPoint) {
+  return `
+    <div style="
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      font-family: Pretendard, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      cursor: pointer;
+    ">
+      <div style="
+        min-width: 34px;
+        height: 34px;
+        padding: 0 9px;
+        border-radius: 999px;
+        border: 2px solid #fff;
+        background: #0f172a;
+        color: #fff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 12px;
+        font-weight: 700;
+        box-shadow: 0 8px 20px rgba(15, 23, 42, 0.24);
+      ">${point.groups.length}</div>
+      <div style="
+        width: 9px;
+        height: 9px;
+        margin-top: -3px;
+        background: #0f172a;
+        transform: rotate(45deg);
+      "></div>
+    </div>
+  `;
+}
+
+function getNaverClusterMarkerHtml(cluster: PropertyMapCluster) {
+  const markerSize = cluster.groupCount >= 50 ? 60 : cluster.groupCount >= 20 ? 54 : 48;
+  return `
+    <div style="
+      width: ${markerSize}px;
+      height: ${markerSize}px;
+      border-radius: 999px;
+      border: 3px solid rgba(255, 255, 255, 0.95);
+      background: #2563eb;
+      color: #fff;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      font-family: Pretendard, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      cursor: pointer;
+      box-shadow: 0 10px 24px rgba(37, 99, 235, 0.28);
+    ">
+      <div style="font-size: 13px; line-height: 1; font-weight: 800;">${cluster.groupCount}</div>
+      <div style="margin-top: 3px; font-size: 10px; line-height: 1; font-weight: 600; opacity: 0.85;">매물</div>
+    </div>
+  `;
+}
+
+function MapPropertyRow({
+  group,
+  point,
+  onClick,
+  muted,
+}: {
+  group: PropertyListingGroup;
+  point?: PropertyMapPoint;
+  onClick: () => void;
+  muted?: boolean;
+}) {
+  const property = group.property;
+  const siteName = property?.site?.name ?? '매물 정보 없음';
+  const address = point?.address ?? property?.site?.roadAddress ?? property?.site?.jibunAddress ?? '주소 미등록';
+  const unitLabel = getPropertyMapUnitLabel(property);
+  const priceLabel = getPropertyMapPriceLabel(group.listings);
+
+  return (
+    <button
+      type="button"
+      className={cn(
+        'block w-full border-b border-border px-3 py-2.5 text-left hover:bg-muted/40',
+        muted && 'bg-muted/10',
+      )}
+      onClick={onClick}
+    >
+      <div className="flex min-w-0 items-start justify-between gap-2">
+        <div className="min-w-0">
+          <div className="truncate text-[13px] font-semibold text-foreground">{siteName}</div>
+          <div className="mt-0.5 truncate text-[12px] text-muted-foreground">
+            {[unitLabel, address].filter(Boolean).join(' · ')}
+          </div>
+        </div>
+        <span className="shrink-0 text-[11px] text-muted-foreground">
+          {group.listings.length.toLocaleString()}건
+        </span>
+      </div>
+      <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-1.5">
+        {group.listings.slice(0, 3).map((listing) => (
+          <TransactionBadge key={listing.id} transactionType={listing.transactionType} />
+        ))}
+        <span className="truncate text-[12px] font-medium text-slate-700">{priceLabel}</span>
+      </div>
+    </button>
   );
 }
 
@@ -2255,6 +2963,11 @@ function parseEditorCellValue(value: unknown) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function parseEditorTextValue(value: unknown) {
+  const trimmed = String(value ?? '').trim();
+  return trimmed || null;
+}
+
 function ListingAdStack({ listings }: { listings: ListingSummary[] }) {
   const hasMultiple = listings.length > 1;
   return (
@@ -2277,12 +2990,31 @@ function ListingAdStack({ listings }: { listings: ListingSummary[] }) {
   );
 }
 
-function IntakeMemoCell({ memo }: { memo: string | null | undefined }) {
-  const value = memo?.trim();
+function IntakeMemoCell({
+  intake,
+  onSave,
+}: {
+  intake: PropertyListingGroup['representative'];
+  onSave: (intakeId: string, value: unknown) => void;
+}) {
+  const value = intake.memo?.trim();
   return (
-    <p className="line-clamp-2 min-w-0 text-[11px] leading-snug text-slate-600">
-      {value || <span className="text-slate-400">-</span>}
-    </p>
+    <EditableCell
+      recordId={intake.id}
+      field="memo"
+      value={intake.memo}
+      onSave={(recordId, _field, newValue) => {
+        onSave(recordId, newValue);
+      }}
+      editType="text"
+      activation="doubleClick"
+      portalAnchor="tableCell"
+      hoverHighlight={false}
+    >
+      <p className="line-clamp-2 min-w-0 px-2.5 text-[11px] leading-snug text-slate-600">
+        {value || <span className="text-slate-400">-</span>}
+      </p>
+    </EditableCell>
   );
 }
 
@@ -2927,6 +3659,96 @@ function buildPropertyListingGroups(intakes: ListingIntake[]) {
     matchedIntakes: [intake],
     listings: (intake.listings ?? []).map(toListingSummary).sort(compareListingSummary),
   }));
+}
+
+function buildPropertyMapPoints(groups: PropertyListingGroup[]) {
+  const pointMap = new Map<string, PropertyMapPoint>();
+  const missingGroups: PropertyListingGroup[] = [];
+
+  for (const group of groups) {
+    const site = group.property?.site;
+    const lat = readCoordinate(site?.lat);
+    const lng = readCoordinate(site?.lng);
+
+    if (!site || lat === null || lng === null) {
+      missingGroups.push(group);
+      continue;
+    }
+
+    const key = `${site.id}:${lat}:${lng}`;
+    const existing = pointMap.get(key);
+    if (existing) {
+      existing.groups.push(group);
+      existing.listingCount += group.listings.length;
+      continue;
+    }
+
+    pointMap.set(key, {
+      id: key,
+      siteId: site.id,
+      siteName: site.name,
+      address: site.roadAddress ?? site.jibunAddress ?? '주소 미등록',
+      lat,
+      lng,
+      groups: [group],
+      listingCount: group.listings.length,
+    });
+  }
+
+  return {
+    points: Array.from(pointMap.values()).sort((a, b) => b.groups.length - a.groups.length || a.siteName.localeCompare(b.siteName)),
+    missingGroups,
+  };
+}
+
+function readCoordinate(value: number | string | null | undefined) {
+  if (value === null || value === undefined || value === '') return null;
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
+function getMapBounds(points: PropertyMapPoint[]) {
+  if (points.length === 0) {
+    return { minLat: 0, maxLat: 0, minLng: 0, maxLng: 0 };
+  }
+
+  return points.reduce(
+    (bounds, point) => ({
+      minLat: Math.min(bounds.minLat, point.lat),
+      maxLat: Math.max(bounds.maxLat, point.lat),
+      minLng: Math.min(bounds.minLng, point.lng),
+      maxLng: Math.max(bounds.maxLng, point.lng),
+    }),
+    {
+      minLat: points[0].lat,
+      maxLat: points[0].lat,
+      minLng: points[0].lng,
+      maxLng: points[0].lng,
+    },
+  );
+}
+
+function getPropertyMapUnitLabel(property?: ListingProperty) {
+  if (!property?.unit) return '';
+  return [getDongName(property), property.unit.name]
+    .filter((item) => item && item !== '-')
+    .join(' ');
+}
+
+function getPropertyMapPriceLabel(listings: ListingSummary[]) {
+  if (listings.length === 0) return '가격 미등록';
+  return listings
+    .slice(0, 2)
+    .map((listing) => {
+      if (listing.transactionType === 'monthly') {
+        const deposit = listing.deposit ? formatPrice(listing.deposit) : '-';
+        const rent = listing.monthlyRent ? formatPrice(listing.monthlyRent) : '-';
+        return `${deposit}/${rent}`;
+      }
+      const price = listing.transactionType === 'jeonse' ? listing.deposit : listing.price;
+      return price ? formatPrice(price) : '-';
+    })
+    .join(' · ');
 }
 
 function toListingSummary(listing: ListingSummary): ListingSummary {

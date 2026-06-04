@@ -44,6 +44,8 @@ export interface Property {
     type: string;
     roadAddress: string | null;
     jibunAddress: string | null;
+    lat?: number | string | null;
+    lng?: number | string | null;
   };
   unit?: {
     id: string;

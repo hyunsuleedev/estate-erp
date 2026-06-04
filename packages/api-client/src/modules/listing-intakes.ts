@@ -122,6 +122,12 @@ export interface ListingIntakesResponse {
   };
 }
 
+export interface ListingIntakesMapResponse {
+  items: ListingIntake[];
+  truncated: boolean;
+  limit: number;
+}
+
 export interface CreateListingForIntakeDto {
   transactionType: string;
   price?: number | null;
@@ -168,6 +174,11 @@ export function createListingIntakesApi(request: RequestFn) {
   return {
     findAll: (filters?: ListingIntakesFilter) =>
       request<ListingIntakesResponse>('/listing-intakes', {
+        params: filters as Record<string, string | number | boolean | undefined>,
+      }),
+
+    map: (filters?: ListingIntakesFilter) =>
+      request<ListingIntakesMapResponse>('/listing-intakes/map', {
         params: filters as Record<string, string | number | boolean | undefined>,
       }),
 

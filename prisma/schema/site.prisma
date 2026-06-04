@@ -149,7 +149,7 @@ model Dong {
   id            String   @id @default(uuid()) @db.Uuid
   officeId      String?  @map("office_id") @db.Uuid // null = 중앙 데이터
   siteId        String   @map("site_id") @db.Uuid
-  name          String // 동 이름 (101동, A동, 단일 동 건물은 "-" 등)
+  name          String // 동 이름 (101, A, 단일 동 건물은 "-" 등) - "동" suffix는 저장하지 않음
   isPlaceholder Boolean  @default(false) @map("is_placeholder") // true = 실제 동 구분 없음, UI에서 숨김
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
