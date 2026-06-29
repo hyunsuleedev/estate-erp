@@ -319,9 +319,7 @@ function formatPropertyContextTitle(
 }
 
 function formatPropertyContextDescription(property: ConsultationListItem['property'] | null | undefined) {
-  const memo = property?.memo?.trim();
-  if (memo) return memo;
-
+  // Property.memo 컬럼은 제거됨 (의뢰 메모는 ListingIntake로 이동) — 호실 정보만 표기.
   const details = [
     property?.unit?.floor != null ? `${property.unit.floor}층` : null,
     property?.unit?.lineNo != null ? `${property.unit.lineNo}라인` : null,

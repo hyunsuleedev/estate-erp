@@ -89,6 +89,9 @@ type EmployeeDetail = Prisma.UserGetPayload<{
   include: typeof employeeDetailInclude;
 }>;
 
+const USER_LICENSE_TYPES = ['broker_owner', 'broker_associate', 'assistant'] as const;
+const USER_PAY_TYPES = ['fixed', 'mixed', 'commission_only'] as const;
+
 @Injectable()
 export class EmployeesService {
   constructor(
@@ -145,6 +148,12 @@ export class EmployeesService {
         phone: employee.phone,
         role: employee.role,
         isActive: employee.isActive,
+        licenseType: employee.licenseType,
+        licenseNo: employee.licenseNo,
+        payType: employee.payType,
+        baseSalary: employee.baseSalary,
+        commissionRate:
+          employee.commissionRate === null ? null : Number(employee.commissionRate),
         createdAt: employee.createdAt,
         updatedAt: employee.updatedAt,
         counts: {
@@ -192,19 +201,31 @@ export class EmployeesService {
       email?: string;
       role?: string;
       loginId?: string;
+      licenseType?: string | null;
+      licenseNo?: string | null;
     },
   ) {
     const office = await this.prisma.office.findUnique({
       where: { id: actor.officeId },
-      select: { id: true },
+      select: { id: true, maxUsers: true },
     });
 
     if (!office) {
       throw new NotFoundException('Office not found');
     }
 
+    const activeUserCount = await this.prisma.user.count({
+      where: { officeId: actor.officeId, isActive: true },
+    });
+    if (activeUserCount >= office.maxUsers) {
+      throw new BadRequestException(
+        `최대 사용자 수(${office.maxUsers}명)를 초과했습니다. 플랜을 업그레이드하거나 비활성 처리 후 추가하세요.`,
+      );
+    }
+
     const role = dto.role ?? 'agent';
     this.assertMutableRole(actor.role, role);
+    const licenseType = this.normalizeLicenseType(dto.licenseType);
 
     const loginId = dto.loginId ? this.normalizeLoginId(dto.loginId) : '';
     if (!loginId) {
@@ -242,6 +263,8 @@ export class EmployeesService {
           name: dto.name,
           phone: dto.phone,
           role,
+          licenseType,
+          licenseNo: this.normalizeNullableText(dto.licenseNo),
           clerkId: clerkUser.id,
         },
         include: employeeDetailInclude,
@@ -267,10 +290,36 @@ export class EmployeesService {
       name?: string;
       phone?: string | null;
       email?: string | null;
+      licenseType?: string | null;
+      licenseNo?: string | null;
+      payType?: string;
+      baseSalary?: number | null;
+      commissionRate?: number | null;
     },
   ) {
     const target = await this.findOne(id, actor.officeId);
     this.assertCanManageTarget(actor.role, target.role);
+
+    if (dto.payType !== undefined && !USER_PAY_TYPES.includes(dto.payType as never)) {
+      throw new BadRequestException('유효하지 않은 급여 유형입니다.');
+    }
+    if (
+      dto.commissionRate !== undefined &&
+      dto.commissionRate !== null &&
+      (typeof dto.commissionRate !== 'number' ||
+        !Number.isFinite(dto.commissionRate) ||
+        dto.commissionRate < 0 ||
+        dto.commissionRate > 100)
+    ) {
+      throw new BadRequestException('수수료 배분율은 0~100 사이여야 합니다.');
+    }
+    if (
+      dto.baseSalary !== undefined &&
+      dto.baseSalary !== null &&
+      (!Number.isInteger(dto.baseSalary) || dto.baseSalary < 0)
+    ) {
+      throw new BadRequestException('기본급은 0 이상의 정수(만원)여야 합니다.');
+    }
 
     const employee = await this.prisma.user.update({
       where: { id },
@@ -278,6 +327,17 @@ export class EmployeesService {
         name: dto.name,
         phone: dto.phone,
         email: dto.email === undefined ? undefined : this.normalizeNullableEmail(dto.email),
+        licenseType:
+          dto.licenseType === undefined
+            ? undefined
+            : this.normalizeLicenseType(dto.licenseType),
+        licenseNo:
+          dto.licenseNo === undefined
+            ? undefined
+            : this.normalizeNullableText(dto.licenseNo),
+        payType: dto.payType,
+        baseSalary: dto.baseSalary,
+        commissionRate: dto.commissionRate,
       },
       include: employeeDetailInclude,
     });
@@ -457,6 +517,12 @@ export class EmployeesService {
       phone: employee.phone,
       role: employee.role,
       isActive: employee.isActive,
+      licenseType: employee.licenseType,
+      licenseNo: employee.licenseNo,
+      payType: employee.payType,
+      baseSalary: employee.baseSalary,
+      commissionRate:
+        employee.commissionRate === null ? null : Number(employee.commissionRate),
       createdAt: employee.createdAt,
       updatedAt: employee.updatedAt,
       office: employee.office,
@@ -498,6 +564,22 @@ export class EmployeesService {
 
   private normalizeLoginId(loginId: string) {
     return typeof loginId === 'string' ? loginId.trim().toLowerCase() : '';
+  }
+
+  private normalizeLicenseType(licenseType?: string | null) {
+    if (licenseType === undefined || licenseType === null || licenseType === '') {
+      return null;
+    }
+    if (!USER_LICENSE_TYPES.includes(licenseType as never)) {
+      throw new BadRequestException('유효하지 않은 자격 구분입니다.');
+    }
+    return licenseType;
+  }
+
+  private normalizeNullableText(value?: string | null) {
+    if (value === undefined || value === null) return null;
+    const trimmed = value.trim();
+    return trimmed ? trimmed : null;
   }
 
   private normalizeNullableEmail(email?: string | null) {

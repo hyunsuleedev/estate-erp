@@ -81,14 +81,15 @@ describe('desktop data table', () => {
     assert.doesNotMatch(source, /<FilterPopoverChip\s+label="법정동"/);
   });
 
-  it('adds a map view toggle to property management', () => {
+  it('keeps property map view code while hiding the list-to-map toggle', () => {
     const source = readFileSync(
       resolve(testDir, '../src/renderer/routes/_authenticated/properties/index.tsx'),
       'utf8',
     );
 
     assert.match(source, /type PropertyViewMode = 'list' \| 'map'/);
-    assert.match(source, /<ViewModeSwitch value=\{viewMode\} onChange=\{setViewMode\} \/>/);
+    assert.doesNotMatch(source, /<ViewModeSwitch value=\{viewMode\} onChange=\{setViewMode\} \/>/);
+    assert.doesNotMatch(source, /function ViewModeSwitch/);
     assert.match(source, /viewMode === 'list'/);
     assert.match(source, /<PropertyMapView/);
     assert.match(source, /api\.listingIntakes\.map/);

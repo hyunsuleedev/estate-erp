@@ -5,7 +5,11 @@ import {
   NotFoundException,
   Optional,
 } from '@nestjs/common';
-import { CheckStatus, TransactionType } from '@estate-erp/shared';
+import {
+  CheckStatus,
+  MaintenanceFeeInclude,
+  TransactionType,
+} from '@estate-erp/shared';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ListingsService } from '../listings/listings.service';
@@ -29,6 +33,9 @@ const VALID_INTAKE_STATUSES = new Set([
 ]);
 const VALID_TRANSACTION_TYPES: ReadonlySet<string> = new Set(
   Object.values(TransactionType),
+);
+const VALID_MAINTENANCE_FEE_INCLUDES: ReadonlySet<string> = new Set(
+  Object.values(MaintenanceFeeInclude),
 );
 const VALID_CHECK_STATUSES: ReadonlySet<string> = new Set(
   Object.values(CheckStatus),
@@ -89,6 +96,11 @@ interface ListingInputDto {
   price?: number | null;
   deposit?: number | null;
   monthlyRent?: number | null;
+  maintenanceFee?: number | null;
+  maintenanceFeeIncludes?: string[];
+  loanAmount?: number | null;
+  premium?: number | null;
+  privateMemo?: string | null;
   moveInAvailableType?: string | null;
   moveInAvailableFrom?: Date | string | null;
   moveInAvailableTo?: Date | string | null;
@@ -258,6 +270,11 @@ export class ListingIntakesService {
             price: listing.price,
             deposit: listing.deposit,
             monthlyRent: listing.monthlyRent,
+            maintenanceFee: listing.maintenanceFee,
+            maintenanceFeeIncludes: listing.maintenanceFeeIncludes ?? undefined,
+            loanAmount: listing.loanAmount,
+            premium: listing.premium,
+            privateMemo: listing.privateMemo,
             moveInAvailableType: listing.moveInAvailableType,
             moveInAvailableFrom: listing.moveInAvailableFrom,
             moveInAvailableTo: listing.moveInAvailableTo,
@@ -794,6 +811,11 @@ export class ListingIntakesService {
           price: true,
           deposit: true,
           monthlyRent: true,
+          maintenanceFee: true,
+          maintenanceFeeIncludes: true,
+          loanAmount: true,
+          premium: true,
+          privateMemo: true,
           moveInAvailableType: true,
           moveInAvailableFrom: true,
           moveInAvailableTo: true,
@@ -848,6 +870,11 @@ export class ListingIntakesService {
           price: true,
           deposit: true,
           monthlyRent: true,
+          maintenanceFee: true,
+          maintenanceFeeIncludes: true,
+          loanAmount: true,
+          premium: true,
+          privateMemo: true,
           moveInAvailableType: true,
           moveInAvailableFrom: true,
           moveInAvailableTo: true,
@@ -1048,6 +1075,15 @@ export class ListingIntakesService {
     for (const listing of listings) {
       if (!VALID_TRANSACTION_TYPES.has(listing.transactionType as TransactionType)) {
         throw new BadRequestException('Invalid transactionType');
+      }
+      for (const slug of listing.maintenanceFeeIncludes ?? []) {
+        if (
+          !VALID_MAINTENANCE_FEE_INCLUDES.has(slug as MaintenanceFeeInclude)
+        ) {
+          throw new BadRequestException(
+            `Invalid maintenanceFeeIncludes slug: ${slug}`,
+          );
+        }
       }
     }
   }

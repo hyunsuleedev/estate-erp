@@ -126,6 +126,11 @@ model User {
   role             String  @default("agent") // owner, manager, agent
   isActive         Boolean @default(true) @map("is_active")
 
+  /// 공인중개사 자격 구분: broker_owner(개업공인중개사) | broker_associate(소속공인중개사) | assistant(중개보조원)
+  licenseType String? @map("license_type")
+  /// 공인중개사 자격증 번호 또는 중개사무소 등록 번호
+  licenseNo String? @map("license_no")
+
   /// Clerk user.id 매핑. Clerk session JWT의 sub(user_xxx)로 자체 User를 조회한다.
   /// 기존 사용자 전환을 위해 첫 Clerk 로그인 시 email이 일치하면 자동 연결한다.
   clerkId String? @unique @map("clerk_id")

@@ -1,7 +1,12 @@
-import { createFileRoute, Outlet, Navigate, useMatches } from '@tanstack/react-router';
+import { Fragment } from 'react';
+import { createFileRoute, Outlet, Navigate, useMatches, useLocation, Link } from '@tanstack/react-router';
 import { SplashScreen } from '@/components/layout/splash-screen';
 import { useAuth } from '@/providers/auth-provider';
 import { AppSidebar } from '@/components/layout/app-sidebar';
+import { GlobalSearch } from '@/components/layout/global-search';
+import { NotificationBell } from '@/components/layout/notification-bell';
+import { QuickCreate } from '@/components/layout/quick-create';
+import { getBreadcrumb } from '@/components/layout/nav-config';
 import {
   SidebarInset,
   SidebarProvider,
@@ -11,32 +16,11 @@ import { Separator } from '@/components/ui/separator';
 import {
   Breadcrumb,
   BreadcrumbItem,
+  BreadcrumbLink,
   BreadcrumbList,
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from '@/components/ui/breadcrumb';
-
-const routeLabels: Record<string, string> = {
-  '/_authenticated/dashboard': '대시보드',
-  '/_authenticated/buyer-requirements/': '구매고객',
-  '/_authenticated/consultations/': '상담기록',
-  '/_authenticated/properties/': '매물관리',
-  '/_authenticated/properties/$id': '매물 상세',
-  '/_authenticated/properties/new': '매물 등록',
-  '/_authenticated/contacts/': '연락처',
-  '/_authenticated/contacts/$id': '연락처 상세',
-  '/_authenticated/contacts/new': '연락처 추가',
-  '/_authenticated/deals/': '거래관리',
-  '/_authenticated/matches/': '매칭',
-  '/_authenticated/tasks/': '업무',
-  '/_authenticated/calendar/': '캘린더',
-  '/_authenticated/sites/': '관리단지',
-  '/_authenticated/contracts/': '계약서 관리',
-  '/_authenticated/network/': '네트워크',
-  '/_authenticated/ai-operations/': 'AI 운영',
-  '/_authenticated/employees/': '직원관리',
-  '/_authenticated/settings/': '설정',
-};
 
 export const Route = createFileRoute('/_authenticated')({
   component: AuthenticatedLayout,
@@ -45,6 +29,7 @@ export const Route = createFileRoute('/_authenticated')({
 function AuthenticatedLayout() {
   const { user, isAuthenticated, isLoading } = useAuth();
   const matches = useMatches();
+  const location = useLocation();
 
   if (isLoading) {
     return <SplashScreen />;
@@ -59,37 +44,47 @@ function AuthenticatedLayout() {
   }
 
   const currentMatch = matches[matches.length - 1];
-  const currentLabel = routeLabels[currentMatch?.routeId] ?? '';
-  const parentLabel = matches.length > 2
-    ? routeLabels[matches[matches.length - 2]?.routeId]
-    : undefined;
+  // 브레드크럼은 nav-config의 IA/라벨 맵에서 자동 derive (그룹 > 페이지 > 상세)
+  const crumbs = getBreadcrumb(currentMatch?.routeId ?? '', location.pathname);
 
   return (
     <SidebarProvider>
       <AppSidebar />
       <SidebarInset className="h-svh min-h-0 min-w-0">
-
-        <header className="flex h-16 shrink-0 items-center gap-2 transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-12">
-          <div className="flex items-center gap-2 px-4">
-          <SidebarTrigger className="-ml-1" />
-          <Separator orientation="vertical" className="mr-2 data-[orientation=vertical]:h-4" />
-          <Breadcrumb>
-            <BreadcrumbList>
-              {parentLabel && (
-                <>
-                  <BreadcrumbItem className="text-xs">
-                    {parentLabel}
-                  </BreadcrumbItem>
-                  <BreadcrumbSeparator />
-                </>
-              )}
-              <BreadcrumbItem>
-                <BreadcrumbPage className="text-xs font-medium">
-                  {currentLabel}
-                </BreadcrumbPage>
-              </BreadcrumbItem>
-            </BreadcrumbList>
-          </Breadcrumb>
+        <header className="flex h-14 shrink-0 items-center justify-between gap-2 border-b px-4">
+          <div className="flex min-w-0 items-center gap-2">
+            <SidebarTrigger className="-ml-1" />
+            <Separator orientation="vertical" className="mr-1 data-[orientation=vertical]:h-4" />
+            <Breadcrumb>
+              <BreadcrumbList>
+                {crumbs.map((crumb, index) => {
+                  const isLast = index === crumbs.length - 1;
+                  return (
+                    <Fragment key={`${crumb.label}-${index}`}>
+                      {index > 0 && <BreadcrumbSeparator />}
+                      <BreadcrumbItem className="text-xs">
+                        {isLast ? (
+                          <BreadcrumbPage className="text-xs font-medium">
+                            {crumb.label}
+                          </BreadcrumbPage>
+                        ) : crumb.to ? (
+                          <BreadcrumbLink asChild>
+                            <Link to={crumb.to}>{crumb.label}</Link>
+                          </BreadcrumbLink>
+                        ) : (
+                          crumb.label
+                        )}
+                      </BreadcrumbItem>
+                    </Fragment>
+                  );
+                })}
+              </BreadcrumbList>
+            </Breadcrumb>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <GlobalSearch />
+            <NotificationBell />
+            <QuickCreate />
           </div>
         </header>
         <div className="flex flex-1 flex-col gap-4 p-4 pt-0 min-h-0 min-w-0 overflow-auto">

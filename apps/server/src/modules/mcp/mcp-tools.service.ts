@@ -96,12 +96,40 @@ const obj = (
   properties,
   ...(required?.length ? { required } : {}),
 });
+/** Listing 거래유형 (yearly_rent = 연세, 1년치 임대료 선납) */
+const LISTING_TRANSACTION_TYPES = ['sale', 'jeonse', 'monthly', 'yearly_rent'];
+const MAINTENANCE_FEE_INCLUDE_SLUGS = [
+  'water',
+  'electricity',
+  'gas',
+  'internet',
+  'tv',
+  'cleaning',
+  'parking',
+  'heating',
+];
+const maintenanceFeeIncludes = {
+  type: 'array' as const,
+  items: { type: 'string' as const, enum: MAINTENANCE_FEE_INCLUDE_SLUGS },
+  description:
+    '관리비 포함 항목 slug 목록 (water=수도, electricity=전기, gas=가스, internet=인터넷, tv=TV, cleaning=청소, parking=주차, heating=난방)',
+};
 const listingInput = obj(
   {
-    transactionType: strEnum('거래유형', ['sale', 'jeonse', 'monthly']),
+    transactionType: strEnum(
+      '거래유형 (yearly_rent=연세)',
+      LISTING_TRANSACTION_TYPES,
+    ),
     price: num('매매가/전세가 (만원)'),
     deposit: num('보증금 (만원)'),
     monthlyRent: num('월세 (만원)'),
+    maintenanceFee: num('관리비 (만원)'),
+    maintenanceFeeIncludes,
+    loanAmount: num('융자금/근저당 설정액 (만원)'),
+    premium: num('상가 권리금 (만원)'),
+    privateMemo: str(
+      '내부 전용 메모 — 네트워크 공유/외부 노출 절대 금지. MCP 조회 응답에는 포함되지 않습니다.',
+    ),
     moveInAvailableType: str('입주가능 유형'),
     moveInAvailableFrom: str('입주가능 시작일 (ISO)'),
     moveInAvailableTo: str('입주가능 종료일 (ISO)'),
@@ -172,7 +200,12 @@ export class McpToolsService {
     try {
       const data = await entry.handler(args, ctx);
       return {
-        content: [{ type: 'text', text: JSON.stringify(data, null, 2) }],
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify(this.redactPrivateFields(data), null, 2),
+          },
+        ],
         isError: false,
       };
     } catch (err) {
@@ -193,6 +226,33 @@ export class McpToolsService {
     this.tools.push({ def: { name, description, inputSchema }, handler });
   }
 
+  /**
+   * MCP 응답에서 내부 전용 필드를 제거한다.
+   * Listing.privateMemo 는 네트워크 공유/외부(MCP 포함) 노출 절대 금지 필드 —
+   * 어떤 도구가 어떤 include 로 Listing 을 직렬화하든 여기서 일괄 차단한다.
+   */
+  private redactPrivateFields(value: unknown): unknown {
+    if (Array.isArray(value)) {
+      return value.map((item) => this.redactPrivateFields(item));
+    }
+    // Date/Decimal 등 class instance 는 toJSON 직렬화를 보존하기 위해 건드리지 않는다.
+    if (!this.isPlainObject(value)) {
+      return value;
+    }
+    const result: Record<string, unknown> = {};
+    for (const [key, val] of Object.entries(value)) {
+      if (key === 'privateMemo') continue;
+      result[key] = this.redactPrivateFields(val);
+    }
+    return result;
+  }
+
+  private isPlainObject(value: unknown): value is Record<string, unknown> {
+    if (!value || typeof value !== 'object') return false;
+    const proto: unknown = Object.getPrototypeOf(value);
+    return proto === Object.prototype || proto === null;
+  }
+
   private clampLimit(args: Record<string, unknown>, max = 100): number {
     return Math.min(Math.max((args.limit as number) ?? 20, 1), max);
   }
@@ -210,7 +270,10 @@ export class McpToolsService {
         nextConfirmTo: str('다음 확인 예정 종료일 (ISO)'),
         includeInactive: bool('비활성 의뢰 포함'),
         propertyId: str('관리매물 ID'),
-        transactionType: strEnum('거래유형', ['sale', 'jeonse', 'monthly']),
+        transactionType: strEnum(
+          '거래유형 (yearly_rent=연세)',
+          LISTING_TRANSACTION_TYPES,
+        ),
         checkStatus: strEnum('확인상태', ['unverified', 'verified', 'in_contract', 'hold', 'done']),
         siteId: str('단지 ID'),
         siteType: str('매물유형'),
@@ -358,7 +421,10 @@ export class McpToolsService {
       'find_listings',
       '매물(Listing) 목록을 검색합니다. 거래유형, 확인상태, 가격범위, 단지, 키워드로 필터링.',
       obj({
-        transactionType: strEnum('거래유형', ['sale', 'jeonse', 'monthly']),
+        transactionType: strEnum(
+          '거래유형 (yearly_rent=연세)',
+          LISTING_TRANSACTION_TYPES,
+        ),
         checkStatus: strEnum('확인상태', ['unverified', 'verified', 'in_contract', 'hold', 'done']),
         siteId: str('단지 ID'),
         search: str('검색어 (단지명, 주소)'),
@@ -393,10 +459,20 @@ export class McpToolsService {
         {
           intakeId: str('의뢰 ID'),
           propertyId: str('관리매물 ID'),
-          transactionType: strEnum('거래유형', ['sale', 'jeonse', 'monthly']),
+          transactionType: strEnum(
+            '거래유형 (yearly_rent=연세, 1년치 임대료 선납)',
+            LISTING_TRANSACTION_TYPES,
+          ),
           price: num('매매가/전세가 (만원)'),
           deposit: num('보증금 (만원)'),
           monthlyRent: num('월세 (만원)'),
+          maintenanceFee: num('관리비 (만원)'),
+          maintenanceFeeIncludes,
+          loanAmount: num('융자금/근저당 설정액 (만원)'),
+          premium: num('상가 권리금 (만원)'),
+          privateMemo: str(
+            '내부 전용 메모 — 네트워크 공유/외부 노출 절대 금지. MCP 조회 응답에는 포함되지 않습니다.',
+          ),
           memo: str('메모'),
         },
         ['intakeId', 'propertyId', 'transactionType'],
@@ -413,6 +489,11 @@ export class McpToolsService {
           price: a.price as number,
           deposit: a.deposit as number,
           monthlyRent: a.monthlyRent as number,
+          maintenanceFee: a.maintenanceFee as number,
+          maintenanceFeeIncludes: a.maintenanceFeeIncludes as string[],
+          loanAmount: a.loanAmount as number,
+          premium: a.premium as number,
+          privateMemo: a.privateMemo as string,
           memo: a.memo as string,
         });
       },
@@ -420,13 +501,35 @@ export class McpToolsService {
 
     this.add(
       'update_listing',
-      '매물 정보를 수정합니다. 가격, 거래유형, 확인상태, 메모 등.',
-      obj({ id: str('매물 ID'), price: num('가격'), deposit: num('보증금'), monthlyRent: num('월세'), checkStatus: strEnum('확인상태', ['unverified', 'verified', 'in_contract', 'hold', 'done']), memo: str('메모') }, ['id']),
+      '매물 정보를 수정합니다. 가격, 관리비, 융자금, 권리금, 확인상태, 메모 등.',
+      obj(
+        {
+          id: str('매물 ID'),
+          price: num('가격 (만원)'),
+          deposit: num('보증금 (만원)'),
+          monthlyRent: num('월세 (만원)'),
+          maintenanceFee: num('관리비 (만원)'),
+          maintenanceFeeIncludes,
+          loanAmount: num('융자금/근저당 설정액 (만원)'),
+          premium: num('상가 권리금 (만원)'),
+          privateMemo: str(
+            '내부 전용 메모 — 네트워크 공유/외부 노출 절대 금지. MCP 조회 응답에는 포함되지 않습니다.',
+          ),
+          checkStatus: strEnum('확인상태', ['unverified', 'verified', 'in_contract', 'hold', 'done']),
+          memo: str('메모'),
+        },
+        ['id'],
+      ),
       async (a, c) =>
         this.listings.update(a.id as string, c.officeId, {
           price: a.price as number,
           deposit: a.deposit as number,
           monthlyRent: a.monthlyRent as number,
+          maintenanceFee: a.maintenanceFee as number,
+          maintenanceFeeIncludes: a.maintenanceFeeIncludes as string[],
+          loanAmount: a.loanAmount as number,
+          premium: a.premium as number,
+          privateMemo: a.privateMemo as string,
           checkStatus: a.checkStatus as string,
           memo: a.memo as string,
         }),
@@ -781,7 +884,7 @@ export class McpToolsService {
 
     this.add(
       'create_property',
-      '새 관리매물을 등록합니다. 단지(siteId)는 필수, 호실(unitId)은 선택. 의뢰 메모는 매물(Listing) 단위에서 별도로 기록한다.',
+      '새 관리매물을 등록합니다. 단지(siteId)는 필수. 호실(unitId)은 건물형(아파트/오피스텔/빌라/상가/생활숙박시설)은 필수, 토지(land)는 금지, 단독/다가구주택(house)은 선택(통건물·호실 모두 가능). 의뢰 메모는 매물(Listing) 단위에서 별도로 기록한다.',
       obj({ siteId: str('단지 ID'), unitId: str('호실 ID') }, ['siteId']),
       async (a, c) =>
         this.properties.create(c.officeId, {

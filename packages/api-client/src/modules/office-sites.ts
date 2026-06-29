@@ -22,6 +22,9 @@ export function createOfficeSitesApi(request: RequestFn) {
     add: (dto: { siteId: string; memo?: string }) =>
       request<OfficeSite>('/office-sites', { method: 'POST', body: dto }),
 
+    update: (id: string, dto: { memo?: string | null }) =>
+      request<OfficeSite>(`/office-sites/${id}`, { method: 'PATCH', body: dto }),
+
     remove: (id: string) =>
       request<void>(`/office-sites/${id}`, { method: 'DELETE' }),
   };

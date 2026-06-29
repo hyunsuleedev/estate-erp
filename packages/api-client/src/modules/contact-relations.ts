@@ -14,6 +14,12 @@ export interface ContactRelation {
   contact?: { id: string; name: string; phone: string | null };
 }
 
+/** GET /contact-relations?contactId= 응답 — 주체로 연결한 관계 + 상대로 연결된 관계 */
+export interface ContactRelationsByContact {
+  relations: ContactRelation[];
+  relatedBy: ContactRelation[];
+}
+
 export interface CreateContactRelationDto {
   contactId: string;
   relatedContactId: string;
@@ -34,7 +40,7 @@ export interface CreateContactRelationWithNewContactDto {
 export function createContactRelationsApi(request: RequestFn) {
   return {
     findByContact: (contactId: string) =>
-      request<ContactRelation[]>('/contact-relations', { params: { contactId } }),
+      request<ContactRelationsByContact>('/contact-relations', { params: { contactId } }),
 
     create: (dto: CreateContactRelationDto) =>
       request<ContactRelation>('/contact-relations', { method: 'POST', body: dto }),

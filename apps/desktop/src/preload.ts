@@ -17,6 +17,19 @@ contextBridge.exposeInMainWorld('electronBridge', {
   },
   getPlatform: () => ipcRenderer.invoke('get-platform'),
   isFullscreen: () => ipcRenderer.invoke('is-fullscreen'),
+  updater: {
+    getStatus: () => ipcRenderer.invoke('updater:getStatus'),
+    check: () => ipcRenderer.invoke('updater:check'),
+    install: () => ipcRenderer.invoke('updater:install'),
+    onStatus: (callback: (payload: unknown) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, payload: unknown) =>
+        callback(payload);
+      ipcRenderer.on('updater:status', handler);
+      return () => {
+        ipcRenderer.removeListener('updater:status', handler);
+      };
+    },
+  },
   tabs: {
     detach: (payload: unknown) => ipcRenderer.invoke('tabs:detach', payload),
     beginDrag: (payload: unknown) => ipcRenderer.invoke('tabs:beginDrag', payload),

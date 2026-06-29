@@ -82,6 +82,11 @@ export interface CreateDealDto {
   specialTerms?: string;
   buyerContactId?: string;
   sellerContactId?: string;
+  /// 공동중개 여부
+  isJointBrokerage?: boolean;
+  /// 공동중개 시 우리 담당 측: seller / buyer / both
+  ourSide?: 'seller' | 'buyer' | 'both';
+  partnerBrokerId?: string;
   memo?: string;
 }
 
@@ -96,6 +101,30 @@ export interface UpdateDealStageDto {
 export interface CancelDealDto {
   cancelReason?: string;
   cancelledBy?: string;
+}
+
+export interface CreateDealPaymentDto {
+  /// pre_contract / contract / interim / balance / refund
+  kind: string;
+  /// 중도금 차수 (생략 시 interim 은 자동 증가, 나머지는 1)
+  sequence?: number;
+  /// 예정 금액 (만원)
+  scheduledAmount: number;
+  scheduledDate?: string;
+  memo?: string;
+}
+
+export interface UpdateDealPaymentDto {
+  scheduledAmount?: number;
+  scheduledDate?: string | null;
+  /// 실입금 금액 (만원). status 미지정 시 서버가 paid/partial 자동 판정
+  paidAmount?: number | null;
+  paidAt?: string | null;
+  /// pending / partial / paid / overdue / cancelled
+  status?: string;
+  method?: string | null;
+  payerName?: string | null;
+  memo?: string | null;
 }
 
 export function createDealsApi(request: RequestFn) {
@@ -115,5 +144,26 @@ export function createDealsApi(request: RequestFn) {
 
     remove: (id: string) =>
       request<void>(`/deals/${id}`, { method: 'DELETE' }),
+
+    createPayment: (dealId: string, dto: CreateDealPaymentDto) =>
+      request<DealPayment>(`/deals/${dealId}/payments`, {
+        method: 'POST',
+        body: dto,
+      }),
+
+    updatePayment: (
+      dealId: string,
+      paymentId: string,
+      dto: UpdateDealPaymentDto,
+    ) =>
+      request<DealPayment>(`/deals/${dealId}/payments/${paymentId}`, {
+        method: 'PATCH',
+        body: dto,
+      }),
+
+    removePayment: (dealId: string, paymentId: string) =>
+      request<DealPayment>(`/deals/${dealId}/payments/${paymentId}`, {
+        method: 'DELETE',
+      }),
   };
 }

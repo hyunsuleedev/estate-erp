@@ -13,6 +13,17 @@ jest.mock('@estate-erp/shared', () => ({
     SALE: 'sale',
     JEONSE: 'jeonse',
     MONTHLY: 'monthly',
+    YEARLY_RENT: 'yearly_rent',
+  },
+  MaintenanceFeeInclude: {
+    WATER: 'water',
+    ELECTRICITY: 'electricity',
+    GAS: 'gas',
+    INTERNET: 'internet',
+    TV: 'tv',
+    CLEANING: 'cleaning',
+    PARKING: 'parking',
+    HEATING: 'heating',
   },
 }));
 

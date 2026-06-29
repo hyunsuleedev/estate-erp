@@ -2,10 +2,11 @@ import { createFileRoute, Link, useNavigate } from '@tanstack/react-router';
 import { useInfiniteQuery, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState, useCallback, useEffect, useMemo, type ReactNode } from 'react';
 import {
+  Building2,
   CalendarDays,
-  Check,
   ChevronDown,
   CircleDollarSign,
+  Columns3,
   DoorOpen,
   ExternalLink,
   FileText,
@@ -15,27 +16,31 @@ import {
   Megaphone,
   MessageSquare,
   Phone,
+  PhoneCall,
   Plus,
   RotateCcw,
   Ruler,
   Search,
+  SearchX,
   SlidersHorizontal,
   Tag,
   Type,
   X,
 } from 'lucide-react';
 import type { ColumnDef, SortingState } from '@tanstack/react-table';
+import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import type {
   Consultation,
   Listing,
   ListingFilterSite,
+  ListingIntake,
+  ListingIntakesFilter,
   Property,
   PropertyContact,
   PropertyListing,
   Tenant,
 } from '@estate-erp/api-client';
-import { formatPrice } from '@estate-erp/shared';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -49,8 +54,8 @@ import {
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
-  DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {
@@ -82,32 +87,27 @@ import {
   type QuickSheetNotice,
   type QuickSheetNoticeTone,
 } from '@/components/quick-sheet';
-import { getMoveInAvailability } from './-property-list-view-utils';
+import { EmptyState, StatusBadge } from '@/components/domain';
+import { getStatusMeta } from '@/lib/status-config';
+import { formatArea, formatMoney, formatPhone } from '@/lib/format';
+import {
+  getMoveInAvailability,
+  pickPrimaryIntake,
+  TONE_CHIP_CLASSES,
+  type ListingProperty,
+  type ListingSummary,
+  type PropertyListingGroup,
+} from './-property-list-view-utils';
+import {
+  IntakeNextConfirmCell,
+  ListingCostSummary,
+  PropertyBulkActions,
+  PropertyRowActions,
+  type ListingCostExtras,
+} from './-property-intake-actions';
 
-// ── Labels & Colors ─────────────────────────────────────────────
-
-const checkStatusMeta: Record<string, { label: string; dotClassName: string; pillClassName: string }> = {
-  unverified: { label: '미확인', dotClassName: 'bg-[#9b9a97]', pillClassName: 'bg-[#f1f1ef] text-[#5f5e5b]' },
-  verified: { label: '확인완료', dotClassName: 'bg-[#6c9b7a]', pillClassName: 'bg-[#eef3ed] text-[#44745a]' },
-  in_contract: { label: '거래중', dotClassName: 'bg-[#529cca]', pillClassName: 'bg-[#e7f3f8] text-[#337ea9]' },
-  hold: { label: '보류', dotClassName: 'bg-[#dfab01]', pillClassName: 'bg-[#fbf3db] text-[#9f6b00]' },
-  done: { label: '종료', dotClassName: 'bg-[#b4b4b1]', pillClassName: 'bg-[#f1f1ef] text-[#787774]' },
-};
-
-const transactionTypeMeta: Record<string, { label: string; className: string }> = {
-  sale: { label: '매매', className: 'bg-[#fdebec] text-[#8f4b46]' },
-  jeonse: { label: '전세', className: 'bg-[#e7f3f8] text-[#337ea9]' },
-  monthly: { label: '월세', className: 'bg-[#fbf3db] text-[#8f6b1f]' },
-};
-
-const adStatusMeta: Record<string, { label: string; className: string }> = {
-  planned: { label: '보류', className: 'bg-[#f1f1ef] text-[#5f5e5b]' },
-  draft: { label: '준비', className: 'bg-[#f1f1ef] text-[#787774]' },
-  active: { label: '광고중', className: 'bg-[#eef3ed] text-[#44745a]' },
-  paused: { label: '중단', className: 'bg-[#fbf3db] text-[#8f6b1f]' },
-  ended: { label: '종료', className: 'bg-[#f1f1ef] text-[#787774]' },
-  error: { label: '오류', className: 'bg-[#fbe4e4] text-[#9f5555]' },
-};
+// ── Labels ──────────────────────────────────────────────────────
+// 상태 뱃지 컬러/라벨은 StatusBadge + status-config가 단일 소스.
 
 const adChannelLabels: Record<string, string> = {
   naver: '네이버',
@@ -144,19 +144,19 @@ const sortFilterOptions = [
 
 const LISTINGS_PAGE_SIZE = 50;
 
-const checkStatusOptions = [
-  { label: '미확인', value: 'unverified' },
-  { label: '확인완료', value: 'verified' },
-  { label: '거래중', value: 'in_contract' },
-  { label: '보류', value: 'hold' },
-  { label: '종료', value: 'done' },
-] as const;
+const CHECK_STATUS_VALUES = ['unverified', 'verified', 'in_contract', 'hold', 'done'] as const;
+
+const checkStatusOptions = CHECK_STATUS_VALUES.map((value) => ({
+  value,
+  label: getStatusMeta('checkStatus', value).label,
+}));
 
 const transactionTypeOptions = [
   { value: 'all', label: '전체' },
   { value: 'sale', label: '매매' },
   { value: 'jeonse', label: '전세' },
   { value: 'monthly', label: '월세' },
+  { value: 'yearly_rent', label: '연세' },
 ] as const;
 
 const checkStatusFilterOptions = [
@@ -203,38 +203,6 @@ const initialPropertyFilters: PropertyFilterState = {
   areaMax: '',
 };
 
-type ListingSummary = Pick<
-  Listing,
-  | 'id'
-  | 'transactionType'
-  | 'price'
-  | 'deposit'
-  | 'monthlyRent'
-  | 'moveInAvailableType'
-  | 'moveInAvailableFrom'
-  | 'moveInAvailableTo'
-  | 'isJointBrokerageRequired'
-  | 'jointBrokeragePartnerId'
-  | 'jointBrokeragePartner'
-  | 'checkStatus'
-  | 'isHidden'
-  | 'memo'
-  | 'createdAt'
-  | 'updatedAt'
-  | 'advertisements'
-  | 'priceHistories'
->;
-type ListingProperty = NonNullable<Listing['property']>;
-
-interface PropertyListingGroup {
-  id: string;
-  propertyId: string;
-  property?: ListingProperty;
-  representative: Listing;
-  listings: ListingSummary[];
-  matchedListings: Listing[];
-}
-
 type PropertySheetNoticeTone = QuickSheetNoticeTone;
 type PropertySheetNotice = QuickSheetNotice;
 
@@ -257,6 +225,10 @@ function PropertiesPage() {
   const [selectedPropertyId, setSelectedPropertyId] = useState<string | null>(null);
   const [activeSorts, setActiveSorts] = useState<SortDefinition[]>([]);
   const [sorting, setSorting] = useState<SortingState>([]);
+  const [optionalColumns, setOptionalColumns] = useState({
+    maintenanceFee: false,
+    loanAmount: false,
+  });
   const debouncedSearch = useDebouncedValue(search, 300);
 
   const { data: filterSites = [], isLoading: isFilterSitesLoading } = useQuery({
@@ -294,9 +266,11 @@ function PropertiesPage() {
   const {
     data,
     isLoading,
+    isError,
     isFetchingNextPage,
     fetchNextPage,
     hasNextPage,
+    refetch,
   } = useInfiniteQuery({
     queryKey: ['listings', apiParams],
     queryFn: ({ pageParam }) =>
@@ -307,6 +281,34 @@ function PropertiesPage() {
       return currentPage < totalPages ? currentPage + 1 : undefined;
     },
   });
+
+  // 의뢰(ListingIntake) 오버레이 — 목록과 같은 필터로 조회해 행에 다음확인일/접수일을 표시.
+  const intakeParams = useMemo(() => {
+    const params: Record<string, string | number | boolean | undefined> = {
+      limit: 100,
+      includeInactive: true,
+      sortBy: 'receivedAt',
+      sortOrder: 'desc',
+      search: debouncedSearch.trim() || undefined,
+      ...buildListingFilterParams(propertyFilters),
+    };
+    if (selectedTransactionType !== 'all') {
+      params.transactionType = selectedTransactionType;
+    }
+    return params;
+  }, [debouncedSearch, propertyFilters, selectedTransactionType]);
+
+  const { data: intakeData } = useQuery({
+    queryKey: ['listing-intakes', 'list-overlay', intakeParams],
+    queryFn: () => api.listingIntakes.findAll(intakeParams as ListingIntakesFilter),
+    staleTime: 30_000,
+  });
+
+  const intakesById = useMemo(() => {
+    const map = new Map<string, ListingIntake>();
+    (intakeData?.items ?? []).forEach((intake) => map.set(intake.id, intake));
+    return map;
+  }, [intakeData?.items]);
 
   const listings = useMemo(
     () => data?.pages.flatMap((pageData) => pageData.items) ?? [],
@@ -324,6 +326,8 @@ function PropertiesPage() {
     () => buildActiveFilterChips(search, propertyFilters, sitesById),
     [search, propertyFilters, sitesById],
   );
+  const hasActiveFilters =
+    activeFilterChips.length > 0 || selectedTransactionType !== 'all';
   const selectedSortValue =
     activeSorts.length > 0 &&
     sortOptions.some((option) => option.value === `${activeSorts[0].field}:${activeSorts[0].direction}`)
@@ -365,6 +369,11 @@ function PropertiesPage() {
       );
     },
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['listings'] });
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || '변경 사항 저장에 실패했습니다.');
+      // 낙관적 업데이트 롤백 — 서버 상태로 재동기화
       queryClient.invalidateQueries({ queryKey: ['listings'] });
     },
   });
@@ -545,6 +554,44 @@ function PropertiesPage() {
           <ListingMonthlyRentStack listings={row.original.listings} onSave={handleCellSave} />
         ),
       },
+      ...(optionalColumns.maintenanceFee
+        ? [
+            {
+              id: 'maintenanceFee',
+              header: () => (
+                <TableHeaderLabel icon={<CircleDollarSign className="size-4" />} label="관리비" />
+              ),
+              size: 88,
+              enableSorting: false,
+              cell: ({ row }) => (
+                <ListingNumberFieldStack
+                  listings={row.original.listings}
+                  field="maintenanceFee"
+                  onSave={handleCellSave}
+                />
+              ),
+            } satisfies ColumnDef<PropertyListingGroup, unknown>,
+          ]
+        : []),
+      ...(optionalColumns.loanAmount
+        ? [
+            {
+              id: 'loanAmount',
+              header: () => (
+                <TableHeaderLabel icon={<CircleDollarSign className="size-4" />} label="융자금" />
+              ),
+              size: 96,
+              enableSorting: false,
+              cell: ({ row }) => (
+                <ListingNumberFieldStack
+                  listings={row.original.listings}
+                  field="loanAmount"
+                  onSave={handleCellSave}
+                />
+              ),
+            } satisfies ColumnDef<PropertyListingGroup, unknown>,
+          ]
+        : []),
       {
         id: 'advertisement',
         header: () => <TableHeaderLabel icon={<Megaphone className="size-4" />} label="광고" />,
@@ -569,6 +616,17 @@ function PropertiesPage() {
         ),
       },
       {
+        id: 'intake',
+        header: () => <TableHeaderLabel icon={<PhoneCall className="size-4" />} label="다음확인" />,
+        size: 168,
+        enableSorting: false,
+        cell: ({ row }) => (
+          <IntakeNextConfirmCell
+            intake={pickPrimaryIntake(row.original.listings, intakesById)}
+          />
+        ),
+      },
+      {
         id: 'jointBrokerage',
         header: () => <TableHeaderLabel icon={<Handshake className="size-4" />} label="공동" />,
         size: 60,
@@ -582,13 +640,23 @@ function PropertiesPage() {
         minSize: 220,
         enableSorting: false,
         cell: ({ row }) => (
-          <p className="line-clamp-2 text-[11px] leading-snug text-slate-600">
-            {getGroupMemo(row.original)}
-          </p>
+          <ListingMemoStack listings={row.original.listings} onSave={handleCellSave} />
+        ),
+      },
+      {
+        id: 'actions',
+        header: () => <span className="sr-only">작업</span>,
+        size: 44,
+        enableSorting: false,
+        cell: ({ row }) => (
+          <PropertyRowActions
+            listings={row.original.listings}
+            intake={pickPrimaryIntake(row.original.listings, intakesById)}
+          />
         ),
       },
     ],
-    [handleCellSave],
+    [handleCellSave, intakesById, optionalColumns],
   );
 
   return (
@@ -674,6 +742,36 @@ function PropertiesPage() {
                   className={cn('size-3.5 transition-transform', filtersOpen && 'rotate-180')}
                 />
               </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 gap-1.5 px-2.5 text-xs text-slate-600"
+                  >
+                    <Columns3 className="size-3.5" />
+                    컬럼
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-40">
+                  <DropdownMenuCheckboxItem
+                    checked={optionalColumns.maintenanceFee}
+                    onCheckedChange={(checked) =>
+                      setOptionalColumns((prev) => ({ ...prev, maintenanceFee: Boolean(checked) }))
+                    }
+                  >
+                    관리비
+                  </DropdownMenuCheckboxItem>
+                  <DropdownMenuCheckboxItem
+                    checked={optionalColumns.loanAmount}
+                    onCheckedChange={(checked) =>
+                      setOptionalColumns((prev) => ({ ...prev, loanAmount: Boolean(checked) }))
+                    }
+                  >
+                    융자금
+                  </DropdownMenuCheckboxItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
               <Button variant="ghost" size="sm" className="h-8 gap-1.5 px-2.5 text-xs text-slate-600" onClick={handleFiltersReset}>
                 <RotateCcw className="size-3.5" />
                 Reset
@@ -774,35 +872,75 @@ function PropertiesPage() {
 
         <section className="flex min-h-0 flex-1 bg-white px-6 py-0">
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-white">
-            {/* Data Table */}
-            <DataTable
-              columns={columns}
-              data={propertyGroups}
-              totalCount={totalListings}
-              pageCount={1}
-              page={page}
-              onPageChange={setPage}
-              pageSize={LISTINGS_PAGE_SIZE}
-              sorting={sorting}
-              onSortingChange={handleSortingChange}
-              enableRowSelection
-              pinnedColumns={['info', 'site', 'dong', 'unit']}
-              layout="full-height"
-              variant="notion"
-              rowHeight={32}
-              onRowClick={(row) => setSelectedPropertyId(row.propertyId)}
-              isLoading={isLoading}
-              isLoadingMore={isFetchingNextPage}
-              onEndReached={handleEndReached}
-              emptyMessage="매물이 없습니다."
-              renderStatusBar={() => (
-                <span>
-                  거래 {loadedListings.toLocaleString()} / {totalListings.toLocaleString()}건 표시
-                  {hasNextPage && !isFetchingNextPage ? ' · 아래로 스크롤하면 더 불러옵니다' : ''}
-                  {isFetchingNextPage ? ' · 더 불러오는 중...' : ''}
-                </span>
-              )}
-            />
+            {isError ? (
+              <div className="flex flex-1 flex-col items-center justify-center gap-3 py-16">
+                <p className="text-sm text-muted-foreground">매물 목록을 불러오지 못했습니다.</p>
+                <Button variant="outline" size="sm" onClick={() => void refetch()}>
+                  <RotateCcw className="size-3.5" />
+                  다시 시도
+                </Button>
+              </div>
+            ) : !isLoading && propertyGroups.length === 0 ? (
+              <div className="flex flex-1 items-center justify-center">
+                {hasActiveFilters ? (
+                  <EmptyState
+                    icon={SearchX}
+                    title="조건에 맞는 매물이 없습니다"
+                    description="검색어나 필터 조건을 조정해 보세요."
+                    action={
+                      <Button variant="outline" size="sm" onClick={handleFiltersReset}>
+                        필터 초기화
+                      </Button>
+                    }
+                  />
+                ) : (
+                  <EmptyState
+                    icon={Building2}
+                    title="등록된 매물이 없습니다"
+                    description="첫 매물을 등록하면 의뢰 확인 주기와 거래 현황을 한눈에 관리할 수 있습니다."
+                    action={
+                      <Button size="sm" asChild>
+                        <Link to="/properties/new">
+                          <Plus className="size-3.5" />새 매물 등록
+                        </Link>
+                      </Button>
+                    }
+                  />
+                )}
+              </div>
+            ) : (
+              <DataTable
+                columns={columns}
+                data={propertyGroups}
+                totalCount={totalListings}
+                pageCount={1}
+                page={page}
+                onPageChange={setPage}
+                pageSize={LISTINGS_PAGE_SIZE}
+                sorting={sorting}
+                onSortingChange={handleSortingChange}
+                enableRowSelection
+                renderBulkActions={(selectedRows) => (
+                  <PropertyBulkActions groups={selectedRows} />
+                )}
+                pinnedColumns={['info', 'site', 'dong', 'unit']}
+                layout="full-height"
+                variant="notion"
+                rowHeight={32}
+                onRowClick={(row) => setSelectedPropertyId(row.propertyId)}
+                isLoading={isLoading}
+                isLoadingMore={isFetchingNextPage}
+                onEndReached={handleEndReached}
+                emptyMessage="매물이 없습니다."
+                renderStatusBar={() => (
+                  <span>
+                    거래 {loadedListings.toLocaleString()} / {totalListings.toLocaleString()}건 표시
+                    {hasNextPage && !isFetchingNextPage ? ' · 아래로 스크롤하면 더 불러옵니다' : ''}
+                    {isFetchingNextPage ? ' · 더 불러오는 중...' : ''}
+                  </span>
+                )}
+              />
+            )}
           </div>
         </section>
         <PropertyQuickSheet
@@ -1109,6 +1247,7 @@ function PropertySheetListingCard({ listing }: { listing: PropertyListing }) {
         <span>등록 {formatDateShort(listing.createdAt)}</span>
         <span>확인 {formatDaysAgo(listing.updatedAt)}</span>
       </div>
+      <ListingCostSummary listing={listing as PropertyListing & ListingCostExtras} />
       {listing.memo?.trim() && (
         <p className="mt-2.5 line-clamp-2 border-l-2 border-border pl-2.5 text-[12px] leading-5 text-muted-foreground">
           {listing.memo.trim()}
@@ -1215,7 +1354,6 @@ function PropertySheetAdvertisementRow({
   listing: PropertyListing;
   advertisement: NonNullable<PropertyListing['advertisements']>[number];
 }) {
-  const statusMeta = adStatusMeta[advertisement.status] ?? adStatusMeta.draft;
   const priceLabel = formatAdvertisementPrice(listing, advertisement);
   const dateItems = [
     advertisement.startedAt ? `시작 ${formatDateShort(advertisement.startedAt)}` : null,
@@ -1228,14 +1366,7 @@ function PropertySheetAdvertisementRow({
     <div className="px-3 py-3">
       <div className="flex min-w-0 flex-wrap items-center gap-1.5">
         <TransactionBadge transactionType={listing.transactionType} />
-        <span
-          className={cn(
-            'inline-flex rounded-[4px] px-1.5 py-0.5 text-[11px] font-medium leading-5',
-            statusMeta.className,
-          )}
-        >
-          {statusMeta.label}
-        </span>
+        <StatusBadge kind="adStatus" status={advertisement.status} size="sm" />
         {advertisement.url ? (
           <a
             href={advertisement.url}
@@ -1292,7 +1423,7 @@ function PropertySheetContactRow({ propertyContact }: { propertyContact: Propert
           )}
         </div>
         <p className="mt-0.5 truncate text-xs text-slate-500">
-          {phone ?? '연락처 없음'}
+          {phone ? formatPhone(phone) : '연락처 없음'}
           {propertyContact.memo ? ` · ${propertyContact.memo}` : ''}
         </p>
       </div>
@@ -1323,7 +1454,7 @@ function PropertySheetTenantRow({ tenant }: { tenant: Tenant }) {
           </span>
         </div>
         <p className="mt-0.5 truncate text-xs text-slate-500">
-          {phone ?? '연락처 없음'} · {getTenantPeriodLabel(tenant)}
+          {phone ? formatPhone(phone) : '연락처 없음'} · {getTenantPeriodLabel(tenant)}
         </p>
       </div>
       {phone && (
@@ -1354,103 +1485,8 @@ function PropertySheetConsultationRow({ consultation }: { consultation: Consulta
   );
 }
 
-function SheetActionButton({
-  icon,
-  label,
-  href,
-  disabled,
-  emphasis,
-}: {
-  icon: ReactNode;
-  label: string;
-  href?: string;
-  disabled?: boolean;
-  emphasis?: boolean;
-}) {
-  const className = cn(
-    'flex h-9 items-center justify-center gap-2 rounded-md border px-3 text-sm font-medium transition-colors',
-    emphasis
-      ? 'border-slate-950 bg-slate-950 text-white hover:bg-slate-800'
-      : 'border-[#eeeeec] bg-white text-slate-700 hover:bg-slate-50',
-    disabled && 'pointer-events-none opacity-45',
-  );
-
-  if (href) {
-    return (
-      <a className={className} href={href}>
-        {icon}
-        <span className="truncate">{label}</span>
-      </a>
-    );
-  }
-
-  return (
-    <button type="button" className={className} disabled={disabled}>
-      {icon}
-      <span className="truncate">{label}</span>
-    </button>
-  );
-}
-
-function StatusDropdown({
-  value,
-  onChange,
-  compact = false,
-}: {
-  value: string;
-  onChange: (value: string) => void;
-  compact?: boolean;
-}) {
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <button
-          type="button"
-          className={cn(
-            'inline-flex items-center rounded-[4px] text-left transition-colors hover:bg-slate-100/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/30',
-            compact ? 'p-px' : 'p-0.5',
-          )}
-          onClick={(event) => event.stopPropagation()}
-        >
-          <StatusIndicator value={value} />
-        </button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-36" onClick={(event) => event.stopPropagation()}>
-        {checkStatusOptions.map((option) => (
-          <DropdownMenuItem
-            key={option.value}
-            className="text-xs"
-            onSelect={() => {
-              if (option.value !== value) onChange(option.value);
-            }}
-          >
-            <StatusIndicator value={option.value} />
-            {option.value === value && <Check className="ml-auto size-3.5 text-slate-500" />}
-          </DropdownMenuItem>
-        ))}
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
-
 function StatusIndicator({ value }: { value: string }) {
-  const meta = checkStatusMeta[value] ?? {
-    label: value,
-    dotClassName: 'bg-[#b4b4b1]',
-    pillClassName: 'bg-[#f1f1ef] text-[#5f5e5b]',
-  };
-
-  return (
-    <span
-      className={cn(
-        'inline-flex max-w-full items-center gap-1 rounded-[4px] px-1.5 py-0.5 text-[12px] font-medium leading-5',
-        meta.pillClassName,
-      )}
-    >
-      <span className={cn('size-1.5 rounded-full', meta.dotClassName)} />
-      <span className="truncate">{meta.label}</span>
-    </span>
-  );
+  return <StatusBadge kind="checkStatus" status={value} />;
 }
 
 function TransactionStack({ listings }: { listings: ListingSummary[] }) {
@@ -1497,11 +1533,11 @@ function JointBrokerageStack({ listings }: { listings: ListingSummary[] }) {
 }
 
 const checkStatusChipOptions = checkStatusOptions.map((option) => {
-  const meta = checkStatusMeta[option.value];
+  const meta = getStatusMeta('checkStatus', option.value);
   return {
     value: option.value,
-    label: option.label,
-    className: meta?.pillClassName,
+    label: meta.label,
+    className: TONE_CHIP_CLASSES[meta.tone],
   };
 });
 
@@ -1626,6 +1662,86 @@ function ListingMonthlyRentStack({
   );
 }
 
+function ListingNumberFieldStack({
+  listings,
+  field,
+  onSave,
+}: {
+  listings: ListingSummary[];
+  field: 'maintenanceFee' | 'loanAmount';
+  onSave: (recordId: string, field: string, value: unknown) => void;
+}) {
+  const hasMultiple = listings.length > 1;
+  return (
+    <div
+      className={cn(
+        '-mx-2.5 flex h-full min-w-0 flex-col items-stretch',
+        hasMultiple && 'divide-y divide-[#d9d9d6]',
+      )}
+      onClick={(event) => event.stopPropagation()}
+    >
+      {listings.map((listing) => (
+        <div key={listing.id} className="flex min-w-0 flex-1 items-stretch">
+          <EditableCell
+            recordId={listing.id}
+            field={field}
+            value={listing[field]}
+            onSave={onSave}
+            editType="number"
+          >
+            <span className="flex h-full w-full items-center px-2.5 text-sm font-medium tabular-nums">
+              {listing[field] ? formatMoney(listing[field]) : '-'}
+            </span>
+          </EditableCell>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ListingMemoStack({
+  listings,
+  onSave,
+}: {
+  listings: ListingSummary[];
+  onSave: (recordId: string, field: string, value: unknown) => void;
+}) {
+  const hasMultiple = listings.length > 1;
+  return (
+    <div
+      className={cn(
+        '-mx-2.5 flex h-full min-w-0 flex-col items-stretch',
+        hasMultiple && 'divide-y divide-[#d9d9d6]',
+      )}
+      onClick={(event) => event.stopPropagation()}
+    >
+      {listings.map((listing) => (
+        <div key={listing.id} className="flex min-w-0 flex-1 items-stretch">
+          <EditableCell
+            recordId={listing.id}
+            field="memo"
+            value={listing.memo ?? ''}
+            onSave={onSave}
+            editType="text"
+          >
+            <span className="flex h-full w-full items-center gap-1.5 px-2.5">
+              {hasMultiple && <TransactionMiniLabel transactionType={listing.transactionType} />}
+              <span
+                className={cn(
+                  'line-clamp-2 min-w-0 text-[11px] leading-snug',
+                  listing.memo?.trim() ? 'text-slate-600' : 'text-slate-400',
+                )}
+              >
+                {listing.memo?.trim() || '-'}
+              </span>
+            </span>
+          </EditableCell>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function PriceDepositValue({ listing }: { listing: ListingSummary }) {
   const value = listing.transactionType === 'monthly'
     ? listing.deposit
@@ -1633,7 +1749,7 @@ function PriceDepositValue({ listing }: { listing: ListingSummary }) {
 
   return (
     <span className="tabular-nums text-sm font-medium">
-      {value ? formatPrice(value) : '-'}
+      {value ? formatMoney(value) : '-'}
     </span>
   );
 }
@@ -1641,7 +1757,7 @@ function PriceDepositValue({ listing }: { listing: ListingSummary }) {
 function MonthlyRentValue({ listing }: { listing: ListingSummary }) {
   return (
     <span className="tabular-nums text-sm font-medium">
-      {listing.monthlyRent ? formatPrice(listing.monthlyRent) : '-'}
+      {listing.monthlyRent ? formatMoney(listing.monthlyRent) : '-'}
     </span>
   );
 }
@@ -1683,18 +1799,21 @@ function AdIndicator({
   }
 
   const activeCount = advertisements.filter((advertisement) => advertisement.status === 'active').length;
-  const statusMeta = adStatusMeta[primaryAd.status] ?? adStatusMeta.draft;
+  const statusMeta = getStatusMeta('adStatus', primaryAd.status);
   const channelLabel = getAdChannelLabel(primaryAd.channel);
   const label = activeCount > 1 && primaryAd.status === 'active'
     ? `${channelLabel} 외 ${activeCount - 1}`
     : channelLabel;
 
   return (
-    <span className="inline-flex min-w-0 max-w-full flex-1 items-center gap-1 overflow-hidden">
+    <span
+      className="inline-flex min-w-0 max-w-full flex-1 items-center gap-1 overflow-hidden"
+      title={`${channelLabel} · ${statusMeta.label}`}
+    >
       <span
         className={cn(
           'inline-flex min-w-0 max-w-[96px] shrink rounded-md px-1.5 py-0.5 text-[12px] font-medium leading-5',
-          statusMeta.className,
+          TONE_CHIP_CLASSES[statusMeta.tone],
         )}
       >
         <span className="truncate">{label}</span>
@@ -1810,30 +1929,17 @@ function MoveInAvailableSummary({ listing }: { listing: ListingSummary }) {
 }
 
 function TransactionBadge({ transactionType }: { transactionType: string }) {
-  const transactionMeta = transactionTypeMeta[transactionType];
-  return (
-    <span
-      className={cn(
-        'inline-flex max-w-full rounded-[4px] px-1.5 py-0.5 text-[12px] font-medium leading-5',
-        transactionMeta?.className ?? 'bg-[#f1f1ef] text-[#787774]',
-      )}
-    >
-      {transactionMeta?.label ?? transactionType}
-    </span>
-  );
+  return <StatusBadge kind="transactionType" status={transactionType} />;
 }
 
 function TransactionMiniLabel({ transactionType }: { transactionType: string }) {
-  const transactionMeta = transactionTypeMeta[transactionType];
   return (
-    <span
-      className={cn(
-        'inline-flex min-w-8 justify-center rounded-[4px] px-1.5 py-0.5 text-[11px] font-medium leading-5',
-        transactionMeta?.className ?? 'bg-[#f1f1ef] text-[#787774]',
-      )}
-    >
-      {transactionMeta?.label ?? transactionType}
-    </span>
+    <StatusBadge
+      kind="transactionType"
+      status={transactionType}
+      size="sm"
+      className="min-w-8 justify-center"
+    />
   );
 }
 
@@ -2217,19 +2323,39 @@ function mergeListingSummaries(
 ) {
   const byId = new Map<string, ListingSummary>();
   [...baseListings, ...incomingListings].forEach((listing) => {
-    byId.set(listing.id, listing);
+    const previous = byId.get(listing.id);
+    byId.set(listing.id, previous ? mergeDefinedFields(previous, listing) : listing);
   });
 
   return Array.from(byId.values()).sort(compareListingSummary);
 }
 
+/** 같은 매물이 두 소스(최상위/property.listings)에서 오면 정의된 값만 덮어쓴다.
+ *  (중첩 응답에는 isHidden·priceHistories가 빠져 있어 undefined로 지워지는 것 방지) */
+function mergeDefinedFields(
+  previous: ListingSummary,
+  next: ListingSummary,
+): ListingSummary {
+  const merged: Record<string, unknown> = { ...previous };
+  for (const [key, value] of Object.entries(next)) {
+    if (value !== undefined) merged[key] = value;
+  }
+  return merged as unknown as ListingSummary;
+}
+
 function toListingSummary(listing: ListingSummary): ListingSummary {
   return {
     id: listing.id,
+    intakeId: listing.intakeId,
     transactionType: listing.transactionType,
     price: listing.price,
     deposit: listing.deposit,
     monthlyRent: listing.monthlyRent,
+    maintenanceFee: listing.maintenanceFee,
+    maintenanceFeeIncludes: listing.maintenanceFeeIncludes,
+    loanAmount: listing.loanAmount,
+    premium: listing.premium,
+    privateMemo: listing.privateMemo,
     moveInAvailableType: listing.moveInAvailableType,
     moveInAvailableFrom: listing.moveInAvailableFrom,
     moveInAvailableTo: listing.moveInAvailableTo,
@@ -2256,6 +2382,7 @@ function getTransactionTypeOrder(value: string) {
   if (value === 'sale') return 0;
   if (value === 'jeonse') return 1;
   if (value === 'monthly') return 2;
+  if (value === 'yearly_rent') return 3;
   return 99;
 }
 
@@ -2307,13 +2434,13 @@ function formatPriceHistorySnapshot(
   value: { price: number | null; deposit: number | null; monthlyRent: number | null },
 ) {
   if (transactionType === 'monthly') {
-    const deposit = value.deposit ? formatPrice(value.deposit) : '-';
-    const monthlyRent = value.monthlyRent ? formatPrice(value.monthlyRent) : '-';
+    const deposit = value.deposit ? formatMoney(value.deposit) : '-';
+    const monthlyRent = value.monthlyRent ? formatMoney(value.monthlyRent) : '-';
     return `${deposit} / ${monthlyRent}`;
   }
 
   const price = value.price ?? value.deposit;
-  return price ? formatPrice(price) : '-';
+  return price ? formatMoney(price) : '-';
 }
 
 function formatAdvertisementPrice(
@@ -2322,16 +2449,16 @@ function formatAdvertisementPrice(
 ) {
   if (listing.transactionType === 'monthly') {
     const deposit = advertisement.advertisedDeposit
-      ? formatPrice(advertisement.advertisedDeposit)
+      ? formatMoney(advertisement.advertisedDeposit)
       : '-';
     const monthlyRent = advertisement.advertisedMonthlyRent
-      ? formatPrice(advertisement.advertisedMonthlyRent)
+      ? formatMoney(advertisement.advertisedMonthlyRent)
       : '-';
     return `${deposit} / ${monthlyRent}`;
   }
 
   const price = advertisement.advertisedPrice ?? advertisement.advertisedDeposit;
-  return price ? formatPrice(price) : '-';
+  return price ? formatMoney(price) : '-';
 }
 
 function getDongName(property?: ListingProperty) {
@@ -2372,10 +2499,10 @@ function formatPropertySheetArea(property: Property) {
   const supply = getPropertySheetSupplyAreaM2(property);
 
   if (exclusive && supply) {
-    return `전용 ${formatAreaPyeong(exclusive)} · 공급 ${formatAreaPyeong(supply)}`;
+    return `전용 ${formatArea(exclusive)} · 공급 ${formatArea(supply)}`;
   }
-  if (exclusive) return `전용 ${formatAreaPyeong(exclusive)}`;
-  if (supply) return `공급 ${formatAreaPyeong(supply)}`;
+  if (exclusive) return `전용 ${formatArea(exclusive)}`;
+  if (supply) return `공급 ${formatArea(supply)}`;
   return '-';
 }
 
@@ -2500,7 +2627,9 @@ function getTenantStatusLabel(status: string) {
 
 function formatTransactionTypeList(listings: Pick<PropertyListing, 'transactionType'>[]) {
   const labels = Array.from(
-    new Set(listings.map((listing) => transactionTypeMeta[listing.transactionType]?.label ?? listing.transactionType)),
+    new Set(
+      listings.map((listing) => getStatusMeta('transactionType', listing.transactionType).label),
+    ),
   );
   return labels.join(', ');
 }
@@ -2510,18 +2639,12 @@ function formatJointBrokerageRequirementList(
 ) {
   return listings
     .map((listing) => {
-      const transactionLabel = transactionTypeMeta[listing.transactionType]?.label ?? listing.transactionType;
+      const transactionLabel = getStatusMeta('transactionType', listing.transactionType).label;
       return listing.jointBrokeragePartner?.name
         ? `${transactionLabel} ${listing.jointBrokeragePartner.name}`
         : `${transactionLabel} 파트너 미지정`;
     })
     .join(', ');
-}
-
-function getGroupMemo(group: PropertyListingGroup) {
-  return (
-    group.listings.find((listing) => listing.memo?.trim())?.memo?.trim() || '-'
-  );
 }
 
 function getLatestListingUpdatedAt(group: PropertyListingGroup) {

@@ -1,12 +1,11 @@
 import { Link, useMatchRoute } from '@tanstack/react-router'
-import { ChevronRight, type LucideIcon } from "lucide-react"
-import { useTranslation } from 'react-i18next'
+import { ChevronRight } from 'lucide-react'
 
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
-} from "@/components/ui/collapsible"
+} from '@/components/ui/collapsible'
 import {
   SidebarGroup,
   SidebarGroupLabel,
@@ -16,88 +15,87 @@ import {
   SidebarMenuSub,
   SidebarMenuSubButton,
   SidebarMenuSubItem,
-} from "@/components/ui/sidebar"
+} from '@/components/ui/sidebar'
+import { ALL_NAV_PATHS, type NavItem } from '@/components/layout/nav-config'
 
+/**
+ * nav-config의 그룹 1개를 렌더링.
+ * active 판정: fuzzy 매치하되, 전체 네비 경로 중 더 구체적(긴) 경로가
+ * 함께 매치되면 비활성 (예: /properties/external-listings 방문 시
+ * "매물장"(/properties)이 아닌 "광고노트"만 활성).
+ */
 export function NavMain({
+  label,
   items,
 }: {
-  items: {
-    title: string
-    url: string
-    icon?: LucideIcon
-    items?: {
-      title: string
-      url: string
-    }[]
-  }[]
+  label: string
+  items: NavItem[]
 }) {
   const matchRoute = useMatchRoute()
-  const { t } = useTranslation('sidebar')
+
+  const isActivePath = (path: string) => {
+    if (!matchRoute({ to: path, fuzzy: true })) return false
+    const hasMoreSpecificMatch = ALL_NAV_PATHS.some(
+      (other) =>
+        other !== path &&
+        other.startsWith(`${path}/`) &&
+        matchRoute({ to: other, fuzzy: true }),
+    )
+    return !hasMoreSpecificMatch
+  }
 
   return (
     <SidebarGroup>
-      <SidebarGroupLabel>{t('menu')}</SidebarGroupLabel>
+      <SidebarGroupLabel className="text-xs">{label}</SidebarGroupLabel>
       <SidebarMenu>
         {items.map((item) =>
-          item.items && item.items.length > 0 ? (
+          item.children && item.children.length > 0 ? (
             <Collapsible
-              key={item.title}
+              key={item.path}
               asChild
-              defaultOpen={!!matchRoute({ to: item.url, fuzzy: true })}
+              defaultOpen={!!matchRoute({ to: item.path, fuzzy: true })}
               className="group/collapsible"
             >
               <SidebarMenuItem>
                 <CollapsibleTrigger asChild>
-                  <SidebarMenuButton tooltip={item.title}>
-                    {item.icon && <item.icon />}
-                    <span>{item.title}</span>
+                  <SidebarMenuButton tooltip={item.label}>
+                    <item.icon />
+                    <span>{item.label}</span>
                     <ChevronRight className="ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
                   </SidebarMenuButton>
                 </CollapsibleTrigger>
                 <CollapsibleContent>
                   <SidebarMenuSub>
-                    {item.items.map((subItem) => {
-                      // 같은 그룹 내 다른 subItem URL 중 현재 경로와
-                      // 더 구체적(긴)으로 일치하는 게 있으면 이 항목은 비활성.
-                      // (예: /cashflow/ledger 방문 시 "캐시플로우"(/cashflow) 가 아닌
-                      //  "수금 원장"(/cashflow/ledger) 만 활성화되도록 prefix 충돌 제거)
-                      const hasMoreSpecificSibling = item.items!.some(
-                        (other) =>
-                          other.url !== subItem.url &&
-                          other.url.startsWith(subItem.url + '/') &&
-                          matchRoute({ to: other.url, fuzzy: true }),
-                      );
-                      const isActive =
-                        !hasMoreSpecificSibling &&
-                        !!matchRoute({ to: subItem.url, fuzzy: true });
-                      return (
-                        <SidebarMenuSubItem key={subItem.title}>
-                          <SidebarMenuSubButton asChild isActive={isActive}>
-                            <Link to={subItem.url}>
-                              <span>{subItem.title}</span>
-                            </Link>
-                          </SidebarMenuSubButton>
-                        </SidebarMenuSubItem>
-                      );
-                    })}
+                    {item.children.map((child) => (
+                      <SidebarMenuSubItem key={child.path}>
+                        <SidebarMenuSubButton
+                          asChild
+                          isActive={isActivePath(child.path)}
+                        >
+                          <Link to={child.path}>
+                            <span>{child.label}</span>
+                          </Link>
+                        </SidebarMenuSubButton>
+                      </SidebarMenuSubItem>
+                    ))}
                   </SidebarMenuSub>
                 </CollapsibleContent>
               </SidebarMenuItem>
             </Collapsible>
           ) : (
-            <SidebarMenuItem key={item.title}>
+            <SidebarMenuItem key={item.path}>
               <SidebarMenuButton
                 asChild
-                isActive={!!matchRoute({ to: item.url, fuzzy: true })}
-                tooltip={item.title}
+                isActive={isActivePath(item.path)}
+                tooltip={item.label}
               >
-                <Link to={item.url}>
-                  {item.icon && <item.icon />}
-                  <span>{item.title}</span>
+                <Link to={item.path}>
+                  <item.icon />
+                  <span>{item.label}</span>
                 </Link>
               </SidebarMenuButton>
             </SidebarMenuItem>
-          )
+          ),
         )}
       </SidebarMenu>
     </SidebarGroup>

@@ -72,16 +72,26 @@ async function main() {
       throw new Error('고덕그라시움 Site 가 없습니다.');
     }
 
+    console.log('1. 기존 [DEMO] 데이터 정리...');
+    await wipe({ prisma, officeId: office.id });
+
     // 실제 Unit 중 층수 기준 상위 몇 개를 골라 고정 순서로 사용.
     // 동일한 선택을 반복 가능하게 하기 위해 layer 별로 고정 ordering.
+    // Property @@unique([officeId, siteId, unitId]) 충돌을 피하기 위해
+    // 이 사무소의 기존(비-DEMO) Property 가 없는 Unit 만 고른다.
+    // (wipe 이후 조회하므로 직전 실행의 DEMO Property 가 점유했던 Unit 도 회수됨)
     const units = await prisma.unit.findMany({
-      where: { siteId: site.id, floor: { not: null } },
+      where: {
+        siteId: site.id,
+        floor: { not: null },
+        properties: { none: { officeId: office.id } },
+      },
       orderBy: [{ floor: 'desc' }, { name: 'asc' }],
       take: 8,
     });
     if (units.length < 8) {
       throw new Error(
-        `Unit 이 8개 필요한데 ${units.length}개 만 있습니다.`,
+        `빈 Unit 이 8개 필요한데 ${units.length}개 만 있습니다.`,
       );
     }
 
@@ -95,17 +105,14 @@ async function main() {
       unitIds: units.map((u) => u.id),
     };
 
-    console.log('1. 기존 [DEMO] 데이터 정리...');
-    await wipe(ctx);
-
     console.log('2. Contact 12 insert...');
     const contacts = await seedContacts(ctx);
 
     console.log('3. Property + PropertyContact + Tenant insert...');
     const properties = await seedProperties(ctx, contacts);
 
-    console.log('4. Listing + PriceHistory insert...');
-    const listings = await seedListings(ctx, properties);
+    console.log('4. ListingIntake + Listing + PriceHistory insert...');
+    const listings = await seedListings(ctx, properties, contacts);
 
     console.log('5. BuyerRequirement insert...');
     const buyerReqs = await seedBuyerRequirements(ctx, contacts);
@@ -131,6 +138,12 @@ async function main() {
     console.log('11. OfficeExpenseTemplate insert...');
     await seedOfficeExpenses(ctx);
 
+    console.log('12. NetworkRoom + 공유매물 + 채팅 + 문의 insert...');
+    const network = await seedNetwork(ctx, listings);
+
+    console.log('13. Notification insert...');
+    await seedNotifications(ctx, network);
+
     console.log('\n✅ seed-demo 완료');
   } finally {
     await prisma.$disconnect();
@@ -141,8 +154,45 @@ async function main() {
 // 정리 — memo/title/content 에 [DEMO] 태그가 있는 것만 삭제
 // 참조 관계를 고려해 역순으로 삭제
 // ─────────────────────────────────────────────────────────────
-async function wipe({ prisma, officeId }: Ctx) {
+async function wipe({ prisma, officeId }: Pick<Ctx, 'prisma' | 'officeId'>) {
   const demoLike = { contains: DEMO_TAG };
+
+  // Notification (content 에 [DEMO] 태그)
+  await prisma.notification.deleteMany({
+    where: { officeId, content: demoLike },
+  });
+
+  // 공동 중개망 — 우리가 만든 DEMO 방과 그 안의 모든 레코드
+  // (NetworkSharedProperty 가 demo Listing 을 FK 로 잡고 있으므로 Listing 보다 먼저)
+  const demoRooms = await prisma.networkRoom.findMany({
+    where: { createdBy: officeId, description: demoLike },
+    select: { id: true },
+  });
+  const demoRoomIds = demoRooms.map((r) => r.id);
+  if (demoRoomIds.length > 0) {
+    await prisma.networkMessage.deleteMany({
+      where: { roomId: { in: demoRoomIds } },
+    });
+    const demoShared = await prisma.networkSharedProperty.findMany({
+      where: { roomId: { in: demoRoomIds } },
+      select: { id: true },
+    });
+    const demoSharedIds = demoShared.map((s) => s.id);
+    if (demoSharedIds.length > 0) {
+      await prisma.networkInquiry.deleteMany({
+        where: { sharedPropertyId: { in: demoSharedIds } },
+      });
+      await prisma.networkSharedProperty.deleteMany({
+        where: { id: { in: demoSharedIds } },
+      });
+    }
+    await prisma.networkRoomMember.deleteMany({
+      where: { roomId: { in: demoRoomIds } },
+    });
+    await prisma.networkRoom.deleteMany({
+      where: { id: { in: demoRoomIds } },
+    });
+  }
 
   // CalendarEvent
   await prisma.calendarEvent.deleteMany({
@@ -253,20 +303,55 @@ async function wipe({ prisma, officeId }: Ctx) {
     where: { officeId, reason: demoLike },
   });
 
-  // Listing
-  await prisma.listing.deleteMany({
-    where: { officeId, memo: demoLike },
-  });
-
-  // Tenant, PropertyContact → Property
-  // memo 컬럼이 사라졌으므로 데모 Property 는 PropertyContact 의 memo 태그로 식별.
+  // Listing → ListingIntake → Property 순서로 삭제 (FK 체인)
+  // 데모 Property 는 PropertyContact.memo / ListingIntake.memo 태그로 식별.
   const demoPropertyContacts = await prisma.propertyContact.findMany({
     where: { officeId, memo: demoLike },
     select: { propertyId: true },
   });
+  const demoIntakes = await prisma.listingIntake.findMany({
+    where: { officeId, memo: demoLike },
+    select: { id: true, propertyId: true },
+  });
   const propIds = Array.from(
-    new Set(demoPropertyContacts.map((pc) => pc.propertyId)),
+    new Set([
+      ...demoPropertyContacts.map((pc) => pc.propertyId),
+      ...demoIntakes.map((i) => i.propertyId),
+    ]),
   );
+  const intakeIds = demoIntakes.map((i) => i.id);
+
+  // 1) Listing — memo 태그 또는 데모 intake/property 에 매달린 것 전부
+  const demoListings = await prisma.listing.findMany({
+    where: {
+      officeId,
+      OR: [
+        { memo: demoLike },
+        { intakeId: { in: intakeIds } },
+        { propertyId: { in: propIds } },
+      ],
+    },
+    select: { id: true },
+  });
+  const demoListingIds = demoListings.map((l) => l.id);
+  if (demoListingIds.length > 0) {
+    await prisma.priceHistory.deleteMany({
+      where: { listingId: { in: demoListingIds } },
+    });
+    await prisma.listing.deleteMany({
+      where: { id: { in: demoListingIds } },
+    });
+  }
+
+  // 2) ListingIntake (memo 태그 + 데모 Property 소속)
+  await prisma.listingIntake.deleteMany({
+    where: {
+      officeId,
+      OR: [{ id: { in: intakeIds } }, { propertyId: { in: propIds } }],
+    },
+  });
+
+  // 3) Tenant, PropertyContact → Property
   if (propIds.length > 0) {
     await prisma.tenant.deleteMany({ where: { propertyId: { in: propIds } } });
     await prisma.propertyContact.deleteMany({
@@ -303,17 +388,28 @@ async function seedContacts(ctx: Ctx) {
 
   const created = [];
   for (const def of defs) {
+    const normalized = def.phone.replace(/[\s\-()]/g, '');
+    const formatted = `${normalized.slice(0, 3)}-${normalized.slice(3, 7)}-${normalized.slice(7)}`;
     const c = await ctx.prisma.contact.create({
       data: {
         officeId: ctx.officeId,
         name: def.name,
-        phone: def.phone,
-        email: `${def.phone.replace(/-/g, '')}@demo.test`,
+        email: `${normalized}@demo.test`,
         tags: def.tags,
         memo: `${DEMO_TAG} ${def.name} 더미`,
+        phones: {
+          create: {
+            officeId: ctx.officeId,
+            phone: formatted,
+            normalizedPhone: normalized,
+            label: 'mobile',
+            isPrimary: true,
+          },
+        },
       },
     });
-    created.push(c);
+    // CallRecording 등에서 사용할 수 있게 대표번호를 함께 들고 다닌다.
+    created.push({ ...c, phone: formatted });
   }
   return created;
 }
@@ -398,34 +494,185 @@ async function seedProperties(
 }
 
 // ─────────────────────────────────────────────────────────────
-// Listing — 8 개 (매매 5 / 전세 2 / 월세 1)
-// 같은 Property 에 여러 Listing 가능 (매매 + 전세 동시)
+// ListingIntake + Listing — 의뢰(intake) 7 건 / 매물 9 개
+// (매매 5 / 전세 2 / 월세 1 / 연세 1)
+// 같은 intake 에 transactionType 중복 불가 (@@unique [intakeId, transactionType])
+// → 같은 Property 의 매매 2건(P2/P2B)은 별도 의뢰로 분리.
 // ─────────────────────────────────────────────────────────────
 async function seedListings(
   ctx: Ctx,
   properties: Awaited<ReturnType<typeof seedProperties>>,
+  contacts: Awaited<ReturnType<typeof seedContacts>>,
 ) {
+  const owners = contacts.slice(0, 4);
   const now = new Date();
   const daysAgo = (n: number) => {
     const d = new Date(now);
     d.setDate(d.getDate() - n);
     return d;
   };
+  const daysFromNow = (n: number) => {
+    const d = new Date(now);
+    d.setDate(d.getDate() + n);
+    return d;
+  };
 
+  // ── ListingIntake (Property 단위 의뢰 접수) ─────────────────
+  const intakeDefs: Array<{
+    key: string;
+    propertyIdx: number;
+    requesterIdx: number; // owners[]
+    status: string; // unverified, active, in_contract, hold, done
+    receivedDaysAgo: number;
+    confirmedDaysAgo?: number;
+    occupancyStatus?: string;
+    viewingMemo?: string;
+    rightsMemo?: string;
+    fieldMemo?: string;
+    nextConfirmInDays?: number;
+    memo: string;
+  }> = [
+    {
+      key: 'P0',
+      propertyIdx: 0,
+      requesterIdx: 0,
+      status: 'active',
+      receivedDaysAgo: 14,
+      confirmedDaysAgo: 12,
+      occupancyStatus: 'owner_occupied',
+      viewingMemo: '집주인 거주중 — 방문 전날 전화 필수, 평일 18시 이후 가능',
+      rightsMemo: '근저당 5억 (KB국민) — 잔금 시 말소 조건',
+      fieldMemo: '올수리 상태 양호, 남향 한강 조망 일부',
+      nextConfirmInDays: 7,
+      memo: `${DEMO_TAG} 매매+전세 동시 의뢰`,
+    },
+    {
+      key: 'P1',
+      propertyIdx: 1,
+      requesterIdx: 1,
+      status: 'active',
+      receivedDaysAgo: 20,
+      confirmedDaysAgo: 18,
+      occupancyStatus: 'vacant',
+      viewingMemo: '공실 — 도어락 비번 공유받음, 자유 방문 가능',
+      fieldMemo: '올수리 완료, 즉시입주 가능',
+      nextConfirmInDays: 14,
+      memo: `${DEMO_TAG} 매매 의뢰 (공실)`,
+    },
+    {
+      key: 'P2',
+      propertyIdx: 2,
+      requesterIdx: 2,
+      status: 'unverified',
+      receivedDaysAgo: 3,
+      occupancyStatus: 'tenant',
+      viewingMemo: '세입자 거주 — 방문 조율 까다로움, 주말만 가능',
+      nextConfirmInDays: 3,
+      memo: `${DEMO_TAG} 펜트하우스 매매 의뢰 (미확인)`,
+    },
+    {
+      // DB 부분 unique 인덱스: 같은 Property 에 open 상태(unverified/active/
+      // in_contract/hold) intake 는 1개만 허용 → 이전 의뢰는 done 으로 종료 처리.
+      key: 'P2B',
+      propertyIdx: 2,
+      requesterIdx: 2,
+      status: 'done',
+      receivedDaysAgo: 40,
+      confirmedDaysAgo: 38,
+      occupancyStatus: 'tenant',
+      fieldMemo: '집주인 해외여행 — 6월 말 귀국 후 재개 예정',
+      memo: `${DEMO_TAG} 종료된 이전 매매 의뢰 (재의뢰로 대체)`,
+    },
+    {
+      key: 'P3',
+      propertyIdx: 3,
+      requesterIdx: 3,
+      status: 'in_contract',
+      receivedDaysAgo: 30,
+      confirmedDaysAgo: 28,
+      occupancyStatus: 'vacant',
+      rightsMemo: '전세보증금 9.5억 승계 조건',
+      memo: `${DEMO_TAG} 계약 진행중 의뢰`,
+    },
+    {
+      key: 'P4',
+      propertyIdx: 4,
+      requesterIdx: 0,
+      status: 'active',
+      receivedDaysAgo: 10,
+      confirmedDaysAgo: 9,
+      occupancyStatus: 'tenant',
+      viewingMemo: '세입자 만기 2개월 전 — 퇴거 협의 완료',
+      nextConfirmInDays: 7,
+      memo: `${DEMO_TAG} 전세 재임대 의뢰`,
+    },
+    {
+      key: 'P5',
+      propertyIdx: 5,
+      requesterIdx: 3,
+      status: 'active',
+      receivedDaysAgo: 8,
+      confirmedDaysAgo: 7,
+      occupancyStatus: 'tenant',
+      viewingMemo: '월세 세입자 거주중 — 1주일 전 통보 필요',
+      fieldMemo: '반려동물 가능, 단기 임대 협의 가능',
+      nextConfirmInDays: 10,
+      memo: `${DEMO_TAG} 월세/연세 의뢰`,
+    },
+  ];
+
+  const intakes = new Map<string, { id: string }>();
+  for (const def of intakeDefs) {
+    const intake = await ctx.prisma.listingIntake.create({
+      data: {
+        officeId: ctx.officeId,
+        propertyId: properties[def.propertyIdx].id,
+        requesterContactId: owners[def.requesterIdx].id,
+        status: def.status,
+        receivedAt: daysAgo(def.receivedDaysAgo),
+        confirmedAt:
+          def.confirmedDaysAgo != null ? daysAgo(def.confirmedDaysAgo) : null,
+        occupancyStatus: def.occupancyStatus ?? null,
+        viewingMemo: def.viewingMemo ?? null,
+        rightsMemo: def.rightsMemo ?? null,
+        fieldMemo: def.fieldMemo ?? null,
+        nextConfirmAt:
+          def.nextConfirmInDays != null
+            ? daysFromNow(def.nextConfirmInDays)
+            : null,
+        memo: def.memo,
+      },
+    });
+    intakes.set(def.key, intake);
+  }
+
+  // ── Listing ────────────────────────────────────────────────
   const defs: Array<{
     propertyIdx: number;
-    transactionType: 'sale' | 'jeonse' | 'monthly';
+    intakeKey: string;
+    transactionType: 'sale' | 'jeonse' | 'monthly' | 'yearly_rent';
     price?: number;
     deposit?: number;
     monthlyRent?: number;
+    maintenanceFee?: number;
+    maintenanceFeeIncludes?: string[];
+    loanAmount?: number;
+    privateMemo?: string;
+    moveInAvailableType?: string;
     checkStatus: string;
     memo: string;
     priceHistory?: { priceBefore: number; priceAfter: number; reason: string };
   }> = [
     {
       propertyIdx: 0,
+      intakeKey: 'P0',
       transactionType: 'sale',
       price: 268000, // 26.8억
+      maintenanceFee: 25,
+      maintenanceFeeIncludes: ['cleaning', 'parking'],
+      loanAmount: 50000, // 융자 5억 (잔금 시 말소)
+      privateMemo: `${DEMO_TAG} 내부메모 — 집주인 깐깐함, 가격 얘기 먼저 꺼내지 말 것`,
+      moveInAvailableType: 'immediate',
       checkStatus: 'verified',
       memo: `${DEMO_TAG} 급매 · 로얄층 남향 · 즉시입주`,
       priceHistory: {
@@ -436,36 +683,51 @@ async function seedListings(
     },
     {
       propertyIdx: 1,
+      intakeKey: 'P1',
       transactionType: 'sale',
       price: 242000,
+      maintenanceFee: 22,
+      maintenanceFeeIncludes: ['cleaning'],
+      moveInAvailableType: 'immediate',
       checkStatus: 'verified',
       memo: `${DEMO_TAG} 깔끔 · 올수리 · 남동향`,
     },
     {
       propertyIdx: 2,
+      intakeKey: 'P2',
       transactionType: 'sale',
       price: 319000,
+      privateMemo: `${DEMO_TAG} 내부메모 — 호가 높음, 1억까지 조정 여지 있음`,
       checkStatus: 'unverified',
       memo: `${DEMO_TAG} 고층 · 한강뷰 · 펜트하우스`,
     },
     {
       propertyIdx: 3,
+      intakeKey: 'P3',
       transactionType: 'sale',
       price: 198000,
+      loanAmount: 0,
       checkStatus: 'in_contract',
       memo: `${DEMO_TAG} 계약 진행중`,
     },
     {
-      propertyIdx: 0, // 매매와 동시 등록된 전세
+      propertyIdx: 0, // 매매와 동시 등록된 전세 (같은 의뢰 P0)
+      intakeKey: 'P0',
       transactionType: 'jeonse',
       price: 130000,
+      maintenanceFee: 25,
+      maintenanceFeeIncludes: ['water', 'internet'],
       checkStatus: 'verified',
       memo: `${DEMO_TAG} 매매/전세 동시 등록`,
     },
     {
       propertyIdx: 4,
+      intakeKey: 'P4',
       transactionType: 'jeonse',
       price: 95000,
+      maintenanceFee: 18,
+      maintenanceFeeIncludes: ['water'],
+      moveInAvailableType: 'immediate',
       checkStatus: 'verified',
       memo: `${DEMO_TAG} 깨끗 · 즉시입주 가능`,
       priceHistory: {
@@ -476,31 +738,55 @@ async function seedListings(
     },
     {
       propertyIdx: 5,
+      intakeKey: 'P5',
       transactionType: 'monthly',
       deposit: 5000,
       monthlyRent: 180,
+      maintenanceFee: 12,
+      maintenanceFeeIncludes: ['water', 'internet', 'tv'],
       checkStatus: 'verified',
       memo: `${DEMO_TAG} 단기 가능 · 반려동물 허용`,
     },
     {
       propertyIdx: 2,
+      intakeKey: 'P2B',
       transactionType: 'sale',
       price: 315000,
       checkStatus: 'hold',
       memo: `${DEMO_TAG} 보류 · 집주인 여행중`,
     },
+    {
+      propertyIdx: 5, // 월세와 같은 의뢰(P5)에 연세 옵션 동시 등록
+      intakeKey: 'P5',
+      transactionType: 'yearly_rent',
+      deposit: 5000,
+      price: 2040, // 연세 — 연간 임대료 총액 (만원, 월 170 환산)
+      maintenanceFee: 12,
+      maintenanceFeeIncludes: ['water', 'internet', 'tv'],
+      privateMemo: `${DEMO_TAG} 내부메모 — 연세 일시납 시 월 10만 할인 가능`,
+      checkStatus: 'verified',
+      memo: `${DEMO_TAG} 연세 — 연 2,040 일시납`,
+    },
   ];
 
   const created = [];
   for (const def of defs) {
+    const intake = intakes.get(def.intakeKey);
+    if (!intake) throw new Error(`Unknown intake key: ${def.intakeKey}`);
     const listing = await ctx.prisma.listing.create({
       data: {
         officeId: ctx.officeId,
         propertyId: properties[def.propertyIdx].id,
+        intakeId: intake.id,
         transactionType: def.transactionType,
         price: def.price ?? null,
         deposit: def.deposit ?? null,
         monthlyRent: def.monthlyRent ?? null,
+        maintenanceFee: def.maintenanceFee ?? null,
+        maintenanceFeeIncludes: def.maintenanceFeeIncludes ?? [],
+        loanAmount: def.loanAmount ?? null,
+        privateMemo: def.privateMemo ?? null,
+        moveInAvailableType: def.moveInAvailableType ?? null,
         checkStatus: def.checkStatus,
         checkStatusChangedAt: daysAgo(Math.floor(Math.random() * 10) + 1),
         memo: def.memo,
@@ -2178,6 +2464,235 @@ async function seedCallRecordings(
         })),
       });
     }
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
+// NetworkRoom — 공동 중개망 데모
+// 첫 사무소가 만든 공개방 + (있다면) 두 번째 사무소 멤버 참여
+// 데모 Listing 2개 공유 (마스킹 다양화) + 채팅 + pending 문의 1건
+// memo 컬럼이 없는 모델은 description/content/message 에 [DEMO] 태그.
+// ─────────────────────────────────────────────────────────────
+async function seedNetwork(
+  ctx: Ctx,
+  listings: Awaited<ReturnType<typeof seedListings>>,
+) {
+  const now = new Date();
+  const hoursAgo = (n: number) => new Date(now.getTime() - n * 60 * 60 * 1000);
+
+  // 두 번째 활성 사무소 (없으면 단독 방으로 생성)
+  const partnerOffice = await ctx.prisma.office.findFirst({
+    where: { isActive: true, id: { not: ctx.officeId } },
+    orderBy: { createdAt: 'asc' },
+  });
+  const partnerUser = partnerOffice
+    ? await ctx.prisma.user.findFirst({
+        where: { officeId: partnerOffice.id, isActive: true },
+        orderBy: { createdAt: 'asc' },
+      })
+    : null;
+
+  const room = await ctx.prisma.networkRoom.create({
+    data: {
+      name: '강동 공동중개',
+      description: `${DEMO_TAG} 강동구 공동중개 매물 공유방`,
+      type: 'public',
+      createdBy: ctx.officeId,
+      region: '강동구',
+      isActive: true,
+    },
+  });
+
+  await ctx.prisma.networkRoomMember.create({
+    data: {
+      roomId: room.id,
+      officeId: ctx.officeId,
+      role: 'admin',
+      status: 'approved',
+      joinedAt: hoursAgo(72),
+    },
+  });
+  if (partnerOffice) {
+    await ctx.prisma.networkRoomMember.create({
+      data: {
+        roomId: room.id,
+        officeId: partnerOffice.id,
+        role: 'member',
+        status: 'approved',
+        joinedAt: hoursAgo(48),
+      },
+    });
+  }
+
+  // 공유 매물 1: 급매 매매 — 가격 공개, 동/호수 비공개
+  const shared1 = await ctx.prisma.networkSharedProperty.create({
+    data: {
+      roomId: room.id,
+      listingId: listings[0].id,
+      officeId: ctx.officeId,
+      sharedBy: ctx.agentUserId,
+      showSiteName: true,
+      showDong: false,
+      showUnit: false,
+      showPrice: true,
+      showArea: true,
+      showFloor: true,
+      showMemo: false,
+      contactName: '이중개',
+      contactPhone: '010-7777-1111',
+      description: `${DEMO_TAG} 급매 — 26.8억, 로얄층 남향. 공동중개 환영`,
+      isActive: true,
+      createdAt: hoursAgo(30),
+    },
+  });
+
+  // 공유 매물 2: 전세 — 동까지 공개, 가격 비공개 (문의 유도)
+  const shared2 = await ctx.prisma.networkSharedProperty.create({
+    data: {
+      roomId: room.id,
+      listingId: listings[5].id,
+      officeId: ctx.officeId,
+      sharedBy: ctx.managerUserId,
+      showSiteName: true,
+      showDong: true,
+      showUnit: false,
+      showPrice: false,
+      showArea: true,
+      showFloor: false,
+      showMemo: true,
+      contactName: '김팀장',
+      contactPhone: '010-7777-2222',
+      description: `${DEMO_TAG} 전세 즉시입주 — 가격은 문의 주세요`,
+      isActive: true,
+      createdAt: hoursAgo(20),
+    },
+  });
+
+  // 채팅 메시지
+  const messageDefs: Array<{
+    officeId: string;
+    userId: string;
+    content: string;
+    sharedPropertyId?: string;
+    at: Date;
+  }> = [
+    {
+      officeId: ctx.officeId,
+      userId: ctx.ownerUserId,
+      content: `${DEMO_TAG} 강동 공동중개방 오픈했습니다. 좋은 물건 많이 공유해주세요!`,
+      at: hoursAgo(71),
+    },
+    {
+      officeId: ctx.officeId,
+      userId: ctx.agentUserId,
+      content: `${DEMO_TAG} 고덕그라시움 급매 공유합니다. 26.8억 로얄층입니다.`,
+      sharedPropertyId: shared1.id,
+      at: hoursAgo(29),
+    },
+    {
+      officeId: ctx.officeId,
+      userId: ctx.managerUserId,
+      content: `${DEMO_TAG} 전세 물건도 하나 올립니다. 즉시입주 가능해요.`,
+      sharedPropertyId: shared2.id,
+      at: hoursAgo(19),
+    },
+  ];
+  if (partnerOffice && partnerUser) {
+    messageDefs.push({
+      officeId: partnerOffice.id,
+      userId: partnerUser.id,
+      content: `${DEMO_TAG} 급매 물건 매수 대기 고객 있습니다. 문의 넣었어요~`,
+      at: hoursAgo(5),
+    });
+  }
+  for (const def of messageDefs) {
+    await ctx.prisma.networkMessage.create({
+      data: {
+        roomId: room.id,
+        officeId: def.officeId,
+        userId: def.userId,
+        content: def.content,
+        sharedPropertyId: def.sharedPropertyId ?? null,
+        createdAt: def.at,
+      },
+    });
+  }
+
+  // 문의 1건 (pending) — 두 번째 사무소 → 급매 공유 매물
+  let inquiryId: string | null = null;
+  if (partnerOffice && partnerUser) {
+    const inquiry = await ctx.prisma.networkInquiry.create({
+      data: {
+        sharedPropertyId: shared1.id,
+        fromOfficeId: partnerOffice.id,
+        fromUserId: partnerUser.id,
+        status: 'pending',
+        message: `${DEMO_TAG} 매수 의향 고객 있습니다. 동/호수 및 방문 가능 일정 공유 부탁드립니다.`,
+        createdAt: hoursAgo(4),
+      },
+    });
+    inquiryId = inquiry.id;
+  }
+
+  return { roomId: room.id, inquiryId };
+}
+
+// ─────────────────────────────────────────────────────────────
+// Notification — 첫 사무소 owner 에게 3건
+// content 에 [DEMO] 태그 (wipe 식별용)
+// ─────────────────────────────────────────────────────────────
+async function seedNotifications(
+  ctx: Ctx,
+  network: Awaited<ReturnType<typeof seedNetwork>>,
+) {
+  const now = new Date();
+  const hoursAgo = (n: number) => new Date(now.getTime() - n * 60 * 60 * 1000);
+
+  const defs = [
+    {
+      type: 'network_inquiry',
+      title: '공유 매물에 새 문의가 도착했습니다',
+      content: `${DEMO_TAG} 강동 공동중개방 — 급매 매물에 매수 문의 1건 (pending)`,
+      linkType: network.inquiryId ? 'network_inquiry' : null,
+      linkId: network.inquiryId,
+      isRead: false,
+      createdAt: hoursAgo(4),
+    },
+    {
+      type: 'task_assigned',
+      title: '새 업무가 배정되었습니다',
+      content: `${DEMO_TAG} 급매 26.8억 등기부 확인 — 마감 내일`,
+      linkType: null,
+      linkId: null,
+      isRead: false,
+      createdAt: hoursAgo(8),
+    },
+    {
+      type: 'verification_due',
+      title: '매물 확인 주기가 도래했습니다',
+      content: `${DEMO_TAG} 고덕그라시움 펜트하우스 — 마지막 확인 후 3일 경과`,
+      linkType: null,
+      linkId: null,
+      isRead: true,
+      createdAt: hoursAgo(26),
+    },
+  ];
+
+  for (const def of defs) {
+    await ctx.prisma.notification.create({
+      data: {
+        officeId: ctx.officeId,
+        userId: ctx.ownerUserId,
+        type: def.type,
+        title: def.title,
+        content: def.content,
+        linkType: def.linkType,
+        linkId: def.linkId,
+        isRead: def.isRead,
+        readAt: def.isRead ? hoursAgo(20) : null,
+        createdAt: def.createdAt,
+      },
+    });
   }
 }
 

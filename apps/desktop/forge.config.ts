@@ -7,6 +7,8 @@ import { VitePlugin } from '@electron-forge/plugin-vite';
 import { FusesPlugin } from '@electron-forge/plugin-fuses';
 import { FuseV1Options, FuseVersion } from '@electron/fuses';
 
+const updateBaseUrl = process.env.ESTATE_ERP_UPDATE_BASE_URL?.replace(/\/+$/, '');
+
 const config: ForgeConfig = {
   packagerConfig: {
     asar: true,
@@ -14,8 +16,17 @@ const config: ForgeConfig = {
   },
   rebuildConfig: {},
   makers: [
-    new MakerSquirrel({}),
-    new MakerZIP({}, ['darwin']),
+    new MakerSquirrel(
+      updateBaseUrl
+        ? { remoteReleases: `${updateBaseUrl}/win32/${process.arch}` }
+        : {},
+    ),
+    new MakerZIP(
+      updateBaseUrl
+        ? { macUpdateManifestBaseUrl: `${updateBaseUrl}/darwin/${process.arch}` }
+        : {},
+      ['darwin'],
+    ),
     new MakerRpm({}),
     new MakerDeb({}),
   ],

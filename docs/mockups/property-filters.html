@@ -1,0 +1,625 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>매물관리 필터 — 현행 개선형 예시</title>
+<style>
+  /* ── Estate ERP 디자인 토큰 (index.tsx 기준 추출) ──────────────── */
+  :root {
+    --bg: #ffffff;
+    --border: #e7e7e4;
+    --border-strong: #d9d9d6;
+    --muted: #f4f4f2;          /* bg-muted */
+    --muted-20: #fafafa;
+    --foreground: #1f1f1d;
+    --muted-foreground: #75746f;
+    --slate-900: #0f172a;
+    --slate-700: #334155;
+    --slate-500: #64748b;
+    --slate-400: #94a3b8;
+    --slate-100: #f1f5f9;
+    /* 상태 pill 색 (checkStatusMeta / transactionTypeMeta) */
+    --sale-bg:#fdebec; --sale-fg:#8f4b46;
+    --jeonse-bg:#e7f3f8; --jeonse-fg:#337ea9;
+    --monthly-bg:#fbf3db; --monthly-fg:#8f6b1f;
+    --green-bg:#eef3ed; --green-fg:#44745a;
+    --gray-bg:#f1f1ef; --gray-fg:#5f5e5b;
+    --warn-bg:#fbf3db; --warn-fg:#9f6b00;
+    --danger-bg:#fbe4e4; --danger-fg:#9f5555;
+    --primary:#2f6fed;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Pretendard", "Apple SD Gothic Neo", "Segoe UI", Roboto, sans-serif;
+    color: var(--foreground);
+    background: #f0f0ee;
+    font-size: 13px;
+  }
+  .app { max-width: 1280px; margin: 24px auto; background: var(--bg); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,.05); }
+
+  /* ── Row 1: 탭 + 단지/동/호 + 검색 ───────────────────────────── */
+  .bar { border-bottom: 1px solid var(--border); padding: 8px 12px; background: var(--bg); }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+  .spacer { margin-left: auto; }
+
+  .tabs { display: inline-flex; gap: 0; background: var(--muted); border-radius: 8px; padding: 2px; }
+  .tab { border: 1px solid transparent; background: transparent; border-radius: 6px; padding: 5px 12px; font-size: 13px; color: var(--muted-foreground); cursor: pointer; line-height: 1; }
+  .tab[aria-selected="true"] { background: #fff; border-color: var(--border-strong); color: #020617; box-shadow: 0 1px 2px rgba(0,0,0,.06); font-weight: 500; }
+
+  .text-input { position: relative; }
+  .text-input input {
+    height: 32px; border: 1px solid transparent; border-radius: 6px; background: #fff;
+    padding: 0 26px 0 8px; font-size: 13px; color: var(--foreground); width: 80px; outline: none;
+  }
+  .text-input.search input { padding-left: 30px; width: 224px; }
+  .text-input input::placeholder { color: var(--slate-400); }
+  .text-input input:hover { border-color: var(--border); }
+  .text-input input:focus { border-color: var(--border-strong); }
+  .text-input .ic { position: absolute; left: 9px; top: 50%; transform: translateY(-50%); color: var(--muted-foreground); width: 14px; height: 14px; pointer-events: none; }
+  .text-input .clear { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); border: none; background: none; color: var(--slate-400); cursor: pointer; border-radius: 4px; padding: 2px; line-height: 0; display: none; }
+  .text-input input:not(:placeholder-shown) ~ .clear { display: block; }
+
+  .btn-primary {
+    height: 32px; border: none; border-radius: 6px; background: var(--primary); color: #fff;
+    padding: 0 14px; font-size: 13px; font-weight: 500; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;
+  }
+
+  /* ── Row 2: 필터 칩 바 ──────────────────────────────────────── */
+  .filter-bar { border-bottom: 1px solid var(--border); padding: 10px 12px; background: var(--bg); }
+
+  .chip {
+    height: 32px; max-width: 220px; border: 1px solid transparent; border-radius: 6px;
+    background: transparent; padding: 0 10px; font-size: 12px; color: var(--muted-foreground);
+    cursor: pointer; display: inline-flex; align-items: center; gap: 6px; line-height: 1; position: relative;
+  }
+  .chip:hover { border-color: var(--border); background: #fff; }
+  .chip[data-active="true"] { border-color: var(--border); background: var(--muted); color: var(--foreground); }
+  .chip .lbl { color: var(--muted-foreground); flex-shrink: 0; }
+  .chip .val { font-weight: 500; color: var(--foreground); max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .chip[data-active="true"] .lbl { color: var(--muted-foreground); }
+  .chip .caret { width: 14px; height: 14px; color: var(--muted-foreground); flex-shrink: 0; }
+  /* 새로 추가된 1차 칩 강조용 점 */
+  .chip.is-new::after { content:""; position:absolute; top:5px; right:5px; width:5px; height:5px; border-radius:50%; background: var(--primary); }
+
+  .count-badge {
+    display:inline-flex; align-items:center; justify-content:center; min-width:16px; height:16px; padding:0 4px;
+    border-radius:8px; background: var(--primary); color:#fff; font-size:10px; font-weight:600; line-height:1;
+  }
+
+  .toggle {
+    height: 32px; display: inline-flex; align-items: center; gap: 8px; border: 1px solid transparent;
+    border-radius: 6px; padding: 0 12px; font-size: 12px; color: var(--muted-foreground); cursor: pointer; user-select: none;
+  }
+  .toggle[data-on="true"] { border-color: var(--border); background: var(--muted); color: var(--foreground); }
+  .switch { width: 26px; height: 16px; border-radius: 8px; background: #cfcfca; position: relative; transition: background .15s; flex-shrink: 0; }
+  .toggle[data-on="true"] .switch { background: var(--primary); }
+  .switch::after { content:""; position:absolute; top:2px; left:2px; width:12px; height:12px; border-radius:50%; background:#fff; transition: left .15s; }
+  .toggle[data-on="true"] .switch::after { left: 12px; }
+
+  .ghost-btn { height: 32px; border: none; background: none; color: var(--muted-foreground); font-size: 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; padding: 0 10px; border-radius: 6px; }
+  .ghost-btn:hover { background: var(--muted); }
+
+  .select-mini { height: 32px; min-width: 96px; border: 1px solid var(--border); border-radius: 6px; background: #fff; padding: 0 28px 0 10px; font-size: 13px; color: var(--foreground); cursor: pointer;
+    appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%2375746f' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 8px center; }
+
+  .divider-v { width: 1px; height: 18px; background: var(--border); margin: 0 4px; }
+
+  /* ── Popover ────────────────────────────────────────────────── */
+  .pop { position: relative; display: inline-flex; }
+  .pop > .panel {
+    display: none; position: absolute; top: calc(100% + 6px); left: 0; z-index: 50;
+    width: 320px; background: #fff; border: 1px solid var(--border); border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(15,23,42,.12); padding: 12px;
+  }
+  .pop.open > .panel { display: block; }
+  .pop.w360 > .panel { width: 360px; }
+  .pop.w340 > .panel { width: 340px; }
+
+  .pop-title { font-size: 13px; font-weight: 600; color: var(--foreground); }
+  .pop-desc { margin-top: 2px; font-size: 11px; line-height: 1.45; color: var(--muted-foreground); }
+  .pop-body { margin-top: 12px; display: flex; flex-direction: column; gap: 12px; }
+
+  .field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+  .field > label { font-size: 11px; font-weight: 500; color: var(--slate-500); }
+  .field input[type="number"], .field input[type="date"], .field select, .field input[type="text"] {
+    height: 32px; border: 1px solid var(--border); border-radius: 6px; background: #fff; padding: 0 8px; font-size: 13px; width: 100%; outline: none; color: var(--foreground);
+  }
+  .field input:focus, .field select:focus { border-color: var(--border-strong); }
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+  .range { display: grid; grid-template-columns: minmax(0,1fr) auto minmax(0,1fr); align-items: center; gap: 6px; }
+  .range .tilde { font-size: 12px; color: var(--slate-400); text-align:center; }
+
+  /* preset 칩 (확인경과 등 빠른선택) */
+  .presets { display: flex; flex-wrap: wrap; gap: 6px; }
+  .preset { border: 1px solid var(--border); background: #fff; border-radius: 999px; padding: 4px 10px; font-size: 12px; color: var(--slate-700); cursor: pointer; }
+  .preset:hover { background: var(--muted-20); }
+  .preset[data-sel="true"] { border-color: var(--primary); background: #eef3ff; color: var(--primary); font-weight: 500; }
+
+  /* 체크박스형 옵션 리스트 (광고채널, 매물확인상태 등 다중선택) */
+  .check-list { display: flex; flex-direction: column; gap: 2px; }
+  .check-row { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 6px; cursor: pointer; font-size: 13px; color: var(--slate-700); }
+  .check-row:hover { background: var(--muted-20); }
+  .check-row input { width: 15px; height: 15px; accent-color: var(--primary); }
+  .check-row .dot { width: 8px; height: 8px; border-radius: 50%; }
+
+  /* status pill in popover preview */
+  .pill { display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px; border-radius: 5px; font-size: 11px; font-weight: 500; }
+
+  .pop-footer { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+  .link-btn { border: none; background: none; color: var(--muted-foreground); font-size: 12px; cursor: pointer; }
+  .apply-btn { border: none; background: var(--foreground); color: #fff; border-radius: 6px; padding: 6px 14px; font-size: 12px; font-weight: 500; cursor: pointer; }
+
+  /* ── 상세필터 (대형 팝오버, 그룹화) ──────────────────────────── */
+  .pop.detail > .panel { width: 560px; padding: 0; left: auto; right: 0; }
+  .detail-head { padding: 12px 14px; border-bottom: 1px solid var(--border); display:flex; justify-content: space-between; align-items: flex-start; }
+  .detail-scroll { max-height: 440px; overflow-y: auto; padding: 4px 14px 14px; }
+  .detail-group { padding: 14px 0; border-bottom: 1px solid var(--border); }
+  .detail-group:last-child { border-bottom: none; }
+  .detail-group > h4 { margin: 0 0 10px; font-size: 12px; font-weight: 600; color: var(--slate-500); letter-spacing: .02em; display:flex; align-items:center; gap:6px; }
+  .detail-group .soon { font-size: 10px; font-weight: 500; color: var(--slate-400); border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px; }
+
+  .row-disabled { opacity: .45; pointer-events: none; }
+
+  /* ── status bar (목록 카운트) ───────────────────────────────── */
+  .status-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding: 7px 12px; background: var(--muted-20); border-bottom: 1px solid var(--border); font-size: 12px; color: var(--muted-foreground); }
+  .status-bar .strong { color: var(--foreground); font-weight: 500; }
+  .active-chips { display:flex; flex-wrap:wrap; gap:6px; }
+  .active-chip { display:inline-flex; align-items:center; gap:5px; background: var(--muted); border:1px solid var(--border); border-radius: 999px; padding: 2px 6px 2px 9px; font-size: 11px; color: var(--slate-700); }
+  .active-chip button { border:none; background:none; cursor:pointer; color: var(--slate-400); line-height:0; padding:0; }
+
+  /* table preview */
+  .table-preview { padding: 0; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  thead th { text-align: left; font-weight: 400; color: var(--muted-foreground); font-size: 12px; padding: 8px 10px; border-bottom: 1px solid var(--border); background: #fff; white-space: nowrap; }
+  tbody td { padding: 9px 10px; border-bottom: 1px solid var(--border); color: var(--slate-700); white-space: nowrap; }
+  tbody tr:hover { background: var(--muted-20); }
+  .tx { display:inline-flex; padding: 2px 7px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+  .tx.sale { background: var(--sale-bg); color: var(--sale-fg); }
+  .tx.jeonse { background: var(--jeonse-bg); color: var(--jeonse-fg); }
+  .tx.monthly { background: var(--monthly-bg); color: var(--monthly-fg); }
+  .nm { font-weight: 600; color: var(--slate-900); }
+  .stale { color: var(--danger-fg); font-weight: 500; }
+
+  .legend { max-width: 1280px; margin: 12px auto 40px; padding: 0 8px; color: #555; font-size: 12px; line-height: 1.7; }
+  .legend code { background: #eee; padding: 1px 5px; border-radius: 4px; font-size: 11px; }
+  .legend h3 { font-size: 13px; margin: 18px 0 6px; color: #222; }
+  svg.ic-inline { width: 14px; height: 14px; vertical-align: -2px; }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- ════════════════ Row 1 : 탭 + 단지/동/호 + 검색 ════════════════ -->
+  <div class="bar">
+    <div class="row">
+      <div class="tabs" role="tablist">
+        <button class="tab" role="tab" aria-selected="true">전체</button>
+        <button class="tab" role="tab" aria-selected="false">매매</button>
+        <button class="tab" role="tab" aria-selected="false">전세</button>
+        <button class="tab" role="tab" aria-selected="false">월세</button>
+      </div>
+
+      <!-- 단지 (팝오버 + 자동완성) -->
+      <div class="pop w360" id="pop-site">
+        <button class="chip" data-active="false" onclick="toggle('pop-site')">
+          <span class="lbl">단지</span><span class="val">전체</span>
+          <svg class="caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
+        </button>
+        <div class="panel">
+          <div class="pop-title">단지</div>
+          <div class="pop-desc">단지명 또는 주소로 매물을 좁힙니다.</div>
+          <div class="pop-body">
+            <div class="text-input search" style="width:100%">
+              <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+              <input style="width:100%" placeholder="단지 검색" />
+            </div>
+            <div class="check-list">
+              <button class="check-row" style="flex-direction:column;align-items:flex-start;gap:1px">
+                <span class="nm">래미안고덕</span><span style="font-size:11px;color:var(--slate-500)">서울 강동구 고덕로 100 · 42건</span>
+              </button>
+              <button class="check-row" style="flex-direction:column;align-items:flex-start;gap:1px">
+                <span class="nm">고덕그라시움</span><span style="font-size:11px;color:var(--slate-500)">서울 강동구 고덕동 1-1 · 28건</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="text-input">
+        <input placeholder="동" />
+        <button class="clear" aria-label="지우기">✕</button>
+      </div>
+      <div class="text-input">
+        <input placeholder="호" />
+        <button class="clear" aria-label="지우기">✕</button>
+      </div>
+
+      <div class="text-input search" style="margin-left:4px">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+        <input placeholder="주소, 연락처, 메모" />
+        <button class="clear" aria-label="지우기">✕</button>
+      </div>
+
+      <button class="btn-primary spacer">
+        <svg class="ic-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5v14"/></svg>
+        새 매물 등록
+      </button>
+    </div>
+  </div>
+
+  <!-- ════════════════ Row 2 : 필터 칩 바 ════════════════ -->
+  <div class="filter-bar">
+    <div class="row">
+
+      <!-- 지역 -->
+      <div class="pop w360" id="pop-region">
+        <button class="chip" data-active="false" onclick="toggle('pop-region')">
+          <span class="lbl">지역</span><span class="val">전체</span>
+          <svg class="caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
+        </button>
+        <div class="panel">
+          <div class="pop-title">지역</div>
+          <div class="pop-desc">시도, 시군구, 법정동을 한 번에 좁힙니다.</div>
+          <div class="pop-body">
+            <div class="grid-3">
+              <div class="field"><label>시도</label><select><option>전체</option><option>서울특별시</option></select></div>
+              <div class="field"><label>시군구</label><select><option>전체</option><option>강동구</option></select></div>
+              <div class="field"><label>법정동</label><select><option>전체</option><option>고덕동</option></select></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 유형 -->
+      <div class="pop" id="pop-type">
+        <button class="chip" data-active="false" onclick="toggle('pop-type')">
+          <span class="lbl">유형</span><span class="val">전체</span>
+          <svg class="caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
+        </button>
+        <div class="panel">
+          <div class="pop-title">매물유형</div>
+          <div class="pop-desc">아파트, 오피스텔, 상가 등 건물 유형을 선택합니다.</div>
+          <div class="pop-body">
+            <div class="check-list">
+              <label class="check-row"><input type="checkbox" checked /> 아파트</label>
+              <label class="check-row"><input type="checkbox" /> 오피스텔</label>
+              <label class="check-row"><input type="checkbox" /> 빌라</label>
+              <label class="check-row"><input type="checkbox" /> 단독/다가구</label>
+              <label class="check-row"><input type="checkbox" /> 상가</label>
+              <label class="check-row"><input type="checkbox" /> 토지</label>
+              <label class="check-row"><input type="checkbox" /> 생활숙박</label>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 상태 (의뢰 상태) -->
+      <div class="pop" id="pop-status">
+        <button class="chip" data-active="true" onclick="toggle('pop-status')">
+          <span class="lbl">상태</span><span class="val">활성</span>
+          <svg class="caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
+        </button>
+        <div class="panel">
+          <div class="pop-title">의뢰 상태</div>
+          <div class="pop-desc">매물 의뢰의 진행 상태로 좁힙니다.</div>
+          <div class="pop-body">
+            <div class="check-list">
+              <label class="check-row"><input type="checkbox" /><span class="dot" style="background:#9b9a97"></span> 미확인</label>
+              <label class="check-row"><input type="checkbox" checked /><span class="dot" style="background:#6c9b7a"></span> 활성</label>
+              <label class="check-row"><input type="checkbox" /><span class="dot" style="background:#529cca"></span> 거래중</label>
+              <label class="check-row"><input type="checkbox" /><span class="dot" style="background:#dfab01"></span> 보류</label>
+              <label class="check-row"><input type="checkbox" /><span class="dot" style="background:#b4b4b1"></span> 종료</label>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 가격/보증금 -->
+      <div class="pop w340" id="pop-price">
+        <button class="chip" data-active="false" onclick="toggle('pop-price')">
+          <span class="lbl">가격</span><span class="val">전체</span>
+          <svg class="caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
+        </button>
+        <div class="panel">
+          <div class="pop-title">가격 / 보증금</div>
+          <div class="pop-desc">만원 단위로 입력합니다. (매매·전세는 가격, 월세는 보증금)</div>
+          <div class="pop-body">
+            <div class="field"><label>가격 (만원)</label>
+              <div class="range"><input type="number" placeholder="최소"/><span class="tilde">~</span><input type="number" placeholder="최대"/></div>
+            </div>
+            <div class="field"><label>보증금 (만원)</label>
+              <div class="range"><input type="number" placeholder="최소"/><span class="tilde">~</span><input type="number" placeholder="최대"/></div>
+            </div>
+            <div class="presets">
+              <button class="preset">~3억</button><button class="preset">3~6억</button>
+              <button class="preset">6~10억</button><button class="preset">10억~</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 면적 -->
+      <div class="pop" id="pop-area">
+        <button class="chip" data-active="false" onclick="toggle('pop-area')">
+          <span class="lbl">면적</span><span class="val">전체</span>
+          <svg class="caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
+        </button>
+        <div class="panel">
+          <div class="pop-title">전용면적</div>
+          <div class="pop-desc">평 단위로 입력합니다.</div>
+          <div class="pop-body">
+            <div class="field"><label>전용면적 (평)</label>
+              <div class="range"><input type="number" placeholder="최소"/><span class="tilde">~</span><input type="number" placeholder="최대"/></div>
+            </div>
+            <div class="presets">
+              <button class="preset">~20평</button><button class="preset">20~30평</button>
+              <button class="preset">30~40평</button><button class="preset">40평~</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ★ 신규 1차 칩: 확인경과 (킬러 필터) -->
+      <div class="pop w340" id="pop-confirm">
+        <button class="chip is-new" data-active="true" onclick="toggle('pop-confirm')">
+          <span class="lbl">확인경과</span><span class="val">14일 이상</span>
+          <svg class="caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
+        </button>
+        <div class="panel">
+          <div class="pop-title">확인경과 · 재확인 대상</div>
+          <div class="pop-desc">마지막 소유주 확인 이후 경과일 / 다음 확인 예정일 기준으로 오래된 매물을 골라냅니다.</div>
+          <div class="pop-body">
+            <div class="field"><label>마지막 확인 이후</label>
+              <div class="presets">
+                <button class="preset">전체</button>
+                <button class="preset">7일↑</button>
+                <button class="preset" data-sel="true">14일↑</button>
+                <button class="preset">30일↑</button>
+                <button class="preset">미확인</button>
+              </div>
+            </div>
+            <div class="field"><label>직접 입력 (일)</label>
+              <div class="range"><input type="number" placeholder="최소"/><span class="tilde">~</span><input type="number" placeholder="최대"/></div>
+            </div>
+            <label class="check-row" style="padding-left:0"><input type="checkbox" /> 다음 확인 예정일(<code style="font-size:11px;background:#eee;padding:1px 4px;border-radius:3px">nextConfirmAt</code>) 지난 것만</label>
+          </div>
+        </div>
+      </div>
+
+      <!-- ★ 신규 1차 칩: 층수 -->
+      <div class="pop" id="pop-floor">
+        <button class="chip is-new" data-active="false" onclick="toggle('pop-floor')">
+          <span class="lbl">층수</span><span class="val">전체</span>
+          <svg class="caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
+        </button>
+        <div class="panel">
+          <div class="pop-title">층수</div>
+          <div class="pop-desc">저·중·고층 또는 직접 범위로 좁힙니다.</div>
+          <div class="pop-body">
+            <div class="presets">
+              <button class="preset">전체</button>
+              <button class="preset">저층 (1~3F)</button>
+              <button class="preset">중층</button>
+              <button class="preset">고층</button>
+              <button class="preset">탑층 제외</button>
+              <button class="preset">1층 제외</button>
+            </div>
+            <div class="field"><label>직접 입력 (층)</label>
+              <div class="range"><input type="number" placeholder="최소"/><span class="tilde">~</span><input type="number" placeholder="최대"/></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ★ 상세필터 묶음 (대형 팝오버) -->
+      <div class="pop detail" id="pop-detail">
+        <button class="chip" data-active="true" onclick="toggle('pop-detail')">
+          <svg class="ic-inline" style="margin-right:-2px" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M7 12h10m-7 6h4"/></svg>
+          <span class="lbl">상세필터</span>
+          <span class="count-badge">3</span>
+          <svg class="caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
+        </button>
+        <div class="panel">
+          <div class="detail-head">
+            <div>
+              <div class="pop-title">상세필터</div>
+              <div class="pop-desc">자주 쓰지 않거나 데이터가 일부 매물에만 있는 조건입니다.</div>
+            </div>
+            <button class="link-btn">전체 해제</button>
+          </div>
+          <div class="detail-scroll">
+
+            <!-- 매물 확인상태 (Listing.checkStatus) -->
+            <div class="detail-group">
+              <h4>매물 확인상태</h4>
+              <div class="check-list">
+                <label class="check-row"><input type="checkbox" /><span class="pill" style="background:var(--gray-bg);color:var(--gray-fg)">● 미확인</span></label>
+                <label class="check-row"><input type="checkbox" checked /><span class="pill" style="background:var(--green-bg);color:var(--green-fg)">● 확인완료</span></label>
+                <label class="check-row"><input type="checkbox" /><span class="pill" style="background:var(--jeonse-bg);color:var(--jeonse-fg)">● 거래중</span></label>
+                <label class="check-row"><input type="checkbox" /><span class="pill" style="background:var(--warn-bg);color:var(--warn-fg)">● 보류</span></label>
+              </div>
+            </div>
+
+            <!-- 입주 / 세입자 -->
+            <div class="detail-group">
+              <h4>입주 · 세입자</h4>
+              <div class="presets" style="margin-bottom:10px">
+                <button class="preset" data-sel="true">즉시입주</button>
+                <button class="preset">협의가능</button>
+                <button class="preset">날짜지정</button>
+              </div>
+              <div class="grid-2">
+                <div class="field"><label>세입자 상태</label>
+                  <select><option>전체</option><option>공실(없음)</option><option>거주중</option><option>퇴거예정</option><option>명도완료</option></select>
+                </div>
+                <div class="field"><label>점유 상태</label>
+                  <select><option>전체</option><option>공실</option><option>주인거주</option><option>세입자거주</option></select>
+                </div>
+              </div>
+              <div class="field" style="margin-top:8px"><label>입주가능일</label>
+                <div class="range"><input type="date"/><span class="tilde">~</span><input type="date"/></div>
+              </div>
+            </div>
+
+            <!-- 광고 -->
+            <div class="detail-group">
+              <h4>광고</h4>
+              <div class="grid-2" style="margin-bottom:8px">
+                <label class="toggle" data-on="false" style="border-color:var(--border)"><span class="switch"></span> 광고중만</label>
+                <label class="toggle" data-on="false" style="border-color:var(--border)"><span class="switch"></span> 광고 없음</label>
+              </div>
+              <div class="field"><label>광고 채널</label>
+                <div class="presets">
+                  <button class="preset">네이버</button><button class="preset">아실</button>
+                  <button class="preset">직방</button><button class="preset">다방</button>
+                  <button class="preset">한방</button><button class="preset">기타</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- 변동 · 시점 -->
+            <div class="detail-group">
+              <h4>가격 변동 · 등록 시점</h4>
+              <div class="presets" style="margin-bottom:10px">
+                <button class="preset">최근 7일 내 가격변동</button>
+                <button class="preset">가격 인하</button>
+              </div>
+              <div class="field"><label>등록일</label>
+                <div class="range"><input type="date"/><span class="tilde">~</span><input type="date"/></div>
+              </div>
+            </div>
+
+            <!-- 관리 옵션 -->
+            <div class="detail-group">
+              <h4>관리</h4>
+              <div class="grid-2">
+                <label class="toggle" data-on="false" style="border-color:var(--border)"><span class="switch"></span> 공동중개 필요</label>
+                <label class="toggle" data-on="false" style="border-color:var(--border)"><span class="switch"></span> 숨김 매물 포함</label>
+              </div>
+            </div>
+
+            <!-- 추후 (신규 필드 필요 — 비활성) -->
+            <div class="detail-group">
+              <h4>담당 · 검증 <span class="soon">추후</span></h4>
+              <div class="row-disabled">
+                <div class="grid-2">
+                  <div class="field"><label>담당 중개사</label><select><option>전체</option></select></div>
+                  <div class="field"><label>소유주 검증</label><select><option>전체</option></select></div>
+                </div>
+                <label class="check-row" style="padding-left:0;margin-top:8px"><input type="checkbox" disabled /> 융자/근저당 있는 매물</label>
+              </div>
+              <p style="margin:8px 0 0;font-size:11px;color:var(--slate-400)">담당자·소유주검증·융자비율은 스키마에 전용 필드 추가 후 활성화됩니다.</p>
+            </div>
+          </div>
+          <div style="padding:10px 14px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px">
+            <button class="apply-btn">적용</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 우측: 정렬 + 초기화 -->
+      <div class="spacer"></div>
+      <select class="select-mini" style="min-width:140px">
+        <option>정렬</option>
+        <option>확인 오래된순</option>
+        <option>확인 최근순</option>
+        <option>가격 낮은순</option>
+        <option>가격 높은순</option>
+        <option>등록일 최신순</option>
+      </select>
+      <button class="ghost-btn">
+        <svg class="ic-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 2v6h6"/><path d="M3 13a9 9 0 1 0 3-7.7L3 8"/></svg>
+        초기화
+      </button>
+    </div>
+  </div>
+
+  <!-- ════════════════ 활성 필터 요약 + 카운트 바 ════════════════ -->
+  <div class="status-bar">
+    <span class="strong">매물 128개</span>
+    <span>의뢰 134건 · 거래 156건</span>
+    <span class="active-chips">
+      <span class="active-chip">상태 활성 <button>✕</button></span>
+      <span class="active-chip">확인경과 14일↑ <button>✕</button></span>
+      <span class="active-chip">상세필터 3 <button>✕</button></span>
+    </span>
+    <span style="margin-left:auto">행 더블클릭 시 빠른 확인 패널을 엽니다.</span>
+  </div>
+
+  <!-- ════════════════ 매물 그리드 (미리보기) ════════════════ -->
+  <div class="table-preview">
+    <table>
+      <thead>
+        <tr>
+          <th>거래</th><th>단지</th><th>동</th><th>호</th><th>타입</th><th>전용</th>
+          <th>층</th><th>확인</th><th>확인일</th><th>상태</th><th>가격/보증금</th><th>월세</th><th>광고</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><span class="tx sale">매매</span></td><td class="nm">래미안고덕</td><td>101</td><td>1503</td><td>84A</td><td>25.4평</td>
+          <td>15F</td><td>✓</td><td class="stale">21일 전</td><td><span class="pill" style="background:var(--green-bg);color:var(--green-fg)">확인완료</span></td><td>15억 8,000</td><td>—</td><td>네이버</td>
+        </tr>
+        <tr>
+          <td><span class="tx jeonse">전세</span></td><td class="nm">고덕그라시움</td><td>302</td><td>2201</td><td>59B</td><td>17.8평</td>
+          <td>22F</td><td>✓</td><td class="stale">18일 전</td><td><span class="pill" style="background:var(--green-bg);color:var(--green-fg)">확인완료</span></td><td>8억 5,000</td><td>—</td><td>—</td>
+        </tr>
+        <tr>
+          <td><span class="tx monthly">월세</span></td><td class="nm">래미안고덕</td><td>103</td><td>0805</td><td>84B</td><td>25.4평</td>
+          <td>8F</td><td>✓</td><td class="stale">15일 전</td><td><span class="pill" style="background:var(--green-bg);color:var(--green-fg)">확인완료</span></td><td>보 5,000</td><td>180</td><td>네이버·직방</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="legend">
+  <h3>이 예시의 설계 의도</h3>
+  · <b>2단 구조 유지</b> — 1행: 거래유형 탭 + 단지/동/호 + 통합검색. 2행: 필터 칩 바. (기존 <code>index.tsx</code> 구조 그대로)<br/>
+  · <b>1차 칩(항상 노출)</b>: 지역 · 유형 · 상태 · 가격 · 면적 + <b style="color:var(--primary)">신규 ●확인경과 · ●층수</b>. 파란 점이 신규 추가분.<br/>
+  · <b>「상세필터」 묶음</b>: 매물확인상태 · 입주/세입자 · 광고채널 · 가격변동 · 등록일 · 숨김매물 — 그룹화한 대형 팝오버. 칩 우측 <span class="count-badge" style="position:static;display:inline-flex">3</span> 배지로 적용 개수 표시.<br/>
+  · <b>회색 "추후" 그룹</b>: 담당 중개사 · 소유주검증 · 융자 — 스키마에 전용 필드가 없어 비활성 처리. 자리만 잡아둠.<br/>
+  · <b>담당자 위치 참고</b>: 질문에서 고른 미리보기엔 <code>[담당자▾]</code>가 1차 칩에 있었지만, 2번 질문(신규 필드 → 추후)에 맞춰 「추후」 그룹으로 내렸습니다. 담당자 필드(<code>assignedToId</code>)가 매물 모델에 추가되면 1차 칩으로 승격하는 것을 권장.<br/>
+  <h3>킬러 필터: 확인경과 (매물 생존 확인)</h3>
+  중개사는 등록된 매물이 <b>아직 살아있는지</b> — 소유주가 다른 데서 거래했거나 매물을 거둬들이지 않았는지 — 주기적으로 소유주에게 <b>확인 전화</b>를 돌립니다. "마지막 확인 이후 N일 지난 매물"을 골라 일괄로 전화 확인하는 게 매물장 관리의 핵심 루틴인데, 지금은 이걸 골라낼 필터가 없습니다. 스키마의 <code>confirmedAt</code>/<code>nextConfirmAt</code>이 이미 있어 <b>스키마 변경 없이</b> 필터만 추가하면 됨(단, 백엔드 where 빌드 + 정렬 케이스는 신규 작성 필요).
+  <h3>구현 난이도 (정확히 두 갈래)</h3>
+  <b>① 스키마 마이그레이션 불필요 + 백엔드가 이미 지원</b> (프론트만): 매물확인상태(<code>checkStatus</code>) · 공동중개 · 입주가능일 범위 · 광고 유무. 이건 칩만 노출하면 됨.<br/>
+  <b>② 스키마 마이그레이션 불필요하지만 백엔드 쿼리 변경 필요</b> (where/정렬 신규): 확인경과(<code>confirmedAt</code>·<code>nextConfirmAt</code> — 컨트롤러는 <code>nextConfirmFrom/To</code>만 받음, 경과일 계산 로직 추가) · 층수(<code>Unit.floor</code>) · 즉시입주(<code>moveInAvailableType</code>) · 세입자상태(<code>Tenant.status</code>) · 광고채널(<code>channel</code> 별) · 가격변동(<code>PriceHistory</code> 조인) · 등록일(<code>createdAt</code>) · 숨김(<code>isHidden</code>). <b>그리고 유형·상태를 단일선택→다중선택 체크박스로 바꾼 부분</b>도 여기 해당 — 현재 API는 <code>siteType</code>/<code>status</code>를 단일 값 <code>equals</code>로만 받으므로, 다중선택은 DTO를 배열로 받고 where를 <code>IN</code>으로 바꾸는 백엔드 작업이 필요함.<br/>
+  <b>③ 스키마 신규 필드 필요</b> (회색 "추후"): 담당 중개사(<code>assignedToId</code>) · 소유주 검증 · 융자/근저당 비율 · 관리비. 매물 모델에 컬럼 없음.
+  <h3>⚠ 정렬 주의</h3>
+  현재 백엔드 <code>resolveOrderBy</code>는 <code>receivedAt</code>/<code>createdAt</code>/<code>updatedAt</code>만 지원합니다. 드롭다운의 <b>「가격 낮은순/높은순」과 「확인 오래된순/최근순」은 지금은 동작하지 않고</b> <code>receivedAt</code>으로 폴백됩니다 — <code>resolveOrderBy</code>에 price/confirm 케이스를 추가해야 실제 정렬이 됩니다. 또 기존 "확인일" 정렬은 실제 확인 시각(<code>confirmedAt</code>)이 아니라 <code>updatedAt</code> 기반이라, 인라인 편집만 해도 갱신되는 점을 보정 권장.
+  <h3>거래유형 탭 연동</h3>
+  매매·전세 탭 → 「가격」 칩이 가격 범위만, 월세 탭 → 보증금+월세 노출. (탭 따라 가격 칩 라벨/내용 전환)
+</div>
+
+<script>
+  function toggle(id){
+    var el = document.getElementById(id);
+    var wasOpen = el.classList.contains('open');
+    document.querySelectorAll('.pop.open').forEach(function(p){ p.classList.remove('open'); });
+    if(!wasOpen) el.classList.add('open');
+    event.stopPropagation();
+  }
+  document.addEventListener('click', function(){
+    document.querySelectorAll('.pop.open').forEach(function(p){ p.classList.remove('open'); });
+  });
+  document.querySelectorAll('.panel').forEach(function(p){ p.addEventListener('click', function(e){ e.stopPropagation(); }); });
+  // preset/toggle 데모용 인터랙션
+  document.querySelectorAll('.preset').forEach(function(b){ b.addEventListener('click', function(){
+    var sibs = this.parentElement.querySelectorAll('.preset');
+    sibs.forEach(function(s){ s.removeAttribute('data-sel'); });
+    this.setAttribute('data-sel','true');
+  });});
+  document.querySelectorAll('.toggle').forEach(function(t){ t.addEventListener('click', function(){
+    this.setAttribute('data-on', this.getAttribute('data-on')==='true' ? 'false':'true');
+  });});
+  document.querySelectorAll('.tab').forEach(function(t){ t.addEventListener('click', function(){
+    this.parentElement.querySelectorAll('.tab').forEach(function(x){ x.setAttribute('aria-selected','false'); });
+    this.setAttribute('aria-selected','true');
+  });});
+</script>
+</body>
+</html>

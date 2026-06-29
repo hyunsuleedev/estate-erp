@@ -84,9 +84,11 @@ export interface UpdateContactDto {
   name?: string;
   phone?: string;
   phones?: ContactPhoneInput[];
-  email?: string;
+  /** null = 이메일 제거 (서버 ContactWriteInput이 null 허용) */
+  email?: string | null;
   tags?: string[];
-  memo?: string;
+  /** null = 메모 제거 */
+  memo?: string | null;
 }
 
 export function createContactsApi(request: RequestFn) {

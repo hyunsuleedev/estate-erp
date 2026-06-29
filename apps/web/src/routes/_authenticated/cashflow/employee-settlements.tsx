@@ -5,12 +5,16 @@ import {
   AlertCircle,
   CircleCheck,
   Lock,
+  RotateCw,
   TrendingUp,
   Users as UsersIcon,
 } from 'lucide-react';
 import type { Employee, EmployeePerformance } from '@estate-erp/api-client';
 import { useAuth } from '@/providers/auth-provider';
 import { api } from '@/lib/api';
+import { formatMoney } from '@/lib/format';
+import { EmptyState, PageHeader } from '@/components/domain';
+import { Button } from '@/components/ui/button';
 import {
   Card,
   CardContent,
@@ -33,13 +37,6 @@ export const Route = createFileRoute('/_authenticated/cashflow/employee-settleme
   component: EmployeeSettlementsPage,
 });
 
-function toEok(manwon: number): string {
-  const sign = manwon < 0 ? '-' : '';
-  const abs = Math.abs(manwon);
-  if (abs >= 10000) return `${sign}${(abs / 10000).toFixed(1)}억`;
-  return `${sign}${abs.toLocaleString()}만`;
-}
-
 const roleLabel: Record<string, string> = {
   owner: '대표',
   manager: '매니저',
@@ -56,15 +53,18 @@ function EmployeeSettlementsPage() {
   const { user } = useAuth();
   const canView = user?.role === 'owner' || user?.role === 'manager';
 
-  const { data: employees, isLoading: loadingList } = useQuery({
+  const {
+    data: employees,
+    isLoading: loadingList,
+    isError,
+    refetch,
+  } = useQuery({
     queryKey: ['employees'],
     queryFn: () => api.employees.findAll(),
     enabled: canView,
   });
 
-  if (!canView) return <AccessDenied />;
-
-
+  // 주의: 모든 Hook 호출이 끝난 뒤에 권한 조기 반환 (React Hooks 규칙)
   const perfQueries = useQueries({
     queries: (employees ?? []).map((e) => ({
       queryKey: ['employees', e.id, 'performance'],
@@ -104,14 +104,14 @@ function EmployeeSettlementsPage() {
 
   const activeEmployees = (employees ?? []).filter((e) => e.isActive).length;
 
+  if (!canView) return <AccessDenied />;
+
   return (
     <div className="flex flex-col gap-4">
-      <div>
-        <h1 className="text-lg font-semibold tracking-tight">직원 정산</h1>
-        <p className="text-sm text-muted-foreground">
-          직원별 거래 참여 수수료와 미정산 거래 현황을 집계합니다.
-        </p>
-      </div>
+      <PageHeader
+        title="직원 정산"
+        description="직원별 거래 참여 수수료와 미정산 거래 현황을 집계합니다."
+      />
 
       <div className="grid gap-3 md:grid-cols-4">
         <SummaryCard
@@ -122,7 +122,7 @@ function EmployeeSettlementsPage() {
         <SummaryCard
           icon={<TrendingUp className="size-4" />}
           label="누적 배분 수수료"
-          value={toEok(totals.commissionTotal)}
+          value={formatMoney(totals.commissionTotal)}
           highlight
         />
         <SummaryCard
@@ -147,9 +147,29 @@ function EmployeeSettlementsPage() {
         </CardHeader>
         <CardContent>
           {loadingList ? (
-            <Skeleton className="h-60 rounded-lg" />
+            <div className="space-y-2">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <Skeleton key={i} className="h-10 rounded-md" />
+              ))}
+            </div>
+          ) : isError ? (
+            <EmptyState
+              icon={UsersIcon}
+              title="직원 정산 현황을 불러오지 못했습니다"
+              description="네트워크 상태를 확인한 뒤 다시 시도해주세요."
+              action={
+                <Button variant="outline" onClick={() => refetch()}>
+                  <RotateCw className="size-4" />
+                  다시 시도
+                </Button>
+              }
+            />
           ) : sorted.length === 0 ? (
-            <EmptyState />
+            <EmptyState
+              icon={UsersIcon}
+              title="등록된 직원이 없습니다"
+              description="직원관리 메뉴에서 직원을 추가하면 이 화면에 배분 수수료가 집계됩니다."
+            />
           ) : (
             <div className="overflow-x-auto">
               <Table>
@@ -202,7 +222,7 @@ function EmployeeSettlementsPage() {
                         {isLoading ? (
                           <Skeleton className="ml-auto h-4 w-16" />
                         ) : (
-                          toEok(performance?.commissionAmountTotal ?? 0)
+                          formatMoney(performance?.commissionAmountTotal ?? 0)
                         )}
                       </TableCell>
                       <TableCell className="text-right tabular-nums text-muted-foreground">
@@ -248,18 +268,6 @@ function SummaryCard({
         <div className="rounded-md bg-muted/60 p-2 text-muted-foreground">{icon}</div>
       </CardContent>
     </Card>
-  );
-}
-
-function EmptyState() {
-  return (
-    <div className="rounded-xl border border-dashed bg-muted/30 p-10 text-center">
-      <UsersIcon className="mx-auto size-8 text-muted-foreground" />
-      <p className="mt-3 text-sm font-medium">등록된 직원이 없습니다</p>
-      <p className="mt-1 text-xs text-muted-foreground">
-        직원관리 메뉴에서 직원을 추가하면 이 화면에 배분 수수료가 집계됩니다.
-      </p>
-    </div>
   );
 }
 

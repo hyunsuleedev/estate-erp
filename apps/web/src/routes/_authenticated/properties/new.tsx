@@ -1,13 +1,14 @@
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import { ArrowLeft, Building2, Check, ChevronsUpDown, Search } from 'lucide-react';
-import { formatPrice, sqmToPyeong } from '@estate-erp/shared';
+import { sqmToPyeong, TRANSACTION_TYPE_LABELS } from '@estate-erp/shared';
 import type { Property, PropertyListing } from '@estate-erp/api-client';
 import { api } from '@/lib/api';
+import { formatMoney } from '@/lib/format';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -22,12 +23,32 @@ import {
 } from '@/components/ui/command';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
+import {
+  FieldRow,
+  ListingCostFields,
+  PrivateMemoField,
+  Section,
+} from './-new-form-ui';
+
+interface NewPropertySearch {
+  siteId?: string;
+  dongId?: string;
+  unitId?: string;
+}
 
 export const Route = createFileRoute('/_authenticated/properties/new')({
+  validateSearch: (search: Record<string, unknown>): NewPropertySearch => ({
+    siteId:
+      typeof search.siteId === 'string' && search.siteId ? search.siteId : undefined,
+    dongId:
+      typeof search.dongId === 'string' && search.dongId ? search.dongId : undefined,
+    unitId:
+      typeof search.unitId === 'string' && search.unitId ? search.unitId : undefined,
+  }),
   component: NewPropertyPage,
 });
 
-// Site types that have Dong/Unit hierarchy (need unit selection)
+// Site types that REQUIRE Dong/Unit hierarchy (unit selection mandatory)
 const UNIT_BEARING_TYPES = new Set([
   'apartment',
   'officetel',
@@ -35,6 +56,9 @@ const UNIT_BEARING_TYPES = new Set([
   'commercial',
   'living_accommodation',
 ]);
+
+// 단독/다가구(house)는 통건물·호실 둘 다 허용 — 동/호 선택은 선택사항
+const OPTIONAL_UNIT_TYPES = new Set(['house']);
 
 const SITE_TYPE_LABELS: Record<string, string> = {
   apartment: '아파트',
@@ -46,7 +70,7 @@ const SITE_TYPE_LABELS: Record<string, string> = {
   living_accommodation: '생활숙박',
 };
 
-const TX_LABELS = { sale: '매매', jeonse: '전세', monthly: '월세' } as const;
+const TX_LABELS = TRANSACTION_TYPE_LABELS as Record<string, string>;
 
 const MOVE_IN_TYPES = [
   { value: 'immediate', label: '즉시 입주' },
@@ -56,7 +80,7 @@ const MOVE_IN_TYPES = [
   { value: 'unknown', label: '미정' },
 ] as const;
 
-type TransactionType = 'sale' | 'jeonse' | 'monthly';
+type TransactionType = 'sale' | 'jeonse' | 'monthly' | 'yearly_rent';
 type MoveInType = (typeof MOVE_IN_TYPES)[number]['value'];
 
 interface FormState {
@@ -80,8 +104,15 @@ interface FormState {
   isJointBrokerageRequired: boolean;
   jointBrokeragePartnerId: string;
 
-  // Step 4: Property memo
+  // Step 3.5: 비용 정보
+  maintenanceFee: string;
+  maintenanceFeeIncludes: string[];
+  loanAmount: string;
+  premium: string;
+
+  // Step 4: 메모
   memo: string;
+  privateMemo: string;
 
   // Step 5: People (optional)
   addOwner: boolean;
@@ -111,7 +142,12 @@ const initialForm: FormState = {
   moveInAvailableTo: '',
   isJointBrokerageRequired: false,
   jointBrokeragePartnerId: '',
+  maintenanceFee: '',
+  maintenanceFeeIncludes: [],
+  loanAmount: '',
+  premium: '',
   memo: '',
+  privateMemo: '',
   addOwner: false,
   ownerName: '',
   ownerPhone: '',
@@ -127,18 +163,43 @@ const initialForm: FormState = {
 function NewPropertyPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const searchParams = Route.useSearch();
   const [form, setForm] = useState<FormState>(initialForm);
   const [error, setError] = useState('');
+  const [prefillApplied, setPrefillApplied] = useState(false);
 
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) =>
     setForm((prev) => ({ ...prev, [key]: value }));
 
+  // sites 페이지에서 ?siteId=&dongId=&unitId= 로 진입 시 해당 단계 프리필
+  const { data: prefillSite } = useQuery({
+    queryKey: ['sites', 'prefill', searchParams.siteId],
+    queryFn: () => api.sites.findOne(searchParams.siteId as string),
+    enabled: Boolean(searchParams.siteId) && !prefillApplied,
+  });
+
+  useEffect(() => {
+    if (!prefillSite || prefillApplied) return;
+    setForm((prev) => ({
+      ...prev,
+      siteId: prefillSite.id,
+      siteName: prefillSite.name,
+      siteType: prefillSite.type,
+      dongId: searchParams.dongId ?? '',
+      unitId: searchParams.unitId ?? '',
+    }));
+    setPrefillApplied(true);
+  }, [prefillSite, prefillApplied, searchParams.dongId, searchParams.unitId]);
+
   const needsUnit = UNIT_BEARING_TYPES.has(form.siteType);
+  const allowsUnit = needsUnit || OPTIONAL_UNIT_TYPES.has(form.siteType);
+  const isHouse = OPTIONAL_UNIT_TYPES.has(form.siteType);
+  const isCommercial = form.siteType === 'commercial';
 
   const { data: dongs } = useQuery({
     queryKey: ['dongs', form.siteId],
     queryFn: () => api.dongs.findAll(form.siteId),
-    enabled: !!form.siteId && needsUnit,
+    enabled: !!form.siteId && allowsUnit,
   });
 
   // Auto-skip placeholder Dong (single-building sites)
@@ -156,7 +217,7 @@ function NewPropertyPage() {
         siteId: form.siteId,
         dongId: effectiveDongId || undefined,
       }),
-    enabled: !!form.siteId && needsUnit && !!effectiveDongId,
+    enabled: !!form.siteId && allowsUnit && !!effectiveDongId,
   });
 
   const { data: partners } = useQuery({
@@ -171,26 +232,24 @@ function NewPropertyPage() {
   );
 
   // Detect existing Property for the same Site/Unit (find-or-create)
+  // house는 통건물(unitId=null)·호실(unitId 지정) 둘 다 가능
+  const effectiveUnitId = allowsUnit && form.unitId ? form.unitId : null;
   const siteUnitKeyReady =
     !!form.siteId && (!needsUnit || !!form.unitId);
   const { data: existingProperties } = useQuery({
-    queryKey: ['properties', 'lookup', form.siteId, form.unitId, needsUnit],
+    queryKey: ['properties', 'lookup', form.siteId, effectiveUnitId],
     queryFn: () =>
       api.properties.findAll({
         siteId: form.siteId,
-        unitId: needsUnit ? form.unitId : undefined,
-        limit: 5,
+        unitId: effectiveUnitId ?? undefined,
+        limit: 20,
       }),
     enabled: siteUnitKeyReady,
   });
   const existingProperty = useMemo<Property | null>(() => {
     const items = existingProperties?.items ?? [];
-    if (!needsUnit) {
-      // 토지/단독: 한 사무소 한 Site = Property 1건 가정
-      return items[0] ?? null;
-    }
-    return items.find((p) => p.unitId === form.unitId) ?? null;
-  }, [existingProperties, form.unitId, needsUnit]);
+    return items.find((p) => (p.unitId ?? null) === effectiveUnitId) ?? null;
+  }, [existingProperties, effectiveUnitId]);
 
   const txConflict = useMemo<PropertyListing | null>(() => {
     if (!existingProperty) return null;
@@ -209,6 +268,9 @@ function NewPropertyPage() {
       if (form.transactionType === 'sale' || form.transactionType === 'jeonse') {
         if (!form.price) throw new Error('가격을 입력하세요.');
       }
+      if (form.transactionType === 'yearly_rent') {
+        if (!form.price) throw new Error('연세(연간 총액)를 입력하세요.');
+      }
       if (form.transactionType === 'monthly') {
         if (!form.monthlyRent) throw new Error('월세를 입력하세요.');
       }
@@ -223,7 +285,7 @@ function NewPropertyPage() {
         ? existingProperty
         : await api.properties.create({
             siteId: form.siteId,
-            unitId: form.unitId || undefined,
+            unitId: effectiveUnitId ?? undefined,
           });
 
       // 2) Listing
@@ -233,6 +295,12 @@ function NewPropertyPage() {
         price: form.price ? Number(form.price) : undefined,
         deposit: form.deposit ? Number(form.deposit) : undefined,
         monthlyRent: form.monthlyRent ? Number(form.monthlyRent) : undefined,
+        maintenanceFee: form.maintenanceFee ? Number(form.maintenanceFee) : undefined,
+        maintenanceFeeIncludes:
+          form.maintenanceFeeIncludes.length > 0 ? form.maintenanceFeeIncludes : undefined,
+        loanAmount: form.loanAmount ? Number(form.loanAmount) : undefined,
+        premium: isCommercial && form.premium ? Number(form.premium) : undefined,
+        privateMemo: form.privateMemo.trim() || undefined,
         moveInAvailableType: form.moveInAvailableType,
         moveInAvailableFrom: form.moveInAvailableFrom || undefined,
         moveInAvailableTo: form.moveInAvailableTo || undefined,
@@ -275,15 +343,19 @@ function NewPropertyPage() {
     onSuccess: ({ property }) => {
       queryClient.invalidateQueries({ queryKey: ['properties'] });
       queryClient.invalidateQueries({ queryKey: ['listings'] });
+      queryClient.invalidateQueries({ queryKey: ['listing-intakes'] });
+      toast.success('매물이 등록되었습니다.');
       navigate({ to: '/properties/$id', params: { id: property.id } });
     },
     onError: (e: Error) => {
       setError(e.message || '매물 등록에 실패했습니다.');
+      toast.error(e.message || '매물 등록에 실패했습니다.');
     },
   });
 
   const showPrice =
     form.transactionType === 'sale' || form.transactionType === 'jeonse';
+  const showYearly = form.transactionType === 'yearly_rent';
   const showRent = form.transactionType === 'monthly';
 
   return (
@@ -338,16 +410,22 @@ function NewPropertyPage() {
               <span className="font-medium text-foreground">
                 {SITE_TYPE_LABELS[form.siteType] ?? form.siteType}
               </span>
-              {!needsUnit && (
+              {!allowsUnit && (
                 <>
                   {' '}— 이 유형은 호실 구분 없이 Property 한 건으로 관리합니다.
+                </>
+              )}
+              {isHouse && (
+                <>
+                  {' '}— 통건물·호실 단위 둘 다 등록할 수 있어요. 호실을 비워두면
+                  통건물로 등록됩니다.
                 </>
               )}
             </p>
           )}
 
-          {form.siteId && needsUnit && !isPlaceholderOnly && (
-            <FieldRow label="동" required>
+          {form.siteId && allowsUnit && !isPlaceholderOnly && (
+            <FieldRow label="동" required={needsUnit}>
               <Select
                 value={form.dongId}
                 onValueChange={(v) => {
@@ -356,7 +434,9 @@ function NewPropertyPage() {
                 }}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="동 선택" />
+                  <SelectValue
+                    placeholder={isHouse ? '동 선택 (통건물이면 비워두세요)' : '동 선택'}
+                  />
                 </SelectTrigger>
                 <SelectContent>
                   {visibleDongs.map((d) => (
@@ -366,16 +446,31 @@ function NewPropertyPage() {
                   ))}
                 </SelectContent>
               </Select>
+              {isHouse && visibleDongs.length === 0 && (
+                <p className="mt-1.5 text-xs text-muted-foreground">
+                  등록된 동이 없습니다. 호실 단위로 관리하려면{' '}
+                  <Link to="/sites" className="underline">
+                    단지 관리에서 동/호를 먼저 추가
+                  </Link>
+                  하세요. 비워두면 통건물로 등록됩니다.
+                </p>
+              )}
             </FieldRow>
           )}
 
-          {form.siteId && needsUnit && effectiveDongId && (
-            <FieldRow label="호실" required>
-              <Select value={form.unitId} onValueChange={(v) => set('unitId', v)}>
+          {form.siteId && allowsUnit && effectiveDongId && (
+            <FieldRow label="호실" required={needsUnit}>
+              <Select
+                value={form.unitId || (isHouse ? '__whole__' : '')}
+                onValueChange={(v) => set('unitId', v === '__whole__' ? '' : v)}
+              >
                 <SelectTrigger>
                   <SelectValue placeholder="호실 선택" />
                 </SelectTrigger>
                 <SelectContent>
+                  {isHouse && (
+                    <SelectItem value="__whole__">통건물 (호실 없음)</SelectItem>
+                  )}
                   {(units ?? []).map((u) => (
                     <SelectItem key={u.id} value={u.id}>
                       {u.name}
@@ -418,7 +513,7 @@ function NewPropertyPage() {
           {existingProperty && (
             <ExistingPropertyNotice
               property={existingProperty}
-              needsUnit={needsUnit}
+              needsUnit={needsUnit || Boolean(effectiveUnitId)}
             />
           )}
         </Section>
@@ -427,7 +522,7 @@ function NewPropertyPage() {
         <Section step={2} title="거래 정보" subtitle="가격은 만원 단위로 입력합니다.">
           <FieldRow label="거래유형" required>
             <div className="flex gap-2">
-              {(['sale', 'jeonse', 'monthly'] as TransactionType[]).map((t) => {
+              {(['sale', 'jeonse', 'monthly', 'yearly_rent'] as TransactionType[]).map((t) => {
                 const hasExisting = (existingProperty?.listings ?? []).some(
                   (l) => l.transactionType === t,
                 );
@@ -469,7 +564,7 @@ function NewPropertyPage() {
               required
               hint={
                 form.price
-                  ? formatPrice(Number(form.price))
+                  ? formatMoney(Number(form.price))
                   : '예: 158000 = 15억 8천만'
               }
             >
@@ -483,11 +578,45 @@ function NewPropertyPage() {
             </FieldRow>
           )}
 
+          {showYearly && (
+            <div className="grid grid-cols-2 gap-3">
+              <FieldRow
+                label="보증금 (만원)"
+                hint={form.deposit ? formatMoney(Number(form.deposit)) : undefined}
+              >
+                <Input
+                  type="number"
+                  inputMode="numeric"
+                  value={form.deposit}
+                  onChange={(e) => set('deposit', e.target.value)}
+                  placeholder="1000"
+                />
+              </FieldRow>
+              <FieldRow
+                label="연세 (연간 총액, 만원)"
+                required
+                hint={
+                  form.price
+                    ? `${formatMoney(Number(form.price))} / 년`
+                    : '1년치 임대료 선납 총액'
+                }
+              >
+                <Input
+                  type="number"
+                  inputMode="numeric"
+                  value={form.price}
+                  onChange={(e) => set('price', e.target.value)}
+                  placeholder="1200"
+                />
+              </FieldRow>
+            </div>
+          )}
+
           {showRent && (
             <div className="grid grid-cols-2 gap-3">
               <FieldRow
                 label="보증금 (만원)"
-                hint={form.deposit ? formatPrice(Number(form.deposit)) : undefined}
+                hint={form.deposit ? formatMoney(Number(form.deposit)) : undefined}
               >
                 <Input
                   type="number"
@@ -600,18 +729,43 @@ function NewPropertyPage() {
           )}
         </Section>
 
-        {/* Section 3: 메모 */}
-        <Section step={3} title="메모" subtitle="매물·집주인 특이사항을 자유롭게.">
+        {/* Section 3: 비용 정보 */}
+        <Section
+          step={3}
+          title="비용 정보"
+          subtitle="관리비·융자금은 만원 단위. 권리금은 상가 매물에서만 입력합니다."
+        >
+          <ListingCostFields
+            value={{
+              maintenanceFee: form.maintenanceFee,
+              maintenanceFeeIncludes: form.maintenanceFeeIncludes,
+              loanAmount: form.loanAmount,
+              premium: form.premium,
+            }}
+            onChange={(key, fieldValue) =>
+              setForm((prev) => ({ ...prev, [key]: fieldValue }))
+            }
+            showPremium={isCommercial}
+            isJeonse={form.transactionType === 'jeonse'}
+          />
+        </Section>
+
+        {/* Section 4: 메모 */}
+        <Section step={4} title="메모" subtitle="매물·집주인 특이사항을 자유롭게.">
           <Textarea
             value={form.memo}
             onChange={(e) => set('memo', e.target.value)}
             rows={3}
             placeholder="예) 남향, 풀옵션, 6월 이사 가능, 집주인 연락 잦음"
           />
+          <PrivateMemoField
+            value={form.privateMemo}
+            onChange={(value) => set('privateMemo', value)}
+          />
         </Section>
 
-        {/* Section 4: 관련인 (옵션) */}
-        <Section step={4} title="관련인" subtitle="등록 안 해도 나중에 추가할 수 있어요.">
+        {/* Section 5: 관련인 (옵션) */}
+        <Section step={5} title="관련인" subtitle="등록 안 해도 나중에 추가할 수 있어요.">
           {/* Owner */}
           <div className="rounded-lg border bg-card">
             <div className="flex items-center justify-between p-3">
@@ -761,9 +915,9 @@ function ExistingPropertyNotice({
                 </span>
                 <span>
                   {l.transactionType === 'monthly'
-                    ? `보증금 ${l.deposit ? formatPrice(l.deposit) : '-'} / 월 ${l.monthlyRent?.toLocaleString() ?? '-'}만`
+                    ? `보증금 ${l.deposit ? formatMoney(l.deposit) : '-'} / 월 ${l.monthlyRent?.toLocaleString() ?? '-'}만`
                     : l.price
-                      ? formatPrice(l.price)
+                      ? formatMoney(l.price)
                       : '가격 미입력'}
                 </span>
                 <Link
@@ -789,61 +943,7 @@ function ExistingPropertyNotice({
   );
 }
 
-// ============================================================
-// Section wrapper
-// ============================================================
-
-function Section({
-  step,
-  title,
-  subtitle,
-  children,
-}: {
-  step: number;
-  title: string;
-  subtitle?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <section className="rounded-xl border bg-card p-5 shadow-xs">
-      <header className="mb-4 flex items-baseline gap-2">
-        <Badge variant="outline" className="rounded-md">
-          {step}
-        </Badge>
-        <h2 className="text-sm font-semibold">{title}</h2>
-        {subtitle && (
-          <span className="text-xs text-muted-foreground">{subtitle}</span>
-        )}
-      </header>
-      <div className="space-y-3">{children}</div>
-    </section>
-  );
-}
-
-function FieldRow({
-  label,
-  required,
-  hint,
-  children,
-}: {
-  label: string;
-  required?: boolean;
-  hint?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="space-y-1.5">
-      <div className="flex items-baseline justify-between">
-        <Label className="text-xs font-medium text-muted-foreground">
-          {label}
-          {required && <span className="ml-0.5 text-destructive">*</span>}
-        </Label>
-        {hint && <span className="text-xs text-muted-foreground">{hint}</span>}
-      </div>
-      {children}
-    </div>
-  );
-}
+// Section / FieldRow는 ./-new-form-ui 에서 import.
 
 // ============================================================
 // SitePicker — OfficeSite (managed) + central search

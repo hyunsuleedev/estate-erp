@@ -35,6 +35,10 @@ import { createInboxApi } from './modules/inbox.js';
 import { createMcpApi } from './modules/mcp.js';
 import { createRegionsApi } from './modules/regions.js';
 import { createServiceVendorsApi } from './modules/service-vendors.js';
+import { createNotificationsApi } from './modules/notifications.js';
+import { createNetworkApi } from './modules/network.js';
+import { createDashboardApi } from './modules/dashboard.js';
+import { createActivityLogsApi } from './modules/activity-logs.js';
 
 export type HttpMethod = 'GET' | 'POST' | 'PATCH' | 'DELETE';
 
@@ -51,16 +55,20 @@ async function executeRequest<T>(
   body: unknown,
   token: string | null,
 ): Promise<Response> {
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-  };
+  // FormData(multipart) body는 Content-Type을 직접 지정하지 않는다 —
+  // fetch가 boundary가 포함된 헤더를 자동으로 설정한다.
+  const isFormData = typeof FormData !== 'undefined' && body instanceof FormData;
+  const headers: Record<string, string> = {};
+  if (!isFormData) {
+    headers['Content-Type'] = 'application/json';
+  }
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
   }
   return fetch(url, {
     method,
     headers,
-    body: body ? JSON.stringify(body) : undefined,
+    body: isFormData ? (body as FormData) : body ? JSON.stringify(body) : undefined,
   });
 }
 
@@ -146,6 +154,10 @@ export function createApiClient(config: ApiClientConfig) {
     mcp: createMcpApi(req),
     regions: createRegionsApi(req),
     serviceVendors: createServiceVendorsApi(req),
+    notifications: createNotificationsApi(req),
+    network: createNetworkApi(req),
+    dashboard: createDashboardApi(req),
+    activityLogs: createActivityLogsApi(req),
   };
 }
 

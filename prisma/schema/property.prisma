@@ -92,10 +92,17 @@ model Listing {
   officeId        String  @map("office_id") @db.Uuid
   propertyId      String  @map("property_id") @db.Uuid
   intakeId        String  @map("intake_id") @db.Uuid
-  transactionType String  @map("transaction_type") // sale, jeonse, monthly
+  transactionType String  @map("transaction_type") // sale, jeonse, monthly, yearly_rent
   price           Int? // 매매가/전세가 (만원)
-  deposit         Int? // 보증금 (만원, monthly일 때)
+  deposit         Int? // 보증금 (만원, monthly/yearly_rent일 때)
   monthlyRent     Int?    @map("monthly_rent") // 월세 (만원)
+  maintenanceFee  Int?    @map("maintenance_fee") // 관리비 (만원)
+  /// 관리비 포함 항목 slug: water, electricity, gas, internet, tv, cleaning, parking, heating
+  maintenanceFeeIncludes String[] @default([]) @map("maintenance_fee_includes")
+  loanAmount      Int?    @map("loan_amount") // 융자금/근저당 설정액 (만원)
+  premium         Int? // 상가 권리금 (만원)
+  /// 내부 전용 메모 — 네트워크 공유/외부(MCP 조회 포함) 노출 절대 금지
+  privateMemo     String? @map("private_memo")
   moveInAvailableType String?   @map("move_in_available_type") // immediate, date, range, negotiable, unknown
   moveInAvailableFrom DateTime? @map("move_in_available_from")
   moveInAvailableTo   DateTime? @map("move_in_available_to")

@@ -20,8 +20,6 @@ import {
   FileText,
   Handshake,
   Hash,
-  List,
-  Map as MapIcon,
   MapPin,
   Megaphone,
   MessageSquare,
@@ -155,20 +153,11 @@ const contactRoleLabels: Record<string, string> = {
   tax_agent: '세무사',
 };
 
+// 정렬은 표 헤더 클릭으로 처리. 헤더 라벨 매핑만 유지.
 const sortDefinitions = [
   { field: 'price', label: '가격' },
   { field: 'createdAt', label: '등록일' },
   { field: 'updatedAt', label: '확인일' },
-];
-
-const sortOptions = [
-  { value: 'price:asc', field: 'price', label: '가격 낮은순', direction: 'asc' },
-  { value: 'price:desc', field: 'price', label: '가격 높은순', direction: 'desc' },
-] satisfies Array<{ value: string; field: string; label: string; direction: 'asc' | 'desc' }>;
-
-const sortFilterOptions = [
-  { value: '', label: '정렬' },
-  ...sortOptions.map((option) => ({ value: option.value, label: option.label })),
 ];
 
 const LISTINGS_PAGE_SIZE = 50;
@@ -248,6 +237,39 @@ const intakeStatusFilterOptions = [
   { value: 'all', label: '전체' },
   ...intakeStatusOptions,
 ] as const;
+
+// 가격 프리셋 — 억 단위. 거래유형(매매/전세)에 따라 자릿대가 다름.
+const SALE_PRICE_PRESETS: RangePreset[] = [
+  { label: '3억 이하', min: '', max: '3' },
+  { label: '3~5억', min: '3', max: '5' },
+  { label: '5~8억', min: '5', max: '8' },
+  { label: '8~12억', min: '8', max: '12' },
+  { label: '12~20억', min: '12', max: '20' },
+  { label: '20억 이상', min: '20', max: '' },
+];
+const JEONSE_PRICE_PRESETS: RangePreset[] = [
+  { label: '2억 이하', min: '', max: '2' },
+  { label: '2~4억', min: '2', max: '4' },
+  { label: '4~6억', min: '4', max: '6' },
+  { label: '6~9억', min: '6', max: '9' },
+  { label: '9억 이상', min: '9', max: '' },
+];
+
+// 면적 프리셋 — 평 단위.
+const AREA_PRESETS: RangePreset[] = [
+  { label: '10평대', min: '10', max: '19' },
+  { label: '20평대', min: '20', max: '29' },
+  { label: '30평대', min: '30', max: '39' },
+  { label: '40평 이상', min: '40', max: '' },
+];
+
+function getPricePresets(
+  transactionType: (typeof transactionTypeOptions)[number]['value'],
+): RangePreset[] {
+  // 매매/전체는 매매 기준, 전세는 전세 기준. 월세 탭에서는 가격 프리셋을 쓰지 않음(보증금/월세 별도).
+  if (transactionType === 'jeonse') return JEONSE_PRICE_PRESETS;
+  return SALE_PRICE_PRESETS;
+}
 
 interface PropertyFilterState {
   siteId: string;
@@ -342,7 +364,7 @@ function PropertiesPage() {
     useState<(typeof transactionTypeOptions)[number]['value']>('all');
   const [propertyFilters, setPropertyFilters] = useState<PropertyFilterState>(initialPropertyFilters);
   const [selectedIntakeId, setSelectedIntakeId] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<PropertyViewMode>('list');
+  const [viewMode] = useState<PropertyViewMode>('list');
   const [isSiteFilterOpen, setIsSiteFilterOpen] = useState(false);
   const [activeSorts, setActiveSorts] = useState<SortDefinition[]>([]);
   const [sorting, setSorting] = useState<SortingState>([]);
@@ -489,30 +511,6 @@ function PropertiesPage() {
     () => buildPropertyMapPoints(mapGroups),
     [mapGroups],
   );
-  const activeFilterSummary = getActiveFilterSummary({
-    search,
-    selectedTransactionType,
-    propertyFilters,
-    selectedSiteName: propertyFilters.siteId
-      ? sitesById.get(propertyFilters.siteId)?.name
-      : undefined,
-    selectedProvinceName: propertyFilters.provinceCode
-      ? provinces.find((province) => province.code === propertyFilters.provinceCode)?.name
-      : undefined,
-    selectedDistrictName: propertyFilters.districtCode
-      ? districts.find((district) => district.code === propertyFilters.districtCode)?.name
-      : undefined,
-    selectedWardName: propertyFilters.wardCode
-      ? wards.find((ward) => ward.code === propertyFilters.wardCode)?.name
-      : undefined,
-    activeSorts,
-  });
-
-  const selectedSortValue =
-    activeSorts.length > 0 &&
-    sortOptions.some((option) => option.value === `${activeSorts[0].field}:${activeSorts[0].direction}`)
-      ? `${activeSorts[0].field}:${activeSorts[0].direction}`
-      : '';
   const selectedSite = propertyFilters.siteId
     ? sitesById.get(propertyFilters.siteId)
     : undefined;
@@ -527,9 +525,67 @@ function PropertiesPage() {
     : undefined;
   const selectedRegionName = selectedWard?.name ?? selectedDistrict?.name ?? selectedProvince?.name;
   const priceDepositFilterSummary = getPriceDepositFilterSummary(propertyFilters);
+  const priceFilterLabel =
+    selectedTransactionType === 'jeonse' ? '전세가'
+    : selectedTransactionType === 'monthly' ? '가격'
+    : '매매가';
   const monthlyRentFilterSummary = getRangeSummary(propertyFilters.monthlyRentMin, propertyFilters.monthlyRentMax, '만원');
   const areaFilterSummary = getRangeSummary(propertyFilters.areaMin, propertyFilters.areaMax, '평');
   const moveInFilterSummary = getDateRangeSummary(propertyFilters.moveInFrom, propertyFilters.moveInTo);
+
+  // 적용된 필터를 개별 제거 가능한 pill 목록으로. (정렬은 표 헤더로 처리하므로 제외)
+  const activeFilterChips: { key: string; label: string; onClear: () => void }[] = [];
+  if (selectedTransactionType !== 'all') {
+    activeFilterChips.push({
+      key: 'transactionType',
+      label: getOptionLabel(transactionTypeOptions, selectedTransactionType),
+      onClear: () => setSelectedTransactionType('all'),
+    });
+  }
+  if (search.trim()) {
+    activeFilterChips.push({ key: 'search', label: `검색 ${search.trim()}`, onClear: () => handleSearchChange('') });
+  }
+  if (propertyFilters.siteId) {
+    activeFilterChips.push({ key: 'siteId', label: selectedSite?.name ?? '선택 단지', onClear: () => clearFilterFields(['siteId']) });
+  }
+  if (propertyFilters.provinceCode || propertyFilters.districtCode || propertyFilters.wardCode) {
+    activeFilterChips.push({
+      key: 'region',
+      label: selectedRegionName ?? '지역',
+      onClear: () => clearFilterFields(['provinceCode', 'districtCode', 'wardCode']),
+    });
+  }
+  if (propertyFilters.dongSearch.trim()) {
+    activeFilterChips.push({ key: 'dong', label: `${propertyFilters.dongSearch.trim()}동`, onClear: () => clearFilterFields(['dongSearch']) });
+  }
+  if (propertyFilters.unitSearch.trim()) {
+    activeFilterChips.push({ key: 'unit', label: `${propertyFilters.unitSearch.trim()}호`, onClear: () => clearFilterFields(['unitSearch']) });
+  }
+  if (propertyFilters.siteType !== 'all') {
+    activeFilterChips.push({ key: 'siteType', label: getOptionLabel(siteTypeOptions, propertyFilters.siteType), onClear: () => clearFilterFields(['siteType']) });
+  }
+  if (propertyFilters.intakeStatus !== 'all') {
+    activeFilterChips.push({ key: 'status', label: getOptionLabel(intakeStatusFilterOptions, propertyFilters.intakeStatus), onClear: () => clearFilterFields(['intakeStatus']) });
+  }
+  if (priceDepositFilterSummary) {
+    activeFilterChips.push({ key: 'price', label: priceDepositFilterSummary, onClear: () => clearFilterFields(['priceMin', 'priceMax', 'depositMin', 'depositMax']) });
+  }
+  if (monthlyRentFilterSummary) {
+    activeFilterChips.push({ key: 'monthlyRent', label: `월세 ${monthlyRentFilterSummary}`, onClear: () => clearFilterFields(['monthlyRentMin', 'monthlyRentMax']) });
+  }
+  if (areaFilterSummary) {
+    activeFilterChips.push({ key: 'area', label: areaFilterSummary, onClear: () => clearFilterFields(['areaMin', 'areaMax']) });
+  }
+  if (moveInFilterSummary) {
+    activeFilterChips.push({ key: 'moveIn', label: `입주 ${moveInFilterSummary}`, onClear: () => clearFilterFields(['moveInFrom', 'moveInTo']) });
+  }
+  if (propertyFilters.hasAdvertisement) {
+    activeFilterChips.push({ key: 'hasAdvertisement', label: '광고 있음', onClear: () => clearFilterFields(['hasAdvertisement']) });
+  }
+  if (propertyFilters.isJointBrokerage) {
+    activeFilterChips.push({ key: 'isJointBrokerage', label: '공동중개', onClear: () => clearFilterFields(['isJointBrokerage']) });
+  }
+
   const hasActiveFilters = Boolean(
     search.trim() ||
       propertyFilters.siteId ||
@@ -741,17 +797,15 @@ function PropertiesPage() {
     setPage(1);
   }, []);
 
-  const handleSortSelect = useCallback((value: string) => {
-    if (!value) {
-      setActiveSorts([]);
-      setSorting([]);
-      setPage(1);
-      return;
-    }
-
-    const option = sortOptions.find((item) => item.value === value) ?? sortOptions[0];
-    setActiveSorts([{ field: option.field, label: option.label, direction: option.direction }]);
-    setSorting([{ id: option.field, desc: option.direction === 'desc' }]);
+  // 특정 필터 필드만 초기값으로 되돌림 (chip X / summary pill X 공용).
+  const clearFilterFields = useCallback((fields: (keyof PropertyFilterState)[]) => {
+    setPropertyFilters((prev) => {
+      const next = { ...prev };
+      for (const field of fields) {
+        (next[field] as PropertyFilterState[typeof field]) = initialPropertyFilters[field];
+      }
+      return next;
+    });
     setPage(1);
   }, []);
 
@@ -1023,6 +1077,8 @@ function PropertiesPage() {
                 label="단지"
                 value={selectedSite?.name ?? '전체'}
                 active={Boolean(propertyFilters.siteId)}
+                tier={1}
+                onClear={() => clearFilterFields(['siteId'])}
                 onOpenChange={setIsSiteFilterOpen}
                 contentClassName="w-[360px]"
               >
@@ -1119,6 +1175,8 @@ function PropertiesPage() {
               label="지역"
               value={selectedRegionName ?? '전체'}
               active={Boolean(propertyFilters.provinceCode || propertyFilters.districtCode || propertyFilters.wardCode)}
+              tier={2}
+              onClear={() => clearFilterFields(['provinceCode', 'districtCode', 'wardCode'])}
               contentClassName="w-[360px]"
             >
               <div className="space-y-3">
@@ -1153,6 +1211,8 @@ function PropertiesPage() {
               label="유형"
               value={getOptionLabel(siteTypeOptions, propertyFilters.siteType)}
               active={propertyFilters.siteType !== 'all'}
+              tier={3}
+              onClear={() => clearFilterFields(['siteType'])}
             >
               <div className="space-y-2">
                 <PopoverTitle title="매물유형" description="아파트, 오피스텔, 상가 등 건물 유형을 선택합니다." />
@@ -1168,6 +1228,8 @@ function PropertiesPage() {
               label="상태"
               value={getOptionLabel(intakeStatusFilterOptions, propertyFilters.intakeStatus)}
               active={propertyFilters.intakeStatus !== 'all'}
+              tier={2}
+              onClear={() => clearFilterFields(['intakeStatus'])}
             >
               <div className="space-y-2">
                 <PopoverTitle title="상태" description="의뢰 상태로 매물을 좁힙니다." />
@@ -1183,17 +1245,20 @@ function PropertiesPage() {
               label="가격/보증금"
               value={priceDepositFilterSummary ?? '전체'}
               active={Boolean(priceDepositFilterSummary)}
+              tier={2}
+              onClear={() => clearFilterFields(['priceMin', 'priceMax', 'depositMin', 'depositMax'])}
               contentClassName="w-[340px]"
             >
               <div className="space-y-3">
-                <PopoverTitle title="가격/보증금" description="만원 단위로 입력합니다." />
+                <PopoverTitle title={priceFilterLabel} description="가격은 억, 보증금은 만원 단위입니다." />
                 <RangeFilter
-                  label="가격"
-                  unit="만원"
+                  label={priceFilterLabel}
+                  unit="억"
                   minValue={propertyFilters.priceMin}
                   maxValue={propertyFilters.priceMax}
                   onMinChange={(value) => updatePropertyFilter('priceMin', value)}
                   onMaxChange={(value) => updatePropertyFilter('priceMax', value)}
+                  presets={getPricePresets(selectedTransactionType)}
                 />
                 <RangeFilter
                   label="보증금"
@@ -1210,6 +1275,8 @@ function PropertiesPage() {
               label="월세"
               value={monthlyRentFilterSummary ?? '전체'}
               active={Boolean(monthlyRentFilterSummary)}
+              tier={3}
+              onClear={() => clearFilterFields(['monthlyRentMin', 'monthlyRentMax'])}
               contentClassName="w-[320px]"
             >
               <div className="space-y-3">
@@ -1229,6 +1296,8 @@ function PropertiesPage() {
               label="면적"
               value={areaFilterSummary ?? '전체'}
               active={Boolean(areaFilterSummary)}
+              tier={2}
+              onClear={() => clearFilterFields(['areaMin', 'areaMax'])}
               contentClassName="w-[320px]"
             >
               <div className="space-y-3">
@@ -1240,6 +1309,7 @@ function PropertiesPage() {
                   maxValue={propertyFilters.areaMax}
                   onMinChange={(value) => updatePropertyFilter('areaMin', value)}
                   onMaxChange={(value) => updatePropertyFilter('areaMax', value)}
+                  presets={AREA_PRESETS}
                 />
               </div>
             </FilterPopoverChip>
@@ -1248,6 +1318,8 @@ function PropertiesPage() {
               label="입주일"
               value={moveInFilterSummary ?? '전체'}
               active={Boolean(moveInFilterSummary)}
+              tier={3}
+              onClear={() => clearFilterFields(['moveInFrom', 'moveInTo'])}
               contentClassName="w-[320px]"
             >
               <div className="space-y-3">
@@ -1261,48 +1333,45 @@ function PropertiesPage() {
               </div>
             </FilterPopoverChip>
 
-            <label className={cn(
-              'flex h-8 items-center gap-2 rounded-md border px-3 text-xs',
-              propertyFilters.hasAdvertisement
-                ? 'border-border bg-muted text-foreground'
-                : 'border-transparent bg-white text-muted-foreground',
-            )}>
-              <Switch
-                size="sm"
-                checked={propertyFilters.hasAdvertisement}
-                onCheckedChange={(checked) => updatePropertyFilter('hasAdvertisement', checked)}
-              />
-              광고
-            </label>
-
-            <label className={cn(
-              'flex h-8 items-center gap-2 rounded-md border px-3 text-xs',
-              propertyFilters.isJointBrokerage
-                ? 'border-border bg-muted text-foreground'
-                : 'border-transparent bg-white text-muted-foreground',
-            )}>
-              <Switch
-                size="sm"
-                checked={propertyFilters.isJointBrokerage}
-                onCheckedChange={(checked) => updatePropertyFilter('isJointBrokerage', checked)}
-              />
-              공동
-            </label>
-
+            {/* 표시 옵션 (광고·공동) — 우측 정렬, 조건 필터와 의미 분리 */}
             <div className="ml-auto flex items-center gap-1.5">
-              <ViewModeSwitch value={viewMode} onChange={setViewMode} />
-              <div className="w-40">
-                <SelectFilter
-                  value={selectedSortValue}
-                  onChange={handleSortSelect}
-                  options={sortFilterOptions}
+              <span className="mr-0.5 hidden text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60 xl:inline">표시</span>
+              <label className={cn(
+                'flex h-8 cursor-pointer items-center gap-2 rounded-md border px-3 text-xs',
+                propertyFilters.hasAdvertisement
+                  ? 'border-foreground/25 bg-foreground/[0.06] text-foreground'
+                  : 'border-transparent bg-white text-muted-foreground hover:border-border',
+              )}>
+                <Switch
+                  size="sm"
+                  checked={propertyFilters.hasAdvertisement}
+                  onCheckedChange={(checked) => updatePropertyFilter('hasAdvertisement', checked)}
                 />
-              </div>
+                광고
+              </label>
+
+              <label className={cn(
+                'flex h-8 cursor-pointer items-center gap-2 rounded-md border px-3 text-xs',
+                propertyFilters.isJointBrokerage
+                  ? 'border-foreground/25 bg-foreground/[0.06] text-foreground'
+                  : 'border-transparent bg-white text-muted-foreground hover:border-border',
+              )}>
+                <Switch
+                  size="sm"
+                  checked={propertyFilters.isJointBrokerage}
+                  onCheckedChange={(checked) => updatePropertyFilter('isJointBrokerage', checked)}
+                />
+                공동
+              </label>
+
               {hasActiveFilters && (
-                <Button variant="ghost" size="sm" className="h-8 gap-1.5 px-2.5 text-xs text-muted-foreground" onClick={handleFiltersReset}>
-                  <RotateCcw className="size-3.5" />
-                  초기화
-                </Button>
+                <>
+                  <div className="mx-0.5 h-4 w-px bg-border" />
+                  <Button variant="ghost" size="sm" className="h-8 gap-1.5 px-2.5 text-xs text-muted-foreground" onClick={handleFiltersReset}>
+                    <RotateCcw className="size-3.5" />
+                    초기화
+                  </Button>
+                </>
               )}
             </div>
           </div>
@@ -1316,10 +1385,28 @@ function PropertiesPage() {
                   매물 {propertyGroups.length.toLocaleString()}개
                 </span>
                 <span>의뢰 {intakeCountLabel}건 · 거래 {loadedListings.toLocaleString()}건</span>
-                {activeFilterSummary.length > 0 ? (
-                  <span className="min-w-0 truncate">
-                    필터: {activeFilterSummary.join(' · ')}
-                  </span>
+                {activeFilterChips.length > 0 ? (
+                  <>
+                    <span className="text-border">|</span>
+                    <div className="flex min-w-0 flex-wrap items-center gap-1">
+                      {activeFilterChips.map((chip) => (
+                        <span
+                          key={chip.key}
+                          className="inline-flex h-[22px] items-center gap-1 rounded-full border border-border bg-white pl-2.5 pr-1.5 text-[11px] text-foreground"
+                        >
+                          {chip.label}
+                          <button
+                            type="button"
+                            aria-label={`${chip.label} 필터 해제`}
+                            onClick={chip.onClear}
+                            className="inline-flex items-center justify-center rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                          >
+                            <X className="size-2.5" />
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  </>
                 ) : (
                   <span>전체 조건</span>
                 )}
@@ -1383,47 +1470,6 @@ function TableHeaderLabel({ icon, label }: { icon: ReactNode; label: string }) {
       <span className="shrink-0 [&>svg]:size-3 [&>svg]:text-muted-foreground/70">{icon}</span>
       <span className="truncate">{label}</span>
     </span>
-  );
-}
-
-function ViewModeSwitch({
-  value,
-  onChange,
-}: {
-  value: PropertyViewMode;
-  onChange: (value: PropertyViewMode) => void;
-}) {
-  return (
-    <div className="flex h-8 items-center rounded-md border border-border bg-white p-0.5">
-      <Button
-        type="button"
-        variant="ghost"
-        size="sm"
-        className={cn(
-          'h-7 gap-1.5 rounded-[5px] px-2.5 text-xs font-medium',
-          value === 'list' && 'bg-muted text-foreground shadow-sm',
-        )}
-        onClick={() => onChange('list')}
-        aria-pressed={value === 'list'}
-      >
-        <List className="size-3.5" />
-        목록
-      </Button>
-      <Button
-        type="button"
-        variant="ghost"
-        size="sm"
-        className={cn(
-          'h-7 gap-1.5 rounded-[5px] px-2.5 text-xs font-medium',
-          value === 'map' && 'bg-muted text-foreground shadow-sm',
-        )}
-        onClick={() => onChange('map')}
-        aria-pressed={value === 'map'}
-      >
-        <MapIcon className="size-3.5" />
-        지도
-      </Button>
-    </div>
   );
 }
 
@@ -3203,14 +3249,20 @@ function FilterPopoverChip({
   label,
   value,
   active,
+  tier = 2,
   onOpenChange,
+  onClear,
   contentClassName,
   children,
 }: {
   label: string;
   value: string;
   active?: boolean;
+  /** 사용 빈도 기반 시각 계층. 1 = 강조(항상 테두리), 2 = 기본, 3 = 약화(작고 옅게). */
+  tier?: 1 | 2 | 3;
   onOpenChange?: (open: boolean) => void;
+  /** 활성 상태에서 X 한 번으로 이 필터만 해제. */
+  onClear?: () => void;
   contentClassName?: string;
   children: ReactNode;
 }) {
@@ -3221,15 +3273,39 @@ function FilterPopoverChip({
           variant="ghost"
           size="sm"
           className={cn(
-            'h-8 max-w-[220px] gap-1.5 rounded-md border px-2.5 text-xs',
-            active
-              ? 'border-border bg-muted text-foreground hover:bg-muted'
-              : 'border-transparent text-muted-foreground hover:border-border hover:bg-white',
+            'h-8 max-w-[240px] gap-1.5 rounded-md border text-xs',
+            onClear && active ? 'pl-2.5 pr-1.5' : 'px-2.5',
+            // 활성: 강한 inverse (모노톤)
+            active && 'border-foreground/25 bg-foreground/[0.06] text-foreground hover:bg-foreground/[0.09]',
+            // 비활성 + tier별 weight
+            !active && tier === 1 && 'border-border bg-white text-foreground hover:border-foreground/40',
+            !active && tier === 2 && 'border-transparent text-muted-foreground hover:border-border hover:bg-white',
+            !active && tier === 3 && 'border-transparent text-muted-foreground/70 hover:border-border hover:bg-white',
           )}
         >
-          <span className="shrink-0 text-muted-foreground">{label}</span>
-          <span className="min-w-0 truncate font-medium text-foreground">{value}</span>
-          <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
+          <span className={cn('shrink-0', active ? 'text-muted-foreground' : 'text-muted-foreground')}>{label}</span>
+          <span className={cn('min-w-0 truncate', active ? 'font-semibold text-foreground' : 'font-medium text-foreground')}>{value}</span>
+          {onClear && active ? (
+            <span
+              role="button"
+              tabIndex={-1}
+              aria-label={`${label} 필터 해제`}
+              onPointerDown={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+              }}
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                onClear();
+              }}
+              className="ml-0.5 inline-flex shrink-0 items-center justify-center rounded p-0.5 text-muted-foreground hover:bg-foreground/10 hover:text-foreground"
+            >
+              <X className="size-3" />
+            </span>
+          ) : (
+            <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
+          )}
         </Button>
       </PopoverTrigger>
       <PopoverContent align="start" className={cn('w-80 p-3', contentClassName)}>
@@ -3426,6 +3502,12 @@ function SelectFilter({
   );
 }
 
+interface RangePreset {
+  label: string;
+  min: string;
+  max: string;
+}
+
 function RangeFilter({
   label,
   unit,
@@ -3433,6 +3515,7 @@ function RangeFilter({
   maxValue,
   onMinChange,
   onMaxChange,
+  presets,
 }: {
   label: string;
   unit: string;
@@ -3440,30 +3523,76 @@ function RangeFilter({
   maxValue: string;
   onMinChange: (value: string) => void;
   onMaxChange: (value: string) => void;
+  presets?: RangePreset[];
 }) {
+  const activePreset = presets?.find(
+    (preset) => preset.min === minValue.trim() && preset.max === maxValue.trim(),
+  );
+
   return (
     <FilterField label={`${label} (${unit})`}>
+      {presets && presets.length > 0 && (
+        <div className="mb-2 flex flex-wrap gap-1.5">
+          {presets.map((preset) => {
+            const isActive = activePreset?.label === preset.label;
+            return (
+              <button
+                key={preset.label}
+                type="button"
+                onClick={() => {
+                  onMinChange(preset.min);
+                  onMaxChange(preset.max);
+                }}
+                className={cn(
+                  'h-7 rounded-full border px-2.5 text-[12px] transition-colors',
+                  isActive
+                    ? 'border-foreground bg-foreground font-medium text-background'
+                    : 'border-border bg-white text-foreground hover:bg-muted',
+                )}
+              >
+                {preset.label}
+              </button>
+            );
+          })}
+        </div>
+      )}
       <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-1.5">
-        <Input
-          type="number"
-          inputMode="decimal"
-          value={minValue}
-          onChange={(event) => onMinChange(event.target.value)}
-          placeholder="최소"
-          className="h-8 bg-white px-2 text-[13px]"
-        />
+        <div className="relative">
+          <Input
+            type="number"
+            inputMode="decimal"
+            value={minValue}
+            onChange={(event) => onMinChange(event.target.value)}
+            placeholder="최소"
+            className="h-8 bg-white px-2 pr-7 text-[13px]"
+          />
+          <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[11px] text-muted-foreground">{unit}</span>
+        </div>
         <span className="text-xs text-slate-400">~</span>
-        <Input
-          type="number"
-          inputMode="decimal"
-          value={maxValue}
-          onChange={(event) => onMaxChange(event.target.value)}
-          placeholder="최대"
-          className="h-8 bg-white px-2 text-[13px]"
-        />
+        <div className="relative">
+          <Input
+            type="number"
+            inputMode="decimal"
+            value={maxValue}
+            onChange={(event) => onMaxChange(event.target.value)}
+            placeholder="최대"
+            className="h-8 bg-white px-2 pr-7 text-[13px]"
+          />
+          <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[11px] text-muted-foreground">{unit}</span>
+        </div>
       </div>
     </FilterField>
   );
+}
+
+function toISODate(date: Date) {
+  return date.toISOString().slice(0, 10);
+}
+
+function addMonths(base: Date, months: number) {
+  const next = new Date(base);
+  next.setMonth(next.getMonth() + months);
+  return next;
 }
 
 function DateRangeFilter({
@@ -3477,8 +3606,44 @@ function DateRangeFilter({
   onFromChange: (value: string) => void;
   onToChange: (value: string) => void;
 }) {
+  // 입주 가능 시작일이 "지금부터 N개월 내"인 매물로 좁히는 빠른 옵션.
+  const applyWithin = (months: number) => {
+    const today = new Date();
+    onFromChange(toISODate(today));
+    onToChange(toISODate(addMonths(today, months)));
+  };
+  const withinOptions = [
+    { label: '1개월 내', months: 1 },
+    { label: '3개월 내', months: 3 },
+    { label: '6개월 내', months: 6 },
+  ];
+
   return (
     <FilterField label="입주가능일">
+      <div className="mb-2 flex flex-wrap gap-1.5">
+        {withinOptions.map((option) => (
+          <button
+            key={option.label}
+            type="button"
+            onClick={() => applyWithin(option.months)}
+            className="h-7 rounded-full border border-border bg-white px-2.5 text-[12px] text-foreground transition-colors hover:bg-muted"
+          >
+            {option.label}
+          </button>
+        ))}
+        {(fromValue || toValue) && (
+          <button
+            type="button"
+            onClick={() => {
+              onFromChange('');
+              onToChange('');
+            }}
+            className="h-7 rounded-full px-2.5 text-[12px] text-muted-foreground transition-colors hover:text-foreground"
+          >
+            지우기
+          </button>
+        )}
+      </div>
       <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-1.5">
         <Input
           type="date"
@@ -3507,8 +3672,10 @@ function buildListingFilterParams(filters: PropertyFilterState) {
   if (filters.wardCode) params.wardCode = filters.wardCode;
   if (filters.siteType !== 'all') params.siteType = filters.siteType;
   if (filters.intakeStatus !== 'all') params.status = filters.intakeStatus;
-  addNumberParam(params, 'priceMin', filters.priceMin);
-  addNumberParam(params, 'priceMax', filters.priceMax);
+  // 가격(매매가/전세가)은 state를 억 단위로 보관 → API는 만원 단위 (×10000)
+  addEokParam(params, 'priceMin', filters.priceMin);
+  addEokParam(params, 'priceMax', filters.priceMax);
+  // 보증금·월세는 만원 단위 그대로 (월세를 억으로 받으면 200→200억 버그)
   addNumberParam(params, 'depositMin', filters.depositMin);
   addNumberParam(params, 'depositMax', filters.depositMax);
   addNumberParam(params, 'monthlyRentMin', filters.monthlyRentMin);
@@ -3536,6 +3703,16 @@ function addNumberParam(
   if (numberValue !== undefined) params[key] = numberValue;
 }
 
+/** 억 단위 입력값을 만원 단위 API 파라미터로 변환 (1억 = 10,000만원). */
+function addEokParam(
+  params: Record<string, string | number | boolean | undefined>,
+  key: string,
+  value: string,
+) {
+  const numberValue = parseNumberFilter(value);
+  if (numberValue !== undefined) params[key] = Math.round(numberValue * 10000);
+}
+
 function parseNumberFilter(value: string) {
   const trimmed = value.trim();
   if (!trimmed) return undefined;
@@ -3545,57 +3722,6 @@ function parseNumberFilter(value: string) {
 
 function pyeongToSquareMeters(value: number) {
   return Number((value / 0.3025).toFixed(2));
-}
-
-function getActiveFilterSummary({
-  search,
-  selectedTransactionType,
-  propertyFilters,
-  selectedSiteName,
-  selectedProvinceName,
-  selectedDistrictName,
-  selectedWardName,
-  activeSorts,
-}: {
-  search: string;
-  selectedTransactionType: (typeof transactionTypeOptions)[number]['value'];
-  propertyFilters: PropertyFilterState;
-  selectedSiteName?: string;
-  selectedProvinceName?: string;
-  selectedDistrictName?: string;
-  selectedWardName?: string;
-  activeSorts: SortDefinition[];
-}) {
-  const summary: string[] = [];
-  const trimmedSearch = search.trim();
-
-  if (selectedTransactionType !== 'all') {
-    summary.push(getOptionLabel(transactionTypeOptions, selectedTransactionType));
-  }
-  if (trimmedSearch) summary.push(`검색 ${trimmedSearch}`);
-  if (propertyFilters.siteId) summary.push(selectedSiteName ?? '선택 단지');
-  if (propertyFilters.provinceCode) summary.push(selectedProvinceName ?? '선택 시도');
-  if (propertyFilters.districtCode) summary.push(selectedDistrictName ?? '선택 시군구');
-  if (propertyFilters.wardCode) summary.push(selectedWardName ?? '선택 법정동');
-  if (propertyFilters.dongSearch.trim()) summary.push(`동 ${propertyFilters.dongSearch.trim()}`);
-  if (propertyFilters.unitSearch.trim()) summary.push(`호 ${propertyFilters.unitSearch.trim()}`);
-  if (propertyFilters.siteType !== 'all') {
-    summary.push(getOptionLabel(siteTypeOptions, propertyFilters.siteType));
-  }
-
-  const priceDeposit = getPriceDepositFilterSummary(propertyFilters);
-  const monthlyRent = getRangeSummary(propertyFilters.monthlyRentMin, propertyFilters.monthlyRentMax, '만원');
-  const area = getRangeSummary(propertyFilters.areaMin, propertyFilters.areaMax, '평');
-  const moveIn = getDateRangeSummary(propertyFilters.moveInFrom, propertyFilters.moveInTo);
-  if (priceDeposit) summary.push(priceDeposit);
-  if (monthlyRent) summary.push(`월세 ${monthlyRent}`);
-  if (area) summary.push(area);
-  if (moveIn) summary.push(`입주 ${moveIn}`);
-  if (propertyFilters.hasAdvertisement) summary.push('광고 있음');
-  if (propertyFilters.isJointBrokerage) summary.push('공동 있음');
-  if (activeSorts[0]) summary.push(`정렬 ${activeSorts[0].label}`);
-
-  return summary;
 }
 
 function getRangeSummary(minValue: string, maxValue: string, unit: string) {
@@ -3617,7 +3743,8 @@ function getDateRangeSummary(fromValue: string, toValue: string) {
 }
 
 function getPriceDepositFilterSummary(filters: PropertyFilterState) {
-  const price = getRangeSummary(filters.priceMin, filters.priceMax, '만원');
+  // 가격은 억 단위 입력 → 요약도 억으로 표시. 보증금은 만원 유지.
+  const price = getRangeSummary(filters.priceMin, filters.priceMax, '억');
   const deposit = getRangeSummary(filters.depositMin, filters.depositMax, '만원');
   const summaries = [
     price && `가격 ${price}`,

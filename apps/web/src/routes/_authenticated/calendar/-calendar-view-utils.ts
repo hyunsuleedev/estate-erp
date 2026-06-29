@@ -92,17 +92,74 @@ export function addCalendarPeriod(
   return addDays(anchorDate, direction * 7);
 }
 
+/**
+ * 이벤트를 로컬 날짜 키로 그룹화한다.
+ * end가 다음 날 이후인 멀티데이 이벤트는 start~end 사이 모든 날짜 셀에 배치된다.
+ * (무한 루프 방지를 위해 이벤트당 최대 62일까지 전개)
+ */
 export function groupEventsByDate<T extends CalendarLikeEvent>(events: T[]) {
   const grouped = new Map<string, T[]>();
+  const MAX_SPAN_DAYS = 62;
 
   for (const event of sortEventsByStart(events)) {
-    const key = getLocalDateKey(new Date(event.start));
-    const dayEvents = grouped.get(key) ?? [];
-    dayEvents.push(event);
-    grouped.set(key, dayEvents);
+    const startDate = new Date(event.start);
+    const endDate = event.end ? new Date(event.end) : startDate;
+    const lastDay = startOfDay(endDate < startDate ? startDate : endDate);
+
+    let cursor = startOfDay(startDate);
+    let guard = 0;
+
+    while (cursor <= lastDay && guard < MAX_SPAN_DAYS) {
+      const key = getLocalDateKey(cursor);
+      const dayEvents = grouped.get(key) ?? [];
+      dayEvents.push(event);
+      grouped.set(key, dayEvents);
+      cursor = addDays(cursor, 1);
+      guard += 1;
+    }
   }
 
   return grouped;
+}
+
+/** start와 end가 서로 다른 달력 날짜에 걸치면 멀티데이 이벤트. */
+export function isMultiDayEvent(event: CalendarLikeEvent) {
+  if (!event.end) return false;
+  return !isSameCalendarDate(new Date(event.start), new Date(event.end));
+}
+
+/**
+ * 주/일 타임그리드에 표시할 시간 슬롯 목록.
+ * 기본 09~18시를 유지하되, 그 밖의 시간에 시작/종료하는 (시간 지정) 이벤트가 있으면
+ * 해당 시간까지 슬롯을 확장한다. 종일/멀티데이 이벤트는 all-day 영역에서 처리하므로 제외.
+ */
+export function getHourSlots(
+  events: Array<CalendarLikeEvent & { allDay?: boolean }>,
+  defaultStartHour = 9,
+  defaultEndHour = 18,
+): number[] {
+  let startHour = defaultStartHour;
+  let endHour = defaultEndHour;
+
+  for (const event of events) {
+    if (event.allDay || isMultiDayEvent(event)) continue;
+
+    const start = new Date(event.start);
+    startHour = Math.min(startHour, start.getHours());
+    endHour = Math.max(endHour, start.getHours());
+
+    if (event.end) {
+      const end = new Date(event.end);
+      // 종료가 정각이면 직전 슬롯까지만 필요 (예: 20:00 종료 → 19시 슬롯)
+      const endSlotHour = end.getMinutes() === 0 ? end.getHours() - 1 : end.getHours();
+      endHour = Math.max(endHour, Math.min(23, Math.max(start.getHours(), endSlotHour)));
+    }
+  }
+
+  startHour = Math.max(0, startHour);
+  endHour = Math.min(23, endHour);
+
+  return Array.from({ length: endHour - startHour + 1 }, (_, index) => startHour + index);
 }
 
 export function sortEventsByStart<T extends CalendarLikeEvent>(events: T[]) {

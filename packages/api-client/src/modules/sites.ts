@@ -1,5 +1,16 @@
 import type { RequestFn } from '../client.js';
 
+/** 법정동 체인 (서버 include — office-sites/sites 상세 projection에서 내려옴) */
+export interface SiteWard {
+  code: string;
+  name: string;
+  district?: {
+    code: string;
+    name: string;
+    province?: { code: string; name: string } | null;
+  } | null;
+}
+
 export interface Site {
   id: string;
   officeId: string | null;
@@ -21,6 +32,9 @@ export interface Site {
   metadata: Record<string, unknown> | null;
   createdAt: string;
   updatedAt: string;
+  /** 법정동 체인 — projection에 따라 없을 수 있음 */
+  ward?: SiteWard | null;
+  _count?: { dongs: number; units: number; properties: number } | null;
 }
 
 export interface CreateSiteDto {

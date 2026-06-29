@@ -13,15 +13,20 @@ import {
 } from '../contacts/contact-phone.utils';
 
 const VALID_SITE_TYPES: ReadonlySet<string> = new Set(Object.values(SiteType));
-// 토지/단독은 Unit 자체가 없음 → property는 siteId만으로 식별
-const UNIT_FORBIDDEN_SITE_TYPES: ReadonlySet<string> = new Set([
-  SiteType.HOUSE,
-  SiteType.LAND,
+// Unit 연결 정책:
+// - FORBIDDEN: 토지(land)는 Unit 자체가 없음 → property는 siteId만으로 식별
+// - REQUIRED: 건물형(아파트/오피스텔/빌라/상가/생활숙박시설)은 Unit 필수
+// - house(단독/다가구주택)는 어느 쪽에도 속하지 않음 → 둘 다 허용.
+//   다가구주택은 101호/201호 개별 임대가 일상이므로 통건물 Property와
+//   호실 Property를 모두 만들 수 있어야 한다.
+const UNIT_FORBIDDEN_SITE_TYPES: ReadonlySet<string> = new Set([SiteType.LAND]);
+const UNIT_REQUIRED_SITE_TYPES: ReadonlySet<string> = new Set([
+  SiteType.APARTMENT,
+  SiteType.OFFICETEL,
+  SiteType.VILLA,
+  SiteType.COMMERCIAL,
+  SiteType.LIVING_ACCOMMODATION,
 ]);
-// 나머지(아파트/오피스텔/빌라/상가/숙박시설 등)는 모두 Unit 필수
-const UNIT_REQUIRED_SITE_TYPES: ReadonlySet<string> = new Set(
-  Object.values(SiteType).filter((t) => !UNIT_FORBIDDEN_SITE_TYPES.has(t)),
-);
 const VALID_SORT_FIELDS: ReadonlySet<string> = new Set([
   'createdAt',
   'updatedAt',
@@ -445,13 +450,13 @@ export class PropertiesService {
   ) {
     if (UNIT_REQUIRED_SITE_TYPES.has(siteType) && !unit) {
       throw new BadRequestException(
-        'unitId is required for building-type properties',
+        'unitId is required for building-type properties (apartment/officetel/villa/commercial/living_accommodation)',
       );
     }
 
     if (UNIT_FORBIDDEN_SITE_TYPES.has(siteType) && unit) {
       throw new BadRequestException(
-        'unitId is not allowed for house/land properties',
+        'unitId is not allowed for land properties',
       );
     }
   }

@@ -35,6 +35,10 @@ import { PublicDocumentsModule } from './modules/public-documents/public-documen
 import { PropertyPhotosModule } from './modules/property-photos/property-photos.module';
 import { McpModule } from './modules/mcp/mcp.module';
 import { InboxModule } from './modules/inbox/inbox.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
+import { NetworkModule } from './modules/network/network.module';
+import { DashboardModule } from './modules/dashboard/dashboard.module';
+import { ActivityLogsModule } from './modules/activity-logs/activity-logs.module';
 import { RegionsModule } from './modules/regions/regions.module';
 import { ServiceVendorsModule } from './modules/service-vendors/service-vendors.module';
 import { RequestContextMiddleware } from './common/request-context/request-context.middleware';
@@ -104,6 +108,10 @@ const AUTH_RATE_LIMIT_PER_MINUTE = 10;
     PublicDocumentsModule,
     PropertyPhotosModule,
     ServiceVendorsModule,
+    NotificationsModule,
+    NetworkModule,
+    DashboardModule,
+    ActivityLogsModule,
     McpModule,
   ],
   providers: [

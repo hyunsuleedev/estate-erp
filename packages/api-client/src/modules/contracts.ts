@@ -285,6 +285,10 @@ export function createContractsApi(request: RequestFn) {
         method: 'PATCH',
         body: dto,
       }),
+    deletePrintTemplate: (templateId: string) =>
+      request<void>(`/contracts/print-templates/${templateId}`, {
+        method: 'DELETE',
+      }),
     clauseTemplates: (filter?: ContractClauseTemplateFilter) =>
       request<ContractClauseTemplate[]>('/contracts/clause-templates', {
         params: (filter ?? {}) as Record<string, string | number | boolean | undefined>,
@@ -301,6 +305,10 @@ export function createContractsApi(request: RequestFn) {
       request<ContractClauseTemplate>(`/contracts/clause-templates/${templateId}`, {
         method: 'PATCH',
         body: dto,
+      }),
+    deleteClauseTemplate: (templateId: string) =>
+      request<void>(`/contracts/clause-templates/${templateId}`, {
+        method: 'DELETE',
       }),
     documents: (contractId: string) =>
       request<ContractDocument[]>(`/contracts/${contractId}/documents`),

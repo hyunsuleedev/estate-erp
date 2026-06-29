@@ -19,6 +19,52 @@ export interface BuyerRequirementPreferredRegion {
   ward?: { code: string; name: string } | null;
 }
 
+/** findOne include: matches → listing → property → site */
+export interface BuyerRequirementMatch {
+  id: string;
+  officeId: string;
+  listingId: string;
+  buyerReqId: string;
+  stage: string;
+  memo: string | null;
+  createdAt: string;
+  updatedAt: string;
+  listing?: {
+    id: string;
+    propertyId: string;
+    transactionType: string;
+    price: number | null;
+    deposit: number | null;
+    monthlyRent: number | null;
+    checkStatus: string;
+    isHidden: boolean;
+    property?: {
+      id: string;
+      siteId: string;
+      unitId: string | null;
+      site?: {
+        id: string;
+        name: string;
+        type: string;
+        roadAddress: string | null;
+        jibunAddress: string | null;
+      } | null;
+    } | null;
+  } | null;
+}
+
+/** findOne include: consultations (최근 10건, 관계 미포함 raw row) */
+export interface BuyerRequirementConsultation {
+  id: string;
+  contactId: string;
+  createdById: string;
+  type: string;
+  purpose?: string | null;
+  content: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface BuyerRequirement {
   id: string;
   officeId: string;
@@ -44,6 +90,13 @@ export interface BuyerRequirement {
   createdAt: string;
   updatedAt: string;
   contact?: { id: string; name: string; phone: string | null };
+  /** findAll/findOne include — 담당자 요약 */
+  assignedTo?: { id: string; name: string } | null;
+  /** findAll include — 연결 매칭/상담 수 */
+  _count?: { matches: number; consultations: number };
+  /** findOne 전용 include */
+  matches?: BuyerRequirementMatch[];
+  consultations?: BuyerRequirementConsultation[];
   preferredSites?: BuyerRequirementPreferredSite[];
   preferredRegions?: BuyerRequirementPreferredRegion[];
 }
@@ -87,18 +140,20 @@ export interface CreateBuyerRequirementDto {
   contactId: string;
   transactionType?: string;
   siteTypes?: string[];
-  priceMin?: number;
-  priceMax?: number;
-  depositMin?: number;
-  depositMax?: number;
-  monthlyRentMax?: number;
-  areaMin?: number;
-  areaMax?: number;
+  // 범위 필드는 null 허용 — 수정 시 null을 보내면 서버가 해당 값을 비움 (replace 의미)
+  priceMin?: number | null;
+  priceMax?: number | null;
+  depositMin?: number | null;
+  depositMax?: number | null;
+  monthlyRentMax?: number | null;
+  areaMin?: number | null;
+  areaMax?: number | null;
   mustConditions?: string[];
   preferConditions?: string[];
   moveInDate?: string;
   urgency?: string;
   assignedToId?: string;
+  nextContactDate?: string;
   memo?: string;
   preferredSites?: { siteId: string; priority?: number; memo?: string }[];
   preferredRegions?: {
@@ -106,6 +161,11 @@ export interface CreateBuyerRequirementDto {
     districtCode?: string;
     wardCode?: string;
   }[];
+}
+
+export interface UpdateBuyerRequirementDto
+  extends Omit<CreateBuyerRequirementDto, 'contactId'> {
+  lastContactDate?: string;
 }
 
 export function createBuyerRequirementsApi(request: RequestFn) {
@@ -124,7 +184,7 @@ export function createBuyerRequirementsApi(request: RequestFn) {
     create: (dto: CreateBuyerRequirementDto) =>
       request<BuyerRequirement>('/buyer-requirements', { method: 'POST', body: dto }),
 
-    update: (id: string, dto: Record<string, unknown>) =>
+    update: (id: string, dto: UpdateBuyerRequirementDto) =>
       request<BuyerRequirement>(`/buyer-requirements/${id}`, { method: 'PATCH', body: dto }),
 
     updateStatus: (id: string, status: string) =>

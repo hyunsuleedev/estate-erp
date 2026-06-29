@@ -16,6 +16,7 @@ import { RealtimeService } from './realtime.service';
 import {
   listingIntakeRoom,
   listingRoom,
+  networkRoom,
   officeRoom,
   propertyRoom,
 } from './realtime.rooms';
@@ -144,6 +145,45 @@ export class RealtimeGateway
 
     socket.join(listingIntakeRoom(user.officeId, intake.id));
     socket.join(propertyRoom(user.officeId, intake.propertyId));
+    return { ok: true };
+  }
+
+  /**
+   * 공동중개 네트워크 중개방 채널 입장.
+   * 크로스 오피스 채널이므로 approved 멤버십을 서비스 레벨에서 직접 검사한다.
+   */
+  @SubscribeMessage('network.room.join')
+  async joinNetworkRoom(
+    @ConnectedSocket() socket: Socket,
+    @MessageBody() payload: { roomId?: string },
+  ) {
+    const user = this.getSocketUser(socket);
+    if (!user || !payload?.roomId) return { ok: false };
+
+    const member = await this.prisma.networkRoomMember.findFirst({
+      where: {
+        roomId: payload.roomId,
+        officeId: user.officeId,
+        status: 'approved',
+      },
+      select: { id: true },
+    });
+
+    if (!member) return { ok: false };
+
+    socket.join(networkRoom(payload.roomId));
+    return { ok: true };
+  }
+
+  @SubscribeMessage('network.room.leave')
+  async leaveNetworkRoom(
+    @ConnectedSocket() socket: Socket,
+    @MessageBody() payload: { roomId?: string },
+  ) {
+    const user = this.getSocketUser(socket);
+    if (!user || !payload?.roomId) return { ok: false };
+
+    socket.leave(networkRoom(payload.roomId));
     return { ok: true };
   }
 

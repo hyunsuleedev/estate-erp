@@ -8,6 +8,7 @@ import {
   registerTabIpcHandlers,
   setPackagedRendererBaseUrl,
 } from './main/windowManager';
+import { UpdaterService } from './main/updaterService';
 
 const APP_PROTOCOL = 'estate-erp';
 
@@ -37,6 +38,7 @@ if (!app.isPackaged) {
 }
 
 const windowManager = new WindowManager();
+const updaterService = new UpdaterService();
 let packagedRendererProtocolRegistered = false;
 
 function registerPackagedRendererProtocol() {
@@ -88,6 +90,7 @@ ipcMain.handle('get-platform', () => process.platform);
 ipcMain.handle('is-fullscreen', () => windowManager.getMainWindow()?.isFullScreen() ?? false);
 
 registerTabIpcHandlers(windowManager);
+updaterService.initialize();
 
 // Known-harmless codex-internal stderr lines to suppress in the UI. Follows
 // Paperclip's `stripCodexRolloutNoise` pattern but extends it: Paperclip only
@@ -372,7 +375,10 @@ app.on('before-quit', () => {
   codexRuns.clear();
 });
 
-app.on('ready', createWindow);
+app.on('ready', () => {
+  createWindow();
+  updaterService.checkForUpdates();
+});
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {

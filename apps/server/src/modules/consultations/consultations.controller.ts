@@ -102,6 +102,7 @@ export class ConsultationsController {
       listingId?: string;
       matchId?: string;
       buyerReqId?: string;
+      callRecordingId?: string;
     },
     @CurrentUser() user: CurrentUserPayload,
   ) {
@@ -192,12 +193,22 @@ export class ConsultationsController {
   @Get('recordings/list')
   findRecordings(
     @Query('contactId') contactId: string,
+    @Query('direction') direction: string,
+    @Query('sttStatus') sttStatus: string,
+    @Query('dateFrom') dateFrom: string,
+    @Query('dateTo') dateTo: string,
+    @Query('q') q: string,
     @Query('page') page: string,
     @Query('limit') limit: string,
     @CurrentUser() user: CurrentUserPayload,
   ) {
     return this.service.findRecordings(user.officeId, {
       contactId: contactId || undefined,
+      direction: direction || undefined,
+      sttStatus: sttStatus || undefined,
+      dateFrom: dateFrom || undefined,
+      dateTo: dateTo || undefined,
+      q: q || undefined,
       page: page ? Number(page) : undefined,
       limit: limit ? Number(limit) : undefined,
     });
@@ -209,5 +220,18 @@ export class ConsultationsController {
     @CurrentUser() user: CurrentUserPayload,
   ) {
     return this.service.findRecording(id, user.officeId);
+  }
+
+  @Patch('recordings/:id')
+  updateRecording(
+    @Param('id') id: string,
+    @Body()
+    dto: {
+      contactId?: string | null;
+      speakerLabels?: Array<{ speaker: number; label: string }>;
+    },
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.service.updateRecording(id, user.officeId, dto);
   }
 }

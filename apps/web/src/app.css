@@ -27,6 +27,22 @@
   --color-accent-foreground: #37352f;
   --color-destructive: #e03e3e;
   --color-destructive-foreground: #ffffff;
+  /* Semantic status tones — Notion tag palette (StatusBadge 등 상태 표시 전용) */
+  --color-success: #0f7b6c;
+  --color-success-soft: #dbeddb;
+  --color-warning: #cb912f;
+  --color-warning-soft: #fdecc8;
+  --color-info: #2383e2;
+  --color-info-soft: #d3e5ef;
+  --color-violet: #6940a5;
+  --color-violet-soft: #e8deee;
+  --color-pink: #ad1a72;
+  --color-pink-soft: #f5e0e9;
+  --color-orange: #d9730d;
+  --color-orange-soft: #fadec9;
+  --color-destructive-soft: #ffe2dd;
+  --color-neutral-strong: #37352f;
+  --color-neutral-soft: #f1f1ef;
   --color-card: #ffffff;
   --color-card-foreground: #37352f;
   --color-popover: #ffffff;

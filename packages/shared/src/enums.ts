@@ -15,9 +15,18 @@ export const TransactionType = {
   SALE: 'sale',
   JEONSE: 'jeonse',
   MONTHLY: 'monthly',
+  /** 연세 — 제주/지방에서 1년치 임대료를 선납하는 임대 유형 */
+  YEARLY_RENT: 'yearly_rent',
 } as const;
 export type TransactionType =
   (typeof TransactionType)[keyof typeof TransactionType];
+
+export const TRANSACTION_TYPE_LABELS: Record<TransactionType, string> = {
+  sale: '매매',
+  jeonse: '전세',
+  monthly: '월세',
+  yearly_rent: '연세',
+};
 
 /**
  * 계약서 거래 유형 (Contract 단계).
@@ -48,6 +57,49 @@ export const CONTRACT_TRANSACTION_TYPE_LABELS: Record<
   sublease: '전대',
   transfer: '권리양도',
   succession: '권리승계',
+};
+
+/** 사용자 공인중개사 자격 구분 (User.licenseType) */
+export const UserLicenseType = {
+  BROKER_OWNER: 'broker_owner', // 개업공인중개사
+  BROKER_ASSOCIATE: 'broker_associate', // 소속공인중개사
+  ASSISTANT: 'assistant', // 중개보조원
+} as const;
+export type UserLicenseType =
+  (typeof UserLicenseType)[keyof typeof UserLicenseType];
+
+export const USER_LICENSE_TYPE_LABELS: Record<UserLicenseType, string> = {
+  broker_owner: '개업공인중개사',
+  broker_associate: '소속공인중개사',
+  assistant: '중개보조원',
+};
+
+/** 관리비 포함 항목 slug (Listing.maintenanceFeeIncludes) */
+export const MaintenanceFeeInclude = {
+  WATER: 'water',
+  ELECTRICITY: 'electricity',
+  GAS: 'gas',
+  INTERNET: 'internet',
+  TV: 'tv',
+  CLEANING: 'cleaning',
+  PARKING: 'parking',
+  HEATING: 'heating',
+} as const;
+export type MaintenanceFeeInclude =
+  (typeof MaintenanceFeeInclude)[keyof typeof MaintenanceFeeInclude];
+
+export const MAINTENANCE_FEE_INCLUDE_LABELS: Record<
+  MaintenanceFeeInclude,
+  string
+> = {
+  water: '수도',
+  electricity: '전기',
+  gas: '가스',
+  internet: '인터넷',
+  tv: 'TV',
+  cleaning: '청소',
+  parking: '주차',
+  heating: '난방',
 };
 
 /** 내 사무소의 광고 게재 상태 (ListingAdvertisement.status) */

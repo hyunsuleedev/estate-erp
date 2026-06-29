@@ -435,6 +435,27 @@ export class ContractsService {
     });
   }
 
+  async removePrintTemplate(templateId: string, officeId: string) {
+    const template = await this.prisma.officePrintTemplate.findFirst({
+      where: { id: templateId, officeId },
+      select: { id: true, isDefault: true },
+    });
+
+    if (!template) {
+      throw new NotFoundException('Office print template not found');
+    }
+
+    if (template.isDefault) {
+      throw new BadRequestException(
+        '기본 템플릿은 삭제할 수 없습니다. 다른 템플릿을 기본으로 지정한 뒤 삭제해주세요.',
+      );
+    }
+
+    return this.prisma.officePrintTemplate.delete({
+      where: { id: templateId },
+    });
+  }
+
   async listClauseTemplates(
     officeId: string,
     filters: ContractClauseTemplateFilters = {},
@@ -527,6 +548,27 @@ export class ContractsService {
         isActive: dto.isActive,
         sortOrder: dto.sortOrder,
       },
+    });
+  }
+
+  async removeClauseTemplate(templateId: string, officeId: string) {
+    const template = await this.prisma.contractClauseTemplate.findFirst({
+      where: { id: templateId, officeId },
+      select: { id: true, isDefault: true },
+    });
+
+    if (!template) {
+      throw new NotFoundException('Contract clause template not found');
+    }
+
+    if (template.isDefault) {
+      throw new BadRequestException(
+        '기본 템플릿은 삭제할 수 없습니다. 다른 템플릿을 기본으로 지정한 뒤 삭제해주세요.',
+      );
+    }
+
+    return this.prisma.contractClauseTemplate.delete({
+      where: { id: templateId },
     });
   }
 

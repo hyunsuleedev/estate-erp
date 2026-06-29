@@ -23,7 +23,6 @@ export interface CalendarEvent {
   contact?: { id: string; name: string; phone: string | null } | null;
   property?: {
     id: string;
-    memo: string | null;
     site?: { name: string | null } | null;
   } | null;
   listingIntake?: {
@@ -71,7 +70,8 @@ export interface UpdateCalendarEventDto {
   type?: string;
   allDay?: boolean;
   start?: string;
-  end?: string;
+  /** null 전달 시 종료 시간 제거 (서버가 null을 그대로 저장) */
+  end?: string | null;
   color?: string;
   propertyId?: string | null;
   listingIntakeId?: string | null;

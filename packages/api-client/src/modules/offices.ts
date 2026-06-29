@@ -6,6 +6,8 @@ export interface OfficeUserSummary {
   email: string | null;
   phone: string | null;
   role: string;
+  /** broker_owner / broker_associate / assistant (shared USER_LICENSE_TYPE_LABELS) */
+  licenseType: string | null;
   isActive: boolean;
 }
 
@@ -20,6 +22,10 @@ export interface OfficeProfile {
   maxUsers: number;
   isActive: boolean;
   commissionConfig: unknown;
+  /** AI 직원(Rule Engine + Proposal) 전체 on/off */
+  agentEnabled: boolean;
+  /** Proposal type별 trust tier 오버라이드. 예: { ad_takedown: 'approval_required' } */
+  agentTrustConfig: Record<string, string>;
   createdAt: string;
   updatedAt: string;
   counts: {
@@ -47,6 +53,12 @@ export interface CreateOfficeDto {
   address?: string | null;
 }
 
+export interface AgentConfigDto {
+  agentEnabled?: boolean;
+  /** 키: Proposal type(=Rule name), 값: trust tier. null이면 오버라이드 제거(기본값 사용). */
+  agentTrustConfig?: Record<string, string | null>;
+}
+
 export interface CommissionConfigDto {
   distributionType?: string;
   defaultAgentRate?: number;
@@ -66,6 +78,11 @@ export function createOfficesApi(request: RequestFn) {
       request<OfficeProfile>('/offices/me', { method: 'PATCH', body: dto }),
     updateCommissionConfig: (dto: CommissionConfigDto) =>
       request<OfficeProfile>('/offices/me/commission-config', {
+        method: 'PATCH',
+        body: dto,
+      }),
+    updateAgentConfig: (dto: AgentConfigDto) =>
+      request<OfficeProfile>('/offices/me/agent-config', {
         method: 'PATCH',
         body: dto,
       }),

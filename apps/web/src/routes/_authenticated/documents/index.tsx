@@ -1,21 +1,35 @@
-import { createFileRoute, Link } from '@tanstack/react-router';
-import { useQuery } from '@tanstack/react-query';
-import { useState } from 'react';
+import { createFileRoute } from '@tanstack/react-router';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMemo, useState } from 'react';
+import { toast } from 'sonner';
 import {
-  FileText,
-  Download,
+  AlertCircle,
   CheckCircle2,
-  XCircle,
-  Clock,
+  Download,
+  FileText,
   Loader2,
-  Building,
+  RotateCcw,
+  Trash2,
+  XCircle,
 } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import type { PublicDocument } from '@estate-erp/api-client';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
-import { Badge } from '@/components/ui/badge';
+import { formatDate, formatDday } from '@/lib/format';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
+import {
+  ConfirmDialog,
+  EmptyState,
+  EntityChip,
+  FilterBar,
+  FilterCount,
+  FilterSearch,
+  FilterSelect,
+  PageHeader,
+} from '@/components/domain';
+import { DocumentsNav } from './-documents-nav';
 
 export const Route = createFileRoute('/_authenticated/documents/')({
   component: PublicDocumentsListPage,
@@ -30,100 +44,255 @@ const typeLabel: Record<string, string> = {
   land_register: '대지권등록부',
 };
 
-const typeFilters = [
-  { key: 'all', label: '전체' },
-  { key: 'registry', label: '등기부등본' },
-  { key: 'building_ledger', label: '건축물대장' },
-  { key: 'land_ledger', label: '토지대장' },
-  { key: 'cadastral_map', label: '지적도' },
-  { key: 'land_use_plan', label: '토지이용계획' },
-  { key: 'land_register', label: '대지권등록부' },
+const typeOptions = [
+  { value: 'registry', label: '등기부등본' },
+  { value: 'building_ledger', label: '건축물대장' },
+  { value: 'land_ledger', label: '토지대장' },
+  { value: 'cadastral_map', label: '지적도' },
+  { value: 'land_use_plan', label: '토지이용계획' },
+  { value: 'land_register', label: '대지권등록부' },
 ];
 
-const statusConfig: Record<string, { label: string; color: string }> = {
-  completed: { label: '완료', color: 'bg-emerald-100 text-emerald-700' },
-  pending: { label: '처리중', color: 'bg-amber-100 text-amber-700' },
-  failed: { label: '실패', color: 'bg-red-100 text-red-700' },
+const statusOptions = [
+  { value: 'completed', label: '완료' },
+  { value: 'pending', label: '처리중' },
+  { value: 'failed', label: '실패' },
+];
+
+const periodOptions = [
+  { value: '1m', label: '최근 1개월' },
+  { value: '3m', label: '최근 3개월' },
+  { value: '6m', label: '최근 6개월' },
+  { value: '1y', label: '최근 1년' },
+];
+
+const PERIOD_MONTHS: Record<string, number> = { '1m': 1, '3m': 3, '6m': 6, '1y': 12 };
+
+const statusMeta: Record<
+  string,
+  { label: string; className: string; icon: LucideIcon; spin?: boolean }
+> = {
+  completed: { label: '완료', className: 'bg-success-soft text-success', icon: CheckCircle2 },
+  pending: { label: '처리중', className: 'bg-warning-soft text-warning', icon: Loader2, spin: true },
+  failed: { label: '실패', className: 'bg-destructive-soft text-destructive', icon: XCircle },
 };
 
-function PublicDocumentsListPage() {
-  const [typeFilter, setTypeFilter] = useState('all');
+function siteNameOf(doc: PublicDocument): string | null {
+  return doc.property?.site.name ?? doc.site?.name ?? null;
+}
 
-  const { data, isLoading } = useQuery({
-    queryKey: ['public-documents', 'all', typeFilter],
-    queryFn: () =>
-      api.publicDocuments.list(
-        typeFilter === 'all' ? {} : { type: typeFilter },
-      ),
+function locationOf(doc: PublicDocument): string {
+  if (doc.property) {
+    return [
+      doc.property.site.name,
+      doc.property.unit?.dong?.name,
+      doc.property.unit?.name && `${doc.property.unit.name}호`,
+    ]
+      .filter(Boolean)
+      .join(' ');
+  }
+  return doc.site?.name ?? '—';
+}
+
+function PublicDocumentsListPage() {
+  const queryClient = useQueryClient();
+  const [search, setSearch] = useState('');
+  const [typeFilter, setTypeFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [siteFilter, setSiteFilter] = useState('');
+  const [period, setPeriod] = useState('');
+  const [deleteTarget, setDeleteTarget] = useState<PublicDocument | null>(null);
+
+  const { data, isLoading, isError, refetch } = useQuery({
+    queryKey: ['public-documents', 'all'],
+    queryFn: () => api.publicDocuments.list({}),
+    // 처리중 건이 있으면 7초 간격 폴링 — 상태 전환을 자동 반영
+    refetchInterval: (query) =>
+      query.state.data?.some((d) => d.status === 'pending') ? 7000 : false,
   });
 
-  const totalCost =
-    data
-      ?.filter((d) => d.status === 'completed')
-      .reduce((s, d) => s + d.cost, 0) ?? 0;
+  // 매물/단지 필터 옵션 — 이력에 등장하는 단지명에서 파생
+  const siteOptions = useMemo(() => {
+    const names = new Set<string>();
+    for (const doc of data ?? []) {
+      const name = siteNameOf(doc);
+      if (name) names.add(name);
+    }
+    return Array.from(names)
+      .sort((a, b) => a.localeCompare(b, 'ko'))
+      .map((name) => ({ value: name, label: name }));
+  }, [data]);
+
+  const filtered = useMemo(() => {
+    if (!data) return [];
+    const q = search.trim().toLowerCase();
+    const months = PERIOD_MONTHS[period];
+    const cutoff = months ? new Date(Date.now() - months * 30 * 24 * 60 * 60 * 1000) : null;
+    return data.filter((doc) => {
+      if (typeFilter && doc.type !== typeFilter) return false;
+      if (statusFilter && doc.status !== statusFilter) return false;
+      if (siteFilter && siteNameOf(doc) !== siteFilter) return false;
+      if (cutoff && new Date(doc.issuedAt) < cutoff) return false;
+      if (q) {
+        const hay = [
+          doc.title,
+          doc.subtitle,
+          typeLabel[doc.type],
+          locationOf(doc),
+          doc.requestedBy?.name,
+        ]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
+  }, [data, search, typeFilter, statusFilter, siteFilter, period]);
+
+  // 요약은 필터와 무관한 전체 기준
+  const summary = useMemo(() => {
+    const all = data ?? [];
+    return {
+      total: all.length,
+      completedCost: all
+        .filter((d) => d.status === 'completed')
+        .reduce((s, d) => s + d.cost, 0),
+      pendingCount: all.filter((d) => d.status === 'pending').length,
+      failedCount: all.filter((d) => d.status === 'failed').length,
+    };
+  }, [data]);
+
+  const retryMutation = useMutation({
+    mutationFn: (doc: PublicDocument) =>
+      api.publicDocuments.create({
+        propertyId: doc.propertyId ?? undefined,
+        siteId: doc.siteId,
+        type: doc.type,
+        title: doc.title,
+        subtitle: doc.subtitle ?? undefined,
+        cost: doc.cost,
+      }),
+    onSuccess: () => {
+      toast.success('재발급 요청이 등록되었습니다.');
+      queryClient.invalidateQueries({ queryKey: ['public-documents'] });
+    },
+    onError: () => toast.error('재발급 요청에 실패했습니다.'),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => api.publicDocuments.remove(id),
+    onSuccess: () => {
+      toast.success('발급 이력이 삭제되었습니다.');
+      queryClient.invalidateQueries({ queryKey: ['public-documents'] });
+      setDeleteTarget(null);
+    },
+    onError: () => toast.error('발급 이력 삭제에 실패했습니다.'),
+  });
+
+  const hasActiveFilter = Boolean(search || typeFilter || statusFilter || siteFilter || period);
+  const resetFilters = () => {
+    setSearch('');
+    setTypeFilter('');
+    setStatusFilter('');
+    setSiteFilter('');
+    setPeriod('');
+  };
 
   return (
-    <div className="flex flex-col gap-4">
-      {/* Header */}
-      <div className="flex items-start gap-4">
-        <div className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary">
-          <FileText className="size-5" />
-        </div>
-        <div className="space-y-1.5">
-          <h1 className="text-xl font-semibold tracking-tight">공적장부</h1>
-          <p className="text-sm text-muted-foreground">
-            발급된 공적장부를 한곳에서 조회하고 다운로드할 수 있습니다.
-          </p>
-        </div>
-      </div>
+    <div className="flex flex-col">
+      <PageHeader
+        title="자료실"
+        description="발급된 공적장부를 한곳에서 조회하고 관리합니다."
+      />
+      <DocumentsNav />
 
-      {/* Summary */}
-      <div className="flex gap-4 rounded-xl bg-muted/50 p-4 text-sm">
+      {/* 전체 기준 요약 (필터와 무관) */}
+      <div className="mb-4 flex flex-wrap items-center gap-x-6 gap-y-1 rounded-md bg-muted/50 p-3 text-sm">
         <div>
-          <span className="text-muted-foreground">총 발급: </span>
-          <span className="font-semibold">{data?.length ?? 0}건</span>
+          <span className="text-muted-foreground">총 발급 </span>
+          <span className="font-semibold tabular-nums">{summary.total}건</span>
         </div>
-        {totalCost > 0 && (
+        <div>
+          <span className="text-muted-foreground">발급 비용(완료 기준) </span>
+          <span className="font-semibold tabular-nums">
+            {summary.completedCost > 0 ? `${summary.completedCost.toLocaleString()}원` : '0원'}
+          </span>
+        </div>
+        {summary.pendingCount > 0 && (
           <div>
-            <span className="text-muted-foreground">발급 비용: </span>
-            <span className="font-semibold">{totalCost.toLocaleString()}원</span>
+            <span className="text-muted-foreground">처리중 </span>
+            <span className="font-semibold text-warning tabular-nums">
+              {summary.pendingCount}건
+            </span>
           </div>
+        )}
+        {summary.failedCount > 0 && (
+          <div>
+            <span className="text-muted-foreground">실패 </span>
+            <span className="font-semibold text-destructive tabular-nums">
+              {summary.failedCount}건
+            </span>
+          </div>
+        )}
+        {summary.pendingCount > 0 && (
+          <p className="basis-full text-xs text-muted-foreground">
+            발급 기관 연동 전까지는 처리중 상태가 유지될 수 있습니다.
+          </p>
         )}
       </div>
 
-      {/* Type filter */}
-      <div className="flex flex-wrap gap-1.5">
-        {typeFilters.map((f) => (
-          <button
-            key={f.key}
-            onClick={() => setTypeFilter(f.key)}
-            className={cn(
-              'rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors',
-              typeFilter === f.key
-                ? 'border-primary bg-primary text-primary-foreground'
-                : 'border-border hover:bg-muted/50',
-            )}
-          >
-            {f.label}
-          </button>
-        ))}
-      </div>
+      <FilterBar className="mb-4">
+        <FilterSearch value={search} onChange={setSearch} placeholder="단지명·장부명 검색" />
+        <FilterSelect label="종류" value={typeFilter} onChange={setTypeFilter} options={typeOptions} />
+        <FilterSelect label="상태" value={statusFilter} onChange={setStatusFilter} options={statusOptions} />
+        <FilterSelect label="기간" value={period} onChange={setPeriod} options={periodOptions} />
+        {siteOptions.length > 0 && (
+          <FilterSelect label="단지" value={siteFilter} onChange={setSiteFilter} options={siteOptions} />
+        )}
+        <FilterCount n={filtered.length} />
+      </FilterBar>
 
-      {/* List */}
       {isLoading ? (
         <div className="space-y-2">
           {Array.from({ length: 5 }).map((_, i) => (
-            <Skeleton key={i} className="h-16 rounded-xl" />
+            <Skeleton key={i} className="h-12 rounded-md" />
           ))}
         </div>
-      ) : !data || data.length === 0 ? (
-        <div className="rounded-xl border border-dashed p-12 text-center text-sm text-muted-foreground">
-          {typeFilter === 'all'
-            ? '발급된 공적장부가 없습니다. 매물 상세에서 장부를 발급해보세요.'
-            : `${typeFilters.find((f) => f.key === typeFilter)?.label} 이력이 없습니다.`}
-        </div>
+      ) : isError ? (
+        <EmptyState
+          icon={AlertCircle}
+          title="발급 이력을 불러오지 못했습니다"
+          description="네트워크 상태를 확인한 뒤 다시 시도해주세요."
+          action={
+            <Button variant="outline" size="sm" onClick={() => refetch()}>
+              다시 시도
+            </Button>
+          }
+        />
+      ) : filtered.length === 0 ? (
+        <EmptyState
+          icon={FileText}
+          title={
+            hasActiveFilter
+              ? '조건에 맞는 발급 이력이 없습니다'
+              : '발급된 공적장부가 없습니다'
+          }
+          description={
+            hasActiveFilter
+              ? '필터를 조정하거나 초기화해보세요.'
+              : '매물 상세의 공적장부 탭에서 장부를 발급하면 이곳에 이력이 쌓입니다.'
+          }
+          action={
+            hasActiveFilter ? (
+              <Button variant="outline" size="sm" onClick={resetFilters}>
+                필터 초기화
+              </Button>
+            ) : undefined
+          }
+        />
       ) : (
-        <div className="overflow-hidden rounded-xl border">
+        <div className="overflow-hidden rounded-md border">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b bg-muted/30 text-xs text-muted-foreground">
@@ -131,88 +300,120 @@ function PublicDocumentsListPage() {
                 <th className="px-3 py-2.5 text-left font-medium">종류</th>
                 <th className="px-3 py-2.5 text-left font-medium">매물/단지</th>
                 <th className="px-3 py-2.5 text-left font-medium">발급일</th>
+                <th className="px-3 py-2.5 text-left font-medium">유효기간</th>
                 <th className="px-3 py-2.5 text-left font-medium">요청자</th>
                 <th className="px-3 py-2.5 text-right font-medium">비용</th>
                 <th className="px-3 py-2.5 text-right font-medium" />
               </tr>
             </thead>
             <tbody>
-              {data.map((doc) => (
-                <DocumentTableRow key={doc.id} doc={doc} />
+              {filtered.map((doc) => (
+                <DocumentTableRow
+                  key={doc.id}
+                  doc={doc}
+                  onRetry={() => retryMutation.mutate(doc)}
+                  retryDisabled={retryMutation.isPending}
+                  onDelete={() => setDeleteTarget(doc)}
+                />
               ))}
             </tbody>
           </table>
         </div>
       )}
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setDeleteTarget(null);
+        }}
+        title="발급 이력을 삭제하시겠습니까?"
+        description={
+          deleteTarget
+            ? `${typeLabel[deleteTarget.type] ?? deleteTarget.type} (${locationOf(deleteTarget)}) 이력이 삭제됩니다. 삭제 후에는 복구할 수 없습니다.`
+            : undefined
+        }
+        confirmLabel="삭제"
+        destructive
+        loading={deleteMutation.isPending}
+        onConfirm={() => {
+          if (deleteTarget) deleteMutation.mutate(deleteTarget.id);
+        }}
+      />
     </div>
   );
 }
 
-function DocumentTableRow({ doc }: { doc: PublicDocument }) {
-  const status = statusConfig[doc.status] ?? statusConfig.pending;
-
-  const location = doc.property
-    ? [
-        doc.property.site.name,
-        doc.property.unit?.dong?.name,
-        doc.property.unit?.name && `${doc.property.unit.name}호`,
-      ]
-        .filter(Boolean)
-        .join(' ')
-    : doc.site?.name ?? '-';
-
-  const propertyLink = doc.property?.id
-    ? `/properties/${doc.property.id}`
-    : null;
+function DocumentTableRow({
+  doc,
+  onRetry,
+  retryDisabled,
+  onDelete,
+}: {
+  doc: PublicDocument;
+  onRetry: () => void;
+  retryDisabled: boolean;
+  onDelete: () => void;
+}) {
+  const status = statusMeta[doc.status] ?? statusMeta.pending;
+  const StatusIcon = status.icon;
+  const location = locationOf(doc);
+  const expired = doc.expiresAt ? new Date(doc.expiresAt).getTime() < Date.now() : false;
 
   return (
     <tr className="border-b last:border-b-0 hover:bg-muted/30">
       <td className="px-3 py-2.5">
         <span
           className={cn(
-            'inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium',
-            status.color,
+            'inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium',
+            status.className,
           )}
         >
-          {doc.status === 'pending' && <Loader2 className="mr-1 size-3 animate-spin" />}
-          {doc.status === 'completed' && <CheckCircle2 className="mr-1 size-3" />}
-          {doc.status === 'failed' && <XCircle className="mr-1 size-3" />}
+          <StatusIcon className={cn('mr-1 size-3', status.spin && 'animate-spin')} />
           {status.label}
         </span>
       </td>
       <td className="px-3 py-2.5">
         <div className="flex items-center gap-1.5">
-          <FileText className="size-3.5 text-muted-foreground" />
+          <FileText className="size-3.5 shrink-0 text-muted-foreground" />
           <span className="font-medium">{typeLabel[doc.type] ?? doc.type}</span>
         </div>
         {doc.subtitle && (
-          <span className="ml-5 text-[11px] text-muted-foreground">{doc.subtitle}</span>
+          <p className="ml-5 text-[11px] text-muted-foreground">{doc.subtitle}</p>
+        )}
+        {doc.status === 'failed' && (
+          <p className="ml-5 mt-0.5 text-[11px] text-destructive">
+            {doc.errorMessage ?? '발급 처리 중 오류가 발생했습니다.'}
+          </p>
         )}
       </td>
       <td className="px-3 py-2.5">
-        {propertyLink ? (
-          <Link
-            to={propertyLink}
-            className="inline-flex items-center gap-1 text-xs hover:underline"
-          >
-            <Building className="size-3 text-muted-foreground" />
-            {location}
-          </Link>
+        {doc.property?.id ? (
+          <EntityChip kind="property" id={doc.property.id} label={location} />
         ) : (
           <span className="text-xs text-muted-foreground">{location}</span>
         )}
       </td>
-      <td className="px-3 py-2.5 text-xs text-muted-foreground">
-        {new Date(doc.issuedAt).toLocaleDateString('ko-KR', {
-          year: 'numeric',
-          month: 'short',
-          day: 'numeric',
-        })}
+      <td className="px-3 py-2.5 text-xs text-muted-foreground tabular-nums">
+        {formatDate(doc.issuedAt)}
+      </td>
+      <td className="px-3 py-2.5 text-xs tabular-nums">
+        {doc.expiresAt ? (
+          expired ? (
+            <span className="font-medium text-destructive">만료</span>
+          ) : (
+            <span className="text-muted-foreground">
+              {formatDate(doc.expiresAt)}{' '}
+              <span className="text-[10px]">({formatDday(doc.expiresAt)})</span>
+            </span>
+          )
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        )}
       </td>
       <td className="px-3 py-2.5 text-xs text-muted-foreground">
-        {doc.requestedBy?.name ?? '-'}
+        {doc.requestedBy?.name ?? '—'}
       </td>
-      <td className="px-3 py-2.5 text-right text-xs">
+      <td className="px-3 py-2.5 text-right text-xs tabular-nums">
         {doc.cost > 0 ? (
           <span>{doc.cost.toLocaleString()}원</span>
         ) : (
@@ -220,14 +421,37 @@ function DocumentTableRow({ doc }: { doc: PublicDocument }) {
         )}
       </td>
       <td className="px-3 py-2.5 text-right">
-        {doc.status === 'completed' && doc.fileUrl && (
-          <Button variant="ghost" size="sm" className="gap-1 text-xs" asChild>
-            <a href={doc.fileUrl} target="_blank" rel="noopener noreferrer">
-              <Download className="size-3" />
-              열람
-            </a>
+        <div className="flex items-center justify-end gap-0.5">
+          {doc.status === 'completed' && doc.fileUrl && (
+            <Button variant="ghost" size="sm" className="h-7 gap-1 px-2 text-xs" asChild>
+              <a href={doc.fileUrl} target="_blank" rel="noopener noreferrer">
+                <Download className="size-3" />
+                열람
+              </a>
+            </Button>
+          )}
+          {doc.status === 'failed' && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 gap-1 px-2 text-xs"
+              disabled={retryDisabled}
+              onClick={onRetry}
+            >
+              <RotateCcw className="size-3" />
+              재발급
+            </Button>
+          )}
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className="size-7 text-muted-foreground hover:text-destructive"
+            aria-label="발급 이력 삭제"
+            onClick={onDelete}
+          >
+            <Trash2 className="size-3.5" />
           </Button>
-        )}
+        </div>
       </td>
     </tr>
   );

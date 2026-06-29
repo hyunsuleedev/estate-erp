@@ -50,6 +50,7 @@ describe('McpToolsService', () => {
       noop,
       noop,
       listingAdvertisements,
+      noop, // officeAdvertisements
       listingIntakes,
     ) as McpToolsService;
 

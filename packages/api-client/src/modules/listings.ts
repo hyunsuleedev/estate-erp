@@ -50,6 +50,11 @@ export interface Listing {
   price: number | null;
   deposit: number | null;
   monthlyRent: number | null;
+  maintenanceFee: number | null;
+  maintenanceFeeIncludes: string[];
+  loanAmount: number | null;
+  premium: number | null;
+  privateMemo: string | null;
   moveInAvailableType: string | null;
   moveInAvailableFrom: string | null;
   moveInAvailableTo: string | null;
@@ -115,6 +120,11 @@ export interface Listing {
       price: number | null;
       deposit: number | null;
       monthlyRent: number | null;
+      maintenanceFee: number | null;
+      maintenanceFeeIncludes: string[];
+      loanAmount: number | null;
+      premium: number | null;
+      privateMemo: string | null;
       moveInAvailableType: string | null;
       moveInAvailableFrom: string | null;
       moveInAvailableTo: string | null;
@@ -177,6 +187,11 @@ export interface CreateListingDto {
   price?: number | null;
   deposit?: number | null;
   monthlyRent?: number | null;
+  maintenanceFee?: number | null;
+  maintenanceFeeIncludes?: string[];
+  loanAmount?: number | null;
+  premium?: number | null;
+  privateMemo?: string | null;
   moveInAvailableType?: string;
   moveInAvailableFrom?: string;
   moveInAvailableTo?: string;
@@ -190,6 +205,11 @@ export interface UpdateListingDto {
   price?: number | null;
   deposit?: number | null;
   monthlyRent?: number | null;
+  maintenanceFee?: number | null;
+  maintenanceFeeIncludes?: string[];
+  loanAmount?: number | null;
+  premium?: number | null;
+  privateMemo?: string | null;
   moveInAvailableType?: string | null;
   moveInAvailableFrom?: string | null;
   moveInAvailableTo?: string | null;
@@ -217,6 +237,13 @@ export function createListingsApi(request: RequestFn) {
 
     update: (id: string, dto: UpdateListingDto) =>
       request<Listing>(`/listings/${id}`, { method: 'PATCH', body: dto }),
+
+    /** 목록 숨김 토글 (Listing.isHidden) */
+    setHidden: (id: string, isHidden: boolean) =>
+      request<Listing>(`/listings/${id}`, {
+        method: 'PATCH',
+        body: { isHidden },
+      }),
 
     remove: (id: string) =>
       request<void>(`/listings/${id}`, { method: 'DELETE' }),

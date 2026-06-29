@@ -1,260 +1,256 @@
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState, type ComponentType, type ReactNode } from 'react';
-import type { BuyerRequirement, ContactDetail, ContactRelation, PropertyContact } from '@estate-erp/api-client';
-import { formatPrice, sqmToPyeong } from '@estate-erp/shared';
+import { toast } from 'sonner';
+import { ApiError, type ContactDetail } from '@estate-erp/api-client';
 import {
+  AlertCircle,
   ArrowLeft,
   Building2,
+  CalendarPlus,
   Clock3,
-  Link2,
+  FileText,
   Mail,
-  MessageSquare,
+  MessageSquarePlus,
   Pencil,
   Phone,
+  Plus,
   Target,
   Trash2,
   UserRound,
+  UserSearch,
+  Users,
 } from 'lucide-react';
 import { api } from '@/lib/api';
-import { formatPhoneNumber, mergeContactTags, splitContactTags, stringifyContactTags } from '@/lib/contacts';
+import { formatDateTime, formatPhone } from '@/lib/format';
+import { splitContactTags } from '@/lib/contacts';
 import { cn } from '@/lib/utils';
-import { ContactGroupSelector } from '@/components/contacts/contact-group-selector';
-import { Badge } from '@/components/ui/badge';
+import { ConfirmDialog, EmptyState } from '@/components/domain';
 import { Button } from '@/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Textarea } from '@/components/ui/textarea';
-
-const consultationTypeLabels: Record<string, string> = {
-  phone: '전화',
-  visit: '방문',
-  online: '온라인',
-};
-
-const consultationTypeColors: Record<string, string> = {
-  phone: 'bg-blue-50 text-blue-700',
-  visit: 'bg-emerald-50 text-emerald-700',
-  online: 'bg-violet-50 text-violet-700',
-};
-
-const buyerStatusLabels: Record<string, string> = {
-  active: '활성',
-  matched: '매칭됨',
-  completed: '완료',
-  inactive: '비활성',
-};
-
-const buyerStatusColors: Record<string, string> = {
-  active: 'bg-emerald-50 text-emerald-700',
-  matched: 'bg-blue-50 text-blue-700',
-  completed: 'bg-gray-100 text-gray-600',
-  inactive: 'bg-gray-50 text-gray-400',
-};
-
-const urgencyLabels: Record<string, string> = {
-  urgent: '급',
-  normal: '보통',
-  flexible: '여유',
-};
-
-const urgencyColors: Record<string, string> = {
-  urgent: 'bg-red-50 text-red-700',
-  normal: 'bg-gray-100 text-gray-700',
-  flexible: 'bg-sky-50 text-sky-700',
-};
-
-const transactionTypeLabels: Record<string, string> = {
-  sale: '매매',
-  jeonse: '전세',
-  monthly: '월세',
-};
-
-const roleLabels: Record<string, string> = {
-  owner: '소유자',
-  co_owner: '공동소유',
-  representative: '대리인',
-  lawyer: '법무사',
-  tax_agent: '세무사',
-};
-
-type ContactEditForm = {
-  name: string;
-  phone: string;
-  phone2: string;
-  email: string;
-  groupTags: string[];
-  customTagsInput: string;
-  memo: string;
-};
+import {
+  BuyerRequirementCard,
+  ConsultationCard,
+  PropertyContactCard,
+  RelationCard,
+  relationTypeLabels,
+  type RelationItem,
+} from './-detail-cards';
+import { ContactEditDialog, ContactTagBadges, RelationAddDialog } from './-detail-dialogs';
+import {
+  BuyerReqAddDialog,
+  ConsultationAddDialog,
+  PropertyLinkDialog,
+  TaskAddDialog,
+} from './-detail-action-dialogs';
 
 export const Route = createFileRoute('/_authenticated/contacts/$id')({
   component: ContactDetailPage,
 });
 
+type DialogKind =
+  | 'edit'
+  | 'relation'
+  | 'consultation'
+  | 'task'
+  | 'propertyLink'
+  | 'buyerReq'
+  | 'deleteBlocked'
+  | 'deleteConfirm'
+  | null;
+
 function ContactDetailPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { id } = Route.useParams();
-  const [isEditOpen, setIsEditOpen] = useState(false);
-  const [editError, setEditError] = useState('');
-  const [pageError, setPageError] = useState('');
-  const [editForm, setEditForm] = useState<ContactEditForm>({
-    name: '',
-    phone: '',
-    phone2: '',
-    email: '',
-    groupTags: [],
-    customTagsInput: '',
-    memo: '',
-  });
+  const [openDialog, setOpenDialog] = useState<DialogKind>(null);
+  const [relationToDelete, setRelationToDelete] = useState<RelationItem | null>(null);
 
-  const { data: contact, isLoading } = useQuery({
+  const contactQuery = useQuery({
     queryKey: ['contacts', id],
     queryFn: () => api.contacts.findOne(id),
+    retry: (failureCount, error) => {
+      if (error instanceof ApiError && error.statusCode === 404) return false;
+      return failureCount < 2;
+    },
   });
+  const contact = contactQuery.data;
 
   const { data: propertyContacts = [], isLoading: propertyContactsLoading } = useQuery({
     queryKey: ['contacts', id, 'property-contacts'],
     queryFn: () => api.contacts.getPropertyContacts(id),
+    enabled: Boolean(contact),
   });
 
   const { data: buyerRequirements = [], isLoading: buyerRequirementsLoading } = useQuery({
     queryKey: ['contacts', id, 'buyer-requirements'],
     queryFn: () => api.contacts.getBuyerRequirements(id),
+    enabled: Boolean(contact),
   });
 
   const { data: consultations = [], isLoading: consultationsLoading } = useQuery({
     queryKey: ['contacts', id, 'consultations'],
     queryFn: () => api.contacts.getConsultations(id),
+    enabled: Boolean(contact),
   });
 
-  const relationshipItems = useMemo(() => {
+  const relationshipItems = useMemo<RelationItem[]>(() => {
     if (!contact) return [];
-
     return [
-      ...contact.relationsAsMain.map((relation) => ({
+      ...contact.relationsAsMain.map<RelationItem>((relation) => ({
         id: `main-${relation.id}`,
+        relationId: relation.id,
         direction: '연결함',
         relation,
+        counterpartId: relation.relatedContact?.id ?? relation.relatedContactId ?? null,
         counterpartName: relation.relatedContact?.name ?? '이름 없음',
         counterpartPhone: relation.relatedContact?.phone ?? null,
       })),
-      ...contact.relationsAsRelated.map((relation) => ({
+      ...contact.relationsAsRelated.map<RelationItem>((relation) => ({
         id: `related-${relation.id}`,
+        relationId: relation.id,
         direction: '연결됨',
         relation,
+        counterpartId: relation.contact?.id ?? relation.contactId ?? null,
         counterpartName: relation.contact?.name ?? '이름 없음',
         counterpartPhone: relation.contact?.phone ?? null,
       })),
     ];
   }, [contact]);
 
-  const { groupTags, customTags } = useMemo(
-    () => splitContactTags(contact?.tags ?? []),
-    [contact?.tags],
-  );
-
-  const updateMutation = useMutation({
-    mutationFn: (payload: Parameters<typeof api.contacts.update>[1]) =>
-      api.contacts.update(id, payload),
-    onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['contacts'] }),
-        queryClient.invalidateQueries({ queryKey: ['contacts', id] }),
-      ]);
-      setEditError('');
-      setPageError('');
-      setIsEditOpen(false);
-    },
-    onError: () => {
-      setEditError('연락처 수정에 실패했습니다.');
-    },
-  });
-
   const removeMutation = useMutation({
     mutationFn: () => api.contacts.remove(id),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['contacts'] });
-      navigate({ to: '/contacts' });
+      toast.success('연락처가 삭제되었습니다.');
+      setOpenDialog(null);
+      void navigate({ to: '/contacts' });
     },
     onError: () => {
-      setPageError('연락처 삭제에 실패했습니다.');
+      toast.error('연락처 삭제에 실패했습니다.');
     },
   });
 
-  if (isLoading) {
+  const removeRelationMutation = useMutation({
+    mutationFn: (relationId: string) => api.contactRelations.remove(relationId),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['contacts'] });
+      toast.success('관계가 삭제되었습니다.');
+      setRelationToDelete(null);
+    },
+    onError: () => {
+      toast.error('관계 삭제에 실패했습니다.');
+    },
+  });
+
+  if (contactQuery.isLoading) {
     return (
       <div className="flex flex-col gap-4">
         <Skeleton className="h-8 w-48" />
-        <Skeleton className="h-28 w-full rounded-xl" />
-        <Skeleton className="h-96 w-full rounded-xl" />
+        <Skeleton className="h-28 w-full rounded-lg" />
+        <Skeleton className="h-96 w-full rounded-lg" />
       </div>
     );
   }
 
-  if (!contact) {
-    return <div className="py-12 text-center text-sm text-muted-foreground">연락처를 찾을 수 없습니다.</div>;
+  const isNotFound =
+    contactQuery.error instanceof ApiError && contactQuery.error.statusCode === 404;
+
+  if (contactQuery.isError && !isNotFound) {
+    return (
+      <EmptyState
+        icon={AlertCircle}
+        title="연락처를 불러오지 못했습니다"
+        description="네트워크 상태를 확인한 뒤 다시 시도하세요."
+        action={
+          <Button variant="outline" onClick={() => void contactQuery.refetch()}>
+            다시 시도
+          </Button>
+        }
+      />
+    );
   }
+
+  if (isNotFound || !contact) {
+    return (
+      <EmptyState
+        icon={UserSearch}
+        title="연락처를 찾을 수 없습니다"
+        description="삭제되었거나 존재하지 않는 연락처입니다."
+        action={
+          <Button variant="outline" asChild>
+            <Link to="/contacts">목록으로 돌아가기</Link>
+          </Button>
+        }
+      />
+    );
+  }
+
+  // 삭제 가드 — 연결 엔터티가 있으면 hard delete를 막고 사유를 안내한다 (PRD 11장).
+  const linkedParts = [
+    propertyContacts.length > 0 ? `연결 매물 ${propertyContacts.length}건` : null,
+    buyerRequirements.length > 0 ? `매수요건 ${buyerRequirements.length}건` : null,
+    consultations.length > 0 ? `상담 기록 ${consultations.length}건` : null,
+    relationshipItems.length > 0 ? `관계 ${relationshipItems.length}건` : null,
+  ].filter((part): part is string => part !== null);
+  const hasLinkedEntities = linkedParts.length > 0;
+
+  const phones = collectDetailPhones(contact);
 
   return (
     <>
       <div className="flex flex-col gap-4">
-        <div className="flex items-start justify-between gap-4">
-          <div className="flex items-start gap-3">
+        {/* 헤더 — 이름/태그/연락 정보 + 후속 액션 CTA */}
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="flex min-w-0 items-start gap-3">
             <Button variant="ghost" size="icon" className="mt-0.5 size-7" asChild>
               <Link to="/contacts">
                 <ArrowLeft className="size-4" />
               </Link>
             </Button>
-            <div className="space-y-2">
+            <div className="min-w-0 space-y-2">
               <div className="flex flex-wrap items-center gap-2">
                 <h1 className="text-lg font-semibold tracking-tight">{contact.name}</h1>
-                {contact.tags.map((tag) => (
-                  <Badge key={tag} variant={groupTags.includes(tag) ? 'default' : 'secondary'}>
-                    {tag}
-                  </Badge>
-                ))}
+                <ContactTagBadges tags={contact.tags} />
               </div>
-              <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
-                <span className="inline-flex items-center gap-1.5">
-                  <Phone className="size-3.5" />
-                  {formatPhoneNumber(contact.phone)}
-                </span>
-                {contact.email && (
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
+                {phones.length > 0 ? (
+                  phones.map((phone) => (
+                    <a
+                      key={phone.key}
+                      href={`tel:${phone.phone}`}
+                      className="inline-flex items-center gap-1.5 tabular-nums hover:text-foreground hover:underline"
+                    >
+                      <Phone className="size-3.5" />
+                      {formatPhone(phone.phone)}
+                      {phone.label && <span className="text-xs text-muted-foreground/70">({phone.label})</span>}
+                    </a>
+                  ))
+                ) : (
                   <span className="inline-flex items-center gap-1.5">
+                    <Phone className="size-3.5" />
+                    전화번호 없음
+                  </span>
+                )}
+                {contact.email && (
+                  <a
+                    href={`mailto:${contact.email}`}
+                    className="inline-flex items-center gap-1.5 hover:text-foreground hover:underline"
+                  >
                     <Mail className="size-3.5" />
                     {contact.email}
-                  </span>
+                  </a>
                 )}
                 <span className="inline-flex items-center gap-1.5">
                   <Clock3 className="size-3.5" />
-                  {formatDate(contact.createdAt)} 등록
+                  {formatDateTime(contact.createdAt)} 등록
                 </span>
               </div>
             </div>
           </div>
 
           <div className="flex shrink-0 items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                setEditForm(toEditForm(contact));
-                setEditError('');
-                setIsEditOpen(true);
-              }}
-            >
+            <Button variant="outline" size="sm" onClick={() => setOpenDialog('edit')}>
               <Pencil className="size-4" />
               수정
             </Button>
@@ -263,13 +259,7 @@ function ContactDetailPage() {
               size="sm"
               className="text-destructive hover:text-destructive"
               disabled={removeMutation.isPending}
-              onClick={() => {
-                const confirmed = window.confirm(`"${contact.name}" 연락처를 삭제할까요?`);
-                if (confirmed) {
-                  setPageError('');
-                  removeMutation.mutate();
-                }
-              }}
+              onClick={() => setOpenDialog(hasLinkedEntities ? 'deleteBlocked' : 'deleteConfirm')}
             >
               <Trash2 className="size-4" />
               삭제
@@ -277,451 +267,384 @@ function ContactDetailPage() {
           </div>
         </div>
 
-        {pageError && (
-          <div className="rounded-lg border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive">
-            {pageError}
-          </div>
-        )}
+        {/* 후속 액션 CTA (PRD 9장: 저장 후 후속 액션 / 12장: 연결 화면) */}
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => setOpenDialog('consultation')}>
+            <MessageSquarePlus className="size-4" />
+            상담 기록
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => setOpenDialog('buyerReq')}>
+            <Target className="size-4" />
+            매수요건 추가
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => setOpenDialog('propertyLink')}>
+            <Building2 className="size-4" />
+            매물 연결
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => setOpenDialog('task')}>
+            <CalendarPlus className="size-4" />
+            할 일 추가
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => setOpenDialog('relation')}>
+            <Users className="size-4" />
+            관계 추가
+          </Button>
+        </div>
 
-        <Tabs defaultValue="overview" className="flex flex-col gap-4">
-          <TabsList className="w-fit">
-            <TabsTrigger value="overview">기본 정보</TabsTrigger>
-            <TabsTrigger value="properties">연결 매물 ({propertyContacts.length})</TabsTrigger>
-            <TabsTrigger value="buyers">매수요건 ({buyerRequirements.length})</TabsTrigger>
-            <TabsTrigger value="consultations">상담 ({consultations.length})</TabsTrigger>
-            <TabsTrigger value="relations">관계 ({relationshipItems.length})</TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="overview">
-            <div className="rounded-xl border border-border/60 bg-background">
-              <div className="grid gap-0 xl:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]">
-                <div className="border-b border-border/60 px-5 py-4 xl:border-r xl:border-b-0">
-                  <SectionHeading
-                    title="연락처 프로필"
-                    description="기본 연락 정보와 그룹, 추가 태그를 확인합니다."
+        {/* PRD 5장 — 좌 2/3 정보 영역 + 우 1/3 상담내역 고정 스크롤 패널 */}
+        <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,2fr)_minmax(340px,1fr)]">
+          <div className="min-w-0 space-y-4">
+            {/* 기본 프로필 + 메모 */}
+            <DetailSection
+              icon={UserRound}
+              title="기본 정보"
+              description="연락 정보, 그룹·태그, 메모"
+            >
+              <div className="grid gap-5 sm:grid-cols-2">
+                <InfoField label="이름" value={contact.name} icon={UserRound} />
+                <InfoField label="이메일" value={contact.email ?? '—'} icon={Mail} />
+                {phones.map((phone, index) => (
+                  <InfoField
+                    key={phone.key}
+                    label={phone.label || (index === 0 ? '전화번호' : `전화번호 ${index + 1}`)}
+                    value={`${formatPhone(phone.phone)}${phone.isPrimary ? ' (주)' : ''}`}
+                    icon={Phone}
+                    mono
                   />
-                </div>
-                <div className="px-5 py-4">
-                  <SectionHeading
-                    title="메모"
-                    description="연락처와 관련된 메모와 참고사항입니다."
-                  />
-                </div>
-
-                <div className="border-b border-border/60 px-5 py-5 xl:border-r xl:border-b-0">
-                  <div className="grid gap-5 sm:grid-cols-2">
-                  <InfoField label="이름" value={contact.name} icon={UserRound} />
-                  <InfoField label="전화번호" value={formatPhoneNumber(contact.phone)} icon={Phone} mono />
-                  {getSecondaryPhone(contact) && (
-                    <InfoField
-                      label="보조 전화"
-                      value={formatPhoneNumber(getSecondaryPhone(contact))}
-                      icon={Phone}
-                      mono
-                    />
-                  )}
-                  <InfoField label="이메일" value={contact.email ?? '-'} icon={Mail} />
-                  <InfoField label="등록일" value={formatDateTime(contact.createdAt)} icon={Clock3} />
-                  <InfoField label="수정일" value={formatDateTime(contact.updatedAt)} icon={Clock3} />
-
-                  <div className="space-y-2 sm:col-span-2">
-                    <p className="text-xs font-medium text-muted-foreground">그룹</p>
-                    {groupTags.length > 0 ? (
-                      <div className="flex flex-wrap gap-1.5">
-                        {groupTags.map((tag) => (
-                          <Badge key={tag}>
-                            {tag}
-                          </Badge>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="text-sm text-muted-foreground">지정된 그룹이 없습니다.</p>
+                ))}
+                <InfoField label="등록일" value={formatDateTime(contact.createdAt)} icon={Clock3} />
+                <InfoField label="수정일" value={formatDateTime(contact.updatedAt)} icon={Clock3} />
+                <div className="space-y-2 sm:col-span-2">
+                  <p className="text-xs font-medium text-muted-foreground">그룹 / 태그</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    <ContactTagBadges tags={contact.tags} />
+                    {contact.tags.filter((tag) => Boolean(tag)).length === 0 && (
+                      <p className="text-sm text-muted-foreground">지정된 그룹/태그가 없습니다.</p>
                     )}
                   </div>
-
-                  <div className="space-y-2 sm:col-span-2">
-                    <p className="text-xs font-medium text-muted-foreground">추가 태그</p>
-                    {customTags.length > 0 ? (
-                      <div className="flex flex-wrap gap-1.5">
-                        {customTags.map((tag) => (
-                          <Badge key={tag} variant="secondary">
-                            {tag}
-                          </Badge>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="text-sm text-muted-foreground">추가 태그가 없습니다.</p>
-                    )}
-                  </div>
-                  </div>
                 </div>
-
-                <div className="px-5 py-5">
+                <div className="space-y-2 sm:col-span-2">
+                  <p className="text-xs font-medium text-muted-foreground">메모</p>
                   {contact.memo ? (
-                    <p className="whitespace-pre-wrap rounded-lg border bg-muted/30 px-4 py-3 text-sm leading-relaxed">
+                    <p className="whitespace-pre-wrap rounded-md border bg-muted/30 px-4 py-3 text-sm leading-relaxed">
                       {contact.memo}
                     </p>
                   ) : (
-                    <EmptyState message="작성된 메모가 없습니다." />
+                    <p className="text-sm text-muted-foreground">작성된 메모가 없습니다.</p>
                   )}
                 </div>
               </div>
+            </DetailSection>
+
+            {/* 연결된 연락처(관계) */}
+            <DetailSection
+              icon={Users}
+              title={`연결된 연락처 (관계) ${relationshipItems.length}`}
+              description="가족, 공동 명의, 전문가 관계"
+              action={
+                <Button variant="ghost" size="sm" className="h-7 gap-1 px-2 text-xs" onClick={() => setOpenDialog('relation')}>
+                  <Plus className="size-3.5" />
+                  추가
+                </Button>
+              }
+            >
+              {relationshipItems.length === 0 ? (
+                <EmptyState
+                  icon={Users}
+                  title="등록된 관계가 없습니다"
+                  description="가족·법무사 등 관련 인물을 연결해 두면 상담 맥락 파악이 빨라집니다."
+                  className="py-8"
+                  action={
+                    <Button variant="outline" size="sm" onClick={() => setOpenDialog('relation')}>
+                      <Plus className="size-3.5" />
+                      관계 추가
+                    </Button>
+                  }
+                />
+              ) : (
+                <div className="space-y-3">
+                  {relationshipItems.map((item) => (
+                    <RelationCard
+                      key={item.id}
+                      item={item}
+                      deleting={
+                        removeRelationMutation.isPending &&
+                        relationToDelete?.relationId === item.relationId
+                      }
+                      onDelete={() => setRelationToDelete(item)}
+                    />
+                  ))}
+                </div>
+              )}
+            </DetailSection>
+
+            {/* 소유물건 / 연결 매물 */}
+            <DetailSection
+              icon={Building2}
+              title={`연결 매물 ${propertyContacts.length}`}
+              description="소유주, 대리인 등 매물과의 연결"
+              action={
+                <Button variant="ghost" size="sm" className="h-7 gap-1 px-2 text-xs" onClick={() => setOpenDialog('propertyLink')}>
+                  <Plus className="size-3.5" />
+                  연결
+                </Button>
+              }
+            >
+              {propertyContactsLoading ? (
+                <StackSkeleton rows={2} />
+              ) : propertyContacts.length === 0 ? (
+                <EmptyState
+                  icon={Building2}
+                  title="연결된 매물이 없습니다"
+                  className="py-8"
+                  action={
+                    <Button variant="outline" size="sm" onClick={() => setOpenDialog('propertyLink')}>
+                      <Plus className="size-3.5" />
+                      매물 연결
+                    </Button>
+                  }
+                />
+              ) : (
+                <div className="space-y-3">
+                  {propertyContacts.map((propertyContact) => (
+                    <PropertyContactCard key={propertyContact.id} propertyContact={propertyContact} />
+                  ))}
+                </div>
+              )}
+            </DetailSection>
+
+            {/* 구매요구조건 */}
+            <DetailSection
+              icon={Target}
+              title={`매수요건 ${buyerRequirements.length}`}
+              description="희망 조건과 추적 상태"
+              action={
+                <div className="flex items-center gap-1">
+                  <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" asChild>
+                    <Link to="/buyer-requirements">구매고객 페이지</Link>
+                  </Button>
+                  <Button variant="ghost" size="sm" className="h-7 gap-1 px-2 text-xs" onClick={() => setOpenDialog('buyerReq')}>
+                    <Plus className="size-3.5" />
+                    추가
+                  </Button>
+                </div>
+              }
+            >
+              {buyerRequirementsLoading ? (
+                <StackSkeleton rows={2} />
+              ) : buyerRequirements.length === 0 ? (
+                <EmptyState
+                  icon={Target}
+                  title="등록된 매수요건이 없습니다"
+                  className="py-8"
+                  action={
+                    <Button variant="outline" size="sm" onClick={() => setOpenDialog('buyerReq')}>
+                      <Plus className="size-3.5" />
+                      매수요건 추가
+                    </Button>
+                  }
+                />
+              ) : (
+                <div className="space-y-3">
+                  {buyerRequirements.map((requirement) => (
+                    <BuyerRequirementCard key={requirement.id} requirement={requirement} />
+                  ))}
+                </div>
+              )}
+            </DetailSection>
+          </div>
+
+          {/* 우측 1/3 — 상담내역 전용 패널 (독립 스크롤, 여러 줄 내용 그대로) */}
+          <aside className="min-w-0 rounded-lg border border-border/60 bg-background xl:sticky xl:top-4">
+            <div className="flex items-center justify-between gap-2 border-b border-border/60 px-4 py-3">
+              <div className="flex min-w-0 items-center gap-2">
+                <FileText className="size-4 shrink-0 text-muted-foreground" />
+                <p className="truncate text-sm font-semibold">상담내역 {consultations.length}</p>
+              </div>
+              <div className="flex shrink-0 items-center gap-1">
+                <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" asChild>
+                  <Link to="/consultations">전체 보기</Link>
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 gap-1 px-2 text-xs"
+                  onClick={() => setOpenDialog('consultation')}
+                >
+                  <Plus className="size-3.5" />
+                  기록
+                </Button>
+              </div>
             </div>
-          </TabsContent>
-
-          <TabsContent value="properties">
-            <SectionPanel
-              title="연결된 매물"
-              description="소유주, 대리인 등 매물과의 연결 관계를 확인합니다."
-            >
-                {propertyContactsLoading ? (
-                  <StackSkeleton rows={3} />
-                ) : propertyContacts.length === 0 ? (
-                  <EmptyState message="연결된 매물이 없습니다." />
-                ) : (
-                  <div className="space-y-3">
-                    {propertyContacts.map((propertyContact) => (
-                      <PropertyContactCard key={propertyContact.id} propertyContact={propertyContact} />
-                    ))}
-                  </div>
-                )}
-            </SectionPanel>
-          </TabsContent>
-
-          <TabsContent value="buyers">
-            <SectionPanel
-              title="매수요건"
-              description="현재 연락처가 등록한 희망 조건과 추적 상태입니다."
-            >
-                {buyerRequirementsLoading ? (
-                  <StackSkeleton rows={3} />
-                ) : buyerRequirements.length === 0 ? (
-                  <EmptyState message="등록된 매수요건이 없습니다." />
-                ) : (
-                  <div className="space-y-3">
-                    {buyerRequirements.map((requirement) => (
-                      <BuyerRequirementCard key={requirement.id} requirement={requirement} />
-                    ))}
-                  </div>
-                )}
-            </SectionPanel>
-          </TabsContent>
-
-          <TabsContent value="consultations">
-            <SectionPanel
-              title="상담 이력"
-              description="연락처와의 최근 상담 기록과 연계 매물을 봅니다."
-            >
-                {consultationsLoading ? (
-                  <StackSkeleton rows={3} />
-                ) : consultations.length === 0 ? (
-                  <EmptyState message="상담 이력이 없습니다." />
-                ) : (
-                  <div className="space-y-3">
-                    {consultations.map((consultation) => (
-                      <ConsultationCard key={consultation.id} consultation={consultation} />
-                    ))}
-                  </div>
-                )}
-            </SectionPanel>
-          </TabsContent>
-
-          <TabsContent value="relations">
-            <SectionPanel
-              title="연락처 관계"
-              description="가족, 공동 명의, 참조 관계 등 연락처 간 연결입니다."
-            >
-                {relationshipItems.length === 0 ? (
-                  <EmptyState message="등록된 관계가 없습니다." />
-                ) : (
-                  <div className="space-y-3">
-                    {relationshipItems.map((item) => (
-                      <RelationCard
-                        key={item.id}
-                        direction={item.direction}
-                        relation={item.relation}
-                        counterpartName={item.counterpartName}
-                        counterpartPhone={item.counterpartPhone}
-                      />
-                    ))}
-                  </div>
-                )}
-            </SectionPanel>
-          </TabsContent>
-        </Tabs>
+            <div className="space-y-3 overflow-y-auto p-4 xl:max-h-[calc(100vh-11rem)]">
+              {consultationsLoading ? (
+                <StackSkeleton rows={3} />
+              ) : consultations.length === 0 ? (
+                <EmptyState
+                  icon={FileText}
+                  title="상담 이력이 없습니다"
+                  className="py-8"
+                  action={
+                    <Button variant="outline" size="sm" onClick={() => setOpenDialog('consultation')}>
+                      <Plus className="size-3.5" />
+                      상담 기록
+                    </Button>
+                  }
+                />
+              ) : (
+                consultations.map((consultation) => (
+                  <ConsultationCard key={consultation.id} consultation={consultation} />
+                ))
+              )}
+            </div>
+          </aside>
+        </div>
       </div>
 
-      <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle>연락처 수정</DialogTitle>
-            <DialogDescription>연락처 정보와 태그, 메모를 즉시 수정합니다.</DialogDescription>
-          </DialogHeader>
+      {/* 다이얼로그 */}
+      <ContactEditDialog
+        contact={contact}
+        open={openDialog === 'edit'}
+        onOpenChange={(open) => setOpenDialog(open ? 'edit' : null)}
+      />
+      <RelationAddDialog
+        contactId={contact.id}
+        contactName={contact.name}
+        open={openDialog === 'relation'}
+        onOpenChange={(open) => setOpenDialog(open ? 'relation' : null)}
+      />
+      <ConsultationAddDialog
+        contactId={contact.id}
+        contactName={contact.name}
+        open={openDialog === 'consultation'}
+        onOpenChange={(open) => setOpenDialog(open ? 'consultation' : null)}
+      />
+      <TaskAddDialog
+        contactId={contact.id}
+        contactName={contact.name}
+        open={openDialog === 'task'}
+        onOpenChange={(open) => setOpenDialog(open ? 'task' : null)}
+      />
+      <PropertyLinkDialog
+        contactId={contact.id}
+        contactName={contact.name}
+        open={openDialog === 'propertyLink'}
+        onOpenChange={(open) => setOpenDialog(open ? 'propertyLink' : null)}
+      />
+      <BuyerReqAddDialog
+        contactId={contact.id}
+        contactName={contact.name}
+        open={openDialog === 'buyerReq'}
+        onOpenChange={(open) => setOpenDialog(open ? 'buyerReq' : null)}
+      />
 
-          <form
-            className="space-y-4"
-            onSubmit={(event) => {
-              event.preventDefault();
+      {/* 삭제 차단 안내 — 연결 엔터티 존재 시 (PRD 11장 삭제 불가 조건) */}
+      <ConfirmDialog
+        open={openDialog === 'deleteBlocked'}
+        onOpenChange={(open) => setOpenDialog(open ? 'deleteBlocked' : null)}
+        title="삭제할 수 없는 연락처입니다"
+        description={`${linkedParts.join(', ')}이(가) 이 연락처에 연결되어 있습니다. 연결된 데이터를 먼저 정리하거나 이관한 뒤 삭제하세요. 연결 이력이 있는 연락처는 보존하는 것을 권장합니다.`}
+        confirmLabel="확인"
+        onConfirm={() => setOpenDialog(null)}
+      />
 
-              const name = editForm.name.trim();
-              if (!name) {
-                setEditError('이름은 필수입니다.');
-                return;
-              }
+      {/* 삭제 확인 — 연결 엔터티 없는 경우만 */}
+      <ConfirmDialog
+        open={openDialog === 'deleteConfirm'}
+        onOpenChange={(open) => setOpenDialog(open ? 'deleteConfirm' : null)}
+        title={`"${contact.name}" 연락처를 삭제할까요?`}
+        description="삭제한 연락처는 복구할 수 없습니다."
+        confirmLabel="삭제"
+        destructive
+        loading={removeMutation.isPending}
+        onConfirm={() => removeMutation.mutate()}
+      />
 
-              setEditError('');
-              const phone = editForm.phone.trim();
-              const phone2 = editForm.phone2.trim();
-              updateMutation.mutate({
-                name,
-                phone: phone || undefined,
-                phones: buildPhonesInput(phone, phone2),
-                email: editForm.email.trim() || undefined,
-                tags: mergeContactTags(editForm.groupTags, editForm.customTagsInput),
-                memo: editForm.memo.trim() || undefined,
-              });
-            }}
-          >
-            {editError && (
-              <div className="rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2 text-sm text-destructive">
-                {editError}
-              </div>
-            )}
-
-            <FormField label="이름">
-              <Input
-                value={editForm.name}
-                onChange={(event) => setEditForm((previous) => ({ ...previous, name: event.target.value }))}
-                required
-              />
-            </FormField>
-
-            <div className="grid gap-4 sm:grid-cols-2">
-              <FormField label="전화번호">
-                <Input
-                  type="tel"
-                  value={editForm.phone}
-                  onChange={(event) => setEditForm((previous) => ({ ...previous, phone: event.target.value }))}
-                />
-              </FormField>
-
-              <FormField label="보조 전화">
-                <Input
-                  type="tel"
-                  value={editForm.phone2}
-                  onChange={(event) => setEditForm((previous) => ({ ...previous, phone2: event.target.value }))}
-                />
-              </FormField>
-            </div>
-
-            <FormField label="이메일">
-              <Input
-                type="email"
-                value={editForm.email}
-                onChange={(event) => setEditForm((previous) => ({ ...previous, email: event.target.value }))}
-              />
-            </FormField>
-
-            <FormField label="그룹 / 태그">
-              <div className="space-y-3">
-                <div className="space-y-2">
-                  <p className="text-xs font-medium text-muted-foreground">그룹</p>
-                  <ContactGroupSelector
-                    selectedTags={editForm.groupTags}
-                    onToggle={(tag) => {
-                      setEditForm((previous) => ({
-                        ...previous,
-                        groupTags: previous.groupTags.includes(tag)
-                          ? previous.groupTags.filter((item) => item !== tag)
-                          : [...previous.groupTags, tag],
-                      }));
-                    }}
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <p className="text-xs font-medium text-muted-foreground">추가 태그</p>
-                  <Input
-                    value={editForm.customTagsInput}
-                    onChange={(event) => setEditForm((previous) => ({ ...previous, customTagsInput: event.target.value }))}
-                    placeholder="예: VIP, 소개, 재연락"
-                  />
-                </div>
-              </div>
-            </FormField>
-
-            <FormField label="메모">
-              <Textarea
-                rows={4}
-                value={editForm.memo}
-                onChange={(event) => setEditForm((previous) => ({ ...previous, memo: event.target.value }))}
-              />
-            </FormField>
-
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setIsEditOpen(false)}>
-                취소
-              </Button>
-              <Button type="submit" disabled={updateMutation.isPending}>
-                {updateMutation.isPending ? '저장 중...' : '저장'}
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
+      {/* 관계 삭제 확인 */}
+      <ConfirmDialog
+        open={relationToDelete !== null}
+        onOpenChange={(open) => {
+          if (!open) setRelationToDelete(null);
+        }}
+        title="관계를 삭제할까요?"
+        description={
+          relationToDelete
+            ? `${relationToDelete.counterpartName} 님과의 "${
+                relationToDelete.relation.label ||
+                relationTypeLabels[relationToDelete.relation.relationType] ||
+                relationToDelete.relation.relationType
+              }" 관계만 삭제됩니다. 상대 연락처는 유지됩니다.`
+            : undefined
+        }
+        confirmLabel="삭제"
+        destructive
+        loading={removeRelationMutation.isPending}
+        onConfirm={() => {
+          if (relationToDelete) {
+            removeRelationMutation.mutate(relationToDelete.relationId);
+          }
+        }}
+      />
     </>
   );
 }
 
-function PropertyContactCard({ propertyContact }: { propertyContact: PropertyContact }) {
-  const title = propertyContact.property?.site?.name ?? '연결 매물';
-  const subtitle = [propertyContact.property?.unit?.name, propertyContact.property?.site?.roadAddress || propertyContact.property?.site?.jibunAddress]
-    .filter(Boolean)
-    .join(' · ');
+// ── 보조 컴포넌트 ─────────────────────────────────────────────
 
-  return (
-    <div className="rounded-xl border bg-card px-4 py-3">
-      <div className="flex items-start justify-between gap-3">
-        <div className="space-y-1">
-          {propertyContact.property ? (
-            <Link
-              to="/properties/$id"
-              params={{ id: propertyContact.propertyId }}
-              className="text-sm font-medium hover:text-primary hover:underline"
-            >
-              {title}
-            </Link>
-          ) : (
-            <p className="text-sm font-medium">{title}</p>
-          )}
-          <p className="text-sm text-muted-foreground">{subtitle || '위치 정보 없음'}</p>
-        </div>
-        <div className="flex flex-wrap justify-end gap-1.5">
-          <Badge variant="secondary">{roleLabels[propertyContact.role] ?? propertyContact.role}</Badge>
-          {propertyContact.isPrimary && <Badge>주 연락처</Badge>}
-          {propertyContact.isResident && <Badge variant="outline">거주중</Badge>}
-        </div>
-      </div>
-
-      <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-        {propertyContact.shareRatio !== null && <span>지분 {propertyContact.shareRatio}%</span>}
-        <span>상태 {propertyContact.status}</span>
-      </div>
-
-      {propertyContact.memo && (
-        <p className="mt-3 rounded-lg bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
-          {propertyContact.memo}
-        </p>
-      )}
-    </div>
-  );
+interface DetailPhone {
+  key: string;
+  phone: string;
+  label: string | null;
+  isPrimary: boolean;
 }
 
-function BuyerRequirementCard({ requirement }: { requirement: BuyerRequirement }) {
-  return (
-    <div className="rounded-xl border bg-card px-4 py-3">
-      <div className="flex items-start justify-between gap-3">
-        <div className="space-y-1">
-          <div className="flex flex-wrap items-center gap-1.5">
-            <Badge className={cn('border-transparent', buyerStatusColors[requirement.status] ?? 'bg-gray-100 text-gray-700')}>
-              {buyerStatusLabels[requirement.status] ?? requirement.status}
-            </Badge>
-            <Badge className={cn('border-transparent', urgencyColors[requirement.urgency] ?? 'bg-gray-100 text-gray-700')}>
-              {urgencyLabels[requirement.urgency] ?? requirement.urgency}
-            </Badge>
-            {requirement.transactionType && (
-              <Badge variant="outline">
-                {transactionTypeLabels[requirement.transactionType] ?? requirement.transactionType}
-              </Badge>
-            )}
-          </div>
-          <p className="text-sm font-medium">{formatBudgetSummary(requirement)}</p>
-          <p className="text-sm text-muted-foreground">
-            {formatAreaSummary(requirement)}
-            {(() => {
-              const regions = (requirement.preferredRegions ?? [])
-                .map((r) => r.ward?.name ?? r.district?.name ?? r.province?.name ?? '')
-                .filter(Boolean);
-              return regions.length > 0 ? ` · ${regions.join(', ')}` : '';
-            })()}
-          </p>
-        </div>
-        <div className="text-right text-xs text-muted-foreground">
-          <p>등록 {formatDate(requirement.createdAt)}</p>
-          {requirement.nextContactDate && <p>다음 연락 {formatDate(requirement.nextContactDate)}</p>}
-        </div>
-      </div>
+/** phones[] primary 우선 정렬 + legacy contact.phone 폴백 */
+function collectDetailPhones(contact: ContactDetail): DetailPhone[] {
+  const fromPhones = (contact.phones ?? [])
+    .filter((phone) => phone.phone)
+    .slice()
+    .sort((a, b) => Number(b.isPrimary) - Number(a.isPrimary))
+    .map((phone) => ({
+      key: phone.id,
+      phone: phone.phone,
+      label: phone.label && phone.label !== 'mobile' ? phone.label : null,
+      isPrimary: phone.isPrimary,
+    }));
 
-      {requirement.memo && (
-        <p className="mt-3 rounded-lg bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
-          {requirement.memo}
-        </p>
-      )}
-    </div>
-  );
+  if (fromPhones.length > 0) return fromPhones;
+  if (contact.phone) {
+    return [{ key: `legacy-${contact.id}`, phone: contact.phone, label: null, isPrimary: true }];
+  }
+  return [];
 }
 
-function ConsultationCard({ consultation }: { consultation: ContactDetail['consultations'][number] }) {
-  return (
-    <div className="rounded-xl border bg-card px-4 py-3">
-      <div className="flex items-start justify-between gap-3">
-        <div className="space-y-2">
-          <div className="flex flex-wrap items-center gap-1.5">
-            <Badge className={cn('border-transparent', consultationTypeColors[consultation.type] ?? 'bg-gray-100 text-gray-700')}>
-              {consultationTypeLabels[consultation.type] ?? consultation.type}
-            </Badge>
-            {consultation.property?.site?.name && (
-              <Badge variant="outline">{consultation.property.site.name}</Badge>
-            )}
-            {consultation.listing?.transactionType && (
-              <Badge variant="outline">
-                {transactionTypeLabels[consultation.listing.transactionType] ?? consultation.listing.transactionType}
-                {consultation.listing.price ? ` · ${formatPrice(consultation.listing.price)}` : ''}
-              </Badge>
-            )}
-          </div>
-          <p className="whitespace-pre-wrap text-sm leading-relaxed">{consultation.content}</p>
-        </div>
-        <div className="text-right text-xs text-muted-foreground">
-          <p>{formatDateTime(consultation.createdAt)}</p>
-          {consultation.createdBy?.name && <p>{consultation.createdBy.name}</p>}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function RelationCard({
-  direction,
-  relation,
-  counterpartName,
-  counterpartPhone,
+function DetailSection({
+  icon: Icon,
+  title,
+  description,
+  action,
+  children,
 }: {
-  direction: string;
-  relation: ContactRelation;
-  counterpartName: string;
-  counterpartPhone: string | null;
+  icon: ComponentType<{ className?: string }>;
+  title: string;
+  description?: string;
+  action?: ReactNode;
+  children: ReactNode;
 }) {
   return (
-    <div className="rounded-xl border bg-card px-4 py-3">
-      <div className="flex items-start justify-between gap-3">
-        <div className="space-y-1">
-          <div className="flex items-center gap-1.5">
-            <Badge variant="outline">{direction}</Badge>
-            <Badge variant="secondary">{relation.label || relation.relationType}</Badge>
+    <section className="rounded-lg border border-border/60 bg-background">
+      <div className="flex items-start justify-between gap-2 border-b border-border/60 px-4 py-3">
+        <div className="flex min-w-0 items-center gap-2">
+          <Icon className="size-4 shrink-0 text-muted-foreground" />
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold">{title}</p>
+            {description && <p className="text-xs text-muted-foreground">{description}</p>}
           </div>
-          <p className="text-sm font-medium">{counterpartName}</p>
-          <p className="text-sm text-muted-foreground">{formatPhoneNumber(counterpartPhone)}</p>
         </div>
-        <Link2 className="mt-1 size-4 text-muted-foreground" />
+        {action && <div className="shrink-0">{action}</div>}
       </div>
-
-      {relation.memo && (
-        <p className="mt-3 rounded-lg bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
-          {relation.memo}
-        </p>
-      )}
-    </div>
+      <div className="px-4 py-4">{children}</div>
+    </section>
   );
 }
 
@@ -747,145 +670,12 @@ function InfoField({
   );
 }
 
-function FormField({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div className="space-y-1.5">
-      <Label className="text-xs font-medium text-muted-foreground">{label}</Label>
-      {children}
-    </div>
-  );
-}
-
 function StackSkeleton({ rows }: { rows: number }) {
   return (
     <div className="space-y-3">
       {Array.from({ length: rows }).map((_, index) => (
-        <Skeleton key={index} className="h-24 w-full rounded-xl" />
+        <Skeleton key={index} className="h-24 w-full rounded-md" />
       ))}
     </div>
   );
-}
-
-function EmptyState({ message }: { message: string }) {
-  return (
-    <div className="flex min-h-32 items-center justify-center rounded-xl border border-dashed text-sm text-muted-foreground">
-      {message}
-    </div>
-  );
-}
-
-function SectionPanel({
-  title,
-  description,
-  children,
-}: {
-  title: string;
-  description: string;
-  children: ReactNode;
-}) {
-  return (
-    <div className="rounded-xl border border-border/60 bg-background">
-      <div className="border-b border-border/60 px-5 py-4">
-        <SectionHeading title={title} description={description} />
-      </div>
-      <div className="px-5 py-5">
-        {children}
-      </div>
-    </div>
-  );
-}
-
-function SectionHeading({ title, description }: { title: string; description: string }) {
-  return (
-    <div className="space-y-1">
-      <p className="text-sm font-semibold">{title}</p>
-      <p className="text-sm text-muted-foreground">{description}</p>
-    </div>
-  );
-}
-
-function toEditForm(contact: ContactDetail): ContactEditForm {
-  const { groupTags, customTags } = splitContactTags(contact.tags);
-
-  return {
-    name: contact.name,
-    phone: contact.phone ?? '',
-    phone2: getSecondaryPhone(contact) ?? '',
-    email: contact.email ?? '',
-    groupTags,
-    customTagsInput: stringifyContactTags(customTags),
-    memo: contact.memo ?? '',
-  };
-}
-
-/**
- * Contact.phones[]에서 주 연락처가 아닌 첫 보조 전화번호를 반환.
- * phones 배열이 비어있고 legacy contact.phone만 있는 경우 null.
- */
-function getSecondaryPhone(contact: { phones?: { phone: string; isPrimary: boolean }[] | null }): string | null {
-  const list = contact.phones ?? [];
-  const secondary = list.find((phone) => !phone.isPrimary && phone.phone);
-  if (secondary) return secondary.phone;
-  // primary 표시가 없을 때 두 번째 항목 폴백
-  if (list.length >= 2) return list[1].phone || null;
-  return null;
-}
-
-/**
- * 편집 폼의 phone(주) + phone2(보조) → ContactPhoneInput[] 입력 변환.
- * primary=true 1건 + (있다면) primary=false 1건.
- */
-function buildPhonesInput(primary: string, secondary: string) {
-  const phones: { phone: string; isPrimary: boolean; label?: string }[] = [];
-  if (primary) phones.push({ phone: primary, isPrimary: true });
-  if (secondary) phones.push({ phone: secondary, isPrimary: false, label: '보조' });
-  return phones.length > 0 ? phones : undefined;
-}
-
-function formatDate(value: string) {
-  return new Date(value).toLocaleDateString('ko-KR', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-  });
-}
-
-function formatDateTime(value: string) {
-  return new Date(value).toLocaleString('ko-KR', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-}
-
-function formatBudgetSummary(requirement: BuyerRequirement) {
-  if (requirement.transactionType === 'monthly') {
-    const deposit = formatRange(requirement.depositMin, requirement.depositMax);
-    const monthly = requirement.monthlyRentMax ? `${formatPrice(requirement.monthlyRentMax)} 이하` : '협의';
-    return `보증금 ${deposit} · 월세 ${monthly}`;
-  }
-
-  if (requirement.transactionType === 'jeonse') {
-    return `전세 ${formatRange(requirement.depositMin, requirement.depositMax)}`;
-  }
-
-  return `매매 ${formatRange(requirement.priceMin, requirement.priceMax)}`;
-}
-
-function formatRange(min: number | null, max: number | null) {
-  if (min && max) return `${formatPrice(min)} ~ ${formatPrice(max)}`;
-  if (min) return `${formatPrice(min)} 이상`;
-  if (max) return `${formatPrice(max)} 이하`;
-  return '협의';
-}
-
-function formatAreaSummary(requirement: BuyerRequirement) {
-  if (!requirement.areaMin && !requirement.areaMax) return '면적 조건 없음';
-  if (requirement.areaMin && requirement.areaMax) {
-    return `${sqmToPyeong(requirement.areaMin)}평 ~ ${sqmToPyeong(requirement.areaMax)}평`;
-  }
-  if (requirement.areaMin) return `${sqmToPyeong(requirement.areaMin)}평 이상`;
-  return `${sqmToPyeong(requirement.areaMax ?? 0)}평 이하`;
 }

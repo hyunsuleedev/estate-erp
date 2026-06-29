@@ -9,6 +9,8 @@ export interface Consultation {
   type: string;
   purpose: string;
   content: string;
+  /** 통화 녹음 연결 (nullable — 녹음 없는 상담도 있음). 상세는 callRecordings.findOne으로 조회. */
+  callRecordingId: string | null;
   propertyId: string | null;
   listingIntakeId: string | null;
   listingId: string | null;
@@ -20,7 +22,6 @@ export interface Consultation {
   createdBy?: { id: string; name: string } | null;
   property?: {
     id: string;
-    memo: string | null;
     site?: { name: string | null } | null;
     unit?: {
       id: string;
@@ -89,11 +90,43 @@ export interface CreateConsultationDto {
   listingId?: string;
   matchId?: string;
   buyerReqId?: string;
+  /** 기존 통화 녹음(CallRecording)을 상담에 연결 */
+  callRecordingId?: string;
 }
 
+// 서버 PATCH /consultations/:id는 type/content만 허용 (purpose·컨텍스트 FK 변경 불가)
 export interface UpdateConsultationDto {
   type?: string;
   content?: string;
+}
+
+/**
+ * POST /consultations/with-recording (multipart) 응답.
+ * 녹음 파일 업로드 → CallRecording 생성 → 비동기 STT 시작.
+ */
+export interface ConsultationWithRecordingResponse {
+  recording: {
+    id: string;
+    sttStatus: string;
+    fileName: string | null;
+    fileSize: number | null;
+  };
+  /** 하위 호환 필드 — recording.id와 동일한 id */
+  consultation: { id: string; content: string };
+  sttStatus: string;
+  recordingFileName: string;
+  recordingSize: number;
+}
+
+export interface CreateConsultationWithRecordingDto {
+  contactId: string;
+  type?: string;
+  direction?: 'inbound' | 'outbound';
+  phoneNumber?: string;
+  durationSec?: number;
+  /** 녹음 파일 (audio) */
+  file: Blob | File;
+  fileName?: string;
 }
 
 export function createConsultationsApi(request: RequestFn) {
@@ -117,5 +150,20 @@ export function createConsultationsApi(request: RequestFn) {
 
     remove: (id: string) =>
       request<void>(`/consultations/${id}`, { method: 'DELETE' }),
+
+    /** 녹음 파일과 함께 통화 기록 생성 (multipart). STT는 서버에서 비동기 처리. */
+    createWithRecording: (dto: CreateConsultationWithRecordingDto) => {
+      const form = new FormData();
+      form.append('file', dto.file, dto.fileName ?? (dto.file instanceof File ? dto.file.name : 'recording'));
+      form.append('contactId', dto.contactId);
+      if (dto.type) form.append('type', dto.type);
+      if (dto.direction) form.append('direction', dto.direction);
+      if (dto.phoneNumber) form.append('phoneNumber', dto.phoneNumber);
+      if (dto.durationSec != null) form.append('durationSec', String(dto.durationSec));
+      return request<ConsultationWithRecordingResponse>('/consultations/with-recording', {
+        method: 'POST',
+        body: form,
+      });
+    },
   };
 }

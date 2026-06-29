@@ -1,4 +1,5 @@
 import type { Consultation } from '@estate-erp/api-client';
+import { formatDate, formatMoney } from '@/lib/format';
 
 export type ConsultationListItem = Consultation;
 
@@ -16,18 +17,38 @@ export interface ConsultationDayGroup {
   items: ConsultationListItem[];
 }
 
-export type ConsultationContextCardKey = 'contact' | 'property' | 'listing' | 'match' | 'buyerRequirement';
+export type ConsultationContextCardKey =
+  | 'contact'
+  | 'property'
+  | 'listingIntake'
+  | 'listing'
+  | 'match'
+  | 'buyerRequirement';
 
 export interface ConsultationContextCard {
   key: ConsultationContextCardKey;
   label: string;
   title: string;
   description: string;
-  to: '/contacts/$id' | '/properties/$id' | '/properties' | '/matches' | '/buyer-requirements';
+  to:
+    | '/contacts/$id'
+    | '/properties/$id'
+    | '/properties'
+    | '/matches'
+    | '/buyer-requirements/$id'
+    | '/buyer-requirements';
   params?: { id: string };
+  /** 매칭 딥링크 (?matchId=) — /matches 페이지가 자동으로 상세를 연다 */
+  search?: { matchId: string };
 }
 
-export type ConsultationQuickFilter = 'all' | 'actionRequired' | 'property' | 'buyerRequirement';
+export type ConsultationQuickFilter =
+  | 'all'
+  | 'actionRequired'
+  | 'property'
+  | 'listingIntake'
+  | 'buyerRequirement'
+  | 'unlinked';
 
 export interface ConsultationFilterOption {
   id: string;
@@ -42,6 +63,9 @@ export interface ConsultationEntityFilters {
   dong?: ConsultationFilterOption | null;
   unit?: ConsultationFilterOption | null;
   type?: string | null;
+  createdBy?: ConsultationFilterOption | null;
+  dateFrom?: string | null;
+  dateTo?: string | null;
 }
 
 export interface ConsultationFilterChip {
@@ -51,6 +75,38 @@ export interface ConsultationFilterChip {
 
 type ConsultationProperty = NonNullable<ConsultationListItem['property']>;
 type ConsultationPropertyUnit = NonNullable<ConsultationProperty['unit']>;
+
+// ----------------------------------------------------------------
+// purpose (상담 목적)
+// ----------------------------------------------------------------
+
+export interface ConsultationPurposeMeta {
+  label: string;
+  className: string;
+}
+
+export const consultationPurposeMeta: Record<string, ConsultationPurposeMeta> = {
+  general: { label: '일반 상담', className: 'bg-slate-100 text-slate-700' },
+  listing_confirm: { label: '매물 확인', className: 'bg-sky-50 text-sky-700' },
+  buyer_consult: { label: '매수 상담', className: 'bg-amber-50 text-amber-700' },
+  deal_followup: { label: '거래 후속', className: 'bg-violet-50 text-violet-700' },
+};
+
+export const consultationPurposeOptions: Array<{ value: string; label: string }> = [
+  { value: 'general', label: '일반 상담' },
+  { value: 'listing_confirm', label: '매물 확인' },
+  { value: 'buyer_consult', label: '매수 상담' },
+  { value: 'deal_followup', label: '거래 후속' },
+];
+
+export function getConsultationPurposeMeta(purpose: string | null | undefined): ConsultationPurposeMeta {
+  if (!purpose) return consultationPurposeMeta.general;
+  return consultationPurposeMeta[purpose] ?? { label: purpose, className: 'bg-slate-100 text-slate-700' };
+}
+
+// ----------------------------------------------------------------
+// 업무 신호 (purpose 우선, content 휴리스틱 fallback)
+// ----------------------------------------------------------------
 
 const signalMeta: Record<ConsultationSignalKey, ConsultationSignal> = {
   price: {
@@ -80,6 +136,12 @@ const signalMeta: Record<ConsultationSignalKey, ConsultationSignal> = {
   },
 };
 
+const purposeSignalMap: Record<string, ConsultationSignal> = {
+  listing_confirm: { key: 'price', label: '매물 확인', className: 'bg-sky-50 text-sky-700' },
+  buyer_consult: { key: 'requirement', label: '매수 상담', className: 'bg-amber-50 text-amber-700' },
+  deal_followup: { key: 'contract', label: '거래 후속', className: 'bg-violet-50 text-violet-700' },
+};
+
 const signalMatchers: Array<[ConsultationSignalKey, RegExp]> = [
   ['contract', /계약|입금|잔금|중도금|가계약|서명|날인/],
   ['schedule', /일정|임장|방문|내방|예약|토요일|일요일|오전|오후|확정/],
@@ -88,6 +150,10 @@ const signalMatchers: Array<[ConsultationSignalKey, RegExp]> = [
 ];
 
 export function getConsultationSignal(consultation: ConsultationListItem): ConsultationSignal {
+  // purpose가 분류돼 있으면 정규식 휴리스틱보다 우선한다.
+  const byPurpose = consultation.purpose ? purposeSignalMap[consultation.purpose] : undefined;
+  if (byPurpose) return byPurpose;
+
   const content = consultation.content ?? '';
   const match = signalMatchers.find(([, matcher]) => matcher.test(content));
   return signalMeta[match?.[0] ?? 'general'];
@@ -102,6 +168,10 @@ export function getConsultationOutcomeLabel(consultation: ConsultationListItem) 
 }
 
 export function getConsultationActionLabel(consultation: ConsultationListItem) {
+  if (consultation.purpose === 'listing_confirm') return '매물 확인 상태 업데이트';
+  if (consultation.purpose === 'buyer_consult') return '구매요건 업데이트';
+  if (consultation.purpose === 'deal_followup') return '거래 단계·입금 상태 확인';
+
   const signal = getConsultationSignal(consultation).key;
   const outcome = getConsultationOutcomeLabel(consultation);
 
@@ -119,17 +189,27 @@ export function getConsultationContextLabels(consultation: ConsultationListItem)
   const propertyTitle = formatPropertyContextTitle(consultation.property, consultation.propertyId);
   if (propertyTitle) labels.push(propertyTitle);
 
+  if (consultation.listingIntakeId) labels.push('의뢰 연결');
+
   if (consultation.listing) {
     const type = transactionTypeLabels[consultation.listing.transactionType] ?? consultation.listing.transactionType;
-    const price = consultation.listing.price ? ` ${formatPrice(consultation.listing.price)}` : '';
+    const price = consultation.listing.price ? ` ${formatMoney(consultation.listing.price)}` : '';
     labels.push(`${type}${price}`);
-  } else if (consultation.listingId) labels.push('리스팅 연결');
+  } else if (consultation.listingId) labels.push('매물 연결');
 
   if (consultation.matchId) labels.push('매칭 연결');
   if (consultation.buyerReqId) labels.push('구매요건 연결');
 
   return labels;
 }
+
+export const intakeStatusLabels: Record<string, string> = {
+  unverified: '미확인',
+  active: '진행중',
+  in_contract: '거래중',
+  hold: '보류',
+  done: '완료',
+};
 
 export function getConsultationContextCards(consultation: ConsultationListItem): ConsultationContextCard[] {
   const cards: ConsultationContextCard[] = [];
@@ -154,16 +234,32 @@ export function getConsultationContextCards(consultation: ConsultationListItem):
     });
   }
 
+  if (consultation.listingIntakeId) {
+    const intake = consultation.listingIntake;
+    const statusLabel = intake?.status ? (intakeStatusLabels[intake.status] ?? intake.status) : null;
+    const targetPropertyId = intake?.propertyId ?? consultation.propertyId;
+    cards.push({
+      key: 'listingIntake',
+      label: '의뢰',
+      title: statusLabel ? `의뢰 (${statusLabel})` : '의뢰 연결',
+      description: intake?.receivedAt
+        ? `접수일 ${formatDate(intake.receivedAt)}`
+        : '매물 확인·권리·현장 메모 맥락입니다.',
+      to: targetPropertyId ? '/properties/$id' : '/properties',
+      params: targetPropertyId ? { id: targetPropertyId } : undefined,
+    });
+  }
+
   if (consultation.listingId) {
     const listingTitle = consultation.listing
       ? formatListingLabel(consultation.listing.transactionType, consultation.listing.price)
-      : '리스팅 연결';
+      : '매물 연결';
     cards.push({
       key: 'listing',
-      label: '리스팅',
+      label: '매물(거래)',
       title: listingTitle,
       description: consultation.listing?.checkStatus
-        ? `상태 ${consultation.listing.checkStatus}`
+        ? `확인 상태 ${intakeStatusLabels[consultation.listing.checkStatus] ?? consultation.listing.checkStatus}`
         : '거래 조건, 가격 협의, 광고 상태 문맥입니다.',
       to: consultation.propertyId ? '/properties/$id' : '/properties',
       params: consultation.propertyId ? { id: consultation.propertyId } : undefined,
@@ -174,9 +270,12 @@ export function getConsultationContextCards(consultation: ConsultationListItem):
     cards.push({
       key: 'match',
       label: '매칭',
-      title: '매칭 연결',
-      description: consultation.match?.stage ? `단계 ${consultation.match.stage}` : `ID ${shortId(consultation.matchId)}`,
+      title: consultation.match?.stage
+        ? `매칭 · ${matchStageLabels[consultation.match.stage] ?? consultation.match.stage}`
+        : '매칭 연결',
+      description: '매칭 파이프라인에서 이 매칭의 상세를 엽니다.',
       to: '/matches',
+      search: { matchId: consultation.matchId },
     });
   }
 
@@ -187,14 +286,19 @@ export function getConsultationContextCards(consultation: ConsultationListItem):
       label: '구매요건',
       title: '구매요건 연결',
       description: transactionType
-        ? `${transactionTypeLabels[transactionType] ?? transactionType} · ${consultation.buyerRequirement?.status ?? '상태 미지정'}`
+        ? `${transactionTypeLabels[transactionType] ?? transactionType} · ${buyerReqStatusLabels[consultation.buyerRequirement?.status ?? ''] ?? consultation.buyerRequirement?.status ?? '상태 미지정'}`
         : `ID ${shortId(consultation.buyerReqId)}`,
-      to: '/buyer-requirements',
+      to: '/buyer-requirements/$id',
+      params: { id: consultation.buyerReqId },
     });
   }
 
   return cards;
 }
+
+// ----------------------------------------------------------------
+// 그룹핑 (날짜별 / 고객별)
+// ----------------------------------------------------------------
 
 export function groupConsultationsByDay(items: ConsultationListItem[]): ConsultationDayGroup[] {
   const groups = new Map<string, ConsultationListItem[]>();
@@ -213,6 +317,34 @@ export function groupConsultationsByDay(items: ConsultationListItem[]): Consulta
       label: formatFullDate(key),
       items: groupItems.slice().sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime()),
     }));
+}
+
+/** 연락처별 타임라인 그룹 — 최신 상담이 있는 고객이 위로 */
+export function groupConsultationsByContact(items: ConsultationListItem[]): ConsultationDayGroup[] {
+  const groups = new Map<string, ConsultationListItem[]>();
+
+  for (const item of items) {
+    const key = item.contact?.id ?? item.contactId;
+    const existing = groups.get(key) ?? [];
+    existing.push(item);
+    groups.set(key, existing);
+  }
+
+  return Array.from(groups.entries())
+    .map(([key, groupItems]) => {
+      const sorted = groupItems
+        .slice()
+        .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime());
+      return {
+        key,
+        label: sorted[0]?.contact?.name ?? '미지정 고객',
+        items: sorted,
+      };
+    })
+    .sort(
+      (left, right) =>
+        new Date(right.items[0]?.createdAt ?? 0).getTime() - new Date(left.items[0]?.createdAt ?? 0).getTime(),
+    );
 }
 
 export function getConsultationStats(items: ConsultationListItem[]) {
@@ -234,6 +366,10 @@ export function getSelectedConsultation(items: ConsultationListItem[], selectedI
   return items.find((item) => item.id === selectedId) ?? null;
 }
 
+// ----------------------------------------------------------------
+// API 파라미터 / 필터 칩
+// ----------------------------------------------------------------
+
 export function buildConsultationApiParams({
   page,
   sortOrder,
@@ -254,13 +390,19 @@ export function buildConsultationApiParams({
 
   if (filters.quickFilter === 'actionRequired') params.outcome = 'actionRequired';
   if (filters.quickFilter === 'property') params.context = 'property';
+  if (filters.quickFilter === 'listingIntake') params.context = 'listingIntake';
   if (filters.quickFilter === 'buyerRequirement') params.context = 'buyerRequirement';
+  if (filters.quickFilter === 'unlinked') params.context = 'unlinked';
 
   if (filters.contact?.id) params.contactId = filters.contact.id;
   if (filters.site?.id) params.siteId = filters.site.id;
   if (filters.dong?.id) params.dongId = filters.dong.id;
   if (filters.unit?.id) params.unitId = filters.unit.id;
   if (filters.type) params.type = filters.type;
+  if (filters.createdBy?.id) params.createdById = filters.createdBy.id;
+  if (filters.dateFrom) params.dateFrom = filters.dateFrom;
+  // dateTo는 해당 날짜 끝까지 포함 (서버는 lte 비교)
+  if (filters.dateTo) params.dateTo = `${filters.dateTo}T23:59:59.999`;
 
   return params;
 }
@@ -272,21 +414,52 @@ export function getConsultationFilterChips(filters: ConsultationEntityFilters): 
   if (q) chips.push({ key: 'q', label: `검색 ${q}` });
   if (filters.quickFilter === 'actionRequired') chips.push({ key: 'quickFilter', label: '후속 필요' });
   if (filters.quickFilter === 'property') chips.push({ key: 'quickFilter', label: '매물 연결' });
+  if (filters.quickFilter === 'listingIntake') chips.push({ key: 'quickFilter', label: '의뢰 연결' });
   if (filters.quickFilter === 'buyerRequirement') chips.push({ key: 'quickFilter', label: '구매요건' });
+  if (filters.quickFilter === 'unlinked') chips.push({ key: 'quickFilter', label: '미연결' });
   if (filters.contact) chips.push({ key: 'contact', label: `고객 ${filters.contact.label}` });
 
   const propertyLabel = [filters.site?.label, filters.dong?.label, filters.unit?.label].filter(Boolean).join(' ');
   if (propertyLabel) chips.push({ key: 'property', label: `매물 ${propertyLabel}` });
 
   if (filters.type) chips.push({ key: 'type', label: `상담유형 ${typeLabel(filters.type)}` });
+  if (filters.createdBy) chips.push({ key: 'createdBy', label: `기록자 ${filters.createdBy.label}` });
+
+  if (filters.dateFrom || filters.dateTo) {
+    const from = filters.dateFrom ? filters.dateFrom.replaceAll('-', '.') : '';
+    const to = filters.dateTo ? filters.dateTo.replaceAll('-', '.') : '';
+    chips.push({ key: 'dateRange', label: `기간 ${from} ~ ${to}`.trim() });
+  }
 
   return chips;
 }
 
-const transactionTypeLabels: Record<string, string> = {
+// ----------------------------------------------------------------
+// 라벨/포맷 헬퍼
+// ----------------------------------------------------------------
+
+export const transactionTypeLabels: Record<string, string> = {
   sale: '매매',
   jeonse: '전세',
   monthly: '월세',
+  yearly_rent: '연세',
+};
+
+export const buyerReqStatusLabels: Record<string, string> = {
+  active: '진행중',
+  matched: '매칭됨',
+  completed: '완료',
+  inactive: '비활성',
+};
+
+export const matchStageLabels: Record<string, string> = {
+  suggested: '제안',
+  buyerContacted: '고객연락',
+  viewing: '임장',
+  ownerContacted: '집주인연락',
+  negotiating: '협상',
+  dealCreated: '거래전환',
+  closed: '종료',
 };
 
 const consultationTypeLabels: Record<string, string> = {
@@ -299,9 +472,9 @@ function typeLabel(type: string) {
   return consultationTypeLabels[type] ?? type;
 }
 
-function formatListingLabel(transactionType: string, price: number | null): string {
+export function formatListingLabel(transactionType: string, price: number | null): string {
   const type = transactionTypeLabels[transactionType] ?? transactionType;
-  return price ? `${type} ${formatPrice(price)}` : type;
+  return price ? `${type} ${formatMoney(price)}` : type;
 }
 
 function formatPropertyContextTitle(
@@ -319,9 +492,6 @@ function formatPropertyContextTitle(
 }
 
 function formatPropertyContextDescription(property: ConsultationListItem['property'] | null | undefined) {
-  const memo = property?.memo?.trim();
-  if (memo) return memo;
-
   const details = [
     property?.unit?.floor != null ? `${property.unit.floor}층` : null,
     property?.unit?.lineNo != null ? `${property.unit.lineNo}라인` : null,
@@ -358,15 +528,6 @@ function formatFullDate(value: string) {
     year: 'numeric',
     month: 'long',
     day: 'numeric',
+    weekday: 'short',
   }).format(new Date(value));
-}
-
-function formatPrice(priceInManwon: number): string {
-  if (priceInManwon >= 10000) {
-    const eok = Math.floor(priceInManwon / 10000);
-    const man = priceInManwon % 10000;
-    if (man === 0) return `${eok}억`;
-    return `${eok}억 ${man.toLocaleString()}만`;
-  }
-  return `${priceInManwon.toLocaleString()}만`;
 }

@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
@@ -98,6 +99,14 @@ export class ContractsController {
     );
   }
 
+  @Delete('print-templates/:templateId')
+  removePrintTemplate(
+    @Param('templateId') templateId: string,
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.contractsService.removePrintTemplate(templateId, user.officeId);
+  }
+
   @Get('clause-templates')
   listClauseTemplates(
     @CurrentUser() user: CurrentUserPayload,
@@ -156,6 +165,17 @@ export class ContractsController {
       templateId,
       user.officeId,
       dto,
+    );
+  }
+
+  @Delete('clause-templates/:templateId')
+  removeClauseTemplate(
+    @Param('templateId') templateId: string,
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.contractsService.removeClauseTemplate(
+      templateId,
+      user.officeId,
     );
   }
 

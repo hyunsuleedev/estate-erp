@@ -28,6 +28,10 @@ export interface UnitPropertyContact {
   role: string;
   isPrimary: boolean;
   isResident: boolean;
+  /** 지분비율 % — Prisma Decimal이 문자열로 내려올 수 있음 */
+  shareRatio: string | number | null;
+  memo: string | null;
+  status: string;
   contact: UnitContact;
 }
 
@@ -36,6 +40,10 @@ export interface UnitTenant {
   deposit: number | null;
   monthlyRent: number | null;
   status: string;
+  contractStart: string | null;
+  contractEnd: string | null;
+  moveOutDate: string | null;
+  memo: string | null;
   contact: UnitContact;
 }
 
@@ -55,11 +63,11 @@ export interface UnitListing {
   monthlyRent: number | null;
   checkStatus: string;
   isHidden: boolean;
+  updatedAt: string;
 }
 
 export interface UnitProperty {
   id: string;
-  memo: string | null;
   propertyContacts: UnitPropertyContact[];
   tenants: UnitTenant[];
   consultations: UnitConsultation[];
@@ -88,6 +96,9 @@ export interface CreateUnitDto {
   siteId: string;
   dongId: string;
   name: string;
+  siteUnitTypeId?: string;
+  floor?: number;
+  lineNo?: number;
   exclusiveAreaM2?: number;
   supplyAreaM2?: number;
 }
@@ -95,6 +106,9 @@ export interface CreateUnitDto {
 export interface UpdateUnitDto {
   name?: string;
   dongId?: string;
+  siteUnitTypeId?: string | null;
+  floor?: number | null;
+  lineNo?: number | null;
   exclusiveAreaM2?: number;
   supplyAreaM2?: number;
 }

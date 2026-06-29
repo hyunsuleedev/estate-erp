@@ -108,6 +108,11 @@ export class ListingsController {
       price?: number | null;
       deposit?: number | null;
       monthlyRent?: number | null;
+      maintenanceFee?: number | null;
+      maintenanceFeeIncludes?: string[];
+      loanAmount?: number | null;
+      premium?: number | null;
+      privateMemo?: string | null;
       moveInAvailableType?: string;
       moveInAvailableFrom?: string;
       moveInAvailableTo?: string;
@@ -129,6 +134,11 @@ export class ListingsController {
       price?: number | null;
       deposit?: number | null;
       monthlyRent?: number | null;
+      maintenanceFee?: number | null;
+      maintenanceFeeIncludes?: string[];
+      loanAmount?: number | null;
+      premium?: number | null;
+      privateMemo?: string | null;
       moveInAvailableType?: string | null;
       moveInAvailableFrom?: string | null;
       moveInAvailableTo?: string | null;

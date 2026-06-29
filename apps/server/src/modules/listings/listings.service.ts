@@ -5,7 +5,11 @@ import {
   NotFoundException,
   Optional,
 } from '@nestjs/common';
-import { CheckStatus, TransactionType } from '@estate-erp/shared';
+import {
+  CheckStatus,
+  MaintenanceFeeInclude,
+  TransactionType,
+} from '@estate-erp/shared';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
@@ -20,6 +24,9 @@ const VALID_TRANSACTION_TYPES: ReadonlySet<string> = new Set(
 );
 const VALID_CHECK_STATUSES: ReadonlySet<string> = new Set(
   Object.values(CheckStatus),
+);
+const VALID_MAINTENANCE_FEE_INCLUDES: ReadonlySet<string> = new Set(
+  Object.values(MaintenanceFeeInclude),
 );
 const VALID_SORT_FIELDS: ReadonlySet<string> = new Set([
   'price',
@@ -70,6 +77,11 @@ interface ListingCreateDto {
   price?: number | null;
   deposit?: number | null;
   monthlyRent?: number | null;
+  maintenanceFee?: number | null;
+  maintenanceFeeIncludes?: string[];
+  loanAmount?: number | null;
+  premium?: number | null;
+  privateMemo?: string | null;
   moveInAvailableType?: string | null;
   moveInAvailableFrom?: Date | string | null;
   moveInAvailableTo?: Date | string | null;
@@ -83,6 +95,11 @@ interface ListingUpdateDto {
   price?: number | null;
   deposit?: number | null;
   monthlyRent?: number | null;
+  maintenanceFee?: number | null;
+  maintenanceFeeIncludes?: string[];
+  loanAmount?: number | null;
+  premium?: number | null;
+  privateMemo?: string | null;
   moveInAvailableType?: string | null;
   moveInAvailableFrom?: Date | string | null;
   moveInAvailableTo?: Date | string | null;
@@ -313,6 +330,11 @@ export class ListingsService {
                   price: true,
                   deposit: true,
                   monthlyRent: true,
+                  maintenanceFee: true,
+                  maintenanceFeeIncludes: true,
+                  loanAmount: true,
+                  premium: true,
+                  privateMemo: true,
                   moveInAvailableType: true,
                   moveInAvailableFrom: true,
                   moveInAvailableTo: true,
@@ -517,6 +539,7 @@ export class ListingsService {
 
   async create(officeId: string, dto: ListingCreateDto) {
     this.assertValidTransactionType(dto.transactionType);
+    this.assertValidMaintenanceFeeIncludes(dto.maintenanceFeeIncludes);
 
     // Verify the property exists and belongs to this office
     const property = await this.prisma.property.findFirst({
@@ -552,6 +575,11 @@ export class ListingsService {
         price: dto.price,
         deposit: dto.deposit,
         monthlyRent: dto.monthlyRent,
+        maintenanceFee: dto.maintenanceFee,
+        maintenanceFeeIncludes: dto.maintenanceFeeIncludes ?? undefined,
+        loanAmount: dto.loanAmount,
+        premium: dto.premium,
+        privateMemo: dto.privateMemo,
         moveInAvailableType: dto.moveInAvailableType,
         moveInAvailableFrom: dto.moveInAvailableFrom,
         moveInAvailableTo: dto.moveInAvailableTo,
@@ -604,6 +632,7 @@ export class ListingsService {
     const nextTransactionType =
       patch.transactionType ?? existingListing.transactionType;
     this.assertValidTransactionType(nextTransactionType);
+    this.assertValidMaintenanceFeeIncludes(patch.maintenanceFeeIncludes);
 
     if (nextTransactionType !== existingListing.transactionType) {
       await this.assertNoDuplicateTransactionType(
@@ -735,6 +764,17 @@ export class ListingsService {
   private assertValidTransactionType(transactionType: string) {
     if (!VALID_TRANSACTION_TYPES.has(transactionType as TransactionType)) {
       throw new BadRequestException('Invalid transactionType');
+    }
+  }
+
+  private assertValidMaintenanceFeeIncludes(includes?: string[] | null) {
+    if (!includes) return;
+    for (const slug of includes) {
+      if (!VALID_MAINTENANCE_FEE_INCLUDES.has(slug)) {
+        throw new BadRequestException(
+          `Invalid maintenanceFeeIncludes slug: ${slug}`,
+        );
+      }
     }
   }
 

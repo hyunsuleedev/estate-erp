@@ -5,7 +5,9 @@ import {
   buildMonthCells,
   addCalendarPeriod,
   getCalendarRange,
+  getHourSlots,
   groupEventsByDate,
+  isMultiDayEvent,
   type CalendarViewMode,
 } from '../src/routes/_authenticated/calendar/-calendar-view-utils';
 
@@ -55,6 +57,64 @@ describe('calendar view utilities', () => {
       grouped.get('2026-04-22')?.map((event) => event.id),
       ['next-day'],
     );
+  });
+
+  it('places multi-day events on every date cell between start and end', () => {
+    const grouped = groupEventsByDate([
+      {
+        id: 'trip',
+        start: new Date(2026, 3, 21, 14).toISOString(),
+        end: new Date(2026, 3, 23, 11).toISOString(),
+      },
+      { id: 'single', start: new Date(2026, 3, 22, 9).toISOString() },
+    ]);
+
+    assert.deepEqual(grouped.get('2026-04-21')?.map((event) => event.id), ['trip']);
+    assert.deepEqual(grouped.get('2026-04-22')?.map((event) => event.id), ['trip', 'single']);
+    assert.deepEqual(grouped.get('2026-04-23')?.map((event) => event.id), ['trip']);
+    assert.equal(grouped.get('2026-04-24'), undefined);
+  });
+
+  it('detects multi-day events by calendar date, not 24-hour spans', () => {
+    assert.equal(
+      isMultiDayEvent({
+        start: new Date(2026, 3, 21, 23).toISOString(),
+        end: new Date(2026, 3, 22, 1).toISOString(),
+      }),
+      true,
+    );
+    assert.equal(
+      isMultiDayEvent({
+        start: new Date(2026, 3, 21, 9).toISOString(),
+        end: new Date(2026, 3, 21, 18).toISOString(),
+      }),
+      false,
+    );
+    assert.equal(isMultiDayEvent({ start: new Date(2026, 3, 21, 9).toISOString() }), false);
+  });
+
+  it('expands hour slots beyond 09-18 when timed events fall outside, ignoring all-day events', () => {
+    assert.deepEqual(
+      getHourSlots([]),
+      [9, 10, 11, 12, 13, 14, 15, 16, 17, 18],
+    );
+
+    const expanded = getHourSlots([
+      { start: new Date(2026, 3, 21, 7, 30).toISOString() },
+      {
+        start: new Date(2026, 3, 21, 19).toISOString(),
+        end: new Date(2026, 3, 21, 21, 30).toISOString(),
+      },
+      // 종일/멀티데이 이벤트는 all-day 영역에서 처리하므로 슬롯 확장에서 제외
+      { start: new Date(2026, 3, 21, 0).toISOString(), allDay: true },
+      {
+        start: new Date(2026, 3, 20, 2).toISOString(),
+        end: new Date(2026, 3, 22, 23).toISOString(),
+      },
+    ]);
+
+    assert.equal(expanded[0], 7);
+    assert.equal(expanded[expanded.length - 1], 21);
   });
 });
 

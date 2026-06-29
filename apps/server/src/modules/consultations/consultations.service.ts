@@ -194,9 +194,21 @@ export class ConsultationsService {
       listingId?: string;
       matchId?: string;
       buyerReqId?: string;
+      /** 통화 녹음 연결 (통화 → 상담 전환) */
+      callRecordingId?: string;
     },
   ) {
-    const { propertyId, listingIntakeId, listingId, matchId, buyerReqId, ...rest } = dto;
+    const { propertyId, listingIntakeId, listingId, matchId, buyerReqId, callRecordingId, ...rest } = dto;
+
+    // 통화 녹음 연결 시 같은 사무소 소유인지 확인
+    if (callRecordingId) {
+      const recording = await this.prisma.callRecording.findFirst({
+        where: { id: callRecordingId, officeId },
+        select: { id: true },
+      });
+      if (!recording) throw new NotFoundException('Recording not found');
+    }
+
     return this.prisma.consultation.create({
       data: {
         officeId,
@@ -207,6 +219,7 @@ export class ConsultationsService {
         listingId: listingId || undefined,
         matchId: matchId || undefined,
         buyerReqId: buyerReqId || undefined,
+        callRecordingId: callRecordingId || undefined,
       },
       include: this.defaultInclude,
     }).then(withPrimaryContactPhone);
@@ -350,35 +363,97 @@ export class ConsultationsService {
   }
 
   /**
-   * CallRecording 목록 조회
+   * CallRecording 목록 조회 (서버사이드 필터 + 기간 기준 요약 통계)
    */
-  async findRecordings(officeId: string, query: { contactId?: string; page?: number; limit?: number } = {}) {
-    const where: Prisma.CallRecordingWhereInput = { officeId };
-    if (query.contactId) where.contactId = query.contactId;
+  async findRecordings(
+    officeId: string,
+    query: {
+      contactId?: string;
+      direction?: string;
+      sttStatus?: string;
+      dateFrom?: string;
+      dateTo?: string;
+      q?: string;
+      page?: number;
+      limit?: number;
+    } = {},
+  ) {
+    const calledAtFilter =
+      query.dateFrom || query.dateTo
+        ? {
+            ...(query.dateFrom && { gte: new Date(query.dateFrom) }),
+            ...(query.dateTo && { lte: new Date(query.dateTo) }),
+          }
+        : undefined;
+
+    const filters: Prisma.CallRecordingWhereInput[] = [{ officeId }];
+    if (query.contactId) filters.push({ contactId: query.contactId });
+    if (query.direction) filters.push({ direction: query.direction });
+    if (query.sttStatus) filters.push({ sttStatus: query.sttStatus });
+    if (calledAtFilter) filters.push({ calledAt: calledAtFilter });
+
+    const q = query.q?.trim();
+    if (q) {
+      const normalized = normalizePhone(q);
+      filters.push({
+        OR: [
+          { contact: { name: { contains: q, mode: 'insensitive' } } },
+          { phoneNumber: { contains: q } },
+          ...(normalized && normalized !== q
+            ? [{ phoneNumber: { contains: normalized } }]
+            : []),
+          { messages: { some: { text: { contains: q, mode: 'insensitive' } } } },
+        ],
+      });
+    }
+
+    const where: Prisma.CallRecordingWhereInput =
+      filters.length === 1 ? filters[0] : { AND: filters };
 
     const page = Math.max(1, query.page || 1);
     const limit = Math.min(100, Math.max(1, query.limit || 20));
     const skip = (page - 1) * limit;
 
-    const [items, total] = await Promise.all([
-      this.prisma.callRecording.findMany({
-        where,
-        include: {
-          contact: { select: { id: true, name: true, phones: contactPhonesSelectOrdered } },
-          user: { select: { id: true, name: true } },
-          messages: { orderBy: { seq: 'asc' } },
-          _count: { select: { messages: true } },
-        },
-        orderBy: { calledAt: 'desc' },
-        skip,
-        take: limit,
-      }),
-      this.prisma.callRecording.count({ where }),
-    ]);
+    // 요약 통계는 기간 필터만 반영 (방향/상태/검색과 무관 — 대시보드 성격)
+    const statsBase: Prisma.CallRecordingWhereInput = {
+      officeId,
+      ...(calledAtFilter && { calledAt: calledAtFilter }),
+    };
+
+    const [items, total, statTotal, statInbound, statOutbound, statMissed, statStt] =
+      await Promise.all([
+        this.prisma.callRecording.findMany({
+          where,
+          include: {
+            contact: { select: { id: true, name: true, phones: contactPhonesSelectOrdered } },
+            user: { select: { id: true, name: true } },
+            messages: { orderBy: { seq: 'asc' } },
+            _count: { select: { messages: true } },
+          },
+          orderBy: { calledAt: 'desc' },
+          skip,
+          take: limit,
+        }),
+        this.prisma.callRecording.count({ where }),
+        this.prisma.callRecording.count({ where: statsBase }),
+        this.prisma.callRecording.count({ where: { ...statsBase, direction: 'inbound' } }),
+        this.prisma.callRecording.count({ where: { ...statsBase, direction: 'outbound' } }),
+        this.prisma.callRecording.count({
+          where: { ...statsBase, direction: 'inbound', durationSec: { lt: 5 } },
+        }),
+        this.prisma.callRecording.count({ where: { ...statsBase, sttStatus: 'completed' } }),
+      ]);
 
     return {
       items: items.map(withPrimaryContactPhone),
       pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+      stats: {
+        total: statTotal,
+        inbound: statInbound,
+        outbound: statOutbound,
+        missed: statMissed,
+        sttCompleted: statStt,
+      },
     };
   }
 
@@ -399,6 +474,51 @@ export class ConsultationsService {
     });
     if (!recording) throw new NotFoundException('Recording not found');
     return withPrimaryContactPhone(recording);
+  }
+
+  /**
+   * CallRecording 갱신 — 미등록 번호 연락처 연결, 화자 라벨(나/고객) 수정
+   */
+  async updateRecording(
+    id: string,
+    officeId: string,
+    dto: {
+      contactId?: string | null;
+      speakerLabels?: Array<{ speaker: number; label: string }>;
+    },
+  ) {
+    const recording = await this.prisma.callRecording.findFirst({
+      where: { id, officeId },
+      select: { id: true },
+    });
+    if (!recording) throw new NotFoundException('Recording not found');
+
+    if (dto.contactId !== undefined) {
+      if (dto.contactId) {
+        const contact = await this.prisma.contact.findFirst({
+          where: { id: dto.contactId, officeId },
+          select: { id: true },
+        });
+        if (!contact) throw new NotFoundException('Contact not found');
+      }
+      await this.prisma.callRecording.update({
+        where: { id },
+        data: { contactId: dto.contactId },
+      });
+    }
+
+    if (dto.speakerLabels?.length) {
+      await Promise.all(
+        dto.speakerLabels.map((entry) =>
+          this.prisma.callRecordingMessage.updateMany({
+            where: { recordingId: id, speaker: entry.speaker },
+            data: { speakerLabel: entry.label },
+          }),
+        ),
+      );
+    }
+
+    return this.findRecording(id, officeId);
   }
 
   /**

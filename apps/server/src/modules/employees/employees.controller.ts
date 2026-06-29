@@ -55,6 +55,8 @@ export class EmployeesController {
       email?: string;
       role?: string;
       loginId?: string;
+      licenseType?: string | null;
+      licenseNo?: string | null;
     },
     @CurrentUser() user: CurrentUserPayload,
   ) {
@@ -71,6 +73,11 @@ export class EmployeesController {
       name?: string;
       phone?: string | null;
       email?: string | null;
+      licenseType?: string | null;
+      licenseNo?: string | null;
+      payType?: string;
+      baseSalary?: number | null;
+      commissionRate?: number | null;
     },
     @CurrentUser() user: CurrentUserPayload,
   ) {

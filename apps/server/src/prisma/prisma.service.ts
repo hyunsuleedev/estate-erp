@@ -23,10 +23,11 @@ const TENANT_SCOPED_MODELS = new Set([
   'CalendarEvent',
   'ActivityLog',
   'Notification',
-  'NetworkRoomMember',
-  'NetworkSharedProperty',
-  'NetworkInquiry',
-  'NetworkMessage',
+  // 공동중개 네트워크 모델(NetworkRoom/NetworkRoomMember/NetworkSharedProperty/
+  // NetworkInquiry/NetworkMessage)은 여러 사무소가 한 방을 공유하는 크로스 오피스
+  // 데이터라 자동 officeId 주입 대상이 아니다 (NetworkInquiry는 officeId 컬럼 자체가
+  // 없고 fromOfficeId만 있다). 접근 제어는 modules/network의 방 멤버십(status=approved)
+  // 검사로 서비스 레벨에서 강제한다.
 ]);
 
 const AUDITED_MODELS = new Set([

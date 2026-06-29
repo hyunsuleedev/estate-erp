@@ -11,6 +11,7 @@ import { RuleController } from './rule/rule.controller';
 import { AdTakedownRule } from './rule/implementations/ad-takedown.rule';
 import { LeaseExpiryRule } from './rule/implementations/lease-expiry.rule';
 import { NewExternalListingsRule } from './rule/implementations/new-external-listings.rule';
+import { TransactionReportDeadlineRule } from './rule/implementations/transaction-report-deadline.rule';
 import { RULE_REGISTRY } from './rule/rule.types';
 
 /**
@@ -42,14 +43,21 @@ import { RULE_REGISTRY } from './rule/rule.types';
     AdTakedownRule,
     LeaseExpiryRule,
     NewExternalListingsRule,
+    TransactionReportDeadlineRule,
     {
       provide: RULE_REGISTRY,
       useFactory: (
         ad: AdTakedownRule,
         lease: LeaseExpiryRule,
         newExt: NewExternalListingsRule,
-      ) => [ad, lease, newExt],
-      inject: [AdTakedownRule, LeaseExpiryRule, NewExternalListingsRule],
+        report: TransactionReportDeadlineRule,
+      ) => [ad, lease, newExt, report],
+      inject: [
+        AdTakedownRule,
+        LeaseExpiryRule,
+        NewExternalListingsRule,
+        TransactionReportDeadlineRule,
+      ],
     },
   ],
   exports: [ProposalService, RuleEngineService, ExecutorService],

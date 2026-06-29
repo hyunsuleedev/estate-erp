@@ -48,6 +48,9 @@ import { Route as AuthenticatedCashflowMySettlementRouteImport } from './routes/
 import { Route as AuthenticatedCashflowLedgerRouteImport } from './routes/_authenticated/cashflow/ledger'
 import { Route as AuthenticatedCashflowExpensesRouteImport } from './routes/_authenticated/cashflow/expenses'
 import { Route as AuthenticatedCashflowEmployeeSettlementsRouteImport } from './routes/_authenticated/cashflow/employee-settlements'
+import { Route as AuthenticatedBuyerRequirementsNewRouteImport } from './routes/_authenticated/buyer-requirements/new'
+import { Route as AuthenticatedBuyerRequirementsIdRouteImport } from './routes/_authenticated/buyer-requirements/$id'
+import { Route as AuthenticatedBuyerRequirementsIdEditRouteImport } from './routes/_authenticated/buyer-requirements/$id_.edit'
 
 const AuthenticatedRoute = AuthenticatedRouteImport.update({
   id: '/_authenticated',
@@ -268,6 +271,24 @@ const AuthenticatedCashflowEmployeeSettlementsRoute =
     path: '/cashflow/employee-settlements',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const AuthenticatedBuyerRequirementsNewRoute =
+  AuthenticatedBuyerRequirementsNewRouteImport.update({
+    id: '/buyer-requirements/new',
+    path: '/buyer-requirements/new',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedBuyerRequirementsIdRoute =
+  AuthenticatedBuyerRequirementsIdRouteImport.update({
+    id: '/buyer-requirements/$id',
+    path: '/buyer-requirements/$id',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedBuyerRequirementsIdEditRoute =
+  AuthenticatedBuyerRequirementsIdEditRouteImport.update({
+    id: '/buyer-requirements/$id_/edit',
+    path: '/buyer-requirements/$id/edit',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -275,6 +296,8 @@ export interface FileRoutesByFullPath {
   '/register': typeof AuthRegisterRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/onboarding/office': typeof OnboardingOfficeRoute
+  '/buyer-requirements/$id': typeof AuthenticatedBuyerRequirementsIdRoute
+  '/buyer-requirements/new': typeof AuthenticatedBuyerRequirementsNewRoute
   '/cashflow/employee-settlements': typeof AuthenticatedCashflowEmployeeSettlementsRoute
   '/cashflow/expenses': typeof AuthenticatedCashflowExpensesRoute
   '/cashflow/ledger': typeof AuthenticatedCashflowLedgerRoute
@@ -307,6 +330,7 @@ export interface FileRoutesByFullPath {
   '/settings/': typeof AuthenticatedSettingsIndexRoute
   '/sites/': typeof AuthenticatedSitesIndexRoute
   '/tasks/': typeof AuthenticatedTasksIndexRoute
+  '/buyer-requirements/$id/edit': typeof AuthenticatedBuyerRequirementsIdEditRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -314,6 +338,8 @@ export interface FileRoutesByTo {
   '/register': typeof AuthRegisterRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/onboarding/office': typeof OnboardingOfficeRoute
+  '/buyer-requirements/$id': typeof AuthenticatedBuyerRequirementsIdRoute
+  '/buyer-requirements/new': typeof AuthenticatedBuyerRequirementsNewRoute
   '/cashflow/employee-settlements': typeof AuthenticatedCashflowEmployeeSettlementsRoute
   '/cashflow/expenses': typeof AuthenticatedCashflowExpensesRoute
   '/cashflow/ledger': typeof AuthenticatedCashflowLedgerRoute
@@ -346,6 +372,7 @@ export interface FileRoutesByTo {
   '/settings': typeof AuthenticatedSettingsIndexRoute
   '/sites': typeof AuthenticatedSitesIndexRoute
   '/tasks': typeof AuthenticatedTasksIndexRoute
+  '/buyer-requirements/$id/edit': typeof AuthenticatedBuyerRequirementsIdEditRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -356,6 +383,8 @@ export interface FileRoutesById {
   '/_auth/register': typeof AuthRegisterRoute
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
   '/onboarding/office': typeof OnboardingOfficeRoute
+  '/_authenticated/buyer-requirements/$id': typeof AuthenticatedBuyerRequirementsIdRoute
+  '/_authenticated/buyer-requirements/new': typeof AuthenticatedBuyerRequirementsNewRoute
   '/_authenticated/cashflow/employee-settlements': typeof AuthenticatedCashflowEmployeeSettlementsRoute
   '/_authenticated/cashflow/expenses': typeof AuthenticatedCashflowExpensesRoute
   '/_authenticated/cashflow/ledger': typeof AuthenticatedCashflowLedgerRoute
@@ -388,6 +417,7 @@ export interface FileRoutesById {
   '/_authenticated/settings/': typeof AuthenticatedSettingsIndexRoute
   '/_authenticated/sites/': typeof AuthenticatedSitesIndexRoute
   '/_authenticated/tasks/': typeof AuthenticatedTasksIndexRoute
+  '/_authenticated/buyer-requirements/$id_/edit': typeof AuthenticatedBuyerRequirementsIdEditRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -397,6 +427,8 @@ export interface FileRouteTypes {
     | '/register'
     | '/dashboard'
     | '/onboarding/office'
+    | '/buyer-requirements/$id'
+    | '/buyer-requirements/new'
     | '/cashflow/employee-settlements'
     | '/cashflow/expenses'
     | '/cashflow/ledger'
@@ -429,6 +461,7 @@ export interface FileRouteTypes {
     | '/settings/'
     | '/sites/'
     | '/tasks/'
+    | '/buyer-requirements/$id/edit'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -436,6 +469,8 @@ export interface FileRouteTypes {
     | '/register'
     | '/dashboard'
     | '/onboarding/office'
+    | '/buyer-requirements/$id'
+    | '/buyer-requirements/new'
     | '/cashflow/employee-settlements'
     | '/cashflow/expenses'
     | '/cashflow/ledger'
@@ -468,6 +503,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/sites'
     | '/tasks'
+    | '/buyer-requirements/$id/edit'
   id:
     | '__root__'
     | '/'
@@ -477,6 +513,8 @@ export interface FileRouteTypes {
     | '/_auth/register'
     | '/_authenticated/dashboard'
     | '/onboarding/office'
+    | '/_authenticated/buyer-requirements/$id'
+    | '/_authenticated/buyer-requirements/new'
     | '/_authenticated/cashflow/employee-settlements'
     | '/_authenticated/cashflow/expenses'
     | '/_authenticated/cashflow/ledger'
@@ -509,6 +547,7 @@ export interface FileRouteTypes {
     | '/_authenticated/settings/'
     | '/_authenticated/sites/'
     | '/_authenticated/tasks/'
+    | '/_authenticated/buyer-requirements/$id_/edit'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -793,6 +832,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedCashflowEmployeeSettlementsRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/buyer-requirements/new': {
+      id: '/_authenticated/buyer-requirements/new'
+      path: '/buyer-requirements/new'
+      fullPath: '/buyer-requirements/new'
+      preLoaderRoute: typeof AuthenticatedBuyerRequirementsNewRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/buyer-requirements/$id': {
+      id: '/_authenticated/buyer-requirements/$id'
+      path: '/buyer-requirements/$id'
+      fullPath: '/buyer-requirements/$id'
+      preLoaderRoute: typeof AuthenticatedBuyerRequirementsIdRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/buyer-requirements/$id_/edit': {
+      id: '/_authenticated/buyer-requirements/$id_/edit'
+      path: '/buyer-requirements/$id/edit'
+      fullPath: '/buyer-requirements/$id/edit'
+      preLoaderRoute: typeof AuthenticatedBuyerRequirementsIdEditRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
   }
 }
 
@@ -810,6 +870,8 @@ const AuthRouteWithChildren = AuthRoute._addFileChildren(AuthRouteChildren)
 
 interface AuthenticatedRouteChildren {
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
+  AuthenticatedBuyerRequirementsIdRoute: typeof AuthenticatedBuyerRequirementsIdRoute
+  AuthenticatedBuyerRequirementsNewRoute: typeof AuthenticatedBuyerRequirementsNewRoute
   AuthenticatedCashflowEmployeeSettlementsRoute: typeof AuthenticatedCashflowEmployeeSettlementsRoute
   AuthenticatedCashflowExpensesRoute: typeof AuthenticatedCashflowExpensesRoute
   AuthenticatedCashflowLedgerRoute: typeof AuthenticatedCashflowLedgerRoute
@@ -842,10 +904,14 @@ interface AuthenticatedRouteChildren {
   AuthenticatedSettingsIndexRoute: typeof AuthenticatedSettingsIndexRoute
   AuthenticatedSitesIndexRoute: typeof AuthenticatedSitesIndexRoute
   AuthenticatedTasksIndexRoute: typeof AuthenticatedTasksIndexRoute
+  AuthenticatedBuyerRequirementsIdEditRoute: typeof AuthenticatedBuyerRequirementsIdEditRoute
 }
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
+  AuthenticatedBuyerRequirementsIdRoute: AuthenticatedBuyerRequirementsIdRoute,
+  AuthenticatedBuyerRequirementsNewRoute:
+    AuthenticatedBuyerRequirementsNewRoute,
   AuthenticatedCashflowEmployeeSettlementsRoute:
     AuthenticatedCashflowEmployeeSettlementsRoute,
   AuthenticatedCashflowExpensesRoute: AuthenticatedCashflowExpensesRoute,
@@ -884,6 +950,8 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedSettingsIndexRoute: AuthenticatedSettingsIndexRoute,
   AuthenticatedSitesIndexRoute: AuthenticatedSitesIndexRoute,
   AuthenticatedTasksIndexRoute: AuthenticatedTasksIndexRoute,
+  AuthenticatedBuyerRequirementsIdEditRoute:
+    AuthenticatedBuyerRequirementsIdEditRoute,
 }
 
 const AuthenticatedRouteWithChildren = AuthenticatedRoute._addFileChildren(

@@ -44,10 +44,21 @@ export type {
   UpdateOfficeAdvertisementGroupDto,
   LinkOfficeAdvertisementGroupDto,
 } from './modules/office-advertisements.js';
-export type { Contact, ContactCounts, ContactDetail, ContactsFilter, CreateContactDto, UpdateContactDto } from './modules/contacts.js';
-export type { Site, SiteDetail, CreateSiteDto } from './modules/sites.js';
+export type { Contact, ContactCounts, ContactDetail, ContactsFilter, ContactPhone, ContactPhoneInput, ContactLatestConsultation, CreateContactDto, UpdateContactDto } from './modules/contacts.js';
+export type { Site, SiteDetail, SiteWard, CreateSiteDto } from './modules/sites.js';
 export type { Dong } from './modules/dongs.js';
-export type { SiteUnitType, Unit, CreateUnitDto, UpdateUnitDto } from './modules/units.js';
+export type {
+  SiteUnitType,
+  Unit,
+  UnitContact,
+  UnitConsultation,
+  UnitListing,
+  UnitProperty,
+  UnitPropertyContact,
+  UnitTenant,
+  CreateUnitDto,
+  UpdateUnitDto,
+} from './modules/units.js';
 export type {
   Task,
   TaskAssignee,
@@ -91,12 +102,15 @@ export type {
   BuyerRequirement,
   BuyerRequirementPreferredSite,
   BuyerRequirementPreferredRegion,
+  BuyerRequirementMatch,
+  BuyerRequirementConsultation,
   BuyerRequirementsFilter,
   CreateBuyerRequirementDto,
+  UpdateBuyerRequirementDto,
 } from './modules/buyer-requirements.js';
 export type { CalendarEvent, CalendarEventsFilter, CreateCalendarEventDto, UpdateCalendarEventDto } from './modules/calendar-events.js';
-export type { PropertyContact, CreatePropertyContactDto, UpdatePropertyContactDto } from './modules/property-contacts.js';
-export type { ContactRelation, CreateContactRelationDto } from './modules/contact-relations.js';
+export type { PropertyContact, CreatePropertyContactDto, CreatePropertyContactWithNewContactDto, UpdatePropertyContactDto } from './modules/property-contacts.js';
+export type { ContactRelation, ContactRelationsByContact, CreateContactRelationDto, CreateContactRelationWithNewContactDto } from './modules/contact-relations.js';
 export type { Tenant, CreateTenantDto, UpdateTenantDto } from './modules/tenants.js';
 export type { OfficeSite } from './modules/office-sites.js';
 export type {
@@ -107,7 +121,7 @@ export type {
   UpdateEmployeeDto,
   EmployeePerformance,
 } from './modules/employees.js';
-export type { OfficeProfile, UpdateOfficeDto, CommissionConfigDto } from './modules/offices.js';
+export type { OfficeProfile, OfficeUserSummary, UpdateOfficeDto, CommissionConfigDto, AgentConfigDto } from './modules/offices.js';
 export type {
   ExternalListing,
   ExternalListingGroup,
@@ -155,6 +169,9 @@ export type {
   CallRecordingListItem,
   CallRecordingDetail,
   CallRecordingsListResponse,
+  CallRecordingsListStats,
+  CallRecordingsListParams,
+  UpdateCallRecordingDto,
 } from './modules/call-recordings.js';
 export type {
   McpApiKeyStatus,
@@ -208,3 +225,43 @@ export type {
   LedgerPayment,
   LedgerPaymentDistribution,
 } from './modules/finance.js';
+export type {
+  AppNotification,
+  NotificationsListFilter,
+  NotificationsListResponse,
+  NotificationCreatedEvent,
+} from './modules/notifications.js';
+export type {
+  DashboardSummary,
+  DashboardThisMonth,
+  DashboardCounts,
+} from './modules/dashboard.js';
+export type {
+  ActivityLog,
+  ActivityLogAction,
+  ActivityLogChange,
+  ActivityLogsFilter,
+} from './modules/activity-logs.js';
+export type {
+  NetworkRoom,
+  NetworkRoomDetail,
+  NetworkRoomMember,
+  NetworkRoomType,
+  NetworkMemberRole,
+  NetworkMemberStatus,
+  NetworkRoomsFilter,
+  CreateNetworkRoomDto,
+  SharedPropertyListingView,
+  NetworkSharedPropertyView,
+  ShareListingDto,
+  UpdateSharedPropertyDto,
+  NetworkInquiry,
+  NetworkInquiryStatus,
+  NetworkInquiriesFilter,
+  RespondNetworkInquiryDto,
+  NetworkMessage,
+  NetworkMessagesFilter,
+  NetworkMessagesResponse,
+  SendNetworkMessageDto,
+  NetworkMessageCreatedEvent,
+} from './modules/network.js';

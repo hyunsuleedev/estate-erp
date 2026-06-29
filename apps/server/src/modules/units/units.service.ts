@@ -10,13 +10,12 @@ import {
   withPrimaryPhone,
 } from '../contacts/contact-phone.utils';
 
-// 토지/단독주택은 Unit 자체를 만들지 않는다.
+// 토지(land)는 Unit 자체를 만들지 않는다.
 // 그 외(아파트/오피스텔/빌라/상가/지식산업센터 등 건물형)는 모두
 // Site → Dong → Unit 체인을 사용하며, 단일 동 건물은 placeholder Dong을 사용한다.
-const UNIT_DISABLED_SITE_TYPES: ReadonlySet<string> = new Set([
-  SiteType.HOUSE,
-  SiteType.LAND,
-]);
+// 단독/다가구주택(house)은 101호/201호 개별 임대가 일상이므로 Unit 생성을 허용한다
+// (호실 없이 통건물로 관리하는 것도 가능 — Property 쪽에서 둘 다 허용).
+const UNIT_DISABLED_SITE_TYPES: ReadonlySet<string> = new Set([SiteType.LAND]);
 
 const UNIT_CELL_TYPES = [
   'unit',
@@ -123,7 +122,7 @@ export class UnitsService {
     const site = await this.findEditableSite(dto.siteId, officeId);
 
     if (UNIT_DISABLED_SITE_TYPES.has(site.type)) {
-      throw new BadRequestException('This site type does not support units');
+      throw new BadRequestException('Units are not supported for land sites');
     }
 
     if (!dto.dongId) {
@@ -170,7 +169,7 @@ export class UnitsService {
         : dto.siteUnitTypeId;
 
     if (UNIT_DISABLED_SITE_TYPES.has(site.type)) {
-      throw new BadRequestException('This site type does not support units');
+      throw new BadRequestException('Units are not supported for land sites');
     }
 
     await this.findOwnedDong(nextDongId, officeId, site.id);

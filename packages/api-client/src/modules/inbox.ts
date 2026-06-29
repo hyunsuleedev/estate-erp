@@ -142,5 +142,22 @@ export function createInboxApi(request: RequestFn) {
         method: 'POST',
         body: { body },
       }),
+
+    /**
+     * 재작성(revision) 완료 보고 — processing 상태 draft 의 proposedChanges 를
+     * 새 내용으로 교체하고 pending 으로 복귀시킨다.
+     * readCommentIds 를 생략하면 모든 미읽음 코멘트가 읽음 처리된다.
+     */
+    submitRevision: (
+      id: string,
+      body: {
+        proposedChanges: Record<string, unknown>;
+        readCommentIds?: string[];
+      },
+    ) =>
+      request<InboxItem>(`/inbox/${id}/revision`, {
+        method: 'POST',
+        body,
+      }),
   };
 }

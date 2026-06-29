@@ -1,128 +1,177 @@
-import { createFileRoute } from '@tanstack/react-router';
-import { Bot } from 'lucide-react';
+import { createFileRoute, Link } from '@tanstack/react-router';
+import { useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { Bot, Lock } from 'lucide-react';
+
+import { api } from '@/lib/api';
+import { cn } from '@/lib/utils';
+import { useAuth } from '@/providers/auth-provider';
+import { PageHeader } from '@/components/domain';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
-
-const operatingAgentItems = [
-  '매물 정리봇: 가격 변동, 확인일 경과, 숨김 후보를 정리합니다.',
-  '상담 요약봇: 통화/상담 기록을 요약하고 후속 업무를 제안합니다.',
-  '계약 체크봇: 계약금, 중도금, 잔금 일정 누락을 감시합니다.',
-  '네트워크 매칭봇: 공유 매물과 문의 흐름을 따라 후속 액션을 만듭니다.',
-];
-
-const approvalGateItems = [
-  '고객에게 직접 발송되는 메시지/알림',
-  '계약 상태, 거래 단계 등 핵심 상태 변경',
-  '연락처 병합, 삭제, 개인정보 정리',
-  '외부 네트워크 공유/회수 같은 대외 액션',
-];
-
-const auditItems = [
-  '모든 실행을 run 단위로 기록하고 ActivityLog와 연결',
-  '어떤 규칙과 컨텍스트로 실행됐는지 추적',
-  '비용, 도구 호출, 결과 생성물을 한 화면에 집계',
-];
-
-const phaseOneItems = [
-  'AI는 우선 Task, Insight, CalendarEvent 생성까지만 허용',
-  '승인이 필요한 액션은 승인 대기함으로만 적재',
-  '사무소별 규칙, 예산, 에이전트 활성화 상태를 분리 관리',
-];
-
-function BulletList({ items }: { items: string[] }) {
-  return (
-    <ul className="space-y-3">
-      {items.map((item) => (
-        <li key={item} className="flex items-start gap-3 text-sm text-foreground/90">
-          <span className="mt-1 size-2 shrink-0 rounded-full bg-primary/70" />
-          <span>{item}</span>
-        </li>
-      ))}
-    </ul>
-  );
-}
+import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { ActivityTab } from './-activity-tab';
+import { PrinciplesTab } from './-principles-tab';
+import { ProposalsTab, summarizeProposals } from './-proposals-tab';
+import { RulesTab } from './-rules-tab';
 
 export const Route = createFileRoute('/_authenticated/ai-operations/')({
   component: AiOperationsPage,
 });
 
 function AiOperationsPage() {
+  const { user } = useAuth();
+  const role = user?.role ?? 'agent';
+  const canManage = role === 'owner' || role === 'manager';
+
+  const [tab, setTab] = useState('rules');
+
+  // KPI 집계용 — 각 탭의 쿼리와 동일한 queryKey라 캐시를 공유한다 (중복 패칭 없음)
+  const rulesQuery = useQuery({
+    queryKey: ['agent-rules'],
+    queryFn: () => api.rules.list(),
+  });
+  const proposalsQuery = useQuery({
+    queryKey: ['proposals', 'all'],
+    queryFn: () => api.proposals.list(),
+  });
+
+  const stats = useMemo(
+    () => summarizeProposals(proposalsQuery.data),
+    [proposalsQuery.data],
+  );
+  const activeRules = (rulesQuery.data ?? []).filter((r) => r.isActive).length;
+  const totalRules = rulesQuery.data?.length ?? 0;
+  const kpiLoading = rulesQuery.isLoading || proposalsQuery.isLoading;
+
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-3">
-        <Badge variant="outline" className="w-fit">
-          Control Plane Draft
-        </Badge>
-        <div className="flex items-start gap-4">
-          <div className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary">
-            <Bot className="size-5" />
-          </div>
-          <div className="space-y-1.5">
-            <h1 className="text-xl font-semibold tracking-tight">AI 운영</h1>
-            <p className="max-w-3xl text-sm leading-6 text-muted-foreground">
-              Paperclip식 control plane 아이디어를 부동산 ERP에 맞게 번안한 운영 화면입니다.
-              AI가 사무소를 대신 운영하는 방향이 아니라, 사장님과 직원이 자동화를 통제하고
-              승인하는 방향으로 설계합니다.
-            </p>
-          </div>
+    <div className="flex flex-col">
+      <PageHeader
+        title={
+          <span className="inline-flex items-center gap-2">
+            <Bot className="size-5 text-primary" />
+            AI 운영
+          </span>
+        }
+        description="규칙 기반 자동화와 AI 제안을 사장님이 직접 통제하는 운영 콘솔입니다. 민감한 액션은 승인 없이는 실행되지 않습니다."
+        actions={
+          <Badge variant="outline" className="w-fit">
+            Control Plane Draft
+          </Badge>
+        }
+      />
+
+      {!canManage && (
+        <Alert className="mb-4">
+          <Lock className="size-4" />
+          <AlertDescription>
+            AI 운영 콘솔은 사장님(owner)·매니저 전용 화면입니다. 현재 읽기 전용으로
+            표시되며 규칙 변경과 제안 승인/반려는 할 수 없습니다.
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {/* KPI 요약 — 클라이언트 집계 (규칙 + 제안) */}
+      <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <KpiCard
+          label="활성 규칙"
+          loading={kpiLoading}
+          value={`${activeRules}`}
+          sub={totalRules > 0 ? `전체 ${totalRules}개` : undefined}
+        />
+        <KpiCard
+          label="승인 대기"
+          loading={kpiLoading}
+          value={`${stats.pending}`}
+          sub={stats.pendingUrgent > 0 ? `긴급 ${stats.pendingUrgent}건` : undefined}
+          tone={stats.pendingUrgent > 0 ? 'warn' : undefined}
+        />
+        <KpiCard label="오늘 생성된 제안" loading={kpiLoading} value={`${stats.today}`} />
+        <KpiCard
+          label="처리 결과 (누적)"
+          loading={kpiLoading}
+          value={`승인 ${stats.approved} · 반려 ${stats.rejected} · 자동 ${stats.auto}`}
+          sub={stats.failed > 0 ? `실패 ${stats.failed}건` : undefined}
+          tone={stats.failed > 0 ? 'warn' : undefined}
+          small
+        />
+      </div>
+
+      <Tabs value={tab} onValueChange={setTab}>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <TabsList>
+            <TabsTrigger value="rules">규칙</TabsTrigger>
+            <TabsTrigger value="proposals">
+              제안 이력
+              {stats.pending > 0 && (
+                <span className="ml-1 rounded-full bg-warning-soft px-1.5 text-[10px] font-medium text-warning tabular-nums">
+                  {stats.pending}
+                </span>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="logs">실행 로그</TabsTrigger>
+            <TabsTrigger value="principles">운영 원칙</TabsTrigger>
+          </TabsList>
+          <Button asChild variant="ghost" size="sm" className="text-xs text-muted-foreground">
+            <Link to="/inbox">업무함(승인 큐)으로 이동 →</Link>
+          </Button>
         </div>
-      </div>
 
-      <div className="grid gap-4 xl:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>운영 에이전트</CardTitle>
-            <CardDescription>
-              업무 단위별로 책임이 분리된 AI 워커를 둡니다.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <BulletList items={operatingAgentItems} />
-          </CardContent>
-        </Card>
+        <TabsContent value="rules" className="mt-3">
+          <RulesTab canManage={canManage} />
+        </TabsContent>
+        <TabsContent value="proposals" className="mt-3">
+          <ProposalsTab canManage={canManage} />
+        </TabsContent>
+        <TabsContent value="logs" className="mt-3">
+          <ActivityTab />
+        </TabsContent>
+        <TabsContent value="principles" className="mt-3">
+          <PrinciplesTab />
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+}
 
-        <Card>
-          <CardHeader>
-            <CardTitle>승인 게이트</CardTitle>
-            <CardDescription>
-              고객/거래/외부 네트워크에 영향이 있는 액션은 자동 실행하지 않습니다.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <BulletList items={approvalGateItems} />
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>실행 이력과 비용</CardTitle>
-            <CardDescription>
-              누가 무엇을 왜 실행했는지 남겨서 사후 감사가 가능해야 합니다.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <BulletList items={auditItems} />
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>1차 구현 범위</CardTitle>
-            <CardDescription>
-              기존 Task, Insight, CalendarEvent, ActivityLog를 활용해 작게 시작합니다.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <BulletList items={phaseOneItems} />
-          </CardContent>
-        </Card>
-      </div>
+function KpiCard({
+  label,
+  value,
+  sub,
+  tone,
+  loading,
+  small,
+}: {
+  label: string;
+  value: string;
+  sub?: string;
+  tone?: 'warn';
+  loading?: boolean;
+  small?: boolean;
+}) {
+  return (
+    <div className="rounded-md border bg-background px-3 py-2.5">
+      <p className="text-[11px] text-muted-foreground">{label}</p>
+      {loading ? (
+        <Skeleton className="mt-1.5 h-6 w-20" />
+      ) : (
+        <p
+          className={cn(
+            'mt-0.5 font-semibold tabular-nums',
+            small ? 'text-sm leading-7' : 'text-lg',
+            tone === 'warn' && 'text-warning',
+          )}
+        >
+          {value}
+        </p>
+      )}
+      {!loading && sub && (
+        <p className={cn('text-[11px]', tone === 'warn' ? 'text-warning' : 'text-muted-foreground')}>
+          {sub}
+        </p>
+      )}
     </div>
   );
 }

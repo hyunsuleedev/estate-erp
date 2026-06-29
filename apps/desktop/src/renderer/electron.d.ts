@@ -45,6 +45,22 @@ interface CodexBridge {
   onEvent: (callback: (payload: CodexEventPayload) => void) => () => void;
 }
 
+type DesktopUpdateStatus =
+  | { state: 'disabled'; currentVersion: string; reason: string; startedAt: number }
+  | { state: 'idle'; currentVersion: string; startedAt: number }
+  | { state: 'checking'; currentVersion: string; manual?: boolean; startedAt: number }
+  | { state: 'available'; currentVersion: string; version?: string; releaseName?: string; manual?: boolean; startedAt: number }
+  | { state: 'not-available'; currentVersion: string; manual?: boolean; startedAt: number }
+  | { state: 'downloaded'; currentVersion: string; version?: string; releaseName?: string; releaseNotes?: string; startedAt: number }
+  | { state: 'error'; currentVersion: string; message: string; manual?: boolean; startedAt: number };
+
+interface UpdaterBridge {
+  getStatus: () => Promise<DesktopUpdateStatus>;
+  check: () => Promise<DesktopUpdateStatus>;
+  install: () => Promise<{ ok: boolean; error?: string }>;
+  onStatus: (callback: (payload: DesktopUpdateStatus) => void) => () => void;
+}
+
 interface TabBridgePayloadTab {
   id: string;
   kind: string;
@@ -97,6 +113,7 @@ interface ElectronBridge {
   onFullscreenChanged: (callback: (isFullscreen: boolean) => void) => () => void;
   getPlatform: () => Promise<string>;
   isFullscreen: () => Promise<boolean>;
+  updater: UpdaterBridge;
   tabs: TabsBridge;
   codex: CodexBridge;
 }

@@ -1,12 +1,11 @@
 import { createFileRoute } from '@tanstack/react-router';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useDeferredValue, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   DndContext,
-  closestCenter,
-  closestCorners,
   DragOverlay,
   PointerSensor,
+  useDraggable,
   useDroppable,
   useSensor,
   useSensors,
@@ -14,60 +13,39 @@ import {
   type DragStartEvent,
 } from '@dnd-kit/core';
 import {
-  SortableContext,
-  useSortable,
-  verticalListSortingStrategy,
-  arrayMove,
-} from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
-import { restrictToVerticalAxis } from '@dnd-kit/modifiers';
-import {
   AlertCircle,
   ArrowRight,
-  Building2,
-  Calendar,
   CheckCircle2,
   Circle,
   ClipboardList,
   Clock,
   Edit,
-  FileSignature,
-  FileText,
-  GripVertical,
-  HelpCircle,
-  Layers,
   LayoutGrid,
-  Link2,
+  Layers,
   List,
   ListOrdered,
-  MapPin,
-  Megaphone,
-  MessageSquare,
   MoreHorizontal,
-  Phone,
   Plus,
-  Search,
-  Settings,
+  SearchX,
   Trash2,
   User,
   X,
   XCircle,
+  type LucideIcon,
 } from 'lucide-react';
-import type { Task, CreateTaskDto, Employee } from '@estate-erp/api-client';
+import { toast } from 'sonner';
+import {
+  ApiError,
+  type CreateTaskDto,
+  type Task,
+  type UpdateTaskDto,
+} from '@estate-erp/api-client';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/providers/auth-provider';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -75,323 +53,65 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
-import { Textarea } from '@/components/ui/textarea';
+import {
+  ConfirmDialog,
+  EmptyState,
+  FilterBar,
+  FilterCount,
+  FilterSearch,
+  FilterSelect,
+  PageHeader,
+} from '@/components/domain';
+import {
+  ASSIGNEE_UNASSIGNED,
+  DueDateText,
+  TASK_STATUSES,
+  TaskContextChips,
+  TaskSourceBadge,
+  boardColumns,
+  categoryConfig,
+  isOverdue,
+  priorityConfig,
+  taskStatusLabel,
+  type DueDateFilter,
+  type TaskCategory,
+  type TaskPriority,
+  type ViewMode,
+} from './-task-shared';
+import {
+  CategoryTaskTable,
+  LoadingSkeleton,
+  NotionTableHeader,
+  NotionTableRow,
+  StatusView,
+} from './-task-table';
+import { TaskFormModal } from './-task-form';
 
 export const Route = createFileRoute('/_authenticated/tasks/')({
   component: TasksPage,
 });
 
-// ─── Config (estate-crm 노션 스타일) ─────────────────────
+// ─── Config ───────────────────────────────────────────────
 
-type TaskPriority = 'urgent' | 'high' | 'medium' | 'low';
-type TaskStatus = 'pending' | 'in_progress' | 'completed' | 'cancelled';
-type TaskCategory = 'property' | 'buyer' | 'match' | 'deal' | 'contract' | 'consultation' | 'viewing' | 'admin' | 'other' | 'advertisement' | 'call' | 'document' | 'verify';
-
-const priorityConfig: Record<TaskPriority, { label: string; color: string; icon: React.ReactNode }> = {
-  urgent: { label: '긴급', color: 'bg-red-100 text-red-700', icon: <AlertCircle className="size-3" /> },
-  high: { label: '높음', color: 'bg-orange-100 text-orange-700', icon: <Clock className="size-3" /> },
-  medium: { label: '중간', color: 'bg-yellow-100 text-yellow-700', icon: <Circle className="size-3" /> },
-  low: { label: '낮음', color: 'bg-gray-100 text-gray-600', icon: <Circle className="size-3" /> },
-};
-
-const statusConfig: Record<TaskStatus, { label: string; color: string; icon: React.ReactNode }> = {
-  pending: { label: '대기', color: 'bg-gray-100 text-gray-700', icon: <Circle className="size-4" /> },
-  in_progress: { label: '진행중', color: 'bg-blue-100 text-blue-700', icon: <Clock className="size-4" /> },
-  completed: { label: '완료', color: 'bg-green-100 text-green-700', icon: <CheckCircle2 className="size-4" /> },
-  cancelled: { label: '취소', color: 'bg-red-100 text-red-700', icon: <XCircle className="size-4" /> },
-};
-
-const categoryConfig: Record<TaskCategory, { label: string; icon: React.ReactNode; color: string }> = {
-  property: { label: '매물', icon: <Building2 className="size-3" />, color: 'bg-blue-100 text-blue-700' },
-  buyer: { label: '구매고객', icon: <Search className="size-3" />, color: 'bg-green-100 text-green-700' },
-  match: { label: '매칭', icon: <Link2 className="size-3" />, color: 'bg-purple-100 text-purple-700' },
-  deal: { label: '거래', icon: <FileText className="size-3" />, color: 'bg-amber-100 text-amber-700' },
-  contract: { label: '계약', icon: <FileSignature className="size-3" />, color: 'bg-indigo-100 text-indigo-700' },
-  consultation: { label: '상담', icon: <MessageSquare className="size-3" />, color: 'bg-cyan-100 text-cyan-700' },
-  viewing: { label: '방문', icon: <MapPin className="size-3" />, color: 'bg-rose-100 text-rose-700' },
-  admin: { label: '관리', icon: <Settings className="size-3" />, color: 'bg-gray-100 text-gray-700' },
-  other: { label: '기타', icon: <HelpCircle className="size-3" />, color: 'bg-slate-100 text-slate-700' },
-  advertisement: { label: '광고작업', icon: <Megaphone className="size-3" />, color: 'bg-orange-100 text-orange-700' },
-  call: { label: '전화작업', icon: <Phone className="size-3" />, color: 'bg-teal-100 text-teal-700' },
-  document: { label: '서류작업', icon: <ClipboardList className="size-3" />, color: 'bg-yellow-100 text-yellow-700' },
-  verify: { label: '확인작업', icon: <CheckCircle2 className="size-3" />, color: 'bg-emerald-100 text-emerald-700' },
-};
-
-const boardColumns: { status: TaskStatus; title: string; dotColor: string; bgColor: string; columnBg: string }[] = [
-  { status: 'pending', title: '플래닝', dotColor: 'bg-gray-400', bgColor: 'bg-gray-100 text-gray-700', columnBg: 'bg-gray-50' },
-  { status: 'in_progress', title: '진행 중', dotColor: 'bg-amber-400', bgColor: 'bg-amber-100 text-amber-700', columnBg: 'bg-amber-50/50' },
-  { status: 'completed', title: '완료', dotColor: 'bg-green-500', bgColor: 'bg-green-100 text-green-700', columnBg: 'bg-green-50/50' },
+const VIEW_OPTIONS: { mode: ViewMode; label: string; icon: LucideIcon }[] = [
+  { mode: 'category', label: '작업별', icon: Layers },
+  { mode: 'status', label: '상태별', icon: ListOrdered },
+  { mode: 'board', label: '보드', icon: LayoutGrid },
+  { mode: 'list', label: '전체', icon: List },
 ];
 
-type ViewMode = 'category' | 'board' | 'list' | 'status';
-type DueDateFilter = 'all' | 'overdue' | 'today' | 'week' | 'none';
-type TaskUpdatePatch = {
-  status?: string;
-  priority?: string;
-  dueDate?: string | null;
-  assignedToId?: string | null;
-};
-type TaskContextItem = {
-  key: string;
-  label: string;
-  detail?: string;
-  icon: React.ReactNode;
-  className: string;
-};
+const DUE_DATE_OPTIONS = [
+  { value: 'overdue', label: '지연됨' },
+  { value: 'today', label: '오늘' },
+  { value: 'week', label: '이번 주' },
+  { value: 'none', label: '마감일 없음' },
+];
 
-const ASSIGNEE_ALL = 'all';
-const ASSIGNEE_UNASSIGNED = 'unassigned';
-
-const transactionTypeLabels: Record<string, string> = {
-  sale: '매매',
-  jeonse: '전세',
-  monthly: '월세',
-};
-
-const matchStageLabels: Record<string, string> = {
-  suggested: '추천',
-  buyerContacted: '매수 연락',
-  viewing: '방문',
-  ownerContacted: '소유자 연락',
-  negotiating: '협상',
-  dealCreated: '거래 생성',
-  closed: '종료',
-};
-
-const dealStageLabels: Record<string, string> = {
-  selection: '선정',
-  deposit: '입금',
-  contract: '계약',
-  completed: '완료',
-  closed: '종료',
-};
-
-const contractStatusLabels: Record<string, string> = {
-  draft: '초안',
-  signed: '서명',
-  depositPaid: '계약금',
-  balancePaid: '잔금',
-  registered: '등록',
-  cancelled: '취소',
-};
-
-// ─── Helpers ──────────────────────────────────────────────
-
-function isOverdue(task: Task): boolean {
-  if (!task.dueDate || task.status === 'completed' || task.status === 'cancelled') return false;
-  return new Date(task.dueDate) < new Date(new Date().toDateString());
-}
-
-function isDueSoon(date: string | null): boolean {
-  if (!date) return false;
-  const d = new Date(date);
-  const now = new Date();
-  return d.toDateString() === now.toDateString() ||
-    d.toDateString() === new Date(now.getTime() + 86400000).toDateString();
-}
-
-function formatDueDate(date: string | null): string | null {
-  if (!date) return null;
-  const d = new Date(date);
-  const now = new Date();
-  const today = new Date(now.toDateString());
-  const diff = Math.ceil((d.getTime() - today.getTime()) / 86400000);
-  if (diff === 0) return '오늘';
-  if (diff === 1) return '내일';
-  if (diff < 0) {
-    return `${Math.abs(diff)}일 지남`;
-  }
-  return `${d.getMonth() + 1}월 ${d.getDate()}일`;
-}
-
-function formatDateRange(date: string | null): string | null {
-  if (!date) return null;
-  const d = new Date(date);
-  return `${d.getFullYear()}년 ${d.getMonth() + 1}월 ${d.getDate()}일`;
-}
-
-function formatManwon(value: number | null | undefined): string | null {
-  if (!value) return null;
-  if (value >= 10000) {
-    const eok = Math.floor(value / 10000);
-    const man = value % 10000;
-    return man ? `${eok}억 ${man.toLocaleString()}만` : `${eok}억`;
-  }
-  return `${value.toLocaleString()}만`;
-}
-
-function formatListingAmount(listing: NonNullable<Task['listing']>): string | null {
-  if (listing.transactionType === 'monthly') {
-    const deposit = formatManwon(listing.deposit);
-    const monthlyRent = formatManwon(listing.monthlyRent);
-    if (deposit && monthlyRent) return `${deposit}/${monthlyRent}`;
-    return deposit ?? monthlyRent;
-  }
-  return formatManwon(listing.price);
-}
-
-function getPropertyLabel(task: Task): string {
-  const siteName = task.property?.site?.name;
-  const unitName = task.property?.unit?.name;
-  if (siteName && unitName) return `${siteName} ${unitName}`;
-  if (siteName) return siteName;
-  if (unitName) return unitName;
-  return '매물';
-}
-
-function getListingLabel(task: Task): string {
-  if (!task.listing) return '리스팅';
-  const transactionType = transactionTypeLabels[task.listing.transactionType] ?? task.listing.transactionType;
-  const amount = formatListingAmount(task.listing);
-  return amount ? `${transactionType} ${amount}` : transactionType;
-}
-
-function buildTaskContextItems(task: Task): TaskContextItem[] {
-  const items: TaskContextItem[] = [];
-
-  if (task.contact || task.contactId) {
-    items.push({
-      key: 'contact',
-      label: task.contact?.name ?? '연락처',
-      detail: task.contact?.phone ?? undefined,
-      icon: <User className="size-3" />,
-      className: 'border-teal-200 bg-teal-50 text-teal-700',
-    });
-  }
-
-  if (task.property || task.propertyId) {
-    items.push({
-      key: 'property',
-      label: getPropertyLabel(task),
-      detail: task.property?.site?.roadAddress ?? task.property?.site?.jibunAddress ?? undefined,
-      icon: <Building2 className="size-3" />,
-      className: 'border-blue-200 bg-blue-50 text-blue-700',
-    });
-  }
-
-  if (task.listing || task.listingId) {
-    items.push({
-      key: 'listing',
-      label: getListingLabel(task),
-      detail: task.listing?.checkStatus,
-      icon: <FileText className="size-3" />,
-      className: 'border-slate-200 bg-slate-50 text-slate-700',
-    });
-  }
-
-  if (task.buyerRequirement || task.buyerReqId) {
-    items.push({
-      key: 'buyerRequirement',
-      label: task.buyerRequirement?.contact?.name ? `요청 ${task.buyerRequirement.contact.name}` : '구매요청',
-      detail: task.buyerRequirement?.status,
-      icon: <Search className="size-3" />,
-      className: 'border-emerald-200 bg-emerald-50 text-emerald-700',
-    });
-  }
-
-  if (task.match || task.matchId) {
-    const stage = task.match?.stage;
-    items.push({
-      key: 'match',
-      label: stage ? `매칭 ${matchStageLabels[stage] ?? stage}` : '매칭',
-      icon: <Link2 className="size-3" />,
-      className: 'border-violet-200 bg-violet-50 text-violet-700',
-    });
-  }
-
-  if (task.deal || task.dealId) {
-    const stage = task.deal?.stage;
-    items.push({
-      key: 'deal',
-      label: stage ? `거래 ${dealStageLabels[stage] ?? stage}` : '거래',
-      detail: task.deal?.transactionType ? transactionTypeLabels[task.deal.transactionType] ?? task.deal.transactionType : undefined,
-      icon: <Layers className="size-3" />,
-      className: 'border-amber-200 bg-amber-50 text-amber-700',
-    });
-  }
-
-  if (task.contract || task.contractId) {
-    const status = task.contract?.status;
-    items.push({
-      key: 'contract',
-      label: status ? `계약 ${contractStatusLabels[status] ?? status}` : '계약',
-      detail: task.contract?.contractDate ?? undefined,
-      icon: <FileSignature className="size-3" />,
-      className: 'border-indigo-200 bg-indigo-50 text-indigo-700',
-    });
-  }
-
-  if (task.consultation || task.consultationId) {
-    items.push({
-      key: 'consultation',
-      label: task.consultation?.type ? `상담 ${task.consultation.type}` : '상담',
-      icon: <MessageSquare className="size-3" />,
-      className: 'border-cyan-200 bg-cyan-50 text-cyan-700',
-    });
-  }
-
-  return items;
-}
-
-function TaskContextChips({
-  task,
-  className,
-  compact = false,
-}: {
-  task: Task;
-  className?: string;
-  compact?: boolean;
-}) {
-  const items = buildTaskContextItems(task);
-  if (items.length === 0) return null;
-
-  return (
-    <div className={cn('flex min-w-0 flex-wrap items-center gap-1', className)}>
-      {items.map((item) => (
-        <Badge
-          key={item.key}
-          variant="outline"
-          title={item.detail ? `${item.label} · ${item.detail}` : item.label}
-          className={cn(
-            'max-w-full gap-1 px-1.5 py-0 text-[11px] font-normal leading-5',
-            '[&>svg]:size-3',
-            compact ? 'max-w-[150px] text-[10px] leading-4' : 'max-w-[240px]',
-            item.className,
-          )}
-        >
-          {item.icon}
-          <span className="truncate">{item.label}</span>
-        </Badge>
-      ))}
-    </div>
-  );
-}
-
-function TaskContextPanel({ task }: { task: Task }) {
-  const items = buildTaskContextItems(task);
-  if (items.length === 0) return null;
-
-  return (
-    <div className="grid gap-2 rounded-md border border-dashed border-border bg-muted/20 p-3">
-      <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
-        <Link2 className="size-3.5" />
-        연결 문맥
-      </div>
-      <TaskContextChips task={task} />
-    </div>
-  );
+function getErrorMessage(error: unknown): string {
+  if (error instanceof ApiError && error.message) return error.message;
+  if (error instanceof Error && error.message) return error.message;
+  return '요청을 처리하지 못했습니다';
 }
 
 // ─── Main Page ────────────────────────────────────────────
@@ -399,21 +119,38 @@ function TaskContextPanel({ task }: { task: Task }) {
 function TasksPage() {
   const queryClient = useQueryClient();
   const { user } = useAuth();
+  const role = user?.role ?? 'agent';
+  const canBulkDelete = role === 'owner' || role === 'manager';
+
   const [viewMode, setViewMode] = useState<ViewMode>('category');
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [createPresetStatus, setCreatePresetStatus] = useState<string | null>(null);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Task | null>(null);
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  /** reorder 실패 시 StatusView 로컬 순서를 props 기준으로 리셋하기 위한 key */
+  const [dndResetKey, setDndResetKey] = useState(0);
 
   // 필터
-  const [statusFilter, setStatusFilter] = useState<string>('all');
-  const [dueDateFilter, setDueDateFilter] = useState<DueDateFilter>('all');
-  const [categoryFilter, setCategoryFilter] = useState<string>('all');
-  const [assigneeFilter, setAssigneeFilter] = useState<string>(ASSIGNEE_ALL);
+  const [searchText, setSearchText] = useState('');
+  const deferredSearch = useDeferredValue(searchText);
+  const [statusFilter, setStatusFilter] = useState('');
+  const [dueDateFilter, setDueDateFilter] = useState<DueDateFilter>('');
+  const [categoryFilter, setCategoryFilter] = useState('');
+  const [assigneeFilter, setAssigneeFilter] = useState('');
   const [showOnlyMyTasks, setShowOnlyMyTasks] = useState(false);
+  const searchWrapRef = useRef<HTMLDivElement>(null);
 
-  // 선택 (리스트 뷰)
+  // 선택 (전체 뷰)
   const [selectedTasks, setSelectedTasks] = useState<Set<string>>(new Set());
 
-  const { data: tasks = [], isLoading } = useQuery({
+  const {
+    data: tasks = [],
+    isLoading,
+    isError,
+    error,
+    refetch,
+  } = useQuery({
     queryKey: ['tasks'],
     queryFn: () => api.tasks.findAll(),
   });
@@ -428,64 +165,104 @@ function TasksPage() {
     [employees],
   );
 
+  // ─── Mutations (성공 toast + 실패 toast + invalidate) ────
+
   const createMutation = useMutation({
     mutationFn: (dto: CreateTaskDto) => api.tasks.create(dto),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['tasks'] });
+      toast.success('업무가 등록되었습니다');
       setIsCreateModalOpen(false);
+      setCreatePresetStatus(null);
     },
+    onError: (e) => toast.error(getErrorMessage(e)),
   });
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, dto }: { id: string; dto: Parameters<typeof api.tasks.update>[1] }) =>
-      api.tasks.update(id, dto),
+    mutationFn: ({ id, dto }: { id: string; dto: UpdateTaskDto }) => api.tasks.update(id, dto),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['tasks'] });
+      toast.success('업무가 수정되었습니다');
       setEditingTask(null);
     },
+    onError: (e) => toast.error(getErrorMessage(e)),
   });
 
+  // 상태 변경 (DnD/퀵액션) — 낙관적 캐시 업데이트 + 실패 시 롤백
   const updateStatusMutation = useMutation({
     mutationFn: ({ id, status }: { id: string; status: string }) =>
       api.tasks.update(id, { status }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['tasks'] }),
+    onMutate: async ({ id, status }) => {
+      await queryClient.cancelQueries({ queryKey: ['tasks'] });
+      const previous = queryClient.getQueryData<Task[]>(['tasks']);
+      queryClient.setQueryData<Task[]>(['tasks'], (old) =>
+        old?.map((t) => (t.id === id ? { ...t, status } : t)),
+      );
+      return { previous };
+    },
+    onSuccess: (_data, { status }) => {
+      toast.success(`'${taskStatusLabel(status)}' 상태로 변경되었습니다`);
+    },
+    onError: (e, _vars, context) => {
+      if (context?.previous) queryClient.setQueryData(['tasks'], context.previous);
+      toast.error(getErrorMessage(e));
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ['tasks'] }),
   });
 
   const reorderMutation = useMutation({
     mutationFn: (orderedIds: string[]) => api.tasks.reorder(orderedIds),
+    onSuccess: () => toast.success('순서가 저장되었습니다'),
+    onError: (e) => {
+      toast.error(getErrorMessage(e));
+      setDndResetKey((k) => k + 1);
+    },
     onSettled: () => queryClient.invalidateQueries({ queryKey: ['tasks'] }),
   });
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => api.tasks.remove(id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['tasks'] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tasks'] });
+      toast.success('업무가 삭제되었습니다');
+      setDeleteTarget(null);
+    },
+    onError: (e) => toast.error(getErrorMessage(e)),
   });
 
   const bulkStatusMutation = useMutation({
     mutationFn: ({ ids, status }: { ids: string[]; status: string }) =>
       api.tasks.bulkUpdateStatus(ids, status),
-    onSuccess: () => {
+    onSuccess: (_data, { ids, status }) => {
       queryClient.invalidateQueries({ queryKey: ['tasks'] });
+      toast.success(`${ids.length}개 업무가 '${taskStatusLabel(status)}' 상태로 변경되었습니다`);
       setSelectedTasks(new Set());
     },
+    onError: (e) => toast.error(getErrorMessage(e)),
   });
 
   const bulkDeleteMutation = useMutation({
     mutationFn: (ids: string[]) => api.tasks.bulkDelete(ids),
-    onSuccess: () => {
+    onSuccess: (_data, ids) => {
       queryClient.invalidateQueries({ queryKey: ['tasks'] });
+      toast.success(`${ids.length}개 업무가 삭제되었습니다`);
       setSelectedTasks(new Set());
+      setBulkDeleteOpen(false);
     },
+    onError: (e) => toast.error(getErrorMessage(e)),
   });
 
-  // 마감일 필터
+  // ─── 필터링 ──────────────────────────────────────────────
+
   const matchesDueDateFilter = (task: Task) => {
-    if (dueDateFilter === 'all') return true;
+    if (!dueDateFilter) return true;
     if (dueDateFilter === 'none') return !task.dueDate;
     if (!task.dueDate) return false;
     const d = new Date(task.dueDate);
     const today = new Date(new Date().toDateString());
-    if (dueDateFilter === 'overdue') return d < today && task.status !== 'completed' && task.status !== 'cancelled';
+    if (dueDateFilter === 'overdue') {
+      return d < today && task.status !== 'completed' && task.status !== 'cancelled';
+    }
     if (dueDateFilter === 'today') return d.toDateString() === today.toDateString();
     if (dueDateFilter === 'week') {
       const weekEnd = new Date(today);
@@ -496,47 +273,121 @@ function TasksPage() {
   };
 
   const filteredTasks = useMemo(() => {
+    const q = deferredSearch.trim().toLowerCase();
     return tasks
       .filter((task) => {
-        if (task.status === 'cancelled') return false;
-        if (statusFilter !== 'all' && task.status !== statusFilter) return false;
-        if (categoryFilter !== 'all' && task.category !== categoryFilter) return false;
+        // 취소 업무는 기본 숨김 — 상태 필터로 '취소'를 선택했을 때만 조회 (아카이브)
+        if (statusFilter === 'cancelled') {
+          if (task.status !== 'cancelled') return false;
+        } else {
+          if (task.status === 'cancelled') return false;
+          if (statusFilter && task.status !== statusFilter) return false;
+        }
+        if (categoryFilter && task.category !== categoryFilter) return false;
         if (!matchesDueDateFilter(task)) return false;
         if (showOnlyMyTasks && user && task.assignedToId !== user.id) return false;
         if (assigneeFilter === ASSIGNEE_UNASSIGNED && task.assignedToId) return false;
         if (
-          assigneeFilter !== ASSIGNEE_ALL &&
+          assigneeFilter &&
           assigneeFilter !== ASSIGNEE_UNASSIGNED &&
           task.assignedToId !== assigneeFilter
-        ) return false;
+        ) {
+          return false;
+        }
+        if (q) {
+          const haystack = [
+            task.title,
+            task.content,
+            task.contact?.name,
+            task.contact?.phone,
+            task.property?.site?.name,
+            task.property?.unit?.name,
+            task.assignedTo?.name,
+          ]
+            .filter(Boolean)
+            .join(' ')
+            .toLowerCase();
+          if (!haystack.includes(q)) return false;
+        }
         return true;
       })
       .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
-  }, [tasks, statusFilter, categoryFilter, dueDateFilter, showOnlyMyTasks, user, assigneeFilter]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tasks, statusFilter, categoryFilter, dueDateFilter, showOnlyMyTasks, user, assigneeFilter, deferredSearch]);
 
-  const handleInlineUpdate = (id: string, dto: TaskUpdatePatch) => {
-    updateMutation.mutate({ id, dto });
-  };
-
-  const hasActiveFilters = statusFilter !== 'all' || dueDateFilter !== 'all' || categoryFilter !== 'all' || assigneeFilter !== ASSIGNEE_ALL || showOnlyMyTasks;
+  const hasActiveFilters =
+    !!statusFilter ||
+    !!dueDateFilter ||
+    !!categoryFilter ||
+    !!assigneeFilter ||
+    showOnlyMyTasks ||
+    !!searchText.trim();
 
   const resetFilters = () => {
-    setStatusFilter('all');
-    setDueDateFilter('all');
-    setCategoryFilter('all');
-    setAssigneeFilter(ASSIGNEE_ALL);
+    setSearchText('');
+    setStatusFilter('');
+    setDueDateFilter('');
+    setCategoryFilter('');
+    setAssigneeFilter('');
     setShowOnlyMyTasks(false);
   };
 
   const handleMyTasksChange = (checked: boolean) => {
     setShowOnlyMyTasks(checked);
-    if (checked) setAssigneeFilter(ASSIGNEE_ALL);
+    if (checked) setAssigneeFilter('');
   };
 
   const handleAssigneeFilterChange = (value: string) => {
     setAssigneeFilter(value);
-    if (value !== ASSIGNEE_ALL) setShowOnlyMyTasks(false);
+    if (value) setShowOnlyMyTasks(false);
   };
+
+  // ─── 키보드 단축키: N 새 업무 / "/" 검색 포커스 ──────────
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      const target = e.target as HTMLElement | null;
+      if (
+        target?.closest('input, textarea, select, [contenteditable="true"], [role="dialog"], [role="alertdialog"]')
+      ) {
+        return;
+      }
+      if (e.key === 'n' || e.key === 'N') {
+        e.preventDefault();
+        setEditingTask(null);
+        setIsCreateModalOpen(true);
+      } else if (e.key === '/') {
+        e.preventDefault();
+        searchWrapRef.current?.querySelector('input')?.focus();
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
+
+  // ─── 핸들러 ──────────────────────────────────────────────
+
+  const openCreate = (presetStatus?: string) => {
+    setEditingTask(null);
+    setCreatePresetStatus(presetStatus ?? null);
+    setIsCreateModalOpen(true);
+  };
+
+  /** 단건 삭제 요청 — agent는 시스템/AI 생성 업무 삭제 불가 */
+  const requestDelete = (task: Task) => {
+    if (task.source !== 'manual' && role === 'agent') {
+      toast.error('시스템/AI 생성 업무는 매니저 이상만 삭제할 수 있습니다');
+      return;
+    }
+    setDeleteTarget(task);
+  };
+
+  const handleStatusChange = (id: string, status: string) =>
+    updateStatusMutation.mutate({ id, status });
+
+  const handleInlineUpdate = (id: string, dto: UpdateTaskDto) =>
+    updateMutation.mutate({ id, dto });
 
   // 선택 관련
   const toggleTaskSelection = (taskId: string) => {
@@ -549,821 +400,422 @@ function TasksPage() {
   };
 
   const toggleAllSelection = () => {
-    if (selectedTasks.size === filteredTasks.length) {
-      setSelectedTasks(new Set());
-    } else {
-      setSelectedTasks(new Set(filteredTasks.map((t) => t.id)));
-    }
+    if (selectedTasks.size === filteredTasks.length) setSelectedTasks(new Set());
+    else setSelectedTasks(new Set(filteredTasks.map((t) => t.id)));
   };
+
+  // 필터/데이터 변경으로 목록에서 사라진 업무는 선택에서 제거 (숨은 업무 일괄 처리 방지)
+  useEffect(() => {
+    setSelectedTasks((prev) => {
+      if (prev.size === 0) return prev;
+      const visible = new Set(filteredTasks.map((t) => t.id));
+      const next = new Set([...prev].filter((id) => visible.has(id)));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [filteredTasks]);
 
   const hasSelection = selectedTasks.size > 0;
   const isAllSelected = filteredTasks.length > 0 && selectedTasks.size === filteredTasks.length;
 
-  return (
-    <div className="flex flex-col gap-6 -mt-4 -mx-4">
-      {/* 필터 + 뷰 스위처 + 업무 추가 (한 줄, sticky) */}
-      <div className="flex items-center gap-2 flex-wrap sticky -top-4 z-10 bg-background py-3 px-4 border-b border-border/40">
-        {/* 내 업무만 토글 */}
-        <div className="flex items-center gap-2 px-3 py-1.5 border border-dashed rounded-md h-8">
-          <Switch
-            size="sm"
-            checked={showOnlyMyTasks}
-            onCheckedChange={handleMyTasksChange}
-          />
-          <label
-            className="text-xs font-medium cursor-pointer select-none text-muted-foreground"
-            onClick={() => handleMyTasksChange(!showOnlyMyTasks)}
-          >
-            <User className="size-3 inline mr-1" />
-            내 업무
-          </label>
-        </div>
+  // ─── 본문 콘텐츠 ─────────────────────────────────────────
 
-        <div className="w-px h-6 bg-border" />
+  const showCancelledHint =
+    statusFilter === 'cancelled' && (viewMode === 'board' || viewMode === 'status');
 
-        {/* 상태 필터 */}
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="h-8 gap-1.5 text-xs border-dashed">
-            <Circle className="size-3" />
-            <SelectValue placeholder="상태" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">전체 상태</SelectItem>
-            {Object.entries(statusConfig).map(([key, { label, icon }]) => (
-              <SelectItem key={key} value={key}>
-                <span className="flex items-center gap-2">
-                  {icon}
-                  {label}
-                </span>
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
-        {/* 마감일 필터 */}
-        <Select value={dueDateFilter} onValueChange={(v) => setDueDateFilter(v as DueDateFilter)}>
-          <SelectTrigger className="h-8 gap-1.5 text-xs border-dashed">
-            <Calendar className="size-3" />
-            <SelectValue placeholder="마감일" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">전체</SelectItem>
-            <SelectItem value="overdue">지연됨</SelectItem>
-            <SelectItem value="today">오늘</SelectItem>
-            <SelectItem value="week">이번 주</SelectItem>
-            <SelectItem value="none">마감일 없음</SelectItem>
-          </SelectContent>
-        </Select>
-
-        {/* 카테고리 필터 */}
-        <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-          <SelectTrigger className="h-8 gap-1.5 text-xs border-dashed">
-            <Layers className="size-3" />
-            <SelectValue placeholder="카테고리" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">전체 카테고리</SelectItem>
-            {Object.entries(categoryConfig).map(([key, { label, icon }]) => (
-              <SelectItem key={key} value={key}>
-                <span className="flex items-center gap-2">
-                  {icon}
-                  {label}
-                </span>
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
-        {/* 담당자 필터 */}
-        <Select value={assigneeFilter} onValueChange={handleAssigneeFilterChange}>
-          <SelectTrigger className="h-8 gap-1.5 text-xs border-dashed">
-            <User className="size-3" />
-            <SelectValue placeholder="담당자" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={ASSIGNEE_ALL}>전체 담당자</SelectItem>
-            <SelectItem value={ASSIGNEE_UNASSIGNED}>미배정</SelectItem>
-            {activeEmployees.map((employee) => (
-              <SelectItem key={employee.id} value={employee.id}>
-                {employee.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
-        {/* 필터 초기화 */}
-        {hasActiveFilters && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={resetFilters}
-            className="h-8 gap-1.5 text-xs text-muted-foreground"
-          >
-            <X className="size-3" />
-            필터 초기화
+  let content: ReactNode;
+  if (isError) {
+    content = (
+      <EmptyState
+        icon={AlertCircle}
+        title="업무 목록을 불러오지 못했습니다"
+        description={getErrorMessage(error)}
+        action={
+          <Button variant="outline" size="sm" onClick={() => void refetch()}>
+            다시 시도
           </Button>
-        )}
-
-        {/* 오른쪽: 뷰 스위처 + 업무 추가 */}
-        <div className="flex items-center gap-3 ml-auto">
-          <div className="flex items-center gap-1 border rounded-lg p-1">
-            <Button
-              variant={viewMode === 'category' ? 'secondary' : 'ghost'}
-              size="sm"
-              onClick={() => setViewMode('category')}
-              className="gap-1.5"
-            >
-              <Layers className="size-4" />
-              작업별
-            </Button>
-            <Button
-              variant={viewMode === 'status' ? 'secondary' : 'ghost'}
-              size="sm"
-              onClick={() => setViewMode('status')}
-              className="gap-1.5"
-            >
-              <ListOrdered className="size-4" />
-              상태별
-            </Button>
-            <Button
-              variant={viewMode === 'board' ? 'secondary' : 'ghost'}
-              size="sm"
-              onClick={() => setViewMode('board')}
-              className="gap-1.5"
-            >
-              <LayoutGrid className="size-4" />
-              보드
-            </Button>
-            <Button
-              variant={viewMode === 'list' ? 'secondary' : 'ghost'}
-              size="sm"
-              onClick={() => setViewMode('list')}
-              className="gap-1.5"
-            >
-              <List className="size-4" />
-              전체
-            </Button>
-          </div>
-          <Button onClick={() => setIsCreateModalOpen(true)}>
-            <Plus className="size-4 mr-2" />
+        }
+      />
+    );
+  } else if (isLoading) {
+    content = <LoadingSkeleton />;
+  } else if (tasks.length === 0) {
+    content = (
+      <EmptyState
+        icon={ClipboardList}
+        title="등록된 업무가 없습니다"
+        description="첫 업무를 추가해 후속 작업 누락을 방지하세요"
+        action={
+          <Button size="sm" onClick={() => openCreate()}>
+            <Plus className="size-4" />
             업무 추가
           </Button>
-        </div>
+        }
+      />
+    );
+  } else if (filteredTasks.length === 0) {
+    content = (
+      <EmptyState
+        icon={SearchX}
+        title="조건에 맞는 업무가 없습니다"
+        description="검색어 또는 필터를 조정해 보세요"
+        action={
+          hasActiveFilters ? (
+            <Button variant="outline" size="sm" onClick={resetFilters}>
+              <X className="size-4" />
+              필터 초기화
+            </Button>
+          ) : undefined
+        }
+      />
+    );
+  } else if (showCancelledHint) {
+    content = (
+      <EmptyState
+        icon={XCircle}
+        title="취소된 업무는 보드/상태별 뷰에 표시되지 않습니다"
+        description="취소 업무는 전체 또는 작업별 뷰에서 확인하세요"
+        action={
+          <Button variant="outline" size="sm" onClick={() => setViewMode('list')}>
+            전체 뷰로 보기
+          </Button>
+        }
+      />
+    );
+  } else if (viewMode === 'board') {
+    content = (
+      <BoardView
+        tasks={filteredTasks}
+        onEdit={setEditingTask}
+        onStatusChange={handleStatusChange}
+        onDelete={requestDelete}
+        onAddTask={(status) => openCreate(status)}
+      />
+    );
+  } else if (viewMode === 'status') {
+    content = (
+      <StatusView
+        key={dndResetKey}
+        filteredTasks={filteredTasks}
+        onRowClick={setEditingTask}
+        onStatusChange={handleStatusChange}
+        onDelete={requestDelete}
+        onUpdate={handleInlineUpdate}
+        onReorder={(orderedIds) => reorderMutation.mutate(orderedIds)}
+        employeeOptions={activeEmployees}
+      />
+    );
+  } else if (viewMode === 'category') {
+    content = (
+      <div>
+        {Object.entries(categoryConfig).map(([catKey, catData]) => {
+          const catTasks = filteredTasks.filter((t) => t.category === catKey);
+          if (catTasks.length === 0) return null;
+          return (
+            <CategoryTaskTable
+              key={catKey}
+              categoryData={catData}
+              tasks={catTasks}
+              onRowClick={setEditingTask}
+              onStatusChange={handleStatusChange}
+              onDelete={requestDelete}
+              onUpdate={handleInlineUpdate}
+              employeeOptions={activeEmployees}
+            />
+          );
+        })}
+      </div>
+    );
+  } else {
+    content = (
+      <div>
+        {/* 일괄 작업 바 */}
+        {hasSelection && (
+          <div className="mb-3 flex flex-wrap items-center gap-2 rounded-md border border-info/30 bg-info-soft/50 p-2">
+            <span className="text-sm font-medium text-info">{selectedTasks.size}개 선택됨</span>
+            <div className="ml-auto flex items-center gap-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 text-xs"
+                disabled={bulkStatusMutation.isPending}
+                onClick={() =>
+                  bulkStatusMutation.mutate({ ids: [...selectedTasks], status: 'in_progress' })
+                }
+              >
+                <Clock className="size-3" /> 진행중
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 text-xs"
+                disabled={bulkStatusMutation.isPending}
+                onClick={() =>
+                  bulkStatusMutation.mutate({ ids: [...selectedTasks], status: 'completed' })
+                }
+              >
+                <CheckCircle2 className="size-3" /> 완료
+              </Button>
+              {canBulkDelete && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 text-xs text-destructive hover:bg-destructive-soft hover:text-destructive"
+                  onClick={() => setBulkDeleteOpen(true)}
+                >
+                  <Trash2 className="size-3" /> 삭제
+                </Button>
+              )}
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 text-xs"
+                onClick={() => setSelectedTasks(new Set())}
+              >
+                <X className="size-3" /> 선택 취소
+              </Button>
+            </div>
+          </div>
+        )}
+
+        <table className="w-full">
+          <thead>
+            <NotionTableHeader
+              showCategory
+              showCheckbox
+              isAllSelected={isAllSelected}
+              onToggleAll={toggleAllSelection}
+            />
+          </thead>
+          <tbody>
+            {filteredTasks.map((task, idx) => (
+              <NotionTableRow
+                key={task.id}
+                task={task}
+                index={idx + 1}
+                onRowClick={setEditingTask}
+                onStatusChange={handleStatusChange}
+                onDelete={requestDelete}
+                onUpdate={handleInlineUpdate}
+                employeeOptions={activeEmployees}
+                showCategory
+                showCheckbox
+                isSelected={selectedTasks.has(task.id)}
+                onToggleSelect={toggleTaskSelection}
+              />
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col pt-4">
+      <PageHeader
+        title="업무"
+        description="사무소 전체의 후속 작업을 만들고 상태·담당·마감일로 관리합니다"
+        actions={
+          <>
+            <div className="flex items-center gap-0.5 rounded-md border p-0.5">
+              {VIEW_OPTIONS.map(({ mode, label, icon: Icon }) => (
+                <Button
+                  key={mode}
+                  variant={viewMode === mode ? 'secondary' : 'ghost'}
+                  size="sm"
+                  onClick={() => setViewMode(mode)}
+                  className="h-7 gap-1.5 text-xs"
+                >
+                  <Icon className="size-3.5" />
+                  {label}
+                </Button>
+              ))}
+            </div>
+            <Button onClick={() => openCreate()}>
+              <Plus className="size-4" />
+              업무 추가
+            </Button>
+          </>
+        }
+      />
+
+      {/* 필터 바 (sticky) */}
+      <div className="sticky top-0 z-10 bg-background pb-3">
+        <FilterBar>
+          <div ref={searchWrapRef}>
+            <FilterSearch
+              value={searchText}
+              onChange={setSearchText}
+              placeholder="제목·내용·연락처 검색 ( / )"
+            />
+          </div>
+          <div className="flex h-8 items-center gap-2 rounded-md border border-dashed bg-background px-3">
+            <Switch size="sm" checked={showOnlyMyTasks} onCheckedChange={handleMyTasksChange} />
+            <label
+              className="cursor-pointer text-xs font-medium text-muted-foreground select-none"
+              onClick={() => handleMyTasksChange(!showOnlyMyTasks)}
+            >
+              <User className="mr-1 inline size-3" />내 업무
+            </label>
+          </div>
+          <FilterSelect
+            label="상태"
+            value={statusFilter}
+            onChange={setStatusFilter}
+            options={TASK_STATUSES.map((s) => ({ value: s, label: taskStatusLabel(s) }))}
+          />
+          <FilterSelect
+            label="마감일"
+            value={dueDateFilter}
+            onChange={(v) => setDueDateFilter(v as DueDateFilter)}
+            options={DUE_DATE_OPTIONS}
+          />
+          <FilterSelect
+            label="카테고리"
+            value={categoryFilter}
+            onChange={setCategoryFilter}
+            options={Object.entries(categoryConfig).map(([value, { label }]) => ({ value, label }))}
+          />
+          <FilterSelect
+            label="담당자"
+            value={assigneeFilter}
+            onChange={handleAssigneeFilterChange}
+            options={[
+              { value: ASSIGNEE_UNASSIGNED, label: '미배정' },
+              ...activeEmployees.map((e) => ({ value: e.id, label: e.name })),
+            ]}
+          />
+          {hasActiveFilters && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={resetFilters}
+              className="h-8 gap-1.5 text-xs text-muted-foreground"
+            >
+              <X className="size-3" />
+              필터 초기화
+            </Button>
+          )}
+          <FilterCount n={filteredTasks.length} />
+        </FilterBar>
       </div>
 
-      <div className="px-4">
-      {/* ── 보드 뷰 (칸반) ── */}
-      {viewMode === 'board' && (
-        isLoading ? <LoadingSkeleton /> : (
-          <div className="grid grid-cols-3 gap-4">
-            {boardColumns.map((column) => {
-              const colTasks = filteredTasks.filter((t) => t.status === column.status);
-              return (
-                <div key={column.status} className="flex flex-col">
-                  <div className="flex items-center justify-between mb-3">
-                    <div className={cn('inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-sm font-medium', column.bgColor)}>
-                      <span className={cn('size-2 rounded-full', column.dotColor)} />
-                      {column.title}
-                    </div>
-                    <Button variant="ghost" size="sm" className="size-6 p-0 text-muted-foreground" onClick={() => setIsCreateModalOpen(true)}>
-                      <Plus className="size-4" />
-                    </Button>
-                  </div>
-                  <div className={cn('rounded-xl p-3 min-h-[200px]', column.columnBg)}>
-                    <div className="space-y-3">
-                      {colTasks.map((task) => (
-                        <KanbanCard
-                          key={task.id}
-                          task={task}
-                          onEdit={setEditingTask}
-                          onStatusChange={(id, status) => updateStatusMutation.mutate({ id, status })}
-                          onDelete={(id) => deleteMutation.mutate(id)}
-                          currentStatus={column.status}
-                        />
-                      ))}
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="w-full justify-start text-muted-foreground hover:bg-white/50 h-auto py-2"
-                        onClick={() => setIsCreateModalOpen(true)}
-                      >
-                        <Plus className="size-4 mr-2" />
-                        새 프로젝트
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )
-      )}
+      {content}
 
-      {/* ── 상태별 뷰 ── */}
-      {viewMode === 'status' && (
-        isLoading ? <LoadingSkeleton /> : (
-          <StatusView
-            filteredTasks={filteredTasks}
-            onRowClick={setEditingTask}
-            onStatusChange={(id, status) => updateStatusMutation.mutate({ id, status })}
-            onDelete={(id) => deleteMutation.mutate(id)}
-            onUpdate={handleInlineUpdate}
-            onReorder={(orderedIds) => reorderMutation.mutate(orderedIds)}
-            employeeOptions={activeEmployees}
-          />
-        )
-      )}
-
-      {/* ── 카테고리별 뷰 ── */}
-      {viewMode === 'category' && (
-        isLoading ? <LoadingSkeleton /> : (
-          <div>
-            {Object.entries(categoryConfig).map(([catKey, catData]) => {
-              const catTasks = filteredTasks.filter((t) => t.category === catKey);
-              if (catTasks.length === 0) return null;
-              return (
-                <CategoryTaskTable
-                  key={catKey}
-                  categoryData={catData}
-                  tasks={catTasks}
-                  onRowClick={setEditingTask}
-                  onStatusChange={(id, status) => updateStatusMutation.mutate({ id, status })}
-                  onDelete={(id) => deleteMutation.mutate(id)}
-                  onUpdate={handleInlineUpdate}
-                  employeeOptions={activeEmployees}
-                />
-              );
-            })}
-          </div>
-        )
-      )}
-
-      {/* ── 전체 리스트 뷰 ── */}
-      {viewMode === 'list' && (
-        <div>
-          {/* 일괄 작업 바 */}
-          {hasSelection && (
-            <div className="flex items-center gap-2 mb-3 p-2 bg-blue-50 border border-blue-200 rounded-lg">
-              <span className="text-sm font-medium text-blue-700">
-                {selectedTasks.size}개 선택됨
-              </span>
-              <div className="flex items-center gap-1 ml-auto">
-                <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => bulkStatusMutation.mutate({ ids: [...selectedTasks], status: 'in_progress' })}>
-                  <Clock className="size-3 mr-1" /> 진행중
-                </Button>
-                <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => bulkStatusMutation.mutate({ ids: [...selectedTasks], status: 'completed' })}>
-                  <CheckCircle2 className="size-3 mr-1" /> 완료
-                </Button>
-                <Button variant="ghost" size="sm" className="h-7 text-xs text-red-600 hover:text-red-700 hover:bg-red-50" onClick={() => bulkDeleteMutation.mutate([...selectedTasks])}>
-                  <Trash2 className="size-3 mr-1" /> 삭제
-                </Button>
-                <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setSelectedTasks(new Set())}>
-                  <X className="size-3 mr-1" /> 선택 취소
-                </Button>
-              </div>
-            </div>
-          )}
-
-          {isLoading ? <LoadingSkeleton /> : (
-            <table className="w-full">
-              <thead>
-                <NotionTableHeader showCategory showCheckbox isAllSelected={isAllSelected} onToggleAll={toggleAllSelection} />
-              </thead>
-              <tbody>
-                {filteredTasks.map((task, idx) => (
-                  <NotionTableRow
-                    key={task.id}
-                    task={task}
-                    index={idx + 1}
-                    onRowClick={setEditingTask}
-                    onStatusChange={(id, status) => updateStatusMutation.mutate({ id, status })}
-                    onDelete={(id) => deleteMutation.mutate(id)}
-                    onUpdate={handleInlineUpdate}
-                    employeeOptions={activeEmployees}
-                    showCategory
-                    showCheckbox
-                    isSelected={selectedTasks.has(task.id)}
-                    onToggleSelect={toggleTaskSelection}
-                  />
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-      )}
-
-      {/* Create/Edit Modal */}
+      {/* 생성/수정 다이얼로그 */}
       <TaskFormModal
         isOpen={isCreateModalOpen || !!editingTask}
-        onClose={() => { setIsCreateModalOpen(false); setEditingTask(null); }}
+        onClose={() => {
+          setIsCreateModalOpen(false);
+          setCreatePresetStatus(null);
+          setEditingTask(null);
+        }}
         task={editingTask}
+        presetStatus={createPresetStatus}
         employeeOptions={activeEmployees}
         onSubmit={(data) => {
           if (editingTask) {
-            updateMutation.mutate({ id: editingTask.id, dto: data });
+            updateMutation.mutate({ id: editingTask.id, dto: data as UpdateTaskDto });
           } else {
             createMutation.mutate(data as CreateTaskDto);
           }
         }}
         isLoading={createMutation.isPending || updateMutation.isPending}
       />
-      </div>
+
+      {/* 단건 삭제 확인 */}
+      <ConfirmDialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => {
+          if (!open) setDeleteTarget(null);
+        }}
+        title="업무를 삭제할까요?"
+        description={
+          deleteTarget ? (
+            <>
+              “{deleteTarget.title}” 업무가 영구 삭제됩니다.
+              {deleteTarget.source !== 'manual' &&
+                ' 시스템/AI가 생성한 업무는 규칙에 따라 다시 생성될 수 있습니다.'}
+            </>
+          ) : undefined
+        }
+        confirmLabel="삭제"
+        destructive
+        loading={deleteMutation.isPending}
+        onConfirm={() => {
+          if (deleteTarget) deleteMutation.mutate(deleteTarget.id);
+        }}
+      />
+
+      {/* 일괄 삭제 확인 */}
+      <ConfirmDialog
+        open={bulkDeleteOpen}
+        onOpenChange={setBulkDeleteOpen}
+        title={`${selectedTasks.size}개 업무를 삭제할까요?`}
+        description="선택한 업무가 모두 영구 삭제됩니다. 이 작업은 되돌릴 수 없습니다."
+        confirmLabel="모두 삭제"
+        destructive
+        loading={bulkDeleteMutation.isPending}
+        onConfirm={() => bulkDeleteMutation.mutate([...selectedTasks])}
+      />
     </div>
   );
 }
 
-// ─── Notion Table Header ──────────────────────────────────
+// ─── Board View (칸반 + drag-and-drop 상태 변경) ──────────
 
-function NotionTableHeader({
-  showCategory = true,
-  showCheckbox = false,
-  showDragHandle = false,
-  isAllSelected = false,
-  onToggleAll,
-}: {
-  showCategory?: boolean;
-  showCheckbox?: boolean;
-  showDragHandle?: boolean;
-  isAllSelected?: boolean;
-  onToggleAll?: () => void;
-}) {
-  return (
-    <tr className="border-b border-border/40 text-xs text-muted-foreground">
-      {showDragHandle && <th className="w-[28px]" />}
-      {showCheckbox && (
-        <th className="py-2 px-3 w-[40px]">
-          <Checkbox checked={isAllSelected} onCheckedChange={onToggleAll} />
-        </th>
-      )}
-      <th className="text-left py-2 px-3 font-medium w-[50px]">No</th>
-      <th className="text-left py-2 px-3 font-medium">작업</th>
-      <th className="text-left py-2 px-3 font-medium w-[90px]">상태</th>
-      <th className="text-left py-2 px-3 font-medium w-[80px]">담당자</th>
-      <th className="text-left py-2 px-3 font-medium w-[100px]">마감일</th>
-      <th className="text-left py-2 px-3 font-medium w-[70px]">우선순위</th>
-      {showCategory && <th className="text-left py-2 px-3 font-medium w-[110px]">카테고리</th>}
-      <th className="w-[40px]" />
-    </tr>
-  );
-}
-
-// ─── Notion Table Row ─────────────────────────────────────
-
-type NotionRowProps = {
-  task: Task;
-  index: number;
-  onRowClick: (task: Task) => void;
+type BoardHandlers = {
+  onEdit: (task: Task) => void;
   onStatusChange: (id: string, status: string) => void;
-  onDelete: (id: string) => void;
-  onUpdate?: (id: string, dto: TaskUpdatePatch) => void;
-  employeeOptions: Employee[];
-  showCategory?: boolean;
-  showCheckbox?: boolean;
-  isSelected?: boolean;
-  onToggleSelect?: (taskId: string) => void;
+  onDelete: (task: Task) => void;
+  onAddTask: (status: string) => void;
 };
 
-function NotionTableRow({
-  task,
-  index,
-  onRowClick,
-  onStatusChange,
-  onDelete,
-  onUpdate,
-  employeeOptions,
-  showCategory = true,
-  showCheckbox = false,
-  isSelected = false,
-  onToggleSelect,
-}: NotionRowProps) {
-  const overdue = isOverdue(task);
-
-  return (
-    <tr
-      className={cn(
-        'group/row border-b border-border/40 hover:bg-muted/30 transition-colors text-sm',
-        overdue && 'bg-red-50/50',
-        isSelected && 'bg-blue-50/50',
-      )}
-    >
-      {showCheckbox && (
-        <td className="py-2 px-3">
-          <Checkbox checked={isSelected} onCheckedChange={() => onToggleSelect?.(task.id)} />
-        </td>
-      )}
-      <NotionTableRowCells task={task} index={index} onRowClick={onRowClick} onStatusChange={onStatusChange} onDelete={onDelete} onUpdate={onUpdate} employeeOptions={employeeOptions} showCategory={showCategory} />
-    </tr>
-  );
-}
-
-function NotionTableRowCells({
-  task,
-  index,
-  onRowClick,
-  onStatusChange,
-  onDelete,
-  onUpdate,
-  employeeOptions,
-  showCategory = true,
-}: {
-  task: Task;
-  index: number;
-  onRowClick: (task: Task) => void;
-  onStatusChange: (id: string, status: string) => void;
-  onDelete: (id: string) => void;
-  onUpdate?: (id: string, dto: TaskUpdatePatch) => void;
-  employeeOptions: Employee[];
-  showCategory?: boolean;
-}) {
-  const sCfg = statusConfig[task.status as TaskStatus];
-  const pCfg = priorityConfig[task.priority as TaskPriority];
-  const cCfg = categoryConfig[task.category as TaskCategory] ?? categoryConfig.other;
-  const overdue = isOverdue(task);
-
-  return (
-    <>
-      <td className="py-2 px-3 text-muted-foreground border-r border-border/40">{index}</td>
-      <td className="py-2 px-3 border-r border-border/40">
-        <div className="grid gap-1">
-          <div className="flex items-center gap-1">
-            <span className={cn('flex-1', task.status === 'completed' ? 'line-through text-muted-foreground' : '')}>{task.title}</span>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="size-6 p-0 opacity-0 group-hover/row:opacity-100 transition-opacity shrink-0"
-              onClick={() => onRowClick(task)}
-            >
-              <Edit className="size-3.5" />
-            </Button>
-          </div>
-          <TaskContextChips task={task} />
-        </div>
-      </td>
-
-      {/* 상태 — 클릭 시 인라인 선택 */}
-      <td className="py-2 px-3 border-r border-border/40">
-        <Popover>
-          <PopoverTrigger asChild>
-            <button className="inline-flex items-center rounded-md hover:ring-2 hover:ring-ring/20 transition-all">
-              <Badge className={cn(sCfg?.color, 'text-xs gap-1')}>
-                <span className="size-1.5 rounded-full bg-current" />
-                {sCfg?.label}
-              </Badge>
-            </button>
-          </PopoverTrigger>
-          <PopoverContent className="w-[160px] p-1" align="start">
-            <div className="flex flex-col">
-              {Object.entries(statusConfig).map(([key, { label, icon }]) => (
-                <button
-                  key={key}
-                  className={cn(
-                    'flex items-center gap-2 px-2 py-1.5 text-xs rounded-sm hover:bg-accent transition-colors text-left',
-                    task.status === key && 'bg-accent',
-                  )}
-                  onClick={() => onUpdate?.(task.id, { status: key })}
-                >
-                  {icon}
-                  <span>{label}</span>
-                </button>
-              ))}
-            </div>
-          </PopoverContent>
-        </Popover>
-      </td>
-
-      {/* 담당자 — 클릭 시 인라인 표시 */}
-      <td className="py-2 px-3 border-r border-border/40">
-        <TaskAssigneePicker
-          task={task}
-          employeeOptions={employeeOptions}
-          onUpdate={onUpdate}
-        />
-      </td>
-
-      {/* 마감일 — 클릭 시 인라인 날짜 선택 */}
-      <td className="py-2 px-3 border-r border-border/40">
-        <Popover>
-          <PopoverTrigger asChild>
-            <button className="inline-flex items-center rounded-md hover:ring-2 hover:ring-ring/20 transition-all">
-              {task.dueDate ? (
-                <span className={cn('text-xs', overdue ? 'text-red-600 font-medium' : isDueSoon(task.dueDate) ? 'text-orange-600' : 'text-muted-foreground')}>
-                  {formatDueDate(task.dueDate)}
-                </span>
-              ) : (
-                <span className="text-xs text-muted-foreground">-</span>
-              )}
-            </button>
-          </PopoverTrigger>
-          <PopoverContent className="w-[200px] p-2" align="start">
-            <div className="flex flex-col gap-2">
-              <p className="text-xs font-medium text-muted-foreground">마감일</p>
-              <Input
-                type="date"
-                className="h-8 text-xs"
-                defaultValue={task.dueDate ? task.dueDate.substring(0, 10) : ''}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  onUpdate?.(task.id, { dueDate: val || null });
-                }}
-              />
-              {task.dueDate && (
-                <button
-                  className="flex items-center gap-2 px-2 py-1.5 text-xs rounded-sm hover:bg-accent transition-colors text-left text-red-600"
-                  onClick={() => onUpdate?.(task.id, { dueDate: null })}
-                >
-                  <X className="size-3" />
-                  마감일 제거
-                </button>
-              )}
-            </div>
-          </PopoverContent>
-        </Popover>
-      </td>
-
-      {/* 우선순위 — 클릭 시 인라인 선택 */}
-      <td className="py-2 px-3 border-r border-border/40">
-        <Popover>
-          <PopoverTrigger asChild>
-            <button className="inline-flex items-center rounded-md hover:ring-2 hover:ring-ring/20 transition-all">
-              <Badge className={cn(pCfg?.color, 'text-xs')}>{pCfg?.label}</Badge>
-            </button>
-          </PopoverTrigger>
-          <PopoverContent className="w-[140px] p-1" align="start">
-            <div className="flex flex-col">
-              {Object.entries(priorityConfig).map(([key, { label, icon }]) => (
-                <button
-                  key={key}
-                  className={cn(
-                    'flex items-center gap-2 px-2 py-1.5 text-xs rounded-sm hover:bg-accent transition-colors text-left',
-                    task.priority === key && 'bg-accent',
-                  )}
-                  onClick={() => onUpdate?.(task.id, { priority: key })}
-                >
-                  {icon}
-                  <span>{label}</span>
-                </button>
-              ))}
-            </div>
-          </PopoverContent>
-        </Popover>
-      </td>
-
-      {showCategory && (
-        <td className="py-2 px-3 border-r border-border/40">
-          <Badge className={cn(cCfg.color, 'text-xs gap-1')}>
-            {cCfg.icon}
-            {cCfg.label}
-          </Badge>
-        </td>
-      )}
-      <td className="py-2 px-3">
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="sm" className="size-6 p-0">
-              <MoreHorizontal className="size-4" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={() => onRowClick(task)}>
-              <Edit className="size-4 mr-2" />수정
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => onStatusChange(task.id, 'in_progress')}>
-              <ArrowRight className="size-4 mr-2" />진행중으로 변경
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => onStatusChange(task.id, 'completed')}>
-              <CheckCircle2 className="size-4 mr-2" />완료로 변경
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem className="text-red-600" onClick={() => onDelete(task.id)}>
-              <Trash2 className="size-4 mr-2" />삭제
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </td>
-    </>
-  );
-}
-
-function TaskAssigneePicker({
-  task,
-  employeeOptions,
-  onUpdate,
-}: {
-  task: Task;
-  employeeOptions: Employee[];
-  onUpdate?: (id: string, dto: TaskUpdatePatch) => void;
-}) {
-  return (
-    <Popover>
-      <PopoverTrigger asChild>
-        <button className="inline-flex items-center rounded-md hover:ring-2 hover:ring-ring/20 transition-all w-full">
-          {task.assignedTo ? (
-            <div className="flex items-center gap-1.5 min-w-0">
-              <Avatar className="size-5 shrink-0">
-                <AvatarFallback className="text-[10px]">
-                  {task.assignedTo.name.charAt(0)}
-                </AvatarFallback>
-              </Avatar>
-              <span className="text-xs text-muted-foreground truncate">
-                {task.assignedTo.name}
-              </span>
-            </div>
-          ) : (
-            <span className="text-xs text-muted-foreground">미배정</span>
-          )}
-        </button>
-      </PopoverTrigger>
-      <PopoverContent className="w-[200px] p-2" align="start">
-        <div className="flex flex-col gap-1">
-          <p className="text-xs font-medium text-muted-foreground px-1 mb-1">담당자</p>
-          <button
-            className={cn(
-              'flex items-center gap-2 px-2 py-1.5 text-xs rounded-sm hover:bg-accent transition-colors text-left',
-              !task.assignedToId && 'bg-accent',
-            )}
-            onClick={() => onUpdate?.(task.id, { assignedToId: null })}
-          >
-            <User className="size-3" />
-            미배정
-          </button>
-          {employeeOptions.map((employee) => (
-            <button
-              key={employee.id}
-              className={cn(
-                'flex items-center gap-2 px-2 py-1.5 text-xs rounded-sm hover:bg-accent transition-colors text-left',
-                task.assignedToId === employee.id && 'bg-accent',
-              )}
-              onClick={() => onUpdate?.(task.id, { assignedToId: employee.id })}
-            >
-              <Avatar className="size-5">
-                <AvatarFallback className="text-[10px]">
-                  {employee.name.charAt(0)}
-                </AvatarFallback>
-              </Avatar>
-              <span className="truncate">{employee.name}</span>
-            </button>
-          ))}
-          {employeeOptions.length === 0 && (
-            <p className="text-xs text-muted-foreground px-1 py-1">활성 직원 없음</p>
-          )}
-        </div>
-      </PopoverContent>
-    </Popover>
-  );
-}
-
-// ─── Status View (상위 DndContext — 크로스 그룹 이동 지원) ──
-
-function StatusView({
-  filteredTasks,
-  onRowClick,
-  onStatusChange,
-  onDelete,
-  onUpdate,
-  onReorder,
-  employeeOptions,
-}: {
-  filteredTasks: Task[];
-  onRowClick: (task: Task) => void;
-  onStatusChange: (id: string, status: string) => void;
-  onDelete: (id: string) => void;
-  onUpdate?: (id: string, dto: TaskUpdatePatch) => void;
-  onReorder?: (orderedIds: string[]) => void;
-  employeeOptions: Employee[];
-}) {
-  const [activeId, setActiveId] = useState<string | null>(null);
-
-  // 로컬 순서 관리 (status별)
-  const [localTaskMap, setLocalTaskMap] = useState<Record<string, Task[]>>(() => {
-    const map: Record<string, Task[]> = {};
-    for (const col of boardColumns) {
-      map[col.status] = filteredTasks.filter((t) => t.status === col.status);
-    }
-    return map;
-  });
-
-  // prop sync: task 멤버십이 바뀔 때만 동기화
-  const prevIdsRef = useRef('');
-  const propIds = useMemo(() => filteredTasks.map((t) => t.id).sort().join(','), [filteredTasks]);
-  if (propIds !== prevIdsRef.current) {
-    prevIdsRef.current = propIds;
-    const propMap = new Map(filteredTasks.map((t) => [t.id, t]));
-    const newMap: Record<string, Task[]> = {};
-    for (const col of boardColumns) {
-      const colPropTasks = filteredTasks.filter((t) => t.status === col.status);
-      const prev = localTaskMap[col.status] || [];
-      const prevOrder = prev.map((t) => t.id);
-      // 기존 로컬 순서 유지 + 데이터 업데이트
-      const synced = prevOrder.filter((id) => propMap.has(id) && propMap.get(id)!.status === col.status).map((id) => propMap.get(id)!);
-      // 새로 추가된 task (이 status에 새로 들어온 것)
-      const syncedIds = new Set(synced.map((t) => t.id));
-      const added = colPropTasks.filter((t) => !syncedIds.has(t.id));
-      newMap[col.status] = [...synced, ...added];
-    }
-    setLocalTaskMap(newMap);
-  }
-
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
-  );
-
-  // task ID → status 매핑
-  const findContainer = (taskId: string): string | null => {
-    for (const [status, tasks] of Object.entries(localTaskMap)) {
-      if (tasks.some((t) => t.id === taskId)) return status;
-    }
-    return null;
-  };
+function BoardView({ tasks, ...handlers }: BoardHandlers & { tasks: Task[] }) {
+  const [activeTask, setActiveTask] = useState<Task | null>(null);
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
 
   const handleDragStart = (event: DragStartEvent) => {
-    setActiveId(event.active.id as string);
+    setActiveTask(tasks.find((t) => t.id === event.active.id) ?? null);
   };
 
   const handleDragEnd = (event: DragEndEvent) => {
-    setActiveId(null);
-    const { active, over } = event;
-    if (!over) return;
-
-    const activeContainer = findContainer(active.id as string);
-    // over가 task ID인지 container ID인지 확인
-    let overContainer = findContainer(over.id as string);
-    if (!overContainer) {
-      // over.id가 status 이름(container)일 수 있음
-      if (boardColumns.some((c) => c.status === over.id)) {
-        overContainer = over.id as string;
-      }
-    }
-
-    if (!activeContainer || !overContainer) return;
-
-    if (activeContainer === overContainer) {
-      // 같은 그룹 내 리오더
-      if (active.id === over.id) return;
-      const tasks = localTaskMap[activeContainer];
-      const oldIndex = tasks.findIndex((t) => t.id === active.id);
-      const newIndex = tasks.findIndex((t) => t.id === over.id);
-      if (oldIndex === -1 || newIndex === -1) return;
-      const reordered = arrayMove(tasks, oldIndex, newIndex);
-      setLocalTaskMap((prev) => ({ ...prev, [activeContainer]: reordered }));
-      onReorder?.(reordered.map((t) => t.id));
-    } else {
-      // 다른 그룹으로 이동 → status 변경
-      const task = localTaskMap[activeContainer].find((t) => t.id === active.id);
-      if (!task) return;
-      // 로컬 상태 즉시 업데이트
-      const fromTasks = localTaskMap[activeContainer].filter((t) => t.id !== active.id);
-      const toTasks = [...localTaskMap[overContainer]];
-      // over가 task라면 그 위치에 삽입, 아니면 끝에 추가
-      const overIndex = toTasks.findIndex((t) => t.id === over.id);
-      const movedTask = { ...task, status: overContainer };
-      if (overIndex !== -1) {
-        toTasks.splice(overIndex, 0, movedTask);
-      } else {
-        toTasks.push(movedTask);
-      }
-      setLocalTaskMap((prev) => ({
-        ...prev,
-        [activeContainer]: fromTasks,
-        [overContainer]: toTasks,
-      }));
-      // 서버에 status 변경 전송
-      onStatusChange(active.id as string, overContainer);
+    const task = activeTask;
+    setActiveTask(null);
+    const { over } = event;
+    if (!over || !task) return;
+    const newStatus = over.id as string;
+    if (boardColumns.some((c) => c.status === newStatus) && newStatus !== task.status) {
+      handlers.onStatusChange(task.id, newStatus);
     }
   };
-
-  const activeTask = activeId
-    ? Object.values(localTaskMap).flat().find((t) => t.id === activeId)
-    : null;
 
   return (
     <DndContext
       sensors={sensors}
-      collisionDetection={closestCorners}
       onDragStart={handleDragStart}
-      onDragCancel={() => setActiveId(null)}
+      onDragCancel={() => setActiveTask(null)}
       onDragEnd={handleDragEnd}
     >
-      <div>
+      <div className="grid grid-cols-3 gap-4">
         {boardColumns.map((column) => (
-          <StatusGroup
+          <BoardColumn
             key={column.status}
             column={column}
-            tasks={localTaskMap[column.status] || []}
-            onRowClick={onRowClick}
-            onStatusChange={onStatusChange}
-            onDelete={onDelete}
-            onUpdate={onUpdate}
-            employeeOptions={employeeOptions}
+            tasks={tasks.filter((t) => t.status === column.status)}
+            {...handlers}
           />
         ))}
       </div>
       <DragOverlay>
         {activeTask ? (
-          <div className="flex items-center border border-border bg-background shadow-lg rounded-md text-sm opacity-90">
-            <div className="py-2 px-1 w-[28px] shrink-0 flex items-center justify-center">
-              <GripVertical className="size-4 text-muted-foreground" />
-            </div>
-            <div className="py-2 px-3 flex-1 truncate">{activeTask.title}</div>
+          <div className="pointer-events-none w-64 rotate-2 opacity-95">
+            <KanbanCard
+              task={activeTask}
+              onEdit={() => {}}
+              onStatusChange={() => {}}
+              onDelete={() => {}}
+              currentStatus={activeTask.status}
+            />
           </div>
         ) : null}
       </DragOverlay>
@@ -1371,321 +823,87 @@ function StatusView({
   );
 }
 
-// ─── Status Group (droppable + sortable) ─────────────────
-
-function StatusGroup({
+function BoardColumn({
   column,
   tasks,
-  onRowClick,
+  onEdit,
   onStatusChange,
   onDelete,
-  onUpdate,
-  employeeOptions,
-}: {
-  column: typeof boardColumns[number];
-  tasks: Task[];
-  onRowClick: (task: Task) => void;
-  onStatusChange: (id: string, status: string) => void;
-  onDelete: (id: string) => void;
-  onUpdate?: (id: string, dto: TaskUpdatePatch) => void;
-  employeeOptions: Employee[];
-}) {
-  const [isCollapsed, setIsCollapsed] = useState(false);
+  onAddTask,
+}: BoardHandlers & { column: (typeof boardColumns)[number]; tasks: Task[] }) {
   const { setNodeRef, isOver } = useDroppable({ id: column.status });
-  const completedCount = tasks.filter((t) => t.status === 'completed').length;
 
   return (
-    <div className="mb-6">
-      <div
-        className="flex items-center gap-2 py-2 cursor-pointer hover:bg-muted/30 rounded"
-        onClick={() => setIsCollapsed(!isCollapsed)}
-      >
-        <span className={cn('transition-transform text-xs', !isCollapsed && 'rotate-90')}>▶</span>
-        {statusConfig[column.status]?.icon}
-        <span className="font-medium">{column.title}</span>
-        <span className="text-muted-foreground text-sm">{tasks.length}</span>
+    <div className="flex min-w-0 flex-col">
+      <div className="mb-3 flex items-center justify-between">
+        <div
+          className={cn(
+            'inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-sm font-medium',
+            column.bgColor,
+          )}
+        >
+          <span className={cn('size-2 rounded-full', column.dotColor)} />
+          {column.title}
+          <span className="text-xs opacity-70 tabular-nums">{tasks.length}</span>
+        </div>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="size-6 p-0 text-muted-foreground"
+          onClick={() => onAddTask(column.status)}
+        >
+          <Plus className="size-4" />
+        </Button>
       </div>
-      {!isCollapsed && (
-        <>
-          {/* Header row */}
-          <div className="flex items-center border-b border-border/40 text-xs text-muted-foreground">
-            <div className="w-[28px] shrink-0" />
-            <div className="py-2 px-3 font-medium w-[50px] shrink-0">No</div>
-            <div className="py-2 px-3 font-medium flex-1">작업</div>
-            <div className="py-2 px-3 font-medium w-[90px] shrink-0">상태</div>
-            <div className="py-2 px-3 font-medium w-[80px] shrink-0">담당자</div>
-            <div className="py-2 px-3 font-medium w-[100px] shrink-0">마감일</div>
-            <div className="py-2 px-3 font-medium w-[70px] shrink-0">우선순위</div>
-            <div className="py-2 px-3 font-medium w-[110px] shrink-0">카테고리</div>
-            <div className="w-[40px] shrink-0" />
-          </div>
-          <div ref={setNodeRef} className={cn('min-h-[40px] transition-colors rounded', isOver && 'bg-accent/50')}>
-            <SortableContext items={tasks.map((t) => t.id)} strategy={verticalListSortingStrategy}>
-              {tasks.map((task, idx) => (
-                <SortableTableRow key={task.id} task={task} index={idx + 1} onRowClick={onRowClick} onStatusChange={onStatusChange} onDelete={onDelete} onUpdate={onUpdate} employeeOptions={employeeOptions} showCategory />
-              ))}
-              {tasks.length === 0 && (
-                <div className="py-4 text-center text-xs text-muted-foreground">
-                  여기에 드롭하여 상태 변경
-                </div>
-              )}
-            </SortableContext>
-          </div>
-          <div className="text-center text-xs text-muted-foreground py-2">
-            완료 {completedCount}/{tasks.length}
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
-
-// ─── Sortable Table Row (DnD wrapper) ────────────────────
-
-function SortableTableRow(props: {
-  task: Task;
-  index: number;
-  onRowClick: (task: Task) => void;
-  onStatusChange: (id: string, status: string) => void;
-  onDelete: (id: string) => void;
-  onUpdate?: (id: string, dto: TaskUpdatePatch) => void;
-  employeeOptions: Employee[];
-  showCategory?: boolean;
-}) {
-  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({ id: props.task.id });
-  const overdue = isOverdue(props.task);
-  const sCfg = statusConfig[props.task.status as TaskStatus];
-  const pCfg = priorityConfig[props.task.priority as TaskPriority];
-  const cCfg = categoryConfig[props.task.category as TaskCategory] ?? categoryConfig.other;
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
-  };
-
-  return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      {...attributes}
-      className={cn(
-        'group/row flex items-center border-b border-border/40 hover:bg-muted/30 transition-colors text-sm',
-        overdue && 'bg-red-50/50',
-        isDragging && 'bg-muted/50 shadow-md rounded-md z-10',
-      )}
-    >
-      {/* Drag handle */}
       <div
-        ref={setActivatorNodeRef}
-        {...listeners}
-        className="py-2 px-1 w-[28px] shrink-0 flex items-center justify-center cursor-grab active:cursor-grabbing touch-none"
+        ref={setNodeRef}
+        className={cn(
+          'min-h-[200px] flex-1 rounded-lg p-2 transition-shadow',
+          column.columnBg,
+          isOver && 'ring-2 ring-info/40',
+        )}
       >
-        <GripVertical className="size-4 text-muted-foreground/40 hover:text-muted-foreground" />
-      </div>
-      {/* No */}
-      <div className="py-2 px-3 text-muted-foreground w-[50px] shrink-0 border-r border-border/40">{props.index}</div>
-      {/* 작업 */}
-      <div className="py-2 px-3 flex-1 border-r border-border/40 min-w-0">
-        <div className="flex items-center gap-1">
-          <span className={cn('flex-1 truncate', props.task.status === 'completed' ? 'line-through text-muted-foreground' : '')}>{props.task.title}</span>
+        <div className="space-y-2">
+          {tasks.map((task) => (
+            <DraggableBoardCard
+              key={task.id}
+              task={task}
+              onEdit={onEdit}
+              onStatusChange={onStatusChange}
+              onDelete={onDelete}
+              currentStatus={column.status}
+            />
+          ))}
           <Button
             variant="ghost"
             size="sm"
-            className="size-6 p-0 opacity-0 group-hover/row:opacity-100 transition-opacity shrink-0"
-            onClick={() => props.onRowClick(props.task)}
+            className="h-auto w-full justify-start py-2 text-muted-foreground hover:bg-background/60"
+            onClick={() => onAddTask(column.status)}
           >
-            <Edit className="size-3.5" />
+            <Plus className="size-4" />새 업무
           </Button>
         </div>
-        <TaskContextChips task={props.task} compact className="mt-1" />
-      </div>
-      {/* 상태 */}
-      <div className="py-2 px-3 w-[90px] shrink-0 border-r border-border/40">
-        <Popover>
-          <PopoverTrigger asChild>
-            <button className="inline-flex items-center rounded-md hover:ring-2 hover:ring-ring/20 transition-all">
-              <Badge className={cn(sCfg?.color, 'text-xs gap-1')}>
-                <span className="size-1.5 rounded-full bg-current" />
-                {sCfg?.label}
-              </Badge>
-            </button>
-          </PopoverTrigger>
-          <PopoverContent className="w-[160px] p-1" align="start">
-            <div className="flex flex-col">
-              {Object.entries(statusConfig).map(([key, { label, icon }]) => (
-                <button
-                  key={key}
-                  className={cn('flex items-center gap-2 px-2 py-1.5 text-xs rounded-sm hover:bg-accent transition-colors text-left', props.task.status === key && 'bg-accent')}
-                  onClick={() => props.onUpdate?.(props.task.id, { status: key })}
-                >
-                  {icon}
-                  <span>{label}</span>
-                </button>
-              ))}
-            </div>
-          </PopoverContent>
-        </Popover>
-      </div>
-      {/* 담당자 */}
-      <div className="py-2 px-3 w-[80px] shrink-0 border-r border-border/40">
-        <TaskAssigneePicker
-          task={props.task}
-          employeeOptions={props.employeeOptions}
-          onUpdate={props.onUpdate}
-        />
-      </div>
-      {/* 마감일 */}
-      <div className="py-2 px-3 w-[100px] shrink-0 border-r border-border/40">
-        <Popover>
-          <PopoverTrigger asChild>
-            <button className="inline-flex items-center rounded-md hover:ring-2 hover:ring-ring/20 transition-all">
-              {props.task.dueDate ? (
-                <span className={cn('text-xs', overdue ? 'text-red-600 font-medium' : isDueSoon(props.task.dueDate) ? 'text-orange-600' : 'text-muted-foreground')}>
-                  {formatDueDate(props.task.dueDate)}
-                </span>
-              ) : (
-                <span className="text-xs text-muted-foreground">-</span>
-              )}
-            </button>
-          </PopoverTrigger>
-          <PopoverContent className="w-[200px] p-2" align="start">
-            <div className="flex flex-col gap-2">
-              <p className="text-xs font-medium text-muted-foreground">마감일</p>
-              <Input
-                type="date"
-                className="h-8 text-xs"
-                defaultValue={props.task.dueDate ? props.task.dueDate.substring(0, 10) : ''}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  props.onUpdate?.(props.task.id, { dueDate: val || null });
-                }}
-              />
-              {props.task.dueDate && (
-                <button
-                  className="flex items-center gap-2 px-2 py-1.5 text-xs rounded-sm hover:bg-accent transition-colors text-left text-red-600"
-                  onClick={() => props.onUpdate?.(props.task.id, { dueDate: null })}
-                >
-                  <X className="size-3" />
-                  마감일 제거
-                </button>
-              )}
-            </div>
-          </PopoverContent>
-        </Popover>
-      </div>
-      {/* 우선순위 */}
-      <div className="py-2 px-3 w-[70px] shrink-0 border-r border-border/40">
-        <Popover>
-          <PopoverTrigger asChild>
-            <button className="inline-flex items-center rounded-md hover:ring-2 hover:ring-ring/20 transition-all">
-              <Badge className={cn(pCfg?.color, 'text-xs')}>{pCfg?.label}</Badge>
-            </button>
-          </PopoverTrigger>
-          <PopoverContent className="w-[140px] p-1" align="start">
-            <div className="flex flex-col">
-              {Object.entries(priorityConfig).map(([key, { label, icon }]) => (
-                <button
-                  key={key}
-                  className={cn('flex items-center gap-2 px-2 py-1.5 text-xs rounded-sm hover:bg-accent transition-colors text-left', props.task.priority === key && 'bg-accent')}
-                  onClick={() => props.onUpdate?.(props.task.id, { priority: key })}
-                >
-                  {icon}
-                  <span>{label}</span>
-                </button>
-              ))}
-            </div>
-          </PopoverContent>
-        </Popover>
-      </div>
-      {/* 카테고리 */}
-      {props.showCategory && (
-        <div className="py-2 px-3 w-[110px] shrink-0 border-r border-border/40">
-          <Badge className={cn(cCfg.color, 'text-xs gap-1')}>
-            {cCfg.icon}
-            {cCfg.label}
-          </Badge>
-        </div>
-      )}
-      {/* 액션 */}
-      <div className="py-2 px-3 w-[40px] shrink-0">
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="sm" className="size-6 p-0">
-              <MoreHorizontal className="size-4" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={() => props.onRowClick(props.task)}>
-              <Edit className="size-4 mr-2" />수정
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => props.onStatusChange(props.task.id, 'in_progress')}>
-              <ArrowRight className="size-4 mr-2" />진행중으로 변경
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => props.onStatusChange(props.task.id, 'completed')}>
-              <CheckCircle2 className="size-4 mr-2" />완료로 변경
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem className="text-red-600" onClick={() => props.onDelete(props.task.id)}>
-              <Trash2 className="size-4 mr-2" />삭제
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
       </div>
     </div>
   );
 }
 
-// ─── Category Task Table (카테고리별 그룹) ────────────────
-
-function CategoryTaskTable({
-  categoryData,
-  tasks,
-  onRowClick,
-  onStatusChange,
-  onDelete,
-  onUpdate,
-  employeeOptions,
-}: {
-  categoryData: { label: string; icon: React.ReactNode; color: string };
-  tasks: Task[];
-  onRowClick: (task: Task) => void;
+function DraggableBoardCard(props: {
+  task: Task;
+  onEdit: (task: Task) => void;
   onStatusChange: (id: string, status: string) => void;
-  onDelete: (id: string) => void;
-  onUpdate?: (id: string, dto: TaskUpdatePatch) => void;
-  employeeOptions: Employee[];
+  onDelete: (task: Task) => void;
+  currentStatus: string;
 }) {
-  const [isCollapsed, setIsCollapsed] = useState(false);
-  const completedCount = tasks.filter((t) => t.status === 'completed').length;
-
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: props.task.id });
   return (
-    <div className="mb-6">
-      <div
-        className="flex items-center gap-2 py-2 cursor-pointer hover:bg-muted/30 rounded"
-        onClick={() => setIsCollapsed(!isCollapsed)}
-      >
-        <span className={cn('transition-transform text-xs', !isCollapsed && 'rotate-90')}>▶</span>
-        {categoryData.icon}
-        <span className="font-medium">{categoryData.label}</span>
-        <span className="text-muted-foreground text-sm">{tasks.length}</span>
-      </div>
-      {!isCollapsed && (
-        <>
-          <table className="w-full">
-            <thead>
-              <NotionTableHeader showCategory={false} />
-            </thead>
-            <tbody>
-              {tasks.map((task, idx) => (
-                <NotionTableRow key={task.id} task={task} index={idx + 1} onRowClick={onRowClick} onStatusChange={onStatusChange} onDelete={onDelete} onUpdate={onUpdate} employeeOptions={employeeOptions} showCategory={false} />
-              ))}
-            </tbody>
-          </table>
-          <div className="text-center text-xs text-muted-foreground py-2">
-            완료 {completedCount}/{tasks.length}
-          </div>
-        </>
-      )}
+    <div
+      ref={setNodeRef}
+      {...attributes}
+      {...listeners}
+      className={cn('touch-none', isDragging && 'opacity-40')}
+    >
+      <KanbanCard {...props} />
     </div>
   );
 }
@@ -1702,7 +920,7 @@ function KanbanCard({
   task: Task;
   onEdit: (task: Task) => void;
   onStatusChange: (id: string, status: string) => void;
-  onDelete: (id: string) => void;
+  onDelete: (task: Task) => void;
   currentStatus: string;
 }) {
   const overdue = isOverdue(task);
@@ -1712,19 +930,31 @@ function KanbanCard({
   return (
     <div
       className={cn(
-        'bg-white border rounded-lg p-4 cursor-pointer hover:shadow-md transition-all group',
-        overdue ? 'border-red-200 bg-red-50/30' : 'border-gray-200',
+        'group cursor-pointer rounded-md border bg-background p-3 transition-shadow hover:shadow-sm',
+        overdue && 'border-destructive/40 bg-destructive-soft/20',
       )}
       onClick={() => onEdit(task)}
     >
-      {/* 카테고리 아이콘 + 제목 + 액션 */}
-      <div className="flex items-start gap-2 mb-3">
-        <span className="text-lg mt-0.5">{cCfg.icon}</span>
-        <h4 className={cn('flex-1 font-medium text-sm leading-tight', task.status === 'completed' && 'line-through text-muted-foreground')}>
+      <div className="mb-2 flex items-start gap-1.5">
+        <h4
+          className={cn(
+            'flex-1 text-sm leading-tight font-medium',
+            task.status === 'completed' && 'text-muted-foreground line-through',
+          )}
+        >
           {task.title}
         </h4>
-        <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-          <Button variant="ghost" size="sm" className="size-6 p-0" onClick={(e) => { e.stopPropagation(); onEdit(task); }}>
+        <TaskSourceBadge source={task.source} className="mt-px" />
+        <div className="flex items-center opacity-0 transition-opacity group-hover:opacity-100">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="size-6 p-0"
+            onClick={(e) => {
+              e.stopPropagation();
+              onEdit(task);
+            }}
+          >
             <Edit className="size-3" />
           </Button>
           <DropdownMenu>
@@ -1735,205 +965,75 @@ function KanbanCard({
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               {currentStatus !== 'pending' && (
-                <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onStatusChange(task.id, 'pending'); }}>
-                  <Circle className="size-4 mr-2" />대기로 변경
+                <DropdownMenuItem
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onStatusChange(task.id, 'pending');
+                  }}
+                >
+                  <Circle className="mr-2 size-4" />
+                  대기로 변경
                 </DropdownMenuItem>
               )}
               {currentStatus !== 'in_progress' && (
-                <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onStatusChange(task.id, 'in_progress'); }}>
-                  <ArrowRight className="size-4 mr-2" />진행중으로 변경
+                <DropdownMenuItem
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onStatusChange(task.id, 'in_progress');
+                  }}
+                >
+                  <ArrowRight className="mr-2 size-4" />
+                  진행중으로 변경
                 </DropdownMenuItem>
               )}
               {currentStatus !== 'completed' && (
-                <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onStatusChange(task.id, 'completed'); }}>
-                  <CheckCircle2 className="size-4 mr-2" />완료로 변경
+                <DropdownMenuItem
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onStatusChange(task.id, 'completed');
+                  }}
+                >
+                  <CheckCircle2 className="mr-2 size-4" />
+                  완료로 변경
                 </DropdownMenuItem>
               )}
               <DropdownMenuSeparator />
-              <DropdownMenuItem className="text-red-600" onClick={(e) => { e.stopPropagation(); onDelete(task.id); }}>
-                <Trash2 className="size-4 mr-2" />삭제
+              <DropdownMenuItem
+                className="text-destructive"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDelete(task);
+                }}
+              >
+                <Trash2 className="mr-2 size-4" />
+                삭제
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
       </div>
 
-      {/* 날짜 */}
-      {task.dueDate && (
-        <p className={cn('text-xs mb-3', overdue ? 'text-red-600' : 'text-muted-foreground')}>
-          {formatDateRange(task.dueDate)}
-        </p>
-      )}
-
-      <TaskContextChips task={task} compact className="mb-3" />
-
-      {/* 우선순위 배지 */}
-      <div className="mb-3">
+      <div className="mb-2 flex flex-wrap items-center gap-1.5">
         <Badge className={cn(pCfg?.color, 'text-xs')}>{pCfg?.label}</Badge>
+        <Badge className={cn(cCfg.color, 'gap-1 text-xs')}>
+          {cCfg.icon}
+          {cCfg.label}
+        </Badge>
+        <DueDateText task={task} />
       </div>
 
-      {/* 진행률 바 */}
-      <div className="flex items-center gap-2">
-        <span className="text-xs text-muted-foreground">
-          {task.status === 'completed' ? '100.00' : task.status === 'in_progress' ? '50.00' : '0.00'}%
-        </span>
-        <div className="flex-1 h-1 bg-gray-200 rounded-full overflow-hidden">
-          <div
-            className={cn(
-              'h-full rounded-full transition-all',
-              task.status === 'completed' ? 'bg-green-500 w-full' :
-              task.status === 'in_progress' ? 'bg-amber-400 w-1/2' :
-              'bg-gray-300 w-0',
-            )}
-          />
+      <TaskContextChips task={task} compact />
+
+      {task.assignedTo && (
+        <div className="mt-2 flex items-center gap-1.5">
+          <Avatar className="size-5">
+            <AvatarFallback className="text-[10px]">
+              {task.assignedTo.name.charAt(0)}
+            </AvatarFallback>
+          </Avatar>
+          <span className="truncate text-xs text-muted-foreground">{task.assignedTo.name}</span>
         </div>
-      </div>
-    </div>
-  );
-}
-
-// ─── Task Form Modal ──────────────────────────────────────
-
-function TaskFormModal({
-  isOpen,
-  onClose,
-  task,
-  employeeOptions,
-  onSubmit,
-  isLoading,
-}: {
-  isOpen: boolean;
-  onClose: () => void;
-  task: Task | null;
-  employeeOptions: Employee[];
-  onSubmit: (data: any) => void;
-  isLoading: boolean;
-}) {
-  const [title, setTitle] = useState('');
-  const [content, setContent] = useState('');
-  const [category, setCategory] = useState<string>('other');
-  const [priority, setPriority] = useState<string>('medium');
-  const [dueDate, setDueDate] = useState('');
-  const [assignedToId, setAssignedToId] = useState<string>(ASSIGNEE_UNASSIGNED);
-
-  useEffect(() => {
-    setTitle(task?.title ?? '');
-    setContent(task?.content ?? '');
-    setCategory(task?.category ?? 'other');
-    setPriority(task?.priority ?? 'medium');
-    setDueDate(task?.dueDate ? task.dueDate.substring(0, 10) : '');
-    setAssignedToId(task?.assignedToId ?? ASSIGNEE_UNASSIGNED);
-  }, [task]);
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!title.trim()) return;
-    const nextAssignedToId =
-      assignedToId === ASSIGNEE_UNASSIGNED ? (task ? null : undefined) : assignedToId;
-
-    onSubmit({
-      title: title.trim(),
-      content: content.trim() || undefined,
-      category,
-      priority,
-      status: task?.status ?? 'pending',
-      dueDate: dueDate || undefined,
-      assignedToId: nextAssignedToId,
-    });
-  };
-
-  return (
-    <Dialog
-      open={isOpen}
-      onOpenChange={(open) => {
-        if (!open) onClose();
-      }}
-    >
-      <DialogContent className="sm:max-w-[500px]">
-        <DialogHeader>
-          <DialogTitle>{task ? '업무 수정' : '새 업무 추가'}</DialogTitle>
-        </DialogHeader>
-        <form onSubmit={handleSubmit}>
-          <div className="grid gap-4 py-4">
-            <div className="grid gap-2">
-              <Label htmlFor="title">제목 *</Label>
-              <Input id="title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="업무 제목을 입력하세요" autoFocus />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="content">설명</Label>
-              <Textarea id="content" value={content} onChange={(e) => setContent(e.target.value)} placeholder="상세 설명을 입력하세요" rows={3} />
-            </div>
-            {task && <TaskContextPanel task={task} />}
-            <div className="grid grid-cols-2 gap-4">
-              <div className="grid gap-2">
-                <Label>카테고리</Label>
-                <Select value={category} onValueChange={setCategory}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {Object.entries(categoryConfig).map(([key, { label, icon }]) => (
-                      <SelectItem key={key} value={key}>
-                        <span className="flex items-center gap-2">{icon}{label}</span>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="grid gap-2">
-                <Label>우선순위</Label>
-                <Select value={priority} onValueChange={setPriority}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {Object.entries(priorityConfig).map(([key, { label }]) => (
-                      <SelectItem key={key} value={key}>{label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <div className="grid gap-2">
-              <Label>담당자</Label>
-              <Select value={assignedToId} onValueChange={setAssignedToId}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={ASSIGNEE_UNASSIGNED}>미배정</SelectItem>
-                  {employeeOptions.map((employee) => (
-                    <SelectItem key={employee.id} value={employee.id}>
-                      {employee.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="dueDate">마감일</Label>
-              <Input id="dueDate" type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={onClose}>취소</Button>
-            <Button type="submit" disabled={isLoading || !title.trim()}>
-              {isLoading ? '저장 중...' : task ? '수정' : '추가'}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-// ─── Loading ──────────────────────────────────────────────
-
-function LoadingSkeleton() {
-  return (
-    <div className="space-y-3">
-      {Array.from({ length: 5 }).map((_, i) => (
-        <div key={i} className="flex items-center gap-3 border rounded-lg px-4 py-3">
-          <Skeleton className="size-4 rounded" />
-          <Skeleton className="h-4 flex-1" />
-          <Skeleton className="h-5 w-14 rounded-full" />
-          <Skeleton className="h-5 w-14 rounded-full" />
-        </div>
-      ))}
+      )}
     </div>
   );
 }

@@ -8,6 +8,7 @@ import {
   calculateCommissionAmount,
   calculateCommissionBase,
   computeDealCommissionSummary,
+  siteTypeToCommissionKind,
   type CommissionTransactionType,
 } from '@estate-erp/shared';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -70,7 +71,7 @@ export class DealsService {
       memo?: string;
     },
   ) {
-    const { listingId, transactionType } = await this.resolveListing(
+    const { listingId, transactionType, siteType } = await this.resolveListing(
       officeId,
       dto,
     );
@@ -105,6 +106,7 @@ export class DealsService {
         dealId: created.id,
         officeId,
         transactionType,
+        siteType,
         agreedPrice: dto.agreedPrice,
         agreedDeposit: dto.agreedDeposit,
         agreedMonthlyRent: dto.agreedMonthlyRent,
@@ -138,6 +140,7 @@ export class DealsService {
       dealId: string;
       officeId: string;
       transactionType: string;
+      siteType?: string | null;
       agreedPrice?: number | null;
       agreedDeposit?: number | null;
       agreedMonthlyRent?: number | null;
@@ -151,7 +154,8 @@ export class DealsService {
     if (
       args.transactionType !== 'sale' &&
       args.transactionType !== 'jeonse' &&
-      args.transactionType !== 'monthly'
+      args.transactionType !== 'monthly' &&
+      args.transactionType !== 'yearly_rent'
     ) {
       return;
     }
@@ -164,7 +168,17 @@ export class DealsService {
     });
     if (base <= 0) return;
 
-    const { rate, amount } = calculateCommissionAmount(txType, base);
+    // Listing → Property → Site.type 체인으로 물건유형 결정.
+    // 매물 미연결 Deal 은 'housing' 기본값 적용.
+    const propertyKind = args.siteType
+      ? siteTypeToCommissionKind(args.siteType)
+      : 'housing';
+
+    const { rate, amount } = calculateCommissionAmount(
+      txType,
+      base,
+      propertyKind,
+    );
     if (amount <= 0) return;
 
     // 우리가 담당하는 측만 CommissionPayment 생성.
@@ -331,6 +345,167 @@ export class DealsService {
     return this.prisma.deal.delete({ where: { id } });
   }
 
+  // ============================================================
+  // DealPayment — 지급 스케줄 CRUD
+  // ============================================================
+
+  private static readonly PAYMENT_KINDS = new Set([
+    'pre_contract',
+    'contract',
+    'interim',
+    'balance',
+    'refund',
+  ]);
+
+  private static readonly PAYMENT_STATUSES = new Set([
+    'pending',
+    'partial',
+    'paid',
+    'overdue',
+    'cancelled',
+  ]);
+
+  async createPayment(
+    dealId: string,
+    officeId: string,
+    dto: {
+      kind: string;
+      sequence?: number;
+      scheduledAmount: number;
+      scheduledDate?: string;
+      memo?: string;
+    },
+  ) {
+    const deal = await this.prisma.deal.findFirst({
+      where: { id: dealId, officeId },
+      select: { id: true },
+    });
+    if (!deal) throw new NotFoundException('Deal not found');
+
+    if (!DealsService.PAYMENT_KINDS.has(dto.kind)) {
+      throw new BadRequestException(`지원하지 않는 지급 종류입니다: ${dto.kind}`);
+    }
+    if (!dto.scheduledAmount || dto.scheduledAmount <= 0) {
+      throw new BadRequestException('예정 금액(만원)을 입력해주세요.');
+    }
+
+    let sequence = dto.sequence;
+    if (sequence == null) {
+      if (dto.kind === 'interim') {
+        const last = await this.prisma.dealPayment.findFirst({
+          where: { dealId, kind: 'interim' },
+          orderBy: { sequence: 'desc' },
+          select: { sequence: true },
+        });
+        sequence = (last?.sequence ?? 0) + 1;
+      } else {
+        sequence = 1;
+      }
+    }
+
+    try {
+      return await this.prisma.dealPayment.create({
+        data: {
+          officeId,
+          dealId,
+          kind: dto.kind,
+          sequence,
+          scheduledAmount: dto.scheduledAmount,
+          scheduledDate: dto.scheduledDate
+            ? new Date(dto.scheduledDate)
+            : undefined,
+          memo: dto.memo,
+        },
+      });
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
+        throw new BadRequestException(
+          '같은 종류·차수의 지급 항목이 이미 존재합니다.',
+        );
+      }
+      throw error;
+    }
+  }
+
+  async updatePayment(
+    dealId: string,
+    paymentId: string,
+    officeId: string,
+    dto: {
+      scheduledAmount?: number;
+      scheduledDate?: string | null;
+      paidAmount?: number | null;
+      paidAt?: string | null;
+      status?: string;
+      method?: string | null;
+      payerName?: string | null;
+      memo?: string | null;
+    },
+  ) {
+    const existing = await this.prisma.dealPayment.findFirst({
+      where: { id: paymentId, dealId, officeId },
+    });
+    if (!existing) throw new NotFoundException('DealPayment not found');
+
+    if (dto.status && !DealsService.PAYMENT_STATUSES.has(dto.status)) {
+      throw new BadRequestException(`지원하지 않는 상태입니다: ${dto.status}`);
+    }
+    if (dto.scheduledAmount !== undefined && dto.scheduledAmount <= 0) {
+      throw new BadRequestException('예정 금액(만원)은 0보다 커야 합니다.');
+    }
+
+    // 입금액이 들어오고 status 를 명시하지 않으면 자동 판정 (paid / partial / pending)
+    let status = dto.status;
+    if (!status && dto.paidAmount !== undefined) {
+      const scheduledAmount = dto.scheduledAmount ?? existing.scheduledAmount;
+      status =
+        dto.paidAmount == null
+          ? 'pending'
+          : dto.paidAmount >= scheduledAmount
+            ? 'paid'
+            : 'partial';
+    }
+
+    // 입금 확인인데 입금일이 없으면 현재 시각으로 기본 처리
+    let paidAt: Date | null | undefined;
+    if (dto.paidAt !== undefined) {
+      paidAt = dto.paidAt ? new Date(dto.paidAt) : null;
+    } else if (dto.paidAmount != null && existing.paidAt == null) {
+      paidAt = new Date();
+    }
+
+    return this.prisma.dealPayment.update({
+      where: { id: paymentId },
+      data: {
+        scheduledAmount: dto.scheduledAmount,
+        scheduledDate:
+          dto.scheduledDate !== undefined
+            ? dto.scheduledDate
+              ? new Date(dto.scheduledDate)
+              : null
+            : undefined,
+        paidAmount: dto.paidAmount !== undefined ? dto.paidAmount : undefined,
+        paidAt,
+        status,
+        method: dto.method !== undefined ? dto.method : undefined,
+        payerName: dto.payerName !== undefined ? dto.payerName : undefined,
+        memo: dto.memo !== undefined ? dto.memo : undefined,
+      },
+    });
+  }
+
+  async removePayment(dealId: string, paymentId: string, officeId: string) {
+    const existing = await this.prisma.dealPayment.findFirst({
+      where: { id: paymentId, dealId, officeId },
+      select: { id: true },
+    });
+    if (!existing) throw new NotFoundException('DealPayment not found');
+    return this.prisma.dealPayment.delete({ where: { id: paymentId } });
+  }
+
   private withPropertyContext(deal: DealWithRelations) {
     const property = deal.listing?.property ?? null;
 
@@ -358,16 +533,28 @@ export class DealsService {
   private async resolveListing(
     officeId: string,
     dto: { propertyId?: string; listingId?: string; transactionType?: string },
-  ): Promise<{ listingId: string | undefined; transactionType: string }> {
+  ): Promise<{
+    listingId: string | undefined;
+    transactionType: string;
+    /** Listing → Property → Site.type (법정 중개보수 물건유형 결정용) */
+    siteType: string | null;
+  }> {
+    const listingSelect = {
+      id: true,
+      transactionType: true,
+      property: { select: { site: { select: { type: true } } } },
+    } satisfies Prisma.ListingSelect;
+
     if (dto.listingId) {
       const listing = await this.prisma.listing.findFirst({
         where: { id: dto.listingId, officeId },
-        select: { id: true, transactionType: true },
+        select: listingSelect,
       });
       if (!listing) throw new NotFoundException('Listing not found');
       return {
         listingId: listing.id,
         transactionType: dto.transactionType ?? listing.transactionType,
+        siteType: listing.property?.site?.type ?? null,
       };
     }
 
@@ -375,12 +562,13 @@ export class DealsService {
       const listing = await this.prisma.listing.findFirst({
         where: { officeId, propertyId: dto.propertyId },
         orderBy: { createdAt: 'desc' },
-        select: { id: true, transactionType: true },
+        select: listingSelect,
       });
       if (!listing) throw new NotFoundException('Listing not found');
       return {
         listingId: listing.id,
         transactionType: dto.transactionType ?? listing.transactionType,
+        siteType: listing.property?.site?.type ?? null,
       };
     }
 
@@ -390,6 +578,10 @@ export class DealsService {
       );
     }
 
-    return { listingId: undefined, transactionType: dto.transactionType };
+    return {
+      listingId: undefined,
+      transactionType: dto.transactionType,
+      siteType: null,
+    };
   }
 }

@@ -25,12 +25,14 @@ describe('ContractsService', () => {
         create: jest.fn(),
         update: jest.fn(),
         updateMany: jest.fn(),
+        delete: jest.fn(),
       },
       contractClauseTemplate: {
         findFirst: jest.fn(),
         findMany: jest.fn(),
         create: jest.fn(),
         update: jest.fn(),
+        delete: jest.fn(),
       },
     };
 
@@ -262,6 +264,79 @@ describe('ContractsService', () => {
         }),
       }),
     );
+  });
+
+  it('deletes an office print template after verifying office ownership', async () => {
+    const { prisma, service } = createService();
+
+    prisma.officePrintTemplate.findFirst.mockResolvedValue({
+      id: 'print-template-1',
+      isDefault: false,
+    });
+    prisma.officePrintTemplate.delete.mockResolvedValue({
+      id: 'print-template-1',
+    });
+
+    await service.removePrintTemplate('print-template-1', 'office-1');
+
+    expect(prisma.officePrintTemplate.findFirst).toHaveBeenCalledWith({
+      where: { id: 'print-template-1', officeId: 'office-1' },
+      select: { id: true, isDefault: true },
+    });
+    expect(prisma.officePrintTemplate.delete).toHaveBeenCalledWith({
+      where: { id: 'print-template-1' },
+    });
+  });
+
+  it('refuses to delete a default print template', async () => {
+    const { prisma, service } = createService();
+
+    prisma.officePrintTemplate.findFirst.mockResolvedValue({
+      id: 'print-template-1',
+      isDefault: true,
+    });
+
+    await expect(
+      service.removePrintTemplate('print-template-1', 'office-1'),
+    ).rejects.toThrow(/기본 템플릿은 삭제할 수 없습니다/);
+    expect(prisma.officePrintTemplate.delete).not.toHaveBeenCalled();
+  });
+
+  it('rejects deleting a print template owned by another office', async () => {
+    const { prisma, service } = createService();
+
+    prisma.officePrintTemplate.findFirst.mockResolvedValue(null);
+
+    await expect(
+      service.removePrintTemplate('print-template-1', 'other-office'),
+    ).rejects.toThrow('Office print template not found');
+    expect(prisma.officePrintTemplate.delete).not.toHaveBeenCalled();
+  });
+
+  it('deletes a clause template but protects default templates', async () => {
+    const { prisma, service } = createService();
+
+    prisma.contractClauseTemplate.findFirst
+      .mockResolvedValueOnce({ id: 'clause-template-1', isDefault: false })
+      .mockResolvedValueOnce({ id: 'clause-template-2', isDefault: true });
+    prisma.contractClauseTemplate.delete.mockResolvedValue({
+      id: 'clause-template-1',
+    });
+
+    await service.removeClauseTemplate('clause-template-1', 'office-1');
+
+    expect(prisma.contractClauseTemplate.findFirst).toHaveBeenCalledWith({
+      where: { id: 'clause-template-1', officeId: 'office-1' },
+      select: { id: true, isDefault: true },
+    });
+    expect(prisma.contractClauseTemplate.delete).toHaveBeenCalledWith({
+      where: { id: 'clause-template-1' },
+    });
+
+    await expect(
+      service.removeClauseTemplate('clause-template-2', 'office-1'),
+    ).rejects.toThrow(/기본 템플릿은 삭제할 수 없습니다/);
+    expect(prisma.contractClauseTemplate.delete).toHaveBeenCalledTimes(1);
   });
 
   it('accepts all seven contract transaction types when creating a contract', async () => {

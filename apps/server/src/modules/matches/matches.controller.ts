@@ -5,11 +5,13 @@ import {
   Patch,
   Delete,
   Param,
+  Query,
   Body,
   UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { MatchesService } from './matches.service';
+import { CreateMatchDto, UpdateMatchStageDto } from './dto/match.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import {
   CurrentUser,
@@ -24,8 +26,19 @@ export class MatchesController {
   constructor(private readonly matchesService: MatchesService) {}
 
   @Get()
-  findAll(@CurrentUser() user: CurrentUserPayload) {
-    return this.matchesService.findAll(user.officeId);
+  findAll(
+    @CurrentUser() user: CurrentUserPayload,
+    @Query('propertyId') propertyId?: string,
+    @Query('listingId') listingId?: string,
+    @Query('buyerReqId') buyerReqId?: string,
+    @Query('stage') stage?: string,
+  ) {
+    return this.matchesService.findAll(user.officeId, {
+      propertyId,
+      listingId,
+      buyerReqId,
+      stage,
+    });
   }
 
   @Get(':id')
@@ -38,12 +51,7 @@ export class MatchesController {
 
   @Post()
   create(
-    @Body()
-    dto: {
-      listingId: string;
-      buyerReqId: string;
-      memo?: string;
-    },
+    @Body() dto: CreateMatchDto,
     @CurrentUser() user: CurrentUserPayload,
   ) {
     return this.matchesService.create(user.officeId, dto);
@@ -52,7 +60,7 @@ export class MatchesController {
   @Patch(':id/stage')
   updateStage(
     @Param('id') id: string,
-    @Body() dto: { stage: string; memo?: string },
+    @Body() dto: UpdateMatchStageDto,
     @CurrentUser() user: CurrentUserPayload,
   ) {
     return this.matchesService.updateStage(id, user.officeId, dto);
