@@ -107,6 +107,37 @@ interface TabsBridge {
   onOpenRoute: (callback: (route: string) => void) => () => void;
 }
 
+/** CTI Bridge → 서버 계약과 동일 (packages/shared/src/cti.ts CtiCallEvent) */
+interface CtiEventPayload {
+  type: 'ring' | 'terminate' | 'ctc_result';
+  vendor: string;
+  caller: string;
+  callee: string;
+  lineId?: string;
+  seqno?: string;
+  durationSec?: number;
+  occurredAt: string;
+}
+
+interface CtiStatusPayload {
+  bridgeConnected: boolean;
+  bridge: {
+    type: 'status';
+    vendor: string;
+    connected: boolean;
+    loggedIn: boolean;
+    lines: string[];
+    bridgeVersion: string;
+  } | null;
+}
+
+interface CtiBridge {
+  getStatus: () => Promise<CtiStatusPayload>;
+  dial: (payload: { callee: string; caller?: string }) => Promise<{ ok: boolean; error?: string }>;
+  onEvent: (callback: (payload: CtiEventPayload) => void) => () => void;
+  onStatus: (callback: (payload: CtiStatusPayload) => void) => () => void;
+}
+
 interface ElectronBridge {
   platform: string;
   onToggleSidebar: (callback: () => void) => () => void;
@@ -116,6 +147,7 @@ interface ElectronBridge {
   updater: UpdaterBridge;
   tabs: TabsBridge;
   codex: CodexBridge;
+  cti: CtiBridge;
 }
 
 declare global {

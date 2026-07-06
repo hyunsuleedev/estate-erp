@@ -56,6 +56,26 @@ export interface NetworkMessageCreatedEvent {
   };
 }
 
+export interface CtiIncomingCallEvent {
+  officeId: string;
+  callLogId: string;
+  /** 정규화된 발신번호 (01012345678) */
+  phoneNumber: string;
+  /** 착신 회선 */
+  lineNumber: string | null;
+  /** 매칭된 연락처 (null = 미등록 번호) */
+  contact: { id: string; name: string } | null;
+  startedAt: string;
+}
+
+export interface CtiCallUpdatedEvent {
+  officeId: string;
+  callLogId: string;
+  /** ringing / answered / missed / ended */
+  status: string;
+  durationSec: number;
+}
+
 @Injectable()
 export class RealtimeService {
   private server: Server | null = null;
@@ -111,5 +131,19 @@ export class RealtimeService {
     this.server
       .to(officeRoom(event.officeId))
       .emit('notification.created', event);
+  }
+
+  /** 전화 수신(ring) push — 사무소 전 직원 화면에 수신 배너/팝업을 띄운다. */
+  emitCtiIncoming(event: CtiIncomingCallEvent) {
+    if (!this.server) return;
+
+    this.server.to(officeRoom(event.officeId)).emit('cti.incoming', event);
+  }
+
+  /** 통화 상태 변화(종료/부재중) push — 열린 수신 팝업의 상태를 갱신한다. */
+  emitCtiCallUpdated(event: CtiCallUpdatedEvent) {
+    if (!this.server) return;
+
+    this.server.to(officeRoom(event.officeId)).emit('cti.call.updated', event);
   }
 }

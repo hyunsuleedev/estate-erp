@@ -9,6 +9,7 @@ import {
   setPackagedRendererBaseUrl,
 } from './main/windowManager';
 import { UpdaterService } from './main/updaterService';
+import { CtiClient } from './main/ctiClient';
 
 const APP_PROTOCOL = 'estate-erp';
 
@@ -39,6 +40,7 @@ if (!app.isPackaged) {
 
 const windowManager = new WindowManager();
 const updaterService = new UpdaterService();
+const ctiClient = new CtiClient();
 let packagedRendererProtocolRegistered = false;
 
 function registerPackagedRendererProtocol() {
@@ -365,6 +367,7 @@ ipcMain.handle('codex:stop', (_e, runId: string) => {
 });
 
 app.on('before-quit', () => {
+  ctiClient.stop();
   for (const run of codexRuns.values()) {
     try {
       run.proc.kill('SIGTERM');
@@ -378,6 +381,7 @@ app.on('before-quit', () => {
 app.on('ready', () => {
   createWindow();
   updaterService.checkForUpdates();
+  ctiClient.start();
 });
 
 app.on('window-all-closed', () => {

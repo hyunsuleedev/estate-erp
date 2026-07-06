@@ -42,39 +42,39 @@ model Office {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  users             User[]
-  officeSites       OfficeSite[]
-  sites             Site[]
-  dongs             Dong[]
-  units             Unit[]
-  contacts          Contact[]
-  contactPhones     ContactPhone[]
-  contactRelations  ContactRelation[]
-  propertyContacts  PropertyContact[]
-  tenants           Tenant[]
-  properties        Property[]
-  listingIntakes    ListingIntake[]
-  listings          Listing[]
-  listingAdvertisements ListingAdvertisement[]
+  users                     User[]
+  officeSites               OfficeSite[]
+  sites                     Site[]
+  dongs                     Dong[]
+  units                     Unit[]
+  contacts                  Contact[]
+  contactPhones             ContactPhone[]
+  contactRelations          ContactRelation[]
+  propertyContacts          PropertyContact[]
+  tenants                   Tenant[]
+  properties                Property[]
+  listingIntakes            ListingIntake[]
+  listings                  Listing[]
+  listingAdvertisements     ListingAdvertisement[]
   officeAdvertisementGroups OfficeAdvertisementGroup[]
   officeAdvertisements      OfficeAdvertisement[]
-  tasks             Task[]
-  consultations     Consultation[]
-  buyerRequirements BuyerRequirement[]
-  matches           Match[]
-  deals             Deal[]
-  dealPayments      DealPayment[]
-  contracts         Contract[]
+  tasks                     Task[]
+  consultations             Consultation[]
+  buyerRequirements         BuyerRequirement[]
+  matches                   Match[]
+  deals                     Deal[]
+  dealPayments              DealPayment[]
+  contracts                 Contract[]
   contractDocumentTemplates ContractDocumentTemplate[]
-  contractDocuments ContractDocument[]
-  officePrintTemplates OfficePrintTemplate[]
-  contractClauseTemplates ContractClauseTemplate[]
-  dealParticipants  DealParticipant[]
-  rules             Rule[]
-  proposals         Proposal[]
-  entityDrafts      EntityDraft[]
-  entityDraftComments EntityDraftComment[]
-  calendarEvents    CalendarEvent[]
+  contractDocuments         ContractDocument[]
+  officePrintTemplates      OfficePrintTemplate[]
+  contractClauseTemplates   ContractClauseTemplate[]
+  dealParticipants          DealParticipant[]
+  rules                     Rule[]
+  proposals                 Proposal[]
+  entityDrafts              EntityDraft[]
+  entityDraftComments       EntityDraftComment[]
+  calendarEvents            CalendarEvent[]
 
   siteUnitTypes  SiteUnitType[]
   priceHistories PriceHistory[]
@@ -92,8 +92,8 @@ model Office {
   officeExpenseTemplates  OfficeExpenseTemplate[]
 
   // 공동중개 파트너 주소록
-  partnerBrokers       PartnerBroker[] @relation("OfficePartnerBrokers")
-  linkedFromPartners   PartnerBroker[] @relation("LinkedAsPartner")
+  partnerBrokers     PartnerBroker[] @relation("OfficePartnerBrokers")
+  linkedFromPartners PartnerBroker[] @relation("LinkedAsPartner")
 
   // 공적장부 / 사진
   publicDocuments PublicDocument[]
@@ -101,6 +101,8 @@ model Office {
 
   // 통화 녹음
   callRecordings CallRecording[]
+  // 통화 이벤트 로그 (CTI)
+  callLogs       CallLog[]
 
   // 공동 중개망
   createdRooms            NetworkRoom[]
@@ -117,19 +119,19 @@ model Office {
 }
 
 model User {
-  id               String  @id @default(uuid()) @db.Uuid
-  officeId         String? @map("office_id") @db.Uuid
-  loginId          String  @unique @map("login_id") // 로그인 ID (owner/직원 모두 별도 아이디 사용 가능)
-  email            String? // owner 필수, 직원 선택
-  name             String
-  phone            String?
-  role             String  @default("agent") // owner, manager, agent
-  isActive         Boolean @default(true) @map("is_active")
+  id       String  @id @default(uuid()) @db.Uuid
+  officeId String? @map("office_id") @db.Uuid
+  loginId  String  @unique @map("login_id") // 로그인 ID (owner/직원 모두 별도 아이디 사용 가능)
+  email    String? // owner 필수, 직원 선택
+  name     String
+  phone    String?
+  role     String  @default("agent") // owner, manager, agent
+  isActive Boolean @default(true) @map("is_active")
 
   /// 공인중개사 자격 구분: broker_owner(개업공인중개사) | broker_associate(소속공인중개사) | assistant(중개보조원)
   licenseType String? @map("license_type")
   /// 공인중개사 자격증 번호 또는 중개사무소 등록 번호
-  licenseNo String? @map("license_no")
+  licenseNo   String? @map("license_no")
 
   /// Clerk user.id 매핑. Clerk session JWT의 sub(user_xxx)로 자체 User를 조회한다.
   /// 기존 사용자 전환을 위해 첫 Clerk 로그인 시 email이 일치하면 자동 연결한다.
@@ -182,6 +184,8 @@ model User {
 
   // 통화 녹음
   callRecordings CallRecording[]
+  // 통화 이벤트 로그 (CTI)
+  callLogs       CallLog[]
 
   // 공동 중개망
   networkSharedProperties NetworkSharedProperty[]
@@ -192,8 +196,8 @@ model User {
   requestedDocuments PublicDocument[] @relation("DocumentRequester")
 
   // 계약 문서 생성 이력
-  generatedContractDocuments ContractDocument[] @relation("ContractDocumentGenerator")
-  createdOfficePrintTemplates OfficePrintTemplate[] @relation("OfficePrintTemplateCreator")
+  generatedContractDocuments     ContractDocument[]       @relation("ContractDocumentGenerator")
+  createdOfficePrintTemplates    OfficePrintTemplate[]    @relation("OfficePrintTemplateCreator")
   createdContractClauseTemplates ContractClauseTemplate[] @relation("ContractClauseTemplateCreator")
 
   // 외부 매물 스냅샷 세션

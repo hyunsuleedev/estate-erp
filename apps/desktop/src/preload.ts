@@ -84,4 +84,25 @@ contextBridge.exposeInMainWorld('electronBridge', {
       };
     },
   },
+  cti: {
+    getStatus: () => ipcRenderer.invoke('cti:getStatus'),
+    dial: (payload: { callee: string; caller?: string }) =>
+      ipcRenderer.invoke('cti:dial', payload),
+    onEvent: (callback: (payload: Record<string, unknown>) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, payload: Record<string, unknown>) =>
+        callback(payload);
+      ipcRenderer.on('cti:event', handler);
+      return () => {
+        ipcRenderer.removeListener('cti:event', handler);
+      };
+    },
+    onStatus: (callback: (payload: Record<string, unknown>) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, payload: Record<string, unknown>) =>
+        callback(payload);
+      ipcRenderer.on('cti:status', handler);
+      return () => {
+        ipcRenderer.removeListener('cti:status', handler);
+      };
+    },
+  },
 });

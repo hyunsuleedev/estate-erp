@@ -49,27 +49,27 @@ model ListingIntake {
   receivedAt  DateTime  @default(now()) @map("received_at")
   confirmedAt DateTime? @map("confirmed_at")
 
-  occupancyStatus String? @map("occupancy_status")
-  viewingMemo     String? @map("viewing_memo") @db.Text
-  rightsMemo      String? @map("rights_memo") @db.Text
-  fieldMemo       String? @map("field_memo") @db.Text
-  isJointBrokerageRequired Boolean @default(false) @map("is_joint_brokerage_required")
-  jointBrokeragePartnerId  String? @map("joint_brokerage_partner_id") @db.Uuid
-  nextConfirmAt   DateTime? @map("next_confirm_at")
-  memo            String? @db.Text
+  occupancyStatus          String?   @map("occupancy_status")
+  viewingMemo              String?   @map("viewing_memo") @db.Text
+  rightsMemo               String?   @map("rights_memo") @db.Text
+  fieldMemo                String?   @map("field_memo") @db.Text
+  isJointBrokerageRequired Boolean   @default(false) @map("is_joint_brokerage_required")
+  jointBrokeragePartnerId  String?   @map("joint_brokerage_partner_id") @db.Uuid
+  nextConfirmAt            DateTime? @map("next_confirm_at")
+  memo                     String?   @db.Text
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  office           Office          @relation(fields: [officeId], references: [id])
-  property         Property        @relation(fields: [propertyId], references: [id])
-  requesterContact Contact?        @relation(fields: [requesterContactId], references: [id])
-  jointBrokeragePartner PartnerBroker? @relation("ListingIntakeJointBrokeragePartner", fields: [jointBrokeragePartnerId], references: [id])
-  listings         Listing[]
-  consultations    Consultation[]
-  tasks            Task[]
-  calendarEvents   CalendarEvent[]
-  proposals        Proposal[]
+  office                Office          @relation(fields: [officeId], references: [id])
+  property              Property        @relation(fields: [propertyId], references: [id])
+  requesterContact      Contact?        @relation(fields: [requesterContactId], references: [id])
+  jointBrokeragePartner PartnerBroker?  @relation("ListingIntakeJointBrokeragePartner", fields: [jointBrokeragePartnerId], references: [id])
+  listings              Listing[]
+  consultations         Consultation[]
+  tasks                 Task[]
+  calendarEvents        CalendarEvent[]
+  proposals             Proposal[]
 
   @@index([officeId, receivedAt])
   @@index([officeId, status, updatedAt])
@@ -88,29 +88,29 @@ model ListingIntake {
 // ============================================================
 
 model Listing {
-  id              String  @id @default(uuid()) @db.Uuid
-  officeId        String  @map("office_id") @db.Uuid
-  propertyId      String  @map("property_id") @db.Uuid
-  intakeId        String  @map("intake_id") @db.Uuid
-  transactionType String  @map("transaction_type") // sale, jeonse, monthly, yearly_rent
-  price           Int? // 매매가/전세가 (만원)
-  deposit         Int? // 보증금 (만원, monthly/yearly_rent일 때)
-  monthlyRent     Int?    @map("monthly_rent") // 월세 (만원)
-  maintenanceFee  Int?    @map("maintenance_fee") // 관리비 (만원)
+  id                       String    @id @default(uuid()) @db.Uuid
+  officeId                 String    @map("office_id") @db.Uuid
+  propertyId               String    @map("property_id") @db.Uuid
+  intakeId                 String    @map("intake_id") @db.Uuid
+  transactionType          String    @map("transaction_type") // sale, jeonse, monthly, yearly_rent
+  price                    Int? // 매매가/전세가 (만원)
+  deposit                  Int? // 보증금 (만원, monthly/yearly_rent일 때)
+  monthlyRent              Int?      @map("monthly_rent") // 월세 (만원)
+  maintenanceFee           Int?      @map("maintenance_fee") // 관리비 (만원)
   /// 관리비 포함 항목 slug: water, electricity, gas, internet, tv, cleaning, parking, heating
-  maintenanceFeeIncludes String[] @default([]) @map("maintenance_fee_includes")
-  loanAmount      Int?    @map("loan_amount") // 융자금/근저당 설정액 (만원)
-  premium         Int? // 상가 권리금 (만원)
+  maintenanceFeeIncludes   String[]  @default([]) @map("maintenance_fee_includes")
+  loanAmount               Int?      @map("loan_amount") // 융자금/근저당 설정액 (만원)
+  premium                  Int? // 상가 권리금 (만원)
   /// 내부 전용 메모 — 네트워크 공유/외부(MCP 조회 포함) 노출 절대 금지
-  privateMemo     String? @map("private_memo")
-  moveInAvailableType String?   @map("move_in_available_type") // immediate, date, range, negotiable, unknown
-  moveInAvailableFrom DateTime? @map("move_in_available_from")
-  moveInAvailableTo   DateTime? @map("move_in_available_to")
-  isJointBrokerageRequired Boolean @default(false) @map("is_joint_brokerage_required")
-  jointBrokeragePartnerId  String? @map("joint_brokerage_partner_id") @db.Uuid
-  checkStatus     String  @default("unverified") @map("check_status")
-  isHidden        Boolean @default(false) @map("is_hidden")
-  memo            String?
+  privateMemo              String?   @map("private_memo")
+  moveInAvailableType      String?   @map("move_in_available_type") // immediate, date, range, negotiable, unknown
+  moveInAvailableFrom      DateTime? @map("move_in_available_from")
+  moveInAvailableTo        DateTime? @map("move_in_available_to")
+  isJointBrokerageRequired Boolean   @default(false) @map("is_joint_brokerage_required")
+  jointBrokeragePartnerId  String?   @map("joint_brokerage_partner_id") @db.Uuid
+  checkStatus              String    @default("unverified") @map("check_status")
+  isHidden                 Boolean   @default(false) @map("is_hidden")
+  memo                     String?
 
   /// checkStatus 가 마지막으로 전이된 시각. Prisma middleware가 자동 갱신.
   /// AdTakedownRule의 "거래 후 N시간 경과" 데드라인 계산에 사용.
@@ -119,9 +119,9 @@ model Listing {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  office   Office   @relation(fields: [officeId], references: [id])
-  property Property @relation(fields: [propertyId], references: [id])
-  intake   ListingIntake @relation(fields: [intakeId], references: [id])
+  office                Office         @relation(fields: [officeId], references: [id])
+  property              Property       @relation(fields: [propertyId], references: [id])
+  intake                ListingIntake  @relation(fields: [intakeId], references: [id])
   jointBrokeragePartner PartnerBroker? @relation("ListingJointBrokeragePartner", fields: [jointBrokeragePartnerId], references: [id])
 
   matches        Match[]
@@ -170,15 +170,15 @@ model ListingAdvertisement {
   url       String?
   memo      String?
 
-  externalAdId String?   @map("external_ad_id")
+  externalAdId  String?   @map("external_ad_id")
   lastCheckedAt DateTime? @map("last_checked_at")
-  lastSyncedAt DateTime? @map("last_synced_at")
+  lastSyncedAt  DateTime? @map("last_synced_at")
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  office  Office  @relation(fields: [officeId], references: [id])
-  listing Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  office                   Office                    @relation(fields: [officeId], references: [id])
+  listing                  Listing                   @relation(fields: [listingId], references: [id], onDelete: Cascade)
   officeAdvertisementGroup OfficeAdvertisementGroup?
 
   @@index([officeId])

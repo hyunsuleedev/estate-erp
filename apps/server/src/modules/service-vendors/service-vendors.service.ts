@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { normalizePhone } from '../contacts/contact-phone.utils';
 import {
   CreateServiceVendorDto,
   CreateVendorContactDto,
@@ -301,6 +302,7 @@ export class ServiceVendorsService {
         vendorId,
         name: dto.name,
         phone: dto.phone,
+        normalizedPhone: normalizePhone(dto.phone),
         role: dto.role ?? null,
         memo: dto.memo ?? null,
         sortOrder: dto.sortOrder ?? 0,
@@ -328,7 +330,10 @@ export class ServiceVendorsService {
 
     const data: Prisma.VendorContactUpdateInput = {};
     if (dto.name !== undefined) data.name = dto.name;
-    if (dto.phone !== undefined) data.phone = dto.phone;
+    if (dto.phone !== undefined) {
+      data.phone = dto.phone;
+      data.normalizedPhone = normalizePhone(dto.phone);
+    }
     if (dto.role !== undefined) data.role = dto.role;
     if (dto.memo !== undefined) data.memo = dto.memo;
     if (dto.sortOrder !== undefined) data.sortOrder = dto.sortOrder;

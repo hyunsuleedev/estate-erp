@@ -12,26 +12,28 @@ model Contact {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  office             Office             @relation(fields: [officeId], references: [id])
-  phones             ContactPhone[]
-  propertyContacts   PropertyContact[]
+  office                  Office              @relation(fields: [officeId], references: [id])
+  phones                  ContactPhone[]
+  propertyContacts        PropertyContact[]
   listingIntakesRequested ListingIntake[]
-  buyerRequirements  BuyerRequirement[]
-  consultations      Consultation[]
-  tenants            Tenant[]
-  tasks              Task[]
-  calendarEvents     CalendarEvent[]
-  dealsAsBuyer       Deal[]             @relation("DealBuyer")
-  dealsAsSeller      Deal[]             @relation("DealSeller")
-  contractsAsBuyer   Contract[]         @relation("ContractBuyer")
-  contractsAsSeller  Contract[]         @relation("ContractSeller")
-  proposals            Proposal[]
-  commissionPayments   CommissionPayment[] @relation("CommissionPayer")
+  buyerRequirements       BuyerRequirement[]
+  consultations           Consultation[]
+  tenants                 Tenant[]
+  tasks                   Task[]
+  calendarEvents          CalendarEvent[]
+  dealsAsBuyer            Deal[]              @relation("DealBuyer")
+  dealsAsSeller           Deal[]              @relation("DealSeller")
+  contractsAsBuyer        Contract[]          @relation("ContractBuyer")
+  contractsAsSeller       Contract[]          @relation("ContractSeller")
+  proposals               Proposal[]
+  commissionPayments      CommissionPayment[] @relation("CommissionPayer")
   // 통화 녹음
-  callRecordings     CallRecording[]
+  callRecordings          CallRecording[]
+  // 통화 이벤트 로그 (CTI)
+  callLogs                CallLog[]
   // ContactRelation 양방향
-  relationsAsMain    ContactRelation[]  @relation("MainContact")
-  relationsAsRelated ContactRelation[]  @relation("RelatedContact")
+  relationsAsMain         ContactRelation[]   @relation("MainContact")
+  relationsAsRelated      ContactRelation[]   @relation("RelatedContact")
 
   @@map("contacts")
 }
@@ -132,9 +134,9 @@ model Tenant {
   createdAt     DateTime  @default(now()) @map("created_at")
   updatedAt     DateTime  @updatedAt @map("updated_at")
 
-  office   Office   @relation(fields: [officeId], references: [id])
-  property Property @relation(fields: [propertyId], references: [id])
-  contact  Contact  @relation(fields: [contactId], references: [id])
+  office    Office     @relation(fields: [officeId], references: [id])
+  property  Property   @relation(fields: [propertyId], references: [id])
+  contact   Contact    @relation(fields: [contactId], references: [id])
   proposals Proposal[]
 
   @@index([officeId])

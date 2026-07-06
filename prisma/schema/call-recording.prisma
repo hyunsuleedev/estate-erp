@@ -13,8 +13,8 @@ model CallRecording {
 
   /// inbound (수신) / outbound (발신)
   direction   String
-  phoneNumber String  @map("phone_number")
-  durationSec Int     @default(0) @map("duration_sec")
+  phoneNumber String @map("phone_number")
+  durationSec Int    @default(0) @map("duration_sec")
 
   /// 녹음 파일 정보
   fileName String? @map("file_name")
@@ -26,7 +26,7 @@ model CallRecording {
 
   /// LLM 분석 결과 (Gemini)
   /// { summary, customerNeed, nextActions }
-  analysis     Json?   @db.JsonB
+  analysis       Json?  @db.JsonB
   /// 분석 상태: none / processing / completed / failed
   analysisStatus String @default("none") @map("analysis_status")
 
@@ -41,6 +41,7 @@ model CallRecording {
   user          User                   @relation(fields: [userId], references: [id])
   messages      CallRecordingMessage[]
   consultations Consultation[]
+  callLogs      CallLog[]
 
   @@index([officeId, calledAt])
   @@index([officeId, phoneNumber])

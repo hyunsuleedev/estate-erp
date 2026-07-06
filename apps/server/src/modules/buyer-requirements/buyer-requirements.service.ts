@@ -1,7 +1,11 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
-import { normalizePhone } from '../contacts/contact-phone.utils';
+import {
+  contactPhonesIncludeOrdered,
+  normalizePhone,
+  withPrimaryContactPhone,
+} from '../contacts/contact-phone.utils';
 
 export interface BuyerRequirementSearchQuery {
   // Multi-value filters (comma-separated or arrays). Single string is treated
@@ -180,7 +184,7 @@ export class BuyerRequirementsService {
       this.prisma.buyerRequirement.findMany({
         where,
         include: {
-          contact: true,
+          contact: { include: { phones: contactPhonesIncludeOrdered } },
           assignedTo: { select: { id: true, name: true } },
           preferredSites: {
             include: {
@@ -205,7 +209,7 @@ export class BuyerRequirementsService {
     ]);
 
     return {
-      items,
+      items: items.map(withPrimaryContactPhone),
       pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
     };
   }
@@ -350,14 +354,18 @@ export class BuyerRequirementsService {
 
   async findDueContacts(officeId: string) {
     const now = new Date();
-    return this.prisma.buyerRequirement.findMany({
+    const items = await this.prisma.buyerRequirement.findMany({
       where: {
         officeId,
         status: 'active',
         nextContactDate: { lte: now },
       },
-      include: { contact: true, assignedTo: { select: { id: true, name: true } } },
+      include: {
+        contact: { include: { phones: contactPhonesIncludeOrdered } },
+        assignedTo: { select: { id: true, name: true } },
+      },
       orderBy: { nextContactDate: 'asc' },
     });
+    return items.map(withPrimaryContactPhone);
   }
 }

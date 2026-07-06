@@ -41,6 +41,7 @@ import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { ActivityLogsModule } from './modules/activity-logs/activity-logs.module';
 import { RegionsModule } from './modules/regions/regions.module';
 import { ServiceVendorsModule } from './modules/service-vendors/service-vendors.module';
+import { CtiModule } from './modules/cti/cti.module';
 import { RequestContextMiddleware } from './common/request-context/request-context.middleware';
 import { RealtimeModule } from './realtime/realtime.module';
 
@@ -108,6 +109,7 @@ const AUTH_RATE_LIMIT_PER_MINUTE = 10;
     PublicDocumentsModule,
     PropertyPhotosModule,
     ServiceVendorsModule,
+    CtiModule,
     NotificationsModule,
     NetworkModule,
     DashboardModule,

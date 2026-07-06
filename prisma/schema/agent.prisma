@@ -15,8 +15,8 @@
 // ============================================================
 
 model Rule {
-  id          String  @id @default(uuid()) @db.Uuid
-  officeId    String  @map("office_id") @db.Uuid
+  id       String @id @default(uuid()) @db.Uuid
+  officeId String @map("office_id") @db.Uuid
 
   /// 코드 레벨 식별자 (예: "ad_takedown", "lease_expiry").
   /// 같은 officeId 안에서 unique.
@@ -34,18 +34,18 @@ model Rule {
 
   /// 규칙 파라미터. 법 기반 규칙은 비어있거나 메타 정보만.
   /// 임계값 기반 규칙은 { "daysSinceRegister": 14, ... } 형태.
-  config      Json    @default("{}") @db.JsonB
+  config Json @default("{}") @db.JsonB
 
   /// 활성 여부 (사무소가 토글 가능, 단 isSystem 규칙도 끌 수 있음)
-  isActive    Boolean @default(true) @map("is_active")
+  isActive Boolean @default(true) @map("is_active")
   /// true: 시스템이 seed/startup에 자동 등록. 사용자 삭제 불가.
   /// false: 사무소가 생성한 커스텀 규칙.
-  isSystem    Boolean @default(false) @map("is_system")
+  isSystem Boolean @default(false) @map("is_system")
 
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
-  office      Office   @relation(fields: [officeId], references: [id])
+  office Office @relation(fields: [officeId], references: [id])
 
   @@unique([officeId, name])
   @@index([officeId, isActive, triggerType])
@@ -53,8 +53,8 @@ model Rule {
 }
 
 model Proposal {
-  id        String @id @default(uuid()) @db.Uuid
-  officeId  String @map("office_id") @db.Uuid
+  id       String @id @default(uuid()) @db.Uuid
+  officeId String @map("office_id") @db.Uuid
 
   /// 제안 유형 (예: "ad_takedown", "lease_renewal_notice")
   type        String
@@ -79,13 +79,13 @@ model Proposal {
   createdByUserId String? @map("created_by_user_id") @db.Uuid
 
   // 컨텍스트 링크 — inbox 카드에서 한눈에 파악할 수 있게
-  listingId  String? @map("listing_id") @db.Uuid
+  listingId       String? @map("listing_id") @db.Uuid
   listingIntakeId String? @map("listing_intake_id") @db.Uuid
-  propertyId String? @map("property_id") @db.Uuid
-  contactId  String? @map("contact_id") @db.Uuid
-  dealId     String? @map("deal_id") @db.Uuid
-  contractId String? @map("contract_id") @db.Uuid
-  tenantId   String? @map("tenant_id") @db.Uuid
+  propertyId      String? @map("property_id") @db.Uuid
+  contactId       String? @map("contact_id") @db.Uuid
+  dealId          String? @map("deal_id") @db.Uuid
+  contractId      String? @map("contract_id") @db.Uuid
+  tenantId        String? @map("tenant_id") @db.Uuid
 
   // 라이프사이클
   proposedAt     DateTime  @default(now()) @map("proposed_at")
@@ -96,15 +96,15 @@ model Proposal {
   executedAt     DateTime? @map("executed_at")
   executionError String?   @map("execution_error")
 
-  office    Office    @relation(fields: [officeId], references: [id])
-  listing   Listing?  @relation(fields: [listingId], references: [id])
-  listingIntake ListingIntake? @relation(fields: [listingIntakeId], references: [id])
-  property  Property? @relation(fields: [propertyId], references: [id])
-  contact   Contact?  @relation(fields: [contactId], references: [id])
-  deal      Deal?     @relation(fields: [dealId], references: [id])
-  contract  Contract? @relation(fields: [contractId], references: [id])
-  tenant    Tenant?   @relation(fields: [tenantId], references: [id])
-  actions   ProposalAction[]
+  office        Office           @relation(fields: [officeId], references: [id])
+  listing       Listing?         @relation(fields: [listingId], references: [id])
+  listingIntake ListingIntake?   @relation(fields: [listingIntakeId], references: [id])
+  property      Property?        @relation(fields: [propertyId], references: [id])
+  contact       Contact?         @relation(fields: [contactId], references: [id])
+  deal          Deal?            @relation(fields: [dealId], references: [id])
+  contract      Contract?        @relation(fields: [contractId], references: [id])
+  tenant        Tenant?          @relation(fields: [tenantId], references: [id])
+  actions       ProposalAction[]
 
   @@index([officeId, status, priority, proposedAt])
   @@index([officeId, type, status])
@@ -121,9 +121,9 @@ model ProposalAction {
   proposalId String @map("proposal_id") @db.Uuid
 
   /// MCP 도구명 ("update_listing_price", "create_task" 등)
-  tool   String
+  tool String
   /// 실행 인자
-  args   Json   @db.JsonB
+  args Json   @db.JsonB
 
   /// pending | executed | failed
   status String  @default("pending")
@@ -179,10 +179,10 @@ model EntityDraft {
   entityType String @map("entity_type")
 
   /// create | update | delete | action
-  operation  String
+  operation String
 
   /// 대상 레코드 ID (create / action 일 때 null)
-  entityId   String? @map("entity_id") @db.Uuid
+  entityId String? @map("entity_id") @db.Uuid
 
   /// 변경 내용 (operation 별 의미 다름)
   /// - update/create: 반영할 필드 맵
@@ -191,11 +191,11 @@ model EntityDraft {
   proposedChanges Json @map("proposed_changes") @db.JsonB
 
   /// 표시용
-  category  String   // UI 카드 렌더러 식별: 'contract_draft' | 'ad_takedown' | 'commission_adjustment' ...
+  category  String // UI 카드 렌더러 식별: 'contract_draft' | 'ad_takedown' | 'commission_adjustment' ...
   title     String
   summary   String
   reasoning String?
-  priority  String @default("normal")  // urgent | normal | low
+  priority  String  @default("normal") // urgent | normal | low
 
   /// 의사결정 양식 — 버튼 레이블 결정
   /// 'confirm'  = [확인]  (결과물 검토)
@@ -237,8 +237,8 @@ model EntityDraft {
   lockExpiresAt DateTime? @map("lock_expires_at")
 
   /// 재시도
-  attempts      Int @default(0)
-  maxAttempts   Int @default(3) @map("max_attempts")
+  attempts    Int @default(0)
+  maxAttempts Int @default(3) @map("max_attempts")
 
   /// 출처
   /// 'rule:xxx:v1' | 'user:yyy' | 'event:zzz' | 'agent:claude'
@@ -248,18 +248,18 @@ model EntityDraft {
   dedupeKey String? @map("dedupe_key")
 
   // 컨텍스트 링크 (inbox 카드에서 한눈에 파악, 도메인으로 점프)
-  listingId  String? @map("listing_id") @db.Uuid
+  listingId       String? @map("listing_id") @db.Uuid
   listingIntakeId String? @map("listing_intake_id") @db.Uuid
-  propertyId String? @map("property_id") @db.Uuid
-  contactId  String? @map("contact_id") @db.Uuid
-  dealId     String? @map("deal_id") @db.Uuid
-  contractId String? @map("contract_id") @db.Uuid
-  paymentId  String? @map("payment_id") @db.Uuid
+  propertyId      String? @map("property_id") @db.Uuid
+  contactId       String? @map("contact_id") @db.Uuid
+  dealId          String? @map("deal_id") @db.Uuid
+  contractId      String? @map("contract_id") @db.Uuid
+  paymentId       String? @map("payment_id") @db.Uuid
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  office   Office   @relation(fields: [officeId], references: [id])
+  office   Office               @relation(fields: [officeId], references: [id])
   comments EntityDraftComment[]
 
   @@unique([officeId, dedupeKey])

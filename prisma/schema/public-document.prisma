@@ -22,7 +22,7 @@ model PublicDocument {
   /// land_register: 대지권등록부
   type String
 
-  title    String  // "등기부등본 (집합건물)", "건축물대장 총괄표제부" 등
+  title    String // "등기부등본 (집합건물)", "건축물대장 총괄표제부" 등
   subtitle String? // "현재유효사항" / "말소사항포함" 등 옵션 표시
 
   /// S3/R2 파일 URL
@@ -33,7 +33,7 @@ model PublicDocument {
   mimeType String? @map("mime_type")
 
   /// 발급일
-  issuedAt DateTime @map("issued_at")
+  issuedAt  DateTime  @map("issued_at")
   /// 유효기간 (등기부등본은 발급일 기준 의미, 장부마다 다름)
   expiresAt DateTime? @map("expires_at")
 
@@ -41,7 +41,7 @@ model PublicDocument {
   cost Int @default(0)
 
   /// 발급 상태: pending → completed → failed
-  status String @default("pending")
+  status       String  @default("pending")
   /// 실패 시 에러 메시지
   errorMessage String? @map("error_message")
 

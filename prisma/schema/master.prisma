@@ -4,10 +4,10 @@
 
 /// 시도 (서울특별시, 경기도 등)
 model Province {
-  code          String                   @id @db.VarChar(2) // "11" = 서울
-  name          String                   @unique // 서울특별시
-  districts     District[]
-  buyerRegions  BuyerRequirementRegion[]
+  code         String                   @id @db.VarChar(2) // "11" = 서울
+  name         String                   @unique // 서울특별시
+  districts    District[]
+  buyerRegions BuyerRequirementRegion[]
 
   @@map("provinces")
 }

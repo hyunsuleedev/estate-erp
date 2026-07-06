@@ -1,0 +1,57 @@
+// ============================================================
+// 통화 이벤트 로그 (CTI Bridge)
+//
+// CallRecording(녹음 파일 + STT + 분석)과 분리된 "통화 사실" 기록.
+// 녹음이 없어도 수신/발신/부재중 이벤트는 항상 여기 남는다.
+// 설계 문서: docs/CTI_BRIDGE_PLAN.md §4.4
+// ============================================================
+
+model CallLog {
+  id       String @id @default(uuid()) @db.Uuid
+  officeId String @map("office_id") @db.Uuid
+
+  /// 통화 처리 직원 (수신 이벤트를 서버로 올린 사람 / 발신자). null = 미배정
+  userId    String? @map("user_id") @db.Uuid
+  /// 매칭된 연락처 (null = 미등록 번호)
+  contactId String? @map("contact_id") @db.Uuid
+
+  /// inbound / outbound
+  direction   String
+  /// 상대방 번호 (정규화: 01012345678)
+  phoneNumber String  @map("phone_number")
+  /// 착신 회선 (대표번호/내선)
+  lineNumber  String? @map("line_number")
+
+  /// mock / kt / lgu / samsung
+  vendor      String?
+  /// 통신사 통화 시퀀스 (KT EventCID sClSeqno) — 이벤트 dedupe 키
+  vendorSeqno String? @map("vendor_seqno")
+
+  /// ringing / answered / missed / ended
+  status      String @default("ringing")
+  durationSec Int    @default(0) @map("duration_sec")
+
+  /// 통화가 상담으로 전환되면 연결
+  consultationId String? @map("consultation_id") @db.Uuid
+  /// 녹음이 붙으면 연결 (070 녹취/모바일 업로드 → 사후 연결)
+  recordingId    String? @map("recording_id") @db.Uuid
+
+  memo      String?
+  startedAt DateTime  @map("started_at")
+  endedAt   DateTime? @map("ended_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  office       Office         @relation(fields: [officeId], references: [id])
+  user         User?          @relation(fields: [userId], references: [id])
+  contact      Contact?       @relation(fields: [contactId], references: [id])
+  consultation Consultation?  @relation(fields: [consultationId], references: [id])
+  recording    CallRecording? @relation(fields: [recordingId], references: [id])
+
+  @@unique([officeId, vendor, vendorSeqno])
+  @@index([officeId, startedAt])
+  @@index([officeId, phoneNumber])
+  @@index([contactId])
+  @@map("call_logs")
+}

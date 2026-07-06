@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>EstateErp.CtiBridge</RootNamespace>
+    <AssemblyName>cti-bridge</AssemblyName>
+    <Version>0.1.0</Version>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <!--
+      개발(mock)은 어느 플랫폼에서든 dotnet run 으로 실행 가능 (AnyCPU).
+      운영 배포는 KT COM(32비트) 제약 때문에 반드시 win-x86 self-contained로 publish:
+        dotnet publish -c Release -r win-x86 - -self-contained -p:PublishSingleFile=true
+      (docs/CTI_BRIDGE_PLAN.md §4.1)
+    -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Update="appsettings.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+</Project>

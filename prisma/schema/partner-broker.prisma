@@ -41,10 +41,10 @@ model PartnerBroker {
   office       Office  @relation("OfficePartnerBrokers", fields: [officeId], references: [id])
   linkedOffice Office? @relation("LinkedAsPartner", fields: [linkedOfficeId], references: [id])
 
-  deals         Deal[]
-  distributions CommissionDistribution[]
-  jointRequiredIntakes ListingIntake[] @relation("ListingIntakeJointBrokeragePartner")
-  jointRequiredListings Listing[] @relation("ListingJointBrokeragePartner")
+  deals                 Deal[]
+  distributions         CommissionDistribution[]
+  jointRequiredIntakes  ListingIntake[]          @relation("ListingIntakeJointBrokeragePartner")
+  jointRequiredListings Listing[]                @relation("ListingJointBrokeragePartner")
 
   @@index([officeId, name])
   @@index([officeId, isActive])

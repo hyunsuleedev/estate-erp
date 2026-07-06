@@ -34,6 +34,7 @@ model Consultation {
   match            Match?            @relation(fields: [matchId], references: [id])
   buyerRequirement BuyerRequirement? @relation(fields: [buyerReqId], references: [id])
   tasks            Task[]
+  callLogs         CallLog[]
 
   @@index([officeId, contactId])
   @@index([officeId, purpose])
@@ -72,9 +73,9 @@ model BuyerRequirement {
   createdAt        DateTime  @default(now()) @map("created_at")
   updatedAt        DateTime  @updatedAt @map("updated_at")
 
-  office           Office                    @relation(fields: [officeId], references: [id])
-  contact          Contact                   @relation(fields: [contactId], references: [id])
-  assignedTo       User?                     @relation("AssignedAgent", fields: [assignedToId], references: [id])
+  office           Office                   @relation(fields: [officeId], references: [id])
+  contact          Contact                  @relation(fields: [contactId], references: [id])
+  assignedTo       User?                    @relation("AssignedAgent", fields: [assignedToId], references: [id])
   matches          Match[]
   consultations    Consultation[]
   tasks            Task[]
@@ -162,11 +163,11 @@ model Deal {
 
   // ─── 매물/매칭 연결 ────────────────────────────────────────
   /// 우리 DB 의 매물. 공동중개 매수측(외부 매물)은 null 허용.
-  listingId String? @map("listing_id") @db.Uuid
+  listingId         String? @map("listing_id") @db.Uuid
   /// 공동중개로 외부 매물에 매수측으로 붙었을 때 참조 (listingId 와 상호보완)
   externalListingId String? @map("external_listing_id") @db.Uuid
   /// 어느 매칭에서 전환됐는지 (실적/직원 분석용)
-  matchId String? @map("match_id") @db.Uuid
+  matchId           String? @map("match_id") @db.Uuid
 
   // ─── 파이프라인 ────────────────────────────────────────────
   /// selection → negotiating → preContract → contracted → settling → completed → closed
@@ -361,10 +362,10 @@ model Contract {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  office        Office     @relation(fields: [officeId], references: [id])
-  deal          Deal       @relation(fields: [dealId], references: [id])
-  buyerContact  Contact    @relation("ContractBuyer", fields: [buyerContactId], references: [id])
-  sellerContact Contact    @relation("ContractSeller", fields: [sellerContactId], references: [id])
+  office        Office             @relation(fields: [officeId], references: [id])
+  deal          Deal               @relation(fields: [dealId], references: [id])
+  buyerContact  Contact            @relation("ContractBuyer", fields: [buyerContactId], references: [id])
+  sellerContact Contact            @relation("ContractSeller", fields: [sellerContactId], references: [id])
   tasks         Task[]
   proposals     Proposal[]
   documents     ContractDocument[]
@@ -419,7 +420,7 @@ model ContractDocument {
   templateId String? @map("template_id") @db.Uuid
 
   /// generated / uploaded / external
-  type String
+  type     String
   /// contract / identity / explanation / report / receipt / attachment
   category String
   title    String
@@ -438,7 +439,7 @@ model ContractDocument {
   generatedById String? @map("generated_by_id") @db.Uuid
   externalRefId String? @map("external_ref_id")
 
-  metadata Json @default("{}") @db.JsonB
+  metadata Json    @default("{}") @db.JsonB
   memo     String?
 
   createdAt DateTime @default(now()) @map("created_at")
@@ -472,7 +473,7 @@ model OfficePrintTemplate {
   /// 표지, 영수증, 거래대장, 정산서 등 출력 옵션 JSON.
   data Json @default("{}") @db.JsonB
 
-  createdById String? @map("created_by_id") @db.Uuid
+  createdById String?  @map("created_by_id") @db.Uuid
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 
@@ -489,7 +490,7 @@ model ContractClauseTemplate {
   officeId String @map("office_id") @db.Uuid
 
   /// contract_clause / special_terms_clause / confirmation_clause / office_notice
-  type String
+  type         String
   /// base_contract / standard_lease_contract / broker_explanation 등 문서 종류.
   contractKind String? @map("contract_kind")
 
@@ -503,7 +504,7 @@ model ContractClauseTemplate {
   isActive  Boolean @default(true) @map("is_active")
   sortOrder Int     @default(0) @map("sort_order")
 
-  createdById String? @map("created_by_id") @db.Uuid
+  createdById String?  @map("created_by_id") @db.Uuid
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 
