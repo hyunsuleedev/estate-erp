@@ -246,25 +246,52 @@ export class CtiService {
     } else {
       // ring 유실(Bridge 재시작 등) — terminate만으로도 통화 사실은 남긴다
       const matchedPhone = await this.findContactByPhone(officeId, phoneNumber);
-      callLog = await this.prisma.callLog.create({
-        data: {
-          officeId,
-          userId,
-          contactId: matchedPhone?.contactId ?? null,
-          direction: 'inbound',
-          phoneNumber,
-          lineNumber: dto.lineId ?? dto.callee ?? null,
-          vendor: dto.vendor,
-          vendorSeqno: dto.seqno
-            ? CtiService.ringDedupeKey(dto.seqno, occurredAt)
-            : null,
-          status,
-          durationSec,
-          startedAt: new Date(occurredAt.getTime() - durationSec * 1000),
-          endedAt: occurredAt,
-        },
-        include: { contact: this.contactBrief },
-      });
+      const vendorSeqnoKey = dto.seqno
+        ? CtiService.ringDedupeKey(dto.seqno, occurredAt)
+        : null;
+      try {
+        callLog = await this.prisma.callLog.create({
+          data: {
+            officeId,
+            userId,
+            contactId: matchedPhone?.contactId ?? null,
+            direction: 'inbound',
+            phoneNumber,
+            lineNumber: dto.lineId ?? dto.callee ?? null,
+            vendor: dto.vendor,
+            vendorSeqno: vendorSeqnoKey,
+            status,
+            durationSec,
+            startedAt: new Date(occurredAt.getTime() - durationSec * 1000),
+            endedAt: occurredAt,
+          },
+          include: { contact: this.contactBrief },
+        });
+      } catch (error) {
+        // 멀티 PC가 같은 terminate를 동시에 보고 — 먼저 만든 쪽의 행을 채택
+        // (seqno 없는 이벤트는 unique 키가 없어 이 방어가 불가능하지만,
+        //  mock 수동 입력 외에는 seqno가 항상 있다)
+        if (
+          error instanceof Prisma.PrismaClientKnownRequestError &&
+          error.code === 'P2002' &&
+          vendorSeqnoKey
+        ) {
+          const winner = await this.prisma.callLog.findUnique({
+            where: {
+              officeId_vendor_vendorSeqno: {
+                officeId,
+                vendor: dto.vendor,
+                vendorSeqno: vendorSeqnoKey,
+              },
+            },
+            include: { contact: this.contactBrief },
+          });
+          if (winner) {
+            return { handled: true as const, deduped: true, callLog: winner };
+          }
+        }
+        throw error;
+      }
     }
 
     this.realtime.emitCtiCallUpdated({

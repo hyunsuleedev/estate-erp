@@ -265,3 +265,15 @@ export type {
   SendNetworkMessageDto,
   NetworkMessageCreatedEvent,
 } from './modules/network.js';
+export type {
+  CtiCallEventInput,
+  CallLog,
+  CallLogStatus,
+  CallLogsFilter,
+  CallLogsResponse,
+  CtiLookupResult,
+  CtiLookupVendorContact,
+  CtiLookupProperty,
+  IngestCallEventResult,
+  UpdateCallLogDto,
+} from './modules/cti.js';

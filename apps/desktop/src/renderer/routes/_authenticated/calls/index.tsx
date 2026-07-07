@@ -1,10 +1,11 @@
-import { createFileRoute } from '@tanstack/react-router';
+import { createFileRoute, Link } from '@tanstack/react-router';
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   PhoneIncoming,
   PhoneOutgoing,
   Clock,
+  History,
   Search,
   User as UserIcon,
   Loader2,
@@ -239,6 +240,13 @@ function CallsPage() {
             <SelectItem value="none">녹음 없음</SelectItem>
           </SelectContent>
         </Select>
+
+        <Button asChild variant="outline" size="sm" className="ml-auto h-9">
+          <Link to="/calls/logs">
+            <History className="size-3.5" />
+            통화 이력
+          </Link>
+        </Button>
       </div>
 
       {/* 요약 통계 */}

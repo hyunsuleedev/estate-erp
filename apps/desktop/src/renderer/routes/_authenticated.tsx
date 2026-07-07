@@ -13,6 +13,8 @@ import { Separator } from '@/components/ui/separator';
 import { TabBar } from '@/features/tabs/TabBar/TabBar';
 import { TabContent } from '@/features/tabs/TabContent';
 import { useDetachedInitialTab } from '@/features/tabs/hooks/useDetachedInitialTab';
+import { CtiProvider } from '@/features/cti/cti-provider';
+import { CallPopup } from '@/features/cti/call-popup';
 
 const isMac = window.electronBridge?.platform === 'darwin';
 const isWin = window.electronBridge?.platform === 'win32';
@@ -88,32 +90,37 @@ function AuthenticatedLayout() {
   // 데이터 갱신은 cross-window invalidate로 동기화.
   return (
     <SidebarProvider>
-      <ElectronSidebarBridge />
-      <div className="flex h-screen w-full flex-col">
-        {/* Titlebar: SidebarTrigger + TabBar inline (no breadcrumb) */}
-        <header className="app-titlebar flex h-10 shrink-0 items-center gap-2 border-b border-border bg-sidebar pr-2">
-          <div
-            className={`flex items-center gap-1 ${titlebarLeftPadding}`}
-            style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
-          >
-            <SidebarTrigger className="-ml-1" />
-            <Separator orientation="vertical" className="mx-1 data-[orientation=vertical]:h-4" />
-          </div>
-          <TabBar className="min-w-0" />
-          {/* Windows: titleBarOverlay 자리 확보 */}
-          {isWin && <div className="w-[140px] shrink-0" aria-hidden />}
-        </header>
-
-        {/* Sidebar + Content below titlebar */}
-        <div className="flex flex-1 overflow-hidden">
-          <AppSidebar />
-          <SidebarInset className="flex-1 min-h-0 min-w-0">
-            <div className="flex flex-1 flex-col gap-4 p-4 min-h-0 min-w-0 overflow-auto">
-              <TabContent autoCreateInitialTab={windowKind !== 'detached'} />
+      {/* CTI는 메인 창만 구독 — detached 창까지 구독하면 통화 1건이 창 수만큼 중복 ingest된다 */}
+      <CtiProvider enabled={windowKind === 'main'}>
+        <ElectronSidebarBridge />
+        <div className="flex h-screen w-full flex-col">
+          {/* Titlebar: SidebarTrigger + TabBar inline (no breadcrumb) */}
+          <header className="app-titlebar flex h-10 shrink-0 items-center gap-2 border-b border-border bg-sidebar pr-2">
+            <div
+              className={`flex items-center gap-1 ${titlebarLeftPadding}`}
+              style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+            >
+              <SidebarTrigger className="-ml-1" />
+              <Separator orientation="vertical" className="mx-1 data-[orientation=vertical]:h-4" />
             </div>
-          </SidebarInset>
+            <TabBar className="min-w-0" />
+            {/* Windows: titleBarOverlay 자리 확보 */}
+            {isWin && <div className="w-[140px] shrink-0" aria-hidden />}
+          </header>
+
+          {/* Sidebar + Content below titlebar */}
+          <div className="flex flex-1 overflow-hidden">
+            <AppSidebar />
+            <SidebarInset className="flex-1 min-h-0 min-w-0">
+              <div className="flex flex-1 flex-col gap-4 p-4 min-h-0 min-w-0 overflow-auto">
+                <TabContent autoCreateInitialTab={windowKind !== 'detached'} />
+              </div>
+            </SidebarInset>
+          </div>
         </div>
-      </div>
+        {/* CTI 전화 수신 팝업 — 어느 화면에서든 우하단에 표시 */}
+        <CallPopup />
+      </CtiProvider>
     </SidebarProvider>
   );
 }

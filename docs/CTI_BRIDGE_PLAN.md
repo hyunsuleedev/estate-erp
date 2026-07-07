@@ -376,10 +376,13 @@ Phase 1은 **첫 번째(Electron 경유)** 로 시작. 무인 수신 요구가 �
 - [x] `RealtimeService`로 `cti.incoming`/`cti.call.updated` 브로드캐스트.
 - [x] 단위 테스트 6개 (ring dedupe, terminate missed/ended, ring 유실 대비, lookup isNew).
 
-### Step 4 — 통화 팝업 UI (마이스파이더 §9 레이아웃)
-- [ ] 수신 팝업: 고객명/신규구분/최근상담/연결매물/구하는조건/미완료업무/최근통화.
-- [ ] "상담 기록하기" → Consultation 생성 + `CallLog.consultationId` 연결.
-- [ ] 통화 이력 페이지 (수신/발신/부재중 필터).
+### Step 4 — 통화 팝업 UI (마이스파이더 §9 레이아웃) ✅ 완료 (2026-07-06)
+- [x] 수신 팝업 (`apps/desktop/src/renderer/features/cti/`): 고객명+태그/신규 배지/최근상담/연결매물/구하는조건/미완료업무/최근통화. ring→종료(통화시간)/부재중 전환, 종료 60초 후 자동 닫힘.
+- [x] "상담 기록" → Consultation 생성 + `CallLog.consultationId` 연결. 신규 번호는 "연락처 등록" 인라인 폼(이름만 입력 → Contact+ContactPhone 생성 + CallLog 연결).
+- [x] 통화 이력 페이지 `/calls/logs` (방향/상태 필터, 번호 검색, 페이지네이션). 기존 `/calls`(녹음)와 상호 링크.
+- [x] `packages/api-client` `cti` 모듈 (lookup/ingestCallEvent/listCallLogs/updateCallLog).
+- [x] DEV 하네스 `/dev/cti-preview`: Bridge/로그인 없이 브라우저에서 팝업 파이프라인 확인 (`window.__ctiSimulate`).
+- 검증: Playwright(Chromium) 프리뷰로 수신 카드 풀 렌더/상담 폼/종료/부재중/신규 등록 흐름 확인, 콘솔 에러 0, typecheck 클린.
 
 ### Step 5 — 실제 KT 어댑터 결선
 - [ ] Step 0 PoC 결과를 `kt-openapi.adapter`로 정식화.

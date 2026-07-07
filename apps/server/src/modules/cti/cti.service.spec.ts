@@ -252,6 +252,35 @@ describe('CtiService', () => {
       expect(realtime.emitCtiCallUpdated).not.toHaveBeenCalled();
     });
 
+    it('terminate-only 동시 보고(P2002): 먼저 생성된 행을 채택하고 중복 생성하지 않는다', async () => {
+      const { prisma, realtime, service } = createService();
+      prisma.callLog.findUnique
+        .mockResolvedValueOnce(null) // 당일 키 조회
+        .mockResolvedValueOnce(null) // 전날 키 조회
+        .mockResolvedValueOnce({
+          // P2002 후 승자 재조회
+          id: 'log-winner',
+          phoneNumber: '01012345678',
+          status: 'ended',
+          durationSec: 10,
+          contact: null,
+        });
+      prisma.callLog.findFirst.mockResolvedValue(null);
+      prisma.contactPhone.findFirst.mockResolvedValue(null);
+      prisma.callLog.create.mockRejectedValue(p2002());
+
+      const result = await service.ingestCallEvent('office-1', 'user-1', {
+        ...ringEvent,
+        type: 'terminate',
+        durationSec: 10,
+      });
+
+      expect(result).toEqual(
+        expect.objectContaining({ deduped: true, callLog: expect.objectContaining({ id: 'log-winner' }) }),
+      );
+      expect(realtime.emitCtiCallUpdated).not.toHaveBeenCalled();
+    });
+
     it('대응하는 ring이 없으면(유실) 연락처 매칭까지 해서 새로 남긴다', async () => {
       const { prisma, service } = createService();
       prisma.callLog.findUnique.mockResolvedValue(null);

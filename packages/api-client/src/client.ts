@@ -39,6 +39,7 @@ import { createNotificationsApi } from './modules/notifications.js';
 import { createNetworkApi } from './modules/network.js';
 import { createDashboardApi } from './modules/dashboard.js';
 import { createActivityLogsApi } from './modules/activity-logs.js';
+import { createCtiApi } from './modules/cti.js';
 
 export type HttpMethod = 'GET' | 'POST' | 'PATCH' | 'DELETE';
 
@@ -158,6 +159,7 @@ export function createApiClient(config: ApiClientConfig) {
     network: createNetworkApi(req),
     dashboard: createDashboardApi(req),
     activityLogs: createActivityLogsApi(req),
+    cti: createCtiApi(req),
   };
 }
 
