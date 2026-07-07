@@ -352,9 +352,11 @@ Phase 1은 **첫 번째(Electron 경유)** 로 시작. 무인 수신 요구가 �
 
 ### Step 0 — C# COM interop PoC (KT 인증키 등록 후 실행, 병렬 대기)
 - [ ] 개발용 KT OpenAPI **사용자 등록** → 테스트 인증키/계정 확보. (DLL 자체는 오픈이라 입수 절차 없음 — 등록만 하면 됨)
-- [ ] .NET 8 x86 콘솔에서 KT `KTOpenAPI.dll`/`KTPCBiz` COM 로드 → `Login` → `_IKTPCBizXEvents.EventCID` 콜백을 C# 이벤트 핸들러로 수신 확인.
+- [ ] **바인딩 = tlbimp 방식 확정 (2026-07-07)**: Windows에서 KT DLL 레지스트리 등록 → `tlbimp`로 `Interop.KTPCBizLib.dll` 생성 → **리포에 커밋** (IL이라 이후 macOS 컴파일도 됨. 마이스파이더와 동일 방식. 단, 마이스파이더의 Interop DLL 재사용 금지 — KT DLL에서 직접 생성). 수기 `[ComImport]`는 tlbimp 산출물이 .NET 8에서 문제일 때의 폴백.
+- [ ] .NET 8 x86 콘솔에서 `Login` → `_IKTPCBizXEvents.EventCID` 콜백 수신 확인 (전용 STA 스레드 + GetMessage/DispatchMessage 펌프 필수 — 콘솔은 기본 펌프가 없어 펌프 없이는 이벤트 안 옴).
+- [ ] PoC에서 해소할 미지수: ① `EventCallTerminate`의 `sDBID` ↔ `EventCID`의 `sClSeqno` 대응 (다르면 `GetCall(sDBID)` 역조회; 서버는 번호+시간창 fallback 있음), ② 실제 ProgID, ③ `InitApi` 필요 여부(Delphi 샘플 호출 순서), ④ `LoginKickOut` 중복 로그인 정책.
 - [ ] 참고: `KTOpenAPIDelphiSample.exe`, `KTPCBiz.idl`(인터페이스 정의), 레지스트리 등록 `OpenAPI 레지스트리 등록.bat`, 가입 매뉴얼 `001.rtf`.
-- [ ] 그동안 Step 1~4는 mock으로 병렬 진행. (완료됨)
+- [x] 그동안 Step 1~4는 mock으로 병렬 진행. (완료)
 
 ### Step 1 — Bridge 골격 (mock 우선, KT 계정 불요) ✅ 완료 (2026-07-06)
 - [x] `apps/cti-bridge` C# 프로젝트 스캐폴딩 (net8.0, 배포 시 win-x86 publish).
