@@ -56,7 +56,9 @@ EventSMS / EventMMS                               // 문자 수신
 - 한방 기본값이 `CIDKind=OPENAPI` (KT OpenAPI).
 - 1회선 → 최대 4대 PC 동시 수신 (KT).
 - **KT DLL은 오픈(자유 배포 가능)** — Bridge 설치본에 동봉하고 설치 시 레지스트리 등록(마이스파이더 `OpenAPI 레지스트리 등록.bat` 방식)까지 자동화하면 됨. (2026-07-07 확인)
-- **게이트는 인증키**: 사무소(사용자)가 KT OpenAPI **사용자 등록**을 하고 받은 인증키+계정을 Bridge 설정에 입력 — `Login(nServer, sAuthKey, sLoginID, sLoginPwd)`. 회선 가입 절차 참고: KT 100 → 1 → 4 → `#` (한방은 협회 CP 코드 `70229` 사용, 매뉴얼 `001.rtf`).
+- **인증은 2계층** (`Login(nServer, sAuthKey, sLoginID, sLoginPwd)` + 매뉴얼 `001.rtf` 확인, 2026-07-07):
+  - **CP(프로그램) 키 `sAuthKey`**: 소프트웨어 제조사 식별 (한방 = 협회 CP코드 70229). **Estate ERP 자체 CP 등록/키 발급을 KT에 확인 필요 — Step 0 선행 항목.** 마이스파이더는 이 키를 바이너리에 내장했다가 디컴파일로 노출됨 → 우리는 내장 대신 서버에서 런타임 전달 검토.
+  - **사용자 계정 `sLoginID/sLoginPwd`**: 회선 단위 PC폰 계정. 사무소가 KT 100 → 1 → 4 → `#` 전화 가입 시 발급(CP 코드 통지) → Bridge 설정에 입력. 한방은 `cid.ini`에 **평문 저장** (레퍼런스에 실계정 평문 잔존 — 반면교사) → 우리는 Windows DPAPI 암호화 저장 검토.
 - LGU+/삼성은 2순위. Bridge는 **어댑터 패턴**으로 통신사 교체 가능하게.
 
 ### 1.4 통화 팝업이 보여줘야 하는 정보 (마이스파이더 §9)
