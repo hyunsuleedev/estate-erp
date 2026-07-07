@@ -23,4 +23,19 @@
     </None>
   </ItemGroup>
 
+  <!--
+    KT COM 바인딩 (tlbimp, docs/CTI_BRIDGE_PLAN.md Step 0):
+    Windows에서 `tlbimp KTOpenAPI.dll /out:Interop.KTPCBizLib.dll`로 생성한 산출물을
+    lib/ 에 커밋하면 KT_INTEROP이 자동 정의되어 TlbImpKtPcBizClient 실제 구현이 활성화된다.
+    없으면 placeholder로 컴파일되어 mock 개발 흐름(macOS 포함)이 유지된다.
+  -->
+  <PropertyGroup Condition="Exists('$(MSBuildProjectDirectory)/lib/Interop.KTPCBizLib.dll')">
+    <DefineConstants>$(DefineConstants);KT_INTEROP</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup Condition="Exists('$(MSBuildProjectDirectory)/lib/Interop.KTPCBizLib.dll')">
+    <Reference Include="Interop.KTPCBizLib">
+      <HintPath>lib/Interop.KTPCBizLib.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+
 </Project>

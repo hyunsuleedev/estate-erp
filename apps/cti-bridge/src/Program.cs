@@ -19,7 +19,10 @@ Console.CancelKeyPress += (_, e) =>
 await using IVendorAdapter adapter = config.Vendor switch
 {
     "mock" => new MockAdapter(config),
-    "kt" => new KtOpenApiAdapter(config),
+    "kt" => OperatingSystem.IsWindows()
+        ? new KtOpenApiAdapter(config)
+        : throw new PlatformNotSupportedException(
+            "KT 어댑터는 Windows 전용입니다. 개발은 vendor=mock 사용."),
     _ => throw new NotSupportedException(
         $"지원하지 않는 vendor: {config.Vendor} (mock | kt — lgu/samsung은 2순위, docs/CTI_BRIDGE_PLAN.md)"),
 };

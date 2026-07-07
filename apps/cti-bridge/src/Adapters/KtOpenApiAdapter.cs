@@ -1,49 +1,50 @@
+using System.Collections.Concurrent;
+using System.Runtime.Versioning;
+using System.Threading.Channels;
+using EstateErp.CtiBridge.Adapters.Kt;
 using EstateErp.CtiBridge.Models;
 
 namespace EstateErp.CtiBridge.Adapters;
 
 /// <summary>
-/// KT OLLEH OpenAPI COM 어댑터 — Step 5에서 실계정 확보 후 구현 (docs/CTI_BRIDGE_PLAN.md).
+/// KT OLLEH OpenAPI COM 어댑터.
 ///
-/// 구현 가이드 (docs/reference/hanbang/app/KTPCBiz.idl 기준):
+/// 구조 (docs/CTI_BRIDGE_PLAN.md Step 0):
+///   StaMessagePump(전용 STA 스레드 + Win32 펌프) 위에서 IKtPcBizClient(tlbimp 심)를
+///   생성·호출하고, COM 이벤트를 Channel로 메인 루프에 마샬링해 CallEventReceived로 발화.
 ///
-/// 0. 바인딩 (2026-07-07 확정): Windows에서 1회 `tlbimp KTOpenAPI.dll` →
-///    Interop.KTPCBizLib.dll 생성 후 리포 커밋, 이 프로젝트가 참조 (IL이라 macOS 컴파일 유지).
-///    마이스파이더와 동일 방식이나 그쪽 Interop 바이너리 재사용 금지 — KT DLL에서 직접 생성.
-///    tlbimp 산출물이 .NET 8에서 문제일 때만 수기 [ComImport] + ComEventsHelper 폴백.
-///
-/// 1. COM 인터페이스: IKTPCBizX (dual, IDispatch)
-///    - InitApi(cCmType)? → Login(nServer, sAuthKey, sLoginID, sLoginPwd) → EventLogin 콜백 대기
-///      (InitApi 필요 여부는 PoC에서 KTOpenAPIDelphiSample 호출 순서로 확인)
-///    - SetRecvPhone(sRecvPhone): config.Lines의 각 회선 등록
-///    - SendCTC(sCaller, sCallee): 클릭투콜 발신 → DialAsync에서 호출
-///
-/// 2. 이벤트 sink: _IKTPCBizXEvents (dispinterface) — tlbimp 생성 C# 이벤트로 구독
-///    - EventCID(sCaller, sCallee, sResult, sClSeqno, sMiSeqno)
-///        → CtiCallEvent { Type="ring", Seqno=sClSeqno } 로 정규화
-///    - EventCallTerminate(sDBID, nMode, nTime)
-///        → CtiCallEvent { Type="terminate", DurationSec=nTime }
-///      ⚠ sDBID ↔ sClSeqno 대응은 PoC 확인 필요. 다르면 GetCall(sDBID)로 역조회해
-///        caller를 채운다 (서버는 seqno 없어도 번호+시간창 fallback으로 매칭 가능).
-///    - EventCTC(sCaller, sCallee, sResult, sMiSeqno)
-///        → CtiCallEvent { Type="ctc_result" }
-///    - EventConnect(nResult) / EventLogin(nResult) → Connected/LoggedIn 갱신 + StatusChanged
-///    - LoginKickOut: 중복 로그인 킥 정책 확인 → 재연결 백오프 + status broadcast
-///
-/// 3. 스레딩: COM 이벤트 수신을 위해 전용 STA 스레드 + 메시지 펌프 필수
-///    (콘솔은 기본 펌프가 없어 펌프 없이는 이벤트가 오지 않는다).
-///    STA 스레드: COM 생성/구독 + GetMessage/DispatchMessage P/Invoke 펌프 루프
-///    → System.Threading.Channels로 메인 async 루프에 전달 → CallEventReceived.
-///    메서드 호출(Login/SendCTC)은 COM 프록시가 STA로 자동 마샬링하므로 타 스레드 호출 허용.
-///
-/// 4. 배포: 반드시 win-x86 (32비트 COM). KT DLL은 오픈 — 설치본에 동봉하고
-///    레지스트리 등록 자동화 (마이스파이더 "OpenAPI 레지스트리 등록.bat" 방식).
+/// 상태: 컴파일 가능한 풀 골격 — 런타임 검증은 Windows + KT 인증키 + Interop DLL(PoC) 대기.
+/// PoC에서 해소할 미지수는 KtPcBizClient/아래 주석의 ⚠ 표시 참고.
 /// </summary>
+[SupportedOSPlatform("windows")]
 public sealed class KtOpenApiAdapter : IVendorAdapter
 {
+    /// <summary>KT 이벤트 콜백의 결과 코드 성공값 (⚠ PoC에서 실제 값 확인 — 0 가정)</summary>
+    private const int ResultOk = 0;
+
+    private static readonly TimeSpan InitialRetryDelay = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan MaxRetryDelay = TimeSpan.FromSeconds(60);
+
+    private readonly BridgeConfig _config;
+    private readonly StaMessagePump _pump = new();
+    private readonly Channel<CtiCallEvent> _events = Channel.CreateUnbounded<CtiCallEvent>();
+    private readonly CancellationTokenSource _cts = new();
+
+    /// <summary>
+    /// ⚠ PoC 미지수 대응: EventCID는 sClSeqno를, EventCallTerminate는 sDBID를 준다.
+    /// 같은 값인지 불명이므로 진행 중 통화를 seqno→caller로 기억해두고,
+    /// terminate 시 sDBID로 못 찾으면 단일 진행 통화로 폴백한다.
+    /// (서버는 caller 번호+시간창 fallback이 있어 최악에도 기록은 남는다)
+    /// </summary>
+    private readonly ConcurrentDictionary<string, string> _activeCalls = new();
+
+    private IKtPcBizClient? _client;
+    private Task? _readerTask;
+    private int _retryAttempt;
+
     public KtOpenApiAdapter(BridgeConfig config)
     {
-        _ = config;
+        _config = config;
         if (!OperatingSystem.IsWindows())
         {
             throw new PlatformNotSupportedException(
@@ -52,28 +53,222 @@ public sealed class KtOpenApiAdapter : IVendorAdapter
     }
 
     public string Vendor => "kt";
-    public bool Connected => false;
-    public bool LoggedIn => false;
+    public bool Connected { get; private set; }
+    public bool LoggedIn { get; private set; }
 
-    public event Action<CtiCallEvent>? CallEventReceived
+    public event Action<CtiCallEvent>? CallEventReceived;
+    public event Action? StatusChanged;
+
+    public async Task StartAsync(CancellationToken ct)
     {
-        add { _ = value; }
-        remove { _ = value; }
+        await _pump.StartAsync();
+
+        // 이벤트를 STA 스레드 밖(메인 루프)에서 소비자에게 전달
+        _readerTask = Task.Run(async () =>
+        {
+            await foreach (var evt in _events.Reader.ReadAllAsync(_cts.Token))
+            {
+                CallEventReceived?.Invoke(evt);
+            }
+        }, _cts.Token);
+
+        // COM 객체 생성 + 이벤트 결선 + 로그인은 전부 STA 스레드에서
+        await _pump.InvokeAsync(() =>
+        {
+            _client = new TlbImpKtPcBizClient();
+            WireClientEvents(_client);
+            Console.WriteLine($"[kt] api version: {SafeApiVer(_client)}");
+            BeginLogin(_client);
+            return true;
+        });
     }
 
-    public event Action? StatusChanged
+    private static string SafeApiVer(IKtPcBizClient client)
     {
-        add { _ = value; }
-        remove { _ = value; }
+        try
+        {
+            return client.GetApiVer();
+        }
+        catch (Exception e)
+        {
+            return $"(GetApiVer 실패: {e.Message})";
+        }
     }
 
-    public Task StartAsync(CancellationToken ct)
-        => throw new NotImplementedException(
-            "KT 실계정 확보 후 Step 5에서 구현 — docs/CTI_BRIDGE_PLAN.md §5 참고.");
+    private void WireClientEvents(IKtPcBizClient client)
+    {
+        client.ConnectChanged += (result) =>
+        {
+            Connected = result == ResultOk;
+            StatusChanged?.Invoke();
+            if (!Connected)
+            {
+                LoggedIn = false;
+                ScheduleRelogin();
+            }
+        };
+
+        client.LoginCompleted += (result) =>
+        {
+            LoggedIn = result == ResultOk;
+            Connected = Connected || LoggedIn;
+            StatusChanged?.Invoke();
+
+            if (LoggedIn)
+            {
+                _retryAttempt = 0;
+                RegisterLines(client);
+            }
+            else
+            {
+                Console.WriteLine($"[kt] login failed: {result}");
+                ScheduleRelogin();
+            }
+        };
+
+        client.CidReceived += (caller, callee, _result, clSeqno, _miSeqno) =>
+        {
+            var normalized = Normalize.Phone(caller);
+            if (!string.IsNullOrEmpty(clSeqno))
+            {
+                _activeCalls[clSeqno] = normalized;
+            }
+            _events.Writer.TryWrite(new CtiCallEvent
+            {
+                Type = "ring",
+                Vendor = Vendor,
+                Caller = normalized,
+                Callee = Normalize.Phone(callee),
+                Seqno = string.IsNullOrEmpty(clSeqno) ? null : clSeqno,
+                OccurredAt = DateTimeOffset.UtcNow.ToString("O"),
+            });
+        };
+
+        client.CallTerminated += (dbId, _mode, durationSec) =>
+        {
+            // ⚠ sDBID ↔ sClSeqno 대응은 PoC 확인 항목 — 우선 같다고 가정하고 조회,
+            // 실패 시 "진행 중 통화가 1건뿐"이면 그것으로 폴백
+            string? caller = null;
+            if (!string.IsNullOrEmpty(dbId) && _activeCalls.TryRemove(dbId, out var byId))
+            {
+                caller = byId;
+            }
+            else if (_activeCalls.Count == 1)
+            {
+                var only = _activeCalls.Keys.First();
+                if (_activeCalls.TryRemove(only, out var single))
+                {
+                    caller = single;
+                }
+            }
+
+            _events.Writer.TryWrite(new CtiCallEvent
+            {
+                Type = "terminate",
+                Vendor = Vendor,
+                Caller = caller ?? "",
+                Callee = _config.Lines.FirstOrDefault() ?? "",
+                Seqno = string.IsNullOrEmpty(dbId) ? null : dbId,
+                DurationSec = Math.Max(0, durationSec),
+                OccurredAt = DateTimeOffset.UtcNow.ToString("O"),
+            });
+        };
+
+        client.CtcCompleted += (caller, callee, _result, _miSeqno) =>
+        {
+            _events.Writer.TryWrite(new CtiCallEvent
+            {
+                Type = "ctc_result",
+                Vendor = Vendor,
+                Caller = Normalize.Phone(caller),
+                Callee = Normalize.Phone(callee),
+                OccurredAt = DateTimeOffset.UtcNow.ToString("O"),
+            });
+        };
+    }
+
+    private void BeginLogin(IKtPcBizClient client)
+    {
+        var kt = _config.Kt;
+        var result = client.Login(kt.Server, kt.AuthKey, kt.LoginId, kt.LoginPwd);
+        Console.WriteLine($"[kt] Login() returned {result} — 최종 결과는 EventLogin 콜백");
+        // ⚠ InitApi(cCmType) 선행 필요 여부는 PoC에서 KTOpenAPIDelphiSample 호출 순서로 확인
+    }
+
+    private void RegisterLines(IKtPcBizClient client)
+    {
+        foreach (var line in _config.Lines)
+        {
+            var result = client.SetRecvPhone(line);
+            Console.WriteLine($"[kt] SetRecvPhone({line}) -> {result}");
+        }
+    }
+
+    /// <summary>연결/로그인 실패 시 지수 백오프 재시도 (LoginKickOut 포함 ⚠ 정책 PoC 확인)</summary>
+    private void ScheduleRelogin()
+    {
+        if (_cts.IsCancellationRequested) return;
+
+        var attempt = Math.Min(++_retryAttempt, 10);
+        var delay = TimeSpan.FromTicks(Math.Min(
+            InitialRetryDelay.Ticks * (1L << Math.Min(attempt - 1, 4)),
+            MaxRetryDelay.Ticks));
+        Console.WriteLine($"[kt] {delay.TotalSeconds:0}s 후 재로그인 시도 ({attempt}회차)");
+
+        _ = Task.Delay(delay, _cts.Token).ContinueWith(t =>
+        {
+            if (t.IsCanceled || _client is null) return;
+            _pump.Post(() => BeginLogin(_client));
+        }, TaskScheduler.Default);
+    }
 
     public Task DialAsync(string? caller, string callee, CancellationToken ct)
-        => throw new NotImplementedException(
-            "KT 실계정 확보 후 Step 5에서 구현 (SendCTC).");
+    {
+        if (_client is null || !LoggedIn)
+        {
+            throw new InvalidOperationException("KT CTI가 로그인되지 않았습니다.");
+        }
+        var from = caller ?? _config.Lines.FirstOrDefault()
+            ?? throw new InvalidOperationException("발신 회선(config.lines)이 없습니다.");
 
-    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+        return _pump.InvokeAsync(() => _client.SendCtc(from, Normalize.Phone(callee)));
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _cts.Cancel();
+        _events.Writer.TryComplete();
+
+        if (_client is not null)
+        {
+            await _pump.InvokeAsync(() =>
+            {
+                try
+                {
+                    _client.Logout();
+                }
+                finally
+                {
+                    _client.Dispose();
+                }
+                return true;
+            }).WaitAsync(TimeSpan.FromSeconds(5)).ContinueWith(_ => { });
+        }
+
+        _pump.Stop();
+        Connected = false;
+        LoggedIn = false;
+
+        if (_readerTask is not null)
+        {
+            try
+            {
+                await _readerTask;
+            }
+            catch (OperationCanceledException)
+            {
+                // expected
+            }
+        }
+    }
 }
