@@ -317,6 +317,41 @@ describe('CtiService', () => {
   });
 
   describe('모바일(vendor=mobile) 이벤트', () => {
+    it('같은 번호 5분 내 재통화도 이전 통화에 dedupe되지 않고 새 행으로 기록된다', async () => {
+      const { prisma, service } = createService();
+      // seqno(클라이언트 UUID) 키 조회는 미스 — ring이 없으므로
+      prisma.callLog.findUnique.mockResolvedValue(null);
+      prisma.contactPhone.findFirst.mockResolvedValue(null);
+      prisma.callLog.create.mockResolvedValue({
+        id: 'log-m2',
+        status: 'ended',
+        durationSec: 30,
+        contact: null,
+      });
+
+      await service.ingestCallEvent('office-1', 'user-1', {
+        type: 'terminate',
+        vendor: 'mobile',
+        caller: '01012345678',
+        callee: '',
+        seqno: 'uuid-call-b',
+        direction: 'inbound',
+        durationSec: 30,
+        occurredAt: '2026-07-07T09:03:00.000Z',
+      });
+
+      // 모바일은 번호+시간창 fallback을 타지 않는다 (이전 통화 오매칭 방지)
+      expect(prisma.callLog.findFirst).not.toHaveBeenCalled();
+      expect(prisma.callLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            vendorSeqno: 'uuid-call-b#20260707',
+            status: 'ended',
+          }),
+        }),
+      );
+    });
+
     it('발신 terminate: direction=outbound로 기록하고 0초여도 missed가 아니라 ended', async () => {
       const { prisma, service } = createService();
       prisma.callLog.findFirst.mockResolvedValue(null);
@@ -338,12 +373,8 @@ describe('CtiService', () => {
         occurredAt: '2026-07-07T09:00:00.000Z',
       });
 
-      // 발신 종료는 수신 ringing 행을 닫지 않도록 direction까지 매칭
-      expect(prisma.callLog.findFirst).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: expect.objectContaining({ direction: 'outbound' }),
-        }),
-      );
+      // 모바일은 번호+시간창 fallback을 타지 않는다
+      expect(prisma.callLog.findFirst).not.toHaveBeenCalled();
       expect(prisma.callLog.create).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({

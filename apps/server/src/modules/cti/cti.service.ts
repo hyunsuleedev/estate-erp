@@ -214,7 +214,11 @@ export class CtiService {
       }
     }
 
-    if (!existing) {
+    // 번호+시간창 fallback은 데스크톱 CTI의 "ring 유실 보정"용이다.
+    // 모바일은 단말 1대가 통화 1건당 정확히 1회 보고(ring 없음)하므로 이 보정이
+    // 오히려 같은 번호 연속 통화를 이전 통화의 중복 보고로 오판해 유실시킨다 → 건너뜀.
+    const usePhoneWindowFallback = dto.vendor !== 'mobile';
+    if (!existing && usePhoneWindowFallback) {
       existing = await this.prisma.callLog.findFirst({
         where: {
           officeId,
