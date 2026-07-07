@@ -55,7 +55,8 @@ EventSMS / EventMMS                               // 문자 수신
 
 - 한방 기본값이 `CIDKind=OPENAPI` (KT OpenAPI).
 - 1회선 → 최대 4대 PC 동시 수신 (KT).
-- 가입: KT 100 → 1 → 4 → `#`, 협회 CP사 코드 `70229`.
+- **KT DLL은 오픈(자유 배포 가능)** — Bridge 설치본에 동봉하고 설치 시 레지스트리 등록(마이스파이더 `OpenAPI 레지스트리 등록.bat` 방식)까지 자동화하면 됨. (2026-07-07 확인)
+- **게이트는 인증키**: 사무소(사용자)가 KT OpenAPI **사용자 등록**을 하고 받은 인증키+계정을 Bridge 설정에 입력 — `Login(nServer, sAuthKey, sLoginID, sLoginPwd)`. 회선 가입 절차 참고: KT 100 → 1 → 4 → `#` (한방은 협회 CP 코드 `70229` 사용, 매뉴얼 `001.rtf`).
 - LGU+/삼성은 2순위. Bridge는 **어댑터 패턴**으로 통신사 교체 가능하게.
 
 ### 1.4 통화 팝업이 보여줘야 하는 정보 (마이스파이더 §9)
@@ -349,10 +350,11 @@ Phase 1은 **첫 번째(Electron 경유)** 로 시작. 무인 수신 요구가 �
 
 ## 5. 단계별 구현 로드맵
 
-### Step 0 — C# COM interop PoC (실 KT 계정 확보 후 실행, 병렬 대기)
+### Step 0 — C# COM interop PoC (KT 인증키 등록 후 실행, 병렬 대기)
+- [ ] 개발용 KT OpenAPI **사용자 등록** → 테스트 인증키/계정 확보. (DLL 자체는 오픈이라 입수 절차 없음 — 등록만 하면 됨)
 - [ ] .NET 8 x86 콘솔에서 KT `KTOpenAPI.dll`/`KTPCBiz` COM 로드 → `Login` → `_IKTPCBizXEvents.EventCID` 콜백을 C# 이벤트 핸들러로 수신 확인.
-- [ ] 참고: 벤더 배포물 `KTOpenAPIDelphiSample.exe`, `KTPCBiz.idl`(인터페이스 정의), 레지스트리 등록 `OpenAPI 레지스트리 등록.bat`.
-- [ ] **KT 실계정이 아직 없으므로 이 스텝은 계정 확보 시점까지 대기.** 그동안 Step 1~4는 mock으로 병렬 진행.
+- [ ] 참고: `KTOpenAPIDelphiSample.exe`, `KTPCBiz.idl`(인터페이스 정의), 레지스트리 등록 `OpenAPI 레지스트리 등록.bat`, 가입 매뉴얼 `001.rtf`.
+- [ ] 그동안 Step 1~4는 mock으로 병렬 진행. (완료됨)
 
 ### Step 1 — Bridge 골격 (mock 우선, KT 계정 불요) ✅ 완료 (2026-07-06)
 - [x] `apps/cti-bridge` C# 프로젝트 스캐폴딩 (net8.0, 배포 시 win-x86 publish).
@@ -389,7 +391,9 @@ Phase 1은 **첫 번째(Electron 경유)** 로 시작. 무인 수신 요구가 �
 - [ ] 클릭투콜(`SendCTC`) 역방향 경로 (renderer → main → Bridge WS → SDK).
 
 ### Step 6 — 배포/운영
-- [ ] Bridge를 electron-builder와 별개 32비트 exe로 패키징(`pkg`/`nexe` 또는 C# self-contained).
+- [ ] Bridge를 win-x86 self-contained exe로 패키징 (`dotnet publish -r win-x86`).
+- [ ] **KT DLL 동봉 + 설치 시 레지스트리 등록 자동화** (DLL은 오픈 — `OpenAPI 레지스트리 등록.bat` 방식).
+- [ ] 사무소 온보딩: KT OpenAPI 사용자 등록 안내 + 인증키를 `appsettings.json`(또는 설정 UI)에 입력하는 절차 문서화.
 - [ ] 윈도우 시작프로그램 자동 등록, 트레이 상태.
 - [ ] LGU+/삼성 어댑터(2순위)는 수요 확인 후.
 
