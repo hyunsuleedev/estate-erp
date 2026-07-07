@@ -9,6 +9,8 @@ export interface CtiCallEventInput {
   lineId?: string;
   seqno?: string;
   durationSec?: number;
+  /** 생략 시 inbound. 모바일(vendor=mobile)은 발신 통화도 기록 */
+  direction?: 'inbound' | 'outbound';
   occurredAt: string;
 }
 
@@ -122,6 +124,8 @@ export interface UpdateCallLogDto {
   memo?: string;
   contactId?: string;
   consultationId?: string;
+  /** 녹음(CallRecording) 업로드 후 연결 */
+  recordingId?: string;
   status?: CallLogStatus;
 }
 

@@ -184,7 +184,9 @@ export class CtiService {
     const phoneNumber = normalizePhone(dto.caller);
     const occurredAt = this.parseOccurredAt(dto.occurredAt);
     const durationSec = dto.durationSec ?? 0;
-    const status = durationSec > 0 ? 'ended' : 'missed';
+    const direction = dto.direction ?? 'inbound';
+    // 발신 통화는 "부재중" 개념이 없다 — 0초여도 ended(불발신)로 기록
+    const status = durationSec > 0 || direction === 'outbound' ? 'ended' : 'missed';
 
     let existing = null;
 
@@ -217,6 +219,7 @@ export class CtiService {
         where: {
           officeId,
           phoneNumber,
+          direction, // 모바일 발신 종료가 수신 ringing 행을 닫지 않도록
           startedAt: { gte: new Date(occurredAt.getTime() - TERMINATE_MATCH_WINDOW_MS) },
         },
         orderBy: { startedAt: 'desc' },
@@ -255,7 +258,7 @@ export class CtiService {
             officeId,
             userId,
             contactId: matchedPhone?.contactId ?? null,
-            direction: 'inbound',
+            direction,
             phoneNumber,
             lineNumber: dto.lineId ?? dto.callee ?? null,
             vendor: dto.vendor,
@@ -501,6 +504,16 @@ export class CtiService {
       }
     }
 
+    if (dto.recordingId) {
+      const recording = await this.prisma.callRecording.findFirst({
+        where: { id: dto.recordingId, officeId },
+        select: { id: true },
+      });
+      if (!recording) {
+        throw new BadRequestException('해당 녹음을 찾을 수 없습니다');
+      }
+    }
+
     return this.prisma.callLog.update({
       where: { id },
       data: {
@@ -509,6 +522,7 @@ export class CtiService {
         ...(dto.consultationId !== undefined
           ? { consultationId: dto.consultationId }
           : {}),
+        ...(dto.recordingId !== undefined ? { recordingId: dto.recordingId } : {}),
         ...(dto.status !== undefined ? { status: dto.status } : {}),
       },
       include: { contact: this.contactBrief },

@@ -47,6 +47,11 @@ export class CallEventDto {
   @Min(0)
   durationSec?: number;
 
+  /** 통화 방향 — CTI Bridge는 생략(inbound), 모바일(vendor=mobile)은 발신도 기록 */
+  @IsOptional()
+  @IsIn(['inbound', 'outbound'])
+  direction?: 'inbound' | 'outbound';
+
   @IsISO8601()
   occurredAt!: string;
 }
@@ -65,6 +70,11 @@ export class UpdateCallLogDto {
   @IsOptional()
   @IsUUID()
   consultationId?: string;
+
+  /** 녹음 파일(CallRecording) 업로드 후 연결 — 모바일 녹음 첨부 흐름 */
+  @IsOptional()
+  @IsUUID()
+  recordingId?: string;
 
   @IsOptional()
   @IsIn(CALL_LOG_STATUSES)

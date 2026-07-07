@@ -6,7 +6,7 @@
 // 설계 문서: docs/CTI_BRIDGE_PLAN.md §4.1
 // ============================================================
 
-export const CTI_VENDORS = ['mock', 'kt', 'lgu', 'samsung'] as const;
+export const CTI_VENDORS = ['mock', 'kt', 'lgu', 'samsung', 'mobile'] as const;
 export type CtiVendor = (typeof CTI_VENDORS)[number];
 
 /** Bridge가 로컬 WebSocket을 여는 기본 포트 (127.0.0.1 전용) */
@@ -31,6 +31,11 @@ export interface CtiCallEvent {
   seqno?: string;
   /** terminate 시 통화 시간(초) (KT EventCallTerminate nTime) */
   durationSec?: number;
+  /**
+   * 통화 방향. CTI Bridge는 수신만 잡으므로 생략(서버가 inbound로 처리).
+   * 모바일(vendor=mobile)은 발신 통화도 기록하므로 명시한다.
+   */
+  direction?: 'inbound' | 'outbound';
   /** ISO 8601 */
   occurredAt: string;
 }

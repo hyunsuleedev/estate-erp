@@ -28,6 +28,7 @@ describe('CtiService', () => {
       buyerRequirement: { findFirst: jest.fn() },
       task: { findMany: jest.fn() },
       contact: { findFirst: jest.fn() },
+      callRecording: { findFirst: jest.fn() },
     };
     const realtime = {
       emitCtiIncoming: jest.fn(),
@@ -310,6 +311,66 @@ describe('CtiService', () => {
             contactId: 'contact-1',
             userId: 'user-1',
           }),
+        }),
+      );
+    });
+  });
+
+  describe('모바일(vendor=mobile) 이벤트', () => {
+    it('발신 terminate: direction=outbound로 기록하고 0초여도 missed가 아니라 ended', async () => {
+      const { prisma, service } = createService();
+      prisma.callLog.findFirst.mockResolvedValue(null);
+      prisma.contactPhone.findFirst.mockResolvedValue(null);
+      prisma.callLog.create.mockResolvedValue({
+        id: 'log-m1',
+        status: 'ended',
+        durationSec: 0,
+        contact: null,
+      });
+
+      await service.ingestCallEvent('office-1', 'user-1', {
+        type: 'terminate',
+        vendor: 'mobile',
+        caller: '010-1234-5678',
+        callee: '01099998888',
+        direction: 'outbound',
+        durationSec: 0,
+        occurredAt: '2026-07-07T09:00:00.000Z',
+      });
+
+      // 발신 종료는 수신 ringing 행을 닫지 않도록 direction까지 매칭
+      expect(prisma.callLog.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ direction: 'outbound' }),
+        }),
+      );
+      expect(prisma.callLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            direction: 'outbound',
+            status: 'ended',
+            vendor: 'mobile',
+          }),
+        }),
+      );
+    });
+  });
+
+  describe('updateCallLog', () => {
+    it('recordingId 연결 시 사무소 소유 녹음인지 검증한다', async () => {
+      const { prisma, service } = createService();
+      prisma.callLog.findFirst.mockResolvedValue({ id: 'log-1' });
+      prisma.callRecording.findFirst.mockResolvedValue({ id: 'rec-1' });
+      prisma.callLog.update.mockResolvedValue({ id: 'log-1', contact: null });
+
+      await service.updateCallLog('office-1', 'log-1', { recordingId: 'rec-1' });
+
+      expect(prisma.callRecording.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: 'rec-1', officeId: 'office-1' } }),
+      );
+      expect(prisma.callLog.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ recordingId: 'rec-1' }),
         }),
       );
     });

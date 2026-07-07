@@ -42,6 +42,12 @@ public sealed record CtiCallEvent
     /// <summary>terminate 시 통화 시간(초) (KT EventCallTerminate nTime)</summary>
     public int? DurationSec { get; init; }
 
+    /// <summary>
+    /// 통화 방향 (inbound | outbound). Bridge는 수신만 잡으므로 항상 생략 —
+    /// 계약 미러 완전성을 위해서만 존재 (모바일 클라이언트가 사용).
+    /// </summary>
+    public string? Direction { get; init; }
+
     /// <summary>ISO 8601</summary>
     public required string OccurredAt { get; init; }
 }
