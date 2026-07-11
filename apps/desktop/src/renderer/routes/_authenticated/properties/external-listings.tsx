@@ -8,13 +8,18 @@ import {
   ChevronUp,
   ExternalLink,
   Filter,
+  Link2,
+  Loader2,
   Lock,
   Plus,
+  RefreshCw,
   RotateCcw,
   Search,
   Star,
+  X,
   XCircle,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import type { ColumnDef } from '@tanstack/react-table';
 import type {
   ExternalListingGroup,
@@ -40,6 +45,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
+import { Skeleton } from '@/components/ui/skeleton';
 import {
   Select,
   SelectContent,
@@ -156,7 +167,12 @@ function ExternalListingsPage() {
     setInnerTab('new');
   }, [scopeSiteId, transactionType]);
 
-  const { data: groups = [], isLoading } = useQuery({
+  const {
+    data: groups = [],
+    isLoading,
+    isError: isGroupsError,
+    refetch: refetchGroups,
+  } = useQuery({
     queryKey: [
       'external-listing-groups',
       transactionType,
@@ -275,16 +291,37 @@ function ExternalListingsPage() {
       }
       return { snapshots };
     },
-    onError: (_err, _vars, ctx) => {
-      if (!ctx) return;
-      for (const [key, prev] of ctx.snapshots) {
-        queryClient.setQueryData(key, prev);
+    onError: (err, _vars, ctx) => {
+      if (ctx) {
+        for (const [key, prev] of ctx.snapshots) {
+          queryClient.setQueryData(key, prev);
+        }
       }
+      toast.error(
+        err instanceof Error && err.message ? err.message : '저장에 실패했습니다.',
+      );
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['external-listing-groups'] });
     },
   });
+
+  // ── 호실(Unit) 수동 링크/해제 — unit 객체가 함께 갱신돼야 하므로 낙관적 갱신 없이 invalidate
+  const linkUnitMutation = useMutation({
+    mutationFn: ({ id, unitId }: { id: string; unitId: string | null }) =>
+      api.externalListings.updateGroup(id, { unitId }),
+    onSuccess: (_data, vars) => {
+      toast.success(vars.unitId ? '호실이 연결되었습니다.' : '호실 연결이 해제되었습니다.');
+      queryClient.invalidateQueries({ queryKey: ['external-listing-groups'] });
+    },
+    onError: (err) =>
+      toast.error(
+        err instanceof Error && err.message ? err.message : '호실 연결에 실패했습니다.',
+      ),
+  });
+
+  // ── 그룹 내 형제 매물 펼치기 다이얼로그 ──────────────────────────
+  const [siblingGroup, setSiblingGroup] = useState<ExternalListingGroup | null>(null);
 
   // ── Client-side filters (서버 검색과 별개로 즉시 반응) ────────────
   const filteredGroups = useMemo(() => {
@@ -390,8 +427,10 @@ function ExternalListingsPage() {
           updateGroupMutation.mutate({ id, dto: { memo: memo || null } }),
         onUpdateInferredHo: (id, ho) =>
           updateGroupMutation.mutate({ id, dto: { inferredHo: ho || null } }),
+        onLinkUnit: (id, unitId) => linkUnitMutation.mutate({ id, unitId }),
+        onShowListings: (group) => setSiblingGroup(group),
       }),
-    [transactionType, updateGroupMutation],
+    [transactionType, updateGroupMutation, linkUnitMutation],
   );
 
   const handleManualButtonClick = () => {
@@ -407,7 +446,7 @@ function ExternalListingsPage() {
   };
 
   return (
-    <div className="-m-4 flex min-h-0 flex-1 flex-col bg-white px-6 py-5">
+    <div className="-m-4 flex min-h-0 min-w-0 flex-1 flex-col bg-white px-6 py-5">
       {activeSession && (
         <div className="mb-3 flex items-center gap-2 rounded-md border border-amber-100 bg-amber-50/70 px-3 py-2 text-sm">
           <Lock className="size-4 text-amber-700" />
@@ -437,7 +476,7 @@ function ExternalListingsPage() {
         onValueChange={(v) =>
           setTransactionType(v as ExternalListingTransactionType)
         }
-        className="flex min-h-0 flex-1 flex-col gap-0"
+        className="flex min-h-0 min-w-0 flex-1 flex-col gap-0"
       >
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-[#eeeeec] pb-3">
           <TabsList className="bg-slate-100/70">
@@ -459,7 +498,7 @@ function ExternalListingsPage() {
                 : `${groups.length}건`}
             </span>
           )}
-          <div className="ml-auto flex items-center gap-2">
+          <div className="ml-auto flex shrink-0 items-center gap-2">
             {activeSession && (
               <>
                 <Button
@@ -675,7 +714,7 @@ function ExternalListingsPage() {
         </div>
 
         {/* 테이블 카드 */}
-        <section className="flex min-h-0 flex-1 flex-col overflow-hidden bg-white">
+        <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-white">
           {activeSession && (
             <div className="flex items-center gap-1 border-b border-[#eeeeec] px-2 py-2">
               <Button
@@ -702,9 +741,19 @@ function ExternalListingsPage() {
             <TabsContent
               key={t.value}
               value={t.value}
-              className="m-0 flex min-h-0 flex-1 flex-col"
+              className="m-0 flex min-h-0 min-w-0 flex-1 flex-col"
             >
-              {!isLoading && groups.length === 0 ? (
+              {isGroupsError ? (
+                <div className="flex flex-col items-center gap-3 px-4 py-16 text-center">
+                  <p className="text-sm text-muted-foreground">
+                    외부 매물 목록을 불러오지 못했습니다.
+                  </p>
+                  <Button variant="outline" size="sm" onClick={() => refetchGroups()}>
+                    <RefreshCw className="mr-1 size-3.5" />
+                    다시 시도
+                  </Button>
+                </div>
+              ) : !isLoading && groups.length === 0 ? (
                 <EmptyState hasSiteFilter={selectedSiteIds.length > 0} />
               ) : (
                 <DataTable
@@ -789,7 +838,127 @@ function ExternalListingsPage() {
         onConfirm={() => cancelSessionMutation.mutate()}
         pending={cancelSessionMutation.isPending}
       />
+
+      <GroupListingsDialog
+        group={siblingGroup}
+        onOpenChange={(open) => {
+          if (!open) setSiblingGroup(null);
+        }}
+      />
     </div>
+  );
+}
+
+// ── 그룹 내 형제 매물 펼치기 다이얼로그 ──────────────────────────────
+
+function GroupListingsDialog({
+  group,
+  onOpenChange,
+}: {
+  group: ExternalListingGroup | null;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const { data, isLoading, isError, refetch } = useQuery({
+    queryKey: ['external-listing-group-detail', group?.id],
+    queryFn: () => api.externalListings.findGroupById(group!.id),
+    enabled: !!group,
+  });
+
+  const listings = data?.listings ?? [];
+  const tType = group?.transactionType ?? 'sale';
+
+  return (
+    <Dialog open={!!group} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>
+            그룹 매물 {data?.listingCount ?? listings.length ?? ''}건
+            <span className="ml-2 text-sm font-normal text-muted-foreground">
+              {group?.site?.name}
+              {group?.buildingName ? ` · ${group.buildingName}` : ''}
+              {group?.unit?.name
+                ? ` · ${group.unit.name}`
+                : group?.inferredHo
+                  ? ` · ${group.inferredHo}(추정)`
+                  : ''}
+            </span>
+          </DialogTitle>
+        </DialogHeader>
+        {isLoading ? (
+          <div className="space-y-2">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <Skeleton key={i} className="h-12 w-full rounded-md" />
+            ))}
+          </div>
+        ) : isError ? (
+          <div className="flex flex-col items-center gap-2 py-8 text-center">
+            <p className="text-sm text-muted-foreground">매물 목록을 불러오지 못했습니다.</p>
+            <Button variant="outline" size="sm" onClick={() => refetch()}>
+              <RefreshCw className="mr-1 size-3.5" />
+              다시 시도
+            </Button>
+          </div>
+        ) : listings.length === 0 ? (
+          <p className="py-8 text-center text-sm text-muted-foreground">
+            이 그룹에 수집된 매물이 없습니다.
+          </p>
+        ) : (
+          <div className="max-h-[55vh] divide-y overflow-y-auto rounded-md border">
+            {listings.map((listing) => {
+              const href = listing.cpPcArticleUrl ?? listing.sourceUrl;
+              return (
+                <div key={listing.id} className="flex items-start gap-3 px-3 py-2.5">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <NotionTag
+                        className={
+                          listing.isActive
+                            ? 'bg-[#e7f3f8] text-[#337ea9]'
+                            : 'bg-[#fbe4e4] text-[#9f5555]'
+                        }
+                      >
+                        {listing.isActive ? '광고 O' : '광고 X'}
+                      </NotionTag>
+                      <span className="text-[13px] font-medium tabular-nums text-slate-950">
+                        {formatListingPrice(listing, tType)}
+                      </span>
+                      {listing.ranking != null && (
+                        <NotionTag className="bg-[#f1f1ef] text-[#5f5e5b] tabular-nums">
+                          순위 {listing.ranking}
+                        </NotionTag>
+                      )}
+                      {listing.verificationTypeCode === 'OWNER' && (
+                        <NotionTag className="bg-[#eef3ed] text-[#44745a]">집주인</NotionTag>
+                      )}
+                    </div>
+                    <p className="mt-1 truncate text-xs text-muted-foreground">
+                      {listing.realtorName ?? '중개사 미상'} · 확인일{' '}
+                      {formatYmd(listing.articleConfirmYmd)} · {listing.articleNo}
+                    </p>
+                    {listing.articleFeatureDesc && (
+                      <p className="mt-0.5 line-clamp-1 text-[11px] text-muted-foreground/80">
+                        {listing.articleFeatureDesc}
+                      </p>
+                    )}
+                  </div>
+                  {href && (
+                    <a
+                      href={href}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex shrink-0 items-center gap-1 rounded-[4px] bg-[#e7f3f8] px-1.5 py-0.5 text-[11px] font-medium text-[#337ea9] hover:bg-[#dcecf3]"
+                    >
+                      <ExternalLink className="size-3" />
+                      {getExternalSourceLabel(listing.source)}
+                    </a>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -937,6 +1106,8 @@ interface ColumnFactoryContext {
   onUpdateStatus: (groupId: string, status: ExternalListingGroupStatus) => void;
   onUpdateMemo: (groupId: string, memo: string) => void;
   onUpdateInferredHo: (groupId: string, ho: string) => void;
+  onLinkUnit: (groupId: string, unitId: string | null) => void;
+  onShowListings: (group: ExternalListingGroup) => void;
 }
 
 function buildColumns(
@@ -967,7 +1138,7 @@ function buildColumns(
     },
   });
 
-  // ── 중복 (순위/동일주소 개수) ─────────────────────────────
+  // ── 중복 (순위/동일주소 개수 — 클릭 시 그룹 매물 펼치기) ────────
   columns.push({
     id: 'duplicate',
     header: '중복',
@@ -984,9 +1155,19 @@ function buildColumns(
             ? `${sameAddrCnt}개`
             : '-';
       return (
-        <NotionTag className="bg-[#f1f1ef] text-[#5f5e5b] tabular-nums">
-          {label}
-        </NotionTag>
+        <button
+          type="button"
+          title="그룹 내 매물 전체 보기"
+          onClick={(e) => {
+            e.stopPropagation();
+            ctx.onShowListings(g);
+          }}
+          className="cursor-pointer"
+        >
+          <NotionTag className="bg-[#f1f1ef] text-[#5f5e5b] tabular-nums transition-colors hover:bg-[#e3e3e0]">
+            {label}
+          </NotionTag>
+        </button>
       );
     },
   });
@@ -1040,43 +1221,61 @@ function buildColumns(
     ),
   });
 
-  // ── 6. 호 (+ floorInfo, 인라인 편집) ──────────────────────
+  // ── 6. 호 (+ floorInfo, 인라인 편집 + Unit 수동 링크) ──────────
   columns.push({
     id: 'ho',
     header: '호',
-    size: 80,
+    size: 96,
     cell: ({ row }) => {
       const g = row.original;
       const main = g.mainExternalListing;
-      // If a Unit is linked, the ho is authoritative (read-only). Otherwise
-      // show an editable input bound to inferredHo.
+      // If a Unit is linked, the ho is authoritative (read-only with unlink).
       if (g.unit?.name) {
         return (
-          <div
-            className="flex min-w-0 flex-col text-[12px]"
-            title="호실이 확정되어 수정할 수 없습니다. 수정하려면 Unit 링크를 해제하세요."
-          >
-            <span className="truncate font-medium text-slate-800">{g.unit.name}</span>
+          <div className="flex min-w-0 items-start gap-1 text-[12px]">
+            <div
+              className="flex min-w-0 flex-col"
+              title="호실이 확정되었습니다. 변경하려면 연결을 해제하세요."
+            >
+              <span className="flex items-center gap-1 truncate font-medium text-slate-800">
+                <Link2 className="size-3 shrink-0 text-[#337ea9]" />
+                {g.unit.name}
+              </span>
+              {main?.floorInfo && (
+                <span className="truncate text-[11px] text-slate-500">
+                  {main.floorInfo}
+                </span>
+              )}
+            </div>
+            <button
+              type="button"
+              title="호실 연결 해제"
+              onClick={(e) => {
+                e.stopPropagation();
+                ctx.onLinkUnit(g.id, null);
+              }}
+              className="mt-0.5 rounded-[3px] p-0.5 text-muted-foreground/50 transition-colors hover:bg-[#f1f1ef] hover:text-destructive"
+            >
+              <X className="size-3" />
+            </button>
+          </div>
+        );
+      }
+      return (
+        <div className="flex min-w-0 items-start gap-0.5">
+          <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+            <HoInput
+              groupId={g.id}
+              initial={g.inferredHo}
+              onSave={ctx.onUpdateInferredHo}
+            />
             {main?.floorInfo && (
               <span className="truncate text-[11px] text-slate-500">
                 {main.floorInfo}
               </span>
             )}
           </div>
-        );
-      }
-      return (
-        <div className="flex min-w-0 flex-col gap-0.5">
-          <HoInput
-            groupId={g.id}
-            initial={g.inferredHo}
-            onSave={ctx.onUpdateInferredHo}
-          />
-          {main?.floorInfo && (
-            <span className="truncate text-[11px] text-slate-500">
-              {main.floorInfo}
-            </span>
-          )}
+          <UnitLinkPopover group={g} onLink={(unitId) => ctx.onLinkUnit(g.id, unitId)} />
         </div>
       );
     },
@@ -1372,6 +1571,139 @@ function HoInput({
       placeholder="호수"
       className="h-6 border-transparent bg-transparent px-1.5 py-0 text-[12px] shadow-none tabular-nums hover:border-[#eeeeec] focus-visible:border-slate-300 focus-visible:ring-0"
     />
+  );
+}
+
+// ── Unit 수동 링크 팝오버 (동 → 호 선택) ─────────────────────────────
+
+function UnitLinkPopover({
+  group,
+  onLink,
+}: {
+  group: ExternalListingGroup;
+  onLink: (unitId: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [dongId, setDongId] = useState('');
+
+  const { data: dongs = [], isLoading: isDongsLoading } = useQuery({
+    queryKey: ['dongs', group.siteId],
+    queryFn: () => api.dongs.findAll(group.siteId),
+    enabled: open,
+  });
+
+  // 단일 동 건물(placeholder)이면 동 선택을 건너뛰고 바로 호실을 보여준다.
+  const placeholderDong = useMemo(
+    () => dongs.find((d) => d.isPlaceholder) ?? null,
+    [dongs],
+  );
+  const visibleDongs = useMemo(() => dongs.filter((d) => !d.isPlaceholder), [dongs]);
+  const effectiveDongId = dongId || placeholderDong?.id || '';
+
+  const { data: units = [], isLoading: isUnitsLoading } = useQuery({
+    queryKey: ['units', group.siteId, effectiveDongId],
+    queryFn: () => api.units.findAll({ siteId: group.siteId, dongId: effectiveDongId }),
+    enabled: open && !!effectiveDongId,
+  });
+
+  const sortedUnits = useMemo(
+    () =>
+      [...units].sort((a, b) => {
+        const af = a.floor ?? 0;
+        const bf = b.floor ?? 0;
+        if (af !== bf) return bf - af;
+        return a.name.localeCompare(b.name, 'ko', { numeric: true });
+      }),
+    [units],
+  );
+
+  const handleOpenChange = (next: boolean) => {
+    setOpen(next);
+    if (next) {
+      // 네이버가 준 동명 원문과 이름이 같은 동을 기본 선택
+      setDongId('');
+    }
+  };
+
+  return (
+    <Popover open={open} onOpenChange={handleOpenChange}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          title="호실(Unit) 연결"
+          onClick={(e) => e.stopPropagation()}
+          className="mt-1 rounded-[3px] p-0.5 text-muted-foreground/50 transition-colors hover:bg-[#f1f1ef] hover:text-[#337ea9]"
+        >
+          <Link2 className="size-3.5" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent
+        align="start"
+        className="w-64 p-3"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <p className="text-xs font-medium">호실 연결</p>
+        <p className="mt-0.5 text-[11px] text-muted-foreground">
+          {group.site?.name}
+          {group.buildingName ? ` · ${group.buildingName}` : ''} 그룹을 실제 호실에
+          연결합니다.
+        </p>
+        <div className="mt-2 space-y-2">
+          {visibleDongs.length > 0 && (
+            <Select value={dongId} onValueChange={(v) => setDongId(v)}>
+              <SelectTrigger className="h-8 w-full text-xs">
+                <SelectValue
+                  placeholder={isDongsLoading ? '동 불러오는 중...' : '동 선택'}
+                />
+              </SelectTrigger>
+              <SelectContent>
+                {visibleDongs.map((d) => (
+                  <SelectItem key={d.id} value={d.id} className="text-xs">
+                    {d.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+          {!effectiveDongId ? (
+            <p className="py-2 text-center text-[11px] text-muted-foreground">
+              {isDongsLoading
+                ? '동 정보를 불러오는 중...'
+                : visibleDongs.length === 0
+                  ? '등록된 동/호실 정보가 없습니다. 관리단지에서 호실을 먼저 등록하세요.'
+                  : '동을 먼저 선택하세요.'}
+            </p>
+          ) : isUnitsLoading ? (
+            <div className="flex items-center justify-center py-3">
+              <Loader2 className="size-4 animate-spin text-muted-foreground" />
+            </div>
+          ) : sortedUnits.length === 0 ? (
+            <p className="py-2 text-center text-[11px] text-muted-foreground">
+              이 동에 등록된 호실이 없습니다.
+            </p>
+          ) : (
+            <div className="max-h-48 overflow-y-auto rounded-md border">
+              {sortedUnits.map((u) => (
+                <button
+                  key={u.id}
+                  type="button"
+                  onClick={() => {
+                    onLink(u.id);
+                    setOpen(false);
+                  }}
+                  className="flex w-full items-center justify-between border-b px-2.5 py-1.5 text-left text-xs transition-colors last:border-b-0 hover:bg-[#f1f1ef]"
+                >
+                  <span className="font-medium">{u.name}</span>
+                  <span className="text-[11px] text-muted-foreground">
+                    {u.siteUnitType?.name ?? ''}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }
 

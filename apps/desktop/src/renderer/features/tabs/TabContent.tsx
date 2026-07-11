@@ -30,14 +30,18 @@ export function TabContent({ autoCreateInitialTab = true }: TabContentProps = {}
   const navigate = useNavigate();
   const location = useLocation();
 
-  // 빈 상태면 대시보드 탭 자동 생성 (메인 윈도우만)
+  // 빈 상태면 초기 탭 자동 생성 (메인 윈도우만).
+  // 딥링크 보존: 브라우저(dev)에서 /contacts 등으로 직접 진입하면 그 경로로 첫 탭을 만든다.
+  // Electron(file:)은 hash history라 첫 진입 경로가 '/' → 대시보드로 fallback.
   useEffect(() => {
     if (!autoCreateInitialTab) return;
     if (tabs.length === 0) {
-      const meta = getRouteMeta('/dashboard');
-      openTab({ route: '/dashboard', kind: meta.kind, title: meta.title });
+      const path = location.pathname;
+      const initialRoute = path && path !== '/' && path !== '/login' ? path : '/dashboard';
+      const meta = getRouteMeta(initialRoute);
+      openTab({ route: initialRoute, kind: meta.kind, title: meta.title });
     }
-  }, [autoCreateInitialTab, tabs.length, openTab]);
+  }, [autoCreateInitialTab, tabs.length, openTab, location.pathname]);
 
   const activeTab = tabs.find((t) => t.id === activeTabId) ?? null;
 

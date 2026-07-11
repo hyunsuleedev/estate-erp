@@ -1,5 +1,4 @@
 import {
-  Bot,
   BookUser,
   Building2,
   CalendarDays,
@@ -114,7 +113,6 @@ export const NAV_ITEMS: NavItem[] = [
   { path: '/employees', label: '직원', icon: Users, group: 'operations', roles: ['owner', 'manager'] },
   { path: '/service-vendors', label: '업체 디렉토리', icon: Wrench, group: 'operations' },
   { path: '/documents', label: '자료실', icon: FolderOpen, group: 'operations' },
-  { path: '/ai-operations', label: 'AI 운영', icon: Bot, group: 'operations', roles: ['owner', 'manager'] },
   { path: '/settings', label: '설정', icon: Settings, group: 'operations' },
 ]
 
@@ -190,7 +188,6 @@ export const ROUTE_LABELS: Record<string, string> = {
   '/_authenticated/service-vendors/': '업체 디렉토리',
   '/_authenticated/documents/': '자료실',
   '/_authenticated/documents/photos': '사진 자료',
-  '/_authenticated/ai-operations/': 'AI 운영',
   '/_authenticated/settings/': '설정',
   // 기타 (인증 셸 밖이지만 라벨 일관성 위해 포함)
   '/onboarding/office': '사무소 설정',

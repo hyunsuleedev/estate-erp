@@ -1,0 +1,196 @@
+/**
+ * 전 파이프라인 상태 라벨 + 컬러 단일 소스.
+ * DESIGN_SPEC.md 3장(컬러 매핑표)과 9장(라벨 사전)의 코드화 — 페이지에서 직접 컬러/라벨 정의 금지.
+ *
+ * 사용: <StatusBadge kind="dealStage" status={deal.stage} /> 또는 getStatusMeta('dealStage', deal.stage)
+ */
+
+export type Tone =
+  | 'gray'
+  | 'success'
+  | 'warning'
+  | 'info'
+  | 'violet'
+  | 'pink'
+  | 'orange'
+  | 'destructive'
+  | 'neutral';
+
+export type StatusKind =
+  | 'checkStatus'
+  | 'intakeStatus'
+  | 'matchStage'
+  | 'dealStage'
+  | 'contractStatus'
+  | 'commissionStatus'
+  | 'dealPaymentStatus'
+  | 'taskStatus'
+  | 'adStatus'
+  | 'transactionType'
+  | 'proposalStatus'
+  | 'inboxStatus'
+  | 'buyerStatus'
+  | 'buyerUrgency';
+
+export interface StatusMeta {
+  label: string;
+  tone: Tone;
+}
+
+export const STATUS_CONFIG: Record<StatusKind, Record<string, StatusMeta>> = {
+  /** Listing.checkStatus — 매물 확인 상태 */
+  checkStatus: {
+    unverified: { label: '미확인', tone: 'gray' },
+    verified: { label: '확인완료', tone: 'success' },
+    in_contract: { label: '거래중', tone: 'info' },
+    hold: { label: '보류', tone: 'warning' },
+    done: { label: '종료', tone: 'neutral' },
+  },
+  /** ListingIntake.status — 의뢰 상태 */
+  intakeStatus: {
+    unverified: { label: '미확인', tone: 'gray' },
+    active: { label: '진행중', tone: 'success' },
+    in_contract: { label: '거래중', tone: 'info' },
+    hold: { label: '보류', tone: 'warning' },
+    done: { label: '종료', tone: 'neutral' },
+  },
+  /** Match.stage — 매칭 파이프라인 */
+  matchStage: {
+    suggested: { label: '제안', tone: 'gray' },
+    buyerContacted: { label: '고객연락', tone: 'info' },
+    viewing: { label: '임장', tone: 'violet' },
+    ownerContacted: { label: '집주인연락', tone: 'info' },
+    negotiating: { label: '협상', tone: 'warning' },
+    dealCreated: { label: '거래전환', tone: 'success' },
+    closed: { label: '종료', tone: 'neutral' },
+  },
+  /** Deal.stage — 거래 파이프라인 */
+  dealStage: {
+    selection: { label: '검토', tone: 'gray' },
+    negotiating: { label: '협상', tone: 'warning' },
+    preContract: { label: '가계약', tone: 'violet' },
+    contracted: { label: '계약', tone: 'info' },
+    settling: { label: '중도금/잔금', tone: 'orange' },
+    completed: { label: '잔금완료', tone: 'success' },
+    closed: { label: '정산종료', tone: 'neutral' },
+  },
+  /** Contract.status — 계약 상태 */
+  contractStatus: {
+    draft: { label: '작성중', tone: 'gray' },
+    signed: { label: '서명완료', tone: 'info' },
+    depositPaid: { label: '계약금 완료', tone: 'violet' },
+    balancePaid: { label: '잔금 완료', tone: 'success' },
+    registered: { label: '등기 완료', tone: 'neutral' },
+    cancelled: { label: '취소', tone: 'destructive' },
+  },
+  /** CommissionPayment.status — 수수료 수금 상태 */
+  commissionStatus: {
+    draft: { label: '작성중', tone: 'gray' },
+    pending: { label: '수금대기', tone: 'warning' },
+    partial: { label: '부분수금', tone: 'orange' },
+    collected: { label: '수금완료', tone: 'success' },
+    overdue: { label: '연체', tone: 'destructive' },
+    waived: { label: '면제', tone: 'gray' },
+    cancelled: { label: '취소', tone: 'gray' },
+  },
+  /** DealPayment.status — 거래 대금 상태 */
+  dealPaymentStatus: {
+    pending: { label: '예정', tone: 'warning' },
+    partial: { label: '부분입금', tone: 'orange' },
+    paid: { label: '완납', tone: 'success' },
+    overdue: { label: '연체', tone: 'destructive' },
+    cancelled: { label: '취소', tone: 'gray' },
+  },
+  /** Task.status — 업무 상태 */
+  taskStatus: {
+    pending: { label: '대기', tone: 'gray' },
+    in_progress: { label: '진행중', tone: 'info' },
+    completed: { label: '완료', tone: 'success' },
+    cancelled: { label: '취소', tone: 'gray' },
+  },
+  /** ListingAdvertisement.status — 광고 게재 상태 */
+  adStatus: {
+    planned: { label: '게재예정', tone: 'gray' },
+    draft: { label: '작성중', tone: 'gray' },
+    active: { label: '게재중', tone: 'success' },
+    paused: { label: '일시중지', tone: 'warning' },
+    ended: { label: '종료', tone: 'neutral' },
+    error: { label: '오류', tone: 'destructive' },
+  },
+  /** 거래유형 — 라벨/컬러 전 페이지 통일 */
+  transactionType: {
+    sale: { label: '매매', tone: 'info' },
+    jeonse: { label: '전세', tone: 'success' },
+    monthly: { label: '월세', tone: 'orange' },
+    yearly_rent: { label: '연세', tone: 'violet' },
+  },
+  /** Proposal.status — AI 제안 큐 */
+  proposalStatus: {
+    pending: { label: '대기', tone: 'warning' },
+    approved: { label: '승인', tone: 'info' },
+    rejected: { label: '반려', tone: 'gray' },
+    expired: { label: '만료', tone: 'gray' },
+    executed: { label: '실행완료', tone: 'success' },
+    failed: { label: '실패', tone: 'destructive' },
+    auto_resolved: { label: '자동해결', tone: 'neutral' },
+  },
+  /** BuyerRequirement.status — 구매고객 상태 */
+  buyerStatus: {
+    active: { label: '활성', tone: 'success' },
+    matched: { label: '매칭됨', tone: 'info' },
+    completed: { label: '완료', tone: 'neutral' },
+    inactive: { label: '비활성', tone: 'gray' },
+  },
+  /** BuyerRequirement.urgency — 긴급도 */
+  buyerUrgency: {
+    urgent: { label: '급함', tone: 'destructive' },
+    normal: { label: '보통', tone: 'gray' },
+    flexible: { label: '여유', tone: 'info' },
+  },
+  /** EntityDraft(업무함 inbox) status */
+  inboxStatus: {
+    pending: { label: '대기', tone: 'warning' },
+    processing: { label: '처리중', tone: 'info' },
+    approved: { label: '승인', tone: 'info' },
+    executing: { label: '실행중', tone: 'violet' },
+    executed: { label: '실행완료', tone: 'success' },
+    failed: { label: '실패', tone: 'destructive' },
+    rejected: { label: '반려', tone: 'gray' },
+    expired: { label: '만료', tone: 'gray' },
+  },
+};
+
+/**
+ * 파이프라인 단계 순서 (PipelineSteps용). 취소/예외 상태는 포함하지 않는다.
+ */
+export const PIPELINE_STEPS: Partial<Record<StatusKind, string[]>> = {
+  checkStatus: ['unverified', 'verified', 'in_contract', 'hold', 'done'],
+  intakeStatus: ['unverified', 'active', 'in_contract', 'hold', 'done'],
+  matchStage: [
+    'suggested',
+    'buyerContacted',
+    'viewing',
+    'ownerContacted',
+    'negotiating',
+    'dealCreated',
+    'closed',
+  ],
+  dealStage: [
+    'selection',
+    'negotiating',
+    'preContract',
+    'contracted',
+    'settling',
+    'completed',
+    'closed',
+  ],
+  contractStatus: ['draft', 'signed', 'depositPaid', 'balancePaid', 'registered'],
+};
+
+/**
+ * 상태 메타 조회. 미정의 값은 gray + 원문 라벨로 fallback (절대 throw 하지 않음).
+ */
+export function getStatusMeta(kind: StatusKind, value: string | null | undefined): StatusMeta {
+  if (!value) return { label: '—', tone: 'gray' };
+  return STATUS_CONFIG[kind]?.[value] ?? { label: value, tone: 'gray' };
+}

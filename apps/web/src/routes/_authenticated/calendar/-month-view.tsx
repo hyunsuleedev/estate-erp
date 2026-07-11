@@ -44,9 +44,9 @@ export function MonthCalendarView({
   const cells = buildMonthCells(currentDate);
 
   return (
-    <div className="grid overflow-hidden rounded-lg border bg-background shadow-xs xl:grid-cols-[minmax(0,1fr)_360px]">
+    <div className="grid overflow-hidden rounded-lg border bg-background shadow-xs xl:grid-cols-[minmax(0,1fr)_320px] 2xl:grid-cols-[minmax(0,1fr)_360px]">
       <div className="min-w-0 overflow-x-auto xl:border-r">
-        <div className="min-w-[760px] xl:min-w-0">
+        <div className="min-w-[640px] xl:min-w-0">
           <div className="grid grid-cols-7 border-b bg-muted/30">
             {WEEK_DAY_LABELS.map((day, index) => (
               <div
@@ -224,7 +224,7 @@ export function SelectedDayPanel({
   const navigate = useNavigate();
 
   return (
-    <aside className="flex min-h-[560px] flex-col bg-muted/[0.16]">
+    <aside className="flex min-h-[280px] flex-col border-t bg-muted/[0.16] xl:min-h-[560px] xl:border-t-0">
       <div className="border-b bg-background px-5 py-4">
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">

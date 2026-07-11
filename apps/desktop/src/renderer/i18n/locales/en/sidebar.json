@@ -1,5 +1,6 @@
 {
   "menu": "Menu",
+  "favorites": "Favorite Complexes",
   "toggleSidebar": "Toggle Sidebar",
   "items": {
     "dashboard": "Dashboard",
@@ -8,7 +9,7 @@
     "propertiesList": "Property List",
     "propertiesNew": "Add Property",
     "propertiesExternalListings": "Ad Notes",
-    "propertiesMyAds": "My Ads",
+    "propertiesNaverMyAds": "My Ads",
     "contacts": "Contacts",
     "contactsList": "People",
     "contactsNew": "Add Contact",
@@ -32,7 +33,6 @@
     "expenses": "Fixed Expenses",
     "documents": "Documents",
     "network": "Network",
-    "aiOperations": "AI Operations",
     "employees": "Employees",
     "settings": "Settings"
   }

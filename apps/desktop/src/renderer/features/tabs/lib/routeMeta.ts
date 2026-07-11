@@ -16,7 +16,6 @@ import {
   SquareTerminal,
   Inbox as InboxIcon,
   Network,
-  Bot,
   Wrench,
   Home,
   type LucideIcon,
@@ -58,7 +57,6 @@ const STATIC_ROUTES: Record<string, RouteMeta> = {
   '/settings': { title: '설정', kind: 'settings', icon: SettingsIcon },
   '/inbox': { title: '인박스', kind: 'inbox', icon: InboxIcon },
   '/network': { title: '네트워크', kind: 'generic', icon: Network },
-  '/ai-operations': { title: 'AI 운영', kind: 'generic', icon: Bot },
 };
 
 const DYNAMIC_ROUTE_META: Array<{

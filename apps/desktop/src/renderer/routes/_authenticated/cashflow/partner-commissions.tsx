@@ -1,9 +1,18 @@
 import { createFileRoute, Link } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
-import { useMemo } from 'react';
-import { Handshake, Users, TrendingUp, Calendar } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { Handshake, Users, TrendingUp, Calendar, RotateCw } from 'lucide-react';
 import type { Deal } from '@estate-erp/api-client';
 import { api } from '@/lib/api';
+import { formatDate, formatMoney } from '@/lib/format';
+import {
+  EmptyState,
+  FilterBar,
+  FilterCount,
+  FilterSelect,
+  PageHeader,
+} from '@/components/domain';
+import { Button } from '@/components/ui/button';
 import {
   Card,
   CardContent,
@@ -25,18 +34,6 @@ import { Skeleton } from '@/components/ui/skeleton';
 export const Route = createFileRoute('/_authenticated/cashflow/partner-commissions')({
   component: PartnerCommissionsPage,
 });
-
-function toEok(manwon: number): string {
-  const sign = manwon < 0 ? '-' : '';
-  const abs = Math.abs(manwon);
-  if (abs >= 10000) return `${sign}${(abs / 10000).toFixed(1)}억`;
-  return `${sign}${abs.toLocaleString()}만`;
-}
-
-function formatDate(iso: string): string {
-  const d = new Date(iso);
-  return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}`;
-}
 
 type PartnerAggregate = {
   partnerId: string | null;
@@ -85,12 +82,37 @@ function aggregateByPartner(deals: Deal[]): PartnerAggregate[] {
 }
 
 function PartnerCommissionsPage() {
-  const { data: deals, isLoading } = useQuery({
+  const { data: deals, isLoading, isError, refetch } = useQuery({
     queryKey: ['deals'],
     queryFn: () => api.deals.findAll(),
   });
 
-  const partners = useMemo(() => aggregateByPartner(deals ?? []), [deals]);
+  // 기간(연도) 필터 — 서버 집계 엔드포인트 부재로 클라이언트에서 필터링
+  const [yearFilter, setYearFilter] = useState<string>('');
+
+  const yearOptions = useMemo(() => {
+    const years = new Set<number>();
+    for (const d of deals ?? []) {
+      if (!d.isJointBrokerage) continue;
+      years.add(new Date(d.stageChangedAt).getFullYear());
+    }
+    return Array.from(years)
+      .sort((a, b) => b - a)
+      .map((y) => ({ value: String(y), label: `${y}년` }));
+  }, [deals]);
+
+  const filteredDeals = useMemo(() => {
+    const list = deals ?? [];
+    if (!yearFilter) return list;
+    return list.filter(
+      (d) => new Date(d.stageChangedAt).getFullYear() === Number(yearFilter),
+    );
+  }, [deals, yearFilter]);
+
+  const partners = useMemo(
+    () => aggregateByPartner(filteredDeals),
+    [filteredDeals],
+  );
 
   const totals = useMemo(() => {
     return partners.reduce(
@@ -106,12 +128,23 @@ function PartnerCommissionsPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div>
-        <h1 className="text-lg font-semibold tracking-tight">공동중개 수수료</h1>
-        <p className="text-sm text-muted-foreground">
-          파트너 사무소별 공동중개 정산 현황을 집계합니다. 공동중개 거래(<code>isJointBrokerage</code>)만 포함됩니다.
-        </p>
-      </div>
+      <PageHeader
+        title="공동중개 수수료"
+        description="파트너 사무소별 공동중개 정산 현황을 집계합니다. 공동중개로 표시한 거래만 포함됩니다."
+      />
+
+      {yearOptions.length > 0 && (
+        <FilterBar>
+          <FilterSelect
+            label="기간"
+            value={yearFilter}
+            onChange={setYearFilter}
+            allLabel="전체 기간"
+            options={yearOptions}
+          />
+          <FilterCount n={partners.length} unit="곳" />
+        </FilterBar>
+      )}
 
       <div className="grid gap-3 md:grid-cols-4">
         <SummaryCard
@@ -127,13 +160,13 @@ function PartnerCommissionsPage() {
         <SummaryCard
           icon={<TrendingUp className="size-4" />}
           label="누적 우리 몫"
-          value={toEok(totals.ourShareTotal)}
+          value={formatMoney(totals.ourShareTotal)}
           highlight
         />
         <SummaryCard
           icon={<TrendingUp className="size-4" />}
           label="누적 파트너 몫"
-          value={toEok(totals.partnerShareTotal)}
+          value={formatMoney(totals.partnerShareTotal)}
         />
       </div>
 
@@ -146,9 +179,29 @@ function PartnerCommissionsPage() {
         </CardHeader>
         <CardContent>
           {isLoading ? (
-            <Skeleton className="h-60 rounded-lg" />
+            <div className="space-y-2">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <Skeleton key={i} className="h-10 rounded-md" />
+              ))}
+            </div>
+          ) : isError ? (
+            <EmptyState
+              icon={Handshake}
+              title="공동중개 현황을 불러오지 못했습니다"
+              description="네트워크 상태를 확인한 뒤 다시 시도해주세요."
+              action={
+                <Button variant="outline" onClick={() => refetch()}>
+                  <RotateCw className="size-4" />
+                  다시 시도
+                </Button>
+              }
+            />
           ) : partners.length === 0 ? (
-            <EmptyState />
+            <EmptyState
+              icon={Handshake}
+              title="공동중개 거래가 아직 없습니다"
+              description="거래 생성 시 ‘공동중개’로 체크하면 이 화면에 파트너별 정산 현황이 집계됩니다."
+            />
           ) : (
             <div className="overflow-x-auto">
               <Table>
@@ -191,16 +244,16 @@ function PartnerCommissionsPage() {
                         <Badge variant="outline">{p.dealCount}건</Badge>
                       </TableCell>
                       <TableCell className="text-right tabular-nums text-muted-foreground">
-                        {toEok(p.billedTotal)}
+                        {formatMoney(p.billedTotal)}
                       </TableCell>
                       <TableCell className="text-right tabular-nums font-medium text-emerald-600 dark:text-emerald-400">
-                        {toEok(p.ourShareTotal)}
+                        {formatMoney(p.ourShareTotal)}
                       </TableCell>
                       <TableCell className="text-right tabular-nums text-muted-foreground">
-                        {toEok(p.partnerShareTotal)}
+                        {formatMoney(p.partnerShareTotal)}
                       </TableCell>
                       <TableCell className="text-right tabular-nums">
-                        {toEok(p.collectedTotal)}
+                        {formatMoney(p.collectedTotal)}
                       </TableCell>
                       <TableCell className="text-xs text-muted-foreground">
                         <div className="flex items-center gap-1">
@@ -252,14 +305,3 @@ function SummaryCard({
   );
 }
 
-function EmptyState() {
-  return (
-    <div className="rounded-xl border border-dashed bg-muted/30 p-10 text-center">
-      <Handshake className="mx-auto size-8 text-muted-foreground" />
-      <p className="mt-3 text-sm font-medium">공동중개 거래가 아직 없습니다</p>
-      <p className="mt-1 text-xs text-muted-foreground">
-        거래 생성 시 “공동중개”로 체크하면 이 화면에 파트너별 정산 현황이 집계됩니다.
-      </p>
-    </div>
-  );
-}

@@ -54,8 +54,10 @@ export function TimeGridCalendarView({
       <div
         className="grid"
         style={{
-          gridTemplateColumns: `76px repeat(${dates.length}, minmax(168px, 1fr))`,
-          minWidth: dates.length === 1 ? '560px' : '1040px',
+          // 76px 시간축 + 요일당 최소 128px. 1280px 뷰포트(콘텐츠 ~992px)에서
+          // 가로 스크롤 없이 들어가고, 더 좁으면 컨테이너 안에서만 스크롤된다.
+          gridTemplateColumns: `76px repeat(${dates.length}, minmax(128px, 1fr))`,
+          minWidth: dates.length === 1 ? '480px' : '972px',
         }}
       >
         <div className="border-b border-r bg-muted/30 px-3 py-3 text-[10px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
@@ -200,7 +202,8 @@ function WeekEventBlock({
       }}
     >
       <div className="truncate text-[11px] font-semibold text-foreground">{event.title}</div>
-      <div className="mt-0.5 font-mono text-[10px] text-muted-foreground tabular-nums">
+      {/* break-keep: 좁은 컬럼에서 한글 음절 중간 줄바꿈 방지 */}
+      <div className="mt-0.5 break-keep font-mono text-[10px] text-muted-foreground tabular-nums">
         {formatEventTimeRange(event)}
       </div>
       <div className="mt-1 truncate text-[10px] text-muted-foreground">{formatEventContext(event)}</div>

@@ -159,6 +159,26 @@ export class ConsultationsController {
     );
   }
 
+  /**
+   * 자동 생성된 CallRecording에 녹음 파일 첨부 → STT 시작.
+   * with-recording과 달리 새 레코드를 만들지 않아 통화당 1건이 유지된다.
+   */
+  @Post('recordings/:id/attach-file')
+  @UseInterceptors(FileInterceptor('file'))
+  attachRecordingFile(
+    @Param('id') id: string,
+    @UploadedFile() file: Express.Multer.File,
+    @Body('contactId') contactId: string,
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.service.attachRecordingFile(
+      id,
+      user.officeId,
+      file,
+      contactId || undefined,
+    );
+  }
+
   @Get(':id/stt-status')
   getSttStatus(
     @Param('id') id: string,

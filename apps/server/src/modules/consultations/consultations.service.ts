@@ -310,6 +310,67 @@ export class ConsultationsService {
   }
 
   /**
+   * 자동 생성된 CallRecording에 녹음 파일 첨부 → STT 시작.
+   */
+  async attachRecordingFile(
+    id: string,
+    officeId: string,
+    file: Express.Multer.File,
+    contactId?: string,
+  ) {
+    const recording = await this.prisma.callRecording.findFirst({
+      where: { id, officeId },
+    });
+    if (!recording) throw new NotFoundException('Recording not found');
+    if (recording.sttStatus === 'processing') {
+      // 이미 분석 중이면 중복 업로드 방지
+      return {
+        recording: {
+          id: recording.id,
+          sttStatus: recording.sttStatus,
+          fileName: recording.fileName,
+          fileSize: recording.fileSize,
+        },
+        consultation: { id: recording.id, content: '[녹음 분석 중...]' },
+        sttStatus: 'processing',
+        recordingFileName: recording.fileName,
+        recordingSize: recording.fileSize,
+      };
+    }
+
+    // 재분석 대비 기존 메시지 정리
+    await this.prisma.callRecordingMessage.deleteMany({
+      where: { recordingId: id },
+    });
+
+    const updated = await this.prisma.callRecording.update({
+      where: { id },
+      data: {
+        fileName: file.originalname,
+        fileSize: file.size,
+        sttStatus: 'processing',
+        ...(contactId && !recording.contactId ? { contactId } : {}),
+      },
+    });
+
+    this.processSTT(updated.id, officeId, file);
+
+    return {
+      recording: {
+        id: updated.id,
+        sttStatus: updated.sttStatus,
+        fileName: updated.fileName,
+        fileSize: updated.fileSize,
+      },
+      // 하위 호환: 모바일 폴링이 consultation.id 필드를 recording id로 사용
+      consultation: { id: updated.id, content: '[녹음 분석 중...]' },
+      sttStatus: 'processing',
+      recordingFileName: updated.fileName,
+      recordingSize: updated.fileSize,
+    };
+  }
+
+  /**
    * CallRecording의 STT 상태 + 메시지 조회
    */
   async getSttStatus(id: string, officeId: string) {

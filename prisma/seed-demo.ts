@@ -35,14 +35,20 @@ interface Ctx {
 async function main() {
   const prisma = new PrismaClient();
   try {
-    // 첫 번째 활성 사무소를 대상으로 한다. 여러 사무소가 있어도 안전한 선택.
-    const office = await prisma.office.findFirst({
-      where: { isActive: true },
-      orderBy: { createdAt: 'asc' },
-    });
+    // SEED_OFFICE_ID 가 지정되면 해당 사무소를, 아니면 첫 번째 활성 사무소를 대상으로 한다.
+    const office = process.env.SEED_OFFICE_ID
+      ? await prisma.office.findUnique({
+          where: { id: process.env.SEED_OFFICE_ID },
+        })
+      : await prisma.office.findFirst({
+          where: { isActive: true },
+          orderBy: { createdAt: 'asc' },
+        });
     if (!office) {
       throw new Error(
-        `활성 Office 가 없습니다. 먼저 사무소 / 사용자를 생성해주세요.`,
+        process.env.SEED_OFFICE_ID
+          ? `SEED_OFFICE_ID=${process.env.SEED_OFFICE_ID} 에 해당하는 Office 가 없습니다.`
+          : `활성 Office 가 없습니다. 먼저 사무소 / 사용자를 생성해주세요.`,
       );
     }
     console.log(`대상 사무소: ${office.name}`);

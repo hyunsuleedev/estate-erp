@@ -1,10 +1,9 @@
 /**
  * AI 직원 설정 카드 — 전체 on/off(Office.agentEnabled) + 규칙별 활성화/trust tier.
- * 규칙 실행 이력·제안 상세는 /ai-operations 에서 확인.
+ * 제안 승인/거절은 업무함(인박스)에서 처리한다.
  */
-import { Link } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowRight, Bot, CalendarClock, RotateCw, Zap } from 'lucide-react';
+import { Bot, CalendarClock, RotateCw, Zap } from 'lucide-react';
 import { toast } from 'sonner';
 import type { AgentRule, OfficeProfile } from '@estate-erp/api-client';
 import { api } from '@/lib/api';
@@ -170,15 +169,6 @@ export function AiAgentCard({
             ))}
           </div>
         )}
-
-        <div className="flex justify-end">
-          <Button asChild variant="outline" size="sm">
-            <Link to="/ai-operations">
-              AI 운영 상세
-              <ArrowRight className="size-3.5" />
-            </Link>
-          </Button>
-        </div>
       </CardContent>
     </Card>
   );

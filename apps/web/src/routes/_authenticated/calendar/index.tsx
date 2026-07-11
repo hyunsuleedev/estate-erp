@@ -234,8 +234,10 @@ function CalendarPage() {
   }, [isDialogOpen, selectedDate, currentDate, viewMode]);
 
   return (
-    <div className="flex min-h-0 flex-col gap-4">
-      <section className="overflow-hidden rounded-lg border bg-background">
+    // min-h-0을 주면 레이아웃의 overflow-auto 래퍼 안에서 페이지 전체가 뷰포트 높이로
+    // 수축해 헤더·그리드가 잘린다 (스크롤 불가). 대시보드와 동일하게 자연 높이로 흐르게 한다.
+    <div className="flex flex-col gap-4">
+      <section className="shrink-0 overflow-hidden rounded-lg border bg-background">
         <div className="flex flex-col gap-4 border-b bg-muted/20 px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="min-w-0 space-y-1">
             <div className="flex flex-wrap items-center gap-2">
@@ -474,7 +476,7 @@ function MetricItem({
       </div>
       <div className="min-w-0">
         <div className="truncate text-[11px] text-muted-foreground">{label}</div>
-        <div className="font-mono text-sm font-semibold tabular-nums">{value}</div>
+        <div className="whitespace-nowrap font-mono text-sm font-semibold tabular-nums">{value}</div>
       </div>
     </div>
   );

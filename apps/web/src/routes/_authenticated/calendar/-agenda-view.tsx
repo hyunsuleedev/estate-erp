@@ -116,7 +116,7 @@ function AgendaEventRow({
       type="button"
       onClick={() => onEdit(event)}
       className={cn(
-        'grid w-full grid-cols-[18px_minmax(0,1fr)_auto] items-center gap-3 px-4 py-3.5 text-left transition-colors hover:bg-muted/30 sm:grid-cols-[18px_104px_minmax(0,1fr)_auto] sm:px-5',
+        'grid w-full grid-cols-[18px_minmax(0,1fr)_auto] items-center gap-3 px-4 py-3.5 text-left transition-colors hover:bg-muted/30 sm:grid-cols-[18px_118px_minmax(0,1fr)_auto] sm:px-5',
         status.state === 'active' && 'bg-blue-50/60',
       )}
     >
@@ -126,7 +126,8 @@ function AgendaEventRow({
           status.state === 'done' ? 'border-emerald-500 bg-emerald-500' : 'border-muted-foreground/40',
         )}
       />
-      <span className="hidden font-mono text-xs text-muted-foreground tabular-nums sm:block">
+      {/* break-keep: 한글 음절 중간이 아니라 공백에서만 줄바꿈 (오전 10:00 / - 오전 11:30) */}
+      <span className="hidden break-keep font-mono text-xs leading-5 text-muted-foreground tabular-nums sm:block">
         {formatEventTimeRange(event)}
       </span>
       <span className="min-w-0">

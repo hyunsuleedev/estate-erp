@@ -57,12 +57,18 @@ export type ListingSummary = Pick<
   | 'moveInAvailableFrom'
   | 'moveInAvailableTo'
   | 'checkStatus'
+  | 'isHidden'
   | 'memo'
   | 'createdAt'
   | 'updatedAt'
   | 'advertisements'
   | 'priceHistories'
->;
+> & {
+  // api-client ListingIntakeListing 타입에 아직 없지만 서버가 반환하는 비용 필드
+  // (웹 -property-intake-actions의 ListingCostExtras 대응) — 선택 컬럼(관리비/융자금)에서 사용.
+  maintenanceFee?: number | null;
+  loanAmount?: number | null;
+};
 
 interface PropertyListingsTableProps {
   columns: ColumnDef<PropertyListingGroup, unknown>[];
@@ -80,6 +86,8 @@ interface PropertyListingsTableProps {
     focusedRow: PropertyListingGroup | null;
     totalCount: number;
   }) => ReactNode;
+  /** 선택된 행이 있을 때 표시할 일괄 작업 UI (웹 DataTable의 renderBulkActions 대응) */
+  renderBulkActions?: (selectedRows: PropertyListingGroup[]) => ReactNode;
 }
 
 export function PropertyListingsTable({
@@ -95,6 +103,7 @@ export function PropertyListingsTable({
   onEndReached,
   emptyMessage = '등록된 매물이 없습니다.',
   renderStatusBar,
+  renderBulkActions,
 }: PropertyListingsTableProps) {
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
   const [focusedCell, setFocusedCell] = useState<{ row: number; col: number } | null>(null);
@@ -278,6 +287,13 @@ export function PropertyListingsTable({
   const focusedRow =
     focusedCell !== null && rows[focusedCell.row]?.original ? rows[focusedCell.row].original : null;
   const tableTotalSize = table.getTotalSize();
+
+  const selectedRows = useMemo(
+    () => rows.filter((row) => row.getIsSelected()).map((row) => row.original),
+    // rowSelection을 의존성에 포함해 선택 변경 시 재계산되도록 한다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [rows, rowSelection],
+  );
 
   const getPinStyle = (column: ReturnType<typeof table.getAllLeafColumns>[number]) => {
     if (column.getIsPinned() !== 'left') return {};
@@ -470,6 +486,19 @@ export function PropertyListingsTable({
           </tbody>
         </table>
       </div>
+      {renderBulkActions && selectedRows.length > 0 && (
+        <div className="flex min-h-9 flex-wrap items-center gap-2 border-t border-border/60 bg-white px-3 py-1.5 text-xs">
+          <span className="font-medium text-slate-900">{selectedRows.length}개 호실 선택</span>
+          {renderBulkActions(selectedRows)}
+          <button
+            type="button"
+            className="ml-auto text-[11px] text-muted-foreground underline-offset-2 hover:underline"
+            onClick={() => table.resetRowSelection()}
+          >
+            선택 해제
+          </button>
+        </div>
+      )}
       {renderStatusBar && (
         <div className="flex min-h-7 items-center gap-2 border-t border-border/60 bg-muted/30 px-3 text-[11px] text-muted-foreground">
           {renderStatusBar({ focusedRow, totalCount: totalCount || pageSize })}

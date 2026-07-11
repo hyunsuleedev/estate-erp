@@ -3,6 +3,9 @@ import { useEffect, useState } from 'react';
 import { SplashScreen } from '@/components/layout/splash-screen';
 import { useAuth } from '@/providers/auth-provider';
 import { AppSidebar } from '@/components/layout/app-sidebar';
+import { GlobalSearch } from '@/components/layout/global-search';
+import { NotificationBell } from '@/components/layout/notification-bell';
+import { QuickCreate } from '@/components/layout/quick-create';
 import {
   SidebarInset,
   SidebarProvider,
@@ -104,6 +107,15 @@ function AuthenticatedLayout() {
               <Separator orientation="vertical" className="mx-1 data-[orientation=vertical]:h-4" />
             </div>
             <TabBar className="min-w-0" />
+            {/* 우측 헤더 액션 (웹 셸과 동일): 전역 검색 + 알림 + 빠른 생성 */}
+            <div
+              className="flex shrink-0 items-center gap-2"
+              style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+            >
+              <GlobalSearch />
+              <NotificationBell />
+              <QuickCreate />
+            </div>
             {/* Windows: titleBarOverlay 자리 확보 */}
             {isWin && <div className="w-[140px] shrink-0" aria-hidden />}
           </header>

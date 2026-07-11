@@ -13,6 +13,7 @@ import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as AuthRouteImport } from './routes/_auth'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as OnboardingOfficeRouteImport } from './routes/onboarding.office'
+import { Route as DevCtiPreviewRouteImport } from './routes/dev.cti-preview'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
 import { Route as AuthRegisterRouteImport } from './routes/_auth/register'
 import { Route as AuthLoginRouteImport } from './routes/_auth/login'
@@ -35,8 +36,8 @@ import { Route as AuthenticatedCashflowIndexRouteImport } from './routes/_authen
 import { Route as AuthenticatedCallsIndexRouteImport } from './routes/_authenticated/calls/index'
 import { Route as AuthenticatedCalendarIndexRouteImport } from './routes/_authenticated/calendar/index'
 import { Route as AuthenticatedBuyerRequirementsIndexRouteImport } from './routes/_authenticated/buyer-requirements/index'
-import { Route as AuthenticatedAiOperationsIndexRouteImport } from './routes/_authenticated/ai-operations/index'
 import { Route as AuthenticatedPropertiesNewRouteImport } from './routes/_authenticated/properties/new'
+import { Route as AuthenticatedPropertiesNaverMyAdsRouteImport } from './routes/_authenticated/properties/naver-my-ads'
 import { Route as AuthenticatedPropertiesMyAdsRouteImport } from './routes/_authenticated/properties/my-ads'
 import { Route as AuthenticatedPropertiesExternalListingsRouteImport } from './routes/_authenticated/properties/external-listings'
 import { Route as AuthenticatedPropertiesIdRouteImport } from './routes/_authenticated/properties/$id'
@@ -48,6 +49,10 @@ import { Route as AuthenticatedCashflowMySettlementRouteImport } from './routes/
 import { Route as AuthenticatedCashflowLedgerRouteImport } from './routes/_authenticated/cashflow/ledger'
 import { Route as AuthenticatedCashflowExpensesRouteImport } from './routes/_authenticated/cashflow/expenses'
 import { Route as AuthenticatedCashflowEmployeeSettlementsRouteImport } from './routes/_authenticated/cashflow/employee-settlements'
+import { Route as AuthenticatedCallsLogsRouteImport } from './routes/_authenticated/calls/logs'
+import { Route as AuthenticatedBuyerRequirementsNewRouteImport } from './routes/_authenticated/buyer-requirements/new'
+import { Route as AuthenticatedBuyerRequirementsIdRouteImport } from './routes/_authenticated/buyer-requirements/$id'
+import { Route as AuthenticatedBuyerRequirementsIdEditRouteImport } from './routes/_authenticated/buyer-requirements/$id_.edit'
 
 const AuthenticatedRoute = AuthenticatedRouteImport.update({
   id: '/_authenticated',
@@ -65,6 +70,11 @@ const IndexRoute = IndexRouteImport.update({
 const OnboardingOfficeRoute = OnboardingOfficeRouteImport.update({
   id: '/onboarding/office',
   path: '/onboarding/office',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DevCtiPreviewRoute = DevCtiPreviewRouteImport.update({
+  id: '/dev/cti-preview',
+  path: '/dev/cti-preview',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthenticatedDashboardRoute = AuthenticatedDashboardRouteImport.update({
@@ -191,16 +201,16 @@ const AuthenticatedBuyerRequirementsIndexRoute =
     path: '/buyer-requirements/',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
-const AuthenticatedAiOperationsIndexRoute =
-  AuthenticatedAiOperationsIndexRouteImport.update({
-    id: '/ai-operations/',
-    path: '/ai-operations/',
-    getParentRoute: () => AuthenticatedRoute,
-  } as any)
 const AuthenticatedPropertiesNewRoute =
   AuthenticatedPropertiesNewRouteImport.update({
     id: '/properties/new',
     path: '/properties/new',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedPropertiesNaverMyAdsRoute =
+  AuthenticatedPropertiesNaverMyAdsRouteImport.update({
+    id: '/properties/naver-my-ads',
+    path: '/properties/naver-my-ads',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
 const AuthenticatedPropertiesMyAdsRoute =
@@ -268,13 +278,40 @@ const AuthenticatedCashflowEmployeeSettlementsRoute =
     path: '/cashflow/employee-settlements',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const AuthenticatedCallsLogsRoute = AuthenticatedCallsLogsRouteImport.update({
+  id: '/calls/logs',
+  path: '/calls/logs',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
+const AuthenticatedBuyerRequirementsNewRoute =
+  AuthenticatedBuyerRequirementsNewRouteImport.update({
+    id: '/buyer-requirements/new',
+    path: '/buyer-requirements/new',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedBuyerRequirementsIdRoute =
+  AuthenticatedBuyerRequirementsIdRouteImport.update({
+    id: '/buyer-requirements/$id',
+    path: '/buyer-requirements/$id',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedBuyerRequirementsIdEditRoute =
+  AuthenticatedBuyerRequirementsIdEditRouteImport.update({
+    id: '/buyer-requirements/$id_/edit',
+    path: '/buyer-requirements/$id/edit',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/login': typeof AuthLoginRoute
   '/register': typeof AuthRegisterRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
+  '/dev/cti-preview': typeof DevCtiPreviewRoute
   '/onboarding/office': typeof OnboardingOfficeRoute
+  '/buyer-requirements/$id': typeof AuthenticatedBuyerRequirementsIdRoute
+  '/buyer-requirements/new': typeof AuthenticatedBuyerRequirementsNewRoute
+  '/calls/logs': typeof AuthenticatedCallsLogsRoute
   '/cashflow/employee-settlements': typeof AuthenticatedCashflowEmployeeSettlementsRoute
   '/cashflow/expenses': typeof AuthenticatedCashflowExpensesRoute
   '/cashflow/ledger': typeof AuthenticatedCashflowLedgerRoute
@@ -286,8 +323,8 @@ export interface FileRoutesByFullPath {
   '/properties/$id': typeof AuthenticatedPropertiesIdRoute
   '/properties/external-listings': typeof AuthenticatedPropertiesExternalListingsRoute
   '/properties/my-ads': typeof AuthenticatedPropertiesMyAdsRoute
+  '/properties/naver-my-ads': typeof AuthenticatedPropertiesNaverMyAdsRoute
   '/properties/new': typeof AuthenticatedPropertiesNewRoute
-  '/ai-operations/': typeof AuthenticatedAiOperationsIndexRoute
   '/buyer-requirements/': typeof AuthenticatedBuyerRequirementsIndexRoute
   '/calendar/': typeof AuthenticatedCalendarIndexRoute
   '/calls/': typeof AuthenticatedCallsIndexRoute
@@ -307,13 +344,18 @@ export interface FileRoutesByFullPath {
   '/settings/': typeof AuthenticatedSettingsIndexRoute
   '/sites/': typeof AuthenticatedSitesIndexRoute
   '/tasks/': typeof AuthenticatedTasksIndexRoute
+  '/buyer-requirements/$id/edit': typeof AuthenticatedBuyerRequirementsIdEditRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof AuthLoginRoute
   '/register': typeof AuthRegisterRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
+  '/dev/cti-preview': typeof DevCtiPreviewRoute
   '/onboarding/office': typeof OnboardingOfficeRoute
+  '/buyer-requirements/$id': typeof AuthenticatedBuyerRequirementsIdRoute
+  '/buyer-requirements/new': typeof AuthenticatedBuyerRequirementsNewRoute
+  '/calls/logs': typeof AuthenticatedCallsLogsRoute
   '/cashflow/employee-settlements': typeof AuthenticatedCashflowEmployeeSettlementsRoute
   '/cashflow/expenses': typeof AuthenticatedCashflowExpensesRoute
   '/cashflow/ledger': typeof AuthenticatedCashflowLedgerRoute
@@ -325,8 +367,8 @@ export interface FileRoutesByTo {
   '/properties/$id': typeof AuthenticatedPropertiesIdRoute
   '/properties/external-listings': typeof AuthenticatedPropertiesExternalListingsRoute
   '/properties/my-ads': typeof AuthenticatedPropertiesMyAdsRoute
+  '/properties/naver-my-ads': typeof AuthenticatedPropertiesNaverMyAdsRoute
   '/properties/new': typeof AuthenticatedPropertiesNewRoute
-  '/ai-operations': typeof AuthenticatedAiOperationsIndexRoute
   '/buyer-requirements': typeof AuthenticatedBuyerRequirementsIndexRoute
   '/calendar': typeof AuthenticatedCalendarIndexRoute
   '/calls': typeof AuthenticatedCallsIndexRoute
@@ -346,6 +388,7 @@ export interface FileRoutesByTo {
   '/settings': typeof AuthenticatedSettingsIndexRoute
   '/sites': typeof AuthenticatedSitesIndexRoute
   '/tasks': typeof AuthenticatedTasksIndexRoute
+  '/buyer-requirements/$id/edit': typeof AuthenticatedBuyerRequirementsIdEditRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -355,7 +398,11 @@ export interface FileRoutesById {
   '/_auth/login': typeof AuthLoginRoute
   '/_auth/register': typeof AuthRegisterRoute
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
+  '/dev/cti-preview': typeof DevCtiPreviewRoute
   '/onboarding/office': typeof OnboardingOfficeRoute
+  '/_authenticated/buyer-requirements/$id': typeof AuthenticatedBuyerRequirementsIdRoute
+  '/_authenticated/buyer-requirements/new': typeof AuthenticatedBuyerRequirementsNewRoute
+  '/_authenticated/calls/logs': typeof AuthenticatedCallsLogsRoute
   '/_authenticated/cashflow/employee-settlements': typeof AuthenticatedCashflowEmployeeSettlementsRoute
   '/_authenticated/cashflow/expenses': typeof AuthenticatedCashflowExpensesRoute
   '/_authenticated/cashflow/ledger': typeof AuthenticatedCashflowLedgerRoute
@@ -367,8 +414,8 @@ export interface FileRoutesById {
   '/_authenticated/properties/$id': typeof AuthenticatedPropertiesIdRoute
   '/_authenticated/properties/external-listings': typeof AuthenticatedPropertiesExternalListingsRoute
   '/_authenticated/properties/my-ads': typeof AuthenticatedPropertiesMyAdsRoute
+  '/_authenticated/properties/naver-my-ads': typeof AuthenticatedPropertiesNaverMyAdsRoute
   '/_authenticated/properties/new': typeof AuthenticatedPropertiesNewRoute
-  '/_authenticated/ai-operations/': typeof AuthenticatedAiOperationsIndexRoute
   '/_authenticated/buyer-requirements/': typeof AuthenticatedBuyerRequirementsIndexRoute
   '/_authenticated/calendar/': typeof AuthenticatedCalendarIndexRoute
   '/_authenticated/calls/': typeof AuthenticatedCallsIndexRoute
@@ -388,6 +435,7 @@ export interface FileRoutesById {
   '/_authenticated/settings/': typeof AuthenticatedSettingsIndexRoute
   '/_authenticated/sites/': typeof AuthenticatedSitesIndexRoute
   '/_authenticated/tasks/': typeof AuthenticatedTasksIndexRoute
+  '/_authenticated/buyer-requirements/$id_/edit': typeof AuthenticatedBuyerRequirementsIdEditRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -396,7 +444,11 @@ export interface FileRouteTypes {
     | '/login'
     | '/register'
     | '/dashboard'
+    | '/dev/cti-preview'
     | '/onboarding/office'
+    | '/buyer-requirements/$id'
+    | '/buyer-requirements/new'
+    | '/calls/logs'
     | '/cashflow/employee-settlements'
     | '/cashflow/expenses'
     | '/cashflow/ledger'
@@ -408,8 +460,8 @@ export interface FileRouteTypes {
     | '/properties/$id'
     | '/properties/external-listings'
     | '/properties/my-ads'
+    | '/properties/naver-my-ads'
     | '/properties/new'
-    | '/ai-operations/'
     | '/buyer-requirements/'
     | '/calendar/'
     | '/calls/'
@@ -429,13 +481,18 @@ export interface FileRouteTypes {
     | '/settings/'
     | '/sites/'
     | '/tasks/'
+    | '/buyer-requirements/$id/edit'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/login'
     | '/register'
     | '/dashboard'
+    | '/dev/cti-preview'
     | '/onboarding/office'
+    | '/buyer-requirements/$id'
+    | '/buyer-requirements/new'
+    | '/calls/logs'
     | '/cashflow/employee-settlements'
     | '/cashflow/expenses'
     | '/cashflow/ledger'
@@ -447,8 +504,8 @@ export interface FileRouteTypes {
     | '/properties/$id'
     | '/properties/external-listings'
     | '/properties/my-ads'
+    | '/properties/naver-my-ads'
     | '/properties/new'
-    | '/ai-operations'
     | '/buyer-requirements'
     | '/calendar'
     | '/calls'
@@ -468,6 +525,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/sites'
     | '/tasks'
+    | '/buyer-requirements/$id/edit'
   id:
     | '__root__'
     | '/'
@@ -476,7 +534,11 @@ export interface FileRouteTypes {
     | '/_auth/login'
     | '/_auth/register'
     | '/_authenticated/dashboard'
+    | '/dev/cti-preview'
     | '/onboarding/office'
+    | '/_authenticated/buyer-requirements/$id'
+    | '/_authenticated/buyer-requirements/new'
+    | '/_authenticated/calls/logs'
     | '/_authenticated/cashflow/employee-settlements'
     | '/_authenticated/cashflow/expenses'
     | '/_authenticated/cashflow/ledger'
@@ -488,8 +550,8 @@ export interface FileRouteTypes {
     | '/_authenticated/properties/$id'
     | '/_authenticated/properties/external-listings'
     | '/_authenticated/properties/my-ads'
+    | '/_authenticated/properties/naver-my-ads'
     | '/_authenticated/properties/new'
-    | '/_authenticated/ai-operations/'
     | '/_authenticated/buyer-requirements/'
     | '/_authenticated/calendar/'
     | '/_authenticated/calls/'
@@ -509,12 +571,14 @@ export interface FileRouteTypes {
     | '/_authenticated/settings/'
     | '/_authenticated/sites/'
     | '/_authenticated/tasks/'
+    | '/_authenticated/buyer-requirements/$id_/edit'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthRoute: typeof AuthRouteWithChildren
   AuthenticatedRoute: typeof AuthenticatedRouteWithChildren
+  DevCtiPreviewRoute: typeof DevCtiPreviewRoute
   OnboardingOfficeRoute: typeof OnboardingOfficeRoute
 }
 
@@ -546,6 +610,13 @@ declare module '@tanstack/react-router' {
       path: '/onboarding/office'
       fullPath: '/onboarding/office'
       preLoaderRoute: typeof OnboardingOfficeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dev/cti-preview': {
+      id: '/dev/cti-preview'
+      path: '/dev/cti-preview'
+      fullPath: '/dev/cti-preview'
+      preLoaderRoute: typeof DevCtiPreviewRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_authenticated/dashboard': {
@@ -702,18 +773,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedBuyerRequirementsIndexRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
-    '/_authenticated/ai-operations/': {
-      id: '/_authenticated/ai-operations/'
-      path: '/ai-operations'
-      fullPath: '/ai-operations/'
-      preLoaderRoute: typeof AuthenticatedAiOperationsIndexRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
     '/_authenticated/properties/new': {
       id: '/_authenticated/properties/new'
       path: '/properties/new'
       fullPath: '/properties/new'
       preLoaderRoute: typeof AuthenticatedPropertiesNewRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/properties/naver-my-ads': {
+      id: '/_authenticated/properties/naver-my-ads'
+      path: '/properties/naver-my-ads'
+      fullPath: '/properties/naver-my-ads'
+      preLoaderRoute: typeof AuthenticatedPropertiesNaverMyAdsRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/properties/my-ads': {
@@ -793,6 +864,34 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedCashflowEmployeeSettlementsRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/calls/logs': {
+      id: '/_authenticated/calls/logs'
+      path: '/calls/logs'
+      fullPath: '/calls/logs'
+      preLoaderRoute: typeof AuthenticatedCallsLogsRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/buyer-requirements/new': {
+      id: '/_authenticated/buyer-requirements/new'
+      path: '/buyer-requirements/new'
+      fullPath: '/buyer-requirements/new'
+      preLoaderRoute: typeof AuthenticatedBuyerRequirementsNewRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/buyer-requirements/$id': {
+      id: '/_authenticated/buyer-requirements/$id'
+      path: '/buyer-requirements/$id'
+      fullPath: '/buyer-requirements/$id'
+      preLoaderRoute: typeof AuthenticatedBuyerRequirementsIdRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/buyer-requirements/$id_/edit': {
+      id: '/_authenticated/buyer-requirements/$id_/edit'
+      path: '/buyer-requirements/$id/edit'
+      fullPath: '/buyer-requirements/$id/edit'
+      preLoaderRoute: typeof AuthenticatedBuyerRequirementsIdEditRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
   }
 }
 
@@ -810,6 +909,9 @@ const AuthRouteWithChildren = AuthRoute._addFileChildren(AuthRouteChildren)
 
 interface AuthenticatedRouteChildren {
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
+  AuthenticatedBuyerRequirementsIdRoute: typeof AuthenticatedBuyerRequirementsIdRoute
+  AuthenticatedBuyerRequirementsNewRoute: typeof AuthenticatedBuyerRequirementsNewRoute
+  AuthenticatedCallsLogsRoute: typeof AuthenticatedCallsLogsRoute
   AuthenticatedCashflowEmployeeSettlementsRoute: typeof AuthenticatedCashflowEmployeeSettlementsRoute
   AuthenticatedCashflowExpensesRoute: typeof AuthenticatedCashflowExpensesRoute
   AuthenticatedCashflowLedgerRoute: typeof AuthenticatedCashflowLedgerRoute
@@ -821,8 +923,8 @@ interface AuthenticatedRouteChildren {
   AuthenticatedPropertiesIdRoute: typeof AuthenticatedPropertiesIdRoute
   AuthenticatedPropertiesExternalListingsRoute: typeof AuthenticatedPropertiesExternalListingsRoute
   AuthenticatedPropertiesMyAdsRoute: typeof AuthenticatedPropertiesMyAdsRoute
+  AuthenticatedPropertiesNaverMyAdsRoute: typeof AuthenticatedPropertiesNaverMyAdsRoute
   AuthenticatedPropertiesNewRoute: typeof AuthenticatedPropertiesNewRoute
-  AuthenticatedAiOperationsIndexRoute: typeof AuthenticatedAiOperationsIndexRoute
   AuthenticatedBuyerRequirementsIndexRoute: typeof AuthenticatedBuyerRequirementsIndexRoute
   AuthenticatedCalendarIndexRoute: typeof AuthenticatedCalendarIndexRoute
   AuthenticatedCallsIndexRoute: typeof AuthenticatedCallsIndexRoute
@@ -842,10 +944,15 @@ interface AuthenticatedRouteChildren {
   AuthenticatedSettingsIndexRoute: typeof AuthenticatedSettingsIndexRoute
   AuthenticatedSitesIndexRoute: typeof AuthenticatedSitesIndexRoute
   AuthenticatedTasksIndexRoute: typeof AuthenticatedTasksIndexRoute
+  AuthenticatedBuyerRequirementsIdEditRoute: typeof AuthenticatedBuyerRequirementsIdEditRoute
 }
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
+  AuthenticatedBuyerRequirementsIdRoute: AuthenticatedBuyerRequirementsIdRoute,
+  AuthenticatedBuyerRequirementsNewRoute:
+    AuthenticatedBuyerRequirementsNewRoute,
+  AuthenticatedCallsLogsRoute: AuthenticatedCallsLogsRoute,
   AuthenticatedCashflowEmployeeSettlementsRoute:
     AuthenticatedCashflowEmployeeSettlementsRoute,
   AuthenticatedCashflowExpensesRoute: AuthenticatedCashflowExpensesRoute,
@@ -861,8 +968,9 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedPropertiesExternalListingsRoute:
     AuthenticatedPropertiesExternalListingsRoute,
   AuthenticatedPropertiesMyAdsRoute: AuthenticatedPropertiesMyAdsRoute,
+  AuthenticatedPropertiesNaverMyAdsRoute:
+    AuthenticatedPropertiesNaverMyAdsRoute,
   AuthenticatedPropertiesNewRoute: AuthenticatedPropertiesNewRoute,
-  AuthenticatedAiOperationsIndexRoute: AuthenticatedAiOperationsIndexRoute,
   AuthenticatedBuyerRequirementsIndexRoute:
     AuthenticatedBuyerRequirementsIndexRoute,
   AuthenticatedCalendarIndexRoute: AuthenticatedCalendarIndexRoute,
@@ -883,6 +991,8 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedSettingsIndexRoute: AuthenticatedSettingsIndexRoute,
   AuthenticatedSitesIndexRoute: AuthenticatedSitesIndexRoute,
   AuthenticatedTasksIndexRoute: AuthenticatedTasksIndexRoute,
+  AuthenticatedBuyerRequirementsIdEditRoute:
+    AuthenticatedBuyerRequirementsIdEditRoute,
 }
 
 const AuthenticatedRouteWithChildren = AuthenticatedRoute._addFileChildren(
@@ -893,6 +1003,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthRoute: AuthRouteWithChildren,
   AuthenticatedRoute: AuthenticatedRouteWithChildren,
+  DevCtiPreviewRoute: DevCtiPreviewRoute,
   OnboardingOfficeRoute: OnboardingOfficeRoute,
 }
 export const routeTree = rootRouteImport

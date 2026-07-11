@@ -5,25 +5,32 @@ import {
   AlertTriangle,
   ArrowRight,
   Bell,
+  CalendarDays,
   Check,
   ChevronLeft,
   ChevronRight,
   CircleCheck,
   Handshake,
   ReceiptText,
+  RotateCw,
   Sparkles,
+  SquareKanban,
   TrendingDown,
   TrendingUp,
+  Wallet,
   X,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import type {
   CashflowSummary,
-  LedgerDealGroup,
   LedgerPayment,
   LedgerView,
 } from '@estate-erp/api-client';
 import { api } from '@/lib/api';
+import { useAuth } from '@/providers/auth-provider';
 import { cn } from '@/lib/utils';
+import { formatMoney } from '@/lib/format';
+import { EmptyState, StatusBadge } from '@/components/domain';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -35,17 +42,6 @@ export const Route = createFileRoute('/_authenticated/cashflow/')({
 // ─────────────────────────────────────────────────────────────
 // Utils
 // ─────────────────────────────────────────────────────────────
-
-function toEok(manwon: number): string {
-  const sign = manwon < 0 ? '-' : '';
-  const abs = Math.abs(manwon);
-  if (abs >= 10000) return `${sign}${(abs / 10000).toFixed(1)}억`;
-  return `${sign}${abs.toLocaleString()}만`;
-}
-
-function toManwon(value: number): string {
-  return `${value.toLocaleString()}만`;
-}
 
 function daysFrom(value: string | null | undefined): number | null {
   if (!value) return null;
@@ -77,11 +73,21 @@ function CashflowDashboard() {
     month: today.getMonth() + 1,
   }));
 
-  const { data: cashflow, isLoading: cashflowLoading } = useQuery({
+  const {
+    data: cashflow,
+    isLoading: cashflowLoading,
+    isError: cashflowError,
+    refetch: refetchCashflow,
+  } = useQuery({
     queryKey: ['cashflow', selected.year, selected.month],
     queryFn: () => api.finance.cashflow.summary(selected.year, selected.month),
   });
-  const { data: ledger, isLoading: ledgerLoading } = useQuery({
+  const {
+    data: ledger,
+    isLoading: ledgerLoading,
+    isError: ledgerError,
+    refetch: refetchLedger,
+  } = useQuery({
     queryKey: ['finance', 'ledger', selected.year, selected.month],
     queryFn: () =>
       api.finance.ledger.get({
@@ -123,11 +129,25 @@ function CashflowDashboard() {
     );
   }
 
-  if (!cashflow || !ledger) {
+  if (cashflowError || ledgerError || !cashflow || !ledger) {
     return (
-      <div className="rounded-xl bg-muted/50 p-8 text-center text-sm text-muted-foreground">
-        데이터를 불러올 수 없습니다.
-      </div>
+      <EmptyState
+        icon={Wallet}
+        title="캐시플로우 데이터를 불러올 수 없습니다"
+        description="네트워크 상태를 확인한 뒤 다시 시도해주세요."
+        action={
+          <Button
+            variant="outline"
+            onClick={() => {
+              void refetchCashflow();
+              void refetchLedger();
+            }}
+          >
+            <RotateCw className="size-4" />
+            다시 시도
+          </Button>
+        }
+      />
     );
   }
 
@@ -185,17 +205,39 @@ function CashflowDashboard() {
               안녕하세요, 오늘 하루도 시작합니다
             </div>
           </div>
-          <Button asChild variant="outline" size="sm">
-            <Link to="/cashflow/ledger">
-              수금 원장
-              <ArrowRight className="size-3.5" />
-            </Link>
-          </Button>
+          <div className="flex items-center gap-1">
+            <Button asChild variant="outline" size="sm">
+              <Link to="/cashflow/ledger">
+                수금 원장
+                <ArrowRight className="size-3.5" />
+              </Link>
+            </Button>
+            <Button asChild variant="ghost" size="sm" title="수금 칸반 보기">
+              <Link to="/cashflow/ledger" search={{ view: 'kanban' }}>
+                <SquareKanban className="size-3.5" />
+                칸반
+              </Link>
+            </Button>
+            <Button asChild variant="ghost" size="sm" title="수금 캘린더 보기">
+              <Link to="/cashflow/ledger" search={{ view: 'calendar' }}>
+                <CalendarDays className="size-3.5" />
+                캘린더
+              </Link>
+            </Button>
+          </div>
         </div>
       </div>
 
       {/* 메인 히어로: 이번 달 돈 흐름 스토리 */}
-      <HeroBlock cashflow={cashflow} ledger={ledger} month={selected.month} />
+      <HeroBlock
+        cashflow={cashflow}
+        ledger={ledger}
+        year={selected.year}
+        month={selected.month}
+      />
+
+      {/* 월별 추이: 수금 / 고정비 / 순이익 */}
+      <MonthlyTrendChart trend={cashflow.monthlyTrend} />
 
       {/* 2단: 오늘 처리 / 이번 달 계약 */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
@@ -215,16 +257,75 @@ function CashflowDashboard() {
 }
 
 // ─────────────────────────────────────────────────────────────
+// 월별 추이 미니 차트 — 수금(막대) + 순이익(라벨)
+// ─────────────────────────────────────────────────────────────
+
+function MonthlyTrendChart({
+  trend,
+}: {
+  trend: CashflowSummary['monthlyTrend'];
+}) {
+  if (!trend || trend.length < 2) return null;
+  const max = Math.max(...trend.map((t) => t.collected), 1);
+  return (
+    <div className="rounded-xl border bg-card p-4">
+      <div className="mb-3 flex items-baseline justify-between">
+        <div className="text-sm font-semibold">월별 수금 추이</div>
+        <div className="text-[11px] text-muted-foreground">
+          최근 {trend.length}개월 · 수금액 기준
+        </div>
+      </div>
+      <div className="flex items-end gap-2">
+        {trend.map((t) => {
+          const pct = Math.max(2, Math.round((t.collected / max) * 100));
+          const monthLabel = t.month.length >= 7 ? `${Number(t.month.slice(5, 7))}월` : t.month;
+          return (
+            <div
+              key={t.month}
+              className="group flex flex-1 flex-col items-center gap-1"
+              title={`${t.month} · 수금 ${formatMoney(t.collected)} · 고정비 ${formatMoney(t.expense)} · 순이익 ${formatMoney(t.net)}`}
+            >
+              <span
+                className={cn(
+                  'text-[10px] font-medium tabular-nums',
+                  t.net >= 0 ? 'text-success' : 'text-destructive',
+                )}
+              >
+                {formatMoney(t.net)}
+              </span>
+              <div className="flex h-24 w-full items-end rounded-sm bg-muted/50">
+                <div
+                  className="w-full rounded-sm bg-success/70 transition-all group-hover:bg-success"
+                  style={{ height: `${pct}%` }}
+                />
+              </div>
+              <span className="text-[10px] text-muted-foreground">
+                {monthLabel}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+      <div className="mt-2 text-[10px] text-muted-foreground">
+        막대 = 수금액 · 위 숫자 = 순이익(수금 − 고정비)
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
 // Hero: 메인 블록 — 이번 달 수금·목표·순이익·받을 돈을 하나로
 // ─────────────────────────────────────────────────────────────
 
 function HeroBlock({
   cashflow,
   ledger,
+  year,
   month,
 }: {
   cashflow: CashflowSummary;
   ledger: LedgerView;
+  year: number;
   month: number;
 }) {
   const trend = cashflow.monthlyTrend;
@@ -243,9 +344,9 @@ function HeroBlock({
     Math.round((cashflow.collected / goal) * 100),
   );
 
-  // 이번 달 신규 발생 수수료
-  const startOfMonth = new Date(new Date().getFullYear(), month - 1, 1);
-  const endOfMonth = new Date(new Date().getFullYear(), month, 0, 23, 59, 59);
+  // 선택한 연·월의 신규 발생 수수료 (연도 이동 시에도 올바른 월 범위로 집계)
+  const startOfMonth = new Date(year, month - 1, 1);
+  const endOfMonth = new Date(year, month, 0, 23, 59, 59);
   const contractedStages = new Set([
     'contracted',
     'settling',
@@ -282,7 +383,7 @@ function HeroBlock({
           </div>
           <div className="mt-3 flex items-baseline gap-3">
             <span className="text-5xl font-bold tracking-tight">
-              {toEok(cashflow.collected)}
+              {formatMoney(cashflow.collected)}
             </span>
             <DeltaPill pct={deltaPct} />
           </div>
@@ -293,7 +394,7 @@ function HeroBlock({
               <span className="text-muted-foreground">
                 월 목표{' '}
                 <span className="font-medium text-foreground">
-                  {toEok(goal)}
+                  {formatMoney(goal)}
                 </span>{' '}
                 중
               </span>
@@ -310,7 +411,10 @@ function HeroBlock({
             <div className="text-[11px] text-muted-foreground">
               남은 목표{' '}
               <span className="font-medium text-foreground">
-                {toEok(Math.max(0, goal - cashflow.collected))}
+                {formatMoney(Math.max(0, goal - cashflow.collected))}
+              </span>
+              <span className="ml-1 text-[10px]">
+                · 목표는 고정비 기반 자동 추정
               </span>
             </div>
           </div>
@@ -320,24 +424,24 @@ function HeroBlock({
         <div className="grid grid-cols-3 divide-x">
           <HeroStat
             label="순이익"
-            value={toEok(cashflow.netProfit)}
+            value={formatMoney(cashflow.netProfit)}
             emphasis={cashflow.netProfit >= 0 ? 'positive' : 'negative'}
-            hint={`고정비 ${toEok(cashflow.monthlyExpense)}`}
+            hint={`고정비 ${formatMoney(cashflow.monthlyExpense)}`}
           />
           <HeroStat
             label="받을 돈"
-            value={toEok(pending)}
+            value={formatMoney(pending)}
             emphasis="neutral"
             hint={
               cashflow.overdue > 0
-                ? `연체 ${toEok(cashflow.overdue)}`
+                ? `연체 ${formatMoney(cashflow.overdue)}`
                 : `진행 ${ledger.summary.paymentCount - ledger.summary.collectedCount}건`
             }
             hintTone={cashflow.overdue > 0 ? 'red' : undefined}
           />
           <HeroStat
             label={`${month}월 계약 수수료`}
-            value={toEok(newBilledTotal)}
+            value={formatMoney(newBilledTotal)}
             emphasis="neutral"
             hint={`신규 계약 ${newContractCount}건`}
           />
@@ -594,8 +698,8 @@ function OverdueRow({
   const createTask = useMutation({
     mutationFn: () =>
       api.tasks.create({
-        title: `[독촉] ${item.location} · ${item.payment.code ?? ''} ${toManwon(item.remaining)} 수금`,
-        content: `${item.daysOverdue}일 경과한 ${item.payment.clientSide === 'seller' ? '매도측' : '매수측'} 수수료 ${toManwon(item.remaining)} 독촉 필요`,
+        title: `[독촉] ${item.location} · ${item.payment.code ?? ''} ${formatMoney(item.remaining)} 수금`,
+        content: `${item.daysOverdue}일 경과한 ${item.payment.clientSide === 'seller' ? '매도측' : '매수측'} 수수료 ${formatMoney(item.remaining)} 독촉 필요`,
         category: 'call',
         priority: 'urgent',
         source: 'system',
@@ -611,7 +715,9 @@ function OverdueRow({
     setLoading(true);
     try {
       await createTask.mutateAsync();
-      alert('독촉 태스크를 생성했습니다.');
+      toast.success('독촉 태스크를 생성했습니다.');
+    } catch {
+      toast.error('독촉 태스크 생성에 실패했습니다.');
     } finally {
       setLoading(false);
     }
@@ -624,7 +730,13 @@ function OverdueRow({
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-sm font-semibold">{item.location}</span>
+          <Link
+            to="/cashflow/ledger"
+            search={{ deal: item.dealId, payment: item.payment.id }}
+            className="text-sm font-semibold underline-offset-2 hover:underline"
+          >
+            {item.location}
+          </Link>
           <Badge
             variant="outline"
             className="border-0 bg-red-100 text-[10px] text-red-700 dark:bg-red-950/40 dark:text-red-300"
@@ -639,16 +751,16 @@ function OverdueRow({
         {item.payment.actualAmount !== null &&
           item.payment.actualAmount > 0 && (
             <div className="mt-0.5 text-[11px] text-muted-foreground">
-              수금 {toManwon(item.payment.actualAmount)} · 잔여{' '}
+              수금 {formatMoney(item.payment.actualAmount)} · 잔여{' '}
               <span className="font-medium text-red-600">
-                {toManwon(item.remaining)}
+                {formatMoney(item.remaining)}
               </span>
             </div>
           )}
       </div>
       <div className="shrink-0 text-right">
         <div className="text-base font-bold text-red-600 dark:text-red-400">
-          {toManwon(item.remaining)}
+          {formatMoney(item.remaining)}
         </div>
       </div>
       <div className="shrink-0">
@@ -673,20 +785,26 @@ function AdjustmentRow({
   item: Extract<ActionItem, { kind: 'adjustment' }>;
 }) {
   const qc = useQueryClient();
+  const { user } = useAuth();
+  const canDecide = user?.role === 'owner';
 
   const approve = useMutation({
     mutationFn: () => api.finance.adjustments.approve(item.id),
     onSuccess: () => {
+      toast.success('수수료 조정을 승인했습니다.');
       qc.invalidateQueries({ queryKey: ['finance', 'ledger'] });
       qc.invalidateQueries({ queryKey: ['cashflow'] });
     },
+    onError: () => toast.error('조정 승인에 실패했습니다.'),
   });
   const reject = useMutation({
     mutationFn: () => api.finance.adjustments.reject(item.id),
     onSuccess: () => {
+      toast.success('수수료 조정을 반려했습니다.');
       qc.invalidateQueries({ queryKey: ['finance', 'ledger'] });
       qc.invalidateQueries({ queryKey: ['cashflow'] });
     },
+    onError: () => toast.error('조정 반려에 실패했습니다.'),
   });
 
   const typeLabel =
@@ -719,30 +837,36 @@ function AdjustmentRow({
       </div>
       <div className="shrink-0 text-right">
         <div className="text-base font-bold text-amber-700 dark:text-amber-300">
-          {toManwon(item.amount)}
+          {formatMoney(item.amount)}
         </div>
       </div>
-      <div className="flex shrink-0 items-center gap-1">
-        <Button
-          size="sm"
-          variant="outline"
-          className="h-8"
-          onClick={() => reject.mutate()}
-          disabled={reject.isPending || approve.isPending}
-        >
-          <X className="size-3" />
-          반려
-        </Button>
-        <Button
-          size="sm"
-          className="h-8 bg-emerald-600 hover:bg-emerald-700"
-          onClick={() => approve.mutate()}
-          disabled={approve.isPending || reject.isPending}
-        >
-          <Check className="size-3" />
-          승인
-        </Button>
-      </div>
+      {canDecide ? (
+        <div className="flex shrink-0 items-center gap-1">
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-8"
+            onClick={() => reject.mutate()}
+            disabled={reject.isPending || approve.isPending}
+          >
+            <X className="size-3" />
+            반려
+          </Button>
+          <Button
+            size="sm"
+            className="h-8 bg-emerald-600 hover:bg-emerald-700"
+            onClick={() => approve.mutate()}
+            disabled={approve.isPending || reject.isPending}
+          >
+            <Check className="size-3" />
+            승인
+          </Button>
+        </div>
+      ) : (
+        <span className="shrink-0 text-[11px] text-muted-foreground">
+          대표 승인 대기
+        </span>
+      )}
     </div>
   );
 }
@@ -756,6 +880,7 @@ function UpcomingRow({
   return (
     <Link
       to="/cashflow/ledger"
+      search={{ deal: item.dealId, payment: item.payment.id }}
       className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-sky-50/50 dark:hover:bg-sky-950/10"
     >
       <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-sky-100 text-sky-700 dark:bg-sky-950/40 dark:text-sky-300">
@@ -776,7 +901,7 @@ function UpcomingRow({
       </div>
       <div className="shrink-0 text-right">
         <div className="text-base font-semibold">
-          {toManwon(item.payment.expectedAmount)}
+          {formatMoney(item.payment.expectedAmount)}
         </div>
       </div>
     </Link>
@@ -859,12 +984,6 @@ function MonthContracts({
   const overallRatio =
     billedTotal > 0 ? Math.round((collectedTotal / billedTotal) * 100) : 0;
 
-  const typeLabel: Record<string, string> = {
-    sale: '매매',
-    jeonse: '전세',
-    monthly: '월세',
-  };
-
   return (
     <div className="flex h-full flex-col overflow-hidden rounded-xl border bg-card">
       <div className="border-b px-4 py-3">
@@ -883,7 +1002,7 @@ function MonthContracts({
             <div className="flex items-baseline justify-between text-xs">
               <span className="text-muted-foreground">총 채권</span>
               <span className="text-lg font-bold tracking-tight">
-                {toEok(billedTotal)}
+                {formatMoney(billedTotal)}
               </span>
             </div>
             <div className="relative h-1.5 overflow-hidden rounded-full bg-muted">
@@ -894,10 +1013,10 @@ function MonthContracts({
             </div>
             <div className="flex items-baseline justify-between text-[11px]">
               <span className="text-emerald-700 dark:text-emerald-300">
-                수금 {toEok(collectedTotal)} ({overallRatio}%)
+                수금 {formatMoney(collectedTotal)} ({overallRatio}%)
               </span>
               <span className="text-muted-foreground">
-                미수금 {toEok(billedTotal - collectedTotal)}
+                미수금 {formatMoney(billedTotal - collectedTotal)}
               </span>
             </div>
           </div>
@@ -914,6 +1033,7 @@ function MonthContracts({
             <Link
               key={c.dealId}
               to="/cashflow/ledger"
+              search={{ deal: c.dealId }}
               className="block px-4 py-3 transition-colors hover:bg-muted/40"
             >
               <div className="flex items-start justify-between gap-2">
@@ -922,9 +1042,11 @@ function MonthContracts({
                     <span className="truncate text-sm font-medium">
                       {c.location}
                     </span>
-                    <Badge variant="outline" className="text-[10px]">
-                      {typeLabel[c.transactionType] ?? c.transactionType}
-                    </Badge>
+                    <StatusBadge
+                      kind="transactionType"
+                      status={c.transactionType}
+                      size="sm"
+                    />
                   </div>
                   <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted-foreground">
                     <span>계약 {dateShort(c.stageDate)}</span>
@@ -941,7 +1063,7 @@ function MonthContracts({
                 </div>
                 <div className="shrink-0 text-right">
                   <div className="text-sm font-semibold">
-                    {toManwon(c.billed)}
+                    {formatMoney(c.billed)}
                   </div>
                   <div className="text-[11px] text-emerald-700 dark:text-emerald-300">
                     {c.collectedRatio}%

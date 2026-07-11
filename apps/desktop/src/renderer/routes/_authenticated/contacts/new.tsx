@@ -1,16 +1,28 @@
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDeferredValue, useMemo, useState, type ComponentType, type ReactNode } from 'react';
-import { AlertTriangle, ArrowLeft, CheckCircle2, Phone, Plus, Trash2 } from 'lucide-react';
+import { toast } from 'sonner';
+import { AlertTriangle, ArrowLeft, CheckCircle2, Phone } from 'lucide-react';
 import { api } from '@/lib/api';
-import { formatPhoneNumber, mergeContactTags, normalizePhone, parseContactTags } from '@/lib/contacts';
+import { formatPhone } from '@/lib/format';
+import { mergeContactTags, normalizePhone, parseContactTags } from '@/lib/contacts';
 import { ContactGroupSelector } from '@/components/contacts/contact-group-selector';
+import {
+  ContactPhonesEditor,
+  createEmptyPhone,
+  firstPhoneValue,
+  toPhoneInputs,
+  type EditablePhone,
+} from '@/components/contacts/contact-phones-editor';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
+
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export const Route = createFileRoute('/_authenticated/contacts/new')({
   component: NewContactPage,
@@ -21,15 +33,18 @@ function NewContactPage() {
   const queryClient = useQueryClient();
   const [form, setForm] = useState({
     name: '',
-    phone: '',
     email: '',
     customTagsInput: '',
     memo: '',
   });
-  const [extraPhones, setExtraPhones] = useState<Array<{ phone: string; label: string }>>([]);
+  const [phones, setPhones] = useState<EditablePhone[]>(() => [createEmptyPhone(true)]);
   const [selectedGroupTags, setSelectedGroupTags] = useState<string[]>([]);
   const [error, setError] = useState('');
-  const deferredPhone = useDeferredValue(form.phone);
+  /** 중복 후보가 있어도 생성은 가능하지만, 사용자가 명시적으로 확인해야 한다 (PRD 9장) */
+  const [duplicateAcknowledged, setDuplicateAcknowledged] = useState(false);
+
+  const primaryPhoneValue = firstPhoneValue(phones);
+  const deferredPhone = useDeferredValue(primaryPhoneValue);
   const normalizedPhone = normalizePhone(deferredPhone);
 
   const duplicateContactsQuery = useQuery({
@@ -37,39 +52,35 @@ function NewContactPage() {
     queryFn: () => api.contacts.findByPhone(normalizedPhone),
     enabled: normalizedPhone.length >= 7,
   });
+  const duplicates = normalizedPhone.length >= 7 ? duplicateContactsQuery.data ?? [] : [];
+  const hasDuplicates = duplicates.length > 0;
 
   const parsedTags = useMemo(() => parseContactTags(form.customTagsInput), [form.customTagsInput]);
 
   const mutation = useMutation({
-    mutationFn: () =>
-      api.contacts.create({
+    mutationFn: () => {
+      const phoneInputs = toPhoneInputs(phones);
+      return api.contacts.create({
         name: form.name.trim(),
-        phone: form.phone.trim() || undefined,
-        phones: [
-          ...(form.phone.trim()
-            ? [{ phone: form.phone.trim(), label: 'mobile', isPrimary: true, isActive: true }]
-            : []),
-          ...extraPhones
-            .filter((item) => item.phone.trim())
-            .map((item) => ({
-              phone: item.phone.trim(),
-              label: item.label,
-              isPrimary: false,
-              isActive: item.label !== 'old',
-            })),
-        ],
+        phone: firstPhoneValue(phones) || undefined,
+        phones: phoneInputs.length > 0 ? phoneInputs : undefined,
         email: form.email.trim() || undefined,
         tags: mergeContactTags(selectedGroupTags, form.customTagsInput),
         memo: form.memo.trim() || undefined,
-      }),
+      });
+    },
     onSuccess: async (created) => {
       await queryClient.invalidateQueries({ queryKey: ['contacts'] });
-      navigate({
+      toast.success('연락처가 등록되었습니다.');
+      void navigate({
         to: '/contacts/$id',
         params: { id: created.id },
       });
     },
-    onError: () => setError('연락처 등록에 실패했습니다.'),
+    onError: () => {
+      setError('연락처 등록에 실패했습니다.');
+      toast.error('연락처 등록에 실패했습니다.');
+    },
   });
 
   return (
@@ -103,6 +114,14 @@ function NewContactPage() {
                   setError('이름은 필수입니다.');
                   return;
                 }
+                if (form.email.trim() && !EMAIL_PATTERN.test(form.email.trim())) {
+                  setError('이메일 형식이 올바르지 않습니다.');
+                  return;
+                }
+                if (hasDuplicates && !duplicateAcknowledged) {
+                  setError('동일 번호의 기존 연락처가 있습니다. 우측에서 확인 후 "중복 확인" 체크박스를 선택해야 등록할 수 있습니다.');
+                  return;
+                }
 
                 setError('');
                 mutation.mutate();
@@ -115,7 +134,7 @@ function NewContactPage() {
                 </div>
               )}
 
-              <FormField label="이름">
+              <FormField label="이름" required>
                 <Input
                   id="name"
                   type="text"
@@ -125,77 +144,15 @@ function NewContactPage() {
                 />
               </FormField>
 
-              <div className="grid gap-4 sm:grid-cols-2">
-                <FormField label="전화번호">
-                  <Input
-                    id="phone"
-                    type="tel"
-                    value={form.phone}
-                    onChange={(event) => setForm((previous) => ({ ...previous, phone: event.target.value }))}
-                    placeholder="010-1234-5678"
-                  />
-                </FormField>
-
-                <FormField label="추가 번호">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="w-full justify-start"
-                    onClick={() => setExtraPhones((previous) => [...previous, { phone: '', label: 'home' }])}
-                  >
-                    <Plus className="mr-2 size-4" />
-                    번호 추가
-                  </Button>
-                </FormField>
-              </div>
-
-              {extraPhones.length > 0 && (
-                <div className="space-y-2">
-                  {extraPhones.map((item, index) => (
-                    <div key={index} className="grid grid-cols-[120px_minmax(0,1fr)_36px] gap-2">
-                      <select
-                        value={item.label}
-                        onChange={(event) =>
-                          setExtraPhones((previous) =>
-                            previous.map((phone, phoneIndex) =>
-                              phoneIndex === index ? { ...phone, label: event.target.value } : phone,
-                            ),
-                          )
-                        }
-                        className="h-10 rounded-md border border-input bg-background px-3 text-sm"
-                      >
-                        <option value="home">집전화</option>
-                        <option value="work">업무폰</option>
-                        <option value="office">회사</option>
-                        <option value="fax">팩스</option>
-                        <option value="old">예전번호</option>
-                        <option value="other">기타</option>
-                      </select>
-                      <Input
-                        type="tel"
-                        value={item.phone}
-                        onChange={(event) =>
-                          setExtraPhones((previous) =>
-                            previous.map((phone, phoneIndex) =>
-                              phoneIndex === index ? { ...phone, phone: event.target.value } : phone,
-                            ),
-                          )
-                        }
-                        placeholder="추가 전화번호"
-                      />
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => setExtraPhones((previous) => previous.filter((_, phoneIndex) => phoneIndex !== index))}
-                        aria-label="번호 삭제"
-                      >
-                        <Trash2 className="size-4" />
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-              )}
+              <FormField label="전화번호">
+                <ContactPhonesEditor
+                  phones={phones}
+                  onChange={(next) => {
+                    setPhones(next);
+                    setDuplicateAcknowledged(false);
+                  }}
+                />
+              </FormField>
 
               <FormField label="이메일">
                 <Input
@@ -258,11 +215,28 @@ function NewContactPage() {
                 />
               </FormField>
 
+              {hasDuplicates && (
+                <label className="flex items-start gap-2 rounded-lg border border-warning/30 bg-warning-soft/40 px-3 py-2.5 text-sm">
+                  <Checkbox
+                    checked={duplicateAcknowledged}
+                    onCheckedChange={(checked) => setDuplicateAcknowledged(checked === true)}
+                    className="mt-0.5"
+                  />
+                  <span>
+                    동일 번호의 기존 연락처 {duplicates.length}건을 확인했으며, 중복이 아닌 새 연락처로
+                    등록합니다.
+                  </span>
+                </label>
+              )}
+
               <div className="flex items-center justify-end gap-2">
                 <Button type="button" variant="outline" asChild>
                   <Link to="/contacts">취소</Link>
                 </Button>
-                <Button type="submit" disabled={mutation.isPending}>
+                <Button
+                  type="submit"
+                  disabled={mutation.isPending || (hasDuplicates && !duplicateAcknowledged)}
+                >
                   {mutation.isPending ? '등록 중...' : '등록 후 상세 보기'}
                 </Button>
               </div>
@@ -290,16 +264,33 @@ function NewContactPage() {
                   <Skeleton key={index} className="h-20 w-full rounded-xl" />
                 ))}
               </div>
-            ) : duplicateContactsQuery.data && duplicateContactsQuery.data.length > 0 ? (
+            ) : duplicateContactsQuery.isError ? (
+              <StatusNotice
+                icon={AlertTriangle}
+                title="중복 확인 실패"
+                description="중복 후보 조회에 실패했습니다. 네트워크 확인 후 다시 시도하세요."
+                tone="warning"
+                action={
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => void duplicateContactsQuery.refetch()}
+                  >
+                    다시 시도
+                  </Button>
+                }
+              />
+            ) : hasDuplicates ? (
               <>
                 <StatusNotice
                   icon={AlertTriangle}
                   title="기존 연락처 발견"
-                  description="중복 등록 전 기존 연락처를 먼저 확인하는 편이 안전합니다."
+                  description="중복 등록 전 기존 연락처를 먼저 확인하는 편이 안전합니다. 신규 등록하려면 좌측의 중복 확인 체크가 필요합니다."
                   tone="warning"
                 />
                 <div className="space-y-3">
-                  {duplicateContactsQuery.data.map((contact) => (
+                  {duplicates.map((contact) => (
                     <div key={contact.id} className="rounded-xl border bg-card px-4 py-3">
                       <div className="flex items-start justify-between gap-3">
                         <div className="space-y-1">
@@ -310,8 +301,14 @@ function NewContactPage() {
                           >
                             {contact.name}
                           </Link>
-                          <p className="text-sm text-muted-foreground">
-                            {formatContactPhones(contact)}
+                          <p className="text-sm text-muted-foreground tabular-nums">
+                            {formatPhone(contact.phone)}
+                            {(() => {
+                              const secondary = (contact.phones ?? []).find(
+                                (phone) => !phone.isPrimary && phone.phone,
+                              )?.phone;
+                              return secondary ? ` · ${formatPhone(secondary)}` : '';
+                            })()}
                           </p>
                           {contact.email && <p className="text-sm text-muted-foreground">{contact.email}</p>}
                         </div>
@@ -333,7 +330,7 @@ function NewContactPage() {
               <StatusNotice
                 icon={CheckCircle2}
                 title="중복 연락처 없음"
-                description={`현재 입력 번호 ${formatPhoneNumber(form.phone)} 와 일치하는 연락처가 없습니다.`}
+                description={`현재 입력 번호 ${formatPhone(primaryPhoneValue)} 와 일치하는 연락처가 없습니다.`}
                 tone="success"
               />
             )}
@@ -344,25 +341,16 @@ function NewContactPage() {
   );
 }
 
-function FormField({ label, children }: { label: string; children: ReactNode }) {
+function FormField({ label, required, children }: { label: string; required?: boolean; children: ReactNode }) {
   return (
     <div className="space-y-1.5">
-      <Label className="text-xs font-medium text-muted-foreground">{label}</Label>
+      <Label className="text-xs font-medium text-muted-foreground">
+        {label}
+        {required && <span className="ml-0.5 text-destructive">*</span>}
+      </Label>
       {children}
     </div>
   );
-}
-
-function formatContactPhones(contact: { phone: string | null; phones?: Array<{ phone: string }> }) {
-  const phones = contact.phones?.length
-    ? contact.phones.map((item) => item.phone)
-    : contact.phone
-      ? [contact.phone]
-      : [];
-
-  return phones.length > 0
-    ? phones.map((phone) => formatPhoneNumber(phone)).join(' · ')
-    : '-';
 }
 
 function StatusNotice({
@@ -370,18 +358,20 @@ function StatusNotice({
   title,
   description,
   tone = 'default',
+  action,
 }: {
   icon: ComponentType<{ className?: string }>;
   title: string;
   description: string;
   tone?: 'default' | 'warning' | 'success';
+  action?: ReactNode;
 }) {
   return (
     <div
       className={[
         'rounded-xl border px-4 py-3',
-        tone === 'warning' && 'border-amber-200 bg-amber-50/70',
-        tone === 'success' && 'border-emerald-200 bg-emerald-50/70',
+        tone === 'warning' && 'border-warning/30 bg-warning-soft/50',
+        tone === 'success' && 'border-success/30 bg-success-soft/50',
         tone === 'default' && 'border-border bg-muted/30',
       ].filter(Boolean).join(' ')}
     >
@@ -390,6 +380,7 @@ function StatusNotice({
         <div className="space-y-1">
           <p className="text-sm font-medium">{title}</p>
           <p className="text-sm text-muted-foreground">{description}</p>
+          {action && <div className="pt-1">{action}</div>}
         </div>
       </div>
     </div>

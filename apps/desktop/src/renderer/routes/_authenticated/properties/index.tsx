@@ -15,6 +15,7 @@ import {
   Check,
   ChevronDown,
   CircleDollarSign,
+  Columns3,
   DoorOpen,
   ExternalLink,
   FileText,
@@ -24,6 +25,7 @@ import {
   Megaphone,
   MessageSquare,
   Phone,
+  PhoneCall,
   Plus,
   RotateCcw,
   Ruler,
@@ -59,6 +61,7 @@ import {
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
@@ -97,6 +100,13 @@ import {
   buildPropertyMapClustersFromOffsets,
   type PropertyMapClusterSource,
 } from './-property-map-utils';
+import {
+  IntakeNextConfirmCell,
+  ListingCostSummary,
+  PropertyBulkActions,
+  PropertyRowActions,
+  type ListingCostExtras,
+} from './-property-intake-actions';
 
 // ── Labels & Colors ─────────────────────────────────────────────
 
@@ -112,7 +122,13 @@ const transactionTypeMeta: Record<string, { label: string; className: string }> 
   sale: { label: '매매', className: 'bg-[#fdebec] text-[#8f4b46]' },
   jeonse: { label: '전세', className: 'bg-[#e7f3f8] text-[#337ea9]' },
   monthly: { label: '월세', className: 'bg-[#fbf3db] text-[#8f6b1f]' },
+  yearly_rent: { label: '연세', className: 'bg-[#f1edfb] text-[#6940a5]' },
 };
+
+// 거래별 확인상태 인라인 편집용 칩 옵션 (웹 checkStatusChipOptions 대응)
+const checkStatusChipOptions: ChipOption[] = Object.entries(checkStatusMeta).map(
+  ([value, meta]) => ({ value, label: meta.label, className: meta.pillClassName }),
+);
 
 const adStatusMeta: Record<string, { label: string; className: string }> = {
   planned: { label: '보류', className: 'bg-[#f1f1ef] text-[#5f5e5b]' },
@@ -220,6 +236,7 @@ const transactionTypeOptions = [
   { value: 'sale', label: '매매' },
   { value: 'jeonse', label: '전세' },
   { value: 'monthly', label: '월세' },
+  { value: 'yearly_rent', label: '연세' },
 ] as const;
 
 const siteTypeOptions = [
@@ -368,6 +385,11 @@ function PropertiesPage() {
   const [isSiteFilterOpen, setIsSiteFilterOpen] = useState(false);
   const [activeSorts, setActiveSorts] = useState<SortDefinition[]>([]);
   const [sorting, setSorting] = useState<SortingState>([]);
+  // (웹 대응) 선택 표시 컬럼 — 관리비/융자금
+  const [optionalColumns, setOptionalColumns] = useState({
+    maintenanceFee: false,
+    loanAmount: false,
+  });
   const debouncedSearch = useDebouncedValue(search, 300);
   const debouncedDongSearch = useDebouncedValue(propertyFilters.dongSearch, 300);
   const debouncedUnitSearch = useDebouncedValue(propertyFilters.unitSearch, 300);
@@ -912,6 +934,18 @@ function PropertiesPage() {
         },
       },
       {
+        id: 'checkStatus',
+        header: () => <TableHeaderLabel icon={<Tag className="size-4" />} label="거래상태" />,
+        size: 120,
+        enableSorting: false,
+        cell: ({ row }) => (
+          <ListingStatusStack
+            listings={row.original.listings}
+            onChange={(listingId, value) => handleCellSave(listingId, 'checkStatus', value)}
+          />
+        ),
+      },
+      {
         id: 'confirmAction',
         header: () => <TableHeaderLabel icon={<Check className="size-4" />} label="확인" />,
         size: 65,
@@ -951,6 +985,13 @@ function PropertiesPage() {
             }
           />
         ),
+      },
+      {
+        id: 'intake',
+        header: () => <TableHeaderLabel icon={<PhoneCall className="size-4" />} label="다음확인" />,
+        size: 168,
+        enableSorting: false,
+        cell: ({ row }) => <IntakeNextConfirmCell intake={row.original.representative} />,
       },
       {
         id: 'price',
@@ -995,6 +1036,62 @@ function PropertiesPage() {
           />
         ),
       },
+      ...(optionalColumns.maintenanceFee
+        ? [
+            {
+              id: 'maintenanceFee',
+              header: () => (
+                <TableHeaderLabel icon={<CircleDollarSign className="size-4" />} label="관리비" />
+              ),
+              size: 88,
+              enableSorting: false,
+              meta: {
+                cellClassName: 'hover:bg-muted/50',
+                onCellDoubleClick: (
+                  _group: PropertyListingGroup,
+                  event: ReactMouseEvent<HTMLTableCellElement>,
+                ) => {
+                  triggerStackCellEditor(event);
+                },
+              },
+              cell: ({ row }) => (
+                <ListingNumberFieldStack
+                  listings={row.original.listings}
+                  field="maintenanceFee"
+                  onSave={handleCellSave}
+                />
+              ),
+            } satisfies ColumnDef<PropertyListingGroup, unknown>,
+          ]
+        : []),
+      ...(optionalColumns.loanAmount
+        ? [
+            {
+              id: 'loanAmount',
+              header: () => (
+                <TableHeaderLabel icon={<CircleDollarSign className="size-4" />} label="융자금" />
+              ),
+              size: 96,
+              enableSorting: false,
+              meta: {
+                cellClassName: 'hover:bg-muted/50',
+                onCellDoubleClick: (
+                  _group: PropertyListingGroup,
+                  event: ReactMouseEvent<HTMLTableCellElement>,
+                ) => {
+                  triggerStackCellEditor(event);
+                },
+              },
+              cell: ({ row }) => (
+                <ListingNumberFieldStack
+                  listings={row.original.listings}
+                  field="loanAmount"
+                  onSave={handleCellSave}
+                />
+              ),
+            } satisfies ColumnDef<PropertyListingGroup, unknown>,
+          ]
+        : []),
       {
         id: 'advertisement',
         header: () => <TableHeaderLabel icon={<Megaphone className="size-4" />} label="광고" />,
@@ -1038,6 +1135,18 @@ function PropertiesPage() {
           />
         ),
       },
+      {
+        id: 'actions',
+        header: () => <span className="sr-only">작업</span>,
+        size: 44,
+        enableSorting: false,
+        cell: ({ row }) => (
+          <PropertyRowActions
+            listings={row.original.listings}
+            intake={row.original.representative}
+          />
+        ),
+      },
     ],
     [
       handleCellSave,
@@ -1048,6 +1157,8 @@ function PropertiesPage() {
       confirmMutation.isPending,
       confirmMutation.variables?.intakeId,
       intakeStatusMutation.isPending,
+      optionalColumns.maintenanceFee,
+      optionalColumns.loanAmount,
     ],
   );
 
@@ -1364,6 +1475,37 @@ function PropertiesPage() {
                 공동
               </label>
 
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 gap-1.5 px-2.5 text-xs text-muted-foreground"
+                  >
+                    <Columns3 className="size-3.5" />
+                    컬럼
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-40">
+                  <DropdownMenuCheckboxItem
+                    checked={optionalColumns.maintenanceFee}
+                    onCheckedChange={(checked) =>
+                      setOptionalColumns((prev) => ({ ...prev, maintenanceFee: Boolean(checked) }))
+                    }
+                  >
+                    관리비
+                  </DropdownMenuCheckboxItem>
+                  <DropdownMenuCheckboxItem
+                    checked={optionalColumns.loanAmount}
+                    onCheckedChange={(checked) =>
+                      setOptionalColumns((prev) => ({ ...prev, loanAmount: Boolean(checked) }))
+                    }
+                  >
+                    융자금
+                  </DropdownMenuCheckboxItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+
               {hasActiveFilters && (
                 <>
                   <div className="mx-0.5 h-4 w-px bg-border" />
@@ -1432,6 +1574,9 @@ function PropertiesPage() {
                 isLoadingMore={isFetchingNextPage}
                 onEndReached={handleEndReached}
                 emptyMessage={hasActiveFilters ? '조건에 맞는 매물이 없습니다.' : '등록된 매물이 없습니다.'}
+                renderBulkActions={(selectedRows) => (
+                  <PropertyBulkActions groups={selectedRows} />
+                )}
                 renderStatusBar={() => (
                   <span>
                     의뢰 {intakeCountLabel}건 표시
@@ -2324,6 +2469,11 @@ function PropertySheetListingCard({ listing }: { listing: PropertyListing }) {
           <TransactionBadge transactionType={listing.transactionType} />
           <StatusIndicator value={listing.checkStatus} />
           <JointBrokerageBadge listing={listing} />
+          {listing.isHidden && (
+            <span className="inline-flex rounded-md bg-[#fbe4e4] px-1.5 py-0.5 text-[11px] font-medium leading-5 text-[#9f5555]">
+              숨김
+            </span>
+          )}
         </div>
         <span className="shrink-0 text-[11px] text-muted-foreground">
           확인 {formatDateShort(listing.updatedAt)}
@@ -2341,6 +2491,7 @@ function PropertySheetListingCard({ listing }: { listing: PropertyListing }) {
         <span>등록 {formatDateShort(listing.createdAt)}</span>
         <span>확인 {formatDaysAgo(listing.updatedAt)}</span>
       </div>
+      <ListingCostSummary listing={listing as PropertyListing & ListingCostExtras} />
       {listing.memo?.trim() && (
         <p className="mt-2.5 line-clamp-2 border-l-2 border-border pl-2.5 text-[12px] leading-5 text-muted-foreground">
           {listing.memo.trim()}
@@ -2732,6 +2883,49 @@ function TransactionStack({ listings }: { listings: ListingSummary[] }) {
       {listings.map((listing) => (
         <div key={listing.id} className="flex items-center gap-1">
           <TransactionBadge transactionType={listing.transactionType} />
+          {listing.isHidden && (
+            <span className="inline-flex rounded-[4px] bg-[#fbe4e4] px-1.5 py-0.5 text-[11px] font-medium leading-5 text-[#9f5555]">
+              숨김
+            </span>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ListingStatusStack({
+  listings,
+  onChange,
+}: {
+  listings: ListingSummary[];
+  onChange: (listingId: string, value: string) => void;
+}) {
+  const hasMultiple = listings.length > 1;
+  return (
+    <div
+      className={cn(
+        '-mx-2.5 flex h-full flex-col items-stretch',
+        hasMultiple && 'divide-y divide-[#d9d9d6]',
+      )}
+      style={getListingStackStyle(listings)}
+      onClick={(event) => event.stopPropagation()}
+    >
+      {listings.map((listing) => (
+        <div key={listing.id} className="flex flex-1 items-stretch">
+          <EditableCell
+            recordId={listing.id}
+            field="checkStatus"
+            value={listing.checkStatus}
+            onSave={(_id, _field, value) => onChange(listing.id, value as string)}
+            editType="select-chip"
+            chipOptions={checkStatusChipOptions}
+          >
+            <span className="flex h-full w-full items-center gap-1.5 px-2.5">
+              {hasMultiple && <TransactionMiniLabel transactionType={listing.transactionType} />}
+              <StatusIndicator value={listing.checkStatus} />
+            </span>
+          </EditableCell>
         </div>
       ))}
     </div>
@@ -2963,6 +3157,50 @@ function ListingMonthlyRentStack({
           ) : (
             <span className="flex h-full w-full items-center px-2.5 text-[13px] text-muted-foreground">-</span>
           )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// (웹 대응) 선택 컬럼(관리비/융자금)용 숫자 필드 스택
+function ListingNumberFieldStack({
+  listings,
+  field,
+  onSave,
+}: {
+  listings: ListingSummary[];
+  field: 'maintenanceFee' | 'loanAmount';
+  onSave: (recordId: string, field: string, value: unknown) => void;
+}) {
+  const hasMultiple = listings.length > 1;
+  return (
+    <div
+      className={cn(
+        '-mx-2.5 flex h-full min-w-0 flex-col items-stretch',
+        hasMultiple && 'divide-y divide-[#d9d9d6]',
+      )}
+      style={getListingStackStyle(listings)}
+      onClick={(event) => event.stopPropagation()}
+    >
+      {listings.map((listing) => (
+        <div key={listing.id} className="flex min-w-0 flex-1 items-center">
+          <EditableCell
+            recordId={listing.id}
+            field={field}
+            value={listing[field]}
+            onSave={(recordId, savedField, value) => {
+              onSave(recordId, savedField, parseEditorCellValue(value));
+            }}
+            editType="number"
+            activation="doubleClick"
+            portalAnchor={hasMultiple ? 'self' : 'tableCell'}
+            hoverHighlight={false}
+          >
+            <span className="flex h-full w-full items-center px-2.5 text-sm font-medium tabular-nums">
+              {listing[field] ? formatPrice(listing[field] as number) : '-'}
+            </span>
+          </EditableCell>
         </div>
       ))}
     </div>
@@ -3879,6 +4117,9 @@ function toListingSummary(listing: ListingSummary): ListingSummary {
     moveInAvailableFrom: listing.moveInAvailableFrom,
     moveInAvailableTo: listing.moveInAvailableTo,
     checkStatus: listing.checkStatus,
+    isHidden: listing.isHidden,
+    maintenanceFee: listing.maintenanceFee,
+    loanAmount: listing.loanAmount,
     memo: listing.memo,
     createdAt: listing.createdAt,
     updatedAt: listing.updatedAt,
@@ -3897,6 +4138,7 @@ function getTransactionTypeOrder(value: string) {
   if (value === 'sale') return 0;
   if (value === 'jeonse') return 1;
   if (value === 'monthly') return 2;
+  if (value === 'yearly_rent') return 3;
   return 99;
 }
 

@@ -5,11 +5,15 @@ import {
   AlertCircle,
   CircleCheck,
   Handshake,
+  RotateCw,
   TrendingUp,
 } from 'lucide-react';
 import type { EmployeeDealParticipant } from '@estate-erp/api-client';
 import { useAuth } from '@/providers/auth-provider';
 import { api } from '@/lib/api';
+import { formatDate, formatMoney } from '@/lib/format';
+import { EmptyState, PageHeader } from '@/components/domain';
+import { Button } from '@/components/ui/button';
 import {
   Card,
   CardContent,
@@ -31,19 +35,6 @@ import { Skeleton } from '@/components/ui/skeleton';
 export const Route = createFileRoute('/_authenticated/cashflow/my-settlement')({
   component: MySettlementPage,
 });
-
-function toEok(manwon: number): string {
-  const sign = manwon < 0 ? '-' : '';
-  const abs = Math.abs(manwon);
-  if (abs >= 10000) return `${sign}${(abs / 10000).toFixed(1)}억`;
-  return `${sign}${abs.toLocaleString()}만`;
-}
-
-function formatDate(iso: string | null): string {
-  if (!iso) return '-';
-  const d = new Date(iso);
-  return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}`;
-}
 
 const roleLabel: Record<string, string> = {
   listing_agent: '매도측',
@@ -67,7 +58,7 @@ function MySettlementPage() {
   const { user } = useAuth();
   const myId = user?.id;
 
-  const { data: me, isLoading } = useQuery({
+  const { data: me, isLoading, isError, refetch } = useQuery({
     queryKey: ['employees', myId],
     queryFn: () => api.employees.findOne(myId!),
     enabled: !!myId,
@@ -106,12 +97,10 @@ function MySettlementPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div>
-        <h1 className="text-lg font-semibold tracking-tight">내 수수료</h1>
-        <p className="text-sm text-muted-foreground">
-          내가 참여한 거래와 배분 수수료, 정산 상태를 확인합니다.
-        </p>
-      </div>
+      <PageHeader
+        title="내 수수료"
+        description="내가 참여한 거래와 배분 수수료, 정산 상태를 확인합니다. 정산 처리는 사무소 정책에 따라 대표가 진행합니다."
+      />
 
       <div className="grid gap-3 md:grid-cols-4">
         <SummaryCard
@@ -122,18 +111,18 @@ function MySettlementPage() {
         <SummaryCard
           icon={<TrendingUp className="size-4" />}
           label="누적 배분 수수료"
-          value={toEok(totals.total)}
+          value={formatMoney(totals.total)}
           highlight
         />
         <SummaryCard
           icon={<CircleCheck className="size-4" />}
           label="정산 완료"
-          value={toEok(totals.settled)}
+          value={formatMoney(totals.settled)}
         />
         <SummaryCard
           icon={<AlertCircle className="size-4" />}
           label="미정산"
-          value={`${toEok(totals.unsettled)} (${totals.unsettledCount}건)`}
+          value={`${formatMoney(totals.unsettled)} (${totals.unsettledCount}건)`}
           warn={totals.unsettledCount > 0}
         />
       </div>
@@ -145,9 +134,29 @@ function MySettlementPage() {
         </CardHeader>
         <CardContent>
           {isLoading ? (
-            <Skeleton className="h-60 rounded-lg" />
+            <div className="space-y-2">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <Skeleton key={i} className="h-10 rounded-md" />
+              ))}
+            </div>
+          ) : isError ? (
+            <EmptyState
+              icon={Handshake}
+              title="정산 내역을 불러오지 못했습니다"
+              description="네트워크 상태를 확인한 뒤 다시 시도해주세요."
+              action={
+                <Button variant="outline" onClick={() => refetch()}>
+                  <RotateCw className="size-4" />
+                  다시 시도
+                </Button>
+              }
+            />
           ) : sorted.length === 0 ? (
-            <EmptyState />
+            <EmptyState
+              icon={Handshake}
+              title="아직 참여한 거래가 없습니다"
+              description="거래에 참여하면 이 화면에 내 배분 수수료가 집계됩니다."
+            />
           ) : (
             <div className="overflow-x-auto">
               <Table>
@@ -197,7 +206,7 @@ function MySettlementPage() {
                             : '-'}
                         </TableCell>
                         <TableCell className="text-right tabular-nums font-medium text-emerald-600 dark:text-emerald-400">
-                          {toEok(p.commissionAmount ?? 0)}
+                          {formatMoney(p.commissionAmount ?? 0)}
                         </TableCell>
                         <TableCell>
                           {settled ? (
@@ -257,14 +266,3 @@ function SummaryCard({
   );
 }
 
-function EmptyState() {
-  return (
-    <div className="rounded-xl border border-dashed bg-muted/30 p-10 text-center">
-      <Handshake className="mx-auto size-8 text-muted-foreground" />
-      <p className="mt-3 text-sm font-medium">아직 참여한 거래가 없습니다</p>
-      <p className="mt-1 text-xs text-muted-foreground">
-        거래에 참여하면 이 화면에 내 배분 수수료가 집계됩니다.
-      </p>
-    </div>
-  );
-}

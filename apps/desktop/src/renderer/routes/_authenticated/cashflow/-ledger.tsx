@@ -15,8 +15,11 @@ import {
   Handshake,
   LayoutList,
   ReceiptText,
-  Search,
+  RotateCw,
+  SquareKanban,
+  Wallet,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import type {
   LedgerDealGroup,
   LedgerPayment,
@@ -24,7 +27,19 @@ import type {
   LedgerView,
 } from '@estate-erp/api-client';
 import { api } from '@/lib/api';
+import { useAuth } from '@/providers/auth-provider';
 import { cn } from '@/lib/utils';
+import { formatDate, formatMoney } from '@/lib/format';
+import { getStatusMeta } from '@/lib/status-config';
+import {
+  EmptyState,
+  EntityChip,
+  FilterBar,
+  FilterSearch,
+  FilterSelect,
+  StatusBadge,
+} from '@/components/domain';
+import { LedgerKanban } from './-ledger-kanban';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -59,56 +74,21 @@ import {
 } from '@/components/ui/sheet';
 
 // ─────────────────────────────────────────────────────────────
-// 원장 스타일 정의
+// 원장 스타일 정의 — 상태 라벨/컬러는 status-config(StatusBadge) 단일 소스 사용
 // ─────────────────────────────────────────────────────────────
 
-const paymentStatusMeta: Record<
-  string,
-  { label: string; dotClass: string; pillClass: string }
-> = {
-  draft: {
-    label: '초안',
-    dotClass: 'bg-zinc-400',
-    pillClass:
-      'text-zinc-600 bg-zinc-100 dark:text-zinc-400 dark:bg-zinc-900',
-  },
-  pending: {
-    label: '예정',
-    dotClass: 'bg-sky-500',
-    pillClass: 'text-sky-700 bg-sky-50 dark:text-sky-300 dark:bg-sky-950/40',
-  },
-  partial: {
-    label: '일부수금',
-    dotClass: 'bg-amber-500',
-    pillClass: 'text-amber-700 bg-amber-50 dark:text-amber-300 dark:bg-amber-950/40',
-  },
-  collected: {
-    label: '수금완료',
-    dotClass: 'bg-emerald-500',
-    pillClass: 'text-emerald-700 bg-emerald-50 dark:text-emerald-300 dark:bg-emerald-950/40',
-  },
-  overdue: {
-    label: '연체',
-    dotClass: 'bg-red-500',
-    pillClass: 'text-red-700 bg-red-50 dark:text-red-300 dark:bg-red-950/40',
-  },
-  waived: {
-    label: '면제',
-    dotClass: 'bg-zinc-400',
-    pillClass: 'text-zinc-600 bg-zinc-100 dark:text-zinc-400 dark:bg-zinc-900',
-  },
-  cancelled: {
-    label: '취소',
-    dotClass: 'bg-zinc-400',
-    pillClass: 'text-zinc-600 bg-zinc-100 dark:text-zinc-400 dark:bg-zinc-900',
-  },
-};
+/** 필터 옵션에 노출할 수금 상태 (status-config 라벨 사용) */
+const STATUS_FILTER_VALUES = [
+  'draft',
+  'pending',
+  'partial',
+  'collected',
+  'overdue',
+  'waived',
+  'cancelled',
+] as const;
 
-const transactionTypeLabel: Record<string, string> = {
-  sale: '매매',
-  jeonse: '전세',
-  monthly: '월세',
-};
+const TYPE_FILTER_VALUES = ['sale', 'jeonse', 'monthly', 'yearly_rent'] as const;
 
 // Deal stage 를 4단계 마일스톤 으로 요약
 // 수수료 채권 파이프라인 — 계약 체결 이후 4단계만 의미가 있음
@@ -150,18 +130,6 @@ const stageMilestone = (
   };
 };
 
-function toManwon(value: number): string {
-  return `${value.toLocaleString()}만`;
-}
-
-function toDateLabel(value: string | null | undefined): string {
-  if (!value) return '-';
-  return new Date(value).toLocaleDateString('ko-KR', {
-    month: 'numeric',
-    day: 'numeric',
-  });
-}
-
 function daysFrom(value: string | null | undefined): number | null {
   if (!value) return null;
   const diff = Math.round(
@@ -182,7 +150,7 @@ function relativeDateLabel(value: string | null | undefined): string {
 // Top-level Ledger view
 // ─────────────────────────────────────────────────────────────
 
-export type LedgerViewMode = 'table' | 'calendar';
+export type LedgerViewMode = 'table' | 'calendar' | 'kanban';
 
 export type LedgerSortKey = 'dueDate_asc' | 'dueDate_desc' | 'amount_desc';
 
@@ -254,31 +222,45 @@ function useVisibleColumns() {
 
 export function LedgerView({
   defaultViewMode = 'table',
-}: { defaultViewMode?: LedgerViewMode } = {}) {
+  initialDealId,
+  initialPaymentId,
+}: {
+  defaultViewMode?: LedgerViewMode;
+  /** 대시보드 등에서 ?deal= 로 진입 시 상세 Sheet 자동 오픈 */
+  initialDealId?: string;
+  /** ?payment= 로 진입 시 해당 청구 하이라이트 */
+  initialPaymentId?: string;
+} = {}) {
   const today = new Date();
   const [year, setYear] = useState(today.getFullYear());
   const [month, setMonth] = useState(today.getMonth() + 1);
   const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState<string>('all');
-  const [typeFilter, setTypeFilter] = useState<string>('all');
-  const [assigneeFilter, setAssigneeFilter] = useState<string>('all');
-  const [partnerFilter, setPartnerFilter] = useState<string>('all');
+  // '' = 전체 (FilterSelect 규약)
+  const [statusFilter, setStatusFilter] = useState<string>('');
+  const [typeFilter, setTypeFilter] = useState<string>('');
+  const [assigneeFilter, setAssigneeFilter] = useState<string>('');
+  const [partnerFilter, setPartnerFilter] = useState<string>('');
   const [sort, setSort] = useState<LedgerSortKey>('dueDate_asc');
   const [viewMode, setViewMode] = useState<LedgerViewMode>(defaultViewMode);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [detailDealId, setDetailDealId] = useState<string | null>(null);
+  const [detailDealId, setDetailDealId] = useState<string | null>(
+    initialDealId ?? null,
+  );
   const [detailHighlightPaymentId, setDetailHighlightPaymentId] = useState<
     string | null
-  >(null);
+  >(initialPaymentId ?? null);
   const { visible: visibleColumns, toggle: toggleColumn, reset: resetColumns } =
     useVisibleColumns();
 
   // 테이블 뷰 기본: 'upcoming' (오늘부터 끝까지), 캘린더 뷰 기본: 'month'
-  const [tablePreset, setTablePreset] = useState<LedgerPreset>('upcoming');
+  // 딥링크(?deal=)로 진입한 경우 대상 거래가 기간 밖에 있을 수 있어 전체 기간으로 시작
+  const [tablePreset, setTablePreset] = useState<LedgerPreset>(
+    initialDealId ? 'all' : 'upcoming',
+  );
   const effectivePreset: LedgerPreset =
     viewMode === 'calendar' ? 'month' : tablePreset;
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['finance', 'ledger', effectivePreset, year, month],
     queryFn: () =>
       api.finance.ledger.get({
@@ -310,20 +292,21 @@ export function LedgerView({
     if (!data) return [];
     const query = search.trim().toLowerCase();
     const list = data.groups.filter((g) => {
-      if (typeFilter !== 'all' && g.deal.transactionType !== typeFilter) {
+      // '' = 전체 (FilterSelect 규약)
+      if (typeFilter && g.deal.transactionType !== typeFilter) {
         return false;
       }
-      if (statusFilter !== 'all') {
+      if (statusFilter) {
         const hasMatch = g.payments.some((p) => p.status === statusFilter);
         if (!hasMatch) return false;
       }
-      if (assigneeFilter !== 'all') {
+      if (assigneeFilter) {
         const has = (g.deal.participants ?? []).some(
           (p) => p.userName === assigneeFilter,
         );
         if (!has) return false;
       }
-      if (partnerFilter !== 'all') {
+      if (partnerFilter) {
         if (partnerFilter === 'none') {
           if (g.deal.partnerBroker) return false;
         } else {
@@ -419,11 +402,19 @@ export function LedgerView({
     );
   }
 
-  if (!data) {
+  if (isError || !data) {
     return (
-      <div className="rounded-xl bg-muted/50 p-8 text-center text-sm text-muted-foreground">
-        원장 데이터를 불러올 수 없습니다.
-      </div>
+      <EmptyState
+        icon={Wallet}
+        title="원장 데이터를 불러올 수 없습니다"
+        description="네트워크 상태를 확인한 뒤 다시 시도해주세요."
+        action={
+          <Button variant="outline" onClick={() => refetch()}>
+            <RotateCw className="size-4" />
+            다시 시도
+          </Button>
+        }
+      />
     );
   }
 
@@ -435,7 +426,7 @@ export function LedgerView({
       )}
 
       {/* 필터 바 */}
-      <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-card p-2">
+      <FilterBar>
         <PeriodPicker
           viewMode={viewMode}
           preset={tablePreset}
@@ -447,73 +438,61 @@ export function LedgerView({
             setMonth(m);
           }}
         />
-        <div className="relative flex-1 min-w-[180px] max-w-[260px]">
-          <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="호수·ID·메모·공동중개…"
-            className="h-9 pl-8"
-          />
-        </div>
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="h-9 w-[130px]">
-            <SelectValue placeholder="전체 상태" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">전체 상태</SelectItem>
-            {Object.entries(paymentStatusMeta).map(([key, meta]) => (
-              <SelectItem key={key} value={key}>
-                {meta.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select value={typeFilter} onValueChange={setTypeFilter}>
-          <SelectTrigger className="h-9 w-[110px]">
-            <SelectValue placeholder="거래유형" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">전체 유형</SelectItem>
-            <SelectItem value="sale">매매</SelectItem>
-            <SelectItem value="jeonse">전세</SelectItem>
-            <SelectItem value="monthly">월세</SelectItem>
-          </SelectContent>
-        </Select>
+        <FilterSearch
+          value={search}
+          onChange={setSearch}
+          placeholder="호수·ID·메모·공동중개…"
+        />
+        <FilterSelect
+          label="상태"
+          value={statusFilter}
+          onChange={setStatusFilter}
+          allLabel="전체 상태"
+          options={STATUS_FILTER_VALUES.map((v) => ({
+            value: v,
+            label: getStatusMeta('commissionStatus', v).label,
+          }))}
+        />
+        <FilterSelect
+          label="유형"
+          value={typeFilter}
+          onChange={setTypeFilter}
+          allLabel="전체 유형"
+          options={TYPE_FILTER_VALUES.map((v) => ({
+            value: v,
+            label: getStatusMeta('transactionType', v).label,
+          }))}
+        />
 
         {/* 담당자 필터 */}
         {assigneeOptions.length > 0 && (
-          <Select value={assigneeFilter} onValueChange={setAssigneeFilter}>
-            <SelectTrigger className="h-9 w-[110px]">
-              <SelectValue placeholder="담당자" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">전체 담당자</SelectItem>
-              {assigneeOptions.map((name) => (
-                <SelectItem key={name} value={name}>
-                  {name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <FilterSelect
+            label="담당자"
+            value={assigneeFilter}
+            onChange={setAssigneeFilter}
+            allLabel="전체 담당자"
+            options={assigneeOptions.map((name) => ({
+              value: name,
+              label: name,
+            }))}
+          />
         )}
 
         {/* 공동중개 필터 */}
         {partnerOptions.length > 0 && (
-          <Select value={partnerFilter} onValueChange={setPartnerFilter}>
-            <SelectTrigger className="h-9 w-[130px]">
-              <SelectValue placeholder="공동중개" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">전체 (공동/단독)</SelectItem>
-              <SelectItem value="none">단독중개만</SelectItem>
-              {partnerOptions.map(([id, name]) => (
-                <SelectItem key={id} value={id}>
-                  {name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <FilterSelect
+            label="공동중개"
+            value={partnerFilter}
+            onChange={setPartnerFilter}
+            allLabel="전체 (공동/단독)"
+            options={[
+              { value: 'none', label: '단독중개만' },
+              ...partnerOptions.map(([id, name]) => ({
+                value: id,
+                label: name,
+              })),
+            ]}
+          />
         )}
 
         {/* 정렬 */}
@@ -521,7 +500,7 @@ export function LedgerView({
           value={sort}
           onValueChange={(v) => setSort(v as LedgerSortKey)}
         >
-          <SelectTrigger className="h-9 w-[130px]">
+          <SelectTrigger className="h-8 w-[120px]">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -556,6 +535,19 @@ export function LedgerView({
             </button>
             <button
               type="button"
+              onClick={() => setViewMode('kanban')}
+              className={cn(
+                'inline-flex items-center gap-1.5 rounded px-2.5 py-1 text-xs font-medium',
+                viewMode === 'kanban'
+                  ? 'bg-primary text-primary-foreground'
+                  : 'text-muted-foreground hover:text-foreground',
+              )}
+            >
+              <SquareKanban className="size-3.5" />
+              칸반
+            </button>
+            <button
+              type="button"
               onClick={() => setViewMode('calendar')}
               className={cn(
                 'inline-flex items-center gap-1.5 rounded px-2.5 py-1 text-xs font-medium',
@@ -569,7 +561,7 @@ export function LedgerView({
             </button>
           </div>
         </div>
-      </div>
+      </FilterBar>
 
       {/* KPI 요약 바 */}
       <SummaryBar summary={data.summary} />
@@ -583,7 +575,7 @@ export function LedgerView({
         />
       )}
 
-      {/* 뷰: 테이블 or 캘린더 */}
+      {/* 뷰: 테이블 / 칸반 / 캘린더 */}
       {viewMode === 'table' ? (
         <LedgerTable
           groups={filtered}
@@ -595,6 +587,14 @@ export function LedgerView({
             selectedIds.size === visiblePaymentIds.size
           }
           visibleColumns={visibleColumns}
+          onOpenDeal={(dealId, paymentId) => {
+            setDetailDealId(dealId);
+            setDetailHighlightPaymentId(paymentId ?? null);
+          }}
+        />
+      ) : viewMode === 'kanban' ? (
+        <LedgerKanban
+          groups={filtered}
           onOpenDeal={(dealId, paymentId) => {
             setDetailDealId(dealId);
             setDetailHighlightPaymentId(paymentId ?? null);
@@ -734,7 +734,7 @@ function BulkActionBar({
       await Promise.all(
         items.map((it) =>
           api.tasks.create({
-            title: `[독촉] ${it.location} · ${it.code ?? ''} ${toManwon(
+            title: `[독촉] ${it.location} · ${it.code ?? ''} ${formatMoney(
               it.payment.expectedAmount - (it.payment.actualAmount ?? 0),
             )} 수금`,
             content: `${it.payment.clientSide === 'seller' ? '매도측' : '매수측'} 청구 독촉`,
@@ -747,8 +747,10 @@ function BulkActionBar({
         ),
       );
       qc.invalidateQueries({ queryKey: ['tasks'] });
-      alert(`${items.length}건 독촉 태스크를 생성했습니다.`);
+      toast.success(`${items.length}건 독촉 태스크를 생성했습니다.`);
       onClear();
+    } catch {
+      toast.error('독촉 태스크 생성에 실패했습니다.');
     } finally {
       setDunningLoading(false);
     }
@@ -774,7 +776,7 @@ function BulkActionBar({
         p.dueDate ? new Date(p.dueDate).toLocaleDateString('ko-KR') : '',
         p.expectedAmount,
         p.actualAmount ?? '',
-        paymentStatusMeta[p.status]?.label ?? p.status,
+        getStatusMeta('commissionStatus', p.status).label,
         p.taxInvoiceNo ?? '',
       ].join(',');
     });
@@ -801,7 +803,7 @@ function BulkActionBar({
         </button>
         <span className="font-medium">{selectedIds.size}건 선택됨</span>
         <span className="text-xs text-muted-foreground">
-          잔여 합계 {toManwon(totalAmount)}
+          잔여 합계 {formatMoney(totalAmount)}
         </span>
       </div>
       <div className="flex items-center gap-2">
@@ -848,7 +850,7 @@ function AdjustmentBanner({
             수수료 조정 승인 대기 · {items.length}건 · 총{' '}
             <span className="text-red-700">
               {total >= 0 ? '+' : ''}
-              {toManwon(total)}
+              {formatMoney(total)}
             </span>
           </div>
           <p className="mt-0.5 text-xs text-muted-foreground">
@@ -872,7 +874,7 @@ function AdjustmentBanner({
                     ? '면제'
                     : '대손 처리'}
               </span>
-              <span className="font-semibold text-red-600">{toManwon(a.amount)}</span>
+              <span className="font-semibold text-red-600">{formatMoney(a.amount)}</span>
             </button>
           ))}
         </div>
@@ -897,26 +899,34 @@ function AdjustmentDecisionDialog({
   adjustment: LedgerView['adjustmentsPending'][number] | null;
 }) {
   const qc = useQueryClient();
+  const { user } = useAuth();
+  const canDecide = user?.role === 'owner';
   const [note, setNote] = useState('');
 
   const approve = useMutation({
     mutationFn: () =>
       api.finance.adjustments.approve(adjustment!.id, note || undefined),
     onSuccess: () => {
+      toast.success('수수료 조정을 승인했습니다.');
       qc.invalidateQueries({ queryKey: ['finance', 'ledger'] });
+      qc.invalidateQueries({ queryKey: ['cashflow'] });
       onOpenChange(false);
       setNote('');
     },
+    onError: () => toast.error('조정 승인에 실패했습니다.'),
   });
 
   const reject = useMutation({
     mutationFn: () =>
       api.finance.adjustments.reject(adjustment!.id, note || undefined),
     onSuccess: () => {
+      toast.success('수수료 조정을 반려했습니다.');
       qc.invalidateQueries({ queryKey: ['finance', 'ledger'] });
+      qc.invalidateQueries({ queryKey: ['cashflow'] });
       onOpenChange(false);
       setNote('');
     },
+    onError: () => toast.error('조정 반려에 실패했습니다.'),
   });
 
   if (!adjustment) return null;
@@ -937,7 +947,7 @@ function AdjustmentDecisionDialog({
           </DialogTitle>
           <DialogDescription>
             {adjustment.paymentCode ? `${adjustment.paymentCode} · ` : ''}
-            {typeLabel} · {toManwon(adjustment.amount)}
+            {typeLabel} · {formatMoney(adjustment.amount)}
           </DialogDescription>
         </DialogHeader>
 
@@ -947,32 +957,46 @@ function AdjustmentDecisionDialog({
             <div className="mt-1 whitespace-pre-wrap">{adjustment.reason}</div>
           </div>
 
-          <div className="grid gap-1.5">
-            <Label>결정 메모 (선택)</Label>
-            <Input
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              placeholder="예) 원칙대로 승인"
-            />
-          </div>
+          {canDecide ? (
+            <div className="grid gap-1.5">
+              <Label>결정 메모 (선택)</Label>
+              <Input
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                placeholder="예) 원칙대로 승인"
+              />
+            </div>
+          ) : (
+            <p className="text-[11px] text-muted-foreground">
+              조정 승인/반려는 대표만 할 수 있습니다.
+            </p>
+          )}
         </div>
 
         <DialogFooter>
-          <Button
-            variant="outline"
-            onClick={() => reject.mutate()}
-            disabled={reject.isPending || approve.isPending}
-          >
-            <CircleSlash className="size-3.5" />
-            반려
-          </Button>
-          <Button
-            onClick={() => approve.mutate()}
-            disabled={approve.isPending || reject.isPending}
-          >
-            <CircleCheck className="size-3.5" />
-            승인
-          </Button>
+          {canDecide ? (
+            <>
+              <Button
+                variant="outline"
+                onClick={() => reject.mutate()}
+                disabled={reject.isPending || approve.isPending}
+              >
+                <CircleSlash className="size-3.5" />
+                반려
+              </Button>
+              <Button
+                onClick={() => approve.mutate()}
+                disabled={approve.isPending || reject.isPending}
+              >
+                <CircleCheck className="size-3.5" />
+                승인
+              </Button>
+            </>
+          ) : (
+            <Button variant="outline" onClick={() => onOpenChange(false)}>
+              닫기
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -987,14 +1011,6 @@ function AdjustmentDecisionDialog({
 // 기간 선택기 — 프리셋 드롭다운 + (필요시) 월 네비게이터
 // ─────────────────────────────────────────────────────────────
 
-const presetLabels: Record<LedgerPreset | 'custom_month', string> = {
-  upcoming: '다가오는 수금',
-  'this-month': '이번 달 진행',
-  month: '이번 달',
-  all: '전체 기간',
-  custom_month: '특정 월 선택…',
-};
-
 function PeriodPicker({
   viewMode,
   preset,
@@ -1003,7 +1019,7 @@ function PeriodPicker({
   onPresetChange,
   onMonthChange,
 }: {
-  viewMode: 'table' | 'calendar';
+  viewMode: LedgerViewMode;
   preset: LedgerPreset;
   year: number;
   month: number;
@@ -1101,10 +1117,10 @@ function SummaryBar({
 }) {
   const items = [
     { label: '청구 건수', value: `${summary.paymentCount}건`, accent: '' },
-    { label: '합계 금액', value: toManwon(summary.billedTotal), accent: 'text-foreground' },
+    { label: '합계 금액', value: formatMoney(summary.billedTotal), accent: 'text-foreground' },
     {
       label: '수금 완료',
-      value: `${toManwon(summary.collectedTotal)} (${summary.collectedCount}건)`,
+      value: `${formatMoney(summary.collectedTotal)} (${summary.collectedCount}건)`,
       accent: 'text-emerald-700 dark:text-emerald-300',
     },
     {
@@ -1162,9 +1178,11 @@ function LedgerTable({
 }) {
   if (groups.length === 0) {
     return (
-      <div className="rounded-xl border border-dashed bg-muted/30 p-10 text-center text-sm text-muted-foreground">
-        조건에 맞는 청구 내역이 없습니다.
-      </div>
+      <EmptyState
+        icon={Wallet}
+        title="조건에 맞는 청구 내역이 없습니다"
+        description="기간이나 필터를 조정해보세요."
+      />
     );
   }
 
@@ -1251,7 +1269,6 @@ function DealGroupRow({
       : payments.every((p) => p.status === 'collected')
         ? 'collected'
         : 'pending';
-  const meta = paymentStatusMeta[worstStatus] ?? paymentStatusMeta.pending;
 
   const milestone = stageMilestone(deal.stage);
 
@@ -1312,12 +1329,14 @@ function DealGroupRow({
             <span className="font-medium underline-offset-2 hover:underline">
               {location || '매물 미지정'}
             </span>
-            <Badge variant="outline" className="text-[10px]">
-              {transactionTypeLabel[deal.transactionType] ?? deal.transactionType}
-            </Badge>
+            <StatusBadge
+              kind="transactionType"
+              status={deal.transactionType}
+              size="sm"
+            />
           </div>
           <div className="mt-1 text-[11px] text-muted-foreground">
-            계약 {toDateLabel(deal.stageChangedAt)}
+            계약 {formatDate(deal.stageChangedAt)}
           </div>
         </td>
         {visibleColumns.pipeline && (
@@ -1336,17 +1355,13 @@ function DealGroupRow({
         )}
         <td className="px-3 py-3 align-top">
           <div className="flex items-center gap-2">
-            <span className={cn('size-2 rounded-full', meta.dotClass)} />
-            <span
-              className={cn(
-                'rounded-full px-2 py-0.5 text-[11px] font-medium',
-                meta.pillClass,
-              )}
-            >
-              {meta.label}
-            </span>
+            <StatusBadge
+              kind="commissionStatus"
+              status={worstStatus}
+              size="sm"
+            />
             <span className="text-sm font-semibold">
-              {toManwon(deal.summary.billed)}
+              {formatMoney(deal.summary.billed)}
             </span>
           </div>
           <CollectionProgressBar
@@ -1364,7 +1379,7 @@ function DealGroupRow({
                 : 'text-foreground/80',
             )}
           >
-            {toDateLabel(deal.balanceDueDate)}
+            {formatDate(deal.balanceDueDate)}
             <div
               className={cn(
                 'mt-0.5 text-[10px] font-normal',
@@ -1446,7 +1461,6 @@ function PaymentRow({
   visibleColumns: Record<LedgerColumnKey, boolean>;
   onOpen: () => void;
 }) {
-  const meta = paymentStatusMeta[payment.status] ?? paymentStatusMeta.pending;
   const [collectOpen, setCollectOpen] = useState(false);
   const [taxOpen, setTaxOpen] = useState(false);
   const [adjustOpen, setAdjustOpen] = useState(false);
@@ -1524,36 +1538,37 @@ function PaymentRow({
         )}
         <td className="px-3 py-2.5 align-top">
           <div className="flex items-center gap-2">
-            <span className={cn('size-2 rounded-full', meta.dotClass)} />
-            <span className={cn('rounded-full px-2 py-0.5 text-[11px] font-medium', meta.pillClass)}>
-              {meta.label}
-            </span>
+            <StatusBadge
+              kind="commissionStatus"
+              status={payment.status}
+              size="sm"
+            />
             {payment.pendingAdjustments > 0 && (
               <span className="rounded-full bg-red-50 px-2 py-0.5 text-[10px] text-red-700 dark:bg-red-950/40 dark:text-red-300">
                 승인대기
               </span>
             )}
             <span className="text-sm font-semibold">
-              {toManwon(payment.expectedAmount)}
+              {formatMoney(payment.expectedAmount)}
             </span>
           </div>
           {payment.status === 'collected' && (
             <div className="mt-1 text-[11px] text-emerald-700 dark:text-emerald-300">
               전액 수금
-              {payment.paidAt && ` · ${toDateLabel(payment.paidAt)}`}
+              {payment.paidAt && ` · ${formatDate(payment.paidAt)}`}
             </div>
           )}
           {payment.status === 'partial' && (
             <div className="mt-1 text-[11px]">
-              수금 {toManwon(payment.actualAmount ?? 0)} (
+              수금 {formatMoney(payment.actualAmount ?? 0)} (
               {Math.round(((payment.actualAmount ?? 0) / payment.expectedAmount) * 100)}%)
-              {payment.paidAt && ` · ${toDateLabel(payment.paidAt)}`}
+              {payment.paidAt && ` · ${formatDate(payment.paidAt)}`}
               {remaining !== null && (
                 <>
                   {' '}
-                  · 잔여 {toManwon(remaining)}
+                  · 잔여 {formatMoney(remaining)}
                   {payment.agreedRemainingDate &&
-                    ` · ${toDateLabel(payment.agreedRemainingDate)} 예정`}
+                    ` · ${formatDate(payment.agreedRemainingDate)} 예정`}
                 </>
               )}
             </div>
@@ -1584,10 +1599,10 @@ function PaymentRow({
                 : 'text-muted-foreground',
             )}
           >
-            {toDateLabel(payment.dueDate)}
+            {formatDate(payment.dueDate)}
             {payment.status === 'partial' && payment.agreedRemainingDate && (
               <div className="mt-0.5 text-[10px] font-normal text-amber-700 dark:text-amber-400">
-                잔여 {toDateLabel(payment.agreedRemainingDate)}
+                잔여 {formatDate(payment.agreedRemainingDate)}
               </div>
             )}
           </td>
@@ -1705,11 +1720,14 @@ function AdjustmentRequestDialog({
         reason,
       }),
     onSuccess: () => {
+      toast.success('수수료 조정 요청을 등록했습니다. 승인 후 반영됩니다.');
       qc.invalidateQueries({ queryKey: ['finance', 'ledger'] });
+      qc.invalidateQueries({ queryKey: ['cashflow'] });
       onOpenChange(false);
       setAmount('');
       setReason('');
     },
+    onError: () => toast.error('조정 요청 등록에 실패했습니다.'),
   });
 
   return (
@@ -1718,7 +1736,7 @@ function AdjustmentRequestDialog({
         <DialogHeader>
           <DialogTitle>수수료 조정 요청</DialogTitle>
           <DialogDescription>
-            {payment.code ?? '-'} · 예정 {toManwon(payment.expectedAmount)} ·
+            {payment.code ?? '-'} · 예정 {formatMoney(payment.expectedAmount)} ·
             승인 후 반영됩니다.
           </DialogDescription>
         </DialogHeader>
@@ -1752,7 +1770,7 @@ function AdjustmentRequestDialog({
                 placeholder="예) 200"
               />
               <p className="text-[11px] text-muted-foreground">
-                음수로 저장됩니다. 최종 청구액 = {toManwon(payment.expectedAmount)} − 입력값.
+                음수로 저장됩니다. 최종 청구액 = {formatMoney(payment.expectedAmount)} − 입력값.
               </p>
             </div>
           )}
@@ -1863,7 +1881,7 @@ function CollectionProgressBar({
               : 'text-amber-700 dark:text-amber-300',
           )}
         >
-          수금 {toManwon(collected)} · {Math.round(pct)}%
+          수금 {formatMoney(collected)} · {Math.round(pct)}%
         </div>
       )}
     </div>
@@ -1947,10 +1965,16 @@ function CollectDialog({
         note: note || undefined,
       }),
     onSuccess: () => {
+      toast.success(
+        Number(amount) < payment.expectedAmount
+          ? '일부수금으로 기록했습니다.'
+          : '수금 완료로 기록했습니다.',
+      );
       qc.invalidateQueries({ queryKey: ['finance', 'ledger'] });
       qc.invalidateQueries({ queryKey: ['cashflow'] });
       onOpenChange(false);
     },
+    onError: () => toast.error('수금 처리에 실패했습니다.'),
   });
 
   return (
@@ -1959,7 +1983,7 @@ function CollectDialog({
         <DialogHeader>
           <DialogTitle>수금 처리</DialogTitle>
           <DialogDescription>
-            {payment.code ?? '-'} · 예정 {toManwon(payment.expectedAmount)}
+            {payment.code ?? '-'} · 예정 {formatMoney(payment.expectedAmount)}
           </DialogDescription>
         </DialogHeader>
 
@@ -2050,10 +2074,12 @@ function TaxInvoiceDialog({
         taxInvoiceDate,
       }),
     onSuccess: () => {
+      toast.success('세금계산서 발행을 기록했습니다.');
       qc.invalidateQueries({ queryKey: ['finance', 'ledger'] });
       qc.invalidateQueries({ queryKey: ['cashflow'] });
       onOpenChange(false);
     },
+    onError: () => toast.error('세금계산서 발행 기록에 실패했습니다.'),
   });
 
   return (
@@ -2062,7 +2088,7 @@ function TaxInvoiceDialog({
         <DialogHeader>
           <DialogTitle>세금계산서 발행 기록</DialogTitle>
           <DialogDescription>
-            {payment.code ?? '-'} · {toManwon(payment.expectedAmount)}
+            {payment.code ?? '-'} · {formatMoney(payment.expectedAmount)}
           </DialogDescription>
         </DialogHeader>
 
@@ -2101,9 +2127,6 @@ function TaxInvoiceDialog({
     </Dialog>
   );
 }
-
-// 사용하지 않는 아이콘 정리용 export (typecheck 경고 방지)
-export const _icons = { CirclePause, CircleSlash };
 
 // ─────────────────────────────────────────────────────────────
 // 캘린더 뷰 — 월 그리드에 수금 일정 표시
@@ -2292,7 +2315,7 @@ function LedgerCalendar({
                 </span>
                 {evs.length > 0 && cell.isCurrentMonth && (
                   <span className="text-[10px] font-medium text-muted-foreground">
-                    {toManwon(totalAmount)}
+                    {formatMoney(totalAmount)}
                   </span>
                 )}
               </div>
@@ -2344,9 +2367,9 @@ function CalendarEventPill({ event }: { event: CalendarEvent }) {
         'truncate rounded px-1.5 py-0.5 text-[10px]',
         colorClass,
       )}
-      title={`${event.code ?? ''} · ${event.dealLocation} · ${sideShort} ${toManwon(event.amount)}`}
+      title={`${event.code ?? ''} · ${event.dealLocation} · ${sideShort} ${formatMoney(event.amount)}`}
     >
-      <span className="font-medium">{sideShort} {toManwon(event.amount)}</span>
+      <span className="font-medium">{sideShort} {formatMoney(event.amount)}</span>
       {typeShort && <span className="ml-1 opacity-70">{typeShort}</span>}
     </div>
   );
@@ -2441,9 +2464,6 @@ function LedgerDetailBody({
   const [previewPartnerRatio, setPreviewPartnerRatio] = useState<number | null>(
     null,
   );
-  const partnerRatio = previewPartnerRatio ?? currentPartnerRatio;
-  const ourRatio = 100 - partnerRatio;
-
   const [confirming, setConfirming] = useState(false);
   const editablePayments = payments.filter(isPaymentDistributionEditable);
   const lockedPayments = payments.filter((p) => !isPaymentDistributionEditable(p));
@@ -2452,9 +2472,11 @@ function LedgerDetailBody({
     <div className="flex h-full flex-col">
       <SheetHeader className="space-y-1 border-b px-6 py-5">
         <div className="flex flex-wrap items-center gap-2">
-          <Badge variant="outline" className="text-[10px]">
-            {transactionTypeLabel[deal.transactionType] ?? deal.transactionType}
-          </Badge>
+          <StatusBadge
+            kind="transactionType"
+            status={deal.transactionType}
+            size="sm"
+          />
           <Badge variant="outline" className="text-[10px]">
             {milestone.label}
           </Badge>
@@ -2467,24 +2489,28 @@ function LedgerDetailBody({
         </div>
         <SheetTitle className="text-lg">{location}</SheetTitle>
         <SheetDescription className="text-xs text-muted-foreground">
-          단계 변경일 {toDateLabel(deal.stageChangedAt)}
-          {deal.balanceDueDate && ` · 잔금일 ${toDateLabel(deal.balanceDueDate)}`}
+          단계 변경일 {formatDate(deal.stageChangedAt)}
+          {deal.balanceDueDate && ` · 잔금일 ${formatDate(deal.balanceDueDate)}`}
         </SheetDescription>
+        {/* 컨텍스트 점프 — 거래 파이프라인으로 이동 */}
+        <div className="flex flex-wrap gap-1.5 pt-1">
+          <EntityChip kind="deal" id={deal.id} label={location} sublabel="거래 보기" />
+        </div>
       </SheetHeader>
 
       <div className="flex-1 overflow-y-auto">
         {/* 요약 */}
         <div className="border-b px-6 py-5">
           <div className="grid grid-cols-3 gap-3">
-            <SummaryStat label="청구 합계" value={toManwon(billed)} />
+            <SummaryStat label="청구 합계" value={formatMoney(billed)} />
             <SummaryStat
               label="수금 완료"
-              value={toManwon(collected)}
+              value={formatMoney(collected)}
               tone="emerald"
             />
             <SummaryStat
               label="미수금"
-              value={toManwon(remaining)}
+              value={formatMoney(remaining)}
               tone={remaining > 0 ? 'amber' : 'muted'}
             />
           </div>
@@ -2534,18 +2560,18 @@ function LedgerDetailBody({
             />
             <InfoRow
               label="거래가"
-              value={toManwon(deal.agreedPrice ?? 0)}
+              value={formatMoney(deal.agreedPrice ?? 0)}
             />
             {deal.agreedDeposit != null && deal.agreedDeposit > 0 && (
               <InfoRow
                 label="보증금"
-                value={toManwon(deal.agreedDeposit)}
+                value={formatMoney(deal.agreedDeposit)}
               />
             )}
             {deal.agreedMonthlyRent != null && deal.agreedMonthlyRent > 0 && (
               <InfoRow
                 label="월세"
-                value={toManwon(deal.agreedMonthlyRent)}
+                value={formatMoney(deal.agreedMonthlyRent)}
               />
             )}
           </dl>
@@ -2732,11 +2758,13 @@ function DealDistributionSlider({
       );
     },
     onSuccess: () => {
+      toast.success('공동중개 분배를 적용했습니다.');
       qc.invalidateQueries({ queryKey: ['finance', 'ledger'] });
-      qc.invalidateQueries({ queryKey: ['finance', 'cashflow'] });
+      qc.invalidateQueries({ queryKey: ['cashflow'] });
       onPreviewChange(null);
       setConfirming(false);
     },
+    onError: () => toast.error('분배 적용에 실패했습니다.'),
   });
 
   return (
@@ -2756,7 +2784,7 @@ function DealDistributionSlider({
         <div>
           <div className="font-medium">우리 사무소</div>
           <div className="tabular-nums text-muted-foreground">
-            {ourRatio}% · {toManwon(ourAmount)}
+            {ourRatio}% · {formatMoney(ourAmount)}
           </div>
         </div>
         <div className="text-right">
@@ -2764,7 +2792,7 @@ function DealDistributionSlider({
             {partnerBroker?.name ?? '파트너 중개'}
           </div>
           <div className="tabular-nums text-muted-foreground">
-            {partnerRatio}% · {toManwon(partnerAmount)}
+            {partnerRatio}% · {formatMoney(partnerAmount)}
           </div>
         </div>
       </div>
@@ -2901,7 +2929,6 @@ function DetailPaymentItem({
   previewPartnerRatio: number | null;
   locked: boolean;
 }) {
-  const meta = paymentStatusMeta[payment.status] ?? paymentStatusMeta.pending;
   const sideLabel = payment.clientSide === 'seller' ? '매도측' : '매수측';
   const remaining =
     payment.actualAmount != null && payment.status === 'partial'
@@ -2912,15 +2939,7 @@ function DetailPaymentItem({
   const [collectOpen, setCollectOpen] = useState(false);
   const [taxOpen, setTaxOpen] = useState(false);
   const [adjustOpen, setAdjustOpen] = useState(false);
-
-  const qc = useQueryClient();
-  const confirmDraft = useMutation({
-    mutationFn: () => api.finance.commissionPayments.confirmDraft(payment.id),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['finance', 'ledger'] });
-      qc.invalidateQueries({ queryKey: ['finance', 'cashflow'] });
-    },
-  });
+  const [confirmDraftOpen, setConfirmDraftOpen] = useState(false);
 
   const isDraft = payment.status === 'draft';
   const collectable =
@@ -2954,14 +2973,11 @@ function DetailPaymentItem({
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1 space-y-1">
           <div className="flex flex-wrap items-center gap-1.5">
-            <span
-              className={cn(
-                'rounded-full px-2 py-0.5 text-[10px] font-medium',
-                meta.pillClass,
-              )}
-            >
-              {meta.label}
-            </span>
+            <StatusBadge
+              kind="commissionStatus"
+              status={payment.status}
+              size="sm"
+            />
             <Badge
               variant="outline"
               className={cn(
@@ -2987,11 +3003,11 @@ function DetailPaymentItem({
         </div>
         <div className="text-right">
           <div className="text-sm font-semibold">
-            {toManwon(payment.expectedAmount)}
+            {formatMoney(payment.expectedAmount)}
           </div>
           {payment.dueDate && (
             <div className="text-[10px] text-muted-foreground">
-              {toDateLabel(payment.dueDate)}
+              {formatDate(payment.dueDate)}
             </div>
           )}
         </div>
@@ -3003,14 +3019,14 @@ function DetailPaymentItem({
         <div className="mt-2 space-y-0.5 text-[11px]">
           {payment.status === 'collected' && (
             <div className="text-emerald-700 dark:text-emerald-300">
-              전액 수금 · {toDateLabel(payment.paidAt)}
+              전액 수금 · {formatDate(payment.paidAt)}
             </div>
           )}
           {payment.status === 'partial' && payment.actualAmount != null && (
             <div>
-              수금 {toManwon(payment.actualAmount)} /{' '}
-              {toManwon(payment.expectedAmount)}
-              {remaining !== null && ` · 잔여 ${toManwon(remaining)}`}
+              수금 {formatMoney(payment.actualAmount)} /{' '}
+              {formatMoney(payment.expectedAmount)}
+              {remaining !== null && ` · 잔여 ${formatMoney(remaining)}`}
             </div>
           )}
         </div>
@@ -3034,12 +3050,12 @@ function DetailPaymentItem({
               <>
                 {ourR > 0 && (
                   <span className="rounded bg-primary/10 px-1.5 py-0.5 text-primary">
-                    우리 {ourR}% · {toManwon(ourShare)}
+                    우리 {ourR}% · {formatMoney(ourShare)}
                   </span>
                 )}
                 {partnerR > 0 && (
                   <span className="rounded bg-primary/10 px-1.5 py-0.5 text-primary">
-                    {partnerName} {partnerR}% · {toManwon(partnerShare)}
+                    {partnerName} {partnerR}% · {formatMoney(partnerShare)}
                   </span>
                 )}
                 <span className="text-[10px] font-medium text-primary">
@@ -3055,7 +3071,7 @@ function DetailPaymentItem({
                 {d.recipientType === 'our_office'
                   ? '우리'
                   : (d.partnerBrokerName ?? '파트너')}{' '}
-                {Number(d.shareRatio)}% · {toManwon(d.shareAmount)}
+                {Number(d.shareRatio)}% · {formatMoney(d.shareAmount)}
               </span>
             ))}
             {locked && (
@@ -3099,10 +3115,9 @@ function DetailPaymentItem({
           <Button
             size="xs"
             className="h-7 px-2 text-[11px]"
-            onClick={() => confirmDraft.mutate()}
-            disabled={confirmDraft.isPending}
+            onClick={() => setConfirmDraftOpen(true)}
           >
-            {confirmDraft.isPending ? '확정 중…' : '청구 확정'}
+            청구 확정
           </Button>
         </div>
       )}
@@ -3167,7 +3182,88 @@ function DetailPaymentItem({
         dealId={dealId}
         defaultPartnerBrokerId={dealPartnerBrokerId}
       />
+      <ConfirmDraftDialog
+        open={confirmDraftOpen}
+        onOpenChange={setConfirmDraftOpen}
+        payment={payment}
+      />
     </li>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// 청구 확정 다이얼로그 — 확정 시 수금 예정일(선택) 지정
+// ─────────────────────────────────────────────────────────────
+
+function ConfirmDraftDialog({
+  open,
+  onOpenChange,
+  payment,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  payment: LedgerPayment;
+}) {
+  const qc = useQueryClient();
+  const [dueDate, setDueDate] = useState(payment.dueDate?.slice(0, 10) ?? '');
+
+  const mutation = useMutation({
+    mutationFn: () =>
+      api.finance.commissionPayments.confirmDraft(
+        payment.id,
+        dueDate ? { dueDate } : undefined,
+      ),
+    onSuccess: () => {
+      toast.success('청구를 확정했습니다.');
+      qc.invalidateQueries({ queryKey: ['finance', 'ledger'] });
+      qc.invalidateQueries({ queryKey: ['cashflow'] });
+      onOpenChange(false);
+    },
+    onError: () => toast.error('청구 확정에 실패했습니다.'),
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-sm">
+        <DialogHeader>
+          <DialogTitle>청구 확정</DialogTitle>
+          <DialogDescription>
+            {payment.code ?? '-'} · 예정 {formatMoney(payment.expectedAmount)} ·
+            확정하면 수금 대기 상태가 됩니다.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="grid gap-1.5">
+          <Label>수금 예정일 (선택)</Label>
+          <Input
+            type="date"
+            value={dueDate}
+            onChange={(e) => setDueDate(e.target.value)}
+          />
+          <p className="text-[11px] text-muted-foreground">
+            비워두면 잔금일 기준으로 관리됩니다. 확정 후에는 일정을 변경할 수
+            없으니 미리 확인하세요.
+          </p>
+        </div>
+
+        <DialogFooter>
+          <Button
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+            disabled={mutation.isPending}
+          >
+            취소
+          </Button>
+          <Button
+            onClick={() => mutation.mutate()}
+            disabled={mutation.isPending}
+          >
+            <CircleCheck className="size-3.5" />
+            {mutation.isPending ? '확정 중…' : '청구 확정'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -3256,10 +3352,12 @@ function DistributionEditDialog({
         buildItems(),
       ),
     onSuccess: () => {
+      toast.success('수수료 분배를 저장했습니다.');
       qc.invalidateQueries({ queryKey: ['finance', 'ledger'] });
-      qc.invalidateQueries({ queryKey: ['finance', 'cashflow'] });
+      qc.invalidateQueries({ queryKey: ['cashflow'] });
       onOpenChange(false);
     },
+    onError: () => toast.error('분배 저장에 실패했습니다.'),
   });
 
   const saveBulk = useMutation({
@@ -3269,10 +3367,12 @@ function DistributionEditDialog({
         buildItems(),
       ),
     onSuccess: () => {
+      toast.success('거래 전체 분배를 저장했습니다.');
       qc.invalidateQueries({ queryKey: ['finance', 'ledger'] });
-      qc.invalidateQueries({ queryKey: ['finance', 'cashflow'] });
+      qc.invalidateQueries({ queryKey: ['cashflow'] });
       onOpenChange(false);
     },
+    onError: () => toast.error('분배 저장에 실패했습니다.'),
   });
 
   const pending = saveSingle.isPending || saveBulk.isPending;
@@ -3284,7 +3384,7 @@ function DistributionEditDialog({
         <DialogHeader>
           <DialogTitle>수수료 분배 수정</DialogTitle>
           <DialogDescription>
-            청구 {payment.code ?? ''} · 예상 {toManwon(payment.expectedAmount)}
+            청구 {payment.code ?? ''} · 예상 {formatMoney(payment.expectedAmount)}
           </DialogDescription>
         </DialogHeader>
 
@@ -3294,7 +3394,7 @@ function DistributionEditDialog({
             <div className="flex items-center justify-between text-xs">
               <span className="font-medium">우리 사무소</span>
               <span className="tabular-nums">
-                {ourRatio}% · {toManwon(ourShare)}
+                {ourRatio}% · {formatMoney(ourShare)}
               </span>
             </div>
             <input
@@ -3311,7 +3411,7 @@ function DistributionEditDialog({
                 파트너 중개
               </span>
               <span className="tabular-nums">
-                {partnerRatio}% · {toManwon(partnerShare)}
+                {partnerRatio}% · {formatMoney(partnerShare)}
               </span>
             </div>
             <div className="flex items-center gap-2">

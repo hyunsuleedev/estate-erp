@@ -19,6 +19,23 @@ export type ContractDocumentEngineContact = {
   address?: string | null;
 };
 
+export type ContractDocumentEngineProperty = {
+  site?: {
+    name?: string | null;
+    roadAddress?: string | null;
+    jibunAddress?: string | null;
+  } | null;
+  unit?: {
+    name?: string | null;
+    exclusiveAreaM2?: number | string | null;
+    supplyAreaM2?: number | string | null;
+    dong?: {
+      name?: string | null;
+      isPlaceholder?: boolean;
+    } | null;
+  } | null;
+};
+
 export type ContractDocumentEngineContract = {
   id: string;
   transactionType: string;
@@ -38,19 +55,9 @@ export type ContractDocumentEngineContract = {
   buyerContact?: ContractDocumentEngineContact | null;
   sellerContact?: ContractDocumentEngineContact | null;
   deal?: {
-    property?: {
-      site?: {
-        name?: string | null;
-        address?: string | null;
-      } | null;
-      dong?: {
-        name?: string | null;
-      } | null;
-      unit?: {
-        name?: string | null;
-        exclusiveAreaM2?: number | null;
-        supplyAreaM2?: number | null;
-      } | null;
+    property?: ContractDocumentEngineProperty | null;
+    listing?: {
+      property?: ContractDocumentEngineProperty | null;
     } | null;
   } | null;
 };
@@ -319,9 +326,12 @@ function buildDefaultFields(
   template: ContractDocumentEngineTemplate,
   baseDate: Date,
 ): ContractDocumentEngineFields {
-  const property = contract.deal?.property;
+  // 서버 /contracts 응답은 deal.listing.property 형태로 내려오고,
+  // /deals 응답은 deal.property 가 합성돼 있으므로 둘 다 지원한다.
+  const property = contract.deal?.property ?? contract.deal?.listing?.property;
   const siteName = property?.site?.name ?? '';
-  const dongName = property?.dong?.name ?? '';
+  const dong = property?.unit?.dong;
+  const dongName = dong && !dong.isPlaceholder ? (dong.name ?? '') : '';
   const unitName = property?.unit?.name ?? '';
   const partyRoles = getPartyRoles(contract.transactionType);
   const seller = contract.sellerContact;
@@ -332,7 +342,8 @@ function buildDefaultFields(
     writtenDate: formatEngineDate(baseDate),
     contractDateText: formatDateText(contract.contractDate),
     propertyLabel: [siteName, dongName, unitName].filter(Boolean).join(' ') || '-',
-    propertyAddress: property?.site?.address ?? '-',
+    propertyAddress:
+      property?.site?.roadAddress ?? property?.site?.jibunAddress ?? '-',
     propertyAreaText: formatAreaText(
       property?.unit?.exclusiveAreaM2,
       property?.unit?.supplyAreaM2,
@@ -591,6 +602,11 @@ function getTransactionTypeLabel(transactionType: string) {
     sale: '매매',
     jeonse: '전세',
     monthly: '월세',
+    yearly_rent: '연세',
+    exchange: '교환',
+    sublease: '전대',
+    transfer: '권리양도',
+    succession: '권리승계',
   };
   return labels[transactionType] ?? transactionType;
 }
@@ -640,15 +656,28 @@ function formatParty(
 }
 
 function formatAreaText(
-  exclusiveAreaM2: number | null | undefined,
-  supplyAreaM2: number | null | undefined,
+  exclusiveAreaM2: number | string | null | undefined,
+  supplyAreaM2: number | string | null | undefined,
 ) {
   const parts = [
-    exclusiveAreaM2 ? `전용 ${exclusiveAreaM2.toLocaleString('ko-KR')}m2` : null,
-    supplyAreaM2 ? `공급 ${supplyAreaM2.toLocaleString('ko-KR')}m2` : null,
+    formatSingleArea('전용', exclusiveAreaM2),
+    formatSingleArea('공급', supplyAreaM2),
   ].filter(Boolean);
 
   return parts.length > 0 ? parts.join(' / ') : '-';
+}
+
+/** "전용 84.92㎡ (25.7평)" — 평 = m² × 0.3025, 소수 1자리 */
+function formatSingleArea(
+  prefix: string,
+  m2: number | string | null | undefined,
+) {
+  if (m2 == null || m2 === '') return null;
+  const value = typeof m2 === 'string' ? Number(m2) : m2;
+  if (Number.isNaN(value) || value <= 0) return null;
+  const m2Text = String(Math.round(value * 100) / 100);
+  const pyeong = (value * 0.3025).toFixed(1);
+  return `${prefix} ${m2Text}㎡ (${pyeong}평)`;
 }
 
 function formatManwon(value: number | null | undefined) {

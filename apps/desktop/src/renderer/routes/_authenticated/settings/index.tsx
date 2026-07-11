@@ -1,18 +1,19 @@
-import { createFileRoute } from '@tanstack/react-router';
+import { createFileRoute, Link } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import {
+  ArrowRight,
   Building2,
-  Check,
-  Copy,
   Globe,
-  KeyRound,
+  RotateCw,
   Save,
   ShieldCheck,
-  Trash2,
+  UserRound,
   Users,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
+import { USER_LICENSE_TYPE_LABELS } from '@estate-erp/shared';
 import {
   changeLocale,
   currentLocale,
@@ -20,7 +21,9 @@ import {
   type SupportedLocale,
 } from '@/i18n';
 import { api } from '@/lib/api';
+import { formatPhone } from '@/lib/format';
 import { useAuth } from '@/providers/auth-provider';
+import { PageHeader } from '@/components/domain';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -39,6 +42,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { AiAgentCard } from './-ai-agent-card';
+import { ExpenseSummaryCard } from './-expense-summary-card';
+import { McpApiKeyCard } from './-mcp-card';
+import { ContractTemplatesCard } from './-templates-card';
 
 type CommissionConfigForm = {
   distributionType: string;
@@ -58,6 +65,19 @@ type OfficeForm = {
   address: string;
 };
 
+const ROLE_LABELS: Record<string, string> = {
+  owner: '대표',
+  manager: '매니저',
+  agent: '중개사',
+};
+
+const SUBSCRIPTION_LABELS: Record<string, string> = {
+  free: '무료',
+  basic: '기본',
+  pro: '프로',
+  premium: '프리미엄',
+};
+
 export const Route = createFileRoute('/_authenticated/settings/')({
   component: SettingsPage,
 });
@@ -73,7 +93,12 @@ function SettingsPage() {
     changeLocale(next);
   };
 
-  const { data: office, isLoading } = useQuery({
+  const {
+    data: office,
+    isLoading,
+    isError,
+    refetch,
+  } = useQuery({
     queryKey: ['office-profile'],
     queryFn: () => api.offices.getMe(),
   });
@@ -128,26 +153,51 @@ function SettingsPage() {
         address: emptyToNull(officeForm.address),
       }),
     onSuccess: () => {
+      toast.success('사무소 정보를 저장했습니다.');
       queryClient.invalidateQueries({ queryKey: ['office-profile'] });
       queryClient.invalidateQueries({ queryKey: ['employees'] });
     },
+    onError: (error) =>
+      toast.error(
+        error instanceof Error ? error.message : '사무소 정보 저장에 실패했습니다.',
+      ),
   });
 
   const updateCommissionMutation = useMutation({
     mutationFn: () =>
       api.offices.updateCommissionConfig({
         distributionType: commissionForm.distributionType,
-        defaultAgentRate: toNumber(commissionForm.defaultAgentRate, 50),
-        listingAgentRate: toNumber(commissionForm.listingAgentRate, 50),
-        buyingAgentRate: toNumber(commissionForm.buyingAgentRate, 50),
-        dualAgentRate: toNumber(commissionForm.dualAgentRate, 70),
-        managerRate: toNumber(commissionForm.managerRate, 10),
-        closerBonus: toNumber(commissionForm.closerBonus, 0),
+        defaultAgentRate: Number(commissionForm.defaultAgentRate),
+        listingAgentRate: Number(commissionForm.listingAgentRate),
+        buyingAgentRate: Number(commissionForm.buyingAgentRate),
+        dualAgentRate: Number(commissionForm.dualAgentRate),
+        managerRate: Number(commissionForm.managerRate),
+        closerBonus: Number(commissionForm.closerBonus),
       }),
     onSuccess: () => {
+      toast.success('수수료 배분 규칙을 저장했습니다.');
       queryClient.invalidateQueries({ queryKey: ['office-profile'] });
     },
+    onError: (error) =>
+      toast.error(
+        error instanceof Error ? error.message : '배분 규칙 저장에 실패했습니다.',
+      ),
   });
+
+  const handleCommissionSave = () => {
+    const invalid = validateCommissionForm(commissionForm);
+    if (invalid) {
+      toast.error(invalid);
+      return;
+    }
+    updateCommissionMutation.mutate();
+  };
+
+  /** 내 계정 — office.users에서 현재 사용자 행을 찾아 전화/자격 구분 보강 */
+  const myProfile = useMemo(
+    () => office?.users.find((member) => member.id === user?.id) ?? null,
+    [office, user?.id],
+  );
 
   const metrics = useMemo(() => {
     if (!office) return [];
@@ -155,12 +205,16 @@ function SettingsPage() {
     return [
       { label: '활성 직원', value: `${office.counts.activeUsers}명`, icon: Users },
       { label: '매니저 수', value: `${office.counts.managers}명`, icon: ShieldCheck },
-      { label: '플랜', value: office.subscription, icon: Building2 },
+      {
+        label: '플랜',
+        value: SUBSCRIPTION_LABELS[office.subscription] ?? office.subscription,
+        icon: Building2,
+      },
     ];
   }, [office]);
 
   const metricCards = isLoading
-    ? Array.from({ length: 4 }, (_, index) => ({
+    ? Array.from({ length: 3 }, (_, index) => ({
         key: `placeholder-${index}`,
         label: '불러오는 중',
         value: '-',
@@ -170,49 +224,29 @@ function SettingsPage() {
 
   return (
     <div className="flex flex-col gap-5">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div className="space-y-1">
-          <div className="flex items-center gap-3">
-            <h1 className="text-lg font-semibold tracking-tight">설정</h1>
-          </div>
-          <p className="text-sm text-muted-foreground">
-            사무소 기본 정보와 수수료 배분 규칙을 관리합니다.
-          </p>
-        </div>
-        {!canEdit ? (
-          <Badge variant="secondary">읽기 전용</Badge>
-        ) : null}
-      </div>
+      <PageHeader
+        title="설정"
+        description="사무소 기본 정보와 수수료·템플릿·AI 운영 정책을 관리합니다."
+        actions={!canEdit ? <Badge variant="secondary">읽기 전용</Badge> : undefined}
+        className="mb-0"
+      />
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Globe className="size-4" />
-            {t('sections.language')}
-          </CardTitle>
-          <CardDescription>{t('sections.languageDescription')}</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="flex max-w-xs items-center gap-2">
-            <Select value={locale} onValueChange={(v) => handleLocaleChange(v as SupportedLocale)}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {SUPPORTED_LOCALES.map((l) => (
-                  <SelectItem key={l} value={l}>
-                    {t(`languageOptions.${l}`)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        </CardContent>
-      </Card>
+      {isError ? (
+        <Card>
+          <CardContent className="flex flex-wrap items-center justify-between gap-3 py-6">
+            <p className="text-sm text-muted-foreground">
+              사무소 정보를 불러오지 못했습니다. 아직 사무소가 없다면 온보딩에서 먼저
+              사무소를 생성해 주세요.
+            </p>
+            <Button size="sm" variant="outline" onClick={() => refetch()}>
+              <RotateCw className="size-3.5" />
+              다시 시도
+            </Button>
+          </CardContent>
+        </Card>
+      ) : null}
 
-      <McpApiKeyCard canEdit={canEdit} />
-
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-3 md:grid-cols-3">
         {metricCards.map((metric) => (
           <Card key={metric.key} className="gap-3 py-4">
             <CardContent className="flex items-center justify-between px-4">
@@ -242,6 +276,7 @@ function SettingsPage() {
               value={officeForm.name}
               onChange={(value) => setOfficeForm((prev) => ({ ...prev, name: value }))}
               disabled={!canEdit}
+              required
             />
             <Field
               label="대표명"
@@ -280,62 +315,117 @@ function SettingsPage() {
               disabled={!canEdit || updateOfficeMutation.isPending || !officeForm.name.trim()}
             >
               <Save className="size-4" />
-              기본 정보 저장
+              {updateOfficeMutation.isPending ? '저장 중…' : '기본 정보 저장'}
             </Button>
           </div>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>운영 요약</CardTitle>
-            <CardDescription>
-              현재 계정 상태와 소유자 정보를 빠르게 확인합니다.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <SummaryRow label="Owner" value={office?.owner?.name ?? '-'} />
-            <SummaryRow label="Owner 이메일" value={office?.owner?.email ?? '-'} />
-            <SummaryRow
-              label="전체 직원"
-              value={office ? `${office.counts.totalUsers}명` : '-'}
-            />
-            <SummaryRow
-              label="활성 계정"
-              value={office ? `${office.counts.activeUsers}명` : '-'}
-            />
-            <div className="space-y-2">
-              <p className="text-xs font-medium text-muted-foreground">팀 구성</p>
-              <div className="space-y-2">
-                {office?.users.map((member) => (
-                  <div
-                    key={member.id}
-                    className="flex items-center justify-between rounded-lg border border-border/60 px-3 py-2"
-                  >
-                    <div>
-                      <p className="text-sm font-medium">{member.name}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {member.email ?? member.phone ?? '연락처 없음'}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Badge variant="outline">{member.role}</Badge>
-                      <Badge variant={member.isActive ? 'secondary' : 'destructive'}>
-                        {member.isActive ? '활성' : '비활성'}
-                      </Badge>
-                    </div>
-                  </div>
-                ))}
+        <div className="flex flex-col gap-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <UserRound className="size-4" />내 계정
+              </CardTitle>
+              <CardDescription>현재 로그인한 계정 정보입니다.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              <SummaryRow label="이름" value={user?.name ?? '-'} />
+              <SummaryRow label="로그인 ID" value={user?.loginId ?? '-'} />
+              <SummaryRow label="이메일" value={user?.email ?? '-'} />
+              <SummaryRow
+                label="전화"
+                value={myProfile?.phone ? formatPhone(myProfile.phone) : '-'}
+              />
+              <SummaryRow
+                label="역할"
+                value={user ? (ROLE_LABELS[user.role] ?? user.role) : '-'}
+              />
+              <SummaryRow
+                label="자격 구분"
+                value={
+                  myProfile?.licenseType
+                    ? (USER_LICENSE_TYPE_LABELS as Record<string, string>)[
+                        myProfile.licenseType
+                      ] ?? myProfile.licenseType
+                    : '미지정'
+                }
+              />
+              {myProfile?.licenseType === 'assistant' ? (
+                <p className="rounded-md bg-muted/60 px-3 py-2 text-[11px] leading-4 text-muted-foreground">
+                  중개보조원은 계약서에 서명할 수 없는 신분입니다. 계약 체결은
+                  개업·소속공인중개사가 진행해야 합니다.
+                </p>
+              ) : null}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div className="space-y-1.5">
+                  <CardTitle>운영 요약</CardTitle>
+                  <CardDescription>계정 상태와 팀 구성을 확인합니다.</CardDescription>
+                </div>
+                <Button asChild variant="outline" size="sm">
+                  <Link to="/employees">
+                    직원 관리
+                    <ArrowRight className="size-3.5" />
+                  </Link>
+                </Button>
               </div>
-            </div>
-          </CardContent>
-        </Card>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <SummaryRow label="대표(Owner)" value={office?.owner?.name ?? '-'} />
+              <SummaryRow
+                label="전체 직원"
+                value={office ? `${office.counts.totalUsers}명` : '-'}
+              />
+              <SummaryRow
+                label="활성 계정"
+                value={office ? `${office.counts.activeUsers}명` : '-'}
+              />
+              <div className="space-y-2">
+                <p className="text-xs font-medium text-muted-foreground">팀 구성</p>
+                <div className="space-y-2">
+                  {office?.users.map((member) => (
+                    <div
+                      key={member.id}
+                      className="flex items-center justify-between rounded-lg border border-border/60 px-3 py-2"
+                    >
+                      <div>
+                        <p className="text-sm font-medium">{member.name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {member.licenseType
+                            ? ((USER_LICENSE_TYPE_LABELS as Record<string, string>)[
+                                member.licenseType
+                              ] ?? member.licenseType)
+                            : (member.email ??
+                              (member.phone ? formatPhone(member.phone) : '연락처 없음'))}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Badge variant="outline">
+                          {ROLE_LABELS[member.role] ?? member.role}
+                        </Badge>
+                        <Badge variant={member.isActive ? 'secondary' : 'destructive'}>
+                          {member.isActive ? '활성' : '비활성'}
+                        </Badge>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       </div>
 
       <Card>
         <CardHeader>
           <CardTitle>수수료 배분 규칙</CardTitle>
           <CardDescription>
-            거래 참여자 기본 배분 기준을 사무소 정책으로 저장합니다.
+            거래 참여자 기본 배분 기준을 사무소 정책으로 저장합니다. 각 비율은 해당 측
+            수수료에서 직원이 가져가는 몫(%)이며 0~100 사이로 입력합니다.
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -386,7 +476,7 @@ function SettingsPage() {
             suffix="%"
           />
           <NumberField
-            label="단독중개"
+            label="단독중개 (양측 담당)"
             value={commissionForm.dualAgentRate}
             onChange={(value) =>
               setCommissionForm((prev) => ({ ...prev, dualAgentRate: value }))
@@ -410,18 +500,52 @@ function SettingsPage() {
               setCommissionForm((prev) => ({ ...prev, closerBonus: value }))
             }
             disabled={!canEdit}
-            suffix="만원"
+            suffix="%"
           />
         </CardContent>
         <div className="flex justify-end px-6 pb-6">
           <Button
-            onClick={() => updateCommissionMutation.mutate()}
+            onClick={handleCommissionSave}
             disabled={!canEdit || updateCommissionMutation.isPending}
           >
             <Save className="size-4" />
-            배분 규칙 저장
+            {updateCommissionMutation.isPending ? '저장 중…' : '배분 규칙 저장'}
           </Button>
         </div>
+      </Card>
+
+      <ContractTemplatesCard canEdit={canEdit} />
+
+      <ExpenseSummaryCard />
+
+      <AiAgentCard office={office} canEdit={canEdit} />
+
+      <McpApiKeyCard canEdit={canEdit} />
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Globe className="size-4" />
+            {t('sections.language')}
+          </CardTitle>
+          <CardDescription>{t('sections.languageDescription')}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex max-w-xs items-center gap-2">
+            <Select value={locale} onValueChange={(v) => handleLocaleChange(v as SupportedLocale)}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {SUPPORTED_LOCALES.map((l) => (
+                  <SelectItem key={l} value={l}>
+                    {t(`languageOptions.${l}`)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </CardContent>
       </Card>
     </div>
   );
@@ -432,15 +556,20 @@ function Field({
   value,
   onChange,
   disabled,
+  required,
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
   disabled?: boolean;
+  required?: boolean;
 }) {
   return (
     <div className="space-y-2">
-      <Label>{label}</Label>
+      <Label>
+        {label}
+        {required ? <span className="text-destructive"> *</span> : null}
+      </Label>
       <Input value={value} onChange={(event) => onChange(event.target.value)} disabled={disabled} />
     </div>
   );
@@ -459,6 +588,10 @@ function NumberField({
   disabled?: boolean;
   suffix: string;
 }) {
+  const parsed = Number(value);
+  const invalid =
+    value.trim() === '' || !Number.isFinite(parsed) || parsed < 0 || parsed > 100;
+
   return (
     <div className="space-y-2">
       <Label>{label}</Label>
@@ -468,12 +601,16 @@ function NumberField({
           value={value}
           onChange={(event) => onChange(event.target.value)}
           disabled={disabled}
-          className="pr-12"
+          aria-invalid={invalid}
+          className={invalid ? 'border-destructive pr-12' : 'pr-12'}
         />
         <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
           {suffix}
         </span>
       </div>
+      {invalid ? (
+        <p className="text-[11px] text-destructive">0~100 사이 숫자를 입력하세요.</p>
+      ) : null}
     </div>
   );
 }
@@ -496,6 +633,30 @@ function SummaryRow({ label, value }: { label: string; value: string }) {
       <span className="text-sm font-medium">{value}</span>
     </div>
   );
+}
+
+const COMMISSION_RATE_FIELDS: { key: keyof CommissionConfigForm; label: string }[] = [
+  { key: 'defaultAgentRate', label: '기본 직원 배분율' },
+  { key: 'listingAgentRate', label: '매도측 담당' },
+  { key: 'buyingAgentRate', label: '매수측 담당' },
+  { key: 'dualAgentRate', label: '단독중개' },
+  { key: 'managerRate', label: '매니저 배분' },
+  { key: 'closerBonus', label: '마감 보너스' },
+];
+
+/** 0~100 범위 검증. 통과 시 null, 실패 시 에러 메시지 반환 */
+function validateCommissionForm(form: CommissionConfigForm): string | null {
+  for (const field of COMMISSION_RATE_FIELDS) {
+    const raw = form[field.key].trim();
+    const parsed = Number(raw);
+    if (raw === '' || !Number.isFinite(parsed)) {
+      return `${field.label} 값을 숫자로 입력하세요.`;
+    }
+    if (parsed < 0 || parsed > 100) {
+      return `${field.label}은(는) 0~100 사이로 입력하세요.`;
+    }
+  }
+  return null;
 }
 
 function normalizeCommissionConfig(raw: unknown) {
@@ -521,168 +682,7 @@ function getNumber(value: unknown, fallback: number) {
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
 }
 
-function toNumber(value: string, fallback: number) {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : fallback;
-}
-
 function emptyToNull(value: string) {
   const trimmed = value.trim();
   return trimmed ? trimmed : null;
-}
-
-function McpApiKeyCard({ canEdit }: { canEdit: boolean }) {
-  const { t } = useTranslation('settings');
-  const qc = useQueryClient();
-  const [freshKey, setFreshKey] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
-
-  const { data: status } = useQuery({
-    queryKey: ['mcp-api-key'],
-    queryFn: () => api.mcp.getApiKeyStatus(),
-  });
-
-  const generateMutation = useMutation({
-    mutationFn: () => api.mcp.generateApiKey(),
-    onSuccess: (res) => {
-      setFreshKey(res.key);
-      qc.invalidateQueries({ queryKey: ['mcp-api-key'] });
-    },
-  });
-
-  const revokeMutation = useMutation({
-    mutationFn: () => api.mcp.revokeApiKey(),
-    onSuccess: () => {
-      setFreshKey(null);
-      qc.invalidateQueries({ queryKey: ['mcp-api-key'] });
-    },
-  });
-
-  const handleCopy = async () => {
-    if (!freshKey) return;
-    await navigator.clipboard.writeText(freshKey);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
-  };
-
-  const handleRevoke = () => {
-    if (!window.confirm(t('mcp.revokeConfirm'))) return;
-    revokeMutation.mutate();
-  };
-
-  const endpoint = `${window.location.origin.replace(/:\d+$/, ':3000')}/mcp`;
-  const configJson = freshKey
-    ? JSON.stringify(
-        {
-          mcpServers: {
-            'estate-erp': {
-              url: endpoint,
-              headers: { Authorization: `Bearer ${freshKey}` },
-            },
-          },
-        },
-        null,
-        2,
-      )
-    : null;
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          <KeyRound className="size-4" />
-          {t('sections.mcp')}
-        </CardTitle>
-        <CardDescription>{t('sections.mcpDescription')}</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        {freshKey ? (
-          <div className="space-y-3 rounded-md border border-amber-200 bg-amber-50/60 p-3 text-[13px] dark:border-amber-900/60 dark:bg-amber-950/20">
-            <p className="text-amber-800 dark:text-amber-200">
-              {t('mcp.justGenerated')}
-            </p>
-            <div className="flex items-center gap-2">
-              <code className="flex-1 overflow-x-auto rounded bg-background px-2 py-1.5 font-mono text-[12px]">
-                {freshKey}
-              </code>
-              <Button size="sm" variant="outline" onClick={handleCopy} className="gap-1">
-                {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
-                {copied ? t('mcp.copied') : t('mcp.copy')}
-              </Button>
-            </div>
-
-            <div className="space-y-2 rounded-md bg-background p-3">
-              <p className="text-[12px] font-semibold">{t('mcp.guideTitle')}</p>
-              <ol className="list-decimal space-y-1 pl-5 text-[12px] text-muted-foreground">
-                <li>{t('mcp.guideStep1')}</li>
-                <li>{t('mcp.guideStep2')}</li>
-              </ol>
-              <pre className="overflow-x-auto rounded bg-muted/60 p-2 text-[11px]">
-                {configJson}
-              </pre>
-              <p className="text-[11px] text-muted-foreground">
-                <span className="font-semibold">{t('mcp.endpointLabel')}:</span>{' '}
-                <code>{endpoint}</code>
-              </p>
-            </div>
-
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => {
-                setFreshKey(null);
-                setCopied(false);
-              }}
-            >
-              {t('mcp.dismiss')}
-            </Button>
-          </div>
-        ) : status?.hasKey ? (
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="space-y-0.5">
-              <p className="text-[11px] text-muted-foreground">
-                {t('mcp.currentPrefix')}
-              </p>
-              <code className="rounded bg-muted px-2 py-1 font-mono text-[12px]">
-                {status.prefix}···
-              </code>
-            </div>
-            {canEdit && (
-              <Button
-                size="sm"
-                variant="outline"
-                className="gap-1 text-destructive"
-                onClick={handleRevoke}
-                disabled={revokeMutation.isPending}
-              >
-                <Trash2 className="size-3.5" />
-                {revokeMutation.isPending ? t('mcp.revoking') : t('mcp.revoke')}
-              </Button>
-            )}
-          </div>
-        ) : (
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <p className="text-[13px] text-muted-foreground">{t('mcp.empty')}</p>
-            {canEdit ? (
-              <Button
-                size="sm"
-                onClick={() => generateMutation.mutate()}
-                disabled={generateMutation.isPending}
-                className="gap-1"
-              >
-                <KeyRound className="size-3.5" />
-                {generateMutation.isPending
-                  ? t('mcp.generating')
-                  : t('mcp.generate')}
-              </Button>
-            ) : (
-              <p className="text-[12px] text-muted-foreground">
-                {t('mcp.ownerOnly')}
-              </p>
-            )}
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  );
 }

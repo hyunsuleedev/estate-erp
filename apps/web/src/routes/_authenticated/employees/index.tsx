@@ -1,58 +1,26 @@
-import { Link, createFileRoute, useNavigate } from '@tanstack/react-router';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Link, createFileRoute } from '@tanstack/react-router';
+import { useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { Dispatch, ReactNode, SetStateAction } from 'react';
 import {
-  Activity,
-  AlertTriangle,
-  BriefcaseBusiness,
-  CalendarClock,
-  ChevronRight,
   CircleDollarSign,
-  CirclePlus,
-  ClipboardList,
   Info,
-  KeyRound,
-  ListFilter,
-  Mail,
-  Phone,
+  LayoutGrid,
+  Plus,
   RotateCw,
-  UserCheck,
-  UserCog,
+  Search,
+  Table2,
   Users,
-  UserX,
+  X,
 } from 'lucide-react';
-import type { LucideIcon } from 'lucide-react';
-import { toast } from 'sonner';
-import { ApiError } from '@estate-erp/api-client';
-import type { CreateEmployeeDto, EmployeeDetail } from '@estate-erp/api-client';
-import { USER_LICENSE_TYPE_LABELS } from '@estate-erp/shared';
+import type { Employee } from '@estate-erp/api-client';
 import { api } from '@/lib/api';
 import { useAuth } from '@/providers/auth-provider';
 import { cn } from '@/lib/utils';
-import { formatDate, formatDateTime, formatMoney, formatPhone } from '@/lib/format';
 import { timeAgo } from '@/lib/time-ago';
-import { getStatusMeta } from '@/lib/status-config';
-import {
-  ConfirmDialog,
-  EmptyState,
-  FilterSearch,
-  FilterSelect,
-  PageHeader,
-} from '@/components/domain';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
+import { EmptyState } from '@/components/domain';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import {
   Select,
   SelectContent,
@@ -60,129 +28,48 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
+import {
+  ALL_VALUE,
+  LICENSE_TYPE_LABELS,
+  PersonAvatar,
+  RoleLabel,
+  StatusLabel,
+  payTypeLabels,
+  roleMeta,
+} from './-employee-shared';
+import { EmployeePeek } from './-employee-peek';
+import { EmployeeCreateDialog } from './-employee-create-dialog';
 
-const roleMeta: Record<string, { label: string; className: string }> = {
-  owner: { label: '대표', className: 'border-transparent bg-violet-soft text-violet' },
-  manager: { label: '매니저', className: 'border-transparent bg-info-soft text-info' },
-  agent: { label: '중개사', className: 'border-transparent bg-success-soft text-success' },
-};
-
-const LICENSE_TYPE_LABELS: Record<string, string> = USER_LICENSE_TYPE_LABELS;
-const NONE_VALUE = '__none__';
-
-const payTypeLabels: Record<string, string> = {
-  fixed: '고정급',
-  mixed: '고정급+수수료',
-  commission_only: '수수료제',
-};
-
-const participantRoleLabels: Record<string, string> = {
-  listing_agent: '매도측 담당',
-  buying_agent: '매수측 담당',
-  dual_agent: '단독중개',
-  manager: '관리자',
-  assistant: '보조',
-  closer: '마감 담당',
-};
-
-const participantSideLabels: Record<string, string> = {
-  seller: '매도측',
-  buyer: '매수측',
-  both: '양측',
-};
-
-const settlementLabels: Record<string, string> = {
-  settled: '정산완료',
-  unsettled: '미정산',
-};
-
-const taskPriorityLabels: Record<string, string> = {
-  urgent: '긴급',
-  high: '높음',
-  medium: '보통',
-  low: '낮음',
-};
-
-const buyerStatusLabels: Record<string, string> = {
-  active: '진행중',
-  matched: '매칭됨',
-  completed: '완료',
-  inactive: '중지',
-};
-
-interface DetailFormState {
-  name: string;
-  phone: string;
-  email: string;
-  licenseType: string;
-  licenseNo: string;
-  payType: string;
-  baseSalary: string;
-  commissionRate: string;
-}
-
-interface CreateFormState {
-  name: string;
-  loginId: string;
-  phone: string;
-  email: string;
-  role: string;
-  password: string;
-  licenseType: string;
-  licenseNo: string;
-}
-
-const EMPTY_CREATE_FORM: CreateFormState = {
-  name: '',
-  loginId: '',
-  phone: '',
-  email: '',
-  role: 'agent',
-  password: '',
-  licenseType: '',
-  licenseNo: '',
-};
-
-function getErrorMessage(error: unknown): string {
-  if (error instanceof ApiError && error.message) return error.message;
-  if (error instanceof Error && error.message) return error.message;
-  return '요청 처리에 실패했습니다.';
-}
+type ViewMode = 'table' | 'board';
 
 export const Route = createFileRoute('/_authenticated/employees/')({
+  validateSearch: (search: Record<string, unknown>): { emp?: string } => ({
+    emp: typeof search.emp === 'string' && search.emp ? search.emp : undefined,
+  }),
   component: EmployeesPage,
 });
 
 function EmployeesPage() {
   const { user } = useAuth();
-  const queryClient = useQueryClient();
+  const navigate = Route.useNavigate();
+  const { emp: peekId } = Route.useSearch();
+
   const canManage = user?.role === 'owner' || user?.role === 'manager';
   // PRD 3절: agent는 본인 정보만 조회 (다른 직원 목록·실적·배분 금액 비노출)
   const isSelfOnly = !canManage;
 
-  const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null);
+  const [view, setView] = useState<ViewMode>('table');
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [workloadFilter, setWorkloadFilter] = useState('');
   const [isCreateOpen, setIsCreateOpen] = useState(false);
-  const [resetPassword, setResetPassword] = useState('');
-  const [pendingRole, setPendingRole] = useState<string | null>(null);
-  const [isStatusConfirmOpen, setIsStatusConfirmOpen] = useState(false);
-  const [createForm, setCreateForm] = useState<CreateFormState>(EMPTY_CREATE_FORM);
-  const [detailForm, setDetailForm] = useState<DetailFormState>({
-    name: '',
-    phone: '',
-    email: '',
-    licenseType: '',
-    licenseNo: '',
-    payType: 'mixed',
-    baseSalary: '',
-    commissionRate: '',
-  });
-  const searchWrapRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+
+  const openPeek = (id: string) =>
+    navigate({ search: (prev) => ({ ...prev, emp: id }) });
+  const closePeek = () => navigate({ search: (prev) => ({ ...prev, emp: undefined }) });
 
   const {
     data: employees = [],
@@ -199,12 +86,6 @@ function EmployeesPage() {
     queryFn: () => api.offices.getMe(),
   });
 
-  const { data: performance, isLoading: isPerformanceLoading } = useQuery({
-    queryKey: ['employee-performance', selectedEmployeeId],
-    queryFn: () => api.employees.getPerformance(selectedEmployeeId as string),
-    enabled: !!selectedEmployeeId,
-  });
-
   const visibleEmployees = useMemo(
     () => (isSelfOnly ? employees.filter((employee) => employee.id === user?.id) : employees),
     [employees, isSelfOnly, user?.id],
@@ -217,18 +98,12 @@ function EmployeesPage() {
       if (roleFilter && employee.role !== roleFilter) return false;
       if (statusFilter === 'active' && !employee.isActive) return false;
       if (statusFilter === 'inactive' && employee.isActive) return false;
-      if (workloadFilter === 'hasTasks' && employee.counts.activeTaskCount === 0) {
-        return false;
-      }
-      if (workloadFilter === 'hasDeals' && employee.counts.activeDealCount === 0) {
-        return false;
-      }
+      if (workloadFilter === 'hasTasks' && employee.counts.activeTaskCount === 0) return false;
+      if (workloadFilter === 'hasDeals' && employee.counts.activeDealCount === 0) return false;
       if (workloadFilter === 'hasUnsettled' && employee.counts.unsettledDealCount === 0) {
         return false;
       }
-
       if (!query) return true;
-
       return [employee.name, employee.loginId, employee.email, employee.phone]
         .filter(Boolean)
         .join(' ')
@@ -239,50 +114,6 @@ function EmployeesPage() {
     // 활성 직원 우선, 그 안에서는 서버 정렬(역할 → 이름) 유지
     return [...filtered].sort((a, b) => Number(b.isActive) - Number(a.isActive));
   }, [visibleEmployees, roleFilter, search, statusFilter, workloadFilter]);
-
-  useEffect(() => {
-    if (!selectedEmployeeId && filteredEmployees.length > 0) {
-      setSelectedEmployeeId(filteredEmployees[0].id);
-    }
-
-    if (
-      selectedEmployeeId &&
-      filteredEmployees.length > 0 &&
-      !filteredEmployees.some((employee) => employee.id === selectedEmployeeId)
-    ) {
-      setSelectedEmployeeId(filteredEmployees[0].id);
-    }
-  }, [filteredEmployees, selectedEmployeeId]);
-
-  const {
-    data: employeeDetail,
-    isLoading: isDetailLoading,
-    isError: isDetailError,
-    refetch: refetchDetail,
-  } = useQuery({
-    queryKey: ['employee', selectedEmployeeId],
-    queryFn: () => api.employees.findOne(selectedEmployeeId as string),
-    enabled: !!selectedEmployeeId,
-  });
-
-  useEffect(() => {
-    if (!employeeDetail) return;
-
-    setDetailForm({
-      name: employeeDetail.name ?? '',
-      phone: employeeDetail.phone ?? '',
-      email: employeeDetail.email ?? '',
-      licenseType: employeeDetail.licenseType ?? '',
-      licenseNo: employeeDetail.licenseNo ?? '',
-      payType: employeeDetail.payType ?? 'mixed',
-      baseSalary:
-        employeeDetail.baseSalary != null ? String(employeeDetail.baseSalary) : '',
-      commissionRate:
-        employeeDetail.commissionRate != null
-          ? String(employeeDetail.commissionRate)
-          : '',
-    });
-  }, [employeeDetail]);
 
   // 키보드 단축키: '/' 검색 포커스, Cmd/Ctrl+N 직원 추가
   useEffect(() => {
@@ -300,1292 +131,487 @@ function EmployeesPage() {
         }
         return;
       }
-
-      // agent(본인 정보만)는 검색 UI가 숨겨져 있으므로 포커스 제외
       if (event.key === '/' && !isTyping && canManage) {
         event.preventDefault();
-        searchWrapRef.current?.querySelector('input')?.focus();
+        searchRef.current?.focus();
       }
     };
-
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, [canManage]);
-
-  const invalidateEmployee = () => {
-    queryClient.invalidateQueries({ queryKey: ['employees'] });
-    queryClient.invalidateQueries({ queryKey: ['employee', selectedEmployeeId] });
-  };
-
-  const createMutation = useMutation({
-    mutationFn: (payload: CreateEmployeeDto) => api.employees.create(payload),
-    onSuccess: (created) => {
-      queryClient.invalidateQueries({ queryKey: ['employees'] });
-      queryClient.invalidateQueries({ queryKey: ['office-profile'] });
-      setSelectedEmployeeId(created.id);
-      setIsCreateOpen(false);
-      setCreateForm(EMPTY_CREATE_FORM);
-      toast.success(`${created.name}님 계정이 생성되었습니다.`);
-    },
-    onError: (error) => toast.error(getErrorMessage(error)),
-  });
-
-  const updateMutation = useMutation({
-    mutationFn: () =>
-      api.employees.update(selectedEmployeeId as string, {
-        name: detailForm.name.trim(),
-        phone: emptyToNull(detailForm.phone),
-        email: emptyToNull(detailForm.email),
-        licenseType: detailForm.licenseType || null,
-        licenseNo: emptyToNull(detailForm.licenseNo),
-        payType: detailForm.payType,
-        baseSalary:
-          detailForm.baseSalary.trim() === '' ? null : Number(detailForm.baseSalary),
-        commissionRate:
-          detailForm.commissionRate.trim() === ''
-            ? null
-            : Number(detailForm.commissionRate),
-      }),
-    onSuccess: () => {
-      invalidateEmployee();
-      toast.success('직원 정보가 저장되었습니다.');
-    },
-    onError: (error) => toast.error(getErrorMessage(error)),
-  });
-
-  const roleMutation = useMutation({
-    mutationFn: (role: string) =>
-      api.employees.updateRole(selectedEmployeeId as string, role),
-    onSuccess: (_, role) => {
-      invalidateEmployee();
-      setPendingRole(null);
-      toast.success(`역할이 '${roleMeta[role]?.label ?? role}'(으)로 변경되었습니다.`);
-    },
-    onError: (error) => toast.error(getErrorMessage(error)),
-  });
-
-  const statusMutation = useMutation({
-    mutationFn: (isActive: boolean) =>
-      api.employees.updateStatus(selectedEmployeeId as string, isActive),
-    onSuccess: (_, isActive) => {
-      invalidateEmployee();
-      queryClient.invalidateQueries({ queryKey: ['office-profile'] });
-      setIsStatusConfirmOpen(false);
-      toast.success(isActive ? '계정이 재활성화되었습니다.' : '계정이 비활성화되었습니다.');
-    },
-    onError: (error) => toast.error(getErrorMessage(error)),
-  });
-
-  const passwordMutation = useMutation({
-    mutationFn: (nextPassword: string) =>
-      api.employees.resetPassword(selectedEmployeeId as string, nextPassword),
-    onSuccess: (result) => {
-      setResetPassword('');
-      toast.success(
-        result.message ?? '비밀번호가 재설정되었습니다. 직원에게 전달하세요.',
-      );
-    },
-    onError: (error) => toast.error(getErrorMessage(error)),
-  });
-
-  const handleSave = () => {
-    if (!detailForm.name.trim()) {
-      toast.error('이름을 입력하세요.');
-      return;
-    }
-    if (detailForm.baseSalary.trim() !== '') {
-      const baseSalary = Number(detailForm.baseSalary);
-      if (!Number.isInteger(baseSalary) || baseSalary < 0) {
-        toast.error('기본급은 0 이상의 정수(만원)로 입력하세요.');
-        return;
-      }
-    }
-    if (detailForm.commissionRate.trim() !== '') {
-      const rate = Number(detailForm.commissionRate);
-      if (!Number.isFinite(rate) || rate < 0 || rate > 100) {
-        toast.error('수수료 배분율은 0~100 사이로 입력하세요.');
-        return;
-      }
-    }
-    updateMutation.mutate();
-  };
-
-  const handleCreate = () => {
-    createMutation.mutate({
-      name: createForm.name.trim(),
-      loginId: createForm.loginId.trim(),
-      phone: createForm.phone.trim() || undefined,
-      email: createForm.email.trim() || undefined,
-      role: createForm.role,
-      password: createForm.password,
-      licenseType: createForm.licenseType || null,
-      licenseNo: createForm.licenseNo.trim() || null,
-    });
-  };
-
-  const metrics = useMemo(() => {
-    const activeEmployees = visibleEmployees.filter((employee) => employee.isActive);
-
-    return [
-      { label: '전체', value: `${visibleEmployees.length}명`, icon: Users },
-      { label: '활성', value: `${activeEmployees.length}명`, icon: UserCheck },
-      {
-        label: '비활성',
-        value: `${visibleEmployees.length - activeEmployees.length}명`,
-        icon: UserX,
-      },
-      {
-        label: '매니저',
-        value: `${visibleEmployees.filter((employee) => employee.role === 'manager').length}명`,
-        icon: UserCog,
-      },
-      {
-        label: '거래 담당',
-        value: `${visibleEmployees.filter((employee) => employee.counts.activeDealCount > 0).length}명`,
-        icon: BriefcaseBusiness,
-      },
-    ];
-  }, [visibleEmployees]);
-
-  // 생성: manager는 agent만, owner는 agent/manager. 역할 변경: owner는 owner 승계까지 가능.
-  const createRoleOptions = user?.role === 'owner' ? ['agent', 'manager'] : ['agent'];
-  const detailRoleOptions =
-    user?.role === 'owner' ? ['agent', 'manager', 'owner'] : ['agent'];
 
   const activeUserCount =
     officeProfile?.counts.activeUsers ??
     employees.filter((employee) => employee.isActive).length;
   const maxUsers = officeProfile?.maxUsers ?? null;
-  const isSlotFull = maxUsers != null && activeUserCount >= maxUsers;
 
-  const statusWarnings = useMemo(() => {
-    if (!employeeDetail || !employeeDetail.isActive) return [];
-    const warnings: string[] = [];
-    if (employeeDetail.role === 'owner') {
-      warnings.push(
-        '대표(owner) 계정입니다. 사무소의 마지막 대표 계정은 비활성화할 수 없습니다.',
-      );
-    }
-    const { activeTaskCount, activeDealCount } = employeeDetail.counts;
-    if (activeTaskCount > 0 || activeDealCount > 0) {
-      warnings.push(
-        `진행 중 업무 ${activeTaskCount}건 · 거래 ${activeDealCount}건이 있습니다. 비활성화 전에 다른 직원에게 인계하세요.`,
-      );
-    }
-    return warnings;
-  }, [employeeDetail]);
+  const summary = useMemo(() => {
+    const active = visibleEmployees.filter((employee) => employee.isActive).length;
+    const managers = visibleEmployees.filter((employee) => employee.role === 'manager').length;
+    const dealing = visibleEmployees.filter(
+      (employee) => employee.counts.activeDealCount > 0,
+    ).length;
+    const parts = [
+      `전체 ${visibleEmployees.length}`,
+      `활성 ${active}`,
+      `매니저 ${managers}`,
+      `거래 담당 ${dealing}`,
+    ];
+    if (maxUsers != null) parts.push(`슬롯 ${activeUserCount}/${maxUsers}`);
+    return parts;
+  }, [visibleEmployees, maxUsers, activeUserCount]);
+
+  const hasFilter = Boolean(roleFilter || statusFilter || workloadFilter || search.trim());
+  const clearFilters = () => {
+    setRoleFilter('');
+    setStatusFilter('');
+    setWorkloadFilter('');
+    setSearch('');
+  };
 
   return (
-    <div className="flex min-h-0 flex-col gap-4 pt-4">
-      <PageHeader
-        title="직원관리"
-        description="계정, 권한, 재직 상태와 담당 현황을 한 화면에서 관리합니다."
-        actions={
-          <div className="flex flex-wrap gap-2">
-            <Button variant="outline" asChild>
-              <Link to="/cashflow/employee-settlements">
-                <CircleDollarSign className="size-4" />
-                정산 현황
-              </Link>
-            </Button>
-            {canManage ? (
-              <Button onClick={() => setIsCreateOpen(true)}>
-                <CirclePlus className="size-4" />
-                직원 추가
-              </Button>
-            ) : null}
-          </div>
-        }
-        className="mb-0"
-      />
+    <div className="mx-auto flex w-full max-w-6xl flex-col pt-8">
+      {/* 페이지 헤더 — Notion 문서 타이틀 */}
+      <div className="px-1">
+        <div className="flex items-center gap-2.5">
+          <span className="flex size-9 items-center justify-center rounded-lg bg-neutral-soft">
+            <Users className="size-5 text-muted-foreground" />
+          </span>
+          <h1 className="text-2xl font-bold tracking-tight">
+            {isSelfOnly ? '내 정보' : '직원관리'}
+          </h1>
+        </div>
+        {isSelfOnly ? null : (
+          <p className="mt-2 flex flex-wrap items-center gap-x-1 text-sm text-muted-foreground">
+            {summary.map((part, index) => (
+              <span key={part} className="inline-flex items-center gap-1">
+                {index > 0 ? <span className="text-border">·</span> : null}
+                {part}
+              </span>
+            ))}
+          </p>
+        )}
+      </div>
 
       {isSelfOnly ? (
-        <Alert>
+        <Alert className="mt-5">
           <Info className="size-4" />
           <AlertDescription>
-            일반 중개사 계정은 본인 정보만 조회할 수 있습니다. 다른 직원 정보나 계정
-            관리는 대표 또는 매니저에게 문의하세요.
+            일반 중개사 계정은 본인 정보만 조회할 수 있습니다. 다른 직원 정보나 계정 관리는
+            대표 또는 매니저에게 문의하세요.
           </AlertDescription>
         </Alert>
-      ) : (
-        <div className="rounded-lg border border-border/70 bg-background">
-          <div className="grid divide-y divide-border/70 md:grid-cols-5 md:divide-x md:divide-y-0">
-            {metrics.map((metric) => (
-              <div key={metric.label} className="flex items-center gap-3 px-5 py-3">
-                <div className="flex size-9 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
-                  <metric.icon className="size-4" />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-xs text-muted-foreground">{metric.label}</p>
-                  <p className="text-lg font-semibold tracking-tight">{metric.value}</p>
-                </div>
+      ) : null}
+
+      {/* 툴바 — 뷰 전환 + 필터 + 액션 */}
+      <div className="sticky top-0 z-10 mt-5 flex flex-wrap items-center gap-1 border-b bg-background/95 pb-2 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+        <div className="flex items-center">
+          <ViewTab
+            icon={Table2}
+            label="표"
+            active={view === 'table'}
+            onClick={() => setView('table')}
+          />
+          <ViewTab
+            icon={LayoutGrid}
+            label="보드"
+            active={view === 'board'}
+            onClick={() => setView('board')}
+          />
+        </div>
+
+        <div className="ml-auto flex flex-wrap items-center gap-1">
+          {isSelfOnly ? null : (
+            <>
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  ref={searchRef}
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' && filteredEmployees.length > 0) {
+                      openPeek(filteredEmployees[0].id);
+                    }
+                  }}
+                  placeholder="검색"
+                  className="h-7 w-40 border-transparent bg-transparent pl-7 pr-7 text-sm shadow-none transition-[width] hover:bg-muted/70 focus-visible:w-56 focus-visible:bg-background md:w-48"
+                />
+                <kbd className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 rounded border bg-muted px-1 font-mono text-[10px] text-muted-foreground">
+                  /
+                </kbd>
               </div>
+              <GhostFilter
+                placeholder="역할"
+                value={roleFilter}
+                onChange={setRoleFilter}
+                options={[
+                  { value: 'owner', label: '대표' },
+                  { value: 'manager', label: '매니저' },
+                  { value: 'agent', label: '중개사' },
+                ]}
+              />
+              <GhostFilter
+                placeholder="상태"
+                value={statusFilter}
+                onChange={setStatusFilter}
+                options={[
+                  { value: 'active', label: '활성' },
+                  { value: 'inactive', label: '비활성' },
+                ]}
+              />
+              <GhostFilter
+                placeholder="담당"
+                value={workloadFilter}
+                onChange={setWorkloadFilter}
+                options={[
+                  { value: 'hasTasks', label: '진행 업무 있음' },
+                  { value: 'hasDeals', label: '진행 거래 있음' },
+                  { value: 'hasUnsettled', label: '미정산 있음' },
+                ]}
+              />
+              {hasFilter ? (
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  className="text-muted-foreground"
+                  onClick={clearFilters}
+                >
+                  <X className="size-3" />
+                  초기화
+                </Button>
+              ) : null}
+              <span className="mx-1 h-4 w-px bg-border" />
+            </>
+          )}
+          <Button variant="ghost" size="sm" asChild className="text-muted-foreground">
+            <Link to="/cashflow/employee-settlements">
+              <CircleDollarSign className="size-3.5" />
+              정산 현황
+            </Link>
+          </Button>
+          {canManage ? (
+            <Button size="sm" onClick={() => setIsCreateOpen(true)}>
+              <Plus className="size-3.5" />새 직원
+            </Button>
+          ) : null}
+        </div>
+      </div>
+
+      {/* 본문 */}
+      {isLoading ? (
+        <div className="mt-1 divide-y divide-border/60">
+          {Array.from({ length: 4 }).map((_, index) => (
+            <div key={index} className="flex items-center gap-3 py-3">
+              <Skeleton className="size-6 rounded-md" />
+              <Skeleton className="h-4 w-32" />
+              <Skeleton className="ml-auto h-4 w-16" />
+              <Skeleton className="h-4 w-16" />
+              <Skeleton className="hidden h-4 w-24 md:block" />
+            </div>
+          ))}
+        </div>
+      ) : isError ? (
+        <div className="flex flex-col items-center gap-3 py-24">
+          <p className="text-sm text-muted-foreground">직원 목록을 불러오지 못했습니다.</p>
+          <Button variant="outline" size="sm" onClick={() => refetch()}>
+            <RotateCw className="size-4" />
+            다시 시도
+          </Button>
+        </div>
+      ) : visibleEmployees.length === 0 ? (
+        <EmptyState
+          icon={Users}
+          title="등록된 직원이 없습니다"
+          description="직원 계정을 만들어 업무와 거래를 배분하세요."
+          action={
+            canManage ? (
+              <Button size="sm" onClick={() => setIsCreateOpen(true)}>
+                <Plus className="size-4" />새 직원
+              </Button>
+            ) : undefined
+          }
+          className="py-24"
+        />
+      ) : filteredEmployees.length === 0 ? (
+        <div className="py-24 text-center text-sm text-muted-foreground">
+          조건에 맞는 직원이 없습니다.
+          <Button variant="ghost" size="sm" className="ml-2" onClick={clearFilters}>
+            필터 초기화
+          </Button>
+        </div>
+      ) : view === 'table' ? (
+        <EmployeeTable employees={filteredEmployees} onOpen={openPeek} />
+      ) : (
+        <EmployeeBoard employees={filteredEmployees} onOpen={openPeek} />
+      )}
+
+      <EmployeePeek
+        employeeId={peekId ?? null}
+        open={!!peekId}
+        onClose={closePeek}
+        canManage={canManage}
+        actorRole={user?.role ?? 'agent'}
+      />
+
+      <EmployeeCreateDialog
+        open={isCreateOpen}
+        onOpenChange={setIsCreateOpen}
+        actorRole={user?.role ?? 'agent'}
+        activeUserCount={activeUserCount}
+        maxUsers={maxUsers}
+        onCreated={openPeek}
+      />
+    </div>
+  );
+}
+
+/* ---------- 표 뷰 — Notion 데이터베이스 테이블 ---------- */
+
+function EmployeeTable({
+  employees,
+  onOpen,
+}: {
+  employees: Employee[];
+  onOpen: (id: string) => void;
+}) {
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[640px] border-collapse text-sm">
+        <thead>
+          <tr className="border-b text-left text-xs font-normal text-muted-foreground">
+            <th className="w-[30%] min-w-52 py-2 pl-1 pr-3 font-normal">이름</th>
+            <th className="py-2 pr-3 font-normal">역할</th>
+            <th className="py-2 pr-3 font-normal">상태</th>
+            <th className="hidden py-2 pr-3 font-normal lg:table-cell">자격</th>
+            <th className="hidden py-2 pr-3 font-normal xl:table-cell">급여</th>
+            <th className="py-2 pr-3 text-right font-normal">업무</th>
+            <th className="py-2 pr-3 text-right font-normal">거래</th>
+            <th className="py-2 pr-3 text-right font-normal">미정산</th>
+            <th className="hidden py-2 pr-1 text-right font-normal md:table-cell">
+              최근 활동
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {employees.map((employee) => (
+            <tr
+              key={employee.id}
+              onClick={() => onOpen(employee.id)}
+              className={cn(
+                'group cursor-pointer border-b border-border/60 transition-colors hover:bg-muted/50',
+                !employee.isActive && 'opacity-55',
+              )}
+            >
+              <td className="py-2 pl-1 pr-3">
+                <div className="flex items-center gap-2.5">
+                  <PersonAvatar name={employee.name} muted={!employee.isActive} />
+                  <span className="min-w-0">
+                    <span className="block truncate font-medium">{employee.name}</span>
+                    <span className="block truncate text-xs text-muted-foreground">
+                      {employee.loginId}
+                    </span>
+                  </span>
+                  <span className="ml-auto opacity-0 transition-opacity group-hover:opacity-100">
+                    <span className="rounded border bg-background px-1.5 py-0.5 text-[11px] text-muted-foreground shadow-xs">
+                      열기
+                    </span>
+                  </span>
+                </div>
+              </td>
+              <td className="whitespace-nowrap py-2 pr-3">
+                <RoleLabel role={employee.role} />
+              </td>
+              <td className="whitespace-nowrap py-2 pr-3">
+                <StatusLabel isActive={employee.isActive} />
+              </td>
+              <td className="hidden whitespace-nowrap py-2 pr-3 text-muted-foreground lg:table-cell">
+                {employee.licenseType
+                  ? (LICENSE_TYPE_LABELS[employee.licenseType] ?? employee.licenseType)
+                  : '—'}
+              </td>
+              <td className="hidden whitespace-nowrap py-2 pr-3 text-muted-foreground xl:table-cell">
+                {payTypeLabels[employee.payType] ?? employee.payType}
+              </td>
+              <CountCell value={employee.counts.activeTaskCount} />
+              <CountCell value={employee.counts.activeDealCount} />
+              <CountCell value={employee.counts.unsettledDealCount} warn />
+              <td className="hidden whitespace-nowrap py-2 pr-1 text-right text-xs text-muted-foreground md:table-cell">
+                {employee.latestActivityAt ? timeAgo(employee.latestActivityAt) : '—'}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p className="py-2 pl-1 text-xs text-muted-foreground/70">{employees.length}명</p>
+    </div>
+  );
+}
+
+function CountCell({ value, warn }: { value: number; warn?: boolean }) {
+  return (
+    <td
+      className={cn(
+        'whitespace-nowrap py-2 pr-3 text-right tabular-nums',
+        value === 0 ? 'text-muted-foreground/50' : warn ? 'font-medium text-warning' : '',
+      )}
+    >
+      {value}
+    </td>
+  );
+}
+
+/* ---------- 보드 뷰 — 역할별 그룹 ---------- */
+
+const BOARD_ORDER = ['owner', 'manager', 'agent'];
+
+function EmployeeBoard({
+  employees,
+  onOpen,
+}: {
+  employees: Employee[];
+  onOpen: (id: string) => void;
+}) {
+  const groups = BOARD_ORDER.map((role) => ({
+    role,
+    items: employees.filter((employee) => employee.role === role),
+  })).filter((group) => group.items.length > 0);
+
+  return (
+    <div className="mt-4 grid items-start gap-4 md:grid-cols-2 xl:grid-cols-3">
+      {groups.map((group) => (
+        <div key={group.role} className="rounded-lg bg-muted/50 p-2">
+          <div className="flex items-center gap-2 px-2 py-1.5">
+            <RoleLabel role={group.role} className="text-xs font-medium" />
+            <span className="text-xs tabular-nums text-muted-foreground">
+              {group.items.length}
+            </span>
+          </div>
+          <div className="space-y-1.5">
+            {group.items.map((employee) => (
+              <button
+                key={employee.id}
+                type="button"
+                onClick={() => onOpen(employee.id)}
+                className={cn(
+                  'w-full rounded-md border border-border/60 bg-background p-3 text-left shadow-xs transition-all hover:shadow-sm',
+                  !employee.isActive && 'opacity-55',
+                )}
+              >
+                <div className="flex items-center gap-2.5">
+                  <PersonAvatar name={employee.name} muted={!employee.isActive} />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-medium">
+                      {employee.name}
+                    </span>
+                    <span className="block truncate text-xs text-muted-foreground">
+                      {employee.loginId}
+                      {employee.licenseType
+                        ? ` · ${LICENSE_TYPE_LABELS[employee.licenseType] ?? employee.licenseType}`
+                        : ''}
+                    </span>
+                  </span>
+                  <StatusLabel isActive={employee.isActive} className="text-xs" />
+                </div>
+                <div className="mt-2.5 flex items-center gap-3 text-xs text-muted-foreground">
+                  <span>
+                    업무{' '}
+                    <span className="font-medium tabular-nums text-foreground">
+                      {employee.counts.activeTaskCount}
+                    </span>
+                  </span>
+                  <span>
+                    거래{' '}
+                    <span className="font-medium tabular-nums text-foreground">
+                      {employee.counts.activeDealCount}
+                    </span>
+                  </span>
+                  {employee.counts.unsettledDealCount > 0 ? (
+                    <span className="text-warning">
+                      미정산{' '}
+                      <span className="font-medium tabular-nums">
+                        {employee.counts.unsettledDealCount}
+                      </span>
+                    </span>
+                  ) : null}
+                  <span className="ml-auto">
+                    {employee.latestActivityAt ? timeAgo(employee.latestActivityAt) : ''}
+                  </span>
+                </div>
+              </button>
             ))}
           </div>
         </div>
-      )}
-
-      <div className="grid min-h-[720px] overflow-hidden rounded-lg border border-border/70 bg-background xl:grid-cols-[380px_minmax(0,1fr)]">
-        <aside className="flex min-h-0 flex-col border-b border-border/70 xl:border-b-0 xl:border-r">
-          <div className="border-b border-border/70 px-4 py-4">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <h2 className="text-sm font-semibold">
-                  {isSelfOnly ? '내 정보' : '직원 디렉터리'}
-                </h2>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {isSelfOnly
-                    ? '본인 계정만 표시됩니다'
-                    : `${filteredEmployees.length}명 표시 중${
-                        maxUsers != null ? ` · 슬롯 ${activeUserCount}/${maxUsers}` : ''
-                      }`}
-                </p>
-              </div>
-              {isSelfOnly ? null : (
-                <ListFilter className="size-4 text-muted-foreground" />
-              )}
-            </div>
-            <div className={cn('mt-4 space-y-2', isSelfOnly && 'hidden')}>
-              <div
-                ref={searchWrapRef}
-                onKeyDown={(event) => {
-                  // Enter로 첫 검색 결과 상세 열기 (PRD 13절 키보드 흐름)
-                  if (event.key === 'Enter' && filteredEmployees.length > 0) {
-                    setSelectedEmployeeId(filteredEmployees[0].id);
-                  }
-                }}
-              >
-                <FilterSearch
-                  value={search}
-                  onChange={setSearch}
-                  placeholder="이름, 로그인 ID, 연락처 검색 ( / )"
-                  className="w-full"
-                />
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <FilterSelect
-                  label="역할"
-                  value={roleFilter}
-                  onChange={setRoleFilter}
-                  options={[
-                    { value: 'owner', label: '대표' },
-                    { value: 'manager', label: '매니저' },
-                    { value: 'agent', label: '중개사' },
-                  ]}
-                />
-                <FilterSelect
-                  label="상태"
-                  value={statusFilter}
-                  onChange={setStatusFilter}
-                  options={[
-                    { value: 'active', label: '활성' },
-                    { value: 'inactive', label: '비활성' },
-                  ]}
-                />
-                <FilterSelect
-                  label="담당"
-                  value={workloadFilter}
-                  onChange={setWorkloadFilter}
-                  options={[
-                    { value: 'hasTasks', label: '진행 업무 있음' },
-                    { value: 'hasDeals', label: '진행 거래 있음' },
-                    { value: 'hasUnsettled', label: '미정산 있음' },
-                  ]}
-                />
-              </div>
-            </div>
-          </div>
-
-          <ScrollArea className="min-h-0 flex-1">
-            <div className="space-y-1 p-2">
-              {isLoading ? (
-                Array.from({ length: 5 }).map((_, index) => (
-                  <div key={index} className="space-y-2 rounded-md border border-border/50 px-3 py-3">
-                    <div className="flex items-center gap-3">
-                      <Skeleton className="size-9 rounded-md" />
-                      <div className="flex-1 space-y-1.5">
-                        <Skeleton className="h-3.5 w-24" />
-                        <Skeleton className="h-3 w-16" />
-                      </div>
-                    </div>
-                    <Skeleton className="h-7 w-full" />
-                  </div>
-                ))
-              ) : isError ? (
-                <div className="flex flex-col items-center gap-3 px-3 py-12 text-center">
-                  <p className="text-sm text-muted-foreground">
-                    직원 목록을 불러오지 못했습니다.
-                  </p>
-                  <Button variant="outline" size="sm" onClick={() => refetch()}>
-                    <RotateCw className="size-4" />
-                    다시 시도
-                  </Button>
-                </div>
-              ) : visibleEmployees.length === 0 ? (
-                <EmptyState
-                  icon={Users}
-                  title="등록된 직원이 없습니다"
-                  description="직원 계정을 만들어 업무와 거래를 배분하세요."
-                  action={
-                    canManage ? (
-                      <Button size="sm" onClick={() => setIsCreateOpen(true)}>
-                        <CirclePlus className="size-4" />
-                        직원 추가
-                      </Button>
-                    ) : undefined
-                  }
-                  className="py-12"
-                />
-              ) : (
-                <>
-                  {filteredEmployees.map((employee) => (
-                    <button
-                      key={employee.id}
-                      type="button"
-                      onClick={() => setSelectedEmployeeId(employee.id)}
-                      className={cn(
-                        'group w-full rounded-md border px-3 py-3 text-left transition-colors',
-                        selectedEmployeeId === employee.id
-                          ? 'border-primary/30 bg-primary/5 shadow-xs'
-                          : 'border-transparent hover:border-border/70 hover:bg-muted/35',
-                        !employee.isActive && 'opacity-55',
-                      )}
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex min-w-0 items-start gap-3">
-                          <div className="flex size-9 shrink-0 items-center justify-center rounded-md bg-muted text-sm font-semibold text-muted-foreground group-hover:bg-background">
-                            {employee.name.charAt(0)}
-                          </div>
-                          <div className="min-w-0">
-                            <p className="truncate text-sm font-medium">{employee.name}</p>
-                            <p className="truncate text-xs text-muted-foreground">
-                              {employee.loginId}
-                              {employee.licenseType
-                                ? ` · ${LICENSE_TYPE_LABELS[employee.licenseType] ?? employee.licenseType}`
-                                : ''}
-                            </p>
-                          </div>
-                        </div>
-                        <Badge
-                          variant="outline"
-                          className={cn('rounded-md', roleMeta[employee.role]?.className)}
-                        >
-                          {roleMeta[employee.role]?.label ?? employee.role}
-                        </Badge>
-                      </div>
-                      <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
-                        <DirectoryStat label="업무" value={employee.counts.activeTaskCount} />
-                        <DirectoryStat label="거래" value={employee.counts.activeDealCount} />
-                        <span
-                          className={cn(
-                            'flex h-7 items-center justify-center rounded-md text-xs font-medium',
-                            employee.isActive
-                              ? 'bg-success-soft text-success'
-                              : 'bg-destructive-soft text-destructive',
-                          )}
-                        >
-                          {employee.isActive ? '활성' : '비활성'}
-                        </span>
-                      </div>
-                      <p className="mt-2 text-xs text-muted-foreground">
-                        최근 활동{' '}
-                        {employee.latestActivityAt
-                          ? timeAgo(employee.latestActivityAt)
-                          : '없음'}
-                      </p>
-                    </button>
-                  ))}
-                  {filteredEmployees.length === 0 ? (
-                    <div className="px-3 py-12 text-center text-sm text-muted-foreground">
-                      조건에 맞는 직원이 없습니다.
-                    </div>
-                  ) : null}
-                </>
-              )}
-            </div>
-          </ScrollArea>
-        </aside>
-
-        {selectedEmployeeId && isDetailLoading ? (
-          <main className="min-w-0 space-y-4 p-5">
-            <div className="flex items-center gap-4">
-              <Skeleton className="size-12 rounded-md" />
-              <div className="space-y-2">
-                <Skeleton className="h-5 w-40" />
-                <Skeleton className="h-3.5 w-64" />
-              </div>
-            </div>
-            <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-4">
-              {Array.from({ length: 4 }).map((_, index) => (
-                <Skeleton key={index} className="h-20 rounded-md" />
-              ))}
-            </div>
-            <Skeleton className="h-56 rounded-lg" />
-            <Skeleton className="h-40 rounded-lg" />
-          </main>
-        ) : selectedEmployeeId && isDetailError ? (
-          <main className="flex min-h-[540px] flex-col items-center justify-center gap-3">
-            <p className="text-sm text-muted-foreground">
-              직원 상세 정보를 불러오지 못했습니다.
-            </p>
-            <Button variant="outline" size="sm" onClick={() => refetchDetail()}>
-              <RotateCw className="size-4" />
-              다시 시도
-            </Button>
-          </main>
-        ) : (
-          <EmployeeDetailCard
-            employee={employeeDetail}
-            performance={performance}
-            isPerformanceLoading={isPerformanceLoading}
-            detailForm={detailForm}
-            onDetailChange={setDetailForm}
-            canManage={canManage}
-            actorRole={user?.role ?? 'agent'}
-            roleOptions={detailRoleOptions}
-            onSave={handleSave}
-            onRoleSelect={(role) => setPendingRole(role)}
-            onStatusToggle={() => setIsStatusConfirmOpen(true)}
-            resetPassword={resetPassword}
-            onResetPasswordChange={setResetPassword}
-            onResetPassword={() => passwordMutation.mutate(resetPassword)}
-            isSaving={
-              updateMutation.isPending ||
-              roleMutation.isPending ||
-              statusMutation.isPending ||
-              passwordMutation.isPending
-            }
-          />
-        )}
-      </div>
-
-      <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
-        <DialogContent className="sm:max-w-xl">
-          <DialogHeader>
-            <DialogTitle>새 직원 추가</DialogTitle>
-            <DialogDescription>
-              직원이 사용할 로그인 ID와 초기 비밀번호를 입력합니다.
-              {maxUsers != null
-                ? ` 직원 슬롯 ${activeUserCount}/${maxUsers} 사용 중입니다.`
-                : ''}
-            </DialogDescription>
-          </DialogHeader>
-
-          {isSlotFull ? (
-            <Alert variant="destructive">
-              <AlertTriangle className="size-4" />
-              <AlertDescription>
-                최대 사용자 수({maxUsers}명)에 도달했습니다. 직원을 비활성화하거나
-                플랜을 업그레이드한 후 추가하세요.
-              </AlertDescription>
-            </Alert>
-          ) : null}
-
-          <div className="grid gap-4 md:grid-cols-2">
-            <Field
-              label="이름 *"
-              value={createForm.name}
-              onChange={(value) => setCreateForm((prev) => ({ ...prev, name: value }))}
-            />
-            <Field
-              label="로그인 ID *"
-              value={createForm.loginId}
-              onChange={(value) => setCreateForm((prev) => ({ ...prev, loginId: value }))}
-            />
-            <Field
-              label="휴대폰"
-              value={createForm.phone}
-              onChange={(value) => setCreateForm((prev) => ({ ...prev, phone: value }))}
-            />
-            <Field
-              label="이메일"
-              value={createForm.email}
-              onChange={(value) => setCreateForm((prev) => ({ ...prev, email: value }))}
-            />
-            <div className="space-y-2">
-              <Label>역할</Label>
-              <Select
-                value={createForm.role}
-                onValueChange={(value) => setCreateForm((prev) => ({ ...prev, role: value }))}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="역할 선택" />
-                </SelectTrigger>
-                <SelectContent>
-                  {createRoleOptions.map((role) => (
-                    <SelectItem key={role} value={role}>
-                      {roleMeta[role]?.label ?? role}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <Field
-              label="초기 비밀번호 *"
-              value={createForm.password}
-              type="password"
-              onChange={(value) => setCreateForm((prev) => ({ ...prev, password: value }))}
-            />
-            <div className="space-y-2">
-              <Label>자격 구분</Label>
-              <Select
-                value={createForm.licenseType || NONE_VALUE}
-                onValueChange={(value) =>
-                  setCreateForm((prev) => ({
-                    ...prev,
-                    licenseType: value === NONE_VALUE ? '' : value,
-                  }))
-                }
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="자격 구분" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={NONE_VALUE}>미지정</SelectItem>
-                  {Object.entries(LICENSE_TYPE_LABELS).map(([value, label]) => (
-                    <SelectItem key={value} value={value}>
-                      {label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {createForm.licenseType === 'assistant' ? (
-                <p className="text-xs text-warning">
-                  중개보조원은 계약서에 서명할 수 없습니다.
-                </p>
-              ) : null}
-            </div>
-            <Field
-              label="자격증/등록 번호"
-              value={createForm.licenseNo}
-              onChange={(value) => setCreateForm((prev) => ({ ...prev, licenseNo: value }))}
-            />
-          </div>
-
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setIsCreateOpen(false)}
-              disabled={createMutation.isPending}
-            >
-              닫기
-            </Button>
-            <Button
-              onClick={handleCreate}
-              disabled={
-                createMutation.isPending ||
-                isSlotFull ||
-                !createForm.name.trim() ||
-                !createForm.loginId.trim() ||
-                !createForm.password.trim()
-              }
-            >
-              생성
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <ConfirmDialog
-        open={pendingRole !== null}
-        onOpenChange={(open) => {
-          if (!open) setPendingRole(null);
-        }}
-        title="역할 변경"
-        description={
-          pendingRole && employeeDetail
-            ? `${employeeDetail.name}님의 역할을 '${roleMeta[pendingRole]?.label ?? pendingRole}'(으)로 변경합니다. 접근 권한이 즉시 변경됩니다.${
-                pendingRole === 'owner'
-                  ? ' 대표 권한을 부여하면 사무소 핵심 설정까지 변경할 수 있습니다.'
-                  : ''
-              }`
-            : undefined
-        }
-        confirmLabel="변경"
-        loading={roleMutation.isPending}
-        onConfirm={() => {
-          if (pendingRole) roleMutation.mutate(pendingRole);
-        }}
-      />
-
-      <ConfirmDialog
-        open={isStatusConfirmOpen}
-        onOpenChange={setIsStatusConfirmOpen}
-        title={employeeDetail?.isActive ? '계정 비활성화' : '계정 재활성화'}
-        destructive={employeeDetail?.isActive}
-        description={
-          employeeDetail?.isActive ? (
-            <span className="space-y-1.5">
-              <span className="block">
-                {employeeDetail.name}님 계정을 비활성화하면 더 이상 로그인할 수 없습니다.
-              </span>
-              {statusWarnings.map((warning) => (
-                <span key={warning} className="block text-destructive">
-                  {warning}
-                </span>
-              ))}
-            </span>
-          ) : employeeDetail ? (
-            `${employeeDetail.name}님 계정을 재활성화하면 즉시 로그인과 업무 배정이 가능해집니다.`
-          ) : undefined
-        }
-        confirmLabel={employeeDetail?.isActive ? '비활성화' : '재활성화'}
-        loading={statusMutation.isPending}
-        onConfirm={() => {
-          if (employeeDetail) statusMutation.mutate(!employeeDetail.isActive);
-        }}
-      />
+      ))}
     </div>
   );
 }
 
-function EmployeeDetailCard({
-  employee,
-  performance,
-  isPerformanceLoading,
-  detailForm,
-  onDetailChange,
-  canManage,
-  actorRole,
-  roleOptions,
-  onSave,
-  onRoleSelect,
-  onStatusToggle,
-  resetPassword,
-  onResetPasswordChange,
-  onResetPassword,
-  isSaving,
-}: {
-  employee?: EmployeeDetail;
-  performance?: {
-    activeTaskCount: number;
-    activeBuyerRequirementCount: number;
-    activeDealCount: number;
-    unsettledDealCount: number;
-    consultationCount: number;
-    commissionAmountTotal: number;
-  };
-  isPerformanceLoading: boolean;
-  detailForm: DetailFormState;
-  onDetailChange: Dispatch<SetStateAction<DetailFormState>>;
-  canManage: boolean;
-  actorRole: string;
-  roleOptions: string[];
-  onSave: () => void;
-  onRoleSelect: (role: string) => void;
-  onStatusToggle: () => void;
-  resetPassword: string;
-  onResetPasswordChange: (value: string) => void;
-  onResetPassword: () => void;
-  isSaving: boolean;
-}) {
-  const navigate = useNavigate();
+/* ---------- 툴바 부품 ---------- */
 
-  if (!employee) {
-    return (
-      <main className="flex min-h-[540px] items-center justify-center text-sm text-muted-foreground">
-        직원을 선택하면 상세 정보가 표시됩니다.
-      </main>
-    );
-  }
-
-  // manager는 agent만 관리 가능 → 그 외 대상은 역할 select 비활성화
-  const roleSelectDisabled =
-    !canManage || (actorRole === 'manager' && employee.role !== 'agent');
-  const selectableRoles = roleOptions.includes(employee.role)
-    ? roleOptions
-    : [...roleOptions, employee.role];
-  const latestActivityAt = employee.recentActivities[0]?.createdAt ?? null;
-
-  return (
-    <main className="min-w-0">
-      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-border/70 px-5 py-4">
-        <div className="flex min-w-0 items-center gap-4">
-          <div className="flex size-12 shrink-0 items-center justify-center rounded-md bg-foreground text-lg font-semibold text-background">
-            {employee.name.charAt(0)}
-          </div>
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <h2 className="truncate text-xl font-semibold tracking-tight">{employee.name}</h2>
-              <Badge
-                variant="outline"
-                className={cn('rounded-md', roleMeta[employee.role]?.className)}
-              >
-                {roleMeta[employee.role]?.label ?? employee.role}
-              </Badge>
-              <ActiveBadge isActive={employee.isActive} />
-              {employee.licenseType ? (
-                <Badge
-                  variant="outline"
-                  className="rounded-md border-transparent bg-neutral-soft text-neutral-strong"
-                >
-                  {LICENSE_TYPE_LABELS[employee.licenseType] ?? employee.licenseType}
-                </Badge>
-              ) : null}
-              {employee.licenseType === 'assistant' ? (
-                <Badge
-                  variant="outline"
-                  className="rounded-md border-transparent bg-warning-soft text-warning"
-                >
-                  계약서 서명 불가
-                </Badge>
-              ) : null}
-            </div>
-            <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
-              <span>{employee.loginId}</span>
-              {employee.phone ? (
-                <span className="inline-flex items-center gap-1">
-                  <Phone className="size-3" />
-                  {formatPhone(employee.phone)}
-                </span>
-              ) : null}
-              {employee.email ? (
-                <span className="inline-flex items-center gap-1">
-                  <Mail className="size-3" />
-                  {employee.email}
-                </span>
-              ) : null}
-            </div>
-          </div>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button variant="outline" disabled={!canManage || isSaving} onClick={onStatusToggle}>
-            {employee.isActive ? '비활성화' : '재활성화'}
-          </Button>
-          <Button disabled={!canManage || isSaving} onClick={onSave}>
-            저장
-          </Button>
-        </div>
-      </div>
-
-      <div className="grid min-h-0 gap-0 xl:grid-cols-[minmax(0,1fr)_360px]">
-        <section className="min-w-0 space-y-5 p-5">
-          <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-5">
-            <MetricTile
-              icon={ClipboardList}
-              label="진행 업무"
-              value={`${employee.counts.activeTaskCount}건`}
-            />
-            <MetricTile
-              icon={BriefcaseBusiness}
-              label="진행 거래"
-              value={`${employee.counts.activeDealCount}건`}
-            />
-            <MetricTile
-              icon={Users}
-              label="담당 고객"
-              value={`${employee.counts.activeBuyerRequirementCount}건`}
-            />
-            <MetricTile
-              icon={CircleDollarSign}
-              label="미정산 참여"
-              value={`${employee.counts.unsettledDealCount}건`}
-            />
-            <MetricTile
-              icon={Activity}
-              label="최근 활동"
-              value={latestActivityAt ? timeAgo(latestActivityAt) : '—'}
-            />
-          </div>
-
-          <SectionPanel
-            title="실적"
-            description="누적 상담과 거래 참여 수수료 합계입니다."
-            compact
-            headerAction={
-              <Button variant="outline" size="sm" asChild>
-                <Link to="/cashflow/employee-settlements">
-                  정산 현황
-                  <ChevronRight className="size-3.5" />
-                </Link>
-              </Button>
-            }
-          >
-            {isPerformanceLoading ? (
-              <div className="grid gap-3 md:grid-cols-2">
-                <Skeleton className="h-20 rounded-md" />
-                <Skeleton className="h-20 rounded-md" />
-              </div>
-            ) : performance ? (
-              <div className="grid gap-3 md:grid-cols-2">
-                <MetricTile
-                  icon={Activity}
-                  label="누적 상담"
-                  value={`${performance.consultationCount}건`}
-                />
-                <MetricTile
-                  icon={CircleDollarSign}
-                  label="참여 수수료 합계"
-                  value={formatMoney(performance.commissionAmountTotal)}
-                />
-              </div>
-            ) : (
-              <p className="text-sm text-muted-foreground">실적 정보를 불러오지 못했습니다.</p>
-            )}
-          </SectionPanel>
-
-          <SectionPanel title="기본 정보">
-            <div className="grid gap-4 md:grid-cols-2">
-              <Field
-                label="이름 *"
-                value={detailForm.name}
-                onChange={(value) => onDetailChange((prev) => ({ ...prev, name: value }))}
-                disabled={!canManage}
-              />
-              <StaticField label="로그인 ID" value={employee.loginId} />
-              <Field
-                label="휴대폰"
-                value={detailForm.phone}
-                onChange={(value) => onDetailChange((prev) => ({ ...prev, phone: value }))}
-                disabled={!canManage}
-              />
-              <Field
-                label="이메일"
-                value={detailForm.email}
-                onChange={(value) => onDetailChange((prev) => ({ ...prev, email: value }))}
-                disabled={!canManage}
-              />
-              <div className="space-y-2">
-                <Label>자격 구분</Label>
-                <Select
-                  value={detailForm.licenseType || NONE_VALUE}
-                  onValueChange={(value) =>
-                    onDetailChange((prev) => ({
-                      ...prev,
-                      licenseType: value === NONE_VALUE ? '' : value,
-                    }))
-                  }
-                  disabled={!canManage}
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="자격 구분" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={NONE_VALUE}>미지정</SelectItem>
-                    {Object.entries(LICENSE_TYPE_LABELS).map(([value, label]) => (
-                      <SelectItem key={value} value={value}>
-                        {label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {detailForm.licenseType === 'assistant' ? (
-                  <p className="text-xs text-warning">
-                    중개보조원은 계약서에 서명할 수 없습니다.
-                  </p>
-                ) : null}
-              </div>
-              <Field
-                label="자격증/등록 번호"
-                value={detailForm.licenseNo}
-                onChange={(value) => onDetailChange((prev) => ({ ...prev, licenseNo: value }))}
-                disabled={!canManage}
-              />
-              <div className="space-y-2">
-                <Label>역할</Label>
-                <Select
-                  value={employee.role}
-                  onValueChange={(value) => {
-                    if (value !== employee.role) onRoleSelect(value);
-                  }}
-                  disabled={roleSelectDisabled}
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="역할 선택" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {selectableRoles.map((role) => (
-                      <SelectItem key={role} value={role}>
-                        {roleMeta[role]?.label ?? role}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <StaticField label="생성일" value={formatDate(employee.createdAt)} />
-            </div>
-          </SectionPanel>
-
-          <SectionPanel
-            title="급여/배분"
-            description="급여 유형과 개인 수수료 배분율을 설정합니다. 배분율을 비우면 사무소 기본 배분율이 적용됩니다."
-          >
-            <div className="grid gap-4 md:grid-cols-3">
-              <div className="space-y-2">
-                <Label>급여 유형</Label>
-                <Select
-                  value={detailForm.payType}
-                  onValueChange={(value) =>
-                    onDetailChange((prev) => ({ ...prev, payType: value }))
-                  }
-                  disabled={!canManage}
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="급여 유형" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {Object.entries(payTypeLabels).map(([value, label]) => (
-                      <SelectItem key={value} value={value}>
-                        {label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>월 기본급 (만원)</Label>
-                <Input
-                  type="number"
-                  min={0}
-                  value={detailForm.baseSalary}
-                  onChange={(event) =>
-                    onDetailChange((prev) => ({ ...prev, baseSalary: event.target.value }))
-                  }
-                  placeholder={detailForm.payType === 'commission_only' ? '수수료제' : '예: 250'}
-                  disabled={!canManage || detailForm.payType === 'commission_only'}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>개인 배분율 (%)</Label>
-                <Input
-                  type="number"
-                  min={0}
-                  max={100}
-                  value={detailForm.commissionRate}
-                  onChange={(event) =>
-                    onDetailChange((prev) => ({
-                      ...prev,
-                      commissionRate: event.target.value,
-                    }))
-                  }
-                  placeholder={detailForm.payType === 'fixed' ? '고정급' : '비우면 사무소 기본'}
-                  disabled={!canManage || detailForm.payType === 'fixed'}
-                />
-              </div>
-            </div>
-          </SectionPanel>
-
-          <SectionPanel title="보안" description="초기 비밀번호를 즉시 다시 발급합니다.">
-            <div className="flex flex-col gap-3 md:flex-row">
-              <Input
-                type="password"
-                value={resetPassword}
-                onChange={(event) => onResetPasswordChange(event.target.value)}
-                placeholder="새 비밀번호"
-                disabled={!canManage}
-              />
-              <Button
-                variant="outline"
-                onClick={onResetPassword}
-                disabled={!canManage || !resetPassword.trim() || isSaving}
-              >
-                <KeyRound className="size-4" />
-                재설정
-              </Button>
-            </div>
-          </SectionPanel>
-
-          <ListSection
-            title="담당 업무"
-            icon={ClipboardList}
-            items={employee.assignedTasks.map((task) => ({
-              id: task.id,
-              title: task.title,
-              description: `${getStatusMeta('taskStatus', task.status).label} · ${
-                taskPriorityLabels[task.priority] ?? task.priority
-              }${task.dueDate ? ` · ${formatDate(task.dueDate)}` : ''}`,
-              onNavigate: () => navigate({ to: '/tasks' }),
-            }))}
-            emptyMessage="담당 업무가 없습니다."
-          />
-
-          <ListSection
-            title="담당 고객/요구조건"
-            icon={Users}
-            items={employee.assignedBuyerRequirements.map((requirement) => ({
-              id: requirement.id,
-              title: requirement.contact?.name ?? '고객',
-              description: `${buyerStatusLabels[requirement.status] ?? requirement.status}${
-                requirement.nextContactDate
-                  ? ` · 다음 연락 ${formatDate(requirement.nextContactDate)}`
-                  : ''
-              }`,
-              onNavigate: () =>
-                navigate({
-                  to: '/buyer-requirements/$id',
-                  params: { id: requirement.id },
-                }),
-            }))}
-            emptyMessage="담당 고객이 없습니다."
-          />
-        </section>
-
-        <aside className="space-y-5 border-t border-border/70 bg-muted/20 p-5 xl:border-l xl:border-t-0">
-          <ListSection
-            title="거래 참여/배분"
-            icon={BriefcaseBusiness}
-            items={employee.dealParticipants.map((participant) => ({
-              id: participant.id,
-              title:
-                participant.deal.listing?.property?.site?.name ??
-                participant.deal.property?.site?.name ??
-                '거래',
-              description: `${participantRoleLabels[participant.role] ?? participant.role} · ${
-                participantSideLabels[participant.side] ?? participant.side
-              } · ${settlementLabels[participant.settlementStatus] ?? participant.settlementStatus}${
-                participant.commissionAmount
-                  ? ` · ${formatMoney(participant.commissionAmount)}`
-                  : ''
-              }`,
-              onNavigate: () => navigate({ to: '/deals' }),
-            }))}
-            emptyMessage="참여 중인 거래가 없습니다."
-          />
-
-          <ListSection
-            title="최근 상담"
-            icon={CalendarClock}
-            items={employee.recentConsultations.map((consultation) => ({
-              id: consultation.id,
-              title: consultation.contact?.name ?? consultation.type,
-              description: `${consultation.type} · ${formatDateTime(consultation.createdAt)} · ${consultation.content}`,
-              onNavigate: () => navigate({ to: '/consultations' }),
-            }))}
-            emptyMessage="최근 상담이 없습니다."
-          />
-
-          <ListSection
-            title="최근 활동"
-            icon={Activity}
-            items={employee.recentActivities.map((activity) => ({
-              id: activity.id,
-              title: `${activity.entityType} ${activity.action}`,
-              description: `${activity.source} · ${formatDateTime(activity.createdAt)}${activity.reason ? ` · ${activity.reason}` : ''}`,
-            }))}
-            emptyMessage="최근 활동 로그가 없습니다."
-          />
-
-          <SectionPanel title="사무소 배분 정책" compact>
-            <div className="space-y-2 text-sm">
-              <SummaryRow
-                label="기본 직원 배분"
-                value={`${getCommissionNumber(employee.office.commissionConfig, 'defaultAgentRate', 50)}%`}
-              />
-              <SummaryRow
-                label="매도측 담당"
-                value={`${getCommissionNumber(employee.office.commissionConfig, 'listingAgentRate', 50)}%`}
-              />
-              <SummaryRow
-                label="매수측 담당"
-                value={`${getCommissionNumber(employee.office.commissionConfig, 'buyingAgentRate', 50)}%`}
-              />
-              <SummaryRow
-                label="단독중개"
-                value={`${getCommissionNumber(employee.office.commissionConfig, 'dualAgentRate', 70)}%`}
-              />
-              <SummaryRow
-                label="관리자 배분"
-                value={`${getCommissionNumber(employee.office.commissionConfig, 'managerRate', 10)}%`}
-              />
-              <SummaryRow
-                label="마감 보너스"
-                value={`${getCommissionNumber(employee.office.commissionConfig, 'closerBonus', 0)}만원`}
-              />
-            </div>
-          </SectionPanel>
-        </aside>
-      </div>
-    </main>
-  );
-}
-
-function ListSection({
-  title,
-  icon: Icon,
-  items,
-  emptyMessage,
-}: {
-  title: string;
-  icon?: LucideIcon;
-  items: Array<{
-    id: string;
-    title: string;
-    description: string;
-    onNavigate?: () => void;
-  }>;
-  emptyMessage: string;
-}) {
-  return (
-    <SectionPanel title={title} icon={Icon} compact>
-      <div className="space-y-2">
-        {items.length === 0 ? (
-          <p className="rounded-md border border-dashed border-border/80 px-3 py-5 text-center text-sm text-muted-foreground">
-            {emptyMessage}
-          </p>
-        ) : (
-          items.map((item) =>
-            item.onNavigate ? (
-              <button
-                key={item.id}
-                type="button"
-                onClick={item.onNavigate}
-                className="group flex w-full items-center gap-2 rounded-md border border-border/70 bg-background px-3 py-3 text-left transition-colors hover:border-border hover:bg-muted/40"
-              >
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-medium">{item.title}</span>
-                  <span className="mt-1 block text-xs leading-5 text-muted-foreground">
-                    {item.description}
-                  </span>
-                </span>
-                <ChevronRight className="size-4 shrink-0 text-muted-foreground/50 transition-colors group-hover:text-muted-foreground" />
-              </button>
-            ) : (
-              <div
-                key={item.id}
-                className="rounded-md border border-border/70 bg-background px-3 py-3"
-              >
-                <p className="text-sm font-medium">{item.title}</p>
-                <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                  {item.description}
-                </p>
-              </div>
-            ),
-          )
-        )}
-      </div>
-    </SectionPanel>
-  );
-}
-
-function MetricTile({
+function ViewTab({
   icon: Icon,
   label,
-  value,
+  active,
+  onClick,
 }: {
-  icon: LucideIcon;
+  icon: typeof Table2;
   label: string;
-  value: string;
+  active: boolean;
+  onClick: () => void;
 }) {
   return (
-    <div className="rounded-md border border-border/70 bg-background px-4 py-3">
-      <div className="flex items-center justify-between gap-3">
-        <p className="text-xs text-muted-foreground">{label}</p>
-        <Icon className="size-4 text-muted-foreground" />
-      </div>
-      <p className="mt-2 truncate text-lg font-semibold tracking-tight">{value}</p>
-    </div>
-  );
-}
-
-function SectionPanel({
-  title,
-  description,
-  icon: Icon,
-  compact,
-  headerAction,
-  children,
-}: {
-  title: string;
-  description?: string;
-  icon?: LucideIcon;
-  compact?: boolean;
-  headerAction?: ReactNode;
-  children: ReactNode;
-}) {
-  return (
-    <section className="rounded-lg border border-border/70 bg-background">
-      <div className={cn('border-b border-border/70', compact ? 'px-4 py-3' : 'px-5 py-4')}>
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            {Icon ? <Icon className="size-4 text-muted-foreground" /> : null}
-            <h3 className="text-sm font-semibold">{title}</h3>
-          </div>
-          {headerAction}
-        </div>
-        {description ? (
-          <p className="mt-1 text-xs text-muted-foreground">{description}</p>
-        ) : null}
-      </div>
-      <div className={compact ? 'p-4' : 'p-5'}>{children}</div>
-    </section>
-  );
-}
-
-function DirectoryStat({ label, value }: { label: string; value: number }) {
-  return (
-    <span className="flex h-7 items-center justify-center rounded-md border border-border/70 bg-background text-muted-foreground">
-      {label} <span className="ml-1 font-medium text-foreground">{value}</span>
-    </span>
-  );
-}
-
-function ActiveBadge({ isActive }: { isActive: boolean }) {
-  return (
-    <Badge
-      variant="outline"
+    <button
+      type="button"
+      onClick={onClick}
       className={cn(
-        'rounded-md border-transparent',
-        isActive ? 'bg-success-soft text-success' : 'bg-destructive-soft text-destructive',
+        'flex h-7 items-center gap-1.5 rounded-md px-2 text-sm transition-colors',
+        active
+          ? 'bg-neutral-soft font-medium text-foreground'
+          : 'text-muted-foreground hover:bg-muted/70 hover:text-foreground',
       )}
     >
-      {isActive ? '활성' : '비활성'}
-    </Badge>
+      <Icon className="size-3.5" />
+      {label}
+    </button>
   );
 }
 
-function Field({
-  label,
+function GhostFilter({
+  placeholder,
   value,
   onChange,
-  disabled,
-  type = 'text',
+  options,
 }: {
-  label: string;
+  placeholder: string;
   value: string;
   onChange: (value: string) => void;
-  disabled?: boolean;
-  type?: string;
+  options: Array<{ value: string; label: string }>;
 }) {
   return (
-    <div className="space-y-2">
-      <Label>{label}</Label>
-      <Input
-        type={type}
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        disabled={disabled}
-      />
-    </div>
+    <Select
+      value={value || ALL_VALUE}
+      onValueChange={(next) => onChange(next === ALL_VALUE ? '' : next)}
+    >
+      <SelectTrigger
+        size="sm"
+        className={cn(
+          'h-7 gap-1 border-transparent bg-transparent px-2 text-sm shadow-none hover:bg-muted/70 data-[state=open]:bg-muted/70',
+          value ? 'text-foreground' : 'text-muted-foreground',
+        )}
+      >
+        <SelectValue placeholder={placeholder} />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value={ALL_VALUE}>
+          <span className="text-muted-foreground">{placeholder}: 전체</span>
+        </SelectItem>
+        {options.map((option) => (
+          <SelectItem key={option.value} value={option.value}>
+            {option.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   );
-}
-
-function StaticField({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="space-y-2">
-      <Label>{label}</Label>
-      <div className="flex h-9 items-center rounded-md border border-border/60 bg-muted/30 px-3 text-sm">
-        {value}
-      </div>
-    </div>
-  );
-}
-
-function SummaryRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-center justify-between gap-3 rounded-lg border border-border/60 px-3 py-2">
-      <span className="text-sm text-muted-foreground">{label}</span>
-      <span className="text-sm font-medium">{value}</span>
-    </div>
-  );
-}
-
-function emptyToNull(value: string) {
-  const trimmed = value.trim();
-  return trimmed ? trimmed : null;
-}
-
-function getCommissionNumber(config: unknown, key: string, fallback: number) {
-  if (typeof config !== 'object' || config === null) return fallback;
-  const value = (config as Record<string, unknown>)[key];
-  return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
 }

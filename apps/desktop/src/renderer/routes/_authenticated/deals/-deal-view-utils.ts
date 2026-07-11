@@ -1,6 +1,44 @@
 import type { Deal } from '@estate-erp/api-client';
+import { formatMoney, formatRent } from '@/lib/format';
 
 export type DealListItem = Deal;
+
+export type DealPayment = NonNullable<Deal['payments']>[number];
+
+/** Deal.cancelledBy(취소 주체) 표시 라벨 */
+export const cancelledByLabels: Record<string, string> = {
+  buyer: '매수인',
+  seller: '매도인',
+  mutual: '상호 합의',
+  office: '우리 사무소',
+  partner: '공동중개사',
+  other: '기타',
+};
+
+export function formatCancelledBy(value: string | null | undefined) {
+  if (!value) return '미기록';
+  return cancelledByLabels[value] ?? value;
+}
+
+/** ourSide(공동중개 시 우리 담당 측) 라벨 */
+export const ourSideLabels: Record<string, string> = {
+  seller: '매도측',
+  buyer: '매수측',
+  both: '양측',
+};
+
+export const dealPipelineStages = [
+  'selection',
+  'negotiating',
+  'preContract',
+  'contracted',
+  'settling',
+  'completed',
+] as const;
+
+export const dealStageOrder = [...dealPipelineStages, 'closed'] as const;
+
+export type DealPipelineStage = (typeof dealPipelineStages)[number];
 
 export type DealDisplayGroupKey =
   | 'coordination'
@@ -80,13 +118,20 @@ const stageProgress: Record<string, number> = {
   closed: 5,
 };
 
-const paymentKindLabels: Record<string, string> = {
+export const paymentKindLabels: Record<string, string> = {
   pre_contract: '가계약금',
   contract: '계약금',
   interim: '중도금',
   balance: '잔금',
   refund: '환불',
 };
+
+/** kind + sequence → "중도금 2차" 표기 (interim 외에는 차수 생략) */
+export function formatPaymentKind(kind: string, sequence?: number) {
+  const base = paymentKindLabels[kind] ?? kind;
+  if (kind === 'interim' && sequence && sequence > 1) return `${base} ${sequence}차`;
+  return base;
+}
 
 export function getDealDisplayGroupKey(stage: string): DealDisplayGroupKey {
   if (stage === 'closed') return 'closed';
@@ -194,4 +239,95 @@ function differenceInCalendarDays(target: Date, reference: Date) {
   const targetDay = new Date(target.getFullYear(), target.getMonth(), target.getDate()).getTime();
   const referenceDay = new Date(reference.getFullYear(), reference.getMonth(), reference.getDate()).getTime();
   return Math.round((targetDay - referenceDay) / 86_400_000);
+}
+
+export function getDaysUntil(target: Date, reference: Date) {
+  return differenceInCalendarDays(target, reference);
+}
+
+// ============================================================
+// 표시 헬퍼 (보드/리스트/상세 공용)
+// ============================================================
+
+export function getDealTitle(deal: Deal) {
+  const siteName = deal.property?.site?.name;
+  const dongName = deal.property?.unit?.dong?.isPlaceholder ? null : deal.property?.unit?.dong?.name;
+  const unitName = deal.property?.unit?.name;
+  return [siteName, dongName, unitName].filter(Boolean).join(' ') || '매물 정보 없음';
+}
+
+export function getDealLocationLine(deal: Deal) {
+  const address = deal.property?.site?.roadAddress ?? deal.property?.site?.jibunAddress ?? '주소 정보 없음';
+  const area = deal.property?.unit?.exclusiveAreaM2;
+  return area ? `${address} · 전용 ${Math.round(Number(area))}㎡` : address;
+}
+
+export function getDealShortCode(id: string) {
+  return `D${id.replaceAll('-', '').slice(0, 3).toUpperCase()}`;
+}
+
+export function getNextDealStage(stage: string) {
+  const currentIndex = dealPipelineStages.indexOf(stage as DealPipelineStage);
+  if (currentIndex < 0 || currentIndex >= dealPipelineStages.length - 1) {
+    return null;
+  }
+  return dealPipelineStages[currentIndex + 1];
+}
+
+export function getDealTransactionType(deal: Deal): string | undefined {
+  return deal.transactionType ?? deal.listing?.transactionType ?? undefined;
+}
+
+/** 거래유형별 대표 금액 문자열 (월세 "1억 / 120", 연세 "보증금 / 연 3,600만") */
+export function formatDealAmount(deal: Deal) {
+  const type = getDealTransactionType(deal);
+
+  if (type === 'monthly') {
+    const deposit = deal.agreedDeposit ?? deal.listing?.deposit;
+    const monthlyRent = deal.agreedMonthlyRent ?? deal.listing?.monthlyRent;
+    return formatRent(deposit, monthlyRent);
+  }
+
+  if (type === 'yearly_rent') {
+    const deposit = deal.agreedDeposit ?? deal.listing?.deposit;
+    const yearly = deal.agreedPrice ?? deal.listing?.price;
+    if (deposit) return `${formatMoney(deposit)} / 연 ${formatMoney(yearly)}`;
+    return yearly ? `연 ${formatMoney(yearly)}` : '—';
+  }
+
+  const price = deal.agreedPrice ?? deal.agreedDeposit ?? deal.listing?.price ?? deal.listing?.deposit;
+  return formatMoney(price);
+}
+
+export function formatDaysLabel(daysUntil: number | null) {
+  if (daysUntil === null) return '미정';
+  if (daysUntil < 0) return `D+${Math.abs(daysUntil)}`;
+  if (daysUntil === 0) return 'D-Day';
+  return `D-${daysUntil}`;
+}
+
+export function formatShortDate(value: string) {
+  const date = new Date(value);
+  return `${date.getMonth() + 1}/${date.getDate()}`;
+}
+
+export function formatNextPaymentLabel(summary: ReturnType<typeof getNextDealPaymentSummary>) {
+  if (!summary) return '일정 미정';
+  if (!summary.payment.scheduledDate) return `${summary.label} · 일정 미정`;
+  return `${summary.label} ${formatShortDate(summary.payment.scheduledDate)} · ${formatDaysLabel(summary.daysUntil)}`;
+}
+
+export function formatNextPaymentName(summary: ReturnType<typeof getNextDealPaymentSummary>) {
+  if (!summary) return '일정 미정';
+  if (!summary.payment.scheduledDate) return `${summary.label} 일정 미정`;
+  return `${summary.label} ${formatShortDate(summary.payment.scheduledDate)}`;
+}
+
+/** 보드/리스트가 공유하는 거래 행 액션 핸들러 묶음 */
+export interface DealRowActions {
+  onSelect: (id: string) => void;
+  onRequestStage: (deal: Deal, stage: string) => void;
+  onRequestCancel: (deal: Deal) => void;
+  onRequestDelete: (deal: Deal) => void;
+  isUpdating: boolean;
 }
