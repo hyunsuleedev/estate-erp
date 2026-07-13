@@ -734,37 +734,43 @@ export class ListingsService {
     const uniqueIds = Array.from(new Set(listingIds));
     if (uniqueIds.length === 0) return { count: 0 };
 
-    const listings = await this.prisma.listing.findMany({
-      where: { id: { in: uniqueIds }, officeId },
-      select: { id: true, propertyId: true, intakeId: true, checkStatus: true },
+    // 검증-갱신 사이에 다른 요청이 상태를 바꾸면 금지 전환이 기록될 수 있으므로
+    // (TOCTOU), 트랜잭션 안에서 행 잠금(FOR UPDATE) 후 검증하고 같은 잠금
+    // 아래에서 갱신한다. 동시 전환 요청은 잠금 해제 후 자신의 검증을 다시 탄다.
+    const listings = await this.prisma.$transaction(async (tx) => {
+      const rows = await tx.$queryRaw<
+        Array<{ id: string; property_id: string; intake_id: string; check_status: string }>
+      >`
+        SELECT id, property_id, intake_id, check_status FROM listings
+        WHERE id = ANY(${uniqueIds}::uuid[]) AND office_id = ${officeId}::uuid
+        FOR UPDATE`;
+      if (rows.length !== uniqueIds.length) {
+        throw new NotFoundException('Listing not found');
+      }
+
+      // 단건 경로와 동일한 파이프라인 전환 규칙 — 하나라도 금지 전환이면
+      // (예: done → unverified) 전체 롤백으로 아무것도 반영하지 않는다.
+      for (const row of rows) {
+        this.assertCheckStatusTransition(row.check_status, checkStatus);
+      }
+
+      for (const row of rows) {
+        if (row.check_status === checkStatus) continue;
+        // 개별 update 유지 — ActivityLog 미들웨어의 레코드별 감사 추적 보존
+        await tx.listing.update({
+          where: { id: row.id },
+          data: { checkStatus },
+        });
+      }
+      return rows;
     });
-    if (listings.length !== uniqueIds.length) {
-      throw new NotFoundException('Listing not found');
-    }
-
-    // 단건 경로와 동일한 파이프라인 전환 규칙 적용 — 하나라도 금지 전환이면
-    // (예: done → unverified) 아무것도 반영하지 않고 거부한다.
-    for (const listing of listings) {
-      this.assertCheckStatusTransition(listing.checkStatus, checkStatus);
-    }
-
-    await this.prisma.$transaction(
-      listings
-        .filter((listing) => listing.checkStatus !== checkStatus)
-        .map((listing) =>
-          this.prisma.listing.update({
-            where: { id: listing.id },
-            data: { checkStatus },
-          }),
-        ),
-    );
 
     for (const listing of listings) {
       this.realtime?.emitListingUpdated({
         officeId,
         listingId: listing.id,
-        propertyId: listing.propertyId,
-        intakeId: listing.intakeId,
+        propertyId: listing.property_id,
+        intakeId: listing.intake_id,
       });
     }
 

@@ -438,20 +438,36 @@ function PropertiesPage() {
     [queryClient],
   );
 
+  // 낙관적 업데이트 전 캐시 스냅샷 — 실패 시 invalidate(재조회)만으로는
+  // 재조회까지 실패하면 미저장 값이 계속 보이므로, 스냅샷 복원이 1차 롤백이다.
+  const snapshotListingsCache = useCallback(
+    () => queryClient.getQueriesData({ queryKey: ['listings'] }),
+    [queryClient],
+  );
+  const restoreListingsCache = useCallback(
+    (snapshot: ReturnType<typeof snapshotListingsCache>) => {
+      for (const [key, data] of snapshot) queryClient.setQueryData(key, data);
+    },
+    [queryClient],
+  );
+
   // ── Inline edit mutation ──────────────────────────────────────
   const updateMutation = useMutation({
     mutationFn: ({ id, field, value }: { id: string; field: string; value: unknown }) =>
       api.listings.update(id, { [field]: value }),
     onMutate: async ({ id, field, value }) => {
       await queryClient.cancelQueries({ queryKey: ['listings'] });
+      const snapshot = snapshotListingsCache();
       patchListingsCache((listingId) => listingId === id, { [field]: value });
+      return { snapshot };
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['listings'] });
     },
-    onError: (error: Error) => {
+    onError: (error: Error, _variables, context) => {
       toast.error(error.message || '변경 사항 저장에 실패했습니다.');
-      // 낙관적 업데이트 롤백 — 서버 상태로 재동기화
+      // 1차: 스냅샷 즉시 복원 (재조회 실패에도 안전) → 2차: 서버 상태 재동기화
+      if (context?.snapshot) restoreListingsCache(context.snapshot);
       queryClient.invalidateQueries({ queryKey: ['listings'] });
     },
   });
@@ -470,14 +486,17 @@ function PropertiesPage() {
       api.listings.bulkTransitionCheckStatus(listingIds, value),
     onMutate: async ({ listingIds, value }) => {
       await queryClient.cancelQueries({ queryKey: ['listings'] });
+      const snapshot = snapshotListingsCache();
       const idSet = new Set(listingIds);
       patchListingsCache((listingId) => idSet.has(listingId), { checkStatus: value });
+      return { snapshot };
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['listings'] });
     },
-    onError: (error: Error) => {
+    onError: (error: Error, _variables, context) => {
       toast.error(error.message || '상태 변경에 실패했습니다.');
+      if (context?.snapshot) restoreListingsCache(context.snapshot);
       queryClient.invalidateQueries({ queryKey: ['listings'] });
     },
   });
