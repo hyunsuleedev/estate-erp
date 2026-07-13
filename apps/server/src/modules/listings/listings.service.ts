@@ -36,6 +36,28 @@ const VALID_SORT_FIELDS: ReadonlySet<string> = new Set([
 const VALID_SORT_ORDERS: ReadonlySet<string> = new Set(['asc', 'desc']);
 const ACTIVE_INTAKE_STATUS = 'active';
 
+/** update() 반환용 공통 include — 일반 경로와 상태 전환(잠금) 경로가 공유 */
+const LISTING_UPDATE_INCLUDE = {
+  property: {
+    include: {
+      site: true,
+      unit: {
+        include: {
+          dong: true,
+          siteUnitType: true,
+        },
+      },
+    },
+  },
+  jointBrokeragePartner: {
+    select: {
+      id: true,
+      name: true,
+      phone: true,
+    },
+  },
+} as const;
+
 const CHECK_STATUS_TRANSITIONS: Record<string, string[]> = {
   [CheckStatus.UNVERIFIED]: [CheckStatus.VERIFIED, CheckStatus.HOLD],
   [CheckStatus.VERIFIED]: [CheckStatus.IN_CONTRACT, CheckStatus.HOLD],
@@ -676,24 +698,30 @@ export class ListingsService {
 
       listing = await this.findOne(id, officeId);
     } else if (patch.checkStatus) {
-      // 상태 전환은 검증 시점의 현재 상태를 조건으로 걸어 TOCTOU 를 막는다 —
-      // 검증 후 다른 요청이 상태를 바꿨다면(count 0) 금지 전환이 기록되는 대신
-      // 충돌로 거부하고, 클라이언트는 최신 상태로 재시도한다.
-      const result = await this.prisma.listing.updateMany({
-        where: { id, officeId, checkStatus: existingListing.checkStatus },
-        data: {
-          ...patch,
-          transactionType: nextTransactionType,
-        },
+      // 상태 전환은 행 잠금(FOR UPDATE) 후 최신 상태로 재검증해 TOCTOU 를 막는다.
+      // updateMany 조건부 갱신은 ActivityLog/PriceHistory 미들웨어(단건 update 훅)를
+      // 우회하므로 쓰지 않는다 — 일반 편집 폼이 가격과 상태를 함께 보내는 경우
+      // 가격 이력이 누락된다. 잠금 하의 일반 update 는 두 이력 모두 보존한다.
+      listing = await this.prisma.$transaction(async (tx) => {
+        const rows = await tx.$queryRaw<Array<{ check_status: string }>>`
+          SELECT check_status FROM listings
+          WHERE id = ${id}::uuid AND office_id = ${officeId}::uuid
+          FOR UPDATE`;
+        if (rows.length === 0) {
+          throw new NotFoundException('Listing not found');
+        }
+        // 잠금 하 재검증 — findFirst 스냅샷과 달리 이 값은 커밋까지 불변
+        this.assertCheckStatusTransition(rows[0].check_status, patch.checkStatus!);
+
+        return tx.listing.update({
+          where: { id },
+          data: {
+            ...patch,
+            transactionType: nextTransactionType,
+          },
+          include: LISTING_UPDATE_INCLUDE,
+        });
       });
-
-      if (result.count === 0) {
-        throw new ConflictException(
-          '매물 상태가 동시에 변경되었습니다. 새로고침 후 다시 시도해주세요.',
-        );
-      }
-
-      listing = await this.findOne(id, officeId);
     } else {
       listing = await this.prisma.listing.update({
         where: { id },
@@ -701,26 +729,7 @@ export class ListingsService {
           ...patch,
           transactionType: nextTransactionType,
         },
-        include: {
-          property: {
-            include: {
-              site: true,
-              unit: {
-                include: {
-                  dong: true,
-                  siteUnitType: true,
-                },
-              },
-            },
-          },
-          jointBrokeragePartner: {
-            select: {
-              id: true,
-              name: true,
-              phone: true,
-            },
-          },
-        },
+        include: LISTING_UPDATE_INCLUDE,
       });
     }
 

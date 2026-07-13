@@ -438,18 +438,18 @@ function PropertiesPage() {
     [queryClient],
   );
 
-  // 낙관적 업데이트 롤백용 — 이 mutation 이 건드린 listing·필드의 "이전 값"만
-  // 캡처했다가 실패 시 그 값만 되돌린다. 전체 캐시 스냅샷 복원은 겹쳐 실행된
-  // 다른 mutation 의 (실패 포함) 결과까지 되살리므로 쓰지 않는다.
-  const captureListingFields = useCallback(
-    (shouldCapture: (listingId: string) => boolean, fields: string[]) => {
-      const captured = new Map<string, Record<string, unknown>>();
-      const visit = (listing: Record<string, unknown> & { id: string }) => {
-        if (!shouldCapture(listing.id) || captured.has(listing.id)) return;
-        const values: Record<string, unknown> = {};
-        for (const field of fields) values[field] = listing[field];
-        captured.set(listing.id, values);
-      };
+  // 낙관적 업데이트 롤백 — listing:field 단위 in-flight 레지스트리.
+  // 같은 필드에 A/B mutation 이 겹치면 "기준값(base)"은 최초 writer 진입 시의
+  // 서버 값 하나만 기록되고, 마지막 writer 가 실패로 빠질 때만 base 로 복원한다.
+  //  - A 실패 → B 진행 중이면 복원하지 않음 (B 소유)
+  //  - B 도 실패 → writer 0 이 되는 시점에 base(진짜 서버 값) 복원
+  //  - 성공이 하나라도 있으면 복원 없이 invalidate 재동기화에 맡김
+  // 전체 스냅샷/단순 이전값 복원이 겹친 mutation 의 낙관적 값을 되살리는 문제를 막는다.
+  const pendingEditsRef = useRef(
+    new Map<string, { base: unknown; writers: number; anyFailed: boolean; anySucceeded: boolean }>(),
+  );
+  const readListingField = useCallback(
+    (listingId: string, field: string): unknown => {
       for (const [, data] of queryClient.getQueriesData({ queryKey: ['listings'] })) {
         if (!data || typeof data !== 'object') continue;
         const pages =
@@ -459,21 +459,61 @@ function PropertiesPage() {
         for (const page of pages) {
           if (!Array.isArray(page?.items)) continue;
           for (const listing of page.items) {
-            visit(listing as unknown as Record<string, unknown> & { id: string });
+            if (listing.id === listingId) {
+              return (listing as unknown as Record<string, unknown>)[field];
+            }
             for (const related of listing.property?.listings ?? []) {
-              visit(related as unknown as Record<string, unknown> & { id: string });
+              if (related.id === listingId) {
+                return (related as unknown as Record<string, unknown>)[field];
+              }
             }
           }
         }
       }
-      return captured;
+      return undefined;
     },
     [queryClient],
   );
-  const rollbackListingFields = useCallback(
-    (captured: Map<string, Record<string, unknown>>) => {
-      for (const [listingId, values] of captured) {
-        patchListingsCache((id) => id === listingId, values);
+  /** onMutate 에서 호출 — writer 등록 후 정산용 키 목록 반환 */
+  const registerOptimisticEdits = useCallback(
+    (listingIds: string[], field: string) => {
+      const keys: string[] = [];
+      for (const listingId of listingIds) {
+        const key = `${listingId}:${field}`;
+        const entry = pendingEditsRef.current.get(key);
+        if (entry) {
+          entry.writers += 1;
+        } else {
+          pendingEditsRef.current.set(key, {
+            base: readListingField(listingId, field),
+            writers: 1,
+            anyFailed: false,
+            anySucceeded: false,
+          });
+        }
+        keys.push(key);
+      }
+      return keys;
+    },
+    [readListingField],
+  );
+  /** onSuccess/onError 에서 호출 — 마지막 writer 가 전원 실패로 끝났을 때만 base 복원 */
+  const settleOptimisticEdits = useCallback(
+    (keys: string[], outcome: 'success' | 'error') => {
+      for (const key of keys) {
+        const entry = pendingEditsRef.current.get(key);
+        if (!entry) continue;
+        entry.writers -= 1;
+        if (outcome === 'error') entry.anyFailed = true;
+        else entry.anySucceeded = true;
+        if (entry.writers > 0) continue;
+        pendingEditsRef.current.delete(key);
+        if (entry.anyFailed && !entry.anySucceeded) {
+          const sep = key.indexOf(':');
+          const listingId = key.slice(0, sep);
+          const field = key.slice(sep + 1);
+          patchListingsCache((id) => id === listingId, { [field]: entry.base });
+        }
       }
     },
     [patchListingsCache],
@@ -485,17 +525,17 @@ function PropertiesPage() {
       api.listings.update(id, { [field]: value }),
     onMutate: async ({ id, field, value }) => {
       await queryClient.cancelQueries({ queryKey: ['listings'] });
-      const captured = captureListingFields((listingId) => listingId === id, [field]);
+      const keys = registerOptimisticEdits([id], field);
       patchListingsCache((listingId) => listingId === id, { [field]: value });
-      return { captured };
+      return { keys };
     },
-    onSuccess: () => {
+    onSuccess: (_data, _variables, context) => {
+      settleOptimisticEdits(context?.keys ?? [], 'success');
       queryClient.invalidateQueries({ queryKey: ['listings'] });
     },
     onError: (error: Error, _variables, context) => {
       toast.error(error.message || '변경 사항 저장에 실패했습니다.');
-      // 1차: 건드린 필드만 이전 값으로 복원 (재조회 실패에도 안전, 겹친 mutation 무해)
-      if (context?.captured) rollbackListingFields(context.captured);
+      settleOptimisticEdits(context?.keys ?? [], 'error');
       queryClient.invalidateQueries({ queryKey: ['listings'] });
     },
   });
@@ -515,16 +555,17 @@ function PropertiesPage() {
     onMutate: async ({ listingIds, value }) => {
       await queryClient.cancelQueries({ queryKey: ['listings'] });
       const idSet = new Set(listingIds);
-      const captured = captureListingFields((listingId) => idSet.has(listingId), ['checkStatus']);
+      const keys = registerOptimisticEdits(listingIds, 'checkStatus');
       patchListingsCache((listingId) => idSet.has(listingId), { checkStatus: value });
-      return { captured };
+      return { keys };
     },
-    onSuccess: () => {
+    onSuccess: (_data, _variables, context) => {
+      settleOptimisticEdits(context?.keys ?? [], 'success');
       queryClient.invalidateQueries({ queryKey: ['listings'] });
     },
     onError: (error: Error, _variables, context) => {
       toast.error(error.message || '상태 변경에 실패했습니다.');
-      if (context?.captured) rollbackListingFields(context.captured);
+      settleOptimisticEdits(context?.keys ?? [], 'error');
       queryClient.invalidateQueries({ queryKey: ['listings'] });
     },
   });

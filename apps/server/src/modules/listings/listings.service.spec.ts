@@ -45,7 +45,17 @@ describe('ListingsService', () => {
         findFirst: jest.fn(),
         create: jest.fn(),
       },
+      $queryRaw: jest.fn(),
+      $transaction: jest.fn(),
     };
+    // checkStatus 전환 경로는 인터랙티브 트랜잭션(FOR UPDATE 잠금)을 사용한다 —
+    // tx 로 prisma mock 자신을 넘겨 tx.$queryRaw / tx.listing.update 를 공유.
+    prisma.$transaction.mockImplementation(
+      async (input: unknown) =>
+        typeof input === 'function'
+          ? (input as (tx: typeof prisma) => Promise<unknown>)(prisma)
+          : Promise.all(input as Array<Promise<unknown>>),
+    );
 
     return {
       prisma,
@@ -182,6 +192,8 @@ describe('ListingsService', () => {
       ...updatedListing,
       checkStatus: 'unverified',
     });
+    // FOR UPDATE 잠금 하 재검증용 현재 상태
+    prisma.$queryRaw.mockResolvedValue([{ check_status: 'unverified' }]);
     prisma.listing.update.mockResolvedValue(updatedListing);
 
     await service.update('listing-1', 'office-1', { checkStatus: 'verified' });
@@ -192,6 +204,26 @@ describe('ListingsService', () => {
       propertyId: 'property-1',
       intakeId: 'intake-1',
     });
+  });
+
+  it('rejects a stale status transition when the row changed after validation (lock re-check)', async () => {
+    const { prisma, service } = createService();
+    prisma.listing.findFirst.mockResolvedValue({
+      id: 'listing-1',
+      officeId: 'office-1',
+      propertyId: 'property-1',
+      intakeId: 'intake-1',
+      transactionType: 'sale',
+      checkStatus: 'hold', // 스냅샷 시점: hold → verified 허용
+    });
+    // 잠금 시점에는 이미 done — done → verified 는 금지 전환
+    prisma.$queryRaw.mockResolvedValue([{ check_status: 'done' }]);
+
+    await expect(
+      service.update('listing-1', 'office-1', { checkStatus: 'verified' }),
+    ).rejects.toMatchObject({ status: 400 });
+
+    expect(prisma.listing.update).not.toHaveBeenCalled();
   });
 
   it('emits a realtime listing update after creating a listing', async () => {
