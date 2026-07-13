@@ -9,13 +9,17 @@ export type EventTypeMeta = {
   color: string;
 };
 
-/** CalendarEvent.type별 라벨/기본 색상 (범례·필터·폼 공용) */
+/**
+ * CalendarEvent.type별 라벨/기본 색상 (범례·필터·폼 공용).
+ * 색상은 app.css 시맨틱 토큰 원값 — inline style(withAlpha)과 DB 저장(color hex) 때문에 hex 유지.
+ * general=muted-foreground / viewing=success / contract=warning / meeting=info / task=violet
+ */
 export const EVENT_TYPE_META: Record<string, EventTypeMeta> = {
-  general: { label: '일반', color: '#64748b' },
-  viewing: { label: '임장', color: '#10b981' },
-  contract: { label: '계약', color: '#f59e0b' },
-  meeting: { label: '미팅', color: '#3b82f6' },
-  task: { label: '업무', color: '#8b5cf6' },
+  general: { label: '일반', color: '#787774' },
+  viewing: { label: '임장', color: '#0f7b6c' },
+  contract: { label: '계약', color: '#cb912f' },
+  meeting: { label: '미팅', color: '#2383e2' },
+  task: { label: '업무', color: '#6940a5' },
 };
 
 export function getEventMeta(event: Pick<CalendarEvent, 'type'>) {

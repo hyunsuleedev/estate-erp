@@ -44,17 +44,17 @@ export function MonthCalendarView({
   const cells = buildMonthCells(currentDate);
 
   return (
-    <div className="grid overflow-hidden rounded-lg border bg-background shadow-xs xl:grid-cols-[minmax(0,1fr)_320px] 2xl:grid-cols-[minmax(0,1fr)_360px]">
+    <div className="grid overflow-hidden rounded-[12px] border border-border bg-background xl:grid-cols-[minmax(0,1fr)_320px] 2xl:grid-cols-[minmax(0,1fr)_360px]">
       <div className="min-w-0 overflow-x-auto xl:border-r">
         <div className="min-w-[640px] xl:min-w-0">
-          <div className="grid grid-cols-7 border-b bg-muted/30">
+          <div className="grid grid-cols-7 border-b bg-muted/60">
             {WEEK_DAY_LABELS.map((day, index) => (
               <div
                 key={day}
                 className={cn(
                   'px-3 py-2.5 text-[11px] font-semibold uppercase tracking-[0.05em] text-muted-foreground',
-                  index === 0 && 'text-rose-500',
-                  index === 6 && 'text-blue-500',
+                  index === 0 && 'text-destructive/80',
+                  index === 6 && 'text-info/80',
                 )}
               >
                 {day}
@@ -74,8 +74,8 @@ export function MonthCalendarView({
                   key={cell.key}
                   className={cn(
                     'min-h-[124px] border-b border-r bg-background p-2.5 text-left outline-none transition-colors md:min-h-[140px]',
-                    isSelected ? 'bg-blue-50/60 ring-1 ring-inset ring-blue-200' : 'hover:bg-muted/30',
-                    cell.isOutsideMonth && 'bg-muted/20 text-muted-foreground',
+                    isSelected ? 'bg-info-soft/40 ring-1 ring-inset ring-info/25' : 'hover:bg-muted/60',
+                    cell.isOutsideMonth && 'bg-muted/40 text-muted-foreground',
                   )}
                 >
                   <button
@@ -86,7 +86,7 @@ export function MonthCalendarView({
                     <span
                       className={cn(
                         'inline-flex size-7 items-center justify-center rounded-full text-xs font-semibold',
-                        isToday && 'bg-primary text-primary-foreground shadow-sm',
+                        isToday && 'bg-primary text-primary-foreground',
                         !isToday && isSelected && 'bg-background text-foreground shadow-xs',
                         !isToday && cell.isOutsideMonth && 'text-muted-foreground/60',
                         !isToday && !isSelected && !cell.isOutsideMonth && 'text-foreground',
@@ -95,7 +95,7 @@ export function MonthCalendarView({
                       {cell.date.getDate()}
                     </span>
                     {dayEvents.length > 0 ? (
-                      <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                      <span className="rounded-full bg-secondary px-2 py-0.5 text-[10px] font-semibold tabular-nums text-muted-foreground">
                         {dayEvents.length}건
                       </span>
                     ) : null}
@@ -168,7 +168,7 @@ export function MonthEventPill({
         clickEvent.stopPropagation();
         onEdit(event);
       }}
-      className="block w-full rounded-md border border-l-[3px] px-2 py-1 text-left shadow-xs transition-colors hover:bg-background"
+      className="block w-full rounded-md border border-l-[3px] px-2 py-1 text-left transition-colors hover:bg-background"
       style={{
         backgroundColor: withAlpha(color, '14'),
         borderLeftColor: color,
@@ -224,7 +224,7 @@ export function SelectedDayPanel({
   const navigate = useNavigate();
 
   return (
-    <aside className="flex min-h-[280px] flex-col border-t bg-muted/[0.16] xl:min-h-[560px] xl:border-t-0">
+    <aside className="flex min-h-[280px] flex-col border-t bg-muted/40 xl:min-h-[560px] xl:border-t-0">
       <div className="border-b bg-background px-5 py-4">
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
@@ -232,17 +232,17 @@ export function SelectedDayPanel({
               선택된 날짜
             </div>
             <div className="mt-2 flex flex-wrap items-baseline gap-2">
-              <h2 className="text-xl font-semibold tracking-tight">{formatDayTitle(selectedDate)}</h2>
-              <span className="text-sm text-muted-foreground">{formatWeekday(selectedDate)}</span>
+              <h2 className="text-lg font-bold tracking-[-0.02em] text-foreground">{formatDayTitle(selectedDate)}</h2>
+              <span className="text-[12.5px] text-muted-foreground">{formatWeekday(selectedDate)}</span>
             </div>
           </div>
           {isSameCalendarDate(new Date(), selectedDate) ? (
             <Badge className="border-0 bg-primary text-primary-foreground">오늘</Badge>
           ) : null}
         </div>
-        <div className="mt-3 flex items-center justify-between rounded-md border bg-muted/20 px-3 py-2 text-xs">
+        <div className="mt-3 flex items-center justify-between rounded-[9px] border border-border bg-muted px-3 py-2 text-xs">
           <span className="text-muted-foreground">선택일 일정</span>
-          <span className="font-mono font-semibold tabular-nums">
+          <span className="font-semibold tabular-nums text-foreground">
             {selectedDateEvents.length + selectedDateOverlays.length}건
           </span>
         </div>
@@ -258,17 +258,17 @@ export function SelectedDayPanel({
                 key={event.id}
                 type="button"
                 onClick={() => onEdit(event)}
-                className="flex w-full items-start gap-3 border-b bg-background px-5 py-3.5 text-left transition-colors hover:bg-muted/30"
+                className="flex w-full items-start gap-3 border-b bg-background px-5 py-3.5 text-left transition-colors hover:bg-muted/60"
               >
                 <span
                   className="mt-1 h-11 w-1 shrink-0 rounded-full"
                   style={{ backgroundColor: getEventColor(event) }}
                 />
                 <span className="min-w-0 flex-1">
-                  <span className="block font-mono text-[11px] text-muted-foreground tabular-nums">
+                  <span className="block text-[11px] tabular-nums text-muted-foreground">
                     {formatEventTimeRange(event)}
                   </span>
-                  <span className="mt-1 block truncate text-sm font-semibold">{event.title}</span>
+                  <span className="mt-1 block truncate text-[13px] font-semibold text-foreground">{event.title}</span>
                   <span className="mt-1 block truncate text-xs text-muted-foreground">
                     {formatEventContext(event)}
                   </span>
@@ -277,7 +277,7 @@ export function SelectedDayPanel({
             ))}
 
             {selectedDateOverlays.length > 0 ? (
-              <div className="border-b bg-muted/20 px-5 py-2 text-[11px] font-semibold uppercase tracking-[0.05em] text-muted-foreground">
+              <div className="border-b bg-muted/60 px-5 py-2 text-[11px] font-semibold uppercase tracking-[0.05em] text-muted-foreground">
                 재무 일정 (계약·수금 자동 표시)
               </div>
             ) : null}
@@ -288,13 +288,13 @@ export function SelectedDayPanel({
                   key={item.id}
                   type="button"
                   onClick={() => void navigate({ to: meta.link })}
-                  className="flex w-full items-start gap-3 border-b bg-background px-5 py-3 text-left transition-colors hover:bg-muted/30"
+                  className="flex w-full items-start gap-3 border-b bg-background px-5 py-3 text-left transition-colors hover:bg-muted/60"
                 >
                   <Landmark className="mt-0.5 size-4 shrink-0" style={{ color: meta.color }} />
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-medium">{item.title}</span>
+                    <span className="block truncate text-[13px] font-medium text-foreground">{item.title}</span>
                     {item.sublabel ? (
-                      <span className="mt-0.5 block truncate font-mono text-xs text-muted-foreground tabular-nums">
+                      <span className="mt-0.5 block truncate text-xs tabular-nums text-muted-foreground">
                         {item.sublabel}
                       </span>
                     ) : null}

@@ -33,7 +33,7 @@ export function AgendaCalendarView({
 
   if (dayGroups.every((group) => group.events.length === 0)) {
     return (
-      <div className="rounded-lg border bg-background py-6 shadow-xs">
+      <div className="rounded-[12px] border border-border bg-background py-6">
         <EmptyState
           icon={CalendarDays}
           title="이번 달 일정이 없습니다"
@@ -50,7 +50,7 @@ export function AgendaCalendarView({
   }
 
   return (
-    <div className="overflow-hidden rounded-lg border bg-background shadow-xs">
+    <div className="overflow-hidden rounded-[12px] border border-border bg-background">
       {dayGroups.map(({ date, events }) => {
         if (events.length === 0) return null;
 
@@ -59,29 +59,29 @@ export function AgendaCalendarView({
             key={getLocalDateKey(date)}
             className="grid border-b last:border-b-0 md:grid-cols-[116px_minmax(0,1fr)]"
           >
-            <div className="border-b bg-muted/20 px-4 py-4 md:border-r md:border-b-0">
+            <div className="border-b bg-muted/40 px-4 py-4 md:border-r md:border-b-0">
               <div className="flex items-center gap-3 md:block">
                 <div
                   className={cn(
                     'text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground',
-                    date.getDay() === 0 && 'text-rose-600',
-                    date.getDay() === 6 && 'text-blue-600',
-                    isSameCalendarDate(new Date(), date) && 'text-primary',
+                    date.getDay() === 0 && 'text-destructive/80',
+                    date.getDay() === 6 && 'text-info/80',
+                    isSameCalendarDate(new Date(), date) && 'text-info',
                   )}
                 >
                   {WEEK_DAY_LABELS[date.getDay()]}
                 </div>
                 <div
                   className={cn(
-                    'text-3xl font-semibold tracking-tight md:mt-1',
-                    isSameCalendarDate(new Date(), date) && 'text-primary',
+                    'text-3xl font-semibold tracking-tight tabular-nums md:mt-1',
+                    isSameCalendarDate(new Date(), date) && 'text-info',
                   )}
                 >
                   {date.getDate()}
                 </div>
                 <div className="min-w-0 flex-1 md:mt-2">
-                  <div className="truncate text-sm font-semibold">{formatRelativeDay(date)}</div>
-                  <div className="truncate text-xs text-muted-foreground">{events.length}건</div>
+                  <div className="truncate text-[13px] font-semibold text-foreground">{formatRelativeDay(date)}</div>
+                  <div className="truncate text-xs tabular-nums text-muted-foreground">{events.length}건</div>
                 </div>
                 {isSameCalendarDate(new Date(), date) ? (
                   <Badge className="border-0 bg-primary text-primary-foreground md:mt-3">오늘</Badge>
@@ -116,18 +116,18 @@ function AgendaEventRow({
       type="button"
       onClick={() => onEdit(event)}
       className={cn(
-        'grid w-full grid-cols-[18px_minmax(0,1fr)_auto] items-center gap-3 px-4 py-3.5 text-left transition-colors hover:bg-muted/30 sm:grid-cols-[18px_118px_minmax(0,1fr)_auto] sm:px-5',
-        status.state === 'active' && 'bg-blue-50/60',
+        'grid w-full grid-cols-[18px_minmax(0,1fr)_auto] items-center gap-3 px-4 py-3.5 text-left transition-colors hover:bg-muted/60 sm:grid-cols-[18px_118px_minmax(0,1fr)_auto] sm:px-5',
+        status.state === 'active' && 'bg-info-soft/40',
       )}
     >
       <span
         className={cn(
           'size-3.5 rounded-sm border',
-          status.state === 'done' ? 'border-emerald-500 bg-emerald-500' : 'border-muted-foreground/40',
+          status.state === 'done' ? 'border-success bg-success' : 'border-muted-foreground/40',
         )}
       />
       {/* break-keep: 한글 음절 중간이 아니라 공백에서만 줄바꿈 (오전 10:00 / - 오전 11:30) */}
-      <span className="hidden break-keep font-mono text-xs leading-5 text-muted-foreground tabular-nums sm:block">
+      <span className="hidden break-keep text-xs leading-5 tabular-nums text-muted-foreground sm:block">
         {formatEventTimeRange(event)}
       </span>
       <span className="min-w-0">
@@ -135,14 +135,14 @@ function AgendaEventRow({
           <span className="h-4 w-1 shrink-0 rounded-full" style={{ backgroundColor: color }} />
           <span
             className={cn(
-              'block truncate text-sm font-semibold',
+              'block truncate text-[13px] font-semibold text-foreground',
               status.state === 'done' && 'text-muted-foreground line-through',
             )}
           >
             {event.title}
           </span>
         </span>
-        <span className="mb-0.5 block font-mono text-[11px] text-muted-foreground tabular-nums sm:hidden">
+        <span className="mb-0.5 block text-[11px] tabular-nums text-muted-foreground sm:hidden">
           {formatEventTimeRange(event)}
         </span>
         <span className="mt-0.5 block truncate text-xs text-muted-foreground">

@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { createFileRoute, useNavigate } from '@tanstack/react-router';
+import { createFileRoute, Link, useNavigate } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
-import { MailQuestionIcon, PlusIcon, UsersRoundIcon } from 'lucide-react';
+import { Briefcase, MailQuestionIcon, PlusIcon, UsersRoundIcon } from 'lucide-react';
 
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/button';
@@ -64,6 +64,13 @@ function NetworkPage() {
         description="사무소 간 매물 공유 · 문의 · 채팅으로 공동중개를 진행합니다."
         actions={
           <div className="flex items-center gap-2">
+            {/* 파트너 중개사 관리 진입점 — 사이드바(시안 IA)에서 빠져 공동중개 문맥에 배치 */}
+            <Button variant="ghost" asChild className="text-muted-foreground">
+              <Link to="/partner-brokers">
+                <Briefcase className="size-4" />
+                파트너 중개사
+              </Link>
+            </Button>
             <Button
               variant={showInquiries ? 'secondary' : 'outline'}
               onClick={toggleInquiries}
