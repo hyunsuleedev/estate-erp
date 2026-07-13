@@ -242,6 +242,13 @@ export function createListingsApi(request: RequestFn) {
     update: (id: string, dto: UpdateListingDto) =>
       request<Listing>(`/listings/${id}`, { method: 'PATCH', body: dto }),
 
+    /** 물건(호실) 단위 확인 상태 일괄 전환 — 서버 트랜잭션으로 원자 처리 */
+    bulkTransitionCheckStatus: (listingIds: string[], checkStatus: string) =>
+      request<{ count: number }>('/listings/check-status/bulk', {
+        method: 'PATCH',
+        body: { listingIds, checkStatus },
+      }),
+
     /** 목록 숨김 토글 (Listing.isHidden) */
     setHidden: (id: string, isHidden: boolean) =>
       request<Listing>(`/listings/${id}`, {

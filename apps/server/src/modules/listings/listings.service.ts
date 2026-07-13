@@ -719,6 +719,50 @@ export class ListingsService {
     return this.update(id, officeId, { checkStatus });
   }
 
+  /**
+   * 물건(호실) 단위 확인 상태 일괄 전환 — 같은 호실의 매매/전세/월세 Listing 이
+   * 하나의 상태를 공유하는 UI 를 위해 원자적으로 전환한다.
+   * updateMany 대신 트랜잭션 내 개별 update 를 사용해 ActivityLog 미들웨어의
+   * 레코드별 감사 추적을 유지한다. 하나라도 실패하면 전체 롤백.
+   */
+  async bulkTransitionCheckStatus(
+    listingIds: string[],
+    officeId: string,
+    checkStatus: string,
+  ) {
+    this.assertValidCheckStatus(checkStatus);
+    const uniqueIds = Array.from(new Set(listingIds));
+    if (uniqueIds.length === 0) return { count: 0 };
+
+    const listings = await this.prisma.listing.findMany({
+      where: { id: { in: uniqueIds }, officeId },
+      select: { id: true, propertyId: true, intakeId: true },
+    });
+    if (listings.length !== uniqueIds.length) {
+      throw new NotFoundException('Listing not found');
+    }
+
+    await this.prisma.$transaction(
+      listings.map((listing) =>
+        this.prisma.listing.update({
+          where: { id: listing.id },
+          data: { checkStatus },
+        }),
+      ),
+    );
+
+    for (const listing of listings) {
+      this.realtime?.emitListingUpdated({
+        officeId,
+        listingId: listing.id,
+        propertyId: listing.propertyId,
+        intakeId: listing.intakeId,
+      });
+    }
+
+    return { count: listings.length };
+  }
+
   async remove(id: string, officeId: string) {
     const listing = await this.findOne(id, officeId);
 

@@ -448,6 +448,52 @@ function PropertiesPage() {
     [updateMutation],
   );
 
+  // ── 물건(호실) 단위 상태 일괄 전환 — 서버 트랜잭션으로 원자 처리 ──
+  // Listing별 독립 PATCH 는 일부만 성공하는 혼합 상태를 만들 수 있어 금지.
+  const rowStatusMutation = useMutation({
+    mutationFn: ({ listingIds, value }: { listingIds: string[]; value: string }) =>
+      api.listings.bulkTransitionCheckStatus(listingIds, value),
+    onMutate: async ({ listingIds, value }) => {
+      await queryClient.cancelQueries({ queryKey: ['listings'] });
+      const idSet = new Set(listingIds);
+      queryClient.setQueriesData<{ items: Listing[] }>({ queryKey: ['listings'] }, (old) => {
+        if (!old?.items) return old;
+        return {
+          ...old,
+          items: old.items.map((listing) => {
+            const nextListing = idSet.has(listing.id)
+              ? { ...listing, checkStatus: value }
+              : listing;
+            const relatedListings = listing.property?.listings?.map((relatedListing) =>
+              idSet.has(relatedListing.id)
+                ? { ...relatedListing, checkStatus: value }
+                : relatedListing,
+            );
+            if (!relatedListings || !nextListing.property) return nextListing;
+            return {
+              ...nextListing,
+              property: { ...nextListing.property, listings: relatedListings },
+            };
+          }),
+        };
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['listings'] });
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || '상태 변경에 실패했습니다.');
+      queryClient.invalidateQueries({ queryKey: ['listings'] });
+    },
+  });
+
+  const handleRowStatusSave = useCallback(
+    (listingIds: string[], value: string) => {
+      rowStatusMutation.mutate({ listingIds, value });
+    },
+    [rowStatusMutation],
+  );
+
   // ── 확인일 갱신 (updatedAt = 확인일 → 빈 PATCH로 오늘로 갱신) ──
   const refreshConfirmMutation = useMutation({
     mutationFn: async (listingIds: string[]) => {
@@ -1037,6 +1083,7 @@ function PropertiesPage() {
                               onToggleSelect={() => toggleGroupSelect(group.id)}
                               onOpenSheet={() => setSelectedPropertyId(group.propertyId)}
                               onSave={handleCellSave}
+                              onRowStatusSave={handleRowStatusSave}
                               matchOpen={expandedMatchRows.has(group.id)}
                               adOpen={expandedAdRows.has(group.id)}
                               onToggleMatch={() => toggleMatchRow(group.id)}
@@ -1195,6 +1242,7 @@ function PropertyGridRow({
   onToggleSelect,
   onOpenSheet,
   onSave,
+  onRowStatusSave,
   matchOpen,
   adOpen,
   onToggleMatch,
@@ -1211,6 +1259,8 @@ function PropertyGridRow({
   onToggleSelect: () => void;
   onOpenSheet: () => void;
   onSave: (recordId: string, field: string, value: unknown) => void;
+  /** 물건 단위 상태 일괄 전환 (원자적) */
+  onRowStatusSave: (listingIds: string[], value: string) => void;
   matchOpen: boolean;
   adOpen: boolean;
   onToggleMatch: () => void;
@@ -1336,8 +1386,11 @@ function PropertyGridRow({
               recordId={listings[0].id}
               field="checkStatus"
               value={listings[0].checkStatus}
-              onSave={(_recordId, field, value) => {
-                for (const listing of listings) onSave(listing.id, field, value);
+              onSave={(_recordId, _field, value) => {
+                onRowStatusSave(
+                  listings.map((listing) => listing.id),
+                  String(value),
+                );
               }}
               editType="select-chip"
               chipOptions={checkStatusChipOptions}

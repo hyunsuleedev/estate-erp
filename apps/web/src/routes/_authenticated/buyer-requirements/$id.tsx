@@ -144,7 +144,7 @@ function BuyerRequirementDetailPage() {
             : undefined
         }
         actions={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Button variant="outline" size="sm" onClick={() => setContactLogOpen(true)}>
               <PhoneCall className="size-3.5" />
               연락함 기록

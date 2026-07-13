@@ -85,6 +85,19 @@ export class ListingsController {
     return this.listingsService.findOne(id, user.officeId);
   }
 
+  /** 물건 단위 상태 일괄 전환 — 트랜잭션으로 원자성 보장 */
+  @Patch('check-status/bulk')
+  bulkTransitionCheckStatus(
+    @Body() dto: { listingIds: string[]; checkStatus: string },
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.listingsService.bulkTransitionCheckStatus(
+      dto.listingIds ?? [],
+      user.officeId,
+      dto.checkStatus,
+    );
+  }
+
   @Patch(':id/check-status')
   transitionCheckStatus(
     @Param('id') id: string,
