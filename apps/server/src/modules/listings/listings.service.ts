@@ -686,10 +686,16 @@ export class ListingsService {
     // FOR UPDATE(배타)로 승격시켜, 감사 미들웨어의 트랜잭션 밖 price_histories
     // INSERT(FOR KEY SHARE)와 자기 잠금 충돌이 난다 — 실제로 바뀔 때만 쓴다.
     const { transactionType: _requestedTransactionType, ...patchWithoutTx } = patch;
-    const updateData =
-      nextTransactionType !== existingListing.transactionType
-        ? { ...patchWithoutTx, transactionType: nextTransactionType }
-        : patchWithoutTx;
+    const transactionTypeChanged =
+      nextTransactionType !== existingListing.transactionType;
+    // 빈 PATCH 는 "확인일 갱신" 시그니처다 (updatedAt = 확인일 규약) — 예전에는
+    // transactionType 을 항상 써서 우연히 동작했지만, 이제는 updatedAt 을 명시로 touch 한다.
+    // (updatedAt 은 감사 로그 SKIP 필드라 ActivityLog 노이즈도 없다)
+    const updateData = transactionTypeChanged
+      ? { ...patchWithoutTx, transactionType: nextTransactionType }
+      : Object.keys(patchWithoutTx).length > 0
+        ? patchWithoutTx
+        : { updatedAt: new Date() };
 
     let listing;
     if (expectedUpdatedAt) {
