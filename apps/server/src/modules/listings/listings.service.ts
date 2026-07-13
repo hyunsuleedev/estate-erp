@@ -675,6 +675,25 @@ export class ListingsService {
       }
 
       listing = await this.findOne(id, officeId);
+    } else if (patch.checkStatus) {
+      // 상태 전환은 검증 시점의 현재 상태를 조건으로 걸어 TOCTOU 를 막는다 —
+      // 검증 후 다른 요청이 상태를 바꿨다면(count 0) 금지 전환이 기록되는 대신
+      // 충돌로 거부하고, 클라이언트는 최신 상태로 재시도한다.
+      const result = await this.prisma.listing.updateMany({
+        where: { id, officeId, checkStatus: existingListing.checkStatus },
+        data: {
+          ...patch,
+          transactionType: nextTransactionType,
+        },
+      });
+
+      if (result.count === 0) {
+        throw new ConflictException(
+          '매물 상태가 동시에 변경되었습니다. 새로고침 후 다시 시도해주세요.',
+        );
+      }
+
+      listing = await this.findOne(id, officeId);
     } else {
       listing = await this.prisma.listing.update({
         where: { id },

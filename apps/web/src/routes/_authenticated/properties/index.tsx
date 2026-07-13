@@ -438,17 +438,45 @@ function PropertiesPage() {
     [queryClient],
   );
 
-  // 낙관적 업데이트 전 캐시 스냅샷 — 실패 시 invalidate(재조회)만으로는
-  // 재조회까지 실패하면 미저장 값이 계속 보이므로, 스냅샷 복원이 1차 롤백이다.
-  const snapshotListingsCache = useCallback(
-    () => queryClient.getQueriesData({ queryKey: ['listings'] }),
-    [queryClient],
-  );
-  const restoreListingsCache = useCallback(
-    (snapshot: ReturnType<typeof snapshotListingsCache>) => {
-      for (const [key, data] of snapshot) queryClient.setQueryData(key, data);
+  // 낙관적 업데이트 롤백용 — 이 mutation 이 건드린 listing·필드의 "이전 값"만
+  // 캡처했다가 실패 시 그 값만 되돌린다. 전체 캐시 스냅샷 복원은 겹쳐 실행된
+  // 다른 mutation 의 (실패 포함) 결과까지 되살리므로 쓰지 않는다.
+  const captureListingFields = useCallback(
+    (shouldCapture: (listingId: string) => boolean, fields: string[]) => {
+      const captured = new Map<string, Record<string, unknown>>();
+      const visit = (listing: Record<string, unknown> & { id: string }) => {
+        if (!shouldCapture(listing.id) || captured.has(listing.id)) return;
+        const values: Record<string, unknown> = {};
+        for (const field of fields) values[field] = listing[field];
+        captured.set(listing.id, values);
+      };
+      for (const [, data] of queryClient.getQueriesData({ queryKey: ['listings'] })) {
+        if (!data || typeof data !== 'object') continue;
+        const pages =
+          'pages' in data && Array.isArray((data as { pages: unknown }).pages)
+            ? ((data as { pages: Array<{ items?: Listing[] }> }).pages)
+            : [data as { items?: Listing[] }];
+        for (const page of pages) {
+          if (!Array.isArray(page?.items)) continue;
+          for (const listing of page.items) {
+            visit(listing as unknown as Record<string, unknown> & { id: string });
+            for (const related of listing.property?.listings ?? []) {
+              visit(related as unknown as Record<string, unknown> & { id: string });
+            }
+          }
+        }
+      }
+      return captured;
     },
     [queryClient],
+  );
+  const rollbackListingFields = useCallback(
+    (captured: Map<string, Record<string, unknown>>) => {
+      for (const [listingId, values] of captured) {
+        patchListingsCache((id) => id === listingId, values);
+      }
+    },
+    [patchListingsCache],
   );
 
   // ── Inline edit mutation ──────────────────────────────────────
@@ -457,17 +485,17 @@ function PropertiesPage() {
       api.listings.update(id, { [field]: value }),
     onMutate: async ({ id, field, value }) => {
       await queryClient.cancelQueries({ queryKey: ['listings'] });
-      const snapshot = snapshotListingsCache();
+      const captured = captureListingFields((listingId) => listingId === id, [field]);
       patchListingsCache((listingId) => listingId === id, { [field]: value });
-      return { snapshot };
+      return { captured };
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['listings'] });
     },
     onError: (error: Error, _variables, context) => {
       toast.error(error.message || '변경 사항 저장에 실패했습니다.');
-      // 1차: 스냅샷 즉시 복원 (재조회 실패에도 안전) → 2차: 서버 상태 재동기화
-      if (context?.snapshot) restoreListingsCache(context.snapshot);
+      // 1차: 건드린 필드만 이전 값으로 복원 (재조회 실패에도 안전, 겹친 mutation 무해)
+      if (context?.captured) rollbackListingFields(context.captured);
       queryClient.invalidateQueries({ queryKey: ['listings'] });
     },
   });
@@ -486,17 +514,17 @@ function PropertiesPage() {
       api.listings.bulkTransitionCheckStatus(listingIds, value),
     onMutate: async ({ listingIds, value }) => {
       await queryClient.cancelQueries({ queryKey: ['listings'] });
-      const snapshot = snapshotListingsCache();
       const idSet = new Set(listingIds);
+      const captured = captureListingFields((listingId) => idSet.has(listingId), ['checkStatus']);
       patchListingsCache((listingId) => idSet.has(listingId), { checkStatus: value });
-      return { snapshot };
+      return { captured };
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['listings'] });
     },
     onError: (error: Error, _variables, context) => {
       toast.error(error.message || '상태 변경에 실패했습니다.');
-      if (context?.snapshot) restoreListingsCache(context.snapshot);
+      if (context?.captured) rollbackListingFields(context.captured);
       queryClient.invalidateQueries({ queryKey: ['listings'] });
     },
   });
