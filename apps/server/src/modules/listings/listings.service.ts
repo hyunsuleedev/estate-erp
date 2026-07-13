@@ -703,10 +703,14 @@ export class ListingsService {
       // 우회하므로 쓰지 않는다 — 일반 편집 폼이 가격과 상태를 함께 보내는 경우
       // 가격 이력이 누락된다. 잠금 하의 일반 update 는 두 이력 모두 보존한다.
       listing = await this.prisma.$transaction(async (tx) => {
+        // FOR NO KEY UPDATE: 동시 상태 전환(같은 잠금끼리 충돌)은 직렬화하면서,
+        // 감사 미들웨어가 트랜잭션 밖 커넥션으로 넣는 price_histories INSERT 의
+        // FK 잠금(FOR KEY SHARE)과는 호환된다 — FOR UPDATE 를 쓰면 가격+상태
+        // 동시 수정 시 자기 잠금 대기(self-lock)로 요청이 멈춘다.
         const rows = await tx.$queryRaw<Array<{ check_status: string }>>`
           SELECT check_status FROM listings
           WHERE id = ${id}::uuid AND office_id = ${officeId}::uuid
-          FOR UPDATE`;
+          FOR NO KEY UPDATE`;
         if (rows.length === 0) {
           throw new NotFoundException('Listing not found');
         }
@@ -771,7 +775,7 @@ export class ListingsService {
       >`
         SELECT id, property_id, intake_id, check_status FROM listings
         WHERE id = ANY(${uniqueIds}::uuid[]) AND office_id = ${officeId}::uuid
-        FOR UPDATE`;
+        FOR NO KEY UPDATE`;
       if (rows.length !== uniqueIds.length) {
         throw new NotFoundException('Listing not found');
       }
