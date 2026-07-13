@@ -990,7 +990,7 @@ function PropertiesPage() {
                       className="sticky left-[328px] z-[1] border-r-foreground/20 bg-background"
                     />
                     <GridHeaderCell icon={Type} label="유형" />
-                    <GridHeaderCell icon={Ruler} label="면적" />
+                    <GridHeaderCell icon={Ruler} label="전용면적" />
                     <GridHeaderCell icon={CalendarDays} label="확인" />
                     <GridHeaderCell icon={Tag} label="상태" />
                     <GridHeaderCell icon={GitBranch} label="매칭" />
@@ -1290,9 +1290,12 @@ function PropertyGridRow({
           {typeLabel === '-' ? '' : typeLabel}
         </div>
 
-        {/* 6. 면적 (전용/공급 m²) */}
-        <div className={cn('flex min-h-10 items-center whitespace-nowrap px-2.5 text-[12.5px] tabular-nums text-foreground/80', CELL_BORDER)}>
-          {formatAreaPair(property)}
+        {/* 6. 전용면적 (시안 기준 — 공급면적은 툴팁) */}
+        <div
+          title={supplyAreaTitle(property)}
+          className={cn('flex min-h-10 items-center whitespace-nowrap px-2.5 text-[12.5px] tabular-nums text-foreground/80', CELL_BORDER)}
+        >
+          {formatExclusiveArea(property)}
         </div>
 
         {/* 7. 확인 — 신선도 dot + 확인일 + 상대시간 + hover ⟳ */}
@@ -1325,23 +1328,26 @@ function PropertyGridRow({
           </button>
         </div>
 
-        {/* 8. 상태 — checkStatus 칩 (클릭 인라인 변경) */}
-        <ListingStackCell listings={listings}>
-          {(listing) => (
+        {/* 8. 상태 — 시안 기준 물건(호실) 단위 단일 칩. 거래 타입이 여러 개라도
+            상태는 하나로 표시하고, 변경 시 이 호실의 모든 Listing 에 일괄 적용한다. */}
+        <div className={cn('flex min-h-10 items-center px-1', CELL_BORDER)}>
+          {listings[0] && (
             <EditableCell
-              recordId={listing.id}
+              recordId={listings[0].id}
               field="checkStatus"
-              value={listing.checkStatus}
-              onSave={onSave}
+              value={listings[0].checkStatus}
+              onSave={(_recordId, field, value) => {
+                for (const listing of listings) onSave(listing.id, field, value);
+              }}
               editType="select-chip"
               chipOptions={checkStatusChipOptions}
             >
-              <span className="flex h-full w-full items-center px-1.5">
-                <StatusBadge kind="checkStatus" status={listing.checkStatus} size="sm" />
+              <span className="flex h-full w-full items-center px-0.5">
+                <StatusBadge kind="checkStatus" status={listings[0].checkStatus} size="sm" />
               </span>
             </EditableCell>
           )}
-        </ListingStackCell>
+        </div>
 
         {/* 9. 매칭 칩 — 클릭 → 연관 구매의뢰 패널 토글 */}
         <div className={cn('flex min-h-10 items-center justify-center px-1', CELL_BORDER)}>
@@ -1559,21 +1565,24 @@ function PropertyGridRow({
   );
 }
 
-/** 전용/공급 m² 병기 — "84.9/112.4㎡" */
-function formatAreaPair(property?: ListingProperty) {
+/** 전용면적 m² — 시안 기준 전용면적 단일 표기 (공급면적은 title 툴팁으로 보조) */
+function formatExclusiveArea(property?: ListingProperty) {
   const exclusive = getExclusiveAreaM2(property);
-  const supply =
-    property?.unit?.supplyAreaM2 ?? property?.unit?.siteUnitType?.supplyAreaM2;
   const trim = (value: number | string) => {
     const numeric = Number(value);
     return Number.isFinite(numeric) ? String(Math.round(numeric * 10) / 10) : null;
   };
-  const exclusiveLabel = exclusive != null ? trim(exclusive) : null;
-  const supplyLabel = supply != null ? trim(supply) : null;
-  if (exclusiveLabel && supplyLabel) return `${exclusiveLabel}/${supplyLabel}㎡`;
-  if (exclusiveLabel) return `전용 ${exclusiveLabel}㎡`;
-  if (supplyLabel) return `공급 ${supplyLabel}㎡`;
-  return '';
+  const label = exclusive != null ? trim(exclusive) : null;
+  return label ? `${label}㎡` : '';
+}
+
+function supplyAreaTitle(property?: ListingProperty) {
+  const supply =
+    property?.unit?.supplyAreaM2 ?? property?.unit?.siteUnitType?.supplyAreaM2;
+  const numeric = Number(supply);
+  return Number.isFinite(numeric) && supply != null
+    ? `공급 ${Math.round(numeric * 10) / 10}㎡`
+    : undefined;
 }
 
 // ── 펼침 패널: 연관 구매의뢰 (amber) ────────────────────────────

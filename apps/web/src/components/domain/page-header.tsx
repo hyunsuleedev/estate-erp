@@ -18,9 +18,14 @@ export interface PageHeaderProps {
 /** 페이지 상단 헤더 — h1 text-xl font-semibold, 하단 mb-4. */
 export function PageHeader({ title, description, actions, backTo, className }: PageHeaderProps) {
   return (
+    // 좁은 화면은 열(제목 위 / 액션 아래)로 전환 — 호출부가 액션을 비-wrapping
+    // 그룹으로 넘겨도(예: 버튼 4개 div) 제목을 침범하지 않는다.
     <div
       data-slot="page-header"
-      className={cn('mb-4 flex items-start justify-between gap-4', className)}
+      className={cn(
+        'mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4',
+        className,
+      )}
     >
       <div className="flex min-w-0 items-start gap-1.5">
         {backTo && (
@@ -37,10 +42,8 @@ export function PageHeader({ title, description, actions, backTo, className }: P
           )}
         </div>
       </div>
-      {/* shrink-0 이면 좁은 화면에서 액션 영역이 줄어들지 못해 (actions 내부의)
-          flex-wrap 이 발동하지 않고 타이틀만 짓눌린다 — 축소를 허용한다. */}
       {actions && (
-        <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">{actions}</div>
+        <div className="flex min-w-0 flex-wrap items-center gap-2 sm:justify-end">{actions}</div>
       )}
     </div>
   );
