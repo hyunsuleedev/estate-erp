@@ -41,6 +41,10 @@
   --color-orange: #d9730d;
   --color-orange-soft: #fadec9;
   --color-destructive-soft: #ffe2dd;
+  /* 소형 본문 텍스트용 강화 톤 — 흰 배경에서 WCAG AA(4.5:1) 이상 확보
+     (destructive/info 원톤은 소형 텍스트 기준 ~3.7–4.2:1로 부족) */
+  --color-destructive-strong: #bb3430;
+  --color-info-strong: #1b64b1;
   --color-neutral-strong: #37352f;
   --color-neutral-soft: #f1f1ef;
   --color-card: #ffffff;

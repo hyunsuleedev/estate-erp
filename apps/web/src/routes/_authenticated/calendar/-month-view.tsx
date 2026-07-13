@@ -53,8 +53,8 @@ export function MonthCalendarView({
                 key={day}
                 className={cn(
                   'px-3 py-2.5 text-[11px] font-semibold uppercase tracking-[0.05em] text-muted-foreground',
-                  index === 0 && 'text-destructive/80',
-                  index === 6 && 'text-info/80',
+                  index === 0 && 'text-destructive-strong',
+                  index === 6 && 'text-info-strong',
                 )}
               >
                 {day}

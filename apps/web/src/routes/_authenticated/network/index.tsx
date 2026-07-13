@@ -63,12 +63,13 @@ function NetworkPage() {
         title="중개방"
         description="사무소 간 매물 공유 · 문의 · 채팅으로 공동중개를 진행합니다."
         actions={
-          <div className="flex items-center gap-2">
-            {/* 파트너 중개사 관리 진입점 — 사이드바(시안 IA)에서 빠져 공동중개 문맥에 배치 */}
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            {/* 파트너 중개사 관리 진입점 — 사이드바(시안 IA)에서 빠져 공동중개 문맥에 배치.
+                좁은 화면에서는 아이콘만 남겨 핵심 액션(방 만들기)이 밀리지 않게 한다. */}
             <Button variant="ghost" asChild className="text-muted-foreground">
-              <Link to="/partner-brokers">
+              <Link to="/partner-brokers" aria-label="파트너 중개사 관리">
                 <Briefcase className="size-4" />
-                파트너 중개사
+                <span className="hidden md:inline">파트너 중개사</span>
               </Link>
             </Button>
             <Button

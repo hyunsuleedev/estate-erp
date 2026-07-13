@@ -82,15 +82,15 @@ export function TimeGridCalendarView({
               <div
                 className={cn(
                   'text-[10px] font-semibold tracking-[0.06em] text-muted-foreground',
-                  dayOfWeek === 0 && 'text-destructive/80',
-                  dayOfWeek === 6 && 'text-info/80',
-                  isToday && 'text-info',
+                  dayOfWeek === 0 && 'text-destructive-strong',
+                  dayOfWeek === 6 && 'text-info-strong',
+                  isToday && 'text-info-strong',
                 )}
               >
                 {WEEK_DAY_LABELS[dayOfWeek]}
                 {isToday ? ' · 오늘' : ''}
               </div>
-              <div className={cn('mt-1 text-lg font-semibold tabular-nums', isToday && 'text-info')}>
+              <div className={cn('mt-1 text-lg font-semibold tabular-nums', isToday && 'text-info-strong')}>
                 {date.getDate()}
               </div>
               <div className="mt-1 text-[11px] tabular-nums text-muted-foreground">

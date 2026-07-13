@@ -246,11 +246,16 @@ function CalendarPage() {
         </div>
         <div className="flex-1" />
         <div className="flex flex-wrap items-center gap-2">
-          <div className="flex items-center rounded-lg bg-secondary p-0.5">
+          <div
+            role="group"
+            aria-label="캘린더 보기 전환"
+            className="flex items-center rounded-lg bg-secondary p-0.5"
+          >
             {viewOptions.map((option) => (
               <button
                 key={option.value}
                 type="button"
+                aria-pressed={viewMode === option.value}
                 onClick={() => handleViewChange(option.value)}
                 className={cn(
                   'h-7 rounded-md px-3 text-xs font-semibold transition-colors',

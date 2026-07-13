@@ -64,9 +64,9 @@ export function AgendaCalendarView({
                 <div
                   className={cn(
                     'text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground',
-                    date.getDay() === 0 && 'text-destructive/80',
-                    date.getDay() === 6 && 'text-info/80',
-                    isSameCalendarDate(new Date(), date) && 'text-info',
+                    date.getDay() === 0 && 'text-destructive-strong',
+                    date.getDay() === 6 && 'text-info-strong',
+                    isSameCalendarDate(new Date(), date) && 'text-info-strong',
                   )}
                 >
                   {WEEK_DAY_LABELS[date.getDay()]}
@@ -74,7 +74,7 @@ export function AgendaCalendarView({
                 <div
                   className={cn(
                     'text-3xl font-semibold tracking-tight tabular-nums md:mt-1',
-                    isSameCalendarDate(new Date(), date) && 'text-info',
+                    isSameCalendarDate(new Date(), date) && 'text-info-strong',
                   )}
                 >
                   {date.getDate()}
