@@ -397,39 +397,54 @@ function PropertiesPage() {
       ? `${activeSorts[0].field}:${activeSorts[0].direction}`
       : '';
 
+  // ── 낙관적 캐시 패치 헬퍼 ─────────────────────────────────────
+  // 목록은 useInfiniteQuery 라 캐시 형태가 { pages: [{ items }] } 다 —
+  // { items } 만 패치하면 아무 효과가 없으므로 두 형태 모두 순회한다.
+  const patchListingsCache = useCallback(
+    (shouldPatch: (listingId: string) => boolean, patch: Record<string, unknown>) => {
+      const patchItems = (items: Listing[]): Listing[] =>
+        items.map((listing) => {
+          const nextListing = shouldPatch(listing.id) ? { ...listing, ...patch } : listing;
+          const relatedListings = listing.property?.listings?.map((relatedListing) =>
+            shouldPatch(relatedListing.id)
+              ? { ...relatedListing, ...patch }
+              : relatedListing,
+          );
+          if (!relatedListings || !nextListing.property) return nextListing;
+          return {
+            ...nextListing,
+            property: { ...nextListing.property, listings: relatedListings },
+          };
+        });
+
+      queryClient.setQueriesData<unknown>({ queryKey: ['listings'] }, (old: unknown) => {
+        if (!old || typeof old !== 'object') return old;
+        if ('pages' in old && Array.isArray((old as { pages: unknown }).pages)) {
+          const data = old as { pages: Array<{ items?: Listing[] }> };
+          return {
+            ...data,
+            pages: data.pages.map((page) =>
+              page.items ? { ...page, items: patchItems(page.items) } : page,
+            ),
+          };
+        }
+        if ('items' in old && Array.isArray((old as { items: unknown }).items)) {
+          const data = old as { items: Listing[] };
+          return { ...data, items: patchItems(data.items) };
+        }
+        return old;
+      });
+    },
+    [queryClient],
+  );
+
   // ── Inline edit mutation ──────────────────────────────────────
   const updateMutation = useMutation({
     mutationFn: ({ id, field, value }: { id: string; field: string; value: unknown }) =>
       api.listings.update(id, { [field]: value }),
     onMutate: async ({ id, field, value }) => {
       await queryClient.cancelQueries({ queryKey: ['listings'] });
-      queryClient.setQueriesData<{ items: Listing[] }>(
-        { queryKey: ['listings'] },
-        (old) => {
-          if (!old?.items) return old;
-          return {
-            ...old,
-            items: old.items.map((listing) => {
-              const nextListing =
-                listing.id === id ? { ...listing, [field]: value } : listing;
-              const relatedListings = listing.property?.listings?.map((relatedListing) =>
-                relatedListing.id === id
-                  ? { ...relatedListing, [field]: value }
-                  : relatedListing,
-              );
-
-              if (!relatedListings || !nextListing.property) return nextListing;
-              return {
-                ...nextListing,
-                property: {
-                  ...nextListing.property,
-                  listings: relatedListings,
-                },
-              };
-            }),
-          };
-        },
-      );
+      patchListingsCache((listingId) => listingId === id, { [field]: value });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['listings'] });
@@ -456,27 +471,7 @@ function PropertiesPage() {
     onMutate: async ({ listingIds, value }) => {
       await queryClient.cancelQueries({ queryKey: ['listings'] });
       const idSet = new Set(listingIds);
-      queryClient.setQueriesData<{ items: Listing[] }>({ queryKey: ['listings'] }, (old) => {
-        if (!old?.items) return old;
-        return {
-          ...old,
-          items: old.items.map((listing) => {
-            const nextListing = idSet.has(listing.id)
-              ? { ...listing, checkStatus: value }
-              : listing;
-            const relatedListings = listing.property?.listings?.map((relatedListing) =>
-              idSet.has(relatedListing.id)
-                ? { ...relatedListing, checkStatus: value }
-                : relatedListing,
-            );
-            if (!relatedListings || !nextListing.property) return nextListing;
-            return {
-              ...nextListing,
-              property: { ...nextListing.property, listings: relatedListings },
-            };
-          }),
-        };
-      });
+      patchListingsCache((listingId) => idSet.has(listingId), { checkStatus: value });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['listings'] });

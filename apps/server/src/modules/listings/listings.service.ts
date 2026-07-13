@@ -736,19 +736,27 @@ export class ListingsService {
 
     const listings = await this.prisma.listing.findMany({
       where: { id: { in: uniqueIds }, officeId },
-      select: { id: true, propertyId: true, intakeId: true },
+      select: { id: true, propertyId: true, intakeId: true, checkStatus: true },
     });
     if (listings.length !== uniqueIds.length) {
       throw new NotFoundException('Listing not found');
     }
 
+    // 단건 경로와 동일한 파이프라인 전환 규칙 적용 — 하나라도 금지 전환이면
+    // (예: done → unverified) 아무것도 반영하지 않고 거부한다.
+    for (const listing of listings) {
+      this.assertCheckStatusTransition(listing.checkStatus, checkStatus);
+    }
+
     await this.prisma.$transaction(
-      listings.map((listing) =>
-        this.prisma.listing.update({
-          where: { id: listing.id },
-          data: { checkStatus },
-        }),
-      ),
+      listings
+        .filter((listing) => listing.checkStatus !== checkStatus)
+        .map((listing) =>
+          this.prisma.listing.update({
+            where: { id: listing.id },
+            data: { checkStatus },
+          }),
+        ),
     );
 
     for (const listing of listings) {
