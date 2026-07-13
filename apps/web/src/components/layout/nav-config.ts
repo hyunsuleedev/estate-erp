@@ -1,6 +1,5 @@
 import {
   BookUser,
-  Briefcase,
   Building2,
   CalendarDays,
   FileText,
@@ -77,7 +76,8 @@ export const NAV_ITEMS: NavItem[] = [
   { path: '/deals', label: '거래관리', icon: Handshake, group: 'menu' },
   { path: '/matches', label: '매칭', icon: GitBranch, group: 'menu' },
   { path: '/network', label: '네트워크', icon: Network, group: 'menu' },
-  { path: '/partner-brokers', label: '파트너 중개사', icon: Briefcase, group: 'menu' },
+  // 파트너 중개사(/partner-brokers)는 시안 사이드바에서 제외 — 라우트는 유지
+  // (공동중개 수수료 페이지 내 링크 및 URL 직접 접근으로 도달)
   { path: '/consultations', label: '상담기록', icon: MessageSquare, group: 'menu' },
   { path: '/calls', label: '통화 관리', icon: PhoneCall, group: 'menu' },
   { path: '/buyer-requirements', label: '구매고객', icon: UserSearch, group: 'menu' },
