@@ -681,15 +681,22 @@ export class ListingsService {
       patch.jointBrokeragePartnerId,
     );
 
+    // transactionType 은 [intakeId, transactionType] 복합 unique 키의 일부다.
+    // 값이 그대로여도 UPDATE 의 SET 대상에 포함되면 PostgreSQL 이 행 잠금을
+    // FOR UPDATE(배타)로 승격시켜, 감사 미들웨어의 트랜잭션 밖 price_histories
+    // INSERT(FOR KEY SHARE)와 자기 잠금 충돌이 난다 — 실제로 바뀔 때만 쓴다.
+    const { transactionType: _requestedTransactionType, ...patchWithoutTx } = patch;
+    const updateData =
+      nextTransactionType !== existingListing.transactionType
+        ? { ...patchWithoutTx, transactionType: nextTransactionType }
+        : patchWithoutTx;
+
     let listing;
     if (expectedUpdatedAt) {
       const expectedUpdatedAtDate = this.parseExpectedUpdatedAt(expectedUpdatedAt);
       const result = await this.prisma.listing.updateMany({
         where: { id, officeId, updatedAt: expectedUpdatedAtDate },
-        data: {
-          ...patch,
-          transactionType: nextTransactionType,
-        },
+        data: updateData,
       });
 
       if (result.count === 0) {
@@ -698,7 +705,7 @@ export class ListingsService {
 
       listing = await this.findOne(id, officeId);
     } else if (patch.checkStatus) {
-      // 상태 전환은 행 잠금(FOR UPDATE) 후 최신 상태로 재검증해 TOCTOU 를 막는다.
+      // 상태 전환은 행 잠금 후 최신 상태로 재검증해 TOCTOU 를 막는다.
       // updateMany 조건부 갱신은 ActivityLog/PriceHistory 미들웨어(단건 update 훅)를
       // 우회하므로 쓰지 않는다 — 일반 편집 폼이 가격과 상태를 함께 보내는 경우
       // 가격 이력이 누락된다. 잠금 하의 일반 update 는 두 이력 모두 보존한다.
@@ -719,20 +726,14 @@ export class ListingsService {
 
         return tx.listing.update({
           where: { id },
-          data: {
-            ...patch,
-            transactionType: nextTransactionType,
-          },
+          data: updateData,
           include: LISTING_UPDATE_INCLUDE,
         });
       });
     } else {
       listing = await this.prisma.listing.update({
         where: { id },
-        data: {
-          ...patch,
-          transactionType: nextTransactionType,
-        },
+        data: updateData,
         include: LISTING_UPDATE_INCLUDE,
       });
     }
