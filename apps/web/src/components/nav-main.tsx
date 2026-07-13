@@ -10,6 +10,7 @@ import {
   SidebarGroup,
   SidebarGroupLabel,
   SidebarMenu,
+  SidebarMenuAction,
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarMenuSub,
@@ -44,6 +45,12 @@ export function NavMain({
     return !hasMoreSpecificMatch
   }
 
+  // 부모와 자식이 같은 경로를 공유할 수 있으므로(예: 매물관리 ↔ 매물 목록 = /properties)
+  // 자식이 활성인 동안 부모 버튼은 강조하지 않는다 — 가장 깊은 매치만 하이라이트.
+  const isParentActive = (item: NavItem) =>
+    isActivePath(item.path) &&
+    !(item.children ?? []).some((child) => isActivePath(child.path))
+
   return (
     <SidebarGroup>
       <SidebarGroupLabel className="text-xs">{label}</SidebarGroupLabel>
@@ -57,12 +64,22 @@ export function NavMain({
               className="group/collapsible"
             >
               <SidebarMenuItem>
-                <CollapsibleTrigger asChild>
-                  <SidebarMenuButton tooltip={item.label}>
+                {/* 부모는 링크 — 아이콘 접힘 모드에서도 클릭으로 이동 가능해야 함 */}
+                <SidebarMenuButton
+                  asChild
+                  isActive={isParentActive(item)}
+                  tooltip={item.label}
+                >
+                  <Link to={item.path}>
                     <item.icon />
                     <span>{item.label}</span>
-                    <ChevronRight className="ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
-                  </SidebarMenuButton>
+                  </Link>
+                </SidebarMenuButton>
+                <CollapsibleTrigger asChild>
+                  <SidebarMenuAction className="data-[state=open]:rotate-90 transition-transform duration-200">
+                    <ChevronRight />
+                    <span className="sr-only">{item.label} 하위 메뉴 토글</span>
+                  </SidebarMenuAction>
                 </CollapsibleTrigger>
                 <CollapsibleContent>
                   <SidebarMenuSub>

@@ -177,9 +177,7 @@ export function MatchConvertDialog({
                   </div>
                 ) : (
                   <label className="space-y-1 text-xs font-medium text-muted-foreground">
-                    <span>
-                      합의 {transactionType === 'yearly_rent' ? '연세 (연간 총액, 만원)' : `${typeLabel}가 (만원)`}
-                    </span>
+                    <span>합의 {typeLabel}가 (만원)</span>
                     <Input
                       inputMode="numeric"
                       value={priceInput}

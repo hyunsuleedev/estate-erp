@@ -28,9 +28,14 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
+import { RequireRole } from '@/components/layout/require-role';
 
 export const Route = createFileRoute('/_authenticated/cashflow/expenses')({
-  component: ExpensesPage,
+  component: () => (
+    <RequireRole roles={['owner', 'manager']} fallback="/cashflow/my-settlement">
+      <ExpensesPage />
+    </RequireRole>
+  ),
 });
 
 const CATEGORY_OPTIONS: Array<{ value: string; label: string }> = [

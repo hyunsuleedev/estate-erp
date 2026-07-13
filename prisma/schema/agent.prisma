@@ -244,7 +244,7 @@ model EntityDraft {
   /// 'rule:xxx:v1' | 'user:yyy' | 'event:zzz' | 'agent:claude'
   generatedBy String @map("generated_by")
 
-  /// 중복 방지 (같은 officeId + dedupeKey + status in [pending, approved] 이면 skip)
+  /// 중복 방지 (같은 officeId + dedupeKey의 활성 검토 상태는 하나만 허용)
   dedupeKey String? @map("dedupe_key")
 
   // 컨텍스트 링크 (inbox 카드에서 한눈에 파악, 도메인으로 점프)
@@ -256,19 +256,28 @@ model EntityDraft {
   contractId      String? @map("contract_id") @db.Uuid
   paymentId       String? @map("payment_id") @db.Uuid
 
+  /// 이 검토 요청을 소유한 지속형 AI 세션과, 요청을 만든 실행 시도.
+  /// 사람 책임자는 AgentSession.task.assignedTo, AI 실행자는 AgentSession.agentKey로 분리한다.
+  agentSessionId   String? @map("agent_session_id") @db.Uuid
+  requestedByRunId String? @map("requested_by_run_id") @db.Uuid
+
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  office   Office               @relation(fields: [officeId], references: [id])
-  comments EntityDraftComment[]
+  office         Office               @relation(fields: [officeId], references: [id])
+  comments       EntityDraftComment[]
+  agentSession   AgentSession?        @relation("EntityDraftAgentSession", fields: [agentSessionId], references: [id], onDelete: SetNull)
+  requestedByRun AgentRun?            @relation("EntityDraftRequestedByRun", fields: [requestedByRunId], references: [id], onDelete: SetNull)
 
-  @@unique([officeId, dedupeKey])
+  @@index([officeId, dedupeKey])
   @@index([officeId, status, priority])
   @@index([officeId, decisionMode, status])
   @@index([entityType, entityId])
   @@index([listingId])
   @@index([listingIntakeId])
   @@index([dealId])
+  @@index([agentSessionId, status])
+  @@index([requestedByRunId])
   @@map("entity_drafts")
 }
 
@@ -291,4 +300,163 @@ model EntityDraftComment {
 
   @@index([draftId, createdAt])
   @@map("entity_draft_comments")
+}
+
+// ============================================================
+// Agent Control Plane — Session / Wakeup / Run / Activity
+// ============================================================
+//
+// Paperclip/Linear 스타일의 human-in-the-loop 실행 기반.
+// 기존 Proposal/EntityDraft(검토·승인 데이터)와 책임을 분리한다.
+//
+//   AgentSession       — 하나의 업무 문맥에서 지속되는 AI 세션
+//   AgentWakeupRequest — 승인/코멘트/스케줄 등으로 세션을 깨우는 durable 신호
+//   AgentRun           — 실제 실행 시도 1회 (재시도마다 새 행)
+//   AgentActivity      — 실행 중 발생한 의미 이벤트의 append-only 로그
+//
+// status는 외부 프로토콜과의 확장을 위해 String으로 저장하되, 서비스 계층에서
+// 허용 상태와 전이를 제한한다. AgentActivity 불변성과 wakeup 활성 idempotency는
+// PostgreSQL migration의 trigger/partial unique index가 최종 방어선이다.
+// ============================================================
+
+model AgentSession {
+  id       String @id @default(uuid()) @db.Uuid
+  officeId String @map("office_id") @db.Uuid
+
+  /// 외부 AI 실행자 식별자. 예: "codex", "chatgpt", "contract-agent".
+  agentKey String @map("agent_key")
+  /// 실행 어댑터. 예: "mcp", "openai", "manual".
+  adapter  String @default("mcp")
+
+  /// ERP Task 연결. Task.assignedTo는 사람 책임자, agentKey는 AI delegate다.
+  taskId  String? @map("task_id") @db.Uuid
+  /// 같은 agent/adapter가 업무 세션을 재사용하기 위한 안정 키.
+  taskKey String  @map("task_key")
+
+  /// pending | active | awaiting_input | complete | error | stale
+  status        String  @default("pending")
+  /// AI가 사용자 입력을 기다리는 이유나 실패 요약.
+  waitingReason String? @map("waiting_reason")
+
+  /// 실행자가 이어받을 업무 문맥 및 계획. 민감한 원문 대신 도메인 ID 중심으로 저장한다.
+  context Json  @default("{}") @db.JsonB
+  plan    Json? @db.JsonB
+
+  lastRunAt   DateTime? @map("last_run_at")
+  completedAt DateTime? @map("completed_at")
+  error       String?
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  runs           AgentRun[]
+  wakeups        AgentWakeupRequest[]
+  activities     AgentActivity[]
+  reviewRequests EntityDraft[]        @relation("EntityDraftAgentSession")
+  office         Office               @relation(fields: [officeId], references: [id])
+  task           Task?                @relation(fields: [taskId], references: [id], onDelete: SetNull)
+
+  @@unique([officeId, agentKey, adapter, taskKey])
+  @@index([officeId, status, updatedAt])
+  @@index([officeId, taskId])
+  @@map("agent_sessions")
+}
+
+model AgentWakeupRequest {
+  id        String @id @default(uuid()) @db.Uuid
+  officeId  String @map("office_id") @db.Uuid
+  sessionId String @map("session_id") @db.Uuid
+
+  /// approval | comment | schedule | event | api | retry 등.
+  source  String
+  reason  String
+  payload Json   @default("{}") @db.JsonB
+
+  /// queued | claimed | completed | failed | cancelled
+  status         String  @default("queued")
+  /// 활성(queued/claimed) wakeup에 한해서 중복 생성을 막는다.
+  /// partial unique index는 migration SQL에 정의한다.
+  idempotencyKey String? @map("idempotency_key")
+  coalescedCount Int     @default(0) @map("coalesced_count")
+  maxAttempts    Int     @default(5) @map("max_attempts")
+
+  requestedBy String?  @map("requested_by")
+  requestedAt DateTime @default(now()) @map("requested_at")
+
+  claimedBy      String?   @map("claimed_by")
+  claimedAt      DateTime? @map("claimed_at")
+  leaseExpiresAt DateTime? @map("lease_expires_at")
+
+  finishedAt DateTime? @map("finished_at")
+  error      String?
+
+  session AgentSession @relation(fields: [sessionId], references: [id], onDelete: Restrict)
+  office  Office       @relation(fields: [officeId], references: [id])
+  runs    AgentRun[]
+
+  @@index([officeId, status, requestedAt])
+  @@index([sessionId, requestedAt])
+  @@map("agent_wakeup_requests")
+}
+
+model AgentRun {
+  id              String  @id @default(uuid()) @db.Uuid
+  officeId        String  @map("office_id") @db.Uuid
+  sessionId       String  @map("session_id") @db.Uuid
+  wakeupRequestId String? @map("wakeup_request_id") @db.Uuid
+
+  /// queued | running | completed | failed | cancelled
+  status  String @default("queued")
+  trigger String
+  /// 동일 wakeup의 lease 만료 재실행 횟수(1부터 시작).
+  attempt Int    @default(1)
+
+  workerId       String?   @map("worker_id")
+  leaseExpiresAt DateTime? @map("lease_expires_at")
+
+  startedAt  DateTime? @map("started_at")
+  finishedAt DateTime? @map("finished_at")
+  result     Json?     @db.JsonB
+  usage      Json?     @db.JsonB
+  error      String?
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  session        AgentSession        @relation(fields: [sessionId], references: [id], onDelete: Restrict)
+  wakeupRequest  AgentWakeupRequest? @relation(fields: [wakeupRequestId], references: [id], onDelete: Restrict)
+  activities     AgentActivity[]
+  reviewRequests EntityDraft[]       @relation("EntityDraftRequestedByRun")
+  office         Office              @relation(fields: [officeId], references: [id])
+
+  @@unique([wakeupRequestId, attempt])
+  @@index([officeId, status, createdAt])
+  @@index([sessionId, createdAt])
+  @@map("agent_runs")
+}
+
+/// AI 실행의 불변 이벤트 스트림.
+/// type: thought | action | elicitation | response | error | system
+model AgentActivity {
+  id        String  @id @default(uuid()) @db.Uuid
+  officeId  String  @map("office_id") @db.Uuid
+  sessionId String  @map("session_id") @db.Uuid
+  runId     String? @map("run_id") @db.Uuid
+
+  sequence  Int
+  type      String
+  message   String?
+  payload   Json?   @db.JsonB
+  ephemeral Boolean @default(false)
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  session AgentSession @relation(fields: [sessionId], references: [id], onDelete: Restrict)
+  run     AgentRun?    @relation(fields: [runId], references: [id], onDelete: Restrict)
+  office  Office       @relation(fields: [officeId], references: [id])
+
+  @@unique([sessionId, sequence])
+  @@index([officeId, createdAt])
+  @@index([runId, sequence])
+  @@map("agent_activities")
 }

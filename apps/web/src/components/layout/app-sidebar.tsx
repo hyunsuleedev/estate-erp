@@ -26,8 +26,8 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         {groups.map((group) => (
           <Fragment key={group.key}>
             <NavMain label={group.label} items={group.items} />
-            {/* 즐겨찾기 단지는 '매물' 그룹 바로 아래 유지 */}
-            {group.key === 'listings' && <NavFavorites />}
+            {/* 즐겨찾기 단지는 '메뉴' 그룹 바로 아래 유지 */}
+            {group.key === 'menu' && <NavFavorites />}
           </Fragment>
         ))}
       </SidebarContent>

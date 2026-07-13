@@ -67,6 +67,8 @@ export interface Listing {
   updatedAt: string;
   advertisements?: ListingAdvertisement[];
   priceHistories?: ListingPriceHistory[];
+  /** findAll include — 매물 목록 매칭 칩 카운트 */
+  _count?: { matches: number };
   jointBrokeragePartner?: {
     id: string;
     name: string;
@@ -137,6 +139,8 @@ export interface Listing {
       updatedAt: string;
       advertisements?: ListingAdvertisement[];
       priceHistories?: ListingPriceHistory[];
+      /** findAll include — 매물 목록 매칭 칩 카운트 */
+      _count?: { matches: number };
       jointBrokeragePartner?: {
         id: string;
         name: string;

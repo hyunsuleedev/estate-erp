@@ -1,5 +1,6 @@
 import {
   BookUser,
+  Briefcase,
   Building2,
   CalendarDays,
   FileText,
@@ -10,17 +11,15 @@ import {
   LayoutDashboard,
   ListTodo,
   Map,
-  Megaphone,
   MessageSquare,
   Network,
-  NotebookPen,
   PhoneCall,
   Settings,
+  Sparkles,
   Store,
   Users,
   UserSearch,
   Wallet,
-  Wrench,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -33,13 +32,7 @@ import {
 
 export type NavRole = 'owner' | 'manager' | 'agent'
 
-export type NavGroupKey =
-  | 'home'
-  | 'listings'
-  | 'customers'
-  | 'deals'
-  | 'network'
-  | 'operations'
+export type NavGroupKey = 'menu' | 'services'
 
 export interface NavChildItem {
   path: string
@@ -59,42 +52,44 @@ export interface NavItem {
 }
 
 export const NAV_GROUPS: { key: NavGroupKey; label: string }[] = [
-  { key: 'home', label: '홈' },
-  { key: 'listings', label: '매물' },
-  { key: 'customers', label: '고객' },
-  { key: 'deals', label: '거래' },
-  { key: 'network', label: '네트워크' },
-  { key: 'operations', label: '운영' },
+  { key: 'menu', label: '메뉴' },
+  { key: 'services', label: '서비스' },
 ]
 
 export const NAV_ITEMS: NavItem[] = [
-  // ── 홈
-  { path: '/dashboard', label: '대시보드', icon: LayoutDashboard, group: 'home' },
-  { path: '/inbox', label: '업무함', icon: Inbox, group: 'home' },
-  { path: '/tasks', label: '업무', icon: ListTodo, group: 'home' },
-  { path: '/calendar', label: '캘린더', icon: CalendarDays, group: 'home' },
-
-  // ── 매물
-  { path: '/properties', label: '매물장', icon: Building2, group: 'listings' },
-  { path: '/sites', label: '관리단지', icon: Map, group: 'listings' },
-  { path: '/properties/external-listings', label: '광고노트', icon: NotebookPen, group: 'listings' },
-  { path: '/properties/naver-my-ads', label: '내 광고', icon: Megaphone, group: 'listings' },
-
-  // ── 고객
-  { path: '/contacts', label: '연락처', icon: BookUser, group: 'customers' },
-  { path: '/buyer-requirements', label: '구매고객', icon: UserSearch, group: 'customers' },
-  { path: '/consultations', label: '상담기록', icon: MessageSquare, group: 'customers' },
-  { path: '/calls', label: '통화기록', icon: PhoneCall, group: 'customers' },
-
-  // ── 거래
-  { path: '/matches', label: '매칭', icon: GitBranch, group: 'deals' },
-  { path: '/deals', label: '거래', icon: Handshake, group: 'deals' },
-  { path: '/contracts', label: '계약', icon: FileText, group: 'deals' },
+  // ── 메뉴 (디자인 Estate ERP 웹.dc.html 사이드바 순서)
+  { path: '/dashboard', label: '대시보드', icon: LayoutDashboard, group: 'menu' },
+  { path: '/inbox', label: 'AI 검토함', icon: Inbox, group: 'menu' },
+  // AI 채팅 — UI 선행 (백엔드는 Phase 2 연결)
+  { path: '/ai-chat', label: 'AI 채팅', icon: Sparkles, group: 'menu' },
+  {
+    path: '/properties',
+    label: '매물관리',
+    icon: Building2,
+    group: 'menu',
+    children: [
+      { path: '/properties', label: '매물 목록' },
+      { path: '/properties/external-listings', label: '광고노트' },
+      { path: '/properties/naver-my-ads', label: '내광고관리' },
+    ],
+  },
+  { path: '/contacts', label: '연락처', icon: BookUser, group: 'menu' },
+  { path: '/deals', label: '거래관리', icon: Handshake, group: 'menu' },
+  { path: '/matches', label: '매칭', icon: GitBranch, group: 'menu' },
+  { path: '/network', label: '네트워크', icon: Network, group: 'menu' },
+  { path: '/partner-brokers', label: '파트너 중개사', icon: Briefcase, group: 'menu' },
+  { path: '/consultations', label: '상담기록', icon: MessageSquare, group: 'menu' },
+  { path: '/calls', label: '통화 관리', icon: PhoneCall, group: 'menu' },
+  { path: '/buyer-requirements', label: '구매고객', icon: UserSearch, group: 'menu' },
+  { path: '/tasks', label: '업무', icon: ListTodo, group: 'menu' },
+  { path: '/calendar', label: '캘린더', icon: CalendarDays, group: 'menu' },
+  { path: '/sites', label: '관리단지', icon: Map, group: 'menu' },
+  { path: '/contracts', label: '계약서 관리', icon: FileText, group: 'menu' },
   {
     path: '/cashflow',
-    label: '수금/정산',
+    label: '수수료/정산',
     icon: Wallet,
-    group: 'deals',
+    group: 'menu',
     children: [
       { path: '/cashflow', label: '캐시플로우', roles: ['owner', 'manager'] },
       { path: '/cashflow/ledger', label: '수금 원장', roles: ['owner', 'manager'] },
@@ -104,16 +99,12 @@ export const NAV_ITEMS: NavItem[] = [
       { path: '/cashflow/expenses', label: '고정비 설정', roles: ['owner', 'manager'] },
     ],
   },
+  { path: '/employees', label: '직원관리', icon: Users, group: 'menu', roles: ['owner', 'manager'] },
 
-  // ── 네트워크
-  { path: '/network', label: '중개방', icon: Network, group: 'network' },
-  { path: '/partner-brokers', label: '파트너 중개사', icon: Store, group: 'network' },
-
-  // ── 운영
-  { path: '/employees', label: '직원', icon: Users, group: 'operations', roles: ['owner', 'manager'] },
-  { path: '/service-vendors', label: '업체 디렉토리', icon: Wrench, group: 'operations' },
-  { path: '/documents', label: '자료실', icon: FolderOpen, group: 'operations' },
-  { path: '/settings', label: '설정', icon: Settings, group: 'operations' },
+  // ── 서비스
+  { path: '/service-vendors', label: '협력업체 찾기', icon: Store, group: 'services' },
+  { path: '/documents', label: '자료실', icon: FolderOpen, group: 'services' },
+  { path: '/settings', label: '설정', icon: Settings, group: 'services' },
 ]
 
 /** active 하이라이트 prefix 충돌 제거용 — 모든 네비 경로 (item + children) */
@@ -137,11 +128,15 @@ export function getNavGroups(role?: string): NavGroupWithItems[] {
     ...group,
     items: NAV_ITEMS.filter(
       (item) => item.group === group.key && visible(item.roles),
-    ).map((item) =>
-      item.children
-        ? { ...item, children: item.children.filter((c) => visible(c.roles)) }
-        : item,
-    ),
+    )
+      .map((item) => {
+        if (!item.children) return item
+        const children = item.children.filter((c) => visible(c.roles))
+        // 부모는 링크로 렌더링되므로, role 필터를 통과한 첫 하위 경로를
+        // 가리켜야 함 (예: agent의 수수료/정산 → /cashflow/my-settlement)
+        return { ...item, children, path: children[0]?.path ?? item.path }
+      })
+      .filter((item) => !item.children || item.children.length > 0),
   })).filter((group) => group.items.length > 0)
 }
 
@@ -153,15 +148,16 @@ export function getNavGroups(role?: string): NavGroupWithItems[] {
 export const ROUTE_LABELS: Record<string, string> = {
   // 홈
   '/_authenticated/dashboard': '대시보드',
-  '/_authenticated/inbox/': '업무함',
+  '/_authenticated/ai-chat/': 'AI 채팅',
+  '/_authenticated/inbox/': 'AI 검토함',
   '/_authenticated/tasks/': '업무',
   '/_authenticated/calendar/': '캘린더',
   // 매물
-  '/_authenticated/properties/': '매물장',
+  '/_authenticated/properties/': '매물 목록',
   '/_authenticated/properties/$id': '매물 상세',
   '/_authenticated/properties/new': '매물 등록',
   '/_authenticated/properties/external-listings': '광고노트',
-  '/_authenticated/properties/naver-my-ads': '내 광고',
+  '/_authenticated/properties/naver-my-ads': '내광고관리',
   '/_authenticated/sites/': '관리단지',
   // 고객
   '/_authenticated/contacts/': '연락처',
@@ -169,28 +165,40 @@ export const ROUTE_LABELS: Record<string, string> = {
   '/_authenticated/contacts/new': '연락처 추가',
   '/_authenticated/buyer-requirements/': '구매고객',
   '/_authenticated/consultations/': '상담기록',
-  '/_authenticated/calls/': '통화기록',
+  '/_authenticated/calls/': '통화 관리',
   // 거래
   '/_authenticated/matches/': '매칭',
-  '/_authenticated/deals/': '거래',
-  '/_authenticated/contracts/': '계약',
-  '/_authenticated/cashflow/': '수금/정산',
+  '/_authenticated/deals/': '거래관리',
+  '/_authenticated/contracts/': '계약서 관리',
+  '/_authenticated/cashflow/': '수수료/정산',
   '/_authenticated/cashflow/ledger': '수금 원장',
   '/_authenticated/cashflow/partner-commissions': '공동중개 수수료',
   '/_authenticated/cashflow/employee-settlements': '직원 정산',
   '/_authenticated/cashflow/my-settlement': '내 수수료',
   '/_authenticated/cashflow/expenses': '고정비 설정',
   // 네트워크
-  '/_authenticated/network/': '중개방',
+  '/_authenticated/network/': '네트워크',
   '/_authenticated/partner-brokers/': '파트너 중개사',
   // 운영
-  '/_authenticated/employees/': '직원',
-  '/_authenticated/service-vendors/': '업체 디렉토리',
+  '/_authenticated/employees/': '직원관리',
+  '/_authenticated/service-vendors/': '협력업체 찾기',
   '/_authenticated/documents/': '자료실',
   '/_authenticated/documents/photos': '사진 자료',
   '/_authenticated/settings/': '설정',
   // 기타 (인증 셸 밖이지만 라벨 일관성 위해 포함)
   '/onboarding/office': '사무소 설정',
+}
+
+/** 현재 경로의 최상위 네비 항목 아이콘 (헤더 페이지 타이틀용). 네비에 없는 경로는 undefined. */
+export function getNavIcon(pathname: string): LucideIcon | undefined {
+  let best: NavItem | undefined
+  for (const item of NAV_ITEMS) {
+    const paths = [item.path, ...(item.children?.map((c) => c.path) ?? [])]
+    if (paths.some((p) => pathname === p || pathname.startsWith(`${p}/`))) {
+      if (!best || item.path.length > best.path.length) best = item
+    }
+  }
+  return best?.icon
 }
 
 export interface BreadcrumbEntry {
@@ -234,8 +242,13 @@ function flattenNav(): FlatNavEntry[] {
 /**
  * 현재 라우트의 브레드크럼 체인 derive: 그룹 > (상위 메뉴) > 페이지.
  * ROUTE_LABELS에 없는 라우트는 가장 가까운 네비 항목 라벨 → 그룹 라벨 순 fallback.
+ * role을 주면 상위 메뉴 크럼 링크가 role이 접근 가능한 첫 하위 경로를 가리킨다.
  */
-export function getBreadcrumb(routeId: string, pathname: string): BreadcrumbEntry[] {
+export function getBreadcrumb(
+  routeId: string,
+  pathname: string,
+  role?: string,
+): BreadcrumbEntry[] {
   const entries = flattenNav()
   let best: FlatNavEntry | undefined
   for (const entry of entries) {
@@ -247,10 +260,20 @@ export function getBreadcrumb(routeId: string, pathname: string): BreadcrumbEntr
   const pageLabel = ROUTE_LABELS[routeId] ?? best?.label ?? best?.groupLabel ?? ''
   if (!pageLabel) return []
 
+  const visible = (roles?: NavRole[]) =>
+    !roles || (!!role && roles.includes(role as NavRole))
+
   const crumbs: BreadcrumbEntry[] = []
   if (best) crumbs.push({ label: best.groupLabel })
   if (best?.parent && best.parent.label !== pageLabel) {
-    crumbs.push({ label: best.parent.label, to: best.parent.path })
+    // 사이드바와 동일 규칙: role이 볼 수 있는 첫 하위 경로로 링크
+    const parentItem = NAV_ITEMS.find(
+      (i) => i.path === best!.parent!.path && i.children,
+    )
+    const to = parentItem
+      ? parentItem.children!.filter((c) => visible(c.roles))[0]?.path
+      : best.parent.path
+    crumbs.push({ label: best.parent.label, to })
   }
   if (best && best.label !== pageLabel) {
     crumbs.push({ label: best.label, to: best.path })

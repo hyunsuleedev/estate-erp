@@ -80,7 +80,7 @@ const MOVE_IN_TYPES = [
   { value: 'unknown', label: '미정' },
 ] as const;
 
-type TransactionType = 'sale' | 'jeonse' | 'monthly' | 'yearly_rent';
+type TransactionType = 'sale' | 'jeonse' | 'monthly';
 type MoveInType = (typeof MOVE_IN_TYPES)[number]['value'];
 
 interface FormState {
@@ -268,9 +268,6 @@ function NewPropertyPage() {
       if (form.transactionType === 'sale' || form.transactionType === 'jeonse') {
         if (!form.price) throw new Error('가격을 입력하세요.');
       }
-      if (form.transactionType === 'yearly_rent') {
-        if (!form.price) throw new Error('연세(연간 총액)를 입력하세요.');
-      }
       if (form.transactionType === 'monthly') {
         if (!form.monthlyRent) throw new Error('월세를 입력하세요.');
       }
@@ -355,7 +352,6 @@ function NewPropertyPage() {
 
   const showPrice =
     form.transactionType === 'sale' || form.transactionType === 'jeonse';
-  const showYearly = form.transactionType === 'yearly_rent';
   const showRent = form.transactionType === 'monthly';
 
   return (
@@ -522,7 +518,7 @@ function NewPropertyPage() {
         <Section step={2} title="거래 정보" subtitle="가격은 만원 단위로 입력합니다.">
           <FieldRow label="거래유형" required>
             <div className="flex gap-2">
-              {(['sale', 'jeonse', 'monthly', 'yearly_rent'] as TransactionType[]).map((t) => {
+              {(['sale', 'jeonse', 'monthly'] as TransactionType[]).map((t) => {
                 const hasExisting = (existingProperty?.listings ?? []).some(
                   (l) => l.transactionType === t,
                 );
@@ -576,40 +572,6 @@ function NewPropertyPage() {
                 placeholder="158000"
               />
             </FieldRow>
-          )}
-
-          {showYearly && (
-            <div className="grid grid-cols-2 gap-3">
-              <FieldRow
-                label="보증금 (만원)"
-                hint={form.deposit ? formatMoney(Number(form.deposit)) : undefined}
-              >
-                <Input
-                  type="number"
-                  inputMode="numeric"
-                  value={form.deposit}
-                  onChange={(e) => set('deposit', e.target.value)}
-                  placeholder="1000"
-                />
-              </FieldRow>
-              <FieldRow
-                label="연세 (연간 총액, 만원)"
-                required
-                hint={
-                  form.price
-                    ? `${formatMoney(Number(form.price))} / 년`
-                    : '1년치 임대료 선납 총액'
-                }
-              >
-                <Input
-                  type="number"
-                  inputMode="numeric"
-                  value={form.price}
-                  onChange={(e) => set('price', e.target.value)}
-                  placeholder="1200"
-                />
-              </FieldRow>
-            </div>
           )}
 
           {showRent && (

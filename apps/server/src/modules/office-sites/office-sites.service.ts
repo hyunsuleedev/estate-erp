@@ -24,7 +24,14 @@ export class OfficeSitesService {
                 },
               },
             },
-            _count: { select: { dongs: true, units: true, properties: { where: { officeId } } } },
+            _count: {
+              select: {
+                // placeholder Dong(단일동 건물의 가짜 동)은 동 수에서 제외 — UI 규칙과 일치
+                dongs: { where: { isPlaceholder: false } },
+                units: true,
+                properties: { where: { officeId } },
+              },
+            },
           },
         },
       },

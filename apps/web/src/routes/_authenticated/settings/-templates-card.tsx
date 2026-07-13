@@ -61,7 +61,6 @@ const TX_TYPE_OPTIONS = [
   { value: 'sale', label: '매매' },
   { value: 'jeonse', label: '전세' },
   { value: 'monthly', label: '월세' },
-  { value: 'yearly_rent', label: '연세' },
 ];
 
 const txTypeLabel = (value: string) =>

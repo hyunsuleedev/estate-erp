@@ -12,6 +12,7 @@ import type {
   Deal,
   UpdateContractDocumentDto,
 } from '@estate-erp/api-client';
+import { mergeResidentialSaleAgreementMetadata } from '@estate-erp/shared';
 import { mergeContractDocumentEngineMetadata } from './-document-engine';
 import {
   ContractTransactionTypeBadge,
@@ -361,11 +362,18 @@ function ContractsPage() {
 
   function saveDocument() {
     setDocumentFormError(null);
+    const savedAt = new Date().toISOString();
 
-    const metadata = mergeContractDocumentEngineMetadata(
+    const engineMetadata = mergeContractDocumentEngineMetadata(
       documentEditorForm.metadata,
       documentEditorForm.engineFields,
     );
+    const metadata = documentEditorForm.saleAgreement
+      ? mergeResidentialSaleAgreementMetadata(
+          engineMetadata,
+          documentEditorForm.saleAgreement,
+        )
+      : engineMetadata;
     const title =
       documentEditorForm.engineFields.documentTitle.trim() || documentEditorForm.title;
 
@@ -378,6 +386,14 @@ function ContractsPage() {
         title,
         status: documentEditorForm.status,
         fileUrl: documentEditorForm.fileUrl.trim() || undefined,
+        signedAt:
+          documentEditorForm.status === 'signed'
+            ? documentEditorForm.signedAt || savedAt
+            : documentEditorForm.signedAt || undefined,
+        submittedAt:
+          documentEditorForm.status === 'submitted'
+            ? documentEditorForm.submittedAt || savedAt
+            : documentEditorForm.submittedAt || undefined,
         memo: documentEditorForm.memo.trim() || null,
         metadata,
       },
@@ -661,7 +677,6 @@ function ContractsPage() {
     </div>
   );
 }
-
 function ContractsTable({
   contracts,
   isFiltered,

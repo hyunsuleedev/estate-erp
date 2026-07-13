@@ -20,6 +20,48 @@ describe('McpToolsService', () => {
       update: jest.fn().mockResolvedValue({ id: 'intake-1' }),
       remove: jest.fn().mockResolvedValue({ id: 'intake-1', status: 'cancelled' }),
     };
+    const contracts = {
+      prepareSaleContractDraft: jest.fn().mockResolvedValue({
+        document: {
+          id: 'document-1',
+          title: '부동산 매매계약서',
+          status: 'draft',
+        },
+        revision: {
+          id: 'revision-1',
+          revisionNo: 1,
+          contentHash: 'a'.repeat(64),
+          payload: { contractAgreement: { schemaVersion: 1 } },
+        },
+        validation: { errors: [], warnings: [], isReadyForGeneration: true },
+      }),
+      validateSaleContractDraft: jest.fn().mockResolvedValue({
+        errors: [],
+        warnings: [],
+        isReadyForGeneration: true,
+      }),
+    };
+    const tasks = {
+      create: jest.fn().mockResolvedValue({ id: 'task-1' }),
+      update: jest.fn().mockResolvedValue({ id: 'task-1' }),
+    };
+    const inbox = {
+      upsertAgentReview: jest.fn().mockResolvedValue({ id: 'review-1' }),
+    };
+    const controlPlane = {
+      getOrCreateSession: jest.fn().mockResolvedValue({
+        id: 'session-1',
+        taskId: null,
+      }),
+      updateSession: jest.fn().mockImplementation(
+        async (_officeId: string, _sessionId: string, input: Record<string, unknown>) => ({
+          id: 'session-1',
+          taskId: input.taskId ?? 'task-1',
+          ...input,
+        }),
+      ),
+      appendActivity: jest.fn().mockResolvedValue({ id: 'activity-1' }),
+    };
     const noop = {};
 
     const service = new (McpToolsService as any)(
@@ -30,6 +72,8 @@ describe('McpToolsService', () => {
       noop,
       noop,
       noop,
+      contracts,
+      tasks,
       noop,
       noop,
       noop,
@@ -45,16 +89,24 @@ describe('McpToolsService', () => {
       noop,
       noop,
       noop,
-      noop,
-      noop,
-      noop,
-      noop,
+      noop, // proposals
+      inbox,
       listingAdvertisements,
       noop, // officeAdvertisements
       listingIntakes,
+      controlPlane,
     ) as McpToolsService;
 
-    return { service, listings, listingAdvertisements, listingIntakes };
+    return {
+      service,
+      listings,
+      listingAdvertisements,
+      listingIntakes,
+      contracts,
+      tasks,
+      inbox,
+      controlPlane,
+    };
   }
 
   it('registers listing intake table CRUD tools', () => {
@@ -202,5 +254,97 @@ describe('McpToolsService', () => {
         memo: '광고 내림',
       }),
     );
+  });
+
+  it('registers sale contract draft preparation and validation tools', () => {
+    const { service } = createService();
+    const definitions = service.getToolDefinitions();
+
+    expect(definitions.map((tool) => tool.name)).toEqual(
+      expect.arrayContaining(['prepare_sale_contract_draft', 'validate_sale_contract_draft']),
+    );
+    expect(definitions.find((tool) => tool.name === 'prepare_sale_contract_draft')?.description).toContain(
+      '불변 revision',
+    );
+  });
+
+  it('delegates sale contract draft preparation without completing the document', async () => {
+    const { service, contracts, tasks, inbox, controlPlane } = createService();
+
+    const result = await service.executeTool(
+      'prepare_sale_contract_draft',
+      {
+        contractId: 'contract-1',
+        actualAgreementAt: '2026-07-20',
+        conditions: '잔금 지급과 동시에 인도한다.',
+        rightsTransferDetails: '잔금과 동시에 근저당을 말소한다.',
+      },
+      ctx,
+    );
+
+    expect(result.isError).toBe(false);
+    expect(contracts.prepareSaleContractDraft).toHaveBeenCalledWith(
+      'contract-1',
+      'office-1',
+      'user-1',
+      expect.objectContaining({
+        actualAgreementAt: '2026-07-20',
+        conditions: '잔금 지급과 동시에 인도한다.',
+        rightsTransferDetails: '잔금과 동시에 근저당을 말소한다.',
+      }),
+      'agent:contract-writer',
+    );
+    expect(tasks.create).toHaveBeenCalledWith(
+      'office-1',
+      expect.objectContaining({
+        source: 'ai',
+        assignedToId: 'user-1',
+        contractId: 'contract-1',
+      }),
+      'user-1',
+    );
+    expect(inbox.upsertAgentReview).toHaveBeenCalledWith(
+      expect.objectContaining({
+        contractId: 'contract-1',
+        agentSessionId: 'session-1',
+        dedupeKey: 'contract:contract-1:sale-agreement',
+        proposedChanges: expect.objectContaining({
+          documentId: 'document-1',
+          revisionId: 'revision-1',
+          contentHash: 'a'.repeat(64),
+          _artifactRevision: expect.objectContaining({ revisionNo: 1 }),
+        }),
+      }),
+    );
+    expect(controlPlane.appendActivity).toHaveBeenCalledWith(
+      'office-1',
+      expect.objectContaining({
+        sessionId: 'session-1',
+        type: 'elicitation',
+      }),
+    );
+  });
+
+  it('registers the durable agent run protocol tools', () => {
+    const { service } = createService();
+    expect(service.getToolDefinitions().map((tool) => tool.name)).toEqual(
+      expect.arrayContaining([
+        'agent_start_session',
+        'agent_claim_wakeup',
+        'agent_renew_run',
+        'agent_append_activity',
+        'agent_complete_run',
+      ]),
+    );
+  });
+
+  it('delegates sale contract draft validation as a read-only tool', async () => {
+    const { service, contracts } = createService();
+
+    const result = await service.executeTool('validate_sale_contract_draft', { contractId: 'contract-1' }, ctx);
+
+    expect(result.isError).toBe(false);
+    expect(contracts.validateSaleContractDraft).toHaveBeenCalledWith('contract-1', 'office-1');
+    expect(contracts.prepareSaleContractDraft).not.toHaveBeenCalled();
   });
 });

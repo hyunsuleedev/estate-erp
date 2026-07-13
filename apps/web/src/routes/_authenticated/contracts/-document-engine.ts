@@ -1,3 +1,9 @@
+import {
+  createResidentialSaleAgreementDraft,
+  readResidentialSaleAgreement,
+  type ResidentialSaleAgreementDraft,
+} from '@estate-erp/shared';
+
 export type ContractDocumentEngineMetadata = Record<string, unknown>;
 
 export type ContractDocumentEngineTemplate = {
@@ -14,9 +20,15 @@ export type ContractDocumentEngineDocument = {
 };
 
 export type ContractDocumentEngineContact = {
+  id?: string | null;
   name?: string | null;
   phone?: string | null;
   address?: string | null;
+  phones?: Array<{
+    phone: string;
+    isPrimary: boolean;
+    isActive: boolean;
+  }>;
 };
 
 export type ContractDocumentEngineProperty = {
@@ -32,6 +44,9 @@ export type ContractDocumentEngineProperty = {
     dong?: {
       name?: string | null;
       isPlaceholder?: boolean;
+    } | null;
+    siteUnitType?: {
+      exclusiveAreaM2?: number | string | null;
     } | null;
   } | null;
 };
@@ -52,6 +67,13 @@ export type ContractDocumentEngineContract = {
   leaseEndDate?: string | null;
   specialTerms?: string | null;
   memo?: string | null;
+  office?: {
+    name?: string | null;
+    licenseNo?: string | null;
+    ceoName?: string | null;
+    phone?: string | null;
+    address?: string | null;
+  } | null;
   buyerContact?: ContractDocumentEngineContact | null;
   sellerContact?: ContractDocumentEngineContact | null;
   deal?: {
@@ -61,6 +83,78 @@ export type ContractDocumentEngineContract = {
     } | null;
   } | null;
 };
+
+export function buildResidentialSaleAgreement(
+  contract: ContractDocumentEngineContract,
+  template: ContractDocumentEngineTemplate,
+  document?: ContractDocumentEngineDocument | null,
+): ResidentialSaleAgreementDraft | null {
+  if (template.code !== 'base_contract' || contract.transactionType !== 'sale') {
+    return null;
+  }
+
+  const stored = readResidentialSaleAgreement(document?.metadata);
+  if (stored) return stored;
+
+  const property = contract.deal?.property ?? contract.deal?.listing?.property;
+  const dong = property?.unit?.dong;
+  const targetDescription = [
+    property?.site?.name,
+    dong && !dong.isPlaceholder ? dong.name : null,
+    property?.unit?.name,
+  ]
+    .filter(Boolean)
+    .join(' ');
+
+  return createResidentialSaleAgreementDraft({
+    actualAgreementAt: contract.contractDate,
+    writtenAt: contract.contractDate,
+    property: {
+      roadAddress: property?.site?.roadAddress ?? '',
+      jibunAddress: property?.site?.jibunAddress ?? '',
+      targetDescription,
+      buildingAreaM2: toNullableEngineNumber(
+        property?.unit?.exclusiveAreaM2 ?? property?.unit?.siteUnitType?.exclusiveAreaM2,
+      ),
+    },
+    payment: {
+      totalPriceManwon: contract.totalPrice,
+      depositManwon: contract.statedDeposit,
+      depositDueAt: contract.contractDate ?? undefined,
+      interimManwon: contract.statedInterimPayment,
+      interimDueAt: contract.statedInterimDate ?? undefined,
+      balanceManwon: contract.statedBalance,
+      balanceDueAt: contract.statedBalanceDate ?? undefined,
+    },
+    transfer: {
+      deliveryAt: contract.moveInDate ?? contract.statedBalanceDate ?? undefined,
+      ownershipTransferAt: contract.statedBalanceDate ?? undefined,
+      explanationDeliveredAt: contract.contractDate ?? undefined,
+      rightsTransferDetails:
+        '잔금 지급과 동시에 소유권이전등기에 필요한 서류를 교부하고 권리관계를 정리한다.',
+    },
+    seller: {
+      contactId: contract.sellerContact?.id ?? null,
+      name: contract.sellerContact?.name ?? '',
+      address: contract.sellerContact?.address ?? '',
+      phone: getEngineContactPhone(contract.sellerContact),
+    },
+    buyer: {
+      contactId: contract.buyerContact?.id ?? null,
+      name: contract.buyerContact?.name ?? '',
+      address: contract.buyerContact?.address ?? '',
+      phone: getEngineContactPhone(contract.buyerContact),
+    },
+    brokerage: {
+      officeName: contract.office?.name ?? '',
+      registrationNo: contract.office?.licenseNo ?? '',
+      representativeName: contract.office?.ceoName ?? '',
+      address: contract.office?.address ?? '',
+      phone: contract.office?.phone ?? '',
+    },
+    specialTerms: contract.specialTerms,
+  });
+}
 
 export type ContractDocumentEngineFields = {
   documentTitle: string;
@@ -170,7 +264,10 @@ export function buildContractDocumentEngineDraft({
 export function getContractDocumentEngineWorkflow(
   template: ContractDocumentEngineTemplate,
 ): ContractDocumentEngineWorkflow {
-  const byCode: Record<string, Pick<ContractDocumentEngineWorkflow, 'inputFormName' | 'reportName'>> = {
+  const byCode: Record<
+    string,
+    Pick<ContractDocumentEngineWorkflow, 'inputFormName' | 'reportName'>
+  > = {
     base_contract: {
       inputFormName: 'ContractInputForm',
       reportName: 'ApartmentTradeContractReport',
@@ -342,12 +439,8 @@ function buildDefaultFields(
     writtenDate: formatEngineDate(baseDate),
     contractDateText: formatDateText(contract.contractDate),
     propertyLabel: [siteName, dongName, unitName].filter(Boolean).join(' ') || '-',
-    propertyAddress:
-      property?.site?.roadAddress ?? property?.site?.jibunAddress ?? '-',
-    propertyAreaText: formatAreaText(
-      property?.unit?.exclusiveAreaM2,
-      property?.unit?.supplyAreaM2,
-    ),
+    propertyAddress: property?.site?.roadAddress ?? property?.site?.jibunAddress ?? '-',
+    propertyAreaText: formatAreaText(property?.unit?.exclusiveAreaM2, property?.unit?.supplyAreaM2),
     partyOneRole: partyRoles.partyOne,
     partyOneName: seller?.name ?? '',
     partyOneAddress: seller?.address ?? '',
@@ -452,7 +545,13 @@ export function getContractDocumentEngineFieldGroups(
   if (category === 'attachment' || category === 'guarantee') {
     groups.push({
       title: '정산/보증',
-      fields: [{ key: 'settlementMemo', label: '정산/보증 표시 문구', multiline: true }],
+      fields: [
+        {
+          key: 'settlementMemo',
+          label: '정산/보증 표시 문구',
+          multiline: true,
+        },
+      ],
     });
   }
 
@@ -495,14 +594,26 @@ export function getContractDocumentEngineSections(
       title: '4. 서식 본문',
       rows: [
         { label: '본문', value: fields.bodyText || '-', multiline: true },
-        { label: '근거/확인 기준', value: fields.legalBasisText || '-', multiline: true },
+        {
+          label: '근거/확인 기준',
+          value: fields.legalBasisText || '-',
+          multiline: true,
+        },
       ],
     },
     {
       title: '5. 특약 및 확인사항',
       rows: [
-        { label: '특약사항', value: fields.specialTerms || '-', multiline: true },
-        { label: '확인 메모', value: fields.confirmationMemo || '-', multiline: true },
+        {
+          label: '특약사항',
+          value: fields.specialTerms || '-',
+          multiline: true,
+        },
+        {
+          label: '확인 메모',
+          value: fields.confirmationMemo || '-',
+          multiline: true,
+        },
       ],
     },
   ];
@@ -602,7 +713,6 @@ function getTransactionTypeLabel(transactionType: string) {
     sale: '매매',
     jeonse: '전세',
     monthly: '월세',
-    yearly_rent: '연세',
     exchange: '교환',
     sublease: '전대',
     transfer: '권리양도',
@@ -645,10 +755,7 @@ function buildLeasePeriod(contract: ContractDocumentEngineContract) {
   return `${formatDateText(contract.leaseStartDate)}부터 ${formatDateText(contract.leaseEndDate)}까지`;
 }
 
-function formatParty(
-  fields: ContractDocumentEngineFields,
-  prefix: 'partyOne' | 'partyTwo',
-) {
+function formatParty(fields: ContractDocumentEngineFields, prefix: 'partyOne' | 'partyTwo') {
   const name = fields[`${prefix}Name`];
   const address = fields[`${prefix}Address`];
   const phone = fields[`${prefix}Phone`];
@@ -668,10 +775,7 @@ function formatAreaText(
 }
 
 /** "전용 84.92㎡ (25.7평)" — 평 = m² × 0.3025, 소수 1자리 */
-function formatSingleArea(
-  prefix: string,
-  m2: number | string | null | undefined,
-) {
+function formatSingleArea(prefix: string, m2: number | string | null | undefined) {
   if (m2 == null || m2 === '') return null;
   const value = typeof m2 === 'string' ? Number(m2) : m2;
   if (Number.isNaN(value) || value <= 0) return null;
@@ -767,11 +871,25 @@ function defaultReceiptMemo(category: string) {
 }
 
 function defaultLedgerMemo(category: string) {
-  return category === 'report' ? '거래대장 및 신고 출력 전 금액, 일정, 당사자 정보를 재확인합니다.' : '';
+  return category === 'report'
+    ? '거래대장 및 신고 출력 전 금액, 일정, 당사자 정보를 재확인합니다.'
+    : '';
 }
 
 function defaultSettlementMemo(category: string) {
   return category === 'guarantee' || category === 'attachment'
     ? '보증, 정산, 첨부 서류의 표시 항목을 사무소 기준에 맞게 확인합니다.'
     : '';
+}
+
+function getEngineContactPhone(contact: ContractDocumentEngineContact | null | undefined) {
+  const primary = contact?.phones?.find((phone) => phone.isActive && phone.isPrimary);
+  const active = contact?.phones?.find((phone) => phone.isActive);
+  return primary?.phone ?? active?.phone ?? contact?.phone ?? '';
+}
+
+function toNullableEngineNumber(value: number | string | null | undefined) {
+  if (value === null || value === undefined || value === '') return null;
+  const parsed = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
 }

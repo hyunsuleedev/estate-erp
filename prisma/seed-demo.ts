@@ -500,8 +500,8 @@ async function seedProperties(
 }
 
 // ─────────────────────────────────────────────────────────────
-// ListingIntake + Listing — 의뢰(intake) 7 건 / 매물 9 개
-// (매매 5 / 전세 2 / 월세 1 / 연세 1)
+// ListingIntake + Listing — 의뢰(intake) 7 건 / 매물 8 개
+// (매매 5 / 전세 2 / 월세 1)
 // 같은 intake 에 transactionType 중복 불가 (@@unique [intakeId, transactionType])
 // → 같은 Property 의 매매 2건(P2/P2B)은 별도 의뢰로 분리.
 // ─────────────────────────────────────────────────────────────
@@ -623,7 +623,7 @@ async function seedListings(
       viewingMemo: '월세 세입자 거주중 — 1주일 전 통보 필요',
       fieldMemo: '반려동물 가능, 단기 임대 협의 가능',
       nextConfirmInDays: 10,
-      memo: `${DEMO_TAG} 월세/연세 의뢰`,
+      memo: `${DEMO_TAG} 월세 의뢰`,
     },
   ];
 
@@ -656,7 +656,7 @@ async function seedListings(
   const defs: Array<{
     propertyIdx: number;
     intakeKey: string;
-    transactionType: 'sale' | 'jeonse' | 'monthly' | 'yearly_rent';
+    transactionType: 'sale' | 'jeonse' | 'monthly';
     price?: number;
     deposit?: number;
     monthlyRent?: number;
@@ -760,18 +760,6 @@ async function seedListings(
       price: 315000,
       checkStatus: 'hold',
       memo: `${DEMO_TAG} 보류 · 집주인 여행중`,
-    },
-    {
-      propertyIdx: 5, // 월세와 같은 의뢰(P5)에 연세 옵션 동시 등록
-      intakeKey: 'P5',
-      transactionType: 'yearly_rent',
-      deposit: 5000,
-      price: 2040, // 연세 — 연간 임대료 총액 (만원, 월 170 환산)
-      maintenanceFee: 12,
-      maintenanceFeeIncludes: ['water', 'internet', 'tv'],
-      privateMemo: `${DEMO_TAG} 내부메모 — 연세 일시납 시 월 10만 할인 가능`,
-      checkStatus: 'verified',
-      memo: `${DEMO_TAG} 연세 — 연 2,040 일시납`,
     },
   ];
 

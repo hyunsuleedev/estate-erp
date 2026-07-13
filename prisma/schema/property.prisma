@@ -92,9 +92,9 @@ model Listing {
   officeId                 String    @map("office_id") @db.Uuid
   propertyId               String    @map("property_id") @db.Uuid
   intakeId                 String    @map("intake_id") @db.Uuid
-  transactionType          String    @map("transaction_type") // sale, jeonse, monthly, yearly_rent
+  transactionType          String    @map("transaction_type") // sale, jeonse, monthly
   price                    Int? // 매매가/전세가 (만원)
-  deposit                  Int? // 보증금 (만원, monthly/yearly_rent일 때)
+  deposit                  Int? // 보증금 (만원, monthly일 때)
   monthlyRent              Int?      @map("monthly_rent") // 월세 (만원)
   maintenanceFee           Int?      @map("maintenance_fee") // 관리비 (만원)
   /// 관리비 포함 항목 slug: water, electricity, gas, internet, tv, cleaning, parking, heating

@@ -30,9 +30,14 @@ import {
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import { RequireRole } from '@/components/layout/require-role';
 
 export const Route = createFileRoute('/_authenticated/cashflow/partner-commissions')({
-  component: PartnerCommissionsPage,
+  component: () => (
+    <RequireRole roles={['owner', 'manager']} fallback="/cashflow/my-settlement">
+      <PartnerCommissionsPage />
+    </RequireRole>
+  ),
 });
 
 type PartnerAggregate = {

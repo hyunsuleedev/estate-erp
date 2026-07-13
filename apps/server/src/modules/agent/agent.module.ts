@@ -13,6 +13,7 @@ import { LeaseExpiryRule } from './rule/implementations/lease-expiry.rule';
 import { NewExternalListingsRule } from './rule/implementations/new-external-listings.rule';
 import { TransactionReportDeadlineRule } from './rule/implementations/transaction-report-deadline.rule';
 import { RULE_REGISTRY } from './rule/rule.types';
+import { AgentControlPlaneService } from './control-plane/control-plane.service';
 
 /**
  * AgentModule
@@ -39,6 +40,7 @@ import { RULE_REGISTRY } from './rule/rule.types';
     ProposalService,
     ExecutorService,
     AssignmentService,
+    AgentControlPlaneService,
     RuleEngineService,
     AdTakedownRule,
     LeaseExpiryRule,
@@ -60,6 +62,11 @@ import { RULE_REGISTRY } from './rule/rule.types';
       ],
     },
   ],
-  exports: [ProposalService, RuleEngineService, ExecutorService],
+  exports: [
+    ProposalService,
+    RuleEngineService,
+    ExecutorService,
+    AgentControlPlaneService,
+  ],
 })
 export class AgentModule {}

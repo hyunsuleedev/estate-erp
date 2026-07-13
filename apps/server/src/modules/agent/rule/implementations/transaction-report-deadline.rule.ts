@@ -15,7 +15,7 @@ import { ProposalDraft, ProposalPriority, Rule, RuleContext } from '../rule.type
  * 판정 로직:
  *   status != 'cancelled' 인 Contract 중 contractDate 가 있고,
  *     (a) transactionType = 'sale'                        → 부동산 거래신고 대상
- *     (b) transactionType ∈ (jeonse, monthly, yearly_rent)
+ *     (b) transactionType ∈ (jeonse, monthly)
  *         AND (보증금 > 6,000만원 OR 월세 > 30만원)        → 임대차 신고 대상
  *   인데 category='report' 인 ContractDocument 에 submittedAt 이 채워진 게
  *   하나도 없으면 신고 미완료로 본다.
@@ -71,7 +71,7 @@ export class TransactionReportDeadlineRule implements Rule {
   /** 임대차 신고 대상 월세 기준 (만원). 초과 시 대상. */
   private static readonly LEASE_RENT_THRESHOLD = 30;
   /** 임대차 신고 대상 거래유형 */
-  private static readonly LEASE_TYPES = ['jeonse', 'monthly', 'yearly_rent'];
+  private static readonly LEASE_TYPES = ['jeonse', 'monthly'];
 
   constructor(private readonly prisma: PrismaService) {}
 
@@ -301,8 +301,6 @@ export class TransactionReportDeadlineRule implements Rule {
         return '전세';
       case 'monthly':
         return '월세';
-      case 'yearly_rent':
-        return '연세';
       default:
         return transactionType;
     }

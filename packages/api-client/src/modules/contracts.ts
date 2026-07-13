@@ -1,4 +1,5 @@
 import type { RequestFn } from '../client.js';
+import type { ResidentialSaleAgreementValidation } from '@estate-erp/shared';
 import type { Contact } from './contacts.js';
 import type { Deal } from './deals.js';
 
@@ -27,6 +28,19 @@ export interface ContractDocumentTemplate {
   updatedAt: string;
 }
 
+export interface ContractDocumentRevision {
+  id: string;
+  officeId: string;
+  documentId: string;
+  revisionNo: number;
+  contentHash: string;
+  payload: Record<string, unknown>;
+  createdBy: string;
+  createdAt: string;
+  appliedBy: string | null;
+  appliedAt: string | null;
+}
+
 export interface ContractDocument {
   id: string;
   officeId: string;
@@ -46,10 +60,12 @@ export interface ContractDocument {
   externalRefId: string | null;
   metadata: Record<string, unknown>;
   memo: string | null;
+  currentRevisionId: string | null;
   createdAt: string;
   updatedAt: string;
   template?: ContractDocumentTemplate | null;
   generatedBy?: { id: string; name: string } | null;
+  currentRevision?: ContractDocumentRevision | null;
 }
 
 export interface OfficePrintTemplate {
@@ -80,6 +96,15 @@ export interface ContractClauseTemplate {
   createdById: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface ContractOffice {
+  id: string;
+  name: string;
+  licenseNo: string | null;
+  ceoName: string | null;
+  phone: string | null;
+  address: string | null;
 }
 
 export interface Contract {
@@ -116,6 +141,7 @@ export interface Contract {
   requiredDocumentTemplates?: ContractDocumentTemplate[];
   documents?: ContractDocument[];
   deal?: Deal | null;
+  office?: ContractOffice | null;
   buyerContact?: Contact | null;
   sellerContact?: Contact | null;
 }
@@ -195,6 +221,25 @@ export interface UpdateContractDocumentDto {
   externalRefId?: string | null;
   metadata?: Record<string, unknown>;
   memo?: string | null;
+}
+
+export interface PrepareSaleContractDraftDto {
+  actualAgreementAt?: string;
+  conditions?: string;
+  specialTerms?: string;
+  rightsTransferDetails?: string;
+  explanationDeliveredAt?: string;
+}
+
+export interface PrepareSaleContractDraftResult {
+  document: ContractDocument;
+  revision: ContractDocumentRevision;
+  validation: ResidentialSaleAgreementValidation;
+}
+
+export interface ApplyContractDocumentRevisionResult {
+  document: ContractDocument;
+  revision: ContractDocumentRevision;
 }
 
 export interface ContractDocumentTemplateFilter {
@@ -312,6 +357,33 @@ export function createContractsApi(request: RequestFn) {
       }),
     documents: (contractId: string) =>
       request<ContractDocument[]>(`/contracts/${contractId}/documents`),
+    documentRevisions: (contractId: string, documentId: string) =>
+      request<ContractDocumentRevision[]>(
+        `/contracts/${contractId}/documents/${documentId}/revisions`,
+      ),
+    applyDocumentRevision: (
+      contractId: string,
+      documentId: string,
+      revisionId: string,
+      contentHash: string,
+    ) =>
+      request<ApplyContractDocumentRevisionResult>(
+        `/contracts/${contractId}/documents/${documentId}/revisions/${revisionId}/apply`,
+        { method: 'POST', body: { contentHash } },
+      ),
+    prepareSaleContractDraft: (
+      contractId: string,
+      dto: PrepareSaleContractDraftDto = {},
+    ) =>
+      request<PrepareSaleContractDraftResult>(
+        `/contracts/${contractId}/sale-contract-draft/prepare`,
+        { method: 'POST', body: dto },
+      ),
+    validateSaleContractDraft: (contractId: string, revisionId?: string) =>
+      request<ResidentialSaleAgreementValidation>(
+        `/contracts/${contractId}/sale-contract-draft/validate`,
+        { params: { revisionId } },
+      ),
     createDocument: (contractId: string, dto: CreateContractDocumentDto) =>
       request<ContractDocument>(`/contracts/${contractId}/documents`, {
         method: 'POST',

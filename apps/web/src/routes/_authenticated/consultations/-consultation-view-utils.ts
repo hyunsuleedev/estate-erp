@@ -442,7 +442,6 @@ export const transactionTypeLabels: Record<string, string> = {
   sale: '매매',
   jeonse: '전세',
   monthly: '월세',
-  yearly_rent: '연세',
 };
 
 export const buyerReqStatusLabels: Record<string, string> = {

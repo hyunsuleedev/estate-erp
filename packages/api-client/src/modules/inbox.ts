@@ -14,7 +14,7 @@ export type DraftOperation = 'create' | 'update' | 'delete' | 'action';
 
 export type DraftStatus =
   | 'pending'
-  | 'processing'  // AI 재작성 대기 (OpenClaw heartbeat 대기)
+  | 'processing' // durable wakeup을 받은 AI가 새 revision 작성 중
   | 'approved'
   | 'executing'
   | 'executed'
@@ -78,11 +78,27 @@ export interface InboxItem {
   dedupeKey: string | null;
 
   listingId: string | null;
+  listingIntakeId: string | null;
   propertyId: string | null;
   contactId: string | null;
   dealId: string | null;
   contractId: string | null;
   paymentId: string | null;
+
+  agentSessionId: string | null;
+  requestedByRunId: string | null;
+  agentSession: {
+    id: string;
+    agentKey: string;
+    status: string;
+    waitingReason: string | null;
+    task: {
+      id: string;
+      title: string;
+      status: string;
+      assignedTo: { id: string; name: string } | null;
+    } | null;
+  } | null;
 
   createdAt: string;
   updatedAt: string;
@@ -144,8 +160,8 @@ export function createInboxApi(request: RequestFn) {
       }),
 
     /**
-     * 재작성(revision) 완료 보고 — processing 상태 draft 의 proposedChanges 를
-     * 새 내용으로 교체하고 pending 으로 복귀시킨다.
+     * 일반 제안의 재작성 완료 보고. 불변 계약서 artifact는 이 API 대신
+     * 새 ContractDocumentRevision을 생성해야 한다.
      * readCommentIds 를 생략하면 모든 미읽음 코멘트가 읽음 처리된다.
      */
     submitRevision: (

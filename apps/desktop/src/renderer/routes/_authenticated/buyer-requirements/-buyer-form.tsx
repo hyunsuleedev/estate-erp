@@ -379,11 +379,7 @@ export function BuyerRequirementForm({
   };
 
   const priceLabel =
-    transactionType === 'jeonse'
-      ? '전세 보증금 범위'
-      : transactionType === 'yearly_rent'
-        ? '연세 범위 (연간 총액)'
-        : '매매가 범위';
+    transactionType === 'jeonse' ? '전세 보증금 범위' : '매매가 범위';
 
   return (
     <div className="max-w-3xl space-y-5">

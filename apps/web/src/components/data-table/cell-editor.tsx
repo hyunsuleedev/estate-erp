@@ -29,14 +29,26 @@ const CellEditContext = createContext<CellEditContextType>({
   stopEdit: () => {},
 });
 
+// 가상화 테이블에서 편집 중인 행이 화면 밖으로 나가 포털이 언마운트돼도
+// 입력 초안을 보존하는 저장소. 불변식: "현재 편집 중인 셀"의 초안만 보유한다 —
+// 편집 세션이 끝나면(다른 셀 편집 시작/종료) 즉시 비워 stale 복원을 막는다.
+const cellDraftStore = new Map<string, string>();
+const cellDraftKey = (recordId: string, field: string) => `${recordId}:${field}`;
+
 export function CellEditProvider({ children }: { children: React.ReactNode }) {
   const [editingCell, setEditingCell] = useState<{ recordId: string; field: string } | null>(null);
 
   const startEdit = useCallback((recordId: string, field: string) => {
+    // startEdit는 항상 새 편집 세션의 시작이다 — 가상화 스크롤아웃 복원 경로는
+    // startEdit를 다시 호출하지 않으므로(editingCell 유지, 포털만 재마운트),
+    // 여기서 무조건 비워도 정당한 초안은 지워지지 않는다. Provider/라우트가
+    // 재마운트돼 모듈 저장소에 남은 stale 초안도 이 시점에 함께 폐기된다.
+    cellDraftStore.clear();
     setEditingCell({ recordId, field });
   }, []);
 
   const stopEdit = useCallback(() => {
+    cellDraftStore.clear();
     setEditingCell(null);
   }, []);
 
@@ -138,6 +150,8 @@ export function EditableCell({
       {isEditing && cellRef.current && (
         <CellEditPortal
           anchorEl={cellRef.current}
+          recordId={recordId}
+          field={field}
           value={value}
           chipValueOf={chipValueOf}
           editType={editType}
@@ -168,6 +182,8 @@ export function EditableCell({
 
 interface CellEditPortalProps {
   anchorEl: HTMLElement;
+  recordId: string;
+  field: string;
   value: unknown;
   chipValueOf?: (value: unknown) => string | undefined;
   editType: 'text' | 'number' | 'select' | 'select-chip';
@@ -190,6 +206,8 @@ function formatLocalDate(d: Date): string {
 
 function CellEditPortal({
   anchorEl,
+  recordId,
+  field,
   value,
   chipValueOf,
   editType,
@@ -201,7 +219,24 @@ function CellEditPortal({
 }: CellEditPortalProps) {
   const initialDraft =
     editType === 'select-chip' ? (chipValueOf?.(value) ?? '') : String(value ?? '');
-  const [draft, setDraft] = useState(initialDraft);
+  // 언마운트(가상화 스크롤아웃) 후 재마운트 시 보존된 초안을 복원
+  const [draft, setDraftState] = useState(
+    () => cellDraftStore.get(cellDraftKey(recordId, field)) ?? initialDraft,
+  );
+  const setDraft = (next: string) => {
+    cellDraftStore.set(cellDraftKey(recordId, field), next);
+    setDraftState(next);
+  };
+  const clearDraft = () => cellDraftStore.delete(cellDraftKey(recordId, field));
+  // 저장/취소 시 보존 초안 제거 — 언마운트(스크롤아웃)만으로는 지우지 않는다
+  const commit = (next: unknown) => {
+    clearDraft();
+    onSave(next);
+  };
+  const cancel = () => {
+    clearDraft();
+    onCancel();
+  };
   const [pendingDateOption, setPendingDateOption] = useState<ChipOption | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const rect = anchorEl.getBoundingClientRect();
@@ -231,7 +266,7 @@ function CellEditPortal({
       const target = e.target as Node;
       if (anchorEl.contains(target)) return;
       if (popoverRef.current?.contains(target)) return;
-      onCancel();
+      cancel();
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
@@ -240,7 +275,7 @@ function CellEditPortal({
   // Close on Escape (handles select-chip where input isn't focused)
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onCancel();
+      if (e.key === 'Escape') cancel();
     };
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
@@ -250,16 +285,16 @@ function CellEditPortal({
     if (e.key === 'Enter') {
       e.preventDefault();
       const finalValue = editType === 'number' ? Number(draft) : draft;
-      onSave(finalValue);
+      commit(finalValue);
     }
     if (e.key === 'Escape') {
       e.preventDefault();
-      onCancel();
+      cancel();
     }
     if (e.key === 'Tab') {
       e.preventDefault();
       const finalValue = editType === 'number' ? Number(draft) : draft;
-      onSave(finalValue);
+      commit(finalValue);
       // TODO: move to next cell
     }
   };
@@ -280,7 +315,7 @@ function CellEditPortal({
             <Select
               value={draft}
               onValueChange={(v) => {
-                onSave(v);
+                commit(v);
               }}
             >
               <SelectTrigger className="h-full w-full rounded-none border-0 px-2.5 text-[13px] shadow-none focus:ring-0">
@@ -336,7 +371,7 @@ function CellEditPortal({
                     setPendingDateOption(opt);
                     return;
                   }
-                  onSave(opt.value);
+                  commit(opt.value);
                 }}
                 className={cn(
                   'flex items-center justify-between rounded-sm px-2 py-1.5 text-left transition-colors hover:bg-muted',
@@ -401,6 +436,7 @@ function CellEditPortal({
                   { field: fromField, value: formatLocalDate(range.from) },
                   { field: toField, value: formatLocalDate(range.to) },
                 ];
+                clearDraft();
                 onChipSave?.({
                   type: pendingDateOption.value,
                   dateWrites: writes,
@@ -417,6 +453,7 @@ function CellEditPortal({
                 if (!date) return;
                 const fromField = pendingDateOption.fromField;
                 if (!fromField) return;
+                clearDraft();
                 onChipSave?.({
                   type: pendingDateOption.value,
                   dateWrites: [{ field: fromField, value: formatLocalDate(date) }],

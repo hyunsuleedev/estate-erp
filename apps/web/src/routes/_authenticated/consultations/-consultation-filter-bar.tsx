@@ -31,12 +31,15 @@ export function ConsultationFilterBar({
   onFiltersChange,
   onSortOrderChange,
   onReset,
+  actions,
 }: {
   filters: ConsultationEntityFilters;
   sortOrder: 'asc' | 'desc';
   onFiltersChange: (updater: (current: ConsultationEntityFilters) => ConsultationEntityFilters) => void;
   onSortOrderChange: (value: 'asc' | 'desc') => void;
   onReset: () => void;
+  /** 툴바 우측 액션 슬롯 — 보기 전환·상담 기록 버튼 등 */
+  actions?: ReactNode;
 }) {
   const chips = getConsultationFilterChips(filters);
   const hasActiveFilters = chips.length > 0;
@@ -199,6 +202,8 @@ export function ConsultationFilterBar({
             <SelectItem value="asc">오래된순</SelectItem>
           </SelectContent>
         </Select>
+
+        {actions}
       </div>
 
       {(hasActiveFilters || sortOrder !== 'desc') && (
@@ -243,18 +248,18 @@ function QuickFilterButton({
   children: ReactNode;
 }) {
   return (
-    <Button
+    <button
       type="button"
-      variant={active ? 'outline' : 'ghost'}
-      size="sm"
       className={cn(
-        'h-8 px-2.5 text-xs',
-        active ? 'border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100' : 'text-muted-foreground',
+        'flex h-8 items-center rounded-lg border px-3 text-xs font-medium transition-colors',
+        active
+          ? 'border-foreground/20 bg-secondary text-foreground'
+          : 'border-border bg-background text-muted-foreground hover:bg-muted hover:text-foreground',
       )}
       onClick={onClick}
     >
       {children}
-    </Button>
+    </button>
   );
 }
 

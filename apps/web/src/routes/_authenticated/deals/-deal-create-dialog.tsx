@@ -30,7 +30,7 @@ import { StatusBadge } from '@/components/domain';
 import { ContactPicker } from './-deal-shared';
 import { ourSideLabels } from './-deal-view-utils';
 
-const TX_TYPES = ['sale', 'jeonse', 'monthly', 'yearly_rent'] as const;
+const TX_TYPES = ['sale', 'jeonse', 'monthly'] as const;
 
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : '요청 처리에 실패했습니다.';
@@ -142,14 +142,10 @@ export function DealCreateDialog({
   });
 
   const showPrice = transactionType !== 'monthly';
-  const showDeposit = transactionType === 'monthly' || transactionType === 'yearly_rent';
+  const showDeposit = transactionType === 'monthly';
   const showMonthlyRent = transactionType === 'monthly';
   const priceLabel =
-    transactionType === 'sale'
-      ? '매매가 (만원)'
-      : transactionType === 'jeonse'
-        ? '전세금 (만원)'
-        : '연세 (연간 총액, 만원)';
+    transactionType === 'sale' ? '매매가 (만원)' : '전세금 (만원)';
 
   const listings = useMemo(() => listingsQuery.data?.items ?? [], [listingsQuery.data]);
 

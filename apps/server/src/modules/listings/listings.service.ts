@@ -344,6 +344,8 @@ export class ListingsService {
                   memo: true,
                   createdAt: true,
                   updatedAt: true,
+                  // 매물 목록 매칭 칩 카운트용
+                  _count: { select: { matches: true } },
                   advertisements: {
                     orderBy: { createdAt: 'desc' },
                     take: 5,
@@ -374,6 +376,8 @@ export class ListingsService {
             orderBy: { createdAt: 'desc' },
             take: 5,
           },
+          // 매물 목록 매칭 칩 카운트용
+          _count: { select: { matches: true } },
         },
         orderBy: { [sortBy]: sortOrder },
         skip,

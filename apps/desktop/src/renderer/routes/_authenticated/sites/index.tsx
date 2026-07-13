@@ -656,9 +656,7 @@ function SitesPage() {
                   ? '전세'
                   : primary.transactionType === 'monthly'
                     ? '월세'
-                    : primary.transactionType === 'yearly_rent'
-                      ? '연세'
-                      : primary.transactionType}
+                    : primary.transactionType}
             </Badge>
             <span className="truncate text-[13px] tabular-nums">
               {formatListingPrice(primary)}

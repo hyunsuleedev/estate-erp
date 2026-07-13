@@ -442,18 +442,50 @@ model ContractDocument {
   metadata Json    @default("{}") @db.JsonB
   memo     String?
 
+  /// 마지막으로 사람의 승인을 거쳐 metadata 에 적용된 정확한 revision.
+  /// AI가 새 초안을 준비하는 것만으로는 이 포인터와 metadata 가 바뀌지 않는다.
+  currentRevisionId String? @unique @map("current_revision_id") @db.Uuid
+
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  office      Office                    @relation(fields: [officeId], references: [id])
-  contract    Contract                  @relation(fields: [contractId], references: [id], onDelete: Cascade)
-  template    ContractDocumentTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
-  generatedBy User?                     @relation("ContractDocumentGenerator", fields: [generatedById], references: [id], onDelete: SetNull)
+  office          Office                     @relation(fields: [officeId], references: [id])
+  contract        Contract                   @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  template        ContractDocumentTemplate?  @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  generatedBy     User?                      @relation("ContractDocumentGenerator", fields: [generatedById], references: [id], onDelete: SetNull)
+  currentRevision ContractDocumentRevision?  @relation("ContractDocumentCurrentRevision", fields: [currentRevisionId], references: [id], onDelete: SetNull)
+  revisions       ContractDocumentRevision[] @relation("ContractDocumentRevisions")
 
   @@index([officeId, contractId])
   @@index([officeId, status])
   @@index([templateId])
   @@map("contract_documents")
+}
+
+/// 계약 문서의 불변 내용 스냅샷.
+/// payload 와 contentHash 를 함께 승인 대상으로 사용해 검토한 버전과 실제 적용 버전의
+/// 불일치를 막는다. createdBy 는 user UUID뿐 아니라 mcp:Codex 같은 actor도 담을 수 있다.
+model ContractDocumentRevision {
+  id         String @id @default(uuid()) @db.Uuid
+  officeId   String @map("office_id") @db.Uuid
+  documentId String @map("document_id") @db.Uuid
+
+  revisionNo  Int       @map("revision_no")
+  contentHash String    @map("content_hash") @db.VarChar(64)
+  payload     Json      @db.JsonB
+  createdBy   String    @map("created_by")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  appliedBy   String?   @map("applied_by")
+  appliedAt   DateTime? @map("applied_at")
+
+  document           ContractDocument  @relation("ContractDocumentRevisions", fields: [documentId], references: [id], onDelete: Cascade)
+  currentForDocument ContractDocument? @relation("ContractDocumentCurrentRevision")
+  office             Office            @relation(fields: [officeId], references: [id])
+
+  @@unique([documentId, revisionNo])
+  @@index([officeId, documentId, createdAt])
+  @@index([contentHash])
+  @@map("contract_document_revisions")
 }
 
 model OfficePrintTemplate {

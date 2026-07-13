@@ -81,6 +81,7 @@ export type {
   ContractClauseTemplate,
   ContractClauseTemplateFilter,
   ContractDocument,
+  ContractDocumentRevision,
   ContractDocumentStatus,
   ContractDocumentTemplate,
   ContractDocumentTemplateFilter,
@@ -89,12 +90,15 @@ export type {
   CreateContractDocumentDto,
   CreateContractDto,
   CreateOfficePrintTemplateDto,
+  ApplyContractDocumentRevisionResult,
   OfficePrintTemplate,
   OfficePrintTemplateFilter,
   UpdateContractClauseTemplateDto,
   UpdateContractDocumentDto,
   UpdateContractDto,
   UpdateOfficePrintTemplateDto,
+  PrepareSaleContractDraftDto,
+  PrepareSaleContractDraftResult,
 } from './modules/contracts.js';
 export type { Consultation, ConsultationsFilter, CreateConsultationDto, UpdateConsultationDto } from './modules/consultations.js';
 export type { DistrictOption, ProvinceOption, RegionLevel, RegionSearchResult, WardOption } from './modules/regions.js';

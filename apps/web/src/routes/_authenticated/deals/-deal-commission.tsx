@@ -27,7 +27,7 @@ const PROPERTY_KIND_OPTIONS: Array<{ value: CommissionPropertyKind; label: strin
   { value: 'non_housing', label: '주택외 0.9%' },
 ];
 
-const COMMISSION_TX_TYPES = new Set(['sale', 'jeonse', 'monthly', 'yearly_rent']);
+const COMMISSION_TX_TYPES = new Set(['sale', 'jeonse', 'monthly']);
 
 const CLIENT_SIDE_LABELS: Record<string, string> = {
   seller: '매도측',
@@ -118,9 +118,6 @@ export function DealCommissionSection({ deal }: { deal: Deal }) {
         </div>
         {txType === 'monthly' ? (
           <p className="mt-1 text-[11px]">월세 환산: 보증금 + 월세 × 100 (5천만 미만이면 × 70)</p>
-        ) : null}
-        {txType === 'yearly_rent' ? (
-          <p className="mt-1 text-[11px]">연세 환산: 보증금 + (연세 ÷ 12) × 100</p>
         ) : null}
         <p className="mt-1 text-[11px]">
           {propertyKind === 'non_housing'

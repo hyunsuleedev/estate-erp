@@ -67,14 +67,14 @@ model VendorContact {
   id       String @id @default(uuid()) @db.Uuid
   vendorId String @map("vendor_id") @db.Uuid
 
-  name      String // "김철수", "대표번호", "김기사"
-  phone     String
+  name            String // "김철수", "대표번호", "김기사"
+  phone           String
   /// CTI 발신번호 매칭용 (ContactPhone.normalizedPhone과 동일 규칙, 쓰기 시 자동 세팅)
-  normalizedPhone String @map("normalized_phone")
-  role      String? // "대표" | "배관기사" | "야간긴급"
-  memo      String?
+  normalizedPhone String  @map("normalized_phone")
+  role            String? // "대표" | "배관기사" | "야간긴급"
+  memo            String?
   /// 한 업체 내 표시 순서. 작을수록 위.
-  sortOrder Int     @default(0) @map("sort_order")
+  sortOrder       Int     @default(0) @map("sort_order")
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")

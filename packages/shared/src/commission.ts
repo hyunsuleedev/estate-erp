@@ -16,15 +16,10 @@
 //   - 매매/교환:      매매가
 //   - 전세:           전세 보증금
 //   - 월세:           보증금 + 월세 × 100  (단 이 값이 5천만 미만이면 보증금 + 월세 × 70)
-//   - 연세:           보증금 + (연세액/12) × 100  (5천만 미만이면 ×70 동일 적용)
 //
 // 요율은 한쪽 (매도측 또는 매수측) 에 적용됨. 즉 반대편에 동일 요율로 또 청구됨.
 
-export type CommissionTransactionType =
-  | 'sale'
-  | 'jeonse'
-  | 'monthly'
-  | 'yearly_rent';
+export type CommissionTransactionType = 'sale' | 'jeonse' | 'monthly';
 
 /** 법정 중개보수 물건유형 */
 export type CommissionPropertyKind = 'housing' | 'officetel' | 'non_housing';
@@ -56,9 +51,6 @@ export function siteTypeToCommissionKind(
 
 /**
  * 거래 유형과 합의 가격으로 요율 계산 기준 금액 (baseAmount) 을 산출한다.
- *
- * yearly_rent(연세) 는 `agreedPrice` 를 연세액(1년치 임대료 총액, 만원)으로 사용한다.
- * (Deal.agreedPrice = "이 거래의 총액" 단일 진실 — 연세 거래에선 연간 임대료)
  */
 export function calculateCommissionBase(
   transactionType: CommissionTransactionType,
@@ -72,12 +64,7 @@ export function calculateCommissionBase(
   if (transactionType === 'jeonse') return params.agreedPrice ?? 0;
 
   const deposit = params.agreedDeposit ?? 0;
-
-  // 월 환산 임대료: 월세는 그대로, 연세는 연세액 ÷ 12
-  const monthlyEquivalent =
-    transactionType === 'yearly_rent'
-      ? (params.agreedPrice ?? 0) / 12
-      : (params.agreedMonthlyRent ?? 0);
+  const monthlyEquivalent = params.agreedMonthlyRent ?? 0;
 
   const base100 = deposit + monthlyEquivalent * 100;
   // 환산가가 5천만 미만이면 곱수를 70 으로 낮춤 (국토부 계산식)
@@ -116,7 +103,7 @@ export function getLegalMaxRate(
     if (baseAmount < 150000) return { rate: 0.6, cap: null }; // 15억 미만
     return { rate: 0.7, cap: null };                          // 15억 이상 (협의)
   }
-  // jeonse / monthly / yearly_rent (임대차)
+  // jeonse / monthly (임대차)
   if (baseAmount < 5000) return { rate: 0.5, cap: 20 };
   if (baseAmount < 10000) return { rate: 0.4, cap: 30 };
   if (baseAmount < 60000) return { rate: 0.3, cap: null };

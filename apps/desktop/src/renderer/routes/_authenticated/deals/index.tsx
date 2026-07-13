@@ -53,7 +53,7 @@ type DealViewMode = 'board' | 'list';
 
 const CONTRACT_REQUIRED_STAGES = new Set(['contracted', 'settling', 'completed', 'closed']);
 
-const TX_FILTER_OPTIONS = ['sale', 'jeonse', 'monthly', 'yearly_rent'].map((value) => ({
+const TX_FILTER_OPTIONS = ['sale', 'jeonse', 'monthly'].map((value) => ({
   value,
   label: getStatusMeta('transactionType', value).label,
 }));

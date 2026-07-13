@@ -50,7 +50,7 @@ interface BuyerMatchGroupData {
   matches: Match[];
 }
 
-const TRANSACTION_TYPE_OPTIONS = ['sale', 'jeonse', 'monthly', 'yearly_rent'].map((value) => ({
+const TRANSACTION_TYPE_OPTIONS = ['sale', 'jeonse', 'monthly'].map((value) => ({
   value,
   label: getStatusMeta('transactionType', value).label,
 }));

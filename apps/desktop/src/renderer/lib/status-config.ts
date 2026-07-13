@@ -122,7 +122,6 @@ export const STATUS_CONFIG: Record<StatusKind, Record<string, StatusMeta>> = {
     sale: { label: '매매', tone: 'info' },
     jeonse: { label: '전세', tone: 'success' },
     monthly: { label: '월세', tone: 'orange' },
-    yearly_rent: { label: '연세', tone: 'violet' },
   },
   /** Proposal.status — AI 제안 큐 */
   proposalStatus: {

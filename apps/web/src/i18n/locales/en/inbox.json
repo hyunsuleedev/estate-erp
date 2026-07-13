@@ -1,9 +1,9 @@
 {
   "tabs": {
-    "pending": "Pending",
-    "processing": "Reprocessing",
-    "approved": "Approved",
-    "resolved": "Resolved"
+    "pending": "Needs Review",
+    "processing": "AI Working",
+    "approved": "Awaiting Execution",
+    "resolved": "Completed"
   },
   "priorities": {
     "urgent": "Urgent",
@@ -77,7 +77,7 @@
     "executionFailed": "Execution failed: {{error}}",
     "commentThreadHeading": "AI Instructions",
     "commentReflected": "Applied · {{time}}",
-    "processingBanner": "AI is rewriting. It will be reflected on the next OpenClaw cycle (within 30 minutes) and return to pending review."
+    "processingBanner": "AI is handling the requested changes. The item will return to Needs Review when a new version is ready."
   },
   "commentForm": {
     "label": "AI Instructions",

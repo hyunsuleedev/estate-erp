@@ -15,8 +15,6 @@ export const TransactionType = {
   SALE: 'sale',
   JEONSE: 'jeonse',
   MONTHLY: 'monthly',
-  /** 연세 — 제주/지방에서 1년치 임대료를 선납하는 임대 유형 */
-  YEARLY_RENT: 'yearly_rent',
 } as const;
 export type TransactionType =
   (typeof TransactionType)[keyof typeof TransactionType];
@@ -25,7 +23,6 @@ export const TRANSACTION_TYPE_LABELS: Record<TransactionType, string> = {
   sale: '매매',
   jeonse: '전세',
   monthly: '월세',
-  yearly_rent: '연세',
 };
 
 /**

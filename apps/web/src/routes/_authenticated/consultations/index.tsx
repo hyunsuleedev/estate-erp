@@ -1,22 +1,33 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
-import { AlertCircle, ArrowRight, CalendarDays, Clock3, MessageSquareText, Plus, Users } from 'lucide-react';
+import {
+  AlertCircle,
+  Building2,
+  CalendarDays,
+  CornerDownRight,
+  Globe,
+  MapPin,
+  MessageSquareText,
+  Phone,
+  Plus,
+  Users,
+} from 'lucide-react';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import type { Consultation } from '@estate-erp/api-client';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent } from '@/components/ui/sheet';
 import { Skeleton } from '@/components/ui/skeleton';
-import { EmptyState, PageHeader } from '@/components/domain';
-import { PurposeBadge, TypeBadge, getInitial } from './-consultation-badges';
+import { EmptyState } from '@/components/domain';
+import { consultationTypeLabels, getInitial } from './-consultation-badges';
 import { ConsultationFilterBar } from './-consultation-filter-bar';
 import { ConsultationFormDialog } from './-consultation-form-dialog';
 import { ConsultationDetailSheet } from './-consultation-detail-sheet';
 import {
   buildConsultationApiParams,
+  getConsultationActionLabel,
   getConsultationContextLabels,
   getConsultationOutcomeLabel,
   getConsultationPreview,
@@ -74,6 +85,23 @@ function ConsultationsPage() {
     queryFn: () => api.consultations.findAll(apiParams),
   });
 
+  // 헤더 우측 "최근 7일 N건" — 카운트만 필요하므로 limit 1로 최소 조회.
+  // 날짜 문자열은 서버가 UTC 자정으로 해석해 KST 경계/8일 창 문제가 생기므로
+  // fetch 시점마다 "지금 - 7일" full ISO 타임스탬프(롤링 7일 창)를 새로 계산한다.
+  // (마운트 시 고정하면 세션이 길어질수록 창이 늘어남 → 주기 refetch로 최신 유지)
+  const { data: weekData } = useQuery({
+    queryKey: ['consultations-week-count'],
+    queryFn: () =>
+      api.consultations.findAll({
+        page: 1,
+        limit: 1,
+        dateFrom: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
+      }),
+    refetchInterval: 60 * 60 * 1000,
+    staleTime: 5 * 60 * 1000,
+  });
+  const weekCount = weekData?.pagination?.total ?? 0;
+
   const consultations = data?.items ?? [];
   const groups = useMemo(
     () => (viewMode === 'contact' ? groupConsultationsByContact(consultations) : groupConsultationsByDay(consultations)),
@@ -90,7 +118,9 @@ function ConsultationsPage() {
     queryFn: () => api.consultations.findOne(consultationId!),
     enabled: Boolean(consultationId) && !selectedFromList,
   });
-  const selectedConsultation = selectedFromList ?? (selectedFetched?.id === consultationId ? selectedFetched : null);
+  // consultationId 미지정 시 undefined === undefined 로 빈 Sheet가 열리지 않도록 fetch 결과 존재를 함께 확인
+  const selectedConsultation =
+    selectedFromList ?? (selectedFetched && selectedFetched.id === consultationId ? selectedFetched : null);
 
   const selectConsultation = (id: string | null) => {
     void navigate({
@@ -115,19 +145,21 @@ function ConsultationsPage() {
   };
 
   return (
-    <div className="space-y-4 pb-4">
-      <PageHeader
-        title="상담기록"
-        description="고객과 나눈 대화를 기록하고 매물·거래 맥락에 연결합니다."
-        actions={
-          <Button size="sm" className="gap-1" onClick={openCreate}>
-            <Plus className="size-4" />새 상담
-          </Button>
-        }
-        className="mb-0"
-      />
+    <div className="flex h-[calc(100svh-4rem)] min-h-0 flex-col bg-background">
+      {/* 페이지 헤더 — 타이틀 + 설명 + 최근 7일 카운트 */}
+      <section className="flex items-start gap-3 px-6 pb-3 pt-[18px]">
+        <div>
+          <h1 className="text-lg font-bold tracking-[-0.02em] text-foreground">상담기록</h1>
+          <p className="mt-0.5 break-keep text-[12.5px] text-muted-foreground">
+            고객 대화의 원장 — 의도별 분류와 후속 조치, 매물 연결까지 한 곳에
+          </p>
+        </div>
+        <div className="flex-1" />
+        <span className="pt-1.5 text-xs tabular-nums text-muted-foreground">최근 7일 {weekCount}건</span>
+      </section>
 
-      <section className="rounded-[10px] border border-slate-200 bg-background">
+      {/* 툴바 — 검색·퀵필터·상세필터·정렬 + 보기 전환 + 상담 기록 버튼 */}
+      <section className="border-b border-border px-3">
         <ConsultationFilterBar
           filters={filters}
           sortOrder={sortOrder}
@@ -141,74 +173,66 @@ function ConsultationsPage() {
             setSortOrder('desc');
             setPage(1);
           }}
-        />
-      </section>
-
-      <section className="min-h-0 overflow-hidden rounded-[10px] border border-slate-200 bg-background">
-        <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-4 py-3">
-          <div>
-            <h2 className="text-sm font-semibold text-slate-900">대화 원장</h2>
-            <p className="text-xs text-muted-foreground">
-              {viewMode === 'date' ? '날짜별 상담과 업무 신호를 한 번에 확인합니다.' : '고객별 상담 타임라인을 확인합니다.'}
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="flex items-center rounded-md border border-slate-200 bg-background p-0.5">
-              <ViewModeButton active={viewMode === 'date'} icon={CalendarDays} label="날짜별" onClick={() => setViewMode('date')} />
-              <ViewModeButton active={viewMode === 'contact'} icon={Users} label="고객별" onClick={() => setViewMode('contact')} />
-            </div>
-            <Badge variant="outline" className="rounded-lg bg-background text-[11px] text-slate-500">
-              {consultations.length}건 표시
-            </Badge>
-          </div>
-        </div>
-
-        <div data-testid="consultation-ledger-flow">
-          {isLoading ? (
-            <ConsultationLoading />
-          ) : isError ? (
-            <div className="flex flex-col items-center gap-3 px-4 py-16 text-center">
-              <AlertCircle className="size-8 text-destructive/60" />
-              <p className="text-sm text-muted-foreground">상담 기록을 불러오지 못했습니다.</p>
-              <Button variant="outline" size="sm" onClick={() => void refetch()}>
-                다시 시도
+          actions={
+            <>
+              <div className="flex items-center rounded-lg border border-border bg-background p-0.5">
+                <ViewModeButton active={viewMode === 'date'} icon={CalendarDays} label="날짜별" onClick={() => setViewMode('date')} />
+                <ViewModeButton active={viewMode === 'contact'} icon={Users} label="고객별" onClick={() => setViewMode('contact')} />
+              </div>
+              <Button size="sm" className="h-[34px] shrink-0 gap-1.5 rounded-[9px] px-3.5" onClick={openCreate}>
+                <Plus className="size-4" />
+                상담 기록
               </Button>
-            </div>
-          ) : groups.length === 0 ? (
-            <EmptyState
-              icon={MessageSquareText}
-              title="상담 기록이 없습니다"
-              description="고객과 나눈 첫 상담을 기록해 보세요. 매물·구매조건과 연결하면 후속 업무로 이어집니다."
-              action={
-                <Button size="sm" className="gap-1" onClick={openCreate}>
-                  <Plus className="size-4" />새 상담
-                </Button>
-              }
-              className="py-16"
-            />
-          ) : (
-            <div className="px-4 py-3">
-              {groups.map((group) => (
-                <ConsultationGroupSection
-                  key={group.key}
-                  label={group.label}
-                  items={group.items}
-                  viewMode={viewMode}
-                  selectedId={consultationId ?? null}
-                  onSelect={selectConsultation}
-                />
-              ))}
-            </div>
-          )}
-        </div>
-
-        <PaginationFooter
-          page={page}
-          totalPages={data?.pagination?.totalPages ?? 1}
-          total={data?.pagination?.total ?? 0}
-          onPageChange={setPage}
+            </>
+          }
         />
       </section>
+
+      {/* 본문 — 날짜/고객 그룹 원장 */}
+      <div data-testid="consultation-ledger-flow" className="min-h-0 flex-1 overflow-y-auto px-6 pb-7 pt-4">
+        {isLoading ? (
+          <ConsultationLoading />
+        ) : isError ? (
+          <div className="flex flex-col items-center gap-3 px-4 py-16 text-center">
+            <AlertCircle className="size-8 text-destructive/60" />
+            <p className="text-sm text-muted-foreground">상담 기록을 불러오지 못했습니다.</p>
+            <Button variant="outline" size="sm" onClick={() => void refetch()}>
+              다시 시도
+            </Button>
+          </div>
+        ) : groups.length === 0 ? (
+          <EmptyState
+            icon={MessageSquareText}
+            title="상담 기록이 없습니다"
+            description="고객과 나눈 첫 상담을 기록해 보세요. 매물·구매조건과 연결하면 후속 업무로 이어집니다."
+            action={
+              <Button size="sm" className="gap-1" onClick={openCreate}>
+                <Plus className="size-4" />
+                상담 기록
+              </Button>
+            }
+            className="py-16"
+          />
+        ) : (
+          groups.map((group) => (
+            <ConsultationGroupSection
+              key={group.key}
+              label={group.label}
+              items={group.items}
+              viewMode={viewMode}
+              selectedId={consultationId ?? null}
+              onSelect={selectConsultation}
+            />
+          ))
+        )}
+      </div>
+
+      <PaginationFooter
+        page={page}
+        totalPages={data?.pagination?.totalPages ?? 1}
+        total={data?.pagination?.total ?? 0}
+        onPageChange={setPage}
+      />
 
       <Sheet open={selectedConsultation !== null} onOpenChange={(open) => !open && selectConsultation(null)}>
         <SheetContent side="right" className="w-full gap-0 overflow-hidden p-0 sm:max-w-[560px]">
@@ -250,8 +274,8 @@ function ViewModeButton({
     <button
       type="button"
       className={cn(
-        'flex items-center gap-1 rounded px-2 py-1 text-[11px] font-medium transition-colors',
-        active ? 'bg-slate-100 text-slate-900' : 'text-muted-foreground hover:text-foreground',
+        'flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition-colors',
+        active ? 'bg-secondary text-foreground' : 'text-muted-foreground hover:text-foreground',
       )}
       onClick={onClick}
     >
@@ -275,19 +299,17 @@ function ConsultationGroupSection({
   onSelect: (id: string) => void;
 }) {
   return (
-    <section className="mb-5 last:mb-0">
-      <div className="mb-2 flex items-center gap-2">
-        {viewMode === 'contact' ? (
+    <section className="mb-[18px] last:mb-0">
+      <div className="mb-[7px] flex items-center gap-2">
+        {viewMode === 'contact' && (
           <Avatar className="size-5">
             <AvatarFallback className="text-[10px]">{getInitial(label)}</AvatarFallback>
           </Avatar>
-        ) : (
-          <span className="size-2 rounded-full bg-slate-400" />
         )}
-        <h3 className="text-sm font-medium text-slate-900">{label}</h3>
-        <span className="text-xs text-muted-foreground">{items.length}</span>
+        <h3 className="text-xs font-bold text-muted-foreground">{label}</h3>
+        <span className="text-xs tabular-nums text-muted-foreground/70">{items.length}</span>
       </div>
-      <div className="overflow-hidden rounded-lg border border-slate-200">
+      <div className="overflow-hidden rounded-[11px] border border-border bg-background">
         {items.map((consultation) => (
           <ConsultationTimelineRow
             key={consultation.id}
@@ -299,6 +321,29 @@ function ConsultationGroupSection({
         ))}
       </div>
     </section>
+  );
+}
+
+// 상담 채널(전화/방문/온라인) 칩 — 디자인의 아이콘+라벨 soft 톤
+const typeChipMeta: Record<string, { icon: typeof Phone; className: string }> = {
+  phone: { icon: Phone, className: 'bg-info-soft text-info' },
+  visit: { icon: MapPin, className: 'bg-success-soft text-success' },
+  online: { icon: Globe, className: 'bg-violet-soft text-violet' },
+};
+
+function TypeChip({ type }: { type: string }) {
+  const meta = typeChipMeta[type] ?? { icon: MessageSquareText, className: 'bg-secondary text-muted-foreground' };
+  const Icon = meta.icon;
+  return (
+    <span
+      className={cn(
+        'inline-flex h-[21px] shrink-0 items-center gap-1 rounded-md px-2 text-[11px] font-medium',
+        meta.className,
+      )}
+    >
+      <Icon className="size-3" />
+      {consultationTypeLabels[type] ?? type}
+    </span>
   );
 }
 
@@ -314,49 +359,65 @@ function ConsultationTimelineRow({
   onSelect: () => void;
 }) {
   const signal = getConsultationSignal(consultation);
-  const outcome = getConsultationOutcomeLabel(consultation);
+  const needsFollowUp = getConsultationOutcomeLabel(consultation) === '후속 필요';
   const contextLabels = getConsultationContextLabels(consultation);
+  const [propertyLabel, ...extraLabels] = contextLabels;
 
   return (
     <button
       type="button"
       className={cn(
-        'group/row flex w-full items-start gap-3 border-b border-slate-100 px-3 py-3 text-left transition-colors last:border-b-0 hover:bg-muted/30',
-        selected && 'bg-slate-50',
+        'flex w-full items-start gap-3 border-b border-border/60 px-4 py-3 text-left transition-colors last:border-b-0 hover:bg-muted/60',
+        selected && 'bg-muted',
       )}
       onClick={onSelect}
     >
-      <Avatar className="mt-0.5 size-8">
-        <AvatarFallback className="text-xs">{getInitial(consultation.contact?.name)}</AvatarFallback>
-      </Avatar>
+      <span
+        className={cn(
+          'shrink-0 pt-0.5 text-xs tabular-nums text-muted-foreground/80',
+          viewMode === 'contact' ? 'w-[84px]' : 'w-[38px]',
+        )}
+      >
+        {viewMode === 'contact' ? formatRowDateTime(consultation.createdAt) : formatRowTime(consultation.createdAt)}
+      </span>
 
-      <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-center gap-1.5">
-          <span className="text-sm font-medium text-foreground">{consultation.contact?.name ?? '미지정 고객'}</span>
-          <TypeBadge type={consultation.type} />
-          <PurposeBadge purpose={consultation.purpose} />
-          <Badge className={cn('rounded-md px-1.5 text-[10px]', signal.className)}>{signal.label}</Badge>
-          <Badge variant="outline" className="rounded-md px-1.5 text-[10px] text-slate-500">
-            {outcome}
-          </Badge>
-        </div>
-        <p className="mt-1 line-clamp-2 text-sm leading-5 text-slate-700">
-          {getConsultationPreview(consultation.content, 132)}
-        </p>
-        <div className="mt-2 flex flex-wrap items-center gap-1.5">
-          <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
-            <Clock3 className="size-3" />
-            {viewMode === 'contact' ? formatRowDateTime(consultation.createdAt) : formatRowTime(consultation.createdAt)}
+      <TypeChip type={consultation.type} />
+
+      <div className="flex min-w-0 flex-1 flex-col gap-1">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <span className="text-[13px] font-semibold text-foreground">{consultation.contact?.name ?? '미지정 고객'}</span>
+          <span
+            className={cn(
+              'inline-flex h-[19px] shrink-0 items-center rounded-[5px] px-[7px] text-[10.5px] font-semibold',
+              signal.className,
+            )}
+          >
+            {signal.label}
           </span>
-          {contextLabels.slice(0, 3).map((label) => (
-            <Badge key={label} variant="outline" className="rounded-md bg-background px-1.5 text-[10px] text-slate-500">
+          {propertyLabel && (
+            <span className="inline-flex h-[19px] items-center gap-1 rounded-[5px] bg-secondary px-[7px] text-[10.5px] text-muted-foreground">
+              <Building2 className="size-3" />
+              {propertyLabel}
+            </span>
+          )}
+          {extraLabels.slice(0, 2).map((label) => (
+            <span key={label} className="inline-flex h-[19px] items-center rounded-[5px] bg-secondary px-[7px] text-[10.5px] text-muted-foreground">
               {label}
-            </Badge>
+            </span>
           ))}
         </div>
-      </div>
 
-      <ArrowRight className="mt-2 size-4 text-slate-300 opacity-0 transition-opacity group-hover/row:opacity-100" />
+        <p className="line-clamp-2 text-[12.5px] leading-normal text-foreground/80">
+          {getConsultationPreview(consultation.content, 132)}
+        </p>
+
+        {needsFollowUp && (
+          <span className="inline-flex h-5 items-center gap-1 self-start rounded-md bg-warning-soft px-2 text-[11px] font-medium text-warning">
+            <CornerDownRight className="size-3" />
+            {getConsultationActionLabel(consultation)}
+          </span>
+        )}
+      </div>
     </button>
   );
 }
@@ -373,13 +434,13 @@ function PaginationFooter({
   onPageChange: (page: number) => void;
 }) {
   return (
-    <div className="flex items-center justify-between border-t border-slate-200 px-4 py-3 text-xs text-muted-foreground">
-      <span>전체 {total}건</span>
+    <div className="flex shrink-0 items-center justify-between border-t border-border px-6 py-2.5 text-xs text-muted-foreground">
+      <span className="tabular-nums">전체 {total}건</span>
       <div className="flex items-center gap-2">
         <Button type="button" variant="outline" size="xs" onClick={() => onPageChange(Math.max(1, page - 1))} disabled={page <= 1}>
           이전
         </Button>
-        <span className="min-w-14 text-center">
+        <span className="min-w-14 text-center tabular-nums">
           {page} / {Math.max(1, totalPages)}
         </span>
         <Button type="button" variant="outline" size="xs" onClick={() => onPageChange(Math.min(totalPages, page + 1))} disabled={page >= totalPages}>
@@ -392,9 +453,9 @@ function PaginationFooter({
 
 function ConsultationLoading() {
   return (
-    <div className="space-y-3 px-4 py-4">
+    <div className="space-y-3">
       {Array.from({ length: 5 }).map((_, index) => (
-        <Skeleton key={index} className="h-20 w-full rounded-lg" />
+        <Skeleton key={index} className="h-20 w-full rounded-[11px]" />
       ))}
     </div>
   );

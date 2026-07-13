@@ -117,15 +117,16 @@ export function GlobalSearch() {
 
   return (
     <>
+      {/* 디자인 헤더 검색 트리거: 34px 높이 · 280px · muted 배경 */}
       <Button
-        variant="outline"
+        variant="ghost"
         size="sm"
-        className="h-8 w-40 justify-start gap-2 px-2.5 font-normal text-muted-foreground sm:w-48"
+        className="h-[34px] w-40 justify-start gap-2 rounded-[9px] border border-[#ececea] bg-muted px-3 font-normal text-[#a8a59f] hover:bg-muted sm:w-[280px]"
         onClick={() => setOpen(true)}
       >
-        <Search className="size-3.5" />
-        <span className="flex-1 text-left">검색</span>
-        <kbd className="pointer-events-none hidden h-5 items-center gap-0.5 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground sm:inline-flex">
+        <Search className="size-[15px]" />
+        <span className="flex-1 text-left text-[13px]">전체 검색</span>
+        <kbd className="pointer-events-none hidden items-center rounded bg-[#efedea] px-[5px] py-px text-[10px] font-semibold text-[#b2afa9] sm:inline-flex">
           ⌘K
         </kbd>
       </Button>

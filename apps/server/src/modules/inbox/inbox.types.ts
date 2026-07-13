@@ -57,9 +57,14 @@ export interface CreateDraftInput {
 
   // 컨텍스트 링크
   listingId?: string;
+  listingIntakeId?: string;
   propertyId?: string;
   contactId?: string;
   dealId?: string;
   contractId?: string;
   paymentId?: string;
+
+  // Paperclip-style control-plane lineage
+  agentSessionId?: string;
+  requestedByRunId?: string;
 }

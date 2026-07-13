@@ -1,5 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { LedgerView, type LedgerViewMode } from './-ledger';
+import { RequireRole } from '@/components/layout/require-role';
 
 export interface LedgerSearch {
   /** 상세 Sheet를 열 거래 id */
@@ -19,7 +20,11 @@ export const Route = createFileRoute('/_authenticated/cashflow/ledger')({
         ? search.view
         : undefined,
   }),
-  component: LedgerPage,
+  component: () => (
+    <RequireRole roles={['owner', 'manager']} fallback="/cashflow/my-settlement">
+      <LedgerPage />
+    </RequireRole>
+  ),
 });
 
 function LedgerPage() {

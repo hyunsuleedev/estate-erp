@@ -1,26 +1,17 @@
-import { Fragment } from 'react';
-import { createFileRoute, Outlet, Navigate, useMatches, useLocation, Link } from '@tanstack/react-router';
+import { createFileRoute, Outlet, Navigate, useMatches, useLocation } from '@tanstack/react-router';
 import { SplashScreen } from '@/components/layout/splash-screen';
 import { useAuth } from '@/providers/auth-provider';
 import { AppSidebar } from '@/components/layout/app-sidebar';
 import { GlobalSearch } from '@/components/layout/global-search';
 import { NotificationBell } from '@/components/layout/notification-bell';
 import { QuickCreate } from '@/components/layout/quick-create';
-import { getBreadcrumb } from '@/components/layout/nav-config';
+import { getBreadcrumb, getNavIcon } from '@/components/layout/nav-config';
 import {
   SidebarInset,
   SidebarProvider,
   SidebarTrigger,
 } from '@/components/ui/sidebar';
 import { Separator } from '@/components/ui/separator';
-import {
-  Breadcrumb,
-  BreadcrumbItem,
-  BreadcrumbLink,
-  BreadcrumbList,
-  BreadcrumbPage,
-  BreadcrumbSeparator,
-} from '@/components/ui/breadcrumb';
 
 export const Route = createFileRoute('/_authenticated')({
   component: AuthenticatedLayout,
@@ -44,42 +35,26 @@ function AuthenticatedLayout() {
   }
 
   const currentMatch = matches[matches.length - 1];
-  // 브레드크럼은 nav-config의 IA/라벨 맵에서 자동 derive (그룹 > 페이지 > 상세)
-  const crumbs = getBreadcrumb(currentMatch?.routeId ?? '', location.pathname);
+  // 페이지 타이틀은 nav-config의 IA/라벨 맵에서 derive — 마지막 크럼 = 현재 페이지
+  const crumbs = getBreadcrumb(currentMatch?.routeId ?? '', location.pathname, user?.role);
+  const pageTitle = crumbs[crumbs.length - 1]?.label ?? '';
+  const PageIcon = getNavIcon(location.pathname);
 
   return (
     <SidebarProvider>
       <AppSidebar />
       <SidebarInset className="h-svh min-h-0 min-w-0">
-        <header className="flex h-14 shrink-0 items-center justify-between gap-2 border-b px-4">
-          <div className="flex min-w-0 items-center gap-2">
-            <SidebarTrigger className="-ml-1" />
-            <Separator orientation="vertical" className="mr-1 data-[orientation=vertical]:h-4" />
-            <Breadcrumb>
-              <BreadcrumbList>
-                {crumbs.map((crumb, index) => {
-                  const isLast = index === crumbs.length - 1;
-                  return (
-                    <Fragment key={`${crumb.label}-${index}`}>
-                      {index > 0 && <BreadcrumbSeparator />}
-                      <BreadcrumbItem className="text-xs">
-                        {isLast ? (
-                          <BreadcrumbPage className="text-xs font-medium">
-                            {crumb.label}
-                          </BreadcrumbPage>
-                        ) : crumb.to ? (
-                          <BreadcrumbLink asChild>
-                            <Link to={crumb.to}>{crumb.label}</Link>
-                          </BreadcrumbLink>
-                        ) : (
-                          crumb.label
-                        )}
-                      </BreadcrumbItem>
-                    </Fragment>
-                  );
-                })}
-              </BreadcrumbList>
-            </Breadcrumb>
+        {/* 디자인(Estate ERP 웹.dc.html) 헤더: 48px · 페이지 아이콘+타이틀 · 전체 검색 · 벨 */}
+        <header className="flex h-12 shrink-0 items-center justify-between gap-2.5 border-b bg-background px-[18px]">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <SidebarTrigger className="-ml-1 text-muted-foreground" />
+            <Separator orientation="vertical" className="data-[orientation=vertical]:h-[18px]" />
+            {PageIcon && (
+              <PageIcon className="size-[17px] shrink-0 text-[#9b9893]" aria-hidden="true" />
+            )}
+            <span className="truncate text-[14.5px] font-semibold text-foreground">
+              {pageTitle}
+            </span>
           </div>
           <div className="flex shrink-0 items-center gap-2">
             <GlobalSearch />

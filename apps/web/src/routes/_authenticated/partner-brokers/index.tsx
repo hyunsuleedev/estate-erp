@@ -225,7 +225,7 @@ function PartnerBrokersPage() {
 
   return (
     <TooltipProvider delayDuration={300}>
-      <div className="flex h-[calc(100svh-5rem)] min-h-0 flex-col bg-white">
+      <div className="flex h-[calc(100svh-4rem)] min-h-0 flex-col bg-white">
         <PageHeader
           title="파트너 중개사"
           description="공동중개 파트너 사무소 주소록 — 연결 거래와 수수료 분배까지 확인합니다."

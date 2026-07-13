@@ -61,7 +61,7 @@ describe('법정 중개보수 (commission)', () => {
       });
     });
 
-    it('임대차(전세/월세/연세)는 0.4%', () => {
+    it('임대차(전세/월세)는 0.4%', () => {
       // 주택이라면 3억 전세는 0.3% 구간 — 오피스텔은 0.4% 단일 요율
       expect(getLegalMaxRate('jeonse', 30000, 'officetel')).toEqual({
         rate: 0.4,
@@ -74,10 +74,6 @@ describe('법정 중개보수 (commission)', () => {
       expect(getLegalMaxRate('monthly', 4000, 'officetel')).toEqual({
         rate: 0.4,
         cap: null, // 주택의 저가 구간 상한액(cap) 미적용
-      });
-      expect(getLegalMaxRate('yearly_rent', 20000, 'officetel')).toEqual({
-        rate: 0.4,
-        cap: null,
       });
     });
   });
@@ -107,37 +103,8 @@ describe('법정 중개보수 (commission)', () => {
     });
   });
 
-  describe('yearly_rent (연세) 환산', () => {
-    it('환산 = 보증금 + (연세액/12) × 100', () => {
-      // 보증금 1000만 + 연세 2400만 → 월환산 200만 → 1000 + 200×100 = 21000 (2.1억)
-      const base = calculateCommissionBase('yearly_rent', {
-        agreedPrice: 2400, // 연세액 (만원)
-        agreedDeposit: 1000,
-      });
-      expect(base).toBe(21000);
-      // 주택 임대차 2.1억 → 0.3% 구간 → 63만
-      expect(calculateCommissionAmount('yearly_rent', base)).toEqual({
-        rate: 0.3,
-        amount: 63,
-      });
-    });
-
-    it('환산가 5천만 미만이면 ×70 규칙 동일 적용', () => {
-      // 보증금 500만 + 연세 240만 → 월환산 20만
-      // 500 + 20×100 = 2500 < 5000 → 500 + 20×70 = 1900
-      const base = calculateCommissionBase('yearly_rent', {
-        agreedPrice: 240,
-        agreedDeposit: 500,
-      });
-      expect(base).toBe(1900);
-      // 주택 임대차 5천만 미만 → 0.5%, 상한 20만 → min(round(9.5), 20) = 10
-      expect(calculateCommissionAmount('yearly_rent', base)).toEqual({
-        rate: 0.5,
-        amount: 10,
-      });
-    });
-
-    it('월세 환산도 기존과 동일 (회귀 확인)', () => {
+  describe('monthly (월세) 환산', () => {
+    it('환산 = 보증금 + 월세 × 100 (5천만 미만은 ×70)', () => {
       // 보증금 1000만 + 월세 50만 → 1000 + 5000 = 6000 ≥ 5000
       expect(
         calculateCommissionBase('monthly', {

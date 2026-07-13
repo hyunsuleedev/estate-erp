@@ -278,7 +278,7 @@ export function getDealTransactionType(deal: Deal): string | undefined {
   return deal.transactionType ?? deal.listing?.transactionType ?? undefined;
 }
 
-/** 거래유형별 대표 금액 문자열 (월세 "1억 / 120", 연세 "보증금 / 연 3,600만") */
+/** 거래유형별 대표 금액 문자열 (월세 "1억 / 120") */
 export function formatDealAmount(deal: Deal) {
   const type = getDealTransactionType(deal);
 
@@ -286,13 +286,6 @@ export function formatDealAmount(deal: Deal) {
     const deposit = deal.agreedDeposit ?? deal.listing?.deposit;
     const monthlyRent = deal.agreedMonthlyRent ?? deal.listing?.monthlyRent;
     return formatRent(deposit, monthlyRent);
-  }
-
-  if (type === 'yearly_rent') {
-    const deposit = deal.agreedDeposit ?? deal.listing?.deposit;
-    const yearly = deal.agreedPrice ?? deal.listing?.price;
-    if (deposit) return `${formatMoney(deposit)} / 연 ${formatMoney(yearly)}`;
-    return yearly ? `연 ${formatMoney(yearly)}` : '—';
   }
 
   const price = deal.agreedPrice ?? deal.agreedDeposit ?? deal.listing?.price ?? deal.listing?.deposit;

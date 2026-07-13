@@ -2,14 +2,22 @@ import { createFileRoute, Link, useNavigate } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import type { ColumnDef, SortingState } from '@tanstack/react-table';
-import { MoreHorizontal, Pencil, PhoneCall, Plus, RefreshCw, SquareArrowOutUpRight } from 'lucide-react';
+import {
+  MoreHorizontal,
+  Pencil,
+  PhoneCall,
+  Plus,
+  RefreshCw,
+  Search,
+  SquareArrowOutUpRight,
+} from 'lucide-react';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import type { BuyerRequirement } from '@estate-erp/api-client';
 import { TRANSACTION_TYPE_LABELS } from '@estate-erp/shared';
 import { formatDate, formatDday, formatPhone } from '@/lib/format';
 import { STATUS_CONFIG } from '@/lib/status-config';
-import { PageHeader, StatusBadge } from '@/components/domain';
+import { StatusBadge } from '@/components/domain';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -155,8 +163,8 @@ function BuyerRequirementsPage() {
   // 연락함 기록 (행 빠른 액션)
   const [contactLogTarget, setContactLogTarget] = useState<BuyerRequirement | null>(null);
 
-  // ViewBar 검색 포커스용 래퍼 ref (Cmd/Ctrl+F)
-  const viewBarRef = useRef<HTMLDivElement>(null);
+  // 상단 툴바 검색 포커스용 ref (Cmd/Ctrl+F) — 검색창이 항상 노출되므로 직접 포커스
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   // Cmd/Ctrl+N → 신규 등록, Cmd/Ctrl+F → 검색 포커스
   useEffect(() => {
@@ -168,19 +176,11 @@ function BuyerRequirementsPage() {
         navigate({ to: '/buyer-requirements/new' });
       } else if (key === 'f') {
         e.preventDefault();
-        const root = viewBarRef.current;
-        if (!root) return;
-        const input = root.querySelector<HTMLInputElement>('input[type="text"]');
+        const input = searchInputRef.current;
         if (input) {
           input.focus();
           input.select();
-          return;
         }
-        // 검색이 접혀 있으면 '검색' 버튼을 눌러 펼친다 (펼치면 autoFocus)
-        const searchButton = Array.from(root.querySelectorAll('button')).find((b) =>
-          b.textContent?.includes('검색'),
-        );
-        searchButton?.click();
       }
     };
     window.addEventListener('keydown', onKey);
@@ -566,27 +566,25 @@ function BuyerRequirementsPage() {
     [openDetail, navigate],
   );
 
-  return (
-    <div className="flex flex-col gap-3 pt-4">
-      <PageHeader
-        title="구매고객"
-        description={`총 ${data?.pagination?.total ?? 0}건`}
-        className="mb-0"
-        actions={
-          <Button size="sm" asChild>
-            <Link to="/buyer-requirements/new">
-              <Plus className="size-3.5" />
-              구매고객 등록
-            </Link>
-          </Button>
-        }
-      />
+  const total = data?.pagination?.total ?? 0;
 
-      <div className="flex items-start gap-4">
-        {/* ── 좌측 프리셋 탐색 ── */}
-        <aside className="w-40 shrink-0 space-y-0.5 pt-1">
+  return (
+    <div className="flex flex-col bg-white pt-4">
+      {/* ── 페이지 타이틀 ── */}
+      <div className="flex items-baseline gap-3 pb-3">
+        <h1 className="text-[22px] font-semibold tracking-[-0.01em] text-foreground">구매 의뢰</h1>
+        <span className="text-[12px] tabular-nums text-muted-foreground">
+          총 {total.toLocaleString()}건
+        </span>
+      </div>
+
+      {/* ── 상단 툴바: 프리셋 탭 칩 + 검색 + 의뢰 등록 (디자인 시안) ── */}
+      <div className="flex flex-wrap items-center gap-2.5 border-b border-border pb-3">
+        <div className="flex flex-wrap gap-1.5">
           {PRESETS.map((p) => {
             const isActive = preset === p.id;
+            // 칩 카운트: 활성 탭은 현재 조회 결과 총계, '연락 필요'는 항상 due 카운트 노출
+            const count = isActive ? total : p.id === 'due' && dueCount > 0 ? dueCount : null;
             return (
               <button
                 key={p.id}
@@ -596,34 +594,69 @@ function BuyerRequirementsPage() {
                   setPage(1);
                 }}
                 className={cn(
-                  'flex w-full items-center justify-between rounded-md px-2.5 py-1.5 text-left text-[13px] transition-colors',
+                  'flex h-8 items-center gap-1.5 rounded-lg border px-3 text-[12.5px] font-medium transition-colors',
                   isActive
-                    ? 'bg-muted font-medium text-foreground'
-                    : 'text-muted-foreground hover:bg-muted/60',
+                    ? 'border-transparent bg-foreground text-background'
+                    : 'border-border bg-white text-muted-foreground hover:bg-muted/60',
                 )}
               >
-                <span>{p.label}</span>
-                {p.id === 'due' && dueCount > 0 && (
-                  <span className="rounded-full bg-destructive-soft px-1.5 py-px text-[11px] font-medium tabular-nums text-destructive">
-                    {dueCount}
+                {p.label}
+                {count !== null && (
+                  <span
+                    className={cn(
+                      'inline-flex h-4 min-w-[17px] items-center justify-center rounded-lg px-[5px] text-[10.5px] font-semibold tabular-nums',
+                      isActive
+                        ? 'bg-white/20 text-background'
+                        : p.id === 'due'
+                          ? 'bg-destructive-soft text-destructive'
+                          : 'bg-muted text-muted-foreground',
+                    )}
+                  >
+                    {count.toLocaleString()}
                   </span>
                 )}
               </button>
             );
           })}
-        </aside>
+        </div>
 
-        {/* ── 중앙: ViewBar + 목록 ── */}
-        <div className="min-w-0 flex-1 space-y-3">
-          {/* 쿼리 바: 검색 · 필터 · 정렬 한 줄 묶음 (Cmd+F → 검색 포커스) */}
-          <div ref={viewBarRef}>
-            <ViewBar
+        <div className="flex-1" />
+
+        {/* 검색 (Cmd/Ctrl+F 포커스) */}
+        <div className="flex h-8 w-[200px] items-center gap-[7px] rounded-lg border border-border bg-muted px-[11px]">
+          <Search className="size-3.5 shrink-0 text-muted-foreground" />
+          <input
+            ref={searchInputRef}
+            value={query}
+            onChange={(e) => {
+              setQuery(e.target.value);
+              setPage(1);
+            }}
+            placeholder="이름 · 조건 검색"
+            className="w-full min-w-0 bg-transparent text-[12.5px] text-foreground outline-none placeholder:text-muted-foreground/80"
+          />
+        </div>
+
+        <Link
+          to="/buyer-requirements/new"
+          className="flex h-[34px] shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[9px] bg-foreground px-3.5 text-[13px] font-medium text-background transition-colors hover:bg-foreground/90"
+        >
+          <Plus className="size-[15px]" />
+          의뢰 등록
+        </Link>
+      </div>
+
+      {/* ── 쿼리 바 + 목록 ── */}
+      <div className="min-w-0 flex-1 space-y-3">
+        {/* 쿼리 바: 필터 · 정렬 한 줄 묶음 (검색은 상단 툴바와 동일 상태 공유) */}
+        <div className="border-b border-border/60">
+          <ViewBar
             search={query}
             onSearchChange={(v) => {
               setQuery(v);
               setPage(1);
             }}
-            searchPlaceholder="고객명 · 전화 · 단지 · 메모 검색"
+            searchPlaceholder="이름 · 조건 검색"
             filterDefinitions={allFilterDefinitions}
             activeFilters={activeFilters}
             onFilterAdd={(f) => {
@@ -656,7 +689,7 @@ function BuyerRequirementsPage() {
           </div>
 
           {isError ? (
-            <div className="flex flex-col items-center gap-3 rounded-xl border border-border/60 py-16 text-center">
+            <div className="flex flex-col items-center gap-3 rounded-xl border border-border bg-white py-16 text-center">
               <p className="text-sm text-muted-foreground">목록을 불러오지 못했습니다.</p>
               <Button variant="outline" size="sm" onClick={() => refetch()}>
                 <RefreshCw className="size-3.5" />
@@ -664,7 +697,7 @@ function BuyerRequirementsPage() {
               </Button>
             </div>
           ) : (
-            <div className="overflow-hidden rounded-xl border border-border/60 bg-background">
+            <div className="overflow-hidden rounded-xl border border-border bg-white">
               <DataTable
                 columns={columns}
                 data={filteredItems}
@@ -690,6 +723,8 @@ function BuyerRequirementsPage() {
                 rowHeight={36}
                 pinnedColumns={['customer']}
                 enableRowSelection
+                // 선택 배지 바 (디자인 시안의 "n명 선택" 바 — DataTable 내장 바 사용)
+                renderBulkActions={() => null}
                 isLoading={isLoading}
                 onRowClick={openDetail}
                 emptyMessage={
@@ -745,7 +780,6 @@ function BuyerRequirementsPage() {
               />
             </div>
           )}
-        </div>
       </div>
 
       {/* ── 연락함 기록 (행 빠른 액션) ── */}

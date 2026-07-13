@@ -79,7 +79,7 @@ export function DealDetailSheet({
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         side="right"
-        className="w-[calc(100vw-24px)] max-w-none gap-0 overflow-y-auto p-0 sm:w-[760px] sm:max-w-[760px] xl:w-[960px] xl:max-w-[960px]"
+        className="w-[calc(100vw-40px)] max-w-none gap-0 overflow-y-auto p-0 sm:w-[740px] sm:max-w-[740px]"
       >
         <SheetHeader className="sr-only">
           <SheetTitle>거래 상세</SheetTitle>
@@ -122,9 +122,7 @@ function DealDetailPanel({
       ? '매매가'
       : transactionType === 'jeonse'
         ? '전세금'
-        : transactionType === 'yearly_rent'
-          ? '연세 (연간 총액)'
-          : '합의 가격';
+        : '합의 가격';
 
   return (
     <section className="min-h-full overflow-hidden bg-background">
@@ -167,9 +165,9 @@ function DealDetailPanel({
         </div>
       ) : null}
 
-      <div className="grid gap-5 px-6 py-5 xl:grid-cols-3">
-        {/* ── 1열: 다음 액션 · 매물 · 당사자 · 공동중개 ───────────── */}
-        <div className="space-y-4">
+      <div className="grid gap-x-6 gap-y-5 px-6 py-5 pb-7 md:grid-cols-2">
+        {/* ── 1열: 다음 액션 · 매물 · 당사자 · 공동중개 · 메모 ───────────── */}
+        <div className="min-w-0 space-y-4">
           <SectionTitle>
             다음 액션 · {deal.isCancelled ? '취소' : getStatusMeta('dealStage', deal.stage).label}
           </SectionTitle>
@@ -246,10 +244,17 @@ function DealDetailPanel({
               단독중개 거래입니다.
             </div>
           )}
+
+          <SectionTitle>메모</SectionTitle>
+          <div className="rounded-md border border-warning/30 bg-warning-soft/50 px-3 py-2.5">
+            <p className="line-clamp-4 whitespace-pre-line text-sm leading-6 text-foreground">
+              {deal.memo || '등록된 메모가 없습니다.'}
+            </p>
+          </div>
         </div>
 
-        {/* ── 2열: 합의 조건 · 특약 · 지급 스케줄 ───────────── */}
-        <div className="space-y-4">
+        {/* ── 2열: 합의 조건 · 특약 · 지급 스케줄 · 계약 요약 · 수수료 ───────────── */}
+        <div className="min-w-0 space-y-4">
           <div className="flex items-center justify-between">
             <SectionTitle>합의 조건</SectionTitle>
             <Button type="button" variant="outline" size="xs" onClick={() => setTermsOpen(true)}>
@@ -259,7 +264,7 @@ function DealDetailPanel({
           </div>
           <div className="space-y-1 rounded-md border bg-muted/40 px-3 py-2.5">
             <DetailField label={priceLabel} value={formatMoney(deal.agreedPrice)} />
-            {transactionType === 'monthly' || transactionType === 'yearly_rent' ? (
+            {transactionType === 'monthly' ? (
               <DetailField label="보증금" value={formatMoney(deal.agreedDeposit)} />
             ) : null}
             {transactionType === 'monthly' ? (
@@ -288,10 +293,7 @@ function DealDetailPanel({
             </Badge>
           </div>
           <DealPaymentsSection deal={deal} referenceDate={referenceDate} />
-        </div>
 
-        {/* ── 3열: 계약 요약 · 수수료 · 메모 · 액션 ───────────── */}
-        <div className="space-y-4">
           <SectionTitle>계약 요약</SectionTitle>
           {contract ? (
             <div className="space-y-2 rounded-md border bg-muted/40 px-3 py-2.5">
@@ -343,13 +345,6 @@ function DealDetailPanel({
           )}
 
           <DealCommissionSection key={deal.id} deal={deal} />
-
-          <SectionTitle>메모</SectionTitle>
-          <div className="rounded-md border border-warning/30 bg-warning-soft/50 px-3 py-2.5">
-            <p className="line-clamp-4 whitespace-pre-line text-sm leading-6 text-foreground">
-              {deal.memo || '등록된 메모가 없습니다.'}
-            </p>
-          </div>
 
           <div className="flex gap-2 pt-1">
             {nextStage && !deal.isCancelled ? (
@@ -455,16 +450,14 @@ function EditTermsDialog({
   });
 
   const showPrice = transactionType !== 'monthly';
-  const showDeposit = transactionType === 'monthly' || transactionType === 'yearly_rent';
+  const showDeposit = transactionType === 'monthly';
   const showMonthlyRent = transactionType === 'monthly';
   const priceLabel =
     transactionType === 'sale'
       ? '매매가 (만원)'
       : transactionType === 'jeonse'
         ? '전세금 (만원)'
-        : transactionType === 'yearly_rent'
-          ? '연세 (연간 총액, 만원)'
-          : '합의 가격 (만원)';
+        : '합의 가격 (만원)';
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

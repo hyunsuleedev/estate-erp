@@ -139,4 +139,9 @@ export interface DataTableProps<TData> {
   // Status bar rendered below the table. Gets the currently focused row, if any,
   // and the total / visible counts so the parent can show summary info.
   renderStatusBar?: (args: { focusedRow: TData | null; totalCount: number }) => React.ReactNode;
+  // Inline row expansion (controlled). When a row id is in `expandedRowIds`,
+  // `renderExpandedRow` is rendered as a full-width sub-row directly below it.
+  // 확장 행은 높이가 가변이므로 하나라도 열려 있으면 가상화를 끈다.
+  expandedRowIds?: ReadonlySet<string>;
+  renderExpandedRow?: (row: TData) => React.ReactNode;
 }

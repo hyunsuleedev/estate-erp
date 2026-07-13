@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { ContractsService } from '../contracts/contracts.service';
 
 /**
  * DraftExecutorService — approved 된 EntityDraft 를 서버가 직접 실행.
@@ -21,7 +22,10 @@ import { PrismaService } from '../../prisma/prisma.service';
 export class DraftExecutorService {
   private readonly logger = new Logger(DraftExecutorService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly contracts: ContractsService,
+  ) {}
 
   async execute(draftId: string): Promise<void> {
     const draft = await this.prisma.entityDraft.findUnique({
@@ -91,10 +95,24 @@ export class DraftExecutorService {
     entityType: string;
     operation: string;
     entityId: string | null;
+    decidedById: string | null;
     proposedChanges: unknown;
   }): Promise<string | null> {
     const rawChanges =
       (draft.proposedChanges as Record<string, unknown>) ?? {};
+
+    if (
+      draft.entityType === 'contract' &&
+      draft.operation === 'action' &&
+      rawChanges.tool === 'apply_contract_document_revision'
+    ) {
+      return this.execContractRevisionAction(
+        draft.officeId,
+        draft.decidedById,
+        rawChanges,
+      );
+    }
+
     const changes = stripRenderingMeta(rawChanges);
 
     switch (draft.entityType) {
@@ -190,6 +208,26 @@ export class DraftExecutorService {
   }
 
   // ── Contract ──────────────────────────────────────────────────────
+  private async execContractRevisionAction(
+    officeId: string,
+    decidedById: string | null,
+    changes: Record<string, unknown>,
+  ) {
+    const documentId = this.requiredString(changes.documentId, 'documentId');
+    const revisionId = this.requiredString(changes.revisionId, 'revisionId');
+    const contentHash = this.requiredString(changes.contentHash, 'contentHash');
+    if (!decidedById) throw new Error('Contract revision approval requires decidedById');
+
+    const applied = await this.contracts.applyRevision(
+      documentId,
+      revisionId,
+      officeId,
+      decidedById,
+      contentHash,
+    );
+    return applied.document?.id ?? documentId;
+  }
+
   private async execContract(
     op: string,
     id: string | null,
@@ -211,6 +249,13 @@ export class DraftExecutorService {
       return id;
     }
     throw new Error(`Unsupported contract operation: ${op}`);
+  }
+
+  private requiredString(value: unknown, field: string) {
+    if (typeof value !== 'string' || !value.trim()) {
+      throw new Error(`${field} is required`);
+    }
+    return value.trim();
   }
 
   // ── Listing ───────────────────────────────────────────────────────

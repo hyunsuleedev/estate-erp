@@ -67,7 +67,7 @@ describe('TransactionReportDeadlineRule', () => {
     expect(where.officeId).toBe('office-1');
     expect(where.status).toEqual({ not: 'cancelled' });
     expect(where.transactionType).toEqual({
-      in: ['sale', 'jeonse', 'monthly', 'yearly_rent'],
+      in: ['sale', 'jeonse', 'monthly'],
     });
     expect(where.documents).toEqual({
       none: { category: 'report', submittedAt: { not: null } },

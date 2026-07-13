@@ -18,7 +18,7 @@ export function getNewPropertySuccessTabAction({
   };
 }
 
-const TRANSACTION_TYPE_ORDER = ['sale', 'jeonse', 'monthly', 'yearly_rent'] as const;
+const TRANSACTION_TYPE_ORDER = ['sale', 'jeonse', 'monthly'] as const;
 
 export type NewPropertyTransactionType = (typeof TRANSACTION_TYPE_ORDER)[number];
 

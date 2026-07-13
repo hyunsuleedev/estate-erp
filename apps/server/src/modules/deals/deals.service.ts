@@ -9,6 +9,7 @@ import {
   calculateCommissionBase,
   computeDealCommissionSummary,
   siteTypeToCommissionKind,
+  TransactionType,
   type CommissionTransactionType,
 } from '@estate-erp/shared';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -51,6 +52,15 @@ export class DealsService {
     return this.withPropertyContext(deal);
   }
 
+  /** 거래유형은 sale/jeonse/monthly 3종만 허용 (연세 등 폐기 유형 저장 차단) */
+  private assertValidTransactionType(transactionType?: string) {
+    if (transactionType === undefined) return;
+    const valid = Object.values(TransactionType) as string[];
+    if (!valid.includes(transactionType)) {
+      throw new BadRequestException('Invalid transactionType');
+    }
+  }
+
   async create(
     officeId: string,
     dto: {
@@ -71,10 +81,13 @@ export class DealsService {
       memo?: string;
     },
   ) {
+    this.assertValidTransactionType(dto.transactionType);
     const { listingId, transactionType, siteType } = await this.resolveListing(
       officeId,
       dto,
     );
+    // listing에서 유도된 값도 방어적으로 확인 (과거 데이터가 남아있는 경우 차단)
+    this.assertValidTransactionType(transactionType);
 
     const ourSide = dto.ourSide ?? 'both';
 
@@ -154,8 +167,7 @@ export class DealsService {
     if (
       args.transactionType !== 'sale' &&
       args.transactionType !== 'jeonse' &&
-      args.transactionType !== 'monthly' &&
-      args.transactionType !== 'yearly_rent'
+      args.transactionType !== 'monthly'
     ) {
       return;
     }

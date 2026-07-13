@@ -126,10 +126,10 @@ export function NotificationBell() {
         <Button
           variant="ghost"
           size="icon"
-          className="relative size-8"
+          className="relative size-[34px] rounded-[9px] text-muted-foreground"
           aria-label={unreadCount > 0 ? `알림 (미읽음 ${unreadCount}건)` : '알림'}
         >
-          <Bell className="size-4" />
+          <Bell className="size-[18px]" />
           {unreadCount > 0 && (
             <span
               aria-hidden

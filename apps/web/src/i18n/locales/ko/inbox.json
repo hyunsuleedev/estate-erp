@@ -1,9 +1,9 @@
 {
   "tabs": {
-    "pending": "처리 대기",
-    "processing": "재처리",
-    "approved": "승인됨",
-    "resolved": "처리됨"
+    "pending": "검토 필요",
+    "processing": "AI 작업 중",
+    "approved": "실행 대기",
+    "resolved": "처리 완료"
   },
   "priorities": {
     "urgent": "긴급",
@@ -51,7 +51,7 @@
     "selectedDecide": "선택 {{count}}건 {{action}}"
   },
   "empty": {
-    "pending": "처리할 업무가 없습니다. 👏",
+    "pending": "검토할 항목이 없습니다. 👏",
     "processing": "AI 재작성 중인 항목이 없습니다.",
     "approved": "승인 후 실행 대기 중인 업무가 없습니다.",
     "resolved": "처리된 업무가 없습니다."
@@ -77,7 +77,7 @@
     "executionFailed": "실행 실패: {{error}}",
     "commentThreadHeading": "AI 수정 지시",
     "commentReflected": "반영됨 · {{time}}",
-    "processingBanner": "AI 가 재작성 중입니다. 다음 OpenClaw 주기(최대 30분)에 반영돼 다시 검토 대기로 돌아옵니다."
+    "processingBanner": "AI가 수정 요청을 처리 중입니다. 새 버전이 준비되면 다시 검토 필요 탭으로 돌아옵니다."
   },
   "commentForm": {
     "label": "AI 수정 지시",

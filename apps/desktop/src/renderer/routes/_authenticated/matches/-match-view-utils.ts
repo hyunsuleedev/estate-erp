@@ -393,10 +393,6 @@ export function formatListingPrice(listing: MatchViewListItem['listing'] | null 
     return `${deposit} / ${monthlyRent}`;
   }
 
-  if (listing.transactionType === 'yearly_rent') {
-    return listing.price ? `연 ${formatMoney(listing.price)}` : '—';
-  }
-
   const amount = listing.price ?? listing.deposit;
   return amount ? formatMoney(amount) : '—';
 }

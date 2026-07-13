@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
+import { Fragment, useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import {
   flexRender,
   getCoreRowModel,
@@ -49,6 +49,8 @@ export function DataTable<TData extends { id: string }>({
   pinnedColumns,
   renderBulkActions,
   renderStatusBar,
+  expandedRowIds,
+  renderExpandedRow,
 }: DataTableProps<TData>) {
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
   const [focusedCell, setFocusedCell] = useState<{ row: number; col: number } | null>(null);
@@ -212,11 +214,20 @@ export function DataTable<TData extends { id: string }>({
   const canVirtualize =
     isFullHeight && rows.length >= VIRTUALIZE_THRESHOLD && typeof rowCellHeight === 'number';
 
+  // 측정 캐시를 행 인덱스가 아닌 행 id에 묶는다 — 정렬/필터로 순서가 바뀌어도
+  // 펼침 행의 실측 높이가 다른 행에 재사용되지 않는다.
+  // rows(getRowModel 캐시)가 바뀔 때만 참조가 갱신되도록 useCallback으로 안정화 —
+  // 인라인 함수면 스크롤 렌더마다 virtualizer가 키 매핑을 O(n) 재계산한다.
+  const getRowKey = useCallback((index: number) => rows[index]?.id ?? index, [rows]);
+
+  // 확장 행(renderExpandedRow)은 높이가 가변이므로 measureElement(ResizeObserver)로
+  // 행 단위(tbody) 실측 — 수천 행이 로드돼 있어도 펼친 상태에서 가상화가 유지된다.
   const rowVirtualizer = useVirtualizer({
     count: canVirtualize ? rows.length : 0,
     getScrollElement: () => scrollerRef.current,
     estimateSize: () => rowCellHeight ?? DEFAULT_ROW_HEIGHT,
     overscan: 10,
+    getItemKey: getRowKey,
   });
 
   const virtualRows = canVirtualize ? rowVirtualizer.getVirtualItems() : [];
@@ -235,7 +246,10 @@ export function DataTable<TData extends { id: string }>({
       return;
     }
     if (!tableRef.current) return;
-    const trs = tableRef.current.querySelectorAll('tbody tr');
+    // 확장 서브행/로딩 행은 데이터 행 인덱스에서 제외
+    const trs = tableRef.current.querySelectorAll(
+      'tbody tr:not([data-table-expanded-row]):not([aria-hidden])',
+    );
     trs[focusedCell.row]?.scrollIntoView({ block: 'nearest' });
   }, [focusedCell, canVirtualize, rowVirtualizer]);
 
@@ -395,42 +409,47 @@ export function DataTable<TData extends { id: string }>({
             ))}
           </thead>
 
-          {/* Body */}
-          <tbody>
-            {(() => {
+          {/* Body — 가상화 시 행 단위 <tbody>로 감싸 measureElement 실측 대상이 되게 한다 */}
+          {(() => {
               if (isLoading) {
-                return Array.from({ length: 8 }).map((_, i) => (
-                  <tr key={`skel-${i}`}>
-                    {allColumns.map((_, j) => (
-                      <td
-                        key={j}
-                        className={cn(
-                          isNotion ? 'border-b border-[#eeeeec] px-2.5' : 'border-b border-border/30 px-3',
-                          j < allColumns.length - 1 && (isNotion ? 'border-r border-r-[#eeeeec]' : 'border-r border-r-border/30'),
-                        )}
-                        style={{ height: rowCellHeight }}
-                      >
-                        <Skeleton className="h-4 w-full" />
-                      </td>
+                return (
+                  <tbody>
+                    {Array.from({ length: 8 }).map((_, i) => (
+                      <tr key={`skel-${i}`}>
+                        {allColumns.map((_, j) => (
+                          <td
+                            key={j}
+                            className={cn(
+                              isNotion ? 'border-b border-[#eeeeec] px-2.5' : 'border-b border-border/30 px-3',
+                              j < allColumns.length - 1 && (isNotion ? 'border-r border-r-[#eeeeec]' : 'border-r border-r-border/30'),
+                            )}
+                            style={{ height: rowCellHeight }}
+                          >
+                            <Skeleton className="h-4 w-full" />
+                          </td>
+                        ))}
+                      </tr>
                     ))}
-                  </tr>
-                ));
+                  </tbody>
+                );
               }
               if (rows.length === 0) {
                 return (
-                  <tr>
-                    <td
-                      colSpan={allColumns.length}
-                      className="h-32 text-center text-sm text-muted-foreground"
-                    >
-                      {emptyMessage}
-                    </td>
-                  </tr>
+                  <tbody>
+                    <tr>
+                      <td
+                        colSpan={allColumns.length}
+                        className="h-32 text-center text-sm text-muted-foreground"
+                      >
+                        {emptyMessage}
+                      </td>
+                    </tr>
+                  </tbody>
                 );
               }
               const renderRow = (row: (typeof rows)[number], rowIndex: number) => (
+                <Fragment key={row.id}>
                 <tr
-                  key={row.id}
                   data-state={row.getIsSelected() ? 'selected' : undefined}
                   className="group"
                 >
@@ -473,33 +492,62 @@ export function DataTable<TData extends { id: string }>({
                     );
                   })}
                 </tr>
+                {renderExpandedRow && expandedRowIds?.has(row.original.id) && (
+                  <tr data-table-expanded-row>
+                    <td
+                      colSpan={allColumns.length}
+                      className={cn(
+                        'p-0 align-top',
+                        isNotion ? 'border-b border-[#eeeeec] bg-slate-50/40' : 'border-b border-border/30 bg-muted/20',
+                      )}
+                    >
+                      {renderExpandedRow(row.original)}
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
               );
               if (canVirtualize) {
                 return (
                   <>
                     {paddingTop > 0 && (
-                      <tr aria-hidden="true">
-                        <td colSpan={allColumns.length} style={{ height: paddingTop, padding: 0, border: 0 }} />
-                      </tr>
+                      <tbody aria-hidden="true">
+                        <tr>
+                          <td colSpan={allColumns.length} style={{ height: paddingTop, padding: 0, border: 0 }} />
+                        </tr>
+                      </tbody>
                     )}
-                    {virtualRows.map((virtualRow) => renderRow(rows[virtualRow.index], virtualRow.index))}
+                    {virtualRows.map((virtualRow) => (
+                      // 행+확장행을 tbody 하나로 묶어 measureElement가 확장 높이까지 실측
+                      <tbody
+                        key={rows[virtualRow.index].id}
+                        data-index={virtualRow.index}
+                        ref={rowVirtualizer.measureElement}
+                      >
+                        {renderRow(rows[virtualRow.index], virtualRow.index)}
+                      </tbody>
+                    ))}
                     {paddingBottom > 0 && (
-                      <tr aria-hidden="true">
-                        <td colSpan={allColumns.length} style={{ height: paddingBottom, padding: 0, border: 0 }} />
-                      </tr>
+                      <tbody aria-hidden="true">
+                        <tr>
+                          <td colSpan={allColumns.length} style={{ height: paddingBottom, padding: 0, border: 0 }} />
+                        </tr>
+                      </tbody>
                     )}
                     {isLoadingMore && (
-                      <tr>
-                        <td colSpan={allColumns.length} className="h-10 px-3 text-center text-xs text-muted-foreground">
-                          더 불러오는 중...
-                        </td>
-                      </tr>
+                      <tbody>
+                        <tr>
+                          <td colSpan={allColumns.length} className="h-10 px-3 text-center text-xs text-muted-foreground">
+                            더 불러오는 중...
+                          </td>
+                        </tr>
+                      </tbody>
                     )}
                   </>
                 );
               }
               return (
-                <>
+                <tbody>
                   {rows.map(renderRow)}
                   {isLoadingMore && (
                     <tr>
@@ -508,10 +556,9 @@ export function DataTable<TData extends { id: string }>({
                       </td>
                     </tr>
                   )}
-                </>
+                </tbody>
               );
             })()}
-          </tbody>
         </table>
       </div>
 

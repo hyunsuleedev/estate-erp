@@ -1,7 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDeferredValue, useEffect, useMemo, useState } from 'react';
-import { Handshake, List, PanelsTopLeft, Plus, RotateCcw } from 'lucide-react';
+import { Handshake, List, PanelsTopLeft, Plus, RotateCcw, Search } from 'lucide-react';
 import { toast } from 'sonner';
 import { ApiError, type Deal } from '@estate-erp/api-client';
 import { api } from '@/lib/api';
@@ -27,15 +27,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
-import {
-  ConfirmDialog,
-  EmptyState,
-  FilterBar,
-  FilterCount,
-  FilterSearch,
-  FilterSelect,
-  PageHeader,
-} from '@/components/domain';
+import { ConfirmDialog, EmptyState, FilterCount, FilterSelect } from '@/components/domain';
 import { DealBoard } from './-deal-board';
 import { DealCreateDialog } from './-deal-create-dialog';
 import { DealDetailSheet } from './-deal-detail';
@@ -43,6 +35,7 @@ import { CancelledDealArchive, ClosedDealArchive, DealListView } from './-deal-l
 import {
   cancelledByLabels,
   dealStageOrder,
+  getDealAmountValue,
   getDealLocationLine,
   getDealTitle,
   getDealTransactionType,
@@ -53,7 +46,7 @@ type DealViewMode = 'board' | 'list';
 
 const CONTRACT_REQUIRED_STAGES = new Set(['contracted', 'settling', 'completed', 'closed']);
 
-const TX_FILTER_OPTIONS = ['sale', 'jeonse', 'monthly', 'yearly_rent'].map((value) => ({
+const TX_FILTER_OPTIONS = ['sale', 'jeonse', 'monthly'].map((value) => ({
   value,
   label: getStatusMeta('transactionType', value).label,
 }));
@@ -226,16 +219,14 @@ function DealsPage() {
     }
   }, [deals, dealsQuery.isLoading, selectedDealId]);
 
-  const kpis = useMemo(() => {
-    const valid = deals.filter((deal) => !deal.isCancelled);
-    const active = valid.filter((deal) => deal.stage !== 'closed');
-    return {
-      activeCount: active.length,
-      expectedCommission: active.reduce((sum, deal) => sum + (deal.commissionSummary?.billed ?? 0), 0),
-      completedCount: valid.filter((deal) => deal.stage === 'completed').length,
-      jointCount: active.filter((deal) => deal.isJointBrokerage).length,
-    };
-  }, [deals]);
+  /** 헤더 우측 "진행 합계" — 진행 중(취소·정산종료 제외) 거래 대표 금액 합 */
+  const activeSum = useMemo(
+    () =>
+      deals
+        .filter((deal) => !deal.isCancelled && deal.stage !== 'closed')
+        .reduce((sum, deal) => sum + getDealAmountValue(deal), 0),
+    [deals],
+  );
 
   const rowActions: DealRowActions = {
     onSelect: setSelectedDealId,
@@ -250,64 +241,99 @@ function DealsPage() {
 
   return (
     <div className="flex min-h-0 flex-col gap-4 pt-4">
-      <PageHeader
-        title="거래"
-        description="매칭에서 이관된 거래부터 정산 종료까지 파이프라인으로 관리합니다."
-        actions={
-          <Button type="button" onClick={() => setCreateOpen(true)}>
+      {/* 헤더 — 브레드크럼 + 타이틀 + 진행 합계 */}
+      <div className="flex flex-wrap items-start gap-3">
+        <div>
+          <div className="flex items-center gap-1.5 text-[11.5px] text-muted-foreground/80">
+            거래 <span className="text-muted-foreground/50">/</span>{' '}
+            <span className="font-medium text-muted-foreground">전체 거래</span>
+          </div>
+          <div className="mt-1 flex items-center gap-2">
+            <h1 className="text-lg font-bold tracking-tight text-foreground">거래 파이프라인</h1>
+            <span className="inline-flex h-5 items-center rounded-full bg-secondary px-2 text-[11.5px] font-semibold tabular-nums text-muted-foreground">
+              {deals.length}건
+            </span>
+          </div>
+          <p className="mt-0.5 break-keep text-[12.5px] text-muted-foreground/80">
+            매칭에서 이관된 거래부터 정산 완료까지 5단계로 관리해요
+          </p>
+        </div>
+        <div className="flex-1" />
+        <div className="flex items-center gap-3 pt-5">
+          <div className="flex items-baseline gap-1.5 whitespace-nowrap">
+            <span className="text-xs text-muted-foreground/80">진행 합계</span>
+            <span className="text-[14.5px] font-bold tabular-nums text-foreground">
+              {activeSum ? formatMoney(activeSum) : '—'}
+            </span>
+          </div>
+          <Button type="button" size="sm" onClick={() => setCreateOpen(true)}>
             <Plus className="size-4" />
             새 거래
           </Button>
-        }
-        className="mb-0"
-      />
-
-      <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
-        <KpiTile label="진행 거래" value={`${kpis.activeCount}건`} />
-        <KpiTile
-          label="예상 수수료 (진행)"
-          value={kpis.expectedCommission ? formatMoney(kpis.expectedCommission) : '—'}
-        />
-        <KpiTile label="잔금완료" value={`${kpis.completedCount}건`} />
-        <KpiTile label="공동중개 (진행)" value={`${kpis.jointCount}건`} />
+        </div>
       </div>
 
-      <FilterBar>
-        <FilterSearch value={searchQuery} onChange={setSearchQuery} placeholder="매물·고객·주소 검색" />
-        <FilterSelect label="거래유형" value={txFilter} onChange={setTxFilter} options={TX_FILTER_OPTIONS} />
+      {/* 툴바 — 검색 + 거래유형 칩 + 상세 필터 + 뷰 전환 */}
+      <div className="flex flex-wrap items-center gap-2.5 rounded-[10px] border px-3 py-2">
+        <div className="flex h-8 w-60 items-center gap-2 rounded-lg border border-border/70 bg-muted px-2.5">
+          <Search className="size-3.5 shrink-0 text-muted-foreground/70" />
+          <input
+            value={searchQuery}
+            onChange={(event) => setSearchQuery(event.target.value)}
+            placeholder="매물 · 고객 · 주소 검색"
+            className="w-full bg-transparent text-xs text-foreground outline-none placeholder:text-muted-foreground/70"
+          />
+        </div>
+        <div className="flex gap-1">
+          {[{ value: '', label: '전체' }, ...TX_FILTER_OPTIONS].map((option) => (
+            <button
+              key={option.value || 'all'}
+              type="button"
+              onClick={() => setTxFilter(option.value)}
+              className={cn(
+                'h-7 rounded-[7px] px-2.5 text-xs font-medium transition-colors',
+                txFilter === option.value
+                  ? 'bg-primary text-primary-foreground'
+                  : 'text-muted-foreground hover:bg-secondary hover:text-foreground',
+              )}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
         <FilterSelect label="단계" value={stageFilter} onChange={setStageFilter} options={STAGE_FILTER_OPTIONS} />
         <FilterSelect label="공동중개" value={jointFilter} onChange={setJointFilter} options={JOINT_FILTER_OPTIONS} />
         <FilterSelect label="계약서" value={contractFilter} onChange={setContractFilter} options={CONTRACT_FILTER_OPTIONS} />
         <FilterCount n={filteredDeals.length} />
-        <div className="flex w-fit items-center rounded-md bg-muted p-0.5">
-          <Button
+        <div className="flex w-fit items-center rounded-lg bg-secondary p-0.5">
+          <button
             type="button"
-            variant="ghost"
-            size="xs"
             onClick={() => setViewMode('board')}
             className={cn(
-              'h-7 rounded px-2',
-              viewMode === 'board' && 'bg-background text-foreground shadow-xs hover:bg-background',
+              'flex h-7 items-center gap-1.5 rounded-md px-3 text-xs font-semibold transition-colors',
+              viewMode === 'board'
+                ? 'bg-background text-foreground shadow-xs'
+                : 'text-muted-foreground hover:text-foreground',
             )}
           >
             <PanelsTopLeft className="size-3.5" />
             보드
-          </Button>
-          <Button
+          </button>
+          <button
             type="button"
-            variant="ghost"
-            size="xs"
             onClick={() => setViewMode('list')}
             className={cn(
-              'h-7 rounded px-2',
-              viewMode === 'list' && 'bg-background text-foreground shadow-xs hover:bg-background',
+              'flex h-7 items-center gap-1.5 rounded-md px-3 text-xs font-semibold transition-colors',
+              viewMode === 'list'
+                ? 'bg-background text-foreground shadow-xs'
+                : 'text-muted-foreground hover:text-foreground',
             )}
           >
             <List className="size-3.5" />
             리스트
-          </Button>
+          </button>
         </div>
-      </FilterBar>
+      </div>
 
       {dealsQuery.isLoading ? (
         <div className="space-y-2">
@@ -445,15 +471,6 @@ function DealsPage() {
           if (deleteTarget) deleteMutation.mutate(deleteTarget);
         }}
       />
-    </div>
-  );
-}
-
-function KpiTile({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-md border bg-background px-3 py-2.5">
-      <div className="text-xs text-muted-foreground">{label}</div>
-      <div className="mt-0.5 text-lg font-semibold tracking-tight tabular-nums text-foreground">{value}</div>
     </div>
   );
 }

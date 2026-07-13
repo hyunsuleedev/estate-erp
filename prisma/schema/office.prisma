@@ -74,6 +74,11 @@ model Office {
   proposals                 Proposal[]
   entityDrafts              EntityDraft[]
   entityDraftComments       EntityDraftComment[]
+  agentSessions             AgentSession[]
+  agentWakeupRequests       AgentWakeupRequest[]
+  agentRuns                 AgentRun[]
+  agentActivities           AgentActivity[]
+  contractDocumentRevisions ContractDocumentRevision[]
   calendarEvents            CalendarEvent[]
 
   siteUnitTypes  SiteUnitType[]

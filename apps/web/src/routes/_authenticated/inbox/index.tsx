@@ -313,8 +313,8 @@ function InboxPage() {
   return (
     <div className="space-y-4">
       <PageHeader
-        title="업무함"
-        description="AI 직원과 규칙 엔진이 올린 작업을 검토하고 승인합니다."
+        title="AI 검토함"
+        description="AI가 요청한 확인·수정·승인과 실행 결과를 한곳에서 검토합니다."
         className="mb-0"
       />
 
@@ -401,7 +401,7 @@ function InboxPage() {
       {activeDraftsQuery.isError ? (
         <div className="flex flex-col items-center justify-center rounded-xl border border-dashed bg-muted/20 p-16 text-center">
           <AlertTriangle className="mb-3 size-10 text-muted-foreground/40" />
-          <p className="text-sm font-medium">업무함을 불러오지 못했습니다</p>
+          <p className="text-sm font-medium">AI 검토함을 불러오지 못했습니다</p>
           <p className="mt-1 text-[12px] text-muted-foreground">
             {getErrorMessage(activeDraftsQuery.error)}
           </p>
@@ -616,6 +616,129 @@ function isBulkOperation(op: string): boolean {
   return op.endsWith('_bulk');
 }
 
+type ArtifactValidationIssue = {
+  path?: string;
+  message: string;
+};
+
+type ArtifactRevisionInfo = {
+  documentId?: string;
+  revisionId?: string;
+  revisionNo?: number;
+  contentHash?: string;
+  errors: ArtifactValidationIssue[];
+  warnings: ArtifactValidationIssue[];
+};
+
+function recordOf(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function validationIssuesOf(value: unknown): ArtifactValidationIssue[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((entry) => {
+    if (typeof entry === 'string') return [{ message: entry }];
+    const issue = recordOf(entry);
+    if (!issue || typeof issue.message !== 'string') return [];
+    return [
+      {
+        message: issue.message,
+        ...(typeof issue.path === 'string' ? { path: issue.path } : {}),
+      },
+    ];
+  });
+}
+
+function artifactRevisionOf(
+  proposedChanges: Record<string, unknown>,
+): ArtifactRevisionInfo | null {
+  const raw = recordOf(proposedChanges._artifactRevision);
+  if (!raw) return null;
+  const validation = recordOf(raw.validation);
+
+  return {
+    documentId:
+      typeof raw.documentId === 'string' ? raw.documentId : undefined,
+    revisionId:
+      typeof raw.revisionId === 'string' ? raw.revisionId : undefined,
+    revisionNo:
+      typeof raw.revisionNo === 'number' ? raw.revisionNo : undefined,
+    contentHash:
+      typeof raw.contentHash === 'string' ? raw.contentHash : undefined,
+    errors: validationIssuesOf(validation?.errors ?? raw.validationErrors),
+    warnings: validationIssuesOf(
+      validation?.warnings ?? raw.validationWarnings,
+    ),
+  };
+}
+
+function structuredContractAgreementOf(
+  proposedChanges: Record<string, unknown>,
+): Record<string, unknown> | null {
+  const payload = recordOf(proposedChanges.payload);
+  const metadata = recordOf(proposedChanges.metadata);
+  return (
+    recordOf(proposedChanges.contractAgreement) ??
+    recordOf(payload?.contractAgreement) ??
+    recordOf(metadata?.contractAgreement)
+  );
+}
+
+function contractPreviewChangesOf(
+  proposedChanges: Record<string, unknown>,
+): Record<string, unknown> {
+  const agreement = structuredContractAgreementOf(proposedChanges);
+  if (!agreement) return proposedChanges;
+
+  const property = recordOf(agreement.property) ?? {};
+  const payment = recordOf(agreement.payment) ?? {};
+  const transfer = recordOf(agreement.transfer) ?? {};
+  const firstSeller = Array.isArray(agreement.sellers)
+    ? recordOf(agreement.sellers[0])
+    : null;
+  const firstBuyer = Array.isArray(agreement.buyers)
+    ? recordOf(agreement.buyers[0])
+    : null;
+  const address = [property.roadAddress, property.jibunAddress]
+    .filter((value): value is string => typeof value === 'string' && !!value)
+    .join(' / ');
+  const targetDescription =
+    typeof property.targetDescription === 'string'
+      ? property.targetDescription
+      : '';
+
+  return {
+    ...proposedChanges,
+    transactionType: 'sale',
+    totalPrice: payment.totalPriceManwon,
+    statedDeposit: payment.depositManwon,
+    statedInterimPayment: payment.interimManwon,
+    statedInterimDate: payment.interimDueAt,
+    statedBalance: payment.balanceManwon,
+    statedBalanceDate: payment.balanceDueAt,
+    contractDate: agreement.actualAgreementAt ?? agreement.writtenAt,
+    specialTerms: agreement.specialTerms,
+    _document: {
+      propertyAddress: [address, targetDescription].filter(Boolean).join(' · '),
+      buildingStructure: property.buildingStructure,
+      buildingUse: property.buildingUse,
+      landAreaM2: property.landAreaM2,
+      exclusiveAreaM2: property.buildingAreaM2,
+      sellerName: firstSeller?.name,
+      sellerAddress: firstSeller?.address,
+      sellerRrn: firstSeller?.identificationNoMasked,
+      sellerPhone: firstSeller?.phone,
+      buyerName: firstBuyer?.name,
+      buyerAddress: firstBuyer?.address,
+      buyerRrn: firstBuyer?.identificationNoMasked,
+      buyerPhone: firstBuyer?.phone,
+      handoverDate: transfer.deliveryAt,
+    },
+  };
+}
+
 const TERMINAL_STATUSES = new Set(['executed', 'failed', 'rejected', 'expired']);
 
 /** pending draft 의 만료 임박(72시간 이내) 표시 칩 */
@@ -663,6 +786,7 @@ function InboxCard({
   const isPending = tab === 'pending';
   const isResolved = tab === 'resolved';
   const isBulk = isBulkOperation(item.operation);
+  const isVersionedArtifact = artifactRevisionOf(item.proposedChanges) !== null;
   const decidedByName = nameOf(item.decidedById);
 
   const qc = useQueryClient();
@@ -758,7 +882,8 @@ function InboxCard({
     isPending &&
     item.status === 'pending' &&
     item.decisionMode === 'approval' &&
-    !isBulk;
+    !isBulk &&
+    !isVersionedArtifact;
   const showSnooze = isPending && item.status === 'pending';
 
   return (
@@ -836,6 +961,15 @@ function InboxCard({
                 <span>{relative(item.createdAt)}</span>
                 <span className="opacity-60">·</span>
                 <span className="font-mono opacity-80">{item.generatedBy}</span>
+                {item.agentSession?.task?.assignedTo?.name ? (
+                  <span>담당 {item.agentSession.task.assignedTo.name}</span>
+                ) : null}
+                {item.agentSession ? (
+                  <span className="inline-flex items-center gap-1">
+                    <Sparkles className="size-3" />
+                    AI {item.agentSession.agentKey} · {item.agentSession.status}
+                  </span>
+                ) : null}
                 {item.comments.length > 0 && (
                   <span className="inline-flex items-center gap-1">
                     <MessageCircle className="size-3" />
@@ -922,13 +1056,15 @@ function CardSummaryLine({ item }: { item: InboxItem }) {
   const dateLocale = i18n.language.startsWith('ko') ? 'ko-KR' : 'en-US';
 
   if (item.category === 'contract_draft') {
-    const doc = (changes._document as Record<string, unknown> | undefined) ?? {};
-    const price = changes.totalPrice as number | undefined;
-    const specialTerms = (changes.specialTerms as string | undefined) ?? '';
+    const previewChanges = contractPreviewChangesOf(changes);
+    const doc = recordOf(previewChanges._document) ?? {};
+    const price = previewChanges.totalPrice as number | undefined;
+    const specialTerms =
+      (previewChanges.specialTerms as string | undefined) ?? '';
     const termsCount = specialTerms
       ? specialTerms.split(/\n/).filter((l) => l.trim()).length
       : 0;
-    const balance = changes.statedBalanceDate as string | undefined;
+    const balance = previewChanges.statedBalanceDate as string | undefined;
     const balanceLabel = balance
       ? new Date(balance).toLocaleDateString(dateLocale, {
           month: 'numeric',
@@ -1009,6 +1145,10 @@ function InboxItemDetailDialog({
       ? t('decisionMode.confirmAction')
       : t('decisionMode.approveAction');
   const isBulk = isBulkOperation(item.operation);
+  const artifactRevision = artifactRevisionOf(item.proposedChanges);
+  const isVersionedArtifact = artifactRevision !== null;
+  const hasArtifactValidationErrors =
+    (artifactRevision?.errors.length ?? 0) > 0;
   const decidedByName = nameOf(item.decidedById);
 
   const [editMode, setEditMode] = useState(false);
@@ -1045,8 +1185,14 @@ function InboxItemDetailDialog({
     setLocalChecked((prev) => prev.map((v, i) => (i === idx ? !v : v)));
 
   const saveEditMutation = useMutation({
-    mutationFn: () =>
-      api.inbox.edit(item.id, { proposedChanges: draftChanges }),
+    mutationFn: () => {
+      if (isVersionedArtifact) {
+        return Promise.reject(
+          new Error('불변 계약서 리비전은 직접 편집할 수 없습니다.'),
+        );
+      }
+      return api.inbox.edit(item.id, { proposedChanges: draftChanges });
+    },
     onSuccess: () => {
       toast.success('편집 내용을 저장했습니다');
       void qc.invalidateQueries({ queryKey: ['inbox'] });
@@ -1057,7 +1203,13 @@ function InboxItemDetailDialog({
 
   const decideMutation = useMutation({
     mutationFn: async () => {
+      if (hasArtifactValidationErrors) {
+        throw new Error(
+          '검증 오류를 수정한 새 계약서 리비전을 먼저 요청해주세요.',
+        );
+      }
       const hasEdits =
+        !isVersionedArtifact &&
         JSON.stringify(draftChanges) !== JSON.stringify(item.proposedChanges);
 
       let payload = draftChanges;
@@ -1072,7 +1224,7 @@ function InboxItemDetailDialog({
         };
       }
 
-      if (hasEdits || isBulk) {
+      if (!isVersionedArtifact && (hasEdits || isBulk)) {
         await api.inbox.edit(item.id, { proposedChanges: payload });
       }
       return api.inbox.decide(item.id);
@@ -1101,8 +1253,16 @@ function InboxItemDetailDialog({
 
   // 코멘트 → 재작성 루프: 수동 반영 (AI 가 아닌 사용자가 직접 반영)
   const revisionMutation = useMutation({
-    mutationFn: () =>
-      api.inbox.submitRevision(item.id, { proposedChanges: draftChanges }),
+    mutationFn: () => {
+      if (isVersionedArtifact) {
+        return Promise.reject(
+          new Error('불변 계약서 수정은 댓글로 새 리비전을 요청해주세요.'),
+        );
+      }
+      return api.inbox.submitRevision(item.id, {
+        proposedChanges: draftChanges,
+      });
+    },
     onSuccess: () => {
       toast.success('재작성을 반영했습니다 — 검토 대기로 돌아갑니다');
       void qc.invalidateQueries({ queryKey: ['inbox'] });
@@ -1114,6 +1274,7 @@ function InboxItemDetailDialog({
 
   const changes = draftChanges;
   const canEditInline =
+    !isVersionedArtifact &&
     !isBulk &&
     (item.category === 'contract_draft' || hasEditableFields(changes));
 
@@ -1172,6 +1333,10 @@ function InboxItemDetailDialog({
 
         {/* 본문 */}
         <div className="flex-1 overflow-y-auto bg-muted/10 px-6 py-5">
+          {artifactRevision ? (
+            <ArtifactRevisionSummary revision={artifactRevision} />
+          ) : null}
+
           {isBulk ? (
             <BulkItemsList
               items={bulkItems}
@@ -1184,7 +1349,7 @@ function InboxItemDetailDialog({
           ) : item.category === 'contract_draft' ? (
             <ContractDraftBody
               changes={changes}
-              editMode={editMode}
+              editMode={editMode && !isVersionedArtifact}
               onChange={setDraftChanges}
             />
           ) : (
@@ -1266,7 +1431,13 @@ function InboxItemDetailDialog({
                   <div className="rounded-md border border-violet-200 bg-violet-50/50 px-3 py-2 text-[12px] text-violet-700 dark:border-violet-900 dark:bg-violet-950/30 dark:text-violet-300">
                     {t('detail.processingBanner')}
                   </div>
-                  {!revisionMode ? (
+                  {isVersionedArtifact ? (
+                    <div className="rounded-md border border-dashed bg-background px-3 py-2 text-[12px] text-muted-foreground">
+                      이 계약서 버전은 직접 덮어쓸 수 없습니다. 기존 댓글을
+                      반영한 AI가 새 불변 리비전을 생성하면 다시 검토할 수
+                      있습니다.
+                    </div>
+                  ) : !revisionMode ? (
                     <Button
                       size="sm"
                       variant="outline"
@@ -1326,7 +1497,7 @@ function InboxItemDetailDialog({
         {/* 푸터 액션 */}
         {canDecide && (
           <div className="flex flex-wrap items-center gap-2 border-t bg-background px-6 py-3">
-            {editMode ? (
+            {editMode && !isVersionedArtifact ? (
               <>
                 <Button
                   size="sm"
@@ -1354,7 +1525,14 @@ function InboxItemDetailDialog({
                   size="sm"
                   className={cn('gap-1', decisionUI.tone)}
                   disabled={
-                    decideMutation.isPending || (isBulk && noneChecked)
+                    decideMutation.isPending ||
+                    (isBulk && noneChecked) ||
+                    hasArtifactValidationErrors
+                  }
+                  title={
+                    hasArtifactValidationErrors
+                      ? '검증 오류를 수정한 새 리비전이 필요합니다.'
+                      : undefined
                   }
                   onClick={() => decideMutation.mutate()}
                 >
@@ -1388,6 +1566,12 @@ function InboxItemDetailDialog({
                 <SnoozeMenu itemId={item.id} />
 
                 <div className="ml-auto text-[11px] text-muted-foreground">
+                  {item.agentSession?.task?.assignedTo?.name
+                    ? `담당 ${item.agentSession.task.assignedTo.name} · `
+                    : ''}
+                  {item.agentSession
+                    ? `AI ${item.agentSession.agentKey} · `
+                    : ''}
                   {relative(item.createdAt)} · {item.generatedBy}
                 </div>
               </>
@@ -1411,6 +1595,92 @@ function deepClone<T>(v: T): T {
     : JSON.parse(JSON.stringify(v));
 }
 
+function ArtifactRevisionSummary({
+  revision,
+}: {
+  revision: ArtifactRevisionInfo;
+}) {
+  const abbreviatedHash = revision.contentHash
+    ? revision.contentHash.length > 20
+      ? `${revision.contentHash.slice(0, 10)}…${revision.contentHash.slice(-8)}`
+      : revision.contentHash
+    : '—';
+  const hasValidationIssues =
+    revision.errors.length > 0 || revision.warnings.length > 0;
+
+  return (
+    <div className="mb-4 space-y-3 rounded-md border bg-background p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <FileText className="size-4 text-primary" />
+          <span className="text-[13px] font-semibold">
+            불변 계약서 리비전
+          </span>
+          <Badge variant="outline" className="text-[10px] tabular-nums">
+            #{revision.revisionNo ?? '—'}
+          </Badge>
+        </div>
+        <code
+          className="rounded bg-muted px-2 py-1 text-[11px] tabular-nums text-muted-foreground"
+          title={revision.contentHash}
+        >
+          {abbreviatedHash}
+        </code>
+      </div>
+
+      {!hasValidationIssues ? (
+        <div className="flex items-center gap-1.5 text-[12px] text-emerald-700 dark:text-emerald-300">
+          <CircleCheckBig className="size-3.5" />
+          검증 오류와 주의사항이 없습니다.
+        </div>
+      ) : null}
+
+      {revision.errors.length > 0 ? (
+        <div className="rounded-md border border-red-200 bg-red-50/60 p-3 text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
+          <div className="flex items-center gap-1.5 text-[12px] font-semibold">
+            <X className="size-3.5" />
+            검증 오류 {revision.errors.length}건 · 승인할 수 없습니다
+          </div>
+          <ul className="mt-1.5 space-y-1 text-[11px]">
+            {revision.errors.map((issue, index) => (
+              <li key={`${issue.path ?? 'error'}-${index}`}>
+                {issue.path ? (
+                  <code className="mr-1 opacity-70">{issue.path}</code>
+                ) : null}
+                {issue.message}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {revision.warnings.length > 0 ? (
+        <div className="rounded-md border border-amber-200 bg-amber-50/60 p-3 text-amber-700 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-300">
+          <div className="flex items-center gap-1.5 text-[12px] font-semibold">
+            <AlertTriangle className="size-3.5" />
+            확인할 주의사항 {revision.warnings.length}건
+          </div>
+          <ul className="mt-1.5 space-y-1 text-[11px]">
+            {revision.warnings.map((issue, index) => (
+              <li key={`${issue.path ?? 'warning'}-${index}`}>
+                {issue.path ? (
+                  <code className="mr-1 opacity-70">{issue.path}</code>
+                ) : null}
+                {issue.message}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      <p className="text-[11px] text-muted-foreground">
+        이 화면에서 검토한 리비전 번호와 내용 해시가 승인 대상에 고정됩니다.
+        내용 수정은 아래 댓글로 새 리비전을 요청하세요.
+      </p>
+    </div>
+  );
+}
+
 function ContractDraftBody({
   changes,
   editMode,
@@ -1423,7 +1693,11 @@ function ContractDraftBody({
   const { t } = useTranslation('inbox');
 
   if (!editMode) {
-    return <ContractDocumentPreview proposedChanges={changes} />;
+    return (
+      <ContractDocumentPreview
+        proposedChanges={contractPreviewChangesOf(changes)}
+      />
+    );
   }
 
   const totalPrice = (changes.totalPrice as number) ?? 0;

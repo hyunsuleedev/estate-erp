@@ -58,7 +58,7 @@ function NetworkPage() {
   };
 
   return (
-    <div className="flex h-[calc(100svh-5.5rem)] min-h-0 flex-col pt-4">
+    <div className="flex h-[calc(100svh-4rem)] min-h-0 flex-col pt-4">
       <PageHeader
         title="중개방"
         description="사무소 간 매물 공유 · 문의 · 채팅으로 공동중개를 진행합니다."

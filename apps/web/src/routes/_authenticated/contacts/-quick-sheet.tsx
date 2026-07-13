@@ -67,7 +67,6 @@ const transactionTypeTones: Record<string, { label: string; className: string }>
   sale: { label: '매매', className: 'bg-[#fdebec] text-[#8f4b46]' },
   jeonse: { label: '전세', className: 'bg-[#e7f3f8] text-[#337ea9]' },
   monthly: { label: '월세', className: 'bg-[#fbf3db] text-[#8f6b1f]' },
-  yearly_rent: { label: '연세', className: 'bg-[#f3eefb] text-[#6940a5]' },
 };
 
 export function ContactQuickSheet({

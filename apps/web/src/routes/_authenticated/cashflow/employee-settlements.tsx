@@ -32,9 +32,14 @@ import {
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import { RequireRole } from '@/components/layout/require-role';
 
 export const Route = createFileRoute('/_authenticated/cashflow/employee-settlements')({
-  component: EmployeeSettlementsPage,
+  component: () => (
+    <RequireRole roles={['owner', 'manager']} fallback="/cashflow/my-settlement">
+      <EmployeeSettlementsPage />
+    </RequireRole>
+  ),
 });
 
 const roleLabel: Record<string, string> = {

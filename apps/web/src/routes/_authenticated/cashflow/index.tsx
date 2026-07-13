@@ -5,7 +5,6 @@ import {
   AlertTriangle,
   ArrowRight,
   Bell,
-  CalendarDays,
   Check,
   ChevronLeft,
   ChevronRight,
@@ -13,8 +12,6 @@ import {
   Handshake,
   ReceiptText,
   RotateCw,
-  Sparkles,
-  SquareKanban,
   TrendingDown,
   TrendingUp,
   Wallet,
@@ -32,11 +29,15 @@ import { cn } from '@/lib/utils';
 import { formatMoney } from '@/lib/format';
 import { EmptyState, StatusBadge } from '@/components/domain';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { RequireRole } from '@/components/layout/require-role';
 
 export const Route = createFileRoute('/_authenticated/cashflow/')({
-  component: CashflowDashboard,
+  component: () => (
+    <RequireRole roles={['owner', 'manager']} fallback="/cashflow/my-settlement">
+      <CashflowDashboard />
+    </RequireRole>
+  ),
 });
 
 // ─────────────────────────────────────────────────────────────
@@ -60,6 +61,15 @@ function dateShort(value: string | null | undefined): string {
   if (!value) return '';
   const d = new Date(value);
   return `${d.getMonth() + 1}/${d.getDate()}`;
+}
+
+/** 카드 헤더 건수 알약 */
+function CountPill({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="inline-flex h-[18px] items-center rounded-full bg-secondary px-2 text-[10.5px] font-semibold tabular-nums text-muted-foreground">
+      {children}
+    </span>
+  );
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -152,95 +162,69 @@ function CashflowDashboard() {
   }
 
   return (
-    <div className="flex flex-col gap-5">
-      {/* 상단: 월 네비 + 오늘 */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <div className="inline-flex items-center rounded-md border bg-card">
-            <Button
+    <div className="mx-auto flex w-full max-w-[1120px] flex-col gap-3.5">
+      {/* 헤더: 타이틀 + 월 네비 + 수금 원장 */}
+      <div className="flex flex-wrap items-start gap-3">
+        <div>
+          <h1 className="text-lg font-bold tracking-tight">캐시플로우</h1>
+          <p className="mt-0.5 text-[12.5px] break-keep text-muted-foreground">
+            이번 달 돈 흐름 — 수금 목표 진행과 오늘 처리할 수금 업무를 한눈에 봐요
+          </p>
+        </div>
+        <div className="flex-1" />
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="inline-flex h-8 items-stretch overflow-hidden rounded-lg border bg-card">
+            <button
               type="button"
-              variant="ghost"
-              size="sm"
-              className="h-9 rounded-r-none px-2"
               onClick={prev}
+              aria-label="이전 달"
+              className="flex w-[30px] cursor-pointer items-center justify-center text-muted-foreground transition-colors hover:bg-muted"
             >
-              <ChevronLeft className="size-4" />
-            </Button>
-            <div className="min-w-[100px] border-x px-3 py-1 text-center">
-              <div className="text-sm font-semibold">
+              <ChevronLeft className="size-3.5" />
+            </button>
+            <span className="inline-flex items-center gap-1.5 border-x px-3">
+              <span className="whitespace-nowrap text-[12.5px] font-bold">
                 {selected.year}년 {selected.month}월
-              </div>
-              <div className="text-[10px] text-muted-foreground">
-                {isThisMonth ? '이번 달' : `${selected.year}.${String(selected.month).padStart(2, '0')}`}
-              </div>
-            </div>
-            <Button
+              </span>
+              <span className="whitespace-nowrap text-[10.5px] text-muted-foreground">
+                {isThisMonth
+                  ? '이번 달'
+                  : `${selected.year}.${String(selected.month).padStart(2, '0')}`}
+              </span>
+            </span>
+            <button
               type="button"
-              variant="ghost"
-              size="sm"
-              className="h-9 rounded-l-none px-2"
               onClick={next}
+              aria-label="다음 달"
+              className="flex w-[30px] cursor-pointer items-center justify-center text-muted-foreground transition-colors hover:bg-muted"
             >
-              <ChevronRight className="size-4" />
-            </Button>
+              <ChevronRight className="size-3.5" />
+            </button>
           </div>
           {!isThisMonth && (
-            <Button variant="outline" size="sm" onClick={goToday}>
+            <Button variant="outline" size="sm" className="h-8" onClick={goToday}>
               이번 달로
             </Button>
           )}
-        </div>
-
-        <div className="flex items-center gap-2 text-right">
-          <div>
-            <div className="text-[10px] text-muted-foreground">
-              {today.toLocaleDateString('ko-KR', {
-                year: 'numeric',
-                month: 'long',
-                day: 'numeric',
-              })}{' '}
-              ({weekdayKo(today)})
-            </div>
-            <div className="text-sm font-medium">
-              안녕하세요, 오늘 하루도 시작합니다
-            </div>
-          </div>
-          <div className="flex items-center gap-1">
-            <Button asChild variant="outline" size="sm">
-              <Link to="/cashflow/ledger">
-                수금 원장
-                <ArrowRight className="size-3.5" />
-              </Link>
-            </Button>
-            <Button asChild variant="ghost" size="sm" title="수금 칸반 보기">
-              <Link to="/cashflow/ledger" search={{ view: 'kanban' }}>
-                <SquareKanban className="size-3.5" />
-                칸반
-              </Link>
-            </Button>
-            <Button asChild variant="ghost" size="sm" title="수금 캘린더 보기">
-              <Link to="/cashflow/ledger" search={{ view: 'calendar' }}>
-                <CalendarDays className="size-3.5" />
-                캘린더
-              </Link>
-            </Button>
-          </div>
+          <Button asChild variant="outline" size="sm" className="h-8 font-semibold">
+            <Link to="/cashflow/ledger">
+              수금 원장
+              <ArrowRight className="size-3.5" />
+            </Link>
+          </Button>
         </div>
       </div>
 
-      {/* 메인 히어로: 이번 달 돈 흐름 스토리 */}
-      <HeroBlock
+      {/* 요약 카드: 다크 카드 + 라이트 카드 (다른 정산 페이지와 동일한 패턴) */}
+      <SummaryCards
         cashflow={cashflow}
         ledger={ledger}
         year={selected.year}
         month={selected.month}
       />
 
-      {/* 월별 추이: 수금 / 고정비 / 순이익 */}
-      <MonthlyTrendChart trend={cashflow.monthlyTrend} />
-
       {/* 2단: 오늘 처리 / 이번 달 계약 */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
+      <div className="grid grid-cols-1 items-start gap-3.5 lg:grid-cols-5">
         <div className="lg:col-span-3">
           <TodayActions ledger={ledger} />
         </div>
@@ -257,67 +241,10 @@ function CashflowDashboard() {
 }
 
 // ─────────────────────────────────────────────────────────────
-// 월별 추이 미니 차트 — 수금(막대) + 순이익(라벨)
+// 요약 카드 — 이번 달 수금(다크) + 순이익/받을 돈/계약 수수료(라이트)
 // ─────────────────────────────────────────────────────────────
 
-function MonthlyTrendChart({
-  trend,
-}: {
-  trend: CashflowSummary['monthlyTrend'];
-}) {
-  if (!trend || trend.length < 2) return null;
-  const max = Math.max(...trend.map((t) => t.collected), 1);
-  return (
-    <div className="rounded-xl border bg-card p-4">
-      <div className="mb-3 flex items-baseline justify-between">
-        <div className="text-sm font-semibold">월별 수금 추이</div>
-        <div className="text-[11px] text-muted-foreground">
-          최근 {trend.length}개월 · 수금액 기준
-        </div>
-      </div>
-      <div className="flex items-end gap-2">
-        {trend.map((t) => {
-          const pct = Math.max(2, Math.round((t.collected / max) * 100));
-          const monthLabel = t.month.length >= 7 ? `${Number(t.month.slice(5, 7))}월` : t.month;
-          return (
-            <div
-              key={t.month}
-              className="group flex flex-1 flex-col items-center gap-1"
-              title={`${t.month} · 수금 ${formatMoney(t.collected)} · 고정비 ${formatMoney(t.expense)} · 순이익 ${formatMoney(t.net)}`}
-            >
-              <span
-                className={cn(
-                  'text-[10px] font-medium tabular-nums',
-                  t.net >= 0 ? 'text-success' : 'text-destructive',
-                )}
-              >
-                {formatMoney(t.net)}
-              </span>
-              <div className="flex h-24 w-full items-end rounded-sm bg-muted/50">
-                <div
-                  className="w-full rounded-sm bg-success/70 transition-all group-hover:bg-success"
-                  style={{ height: `${pct}%` }}
-                />
-              </div>
-              <span className="text-[10px] text-muted-foreground">
-                {monthLabel}
-              </span>
-            </div>
-          );
-        })}
-      </div>
-      <div className="mt-2 text-[10px] text-muted-foreground">
-        막대 = 수금액 · 위 숫자 = 순이익(수금 − 고정비)
-      </div>
-    </div>
-  );
-}
-
-// ─────────────────────────────────────────────────────────────
-// Hero: 메인 블록 — 이번 달 수금·목표·순이익·받을 돈을 하나로
-// ─────────────────────────────────────────────────────────────
-
-function HeroBlock({
+function SummaryCards({
   cashflow,
   ledger,
   year,
@@ -373,118 +300,99 @@ function HeroBlock({
   const pending = cashflow.pending + cashflow.overdue;
 
   return (
-    <div className="overflow-hidden rounded-2xl border bg-gradient-to-br from-card via-card to-primary/5">
-      <div className="grid grid-cols-1 lg:grid-cols-[1.3fr_1fr]">
-        {/* 왼쪽: 수금 + 목표 + 전월比 */}
-        <div className="border-b p-6 lg:border-b-0 lg:border-r">
-          <div className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-            <Sparkles className="size-3" />
+    <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-[1.5fr_1fr_1fr_1fr]">
+      {/* 다크 카드: 이번 달 수금 + 목표 진행 */}
+      <div className="rounded-xl bg-primary px-[17px] py-[15px] text-primary-foreground">
+        <div className="flex items-center justify-between gap-2">
+          <span className="whitespace-nowrap text-[11px] font-medium uppercase tracking-wider text-primary-foreground/60">
             이번 달 수금
-          </div>
-          <div className="mt-3 flex items-baseline gap-3">
-            <span className="text-5xl font-bold tracking-tight">
-              {formatMoney(cashflow.collected)}
-            </span>
-            <DeltaPill pct={deltaPct} />
-          </div>
-
-          {/* 목표 진행 바 */}
-          <div className="mt-5 space-y-1.5">
-            <div className="flex items-baseline justify-between text-xs">
-              <span className="text-muted-foreground">
-                월 목표{' '}
-                <span className="font-medium text-foreground">
-                  {formatMoney(goal)}
-                </span>{' '}
-                중
-              </span>
-              <span className="font-semibold text-emerald-700 dark:text-emerald-300">
-                {goalPct}%
-              </span>
-            </div>
-            <div className="relative h-2 overflow-hidden rounded-full bg-muted">
-              <div
-                className="h-full rounded-full bg-gradient-to-r from-emerald-400 to-emerald-600 transition-all"
-                style={{ width: `${goalPct}%` }}
-              />
-            </div>
-            <div className="text-[11px] text-muted-foreground">
-              남은 목표{' '}
-              <span className="font-medium text-foreground">
-                {formatMoney(Math.max(0, goal - cashflow.collected))}
-              </span>
-              <span className="ml-1 text-[10px]">
-                · 목표는 고정비 기반 자동 추정
-              </span>
-            </div>
-          </div>
+          </span>
+          <DeltaPill pct={deltaPct} />
         </div>
-
-        {/* 오른쪽: 보조 숫자 3개 */}
-        <div className="grid grid-cols-3 divide-x">
-          <HeroStat
-            label="순이익"
-            value={formatMoney(cashflow.netProfit)}
-            emphasis={cashflow.netProfit >= 0 ? 'positive' : 'negative'}
-            hint={`고정비 ${formatMoney(cashflow.monthlyExpense)}`}
-          />
-          <HeroStat
-            label="받을 돈"
-            value={formatMoney(pending)}
-            emphasis="neutral"
-            hint={
-              cashflow.overdue > 0
-                ? `연체 ${formatMoney(cashflow.overdue)}`
-                : `진행 ${ledger.summary.paymentCount - ledger.summary.collectedCount}건`
-            }
-            hintTone={cashflow.overdue > 0 ? 'red' : undefined}
-          />
-          <HeroStat
-            label={`${month}월 계약 수수료`}
-            value={formatMoney(newBilledTotal)}
-            emphasis="neutral"
-            hint={`신규 계약 ${newContractCount}건`}
-          />
+        <div className="mt-1.5 text-[27px] font-semibold tracking-tight tabular-nums">
+          {formatMoney(cashflow.collected)}
+        </div>
+        <div className="mt-2.5">
+          <div className="flex items-baseline justify-between text-[10.5px] text-primary-foreground/60">
+            <span>월 목표 {formatMoney(goal)}</span>
+            <span className="font-bold tabular-nums text-emerald-300">
+              {goalPct}%
+            </span>
+          </div>
+          <div className="mt-1.5 h-[5px] overflow-hidden rounded-full bg-primary-foreground/15">
+            <div
+              className="h-full rounded-full bg-emerald-300/90 transition-all"
+              style={{ width: `${goalPct}%` }}
+            />
+          </div>
+          <div className="mt-1.5 text-[10.5px] text-primary-foreground/60">
+            남은 목표 {formatMoney(Math.max(0, goal - cashflow.collected))} ·
+            고정비 기반 자동 추정
+          </div>
         </div>
       </div>
+
+      {/* 라이트 카드 3개 */}
+      <StatCard
+        label="순이익"
+        value={formatMoney(cashflow.netProfit)}
+        valueClass={
+          cashflow.netProfit >= 0 ? 'text-success' : 'text-destructive'
+        }
+        hint={`수금 − 고정비 ${formatMoney(cashflow.monthlyExpense)}`}
+      />
+      <StatCard
+        label="받을 돈"
+        value={formatMoney(pending)}
+        hint={
+          cashflow.overdue > 0
+            ? `연체 ${formatMoney(cashflow.overdue)} 포함`
+            : `진행 ${ledger.summary.paymentCount - ledger.summary.collectedCount}건`
+        }
+        hintClass={
+          cashflow.overdue > 0 ? 'font-semibold text-destructive' : undefined
+        }
+      />
+      <StatCard
+        label={`${month}월 계약 수수료`}
+        value={formatMoney(newBilledTotal)}
+        hint={`신규 계약 ${newContractCount}건`}
+      />
     </div>
   );
 }
 
-function HeroStat({
+function StatCard({
   label,
   value,
-  emphasis,
+  valueClass,
   hint,
-  hintTone,
+  hintClass,
 }: {
   label: string;
   value: string;
-  emphasis: 'positive' | 'negative' | 'neutral';
+  valueClass?: string;
   hint?: string;
-  hintTone?: 'red';
+  hintClass?: string;
 }) {
-  const valueClass =
-    emphasis === 'positive'
-      ? 'text-emerald-700 dark:text-emerald-300'
-      : emphasis === 'negative'
-        ? 'text-red-600 dark:text-red-400'
-        : 'text-foreground';
   return (
-    <div className="flex flex-col justify-center p-5">
-      <div className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+    <div className="rounded-xl bg-muted/60 px-[17px] py-[15px]">
+      <div className="whitespace-nowrap text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
         {label}
       </div>
-      <div className={cn('mt-1.5 text-2xl font-bold tracking-tight', valueClass)}>
+      <div
+        className={cn(
+          'mt-1.5 text-[22px] font-semibold tracking-tight tabular-nums',
+          valueClass,
+        )}
+      >
         {value}
       </div>
       {hint && (
         <div
           className={cn(
-            'mt-1 text-[11px]',
-            hintTone === 'red'
-              ? 'text-red-600 dark:text-red-400'
-              : 'text-muted-foreground',
+            'mt-1 whitespace-nowrap text-[11.5px] text-muted-foreground',
+            hintClass,
           )}
         >
           {hint}
@@ -498,21 +406,22 @@ function DeltaPill({ pct }: { pct: number }) {
   if (pct === 0) return null;
   const positive = pct > 0;
   return (
-    <span
-      className={cn(
-        'inline-flex items-center gap-0.5 rounded-md px-2 py-1 text-xs font-semibold',
-        positive
-          ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300'
-          : 'bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300',
-      )}
-    >
-      {positive ? (
-        <TrendingUp className="size-3" />
-      ) : (
-        <TrendingDown className="size-3" />
-      )}
-      {positive ? '+' : ''}
-      {pct}%
+    <span className="inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-primary-foreground/10 px-2 py-0.5 text-[10.5px] font-bold">
+      <span
+        className={cn(
+          'inline-flex items-center gap-0.5 tabular-nums',
+          positive ? 'text-emerald-300' : 'text-red-300',
+        )}
+      >
+        {positive ? (
+          <TrendingUp className="size-3" />
+        ) : (
+          <TrendingDown className="size-3" />
+        )}
+        {positive ? '+' : ''}
+        {pct}%
+      </span>
+      <span className="font-medium text-primary-foreground/50">전월비</span>
     </span>
   );
 }
@@ -633,29 +542,26 @@ function TodayActions({ ledger }: { ledger: LedgerView }) {
 
   return (
     <div className="overflow-hidden rounded-xl border bg-card">
-      <div className="flex items-center justify-between border-b px-4 py-3">
-        <div className="flex items-center gap-2">
-          <div className="text-sm font-semibold">오늘 처리할 것</div>
-          <Badge variant="outline" className="text-[10px]">
-            {items.length}건
-          </Badge>
-        </div>
-        <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+      <div className="flex items-center gap-2 border-b px-4 py-3">
+        <span className="text-[13.5px] font-bold">오늘 처리할 것</span>
+        <CountPill>{items.length}건</CountPill>
+        <div className="flex-1" />
+        <div className="flex items-center gap-2.5 text-[10.5px] text-muted-foreground">
           {overdueCount > 0 && (
             <span className="inline-flex items-center gap-1">
-              <span className="size-1.5 rounded-full bg-red-500" />
+              <span className="size-1.5 rounded-full bg-destructive" />
               연체 {overdueCount}
             </span>
           )}
           {adjustmentCount > 0 && (
             <span className="inline-flex items-center gap-1">
-              <span className="size-1.5 rounded-full bg-amber-500" />
+              <span className="size-1.5 rounded-full bg-warning" />
               승인 {adjustmentCount}
             </span>
           )}
           {upcomingCount > 0 && (
             <span className="inline-flex items-center gap-1">
-              <span className="size-1.5 rounded-full bg-sky-500" />
+              <span className="size-1.5 rounded-full bg-info" />
               예정 {upcomingCount}
             </span>
           )}
@@ -664,14 +570,14 @@ function TodayActions({ ledger }: { ledger: LedgerView }) {
 
       {items.length === 0 ? (
         <div className="px-4 py-14 text-center">
-          <CircleCheck className="mx-auto mb-3 size-10 text-emerald-500/80" />
+          <CircleCheck className="mx-auto mb-3 size-10 text-success/80" />
           <div className="text-sm font-medium">모두 처리 완료</div>
           <div className="mt-1 text-xs text-muted-foreground">
             연체/승인 대기/이번 주 예정 모두 없습니다. 커피 한 잔 ☕
           </div>
         </div>
       ) : (
-        <div className="divide-y">
+        <div className="divide-y divide-border/60">
           {items.map((item) => (
             <ActionRow key={`${item.kind}:${item.id}`} item={item} />
           ))}
@@ -724,25 +630,22 @@ function OverdueRow({
   };
 
   return (
-    <div className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-red-50/50 dark:hover:bg-red-950/10">
-      <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-300">
-        <AlertTriangle className="size-4" />
-      </div>
+    <div className="flex items-center gap-3 px-4 py-[11px] transition-colors hover:bg-muted/40">
+      <span className="flex size-8 shrink-0 items-center justify-center rounded-[9px] bg-destructive-soft text-destructive">
+        <AlertTriangle className="size-[15px]" />
+      </span>
       <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-1.5">
           <Link
             to="/cashflow/ledger"
             search={{ deal: item.dealId, payment: item.payment.id }}
-            className="text-sm font-semibold underline-offset-2 hover:underline"
+            className="text-[12.5px] font-bold underline-offset-2 hover:underline"
           >
             {item.location}
           </Link>
-          <Badge
-            variant="outline"
-            className="border-0 bg-red-100 text-[10px] text-red-700 dark:bg-red-950/40 dark:text-red-300"
-          >
+          <span className="inline-flex h-[17px] items-center rounded-full bg-destructive-soft px-1.5 text-[9.5px] font-bold text-destructive">
             {item.daysOverdue}일 경과
-          </Badge>
+          </span>
           <span className="text-[11px] text-muted-foreground">
             {item.payment.code ?? ''} ·{' '}
             {item.payment.clientSide === 'seller' ? '매도측' : '매수측'}
@@ -750,31 +653,27 @@ function OverdueRow({
         </div>
         {item.payment.actualAmount !== null &&
           item.payment.actualAmount > 0 && (
-            <div className="mt-0.5 text-[11px] text-muted-foreground">
+            <div className="mt-0.5 text-[10.5px] text-muted-foreground">
               수금 {formatMoney(item.payment.actualAmount)} · 잔여{' '}
-              <span className="font-medium text-red-600">
+              <span className="font-medium text-destructive">
                 {formatMoney(item.remaining)}
               </span>
             </div>
           )}
       </div>
-      <div className="shrink-0 text-right">
-        <div className="text-base font-bold text-red-600 dark:text-red-400">
-          {formatMoney(item.remaining)}
-        </div>
-      </div>
-      <div className="shrink-0">
-        <Button
-          size="sm"
-          variant="outline"
-          className="h-8 border-red-200 text-red-700 hover:bg-red-50 dark:border-red-900 dark:text-red-300 dark:hover:bg-red-950/40"
-          onClick={handleDunning}
-          disabled={loading}
-        >
-          <Bell className="size-3" />
-          독촉
-        </Button>
-      </div>
+      <span className="shrink-0 text-sm font-bold tabular-nums text-destructive">
+        {formatMoney(item.remaining)}
+      </span>
+      <Button
+        size="sm"
+        variant="outline"
+        className="h-7 shrink-0 border-destructive/25 px-2.5 text-[11.5px] text-destructive hover:bg-destructive-soft/50 hover:text-destructive"
+        onClick={handleDunning}
+        disabled={loading}
+      >
+        <Bell className="size-3" />
+        독촉
+      </Button>
     </div>
   );
 }
@@ -815,37 +714,35 @@ function AdjustmentRow({
         : '대손 처리';
 
   return (
-    <div className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-amber-50/50 dark:hover:bg-amber-950/10">
-      <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
-        <ReceiptText className="size-4" />
-      </div>
+    <div className="flex items-center gap-3 px-4 py-[11px] transition-colors hover:bg-muted/40">
+      <span className="flex size-8 shrink-0 items-center justify-center rounded-[9px] bg-warning-soft text-warning">
+        <ReceiptText className="size-[15px]" />
+      </span>
       <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-sm font-semibold">{typeLabel}</span>
-          <Badge variant="outline" className="text-[10px]">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-[12.5px] font-bold">{typeLabel}</span>
+          <span className="inline-flex h-[17px] items-center rounded-full bg-secondary px-1.5 text-[9.5px] font-bold text-muted-foreground">
             {item.code ?? ''}
-          </Badge>
+          </span>
           {item.paymentCode && (
             <span className="text-[11px] text-muted-foreground">
               · {item.paymentCode}
             </span>
           )}
         </div>
-        <div className="mt-0.5 line-clamp-1 text-[11px] text-muted-foreground">
+        <div className="mt-0.5 line-clamp-1 text-[10.5px] text-muted-foreground">
           {item.reason}
         </div>
       </div>
-      <div className="shrink-0 text-right">
-        <div className="text-base font-bold text-amber-700 dark:text-amber-300">
-          {formatMoney(item.amount)}
-        </div>
-      </div>
+      <span className="shrink-0 text-sm font-bold tabular-nums text-warning">
+        {formatMoney(item.amount)}
+      </span>
       {canDecide ? (
-        <div className="flex shrink-0 items-center gap-1">
+        <div className="flex shrink-0 items-center gap-1.5">
           <Button
             size="sm"
             variant="outline"
-            className="h-8"
+            className="h-7 px-2.5 text-[11.5px] font-medium"
             onClick={() => reject.mutate()}
             disabled={reject.isPending || approve.isPending}
           >
@@ -854,7 +751,7 @@ function AdjustmentRow({
           </Button>
           <Button
             size="sm"
-            className="h-8 bg-emerald-600 hover:bg-emerald-700"
+            className="h-7 px-2.5 text-[11.5px] font-semibold"
             onClick={() => approve.mutate()}
             disabled={approve.isPending || reject.isPending}
           >
@@ -881,29 +778,27 @@ function UpcomingRow({
     <Link
       to="/cashflow/ledger"
       search={{ deal: item.dealId, payment: item.payment.id }}
-      className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-sky-50/50 dark:hover:bg-sky-950/10"
+      className="flex items-center gap-3 px-4 py-[11px] transition-colors hover:bg-muted/40"
     >
-      <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-sky-100 text-sky-700 dark:bg-sky-950/40 dark:text-sky-300">
-        <span className="text-[10px] font-bold">{dDay}</span>
-      </div>
+      <span className="flex size-8 shrink-0 items-center justify-center rounded-[9px] bg-info-soft text-info">
+        <span className="text-[10px] font-bold tabular-nums">{dDay}</span>
+      </span>
       <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-sm font-semibold">{item.location}</span>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-[12.5px] font-bold">{item.location}</span>
           <span className="text-[11px] text-muted-foreground">
             {item.payment.code ?? ''} ·{' '}
             {item.payment.clientSide === 'seller' ? '매도측' : '매수측'}
           </span>
         </div>
-        <div className="mt-0.5 text-[11px] text-muted-foreground">
+        <div className="mt-0.5 text-[10.5px] text-muted-foreground">
           잔금일 {dateShort(item.payment.dueDate)} (
           {weekdayKo(new Date(item.payment.dueDate!))})
         </div>
       </div>
-      <div className="shrink-0 text-right">
-        <div className="text-base font-semibold">
-          {formatMoney(item.payment.expectedAmount)}
-        </div>
-      </div>
+      <span className="shrink-0 text-sm font-semibold tabular-nums">
+        {formatMoney(item.payment.expectedAmount)}
+      </span>
     </Link>
   );
 }
@@ -987,36 +882,36 @@ function MonthContracts({
   return (
     <div className="flex h-full flex-col overflow-hidden rounded-xl border bg-card">
       <div className="border-b px-4 py-3">
-        <div className="flex items-center justify-between">
-          <div className="text-sm font-semibold">{month}월 계약 수수료</div>
-          <Badge variant="outline" className="text-[10px]">
-            {contracts.length}건
-          </Badge>
+        <div className="flex items-center gap-2">
+          <span className="text-[13.5px] font-bold">{month}월 계약 수수료</span>
+          <span className="ml-auto">
+            <CountPill>{contracts.length}건</CountPill>
+          </span>
         </div>
-        <div className="mt-1 text-[11px] text-muted-foreground">
-          이번 달 새로 계약된 거래의 수수료 채권
+        <div className="mt-0.5 text-[11px] break-keep text-muted-foreground">
+          이번 달 새로 계약된 거래의 수수료 채권이에요
         </div>
 
         {contracts.length > 0 && (
-          <div className="mt-3 space-y-1.5">
-            <div className="flex items-baseline justify-between text-xs">
-              <span className="text-muted-foreground">총 채권</span>
-              <span className="text-lg font-bold tracking-tight">
+          <div className="mt-3">
+            <div className="flex items-baseline justify-between">
+              <span className="text-[11px] text-muted-foreground">총 채권</span>
+              <span className="text-[17px] font-bold tabular-nums">
                 {formatMoney(billedTotal)}
               </span>
             </div>
-            <div className="relative h-1.5 overflow-hidden rounded-full bg-muted">
+            <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-muted">
               <div
-                className="h-full rounded-full bg-emerald-500 transition-all"
+                className="h-full rounded-full bg-success transition-all"
                 style={{ width: `${overallRatio}%` }}
               />
             </div>
-            <div className="flex items-baseline justify-between text-[11px]">
-              <span className="text-emerald-700 dark:text-emerald-300">
+            <div className="mt-1 flex justify-between text-[10.5px]">
+              <span className="font-semibold text-success">
                 수금 {formatMoney(collectedTotal)} ({overallRatio}%)
               </span>
               <span className="text-muted-foreground">
-                미수금 {formatMoney(billedTotal - collectedTotal)}
+                미수 {formatMoney(billedTotal - collectedTotal)}
               </span>
             </div>
           </div>
@@ -1024,55 +919,47 @@ function MonthContracts({
       </div>
 
       {contracts.length === 0 ? (
-        <div className="flex flex-1 items-center justify-center px-4 py-10 text-center text-sm text-muted-foreground">
-          이번 달 새로 계약된 거래가 없습니다
+        <div className="flex flex-1 items-center justify-center px-4 py-9 text-center text-xs text-muted-foreground/70">
+          이번 달 새로 계약된 거래가 없어요
         </div>
       ) : (
-        <div className="divide-y">
+        <div className="divide-y divide-border/60">
           {contracts.map((c) => (
             <Link
               key={c.dealId}
               to="/cashflow/ledger"
               search={{ deal: c.dealId }}
-              className="block px-4 py-3 transition-colors hover:bg-muted/40"
+              className="block px-4 py-[11px] transition-colors hover:bg-muted/40"
             >
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <span className="truncate text-sm font-medium">
-                      {c.location}
-                    </span>
-                    <StatusBadge
-                      kind="transactionType"
-                      status={c.transactionType}
-                      size="sm"
-                    />
-                  </div>
-                  <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                    <span>계약 {dateShort(c.stageDate)}</span>
-                    {c.partnerBrokerName && (
-                      <>
-                        <span>·</span>
-                        <span className="inline-flex items-center gap-0.5 text-violet-700 dark:text-violet-300">
-                          <Handshake className="size-3" />
-                          {c.partnerBrokerName}
-                        </span>
-                      </>
-                    )}
-                  </div>
-                </div>
-                <div className="shrink-0 text-right">
-                  <div className="text-sm font-semibold">
-                    {formatMoney(c.billed)}
-                  </div>
-                  <div className="text-[11px] text-emerald-700 dark:text-emerald-300">
-                    {c.collectedRatio}%
-                  </div>
-                </div>
+              <div className="flex min-w-0 items-center gap-1.5">
+                <span className="truncate text-[12.5px] font-semibold">
+                  {c.location}
+                </span>
+                <StatusBadge
+                  kind="transactionType"
+                  status={c.transactionType}
+                  size="sm"
+                  className="shrink-0"
+                />
+                <span className="ml-auto shrink-0 text-[12.5px] font-bold tabular-nums">
+                  {formatMoney(c.billed)}
+                </span>
               </div>
-              <div className="mt-2 h-1 overflow-hidden rounded-full bg-muted">
+              <div className="mt-1 flex items-center gap-1.5 text-[10.5px] text-muted-foreground">
+                <span>계약 {dateShort(c.stageDate)}</span>
+                {c.partnerBrokerName && (
+                  <span className="inline-flex items-center gap-0.5 text-violet">
+                    <Handshake className="size-[11px]" />
+                    {c.partnerBrokerName}
+                  </span>
+                )}
+                <span className="ml-auto font-semibold tabular-nums text-success">
+                  {c.collectedRatio}%
+                </span>
+              </div>
+              <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-muted">
                 <div
-                  className="h-full rounded-full bg-emerald-500"
+                  className="h-full rounded-full bg-success"
                   style={{ width: `${c.collectedRatio}%` }}
                 />
               </div>

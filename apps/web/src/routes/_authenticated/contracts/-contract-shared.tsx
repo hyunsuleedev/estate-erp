@@ -27,7 +27,7 @@ const CONTRACT_TRANSACTION_TYPE_SET = new Set(
 );
 
 /** StatusBadge(kind=transactionType)가 커버하는 기본 거래유형 */
-const BASE_TRANSACTION_TYPES = new Set(['sale', 'jeonse', 'monthly', 'yearly_rent']);
+const BASE_TRANSACTION_TYPES = new Set(['sale', 'jeonse', 'monthly']);
 
 /** 계약 상태 옵션 — 라벨은 status-config(STATUS_CONFIG.contractStatus) 단일 소스 */
 export const CONTRACT_STATUS_OPTIONS: Array<{ value: string; label: string }> =
@@ -144,11 +144,10 @@ export function getContractPropertyLabel(deal: Deal | null | undefined): string 
     .join(' ');
 }
 
-/** Deal의 거래유형을 계약서 거래유형으로 변환 (연세 등 미지원 유형은 폴백) */
+/** Deal의 거래유형을 계약서 거래유형으로 변환 (미지원 유형은 sale 폴백) */
 export function toContractTransactionType(deal: Deal | null | undefined): string {
   const dealType = deal?.transactionType ?? deal?.listing?.transactionType;
   if (dealType && CONTRACT_TRANSACTION_TYPE_SET.has(dealType)) return dealType;
-  if (dealType === 'yearly_rent') return 'monthly';
   return 'sale';
 }
 

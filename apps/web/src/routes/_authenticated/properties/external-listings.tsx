@@ -32,9 +32,7 @@ import { DataTable } from '@/components/data-table';
 import { useAuth } from '@/providers/auth-provider';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -123,6 +121,12 @@ function ExternalListingsPage() {
   const [onlyFavorite, setOnlyFavorite] = useState(false);
   const [priceMin, setPriceMin] = useState('');
   const [priceMax, setPriceMax] = useState('');
+  // 월세 범위 (월세 탭 전용 — 보증금은 priceMin/Max가 담당)
+  const [monthlyRentMin, setMonthlyRentMin] = useState('');
+  const [monthlyRentMax, setMonthlyRentMax] = useState('');
+  // 범위 카드의 '상세'(듀얼 슬라이더) 모드 토글
+  const [priceDetailMode, setPriceDetailMode] = useState(false);
+  const [monthlyDetailMode, setMonthlyDetailMode] = useState(false);
   const [showManualDialog, setShowManualDialog] = useState(false);
   const [innerTab, setInnerTab] = useState<'new' | 'old'>('new');
   const [showStartConfirm, setShowStartConfirm] = useState(false);
@@ -336,6 +340,14 @@ function ExternalListingsPage() {
       priceMax.trim() && Number.isFinite(Number(priceMax))
         ? Number(priceMax)
         : null;
+    const mrMin =
+      monthlyRentMin.trim() && Number.isFinite(Number(monthlyRentMin))
+        ? Number(monthlyRentMin)
+        : null;
+    const mrMax =
+      monthlyRentMax.trim() && Number.isFinite(Number(monthlyRentMax))
+        ? Number(monthlyRentMax)
+        : null;
     // 우선 가격은 main.price(매매)나 deposit(전세/월세) 기준으로 범위 체크.
     const priceOf = (g: ExternalListingGroup): number | null => {
       const m = g.mainExternalListing;
@@ -380,6 +392,13 @@ function ExternalListingsPage() {
         if (pMin != null && p < pMin) return false;
         if (pMax != null && p > pMax) return false;
       }
+      // 월세 범위 (월세 탭 전용)
+      if (transactionType === 'monthly' && (mrMin != null || mrMax != null)) {
+        const r = g.mainExternalListing?.monthlyRent ?? null;
+        if (r == null) return false;
+        if (mrMin != null && r < mrMin) return false;
+        if (mrMax != null && r > mrMax) return false;
+      }
       return true;
     });
   }, [
@@ -393,6 +412,8 @@ function ExternalListingsPage() {
     onlySeango,
     priceMin,
     priceMax,
+    monthlyRentMin,
+    monthlyRentMax,
     transactionType,
   ]);
 
@@ -404,7 +425,11 @@ function ExternalListingsPage() {
     (onlyOwner ? 1 : 0) +
     (onlyAd ? 1 : 0) +
     (onlySeango ? 1 : 0) +
-    (priceMin.trim() || priceMax.trim() ? 1 : 0);
+    (priceMin.trim() || priceMax.trim() ? 1 : 0) +
+    (transactionType === 'monthly' &&
+    (monthlyRentMin.trim() || monthlyRentMax.trim())
+      ? 1
+      : 0);
 
   const resetFilters = () => {
     setBuildingQuery('');
@@ -416,6 +441,8 @@ function ExternalListingsPage() {
     setOnlySeango(false);
     setPriceMin('');
     setPriceMax('');
+    setMonthlyRentMin('');
+    setMonthlyRentMax('');
   };
 
   const columns = useMemo(
@@ -445,12 +472,73 @@ function ExternalListingsPage() {
     }
   };
 
+  // 범위 카드 구성 — 거래유형별 라벨/프리셋 (만원)
+  const priceFilterLabel =
+    transactionType === 'sale'
+      ? '매매가'
+      : transactionType === 'jeonse'
+        ? '전세가'
+        : '보증금';
+  const priceRangeMax = transactionType === 'monthly' ? 100000 : 250000;
+  const priceRangeStep = transactionType === 'monthly' ? 1000 : 5000;
+  const priceRangePresets =
+    transactionType === 'sale'
+      ? [30000, 50000, 80000, 100000, 150000, 200000, 250000]
+      : transactionType === 'jeonse'
+        ? [10000, 30000, 50000, 80000, 100000, 150000, 200000]
+        : [1000, 3000, 5000, 10000, 30000, 50000, 100000];
+
   return (
-    <div className="-m-4 flex min-h-0 min-w-0 flex-1 flex-col bg-white px-6 py-5">
+    <div className="-m-4 flex min-h-0 min-w-0 flex-1 flex-col bg-white">
+      {/* 페이지 헤더 */}
+      <div className="flex shrink-0 items-center gap-2.5 border-b px-6 py-3">
+        <h1 className="text-lg font-bold tracking-[-0.02em] text-foreground">
+          광고노트
+        </h1>
+        <div className="flex-1" />
+        {activeSession && (
+          <>
+            <Button
+              size="sm"
+              variant="default"
+              className="h-[34px] rounded-[9px] px-3.5 text-[13px]"
+              disabled={!canManageSession || completeSessionMutation.isPending}
+              onClick={() => setShowCompleteConfirm(true)}
+              title={
+                canManageSession
+                  ? undefined
+                  : '권한 부족: 본인 세션 또는 매니저/오너만 완료 가능'
+              }
+            >
+              <CheckCircle className="mr-1 size-4" />
+              완료
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-[34px] rounded-[9px] px-3.5 text-[13px]"
+              disabled={!canManageSession || cancelSessionMutation.isPending}
+              onClick={() => setShowCancelConfirm(true)}
+            >
+              <XCircle className="mr-1 size-4" />
+              취소
+            </Button>
+          </>
+        )}
+        <Button
+          size="sm"
+          className="h-[34px] rounded-[9px] px-3.5 text-[13px]"
+          onClick={handleManualButtonClick}
+        >
+          <Plus className="mr-1 size-4" />
+          입력
+        </Button>
+      </div>
+
       {activeSession && (
-        <div className="mb-3 flex items-center gap-2 rounded-md border border-amber-100 bg-amber-50/70 px-3 py-2 text-sm">
-          <Lock className="size-4 text-amber-700" />
-          <span className="text-amber-900">
+        <div className="mx-6 mt-3 flex items-center gap-2 rounded-md border border-warning-soft bg-warning-soft/50 px-3 py-2 text-sm">
+          <Lock className="size-4 text-warning" />
+          <span className="text-foreground">
             스냅샷 세션 진행 중 —{' '}
             <b>{activeSession.startedBy?.name ?? '알 수 없음'}</b>님이{' '}
             {new Date(activeSession.startedAt).toLocaleString('ko-KR')} 시작
@@ -459,7 +547,7 @@ function ExternalListingsPage() {
       )}
 
       {sessionError && (
-        <div className="mb-3 flex items-center justify-between rounded-md border border-[#eeeeec] px-3 py-2 text-xs">
+        <div className="mx-6 mt-3 flex items-center justify-between rounded-md border px-3 py-2 text-xs">
           <span>{sessionError}</span>
           <Button
             size="xs"
@@ -478,117 +566,91 @@ function ExternalListingsPage() {
         }
         className="flex min-h-0 min-w-0 flex-1 flex-col gap-0"
       >
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-[#eeeeec] pb-3">
-          <TabsList className="bg-slate-100/70">
-            {transactionTypes.map((t) => (
-              <TabsTrigger
-                key={t.value}
-                value={t.value}
-                className="border-0 px-3 shadow-none data-[state=active]:border data-[state=active]:border-[#d9d9d6] data-[state=active]:bg-white data-[state=active]:shadow-sm"
-              >
-                {t.label}
-              </TabsTrigger>
-            ))}
-          </TabsList>
-          {!isLoading && (
-            <span className="text-xs tabular-nums text-slate-500">
-              {activeFilterCount > 0 &&
-              filteredGroups.length !== groups.length
-                ? `${filteredGroups.length}/${groups.length}건`
-                : `${groups.length}건`}
-            </span>
-          )}
-          <div className="ml-auto flex shrink-0 items-center gap-2">
-            {activeSession && (
-              <>
-                <Button
-                  size="sm"
-                  variant="default"
-                  disabled={
-                    !canManageSession || completeSessionMutation.isPending
-                  }
-                  onClick={() => setShowCompleteConfirm(true)}
-                  title={
-                    canManageSession
-                      ? undefined
-                      : '권한 부족: 본인 세션 또는 매니저/오너만 완료 가능'
-                  }
-                >
-                  <CheckCircle className="mr-1 size-4" />
-                  완료
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={
-                    !canManageSession || cancelSessionMutation.isPending
-                  }
-                  onClick={() => setShowCancelConfirm(true)}
-                >
-                  <XCircle className="mr-1 size-4" />
-                  취소
-                </Button>
-              </>
-            )}
-            <Button size="sm" className="mb-2 h-8 px-3 text-xs" onClick={handleManualButtonClick}>
-              <Plus className="mr-1 size-4" />
-              입력
-            </Button>
-          </div>
-        </div>
-
-        {/* 필터 카드 — 테이블과 시각적으로 분리 */}
-        <div className="border-b border-[#eeeeec] py-3">
+        {/* 필터 행 */}
+        <div className="shrink-0 border-b px-6 py-3">
           <div className="flex flex-wrap items-center gap-2">
-            <div className="relative min-w-[220px] flex-1 max-w-md">
-              <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-slate-400" />
-              <Input
+            <TabsList className="h-auto rounded-lg bg-secondary p-[3px]">
+              {transactionTypes.map((t) => (
+                <TabsTrigger
+                  key={t.value}
+                  value={t.value}
+                  className="rounded-md border-0 px-[13px] py-[5px] text-[13px] font-medium text-muted-foreground shadow-none data-[state=active]:bg-white data-[state=active]:text-foreground data-[state=active]:shadow-sm"
+                >
+                  {t.label}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+            {!isLoading && (
+              <span className="text-[12.5px] tabular-nums text-muted-foreground/80">
+                {activeFilterCount > 0 &&
+                filteredGroups.length !== groups.length
+                  ? `${filteredGroups.length}/${groups.length}건`
+                  : `${groups.length}건`}
+              </span>
+            )}
+
+            <div className="flex h-8 min-w-[150px] flex-[0_1_248px] items-center gap-1.5 rounded-lg border bg-muted px-2.5">
+              <Search className="size-3.5 shrink-0 text-muted-foreground/70" />
+              <input
                 value={searchQuery}
                 onChange={(event) => setSearchQuery(event.target.value)}
-                placeholder="단지·메모 검색 (서버)"
-                className="h-8 bg-white pl-8 text-[13px]"
+                placeholder="단지 · 메모 · 부동산 검색"
+                className="w-full min-w-0 bg-transparent text-[13px] outline-none placeholder:text-muted-foreground/60"
               />
             </div>
+            <div className="flex-1" />
             <MultiSelect
               options={siteOptions}
               selected={selectedSiteIds}
               onChange={setSelectedSiteIds}
               placeholder="관리 단지 선택"
-              className="min-w-[220px] bg-white"
+              className="h-8 min-w-[180px] rounded-lg bg-white text-[12.5px]"
             />
             <Button
               type="button"
               variant="outline"
               size="sm"
-              className={cn('h-8 bg-white px-2.5 text-xs', isFilterOpen && 'border-slate-400 bg-slate-50')}
+              className={cn(
+                'h-8 rounded-lg bg-white px-3 text-[12.5px] font-normal text-foreground/80',
+                isFilterOpen && 'border-foreground/40',
+              )}
               onClick={() => setIsFilterOpen((v) => !v)}
             >
-              <Filter className="mr-1 size-4" />
+              <Filter className="mr-1.5 size-3.5 text-muted-foreground/70" />
               상세 필터
               {activeFilterCount > 0 && (
-                <Badge
-                  variant="secondary"
-                  className="ml-2 h-5 px-1.5 text-[10px]"
-                >
+                <span className="ml-1.5 inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-primary px-[5px] text-[11px] font-semibold text-primary-foreground">
                   {activeFilterCount}
-                </Badge>
+                </span>
               )}
               {isFilterOpen ? (
-                <ChevronUp className="ml-1 size-4" />
+                <ChevronUp className="ml-1 size-3.5 text-muted-foreground/70" />
               ) : (
-                <ChevronDown className="ml-1 size-4" />
+                <ChevronDown className="ml-1 size-3.5 text-muted-foreground/70" />
               )}
             </Button>
+            {activeFilterCount > 0 && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-8 px-2.5 text-[12.5px] font-medium text-orange hover:text-orange"
+                onClick={resetFilters}
+              >
+                <RotateCcw className="mr-1 size-3.5" />
+                초기화
+              </Button>
+            )}
           </div>
 
           {isFilterOpen && (
-            <div className="mt-3 flex flex-col gap-3 rounded-md border border-[#eeeeec] bg-slate-50/60 px-3 py-3">
-              {/* Row 1: 동/호수/매물특징 */}
-              <div className="flex flex-wrap items-center gap-3">
+            <div className="mt-3 flex flex-col gap-3.5 rounded-[10px] border bg-muted/50 p-4">
+              {/* 텍스트 필터: 동/호수/매물특징 */}
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
                 <div className="flex items-center gap-2">
                   <Label
                     htmlFor="filter-building"
-                    className="w-12 text-xs text-muted-foreground"
+                    className="text-xs text-muted-foreground"
                   >
                     동
                   </Label>
@@ -596,14 +658,14 @@ function ExternalListingsPage() {
                     id="filter-building"
                     value={buildingQuery}
                     onChange={(e) => setBuildingQuery(e.target.value)}
-                    placeholder="101"
-                    className="h-8 w-[120px] bg-white text-[13px]"
+                    placeholder="143"
+                    className="h-8 w-[104px] bg-white text-[13px]"
                   />
                 </div>
                 <div className="flex items-center gap-2">
                   <Label
                     htmlFor="filter-ho"
-                    className="w-10 text-xs text-muted-foreground"
+                    className="text-xs text-muted-foreground"
                   >
                     호수
                   </Label>
@@ -611,14 +673,14 @@ function ExternalListingsPage() {
                     id="filter-ho"
                     value={hoQuery}
                     onChange={(e) => setHoQuery(e.target.value)}
-                    placeholder="1503"
-                    className="h-8 w-[120px] bg-white text-[13px]"
+                    placeholder="1501"
+                    className="h-8 w-[104px] bg-white text-[13px]"
                   />
                 </div>
-                <div className="flex flex-1 items-center gap-2 min-w-[240px]">
+                <div className="flex min-w-[240px] flex-1 items-center gap-2">
                   <Label
                     htmlFor="filter-feature"
-                    className="w-16 text-xs text-muted-foreground"
+                    className="whitespace-nowrap text-xs text-muted-foreground"
                   >
                     매물특징
                   </Label>
@@ -626,97 +688,82 @@ function ExternalListingsPage() {
                     id="filter-feature"
                     value={featureQuery}
                     onChange={(e) => setFeatureQuery(e.target.value)}
-                    placeholder="급매·올수리·세안고 등"
+                    placeholder="급매 · 올수리 · 세안고 등"
                     className="h-8 bg-white text-[13px]"
                   />
                 </div>
               </div>
 
-              {/* Row 2: 토글 4개 */}
-              <div className="flex flex-wrap items-center gap-4">
-                <label className="flex cursor-pointer items-center gap-2 text-xs">
-                  <Checkbox
-                    checked={onlyOwner}
-                    onCheckedChange={(v) => setOnlyOwner(v === true)}
-                  />
-                  <span>집주인</span>
-                </label>
-                <label className="flex cursor-pointer items-center gap-2 text-xs">
-                  <Checkbox
-                    checked={onlyAd}
-                    onCheckedChange={(v) => setOnlyAd(v === true)}
-                  />
-                  <span>광고 O만</span>
-                </label>
-                <label className="flex cursor-pointer items-center gap-2 text-xs">
-                  <Checkbox
-                    checked={onlySeango}
-                    onCheckedChange={(v) => setOnlySeango(v === true)}
-                  />
-                  <span>세안고</span>
-                </label>
-                <label className="flex cursor-pointer items-center gap-2 text-xs">
-                  <Checkbox
-                    checked={onlyFavorite}
-                    onCheckedChange={(v) => setOnlyFavorite(v === true)}
-                  />
-                  <span className="flex items-center gap-1">
-                    <Star
-                      className={cn(
-                        'size-3.5',
-                        onlyFavorite
-                          ? 'fill-yellow-400 text-yellow-400'
-                          : 'text-muted-foreground',
-                      )}
-                    />
-                    즐겨찾기
-                  </span>
-                </label>
+              {/* 조건 토글 칩 */}
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="mr-0.5 text-xs text-muted-foreground">
+                  조건
+                </span>
+                {(
+                  [
+                    { label: '집주인', active: onlyOwner, toggle: setOnlyOwner },
+                    { label: '광고 O만', active: onlyAd, toggle: setOnlyAd },
+                    { label: '세안고', active: onlySeango, toggle: setOnlySeango },
+                    {
+                      label: '즐겨찾기',
+                      active: onlyFavorite,
+                      toggle: setOnlyFavorite,
+                    },
+                  ] as const
+                ).map((chip) => (
+                  <button
+                    key={chip.label}
+                    type="button"
+                    onClick={() => chip.toggle(!chip.active)}
+                    className={cn(
+                      'flex h-[30px] cursor-pointer items-center gap-1.5 rounded-[7px] border px-3 text-[12.5px] font-medium transition-colors',
+                      chip.active
+                        ? 'border-primary bg-primary text-primary-foreground'
+                        : 'bg-white text-muted-foreground hover:text-foreground',
+                    )}
+                  >
+                    {chip.label}
+                  </button>
+                ))}
               </div>
 
-              {/* Row 3: 가격 범위 + 초기화 */}
-              <div className="flex flex-wrap items-center gap-3">
-                <div className="flex items-center gap-2">
-                  <Label className="w-12 text-xs text-muted-foreground">
-                    가격
-                  </Label>
-                  <Input
-                    type="number"
-                    value={priceMin}
-                    onChange={(e) => setPriceMin(e.target.value)}
-                    placeholder="최소"
-                    className="h-8 w-[110px] bg-white text-[13px] tabular-nums"
+              {/* 범위 필터 카드 (electron-estate 스타일) */}
+              <div className="flex flex-wrap gap-3.5">
+                <RangeFilterCard
+                  title={`${priceFilterLabel} 범위`}
+                  max={priceRangeMax}
+                  step={priceRangeStep}
+                  presets={priceRangePresets}
+                  lo={priceMin}
+                  hi={priceMax}
+                  onLoChange={setPriceMin}
+                  onHiChange={setPriceMax}
+                  detail={priceDetailMode}
+                  onToggleDetail={() => setPriceDetailMode((v) => !v)}
+                />
+                {transactionType === 'monthly' && (
+                  <RangeFilterCard
+                    title="월세 범위"
+                    max={500}
+                    step={10}
+                    presets={[50, 100, 150, 200, 300, 500]}
+                    lo={monthlyRentMin}
+                    hi={monthlyRentMax}
+                    onLoChange={setMonthlyRentMin}
+                    onHiChange={setMonthlyRentMax}
+                    detail={monthlyDetailMode}
+                    onToggleDetail={() => setMonthlyDetailMode((v) => !v)}
                   />
-                  <span className="text-xs text-muted-foreground">~</span>
-                  <Input
-                    type="number"
-                    value={priceMax}
-                    onChange={(e) => setPriceMax(e.target.value)}
-                    placeholder="최대"
-                    className="h-8 w-[110px] bg-white text-[13px] tabular-nums"
-                  />
-                  <span className="text-xs text-muted-foreground">만원</span>
-                </div>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="ml-auto"
-                  onClick={resetFilters}
-                  disabled={activeFilterCount === 0}
-                >
-                  <RotateCcw className="mr-1 size-3.5" />
-                  초기화
-                </Button>
+                )}
               </div>
             </div>
           )}
         </div>
 
-        {/* 테이블 카드 */}
+        {/* 테이블 영역 */}
         <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-white">
           {activeSession && (
-            <div className="flex items-center gap-1 border-b border-[#eeeeec] px-2 py-2">
+            <div className="flex items-center gap-1 border-b px-6 py-2">
               <Button
                 size="xs"
                 variant={innerTab === 'new' ? 'default' : 'ghost'}
@@ -1097,6 +1144,168 @@ function FavoriteToggle({
         strokeWidth={1.6}
       />
     </button>
+  );
+}
+
+// ── 범위 필터 카드 — 기본: 프리셋 Select / 상세: 듀얼 슬라이더 ─────────
+
+const RANGE_INPUT_CLS =
+  'pointer-events-none absolute inset-x-0 top-0 m-0 h-6 w-full appearance-none bg-transparent outline-none ' +
+  '[&::-webkit-slider-thumb]:pointer-events-auto [&::-webkit-slider-thumb]:size-3.5 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:shadow ' +
+  '[&::-moz-range-thumb]:pointer-events-auto [&::-moz-range-thumb]:size-3.5 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border [&::-moz-range-thumb]:bg-white [&::-moz-range-thumb]:shadow';
+
+function RangeFilterCard({
+  title,
+  max,
+  step,
+  presets,
+  lo,
+  hi,
+  onLoChange,
+  onHiChange,
+  detail,
+  onToggleDetail,
+}: {
+  title: string;
+  max: number;
+  step: number;
+  presets: number[];
+  /** 만원 단위 문자열 상태 ('' = 제한 없음) */
+  lo: string;
+  hi: string;
+  onLoChange: (value: string) => void;
+  onHiChange: (value: string) => void;
+  detail: boolean;
+  onToggleDetail: () => void;
+}) {
+  const loNum = Math.min(lo.trim() ? Number(lo) : 0, max);
+  const hiNum = Math.min(hi.trim() ? Number(hi) : max, max);
+  const fillLeft = (Math.min(loNum, hiNum) / max) * 100;
+  const fillWidth = (Math.max(hiNum - loNum, 0) / max) * 100;
+  const rangeLabel = `${lo.trim() ? formatPrice(Number(lo)) : '최소'} ~ ${
+    hi.trim() ? formatPrice(Number(hi)) : '최대'
+  }`;
+
+  return (
+    <div className="w-[300px] rounded-xl border bg-white p-3.5">
+      <div className="mb-3 flex items-center justify-between">
+        <span className="text-[13px] font-semibold text-foreground">
+          {title}
+        </span>
+        {/* 상세(슬라이더) 모드 토글 스위치 */}
+        <button
+          type="button"
+          onClick={onToggleDetail}
+          className="flex cursor-pointer items-center gap-1.5"
+        >
+          <span
+            className={cn(
+              'relative h-[18px] w-[34px] rounded-full transition-colors',
+              detail ? 'bg-primary' : 'bg-border',
+            )}
+          >
+            <span
+              className={cn(
+                'absolute top-0.5 size-3.5 rounded-full bg-white shadow-sm transition-[left]',
+                detail ? 'left-[18px]' : 'left-0.5',
+              )}
+            />
+          </span>
+          <span className="text-xs font-medium text-muted-foreground">
+            상세
+          </span>
+        </button>
+      </div>
+      {detail ? (
+        <>
+          <div className="mb-2 flex items-center justify-between">
+            <span className="text-xs text-muted-foreground">선택</span>
+            <span className="text-[12.5px] font-semibold tabular-nums text-foreground">
+              {rangeLabel}
+            </span>
+          </div>
+          <div className="relative h-6">
+            <div className="absolute inset-x-0 top-[11px] h-0.5 rounded-full bg-border" />
+            <div
+              className="absolute top-[11px] h-0.5 rounded-full bg-primary"
+              style={{ left: `${fillLeft}%`, width: `${fillWidth}%` }}
+            />
+            <input
+              type="range"
+              min={0}
+              max={max}
+              step={step}
+              value={loNum}
+              onChange={(e) => {
+                const v = Math.min(Number(e.target.value), hiNum);
+                onLoChange(v <= 0 ? '' : String(v));
+              }}
+              className={RANGE_INPUT_CLS}
+            />
+            <input
+              type="range"
+              min={0}
+              max={max}
+              step={step}
+              value={hiNum}
+              onChange={(e) => {
+                const v = Math.max(Number(e.target.value), loNum);
+                onHiChange(v >= max ? '' : String(v));
+              }}
+              className={RANGE_INPUT_CLS}
+            />
+          </div>
+        </>
+      ) : (
+        <div className="flex items-center gap-2">
+          <Select
+            value={lo.trim() ? lo : 'all'}
+            onValueChange={(v) => onLoChange(v === 'all' ? '' : v)}
+          >
+            <SelectTrigger className="h-8 flex-1 bg-white text-[12.5px] tabular-nums">
+              <SelectValue placeholder="최소" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all" className="text-xs">
+                최소
+              </SelectItem>
+              {presets.map((p) => (
+                <SelectItem
+                  key={p}
+                  value={String(p)}
+                  className="text-xs tabular-nums"
+                >
+                  {formatPrice(p)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <span className="text-xs text-muted-foreground/60">~</span>
+          <Select
+            value={hi.trim() ? hi : 'all'}
+            onValueChange={(v) => onHiChange(v === 'all' ? '' : v)}
+          >
+            <SelectTrigger className="h-8 flex-1 bg-white text-[12.5px] tabular-nums">
+              <SelectValue placeholder="최대" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all" className="text-xs">
+                최대
+              </SelectItem>
+              {presets.map((p) => (
+                <SelectItem
+                  key={p}
+                  value={String(p)}
+                  className="text-xs tabular-nums"
+                >
+                  {formatPrice(p)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+    </div>
   );
 }
 

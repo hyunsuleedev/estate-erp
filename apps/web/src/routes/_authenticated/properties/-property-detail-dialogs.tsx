@@ -346,11 +346,7 @@ export function ListingFormDialog({
   });
 
   const priceLabel =
-    form.transactionType === 'sale'
-      ? '매매가 (만원) *'
-      : form.transactionType === 'jeonse'
-        ? '전세가 (만원) *'
-        : '연세 · 연간 총액 (만원) *';
+    form.transactionType === 'sale' ? '매매가 (만원) *' : '전세가 (만원) *';
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

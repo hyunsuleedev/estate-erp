@@ -88,7 +88,7 @@ const STATUS_FILTER_VALUES = [
   'cancelled',
 ] as const;
 
-const TYPE_FILTER_VALUES = ['sale', 'jeonse', 'monthly', 'yearly_rent'] as const;
+const TYPE_FILTER_VALUES = ['sale', 'jeonse', 'monthly'] as const;
 
 // Deal stage 를 4단계 마일스톤 으로 요약
 // 수수료 채권 파이프라인 — 계약 체결 이후 4단계만 의미가 있음

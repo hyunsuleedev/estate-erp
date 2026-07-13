@@ -84,19 +84,17 @@ function WidgetFrame({
   children: ReactNode;
 }) {
   return (
-    <section className="rounded-lg border bg-card">
-      <div className="flex items-center justify-between gap-2 border-b px-4 py-2.5">
-        <h2 className="flex items-center gap-1.5 text-sm font-semibold">
-          {title}
-          {count != null && count > 0 && (
-            <span className="rounded-full bg-muted px-1.5 py-px text-[11px] font-medium text-muted-foreground tabular-nums">
-              {count}
-            </span>
-          )}
-        </h2>
-        {action}
+    <section className="rounded-[12px] border bg-card">
+      <div className="flex items-center gap-[7px] px-4 pb-2 pt-[13px]">
+        <h2 className="text-[13.5px] font-bold">{title}</h2>
+        {count != null && count > 0 && (
+          <span className="inline-flex h-[18px] items-center rounded-full bg-secondary px-[7px] text-[10.5px] font-semibold text-muted-foreground tabular-nums">
+            {count}
+          </span>
+        )}
+        <div className="ml-auto">{action}</div>
       </div>
-      <div className="px-4 py-3">{children}</div>
+      <div className="px-4 pb-3.5 pt-0.5">{children}</div>
     </section>
   );
 }
@@ -114,7 +112,7 @@ function MoreLink({
     <Link
       to={to}
       search={search as never}
-      className="flex shrink-0 items-center gap-0.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
+      className="flex shrink-0 items-center gap-0.5 text-[11.5px] text-muted-foreground transition-colors hover:text-foreground"
     >
       {label} <ArrowRight className="size-3" aria-hidden="true" />
     </Link>
@@ -136,7 +134,7 @@ function Dday({ date, redWithin = 30 }: { date: string; redWithin?: number }) {
 }
 
 const ROW_CLASS =
-  '-mx-2 flex items-center gap-2.5 rounded-md px-2 py-1.5 text-[13px] transition-colors hover:bg-muted';
+  '-mx-2 flex items-center gap-2.5 rounded-md border-b border-border/50 px-2 py-[7px] text-[12.5px] transition-colors hover:bg-muted';
 
 /* ------------------------------ 만기 임박 세입자 ------------------------------ */
 
@@ -169,7 +167,7 @@ export function ExpiringTenantsWidget() {
           className="py-6"
         />
       ) : (
-        <ul className="space-y-0.5">
+        <ul>
           {rows.slice(0, 5).map((tenant) => (
             <li key={tenant.id}>
               <TenantRow tenant={tenant} />
@@ -229,7 +227,11 @@ export function TodayEventsWidget() {
   const rows = [...(events.data ?? [])].sort((a, b) => byDateAsc(a.start, b.start));
 
   return (
-    <WidgetFrame title="오늘 일정" count={rows.length} action={<MoreLink to="/calendar" />}>
+    <WidgetFrame
+      title="오늘 일정"
+      count={rows.length}
+      action={<MoreLink to="/calendar" label="캘린더" />}
+    >
       {events.isLoading ? (
         <WidgetSkeleton />
       ) : events.isError ? (
@@ -237,22 +239,25 @@ export function TodayEventsWidget() {
       ) : rows.length === 0 ? (
         <EmptyState icon={CalendarDays} title="오늘 일정이 없습니다" className="py-6" />
       ) : (
-        <ul className="space-y-0.5">
+        <ul>
           {rows.slice(0, 5).map((event) => (
             <li key={event.id}>
               <Link to="/calendar" className={ROW_CLASS}>
                 <span
-                  className="size-1.5 shrink-0 rounded-full"
-                  style={{ backgroundColor: event.color || '#4f46e5' }}
-                  aria-hidden="true"
-                />
-                <span className="min-w-0 flex-1 truncate">{event.title}</span>
-                <span className="shrink-0 text-[11px] text-muted-foreground">
+                  className="w-[58px] shrink-0 text-[11px] font-semibold tabular-nums"
+                  style={{ color: event.color || '#4f46e5' }}
+                >
                   {new Date(event.start).toLocaleTimeString('ko-KR', {
                     hour: '2-digit',
                     minute: '2-digit',
                   })}
                 </span>
+                <span
+                  className="h-4 w-[2.5px] shrink-0 rounded-[2px]"
+                  style={{ backgroundColor: event.color || '#4f46e5' }}
+                  aria-hidden="true"
+                />
+                <span className="min-w-0 flex-1 truncate text-foreground">{event.title}</span>
               </Link>
             </li>
           ))}
@@ -279,7 +284,11 @@ export function PendingTasksWidget() {
     .sort((a, b) => byDateAsc(a.dueDate, b.dueDate));
 
   return (
-    <WidgetFrame title="미완료 업무" count={pending.length} action={<MoreLink to="/tasks" />}>
+    <WidgetFrame
+      title="미완료 업무"
+      count={pending.length}
+      action={<MoreLink to="/tasks" label="업무 전체" />}
+    >
       {tasks.isLoading ? (
         <WidgetSkeleton />
       ) : tasks.isError ? (
@@ -287,24 +296,29 @@ export function PendingTasksWidget() {
       ) : pending.length === 0 ? (
         <EmptyState icon={CheckCircle2} title="모든 업무를 완료했습니다" className="py-6" />
       ) : (
-        <ul className="space-y-0.5">
-          {pending.slice(0, 5).map((task) => {
+        <ul>
+          {pending.slice(0, 7).map((task) => {
             const overdue = task.dueDate != null && (daysUntil(task.dueDate) ?? 0) < 0;
             return (
               <li key={task.id}>
                 <Link to="/tasks" className={ROW_CLASS}>
                   <span
                     className={cn(
-                      'size-1.5 shrink-0 rounded-full',
-                      overdue ? 'bg-destructive' : 'bg-orange-500',
+                      'size-4 shrink-0 rounded-[5px] border-[1.5px]',
+                      overdue ? 'border-destructive/50' : 'border-border',
                     )}
                     aria-hidden="true"
                   />
-                  <span className="min-w-0 flex-1 truncate">{task.title}</span>
+                  <span className="min-w-0 flex-1 truncate text-foreground">{task.title}</span>
+                  {task.assignedTo && (
+                    <span className="shrink-0 text-[11px] text-muted-foreground">
+                      {task.assignedTo.name}
+                    </span>
+                  )}
                   {task.dueDate && (
                     <span
                       className={cn(
-                        'shrink-0 text-[11px]',
+                        'w-[72px] shrink-0 text-right text-[11px] font-medium tabular-nums',
                         overdue ? 'font-semibold text-destructive' : 'text-muted-foreground',
                       )}
                     >
@@ -323,7 +337,7 @@ export function PendingTasksWidget() {
 
 /* ------------------------------- 다가오는 잔금 ------------------------------- */
 
-function isUpcomingBalance(deal: PipelineDeal): boolean {
+export function isUpcomingBalance(deal: PipelineDeal): boolean {
   if (deal.isCancelled || !deal.balanceDueDate) return false;
   if (deal.stage === 'completed' || deal.stage === 'closed') return false;
   const days = daysUntil(deal.balanceDueDate);
@@ -358,7 +372,7 @@ export function UpcomingBalancesWidget() {
       ) : upcoming.length === 0 ? (
         <EmptyState icon={Wallet} title="30일 내 예정된 잔금이 없습니다" className="py-6" />
       ) : (
-        <ul className="space-y-0.5">
+        <ul>
           {upcoming.slice(0, 5).map((deal) => (
             <li key={deal.id}>
               <Link to="/cashflow/ledger" search={{ deal: deal.id }} className={ROW_CLASS}>

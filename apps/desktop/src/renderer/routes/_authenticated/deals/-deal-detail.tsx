@@ -122,9 +122,7 @@ function DealDetailPanel({
       ? '매매가'
       : transactionType === 'jeonse'
         ? '전세금'
-        : transactionType === 'yearly_rent'
-          ? '연세 (연간 총액)'
-          : '합의 가격';
+        : '합의 가격';
 
   return (
     <section className="min-h-full overflow-hidden bg-background">
@@ -259,7 +257,7 @@ function DealDetailPanel({
           </div>
           <div className="space-y-1 rounded-md border bg-muted/40 px-3 py-2.5">
             <DetailField label={priceLabel} value={formatMoney(deal.agreedPrice)} />
-            {transactionType === 'monthly' || transactionType === 'yearly_rent' ? (
+            {transactionType === 'monthly' ? (
               <DetailField label="보증금" value={formatMoney(deal.agreedDeposit)} />
             ) : null}
             {transactionType === 'monthly' ? (
@@ -455,16 +453,14 @@ function EditTermsDialog({
   });
 
   const showPrice = transactionType !== 'monthly';
-  const showDeposit = transactionType === 'monthly' || transactionType === 'yearly_rent';
+  const showDeposit = transactionType === 'monthly';
   const showMonthlyRent = transactionType === 'monthly';
   const priceLabel =
     transactionType === 'sale'
       ? '매매가 (만원)'
       : transactionType === 'jeonse'
         ? '전세금 (만원)'
-        : transactionType === 'yearly_rent'
-          ? '연세 (연간 총액, 만원)'
-          : '합의 가격 (만원)';
+        : '합의 가격 (만원)';
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

@@ -40,6 +40,7 @@ import {
 } from './-employee-shared';
 import { EmployeePeek } from './-employee-peek';
 import { EmployeeCreateDialog } from './-employee-create-dialog';
+import { RequireRole } from '@/components/layout/require-role';
 
 type ViewMode = 'table' | 'board';
 
@@ -47,7 +48,11 @@ export const Route = createFileRoute('/_authenticated/employees/')({
   validateSearch: (search: Record<string, unknown>): { emp?: string } => ({
     emp: typeof search.emp === 'string' && search.emp ? search.emp : undefined,
   }),
-  component: EmployeesPage,
+  component: () => (
+    <RequireRole roles={['owner', 'manager']} fallback="/dashboard">
+      <EmployeesPage />
+    </RequireRole>
+  ),
 });
 
 function EmployeesPage() {

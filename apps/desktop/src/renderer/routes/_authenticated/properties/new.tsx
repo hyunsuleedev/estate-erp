@@ -109,8 +109,6 @@ interface FormState {
   jeonsePrice: string;
   monthlyDeposit: string;
   monthlyRent: string;
-  yearlyDeposit: string;
-  yearlyPrice: string;
   moveInAvailableType: MoveInType;
   moveInAvailableFrom: string;
   moveInAvailableTo: string;
@@ -151,8 +149,6 @@ const initialForm: FormState = {
   jeonsePrice: '',
   monthlyDeposit: '',
   monthlyRent: '',
-  yearlyDeposit: '',
-  yearlyPrice: '',
   moveInAvailableType: 'negotiable',
   moveInAvailableFrom: '',
   moveInAvailableTo: '',
@@ -306,9 +302,6 @@ function NewPropertyPage() {
       }
       if (form.transactionTypes.includes('monthly') && !form.monthlyRent) {
         throw new Error('월세를 입력하세요.');
-      }
-      if (form.transactionTypes.includes('yearly_rent') && !form.yearlyPrice) {
-        throw new Error('연세(연간 총액)를 입력하세요.');
       }
       if (txConflicts.length > 0) {
         throw new Error(
@@ -565,7 +558,7 @@ function NewPropertyPage() {
             <Section step={2} title="거래 정보" subtitle="가격은 만원 단위입니다.">
               <FieldRow label="거래유형" required>
                 <div className="flex gap-2">
-                  {(['sale', 'jeonse', 'monthly', 'yearly_rent'] as TransactionType[]).map((t) => {
+                  {(['sale', 'jeonse', 'monthly'] as TransactionType[]).map((t) => {
                     const hasExisting = (existingProperty?.listings ?? []).some(
                       (l) => l.transactionType === t,
                     );
@@ -660,42 +653,6 @@ function NewPropertyPage() {
                       value={form.monthlyRent}
                       onChange={(e) => set('monthlyRent', e.target.value)}
                       placeholder="80"
-                    />
-                  </FieldRow>
-                </div>
-              )}
-
-              {form.transactionTypes.includes('yearly_rent') && (
-                <div className="grid grid-cols-2 gap-3">
-                  <FieldRow
-                    label="보증금 (만원)"
-                    hint={form.yearlyDeposit ? formatPrice(Number(form.yearlyDeposit)) : undefined}
-                  >
-                    <Input
-                      type="number"
-                      inputMode="numeric"
-                      aria-label="연세 보증금 만원"
-                      value={form.yearlyDeposit}
-                      onChange={(e) => set('yearlyDeposit', e.target.value)}
-                      placeholder="1000"
-                    />
-                  </FieldRow>
-                  <FieldRow
-                    label="연세 (연간 총액, 만원)"
-                    required
-                    hint={
-                      form.yearlyPrice
-                        ? `${formatPrice(Number(form.yearlyPrice))} / 년`
-                        : '1년치 임대료 선납 총액'
-                    }
-                  >
-                    <Input
-                      type="number"
-                      inputMode="numeric"
-                      aria-label="연세 연간 총액 만원"
-                      value={form.yearlyPrice}
-                      onChange={(e) => set('yearlyPrice', e.target.value)}
-                      placeholder="1200"
                     />
                   </FieldRow>
                 </div>
@@ -1062,12 +1019,6 @@ function getListingAmountLabel(form: FormState) {
     }`);
   }
 
-  if (form.transactionTypes.includes('yearly_rent') && (form.yearlyDeposit || form.yearlyPrice)) {
-    parts.push(`연세 보증금 ${form.yearlyDeposit ? formatPrice(Number(form.yearlyDeposit)) : '-'} / 연 ${
-      form.yearlyPrice ? formatPrice(Number(form.yearlyPrice)) : '-'
-    }`);
-  }
-
   return parts.join(' · ');
 }
 
@@ -1108,15 +1059,6 @@ function buildListingPayloads(form: FormState, isCommercial: boolean): IntakeLis
         ...common,
         transactionType,
         price: Number(form.jeonsePrice),
-      };
-    }
-
-    if (transactionType === 'yearly_rent') {
-      return {
-        ...common,
-        transactionType,
-        price: Number(form.yearlyPrice),
-        deposit: form.yearlyDeposit ? Number(form.yearlyDeposit) : undefined,
       };
     }
 

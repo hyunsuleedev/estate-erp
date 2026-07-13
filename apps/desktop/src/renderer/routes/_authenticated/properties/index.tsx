@@ -122,7 +122,6 @@ const transactionTypeMeta: Record<string, { label: string; className: string }> 
   sale: { label: '매매', className: 'bg-[#fdebec] text-[#8f4b46]' },
   jeonse: { label: '전세', className: 'bg-[#e7f3f8] text-[#337ea9]' },
   monthly: { label: '월세', className: 'bg-[#fbf3db] text-[#8f6b1f]' },
-  yearly_rent: { label: '연세', className: 'bg-[#f1edfb] text-[#6940a5]' },
 };
 
 // 거래별 확인상태 인라인 편집용 칩 옵션 (웹 checkStatusChipOptions 대응)
@@ -236,7 +235,6 @@ const transactionTypeOptions = [
   { value: 'sale', label: '매매' },
   { value: 'jeonse', label: '전세' },
   { value: 'monthly', label: '월세' },
-  { value: 'yearly_rent', label: '연세' },
 ] as const;
 
 const siteTypeOptions = [
@@ -4138,7 +4136,6 @@ function getTransactionTypeOrder(value: string) {
   if (value === 'sale') return 0;
   if (value === 'jeonse') return 1;
   if (value === 'monthly') return 2;
-  if (value === 'yearly_rent') return 3;
   return 99;
 }
 

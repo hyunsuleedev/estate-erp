@@ -187,6 +187,63 @@ export class ContractsController {
     return this.contractsService.listDocuments(id, user.officeId);
   }
 
+  @Get(':id/documents/:documentId/revisions')
+  listDocumentRevisions(
+    @Param('id') id: string,
+    @Param('documentId') documentId: string,
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.contractsService.listDocumentRevisions(id, documentId, user.officeId);
+  }
+
+  @Post(':id/documents/:documentId/revisions/:revisionId/apply')
+  applyDocumentRevision(
+    @Param('id') id: string,
+    @Param('documentId') documentId: string,
+    @Param('revisionId') revisionId: string,
+    @Body() dto: { contentHash: string },
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.contractsService.applyDocumentRevision(
+      id,
+      documentId,
+      revisionId,
+      user.officeId,
+      user.userId,
+      dto.contentHash,
+    );
+  }
+
+  @Post(':id/sale-contract-draft/prepare')
+  prepareSaleContractDraft(
+    @Param('id') id: string,
+    @Body()
+    dto: {
+      actualAgreementAt?: string;
+      conditions?: string;
+      specialTerms?: string;
+      rightsTransferDetails?: string;
+      explanationDeliveredAt?: string;
+    },
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.contractsService.prepareSaleContractDraft(
+      id,
+      user.officeId,
+      user.userId,
+      dto,
+    );
+  }
+
+  @Get(':id/sale-contract-draft/validate')
+  validateSaleContractDraft(
+    @Param('id') id: string,
+    @Query('revisionId') revisionId: string | undefined,
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.contractsService.validateSaleContractDraft(id, user.officeId, revisionId);
+  }
+
   @Post(':id/documents')
   createDocument(
     @Param('id') id: string,

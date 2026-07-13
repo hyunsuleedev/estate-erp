@@ -26,7 +26,8 @@ export class InboxController {
   @Get()
   list(
     @CurrentUser() user: CurrentUserPayload,
-    @Query('scope') scope?: 'pending' | 'resolved' | 'all',
+    @Query('scope')
+    scope?: 'pending' | 'processing' | 'approved' | 'resolved' | 'all',
     @Query('decisionMode') decisionMode?: string,
     @Query('priority') priority?: 'urgent' | 'normal' | 'low',
     @Query('category') category?: string,

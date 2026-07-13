@@ -91,7 +91,7 @@ export function formatListingPrice(listing: {
   if (listing.transactionType === 'jeonse') {
     return formatMoney(listing.deposit ?? listing.price);
   }
-  // sale, yearly_rent(연간 총액) 등
+  // sale 등
   return formatMoney(listing.price ?? listing.deposit);
 }
 

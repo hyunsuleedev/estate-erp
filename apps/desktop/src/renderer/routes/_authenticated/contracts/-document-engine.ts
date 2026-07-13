@@ -602,7 +602,6 @@ function getTransactionTypeLabel(transactionType: string) {
     sale: '매매',
     jeonse: '전세',
     monthly: '월세',
-    yearly_rent: '연세',
     exchange: '교환',
     sublease: '전대',
     transfer: '권리양도',

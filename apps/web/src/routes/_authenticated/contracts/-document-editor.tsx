@@ -4,13 +4,14 @@
 import { useEffect, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import { FileText, Printer } from 'lucide-react';
-import type {
-  Contract,
-  ContractDocument,
-  ContractDocumentTemplate,
-} from '@estate-erp/api-client';
+import type { Contract, ContractDocument, ContractDocumentTemplate } from '@estate-erp/api-client';
+import {
+  validateResidentialSaleAgreement,
+  type ResidentialSaleAgreementDraft,
+} from '@estate-erp/shared';
 import {
   buildContractDocumentEngineDraft,
+  buildResidentialSaleAgreement,
   getContractDocumentEngineFieldGroups,
   getContractDocumentEngineSections,
   type ContractDocumentEngineFieldDefinition,
@@ -18,10 +19,10 @@ import {
   type ContractDocumentEngineWorkflow,
 } from './-document-engine';
 import {
-  SummaryRow,
-  documentCategoryLabels,
-  documentStatusMeta,
-} from './-contract-shared';
+  ResidentialSaleAgreementEditor,
+  ResidentialSaleAgreementPreview,
+} from './-residential-sale-editor';
+import { SummaryRow, documentCategoryLabels, documentStatusMeta } from './-contract-shared';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -39,6 +40,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
   SelectTrigger,
   SelectValue,
@@ -61,10 +63,13 @@ export type DocumentEditorForm = {
   title: string;
   status: string;
   fileUrl: string;
+  signedAt: string;
+  submittedAt: string;
   memo: string;
   metadata: Record<string, unknown>;
   workflow: ContractDocumentEngineWorkflow;
   engineFields: ContractDocumentEngineFields;
+  saleAgreement: ResidentialSaleAgreementDraft | null;
 };
 
 export function emptyDocumentEditorForm(): DocumentEditorForm {
@@ -72,12 +77,15 @@ export function emptyDocumentEditorForm(): DocumentEditorForm {
     type: 'generated',
     category: 'contract',
     title: '',
-    status: 'generated',
+    status: 'draft',
     fileUrl: '',
+    signedAt: '',
+    submittedAt: '',
     memo: '',
     metadata: {},
     workflow: emptyDocumentEngineWorkflow(),
     engineFields: emptyDocumentEngineFields(),
+    saleAgreement: null,
   };
 }
 
@@ -98,12 +106,15 @@ export function toDocumentEditorForm(
     type: document?.type ?? 'generated',
     category: document?.category ?? template.category,
     title: draft.title,
-    status: document?.status ?? 'generated',
+    status: document?.status ?? 'draft',
     fileUrl: document?.fileUrl ?? '',
+    signedAt: document?.signedAt ?? '',
+    submittedAt: document?.submittedAt ?? '',
     memo: document?.memo ?? '',
     metadata: document?.metadata ?? template.metadata ?? {},
     workflow: draft.workflow,
     engineFields: draft.fields,
+    saleAgreement: buildResidentialSaleAgreement(contract, template, document),
   };
 }
 
@@ -171,6 +182,9 @@ export function DocumentEditorSheet({
   const fieldGroups = getContractDocumentEngineFieldGroups(form.category);
   const sections = getContractDocumentEngineSections(form.category, form.engineFields);
   const documentTitle = form.engineFields.documentTitle || form.title || '계약 문서';
+  const saleAgreementValidation = form.saleAgreement
+    ? validateResidentialSaleAgreement(form.saleAgreement)
+    : null;
 
   // Ctrl/Cmd+S 저장, Ctrl/Cmd+P 미리보기 (PRD 키보드 단축키)
   useEffect(() => {
@@ -202,6 +216,15 @@ export function DocumentEditorSheet({
     }));
   }
 
+  function updateSaleAgreement(
+    updater: (agreement: ResidentialSaleAgreementDraft) => ResidentialSaleAgreementDraft,
+  ) {
+    onFormChange((prev) => ({
+      ...prev,
+      saleAgreement: prev.saleAgreement ? updater(prev.saleAgreement) : null,
+    }));
+  }
+
   return (
     <>
       <Sheet open={open} onOpenChange={onOpenChange}>
@@ -229,9 +252,7 @@ export function DocumentEditorSheet({
                 <section className="rounded-md border border-border/60 bg-background p-5">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
-                      <p className="text-base font-semibold tracking-tight">
-                        문서별 입력폼
-                      </p>
+                      <p className="text-base font-semibold tracking-tight">문서별 입력폼</p>
                       <p className="mt-1 text-sm text-muted-foreground">
                         값을 입력한 뒤 출력 미리보기에서 리포트 형태를 확인합니다.
                       </p>
@@ -240,15 +261,23 @@ export function DocumentEditorSheet({
                   </div>
                 </section>
 
-                {fieldGroups.map((group) => (
-                  <DocumentInputFormSection
-                    key={group.title}
-                    title={group.title}
-                    fields={group.fields}
-                    values={form.engineFields}
-                    onFieldChange={updateEngineField}
+                {form.saleAgreement && saleAgreementValidation ? (
+                  <ResidentialSaleAgreementEditor
+                    agreement={form.saleAgreement}
+                    validation={saleAgreementValidation}
+                    onChange={updateSaleAgreement}
                   />
-                ))}
+                ) : (
+                  fieldGroups.map((group) => (
+                    <DocumentInputFormSection
+                      key={group.title}
+                      title={group.title}
+                      fields={group.fields}
+                      values={form.engineFields}
+                      onFieldChange={updateEngineField}
+                    />
+                  ))
+                )}
               </main>
 
               <aside className="space-y-4">
@@ -271,10 +300,45 @@ export function DocumentEditorSheet({
                     className="mt-4 w-full"
                     onClick={() => setIsPreviewOpen(true)}
                   >
-                    <FileText className="size-4" />
+                    <FileText data-icon="inline-start" />
                     출력 미리보기
                   </Button>
                 </section>
+
+                {saleAgreementValidation ? (
+                  <section className="rounded-md border border-border/60 bg-background p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-sm font-medium">작성 점검</p>
+                      <Badge
+                        variant={
+                          saleAgreementValidation.isReadyForGeneration ? 'secondary' : 'destructive'
+                        }
+                      >
+                        {saleAgreementValidation.isReadyForGeneration
+                          ? '출력 준비'
+                          : `오류 ${saleAgreementValidation.errors.length}건`}
+                      </Badge>
+                    </div>
+                    <div className="mt-3 grid gap-2">
+                      {saleAgreementValidation.errors.map((issue) => (
+                        <p
+                          key={`${issue.path}-${issue.message}`}
+                          className="rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive"
+                        >
+                          {issue.message}
+                        </p>
+                      ))}
+                      {saleAgreementValidation.warnings.map((issue) => (
+                        <p
+                          key={`${issue.path}-${issue.message}`}
+                          className="rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground"
+                        >
+                          확인: {issue.message}
+                        </p>
+                      ))}
+                    </div>
+                  </section>
+                ) : null}
 
                 <section className="rounded-md border border-border/60 bg-background p-4">
                   <p className="text-sm font-medium">문서 설정</p>
@@ -291,11 +355,13 @@ export function DocumentEditorSheet({
                           <SelectValue placeholder="상태 선택" />
                         </SelectTrigger>
                         <SelectContent>
-                          {Object.entries(documentStatusMeta).map(([key, meta]) => (
-                            <SelectItem key={key} value={key}>
-                              {meta.label}
-                            </SelectItem>
-                          ))}
+                          <SelectGroup>
+                            {Object.entries(documentStatusMeta).map(([key, meta]) => (
+                              <SelectItem key={key} value={key}>
+                                {meta.label}
+                              </SelectItem>
+                            ))}
+                          </SelectGroup>
                         </SelectContent>
                       </Select>
                     </div>
@@ -312,9 +378,11 @@ export function DocumentEditorSheet({
                           <SelectValue placeholder="유형 선택" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="generated">작성</SelectItem>
-                          <SelectItem value="uploaded">첨부</SelectItem>
-                          <SelectItem value="external">외부 제출</SelectItem>
+                          <SelectGroup>
+                            <SelectItem value="generated">작성</SelectItem>
+                            <SelectItem value="uploaded">첨부</SelectItem>
+                            <SelectItem value="external">외부 제출</SelectItem>
+                          </SelectGroup>
                         </SelectContent>
                       </Select>
                     </div>
@@ -324,7 +392,10 @@ export function DocumentEditorSheet({
                       <Input
                         value={form.fileUrl}
                         onChange={(event) =>
-                          onFormChange((prev) => ({ ...prev, fileUrl: event.target.value }))
+                          onFormChange((prev) => ({
+                            ...prev,
+                            fileUrl: event.target.value,
+                          }))
                         }
                         placeholder="https://...pdf"
                       />
@@ -336,7 +407,10 @@ export function DocumentEditorSheet({
                         rows={4}
                         value={form.memo}
                         onChange={(event) =>
-                          onFormChange((prev) => ({ ...prev, memo: event.target.value }))
+                          onFormChange((prev) => ({
+                            ...prev,
+                            memo: event.target.value,
+                          }))
                         }
                       />
                     </div>
@@ -360,10 +434,7 @@ export function DocumentEditorSheet({
               <Button variant="outline" onClick={() => setIsPreviewOpen(true)}>
                 출력 미리보기
               </Button>
-              <Button
-                onClick={onSave}
-                disabled={isSaving || !documentTitle || !form.category}
-              >
+              <Button onClick={onSave} disabled={isSaving || !documentTitle || !form.category}>
                 저장
               </Button>
             </div>
@@ -381,13 +452,20 @@ export function DocumentEditorSheet({
           </div>
           <ScrollArea className="min-h-0 flex-1 bg-muted/40">
             <div className="p-6">
-              <ContractDocumentPage
-                title={documentTitle}
-                templateCode={form.workflow.reportName}
-                status={documentStatusMeta[form.status]?.label ?? form.status}
-                fields={form.engineFields}
-                sections={sections}
-              />
+              {form.saleAgreement ? (
+                <ResidentialSaleAgreementPreview
+                  agreement={form.saleAgreement}
+                  status={documentStatusMeta[form.status]?.label ?? form.status}
+                />
+              ) : (
+                <ContractDocumentPage
+                  title={documentTitle}
+                  templateCode={form.workflow.reportName}
+                  status={documentStatusMeta[form.status]?.label ?? form.status}
+                  fields={form.engineFields}
+                  sections={sections}
+                />
+              )}
             </div>
           </ScrollArea>
           <DialogFooter className="border-t px-6 py-4">
@@ -395,7 +473,7 @@ export function DocumentEditorSheet({
               닫기
             </Button>
             <Button onClick={() => window.print()}>
-              <Printer className="size-4" />
+              <Printer data-icon="inline-start" />
               인쇄
             </Button>
           </DialogFooter>
@@ -447,11 +525,7 @@ function DocumentEngineFieldControl({
     <div className="space-y-2">
       <Label>{field.label}</Label>
       {field.multiline ? (
-        <Textarea
-          rows={4}
-          value={value}
-          onChange={(event) => onChange(event.target.value)}
-        />
+        <Textarea rows={4} value={value} onChange={(event) => onChange(event.target.value)} />
       ) : (
         <Input value={value} onChange={(event) => onChange(event.target.value)} />
       )}
@@ -531,9 +605,7 @@ function DocumentPreviewRow({
 }) {
   return (
     <div className="grid grid-cols-[112px_minmax(0,1fr)] border-b border-slate-200 last:border-b-0">
-      <div className="bg-slate-50 px-3 py-2 text-xs font-medium text-slate-600">
-        {label}
-      </div>
+      <div className="bg-slate-50 px-3 py-2 text-xs font-medium text-slate-600">{label}</div>
       <div
         className={cn(
           'min-h-9 px-3 py-2 text-sm leading-6',

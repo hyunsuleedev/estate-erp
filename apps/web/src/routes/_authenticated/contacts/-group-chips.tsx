@@ -1,34 +1,18 @@
 import { useQueries } from '@tanstack/react-query';
-import type { ComponentType } from 'react';
-import {
-  BriefcaseBusiness,
-  Home,
-  MessageSquareText,
-  Target,
-  Users,
-  UsersRound,
-} from 'lucide-react';
 import { api } from '@/lib/api';
 import { CONTACT_GROUPS } from '@/lib/contacts';
 import { cn } from '@/lib/utils';
 
 /**
- * 연락처 그룹 사이드바 — 전체 연락처 + 고정 그룹 5종 + 그룹별 개수.
+ * 연락처 그룹 필터 칩 — 전체 연락처 + 고정 그룹 5종 + 그룹별 개수.
+ * (기존 좌측 사이드바를 디자인 시안의 상단 칩 행으로 재배치한 것)
  * 그룹별 카운트 전용 API가 없어 그룹마다 limit=1 목록 조회로 pagination.total을 사용한다.
  * (PRD 15장: 그룹 카운트는 별도 조회 캐시 허용)
  */
 
-const groupIcons: Record<string, ComponentType<{ className?: string }>> = {
-  '매수/투자': Target,
-  임차: Home,
-  매물상담: MessageSquareText,
-  소유자: Users,
-  거래처: BriefcaseBusiness,
-};
-
 const GROUP_COUNT_STALE_TIME = 60_000;
 
-export function ContactGroupSidebar({
+export function ContactGroupChips({
   selectedGroupTag,
   onSelect,
 }: {
@@ -51,47 +35,34 @@ export function ContactGroupSidebar({
     ],
   });
 
-  const totalCount = countQueries[0]?.data?.pagination.total;
-
   return (
-    <nav
-      aria-label="연락처 그룹"
-      className="hidden w-48 shrink-0 flex-col gap-0.5 overflow-y-auto border-r border-border bg-muted/30 px-2 py-3 md:flex"
-    >
-      <p className="px-2 pb-1.5 text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
-        그룹
-      </p>
-
-      <GroupRow
-        icon={UsersRound}
-        label="전체 연락처"
-        count={totalCount}
+    <div aria-label="연락처 그룹" className="flex flex-wrap items-center gap-1.5">
+      <GroupChip
+        label="전체"
+        count={countQueries[0]?.data?.pagination.total}
         selected={selectedGroupTag === null}
         onClick={() => onSelect(null)}
       />
 
       {CONTACT_GROUPS.map((group, index) => (
-        <GroupRow
+        <GroupChip
           key={group.id}
-          icon={groupIcons[group.tag] ?? Target}
           label={group.label}
           count={countQueries[index + 1]?.data?.pagination.total}
           selected={selectedGroupTag === group.tag}
           onClick={() => onSelect(selectedGroupTag === group.tag ? null : group.tag)}
         />
       ))}
-    </nav>
+    </div>
   );
 }
 
-function GroupRow({
-  icon: Icon,
+function GroupChip({
   label,
   count,
   selected,
   onClick,
 }: {
-  icon: ComponentType<{ className?: string }>;
   label: string;
   count: number | undefined;
   selected: boolean;
@@ -103,18 +74,17 @@ function GroupRow({
       onClick={onClick}
       aria-pressed={selected}
       className={cn(
-        'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] transition-colors',
+        'flex h-8 items-center gap-1.5 rounded-lg border px-3 text-[12.5px] font-medium transition-colors',
         selected
-          ? 'bg-[#e7f3f8] font-medium text-[#337ea9]'
-          : 'text-slate-700 hover:bg-muted',
+          ? 'border-foreground bg-foreground text-background'
+          : 'border-border bg-background text-muted-foreground hover:bg-muted',
       )}
     >
-      <Icon className={cn('size-3.5 shrink-0', selected ? 'text-[#337ea9]' : 'text-slate-400')} />
-      <span className="min-w-0 flex-1 truncate">{label}</span>
+      {label}
       <span
         className={cn(
-          'shrink-0 text-[11px] tabular-nums',
-          selected ? 'text-[#337ea9]' : 'text-slate-400',
+          'inline-flex h-4 min-w-[17px] items-center justify-center rounded-full px-1.5 text-[10.5px] font-semibold tabular-nums',
+          selected ? 'bg-background/20 text-background' : 'bg-muted text-muted-foreground',
         )}
       >
         {count != null ? count.toLocaleString() : '·'}

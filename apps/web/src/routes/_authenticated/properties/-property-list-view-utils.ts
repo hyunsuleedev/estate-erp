@@ -29,6 +29,7 @@ export type ListingSummary = Pick<
   | 'updatedAt'
   | 'advertisements'
   | 'priceHistories'
+  | '_count'
 >;
 
 export type ListingProperty = NonNullable<Listing['property']>;
