@@ -37,7 +37,11 @@ export function PageHeader({ title, description, actions, backTo, className }: P
           )}
         </div>
       </div>
-      {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
+      {/* shrink-0 이면 좁은 화면에서 액션 영역이 줄어들지 못해 (actions 내부의)
+          flex-wrap 이 발동하지 않고 타이틀만 짓눌린다 — 축소를 허용한다. */}
+      {actions && (
+        <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">{actions}</div>
+      )}
     </div>
   );
 }
