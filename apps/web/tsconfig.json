@@ -14,7 +14,9 @@
     "noEmit": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@estate-erp/api-client": ["../../packages/api-client/src/index.ts"],
+      "@estate-erp/shared": ["../../packages/shared/src/index.ts"]
     }
   },
   "include": ["src", "vite-env.d.ts"]

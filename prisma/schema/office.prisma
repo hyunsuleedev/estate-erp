@@ -67,6 +67,7 @@ model Office {
   contracts         Contract[]
   contractDocumentTemplates ContractDocumentTemplate[]
   contractDocuments ContractDocument[]
+  contractParties   ContractParty[]
   officePrintTemplates OfficePrintTemplate[]
   contractClauseTemplates ContractClauseTemplate[]
   dealParticipants  DealParticipant[]
@@ -101,6 +102,11 @@ model Office {
 
   // 통화 녹음
   callRecordings CallRecording[]
+
+  // CTI
+  ctiLines   CtiLine[]
+  callEvents CallEvent[]
+  ctiBridge  CtiBridge?
 
   // 공동 중개망
   createdRooms            NetworkRoom[]
@@ -158,7 +164,10 @@ model User {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  office               Office?            @relation(fields: [officeId], references: [id])
+  /// onDelete: Restrict 명시 — officeId 가 nullable 이 되면서 Prisma 기본값이
+  /// SetNull 로 바뀌지만, 사무소 삭제 시 소속 사용자가 조용히 orphan
+  /// (테넌트 없는 로그인 계정) 이 되는 것은 의도가 아니다.
+  office               Office?            @relation(fields: [officeId], references: [id], onDelete: Restrict)
   assignedRequirements BuyerRequirement[] @relation("AssignedAgent")
   assignedTasks        Task[]             @relation("TaskAssignee")
   createdTasks         Task[]             @relation("TaskCreator")
@@ -177,6 +186,9 @@ model User {
 
   // 통화 녹음
   callRecordings CallRecording[]
+
+  // CTI 통화 이벤트 (응대/발신 직원)
+  callEvents CallEvent[]
 
   // 공동 중개망
   networkSharedProperties NetworkSharedProperty[]

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  32bit COM/ActiveX 브릿지 헬퍼 (KTPCBizX / multicid.ocx).
+  반드시 x86(32bit)으로 빌드해야 한다 — 대상 COM 컴포넌트가 32bit 전용.
+
+  COM 참조는 SDK 설치 후 추가:
+    <COMReference Include="KTPCBizX">...</COMReference>  (KT OpenAPI)
+    multicid.ocx는 regsvr32 등록 후 CLSID로 late-binding 권장 (아래 Program.cs 참고)
+-->
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <PlatformTarget>x86</PlatformTarget>
+    <LangVersion>8.0</LangVersion>
+    <RootNamespace>EstateCtiHelper</RootNamespace>
+    <AssemblyName>EstateCtiHelper</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="System.Text.Json" Version="8.0.5" />
+  </ItemGroup>
+</Project>

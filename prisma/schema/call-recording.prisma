@@ -33,12 +33,16 @@ model CallRecording {
   /// 통화 시각
   calledAt DateTime @map("called_at")
 
+  /// CTI 착신/발신 이벤트 연결 (nullable — 모바일 녹음 등 CTI 밖에서 생성된 녹음은 null)
+  callEventId String? @map("call_event_id") @db.Uuid
+
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
   office        Office                 @relation(fields: [officeId], references: [id])
   contact       Contact?               @relation(fields: [contactId], references: [id])
   user          User                   @relation(fields: [userId], references: [id])
+  callEvent     CallEvent?             @relation(fields: [callEventId], references: [id])
   messages      CallRecordingMessage[]
   consultations Consultation[]
 

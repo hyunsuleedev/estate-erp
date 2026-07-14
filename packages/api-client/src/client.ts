@@ -35,8 +35,9 @@ import { createInboxApi } from './modules/inbox.js';
 import { createMcpApi } from './modules/mcp.js';
 import { createRegionsApi } from './modules/regions.js';
 import { createServiceVendorsApi } from './modules/service-vendors.js';
+import { createCtiApi } from './modules/cti.js';
 
-export type HttpMethod = 'GET' | 'POST' | 'PATCH' | 'DELETE';
+export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
 export interface RequestOptions {
   method?: HttpMethod;
@@ -146,6 +147,7 @@ export function createApiClient(config: ApiClientConfig) {
     mcp: createMcpApi(req),
     regions: createRegionsApi(req),
     serviceVendors: createServiceVendorsApi(req),
+    cti: createCtiApi(req),
   };
 }
 

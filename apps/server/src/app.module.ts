@@ -37,6 +37,7 @@ import { McpModule } from './modules/mcp/mcp.module';
 import { InboxModule } from './modules/inbox/inbox.module';
 import { RegionsModule } from './modules/regions/regions.module';
 import { ServiceVendorsModule } from './modules/service-vendors/service-vendors.module';
+import { CtiModule } from './modules/cti/cti.module';
 import { RequestContextMiddleware } from './common/request-context/request-context.middleware';
 import { RealtimeModule } from './realtime/realtime.module';
 
@@ -105,6 +106,7 @@ const AUTH_RATE_LIMIT_PER_MINUTE = 10;
     PropertyPhotosModule,
     ServiceVendorsModule,
     McpModule,
+    CtiModule,
   ],
   providers: [
     // 글로벌 Throttler 가드 — 모든 라우트에 default(60req/min) 자동 적용

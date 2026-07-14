@@ -1,0 +1,107 @@
+// ============================================================
+// CTI — 전화 회선 / 통화 이벤트 / 브리지 인증
+// 레거시(MySpider V2) 매핑: docs/desktop-prd/migration/cti-cid-legacy-spec.md
+// ============================================================
+
+/// 사무소 전화 회선 (레거시 MCDS004Q01 / Phne_Clsf)
+model CtiLine {
+  id       String @id @default(uuid()) @db.Uuid
+  officeId String @map("office_id") @db.Uuid
+
+  /// 프로바이더 코드 (레거시 Phne_Clsf): "10" 직렬 / "20"·"30" 멀티CID / "41" KT OpenAPI / "50" 삼성 Wyz070 / "70" LGU Centrex
+  providerCode String  @map("provider_code")
+  displayName  String  @map("display_name")
+  /// 회선 계정 ID (레거시 Phne_Id). 비밀번호는 credentialCipher에만 암호화 저장.
+  externalId   String? @map("external_id")
+  /// 내선번호 (레거시 Inter_No)
+  internalNo   String? @map("internal_no")
+
+  /// 회선 자격증명 암호문 (AES-256-GCM, 서버 전용 접근).
+  /// 레거시가 복호화된 비번을 클라이언트 DataTable에 상주시킨 결함(스펙 6장 3번)의 대체 —
+  /// API 응답에 절대 포함하지 않고, 발신 위임 시에만 복호화해 브리지에 일회성 전달한다.
+  credentialCipher String? @map("credential_cipher")
+
+  /// 마스터 PC 브리지에서만 로그인/CID 가능한 회선 (KT 41, 삼성 50, LGU 70 ActiveX 계열)
+  isMasterOnly Boolean @default(false) @map("is_master_only")
+  /// 대표회선 여부 (레거시 Dlgt_Yn)
+  isDelegate   Boolean @default(false) @map("is_delegate")
+  isActive     Boolean @default(true) @map("is_active")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  office Office @relation(fields: [officeId], references: [id])
+
+  @@unique([officeId, providerCode, externalId])
+  @@map("cti_lines")
+}
+
+/// 착신/발신 통화 이벤트 (레거시 MCLS002I01 착신 / MCLS002I04 발신 / MCDS001U01 상태갱신)
+model CallEvent {
+  id       String @id @default(uuid()) @db.Uuid
+  officeId String @map("office_id") @db.Uuid
+
+  /// inbound (착신) / outbound (발신)
+  direction String
+  /// 정규화된 번호 (82→0, 숫자 외 제거). 발신표시제한이면 빈 문자열 + isPrivate=true
+  phoneNumber String  @map("phone_number")
+  /// 발신표시제한 (레거시 "Private")
+  isPrivate   Boolean @default(false) @map("is_private")
+  /// 착신 수신 번호 (레거시 Tel_No/recvNo — 어느 회선으로 걸려왔는지)
+  receivedNo  String? @map("received_no")
+
+  providerCode String  @map("provider_code")
+  /// dedup/idempotency 키 — 프로바이더 채널|시퀀스 (레거시 sKTPreChannel/sLGUPreChannel)
+  channelKey   String? @map("channel_key")
+
+  /// ringing / answered / missed / ended / dialing / dialed / dial_failed
+  status String @default("ringing")
+
+  /// soft delete (레거시 MCDS001D01 통화이력 삭제 대체 — 이력 보존)
+  deletedAt DateTime? @map("deleted_at")
+
+  /// 명시적 [고객으로 연결] 액션에서만 설정 (레거시 MCDS001U02의 닫힘-시-저장 부작용 제거)
+  contactId String? @map("contact_id") @db.Uuid
+  /// 응대/발신 직원
+  userId    String? @map("user_id") @db.Uuid
+
+  occurredAt DateTime  @map("occurred_at")
+  endedAt    DateTime? @map("ended_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  office     Office          @relation(fields: [officeId], references: [id])
+  contact    Contact?        @relation(fields: [contactId], references: [id])
+  user       User?           @relation(fields: [userId], references: [id])
+  recordings CallRecording[]
+
+  @@unique([officeId, channelKey])
+  @@index([officeId, occurredAt])
+  @@index([officeId, phoneNumber])
+  @@map("call_events")
+}
+
+/// CTI Bridge 인증 토큰 (사무소당 1개 — 마스터 PC 상주 브리지 전용, ctib_ 접두사)
+/// 레거시 평문 TCP + 무인증(스펙 6장 1번)의 대체. 토큰은 발급 시 1회만 노출, 해시만 저장.
+model CtiBridge {
+  id       String @id @default(uuid()) @db.Uuid
+  officeId String @unique @map("office_id") @db.Uuid
+
+  /// 마스터 PC 라벨 ("카운터 PC" 등)
+  name        String  @default("마스터 PC")
+  tokenHash   String  @map("token_hash")
+  tokenPrefix String  @map("token_prefix") @db.VarChar(12)
+  isActive    Boolean @default(true) @map("is_active")
+
+  /// 마지막 브리지 접속/하트비트 시각
+  lastSeenAt DateTime? @map("last_seen_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  office Office @relation(fields: [officeId], references: [id])
+
+  @@index([tokenPrefix])
+  @@map("cti_bridges")
+}

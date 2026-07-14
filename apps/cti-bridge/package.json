@@ -1,0 +1,23 @@
+{
+  "name": "@estate-erp/cti-bridge",
+  "version": "0.0.1",
+  "private": true,
+  "description": "CTI Bridge — 마스터 PC 상주 전화(CID) 프로세스. 프로바이더 착신/발신을 서버 /cti-bridge WSS로 릴레이",
+  "type": "module",
+  "main": "./dist/index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test \"src/**/*.test.ts\""
+  },
+  "dependencies": {
+    "socket.io-client": "^4.8.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.21.0",
+    "typescript": "^5.7.0"
+  }
+}

@@ -21,14 +21,17 @@ export type TransactionType =
 
 /**
  * 계약서 거래 유형 (Contract 단계).
- * Listing 의 3종에 더해 교환·전대·권리양도·권리승계를 추가로 표현한다.
+ * Listing 의 3종에 더해 교환·전대·권리양도·권리승계·연세를 추가로 표현한다.
  * 매물 등록 UX 는 단순하게 두고, 계약서 작성 시점에만 확장 유형을 선택한다.
- * 마이스파이더 V2 의 Tran_Clsf 01~07 과 1:1 매핑.
+ * 마이스파이더 V2 의 Tran_Clsf 01~08 과 1:1 매핑
+ * (01 매매 / 02 전세 / 03 월세 / 04 교환 / 05 전대 / 06 양도 / 07 승계 / 08 연세).
  */
 export const ContractTransactionType = {
   SALE: 'sale',
   JEONSE: 'jeonse',
   MONTHLY: 'monthly',
+  /** 연세 (레거시 Tran_Clsf 08) — 아파트/오피스텔/상가/부동산 계약서에서 허용 */
+  YEARLY: 'yearly',
   EXCHANGE: 'exchange',
   SUBLEASE: 'sublease',
   TRANSFER: 'transfer',
@@ -44,11 +47,70 @@ export const CONTRACT_TRANSACTION_TYPE_LABELS: Record<
   sale: '매매',
   jeonse: '전세',
   monthly: '월세',
+  yearly: '연세',
   exchange: '교환',
   sublease: '전대',
   transfer: '권리양도',
   succession: '권리승계',
 };
+
+/**
+ * 계약 문서 서식 코드 (레거시 Cntr_Clsf 33종 → 현행 template code 셋).
+ * `ContractDocument.kind` 와 `ContractDocumentTemplate.code` 의 1차 지원 목록이며,
+ * prisma/contract-template-catalog.ts 의 시드가 이 목록을 그대로 참조한다.
+ * 서버는 명시적으로 전달된 kind 를 이 셋으로 검증한다 (오타 방지).
+ * 구서식 3종(레거시 33 구판/39/40)은 마이그레이션 대상에서 제외 —
+ * docs/desktop-prd/migration/documents-form-catalog.md §5 참조.
+ */
+export const CONTRACT_DOCUMENT_KINDS = [
+  // ── 마이그레이션(20260502170000) 시드 30종 ──
+  'base_contract',
+  'purchase_right_contract',
+  'union_member_right_contract',
+  'commercial_premium_contract',
+  'right_transfer_contract',
+  'right_succession_contract',
+  'standard_lease_contract',
+  'commercial_standard_lease_contract',
+  'house_lease_contract',
+  'sublease_contract',
+  'sublease_agreement',
+  'identity',
+  'broker_explanation',
+  'broker_explanation_residential',
+  'broker_explanation_non_residential',
+  'broker_explanation_land',
+  'broker_explanation_special',
+  'registry_document',
+  'real_estate_transaction_report',
+  'real_estate_transaction_cancel_report',
+  'house_transaction_report',
+  'lease_declaration',
+  'lease_change_declaration',
+  'renewal_confirmation',
+  'guarantee_non_enrollment_agreement',
+  'guarantee_partial_enrollment_agreement',
+  'jeonse_registration_not_requested',
+  'cash_receipt_document',
+  'privacy_agreement',
+  'broker_fee_receipt',
+  // ── 레거시 전수 카탈로그 갭 보강 9종 (documents-form-catalog.md §5.2) ──
+  'exchange_contract',
+  'private_rental_standard_lease_contract',
+  'trade_agreement',
+  'exclusive_brokerage_contract',
+  'transaction_power_of_attorney',
+  'house_funds_and_occupancy_plan',
+  'fact_confirmation',
+  'balance_settlement_sheet',
+  'management_fee_settlement_sheet',
+] as const;
+export type ContractDocumentKind = (typeof CONTRACT_DOCUMENT_KINDS)[number];
+
+/** kind 검증용 Set (서버 write-path 에서 사용) */
+export const CONTRACT_DOCUMENT_KIND_SET: ReadonlySet<string> = new Set(
+  CONTRACT_DOCUMENT_KINDS,
+);
 
 /** 내 사무소의 광고 게재 상태 (ListingAdvertisement.status) */
 export const ListingAdvertisementStatus = {

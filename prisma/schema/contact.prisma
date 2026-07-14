@@ -25,10 +25,13 @@ model Contact {
   dealsAsSeller      Deal[]             @relation("DealSeller")
   contractsAsBuyer   Contract[]         @relation("ContractBuyer")
   contractsAsSeller  Contract[]         @relation("ContractSeller")
+  contractParties    ContractParty[]
   proposals            Proposal[]
   commissionPayments   CommissionPayment[] @relation("CommissionPayer")
   // 통화 녹음
   callRecordings     CallRecording[]
+  // CTI 통화 이벤트 (명시적 연결)
+  callEvents         CallEvent[]
   // ContactRelation 양방향
   relationsAsMain    ContactRelation[]  @relation("MainContact")
   relationsAsRelated ContactRelation[]  @relation("RelatedContact")
