@@ -21,6 +21,9 @@ const TENANT_SCOPED_MODELS = new Set([
   'DealParticipant',
   'ContractDocument',
   'ContractDocumentRevision',
+  // ContractParty는 주민번호 등 민감 PII 보유 — 테넌트 격리는 필수이되,
+  // AUDITED_MODELS에는 의도적으로 넣지 않는다 (idNumber/phone이 activity_logs.changes에 복사되는 것 방지)
+  'ContractParty',
   'OfficePrintTemplate',
   'ContractClauseTemplate',
   'Task',

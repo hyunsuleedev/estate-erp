@@ -1,20 +1,31 @@
 /**
- * 문서 허브 — 거래유형별 필수/선택 문서 체크리스트 + 거래신고(report) D-day 표시.
+ * 문서 허브 — 작성된 문서 목록(sortOrder→kindOrder, 사본/삭제) +
+ * 거래유형별 필수/선택 문서 체크리스트 + 거래신고(report) D-day 표시.
  */
+import { useState } from 'react';
 import {
   ClipboardList,
+  Copy,
   FileCheck2,
   FilePenLine,
   FileText,
+  Trash2,
 } from 'lucide-react';
 import type {
   Contract,
   ContractDocument,
   ContractDocumentTemplate,
 } from '@estate-erp/api-client';
-import { documentStatusMeta, findDocumentByTemplate } from './-contract-shared';
+import {
+  documentCategoryLabels,
+  documentStatusMeta,
+  findDocumentByTemplate,
+  resolveDocumentTemplate,
+  sortContractDocuments,
+} from './-contract-shared';
 import { cn } from '@/lib/utils';
 import { formatDate, formatDday } from '@/lib/format';
+import { ConfirmDialog } from '@/components/domain';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -39,6 +50,10 @@ export function DocumentHub({
   isLoading,
   reportDeadline,
   onOpenDocument,
+  onCopyDocument,
+  isCopyingDocument,
+  onDeleteDocument,
+  isDeletingDocument,
 }: {
   contract: Contract;
   templates: ContractDocumentTemplate[];
@@ -48,11 +63,17 @@ export function DocumentHub({
     template: ContractDocumentTemplate,
     document?: ContractDocument,
   ) => void;
+  /** 서식 단건 사본 (레거시 "다른저장") — 같은 kind 는 kindOrder 자동 증가 */
+  onCopyDocument: (documentId: string) => void;
+  isCopyingDocument: boolean;
+  /** 문서 단건 영구 삭제 (복구 불가, 리비전 cascade) */
+  onDeleteDocument: (documentId: string) => void;
+  isDeletingDocument: boolean;
 }) {
-  const documents = contract.documents ?? [];
+  const documents = sortContractDocuments(contract.documents ?? []);
   const rows = templates.map((template) => ({
     template,
-    document: findDocumentByTemplate(documents, template.id),
+    document: findDocumentByTemplate(contract.documents ?? [], template.id),
   }));
   const requiredRows = rows.filter(({ template }) => template.isRequired);
   const optionalRows = rows.filter(({ template }) => !template.isRequired);
@@ -76,6 +97,15 @@ export function DocumentHub({
         </div>
       </CardHeader>
       <CardContent className="space-y-5 px-5">
+        <ContractDocumentListTable
+          documents={documents}
+          templates={templates}
+          onOpenDocument={onOpenDocument}
+          onCopyDocument={onCopyDocument}
+          isCopyingDocument={isCopyingDocument}
+          onDeleteDocument={onDeleteDocument}
+          isDeletingDocument={isDeletingDocument}
+        />
         <DocumentRowsTable
           title="필수 문서"
           rows={requiredRows}
@@ -92,6 +122,157 @@ export function DocumentHub({
         />
       </CardContent>
     </Card>
+  );
+}
+
+/**
+ * 작성된 문서 목록 — sortOrder(묶음 내 탭 순서) → kindOrder(동일 서식 반복 순번)
+ * 정렬 표시. "사본"은 같은 서식의 다음 kindOrder 를 자동 부여한다 (위임장 2장 케이스).
+ */
+function ContractDocumentListTable({
+  documents,
+  templates,
+  onOpenDocument,
+  onCopyDocument,
+  isCopyingDocument,
+  onDeleteDocument,
+  isDeletingDocument,
+}: {
+  documents: ContractDocument[];
+  templates: ContractDocumentTemplate[];
+  onOpenDocument: (
+    template: ContractDocumentTemplate,
+    document?: ContractDocument,
+  ) => void;
+  onCopyDocument: (documentId: string) => void;
+  isCopyingDocument: boolean;
+  onDeleteDocument: (documentId: string) => void;
+  isDeletingDocument: boolean;
+}) {
+  const [deleteTarget, setDeleteTarget] = useState<ContractDocument | null>(null);
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <p className="text-sm font-medium">작성된 문서</p>
+        <span className="text-xs text-muted-foreground">{documents.length}건</span>
+      </div>
+      <div className="overflow-hidden rounded-md border border-border/60">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="w-14">순서</TableHead>
+              <TableHead>문서</TableHead>
+              <TableHead className="w-24">분류</TableHead>
+              <TableHead className="w-24">상태</TableHead>
+              <TableHead className="w-52 text-right">작업</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {documents.map((document) => (
+              <TableRow key={document.id}>
+                <TableCell className="text-sm text-muted-foreground">
+                  {document.sortOrder + 1}
+                  {document.kindOrder > 1 ? ` · ${document.kindOrder}부` : ''}
+                </TableCell>
+                <TableCell className="whitespace-normal">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium leading-5">
+                      {document.title}
+                      {document.kindOrder > 1 ? (
+                        <span className="ml-1 text-xs text-muted-foreground">
+                          ({document.kindOrder}부)
+                        </span>
+                      ) : null}
+                    </p>
+                    <p className="truncate text-xs text-muted-foreground">
+                      {document.kind ?? document.template?.code ?? '-'}
+                    </p>
+                  </div>
+                </TableCell>
+                <TableCell>
+                  <span className="text-sm">
+                    {documentCategoryLabels[document.category] ?? document.category}
+                  </span>
+                </TableCell>
+                <TableCell>
+                  <Badge
+                    className={cn(
+                      'border-0',
+                      documentStatusMeta[document.status]?.className,
+                    )}
+                  >
+                    {documentStatusMeta[document.status]?.label ?? document.status}
+                  </Badge>
+                </TableCell>
+                <TableCell className="text-right">
+                  <div className="flex justify-end gap-1">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() =>
+                        onOpenDocument(resolveDocumentTemplate(document, templates), document)
+                      }
+                    >
+                      <FilePenLine className="size-3.5" />
+                      수정
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={isCopyingDocument}
+                      onClick={() => onCopyDocument(document.id)}
+                    >
+                      <Copy className="size-3.5" />
+                      사본
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="text-muted-foreground hover:text-destructive"
+                      disabled={isDeletingDocument}
+                      onClick={() => setDeleteTarget(document)}
+                    >
+                      <Trash2 className="size-3.5" />
+                      삭제
+                    </Button>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ))}
+            {documents.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={5} className="h-20 text-center text-sm text-muted-foreground">
+                  아직 작성된 문서가 없습니다. 아래 서식 목록에서 작성하세요.
+                </TableCell>
+              </TableRow>
+            ) : null}
+          </TableBody>
+        </Table>
+      </div>
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) setDeleteTarget(null);
+        }}
+        title="문서 삭제"
+        description={
+          deleteTarget
+            ? `'${deleteTarget.title}' 문서와 저장된 리비전 이력이 영구 삭제되며 복구할 수 없습니다.`
+            : undefined
+        }
+        confirmLabel="삭제"
+        destructive
+        loading={isDeletingDocument}
+        onConfirm={() => {
+          if (deleteTarget) {
+            onDeleteDocument(deleteTarget.id);
+            setDeleteTarget(null);
+          }
+        }}
+      />
+    </div>
   );
 }
 

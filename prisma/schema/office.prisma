@@ -67,6 +67,7 @@ model Office {
   contracts                 Contract[]
   contractDocumentTemplates ContractDocumentTemplate[]
   contractDocuments         ContractDocument[]
+  contractParties           ContractParty[]
   officePrintTemplates      OfficePrintTemplate[]
   contractClauseTemplates   ContractClauseTemplate[]
   dealParticipants          DealParticipant[]

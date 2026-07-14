@@ -369,10 +369,74 @@ model Contract {
   tasks         Task[]
   proposals     Proposal[]
   documents     ContractDocument[]
+  parties       ContractParty[]
 
   @@index([officeId])
   @@index([officeId, status])
   @@map("contracts")
+}
+
+// ============================================================
+// 계약서 당사자 (레거시 TPCT02S 당사자 + TPCT28S 대리인 대응)
+// 공동 매도/매수인 N명, 당사자별 대리인(자기참조), 중개사무소 행을
+// 하나의 테이블로 표현. buyer/seller 대표 Contact 2명(Contract.*ContactId)과
+// 별개로, 계약서에 인쇄되는 전체 당사자 명부를 담당한다.
+// ============================================================
+
+model ContractParty {
+  id         String @id @default(uuid()) @db.Uuid
+  officeId   String @map("office_id") @db.Uuid
+  contractId String @map("contract_id") @db.Uuid
+
+  /// 행 역할 — "one"(레거시 01: 매도/임대/양도측) | "two"(02: 매수/임차/양수측) | "office"(99: 중개사무소)
+  side  String
+  /// 같은 side 내 순번 (1=대표, 2+=공동 당사자) — 레거시 Sub_Id
+  subId Int     @default(1) @map("sub_id")
+  /// 표기 라벨 override ("갑", "전대인" 등). null이면 transactionType에서 유도
+  role  String?
+
+  name        String
+  /// 식별번호 유형 — 레거시 Ownr_Clsf: resident / corporate / foreign / birth
+  idType      String? @map("id_type")
+  /// 주민/법인/등록번호.
+  /// 암호화 저장 필수 — 서버 write-path에서 암호화, 잔금일+15일 후 read 시
+  /// 뒷자리 마스킹(레거시 changeRegNumber 정책).
+  idNumber    String? @map("id_number")
+  address     String?
+  phone       String?
+  mobilePhone String? @map("mobile_phone")
+  /// 거래지분 "N분의 M" — 레거시 Tran_Stak_Silt/Per
+  sharePercent String? @map("share_percent")
+  country     String?
+
+  /// 고객 마스터 연동 (레거시 Cust_Id)
+  contactId String? @map("contact_id") @db.Uuid
+
+  // ─── 대리인 (자기참조, 레거시 TPCT28S) ─────────────────────
+  /// null = 본인 행, 값 = 이 당사자(parent)의 대리인 행
+  parentId   String? @map("parent_id") @db.Uuid
+  /// 대리인 라벨: "대리인" / "공동대리인" / 커스텀
+  agentLabel String? @map("agent_label")
+
+  // ─── 사무소 행(side="office") 전용 ─────────────────────────
+  officeName      String? @map("office_name")
+  officeRegNo     String? @map("office_reg_no")
+  /// 공동중개 상대 사무소 참조 (레거시 Comm_Ofcr_Id). FK 없이 UUID만 보관
+  partnerOfficeId String? @map("partner_office_id") @db.Uuid
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  office   Office          @relation(fields: [officeId], references: [id])
+  contract Contract        @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  contact  Contact?        @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  parent   ContractParty?  @relation("ContractPartyAgent", fields: [parentId], references: [id], onDelete: Cascade)
+  agents   ContractParty[] @relation("ContractPartyAgent")
+
+  @@index([officeId, contractId])
+  @@index([contactId])
+  @@index([parentId])
+  @@map("contract_parties")
 }
 
 // ============================================================
@@ -424,6 +488,13 @@ model ContractDocument {
   /// contract / identity / explanation / report / receipt / attachment
   category String
   title    String
+
+  /// 서식 템플릿 코드 — 레거시 Cntr_Clsf 대응 (base_contract / standard_lease_contract / proxy ...)
+  kind      String?
+  /// 묶음 내 탭 순서 — 레거시 Orde
+  sortOrder Int     @default(0) @map("sort_order")
+  /// 동일 서식 반복 순번 (위임장 2장 등) — 레거시 Cntr_Clsf_Orde
+  kindOrder Int     @default(1) @map("kind_order")
 
   /// draft / generated / signed / submitted / archived / cancelled
   status String @default("draft")

@@ -1,8 +1,13 @@
 /**
  * 계약 상세 워크스페이스 — 요약(대금 타임라인) / 계약 정보(특약 템플릿) /
- * 문서 허브(거래신고 D-day) / 거래 정보(컨텍스트 점프) / 이력(ActivityLog).
+ * 당사자(ContractParty 편집) / 문서 허브(거래신고 D-day, 사본/삭제) /
+ * 거래 정보(컨텍스트 점프) / 이력(ActivityLog).
+ *
+ * 폼 상태는 페이지(index.tsx)가 소유한다 — 문서 편집기로 전환(다이얼로그 닫힘)해도
+ * 미저장 편집이 유지되고, 닫기 시 dirty 확인을 다이얼로그 레벨에서 할 수 있다.
  */
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
+import type { Dispatch, SetStateAction } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, ChevronRight } from 'lucide-react';
 import { toast } from 'sonner';
@@ -12,6 +17,7 @@ import type {
   ContractDocumentTemplate,
 } from '@estate-erp/api-client';
 import {
+  ContractRichTextView,
   ContractTransactionTypeBadge,
   CONTRACT_STATUS_OPTIONS,
   CONTRACT_TRANSACTION_TYPES,
@@ -19,7 +25,6 @@ import {
   NumberField,
   StaticField,
   SummaryRow,
-  emptyContractForm,
   emptyDateToNull,
   emptyStringToNull,
   findDocumentByTemplate,
@@ -29,17 +34,18 @@ import {
   getNextContractStatus,
   getPaymentSumMismatch,
   getReportDeadline,
-  toContractForm,
   toNullableNumber,
   toOptionalNumber,
   validateContractForm,
   type ContractForm,
 } from './-contract-shared';
 import { DocumentHub } from './-document-hub';
+import { ContractPartiesCard } from './-parties-editor';
 import { SpecialTermsCard } from './-special-terms-card';
 import { ActivityLogPanel, DealInfoTab } from './-contract-context';
 import { PaymentTimelineCard } from './-payment-timeline';
 import { api } from '@/lib/api';
+import { sanitizeContractRichTextForSave } from '@/lib/contract-rich-text';
 import {
   formatDate,
   formatDateTime,
@@ -79,6 +85,9 @@ export function ContractDetailCard({
   onRetry,
   documentTemplates,
   isDocumentTemplatesLoading,
+  form,
+  onFormChange,
+  isDirty,
   onOpenDocument,
 }: {
   open: boolean;
@@ -88,18 +97,16 @@ export function ContractDetailCard({
   onRetry: () => void;
   documentTemplates: ContractDocumentTemplate[];
   isDocumentTemplatesLoading: boolean;
+  /** 페이지 소유 폼 상태 (dirty tracking — 문서 편집기 전환에도 유지) */
+  form: ContractForm;
+  onFormChange: Dispatch<SetStateAction<ContractForm>>;
+  isDirty: boolean;
   onOpenDocument: (
     template: ContractDocumentTemplate,
     document?: ContractDocument,
   ) => void;
 }) {
   const queryClient = useQueryClient();
-  const [form, setForm] = useState<ContractForm>(emptyContractForm());
-
-  useEffect(() => {
-    if (!contract) return;
-    setForm(toContractForm(contract));
-  }, [contract]);
 
   const dealQuery = useQuery({
     queryKey: ['deal', contract?.dealId],
@@ -126,7 +133,10 @@ export function ContractDetailCard({
         moveInDate: emptyDateToNull(nextForm.moveInDate),
         leaseStartDate: emptyDateToNull(nextForm.leaseStartDate),
         leaseEndDate: emptyDateToNull(nextForm.leaseEndDate),
-        specialTerms: emptyStringToNull(nextForm.specialTerms),
+        // 특약은 rich text HTML — 저장 전 새니타이즈 (레거시 plain text 는 그대로)
+        specialTerms: emptyStringToNull(
+          sanitizeContractRichTextForSave(nextForm.specialTerms),
+        ),
         memo: emptyStringToNull(nextForm.memo),
         attachments: nextForm.attachmentsText
           .split('\n')
@@ -148,6 +158,47 @@ export function ContractDetailCard({
     },
   });
 
+  // 서식 단건 사본 (레거시 "다른저장") — 같은 kind 는 kindOrder 자동 증가
+  const copyDocumentMutation = useMutation({
+    mutationFn: (documentId: string) =>
+      api.contracts.copyDocument(contract?.id as string, documentId),
+    onSuccess: () => {
+      toast.success('문서 사본을 만들었습니다.');
+      queryClient.invalidateQueries({ queryKey: ['contracts'] });
+      queryClient.invalidateQueries({ queryKey: ['contract', contract?.id] });
+    },
+    onError: (error) => {
+      toast.error(
+        error instanceof Error ? error.message : '문서 사본을 만들지 못했습니다.',
+      );
+    },
+  });
+
+  // 문서 단건 삭제 — 취소(status=cancelled) 우회가 아닌 영구 삭제
+  // (v2 리비전(ContractDocumentRevision)은 DB cascade 로 함께 삭제된다)
+  const deleteDocumentMutation = useMutation({
+    mutationFn: (documentId: string) =>
+      api.contracts.removeDocument(contract?.id as string, documentId),
+    onSuccess: () => {
+      toast.success('문서를 삭제했습니다.');
+      queryClient.invalidateQueries({ queryKey: ['contracts'] });
+      queryClient.invalidateQueries({ queryKey: ['contract', contract?.id] });
+    },
+    onError: (error) => {
+      toast.error(
+        error instanceof Error ? error.message : '문서를 삭제하지 못했습니다.',
+      );
+    },
+  });
+
+  function deleteDocument(documentId: string) {
+    const confirmed = window.confirm(
+      '이 문서와 수정 이력이 영구 삭제되며 복구할 수 없습니다. 삭제할까요?',
+    );
+    if (!confirmed) return;
+    deleteDocumentMutation.mutate(documentId);
+  }
+
   function handleSave(statusOverride?: string) {
     const nextForm = statusOverride ? { ...form, status: statusOverride } : form;
     const validationError = validateContractForm(nextForm);
@@ -157,7 +208,7 @@ export function ContractDetailCard({
       return;
     }
 
-    if (statusOverride) setForm(nextForm);
+    if (statusOverride) onFormChange(nextForm);
     updateMutation.mutate(nextForm);
   }
 
@@ -168,14 +219,15 @@ export function ContractDetailCard({
     function handleKeyDown(event: KeyboardEvent) {
       if ((event.metaKey || event.ctrlKey) && event.key === 's') {
         event.preventDefault();
-        handleSave();
+        // 저장 버튼과 동일하게 미저장 변경이 있을 때만 저장
+        if (isDirty) handleSave();
       }
     }
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, form, contract?.id]);
+  }, [open, form, contract?.id, isDirty]);
 
   if (isError) {
     return (
@@ -260,7 +312,10 @@ export function ContractDetailCard({
                 <ChevronRight className="size-4" />
               </Button>
             ) : null}
-            <Button onClick={() => handleSave()} disabled={updateMutation.isPending}>
+            <Button
+              onClick={() => handleSave()}
+              disabled={updateMutation.isPending || !isDirty}
+            >
               저장
             </Button>
           </div>
@@ -278,6 +333,7 @@ export function ContractDetailCard({
           <TabsList>
             <TabsTrigger value="summary">요약</TabsTrigger>
             <TabsTrigger value="contract">계약 정보</TabsTrigger>
+            <TabsTrigger value="parties">당사자</TabsTrigger>
             <TabsTrigger value="documents">문서 허브</TabsTrigger>
             <TabsTrigger value="deal">거래 정보</TabsTrigger>
             <TabsTrigger value="history">이력</TabsTrigger>
@@ -378,9 +434,10 @@ export function ContractDetailCard({
                     <CardTitle className="text-base">특약 미리보기</CardTitle>
                   </CardHeader>
                   <CardContent className="px-5">
-                    <p className="whitespace-pre-wrap text-sm leading-6 text-muted-foreground">
-                      {form.specialTerms}
-                    </p>
+                    <ContractRichTextView
+                      value={form.specialTerms}
+                      className="text-sm leading-6 text-muted-foreground"
+                    />
                   </CardContent>
                 </Card>
               ) : null}
@@ -397,7 +454,7 @@ export function ContractDetailCard({
                     <Select
                       value={form.status}
                       onValueChange={(value) =>
-                        setForm((prev) => ({ ...prev, status: value }))
+                        onFormChange((prev) => ({ ...prev, status: value }))
                       }
                     >
                       <SelectTrigger className="w-full">
@@ -418,7 +475,7 @@ export function ContractDetailCard({
                     <Select
                       value={form.transactionType}
                       onValueChange={(value) =>
-                        setForm((prev) => ({ ...prev, transactionType: value }))
+                        onFormChange((prev) => ({ ...prev, transactionType: value }))
                       }
                     >
                       <SelectTrigger className="w-full">
@@ -446,14 +503,14 @@ export function ContractDetailCard({
                   <NumberField
                     label="총 거래금액"
                     value={form.totalPrice}
-                    onChange={(value) => setForm((prev) => ({ ...prev, totalPrice: value }))}
+                    onChange={(value) => onFormChange((prev) => ({ ...prev, totalPrice: value }))}
                     suffix="만원"
                   />
 
                   <NumberField
                     label="월세"
                     value={form.monthlyRent}
-                    onChange={(value) => setForm((prev) => ({ ...prev, monthlyRent: value }))}
+                    onChange={(value) => onFormChange((prev) => ({ ...prev, monthlyRent: value }))}
                     suffix="만원"
                     disabled={form.transactionType !== 'monthly'}
                   />
@@ -464,7 +521,7 @@ export function ContractDetailCard({
                       type="date"
                       value={form.contractDate}
                       onChange={(event) =>
-                        setForm((prev) => ({ ...prev, contractDate: event.target.value }))
+                        onFormChange((prev) => ({ ...prev, contractDate: event.target.value }))
                       }
                     />
                   </div>
@@ -495,7 +552,7 @@ export function ContractDetailCard({
                       title="계약금"
                       amount={form.statedDeposit}
                       onAmountChange={(value) =>
-                        setForm((prev) => ({ ...prev, statedDeposit: value }))
+                        onFormChange((prev) => ({ ...prev, statedDeposit: value }))
                       }
                     />
                     <PaymentFieldGroup
@@ -503,10 +560,10 @@ export function ContractDetailCard({
                       amount={form.statedInterimPayment}
                       date={form.statedInterimDate}
                       onAmountChange={(value) =>
-                        setForm((prev) => ({ ...prev, statedInterimPayment: value }))
+                        onFormChange((prev) => ({ ...prev, statedInterimPayment: value }))
                       }
                       onDateChange={(value) =>
-                        setForm((prev) => ({ ...prev, statedInterimDate: value }))
+                        onFormChange((prev) => ({ ...prev, statedInterimDate: value }))
                       }
                     />
                     <PaymentFieldGroup
@@ -514,10 +571,10 @@ export function ContractDetailCard({
                       amount={form.statedBalance}
                       date={form.statedBalanceDate}
                       onAmountChange={(value) =>
-                        setForm((prev) => ({ ...prev, statedBalance: value }))
+                        onFormChange((prev) => ({ ...prev, statedBalance: value }))
                       }
                       onDateChange={(value) =>
-                        setForm((prev) => ({ ...prev, statedBalanceDate: value }))
+                        onFormChange((prev) => ({ ...prev, statedBalanceDate: value }))
                       }
                     />
 
@@ -528,7 +585,7 @@ export function ContractDetailCard({
                           type="date"
                           value={form.moveInDate}
                           onChange={(event) =>
-                            setForm((prev) => ({ ...prev, moveInDate: event.target.value }))
+                            onFormChange((prev) => ({ ...prev, moveInDate: event.target.value }))
                           }
                         />
                       </div>
@@ -538,7 +595,7 @@ export function ContractDetailCard({
                           type="date"
                           value={form.leaseStartDate}
                           onChange={(event) =>
-                            setForm((prev) => ({
+                            onFormChange((prev) => ({
                               ...prev,
                               leaseStartDate: event.target.value,
                             }))
@@ -551,7 +608,7 @@ export function ContractDetailCard({
                           type="date"
                           value={form.leaseEndDate}
                           onChange={(event) =>
-                            setForm((prev) => ({
+                            onFormChange((prev) => ({
                               ...prev,
                               leaseEndDate: event.target.value,
                             }))
@@ -565,9 +622,13 @@ export function ContractDetailCard({
 
               <SpecialTermsCard
                 form={form}
-                onFormChange={setForm}
+                onFormChange={onFormChange}
                 transactionType={form.transactionType}
               />
+            </TabsContent>
+
+            <TabsContent value="parties" className="m-0">
+              <ContractPartiesCard contract={contract} />
             </TabsContent>
 
             <TabsContent value="documents" className="m-0 space-y-4">
@@ -587,6 +648,10 @@ export function ContractDetailCard({
                 isLoading={isDocumentTemplatesLoading}
                 reportDeadline={reportDeadline}
                 onOpenDocument={onOpenDocument}
+                onCopyDocument={(documentId) => copyDocumentMutation.mutate(documentId)}
+                isCopyingDocument={copyDocumentMutation.isPending}
+                onDeleteDocument={deleteDocument}
+                isDeletingDocument={deleteDocumentMutation.isPending}
               />
             </TabsContent>
 

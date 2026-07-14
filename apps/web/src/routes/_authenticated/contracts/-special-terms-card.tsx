@@ -6,8 +6,13 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { BookmarkPlus, ListPlus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { ContractClauseTemplate } from '@estate-erp/api-client';
+import {
+  appendContractRichText,
+  contractRichTextToPlainText,
+} from '@estate-erp/shared';
 import type { ContractForm } from './-contract-shared';
 import { api } from '@/lib/api';
+import { RichTextEditor } from '@/components/rich-text-editor';
 import { ConfirmDialog } from '@/components/domain';
 import { Button } from '@/components/ui/button';
 import {
@@ -65,12 +70,16 @@ export function SpecialTermsCard({
       template.transactionTypes.includes(transactionType),
   );
 
+  // 템플릿 content 는 plain text 로 저장 (HTML 특약은 텍스트 추출) —
+  // 목록 미리보기·문서 편집기 특약 도구 등 다른 소비처와의 호환 유지
+  const specialTermsPlainText = contractRichTextToPlainText(form.specialTerms).trim();
+
   const createMutation = useMutation({
     mutationFn: () =>
       api.contracts.createClauseTemplate({
         type: CLAUSE_TEMPLATE_TYPE,
         title: newTitle.trim(),
-        content: form.specialTerms.trim(),
+        content: specialTermsPlainText,
         transactionTypes: [transactionType],
       }),
     onSuccess: () => {
@@ -103,9 +112,8 @@ export function SpecialTermsCard({
   function insertTemplate(template: ContractClauseTemplate) {
     onFormChange((prev) => ({
       ...prev,
-      specialTerms: prev.specialTerms.trim()
-        ? `${prev.specialTerms.replace(/\s+$/, '')}\n${template.content}`
-        : template.content,
+      // 특약은 rich text — 템플릿(plain text)을 문단 HTML 로 이어붙임
+      specialTerms: appendContractRichText(prev.specialTerms, template.content),
     }));
     toast.success(`'${template.title}' 특약을 삽입했습니다.`);
   }
@@ -154,12 +162,12 @@ export function SpecialTermsCard({
       <CardContent className="grid gap-4 px-5">
         <div className="space-y-2">
           <Label>특약사항</Label>
-          <Textarea
-            rows={5}
+          <RichTextEditor
             value={form.specialTerms}
-            onChange={(event) =>
-              onFormChange((prev) => ({ ...prev, specialTerms: event.target.value }))
+            onChange={(html) =>
+              onFormChange((prev) => ({ ...prev, specialTerms: html }))
             }
+            placeholder="특약사항을 입력하세요"
           />
         </div>
         <div className="space-y-2">
@@ -208,13 +216,13 @@ export function SpecialTermsCard({
                   disabled={
                     createMutation.isPending ||
                     !newTitle.trim() ||
-                    !form.specialTerms.trim()
+                    !specialTermsPlainText
                   }
                 >
                   저장
                 </Button>
               </div>
-              {!form.specialTerms.trim() ? (
+              {!specialTermsPlainText ? (
                 <p className="text-xs text-muted-foreground">
                   특약사항 입력란에 내용을 작성한 뒤 저장할 수 있습니다.
                 </p>

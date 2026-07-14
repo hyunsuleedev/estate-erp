@@ -1,11 +1,32 @@
 /**
  * 계약 문서 편집기 — 마이스파이더 서식 코드 매핑 기반 입력폼 + 출력 미리보기 + 인쇄.
+ *
+ * - 입력폼은 template.metadata.documentEngine.fieldGroups 구동
+ *   (getContractDocumentEngineFieldGroups(template, { transactionType }) 오버로드,
+ *   appliesTo 거래유형 필터 적용). metadata 가 없으면 category 공통 그룹 fallback.
+ * - inputType 별 컨트롤: amount(만원 + 만/천/원 단위 토글 + 한글 병기),
+ *   number(+unit), date(+N개월 편의 버튼), select, checkbox, textarea, text.
+ * - 특약사항(specialTerms)은 rich text HTML — TipTap 에디터로 편집하고,
+ *   미리보기/인쇄는 반드시 새니타이즈 후 렌더한다.
+ * - 부속 서식은 주 계약서 문서(primaryDocument)의 입력값을 기본 승계한다.
+ * - 매매초안(base_contract × sale)은 v2 고유 -residential-sale-editor 를 유지한다.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
-import { FileText, Printer } from 'lucide-react';
-import type { Contract, ContractDocument, ContractDocumentTemplate } from '@estate-erp/api-client';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { BookMarked, FileText, Printer } from 'lucide-react';
+import { toast } from 'sonner';
+import type {
+  Contract,
+  ContractClauseTemplate,
+  ContractDocument,
+  ContractDocumentTemplate,
+} from '@estate-erp/api-client';
 import {
+  appendContractRichText,
+  contractRichTextToPlainText,
+  formatContractAmountWithWon,
+  formatPrice,
   validateResidentialSaleAgreement,
   type ResidentialSaleAgreementDraft,
 } from '@estate-erp/shared';
@@ -14,18 +35,33 @@ import {
   buildResidentialSaleAgreement,
   getContractDocumentEngineFieldGroups,
   getContractDocumentEngineSections,
+  parseContractManwonText,
   type ContractDocumentEngineFieldDefinition,
+  type ContractDocumentEngineFieldGroup,
   type ContractDocumentEngineFields,
+  type ContractDocumentEngineParty,
   type ContractDocumentEngineWorkflow,
 } from './-document-engine';
 import {
   ResidentialSaleAgreementEditor,
   ResidentialSaleAgreementPreview,
 } from './-residential-sale-editor';
-import { SummaryRow, documentCategoryLabels, documentStatusMeta } from './-contract-shared';
+import {
+  SummaryRow,
+  documentCategoryLabels,
+  documentStatusMeta,
+  findPrimaryContractDocument,
+} from './-contract-shared';
+import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
+import {
+  CONTRACT_RICH_TEXT_VIEW_CLASS,
+  sanitizeContractHtml,
+} from '@/lib/contract-rich-text';
+import { RichTextEditor } from '@/components/rich-text-editor';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Dialog,
   DialogContent,
@@ -36,6 +72,11 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   Select,
@@ -70,6 +111,17 @@ export type DocumentEditorForm = {
   workflow: ContractDocumentEngineWorkflow;
   engineFields: ContractDocumentEngineFields;
   saleAgreement: ResidentialSaleAgreementDraft | null;
+  /** 서식 코드 (레거시 Cntr_Clsf) — 신규 문서는 template.code 에서 유도 */
+  kind: string | null;
+  /** 묶음 내 탭 순서 / 동일 서식 반복 순번 — 기존 문서 수정 시 보존 */
+  sortOrder?: number;
+  kindOrder?: number;
+  /** metadata.documentEngine.fieldGroups 구동 + appliesTo 필터 적용된 그룹 */
+  fieldGroups: ContractDocumentEngineFieldGroup[];
+  /** 프리뷰 당사자 반복 렌더용 (contract.parties) */
+  parties: ContractDocumentEngineParty[];
+  /** 계약 거래유형 — 특약 템플릿 필터 등 편의 기능용 */
+  transactionType: string;
 };
 
 export function emptyDocumentEditorForm(): DocumentEditorForm {
@@ -86,6 +138,12 @@ export function emptyDocumentEditorForm(): DocumentEditorForm {
     workflow: emptyDocumentEngineWorkflow(),
     engineFields: emptyDocumentEngineFields(),
     saleAgreement: null,
+    kind: null,
+    sortOrder: undefined,
+    kindOrder: undefined,
+    fieldGroups: [],
+    parties: [],
+    transactionType: '',
   };
 }
 
@@ -94,15 +152,23 @@ export function toDocumentEditorForm(
   template: ContractDocumentTemplate,
   document?: ContractDocument,
 ): DocumentEditorForm {
+  // 부속 서식(계약서 이외 category)은 주 계약서 문서의 입력값(소재지·금액
+  // 스케줄 등)을 기본값으로 승계한다 (레거시 getMainContractInfo)
+  const primaryDocument =
+    template.category !== 'contract'
+      ? findPrimaryContractDocument(contract.documents ?? [], document?.id)
+      : null;
+
   const draft = buildContractDocumentEngineDraft({
     contract,
     template,
     document,
+    primaryDocument,
   });
 
   return {
     documentId: document?.id,
-    templateId: template.id,
+    templateId: template.id || document?.templateId || undefined,
     type: document?.type ?? 'generated',
     category: document?.category ?? template.category,
     title: draft.title,
@@ -115,6 +181,16 @@ export function toDocumentEditorForm(
     workflow: draft.workflow,
     engineFields: draft.fields,
     saleAgreement: buildResidentialSaleAgreement(contract, template, document),
+    // 신규 문서는 template.code 를 kind 로 전달 (서버가 sortOrder/kindOrder 자동 부여).
+    // 템플릿 없는 문서(uploaded/external)는 합성 code 가 '' 이므로 null 유지
+    // — category 등 자유 문자열이 kind 로 저장되지 않도록 (서버 400 방지).
+    kind: document?.kind ?? (template.code || null),
+    sortOrder: document?.sortOrder,
+    kindOrder: document?.kindOrder,
+    // metadata 구동 필드그룹 (appliesTo 는 contract.transactionType 기준 필터 적용됨)
+    fieldGroups: draft.fieldGroups,
+    parties: contract.parties ?? [],
+    transactionType: contract.transactionType,
   };
 }
 
@@ -161,30 +237,151 @@ function emptyDocumentEngineFields(): ContractDocumentEngineFields {
   };
 }
 
+// ---------------------------------------------------------------------------
+// 파생값 헬퍼 — 금액 한글 병기 / 임대차 기간
+// ---------------------------------------------------------------------------
+
+/**
+ * 주 금액 필드 → 프리뷰 공통 '거래 조건' 행 동기화 매핑.
+ * metadata fieldGroups 서식(base_contract 등)에서 salePrice/deposit/monthlyRent 를
+ * 편집하면 출력 미리보기의 거래 금액/월 차임 행도 함께 갱신한다.
+ */
+const PRIMARY_AMOUNT_MIRRORS: Record<string, 'totalPriceText' | 'monthlyRentText'> = {
+  salePrice: 'totalPriceText',
+  deposit: 'totalPriceText',
+  monthlyRent: 'monthlyRentText',
+};
+
+/** 'YYYY-MM-DD' input[type=date] 값 파싱 (로컬 기준) */
+function parseDateInputValue(value: string | undefined): Date | null {
+  if (!value) return null;
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
+  if (!match) return null;
+  const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function toDateInputValue(date: Date): string {
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${date.getFullYear()}-${month}-${day}`;
+}
+
+/** N개월 더하기 — 말일 초과 시 해당 월 말일로 보정 (1/31 +1개월 → 2/28) */
+function addMonthsToDate(date: Date, months: number): Date {
+  const day = date.getDate();
+  const next = new Date(date.getFullYear(), date.getMonth() + months, 1);
+  const lastDay = new Date(next.getFullYear(), next.getMonth() + 1, 0).getDate();
+  next.setDate(Math.min(day, lastDay));
+  return next;
+}
+
+/** 시작일 + N개월 = 종료일이 정확히 성립하는 N (아니면 null) */
+function diffWholeMonths(start: Date, end: Date): number | null {
+  if (end.getTime() <= start.getTime()) return null;
+  const months =
+    (end.getFullYear() - start.getFullYear()) * 12 +
+    (end.getMonth() - start.getMonth());
+  if (months <= 0) return null;
+  return toDateInputValue(addMonthsToDate(start, months)) === toDateInputValue(end)
+    ? months
+    : null;
+}
+
+/**
+ * 임대차 개월수 ↔ 만기일 양방향 파생 (레거시 setRentMonth 대응).
+ * - leaseMonths / leaseStartDate 편집 → leaseEndDate = 시작일 + N개월
+ * - leaseEndDate 편집 → 온전한 개월수면 leaseMonths 갱신, 아니면 비움
+ */
+function applyLeasePeriodDerivation(
+  fields: ContractDocumentEngineFields,
+  key: string,
+  value: string,
+) {
+  if (key === 'leaseMonths' || key === 'leaseStartDate') {
+    const months = Number(
+      (key === 'leaseMonths' ? value : (fields.leaseMonths ?? '')).trim(),
+    );
+    const start = parseDateInputValue(
+      key === 'leaseStartDate' ? value : fields.leaseStartDate,
+    );
+    if (
+      start &&
+      Number.isInteger(months) &&
+      months > 0 &&
+      fields.leaseEndDate !== undefined
+    ) {
+      fields.leaseEndDate = toDateInputValue(addMonthsToDate(start, months));
+    }
+    return;
+  }
+
+  if (key === 'leaseEndDate') {
+    const start = parseDateInputValue(fields.leaseStartDate);
+    const end = parseDateInputValue(value);
+    if (start && end && fields.leaseMonths !== undefined) {
+      const months = diffWholeMonths(start, end);
+      fields.leaseMonths = months !== null ? String(months) : '';
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 편집 시트
+// ---------------------------------------------------------------------------
+
 export function DocumentEditorSheet({
   open,
   form,
   error,
   isSaving,
+  isDirty,
   onOpenChange,
   onFormChange,
   onSave,
+  onSaveAsNew,
 }: {
   open: boolean;
   form: DocumentEditorForm;
   error: string | null;
   isSaving: boolean;
+  isDirty: boolean;
   onOpenChange: (open: boolean) => void;
   onFormChange: Dispatch<SetStateAction<DocumentEditorForm>>;
   onSave: () => void;
+  onSaveAsNew: () => void;
 }) {
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
-  const fieldGroups = getContractDocumentEngineFieldGroups(form.category);
-  const sections = getContractDocumentEngineSections(form.category, form.engineFields);
+  // metadata.documentEngine.fieldGroups 구동 (draft 빌드 시 appliesTo 필터 적용됨).
+  // 없으면 기존 category 공통 그룹 fallback.
+  const fieldGroups =
+    form.fieldGroups.length > 0
+      ? form.fieldGroups
+      : getContractDocumentEngineFieldGroups(form.category);
+  // 문서 제목은 에디터 셸(사이드바)에 고정 배치하므로 그룹에서는 제외
+  const visibleFieldGroups = fieldGroups
+    .map((group) => ({
+      ...group,
+      fields: group.fields.filter((field) => field.key !== 'documentTitle'),
+    }))
+    .filter((group) => group.fields.length > 0);
+  // 당사자 반복 렌더 (공동 N명 + 대리인 중첩 + 사무소/공동중개 행)
+  // + metadata fieldGroups 서식별 필드도 그룹 섹션으로 함께 출력
+  const sections = getContractDocumentEngineSections(form.category, form.engineFields, {
+    parties: form.parties.length > 0 ? form.parties : undefined,
+    fieldGroups,
+  });
   const documentTitle = form.engineFields.documentTitle || form.title || '계약 문서';
   const saleAgreementValidation = form.saleAgreement
     ? validateResidentialSaleAgreement(form.saleAgreement)
     : null;
+  // 기존 문서 수정은 변경이 있어야 저장 활성화. 신규 문서는 기본값 그대로도
+  // 저장(생성) 가능해야 하므로 dirty 를 요구하지 않는다.
+  const isSaveDisabled =
+    isSaving ||
+    !documentTitle ||
+    !form.category ||
+    (Boolean(form.documentId) && !isDirty);
 
   // Ctrl/Cmd+S 저장, Ctrl/Cmd+P 미리보기 (PRD 키보드 단축키)
   useEffect(() => {
@@ -194,7 +391,8 @@ export function DocumentEditorSheet({
       if (!(event.metaKey || event.ctrlKey)) return;
       if (event.key === 's') {
         event.preventDefault();
-        onSave();
+        // 저장 버튼과 동일한 비활성 조건(dirty 등)을 따른다
+        if (!isSaveDisabled) onSave();
       }
       if (event.key === 'p') {
         event.preventDefault();
@@ -204,16 +402,50 @@ export function DocumentEditorSheet({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [open, onSave]);
+  }, [open, onSave, isSaveDisabled]);
 
-  function updateEngineField(key: string, value: string) {
-    onFormChange((prev) => ({
-      ...prev,
-      engineFields: {
+  function updateEngineField(
+    key: string,
+    value: string,
+    field?: ContractDocumentEngineFieldDefinition,
+  ) {
+    onFormChange((prev) => {
+      const nextFields: ContractDocumentEngineFields = {
         ...prev.engineFields,
         [key]: value,
-      },
-    }));
+      };
+
+      // 한글 병기 파생값 동기화 ("일금 삼억오천만원정 (₩350,000,000)").
+      // amount 필드뿐 아니라 공통(fallback) 그룹의 금액 텍스트 필드
+      // (totalPriceText/monthlyRentText)도 병기 시블링이 있으면 함께 갱신한다.
+      const manwon = parseContractManwonText(value);
+      const hangul =
+        manwon !== null && manwon > 0 ? formatContractAmountWithWon(manwon) : '';
+
+      if (field?.inputType === 'amount') {
+        nextFields[`${key}HangulText`] = hangul;
+
+        // 주 금액 필드(salePrice/deposit/monthlyRent)는 프리뷰 공통
+        // '거래 조건' 행(totalPriceText/monthlyRentText)에도 반영한다.
+        const mirrorKey = PRIMARY_AMOUNT_MIRRORS[key];
+        if (mirrorKey && prev.engineFields[mirrorKey] !== undefined) {
+          nextFields[mirrorKey] = manwon !== null && manwon > 0 ? formatPrice(manwon) : '';
+          nextFields[`${mirrorKey.slice(0, -'Text'.length)}HangulText`] = hangul;
+        }
+      } else {
+        const hangulKey = key.endsWith('Text')
+          ? `${key.slice(0, -'Text'.length)}HangulText`
+          : `${key}HangulText`;
+        if (prev.engineFields[hangulKey] !== undefined) {
+          nextFields[hangulKey] = hangul;
+        }
+      }
+
+      // 임대차 개월수 ↔ 만기일 양방향 파생 (레거시 setRentMonth)
+      applyLeasePeriodDerivation(nextFields, key, value);
+
+      return { ...prev, engineFields: nextFields };
+    });
   }
 
   function updateSaleAgreement(
@@ -268,9 +500,11 @@ export function DocumentEditorSheet({
                     onChange={updateSaleAgreement}
                   />
                 ) : (
-                  fieldGroups.map((group) => (
+                  visibleFieldGroups.map((group) => (
                     <DocumentInputFormSection
-                      key={group.title}
+                      // documentId 를 key 에 포함 — 다른 문서로 전환 시 컨트롤의
+                      // 로컬 상태(금액 단위 토글 등)가 이월되지 않도록 리마운트
+                      key={`${form.documentId ?? 'new'}:${group.key ?? group.title}`}
                       title={group.title}
                       fields={group.fields}
                       values={form.engineFields}
@@ -343,6 +577,17 @@ export function DocumentEditorSheet({
                 <section className="rounded-md border border-border/60 bg-background p-4">
                   <p className="text-sm font-medium">문서 설정</p>
                   <div className="mt-4 grid gap-4">
+                    <div className="space-y-2">
+                      <Label>문서 제목</Label>
+                      <Input
+                        value={form.engineFields.documentTitle ?? ''}
+                        onChange={(event) =>
+                          updateEngineField('documentTitle', event.target.value)
+                        }
+                        placeholder="비우면 서식명이 사용됩니다"
+                      />
+                    </div>
+
                     <div className="space-y-2">
                       <Label>문서 상태</Label>
                       <Select
@@ -417,6 +662,24 @@ export function DocumentEditorSheet({
                   </div>
                 </section>
 
+                {!form.saleAgreement ? (
+                  <ClauseTemplateToolsSection
+                    contractKind={form.kind}
+                    transactionType={form.transactionType}
+                    specialTerms={form.engineFields.specialTerms ?? ''}
+                    onInsert={(content) =>
+                      // 특약은 rich text — 템플릿(plain text)을 문단 HTML 로 이어붙임
+                      updateEngineField(
+                        'specialTerms',
+                        appendContractRichText(
+                          form.engineFields.specialTerms,
+                          content,
+                        ),
+                      )
+                    }
+                  />
+                ) : null}
+
                 {error ? (
                   <p className="rounded-md border border-destructive/30 bg-destructive-soft px-3 py-2 text-sm text-destructive">
                     {error}
@@ -434,7 +697,16 @@ export function DocumentEditorSheet({
               <Button variant="outline" onClick={() => setIsPreviewOpen(true)}>
                 출력 미리보기
               </Button>
-              <Button onClick={onSave} disabled={isSaving || !documentTitle || !form.category}>
+              {form.documentId ? (
+                <Button
+                  variant="outline"
+                  onClick={onSaveAsNew}
+                  disabled={isSaving || !documentTitle || !form.category}
+                >
+                  다른 이름으로 저장
+                </Button>
+              ) : null}
+              <Button onClick={onSave} disabled={isSaveDisabled}>
                 저장
               </Button>
             </div>
@@ -483,6 +755,135 @@ export function DocumentEditorSheet({
   );
 }
 
+/**
+ * 특약/조항 도구 (레거시 특약 가져오기/등록 대응).
+ * 사무소 ContractClauseTemplate(special_terms_clause)을 특약사항에 삽입하고,
+ * 현재 특약을 템플릿으로 등록한다.
+ */
+function ClauseTemplateToolsSection({
+  contractKind,
+  transactionType,
+  specialTerms,
+  onInsert,
+}: {
+  contractKind: string | null;
+  transactionType: string;
+  specialTerms: string;
+  onInsert: (content: string) => void;
+}) {
+  const queryClient = useQueryClient();
+  const [newTitle, setNewTitle] = useState('');
+
+  const { data: clauseTemplates = [], isLoading } = useQuery({
+    queryKey: ['contract-clause-templates', 'special_terms_clause'],
+    queryFn: () => api.contracts.clauseTemplates({ type: 'special_terms_clause' }),
+  });
+
+  // 현재 서식(kind)/거래유형과 맞는 템플릿을 앞에 정렬 (무관 템플릿도 뒤에 노출)
+  const sortedTemplates = useMemo(() => {
+    function rank(template: ContractClauseTemplate) {
+      const kindMatch =
+        !template.contractKind || template.contractKind === contractKind;
+      const typeMatch =
+        template.transactionTypes.length === 0 ||
+        (transactionType !== '' &&
+          template.transactionTypes.includes(transactionType));
+      return (kindMatch ? 0 : 2) + (typeMatch ? 0 : 1);
+    }
+
+    return [...clauseTemplates].sort(
+      (left, right) => rank(left) - rank(right) || left.sortOrder - right.sortOrder,
+    );
+  }, [clauseTemplates, contractKind, transactionType]);
+
+  // 템플릿 content 는 plain text 로 저장 (HTML 특약은 텍스트 추출) —
+  // 계약 정보 탭 특약 카드 등 다른 소비처와의 호환 유지
+  const specialTermsPlainText = contractRichTextToPlainText(specialTerms).trim();
+
+  const registerMutation = useMutation({
+    mutationFn: () =>
+      api.contracts.createClauseTemplate({
+        type: 'special_terms_clause',
+        contractKind: contractKind ?? null,
+        transactionTypes: transactionType ? [transactionType] : [],
+        title: newTitle.trim(),
+        content: specialTermsPlainText,
+      }),
+    onSuccess: () => {
+      toast.success('특약 템플릿을 등록했습니다.');
+      setNewTitle('');
+      queryClient.invalidateQueries({ queryKey: ['contract-clause-templates'] });
+    },
+    onError: (error) => {
+      toast.error(
+        error instanceof Error ? error.message : '특약 템플릿을 등록하지 못했습니다.',
+      );
+    },
+  });
+
+  return (
+    <section className="rounded-md border border-border/60 bg-background p-4">
+      <p className="text-sm font-medium">특약 문구</p>
+      <p className="mt-1 text-xs text-muted-foreground">
+        사무소 특약 템플릿을 특약사항에 삽입하거나, 현재 특약을 템플릿으로 등록합니다.
+      </p>
+      <div className="mt-3 space-y-2">
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button variant="outline" size="sm" className="w-full">
+              <BookMarked className="size-3.5" />
+              특약 가져오기
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-80 p-2" align="end">
+            {isLoading ? (
+              <p className="px-2 py-3 text-sm text-muted-foreground">불러오는 중...</p>
+            ) : sortedTemplates.length === 0 ? (
+              <p className="px-2 py-3 text-sm text-muted-foreground">
+                등록된 특약 템플릿이 없습니다.
+              </p>
+            ) : (
+              <div className="max-h-64 space-y-1 overflow-y-auto">
+                {sortedTemplates.map((template) => (
+                  <button
+                    key={template.id}
+                    type="button"
+                    className="w-full rounded-md px-2 py-1.5 text-left hover:bg-muted"
+                    onClick={() => onInsert(template.content)}
+                  >
+                    <span className="block text-sm font-medium">{template.title}</span>
+                    <span className="mt-0.5 block truncate text-xs text-muted-foreground">
+                      {template.content}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </PopoverContent>
+        </Popover>
+        <div className="flex gap-2">
+          <Input
+            value={newTitle}
+            onChange={(event) => setNewTitle(event.target.value)}
+            placeholder="템플릿 이름"
+            className="h-8"
+          />
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={
+              !newTitle.trim() || !specialTermsPlainText || registerMutation.isPending
+            }
+            onClick={() => registerMutation.mutate()}
+          >
+            등록
+          </Button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function DocumentInputFormSection({
   title,
   fields,
@@ -492,18 +893,29 @@ function DocumentInputFormSection({
   title: string;
   fields: ContractDocumentEngineFieldDefinition[];
   values: ContractDocumentEngineFields;
-  onFieldChange: (key: string, value: string) => void;
+  onFieldChange: (
+    key: string,
+    value: string,
+    field?: ContractDocumentEngineFieldDefinition,
+  ) => void;
 }) {
   return (
     <section className="rounded-md border border-border/60 bg-background p-5">
       <p className="text-sm font-semibold">{title}</p>
       <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {fields.map((field) => (
-          <div key={field.key} className={field.multiline ? 'md:col-span-2 xl:col-span-3' : ''}>
+          <div
+            key={field.key}
+            className={
+              field.multiline || field.inputType === 'textarea'
+                ? 'md:col-span-2 xl:col-span-3'
+                : ''
+            }
+          >
             <DocumentEngineFieldControl
               field={field}
               value={values[field.key] ?? ''}
-              onChange={(value) => onFieldChange(field.key, value)}
+              onChange={(value) => onFieldChange(field.key, value, field)}
             />
           </div>
         ))}
@@ -512,6 +924,32 @@ function DocumentInputFormSection({
   );
 }
 
+/** 만원 단위 정수 파싱 — 숫자가 아니거나 음수/소수면 null */
+function parseManwonInt(value: string): number | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const parsed = Number(trimmed.replace(/,/g, ''));
+  if (!Number.isInteger(parsed) || parsed < 0 || !Number.isSafeInteger(parsed)) {
+    return null;
+  }
+  return parsed;
+}
+
+/** 엔진이 라벨에 붙인 단위 접미("매매대금 (만원)")를 입력 접미와 중복되지 않게 제거 */
+function stripUnitSuffix(label: string, unit: string | undefined): string {
+  if (!unit) return label;
+  const suffix = ` (${unit})`;
+  return label.endsWith(suffix) ? label.slice(0, -suffix.length) : label;
+}
+
+/**
+ * 서식 필드 타입별 입력 컨트롤 (template.metadata fieldGroups 의 inputType 구동).
+ * - amount: 만원 숫자 입력 + 만/천/원 단위 토글 + 실시간 한글 병기 미리보기
+ * - number: 숫자 입력 (+unit 접미)
+ * - date: 날짜 입력 + N개월 편의 버튼 / select / checkbox / textarea / text
+ * - specialTerms: rich text (레거시 Rider_Part HTML) — TipTap 에디터
+ * checkbox 는 엔진 필드가 전부 string 이므로 'true'/'' 관례를 따른다.
+ */
 function DocumentEngineFieldControl({
   field,
   value,
@@ -521,14 +959,228 @@ function DocumentEngineFieldControl({
   value: string;
   onChange: (value: string) => void;
 }) {
+  const inputType = field.inputType ?? (field.multiline ? 'textarea' : 'text');
+
+  if (inputType === 'checkbox') {
+    return (
+      <div className="flex h-full min-h-9 items-center gap-2 pt-5">
+        <Checkbox
+          id={`engine-field-${field.key}`}
+          checked={value === 'true'}
+          onCheckedChange={(checked) => onChange(checked === true ? 'true' : '')}
+        />
+        <Label htmlFor={`engine-field-${field.key}`} className="cursor-pointer">
+          {field.label}
+        </Label>
+      </div>
+    );
+  }
+
+  if (inputType === 'select') {
+    return (
+      <div className="space-y-2">
+        <Label>{field.label}</Label>
+        <Select value={value || undefined} onValueChange={(next) => onChange(next)}>
+          <SelectTrigger className="w-full">
+            <SelectValue placeholder="선택" />
+          </SelectTrigger>
+          <SelectContent>
+            {(field.options ?? []).map((option) => (
+              <SelectItem key={option} value={option}>
+                {option}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+    );
+  }
+
+  if (inputType === 'date') {
+    return (
+      <div className="space-y-2">
+        <Label>{field.label}</Label>
+        <Input
+          type="date"
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+        />
+        {/* 날짜 편의 버튼 — 레거시 인도일 +1/+2/+3월 대응 (기준: 입력값, 없으면 오늘) */}
+        <div className="flex gap-1">
+          {[1, 2, 3].map((months) => (
+            <Button
+              key={months}
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-6 px-2 text-[11px]"
+              onClick={() => {
+                const base = parseDateInputValue(value) ?? new Date();
+                onChange(toDateInputValue(addMonthsToDate(base, months)));
+              }}
+            >
+              +{months}개월
+            </Button>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (inputType === 'amount') {
+    return <AmountEngineFieldControl field={field} value={value} onChange={onChange} />;
+  }
+
+  if (inputType === 'number') {
+    return (
+      <div className="space-y-2">
+        <Label>{stripUnitSuffix(field.label, field.unit)}</Label>
+        <div className="relative">
+          <Input
+            inputMode="numeric"
+            value={value}
+            onChange={(event) => onChange(event.target.value)}
+            className={field.unit ? 'pr-14' : undefined}
+          />
+          {field.unit ? (
+            <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
+              {field.unit}
+            </span>
+          ) : null}
+        </div>
+      </div>
+    );
+  }
+
+  // 특약사항은 rich text (레거시 Rider_Part HTML) — TipTap 에디터로 편집
+  if (field.key === 'specialTerms') {
+    return (
+      <div className="space-y-2">
+        <Label>{field.label}</Label>
+        <RichTextEditor value={value} onChange={onChange} />
+      </div>
+    );
+  }
+
+  if (inputType === 'textarea' || field.multiline) {
+    return (
+      <div className="space-y-2">
+        <Label>{field.label}</Label>
+        <Textarea rows={4} value={value} onChange={(event) => onChange(event.target.value)} />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-2">
       <Label>{field.label}</Label>
-      {field.multiline ? (
-        <Textarea rows={4} value={value} onChange={(event) => onChange(event.target.value)} />
-      ) : (
-        <Input value={value} onChange={(event) => onChange(event.target.value)} />
-      )}
+      <Input value={value} onChange={(event) => onChange(event.target.value)} />
+    </div>
+  );
+}
+
+type AmountInputUnit = 'man' | 'cheon' | 'won';
+
+const AMOUNT_UNIT_LABELS: Record<AmountInputUnit, string> = {
+  man: '만원',
+  cheon: '천원',
+  won: '원',
+};
+
+/** 선택 단위 입력값 → 만원 정수 (만원 정수로 환산 불가/소수/음수는 null) */
+function parseUnitToManwon(raw: string, unit: AmountInputUnit): number | null {
+  const digits = raw.trim().replace(/,/g, '');
+  if (!/^\d+$/.test(digits)) return null;
+  const parsed = Number(digits);
+  if (!Number.isSafeInteger(parsed)) return null;
+  if (unit === 'man') return parsed;
+  const divisor = unit === 'cheon' ? 10 : 10000;
+  return parsed % divisor === 0 ? parsed / divisor : null;
+}
+
+/** 저장값(만원 정수) → 선택 단위 표시 문자열 */
+function formatManwonInUnit(manwon: number, unit: AmountInputUnit): string {
+  if (unit === 'man') return String(manwon);
+  return String(manwon * (unit === 'cheon' ? 10 : 10000));
+}
+
+/**
+ * 금액 입력 컨트롤 — 만/천/원 단위 토글 (레거시 Cost_Unit 라디오 대응).
+ * 저장값은 항상 만원 단위 정수 문자열이며, 토글은 입력 해석/표시만 바꾼다.
+ */
+function AmountEngineFieldControl({
+  field,
+  value,
+  onChange,
+}: {
+  field: ContractDocumentEngineFieldDefinition;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const [unit, setUnit] = useState<AmountInputUnit>('man');
+  const [draft, setDraft] = useState<string | null>(null);
+
+  const manwon = parseManwonInt(value);
+  const displayValue =
+    draft ?? (manwon !== null ? formatManwonInUnit(manwon, unit) : value);
+  const isDraftInvalid =
+    draft !== null && draft.trim() !== '' && parseUnitToManwon(draft, unit) === null;
+
+  function handleChange(raw: string) {
+    setDraft(raw);
+    if (!raw.trim()) {
+      onChange('');
+      return;
+    }
+    const parsed = parseUnitToManwon(raw, unit);
+    onChange(parsed !== null ? String(parsed) : '');
+  }
+
+  function handleUnitChange(next: AmountInputUnit) {
+    setUnit(next);
+    setDraft(null); // 저장값(만원) 기준으로 표시 재계산
+  }
+
+  return (
+    <div className="space-y-2">
+      <Label>{stripUnitSuffix(field.label, field.unit)}</Label>
+      <div className="flex gap-2">
+        <div className="relative flex-1">
+          <Input
+            inputMode="numeric"
+            value={displayValue}
+            onChange={(event) => handleChange(event.target.value)}
+            className="pr-11"
+          />
+          <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
+            {AMOUNT_UNIT_LABELS[unit]}
+          </span>
+        </div>
+        <Select
+          value={unit}
+          onValueChange={(next) => handleUnitChange(next as AmountInputUnit)}
+        >
+          <SelectTrigger className="w-20 shrink-0">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {(Object.keys(AMOUNT_UNIT_LABELS) as AmountInputUnit[]).map((option) => (
+              <SelectItem key={option} value={option}>
+                {AMOUNT_UNIT_LABELS[option]}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      {manwon !== null && manwon > 0 ? (
+        <p className="text-xs text-muted-foreground">
+          {formatContractAmountWithWon(manwon)}
+        </p>
+      ) : isDraftInvalid || (draft === null && value.trim()) ? (
+        <p className="text-xs text-destructive">
+          만원 단위 정수로 환산되는 금액을 입력해주세요.
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -573,12 +1225,14 @@ function ContractDocumentPage({
               {section.title}
             </h3>
             <div className="mt-3 rounded-md border border-slate-300">
-              {section.rows.map((row) => (
+              {section.rows.map((row, rowIndex) => (
                 <DocumentPreviewRow
-                  key={`${section.title}-${row.label}`}
+                  // 당사자 반복 행은 라벨이 중복될 수 있어 index 를 key 에 포함
+                  key={`${section.title}-${rowIndex}-${row.label}`}
                   label={row.label}
                   value={row.value}
                   multiline={row.multiline}
+                  html={row.html}
                 />
               ))}
             </div>
@@ -598,22 +1252,36 @@ function DocumentPreviewRow({
   label,
   value,
   multiline,
+  html,
 }: {
   label: string;
   value: string;
   multiline?: boolean;
+  /** value 가 특약 rich text HTML — DOMPurify 새니타이즈 후 HTML 렌더 */
+  html?: boolean;
 }) {
   return (
     <div className="grid grid-cols-[112px_minmax(0,1fr)] border-b border-slate-200 last:border-b-0">
       <div className="bg-slate-50 px-3 py-2 text-xs font-medium text-slate-600">{label}</div>
-      <div
-        className={cn(
-          'min-h-9 px-3 py-2 text-sm leading-6',
-          multiline ? 'whitespace-pre-wrap' : 'truncate',
-        )}
-      >
-        {value || ' '}
-      </div>
+      {html ? (
+        <div
+          className={cn(
+            'min-h-9 px-3 py-2 text-sm leading-6',
+            CONTRACT_RICH_TEXT_VIEW_CLASS,
+          )}
+          // 반드시 새니타이즈를 거친다 — 특약 HTML XSS 방어
+          dangerouslySetInnerHTML={{ __html: sanitizeContractHtml(value) }}
+        />
+      ) : (
+        <div
+          className={cn(
+            'min-h-9 px-3 py-2 text-sm leading-6',
+            multiline ? 'whitespace-pre-wrap' : 'truncate',
+          )}
+        >
+          {value || ' '}
+        </div>
+      )}
     </div>
   );
 }
@@ -623,7 +1291,7 @@ function SignatureBlock({ role, name }: { role: string; name: string }) {
     <div className="rounded-md border border-slate-300 p-4">
       <p className="text-xs text-slate-500">{role}</p>
       <div className="mt-6 flex items-end justify-between gap-3">
-        <span className="text-base font-medium">{name || ' '}</span>
+        <span className="text-base font-medium">{name || ' '}</span>
         <span className="text-sm text-slate-500">(인)</span>
       </div>
     </div>
