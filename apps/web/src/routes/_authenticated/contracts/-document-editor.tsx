@@ -9,7 +9,13 @@
  * - 특약사항(specialTerms)은 rich text HTML — TipTap 에디터로 편집하고,
  *   미리보기/인쇄는 반드시 새니타이즈 후 렌더한다.
  * - 부속 서식은 주 계약서 문서(primaryDocument)의 입력값을 기본 승계한다.
- * - 매매초안(base_contract × sale)은 v2 고유 -residential-sale-editor 를 유지한다.
+ * - 조항 임베디드 편집 (plan §4.2/§4.4): CLAUSE_LAYOUTS 에 레이아웃이 있는 서식
+ *   (base_contract × sale)은 제네릭 그리드 대신 조항 에디터(-base-contract-clause-editor)
+ *   로 렌더한다. 값은 engineFields 단일 진실 — 조항 에디터로 저장된 적 없는 문서
+ *   (printOptions 마커 부재)에 residentialSaleAgreement 스냅샷이 있으면 열 때
+ *   스냅샷을 engineFields 로 변환해 초기값으로 쓰고, 저장 시에는 스냅샷을
+ *   engineFields 기준으로 역반영(재생성)해 서버 완료 검증·MCP 와의 분기를 막는다.
+ *   -residential-sale-editor 경로는 dormant 로 유지한다(회귀 방지).
  */
 import { useEffect, useMemo, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
@@ -33,15 +39,26 @@ import {
 import {
   buildContractDocumentEngineDraft,
   buildResidentialSaleAgreement,
+  convertResidentialSaleAgreementToEngineFields,
+  getContractClauseLayout,
   getContractDocumentEngineFieldGroups,
+  getContractDocumentEnginePrintOptions,
   getContractDocumentEngineSections,
+  hasContractDocumentEnginePrintOptions,
   parseContractManwonText,
+  validateBaseContractSaleEngineFields,
+  CONTRACT_DOCUMENT_ENGINE_DEFAULT_PRINT_OPTIONS,
   type ContractDocumentEngineFieldDefinition,
   type ContractDocumentEngineFieldGroup,
   type ContractDocumentEngineFields,
   type ContractDocumentEngineParty,
+  type ContractDocumentEnginePrintOptions,
   type ContractDocumentEngineWorkflow,
 } from './-document-engine';
+import {
+  BaseContractClauseEditor,
+  BaseContractClausePreview,
+} from './-base-contract-clause-editor';
 import {
   ResidentialSaleAgreementEditor,
   ResidentialSaleAgreementPreview,
@@ -110,6 +127,12 @@ export type DocumentEditorForm = {
   metadata: Record<string, unknown>;
   workflow: ContractDocumentEngineWorkflow;
   engineFields: ContractDocumentEngineFields;
+  /**
+   * 문서 단위 표기/인쇄 옵션 (metadata.documentEngine.printOptions) —
+   * 금액단위(만원/천원/원)·금액인쇄형식(한글/漢字)·공란인쇄·행 토글.
+   * 조항 에디터 서식에서만 저장 페이로드에 포함한다.
+   */
+  printOptions: ContractDocumentEnginePrintOptions;
   saleAgreement: ResidentialSaleAgreementDraft | null;
   /** 서식 코드 (레거시 Cntr_Clsf) — 신규 문서는 template.code 에서 유도 */
   kind: string | null;
@@ -137,6 +160,7 @@ export function emptyDocumentEditorForm(): DocumentEditorForm {
     metadata: {},
     workflow: emptyDocumentEngineWorkflow(),
     engineFields: emptyDocumentEngineFields(),
+    printOptions: { ...CONTRACT_DOCUMENT_ENGINE_DEFAULT_PRINT_OPTIONS },
     saleAgreement: null,
     kind: null,
     sortOrder: undefined,
@@ -166,6 +190,25 @@ export function toDocumentEditorForm(
     primaryDocument,
   });
 
+  // 조항 임베디드 에디터 대상 서식 (현재 base_contract × sale, P2 에서 임대차 확장)
+  const clauseLayout = getContractClauseLayout(template.code, contract.transactionType);
+
+  // 매매초안 이관 (plan §4.4): 조항 에디터로 저장된 적 없는 문서(printOptions 마커
+  // 부재)에 residentialSaleAgreement 스냅샷이 있으면 열 때 스냅샷 값을 engineFields
+  // 위에 덮어 초기값으로 쓴다. 구 편집기(-residential-sale-editor)는 engineFields 를
+  // 편집할 UI 가 없었고 저장 경로가 draft 기본값 engineFields 를 항상 함께 기록했으므로
+  // — documentEngine.fields 존재 여부로 판별하면 이관이 스킵돼 스냅샷의 사용자
+  // 편집값(금액/일정/당사자)이 유실된다 — 스냅샷이 항상 최신 사용자 입력이다.
+  // 조항 에디터 저장은 printOptions 를 항상 기록하므로 마커 이후에는 재이관하지
+  // 않는다 (engineFields 가 단일 진실, 스냅샷은 저장 시 역반영으로 동기화).
+  let engineFields = draft.fields;
+  if (clauseLayout && !hasContractDocumentEnginePrintOptions(document?.metadata)) {
+    const converted = convertResidentialSaleAgreementToEngineFields(document?.metadata);
+    if (converted) {
+      engineFields = { ...draft.fields, ...converted };
+    }
+  }
+
   return {
     documentId: document?.id,
     templateId: template.id || document?.templateId || undefined,
@@ -179,8 +222,13 @@ export function toDocumentEditorForm(
     memo: document?.memo ?? '',
     metadata: document?.metadata ?? template.metadata ?? {},
     workflow: draft.workflow,
-    engineFields: draft.fields,
-    saleAgreement: buildResidentialSaleAgreement(contract, template, document),
+    engineFields,
+    // 표기 옵션은 문서 metadata 에서만 읽는다 (신규 문서는 기본값 만원/한글)
+    printOptions: getContractDocumentEnginePrintOptions(document?.metadata),
+    // 조항 에디터 서식은 engineFields 가 단일 진실 — 매매초안 전용 폼은 dormant.
+    saleAgreement: clauseLayout
+      ? null
+      : buildResidentialSaleAgreement(contract, template, document),
     // 신규 문서는 template.code 를 kind 로 전달 (서버가 sortOrder/kindOrder 자동 부여).
     // 템플릿 없는 문서(uploaded/external)는 합성 code 가 '' 이므로 null 유지
     // — category 등 자유 문자열이 kind 로 저장되지 않도록 (서버 400 방지).
@@ -372,9 +420,34 @@ export function DocumentEditorSheet({
     fieldGroups,
   });
   const documentTitle = form.engineFields.documentTitle || form.title || '계약 문서';
+  // 조항 임베디드 에디터 대상 서식 (CLAUSE_LAYOUTS — 현재 base_contract × sale)
+  const clauseArticles = form.kind
+    ? getContractClauseLayout(form.kind, form.transactionType)
+    : null;
   const saleAgreementValidation = form.saleAgreement
     ? validateResidentialSaleAgreement(form.saleAgreement)
     : null;
+  // 조항 에디터 검증 — 매매초안 validate 의 금액합계·필수일자 검사를 engineFields 로 이식.
+  // printOptions 를 함께 넘긴다 — directClause2(2조 직접입력) 시 인도일 입력이
+  // 숨겨지므로 필수 검사를 생략해야 해소 불가능한 오류가 남지 않는다.
+  const baseContractValidation =
+    clauseArticles && form.kind === 'base_contract' && form.transactionType === 'sale'
+      ? validateBaseContractSaleEngineFields(form.engineFields, form.printOptions)
+      : null;
+  // 작성 점검 사이드바 공용 형태 (기존 "오류 N건" UX 유지)
+  const editorValidation = baseContractValidation
+    ? {
+        isReady: baseContractValidation.isValid,
+        errors: baseContractValidation.errors,
+        warnings: baseContractValidation.warnings,
+      }
+    : saleAgreementValidation
+      ? {
+          isReady: saleAgreementValidation.isReadyForGeneration,
+          errors: saleAgreementValidation.errors,
+          warnings: saleAgreementValidation.warnings,
+        }
+      : null;
   // 기존 문서 수정은 변경이 있어야 저장 활성화. 신규 문서는 기본값 그대로도
   // 저장(생성) 가능해야 하므로 dirty 를 요구하지 않는다.
   const isSaveDisabled =
@@ -457,6 +530,14 @@ export function DocumentEditorSheet({
     }));
   }
 
+  /** 표기/인쇄 옵션 갱신 (AmountNotationBar·공란인쇄·행 토글 → printOptions) */
+  function updatePrintOptions(partial: Partial<ContractDocumentEnginePrintOptions>) {
+    onFormChange((prev) => ({
+      ...prev,
+      printOptions: { ...prev.printOptions, ...partial },
+    }));
+  }
+
   return (
     <>
       <Sheet open={open} onOpenChange={onOpenChange}>
@@ -493,7 +574,18 @@ export function DocumentEditorSheet({
                   </div>
                 </section>
 
-                {form.saleAgreement && saleAgreementValidation ? (
+                {clauseArticles ? (
+                  <BaseContractClauseEditor
+                    // 문서 전환 시 인라인 컨트롤(금액 draft/날짜 칸)의 로컬 상태 리셋
+                    key={`clause:${form.documentId ?? 'new'}`}
+                    articles={clauseArticles}
+                    fields={form.engineFields}
+                    printOptions={form.printOptions}
+                    fieldGroups={fieldGroups}
+                    onFieldChange={updateEngineField}
+                    onPrintOptionsChange={updatePrintOptions}
+                  />
+                ) : form.saleAgreement && saleAgreementValidation ? (
                   <ResidentialSaleAgreementEditor
                     agreement={form.saleAgreement}
                     validation={saleAgreementValidation}
@@ -539,22 +631,18 @@ export function DocumentEditorSheet({
                   </Button>
                 </section>
 
-                {saleAgreementValidation ? (
+                {editorValidation ? (
                   <section className="rounded-md border border-border/60 bg-background p-4">
                     <div className="flex items-center justify-between gap-3">
                       <p className="text-sm font-medium">작성 점검</p>
-                      <Badge
-                        variant={
-                          saleAgreementValidation.isReadyForGeneration ? 'secondary' : 'destructive'
-                        }
-                      >
-                        {saleAgreementValidation.isReadyForGeneration
+                      <Badge variant={editorValidation.isReady ? 'secondary' : 'destructive'}>
+                        {editorValidation.isReady
                           ? '출력 준비'
-                          : `오류 ${saleAgreementValidation.errors.length}건`}
+                          : `오류 ${editorValidation.errors.length}건`}
                       </Badge>
                     </div>
                     <div className="mt-3 grid gap-2">
-                      {saleAgreementValidation.errors.map((issue) => (
+                      {editorValidation.errors.map((issue) => (
                         <p
                           key={`${issue.path}-${issue.message}`}
                           className="rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive"
@@ -562,7 +650,7 @@ export function DocumentEditorSheet({
                           {issue.message}
                         </p>
                       ))}
-                      {saleAgreementValidation.warnings.map((issue) => (
+                      {editorValidation.warnings.map((issue) => (
                         <p
                           key={`${issue.path}-${issue.message}`}
                           className="rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground"
@@ -724,7 +812,18 @@ export function DocumentEditorSheet({
           </div>
           <ScrollArea className="min-h-0 flex-1 bg-muted/40">
             <div className="p-6">
-              {form.saleAgreement ? (
+              {clauseArticles ? (
+                // 같은 CLAUSE_LAYOUTS 를 읽기 전용으로 렌더 — 편집면 = 인쇄면
+                <BaseContractClausePreview
+                  title={documentTitle}
+                  status={documentStatusMeta[form.status]?.label ?? form.status}
+                  reportName={form.workflow.reportName}
+                  articles={clauseArticles}
+                  fields={form.engineFields}
+                  printOptions={form.printOptions}
+                  fieldGroups={fieldGroups}
+                />
+              ) : form.saleAgreement ? (
                 <ResidentialSaleAgreementPreview
                   agreement={form.saleAgreement}
                   status={documentStatusMeta[form.status]?.label ?? form.status}

@@ -7,18 +7,29 @@
  * (매매초안 글루 buildResidentialSaleAgreement 포함 — shared contract-agreement.ts 연동)
  */
 export {
+  applyEngineFieldsToResidentialSaleAgreement,
   buildContractDocumentEngineDraft,
   buildResidentialSaleAgreement,
+  convertResidentialSaleAgreementToEngineFields,
   getContractDocumentEngineDefaultBodyText,
   getContractDocumentEngineFieldGroups,
+  getContractDocumentEnginePrintOptions,
   getContractDocumentEngineSections,
   getContractDocumentEngineWorkflow,
   getContractPartySideLabels,
+  hasContractDocumentEnginePrintOptions,
   mergeContractDocumentEngineMetadata,
+  mergeContractDocumentEnginePrintOptions,
   parseContractManwonText,
+  validateBaseContractSaleEngineFields,
+  CONTRACT_DOCUMENT_ENGINE_DEFAULT_PRINT_OPTIONS,
 } from '@estate-erp/shared';
 export type {
+  BaseContractSaleValidation,
+  BaseContractSaleValidationIssue,
+  ContractDocumentEngineAmountUnit,
   ContractDocumentEngineMetadata,
+  ContractDocumentEnginePrintOptions,
   ContractDocumentEngineTemplate,
   ContractDocumentEngineDocument,
   ContractDocumentEngineContact,
@@ -36,4 +47,22 @@ export type {
   ContractDocumentEngineSectionOptions,
   ContractDocumentEngineWorkflow,
   ContractDocumentEngineDraft,
+} from '@estate-erp/shared';
+
+// 조항 임베디드 레이아웃 (shared/contract-clause-layouts.ts) — 조항 에디터/프리뷰 공유
+export {
+  BASE_CONTRACT_SALE_CLAUSES,
+  collectContractClauseFieldKeys,
+  getClauseFieldValue,
+  getContractClauseLayout,
+  isClauseRowVisible,
+  isContractPrintOptionFieldKey,
+} from '@estate-erp/shared';
+export type {
+  ClauseArticle,
+  ClauseFieldControl,
+  ClauseRow,
+  ClauseSegment,
+  ContractAmountNotation,
+  ContractPrintOptionFieldKey,
 } from '@estate-erp/shared';

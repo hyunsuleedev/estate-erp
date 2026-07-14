@@ -5,6 +5,7 @@ export * from './oauth.js';
 export * from './cti.js';
 export * from './contract-agreement.js';
 export * from './contract-amount.js';
+export * from './contract-clause-layouts.js';
 export * from './contract-document-engine.js';
 export * from './contract-rich-text.js';
 export * from './types/tabs.js';

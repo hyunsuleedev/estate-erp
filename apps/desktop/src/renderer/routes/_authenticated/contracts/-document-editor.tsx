@@ -1,22 +1,26 @@
 /**
  * 계약 문서 편집기 — 마이스파이더 서식 코드 매핑 기반 입력폼 + 출력 미리보기 + 인쇄.
  *
- * - 동적 폼: template.metadata.documentEngine.fieldGroups 구동
- *   (getContractDocumentEngineFieldGroups(template, { transactionType }) —
- *   appliesTo 거래유형 필터 적용). 없으면 category 공통 그룹 fallback.
- * - inputType 별 입력: amount(만원 Int + 한글 병기 + 만/천/원 단위 토글),
- *   number(+unit), date(+N개월 버튼), select, checkbox, textarea, text.
- * - 특약(specialTerms)은 rich text HTML — TipTap 에디터 편집, 미리보기/인쇄는
- *   반드시 새니타이즈 후 렌더.
- * - 부속 서식은 주 계약서 문서 값(primaryDocument)을 승계해 draft 를 빌드한다.
- * - 매매초안(base_contract × sale)은 web 과 동일한 구조화 에디터
- *   (-residential-sale-editor)를 사용한다 — 양 앱이 같은 metadata.contractAgreement
- *   스냅샷을 편집/재생성해 stale 인쇄를 방지한다.
+ * - 입력폼은 template.metadata.documentEngine.fieldGroups 구동
+ *   (getContractDocumentEngineFieldGroups(template, { transactionType }) 오버로드,
+ *   appliesTo 거래유형 필터 적용). metadata 가 없으면 category 공통 그룹 fallback.
+ * - inputType 별 컨트롤: amount(만원 + 만/천/원 단위 토글 + 한글 병기),
+ *   number(+unit), date(+N개월 편의 버튼), select, checkbox, textarea, text.
+ * - 특약사항(specialTerms)은 rich text HTML — TipTap 에디터로 편집하고,
+ *   미리보기/인쇄는 반드시 새니타이즈 후 렌더한다.
+ * - 부속 서식은 주 계약서 문서(primaryDocument)의 입력값을 기본 승계한다.
+ * - 조항 임베디드 편집 (plan §4.2/§4.4): CLAUSE_LAYOUTS 에 레이아웃이 있는 서식
+ *   (base_contract × sale)은 제네릭 그리드 대신 조항 에디터(-base-contract-clause-editor)
+ *   로 렌더한다. 값은 engineFields 단일 진실 — 조항 에디터로 저장된 적 없는 문서
+ *   (printOptions 마커 부재)에 residentialSaleAgreement 스냅샷이 있으면 열 때
+ *   스냅샷을 engineFields 로 변환해 초기값으로 쓰고, 저장 시에는 스냅샷을
+ *   engineFields 기준으로 역반영(재생성)해 서버 완료 검증·MCP 와의 분기를 막는다.
+ *   -residential-sale-editor 경로는 dormant 로 유지한다(회귀 방지).
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
-import { BookMarked, FileText, Printer } from 'lucide-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { BookMarked, FileText, Printer } from 'lucide-react';
 import { toast } from 'sonner';
 import type {
   Contract,
@@ -35,15 +39,26 @@ import {
 import {
   buildContractDocumentEngineDraft,
   buildResidentialSaleAgreement,
+  convertResidentialSaleAgreementToEngineFields,
+  getContractClauseLayout,
   getContractDocumentEngineFieldGroups,
+  getContractDocumentEnginePrintOptions,
   getContractDocumentEngineSections,
+  hasContractDocumentEnginePrintOptions,
   parseContractManwonText,
+  validateBaseContractSaleEngineFields,
+  CONTRACT_DOCUMENT_ENGINE_DEFAULT_PRINT_OPTIONS,
   type ContractDocumentEngineFieldDefinition,
   type ContractDocumentEngineFieldGroup,
   type ContractDocumentEngineFields,
   type ContractDocumentEngineParty,
+  type ContractDocumentEnginePrintOptions,
   type ContractDocumentEngineWorkflow,
 } from './-document-engine';
+import {
+  BaseContractClauseEditor,
+  BaseContractClausePreview,
+} from './-base-contract-clause-editor';
 import {
   ResidentialSaleAgreementEditor,
   ResidentialSaleAgreementPreview,
@@ -83,6 +98,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
   SelectTrigger,
   SelectValue,
@@ -111,7 +127,12 @@ export type DocumentEditorForm = {
   metadata: Record<string, unknown>;
   workflow: ContractDocumentEngineWorkflow;
   engineFields: ContractDocumentEngineFields;
-  /** 매매초안(base_contract × sale) 구조화 스냅샷 — 그 외 서식은 null */
+  /**
+   * 문서 단위 표기/인쇄 옵션 (metadata.documentEngine.printOptions) —
+   * 금액단위(만원/천원/원)·금액인쇄형식(한글/漢字)·공란인쇄·행 토글.
+   * 조항 에디터 서식에서만 저장 페이로드에 포함한다.
+   */
+  printOptions: ContractDocumentEnginePrintOptions;
   saleAgreement: ResidentialSaleAgreementDraft | null;
   /** 서식 코드 (레거시 Cntr_Clsf) — 신규 문서는 template.code 에서 유도 */
   kind: string | null;
@@ -131,7 +152,6 @@ export function emptyDocumentEditorForm(): DocumentEditorForm {
     type: 'generated',
     category: 'contract',
     title: '',
-    // web 과 동일하게 신규 문서 기본 수명주기 상태는 draft(초안)
     status: 'draft',
     fileUrl: '',
     signedAt: '',
@@ -140,6 +160,7 @@ export function emptyDocumentEditorForm(): DocumentEditorForm {
     metadata: {},
     workflow: emptyDocumentEngineWorkflow(),
     engineFields: emptyDocumentEngineFields(),
+    printOptions: { ...CONTRACT_DOCUMENT_ENGINE_DEFAULT_PRINT_OPTIONS },
     saleAgreement: null,
     kind: null,
     sortOrder: undefined,
@@ -169,13 +190,31 @@ export function toDocumentEditorForm(
     primaryDocument,
   });
 
+  // 조항 임베디드 에디터 대상 서식 (현재 base_contract × sale, P2 에서 임대차 확장)
+  const clauseLayout = getContractClauseLayout(template.code, contract.transactionType);
+
+  // 매매초안 이관 (plan §4.4): 조항 에디터로 저장된 적 없는 문서(printOptions 마커
+  // 부재)에 residentialSaleAgreement 스냅샷이 있으면 열 때 스냅샷 값을 engineFields
+  // 위에 덮어 초기값으로 쓴다. 구 편집기(-residential-sale-editor)는 engineFields 를
+  // 편집할 UI 가 없었고 저장 경로가 draft 기본값 engineFields 를 항상 함께 기록했으므로
+  // — documentEngine.fields 존재 여부로 판별하면 이관이 스킵돼 스냅샷의 사용자
+  // 편집값(금액/일정/당사자)이 유실된다 — 스냅샷이 항상 최신 사용자 입력이다.
+  // 조항 에디터 저장은 printOptions 를 항상 기록하므로 마커 이후에는 재이관하지
+  // 않는다 (engineFields 가 단일 진실, 스냅샷은 저장 시 역반영으로 동기화).
+  let engineFields = draft.fields;
+  if (clauseLayout && !hasContractDocumentEnginePrintOptions(document?.metadata)) {
+    const converted = convertResidentialSaleAgreementToEngineFields(document?.metadata);
+    if (converted) {
+      engineFields = { ...draft.fields, ...converted };
+    }
+  }
+
   return {
     documentId: document?.id,
     templateId: template.id || document?.templateId || undefined,
     type: document?.type ?? 'generated',
     category: document?.category ?? template.category,
     title: draft.title,
-    // web 과 동일하게 신규 문서 기본 수명주기 상태는 draft(초안)
     status: document?.status ?? 'draft',
     fileUrl: document?.fileUrl ?? '',
     signedAt: document?.signedAt ?? '',
@@ -183,8 +222,13 @@ export function toDocumentEditorForm(
     memo: document?.memo ?? '',
     metadata: document?.metadata ?? template.metadata ?? {},
     workflow: draft.workflow,
-    engineFields: draft.fields,
-    saleAgreement: buildResidentialSaleAgreement(contract, template, document),
+    engineFields,
+    // 표기 옵션은 문서 metadata 에서만 읽는다 (신규 문서는 기본값 만원/한글)
+    printOptions: getContractDocumentEnginePrintOptions(document?.metadata),
+    // 조항 에디터 서식은 engineFields 가 단일 진실 — 매매초안 전용 폼은 dormant.
+    saleAgreement: clauseLayout
+      ? null
+      : buildResidentialSaleAgreement(contract, template, document),
     // 신규 문서는 template.code 를 kind 로 전달 (서버가 sortOrder/kindOrder 자동 부여).
     // 템플릿 없는 문서(uploaded/external)는 합성 code 가 '' 이므로 null 유지
     // — category 등 자유 문자열이 kind 로 저장되지 않도록 (서버 400 방지).
@@ -240,6 +284,10 @@ function emptyDocumentEngineFields(): ContractDocumentEngineFields {
     settlementMemo: '',
   };
 }
+
+// ---------------------------------------------------------------------------
+// 파생값 헬퍼 — 금액 한글 병기 / 임대차 기간
+// ---------------------------------------------------------------------------
 
 /**
  * 주 금액 필드 → 프리뷰 공통 '거래 조건' 행 동기화 매핑.
@@ -326,6 +374,10 @@ function applyLeasePeriodDerivation(
   }
 }
 
+// ---------------------------------------------------------------------------
+// 편집 시트
+// ---------------------------------------------------------------------------
+
 export function DocumentEditorSheet({
   open,
   form,
@@ -341,12 +393,10 @@ export function DocumentEditorSheet({
   form: DocumentEditorForm;
   error: string | null;
   isSaving: boolean;
-  /** §3.1 dirty tracking — 기존 문서는 변경이 있어야 저장 활성화 */
   isDirty: boolean;
   onOpenChange: (open: boolean) => void;
   onFormChange: Dispatch<SetStateAction<DocumentEditorForm>>;
   onSave: () => void;
-  /** 레거시 '다른저장' — 현재 값으로 새 draft 문서 생성 (kindOrder 자동 증가) */
   onSaveAsNew: () => void;
 }) {
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
@@ -356,7 +406,7 @@ export function DocumentEditorSheet({
     form.fieldGroups.length > 0
       ? form.fieldGroups
       : getContractDocumentEngineFieldGroups(form.category);
-  // 문서 제목은 에디터 셸(사이드바 문서 설정)에 고정 배치하므로 그룹에서는 제외
+  // 문서 제목은 에디터 셸(사이드바)에 고정 배치하므로 그룹에서는 제외
   const visibleFieldGroups = fieldGroups
     .map((group) => ({
       ...group,
@@ -370,11 +420,36 @@ export function DocumentEditorSheet({
     fieldGroups,
   });
   const documentTitle = form.engineFields.documentTitle || form.title || '계약 문서';
+  // 조항 임베디드 에디터 대상 서식 (CLAUSE_LAYOUTS — 현재 base_contract × sale)
+  const clauseArticles = form.kind
+    ? getContractClauseLayout(form.kind, form.transactionType)
+    : null;
   const saleAgreementValidation = form.saleAgreement
     ? validateResidentialSaleAgreement(form.saleAgreement)
     : null;
-  // 기존 문서 수정은 변경이 있어야 저장 활성화 (§3.1 enableSaveButton 대응).
-  // 신규 문서는 기본값 그대로도 저장(생성) 가능해야 하므로 dirty 를 요구하지 않는다.
+  // 조항 에디터 검증 — 매매초안 validate 의 금액합계·필수일자 검사를 engineFields 로 이식.
+  // printOptions 를 함께 넘긴다 — directClause2(2조 직접입력) 시 인도일 입력이
+  // 숨겨지므로 필수 검사를 생략해야 해소 불가능한 오류가 남지 않는다.
+  const baseContractValidation =
+    clauseArticles && form.kind === 'base_contract' && form.transactionType === 'sale'
+      ? validateBaseContractSaleEngineFields(form.engineFields, form.printOptions)
+      : null;
+  // 작성 점검 사이드바 공용 형태 (기존 "오류 N건" UX 유지)
+  const editorValidation = baseContractValidation
+    ? {
+        isReady: baseContractValidation.isValid,
+        errors: baseContractValidation.errors,
+        warnings: baseContractValidation.warnings,
+      }
+    : saleAgreementValidation
+      ? {
+          isReady: saleAgreementValidation.isReadyForGeneration,
+          errors: saleAgreementValidation.errors,
+          warnings: saleAgreementValidation.warnings,
+        }
+      : null;
+  // 기존 문서 수정은 변경이 있어야 저장 활성화. 신규 문서는 기본값 그대로도
+  // 저장(생성) 가능해야 하므로 dirty 를 요구하지 않는다.
   const isSaveDisabled =
     isSaving ||
     !documentTitle ||
@@ -389,6 +464,7 @@ export function DocumentEditorSheet({
       if (!(event.metaKey || event.ctrlKey)) return;
       if (event.key === 's') {
         event.preventDefault();
+        // 저장 버튼과 동일한 비활성 조건(dirty 등)을 따른다
         if (!isSaveDisabled) onSave();
       }
       if (event.key === 'p') {
@@ -454,6 +530,14 @@ export function DocumentEditorSheet({
     }));
   }
 
+  /** 표기/인쇄 옵션 갱신 (AmountNotationBar·공란인쇄·행 토글 → printOptions) */
+  function updatePrintOptions(partial: Partial<ContractDocumentEnginePrintOptions>) {
+    onFormChange((prev) => ({
+      ...prev,
+      printOptions: { ...prev.printOptions, ...partial },
+    }));
+  }
+
   return (
     <>
       <Sheet open={open} onOpenChange={onOpenChange}>
@@ -481,9 +565,7 @@ export function DocumentEditorSheet({
                 <section className="rounded-md border border-border/60 bg-background p-5">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
-                      <p className="text-base font-semibold tracking-tight">
-                        문서별 입력폼
-                      </p>
+                      <p className="text-base font-semibold tracking-tight">문서별 입력폼</p>
                       <p className="mt-1 text-sm text-muted-foreground">
                         값을 입력한 뒤 출력 미리보기에서 리포트 형태를 확인합니다.
                       </p>
@@ -492,7 +574,18 @@ export function DocumentEditorSheet({
                   </div>
                 </section>
 
-                {form.saleAgreement && saleAgreementValidation ? (
+                {clauseArticles ? (
+                  <BaseContractClauseEditor
+                    // 문서 전환 시 인라인 컨트롤(금액 draft/날짜 칸)의 로컬 상태 리셋
+                    key={`clause:${form.documentId ?? 'new'}`}
+                    articles={clauseArticles}
+                    fields={form.engineFields}
+                    printOptions={form.printOptions}
+                    fieldGroups={fieldGroups}
+                    onFieldChange={updateEngineField}
+                    onPrintOptionsChange={updatePrintOptions}
+                  />
+                ) : form.saleAgreement && saleAgreementValidation ? (
                   <ResidentialSaleAgreementEditor
                     agreement={form.saleAgreement}
                     validation={saleAgreementValidation}
@@ -533,29 +626,23 @@ export function DocumentEditorSheet({
                     className="mt-4 w-full"
                     onClick={() => setIsPreviewOpen(true)}
                   >
-                    <FileText className="size-4" />
+                    <FileText data-icon="inline-start" />
                     출력 미리보기
                   </Button>
                 </section>
 
-                {saleAgreementValidation ? (
+                {editorValidation ? (
                   <section className="rounded-md border border-border/60 bg-background p-4">
                     <div className="flex items-center justify-between gap-3">
                       <p className="text-sm font-medium">작성 점검</p>
-                      <Badge
-                        variant={
-                          saleAgreementValidation.isReadyForGeneration
-                            ? 'secondary'
-                            : 'destructive'
-                        }
-                      >
-                        {saleAgreementValidation.isReadyForGeneration
+                      <Badge variant={editorValidation.isReady ? 'secondary' : 'destructive'}>
+                        {editorValidation.isReady
                           ? '출력 준비'
-                          : `오류 ${saleAgreementValidation.errors.length}건`}
+                          : `오류 ${editorValidation.errors.length}건`}
                       </Badge>
                     </div>
                     <div className="mt-3 grid gap-2">
-                      {saleAgreementValidation.errors.map((issue) => (
+                      {editorValidation.errors.map((issue) => (
                         <p
                           key={`${issue.path}-${issue.message}`}
                           className="rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive"
@@ -563,7 +650,7 @@ export function DocumentEditorSheet({
                           {issue.message}
                         </p>
                       ))}
-                      {saleAgreementValidation.warnings.map((issue) => (
+                      {editorValidation.warnings.map((issue) => (
                         <p
                           key={`${issue.path}-${issue.message}`}
                           className="rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground"
@@ -601,11 +688,13 @@ export function DocumentEditorSheet({
                           <SelectValue placeholder="상태 선택" />
                         </SelectTrigger>
                         <SelectContent>
-                          {Object.entries(documentStatusMeta).map(([key, meta]) => (
-                            <SelectItem key={key} value={key}>
-                              {meta.label}
-                            </SelectItem>
-                          ))}
+                          <SelectGroup>
+                            {Object.entries(documentStatusMeta).map(([key, meta]) => (
+                              <SelectItem key={key} value={key}>
+                                {meta.label}
+                              </SelectItem>
+                            ))}
+                          </SelectGroup>
                         </SelectContent>
                       </Select>
                     </div>
@@ -622,9 +711,11 @@ export function DocumentEditorSheet({
                           <SelectValue placeholder="유형 선택" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="generated">작성</SelectItem>
-                          <SelectItem value="uploaded">첨부</SelectItem>
-                          <SelectItem value="external">외부 제출</SelectItem>
+                          <SelectGroup>
+                            <SelectItem value="generated">작성</SelectItem>
+                            <SelectItem value="uploaded">첨부</SelectItem>
+                            <SelectItem value="external">외부 제출</SelectItem>
+                          </SelectGroup>
                         </SelectContent>
                       </Select>
                     </div>
@@ -634,7 +725,10 @@ export function DocumentEditorSheet({
                       <Input
                         value={form.fileUrl}
                         onChange={(event) =>
-                          onFormChange((prev) => ({ ...prev, fileUrl: event.target.value }))
+                          onFormChange((prev) => ({
+                            ...prev,
+                            fileUrl: event.target.value,
+                          }))
                         }
                         placeholder="https://...pdf"
                       />
@@ -646,7 +740,10 @@ export function DocumentEditorSheet({
                         rows={4}
                         value={form.memo}
                         onChange={(event) =>
-                          onFormChange((prev) => ({ ...prev, memo: event.target.value }))
+                          onFormChange((prev) => ({
+                            ...prev,
+                            memo: event.target.value,
+                          }))
                         }
                       />
                     </div>
@@ -715,7 +812,18 @@ export function DocumentEditorSheet({
           </div>
           <ScrollArea className="min-h-0 flex-1 bg-muted/40">
             <div className="p-6">
-              {form.saleAgreement ? (
+              {clauseArticles ? (
+                // 같은 CLAUSE_LAYOUTS 를 읽기 전용으로 렌더 — 편집면 = 인쇄면
+                <BaseContractClausePreview
+                  title={documentTitle}
+                  status={documentStatusMeta[form.status]?.label ?? form.status}
+                  reportName={form.workflow.reportName}
+                  articles={clauseArticles}
+                  fields={form.engineFields}
+                  printOptions={form.printOptions}
+                  fieldGroups={fieldGroups}
+                />
+              ) : form.saleAgreement ? (
                 <ResidentialSaleAgreementPreview
                   agreement={form.saleAgreement}
                   status={documentStatusMeta[form.status]?.label ?? form.status}
@@ -736,7 +844,7 @@ export function DocumentEditorSheet({
               닫기
             </Button>
             <Button onClick={() => window.print()}>
-              <Printer className="size-4" />
+              <Printer data-icon="inline-start" />
               인쇄
             </Button>
           </DialogFooter>
@@ -766,12 +874,12 @@ function ClauseTemplateToolsSection({
   const [newTitle, setNewTitle] = useState('');
 
   const { data: clauseTemplates = [], isLoading } = useQuery({
-    queryKey: ['contract-clause-templates'],
+    queryKey: ['contract-clause-templates', 'special_terms_clause'],
     queryFn: () => api.contracts.clauseTemplates({ type: 'special_terms_clause' }),
   });
 
   // 현재 서식(kind)/거래유형과 맞는 템플릿을 앞에 정렬 (무관 템플릿도 뒤에 노출)
-  const sortedTemplates = (() => {
+  const sortedTemplates = useMemo(() => {
     function rank(template: ContractClauseTemplate) {
       const kindMatch =
         !template.contractKind || template.contractKind === contractKind;
@@ -785,10 +893,10 @@ function ClauseTemplateToolsSection({
     return [...clauseTemplates].sort(
       (left, right) => rank(left) - rank(right) || left.sortOrder - right.sortOrder,
     );
-  })();
+  }, [clauseTemplates, contractKind, transactionType]);
 
   // 템플릿 content 는 plain text 로 저장 (HTML 특약은 텍스트 추출) —
-  // 목록 미리보기 등 다른 소비처와의 호환 유지
+  // 계약 정보 탭 특약 카드 등 다른 소비처와의 호환 유지
   const specialTermsPlainText = contractRichTextToPlainText(specialTerms).trim();
 
   const registerMutation = useMutation({
@@ -816,8 +924,7 @@ function ClauseTemplateToolsSection({
     <section className="rounded-md border border-border/60 bg-background p-4">
       <p className="text-sm font-medium">특약 문구</p>
       <p className="mt-1 text-xs text-muted-foreground">
-        사무소 특약 템플릿을 특약사항에 삽입하거나, 현재 특약을 템플릿으로
-        등록합니다.
+        사무소 특약 템플릿을 특약사항에 삽입하거나, 현재 특약을 템플릿으로 등록합니다.
       </p>
       <div className="mt-3 space-y-2">
         <Popover>
@@ -829,9 +936,7 @@ function ClauseTemplateToolsSection({
           </PopoverTrigger>
           <PopoverContent className="w-80 p-2" align="end">
             {isLoading ? (
-              <p className="px-2 py-3 text-sm text-muted-foreground">
-                불러오는 중...
-              </p>
+              <p className="px-2 py-3 text-sm text-muted-foreground">불러오는 중...</p>
             ) : sortedTemplates.length === 0 ? (
               <p className="px-2 py-3 text-sm text-muted-foreground">
                 등록된 특약 템플릿이 없습니다.
@@ -938,9 +1043,10 @@ function stripUnitSuffix(label: string, unit: string | undefined): string {
 
 /**
  * 서식 필드 타입별 입력 컨트롤 (template.metadata fieldGroups 의 inputType 구동).
- * - amount: 만원 숫자 입력 + 실시간 한글 병기 미리보기 (+만/천/원 단위 토글)
+ * - amount: 만원 숫자 입력 + 만/천/원 단위 토글 + 실시간 한글 병기 미리보기
  * - number: 숫자 입력 (+unit 접미)
- * - date / select / checkbox / textarea / text
+ * - date: 날짜 입력 + N개월 편의 버튼 / select / checkbox / textarea / text
+ * - specialTerms: rich text (레거시 Rider_Part HTML) — TipTap 에디터
  * checkbox 는 엔진 필드가 전부 string 이므로 'true'/'' 관례를 따른다.
  */
 function DocumentEngineFieldControl({
@@ -973,10 +1079,7 @@ function DocumentEngineFieldControl({
     return (
       <div className="space-y-2">
         <Label>{field.label}</Label>
-        <Select
-          value={value || undefined}
-          onValueChange={(next) => onChange(next)}
-        >
+        <Select value={value || undefined} onValueChange={(next) => onChange(next)}>
           <SelectTrigger className="w-full">
             <SelectValue placeholder="선택" />
           </SelectTrigger>
@@ -1062,11 +1165,7 @@ function DocumentEngineFieldControl({
     return (
       <div className="space-y-2">
         <Label>{field.label}</Label>
-        <Textarea
-          rows={4}
-          value={value}
-          onChange={(event) => onChange(event.target.value)}
-        />
+        <Textarea rows={4} value={value} onChange={(event) => onChange(event.target.value)} />
       </div>
     );
   }
@@ -1124,9 +1223,7 @@ function AmountEngineFieldControl({
   const displayValue =
     draft ?? (manwon !== null ? formatManwonInUnit(manwon, unit) : value);
   const isDraftInvalid =
-    draft !== null &&
-    draft.trim() !== '' &&
-    parseUnitToManwon(draft, unit) === null;
+    draft !== null && draft.trim() !== '' && parseUnitToManwon(draft, unit) === null;
 
   function handleChange(raw: string) {
     setDraft(raw);
@@ -1264,9 +1361,7 @@ function DocumentPreviewRow({
 }) {
   return (
     <div className="grid grid-cols-[112px_minmax(0,1fr)] border-b border-slate-200 last:border-b-0">
-      <div className="bg-slate-50 px-3 py-2 text-xs font-medium text-slate-600">
-        {label}
-      </div>
+      <div className="bg-slate-50 px-3 py-2 text-xs font-medium text-slate-600">{label}</div>
       {html ? (
         <div
           className={cn(
@@ -1283,7 +1378,7 @@ function DocumentPreviewRow({
             multiline ? 'whitespace-pre-wrap' : 'truncate',
           )}
         >
-          {value || ' '}
+          {value || ' '}
         </div>
       )}
     </div>
@@ -1295,7 +1390,7 @@ function SignatureBlock({ role, name }: { role: string; name: string }) {
     <div className="rounded-md border border-slate-300 p-4">
       <p className="text-xs text-slate-500">{role}</p>
       <div className="mt-6 flex items-end justify-between gap-3">
-        <span className="text-base font-medium">{name || ' '}</span>
+        <span className="text-base font-medium">{name || ' '}</span>
         <span className="text-sm text-slate-500">(인)</span>
       </div>
     </div>

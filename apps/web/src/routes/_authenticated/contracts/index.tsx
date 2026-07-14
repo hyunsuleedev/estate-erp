@@ -27,7 +27,11 @@ import type {
   UpdateContractDocumentDto,
 } from '@estate-erp/api-client';
 import { mergeResidentialSaleAgreementMetadata } from '@estate-erp/shared';
-import { mergeContractDocumentEngineMetadata } from './-document-engine';
+import {
+  applyEngineFieldsToResidentialSaleAgreement,
+  getContractClauseLayout,
+  mergeContractDocumentEngineMetadata,
+} from './-document-engine';
 import {
   BASE_CONTRACT_TRANSACTION_TYPES,
   ContractTransactionTypeBadge,
@@ -613,15 +617,37 @@ function ContractsPage() {
       ),
     };
 
+    // 조항 임베디드 에디터 서식(base_contract × sale)은 표기/인쇄 옵션
+    // (금액단위·한글/漢字·공란인쇄·행 토글)을 printOptions 로 함께 저장한다.
+    // 그 외 서식은 인자를 생략 — merge 가 기존 저장값을 보존한다.
+    const clauseLayout = documentEditorForm.kind
+      ? getContractClauseLayout(
+          documentEditorForm.kind,
+          documentEditorForm.transactionType,
+        )
+      : null;
+
     const engineMetadata = mergeContractDocumentEngineMetadata(
       documentEditorForm.metadata,
       engineFields,
+      clauseLayout ? documentEditorForm.printOptions : undefined,
     );
-    const metadata = documentEditorForm.saleAgreement
-      ? mergeResidentialSaleAgreementMetadata(
-          engineMetadata,
-          documentEditorForm.saleAgreement,
-        )
+    // 조항 에디터 문서(saleAgreement=null)는 contractAgreement 스냅샷을 편집값
+    // (engineFields) 기준으로 재생성해 함께 저장한다 — 서버 완료 검증
+    // (assertSaleAgreementDocumentCanComplete)·MCP validate/prepare 가 스냅샷을
+    // 진실로 읽으므로 stale 스냅샷과의 분기(완료 저장 400·잘못된 AI 응답)를
+    // 차단한다. 스냅샷이 없던 문서는 새로 만들지 않는다(engineFields 단일 포맷).
+    const clauseAgreement =
+      clauseLayout && !documentEditorForm.saleAgreement
+        ? applyEngineFieldsToResidentialSaleAgreement(
+            engineMetadata,
+            engineFields,
+            documentEditorForm.printOptions,
+          )
+        : null;
+    const agreementToSave = documentEditorForm.saleAgreement ?? clauseAgreement;
+    const metadata = agreementToSave
+      ? mergeResidentialSaleAgreementMetadata(engineMetadata, agreementToSave)
       : engineMetadata;
     const title =
       documentEditorForm.engineFields.documentTitle.trim() || documentEditorForm.title;

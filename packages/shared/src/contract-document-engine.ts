@@ -16,7 +16,10 @@ import {
   readResidentialSaleAgreement,
   type ResidentialSaleAgreementDraft,
 } from './contract-agreement.js';
-import { formatContractAmountWithWon } from './contract-amount.js';
+import {
+  formatContractAmountWithWon,
+  type ContractAmountNotation,
+} from './contract-amount.js';
 import { isContractRichTextHtml } from './contract-rich-text.js';
 import { CONTRACT_TRANSACTION_TYPE_LABELS } from './enums.js';
 
@@ -558,16 +561,463 @@ function getWorkflowByCategory(
   };
 }
 
+// ─────────────────────────────────────────────────────────────
+// printOptions — 문서 단위 표기/인쇄 옵션 (metadata.documentEngine.printOptions)
+// 레거시 priceUnitRadioGroup(금액단위) / pricePrintTypeRadioGroup(한글·漢字) /
+// chkBlank*(공란인쇄) / grantOrInterimcheckEdit(현임차보증금 행) / chkSecUse(2조 직접입력).
+// fields 맵(string 관례)과 분리된 별도 JSON 객체 — 서버 스키마 변경 없음.
+// ─────────────────────────────────────────────────────────────
+
+/** 금액 입력 해석 단위 (입력 편의용). 저장값은 항상 만원 Int 문자열로 불변 */
+export type ContractDocumentEngineAmountUnit = 'manwon' | 'chun' | 'won';
+
+export type ContractDocumentEnginePrintOptions = {
+  /** 금액 입력창의 해석 단위 — 기본 manwon. 저장은 항상 만원 Int (표시/해석만 변경) */
+  amountUnit: ContractDocumentEngineAmountUnit;
+  /** 인쇄 시 금액 표기 — 기본 hangul ("일금 …원정"), hanja ("金…원整") */
+  amountNotation: ContractAmountNotation;
+  /** 융자금 공란인쇄 — 값이 비어도 인쇄 행 유지 (인쇄 반영은 P5) */
+  financeLoanBlankPrint?: boolean;
+  /** 2차 중도금 공란인쇄 */
+  interim2BlankPrint?: boolean;
+  /** '현 임차보증금 입력란 추가' — 현 임대보증금 행 토글 */
+  includeTenantDeposit?: boolean;
+  /** '계약사항2조 직접입력' — 제2조 자동 문장 대신 본문 조항에 직접 기재 */
+  directClause2?: boolean;
+};
+
+export const CONTRACT_DOCUMENT_ENGINE_DEFAULT_PRINT_OPTIONS: ContractDocumentEnginePrintOptions =
+  {
+    amountUnit: 'manwon',
+    amountNotation: 'hangul',
+  };
+
+const PRINT_OPTION_AMOUNT_UNITS: ReadonlySet<string> = new Set(['manwon', 'chun', 'won']);
+const PRINT_OPTION_AMOUNT_NOTATIONS: ReadonlySet<string> = new Set(['hangul', 'hanja']);
+const PRINT_OPTION_BOOLEAN_KEYS = [
+  'financeLoanBlankPrint',
+  'interim2BlankPrint',
+  'includeTenantDeposit',
+  'directClause2',
+] as const;
+
+/** 저장/병합 전 정리 — 알 수 없는 키·형식이 어긋난 값은 조용히 버린다 */
+function sanitizePrintOptions(
+  raw: Record<string, unknown> | Partial<ContractDocumentEnginePrintOptions> | null | undefined,
+): Partial<ContractDocumentEnginePrintOptions> {
+  if (!raw) return {};
+  const record = raw as Record<string, unknown>;
+  const result: Partial<ContractDocumentEnginePrintOptions> = {};
+
+  if (typeof record.amountUnit === 'string' && PRINT_OPTION_AMOUNT_UNITS.has(record.amountUnit)) {
+    result.amountUnit = record.amountUnit as ContractDocumentEngineAmountUnit;
+  }
+  if (
+    typeof record.amountNotation === 'string' &&
+    PRINT_OPTION_AMOUNT_NOTATIONS.has(record.amountNotation)
+  ) {
+    result.amountNotation = record.amountNotation as ContractAmountNotation;
+  }
+  for (const key of PRINT_OPTION_BOOLEAN_KEYS) {
+    if (typeof record[key] === 'boolean') {
+      result[key] = record[key] as boolean;
+    }
+  }
+
+  return result;
+}
+
+/**
+ * metadata.documentEngine.printOptions 읽기 — 저장된 값을 검증하고 기본값
+ * (amountUnit: manwon, amountNotation: hangul)으로 채워 항상 완전한 객체를 반환한다.
+ */
+export function getContractDocumentEnginePrintOptions(
+  metadata: ContractDocumentEngineMetadata | null | undefined,
+): ContractDocumentEnginePrintOptions {
+  const documentEngine = readObject(metadata, 'documentEngine');
+  const stored = sanitizePrintOptions(readObject(documentEngine, 'printOptions'));
+  return { ...CONTRACT_DOCUMENT_ENGINE_DEFAULT_PRINT_OPTIONS, ...stored };
+}
+
+/**
+ * 조항 에디터 세대 마커 — 조항 에디터 저장 경로는 printOptions 를 항상 함께
+ * 기록하므로, 유효한 printOptions 존재 여부로 "조항 에디터로 저장된 적 있는
+ * 문서"를 판별한다.
+ *
+ * 매매초안 이관(plan §4.4) 1회 판별에 쓴다: 구 편집기(-residential-sale-editor)
+ * 저장 경로도 documentEngine.fields 를 항상 기록했기 때문에(초기 draft 기본값
+ * 스냅샷, '' 값도 키 유지) fields 존재 여부로는 이관 여부를 구분할 수 없다.
+ */
+export function hasContractDocumentEnginePrintOptions(
+  metadata: ContractDocumentEngineMetadata | null | undefined,
+): boolean {
+  const documentEngine = readObject(metadata, 'documentEngine');
+  const stored = readObject(documentEngine, 'printOptions');
+  return stored !== null && Object.keys(sanitizePrintOptions(stored)).length > 0;
+}
+
+/**
+ * printOptions 만 갱신하는 병합 — documentEngine.fields 등 기존 내용은 보존한다.
+ * (fields 도 함께 저장할 때는 mergeContractDocumentEngineMetadata 의 3번째 인자 사용)
+ */
+export function mergeContractDocumentEnginePrintOptions(
+  metadata: ContractDocumentEngineMetadata | null | undefined,
+  printOptions: Partial<ContractDocumentEnginePrintOptions>,
+): ContractDocumentEngineMetadata {
+  const documentEngine = readObject(metadata, 'documentEngine') ?? {};
+  const merged = {
+    ...sanitizePrintOptions(readObject(documentEngine, 'printOptions')),
+    ...sanitizePrintOptions(printOptions),
+  };
+
+  return {
+    ...(metadata ?? {}),
+    documentEngine: {
+      ...documentEngine,
+      version: 1,
+      printOptions: merged,
+    },
+  };
+}
+
 export function mergeContractDocumentEngineMetadata(
   metadata: ContractDocumentEngineMetadata | null | undefined,
   fields: Partial<ContractDocumentEngineFields>,
+  printOptions?: Partial<ContractDocumentEnginePrintOptions>,
 ): ContractDocumentEngineMetadata {
+  // 기존 저장된 printOptions 는 인자를 넘기지 않아도 보존한다 — 제네릭 편집기 등
+  // printOptions 를 모르는 저장 경로가 조항 에디터의 옵션을 지우지 않도록.
+  const documentEngine = readObject(metadata, 'documentEngine');
+  const mergedPrintOptions = {
+    ...sanitizePrintOptions(readObject(documentEngine, 'printOptions')),
+    ...sanitizePrintOptions(printOptions),
+  };
+
   return {
     ...(metadata ?? {}),
     documentEngine: {
       version: 1,
       fields: recomputeHangulAmountFields(cleanEngineFields(fields)),
+      ...(Object.keys(mergedPrintOptions).length > 0
+        ? { printOptions: mergedPrintOptions }
+        : {}),
     },
+  };
+}
+
+// ─────────────────────────────────────────────────────────────
+// 매매초안(residentialSaleAgreement 스냅샷) → engineFields 이관 (plan §4.4)
+// 조항 에디터는 engineFields 를 단일 진실로 사용한다. 기존 문서에 스냅샷만 있으면
+// 열 때 1회 변환해 engineFields 로 기록하고, 스냅샷은 읽기 하위호환으로만 유지한다.
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * document.metadata 의 contractAgreement(kr-residential-sale-agreement v1) 스냅샷을
+ * 카탈로그 base_contract engineFields 키로 변환한다. 스냅샷이 없으면 null.
+ *
+ * - 값은 전부 string 관례 (금액은 만원 Int 문자열).
+ * - 빈 값은 키를 만들지 않는다 — draft 빌드 시 계약 스냅샷 기본값을 덮지 않도록.
+ * - 중개사무소 전화(brokerage.phone)는 대응하는 카탈로그 키가 없어 변환하지 않는다.
+ */
+export function convertResidentialSaleAgreementToEngineFields(
+  metadata: ContractDocumentEngineMetadata | null | undefined,
+): Record<string, string> | null {
+  const agreement = readResidentialSaleAgreement(metadata);
+  if (!agreement) return null;
+
+  const fields: Record<string, string> = {};
+  const set = (key: string, value: string | null | undefined) => {
+    const trimmed = (value ?? '').trim();
+    if (trimmed) fields[key] = trimmed;
+  };
+  const setNumber = (key: string, value: number | null) => {
+    if (value === null || !Number.isFinite(value) || value <= 0) return;
+    fields[key] = String(value);
+  };
+
+  // 계약일/부동산 표시
+  set('contractDate', agreement.actualAgreementAt);
+  set('propertyAddress', agreement.property.roadAddress || agreement.property.jibunAddress);
+  set('propertyLabel', agreement.property.targetDescription);
+  set('landCategory', agreement.property.landCategory);
+  setNumber('landArea', agreement.property.landAreaM2);
+  set('buildingStructure', agreement.property.buildingStructure);
+  set('buildingUse', agreement.property.buildingUse);
+  setNumber('buildingArea', agreement.property.buildingAreaM2);
+
+  // 매매대금과 지급 일정 (만원 Int 문자열)
+  setNumber('salePrice', agreement.payment.totalPriceManwon);
+  setNumber('downPayment', agreement.payment.depositManwon);
+  setNumber('interimPayment', agreement.payment.interimManwon);
+  set('interimPaymentDate', agreement.payment.interimDueAt);
+  setNumber('balancePayment', agreement.payment.balanceManwon);
+  set('balancePaymentDate', agreement.payment.balanceDueAt);
+
+  // 인도
+  set('handoverDate', agreement.transfer.deliveryAt);
+
+  // 당사자 (대표 1인 — 공동 당사자는 ContractParty 모델이 별도 관리)
+  const seller = agreement.sellers[0];
+  if (seller) {
+    set('partyOneName', seller.name);
+    set('partyOneIdNumber', seller.identificationNoMasked);
+    set('partyOneAddress', seller.address);
+    set('partyOnePhone', seller.phone);
+  }
+  const buyer = agreement.buyers[0];
+  if (buyer) {
+    set('partyTwoName', buyer.name);
+    set('partyTwoIdNumber', buyer.identificationNoMasked);
+    set('partyTwoAddress', buyer.address);
+    set('partyTwoPhone', buyer.phone);
+  }
+
+  // 중개사무소
+  set('brokerOfficeName', agreement.brokerage.officeName);
+  set('brokerOfficeRegNo', agreement.brokerage.registrationNo);
+  set('brokerCeoName', agreement.brokerage.representativeName);
+  set('brokerOfficeAddress', agreement.brokerage.address);
+  set('brokerAgentName', agreement.brokerage.associateName);
+
+  // 특약
+  set('specialTerms', agreement.specialTerms);
+
+  return fields;
+}
+
+/**
+ * 조항 에디터 저장 시 engineFields → residentialSaleAgreement 스냅샷 역반영 (plan §4.4).
+ *
+ * 서버 완료 검증(assertSaleAgreementDocumentCanComplete)과 MCP
+ * validate_sale_contract_draft / prepareSaleContractDraft 는 여전히
+ * metadata.contractAgreement 스냅샷을 진실로 읽는다. 조항 에디터가 engineFields 만
+ * 갱신하면 두 저장 포맷이 영구 분기하므로(사용자가 조항 에디터에서 고친 금액과
+ * 다른 값으로 완료 검증/AI 응답), 저장 시 스냅샷을 편집값 기준으로 재생성해
+ * 함께 기록한다.
+ *
+ * - 스냅샷이 없는 문서(조항 에디터로 새로 작성)는 null 을 반환한다 — 새 스냅샷을
+ *   만들지 않는다. 서버 검증은 contractAgreement 키가 있을 때만 동작하므로
+ *   engineFields 단일 포맷으로 유지된다.
+ * - engineFields 에 대응 키가 없는 스냅샷 필드(작성일·계약금 지급일·소유권 이전일·
+ *   인도 조건·중개사무소 전화 등)는 기존 스냅샷 값을 보존한다.
+ * - 2차 중도금(interimPayment2)은 v1 스키마에 자리가 없어 interimManwon 에
+ *   합산한다 — 금액 합계 검증(계약금+중도금+잔금=매매대금) 정합 유지.
+ * - '계약사항2조 직접입력'(printOptions.directClause2)으로 인도일 입력이 숨겨진
+ *   경우, 빈 handoverDate 가 기존 인도일을 지우지 않도록 스냅샷 값을 보존한다.
+ */
+export function applyEngineFieldsToResidentialSaleAgreement(
+  metadata: ContractDocumentEngineMetadata | null | undefined,
+  fields: Record<string, string>,
+  printOptions?: ContractDocumentEnginePrintOptions | null,
+): ResidentialSaleAgreementDraft | null {
+  const base = readResidentialSaleAgreement(metadata);
+  if (!base) return null;
+
+  const textOf = (key: string) => (fields[key] ?? '').trim();
+  /** 금액 텍스트 → 만원 Int (빈 값/파싱 불가는 null — 검증이 별도로 잡는다) */
+  const manwonOf = (key: string): number | null => {
+    const raw = textOf(key);
+    if (!raw) return null;
+    return parseContractManwonText(raw);
+  };
+  const numberOf = (key: string): number | null => {
+    const raw = textOf(key);
+    if (!raw) return null;
+    const parsed = Number(raw.replace(/,/g, ''));
+    return Number.isFinite(parsed) ? parsed : null;
+  };
+
+  // 이관(convertResidentialSaleAgreementToEngineFields)이 roadAddress || jibunAddress
+  // 를 propertyAddress 하나로 합쳤으므로, 지번주소와 같은 값이면 도로명 주소를
+  // 덮지 않는다 (도로명이 비어 지번이 노출됐던 케이스의 왕복 안정성).
+  const address = textOf('propertyAddress');
+  const roadAddress =
+    address && address === base.property.jibunAddress
+      ? base.property.roadAddress
+      : address;
+
+  // 2차 중도금은 v1 스키마에 별도 자리가 없다 — 합산해 합계 검증 정합 유지
+  const interim1 = manwonOf('interimPayment');
+  const interim2 = manwonOf('interimPayment2');
+  const interimManwon =
+    interim1 === null && interim2 === null ? null : (interim1 ?? 0) + (interim2 ?? 0);
+
+  const sellerOverlay = {
+    name: textOf('partyOneName'),
+    identificationNoMasked: textOf('partyOneIdNumber'),
+    address: textOf('partyOneAddress'),
+    phone: textOf('partyOnePhone'),
+  };
+  const buyerOverlay = {
+    name: textOf('partyTwoName'),
+    identificationNoMasked: textOf('partyTwoIdNumber'),
+    address: textOf('partyTwoAddress'),
+    phone: textOf('partyTwoPhone'),
+  };
+
+  return createResidentialSaleAgreementDraft({
+    actualAgreementAt: textOf('contractDate'),
+    writtenAt: base.writtenAt,
+    property: {
+      roadAddress,
+      jibunAddress: base.property.jibunAddress,
+      targetDescription: textOf('propertyLabel'),
+      landCategory: textOf('landCategory'),
+      landAreaM2: numberOf('landArea'),
+      buildingStructure: textOf('buildingStructure'),
+      buildingUse: textOf('buildingUse'),
+      buildingAreaM2: numberOf('buildingArea'),
+    },
+    payment: {
+      totalPriceManwon: manwonOf('salePrice'),
+      depositManwon: manwonOf('downPayment'),
+      depositDueAt: base.payment.depositDueAt,
+      interimManwon,
+      interimDueAt: textOf('interimPaymentDate') || textOf('interimPayment2Date'),
+      balanceManwon: manwonOf('balancePayment'),
+      balanceDueAt: textOf('balancePaymentDate'),
+    },
+    transfer: {
+      // directClause2 로 제2조(인도일 입력)가 숨겨진 상태의 빈 값은 기존 값 보존
+      deliveryAt:
+        textOf('handoverDate') ||
+        (printOptions?.directClause2 ? base.transfer.deliveryAt : ''),
+      ownershipTransferAt: base.transfer.ownershipTransferAt,
+      rightsTransferDetails: base.transfer.rightsTransferDetails,
+      conditions: base.transfer.conditions,
+      explanationDeliveredAt: base.transfer.explanationDeliveredAt,
+    },
+    // 대표 1인만 engineFields 와 동기화 (이관 방향과 대칭) — 공동 당사자는 보존
+    sellers:
+      base.sellers.length > 0
+        ? base.sellers.map((party, index) =>
+            index === 0 ? { ...party, ...sellerOverlay } : party,
+          )
+        : undefined,
+    seller: base.sellers.length === 0 ? sellerOverlay : undefined,
+    buyers:
+      base.buyers.length > 0
+        ? base.buyers.map((party, index) =>
+            index === 0 ? { ...party, ...buyerOverlay } : party,
+          )
+        : undefined,
+    buyer: base.buyers.length === 0 ? buyerOverlay : undefined,
+    brokerage: {
+      ...base.brokerage,
+      officeName: textOf('brokerOfficeName'),
+      registrationNo: textOf('brokerOfficeRegNo'),
+      representativeName: textOf('brokerCeoName'),
+      address: textOf('brokerOfficeAddress'),
+      associateName: textOf('brokerAgentName'),
+    },
+    specialTerms: fields.specialTerms ?? '',
+    sourceNotice: base.sourceNotice,
+  });
+}
+
+export type BaseContractSaleValidationIssue = {
+  path: string;
+  message: string;
+};
+
+export type BaseContractSaleValidation = {
+  errors: BaseContractSaleValidationIssue[];
+  warnings: BaseContractSaleValidationIssue[];
+  isValid: boolean;
+};
+
+/**
+ * base_contract × sale engineFields 검증 (순수 함수) —
+ * validateResidentialSaleAgreement 의 금액 합계·필수 일자 검사를 engineFields 기반으로 이식.
+ *
+ * errors:
+ * - 매매대금 필수 + 만원 숫자 형식
+ * - 계약금 + 중도금 + 2차 중도금 + 잔금 합계 = 매매대금 (융자금·현 임대보증금은
+ *   승계 여부 표시용이라 합계에 포함하지 않음 — 레거시 동일)
+ * - 필수 일자: 계약 체결일 / 잔금 지급일 / 인도일
+ *   (인도일은 printOptions.directClause2 = '계약사항2조 직접입력' 체크 시 생략 —
+ *   제2조 자동 문장과 인도일 입력이 숨겨지고 본문 조항에 직접 기재하므로,
+ *   필수로 두면 해소 불가능한 오류가 영구 표시된다)
+ * - 중도금(1·2차) 금액이 있으면 해당 지급일 필수
+ * warnings:
+ * - 부동산 소재지, 당사자 성명 미입력
+ */
+export function validateBaseContractSaleEngineFields(
+  fields: Record<string, string>,
+  printOptions?: ContractDocumentEnginePrintOptions | null,
+): BaseContractSaleValidation {
+  const errors: BaseContractSaleValidationIssue[] = [];
+  const warnings: BaseContractSaleValidationIssue[] = [];
+
+  const textOf = (key: string) => (fields[key] ?? '').trim();
+
+  /** 금액 텍스트 → 만원 Int. 비어 있으면 0, 형식 오류는 error 후 0 처리 */
+  const readAmount = (key: string, label: string): number => {
+    const raw = textOf(key);
+    if (!raw) return 0;
+    const parsed = parseContractManwonText(raw);
+    if (parsed === null) {
+      errors.push({ path: key, message: `${label} 금액 형식을 확인하세요 (만원 단위 숫자).` });
+      return 0;
+    }
+    return parsed;
+  };
+
+  const salePriceText = textOf('salePrice');
+  const salePrice = salePriceText ? parseContractManwonText(salePriceText) : null;
+  if (!salePriceText || salePrice === 0) {
+    errors.push({ path: 'salePrice', message: '매매대금을 입력하세요.' });
+  } else if (salePrice === null) {
+    errors.push({ path: 'salePrice', message: '매매대금 금액 형식을 확인하세요 (만원 단위 숫자).' });
+  }
+
+  const downPayment = readAmount('downPayment', '계약금');
+  const interimPayment = readAmount('interimPayment', '중도금');
+  const interimPayment2 = readAmount('interimPayment2', '2차 중도금');
+  const balancePayment = readAmount('balancePayment', '잔금');
+
+  if (salePrice !== null && salePrice > 0) {
+    const paymentSum = downPayment + interimPayment + interimPayment2 + balancePayment;
+    if (paymentSum !== salePrice) {
+      errors.push({
+        path: 'payment',
+        message: '계약금·중도금·잔금 합계가 매매대금과 일치하지 않습니다.',
+      });
+    }
+  }
+
+  if (!textOf('contractDate')) {
+    errors.push({ path: 'contractDate', message: '계약 체결일을 입력하세요.' });
+  }
+  if (!textOf('balancePaymentDate')) {
+    errors.push({ path: 'balancePaymentDate', message: '잔금 지급일을 입력하세요.' });
+  }
+  // '계약사항2조 직접입력' 체크 시 제2조(인도일 임베디드 문장)가 숨겨지고
+  // 인도일은 본문 조항(bodyText)에 직접 기재된다 — 필수 검사 생략 (레거시 chkSecUse)
+  if (!textOf('handoverDate') && printOptions?.directClause2 !== true) {
+    errors.push({ path: 'handoverDate', message: '부동산 인도일을 입력하세요.' });
+  }
+  if (interimPayment > 0 && !textOf('interimPaymentDate')) {
+    errors.push({ path: 'interimPaymentDate', message: '중도금 지급일을 입력하세요.' });
+  }
+  if (interimPayment2 > 0 && !textOf('interimPayment2Date')) {
+    errors.push({ path: 'interimPayment2Date', message: '2차 중도금 지급일을 입력하세요.' });
+  }
+
+  if (!textOf('propertyAddress')) {
+    warnings.push({ path: 'propertyAddress', message: '부동산 소재지를 확인하세요.' });
+  }
+  if (!textOf('partyOneName')) {
+    warnings.push({ path: 'partyOneName', message: '매도인 성명을 확인하세요.' });
+  }
+  if (!textOf('partyTwoName')) {
+    warnings.push({ path: 'partyTwoName', message: '매수인 성명을 확인하세요.' });
+  }
+
+  return {
+    errors,
+    warnings,
+    isValid: errors.length === 0,
   };
 }
 

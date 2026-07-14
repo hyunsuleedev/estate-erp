@@ -1,5 +1,10 @@
 // 워크스페이스 패키지가 아닌 스크립트 컨텍스트(tsx seed, web test)에서도 항상
 // 해석되도록 상대 경로로 import 한다 (@estate-erp/shared 는 root node_modules 에 없음).
+import {
+  BASE_CONTRACT_DOWN_PAYMENT_PAY_TIME_OPTIONS,
+  BASE_CONTRACT_LOAN_HANDLING_OPTIONS,
+  BASE_CONTRACT_TENANT_DEPOSIT_HANDLING_OPTIONS,
+} from '../packages/shared/src/contract-clause-layouts';
 import { CONTRACT_DOCUMENT_KINDS } from '../packages/shared/src/enums';
 
 type TemplateFields = {
@@ -882,7 +887,10 @@ const BASE_CONTRACT_FIELD_GROUPS: ContractTemplateFieldGroup[] = [
       amountField('salePrice', '매매대금', { appliesTo: ['sale'] }),
       amountField('deposit', '보증금', { appliesTo: ['jeonse', 'monthly'] }),
       amountField('downPayment', '계약금'),
-      field('downPaymentPayTime', '계약금 지급 시기', 'text'),
+      // 레거시 contractPriceComboBox — text → select (조항 임베디드 에디터 2지 문구 verbatim)
+      field('downPaymentPayTime', '계약금 지급 시기', 'select', {
+        options: [...BASE_CONTRACT_DOWN_PAYMENT_PAY_TIME_OPTIONS],
+      }),
       amountField('interimPayment', '중도금'),
       field('interimPaymentDate', '중도금 지급일', 'date'),
       field('interimPaymentBlankPrint', '중도금 공란 인쇄', 'checkbox'),
@@ -891,13 +899,16 @@ const BASE_CONTRACT_FIELD_GROUPS: ContractTemplateFieldGroup[] = [
       amountField('balancePayment', '잔금'),
       field('balancePaymentDate', '잔금 지급일', 'date'),
       amountField('loanAmount', '융자금', { appliesTo: ['sale'] }),
+      // 레거시 loanPriceComboBox 3지 — 축약형 ['승계','말소'] 에서 verbatim 문구로 보강.
+      // 옵션 상수는 shared/contract-clause-layouts.ts 와 단일 소스 공유 (조항 레이아웃 일치).
       field('loanHandling', '융자금 처리', 'select', {
-        options: ['승계', '말소'],
+        options: [...BASE_CONTRACT_LOAN_HANDLING_OPTIONS],
         appliesTo: ['sale'],
       }),
       amountField('currentTenantDeposit', '현 임차보증금', { appliesTo: ['sale'] }),
+      // 레거시 rentGrantPriceComboBox 3지 — 축약형 ['승계','반환'] 에서 verbatim 문구로 보강
       field('currentTenantDepositHandling', '현 임차보증금 처리', 'select', {
-        options: ['승계', '반환'],
+        options: [...BASE_CONTRACT_TENANT_DEPOSIT_HANDLING_OPTIONS],
         appliesTo: ['sale'],
       }),
       // 레거시 Mntr — 월세 차임 (연세 08 은 미지원, 월세 환산 이관)
