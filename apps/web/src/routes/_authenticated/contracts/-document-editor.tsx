@@ -20,7 +20,14 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { BookMarked, FileText, Printer } from 'lucide-react';
+import {
+  BookMarked,
+  CheckCircle2,
+  ClipboardCheck,
+  FileText,
+  Printer,
+  Settings2,
+} from 'lucide-react';
 import { toast } from 'sonner';
 import type {
   Contract,
@@ -64,7 +71,6 @@ import {
   ResidentialSaleAgreementPreview,
 } from './-residential-sale-editor';
 import {
-  SummaryRow,
   documentCategoryLabels,
   documentStatusMeta,
   findPrimaryContractDocument,
@@ -400,6 +406,8 @@ export function DocumentEditorSheet({
   onSaveAsNew: () => void;
 }) {
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+  const [rightPanel, setRightPanel] = useState<'preview' | 'check'>('preview');
+  const [activeSection, setActiveSection] = useState('content');
   // metadata.documentEngine.fieldGroups 구동 (draft 빌드 시 appliesTo 필터 적용됨).
   // 없으면 기존 category 공통 그룹 fallback.
   const fieldGroups =
@@ -455,6 +463,12 @@ export function DocumentEditorSheet({
     !documentTitle ||
     !form.category ||
     (Boolean(form.documentId) && !isDirty);
+
+  useEffect(() => {
+    if (!open) return;
+    setRightPanel('preview');
+    setActiveSection('content');
+  }, [open, form.documentId, form.templateId]);
 
   // Ctrl/Cmd+S 저장, Ctrl/Cmd+P 미리보기 (PRD 키보드 단축키)
   useEffect(() => {
@@ -538,6 +552,20 @@ export function DocumentEditorSheet({
     }));
   }
 
+  const navigationSections = clauseArticles || form.saleAgreement
+    ? [{ id: 'content', label: '계약 내용' }]
+    : visibleFieldGroups.map((group, index) => ({
+        id: `group-${index}`,
+        label: group.title,
+      }));
+
+  function scrollToEditorSection(sectionId: string) {
+    setActiveSection(sectionId);
+    document
+      .getElementById(`document-editor-${sectionId}`)
+      ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
   return (
     <>
       <Sheet open={open} onOpenChange={onOpenChange}>
@@ -545,23 +573,89 @@ export function DocumentEditorSheet({
           side="right"
           className="w-[calc(100vw-24px)] gap-0 overflow-hidden p-0 sm:max-w-none xl:w-[calc(100vw-64px)]"
         >
-          <SheetHeader className="border-b px-6 py-5">
-            <div className="flex items-start justify-between gap-6 pr-8">
-              <div className="space-y-1">
-                <SheetTitle>{form.workflow.formTitle}</SheetTitle>
-                <SheetDescription>
+          <SheetHeader className="border-b px-5 py-3.5">
+            <div className="flex items-center justify-between gap-6 pr-8">
+              <div className="min-w-0 space-y-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <SheetTitle className="truncate">{documentTitle}</SheetTitle>
+                  <Badge className={cn('border-0', documentStatusMeta[form.status]?.className)}>
+                    {documentStatusMeta[form.status]?.label ?? form.status}
+                  </Badge>
+                  <Badge variant="outline">
+                    {documentCategoryLabels[form.category] ?? form.category}
+                  </Badge>
+                </div>
+                <SheetDescription className="truncate">
                   {form.workflow.inputFormName} · {form.workflow.reportName}
                 </SheetDescription>
               </div>
-              <Badge className={cn('border-0', documentStatusMeta[form.status]?.className)}>
-                {documentStatusMeta[form.status]?.label ?? form.status}
-              </Badge>
+              <div className="flex shrink-0 items-center gap-2">
+                <Button variant="outline" size="sm" onClick={() => setIsPreviewOpen(true)}>
+                  <Printer className="size-3.5" />
+                  출력 미리보기
+                </Button>
+                <Button size="sm" onClick={onSave} disabled={isSaveDisabled}>
+                  저장
+                </Button>
+              </div>
             </div>
           </SheetHeader>
 
           <ScrollArea className="min-h-0 flex-1">
-            <div className="grid min-h-full gap-5 bg-muted/40 p-5 lg:grid-cols-[minmax(0,1fr)_340px] xl:grid-cols-[minmax(0,1fr)_380px]">
-              <main className="min-w-0 space-y-4">
+            <div className="grid min-h-full bg-muted/30 lg:grid-cols-[164px_minmax(400px,1fr)_minmax(390px,0.95fr)]">
+              <nav className="sticky top-0 hidden h-[calc(100vh-132px)] flex-col border-r bg-background/95 p-3 lg:flex">
+                <p className="px-2 pb-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                  섹션
+                </p>
+                <div className="space-y-1">
+                  {navigationSections.map((section, index) => (
+                    <button
+                      key={section.id}
+                      type="button"
+                      className={cn(
+                        'flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs transition-colors hover:bg-muted',
+                        (activeSection === section.id || (activeSection === 'content' && index === 0)) &&
+                          'bg-muted font-medium text-foreground',
+                      )}
+                      onClick={() => scrollToEditorSection(section.id)}
+                    >
+                      <FileText className="size-3.5 shrink-0" />
+                      <span className="truncate">{section.label}</span>
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    className={cn(
+                      'flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs transition-colors hover:bg-muted',
+                      activeSection === 'settings' && 'bg-muted font-medium text-foreground',
+                    )}
+                    onClick={() => scrollToEditorSection('settings')}
+                  >
+                    <Settings2 className="size-3.5 shrink-0" />
+                    문서 설정
+                  </button>
+                  {!form.saleAgreement ? (
+                    <button
+                      type="button"
+                      className={cn(
+                        'flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs transition-colors hover:bg-muted',
+                        activeSection === 'clauses' && 'bg-muted font-medium text-foreground',
+                      )}
+                      onClick={() => scrollToEditorSection('clauses')}
+                    >
+                      <BookMarked className="size-3.5 shrink-0" />
+                      특약 문구
+                    </button>
+                  ) : null}
+                </div>
+                <div className="mt-auto rounded-lg border bg-muted/30 p-3">
+                  <p className="text-xs font-medium">작성 팁</p>
+                  <p className="mt-1 text-[11px] leading-5 text-muted-foreground">
+                    왼쪽 섹션을 이동하며 입력하고 오른쪽에서 출력 결과를 바로 확인하세요.
+                  </p>
+                </div>
+              </nav>
+              <main className="min-w-0 space-y-4 p-4">
                 <section className="rounded-md border border-border/60 bg-background p-5">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
@@ -575,107 +669,62 @@ export function DocumentEditorSheet({
                 </section>
 
                 {clauseArticles ? (
-                  <BaseContractClauseEditor
-                    // 문서 전환 시 인라인 컨트롤(금액 draft/날짜 칸)의 로컬 상태 리셋
-                    key={`clause:${form.documentId ?? 'new'}`}
-                    articles={clauseArticles}
-                    fields={form.engineFields}
-                    printOptions={form.printOptions}
-                    fieldGroups={fieldGroups}
-                    onFieldChange={updateEngineField}
-                    onPrintOptionsChange={updatePrintOptions}
-                  />
-                ) : form.saleAgreement && saleAgreementValidation ? (
-                  <ResidentialSaleAgreementEditor
-                    agreement={form.saleAgreement}
-                    validation={saleAgreementValidation}
-                    onChange={updateSaleAgreement}
-                  />
-                ) : (
-                  visibleFieldGroups.map((group) => (
-                    <DocumentInputFormSection
-                      // documentId 를 key 에 포함 — 다른 문서로 전환 시 컨트롤의
-                      // 로컬 상태(금액 단위 토글 등)가 이월되지 않도록 리마운트
-                      key={`${form.documentId ?? 'new'}:${group.key ?? group.title}`}
-                      title={group.title}
-                      fields={group.fields}
-                      values={form.engineFields}
+                  <div id="document-editor-content" className="scroll-mt-4">
+                    <BaseContractClauseEditor
+                      // 문서 전환 시 인라인 컨트롤(금액 draft/날짜 칸)의 로컬 상태 리셋
+                      key={`clause:${form.documentId ?? 'new'}`}
+                      articles={clauseArticles}
+                      fields={form.engineFields}
+                      printOptions={form.printOptions}
+                      fieldGroups={fieldGroups}
                       onFieldChange={updateEngineField}
-                    />
-                  ))
-                )}
-              </main>
-
-              <aside className="space-y-4">
-                <section className="rounded-md border border-border/60 bg-background p-4">
-                  <p className="text-sm font-medium">출력 리포트</p>
-                  <div className="mt-3 space-y-2">
-                    <SummaryRow label="입력폼" value={form.workflow.inputFormName} />
-                    <SummaryRow label="리포트" value={form.workflow.reportName} />
-                    <SummaryRow
-                      label="분류"
-                      value={documentCategoryLabels[form.category] ?? form.category}
-                    />
-                    <SummaryRow
-                      label="상태"
-                      value={documentStatusMeta[form.status]?.label ?? form.status}
+                      onPrintOptionsChange={updatePrintOptions}
                     />
                   </div>
-                  <Button
-                    type="button"
-                    className="mt-4 w-full"
-                    onClick={() => setIsPreviewOpen(true)}
-                  >
-                    <FileText data-icon="inline-start" />
-                    출력 미리보기
-                  </Button>
-                </section>
-
-                {editorValidation ? (
-                  <section className="rounded-md border border-border/60 bg-background p-4">
-                    <div className="flex items-center justify-between gap-3">
-                      <p className="text-sm font-medium">작성 점검</p>
-                      <Badge variant={editorValidation.isReady ? 'secondary' : 'destructive'}>
-                        {editorValidation.isReady
-                          ? '출력 준비'
-                          : `오류 ${editorValidation.errors.length}건`}
-                      </Badge>
+                ) : form.saleAgreement && saleAgreementValidation ? (
+                  <div id="document-editor-content" className="scroll-mt-4">
+                    <ResidentialSaleAgreementEditor
+                      agreement={form.saleAgreement}
+                      validation={saleAgreementValidation}
+                      onChange={updateSaleAgreement}
+                    />
+                  </div>
+                ) : (
+                  visibleFieldGroups.map((group, index) => (
+                    <div
+                      id={`document-editor-group-${index}`}
+                      key={`${form.documentId ?? 'new'}:${group.key ?? group.title}`}
+                      className="scroll-mt-4"
+                    >
+                      <DocumentInputFormSection
+                        title={group.title}
+                        fields={group.fields}
+                        values={form.engineFields}
+                        onFieldChange={updateEngineField}
+                      />
                     </div>
-                    <div className="mt-3 grid gap-2">
-                      {editorValidation.errors.map((issue) => (
-                        <p
-                          key={`${issue.path}-${issue.message}`}
-                          className="rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive"
-                        >
-                          {issue.message}
-                        </p>
-                      ))}
-                      {editorValidation.warnings.map((issue) => (
-                        <p
-                          key={`${issue.path}-${issue.message}`}
-                          className="rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground"
-                        >
-                          확인: {issue.message}
-                        </p>
-                      ))}
-                    </div>
-                  </section>
-                ) : null}
+                  ))
+                )}
 
-                <section className="rounded-md border border-border/60 bg-background p-4">
-                  <p className="text-sm font-medium">문서 설정</p>
-                  <div className="mt-4 grid gap-4">
-                    <div className="space-y-2">
+                <section
+                  id="document-editor-settings"
+                  className="scroll-mt-4 rounded-md border border-border/60 bg-background p-5"
+                >
+                  <div>
+                    <p className="text-sm font-semibold">문서 설정</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      문서 제목, 상태와 보관 정보를 관리합니다.
+                    </p>
+                  </div>
+                  <div className="mt-4 grid gap-4 md:grid-cols-2">
+                    <div className="space-y-2 md:col-span-2">
                       <Label>문서 제목</Label>
                       <Input
                         value={form.engineFields.documentTitle ?? ''}
-                        onChange={(event) =>
-                          updateEngineField('documentTitle', event.target.value)
-                        }
+                        onChange={(event) => updateEngineField('documentTitle', event.target.value)}
                         placeholder="비우면 서식명이 사용됩니다"
                       />
                     </div>
-
                     <div className="space-y-2">
                       <Label>문서 상태</Label>
                       <Select
@@ -684,21 +733,16 @@ export function DocumentEditorSheet({
                           onFormChange((prev) => ({ ...prev, status: value }))
                         }
                       >
-                        <SelectTrigger className="w-full">
-                          <SelectValue placeholder="상태 선택" />
-                        </SelectTrigger>
+                        <SelectTrigger className="w-full"><SelectValue placeholder="상태 선택" /></SelectTrigger>
                         <SelectContent>
                           <SelectGroup>
                             {Object.entries(documentStatusMeta).map(([key, meta]) => (
-                              <SelectItem key={key} value={key}>
-                                {meta.label}
-                              </SelectItem>
+                              <SelectItem key={key} value={key}>{meta.label}</SelectItem>
                             ))}
                           </SelectGroup>
                         </SelectContent>
                       </Select>
                     </div>
-
                     <div className="space-y-2">
                       <Label>작업 유형</Label>
                       <Select
@@ -707,9 +751,7 @@ export function DocumentEditorSheet({
                           onFormChange((prev) => ({ ...prev, type: value }))
                         }
                       >
-                        <SelectTrigger className="w-full">
-                          <SelectValue placeholder="유형 선택" />
-                        </SelectTrigger>
+                        <SelectTrigger className="w-full"><SelectValue placeholder="유형 선택" /></SelectTrigger>
                         <SelectContent>
                           <SelectGroup>
                             <SelectItem value="generated">작성</SelectItem>
@@ -719,53 +761,39 @@ export function DocumentEditorSheet({
                         </SelectContent>
                       </Select>
                     </div>
-
-                    <div className="space-y-2">
+                    <div className="space-y-2 md:col-span-2">
                       <Label>파일 URL</Label>
                       <Input
                         value={form.fileUrl}
-                        onChange={(event) =>
-                          onFormChange((prev) => ({
-                            ...prev,
-                            fileUrl: event.target.value,
-                          }))
-                        }
+                        onChange={(event) => onFormChange((prev) => ({ ...prev, fileUrl: event.target.value }))}
                         placeholder="https://...pdf"
                       />
                     </div>
-
-                    <div className="space-y-2">
+                    <div className="space-y-2 md:col-span-2">
                       <Label>내부 메모</Label>
                       <Textarea
-                        rows={4}
+                        rows={3}
                         value={form.memo}
-                        onChange={(event) =>
-                          onFormChange((prev) => ({
-                            ...prev,
-                            memo: event.target.value,
-                          }))
-                        }
+                        onChange={(event) => onFormChange((prev) => ({ ...prev, memo: event.target.value }))}
                       />
                     </div>
                   </div>
                 </section>
 
                 {!form.saleAgreement ? (
-                  <ClauseTemplateToolsSection
-                    contractKind={form.kind}
-                    transactionType={form.transactionType}
-                    specialTerms={form.engineFields.specialTerms ?? ''}
-                    onInsert={(content) =>
-                      // 특약은 rich text — 템플릿(plain text)을 문단 HTML 로 이어붙임
-                      updateEngineField(
-                        'specialTerms',
-                        appendContractRichText(
-                          form.engineFields.specialTerms,
-                          content,
-                        ),
-                      )
-                    }
-                  />
+                  <div id="document-editor-clauses" className="scroll-mt-4">
+                    <ClauseTemplateToolsSection
+                      contractKind={form.kind}
+                      transactionType={form.transactionType}
+                      specialTerms={form.engineFields.specialTerms ?? ''}
+                      onInsert={(content) =>
+                        updateEngineField(
+                          'specialTerms',
+                          appendContractRichText(form.engineFields.specialTerms, content),
+                        )
+                      }
+                    />
+                  </div>
                 ) : null}
 
                 {error ? (
@@ -773,7 +801,104 @@ export function DocumentEditorSheet({
                     {error}
                   </p>
                 ) : null}
+              </main>
+
+              <aside className="sticky top-0 hidden h-[calc(100vh-132px)] min-w-0 flex-col border-l bg-background lg:flex">
+                <div className="flex h-11 shrink-0 items-center gap-5 border-b px-4">
+                  <button
+                    type="button"
+                    className={cn(
+                      'h-11 border-b-2 border-transparent text-xs font-medium text-muted-foreground',
+                      rightPanel === 'preview' && 'border-foreground text-foreground',
+                    )}
+                    onClick={() => setRightPanel('preview')}
+                  >
+                    미리보기
+                  </button>
+                  <button
+                    type="button"
+                    className={cn(
+                      'flex h-11 items-center gap-1.5 border-b-2 border-transparent text-xs font-medium text-muted-foreground',
+                      rightPanel === 'check' && 'border-foreground text-foreground',
+                    )}
+                    onClick={() => setRightPanel('check')}
+                  >
+                    작성 점검
+                    {editorValidation && !editorValidation.isReady ? (
+                      <Badge variant="destructive" className="h-4 min-w-4 px-1 text-[9px]">
+                        {editorValidation.errors.length}
+                      </Badge>
+                    ) : null}
+                  </button>
+                </div>
+                <ScrollArea className="min-h-0 flex-1 bg-muted/30">
+                  {rightPanel === 'preview' ? (
+                    <div className="p-4">
+                      {clauseArticles ? (
+                        <BaseContractClausePreview
+                          title={documentTitle}
+                          status={documentStatusMeta[form.status]?.label ?? form.status}
+                          reportName={form.workflow.reportName}
+                          articles={clauseArticles}
+                          fields={form.engineFields}
+                          printOptions={form.printOptions}
+                          fieldGroups={fieldGroups}
+                        />
+                      ) : form.saleAgreement ? (
+                        <ResidentialSaleAgreementPreview
+                          agreement={form.saleAgreement}
+                          status={documentStatusMeta[form.status]?.label ?? form.status}
+                        />
+                      ) : (
+                        <ContractDocumentPage
+                          title={documentTitle}
+                          templateCode={form.workflow.reportName}
+                          status={documentStatusMeta[form.status]?.label ?? form.status}
+                          fields={form.engineFields}
+                          sections={sections}
+                        />
+                      )}
+                    </div>
+                  ) : (
+                    <div className="space-y-4 p-4">
+                      <section className="rounded-lg border bg-background p-4">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-2">
+                            <ClipboardCheck className="size-4" />
+                            <p className="text-sm font-medium">문서 작성 점검</p>
+                          </div>
+                          <Badge variant={editorValidation?.isReady === false ? 'destructive' : 'secondary'}>
+                            {editorValidation?.isReady === false
+                              ? `오류 ${editorValidation.errors.length}건`
+                              : '저장 가능'}
+                          </Badge>
+                        </div>
+                        <p className="mt-2 text-xs leading-5 text-muted-foreground">
+                          저장 전에 필수 입력과 금액·일정 정합성을 확인합니다.
+                        </p>
+                      </section>
+                      {editorValidation?.errors.map((issue) => (
+                        <div key={`${issue.path}-${issue.message}`} className="flex items-start gap-2 rounded-lg border border-destructive/20 bg-destructive/[0.035] p-3 text-xs text-destructive">
+                          <FileText className="mt-0.5 size-3.5 shrink-0" />
+                          <span className="leading-5">{issue.message}</span>
+                        </div>
+                      ))}
+                      {editorValidation?.warnings.map((issue) => (
+                        <div key={`${issue.path}-${issue.message}`} className="rounded-lg border bg-background p-3 text-xs leading-5 text-muted-foreground">
+                          확인: {issue.message}
+                        </div>
+                      ))}
+                      {!editorValidation || editorValidation.isReady ? (
+                        <div className="flex items-start gap-2 rounded-lg border border-success/25 bg-success-soft p-3 text-xs text-success">
+                          <CheckCircle2 className="mt-0.5 size-4 shrink-0" />
+                          <span className="leading-5">필수 입력과 문서 정합성 점검을 통과했습니다.</span>
+                        </div>
+                      ) : null}
+                    </div>
+                  )}
+                </ScrollArea>
               </aside>
+
             </div>
           </ScrollArea>
 

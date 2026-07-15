@@ -6,10 +6,10 @@
  * 폼 상태는 페이지(index.tsx)가 소유한다 — 문서 편집기로 전환(다이얼로그 닫힘)해도
  * 미저장 편집이 유지되고, 닫기 시 dirty 확인을 다이얼로그 레벨에서 할 수 있다.
  */
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle, ChevronRight } from 'lucide-react';
+import { AlertTriangle, ChevronRight, FilePenLine } from 'lucide-react';
 import { toast } from 'sonner';
 import type {
   Contract,
@@ -53,7 +53,7 @@ import {
   formatMoney,
 } from '@/lib/format';
 import { getStatusMeta } from '@/lib/status-config';
-import { EntityChip, PipelineSteps, StatusBadge } from '@/components/domain';
+import { EntityChip, StatusBadge } from '@/components/domain';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import {
@@ -107,6 +107,11 @@ export function ContractDetailCard({
   ) => void;
 }) {
   const queryClient = useQueryClient();
+  const [activeTab, setActiveTab] = useState('documents');
+
+  useEffect(() => {
+    if (open) setActiveTab('documents');
+  }, [open, contract?.id]);
 
   const dealQuery = useQuery({
     queryKey: ['deal', contract?.dealId],
@@ -271,6 +276,15 @@ export function ContractDetailCard({
   });
   const showReportWarning =
     !!reportDeadline && unsubmittedReports.length > 0 && form.status !== 'cancelled';
+  const effectiveDocumentTemplates =
+    documentTemplates.length > 0
+      ? documentTemplates
+      : contract.requiredDocumentTemplates ?? [];
+  const nextMissingTemplate = effectiveDocumentTemplates.find(
+    (template) =>
+      template.isRequired &&
+      !findDocumentByTemplate(contract.documents ?? [], template.id),
+  );
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -302,6 +316,15 @@ export function ContractDetailCard({
             </div>
           </div>
           <div className="mr-8 flex items-center gap-2">
+            {activeTab === 'documents' && nextMissingTemplate ? (
+              <Button
+                onClick={() => onOpenDocument(nextMissingTemplate)}
+                disabled={isDocumentTemplatesLoading}
+              >
+                <FilePenLine className="size-4" />
+                누락 문서 작성
+              </Button>
+            ) : null}
             {nextStatus ? (
               <Button
                 variant="outline"
@@ -320,15 +343,13 @@ export function ContractDetailCard({
             </Button>
           </div>
         </div>
-        <PipelineSteps
-          kind="contractStatus"
-          current={form.status}
-          cancelled={form.status === 'cancelled'}
-          className="mt-4"
-        />
       </div>
 
-      <Tabs defaultValue="summary" className="min-h-0 flex-1 gap-0">
+      <Tabs
+        value={activeTab}
+        onValueChange={setActiveTab}
+        className="min-h-0 flex-1 gap-0"
+      >
         <div className="border-b px-6 py-3">
           <TabsList>
             <TabsTrigger value="summary">요약</TabsTrigger>
@@ -640,11 +661,7 @@ export function ContractDetailCard({
               ) : null}
               <DocumentHub
                 contract={contract}
-                templates={
-                  documentTemplates.length > 0
-                    ? documentTemplates
-                    : contract.requiredDocumentTemplates ?? []
-                }
+                templates={effectiveDocumentTemplates}
                 isLoading={isDocumentTemplatesLoading}
                 reportDeadline={reportDeadline}
                 onOpenDocument={onOpenDocument}
