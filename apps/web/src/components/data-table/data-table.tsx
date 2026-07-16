@@ -322,7 +322,13 @@ export function DataTable<TData extends { id: string }>({
         <table
           ref={tableRef}
           className={cn('w-full table-fixed caption-bottom text-sm', isNotion && 'border-separate border-spacing-0')}
-          style={{ width: tableTotalSize, minWidth: tableTotalSize }}
+          style={{
+            // Keep dense grids horizontally scrollable when their configured
+            // columns are wider than the viewport, but let shorter grids use
+            // the available workspace instead of leaving a large dead area.
+            width: `max(100%, ${tableTotalSize}px)`,
+            minWidth: tableTotalSize,
+          }}
         >
           {/* Header */}
           <thead className={cn('sticky top-0 z-20 bg-background', isNotion && 'bg-white')}>

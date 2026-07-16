@@ -337,6 +337,7 @@ function ContactsPage() {
             setSearch(value);
           }}
           searchPlaceholder="이름, 전화번호 검색..."
+          searchAlwaysVisible
           filterDefinitions={filterDefinitions}
           activeFilters={activeFilters}
           onFilterAdd={handleFilterAdd}

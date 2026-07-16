@@ -1,4 +1,5 @@
-import { createFileRoute, Outlet, Navigate, useMatches, useLocation } from '@tanstack/react-router';
+import { useEffect } from 'react';
+import { createFileRoute, Outlet, useMatches, useLocation, useNavigate } from '@tanstack/react-router';
 import { SplashScreen } from '@/components/layout/splash-screen';
 import { useAuth } from '@/providers/auth-provider';
 import { AppSidebar } from '@/components/layout/app-sidebar';
@@ -21,17 +22,22 @@ function AuthenticatedLayout() {
   const { user, isAuthenticated, isLoading } = useAuth();
   const matches = useMatches();
   const location = useLocation();
+  const navigate = useNavigate();
+  const redirectTo = !isLoading
+    ? !isAuthenticated
+      ? '/login'
+      : !user?.office
+        ? '/onboarding/office'
+        : null
+    : null;
 
-  if (isLoading) {
+  useEffect(() => {
+    if (!redirectTo) return;
+    void navigate({ to: redirectTo });
+  }, [navigate, redirectTo]);
+
+  if (isLoading || redirectTo) {
     return <SplashScreen />;
-  }
-
-  if (!isAuthenticated) {
-    return <Navigate to="/login" />;
-  }
-
-  if (!user?.office) {
-    return <Navigate to="/onboarding/office" />;
   }
 
   const currentMatch = matches[matches.length - 1];

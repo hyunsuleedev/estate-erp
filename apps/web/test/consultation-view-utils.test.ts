@@ -155,9 +155,15 @@ describe('consultation view utilities', () => {
       [
         { key: 'contact', label: '고객', title: '한구매', to: '/contacts/$id', params: { id: 'contact-1' } },
         { key: 'property', label: '매물', title: '고덕그라시움', to: '/properties/$id', params: { id: 'property-1' } },
-        { key: 'listing', label: '리스팅', title: '매매 26억 8,000만', to: '/properties/$id', params: { id: 'property-1' } },
+        { key: 'listing', label: '매물(거래)', title: '매매 26억 8,000만', to: '/properties/$id', params: { id: 'property-1' } },
         { key: 'match', label: '매칭', title: '매칭 연결', to: '/matches', params: undefined },
-        { key: 'buyerRequirement', label: '구매요건', title: '구매요건 연결', to: '/buyer-requirements', params: undefined },
+        {
+          key: 'buyerRequirement',
+          label: '구매요건',
+          title: '구매요건 연결',
+          to: '/buyer-requirements/$id',
+          params: { id: 'buyer-1' },
+        },
       ],
     );
   });
@@ -175,8 +181,8 @@ describe('consultation view utilities', () => {
         ids: group.items.map((consultation) => consultation.id),
       })),
       [
-        { label: '2026년 4월 20일', ids: ['c1', 'c2'] },
-        { label: '2026년 4월 19일', ids: ['c3'] },
+        { label: '2026년 4월 20일 월', ids: ['c1', 'c2'] },
+        { label: '2026년 4월 19일 일', ids: ['c3'] },
       ],
     );
 

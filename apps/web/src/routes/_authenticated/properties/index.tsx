@@ -1381,11 +1381,13 @@ function PropertyGridRow({
         </div>
 
         {/* 2. 단지 (sticky, 클릭 → 상세 시트) */}
-        <div
+        <button
+          type="button"
           onClick={onOpenSheet}
+          aria-label={`${property?.site?.name ?? '매물'} 상세 열기`}
           title="매물 상세 열기"
           className={cn(
-            'left-[40px] flex min-h-10 cursor-pointer items-center gap-1.5 px-2.5',
+            'left-[40px] flex min-h-10 cursor-pointer items-center gap-1.5 px-2.5 text-left outline-none focus-visible:z-20 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
             STICKY_CELL,
             CELL_BORDER,
           )}
@@ -1394,7 +1396,7 @@ function PropertyGridRow({
             {property?.site?.name ?? '매물 정보 없음'}
           </span>
           <ArrowUpRight className="size-3 shrink-0 text-muted-foreground/50" />
-        </div>
+        </button>
 
         {/* 3. 동 (sticky) */}
         <div

@@ -1,4 +1,5 @@
-import { createFileRoute, Navigate } from '@tanstack/react-router';
+import { useEffect } from 'react';
+import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { SplashScreen } from '@/components/layout/splash-screen';
 import { useAuth } from '@/providers/auth-provider';
 
@@ -8,17 +9,19 @@ export const Route = createFileRoute('/')({
 
 function IndexPage() {
   const { user, isAuthenticated, isLoading } = useAuth();
+  const navigate = useNavigate();
+  const redirectTo = !isLoading
+    ? isAuthenticated
+      ? user?.office
+        ? '/dashboard'
+        : '/onboarding/office'
+      : '/login'
+    : null;
 
-  if (isLoading) {
-    return <SplashScreen />;
-  }
+  useEffect(() => {
+    if (!redirectTo) return;
+    void navigate({ to: redirectTo });
+  }, [navigate, redirectTo]);
 
-  if (isAuthenticated) {
-    if (!user?.office) {
-      return <Navigate to="/onboarding/office" />;
-    }
-    return <Navigate to="/dashboard" />;
-  }
-
-  return <Navigate to="/login" />;
+  return <SplashScreen />;
 }

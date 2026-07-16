@@ -31,7 +31,12 @@ import {
 
 export type NavRole = 'owner' | 'manager' | 'agent'
 
-export type NavGroupKey = 'menu' | 'services'
+export type NavGroupKey =
+  | 'start'
+  | 'properties'
+  | 'customers'
+  | 'transactions'
+  | 'operations'
 
 export interface NavChildItem {
   path: string
@@ -50,61 +55,131 @@ export interface NavItem {
   children?: NavChildItem[]
 }
 
-export const NAV_GROUPS: { key: NavGroupKey; label: string }[] = [
-  { key: 'menu', label: '메뉴' },
-  { key: 'services', label: '서비스' },
+export const NAV_GROUPS: {
+  key: NavGroupKey
+  label: string
+  defaultOpen?: boolean
+}[] = [
+  { key: 'start', label: '시작', defaultOpen: true },
+  { key: 'properties', label: '매물·공간' },
+  { key: 'customers', label: '고객·상담' },
+  { key: 'transactions', label: '거래·계약' },
+  { key: 'operations', label: '업무·운영' },
 ]
 
 export const NAV_ITEMS: NavItem[] = [
-  // ── 메뉴 (디자인 Estate ERP 웹.dc.html 사이드바 순서)
-  { path: '/dashboard', label: '대시보드', icon: LayoutDashboard, group: 'menu' },
-  { path: '/inbox', label: 'AI 검토함', icon: Inbox, group: 'menu' },
+  // ── 시작
+  {
+    path: '/dashboard',
+    label: '대시보드',
+    icon: LayoutDashboard,
+    group: 'start',
+  },
+  { path: '/inbox', label: 'AI 검토함', icon: Inbox, group: 'start' },
   // AI 채팅 — UI 선행 (백엔드는 Phase 2 연결)
-  { path: '/ai-chat', label: 'AI 채팅', icon: Sparkles, group: 'menu' },
+  { path: '/ai-chat', label: 'AI 채팅', icon: Sparkles, group: 'start' },
+
+  // ── 매물·공간
   {
     path: '/properties',
     label: '매물관리',
     icon: Building2,
-    group: 'menu',
+    group: 'properties',
     children: [
       { path: '/properties', label: '매물 목록' },
       { path: '/properties/external-listings', label: '광고노트' },
       { path: '/properties/naver-my-ads', label: '내광고관리' },
     ],
   },
-  { path: '/contacts', label: '연락처', icon: BookUser, group: 'menu' },
-  { path: '/deals', label: '거래관리', icon: Handshake, group: 'menu' },
-  { path: '/matches', label: '매칭', icon: GitBranch, group: 'menu' },
-  { path: '/network', label: '네트워크', icon: Network, group: 'menu' },
+  { path: '/sites', label: '관리단지', icon: Map, group: 'properties' },
+
+  // ── 고객·상담
+  { path: '/contacts', label: '연락처', icon: BookUser, group: 'customers' },
+  {
+    path: '/buyer-requirements',
+    label: '구매고객',
+    icon: UserSearch,
+    group: 'customers',
+  },
+  {
+    path: '/consultations',
+    label: '상담기록',
+    icon: MessageSquare,
+    group: 'customers',
+  },
+  { path: '/calls', label: '통화 관리', icon: PhoneCall, group: 'customers' },
+
+  // ── 거래·계약
+  { path: '/matches', label: '매칭', icon: GitBranch, group: 'transactions' },
+  { path: '/deals', label: '거래관리', icon: Handshake, group: 'transactions' },
+  {
+    path: '/contracts',
+    label: '계약서 관리',
+    icon: FileText,
+    group: 'transactions',
+  },
   // 파트너 중개사(/partner-brokers)는 시안 사이드바에서 제외 — 라우트는 유지
   // (공동중개 수수료 페이지 내 링크 및 URL 직접 접근으로 도달)
-  { path: '/consultations', label: '상담기록', icon: MessageSquare, group: 'menu' },
-  { path: '/calls', label: '통화 관리', icon: PhoneCall, group: 'menu' },
-  { path: '/buyer-requirements', label: '구매고객', icon: UserSearch, group: 'menu' },
-  { path: '/tasks', label: '업무', icon: ListTodo, group: 'menu' },
-  { path: '/calendar', label: '캘린더', icon: CalendarDays, group: 'menu' },
-  { path: '/sites', label: '관리단지', icon: Map, group: 'menu' },
-  { path: '/contracts', label: '계약서 관리', icon: FileText, group: 'menu' },
   {
     path: '/cashflow',
     label: '수수료/정산',
     icon: Wallet,
-    group: 'menu',
+    group: 'transactions',
     children: [
       { path: '/cashflow', label: '캐시플로우', roles: ['owner', 'manager'] },
-      { path: '/cashflow/ledger', label: '수금 원장', roles: ['owner', 'manager'] },
-      { path: '/cashflow/partner-commissions', label: '공동중개 수수료', roles: ['owner', 'manager'] },
-      { path: '/cashflow/employee-settlements', label: '직원 정산', roles: ['owner', 'manager'] },
+      {
+        path: '/cashflow/ledger',
+        label: '수금 원장',
+        roles: ['owner', 'manager'],
+      },
+      {
+        path: '/cashflow/partner-commissions',
+        label: '공동중개 수수료',
+        roles: ['owner', 'manager'],
+      },
+      {
+        path: '/cashflow/employee-settlements',
+        label: '직원 정산',
+        roles: ['owner', 'manager'],
+      },
       { path: '/cashflow/my-settlement', label: '내 수수료' },
-      { path: '/cashflow/expenses', label: '고정비 설정', roles: ['owner', 'manager'] },
+      {
+        path: '/cashflow/expenses',
+        label: '고정비 설정',
+        roles: ['owner', 'manager'],
+      },
     ],
   },
-  { path: '/employees', label: '직원관리', icon: Users, group: 'menu', roles: ['owner', 'manager'] },
 
-  // ── 서비스
-  { path: '/service-vendors', label: '협력업체 찾기', icon: Store, group: 'services' },
-  { path: '/documents', label: '자료실', icon: FolderOpen, group: 'services' },
-  { path: '/settings', label: '설정', icon: Settings, group: 'services' },
+  // ── 업무·운영
+  { path: '/tasks', label: '업무', icon: ListTodo, group: 'operations' },
+  {
+    path: '/calendar',
+    label: '캘린더',
+    icon: CalendarDays,
+    group: 'operations',
+  },
+  { path: '/network', label: '네트워크', icon: Network, group: 'operations' },
+  {
+    path: '/employees',
+    label: '직원관리',
+    icon: Users,
+    group: 'operations',
+    roles: ['owner', 'manager'],
+  },
+  {
+    path: '/service-vendors',
+    label: '협력업체 찾기',
+    icon: Store,
+    group: 'operations',
+  },
+  {
+    path: '/documents',
+    label: '자료실',
+    icon: FolderOpen,
+    group: 'operations',
+  },
+  { path: '/settings', label: '설정', icon: Settings, group: 'operations' },
 ]
 
 /** active 하이라이트 prefix 충돌 제거용 — 모든 네비 경로 (item + children) */
@@ -116,6 +191,7 @@ export const ALL_NAV_PATHS: string[] = [
 export interface NavGroupWithItems {
   key: NavGroupKey
   label: string
+  defaultOpen?: boolean
   items: NavItem[]
 }
 
@@ -223,7 +299,11 @@ function flattenNav(): FlatNavEntry[] {
   const entries: FlatNavEntry[] = []
   // 부모 항목을 먼저 — 동일 길이 경로 충돌 시(예: /cashflow) 부모 우선
   for (const item of NAV_ITEMS) {
-    entries.push({ path: item.path, label: item.label, groupLabel: groupLabelOf(item.group) })
+    entries.push({
+      path: item.path,
+      label: item.label,
+      groupLabel: groupLabelOf(item.group),
+    })
   }
   for (const item of NAV_ITEMS) {
     for (const child of item.children ?? []) {
@@ -257,7 +337,8 @@ export function getBreadcrumb(
     }
   }
 
-  const pageLabel = ROUTE_LABELS[routeId] ?? best?.label ?? best?.groupLabel ?? ''
+  const pageLabel =
+    ROUTE_LABELS[routeId] ?? best?.label ?? best?.groupLabel ?? ''
   if (!pageLabel) return []
 
   const visible = (roles?: NavRole[]) =>

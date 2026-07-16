@@ -34,6 +34,8 @@ interface ViewBarProps {
   search?: string;
   onSearchChange?: (value: string) => void;
   searchPlaceholder?: string;
+  /** Keep the search field visible for search-heavy workbench pages. */
+  searchAlwaysVisible?: boolean;
   // Filters
   filterDefinitions?: FilterDefinition[];
   activeFilters?: ActiveFilter[];
@@ -57,6 +59,7 @@ export function ViewBar({
   search,
   onSearchChange,
   searchPlaceholder = '검색...',
+  searchAlwaysVisible = false,
   filterDefinitions = [],
   activeFilters = [],
   onFilterAdd,
@@ -69,7 +72,8 @@ export function ViewBar({
   onSortRemove,
   actions,
 }: ViewBarProps) {
-  const [searchExpanded, setSearchExpanded] = useState(!!search);
+  const [searchExpanded, setSearchExpanded] = useState(searchAlwaysVisible || !!search);
+  const isSearchVisible = searchAlwaysVisible || searchExpanded;
 
   const hasActiveItems = activeFilters.length > 0 || activeSorts.length > 0;
 
@@ -87,23 +91,26 @@ export function ViewBar({
       <div className="flex items-center gap-1.5 px-3 py-2">
         {/* Search */}
         <div className="flex items-center gap-1">
-          {searchExpanded ? (
-            <div className="flex items-center gap-1 rounded-md bg-muted/80 px-2">
+          {isSearchVisible ? (
+            <div className="flex items-center gap-1 rounded-md border border-border/70 bg-background px-2 shadow-[0_1px_1px_rgba(0,0,0,0.02)] focus-within:border-ring/50 focus-within:ring-2 focus-within:ring-ring/10">
               <Search className="size-3.5 text-muted-foreground" />
               <Input
                 type="text"
                 value={search ?? ''}
                 onChange={(e) => onSearchChange?.(e.target.value)}
                 placeholder={searchPlaceholder}
-                className="h-7 w-36 border-0 bg-transparent px-1 text-sm shadow-none focus-visible:ring-0"
-                autoFocus
+                className={cn(
+                  'h-7 border-0 bg-transparent px-1 text-sm shadow-none focus-visible:ring-0',
+                  searchAlwaysVisible ? 'w-52 lg:w-72' : 'w-36',
+                )}
+                autoFocus={!searchAlwaysVisible}
                 onBlur={() => {
-                  if (!search) setSearchExpanded(false);
+                  if (!searchAlwaysVisible && !search) setSearchExpanded(false);
                 }}
                 onKeyDown={(e) => {
                   if (e.key === 'Escape') {
                     onSearchChange?.('');
-                    setSearchExpanded(false);
+                    if (!searchAlwaysVisible) setSearchExpanded(false);
                   }
                 }}
               />
@@ -111,8 +118,9 @@ export function ViewBar({
                 <button
                   onClick={() => {
                     onSearchChange?.('');
-                    setSearchExpanded(false);
+                    if (!searchAlwaysVisible) setSearchExpanded(false);
                   }}
+                  aria-label="검색어 지우기"
                   className="text-muted-foreground hover:text-foreground"
                 >
                   <X className="size-3" />
