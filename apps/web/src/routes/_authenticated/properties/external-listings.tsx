@@ -1,6 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   Building2,
   CheckCircle,
@@ -11,6 +11,7 @@ import {
   Link2,
   Loader2,
   Lock,
+  Minus,
   Plus,
   RefreshCw,
   RotateCcw,
@@ -327,6 +328,25 @@ function ExternalListingsPage() {
   // ── 그룹 내 형제 매물 펼치기 다이얼로그 ──────────────────────────
   const [siblingGroup, setSiblingGroup] = useState<ExternalListingGroup | null>(null);
 
+  // ── 최소최대~출처 접기 (호 헤더 ± 버튼 — 매물목록과 동일 패턴) ────
+  const [detailCollapsed, setDetailCollapsed] = useState(
+    () =>
+      typeof window !== 'undefined' &&
+      window.localStorage.getItem(
+        'estate-erp.external-listings.detail-collapsed',
+      ) === '1',
+  );
+  const toggleDetailCollapsed = useCallback(() => {
+    setDetailCollapsed((prev) => {
+      const next = !prev;
+      window.localStorage.setItem(
+        'estate-erp.external-listings.detail-collapsed',
+        next ? '1' : '0',
+      );
+      return next;
+    });
+  }, []);
+
   // ── Client-side filters (서버 검색과 별개로 즉시 반응) ────────────
   const filteredGroups = useMemo(() => {
     const bq = buildingQuery.trim().toLowerCase();
@@ -456,8 +476,16 @@ function ExternalListingsPage() {
           updateGroupMutation.mutate({ id, dto: { inferredHo: ho || null } }),
         onLinkUnit: (id, unitId) => linkUnitMutation.mutate({ id, unitId }),
         onShowListings: (group) => setSiblingGroup(group),
+        detailCollapsed,
+        onToggleDetailCollapsed: toggleDetailCollapsed,
       }),
-    [transactionType, updateGroupMutation, linkUnitMutation],
+    [
+      transactionType,
+      updateGroupMutation,
+      linkUnitMutation,
+      detailCollapsed,
+      toggleDetailCollapsed,
+    ],
   );
 
   const handleManualButtonClick = () => {
@@ -490,11 +518,8 @@ function ExternalListingsPage() {
 
   return (
     <div className="-m-4 flex min-h-0 min-w-0 flex-1 flex-col bg-white">
-      {/* 페이지 헤더 */}
+      {/* 페이지 헤더 — 액션만 (제목은 상단 앱 헤더가 표시) */}
       <div className="flex shrink-0 items-center gap-2.5 border-b px-6 py-3">
-        <h1 className="text-lg font-bold tracking-[-0.02em] text-foreground">
-          광고노트
-        </h1>
         <div className="flex-1" />
         {activeSession && (
           <>
@@ -809,6 +834,7 @@ function ExternalListingsPage() {
                   layout="full-height"
                   variant="notion"
                   rowHeight="auto"
+                  pinnedColumns={['site', 'dong', 'ho']}
                   enableRowSelection
                   renderSelectionAccessory={(group) => (
                     <FavoriteToggle
@@ -1317,7 +1343,19 @@ interface ColumnFactoryContext {
   onUpdateInferredHo: (groupId: string, ho: string) => void;
   onLinkUnit: (groupId: string, unitId: string | null) => void;
   onShowListings: (group: ExternalListingGroup) => void;
+  /** 최소최대~출처 컬럼 접힘 여부 (호 헤더 ± 버튼) */
+  detailCollapsed: boolean;
+  onToggleDetailCollapsed: () => void;
 }
+
+/** 호 헤더의 ± 버튼으로 접히는 컬럼들 (최소최대~출처) */
+const DETAIL_COLUMN_IDS = new Set([
+  'minMax',
+  'direction',
+  'dates',
+  'realtor',
+  'link',
+]);
 
 function buildColumns(
   transactionType: ExternalListingTransactionType,
@@ -1325,63 +1363,7 @@ function buildColumns(
 ): ColumnDef<ExternalListingGroup, unknown>[] {
   const columns: ColumnDef<ExternalListingGroup, unknown>[] = [];
 
-  // ── 정보 (광고 · 집주인) ───────────────────────────────────
-  columns.push({
-    id: 'info',
-    header: '정보',
-    size: 72,
-    cell: ({ row }) => {
-      const g = row.original;
-      const main = g.mainExternalListing;
-      const isActive = !!main?.isActive;
-      return (
-        <div className="flex flex-col gap-1 py-1">
-          <NotionTag className={isActive ? 'bg-[#e7f3f8] text-[#337ea9]' : 'bg-[#fbe4e4] text-[#9f5555]'}>
-            {isActive ? '광고 O' : '광고 X'}
-          </NotionTag>
-          <NotionTag className={g.ownerVerified ? 'bg-[#eef3ed] text-[#44745a]' : 'bg-[#f1f1ef] text-[#787774]'}>
-            {g.ownerVerified ? '집주인' : '중개사'}
-          </NotionTag>
-        </div>
-      );
-    },
-  });
-
-  // ── 중복 (순위/동일주소 개수 — 클릭 시 그룹 매물 펼치기) ────────
-  columns.push({
-    id: 'duplicate',
-    header: '중복',
-    size: 54,
-    cell: ({ row }) => {
-      const g = row.original;
-      const ranking = g.offerRanking ?? null;
-      const sameAddrCnt =
-        g.mainExternalListing?.sameAddrCnt ?? g.listingCount ?? null;
-      const label =
-        ranking && sameAddrCnt
-          ? `${ranking}/${sameAddrCnt}`
-          : sameAddrCnt != null
-            ? `${sameAddrCnt}개`
-            : '-';
-      return (
-        <button
-          type="button"
-          title="그룹 내 매물 전체 보기"
-          onClick={(e) => {
-            e.stopPropagation();
-            ctx.onShowListings(g);
-          }}
-          className="cursor-pointer"
-        >
-          <NotionTag className="bg-[#f1f1ef] text-[#5f5e5b] tabular-nums transition-colors hover:bg-[#e3e3e0]">
-            {label}
-          </NotionTag>
-        </button>
-      );
-    },
-  });
-
-  // ── 3. 아파트 (단지명) ─────────────────────────────────────
+  // ── 1. 아파트 (단지명) ─────────────────────────────────────
   columns.push({
     id: 'site',
     header: '아파트',
@@ -1393,32 +1375,7 @@ function buildColumns(
     ),
   });
 
-  // ── 4. 타입 (areaName + pyeong/pyeong) ─────────────────────
-  columns.push({
-    id: 'type',
-    header: '타입',
-    size: 80,
-    cell: ({ row }) => {
-      const g = row.original;
-      const main = g.mainExternalListing;
-      const exclusivePyeong = sqmToPyeong(
-        main?.exclusiveAreaM2 ?? g.exclusiveAreaM2,
-      );
-      const supplyPyeong = sqmToPyeong(main?.supplyAreaM2);
-      return (
-        <div className="flex min-w-0 flex-col gap-1 text-[12px]">
-          <span className="truncate font-medium text-slate-800">{g.areaName ?? '-'}</span>
-          {exclusivePyeong != null && (
-            <span className="truncate text-[11px] tabular-nums text-slate-500">
-              {exclusivePyeong}/{supplyPyeong ?? '-'}평
-            </span>
-          )}
-        </div>
-      );
-    },
-  });
-
-  // ── 5. 동 ────────────────────────────────────────────────
+  // ── 2. 동 ────────────────────────────────────────────────
   columns.push({
     id: 'dong',
     header: '동',
@@ -1430,11 +1387,41 @@ function buildColumns(
     ),
   });
 
-  // ── 6. 호 (+ floorInfo, 인라인 편집 + Unit 수동 링크) ──────────
+  // ── 3. 호 (+ floorInfo, 인라인 편집 + Unit 수동 링크) ──────────
+  //    헤더의 ± 버튼으로 최소최대~출처 컬럼을 접는다 (매물목록과 동일 패턴)
   columns.push({
     id: 'ho',
-    header: '호',
-    size: 96,
+    header: () => (
+      <div className="flex w-full min-w-0 items-center gap-1">
+        <span>호</span>
+        <button
+          type="button"
+          title={
+            ctx.detailCollapsed
+              ? '최소최대~출처 컬럼 펼치기'
+              : '최소최대~출처 컬럼 접기'
+          }
+          aria-label={
+            ctx.detailCollapsed
+              ? '최소최대~출처 컬럼 펼치기'
+              : '최소최대~출처 컬럼 접기'
+          }
+          aria-expanded={!ctx.detailCollapsed}
+          onClick={(e) => {
+            e.stopPropagation();
+            ctx.onToggleDetailCollapsed();
+          }}
+          className="ml-auto flex size-5 shrink-0 items-center justify-center rounded border border-border/70 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+        >
+          {ctx.detailCollapsed ? (
+            <Plus className="size-3" />
+          ) : (
+            <Minus className="size-3" />
+          )}
+        </button>
+      </div>
+    ),
+    size: 104,
     cell: ({ row }) => {
       const g = row.original;
       const main = g.mainExternalListing;
@@ -1490,7 +1477,108 @@ function buildColumns(
     },
   });
 
-  // ── 7. 상태 (인라인 Select) ──────────────────────────────
+  // ── 4. 타입 (areaName + pyeong/pyeong) ─────────────────────
+  columns.push({
+    id: 'type',
+    header: '타입',
+    size: 80,
+    cell: ({ row }) => {
+      const g = row.original;
+      const main = g.mainExternalListing;
+      const exclusivePyeong = sqmToPyeong(
+        main?.exclusiveAreaM2 ?? g.exclusiveAreaM2,
+      );
+      const supplyPyeong = sqmToPyeong(main?.supplyAreaM2);
+      return (
+        <div className="flex min-w-0 flex-col gap-1 text-[12px]">
+          <span className="truncate font-medium text-slate-800">{g.areaName ?? '-'}</span>
+          {exclusivePyeong != null && (
+            <span className="truncate text-[11px] tabular-nums text-slate-500">
+              {exclusivePyeong}/{supplyPyeong ?? '-'}평
+            </span>
+          )}
+        </div>
+      );
+    },
+  });
+
+  // ── 5. 광고 (활성 광고 여부) ────────────────────────────────
+  columns.push({
+    id: 'ad',
+    header: '광고',
+    size: 64,
+    cell: ({ row }) => {
+      const isActive = !!row.original.mainExternalListing?.isActive;
+      return (
+        <NotionTag
+          className={
+            isActive
+              ? 'bg-[#e7f3f8] text-[#337ea9]'
+              : 'bg-[#fbe4e4] text-[#9f5555]'
+          }
+        >
+          {isActive ? '광고 O' : '광고 X'}
+        </NotionTag>
+      );
+    },
+  });
+
+  // ── 6. 집주인 (소유주 확인 여부) ────────────────────────────
+  columns.push({
+    id: 'owner',
+    header: '집주인',
+    size: 64,
+    cell: ({ row }) => {
+      const g = row.original;
+      return (
+        <NotionTag
+          className={
+            g.ownerVerified
+              ? 'bg-[#eef3ed] text-[#44745a]'
+              : 'bg-[#f1f1ef] text-[#787774]'
+          }
+        >
+          {g.ownerVerified ? '집주인' : '중개사'}
+        </NotionTag>
+      );
+    },
+  });
+
+  // ── 7. 중복 (순위/동일주소 개수 — 클릭 시 그룹 매물 펼치기) ────
+  columns.push({
+    id: 'duplicate',
+    header: '중복',
+    size: 54,
+    cell: ({ row }) => {
+      const g = row.original;
+      const ranking = g.offerRanking ?? null;
+      const sameAddrCnt =
+        g.mainExternalListing?.sameAddrCnt ?? g.listingCount ?? null;
+      const label =
+        ranking && sameAddrCnt
+          ? `${ranking}/${sameAddrCnt}`
+          : sameAddrCnt != null
+            ? `${sameAddrCnt}개`
+            : '-';
+      return (
+        <button
+          type="button"
+          title="그룹 내 매물 전체 보기"
+          onClick={(e) => {
+            e.stopPropagation();
+            ctx.onShowListings(g);
+          }}
+          className="cursor-pointer"
+        >
+          <NotionTag className="bg-[#f1f1ef] text-[#5f5e5b] tabular-nums transition-colors hover:bg-[#e3e3e0]">
+            {label}
+          </NotionTag>
+        </button>
+      );
+    },
+  });
+
+  // ── 8. 상태 (인라인 Select) ──────────────────────────────
   columns.push({
     id: 'status',
     header: '상태',
@@ -1522,7 +1610,7 @@ function buildColumns(
     },
   });
 
-  // ── 8. 가격 (탭별 다름) ───────────────────────────────────
+  // ── 9. 가격 (탭별 다름) ───────────────────────────────────
   if (transactionType === 'sale') {
     columns.push({
       id: 'price',
@@ -1576,7 +1664,7 @@ function buildColumns(
     });
   }
 
-  // ── 9. 최소최대 (같은 주소 가격 범위) ──────────────────────
+  // ── 10. 최소최대 (접기 대상) (같은 주소 가격 범위) ──────────────────────
   columns.push({
     id: 'minMax',
     header: '최소최대',
@@ -1615,7 +1703,7 @@ function buildColumns(
     },
   });
 
-  // ── 10. 방향 ────────────────────────────────────────────
+  // ── 11. 방향 (접기 대상) ────────────────────────────────────────────
   columns.push({
     id: 'direction',
     header: '방향',
@@ -1627,7 +1715,7 @@ function buildColumns(
     ),
   });
 
-  // ── 11. 확인일 (최신/최초 + 경과일) ───────────────────────
+  // ── 12. 확인일 (최신/최초 + 경과일, 접기 대상) ───────────────────────
   columns.push({
     id: 'dates',
     header: '확인일',
@@ -1661,7 +1749,7 @@ function buildColumns(
     },
   });
 
-  // ── 12. 부동산 ──────────────────────────────────────────
+  // ── 13. 부동산 (접기 대상) ──────────────────────────────────────────
   columns.push({
     id: 'realtor',
     header: '부동산',
@@ -1675,7 +1763,7 @@ function buildColumns(
     ),
   });
 
-  // ── 13. 출처 (외부 링크) ──────────────────────────────────
+  // ── 14. 출처 (외부 링크, 접기 대상) ──────────────────────────────────
   columns.push({
     id: 'link',
     header: '출처',
@@ -1709,7 +1797,7 @@ function buildColumns(
     },
   });
 
-  // ── 14. 매물특징 + 메모(인라인) ────────────────────────────
+  // ── 15. 매물특징 + 메모(인라인) ────────────────────────────
   columns.push({
     id: 'features',
     header: '매물특징',
@@ -1739,6 +1827,10 @@ function buildColumns(
     },
   });
 
+  // 접힘 상태면 최소최대~출처 컬럼 제외 — 남는 폭은 매물특징이 흡수한다
+  if (ctx.detailCollapsed) {
+    return columns.filter((c) => !DETAIL_COLUMN_IDS.has(c.id ?? ''));
+  }
   return columns;
 }
 
