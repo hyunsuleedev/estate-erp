@@ -1,6 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router';
-import { keepPreviousData, useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
+import { toast } from 'sonner';
 import {
   CalendarPlus2,
   CalendarX2,
@@ -26,7 +27,6 @@ import {
   getCalendarRange,
   getLocalDateKey,
   getMonthDates,
-  getWeekDates,
   groupEventsByDate,
   type CalendarViewMode,
 } from './-calendar-view-utils';
@@ -43,8 +43,10 @@ import {
   type OverlayKind,
 } from './-calendar-overlay';
 import { EventDialog } from './-event-dialog';
-import { MonthCalendarView } from './-month-view';
-import { TimeGridCalendarView } from './-time-grid-view';
+import {
+  FullCalendarView,
+  type CalendarEventDateChange,
+} from './-full-calendar-view';
 import { AgendaCalendarView } from './-agenda-view';
 
 const viewOptions: Array<{ value: CalendarViewMode; label: string }> = [
@@ -54,15 +56,13 @@ const viewOptions: Array<{ value: CalendarViewMode; label: string }> = [
   { value: 'agenda', label: '일정' },
 ];
 
-/** 서버 findAll이 start 기준으로만 필터하므로, 범위 이전에 시작해 범위에 걸치는 멀티데이 이벤트를 위해 조회 시작을 당긴다. */
-const MULTI_DAY_LOOKBACK_MS = 31 * 86_400_000;
-
 export const Route = createFileRoute('/_authenticated/calendar/')({
   component: CalendarPage,
 });
 
 function CalendarPage() {
   const { user } = useAuth();
+  const queryClient = useQueryClient();
   const [viewMode, setViewMode] = useState<CalendarViewMode>('month');
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState(new Date());
@@ -74,10 +74,13 @@ function CalendarPage() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [dialogEvent, setDialogEvent] = useState<CalendarEvent | null>(null);
   const [dialogDefaultDate, setDialogDefaultDate] = useState(new Date());
+  const [dialogDefaultEnd, setDialogDefaultEnd] = useState<Date | null>(null);
+  const [dialogDefaultAllDay, setDialogDefaultAllDay] = useState(false);
 
   const range = useMemo(() => getCalendarRange(currentDate, viewMode), [currentDate, viewMode]);
-  const fetchStart = new Date(range.start.getTime() - MULTI_DAY_LOOKBACK_MS).toISOString();
-  const fetchEnd = range.end.toISOString();
+  const fetchStart = range.start.toISOString();
+  // getCalendarRange의 end는 endOfDay이므로 API의 exclusive end에 맞춰 다음 날 자정으로 변환한다.
+  const fetchEnd = new Date(range.end.getTime() + 1).toISOString();
 
   const { data: employees = [] } = useQuery({
     queryKey: ['employees'],
@@ -108,7 +111,7 @@ function CalendarPage() {
     const needle = searchText.trim().toLowerCase();
     return raw.filter((event) => {
       const eventEnd = event.end ? new Date(event.end) : new Date(event.start);
-      if (eventEnd < range.start) return false;
+      if (event.end ? eventEnd <= range.start : eventEnd < range.start) return false;
       if (!needle) return true;
       return [event.title, event.description, event.contact?.name].some((value) =>
         value?.toLowerCase().includes(needle),
@@ -118,9 +121,7 @@ function CalendarPage() {
 
   const eventsByDate = useMemo(() => groupEventsByDate(events), [events]);
   const overlaysByDate = showFinance ? overlay.overlaysByDate : new Map<string, OverlayItem[]>();
-  const weekDates = useMemo(() => getWeekDates(currentDate), [currentDate]);
   const agendaDates = useMemo(() => getMonthDates(currentDate), [currentDate]);
-  const timeGridDates = viewMode === 'day' ? [currentDate] : weekDates;
   const selectedDateEvents = eventsByDate.get(getLocalDateKey(selectedDate)) ?? [];
   const metrics = useMemo(() => getCalendarMetrics(events, user?.id), [events, user?.id]);
 
@@ -145,16 +146,36 @@ function CalendarPage() {
       ? '월간 일정 밀도와 선택한 날짜의 CRM 문맥을 함께 확인합니다.'
       : `${rangeLabel} · ${events.length}건`;
 
-  const handleOpenCreate = (date: Date) => {
+  const handleOpenCreateRange = (start: Date, end: Date, allDay: boolean) => {
     setDialogEvent(null);
-    setDialogDefaultDate(date);
-    setSelectedDate(date);
+    setDialogDefaultDate(start);
+    setDialogDefaultEnd(end);
+    setDialogDefaultAllDay(allDay);
+    setSelectedDate(start);
     setIsDialogOpen(true);
+  };
+
+  const handleOpenCreate = (date: Date) => {
+    const end = new Date(date);
+    end.setHours(date.getHours() + 1);
+    handleOpenCreateRange(date, end, false);
   };
 
   const handleOpenEdit = (event: CalendarEvent) => {
     setDialogEvent(event);
     setIsDialogOpen(true);
+  };
+
+  const handleEventDatesChange = async (eventId: string, dates: CalendarEventDateChange) => {
+    try {
+      await api.calendarEvents.update(eventId, dates);
+      await queryClient.invalidateQueries({ queryKey: ['calendar-events'] });
+      toast.success('일정 시간이 변경되었습니다.');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '알 수 없는 오류';
+      toast.error(`일정 시간 변경에 실패했습니다: ${message}`);
+      throw error;
+    }
   };
 
   const handleSelectDate = (date: Date) => {
@@ -237,7 +258,7 @@ function CalendarPage() {
       <section className="flex flex-wrap items-start gap-3 px-6 pb-3 pt-[18px]">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-lg font-bold tracking-[-0.02em] text-foreground">{headerTitle}</h1>
+            <h2 className="text-lg font-bold tracking-[-0.02em] text-foreground">{headerTitle}</h2>
             <span className="inline-flex h-5 items-center rounded-full bg-secondary px-2 text-[11.5px] font-semibold text-muted-foreground">
               {viewLabel}
             </span>
@@ -411,27 +432,18 @@ function CalendarPage() {
           </div>
         ) : (
           <>
-            {viewMode === 'month' ? (
-              <MonthCalendarView
+            {viewMode !== 'agenda' ? (
+              <FullCalendarView
+                viewMode={viewMode}
                 currentDate={currentDate}
                 selectedDate={selectedDate}
-                eventsByDate={eventsByDate}
+                events={events}
                 overlaysByDate={overlaysByDate}
-                onCreate={handleOpenCreate}
-                onEdit={handleOpenEdit}
-                onSelectDate={handleSelectDate}
                 selectedDateEvents={selectedDateEvents}
-              />
-            ) : null}
-
-            {viewMode === 'week' || viewMode === 'day' ? (
-              <TimeGridCalendarView
-                dates={timeGridDates}
-                eventsByDate={eventsByDate}
-                onCreate={handleOpenCreate}
+                onCreate={handleOpenCreateRange}
                 onEdit={handleOpenEdit}
-                selectedDate={selectedDate}
                 onSelectDate={handleSelectDate}
+                onEventDatesChange={handleEventDatesChange}
               />
             ) : null}
 
@@ -452,6 +464,8 @@ function CalendarPage() {
         onOpenChange={setIsDialogOpen}
         event={dialogEvent}
         defaultDate={dialogDefaultDate}
+        defaultEnd={dialogDefaultEnd}
+        defaultAllDay={dialogDefaultAllDay}
       />
     </div>
   );

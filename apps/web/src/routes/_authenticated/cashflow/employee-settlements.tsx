@@ -280,7 +280,7 @@ function AccessDenied() {
   return (
     <div className="flex flex-col gap-4">
       <div>
-        <h1 className="text-lg font-semibold tracking-tight">직원 정산</h1>
+        <h2 className="text-lg font-semibold tracking-tight">직원 정산</h2>
         <p className="text-sm text-muted-foreground">
           전 직원 정산 현황은 대표와 매니저만 조회할 수 있습니다.
         </p>

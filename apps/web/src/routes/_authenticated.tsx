@@ -7,6 +7,11 @@ import { GlobalSearch } from '@/components/layout/global-search';
 import { NotificationBell } from '@/components/layout/notification-bell';
 import { QuickCreate } from '@/components/layout/quick-create';
 import { getBreadcrumb, getNavIcon } from '@/components/layout/nav-config';
+import { ShellThemeSwitcher } from '@/components/layout/shell-theme-switcher';
+import {
+  ShellThemeProvider,
+  useShellTheme,
+} from '@/providers/shell-theme-provider';
 import {
   SidebarInset,
   SidebarProvider,
@@ -19,7 +24,16 @@ export const Route = createFileRoute('/_authenticated')({
 });
 
 function AuthenticatedLayout() {
+  return (
+    <ShellThemeProvider>
+      <AuthenticatedShell />
+    </ShellThemeProvider>
+  );
+}
+
+function AuthenticatedShell() {
   const { user, isAuthenticated, isLoading } = useAuth();
+  const { theme } = useShellTheme();
   const matches = useMatches();
   const location = useLocation();
   const navigate = useNavigate();
@@ -47,8 +61,10 @@ function AuthenticatedLayout() {
   const PageIcon = getNavIcon(location.pathname);
 
   return (
-    <SidebarProvider>
-      <AppSidebar />
+    <SidebarProvider
+      style={{ '--sidebar-width': theme.sidebarWidth } as React.CSSProperties}
+    >
+      <AppSidebar variant={theme.sidebarVariant} />
       <SidebarInset className="h-svh min-h-0 min-w-0">
         {/* 디자인(Estate ERP 웹.dc.html) 헤더: 48px · 페이지 아이콘+타이틀 · 전체 검색 · 벨 */}
         <header className="flex h-12 shrink-0 items-center justify-between gap-2.5 border-b bg-background px-[18px]">
@@ -58,12 +74,14 @@ function AuthenticatedLayout() {
             {PageIcon && (
               <PageIcon className="size-[17px] shrink-0 text-[#9b9893]" aria-hidden="true" />
             )}
-            <span className="truncate text-[14.5px] font-semibold text-foreground">
+            {/* 페이지별 h1 — 본문 설명 헤더를 없앴으므로 문서 제목 시맨틱은 셸이 담당 */}
+            <h1 className="truncate text-[14.5px] font-semibold text-foreground">
               {pageTitle}
-            </span>
+            </h1>
           </div>
           <div className="flex shrink-0 items-center gap-2">
             <GlobalSearch />
+            <ShellThemeSwitcher />
             <NotificationBell />
             <QuickCreate />
           </div>

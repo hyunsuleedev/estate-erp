@@ -250,10 +250,21 @@ export function getDaysUntil(target: Date, reference: Date) {
 // ============================================================
 
 export function getDealTitle(deal: Deal) {
-  const siteName = deal.property?.site?.name;
-  const dongName = deal.property?.unit?.dong?.isPlaceholder ? null : deal.property?.unit?.dong?.name;
-  const unitName = deal.property?.unit?.name;
-  return [siteName, dongName, unitName].filter(Boolean).join(' ') || '매물 정보 없음';
+  const siteName = deal.property?.site?.name?.trim();
+  const dong = deal.property?.unit?.dong;
+  const dongName = dong?.name?.trim();
+  const dongLabel =
+    dongName && dongName !== '-' && !dong?.isPlaceholder
+      ? withSuffix(dongName, '동')
+      : null;
+  const unitName = deal.property?.unit?.name?.trim();
+  const unitLabel = unitName && unitName !== '-' ? withSuffix(unitName, '호') : null;
+
+  return [siteName, dongLabel, unitLabel].filter(Boolean).join(' ') || '매물 정보 없음';
+}
+
+function withSuffix(value: string, suffix: string) {
+  return value.endsWith(suffix) ? value : `${value}${suffix}`;
 }
 
 export function getDealLocationLine(deal: Deal) {

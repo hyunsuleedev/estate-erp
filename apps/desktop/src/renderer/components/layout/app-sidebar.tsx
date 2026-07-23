@@ -1,7 +1,5 @@
-import { Fragment } from 'react'
 import { useAuth } from '@/providers/auth-provider'
 import { NavMain } from '@/components/nav-main'
-import { NavFavorites } from '@/components/nav-favorites'
 import { NavUser } from '@/components/nav-user'
 import { OfficeSwitcher } from '@/components/team-switcher'
 import { getNavGroups } from '@/components/layout/nav-config'
@@ -24,11 +22,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       </SidebarHeader>
       <SidebarContent>
         {groups.map((group) => (
-          <Fragment key={group.key}>
-            <NavMain label={group.label} items={group.items} />
-            {/* 즐겨찾기 단지는 '매물' 그룹 바로 아래 유지 */}
-            {group.key === 'listings' && <NavFavorites />}
-          </Fragment>
+          <NavMain key={group.key} label={group.label} items={group.items} />
         ))}
       </SidebarContent>
       <SidebarFooter>

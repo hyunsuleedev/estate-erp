@@ -21,10 +21,12 @@ const TENANT_SCOPED_MODELS = new Set([
   'DealParticipant',
   'ContractDocument',
   'ContractDocumentRevision',
+  'PublicDocument',
   // ContractParty는 주민번호 등 민감 PII 보유 — 테넌트 격리는 필수이되,
   // AUDITED_MODELS에는 의도적으로 넣지 않는다 (idNumber/phone이 activity_logs.changes에 복사되는 것 방지)
   'ContractParty',
   'OfficePrintTemplate',
+  'PublicDocument',
   'ContractClauseTemplate',
   'Task',
   'CalendarEvent',
@@ -72,7 +74,13 @@ const AUDITED_OPERATIONS = new Set<PrismaOperation>([
 ]);
 
 const PRICE_TRACKED_FIELDS = ['price', 'deposit', 'monthlyRent'] as const;
-const SKIPPED_ACTIVITY_FIELDS = new Set(['updatedAt']);
+const SKIPPED_ACTIVITY_FIELDS = new Set([
+  'updatedAt',
+  // 공급자 원문은 크기가 크고 파일 URL에는 만료형 서명이 포함될 수 있으므로
+  // 업무 감사 로그에 복제하지 않는다. 상태/provider 변경 자체는 계속 기록한다.
+  'metadata',
+  'fileUrl',
+]);
 
 type PrismaOperation =
   | 'findUnique'

@@ -1,12 +1,20 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDeferredValue, useEffect, useMemo, useState } from 'react';
-import { Handshake, List, PanelsTopLeft, Plus, RotateCcw, Search } from 'lucide-react';
+import {
+  Handshake,
+  List,
+  PanelsTopLeft,
+  Plus,
+  RotateCcw,
+  Rows3,
+  Rows4,
+  Search,
+} from 'lucide-react';
 import { toast } from 'sonner';
 import { ApiError, type Deal } from '@estate-erp/api-client';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
-import { formatMoney } from '@/lib/format';
 import { getStatusMeta } from '@/lib/status-config';
 import { Button } from '@/components/ui/button';
 import {
@@ -35,10 +43,11 @@ import { CancelledDealArchive, ClosedDealArchive, DealListView } from './-deal-l
 import {
   cancelledByLabels,
   dealStageOrder,
-  getDealAmountValue,
   getDealLocationLine,
+  getDealPipelineHealth,
   getDealTitle,
   getDealTransactionType,
+  type DealPipelineHealthState,
   type DealRowActions,
 } from './-deal-view-utils';
 
@@ -66,6 +75,13 @@ const CONTRACT_FILTER_OPTIONS = [
   { value: 'none', label: '계약서 없음' },
 ];
 
+const HEALTH_FILTER_OPTIONS: Array<{ value: DealPipelineHealthState; label: string }> = [
+  { value: 'overdue', label: '일정 지연' },
+  { value: 'stale', label: '단계 정체' },
+  { value: 'unscheduled', label: '다음 일정 미정' },
+  { value: 'healthy', label: '정상 진행' },
+];
+
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : '요청 처리에 실패했습니다.';
 }
@@ -81,7 +97,9 @@ function DealsPage() {
   const [stageFilter, setStageFilter] = useState('');
   const [jointFilter, setJointFilter] = useState('');
   const [contractFilter, setContractFilter] = useState('');
+  const [healthFilter, setHealthFilter] = useState('');
   const [viewMode, setViewMode] = useState<DealViewMode>('board');
+  const [compactCards, setCompactCards] = useState(false);
   const [selectedDealId, setSelectedDealId] = useState<string | null>(null);
   const [showClosed, setShowClosed] = useState(false);
   const [showCancelled, setShowCancelled] = useState(false);
@@ -115,12 +133,31 @@ function DealsPage() {
   const stageMutation = useMutation({
     mutationFn: ({ deal, stage }: { deal: Deal; stage: string }) =>
       api.deals.updateStage(deal.id, { stage }),
-    onSuccess: (_, { stage }) => {
-      invalidateDeals();
+    onMutate: async ({ deal, stage }) => {
+      await queryClient.cancelQueries({ queryKey: ['deals'] });
+      const previousDeals = queryClient.getQueryData<Deal[]>(['deals']);
+
+      queryClient.setQueryData<Deal[]>(['deals'], (currentDeals) =>
+        currentDeals?.map((currentDeal) =>
+          currentDeal.id === deal.id
+            ? { ...currentDeal, stage, stageChangedAt: new Date().toISOString() }
+            : currentDeal,
+        ),
+      );
+
+      return { previousDeals };
+    },
+    onSuccess: (updatedDeal, { stage }) => {
+      queryClient.setQueryData<Deal[]>(['deals'], (currentDeals) =>
+        currentDeals?.map((deal) => (deal.id === updatedDeal.id ? updatedDeal : deal)),
+      );
       toast.success(`'${getStatusMeta('dealStage', stage).label}' 단계로 변경되었습니다.`);
       setPendingStage(null);
     },
-    onError: (error, { deal, stage }) => {
+    onError: (error, { deal, stage }, context) => {
+      if (context?.previousDeals) {
+        queryClient.setQueryData(['deals'], context.previousDeals);
+      }
       setPendingStage(null);
       const needsContract =
         error instanceof ApiError &&
@@ -139,6 +176,7 @@ function DealsPage() {
         toast.error(getErrorMessage(error));
       }
     },
+    onSettled: () => invalidateDeals(),
   });
 
   const cancelMutation = useMutation({
@@ -174,6 +212,7 @@ function DealsPage() {
       if (jointFilter === 'solo' && deal.isJointBrokerage) return false;
       if (contractFilter === 'has' && !contractByDealId.has(deal.id)) return false;
       if (contractFilter === 'none' && contractByDealId.has(deal.id)) return false;
+      if (healthFilter && getDealPipelineHealth(deal, referenceDate).state !== healthFilter) return false;
 
       if (!query) return true;
 
@@ -194,7 +233,17 @@ function DealsPage() {
         .toLowerCase()
         .includes(query);
     });
-  }, [deals, deferredSearch, txFilter, stageFilter, jointFilter, contractFilter, contractByDealId]);
+  }, [
+    deals,
+    deferredSearch,
+    txFilter,
+    stageFilter,
+    jointFilter,
+    contractFilter,
+    contractByDealId,
+    healthFilter,
+    referenceDate,
+  ]);
 
   const activeDeals = useMemo(
     () => filteredDeals.filter((deal) => !deal.isCancelled && deal.stage !== 'closed'),
@@ -219,15 +268,6 @@ function DealsPage() {
     }
   }, [deals, dealsQuery.isLoading, selectedDealId]);
 
-  /** 헤더 우측 "진행 합계" — 진행 중(취소·정산종료 제외) 거래 대표 금액 합 */
-  const activeSum = useMemo(
-    () =>
-      deals
-        .filter((deal) => !deal.isCancelled && deal.stage !== 'closed')
-        .reduce((sum, deal) => sum + getDealAmountValue(deal), 0),
-    [deals],
-  );
-
   const rowActions: DealRowActions = {
     onSelect: setSelectedDealId,
     onRequestStage: (deal, stage) => setPendingStage({ deal, stage }),
@@ -237,40 +277,21 @@ function DealsPage() {
   };
 
   const hasFilters =
-    Boolean(deferredSearch.trim()) || Boolean(txFilter) || Boolean(stageFilter) || Boolean(jointFilter) || Boolean(contractFilter);
+    Boolean(deferredSearch.trim()) ||
+    Boolean(txFilter) ||
+    Boolean(stageFilter) ||
+    Boolean(jointFilter) ||
+    Boolean(contractFilter) ||
+    Boolean(healthFilter);
 
   return (
     <div className="flex min-h-0 flex-col gap-4 pt-4">
-      {/* 헤더 — 브레드크럼 + 타이틀 + 진행 합계 */}
-      <div className="flex flex-wrap items-start gap-3">
-        <div>
-          <div className="flex items-center gap-1.5 text-[11.5px] text-muted-foreground/80">
-            거래 <span className="text-muted-foreground/50">/</span>{' '}
-            <span className="font-medium text-muted-foreground">전체 거래</span>
-          </div>
-          <div className="mt-1 flex items-center gap-2">
-            <h1 className="text-lg font-bold tracking-tight text-foreground">거래 파이프라인</h1>
-            <span className="inline-flex h-5 items-center rounded-full bg-secondary px-2 text-[11.5px] font-semibold tabular-nums text-muted-foreground">
-              {deals.length}건
-            </span>
-          </div>
-          <p className="mt-0.5 break-keep text-[12.5px] text-muted-foreground/80">
-            매칭에서 이관된 거래부터 정산 완료까지 5단계로 관리해요
-          </p>
-        </div>
-        <div className="flex-1" />
-        <div className="flex items-center gap-3 pt-5">
-          <div className="flex items-baseline gap-1.5 whitespace-nowrap">
-            <span className="text-xs text-muted-foreground/80">진행 합계</span>
-            <span className="text-[14.5px] font-bold tabular-nums text-foreground">
-              {activeSum ? formatMoney(activeSum) : '—'}
-            </span>
-          </div>
-          <Button type="button" size="sm" onClick={() => setCreateOpen(true)}>
-            <Plus className="size-4" />
-            새 거래
-          </Button>
-        </div>
+      {/* 헤더 — 액션만 (제목은 상단 앱 헤더가 표시) */}
+      <div className="flex items-center justify-end">
+        <Button type="button" size="sm" onClick={() => setCreateOpen(true)}>
+          <Plus className="size-4" />
+          새 거래
+        </Button>
       </div>
 
       {/* 툴바 — 검색 + 거래유형 칩 + 상세 필터 + 뷰 전환 */}
@@ -304,7 +325,66 @@ function DealsPage() {
         <FilterSelect label="단계" value={stageFilter} onChange={setStageFilter} options={STAGE_FILTER_OPTIONS} />
         <FilterSelect label="공동중개" value={jointFilter} onChange={setJointFilter} options={JOINT_FILTER_OPTIONS} />
         <FilterSelect label="계약서" value={contractFilter} onChange={setContractFilter} options={CONTRACT_FILTER_OPTIONS} />
+        <FilterSelect
+          label="파이프라인 상태"
+          value={healthFilter}
+          onChange={setHealthFilter}
+          options={HEALTH_FILTER_OPTIONS}
+        />
         <FilterCount n={filteredDeals.length} />
+        {hasFilters ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="xs"
+            className="h-7 gap-1 px-2 text-[11px] text-muted-foreground"
+            onClick={() => {
+              setSearchQuery('');
+              setTxFilter('');
+              setStageFilter('');
+              setJointFilter('');
+              setContractFilter('');
+              setHealthFilter('');
+            }}
+          >
+            <RotateCcw className="size-3" aria-hidden="true" />
+            초기화
+          </Button>
+        ) : null}
+        {viewMode === 'board' ? (
+          <div className="flex w-fit items-center rounded-lg border border-border bg-background p-0.5">
+            <button
+              type="button"
+              aria-label="카드 자세히 보기"
+              aria-pressed={!compactCards}
+              title="카드 자세히"
+              onClick={() => setCompactCards(false)}
+              className={cn(
+                'flex size-7 items-center justify-center rounded-md transition-colors',
+                !compactCards
+                  ? 'bg-secondary text-foreground'
+                  : 'text-muted-foreground hover:text-foreground',
+              )}
+            >
+              <Rows4 className="size-3.5" />
+            </button>
+            <button
+              type="button"
+              aria-label="카드 간결하게 보기"
+              aria-pressed={compactCards}
+              title="카드 간결하게"
+              onClick={() => setCompactCards(true)}
+              className={cn(
+                'flex size-7 items-center justify-center rounded-md transition-colors',
+                compactCards
+                  ? 'bg-secondary text-foreground'
+                  : 'text-muted-foreground hover:text-foreground',
+              )}
+            >
+              <Rows3 className="size-3.5" />
+            </button>
+          </div>
+        ) : null}
         <div className="flex w-fit items-center rounded-lg bg-secondary p-0.5">
           <button
             type="button"
@@ -368,7 +448,9 @@ function DealsPage() {
               deals={activeDeals}
               selectedDealId={selectedDeal?.id ?? null}
               referenceDate={referenceDate}
+              compact={compactCards}
               actions={rowActions}
+              onStageDrop={(deal, stage) => stageMutation.mutate({ deal, stage })}
             />
           ) : (
             <DealListView

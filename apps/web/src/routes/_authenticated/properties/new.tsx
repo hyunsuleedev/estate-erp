@@ -363,7 +363,6 @@ function NewPropertyPage() {
             <ArrowLeft className="size-4" />
           </Link>
         </Button>
-        <h1 className="text-lg font-semibold tracking-tight">매물 등록</h1>
       </div>
 
       <form

@@ -30,5 +30,15 @@ export function validateEnv(config: Record<string, unknown>) {
     throw new Error('REDIS_URL must be a Redis connection string');
   }
 
+  const registryProviders = ['manual', 'tilko', 'hyphen', 'codef', 'coocon'];
+  if (
+    env.REGISTRY_PROVIDER &&
+    !registryProviders.includes(env.REGISTRY_PROVIDER.toLowerCase())
+  ) {
+    throw new Error(
+      `REGISTRY_PROVIDER must be one of: ${registryProviders.join(', ')}`,
+    );
+  }
+
   return config;
 }

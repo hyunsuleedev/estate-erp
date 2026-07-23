@@ -85,23 +85,6 @@ function ConsultationsPage() {
     queryFn: () => api.consultations.findAll(apiParams),
   });
 
-  // 헤더 우측 "최근 7일 N건" — 카운트만 필요하므로 limit 1로 최소 조회.
-  // 날짜 문자열은 서버가 UTC 자정으로 해석해 KST 경계/8일 창 문제가 생기므로
-  // fetch 시점마다 "지금 - 7일" full ISO 타임스탬프(롤링 7일 창)를 새로 계산한다.
-  // (마운트 시 고정하면 세션이 길어질수록 창이 늘어남 → 주기 refetch로 최신 유지)
-  const { data: weekData } = useQuery({
-    queryKey: ['consultations-week-count'],
-    queryFn: () =>
-      api.consultations.findAll({
-        page: 1,
-        limit: 1,
-        dateFrom: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
-      }),
-    refetchInterval: 60 * 60 * 1000,
-    staleTime: 5 * 60 * 1000,
-  });
-  const weekCount = weekData?.pagination?.total ?? 0;
-
   const consultations = data?.items ?? [];
   const groups = useMemo(
     () => (viewMode === 'contact' ? groupConsultationsByContact(consultations) : groupConsultationsByDay(consultations)),
@@ -146,18 +129,6 @@ function ConsultationsPage() {
 
   return (
     <div className="flex h-[calc(100svh-4rem)] min-h-0 flex-col bg-background">
-      {/* 페이지 헤더 — 타이틀 + 설명 + 최근 7일 카운트 */}
-      <section className="flex items-start gap-3 px-6 pb-3 pt-[18px]">
-        <div>
-          <h1 className="text-lg font-bold tracking-[-0.02em] text-foreground">상담기록</h1>
-          <p className="mt-0.5 break-keep text-[12.5px] text-muted-foreground">
-            고객 대화의 원장 — 의도별 분류와 후속 조치, 매물 연결까지 한 곳에
-          </p>
-        </div>
-        <div className="flex-1" />
-        <span className="pt-1.5 text-xs tabular-nums text-muted-foreground">최근 7일 {weekCount}건</span>
-      </section>
-
       {/* 툴바 — 검색·퀵필터·상세필터·정렬 + 보기 전환 + 상담 기록 버튼 */}
       <section className="border-b border-border px-3">
         <ConsultationFilterBar

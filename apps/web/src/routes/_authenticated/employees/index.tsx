@@ -150,21 +150,6 @@ function EmployeesPage() {
     employees.filter((employee) => employee.isActive).length;
   const maxUsers = officeProfile?.maxUsers ?? null;
 
-  const summary = useMemo(() => {
-    const active = visibleEmployees.filter((employee) => employee.isActive).length;
-    const managers = visibleEmployees.filter((employee) => employee.role === 'manager').length;
-    const dealing = visibleEmployees.filter(
-      (employee) => employee.counts.activeDealCount > 0,
-    ).length;
-    const parts = [
-      `전체 ${visibleEmployees.length}`,
-      `활성 ${active}`,
-      `매니저 ${managers}`,
-      `거래 담당 ${dealing}`,
-    ];
-    if (maxUsers != null) parts.push(`슬롯 ${activeUserCount}/${maxUsers}`);
-    return parts;
-  }, [visibleEmployees, maxUsers, activeUserCount]);
 
   const hasFilter = Boolean(roleFilter || statusFilter || workloadFilter || search.trim());
   const clearFilters = () => {
@@ -176,28 +161,6 @@ function EmployeesPage() {
 
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col pt-8">
-      {/* 페이지 헤더 — Notion 문서 타이틀 */}
-      <div className="px-1">
-        <div className="flex items-center gap-2.5">
-          <span className="flex size-9 items-center justify-center rounded-lg bg-neutral-soft">
-            <Users className="size-5 text-muted-foreground" />
-          </span>
-          <h1 className="text-2xl font-bold tracking-tight">
-            {isSelfOnly ? '내 정보' : '직원관리'}
-          </h1>
-        </div>
-        {isSelfOnly ? null : (
-          <p className="mt-2 flex flex-wrap items-center gap-x-1 text-sm text-muted-foreground">
-            {summary.map((part, index) => (
-              <span key={part} className="inline-flex items-center gap-1">
-                {index > 0 ? <span className="text-border">·</span> : null}
-                {part}
-              </span>
-            ))}
-          </p>
-        )}
-      </div>
-
       {isSelfOnly ? (
         <Alert className="mt-5">
           <Info className="size-4" />

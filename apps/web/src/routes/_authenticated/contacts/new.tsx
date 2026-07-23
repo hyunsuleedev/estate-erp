@@ -91,10 +91,6 @@ function NewContactPage() {
             <ArrowLeft className="size-4" />
           </Link>
         </Button>
-        <div>
-          <h1 className="text-lg font-semibold tracking-tight">연락처 추가</h1>
-          <p className="text-sm text-muted-foreground">기본 연락 정보와 태그, 메모를 함께 등록합니다.</p>
-        </div>
       </div>
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_360px]">

@@ -58,9 +58,8 @@ export interface NavItem {
 export const NAV_GROUPS: {
   key: NavGroupKey
   label: string
-  defaultOpen?: boolean
 }[] = [
-  { key: 'start', label: '시작', defaultOpen: true },
+  { key: 'start', label: '시작' },
   { key: 'properties', label: '매물·공간' },
   { key: 'customers', label: '고객·상담' },
   { key: 'transactions', label: '거래·계약' },
@@ -191,7 +190,6 @@ export const ALL_NAV_PATHS: string[] = [
 export interface NavGroupWithItems {
   key: NavGroupKey
   label: string
-  defaultOpen?: boolean
   items: NavItem[]
 }
 

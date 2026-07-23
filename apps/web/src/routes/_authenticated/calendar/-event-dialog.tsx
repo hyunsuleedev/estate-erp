@@ -52,22 +52,49 @@ type EventForm = {
 
 const LINK_KINDS: EventLinkKind[] = ['contact', 'property', 'listing', 'match', 'deal'];
 
-function createDefaultForm(date: Date): EventForm {
+function createDefaultForm(date: Date, defaultEnd: Date | null = null, allDay = false): EventForm {
   const start = new Date(date);
-  if (start.getHours() === 0 && start.getMinutes() === 0) start.setHours(10, 0, 0, 0);
-  const end = new Date(start);
-  end.setHours(start.getHours() + 1, start.getMinutes(), 0, 0);
+  if (!allDay && start.getHours() === 0 && start.getMinutes() === 0) start.setHours(10, 0, 0, 0);
+
+  const end = defaultEnd ? new Date(defaultEnd) : new Date(start);
+  if (!defaultEnd) {
+    if (allDay) end.setDate(start.getDate() + 1);
+    else end.setHours(start.getHours() + 1, start.getMinutes(), 0, 0);
+  }
+
+  // FullCalendar/Google Calendar의 종일 종료일은 exclusive이므로 폼에는 마지막 포함일을 표시한다.
+  const inclusiveAllDayEnd = new Date(end);
+  if (allDay) inclusiveAllDayEnd.setDate(inclusiveAllDayEnd.getDate() - 1);
 
   return {
     title: '',
     description: '',
     type: 'general',
-    allDay: false,
-    start: toDateTimeLocalInput(start.toISOString()),
-    end: toDateTimeLocalInput(end.toISOString()),
+    allDay,
+    start: allDay ? toDateInput(start.toISOString()) : toDateTimeLocalInput(start.toISOString()),
+    end: allDay
+      ? toDateInput(inclusiveAllDayEnd.toISOString())
+      : toDateTimeLocalInput(end.toISOString()),
     color: EVENT_TYPE_META.general.color,
     links: EMPTY_EVENT_LINKS,
   };
+}
+
+function toAllDayEndInput(startValue: string, endValue: string) {
+  const start = new Date(startValue);
+  const end = new Date(endValue);
+
+  // 신규 일정은 exclusive 자정, 기존 데이터는 같은 날 23:59:59 형식일 수 있다.
+  if (
+    end > start &&
+    end.getHours() === 0 &&
+    end.getMinutes() === 0 &&
+    end.getSeconds() === 0
+  ) {
+    end.setDate(end.getDate() - 1);
+  }
+
+  return toDateInput(end.toISOString());
 }
 
 function formFromEvent(event: CalendarEvent): EventForm {
@@ -79,7 +106,7 @@ function formFromEvent(event: CalendarEvent): EventForm {
     start: event.allDay ? toDateInput(event.start) : toDateTimeLocalInput(event.start),
     end: event.end
       ? event.allDay
-        ? toDateInput(event.end)
+        ? toAllDayEndInput(event.start, event.end)
         : toDateTimeLocalInput(event.end)
       : '',
     color: event.color ?? (EVENT_TYPE_META[event.type] ?? EVENT_TYPE_META.general).color,
@@ -101,23 +128,32 @@ export function EventDialog({
   onOpenChange,
   event,
   defaultDate,
+  defaultEnd,
+  defaultAllDay,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /** null이면 생성 모드 */
   event: CalendarEvent | null;
   defaultDate: Date;
+  /** FullCalendar 선택 범위의 exclusive 종료 시각 */
+  defaultEnd?: Date | null;
+  defaultAllDay?: boolean;
 }) {
   const queryClient = useQueryClient();
   const { user } = useAuth();
-  const [form, setForm] = useState<EventForm>(() => createDefaultForm(defaultDate));
+  const [form, setForm] = useState<EventForm>(() =>
+    createDefaultForm(defaultDate, defaultEnd, defaultAllDay),
+  );
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
 
   useEffect(() => {
     if (!open) return;
-    setForm(event ? formFromEvent(event) : createDefaultForm(defaultDate));
+    setForm(
+      event ? formFromEvent(event) : createDefaultForm(defaultDate, defaultEnd, defaultAllDay),
+    );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, event?.id]);
+  }, [open, event?.id, defaultDate, defaultEnd, defaultAllDay]);
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['calendar-events'] });
 
@@ -180,7 +216,11 @@ export function EventDialog({
     const startDate = form.allDay ? new Date(`${form.start}T00:00:00`) : new Date(form.start);
     const endDate = form.end
       ? form.allDay
-        ? new Date(`${form.end}T23:59:59`)
+        ? (() => {
+            const exclusiveEnd = new Date(`${form.end}T00:00:00`);
+            exclusiveEnd.setDate(exclusiveEnd.getDate() + 1);
+            return exclusiveEnd;
+          })()
         : new Date(form.end)
       : null;
 

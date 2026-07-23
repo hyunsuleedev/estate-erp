@@ -5,13 +5,55 @@ import {
   dealDisplayGroups,
   getDealDisplayGroupKey,
   getDealNotionListGroups,
+  getDealPipelineHealth,
   getDealProgressStep,
+  getDealStageAgeDays,
+  getDealTitle,
+  getWeightedCommissionValue,
   getNextDealPaymentSummary,
+  sortDealsForDisplay,
   summarizeDealGroup,
   type DealListItem,
 } from '../src/routes/_authenticated/deals/-deal-view-utils';
 
 describe('deal view utilities', () => {
+  it('거래 카드 제목에 단지명·동·호를 표시한다', () => {
+    const target = deal({
+      property: {
+        id: 'property-1',
+        officeId: 'office',
+        siteId: 'site-1',
+        unitId: 'unit-1',
+        createdAt: '2026-04-20T00:00:00.000Z',
+        updatedAt: '2026-04-20T00:00:00.000Z',
+        site: {
+          id: 'site-1',
+          name: '그라시움',
+          type: 'apartment',
+          roadAddress: null,
+          jibunAddress: null,
+        },
+        unit: {
+          id: 'unit-1',
+          name: '302',
+          floor: 3,
+          exclusiveAreaM2: 84,
+          supplyAreaM2: 112,
+          dong: { id: 'dong-1', name: '102', isPlaceholder: false },
+        },
+      },
+    });
+
+    assert.equal(getDealTitle(target), '그라시움 102동 302호');
+
+    target.property!.unit!.dong = {
+      id: 'dong-placeholder',
+      name: '-',
+      isPlaceholder: true,
+    };
+    assert.equal(getDealTitle(target), '그라시움 302호');
+  });
+
   it('maps current deal stages into the five Paper display groups', () => {
     assert.deepEqual(
       dealDisplayGroups.map((group) => group.label),
@@ -92,6 +134,55 @@ describe('deal view utilities', () => {
     assert.equal(summary?.daysUntil, 3);
     assert.equal(summary?.isUrgent, true);
     assert.equal(summary?.label, '중도금');
+  });
+
+  it('marks overdue schedules and stale stages as pipeline risks', () => {
+    const referenceDate = new Date('2026-05-10T00:00:00.000Z');
+    const overdue = deal({
+      id: 'overdue',
+      stage: 'settling',
+      stageChangedAt: '2026-05-08T00:00:00.000Z',
+      payments: [payment({ scheduledDate: '2026-05-07T00:00:00.000Z' })],
+    });
+    const stale = deal({
+      id: 'stale',
+      stage: 'negotiating',
+      stageChangedAt: '2026-04-28T00:00:00.000Z',
+    });
+
+    assert.equal(getDealPipelineHealth(overdue, referenceDate).state, 'overdue');
+    assert.equal(getDealPipelineHealth(stale, referenceDate).state, 'stale');
+    assert.equal(getDealStageAgeDays(stale, referenceDate), 12);
+    assert.deepEqual(
+      sortDealsForDisplay([stale, overdue], referenceDate).map((item) => item.id),
+      [overdue.id, stale.id],
+    );
+  });
+
+  it('marks contract stages without a next schedule as at risk', () => {
+    const health = getDealPipelineHealth(
+      deal({
+        stage: 'contracted',
+        stageChangedAt: '2026-05-08T00:00:00.000Z',
+        payments: [],
+      }),
+      new Date('2026-05-10T00:00:00.000Z'),
+    );
+
+    assert.equal(health.state, 'unscheduled');
+    assert.equal(health.isAtRisk, true);
+  });
+
+  it('calculates stage-weighted expected commission', () => {
+    assert.equal(
+      getWeightedCommissionValue(
+        deal({
+          stage: 'contracted',
+          commissionSummary: { billed: 1000, ourShare: 800, partnerShare: 200, collected: 0 },
+        }),
+      ),
+      640,
+    );
   });
 });
 

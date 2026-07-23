@@ -517,49 +517,8 @@ function ExternalListingsPage() {
         : [1000, 3000, 5000, 10000, 30000, 50000, 100000];
 
   return (
-    <div className="-m-4 flex min-h-0 min-w-0 flex-1 flex-col bg-white">
-      {/* 페이지 헤더 — 액션만 (제목은 상단 앱 헤더가 표시) */}
-      <div className="flex shrink-0 items-center gap-2.5 border-b px-6 py-3">
-        <div className="flex-1" />
-        {activeSession && (
-          <>
-            <Button
-              size="sm"
-              variant="default"
-              className="h-[34px] rounded-[9px] px-3.5 text-[13px]"
-              disabled={!canManageSession || completeSessionMutation.isPending}
-              onClick={() => setShowCompleteConfirm(true)}
-              title={
-                canManageSession
-                  ? undefined
-                  : '권한 부족: 본인 세션 또는 매니저/오너만 완료 가능'
-              }
-            >
-              <CheckCircle className="mr-1 size-4" />
-              완료
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-[34px] rounded-[9px] px-3.5 text-[13px]"
-              disabled={!canManageSession || cancelSessionMutation.isPending}
-              onClick={() => setShowCancelConfirm(true)}
-            >
-              <XCircle className="mr-1 size-4" />
-              취소
-            </Button>
-          </>
-        )}
-        <Button
-          size="sm"
-          className="h-[34px] rounded-[9px] px-3.5 text-[13px]"
-          onClick={handleManualButtonClick}
-        >
-          <Plus className="mr-1 size-4" />
-          입력
-        </Button>
-      </div>
-
+    // 래퍼는 pt-0이므로 top 마진 상쇄 불필요 — -mt까지 주면 헤더 뒤로 16px 파고든다
+    <div className="-mx-4 -mb-4 flex min-h-0 min-w-0 flex-1 flex-col bg-white">
       {activeSession && (
         <div className="mx-6 mt-3 flex items-center gap-2 rounded-md border border-warning-soft bg-warning-soft/50 px-3 py-2 text-sm">
           <Lock className="size-4 text-warning" />
@@ -666,6 +625,43 @@ function ExternalListingsPage() {
                 초기화
               </Button>
             )}
+            {activeSession && (
+              <>
+                <Button
+                  size="sm"
+                  variant="default"
+                  className="h-8 rounded-lg px-3 text-[12.5px]"
+                  disabled={!canManageSession || completeSessionMutation.isPending}
+                  onClick={() => setShowCompleteConfirm(true)}
+                  title={
+                    canManageSession
+                      ? undefined
+                      : '권한 부족: 본인 세션 또는 매니저/오너만 완료 가능'
+                  }
+                >
+                  <CheckCircle className="mr-1 size-3.5" />
+                  완료
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-8 rounded-lg px-3 text-[12.5px]"
+                  disabled={!canManageSession || cancelSessionMutation.isPending}
+                  onClick={() => setShowCancelConfirm(true)}
+                >
+                  <XCircle className="mr-1 size-3.5" />
+                  취소
+                </Button>
+              </>
+            )}
+            <Button
+              size="sm"
+              className="h-8 rounded-lg px-3 text-[12.5px]"
+              onClick={handleManualButtonClick}
+            >
+              <Plus className="mr-1 size-3.5" />
+              입력
+            </Button>
           </div>
 
           {isFilterOpen && (
@@ -834,7 +830,7 @@ function ExternalListingsPage() {
                   layout="full-height"
                   variant="notion"
                   rowHeight="auto"
-                  pinnedColumns={['site', 'dong', 'ho']}
+                  pinnedColumns={['ad', 'owner', 'site', 'dong', 'floor', 'ho']}
                   enableRowSelection
                   renderSelectionAccessory={(group) => (
                     <FavoriteToggle
@@ -1363,11 +1359,51 @@ function buildColumns(
 ): ColumnDef<ExternalListingGroup, unknown>[] {
   const columns: ColumnDef<ExternalListingGroup, unknown>[] = [];
 
-  // ── 1. 아파트 (단지명) ─────────────────────────────────────
+  // ── 1. 광고 (활성 광고 여부) — sticky 고정 컬럼 ─────────────
+  columns.push({
+    id: 'ad',
+    header: '광고',
+    size: 64,
+    enableResizing: false,
+    cell: ({ row }) => {
+      const isActive = !!row.original.mainExternalListing?.isActive;
+      // 비활성은 오류가 아니므로 붉은 태그 대신 저채도 텍스트로 — 활성만 색을 가진다
+      return isActive ? (
+        <NotionTag className="bg-[#e7f3f8] text-[#337ea9]">광고 O</NotionTag>
+      ) : (
+        <span className="px-1 text-[12px] text-slate-600">광고 X</span>
+      );
+    },
+  });
+
+  // ── 2. 주 (소유주 확인 여부: 집=집주인 / 중=중개사) — sticky 고정 컬럼
+  columns.push({
+    id: 'owner',
+    header: '주',
+    size: 44,
+    enableResizing: false,
+    cell: ({ row }) => {
+      const g = row.original;
+      return (
+        <NotionTag
+          className={
+            g.ownerVerified
+              ? 'bg-[#eef3ed] text-[#44745a]'
+              : 'bg-[#f1f1ef] text-[#787774]'
+          }
+        >
+          {g.ownerVerified ? '집' : '중'}
+        </NotionTag>
+      );
+    },
+  });
+
+  // ── 3. 아파트 (단지명) — sticky 고정 컬럼: 폭 고정 (리사이즈 금지)
   columns.push({
     id: 'site',
     header: '아파트',
     size: 200,
+    enableResizing: false,
     cell: ({ row }) => (
       <span className="truncate text-[13px] font-medium">
         {row.original.site?.name ?? '-'}
@@ -1375,11 +1411,12 @@ function buildColumns(
     ),
   });
 
-  // ── 2. 동 ────────────────────────────────────────────────
+  // ── 4. 동 — sticky 고정 컬럼: 폭 고정 (리사이즈 금지) ─────────
   columns.push({
     id: 'dong',
     header: '동',
     size: 70,
+    enableResizing: false,
     cell: ({ row }) => (
       <span className="truncate text-[13px]">
         {row.original.buildingName ?? '-'}
@@ -1387,7 +1424,20 @@ function buildColumns(
     ),
   });
 
-  // ── 3. 호 (+ floorInfo, 인라인 편집 + Unit 수동 링크) ──────────
+  // ── 5. 층 (floorInfo: 저/중/고 또는 층수/전체층) — sticky 고정 컬럼
+  columns.push({
+    id: 'floor',
+    header: '층',
+    size: 56,
+    enableResizing: false,
+    cell: ({ row }) => (
+      <span className="truncate text-[12px] tabular-nums text-slate-700">
+        {row.original.mainExternalListing?.floorInfo ?? '-'}
+      </span>
+    ),
+  });
+
+  // ── 6. 호 (인라인 편집 + Unit 수동 링크) ──────────────────────
   //    헤더의 ± 버튼으로 최소최대~출처 컬럼을 접는다 (매물목록과 동일 패턴)
   columns.push({
     id: 'ho',
@@ -1422,27 +1472,20 @@ function buildColumns(
       </div>
     ),
     size: 104,
+    enableResizing: false,
     cell: ({ row }) => {
       const g = row.original;
-      const main = g.mainExternalListing;
       // If a Unit is linked, the ho is authoritative (read-only with unlink).
       if (g.unit?.name) {
         return (
-          <div className="flex min-w-0 items-start gap-1 text-[12px]">
-            <div
-              className="flex min-w-0 flex-col"
+          <div className="flex min-w-0 items-center gap-1 text-[12px]">
+            <span
+              className="flex min-w-0 items-center gap-1 truncate font-medium text-slate-800"
               title="호실이 확정되었습니다. 변경하려면 연결을 해제하세요."
             >
-              <span className="flex items-center gap-1 truncate font-medium text-slate-800">
-                <Link2 className="size-3 shrink-0 text-[#337ea9]" />
-                {g.unit.name}
-              </span>
-              {main?.floorInfo && (
-                <span className="truncate text-[11px] text-slate-500">
-                  {main.floorInfo}
-                </span>
-              )}
-            </div>
+              <Link2 className="size-3 shrink-0 text-[#337ea9]" />
+              {g.unit.name}
+            </span>
             <button
               type="button"
               title="호실 연결 해제"
@@ -1450,7 +1493,7 @@ function buildColumns(
                 e.stopPropagation();
                 ctx.onLinkUnit(g.id, null);
               }}
-              className="mt-0.5 rounded-[3px] p-0.5 text-muted-foreground/50 transition-colors hover:bg-[#f1f1ef] hover:text-destructive"
+              className="rounded-[3px] p-0.5 text-slate-500 transition-colors hover:bg-[#f1f1ef] hover:text-destructive"
             >
               <X className="size-3" />
             </button>
@@ -1458,26 +1501,19 @@ function buildColumns(
         );
       }
       return (
-        <div className="flex min-w-0 items-start gap-0.5">
-          <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-            <HoInput
-              groupId={g.id}
-              initial={g.inferredHo}
-              onSave={ctx.onUpdateInferredHo}
-            />
-            {main?.floorInfo && (
-              <span className="truncate text-[11px] text-slate-500">
-                {main.floorInfo}
-              </span>
-            )}
-          </div>
+        <div className="flex min-w-0 items-center gap-0.5">
+          <HoInput
+            groupId={g.id}
+            initial={g.inferredHo}
+            onSave={ctx.onUpdateInferredHo}
+          />
           <UnitLinkPopover group={g} onLink={(unitId) => ctx.onLinkUnit(g.id, unitId)} />
         </div>
       );
     },
   });
 
-  // ── 4. 타입 (areaName + pyeong/pyeong) ─────────────────────
+  // ── 6. 타입 (areaName + pyeong/pyeong) ─────────────────────
   columns.push({
     id: 'type',
     header: '타입',
@@ -1498,48 +1534,6 @@ function buildColumns(
             </span>
           )}
         </div>
-      );
-    },
-  });
-
-  // ── 5. 광고 (활성 광고 여부) ────────────────────────────────
-  columns.push({
-    id: 'ad',
-    header: '광고',
-    size: 64,
-    cell: ({ row }) => {
-      const isActive = !!row.original.mainExternalListing?.isActive;
-      return (
-        <NotionTag
-          className={
-            isActive
-              ? 'bg-[#e7f3f8] text-[#337ea9]'
-              : 'bg-[#fbe4e4] text-[#9f5555]'
-          }
-        >
-          {isActive ? '광고 O' : '광고 X'}
-        </NotionTag>
-      );
-    },
-  });
-
-  // ── 6. 집주인 (소유주 확인 여부) ────────────────────────────
-  columns.push({
-    id: 'owner',
-    header: '집주인',
-    size: 64,
-    cell: ({ row }) => {
-      const g = row.original;
-      return (
-        <NotionTag
-          className={
-            g.ownerVerified
-              ? 'bg-[#eef3ed] text-[#44745a]'
-              : 'bg-[#f1f1ef] text-[#787774]'
-          }
-        >
-          {g.ownerVerified ? '집주인' : '중개사'}
-        </NotionTag>
       );
     },
   });
@@ -1803,6 +1797,8 @@ function buildColumns(
     header: '매물특징',
     size: 400,
     minSize: 280,
+    // 남는 가로 공간을 흡수 — 다른 컬럼(특히 sticky)의 폭이 늘어나지 않게 한다
+    meta: { fill: true },
     cell: ({ row }) => {
       const g = row.original;
       const main = g.mainExternalListing;
@@ -1810,13 +1806,16 @@ function buildColumns(
       const seango = hasSeangoMarker(desc) || hasSeangoMarker(g.memo);
       return (
         <div className="flex flex-col gap-1">
-          <div
-            className="text-[11px] whitespace-pre-line leading-snug text-foreground/80"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {seango && <NotionTag className="mr-1 bg-[#e7f3f8] text-[#337ea9]">세안고</NotionTag>}
-            {desc || '-'}
-          </div>
+          {/* 특징이 없으면 줄 자체를 생략 — 빈 행마다 '-'가 반복되는 노이즈 제거 */}
+          {(seango || desc) && (
+            <div
+              className="text-[11px] whitespace-pre-line leading-snug text-foreground/80"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {seango && <NotionTag className="mr-1 bg-[#e7f3f8] text-[#337ea9]">세안고</NotionTag>}
+              {desc}
+            </div>
+          )}
           <CommentInput
             groupId={g.id}
             initial={g.memo}
@@ -1870,7 +1869,7 @@ function HoInput({
       }}
       onClick={(e) => e.stopPropagation()}
       placeholder="호수"
-      className="h-6 border-transparent bg-transparent px-1.5 py-0 text-[12px] shadow-none tabular-nums hover:border-[#eeeeec] focus-visible:border-slate-300 focus-visible:ring-0"
+      className="h-6 rounded-[5px] border-0 bg-transparent px-1.5 py-0 text-[12px] shadow-none tabular-nums placeholder:text-transparent hover:ring-1 hover:ring-[#eeeeec] focus-visible:ring-1 focus-visible:ring-slate-300 focus-visible:placeholder:text-slate-500 group-hover:placeholder:text-slate-500"
     />
   );
 }
@@ -1933,7 +1932,7 @@ function UnitLinkPopover({
           type="button"
           title="호실(Unit) 연결"
           onClick={(e) => e.stopPropagation()}
-          className="mt-1 rounded-[3px] p-0.5 text-muted-foreground/50 transition-colors hover:bg-[#f1f1ef] hover:text-[#337ea9]"
+          className="rounded-[3px] p-0.5 text-slate-500 transition-colors hover:bg-[#f1f1ef] hover:text-[#337ea9]"
         >
           <Link2 className="size-3.5" />
         </button>
@@ -2045,7 +2044,7 @@ function CommentInput({
       }}
       onClick={(e) => e.stopPropagation()}
       placeholder="메모 입력..."
-      className="h-6 border-transparent bg-transparent px-2 text-[11px] shadow-none hover:border-[#eeeeec] focus-visible:border-slate-300 focus-visible:ring-0"
+      className="h-6 rounded-[5px] border-0 bg-transparent px-2 text-[11px] shadow-none placeholder:text-transparent hover:ring-1 hover:ring-[#eeeeec] focus-visible:ring-1 focus-visible:ring-slate-300 focus-visible:placeholder:text-slate-500 group-hover:placeholder:text-slate-500"
     />
   );
 }

@@ -381,7 +381,11 @@ export function DataTable<TData extends { id: string }>({
                         isLastPinned && 'shadow-[1px_0_0_0_#d9d9d6]',
                       )}
                       style={{
-                        width: header.getSize(),
+                        // fill 컬럼은 폭을 지정하지 않아 table-fixed 레이아웃의
+                        // 남는 공간을 전부 흡수한다 (다른 컬럼은 고정폭 유지)
+                        width: header.column.columnDef.meta?.fill
+                          ? undefined
+                          : header.getSize(),
                         ...(isPinned
                           ? { position: 'sticky', left: header.column.getStart('left'), zIndex: 30 }
                           : {}),
@@ -395,8 +399,8 @@ export function DataTable<TData extends { id: string }>({
                         {sorted === 'asc' && <ArrowUp className="size-3" />}
                         {sorted === 'desc' && <ArrowDown className="size-3" />}
                       </div>
-                      {/* Column resize handle */}
-                      {header.column.getCanResize() && (
+                      {/* Column resize handle — fill 컬럼은 폭 지정이 무시되므로 핸들도 숨김 */}
+                      {header.column.getCanResize() && !header.column.columnDef.meta?.fill && (
                         <div
                           onMouseDown={header.getResizeHandler()}
                           onTouchStart={header.getResizeHandler()}
@@ -484,7 +488,9 @@ export function DataTable<TData extends { id: string }>({
                           isLastPinned && 'shadow-[1px_0_0_0_#d9d9d6]',
                         )}
                         style={{
-                          width: cell.column.getSize(),
+                          width: cell.column.columnDef.meta?.fill
+                            ? undefined
+                            : cell.column.getSize(),
                           height: rowCellHeight,
                           ...getPinStyle(cell.column),
                         }}

@@ -13,6 +13,7 @@ import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as AuthRouteImport } from './routes/_auth'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as OnboardingOfficeRouteImport } from './routes/onboarding.office'
+import { Route as DevShellPreviewRouteImport } from './routes/dev.shell-preview'
 import { Route as DevHitlPreviewRouteImport } from './routes/dev.hitl-preview'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
 import { Route as AuthRegisterRouteImport } from './routes/_auth/register'
@@ -69,6 +70,11 @@ const IndexRoute = IndexRouteImport.update({
 const OnboardingOfficeRoute = OnboardingOfficeRouteImport.update({
   id: '/onboarding/office',
   path: '/onboarding/office',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DevShellPreviewRoute = DevShellPreviewRouteImport.update({
+  id: '/dev/shell-preview',
+  path: '/dev/shell-preview',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DevHitlPreviewRoute = DevHitlPreviewRouteImport.update({
@@ -302,6 +308,7 @@ export interface FileRoutesByFullPath {
   '/register': typeof AuthRegisterRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/dev/hitl-preview': typeof DevHitlPreviewRoute
+  '/dev/shell-preview': typeof DevShellPreviewRoute
   '/onboarding/office': typeof OnboardingOfficeRoute
   '/buyer-requirements/$id': typeof AuthenticatedBuyerRequirementsIdRoute
   '/buyer-requirements/new': typeof AuthenticatedBuyerRequirementsNewRoute
@@ -345,6 +352,7 @@ export interface FileRoutesByTo {
   '/register': typeof AuthRegisterRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/dev/hitl-preview': typeof DevHitlPreviewRoute
+  '/dev/shell-preview': typeof DevShellPreviewRoute
   '/onboarding/office': typeof OnboardingOfficeRoute
   '/buyer-requirements/$id': typeof AuthenticatedBuyerRequirementsIdRoute
   '/buyer-requirements/new': typeof AuthenticatedBuyerRequirementsNewRoute
@@ -391,6 +399,7 @@ export interface FileRoutesById {
   '/_auth/register': typeof AuthRegisterRoute
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
   '/dev/hitl-preview': typeof DevHitlPreviewRoute
+  '/dev/shell-preview': typeof DevShellPreviewRoute
   '/onboarding/office': typeof OnboardingOfficeRoute
   '/_authenticated/buyer-requirements/$id': typeof AuthenticatedBuyerRequirementsIdRoute
   '/_authenticated/buyer-requirements/new': typeof AuthenticatedBuyerRequirementsNewRoute
@@ -436,6 +445,7 @@ export interface FileRouteTypes {
     | '/register'
     | '/dashboard'
     | '/dev/hitl-preview'
+    | '/dev/shell-preview'
     | '/onboarding/office'
     | '/buyer-requirements/$id'
     | '/buyer-requirements/new'
@@ -479,6 +489,7 @@ export interface FileRouteTypes {
     | '/register'
     | '/dashboard'
     | '/dev/hitl-preview'
+    | '/dev/shell-preview'
     | '/onboarding/office'
     | '/buyer-requirements/$id'
     | '/buyer-requirements/new'
@@ -524,6 +535,7 @@ export interface FileRouteTypes {
     | '/_auth/register'
     | '/_authenticated/dashboard'
     | '/dev/hitl-preview'
+    | '/dev/shell-preview'
     | '/onboarding/office'
     | '/_authenticated/buyer-requirements/$id'
     | '/_authenticated/buyer-requirements/new'
@@ -567,6 +579,7 @@ export interface RootRouteChildren {
   AuthRoute: typeof AuthRouteWithChildren
   AuthenticatedRoute: typeof AuthenticatedRouteWithChildren
   DevHitlPreviewRoute: typeof DevHitlPreviewRoute
+  DevShellPreviewRoute: typeof DevShellPreviewRoute
   OnboardingOfficeRoute: typeof OnboardingOfficeRoute
 }
 
@@ -598,6 +611,13 @@ declare module '@tanstack/react-router' {
       path: '/onboarding/office'
       fullPath: '/onboarding/office'
       preLoaderRoute: typeof OnboardingOfficeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dev/shell-preview': {
+      id: '/dev/shell-preview'
+      path: '/dev/shell-preview'
+      fullPath: '/dev/shell-preview'
+      preLoaderRoute: typeof DevShellPreviewRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/dev/hitl-preview': {
@@ -983,6 +1003,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuthRoute: AuthRouteWithChildren,
   AuthenticatedRoute: AuthenticatedRouteWithChildren,
   DevHitlPreviewRoute: DevHitlPreviewRoute,
+  DevShellPreviewRoute: DevShellPreviewRoute,
   OnboardingOfficeRoute: OnboardingOfficeRoute,
 }
 export const routeTree = rootRouteImport

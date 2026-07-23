@@ -1,0 +1,562 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Estate ERP UI Redesign Atlas — 39개 페이지 데모</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --canvas: #efede8;
+      --surface: #ffffff;
+      --surface-soft: #f7f6f3;
+      --sidebar: #e8e5df;
+      --text: #2f2d2a;
+      --muted: #716d66;
+      --line: #d6d2ca;
+      --line-strong: #bbb6ac;
+      --blue: #3f63d8;
+      --blue-soft: #e9efff;
+      --green: #237b4b;
+      --amber: #a85d0e;
+      --red: #b44343;
+      --radius: 8px;
+      --shadow: 0 10px 28px rgb(47 45 42 / 8%);
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      background: var(--canvas);
+      color: var(--text);
+      font-family: Pretendard, "Noto Sans KR", Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 14px;
+      line-height: 1.55;
+    }
+
+    button, input { font: inherit; }
+    a { color: inherit; }
+    img { display: block; max-width: 100%; }
+
+    .layout { min-height: 100vh; }
+    .side {
+      position: fixed;
+      inset: 0 auto 0 0;
+      z-index: 10;
+      width: 252px;
+      overflow-y: auto;
+      border-right: 1px solid var(--line-strong);
+      background: var(--sidebar);
+      padding: 24px 18px;
+    }
+
+    .brand { display: flex; align-items: center; gap: 11px; margin-bottom: 28px; }
+    .brand-mark {
+      display: grid;
+      width: 36px;
+      height: 36px;
+      place-items: center;
+      border-radius: 8px;
+      background: var(--text);
+      color: #fff;
+      font-weight: 750;
+      letter-spacing: -.03em;
+    }
+    .brand strong { display: block; font-size: 15px; }
+    .brand small { color: var(--muted); }
+
+    .side-metrics { display: grid; grid-template-columns: repeat(2, 1fr); gap: 7px; margin-bottom: 24px; }
+    .side-metric { border: 1px solid var(--line); border-radius: 7px; background: rgb(255 255 255 / 46%); padding: 9px; }
+    .side-metric b { display: block; font-size: 18px; line-height: 1.15; }
+    .side-metric span { color: var(--muted); font-size: 12px; }
+
+    .side-label { margin: 22px 8px 8px; color: var(--muted); font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+    .side nav a {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      min-height: 36px;
+      margin: 2px 0;
+      border-radius: 6px;
+      padding: 7px 9px;
+      color: #4f4c47;
+      text-decoration: none;
+    }
+    .side nav a:hover, .side nav a:focus-visible { background: rgb(255 255 255 / 58%); outline: none; }
+    .side nav a span { color: var(--muted); font-size: 12px; }
+
+    .main { margin-left: 252px; padding: 32px clamp(22px, 4vw, 64px) 96px; }
+    .content { width: min(1500px, 100%); margin: 0 auto; }
+    section { scroll-margin-top: 20px; margin-bottom: 70px; }
+
+    .eyebrow { color: var(--blue); font-size: 12px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+    h1 { max-width: 980px; margin: 12px 0 18px; font-size: clamp(34px, 4.5vw, 66px); line-height: 1.04; letter-spacing: -.045em; }
+    h2 { margin: 0 0 12px; font-size: 28px; line-height: 1.2; letter-spacing: -.025em; }
+    h3 { margin: 0; font-size: 17px; letter-spacing: -.015em; }
+    .lede { max-width: 900px; margin: 0; color: #57534e; font-size: 17px; line-height: 1.7; }
+
+    .hero-grid { display: grid; grid-template-columns: 1.05fr .95fr; gap: 20px; align-items: stretch; margin-top: 32px; }
+    .hero-visual, .decision-panel { border: 1px solid var(--line-strong); border-radius: 10px; background: var(--surface); overflow: hidden; }
+    .hero-visual { box-shadow: var(--shadow); }
+    .hero-visual img { width: 100%; height: 100%; object-fit: cover; }
+    .decision-panel { padding: 24px; }
+    .decision-panel .choice { display: inline-flex; border: 1px solid #b9c5ee; border-radius: 999px; background: var(--blue-soft); color: #2948ad; padding: 5px 10px; font-size: 12px; font-weight: 750; }
+    .decision-panel h2 { margin-top: 18px; }
+    .decision-list { display: grid; gap: 0; margin-top: 20px; border-top: 1px solid var(--line); }
+    .decision-row { display: grid; grid-template-columns: 118px 1fr; gap: 14px; border-bottom: 1px solid var(--line); padding: 13px 0; }
+    .decision-row b { font-size: 13px; }
+    .decision-row span { color: var(--muted); }
+
+    .metric-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 20px; }
+    .metric { border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); padding: 16px; }
+    .metric b { display: block; font-size: 26px; line-height: 1.1; }
+    .metric span { color: var(--muted); font-size: 12px; }
+
+    .section-head { display: flex; align-items: end; justify-content: space-between; gap: 18px; margin-bottom: 20px; }
+    .section-head p { max-width: 720px; margin: 0; color: var(--muted); }
+
+    .compare-table { width: 100%; border-collapse: separate; border-spacing: 0; overflow: hidden; border: 1px solid var(--line-strong); border-radius: 10px; background: var(--surface); }
+    .compare-table th, .compare-table td { border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); padding: 13px 14px; text-align: left; vertical-align: top; }
+    .compare-table th:last-child, .compare-table td:last-child { border-right: 0; }
+    .compare-table tr:last-child td { border-bottom: 0; }
+    .compare-table thead th { background: var(--surface-soft); font-size: 12px; color: var(--muted); }
+    .compare-table tbody td:first-child { width: 150px; font-weight: 750; }
+    .compare-table strong { color: var(--blue); }
+
+    .before-after { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 0 0 20px; }
+    .before-after figure { margin: 0; overflow: hidden; border: 1px solid var(--line-strong); border-radius: 9px; background: var(--surface); }
+    .before-after img { width: 100%; aspect-ratio: 16 / 10; object-fit: cover; border-bottom: 1px solid var(--line); cursor: zoom-in; }
+    .before-after figcaption { display: flex; justify-content: space-between; gap: 12px; padding: 11px 13px; }
+    .before-after figcaption b { font-size: 12px; }
+    .before-after figcaption span { color: var(--muted); font-size: 11px; }
+
+    .direction-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+    .direction { border: 1px solid var(--line); border-radius: 9px; background: var(--surface); overflow: hidden; }
+    .direction img { width: 100%; aspect-ratio: 16 / 10; object-fit: cover; border-bottom: 1px solid var(--line); cursor: zoom-in; }
+    .direction-body { padding: 15px; }
+    .direction-body p { margin: 8px 0 0; color: var(--muted); font-size: 13px; }
+    .direction.selected { border-color: #8ea5ef; box-shadow: 0 0 0 2px rgb(63 99 216 / 10%); }
+    .direction.selected h3::after { content: "채택"; display: inline-block; margin-left: 8px; border-radius: 999px; background: var(--blue-soft); color: #2948ad; padding: 2px 7px; font-size: 10px; vertical-align: 2px; }
+
+    .token-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    .token-card { border: 1px solid var(--line); border-radius: 9px; background: var(--surface); padding: 18px; }
+    .token-card p { margin: 8px 0 0; color: var(--muted); }
+    .swatches { display: grid; grid-template-columns: repeat(5, 1fr); gap: 7px; margin-top: 14px; }
+    .swatch { min-height: 58px; border: 1px solid var(--line); border-radius: 6px; padding: 8px; font-size: 10px; display: flex; align-items: end; }
+
+    .gallery-tools {
+      position: sticky;
+      top: 0;
+      z-index: 5;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+      margin: 0 -10px 18px;
+      border: 1px solid var(--line-strong);
+      border-radius: 9px;
+      background: rgb(247 246 243 / 94%);
+      padding: 10px;
+      backdrop-filter: blur(10px);
+    }
+    .search { flex: 1 1 280px; height: 38px; border: 1px solid var(--line-strong); border-radius: 6px; background: var(--surface); padding: 0 12px; color: var(--text); }
+    .search:focus { border-color: var(--blue); outline: 3px solid rgb(63 99 216 / 13%); }
+    .filter { height: 34px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); padding: 0 10px; color: #55514b; cursor: pointer; }
+    .filter:hover { border-color: var(--line-strong); }
+    .filter.active { border-color: #9aade9; background: var(--blue-soft); color: #2948ad; font-weight: 700; }
+    .result-count { margin-left: auto; color: var(--muted); font-size: 12px; }
+
+    .gallery { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+    .screen-card { display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--line-strong); border-radius: 10px; background: var(--surface); box-shadow: 0 4px 14px rgb(47 45 42 / 5%); }
+    .screen-card[hidden] { display: none; }
+    .screen-top { display: flex; align-items: start; justify-content: space-between; gap: 12px; min-height: 72px; border-bottom: 1px solid var(--line); padding: 14px 16px; }
+    .screen-title { display: flex; gap: 11px; }
+    .screen-index { display: grid; flex: 0 0 auto; width: 30px; height: 30px; place-items: center; border-radius: 6px; background: var(--text); color: #fff; font-size: 12px; font-weight: 800; }
+    .route { margin-top: 4px; color: var(--muted); font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; word-break: break-all; }
+    .recipe { flex: 0 0 auto; border: 1px solid var(--line); border-radius: 999px; background: var(--surface-soft); padding: 3px 8px; color: var(--muted); font-size: 10px; }
+    .screen-image { position: relative; aspect-ratio: 16 / 10; overflow: hidden; background: #ddd9d1; border-bottom: 1px solid var(--line); }
+    .screen-image img { width: 100%; height: 100%; object-fit: cover; cursor: zoom-in; transition: transform 180ms ease; }
+    .screen-image:hover img { transform: scale(1.008); }
+    .screen-body { padding: 15px 16px; }
+    .purpose { margin: 0 0 12px; color: #56524c; }
+    .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .meta-block { border-left: 2px solid var(--line); padding-left: 9px; }
+    .meta-block.primary { border-color: var(--blue); }
+    .meta-block b { display: block; margin-bottom: 3px; font-size: 11px; }
+    .meta-block span { color: var(--muted); font-size: 12px; }
+    .screen-card details { border-top: 1px solid var(--line); }
+    .screen-card summary { cursor: pointer; padding: 10px 16px; color: #55514b; font-size: 12px; font-weight: 700; }
+    .details-content { display: grid; gap: 10px; padding: 2px 16px 16px; color: var(--muted); font-size: 12px; }
+    .details-content b { color: var(--text); }
+
+    .source-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+    .source-card { display: block; min-height: 128px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); padding: 17px; text-decoration: none; }
+    .source-card:hover { border-color: #9aade9; }
+    .source-card b { display: block; margin-bottom: 7px; }
+    .source-card span { color: var(--muted); font-size: 12px; }
+    .official-links { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 16px; }
+    .official-links a { border: 1px solid var(--line); border-radius: 999px; background: var(--surface-soft); padding: 6px 10px; color: #56524c; font-size: 11px; text-decoration: none; }
+    .official-links a:hover { border-color: #9aade9; color: #2948ad; }
+    .roadmap { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+    .roadmap article { border: 1px solid var(--line); border-radius: 9px; background: var(--surface); padding: 18px; }
+    .roadmap .phase { display: inline-flex; margin-bottom: 14px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface-soft); padding: 3px 8px; color: var(--muted); font-size: 10px; font-weight: 800; }
+    .roadmap p { color: var(--muted); }
+    .roadmap ul { margin: 14px 0 0; padding-left: 18px; }
+    .roadmap li { margin: 6px 0; }
+
+    dialog { width: min(96vw, 1540px); max-height: 94vh; border: 1px solid #aaa59c; border-radius: 10px; padding: 0; background: #1f1e1c; color: #fff; box-shadow: 0 28px 80px rgb(0 0 0 / 40%); }
+    dialog::backdrop { background: rgb(24 23 22 / 78%); backdrop-filter: blur(4px); }
+    .modal-head { display: flex; align-items: center; justify-content: space-between; gap: 18px; min-height: 52px; border-bottom: 1px solid #47443f; padding: 8px 14px; }
+    .modal-head div { min-width: 0; }
+    .modal-head strong { display: block; }
+    .modal-head span { color: #aaa69f; font: 11px ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .modal-close { width: 36px; height: 36px; border: 1px solid #5a5650; border-radius: 6px; background: #2b2926; color: #fff; cursor: pointer; }
+    .modal-img { width: 100%; max-height: calc(94vh - 52px); object-fit: contain; background: #111; }
+
+    footer { border-top: 1px solid var(--line-strong); padding-top: 22px; color: var(--muted); font-size: 12px; }
+
+    @media (max-width: 1120px) {
+      .side { position: static; width: auto; border-right: 0; border-bottom: 1px solid var(--line-strong); }
+      .side nav { display: flex; flex-wrap: wrap; gap: 4px; }
+      .side-label, .side-metrics { display: none; }
+      .main { margin-left: 0; }
+      .hero-grid, .direction-grid, .source-grid, .roadmap { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 760px) {
+      .gallery, .token-grid, .metric-grid, .before-after { grid-template-columns: 1fr; }
+      .main { padding-inline: 14px; }
+      .meta-grid { grid-template-columns: 1fr; }
+    }
+    @media print {
+      @page {
+        size: A3 landscape;
+        margin: 10mm 10mm 14mm;
+        @bottom-left {
+          content: "Estate ERP UI Redesign Atlas · 2026-07-17";
+          color: #716d66;
+          font: 8pt Pretendard, "Noto Sans KR", sans-serif;
+        }
+        @bottom-right {
+          content: counter(page) " / " counter(pages);
+          color: #716d66;
+          font: 8pt ui-monospace, SFMono-Regular, Menlo, monospace;
+        }
+      }
+      html, body {
+        background: #fff;
+        font-size: 10pt;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+      .side, .gallery-tools { display: none !important; }
+      .main { margin: 0; padding: 0; }
+      .content { width: 100%; }
+      section { margin: 0; break-before: page; }
+      #summary { break-before: auto; }
+      h1 { font-size: 40pt; }
+      h2 { font-size: 22pt; }
+      .lede { font-size: 12pt; }
+      .gallery { display: block; }
+      .screen-card {
+        display: grid;
+        grid-template-columns: minmax(0, 3fr) minmax(92mm, 1fr);
+        grid-template-areas:
+          "top top"
+          "image body"
+          "image details";
+        column-gap: 5mm;
+        margin: 0;
+        break-before: page;
+        break-after: page;
+        break-inside: avoid;
+        border-color: var(--line-strong);
+        box-shadow: none;
+      }
+      .screen-top { grid-area: top; min-height: 15mm; padding: 3mm 4mm; }
+      .screen-image { grid-area: image; align-self: start; border: 0; border-right: 1px solid var(--line); }
+      .screen-body { grid-area: body; padding: 5mm 4mm 3mm 0; }
+      .screen-card details { grid-area: details; display: block; border-top: 1px solid var(--line); align-self: start; }
+      .screen-card details > * { display: block !important; }
+      .screen-card summary { padding: 4mm 4mm 2mm 0; list-style: none; }
+      .details-content { display: grid !important; gap: 3mm; padding: 0 4mm 4mm 0; font-size: 9pt; }
+      .meta-grid { grid-template-columns: 1fr; }
+      .purpose { font-size: 10pt; }
+      .metric-grid, .token-grid, .before-after, .direction-grid, .source-grid, .roadmap { break-inside: avoid; }
+      dialog { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <aside class="side">
+      <div class="brand">
+        <div class="brand-mark">E</div>
+        <div><strong>Estate ERP UI Atlas</strong><small>2026-07-17</small></div>
+      </div>
+      <div class="side-metrics">
+        <div class="side-metric"><b>39</b><span>실제 라우트</span></div>
+        <div class="side-metric"><b>55</b><span>기능 작업면</span></div>
+        <div class="side-metric"><b>20</b><span>재사용 recipe</span></div>
+        <div class="side-metric"><b>3</b><span>디자인 방향</span></div>
+      </div>
+      <div class="side-label">보고서</div>
+      <nav>
+        <a href="#summary">결론 <span>01</span></a>
+        <a href="#quality">Attio·Linear 보정 <span>02</span></a>
+        <a href="#directions">디자인 방향 <span>03</span></a>
+        <a href="#system">UI 시스템 <span>04</span></a>
+        <a href="#screens">39개 페이지 <span>05</span></a>
+        <a href="#roadmap">구현 순서 <span>06</span></a>
+        <a href="#sources">조사 원문 <span>07</span></a>
+      </nav>
+      <div class="side-label">화면군</div>
+      <nav>
+        <a href="#screens" data-side-filter="foundation">인증·홈·매물 <span>13</span></a>
+        <a href="#screens" data-side-filter="spatial">단지·고객·거래 <span>13</span></a>
+        <a href="#screens" data-side-filter="ops">재무·운영·설정 <span>13</span></a>
+      </nav>
+    </aside>
+
+    <main class="main">
+      <div class="content">
+        <section id="summary">
+          <div class="eyebrow">Estate ERP redesign decision</div>
+          <h1>보기 좋은 SaaS가 아니라,<br />중개 업무가 빠르게 끝나는 운영 UI</h1>
+          <p class="lede">1번의 고밀도 표·레코드 구조를 채택하고 Attio의 관계·활동 문법, Linear의 정렬·선택·상태 전환 품질을 흡수했다. 지도, 동·호수, 계약, 수금, CTI, 공동중개는 범용 SaaS를 복제하지 않고 Estate ERP 전용 작업면으로 설계했다.</p>
+          <div class="metric-grid">
+            <div class="metric"><b>39</b><span>각각 이미지화한 실제 route</span></div>
+            <div class="metric"><b>15–18</b><span>1440×900 기본 가시 행 수</span></div>
+            <div class="metric"><b>14px</b><span>40–60대 기준 최소 본문</span></div>
+            <div class="metric"><b>1 system</b><span>Desktop·Web 공통 토큰</span></div>
+          </div>
+          <div class="hero-grid">
+            <button class="hero-visual zoomable" type="button" data-img="assets/reference/master-estate-operational-system.png" data-title="채택 마스터 — Estate Operational System" style="padding:0;text-align:inherit;cursor:zoom-in">
+              <img src="assets/reference/master-estate-operational-system.png" alt="Estate ERP 채택 마스터 UI" />
+            </button>
+            <div class="decision-panel">
+              <span class="choice">최종 채택: Direction 1 refined</span>
+              <h2>Attio보다 도메인 깊고,<br />Linear보다 설명적인 구조</h2>
+              <div class="decision-list">
+                <div class="decision-row"><b>목록</b><span>표를 카드 안에 넣지 않고 작업면 자체로 사용한다. 선택행은 우측 레코드 문맥과 항상 동기화한다.</span></div>
+                <div class="decision-row"><b>행동</b><span>최근 연락과 다음 행동을 가격만큼 중요한 고정 열로 둔다. J/K, Enter, ⌘K는 보조 가속 장치다.</span></div>
+                <div class="decision-row"><b>상태</b><span>색에 의존하지 않고 아이콘·텍스트·기한을 결합한다. 법적·재무 상태는 drag만으로 확정하지 않는다.</span></div>
+                <div class="decision-row"><b>상세</b><span>quick peek는 확인과 작은 행동, full page는 편집·감사·계약 같은 고위험 작업을 맡는다.</span></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="quality">
+          <div class="section-head">
+            <div><div class="eyebrow">Quality correction</div><h2>Attio·Linear보다 부실해 보였던 이유와 보정</h2></div>
+            <p>좋은 제품의 색을 복제하는 대신 완성도를 만드는 구조적 기준을 가져왔다. 아래 결정은 39개 데모에 공통으로 적용된다.</p>
+          </div>
+          <div class="before-after">
+            <figure><img src="../screenshots/properties-datatable-ref.png" alt="현재 매물관리 화면" data-img="../screenshots/properties-datatable-ref.png" data-title="현재 UI — 매물관리" /><figcaption><b>Before</b><span>큰 공백 · 약한 경계 · 0건 empty state</span></figcaption></figure>
+            <figure><img src="assets/reference/master-estate-operational-system.png" alt="정제된 매물관리 화면" data-img="assets/reference/master-estate-operational-system.png" data-title="After — Estate Operational System" /><figcaption><b>After</b><span>15행 · 선택 레코드 · 다음 행동 · 선명한 구조</span></figcaption></figure>
+          </div>
+          <table class="compare-table">
+            <thead><tr><th>축</th><th>Attio에서 배울 점과 한계</th><th>Linear에서 배울 점과 한계</th><th>Estate ERP 결정</th></tr></thead>
+            <tbody>
+              <tr><td>정보 위계</td><td>record·activity는 강하지만 작은 글자와 compact 행이 40–60대에게 부담</td><td>초점과 우선순위는 탁월하지만 부동산 관계·금액 구조는 없음</td><td><strong>14px/40px</strong>를 하한으로 하고 식별→상태→다음 행동 순서를 고정</td></tr>
+              <tr><td>정렬과 경계</td><td>얕은 chrome과 표 정렬이 좋지만 일부 카드/공백이 커짐</td><td>4·8px rhythm, 헤더와 filter 계층, focus state가 매우 정교</td><td>카드 중첩을 줄이고 <strong>구조 divider와 baseline</strong>을 강화</td></tr>
+              <tr><td>상태 전환</td><td>pipeline drag와 time-in-stage가 효율적</td><td>명확한 status icon, keyboard, undo가 빠름</td><td>일반 상태는 drag+undo, 계약·입금·정산은 <strong>확인 sheet+감사</strong></td></tr>
+              <tr><td>문맥</td><td>record에 관계·메일·노트·업무가 집중</td><td>issue와 triage의 context는 명확하지만 범용 업무 단위</td><td>Property↔Contact↔Match↔Deal↔Contract를 <strong>관계 chip과 activity</strong>로 연결</td></tr>
+              <tr><td>도메인 작업면</td><td>지도·동호수·수금·A4 계약·CTI는 기준이 부족</td><td>전문 ERP 작업면에는 직접 적용 불가</td><td>UnitMatrix, MapSplit, FinanceLedger, CallWorkspace를 <strong>Estate 고유 recipe</strong>로 보유</td></tr>
+            </tbody>
+          </table>
+        </section>
+
+        <section id="directions">
+          <div class="section-head"><div><div class="eyebrow">Direction study</div><h2>비교한 세 방향</h2></div><p>1번을 공통 셸로 채택하고 2번의 문서·상세 문법, 3번의 지도·공간 문법을 필요한 화면에만 결합했다.</p></div>
+          <div class="direction-grid">
+            <article class="direction selected"><img class="zoomable" src="../ui-demo-direction-options/01-attio-operational-grid.png" alt="Attio식 운영 그리드" data-img="../ui-demo-direction-options/01-attio-operational-grid.png" data-title="Direction 1 — Operational Grid" /><div class="direction-body"><h3>1. Operational Grid</h3><p>매일 쓰는 표, 저장 뷰, 선택 레코드, 활동과 다음 행동. 전체 시스템의 기본 골격.</p></div></article>
+            <article class="direction"><img class="zoomable" src="../ui-demo-direction-options/02-notion-structured-workspace.png" alt="Notion식 구조화 workspace" data-img="../ui-demo-direction-options/02-notion-structured-workspace.png" data-title="Direction 2 — Structured Workspace" /><div class="direction-body"><h3>2. Structured Workspace</h3><p>문서, 계약 조항, 자료실, 상세 layout과 side peek에 선택적으로 사용.</p></div></article>
+            <article class="direction"><img class="zoomable" src="../ui-demo-direction-options/03-estate-hybrid-command-center.png" alt="Estate 지도 관제형" data-img="../ui-demo-direction-options/03-estate-hybrid-command-center.png" data-title="Direction 3 — Estate Command Center" /><div class="direction-body"><h3>3. Estate Command Center</h3><p>매물 지도, 관리단지, 동·호수처럼 공간과 운영 문맥이 동시에 필요한 화면에 사용.</p></div></article>
+          </div>
+        </section>
+
+        <section id="system">
+          <div class="section-head"><div><div class="eyebrow">Shared UI system</div><h2>화면이 흔들리지 않게 하는 공통 규칙</h2></div><p>스타일을 통일하는 수준이 아니라 목록→상세→행동→감사의 전환 규칙까지 공통화한다.</p></div>
+          <div class="token-grid">
+            <article class="token-card"><h3>색과 표면</h3><p>따뜻한 중성색을 유지하되 canvas, surface, selected, warning의 명도 차이를 현재보다 크게 한다.</p><div class="swatches"><div class="swatch" style="background:#f7f6f3">#F7F6F3</div><div class="swatch" style="background:#fff">#FFFFFF</div><div class="swatch" style="background:#2f2d2a;color:#fff">#2F2D2A</div><div class="swatch" style="background:#3f63d8;color:#fff">#3F63D8</div><div class="swatch" style="background:#e9efff">#E9EFFF</div></div></article>
+            <article class="token-card"><h3>밀도와 가독성</h3><p>사이드바 216px, 헤더 48px, 목록행 40px, 입력 36px, 본문 14px. 1440×900에서 15–18행을 목표로 한다.</p></article>
+            <article class="token-card"><h3>목록과 상세</h3><p>DataIndex는 저장 뷰→filter→table/map/board→quick peek 순서를 고정한다. 복잡한 편집은 URL을 가진 full page로 승격한다.</p></article>
+            <article class="token-card"><h3>안전과 감사</h3><p>법적·금전·AI 변경은 대상, before/after, 영향, actor/source, 승인, undo를 표시한다. 색이나 drag만으로 확정하지 않는다.</p></article>
+          </div>
+        </section>
+
+        <section id="screens">
+          <div class="section-head"><div><div class="eyebrow">39 route gallery</div><h2>페이지별 최종 데모</h2></div><p>각 이미지는 동일한 셸과 토큰을 사용하지만 route의 주 작업에 따라 표, 기록, 문서, 지도, 원장, 대화 구조가 달라진다.</p></div>
+          <div class="gallery-tools">
+            <input id="search" class="search" type="search" placeholder="페이지명, route, recipe 검색" aria-label="페이지 검색" />
+            <button class="filter active" type="button" data-filter="all">전체</button>
+            <button class="filter" type="button" data-filter="foundation">인증·홈·매물</button>
+            <button class="filter" type="button" data-filter="spatial">단지·고객·거래</button>
+            <button class="filter" type="button" data-filter="ops">재무·운영·설정</button>
+            <span id="resultCount" class="result-count">39개 화면</span>
+          </div>
+          <div id="gallery" class="gallery"></div>
+        </section>
+
+        <section id="roadmap">
+          <div class="section-head"><div><div class="eyebrow">Implementation roadmap</div><h2>구현은 화면 수가 아니라 recipe 순서로</h2></div><p>39개 route를 각각 따로 만들면 다시 일관성이 무너진다. 공통 토큰과 세 핵심 recipe를 먼저 만든 뒤 전문 작업면을 얹는다.</p></div>
+          <div class="roadmap">
+            <article><span class="phase">P0 · 공통 기반</span><h3>먼저 디자인 시스템을 코드로 고정</h3><p>현재 Desktop/Web에 흩어진 스타일을 공유 계층으로 모으고 고밀도 데이터 작업면의 기준을 만든다.</p><ul><li>semantic color·density·type token</li><li>AppShell·DataIndex·RecordWorkspace</li><li>Money·Area·Address·Status·Relation cell</li><li>virtualized table·saved view·quick peek</li></ul></article>
+            <article><span class="phase">P1 · 일상 코어</span><h3>가장 많이 왕복하는 흐름부터</h3><p>매물과 고객을 연결한 뒤 업무·캘린더·단지·매칭·거래가 같은 record/activity 문법을 쓰게 한다.</p><ul><li>매물 목록·상세·등록·광고</li><li>연락처·구매조건·상담·통화</li><li>업무·캘린더·AI 검토함</li><li>UnitMatrix·Match·Deal pipeline</li></ul></article>
+            <article><span class="phase">P2 · 전문 작업면</span><h3>법적·금전·협업 위험을 별도 설계</h3><p>범용 CRM 패턴으로 처리하면 안 되는 영역을 전문 recipe와 감사 규칙으로 완성한다.</p><ul><li>계약 문서·지급 timeline</li><li>캐시플로우·원장·파트너/직원 정산</li><li>중개 네트워크·자료·사진</li><li>설정·권한·MCP·AI 운영</li></ul></article>
+          </div>
+        </section>
+
+        <section id="sources">
+          <div class="section-head"><div><div class="eyebrow">Research archive</div><h2>조사 원문과 출처</h2></div><p>공식 공개 화면과 도움말을 우선했고, 상용 스크린샷은 설계 참고용이며 오픈소스 자산으로 간주하지 않는다.</p></div>
+          <div class="source-grid">
+            <a class="source-card" href="../OPEN_SOURCE_AND_COMMERCIAL_SAAS_UI_REFERENCE_REPORT_2026-07-17.md"><b>통합 UI 레퍼런스 보고서</b><span>오픈소스·상용·국내 프로그램과 39개 route 전수 조사</span></a>
+            <a class="source-card" href="../ui-reference-research/attio-deep-dive.md"><b>Attio 심층 분석</b><span>공식 이미지 15개, record·view·activity·AI·권한·workflow</span></a>
+            <a class="source-card" href="../ui-reference-research/notion-deep-dive.md"><b>Notion 심층 분석</b><span>database view·layout·dashboard·map·automation·permissions</span></a>
+            <a class="source-card" href="../ui-reference-research/attio-notion-route-mapping.md"><b>Attio × Notion 라우트 매핑</b><span>39 route + 16 보조 작업면 + 20 recipe와 A/B/C 구조</span></a>
+            <a class="source-card" href="../ui-reference-research/home-customer.md"><b>홈·고객 화면 조사</b><span>대시보드, 연락처, 구매고객, 상담, 통화, 업무</span></a>
+            <a class="source-card" href="../ui-reference-research/listings.md"><b>매물·공간 화면 조사</b><span>매물장, 상세, 지도, 단지, 광고, 자료</span></a>
+            <a class="source-card" href="../ui-reference-research/deals-ops.md"><b>거래·운영 화면 조사</b><span>매칭, 거래, 계약, 재무, 네트워크, 설정</span></a>
+            <a class="source-card" href="foundation-manifest.md"><b>화면 매니페스트 01–13</b><span>인증·홈·AI·업무·캘린더·매물: 필수요소, 대안 A/B, 구현 유의점</span></a>
+            <a class="source-card" href="spatial-customer-manifest.md"><b>화면 매니페스트 14–26</b><span>단지·고객·상담·통화·매칭·거래·계약: route별 상세 handoff</span></a>
+            <a class="source-card" href="finance-ops-manifest.md"><b>화면 매니페스트 27–39</b><span>재무·정산·네트워크·운영·자료·설정: 안전·감사·권한 기준</span></a>
+          </div>
+          <div class="official-links" aria-label="주요 공식 출처">
+            <a href="https://attio.com/help/reference/managing-your-data/records/create-and-view-records">Attio record pages</a>
+            <a href="https://attio.com/help/reference/managing-your-data/views/create-and-manage-table-views">Attio table views</a>
+            <a href="https://attio.com/help/reference/managing-your-data/views/create-and-manage-kanban-views">Attio kanban</a>
+            <a href="https://www.notion.com/help/views-filters-and-sorts">Notion database views</a>
+            <a href="https://www.notion.com/help/layouts">Notion layouts</a>
+            <a href="https://www.notion.com/help/dashboards">Notion dashboards</a>
+            <a href="https://linear.app/docs/triage">Linear Triage</a>
+            <a href="https://www.xero.com/au/accounting-software/dashboard/">Xero dashboard</a>
+            <a href="https://github.com/bigcapitalhq/bigcapital">Bigcapital</a>
+            <a href="https://github.com/documenso/documenso">Documenso</a>
+            <a href="https://github.com/chatwoot/chatwoot">Chatwoot</a>
+            <a href="https://github.com/paperless-ngx/paperless-ngx">Paperless-ngx</a>
+            <a href="https://github.com/immich-app/immich">Immich</a>
+          </div>
+        </section>
+
+        <footer>Estate ERP UI Redesign Atlas · 조사/생성 기준일 2026-07-17 · 이미지는 방향 검증용 데모이며 실제 구현에서는 Prisma 모델, RBAC, office_id 격리, 감사로그 규칙을 source of truth로 사용한다.</footer>
+      </div>
+    </main>
+  </div>
+
+  <dialog id="lightbox">
+    <div class="modal-head"><div><strong id="modalTitle"></strong><span id="modalRoute"></span></div><button id="modalClose" class="modal-close" type="button" aria-label="닫기">×</button></div>
+    <img id="modalImg" class="modal-img" alt="확대된 페이지 데모" />
+  </dialog>
+
+  <script>
+    const pages = [
+      {id:1,group:'foundation',route:'/login',title:'로그인',recipe:'AuthGate',image:'assets/screens/foundation/01-login.png',purpose:'Owner 이메일과 직원 자동발급 ID를 하나의 명확한 진입점에서 판별한다.',primary:'단일 폼 + 역할 자동판별 + 오류 설명',altA:'좌측 신뢰·도움 + 우측 폼',altB:'최근 사무소·계정 선택 + 폼',refs:'Clerk, Linear sign-in, Estate auth rule'},
+      {id:2,group:'foundation',route:'/register',title:'회원가입',recipe:'WorkspaceSetup',image:'assets/screens/foundation/02-register.png',purpose:'Owner 계정 인증과 사무소 생성 시작을 짧은 단계로 분리한다.',primary:'한 화면 한 질문의 단계형 가입',altA:'좌측 단계목록 + 우측 폼',altB:'최소 가입 후 시작 체크리스트',refs:'Notion onboarding, HubSpot setup'},
+      {id:3,group:'foundation',route:'/onboarding/office',title:'사무소 온보딩',recipe:'WorkspaceSetup',image:'assets/screens/foundation/03-onboarding-office.png',purpose:'필수 사무소 정보를 먼저 만들고 직원·매물·연동을 후속 행동으로 유도한다.',primary:'완료 체크리스트 + 진행률',altA:'좌측 단계 wizard',altB:'대시보드 안 progressive setup',refs:'Attio workspace, Notion setup'},
+      {id:4,group:'foundation',route:'/dashboard',title:'사무소 대시보드',recipe:'ActionDashboard',image:'assets/screens/foundation/04-dashboard.png',purpose:'KPI보다 오늘 처리할 위험·후속·지급·일정을 먼저 보여준다.',primary:'행동 큐 60% + 일정·업무 40%',altA:'KPI/위험 2열 + 활동',altB:'역할별 탭 + drill-down',refs:'Attio reports, Notion dashboard, Linear'},
+      {id:5,group:'foundation',route:'/inbox',title:'AI 검토함',recipe:'ApprovalInbox',image:'assets/screens/foundation/05-inbox.png',purpose:'AI/MCP가 제안한 변경을 근거·before/after·영향과 함께 승인한다.',primary:'queue + diff + context 3패널',altA:'목록 + 520px diff detail',altB:'한 건 집중 카드 stack',refs:'Linear Triage, Attio approval, Langfuse'},
+      {id:6,group:'foundation',route:'/ai-chat',title:'AI 채팅',recipe:'AIChatCanvas',image:'assets/screens/foundation/06-ai-chat.png',purpose:'대화와 장문 결과물, 레코드 근거, mutation 승인을 분리한다.',primary:'대화 + 우측 결과 canvas',altA:'대화 1면 + inline results',altB:'대화목록 + chat + context',refs:'ChatGPT Canvas, Attio Ask, Notion Agent'},
+      {id:7,group:'foundation',route:'/tasks',title:'업무',recipe:'TaskIndex',image:'assets/screens/foundation/07-tasks.png',purpose:'오늘·지연·팀·자동생성 업무를 관련 고객·매물과 함께 처리한다.',primary:'그룹 목록 + 우측 객체 peek',altA:'table↔board 저장 뷰',altB:'오늘 시간구획 집중형',refs:'Linear My issues, Attio tasks, Asana'},
+      {id:8,group:'foundation',route:'/calendar',title:'캘린더',recipe:'OperationsCalendar',image:'assets/screens/foundation/08-calendar.png',purpose:'방문과 통화뿐 아니라 계약금·중도금·잔금·광고만료를 레이어로 관리한다.',primary:'월 grid + 우측 agenda',altA:'주 time-grid + layer filter',altB:'마감 agenda + mini calendar',refs:'Notion Calendar, Cron, Cal.com'},
+      {id:9,group:'foundation',route:'/properties',title:'매물 목록',recipe:'DataIndex',image:'assets/screens/foundation/09-properties.png',purpose:'주소·가격·면적·검증·소유자·광고·다음 행동을 한 시선에 정렬한다.',primary:'고밀도 table + quick record rail',altA:'전폭 table + overlay sheet',altB:'저장 뷰 rail + table/map',refs:'Attio, Teable, Airtable'},
+      {id:10,group:'foundation',route:'/properties/$id',title:'매물 상세',recipe:'RecordWorkspace',image:'assets/screens/foundation/10-property-detail.png',purpose:'매물 신원·검증·소유/임차·광고·활동·다음 행동을 한 record에 결합한다.',primary:'고정 header + tabs + details rail',altA:'속성 rail + 중앙 activity',altB:'문서형 overview + details',refs:'Attio record, HubSpot, Notion layout'},
+      {id:11,group:'foundation',route:'/properties/new',title:'매물 등록',recipe:'StructuredWizard',image:'assets/screens/foundation/11-property-new.png',purpose:'Site→Dong→Unit 연결, 중복검사, 가격, 소유자, 광고를 조건부 단계로 수집한다.',primary:'단계목록 + 폼 + live summary',altA:'상단 stepper 한 열',altB:'섹션형 + 검증 rail',refs:'Airtable forms, HubSpot create'},
+      {id:12,group:'foundation',route:'/properties/external-listings',title:'광고노트·외부수집',recipe:'DataIndex',image:'assets/screens/foundation/12-external-listings.png',purpose:'외부 원문과 내부 매물 후보를 분리해 비교·병합·보류한다.',primary:'수집 목록 + 원문/후보 split detail',altA:'원문 feed + 검토 drawer',altB:'중복 후보 grouped table',refs:'Linear Triage, Airtable intake'},
+      {id:13,group:'foundation',route:'/properties/naver-my-ads',title:'내 광고',recipe:'PipelineWorkspace',image:'assets/screens/foundation/13-naver-my-ads.png',purpose:'포털별 전송·검수·노출·반려·만료를 ERP 상태와 분리해 관리한다.',primary:'채널 상태 table + 만료/action rail',altA:'상태 kanban + time-in-stage',altB:'채널 탭 + grouped table',refs:'Attio pipeline, Korean listing tools'},
+
+      {id:14,group:'spatial',route:'/sites',title:'관리단지·동호수',recipe:'UnitMatrix',image:'assets/screens/spatial-customer/14-sites.png',purpose:'단지→동→층×라인 호실 격자와 선택 호실의 매물·거주·연락 상태를 동시에 본다.',primary:'단지/동 + UnitMatrix + 호실 detail 3패널',altA:'전폭 grid + quick sheet',altB:'단지 overview + 동별 grid',refs:'국내 부동산 ERP, Estate domain'},
+      {id:15,group:'spatial',route:'/contacts',title:'연락처',recipe:'DataIndex',image:'assets/screens/spatial-customer/15-contacts.png',purpose:'한 사람이 여러 중개 역할을 가질 수 있도록 관계·최근활동·다음업무를 보여준다.',primary:'고밀도 people table + quick detail',altA:'관계별 저장 뷰 + table',altB:'최근 활동 grouped list',refs:'Attio People, Frappe CRM'},
+      {id:16,group:'spatial',route:'/contacts/$id',title:'연락처 상세',recipe:'RecordWorkspace',image:'assets/screens/spatial-customer/16-contact-detail.png',purpose:'신원, 소유·요구 관계, 통화·상담 활동, 다음 행동을 하나의 고객 360에 둔다.',primary:'details + activity + relations',altA:'고정 header + tab workspace',altB:'관계 map + activity rail',refs:'Attio record, HubSpot contact'},
+      {id:17,group:'spatial',route:'/contacts/new',title:'연락처 추가',recipe:'StructuredWizard',image:'assets/screens/spatial-customer/17-contact-new.png',purpose:'이름·전화·유형으로 빠르게 저장하고 중복 후보와 후속 관계 연결을 제안한다.',primary:'quick create + 중복 preview',altA:'side sheet create',altB:'inline table row create',refs:'Attio quick create, Twenty'},
+      {id:18,group:'spatial',route:'/buyer-requirements',title:'구매고객',recipe:'DataIndex',image:'assets/screens/spatial-customer/18-buyer-requirements.png',purpose:'지역·예산·면적·기한·매칭수·최근연락을 고객명보다 앞세운다.',primary:'요구조건 table + match preview',altA:'조건 chip grouped list',altB:'우선순위 board',refs:'Attio custom object, Frappe CRM'},
+      {id:19,group:'spatial',route:'/buyer-requirements/$id',title:'구매고객 상세',recipe:'RecordWorkspace',image:'assets/screens/spatial-customer/19-buyer-requirement-detail.png',purpose:'구매조건과 상담, 추천·보류·거절 매물, 양쪽 접촉 활동을 연결한다.',primary:'조건 summary + matches + activity',altA:'추천 split comparison',altB:'pipeline + detail rail',refs:'Attio relation record, HubSpot'},
+      {id:20,group:'spatial',route:'/buyer-requirements/new',title:'구매조건 등록',recipe:'StructuredWizard',image:'assets/screens/spatial-customer/20-buyer-requirement-new.png',purpose:'복수지역, 필수/선호, 억/만원, ㎡/평을 실수 없이 구조화한다.',primary:'3패널 wizard + live condition summary',altA:'한 화면 grouped form',altB:'대화형 단계 수집',refs:'Notion forms, domain inputs'},
+      {id:21,group:'spatial',route:'/buyer-requirements/$id/edit',title:'구매조건 편집',recipe:'StructuredWizard',image:'assets/screens/spatial-customer/21-buyer-requirement-edit.png',purpose:'수정값이 기존 Match를 몇 건 재평가하는지 저장 전에 보여준다.',primary:'현재/수정 form + 영향 rail',altA:'before/after diff sheet',altB:'section form + match impact',refs:'Linear change review, Estate HITL'},
+      {id:22,group:'spatial',route:'/consultations',title:'상담기록',recipe:'DataIndex',image:'assets/screens/spatial-customer/22-consultations.png',purpose:'누가 언제 누구와 어떤 매물·요구를 상담했고 다음 후속이 무엇인지 구조화한다.',primary:'activity table + consultation detail',altA:'timeline grouped by day',altB:'고객별 conversation log',refs:'Attio activity, Frappe CRM'},
+      {id:23,group:'spatial',route:'/calls',title:'통화 관리',recipe:'CallWorkspace',image:'assets/screens/spatial-customer/23-calls.png',purpose:'통화 목록, 오디오·전사·요약, 연락처 문맥, 상담·업무 전환을 연결한다.',primary:'calls + transcript + context 3패널',altA:'목록 + 전체 transcript',altB:'CTI popup → post-call sheet',refs:'Gong, Attio Call Intelligence'},
+      {id:24,group:'spatial',route:'/matches',title:'매칭',recipe:'PipelineWorkspace',image:'assets/screens/spatial-customer/24-matches.png',purpose:'구매조건과 매물 양쪽, 적합 근거, 가격차, buyer/owner 접촉단계를 함께 본다.',primary:'grouped table + match detail rail',altA:'stage kanban + card peek',altB:'buyer/property comparison board',refs:'Attio kanban, Pipedrive'},
+      {id:25,group:'spatial',route:'/deals',title:'거래관리',recipe:'PipelineWorkspace',image:'assets/screens/spatial-customer/25-deals.png',purpose:'단계·금액·체류일·다음행동과 수수료·계약 위험을 한 거래 workspace로 관리한다.',primary:'pipeline table + deal detail',altA:'전폭 kanban + transition sheet',altB:'funnel + risk queue + table',refs:'Attio Deals, Pipedrive'},
+      {id:26,group:'spatial',route:'/contracts',title:'계약서 관리',recipe:'ContractDocumentWorkspace',image:'assets/screens/spatial-customer/26-contracts.png',purpose:'계약 저장 뷰에서 상태·다음 지급·서명·문서 위험을 보고 편집기로 진입한다.',primary:'contract hub table + document preview',altA:'계약 overview + payment timeline',altB:'목차/문서/필드 editor',refs:'Juro, Documenso, Notion'},
+
+      {id:27,group:'ops',route:'/cashflow',title:'캐시플로우',recipe:'FinanceControl',image:'assets/screens/deals-ops/27-cashflow.png',purpose:'30/90일 예상 현금, 오늘의 수금·지출 위험, 원천 거래를 drill-down한다.',primary:'cash outlook + action queue + ledger preview',altA:'기간별 waterfall + exceptions',altB:'역할별 finance dashboard',refs:'Xero, Bigcapital'},
+      {id:28,group:'ops',route:'/cashflow/ledger',title:'수금 원장',recipe:'FinanceControl',image:'assets/screens/deals-ops/28-ledger.png',purpose:'예정·실입금·미수·조정·증빙과 Deal/Contract 원천을 불변 원장으로 추적한다.',primary:'전폭 ledger + evidence/activity peek',altA:'deal grouped ledger',altB:'미수 aging + transaction detail',refs:'Bigcapital, Xero'},
+      {id:29,group:'ops',route:'/cashflow/partner-commissions',title:'공동중개 수수료',recipe:'FinanceControl',image:'assets/screens/deals-ops/29-partner-commissions.png',purpose:'파트너별 채무·승인·지급·증빙과 관련 거래를 관리한다.',primary:'partner grouped table + approval drawer',altA:'지급 batch review',altB:'partner statement view',refs:'Ramp payables, Xero'},
+      {id:30,group:'ops',route:'/cashflow/employee-settlements',title:'직원 정산',recipe:'FinanceControl',image:'assets/screens/deals-ops/30-employee-settlements.png',purpose:'정산기간, 기여·배분 규칙, 조정, 세전/지급액, 잠금과 재오픈 감사를 검토한다.',primary:'employee grouped settlement + review rail',altA:'pay run step review',altB:'직원별 statement comparison',refs:'Rippling payroll, Deel'},
+      {id:31,group:'ops',route:'/cashflow/my-settlement',title:'내 수수료',recipe:'FinanceControl',image:'assets/screens/deals-ops/31-my-settlement.png',purpose:'직원이 예상·확정·지급 수수료와 계산 근거를 이해하고 이의를 제기한다.',primary:'self-service summary + deal breakdown',altA:'기간 statement',altB:'calculation explanation timeline',refs:'Rippling employee pay'},
+      {id:32,group:'ops',route:'/cashflow/expenses',title:'고정비 설정',recipe:'FinanceControl',image:'assets/screens/deals-ops/32-expenses.png',purpose:'반복 비용 규칙과 실제 발생 원장, 갱신·종료·비활성 상태를 분리한다.',primary:'recurring rules table + edit detail',altA:'calendar projection',altB:'vendor grouped expenses',refs:'Xero recurring bills, Ramp'},
+      {id:33,group:'ops',route:'/network',title:'중개 네트워크',recipe:'ConversationWorkspace',image:'assets/screens/deals-ops/33-network.png',purpose:'방 목록, 대화, 공유매물·문의 context와 공개범위·상태를 동시에 관리한다.',primary:'rooms + conversation + context 3패널',altA:'inquiry table + conversation preview',altB:'shared property feed + thread',refs:'Chatwoot, Intercom, Slack'},
+      {id:34,group:'ops',route:'/partner-brokers',title:'파트너 중개사',recipe:'DataIndex',image:'assets/screens/deals-ops/34-partner-brokers.png',purpose:'사무소·지역·전문유형·공동거래·미정산·최근연락을 관계 record로 본다.',primary:'company table + relationship detail',altA:'지역 directory + map',altB:'최근 공동거래 grouped view',refs:'Attio Companies, HubSpot'},
+      {id:35,group:'ops',route:'/employees',title:'직원관리',recipe:'DataIndex',image:'assets/screens/deals-ops/35-employees.png',purpose:'직원 디렉터리, 역할·권한, 업무·거래·정산 문맥을 민감도별로 분리한다.',primary:'employee table + role/activity detail',altA:'조직 directory',altB:'권한 matrix + user detail',refs:'Frappe HR, Rippling'},
+      {id:36,group:'ops',route:'/service-vendors',title:'협력업체',recipe:'DataIndex',image:'assets/screens/deals-ops/36-service-vendors.png',purpose:'업종·지역·담당자·최근 의뢰·누적 지출·문서를 운영 record로 관리한다.',primary:'vendor table + work/spend detail',altA:'업종 directory',altB:'최근 의뢰 pipeline',refs:'Ramp Vendor Management, Attio'},
+      {id:37,group:'ops',route:'/documents',title:'자료실',recipe:'AssetLibrary',image:'assets/screens/deals-ops/37-documents.png',purpose:'문서 검색 결과와 preview, 관련 매물·고객·계약, 보안·OCR 상태를 함께 본다.',primary:'document table + preview + metadata',altA:'문서 page workspace',altB:'관련 객체 grouped library',refs:'Paperless-ngx, DocuWare, Notion'},
+      {id:38,group:'ops',route:'/documents/photos',title:'사진 자료',recipe:'AssetLibrary',image:'assets/screens/deals-ops/38-photos.png',purpose:'촬영일 타임라인, 대량 선택, 중복·저화질, 대표·순서, 원본·관계를 관리한다.',primary:'timeline/gallery + bulk toolbar + info panel',altA:'관련 매물별 gallery',altB:'비교/대표사진 selection tray',refs:'Immich, Google Photos'},
+      {id:39,group:'ops',route:'/settings',title:'설정',recipe:'SettingsConsole',image:'assets/screens/deals-ops/39-settings.png',purpose:'사무소, 직원·권한, 수수료, 문서, 연동·MCP·AI, 보안·감사를 안정된 IA로 관리한다.',primary:'category rail + search + form/audit ledger',altA:'설정 검색 중심',altB:'관리 위험 summary + drawer',refs:'Linear settings, Attio permissions, Notion admin'}
+    ];
+
+    const groupLabels = {foundation:'인증·홈·매물', spatial:'단지·고객·거래', ops:'재무·운영·설정'};
+    const printMode = new URLSearchParams(window.location.search).has('print');
+    const gallery = document.getElementById('gallery');
+    const search = document.getElementById('search');
+    const resultCount = document.getElementById('resultCount');
+    const lightbox = document.getElementById('lightbox');
+    const modalImg = document.getElementById('modalImg');
+    const modalTitle = document.getElementById('modalTitle');
+    const modalRoute = document.getElementById('modalRoute');
+    let activeFilter = 'all';
+
+    function cardTemplate(page) {
+      return `<article class="screen-card" data-group="${page.group}" data-search="${[page.title,page.route,page.recipe,page.refs,page.purpose].join(' ').toLowerCase()}">
+        <header class="screen-top"><div class="screen-title"><span class="screen-index">${String(page.id).padStart(2,'0')}</span><div><h3>${page.title}</h3><div class="route">${page.route}</div></div></div><span class="recipe">${page.recipe}</span></header>
+        <div class="screen-image"><img loading="${printMode ? 'eager' : 'lazy'}" src="${page.image}" alt="${page.title} 데모 UI" data-img="${page.image}" data-title="${String(page.id).padStart(2,'0')}. ${page.title}" data-route="${page.route}" /></div>
+        <div class="screen-body"><p class="purpose">${page.purpose}</p><div class="meta-grid"><div class="meta-block primary"><b>채택 구조</b><span>${page.primary}</span></div><div class="meta-block"><b>화면군</b><span>${groupLabels[page.group]} · ${page.recipe}</span></div></div></div>
+        <details><summary>대안 유형과 참고 근거</summary><div class="details-content"><div><b>대안 A</b> — ${page.altA}</div><div><b>대안 B</b> — ${page.altB}</div><div><b>참고</b> — ${page.refs}</div></div></details>
+      </article>`;
+    }
+
+    gallery.innerHTML = pages.map(cardTemplate).join('');
+    if (printMode) document.querySelectorAll('.screen-card details').forEach(item => { item.open = true; });
+
+    function applyFilters() {
+      const term = search.value.trim().toLowerCase();
+      let visible = 0;
+      document.querySelectorAll('.screen-card').forEach(card => {
+        const groupOK = activeFilter === 'all' || card.dataset.group === activeFilter;
+        const searchOK = !term || card.dataset.search.includes(term);
+        card.hidden = !(groupOK && searchOK);
+        if (!card.hidden) visible += 1;
+      });
+      resultCount.textContent = `${visible}개 화면`;
+    }
+
+    document.querySelectorAll('.filter').forEach(button => button.addEventListener('click', () => {
+      activeFilter = button.dataset.filter;
+      document.querySelectorAll('.filter').forEach(item => item.classList.toggle('active', item === button));
+      applyFilters();
+    }));
+    document.querySelectorAll('[data-side-filter]').forEach(link => link.addEventListener('click', () => {
+      activeFilter = link.dataset.sideFilter;
+      document.querySelectorAll('.filter').forEach(item => item.classList.toggle('active', item.dataset.filter === activeFilter));
+      applyFilters();
+    }));
+    search.addEventListener('input', applyFilters);
+
+    function openLightbox(target) {
+      const src = target.dataset.img;
+      if (!src) return;
+      modalImg.src = src;
+      modalTitle.textContent = target.dataset.title || target.alt || '페이지 데모';
+      modalRoute.textContent = target.dataset.route || '';
+      lightbox.showModal();
+    }
+    document.addEventListener('click', event => {
+      const target = event.target.closest('[data-img]');
+      if (target) openLightbox(target);
+    });
+    document.getElementById('modalClose').addEventListener('click', () => lightbox.close());
+    lightbox.addEventListener('click', event => { if (event.target === lightbox) lightbox.close(); });
+    document.addEventListener('keydown', event => { if (event.key === 'Escape' && lightbox.open) lightbox.close(); });
+  </script>
+</body>
+</html>

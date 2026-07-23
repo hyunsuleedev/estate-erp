@@ -1,5 +1,23 @@
 import type { ReactNode } from 'react';
-import type { ColumnDef, SortingState, ColumnFiltersState } from '@tanstack/react-table';
+import type {
+  ColumnDef,
+  RowData,
+  SortingState,
+  ColumnFiltersState,
+} from '@tanstack/react-table';
+
+declare module '@tanstack/react-table' {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  interface ColumnMeta<TData extends RowData, TValue> {
+    /**
+     * true면 이 컬럼이 남는 가로 공간을 흡수한다 (고정폭 대신 auto).
+     * 테이블이 뷰포트보다 좁을 때 다른 컬럼(특히 sticky 고정 컬럼)이
+     * 비례로 늘어나 pinned 오프셋이 틀어지는 것을 막는다.
+     * size는 테이블 minWidth 계산에 포함되므로 최소폭 역할을 한다.
+     */
+    fill?: boolean;
+  }
+}
 
 // ── Filter types (Twenty-inspired) ──────────────────────────────
 

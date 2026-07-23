@@ -169,6 +169,11 @@ export type {
   PublicDocument,
   PublicDocumentType,
   PublicDocumentStatus,
+  PublicDocumentRequestMode,
+  PublicDocumentProvider,
+  PublicDocumentQuoteItem,
+  PublicDocumentQuote,
+  BatchPublicDocumentDto,
   CreatePublicDocumentDto,
 } from './modules/public-documents.js';
 export type {

@@ -125,9 +125,9 @@ function DashboardPage() {
     <div className="flex max-w-[1180px] flex-col gap-3.5">
       {/* 인사말 브리핑 */}
       <div>
-        <h1 className="text-[19px] font-bold tracking-[-0.02em] text-foreground">
+        <h2 className="text-[19px] font-bold tracking-[-0.02em] text-foreground">
           {user?.name ? `안녕하세요, ${user.name}님` : '안녕하세요'}
-        </h1>
+        </h2>
         {loading ? (
           <Skeleton className="mt-1.5 h-4 w-72" />
         ) : (

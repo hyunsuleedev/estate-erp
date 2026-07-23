@@ -210,7 +210,7 @@ function ContactDetailPage() {
             </Button>
             <div className="min-w-0 space-y-2">
               <div className="flex flex-wrap items-center gap-2">
-                <h1 className="text-lg font-semibold tracking-tight">{contact.name}</h1>
+                <h2 className="text-lg font-semibold tracking-tight">{contact.name}</h2>
                 <ContactTagBadges tags={contact.tags} />
               </div>
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">

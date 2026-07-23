@@ -137,6 +137,7 @@ function BuyerRequirementDetailPage() {
     <div className="pt-4">
       <PageHeader
         backTo="/buyer-requirements"
+        showTitle
         title={r.contact?.name ? `${r.contact.name} 고객` : '구매고객 상세'}
         description={
           r.transactionType

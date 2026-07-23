@@ -70,6 +70,7 @@ function EditBuyerRequirementPage() {
   return (
     <div className="pt-4">
       <PageHeader
+        showTitle
         title={`${requirement.contact?.name ?? '구매고객'} 조건 수정`}
         backTo="/buyer-requirements"
       />

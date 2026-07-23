@@ -163,14 +163,8 @@ function CashflowDashboard() {
 
   return (
     <div className="mx-auto flex w-full max-w-[1120px] flex-col gap-3.5">
-      {/* 헤더: 타이틀 + 월 네비 + 수금 원장 */}
+      {/* 헤더: 월 네비 + 수금 원장 (제목은 상단 앱 헤더가 표시) */}
       <div className="flex flex-wrap items-start gap-3">
-        <div>
-          <h1 className="text-lg font-bold tracking-tight">캐시플로우</h1>
-          <p className="mt-0.5 text-[12.5px] break-keep text-muted-foreground">
-            이번 달 돈 흐름 — 수금 목표 진행과 오늘 처리할 수금 업무를 한눈에 봐요
-          </p>
-        </div>
         <div className="flex-1" />
         <div className="flex flex-wrap items-center gap-2">
           <div className="inline-flex h-8 items-stretch overflow-hidden rounded-lg border bg-card">

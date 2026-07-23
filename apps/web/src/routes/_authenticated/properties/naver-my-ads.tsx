@@ -137,7 +137,7 @@ function NaverMyAdsPage() {
   };
 
   return (
-    <div className="-m-4 flex min-h-0 min-w-0 flex-1 flex-col bg-background">
+    <div className="-mx-4 -mb-4 flex min-h-0 min-w-0 flex-1 flex-col bg-background">
       {/* 헤더: 상태 탭 + 검색 */}
       <div className="flex flex-wrap items-center gap-2.5 border-b px-6 py-3">
         <div className="flex flex-wrap gap-1.5">

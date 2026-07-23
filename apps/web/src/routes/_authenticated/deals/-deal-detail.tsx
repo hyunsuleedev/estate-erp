@@ -1,7 +1,19 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { ArrowRight, Ban, Circle, ExternalLink, FilePlus2, FileText, Pencil, Phone } from 'lucide-react';
+import {
+  ArrowRight,
+  Ban,
+  Circle,
+  CircleAlert,
+  ExternalLink,
+  FilePlus2,
+  FileText,
+  Pencil,
+  Phone,
+  TimerReset,
+  UserRound,
+} from 'lucide-react';
 import { toast } from 'sonner';
 import type { Contact, Contract, Deal } from '@estate-erp/api-client';
 import { api } from '@/lib/api';
@@ -38,6 +50,7 @@ import {
   formatDealAmount,
   formatNextPaymentLabel,
   getDealLocationLine,
+  getDealPipelineHealth,
   getDealShortCode,
   getDealTitle,
   getDealTransactionType,
@@ -112,6 +125,10 @@ function DealDetailPanel({
 }) {
   const transactionType = getDealTransactionType(deal);
   const nextPayment = getNextDealPaymentSummary(deal, referenceDate);
+  const pipelineHealth = getDealPipelineHealth(deal, referenceDate);
+  const participantNames = [
+    ...new Set((deal.participants ?? []).map((participant) => participant.user.name)),
+  ];
   const nextStage = getNextDealStage(deal.stage);
   const billed = deal.commissionSummary?.billed ?? 0;
   const [termsOpen, setTermsOpen] = useState(false);
@@ -149,6 +166,34 @@ function DealDetailPanel({
         </div>
 
         <PipelineSteps kind="dealStage" current={deal.stage} cancelled={deal.isCancelled} className="mt-4" />
+
+        {!deal.isCancelled ? (
+          <div
+            className={cn(
+              'mt-4 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-md border px-3 py-2 text-xs',
+              pipelineHealth.state === 'overdue' &&
+                'border-destructive/35 bg-destructive-soft/45 text-destructive',
+              pipelineHealth.state === 'stale' &&
+                'border-warning/40 bg-warning-soft/50 text-warning',
+              pipelineHealth.state === 'unscheduled' &&
+                'border-border bg-background text-muted-foreground',
+              pipelineHealth.state === 'healthy' &&
+                'border-success/30 bg-success-soft/40 text-success',
+            )}
+          >
+            {pipelineHealth.isAtRisk ? (
+              <CircleAlert className="size-3.5 shrink-0" aria-hidden="true" />
+            ) : (
+              <TimerReset className="size-3.5 shrink-0" aria-hidden="true" />
+            )}
+            <strong>{pipelineHealth.label}</strong>
+            <span className="text-current/75">{pipelineHealth.description}</span>
+            <span className="ml-auto font-mono text-[11px] text-current/75">
+              현 단계 {pipelineHealth.stageAgeDays}일
+              {pipelineHealth.targetDays > 0 ? ` / 목표 ${pipelineHealth.targetDays}일` : ''}
+            </span>
+          </div>
+        ) : null}
       </div>
 
       {deal.isCancelled ? (
@@ -211,6 +256,26 @@ function DealDetailPanel({
           <SectionTitle>당사자</SectionTitle>
           <PartyDetailRow label="매도" contact={deal.sellerContact ?? null} />
           <PartyDetailRow label="매수" contact={deal.buyerContact ?? null} />
+
+          <SectionTitle>담당 직원</SectionTitle>
+          {participantNames.length ? (
+            <div className="flex flex-wrap gap-1.5">
+              {participantNames.map((participantName) => (
+                <Badge
+                  key={participantName}
+                  variant="outline"
+                  className="gap-1.5 rounded-md bg-background px-2 py-1 text-[11px] font-medium"
+                >
+                  <UserRound className="size-3" aria-hidden="true" />
+                  {participantName}
+                </Badge>
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-md border border-dashed bg-muted/50 px-3 py-3 text-xs text-muted-foreground">
+              배정된 담당 직원이 없습니다.
+            </div>
+          )}
 
           <SectionTitle>공동중개</SectionTitle>
           {deal.isJointBrokerage ? (

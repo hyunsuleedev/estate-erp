@@ -231,7 +231,7 @@ function ServiceVendorsPage() {
   );
 
   return (
-    <div className="-m-4 flex min-h-0 min-w-0 flex-1 flex-col p-4">
+    <div className="-mx-4 -mb-4 flex min-h-0 min-w-0 flex-1 flex-col p-4 pt-0">
       <PageHeader
         title="업체 디렉토리"
         description="단골 수리·시공 업체와 공용 업체 풀을 한 곳에서 관리합니다"

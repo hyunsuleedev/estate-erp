@@ -67,6 +67,13 @@ export interface Deal {
   buyerContact?: Contact | null;
   sellerContact?: Contact | null;
   partnerBroker?: { id: string; name: string; phone: string | null } | null;
+  participants?: Array<{
+    id: string;
+    userId: string;
+    role: string;
+    side: string;
+    user: { id: string; name: string };
+  }>;
   payments?: DealPayment[];
 }
 

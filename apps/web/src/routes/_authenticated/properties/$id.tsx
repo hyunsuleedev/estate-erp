@@ -37,6 +37,8 @@ import type {
   PropertyContact,
   PropertyPhoto,
   PublicDocument,
+  PublicDocumentQuoteItem,
+  PublicDocumentType,
   Tenant,
 } from '@estate-erp/api-client';
 import { toast } from 'sonner';
@@ -327,7 +329,7 @@ function PropertyDetailPage() {
 
             <div className="mt-3 flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
               <div className="min-w-0">
-                <h1 className="truncate text-2xl font-semibold tracking-tight text-slate-950">{title}</h1>
+                <h2 className="truncate text-2xl font-semibold tracking-tight text-slate-950">{title}</h2>
                 <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-muted-foreground">
                   <MetaItem icon={MapPin}>{address}</MetaItem>
                   <MetaItem icon={Ruler}>{formatArea(exclusiveArea ?? supplyArea)}</MetaItem>
@@ -1353,16 +1355,17 @@ function PhotoTile({ photo, index }: { photo: PropertyPhoto; index: number }) {
 // ─────────────────────────────────────────────────────────────
 
 const DOCUMENT_TYPES = [
-  { type: 'registry', title: '등기부등본', source: '대법원 인터넷등기소', cost: 700 },
-  { type: 'building_ledger', title: '건축물대장', source: '세움터', cost: 0 },
-  { type: 'land_ledger', title: '토지/임야대장', source: '정부24', cost: 0 },
-  { type: 'cadastral_map', title: '지적도', source: '정부24', cost: 0 },
-  { type: 'land_use_plan', title: '토지이용계획확인서', source: '토지이음', cost: 0 },
-  { type: 'land_register', title: '대지권등록부', source: '정부24', cost: 0 },
-] as const;
+  { type: 'registry', title: '등기사항증명서' },
+  { type: 'building_ledger', title: '건축물대장' },
+  { type: 'land_ledger', title: '토지·임야대장' },
+  { type: 'cadastral_map', title: '지적도·임야도' },
+  { type: 'land_use_plan', title: '토지이용계획' },
+  { type: 'land_register', title: '대지권등록부' },
+] as const satisfies ReadonlyArray<{ type: PublicDocumentType; title: string }>;
 
 function PublicDocumentsTab({ propertyId, siteId }: { propertyId: string; siteId: string }) {
   const queryClient = useQueryClient();
+  const [registryMode, setRegistryMode] = useState<'view' | 'certificate'>('view');
 
   const {
     data: documents,
@@ -1374,23 +1377,51 @@ function PublicDocumentsTab({ propertyId, siteId }: { propertyId: string; siteId
     queryFn: () => api.publicDocuments.list({ propertyId }),
   });
 
+  const quoteQuery = useQuery({
+    queryKey: ['public-documents', 'quote', propertyId, registryMode],
+    queryFn: () =>
+      api.publicDocuments.quote({
+        propertyId,
+        siteId,
+        types: DOCUMENT_TYPES.map((item) => item.type),
+        registryMode,
+      }),
+    enabled: Boolean(siteId),
+  });
+
   const issueMutation = useMutation({
-    mutationFn: (data: { type: string; title: string; cost: number; subtitle?: string }) =>
+    mutationFn: (data: PublicDocumentQuoteItem) =>
       api.publicDocuments.create({
         propertyId,
         siteId,
         type: data.type,
         title: data.title,
-        cost: data.cost,
-        subtitle: data.subtitle,
+        requestMode: data.requestMode,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['public-documents', propertyId] });
       toast.success('발급 요청이 등록되었습니다.');
     },
-    onError: () => {
-      toast.error('발급 요청에 실패했습니다.');
+    onError: (error) =>
+      toast.error(error instanceof Error ? error.message : '발급 요청에 실패했습니다.'),
+  });
+
+  const batchMutation = useMutation({
+    mutationFn: (types: PublicDocumentType[]) =>
+      api.publicDocuments.createBatch({
+        propertyId,
+        siteId,
+        types,
+        registryMode,
+      }),
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ['public-documents'] });
+      const skippedMessage =
+        result.skipped.length > 0 ? ` 설정이 필요한 ${result.skipped.length}종은 제외했습니다.` : '';
+      toast.success(`${result.documents.length}종을 요청했습니다.${skippedMessage}`);
     },
+    onError: (error) =>
+      toast.error(error instanceof Error ? error.message : '일괄 요청에 실패했습니다.'),
   });
 
   if (isError) {
@@ -1399,6 +1430,7 @@ function PublicDocumentsTab({ propertyId, siteId }: { propertyId: string; siteId
 
   const cards = DOCUMENT_TYPES.map((docType) => ({
     ...docType,
+    quote: quoteQuery.data?.items.find((item) => item.type === docType.type),
     latest: getLatestDocument(documents ?? [], docType.type),
   }));
   const completedCount = cards.filter((card) => card.latest?.status === 'completed').length;
@@ -1406,17 +1438,19 @@ function PublicDocumentsTab({ propertyId, siteId }: { propertyId: string; siteId
   const lastIssued = getLastIssuedDocument(documents ?? []);
   const totalCost = (documents ?? []).reduce((sum, document) => sum + document.cost, 0);
 
-  const issueDocument = (docType: (typeof DOCUMENT_TYPES)[number]) => {
+  const availableMissingCards = missingCards.filter((card) => card.quote?.available);
+
+  const issueDocument = (quote?: PublicDocumentQuoteItem) => {
     if (!siteId) {
       toast.error('단지 정보가 없어 발급할 수 없습니다.');
       return;
     }
 
-    issueMutation.mutate({
-      type: docType.type,
-      title: docType.title,
-      cost: docType.cost,
-    });
+    if (!quote?.available) {
+      toast.error(quote?.reason ?? '공급자 설정을 확인해 주세요.');
+      return;
+    }
+    issueMutation.mutate(quote);
   };
 
   return (
@@ -1434,19 +1468,53 @@ function PublicDocumentsTab({ propertyId, siteId }: { propertyId: string; siteId
             마지막 발급 {lastIssued ? formatDate(lastIssued.issuedAt) : '—'} · 발급 비용 누적{' '}
             {totalCost.toLocaleString()}원
           </p>
+          <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+            <span className="text-muted-foreground">등기사항증명서</span>
+            <div className="inline-flex rounded-md border bg-background p-0.5">
+              <button
+                type="button"
+                aria-pressed={registryMode === 'view'}
+                className={cn(
+                  'rounded px-2.5 py-1 transition-colors',
+                  registryMode === 'view' && 'bg-slate-950 text-white',
+                )}
+                onClick={() => setRegistryMode('view')}
+              >
+                열람용 700원
+              </button>
+              <button
+                type="button"
+                aria-pressed={registryMode === 'certificate'}
+                className={cn(
+                  'rounded px-2.5 py-1 transition-colors',
+                  registryMode === 'certificate' && 'bg-slate-950 text-white',
+                )}
+                onClick={() => setRegistryMode('certificate')}
+              >
+                발급용 1,000원
+              </button>
+            </div>
+          </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Button
             className="gap-1.5 bg-slate-950 text-white hover:bg-slate-800"
-            disabled={missingCards.length === 0 || issueMutation.isPending || !siteId}
-            onClick={() => missingCards.forEach(issueDocument)}
+            disabled={
+              availableMissingCards.length === 0 ||
+              batchMutation.isPending ||
+              quoteQuery.isLoading ||
+              !siteId
+            }
+            onClick={() =>
+              batchMutation.mutate(availableMissingCards.map((card) => card.type))
+            }
           >
-            {issueMutation.isPending ? (
+            {batchMutation.isPending ? (
               <Loader2 className="size-4 animate-spin" />
             ) : (
               <FileText className="size-4" />
             )}
-            일괄 발급 ({missingCards.length}종)
+            일괄 요청 ({availableMissingCards.length}종)
           </Button>
         </div>
       </div>
@@ -1463,11 +1531,10 @@ function PublicDocumentsTab({ propertyId, siteId }: { propertyId: string; siteId
             <DocumentCard
               key={card.type}
               title={card.title}
-              source={card.source}
-              cost={card.cost}
+              quote={card.quote}
               latest={card.latest}
-              isPending={issueMutation.isPending}
-              onIssue={() => issueDocument(card)}
+              isPending={issueMutation.isPending || batchMutation.isPending}
+              onIssue={() => issueDocument(card.quote)}
             />
           ))}
         </div>
@@ -1478,15 +1545,13 @@ function PublicDocumentsTab({ propertyId, siteId }: { propertyId: string; siteId
 
 function DocumentCard({
   title,
-  source,
-  cost,
+  quote,
   latest,
   isPending,
   onIssue,
 }: {
   title: string;
-  source: string;
-  cost: number;
+  quote?: PublicDocumentQuoteItem;
   latest?: PublicDocument;
   isPending: boolean;
   onIssue: () => void;
@@ -1494,6 +1559,8 @@ function DocumentCard({
   const isMissing = !latest;
   const isCompleted = latest?.status === 'completed';
   const isFailed = latest?.status === 'failed';
+  const available = quote?.available ?? false;
+  const isStructuredData = quote?.output === 'structured_data';
 
   return (
     <article
@@ -1512,7 +1579,8 @@ function DocumentCard({
           <div>
             <h3 className="font-semibold text-slate-950">{title}</h3>
             <p className="text-xs text-muted-foreground">
-              {source} · {cost > 0 ? `${cost.toLocaleString()}원` : '무료'}
+              {quote?.providerLabel ?? '공급자 확인 중'} ·{' '}
+              {(quote?.cost ?? 0) > 0 ? `${quote?.cost.toLocaleString()}원` : '무료'}
             </p>
           </div>
         </div>
@@ -1540,9 +1608,16 @@ function DocumentCard({
             </p>
           </>
         ) : (
-          <p className="text-sm leading-6 text-muted-foreground">
-            아직 발급된 기록이 없습니다. 계약 전 권리 확인을 위해 발급을 권장합니다.
-          </p>
+          <div className="text-sm leading-6 text-muted-foreground">
+            <p>
+              {isStructuredData
+                ? '공공 API에서 최신 구조화 데이터를 조회합니다.'
+                : '요청 후 발급받은 문서 파일을 자료실에서 연결합니다.'}
+            </p>
+            {!available && quote?.reason && (
+              <p className="mt-1 text-xs font-medium text-destructive">{quote.reason}</p>
+            )}
+          </div>
         )}
       </div>
 
@@ -1551,27 +1626,49 @@ function DocumentCard({
           variant="outline"
           size="sm"
           className="gap-1.5"
-          disabled={!latest?.fileUrl}
+          disabled={!isCompleted || (!latest?.fileUrl && !latest?.metadata)}
           onClick={() => {
-            if (latest?.fileUrl) window.open(latest.fileUrl, '_blank', 'noopener');
+            if (latest?.fileUrl) {
+              window.open(latest.fileUrl, '_blank', 'noopener');
+            } else if (latest?.metadata) {
+              downloadPublicDocumentData(latest);
+            }
           }}
         >
           <Download className="size-3.5" />
-          PDF
+          {latest?.fileUrl ? 'PDF' : '데이터'}
         </Button>
         <Button
           size="sm"
           variant={isMissing ? 'default' : 'outline'}
           className={cn(isMissing && 'bg-slate-950 text-white hover:bg-slate-800')}
-          disabled={isPending}
+          disabled={isPending || !available || latest?.status === 'pending'}
           onClick={onIssue}
         >
           {isPending ? <Loader2 className="mr-1.5 size-3.5 animate-spin" /> : null}
-          {isMissing ? '지금 발급' : '재발급'}
+          {latest?.status === 'pending'
+            ? '처리 대기중'
+            : isMissing
+              ? isStructuredData
+                ? '지금 조회'
+                : '발급 요청'
+              : '다시 요청'}
         </Button>
       </div>
     </article>
   );
+}
+
+function downloadPublicDocumentData(document: PublicDocument) {
+  const blob = new Blob([JSON.stringify(document.metadata, null, 2)], {
+    type: 'application/json',
+  });
+  const url = URL.createObjectURL(blob);
+  const anchor = window.document.createElement('a');
+  anchor.href = url;
+  anchor.download = `${document.title}-${document.id}.json`;
+  anchor.click();
+  URL.revokeObjectURL(url);
 }
 
 // ─────────────────────────────────────────────────────────────

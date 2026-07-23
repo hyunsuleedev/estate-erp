@@ -61,12 +61,8 @@ function AiChatPage() {
 
   return (
     <div className="-mx-4 -mb-4 flex flex-1 min-h-0 flex-col bg-background">
-      {/* 헤더: 제목 + Beta 뱃지 + 새 대화 */}
+      {/* 헤더: 새 대화 (제목은 상단 앱 헤더가 표시) */}
       <div className="flex shrink-0 items-center gap-2 border-b border-border/60 px-6 py-[13px]">
-        <h1 className="text-lg font-bold tracking-[-0.02em]">AI 채팅</h1>
-        <span className="inline-flex h-[18px] items-center rounded-full bg-violet-soft px-[7px] text-[10px] font-bold text-violet">
-          Beta
-        </span>
         <div className="flex-1" />
         <Button variant="outline" size="sm" onClick={handleNewChat}>
           <Plus />새 대화

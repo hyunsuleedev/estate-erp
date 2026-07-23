@@ -24,6 +24,39 @@ import { PublicDocumentsService } from './public-documents.service';
 export class PublicDocumentsController {
   constructor(private readonly service: PublicDocumentsService) {}
 
+  @Get('providers')
+  providers() {
+    return this.service.getProviders();
+  }
+
+  @Post('quote')
+  quote(
+    @CurrentUser() user: CurrentUserPayload,
+    @Body()
+    body: {
+      propertyId?: string;
+      siteId: string;
+      types: string[];
+      registryMode?: 'view' | 'certificate';
+    },
+  ) {
+    return this.service.quote(user.officeId, body);
+  }
+
+  @Post('batch')
+  createBatch(
+    @CurrentUser() user: CurrentUserPayload,
+    @Body()
+    body: {
+      propertyId?: string;
+      siteId: string;
+      types: string[];
+      registryMode?: 'view' | 'certificate';
+    },
+  ) {
+    return this.service.createBatch(user.officeId, user.userId, body);
+  }
+
   @Get()
   list(
     @CurrentUser() user: CurrentUserPayload,
@@ -50,7 +83,7 @@ export class PublicDocumentsController {
       type: string;
       title: string;
       subtitle?: string;
-      cost?: number;
+      requestMode?: 'data' | 'view' | 'certificate' | 'upload';
     },
   ) {
     return this.service.create(user.officeId, user.userId, body);
@@ -71,6 +104,29 @@ export class PublicDocumentsController {
     },
   ) {
     return this.service.updateStatus(id, user.officeId, body);
+  }
+
+  @Post(':id/retry')
+  retry(
+    @Param('id') id: string,
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.service.retry(id, user.officeId);
+  }
+
+  @Patch(':id/file')
+  attachFile(
+    @Param('id') id: string,
+    @CurrentUser() user: CurrentUserPayload,
+    @Body()
+    body: {
+      fileUrl: string;
+      fileSize?: number;
+      mimeType?: string;
+      externalRefId?: string;
+    },
+  ) {
+    return this.service.attachFile(id, user.officeId, body);
   }
 
   @Delete(':id')

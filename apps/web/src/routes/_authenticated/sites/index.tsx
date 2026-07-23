@@ -778,7 +778,7 @@ function SitesPage() {
   // ── JSX ───────────────────────────────────────────────────────
 
   return (
-    <div className="relative flex flex-1 min-h-0 -m-4">
+    <div className="relative flex flex-1 min-h-0 -mx-4 -mb-4">
       {/* ─── Sidebar (단지 Nav) ──────────────────────────────── */}
       {isSiteNavOpen ? (
         <aside className="flex w-[250px] shrink-0 flex-col border-r bg-background">

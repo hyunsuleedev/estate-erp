@@ -43,12 +43,20 @@ export class CalendarEventsService {
   ) {
     const where: any = { officeId };
 
-    // FullCalendar은 start/end 범위로 이벤트 요청
-    if (filters.start || filters.end) {
-      where.start = {};
-      if (filters.start) where.start.gte = new Date(filters.start);
-      if (filters.end) where.start.lte = new Date(filters.end);
+    // FullCalendar 범위의 end는 exclusive이다. 범위 안에서 시작한 이벤트뿐 아니라
+    // 이전에 시작해 현재 범위까지 이어지는 멀티데이 이벤트도 조회한다.
+    const rangeConditions: any[] = [];
+    if (filters.end) rangeConditions.push({ start: { lt: new Date(filters.end) } });
+    if (filters.start) {
+      const rangeStart = new Date(filters.start);
+      rangeConditions.push({
+        OR: [
+          { end: { gt: rangeStart } },
+          { end: null, start: { gte: rangeStart } },
+        ],
+      });
     }
+    if (rangeConditions.length > 0) where.AND = rangeConditions;
 
     if (filters.userId) where.userId = filters.userId;
     if (filters.type) where.type = filters.type;

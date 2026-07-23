@@ -7,6 +7,7 @@ import {
   CheckCircle2,
   Download,
   FileText,
+  Link2,
   Loader2,
   RotateCcw,
   Trash2,
@@ -18,7 +19,17 @@ import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { formatDate, formatDday } from '@/lib/format';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import {
   ConfirmDialog,
   EmptyState,
@@ -36,7 +47,7 @@ export const Route = createFileRoute('/_authenticated/documents/')({
 });
 
 const typeLabel: Record<string, string> = {
-  registry: '등기부등본',
+  registry: '등기사항증명서',
   building_ledger: '건축물대장',
   land_ledger: '토지/임야대장',
   cadastral_map: '지적도/임야도',
@@ -45,7 +56,7 @@ const typeLabel: Record<string, string> = {
 };
 
 const typeOptions = [
-  { value: 'registry', label: '등기부등본' },
+  { value: 'registry', label: '등기사항증명서' },
   { value: 'building_ledger', label: '건축물대장' },
   { value: 'land_ledger', label: '토지대장' },
   { value: 'cadastral_map', label: '지적도' },
@@ -102,6 +113,8 @@ function PublicDocumentsListPage() {
   const [siteFilter, setSiteFilter] = useState('');
   const [period, setPeriod] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<PublicDocument | null>(null);
+  const [attachTarget, setAttachTarget] = useState<PublicDocument | null>(null);
+  const [fileUrl, setFileUrl] = useState('');
 
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['public-documents', 'all'],
@@ -164,20 +177,25 @@ function PublicDocumentsListPage() {
   }, [data]);
 
   const retryMutation = useMutation({
-    mutationFn: (doc: PublicDocument) =>
-      api.publicDocuments.create({
-        propertyId: doc.propertyId ?? undefined,
-        siteId: doc.siteId,
-        type: doc.type,
-        title: doc.title,
-        subtitle: doc.subtitle ?? undefined,
-        cost: doc.cost,
-      }),
+    mutationFn: (doc: PublicDocument) => api.publicDocuments.retry(doc.id),
     onSuccess: () => {
       toast.success('재발급 요청이 등록되었습니다.');
       queryClient.invalidateQueries({ queryKey: ['public-documents'] });
     },
     onError: () => toast.error('재발급 요청에 실패했습니다.'),
+  });
+
+  const attachMutation = useMutation({
+    mutationFn: ({ id, url }: { id: string; url: string }) =>
+      api.publicDocuments.attachFile(id, { fileUrl: url }),
+    onSuccess: () => {
+      toast.success('발급 문서를 연결했습니다.');
+      queryClient.invalidateQueries({ queryKey: ['public-documents'] });
+      setAttachTarget(null);
+      setFileUrl('');
+    },
+    onError: (error) =>
+      toast.error(error instanceof Error ? error.message : '문서 연결에 실패했습니다.'),
   });
 
   const deleteMutation = useMutation({
@@ -237,7 +255,7 @@ function PublicDocumentsListPage() {
         )}
         {summary.pendingCount > 0 && (
           <p className="basis-full text-xs text-muted-foreground">
-            발급 기관 연동 전까지는 처리중 상태가 유지될 수 있습니다.
+            등기·대지권 문서는 발급 파일을 연결할 때까지 대기 상태로 유지됩니다.
           </p>
         )}
       </div>
@@ -313,6 +331,10 @@ function PublicDocumentsListPage() {
                   doc={doc}
                   onRetry={() => retryMutation.mutate(doc)}
                   retryDisabled={retryMutation.isPending}
+                  onAttach={() => {
+                    setAttachTarget(doc);
+                    setFileUrl(doc.fileUrl ?? '');
+                  }}
                   onDelete={() => setDeleteTarget(doc)}
                 />
               ))}
@@ -339,6 +361,58 @@ function PublicDocumentsListPage() {
           if (deleteTarget) deleteMutation.mutate(deleteTarget.id);
         }}
       />
+
+      <Dialog
+        open={attachTarget !== null}
+        onOpenChange={(open) => {
+          if (!open && !attachMutation.isPending) {
+            setAttachTarget(null);
+            setFileUrl('');
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>발급 문서 연결</DialogTitle>
+            <DialogDescription>
+              인터넷등기소나 발급 서비스에서 받은 PDF의 HTTPS 보관 URL을 입력하세요.
+              문서는 사무소 전용 비공개 저장소 사용을 권장합니다.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 py-2">
+            <Label htmlFor="public-document-url">문서 URL</Label>
+            <Input
+              id="public-document-url"
+              type="url"
+              inputMode="url"
+              placeholder="https://storage.example.com/document.pdf"
+              value={fileUrl}
+              onChange={(event) => setFileUrl(event.target.value)}
+              autoFocus
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              disabled={attachMutation.isPending}
+              onClick={() => setAttachTarget(null)}
+            >
+              취소
+            </Button>
+            <Button
+              disabled={!fileUrl.trim() || attachMutation.isPending}
+              onClick={() => {
+                if (attachTarget) {
+                  attachMutation.mutate({ id: attachTarget.id, url: fileUrl.trim() });
+                }
+              }}
+            >
+              {attachMutation.isPending && <Loader2 className="mr-2 size-4 animate-spin" />}
+              연결 완료
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -347,11 +421,13 @@ function DocumentTableRow({
   doc,
   onRetry,
   retryDisabled,
+  onAttach,
   onDelete,
 }: {
   doc: PublicDocument;
   onRetry: () => void;
   retryDisabled: boolean;
+  onAttach: () => void;
   onDelete: () => void;
 }) {
   const status = statusMeta[doc.status] ?? statusMeta.pending;
@@ -380,6 +456,17 @@ function DocumentTableRow({
         {doc.subtitle && (
           <p className="ml-5 text-[11px] text-muted-foreground">{doc.subtitle}</p>
         )}
+        <p className="ml-5 text-[10px] text-muted-foreground">
+          {doc.provider === 'manual_upload' ? '수동 문서 연결' : doc.provider}
+          {' · '}
+          {doc.requestMode === 'certificate'
+            ? '발급용'
+            : doc.requestMode === 'view'
+              ? '열람용'
+              : doc.requestMode === 'upload'
+                ? '파일'
+                : '구조화 데이터'}
+        </p>
         {doc.status === 'failed' && (
           <p className="ml-5 mt-0.5 text-[11px] text-destructive">
             {doc.errorMessage ?? '발급 처리 중 오류가 발생했습니다.'}
@@ -430,6 +517,28 @@ function DocumentTableRow({
               </a>
             </Button>
           )}
+          {doc.status === 'completed' && !doc.fileUrl && doc.metadata && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 gap-1 px-2 text-xs"
+              onClick={() => downloadMetadata(doc)}
+            >
+              <Download className="size-3" />
+              데이터
+            </Button>
+          )}
+          {doc.status === 'pending' && doc.provider === 'manual_upload' && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 gap-1 px-2 text-xs"
+              onClick={onAttach}
+            >
+              <Link2 className="size-3" />
+              파일 연결
+            </Button>
+          )}
           {doc.status === 'failed' && (
             <Button
               variant="ghost"
@@ -455,4 +564,16 @@ function DocumentTableRow({
       </td>
     </tr>
   );
+}
+
+function downloadMetadata(doc: PublicDocument) {
+  const blob = new Blob([JSON.stringify(doc.metadata, null, 2)], {
+    type: 'application/json',
+  });
+  const url = URL.createObjectURL(blob);
+  const anchor = window.document.createElement('a');
+  anchor.href = url;
+  anchor.download = `${doc.title}-${doc.id}.json`;
+  anchor.click();
+  URL.revokeObjectURL(url);
 }
