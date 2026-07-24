@@ -36,7 +36,6 @@
 3. **테이블 중심 + 상세 패널 패턴.** 좌측 목록, 우측 상세가 자연스럽습니다.
 4. **모바일은 Phase 4.** 현재는 데스크톱만 집중.
 5. **멀티테넌시.** 모든 화면에 "어느 사무소"인지는 최상단에 항상 고정.
-6. **AI 제안은 별도 큐로.** AI가 자동 실행하지 않고 승인 큐(Proposal Inbox)에 쌓아두면 사장님이 승인/반려.
 
 ## 5. 기술 스택 (디자인 환경)
 
@@ -48,18 +47,20 @@
 ## 6. 핵심 데이터 구조 (디자인 이해에 필요한 만큼만)
 
 ```
-Site(단지/건물) → Dong(동) → Unit(호) → Property(관리단위) → Listing(매물)
-                                                          ↓
-Contact(사람) ←→ BuyerRequirement(구매희망) ──── Match ──→ Deal → Contract
-                                                          ↓
-                                                   CommissionPayment (수수료 수금)
+Site(단지/건물) → Dong(동) → Unit(호) → Property(관리단위) → ListingIntake(의뢰)
+                                                               ↓
+                                                          Listing(거래 옵션)
+                                                               ↓
+Contact(사람) ←→ BuyerRequirement(구매희망) ──── Match ─────→ Deal → Contract
+                                                               ↓
+                                                        CommissionPayment (수수료 수금)
 ```
 
 - **Site**: 래미안고덕 같은 아파트 단지, 빌라, 상가, 토지까지 전부 포함.
-- **Listing**: 실제 "매물" — 가격, 매매/전세/월세, 확인 상태(unverified → verified → in_contract → done).
+- **ListingIntake**: 의뢰 생명주기(open/hold/closed)와 확인 이력. 확인 표시는 이력에서 파생됩니다.
+- **Listing**: 의뢰 안의 매매/전세/월세 가격 옵션. 거래중/완료는 연결된 Deal에서 파생됩니다.
 - **Contact**: 사람 1명. 소유자든 구매자든 세입자든 한 테이블에 들어가고, 관계 테이블로 역할이 결정됩니다.
 - **Deal**: 거래 진행 — 수수료 매도측/매수측 분리, 공동중개 시 상대 중개사 몫도 분리 기록.
-- **Proposal**: AI/규칙 엔진이 만든 제안 — 사람이 승인해야 실행됨.
 
 ## 7. 디자인이 필요한 상세 페이지
 
@@ -84,7 +85,6 @@ Contact(사람) ←→ BuyerRequirement(구매희망) ──── Match ──�
 | 페이지 | 핵심 화면 요소 | 난이도 |
 |---|---|---|
 | **공동중개 네트워크** (network) | 중개방(카톡방 메타포) 리스트 + 방 내부(공유 매물 피드 + 채팅) + 매물 공개범위 마스킹 설정 UI | 🔴 상 |
-| **AI 운영 콘솔** (ai-operations) | Proposal 승인 큐(inbox 스타일) + 규칙 엔진 on/off + 실행 로그 | 🔴 상 |
 | **AI 챗** (ai-chat) | 챗 UI + 도구 호출 결과 카드(매물/연락처 inline 표시) | 🟡 중 |
 | **직원 관리** (employees) | 직원별 실적 카드 + 수수료 정산 현황 + 급여 유형(고정/혼합/수수료제) | 🟡 중 |
 | **통화 작업 공간** (call-workspace) | 통화 팝업 + 상담 기록 폼 + 녹음 업로드 (Phase 2 구현, 디자인은 먼저) | 🟡 중 |

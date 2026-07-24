@@ -11,6 +11,11 @@ import {
   normalizePhone,
   withPrimaryPhone,
 } from '../contacts/contact-phone.utils';
+import {
+  LISTING_INTAKE_STATE_SELECT,
+  NON_CLOSED_INTAKE_WHERE,
+  OCCUPYING_DEALS_SELECT,
+} from '../listings/listing-state';
 
 const VALID_SITE_TYPES: ReadonlySet<string> = new Set(Object.values(SiteType));
 // Unit 연결 정책:
@@ -170,21 +175,25 @@ export class PropertiesService {
             orderBy: { createdAt: 'desc' },
           },
           listings: {
+            where: { intake: NON_CLOSED_INTAKE_WHERE },
             orderBy: { createdAt: 'desc' },
             include: {
-            advertisements: {
-              orderBy: { createdAt: 'desc' },
-              take: 5,
-            },
-            jointBrokeragePartner: {
-              select: {
-                id: true,
-                name: true,
-                phone: true,
+              intake: {
+                select: {
+                  ...LISTING_INTAKE_STATE_SELECT,
+                  isJointBrokerageRequired: true,
+                  jointBrokeragePartner: {
+                    select: { id: true, name: true, phone: true },
+                  },
+                },
+              },
+              deals: OCCUPYING_DEALS_SELECT,
+              advertisements: {
+                orderBy: { createdAt: 'desc' },
+                take: 5,
               },
             },
           },
-        },
         },
         orderBy: { [sortBy]: sortOrder },
         skip,
@@ -233,8 +242,19 @@ export class PropertiesService {
           orderBy: { createdAt: 'desc' },
         },
         listings: {
+          where: { intake: NON_CLOSED_INTAKE_WHERE },
           orderBy: { createdAt: 'desc' },
           include: {
+            intake: {
+              select: {
+                ...LISTING_INTAKE_STATE_SELECT,
+                isJointBrokerageRequired: true,
+                jointBrokeragePartner: {
+                  select: { id: true, name: true, phone: true },
+                },
+              },
+            },
+            deals: OCCUPYING_DEALS_SELECT,
             advertisements: {
               orderBy: { createdAt: 'desc' },
               take: 5,
@@ -242,13 +262,6 @@ export class PropertiesService {
             priceHistories: {
               orderBy: { createdAt: 'desc' },
               take: 10,
-            },
-            jointBrokeragePartner: {
-              select: {
-                id: true,
-                name: true,
-                phone: true,
-              },
             },
           },
         },

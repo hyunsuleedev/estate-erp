@@ -23,22 +23,6 @@ model Office {
   //   "closerBonus": 0 }            // 마감 담당 보너스 (만원)
   commissionConfig Json? @map("commission_config") @db.JsonB
 
-  // ─── AI 직원 설정 ──────────────────────────────────────────
-  /// AI 직원(Rule Engine + Proposal 루프) 전체 on/off
-  agentEnabled Boolean @default(true) @map("agent_enabled")
-
-  /// Proposal 타입별 trust tier 오버라이드.
-  /// 예: { "ad_takedown": "approval_required", "lease_renewal_notice": "auto" }
-  /// 키가 없으면 Rule/Proposal의 기본값을 사용.
-  agentTrustConfig Json @default("{}") @map("agent_trust_config") @db.JsonB
-
-  /// MCP 권한의 역할별 기본값. User.mcpPermissions가 없을 때 fallback.
-  /// 예: { "owner": { "listing_write": "execute", ... },
-  ///       "manager": { "listing_write": "propose", ... },
-  ///       "agent": { "listing_write": "propose", ... } }
-  /// Phase 1: 필드만 존재, Phase 2에 실제 해석 로직 붙음.
-  mcpPermissionDefaults Json @default("{}") @map("mcp_permission_defaults") @db.JsonB
-
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
@@ -71,10 +55,6 @@ model Office {
   officePrintTemplates      OfficePrintTemplate[]
   contractClauseTemplates   ContractClauseTemplate[]
   dealParticipants          DealParticipant[]
-  rules                     Rule[]
-  proposals                 Proposal[]
-  entityDrafts              EntityDraft[]
-  entityDraftComments       EntityDraftComment[]
   agentSessions             AgentSession[]
   agentWakeupRequests       AgentWakeupRequest[]
   agentRuns                 AgentRun[]
@@ -150,11 +130,6 @@ model User {
   /// 생성/수정/삭제할 수 있다. 승격은 API로 self-promote 불가 — 수동 SQL 또는
   /// 기존 platform_admin 만이 다른 사용자를 승격할 수 있다.
   isPlatformAdmin Boolean @default(false) @map("is_platform_admin")
-
-  /// MCP 권한 사용자별 오버라이드. null이면 Office.mcpPermissionDefaults의
-  /// role별 기본값을 사용한다. 예: { "listing_write": "execute", ... }
-  /// Phase 1: 필드만 존재, Phase 2에 실제 해석 로직 붙음.
-  mcpPermissions Json? @map("mcp_permissions") @db.JsonB
 
   /// MCP/외부 AI 연결용 장기 API 키 (1인 1키). JWT 대신 사용.
   apiKeyHash   String? @map("api_key_hash")

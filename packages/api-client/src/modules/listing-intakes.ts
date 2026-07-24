@@ -1,13 +1,12 @@
 import type { RequestFn } from '../client.js';
+import type {
+  IntakeCheckResult,
+  IntakeClosedReason,
+  IntakeConfirmationState,
+  IntakeLifecycleStatus,
+} from '@estate-erp/shared';
 import type { ListingAdvertisement, ListingPriceHistory } from './listings.js';
 import type { Property } from './properties.js';
-
-export type ListingIntakeStatus =
-  | 'unverified'
-  | 'active'
-  | 'in_contract'
-  | 'hold'
-  | 'done';
 
 export interface ListingIntakeListing {
   id: string;
@@ -21,19 +20,13 @@ export interface ListingIntakeListing {
   moveInAvailableType: string | null;
   moveInAvailableFrom: string | null;
   moveInAvailableTo: string | null;
-  isJointBrokerageRequired: boolean;
-  jointBrokeragePartnerId: string | null;
-  checkStatus: string;
+  isPaused: boolean;
   isHidden: boolean;
   memo: string | null;
-  checkStatusChangedAt?: string | null;
   createdAt: string;
   updatedAt: string;
-  jointBrokeragePartner?: {
-    id: string;
-    name: string;
-    phone: string | null;
-  } | null;
+  /** 이 거래 옵션을 점유한 활성 Deal — 있으면 "거래중/완료" */
+  deals?: Array<{ id: string; stage: string; stageChangedAt: string | null }>;
   advertisements?: ListingAdvertisement[];
   priceHistories?: ListingPriceHistory[];
 }
@@ -42,9 +35,15 @@ export interface ListingIntake {
   id: string;
   officeId: string;
   propertyId: string;
-  status: ListingIntakeStatus | string;
+  lifecycleStatus: IntakeLifecycleStatus;
+  lifecycleChangedAt: string;
+  /** 마지막 생명주기 전이 주체: "user" | "system:deal" */
+  lifecycleChangedBy: string;
+  closedReason: IntakeClosedReason | null;
   receivedAt: string;
-  confirmedAt: string | null;
+  lastCheckedAt: string | null;
+  lastVerifiedAt: string | null;
+  lastCheckResult: IntakeCheckResult | null;
   nextConfirmAt: string | null;
   isJointBrokerageRequired: boolean;
   jointBrokeragePartnerId: string | null;
@@ -60,12 +59,7 @@ export interface ListingIntake {
   listings?: ListingIntakeListing[];
 }
 
-export type ListingIntakeConfirmResult =
-  | 'alive'
-  | 'price_changed'
-  | 'unavailable'
-  | 'no_answer'
-  | 'pending';
+export type ListingIntakeConfirmResult = IntakeCheckResult;
 
 export type ListingIntakeConfirmChannel =
   | 'phone'
@@ -76,14 +70,14 @@ export type ListingIntakeConfirmChannel =
   | 'mcp';
 
 export interface ListingIntakesFilter {
-  status?: string;
+  lifecycleStatus?: IntakeLifecycleStatus;
+  confirmationState?: IntakeConfirmationState;
   nextConfirmFrom?: string;
   nextConfirmTo?: string;
-  includeInactive?: boolean;
+  includeClosed?: boolean;
   propertyId?: string;
   transactionType?: string;
   siteType?: string;
-  checkStatus?: string;
   priceMin?: number;
   priceMax?: number;
   depositMin?: number;
@@ -105,7 +99,7 @@ export interface ListingIntakesFilter {
   unit?: string;
   moveInFrom?: string;
   moveInTo?: string;
-  sortBy?: 'receivedAt' | 'createdAt' | 'updatedAt' | 'price';
+  sortBy?: 'receivedAt' | 'createdAt' | 'updatedAt';
   sortOrder?: 'asc' | 'desc';
   page?: number;
   limit?: number;
@@ -136,14 +130,19 @@ export interface CreateListingForIntakeDto {
   moveInAvailableType?: string | null;
   moveInAvailableFrom?: string | null;
   moveInAvailableTo?: string | null;
+  isPaused?: boolean;
   memo?: string | null;
 }
 
 export interface CreateListingIntakeDto {
   propertyId: string;
-  status?: ListingIntakeStatus | string;
+  lifecycleStatus?: IntakeLifecycleStatus;
+  closedReason?: IntakeClosedReason | null;
   receivedAt?: string | null;
-  confirmedAt?: string | null;
+  lastCheckedAt?: string | null;
+  lastVerifiedAt?: string | null;
+  lastCheckResult?: IntakeCheckResult | null;
+  nextConfirmAt?: string | null;
   isJointBrokerageRequired?: boolean;
   jointBrokeragePartnerId?: string | null;
   memo?: string | null;
@@ -151,9 +150,13 @@ export interface CreateListingIntakeDto {
 }
 
 export interface UpdateListingIntakeDto {
-  status?: ListingIntakeStatus | string;
+  lifecycleStatus?: IntakeLifecycleStatus;
+  closedReason?: IntakeClosedReason | null;
   receivedAt?: string | null;
-  confirmedAt?: string | null;
+  lastCheckedAt?: string | null;
+  lastVerifiedAt?: string | null;
+  lastCheckResult?: IntakeCheckResult | null;
+  nextConfirmAt?: string | null;
   isJointBrokerageRequired?: boolean;
   jointBrokeragePartnerId?: string | null;
   memo?: string | null;
@@ -161,7 +164,7 @@ export interface UpdateListingIntakeDto {
 }
 
 export interface ConfirmListingIntakeDto {
-  result: ListingIntakeConfirmResult | string;
+  result: ListingIntakeConfirmResult;
   channel?: ListingIntakeConfirmChannel | string;
   memo?: string | null;
   checkedAt?: string | null;
@@ -191,14 +194,21 @@ export function createListingIntakesApi(request: RequestFn) {
     update: (id: string, dto: UpdateListingIntakeDto) =>
       request<ListingIntake>(`/listing-intakes/${id}`, { method: 'PATCH', body: dto }),
 
-    updateStatus: (
+    updateLifecycleStatus: (
       id: string,
-      status: ListingIntakeStatus | string,
-      options?: { expectedUpdatedAt?: string | null },
+      lifecycleStatus: IntakeLifecycleStatus,
+      options?: {
+        closedReason?: IntakeClosedReason | null;
+        expectedUpdatedAt?: string | null;
+      },
     ) =>
-      request<ListingIntake>(`/listing-intakes/${id}/status`, {
+      request<ListingIntake>(`/listing-intakes/${id}/lifecycle`, {
         method: 'PATCH',
-        body: { status, expectedUpdatedAt: options?.expectedUpdatedAt },
+        body: {
+          lifecycleStatus,
+          closedReason: options?.closedReason,
+          expectedUpdatedAt: options?.expectedUpdatedAt,
+        },
       }),
 
     confirm: (id: string, dto: ConfirmListingIntakeDto) =>

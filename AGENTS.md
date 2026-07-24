@@ -113,9 +113,9 @@ pnpm prisma:generate   # Generate Prisma client
 ## Current Phase
 
 **Phase 1 (현재)**: NestJS 서버 + CRM MCP Server
-- API 설계, CRUD, Auth + 멀티테넌시, WebSocket, 규칙 엔진
+- API 설계, CRUD, Auth + 멀티테넌시, WebSocket
 
-## Database (33 tables)
+## Database (31 core tables)
 
 - 법정동 마스터 3: Province, District, Ward
 - 멀티테넌시 2: Office, User
@@ -123,13 +123,15 @@ pnpm prisma:generate   # Generate Prisma client
 - 매물 2: Property, PriceHistory
 - 연락처 4: Contact, ContactRelation, PropertyContact, Tenant
 - CRM 6: BuyerRequirement, Consultation, Match, Deal, Contract, DealParticipant
-- 업무 5: Task, Insight, InsightRule, CalendarEvent, ActivityLog
+- 업무 3: Task, CalendarEvent, ActivityLog
 - 알림 1: Notification
 - 네트워크 5: NetworkRoom, NetworkRoomMember, NetworkSharedProperty, NetworkInquiry, NetworkMessage
 
 ## Key Pipelines
 
-- CheckStatus: unverified → verified → in_contract → hold → done
+- IntakeLifecycleStatus: open ↔ hold, open/hold → closed, closed → open
+- IntakeConfirmationState (파생): unverified / verified / overdue / no_answer
+- ListingAvailability (파생): available / paused / in_contract / completed / closed
 - MatchStage: suggested → buyerContacted → viewing → ownerContacted → negotiating → dealCreated → closed
 - DealStage: selection → deposit → contract → completed → closed
 - TaskSource: manual / system / ai

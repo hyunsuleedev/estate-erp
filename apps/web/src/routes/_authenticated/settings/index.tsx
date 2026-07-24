@@ -42,7 +42,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { AiAgentCard } from './-ai-agent-card';
 import { ExpenseSummaryCard } from './-expense-summary-card';
 import { McpApiKeyCard } from './-mcp-card';
 import { ContractTemplatesCard } from './-templates-card';
@@ -226,7 +225,7 @@ function SettingsPage() {
     <div className="flex flex-col gap-5">
       <PageHeader
         title="설정"
-        description="사무소 기본 정보와 수수료·템플릿·AI 운영 정책을 관리합니다."
+        description="사무소 기본 정보와 수수료·템플릿을 관리합니다."
         actions={!canEdit ? <Badge variant="secondary">읽기 전용</Badge> : undefined}
         className="mb-0"
       />
@@ -517,8 +516,6 @@ function SettingsPage() {
       <ContractTemplatesCard canEdit={canEdit} />
 
       <ExpenseSummaryCard />
-
-      <AiAgentCard office={office} canEdit={canEdit} />
 
       <McpApiKeyCard canEdit={canEdit} />
 

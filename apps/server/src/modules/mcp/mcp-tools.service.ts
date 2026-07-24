@@ -1,4 +1,11 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
+import {
+  IntakeCheckResult,
+  IntakeClosedReason,
+  IntakeConfirmationState,
+  IntakeLifecycleStatus,
+  ListingAvailability,
+} from '@estate-erp/shared';
 import { Prisma } from '@prisma/client';
 import { ListingsService } from '../listings/listings.service';
 import { ListingIntakesService } from '../listing-intakes/listing-intakes.service';
@@ -33,9 +40,6 @@ import {
   OfficeAdvertisementsService,
   type OfficeAdvertisementBatchGroupDto,
 } from '../office-advertisements/office-advertisements.service';
-import { ProposalService } from '../agent/proposal/proposal.service';
-import type { ProposalStatus } from '../agent/proposal/proposal.types';
-import { InboxService } from '../inbox/inbox.service';
 import { AgentControlPlaneService } from '../agent/control-plane/control-plane.service';
 import type {
   AgentActivityType,
@@ -43,13 +47,6 @@ import type {
   AgentWakeupStatus,
   CompleteAgentRunOutcome,
 } from '../agent/control-plane/control-plane.types';
-import type {
-  DraftDecisionMode,
-  DraftEntityType,
-  DraftExecutor,
-  DraftOperation,
-  DraftPriority,
-} from '../inbox/inbox.types';
 
 export interface ToolDefinition {
   name: string;
@@ -179,8 +176,6 @@ export class McpToolsService {
     private readonly cashflow: CashflowService,
     private readonly publicDocs: PublicDocumentsService,
     private readonly propertyPhotos: PropertyPhotosService,
-    private readonly proposals: ProposalService,
-    private readonly inbox: InboxService,
     private readonly listingAdvertisements: ListingAdvertisementsService,
     private readonly officeAdvertisements: OfficeAdvertisementsService,
     private readonly listingIntakes: ListingIntakesService,
@@ -289,35 +284,12 @@ export class McpToolsService {
     return run;
   }
 
-  private async prepareSaleContractReview(
+  private async prepareSaleContractDraft(
     args: Record<string, unknown>,
     ctx: McpContext,
   ) {
     const contractId = args.contractId as string;
-    const taskKey = `contract:${contractId}:sale-agreement`;
-    const requestedByRunId = args.agentRunId as string | undefined;
-    let session = await this.controlPlane.getOrCreateSession(ctx.officeId, {
-      agentKey: 'contract-writer',
-      adapter: 'mcp',
-      taskKey,
-      context: { contractId },
-      plan: [
-        { step: '계약 데이터 수집', status: 'in_progress' },
-        { step: '계약서 revision 작성', status: 'pending' },
-        { step: '담당자 검토', status: 'pending' },
-      ],
-    });
-
-    if (requestedByRunId) {
-      await this.assertMcpRunOwnership(
-        ctx.officeId,
-        ctx.userId,
-        session.id,
-        requestedByRunId,
-      );
-    }
-
-    const prepared = await this.contracts.prepareSaleContractDraft(
+    return this.contracts.prepareSaleContractDraft(
       contractId,
       ctx.officeId,
       ctx.userId,
@@ -332,112 +304,6 @@ export class McpToolsService {
       },
       'agent:contract-writer',
     );
-
-    if (!session.taskId) {
-      const task = await this.tasks.create(
-        ctx.officeId,
-        {
-          title: `계약서 검토 · ${prepared.document.title}`,
-          content:
-            'AI가 작성한 계약서 revision을 확인하고 승인하거나 코멘트로 수정을 요청하세요.',
-          source: 'ai',
-          status: 'pending',
-          priority: 'high',
-          category: 'contract',
-          assignedToId: ctx.userId,
-          contractId,
-        },
-        ctx.userId,
-      );
-      session = await this.controlPlane.updateSession(
-        ctx.officeId,
-        session.id,
-        { taskId: task.id },
-      );
-    } else {
-      await this.tasks.update(
-        session.taskId,
-        ctx.officeId,
-        { status: 'pending' },
-        ctx.userId,
-      );
-    }
-
-    const artifactPayload = prepared.revision.payload as Record<
-      string,
-      unknown
-    >;
-    const reviewRequest = await this.inbox.upsertAgentReview({
-      officeId: ctx.officeId,
-      entityType: 'contract',
-      operation: 'action',
-      entityId: contractId,
-      proposedChanges: {
-        tool: 'apply_contract_document_revision',
-        documentId: prepared.document.id,
-        revisionId: prepared.revision.id,
-        contentHash: prepared.revision.contentHash,
-        payload: artifactPayload,
-        contractAgreement: artifactPayload.contractAgreement,
-        validation: prepared.validation,
-        _artifactRevision: {
-          documentId: prepared.document.id,
-          revisionId: prepared.revision.id,
-          revisionNo: prepared.revision.revisionNo,
-          contentHash: prepared.revision.contentHash,
-          validation: prepared.validation,
-        },
-      },
-      category: 'contract_draft',
-      title: `${prepared.document.title} revision ${prepared.revision.revisionNo}`,
-      summary: 'AI가 작성한 계약서 초안입니다. 정확한 revision을 검토한 뒤 확인해주세요.',
-      reasoning:
-        '계약 데이터와 연결된 매물·당사자·중개사무소 정보를 기반으로 작성했습니다.',
-      priority: 'urgent',
-      decisionMode: 'confirm',
-      executor: 'server',
-      generatedBy: 'agent:contract-writer',
-      dedupeKey: taskKey,
-      contractId,
-      agentSessionId: session.id,
-      requestedByRunId,
-    });
-
-    session = await this.controlPlane.updateSession(ctx.officeId, session.id, {
-      status: 'awaiting_input',
-      waitingReason: `계약서 revision ${prepared.revision.revisionNo} 검토 대기`,
-      context: {
-        contractId,
-        documentId: prepared.document.id,
-        revisionId: prepared.revision.id,
-        reviewRequestId: reviewRequest?.id ?? null,
-      },
-      plan: [
-        { step: '계약 데이터 수집', status: 'completed' },
-        { step: '계약서 revision 작성', status: 'completed' },
-        { step: '담당자 검토', status: 'in_progress' },
-      ],
-    });
-
-    await this.controlPlane.appendActivity(ctx.officeId, {
-      sessionId: session.id,
-      runId: requestedByRunId,
-      type: 'elicitation',
-      message: `계약서 revision ${prepared.revision.revisionNo} 검토를 요청했습니다.`,
-      payload: {
-        contractId,
-        documentId: prepared.document.id,
-        revisionId: prepared.revision.id,
-        contentHash: prepared.revision.contentHash,
-        reviewRequestId: reviewRequest?.id ?? null,
-      },
-    });
-
-    return {
-      ...prepared,
-      reviewRequest,
-      agentSession: session,
-    };
   }
 
   private registerAll() {
@@ -448,16 +314,22 @@ export class McpToolsService {
       'find_listing_intakes',
       '매물 의뢰(ListingIntake) 목록을 검색합니다.',
       obj({
-        status: strEnum('의뢰 상태', ['unverified', 'active', 'in_contract', 'hold', 'done']),
+        lifecycleStatus: strEnum(
+          '의뢰 생명주기',
+          Object.values(IntakeLifecycleStatus),
+        ),
+        confirmationState: strEnum(
+          '파생 확인 상태',
+          Object.values(IntakeConfirmationState),
+        ),
         nextConfirmFrom: str('다음 확인 예정 시작일 (ISO)'),
         nextConfirmTo: str('다음 확인 예정 종료일 (ISO)'),
-        includeInactive: bool('비활성 의뢰 포함'),
+        includeClosed: bool('종결 의뢰 포함'),
         propertyId: str('관리매물 ID'),
         transactionType: strEnum(
           '거래유형',
           LISTING_TRANSACTION_TYPES,
         ),
-        checkStatus: strEnum('확인상태', ['unverified', 'verified', 'in_contract', 'hold', 'done']),
         siteId: str('단지 ID'),
         siteType: str('매물유형'),
         wardCode: str('법정동코드'),
@@ -470,19 +342,19 @@ export class McpToolsService {
         monthlyRentMax: num('최대 월세 (만원)'),
         areaMin: num('최소 면적 (m²)'),
         areaMax: num('최대 면적 (m²)'),
-        sortBy: strEnum('정렬 필드', ['receivedAt', 'updatedAt', 'createdAt', 'price']),
+        sortBy: strEnum('정렬 필드', ['receivedAt', 'updatedAt', 'createdAt']),
         sortOrder: strEnum('정렬 방향', ['asc', 'desc']),
         ...page,
       }),
       async (a, c) =>
         this.listingIntakes.findAll(c.officeId, {
-          status: a.status as string,
+          lifecycleStatus: a.lifecycleStatus as string,
+          confirmationState: a.confirmationState as string,
           nextConfirmFrom: a.nextConfirmFrom as string,
           nextConfirmTo: a.nextConfirmTo as string,
-          includeInactive: a.includeInactive as boolean,
+          includeClosed: a.includeClosed as boolean,
           propertyId: a.propertyId as string,
           transactionType: a.transactionType as string,
-          checkStatus: a.checkStatus as string,
           siteId: a.siteId as string,
           siteType: a.siteType as string,
           wardCode: a.wardCode as string,
@@ -495,7 +367,7 @@ export class McpToolsService {
           monthlyRentMax: a.monthlyRentMax as number,
           areaMin: a.areaMin as number,
           areaMax: a.areaMax as number,
-          sortBy: a.sortBy as 'receivedAt' | 'updatedAt' | 'createdAt' | 'price',
+          sortBy: a.sortBy as 'receivedAt' | 'updatedAt' | 'createdAt',
           sortOrder: a.sortOrder as 'asc' | 'desc',
           page: (a.page as number) ?? 1,
           limit: this.clampLimit(a),
@@ -515,9 +387,22 @@ export class McpToolsService {
       obj(
         {
           propertyId: str('관리매물 ID'),
-          status: strEnum('의뢰 상태', ['unverified', 'active', 'in_contract', 'hold', 'done']),
+          lifecycleStatus: strEnum(
+            '의뢰 생명주기',
+            Object.values(IntakeLifecycleStatus),
+          ),
+          closedReason: strEnum(
+            '종결 사유',
+            Object.values(IntakeClosedReason),
+          ),
           receivedAt: str('접수일 (ISO)'),
-          confirmedAt: str('확인일 (ISO)'),
+          lastCheckedAt: str('마지막 확인 시도일 (ISO)'),
+          lastVerifiedAt: str('마지막 유효 확인일 (ISO)'),
+          lastCheckResult: strEnum(
+            '마지막 확인 결과',
+            Object.values(IntakeCheckResult),
+          ),
+          nextConfirmAt: str('다음 확인 예정일 (ISO)'),
           isJointBrokerageRequired: bool('공동중개 필요 여부'),
           jointBrokeragePartnerId: str('공동중개 거래처 ID'),
           memo: str('의뢰 메모'),
@@ -528,9 +413,13 @@ export class McpToolsService {
       async (a, c) =>
         this.listingIntakes.create(c.officeId, {
           propertyId: a.propertyId as string,
-          status: a.status as string,
+          lifecycleStatus: a.lifecycleStatus as string,
+          closedReason: a.closedReason as string | null,
           receivedAt: a.receivedAt as string | null,
-          confirmedAt: a.confirmedAt as string | null,
+          lastCheckedAt: a.lastCheckedAt as string | null,
+          lastVerifiedAt: a.lastVerifiedAt as string | null,
+          lastCheckResult: a.lastCheckResult as string | null,
+          nextConfirmAt: a.nextConfirmAt as string | null,
           isJointBrokerageRequired: a.isJointBrokerageRequired as boolean,
           jointBrokeragePartnerId: a.jointBrokeragePartnerId as string | null,
           memo: a.memo as string | null,
@@ -544,9 +433,22 @@ export class McpToolsService {
       obj(
         {
           id: str('의뢰 ID'),
-          status: strEnum('의뢰 상태', ['unverified', 'active', 'in_contract', 'hold', 'done']),
+          lifecycleStatus: strEnum(
+            '의뢰 생명주기',
+            Object.values(IntakeLifecycleStatus),
+          ),
+          closedReason: strEnum(
+            '종결 사유',
+            Object.values(IntakeClosedReason),
+          ),
           receivedAt: str('접수일 (ISO)'),
-          confirmedAt: str('확인일 (ISO)'),
+          lastCheckedAt: str('마지막 확인 시도일 (ISO)'),
+          lastVerifiedAt: str('마지막 유효 확인일 (ISO)'),
+          lastCheckResult: strEnum(
+            '마지막 확인 결과',
+            Object.values(IntakeCheckResult),
+          ),
+          nextConfirmAt: str('다음 확인 예정일 (ISO)'),
           isJointBrokerageRequired: bool('공동중개 필요 여부'),
           jointBrokeragePartnerId: str('공동중개 거래처 ID'),
           memo: str('의뢰 메모'),
@@ -555,9 +457,13 @@ export class McpToolsService {
       ),
       async (a, c) =>
         this.listingIntakes.update(a.id as string, c.officeId, {
-          status: a.status as string,
+          lifecycleStatus: a.lifecycleStatus as string,
+          closedReason: a.closedReason as string | null,
           receivedAt: a.receivedAt as string | null,
-          confirmedAt: a.confirmedAt as string | null,
+          lastCheckedAt: a.lastCheckedAt as string | null,
+          lastVerifiedAt: a.lastVerifiedAt as string | null,
+          lastCheckResult: a.lastCheckResult as string | null,
+          nextConfirmAt: a.nextConfirmAt as string | null,
           isJointBrokerageRequired: a.isJointBrokerageRequired as boolean,
           jointBrokeragePartnerId: a.jointBrokeragePartnerId as string | null,
           memo: a.memo as string | null,
@@ -592,7 +498,7 @@ export class McpToolsService {
 
     this.add(
       'delete_listing_intake',
-      '매물 의뢰(ListingIntake)를 삭제 요청합니다. 현재 API 구현은 done 상태로 전환합니다.',
+      '매물 의뢰(ListingIntake)를 삭제 요청합니다. 현재 API 구현은 closed 생명주기로 전환합니다.',
       obj({ id: str('의뢰 ID') }, ['id']),
       async (a, c) => this.listingIntakes.remove(a.id as string, c.officeId),
     );
@@ -602,13 +508,25 @@ export class McpToolsService {
     // ═══════════════════════════════════════════════════════════
     this.add(
       'find_listings',
-      '매물(Listing) 목록을 검색합니다. 거래유형, 확인상태, 가격범위, 단지, 키워드로 필터링.',
+      '매물(Listing) 목록을 검색합니다. 의뢰 생명주기·확인 상태·가용 상태와 거래 조건으로 필터링합니다.',
       obj({
         transactionType: strEnum(
           '거래유형',
           LISTING_TRANSACTION_TYPES,
         ),
-        checkStatus: strEnum('확인상태', ['unverified', 'verified', 'in_contract', 'hold', 'done']),
+        intakeLifecycleStatus: strEnum(
+          '의뢰 생명주기',
+          Object.values(IntakeLifecycleStatus),
+        ),
+        confirmationState: strEnum(
+          '확인 이력에서 파생한 상태',
+          Object.values(IntakeConfirmationState),
+        ),
+        availability: strEnum(
+          'Deal/보류/종결에서 파생한 매물 가용 상태',
+          Object.values(ListingAvailability),
+        ),
+        includeClosed: bool('종결 의뢰의 매물 포함'),
         siteId: str('단지 ID'),
         search: str('검색어 (단지명, 주소)'),
         priceMin: num('최소 가격 (만원)'),
@@ -618,7 +536,10 @@ export class McpToolsService {
       async (a, c) =>
         this.listings.findAll(c.officeId, {
           transactionType: a.transactionType as string,
-          checkStatus: a.checkStatus as string,
+          intakeLifecycleStatus: a.intakeLifecycleStatus as string,
+          confirmationState: a.confirmationState as string,
+          availability: a.availability as string,
+          includeClosed: a.includeClosed as boolean,
           siteId: a.siteId as string,
           search: a.search as string,
           priceMin: a.priceMin as number,
@@ -684,7 +605,7 @@ export class McpToolsService {
 
     this.add(
       'update_listing',
-      '매물 정보를 수정합니다. 가격, 관리비, 융자금, 권리금, 확인상태, 메모 등.',
+      '매물 정보를 수정합니다. 가격, 관리비, 융자금, 권리금, 일시중단, 메모 등. 확인상태는 의뢰(update_listing_intake)에서 관리합니다.',
       obj(
         {
           id: str('매물 ID'),
@@ -698,7 +619,7 @@ export class McpToolsService {
           privateMemo: str(
             '내부 전용 메모 — 네트워크 공유/외부 노출 절대 금지. MCP 조회 응답에는 포함되지 않습니다.',
           ),
-          checkStatus: strEnum('확인상태', ['unverified', 'verified', 'in_contract', 'hold', 'done']),
+          isPaused: bool('이 거래 옵션 일시 중단 여부'),
           memo: str('메모'),
         },
         ['id'],
@@ -713,7 +634,7 @@ export class McpToolsService {
           loanAmount: a.loanAmount as number,
           premium: a.premium as number,
           privateMemo: a.privateMemo as string,
-          checkStatus: a.checkStatus as string,
+          isPaused: a.isPaused as boolean,
           memo: a.memo as string,
         }),
     );
@@ -1347,13 +1268,10 @@ export class McpToolsService {
 
     this.add(
       'prepare_sale_contract_draft',
-      '주거용 매매계약서의 불변 revision을 만들고 AI 검토함에 정확한 버전 승인을 요청합니다. 계약·매물·당사자·중개사무소 정보를 자동 입력하며, 승인 전에는 현재 계약 문서를 덮어쓰지 않습니다.',
+      '주거용 매매계약서의 불변 revision을 만듭니다. 계약·매물·당사자·중개사무소 정보를 자동 입력하며 현재 계약 문서는 덮어쓰지 않습니다.',
       obj(
         {
           contractId: str('매매 Contract ID'),
-          agentRunId: str(
-            'wakeup을 claim해 실행 중이면 AgentRun ID. revision과 실행 이력을 연결합니다.',
-          ),
           actualAgreementAt: str('실제 계약 체결일 (YYYY-MM-DD)'),
           conditions: str('계약 이행 조건'),
           specialTerms: str('특약사항'),
@@ -1364,7 +1282,7 @@ export class McpToolsService {
         },
         ['contractId'],
       ),
-      async (a, c) => this.prepareSaleContractReview(a, c),
+      async (a, c) => this.prepareSaleContractDraft(a, c),
     );
 
     this.add(
@@ -1832,28 +1750,6 @@ export class McpToolsService {
     );
 
     // ═══════════════════════════════════════════════════════════
-    // AI 제안 (Proposals) — 읽기만
-    // ═══════════════════════════════════════════════════════════
-    this.add(
-      'find_proposals',
-      'AI 제안 목록. 상태/우선순위/유형 필터.',
-      obj({ status: str('상태'), priority: str('우선순위'), type: str('유형') }),
-      async (a, c) =>
-        this.proposals.list(c.officeId, {
-          status: a.status as ProposalStatus | undefined,
-          priority: a.priority as string,
-          type: a.type as string,
-        }),
-    );
-
-    this.add(
-      'get_proposal',
-      'AI 제안 상세.',
-      obj({ id: str('제안 ID') }, ['id']),
-      async (a, c) => this.proposals.getById(a.id as string, c.officeId),
-    );
-
-    // ═══════════════════════════════════════════════════════════
     // Agent Control Plane — durable wakeup/run/activity protocol
     // ═══════════════════════════════════════════════════════════
     this.add(
@@ -2063,241 +1959,5 @@ export class McpToolsService {
         ),
     );
 
-    // ═══════════════════════════════════════════════════════════
-    // AI 검토함 (Inbox / EntityDraft) — 사람의 확인·승인 surface
-    //
-    // 1) AI 가 초안 생성 → inbox_create_draft
-    // 2) 사장님이 업무함에서 확인/승인 또는 코멘트로 재작성 요청
-    //    - 코멘트 달리면 status='processing' 으로 자동 전이
-    // 3) 서버가 comment/approval wakeup을 영속화
-    // 4) MCP agent가 agent_claim_wakeup으로 즉시 재개하고 lease를 갱신
-    // 5) 새 artifact revision 또는 실행 결과를 제출한 뒤 AgentRun을 마감
-    // 기존 inbox_list_processing/inbox_claim은 레거시 executor 복구용으로 유지
-    // ═══════════════════════════════════════════════════════════
-
-    this.add(
-      'inbox_list',
-      'AI 검토함 목록 조회. scope로 검토 필요, AI 작업 중, 실행 대기, 완료 항목을 필터링합니다.',
-      obj({
-        scope: strEnum('조회 범위', [
-          'pending',
-          'processing',
-          'approved',
-          'resolved',
-          'all',
-        ]),
-        decisionMode: strEnum('확인/승인 필터', ['confirm', 'approval']),
-        priority: strEnum('우선순위', ['urgent', 'normal', 'low']),
-        category: str('카테고리 (contract_draft, ad_takedown 등)'),
-        limit: num('최대 개수 (기본 100)'),
-      }),
-      async (a, c) =>
-        this.inbox.list(c.officeId, {
-          scope: a.scope as
-            | 'pending'
-            | 'processing'
-            | 'approved'
-            | 'resolved'
-            | 'all'
-            | undefined,
-          decisionMode: a.decisionMode as string,
-          priority: a.priority as DraftPriority | undefined,
-          category: a.category as string,
-          limit: a.limit as number,
-        }),
-    );
-
-    this.add(
-      'inbox_get',
-      'AI 검토함 항목 상세. 사람 담당자, AI 세션, 수정 요청 코멘트를 포함합니다.',
-      obj({ id: str('draft ID') }, ['id']),
-      async (a, c) => this.inbox.getById(a.id as string, c.officeId),
-    );
-
-    this.add(
-      'inbox_create_draft',
-      'AI 검토함에 제안 초안을 등록합니다. decisionMode=confirm 은 결과물 확인, approval 은 행동 사전 승인입니다. 가능하면 agentSessionId/requestedByRunId를 넣어 승인·코멘트가 원래 AI 실행을 깨우게 하세요.',
-      obj(
-        {
-          entityType: strEnum('대상 엔티티', [
-            'listing',
-            'contract',
-            'task',
-            'commission_payment',
-            'match',
-            'consultation',
-            'property',
-            'action',
-          ]),
-          operation: strEnum('작업', ['create', 'update', 'delete', 'action']),
-          entityId: str('기존 엔티티 ID (update/delete 일 때)'),
-          proposedChanges: {
-            type: 'object',
-            description:
-              '제안된 변경 내용 (DB 저장 형식). 렌더링 메타는 _ 접두 키에 넣으면 저장 전에 제거됨.',
-          },
-          category: str(
-            '업무 카테고리 (contract_draft, ad_takedown, post_naver_ad, naver_ad_repost, followup_task 등)',
-          ),
-          title: str('카드 제목'),
-          summary: str('한 줄 요약'),
-          reasoning: str('제안 근거'),
-          priority: strEnum('우선순위', ['urgent', 'normal', 'low']),
-          decisionMode: strEnum('결정 모드', ['confirm', 'approval']),
-          executor: strEnum('실행자', ['server', 'agent', 'manual']),
-          generatedBy: str(
-            '생성 주체 식별자 (예: "mcp:claude", "rule:ad_takedown:v1")',
-          ),
-          dedupeKey: str('중복 방지 키 (같은 officeId + dedupeKey 활성 건이 있으면 생성 스킵)'),
-          expiresAt: str('만료 일시 (ISO 8601)'),
-          agentSessionId: str('이 검토를 요청한 AgentSession ID'),
-          requestedByRunId: str('이 검토를 요청한 AgentRun ID'),
-          listingId: str('연결된 매물 ID'),
-          listingIntakeId: str('연결된 매물 의뢰 ID'),
-          propertyId: str('연결된 호실 ID'),
-          contactId: str('연결된 연락처 ID'),
-          dealId: str('연결된 거래 ID'),
-          contractId: str('연결된 계약 ID'),
-          paymentId: str('연결된 수금 ID'),
-        },
-        [
-          'entityType',
-          'operation',
-          'proposedChanges',
-          'category',
-          'title',
-          'summary',
-          'decisionMode',
-          'generatedBy',
-        ],
-      ),
-      async (a, c) => {
-        const agentSessionId = a.agentSessionId as string | undefined;
-        const requestedByRunId = a.requestedByRunId as string | undefined;
-        if (requestedByRunId) {
-          if (!agentSessionId) {
-            throw new BadRequestException(
-              'requestedByRunId에는 agentSessionId가 필요합니다.',
-            );
-          }
-          await this.assertMcpRunOwnership(
-            c.officeId,
-            c.userId,
-            agentSessionId,
-            requestedByRunId,
-          );
-        }
-        return this.inbox.create({
-          officeId: c.officeId,
-          entityType: a.entityType as DraftEntityType,
-          operation: a.operation as DraftOperation,
-          entityId: a.entityId as string | undefined,
-          proposedChanges: a.proposedChanges as Record<string, unknown>,
-          category: a.category as string,
-          title: a.title as string,
-          summary: a.summary as string,
-          reasoning: a.reasoning as string | undefined,
-          priority: a.priority as DraftPriority | undefined,
-          decisionMode: a.decisionMode as DraftDecisionMode,
-          executor: a.executor as DraftExecutor | undefined,
-          generatedBy: a.generatedBy as string,
-          dedupeKey: a.dedupeKey as string | undefined,
-          expiresAt: a.expiresAt ? new Date(a.expiresAt as string) : undefined,
-          agentSessionId,
-          requestedByRunId,
-          listingId: a.listingId as string | undefined,
-          listingIntakeId: a.listingIntakeId as string | undefined,
-          propertyId: a.propertyId as string | undefined,
-          contactId: a.contactId as string | undefined,
-          dealId: a.dealId as string | undefined,
-          contractId: a.contractId as string | undefined,
-          paymentId: a.paymentId as string | undefined,
-        });
-      },
-    );
-
-    this.add(
-      'inbox_list_processing',
-      '레거시/복구용 processing 검토 요청 목록입니다. 정상 흐름은 agent_claim_wakeup으로 코멘트 신호를 즉시 받습니다.',
-      obj({ limit: num('최대 개수 (기본 20)') }),
-      async (a, c) =>
-        this.inbox.listProcessing(c.officeId, a.limit as number),
-    );
-
-    this.add(
-      'inbox_submit_revision',
-      '일반 제안의 AI 재작성 결과를 제출합니다. 불변 계약서 artifact에는 사용할 수 없으며 prepare_sale_contract_draft로 새 revision을 만들어야 합니다.',
-      obj(
-        {
-          id: str('draft ID'),
-          proposedChanges: {
-            type: 'object',
-            description: '재작성된 제안 내용 전체 (기존 값 완전 교체).',
-          },
-          readCommentIds: strArr(
-            '읽음 처리할 코멘트 ID 배열. 생략 시 해당 draft 의 모든 미읽음 코멘트가 읽음 처리됨.',
-          ),
-        },
-        ['id', 'proposedChanges'],
-      ),
-      async (a, c) =>
-        this.inbox.submitRevision(a.id as string, c.officeId, {
-          proposedChanges: a.proposedChanges as Record<string, unknown>,
-          readCommentIds: a.readCommentIds as string[] | undefined,
-        }),
-    );
-
-    this.add(
-      'inbox_list_agent_pending',
-      '레거시 agent-executor 승인 작업 목록입니다. 세션형 작업은 agent_claim_wakeup을 사용합니다.',
-      obj({ limit: num('최대 개수 (기본 20)') }),
-      async (a, c) =>
-        this.inbox.listAgentPending(c.officeId, a.limit as number),
-    );
-
-    this.add(
-      'inbox_claim',
-      'Agent가 승인된 작업을 lease로 집어감. approved → executing으로 전이하며 동시 실행과 중간 중단을 방지한다.',
-      obj({ id: str('draft ID') }, ['id']),
-      async (a, c) =>
-        this.inbox.claimForAgent(
-          a.id as string,
-          c.officeId,
-          `mcp:${c.userId}`,
-        ),
-    );
-
-    this.add(
-      'inbox_renew_claim',
-      '긴 작업을 수행 중인 Agent가 현재 draft lease를 연장한다.',
-      obj({ id: str('draft ID') }, ['id']),
-      async (a, c) =>
-        this.inbox.renewAgentClaim(
-          a.id as string,
-          c.officeId,
-          `mcp:${c.userId}`,
-        ),
-    );
-
-    this.add(
-      'inbox_report_execution',
-      'Agent 가 실행 결과를 보고. executing → executed (성공) 또는 failed (실패). 실패 시 executionError 에 이유를 남긴다.',
-      obj(
-        {
-          id: str('draft ID'),
-          status: strEnum('실행 결과', ['executed', 'failed']),
-          resultEntityId: str('실행 결과 생성/수정된 엔티티 ID'),
-          executionError: str('실패 사유 (status=failed 일 때)'),
-        },
-        ['id', 'status'],
-      ),
-      async (a, c) =>
-        this.inbox.reportAgentExecution(a.id as string, c.officeId, {
-          status: a.status as 'executed' | 'failed',
-          claimedBy: `mcp:${c.userId}`,
-          resultEntityId: a.resultEntityId as string | undefined,
-          executionError: a.executionError as string | undefined,
-        }),
-    );
   }
 }

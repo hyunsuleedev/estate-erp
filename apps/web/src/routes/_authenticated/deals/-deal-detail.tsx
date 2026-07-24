@@ -1,3 +1,4 @@
+import { getListingAvailability } from "@/lib/listing-status";
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
@@ -243,7 +244,7 @@ function DealDetailPanel({
                     ? formatRent(deal.listing.deposit, deal.listing.monthlyRent)
                     : formatMoney(deal.listing.price ?? deal.listing.deposit)}
                   {' · '}
-                  <StatusBadge kind="checkStatus" status={deal.listing.checkStatus} size="sm" />
+                  <StatusBadge kind="listingAvailability" status={getListingAvailability(deal.listing)} size="sm" />
                 </p>
               ) : null}
             </div>

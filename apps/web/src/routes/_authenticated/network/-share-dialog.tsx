@@ -11,6 +11,7 @@ import type {
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { formatMoney, formatRent } from '@/lib/format';
+import { getListingAvailability } from '@/lib/listing-status';
 import { useAuth } from '@/providers/auth-provider';
 import { Button } from '@/components/ui/button';
 import {
@@ -60,7 +61,7 @@ function listingToPreview(listing: Listing): SharedPropertyListingView {
   return {
     id: listing.id,
     transactionType: listing.transactionType,
-    checkStatus: listing.checkStatus,
+    availability: getListingAvailability(listing),
     siteType: site?.type ?? 'apartment',
     regionLabel: district ? `${district} ${typeLabel}` : typeLabel,
     siteName: site?.name,

@@ -30,6 +30,7 @@ import {
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
+import { getListingAvailability } from "@/lib/listing-status";
 
 const CONSULTATION_TYPE_OPTIONS = [
   { value: 'phone', label: '전화' },
@@ -184,8 +185,8 @@ export function MatchDetailDialog({
                         )}
                       </DetailField>
                       <DetailField label="확인상태">
-                        {match.listing?.checkStatus ? (
-                          <StatusBadge kind="checkStatus" status={match.listing.checkStatus} size="sm" />
+                        {match.listing ? (
+                          <StatusBadge kind="listingAvailability" status={getListingAvailability(match.listing)} size="sm" />
                         ) : (
                           '—'
                         )}

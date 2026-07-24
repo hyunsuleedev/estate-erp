@@ -1,4 +1,14 @@
 import type { RequestFn } from '../client.js';
+import type {
+  ListingIntakeState,
+  ListingOccupyingDeal,
+} from './listings.js';
+
+export interface CalendarListingIntake extends ListingIntakeState {
+  id: string;
+  propertyId: string;
+  receivedAt: string;
+}
 
 export interface CalendarEvent {
   id: string;
@@ -25,17 +35,14 @@ export interface CalendarEvent {
     id: string;
     site?: { name: string | null } | null;
   } | null;
-  listingIntake?: {
-    id: string;
-    status: string;
-    propertyId: string;
-    receivedAt: string;
-  } | null;
+  listingIntake?: CalendarListingIntake | null;
   listing?: {
     id: string;
     transactionType: string;
     price: number | null;
-    checkStatus: string;
+    isPaused: boolean;
+    intake?: ListingIntakeState | null;
+    deals?: ListingOccupyingDeal[];
   } | null;
   match?: { id: string; stage: string } | null;
   deal?: { id: string; stage: string } | null;

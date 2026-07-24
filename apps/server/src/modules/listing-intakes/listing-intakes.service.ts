@@ -6,13 +6,19 @@ import {
   Optional,
 } from '@nestjs/common';
 import {
-  CheckStatus,
+  IntakeCheckResult,
+  IntakeClosedReason,
+  IntakeConfirmationState,
+  IntakeLifecycleStatus,
   MaintenanceFeeInclude,
+  NON_CLOSED_INTAKE_LIFECYCLE_STATUSES,
+  OCCUPYING_DEAL_STAGES,
   TransactionType,
 } from '@estate-erp/shared';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ListingsService } from '../listings/listings.service';
+import { buildIntakeConfirmationWhere } from '../listings/listing-state';
 import {
   contactPhonesIncludeOrdered,
   normalizePhone,
@@ -20,33 +26,52 @@ import {
 } from '../contacts/contact-phone.utils';
 import { RealtimeService } from '../../realtime/realtime.service';
 
-const DEFAULT_INTAKE_STATUS = 'unverified';
-const OPEN_INTAKE_STATUSES = [
-  'unverified',
-  'active',
-  'in_contract',
-  'hold',
-] as const;
-const VALID_INTAKE_STATUSES = new Set([
-  ...OPEN_INTAKE_STATUSES,
-  'done',
-]);
+const DEFAULT_INTAKE_LIFECYCLE_STATUS = IntakeLifecycleStatus.OPEN;
+const VALID_INTAKE_LIFECYCLE_STATUSES: ReadonlySet<string> = new Set(
+  Object.values(IntakeLifecycleStatus),
+);
+const VALID_INTAKE_CLOSED_REASONS: ReadonlySet<string> = new Set(
+  Object.values(IntakeClosedReason),
+);
+const VALID_CONFIRMATION_STATES: ReadonlySet<string> = new Set(
+  Object.values(IntakeConfirmationState),
+);
+
+/** 의뢰 생명주기 전이 규칙 — 확인/거래 상태와 독립된 유일한 저장 상태 */
+const INTAKE_LIFECYCLE_TRANSITIONS: Record<string, string[]> = {
+  [IntakeLifecycleStatus.OPEN]: [
+    IntakeLifecycleStatus.HOLD,
+    IntakeLifecycleStatus.CLOSED,
+  ],
+  [IntakeLifecycleStatus.HOLD]: [
+    IntakeLifecycleStatus.OPEN,
+    IntakeLifecycleStatus.CLOSED,
+  ],
+  [IntakeLifecycleStatus.CLOSED]: [IntakeLifecycleStatus.OPEN],
+};
+
 const VALID_TRANSACTION_TYPES: ReadonlySet<string> = new Set(
   Object.values(TransactionType),
 );
 const VALID_MAINTENANCE_FEE_INCLUDES: ReadonlySet<string> = new Set(
   Object.values(MaintenanceFeeInclude),
 );
-const VALID_CHECK_STATUSES: ReadonlySet<string> = new Set(
-  Object.values(CheckStatus),
+
+/** "이 거래 옵션이 거래중" 파생용 — 점유 Deal 최소 select */
+const OCCUPYING_DEALS_SELECT = {
+  where: {
+    isCancelled: false,
+    stage: { in: [...OCCUPYING_DEAL_STAGES] },
+  },
+  select: {
+    id: true,
+    stage: true,
+    stageChangedAt: true,
+  },
+} satisfies Prisma.Listing$dealsArgs;
+const VALID_CONFIRM_RESULTS: ReadonlySet<string> = new Set(
+  Object.values(IntakeCheckResult),
 );
-const VALID_CONFIRM_RESULTS = new Set([
-  'alive',
-  'price_changed',
-  'unavailable',
-  'no_answer',
-  'pending',
-]);
 const VALID_CONFIRM_CHANNELS = new Set([
   'phone',
   'sms',
@@ -58,13 +83,13 @@ const VALID_CONFIRM_CHANNELS = new Set([
 const MAP_INTAKES_LIMIT = 5000;
 
 export interface ListingIntakeSearchQuery {
-  status?: string;
+  lifecycleStatus?: string;
+  confirmationState?: string;
   nextConfirmFrom?: Date | string;
   nextConfirmTo?: Date | string;
-  includeInactive?: boolean;
+  includeClosed?: boolean;
   propertyId?: string;
   transactionType?: string;
-  checkStatus?: string;
   priceMin?: number;
   priceMax?: number;
   depositMin?: number;
@@ -85,7 +110,7 @@ export interface ListingIntakeSearchQuery {
   unit?: string;
   moveInFrom?: Date | string;
   moveInTo?: Date | string;
-  sortBy?: 'receivedAt' | 'updatedAt' | 'createdAt' | 'price';
+  sortBy?: 'receivedAt' | 'updatedAt' | 'createdAt';
   sortOrder?: 'asc' | 'desc';
   page?: number;
   limit?: number;
@@ -104,14 +129,19 @@ interface ListingInputDto {
   moveInAvailableType?: string | null;
   moveInAvailableFrom?: Date | string | null;
   moveInAvailableTo?: Date | string | null;
+  isPaused?: boolean;
   memo?: string | null;
 }
 
 interface ListingIntakeCreateDto {
   propertyId: string;
-  status?: string;
+  lifecycleStatus?: string;
+  closedReason?: string | null;
   receivedAt?: Date | string | null;
-  confirmedAt?: Date | string | null;
+  lastCheckedAt?: Date | string | null;
+  lastVerifiedAt?: Date | string | null;
+  lastCheckResult?: string | null;
+  nextConfirmAt?: Date | string | null;
   isJointBrokerageRequired?: boolean;
   jointBrokeragePartnerId?: string | null;
   memo?: string | null;
@@ -119,9 +149,13 @@ interface ListingIntakeCreateDto {
 }
 
 interface ListingIntakeUpdateDto {
-  status?: string;
+  lifecycleStatus?: string;
+  closedReason?: string | null;
   receivedAt?: Date | string | null;
-  confirmedAt?: Date | string | null;
+  lastCheckedAt?: Date | string | null;
+  lastVerifiedAt?: Date | string | null;
+  lastCheckResult?: string | null;
+  nextConfirmAt?: Date | string | null;
   isJointBrokerageRequired?: boolean;
   jointBrokeragePartnerId?: string | null;
   memo?: string | null;
@@ -212,8 +246,19 @@ export class ListingIntakesService {
   }
 
   async create(officeId: string, dto: ListingIntakeCreateDto) {
-    const status = dto.status ?? DEFAULT_INTAKE_STATUS;
-    this.assertValidIntakeStatus(status);
+    const lifecycleStatus =
+      dto.lifecycleStatus ?? DEFAULT_INTAKE_LIFECYCLE_STATUS;
+    this.assertValidIntakeLifecycleStatus(lifecycleStatus);
+    const closedReason = this.resolveClosedReason(
+      lifecycleStatus,
+      dto.closedReason,
+    );
+    this.assertValidConfirmResult(dto.lastCheckResult, true);
+    this.assertValidConfirmationHistory(
+      dto.lastCheckedAt ?? null,
+      dto.lastVerifiedAt ?? null,
+      dto.lastCheckResult ?? null,
+    );
     this.assertValidListingInputs(dto.listings ?? []);
     await this.assertAccessiblePartnerBroker(
       officeId,
@@ -229,8 +274,8 @@ export class ListingIntakesService {
       throw new NotFoundException('Property not found');
     }
 
-    if (this.isOpenIntakeStatus(status)) {
-      await this.assertNoOpenIntake(officeId, dto.propertyId);
+    if (this.isNonClosedIntakeLifecycle(lifecycleStatus)) {
+      await this.assertNoNonClosedIntake(officeId, dto.propertyId);
     }
 
     const duplicateTypes = new Set<string>();
@@ -244,21 +289,40 @@ export class ListingIntakesService {
     }
 
     const intake = await this.prisma.$transaction(async (tx) => {
-      const created = await tx.listingIntake.create({
-        data: {
-          officeId,
-          propertyId: dto.propertyId,
-          status,
-          receivedAt: dto.receivedAt ?? undefined,
-          confirmedAt: dto.confirmedAt,
-          isJointBrokerageRequired: dto.isJointBrokerageRequired ?? false,
-          jointBrokeragePartnerId: dto.isJointBrokerageRequired
-            ? (dto.jointBrokeragePartnerId ?? null)
-            : null,
-          memo: dto.memo,
-        },
-        select: { id: true },
-      });
+      const created = await tx.listingIntake
+        .create({
+          data: {
+            officeId,
+            propertyId: dto.propertyId,
+            lifecycleStatus,
+            lifecycleChangedAt: new Date(),
+            lifecycleChangedBy: 'user',
+            closedReason,
+            receivedAt: dto.receivedAt ?? undefined,
+            lastCheckedAt: dto.lastCheckedAt,
+            lastVerifiedAt: dto.lastVerifiedAt,
+            lastCheckResult: dto.lastCheckResult,
+            nextConfirmAt: dto.nextConfirmAt,
+            isJointBrokerageRequired: dto.isJointBrokerageRequired ?? false,
+            jointBrokeragePartnerId: dto.isJointBrokerageRequired
+              ? (dto.jointBrokeragePartnerId ?? null)
+              : null,
+            memo: dto.memo,
+          },
+          select: { id: true },
+        })
+        .catch((error) => {
+          // 동시 생성 경쟁 — non-closed partial unique index
+          if (
+            error instanceof Prisma.PrismaClientKnownRequestError &&
+            error.code === 'P2002'
+          ) {
+            throw new ConflictException(
+              '같은 관리 매물에는 활성 의뢰를 하나만 등록할 수 있습니다.',
+            );
+          }
+          throw error;
+        });
 
       for (const listing of dto.listings ?? []) {
         await tx.listing.create({
@@ -278,6 +342,7 @@ export class ListingIntakesService {
             moveInAvailableType: listing.moveInAvailableType,
             moveInAvailableFrom: listing.moveInAvailableFrom,
             moveInAvailableTo: listing.moveInAvailableTo,
+            isPaused: listing.isPaused,
             memo: listing.memo,
           },
         });
@@ -305,24 +370,63 @@ export class ListingIntakesService {
       throw new NotFoundException('ListingIntake not found');
     }
 
-    const nextStatus = patch.status ?? existing.status;
-    this.assertValidIntakeStatus(nextStatus);
+    const nextLifecycleStatus =
+      patch.lifecycleStatus ?? existing.lifecycleStatus;
+    this.assertValidIntakeLifecycleStatus(nextLifecycleStatus);
+    this.assertValidConfirmResult(patch.lastCheckResult, true);
+    this.assertValidConfirmationHistory(
+      patch.lastCheckedAt === undefined
+        ? existing.lastCheckedAt
+        : patch.lastCheckedAt,
+      patch.lastVerifiedAt === undefined
+        ? existing.lastVerifiedAt
+        : patch.lastVerifiedAt,
+      patch.lastCheckResult === undefined
+        ? existing.lastCheckResult
+        : patch.lastCheckResult,
+    );
+    const lifecycleChanged =
+      nextLifecycleStatus !== existing.lifecycleStatus;
+    // 사용자가 lifecycleStatus를 명시했으면 값이 같아도 전이 주체를 user로 승격 —
+    // Deal이 자동 종결한 의뢰를 사용자가 "종결"로 재확인한 경우,
+    // 이후 Deal 취소의 자동 복구 대상에서 빠져야 한다 (수동 종료로 취급).
+    const lifecycleExplicit = patch.lifecycleStatus !== undefined;
+    if (lifecycleChanged) {
+      this.assertIntakeLifecycleTransition(
+        existing.lifecycleStatus,
+        nextLifecycleStatus,
+      );
+    }
+    const closedReason = this.resolveClosedReason(
+      nextLifecycleStatus,
+      patch.closedReason ??
+        (nextLifecycleStatus === IntakeLifecycleStatus.CLOSED
+          ? existing.closedReason
+          : null),
+    );
     await this.assertAccessiblePartnerBroker(
       officeId,
       patch.isJointBrokerageRequired === false ? null : patch.jointBrokeragePartnerId,
     );
 
     if (
-      this.isOpenIntakeStatus(nextStatus) &&
-      !this.isOpenIntakeStatus(existing.status)
+      this.isNonClosedIntakeLifecycle(nextLifecycleStatus) &&
+      !this.isNonClosedIntakeLifecycle(existing.lifecycleStatus)
     ) {
-      await this.assertNoOpenIntake(officeId, existing.propertyId, id);
+      await this.assertNoNonClosedIntake(officeId, existing.propertyId, id);
     }
 
     const data = {
-      status: nextStatus,
+      lifecycleStatus: nextLifecycleStatus,
+      lifecycleChangedAt: lifecycleChanged ? new Date() : undefined,
+      lifecycleChangedBy:
+        lifecycleChanged || lifecycleExplicit ? 'user' : undefined,
+      closedReason,
       receivedAt: patch.receivedAt ?? undefined,
-      confirmedAt: patch.confirmedAt,
+      lastCheckedAt: patch.lastCheckedAt,
+      lastVerifiedAt: patch.lastVerifiedAt,
+      lastCheckResult: patch.lastCheckResult,
+      nextConfirmAt: patch.nextConfirmAt,
       isJointBrokerageRequired: patch.isJointBrokerageRequired,
       jointBrokeragePartnerId:
         patch.isJointBrokerageRequired === false
@@ -332,24 +436,38 @@ export class ListingIntakesService {
     };
     let intake: { id: string };
 
-    if (expectedUpdatedAt) {
-      const expectedUpdatedAtDate = this.parseExpectedUpdatedAt(expectedUpdatedAt);
-      const result = await this.prisma.listingIntake.updateMany({
-        where: { id, officeId, updatedAt: expectedUpdatedAtDate },
-        data,
-      });
+    try {
+      if (expectedUpdatedAt) {
+        const expectedUpdatedAtDate = this.parseExpectedUpdatedAt(expectedUpdatedAt);
+        const result = await this.prisma.listingIntake.updateMany({
+          where: { id, officeId, updatedAt: expectedUpdatedAtDate },
+          data,
+        });
 
-      if (result.count === 0) {
-        throw new ConflictException('다른 사용자가 먼저 수정했습니다.');
+        if (result.count === 0) {
+          throw new ConflictException('다른 사용자가 먼저 수정했습니다.');
+        }
+
+        intake = { id };
+      } else {
+        intake = await this.prisma.listingIntake.update({
+          where: { id },
+          data,
+          select: { id: true },
+        });
       }
-
-      intake = { id };
-    } else {
-      intake = await this.prisma.listingIntake.update({
-        where: { id },
-        data,
-        select: { id: true },
-      });
+    } catch (error) {
+      // 재개(closed → open) 경쟁 — 사전 검사 후 다른 요청이 먼저
+      // 열린 의뢰를 만들면 partial unique index 가 잡는다. 500 대신 충돌로 응답.
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
+        throw new ConflictException(
+          '같은 관리 매물에는 활성 의뢰를 하나만 등록할 수 있습니다.',
+        );
+      }
+      throw error;
     }
 
     this.realtime?.emitListingIntakeUpdated({
@@ -361,8 +479,13 @@ export class ListingIntakesService {
     return this.findOne(intake.id, officeId);
   }
 
-  async updateStatus(id: string, officeId: string, status: string) {
-    return this.update(id, officeId, { status });
+  async updateLifecycleStatus(
+    id: string,
+    officeId: string,
+    lifecycleStatus: string,
+    closedReason?: string | null,
+  ) {
+    return this.update(id, officeId, { lifecycleStatus, closedReason });
   }
 
   async addListing(id: string, officeId: string, dto: ListingInputDto) {
@@ -370,15 +493,15 @@ export class ListingIntakesService {
 
     const intake = await this.prisma.listingIntake.findFirst({
       where: { id, officeId },
-      select: { id: true, propertyId: true, status: true },
+      select: { id: true, propertyId: true, lifecycleStatus: true },
     });
 
     if (!intake) {
       throw new NotFoundException('ListingIntake not found');
     }
 
-    if (!this.isOpenIntakeStatus(intake.status)) {
-      throw new BadRequestException('Only open intakes can add listings');
+    if (!this.isNonClosedIntakeLifecycle(intake.lifecycleStatus)) {
+      throw new BadRequestException('Closed intakes cannot add listings');
     }
 
     return this.listings.create(officeId, {
@@ -424,10 +547,15 @@ export class ListingIntakesService {
     const contactId = dto.contactId ?? this.resolveDefaultConfirmContactId(intake);
     const content = this.buildConfirmConsultationContent(dto.result, dto.memo);
     const consultationType = this.resolveConsultationType(dto.channel);
-    const shouldUpdateConfirmedAt =
+    const shouldUpdateLastVerifiedAt =
       dto.result === 'alive' || dto.result === 'price_changed';
-    const nextStatus =
-      dto.result === 'unavailable' ? 'done' : intake.status;
+    // 확인 결과는 확인 축에 기록하고, unavailable만 생명주기를 종결한다.
+    const nextLifecycleStatus =
+      dto.result === 'unavailable'
+        ? IntakeLifecycleStatus.CLOSED
+        : intake.lifecycleStatus;
+    const lifecycleChanged =
+      nextLifecycleStatus !== intake.lifecycleStatus;
 
     const updated = await this.prisma.$transaction(async (tx) => {
       if (contactId) {
@@ -447,8 +575,21 @@ export class ListingIntakesService {
       }
 
       const data = {
-        status: nextStatus,
-        confirmedAt: shouldUpdateConfirmedAt ? checkedAt : undefined,
+        lifecycleStatus: nextLifecycleStatus,
+        lifecycleChangedAt: lifecycleChanged ? new Date() : undefined,
+        // unavailable 확인은 이미 closed인 의뢰라도 사용자의 명시적 종결 승인 —
+        // 주체를 user 로 승격해 자동 복구 대상에서 제외한다.
+        lifecycleChangedBy:
+          lifecycleChanged || dto.result === 'unavailable'
+            ? 'user'
+            : undefined,
+        closedReason:
+          dto.result === 'unavailable'
+            ? IntakeClosedReason.UNAVAILABLE
+            : undefined,
+        lastCheckedAt: checkedAt,
+        lastVerifiedAt: shouldUpdateLastVerifiedAt ? checkedAt : undefined,
+        lastCheckResult: dto.result,
         nextConfirmAt,
       };
 
@@ -487,17 +628,32 @@ export class ListingIntakesService {
   }
 
   async remove(id: string, officeId: string) {
-    return this.updateStatus(id, officeId, 'done');
+    return this.updateLifecycleStatus(
+      id,
+      officeId,
+      IntakeLifecycleStatus.CLOSED,
+      IntakeClosedReason.OTHER,
+    );
   }
 
   private buildFindManyWhere(officeId: string, query: ListingIntakeSearchQuery) {
     const listingWhere = this.buildListingWhere(query);
     const filters: Prisma.ListingIntakeWhereInput[] = [{ officeId }];
 
-    if (query.status) {
-      filters.push({ status: query.status });
-    } else if (!query.includeInactive) {
-      filters.push({ status: { in: [...OPEN_INTAKE_STATUSES, 'active', 'paused'] } });
+    if (query.lifecycleStatus) {
+      filters.push({ lifecycleStatus: query.lifecycleStatus });
+    } else if (!query.includeClosed) {
+      filters.push({
+        lifecycleStatus: {
+          in: [...NON_CLOSED_INTAKE_LIFECYCLE_STATUSES],
+        },
+      });
+    }
+
+    if (query.confirmationState) {
+      filters.push(
+        buildIntakeConfirmationWhere(query.confirmationState, new Date()),
+      );
     }
 
     if (query.nextConfirmFrom || query.nextConfirmTo) {
@@ -518,19 +674,8 @@ export class ListingIntakesService {
     }
 
     if (query.isJointBrokerage !== undefined) {
-      filters.push(
-        query.isJointBrokerage
-          ? {
-              OR: [
-                { isJointBrokerageRequired: true },
-                { listings: { some: { isJointBrokerageRequired: true } } },
-              ],
-            }
-          : {
-              isJointBrokerageRequired: false,
-              listings: { none: { isJointBrokerageRequired: true } },
-            },
-      );
+      // 공동중개는 의뢰(ListingIntake)가 단일 소유 — Listing 쪽 판정 없음
+      filters.push({ isJointBrokerageRequired: query.isJointBrokerage });
     }
 
     if (query.areaMin !== undefined || query.areaMax !== undefined) {
@@ -611,10 +756,6 @@ export class ListingIntakesService {
 
     if (query.transactionType) {
       where.transactionType = query.transactionType;
-    }
-
-    if (query.checkStatus) {
-      where.checkStatus = query.checkStatus;
     }
 
     if (query.priceMin !== undefined || query.priceMax !== undefined) {
@@ -780,9 +921,14 @@ export class ListingIntakesService {
       id: true,
       officeId: true,
       propertyId: true,
-      status: true,
+      lifecycleStatus: true,
+      lifecycleChangedAt: true,
+      lifecycleChangedBy: true,
+      closedReason: true,
       receivedAt: true,
-      confirmedAt: true,
+      lastCheckedAt: true,
+      lastVerifiedAt: true,
+      lastCheckResult: true,
       isJointBrokerageRequired: true,
       jointBrokeragePartnerId: true,
       nextConfirmAt: true,
@@ -819,13 +965,12 @@ export class ListingIntakesService {
           moveInAvailableType: true,
           moveInAvailableFrom: true,
           moveInAvailableTo: true,
-          isJointBrokerageRequired: true,
-          jointBrokeragePartnerId: true,
-          checkStatus: true,
-          checkStatusChangedAt: true,
+          isPaused: true,
+          isHidden: true,
           memo: true,
           createdAt: true,
           updatedAt: true,
+          deals: OCCUPYING_DEALS_SELECT,
           advertisements: {
             orderBy: { createdAt: 'desc' as const },
             take: 5,
@@ -846,9 +991,14 @@ export class ListingIntakesService {
       id: true,
       officeId: true,
       propertyId: true,
-      status: true,
+      lifecycleStatus: true,
+      lifecycleChangedAt: true,
+      lifecycleChangedBy: true,
+      closedReason: true,
       receivedAt: true,
-      confirmedAt: true,
+      lastCheckedAt: true,
+      lastVerifiedAt: true,
+      lastCheckResult: true,
       isJointBrokerageRequired: true,
       jointBrokeragePartnerId: true,
       nextConfirmAt: true,
@@ -878,13 +1028,12 @@ export class ListingIntakesService {
           moveInAvailableType: true,
           moveInAvailableFrom: true,
           moveInAvailableTo: true,
-          isJointBrokerageRequired: true,
-          jointBrokeragePartnerId: true,
-          checkStatus: true,
-          checkStatusChangedAt: true,
+          isPaused: true,
+          isHidden: true,
           memo: true,
           createdAt: true,
           updatedAt: true,
+          deals: OCCUPYING_DEALS_SELECT,
         },
       },
     } satisfies Prisma.ListingIntakeSelect;
@@ -906,16 +1055,10 @@ export class ListingIntakesService {
         where: listingWhere,
         orderBy: { createdAt: 'desc' as const },
         include: {
+          deals: OCCUPYING_DEALS_SELECT,
           advertisements: {
             orderBy: { createdAt: 'desc' as const },
             take: 5,
-          },
-          jointBrokeragePartner: {
-            select: {
-              id: true,
-              name: true,
-              phone: true,
-            },
           },
         },
       },
@@ -1051,8 +1194,14 @@ export class ListingIntakesService {
   }
 
   private assertValidQuery(query: ListingIntakeSearchQuery) {
-    if (query.status) {
-      this.assertValidIntakeStatus(query.status);
+    if (query.lifecycleStatus) {
+      this.assertValidIntakeLifecycleStatus(query.lifecycleStatus);
+    }
+    if (
+      query.confirmationState &&
+      !VALID_CONFIRMATION_STATES.has(query.confirmationState)
+    ) {
+      throw new BadRequestException('Invalid confirmation state');
     }
 
     if (
@@ -1061,14 +1210,6 @@ export class ListingIntakesService {
     ) {
       throw new BadRequestException('Invalid transactionType');
     }
-
-    if (
-      query.checkStatus &&
-      !VALID_CHECK_STATUSES.has(query.checkStatus as CheckStatus)
-    ) {
-      throw new BadRequestException('Invalid checkStatus');
-    }
-
   }
 
   private assertValidListingInputs(listings: ListingInputDto[]) {
@@ -1088,14 +1229,47 @@ export class ListingIntakesService {
     }
   }
 
-  private assertValidIntakeStatus(status: string) {
-    if (!VALID_INTAKE_STATUSES.has(status)) {
-      throw new BadRequestException('Invalid ListingIntake status');
+  private resolveClosedReason(
+    lifecycleStatus: string,
+    closedReason?: string | null,
+  ) {
+    if (lifecycleStatus !== IntakeLifecycleStatus.CLOSED) {
+      if (closedReason !== undefined && closedReason !== null) {
+        throw new BadRequestException(
+          'closedReason is only valid for closed intakes',
+        );
+      }
+      return null;
+    }
+
+    const resolved = closedReason ?? IntakeClosedReason.OTHER;
+    if (!VALID_INTAKE_CLOSED_REASONS.has(resolved)) {
+      throw new BadRequestException('Invalid ListingIntake closed reason');
+    }
+    return resolved;
+  }
+
+  private assertValidIntakeLifecycleStatus(lifecycleStatus: string) {
+    if (!VALID_INTAKE_LIFECYCLE_STATUSES.has(lifecycleStatus)) {
+      throw new BadRequestException('Invalid ListingIntake lifecycle status');
     }
   }
 
-  private assertValidConfirmResult(result: string) {
-    if (!VALID_CONFIRM_RESULTS.has(result)) {
+  private assertIntakeLifecycleTransition(current: string, next: string) {
+    const allowedTransitions = INTAKE_LIFECYCLE_TRANSITIONS[current] ?? [];
+    if (!allowedTransitions.includes(next)) {
+      throw new BadRequestException(
+        `Invalid intake lifecycle transition: ${current} -> ${next}`,
+      );
+    }
+  }
+
+  private assertValidConfirmResult(
+    result?: string | null,
+    optional = false,
+  ) {
+    if (optional && (result === undefined || result === null)) return;
+    if (!result || !VALID_CONFIRM_RESULTS.has(result)) {
       throw new BadRequestException('Invalid confirmation result');
     }
   }
@@ -1103,6 +1277,28 @@ export class ListingIntakesService {
   private assertValidConfirmChannel(channel?: string | null) {
     if (channel && !VALID_CONFIRM_CHANNELS.has(channel)) {
       throw new BadRequestException('Invalid confirmation channel');
+    }
+  }
+
+  private assertValidConfirmationHistory(
+    lastCheckedAt: Date | string | null,
+    lastVerifiedAt: Date | string | null,
+    lastCheckResult: string | null,
+  ) {
+    const checkedAt = this.resolveDate(lastCheckedAt);
+    const verifiedAt = this.resolveDate(lastVerifiedAt);
+    if (Boolean(checkedAt) !== Boolean(lastCheckResult)) {
+      throw new BadRequestException(
+        'lastCheckedAt and lastCheckResult must be set or cleared together',
+      );
+    }
+    if (
+      verifiedAt &&
+      (!checkedAt || verifiedAt.getTime() > checkedAt.getTime())
+    ) {
+      throw new BadRequestException(
+        'lastVerifiedAt cannot be after lastCheckedAt',
+      );
     }
   }
 
@@ -1179,13 +1375,13 @@ export class ListingIntakesService {
     return 'online';
   }
 
-  private isOpenIntakeStatus(status: string) {
-    return OPEN_INTAKE_STATUSES.includes(
-      status as (typeof OPEN_INTAKE_STATUSES)[number],
+  private isNonClosedIntakeLifecycle(lifecycleStatus: string) {
+    return NON_CLOSED_INTAKE_LIFECYCLE_STATUSES.includes(
+      lifecycleStatus as (typeof NON_CLOSED_INTAKE_LIFECYCLE_STATUSES)[number],
     );
   }
 
-  private async assertNoOpenIntake(
+  private async assertNoNonClosedIntake(
     officeId: string,
     propertyId: string,
     excludeIntakeId?: string,
@@ -1194,7 +1390,9 @@ export class ListingIntakesService {
       where: {
         officeId,
         propertyId,
-        status: { in: [...OPEN_INTAKE_STATUSES] },
+        lifecycleStatus: {
+          in: [...NON_CLOSED_INTAKE_LIFECYCLE_STATUSES],
+        },
         ...(excludeIntakeId ? { id: { not: excludeIntakeId } } : {}),
       },
       select: { id: true },

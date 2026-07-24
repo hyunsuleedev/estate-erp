@@ -1,4 +1,8 @@
 import type { RequestFn } from '../client.js';
+import type {
+  ListingIntakeState,
+  ListingOccupyingDeal,
+} from './listings.js';
 
 export interface SiteUnitType {
   id: string;
@@ -61,7 +65,9 @@ export interface UnitListing {
   price: number | null;
   deposit: number | null;
   monthlyRent: number | null;
-  checkStatus: string;
+  isPaused: boolean;
+  intake?: ListingIntakeState | null;
+  deals?: ListingOccupyingDeal[];
   isHidden: boolean;
   updatedAt: string;
 }

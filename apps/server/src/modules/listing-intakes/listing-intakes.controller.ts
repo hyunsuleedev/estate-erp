@@ -26,14 +26,14 @@ export class ListingIntakesController {
 
   @Get()
   findAll(
-    @Query('status') status: string,
+    @Query('lifecycleStatus') lifecycleStatus: string,
+    @Query('confirmationState') confirmationState: string,
     @Query('nextConfirmFrom') nextConfirmFrom: string,
     @Query('nextConfirmTo') nextConfirmTo: string,
-    @Query('includeInactive') includeInactive: string,
+    @Query('includeClosed') includeClosed: string,
     @Query('propertyId') propertyId: string,
     @Query('transactionType') transactionType: string,
     @Query('siteType') siteType: string,
-    @Query('checkStatus') checkStatus: string,
     @Query('priceMin') priceMin: string,
     @Query('priceMax') priceMax: string,
     @Query('depositMin') depositMin: string,
@@ -60,14 +60,14 @@ export class ListingIntakesController {
     @CurrentUser() user: CurrentUserPayload,
   ) {
     return this.listingIntakes.findAll(user.officeId, {
-      status: status || undefined,
+      lifecycleStatus: lifecycleStatus || undefined,
+      confirmationState: confirmationState || undefined,
       nextConfirmFrom: nextConfirmFrom || undefined,
       nextConfirmTo: nextConfirmTo || undefined,
-      includeInactive: includeInactive === 'true',
+      includeClosed: includeClosed === 'true',
       propertyId: propertyId || undefined,
       transactionType: transactionType || undefined,
       siteType: siteType || undefined,
-      checkStatus: checkStatus || undefined,
       priceMin: priceMin ? Number(priceMin) : undefined,
       priceMax: priceMax ? Number(priceMax) : undefined,
       depositMin: depositMin ? Number(depositMin) : undefined,
@@ -87,7 +87,7 @@ export class ListingIntakesController {
       unit: unit || undefined,
       moveInFrom: moveInFrom || undefined,
       moveInTo: moveInTo || undefined,
-      sortBy: (sortBy as 'receivedAt' | 'updatedAt' | 'createdAt' | 'price') || undefined,
+      sortBy: (sortBy as 'receivedAt' | 'updatedAt' | 'createdAt') || undefined,
       sortOrder: (sortOrder as 'asc' | 'desc') || undefined,
       page: page ? Number(page) : undefined,
       limit: limit ? Number(limit) : undefined,
@@ -109,9 +109,13 @@ export class ListingIntakesController {
     @Body()
     dto: {
       propertyId: string;
-      status?: string;
+      lifecycleStatus?: string;
+      closedReason?: string | null;
       receivedAt?: string | null;
-      confirmedAt?: string | null;
+      lastCheckedAt?: string | null;
+      lastVerifiedAt?: string | null;
+      lastCheckResult?: string | null;
+      nextConfirmAt?: string | null;
       isJointBrokerageRequired?: boolean;
       jointBrokeragePartnerId?: string | null;
       memo?: string | null;
@@ -155,9 +159,13 @@ export class ListingIntakesController {
     @Param('id') id: string,
     @Body()
     dto: {
-      status?: string;
+      lifecycleStatus?: string;
+      closedReason?: string | null;
       receivedAt?: string | null;
-      confirmedAt?: string | null;
+      lastCheckedAt?: string | null;
+      lastVerifiedAt?: string | null;
+      lastCheckResult?: string | null;
+      nextConfirmAt?: string | null;
       isJointBrokerageRequired?: boolean;
       jointBrokeragePartnerId?: string | null;
       memo?: string | null;
@@ -168,14 +176,20 @@ export class ListingIntakesController {
     return this.listingIntakes.update(id, user.officeId, dto);
   }
 
-  @Patch(':id/status')
-  updateStatus(
+  @Patch(':id/lifecycle')
+  updateLifecycleStatus(
     @Param('id') id: string,
-    @Body() dto: { status: string; expectedUpdatedAt?: string | null },
+    @Body()
+    dto: {
+      lifecycleStatus: string;
+      closedReason?: string | null;
+      expectedUpdatedAt?: string | null;
+    },
     @CurrentUser() user: CurrentUserPayload,
   ) {
     return this.listingIntakes.update(id, user.officeId, {
-      status: dto.status,
+      lifecycleStatus: dto.lifecycleStatus,
+      closedReason: dto.closedReason,
       expectedUpdatedAt: dto.expectedUpdatedAt,
     });
   }
@@ -212,14 +226,14 @@ function parseBooleanQuery(value?: string) {
 
 function parseListingIntakeQuery(query: Record<string, string>) {
   return {
-    status: query.status || undefined,
+    lifecycleStatus: query.lifecycleStatus || undefined,
+    confirmationState: query.confirmationState || undefined,
     nextConfirmFrom: query.nextConfirmFrom || undefined,
     nextConfirmTo: query.nextConfirmTo || undefined,
-    includeInactive: query.includeInactive === 'true',
+    includeClosed: query.includeClosed === 'true',
     propertyId: query.propertyId || undefined,
     transactionType: query.transactionType || undefined,
     siteType: query.siteType || undefined,
-    checkStatus: query.checkStatus || undefined,
     priceMin: query.priceMin ? Number(query.priceMin) : undefined,
     priceMax: query.priceMax ? Number(query.priceMax) : undefined,
     depositMin: query.depositMin ? Number(query.depositMin) : undefined,
@@ -239,7 +253,7 @@ function parseListingIntakeQuery(query: Record<string, string>) {
     unit: query.unit || undefined,
     moveInFrom: query.moveInFrom || undefined,
     moveInTo: query.moveInTo || undefined,
-    sortBy: (query.sortBy as 'receivedAt' | 'updatedAt' | 'createdAt' | 'price') || undefined,
+    sortBy: (query.sortBy as 'receivedAt' | 'updatedAt' | 'createdAt') || undefined,
     sortOrder: (query.sortOrder as 'asc' | 'desc') || undefined,
   };
 }

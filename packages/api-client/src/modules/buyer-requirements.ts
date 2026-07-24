@@ -1,5 +1,9 @@
 import type { RequestFn } from '../client.js';
 import type { PaginatedResponse } from '../types.js';
+import type {
+  ListingIntakeState,
+  ListingOccupyingDeal,
+} from './listings.js';
 
 export interface BuyerRequirementPreferredSite {
   id: string;
@@ -36,7 +40,9 @@ export interface BuyerRequirementMatch {
     price: number | null;
     deposit: number | null;
     monthlyRent: number | null;
-    checkStatus: string;
+    isPaused: boolean;
+    intake?: ListingIntakeState | null;
+    deals?: ListingOccupyingDeal[];
     isHidden: boolean;
     property?: {
       id: string;

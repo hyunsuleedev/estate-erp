@@ -55,6 +55,7 @@ import {
 } from './-site-helpers';
 import { UnitConsultDialog, UnitEditDialog } from './-unit-dialogs';
 import { UnitTasksSection } from './-unit-tasks-section';
+import { getListingAvailability } from "@/lib/listing-status";
 
 const DOC_STATUS_META: Record<string, { label: string; className: string }> = {
   pending: { label: '발급중', className: 'bg-warning-soft text-warning' },
@@ -405,7 +406,7 @@ function UnitDetailBody({
                           <span className="text-sm font-medium tabular-nums">
                             {formatListingPrice(listing)}
                           </span>
-                          <StatusBadge kind="checkStatus" status={listing.checkStatus} size="sm" />
+                          <StatusBadge kind="listingAvailability" status={getListingAvailability(listing)} size="sm" />
                         </div>
                         <div className="flex items-center justify-between gap-2">
                           <span className="text-[11px] text-muted-foreground">

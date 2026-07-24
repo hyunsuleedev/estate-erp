@@ -6,6 +6,10 @@ import {
   normalizePhone,
   withPrimaryContactPhone,
 } from '../contacts/contact-phone.utils';
+import {
+  LISTING_INTAKE_STATE_SELECT,
+  OCCUPYING_DEALS_SELECT,
+} from '../listings/listing-state';
 
 export interface BuyerRequirementSearchQuery {
   // Multi-value filters (comma-separated or arrays). Single string is treated
@@ -220,7 +224,17 @@ export class BuyerRequirementsService {
       include: {
         contact: true,
         assignedTo: { select: { id: true, name: true } },
-        matches: { include: { listing: { include: { property: { include: { site: true } } } } } },
+        matches: {
+          include: {
+            listing: {
+              include: {
+                intake: { select: LISTING_INTAKE_STATE_SELECT },
+                deals: OCCUPYING_DEALS_SELECT,
+                property: { include: { site: true } },
+              },
+            },
+          },
+        },
         consultations: { orderBy: { createdAt: 'desc' }, take: 10 },
         preferredSites: {
           include: { site: { select: { id: true, name: true, type: true } } },

@@ -1,322 +1,12 @@
 // ============================================================
-// AI Employee — Rule Engine + Proposal Queue
-// ============================================================
-//
-// 설계 문서: docs/ai-employee-architecture.md
-//
-// Rule   — 규칙 엔진의 규칙 레코드.
-//          isSystem=true: 법 기반 (사용자 편집 불가, seed로 삽입)
-//          isSystem=false: 임계값 기반 (사무소가 config 조정)
-//          triggerType=schedule | event
-//
-// Proposal — 규칙이 생성하는 제안. 단일 승인 큐(inbox)에 모인다.
-//            generatedBy 접두사: "rule:{name}:{version}" / "mcp:{tool}"
-//            trustTier: auto | approval_required | inform_only
-// ============================================================
-
-model Rule {
-  id       String @id @default(uuid()) @db.Uuid
-  officeId String @map("office_id") @db.Uuid
-
-  /// 코드 레벨 식별자 (예: "ad_takedown", "lease_expiry").
-  /// 같은 officeId 안에서 unique.
-  name        String
-  /// UI 표시용 이름 (예: "광고 내림 감지").
-  displayName String  @map("display_name")
-  description String?
-
-  /// "schedule" | "event"
-  triggerType String  @map("trigger_type")
-  /// triggerType=schedule 일 때 크론 표현식. NestJS @Cron 호환.
-  schedule    String?
-  /// triggerType=event 일 때 EventEmitter2 이벤트명.
-  eventName   String? @map("event_name")
-
-  /// 규칙 파라미터. 법 기반 규칙은 비어있거나 메타 정보만.
-  /// 임계값 기반 규칙은 { "daysSinceRegister": 14, ... } 형태.
-  config Json @default("{}") @db.JsonB
-
-  /// 활성 여부 (사무소가 토글 가능, 단 isSystem 규칙도 끌 수 있음)
-  isActive Boolean @default(true) @map("is_active")
-  /// true: 시스템이 seed/startup에 자동 등록. 사용자 삭제 불가.
-  /// false: 사무소가 생성한 커스텀 규칙.
-  isSystem Boolean @default(false) @map("is_system")
-
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  office Office @relation(fields: [officeId], references: [id])
-
-  @@unique([officeId, name])
-  @@index([officeId, isActive, triggerType])
-  @@map("rules")
-}
-
-model Proposal {
-  id       String @id @default(uuid()) @db.Uuid
-  officeId String @map("office_id") @db.Uuid
-
-  /// 제안 유형 (예: "ad_takedown", "lease_renewal_notice")
-  type        String
-  title       String
-  description String
-  /// 왜 이 제안이 생성됐는지(법적 근거, 데이터 근거). inbox UI에 표시.
-  reasoning   String?
-
-  /// pending | approved | rejected | expired | executed | failed | auto_resolved
-  status    String @default("pending")
-  /// urgent | normal | low
-  priority  String @default("normal")
-  /// auto | approval_required | inform_only
-  trustTier String @map("trust_tier")
-
-  /// "rule:ad_takedown:v1" / "mcp:update_listing_price" / "event:listing.price.changed"
-  generatedBy String  @map("generated_by")
-  /// 중복 방지 키. 같은 officeId + dedupeKey + status IN (pending, approved) 존재하면 skip.
-  dedupeKey   String? @map("dedupe_key")
-
-  /// MCP로 들어온 제안일 때 요청한 사용자 (Phase 2). 규칙 제안은 null.
-  createdByUserId String? @map("created_by_user_id") @db.Uuid
-
-  // 컨텍스트 링크 — inbox 카드에서 한눈에 파악할 수 있게
-  listingId       String? @map("listing_id") @db.Uuid
-  listingIntakeId String? @map("listing_intake_id") @db.Uuid
-  propertyId      String? @map("property_id") @db.Uuid
-  contactId       String? @map("contact_id") @db.Uuid
-  dealId          String? @map("deal_id") @db.Uuid
-  contractId      String? @map("contract_id") @db.Uuid
-  tenantId        String? @map("tenant_id") @db.Uuid
-
-  // 라이프사이클
-  proposedAt     DateTime  @default(now()) @map("proposed_at")
-  expiresAt      DateTime? @map("expires_at")
-  decidedAt      DateTime? @map("decided_at")
-  decidedBy      String?   @map("decided_by") @db.Uuid
-  decisionNote   String?   @map("decision_note")
-  executedAt     DateTime? @map("executed_at")
-  executionError String?   @map("execution_error")
-
-  office        Office           @relation(fields: [officeId], references: [id])
-  listing       Listing?         @relation(fields: [listingId], references: [id])
-  listingIntake ListingIntake?   @relation(fields: [listingIntakeId], references: [id])
-  property      Property?        @relation(fields: [propertyId], references: [id])
-  contact       Contact?         @relation(fields: [contactId], references: [id])
-  deal          Deal?            @relation(fields: [dealId], references: [id])
-  contract      Contract?        @relation(fields: [contractId], references: [id])
-  tenant        Tenant?          @relation(fields: [tenantId], references: [id])
-  actions       ProposalAction[]
-
-  @@index([officeId, status, priority, proposedAt])
-  @@index([officeId, type, status])
-  @@index([officeId, dedupeKey])
-  @@index([listingId])
-  @@index([listingIntakeId])
-  @@index([propertyId])
-  @@map("proposals")
-}
-
-/// Proposal 내 개별 실행 단위.
-model ProposalAction {
-  id         String @id @default(uuid()) @db.Uuid
-  proposalId String @map("proposal_id") @db.Uuid
-
-  /// MCP 도구명 ("update_listing_price", "create_task" 등)
-  tool String
-  /// 실행 인자
-  args Json   @db.JsonB
-
-  /// pending | executed | failed
-  status String  @default("pending")
-  /// 실행 성공 시 결과
-  result Json?   @db.JsonB
-  /// 실행 실패 시 에러
-  error  String?
-
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  proposal Proposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
-
-  @@index([proposalId])
-  @@map("proposal_actions")
-}
-
-// ============================================================
-// EntityDraft — "제안된 변경" 의 단일 모델
-// ============================================================
-//
-// 업무함에 올라오는 모든 항목의 공통 테이블.
-//
-// 핵심 개념:
-//   "AI / Rule / 직원이 제안한 변경" 을 담는다.
-//   승인되면 proposedChanges 가 실제 도메인 테이블에 반영된다.
-//
-// decisionMode:
-//   'confirm'  — AI 가 완성된 결과물을 만들어둠. 사장님 검토 후 반영.
-//                예: 계약서 초안, 수수료 조정 제안
-//                버튼 라벨: [확인]
-//   'approval' — AI 가 수행할 행동에 대한 사전 허락.
-//                예: SMS 발송, 광고 게재
-//                버튼 라벨: [승인]
-//
-// executor:
-//   'server' — 서버 ExecutorService 가 승인/확인 즉시 실행 (내부 DB 쓰기, 단순 API)
-//   'agent'  — OpenClaw 등 외부 에이전트가 heartbeat 때 집어가 실행 (복잡한 워크플로우)
-//   'manual' — 사장님이 직접 처리했다고 표시만 (외부 실행은 사람이)
-//
-// operation:
-//   'create' — entityType 테이블에 새 레코드 생성
-//   'update' — entityId 레코드를 proposedChanges 로 업데이트
-//   'delete' — entityId 레코드 삭제 (논리 삭제 권장)
-//   'action' — 외부 API 호출 등 DB 변경 없는 행동 (tool + args 를 proposedChanges 에 저장)
-// ============================================================
-model EntityDraft {
-  id       String @id @default(uuid()) @db.Uuid
-  officeId String @map("office_id") @db.Uuid
-
-  /// 어떤 테이블의 레코드에 대한 변경인가
-  /// 'listing' | 'contract' | 'task' | 'commission_payment' | 'match' | 'action' ...
-  entityType String @map("entity_type")
-
-  /// create | update | delete | action
-  operation String
-
-  /// 대상 레코드 ID (create / action 일 때 null)
-  entityId String? @map("entity_id") @db.Uuid
-
-  /// 변경 내용 (operation 별 의미 다름)
-  /// - update/create: 반영할 필드 맵
-  /// - delete:        { reason?: string }
-  /// - action:        { tool: string, args: object }
-  proposedChanges Json @map("proposed_changes") @db.JsonB
-
-  /// 표시용
-  category  String // UI 카드 렌더러 식별: 'contract_draft' | 'ad_takedown' | 'commission_adjustment' ...
-  title     String
-  summary   String
-  reasoning String?
-  priority  String  @default("normal") // urgent | normal | low
-
-  /// 의사결정 양식 — 버튼 레이블 결정
-  /// 'confirm'  = [확인]  (결과물 검토)
-  /// 'approval' = [승인]  (사전 허락)
-  decisionMode String @default("approval") @map("decision_mode")
-
-  /// 실행 주체
-  /// 'server' | 'agent' | 'manual'
-  executor String @default("server")
-
-  /// 상태
-  /// pending — 업무함 대기
-  /// approved — 승인/확인 완료, executor 실행 대기 또는 실행 중
-  /// executing — executor='agent' 가 claim 해서 실행 중
-  /// executed — 실행 완료 (최종)
-  /// failed — 실행 실패
-  /// rejected — 사장님이 거부
-  /// expired — expiresAt 지남
-  status String @default("pending")
-
-  /// 보류 (snooze)
-  snoozedUntil DateTime? @map("snoozed_until")
-  expiresAt    DateTime? @map("expires_at")
-
-  /// 결정 감사
-  decidedAt    DateTime? @map("decided_at")
-  decidedById  String?   @map("decided_by_id") @db.Uuid
-  decisionNote String?   @map("decision_note")
-
-  /// 실행 감사
-  executedAt     DateTime? @map("executed_at")
-  executionError String?   @map("execution_error")
-  /// operation='create' 시, 실제로 생성된 레코드 ID
-  resultEntityId String?   @map("result_entity_id") @db.Uuid
-
-  /// agent executor 용 락 (동시 실행 방지)
-  claimedAt     DateTime? @map("claimed_at")
-  claimedBy     String?   @map("claimed_by")
-  lockExpiresAt DateTime? @map("lock_expires_at")
-
-  /// 재시도
-  attempts    Int @default(0)
-  maxAttempts Int @default(3) @map("max_attempts")
-
-  /// 출처
-  /// 'rule:xxx:v1' | 'user:yyy' | 'event:zzz' | 'agent:claude'
-  generatedBy String @map("generated_by")
-
-  /// 중복 방지 (같은 officeId + dedupeKey의 활성 검토 상태는 하나만 허용)
-  dedupeKey String? @map("dedupe_key")
-
-  // 컨텍스트 링크 (inbox 카드에서 한눈에 파악, 도메인으로 점프)
-  listingId       String? @map("listing_id") @db.Uuid
-  listingIntakeId String? @map("listing_intake_id") @db.Uuid
-  propertyId      String? @map("property_id") @db.Uuid
-  contactId       String? @map("contact_id") @db.Uuid
-  dealId          String? @map("deal_id") @db.Uuid
-  contractId      String? @map("contract_id") @db.Uuid
-  paymentId       String? @map("payment_id") @db.Uuid
-
-  /// 이 검토 요청을 소유한 지속형 AI 세션과, 요청을 만든 실행 시도.
-  /// 사람 책임자는 AgentSession.task.assignedTo, AI 실행자는 AgentSession.agentKey로 분리한다.
-  agentSessionId   String? @map("agent_session_id") @db.Uuid
-  requestedByRunId String? @map("requested_by_run_id") @db.Uuid
-
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  office         Office               @relation(fields: [officeId], references: [id])
-  comments       EntityDraftComment[]
-  agentSession   AgentSession?        @relation("EntityDraftAgentSession", fields: [agentSessionId], references: [id], onDelete: SetNull)
-  requestedByRun AgentRun?            @relation("EntityDraftRequestedByRun", fields: [requestedByRunId], references: [id], onDelete: SetNull)
-
-  @@index([officeId, dedupeKey])
-  @@index([officeId, status, priority])
-  @@index([officeId, decisionMode, status])
-  @@index([entityType, entityId])
-  @@index([listingId])
-  @@index([listingIntakeId])
-  @@index([dealId])
-  @@index([agentSessionId, status])
-  @@index([requestedByRunId])
-  @@map("entity_drafts")
-}
-
-model EntityDraftComment {
-  id       String @id @default(uuid()) @db.Uuid
-  draftId  String @map("draft_id") @db.Uuid
-  officeId String @map("office_id") @db.Uuid
-  authorId String @map("author_id") @db.Uuid
-
-  body String
-
-  /// AI 가 이 코멘트를 읽고 proposedChanges 에 반영한 시점.
-  /// null = 아직 반영 안 됨 (processing 상태에서 기다림).
-  readAt DateTime? @map("read_at")
-
-  createdAt DateTime @default(now()) @map("created_at")
-
-  draft  EntityDraft @relation(fields: [draftId], references: [id], onDelete: Cascade)
-  office Office      @relation(fields: [officeId], references: [id])
-
-  @@index([draftId, createdAt])
-  @@map("entity_draft_comments")
-}
-
-// ============================================================
 // Agent Control Plane — Session / Wakeup / Run / Activity
 // ============================================================
 //
-// Paperclip/Linear 스타일의 human-in-the-loop 실행 기반.
-// 기존 Proposal/EntityDraft(검토·승인 데이터)와 책임을 분리한다.
-//
-//   AgentSession       — 하나의 업무 문맥에서 지속되는 AI 세션
-//   AgentWakeupRequest — 승인/코멘트/스케줄 등으로 세션을 깨우는 durable 신호
-//   AgentRun           — 실제 실행 시도 1회 (재시도마다 새 행)
-//   AgentActivity      — 실행 중 발생한 의미 이벤트의 append-only 로그
-//
-// status는 외부 프로토콜과의 확장을 위해 String으로 저장하되, 서비스 계층에서
-// 허용 상태와 전이를 제한한다. AgentActivity 불변성과 wakeup 활성 idempotency는
-// PostgreSQL migration의 trigger/partial unique index가 최종 방어선이다.
+// 외부 AI 실행의 지속 세션과 durable wakeup/run/activity를 추적한다.
+// 상태는 외부 프로토콜 확장을 위해 String으로 저장하되 서비스 계층에서
+// 허용 상태와 전이를 제한한다. AgentActivity 불변성과 wakeup 활성
+// idempotency는 PostgreSQL migration의 trigger/partial unique index가
+// 최종 방어선이다.
 // ============================================================
 
 model AgentSession {
@@ -349,12 +39,11 @@ model AgentSession {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  runs           AgentRun[]
-  wakeups        AgentWakeupRequest[]
-  activities     AgentActivity[]
-  reviewRequests EntityDraft[]        @relation("EntityDraftAgentSession")
-  office         Office               @relation(fields: [officeId], references: [id])
-  task           Task?                @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  runs       AgentRun[]
+  wakeups    AgentWakeupRequest[]
+  activities AgentActivity[]
+  office     Office               @relation(fields: [officeId], references: [id])
+  task       Task?                @relation(fields: [taskId], references: [id], onDelete: SetNull)
 
   @@unique([officeId, agentKey, adapter, taskKey])
   @@index([officeId, status, updatedAt])
@@ -367,7 +56,7 @@ model AgentWakeupRequest {
   officeId  String @map("office_id") @db.Uuid
   sessionId String @map("session_id") @db.Uuid
 
-  /// approval | comment | schedule | event | api | retry 등.
+  /// schedule | event | api | retry 등.
   source  String
   reason  String
   payload Json   @default("{}") @db.JsonB
@@ -423,11 +112,10 @@ model AgentRun {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  session        AgentSession        @relation(fields: [sessionId], references: [id], onDelete: Restrict)
-  wakeupRequest  AgentWakeupRequest? @relation(fields: [wakeupRequestId], references: [id], onDelete: Restrict)
-  activities     AgentActivity[]
-  reviewRequests EntityDraft[]       @relation("EntityDraftRequestedByRun")
-  office         Office              @relation(fields: [officeId], references: [id])
+  session       AgentSession        @relation(fields: [sessionId], references: [id], onDelete: Restrict)
+  wakeupRequest AgentWakeupRequest? @relation(fields: [wakeupRequestId], references: [id], onDelete: Restrict)
+  activities    AgentActivity[]
+  office        Office              @relation(fields: [officeId], references: [id])
 
   @@unique([wakeupRequestId, attempt])
   @@index([officeId, status, createdAt])

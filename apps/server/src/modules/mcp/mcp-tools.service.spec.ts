@@ -45,9 +45,6 @@ describe('McpToolsService', () => {
       create: jest.fn().mockResolvedValue({ id: 'task-1' }),
       update: jest.fn().mockResolvedValue({ id: 'task-1' }),
     };
-    const inbox = {
-      upsertAgentReview: jest.fn().mockResolvedValue({ id: 'review-1' }),
-    };
     const controlPlane = {
       getOrCreateSession: jest.fn().mockResolvedValue({
         id: 'session-1',
@@ -89,8 +86,6 @@ describe('McpToolsService', () => {
       noop,
       noop,
       noop,
-      noop, // proposals
-      inbox,
       listingAdvertisements,
       noop, // officeAdvertisements
       listingIntakes,
@@ -104,7 +99,6 @@ describe('McpToolsService', () => {
       listingIntakes,
       contracts,
       tasks,
-      inbox,
       controlPlane,
     };
   }
@@ -171,7 +165,7 @@ describe('McpToolsService', () => {
       'create_listing_intake',
       {
         propertyId: 'property-1',
-        status: 'active',
+        lifecycleStatus: 'open',
         memo: '테스트 의뢰',
       },
       ctx,
@@ -181,7 +175,7 @@ describe('McpToolsService', () => {
       'office-1',
       expect.objectContaining({
         propertyId: 'property-1',
-        status: 'active',
+        lifecycleStatus: 'open',
         memo: '테스트 의뢰',
       }),
     );
@@ -269,7 +263,7 @@ describe('McpToolsService', () => {
   });
 
   it('delegates sale contract draft preparation without completing the document', async () => {
-    const { service, contracts, tasks, inbox, controlPlane } = createService();
+    const { service, contracts } = createService();
 
     const result = await service.executeTool(
       'prepare_sale_contract_draft',
@@ -293,35 +287,6 @@ describe('McpToolsService', () => {
         rightsTransferDetails: '잔금과 동시에 근저당을 말소한다.',
       }),
       'agent:contract-writer',
-    );
-    expect(tasks.create).toHaveBeenCalledWith(
-      'office-1',
-      expect.objectContaining({
-        source: 'ai',
-        assignedToId: 'user-1',
-        contractId: 'contract-1',
-      }),
-      'user-1',
-    );
-    expect(inbox.upsertAgentReview).toHaveBeenCalledWith(
-      expect.objectContaining({
-        contractId: 'contract-1',
-        agentSessionId: 'session-1',
-        dedupeKey: 'contract:contract-1:sale-agreement',
-        proposedChanges: expect.objectContaining({
-          documentId: 'document-1',
-          revisionId: 'revision-1',
-          contentHash: 'a'.repeat(64),
-          _artifactRevision: expect.objectContaining({ revisionNo: 1 }),
-        }),
-      }),
-    );
-    expect(controlPlane.appendActivity).toHaveBeenCalledWith(
-      'office-1',
-      expect.objectContaining({
-        sessionId: 'session-1',
-        type: 'elicitation',
-      }),
     );
   });
 

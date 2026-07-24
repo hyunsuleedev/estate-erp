@@ -8,6 +8,7 @@ import {
 import { PrismaService } from '../../prisma/prisma.service';
 import { NetworkRoomsService } from './network-rooms.service';
 import {
+  networkVisibleListingWhere,
   serializeSharedProperty,
   sharedPropertyInclude,
 } from './network-masking';
@@ -70,6 +71,17 @@ export class NetworkSharedPropertiesService {
       throw new NotFoundException('매물을 찾을 수 없습니다');
     }
 
+    // 거래중·보류·종료·일시중단 매물은 공유 자체를 막는다
+    const shareable = await this.prisma.listing.findFirst({
+      where: { id: dto.listingId, officeId, ...networkVisibleListingWhere },
+      select: { id: true },
+    });
+    if (!shareable) {
+      throw new BadRequestException(
+        '거래중이거나 보류·종료된 매물은 공유할 수 없습니다',
+      );
+    }
+
     const existing = await this.prisma.networkSharedProperty.findFirst({
       where: { roomId, listingId: dto.listingId },
     });
@@ -115,12 +127,21 @@ export class NetworkSharedPropertiesService {
     return serializeSharedProperty(record, officeId);
   }
 
-  /** 방의 공유 매물 목록 (isActive=true) — viewer 기준 마스킹 적용. */
+  /**
+   * 방의 공유 매물 목록 (isActive=true) — viewer 기준 마스킹 적용.
+   * 거래중·보류·종료·일시중단 매물은 타 사무소에게 숨긴다 (조회 시 파생 —
+   * 계약 무산으로 Deal 이 취소되면 별도 조작 없이 자동 복귀).
+   * 공유한 사무소 본인에게는 상태와 무관하게 계속 보인다 (공유 관리 목적).
+   */
   async listByRoom(roomId: string, officeId: string) {
     await this.rooms.assertApprovedMember(roomId, officeId);
 
     const records = await this.prisma.networkSharedProperty.findMany({
-      where: { roomId, isActive: true },
+      where: {
+        roomId,
+        isActive: true,
+        OR: [{ officeId }, { listing: networkVisibleListingWhere }],
+      },
       include: sharedPropertyInclude,
       orderBy: { createdAt: 'desc' },
     });

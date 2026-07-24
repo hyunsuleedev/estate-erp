@@ -1,3 +1,4 @@
+import { getListingAvailability } from '@/lib/listing-status';
 import { createFileRoute, Link } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState, type ReactNode } from 'react';
@@ -321,7 +322,7 @@ function PropertyDetailPage() {
               {primaryListing && (
                 <StatusBadge kind="transactionType" status={primaryListing.transactionType} />
               )}
-              {primaryListing && <StatusBadge kind="checkStatus" status={primaryListing.checkStatus} />}
+              {primaryListing && <StatusBadge kind="listingAvailability" status={getListingAvailability(primaryListing)} />}
               <Badge variant="secondary" className="border-0">
                 {property.unit?.siteUnitType?.name ?? siteType}
               </Badge>
@@ -503,7 +504,7 @@ function PropertyDetailPage() {
                             {formatDate(listing.updatedAt)}
                           </p>
                         </div>
-                        <StatusBadge kind="checkStatus" status={listing.checkStatus} size="sm" />
+                        <StatusBadge kind="listingAvailability" status={getListingAvailability(listing)} size="sm" />
                       </div>
                     ))
                   )}
@@ -936,7 +937,7 @@ function ListingRow({
         <div className="flex min-w-0 items-center gap-3">
           <StatusBadge kind="transactionType" status={listing.transactionType} />
           <p className="font-medium tabular-nums text-slate-950">{listingPriceLabel(listing)}</p>
-          <StatusBadge kind="checkStatus" status={listing.checkStatus} size="sm" />
+          <StatusBadge kind="listingAvailability" status={getListingAvailability(listing)} size="sm" />
           {listing.isHidden && (
             <Badge variant="outline" className="text-[10px]">
               숨김

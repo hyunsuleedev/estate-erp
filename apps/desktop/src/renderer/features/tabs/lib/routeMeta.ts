@@ -14,7 +14,6 @@ import {
   Users,
   Settings as SettingsIcon,
   SquareTerminal,
-  Inbox as InboxIcon,
   Network,
   Wrench,
   Home,
@@ -55,7 +54,6 @@ const STATIC_ROUTES: Record<string, RouteMeta> = {
   '/cashflow/my-settlement': { title: '내 정산', kind: 'cashflow', icon: Wallet },
   '/employees': { title: '직원관리', kind: 'employee', icon: Users },
   '/settings': { title: '설정', kind: 'settings', icon: SettingsIcon },
-  '/inbox': { title: '인박스', kind: 'inbox', icon: InboxIcon },
   '/network': { title: '네트워크', kind: 'generic', icon: Network },
 };
 

@@ -1,6 +1,6 @@
 import {
   serializeSharedProperty,
-  SharedPropertyWithRelations,
+  type SharedPropertyWithRelations,
 } from './network-masking';
 
 function buildRecord(
@@ -31,7 +31,18 @@ function buildRecord(
     listing: {
       id: 'listing-1',
       transactionType: 'sale',
-      checkStatus: 'verified',
+      isPaused: false,
+      intake: {
+        lifecycleStatus: 'open',
+        lifecycleChangedAt: new Date('2026-06-01T00:00:00.000Z'),
+        lifecycleChangedBy: 'user',
+        closedReason: null,
+        lastCheckedAt: new Date('2026-06-01T00:00:00.000Z'),
+        lastVerifiedAt: new Date('2026-06-01T00:00:00.000Z'),
+        lastCheckResult: 'alive',
+        nextConfirmAt: null,
+      },
+      deals: [],
       price: 158000,
       deposit: null,
       monthlyRent: null,
@@ -85,6 +96,18 @@ describe('serializeSharedProperty (마스킹 직렬화)', () => {
     expect(view.listing.floor).toBe(15);
     expect(view.listing.memo).toBe('집주인 급매 요청');
     expect(view.listing.photoUrls).toEqual(['https://cdn.example.com/p1.jpg']);
+    expect(view.listing.availability).toBe('available');
+  });
+
+  it('가용 상태는 완료 Deal을 의뢰 생명주기나 일시중지보다 우선한다', () => {
+    const record = buildRecord();
+    record.listing.isPaused = true;
+    record.listing.intake.lifecycleStatus = 'closed';
+    record.listing.deals = [{ stage: 'completed' }];
+
+    const view = serializeSharedProperty(record, 'office-sharer');
+
+    expect(view.listing.availability).toBe('completed');
   });
 
   it('타사무소 viewer는 꺼진 show* 플래그의 필드가 응답에서 제거된다', () => {

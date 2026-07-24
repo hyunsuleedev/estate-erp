@@ -9,6 +9,11 @@ import {
   contactPhonesIncludeOrdered,
   withPrimaryPhone,
 } from '../contacts/contact-phone.utils';
+import {
+  LISTING_INTAKE_STATE_SELECT,
+  NON_CLOSED_INTAKE_WHERE,
+  OCCUPYING_DEALS_SELECT,
+} from '../listings/listing-state';
 
 interface SiteWriteDto {
   type?: string;
@@ -121,8 +126,14 @@ export class SitesService {
                         where: {
                           ...(officeId ? { officeId } : {}),
                           isHidden: false,
+                          // 호실 그리드의 "매물 있음" 은 열린 의뢰만 — 목록과 동일 기준
+                          intake: NON_CLOSED_INTAKE_WHERE,
                         },
                         orderBy: { updatedAt: 'desc' },
+                        include: {
+                          intake: { select: LISTING_INTAKE_STATE_SELECT },
+                          deals: OCCUPYING_DEALS_SELECT,
+                        },
                       },
                     },
                   },
@@ -209,8 +220,17 @@ export class SitesService {
               include: { contact: { include: { phones: contactPhonesIncludeOrdered } } },
             },
             listings: {
-              where: { officeId, isHidden: false },
+              where: {
+                officeId,
+                isHidden: false,
+                // 호실 그리드의 "매물 있음" 은 열린 의뢰만 — 목록과 동일 기준
+                intake: NON_CLOSED_INTAKE_WHERE,
+              },
               orderBy: { updatedAt: 'desc' },
+              include: {
+                intake: { select: LISTING_INTAKE_STATE_SELECT },
+                deals: OCCUPYING_DEALS_SELECT,
+              },
             },
           },
         },

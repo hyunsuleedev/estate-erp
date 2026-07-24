@@ -17,8 +17,9 @@ export type Tone =
   | 'neutral';
 
 export type StatusKind =
-  | 'checkStatus'
-  | 'intakeStatus'
+  | 'confirmationState'
+  | 'intakeLifecycle'
+  | 'listingAvailability'
   | 'matchStage'
   | 'dealStage'
   | 'contractStatus'
@@ -27,8 +28,6 @@ export type StatusKind =
   | 'taskStatus'
   | 'adStatus'
   | 'transactionType'
-  | 'proposalStatus'
-  | 'inboxStatus'
   | 'buyerStatus'
   | 'buyerUrgency';
 
@@ -38,21 +37,26 @@ export interface StatusMeta {
 }
 
 export const STATUS_CONFIG: Record<StatusKind, Record<string, StatusMeta>> = {
-  /** Listing.checkStatus — 매물 확인 상태 */
-  checkStatus: {
+  /** ListingIntake 확인 이력에서 파생한 상태 */
+  confirmationState: {
     unverified: { label: '미확인', tone: 'gray' },
     verified: { label: '확인완료', tone: 'success' },
-    in_contract: { label: '거래중', tone: 'info' },
-    hold: { label: '보류', tone: 'warning' },
-    done: { label: '종료', tone: 'neutral' },
+    overdue: { label: '재확인 필요', tone: 'destructive' },
+    no_answer: { label: '부재중', tone: 'orange' },
   },
-  /** ListingIntake.status — 의뢰 상태 */
-  intakeStatus: {
-    unverified: { label: '미확인', tone: 'gray' },
-    active: { label: '진행중', tone: 'success' },
-    in_contract: { label: '거래중', tone: 'info' },
+  /** ListingIntake.lifecycleStatus — 의뢰 생명주기 */
+  intakeLifecycle: {
+    open: { label: '진행중', tone: 'success' },
     hold: { label: '보류', tone: 'warning' },
-    done: { label: '종료', tone: 'neutral' },
+    closed: { label: '종결', tone: 'neutral' },
+  },
+  /** Listing의 Deal·의뢰·옵션 중지를 합성한 가용 상태 */
+  listingAvailability: {
+    available: { label: '가용', tone: 'success' },
+    paused: { label: '일시중지', tone: 'warning' },
+    in_contract: { label: '거래중', tone: 'info' },
+    completed: { label: '거래완료', tone: 'violet' },
+    closed: { label: '종결', tone: 'neutral' },
   },
   /** Match.stage — 매칭 파이프라인 */
   matchStage: {
@@ -123,16 +127,6 @@ export const STATUS_CONFIG: Record<StatusKind, Record<string, StatusMeta>> = {
     jeonse: { label: '전세', tone: 'success' },
     monthly: { label: '월세', tone: 'orange' },
   },
-  /** Proposal.status — AI 제안 큐 */
-  proposalStatus: {
-    pending: { label: '대기', tone: 'warning' },
-    approved: { label: '승인', tone: 'info' },
-    rejected: { label: '반려', tone: 'gray' },
-    expired: { label: '만료', tone: 'gray' },
-    executed: { label: '실행완료', tone: 'success' },
-    failed: { label: '실패', tone: 'destructive' },
-    auto_resolved: { label: '자동해결', tone: 'neutral' },
-  },
   /** BuyerRequirement.status — 구매고객 상태 */
   buyerStatus: {
     active: { label: '활성', tone: 'success' },
@@ -146,25 +140,21 @@ export const STATUS_CONFIG: Record<StatusKind, Record<string, StatusMeta>> = {
     normal: { label: '보통', tone: 'gray' },
     flexible: { label: '여유', tone: 'info' },
   },
-  /** EntityDraft(업무함 inbox) status */
-  inboxStatus: {
-    pending: { label: '대기', tone: 'warning' },
-    processing: { label: '처리중', tone: 'info' },
-    approved: { label: '승인', tone: 'info' },
-    executing: { label: '실행중', tone: 'violet' },
-    executed: { label: '실행완료', tone: 'success' },
-    failed: { label: '실패', tone: 'destructive' },
-    rejected: { label: '반려', tone: 'gray' },
-    expired: { label: '만료', tone: 'gray' },
-  },
 };
 
 /**
  * 파이프라인 단계 순서 (PipelineSteps용). 취소/예외 상태는 포함하지 않는다.
  */
 export const PIPELINE_STEPS: Partial<Record<StatusKind, string[]>> = {
-  checkStatus: ['unverified', 'verified', 'in_contract', 'hold', 'done'],
-  intakeStatus: ['unverified', 'active', 'in_contract', 'hold', 'done'],
+  confirmationState: ['unverified', 'no_answer', 'overdue', 'verified'],
+  intakeLifecycle: ['open', 'hold', 'closed'],
+  listingAvailability: [
+    'available',
+    'paused',
+    'in_contract',
+    'completed',
+    'closed',
+  ],
   matchStage: [
     'suggested',
     'buyerContacted',

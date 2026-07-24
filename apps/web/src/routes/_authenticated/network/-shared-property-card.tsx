@@ -105,7 +105,7 @@ export function SharedPropertyCard({
     >
       <div className="flex flex-wrap items-center gap-1.5">
         <StatusBadge kind="transactionType" status={listing.transactionType} size="sm" />
-        <StatusBadge kind="checkStatus" status={listing.checkStatus} size="sm" />
+        <StatusBadge kind="listingAvailability" status={listing.availability} size="sm" />
         <span className={cn('font-medium', compact ? 'text-sm' : 'text-[15px]')}>
           {title}
         </span>

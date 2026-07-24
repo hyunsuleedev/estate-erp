@@ -8,7 +8,6 @@
  *   - 기존 Site / Dong / Unit (공공 데이터) 는 절대 건드리지 않는다.
  *   - Task/Consultation/CalendarEvent 등 memo 필드가 없는 테이블은 title 또는
  *     content 에 '[DEMO]' 태그를 박는다.
- *   - Proposal seed (seed-proposals.ts), Rule seed (RuleEngineService) 는 별도 실행.
  *
  * 실행:
  *   pnpm tsx prisma/seed-demo.ts
@@ -455,7 +454,7 @@ async function seedProperties(
         role: 'owner',
         shareRatio: new Prisma.Decimal(100),
         isPrimary: true,
-        status: 'active',
+        status: 'verified',
         memo: `${DEMO_TAG} owner link · ${def.label}`,
       },
     });
@@ -528,9 +527,10 @@ async function seedListings(
     key: string;
     propertyIdx: number;
     requesterIdx: number; // owners[]
-    status: string; // unverified, active, in_contract, hold, done
+    lifecycleStatus: 'open' | 'hold' | 'closed';
+    closedReason?: 'superseded' | 'other';
     receivedDaysAgo: number;
-    confirmedDaysAgo?: number;
+    verifiedDaysAgo?: number;
     occupancyStatus?: string;
     viewingMemo?: string;
     rightsMemo?: string;
@@ -542,9 +542,9 @@ async function seedListings(
       key: 'P0',
       propertyIdx: 0,
       requesterIdx: 0,
-      status: 'active',
+      lifecycleStatus: 'open',
       receivedDaysAgo: 14,
-      confirmedDaysAgo: 12,
+      verifiedDaysAgo: 12,
       occupancyStatus: 'owner_occupied',
       viewingMemo: '집주인 거주중 — 방문 전날 전화 필수, 평일 18시 이후 가능',
       rightsMemo: '근저당 5억 (KB국민) — 잔금 시 말소 조건',
@@ -556,9 +556,9 @@ async function seedListings(
       key: 'P1',
       propertyIdx: 1,
       requesterIdx: 1,
-      status: 'active',
+      lifecycleStatus: 'open',
       receivedDaysAgo: 20,
-      confirmedDaysAgo: 18,
+      verifiedDaysAgo: 18,
       occupancyStatus: 'vacant',
       viewingMemo: '공실 — 도어락 비번 공유받음, 자유 방문 가능',
       fieldMemo: '올수리 완료, 즉시입주 가능',
@@ -569,7 +569,7 @@ async function seedListings(
       key: 'P2',
       propertyIdx: 2,
       requesterIdx: 2,
-      status: 'unverified',
+      lifecycleStatus: 'open',
       receivedDaysAgo: 3,
       occupancyStatus: 'tenant',
       viewingMemo: '세입자 거주 — 방문 조율 까다로움, 주말만 가능',
@@ -577,14 +577,15 @@ async function seedListings(
       memo: `${DEMO_TAG} 펜트하우스 매매 의뢰 (미확인)`,
     },
     {
-      // DB 부분 unique 인덱스: 같은 Property 에 open 상태(unverified/active/
-      // in_contract/hold) intake 는 1개만 허용 → 이전 의뢰는 done 으로 종료 처리.
+      // DB 부분 unique 인덱스: 같은 Property 에 non-closed(open/hold)
+      // intake 는 1개만 허용 → 이전 의뢰는 closed 로 종료 처리.
       key: 'P2B',
       propertyIdx: 2,
       requesterIdx: 2,
-      status: 'done',
+      lifecycleStatus: 'closed',
+      closedReason: 'superseded',
       receivedDaysAgo: 40,
-      confirmedDaysAgo: 38,
+      verifiedDaysAgo: 38,
       occupancyStatus: 'tenant',
       fieldMemo: '집주인 해외여행 — 6월 말 귀국 후 재개 예정',
       memo: `${DEMO_TAG} 종료된 이전 매매 의뢰 (재의뢰로 대체)`,
@@ -593,9 +594,9 @@ async function seedListings(
       key: 'P3',
       propertyIdx: 3,
       requesterIdx: 3,
-      status: 'in_contract',
+      lifecycleStatus: 'open',
       receivedDaysAgo: 30,
-      confirmedDaysAgo: 28,
+      verifiedDaysAgo: 28,
       occupancyStatus: 'vacant',
       rightsMemo: '전세보증금 9.5억 승계 조건',
       memo: `${DEMO_TAG} 계약 진행중 의뢰`,
@@ -604,9 +605,9 @@ async function seedListings(
       key: 'P4',
       propertyIdx: 4,
       requesterIdx: 0,
-      status: 'active',
+      lifecycleStatus: 'open',
       receivedDaysAgo: 10,
-      confirmedDaysAgo: 9,
+      verifiedDaysAgo: 9,
       occupancyStatus: 'tenant',
       viewingMemo: '세입자 만기 2개월 전 — 퇴거 협의 완료',
       nextConfirmInDays: 7,
@@ -616,9 +617,9 @@ async function seedListings(
       key: 'P5',
       propertyIdx: 5,
       requesterIdx: 3,
-      status: 'active',
+      lifecycleStatus: 'open',
       receivedDaysAgo: 8,
-      confirmedDaysAgo: 7,
+      verifiedDaysAgo: 7,
       occupancyStatus: 'tenant',
       viewingMemo: '월세 세입자 거주중 — 1주일 전 통보 필요',
       fieldMemo: '반려동물 가능, 단기 임대 협의 가능',
@@ -634,10 +635,16 @@ async function seedListings(
         officeId: ctx.officeId,
         propertyId: properties[def.propertyIdx].id,
         requesterContactId: owners[def.requesterIdx].id,
-        status: def.status,
+        lifecycleStatus: def.lifecycleStatus,
+        lifecycleChangedAt: daysAgo(def.receivedDaysAgo),
+        lifecycleChangedBy: 'user',
+        closedReason: def.closedReason ?? null,
         receivedAt: daysAgo(def.receivedDaysAgo),
-        confirmedAt:
-          def.confirmedDaysAgo != null ? daysAgo(def.confirmedDaysAgo) : null,
+        lastCheckedAt:
+          def.verifiedDaysAgo != null ? daysAgo(def.verifiedDaysAgo) : null,
+        lastVerifiedAt:
+          def.verifiedDaysAgo != null ? daysAgo(def.verifiedDaysAgo) : null,
+        lastCheckResult: def.verifiedDaysAgo != null ? 'alive' : null,
         occupancyStatus: def.occupancyStatus ?? null,
         viewingMemo: def.viewingMemo ?? null,
         rightsMemo: def.rightsMemo ?? null,
@@ -665,7 +672,7 @@ async function seedListings(
     loanAmount?: number;
     privateMemo?: string;
     moveInAvailableType?: string;
-    checkStatus: string;
+    isPaused?: boolean;
     memo: string;
     priceHistory?: { priceBefore: number; priceAfter: number; reason: string };
   }> = [
@@ -679,7 +686,6 @@ async function seedListings(
       loanAmount: 50000, // 융자 5억 (잔금 시 말소)
       privateMemo: `${DEMO_TAG} 내부메모 — 집주인 깐깐함, 가격 얘기 먼저 꺼내지 말 것`,
       moveInAvailableType: 'immediate',
-      checkStatus: 'verified',
       memo: `${DEMO_TAG} 급매 · 로얄층 남향 · 즉시입주`,
       priceHistory: {
         priceBefore: 275000,
@@ -695,7 +701,6 @@ async function seedListings(
       maintenanceFee: 22,
       maintenanceFeeIncludes: ['cleaning'],
       moveInAvailableType: 'immediate',
-      checkStatus: 'verified',
       memo: `${DEMO_TAG} 깔끔 · 올수리 · 남동향`,
     },
     {
@@ -704,7 +709,6 @@ async function seedListings(
       transactionType: 'sale',
       price: 319000,
       privateMemo: `${DEMO_TAG} 내부메모 — 호가 높음, 1억까지 조정 여지 있음`,
-      checkStatus: 'unverified',
       memo: `${DEMO_TAG} 고층 · 한강뷰 · 펜트하우스`,
     },
     {
@@ -713,7 +717,6 @@ async function seedListings(
       transactionType: 'sale',
       price: 198000,
       loanAmount: 0,
-      checkStatus: 'in_contract',
       memo: `${DEMO_TAG} 계약 진행중`,
     },
     {
@@ -723,7 +726,6 @@ async function seedListings(
       price: 130000,
       maintenanceFee: 25,
       maintenanceFeeIncludes: ['water', 'internet'],
-      checkStatus: 'verified',
       memo: `${DEMO_TAG} 매매/전세 동시 등록`,
     },
     {
@@ -734,7 +736,6 @@ async function seedListings(
       maintenanceFee: 18,
       maintenanceFeeIncludes: ['water'],
       moveInAvailableType: 'immediate',
-      checkStatus: 'verified',
       memo: `${DEMO_TAG} 깨끗 · 즉시입주 가능`,
       priceHistory: {
         priceBefore: 100000,
@@ -750,7 +751,6 @@ async function seedListings(
       monthlyRent: 180,
       maintenanceFee: 12,
       maintenanceFeeIncludes: ['water', 'internet', 'tv'],
-      checkStatus: 'verified',
       memo: `${DEMO_TAG} 단기 가능 · 반려동물 허용`,
     },
     {
@@ -758,7 +758,7 @@ async function seedListings(
       intakeKey: 'P2B',
       transactionType: 'sale',
       price: 315000,
-      checkStatus: 'hold',
+      isPaused: true,
       memo: `${DEMO_TAG} 보류 · 집주인 여행중`,
     },
   ];
@@ -781,8 +781,7 @@ async function seedListings(
         loanAmount: def.loanAmount ?? null,
         privateMemo: def.privateMemo ?? null,
         moveInAvailableType: def.moveInAvailableType ?? null,
-        checkStatus: def.checkStatus,
-        checkStatusChangedAt: daysAgo(Math.floor(Math.random() * 10) + 1),
+        isPaused: def.isPaused ?? false,
         memo: def.memo,
       },
     });
@@ -822,7 +821,7 @@ async function seedBuyerRequirements(
   const defs = [
     {
       contact: buyers[0],
-      status: 'active',
+      status: 'verified',
       urgency: 'urgent',
       transactionType: 'sale',
       priceMin: 240000,
@@ -837,7 +836,7 @@ async function seedBuyerRequirements(
     },
     {
       contact: buyers[1],
-      status: 'active',
+      status: 'verified',
       urgency: 'normal',
       transactionType: 'sale',
       priceMin: 300000,
@@ -852,7 +851,7 @@ async function seedBuyerRequirements(
     },
     {
       contact: buyers[2],
-      status: 'active',
+      status: 'verified',
       urgency: 'flexible',
       transactionType: 'sale',
       priceMin: 180000,
@@ -866,7 +865,7 @@ async function seedBuyerRequirements(
     },
     {
       contact: buyers[3],
-      status: 'active',
+      status: 'verified',
       urgency: 'normal',
       transactionType: 'sale',
       priceMin: 230000,

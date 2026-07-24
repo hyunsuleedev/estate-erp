@@ -14,14 +14,23 @@ describe('DealsService property context', () => {
       expect.objectContaining({
         include: expect.objectContaining({
           listing: {
-            include: {
+            include: expect.objectContaining({
+              intake: {
+                select: expect.objectContaining({
+                  lifecycleStatus: true,
+                  lastCheckedAt: true,
+                  lastVerifiedAt: true,
+                  lastCheckResult: true,
+                  nextConfirmAt: true,
+                }),
+              },
               property: {
                 include: {
                   site: true,
                   unit: { include: { dong: true } },
                 },
               },
-            },
+            }),
           },
         }),
       }),

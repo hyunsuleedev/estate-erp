@@ -1,5 +1,5 @@
 import { NetworkSharedPropertiesService } from './network-shared-properties.service';
-import { SharedPropertyWithRelations } from './network-masking';
+import type { SharedPropertyWithRelations } from './network-masking';
 
 function buildRecord(
   overrides: Record<string, unknown> = {},
@@ -29,7 +29,18 @@ function buildRecord(
     listing: {
       id: 'listing-1',
       transactionType: 'sale',
-      checkStatus: 'verified',
+      isPaused: false,
+      intake: {
+        lifecycleStatus: 'open',
+        lifecycleChangedAt: new Date('2026-06-01T00:00:00.000Z'),
+        lifecycleChangedBy: 'user',
+        closedReason: null,
+        lastCheckedAt: new Date('2026-06-01T00:00:00.000Z'),
+        lastVerifiedAt: new Date('2026-06-01T00:00:00.000Z'),
+        lastCheckResult: 'alive',
+        nextConfirmAt: null,
+      },
+      deals: [],
       price: 158000,
       deposit: null,
       monthlyRent: null,

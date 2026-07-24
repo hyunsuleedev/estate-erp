@@ -9,14 +9,19 @@ export type { Property, PropertyListing, PropertiesFilter, CreatePropertyDto, Up
 export type {
   ListingIntake,
   ListingIntakeListing,
-  ListingIntakeStatus,
+  ListingIntakeConfirmResult,
+  ListingIntakeConfirmChannel,
   ListingIntakesFilter,
   CreateListingForIntakeDto,
   CreateListingIntakeDto,
   UpdateListingIntakeDto,
+  ConfirmListingIntakeDto,
 } from './modules/listing-intakes.js';
 export type {
   Listing,
+  ListingIntakeState,
+  ListingIntakeSummary,
+  ListingOccupyingDeal,
   ListingAdvertisement,
   ListingAdvertisementSource,
   ListingAdvertisementStatus,
@@ -136,7 +141,7 @@ export type {
   UpdateEmployeeDto,
   EmployeePerformance,
 } from './modules/employees.js';
-export type { OfficeProfile, OfficeUserSummary, UpdateOfficeDto, CommissionConfigDto, AgentConfigDto } from './modules/offices.js';
+export type { OfficeProfile, OfficeUserSummary, UpdateOfficeDto, CommissionConfigDto } from './modules/offices.js';
 export type {
   ExternalListing,
   ExternalListingGroup,
@@ -151,20 +156,6 @@ export type {
   SnapshotSessionUserRef,
   CompleteSessionResult,
 } from './modules/external-listings.js';
-export type {
-  Proposal,
-  ProposalStatus,
-  ProposalPriority,
-  TrustTier,
-  ListProposalsFilter,
-  ApproveProposalDto,
-  RejectProposalDto,
-} from './modules/proposals.js';
-export type {
-  AgentRule,
-  RuleTriggerType,
-  UpdateAgentRuleDto,
-} from './modules/rules.js';
 export type {
   PublicDocument,
   PublicDocumentType,
@@ -197,17 +188,6 @@ export type {
   McpApiKeyStatus,
   McpApiKeyGenerateResponse,
 } from './modules/mcp.js';
-export type {
-  DraftEntityType,
-  DraftOperation,
-  DraftStatus,
-  DraftDecisionMode,
-  DraftExecutor,
-  DraftPriority,
-  InboxItem,
-  InboxComment,
-  ListInboxOptions,
-} from './modules/inbox.js';
 export type {
   ServiceVendor,
   VendorContact,

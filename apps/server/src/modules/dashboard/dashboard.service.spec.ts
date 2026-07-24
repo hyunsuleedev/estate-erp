@@ -11,8 +11,6 @@ describe('DashboardService', () => {
       match: { count: jest.fn() },
       deal: { count: jest.fn() },
       task: { count: jest.fn() },
-      entityDraft: { count: jest.fn() },
-      proposal: { count: jest.fn() },
       calendarEvent: { count: jest.fn() },
       tenant: { count: jest.fn() },
     };
@@ -57,8 +55,6 @@ describe('DashboardService', () => {
     prisma.match.count.mockResolvedValue(6);
     prisma.deal.count.mockResolvedValue(2);
     prisma.task.count.mockResolvedValue(7);
-    prisma.entityDraft.count.mockResolvedValue(3);
-    prisma.proposal.count.mockResolvedValue(2);
     prisma.calendarEvent.count.mockResolvedValue(1);
     prisma.tenant.count.mockResolvedValue(2);
 
@@ -79,7 +75,6 @@ describe('DashboardService', () => {
         activeMatches: 6,
         activeDeals: 2,
         pendingTasks: 7,
-        pendingInbox: 5, // EntityDraft 3 + Proposal 2
         todayEvents: 1,
         expiringTenants: 2,
       },
@@ -100,8 +95,6 @@ describe('DashboardService', () => {
     prisma.match.count.mockResolvedValue(0);
     prisma.deal.count.mockResolvedValue(0);
     prisma.task.count.mockResolvedValue(0);
-    prisma.entityDraft.count.mockResolvedValue(0);
-    prisma.proposal.count.mockResolvedValue(0);
     prisma.calendarEvent.count.mockResolvedValue(0);
     prisma.tenant.count.mockResolvedValue(0);
 
@@ -133,7 +126,22 @@ describe('DashboardService', () => {
       where: {
         officeId: 'office-1',
         isHidden: false,
-        checkStatus: { in: ['unverified', 'verified'] },
+        isPaused: false,
+        intake: { lifecycleStatus: 'open' },
+        deals: {
+          none: {
+            isCancelled: false,
+            stage: {
+              in: [
+                'preContract',
+                'contracted',
+                'settling',
+                'completed',
+                'closed',
+              ],
+            },
+          },
+        },
       },
     });
     expect(prisma.deal.count).toHaveBeenCalledWith({
@@ -166,8 +174,6 @@ describe('DashboardService', () => {
     prisma.match.count.mockResolvedValue(0);
     prisma.deal.count.mockResolvedValue(0);
     prisma.task.count.mockResolvedValue(0);
-    prisma.entityDraft.count.mockResolvedValue(0);
-    prisma.proposal.count.mockResolvedValue(0);
     prisma.calendarEvent.count.mockResolvedValue(0);
     prisma.tenant.count.mockResolvedValue(0);
 

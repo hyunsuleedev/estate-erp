@@ -1,4 +1,24 @@
 import { Prisma } from '@prisma/client';
+import {
+  DONE_DEAL_STAGES,
+  IntakeLifecycleStatus,
+  ListingAvailability,
+  OCCUPYING_DEAL_STAGES,
+} from '@estate-erp/shared';
+import {
+  LISTING_INTAKE_STATE_SELECT,
+  MARKETABLE_LISTING_WHERE,
+} from '../listings/listing-state';
+
+/**
+ * "타 사무소에게 보이는 매물" 조건 — 상태를 따로 쓰지 않고 조회 시 파생한다.
+ * 의뢰 생명주기가 open이고, 옵션이 일시중단이 아니며,
+ * 이 옵션을 점유한 활성 Deal 이 없어야 한다. 계약이 무산되어 Deal 이 취소되면
+ * 조건이 다시 참이 되므로 공유가 마스킹 설정 그대로 자동 복귀한다.
+ */
+export const networkVisibleListingWhere = {
+  ...MARKETABLE_LISTING_WHERE,
+} satisfies Prisma.ListingWhereInput;
 
 /**
  * 공유 매물 직렬화에 필요한 include.
@@ -14,7 +34,15 @@ export const sharedPropertyInclude = {
     select: {
       id: true,
       transactionType: true,
-      checkStatus: true,
+      isPaused: true,
+      intake: { select: LISTING_INTAKE_STATE_SELECT },
+      deals: {
+        where: {
+          isCancelled: false,
+          stage: { in: [...OCCUPYING_DEAL_STAGES] },
+        },
+        select: { stage: true },
+      },
       price: true,
       deposit: true,
       monthlyRent: true,
@@ -77,7 +105,8 @@ const SITE_TYPE_LABELS: Record<string, string> = {
 export interface MaskedListingView {
   id: string;
   transactionType: string;
-  checkStatus: string;
+  /** Deal·의뢰 생명주기·옵션 일시중지를 합성한 가용 상태 */
+  availability: string;
   siteType: string;
   /** 단지명 비공개 시 대체 텍스트 ("강동구 아파트") — 항상 제공 */
   regionLabel: string;
@@ -151,10 +180,25 @@ export function serializeSharedProperty(
   const typeLabel = SITE_TYPE_LABELS[site.type] ?? '부동산';
   const regionLabel = districtName ? `${districtName} ${typeLabel}` : typeLabel;
 
+  // 가용 상태 우선순위: 완료 Deal > 진행 Deal > 의뢰 종결 > 보류 > 가용
+  const occupyingDeals = listing.deals ?? [];
+  const doneStages: readonly string[] = DONE_DEAL_STAGES;
+  const availability =
+    occupyingDeals.length > 0
+      ? occupyingDeals.some((deal) => doneStages.includes(deal.stage))
+        ? ListingAvailability.COMPLETED
+        : ListingAvailability.IN_CONTRACT
+      : listing.intake?.lifecycleStatus === IntakeLifecycleStatus.CLOSED
+        ? ListingAvailability.CLOSED
+        : listing.isPaused ||
+            listing.intake?.lifecycleStatus === IntakeLifecycleStatus.HOLD
+          ? ListingAvailability.PAUSED
+          : ListingAvailability.AVAILABLE;
+
   const maskedListing: MaskedListingView = {
     id: listing.id,
     transactionType: listing.transactionType,
-    checkStatus: listing.checkStatus,
+    availability,
     siteType: site.type,
     regionLabel,
   };

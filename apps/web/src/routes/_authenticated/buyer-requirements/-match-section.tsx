@@ -10,6 +10,7 @@ import { formatArea, formatDate, formatMoney, formatRent } from '@/lib/format';
 import { EmptyState, StatusBadge } from '@/components/domain';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
+import { getListingAvailability } from "@/lib/listing-status";
 
 /** 매칭 후보 탐색 범위 칩 — 희망단지 우선, 그다음 희망지역, 마지막 조건 전체 */
 interface CandidateScope {
@@ -226,7 +227,7 @@ export function MatchSection({ requirement }: { requirement: BuyerRequirement })
                         {unit?.name ? ` ${unit.name}` : ''}
                       </span>
                       <StatusBadge kind="transactionType" status={l.transactionType} size="sm" />
-                      <StatusBadge kind="checkStatus" status={l.checkStatus} size="sm" />
+                      <StatusBadge kind="listingAvailability" status={getListingAvailability(l)} size="sm" />
                     </div>
                     <p className="text-xs tabular-nums text-muted-foreground">
                       {l.transactionType === 'monthly'

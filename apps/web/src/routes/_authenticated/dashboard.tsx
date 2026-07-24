@@ -1,6 +1,6 @@
 import { createFileRoute, Link, type LinkProps } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowRight, ChevronRight, Hourglass, Inbox, SearchX, Wallet } from 'lucide-react';
+import { ArrowRight, ChevronRight, Hourglass, SearchX, Wallet } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useAuth } from '@/providers/auth-provider';
 import { api } from '@/lib/api';
@@ -101,13 +101,6 @@ function DashboardPage() {
     queryFn: () => api.dashboard.summary(),
   });
 
-  // 업무함 긴급 뱃지용 — 실패해도 뱃지만 생략 (별도 에러 UI 없음)
-  const urgentInbox = useQuery({
-    queryKey: ['proposals', { status: 'pending', priority: 'urgent' }],
-    queryFn: () => api.proposals.list({ status: 'pending', priority: 'urgent' }),
-    select: (rows) => rows.length,
-  });
-
   const cashflow = useQuery({
     queryKey: ['cashflow'],
     queryFn: () => api.finance.cashflow.summary(),
@@ -116,7 +109,6 @@ function DashboardPage() {
   const month = summary.data?.thisMonth;
   const counts = summary.data?.counts;
   const loading = summary.isLoading;
-  const urgentCount = urgentInbox.data ?? 0;
 
   // 30일 내 잔금 예정 거래 수 (UpcomingBalancesWidget과 동일 기준)
   const upcomingBalanceCount = (cashflow.data?.deals ?? []).filter(isUpcomingBalance).length;
@@ -147,7 +139,7 @@ function DashboardPage() {
       ) : (
         <>
           {/* 긴급 액션 레인 */}
-          <div className="grid grid-cols-2 gap-2.5 xl:grid-cols-4">
+          <div className="grid grid-cols-2 gap-2.5 md:grid-cols-3">
             <ActionCard
               icon={SearchX}
               bubbleClassName="bg-warning-soft text-warning"
@@ -155,7 +147,7 @@ function DashboardPage() {
               title={`미확인 매물 ${counts?.unverifiedListings ?? 0}건`}
               desc="확인 상태 점검이 필요합니다"
               to="/properties"
-              search={{ checkStatus: 'unverified' }}
+              search={{ confirmationState: 'unverified' }}
               loading={loading}
             />
             <ActionCard
@@ -175,19 +167,6 @@ function DashboardPage() {
               title={`만기 임박 세입자 ${counts?.expiringTenants ?? 0}명`}
               desc="60일 내 계약이 만료됩니다"
               to="/contacts"
-              loading={loading}
-            />
-            <ActionCard
-              icon={Inbox}
-              bubbleClassName={
-                urgentCount > 0
-                  ? 'bg-destructive-soft text-destructive'
-                  : 'bg-violet-soft text-violet'
-              }
-              titleClassName={urgentCount > 0 ? 'text-destructive' : 'text-violet'}
-              title={`AI 검토 대기 ${counts?.pendingInbox ?? 0}건`}
-              desc={urgentCount > 0 ? `긴급 ${urgentCount}건 검토 필요` : '확인·수정·승인 요청을 확인하세요'}
-              to="/inbox"
               loading={loading}
             />
           </div>

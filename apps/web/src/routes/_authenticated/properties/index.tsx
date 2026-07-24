@@ -1,3 +1,16 @@
+import {
+  getIntakeConfirmationState,
+  getListingAvailability,
+} from "@/lib/listing-status";
+import { invalidateListingDerivedCaches } from "@/lib/listing-cache";
+import {
+  DONE_DEAL_STAGES,
+  IntakeCheckResult,
+  IntakeClosedReason,
+  IntakeConfirmationState,
+  IntakeLifecycleStatus,
+  ListingAvailability,
+} from "@estate-erp/shared";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import {
   useInfiniteQuery,
@@ -115,6 +128,7 @@ import {
   getMoveInAvailability,
   pickPrimaryIntake,
   TONE_CHIP_CLASSES,
+  type IntakeRowSummary,
   type ListingProperty,
   type ListingSummary,
   type PropertyListingGroup,
@@ -178,7 +192,7 @@ const LISTINGS_PAGE_SIZE = 50;
 // 관리비(88)/융자금(96) 옵션 컬럼은 월세 뒤에 삽입된다.
 // 유형~광고 6개 컬럼은 호수 헤더의 ± 버튼으로 접을 수 있고, 접힌 공간은 메모가 흡수한다.
 const GRID_FIXED_PREFIX = [40, 234, 54, 88] as const; // 체크/단지/동/호수(±버튼 포함 88)
-const GRID_COLLAPSIBLE_MIDDLE = [58, 92, 104, 74, 64, 60] as const; // 유형~광고
+const GRID_COLLAPSIBLE_MIDDLE = [58, 92, 128, 86, 64, 60] as const; // 유형~광고
 const GRID_FIXED_REST = [66, 150, 76] as const; // 거래/가격/월세
 const GRID_FIXED_TAIL = [116] as const; // 입주
 const MEMO_COLUMN_WIDTH = 300;
@@ -197,17 +211,23 @@ function getMatchStageIndex(stage: string) {
   return MATCH_STAGE_STEPS.indexOf(stage);
 }
 
-const CHECK_STATUS_VALUES = [
-  "unverified",
-  "verified",
-  "in_contract",
-  "hold",
-  "done",
-] as const;
+const CONFIRMATION_STATE_VALUES = Object.values(IntakeConfirmationState);
+const LISTING_AVAILABILITY_VALUES = Object.values(ListingAvailability);
+const INTAKE_LIFECYCLE_VALUES = Object.values(IntakeLifecycleStatus);
 
-const checkStatusOptions = CHECK_STATUS_VALUES.map((value) => ({
+const confirmationStateOptions = CONFIRMATION_STATE_VALUES.map((value) => ({
   value,
-  label: getStatusMeta("checkStatus", value).label,
+  label: getStatusMeta("confirmationState", value).label,
+}));
+
+const listingAvailabilityOptions = LISTING_AVAILABILITY_VALUES.map((value) => ({
+  value,
+  label: getStatusMeta("listingAvailability", value).label,
+}));
+
+const intakeLifecycleOptions = INTAKE_LIFECYCLE_VALUES.map((value) => ({
+  value,
+  label: getStatusMeta("intakeLifecycle", value).label,
 }));
 
 const transactionTypeOptions = [
@@ -217,9 +237,14 @@ const transactionTypeOptions = [
   { value: "monthly", label: "월세" },
 ] as const;
 
-const checkStatusFilterOptions = [
+const confirmationStateFilterOptions = [
   { value: "all", label: "전체" },
-  ...checkStatusOptions,
+  ...confirmationStateOptions,
+] as const;
+
+const listingAvailabilityFilterOptions = [
+  { value: "all", label: "전체" },
+  ...listingAvailabilityOptions,
 ] as const;
 
 const siteTypeOptions = [
@@ -235,7 +260,8 @@ const siteTypeOptions = [
 
 interface PropertyFilterState {
   siteId: string;
-  checkStatus: string;
+  confirmationState: string;
+  availability: string;
   siteType: string;
   priceMin: string;
   priceMax: string;
@@ -249,7 +275,8 @@ interface PropertyFilterState {
 
 const initialPropertyFilters: PropertyFilterState = {
   siteId: "",
-  checkStatus: "all",
+  confirmationState: "all",
+  availability: "all",
   siteType: "all",
   priceMin: "",
   priceMax: "",
@@ -266,18 +293,20 @@ type PropertySheetNotice = QuickSheetNotice;
 
 // ── Route ───────────────────────────────────────────────────────
 
-type PropertyCheckStatus = (typeof CHECK_STATUS_VALUES)[number];
+type PropertyConfirmationState = (typeof CONFIRMATION_STATE_VALUES)[number];
 
 interface PropertiesSearch {
-  /** 대시보드 딥링크: /properties?checkStatus=unverified */
-  checkStatus?: PropertyCheckStatus;
+  /** 대시보드 딥링크: /properties?confirmationState=unverified */
+  confirmationState?: PropertyConfirmationState;
 }
 
 export const Route = createFileRoute("/_authenticated/properties/")({
   validateSearch: (search: Record<string, unknown>): PropertiesSearch => {
-    const value = search.checkStatus;
-    return CHECK_STATUS_VALUES.includes(value as PropertyCheckStatus)
-      ? { checkStatus: value as PropertyCheckStatus }
+    const value = search.confirmationState;
+    return CONFIRMATION_STATE_VALUES.includes(
+      value as PropertyConfirmationState,
+    )
+      ? { confirmationState: value as PropertyConfirmationState }
       : {};
   },
   component: PropertiesPage,
@@ -285,7 +314,7 @@ export const Route = createFileRoute("/_authenticated/properties/")({
 
 function PropertiesPage() {
   const queryClient = useQueryClient();
-  const { checkStatus: checkStatusParam } = Route.useSearch();
+  const { confirmationState: confirmationStateParam } = Route.useSearch();
 
   // ── State ─────────────────────────────────────────────────────
   const [search, setSearch] = useState("");
@@ -294,7 +323,9 @@ function PropertiesPage() {
   const [propertyFilters, setPropertyFilters] = useState<PropertyFilterState>(
     () => ({
       ...initialPropertyFilters,
-      ...(checkStatusParam ? { checkStatus: checkStatusParam } : {}),
+      ...(confirmationStateParam
+        ? { confirmationState: confirmationStateParam }
+        : {}),
     }),
   );
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -312,15 +343,15 @@ function PropertiesPage() {
     null,
   );
 
-  // 대시보드 딥링크(checkStatus)로 재진입 시 필터 동기화
+  // 대시보드 딥링크(confirmationState)로 재진입 시 필터 동기화
   useEffect(() => {
-    if (!checkStatusParam) return;
+    if (!confirmationStateParam) return;
     setPropertyFilters((prev) =>
-      prev.checkStatus === checkStatusParam
+      prev.confirmationState === confirmationStateParam
         ? prev
-        : { ...prev, checkStatus: checkStatusParam },
+        : { ...prev, confirmationState: confirmationStateParam },
     );
-  }, [checkStatusParam]);
+  }, [confirmationStateParam]);
   const [activeSorts, setActiveSorts] = useState<SortDefinition[]>([]);
   const [optionalColumns, setOptionalColumns] = useState({
     maintenanceFee: false,
@@ -425,34 +456,8 @@ function PropertiesPage() {
     },
   });
 
-  // 의뢰(ListingIntake) 오버레이 — 목록과 같은 필터로 조회해 행에 다음확인일/접수일을 표시.
-  const intakeParams = useMemo(() => {
-    const params: Record<string, string | number | boolean | undefined> = {
-      limit: 100,
-      includeInactive: true,
-      sortBy: "receivedAt",
-      sortOrder: "desc",
-      search: debouncedSearch.trim() || undefined,
-      ...buildListingFilterParams(propertyFilters),
-    };
-    if (selectedTransactionType !== "all") {
-      params.transactionType = selectedTransactionType;
-    }
-    return params;
-  }, [debouncedSearch, propertyFilters, selectedTransactionType]);
-
-  const { data: intakeData } = useQuery({
-    queryKey: ["listing-intakes", "list-overlay", intakeParams],
-    queryFn: () =>
-      api.listingIntakes.findAll(intakeParams as ListingIntakesFilter),
-    staleTime: 30_000,
-  });
-
-  const intakesById = useMemo(() => {
-    const map = new Map<string, ListingIntake>();
-    (intakeData?.items ?? []).forEach((intake) => map.set(intake.id, intake));
-    return map;
-  }, [intakeData?.items]);
+  // 의뢰 컨텍스트는 listings 응답의 listing.intake 에 실려 온다 —
+  // 별도 오버레이 쿼리 없음 (이중 조회 + limit 정합성 구멍 제거).
 
   const listings = useMemo(
     () => data?.pages.flatMap((pageData) => pageData.items) ?? [],
@@ -487,17 +492,19 @@ function PropertiesPage() {
   const patchListingsCache = useCallback(
     (
       shouldPatch: (listingId: string) => boolean,
-      patch: Record<string, unknown>,
+      patch: Record<string, unknown> | (<T extends object>(listing: T) => T),
     ) => {
+      const applyPatch = <T extends object>(listing: T): T =>
+        typeof patch === "function" ? patch(listing) : { ...listing, ...patch };
       const patchItems = (items: Listing[]): Listing[] =>
         items.map((listing) => {
           const nextListing = shouldPatch(listing.id)
-            ? { ...listing, ...patch }
+            ? applyPatch(listing)
             : listing;
           const relatedListings = listing.property?.listings?.map(
             (relatedListing) =>
               shouldPatch(relatedListing.id)
-                ? { ...relatedListing, ...patch }
+                ? applyPatch(relatedListing)
                 : relatedListing,
           );
           if (!relatedListings || !nextListing.property) return nextListing;
@@ -663,48 +670,88 @@ function PropertiesPage() {
     [updateMutation],
   );
 
-  // ── 물건(호실) 단위 상태 일괄 전환 — 서버 트랜잭션으로 원자 처리 ──
-  // Listing별 독립 PATCH 는 일부만 성공하는 혼합 상태를 만들 수 있어 금지.
-  const rowStatusMutation = useMutation({
+  // ── 의뢰 생명주기 전환 — 확인 이력·Deal 상태와 독립적으로 변경 ──
+  const rowLifecycleMutation = useMutation({
     mutationFn: ({
-      listingIds,
+      intakeId,
       value,
     }: {
+      intakeId: string;
       listingIds: string[];
-      value: string;
-    }) => api.listings.bulkTransitionCheckStatus(listingIds, value),
+      value: IntakeLifecycleStatus;
+    }) =>
+      api.listingIntakes.updateLifecycleStatus(intakeId, value, {
+        closedReason:
+          value === IntakeLifecycleStatus.CLOSED
+            ? IntakeClosedReason.WITHDRAWN
+            : null,
+      }),
     onMutate: async ({ listingIds, value }) => {
       await queryClient.cancelQueries({ queryKey: ["listings"] });
       const idSet = new Set(listingIds);
-      const keys = registerOptimisticEdits(listingIds, "checkStatus");
-      patchListingsCache((listingId) => idSet.has(listingId), {
-        checkStatus: value,
-      });
-      return { keys };
+      patchListingsCache(
+        (listingId) => idSet.has(listingId),
+        <T extends object>(listing: T): T => {
+          const intake = (
+            listing as {
+              intake?: {
+                lifecycleStatus: string;
+                lifecycleChangedAt: string;
+                lifecycleChangedBy: string;
+                closedReason: string | null;
+              };
+            }
+          ).intake;
+          return intake
+            ? {
+                ...listing,
+                intake: {
+                  ...intake,
+                  lifecycleStatus: value,
+                  lifecycleChangedAt: new Date().toISOString(),
+                  lifecycleChangedBy: "user",
+                  closedReason:
+                    value === IntakeLifecycleStatus.CLOSED
+                      ? IntakeClosedReason.WITHDRAWN
+                      : null,
+                },
+              }
+            : listing;
+        },
+      );
+      return {};
     },
-    onSuccess: (_data, _variables, context) => {
-      settleOptimisticEdits(context?.keys ?? [], "success");
-      queryClient.invalidateQueries({ queryKey: ["listings"] });
+    onSettled: () => {
+      // 생명주기는 파생 체인(그리드·시트·네트워크 노출)까지 바꾼다.
+      invalidateListingDerivedCaches(queryClient);
     },
-    onError: (error: Error, _variables, context) => {
+    onError: (error: Error) => {
       toast.error(error.message || "상태 변경에 실패했습니다.");
-      settleOptimisticEdits(context?.keys ?? [], "error");
-      queryClient.invalidateQueries({ queryKey: ["listings"] });
     },
   });
 
-  const handleRowStatusSave = useCallback(
-    (listingIds: string[], value: string) => {
-      rowStatusMutation.mutate({ listingIds, value });
+  const handleRowLifecycleSave = useCallback(
+    (
+      intakeId: string,
+      listingIds: string[],
+      value: IntakeLifecycleStatus,
+    ) => {
+      rowLifecycleMutation.mutate({ intakeId, listingIds, value });
     },
-    [rowStatusMutation],
+    [rowLifecycleMutation],
   );
 
-  // ── 확인일 갱신 (updatedAt = 확인일 → 빈 PATCH로 오늘로 갱신) ──
+  // ── 확인일 갱신 — 의뢰 확인 API에 명시적인 alive 결과를 기록 ──
   const refreshConfirmMutation = useMutation({
-    mutationFn: async (listingIds: string[]) => {
+    mutationFn: async (intakeIds: string[]) => {
       const results = await Promise.allSettled(
-        listingIds.map((id) => api.listings.update(id, {})),
+        intakeIds.map((id) =>
+          api.listingIntakes.confirm(id, {
+            result: IntakeCheckResult.ALIVE,
+            channel: "note",
+            memo: "매물 목록에서 확인 완료",
+          }),
+        ),
       );
       const failed = results.filter(
         (result) => result.status === "rejected",
@@ -715,7 +762,7 @@ function PropertiesPage() {
       if (failed > 0) {
         toast.error(`${total - failed}건 갱신, ${failed}건 실패했습니다.`);
       } else {
-        toast.success(`거래 ${total}건의 확인일을 오늘로 갱신했습니다.`);
+        toast.success(`의뢰 ${total}건의 확인일을 오늘로 갱신했습니다.`);
       }
       queryClient.invalidateQueries({ queryKey: ["listings"] });
       queryClient.invalidateQueries({ queryKey: ["listing-intakes"] });
@@ -855,15 +902,19 @@ function PropertiesPage() {
 
   const clearSelection = useCallback(() => setSelectedGroupIds(new Set()), []);
 
-  const selectedListingIds = useMemo(() => {
+  const selectedIntakeIds = useMemo(() => {
     const ids = new Set<string>();
     selectedGroups.forEach((group) =>
-      group.listings.forEach((listing) => ids.add(listing.id)),
+      group.listings.forEach((listing) => ids.add(listing.intakeId)),
     );
     return Array.from(ids);
   }, [selectedGroups]);
 
-  const intakeCount = intakeData?.pagination.total ?? intakeData?.items.length;
+  const intakeCount = useMemo(() => {
+    const ids = new Set<string>();
+    listings.forEach((listing) => ids.add(listing.intakeId));
+    return ids.size;
+  }, [listings]);
   const sortLabel =
     sortOptions.find((option) => option.value === selectedSortValue)?.label ??
     "정렬";
@@ -934,14 +985,24 @@ function PropertiesPage() {
           </Button>
         </section>
 
-        {/* 필터 행: 상태/유형 필터 pill + 단지 검색 + 통합 검색 + 상세 필터 + 정렬 */}
+        {/* 필터 행: 확인/가용/유형 축 + 단지 검색 + 상세 필터 + 정렬 */}
         <section className="border-b border-border bg-white">
           <div className="flex flex-wrap items-center gap-[7px] px-6 py-2.5">
             <FilterPillSelect
-              label="상태"
-              value={propertyFilters.checkStatus}
-              onChange={(value) => updatePropertyFilter("checkStatus", value)}
-              options={checkStatusFilterOptions}
+              label="확인"
+              value={propertyFilters.confirmationState}
+              onChange={(value) =>
+                updatePropertyFilter("confirmationState", value)
+              }
+              options={confirmationStateFilterOptions}
+            />
+            <FilterPillSelect
+              label="가용"
+              value={propertyFilters.availability}
+              onChange={(value) =>
+                updatePropertyFilter("availability", value)
+              }
+              options={listingAvailabilityFilterOptions}
             />
             <FilterPillSelect
               label="유형"
@@ -1173,7 +1234,7 @@ function PropertiesPage() {
                 className="h-6 gap-1 bg-white px-2 text-[11.5px] font-medium"
                 disabled={refreshConfirmMutation.isPending}
                 onClick={() =>
-                  refreshConfirmMutation.mutate(selectedListingIds)
+                  refreshConfirmMutation.mutate(selectedIntakeIds)
                 }
               >
                 <RefreshCw className="size-3" />
@@ -1339,7 +1400,7 @@ function PropertiesPage() {
                         <GridHeaderCell icon={Type} label="유형" />
                         <GridHeaderCell icon={Ruler} label="전용면적" />
                         <GridHeaderCell icon={CalendarDays} label="확인" />
-                        <GridHeaderCell icon={Tag} label="상태" />
+                        <GridHeaderCell icon={Tag} label="의뢰" />
                         <GridHeaderCell icon={GitBranch} label="매칭" />
                         <GridHeaderCell icon={Megaphone} label="광고" />
                       </>
@@ -1393,24 +1454,27 @@ function PropertiesPage() {
                               gridWidth={gridWidth}
                               optionalColumns={optionalColumns}
                               middleCollapsed={middleCollapsed}
-                              intake={pickPrimaryIntake(
-                                group.listings,
-                                intakesById,
-                              )}
+                              intake={pickPrimaryIntake(group.listings)}
                               selected={selectedGroupIds.has(group.id)}
                               onToggleSelect={() => toggleGroupSelect(group.id)}
                               onOpenSheet={() =>
                                 setSelectedPropertyId(group.propertyId)
                               }
                               onSave={handleCellSave}
-                              onRowStatusSave={handleRowStatusSave}
+                              onRowLifecycleSave={handleRowLifecycleSave}
                               matchOpen={expandedMatchRows.has(group.id)}
                               adOpen={expandedAdRows.has(group.id)}
                               onToggleMatch={() => toggleMatchRow(group.id)}
                               onToggleAd={() => toggleAdRow(group.id)}
                               onRefreshConfirm={() =>
                                 refreshConfirmMutation.mutate(
-                                  group.listings.map((listing) => listing.id),
+                                  Array.from(
+                                    new Set(
+                                      group.listings.map(
+                                        (listing) => listing.intakeId,
+                                      ),
+                                    ),
+                                  ),
                                 )
                               }
                               refreshPending={refreshConfirmMutation.isPending}
@@ -1580,7 +1644,7 @@ function PropertyGridRow({
   onToggleSelect,
   onOpenSheet,
   onSave,
-  onRowStatusSave,
+  onRowLifecycleSave,
   matchOpen,
   adOpen,
   onToggleMatch,
@@ -1594,13 +1658,17 @@ function PropertyGridRow({
   optionalColumns: { maintenanceFee: boolean; loanAmount: boolean };
   /** 유형~광고 6개 컬럼 접힘 여부 (호수 헤더 ± 버튼) */
   middleCollapsed: boolean;
-  intake: ListingIntake | null;
+  intake: IntakeRowSummary | null;
   selected: boolean;
   onToggleSelect: () => void;
   onOpenSheet: () => void;
   onSave: (recordId: string, field: string, value: unknown) => void;
-  /** 물건 단위 상태 일괄 전환 (원자적) */
-  onRowStatusSave: (listingIds: string[], value: string) => void;
+  /** 의뢰 생명주기 전환 */
+  onRowLifecycleSave: (
+    intakeId: string,
+    listingIds: string[],
+    value: IntakeLifecycleStatus,
+  ) => void;
   matchOpen: boolean;
   adOpen: boolean;
   onToggleMatch: () => void;
@@ -1711,30 +1779,28 @@ function PropertyGridRow({
               {formatExclusiveArea(property)}
             </div>
 
-            {/* 7. 확인 — 신선도 dot + 확인일 + 상대시간 + hover ⟳ */}
+            {/* 7. 확인 — 확인 이력에서 파생한 상태 + 마지막 시도일 */}
             <div
               className={cn(
                 "flex min-h-10 items-center gap-1.5 px-2",
                 CELL_BORDER,
               )}
             >
-              <span
-                className={cn(
-                  "size-[7px] shrink-0 rounded-full",
-                  freshness.dot,
-                )}
-              />
               <div className="flex min-w-0 flex-col leading-tight">
+                {intake && (
+                  <StatusBadge
+                    kind="confirmationState"
+                    status={getIntakeConfirmationState(intake)}
+                    size="sm"
+                  />
+                )}
                 <span
                   className={cn(
-                    "text-[12px] font-medium tabular-nums",
-                    freshness.date,
+                    "mt-0.5 text-[10.5px] tabular-nums",
+                    freshness.rel,
                   )}
                 >
                   {latestUpdatedAt ? formatDateShort(latestUpdatedAt) : "-"}
-                </span>
-                <span className={cn("text-[10.5px]", freshness.rel)}>
-                  {latestUpdatedAt ? formatDaysAgo(latestUpdatedAt) : ""}
                 </span>
               </div>
               <button
@@ -1751,27 +1817,29 @@ function PropertyGridRow({
               </button>
             </div>
 
-            {/* 8. 상태 — 시안 기준 물건(호실) 단위 단일 칩. 거래 타입이 여러 개라도
-            상태는 하나로 표시하고, 변경 시 이 호실의 모든 Listing 에 일괄 적용한다. */}
+            {/* 8. 의뢰 생명주기 — 확인 결과·Deal 단계와 독립적으로만 변경 */}
             <div className={cn("flex min-h-10 items-center px-1", CELL_BORDER)}>
-              {listings[0] && (
+              {intake && (
                 <EditableCell
-                  recordId={listings[0].id}
-                  field="checkStatus"
-                  value={listings[0].checkStatus}
+                  recordId={intake.id}
+                  field="intakeLifecycle"
+                  value={intake.lifecycleStatus}
                   onSave={(_recordId, _field, value) => {
-                    onRowStatusSave(
-                      listings.map((listing) => listing.id),
-                      String(value),
+                    onRowLifecycleSave(
+                      intake.id,
+                      listings
+                        .filter((listing) => listing.intakeId === intake.id)
+                        .map((listing) => listing.id),
+                      String(value) as IntakeLifecycleStatus,
                     );
                   }}
                   editType="select-chip"
-                  chipOptions={checkStatusChipOptions}
+                  chipOptions={intakeLifecycleChipOptions}
                 >
                   <span className="flex h-full w-full items-center px-0.5">
                     <StatusBadge
-                      kind="checkStatus"
-                      status={listings[0].checkStatus}
+                      kind="intakeLifecycle"
+                      status={intake.lifecycleStatus}
                       size="sm"
                     />
                   </span>
@@ -1839,18 +1907,33 @@ function PropertyGridRow({
           </>
         )}
 
-        {/* 11. 거래 (리스팅 스택) */}
+        {/* 11. 거래 (리스팅 스택) — Deal 점유(거래중/완료)는 옵션 단위로 표시 */}
         <ListingStackCell listings={listings}>
-          {(listing) => (
-            <div className="flex min-w-0 flex-col items-start justify-center gap-0.5 px-2 py-1">
-              <TransactionMiniLabel transactionType={listing.transactionType} />
-              {listing.isHidden && (
-                <span className="rounded-[4px] bg-destructive-soft px-1 text-[10px] font-medium leading-4 text-destructive">
-                  숨김
-                </span>
-              )}
-            </div>
-          )}
+          {(listing) => {
+            const occupiedLabel = getListingOccupiedLabel(listing);
+            return (
+              <div className="flex min-w-0 flex-col items-start justify-center gap-0.5 px-2 py-1">
+                <TransactionMiniLabel transactionType={listing.transactionType} />
+                {occupiedLabel && (
+                  <span
+                    className={cn(
+                      "rounded-[4px] px-1 text-[10px] font-medium leading-4",
+                      occupiedLabel === "완료"
+                        ? "bg-neutral-soft text-muted-foreground"
+                        : "bg-info-soft text-info",
+                    )}
+                  >
+                    {occupiedLabel}
+                  </span>
+                )}
+                {listing.isHidden && (
+                  <span className="rounded-[4px] bg-destructive-soft px-1 text-[10px] font-medium leading-4 text-destructive">
+                    숨김
+                  </span>
+                )}
+              </div>
+            );
+          }}
         </ListingStackCell>
 
         {/* 12. 가격 (인라인 수정 + 보류 태그) */}
@@ -1871,7 +1954,7 @@ function PropertyGridRow({
             >
               <span className="flex h-full w-full min-w-0 items-center gap-1.5 px-2.5">
                 <PriceDepositValue listing={listing} />
-                {listing.checkStatus === "hold" && (
+                {listing.isPaused && (
                   <span className="shrink-0 rounded-[4px] bg-neutral-soft px-1 py-px text-[10px] font-semibold text-muted-foreground">
                     보류
                   </span>
@@ -2417,7 +2500,19 @@ function PropertySheetContent({
                 transactionType={listing.transactionType}
               />
             ))}
-            {listings[0] && <StatusIndicator value={listings[0].checkStatus} />}
+            {listings[0] && (
+              <>
+                <StatusIndicator
+                  value={getListingAvailability(listings[0])}
+                />
+                {listings[0].intake && (
+                  <StatusBadge
+                    kind="confirmationState"
+                    status={getIntakeConfirmationState(listings[0].intake)}
+                  />
+                )}
+              </>
+            )}
           </div>
         </div>
 
@@ -2549,8 +2644,8 @@ function PropertySheetListingCard({ listing }: { listing: PropertyListing }) {
       <div className="flex items-start justify-between gap-3">
         <div className="flex flex-wrap items-center gap-1.5">
           <TransactionBadge transactionType={listing.transactionType} />
-          <StatusIndicator value={listing.checkStatus} />
-          <JointBrokerageBadge listing={listing} />
+          <StatusIndicator value={getListingAvailability(listing)} />
+          <JointBrokerageBadge intake={listing.intake} />
           {listing.isHidden && (
             <span className="inline-flex rounded-md bg-[#fbe4e4] px-1.5 py-0.5 text-[11px] font-medium leading-5 text-[#9f5555]">
               숨김
@@ -2861,11 +2956,11 @@ function PropertySheetConsultationRow({
 }
 
 function StatusIndicator({ value }: { value: string }) {
-  return <StatusBadge kind="checkStatus" status={value} />;
+  return <StatusBadge kind="listingAvailability" status={value} />;
 }
 
-const checkStatusChipOptions = checkStatusOptions.map((option) => {
-  const meta = getStatusMeta("checkStatus", option.value);
+const intakeLifecycleChipOptions = intakeLifecycleOptions.map((option) => {
+  const meta = getStatusMeta("intakeLifecycle", option.value);
   return {
     value: option.value,
     label: meta.label,
@@ -3100,20 +3195,20 @@ function TransactionMiniLabel({
 }
 
 function JointBrokerageBadge({
-  listing,
+  intake,
   compact = false,
 }: {
-  listing: Pick<
-    ListingSummary,
-    "isJointBrokerageRequired" | "jointBrokeragePartner"
-  >;
+  intake?: {
+    isJointBrokerageRequired: boolean;
+    jointBrokeragePartner?: { name: string } | null;
+  } | null;
   compact?: boolean;
 }) {
-  if (!listing.isJointBrokerageRequired) return null;
+  if (!intake?.isJointBrokerageRequired) return null;
 
   const label = compact
     ? "공동"
-    : `공동필수${listing.jointBrokeragePartner?.name ? ` · ${listing.jointBrokeragePartner.name}` : ""}`;
+    : `공동필수${intake.jointBrokeragePartner?.name ? ` · ${intake.jointBrokeragePartner.name}` : ""}`;
 
   return (
     <span className="inline-flex max-w-full rounded-[4px] bg-[#fbf3db] px-1.5 py-0.5 text-[11px] font-medium leading-5 text-[#8f6b1f]">
@@ -3390,11 +3485,34 @@ function RangeFilter({
   );
 }
 
+/**
+ * Deal 점유 파생 뱃지 라벨 — 점유 Deal 이 있을 때만 표시.
+ * 의뢰 확인 상태는 행 상태 칩이 담당하므로 여기서는 폴백하지 않는다.
+ */
+function getListingOccupiedLabel(
+  listing: Pick<ListingSummary, "deals">,
+): string | null {
+  const occupying = listing.deals ?? [];
+  if (occupying.length === 0) return null;
+  const doneStages: readonly string[] = DONE_DEAL_STAGES;
+  return occupying.some((deal) => doneStages.includes(deal.stage))
+    ? "완료"
+    : "거래중";
+}
+
 function buildListingFilterParams(filters: PropertyFilterState) {
   const params: Record<string, string | number | boolean | undefined> = {};
 
   if (filters.siteId) params.siteId = filters.siteId;
-  if (filters.checkStatus !== "all") params.checkStatus = filters.checkStatus;
+  if (filters.confirmationState !== "all") {
+    params.confirmationState = filters.confirmationState;
+  }
+  if (filters.availability !== "all") {
+    params.availability = filters.availability;
+    if (filters.availability === ListingAvailability.CLOSED) {
+      params.includeClosed = true;
+    }
+  }
   if (filters.siteType !== "all") params.siteType = filters.siteType;
 
   addNumberParam(params, "priceMin", filters.priceMin);
@@ -3427,9 +3545,14 @@ function buildActiveFilterChips(
   if (filters.siteType !== "all") {
     chips.push(`유형: ${getOptionLabel(siteTypeOptions, filters.siteType)}`);
   }
-  if (filters.checkStatus !== "all") {
+  if (filters.confirmationState !== "all") {
     chips.push(
-      `상태: ${getOptionLabel(checkStatusFilterOptions, filters.checkStatus)}`,
+      `확인: ${getOptionLabel(confirmationStateFilterOptions, filters.confirmationState)}`,
+    );
+  }
+  if (filters.availability !== "all") {
+    chips.push(
+      `가용: ${getOptionLabel(listingAvailabilityFilterOptions, filters.availability)}`,
     );
   }
 
@@ -3568,10 +3691,9 @@ function toListingSummary(listing: ListingSummary): ListingSummary {
     moveInAvailableType: listing.moveInAvailableType,
     moveInAvailableFrom: listing.moveInAvailableFrom,
     moveInAvailableTo: listing.moveInAvailableTo,
-    isJointBrokerageRequired: listing.isJointBrokerageRequired,
-    jointBrokeragePartnerId: listing.jointBrokeragePartnerId,
-    jointBrokeragePartner: listing.jointBrokeragePartner,
-    checkStatus: listing.checkStatus,
+    isPaused: listing.isPaused,
+    intake: listing.intake,
+    deals: listing.deals,
     isHidden: listing.isHidden,
     memo: listing.memo,
     createdAt: listing.createdAt,
@@ -3721,16 +3843,15 @@ function formatPropertySheetArea(property: Property) {
 }
 
 function getLatestPropertyListingUpdatedAt(property: Property) {
-  const latestListingUpdatedAt = (property.listings ?? []).reduce<
-    string | null
-  >((latest, listing) => {
-    if (!latest) return listing.updatedAt;
-    return new Date(listing.updatedAt).getTime() > new Date(latest).getTime()
-      ? listing.updatedAt
+  return (property.listings ?? []).reduce<string | null>((latest, listing) => {
+    const checkedAt =
+      listing.intake?.lastCheckedAt ?? listing.intake?.lastVerifiedAt ?? null;
+    if (!checkedAt) return latest;
+    if (!latest) return checkedAt;
+    return new Date(checkedAt).getTime() > new Date(latest).getTime()
+      ? checkedAt
       : latest;
   }, null);
-
-  return latestListingUpdatedAt ?? property.updatedAt;
 }
 
 function comparePropertyListing(a: PropertyListing, b: PropertyListing) {
@@ -3752,11 +3873,14 @@ function getPropertySheetNotices(property: Property): PropertySheetNotice[] {
   const latestUpdatedAt = getLatestPropertyListingUpdatedAt(property);
   const daysSinceLatestCheck = getDaysSince(latestUpdatedAt);
   const unverifiedListings = listings.filter(
-    (listing) => listing.checkStatus === "unverified",
+    (listing) =>
+      listing.intake &&
+      getIntakeConfirmationState(listing.intake) ===
+        IntakeConfirmationState.UNVERIFIED,
   );
   const hiddenListings = listings.filter((listing) => listing.isHidden);
   const jointRequiredListings = listings.filter(
-    (listing) => listing.isJointBrokerageRequired,
+    (listing) => listing.intake?.isJointBrokerageRequired,
   );
   const expiringTenant = tenants.find((tenant) => {
     if (!tenant.contractEnd) return false;
@@ -3867,10 +3991,7 @@ function formatTransactionTypeList(
 }
 
 function formatJointBrokerageRequirementList(
-  listings: Pick<
-    PropertyListing,
-    "transactionType" | "jointBrokeragePartner"
-  >[],
+  listings: Pick<PropertyListing, "transactionType" | "intake">[],
 ) {
   return listings
     .map((listing) => {
@@ -3878,8 +3999,8 @@ function formatJointBrokerageRequirementList(
         "transactionType",
         listing.transactionType,
       ).label;
-      return listing.jointBrokeragePartner?.name
-        ? `${transactionLabel} ${listing.jointBrokeragePartner.name}`
+      return listing.intake?.jointBrokeragePartner?.name
+        ? `${transactionLabel} ${listing.intake.jointBrokeragePartner.name}`
         : `${transactionLabel} 파트너 미지정`;
     })
     .join(", ");
@@ -3887,9 +4008,12 @@ function formatJointBrokerageRequirementList(
 
 function getLatestListingUpdatedAt(group: PropertyListingGroup) {
   return group.listings.reduce<string | null>((latest, listing) => {
-    if (!latest) return listing.updatedAt;
-    return new Date(listing.updatedAt).getTime() > new Date(latest).getTime()
-      ? listing.updatedAt
+    const checkedAt =
+      listing.intake?.lastCheckedAt ?? listing.intake?.lastVerifiedAt ?? null;
+    if (!checkedAt) return latest;
+    if (!latest) return checkedAt;
+    return new Date(checkedAt).getTime() > new Date(latest).getTime()
+      ? checkedAt
       : latest;
   }, null);
 }

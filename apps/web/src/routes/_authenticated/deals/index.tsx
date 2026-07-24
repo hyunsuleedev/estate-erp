@@ -1,3 +1,4 @@
+import { invalidateListingDerivedCaches } from '@/lib/listing-cache';
 import { createFileRoute } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDeferredValue, useEffect, useMemo, useState } from 'react';
@@ -128,6 +129,8 @@ function DealsPage() {
   const invalidateDeals = () => {
     void queryClient.invalidateQueries({ queryKey: ['deals'] });
     void queryClient.invalidateQueries({ queryKey: ['commission-payments'] });
+    // Deal 단계는 파생 상태의 원천 — 매물 목록·그리드·네트워크 노출도 함께 갱신
+    invalidateListingDerivedCaches(queryClient);
   };
 
   const stageMutation = useMutation({

@@ -4,7 +4,6 @@
   "toggleSidebar": "Toggle Sidebar",
   "items": {
     "dashboard": "Dashboard",
-    "inbox": "Inbox",
     "properties": "Properties",
     "propertiesList": "Property List",
     "propertiesNew": "Add Property",

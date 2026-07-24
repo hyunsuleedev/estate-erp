@@ -14,7 +14,6 @@
 - [DATA_STRUCTURE.md](./DATA_STRUCTURE.md): ERD, 엔터티 설명, 필드 규칙
 - [PRODUCT_STRATEGY.md](./PRODUCT_STRATEGY.md): 시장/경쟁/AI/MCP 전략
 - [DECISIONS.md](./DECISIONS.md): 핵심 결정, 미결정 사항, 후속 과제
-- [AI_OPERATIONS.md](./AI_OPERATIONS.md): AI 운영 콘솔 확장 메모
 - [LOCAL_INFRA.md](./LOCAL_INFRA.md): 로컬 개발 인프라 실행 방법
 - [desktop-prd/README.md](./desktop-prd/README.md): desktop 페이지 상세 PRD 작성 하네스
 
@@ -76,7 +75,7 @@ Estate ERP는 대한민국 부동산 중개사무소를 위한 통합 ERP다. �
 ### 3.3 멀티테넌시는 기본 전제다
 
 - 모든 비즈니스 데이터는 `office_id` 기준으로 분리한다.
-- 사용자, 권한, 감사 로그, 규칙 엔진, 네트워크 액션 모두 사무소 단위로 격리한다.
+- 사용자, 권한, 감사 로그, 네트워크 액션 모두 사무소 단위로 격리한다.
 
 ### 3.4 네트워크 효과를 제품 본체에 넣는다
 
@@ -96,7 +95,6 @@ Estate ERP는 대한민국 부동산 중개사무소를 위한 통합 ERP다. �
 - 매물/연락처/상담/매칭/거래/태스크/일정 CRUD
 - Listing 중심 파이프라인 설계
 - ActivityLog 기반 감사 추적
-- AI 직원: Rule Engine (`@nestjs/schedule` cron) + Proposal 승인 큐
 - 수수료/캐시플로우: CommissionPayment + 타임라인/칸반/리스트 뷰 + 수금 캘린더
 - 고정비 관리: OfficeExpenseTemplate
 - 공적장부 발급 UI 스캐폴딩 (유료 API 업체 연동 포함)
@@ -112,6 +110,7 @@ Estate ERP는 대한민국 부동산 중개사무소를 위한 통합 ERP다. �
 - 인바운드/아웃바운드 콜 세션 처리
 - 데스크톱 실시간 통화 팝업
 - CTI 연동을 전제로 한 상담 시작 흐름
+- AI 검토함 및 Rule/Proposal 기반 승인 큐
 - 내부 AI 챗 (Phase 2)
 - pgvector 기반 의미 매칭 (Phase 2)
 
@@ -215,7 +214,6 @@ Estate ERP는 대한민국 부동산 중개사무소를 위한 통합 ERP다. �
 - **로컬 MCP** (Phase 3): Electron에서 호스팅. 크롤러 MCP 통합 등 로컬 전용 기능.
 - 인증: JWT 또는 API Key (`X-API-Key` 헤더). API Key는 만료 없이 자동화 전용.
 - 도구 목록: search_listings, get_property, create_task, create_consultation, search_buyers, get_deal, upsert_external_listings 등
-- MCP → Proposal 연동: 쓰기 권한이 없는 사용자의 MCP 요청은 Proposal(승인 큐)로 전환
 
 **크롤러 연동 흐름**:
 
@@ -246,20 +244,19 @@ Claude Desktop
 ```
 Site/Unit 등록
 → Property 생성
-→ Listing 생성
-→ 확인 상태 추적
+→ ListingIntake 접수
+→ Listing 거래 옵션 생성
+→ 확인 이력 추적
 → 상담/매칭/거래로 연결
 ```
 
-`Listing.checkStatus`
+상태는 서로 다른 소유 축으로 분리한다.
 
-```
-unverified
-→ verified
-→ in_contract
-→ hold
-→ done
-```
+- 의뢰 생명주기: `ListingIntake.lifecycleStatus = open | hold | closed`
+- 확인 상태: `lastVerifiedAt`, `lastCheckResult`, `nextConfirmAt`에서
+  `unverified | verified | overdue | no_answer` 파생
+- 거래 상태: 비취소 `Deal.stage`에서 `in_contract | completed` 파생
+- 옵션 중단: `Listing.isPaused`
 
 ### 6.2 매칭 흐름
 
@@ -388,7 +385,7 @@ SaaS 구독형 모델을 전제로 한다. 광고 노출 기능이 없는 업무
 |------|--------|------------|----------|
 | 무료 | 0원 | 2개 | CRM 기본 (매물/고객/상담/거래) |
 | 기본 | 9,900원 | 20개 | 수수료 정산 + 광고노트 + 공적장부 |
-| 프로 | 29,900원 | 무제한 | AI 직원 + 직원관리 + 내부 AI 챗 + MCP |
+| 프로 | 29,900원 | 무제한 | 직원관리 + 내부 AI 챗 + MCP |
 
 Phase 1은 기본(9,900원)으로 출시. CTI/공적장부 API 연동이 완료되는 Phase 2에서 가격 재검토.
 가격, 패키징, 세부 상업 정책은 [PRODUCT_STRATEGY.md](./PRODUCT_STRATEGY.md)에서 관리한다.
@@ -484,4 +481,3 @@ Phase 1은 기본(9,900원)으로 출시. CTI/공적장부 API 연동이 완료�
 - 상세 데이터 구조: [DATA_STRUCTURE.md](./DATA_STRUCTURE.md)
 - 시장/AI 전략: [PRODUCT_STRATEGY.md](./PRODUCT_STRATEGY.md)
 - 결정 및 TODO: [DECISIONS.md](./DECISIONS.md)
-- AI 직원 설계: [ai-employee-architecture.md](./ai-employee-architecture.md)

@@ -2,6 +2,7 @@ import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { OfficeAdvertisementsService } from './office-advertisements.service';
 
 jest.mock('@estate-erp/shared', () => ({
+  ...jest.requireActual('@estate-erp/shared'),
   ListingAdvertisementChannel: {
     NAVER: 'naver',
   },

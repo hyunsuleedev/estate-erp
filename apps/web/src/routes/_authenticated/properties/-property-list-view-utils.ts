@@ -1,4 +1,6 @@
 import type { Listing, ListingIntake } from '@estate-erp/api-client';
+import { IntakeConfirmationState } from '@estate-erp/shared';
+import { getIntakeConfirmationState } from '@/lib/listing-status';
 import type { Tone } from '@/lib/status-config';
 
 // ── 목록 행 타입 (index.tsx + '-' 보조 파일 공유) ────────────────
@@ -19,10 +21,9 @@ export type ListingSummary = Pick<
   | 'moveInAvailableType'
   | 'moveInAvailableFrom'
   | 'moveInAvailableTo'
-  | 'isJointBrokerageRequired'
-  | 'jointBrokeragePartnerId'
-  | 'jointBrokeragePartner'
-  | 'checkStatus'
+  | 'isPaused'
+  | 'intake'
+  | 'deals'
   | 'isHidden'
   | 'memo'
   | 'createdAt'
@@ -63,26 +64,56 @@ export const TONE_CHIP_CLASSES: Record<Tone, string> = {
 // ── 의뢰(ListingIntake) 헬퍼 ─────────────────────────────────────
 
 const INTAKE_STATUS_PRIORITY: Record<string, number> = {
-  active: 0,
-  unverified: 1,
-  in_contract: 2,
-  hold: 3,
-  done: 4,
+  open: 0,
+  hold: 1,
+  closed: 2,
 };
 
-/** 그룹의 매물들이 참조하는 의뢰 중 대표 의뢰 1건 선택 (진행중 우선 → 최근 접수순). */
+/** 행 컴포넌트가 쓰는 의뢰 요약 — listings 응답에 임베드된 intake 에서 파생 */
+export type IntakeRowSummary = Pick<
+  ListingIntake,
+  | 'id'
+  | 'lifecycleStatus'
+  | 'lifecycleChangedAt'
+  | 'lifecycleChangedBy'
+  | 'closedReason'
+  | 'receivedAt'
+  | 'lastCheckedAt'
+  | 'lastVerifiedAt'
+  | 'lastCheckResult'
+  | 'nextConfirmAt'
+  | 'memo'
+  | 'updatedAt'
+>;
+
+/**
+ * 그룹의 매물들이 참조하는 의뢰 중 대표 의뢰 1건 선택 (진행중 우선 → 최근 접수순).
+ * 의뢰 데이터는 별도 조회 없이 각 listing.intake 임베드에서 읽는다.
+ */
 export function pickPrimaryIntake(
-  listings: Array<Pick<ListingSummary, 'intakeId'>>,
-  intakesById: Map<string, ListingIntake>,
-): ListingIntake | null {
+  listings: Array<Pick<ListingSummary, 'intakeId' | 'intake'>>,
+): IntakeRowSummary | null {
   const seen = new Set<string>();
-  const intakes: ListingIntake[] = [];
+  const intakes: IntakeRowSummary[] = [];
 
   for (const listing of listings) {
-    if (!listing.intakeId || seen.has(listing.intakeId)) continue;
-    seen.add(listing.intakeId);
-    const intake = intakesById.get(listing.intakeId);
-    if (intake) intakes.push(intake);
+    const intake = listing.intake;
+    if (!intake || seen.has(intake.id)) continue;
+    seen.add(intake.id);
+    intakes.push({
+      id: intake.id,
+      lifecycleStatus: intake.lifecycleStatus,
+      lifecycleChangedAt: intake.lifecycleChangedAt,
+      lifecycleChangedBy: intake.lifecycleChangedBy,
+      closedReason: intake.closedReason,
+      receivedAt: intake.receivedAt,
+      lastCheckedAt: intake.lastCheckedAt,
+      lastVerifiedAt: intake.lastVerifiedAt,
+      lastCheckResult: intake.lastCheckResult,
+      nextConfirmAt: intake.nextConfirmAt,
+      memo: intake.memo,
+      updatedAt: intake.updatedAt,
+    });
   }
 
   if (intakes.length === 0) return null;
@@ -91,22 +122,25 @@ export function pickPrimaryIntake(
     .slice()
     .sort(
       (a, b) =>
-        (INTAKE_STATUS_PRIORITY[String(a.status)] ?? 9) -
-          (INTAKE_STATUS_PRIORITY[String(b.status)] ?? 9) ||
+        (INTAKE_STATUS_PRIORITY[String(a.lifecycleStatus)] ?? 9) -
+          (INTAKE_STATUS_PRIORITY[String(b.lifecycleStatus)] ?? 9) ||
         new Date(b.receivedAt).getTime() - new Date(a.receivedAt).getTime(),
     )[0];
 }
 
 /** 다음 확인일이 지났는지 (달력일 기준) */
-export function isIntakeOverdue(intake: Pick<ListingIntake, 'nextConfirmAt' | 'status'>) {
-  if (!intake.nextConfirmAt) return false;
-  if (intake.status === 'done') return false;
-  const next = new Date(intake.nextConfirmAt);
-  if (Number.isNaN(next.getTime())) return false;
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  next.setHours(0, 0, 0, 0);
-  return next.getTime() < today.getTime();
+export function isIntakeOverdue(
+  intake: Pick<
+    ListingIntake,
+    | 'lifecycleStatus'
+    | 'lastVerifiedAt'
+    | 'lastCheckResult'
+    | 'nextConfirmAt'
+  >,
+) {
+  return (
+    getIntakeConfirmationState(intake) === IntakeConfirmationState.OVERDUE
+  );
 }
 
 type MoveInAvailabilityInput = {

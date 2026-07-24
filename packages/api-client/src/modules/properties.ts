@@ -1,9 +1,22 @@
 import type { RequestFn } from '../client.js';
 import type { PaginatedResponse } from '../types.js';
 import type { Consultation } from './consultations.js';
-import type { ListingAdvertisement, ListingPriceHistory } from './listings.js';
+import type {
+  ListingAdvertisement,
+  ListingIntakeState,
+  ListingPriceHistory,
+} from './listings.js';
 import type { PropertyContact } from './property-contacts.js';
 import type { Tenant } from './tenants.js';
+
+export interface PropertyListingIntake extends ListingIntakeState {
+  isJointBrokerageRequired: boolean;
+  jointBrokeragePartner?: {
+    id: string;
+    name: string;
+    phone: string | null;
+  } | null;
+}
 
 export interface PropertyListing {
   id: string;
@@ -15,20 +28,17 @@ export interface PropertyListing {
   moveInAvailableType: string | null;
   moveInAvailableFrom: string | null;
   moveInAvailableTo: string | null;
-  isJointBrokerageRequired: boolean;
-  jointBrokeragePartnerId: string | null;
-  checkStatus: string;
+  isPaused: boolean;
+  /** 의뢰 컨텍스트 — 확인 상태/공동중개의 단일 출처 */
+  intake?: PropertyListingIntake | null;
+  /** 이 거래 옵션을 점유한 활성 Deal — 있으면 "거래중/완료" */
+  deals?: Array<{ id: string; stage: string; stageChangedAt: string | null }>;
   isHidden: boolean;
   memo: string | null;
   createdAt: string;
   updatedAt: string;
   advertisements?: ListingAdvertisement[];
   priceHistories?: ListingPriceHistory[];
-  jointBrokeragePartner?: {
-    id: string;
-    name: string;
-    phone: string | null;
-  } | null;
 }
 
 export interface Property {

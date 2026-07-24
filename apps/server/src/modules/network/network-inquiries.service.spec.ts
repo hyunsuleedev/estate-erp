@@ -1,5 +1,5 @@
 import { NetworkInquiriesService } from './network-inquiries.service';
-import { SharedPropertyWithRelations } from './network-masking';
+import type { SharedPropertyWithRelations } from './network-masking';
 
 function buildSharedPropertyRecord(): SharedPropertyWithRelations {
   return {
@@ -27,7 +27,18 @@ function buildSharedPropertyRecord(): SharedPropertyWithRelations {
     listing: {
       id: 'listing-1',
       transactionType: 'sale',
-      checkStatus: 'verified',
+      isPaused: false,
+      intake: {
+        lifecycleStatus: 'open',
+        lifecycleChangedAt: new Date('2026-06-01T00:00:00.000Z'),
+        lifecycleChangedBy: 'user',
+        closedReason: null,
+        lastCheckedAt: new Date('2026-06-01T00:00:00.000Z'),
+        lastVerifiedAt: new Date('2026-06-01T00:00:00.000Z'),
+        lastCheckResult: 'alive',
+        nextConfirmAt: null,
+      },
+      deals: [],
       price: 158000,
       deposit: null,
       monthlyRent: null,
@@ -49,6 +60,10 @@ function createService() {
   const prisma = {
     networkSharedProperty: {
       findFirst: jest.fn(),
+    },
+    listing: {
+      // 노출 파생 가드 — 기본은 "보이는 매물"
+      findFirst: jest.fn().mockResolvedValue({ id: 'listing-1' }),
     },
     networkInquiry: {
       findFirst: jest.fn(),
@@ -86,6 +101,7 @@ describe('NetworkInquiriesService', () => {
         officeId: 'office-sharer',
         sharedBy: 'user-sharer',
         isActive: true,
+        listingId: 'listing-1',
       });
       prisma.networkInquiry.create.mockResolvedValue({
         id: 'inquiry-1',
@@ -135,6 +151,7 @@ describe('NetworkInquiriesService', () => {
         officeId: 'office-sharer',
         sharedBy: 'user-sharer',
         isActive: true,
+        listingId: 'listing-1',
       });
 
       await expect(
@@ -166,6 +183,7 @@ describe('NetworkInquiriesService', () => {
         officeId: 'office-sharer',
         sharedBy: 'user-sharer',
         isActive: true,
+        listingId: 'listing-1',
       });
       rooms.assertApprovedMember.mockRejectedValue(
         new Error('중개방 멤버만 접근할 수 있습니다'),

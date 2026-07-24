@@ -20,6 +20,7 @@ import {
 import type { CreateTaskDto, Employee, Task, UpdateTaskDto } from '@estate-erp/api-client';
 import { api } from '@/lib/api';
 import { formatPhone } from '@/lib/format';
+import { getIntakeConfirmationState } from '@/lib/listing-status';
 import { getStatusMeta } from '@/lib/status-config';
 import { Button } from '@/components/ui/button';
 import {
@@ -81,8 +82,8 @@ function buildModalContexts(task: Task): ModalContext[] {
     items.push({
       key: 'listingIntakeId',
       icon: ClipboardList,
-      label: task.listingIntake?.status
-        ? `의뢰 ${getStatusMeta('intakeStatus', task.listingIntake.status).label}`
+      label: task.listingIntake
+        ? `의뢰 ${getStatusMeta('intakeLifecycle', task.listingIntake.lifecycleStatus).label} · ${getStatusMeta('confirmationState', getIntakeConfirmationState(task.listingIntake)).label}`
         : '의뢰',
     });
   }

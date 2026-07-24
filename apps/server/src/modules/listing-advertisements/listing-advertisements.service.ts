@@ -170,13 +170,6 @@ export class ListingAdvertisementsService {
                   },
                 },
               },
-              jointBrokeragePartner: {
-                select: {
-                  id: true,
-                  name: true,
-                  phone: true,
-                },
-              },
             },
           },
         },

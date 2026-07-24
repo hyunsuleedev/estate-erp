@@ -1,3 +1,4 @@
+import { getListingAvailability } from "@/lib/listing-status";
 import { createFileRoute, Link } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState, type ReactNode } from 'react';
@@ -911,7 +912,7 @@ function LinkAdGroupDialog({
                     {listingPriceLabel(listing)}
                   </span>
                 </span>
-                <StatusBadge kind="checkStatus" status={listing.checkStatus} size="sm" />
+                <StatusBadge kind="listingAvailability" status={getListingAvailability(listing)} size="sm" />
               </button>
             ))
           )}

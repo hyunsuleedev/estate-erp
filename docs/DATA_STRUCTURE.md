@@ -31,8 +31,7 @@
 │  ├── BuyerRequirement (구매 희망조건)                              │
 │  └── Consultation (상담 기록)                                     │
 ├─────────────────────────────────────────────────────────────────┤
-│  Task (업무)                                                     │
-│  Rule (규칙 엔진) / Proposal (AI 제안 큐)                        │
+│  Task (업무) / CalendarEvent (일정) / ActivityLog (감사)          │
 ├─────────────────────────────────────────────────────────────────┤
 │  ServiceVendor (업체) ── officeId nullable (Site 패턴)            │
 │  ├── VendorContact (담당자/연락처, 1:N)                          │
@@ -355,31 +354,61 @@ ContactRelation: 김집주인 → 박어머니 (type: parent)
 **Property에 연결되는 것들:**
 - PropertyContact (소유자, 대리인 등 — 호실 단위)
 - Tenant (세입자 — 호실 단위)
-- Listing[] (거래 매물 — 1:N)
+- ListingIntake[] (의뢰/접수 이력 — 1:N, 단 non-closed는 하나)
+- Listing[] (의뢰 안의 거래 옵션 — 1:N)
 
-### Listing (매물 = 거래 단위)
-Property에서 분리된 거래/가격 정보. 하나의 Property(관리 단위)에 여러 Listing이 있을 수 있다 (매매 + 전세 동시 등록 등).
+### ListingIntake (의뢰/접수 단위)
+한 번 들어온 매도·임대 의뢰의 공통 정보와 확인 이력을 소유한다. 확인 여부와
+거래 진행 상태를 한 상태 컬럼에 섞지 않는다.
 
 | 필드 | 타입 | 설명 |
 |------|------|------|
 | id | UUID | PK |
 | officeId | UUID | FK → Office |
 | propertyId | UUID | FK → Property |
+| lifecycleStatus | String | open, hold, closed |
+| lifecycleChangedAt | DateTime | 마지막 생명주기 전이 시각 |
+| lifecycleChangedBy | String | user, system:deal |
+| closedReason | String? | closed일 때 종결 사유 |
+| lastCheckedAt | DateTime? | 마지막 확인 시도 시각 |
+| lastVerifiedAt | DateTime? | alive/price_changed로 유효성을 확인한 마지막 시각 |
+| lastCheckResult | String? | alive, price_changed, unavailable, no_answer, pending |
+| nextConfirmAt | DateTime? | 다음 확인 예정 시각 |
+
+- 생명주기: `open ↔ hold`, `open/hold → closed`, 필요 시 `closed → open`
+- 확인 표시: `lastVerifiedAt`, `lastCheckResult`, `nextConfirmAt`에서
+  `unverified | verified | overdue | no_answer`를 파생
+- `unavailable` 확인은 의뢰를 `closed`로 종결한다.
+- 같은 Property에는 `open | hold` 의뢰가 최대 하나만 존재한다.
+
+### Listing (매물 = 거래 단위)
+ListingIntake 안의 거래/가격 옵션. 하나의 의뢰에 여러 Listing이 있을 수 있다
+(매매 + 전세 동시 등록 등).
+
+| 필드 | 타입 | 설명 |
+|------|------|------|
+| id | UUID | PK |
+| officeId | UUID | FK → Office |
+| propertyId | UUID | FK → Property |
+| intakeId | UUID | FK → ListingIntake |
 | transactionType | String | sale, jeonse, monthly |
 | price | Int? | 매매가/전세가 (만원) |
 | deposit | Int? | 보증금 (만원) |
 | monthlyRent | Int? | 월세 (만원) |
-| checkStatus | String | 확인 상태 |
+| isPaused | Boolean | 이 거래 옵션만 일시 중단 |
 | isHidden | Boolean | 목록 숨김 여부 |
 | memo | String? | 메모 |
 
 > 가격은 모두 만원(10,000 KRW) 단위
 > Listing은 Match, Deal, PriceHistory의 참조 대상
 
-**확인 상태 파이프라인 (Listing.checkStatus):**
-```
-unverified → verified → in_contract → hold → done
-```
+**Listing 가용 상태는 저장하지 않고 파생한다:**
+
+- `available`: 의뢰 open + Listing 미중단 + 점유 Deal 없음
+- `paused`: 의뢰 hold 또는 Listing.isPaused
+- `in_contract`: 비취소 Deal이 preContract / contracted / settling
+- `completed`: 비취소 Deal이 completed / closed
+- `closed`: 의뢰가 closed이고 점유 Deal 없음
 
 ---
 
@@ -588,49 +617,10 @@ draft → signed → depositPaid → balancePaid → registered → cancelled
 
 > 상담 후 "할 일 추가" → Task 생성 시 contactId, propertyId, listingId 자동 전달
 
-### Rule (규칙 엔진)
-Insight/InsightRule을 대체. agent.prisma에 정의. 설계 문서: docs/ai-employee-architecture.md
-
-| 필드 | 타입 | 설명 |
-|------|------|------|
-| id | UUID | PK |
-| officeId | UUID | FK → Office |
-| name | String | 코드 식별자 ("ad_takedown", "lease_expiry") |
-| displayName | String | UI 표시명 |
-| triggerType | String | "schedule" \| "event" |
-| schedule | String? | 크론 표현식 (schedule일 때) |
-| eventName | String? | 이벤트명 (event일 때) |
-| config | JSON | 규칙 파라미터 |
-| isActive | Boolean | 활성 여부 |
-| isSystem | Boolean | 시스템 규칙 (seed, 삭제 불가) |
-
-> unique: [officeId, name]
-
-### Proposal (AI 제안 큐)
-규칙이 생성하는 제안. 단일 승인 큐(inbox).
-
-| 필드 | 타입 | 설명 |
-|------|------|------|
-| id | UUID | PK |
-| officeId | UUID | FK → Office |
-| type | String | 제안 유형 ("ad_takedown" 등) |
-| title | String | 제목 |
-| description | String | 설명 |
-| reasoning | String? | 생성 근거 |
-| status | String | pending \| approved \| rejected \| expired \| executed \| failed |
-| priority | String | urgent \| normal \| low |
-| trustTier | String | auto \| approval_required \| inform_only |
-| generatedBy | String | "rule:ad_takedown:v1" 등 |
-| listingId | UUID? | 컨텍스트 링크 |
-| propertyId | UUID? | 컨텍스트 링크 |
-| contactId | UUID? | 컨텍스트 링크 |
-
----
-
 ## 10. 가격 이력
 
 ### PriceHistory (가격 변경 이력)
-매물(Listing)의 가격 변화를 자동으로 추적. 규칙 엔진이 가격 변동을 감지하면 기록하고 Insight를 생성한다.
+매물(Listing)의 가격 변화를 자동으로 추적한다.
 
 | 필드 | 타입 | 설명 |
 |------|------|------|
@@ -648,8 +638,6 @@ Insight/InsightRule을 대체. agent.prisma에 정의. 설계 문서: docs/ai-em
 | createdAt | DateTime | 변경 기록일 |
 
 > 자동 추적: Listing의 price/deposit/monthlyRent가 변경되면 middleware에서 PriceHistory 레코드 자동 생성
-> 규칙 엔진: Rule이 감지 → Proposal 생성 → 앱에서 승인/실행
-
 ---
 
 ## 11. 활동 로그
@@ -1051,24 +1039,22 @@ ORDER BY
 | 21 | Deal | deals | 거래 (Listing 참조, 수수료 매도측/매수측 분리, 공동중개) |
 | 22 | Contract | contracts | 계약 상세 (Deal 1:1, 금액 스케줄, 임대기간) |
 | 23 | DealParticipant | deal_participants | 거래 참여자 (직원별 역할/수수료/정산) |
-| — | **업무/인사이트** | | |
+| — | **업무** | | |
 | 24 | Task | tasks | 업무 |
-| 25 | Rule | rules | 규칙 엔진 (InsightRule 대체) |
-| 26 | Proposal | proposals | AI 제안 큐 (Insight 대체) |
-| 27 | CalendarEvent | calendar_events | 캘린더 |
-| 28 | ActivityLog | activity_logs | 활동 로그 (감사 추적) |
+| 25 | CalendarEvent | calendar_events | 캘린더 |
+| 26 | ActivityLog | activity_logs | 활동 로그 (감사 추적) |
 | — | **알림** | | |
-| 29 | Notification | notifications | 인앱 알림 (WebSocket + DB) |
+| 27 | Notification | notifications | 인앱 알림 (WebSocket + DB) |
 | — | **공동 중개망** | | |
-| 30 | NetworkRoom | network_rooms | 중개방 |
-| 31 | NetworkRoomMember | network_room_members | 중개방 참여자 |
-| 32 | NetworkSharedProperty | network_shared_properties | 공유 매물 (Listing 참조, 마스킹) |
-| 33 | NetworkInquiry | network_inquiries | 공유 매물 문의 |
-| 34 | NetworkMessage | network_messages | 중개방 채팅 |
+| 28 | NetworkRoom | network_rooms | 중개방 |
+| 29 | NetworkRoomMember | network_room_members | 중개방 참여자 |
+| 30 | NetworkSharedProperty | network_shared_properties | 공유 매물 (Listing 참조, 마스킹) |
+| 31 | NetworkInquiry | network_inquiries | 공유 매물 문의 |
+| 32 | NetworkMessage | network_messages | 중개방 채팅 |
 | — | **외부 시장 매물 (광고노트)** | | |
-| 35 | ExternalListingGroup | external_listing_groups | 호실 단위 외부 매물 그룹 (HouseProperty 대응, 사용자 기억 보존) |
-| 36 | ExternalListing | external_listings | 개별 외부 매물 1건 (Offer 대응, articleNo 기준 unique) |
+| 33 | ExternalListingGroup | external_listing_groups | 호실 단위 외부 매물 그룹 (HouseProperty 대응, 사용자 기억 보존) |
+| 34 | ExternalListing | external_listings | 개별 외부 매물 1건 (Offer 대응, articleNo 기준 unique) |
 | — | **업체 디렉토리** | | |
-| 37 | ServiceCategory | service_categories | 서비스 카테고리 마스터 (대분류→세부) |
-| 38 | ServiceVendor | service_vendors | 업체 (officeId nullable, 공용 풀 + 사무소별) |
-| 39 | VendorContact | vendor_contacts | 업체 담당자/연락처 (1:N) |
+| 35 | ServiceCategory | service_categories | 서비스 카테고리 마스터 (대분류→세부) |
+| 36 | ServiceVendor | service_vendors | 업체 (officeId nullable, 공용 풀 + 사무소별) |
+| 37 | VendorContact | vendor_contacts | 업체 담당자/연락처 (1:N) |

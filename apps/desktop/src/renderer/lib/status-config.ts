@@ -27,8 +27,6 @@ export type StatusKind =
   | 'taskStatus'
   | 'adStatus'
   | 'transactionType'
-  | 'proposalStatus'
-  | 'inboxStatus'
   | 'buyerStatus'
   | 'buyerUrgency';
 
@@ -123,16 +121,6 @@ export const STATUS_CONFIG: Record<StatusKind, Record<string, StatusMeta>> = {
     jeonse: { label: '전세', tone: 'success' },
     monthly: { label: '월세', tone: 'orange' },
   },
-  /** Proposal.status — AI 제안 큐 */
-  proposalStatus: {
-    pending: { label: '대기', tone: 'warning' },
-    approved: { label: '승인', tone: 'info' },
-    rejected: { label: '반려', tone: 'gray' },
-    expired: { label: '만료', tone: 'gray' },
-    executed: { label: '실행완료', tone: 'success' },
-    failed: { label: '실패', tone: 'destructive' },
-    auto_resolved: { label: '자동해결', tone: 'neutral' },
-  },
   /** BuyerRequirement.status — 구매고객 상태 */
   buyerStatus: {
     active: { label: '활성', tone: 'success' },
@@ -145,17 +133,6 @@ export const STATUS_CONFIG: Record<StatusKind, Record<string, StatusMeta>> = {
     urgent: { label: '급함', tone: 'destructive' },
     normal: { label: '보통', tone: 'gray' },
     flexible: { label: '여유', tone: 'info' },
-  },
-  /** EntityDraft(업무함 inbox) status */
-  inboxStatus: {
-    pending: { label: '대기', tone: 'warning' },
-    processing: { label: '처리중', tone: 'info' },
-    approved: { label: '승인', tone: 'info' },
-    executing: { label: '실행중', tone: 'violet' },
-    executed: { label: '실행완료', tone: 'success' },
-    failed: { label: '실패', tone: 'destructive' },
-    rejected: { label: '반려', tone: 'gray' },
-    expired: { label: '만료', tone: 'gray' },
   },
 };
 

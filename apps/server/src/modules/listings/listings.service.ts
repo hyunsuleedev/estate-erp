@@ -6,8 +6,11 @@ import {
   Optional,
 } from '@nestjs/common';
 import {
-  CheckStatus,
+  IntakeConfirmationState,
+  IntakeLifecycleStatus,
+  ListingAvailability,
   MaintenanceFeeInclude,
+  NON_CLOSED_INTAKE_LIFECYCLE_STATUSES,
   TransactionType,
 } from '@estate-erp/shared';
 import { Prisma } from '@prisma/client';
@@ -18,12 +21,24 @@ import {
   withPrimaryPhone,
 } from '../contacts/contact-phone.utils';
 import { RealtimeService } from '../../realtime/realtime.service';
+import {
+  buildIntakeConfirmationWhere,
+  buildListingAvailabilityWhere,
+  NON_CLOSED_INTAKE_WHERE,
+  OCCUPYING_DEALS_SELECT,
+} from './listing-state';
 
 const VALID_TRANSACTION_TYPES: ReadonlySet<string> = new Set(
   Object.values(TransactionType),
 );
-const VALID_CHECK_STATUSES: ReadonlySet<string> = new Set(
-  Object.values(CheckStatus),
+const VALID_INTAKE_LIFECYCLE_STATUSES: ReadonlySet<string> = new Set(
+  Object.values(IntakeLifecycleStatus),
+);
+const VALID_CONFIRMATION_STATES: ReadonlySet<string> = new Set(
+  Object.values(IntakeConfirmationState),
+);
+const VALID_LISTING_AVAILABILITIES: ReadonlySet<string> = new Set(
+  Object.values(ListingAvailability),
 );
 const VALID_MAINTENANCE_FEE_INCLUDES: ReadonlySet<string> = new Set(
   Object.values(MaintenanceFeeInclude),
@@ -34,9 +49,44 @@ const VALID_SORT_FIELDS: ReadonlySet<string> = new Set([
   'updatedAt',
 ]);
 const VALID_SORT_ORDERS: ReadonlySet<string> = new Set(['asc', 'desc']);
-const ACTIVE_INTAKE_STATUS = 'active';
 
-/** update() 반환용 공통 include — 일반 경로와 상태 전환(잠금) 경로가 공유 */
+/**
+ * "현재 매물" 표시 공통 조건 — 열린 의뢰의 매물만.
+ * 목록·형제 매물·단지 필터 카운트·호실 그리드가 같은 기준을 공유해야
+ * 화면 간 숫자가 어긋나지 않는다. 종료 의뢰 매물은 명시 필터로만 조회.
+ */
+const NON_CLOSED_INTAKE_LISTING_WHERE = {
+  intake: NON_CLOSED_INTAKE_WHERE,
+} satisfies Prisma.ListingWhereInput;
+
+/** 의뢰 컨텍스트 — Listing 응답에 항상 실어 이중 조회(오버레이)를 없앤다 */
+const INTAKE_SELECT = {
+  select: {
+    id: true,
+    lifecycleStatus: true,
+    lifecycleChangedAt: true,
+    lifecycleChangedBy: true,
+    closedReason: true,
+    receivedAt: true,
+    lastCheckedAt: true,
+    lastVerifiedAt: true,
+    lastCheckResult: true,
+    nextConfirmAt: true,
+    isJointBrokerageRequired: true,
+    jointBrokeragePartnerId: true,
+    jointBrokeragePartner: {
+      select: {
+        id: true,
+        name: true,
+        phone: true,
+      },
+    },
+    memo: true,
+    updatedAt: true,
+  },
+} satisfies { select: Prisma.ListingIntakeSelect };
+
+/** update() 반환용 공통 include */
 const LISTING_UPDATE_INCLUDE = {
   property: {
     include: {
@@ -49,31 +99,21 @@ const LISTING_UPDATE_INCLUDE = {
       },
     },
   },
-  jointBrokeragePartner: {
-    select: {
-      id: true,
-      name: true,
-      phone: true,
-    },
-  },
-} as const;
-
-const CHECK_STATUS_TRANSITIONS: Record<string, string[]> = {
-  [CheckStatus.UNVERIFIED]: [CheckStatus.VERIFIED, CheckStatus.HOLD],
-  [CheckStatus.VERIFIED]: [CheckStatus.IN_CONTRACT, CheckStatus.HOLD],
-  [CheckStatus.IN_CONTRACT]: [CheckStatus.HOLD, CheckStatus.DONE],
-  [CheckStatus.HOLD]: [
-    CheckStatus.VERIFIED,
-    CheckStatus.IN_CONTRACT,
-    CheckStatus.DONE,
-  ],
-  [CheckStatus.DONE]: [],
-};
+  intake: INTAKE_SELECT,
+  deals: OCCUPYING_DEALS_SELECT,
+} satisfies Prisma.ListingInclude;
 
 export interface ListingSearchQuery {
   propertyId?: string;
   transactionType?: string;
-  checkStatus?: string;
+  /** 의뢰 생명주기 필터 */
+  intakeLifecycleStatus?: string;
+  /** 확인 이력에서 파생한 상태 필터 */
+  confirmationState?: string;
+  /** Deal/보류/종결을 합성한 Listing 가용 상태 필터 */
+  availability?: string;
+  /** true면 closed 의뢰의 Listing도 포함. 기본은 non-closed만. */
+  includeClosed?: boolean;
   priceMin?: number;
   priceMax?: number;
   depositMin?: number;
@@ -107,8 +147,8 @@ interface ListingCreateDto {
   moveInAvailableType?: string | null;
   moveInAvailableFrom?: Date | string | null;
   moveInAvailableTo?: Date | string | null;
-  isJointBrokerageRequired?: boolean;
-  jointBrokeragePartnerId?: string | null;
+  isPaused?: boolean;
+  isHidden?: boolean;
   memo?: string | null;
 }
 
@@ -125,9 +165,7 @@ interface ListingUpdateDto {
   moveInAvailableType?: string | null;
   moveInAvailableFrom?: Date | string | null;
   moveInAvailableTo?: Date | string | null;
-  isJointBrokerageRequired?: boolean;
-  jointBrokeragePartnerId?: string | null;
-  checkStatus?: string;
+  isPaused?: boolean;
   memo?: string | null;
   expectedUpdatedAt?: Date | string | null;
 }
@@ -154,8 +192,20 @@ export class ListingsService {
       this.assertValidTransactionType(query.transactionType);
     }
 
-    if (query.checkStatus) {
-      this.assertValidCheckStatus(query.checkStatus);
+    if (query.intakeLifecycleStatus) {
+      this.assertValidIntakeLifecycleStatus(query.intakeLifecycleStatus);
+    }
+    if (
+      query.confirmationState &&
+      !VALID_CONFIRMATION_STATES.has(query.confirmationState)
+    ) {
+      throw new BadRequestException('Invalid confirmation state');
+    }
+    if (
+      query.availability &&
+      !VALID_LISTING_AVAILABILITIES.has(query.availability)
+    ) {
+      throw new BadRequestException('Invalid listing availability');
     }
 
     const filters: Prisma.ListingWhereInput[] = [{ officeId }];
@@ -168,8 +218,25 @@ export class ListingsService {
       filters.push({ transactionType: query.transactionType });
     }
 
-    if (query.checkStatus) {
-      filters.push({ checkStatus: query.checkStatus });
+    if (query.intakeLifecycleStatus) {
+      filters.push({
+        intake: { lifecycleStatus: query.intakeLifecycleStatus },
+      });
+    } else if (!query.includeClosed) {
+      filters.push(NON_CLOSED_INTAKE_LISTING_WHERE);
+    }
+
+    if (query.confirmationState) {
+      filters.push({
+        intake: buildIntakeConfirmationWhere(
+          query.confirmationState,
+          new Date(),
+        ),
+      });
+    }
+
+    if (query.availability) {
+      filters.push(buildListingAvailabilityWhere(query.availability));
     }
 
     if (query.priceMin !== undefined || query.priceMax !== undefined) {
@@ -317,6 +384,8 @@ export class ListingsService {
       this.prisma.listing.findMany({
         where,
         include: {
+          intake: INTAKE_SELECT,
+          deals: OCCUPYING_DEALS_SELECT,
           property: {
             include: {
               site: {
@@ -344,6 +413,7 @@ export class ListingsService {
                 orderBy: { createdAt: 'desc' },
               },
               listings: {
+                where: NON_CLOSED_INTAKE_LISTING_WHERE,
                 orderBy: { createdAt: 'desc' },
                 select: {
                   id: true,
@@ -360,34 +430,20 @@ export class ListingsService {
                   moveInAvailableType: true,
                   moveInAvailableFrom: true,
                   moveInAvailableTo: true,
-                  isJointBrokerageRequired: true,
-                  jointBrokeragePartnerId: true,
-                  checkStatus: true,
+                  isPaused: true,
+                  isHidden: true,
                   memo: true,
                   createdAt: true,
                   updatedAt: true,
+                  deals: OCCUPYING_DEALS_SELECT,
                   // 매물 목록 매칭 칩 카운트용
                   _count: { select: { matches: true } },
                   advertisements: {
                     orderBy: { createdAt: 'desc' },
                     take: 5,
                   },
-                  jointBrokeragePartner: {
-                    select: {
-                      id: true,
-                      name: true,
-                      phone: true,
-                    },
-                  },
                 },
               },
-            },
-          },
-          jointBrokeragePartner: {
-            select: {
-              id: true,
-              name: true,
-              phone: true,
             },
           },
           advertisements: {
@@ -421,8 +477,10 @@ export class ListingsService {
 
   async findFilterSites(officeId: string) {
     const listings = await this.prisma.listing.findMany({
+      // 단지 필터의 매물/호실 카운트는 기본 목록과 같은 기준(열린 의뢰만)
       where: {
         officeId,
+        ...NON_CLOSED_INTAKE_LISTING_WHERE,
       },
       select: {
         propertyId: true,
@@ -488,6 +546,7 @@ export class ListingsService {
     const listing = await this.prisma.listing.findFirst({
       where: { id, officeId },
       include: {
+        intake: INTAKE_SELECT,
         property: {
           include: {
             site: {
@@ -515,28 +574,16 @@ export class ListingsService {
               orderBy: { createdAt: 'desc' },
             },
             listings: {
+              where: NON_CLOSED_INTAKE_LISTING_WHERE,
               orderBy: { createdAt: 'desc' },
               include: {
+                deals: OCCUPYING_DEALS_SELECT,
                 advertisements: {
                   orderBy: { createdAt: 'desc' },
                   take: 5,
                 },
-                jointBrokeragePartner: {
-                  select: {
-                    id: true,
-                    name: true,
-                    phone: true,
-                  },
-                },
               },
             },
-          },
-        },
-        jointBrokeragePartner: {
-          select: {
-            id: true,
-            name: true,
-            phone: true,
           },
         },
         advertisements: {
@@ -576,7 +623,7 @@ export class ListingsService {
       throw new NotFoundException('Property not found');
     }
 
-    const intake = await this.resolveActiveIntakeForCreate(
+    const intake = await this.resolveNonClosedIntakeForCreate(
       officeId,
       dto.propertyId,
       dto.intakeId,
@@ -586,10 +633,6 @@ export class ListingsService {
       officeId,
       intake.id,
       dto.transactionType,
-    );
-    await this.assertAccessiblePartnerBroker(
-      officeId,
-      dto.jointBrokeragePartnerId,
     );
 
     const listing = await this.prisma.listing.create({
@@ -609,30 +652,10 @@ export class ListingsService {
         moveInAvailableType: dto.moveInAvailableType,
         moveInAvailableFrom: dto.moveInAvailableFrom,
         moveInAvailableTo: dto.moveInAvailableTo,
-        isJointBrokerageRequired: dto.isJointBrokerageRequired,
-        jointBrokeragePartnerId: dto.jointBrokeragePartnerId,
+        isPaused: dto.isPaused,
         memo: dto.memo,
       },
-      include: {
-        property: {
-          include: {
-            site: true,
-            unit: {
-              include: {
-                dong: true,
-                siteUnitType: true,
-              },
-            },
-          },
-        },
-        jointBrokeragePartner: {
-          select: {
-            id: true,
-            name: true,
-            phone: true,
-          },
-        },
-      },
+      include: LISTING_UPDATE_INCLUDE,
     });
 
     this.realtime?.emitListingUpdated({
@@ -669,18 +692,6 @@ export class ListingsService {
       );
     }
 
-    if (patch.checkStatus) {
-      this.assertValidCheckStatus(patch.checkStatus);
-      this.assertCheckStatusTransition(
-        existingListing.checkStatus,
-        patch.checkStatus,
-      );
-    }
-    await this.assertAccessiblePartnerBroker(
-      officeId,
-      patch.jointBrokeragePartnerId,
-    );
-
     // transactionType 은 [intakeId, transactionType] 복합 unique 키의 일부다.
     // 값이 그대로여도 UPDATE 의 SET 대상에 포함되면 PostgreSQL 이 행 잠금을
     // FOR UPDATE(배타)로 승격시켜, 감사 미들웨어의 트랜잭션 밖 price_histories
@@ -710,32 +721,6 @@ export class ListingsService {
       }
 
       listing = await this.findOne(id, officeId);
-    } else if (patch.checkStatus) {
-      // 상태 전환은 행 잠금 후 최신 상태로 재검증해 TOCTOU 를 막는다.
-      // updateMany 조건부 갱신은 ActivityLog/PriceHistory 미들웨어(단건 update 훅)를
-      // 우회하므로 쓰지 않는다 — 일반 편집 폼이 가격과 상태를 함께 보내는 경우
-      // 가격 이력이 누락된다. 잠금 하의 일반 update 는 두 이력 모두 보존한다.
-      listing = await this.prisma.$transaction(async (tx) => {
-        // FOR NO KEY UPDATE: 동시 상태 전환(같은 잠금끼리 충돌)은 직렬화하면서,
-        // 감사 미들웨어가 트랜잭션 밖 커넥션으로 넣는 price_histories INSERT 의
-        // FK 잠금(FOR KEY SHARE)과는 호환된다 — FOR UPDATE 를 쓰면 가격+상태
-        // 동시 수정 시 자기 잠금 대기(self-lock)로 요청이 멈춘다.
-        const rows = await tx.$queryRaw<Array<{ check_status: string }>>`
-          SELECT check_status FROM listings
-          WHERE id = ${id}::uuid AND office_id = ${officeId}::uuid
-          FOR NO KEY UPDATE`;
-        if (rows.length === 0) {
-          throw new NotFoundException('Listing not found');
-        }
-        // 잠금 하 재검증 — findFirst 스냅샷과 달리 이 값은 커밋까지 불변
-        this.assertCheckStatusTransition(rows[0].check_status, patch.checkStatus!);
-
-        return tx.listing.update({
-          where: { id },
-          data: updateData,
-          include: LISTING_UPDATE_INCLUDE,
-        });
-      });
     } else {
       listing = await this.prisma.listing.update({
         where: { id },
@@ -752,68 +737,6 @@ export class ListingsService {
     });
 
     return listing;
-  }
-
-  async transitionCheckStatus(id: string, officeId: string, checkStatus: string) {
-    return this.update(id, officeId, { checkStatus });
-  }
-
-  /**
-   * 물건(호실) 단위 확인 상태 일괄 전환 — 같은 호실의 매매/전세/월세 Listing 이
-   * 하나의 상태를 공유하는 UI 를 위해 원자적으로 전환한다.
-   * updateMany 대신 트랜잭션 내 개별 update 를 사용해 ActivityLog 미들웨어의
-   * 레코드별 감사 추적을 유지한다. 하나라도 실패하면 전체 롤백.
-   */
-  async bulkTransitionCheckStatus(
-    listingIds: string[],
-    officeId: string,
-    checkStatus: string,
-  ) {
-    this.assertValidCheckStatus(checkStatus);
-    const uniqueIds = Array.from(new Set(listingIds));
-    if (uniqueIds.length === 0) return { count: 0 };
-
-    // 검증-갱신 사이에 다른 요청이 상태를 바꾸면 금지 전환이 기록될 수 있으므로
-    // (TOCTOU), 트랜잭션 안에서 행 잠금(FOR UPDATE) 후 검증하고 같은 잠금
-    // 아래에서 갱신한다. 동시 전환 요청은 잠금 해제 후 자신의 검증을 다시 탄다.
-    const listings = await this.prisma.$transaction(async (tx) => {
-      const rows = await tx.$queryRaw<
-        Array<{ id: string; property_id: string; intake_id: string; check_status: string }>
-      >`
-        SELECT id, property_id, intake_id, check_status FROM listings
-        WHERE id = ANY(${uniqueIds}::uuid[]) AND office_id = ${officeId}::uuid
-        FOR NO KEY UPDATE`;
-      if (rows.length !== uniqueIds.length) {
-        throw new NotFoundException('Listing not found');
-      }
-
-      // 단건 경로와 동일한 파이프라인 전환 규칙 — 하나라도 금지 전환이면
-      // (예: done → unverified) 전체 롤백으로 아무것도 반영하지 않는다.
-      for (const row of rows) {
-        this.assertCheckStatusTransition(row.check_status, checkStatus);
-      }
-
-      for (const row of rows) {
-        if (row.check_status === checkStatus) continue;
-        // 개별 update 유지 — ActivityLog 미들웨어의 레코드별 감사 추적 보존
-        await tx.listing.update({
-          where: { id: row.id },
-          data: { checkStatus },
-        });
-      }
-      return rows;
-    });
-
-    for (const listing of listings) {
-      this.realtime?.emitListingUpdated({
-        officeId,
-        listingId: listing.id,
-        propertyId: listing.property_id,
-        intakeId: listing.intake_id,
-      });
-    }
-
-    return { count: listings.length };
   }
 
   async remove(id: string, officeId: string) {
@@ -902,24 +825,33 @@ export class ListingsService {
     }
   }
 
-  private async resolveActiveIntakeForCreate(
+  /**
+   * 매물 생성 시 붙일 닫히지 않은 의뢰를 찾거나 생성한다.
+   * open/hold 의뢰가 있으면 재사용하고 closed 의뢰에는 추가하지 않는다.
+   * 동시 생성 경쟁은 DB partial unique index 가 잡아주며, 충돌 시 재조회한다.
+   */
+  private async resolveNonClosedIntakeForCreate(
     officeId: string,
     propertyId: string,
     intakeId?: string | null,
   ) {
+    const nonClosedLifecycleFilter = {
+      in: [...NON_CLOSED_INTAKE_LIFECYCLE_STATUSES],
+    };
+
     if (intakeId) {
       const intake = await this.prisma.listingIntake.findFirst({
         where: {
           id: intakeId,
           officeId,
           propertyId,
-          status: ACTIVE_INTAKE_STATUS,
+          lifecycleStatus: nonClosedLifecycleFilter,
         },
         select: { id: true },
       });
 
       if (!intake) {
-        throw new NotFoundException('Active ListingIntake not found');
+        throw new NotFoundException('Non-closed ListingIntake not found');
       }
 
       return intake;
@@ -929,7 +861,7 @@ export class ListingsService {
       where: {
         officeId,
         propertyId,
-        status: ACTIVE_INTAKE_STATUS,
+        lifecycleStatus: nonClosedLifecycleFilter,
       },
       select: { id: true },
     });
@@ -938,48 +870,39 @@ export class ListingsService {
       return existingIntake;
     }
 
-    return this.prisma.listingIntake.create({
-      data: {
-        officeId,
-        propertyId,
-      },
-      select: { id: true },
-    });
-  }
-
-  private async assertAccessiblePartnerBroker(
-    officeId: string,
-    partnerBrokerId?: string | null,
-  ) {
-    if (!partnerBrokerId) return;
-
-    const partnerBroker = await this.prisma.partnerBroker.findFirst({
-      where: { id: partnerBrokerId, officeId },
-      select: { id: true },
-    });
-
-    if (!partnerBroker) {
-      throw new NotFoundException('PartnerBroker not found');
+    try {
+      return await this.prisma.listingIntake.create({
+        data: {
+          officeId,
+          propertyId,
+          lifecycleChangedAt: new Date(),
+          lifecycleChangedBy: 'user',
+        },
+        select: { id: true },
+      });
+    } catch (error) {
+      // 동시 생성 경쟁 — partial unique index 충돌이면 먼저 생성된 열린 의뢰 재사용
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
+        const raced = await this.prisma.listingIntake.findFirst({
+          where: {
+            officeId,
+            propertyId,
+            lifecycleStatus: nonClosedLifecycleFilter,
+          },
+          select: { id: true },
+        });
+        if (raced) return raced;
+      }
+      throw error;
     }
   }
 
-  private assertValidCheckStatus(checkStatus: string) {
-    if (!VALID_CHECK_STATUSES.has(checkStatus as CheckStatus)) {
-      throw new BadRequestException('Invalid checkStatus');
-    }
-  }
-
-  private assertCheckStatusTransition(current: string, next: string) {
-    if (current === next) {
-      return;
-    }
-
-    const allowedTransitions = CHECK_STATUS_TRANSITIONS[current] ?? [];
-
-    if (!allowedTransitions.includes(next)) {
-      throw new BadRequestException(
-        `Invalid checkStatus transition: ${current} -> ${next}`,
-      );
+  private assertValidIntakeLifecycleStatus(lifecycleStatus: string) {
+    if (!VALID_INTAKE_LIFECYCLE_STATUSES.has(lifecycleStatus)) {
+      throw new BadRequestException('Invalid intake lifecycle status');
     }
   }
 

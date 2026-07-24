@@ -5,12 +5,10 @@ import LanguageDetector from 'i18next-browser-languagedetector';
 import koCommon from './locales/ko/common.json';
 import koSidebar from './locales/ko/sidebar.json';
 import koSettings from './locales/ko/settings.json';
-import koInbox from './locales/ko/inbox.json';
 
 import enCommon from './locales/en/common.json';
 import enSidebar from './locales/en/sidebar.json';
 import enSettings from './locales/en/settings.json';
-import enInbox from './locales/en/inbox.json';
 
 export const SUPPORTED_LOCALES = ['ko', 'en'] as const;
 export type SupportedLocale = (typeof SUPPORTED_LOCALES)[number];
@@ -27,19 +25,17 @@ i18n
         common: koCommon,
         sidebar: koSidebar,
         settings: koSettings,
-        inbox: koInbox,
       },
       en: {
         common: enCommon,
         sidebar: enSidebar,
         settings: enSettings,
-        inbox: enInbox,
       },
     },
     fallbackLng: DEFAULT_LOCALE,
     supportedLngs: SUPPORTED_LOCALES as unknown as string[],
     defaultNS: 'common',
-    ns: ['common', 'sidebar', 'settings', 'inbox'],
+    ns: ['common', 'sidebar', 'settings'],
     interpolation: {
       escapeValue: false,
     },

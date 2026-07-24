@@ -1,6 +1,6 @@
 /**
  * 매물 상세($id) 페이지 전용 다이얼로그 모음.
- * - ListingFormDialog: 매물(Listing) 등록/수정 — 가격·확인상태·관리비·융자금·권리금·내부메모
+ * - ListingFormDialog: 매물(Listing) 등록/수정 — 가격·관리비·융자금·권리금·내부메모 (확인 상태는 의뢰 단위로 관리)
  * - PropertyContactAddDialog: 관련인 추가 (기존 연락처 검색 / 신규 생성)
  * - ConsultationAddDialog: 상담 기록 추가 (propertyId 자동 연결)
  * - TenantAddDialog: 임차인 추가
@@ -19,7 +19,6 @@ import {
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { formatMoney, formatPhone, formatRent } from '@/lib/format';
-import { getStatusMeta } from '@/lib/status-config';
 import { StatusBadge } from '@/components/domain';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -54,7 +53,6 @@ function getErrorMessage(err: unknown, fallback: string): string {
   return err instanceof Error && err.message ? err.message : fallback;
 }
 
-const CHECK_STATUS_VALUES = ['unverified', 'verified', 'in_contract', 'hold', 'done'] as const;
 
 const ROLE_OPTIONS = [
   { value: 'owner', label: '소유자' },
@@ -258,7 +256,6 @@ interface ListingFormState {
   price: string;
   deposit: string;
   monthlyRent: string;
-  checkStatus: string;
   maintenanceFee: string;
   maintenanceFeeIncludes: string[];
   loanAmount: string;
@@ -273,7 +270,6 @@ function initListingForm(listing: Listing | null): ListingFormState {
     price: listing?.price != null ? String(listing.price) : '',
     deposit: listing?.deposit != null ? String(listing.deposit) : '',
     monthlyRent: listing?.monthlyRent != null ? String(listing.monthlyRent) : '',
-    checkStatus: listing?.checkStatus ?? 'unverified',
     maintenanceFee: listing?.maintenanceFee != null ? String(listing.maintenanceFee) : '',
     maintenanceFeeIncludes: listing?.maintenanceFeeIncludes ?? [],
     loanAmount: listing?.loanAmount != null ? String(listing.loanAmount) : '',
@@ -325,7 +321,6 @@ export function ListingFormDialog({
       if (isEdit) {
         return api.listings.update(listing.id, {
           ...common,
-          checkStatus: form.checkStatus,
           memo: form.memo.trim() || undefined,
         });
       }
@@ -380,23 +375,7 @@ export function ListingFormDialog({
                 </Select>
               )}
             </div>
-            {isEdit && (
-              <div>
-                <Label className="text-xs">확인 상태</Label>
-                <Select value={form.checkStatus} onValueChange={(v) => set({ checkStatus: v })}>
-                  <SelectTrigger className="mt-1 h-8 w-full text-sm">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {CHECK_STATUS_VALUES.map((value) => (
-                      <SelectItem key={value} value={value}>
-                        {getStatusMeta('checkStatus', value).label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
+            {/* 확인 상태는 의뢰(ListingIntake) 단위로 관리 — 목록/상세의 의뢰 상태 칩에서 변경 */}
           </div>
 
           {isMonthly ? (

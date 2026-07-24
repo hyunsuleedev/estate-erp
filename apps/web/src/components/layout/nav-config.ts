@@ -6,7 +6,6 @@ import {
   FolderOpen,
   GitBranch,
   Handshake,
-  Inbox,
   LayoutDashboard,
   ListTodo,
   Map,
@@ -74,7 +73,6 @@ export const NAV_ITEMS: NavItem[] = [
     icon: LayoutDashboard,
     group: 'start',
   },
-  { path: '/inbox', label: 'AI 검토함', icon: Inbox, group: 'start' },
   // AI 채팅 — UI 선행 (백엔드는 Phase 2 연결)
   { path: '/ai-chat', label: 'AI 채팅', icon: Sparkles, group: 'start' },
 
@@ -223,7 +221,6 @@ export const ROUTE_LABELS: Record<string, string> = {
   // 홈
   '/_authenticated/dashboard': '대시보드',
   '/_authenticated/ai-chat/': 'AI 채팅',
-  '/_authenticated/inbox/': 'AI 검토함',
   '/_authenticated/tasks/': '업무',
   '/_authenticated/calendar/': '캘린더',
   // 매물

@@ -190,15 +190,86 @@ export const ListingAdvertisementChannel = {
 export type ListingAdvertisementChannel =
   (typeof ListingAdvertisementChannel)[keyof typeof ListingAdvertisementChannel];
 
-/** 매물 확인 상태 */
-export const CheckStatus = {
+/**
+ * 의뢰(ListingIntake)의 생명주기만 저장한다.
+ *
+ * - 확인 여부/신선도는 lastVerifiedAt, lastCheckResult, nextConfirmAt에서 파생
+ * - Listing의 거래중/완료는 점유 Deal에서 파생
+ * - Listing 옵션 단위 중지는 Listing.isPaused가 소유
+ */
+export const IntakeLifecycleStatus = {
+  OPEN: 'open',
+  HOLD: 'hold',
+  CLOSED: 'closed',
+} as const;
+export type IntakeLifecycleStatus =
+  (typeof IntakeLifecycleStatus)[keyof typeof IntakeLifecycleStatus];
+
+/** 닫히지 않은 의뢰 — DB partial unique index와 동일한 집합 */
+export const NON_CLOSED_INTAKE_LIFECYCLE_STATUSES = [
+  IntakeLifecycleStatus.OPEN,
+  IntakeLifecycleStatus.HOLD,
+] as const;
+
+/** 의뢰 확인 시도의 구조화된 최신 결과 */
+export const IntakeCheckResult = {
+  ALIVE: 'alive',
+  PRICE_CHANGED: 'price_changed',
+  UNAVAILABLE: 'unavailable',
+  NO_ANSWER: 'no_answer',
+  PENDING: 'pending',
+} as const;
+export type IntakeCheckResult =
+  (typeof IntakeCheckResult)[keyof typeof IntakeCheckResult];
+
+/** 의뢰 종결 사유 — closed 생명주기일 때 필수 */
+export const IntakeClosedReason = {
+  WITHDRAWN: 'withdrawn',
+  UNAVAILABLE: 'unavailable',
+  DEAL_COMPLETED: 'deal_completed',
+  SUPERSEDED: 'superseded',
+  OTHER: 'other',
+} as const;
+export type IntakeClosedReason =
+  (typeof IntakeClosedReason)[keyof typeof IntakeClosedReason];
+
+/** 화면/API에서 확인 이력으로 계산하는 확인 상태 */
+export const IntakeConfirmationState = {
   UNVERIFIED: 'unverified',
   VERIFIED: 'verified',
-  IN_CONTRACT: 'in_contract',
-  HOLD: 'hold',
-  DONE: 'done',
+  OVERDUE: 'overdue',
+  NO_ANSWER: 'no_answer',
 } as const;
-export type CheckStatus = (typeof CheckStatus)[keyof typeof CheckStatus];
+export type IntakeConfirmationState =
+  (typeof IntakeConfirmationState)[keyof typeof IntakeConfirmationState];
+
+/** Listing의 저장 컬럼이 아닌 표시/필터용 파생 가용 상태 */
+export const ListingAvailability = {
+  AVAILABLE: 'available',
+  PAUSED: 'paused',
+  IN_CONTRACT: 'in_contract',
+  COMPLETED: 'completed',
+  CLOSED: 'closed',
+} as const;
+export type ListingAvailability =
+  (typeof ListingAvailability)[keyof typeof ListingAvailability];
+
+/** Listing을 현재 계약 진행 중으로 표시하는 Deal 단계 */
+export const IN_CONTRACT_DEAL_STAGES = [
+  'preContract',
+  'contracted',
+  'settling',
+] as const;
+
+/** Listing의 거래를 종결짓는 Deal 단계 */
+export const DONE_DEAL_STAGES = ['completed', 'closed'] as const;
+
+/** Listing을 점유하는 모든 Deal 단계 — 진행 중 + 종결 */
+export const OCCUPYING_DEAL_STAGES = [
+  ...IN_CONTRACT_DEAL_STAGES,
+  'completed',
+  'closed',
+] as const;
 
 /** 매칭 파이프라인 스테이지 */
 export const MatchStage = {

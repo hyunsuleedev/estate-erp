@@ -6,11 +6,17 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import {
+  LISTING_INTAKE_STATE_SELECT,
+  OCCUPYING_DEALS_SELECT,
+} from '../listings/listing-state';
 import { MATCH_STAGES } from './dto/match.dto';
 
 const matchInclude = {
   listing: {
     include: {
+      intake: { select: LISTING_INTAKE_STATE_SELECT },
+      deals: OCCUPYING_DEALS_SELECT,
       property: {
         include: {
           site: true,

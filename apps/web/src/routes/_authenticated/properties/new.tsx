@@ -301,13 +301,16 @@ function NewPropertyPage() {
         moveInAvailableType: form.moveInAvailableType,
         moveInAvailableFrom: form.moveInAvailableFrom || undefined,
         moveInAvailableTo: form.moveInAvailableTo || undefined,
-        isJointBrokerageRequired: form.isJointBrokerageRequired || undefined,
-        jointBrokeragePartnerId:
-          form.isJointBrokerageRequired && form.jointBrokeragePartnerId
-            ? form.jointBrokeragePartnerId
-            : undefined,
         memo: form.memo || undefined,
       });
+
+      // 공동중개는 의뢰(ListingIntake)가 단일 소유 — 자동 생성된 의뢰에 반영
+      if (form.isJointBrokerageRequired) {
+        await api.listingIntakes.update(listing.intakeId, {
+          isJointBrokerageRequired: true,
+          jointBrokeragePartnerId: form.jointBrokeragePartnerId || null,
+        });
+      }
 
       // 3) Optional: owner
       if (form.addOwner && form.ownerName.trim()) {

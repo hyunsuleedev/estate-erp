@@ -25,7 +25,6 @@ import { Route as AuthenticatedPropertiesIndexRouteImport } from './routes/_auth
 import { Route as AuthenticatedPartnerBrokersIndexRouteImport } from './routes/_authenticated/partner-brokers/index'
 import { Route as AuthenticatedNetworkIndexRouteImport } from './routes/_authenticated/network/index'
 import { Route as AuthenticatedMatchesIndexRouteImport } from './routes/_authenticated/matches/index'
-import { Route as AuthenticatedInboxIndexRouteImport } from './routes/_authenticated/inbox/index'
 import { Route as AuthenticatedEmployeesIndexRouteImport } from './routes/_authenticated/employees/index'
 import { Route as AuthenticatedDocumentsIndexRouteImport } from './routes/_authenticated/documents/index'
 import { Route as AuthenticatedDealsIndexRouteImport } from './routes/_authenticated/deals/index'
@@ -138,11 +137,6 @@ const AuthenticatedMatchesIndexRoute =
     path: '/matches/',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
-const AuthenticatedInboxIndexRoute = AuthenticatedInboxIndexRouteImport.update({
-  id: '/inbox/',
-  path: '/inbox/',
-  getParentRoute: () => AuthenticatedRoute,
-} as any)
 const AuthenticatedEmployeesIndexRoute =
   AuthenticatedEmployeesIndexRouteImport.update({
     id: '/employees/',
@@ -335,7 +329,6 @@ export interface FileRoutesByFullPath {
   '/deals/': typeof AuthenticatedDealsIndexRoute
   '/documents/': typeof AuthenticatedDocumentsIndexRoute
   '/employees/': typeof AuthenticatedEmployeesIndexRoute
-  '/inbox/': typeof AuthenticatedInboxIndexRoute
   '/matches/': typeof AuthenticatedMatchesIndexRoute
   '/network/': typeof AuthenticatedNetworkIndexRoute
   '/partner-brokers/': typeof AuthenticatedPartnerBrokersIndexRoute
@@ -379,7 +372,6 @@ export interface FileRoutesByTo {
   '/deals': typeof AuthenticatedDealsIndexRoute
   '/documents': typeof AuthenticatedDocumentsIndexRoute
   '/employees': typeof AuthenticatedEmployeesIndexRoute
-  '/inbox': typeof AuthenticatedInboxIndexRoute
   '/matches': typeof AuthenticatedMatchesIndexRoute
   '/network': typeof AuthenticatedNetworkIndexRoute
   '/partner-brokers': typeof AuthenticatedPartnerBrokersIndexRoute
@@ -426,7 +418,6 @@ export interface FileRoutesById {
   '/_authenticated/deals/': typeof AuthenticatedDealsIndexRoute
   '/_authenticated/documents/': typeof AuthenticatedDocumentsIndexRoute
   '/_authenticated/employees/': typeof AuthenticatedEmployeesIndexRoute
-  '/_authenticated/inbox/': typeof AuthenticatedInboxIndexRoute
   '/_authenticated/matches/': typeof AuthenticatedMatchesIndexRoute
   '/_authenticated/network/': typeof AuthenticatedNetworkIndexRoute
   '/_authenticated/partner-brokers/': typeof AuthenticatedPartnerBrokersIndexRoute
@@ -472,7 +463,6 @@ export interface FileRouteTypes {
     | '/deals/'
     | '/documents/'
     | '/employees/'
-    | '/inbox/'
     | '/matches/'
     | '/network/'
     | '/partner-brokers/'
@@ -516,7 +506,6 @@ export interface FileRouteTypes {
     | '/deals'
     | '/documents'
     | '/employees'
-    | '/inbox'
     | '/matches'
     | '/network'
     | '/partner-brokers'
@@ -562,7 +551,6 @@ export interface FileRouteTypes {
     | '/_authenticated/deals/'
     | '/_authenticated/documents/'
     | '/_authenticated/employees/'
-    | '/_authenticated/inbox/'
     | '/_authenticated/matches/'
     | '/_authenticated/network/'
     | '/_authenticated/partner-brokers/'
@@ -694,13 +682,6 @@ declare module '@tanstack/react-router' {
       path: '/matches'
       fullPath: '/matches/'
       preLoaderRoute: typeof AuthenticatedMatchesIndexRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
-    '/_authenticated/inbox/': {
-      id: '/_authenticated/inbox/'
-      path: '/inbox'
-      fullPath: '/inbox/'
-      preLoaderRoute: typeof AuthenticatedInboxIndexRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/employees/': {
@@ -935,7 +916,6 @@ interface AuthenticatedRouteChildren {
   AuthenticatedDealsIndexRoute: typeof AuthenticatedDealsIndexRoute
   AuthenticatedDocumentsIndexRoute: typeof AuthenticatedDocumentsIndexRoute
   AuthenticatedEmployeesIndexRoute: typeof AuthenticatedEmployeesIndexRoute
-  AuthenticatedInboxIndexRoute: typeof AuthenticatedInboxIndexRoute
   AuthenticatedMatchesIndexRoute: typeof AuthenticatedMatchesIndexRoute
   AuthenticatedNetworkIndexRoute: typeof AuthenticatedNetworkIndexRoute
   AuthenticatedPartnerBrokersIndexRoute: typeof AuthenticatedPartnerBrokersIndexRoute
@@ -982,7 +962,6 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedDealsIndexRoute: AuthenticatedDealsIndexRoute,
   AuthenticatedDocumentsIndexRoute: AuthenticatedDocumentsIndexRoute,
   AuthenticatedEmployeesIndexRoute: AuthenticatedEmployeesIndexRoute,
-  AuthenticatedInboxIndexRoute: AuthenticatedInboxIndexRoute,
   AuthenticatedMatchesIndexRoute: AuthenticatedMatchesIndexRoute,
   AuthenticatedNetworkIndexRoute: AuthenticatedNetworkIndexRoute,
   AuthenticatedPartnerBrokersIndexRoute: AuthenticatedPartnerBrokersIndexRoute,

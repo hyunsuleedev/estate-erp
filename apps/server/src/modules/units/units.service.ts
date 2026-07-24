@@ -9,6 +9,11 @@ import {
   contactPhonesIncludeOrdered,
   withPrimaryPhone,
 } from '../contacts/contact-phone.utils';
+import {
+  LISTING_INTAKE_STATE_SELECT,
+  NON_CLOSED_INTAKE_WHERE,
+  OCCUPYING_DEALS_SELECT,
+} from '../listings/listing-state';
 
 // 토지(land)는 Unit 자체를 만들지 않는다.
 // 그 외(아파트/오피스텔/빌라/상가/지식산업센터 등 건물형)는 모두
@@ -72,8 +77,16 @@ export class UnitsService {
               include: { contact: { include: { phones: contactPhonesIncludeOrdered } } },
             },
             listings: {
-              where: { officeId, isHidden: false },
+              where: {
+                officeId,
+                isHidden: false,
+                intake: NON_CLOSED_INTAKE_WHERE,
+              },
               orderBy: { updatedAt: 'desc' },
+              include: {
+                intake: { select: LISTING_INTAKE_STATE_SELECT },
+                deals: OCCUPYING_DEALS_SELECT,
+              },
             },
           },
         },

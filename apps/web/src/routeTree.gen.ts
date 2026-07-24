@@ -14,7 +14,6 @@ import { Route as AuthRouteImport } from './routes/_auth'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as OnboardingOfficeRouteImport } from './routes/onboarding.office'
 import { Route as DevShellPreviewRouteImport } from './routes/dev.shell-preview'
-import { Route as DevHitlPreviewRouteImport } from './routes/dev.hitl-preview'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
 import { Route as AuthRegisterRouteImport } from './routes/_auth/register'
 import { Route as AuthLoginRouteImport } from './routes/_auth/login'
@@ -26,7 +25,6 @@ import { Route as AuthenticatedPropertiesIndexRouteImport } from './routes/_auth
 import { Route as AuthenticatedPartnerBrokersIndexRouteImport } from './routes/_authenticated/partner-brokers/index'
 import { Route as AuthenticatedNetworkIndexRouteImport } from './routes/_authenticated/network/index'
 import { Route as AuthenticatedMatchesIndexRouteImport } from './routes/_authenticated/matches/index'
-import { Route as AuthenticatedInboxIndexRouteImport } from './routes/_authenticated/inbox/index'
 import { Route as AuthenticatedEmployeesIndexRouteImport } from './routes/_authenticated/employees/index'
 import { Route as AuthenticatedDocumentsIndexRouteImport } from './routes/_authenticated/documents/index'
 import { Route as AuthenticatedDealsIndexRouteImport } from './routes/_authenticated/deals/index'
@@ -75,11 +73,6 @@ const OnboardingOfficeRoute = OnboardingOfficeRouteImport.update({
 const DevShellPreviewRoute = DevShellPreviewRouteImport.update({
   id: '/dev/shell-preview',
   path: '/dev/shell-preview',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const DevHitlPreviewRoute = DevHitlPreviewRouteImport.update({
-  id: '/dev/hitl-preview',
-  path: '/dev/hitl-preview',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthenticatedDashboardRoute = AuthenticatedDashboardRouteImport.update({
@@ -143,11 +136,6 @@ const AuthenticatedMatchesIndexRoute =
     path: '/matches/',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
-const AuthenticatedInboxIndexRoute = AuthenticatedInboxIndexRouteImport.update({
-  id: '/inbox/',
-  path: '/inbox/',
-  getParentRoute: () => AuthenticatedRoute,
-} as any)
 const AuthenticatedEmployeesIndexRoute =
   AuthenticatedEmployeesIndexRouteImport.update({
     id: '/employees/',
@@ -307,7 +295,6 @@ export interface FileRoutesByFullPath {
   '/login': typeof AuthLoginRoute
   '/register': typeof AuthRegisterRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
-  '/dev/hitl-preview': typeof DevHitlPreviewRoute
   '/dev/shell-preview': typeof DevShellPreviewRoute
   '/onboarding/office': typeof OnboardingOfficeRoute
   '/buyer-requirements/$id': typeof AuthenticatedBuyerRequirementsIdRoute
@@ -335,7 +322,6 @@ export interface FileRoutesByFullPath {
   '/deals/': typeof AuthenticatedDealsIndexRoute
   '/documents/': typeof AuthenticatedDocumentsIndexRoute
   '/employees/': typeof AuthenticatedEmployeesIndexRoute
-  '/inbox/': typeof AuthenticatedInboxIndexRoute
   '/matches/': typeof AuthenticatedMatchesIndexRoute
   '/network/': typeof AuthenticatedNetworkIndexRoute
   '/partner-brokers/': typeof AuthenticatedPartnerBrokersIndexRoute
@@ -351,7 +337,6 @@ export interface FileRoutesByTo {
   '/login': typeof AuthLoginRoute
   '/register': typeof AuthRegisterRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
-  '/dev/hitl-preview': typeof DevHitlPreviewRoute
   '/dev/shell-preview': typeof DevShellPreviewRoute
   '/onboarding/office': typeof OnboardingOfficeRoute
   '/buyer-requirements/$id': typeof AuthenticatedBuyerRequirementsIdRoute
@@ -379,7 +364,6 @@ export interface FileRoutesByTo {
   '/deals': typeof AuthenticatedDealsIndexRoute
   '/documents': typeof AuthenticatedDocumentsIndexRoute
   '/employees': typeof AuthenticatedEmployeesIndexRoute
-  '/inbox': typeof AuthenticatedInboxIndexRoute
   '/matches': typeof AuthenticatedMatchesIndexRoute
   '/network': typeof AuthenticatedNetworkIndexRoute
   '/partner-brokers': typeof AuthenticatedPartnerBrokersIndexRoute
@@ -398,7 +382,6 @@ export interface FileRoutesById {
   '/_auth/login': typeof AuthLoginRoute
   '/_auth/register': typeof AuthRegisterRoute
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
-  '/dev/hitl-preview': typeof DevHitlPreviewRoute
   '/dev/shell-preview': typeof DevShellPreviewRoute
   '/onboarding/office': typeof OnboardingOfficeRoute
   '/_authenticated/buyer-requirements/$id': typeof AuthenticatedBuyerRequirementsIdRoute
@@ -426,7 +409,6 @@ export interface FileRoutesById {
   '/_authenticated/deals/': typeof AuthenticatedDealsIndexRoute
   '/_authenticated/documents/': typeof AuthenticatedDocumentsIndexRoute
   '/_authenticated/employees/': typeof AuthenticatedEmployeesIndexRoute
-  '/_authenticated/inbox/': typeof AuthenticatedInboxIndexRoute
   '/_authenticated/matches/': typeof AuthenticatedMatchesIndexRoute
   '/_authenticated/network/': typeof AuthenticatedNetworkIndexRoute
   '/_authenticated/partner-brokers/': typeof AuthenticatedPartnerBrokersIndexRoute
@@ -444,7 +426,6 @@ export interface FileRouteTypes {
     | '/login'
     | '/register'
     | '/dashboard'
-    | '/dev/hitl-preview'
     | '/dev/shell-preview'
     | '/onboarding/office'
     | '/buyer-requirements/$id'
@@ -472,7 +453,6 @@ export interface FileRouteTypes {
     | '/deals/'
     | '/documents/'
     | '/employees/'
-    | '/inbox/'
     | '/matches/'
     | '/network/'
     | '/partner-brokers/'
@@ -488,7 +468,6 @@ export interface FileRouteTypes {
     | '/login'
     | '/register'
     | '/dashboard'
-    | '/dev/hitl-preview'
     | '/dev/shell-preview'
     | '/onboarding/office'
     | '/buyer-requirements/$id'
@@ -516,7 +495,6 @@ export interface FileRouteTypes {
     | '/deals'
     | '/documents'
     | '/employees'
-    | '/inbox'
     | '/matches'
     | '/network'
     | '/partner-brokers'
@@ -534,7 +512,6 @@ export interface FileRouteTypes {
     | '/_auth/login'
     | '/_auth/register'
     | '/_authenticated/dashboard'
-    | '/dev/hitl-preview'
     | '/dev/shell-preview'
     | '/onboarding/office'
     | '/_authenticated/buyer-requirements/$id'
@@ -562,7 +539,6 @@ export interface FileRouteTypes {
     | '/_authenticated/deals/'
     | '/_authenticated/documents/'
     | '/_authenticated/employees/'
-    | '/_authenticated/inbox/'
     | '/_authenticated/matches/'
     | '/_authenticated/network/'
     | '/_authenticated/partner-brokers/'
@@ -578,7 +554,6 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthRoute: typeof AuthRouteWithChildren
   AuthenticatedRoute: typeof AuthenticatedRouteWithChildren
-  DevHitlPreviewRoute: typeof DevHitlPreviewRoute
   DevShellPreviewRoute: typeof DevShellPreviewRoute
   OnboardingOfficeRoute: typeof OnboardingOfficeRoute
 }
@@ -618,13 +593,6 @@ declare module '@tanstack/react-router' {
       path: '/dev/shell-preview'
       fullPath: '/dev/shell-preview'
       preLoaderRoute: typeof DevShellPreviewRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/dev/hitl-preview': {
-      id: '/dev/hitl-preview'
-      path: '/dev/hitl-preview'
-      fullPath: '/dev/hitl-preview'
-      preLoaderRoute: typeof DevHitlPreviewRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_authenticated/dashboard': {
@@ -702,13 +670,6 @@ declare module '@tanstack/react-router' {
       path: '/matches'
       fullPath: '/matches/'
       preLoaderRoute: typeof AuthenticatedMatchesIndexRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
-    '/_authenticated/inbox/': {
-      id: '/_authenticated/inbox/'
-      path: '/inbox'
-      fullPath: '/inbox/'
-      preLoaderRoute: typeof AuthenticatedInboxIndexRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/employees/': {
@@ -935,7 +896,6 @@ interface AuthenticatedRouteChildren {
   AuthenticatedDealsIndexRoute: typeof AuthenticatedDealsIndexRoute
   AuthenticatedDocumentsIndexRoute: typeof AuthenticatedDocumentsIndexRoute
   AuthenticatedEmployeesIndexRoute: typeof AuthenticatedEmployeesIndexRoute
-  AuthenticatedInboxIndexRoute: typeof AuthenticatedInboxIndexRoute
   AuthenticatedMatchesIndexRoute: typeof AuthenticatedMatchesIndexRoute
   AuthenticatedNetworkIndexRoute: typeof AuthenticatedNetworkIndexRoute
   AuthenticatedPartnerBrokersIndexRoute: typeof AuthenticatedPartnerBrokersIndexRoute
@@ -981,7 +941,6 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedDealsIndexRoute: AuthenticatedDealsIndexRoute,
   AuthenticatedDocumentsIndexRoute: AuthenticatedDocumentsIndexRoute,
   AuthenticatedEmployeesIndexRoute: AuthenticatedEmployeesIndexRoute,
-  AuthenticatedInboxIndexRoute: AuthenticatedInboxIndexRoute,
   AuthenticatedMatchesIndexRoute: AuthenticatedMatchesIndexRoute,
   AuthenticatedNetworkIndexRoute: AuthenticatedNetworkIndexRoute,
   AuthenticatedPartnerBrokersIndexRoute: AuthenticatedPartnerBrokersIndexRoute,
@@ -1002,7 +961,6 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthRoute: AuthRouteWithChildren,
   AuthenticatedRoute: AuthenticatedRouteWithChildren,
-  DevHitlPreviewRoute: DevHitlPreviewRoute,
   DevShellPreviewRoute: DevShellPreviewRoute,
   OnboardingOfficeRoute: OnboardingOfficeRoute,
 }

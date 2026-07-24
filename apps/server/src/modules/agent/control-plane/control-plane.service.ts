@@ -394,16 +394,6 @@ export class AgentControlPlaneService {
             SELECT exhausted."session_id" FROM exhausted
           )
           RETURNING exhausted_session."id"
-        ), reopened_reviews AS (
-          UPDATE "entity_drafts" AS stalled_review
-          SET "status" = 'pending',
-              "execution_error" = 'Agent retry limit reached; review returned to the human queue.',
-              "updated_at" = NOW()
-          WHERE stalled_review."status" = 'processing'
-            AND stalled_review."agent_session_id" IN (
-              SELECT exhausted."session_id" FROM exhausted
-          )
-          RETURNING stalled_review."id"
         ), reopened_tasks AS (
           UPDATE "tasks" AS stalled_task
           SET "status" = 'pending',

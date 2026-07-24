@@ -1,5 +1,15 @@
 import type { RequestFn } from '../client.js';
 import type { PaginatedResponse } from '../types.js';
+import type {
+  ListingIntakeState,
+  ListingOccupyingDeal,
+} from './listings.js';
+
+export interface ConsultationListingIntake extends ListingIntakeState {
+  id: string;
+  propertyId: string;
+  receivedAt: string;
+}
 
 export interface Consultation {
   id: string;
@@ -35,17 +45,14 @@ export interface Consultation {
       } | null;
     } | null;
   } | null;
-  listingIntake?: {
-    id: string;
-    status: string;
-    propertyId: string;
-    receivedAt: string;
-  } | null;
+  listingIntake?: ConsultationListingIntake | null;
   listing?: {
     id: string;
     transactionType: string;
     price: number | null;
-    checkStatus: string;
+    isPaused: boolean;
+    intake?: ListingIntakeState | null;
+    deals?: ListingOccupyingDeal[];
   } | null;
   match?: {
     id: string;

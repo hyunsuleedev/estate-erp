@@ -2,13 +2,35 @@ import { ConflictException } from '@nestjs/common';
 import { ListingsService } from './listings.service';
 
 jest.mock('@estate-erp/shared', () => ({
-  CheckStatus: {
+  IntakeLifecycleStatus: {
+    OPEN: 'open',
+    HOLD: 'hold',
+    CLOSED: 'closed',
+  },
+  NON_CLOSED_INTAKE_LIFECYCLE_STATUSES: ['open', 'hold'],
+  IntakeCheckResult: {
+    ALIVE: 'alive',
+    PRICE_CHANGED: 'price_changed',
+    UNAVAILABLE: 'unavailable',
+    NO_ANSWER: 'no_answer',
+    PENDING: 'pending',
+  },
+  IntakeConfirmationState: {
     UNVERIFIED: 'unverified',
     VERIFIED: 'verified',
-    IN_CONTRACT: 'in_contract',
-    HOLD: 'hold',
-    DONE: 'done',
+    OVERDUE: 'overdue',
+    NO_ANSWER: 'no_answer',
   },
+  ListingAvailability: {
+    AVAILABLE: 'available',
+    PAUSED: 'paused',
+    IN_CONTRACT: 'in_contract',
+    COMPLETED: 'completed',
+    CLOSED: 'closed',
+  },
+  IN_CONTRACT_DEAL_STAGES: ['preContract', 'contracted', 'settling'],
+  OCCUPYING_DEAL_STAGES: ['preContract', 'contracted', 'settling', 'completed', 'closed'],
+  DONE_DEAL_STAGES: ['completed', 'closed'],
   TransactionType: {
     SALE: 'sale',
     JEONSE: 'jeonse',
@@ -48,8 +70,7 @@ describe('ListingsService', () => {
       $queryRaw: jest.fn(),
       $transaction: jest.fn(),
     };
-    // checkStatus 전환 경로는 인터랙티브 트랜잭션(FOR UPDATE 잠금)을 사용한다 —
-    // tx 로 prisma mock 자신을 넘겨 tx.$queryRaw / tx.listing.update 를 공유.
+    // 인터랙티브 트랜잭션은 tx 로 prisma mock 자신을 넘겨 공유한다.
     prisma.$transaction.mockImplementation(
       async (input: unknown) =>
         typeof input === 'function'
@@ -81,6 +102,8 @@ describe('ListingsService', () => {
       data: {
         officeId: 'office-1',
         propertyId: 'property-1',
+        lifecycleChangedAt: expect.any(Date),
+        lifecycleChangedBy: 'user',
       },
       select: { id: true },
     });
@@ -162,7 +185,6 @@ describe('ListingsService', () => {
         propertyId: 'property-1',
         intakeId: 'intake-1',
         transactionType: 'jeonse',
-        checkStatus: 'unverified',
       })
       .mockResolvedValueOnce({ id: 'listing-2' });
     prisma.listing.update.mockResolvedValue({ id: 'listing-1' });
@@ -186,17 +208,15 @@ describe('ListingsService', () => {
       propertyId: 'property-1',
       intakeId: 'intake-1',
       transactionType: 'sale',
-      checkStatus: 'verified',
+      price: 160000,
     };
     prisma.listing.findFirst.mockResolvedValue({
       ...updatedListing,
-      checkStatus: 'unverified',
+      price: 150000,
     });
-    // FOR UPDATE 잠금 하 재검증용 현재 상태
-    prisma.$queryRaw.mockResolvedValue([{ check_status: 'unverified' }]);
     prisma.listing.update.mockResolvedValue(updatedListing);
 
-    await service.update('listing-1', 'office-1', { checkStatus: 'verified' });
+    await service.update('listing-1', 'office-1', { price: 160000 });
 
     expect(realtime.emitListingUpdated).toHaveBeenCalledWith({
       officeId: 'office-1',
@@ -204,26 +224,6 @@ describe('ListingsService', () => {
       propertyId: 'property-1',
       intakeId: 'intake-1',
     });
-  });
-
-  it('rejects a stale status transition when the row changed after validation (lock re-check)', async () => {
-    const { prisma, service } = createService();
-    prisma.listing.findFirst.mockResolvedValue({
-      id: 'listing-1',
-      officeId: 'office-1',
-      propertyId: 'property-1',
-      intakeId: 'intake-1',
-      transactionType: 'sale',
-      checkStatus: 'hold', // 스냅샷 시점: hold → verified 허용
-    });
-    // 잠금 시점에는 이미 done — done → verified 는 금지 전환
-    prisma.$queryRaw.mockResolvedValue([{ check_status: 'done' }]);
-
-    await expect(
-      service.update('listing-1', 'office-1', { checkStatus: 'verified' }),
-    ).rejects.toMatchObject({ status: 400 });
-
-    expect(prisma.listing.update).not.toHaveBeenCalled();
   });
 
   it('emits a realtime listing update after creating a listing', async () => {
@@ -238,7 +238,6 @@ describe('ListingsService', () => {
       propertyId: 'property-1',
       intakeId: 'intake-1',
       transactionType: 'sale',
-      checkStatus: 'unverified',
     };
     prisma.property.findFirst.mockResolvedValue({ id: 'property-1' });
     prisma.listingIntake.findFirst.mockResolvedValue({ id: 'intake-1' });
@@ -271,7 +270,6 @@ describe('ListingsService', () => {
       propertyId: 'property-1',
       intakeId: 'intake-1',
       transactionType: 'sale',
-      checkStatus: 'unverified',
     };
     prisma.listing.findFirst.mockResolvedValue(listing);
     prisma.listing.delete.mockResolvedValue(listing);
@@ -294,7 +292,6 @@ describe('ListingsService', () => {
       propertyId: 'property-1',
       intakeId: 'intake-1',
       transactionType: 'sale',
-      checkStatus: 'unverified',
       updatedAt: new Date('2026-05-20T01:00:00.000Z'),
     });
     prisma.listing.updateMany.mockResolvedValue({ count: 0 });
@@ -374,6 +371,10 @@ describe('ListingsService', () => {
     expect(prisma.listing.findMany).toHaveBeenCalledWith({
       where: {
         officeId: 'office-1',
+        // 단지 필터 카운트도 기본 목록과 같은 기준 (종결되지 않은 의뢰만)
+        intake: {
+          lifecycleStatus: { in: ['open', 'hold'] },
+        },
       },
       select: {
         propertyId: true,
@@ -434,6 +435,52 @@ describe('ListingsService', () => {
     ]);
   });
 
+  it('excludes listings of closed intakes from the default list', async () => {
+    const { prisma, service } = createService();
+    prisma.listing.findMany.mockResolvedValue([]);
+    prisma.listing.count.mockResolvedValue(0);
+
+    await service.findAll('office-1');
+
+    expect(prisma.listing.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          AND: expect.arrayContaining([
+            {
+              intake: {
+                lifecycleStatus: { in: ['open', 'hold'] },
+              },
+            },
+          ]),
+        }),
+      }),
+    );
+  });
+
+  it('shows closed intakes when explicitly filtered or includeClosed is set', async () => {
+    const { prisma, service } = createService();
+    prisma.listing.findMany.mockResolvedValue([]);
+    prisma.listing.count.mockResolvedValue(0);
+
+    await service.findAll('office-1', {
+      intakeLifecycleStatus: 'closed',
+    });
+    expect(prisma.listing.findMany).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          AND: expect.arrayContaining([
+            { intake: { lifecycleStatus: 'closed' } },
+          ]),
+        }),
+      }),
+    );
+
+    await service.findAll('office-1', { includeClosed: true });
+    // includeClosed: 의뢰 상태 필터 자체가 빠진다
+    const lastWhere = prisma.listing.findMany.mock.calls.at(-1)[0].where;
+    expect(JSON.stringify(lastWhere)).not.toContain('intake');
+  });
+
   it('loads tenant and advertisement records for property list rows', async () => {
     const { prisma, service } = createService();
     prisma.listing.findMany.mockResolvedValue([]);
@@ -465,10 +512,9 @@ describe('ListingsService', () => {
                   moveInAvailableType: true,
                   moveInAvailableFrom: true,
                   moveInAvailableTo: true,
-                  isJointBrokerageRequired: true,
-                  jointBrokeragePartnerId: true,
-                  jointBrokeragePartner: expect.objectContaining({
-                    select: { id: true, name: true, phone: true },
+                  isPaused: true,
+                  deals: expect.objectContaining({
+                    select: { id: true, stage: true, stageChangedAt: true },
                   }),
                   advertisements: expect.objectContaining({
                     orderBy: { createdAt: 'desc' },

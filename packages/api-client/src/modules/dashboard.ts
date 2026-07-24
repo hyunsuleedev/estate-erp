@@ -24,8 +24,6 @@ export interface DashboardCounts {
   /** stage not in (completed, closed), isCancelled=false */
   activeDeals: number;
   pendingTasks: number;
-  /** EntityDraft pending + Proposal pending */
-  pendingInbox: number;
   todayEvents: number;
   /** 60일 내 계약 만료 예정 세입자 (residing) */
   expiringTenants: number;

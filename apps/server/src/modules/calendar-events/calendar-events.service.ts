@@ -4,6 +4,10 @@ import {
   contactPhonesSelectOrdered,
   withPrimaryPhone,
 } from '../contacts/contact-phone.utils';
+import {
+  LISTING_INTAKE_STATE_SELECT,
+  OCCUPYING_DEALS_SELECT,
+} from '../listings/listing-state';
 
 const defaultInclude = {
   user: { select: { id: true, name: true } },
@@ -13,12 +17,21 @@ const defaultInclude = {
   listingIntake: {
     select: {
       id: true,
-      status: true,
+      ...LISTING_INTAKE_STATE_SELECT,
       propertyId: true,
       receivedAt: true,
     },
   },
-  listing: { select: { id: true, transactionType: true, price: true, checkStatus: true } },
+  listing: {
+    select: {
+      id: true,
+      transactionType: true,
+      price: true,
+      isPaused: true,
+      intake: { select: LISTING_INTAKE_STATE_SELECT },
+      deals: OCCUPYING_DEALS_SELECT,
+    },
+  },
   contact: { select: { id: true, name: true, phones: contactPhonesSelectOrdered } },
   match: { select: { id: true, stage: true } },
   deal: { select: { id: true, stage: true } },

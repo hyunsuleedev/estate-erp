@@ -12,7 +12,6 @@ export type TabKind =
   | 'site'
   | 'contract'
   | 'cashflow'
-  | 'inbox'
   | 'employee'
   | 'settings'
   | 'dashboard'

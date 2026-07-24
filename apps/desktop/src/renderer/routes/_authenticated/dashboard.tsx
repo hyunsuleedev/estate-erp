@@ -8,7 +8,6 @@ import {
   FilePlus2,
   FileText,
   Handshake,
-  Inbox,
   ListTodo,
   SearchX,
   TriangleAlert,
@@ -45,7 +44,6 @@ interface StatCardProps {
   /** 대상 라우트로 전달할 검색 파라미터 (라우트별 validateSearch 정의에 의존) */
   search?: Record<string, unknown>;
   valueClassName?: string;
-  badge?: ReactNode;
   loading?: boolean;
 }
 
@@ -56,7 +54,6 @@ function StatCard({
   to,
   search,
   valueClassName,
-  badge,
   loading,
 }: StatCardProps) {
   return (
@@ -70,7 +67,6 @@ function StatCard({
           <Icon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
           <span className="truncate text-xs font-medium text-muted-foreground">{label}</span>
         </div>
-        {badge}
       </div>
       {loading ? (
         <Skeleton className="mt-2 h-7 w-16" />
@@ -102,13 +98,6 @@ function DashboardPage() {
     queryFn: () => api.dashboard.summary(),
   });
 
-  // 업무함 긴급 뱃지용 — 실패해도 뱃지만 생략 (별도 에러 UI 없음)
-  const urgentInbox = useQuery({
-    queryKey: ['proposals', { status: 'pending', priority: 'urgent' }],
-    queryFn: () => api.proposals.list({ status: 'pending', priority: 'urgent' }),
-    select: (rows) => rows.length,
-  });
-
   const cashflow = useQuery({
     queryKey: ['cashflow'],
     queryFn: () => api.finance.cashflow.summary(),
@@ -117,7 +106,6 @@ function DashboardPage() {
   const month = summary.data?.thisMonth;
   const counts = summary.data?.counts;
   const loading = summary.isLoading;
-  const urgentCount = urgentInbox.data ?? 0;
 
   return (
     <div className="flex flex-col gap-4">
@@ -136,7 +124,7 @@ function DashboardPage() {
           {/* 이번달 실적 KPI */}
           <section>
             <h2 className="mb-2 text-sm font-semibold">이번달 실적</h2>
-            <div className="grid gap-3 grid-cols-2 md:grid-cols-3 xl:grid-cols-6">
+            <div className="grid gap-3 grid-cols-2 md:grid-cols-3 xl:grid-cols-5">
               <StatCard
                 label="수금 완료"
                 icon={Wallet}
@@ -213,20 +201,6 @@ function DashboardPage() {
                 to="/deals"
                 loading={loading}
                 value={counts?.activeDeals ?? 0}
-              />
-              <StatCard
-                label="대기 업무함"
-                icon={Inbox}
-                to="/inbox"
-                loading={loading}
-                value={counts?.pendingInbox ?? 0}
-                badge={
-                  urgentCount > 0 ? (
-                    <span className="shrink-0 rounded-full bg-destructive-soft px-1.5 py-px text-[11px] font-semibold text-destructive tabular-nums">
-                      긴급 {urgentCount}
-                    </span>
-                  ) : undefined
-                }
               />
               <StatCard
                 label="미완료 업무"

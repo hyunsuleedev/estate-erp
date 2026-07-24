@@ -99,69 +99,7 @@ async function main() {
         where: { listingId: row.id },
         data: { listingId: survivorId },
       });
-      await tx.proposal.updateMany({
-        where: { listingId: row.id },
-        data: { listingId: survivorId },
-      });
       await tx.listingAdvertisement.updateMany({
-        where: { listingId: row.id },
-        data: { listingId: survivorId },
-      });
-      // AI 검토 초안(EntityDraft) 처리 — listingId 는 카드 컨텍스트 링크, entityId 가 실제 실행 대상.
-      // 삭제될 매물을 실행 대상으로 하는 활성 초안은 전제(연세 매물)가 사라지므로 만료 처리한다.
-      // 생존 매물로 재지정하면 연세 조건 기준으로 계산된 proposedChanges 가 월세 매물에
-      // 오적용될 수 있어 재지정하지 않는다. (실행 완료/거부된 이력은 감사 보존을 위해 유지)
-      // - 활성 상태 전체 커버: pending / processing(수정 요청 후 재제출 대기) / approved,
-      //   그리고 executing 중 락이 소멸한 것(worker 사망)까지. 기존 결정 메모(승인 사유 등)는
-      //   덮어쓰지 않고 뒤에 이어붙여 감사 기록을 보존한다.
-      // 만료 + 재시도 소진을 **단일 UPDATE** 로 처리한다 — 두 문장으로 나누면 그 사이에
-      // lease 회수(재큐잉)가 먼저 락을 잡아 executing→approved 로 빠져나간 행이
-      // 뒤 문장의 WHERE(status='executing')에 걸리지 않는 경합 창이 생긴다.
-      // 단일 문장에서는 행 락을 한 번만 잡고 SET 의 CASE 가 (락 획득 후 재평가된)
-      // 같은 행 버전을 기준으로 동작하므로 어떤 인터리빙에도 틈이 없다:
-      // - 활성 락 executing → 상태 유지(worker 미중단) + max_attempts=attempts 로 재시도 소진
-      //   → 이후 lease 회수/재시도 게이트(attempts >= max_attempts)가 failed 로 종결
-      // - 그 외 활성 상태(pending/processing/approved/락 소멸 executing) → expired
-      //   (기존 결정 메모는 보존하고 마이그레이션 사유를 이어붙임)
-      await tx.$executeRaw`
-        UPDATE entity_drafts SET
-          max_attempts = attempts,
-          status = CASE
-            WHEN status = 'executing' AND lock_expires_at IS NOT NULL AND lock_expires_at >= now()
-              THEN status
-            ELSE 'expired'
-          END,
-          decision_note = CASE
-            WHEN status = 'executing' AND lock_expires_at IS NOT NULL AND lock_expires_at >= now()
-              THEN decision_note
-            ELSE TRIM(COALESCE(decision_note || E'\n', '')
-              || '[연세 거래유형 폐기 마이그레이션] 대상 매물이 기존 월세 매물로 병합되어 자동 만료')
-          END,
-          claimed_at = CASE
-            WHEN status = 'executing' AND lock_expires_at IS NOT NULL AND lock_expires_at >= now()
-              THEN claimed_at ELSE NULL
-          END,
-          claimed_by = CASE
-            WHEN status = 'executing' AND lock_expires_at IS NOT NULL AND lock_expires_at >= now()
-              THEN claimed_by ELSE NULL
-          END,
-          lock_expires_at = CASE
-            WHEN status = 'executing' AND lock_expires_at IS NOT NULL AND lock_expires_at >= now()
-              THEN lock_expires_at ELSE NULL
-          END
-        WHERE entity_type = 'listing'
-          AND entity_id = ${row.id}::uuid
-          AND status IN ('pending', 'processing', 'approved', 'executing')`;
-      const stillExecutingRows = await tx.entityDraft.count({
-        where: { entityType: 'listing', entityId: row.id, status: 'executing' },
-      });
-      if (stillExecutingRows > 0) {
-        console.warn(
-          `  ⚠ 병합 매물 ${row.id} 을 실행 중인 초안 ${stillExecutingRows}건 — 재시도를 소진시켰으며 현재 실행이 끝나면 failed 로 종결됩니다.`,
-        );
-      }
-      // 카드 컨텍스트 링크는 생존 매물로 재지정 (업무함에서 도메인 점프가 살아있도록)
-      await tx.entityDraft.updateMany({
         where: { listingId: row.id },
         data: { listingId: survivorId },
       });

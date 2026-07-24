@@ -4,6 +4,10 @@ import {
   contactPhonesSelectOrdered,
   withPrimaryPhone,
 } from '../contacts/contact-phone.utils';
+import {
+  LISTING_INTAKE_STATE_SELECT,
+  OCCUPYING_DEALS_SELECT,
+} from '../listings/listing-state';
 
 @Injectable()
 export class TasksService {
@@ -18,12 +22,17 @@ export class TasksService {
     listingIntake: {
       select: {
         id: true,
-        status: true,
+        ...LISTING_INTAKE_STATE_SELECT,
         propertyId: true,
         receivedAt: true,
       },
     },
-    listing: true,
+    listing: {
+      include: {
+        intake: { select: LISTING_INTAKE_STATE_SELECT },
+        deals: OCCUPYING_DEALS_SELECT,
+      },
+    },
     consultation: true,
     buyerRequirement: {
       select: {

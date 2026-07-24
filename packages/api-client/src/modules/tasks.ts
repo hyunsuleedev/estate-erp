@@ -1,4 +1,8 @@
 import type { RequestFn } from '../client.js';
+import type {
+  ListingIntakeState,
+  ListingOccupyingDeal,
+} from './listings.js';
 
 export interface TaskAssignee {
   id: string;
@@ -50,12 +54,11 @@ export interface TaskListingSummary {
   moveInAvailableType: string | null;
   moveInAvailableFrom: string | null;
   moveInAvailableTo: string | null;
-  isJointBrokerageRequired: boolean;
-  jointBrokeragePartnerId: string | null;
-  checkStatus: string;
+  isPaused: boolean;
   isHidden: boolean;
   memo: string | null;
-  checkStatusChangedAt?: string | null;
+  intake?: ListingIntakeState | null;
+  deals?: ListingOccupyingDeal[];
   createdAt: string;
   updatedAt: string;
 }
@@ -76,9 +79,8 @@ export interface TaskConsultationSummary {
   updatedAt: string;
 }
 
-export interface TaskListingIntakeSummary {
+export interface TaskListingIntakeSummary extends ListingIntakeState {
   id: string;
-  status: string;
   propertyId: string;
   receivedAt: string;
 }

@@ -8,6 +8,10 @@ import {
   withPrimaryPhone,
   withPrimaryContactPhone,
 } from './contact-phone.utils';
+import {
+  LISTING_INTAKE_STATE_SELECT,
+  OCCUPYING_DEALS_SELECT,
+} from '../listings/listing-state';
 
 export interface ContactSearchQuery {
   search?: string;
@@ -348,7 +352,16 @@ export class ContactsService {
       include: {
         contact: { select: { id: true, name: true, phones: this.contactPhonesSelect() } },
         property: { select: { id: true, site: { select: { name: true } } } },
-        listing: { select: { id: true, transactionType: true, price: true, checkStatus: true } },
+        listing: {
+          select: {
+            id: true,
+            transactionType: true,
+            price: true,
+            isPaused: true,
+            intake: { select: LISTING_INTAKE_STATE_SELECT },
+            deals: OCCUPYING_DEALS_SELECT,
+          },
+        },
         createdBy: { select: { id: true, name: true } },
       },
       orderBy: { createdAt: 'desc' },

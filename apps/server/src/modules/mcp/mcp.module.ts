@@ -26,7 +26,6 @@ import { PropertyPhotosModule } from '../property-photos/property-photos.module'
 import { ListingAdvertisementsModule } from '../listing-advertisements/listing-advertisements.module';
 import { OfficeAdvertisementsModule } from '../office-advertisements/office-advertisements.module';
 import { AgentModule } from '../agent/agent.module';
-import { InboxModule } from '../inbox/inbox.module';
 import { McpController } from './mcp.controller';
 import { OAuthDiscoveryController } from './oauth-discovery.controller';
 import { McpServerFactory } from './mcp-server.factory';
@@ -64,7 +63,6 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
     ListingAdvertisementsModule,
     OfficeAdvertisementsModule,
     AgentModule,
-    InboxModule,
   ],
   controllers: [McpController, OAuthDiscoveryController],
   providers: [

@@ -41,16 +41,16 @@ model PublicDocument {
   cost Int @default(0)
 
   /// 실제 처리 공급자: building_hub, vworld, manual_upload 등
-  provider    String @default("manual")
+  provider    String    @default("manual")
   /// data(공공 API 데이터), view(열람), certificate(발급), upload(수동 연결)
-  requestMode String @default("data") @map("request_mode")
+  requestMode String    @default("data") @map("request_mode")
   /// 일괄 요청 묶음 ID
-  batchId     String? @map("batch_id") @db.Uuid
+  batchId     String?   @map("batch_id") @db.Uuid
   /// 요청/완료 시각
   requestedAt DateTime  @default(now()) @map("requested_at")
   completedAt DateTime? @map("completed_at")
   /// 공급자 응답에서 비밀키를 제거한 구조화 데이터와 요청 메타데이터
-  metadata Json? @db.JsonB
+  metadata    Json?     @db.JsonB
 
   /// 발급 상태: pending → completed → failed
   status       String  @default("pending")

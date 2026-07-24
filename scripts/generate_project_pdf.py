@@ -301,7 +301,7 @@ def build_story(styles):
     story.append(
         Paragraph(
             "모든 비즈니스 데이터는 office_id 기준으로 분리된다. Prisma middleware로 테넌트 격리를 "
-            "강제하며, 사용자·권한·감사 로그·규칙 엔진·네트워크 액션이 모두 사무소 단위로 동작한다.",
+            "강제하며, 사용자·권한·감사 로그·네트워크 액션이 모두 사무소 단위로 동작한다.",
             styles["KBody"],
         )
     )
@@ -409,7 +409,6 @@ def build_story(styles):
         "<b>크롤러 MCP</b> — 네이버 부동산 HTML 파싱 전용, 별도 패키지 @estate-erp/mcp-crawler.",
         "<b>로컬 MCP (Phase 3)</b> — Electron 호스팅, 크롤러 MCP 통합 등 로컬 전용 기능.",
         "<b>도구 예시</b> — search_listings, get_property, create_task, create_consultation, search_buyers, get_deal, upsert_external_listings.",
-        "<b>MCP → Proposal 연동</b> — 쓰기 권한이 없는 사용자의 MCP 요청은 Proposal(승인 큐)로 전환.",
     ]:
         story.append(bullet(item, styles))
 
@@ -444,7 +443,7 @@ def build_story(styles):
         ["매물 (Property)", "3", "Property, Listing, PriceHistory"],
         ["연락처 (Contact)", "4", "Contact, ContactRelation, PropertyContact, Tenant"],
         ["CRM 파이프라인", "6", "BuyerRequirement, Consultation, Match, Deal, Contract, DealParticipant"],
-        ["업무 / AI", "5", "Task, Rule, Proposal, CalendarEvent, ActivityLog"],
+        ["업무", "3", "Task, CalendarEvent, ActivityLog"],
         ["알림", "1", "Notification"],
         ["네트워크 (공동중개)", "5", "NetworkRoom, NetworkRoomMember, NetworkSharedProperty, NetworkInquiry, NetworkMessage"],
         ["외부 매물 (광고노트)", "2", "ExternalListingGroup, ExternalListing"],
@@ -501,11 +500,9 @@ def build_story(styles):
     ]:
         story.append(bullet(item, styles))
 
-    story.append(Paragraph("6.2 업무 운영 & AI 직원", styles["KH2"]))
+    story.append(Paragraph("6.2 업무 운영", styles["KH2"]))
     for item in [
         "Task (업무) · CalendarEvent (일정) · Notification (실시간 알림)",
-        "Rule Engine — @nestjs/schedule cron 기반 (ad_takedown, lease_expiry 등)",
-        "Proposal 승인 큐 — trustTier(auto / approval_required / inform_only)별 처리",
         "ActivityLog — 11개 핵심 엔티티의 모든 변경을 actor/source와 함께 감사 추적",
     ]:
         story.append(bullet(item, styles))
@@ -603,7 +600,6 @@ def build_story(styles):
         "인증 · 사무소 · 사용자 · 역할 · 멀티테넌시 격리",
         "매물 / 연락처 / 상담 / 매칭 / 거래 / 태스크 / 일정 CRUD + Listing 중심 파이프라인",
         "ActivityLog 기반 감사 추적 (AsyncLocalStorage + Prisma Middleware)",
-        "AI 직원 — Rule Engine (@nestjs/schedule cron) + Proposal 승인 큐",
         "수수료 / 캐시플로우 — CommissionPayment + 3뷰 대시보드 + 수금 캘린더",
         "고정비 관리 — OfficeExpenseTemplate",
         "공적장부 발급 UI 스캐폴딩 + 유료 API 연동",
@@ -657,7 +653,7 @@ def build_story(styles):
         ["플랜", "월 가격", "광고노트 단지", "핵심 기능"],
         ["무료", "0원", "2개", "CRM 기본 (매물·고객·상담·거래)"],
         ["기본", "9,900원", "20개", "수수료 정산 + 광고노트 + 공적장부"],
-        ["프로", "29,900원", "무제한", "AI 직원 + 직원관리 + 내부 AI 챗 + MCP"],
+        ["프로", "29,900원", "무제한", "직원관리 + 내부 AI 챗 + MCP"],
     ]
     story.append(make_table(plan_rows, [2.5 * cm, 2.5 * cm, 3 * cm, 8 * cm], styles))
 
@@ -696,11 +692,9 @@ def build_story(styles):
         ["문서", "설명"],
         ["prd.md", "제품 요구사항 (현재 문서의 출처)"],
         ["ARCHITECTURE.md", "시스템 구조 · MCP/CTI 전략 · 모노레포 구성"],
-        ["DATA_STRUCTURE.md", "ERD · 엔터티 설명 · 필드 규칙 (39 테이블)"],
+        ["DATA_STRUCTURE.md", "ERD · 엔터티 설명 · 필드 규칙 (37 테이블)"],
         ["PRODUCT_STRATEGY.md", "시장 · 경쟁 · AI · MCP 전략"],
         ["DECISIONS.md", "핵심 결정 · 미결정 사항 · 후속 과제"],
-        ["AI_OPERATIONS.md", "AI 운영 콘솔 확장 메모"],
-        ["ai-employee-architecture.md", "Rule Engine · Proposal 설계"],
         ["LOCAL_INFRA.md", "로컬 개발 인프라 실행 방법"],
         ["desktop-prd/", "desktop 페이지별 상세 PRD 하네스"],
         ["prisma/schema.prisma", "DB 스키마 (source of truth)"],

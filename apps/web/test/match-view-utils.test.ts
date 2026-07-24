@@ -123,7 +123,6 @@ describe('match view utilities', () => {
           moveInAvailableTo: null,
           isJointBrokerageRequired: false,
           jointBrokeragePartnerId: null,
-          checkStatus: 'verified',
           isHidden: false,
           memo: null,
           createdAt: '2026-04-20T00:00:00.000Z',

@@ -1,11 +1,9 @@
 import {
-  BadRequestException,
   ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 
 @Injectable()
@@ -195,78 +193,6 @@ export class OfficesService {
     return this.toOfficeProfile(updated);
   }
 
-  async updateAgentConfig(
-    officeId: string,
-    dto: {
-      agentEnabled?: boolean;
-      /** 키: Proposal type(=Rule name), 값: trust tier. null/'' 이면 오버라이드 제거(기본값 사용). */
-      agentTrustConfig?: Record<string, string | null>;
-    },
-  ) {
-    const office = await this.prisma.office.findUnique({
-      where: { id: officeId },
-      select: { id: true, agentTrustConfig: true },
-    });
-
-    if (!office) {
-      throw new NotFoundException('Office not found');
-    }
-
-    const VALID_TIERS = ['auto', 'approval_required', 'inform_only'];
-    let nextTrustConfig: Record<string, unknown> | undefined;
-
-    if (dto.agentTrustConfig) {
-      const current =
-        typeof office.agentTrustConfig === 'object' &&
-        office.agentTrustConfig !== null
-          ? { ...(office.agentTrustConfig as Record<string, unknown>) }
-          : {};
-
-      for (const [type, tier] of Object.entries(dto.agentTrustConfig)) {
-        if (tier === null || tier === '') {
-          delete current[type];
-          continue;
-        }
-        if (!VALID_TIERS.includes(tier)) {
-          throw new BadRequestException(
-            `잘못된 trust tier 값입니다: ${tier} (허용: ${VALID_TIERS.join(', ')})`,
-          );
-        }
-        current[type] = tier;
-      }
-
-      nextTrustConfig = current;
-    }
-
-    const updated = await this.prisma.office.update({
-      where: { id: officeId },
-      data: {
-        ...(typeof dto.agentEnabled === 'boolean'
-          ? { agentEnabled: dto.agentEnabled }
-          : {}),
-        ...(nextTrustConfig
-          ? { agentTrustConfig: nextTrustConfig as Prisma.InputJsonValue }
-          : {}),
-      },
-      include: {
-        users: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            phone: true,
-            role: true,
-            licenseType: true,
-            isActive: true,
-          },
-          orderBy: [{ role: 'asc' }, { createdAt: 'asc' }],
-        },
-      },
-    });
-
-    return this.toOfficeProfile(updated);
-  }
-
   private toOfficeProfile(office: {
     id: string;
     name: string;
@@ -278,8 +204,6 @@ export class OfficesService {
     maxUsers: number;
     isActive: boolean;
     commissionConfig: unknown;
-    agentEnabled?: boolean;
-    agentTrustConfig?: unknown;
     createdAt: Date;
     updatedAt: Date;
     users: Array<{
@@ -306,8 +230,6 @@ export class OfficesService {
       maxUsers: office.maxUsers,
       isActive: office.isActive,
       commissionConfig: office.commissionConfig,
-      agentEnabled: office.agentEnabled ?? true,
-      agentTrustConfig: office.agentTrustConfig ?? {},
       createdAt: office.createdAt,
       updatedAt: office.updatedAt,
       counts: {

@@ -1,5 +1,11 @@
 import { Injectable } from '@nestjs/common';
+import { IntakeConfirmationState } from '@estate-erp/shared';
 import { PrismaService } from '../../prisma/prisma.service';
+import {
+  buildIntakeConfirmationWhere,
+  MARKETABLE_LISTING_WHERE,
+  NON_CLOSED_INTAKE_WHERE,
+} from '../listings/listing-state';
 
 const TENANT_EXPIRY_WINDOW_DAYS = 60;
 
@@ -31,8 +37,6 @@ export interface DashboardSummary {
     activeMatches: number;
     activeDeals: number;
     pendingTasks: number;
-    /** EntityDraft pending + Proposal pending */
-    pendingInbox: number;
     todayEvents: number;
     /** 60일 내 계약 만료 예정 세입자 (residing) */
     expiringTenants: number;
@@ -69,8 +73,6 @@ export class DashboardService {
       activeMatches,
       activeDeals,
       pendingTasks,
-      pendingDrafts,
-      pendingProposals,
       todayEvents,
       expiringTenants,
     ] = await Promise.all([
@@ -127,12 +129,21 @@ export class DashboardService {
       this.prisma.listing.count({
         where: {
           officeId,
-          isHidden: false,
-          checkStatus: { in: ['unverified', 'verified'] },
+          ...MARKETABLE_LISTING_WHERE,
         },
       }),
       this.prisma.listing.count({
-        where: { officeId, isHidden: false, checkStatus: 'unverified' },
+        where: {
+          officeId,
+          isHidden: false,
+          intake: {
+            ...NON_CLOSED_INTAKE_WHERE,
+            ...buildIntakeConfirmationWhere(
+              IntakeConfirmationState.UNVERIFIED,
+              now,
+            ),
+          },
+        },
       }),
       this.prisma.match.count({
         where: { officeId, stage: { not: 'closed' } },
@@ -145,12 +156,6 @@ export class DashboardService {
         },
       }),
       this.prisma.task.count({
-        where: { officeId, status: 'pending' },
-      }),
-      this.prisma.entityDraft.count({
-        where: { officeId, status: 'pending' },
-      }),
-      this.prisma.proposal.count({
         where: { officeId, status: 'pending' },
       }),
       this.prisma.calendarEvent.count({
@@ -181,7 +186,6 @@ export class DashboardService {
         activeMatches,
         activeDeals,
         pendingTasks,
-        pendingInbox: pendingDrafts + pendingProposals,
         todayEvents,
         expiringTenants,
       },

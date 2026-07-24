@@ -1,4 +1,5 @@
 import type { RequestFn } from '../client.js';
+import type { ListingAvailability } from '@estate-erp/shared';
 
 // ── 중개방 ──────────────────────────────────────────────────────
 
@@ -68,7 +69,8 @@ export interface CreateNetworkRoomDto {
 export interface SharedPropertyListingView {
   id: string;
   transactionType: string;
-  checkStatus: string;
+  /** Deal·의뢰 생명주기·옵션 중지를 합성한 가용 상태 */
+  availability: ListingAvailability;
   siteType: string;
   regionLabel: string;
   siteName?: string;

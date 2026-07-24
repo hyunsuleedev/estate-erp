@@ -36,7 +36,9 @@ describe('ListingIntakesService', () => {
 
     jest.spyOn(service, 'findOne').mockResolvedValue({
       id: 'intake-1',
-      confirmedAt: '2026-05-19T00:00:00.000Z',
+      lastCheckedAt: '2026-05-19T00:00:00.000Z',
+      lastVerifiedAt: '2026-05-19T00:00:00.000Z',
+      lastCheckResult: 'alive',
       nextConfirmAt: '2026-05-26T00:00:00.000Z',
     } as never);
 
@@ -123,7 +125,7 @@ describe('ListingIntakesService', () => {
     );
   });
 
-  it('filters by joint brokerage absence across intake and visible listings', async () => {
+  it('filters by joint brokerage absence on the intake (single source of truth)', async () => {
     const { prisma, service } = createService();
 
     await service.findAll('office-1', { isJointBrokerage: false });
@@ -132,10 +134,7 @@ describe('ListingIntakesService', () => {
       expect.objectContaining({
         where: expect.objectContaining({
           AND: expect.arrayContaining([
-            expect.objectContaining({
-              isJointBrokerageRequired: false,
-              listings: { none: { isJointBrokerageRequired: true } },
-            }),
+            expect.objectContaining({ isJointBrokerageRequired: false }),
           ]),
         }),
       }),
@@ -287,14 +286,15 @@ describe('ListingIntakesService', () => {
       id: 'intake-1',
       officeId: 'office-1',
       propertyId: 'property-1',
-      status: 'active',
+      lifecycleStatus: 'open',
+      closedReason: null,
       updatedAt: new Date('2026-05-20T01:00:00.000Z'),
     });
     prisma.listingIntake.updateMany.mockResolvedValue({ count: 0 });
 
     await expect(
       service.update('intake-1', 'office-1', {
-        status: 'hold',
+        lifecycleStatus: 'hold',
         expectedUpdatedAt: '2026-05-20T00:00:00.000Z',
       }),
     ).rejects.toThrow('다른 사용자가 먼저 수정했습니다.');
@@ -302,44 +302,184 @@ describe('ListingIntakesService', () => {
     expect(prisma.listingIntake.update).not.toHaveBeenCalled();
   });
 
-  it('accepts active as the open ListingIntake status', async () => {
+  it('moves an open intake to hold and stamps lifecycle metadata', async () => {
     const { prisma, service } = createService();
     prisma.listingIntake.findFirst.mockResolvedValue({
       id: 'intake-1',
       officeId: 'office-1',
       propertyId: 'property-1',
-      status: 'unverified',
+      lifecycleStatus: 'open',
+      closedReason: null,
       updatedAt: new Date('2026-05-20T00:00:00.000Z'),
     });
     prisma.listingIntake.update.mockResolvedValue({ id: 'intake-1' });
 
-    await service.updateStatus('intake-1', 'office-1', 'active');
+    await service.updateLifecycleStatus('intake-1', 'office-1', 'hold');
 
     expect(prisma.listingIntake.update).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ status: 'active' }),
+        data: expect.objectContaining({
+          lifecycleStatus: 'hold',
+          lifecycleChangedAt: expect.any(Date),
+          lifecycleChangedBy: 'user',
+          closedReason: null,
+        }),
       }),
     );
   });
 
-  it('rejects verified as a ListingIntake status', async () => {
+  it('rejects a confirmation value as a lifecycle status', async () => {
     const { prisma, service } = createService();
     prisma.listingIntake.findFirst.mockResolvedValue({
       id: 'intake-1',
       officeId: 'office-1',
       propertyId: 'property-1',
-      status: 'unverified',
+      lifecycleStatus: 'open',
+      closedReason: null,
       updatedAt: new Date('2026-05-20T00:00:00.000Z'),
     });
 
     await expect(
-      service.updateStatus('intake-1', 'office-1', 'verified'),
-    ).rejects.toThrow('Invalid ListingIntake status');
+      service.updateLifecycleStatus('intake-1', 'office-1', 'verified'),
+    ).rejects.toThrow('Invalid ListingIntake lifecycle status');
 
     expect(prisma.listingIntake.update).not.toHaveBeenCalled();
   });
 
-  it('creates new intakes as unverified by default', async () => {
+  it('rejects a forbidden intake lifecycle transition (closed -> hold)', async () => {
+    const { prisma, service } = createService();
+    prisma.listingIntake.findFirst.mockResolvedValue({
+      id: 'intake-1',
+      officeId: 'office-1',
+      propertyId: 'property-1',
+      lifecycleStatus: 'closed',
+      closedReason: 'other',
+      updatedAt: new Date('2026-05-20T00:00:00.000Z'),
+    });
+
+    await expect(
+      service.updateLifecycleStatus('intake-1', 'office-1', 'hold'),
+    ).rejects.toThrow('Invalid intake lifecycle transition');
+
+    expect(prisma.listingIntake.update).not.toHaveBeenCalled();
+  });
+
+  it('allows reopening a closed intake when no other non-closed intake exists', async () => {
+    const { prisma, service } = createService();
+    prisma.listingIntake.findFirst
+      // update() 대상 조회
+      .mockResolvedValueOnce({
+        id: 'intake-1',
+        officeId: 'office-1',
+        propertyId: 'property-1',
+        lifecycleStatus: 'closed',
+        closedReason: 'withdrawn',
+        updatedAt: new Date('2026-05-20T00:00:00.000Z'),
+      })
+      // assertNoNonClosedIntake — 같은 Property 의 다른 활성 의뢰 없음
+      .mockResolvedValueOnce(null);
+    prisma.listingIntake.update.mockResolvedValue({ id: 'intake-1' });
+
+    await service.updateLifecycleStatus('intake-1', 'office-1', 'open');
+
+    expect(prisma.listingIntake.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          lifecycleStatus: 'open',
+          lifecycleChangedAt: expect.any(Date),
+          closedReason: null,
+        }),
+      }),
+    );
+  });
+
+  it('rejects reopening when another non-closed intake exists on the property', async () => {
+    const { prisma, service } = createService();
+    prisma.listingIntake.findFirst
+      .mockResolvedValueOnce({
+        id: 'intake-1',
+        officeId: 'office-1',
+        propertyId: 'property-1',
+        lifecycleStatus: 'closed',
+        closedReason: 'withdrawn',
+        updatedAt: new Date('2026-05-20T00:00:00.000Z'),
+      })
+      // 같은 Property 에 이미 non-closed 의뢰 존재
+      .mockResolvedValueOnce({ id: 'intake-2' });
+
+    await expect(
+      service.updateLifecycleStatus('intake-1', 'office-1', 'open'),
+    ).rejects.toThrow('활성 의뢰를 하나만');
+
+    expect(prisma.listingIntake.update).not.toHaveBeenCalled();
+  });
+
+  it('promotes lifecycleChangedBy when the user re-affirms an auto-closed intake', async () => {
+    // Deal 자동화가 closed 처리('system:deal')한 의뢰에 사용자가 다시 "종결" 을
+    // 명시하면 — 값이 같아 no-op 이라도 — 주체가 user 로 승격되어
+    // 이후 Deal 취소의 자동 복구 대상에서 빠져야 한다.
+    const { prisma, service } = createService();
+    prisma.listingIntake.findFirst.mockResolvedValue({
+      id: 'intake-1',
+      officeId: 'office-1',
+      propertyId: 'property-1',
+      lifecycleStatus: 'closed',
+      lifecycleChangedBy: 'system:deal',
+      closedReason: 'deal_completed',
+      updatedAt: new Date('2026-05-20T00:00:00.000Z'),
+    });
+    prisma.listingIntake.update.mockResolvedValue({ id: 'intake-1' });
+
+    await service.updateLifecycleStatus(
+      'intake-1',
+      'office-1',
+      'closed',
+      'deal_completed',
+    );
+
+    expect(prisma.listingIntake.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          lifecycleStatus: 'closed',
+          lifecycleChangedBy: 'user',
+          // 값이 안 바뀌었으므로 전이 시각은 갱신하지 않는다
+          lifecycleChangedAt: undefined,
+        }),
+      }),
+    );
+  });
+
+  it("promotes lifecycleChangedBy on an 'unavailable' confirmation of an already-closed intake", async () => {
+    const { prisma, service, tx } = createService();
+    prisma.listingIntake.findFirst.mockResolvedValue({
+      id: 'intake-1',
+      officeId: 'office-1',
+      propertyId: 'property-1',
+      lifecycleStatus: 'closed',
+      lifecycleChangedBy: 'system:deal',
+      closedReason: 'deal_completed',
+      lastVerifiedAt: null,
+      property: { propertyContacts: [] },
+    });
+
+    await service.confirm('intake-1', 'office-1', 'user-1', {
+      result: 'unavailable',
+      channel: 'phone',
+    });
+
+    expect(tx.listingIntake.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          lifecycleStatus: 'closed',
+          lifecycleChangedBy: 'user',
+          closedReason: 'unavailable',
+          lastCheckResult: 'unavailable',
+        }),
+      }),
+    );
+  });
+
+  it('creates new intakes as open with no implied verification', async () => {
     const { prisma, service } = createService();
     prisma.listingIntake.findFirst.mockResolvedValue(null);
     prisma.listingIntake.update.mockResolvedValue({ id: 'intake-1' });
@@ -365,7 +505,13 @@ describe('ListingIntakesService', () => {
 
     expect(tx.listingIntake.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ status: 'unverified' }),
+        data: expect.objectContaining({
+          lifecycleStatus: 'open',
+          lifecycleChangedAt: expect.any(Date),
+          lifecycleChangedBy: 'user',
+          closedReason: null,
+          lastVerifiedAt: undefined,
+        }),
       }),
     );
   });
@@ -405,7 +551,9 @@ describe('ListingIntakesService', () => {
       id: 'intake-1',
       officeId: 'office-1',
       propertyId: 'property-1',
-      confirmedAt: null,
+      lifecycleStatus: 'open',
+      closedReason: null,
+      lastVerifiedAt: null,
       property: {
         propertyContacts: [
           { contactId: 'owner-1', isPrimary: true, role: 'owner' },
@@ -437,17 +585,22 @@ describe('ListingIntakesService', () => {
     expect(tx.listingIntake.update).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: 'intake-1' },
-        data: {
-          status: undefined,
-          confirmedAt: new Date('2026-05-19T00:00:00.000Z'),
+        data: expect.objectContaining({
+          lifecycleStatus: 'open',
+          lifecycleChangedAt: undefined,
+          lifecycleChangedBy: undefined,
+          closedReason: undefined,
+          lastCheckedAt: new Date('2026-05-19T00:00:00.000Z'),
+          lastVerifiedAt: new Date('2026-05-19T00:00:00.000Z'),
+          lastCheckResult: 'alive',
           nextConfirmAt: new Date('2026-05-26T00:00:00.000Z'),
-        },
+        }),
       }),
     );
     expect(result).toEqual(
       expect.objectContaining({
         id: 'intake-1',
-        confirmedAt: '2026-05-19T00:00:00.000Z',
+        lastVerifiedAt: '2026-05-19T00:00:00.000Z',
       }),
     );
   });
@@ -458,8 +611,9 @@ describe('ListingIntakesService', () => {
       id: 'intake-1',
       officeId: 'office-1',
       propertyId: 'property-1',
-      status: 'hold',
-      confirmedAt: null,
+      lifecycleStatus: 'hold',
+      closedReason: null,
+      lastVerifiedAt: null,
       property: { propertyContacts: [] },
     });
     tx.listingIntake.updateMany.mockResolvedValue({ count: 0 });

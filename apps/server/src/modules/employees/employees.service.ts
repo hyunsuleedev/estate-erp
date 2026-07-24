@@ -11,6 +11,10 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { ClerkAuthService } from '../auth/clerk-auth.service';
 import { contactPhonesSelectOrdered } from '../contacts/contact-phone.utils';
+import {
+  LISTING_INTAKE_STATE_SELECT,
+  OCCUPYING_DEALS_SELECT,
+} from '../listings/listing-state';
 
 const taskInclude = {
   contact: { select: { id: true, name: true, phones: contactPhonesSelectOrdered } },
@@ -40,7 +44,16 @@ const consultationInclude = {
   // NOTE: Property 모델에는 memo 필드가 schema상 존재하지 않음 (docs/DATA_STRUCTURE.md와 불일치).
   // schema 기준으로 select 제한.
   property: { select: { id: true, site: { select: { name: true } } } },
-  listing: { select: { id: true, transactionType: true, price: true, checkStatus: true } },
+  listing: {
+    select: {
+      id: true,
+      transactionType: true,
+      price: true,
+      isPaused: true,
+      intake: { select: LISTING_INTAKE_STATE_SELECT },
+      deals: OCCUPYING_DEALS_SELECT,
+    },
+  },
   match: { select: { id: true, stage: true } },
   buyerRequirement: { select: { id: true, status: true, transactionType: true } },
 } as const;

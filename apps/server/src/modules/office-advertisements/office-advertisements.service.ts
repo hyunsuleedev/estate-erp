@@ -5,6 +5,10 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import {
+  LISTING_INTAKE_STATE_SELECT,
+  OCCUPYING_DEALS_SELECT,
+} from '../listings/listing-state';
 
 const VALID_GROUP_STATUSES = new Set([
   'needs_unit_confirmation',
@@ -329,6 +333,8 @@ export class OfficeAdvertisementsService {
         include: {
           listing: {
             include: {
+              intake: { select: LISTING_INTAKE_STATE_SELECT },
+              deals: OCCUPYING_DEALS_SELECT,
               property: {
                 include: {
                   site: true,

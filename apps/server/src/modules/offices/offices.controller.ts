@@ -72,17 +72,4 @@ export class OfficesController {
     return this.officesService.updateCommissionConfig(user.officeId, dto);
   }
 
-  @Patch('me/agent-config')
-  @Roles('owner', 'manager')
-  @UseGuards(RolesGuard)
-  updateAgentConfig(
-    @Body()
-    dto: {
-      agentEnabled?: boolean;
-      agentTrustConfig?: Record<string, string | null>;
-    },
-    @CurrentUser() user: CurrentUserPayload,
-  ) {
-    return this.officesService.updateAgentConfig(user.officeId, dto);
-  }
 }

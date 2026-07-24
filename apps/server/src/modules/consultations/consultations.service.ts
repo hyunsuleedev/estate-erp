@@ -7,6 +7,10 @@ import {
   withPrimaryContactPhone,
   withPrimaryPhone,
 } from '../contacts/contact-phone.utils';
+import {
+  LISTING_INTAKE_STATE_SELECT,
+  OCCUPYING_DEALS_SELECT,
+} from '../listings/listing-state';
 import FormData = require('form-data');
 
 export interface ConsultationSearchQuery {
@@ -59,12 +63,21 @@ export class ConsultationsService {
     listingIntake: {
       select: {
         id: true,
-        status: true,
+        ...LISTING_INTAKE_STATE_SELECT,
         propertyId: true,
         receivedAt: true,
       },
     },
-    listing: { select: { id: true, transactionType: true, price: true, checkStatus: true } },
+    listing: {
+      select: {
+        id: true,
+        transactionType: true,
+        price: true,
+        isPaused: true,
+        intake: { select: LISTING_INTAKE_STATE_SELECT },
+        deals: OCCUPYING_DEALS_SELECT,
+      },
+    },
     match: { select: { id: true, stage: true } },
     buyerRequirement: { select: { id: true, status: true, transactionType: true } },
     createdBy: { select: { id: true, name: true } },

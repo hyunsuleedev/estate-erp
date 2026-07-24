@@ -65,9 +65,6 @@ model Task {
   @@map("tasks")
 }
 
-// InsightRule/Insight는 agent.prisma의 Rule + Proposal로 대체됨.
-// 설계 문서: docs/ai-employee-architecture.md
-
 // ============================================================
 // 캘린더 이벤트
 // ============================================================
@@ -121,7 +118,7 @@ model ActivityLog {
 
   // 누가
   userId String? @map("user_id") @db.Uuid // 직원이 한 작업이면 FK, 시스템/MCP는 null
-  actor  String // "user", "mcp:claude", "system:rule_engine"
+  actor  String // "user", "mcp:claude", "system"
   source String // "web", "mcp", "system"
 
   // 뭘 했는지
@@ -130,7 +127,7 @@ model ActivityLog {
   entityId   String @map("entity_id") @db.Uuid
 
   // 변경 내용
-  changes Json?   @db.JsonB // { "checkStatus": { "before": "unverified", "after": "verified" } }
+  changes Json?   @db.JsonB // { "lastCheckResult": { "before": "no_answer", "after": "alive" } }
   reason  String? // AI가 보내주면 저장, 선택적
 
   createdAt DateTime @default(now()) @map("created_at")

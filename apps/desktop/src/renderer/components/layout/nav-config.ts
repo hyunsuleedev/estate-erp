@@ -6,7 +6,6 @@ import {
   FolderOpen,
   GitBranch,
   Handshake,
-  Inbox,
   LayoutDashboard,
   ListTodo,
   Map,
@@ -70,7 +69,6 @@ export const NAV_GROUPS: { key: NavGroupKey; label: string }[] = [
 export const NAV_ITEMS: NavItem[] = [
   // ── 홈
   { path: '/dashboard', label: '대시보드', icon: LayoutDashboard, group: 'home' },
-  { path: '/inbox', label: '업무함', icon: Inbox, group: 'home' },
   { path: '/tasks', label: '업무', icon: ListTodo, group: 'home' },
   { path: '/calendar', label: '캘린더', icon: CalendarDays, group: 'home' },
 
@@ -153,7 +151,6 @@ export function getNavGroups(role?: string): NavGroupWithItems[] {
 export const ROUTE_LABELS: Record<string, string> = {
   // 홈
   '/_authenticated/dashboard': '대시보드',
-  '/_authenticated/inbox/': '업무함',
   '/_authenticated/tasks/': '업무',
   '/_authenticated/calendar/': '캘린더',
   // 매물

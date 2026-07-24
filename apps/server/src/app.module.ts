@@ -34,7 +34,6 @@ import { PartnerBrokersModule } from './modules/partner-brokers/partner-brokers.
 import { PublicDocumentsModule } from './modules/public-documents/public-documents.module';
 import { PropertyPhotosModule } from './modules/property-photos/property-photos.module';
 import { McpModule } from './modules/mcp/mcp.module';
-import { InboxModule } from './modules/inbox/inbox.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { NetworkModule } from './modules/network/network.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
@@ -102,7 +101,6 @@ const AUTH_RATE_LIMIT_PER_MINUTE = 10;
     CalendarEventsModule,
     ExternalListingsModule,
     AgentModule,
-    InboxModule,
     RegionsModule,
     FinanceModule,
     PartnerBrokersModule,

@@ -8,6 +8,9 @@ import {
   calculateCommissionAmount,
   calculateCommissionBase,
   computeDealCommissionSummary,
+  IntakeClosedReason,
+  IntakeLifecycleStatus,
+  NON_CLOSED_INTAKE_LIFECYCLE_STATUSES,
   siteTypeToCommissionKind,
   TransactionType,
   type CommissionTransactionType,
@@ -17,6 +20,27 @@ import { PrismaService } from '../../prisma/prisma.service';
 const dealInclude = {
   listing: {
     include: {
+      intake: {
+        select: {
+          lifecycleStatus: true,
+          lifecycleChangedAt: true,
+          closedReason: true,
+          lastCheckedAt: true,
+          lastVerifiedAt: true,
+          lastCheckResult: true,
+          nextConfirmAt: true,
+        },
+      },
+      // 파생 상태("거래중/완료") 계산용 점유 Deal — getListingAvailability와 동일 기준
+      deals: {
+        where: {
+          isCancelled: false,
+          stage: {
+            in: ['preContract', 'contracted', 'settling', 'completed', 'closed'],
+          },
+        },
+        select: { id: true, stage: true, stageChangedAt: true },
+      },
       property: {
         include: { site: true, unit: { include: { dong: true } } },
       },
@@ -47,7 +71,7 @@ const EXCLUSIVE_STAGES: ReadonlySet<string> = new Set([
   'closed',
 ]);
 
-/// Listing.checkStatus / ListingIntake.status 를 'done' 으로 확정하는 단계.
+/// ListingIntake 생명주기를 closed로 확정하는 단계 (산하 매물 전부 종결 시).
 const DONE_STAGES: ReadonlySet<string> = new Set(['completed', 'closed']);
 
 @Injectable()
@@ -76,6 +100,68 @@ export class DealsService {
   }
 
   /**
+   * 의뢰 자동 closed의 근거("산하 매물 전부가 활성 종결 Deal 보유")가 무너졌으면
+   * 의뢰를 open으로 되살린다. 종결 Deal 취소·단계 롤백 후 호출 —
+   * 호출 시점에는 해당 변경이 이미 tx 에 반영돼 있어야 한다.
+   *
+   * 다중 Listing 의뢰에서 일부 옵션의 종결만 무산된 경우도 여기서 잡힌다
+   * (예: 매매+전세 모두 완료 → 의뢰 closed → 전세 취소 → 의뢰 재개).
+   * 같은 Property에 새 non-closed 의뢰가 있으면 되살리지 않는다.
+   */
+  private async reopenAutoClosedIntakeIfBasisBroken(
+    tx: Prisma.TransactionClient,
+    intakeId: string,
+  ) {
+    const listingsWithoutDoneDeal = await tx.listing.count({
+      where: {
+        intakeId,
+        deals: {
+          none: {
+            isCancelled: false,
+            stage: { in: [...DONE_STAGES] },
+          },
+        },
+      },
+    });
+    if (listingsWithoutDoneDeal === 0) return; // 여전히 전부 종결 — closed 유지
+
+    const intakeRow = await tx.listingIntake.findFirst({
+      where: { id: intakeId },
+      select: { propertyId: true, officeId: true },
+    });
+    if (!intakeRow) return;
+
+    const otherNonClosedIntake = await tx.listingIntake.findFirst({
+      where: {
+        officeId: intakeRow.officeId,
+        propertyId: intakeRow.propertyId,
+        id: { not: intakeId },
+        lifecycleStatus: {
+          in: [...NON_CLOSED_INTAKE_LIFECYCLE_STATUSES],
+        },
+      },
+      select: { id: true },
+    });
+    if (otherNonClosedIntake) return;
+
+    // Deal 자동화가 closed 처리한 의뢰만 되살린다. 사용자의 수동 종결은 유지한다.
+    await tx.listingIntake.updateMany({
+      where: {
+        id: intakeId,
+        lifecycleStatus: IntakeLifecycleStatus.CLOSED,
+        lifecycleChangedBy: 'system:deal',
+        closedReason: IntakeClosedReason.DEAL_COMPLETED,
+      },
+      data: {
+        lifecycleStatus: IntakeLifecycleStatus.OPEN,
+        lifecycleChangedAt: new Date(),
+        lifecycleChangedBy: 'system:deal',
+        closedReason: null,
+      },
+    });
+  }
+
+  /**
    * 매물 단위 트랜잭션 advisory lock. 같은 Listing 에 대한 배타 단계 진입/취소
    * 트랜잭션을 직렬화해 check-then-write 경주를 막는다. 트랜잭션 종료 시 자동 해제.
    */
@@ -84,6 +170,19 @@ export class DealsService {
     listingId: string,
   ) {
     await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${listingId}::text, 0))`;
+  }
+
+  /**
+   * 하나의 의뢰에 속한 서로 다른 Listing의 Deal이 동시에 완료/취소될 수 있다.
+   * 의뢰 단위 판정과 쓰기를 직렬화해 둘 다 상대 트랜잭션의 이전 상태를 보고
+   * 자동 closed/reopen을 놓치는 경쟁을 막는다.
+   */
+  private async lockIntakeForLifecycleSync(
+    tx: Prisma.TransactionClient,
+    intakeId: string,
+  ) {
+    const lockKey = `listing-intake:${intakeId}`;
+    await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}::text, 0))`;
   }
 
   /** 거래유형은 sale/jeonse/monthly 3종만 허용 (연세 등 폐기 유형 저장 차단) */
@@ -342,8 +441,17 @@ export class DealsService {
 
     const enteringDone =
       stageChanged &&
+      !existing.isCancelled &&
       DONE_STAGES.has(dto.stage) &&
       !DONE_STAGES.has(existing.stage);
+
+    // 종결 단계에서 되돌아 나가는 전이 (completed → settling 등) —
+    // 이 Deal이 의뢰를 자동 closed 처리했을 수 있으므로 커밋 후 재평가한다.
+    const leavingDone =
+      stageChanged &&
+      !existing.isCancelled &&
+      !DONE_STAGES.has(dto.stage) &&
+      DONE_STAGES.has(existing.stage);
 
     const deal = await this.prisma.$transaction(async (tx) => {
       if (enteringExclusive && existing.listingId) {
@@ -365,6 +473,16 @@ export class DealsService {
         }
       }
 
+      if (
+        (enteringDone || leavingDone) &&
+        existing.listing?.intakeId
+      ) {
+        await this.lockIntakeForLifecycleSync(
+          tx,
+          existing.listing.intakeId,
+        );
+      }
+
       if (enteringContracted) {
         const contract = await tx.contract.findUnique({
           where: { dealId: id },
@@ -381,51 +499,43 @@ export class DealsService {
         });
       }
 
-      // ── Listing/Intake 상태 동기화 — Deal 이 거래 사실의 source of truth ──
-      // 배타 단계 진입: 해당 매물만 '거래중' (같은 의뢰의 다른 거래유형은
-      // 세안고 매매 등 계속 진행 가능하므로 건드리지 않음)
-      if (enteringExclusive && existing.listingId) {
-        await tx.listing.updateMany({
+      // ── 상태 동기화 — Deal 이 거래 사실의 source of truth ──
+      // "이 거래 옵션이 거래중/완료" 는 점유 Deal 에서 파생하므로 (Listing 에
+      // 상태 컬럼 없음) 배타 단계 진입 시 쓸 것이 없다. 세안고 매매처럼 같은
+      // 의뢰의 다른 거래유형은 계속 진행 가능 — 의뢰 상태도 건드리지 않는다.
+      //
+      // completed/closed 진입: 의뢰는 산하 매물이 전부 종결 Deal 을 가지면 done.
+      if (enteringDone && existing.listing?.intakeId) {
+        const remaining = await tx.listing.count({
           where: {
-            id: existing.listingId,
-            checkStatus: { notIn: ['in_contract', 'done'] },
+            intakeId: existing.listing.intakeId,
+            deals: {
+              none: {
+                isCancelled: false,
+                stage: { in: [...DONE_STAGES] },
+              },
+            },
+            // 지금 갱신 중인 Deal 의 stage 는 아직 커밋 전이므로 자신의 매물은 제외
+            id: { not: existing.listingId ?? undefined },
           },
-          data: { checkStatus: 'in_contract', checkStatusChangedAt: new Date() },
         });
-        if (existing.listing?.intakeId) {
+        if (remaining === 0) {
           await tx.listingIntake.updateMany({
             where: {
               id: existing.listing.intakeId,
-              status: { notIn: ['in_contract', 'done'] },
+              lifecycleStatus: { not: IntakeLifecycleStatus.CLOSED },
             },
-            data: { status: 'in_contract' },
+            data: {
+              lifecycleStatus: IntakeLifecycleStatus.CLOSED,
+              lifecycleChangedAt: new Date(),
+              lifecycleChangedBy: 'system:deal',
+              closedReason: IntakeClosedReason.DEAL_COMPLETED,
+            },
           });
         }
       }
 
-      // completed/closed 진입: 매물 done, 의뢰는 산하 매물이 전부 done 이면 done
-      if (enteringDone && existing.listingId) {
-        await tx.listing.updateMany({
-          where: { id: existing.listingId, checkStatus: { not: 'done' } },
-          data: { checkStatus: 'done', checkStatusChangedAt: new Date() },
-        });
-        if (existing.listing?.intakeId) {
-          const remaining = await tx.listing.count({
-            where: {
-              intakeId: existing.listing.intakeId,
-              checkStatus: { not: 'done' },
-            },
-          });
-          if (remaining === 0) {
-            await tx.listingIntake.updateMany({
-              where: { id: existing.listing.intakeId, status: { not: 'done' } },
-              data: { status: 'done' },
-            });
-          }
-        }
-      }
-
-      return tx.deal.update({
+      const updated = await tx.deal.update({
         where: { id },
         data: {
           stage: dto.stage,
@@ -437,6 +547,16 @@ export class DealsService {
         },
         include: this.dealInclude,
       });
+
+      // 종결 근거가 사라졌으면 (이 Deal 이 done 단계에서 빠져나감) 의뢰 재평가
+      if (leavingDone && existing.listing?.intakeId) {
+        await this.reopenAutoClosedIntakeIfBasisBroken(
+          tx,
+          existing.listing.intakeId,
+        );
+      }
+
+      return updated;
     });
 
     return this.withPropertyContext(deal);
@@ -450,6 +570,17 @@ export class DealsService {
     const existing = await this.findOne(id, officeId);
 
     const deal = await this.prisma.$transaction(async (tx) => {
+      const shouldReevaluateIntake =
+        DONE_STAGES.has(existing.stage) &&
+        !existing.isCancelled &&
+        Boolean(existing.listing?.intakeId);
+      if (shouldReevaluateIntake && existing.listing?.intakeId) {
+        await this.lockIntakeForLifecycleSync(
+          tx,
+          existing.listing.intakeId,
+        );
+      }
+
       const cancelled = await tx.deal.update({
         where: { id },
         data: {
@@ -461,42 +592,16 @@ export class DealsService {
         include: this.dealInclude,
       });
 
-      // 배타 단계에서 취소되면 매물/의뢰 상태 복귀 — 단, 같은 매물을 점유한
-      // 다른 활성 Deal 이 남아 있으면 건드리지 않는다.
-      if (
-        EXCLUSIVE_STAGES.has(existing.stage) &&
-        !existing.isCancelled &&
-        existing.listingId
-      ) {
-        // 동시 updateStage(배타 진입)와의 경주 방지 — 같은 매물 락으로 직렬화
-        await this.lockListingForStageChange(tx, existing.listingId);
-        const stillOccupied = await tx.deal.findFirst({
-          where: {
-            listingId: existing.listingId,
-            id: { not: id },
-            isCancelled: false,
-            stage: { in: [...EXCLUSIVE_STAGES] },
-          },
-          select: { id: true },
-        });
-        if (!stillOccupied) {
-          await tx.listing.updateMany({
-            where: { id: existing.listingId, checkStatus: 'in_contract' },
-            data: {
-              checkStatus: 'verified',
-              checkStatusChangedAt: new Date(),
-            },
-          });
-          if (existing.listing?.intakeId) {
-            await tx.listingIntake.updateMany({
-              where: {
-                id: existing.listing.intakeId,
-                status: 'in_contract',
-              },
-              data: { status: 'active' },
-            });
-          }
-        }
+      // 배타 단계에서 취소돼도 매물 상태 복귀는 필요 없다 — "거래중" 은 활성
+      // Deal 에서 파생하므로 isCancelled = true 가 되는 순간 점유가 자동 해제된다.
+      //
+      // 단, 종결 단계(completed/closed) Deal 취소는 의뢰 자동 done 의 근거를
+      // 무너뜨릴 수 있다 (거래 무산 후 재판매 경로) — 커밋된 취소 상태 기준으로 재평가.
+      if (shouldReevaluateIntake && existing.listing?.intakeId) {
+        await this.reopenAutoClosedIntakeIfBasisBroken(
+          tx,
+          existing.listing.intakeId,
+        );
       }
 
       return cancelled;
@@ -506,8 +611,31 @@ export class DealsService {
   }
 
   async remove(id: string, officeId: string) {
-    await this.findOne(id, officeId);
-    return this.prisma.deal.delete({ where: { id } });
+    const existing = await this.findOne(id, officeId);
+
+    return this.prisma.$transaction(async (tx) => {
+      const shouldReevaluateIntake =
+        DONE_STAGES.has(existing.stage) &&
+        !existing.isCancelled &&
+        Boolean(existing.listing?.intakeId);
+      if (shouldReevaluateIntake && existing.listing?.intakeId) {
+        await this.lockIntakeForLifecycleSync(
+          tx,
+          existing.listing.intakeId,
+        );
+      }
+
+      const deleted = await tx.deal.delete({ where: { id } });
+
+      if (shouldReevaluateIntake && existing.listing?.intakeId) {
+        await this.reopenAutoClosedIntakeIfBasisBroken(
+          tx,
+          existing.listing.intakeId,
+        );
+      }
+
+      return deleted;
+    });
   }
 
   // ============================================================
@@ -707,6 +835,8 @@ export class DealsService {
     const listingSelect = {
       id: true,
       transactionType: true,
+      isPaused: true,
+      intake: { select: { lifecycleStatus: true } },
       property: { select: { site: { select: { type: true } } } },
     } satisfies Prisma.ListingSelect;
 
@@ -716,23 +846,40 @@ export class DealsService {
         select: listingSelect,
       });
       if (!listing) throw new NotFoundException('Listing not found');
+      this.assertListingAvailableForDeal(listing);
+      if (
+        dto.transactionType &&
+        dto.transactionType !== listing.transactionType
+      ) {
+        throw new BadRequestException(
+          'transactionType must match the selected Listing',
+        );
+      }
       return {
         listingId: listing.id,
-        transactionType: dto.transactionType ?? listing.transactionType,
+        transactionType: listing.transactionType,
         siteType: listing.property?.site?.type ?? null,
       };
     }
 
     if (dto.propertyId) {
       const listing = await this.prisma.listing.findFirst({
-        where: { officeId, propertyId: dto.propertyId },
+        where: {
+          officeId,
+          propertyId: dto.propertyId,
+          isPaused: false,
+          intake: { lifecycleStatus: IntakeLifecycleStatus.OPEN },
+          ...(dto.transactionType
+            ? { transactionType: dto.transactionType }
+            : {}),
+        },
         orderBy: { createdAt: 'desc' },
         select: listingSelect,
       });
-      if (!listing) throw new NotFoundException('Listing not found');
+      if (!listing) throw new NotFoundException('Available Listing not found');
       return {
         listingId: listing.id,
-        transactionType: dto.transactionType ?? listing.transactionType,
+        transactionType: listing.transactionType,
         siteType: listing.property?.site?.type ?? null,
       };
     }
@@ -748,5 +895,22 @@ export class DealsService {
       transactionType: dto.transactionType,
       siteType: null,
     };
+  }
+
+  private assertListingAvailableForDeal(listing: {
+    isPaused: boolean;
+    intake: { lifecycleStatus: string };
+  }) {
+    if (listing.intake.lifecycleStatus === IntakeLifecycleStatus.CLOSED) {
+      throw new BadRequestException('Closed intake cannot start a new Deal');
+    }
+    if (
+      listing.intake.lifecycleStatus === IntakeLifecycleStatus.HOLD ||
+      listing.isPaused
+    ) {
+      throw new BadRequestException(
+        'Paused Listing cannot start a new Deal until it is resumed',
+      );
+    }
   }
 }

@@ -59,6 +59,10 @@ packages/mcp-server
 *.log
 *.tmp
 .playwright-mcp
+/.playwright-cli
+/tmp
+/output
+/prototypes
 .claude
 
 # CI 산출물

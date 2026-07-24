@@ -24,14 +24,11 @@ import { createOfficeSitesApi } from './modules/office-sites.js';
 import { createEmployeesApi } from './modules/employees.js';
 import { createOfficesApi } from './modules/offices.js';
 import { createExternalListingsApi } from './modules/external-listings.js';
-import { createProposalsApi } from './modules/proposals.js';
-import { createRulesApi } from './modules/rules.js';
 import { createFinanceApi } from './modules/finance.js';
 import { createPartnerBrokersApi } from './modules/partner-brokers.js';
 import { createPublicDocumentsApi } from './modules/public-documents.js';
 import { createPropertyPhotosApi } from './modules/property-photos.js';
 import { createCallRecordingsApi } from './modules/call-recordings.js';
-import { createInboxApi } from './modules/inbox.js';
 import { createMcpApi } from './modules/mcp.js';
 import { createRegionsApi } from './modules/regions.js';
 import { createServiceVendorsApi } from './modules/service-vendors.js';
@@ -144,14 +141,11 @@ export function createApiClient(config: ApiClientConfig) {
     employees: createEmployeesApi(req),
     offices: createOfficesApi(req),
     externalListings: createExternalListingsApi(req),
-    proposals: createProposalsApi(req),
-    rules: createRulesApi(req),
     finance: createFinanceApi(req),
     partnerBrokers: createPartnerBrokersApi(req),
     publicDocuments: createPublicDocumentsApi(req),
     propertyPhotos: createPropertyPhotosApi(req),
     callRecordings: createCallRecordingsApi(req),
-    inbox: createInboxApi(req),
     mcp: createMcpApi(req),
     regions: createRegionsApi(req),
     serviceVendors: createServiceVendorsApi(req),

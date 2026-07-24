@@ -29,7 +29,10 @@ export class ListingsController {
     @Query('propertyId') propertyId: string,
     @Query('transactionType') transactionType: string,
     @Query('siteType') siteType: string,
-    @Query('checkStatus') checkStatus: string,
+    @Query('intakeLifecycleStatus') intakeLifecycleStatus: string,
+    @Query('confirmationState') confirmationState: string,
+    @Query('availability') availability: string,
+    @Query('includeClosed') includeClosed: string,
     @Query('priceMin') priceMin: string,
     @Query('priceMax') priceMax: string,
     @Query('depositMin') depositMin: string,
@@ -51,7 +54,10 @@ export class ListingsController {
       propertyId: propertyId || undefined,
       transactionType: transactionType || undefined,
       siteType: siteType || undefined,
-      checkStatus: checkStatus || undefined,
+      intakeLifecycleStatus: intakeLifecycleStatus || undefined,
+      confirmationState: confirmationState || undefined,
+      availability: availability || undefined,
+      includeClosed: includeClosed === 'true',
       priceMin: priceMin ? Number(priceMin) : undefined,
       priceMax: priceMax ? Number(priceMax) : undefined,
       depositMin: depositMin ? Number(depositMin) : undefined,
@@ -85,32 +91,6 @@ export class ListingsController {
     return this.listingsService.findOne(id, user.officeId);
   }
 
-  /** 물건 단위 상태 일괄 전환 — 트랜잭션으로 원자성 보장 */
-  @Patch('check-status/bulk')
-  bulkTransitionCheckStatus(
-    @Body() dto: { listingIds: string[]; checkStatus: string },
-    @CurrentUser() user: CurrentUserPayload,
-  ) {
-    return this.listingsService.bulkTransitionCheckStatus(
-      dto.listingIds ?? [],
-      user.officeId,
-      dto.checkStatus,
-    );
-  }
-
-  @Patch(':id/check-status')
-  transitionCheckStatus(
-    @Param('id') id: string,
-    @Body() dto: { checkStatus: string },
-    @CurrentUser() user: CurrentUserPayload,
-  ) {
-    return this.listingsService.transitionCheckStatus(
-      id,
-      user.officeId,
-      dto.checkStatus,
-    );
-  }
-
   @Post()
   create(
     @Body()
@@ -129,8 +109,7 @@ export class ListingsController {
       moveInAvailableType?: string;
       moveInAvailableFrom?: string;
       moveInAvailableTo?: string;
-      isJointBrokerageRequired?: boolean;
-      jointBrokeragePartnerId?: string;
+      isPaused?: boolean;
       memo?: string | null;
     },
     @CurrentUser() user: CurrentUserPayload,
@@ -155,9 +134,8 @@ export class ListingsController {
       moveInAvailableType?: string | null;
       moveInAvailableFrom?: string | null;
       moveInAvailableTo?: string | null;
-      isJointBrokerageRequired?: boolean;
-      jointBrokeragePartnerId?: string | null;
-      checkStatus?: string;
+      isPaused?: boolean;
+      isHidden?: boolean;
       memo?: string | null;
       expectedUpdatedAt?: string | null;
     },

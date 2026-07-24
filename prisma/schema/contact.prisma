@@ -26,7 +26,6 @@ model Contact {
   contractsAsBuyer        Contract[]          @relation("ContractBuyer")
   contractsAsSeller       Contract[]          @relation("ContractSeller")
   contractParties         ContractParty[]
-  proposals               Proposal[]
   commissionPayments      CommissionPayment[] @relation("CommissionPayer")
   // 통화 녹음
   callRecordings          CallRecording[]
@@ -138,8 +137,6 @@ model Tenant {
   office    Office     @relation(fields: [officeId], references: [id])
   property  Property   @relation(fields: [propertyId], references: [id])
   contact   Contact    @relation(fields: [contactId], references: [id])
-  proposals Proposal[]
-
   @@index([officeId])
   @@index([officeId, status, contractEnd])
   @@index([propertyId])

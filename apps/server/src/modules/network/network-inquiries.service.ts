@@ -9,6 +9,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NetworkRoomsService } from './network-rooms.service';
 import {
+  networkVisibleListingWhere,
   serializeSharedProperty,
   sharedPropertyInclude,
 } from './network-masking';
@@ -55,6 +56,7 @@ export class NetworkInquiriesService {
         officeId: true,
         sharedBy: true,
         isActive: true,
+        listingId: true,
       },
     });
 
@@ -63,6 +65,15 @@ export class NetworkInquiriesService {
     }
     if (sharedProperty.officeId === officeId) {
       throw new BadRequestException('자기 사무소가 공유한 매물에는 문의할 수 없습니다');
+    }
+
+    // 거래중·보류·종료·일시중단 매물은 목록에서 숨겨지므로 문의도 차단
+    const visibleListing = await this.prisma.listing.findFirst({
+      where: { id: sharedProperty.listingId, ...networkVisibleListingWhere },
+      select: { id: true },
+    });
+    if (!visibleListing) {
+      throw new BadRequestException('거래중이거나 종료된 매물에는 문의할 수 없습니다');
     }
 
     await this.rooms.assertApprovedMember(sharedProperty.roomId, officeId);
