@@ -73,6 +73,19 @@ export function buildPropertyMapClustersFromOffsets<TPoint extends PropertyMapCl
   return clusters.map(({ offsetX, offsetY, ...cluster }) => cluster);
 }
 
+export function removePropertyMapListeners(
+  listeners: readonly unknown[],
+  removeListener?: (listener: unknown) => void,
+) {
+  if (!removeListener) return;
+
+  for (const listener of listeners) {
+    if (listener !== null && listener !== undefined) {
+      removeListener(listener);
+    }
+  }
+}
+
 function buildSinglePropertyMapCluster<TPoint extends PropertyMapClusterSource>(
   point: TPoint,
 ): PropertyMapClusterResult<TPoint> {

@@ -24,7 +24,6 @@ export type ListingSummary = Pick<
   | 'isPaused'
   | 'intake'
   | 'deals'
-  | 'isHidden'
   | 'memo'
   | 'createdAt'
   | 'updatedAt'

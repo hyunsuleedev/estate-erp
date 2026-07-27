@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Eye, EyeOff, Lock, MoreHorizontal, PhoneCall, Trash2, XCircle } from 'lucide-react';
+import { Lock, MoreHorizontal, PhoneCall, Trash2, XCircle } from 'lucide-react';
 import type { IntakeRowSummary } from './-property-list-view-utils';
 import { invalidateListingDerivedCaches } from '@/lib/listing-cache';
 import {
@@ -269,7 +269,7 @@ export function IntakeConfirmDialog({
   );
 }
 
-// ── 행 액션 메뉴 (확인 기록 / 의뢰 종결 / 숨김 / 삭제) ──────────
+// ── 행 액션 메뉴 (확인 기록 / 의뢰 종결 / 삭제) ────────────────
 
 export function PropertyRowActions({
   listings,
@@ -282,20 +282,6 @@ export function PropertyRowActions({
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [closeOpen, setCloseOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<ListingSummary | null>(null);
-
-  const hideMutation = useMutation({
-    mutationFn: ({ id, isHidden }: { id: string; isHidden: boolean }) =>
-      api.listings.setHidden(id, isHidden),
-    onSuccess: (_data, variables) => {
-      toast.success(
-        variables.isHidden ? '매물을 숨김 처리했습니다.' : '매물 숨김을 해제했습니다.',
-      );
-      invalidate();
-    },
-    onError: (error: Error) => {
-      toast.error(error.message || '숨김 상태 변경에 실패했습니다.');
-    },
-  });
 
   const closeMutation = useMutation({
     mutationFn: (intakeId: string) =>
@@ -359,24 +345,6 @@ export function PropertyRowActions({
           <DropdownMenuLabel className="text-[11px] text-muted-foreground">
             거래별 작업
           </DropdownMenuLabel>
-          {listings.map((listing) => (
-            <DropdownMenuItem
-              key={`hide-${listing.id}`}
-              disabled={hideMutation.isPending}
-              onSelect={() =>
-                hideMutation.mutate({ id: listing.id, isHidden: !listing.isHidden })
-              }
-            >
-              {listing.isHidden ? (
-                <Eye className="size-3.5" />
-              ) : (
-                <EyeOff className="size-3.5" />
-              )}
-              {transactionLabel(listing.transactionType)}{' '}
-              {listing.isHidden ? '숨김 해제' : '숨김 처리'}
-            </DropdownMenuItem>
-          ))}
-          <DropdownMenuSeparator />
           {listings.map((listing) => (
             <DropdownMenuItem
               key={`delete-${listing.id}`}
@@ -485,25 +453,7 @@ export function PropertyBulkActions({ groups }: { groups: PropertyListingGroup[]
     onSettled: () => setStatusValue(''),
   });
 
-  const bulkHideMutation = useMutation({
-    mutationFn: async (isHidden: boolean) => {
-      await Promise.all(listingIds.map((id) => api.listings.setHidden(id, isHidden)));
-      return isHidden;
-    },
-    onSuccess: (isHidden) => {
-      toast.success(
-        isHidden
-          ? `거래 ${listingIds.length}건을 숨김 처리했습니다.`
-          : `거래 ${listingIds.length}건의 숨김을 해제했습니다.`,
-      );
-      invalidate();
-    },
-    onError: (error: Error) => {
-      toast.error(error.message || '일괄 숨김 변경에 실패했습니다.');
-    },
-  });
-
-  const busy = bulkStatusMutation.isPending || bulkHideMutation.isPending;
+  const busy = bulkStatusMutation.isPending;
 
   return (
     <div className="flex flex-wrap items-center gap-2">
@@ -527,26 +477,6 @@ export function PropertyBulkActions({ groups }: { groups: PropertyListingGroup[]
           ))}
         </SelectContent>
       </Select>
-      <Button
-        variant="outline"
-        size="sm"
-        className="h-7 px-2.5 text-xs"
-        disabled={busy}
-        onClick={() => bulkHideMutation.mutate(true)}
-      >
-        <EyeOff className="size-3.5" />
-        일괄 숨김
-      </Button>
-      <Button
-        variant="outline"
-        size="sm"
-        className="h-7 px-2.5 text-xs"
-        disabled={busy}
-        onClick={() => bulkHideMutation.mutate(false)}
-      >
-        <Eye className="size-3.5" />
-        숨김 해제
-      </Button>
     </div>
   );
 }

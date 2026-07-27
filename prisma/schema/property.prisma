@@ -123,7 +123,6 @@ model Listing {
   moveInAvailableTo      DateTime? @map("move_in_available_to")
   /// 이 거래 옵션만 일시 중단 ("전세만 잠깐 내림"). 의뢰 전체 보류는 lifecycleStatus = hold.
   isPaused               Boolean   @default(false) @map("is_paused")
-  isHidden               Boolean   @default(false) @map("is_hidden")
   memo                   String?
 
   // 확인 상태는 ListingIntake의 확인 시각/결과에서 파생한다.

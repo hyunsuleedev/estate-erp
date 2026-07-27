@@ -79,7 +79,6 @@ export class UnitsService {
             listings: {
               where: {
                 officeId,
-                isHidden: false,
                 intake: NON_CLOSED_INTAKE_WHERE,
               },
               orderBy: { updatedAt: 'desc' },

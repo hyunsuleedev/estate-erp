@@ -67,7 +67,7 @@ prisma/
 - Unit.dongId는 NOT NULL — 모든 호실은 반드시 Dong에 속함
 - UI는 `Dong.isPlaceholder === true`면 동 선택 UI를 숨기고 바로 호실 그리드 표시
 - Property: 사무소가 관리하는 부동산 단위 (siteId, unitId, memo, PropertyContact/Tenant 연결)
-- Listing: 매물 거래 정보 (propertyId FK, transactionType, price, checkStatus, isHidden)
+- Listing: 매물 거래 정보 (propertyId FK, transactionType, price, isPaused)
 - Property 1:N Listing (같은 호실을 매매+전세로 동시에 내놓는 경우)
 - SiteUnitType: 평형 카탈로그 (84A, 59B 등), 네이버 pyeongList 1:1 대응
 - Unit.floor + Unit.lineNo → 동별 호실 그리드 (네이버 스타일)
@@ -135,7 +135,6 @@ pnpm prisma:generate   # Generate Prisma client
 ## Important Notes
 
 - Node.js >= 23.0.0
-- Listing `isHidden` controls visibility in listing views
 - UI 개발 / 레이아웃 확인은 항상 Playwright(Chromium)로 먼저 확인한다 (`apps/desktop`도 Vite 렌더러는 브라우저로 확인 가능)
 - Electron은 IPC, preload, 시스템 트레이, 네이티브 메뉴, CTI 등 Electron 전용 동작 검증이 필요할 때만 확인한다
 - 복잡한 쿼리 (거리 계산, 통계)는 Prisma `$queryRaw` 사용

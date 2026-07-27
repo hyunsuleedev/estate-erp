@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { buildPropertyMapClustersFromOffsets } from '../src/renderer/routes/_authenticated/properties/-property-map-utils';
+import {
+  buildPropertyMapClustersFromOffsets,
+  removePropertyMapListeners,
+} from '../src/renderer/routes/_authenticated/properties/-property-map-utils';
 
 interface TestPoint {
   id: string;
@@ -60,5 +63,16 @@ describe('property map clustering', () => {
 
     assert.equal(clusters.length, 2);
     assert.deepEqual(clusters.map((cluster) => cluster.points.length), [1, 1]);
+  });
+
+  it('skips null listener handles during map cleanup', () => {
+    const removed: unknown[] = [];
+
+    removePropertyMapListeners(
+      [null, 'marker-listener', undefined, 'map-listener'],
+      (listener) => removed.push(listener),
+    );
+
+    assert.deepEqual(removed, ['marker-listener', 'map-listener']);
   });
 });

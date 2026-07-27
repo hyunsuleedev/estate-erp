@@ -118,6 +118,36 @@ const stageProgress: Record<string, number> = {
   closed: 5,
 };
 
+export const dealStageTargetDays: Record<DealDisplayGroupKey, number> = {
+  coordination: 7,
+  preContract: 5,
+  contracted: 14,
+  settling: 7,
+  completed: 10,
+  closed: 0,
+};
+
+const dealStageProbability: Record<string, number> = {
+  selection: 0.2,
+  negotiating: 0.35,
+  preContract: 0.55,
+  contracted: 0.8,
+  settling: 0.95,
+  completed: 1,
+  closed: 1,
+};
+
+export type DealPipelineHealthState = 'overdue' | 'stale' | 'unscheduled' | 'healthy';
+
+export type DealPipelineHealth = {
+  state: DealPipelineHealthState;
+  label: string;
+  description: string;
+  stageAgeDays: number;
+  targetDays: number;
+  isAtRisk: boolean;
+};
+
 export const paymentKindLabels: Record<string, string> = {
   pre_contract: '가계약금',
   contract: '계약금',
@@ -169,6 +199,84 @@ export function getDealAmountValue(deal: DealListItem): number {
   );
 }
 
+export function getDealCommissionValue(deal: DealListItem): number {
+  return deal.commissionSummary?.ourShare ?? 0;
+}
+
+export function getWeightedCommissionValue(deal: DealListItem): number {
+  const probability = dealStageProbability[deal.stage] ?? 0;
+  return Math.round(getDealCommissionValue(deal) * probability);
+}
+
+export function getDealStageAgeDays(
+  deal: DealListItem,
+  referenceDate = new Date(),
+) {
+  return Math.max(
+    0,
+    differenceInCalendarDays(referenceDate, new Date(deal.stageChangedAt)),
+  );
+}
+
+export function getDealPipelineHealth(
+  deal: DealListItem,
+  referenceDate = new Date(),
+): DealPipelineHealth {
+  const groupKey = getDealDisplayGroupKey(deal.stage);
+  const targetDays = dealStageTargetDays[groupKey];
+  const stageAgeDays = getDealStageAgeDays(deal, referenceDate);
+  const nextPayment = getNextDealPaymentSummary(deal, referenceDate);
+
+  if (
+    nextPayment?.daysUntil !== null &&
+    nextPayment?.daysUntil !== undefined &&
+    nextPayment.daysUntil < 0
+  ) {
+    return {
+      state: 'overdue',
+      label: '일정 지연',
+      description: `${nextPayment.label} ${Math.abs(nextPayment.daysUntil)}일 지연`,
+      stageAgeDays,
+      targetDays,
+      isAtRisk: true,
+    };
+  }
+
+  if (targetDays > 0 && stageAgeDays > targetDays) {
+    return {
+      state: 'stale',
+      label: '단계 정체',
+      description: `목표 ${targetDays}일 · 현재 ${stageAgeDays}일`,
+      stageAgeDays,
+      targetDays,
+      isAtRisk: true,
+    };
+  }
+
+  if (
+    (groupKey === 'contracted' || groupKey === 'settling') &&
+    (!nextPayment || nextPayment.daysUntil === null)
+  ) {
+    return {
+      state: 'unscheduled',
+      label: '일정 미정',
+      description: '다음 지급일을 등록해 주세요',
+      stageAgeDays,
+      targetDays,
+      isAtRisk: true,
+    };
+  }
+
+  return {
+    state: 'healthy',
+    label: '정상',
+    description: nextPayment?.daysUntil === 0 ? '오늘 지급 일정' : '진행 상태 양호',
+    stageAgeDays,
+    targetDays,
+    isAtRisk: false,
+  };
+}
+
 export function getNextDealPaymentSummary(
   deal: DealListItem,
   referenceDate = new Date(),
@@ -177,8 +285,12 @@ export function getNextDealPaymentSummary(
     .filter((payment) => payment.status !== 'paid' && payment.status !== 'cancelled')
     .slice()
     .sort((left, right) => {
-      const leftTime = left.scheduledDate ? new Date(left.scheduledDate).getTime() : Number.POSITIVE_INFINITY;
-      const rightTime = right.scheduledDate ? new Date(right.scheduledDate).getTime() : Number.POSITIVE_INFINITY;
+      const leftTime = left.scheduledDate
+        ? new Date(left.scheduledDate).getTime()
+        : Number.POSITIVE_INFINITY;
+      const rightTime = right.scheduledDate
+        ? new Date(right.scheduledDate).getTime()
+        : Number.POSITIVE_INFINITY;
       return leftTime - rightTime;
     })[0];
 
@@ -201,12 +313,27 @@ export function sortDealsForDisplay(
   referenceDate = new Date(),
 ) {
   return deals.slice().sort((left, right) => {
+    const healthPriority: Record<DealPipelineHealthState, number> = {
+      overdue: 0,
+      stale: 1,
+      unscheduled: 2,
+      healthy: 3,
+    };
+    const leftHealth = getDealPipelineHealth(left, referenceDate);
+    const rightHealth = getDealPipelineHealth(right, referenceDate);
+    const healthDifference =
+      healthPriority[leftHealth.state] - healthPriority[rightHealth.state];
+    if (healthDifference !== 0) return healthDifference;
+
     const leftPayment = getNextDealPaymentSummary(left, referenceDate);
     const rightPayment = getNextDealPaymentSummary(right, referenceDate);
     const leftDays = leftPayment?.daysUntil ?? Number.POSITIVE_INFINITY;
     const rightDays = rightPayment?.daysUntil ?? Number.POSITIVE_INFINITY;
 
     if (leftDays !== rightDays) return leftDays - rightDays;
+    if (leftHealth.stageAgeDays !== rightHealth.stageAgeDays) {
+      return rightHealth.stageAgeDays - leftHealth.stageAgeDays;
+    }
     return new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime();
   });
 }

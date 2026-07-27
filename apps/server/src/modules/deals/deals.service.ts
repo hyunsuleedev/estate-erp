@@ -11,6 +11,7 @@ import {
   IntakeClosedReason,
   IntakeLifecycleStatus,
   NON_CLOSED_INTAKE_LIFECYCLE_STATUSES,
+  OCCUPYING_DEAL_STAGES,
   siteTypeToCommissionKind,
   TransactionType,
   type CommissionTransactionType,
@@ -31,12 +32,12 @@ const dealInclude = {
           nextConfirmAt: true,
         },
       },
-      // 파생 상태("거래중/완료") 계산용 점유 Deal — getListingAvailability와 동일 기준
+      // 파생 상태("거래중/종료") 계산용 점유 Deal — getListingAvailability와 동일 기준
       deals: {
         where: {
           isCancelled: false,
           stage: {
-            in: ['preContract', 'contracted', 'settling', 'completed', 'closed'],
+            in: [...OCCUPYING_DEAL_STAGES],
           },
         },
         select: { id: true, stage: true, stageChangedAt: true },
@@ -211,6 +212,8 @@ export class DealsService {
       isJointBrokerage?: boolean;
       ourSide?: 'seller' | 'buyer' | 'both';
       partnerBrokerId?: string;
+      /** 상태 토글에서 Deal을 시작할 때 hold/isPaused를 같은 트랜잭션에서 해제 */
+      resumeListing?: boolean;
       memo?: string;
     },
   ) {
@@ -225,6 +228,53 @@ export class DealsService {
     const ourSide = dto.ourSide ?? 'both';
 
     const deal = await this.prisma.$transaction(async (tx) => {
+      if (dto.resumeListing && listingId) {
+        const listingToResume = await tx.listing.findFirst({
+          where: { id: listingId, officeId },
+          select: {
+            id: true,
+            isPaused: true,
+            intake: {
+              select: {
+                id: true,
+                lifecycleStatus: true,
+              },
+            },
+          },
+        });
+        if (!listingToResume) {
+          throw new NotFoundException('Listing not found');
+        }
+        if (
+          listingToResume.intake.lifecycleStatus ===
+          IntakeLifecycleStatus.CLOSED
+        ) {
+          throw new BadRequestException(
+            'Closed intake cannot start a new Deal',
+          );
+        }
+
+        if (
+          listingToResume.intake.lifecycleStatus === IntakeLifecycleStatus.HOLD
+        ) {
+          await tx.listingIntake.update({
+            where: { id: listingToResume.intake.id },
+            data: {
+              lifecycleStatus: IntakeLifecycleStatus.OPEN,
+              lifecycleChangedAt: new Date(),
+              lifecycleChangedBy: 'user',
+              closedReason: null,
+            },
+          });
+        }
+        if (listingToResume.isPaused) {
+          await tx.listing.update({
+            where: { id: listingToResume.id },
+            data: { isPaused: false },
+          });
+        }
+      }
+
       const created = await tx.deal.create({
         data: {
           officeId,
@@ -500,7 +550,7 @@ export class DealsService {
       }
 
       // ── 상태 동기화 — Deal 이 거래 사실의 source of truth ──
-      // "이 거래 옵션이 거래중/완료" 는 점유 Deal 에서 파생하므로 (Listing 에
+      // "이 거래 옵션이 거래중/종료" 는 비취소 Deal 에서 파생하므로 (Listing 에
       // 상태 컬럼 없음) 배타 단계 진입 시 쓸 것이 없다. 세안고 매매처럼 같은
       // 의뢰의 다른 거래유형은 계속 진행 가능 — 의뢰 상태도 건드리지 않는다.
       //
@@ -825,7 +875,12 @@ export class DealsService {
 
   private async resolveListing(
     officeId: string,
-    dto: { propertyId?: string; listingId?: string; transactionType?: string },
+    dto: {
+      propertyId?: string;
+      listingId?: string;
+      transactionType?: string;
+      resumeListing?: boolean;
+    },
   ): Promise<{
     listingId: string | undefined;
     transactionType: string;
@@ -846,7 +901,7 @@ export class DealsService {
         select: listingSelect,
       });
       if (!listing) throw new NotFoundException('Listing not found');
-      this.assertListingAvailableForDeal(listing);
+      this.assertListingAvailableForDeal(listing, dto.resumeListing === true);
       if (
         dto.transactionType &&
         dto.transactionType !== listing.transactionType
@@ -900,13 +955,14 @@ export class DealsService {
   private assertListingAvailableForDeal(listing: {
     isPaused: boolean;
     intake: { lifecycleStatus: string };
-  }) {
+  }, allowResume = false) {
     if (listing.intake.lifecycleStatus === IntakeLifecycleStatus.CLOSED) {
       throw new BadRequestException('Closed intake cannot start a new Deal');
     }
     if (
-      listing.intake.lifecycleStatus === IntakeLifecycleStatus.HOLD ||
-      listing.isPaused
+      !allowResume &&
+      (listing.intake.lifecycleStatus === IntakeLifecycleStatus.HOLD ||
+        listing.isPaused)
     ) {
       throw new BadRequestException(
         'Paused Listing cannot start a new Deal until it is resumed',

@@ -194,7 +194,7 @@ export type ListingAdvertisementChannel =
  * 의뢰(ListingIntake)의 생명주기만 저장한다.
  *
  * - 확인 여부/신선도는 lastVerifiedAt, lastCheckResult, nextConfirmAt에서 파생
- * - Listing의 거래중/완료는 점유 Deal에서 파생
+ * - Listing의 거래중/종료는 비취소 Deal에서 파생
  * - Listing 옵션 단위 중지는 Listing.isPaused가 소유
  */
 export const IntakeLifecycleStatus = {
@@ -248,14 +248,15 @@ export const ListingAvailability = {
   AVAILABLE: 'available',
   PAUSED: 'paused',
   IN_CONTRACT: 'in_contract',
-  COMPLETED: 'completed',
   CLOSED: 'closed',
 } as const;
 export type ListingAvailability =
   (typeof ListingAvailability)[keyof typeof ListingAvailability];
 
-/** Listing을 현재 계약 진행 중으로 표시하는 Deal 단계 */
+/** Listing을 현재 거래 진행 중으로 표시하는 활성 Deal 단계 */
 export const IN_CONTRACT_DEAL_STAGES = [
+  'selection',
+  'negotiating',
   'preContract',
   'contracted',
   'settling',

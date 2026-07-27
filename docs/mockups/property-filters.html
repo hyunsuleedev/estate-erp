@@ -497,7 +497,6 @@
               <h4>관리</h4>
               <div class="grid-2">
                 <label class="toggle" data-on="false" style="border-color:var(--border)"><span class="switch"></span> 공동중개 필요</label>
-                <label class="toggle" data-on="false" style="border-color:var(--border)"><span class="switch"></span> 숨김 매물 포함</label>
               </div>
             </div>
 
@@ -580,14 +579,14 @@
   <h3>이 예시의 설계 의도</h3>
   · <b>2단 구조 유지</b> — 1행: 거래유형 탭 + 단지/동/호 + 통합검색. 2행: 필터 칩 바. (기존 <code>index.tsx</code> 구조 그대로)<br/>
   · <b>1차 칩(항상 노출)</b>: 지역 · 유형 · 상태 · 가격 · 면적 + <b style="color:var(--primary)">신규 ●확인경과 · ●층수</b>. 파란 점이 신규 추가분.<br/>
-  · <b>「상세필터」 묶음</b>: 매물확인상태 · 입주/세입자 · 광고채널 · 가격변동 · 등록일 · 숨김매물 — 그룹화한 대형 팝오버. 칩 우측 <span class="count-badge" style="position:static;display:inline-flex">3</span> 배지로 적용 개수 표시.<br/>
+  · <b>「상세필터」 묶음</b>: 매물확인상태 · 입주/세입자 · 광고채널 · 가격변동 · 등록일 — 그룹화한 대형 팝오버. 칩 우측 <span class="count-badge" style="position:static;display:inline-flex">3</span> 배지로 적용 개수 표시.<br/>
   · <b>회색 "추후" 그룹</b>: 담당 중개사 · 소유주검증 · 융자 — 스키마에 전용 필드가 없어 비활성 처리. 자리만 잡아둠.<br/>
   · <b>담당자 위치 참고</b>: 질문에서 고른 미리보기엔 <code>[담당자▾]</code>가 1차 칩에 있었지만, 2번 질문(신규 필드 → 추후)에 맞춰 「추후」 그룹으로 내렸습니다. 담당자 필드(<code>assignedToId</code>)가 매물 모델에 추가되면 1차 칩으로 승격하는 것을 권장.<br/>
   <h3>킬러 필터: 확인경과 (매물 생존 확인)</h3>
   중개사는 등록된 매물이 <b>아직 살아있는지</b> — 소유주가 다른 데서 거래했거나 매물을 거둬들이지 않았는지 — 주기적으로 소유주에게 <b>확인 전화</b>를 돌립니다. "마지막 확인 이후 N일 지난 매물"을 골라 일괄로 전화 확인하는 게 매물장 관리의 핵심 루틴인데, 지금은 이걸 골라낼 필터가 없습니다. 스키마의 <code>confirmedAt</code>/<code>nextConfirmAt</code>이 이미 있어 <b>스키마 변경 없이</b> 필터만 추가하면 됨(단, 백엔드 where 빌드 + 정렬 케이스는 신규 작성 필요).
   <h3>구현 난이도 (정확히 두 갈래)</h3>
   <b>① 스키마 마이그레이션 불필요 + 백엔드가 이미 지원</b> (프론트만): 매물확인상태(<code>checkStatus</code>) · 공동중개 · 입주가능일 범위 · 광고 유무. 이건 칩만 노출하면 됨.<br/>
-  <b>② 스키마 마이그레이션 불필요하지만 백엔드 쿼리 변경 필요</b> (where/정렬 신규): 확인경과(<code>confirmedAt</code>·<code>nextConfirmAt</code> — 컨트롤러는 <code>nextConfirmFrom/To</code>만 받음, 경과일 계산 로직 추가) · 층수(<code>Unit.floor</code>) · 즉시입주(<code>moveInAvailableType</code>) · 세입자상태(<code>Tenant.status</code>) · 광고채널(<code>channel</code> 별) · 가격변동(<code>PriceHistory</code> 조인) · 등록일(<code>createdAt</code>) · 숨김(<code>isHidden</code>). <b>그리고 유형·상태를 단일선택→다중선택 체크박스로 바꾼 부분</b>도 여기 해당 — 현재 API는 <code>siteType</code>/<code>status</code>를 단일 값 <code>equals</code>로만 받으므로, 다중선택은 DTO를 배열로 받고 where를 <code>IN</code>으로 바꾸는 백엔드 작업이 필요함.<br/>
+  <b>② 스키마 마이그레이션 불필요하지만 백엔드 쿼리 변경 필요</b> (where/정렬 신규): 확인경과(<code>confirmedAt</code>·<code>nextConfirmAt</code> — 컨트롤러는 <code>nextConfirmFrom/To</code>만 받음, 경과일 계산 로직 추가) · 층수(<code>Unit.floor</code>) · 즉시입주(<code>moveInAvailableType</code>) · 세입자상태(<code>Tenant.status</code>) · 광고채널(<code>channel</code> 별) · 가격변동(<code>PriceHistory</code> 조인) · 등록일(<code>createdAt</code>). <b>그리고 유형·상태를 단일선택→다중선택 체크박스로 바꾼 부분</b>도 여기 해당 — 현재 API는 <code>siteType</code>/<code>status</code>를 단일 값 <code>equals</code>로만 받으므로, 다중선택은 DTO를 배열로 받고 where를 <code>IN</code>으로 바꾸는 백엔드 작업이 필요함.<br/>
   <b>③ 스키마 신규 필드 필요</b> (회색 "추후"): 담당 중개사(<code>assignedToId</code>) · 소유주 검증 · 융자/근저당 비율 · 관리비. 매물 모델에 컬럼 없음.
   <h3>⚠ 정렬 주의</h3>
   현재 백엔드 <code>resolveOrderBy</code>는 <code>receivedAt</code>/<code>createdAt</code>/<code>updatedAt</code>만 지원합니다. 드롭다운의 <b>「가격 낮은순/높은순」과 「확인 오래된순/최근순」은 지금은 동작하지 않고</b> <code>receivedAt</code>으로 폴백됩니다 — <code>resolveOrderBy</code>에 price/confirm 케이스를 추가해야 실제 정렬이 됩니다. 또 기존 "확인일" 정렬은 실제 확인 시각(<code>confirmedAt</code>)이 아니라 <code>updatedAt</code> 기반이라, 인라인 편집만 해도 갱신되는 점을 보정 권장.

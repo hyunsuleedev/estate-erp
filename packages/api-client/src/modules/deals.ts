@@ -94,6 +94,8 @@ export interface CreateDealDto {
   /// 공동중개 시 우리 담당 측: seller / buyer / both
   ourSide?: 'seller' | 'buyer' | 'both';
   partnerBrokerId?: string;
+  /** 상태 토글에서 Deal 생성 시 보류 상태를 함께 해제 */
+  resumeListing?: boolean;
   memo?: string;
 }
 

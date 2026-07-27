@@ -18,15 +18,15 @@
 - ListingIntake(의뢰) UI 전무 — api.listingIntakes(findAll/confirm/updateStatus/addListing, nextConfirmAt, 확인결과 alive/price_changed/no_answer/unavailable)가 api-client·서버에 완비됐으나 web 어디서도 미사용. 목록은 listings.findAll 기반이라 의뢰 접수일·다음 확인일·컨펌 사이클을 표시/기록할 수 없음. 인덱스에 intake 기반 확인(컨펌) 액션 추가 필요
 - 상세 페이지($id.tsx) 액션 버튼 전부 미연결: 수정/공유/매칭 생성/+관련인 추가/+상담 추가/+거래 추가/+임차인 추가/편집/빠른 액션 4종/이전·다음 매물 이동/사진 추가·순서편집·대표지정 — onClick 핸들러 없는 죽은 버튼. 최소한 거래 추가·상담 추가·관련인 추가는 다이얼로그로 연결 필요
 - 매물→거래(Deal)→계약(Contract) 컨텍스트 점프 없음: 상세 페이지에 Deal 섹션/링크가 전혀 없고 checkStatus가 in_contract여도 해당 거래로 이동 불가. api.deals 존재하므로 listingId 기준 Deal 조회 탭 추가 필요
-- 삭제·숨김 CRUD 미완: api.listings.remove / api.properties.remove / isHidden 토글이 API에 있으나 목록·상세 어디에도 UI 없음(숨김은 배지 표시만)
-- naver-my-ads(내광고관리) 스텁: 사이드바 네비 미등록 고아 라우트, officeAdvertisements/listingAdvertisements API 미사용, ERP 매물을 verified/hidden 기준으로 3버킷 분류만 함. limit 200 단일 페이지 고정, 실제 네이버 광고 데이터 연동 없음
+- 삭제 CRUD 미완: api.listings.remove / api.properties.remove가 API에 있으나 목록·상세 어디에도 UI 없음
+- naver-my-ads(내광고관리) 스텁: 사이드바 네비 미등록 고아 라우트, officeAdvertisements/listingAdvertisements API 미사용, ERP 매물을 확인/광고 상태 기준으로 분류하지 못함. limit 200 단일 페이지 고정, 실제 네이버 광고 데이터 연동 없음
 - 상세 페이지에 가격변동 이력(PriceHistory) 탭 없음 — 빠른확인 시트에는 있으나 전체 페이지에는 미노출
 - 광고(ListingAdvertisement) 등록/수정 UI 없음: 목록·시트에 조회만 가능, api-client listing-advertisements 모듈 미사용 (광고 시작/종료/채널/광고가 기록 불가)
 - 외부매물 그룹 ↔ Unit 수동 링크/해제 UI 없음: UpdateExternalListingGroupDto.unitId 지원하나 inferredHo 텍스트 입력만 가능. 그룹 내 형제 매물(listingCount) 펼쳐보기·ERP 매물 전환 액션도 없음
 - 상세 매칭 조회 비효율: api.matches.findAll() 전체 조회 후 클라이언트 필터 (propertyId 서버 필터 없음)
 - 사진 업로드 미구현: propertyPhotos.create/update/reorder/remove API 있으나 미사용, S3 presigned 업로드 엔드포인트 자체가 없음 (PRD상 Phase 2이나 버튼이 동작하는 척 노출됨)
 - 쿼리 에러 상태 처리 없음: 5개 라우트 모두 isError/재시도 UI 부재 (로딩·빈 상태만 처리)
-- 행 다중선택(enableRowSelection) 활성화돼 있으나 일괄 작업(상태 변경/숨김/삭제) 없음, 메모 컬럼 인라인 편집 불가
+- 행 다중선택(enableRowSelection) 활성화돼 있으나 일괄 작업(상태 변경/삭제) 없음, 메모 컬럼 인라인 편집 불가
 - 공적장부 ZIP 일괄 다운로드 버튼 미구현(핸들러 없음), 발급은 메타데이터 생성만(실 발급 API 연동은 PRD상 Phase 2 허용)
 
 ## API 갭

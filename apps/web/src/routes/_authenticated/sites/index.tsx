@@ -104,6 +104,7 @@ function SitesPage() {
   // ── Refs (키보드 단축키) ──────────────────────────────────────
   const unitSearchRef = useRef<HTMLInputElement>(null);
   const buildingSearchRef = useRef<HTMLInputElement>(null);
+  const didAutoSelectOfficeSite = useRef(false);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -133,6 +134,21 @@ function SitesPage() {
     queryKey: ['office-sites'],
     queryFn: () => api.officeSites.findAll(),
   });
+
+  useEffect(() => {
+    const firstOfficeSite = officeSites[0];
+    if (
+      didAutoSelectOfficeSite.current ||
+      isLoadingList ||
+      isListError ||
+      !firstOfficeSite
+    ) {
+      return;
+    }
+
+    didAutoSelectOfficeSite.current = true;
+    setSelectedOfficeSite((current) => current ?? firstOfficeSite);
+  }, [isListError, isLoadingList, officeSites]);
 
   const selectedSiteId = selectedOfficeSite?.siteId;
 
@@ -173,8 +189,13 @@ function SitesPage() {
     onSuccess: (_data, removedId) => {
       queryClient.invalidateQueries({ queryKey: ['office-sites'] });
       if (selectedOfficeSite?.id === removedId) {
-        setSelectedOfficeSite(null);
+        setSelectedOfficeSite(officeSites.find((site) => site.id !== removedId) ?? null);
         setSelectedUnitId(null);
+        setSelectedDongIds([]);
+        setSelectedUnitTypeIds([]);
+        setQuery('');
+        setUnitSort([]);
+        setOccupancyFilter([]);
       }
       setRemoveTarget(null);
       toast.success('관리단지에서 제거했습니다');
@@ -538,7 +559,9 @@ function SitesPage() {
           size: 80,
           enableSorting: true,
           cell: ({ row }) => (
-            <span className="text-[13px]">{getDongName(row.original.dongId) || '-'}</span>
+            <span className="whitespace-nowrap text-[13px]">
+              {getDongName(row.original.dongId) || '-'}
+            </span>
           ),
         } satisfies ColumnDef<Unit>]
       : []),
@@ -548,31 +571,41 @@ function SitesPage() {
       size: 90,
       enableSorting: true,
       cell: ({ row }) => (
-        <span className="text-[13px] font-medium tabular-nums">{row.original.name}</span>
+        <span className="whitespace-nowrap text-[13px] font-medium tabular-nums">
+          {row.original.name}
+        </span>
       ),
     },
     {
       id: 'supplyArea',
       header: '공급',
-      size: 120,
+      size: 150,
       enableSorting: true,
       cell: ({ row }) => {
         const unit = row.original;
         const m2 = unit.supplyAreaM2 ?? unit.siteUnitType?.supplyAreaM2;
         if (!m2) return <span className="text-[13px] text-muted-foreground">-</span>;
-        return <span className="text-[13px] tabular-nums">{formatArea(m2)}</span>;
+        return (
+          <span className="whitespace-nowrap text-[13px] tabular-nums">
+            {formatArea(m2)}
+          </span>
+        );
       },
     },
     {
       id: 'exclusiveArea',
       header: '전용',
-      size: 120,
+      size: 150,
       enableSorting: true,
       cell: ({ row }) => {
         const unit = row.original;
         const m2 = unit.exclusiveAreaM2 ?? unit.siteUnitType?.exclusiveAreaM2;
         if (!m2) return <span className="text-[13px] text-muted-foreground">-</span>;
-        return <span className="text-[13px] tabular-nums">{formatArea(m2)}</span>;
+        return (
+          <span className="whitespace-nowrap text-[13px] tabular-nums">
+            {formatArea(m2)}
+          </span>
+        );
       },
     },
     {
@@ -583,7 +616,7 @@ function SitesPage() {
       cell: ({ row }) => {
         const typeName = row.original.siteUnitType?.name;
         return typeName
-          ? <span className="text-[13px]">{typeName}</span>
+          ? <span className="whitespace-nowrap text-[13px]">{typeName}</span>
           : <span className="text-[13px] text-muted-foreground">-</span>;
       },
     },
@@ -689,7 +722,7 @@ function SitesPage() {
           .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
         if (!latest) return <span className="text-[13px] text-muted-foreground">-</span>;
         return (
-          <span className="text-[12px] tabular-nums text-muted-foreground">
+          <span className="whitespace-nowrap text-[12px] tabular-nums text-muted-foreground">
             {formatDate(latest.createdAt)}
           </span>
         );
@@ -719,43 +752,54 @@ function SitesPage() {
       <div
         key={os.id}
         className={cn(
-          'group mb-[3px] cursor-pointer rounded-lg px-[11px] py-2.5 transition-colors hover:bg-accent/60',
-          isActive && 'bg-accent hover:bg-accent',
+          'group mb-1 flex items-start gap-1 rounded-lg px-2 py-1.5 transition-colors hover:bg-accent/60',
+          isActive && 'bg-accent shadow-sm ring-1 ring-border/60 hover:bg-accent',
         )}
-        onClick={() => handleSelectSite(os)}
       >
-        <div className="flex items-center gap-1.5">
-          <span className="min-w-0 truncate text-[13px] font-medium">{site.name}</span>
-          <div className="flex-1" />
-          <span className="shrink-0 rounded-full bg-secondary px-[7px] py-px text-[10px] font-medium text-muted-foreground">
-            {siteTypeShort[site.type] ?? site.type}
-          </span>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="-my-1 size-6 shrink-0 opacity-0 transition-opacity group-hover:opacity-100 data-[state=open]:opacity-100"
-                onClick={(e) => e.stopPropagation()}
-                aria-label="단지 메뉴"
-              >
-                <MoreHorizontal className="size-3.5" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
-              <DropdownMenuItem
-                className="text-destructive"
-                onClick={() => setRemoveTarget(os)}
-              >
-                <Trash2 className="size-3.5" />
-                관리단지에서 제거
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-        <div className="mt-0.5 truncate text-[11px] text-muted-foreground/90">
-          {subline || site.roadAddress || site.jibunAddress || '-'}
-        </div>
+        <button
+          type="button"
+          className="min-w-0 flex-1 rounded-md px-1 py-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring/70"
+          aria-pressed={isActive}
+          onClick={() => handleSelectSite(os)}
+        >
+          <div className="flex min-w-0 items-center gap-1.5">
+            <span className="min-w-0 flex-1 truncate text-[13px] font-medium">
+              {site.name}
+            </span>
+            <span
+              className={cn(
+                'shrink-0 rounded-full bg-secondary px-[7px] py-px text-[10px] font-medium text-muted-foreground',
+                isActive && 'bg-background/80 text-foreground/70',
+              )}
+            >
+              {siteTypeShort[site.type] ?? site.type}
+            </span>
+          </div>
+          <div className="mt-0.5 truncate text-[11px] tabular-nums text-muted-foreground/90">
+            {subline || site.roadAddress || site.jibunAddress || '-'}
+          </div>
+        </button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="mt-0.5 size-6 shrink-0 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100"
+              aria-label={`${site.name} 단지 메뉴`}
+            >
+              <MoreHorizontal className="size-3.5" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem
+              className="text-destructive"
+              onClick={() => setRemoveTarget(os)}
+            >
+              <Trash2 className="size-3.5" />
+              관리단지에서 제거
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
     );
   };
@@ -767,7 +811,6 @@ function SitesPage() {
   const siteMetaLine = siteDetail
     ? [
         siteDetail.roadAddress || siteDetail.jibunAddress,
-        siteTypeLabels[siteDetail.type] ?? siteDetail.type,
         realDongCount > 0 ? `${realDongCount}개동` : null,
         `${allUnits.length}호`,
       ]
@@ -781,7 +824,7 @@ function SitesPage() {
     <div className="relative flex flex-1 min-h-0 -mx-4 -mb-4">
       {/* ─── Sidebar (단지 Nav) ──────────────────────────────── */}
       {isSiteNavOpen ? (
-        <aside className="flex w-[250px] shrink-0 flex-col border-r bg-background">
+        <aside className="flex w-[260px] shrink-0 flex-col border-r bg-background">
           {/* 헤더: 타이틀 + 단지 추가 + 접기 */}
           <div className="flex items-center gap-1.5 px-3 pb-2 pt-[11px]">
             <span className="text-[13px] font-semibold">관리단지</span>
@@ -797,7 +840,7 @@ function SitesPage() {
               title="단지 추가"
             >
               <Plus className="size-3" />
-              추가
+              단지 추가
             </Button>
             <Button
               variant="ghost"
@@ -813,7 +856,11 @@ function SitesPage() {
 
           {/* 그룹 탭 (전체/지역/유형) */}
           <div className="px-2.5 pb-1.5">
-            <div className="flex rounded-lg bg-secondary p-0.5">
+            <div
+              className="flex rounded-lg bg-secondary p-0.5"
+              role="group"
+              aria-label="단지 묶음 방식"
+            >
               {([
                 { key: 'none', label: '전체' },
                 { key: 'region', label: '지역' },
@@ -822,8 +869,9 @@ function SitesPage() {
                 <button
                   key={key}
                   type="button"
+                  aria-pressed={groupBy === key}
                   className={cn(
-                    'flex-1 rounded-md py-1 text-[11.5px] transition-colors',
+                    'flex-1 rounded-md py-1 text-[11.5px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/70',
                     groupBy === key
                       ? 'bg-background font-semibold shadow-sm'
                       : 'font-medium text-muted-foreground hover:text-foreground',
@@ -850,6 +898,7 @@ function SitesPage() {
                 placeholder="단지명 · 주소 검색"
                 value={buildingSearch}
                 onChange={(e) => setBuildingSearch(e.target.value)}
+                aria-label="관리단지 검색"
                 className="w-full min-w-0 bg-transparent text-xs outline-none placeholder:text-muted-foreground/60"
               />
             </div>
@@ -950,8 +999,24 @@ function SitesPage() {
         <div className="flex flex-1 items-center justify-center min-w-0 p-4">
           <EmptyState
             icon={Building2}
-            title="단지를 선택하세요"
-            description="왼쪽에서 관리 단지를 선택하면 호수 목록이 표시됩니다"
+            title={officeSites.length > 0 ? '단지를 선택하세요' : '관리 단지를 추가하세요'}
+            description={
+              officeSites.length > 0
+                ? '왼쪽에서 관리 단지를 선택하면 호수 목록이 표시됩니다'
+                : '자주 다루는 단지를 추가하면 호수와 연락처를 한곳에서 관리할 수 있습니다'
+            }
+            action={
+              officeSites.length > 0 ? (
+                <Button variant="outline" size="sm" onClick={() => handleSelectSite(officeSites[0])}>
+                  첫 단지 열기
+                </Button>
+              ) : (
+                <Button size="sm" onClick={() => setShowAddSiteDialog(true)}>
+                  <Plus className="size-3.5" />
+                  단지 추가
+                </Button>
+              )
+            }
           />
         </div>
       ) : isLoadingDetail ? (
@@ -990,17 +1055,32 @@ function SitesPage() {
           {/* 단지 헤더: 단지명 + 메타 + 뷰 전환 탭 */}
           <div className="flex flex-wrap items-center gap-2.5 border-b border-border/60 px-5 py-3">
             <div className="min-w-0">
-              <div className="truncate text-base font-bold tracking-tight">
-                {siteDetail.name}
+              <div className="flex min-w-0 items-center gap-2">
+                <h1
+                  className="min-w-0 line-clamp-1 text-balance text-base font-semibold"
+                  title={siteDetail.name}
+                >
+                  {siteDetail.name}
+                </h1>
+                <Badge
+                  variant="secondary"
+                  className="h-5 shrink-0 rounded-md px-1.5 text-[10px] font-medium"
+                >
+                  {siteTypeLabels[siteDetail.type] ?? siteDetail.type}
+                </Badge>
               </div>
-              <div className="mt-0.5 truncate text-[11.5px] text-muted-foreground/90">
+              <div className="mt-0.5 truncate text-[11.5px] tabular-nums text-muted-foreground/90">
                 {siteMetaLine}
               </div>
             </div>
             <div className="flex-1" />
-            <div className="flex rounded-lg bg-secondary p-[3px]">
+            <div
+              className="flex rounded-lg bg-secondary p-[3px]"
+              role="group"
+              aria-label="단지 보기 방식"
+            >
               {([
-                { key: 'table', label: '테이블' },
+                { key: 'table', label: '호수 목록' },
                 { key: 'layout', label: '배치표' },
                 { key: 'occupancy', label: '점유상태' },
                 { key: 'expiry', label: '만기/변동' },
@@ -1008,8 +1088,9 @@ function SitesPage() {
                 <button
                   key={key}
                   type="button"
+                  aria-pressed={unitViewMode === key}
                   className={cn(
-                    'whitespace-nowrap rounded-md px-3 py-[5px] text-[12.5px] transition-colors',
+                    'whitespace-nowrap rounded-md px-3 py-[5px] text-[12.5px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/70',
                     unitViewMode === key
                       ? 'bg-background font-semibold shadow-sm'
                       : 'font-medium text-muted-foreground hover:text-foreground',
@@ -1053,6 +1134,7 @@ function SitesPage() {
                 placeholder="호수 · 이름 · 전화 · 상담 검색 (/)"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
+                aria-label="호수, 이름, 전화번호, 상담 내용 검색"
                 className="w-full min-w-0 bg-transparent text-xs outline-none placeholder:text-muted-foreground/60"
               />
               {query && (
@@ -1078,6 +1160,15 @@ function SitesPage() {
               </button>
             )}
 
+            <span
+              className="whitespace-nowrap text-[11px] tabular-nums text-muted-foreground"
+              aria-live="polite"
+            >
+              {hasActiveUnitFilters
+                ? `${filteredUnits.length.toLocaleString()} / ${allUnits.length.toLocaleString()}호`
+                : `${allUnits.length.toLocaleString()}호`}
+            </span>
+
             <div className="flex-1" />
 
             {/* 동/호수 추가 (토지는 호실 구조 없음) */}
@@ -1086,7 +1177,7 @@ function SitesPage() {
                 <DropdownMenuTrigger asChild>
                   <Button variant="outline" size="sm" className="h-7 gap-1 rounded-[7px] px-2 text-xs">
                     <Plus className="size-3.5" />
-                    추가
+                    동·호수 추가
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">

@@ -97,13 +97,12 @@ export interface Listing {
   moveInAvailableFrom: string | null;
   moveInAvailableTo: string | null;
   isPaused: boolean;
-  isHidden: boolean;
   memo: string | null;
   createdAt: string;
   updatedAt: string;
   /** 의뢰 컨텍스트 — 확인 상태/접수일/다음확인일의 단일 출처 */
   intake?: ListingIntakeSummary;
-  /** 이 거래 옵션을 점유한 활성 Deal — 있으면 "거래중/완료" */
+  /** 이 거래 옵션의 비취소 Deal — 있으면 "거래중/종료" */
   deals?: ListingOccupyingDeal[];
   advertisements?: ListingAdvertisement[];
   priceHistories?: ListingPriceHistory[];
@@ -166,7 +165,6 @@ export interface Listing {
       moveInAvailableFrom: string | null;
       moveInAvailableTo: string | null;
       isPaused: boolean;
-      isHidden: boolean;
       memo: string | null;
       createdAt: string;
       updatedAt: string;
@@ -274,13 +272,6 @@ export function createListingsApi(request: RequestFn) {
 
     update: (id: string, dto: UpdateListingDto) =>
       request<Listing>(`/listings/${id}`, { method: 'PATCH', body: dto }),
-
-    /** 목록 숨김 토글 (Listing.isHidden) */
-    setHidden: (id: string, isHidden: boolean) =>
-      request<Listing>(`/listings/${id}`, {
-        method: 'PATCH',
-        body: { isHidden },
-      }),
 
     remove: (id: string) =>
       request<void>(`/listings/${id}`, { method: 'DELETE' }),

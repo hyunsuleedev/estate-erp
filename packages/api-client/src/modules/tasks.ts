@@ -55,7 +55,6 @@ export interface TaskListingSummary {
   moveInAvailableFrom: string | null;
   moveInAvailableTo: string | null;
   isPaused: boolean;
-  isHidden: boolean;
   memo: string | null;
   intake?: ListingIntakeState | null;
   deals?: ListingOccupyingDeal[];

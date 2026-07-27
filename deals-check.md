@@ -1,0 +1,135 @@
+- generic [ref=f7e2]:
+  - main [ref=f7e46]:
+    - generic [ref=f7e47]:
+      - generic [ref=f7e48]:
+        - button "Toggle Sidebar" [ref=f7e49]
+        - heading "거래관리" [level=1] [ref=f7e56]
+      - generic [ref=f7e57]:
+        - button "전체 검색" [ref=f7e58]
+        - button "셸 테마 전환" [ref=f7e60]
+        - button "알림 (미읽음 2건)" [ref=f7e61]:
+          - generic [ref=f7e62]: "2"
+        - button [ref=f7e63]
+    - generic [ref=f7e65]:
+      - button "새 거래" [ref=f7e67]
+      - generic [ref=f7e68]:
+        - textbox "매물 · 고객 · 주소 검색" [ref=f7e73]
+        - generic [ref=f7e74]:
+          - button "전체" [ref=f7e75]
+          - button "매매" [ref=f7e76]
+          - button "전세" [ref=f7e77]
+          - button "월세" [ref=f7e78]
+        - combobox [ref=f7e79]:
+          - generic [ref=f7e80]: 단계
+          - generic: 전체
+        - combobox [ref=f7e81]:
+          - generic [ref=f7e82]: 공동중개
+          - generic: 전체
+        - combobox [ref=f7e83]:
+          - generic [ref=f7e84]: 계약서
+          - generic: 전체
+        - combobox [ref=f7e85]:
+          - generic [ref=f7e86]: 파이프라인 상태
+          - generic: 전체
+        - generic [ref=f7e87]: 7건
+        - generic [ref=f7e88]:
+          - button "카드 자세히 보기" [pressed] [ref=f7e89]
+          - button "카드 간결하게 보기" [ref=f7e92]
+        - generic [ref=f7e95]:
+          - button "보드" [ref=f7e96]
+          - button "리스트" [ref=f7e99]
+      - region "거래 단계 칸반 보드" [ref=f7e101]:
+        - generic [ref=f7e102]:
+          - generic [ref=f7e103]:
+            - generic [ref=f7e104]:
+              - heading "조율" [level=2] [ref=f7e106]
+              - generic [ref=f7e107]: "1"
+              - generic [ref=f7e108]: 1,980만
+            - button "고덕그라시움 101동 3401호 거래 카드 단계 이동" [ref=f7e110]:
+              - article [ref=f7e111]:
+                - generic [ref=f7e113]:
+                  - button "고덕그라시움 101동 3401호" [ref=f7e114]:
+                    - paragraph [ref=f7e115]: 고덕그라시움 101동 3401호
+                  - button "거래 액션" [ref=f7e117]
+                - generic [ref=f7e118]: 19억 8,000만
+                - generic [ref=f7e119]: 매매 · 중도금 8/12 · D-20 · 4일 체류
+          - generic [ref=f7e125]:
+            - generic [ref=f7e126]:
+              - heading "가계약" [level=2] [ref=f7e128]
+              - generic [ref=f7e129]: "2"
+              - generic [ref=f7e130]: 4,244만
+            - generic [ref=f7e131]:
+              - button "고덕그라시움 102동 3401호 거래 카드 단계 이동" [ref=f7e132]:
+                - article [ref=f7e133]:
+                  - generic [ref=f7e135]:
+                    - button "고덕그라시움 102동 3401호" [ref=f7e136]
+                    - button "거래 액션" [ref=f7e139]
+                  - generic [ref=f7e140]: 17억 5,000만
+                  - generic [ref=f7e141]: 매매 · 일정 미정 · 5일 체류
+              - button "고덕그라시움 101동 3501호 거래 카드 단계 이동" [ref=f7e147]:
+                - article [ref=f7e148]:
+                  - generic [ref=f7e150]:
+                    - button "고덕그라시움 101동 3501호" [ref=f7e151]
+                    - button "거래 액션" [ref=f7e154]
+                  - generic [ref=f7e155]: 26억 8,000만
+                  - generic [ref=f7e156]: 매매 · 일정 미정 · 4일 체류
+          - generic [ref=f7e162]:
+            - generic [ref=f7e163]:
+              - heading "본계약" [level=2] [ref=f7e165]
+              - generic [ref=f7e166]: "1"
+              - generic [ref=f7e167]: 660만
+            - button "고덕그라시움 101동 3403호 거래 카드 단계 이동" [ref=f7e169]:
+              - article "목표 14일 · 현재 16일" [ref=f7e170]:
+                - generic [ref=f7e172]:
+                  - button "고덕그라시움 101동 3403호" [ref=f7e173]:
+                    - paragraph [ref=f7e174]: 고덕그라시움 101동 3403호
+                  - button "거래 액션" [ref=f7e176]
+                - generic [ref=f7e177]: 13억 2,000만
+                - generic [ref=f7e178]:
+                  - generic [ref=f7e183]: 매매 · 일정 미정 · 16일 체류 · 공동
+                  - generic [ref=f7e184]: 단계 정체
+          - generic [ref=f7e185]:
+            - generic [ref=f7e186]:
+              - heading "잔금/완료" [level=2] [ref=f7e188]
+              - generic [ref=f7e189]: "1"
+              - generic [ref=f7e190]: 704만
+            - button "고덕그라시움 101동 3501호 거래 카드 단계 이동" [ref=f7e192]:
+              - article "목표 7일 · 현재 20일" [ref=f7e193]:
+                - generic [ref=f7e195]:
+                  - button "고덕그라시움 101동 3501호" [ref=f7e196]:
+                    - paragraph [ref=f7e197]: 고덕그라시움 101동 3501호
+                  - button "거래 액션" [ref=f7e199]
+                - generic [ref=f7e200]: 8억 8,000만
+                - generic [ref=f7e201]:
+                  - generic [ref=f7e206]: 전세 · 일정 미정 · 20일 체류
+                  - generic [ref=f7e207]: 단계 정체
+          - generic [ref=f7e208]:
+            - generic [ref=f7e209]:
+              - heading "정산" [level=2] [ref=f7e211]
+              - generic [ref=f7e212]: "2"
+              - generic [ref=f7e213]: 1,028만
+            - generic [ref=f7e214]:
+              - button "고덕그라시움 101동 3402호 거래 카드 단계 이동" [ref=f7e215]:
+                - article "목표 10일 · 현재 18일" [ref=f7e216]:
+                  - generic [ref=f7e218]:
+                    - button "고덕그라시움 101동 3402호" [ref=f7e219]
+                    - button "거래 액션" [ref=f7e222]
+                  - generic [ref=f7e223]: 3,000만 / 120
+                  - generic [ref=f7e224]:
+                    - generic [ref=f7e229]: 월세 · 일정 미정 · 18일 체류 · 공동
+                    - generic [ref=f7e230]: 단계 정체
+              - button "고덕그라시움 101동 3503호 거래 카드 단계 이동" [ref=f7e231]:
+                - article "목표 10일 · 현재 12일" [ref=f7e232]:
+                  - generic [ref=f7e234]:
+                    - button "고덕그라시움 101동 3503호" [ref=f7e235]
+                    - button "거래 액션" [ref=f7e238]
+                  - generic [ref=f7e239]: 24억 2,000만
+                  - generic [ref=f7e240]:
+                    - generic [ref=f7e245]: 매매 · 일정 미정 · 12일 체류 · 공동
+                    - generic [ref=f7e246]: 단계 정체
+      - status [ref=f7e247]
+      - button "종료 거래 0건 합계 —" [ref=f7e249]:
+        - heading "종료 거래" [level=2] [ref=f7e253]
+        - generic [ref=f7e254]: 0건
+        - generic [ref=f7e255]: 합계 —
+  - region "Notifications alt+T"

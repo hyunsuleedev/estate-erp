@@ -1,9 +1,14 @@
 import { useMemo, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Eye, EyeOff, Lock, MoreHorizontal, PhoneCall, Trash2, XCircle } from 'lucide-react';
+import { Lock, MoreVertical, PhoneCall, Trash2, XCircle } from 'lucide-react';
 import type { ListingIntake } from '@estate-erp/api-client';
-import { MAINTENANCE_FEE_INCLUDE_LABELS } from '@estate-erp/shared';
+import {
+  IntakeCheckResult,
+  IntakeClosedReason,
+  IntakeLifecycleStatus,
+  MAINTENANCE_FEE_INCLUDE_LABELS,
+} from '@estate-erp/shared';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -34,23 +39,21 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { ConfirmDialog, StatusBadge } from '@/components/domain';
+import { ConfirmDialog } from '@/components/domain';
 import { getStatusMeta } from '@/lib/status-config';
-import { formatDday, formatMoney } from '@/lib/format';
+import { formatMoney } from '@/lib/format';
 import { formatDateShort } from '@/components/quick-sheet';
-import { isIntakeOverdue } from './-property-list-view-utils';
 
 // (desktop) 웹의 ListingSummary/PropertyListingGroup 대신 최소 구조 타입 사용 —
 // 데스크톱의 의뢰(ListingIntake) 중심 그룹 모델과 웹의 매물(Listing) 중심 모델
 // 양쪽에서 그대로 쓸 수 있도록 필요한 필드만 요구한다.
 export interface RowActionListing {
   id: string;
-  isHidden: boolean;
   transactionType: string;
 }
 
 export interface BulkActionGroup {
-  listings: Array<{ id: string }>;
+  listings: Array<{ id: string; intakeId: string }>;
 }
 
 // ── 공통 invalidate ──────────────────────────────────────────────
@@ -64,38 +67,6 @@ function useInvalidatePropertyLists() {
       queryClient.invalidateQueries({ queryKey: [...key] });
     }
   };
-}
-
-// ── 의뢰 다음확인 셀 ────────────────────────────────────────────
-
-export function IntakeNextConfirmCell({ intake }: { intake: ListingIntake | null }) {
-  if (!intake) {
-    return <span className="px-0.5 text-[12px] text-slate-400">—</span>;
-  }
-
-  const overdue = isIntakeOverdue(intake);
-
-  return (
-    <div className="flex min-w-0 flex-col gap-0.5 py-1">
-      <div className="flex min-w-0 items-center gap-1">
-        <StatusBadge kind="intakeStatus" status={String(intake.status)} size="sm" />
-        {overdue && intake.nextConfirmAt && (
-          <span className="shrink-0 text-[11px] font-semibold text-destructive">
-            {formatDday(intake.nextConfirmAt)} 경과
-          </span>
-        )}
-      </div>
-      <span
-        className={cn(
-          'truncate text-[11px]',
-          overdue ? 'font-medium text-destructive' : 'text-slate-500',
-        )}
-      >
-        다음 {intake.nextConfirmAt ? formatDateShort(intake.nextConfirmAt) : '미정'}
-        {' · '}접수 {formatDateShort(intake.receivedAt)}
-      </span>
-    </div>
-  );
 }
 
 // ── 확인 기록 다이얼로그 ────────────────────────────────────────
@@ -141,7 +112,9 @@ export function IntakeConfirmDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   const invalidate = useInvalidatePropertyLists();
-  const [result, setResult] = useState<string>('alive');
+  const [result, setResult] = useState<IntakeCheckResult>(
+    IntakeCheckResult.ALIVE,
+  );
   const [channel, setChannel] = useState<string>('phone');
   const [memo, setMemo] = useState('');
   const [nextConfirmAt, setNextConfirmAt] = useState('');
@@ -158,7 +131,7 @@ export function IntakeConfirmDialog({
       toast.success('확인 기록을 저장했습니다.');
       invalidate();
       onOpenChange(false);
-      setResult('alive');
+      setResult(IntakeCheckResult.ALIVE);
       setChannel('phone');
       setMemo('');
       setNextConfirmAt('');
@@ -174,15 +147,21 @@ export function IntakeConfirmDialog({
         <DialogHeader>
           <DialogTitle>의뢰 확인 기록</DialogTitle>
           <DialogDescription>
-            마지막 확인 {intake.confirmedAt ? formatDateShort(intake.confirmedAt) : '없음'} · 다음
-            확인 예정 {intake.nextConfirmAt ? formatDateShort(intake.nextConfirmAt) : '미정'}
+            마지막 유효 확인{' '}
+            {intake.lastVerifiedAt ? formatDateShort(intake.lastVerifiedAt) : '없음'} ·
+            다음 확인 예정{' '}
+            {intake.nextConfirmAt ? formatDateShort(intake.nextConfirmAt) : '미정'}
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
           <div className="space-y-1.5">
             <Label className="text-xs font-medium text-muted-foreground">확인 결과 *</Label>
-            <RadioGroup value={result} onValueChange={setResult} className="gap-1.5">
+            <RadioGroup
+              value={result}
+              onValueChange={(value) => setResult(value as IntakeCheckResult)}
+              className="gap-1.5"
+            >
               {CONFIRM_RESULTS.map((option) => (
                 <label
                   key={option.value}
@@ -260,7 +239,7 @@ export function IntakeConfirmDialog({
   );
 }
 
-// ── 행 액션 메뉴 (확인 기록 / 의뢰 종결 / 숨김 / 삭제) ──────────
+// ── 행 액션 메뉴 (확인 기록 / 의뢰 종결 / 삭제) ────────────────
 
 export function PropertyRowActions({
   listings,
@@ -274,22 +253,13 @@ export function PropertyRowActions({
   const [closeOpen, setCloseOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<RowActionListing | null>(null);
 
-  const hideMutation = useMutation({
-    mutationFn: ({ id, isHidden }: { id: string; isHidden: boolean }) =>
-      api.listings.setHidden(id, isHidden),
-    onSuccess: (_data, variables) => {
-      toast.success(
-        variables.isHidden ? '매물을 숨김 처리했습니다.' : '매물 숨김을 해제했습니다.',
-      );
-      invalidate();
-    },
-    onError: (error: Error) => {
-      toast.error(error.message || '숨김 상태 변경에 실패했습니다.');
-    },
-  });
-
   const closeMutation = useMutation({
-    mutationFn: (intakeId: string) => api.listingIntakes.updateStatus(intakeId, 'done'),
+    mutationFn: (intakeId: string) =>
+      api.listingIntakes.updateLifecycleStatus(
+        intakeId,
+        IntakeLifecycleStatus.CLOSED,
+        { closedReason: IntakeClosedReason.WITHDRAWN },
+      ),
     onSuccess: () => {
       toast.success('의뢰를 종결 처리했습니다.');
       invalidate();
@@ -316,11 +286,11 @@ export function PropertyRowActions({
     getStatusMeta('transactionType', transactionType).label;
 
   return (
-    <div onClick={(event) => event.stopPropagation()}>
+    <div className="flex items-center justify-center" onClick={(event) => event.stopPropagation()}>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button variant="ghost" size="icon-sm" aria-label="행 작업 메뉴">
-            <MoreHorizontal className="size-4 text-slate-500" />
+            <MoreVertical className="size-4 text-slate-500" />
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-52">
@@ -333,7 +303,7 @@ export function PropertyRowActions({
                 <PhoneCall className="size-3.5" />
                 확인 기록...
               </DropdownMenuItem>
-              {intake.status !== 'done' && (
+              {intake.lifecycleStatus !== IntakeLifecycleStatus.CLOSED && (
                 <DropdownMenuItem onSelect={() => setCloseOpen(true)}>
                   <XCircle className="size-3.5" />
                   의뢰 종결 처리...
@@ -345,24 +315,6 @@ export function PropertyRowActions({
           <DropdownMenuLabel className="text-[11px] text-muted-foreground">
             거래별 작업
           </DropdownMenuLabel>
-          {listings.map((listing) => (
-            <DropdownMenuItem
-              key={`hide-${listing.id}`}
-              disabled={hideMutation.isPending}
-              onSelect={() =>
-                hideMutation.mutate({ id: listing.id, isHidden: !listing.isHidden })
-              }
-            >
-              {listing.isHidden ? (
-                <Eye className="size-3.5" />
-              ) : (
-                <EyeOff className="size-3.5" />
-              )}
-              {transactionLabel(listing.transactionType)}{' '}
-              {listing.isHidden ? '숨김 해제' : '숨김 처리'}
-            </DropdownMenuItem>
-          ))}
-          <DropdownMenuSeparator />
           {listings.map((listing) => (
             <DropdownMenuItem
               key={`delete-${listing.id}`}
@@ -415,11 +367,15 @@ export function PropertyRowActions({
 
 // ── 일괄 작업 바 (선택 행) ──────────────────────────────────────
 
-const BULK_CHECK_STATUS_VALUES = ['unverified', 'verified', 'in_contract', 'hold', 'done'] as const;
+const BULK_LIFECYCLE_VALUES = [
+  IntakeLifecycleStatus.OPEN,
+  IntakeLifecycleStatus.HOLD,
+  IntakeLifecycleStatus.CLOSED,
+] as const;
 
 export function PropertyBulkActions({ groups }: { groups: BulkActionGroup[] }) {
   const invalidate = useInvalidatePropertyLists();
-  const [statusValue, setStatusValue] = useState('');
+  const [statusValue, setStatusValue] = useState<IntakeLifecycleStatus | ''>('');
 
   const listingIds = useMemo(() => {
     const ids = new Set<string>();
@@ -427,10 +383,25 @@ export function PropertyBulkActions({ groups }: { groups: BulkActionGroup[] }) {
     return Array.from(ids);
   }, [groups]);
 
+  const intakeIds = useMemo(() => {
+    const ids = new Set<string>();
+    groups.forEach((group) =>
+      group.listings.forEach((listing) => ids.add(listing.intakeId)),
+    );
+    return Array.from(ids);
+  }, [groups]);
+
   const bulkStatusMutation = useMutation({
-    mutationFn: async (checkStatus: string) => {
+    mutationFn: async (status: IntakeLifecycleStatus) => {
       const results = await Promise.allSettled(
-        listingIds.map((id) => api.listings.update(id, { checkStatus })),
+        intakeIds.map((id) =>
+          api.listingIntakes.updateLifecycleStatus(id, status, {
+            closedReason:
+              status === IntakeLifecycleStatus.CLOSED
+                ? IntakeClosedReason.WITHDRAWN
+                : null,
+          }),
+        ),
       );
       const failed = results.filter((result) => result.status === 'rejected').length;
       return { failed, total: results.length };
@@ -441,7 +412,7 @@ export function PropertyBulkActions({ groups }: { groups: BulkActionGroup[] }) {
           `${total - failed}건 변경, ${failed}건 실패했습니다. (허용되지 않는 상태 전환 포함)`,
         );
       } else {
-        toast.success(`거래 ${total}건의 확인상태를 변경했습니다.`);
+        toast.success(`의뢰 ${total}건의 생명주기를 변경했습니다.`);
       }
       invalidate();
     },
@@ -451,25 +422,7 @@ export function PropertyBulkActions({ groups }: { groups: BulkActionGroup[] }) {
     onSettled: () => setStatusValue(''),
   });
 
-  const bulkHideMutation = useMutation({
-    mutationFn: async (isHidden: boolean) => {
-      await Promise.all(listingIds.map((id) => api.listings.setHidden(id, isHidden)));
-      return isHidden;
-    },
-    onSuccess: (isHidden) => {
-      toast.success(
-        isHidden
-          ? `거래 ${listingIds.length}건을 숨김 처리했습니다.`
-          : `거래 ${listingIds.length}건의 숨김을 해제했습니다.`,
-      );
-      invalidate();
-    },
-    onError: (error: Error) => {
-      toast.error(error.message || '일괄 숨김 변경에 실패했습니다.');
-    },
-  });
-
-  const busy = bulkStatusMutation.isPending || bulkHideMutation.isPending;
+  const busy = bulkStatusMutation.isPending;
 
   return (
     <div className="flex flex-wrap items-center gap-2">
@@ -477,42 +430,22 @@ export function PropertyBulkActions({ groups }: { groups: BulkActionGroup[] }) {
       <Select
         value={statusValue || undefined}
         onValueChange={(value) => {
-          setStatusValue(value);
-          bulkStatusMutation.mutate(value);
+          setStatusValue(value as IntakeLifecycleStatus);
+          bulkStatusMutation.mutate(value as IntakeLifecycleStatus);
         }}
         disabled={busy}
       >
         <SelectTrigger size="sm" className="h-7 w-40 bg-white text-xs">
-          <SelectValue placeholder="확인상태 일괄 변경" />
+          <SelectValue placeholder="의뢰상태 일괄 변경" />
         </SelectTrigger>
         <SelectContent>
-          {BULK_CHECK_STATUS_VALUES.map((value) => (
+          {BULK_LIFECYCLE_VALUES.map((value) => (
             <SelectItem key={value} value={value} className="text-xs">
-              {getStatusMeta('checkStatus', value).label}
+              {getStatusMeta('intakeLifecycle', value).label}
             </SelectItem>
           ))}
         </SelectContent>
       </Select>
-      <Button
-        variant="outline"
-        size="sm"
-        className="h-7 px-2.5 text-xs"
-        disabled={busy}
-        onClick={() => bulkHideMutation.mutate(true)}
-      >
-        <EyeOff className="size-3.5" />
-        일괄 숨김
-      </Button>
-      <Button
-        variant="outline"
-        size="sm"
-        className="h-7 px-2.5 text-xs"
-        disabled={busy}
-        onClick={() => bulkHideMutation.mutate(false)}
-      >
-        <Eye className="size-3.5" />
-        숨김 해제
-      </Button>
     </div>
   );
 }

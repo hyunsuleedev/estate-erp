@@ -38,7 +38,15 @@ describe('listing state query predicates', () => {
           deals: {
             some: {
               isCancelled: false,
-              stage: { in: ['preContract', 'contracted', 'settling'] },
+              stage: {
+                in: [
+                  'selection',
+                  'negotiating',
+                  'preContract',
+                  'contracted',
+                  'settling',
+                ],
+              },
             },
           },
         },
@@ -49,6 +57,48 @@ describe('listing state query predicates', () => {
               stage: { in: ['completed', 'closed'] },
             },
           },
+        },
+      ],
+    });
+  });
+
+  it('merges completed Deals and a closed intake into closed availability', () => {
+    expect(buildListingAvailabilityWhere('closed')).toEqual({
+      OR: [
+        {
+          deals: {
+            some: {
+              isCancelled: false,
+              stage: { in: ['completed', 'closed'] },
+            },
+          },
+        },
+        {
+          AND: [
+            {
+              intake: {
+                lifecycleStatus: 'closed',
+              },
+            },
+            {
+              deals: {
+                none: {
+                  isCancelled: false,
+                  stage: {
+                    in: [
+                      'selection',
+                      'negotiating',
+                      'preContract',
+                      'contracted',
+                      'settling',
+                      'completed',
+                      'closed',
+                    ],
+                  },
+                },
+              },
+            },
+          ],
         },
       ],
     });

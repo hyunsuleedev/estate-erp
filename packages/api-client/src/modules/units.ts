@@ -68,7 +68,6 @@ export interface UnitListing {
   isPaused: boolean;
   intake?: ListingIntakeState | null;
   deals?: ListingOccupyingDeal[];
-  isHidden: boolean;
   updatedAt: string;
 }
 

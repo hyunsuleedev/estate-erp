@@ -75,11 +75,40 @@ describe('ListingIntakesService', () => {
       }),
     );
     expect(args.select.property.select.site.select).not.toHaveProperty('metadata');
+    expect(args.select.listings.select._count).toEqual({
+      select: { matches: true },
+    });
     expect(args.select.listings.select.advertisements.select).toEqual({
       id: true,
       channel: true,
       status: true,
+      advertisedPrice: true,
+      advertisedDeposit: true,
+      advertisedMonthlyRent: true,
+      startedAt: true,
+      url: true,
       createdAt: true,
+    });
+  });
+
+  it('includes ordered price histories for listings in the detail view', () => {
+    const { service } = createService();
+    const detailInclude = (
+      service as unknown as {
+        buildDetailInclude: () => {
+          listings: {
+            include: {
+              priceHistories: {
+                orderBy: { createdAt: 'desc' };
+              };
+            };
+          };
+        };
+      }
+    ).buildDetailInclude();
+
+    expect(detailInclude.listings.include.priceHistories).toEqual({
+      orderBy: { createdAt: 'desc' },
     });
   });
 
@@ -121,6 +150,106 @@ describe('ListingIntakesService', () => {
             { listings: { some: expect.objectContaining({ advertisements: { some: {} } }) } },
           ]),
         }),
+      }),
+    );
+  });
+
+  it('filters by advertisement absence', async () => {
+    const { prisma, service } = createService();
+
+    await service.findAll('office-1', { hasAdvertisement: false });
+
+    expect(prisma.listingIntake.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          AND: expect.arrayContaining([
+            { listings: { some: expect.objectContaining({ advertisements: { none: {} } }) } },
+          ]),
+        }),
+      }),
+    );
+  });
+
+  it('filters by multiple derived listing availabilities', async () => {
+    const { prisma, service } = createService();
+
+    await service.findAll('office-1', {
+      availabilities: ['available', 'paused'],
+    });
+
+    expect(prisma.listingIntake.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          AND: expect.arrayContaining([
+            {
+              listings: {
+                some: expect.objectContaining({
+                  OR: [expect.any(Object), expect.any(Object)],
+                }),
+              },
+            },
+          ]),
+        }),
+      }),
+    );
+  });
+
+  it('filters by multiple site types', async () => {
+    const { prisma, service } = createService();
+
+    await service.findAll('office-1', {
+      siteTypes: ['apartment', 'villa'],
+    });
+
+    expect(prisma.listingIntake.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          AND: expect.arrayContaining([
+            {
+              property: {
+                site: {
+                  type: { in: ['apartment', 'villa'] },
+                },
+              },
+            },
+          ]),
+        }),
+      }),
+    );
+  });
+
+  it('filters map listings by derived availability', async () => {
+    const { prisma, service } = createService();
+
+    await service.findMapIntakes('office-1', {
+      availability: 'in_contract',
+    });
+
+    const args = prisma.listingIntake.findMany.mock.calls[0][0];
+    expect(args.where).toEqual(
+      expect.objectContaining({
+        AND: expect.arrayContaining([
+          {
+            listings: {
+              some: expect.objectContaining({
+                AND: expect.arrayContaining([
+                  expect.objectContaining({
+                    deals: expect.objectContaining({ some: expect.any(Object) }),
+                  }),
+                ]),
+              }),
+            },
+          },
+        ]),
+      }),
+    );
+    expect(args.select.listings.where).toEqual(
+      expect.objectContaining({
+        AND: expect.arrayContaining([
+          expect.objectContaining({
+            deals: expect.objectContaining({ some: expect.any(Object) }),
+          }),
+        ]),
       }),
     );
   });
@@ -218,6 +347,29 @@ describe('ListingIntakesService', () => {
                     districtCode: '11740',
                   },
                 },
+              },
+            },
+          ]),
+        }),
+      }),
+    );
+  });
+
+  it('filters by multiple site ids', async () => {
+    const { prisma, service } = createService();
+
+    await service.findAll('office-1', {
+      siteIds: ['site-1', 'site-2'],
+    });
+
+    expect(prisma.listingIntake.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          AND: expect.arrayContaining([
+            {
+              property: {
+                siteId: { in: ['site-1', 'site-2'] },
+                site: {},
               },
             },
           ]),
@@ -346,22 +498,32 @@ describe('ListingIntakesService', () => {
     expect(prisma.listingIntake.update).not.toHaveBeenCalled();
   });
 
-  it('rejects a forbidden intake lifecycle transition (closed -> hold)', async () => {
+  it('allows reopening a closed intake directly into hold', async () => {
     const { prisma, service } = createService();
-    prisma.listingIntake.findFirst.mockResolvedValue({
-      id: 'intake-1',
-      officeId: 'office-1',
-      propertyId: 'property-1',
-      lifecycleStatus: 'closed',
-      closedReason: 'other',
-      updatedAt: new Date('2026-05-20T00:00:00.000Z'),
-    });
+    prisma.listingIntake.findFirst
+      .mockResolvedValueOnce({
+        id: 'intake-1',
+        officeId: 'office-1',
+        propertyId: 'property-1',
+        lifecycleStatus: 'closed',
+        closedReason: 'other',
+        updatedAt: new Date('2026-05-20T00:00:00.000Z'),
+      })
+      .mockResolvedValueOnce(null);
+    prisma.listingIntake.update.mockResolvedValue({ id: 'intake-1' });
 
-    await expect(
-      service.updateLifecycleStatus('intake-1', 'office-1', 'hold'),
-    ).rejects.toThrow('Invalid intake lifecycle transition');
+    await service.updateLifecycleStatus('intake-1', 'office-1', 'hold');
 
-    expect(prisma.listingIntake.update).not.toHaveBeenCalled();
+    expect(prisma.listingIntake.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          lifecycleStatus: 'hold',
+          lifecycleChangedAt: expect.any(Date),
+          lifecycleChangedBy: 'user',
+          closedReason: null,
+        }),
+      }),
+    );
   });
 
   it('allows reopening a closed intake when no other non-closed intake exists', async () => {

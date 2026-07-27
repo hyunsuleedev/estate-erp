@@ -148,7 +148,6 @@ interface ListingCreateDto {
   moveInAvailableFrom?: Date | string | null;
   moveInAvailableTo?: Date | string | null;
   isPaused?: boolean;
-  isHidden?: boolean;
   memo?: string | null;
 }
 
@@ -431,7 +430,6 @@ export class ListingsService {
                   moveInAvailableFrom: true,
                   moveInAvailableTo: true,
                   isPaused: true,
-                  isHidden: true,
                   memo: true,
                   createdAt: true,
                   updatedAt: true,
@@ -708,25 +706,33 @@ export class ListingsService {
         ? patchWithoutTx
         : { updatedAt: new Date() };
 
+    const updateWhere: Prisma.ListingWhereUniqueInput = expectedUpdatedAt
+      ? {
+          id,
+          officeId,
+          updatedAt: this.parseExpectedUpdatedAt(expectedUpdatedAt),
+        }
+      : { id };
+
     let listing;
-    if (expectedUpdatedAt) {
-      const expectedUpdatedAtDate = this.parseExpectedUpdatedAt(expectedUpdatedAt);
-      const result = await this.prisma.listing.updateMany({
-        where: { id, officeId, updatedAt: expectedUpdatedAtDate },
-        data: updateData,
-      });
-
-      if (result.count === 0) {
-        throw new ConflictException('다른 사용자가 먼저 수정했습니다.');
-      }
-
-      listing = await this.findOne(id, officeId);
-    } else {
+    try {
       listing = await this.prisma.listing.update({
-        where: { id },
+        where: updateWhere,
         data: updateData,
         include: LISTING_UPDATE_INCLUDE,
       });
+    } catch (error) {
+      // id(고유 키)에 updatedAt 조건을 더한 단일 행 update가 실패하면
+      // 조회 이후 다른 요청이 먼저 수정한 것이다. updateMany를 사용하면
+      // 수정 전/후 행을 얻지 못해 가격 이력과 감사 로그가 누락된다.
+      if (
+        expectedUpdatedAt &&
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2025'
+      ) {
+        throw new ConflictException('다른 사용자가 먼저 수정했습니다.');
+      }
+      throw error;
     }
 
     this.realtime?.emitListingUpdated({

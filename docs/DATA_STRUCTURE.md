@@ -375,7 +375,7 @@ ContactRelation: 김집주인 → 박어머니 (type: parent)
 | lastCheckResult | String? | alive, price_changed, unavailable, no_answer, pending |
 | nextConfirmAt | DateTime? | 다음 확인 예정 시각 |
 
-- 생명주기: `open ↔ hold`, `open/hold → closed`, 필요 시 `closed → open`
+- 생명주기: `open ↔ hold`, `open/hold → closed`, 필요 시 `closed → open/hold`
 - 확인 표시: `lastVerifiedAt`, `lastCheckResult`, `nextConfirmAt`에서
   `unverified | verified | overdue | no_answer`를 파생
 - `unavailable` 확인은 의뢰를 `closed`로 종결한다.
@@ -396,7 +396,6 @@ ListingIntake 안의 거래/가격 옵션. 하나의 의뢰에 여러 Listing이
 | deposit | Int? | 보증금 (만원) |
 | monthlyRent | Int? | 월세 (만원) |
 | isPaused | Boolean | 이 거래 옵션만 일시 중단 |
-| isHidden | Boolean | 목록 숨김 여부 |
 | memo | String? | 메모 |
 
 > 가격은 모두 만원(10,000 KRW) 단위
@@ -406,9 +405,8 @@ ListingIntake 안의 거래/가격 옵션. 하나의 의뢰에 여러 Listing이
 
 - `available`: 의뢰 open + Listing 미중단 + 점유 Deal 없음
 - `paused`: 의뢰 hold 또는 Listing.isPaused
-- `in_contract`: 비취소 Deal이 preContract / contracted / settling
-- `completed`: 비취소 Deal이 completed / closed
-- `closed`: 의뢰가 closed이고 점유 Deal 없음
+- `in_contract`: 비취소 Deal이 selection / negotiating / preContract / contracted / settling
+- `closed`: 의뢰가 closed이거나 비취소 Deal이 completed / closed
 
 ---
 

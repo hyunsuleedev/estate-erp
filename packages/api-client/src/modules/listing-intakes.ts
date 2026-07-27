@@ -4,6 +4,7 @@ import type {
   IntakeClosedReason,
   IntakeConfirmationState,
   IntakeLifecycleStatus,
+  ListingAvailability,
 } from '@estate-erp/shared';
 import type { ListingAdvertisement, ListingPriceHistory } from './listings.js';
 import type { Property } from './properties.js';
@@ -17,18 +18,24 @@ export interface ListingIntakeListing {
   price: number | null;
   deposit: number | null;
   monthlyRent: number | null;
+  maintenanceFee: number | null;
+  maintenanceFeeIncludes: string[];
+  loanAmount: number | null;
+  premium: number | null;
+  privateMemo: string | null;
   moveInAvailableType: string | null;
   moveInAvailableFrom: string | null;
   moveInAvailableTo: string | null;
   isPaused: boolean;
-  isHidden: boolean;
   memo: string | null;
   createdAt: string;
   updatedAt: string;
-  /** 이 거래 옵션을 점유한 활성 Deal — 있으면 "거래중/완료" */
+  /** 이 거래 옵션의 비취소 Deal — 있으면 "거래중/종료" */
   deals?: Array<{ id: string; stage: string; stageChangedAt: string | null }>;
   advertisements?: ListingAdvertisement[];
   priceHistories?: ListingPriceHistory[];
+  /** 목록의 매칭 칩에 표시할 연결 매칭 수 */
+  _count?: { matches: number };
 }
 
 export interface ListingIntake {
@@ -72,12 +79,15 @@ export type ListingIntakeConfirmChannel =
 export interface ListingIntakesFilter {
   lifecycleStatus?: IntakeLifecycleStatus;
   confirmationState?: IntakeConfirmationState;
+  availability?: ListingAvailability;
+  availabilities?: string;
   nextConfirmFrom?: string;
   nextConfirmTo?: string;
   includeClosed?: boolean;
   propertyId?: string;
   transactionType?: string;
   siteType?: string;
+  siteTypes?: string;
   priceMin?: number;
   priceMax?: number;
   depositMin?: number;
@@ -94,6 +104,7 @@ export interface ListingIntakesFilter {
   sigungu?: string;
   eupmyeondong?: string;
   siteId?: string;
+  siteIds?: string;
   search?: string;
   dong?: string;
   unit?: string;

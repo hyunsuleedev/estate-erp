@@ -3,9 +3,6 @@ import { useEffect, useState } from 'react';
 import { SplashScreen } from '@/components/layout/splash-screen';
 import { useAuth } from '@/providers/auth-provider';
 import { AppSidebar } from '@/components/layout/app-sidebar';
-import { GlobalSearch } from '@/components/layout/global-search';
-import { NotificationBell } from '@/components/layout/notification-bell';
-import { QuickCreate } from '@/components/layout/quick-create';
 import {
   SidebarInset,
   SidebarProvider,
@@ -85,8 +82,8 @@ function AuthenticatedLayout() {
     return <Navigate to="/onboarding/office" />;
   }
 
-  // macOS windowed: 80px for traffic lights, fullscreen/other platforms: 16px
-  const titlebarLeftPadding = isMac && !isFullscreen ? 'pl-[80px]' : 'pl-4';
+  // macOS windowed: 80px for traffic lights + 12px breathing room, fullscreen/other platforms: 16px
+  const titlebarLeftPadding = isMac && !isFullscreen ? 'pl-[92px]' : 'pl-4';
 
   // VSCode 모델: detached든 main이든 동일한 레이아웃 (사이드바 + 탭바 + 콘텐츠).
   // 두 창의 탭 풀은 각자 독립 (window별 zustand 인스턴스).
@@ -100,22 +97,20 @@ function AuthenticatedLayout() {
           {/* Titlebar: SidebarTrigger + TabBar inline (no breadcrumb) */}
           <header className="app-titlebar flex h-10 shrink-0 items-center gap-2 border-b border-border bg-sidebar pr-2">
             <div
-              className={`flex items-center gap-1 ${titlebarLeftPadding}`}
+              className={`flex h-full w-(--sidebar-width) shrink-0 items-center gap-1 ${titlebarLeftPadding}`}
               style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
             >
+              <span
+                data-slot="desktop-brand"
+                className="mr-2 select-none text-sm font-semibold tracking-[-0.02em] text-sidebar-foreground"
+              >
+                Estaitt
+              </span>
+              <span data-slot="titlebar-brand-spacer" className="min-w-0 flex-1" aria-hidden />
               <SidebarTrigger className="-ml-1" />
-              <Separator orientation="vertical" className="mx-1 data-[orientation=vertical]:h-4" />
+              <Separator orientation="vertical" className="ml-1 mr-0 data-[orientation=vertical]:h-4" />
             </div>
             <TabBar className="min-w-0" />
-            {/* 우측 헤더 액션 (웹 셸과 동일): 전역 검색 + 알림 + 빠른 생성 */}
-            <div
-              className="flex shrink-0 items-center gap-2"
-              style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
-            >
-              <GlobalSearch />
-              <NotificationBell />
-              <QuickCreate />
-            </div>
             {/* Windows: titleBarOverlay 자리 확보 */}
             {isWin && <div className="w-[140px] shrink-0" aria-hidden />}
           </header>

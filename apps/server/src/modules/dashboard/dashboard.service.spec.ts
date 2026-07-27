@@ -125,7 +125,6 @@ describe('DashboardService', () => {
     expect(prisma.listing.count).toHaveBeenCalledWith({
       where: {
         officeId: 'office-1',
-        isHidden: false,
         isPaused: false,
         intake: { lifecycleStatus: 'open' },
         deals: {
@@ -133,6 +132,8 @@ describe('DashboardService', () => {
             isCancelled: false,
             stage: {
               in: [
+                'selection',
+                'negotiating',
                 'preContract',
                 'contracted',
                 'settling',

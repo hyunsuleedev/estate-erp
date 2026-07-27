@@ -1,0 +1,1336 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Estate ERP · 매물관리 필터 데모</title>
+  <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js"></script>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #ffffff;
+      --app-bg: #f7f7f5;
+      --sidebar: #f6f6f4;
+      --border: #e7e7e3;
+      --border-strong: #d7d7d2;
+      --ink: #20201e;
+      --ink-2: #4b4a46;
+      --muted: #797872;
+      --muted-2: #aaa9a3;
+      --soft: #f3f3f0;
+      --soft-2: #fafaf8;
+      --focus: #4f8bd7;
+      --active: #edf4fb;
+      --active-border: #9dc2ea;
+      --shadow: 0 16px 38px rgba(28, 29, 27, 0.14), 0 2px 8px rgba(28, 29, 27, 0.08);
+      --sale-bg: #fdebec;
+      --sale-fg: #8f4b46;
+      --jeonse-bg: #e7f3f8;
+      --jeonse-fg: #337ea9;
+      --monthly-bg: #fbf3db;
+      --monthly-fg: #8f6b1f;
+      --available-bg: #e7f3f8;
+      --available-fg: #337ea9;
+      --paused-bg: #fbf3db;
+      --paused-fg: #9f6b00;
+      --closed-bg: #f1f1ef;
+      --closed-fg: #787774;
+      --green-bg: #eef3ed;
+      --green-fg: #44745a;
+      --match-bg: #fbf3db;
+      --match-fg: #8f6b1f;
+      --ad-bg: #e7f3f8;
+      --ad-fg: #337ea9;
+    }
+
+    * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
+
+    html, body {
+      height: 100%;
+      margin: 0;
+      background: var(--app-bg);
+      color: var(--ink);
+      font-family: Inter, Pretendard, -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Segoe UI", sans-serif;
+      font-size: 13px;
+    }
+
+    button, input, select { font: inherit; }
+    button { color: inherit; }
+
+    .app {
+      display: grid;
+      grid-template-columns: 228px minmax(0, 1fr);
+      height: 100vh;
+      min-width: 1080px;
+      background: var(--bg);
+      overflow: hidden;
+    }
+
+    .sidebar {
+      display: flex;
+      flex-direction: column;
+      border-right: 1px solid var(--border);
+      background: var(--sidebar);
+      padding: 0 10px 16px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      height: 52px;
+      padding: 0 10px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+
+    .side-section {
+      margin: 15px 10px 6px;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      width: 100%;
+      height: 36px;
+      padding: 0 10px;
+      border: 0;
+      border-radius: 7px;
+      background: transparent;
+      color: var(--ink-2);
+      text-align: left;
+    }
+
+    .nav-item.active {
+      background: #e9e9e6;
+      color: var(--ink);
+      font-weight: 600;
+    }
+
+    .nav-item svg { width: 16px; height: 16px; color: #5d5c57; }
+
+    .main {
+      min-width: 0;
+      overflow: hidden;
+      background: var(--bg);
+    }
+
+    .tab-strip {
+      display: flex;
+      align-items: end;
+      height: 45px;
+      border-bottom: 1px solid var(--border);
+      background: var(--soft-2);
+      padding-left: 12px;
+    }
+
+    .workspace-tab {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 145px;
+      height: 38px;
+      padding: 0 12px;
+      border: 1px solid var(--border);
+      border-bottom-color: var(--bg);
+      border-radius: 7px 7px 0 0;
+      background: var(--bg);
+      font-weight: 600;
+    }
+
+    .workspace-tab svg { width: 15px; height: 15px; }
+
+    .toolbar,
+    .filterbar,
+    .resultbar {
+      position: relative;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg);
+    }
+
+    .toolbar {
+      display: flex;
+      align-items: center;
+      min-height: 55px;
+      gap: 7px;
+      padding: 9px 14px;
+    }
+
+    .filterbar {
+      display: flex;
+      align-items: center;
+      min-height: 50px;
+      gap: 6px;
+      padding: 8px 14px;
+      z-index: 5;
+    }
+
+    .segmented {
+      display: inline-flex;
+      align-items: center;
+      padding: 3px;
+      border-radius: 8px;
+      background: var(--soft);
+    }
+
+    .segment {
+      height: 30px;
+      min-width: 52px;
+      padding: 0 12px;
+      border: 1px solid transparent;
+      border-radius: 6px;
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+    }
+
+    .segment.selected {
+      border-color: var(--border-strong);
+      background: var(--bg);
+      color: var(--ink);
+      box-shadow: 0 1px 2px rgba(0,0,0,.05);
+      font-weight: 600;
+    }
+
+    .control,
+    .filter-trigger,
+    .tool-button {
+      height: 32px;
+      border: 1px solid transparent;
+      border-radius: 7px;
+      background: var(--bg);
+      cursor: pointer;
+    }
+
+    .control:hover,
+    .filter-trigger:hover,
+    .tool-button:hover { border-color: var(--border); background: var(--soft-2); }
+
+    .control {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      min-width: 104px;
+      padding: 0 10px;
+    }
+
+    .control .value { color: var(--ink); font-weight: 500; }
+    .control svg, .filter-trigger svg, .tool-button svg { width: 14px; height: 14px; color: var(--muted); }
+
+    .search-field {
+      position: relative;
+      width: 270px;
+    }
+
+    .search-field.compact { width: 74px; }
+    .search-field.site { width: 132px; }
+
+    .search-field > svg {
+      position: absolute;
+      top: 50%;
+      left: 10px;
+      width: 14px;
+      height: 14px;
+      transform: translateY(-50%);
+      color: var(--muted);
+      pointer-events: none;
+    }
+
+    .search-field input {
+      width: 100%;
+      height: 32px;
+      padding: 0 10px;
+      border: 1px solid transparent;
+      border-radius: 7px;
+      outline: none;
+      color: var(--ink);
+      background: var(--bg);
+    }
+
+    .search-field.has-icon input { padding-left: 31px; }
+    .search-field input:hover { border-color: var(--border); }
+    .search-field input:focus { border-color: var(--focus); box-shadow: 0 0 0 2px rgba(79,139,215,.14); }
+    .search-field input::placeholder { color: var(--muted-2); }
+
+    .spacer { margin-left: auto; }
+
+    .tool-button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 0 10px;
+      color: var(--ink-2);
+      white-space: nowrap;
+    }
+
+    .view-toggle {
+      display: inline-flex;
+      padding: 2px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+    }
+
+    .view-toggle .tool-button { height: 29px; }
+    .view-toggle .selected { background: var(--soft); font-weight: 600; }
+
+    .primary {
+      height: 34px;
+      padding: 0 14px;
+      border: 0;
+      border-radius: 7px;
+      background: #2f302d;
+      color: white;
+      cursor: pointer;
+      font-weight: 600;
+    }
+
+    .filter-trigger {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 0 10px;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+
+    .filter-trigger strong {
+      max-width: 116px;
+      overflow: hidden;
+      color: var(--ink);
+      font-weight: 600;
+      text-overflow: ellipsis;
+    }
+
+    .filter-trigger.active {
+      border-color: var(--active-border);
+      background: var(--active);
+      color: #56789e;
+    }
+
+    .filter-count {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 17px;
+      height: 17px;
+      padding: 0 5px;
+      border-radius: 9px;
+      background: #557da9;
+      color: white;
+      font-size: 10px;
+      font-weight: 700;
+    }
+
+    .separator { width: 1px; height: 20px; margin: 0 2px; background: var(--border); }
+
+    .reset {
+      color: var(--muted);
+      border: 0;
+      background: transparent;
+      cursor: pointer;
+    }
+
+    .popover {
+      position: absolute;
+      top: calc(100% + 5px);
+      left: 14px;
+      z-index: 30;
+      width: 330px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--bg);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .popover[hidden] { display: none; }
+    .popover.price { width: 390px; }
+    .popover.advanced { left: 290px; width: 670px; }
+
+    .popover-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 14px 16px 12px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .popover-title { font-size: 14px; font-weight: 700; }
+    .popover-desc { margin-top: 3px; color: var(--muted); font-size: 11px; line-height: 1.45; }
+
+    .icon-button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 28px;
+      border: 0;
+      border-radius: 6px;
+      background: transparent;
+      cursor: pointer;
+    }
+
+    .icon-button:hover { background: var(--soft); }
+    .icon-button svg { width: 15px; height: 15px; color: var(--muted); }
+
+    .quick-options { padding: 8px; }
+
+    .option {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      width: 100%;
+      min-height: 36px;
+      padding: 7px 9px;
+      border: 0;
+      border-radius: 7px;
+      background: transparent;
+      cursor: pointer;
+      text-align: left;
+    }
+
+    .option:hover { background: var(--soft-2); }
+    .option.selected { background: var(--active); color: #315f91; font-weight: 600; }
+    .option small { color: var(--muted); font-weight: 400; }
+    .option svg { width: 15px; height: 15px; }
+
+    .price-body { padding: 14px 16px 16px; }
+
+    .preset-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 7px;
+      margin: 10px 0 14px;
+    }
+
+    .preset {
+      height: 31px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: var(--bg);
+      cursor: pointer;
+      color: var(--ink-2);
+    }
+
+    .preset:hover { background: var(--soft-2); }
+    .preset.selected { border-color: var(--active-border); background: var(--active); color: #315f91; font-weight: 600; }
+
+    .field-label {
+      display: block;
+      margin-bottom: 6px;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    .range {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+      align-items: center;
+      gap: 7px;
+    }
+
+    .range input,
+    .field select,
+    .field input {
+      width: 100%;
+      height: 34px;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      background: var(--bg);
+      outline: none;
+      padding: 0 9px;
+    }
+
+    .range input:focus,
+    .field select:focus,
+    .field input:focus { border-color: var(--focus); box-shadow: 0 0 0 2px rgba(79,139,215,.12); }
+    .range-separator { color: var(--muted-2); }
+
+    .quick-footer,
+    .advanced-footer {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 8px;
+      padding-top: 12px;
+    }
+
+    .secondary-button,
+    .apply-button,
+    .text-button {
+      height: 32px;
+      border-radius: 7px;
+      padding: 0 12px;
+      cursor: pointer;
+    }
+
+    .secondary-button { border: 1px solid var(--border); background: var(--bg); }
+    .apply-button { border: 1px solid #2f302d; background: #2f302d; color: white; font-weight: 600; }
+    .text-button { border: 0; background: transparent; color: var(--muted); }
+
+    .advanced-body {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      max-height: min(560px, calc(100vh - 210px));
+      overflow: auto;
+      padding: 0 16px;
+    }
+
+    .filter-section {
+      padding: 15px 14px 16px 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .filter-section:nth-child(even) {
+      padding-right: 0;
+      padding-left: 14px;
+      border-left: 1px solid var(--border);
+    }
+
+    .filter-section h3 {
+      margin: 0 0 11px;
+      color: var(--ink-2);
+      font-size: 12px;
+    }
+
+    .fields { display: grid; gap: 11px; }
+    .field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .field-grid.three { grid-template-columns: repeat(3, 1fr); }
+
+    .tri-state {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      padding: 3px;
+      border-radius: 8px;
+      background: var(--soft);
+    }
+
+    .tri-state button {
+      height: 29px;
+      border: 1px solid transparent;
+      border-radius: 6px;
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+    }
+
+    .tri-state button.selected {
+      border-color: var(--border-strong);
+      background: var(--bg);
+      color: var(--ink);
+      box-shadow: 0 1px 2px rgba(0,0,0,.04);
+      font-weight: 600;
+    }
+
+    .advanced-footer {
+      justify-content: space-between;
+      border-top: 1px solid var(--border);
+      padding: 11px 16px;
+    }
+
+    .advanced-footer .right { display: flex; gap: 8px; }
+
+    .resultbar {
+      display: flex;
+      min-height: 39px;
+      align-items: center;
+      gap: 10px;
+      padding: 6px 14px;
+      background: var(--soft-2);
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .resultbar strong { color: var(--ink); }
+
+    .active-chips {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 5px;
+    }
+
+    .active-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      min-height: 24px;
+      padding: 2px 4px 2px 8px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: var(--bg);
+      color: var(--ink-2);
+      font-size: 11px;
+    }
+
+    .active-chip button {
+      display: inline-flex;
+      width: 18px;
+      height: 18px;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+      border: 0;
+      border-radius: 50%;
+      background: transparent;
+      cursor: pointer;
+    }
+
+    .active-chip button:hover { background: var(--soft); }
+    .active-chip svg { width: 11px; height: 11px; color: var(--muted); }
+
+    .table-wrap {
+      height: calc(100vh - 189px);
+      overflow: auto;
+      background: var(--bg);
+    }
+
+    table {
+      width: 100%;
+      min-width: 1450px;
+      border-collapse: separate;
+      border-spacing: 0;
+      table-layout: fixed;
+    }
+
+    th, td {
+      height: 43px;
+      padding: 0 10px;
+      border-right: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+      text-align: left;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    th {
+      position: sticky;
+      top: 0;
+      z-index: 3;
+      height: 39px;
+      background: var(--bg);
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 500;
+    }
+
+    tbody tr:hover td { background: var(--soft-2); }
+    td { color: #334155; }
+    td.site-name { color: #172033; font-weight: 700; }
+    .center { text-align: center; }
+    .number { text-align: right; font-variant-numeric: tabular-nums; }
+    .sticky-1 { position: sticky; left: 0; z-index: 2; background: var(--bg); }
+    .sticky-2 { position: sticky; left: 46px; z-index: 2; background: var(--bg); }
+    th.sticky-1, th.sticky-2 { z-index: 4; }
+
+    .checkbox {
+      width: 15px;
+      height: 15px;
+      accent-color: #4b5563;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 22px;
+      padding: 2px 7px;
+      border-radius: 5px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    .pill.sale { background: var(--sale-bg); color: var(--sale-fg); }
+    .pill.jeonse { background: var(--jeonse-bg); color: var(--jeonse-fg); }
+    .pill.monthly { background: var(--monthly-bg); color: var(--monthly-fg); }
+    .pill.available, .pill.in_contract { background: var(--available-bg); color: var(--available-fg); }
+    .pill.paused { background: var(--paused-bg); color: var(--paused-fg); }
+    .pill.closed { background: var(--closed-bg); color: var(--closed-fg); }
+    .pill.match { background: var(--match-bg); color: var(--match-fg); }
+    .pill.ad { background: var(--ad-bg); color: var(--ad-fg); }
+    .pill.ready { background: var(--green-bg); color: var(--green-fg); }
+    .pill.neutral { background: var(--closed-bg); color: var(--closed-fg); }
+
+    .confirmation {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      line-height: 1.2;
+    }
+
+    .confirmation-dot { width: 7px; height: 7px; border-radius: 50%; background: #8ab49a; }
+    .confirmation.overdue .confirmation-dot { background: #df6868; }
+    .confirmation.unverified .confirmation-dot { background: #b5b5b0; }
+    .confirmation.no_answer .confirmation-dot { background: #dfab01; }
+    .confirmation small { display: block; color: var(--muted); font-size: 10px; }
+
+    .empty {
+      display: grid;
+      place-items: center;
+      height: 260px;
+      color: var(--muted);
+    }
+
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+
+    @media (max-width: 1240px) {
+      .app { grid-template-columns: 72px minmax(0, 1fr); }
+      .brand { justify-content: center; padding: 0; }
+      .brand span, .side-section, .nav-item span { display: none; }
+      .nav-item { justify-content: center; }
+      .search-field { width: 220px; }
+      .popover.advanced { left: 190px; width: 650px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar" aria-label="주요 메뉴">
+      <div class="brand"><span>Estaitt</span></div>
+      <button class="nav-item"><i data-lucide="house"></i><span>홈</span></button>
+      <button class="nav-item"><i data-lucide="layout-dashboard"></i><span>대시보드</span></button>
+      <button class="nav-item"><i data-lucide="list-checks"></i><span>업무</span></button>
+      <button class="nav-item"><i data-lucide="calendar-days"></i><span>캘린더</span></button>
+      <div class="side-section">매물</div>
+      <button class="nav-item active"><i data-lucide="building-2"></i><span>매물장</span></button>
+      <button class="nav-item"><i data-lucide="map"></i><span>관리단지</span></button>
+      <button class="nav-item"><i data-lucide="megaphone"></i><span>광고노트</span></button>
+      <button class="nav-item"><i data-lucide="send"></i><span>내 광고</span></button>
+      <div class="side-section">고객</div>
+      <button class="nav-item"><i data-lucide="contact"></i><span>연락처</span></button>
+      <button class="nav-item"><i data-lucide="users"></i><span>구매고객</span></button>
+    </aside>
+
+    <main class="main">
+      <div class="tab-strip">
+        <div class="workspace-tab"><i data-lucide="building-2"></i>매물관리</div>
+      </div>
+
+      <section class="toolbar" aria-label="매물 탐색">
+        <div class="segmented" id="transaction-tabs" aria-label="거래유형">
+          <button class="segment selected" data-value="all">전체</button>
+          <button class="segment" data-value="sale">매매</button>
+          <button class="segment" data-value="jeonse">전세</button>
+          <button class="segment" data-value="monthly">월세</button>
+        </div>
+
+        <div class="search-field site">
+          <input id="site-input" placeholder="단지 전체" aria-label="단지 검색" />
+        </div>
+        <div class="search-field compact">
+          <input id="dong-input" placeholder="동" aria-label="동 검색" />
+        </div>
+        <div class="search-field compact">
+          <input id="unit-input" placeholder="호" aria-label="호 검색" />
+        </div>
+        <div class="search-field has-icon">
+          <i data-lucide="search"></i>
+          <input id="keyword-input" placeholder="주소, 연락처, 메모" aria-label="통합 검색" />
+        </div>
+
+        <div class="spacer"></div>
+        <div class="view-toggle" aria-label="보기 방식">
+          <button class="tool-button selected"><i data-lucide="list"></i>목록</button>
+          <button class="tool-button" title="필터 데모에서는 목록만 제공합니다"><i data-lucide="map"></i>지도</button>
+        </div>
+        <button class="primary">+ 새 매물 등록</button>
+      </section>
+
+      <section class="filterbar" id="filterbar" aria-label="매물 필터">
+        <button class="filter-trigger" data-popover="confirmation-popover" id="confirmation-trigger" aria-expanded="false">
+          <span>확인</span><strong>전체</strong><i data-lucide="chevron-down"></i>
+        </button>
+        <button class="filter-trigger" data-popover="status-popover" id="status-trigger" aria-expanded="false">
+          <span>매물상태</span><strong>전체</strong><i data-lucide="chevron-down"></i>
+        </button>
+        <button class="filter-trigger" data-popover="price-popover" id="price-trigger" aria-expanded="false">
+          <span>가격</span><strong>전체</strong><i data-lucide="chevron-down"></i>
+        </button>
+        <button class="filter-trigger" data-popover="area-popover" id="area-trigger" aria-expanded="false">
+          <span>면적</span><strong>전체</strong><i data-lucide="chevron-down"></i>
+        </button>
+        <div class="separator"></div>
+        <button class="filter-trigger" data-popover="advanced-popover" id="advanced-trigger" aria-expanded="false">
+          <i data-lucide="sliders-horizontal"></i><strong>필터</strong>
+          <span class="filter-count" id="advanced-count" hidden>0</span>
+        </button>
+
+        <div class="spacer"></div>
+        <select class="tool-button" id="sort-select" aria-label="정렬">
+          <option value="default">정렬</option>
+          <option value="confirm-old">확인 오래된순</option>
+          <option value="price-low">가격 낮은순</option>
+          <option value="price-high">가격 높은순</option>
+        </select>
+        <button class="tool-button"><i data-lucide="columns-3"></i>컬럼</button>
+        <button class="tool-button reset" id="reset-all" hidden><i data-lucide="rotate-ccw"></i>초기화</button>
+
+        <div class="popover" id="confirmation-popover" role="dialog" aria-label="확인 필터" hidden>
+          <div class="popover-header">
+            <div>
+              <div class="popover-title">확인</div>
+              <div class="popover-desc">매물의 최근 확인 상태로 빠르게 좁힙니다.</div>
+            </div>
+            <button class="icon-button close-popover" aria-label="닫기"><i data-lucide="x"></i></button>
+          </div>
+          <div class="quick-options" id="confirmation-options"></div>
+        </div>
+
+        <div class="popover" id="status-popover" role="dialog" aria-label="매물상태 필터" hidden>
+          <div class="popover-header">
+            <div>
+              <div class="popover-title">매물상태</div>
+              <div class="popover-desc">의뢰와 거래 진행 상태를 합성한 현재 상태입니다.</div>
+            </div>
+            <button class="icon-button close-popover" aria-label="닫기"><i data-lucide="x"></i></button>
+          </div>
+          <div class="quick-options" id="status-options"></div>
+        </div>
+
+        <div class="popover price" id="price-popover" role="dialog" aria-label="가격 필터" hidden>
+          <div class="popover-header">
+            <div>
+              <div class="popover-title">가격</div>
+              <div class="popover-desc">빠른 구간을 선택하면 즉시 목록에 반영됩니다.</div>
+            </div>
+            <button class="icon-button close-popover" aria-label="닫기"><i data-lucide="x"></i></button>
+          </div>
+          <div class="price-body">
+            <span class="field-label">매매가 · 전세가</span>
+            <div class="preset-grid" id="price-presets"></div>
+          </div>
+        </div>
+
+        <div class="popover" id="area-popover" role="dialog" aria-label="면적 필터" hidden>
+          <div class="popover-header">
+            <div>
+              <div class="popover-title">전용면적</div>
+              <div class="popover-desc">평 단위의 자주 쓰는 구간입니다.</div>
+            </div>
+            <button class="icon-button close-popover" aria-label="닫기"><i data-lucide="x"></i></button>
+          </div>
+          <div class="price-body">
+            <div class="preset-grid" id="area-presets"></div>
+          </div>
+        </div>
+
+        <div class="popover advanced" id="advanced-popover" role="dialog" aria-label="통합 필터" hidden>
+          <div class="popover-header">
+            <div>
+              <div class="popover-title">필터</div>
+              <div class="popover-desc">여기서 바꾼 조건은 ‘필터 적용’을 눌렀을 때 한 번에 반영됩니다.</div>
+            </div>
+            <button class="icon-button close-popover" aria-label="닫기"><i data-lucide="x"></i></button>
+          </div>
+
+          <div class="advanced-body">
+            <section class="filter-section">
+              <h3>업무 상태</h3>
+              <div class="fields">
+                <label class="field">
+                  <span class="field-label">다음 확인</span>
+                  <select data-draft="nextConfirm">
+                    <option value="all">전체</option>
+                    <option value="overdue">예정일 지남</option>
+                    <option value="today">오늘</option>
+                    <option value="week">7일 이내</option>
+                  </select>
+                </label>
+              </div>
+            </section>
+
+            <section class="filter-section">
+              <h3>위치 · 종류</h3>
+              <div class="fields">
+                <div class="field-grid three">
+                  <label class="field"><span class="field-label">시도</span>
+                    <select data-draft="region"><option value="all">전체</option><option value="서울">서울</option><option value="경기">경기</option></select>
+                  </label>
+                  <label class="field"><span class="field-label">시군구</span>
+                    <select data-draft="district"><option value="all">전체</option><option value="강동구">강동구</option><option value="송파구">송파구</option><option value="하남시">하남시</option></select>
+                  </label>
+                  <label class="field"><span class="field-label">법정동</span>
+                    <select data-draft="ward"><option value="all">전체</option><option value="고덕동">고덕동</option><option value="상일동">상일동</option><option value="잠실동">잠실동</option></select>
+                  </label>
+                </div>
+                <label class="field"><span class="field-label">매물유형</span>
+                  <select data-draft="propertyType">
+                    <option value="all">전체</option>
+                    <option value="아파트">아파트</option>
+                    <option value="오피스텔">오피스텔</option>
+                    <option value="상가">상가</option>
+                  </select>
+                </label>
+              </div>
+            </section>
+
+            <section class="filter-section">
+              <h3>거래 조건</h3>
+              <div class="fields">
+                <label class="field">
+                  <span class="field-label">보증금 · 만원</span>
+                  <span class="range"><input type="number" placeholder="최소" data-draft="depositMin" /><span class="range-separator">~</span><input type="number" placeholder="최대" data-draft="depositMax" /></span>
+                </label>
+                <label class="field">
+                  <span class="field-label">월세 · 만원</span>
+                  <span class="range"><input type="number" placeholder="최소" data-draft="rentMin" /><span class="range-separator">~</span><input type="number" placeholder="최대" data-draft="rentMax" /></span>
+                </label>
+                <label class="field">
+                  <span class="field-label">입주가능일</span>
+                  <span class="range"><input type="date" data-draft="moveInFrom" /><span class="range-separator">~</span><input type="date" data-draft="moveInTo" /></span>
+                </label>
+              </div>
+            </section>
+
+            <section class="filter-section">
+              <h3>운영 조건</h3>
+              <div class="fields">
+                <div class="field"><span class="field-label">광고</span>
+                  <div class="tri-state" data-tri="ads">
+                    <button data-value="all" class="selected">전체</button><button data-value="yes">있음</button><button data-value="no">없음</button>
+                  </div>
+                </div>
+                <div class="field"><span class="field-label">공동중개</span>
+                  <div class="tri-state" data-tri="joint">
+                    <button data-value="all" class="selected">전체</button><button data-value="yes">필요</button><button data-value="no">불필요</button>
+                  </div>
+                </div>
+                <div class="field"><span class="field-label">매칭</span>
+                  <div class="tri-state" data-tri="matches">
+                    <button data-value="all" class="selected">전체</button><button data-value="yes">있음</button><button data-value="no">없음</button>
+                  </div>
+                </div>
+              </div>
+            </section>
+          </div>
+
+          <div class="advanced-footer">
+            <button class="text-button" id="clear-draft">전체 해제</button>
+            <div class="right">
+              <button class="secondary-button close-popover">취소</button>
+              <button class="apply-button" id="apply-advanced">필터 적용</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="resultbar" aria-label="필터 결과">
+        <strong id="result-count" aria-live="polite">매물 0개</strong>
+        <span id="result-detail">의뢰 0건 · 거래 0건</span>
+        <div class="active-chips" id="active-chips"></div>
+        <span class="spacer">빠른 필터는 즉시 · 추가 필터는 적용 후 반영</span>
+      </section>
+
+      <section class="table-wrap" id="table-wrap">
+        <table aria-label="매물 목록">
+          <colgroup>
+            <col style="width:46px"><col style="width:70px"><col style="width:230px"><col style="width:68px"><col style="width:72px">
+            <col style="width:70px"><col style="width:94px"><col style="width:130px"><col style="width:110px"><col style="width:160px">
+            <col style="width:90px"><col style="width:72px"><col style="width:72px"><col style="width:116px"><col style="width:230px">
+          </colgroup>
+          <thead>
+            <tr>
+              <th class="sticky-1 center"><input class="checkbox" type="checkbox" aria-label="전체 선택" /></th>
+              <th class="sticky-2">거래</th>
+              <th>단지</th><th>동</th><th>호</th><th>타입</th><th>전용면적</th><th>확인</th><th>매물상태</th>
+              <th class="number">가격/보증금</th><th class="number">월세</th><th class="center">매칭</th><th class="center">광고</th><th>입주가능일</th><th>의뢰 메모</th>
+            </tr>
+          </thead>
+          <tbody id="property-rows"></tbody>
+        </table>
+        <div class="empty" id="empty-state" hidden>조건에 맞는 매물이 없습니다. 필터를 줄이거나 초기화해 보세요.</div>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    const properties = [
+      { id:1, tx:'sale', site:'고덕그라시움', dong:'101', unit:'3503', type:'아파트', ptype:'243A', area:53.0, confirmation:'verified', confirmDays:0, status:'in_contract', price:318000, deposit:0, rent:0, matches:true, matchCount:1, ads:true, adCount:2, moveIn:'즉시', nextConfirm:'week', joint:false, region:'서울', district:'강동구', ward:'고덕동', memo:'[DEMO] 펜트하우스 매매 의뢰' },
+      { id:2, tx:'monthly', site:'고덕그라시움', dong:'101', unit:'3403', type:'아파트', ptype:'155B', area:34.2, confirmation:'verified', confirmDays:18, status:'in_contract', price:0, deposit:5000, rent:180, matches:false, matchCount:0, ads:false, adCount:0, moveIn:'확인 필요', nextConfirm:'overdue', joint:true, region:'서울', district:'강동구', ward:'고덕동', memo:'[DEMO] 월세 의뢰' },
+      { id:3, tx:'jeonse', site:'고덕그라시움', dong:'101', unit:'3402', type:'아파트', ptype:'172', area:38.6, confirmation:'verified', confirmDays:0, status:'closed', price:0, deposit:95000, rent:0, matches:true, matchCount:1, ads:false, adCount:0, moveIn:'즉시', nextConfirm:'today', joint:false, region:'서울', district:'강동구', ward:'고덕동', memo:'[DEMO] 전세 재임대 예정' },
+      { id:4, tx:'sale', site:'고덕그라시움', dong:'101', unit:'3501', type:'아파트', ptype:'242B', area:53.2, confirmation:'verified', confirmDays:0, status:'in_contract', price:268000, deposit:0, rent:0, matches:true, matchCount:2, ads:false, adCount:0, moveIn:'즉시', nextConfirm:'week', joint:true, region:'서울', district:'강동구', ward:'고덕동', memo:'[DEMO] 매매+전세 동시 진행' },
+      { id:5, tx:'jeonse', site:'고덕그라시움', dong:'102', unit:'3401', type:'아파트', ptype:'243C', area:53.0, confirmation:'no_answer', confirmDays:49, status:'closed', price:0, deposit:242000, rent:0, matches:true, matchCount:1, ads:false, adCount:0, moveIn:'즉시', nextConfirm:'overdue', joint:false, region:'서울', district:'강동구', ward:'고덕동', memo:'[DEMO] 매매 의뢰 연락 안됨' },
+      { id:6, tx:'sale', site:'래미안힐스테이트', dong:'107', unit:'2104', type:'아파트', ptype:'84A', area:25.4, confirmation:'overdue', confirmDays:32, status:'available', price:128000, deposit:0, rent:0, matches:false, matchCount:0, ads:true, adCount:1, moveIn:'협의', nextConfirm:'overdue', joint:false, region:'서울', district:'강동구', ward:'고덕동', memo:'소유주 가격 조정 가능' },
+      { id:7, tx:'jeonse', site:'고덕센트럴아이파크', dong:'202', unit:'1502', type:'아파트', ptype:'59B', area:18.1, confirmation:'unverified', confirmDays:99, status:'available', price:0, deposit:72000, rent:0, matches:true, matchCount:3, ads:true, adCount:2, moveIn:'2026.08.10', nextConfirm:'today', joint:true, region:'서울', district:'강동구', ward:'상일동', memo:'신규 의뢰, 소유주 확인 필요' },
+      { id:8, tx:'monthly', site:'잠실엘스', dong:'114', unit:'703', type:'아파트', ptype:'84C', area:25.6, confirmation:'verified', confirmDays:4, status:'paused', price:0, deposit:10000, rent:260, matches:false, matchCount:0, ads:false, adCount:0, moveIn:'2026.09.01', nextConfirm:'week', joint:false, region:'서울', district:'송파구', ward:'잠실동', memo:'세입자 일정 협의 중' },
+      { id:9, tx:'sale', site:'미사강변센트럴자이', dong:'305', unit:'1801', type:'아파트', ptype:'96A', area:29.1, confirmation:'overdue', confirmDays:15, status:'available', price:118000, deposit:0, rent:0, matches:true, matchCount:2, ads:true, adCount:1, moveIn:'협의', nextConfirm:'overdue', joint:true, region:'경기', district:'하남시', ward:'망월동', memo:'급매 가능, 공동중개 요청' },
+      { id:10, tx:'monthly', site:'고덕비즈밸리', dong:'A', unit:'1208', type:'오피스텔', ptype:'42', area:12.7, confirmation:'verified', confirmDays:7, status:'available', price:0, deposit:2000, rent:120, matches:false, matchCount:0, ads:true, adCount:1, moveIn:'즉시', nextConfirm:'week', joint:false, region:'서울', district:'강동구', ward:'상일동', memo:'풀옵션, 즉시 입주' },
+      { id:11, tx:'sale', site:'고덕상가', dong:'상가', unit:'103', type:'상가', ptype:'38', area:11.5, confirmation:'unverified', confirmDays:99, status:'available', price:92000, deposit:0, rent:0, matches:false, matchCount:0, ads:false, adCount:0, moveIn:'협의', nextConfirm:'today', joint:false, region:'서울', district:'강동구', ward:'고덕동', memo:'권리금 별도 확인' },
+      { id:12, tx:'sale', site:'래미안솔베뉴', dong:'105', unit:'2401', type:'아파트', ptype:'114A', area:34.5, confirmation:'verified', confirmDays:2, status:'available', price:176000, deposit:0, rent:0, matches:true, matchCount:1, ads:true, adCount:3, moveIn:'2026.10.15', nextConfirm:'week', joint:false, region:'서울', district:'강동구', ward:'명일동', memo:'남향, 조망 좋음' }
+    ];
+
+    const labels = {
+      tx: { all:'전체', sale:'매매', jeonse:'전세', monthly:'월세' },
+      confirmation: { all:'전체', needs_check:'확인 필요', overdue:'지연', unverified:'미확인', verified:'확인됨', no_answer:'부재' },
+      status: { all:'전체', available:'가용', paused:'보류', in_contract:'거래중', closed:'종료' },
+      nextConfirm: { all:'전체', overdue:'예정일 지남', today:'오늘', week:'7일 이내' },
+      yesNo: { all:'전체', yes:'있음', no:'없음' }
+    };
+
+    const confirmationOptions = [
+      ['all','전체','모든 확인 상태'],
+      ['needs_check','확인 필요','미확인·지연·부재를 한 번에'],
+      ['overdue','지연','확인 주기를 넘긴 매물'],
+      ['unverified','미확인','아직 한 번도 확인하지 않음'],
+      ['verified','확인됨','최근 확인 완료'],
+      ['no_answer','부재','최근 연락이 닿지 않음']
+    ];
+    const statusOptions = [['all','전체'],['available','가용'],['paused','보류'],['in_contract','거래중'],['closed','종료']];
+    const pricePresets = [
+      { value:'all', label:'전체' },
+      { value:'under8', label:'8억 이하', min:0, max:80000 },
+      { value:'8to12', label:'8~12억', min:80000, max:120000 },
+      { value:'12to20', label:'12~20억', min:120000, max:200000 },
+      { value:'over20', label:'20억 이상', min:200000, max:Infinity }
+    ];
+    const areaPresets = [
+      { value:'all', label:'전체' },
+      { value:'under20', label:'20평 이하', min:0, max:20 },
+      { value:'20to30', label:'20~30평', min:20, max:30 },
+      { value:'30to40', label:'30~40평', min:30, max:40 },
+      { value:'over40', label:'40평 이상', min:40, max:Infinity }
+    ];
+
+    const state = {
+      transaction:'all',
+      confirmation:'all',
+      status:'all',
+      price:'all',
+      area:'all',
+      site:'',
+      dong:'',
+      unit:'',
+      keyword:'',
+      sort:'default',
+      advanced: blankAdvanced(),
+      draft: blankAdvanced()
+    };
+
+    function blankAdvanced() {
+      return {
+        nextConfirm:'all', region:'all', district:'all', ward:'all', propertyType:'all',
+        depositMin:'', depositMax:'', rentMin:'', rentMax:'', moveInFrom:'', moveInTo:'',
+        ads:'all', joint:'all', matches:'all'
+      };
+    }
+
+    function formatMoney(row) {
+      if (row.tx === 'sale') return numberToKorean(row.price);
+      return numberToKorean(row.deposit);
+    }
+
+    function numberToKorean(value) {
+      if (!value) return '—';
+      const eok = Math.floor(value / 10000);
+      const man = value % 10000;
+      if (eok && man) return `${eok}억 ${man.toLocaleString()}만`;
+      if (eok) return `${eok}억`;
+      return `${value.toLocaleString()}만`;
+    }
+
+    function confirmationMarkup(row) {
+      const text = row.confirmation === 'verified' ? formatConfirmDays(row.confirmDays)
+        : row.confirmation === 'overdue' ? `${row.confirmDays}일 전`
+        : row.confirmation === 'unverified' ? '미확인'
+        : `${row.confirmDays}일 전`;
+      const sub = row.confirmation === 'verified' && row.confirmDays === 0 ? '오늘'
+        : row.confirmation === 'no_answer' ? '부재'
+        : row.confirmation === 'overdue' ? '지연'
+        : '';
+      return `<span class="confirmation ${row.confirmation}"><span class="confirmation-dot"></span><span>${text}${sub ? `<small>${sub}</small>` : ''}</span></span>`;
+    }
+
+    function formatConfirmDays(days) {
+      if (days === 0) return '7. 24.';
+      if (days < 7) return `${days}일 전`;
+      return `${days}일 전`;
+    }
+
+    function isQuickActive() {
+      return state.confirmation !== 'all' || state.status !== 'all' || state.price !== 'all' || state.area !== 'all';
+    }
+
+    function activeAdvancedEntries(source = state.advanced) {
+      const entries = [];
+      if (source.nextConfirm !== 'all') entries.push(['nextConfirm', `다음 확인 ${labels.nextConfirm[source.nextConfirm]}`]);
+      if (source.region !== 'all') entries.push(['region', source.region]);
+      if (source.district !== 'all') entries.push(['district', source.district]);
+      if (source.ward !== 'all') entries.push(['ward', source.ward]);
+      if (source.propertyType !== 'all') entries.push(['propertyType', source.propertyType]);
+      if (source.depositMin || source.depositMax) entries.push(['deposit', `보증금 ${rangeLabel(source.depositMin, source.depositMax, '만')}`]);
+      if (source.rentMin || source.rentMax) entries.push(['rent', `월세 ${rangeLabel(source.rentMin, source.rentMax, '만')}`]);
+      if (source.moveInFrom || source.moveInTo) entries.push(['moveIn', `입주일 ${rangeLabel(source.moveInFrom, source.moveInTo, '')}`]);
+      if (source.ads !== 'all') entries.push(['ads', `광고 ${source.ads === 'yes' ? '있음' : '없음'}`]);
+      if (source.joint !== 'all') entries.push(['joint', `공동중개 ${source.joint === 'yes' ? '필요' : '불필요'}`]);
+      if (source.matches !== 'all') entries.push(['matches', `매칭 ${source.matches === 'yes' ? '있음' : '없음'}`]);
+      return entries;
+    }
+
+    function rangeLabel(min, max, unit) {
+      if (min && max) return `${min}${unit}~${max}${unit}`;
+      if (min) return `${min}${unit} 이상`;
+      return `${max}${unit} 이하`;
+    }
+
+    function filterRows() {
+      const pricePreset = pricePresets.find(p => p.value === state.price);
+      const areaPreset = areaPresets.find(p => p.value === state.area);
+      const a = state.advanced;
+      const keyword = state.keyword.toLowerCase().trim();
+
+      let rows = properties.filter(row => {
+        if (state.transaction !== 'all' && row.tx !== state.transaction) return false;
+        if (state.site && !row.site.toLowerCase().includes(state.site.toLowerCase())) return false;
+        if (state.dong && !row.dong.toLowerCase().includes(state.dong.toLowerCase())) return false;
+        if (state.unit && !row.unit.toLowerCase().includes(state.unit.toLowerCase())) return false;
+        if (keyword && !`${row.site} ${row.memo} ${row.dong} ${row.unit}`.toLowerCase().includes(keyword)) return false;
+
+        if (state.confirmation === 'needs_check' && row.confirmation === 'verified') return false;
+        if (!['all','needs_check'].includes(state.confirmation) && row.confirmation !== state.confirmation) return false;
+        if (state.status !== 'all' && row.status !== state.status) return false;
+
+        const comparablePrice = row.tx === 'sale' ? row.price : row.deposit;
+        if (pricePreset && pricePreset.value !== 'all' && (comparablePrice < pricePreset.min || comparablePrice > pricePreset.max)) return false;
+        if (areaPreset && areaPreset.value !== 'all' && (row.area < areaPreset.min || row.area > areaPreset.max)) return false;
+
+        if (a.nextConfirm !== 'all' && row.nextConfirm !== a.nextConfirm) return false;
+        if (a.region !== 'all' && row.region !== a.region) return false;
+        if (a.district !== 'all' && row.district !== a.district) return false;
+        if (a.ward !== 'all' && row.ward !== a.ward) return false;
+        if (a.propertyType !== 'all' && row.type !== a.propertyType) return false;
+        if (a.depositMin && row.deposit < Number(a.depositMin)) return false;
+        if (a.depositMax && row.deposit > Number(a.depositMax)) return false;
+        if (a.rentMin && row.rent < Number(a.rentMin)) return false;
+        if (a.rentMax && row.rent > Number(a.rentMax)) return false;
+        if (a.ads !== 'all' && row.ads !== (a.ads === 'yes')) return false;
+        if (a.joint !== 'all' && row.joint !== (a.joint === 'yes')) return false;
+        if (a.matches !== 'all' && row.matches !== (a.matches === 'yes')) return false;
+        return true;
+      });
+
+      if (state.sort === 'confirm-old') rows.sort((x,y) => y.confirmDays - x.confirmDays);
+      if (state.sort === 'price-low') rows.sort((x,y) => (x.tx === 'sale' ? x.price : x.deposit) - (y.tx === 'sale' ? y.price : y.deposit));
+      if (state.sort === 'price-high') rows.sort((x,y) => (y.tx === 'sale' ? y.price : y.deposit) - (x.tx === 'sale' ? x.price : x.deposit));
+      return rows;
+    }
+
+    function renderRows() {
+      const rows = filterRows();
+      const tbody = document.getElementById('property-rows');
+      const table = tbody.closest('table');
+      const empty = document.getElementById('empty-state');
+      tbody.innerHTML = rows.map(row => `
+        <tr>
+          <td class="sticky-1 center"><input class="checkbox" type="checkbox" aria-label="${row.site} ${row.unit} 선택" /></td>
+          <td class="sticky-2"><span class="pill ${row.tx}">${labels.tx[row.tx]}</span></td>
+          <td class="site-name">${row.site}</td><td>${row.dong}</td><td>${row.unit}</td><td>${row.ptype}</td>
+          <td>${row.area.toFixed(1)}평</td><td>${confirmationMarkup(row)}</td>
+          <td><span class="pill ${row.status}">${labels.status[row.status]}</span></td>
+          <td class="number">${formatMoney(row)}</td><td class="number">${row.rent ? `${row.rent.toLocaleString()}만` : '—'}</td>
+          <td class="center">${row.matches ? `<span class="pill match">${row.matchCount}</span>` : ''}</td>
+          <td class="center">${row.ads ? `<span class="pill ad">${row.adCount}</span>` : ''}</td>
+          <td><span class="pill ${row.moveIn === '즉시' ? 'ready' : 'neutral'}">${row.moveIn}</span></td>
+          <td>${row.memo}</td>
+        </tr>`).join('');
+
+      table.hidden = rows.length === 0;
+      empty.hidden = rows.length !== 0;
+      document.getElementById('result-count').textContent = `매물 ${rows.length}개`;
+      document.getElementById('result-detail').textContent = `의뢰 ${rows.length}건 · 거래 ${rows.length + Math.min(4, rows.length)}건`;
+    }
+
+    function renderQuickTriggers() {
+      setTrigger('confirmation-trigger', labels.confirmation[state.confirmation], state.confirmation !== 'all');
+      setTrigger('status-trigger', labels.status[state.status], state.status !== 'all');
+      setTrigger('price-trigger', pricePresets.find(p => p.value === state.price).label, state.price !== 'all');
+      setTrigger('area-trigger', areaPresets.find(p => p.value === state.area).label, state.area !== 'all');
+    }
+
+    function setTrigger(id, value, active) {
+      const el = document.getElementById(id);
+      el.querySelector('strong').textContent = value;
+      el.classList.toggle('active', active);
+    }
+
+    function renderAdvanced() {
+      const entries = activeAdvancedEntries();
+      const count = document.getElementById('advanced-count');
+      count.textContent = entries.length;
+      count.hidden = entries.length === 0;
+      document.getElementById('advanced-trigger').classList.toggle('active', entries.length > 0);
+
+      document.getElementById('active-chips').innerHTML = entries.map(([key,label]) =>
+        `<span class="active-chip">${label}<button type="button" data-remove="${key}" aria-label="${label} 필터 해제"><i data-lucide="x"></i></button></span>`
+      ).join('');
+      document.querySelectorAll('[data-remove]').forEach(button => {
+        button.addEventListener('click', () => removeAdvanced(button.dataset.remove));
+      });
+    }
+
+    function removeAdvanced(key) {
+      if (key === 'deposit') { state.advanced.depositMin=''; state.advanced.depositMax=''; }
+      else if (key === 'rent') { state.advanced.rentMin=''; state.advanced.rentMax=''; }
+      else if (key === 'moveIn') { state.advanced.moveInFrom=''; state.advanced.moveInTo=''; }
+      else state.advanced[key] = 'all';
+      state.draft = { ...state.advanced };
+      syncDraftControls();
+      renderAll();
+    }
+
+    function renderReset() {
+      const hasText = Boolean(state.site || state.dong || state.unit || state.keyword);
+      const active = state.transaction !== 'all' || isQuickActive() || activeAdvancedEntries().length > 0 || hasText || state.sort !== 'default';
+      document.getElementById('reset-all').hidden = !active;
+    }
+
+    function renderAll() {
+      renderQuickTriggers();
+      renderAdvanced();
+      renderRows();
+      renderReset();
+      if (window.lucide) lucide.createIcons();
+    }
+
+    function optionButtons(containerId, options, activeValue, onSelect) {
+      const container = document.getElementById(containerId);
+      container.innerHTML = options.map(option => {
+        const [value, label, desc] = option;
+        return `<button class="option ${value === activeValue ? 'selected' : ''}" data-value="${value}">
+          <span>${label}${desc ? `<small><br>${desc}</small>` : ''}</span>
+          ${value === activeValue ? '<i data-lucide="check"></i>' : ''}
+        </button>`;
+      }).join('');
+      container.querySelectorAll('.option').forEach(button => button.addEventListener('click', () => onSelect(button.dataset.value)));
+      if (window.lucide) lucide.createIcons();
+    }
+
+    function renderQuickPanels() {
+      optionButtons('confirmation-options', confirmationOptions, state.confirmation, value => {
+        state.confirmation = value; closePopovers(); renderQuickPanels(); renderAll();
+      });
+      optionButtons('status-options', statusOptions, state.status, value => {
+        state.status = value; closePopovers(); renderQuickPanels(); renderAll();
+      });
+
+      document.getElementById('price-presets').innerHTML = pricePresets.map(p =>
+        `<button class="preset ${p.value === state.price ? 'selected' : ''}" data-value="${p.value}">${p.label}</button>`).join('');
+      document.getElementById('price-presets').querySelectorAll('.preset').forEach(button => button.addEventListener('click', () => {
+        state.price = button.dataset.value; closePopovers(); renderQuickPanels(); renderAll();
+      }));
+
+      document.getElementById('area-presets').innerHTML = areaPresets.map(p =>
+        `<button class="preset ${p.value === state.area ? 'selected' : ''}" data-value="${p.value}">${p.label}</button>`).join('');
+      document.getElementById('area-presets').querySelectorAll('.preset').forEach(button => button.addEventListener('click', () => {
+        state.area = button.dataset.value; closePopovers(); renderQuickPanels(); renderAll();
+      }));
+    }
+
+    function openPopover(id, trigger) {
+      const popover = document.getElementById(id);
+      const wasOpen = !popover.hidden;
+      closePopovers();
+      if (!wasOpen) {
+        if (id === 'advanced-popover') {
+          state.draft = { ...state.advanced };
+          syncDraftControls();
+        }
+        popover.hidden = false;
+        trigger.setAttribute('aria-expanded','true');
+      }
+    }
+
+    function closePopovers() {
+      document.querySelectorAll('.popover').forEach(p => p.hidden = true);
+      document.querySelectorAll('[data-popover]').forEach(t => t.setAttribute('aria-expanded','false'));
+    }
+
+    function syncDraftControls() {
+      document.querySelectorAll('[data-draft]').forEach(control => {
+        control.value = state.draft[control.dataset.draft] ?? '';
+      });
+      document.querySelectorAll('[data-tri]').forEach(group => {
+        group.querySelectorAll('button').forEach(button => button.classList.toggle('selected', button.dataset.value === state.draft[group.dataset.tri]));
+      });
+    }
+
+    document.querySelectorAll('[data-popover]').forEach(trigger => {
+      trigger.addEventListener('click', event => {
+        event.stopPropagation();
+        openPopover(trigger.dataset.popover, trigger);
+      });
+    });
+    document.querySelectorAll('.popover').forEach(popover => popover.addEventListener('click', event => event.stopPropagation()));
+    document.querySelectorAll('.close-popover').forEach(button => button.addEventListener('click', closePopovers));
+    document.addEventListener('click', closePopovers);
+    document.addEventListener('keydown', event => { if (event.key === 'Escape') closePopovers(); });
+
+    document.querySelectorAll('#transaction-tabs .segment').forEach(button => button.addEventListener('click', () => {
+      state.transaction = button.dataset.value;
+      document.querySelectorAll('#transaction-tabs .segment').forEach(b => b.classList.toggle('selected', b === button));
+      renderAll();
+    }));
+
+    [['site-input','site'],['dong-input','dong'],['unit-input','unit'],['keyword-input','keyword']].forEach(([id,key]) => {
+      document.getElementById(id).addEventListener('input', event => { state[key] = event.target.value; renderAll(); });
+    });
+    document.getElementById('sort-select').addEventListener('change', event => { state.sort = event.target.value; renderAll(); });
+
+    document.querySelectorAll('[data-draft]').forEach(control => {
+      control.addEventListener('input', event => { state.draft[control.dataset.draft] = event.target.value; });
+    });
+    document.querySelectorAll('[data-tri]').forEach(group => {
+      group.querySelectorAll('button').forEach(button => button.addEventListener('click', () => {
+        state.draft[group.dataset.tri] = button.dataset.value;
+        group.querySelectorAll('button').forEach(b => b.classList.toggle('selected', b === button));
+      }));
+    });
+
+    document.getElementById('clear-draft').addEventListener('click', () => {
+      state.draft = blankAdvanced();
+      syncDraftControls();
+    });
+    document.getElementById('apply-advanced').addEventListener('click', () => {
+      state.advanced = { ...state.draft };
+      closePopovers();
+      renderAll();
+    });
+
+    document.getElementById('reset-all').addEventListener('click', () => {
+      state.transaction='all'; state.confirmation='all'; state.status='all'; state.price='all'; state.area='all';
+      state.site=''; state.dong=''; state.unit=''; state.keyword=''; state.sort='default';
+      state.advanced=blankAdvanced(); state.draft=blankAdvanced();
+      document.querySelectorAll('#transaction-tabs .segment').forEach(b => b.classList.toggle('selected', b.dataset.value === 'all'));
+      document.getElementById('site-input').value='';
+      document.getElementById('dong-input').value='';
+      document.getElementById('unit-input').value='';
+      document.getElementById('keyword-input').value='';
+      document.getElementById('sort-select').value='default';
+      syncDraftControls();
+      renderQuickPanels();
+      renderAll();
+    });
+
+    renderQuickPanels();
+    syncDraftControls();
+    renderAll();
+  </script>
+</body>
+</html>

@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from '@tanstack/react-router';
 import { keepPreviousData, useInfiniteQuery, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
+  Fragment,
   useState,
   useCallback,
   useEffect,
@@ -12,75 +13,85 @@ import {
 import { toast } from 'sonner';
 import {
   CalendarDays,
-  Check,
   ChevronDown,
   CircleDollarSign,
   Columns3,
   DoorOpen,
   ExternalLink,
   FileText,
+  GitBranch,
   Handshake,
   Hash,
+  List,
+  Loader2,
+  Map as MapIcon,
   MapPin,
   Megaphone,
   MessageSquare,
+  Minus,
   Phone,
-  PhoneCall,
   Plus,
+  RefreshCw,
   RotateCcw,
   Ruler,
   Search,
   Tag,
+  Trash2,
   Type,
+  UserRound,
   X,
 } from 'lucide-react';
 import type { ColumnDef, SortingState } from '@tanstack/react-table';
 import { api } from '@/lib/api';
 import { ApiError } from '@estate-erp/api-client';
 import type {
+  BuyerRequirement,
   Consultation,
   ListingIntake,
-  ListingFilterSite,
+  ListingIntakeListing,
+  Match,
   Property,
   PropertyContact,
   PropertyListing,
   Tenant,
   UpdateListingDto,
 } from '@estate-erp/api-client';
-import { formatPrice } from '@estate-erp/shared';
+import {
+  formatPrice,
+  IntakeClosedReason,
+  IntakeConfirmationState,
+  IntakeLifecycleStatus,
+  ListingAvailability,
+} from '@estate-erp/shared';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from '@/components/ui/sheet';
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
-  DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import { Switch } from '@/components/ui/switch';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Slider } from '@/components/ui/slider';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { MultiSelect, type MultiSelectOption } from '@/components/ui/multi-select';
+import { StatusBadge } from '@/components/domain';
 import { cn } from '@/lib/utils';
 import { formatPhoneNumber } from '@/lib/contacts';
+import { formatMoney } from '@/lib/format';
+import { getStatusMeta, PIPELINE_STEPS } from '@/lib/status-config';
 import {
   PriceCell,
   CellEditProvider,
@@ -90,7 +101,13 @@ import {
 } from '@/components/data-table';
 import { useTabStore } from '@/features/tabs/store/useTabStore';
 import { getRouteMeta } from '@/features/tabs/lib/routeMeta';
-import { getListingIntakeStatusOptions, getMoveInAvailability } from './-property-list-view-utils';
+import {
+  getIntakeConfirmationState,
+  getListingAvailability,
+  getListingRowAvailability,
+  planListingStatusChange,
+} from '@/lib/listing-status';
+import { getMoveInAvailability } from './-property-list-view-utils';
 import {
   PropertyListingsTable,
   type ListingSummary,
@@ -98,24 +115,43 @@ import {
 } from './-components/property-listings-table';
 import {
   buildPropertyMapClustersFromOffsets,
+  removePropertyMapListeners,
   type PropertyMapClusterSource,
 } from './-property-map-utils';
 import {
-  IntakeNextConfirmCell,
   ListingCostSummary,
   PropertyBulkActions,
   PropertyRowActions,
   type ListingCostExtras,
 } from './-property-intake-actions';
+import { MatchCreateDialog } from '../matches/-match-create-dialog';
 
 // ── Labels & Colors ─────────────────────────────────────────────
 
-const checkStatusMeta: Record<string, { label: string; dotClassName: string; pillClassName: string }> = {
-  unverified: { label: '미확인', dotClassName: 'bg-[#9b9a97]', pillClassName: 'bg-[#f1f1ef] text-[#5f5e5b]' },
-  verified: { label: '확인완료', dotClassName: 'bg-[#6c9b7a]', pillClassName: 'bg-[#eef3ed] text-[#44745a]' },
-  in_contract: { label: '거래중', dotClassName: 'bg-[#529cca]', pillClassName: 'bg-[#e7f3f8] text-[#337ea9]' },
-  hold: { label: '보류', dotClassName: 'bg-[#dfab01]', pillClassName: 'bg-[#fbf3db] text-[#9f6b00]' },
-  done: { label: '종료', dotClassName: 'bg-[#b4b4b1]', pillClassName: 'bg-[#f1f1ef] text-[#787774]' },
+const listingAvailabilityMeta: Record<
+  ListingAvailability,
+  { label: string; dotClassName: string; pillClassName: string }
+> = {
+  [ListingAvailability.AVAILABLE]: {
+    label: '가용',
+    dotClassName: 'bg-[#6c9b7a]',
+    pillClassName: 'bg-[#eef3ed] text-[#44745a]',
+  },
+  [ListingAvailability.PAUSED]: {
+    label: '보류',
+    dotClassName: 'bg-[#dfab01]',
+    pillClassName: 'bg-[#fbf3db] text-[#9f6b00]',
+  },
+  [ListingAvailability.IN_CONTRACT]: {
+    label: '거래중',
+    dotClassName: 'bg-[#529cca]',
+    pillClassName: 'bg-[#e7f3f8] text-[#337ea9]',
+  },
+  [ListingAvailability.CLOSED]: {
+    label: '종료',
+    dotClassName: 'bg-[#b4b4b1]',
+    pillClassName: 'bg-[#f1f1ef] text-[#787774]',
+  },
 };
 
 const transactionTypeMeta: Record<string, { label: string; className: string }> = {
@@ -124,10 +160,12 @@ const transactionTypeMeta: Record<string, { label: string; className: string }> 
   monthly: { label: '월세', className: 'bg-[#fbf3db] text-[#8f6b1f]' },
 };
 
-// 거래별 확인상태 인라인 편집용 칩 옵션 (웹 checkStatusChipOptions 대응)
-const checkStatusChipOptions: ChipOption[] = Object.entries(checkStatusMeta).map(
-  ([value, meta]) => ({ value, label: meta.label, className: meta.pillClassName }),
-);
+// 웹의 합성 매물상태를 사용하되 pill 색상은 데스크톱 팔레트를 유지한다.
+const listingAvailabilityChipOptions: ChipOption[] = Object.entries(listingAvailabilityMeta).map(([value, meta]) => ({
+  value,
+  label: meta.label,
+  className: meta.pillClassName,
+}));
 
 const adStatusMeta: Record<string, { label: string; className: string }> = {
   planned: { label: '보류', className: 'bg-[#f1f1ef] text-[#5f5e5b]' },
@@ -136,19 +174,6 @@ const adStatusMeta: Record<string, { label: string; className: string }> = {
   paused: { label: '중단', className: 'bg-[#fbf3db] text-[#8f6b1f]' },
   ended: { label: '종료', className: 'bg-[#f1f1ef] text-[#787774]' },
   error: { label: '오류', className: 'bg-[#fbe4e4] text-[#9f5555]' },
-};
-
-const intakeStatusMeta: Record<string, { label: string; className: string }> = {
-  unverified: { label: '미확인', className: 'bg-[#f1f1ef] text-[#5f5e5b]' },
-  active: { label: '활성', className: 'bg-[#eef3ed] text-[#44745a]' },
-  in_contract: { label: '거래중', className: 'bg-[#e7f3f8] text-[#337ea9]' },
-  hold: { label: '보류', className: 'bg-[#fbf3db] text-[#8f6b1f]' },
-  done: { label: '종료', className: 'bg-[#f1f1ef] text-[#787774]' },
-  alive: { label: '살아있음', className: 'bg-[#eef3ed] text-[#44745a]' },
-  price_changed: { label: '가격변경', className: 'bg-[#fbf3db] text-[#8f6b1f]' },
-  unavailable: { label: '불가', className: 'bg-[#fbe4e4] text-[#9f5555]' },
-  no_answer: { label: '부재중', className: 'bg-[#f1f1ef] text-[#787774]' },
-  pending: { label: '답변대기', className: 'bg-[#e7f3f8] text-[#337ea9]' },
 };
 
 const adChannelLabels: Record<string, string> = {
@@ -172,18 +197,34 @@ const contactRoleLabels: Record<string, string> = {
 const sortDefinitions = [
   { field: 'price', label: '가격' },
   { field: 'createdAt', label: '등록일' },
-  { field: 'updatedAt', label: '확인일' },
+  { field: 'updatedAt', label: '확인' },
 ];
 
 const LISTINGS_PAGE_SIZE = 50;
-const intakeStatusOptions = getListingIntakeStatusOptions();
+const PROPERTY_QUICK_SHEET_OPEN_DURATION_MS = 280;
+const PROPERTY_QUICK_SHEET_CONTENT_DELAY_MS = PROPERTY_QUICK_SHEET_OPEN_DURATION_MS + 20;
+const MATCH_STAGE_STEPS = PIPELINE_STEPS.matchStage ?? [];
+
+function getMatchStageIndex(stage: string) {
+  return MATCH_STAGE_STEPS.indexOf(stage);
+}
+
+const listingAvailabilityFilterOptions: MultiSelectOption[] = Object.entries(listingAvailabilityMeta).map(
+  ([value, meta]) => ({
+    value,
+    label: meta.label,
+  }),
+);
 const NAVER_MAPS_NCP_KEY_ID = import.meta.env.VITE_NAVER_MAPS_NCP_KEY_ID as string | undefined;
 
 type NaverMapsApi = {
   LatLng: new (lat: number, lng: number) => NaverLatLng;
   LatLngBounds: new (sw: unknown, ne: unknown) => unknown;
   Point: new (x: number, y: number) => NaverPoint;
-  Map: new (element: HTMLElement, options?: Record<string, unknown>) => {
+  Map: new (
+    element: HTMLElement,
+    options?: Record<string, unknown>,
+  ) => {
     setCenter: (coord: unknown) => void;
     setZoom: (zoom: number) => void;
     getZoom: () => number;
@@ -237,8 +278,7 @@ const transactionTypeOptions = [
   { value: 'monthly', label: '월세' },
 ] as const;
 
-const siteTypeOptions = [
-  { value: 'all', label: '전체' },
+const siteTypeOptions: MultiSelectOption[] = [
   { value: 'apartment', label: '아파트' },
   { value: 'officetel', label: '오피스텔' },
   { value: 'villa', label: '빌라' },
@@ -248,53 +288,67 @@ const siteTypeOptions = [
   { value: 'living_accommodation', label: '생활숙박' },
 ] as const;
 
-const intakeStatusFilterOptions = [
-  { value: 'all', label: '전체' },
-  ...intakeStatusOptions,
+const advertisementFilterOptions = [
+  { value: 'all', label: '광고 전체' },
+  { value: 'with', label: '광고 있음' },
+  { value: 'without', label: '광고 없음' },
 ] as const;
 
-// 가격 프리셋 — 억 단위. 거래유형(매매/전세)에 따라 자릿대가 다름.
-const SALE_PRICE_PRESETS: RangePreset[] = [
-  { label: '3억 이하', min: '', max: '3' },
-  { label: '3~5억', min: '3', max: '5' },
-  { label: '5~8억', min: '5', max: '8' },
-  { label: '8~12억', min: '8', max: '12' },
-  { label: '12~20억', min: '12', max: '20' },
-  { label: '20억 이상', min: '20', max: '' },
-];
-const JEONSE_PRICE_PRESETS: RangePreset[] = [
-  { label: '2억 이하', min: '', max: '2' },
-  { label: '2~4억', min: '2', max: '4' },
-  { label: '4~6억', min: '4', max: '6' },
-  { label: '6~9억', min: '6', max: '9' },
-  { label: '9억 이상', min: '9', max: '' },
-];
-
-// 면적 프리셋 — 평 단위.
-const AREA_PRESETS: RangePreset[] = [
-  { label: '10평대', min: '10', max: '19' },
-  { label: '20평대', min: '20', max: '29' },
-  { label: '30평대', min: '30', max: '39' },
-  { label: '40평 이상', min: '40', max: '' },
-];
-
-function getPricePresets(
-  transactionType: (typeof transactionTypeOptions)[number]['value'],
-): RangePreset[] {
-  // 매매/전체는 매매 기준, 전세는 전세 기준. 월세 탭에서는 가격 프리셋을 쓰지 않음(보증금/월세 별도).
-  if (transactionType === 'jeonse') return JEONSE_PRICE_PRESETS;
-  return SALE_PRICE_PRESETS;
+const PRICE_RANGE_MIN = 0;
+const PRICE_RANGE_MAX = 30;
+interface NumericRangePreset {
+  label: string;
+  min: number;
+  max: number;
+  isAll?: boolean;
 }
 
+const PRICE_RANGE_PRESETS: NumericRangePreset[] = [
+  { label: '~5억', min: 0, max: 5 },
+  { label: '5억대', min: 5, max: 10 },
+  { label: '10억대', min: 10, max: 15 },
+  { label: '15억대', min: 15, max: 20 },
+  { label: '20억대', min: 20, max: 25 },
+  { label: '25억대', min: 25, max: 30 },
+  { label: '30억~', min: 30, max: 30 },
+  { label: '전체', min: 0, max: 30, isAll: true },
+];
+
+const MONTHLY_RENT_RANGE_MIN = 0;
+const MONTHLY_RENT_RANGE_MAX = 600;
+const MONTHLY_RENT_RANGE_PRESETS: NumericRangePreset[] = [
+  { label: '~100만', min: 0, max: 100 },
+  { label: '100만대', min: 100, max: 200 },
+  { label: '200만대', min: 200, max: 300 },
+  { label: '300만대', min: 300, max: 400 },
+  { label: '400만대', min: 400, max: 500 },
+  { label: '500만대', min: 500, max: 600 },
+  { label: '600만~', min: 600, max: 600 },
+  { label: '전체', min: 0, max: 600, isAll: true },
+];
+
+const AREA_RANGE_MIN = 0;
+const AREA_RANGE_MAX = 80;
+const AREA_RANGE_PRESETS: NumericRangePreset[] = [
+  { label: '~10평', min: 0, max: 10 },
+  { label: '10평대', min: 10, max: 20 },
+  { label: '20평대', min: 20, max: 30 },
+  { label: '30평대', min: 30, max: 40 },
+  { label: '40평대', min: 40, max: 50 },
+  { label: '50평대', min: 50, max: 60 },
+  { label: '60평대', min: 60, max: 70 },
+  { label: '70평~', min: 70, max: 80 },
+];
+
 interface PropertyFilterState {
-  siteId: string;
+  siteIds: string[];
   provinceCode: string;
   districtCode: string;
   wardCode: string;
   dongSearch: string;
   unitSearch: string;
-  siteType: string;
-  intakeStatus: string;
+  siteTypes: string[];
+  availabilities: string[];
   priceMin: string;
   priceMax: string;
   depositMin: string;
@@ -305,19 +359,18 @@ interface PropertyFilterState {
   areaMax: string;
   moveInFrom: string;
   moveInTo: string;
-  hasAdvertisement: boolean;
-  isJointBrokerage: boolean;
+  advertisement: 'all' | 'with' | 'without';
 }
 
 const initialPropertyFilters: PropertyFilterState = {
-  siteId: '',
+  siteIds: [],
   provinceCode: '',
   districtCode: '',
   wardCode: '',
   dongSearch: '',
   unitSearch: '',
-  siteType: 'all',
-  intakeStatus: 'all',
+  siteTypes: [],
+  availabilities: [],
   priceMin: '',
   priceMax: '',
   depositMin: '',
@@ -328,8 +381,7 @@ const initialPropertyFilters: PropertyFilterState = {
   areaMax: '',
   moveInFrom: '',
   moveInTo: '',
-  hasAdvertisement: false,
-  isJointBrokerage: false,
+  advertisement: 'all',
 };
 
 type ListingProperty = NonNullable<ListingIntake['property']>;
@@ -362,6 +414,24 @@ interface PropertySheetNotice {
   tone: PropertySheetNoticeTone;
 }
 
+interface StartDealPrompt {
+  propertyId: string;
+  propertyLabel: string;
+  listings: ListingSummary[];
+  requiresListingSelection: boolean;
+  intakeLifecycleStatus: IntakeLifecycleStatus;
+}
+
+interface ResumeClosedPrompt {
+  intakeId: string;
+  listingIds: string[];
+  propertyLabel: string;
+  targetAvailability: ListingAvailability;
+  canResume: boolean;
+  completedListingCount: number;
+  resumableListingCount: number;
+}
+
 // ── Route ───────────────────────────────────────────────────────
 
 export const Route = createFileRoute('/_authenticated/properties/')({
@@ -379,13 +449,19 @@ function PropertiesPage() {
     useState<(typeof transactionTypeOptions)[number]['value']>('all');
   const [propertyFilters, setPropertyFilters] = useState<PropertyFilterState>(initialPropertyFilters);
   const [selectedIntakeId, setSelectedIntakeId] = useState<string | null>(null);
-  const [viewMode] = useState<PropertyViewMode>('list');
-  const [isSiteFilterOpen, setIsSiteFilterOpen] = useState(false);
+  const [startDealPrompt, setStartDealPrompt] = useState<StartDealPrompt | null>(null);
+  const [resumeClosedPrompt, setResumeClosedPrompt] = useState<ResumeClosedPrompt | null>(null);
+  const [viewMode, setViewMode] = useState<PropertyViewMode>('list');
+  const [expandedAdRows, setExpandedAdRows] = useState<ReadonlySet<string>>(() => new Set());
+  const [expandedMatchRows, setExpandedMatchRows] = useState<ReadonlySet<string>>(() => new Set());
+  const [arePropertyDetailColumnsCollapsed, setArePropertyDetailColumnsCollapsed] = useState(true);
+  const [isPriceFilterOpen, setIsPriceFilterOpen] = useState(false);
+  const [isMonthlyRentFilterOpen, setIsMonthlyRentFilterOpen] = useState(false);
+  const [isAreaFilterOpen, setIsAreaFilterOpen] = useState(false);
   const [activeSorts, setActiveSorts] = useState<SortDefinition[]>([]);
   const [sorting, setSorting] = useState<SortingState>([]);
-  // (웹 대응) 선택 표시 컬럼 — 관리비/융자금
+  // 선택 표시 컬럼 — 융자금
   const [optionalColumns, setOptionalColumns] = useState({
-    maintenanceFee: false,
     loanAmount: false,
   });
   const debouncedSearch = useDebouncedValue(search, 300);
@@ -395,12 +471,20 @@ function PropertiesPage() {
   const { data: filterSites = [], isLoading: isFilterSitesLoading } = useQuery({
     queryKey: ['listings', 'filter-sites'],
     queryFn: () => api.listings.filterSites(),
-    enabled: isSiteFilterOpen || Boolean(propertyFilters.siteId),
     staleTime: 5 * 60_000,
   });
 
-  const sitesById = useMemo(
-    () => new Map(filterSites.map((site) => [site.id, site])),
+  const siteFilterOptions = useMemo<MultiSelectOption[]>(
+    () =>
+      filterSites
+        .slice()
+        .sort((a, b) => a.name.localeCompare(b.name, 'ko'))
+        .map((site) => ({
+          value: site.id,
+          label: site.name,
+          description: site.roadAddress ?? site.jibunAddress ?? getSiteTypeLabel(site.type),
+          meta: `${site.propertyCount.toLocaleString()}건`,
+        })),
     [filterSites],
   );
   const { data: provinces = [] } = useQuery({
@@ -421,11 +505,23 @@ function PropertiesPage() {
     staleTime: 24 * 60_000,
   });
   const provinceOptions = useMemo(
-    () => [{ value: '', label: '전체' }, ...provinces.map((province) => ({ value: province.code, label: province.name }))],
+    () => [
+      { value: '', label: '전체' },
+      ...provinces.map((province) => ({
+        value: province.code,
+        label: province.name,
+      })),
+    ],
     [provinces],
   );
   const districtOptions = useMemo(
-    () => [{ value: '', label: '전체' }, ...districts.map((district) => ({ value: district.code, label: district.name }))],
+    () => [
+      { value: '', label: '전체' },
+      ...districts.map((district) => ({
+        value: district.code,
+        label: district.name,
+      })),
+    ],
     [districts],
   );
   const wardOptions = useMemo(
@@ -440,7 +536,7 @@ function PropertiesPage() {
       search: debouncedSearch.trim() || undefined,
       dong: debouncedDongSearch.trim() || undefined,
       unit: debouncedUnitSearch.trim() || undefined,
-      includeInactive: true,
+      includeClosed: true,
       ...buildListingFilterParams(propertyFilters),
     };
 
@@ -454,19 +550,19 @@ function PropertiesPage() {
     }
 
     return params;
-  }, [debouncedDongSearch, debouncedSearch, debouncedUnitSearch, propertyFilters, selectedTransactionType, activeSorts]);
+  }, [
+    debouncedDongSearch,
+    debouncedSearch,
+    debouncedUnitSearch,
+    propertyFilters,
+    selectedTransactionType,
+    activeSorts,
+  ]);
 
   // ── Query ─────────────────────────────────────────────────────
-  const {
-    data,
-    isLoading,
-    isFetchingNextPage,
-    fetchNextPage,
-    hasNextPage,
-  } = useInfiniteQuery({
+  const { data, isLoading, isFetchingNextPage, fetchNextPage, hasNextPage } = useInfiniteQuery({
     queryKey: ['listing-intakes', apiParams],
-    queryFn: ({ pageParam }) =>
-      api.listingIntakes.findAll({ ...apiParams, page: pageParam } as any),
+    queryFn: ({ pageParam }) => api.listingIntakes.findAll({ ...apiParams, page: pageParam } as any),
     initialPageParam: 1,
     placeholderData: keepPreviousData,
     getNextPageParam: (lastPage) => {
@@ -475,10 +571,7 @@ function PropertiesPage() {
     },
   });
 
-  const listingIntakes = useMemo(
-    () => data?.pages.flatMap((pageData) => pageData.items) ?? [],
-    [data?.pages],
-  );
+  const listingIntakes = useMemo(() => data?.pages.flatMap((pageData) => pageData.items) ?? [], [data?.pages]);
   const loadedIntakes = listingIntakes.length;
   const intakeCountLabel = `${loadedIntakes.toLocaleString()}${hasNextPage ? '+' : ''}`;
   const loadedListings = useMemo(
@@ -502,10 +595,7 @@ function PropertiesPage() {
     return map;
   }, [listingIntakes]);
 
-  const propertyGroups = useMemo(
-    () => buildPropertyListingGroups(listingIntakes),
-    [listingIntakes],
-  );
+  const propertyGroups = useMemo(() => buildPropertyListingGroups(listingIntakes), [listingIntakes]);
   const mapApiParams = useMemo(() => {
     const { limit, page, ...params } = apiParams;
     void limit;
@@ -523,17 +613,8 @@ function PropertiesPage() {
     placeholderData: keepPreviousData,
   });
   const mapIntakes = mapData?.items ?? listingIntakes;
-  const mapGroups = useMemo(
-    () => buildPropertyListingGroups(mapIntakes),
-    [mapIntakes],
-  );
-  const mapPoints = useMemo(
-    () => buildPropertyMapPoints(mapGroups),
-    [mapGroups],
-  );
-  const selectedSite = propertyFilters.siteId
-    ? sitesById.get(propertyFilters.siteId)
-    : undefined;
+  const mapGroups = useMemo(() => buildPropertyListingGroups(mapIntakes), [mapIntakes]);
+  const mapPoints = useMemo(() => buildPropertyMapPoints(mapGroups), [mapGroups]);
   const selectedProvince = propertyFilters.provinceCode
     ? provinces.find((province) => province.code === propertyFilters.provinceCode)
     : undefined;
@@ -544,97 +625,42 @@ function PropertiesPage() {
     ? wards.find((ward) => ward.code === propertyFilters.wardCode)
     : undefined;
   const selectedRegionName = selectedWard?.name ?? selectedDistrict?.name ?? selectedProvince?.name;
-  const priceDepositFilterSummary = getPriceDepositFilterSummary(propertyFilters);
-  const priceFilterLabel =
-    selectedTransactionType === 'jeonse' ? '전세가'
-    : selectedTransactionType === 'monthly' ? '가격'
-    : '매매가';
-  const monthlyRentFilterSummary = getRangeSummary(propertyFilters.monthlyRentMin, propertyFilters.monthlyRentMax, '만원');
+  const priceDepositFilterSummary = getPriceDepositFilterSummary(propertyFilters, selectedTransactionType);
+  const monthlyRentFilterSummary = getRangeSummary(
+    propertyFilters.monthlyRentMin,
+    propertyFilters.monthlyRentMax,
+    '만원',
+  );
   const areaFilterSummary = getRangeSummary(propertyFilters.areaMin, propertyFilters.areaMax, '평');
   const moveInFilterSummary = getDateRangeSummary(propertyFilters.moveInFrom, propertyFilters.moveInTo);
 
-  // 적용된 필터를 개별 제거 가능한 pill 목록으로. (정렬은 표 헤더로 처리하므로 제외)
-  const activeFilterChips: { key: string; label: string; onClear: () => void }[] = [];
-  if (selectedTransactionType !== 'all') {
-    activeFilterChips.push({
-      key: 'transactionType',
-      label: getOptionLabel(transactionTypeOptions, selectedTransactionType),
-      onClear: () => setSelectedTransactionType('all'),
-    });
-  }
-  if (search.trim()) {
-    activeFilterChips.push({ key: 'search', label: `검색 ${search.trim()}`, onClear: () => handleSearchChange('') });
-  }
-  if (propertyFilters.siteId) {
-    activeFilterChips.push({ key: 'siteId', label: selectedSite?.name ?? '선택 단지', onClear: () => clearFilterFields(['siteId']) });
-  }
-  if (propertyFilters.provinceCode || propertyFilters.districtCode || propertyFilters.wardCode) {
-    activeFilterChips.push({
-      key: 'region',
-      label: selectedRegionName ?? '지역',
-      onClear: () => clearFilterFields(['provinceCode', 'districtCode', 'wardCode']),
-    });
-  }
-  if (propertyFilters.dongSearch.trim()) {
-    activeFilterChips.push({ key: 'dong', label: `${propertyFilters.dongSearch.trim()}동`, onClear: () => clearFilterFields(['dongSearch']) });
-  }
-  if (propertyFilters.unitSearch.trim()) {
-    activeFilterChips.push({ key: 'unit', label: `${propertyFilters.unitSearch.trim()}호`, onClear: () => clearFilterFields(['unitSearch']) });
-  }
-  if (propertyFilters.siteType !== 'all') {
-    activeFilterChips.push({ key: 'siteType', label: getOptionLabel(siteTypeOptions, propertyFilters.siteType), onClear: () => clearFilterFields(['siteType']) });
-  }
-  if (propertyFilters.intakeStatus !== 'all') {
-    activeFilterChips.push({ key: 'status', label: getOptionLabel(intakeStatusFilterOptions, propertyFilters.intakeStatus), onClear: () => clearFilterFields(['intakeStatus']) });
-  }
-  if (priceDepositFilterSummary) {
-    activeFilterChips.push({ key: 'price', label: priceDepositFilterSummary, onClear: () => clearFilterFields(['priceMin', 'priceMax', 'depositMin', 'depositMax']) });
-  }
-  if (monthlyRentFilterSummary) {
-    activeFilterChips.push({ key: 'monthlyRent', label: `월세 ${monthlyRentFilterSummary}`, onClear: () => clearFilterFields(['monthlyRentMin', 'monthlyRentMax']) });
-  }
-  if (areaFilterSummary) {
-    activeFilterChips.push({ key: 'area', label: areaFilterSummary, onClear: () => clearFilterFields(['areaMin', 'areaMax']) });
-  }
-  if (moveInFilterSummary) {
-    activeFilterChips.push({ key: 'moveIn', label: `입주 ${moveInFilterSummary}`, onClear: () => clearFilterFields(['moveInFrom', 'moveInTo']) });
-  }
-  if (propertyFilters.hasAdvertisement) {
-    activeFilterChips.push({ key: 'hasAdvertisement', label: '광고 있음', onClear: () => clearFilterFields(['hasAdvertisement']) });
-  }
-  if (propertyFilters.isJointBrokerage) {
-    activeFilterChips.push({ key: 'isJointBrokerage', label: '공동중개', onClear: () => clearFilterFields(['isJointBrokerage']) });
-  }
-
   const hasActiveFilters = Boolean(
     search.trim() ||
-      propertyFilters.siteId ||
-      propertyFilters.provinceCode ||
-      propertyFilters.districtCode ||
-      propertyFilters.wardCode ||
-      propertyFilters.dongSearch.trim() ||
-      propertyFilters.unitSearch.trim() ||
-      propertyFilters.siteType !== 'all' ||
-      propertyFilters.intakeStatus !== 'all' ||
-      propertyFilters.priceMin ||
-      propertyFilters.priceMax ||
-      propertyFilters.depositMin ||
-      propertyFilters.depositMax ||
-      propertyFilters.monthlyRentMin ||
-      propertyFilters.monthlyRentMax ||
-      propertyFilters.areaMin ||
-      propertyFilters.areaMax ||
-      propertyFilters.moveInFrom ||
-      propertyFilters.moveInTo ||
-      propertyFilters.hasAdvertisement ||
-      propertyFilters.isJointBrokerage ||
-      activeSorts.length > 0,
+    propertyFilters.siteIds.length > 0 ||
+    propertyFilters.provinceCode ||
+    propertyFilters.districtCode ||
+    propertyFilters.wardCode ||
+    propertyFilters.dongSearch.trim() ||
+    propertyFilters.unitSearch.trim() ||
+    propertyFilters.siteTypes.length > 0 ||
+    propertyFilters.availabilities.length > 0 ||
+    propertyFilters.priceMin ||
+    propertyFilters.priceMax ||
+    propertyFilters.depositMin ||
+    propertyFilters.depositMax ||
+    propertyFilters.monthlyRentMin ||
+    propertyFilters.monthlyRentMax ||
+    propertyFilters.areaMin ||
+    propertyFilters.areaMax ||
+    propertyFilters.moveInFrom ||
+    propertyFilters.moveInTo ||
+    propertyFilters.advertisement !== 'all' ||
+    activeSorts.length > 0,
   );
 
   // ── Inline edit mutation ──────────────────────────────────────
   const updateMutation = useMutation({
-    mutationFn: ({ id, patch }: { id: string; patch: UpdateListingDto }) =>
-      api.listings.update(id, patch),
+    mutationFn: ({ id, patch }: { id: string; patch: UpdateListingDto }) => api.listings.update(id, patch),
     onMutate: async () => {
       await queryClient.cancelQueries({ queryKey: ['listing-intakes'] });
     },
@@ -664,7 +690,9 @@ function PropertiesPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['listing-intakes'] });
       if (selectedIntakeId) {
-        queryClient.invalidateQueries({ queryKey: ['listing-intakes', 'quick-sheet', selectedIntakeId] });
+        queryClient.invalidateQueries({
+          queryKey: ['listing-intakes', 'quick-sheet', selectedIntakeId],
+        });
       }
     },
     onError: (error) => {
@@ -672,26 +700,35 @@ function PropertiesPage() {
       queryClient.invalidateQueries({ queryKey: ['listing-intakes'] });
     },
   });
-  const intakeStatusMutation = useMutation({
+  const invalidateListingStatusQueries = useCallback(() => {
+    for (const queryKey of [['listing-intakes'], ['listings'], ['properties'], ['deals'], ['dashboard'], ['network']]) {
+      void queryClient.invalidateQueries({ queryKey });
+    }
+    if (selectedIntakeId) {
+      void queryClient.invalidateQueries({
+        queryKey: ['listing-intakes', 'quick-sheet', selectedIntakeId],
+      });
+    }
+  }, [queryClient, selectedIntakeId]);
+
+  const rowLifecycleMutation = useMutation({
     mutationFn: ({
       intakeId,
-      status,
+      value,
       expectedUpdatedAt,
     }: {
       intakeId: string;
-      status: string;
+      listingIds: string[];
+      value: IntakeLifecycleStatus;
       expectedUpdatedAt?: string | null;
     }) =>
-      api.listingIntakes.updateStatus(intakeId, status, { expectedUpdatedAt }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['listing-intakes'] });
-      if (selectedIntakeId) {
-        queryClient.invalidateQueries({ queryKey: ['listing-intakes', 'quick-sheet', selectedIntakeId] });
-      }
-    },
+      api.listingIntakes.updateLifecycleStatus(intakeId, value, {
+        closedReason: value === IntakeLifecycleStatus.CLOSED ? IntakeClosedReason.WITHDRAWN : null,
+        expectedUpdatedAt,
+      }),
+    onSettled: invalidateListingStatusQueries,
     onError: (error) => {
       handleMutationError(error);
-      queryClient.invalidateQueries({ queryKey: ['listing-intakes'] });
     },
   });
   const intakeMemoMutation = useMutation({
@@ -711,7 +748,9 @@ function PropertiesPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['listing-intakes'] });
       if (selectedIntakeId) {
-        queryClient.invalidateQueries({ queryKey: ['listing-intakes', 'quick-sheet', selectedIntakeId] });
+        queryClient.invalidateQueries({
+          queryKey: ['listing-intakes', 'quick-sheet', selectedIntakeId],
+        });
       }
     },
     onError: (error) => {
@@ -744,10 +783,7 @@ function PropertiesPage() {
     [listingUpdatedAtById, updateMutation],
   );
   const handleIntakeConfirm = useCallback(
-    (
-      intakeId: string,
-      result: 'alive' | 'price_changed' | 'unavailable' | 'no_answer' | 'pending',
-    ) => {
+    (intakeId: string, result: 'alive' | 'price_changed' | 'unavailable' | 'no_answer' | 'pending') => {
       confirmMutation.mutate({
         intakeId,
         result,
@@ -756,15 +792,68 @@ function PropertiesPage() {
     },
     [confirmMutation, intakeUpdatedAtById],
   );
-  const handleIntakeStatusChange = useCallback(
-    (intakeId: string, status: string) => {
-      intakeStatusMutation.mutate({
-        intakeId,
-        status,
-        expectedUpdatedAt: intakeUpdatedAtById.get(intakeId),
+  const handleRowStatusSave = useCallback(
+    (group: PropertyListingGroup, value: ListingAvailability) => {
+      const intake = group.representative;
+      const listingsWithIntake = group.listings.map((listing) => ({
+        ...listing,
+        intake: { lifecycleStatus: intake.lifecycleStatus },
+      }));
+      const currentValue = getListingRowAvailability(intake, listingsWithIntake);
+      const plan = planListingStatusChange(currentValue, value, listingsWithIntake);
+      const propertyLabel = [group.property?.site?.name, getDongName(group.property), group.property?.unit?.name]
+        .filter((part) => part && part !== '-')
+        .join(' ');
+
+      if (plan.kind === 'startDeal') {
+        setStartDealPrompt({
+          propertyId: group.propertyId,
+          propertyLabel,
+          listings: plan.candidates,
+          requiresListingSelection: group.listings.length > 1,
+          intakeLifecycleStatus: intake.lifecycleStatus,
+        });
+        return;
+      }
+
+      if (plan.kind === 'reviewResume') {
+        setResumeClosedPrompt({
+          intakeId: intake.id,
+          listingIds: group.listings.map((listing) => listing.id),
+          propertyLabel,
+          targetAvailability: value,
+          canResume: plan.canResume,
+          completedListingCount: plan.completedListingCount,
+          resumableListingCount: plan.resumableListingCount,
+        });
+        return;
+      }
+
+      if (plan.kind === 'blocked') {
+        toast.info(
+          plan.reason === 'allHaveActiveDeals'
+            ? '모든 거래유형에 이미 진행 중인 Deal이 있습니다.'
+            : plan.reason === 'completedDeal'
+              ? '이미 거래 완료된 Deal이 있어 종료된 매물입니다.'
+              : plan.reason === 'closedIntake'
+                ? '종료된 의뢰입니다. 먼저 가용으로 재개해 주세요.'
+                : plan.reason === 'noCandidates'
+                  ? 'Deal을 생성할 수 있는 거래유형이 없습니다.'
+                  : '거래중 상태는 연결된 Deal에서 단계를 변경하거나 취소해 주세요.',
+        );
+        return;
+      }
+
+      if (plan.kind === 'noop') return;
+
+      rowLifecycleMutation.mutate({
+        intakeId: intake.id,
+        listingIds: group.listings.map((listing) => listing.id),
+        value: plan.lifecycleStatus,
+        expectedUpdatedAt: intakeUpdatedAtById.get(intake.id),
       });
     },
-    [intakeStatusMutation, intakeUpdatedAtById],
+    [intakeUpdatedAtById, rowLifecycleMutation],
   );
   const handleIntakeMemoSave = useCallback(
     (intakeId: string, value: unknown) => {
@@ -833,11 +922,13 @@ function PropertiesPage() {
     setSorting(newSorting);
     if (newSorting.length > 0) {
       const s = newSorting[0];
-      setActiveSorts([{
-        field: s.id,
-        label: sortDefinitions.find((d) => d.field === s.id)?.label ?? s.id,
-        direction: s.desc ? 'desc' : 'asc',
-      }]);
+      setActiveSorts([
+        {
+          field: s.id,
+          label: sortDefinitions.find((d) => d.field === s.id)?.label ?? s.id,
+          direction: s.desc ? 'desc' : 'asc',
+        },
+      ]);
     } else {
       setActiveSorts([]);
     }
@@ -845,8 +936,35 @@ function PropertiesPage() {
   }, []);
 
   const handleTransactionTabChange = useCallback((transactionType: string) => {
-    setSelectedTransactionType(transactionType as (typeof transactionTypeOptions)[number]['value']);
+    const nextTransactionType = transactionType as (typeof transactionTypeOptions)[number]['value'];
+    setSelectedTransactionType(nextTransactionType);
+    setPropertyFilters((previous) => movePriceRangeForTransaction(previous, nextTransactionType));
     setPage(1);
+  }, []);
+
+  const handlePriceRangeApply = useCallback(
+    (range: [number, number]) => {
+      setPropertyFilters((previous) =>
+        applyPriceRangeFilter(previous, selectedTransactionType, range[0], range[1]),
+      );
+      setPage(1);
+      setIsPriceFilterOpen(false);
+    },
+    [selectedTransactionType],
+  );
+
+  const handleMonthlyRentRangeApply = useCallback((range: [number, number]) => {
+    setPropertyFilters((previous) =>
+      applyMonthlyRentRangeFilter(previous, range[0], range[1]),
+    );
+    setPage(1);
+    setIsMonthlyRentFilterOpen(false);
+  }, []);
+
+  const handleAreaRangeApply = useCallback((range: [number, number]) => {
+    setPropertyFilters((previous) => applyAreaRangeFilter(previous, range[0], range[1]));
+    setPage(1);
+    setIsAreaFilterOpen(false);
   }, []);
 
   const handleEndReached = useCallback(() => {
@@ -854,6 +972,58 @@ function PropertiesPage() {
       void fetchNextPage();
     }
   }, [fetchNextPage, hasNextPage, isFetchingNextPage]);
+
+  const handleCreateProperty = useCallback(() => {
+    const route = '/properties/new';
+    const meta = getRouteMeta(route);
+    openTab({ route, kind: meta.kind, title: meta.title });
+  }, [openTab]);
+
+  const toggleAdRow = useCallback((groupId: string) => {
+    setExpandedAdRows((previous) => {
+      const next = new Set(previous);
+      if (next.has(groupId)) {
+        next.delete(groupId);
+      } else {
+        next.add(groupId);
+      }
+      return next;
+    });
+  }, []);
+
+  const toggleMatchRow = useCallback((groupId: string) => {
+    setExpandedMatchRows((previous) => {
+      const next = new Set(previous);
+      if (next.has(groupId)) {
+        next.delete(groupId);
+      } else {
+        next.add(groupId);
+      }
+      return next;
+    });
+  }, []);
+
+  const expandedRowIds = useMemo(
+    () => new Set([...expandedMatchRows, ...expandedAdRows]),
+    [expandedAdRows, expandedMatchRows],
+  );
+
+  const renderExpandedPropertyRow = useCallback(
+    (group: PropertyListingGroup) => (
+      <>
+        {expandedMatchRows.has(group.id) && <PropertyMatchPanel group={group} />}
+        {expandedAdRows.has(group.id) && <PropertyAdPanel group={group} />}
+      </>
+    ),
+    [expandedAdRows, expandedMatchRows],
+  );
+
+  const getExpandedPropertyRowHeight = useCallback(
+    (group: PropertyListingGroup) =>
+      (expandedMatchRows.has(group.id) ? estimatePropertyMatchPanelHeight(group) : 0) +
+      (expandedAdRows.has(group.id) ? estimatePropertyAdPanelHeight(group) : 0),
+    [expandedAdRows, expandedMatchRows],
+  );
 
   // ── Column definitions (property-grouped operational grid) ────
   const columns = useMemo<ColumnDef<PropertyListingGroup, unknown>[]>(
@@ -868,7 +1038,7 @@ function PropertiesPage() {
       {
         id: 'site',
         header: () => <TableHeaderLabel icon={<Type className="size-4" />} label="단지" />,
-        size: 260,
+        size: 240,
         enableSorting: false,
         cell: ({ row }) => {
           const group = row.original;
@@ -887,9 +1057,7 @@ function PropertiesPage() {
         size: 58,
         enableSorting: false,
         cell: ({ row }) => (
-          <span className="truncate text-[13px] font-medium text-slate-900">
-            {getDongName(row.original.property)}
-          </span>
+          <span className="truncate text-[13px] font-medium text-slate-900">{getDongName(row.original.property)}</span>
         ),
       },
       {
@@ -904,92 +1072,96 @@ function PropertiesPage() {
         ),
       },
       {
-        id: 'unitType',
-        header: () => <TableHeaderLabel icon={<Type className="size-4" />} label="타입" />,
-        size: 58,
+        id: 'actions',
+        header: () => <span className="sr-only">작업</span>,
+        size: 40,
+        minSize: 40,
+        maxSize: 40,
+        enableResizing: false,
         enableSorting: false,
-        cell: ({ row }) => {
-          const value = getUnitTypeName(row.original.property);
-          return (
-            <span className="truncate text-[13px] text-slate-700">
-              {value === '-' ? '' : value}
-            </span>
-          );
+        meta: {
+          cellClassName: 'px-0',
         },
+        cell: ({ row }) => <PropertyRowActions listings={row.original.listings} intake={row.original.representative} />,
       },
+      ...(!arePropertyDetailColumnsCollapsed
+        ? [
+            {
+              id: 'unitType',
+              header: () => <TableHeaderLabel icon={<Type className="size-4" />} label="타입" />,
+              size: 58,
+              enableSorting: false,
+              cell: ({ row }) => {
+                const value = getUnitTypeName(row.original.property);
+                return <span className="truncate text-[13px] text-slate-700">{value === '-' ? '' : value}</span>;
+              },
+            } satisfies ColumnDef<PropertyListingGroup, unknown>,
+            {
+              id: 'exclusiveArea',
+              header: () => <TableHeaderLabel icon={<Ruler className="size-4" />} label="전용면적" />,
+              size: 96,
+              enableSorting: false,
+              cell: ({ row }) => {
+                const value = formatAreaPyeong(getExclusiveAreaM2(row.original.property));
+                return <span className="truncate text-[13px] text-slate-700 tabular-nums">{value === '-' ? '' : value}</span>;
+              },
+            } satisfies ColumnDef<PropertyListingGroup, unknown>,
+            {
+              id: 'matching',
+              header: () => <TableHeaderLabel icon={<GitBranch className="size-4" />} label="매칭" />,
+              size: 64,
+              enableSorting: false,
+              cell: ({ row }) => (
+                <ListingMatchToggle
+                  group={row.original}
+                  isOpen={expandedMatchRows.has(row.original.id)}
+                  onToggle={toggleMatchRow}
+                />
+              ),
+            } satisfies ColumnDef<PropertyListingGroup, unknown>,
+            {
+              id: 'advertisement',
+              header: () => <TableHeaderLabel icon={<Megaphone className="size-4" />} label="광고" />,
+              size: 64,
+              enableSorting: false,
+              cell: ({ row }) => (
+                <ListingAdToggle
+                  group={row.original}
+                  isOpen={expandedAdRows.has(row.original.id)}
+                  onToggle={toggleAdRow}
+                />
+              ),
+            } satisfies ColumnDef<PropertyListingGroup, unknown>,
+            {
+              id: 'updatedAt',
+              header: () => <TableHeaderLabel icon={<CalendarDays className="size-4" />} label="확인" />,
+              size: 112,
+              enableSorting: true,
+              cell: ({ row }) => (
+                <IntakeConfirmationCell
+                  intake={row.original.representative}
+                  onConfirm={handleIntakeConfirm}
+                  isPending={
+                    confirmMutation.isPending &&
+                    confirmMutation.variables?.intakeId === row.original.representative.id
+                  }
+                />
+              ),
+            } satisfies ColumnDef<PropertyListingGroup, unknown>,
+          ]
+        : []),
       {
-        id: 'exclusiveArea',
-        header: () => <TableHeaderLabel icon={<Ruler className="size-4" />} label="전용면적" />,
-        size: 96,
-        enableSorting: false,
-        cell: ({ row }) => {
-          const value = formatAreaPyeong(getExclusiveAreaM2(row.original.property));
-          return (
-            <span className="truncate text-[13px] text-slate-700 tabular-nums">
-              {value === '-' ? '' : value}
-            </span>
-          );
-        },
-      },
-      {
-        id: 'checkStatus',
-        header: () => <TableHeaderLabel icon={<Tag className="size-4" />} label="거래상태" />,
+        id: 'listingAvailability',
+        header: () => <TableHeaderLabel icon={<Tag className="size-4" />} label="매물상태" />,
         size: 120,
         enableSorting: false,
         cell: ({ row }) => (
-          <ListingStatusStack
+          <ListingAvailabilityCell
+            intake={row.original.representative}
             listings={row.original.listings}
-            onChange={(listingId, value) => handleCellSave(listingId, 'checkStatus', value)}
+            onChange={(value) => handleRowStatusSave(row.original, value)}
           />
         ),
-      },
-      {
-        id: 'confirmAction',
-        header: () => <TableHeaderLabel icon={<Check className="size-4" />} label="확인" />,
-        size: 65,
-        enableSorting: false,
-        cell: ({ row }) => (
-          <IntakeConfirmButton
-            intake={row.original.representative}
-            onConfirm={handleIntakeConfirm}
-            isPending={
-              confirmMutation.isPending &&
-              confirmMutation.variables?.intakeId === row.original.representative.id
-            }
-          />
-        ),
-      },
-      {
-        id: 'updatedAt',
-        header: () => <TableHeaderLabel icon={<CalendarDays className="size-4" />} label="확인일" />,
-        size: 70,
-        enableSorting: true,
-        cell: ({ row }) => (
-          <IntakeConfirmedAtCell intake={row.original.representative} />
-        ),
-      },
-      {
-        id: 'intakeStatus',
-        header: () => <TableHeaderLabel icon={<Tag className="size-4" />} label="상태" />,
-        size: 70,
-        enableSorting: false,
-        cell: ({ row }) => (
-          <IntakeStatusCell
-            intake={row.original.representative}
-            onChange={handleIntakeStatusChange}
-            isPending={
-              intakeStatusMutation.isPending &&
-              intakeStatusMutation.variables?.intakeId === row.original.representative.id
-            }
-          />
-        ),
-      },
-      {
-        id: 'intake',
-        header: () => <TableHeaderLabel icon={<PhoneCall className="size-4" />} label="다음확인" />,
-        size: 168,
-        enableSorting: false,
-        cell: ({ row }) => <IntakeNextConfirmCell intake={row.original.representative} />,
       },
       {
         id: 'price',
@@ -998,10 +1170,7 @@ function PropertiesPage() {
         enableSorting: true,
         meta: {
           cellClassName: 'hover:bg-muted/50',
-          onCellDoubleClick: (
-            _group: PropertyListingGroup,
-            event: ReactMouseEvent<HTMLTableCellElement>,
-          ) => {
+          onCellDoubleClick: (_group: PropertyListingGroup, event: ReactMouseEvent<HTMLTableCellElement>) => {
             triggerStackCellEditor(event);
           },
         },
@@ -1020,149 +1189,76 @@ function PropertiesPage() {
         enableSorting: false,
         meta: {
           cellClassName: 'hover:bg-muted/50',
-          onCellDoubleClick: (
-            _group: PropertyListingGroup,
-            event: ReactMouseEvent<HTMLTableCellElement>,
-          ) => {
+          onCellDoubleClick: (_group: PropertyListingGroup, event: ReactMouseEvent<HTMLTableCellElement>) => {
             triggerStackCellEditor(event);
           },
         },
-        cell: ({ row }) => (
-          <ListingMonthlyRentStack
-            listings={row.original.listings}
-            onPatch={handleListingPatch}
-          />
-        ),
+        cell: ({ row }) => <ListingMonthlyRentStack listings={row.original.listings} onPatch={handleListingPatch} />,
       },
-      ...(optionalColumns.maintenanceFee
-        ? [
-            {
-              id: 'maintenanceFee',
-              header: () => (
-                <TableHeaderLabel icon={<CircleDollarSign className="size-4" />} label="관리비" />
-              ),
-              size: 88,
-              enableSorting: false,
-              meta: {
-                cellClassName: 'hover:bg-muted/50',
-                onCellDoubleClick: (
-                  _group: PropertyListingGroup,
-                  event: ReactMouseEvent<HTMLTableCellElement>,
-                ) => {
-                  triggerStackCellEditor(event);
-                },
-              },
-              cell: ({ row }) => (
-                <ListingNumberFieldStack
-                  listings={row.original.listings}
-                  field="maintenanceFee"
-                  onSave={handleCellSave}
-                />
-              ),
-            } satisfies ColumnDef<PropertyListingGroup, unknown>,
-          ]
-        : []),
       ...(optionalColumns.loanAmount
         ? [
             {
               id: 'loanAmount',
-              header: () => (
-                <TableHeaderLabel icon={<CircleDollarSign className="size-4" />} label="융자금" />
-              ),
+              header: () => <TableHeaderLabel icon={<CircleDollarSign className="size-4" />} label="융자금" />,
               size: 96,
               enableSorting: false,
               meta: {
                 cellClassName: 'hover:bg-muted/50',
-                onCellDoubleClick: (
-                  _group: PropertyListingGroup,
-                  event: ReactMouseEvent<HTMLTableCellElement>,
-                ) => {
+                onCellDoubleClick: (_group: PropertyListingGroup, event: ReactMouseEvent<HTMLTableCellElement>) => {
                   triggerStackCellEditor(event);
                 },
               },
               cell: ({ row }) => (
-                <ListingNumberFieldStack
-                  listings={row.original.listings}
-                  field="loanAmount"
-                  onSave={handleCellSave}
-                />
+                <ListingNumberFieldStack listings={row.original.listings} field="loanAmount" onSave={handleCellSave} />
               ),
             } satisfies ColumnDef<PropertyListingGroup, unknown>,
           ]
         : []),
-      {
-        id: 'advertisement',
-        header: () => <TableHeaderLabel icon={<Megaphone className="size-4" />} label="광고" />,
-        size: 100,
-        enableSorting: false,
-        cell: ({ row }) => <ListingAdStack listings={row.original.listings} />,
-      },
-      {
-        id: 'moveInAvailable',
-        header: () => <TableHeaderLabel icon={<DoorOpen className="size-4" />} label="입주가능일" />,
-        size: 120,
-        enableSorting: false,
-        cell: ({ row }) => <MoveInAvailableStack listings={row.original.listings} onPatch={handleListingPatch} />,
-      },
-      {
-        id: 'jointBrokerage',
-        header: () => <TableHeaderLabel icon={<Handshake className="size-4" />} label="공동" />,
-        size: 60,
-        enableSorting: false,
-        cell: ({ row }) => <JointBrokerageCell intake={row.original.representative} />,
-      },
-      {
-        id: 'memo',
-        header: () => <TableHeaderLabel icon={<FileText className="size-4" />} label="의뢰 메모" />,
-        size: 320,
-        minSize: 220,
-        enableSorting: false,
-        meta: {
-          cellClassName: 'hover:bg-muted/50',
-          onCellDoubleClick: (
-            _group: PropertyListingGroup,
-            event: ReactMouseEvent<HTMLTableCellElement>,
-          ) => {
-            triggerStackCellEditor(event);
-          },
+    {
+      id: 'moveInAvailable',
+      header: () => <TableHeaderLabel icon={<DoorOpen className="size-4" />} label="입주가능일" />,
+      size: 120,
+      enableSorting: false,
+      cell: ({ row }) => <MoveInAvailableStack listings={row.original.listings} onPatch={handleListingPatch} />,
+    },
+    {
+      id: 'memo',
+      header: () => <TableHeaderLabel icon={<FileText className="size-4" />} label="의뢰 메모" />,
+      size: 320,
+      minSize: 220,
+      enableResizing: false,
+      enableSorting: false,
+      meta: {
+        cellClassName: 'hover:bg-muted/50',
+        grow: true,
+        onCellDoubleClick: (_group: PropertyListingGroup, event: ReactMouseEvent<HTMLTableCellElement>) => {
+          triggerStackCellEditor(event);
         },
-        cell: ({ row }) => (
-          <IntakeMemoCell
-            intake={row.original.representative}
-            onSave={handleIntakeMemoSave}
-          />
-        ),
       },
-      {
-        id: 'actions',
-        header: () => <span className="sr-only">작업</span>,
-        size: 44,
-        enableSorting: false,
-        cell: ({ row }) => (
-          <PropertyRowActions
-            listings={row.original.listings}
-            intake={row.original.representative}
-          />
-        ),
-      },
+      cell: ({ row }) => <IntakeMemoCell intake={row.original.representative} onSave={handleIntakeMemoSave} />,
+    },
     ],
     [
+      arePropertyDetailColumnsCollapsed,
       handleCellSave,
+      handleCreateProperty,
       handleIntakeConfirm,
       handleIntakeMemoSave,
-      handleIntakeStatusChange,
       handleListingPatch,
+      handleRowStatusSave,
       confirmMutation.isPending,
       confirmMutation.variables?.intakeId,
-      intakeStatusMutation.isPending,
-      optionalColumns.maintenanceFee,
+      expandedAdRows,
+      expandedMatchRows,
       optionalColumns.loanAmount,
+      toggleAdRow,
+      toggleMatchRow,
     ],
   );
 
   return (
     <CellEditProvider>
-      <div className="-m-4 flex min-h-0 flex-1 flex-col bg-white">
+      <div data-properties-page className="-m-4 flex min-h-0 flex-1 flex-col bg-white">
         <section className="border-b border-border bg-white px-3 py-2">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex min-w-0 flex-wrap items-center gap-1.5">
@@ -1182,27 +1278,23 @@ function PropertiesPage() {
                 </TabsList>
               </Tabs>
 
-              <FilterPopoverChip
-                label="단지"
-                value={selectedSite?.name ?? '전체'}
-                active={Boolean(propertyFilters.siteId)}
-                tier={1}
-                onClear={() => clearFilterFields(['siteId'])}
-                onOpenChange={setIsSiteFilterOpen}
-                contentClassName="w-[360px]"
-              >
-                <div className="space-y-2">
-                  <PopoverTitle title="단지" description="단지명 또는 주소로 매물을 좁힙니다." />
-                  <SiteSearchFilter
-                    sites={filterSites}
-                    value={propertyFilters.siteId}
-                    onChange={(value) => updatePropertyFilter('siteId', value)}
-                    isLoading={isFilterSitesLoading}
-                    placeholder="단지 검색"
-                    showCounts
-                  />
-                </div>
-              </FilterPopoverChip>
+              <MultiSelect
+                options={siteFilterOptions}
+                selected={propertyFilters.siteIds}
+                onChange={(values) => updatePropertyFilter('siteIds', values)}
+                ariaLabel="단지 필터"
+                placeholder="단지 전체"
+                searchPlaceholder="단지명 또는 주소 검색"
+                emptyText="일치하는 단지가 없습니다."
+                isLoading={isFilterSitesLoading}
+                maxCount={1}
+                className={cn(
+                  'h-8 min-w-[150px] max-w-[280px] border-border bg-white px-2.5 text-[13px] shadow-none',
+                  propertyFilters.siteIds.length > 0 && 'border-foreground/25 bg-foreground/[0.06]',
+                )}
+                badgeClassName="m-0 h-5 border-border bg-white px-1.5 text-[11px] text-foreground shadow-none"
+                popoverClassName="w-[360px]"
+              />
 
               <div className="relative w-20">
                 <Input
@@ -1263,18 +1355,16 @@ function PropertiesPage() {
               </div>
             </div>
 
-            <Button
-              size="sm"
-              className="shrink-0 px-3.5"
-              onClick={() => {
-                const route = '/properties/new';
-                const meta = getRouteMeta(route);
-                openTab({ route, kind: meta.kind, title: meta.title });
-              }}
-            >
-              <Plus className="size-3.5" />
-              새 매물 등록
-            </Button>
+            <div className="flex shrink-0 items-center gap-2">
+              <ViewModeSwitch value={viewMode} onChange={setViewMode} />
+              <Button
+                size="sm"
+                className="shrink-0 px-3.5"
+                onClick={handleCreateProperty}
+              >
+                <Plus className="size-3.5" />새 매물 등록
+              </Button>
+            </div>
           </div>
         </section>
 
@@ -1316,68 +1406,59 @@ function PropertiesPage() {
               </div>
             </FilterPopoverChip>
 
-            <FilterPopoverChip
-              label="유형"
-              value={getOptionLabel(siteTypeOptions, propertyFilters.siteType)}
-              active={propertyFilters.siteType !== 'all'}
-              tier={3}
-              onClear={() => clearFilterFields(['siteType'])}
-            >
-              <div className="space-y-2">
-                <PopoverTitle title="매물유형" description="아파트, 오피스텔, 상가 등 건물 유형을 선택합니다." />
-                <SelectFilter
-                  value={propertyFilters.siteType}
-                  onChange={(value) => updatePropertyFilter('siteType', value)}
-                  options={siteTypeOptions}
-                />
-              </div>
-            </FilterPopoverChip>
+            <MultiSelect
+              options={siteTypeOptions}
+              selected={propertyFilters.siteTypes}
+              onChange={(values) => updatePropertyFilter('siteTypes', values)}
+              ariaLabel="유형 필터"
+              placeholder="유형 전체"
+              searchPlaceholder="유형 검색"
+              emptyText="일치하는 유형이 없습니다."
+              maxCount={1}
+              className={cn(
+                'h-8 min-w-[126px] max-w-[220px] border-border bg-white px-2.5 text-[13px] shadow-none',
+                propertyFilters.siteTypes.length > 0 && 'border-foreground/25 bg-foreground/[0.06]',
+              )}
+              badgeClassName="m-0 h-5 border-border bg-white px-1.5 text-[11px] text-foreground shadow-none"
+              popoverClassName="w-[240px]"
+            />
 
-            <FilterPopoverChip
-              label="상태"
-              value={getOptionLabel(intakeStatusFilterOptions, propertyFilters.intakeStatus)}
-              active={propertyFilters.intakeStatus !== 'all'}
-              tier={2}
-              onClear={() => clearFilterFields(['intakeStatus'])}
-            >
-              <div className="space-y-2">
-                <PopoverTitle title="상태" description="의뢰 상태로 매물을 좁힙니다." />
-                <SelectFilter
-                  value={propertyFilters.intakeStatus}
-                  onChange={(value) => updatePropertyFilter('intakeStatus', value)}
-                  options={intakeStatusFilterOptions}
-                />
-              </div>
-            </FilterPopoverChip>
+            <MultiSelect
+              options={listingAvailabilityFilterOptions}
+              selected={propertyFilters.availabilities}
+              onChange={(values) => updatePropertyFilter('availabilities', values)}
+              ariaLabel="매물상태 필터"
+              placeholder="매물상태 전체"
+              searchPlaceholder="매물상태 검색"
+              emptyText="일치하는 상태가 없습니다."
+              maxCount={1}
+              className={cn(
+                'h-8 min-w-[150px] max-w-[240px] border-border bg-white px-2.5 text-[13px] shadow-none',
+                propertyFilters.availabilities.length > 0 && 'border-foreground/25 bg-foreground/[0.06]',
+              )}
+              badgeClassName="m-0 h-5 border-border bg-white px-1.5 text-[11px] text-foreground shadow-none"
+              popoverClassName="w-[240px]"
+            />
 
             <FilterPopoverChip
               label="가격/보증금"
               value={priceDepositFilterSummary ?? '전체'}
               active={Boolean(priceDepositFilterSummary)}
               tier={2}
+              open={isPriceFilterOpen}
+              onOpenChange={setIsPriceFilterOpen}
               onClear={() => clearFilterFields(['priceMin', 'priceMax', 'depositMin', 'depositMax'])}
-              contentClassName="w-[340px]"
+              contentClassName="w-[430px] max-w-[calc(100vw-24px)] overflow-hidden p-0"
             >
-              <div className="space-y-3">
-                <PopoverTitle title={priceFilterLabel} description="가격은 억, 보증금은 만원 단위입니다." />
-                <RangeFilter
-                  label={priceFilterLabel}
-                  unit="억"
-                  minValue={propertyFilters.priceMin}
-                  maxValue={propertyFilters.priceMax}
-                  onMinChange={(value) => updatePropertyFilter('priceMin', value)}
-                  onMaxChange={(value) => updatePropertyFilter('priceMax', value)}
-                  presets={getPricePresets(selectedTransactionType)}
-                />
-                <RangeFilter
-                  label="보증금"
-                  unit="만원"
-                  minValue={propertyFilters.depositMin}
-                  maxValue={propertyFilters.depositMax}
-                  onMinChange={(value) => updatePropertyFilter('depositMin', value)}
-                  onMaxChange={(value) => updatePropertyFilter('depositMax', value)}
-                />
-              </div>
+              <PriceRangeFilterPanel
+                initialRange={getPriceRangeFilter(propertyFilters, selectedTransactionType)}
+                onApply={handlePriceRangeApply}
+                onClear={() => {
+                  clearFilterFields(['priceMin', 'priceMax', 'depositMin', 'depositMax']);
+                  setIsPriceFilterOpen(false);
+                }}
+                onCancel={() => setIsPriceFilterOpen(false)}
+              />
             </FilterPopoverChip>
 
             <FilterPopoverChip
@@ -1385,20 +1466,39 @@ function PropertiesPage() {
               value={monthlyRentFilterSummary ?? '전체'}
               active={Boolean(monthlyRentFilterSummary)}
               tier={3}
+              open={isMonthlyRentFilterOpen}
+              onOpenChange={setIsMonthlyRentFilterOpen}
               onClear={() => clearFilterFields(['monthlyRentMin', 'monthlyRentMax'])}
-              contentClassName="w-[320px]"
+              contentClassName="w-[430px] max-w-[calc(100vw-24px)] overflow-hidden p-0"
             >
-              <div className="space-y-3">
-                <PopoverTitle title="월세" description="만원 단위로 입력합니다." />
-                <RangeFilter
-                  label="월세"
-                  unit="만원"
-                  minValue={propertyFilters.monthlyRentMin}
-                  maxValue={propertyFilters.monthlyRentMax}
-                  onMinChange={(value) => updatePropertyFilter('monthlyRentMin', value)}
-                  onMaxChange={(value) => updatePropertyFilter('monthlyRentMax', value)}
-                />
-              </div>
+              <NumericRangeFilterPanel
+                ariaLabel="월세 필터"
+                title="월세"
+                description="월 납부액 기준 · 만원 단위"
+                initialRange={getMonthlyRentRangeFilter(propertyFilters)}
+                min={MONTHLY_RENT_RANGE_MIN}
+                max={MONTHLY_RENT_RANGE_MAX}
+                step={10}
+                presets={MONTHLY_RENT_RANGE_PRESETS}
+                tickLabels={['전체', '200만', '400만', '최대']}
+                formatLabel={(min, max) =>
+                  formatNumericRangeLabel(
+                    min,
+                    max,
+                    MONTHLY_RENT_RANGE_MIN,
+                    MONTHLY_RENT_RANGE_MAX,
+                    '만원',
+                    '전체 월세',
+                  )
+                }
+                thumbLabels={['최소 월세', '최대 월세']}
+                onApply={handleMonthlyRentRangeApply}
+                onClear={() => {
+                  clearFilterFields(['monthlyRentMin', 'monthlyRentMax']);
+                  setIsMonthlyRentFilterOpen(false);
+                }}
+                onCancel={() => setIsMonthlyRentFilterOpen(false)}
+              />
             </FilterPopoverChip>
 
             <FilterPopoverChip
@@ -1406,21 +1506,39 @@ function PropertiesPage() {
               value={areaFilterSummary ?? '전체'}
               active={Boolean(areaFilterSummary)}
               tier={2}
+              open={isAreaFilterOpen}
+              onOpenChange={setIsAreaFilterOpen}
               onClear={() => clearFilterFields(['areaMin', 'areaMax'])}
-              contentClassName="w-[320px]"
+              contentClassName="w-[430px] max-w-[calc(100vw-24px)] overflow-hidden p-0"
             >
-              <div className="space-y-3">
-                <PopoverTitle title="전용면적" description="평 단위로 입력합니다." />
-                <RangeFilter
-                  label="전용면적"
-                  unit="평"
-                  minValue={propertyFilters.areaMin}
-                  maxValue={propertyFilters.areaMax}
-                  onMinChange={(value) => updatePropertyFilter('areaMin', value)}
-                  onMaxChange={(value) => updatePropertyFilter('areaMax', value)}
-                  presets={AREA_PRESETS}
-                />
-              </div>
+              <NumericRangeFilterPanel
+                ariaLabel="면적 필터"
+                title="전용면적"
+                description="전용면적 기준 · 평 단위"
+                initialRange={getAreaRangeFilter(propertyFilters)}
+                min={AREA_RANGE_MIN}
+                max={AREA_RANGE_MAX}
+                step={1}
+                presets={AREA_RANGE_PRESETS}
+                tickLabels={['전체', '20평', '40평', '60평', '최대']}
+                formatLabel={(min, max) =>
+                  formatNumericRangeLabel(
+                    min,
+                    max,
+                    AREA_RANGE_MIN,
+                    AREA_RANGE_MAX,
+                    '평',
+                    '전체 면적',
+                  )
+                }
+                thumbLabels={['최소 면적', '최대 면적']}
+                onApply={handleAreaRangeApply}
+                onClear={() => {
+                  clearFilterFields(['areaMin', 'areaMax']);
+                  setIsAreaFilterOpen(false);
+                }}
+                onCancel={() => setIsAreaFilterOpen(false)}
+              />
             </FilterPopoverChip>
 
             <FilterPopoverChip
@@ -1442,61 +1560,56 @@ function PropertiesPage() {
               </div>
             </FilterPopoverChip>
 
-            {/* 표시 옵션 (광고·공동) — 우측 정렬, 조건 필터와 의미 분리 */}
+            <Select
+              value={propertyFilters.advertisement}
+              onValueChange={(value) =>
+                updatePropertyFilter(
+                  'advertisement',
+                  value as PropertyFilterState['advertisement'],
+                )
+              }
+            >
+              <SelectTrigger
+                size="sm"
+                aria-label="광고 필터"
+                className={cn(
+                  'h-8 w-[116px] border-border bg-white px-2.5 text-xs text-muted-foreground shadow-none',
+                  propertyFilters.advertisement !== 'all' &&
+                    'border-foreground/25 bg-foreground/[0.06] text-foreground',
+                )}
+              >
+                <Megaphone className="size-3.5" />
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent align="start">
+                {advertisementFilterOptions.map((option) => (
+                  <SelectItem key={option.value} value={option.value} className="text-[13px]">
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            {/* 표시 설정과 초기화 — 우측 정렬 */}
             <div className="ml-auto flex items-center gap-1.5">
-              <span className="mr-0.5 hidden text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60 xl:inline">표시</span>
-              <label className={cn(
-                'flex h-8 cursor-pointer items-center gap-2 rounded-md border px-3 text-xs',
-                propertyFilters.hasAdvertisement
-                  ? 'border-foreground/25 bg-foreground/[0.06] text-foreground'
-                  : 'border-transparent bg-white text-muted-foreground hover:border-border',
-              )}>
-                <Switch
-                  size="sm"
-                  checked={propertyFilters.hasAdvertisement}
-                  onCheckedChange={(checked) => updatePropertyFilter('hasAdvertisement', checked)}
-                />
-                광고
-              </label>
-
-              <label className={cn(
-                'flex h-8 cursor-pointer items-center gap-2 rounded-md border px-3 text-xs',
-                propertyFilters.isJointBrokerage
-                  ? 'border-foreground/25 bg-foreground/[0.06] text-foreground'
-                  : 'border-transparent bg-white text-muted-foreground hover:border-border',
-              )}>
-                <Switch
-                  size="sm"
-                  checked={propertyFilters.isJointBrokerage}
-                  onCheckedChange={(checked) => updatePropertyFilter('isJointBrokerage', checked)}
-                />
-                공동
-              </label>
-
+              <span className="mr-0.5 hidden text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60 xl:inline">
+                표시
+              </span>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-8 gap-1.5 px-2.5 text-xs text-muted-foreground"
-                  >
+                  <Button variant="ghost" size="sm" className="h-8 gap-1.5 px-2.5 text-xs text-muted-foreground">
                     <Columns3 className="size-3.5" />
                     컬럼
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-40">
                   <DropdownMenuCheckboxItem
-                    checked={optionalColumns.maintenanceFee}
-                    onCheckedChange={(checked) =>
-                      setOptionalColumns((prev) => ({ ...prev, maintenanceFee: Boolean(checked) }))
-                    }
-                  >
-                    관리비
-                  </DropdownMenuCheckboxItem>
-                  <DropdownMenuCheckboxItem
                     checked={optionalColumns.loanAmount}
                     onCheckedChange={(checked) =>
-                      setOptionalColumns((prev) => ({ ...prev, loanAmount: Boolean(checked) }))
+                      setOptionalColumns((prev) => ({
+                        ...prev,
+                        loanAmount: Boolean(checked),
+                      }))
                     }
                   >
                     융자금
@@ -1507,7 +1620,12 @@ function PropertiesPage() {
               {hasActiveFilters && (
                 <>
                   <div className="mx-0.5 h-4 w-px bg-border" />
-                  <Button variant="ghost" size="sm" className="h-8 gap-1.5 px-2.5 text-xs text-muted-foreground" onClick={handleFiltersReset}>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 gap-1.5 px-2.5 text-xs text-muted-foreground"
+                    onClick={handleFiltersReset}
+                  >
                     <RotateCcw className="size-3.5" />
                     초기화
                   </Button>
@@ -1518,46 +1636,54 @@ function PropertiesPage() {
         </section>
 
         <section className="flex min-h-0 flex-1 bg-white px-0 py-0">
-          <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-white">
-            <div className="flex min-h-9 shrink-0 flex-wrap items-center justify-between gap-2 border-b border-border/60 bg-muted/20 px-3 py-1.5 text-[12px] text-muted-foreground">
-              <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-                <span className="font-medium text-foreground">
-                  매물 {propertyGroups.length.toLocaleString()}개
-                </span>
-                <span>의뢰 {intakeCountLabel}건 · 거래 {loadedListings.toLocaleString()}건</span>
-                {activeFilterChips.length > 0 ? (
-                  <>
-                    <span className="text-border">|</span>
-                    <div className="flex min-w-0 flex-wrap items-center gap-1">
-                      {activeFilterChips.map((chip) => (
-                        <span
-                          key={chip.key}
-                          className="inline-flex h-[22px] items-center gap-1 rounded-full border border-border bg-white pl-2.5 pr-1.5 text-[11px] text-foreground"
-                        >
-                          {chip.label}
-                          <button
-                            type="button"
-                            aria-label={`${chip.label} 필터 해제`}
-                            onClick={chip.onClear}
-                            className="inline-flex items-center justify-center rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
-                          >
-                            <X className="size-2.5" />
-                          </button>
-                        </span>
-                      ))}
-                    </div>
-                  </>
-                ) : (
-                  <span>전체 조건</span>
-                )}
-              </div>
-              {isLoading ? (
+          <div data-property-table-scroll-scope className="flex min-h-0 flex-1 flex-col overflow-hidden bg-white">
+            <div className="relative flex min-h-9 shrink-0 flex-wrap items-center justify-between gap-2 overflow-hidden border-b border-border/60 bg-muted/20 px-3 py-1.5 text-[12px] text-muted-foreground">
+              {viewMode === 'list' && (
+                <>
+                  {!arePropertyDetailColumnsCollapsed && (
+                    <>
+                      <span
+                        aria-hidden="true"
+                        data-column-group-line="property-details"
+                        className="pointer-events-none absolute left-[482px] top-1/2 z-[9] h-px w-[404px] -translate-y-1/2 bg-slate-400"
+                      />
+                      <span
+                        aria-hidden="true"
+                        data-column-group-cap="property-details"
+                        className="pointer-events-none absolute left-[886px] top-1/2 z-[9] h-2 w-px -translate-x-full -translate-y-[0.5px] bg-slate-400"
+                      />
+                    </>
+                  )}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon-xs"
+                    aria-label={
+                      arePropertyDetailColumnsCollapsed ? '타입–확인 컬럼 펼치기' : '타입–확인 컬럼 접기'
+                    }
+                    aria-expanded={!arePropertyDetailColumnsCollapsed}
+                    title={
+                      arePropertyDetailColumnsCollapsed ? '타입–확인 컬럼 펼치기' : '타입–확인 컬럼 접기'
+                    }
+                    data-column-group-toggle="property-details"
+                    className="pointer-events-auto absolute left-[472px] top-1/2 z-10 size-5 -translate-x-1/2 -translate-y-1/2 rounded-[3px] border-slate-400 bg-white p-0 text-slate-600 shadow-none hover:border-slate-500 hover:bg-slate-50 hover:text-slate-900"
+                    onClick={() => setArePropertyDetailColumnsCollapsed((previous) => !previous)}
+                  >
+                    {arePropertyDetailColumnsCollapsed ? (
+                      <Plus className="size-3" />
+                    ) : (
+                      <Minus className="size-3" />
+                    )}
+                  </Button>
+                </>
+              )}
+              {isLoading || (viewMode === 'map' && isMapDataLoading) ? (
                 <span>불러오는 중</span>
               ) : loadedIntakes === 0 && hasActiveFilters ? (
                 <span>조건을 줄이거나 초기화해 보세요.</span>
-              ) : (
-                <span>행 더블클릭 시 빠른 확인 패널을 엽니다.</span>
-              )}
+              ) : viewMode === 'map' ? (
+                <span>마커나 우측 매물을 클릭하면 빠른 확인 패널이 열립니다.</span>
+              ) : null}
             </div>
             {viewMode === 'list' ? (
               <PropertyListingsTable
@@ -1568,13 +1694,14 @@ function PropertiesPage() {
                 sorting={sorting}
                 onSortingChange={handleSortingChange}
                 onRowClick={(row) => setSelectedIntakeId(row.intakeId)}
+                expandedRowIds={expandedRowIds}
+                renderExpandedRow={renderExpandedPropertyRow}
+                getExpandedRowHeight={getExpandedPropertyRowHeight}
                 isLoading={isLoading}
                 isLoadingMore={isFetchingNextPage}
                 onEndReached={handleEndReached}
                 emptyMessage={hasActiveFilters ? '조건에 맞는 매물이 없습니다.' : '등록된 매물이 없습니다.'}
-                renderBulkActions={(selectedRows) => (
-                  <PropertyBulkActions groups={selectedRows} />
-                )}
+                renderBulkActions={(selectedRows) => <PropertyBulkActions groups={selectedRows} />}
                 renderStatusBar={() => (
                   <span>
                     의뢰 {intakeCountLabel}건 표시
@@ -1598,10 +1725,40 @@ function PropertiesPage() {
             )}
           </div>
         </section>
-        <PropertyQuickSheet
-          intakeId={selectedIntakeId}
-          onClose={() => setSelectedIntakeId(null)}
-        />
+        <PropertyQuickSheet intakeId={selectedIntakeId} onClose={() => setSelectedIntakeId(null)} />
+        {startDealPrompt && (
+          <StartDealFromStatusDialog
+            key={`${startDealPrompt.propertyId}:${startDealPrompt.listings.map((listing) => listing.id).join(',')}`}
+            prompt={startDealPrompt}
+            onClose={() => setStartDealPrompt(null)}
+            onSuccess={invalidateListingStatusQueries}
+          />
+        )}
+        {resumeClosedPrompt && (
+          <ResumeClosedListingDialog
+            key={resumeClosedPrompt.intakeId}
+            prompt={resumeClosedPrompt}
+            pending={rowLifecycleMutation.isPending}
+            onClose={() => setResumeClosedPrompt(null)}
+            onResume={() => {
+              if (!resumeClosedPrompt.canResume) return;
+              rowLifecycleMutation.mutate(
+                {
+                  intakeId: resumeClosedPrompt.intakeId,
+                  listingIds: resumeClosedPrompt.listingIds,
+                  value:
+                    resumeClosedPrompt.targetAvailability === ListingAvailability.PAUSED
+                      ? IntakeLifecycleStatus.HOLD
+                      : IntakeLifecycleStatus.OPEN,
+                  expectedUpdatedAt: intakeUpdatedAtById.get(resumeClosedPrompt.intakeId),
+                },
+                {
+                  onSuccess: () => setResumeClosedPrompt(null),
+                },
+              );
+            }}
+          />
+        )}
       </div>
     </CellEditProvider>
   );
@@ -1613,6 +1770,45 @@ function TableHeaderLabel({ icon, label }: { icon: ReactNode; label: string }) {
       <span className="shrink-0 [&>svg]:size-3 [&>svg]:text-muted-foreground/70">{icon}</span>
       <span className="truncate">{label}</span>
     </span>
+  );
+}
+
+function ViewModeSwitch({ value, onChange }: { value: PropertyViewMode; onChange: (value: PropertyViewMode) => void }) {
+  return (
+    <div
+      role="group"
+      aria-label="매물 보기 방식"
+      className="flex h-8 items-center rounded-md border border-border bg-white p-0.5"
+    >
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className={cn(
+          'h-7 gap-1.5 rounded-[5px] px-2.5 text-xs font-medium',
+          value === 'list' ? 'bg-muted text-foreground shadow-sm hover:bg-muted' : 'text-muted-foreground',
+        )}
+        onClick={() => onChange('list')}
+        aria-pressed={value === 'list'}
+      >
+        <List className="size-3.5" />
+        목록
+      </Button>
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className={cn(
+          'h-7 gap-1.5 rounded-[5px] px-2.5 text-xs font-medium',
+          value === 'map' ? 'bg-muted text-foreground shadow-sm hover:bg-muted' : 'text-muted-foreground',
+        )}
+        onClick={() => onChange('map')}
+        aria-pressed={value === 'map'}
+      >
+        <MapIcon className="size-3.5" />
+        지도
+      </Button>
+    </div>
   );
 }
 
@@ -1650,11 +1846,7 @@ function PropertyMapView({
   return (
     <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_320px] bg-white">
       <div className="relative min-h-0 overflow-hidden border-r border-border bg-[#f7f7f5]">
-        <NaverPropertyMap
-          points={points}
-          missingCount={missingGroups.length}
-          onSelectIntake={onSelectIntake}
-        />
+        <NaverPropertyMap points={points} missingCount={missingGroups.length} onSelectIntake={onSelectIntake} />
       </div>
 
       <aside className="flex min-h-0 flex-col bg-white">
@@ -1683,12 +1875,7 @@ function PropertyMapView({
             </div>
           )}
           {missingGroups.map((group) => (
-            <MapPropertyRow
-              key={group.id}
-              group={group}
-              onClick={() => onSelectIntake(group.intakeId)}
-              muted
-            />
+            <MapPropertyRow key={group.id} group={group} onClick={() => onSelectIntake(group.intakeId)} muted />
           ))}
         </div>
       </aside>
@@ -1755,7 +1942,7 @@ function NaverPropertyMap({
   useEffect(() => {
     if (!mapsApi || !mapElementRef.current || mapRef.current) return;
 
-    const centerPoint = points[0] ?? { lat: 37.5665, lng: 126.9780 };
+    const centerPoint = points[0] ?? { lat: 37.5665, lng: 126.978 };
     mapRef.current = new mapsApi.Map(mapElementRef.current, {
       center: new mapsApi.LatLng(centerPoint.lat, centerPoint.lng),
       zoom: points.length > 0 ? 15 : 11,
@@ -1770,9 +1957,7 @@ function NaverPropertyMap({
     if (!mapsApi || !map) return;
 
     const clearMarkers = () => {
-      for (const listener of listenersRef.current) {
-        mapsApi.Event.removeListener?.(listener);
-      }
+      removePropertyMapListeners(listenersRef.current, (listener) => mapsApi.Event.removeListener?.(listener));
       for (const marker of markersRef.current) {
         marker.setMap(null);
       }
@@ -1781,9 +1966,7 @@ function NaverPropertyMap({
     };
 
     const clearClusterListeners = () => {
-      for (const listener of clusterListenersRef.current) {
-        mapsApi.Event.removeListener?.(listener);
-      }
+      removePropertyMapListeners(clusterListenersRef.current, (listener) => mapsApi.Event.removeListener?.(listener));
       clusterListenersRef.current = [];
     };
 
@@ -1806,7 +1989,7 @@ function NaverPropertyMap({
           title: isCluster ? `${cluster.groupCount}건` : cluster.points[0].siteName,
           icon: {
             content: isCluster ? getNaverClusterMarkerHtml(cluster) : getNaverMarkerHtml(cluster.points[0]),
-            anchor: isCluster ? new mapsApi.Point(24, 24) : new mapsApi.Point(18, 42),
+            anchor: isCluster ? new mapsApi.Point(24, 24) : new mapsApi.Point(20, 20),
           },
         });
         const listener = mapsApi.Event.addListener(marker, 'click', () => {
@@ -1856,18 +2039,20 @@ function NaverPropertyMap({
     <div className="relative h-full min-h-0 w-full">
       <div ref={mapElementRef} className="h-full w-full" />
       <div className="absolute left-4 top-4 z-10 rounded-md border border-border bg-white/95 px-3 py-2 shadow-sm">
-        <div className="text-[12px] font-medium text-foreground">
-          지도 표시 {points.length.toLocaleString()}곳
-        </div>
-        <div className="mt-0.5 text-[11px] text-muted-foreground">
-          좌표 없음 {missingCount.toLocaleString()}건
-        </div>
+        <div className="text-[12px] font-medium text-foreground">지도 표시 {points.length.toLocaleString()}곳</div>
+        <div className="mt-0.5 text-[11px] text-muted-foreground">좌표 없음 {missingCount.toLocaleString()}건</div>
       </div>
       {!NAVER_MAPS_NCP_KEY_ID && (
-        <NaverMapOverlayMessage title="네이버 지도 키가 필요합니다" detail="VITE_NAVER_MAPS_NCP_KEY_ID를 설정하면 지도가 표시됩니다." />
+        <NaverMapOverlayMessage
+          title="네이버 지도 키가 필요합니다"
+          detail="VITE_NAVER_MAPS_NCP_KEY_ID를 설정하면 지도가 표시됩니다."
+        />
       )}
       {NAVER_MAPS_NCP_KEY_ID && loadState === 'loading' && (
-        <NaverMapOverlayMessage title="네이버 지도를 불러오는 중입니다" detail="Maps JavaScript SDK를 초기화하고 있습니다." />
+        <NaverMapOverlayMessage
+          title="네이버 지도를 불러오는 중입니다"
+          detail="Maps JavaScript SDK를 초기화하고 있습니다."
+        />
       )}
       {NAVER_MAPS_NCP_KEY_ID && loadState === 'error' && (
         <NaverMapOverlayMessage
@@ -1882,7 +2067,10 @@ function NaverPropertyMap({
         />
       )}
       {NAVER_MAPS_NCP_KEY_ID && loadState === 'ready' && points.length === 0 && (
-        <NaverMapOverlayMessage title="좌표가 등록된 매물이 없습니다" detail="단지 좌표가 있는 매물부터 지도에 표시됩니다." />
+        <NaverMapOverlayMessage
+          title="좌표가 등록된 매물이 없습니다"
+          detail="단지 좌표가 있는 매물부터 지도에 표시됩니다."
+        />
       )}
     </div>
   );
@@ -1993,7 +2181,9 @@ function loadNaverMaps(ncpKeyId: string) {
         return;
       }
       existingScript.addEventListener('load', handleLoad, { once: true });
-      existingScript.addEventListener('error', () => reject(new Error('NAVER Maps SDK failed to load')), { once: true });
+      existingScript.addEventListener('error', () => reject(new Error('NAVER Maps SDK failed to load')), {
+        once: true,
+      });
       return;
     }
 
@@ -2001,10 +2191,14 @@ function loadNaverMaps(ncpKeyId: string) {
     script.id = 'naver-maps-js-sdk';
     script.async = true;
     script.src = `https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=${encodeURIComponent(ncpKeyId)}`;
-    script.addEventListener('load', () => {
-      script.dataset.loadState = 'loaded';
-      handleLoad();
-    }, { once: true });
+    script.addEventListener(
+      'load',
+      () => {
+        script.dataset.loadState = 'loaded';
+        handleLoad();
+      },
+      { once: true },
+    );
     script.addEventListener('error', () => reject(new Error('NAVER Maps SDK failed to load')), { once: true });
     document.head.appendChild(script);
   });
@@ -2015,59 +2209,44 @@ function loadNaverMaps(ncpKeyId: string) {
 function getNaverMarkerHtml(point: PropertyMapPoint) {
   return `
     <div style="
+      width: 40px;
+      height: 40px;
+      box-sizing: border-box;
+      border-radius: 50%;
+      border: 3px solid #fff;
+      background: #0f172a;
+      color: #fff;
       display: flex;
-      flex-direction: column;
       align-items: center;
+      justify-content: center;
       font-family: Pretendard, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 12px;
+      font-weight: 800;
       cursor: pointer;
-    ">
-      <div style="
-        min-width: 34px;
-        height: 34px;
-        padding: 0 9px;
-        border-radius: 999px;
-        border: 2px solid #fff;
-        background: #0f172a;
-        color: #fff;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 12px;
-        font-weight: 700;
-        box-shadow: 0 8px 20px rgba(15, 23, 42, 0.24);
-      ">${point.groups.length}</div>
-      <div style="
-        width: 9px;
-        height: 9px;
-        margin-top: -3px;
-        background: #0f172a;
-        transform: rotate(45deg);
-      "></div>
-    </div>
+      box-shadow: 0 8px 20px rgba(15, 23, 42, 0.24);
+    ">${point.groups.length}</div>
   `;
 }
 
 function getNaverClusterMarkerHtml(cluster: PropertyMapCluster) {
-  const markerSize = cluster.groupCount >= 50 ? 60 : cluster.groupCount >= 20 ? 54 : 48;
   return `
     <div style="
-      width: ${markerSize}px;
-      height: ${markerSize}px;
-      border-radius: 999px;
+      width: 48px;
+      height: 48px;
+      box-sizing: border-box;
+      border-radius: 50%;
       border: 3px solid rgba(255, 255, 255, 0.95);
       background: #2563eb;
       color: #fff;
       display: flex;
-      flex-direction: column;
       align-items: center;
       justify-content: center;
       font-family: Pretendard, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 13px;
+      font-weight: 800;
       cursor: pointer;
       box-shadow: 0 10px 24px rgba(37, 99, 235, 0.28);
-    ">
-      <div style="font-size: 13px; line-height: 1; font-weight: 800;">${cluster.groupCount}</div>
-      <div style="margin-top: 3px; font-size: 10px; line-height: 1; font-weight: 600; opacity: 0.85;">매물</div>
-    </div>
+    ">${cluster.groupCount}</div>
   `;
 }
 
@@ -2104,9 +2283,7 @@ function MapPropertyRow({
             {[unitLabel, address].filter(Boolean).join(' · ')}
           </div>
         </div>
-        <span className="shrink-0 text-[11px] text-muted-foreground">
-          {group.listings.length.toLocaleString()}건
-        </span>
+        <span className="shrink-0 text-[11px] text-muted-foreground">{group.listings.length.toLocaleString()}건</span>
       </div>
       <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-1.5">
         {group.listings.slice(0, 3).map((listing) => (
@@ -2129,37 +2306,28 @@ function useDebouncedValue<T>(value: T, delayMs: number) {
   return debouncedValue;
 }
 
-function PropertyQuickSheet({
-  intakeId,
-  onClose,
-}: {
-  intakeId: string | null;
-  onClose: () => void;
-}) {
+function PropertyQuickSheet({ intakeId, onClose }: { intakeId: string | null; onClose: () => void }) {
   const { data: intake, isLoading } = useQuery({
     queryKey: ['listing-intakes', 'quick-sheet', intakeId],
     queryFn: () => api.listingIntakes.findOne(intakeId as string),
     enabled: Boolean(intakeId),
   });
 
-  // shadcn Sheet의 open animation은 500ms (data-[state=open]:duration-500).
-  // animation 동안 무거운 PropertySheetContent (헤더/거래카드/임차/타임라인 등 큰
-  // React 트리)를 mount하면 메인 스레드가 점유되어 CSS slide가 frame drop.
-  // animation이 완전히 끝난 뒤(550ms)에만 무거운 트리 mount + 그 전에는 가벼운
-  // Skeleton만. 닫힐 때 즉시 reset해 다음 open에서도 deferred 동작.
+  // 무거운 상세 트리는 짧은 drawer 전환이 끝난 뒤 mount해 이동 중 frame drop을 막는다.
   const [contentReady, setContentReady] = useState(false);
   useEffect(() => {
     if (!intakeId) {
       setContentReady(false);
       return;
     }
-    const timer = window.setTimeout(() => setContentReady(true), 550);
+    const timer = window.setTimeout(() => setContentReady(true), PROPERTY_QUICK_SHEET_CONTENT_DELAY_MS);
     return () => window.clearTimeout(timer);
   }, [intakeId]);
 
   return (
     <Sheet open={Boolean(intakeId)} onOpenChange={(open) => !open && onClose()}>
       <SheetContent
+        data-property-quick-sheet
         side="right"
         showCloseButton={false}
         className="!w-full !max-w-full !gap-0 overflow-hidden p-0 sm:!max-w-[720px]"
@@ -2227,19 +2395,14 @@ function PropertySheetContent({
   const unitLabel = getPropertySheetUnitLabel(property);
   const unitTypeName = property.unit?.siteUnitType?.name;
   const floorLabel = property.unit?.floor ? `${property.unit.floor}층` : null;
-  const unitSummaryItems = [
-    unitTypeName ? `${unitTypeName}타입` : null,
-    floorLabel,
-  ].filter(Boolean);
+  const unitSummaryItems = [unitTypeName ? `${unitTypeName}타입` : null, floorLabel].filter(Boolean);
   const address = property.site?.roadAddress ?? property.site?.jibunAddress ?? '주소 미등록';
   const owner = contacts.find((contact) => contact.role === 'owner') ?? contacts[0];
   const ownerPhone = owner?.contact?.phone;
   const areaLabel = formatPropertySheetArea(property);
   const notices = getPropertySheetNotices(property);
-  const intakeStatus = intakeStatusMeta[intake.status] ?? {
-    label: intake.status,
-    className: 'bg-[#f1f1ef] text-[#5f5e5b]',
-  };
+  const intakeListings = listings.filter((listing) => listing.intakeId === intake.id);
+  const availability = getListingRowAvailability(intake, intakeListings);
   const memo = intake.memo?.trim() || listings.find((listing) => listing.memo?.trim())?.memo?.trim();
 
   return (
@@ -2255,8 +2418,7 @@ function PropertySheetContent({
             onClick={() => {
               const route = `/properties/${property.id}`;
               const meta = getRouteMeta(route);
-              const tabTitle =
-                [title, unitLabel].filter(Boolean).join(' ') || meta.title;
+              const tabTitle = [title, unitLabel].filter(Boolean).join(' ') || meta.title;
               onClose();
               openTab({ route, kind: meta.kind, title: tabTitle });
             }}
@@ -2264,12 +2426,7 @@ function PropertySheetContent({
             <ExternalLink />
             전체 페이지로 열기
           </Button>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            onClick={onClose}
-            aria-label="닫기"
-          >
+          <Button variant="ghost" size="icon-sm" onClick={onClose} aria-label="닫기">
             <X />
           </Button>
         </div>
@@ -2281,9 +2438,7 @@ function PropertySheetContent({
             {unitLabel && <span className="text-foreground">{unitLabel}</span>}
           </SheetTitle>
           {unitSummaryItems.length > 0 && (
-            <div className="text-[14px] leading-6 text-muted-foreground">
-              {unitSummaryItems.join(' · ')}
-            </div>
+            <div className="text-[14px] leading-6 text-muted-foreground">{unitSummaryItems.join(' · ')}</div>
           )}
           <SheetDescription className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-muted-foreground">
             <span className="inline-flex min-w-0 items-center gap-1.5">
@@ -2296,7 +2451,7 @@ function PropertySheetContent({
             </span>
             <span className="inline-flex items-center gap-1.5">
               <CalendarDays className="size-3.5" />
-              확인 {intake.confirmedAt ? formatDateShort(intake.confirmedAt) : '미확인'}
+              확인 {intake.lastCheckedAt ? formatDateShort(intake.lastCheckedAt) : '미확인'}
             </span>
             <span>접수 {formatDateShort(intake.receivedAt)}</span>
           </SheetDescription>
@@ -2304,14 +2459,7 @@ function PropertySheetContent({
             {listings.map((listing) => (
               <TransactionBadge key={listing.id} transactionType={listing.transactionType} />
             ))}
-            <span
-              className={cn(
-                'inline-flex max-w-full rounded-[4px] px-1.5 py-0.5 text-[12px] font-medium leading-5',
-                intakeStatus.className,
-              )}
-            >
-              {intakeStatus.label}
-            </span>
+            <StatusIndicator value={availability} />
           </div>
         </div>
 
@@ -2335,12 +2483,7 @@ function PropertySheetContent({
               </span>
             )}
           </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-8 gap-1.5 px-3 text-[13px] font-medium"
-            asChild
-          >
+          <Button variant="outline" size="sm" className="h-8 gap-1.5 px-3 text-[13px] font-medium" asChild>
             <Link to="/properties/$id" params={{ id: property.id }}>
               <MessageSquare className="size-3.5" />
               상담 기록
@@ -2419,9 +2562,7 @@ function PropertySheetContent({
             {consultations.slice(0, 3).map((consultation) => (
               <PropertySheetConsultationRow key={consultation.id} consultation={consultation} />
             ))}
-            {!memo && consultations.length === 0 && (
-              <SheetEmptyState text="상담 기록과 메모가 없습니다." compact />
-            )}
+            {!memo && consultations.length === 0 && <SheetEmptyState text="상담 기록과 메모가 없습니다." compact />}
           </div>
         </SheetSection>
       </div>
@@ -2432,9 +2573,7 @@ function PropertySheetContent({
 function SheetSection({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="space-y-2.5">
-      <h3 className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
-        {title}
-      </h3>
+      <h3 className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">{title}</h3>
       {children}
     </section>
   );
@@ -2465,17 +2604,10 @@ function PropertySheetListingCard({ listing }: { listing: PropertyListing }) {
       <div className="flex items-start justify-between gap-3">
         <div className="flex flex-wrap items-center gap-1.5">
           <TransactionBadge transactionType={listing.transactionType} />
-          <StatusIndicator value={listing.checkStatus} />
-          <JointBrokerageBadge listing={listing} />
-          {listing.isHidden && (
-            <span className="inline-flex rounded-md bg-[#fbe4e4] px-1.5 py-0.5 text-[11px] font-medium leading-5 text-[#9f5555]">
-              숨김
-            </span>
-          )}
+          <StatusIndicator value={getListingAvailability(listing)} />
+          <JointBrokerageBadge intake={listing.intake} />
         </div>
-        <span className="shrink-0 text-[11px] text-muted-foreground">
-          확인 {formatDateShort(listing.updatedAt)}
-        </span>
+        <span className="shrink-0 text-[11px] text-muted-foreground">확인 {formatDateShort(listing.updatedAt)}</span>
       </div>
       <div className="mt-2 text-[18px] font-semibold tracking-[-0.01em] text-foreground">
         <PriceCell
@@ -2516,11 +2648,7 @@ function PropertySheetPriceHistoryList({ listings }: { listings: PropertyListing
   return (
     <div className="divide-y divide-[#eeeeec] rounded-md border border-[#eeeeec]">
       {historyRows.map(({ listing, history }) => (
-        <PropertySheetPriceHistoryRow
-          key={history.id}
-          listing={listing}
-          history={history}
-        />
+        <PropertySheetPriceHistoryRow key={history.id} listing={listing} history={history} />
       ))}
     </div>
   );
@@ -2556,9 +2684,7 @@ function PropertySheetPriceHistoryRow({
         <span className="font-semibold tabular-nums text-slate-950">{afterPrice}</span>
       </div>
       {history.reason?.trim() && (
-        <p className="mt-1.5 line-clamp-2 text-xs leading-5 text-slate-500">
-          {history.reason.trim()}
-        </p>
+        <p className="mt-1.5 line-clamp-2 text-xs leading-5 text-slate-500">{history.reason.trim()}</p>
       )}
     </div>
   );
@@ -2579,11 +2705,7 @@ function PropertySheetAdvertisementList({ listings }: { listings: PropertyListin
   return (
     <div className="divide-y divide-[#eeeeec] rounded-md border border-[#eeeeec]">
       {advertisementRows.map(({ listing, advertisement }) => (
-        <PropertySheetAdvertisementRow
-          key={advertisement.id}
-          listing={listing}
-          advertisement={advertisement}
-        />
+        <PropertySheetAdvertisementRow key={advertisement.id} listing={listing} advertisement={advertisement} />
       ))}
     </div>
   );
@@ -2647,9 +2769,7 @@ function PropertySheetAdvertisementRow({
         </div>
       </div>
       {advertisement.memo?.trim() && (
-        <p className="mt-2 line-clamp-2 text-xs leading-5 text-slate-500">
-          {advertisement.memo.trim()}
-        </p>
+        <p className="mt-2 line-clamp-2 text-xs leading-5 text-slate-500">{advertisement.memo.trim()}</p>
       )}
     </div>
   );
@@ -2667,9 +2787,7 @@ function PropertySheetContactRow({ propertyContact }: { propertyContact: Propert
             {getContactRoleLabel(propertyContact.role)}
           </span>
           {propertyContact.isPrimary && (
-            <span className="rounded-[4px] bg-[#e7f3f8] px-1.5 py-0.5 text-[11px] text-[#337ea9]">
-              주 연락처
-            </span>
+            <span className="rounded-[4px] bg-[#e7f3f8] px-1.5 py-0.5 text-[11px] text-[#337ea9]">주 연락처</span>
           )}
         </div>
         <p className="mt-0.5 truncate text-xs text-slate-500">
@@ -2696,9 +2814,7 @@ function PropertySheetTenantRow({ tenant }: { tenant: Tenant }) {
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-2">
           <span className="truncate text-sm font-medium text-slate-900">{name}</span>
-          <span className="rounded-[4px] bg-[#f1f1ef] px-1.5 py-0.5 text-[11px] text-[#5f5e5b]">
-            임차인
-          </span>
+          <span className="rounded-[4px] bg-[#f1f1ef] px-1.5 py-0.5 text-[11px] text-[#5f5e5b]">임차인</span>
           <span className="rounded-[4px] bg-[#fbf3db] px-1.5 py-0.5 text-[11px] text-[#8f6b1f]">
             {getTenantStatusLabel(tenant.status)}
           </span>
@@ -2722,9 +2838,7 @@ function PropertySheetConsultationRow({ consultation }: { consultation: Consulta
   return (
     <div className="rounded-md border border-[#eeeeec] px-3 py-3">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="rounded-[4px] bg-[#f1f1ef] px-1.5 py-0.5 text-[11px] text-[#5f5e5b]">
-          {consultation.type}
-        </span>
+        <span className="rounded-[4px] bg-[#f1f1ef] px-1.5 py-0.5 text-[11px] text-[#5f5e5b]">{consultation.type}</span>
         <span className="text-[11px] text-slate-500">{formatDateTime(consultation.createdAt)}</span>
         {consultation.contact?.name && (
           <span className="text-[11px] text-slate-500">· {consultation.contact.name}</span>
@@ -2773,20 +2887,14 @@ function SheetActionButton({
   );
 }
 
-function SheetEmptyState({
-  text,
-  compact = false,
-  action,
-}: {
-  text: string;
-  compact?: boolean;
-  action?: ReactNode;
-}) {
+function SheetEmptyState({ text, compact = false, action }: { text: string; compact?: boolean; action?: ReactNode }) {
   return (
-    <div className={cn(
-      'rounded-md border border-dashed border-[#e3e2df] px-3 text-center text-sm text-slate-500',
-      compact ? 'py-4' : 'py-8',
-    )}>
+    <div
+      className={cn(
+        'rounded-md border border-dashed border-[#e3e2df] px-3 text-center text-sm text-slate-500',
+        compact ? 'py-4' : 'py-8',
+      )}
+    >
       <div>{text}</div>
       {action && <div className="mt-3 flex justify-center">{action}</div>}
     </div>
@@ -2794,7 +2902,7 @@ function SheetEmptyState({
 }
 
 function StatusIndicator({ value }: { value: string }) {
-  const meta = checkStatusMeta[value] ?? {
+  const meta = listingAvailabilityMeta[value as ListingAvailability] ?? {
     label: value,
     dotClassName: 'bg-[#b4b4b1]',
     pillClassName: 'bg-[#f1f1ef] text-[#5f5e5b]',
@@ -2811,6 +2919,202 @@ function StatusIndicator({ value }: { value: string }) {
       <span className="truncate">{meta.label}</span>
     </span>
   );
+}
+
+function ResumeClosedListingDialog({
+  prompt,
+  pending,
+  onClose,
+  onResume,
+}: {
+  prompt: ResumeClosedPrompt;
+  pending: boolean;
+  onClose: () => void;
+  onResume: () => void;
+}) {
+  const propertyLabel = prompt.propertyLabel || '선택한 매물';
+  const targetLabel = prompt.targetAvailability === ListingAvailability.PAUSED ? '보류' : '가용';
+  const targetLabelWithParticle =
+    prompt.targetAvailability === ListingAvailability.PAUSED ? '보류로' : '가용으로';
+
+  return (
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open && !pending) onClose();
+      }}
+    >
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>
+            {prompt.canResume
+              ? `종료된 의뢰를 ${targetLabelWithParticle} 재개할까요?`
+              : `${targetLabel} 상태로 변경할 수 없습니다`}
+          </DialogTitle>
+          <DialogDescription>
+            {prompt.canResume
+              ? `${propertyLabel}의 종료된 의뢰를 다시 엽니다.`
+              : `${propertyLabel}은 거래 완료된 Deal 때문에 종료 상태입니다.`}
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="rounded-md border bg-muted/30 px-3 py-2.5 text-sm leading-6 text-muted-foreground">
+          {prompt.canResume ? (
+            prompt.completedListingCount > 0 ? (
+              <>
+                완료 Deal이 없는 거래유형 {prompt.resumableListingCount}개를 재개합니다. 거래 완료된 거래유형{' '}
+                {prompt.completedListingCount}
+                개는 종료 상태를 유지합니다.
+              </>
+            ) : (
+              `재개하면 종료 상태가 해제되고 매물 상태가 ${targetLabelWithParticle} 표시됩니다.`
+            )
+          ) : (
+            '기존 완료 Deal의 단계를 되돌리거나 취소해야 합니다. 새로운 거래라면 새 의뢰를 등록해 주세요.'
+          )}
+        </div>
+
+        <DialogFooter>
+          {prompt.canResume ? (
+            <>
+              <Button type="button" variant="outline" disabled={pending} onClick={onClose}>
+                취소
+              </Button>
+              <Button type="button" disabled={pending} onClick={onResume}>
+                {pending && <Loader2 className="size-4 animate-spin" />}
+                {targetLabelWithParticle} 재개
+              </Button>
+            </>
+          ) : (
+            <Button type="button" onClick={onClose}>
+              확인
+            </Button>
+          )}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function StartDealFromStatusDialog({
+  prompt,
+  onClose,
+  onSuccess,
+}: {
+  prompt: StartDealPrompt;
+  onClose: () => void;
+  onSuccess: () => void;
+}) {
+  const isSingleListing = !prompt.requiresListingSelection;
+  const [selectedListingId, setSelectedListingId] = useState(() =>
+    isSingleListing ? (prompt.listings[0]?.id ?? '') : '',
+  );
+  const selectedListing = prompt.listings.find((listing) => listing.id === selectedListingId) ?? null;
+
+  const mutation = useMutation({
+    mutationFn: () => {
+      if (!selectedListing) {
+        throw new Error('Deal을 생성할 거래유형을 선택해 주세요.');
+      }
+      return api.deals.create({
+        propertyId: prompt.propertyId,
+        listingId: selectedListing.id,
+        transactionType: selectedListing.transactionType,
+        resumeListing: true,
+      });
+    },
+    onSuccess: () => {
+      onSuccess();
+      toast.success('Deal을 생성하고 매물 상태를 거래중으로 변경했습니다.');
+      onClose();
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || 'Deal 생성에 실패했습니다.');
+    },
+  });
+
+  const resumesPausedListing = selectedListing?.isPaused || prompt.intakeLifecycleStatus === IntakeLifecycleStatus.HOLD;
+
+  return (
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open && !mutation.isPending) onClose();
+      }}
+    >
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>{isSingleListing ? 'Deal을 생성하시겠습니까?' : '거래중으로 변경할 거래유형 선택'}</DialogTitle>
+          <DialogDescription>
+            {isSingleListing
+              ? `${prompt.propertyLabel || '선택한 매물'}에 Deal을 생성하면 상태가 거래중으로 변경됩니다.`
+              : 'Deal을 생성할 거래유형을 선택하세요. 선택한 거래유형만 거래중으로 전환됩니다.'}
+          </DialogDescription>
+        </DialogHeader>
+
+        {isSingleListing && selectedListing ? (
+          <DealStartListingOption listing={selectedListing} />
+        ) : (
+          <RadioGroup value={selectedListingId} onValueChange={setSelectedListingId} className="gap-2">
+            {prompt.listings.map((listing) => {
+              const id = `start-deal-${listing.id}`;
+              return (
+                <label
+                  key={listing.id}
+                  htmlFor={id}
+                  className={cn(
+                    'flex cursor-pointer items-center gap-3 rounded-md border px-3 py-2.5 transition-colors hover:bg-muted/50',
+                    selectedListingId === listing.id && 'border-[#529cca] bg-[#e7f3f8]/40',
+                  )}
+                >
+                  <RadioGroupItem id={id} value={listing.id} />
+                  <DealStartListingOption listing={listing} compact />
+                </label>
+              );
+            })}
+          </RadioGroup>
+        )}
+
+        {resumesPausedListing && (
+          <p className="rounded-md bg-[#fbf3db] px-3 py-2 text-xs text-[#9f6b00]">
+            Deal 생성과 함께 선택한 매물의 보류 상태를 해제합니다.
+          </p>
+        )}
+
+        <DialogFooter>
+          <Button type="button" variant="outline" disabled={mutation.isPending} onClick={onClose}>
+            취소
+          </Button>
+          <Button type="button" disabled={!selectedListing || mutation.isPending} onClick={() => mutation.mutate()}>
+            {mutation.isPending ? <Loader2 className="size-4 animate-spin" /> : <Handshake className="size-4" />}
+            Deal 생성
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function DealStartListingOption({ listing, compact = false }: { listing: ListingSummary; compact?: boolean }) {
+  return (
+    <div
+      className={cn('flex min-w-0 flex-1 items-center gap-2', !compact && 'rounded-md border bg-muted/30 px-3 py-3')}
+    >
+      <TransactionBadge transactionType={listing.transactionType} />
+      <span className="min-w-0 flex-1 truncate text-sm font-medium">{getDealStartPriceLabel(listing)}</span>
+    </div>
+  );
+}
+
+function getDealStartPriceLabel(listing: ListingSummary) {
+  if (listing.transactionType === 'monthly') {
+    const deposit = listing.deposit ? formatPrice(listing.deposit) : '-';
+    const monthlyRent = listing.monthlyRent ? formatPrice(listing.monthlyRent) : '-';
+    return `보증금 ${deposit} · 월세 ${monthlyRent}`;
+  }
+
+  const price = listing.transactionType === 'jeonse' ? listing.deposit : listing.price;
+  return price ? formatPrice(price) : '-';
 }
 
 function getConfirmStatusMeta(value?: string | null) {
@@ -2833,9 +3137,7 @@ function getConfirmStatusMeta(value?: string | null) {
 }
 
 function getListingStackStyle(listings: ListingSummary[]) {
-  return listings.length > 1
-    ? { minHeight: listings.length * PROPERTY_LISTING_STACK_ITEM_HEIGHT }
-    : undefined;
+  return listings.length > 1 ? { minHeight: listings.length * PROPERTY_LISTING_STACK_ITEM_HEIGHT } : undefined;
 }
 
 function triggerStackCellEditor(event: ReactMouseEvent<HTMLTableCellElement>) {
@@ -2881,170 +3183,111 @@ function TransactionStack({ listings }: { listings: ListingSummary[] }) {
       {listings.map((listing) => (
         <div key={listing.id} className="flex items-center gap-1">
           <TransactionBadge transactionType={listing.transactionType} />
-          {listing.isHidden && (
-            <span className="inline-flex rounded-[4px] bg-[#fbe4e4] px-1.5 py-0.5 text-[11px] font-medium leading-5 text-[#9f5555]">
-              숨김
-            </span>
-          )}
         </div>
       ))}
     </div>
   );
 }
 
-function ListingStatusStack({
+function ListingAvailabilityCell({
+  intake,
   listings,
   onChange,
 }: {
-  listings: ListingSummary[];
-  onChange: (listingId: string, value: string) => void;
-}) {
-  const hasMultiple = listings.length > 1;
-  return (
-    <div
-      className={cn(
-        '-mx-2.5 flex h-full flex-col items-stretch',
-        hasMultiple && 'divide-y divide-[#d9d9d6]',
-      )}
-      style={getListingStackStyle(listings)}
-      onClick={(event) => event.stopPropagation()}
-    >
-      {listings.map((listing) => (
-        <div key={listing.id} className="flex flex-1 items-stretch">
-          <EditableCell
-            recordId={listing.id}
-            field="checkStatus"
-            value={listing.checkStatus}
-            onSave={(_id, _field, value) => onChange(listing.id, value as string)}
-            editType="select-chip"
-            chipOptions={checkStatusChipOptions}
-          >
-            <span className="flex h-full w-full items-center gap-1.5 px-2.5">
-              {hasMultiple && <TransactionMiniLabel transactionType={listing.transactionType} />}
-              <StatusIndicator value={listing.checkStatus} />
-            </span>
-          </EditableCell>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function IntakeConfirmedAtCell({ intake }: { intake: ListingIntake }) {
-  return (
-    <div className="flex min-w-0 items-center py-1">
-      <span className="truncate text-[12px] font-medium leading-5 text-slate-800">
-        {intake.confirmedAt ? formatDateShort(intake.confirmedAt) : '-'}
-      </span>
-    </div>
-  );
-}
-
-function IntakeStatusCell({
-  intake,
-  onChange,
-  isPending,
-}: {
   intake: ListingIntake;
-  onChange: (intakeId: string, status: string) => void;
-  isPending?: boolean;
+  listings: ListingSummary[];
+  onChange: (value: ListingAvailability) => void;
 }) {
-  const meta = intakeStatusMeta[intake.status] ?? {
-    label: intake.status,
-    className: 'bg-[#f1f1ef] text-[#5f5e5b]',
-  };
+  const availability = getListingRowAvailability(
+    intake,
+    listings.map((listing) => ({
+      ...listing,
+      intake: { lifecycleStatus: intake.lifecycleStatus },
+    })),
+  );
 
   return (
-    <div className="-mx-2.5 flex h-10 items-center" onClick={(event) => event.stopPropagation()}>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <button
-            type="button"
-            disabled={isPending}
-            className="flex h-full w-full items-center px-2.5 text-left transition-opacity disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            <span
-              className={cn(
-                'inline-flex max-w-full rounded-[4px] px-1.5 py-0.5 text-[12px] font-medium leading-5',
-                meta.className,
-              )}
-            >
-              <span className="truncate">{meta.label}</span>
-            </span>
-          </button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="w-32">
-          {intakeStatusOptions.map((option) => {
-            const optionMeta = intakeStatusMeta[option.value] ?? {
-              label: option.label,
-              className: 'bg-[#f1f1ef] text-[#5f5e5b]',
-            };
-            const isSelected = option.value === intake.status;
-
-            return (
-              <DropdownMenuItem
-                key={option.value}
-                className="gap-2 text-xs"
-                disabled={isSelected}
-                onSelect={() => {
-                  if (!isSelected) {
-                    onChange(intake.id, option.value);
-                  }
-                }}
-              >
-                <span
-                  className={cn(
-                    'inline-flex rounded-[4px] px-1.5 py-0.5 text-[12px] font-medium leading-5',
-                    optionMeta.className,
-                  )}
-                >
-                  {optionMeta.label}
-                </span>
-                {isSelected && <Check className="ml-auto size-3.5 text-slate-500" />}
-              </DropdownMenuItem>
-            );
-          })}
-        </DropdownMenuContent>
-      </DropdownMenu>
+    <div className="-mx-2.5 flex h-full items-stretch" onClick={(event) => event.stopPropagation()}>
+      <EditableCell
+        recordId={intake.id}
+        field="listingAvailability"
+        value={availability}
+        onSave={(_id, _field, value) => onChange(String(value) as ListingAvailability)}
+        editType="select-chip"
+        chipOptions={listingAvailabilityChipOptions}
+      >
+        <span className="flex h-full w-full items-center px-2.5">
+          <StatusIndicator value={availability} />
+        </span>
+      </EditableCell>
     </div>
   );
 }
 
-function IntakeConfirmButton({
+function getConfirmFreshness(checkedAt: string | null) {
+  const days = checkedAt ? getDaysSince(checkedAt) : null;
+  if (days == null) {
+    return {
+      dot: 'bg-muted-foreground/40',
+      date: 'text-muted-foreground',
+      relative: 'text-muted-foreground/70',
+    };
+  }
+  if (days <= 7) {
+    return {
+      dot: 'bg-success',
+      date: 'text-foreground',
+      relative: 'text-muted-foreground',
+    };
+  }
+  if (days <= 30) {
+    return {
+      dot: 'bg-warning',
+      date: 'text-warning',
+      relative: 'text-warning/80',
+    };
+  }
+  return {
+    dot: 'bg-destructive',
+    date: 'text-destructive',
+    relative: 'text-destructive/80',
+  };
+}
+
+function IntakeConfirmationCell({
   intake,
   onConfirm,
   isPending,
 }: {
   intake: ListingIntake;
-  onConfirm: (
-    intakeId: string,
-    result: 'alive' | 'price_changed' | 'unavailable' | 'no_answer' | 'pending',
-  ) => void;
+  onConfirm: (intakeId: string, result: 'alive' | 'price_changed' | 'unavailable' | 'no_answer' | 'pending') => void;
   isPending?: boolean;
 }) {
+  const checkedAt = intake.lastCheckedAt ?? intake.lastVerifiedAt;
+  const freshness = getConfirmFreshness(checkedAt);
+
   return (
-    <div className="flex items-center py-1" onClick={(event) => event.stopPropagation()}>
+    <div className="flex h-8 min-w-0 items-center gap-1.5" onClick={(event) => event.stopPropagation()}>
+      <span className={cn('size-[7px] shrink-0 rounded-full', freshness.dot)} />
+      <div className="flex min-w-0 flex-col leading-tight">
+        <span className={cn('truncate text-[12px] font-medium tabular-nums', freshness.date)}>
+          {checkedAt ? formatDateShort(checkedAt) : '-'}
+        </span>
+        <span className={cn('truncate text-[10.5px]', freshness.relative)}>
+          {checkedAt ? formatDaysAgo(checkedAt) : ''}
+        </span>
+      </div>
       <button
         type="button"
+        title="오늘로 확인 갱신"
+        aria-label="오늘로 확인 갱신"
         disabled={isPending}
-        className="inline-flex h-7 items-center rounded-[4px] border border-slate-200 bg-white px-2 text-[12px] font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+        className="ml-auto flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-secondary hover:text-foreground focus-visible:opacity-100 disabled:opacity-40 group-hover:opacity-100"
         onClick={() => onConfirm(intake.id, 'alive')}
       >
-        확인
+        <RefreshCw className={cn('size-3.5', isPending && 'animate-spin')} />
       </button>
     </div>
-  );
-}
-
-function JointBrokerageCell({ intake }: { intake: ListingIntake }) {
-  if (!intake.isJointBrokerageRequired) {
-    return <span className="text-[12px] text-slate-400">-</span>;
-  }
-
-  return (
-    <span className="inline-flex rounded-[4px] bg-[#fbf3db] px-1.5 py-0.5 text-[12px] font-medium leading-5 text-[#8f6b1f]">
-      필수
-    </span>
   );
 }
 
@@ -3060,25 +3303,21 @@ function ListingPriceDepositStack({
   const hasMultiple = listings.length > 1;
   return (
     <div
-      className={cn(
-        '-mx-2.5 flex h-full min-w-0 flex-col items-stretch',
-        hasMultiple && 'divide-y divide-[#d9d9d6]',
-      )}
+      className={cn('-mx-2.5 flex h-full min-w-0 flex-col items-stretch', hasMultiple && 'divide-y divide-[#d9d9d6]')}
       style={getListingStackStyle(listings)}
       onClick={(event) => event.stopPropagation()}
     >
       {listings.map((listing) => (
-        <div
-          key={listing.id}
-          className="flex min-w-0 flex-1 items-center"
-        >
+        <div key={listing.id} className="flex min-w-0 flex-1 items-center">
           {listing.transactionType === 'monthly' ? (
             <EditableCell
               recordId={listing.id}
               field="deposit"
               value={listing.deposit}
               onSave={(recordId, field, value) => {
-                onPatch(recordId, { [field]: parseEditorCellValue(value) } as UpdateListingDto);
+                onPatch(recordId, {
+                  [field]: parseEditorCellValue(value),
+                } as UpdateListingDto);
               }}
               editType="number"
               activation="doubleClick"
@@ -3123,25 +3362,21 @@ function ListingMonthlyRentStack({
   const hasMultiple = listings.length > 1;
   return (
     <div
-      className={cn(
-        '-mx-2.5 flex h-full min-w-0 flex-col items-stretch',
-        hasMultiple && 'divide-y divide-[#d9d9d6]',
-      )}
+      className={cn('-mx-2.5 flex h-full min-w-0 flex-col items-stretch', hasMultiple && 'divide-y divide-[#d9d9d6]')}
       style={getListingStackStyle(listings)}
       onClick={(event) => event.stopPropagation()}
     >
       {listings.map((listing) => (
-        <div
-          key={listing.id}
-          className="flex min-w-0 flex-1 items-center"
-        >
+        <div key={listing.id} className="flex min-w-0 flex-1 items-center">
           {listing.transactionType === 'monthly' ? (
             <EditableCell
               recordId={listing.id}
               field="monthlyRent"
               value={listing.monthlyRent}
               onSave={(recordId, field, value) => {
-                onPatch(recordId, { [field]: parseEditorCellValue(value) } as UpdateListingDto);
+                onPatch(recordId, {
+                  [field]: parseEditorCellValue(value),
+                } as UpdateListingDto);
               }}
               editType="number"
               activation="doubleClick"
@@ -3161,23 +3396,20 @@ function ListingMonthlyRentStack({
   );
 }
 
-// (웹 대응) 선택 컬럼(관리비/융자금)용 숫자 필드 스택
+// 선택 컬럼(융자금)용 숫자 필드 스택
 function ListingNumberFieldStack({
   listings,
   field,
   onSave,
 }: {
   listings: ListingSummary[];
-  field: 'maintenanceFee' | 'loanAmount';
+  field: 'loanAmount';
   onSave: (recordId: string, field: string, value: unknown) => void;
 }) {
   const hasMultiple = listings.length > 1;
   return (
     <div
-      className={cn(
-        '-mx-2.5 flex h-full min-w-0 flex-col items-stretch',
-        hasMultiple && 'divide-y divide-[#d9d9d6]',
-      )}
+      className={cn('-mx-2.5 flex h-full min-w-0 flex-col items-stretch', hasMultiple && 'divide-y divide-[#d9d9d6]')}
       style={getListingStackStyle(listings)}
       onClick={(event) => event.stopPropagation()}
     >
@@ -3206,15 +3438,9 @@ function ListingNumberFieldStack({
 }
 
 function PriceDepositValue({ listing }: { listing: ListingSummary }) {
-  const value = listing.transactionType === 'monthly'
-    ? listing.deposit
-    : listing.price ?? listing.deposit;
+  const value = listing.transactionType === 'monthly' ? listing.deposit : (listing.price ?? listing.deposit);
 
-  return (
-    <span className="tabular-nums text-sm font-medium">
-      {value ? formatPrice(value) : '-'}
-    </span>
-  );
+  return <span className="tabular-nums text-sm font-medium">{value ? formatPrice(value) : '-'}</span>;
 }
 
 function MonthlyRentValue({ listing }: { listing: ListingSummary }) {
@@ -3237,24 +3463,477 @@ function parseEditorTextValue(value: unknown) {
   return trimmed || null;
 }
 
-function ListingAdStack({ listings }: { listings: ListingSummary[] }) {
-  const hasMultiple = listings.length > 1;
+function ListingPanelToggle({
+  count,
+  icon,
+  isOpen,
+  panelId,
+  label,
+  onToggle,
+}: {
+  count: number;
+  icon: ReactNode;
+  isOpen: boolean;
+  panelId: string;
+  label: string;
+  onToggle: () => void;
+}) {
+  return (
+    <Button
+      type="button"
+      variant={isOpen ? 'secondary' : 'outline'}
+      size="xs"
+      aria-expanded={isOpen}
+      aria-controls={panelId}
+      aria-label={`${count}건의 ${label} ${isOpen ? '접기' : '펼치기'}`}
+      title={isOpen ? `${label} 접기` : `${label} 펼치기`}
+      onClick={onToggle}
+      className="min-w-11 px-1.5 text-[11px] tabular-nums shadow-none"
+    >
+      {icon}
+      {count}
+      <ChevronDown
+        aria-hidden="true"
+        className={cn('size-3 transition-transform duration-150', isOpen && 'rotate-180')}
+      />
+    </Button>
+  );
+}
+
+function ListingMatchToggle({
+  group,
+  isOpen,
+  onToggle,
+}: {
+  group: PropertyListingGroup;
+  isOpen: boolean;
+  onToggle: (groupId: string) => void;
+}) {
+  const matchCount = getPropertyMatchCount(group);
+
+  if (matchCount === 0) return null;
+
   return (
     <div
-      className={cn(
-        '-mx-2.5 flex h-full min-w-0 flex-col items-stretch',
-        hasMultiple && 'divide-y divide-[#d9d9d6]',
-      )}
-      style={getListingStackStyle(listings)}
+      className="-mx-2.5 flex h-full items-center justify-center"
+      onClick={(event) => event.stopPropagation()}
+      onDoubleClick={(event) => event.stopPropagation()}
     >
-      {listings.map((listing) => (
-        <div
-          key={listing.id}
-          className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden px-2.5"
-        >
-          <AdIndicator advertisements={listing.advertisements ?? []} />
+      <ListingPanelToggle
+        count={matchCount}
+        icon={<GitBranch className="size-3" />}
+        isOpen={isOpen}
+        panelId={`property-match-panel-${group.id}`}
+        label="연관 구매의뢰"
+        onToggle={() => onToggle(group.id)}
+      />
+    </div>
+  );
+}
+
+function getPropertyMatchCount(group: PropertyListingGroup) {
+  return group.listings.reduce((total, listing) => total + (listing._count?.matches ?? 0), 0);
+}
+
+function estimatePropertyMatchPanelHeight(group: PropertyListingGroup) {
+  return 76 + Math.max(1, getPropertyMatchCount(group)) * 116;
+}
+
+function PropertyMatchPanel({ group }: { group: PropertyListingGroup }) {
+  const queryClient = useQueryClient();
+  const [createOpen, setCreateOpen] = useState(false);
+  const listingIds = useMemo(() => group.listings.map((listing) => listing.id), [group.listings]);
+  const { data: matches = [], isLoading, isError, refetch } = useQuery({
+    queryKey: ['matches', 'property-list-panel', group.id, listingIds.join(',')],
+    queryFn: async () => {
+      const results = await Promise.all(listingIds.map((listingId) => api.matches.findAll({ listingId })));
+      return results.flat();
+    },
+  });
+
+  const stageMutation = useMutation({
+    mutationFn: ({ matchId, stage }: { matchId: string; stage: string }) =>
+      api.matches.updateStage(matchId, { stage }),
+    onSuccess: () => {
+      toast.success('매칭 단계를 변경했습니다.');
+      queryClient.invalidateQueries({ queryKey: ['matches'] });
+      queryClient.invalidateQueries({ queryKey: ['listing-intakes'] });
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || '매칭 단계 변경에 실패했습니다.');
+    },
+  });
+
+  const sortedMatches = useMemo(
+    () => matches.slice().sort((a, b) => getMatchStageIndex(b.stage) - getMatchStageIndex(a.stage)),
+    [matches],
+  );
+
+  return (
+    <div
+      id={`property-match-panel-${group.id}`}
+      role="region"
+      aria-label={`${group.property?.site?.name ?? '매물'} 연관 구매의뢰`}
+      className="border-b border-border bg-[#fbfbfa] py-3 pl-[60px] pr-4"
+    >
+      <div className="max-w-[1120px]">
+        <div className="mb-2.5 flex items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <span className="flex size-7 shrink-0 items-center justify-center text-[#8f6b1f]">
+              <GitBranch className="size-3.5" />
+            </span>
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5">
+                <span className="text-[12.5px] font-semibold text-foreground">연관 구매의뢰</span>
+                <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-md bg-muted px-1.5 text-[10.5px] font-semibold tabular-nums text-muted-foreground">
+                  {isLoading ? getPropertyMatchCount(group) : matches.length}
+                </span>
+                <span className="text-[11px] text-muted-foreground">진행 단계가 높은 순</span>
+              </div>
+            </div>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 shrink-0 gap-1 border-border bg-white px-2.5 text-[11.5px] font-semibold text-foreground shadow-none hover:bg-muted"
+            onClick={() => setCreateOpen(true)}
+          >
+            <Plus className="size-3" />
+            매칭 생성
+          </Button>
         </div>
-      ))}
+
+        {isLoading ? (
+          <div className="flex h-20 items-center justify-center rounded-lg border border-dashed border-border bg-white/70 text-xs text-muted-foreground">
+            <Loader2 className="mr-1.5 size-3.5 animate-spin" />
+            구매의뢰를 불러오는 중...
+          </div>
+        ) : isError ? (
+          <div className="flex h-20 items-center justify-between rounded-lg border border-destructive/20 bg-white px-3.5">
+            <span className="text-xs text-destructive">연결된 구매의뢰를 불러오지 못했습니다.</span>
+            <Button variant="outline" size="xs" onClick={() => void refetch()}>
+              다시 시도
+            </Button>
+          </div>
+        ) : sortedMatches.length === 0 ? (
+          <div className="flex h-20 items-center justify-center rounded-lg border border-dashed border-border bg-white/70 text-xs text-muted-foreground">
+            연결된 구매의뢰가 없습니다.
+          </div>
+        ) : (
+          <div className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-white">
+            {sortedMatches.map((match) => (
+              <MatchPanelCard
+                key={match.id}
+                match={match}
+                pending={stageMutation.isPending && stageMutation.variables?.matchId === match.id}
+                onStageChange={(stage) => stageMutation.mutate({ matchId: match.id, stage })}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+
+      <MatchCreateDialog open={createOpen} onOpenChange={setCreateOpen} matches={matches} />
+    </div>
+  );
+}
+
+function MatchPanelCard({
+  match,
+  pending,
+  onStageChange,
+}: {
+  match: Match;
+  pending: boolean;
+  onStageChange: (stage: string) => void;
+}) {
+  const buyer = match.buyerRequirement;
+  const buyerName = buyer?.contact?.name ?? '구매자 미상';
+  const buyerPhone = buyer?.contact?.phone;
+  const currentIndex = getMatchStageIndex(match.stage);
+  const currentStageLabel = getStatusMeta('matchStage', match.stage).label;
+  const areaLabel = formatBuyerArea(buyer);
+  const requirementNote = formatBuyerRequirementNote(buyer, match.memo);
+
+  return (
+    <article className="group bg-white px-3.5 py-3 transition-colors hover:bg-muted/20">
+      <div className="flex min-w-0 items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="flex size-6 shrink-0 items-center justify-center rounded-md bg-muted/70 text-muted-foreground">
+            <UserRound className="size-3.5" />
+          </span>
+          <span className="whitespace-nowrap text-[13px] font-semibold text-foreground">{buyerName}</span>
+          {buyer?.transactionType && (
+            <StatusBadge kind="transactionType" status={buyer.transactionType} size="sm" />
+          )}
+          {buyer?.urgency && <StatusBadge kind="buyerUrgency" status={buyer.urgency} size="sm" />}
+          <span className="h-3.5 w-px shrink-0 bg-border" />
+          <span className="truncate text-[10.5px] text-muted-foreground">
+            {buyerPhone ? formatPhoneNumber(buyerPhone) : '연락처 없음'}
+            {buyer?.assignedTo?.name ? ` · 담당 ${buyer.assignedTo.name}` : ''}
+          </span>
+        </div>
+
+        <div className="flex shrink-0 items-center gap-1.5">
+          <StatusBadge kind="matchStage" status={match.stage} size="sm" />
+          {buyerPhone && (
+            <Button variant="outline" size="icon-sm" className="size-7 shrink-0 shadow-none" asChild>
+              <a href={`tel:${buyerPhone}`} aria-label={`${buyerName} ${formatPhoneNumber(buyerPhone)} 전화`}>
+                <Phone className="size-3.5" />
+              </a>
+            </Button>
+          )}
+        </div>
+      </div>
+
+      <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 pl-8 text-[11px]">
+        <div className="inline-flex min-w-0 items-center gap-1.5">
+          <span className="shrink-0 text-muted-foreground">예산</span>
+          <span className="whitespace-nowrap font-medium tabular-nums text-foreground">{formatBuyerBudget(buyer)}</span>
+        </div>
+        {areaLabel && (
+          <div className="inline-flex min-w-0 items-center gap-1.5">
+            <span className="shrink-0 text-muted-foreground">면적</span>
+            <span className="whitespace-nowrap font-medium tabular-nums text-foreground">{areaLabel}</span>
+          </div>
+        )}
+        {buyer?.moveInDate && (
+          <div className="inline-flex min-w-0 items-center gap-1.5">
+            <span className="shrink-0 text-muted-foreground">입주</span>
+            <span className="whitespace-nowrap font-medium text-foreground">{formatDateShort(buyer.moveInDate)}</span>
+          </div>
+        )}
+        {requirementNote && (
+          <div className="inline-flex min-w-[240px] flex-1 items-center gap-1.5">
+            <span className="shrink-0 text-muted-foreground">조건</span>
+            <span className="truncate text-foreground">{requirementNote}</span>
+          </div>
+        )}
+      </div>
+
+      <div className="mt-2.5 flex items-center gap-3 border-t border-border/70 pt-2.5">
+        <div className="flex w-12 shrink-0 flex-col">
+          <span className="text-[10.5px] font-medium text-muted-foreground">진행</span>
+          <span className="truncate text-[9.5px] text-muted-foreground/75">{currentStageLabel}</span>
+        </div>
+        <div className="min-w-0 flex-1 overflow-x-auto pb-0.5">
+          <div className="flex min-w-[700px] items-center">
+            {MATCH_STAGE_STEPS.map((stage, index) => {
+              const meta = getStatusMeta('matchStage', stage);
+              const isCurrent = stage === match.stage;
+              const isPassed = currentIndex >= 0 && index < currentIndex;
+
+              return (
+                <Fragment key={stage}>
+                  <button
+                    type="button"
+                    disabled={pending || isCurrent}
+                    aria-current={isCurrent ? 'step' : undefined}
+                    aria-label={
+                      isCurrent
+                        ? `${meta.label}, 현재 단계`
+                        : `${buyerName} 매칭 단계를 ${meta.label}(으)로 변경`
+                    }
+                    title={isCurrent ? '현재 단계' : `${meta.label}(으)로 변경`}
+                    onClick={() => onStageChange(stage)}
+                    className={cn(
+                      'inline-flex h-6 shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-full border px-2.5 text-[10.5px] font-semibold transition-colors disabled:cursor-default',
+                      isCurrent
+                        ? 'border-foreground bg-foreground text-background'
+                        : isPassed
+                          ? 'border-[#ead9aa] bg-[#fbf3db]/70 text-[#8f6b1f] hover:bg-[#fbf3db]'
+                          : 'border-border bg-white text-muted-foreground hover:bg-muted/60 hover:text-foreground',
+                    )}
+                  >
+                    {pending && isCurrent ? <Loader2 className="size-3 animate-spin" /> : meta.label}
+                  </button>
+                  {index < MATCH_STAGE_STEPS.length - 1 && (
+                    <span
+                      data-match-stage-connector="true"
+                      aria-hidden="true"
+                      className={cn(
+                        'mx-1.5 h-px min-w-3 flex-1',
+                        index < currentIndex ? 'bg-[#dfc56d]' : 'bg-border',
+                      )}
+                    />
+                  )}
+                </Fragment>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function formatBuyerBudget(buyer?: BuyerRequirement) {
+  if (!buyer) return '-';
+  if (buyer.transactionType === 'monthly') {
+    const deposit = buyer.depositMax ?? buyer.depositMin;
+    const parts = [
+      deposit ? formatMoney(deposit) : null,
+      buyer.monthlyRentMax ? `월 ${formatMoney(buyer.monthlyRentMax)}` : null,
+    ].filter(Boolean);
+    return parts.length > 0 ? parts.join(' / ') : '-';
+  }
+
+  const min = buyer.priceMin ?? buyer.depositMin;
+  const max = buyer.priceMax ?? buyer.depositMax;
+  if (min && max && min !== max) return `${formatMoney(min)} ~ ${formatMoney(max)}`;
+  return formatMoney(max ?? min).replace('—', '-');
+}
+
+function formatBuyerArea(buyer?: BuyerRequirement) {
+  if (!buyer) return null;
+  const min = buyer.areaMin ? formatAreaPyeong(buyer.areaMin) : null;
+  const max = buyer.areaMax ? formatAreaPyeong(buyer.areaMax) : null;
+  if (min && max && min !== max) return `${min} ~ ${max}`;
+  return max ?? min;
+}
+
+function formatBuyerRequirementNote(buyer: BuyerRequirement | undefined, matchMemo: string | null) {
+  const conditions = [
+    ...(buyer?.mustConditions ?? []),
+    ...(buyer?.preferConditions ?? []),
+  ].filter((condition) => condition.trim());
+  if (conditions.length > 0) {
+    const visible = conditions.slice(0, 3).join(' · ');
+    return conditions.length > 3 ? `${visible} 외 ${conditions.length - 3}개` : visible;
+  }
+  return matchMemo?.trim() || buyer?.memo?.trim() || null;
+}
+
+function ListingAdToggle({
+  group,
+  isOpen,
+  onToggle,
+}: {
+  group: PropertyListingGroup;
+  isOpen: boolean;
+  onToggle: (groupId: string) => void;
+}) {
+  const adCount = getPropertyAdRows(group).length;
+
+  if (adCount === 0) return null;
+
+  return (
+    <div
+      className="-mx-2.5 flex h-full items-center justify-center"
+      onClick={(event) => event.stopPropagation()}
+      onDoubleClick={(event) => event.stopPropagation()}
+    >
+      <ListingPanelToggle
+        count={adCount}
+        icon={<Megaphone className="size-3" />}
+        isOpen={isOpen}
+        panelId={`property-ad-panel-${group.id}`}
+        label="광고 현황"
+        onToggle={() => onToggle(group.id)}
+      />
+    </div>
+  );
+}
+
+function estimatePropertyAdPanelHeight(group: PropertyListingGroup) {
+  return 72 + Math.max(1, getPropertyAdRows(group).length) * 44;
+}
+
+function getPropertyAdRows(group: PropertyListingGroup) {
+  return group.listings.flatMap((listing) =>
+    (listing.advertisements ?? []).map((advertisement) => ({
+      listing,
+      advertisement,
+    })),
+  );
+}
+
+function PropertyAdPanel({ group }: { group: PropertyListingGroup }) {
+  const adRows = getPropertyAdRows(group);
+
+  return (
+    <div
+      id={`property-ad-panel-${group.id}`}
+      role="region"
+      aria-label={`${group.property?.site?.name ?? '매물'} 광고 현황`}
+      className="border-b border-border bg-[#f3f9fb] py-3 pl-[60px] pr-4"
+    >
+      <div className="mb-2 flex items-center gap-1.5">
+        <Megaphone className="size-3.5 text-[#337ea9]" />
+        <span className="text-xs font-semibold text-[#337ea9]">광고 노출 {adRows.length}개</span>
+        <span className="text-[11.5px] text-[#6b9fba]">· CP사별 현황</span>
+      </div>
+
+      {adRows.length === 0 ? (
+        <p className="text-xs text-muted-foreground">등록된 광고가 없습니다.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <div className="min-w-[650px] max-w-[760px]">
+            <div className="flex items-center gap-1.5 pb-1.5 pl-[13px] pr-1">
+              <span className="w-[52px] shrink-0 text-[11px] font-semibold text-muted-foreground">거래</span>
+              <span className="w-[128px] shrink-0 text-[11px] font-semibold text-muted-foreground">CP사</span>
+              <span className="w-[72px] shrink-0 text-[11px] font-semibold text-muted-foreground">상태</span>
+              <span className="w-[130px] shrink-0 text-[11px] font-semibold text-muted-foreground">가격/보증금</span>
+              <span className="w-[90px] shrink-0 text-[11px] font-semibold text-muted-foreground">월세</span>
+              <span className="w-[72px] shrink-0 text-[11px] font-semibold text-muted-foreground">등록일</span>
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              {adRows.map(({ listing, advertisement }) => {
+                const statusMeta = adStatusMeta[advertisement.status] ?? adStatusMeta.draft;
+                const advertisedPrice = advertisement.advertisedPrice ?? advertisement.advertisedDeposit;
+
+                return (
+                  <div
+                    key={advertisement.id}
+                    className="flex items-center gap-1.5 rounded-lg border border-[#d8ebf3] bg-white px-3 py-2"
+                  >
+                    <div className="w-[52px] shrink-0">
+                      <TransactionMiniLabel transactionType={listing.transactionType} />
+                    </div>
+                    <div className="w-[128px] shrink-0 truncate text-[13px] font-semibold text-foreground">
+                      {getAdChannelLabel(advertisement.channel)}
+                    </div>
+                    <div className="w-[72px] shrink-0">
+                      <span
+                        className={cn(
+                          'inline-flex rounded-md px-1.5 py-0.5 text-[11px] font-medium leading-5',
+                          statusMeta.className,
+                        )}
+                      >
+                        {statusMeta.label}
+                      </span>
+                    </div>
+                    <div className="w-[130px] shrink-0 truncate text-[12.5px] font-medium tabular-nums text-foreground">
+                      {advertisedPrice != null ? formatPrice(advertisedPrice) : '-'}
+                    </div>
+                    <div className="w-[90px] shrink-0 truncate text-[12.5px] tabular-nums text-foreground/70">
+                      {advertisement.advertisedMonthlyRent != null
+                        ? formatPrice(advertisement.advertisedMonthlyRent)
+                        : '-'}
+                    </div>
+                    <div className="w-[72px] shrink-0 truncate text-[12.5px] tabular-nums text-foreground/70">
+                      {formatDateShort(advertisement.startedAt)}
+                    </div>
+                    {advertisement.url && (
+                      <a
+                        href={advertisement.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        onClick={(event) => event.stopPropagation()}
+                        className="ml-auto inline-flex shrink-0 items-center gap-1 text-[11.5px] font-medium text-[#337ea9] hover:underline"
+                      >
+                        원문 보기
+                        <ExternalLink className="size-3" />
+                      </a>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -3287,44 +3966,12 @@ function IntakeMemoCell({
   );
 }
 
-function AdIndicator({
-  advertisements,
-}: {
-  advertisements: NonNullable<ListingSummary['advertisements']>;
-}) {
-  const primaryAd = getPrimaryAdvertisement(advertisements);
-
-  if (!primaryAd) {
-    return (
-      <span className="inline-flex max-w-full rounded-[4px] bg-[#f1f1ef] px-1.5 py-0.5 text-[12px] font-medium leading-5 text-[#787774]">
-        미등록
-      </span>
-    );
-  }
-
-  const activeCount = advertisements.filter((advertisement) => advertisement.status === 'active').length;
-  const statusMeta = adStatusMeta[primaryAd.status] ?? adStatusMeta.draft;
-  const channelLabel = getAdChannelLabel(primaryAd.channel);
-  const label = activeCount > 1 && primaryAd.status === 'active'
-    ? `${channelLabel} 외 ${activeCount - 1}`
-    : channelLabel;
-
-  return (
-    <span className="inline-flex min-w-0 max-w-full flex-1 items-center gap-1 overflow-hidden">
-      <span
-        className={cn(
-          'inline-flex min-w-0 max-w-[96px] shrink rounded-md px-1.5 py-0.5 text-[12px] font-medium leading-5',
-          statusMeta.className,
-        )}
-      >
-        <span className="truncate">{label}</span>
-      </span>
-    </span>
-  );
-}
-
 const moveInAvailableChipOptions: ChipOption[] = [
-  { value: 'immediate', label: '즉시', className: 'bg-[#eef3ed] text-[#44745a]' },
+  {
+    value: 'immediate',
+    label: '즉시',
+    className: 'bg-[#eef3ed] text-[#44745a]',
+  },
   {
     value: 'date',
     label: '특정일 이후',
@@ -3358,8 +4005,16 @@ const moveInAvailableChipOptions: ChipOption[] = [
       };
     },
   },
-  { value: 'negotiable', label: '협의', className: 'bg-[#fbf3db] text-[#8f6b1f]' },
-  { value: 'unknown', label: '확인 필요', className: 'bg-[#f1f1ef] text-[#787774]' },
+  {
+    value: 'negotiable',
+    label: '협의',
+    className: 'bg-[#fbf3db] text-[#8f6b1f]',
+  },
+  {
+    value: 'unknown',
+    label: '확인 필요',
+    className: 'bg-[#f1f1ef] text-[#787774]',
+  },
 ];
 
 function MoveInAvailableStack({
@@ -3379,10 +4034,7 @@ function MoveInAvailableStack({
       onClick={(event) => event.stopPropagation()}
     >
       {listings.map((listing) => (
-        <div
-          key={listing.id}
-          className="flex min-w-0 flex-1 items-center"
-        >
+        <div key={listing.id} className="flex min-w-0 flex-1 items-center">
           <EditableCell
             recordId={listing.id}
             field="moveInAvailableType"
@@ -3392,7 +4044,9 @@ function MoveInAvailableStack({
               onPatch(recordId, { [field]: value } as UpdateListingDto);
             }}
             onChipSave={(recordId, payload) => {
-              const patch: UpdateListingDto = { moveInAvailableType: payload.type };
+              const patch: UpdateListingDto = {
+                moveInAvailableType: payload.type,
+              };
               if (payload.dateWrites) {
                 for (const write of payload.dateWrites) {
                   Object.assign(patch, { [write.field]: write.value });
@@ -3426,9 +4080,7 @@ function MoveInAvailableSummary({ listing }: { listing: ListingSummary }) {
       >
         <span className="truncate">{summary.label}</span>
       </span>
-      {summary.detail && (
-        <span className="truncate text-[11px] text-slate-500">{summary.detail}</span>
-      )}
+      {summary.detail && <span className="truncate text-[11px] text-slate-500">{summary.detail}</span>}
     </div>
   );
 }
@@ -3462,17 +4114,20 @@ function TransactionMiniLabel({ transactionType }: { transactionType: string }) 
 }
 
 function JointBrokerageBadge({
-  listing,
+  intake,
   compact = false,
 }: {
-  listing: Pick<PropertyListing, 'isJointBrokerageRequired' | 'jointBrokeragePartner'>;
+  intake?: {
+    isJointBrokerageRequired: boolean;
+    jointBrokeragePartner?: { name: string } | null;
+  } | null;
   compact?: boolean;
 }) {
-  if (!listing.isJointBrokerageRequired) return null;
+  if (!intake?.isJointBrokerageRequired) return null;
 
   const label = compact
     ? '공동'
-    : `공동필수${listing.jointBrokeragePartner?.name ? ` · ${listing.jointBrokeragePartner.name}` : ''}`;
+    : `공동필수${intake.jointBrokeragePartner?.name ? ` · ${intake.jointBrokeragePartner.name}` : ''}`;
 
   return (
     <span className="inline-flex max-w-full rounded-[4px] bg-[#fbf3db] px-1.5 py-0.5 text-[11px] font-medium leading-5 text-[#8f6b1f]">
@@ -3486,6 +4141,7 @@ function FilterPopoverChip({
   value,
   active,
   tier = 2,
+  open,
   onOpenChange,
   onClear,
   contentClassName,
@@ -3496,6 +4152,7 @@ function FilterPopoverChip({
   active?: boolean;
   /** 사용 빈도 기반 시각 계층. 1 = 강조(항상 테두리), 2 = 기본, 3 = 약화(작고 옅게). */
   tier?: 1 | 2 | 3;
+  open?: boolean;
   onOpenChange?: (open: boolean) => void;
   /** 활성 상태에서 X 한 번으로 이 필터만 해제. */
   onClear?: () => void;
@@ -3503,7 +4160,7 @@ function FilterPopoverChip({
   children: ReactNode;
 }) {
   return (
-    <Popover onOpenChange={onOpenChange}>
+    <Popover open={open} onOpenChange={onOpenChange}>
       <PopoverTrigger asChild>
         <Button
           variant="ghost"
@@ -3520,7 +4177,11 @@ function FilterPopoverChip({
           )}
         >
           <span className={cn('shrink-0', active ? 'text-muted-foreground' : 'text-muted-foreground')}>{label}</span>
-          <span className={cn('min-w-0 truncate', active ? 'font-semibold text-foreground' : 'font-medium text-foreground')}>{value}</span>
+          <span
+            className={cn('min-w-0 truncate', active ? 'font-semibold text-foreground' : 'font-medium text-foreground')}
+          >
+            {value}
+          </span>
           {onClear && active ? (
             <span
               role="button"
@@ -3551,153 +4212,20 @@ function FilterPopoverChip({
   );
 }
 
-function PopoverTitle({
-  title,
-  description,
-}: {
-  title: string;
-  description: string;
-}) {
+function PopoverTitle({ title, description }: { title: string; description: string }) {
   return (
     <div>
       <h3 className="text-[13px] font-semibold text-foreground">{title}</h3>
-      <p className="mt-0.5 text-[11px] leading-4 text-muted-foreground">
-        {description}
-      </p>
+      <p className="mt-0.5 text-[11px] leading-4 text-muted-foreground">{description}</p>
     </div>
   );
 }
 
-function FilterField({
-  label,
-  className,
-  children,
-}: {
-  label: string;
-  className?: string;
-  children: ReactNode;
-}) {
+function FilterField({ label, className, children }: { label: string; className?: string; children: ReactNode }) {
   return (
     <div className={cn('flex min-w-0 flex-col gap-1', className)}>
       <span className="text-[11px] font-medium text-slate-500">{label}</span>
       {children}
-    </div>
-  );
-}
-
-function SiteSearchFilter({
-  sites,
-  value,
-  onChange,
-  isLoading,
-  placeholder = '단지명 또는 주소 검색',
-  showCounts = false,
-}: {
-  sites: ListingFilterSite[];
-  value: string;
-  onChange: (value: string) => void;
-  isLoading: boolean;
-  placeholder?: string;
-  showCounts?: boolean;
-}) {
-  const [query, setQuery] = useState('');
-  const [open, setOpen] = useState(false);
-  const selectedSite = sites.find((site) => site.id === value);
-
-  const filteredSites = useMemo(() => {
-    const normalizedQuery = query.trim().toLowerCase();
-    const candidates = normalizedQuery
-      ? sites.filter((site) =>
-          [
-            site.name,
-            site.roadAddress,
-            site.jibunAddress,
-            getSiteTypeLabel(site.type),
-          ]
-            .filter(Boolean)
-            .join(' ')
-            .toLowerCase()
-            .includes(normalizedQuery),
-        )
-      : sites;
-
-    return candidates
-      .slice()
-      .sort((a, b) => a.name.localeCompare(b.name, 'ko'))
-      .slice(0, 8);
-  }, [query, sites]);
-
-  return (
-    <div className="relative">
-      <Search className="pointer-events-none absolute left-2.5 top-1/2 z-10 size-3.5 -translate-y-1/2 text-slate-400" />
-      <Input
-        value={open ? query : selectedSite?.name ?? query}
-        onFocus={() => {
-          setOpen(true);
-          setQuery('');
-        }}
-        onChange={(event) => {
-          setQuery(event.target.value);
-          setOpen(true);
-        }}
-        onBlur={() => window.setTimeout(() => setOpen(false), 120)}
-        placeholder={isLoading ? '단지 불러오는 중...' : placeholder}
-        className="h-8 bg-white pl-8 pr-8 text-[13px]"
-      />
-      {(selectedSite || query) && (
-        <button
-          type="button"
-          aria-label="단지 선택 지우기"
-          onMouseDown={(event) => event.preventDefault()}
-          onClick={() => {
-            onChange('');
-            setQuery('');
-            setOpen(false);
-          }}
-          className="absolute right-2 top-1/2 z-10 -translate-y-1/2 rounded-sm p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-        >
-          <X className="size-3.5" />
-        </button>
-      )}
-
-      {open && (
-        <div className="absolute left-0 right-0 top-[calc(100%+4px)] z-40 max-h-64 overflow-auto rounded-md border border-slate-200 bg-white py-1 shadow-lg">
-          {filteredSites.length > 0 ? (
-            filteredSites.map((site) => (
-              <button
-                key={site.id}
-                type="button"
-                onMouseDown={(event) => {
-                  event.preventDefault();
-                  onChange(site.id);
-                  setQuery('');
-                  setOpen(false);
-                }}
-                className={cn(
-                  'flex w-full flex-col gap-0.5 px-3 py-2 text-left hover:bg-slate-50',
-                  value === site.id && 'bg-slate-50',
-                )}
-              >
-                <span className="flex min-w-0 items-center justify-between gap-2">
-                  <span className="truncate text-[13px] font-medium text-slate-900">{site.name}</span>
-                  {showCounts && (
-                    <span className="shrink-0 text-[11px] text-slate-400">
-                      {site.propertyCount}건
-                    </span>
-                  )}
-                </span>
-                <span className="truncate text-[11px] text-slate-500">
-                  {site.roadAddress ?? site.jibunAddress ?? getSiteTypeLabel(site.type)}
-                </span>
-              </button>
-            ))
-          ) : (
-            <div className="px-3 py-6 text-center text-xs text-slate-500">
-              일치하는 단지가 없습니다.
-            </div>
-          )}
-        </div>
-      )}
     </div>
   );
 }
@@ -3713,23 +4241,13 @@ function SelectFilter({
 }) {
   const SENTINEL = '__all__';
   return (
-    <Select
-      value={value === '' ? SENTINEL : value}
-      onValueChange={(next) => onChange(next === SENTINEL ? '' : next)}
-    >
-      <SelectTrigger
-        size="sm"
-        className="w-full border-border bg-white text-[13px] text-foreground"
-      >
+    <Select value={value === '' ? SENTINEL : value} onValueChange={(next) => onChange(next === SENTINEL ? '' : next)}>
+      <SelectTrigger size="sm" className="w-full border-border bg-white text-[13px] text-foreground">
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
         {options.map((option) => (
-          <SelectItem
-            key={option.value}
-            value={option.value === '' ? SENTINEL : option.value}
-            className="text-[13px]"
-          >
+          <SelectItem key={option.value} value={option.value === '' ? SENTINEL : option.value} className="text-[13px]">
             {option.label}
           </SelectItem>
         ))}
@@ -3738,86 +4256,219 @@ function SelectFilter({
   );
 }
 
-interface RangePreset {
-  label: string;
-  min: string;
-  max: string;
+function PriceRangeFilterPanel({
+  initialRange,
+  onApply,
+  onClear,
+  onCancel,
+}: {
+  initialRange: [number, number];
+  onApply: (range: [number, number]) => void;
+  onClear: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <NumericRangeFilterPanel
+      ariaLabel="가격 필터"
+      title="가격"
+      description="매매가·보증금 기준"
+      initialRange={initialRange}
+      min={PRICE_RANGE_MIN}
+      max={PRICE_RANGE_MAX}
+      step={0.5}
+      presets={PRICE_RANGE_PRESETS}
+      tickLabels={['전체', '10억', '20억', '최대']}
+      formatLabel={formatPriceRangeLabel}
+      thumbLabels={['최소 가격', '최대 가격']}
+      onApply={onApply}
+      onClear={onClear}
+      onCancel={onCancel}
+    />
+  );
 }
 
-function RangeFilter({
-  label,
-  unit,
-  minValue,
-  maxValue,
-  onMinChange,
-  onMaxChange,
+function NumericRangeFilterPanel({
+  ariaLabel,
+  title,
+  description,
+  initialRange,
+  min,
+  max,
+  step,
   presets,
+  tickLabels,
+  formatLabel,
+  thumbLabels,
+  onApply,
+  onClear,
+  onCancel,
 }: {
-  label: string;
-  unit: string;
-  minValue: string;
-  maxValue: string;
-  onMinChange: (value: string) => void;
-  onMaxChange: (value: string) => void;
-  presets?: RangePreset[];
+  ariaLabel: string;
+  title: string;
+  description: string;
+  initialRange: [number, number];
+  min: number;
+  max: number;
+  step: number;
+  presets: NumericRangePreset[];
+  tickLabels: string[];
+  formatLabel: (min: number, max: number) => string;
+  thumbLabels: [string, string];
+  onApply: (range: [number, number]) => void;
+  onClear: () => void;
+  onCancel: () => void;
 }) {
-  const activePreset = presets?.find(
-    (preset) => preset.min === minValue.trim() && preset.max === maxValue.trim(),
+  const segments = presets.filter((preset) => !preset.isAll);
+  const [draftRange, setDraftRange] = useState<[number, number]>(initialRange);
+  const [rangeAnchor, setRangeAnchor] = useState<number | null>(null);
+  const [selectedPresetSpan, setSelectedPresetSpan] = useState<[number, number] | null>(() =>
+    getNumericPresetSpan(initialRange, segments),
   );
+  const isFullRange = draftRange[0] === min && draftRange[1] === max;
+
+  const handleSliderChange = (value: number[]) => {
+    const nextRange: [number, number] = [value[0] ?? min, value[1] ?? max];
+    setDraftRange(nextRange);
+    setRangeAnchor(null);
+    setSelectedPresetSpan(getNumericPresetSpan(nextRange, segments));
+  };
+
+  const handlePresetClick = (preset: NumericRangePreset) => {
+    if (preset.isAll) {
+      setDraftRange([min, max]);
+      setRangeAnchor(null);
+      setSelectedPresetSpan(null);
+      return;
+    }
+
+    const presetIndex = segments.indexOf(preset);
+    if (presetIndex < 0) return;
+
+    if (rangeAnchor === null) {
+      setDraftRange([preset.min, preset.max]);
+      setRangeAnchor(presetIndex);
+      setSelectedPresetSpan([presetIndex, presetIndex]);
+      return;
+    }
+
+    const spanStart = Math.min(rangeAnchor, presetIndex);
+    const spanEnd = Math.max(rangeAnchor, presetIndex);
+    const startPreset = segments[spanStart];
+    const endPreset = segments[spanEnd];
+    if (!startPreset || !endPreset) return;
+
+    setDraftRange([startPreset.min, endPreset.max]);
+    setRangeAnchor(null);
+    setSelectedPresetSpan([spanStart, spanEnd]);
+  };
 
   return (
-    <FilterField label={`${label} (${unit})`}>
-      {presets && presets.length > 0 && (
-        <div className="mb-2 flex flex-wrap gap-1.5">
+    <div aria-label={ariaLabel}>
+      <div className="flex items-start justify-between gap-3 border-b px-4 py-3">
+        <div>
+          <h3 className="text-[13px] font-semibold text-foreground">{title}</h3>
+          <p className="mt-0.5 text-[11px] leading-4 text-muted-foreground">{description}</p>
+        </div>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-xs"
+          aria-label={`${title} 필터 닫기`}
+          onClick={onCancel}
+          className="-mr-1 text-muted-foreground"
+        >
+          <X className="size-3.5" />
+        </Button>
+      </div>
+
+      <div className="px-[18px] pb-[14px] pt-[18px]">
+        <div className="mb-[18px] text-center text-[21px] font-bold tracking-[-0.025em] text-foreground">
+          {formatLabel(draftRange[0], draftRange[1])}
+        </div>
+
+        <div className="mb-2 px-2">
+          <Slider
+            min={min}
+            max={max}
+            step={step}
+            minStepsBetweenThumbs={0}
+            value={draftRange}
+            onValueChange={handleSliderChange}
+            aria-label={`${title} 범위`}
+            thumbLabels={thumbLabels}
+            className="[&_[data-slot=slider-range]]:bg-foreground [&_[data-slot=slider-thumb]]:size-6 [&_[data-slot=slider-thumb]]:border-[1.5px] [&_[data-slot=slider-thumb]]:border-foreground [&_[data-slot=slider-thumb]]:bg-background [&_[data-slot=slider-thumb]]:shadow-md [&_[data-slot=slider-thumb]]:hover:ring-0 [&_[data-slot=slider-track]]:h-1"
+          />
+          <div className="mt-3 flex justify-between text-[10px] tabular-nums text-muted-foreground/70">
+            {tickLabels.map((label) => (
+              <span key={label}>{label}</span>
+            ))}
+          </div>
+        </div>
+
+        <div
+          className="mt-3 grid grid-cols-4 border-l border-t"
+          role="group"
+          aria-label={`${title} 빠른 선택`}
+        >
           {presets.map((preset) => {
-            const isActive = activePreset?.label === preset.label;
+            const segmentIndex = preset.isAll ? -1 : segments.indexOf(preset);
+            const isAllPreset = Boolean(preset.isAll);
+            const isInSelectedSpan =
+              !isAllPreset &&
+              selectedPresetSpan !== null &&
+              segmentIndex >= selectedPresetSpan[0] &&
+              segmentIndex <= selectedPresetSpan[1];
+            const isSpanEdge =
+              isInSelectedSpan &&
+              selectedPresetSpan !== null &&
+              (segmentIndex === selectedPresetSpan[0] || segmentIndex === selectedPresetSpan[1]);
+            const isAllSelected = isAllPreset && selectedPresetSpan === null && isFullRange;
+            const isSelected = isInSelectedSpan || isAllSelected;
             return (
-              <button
+              <Button
                 key={preset.label}
                 type="button"
-                onClick={() => {
-                  onMinChange(preset.min);
-                  onMaxChange(preset.max);
-                }}
+                variant={isSpanEdge || isAllSelected ? 'default' : 'ghost'}
+                size="sm"
+                aria-pressed={isSelected}
+                data-range-state={isSelected ? (isSpanEdge || isAllSelected ? 'edge' : 'inside') : 'off'}
+                onClick={() => handlePresetClick(preset)}
                 className={cn(
-                  'h-7 rounded-full border px-2.5 text-[12px] transition-colors',
-                  isActive
-                    ? 'border-foreground bg-foreground font-medium text-background'
-                    : 'border-border bg-white text-foreground hover:bg-muted',
+                  'h-8 rounded-none border-b border-r px-1 text-[11px] shadow-none',
+                  isInSelectedSpan &&
+                    !isSpanEdge &&
+                    'bg-muted text-foreground hover:bg-muted hover:text-foreground',
+                  !isSelected && 'text-muted-foreground hover:bg-muted/60 hover:text-foreground',
                 )}
               >
                 {preset.label}
-              </button>
+              </Button>
             );
           })}
         </div>
-      )}
-      <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-1.5">
-        <div className="relative">
-          <Input
-            type="number"
-            inputMode="decimal"
-            value={minValue}
-            onChange={(event) => onMinChange(event.target.value)}
-            placeholder="최소"
-            className="h-8 bg-white px-2 pr-7 text-[13px]"
-          />
-          <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[11px] text-muted-foreground">{unit}</span>
-        </div>
-        <span className="text-xs text-slate-400">~</span>
-        <div className="relative">
-          <Input
-            type="number"
-            inputMode="decimal"
-            value={maxValue}
-            onChange={(event) => onMaxChange(event.target.value)}
-            placeholder="최대"
-            className="h-8 bg-white px-2 pr-7 text-[13px]"
-          />
-          <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[11px] text-muted-foreground">{unit}</span>
+
+        <div className="mt-[13px] flex items-center justify-between gap-3">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={onClear}
+            className="-ml-2 px-2 text-[11px] font-normal text-muted-foreground"
+          >
+            <Trash2 className="size-3.5" />
+            조건 삭제
+          </Button>
+          <div className="flex gap-1.5">
+            <Button type="button" variant="outline" size="sm" onClick={onCancel} className="text-[11px]">
+              취소
+            </Button>
+            <Button type="button" size="sm" onClick={() => onApply(draftRange)} className="text-[11px]">
+              적용
+            </Button>
+          </div>
         </div>
       </div>
-    </FilterField>
+    </div>
   );
 }
 
@@ -3902,12 +4553,12 @@ function DateRangeFilter({
 function buildListingFilterParams(filters: PropertyFilterState) {
   const params: Record<string, string | number | boolean | undefined> = {};
 
-  if (filters.siteId) params.siteId = filters.siteId;
+  if (filters.siteIds.length > 0) params.siteIds = filters.siteIds.join(',');
   if (filters.provinceCode) params.provinceCode = filters.provinceCode;
   if (filters.districtCode) params.districtCode = filters.districtCode;
   if (filters.wardCode) params.wardCode = filters.wardCode;
-  if (filters.siteType !== 'all') params.siteType = filters.siteType;
-  if (filters.intakeStatus !== 'all') params.status = filters.intakeStatus;
+  if (filters.siteTypes.length > 0) params.siteTypes = filters.siteTypes.join(',');
+  if (filters.availabilities.length > 0) params.availabilities = filters.availabilities.join(',');
   // 가격(매매가/전세가)은 state를 억 단위로 보관 → API는 만원 단위 (×10000)
   addEokParam(params, 'priceMin', filters.priceMin);
   addEokParam(params, 'priceMax', filters.priceMax);
@@ -3917,8 +4568,9 @@ function buildListingFilterParams(filters: PropertyFilterState) {
   addNumberParam(params, 'monthlyRentMin', filters.monthlyRentMin);
   addNumberParam(params, 'monthlyRentMax', filters.monthlyRentMax);
 
-  if (filters.hasAdvertisement) params.hasAdvertisement = true;
-  if (filters.isJointBrokerage) params.isJointBrokerage = true;
+  if (filters.advertisement !== 'all') {
+    params.hasAdvertisement = filters.advertisement === 'with';
+  }
   if (filters.moveInFrom) params.moveInFrom = filters.moveInFrom;
   if (filters.moveInTo) params.moveInTo = filters.moveInTo;
 
@@ -3930,21 +4582,13 @@ function buildListingFilterParams(filters: PropertyFilterState) {
   return params;
 }
 
-function addNumberParam(
-  params: Record<string, string | number | boolean | undefined>,
-  key: string,
-  value: string,
-) {
+function addNumberParam(params: Record<string, string | number | boolean | undefined>, key: string, value: string) {
   const numberValue = parseNumberFilter(value);
   if (numberValue !== undefined) params[key] = numberValue;
 }
 
 /** 억 단위 입력값을 만원 단위 API 파라미터로 변환 (1억 = 10,000만원). */
-function addEokParam(
-  params: Record<string, string | number | boolean | undefined>,
-  key: string,
-  value: string,
-) {
+function addEokParam(params: Record<string, string | number | boolean | undefined>, key: string, value: string) {
   const numberValue = parseNumberFilter(value);
   if (numberValue !== undefined) params[key] = Math.round(numberValue * 10000);
 }
@@ -3978,24 +4622,239 @@ function getDateRangeSummary(fromValue: string, toValue: string) {
   return `${to} 이전`;
 }
 
-function getPriceDepositFilterSummary(filters: PropertyFilterState) {
-  // 가격은 억 단위 입력 → 요약도 억으로 표시. 보증금은 만원 유지.
-  const price = getRangeSummary(filters.priceMin, filters.priceMax, '억');
-  const deposit = getRangeSummary(filters.depositMin, filters.depositMax, '만원');
-  const summaries = [
-    price && `가격 ${price}`,
-    deposit && `보증금 ${deposit}`,
-  ].filter(Boolean);
+function getPriceDepositFilterSummary(
+  filters: PropertyFilterState,
+  transactionType: (typeof transactionTypeOptions)[number]['value'],
+) {
+  const usesDeposit = transactionType === 'monthly';
+  const minValue = usesDeposit ? filters.depositMin : filters.priceMin;
+  const maxValue = usesDeposit ? filters.depositMax : filters.priceMax;
+  if (!minValue.trim() && !maxValue.trim()) return null;
 
-  if (summaries.length === 0) return null;
-  if (summaries.length === 1) return summaries[0] as string;
-  return `${summaries.length}개 조건`;
+  const range = getPriceRangeFilter(filters, transactionType);
+  return formatPriceRangeLabel(range[0], range[1]);
 }
 
-function getOptionLabel(
-  options: ReadonlyArray<{ value: string; label: string }>,
-  value: string,
+function getPriceRangeFilter(
+  filters: PropertyFilterState,
+  transactionType: (typeof transactionTypeOptions)[number]['value'],
+): [number, number] {
+  const usesDeposit = transactionType === 'monthly';
+  const divisor = usesDeposit ? 10000 : 1;
+  const rawMin = parseNumberFilter(usesDeposit ? filters.depositMin : filters.priceMin);
+  const rawMax = parseNumberFilter(usesDeposit ? filters.depositMax : filters.priceMax);
+  const min = clampPriceRange(rawMin === undefined ? PRICE_RANGE_MIN : rawMin / divisor);
+  const max = clampPriceRange(rawMax === undefined ? PRICE_RANGE_MAX : rawMax / divisor);
+
+  return min <= max ? [min, max] : [max, min];
+}
+
+function getMonthlyRentRangeFilter(filters: PropertyFilterState): [number, number] {
+  return getNumericRangeFilter(
+    filters.monthlyRentMin,
+    filters.monthlyRentMax,
+    MONTHLY_RENT_RANGE_MIN,
+    MONTHLY_RENT_RANGE_MAX,
+  );
+}
+
+function getAreaRangeFilter(filters: PropertyFilterState): [number, number] {
+  return getNumericRangeFilter(
+    filters.areaMin,
+    filters.areaMax,
+    AREA_RANGE_MIN,
+    AREA_RANGE_MAX,
+  );
+}
+
+function getNumericRangeFilter(
+  minValue: string,
+  maxValue: string,
+  rangeMin: number,
+  rangeMax: number,
+): [number, number] {
+  const rawMin = parseNumberFilter(minValue);
+  const rawMax = parseNumberFilter(maxValue);
+  const min = clampNumericRange(rawMin ?? rangeMin, rangeMin, rangeMax);
+  const max = clampNumericRange(rawMax ?? rangeMax, rangeMin, rangeMax);
+
+  return min <= max ? [min, max] : [max, min];
+}
+
+function applyPriceRangeFilter(
+  filters: PropertyFilterState,
+  transactionType: (typeof transactionTypeOptions)[number]['value'],
+  rawMin: number,
+  rawMax: number,
 ) {
+  const min = clampPriceRange(Math.min(rawMin, rawMax));
+  const max = clampPriceRange(Math.max(rawMin, rawMax));
+  const minValue = min <= PRICE_RANGE_MIN ? '' : formatRangeNumber(min);
+  const maxValue = max >= PRICE_RANGE_MAX ? '' : formatRangeNumber(max);
+
+  if (transactionType === 'monthly') {
+    return {
+      ...filters,
+      priceMin: '',
+      priceMax: '',
+      depositMin: minValue ? eokToManwon(minValue) : '',
+      depositMax: maxValue ? eokToManwon(maxValue) : '',
+    };
+  }
+
+  return {
+    ...filters,
+    priceMin: minValue,
+    priceMax: maxValue,
+    depositMin: '',
+    depositMax: '',
+  };
+}
+
+function applyMonthlyRentRangeFilter(
+  filters: PropertyFilterState,
+  rawMin: number,
+  rawMax: number,
+) {
+  const [minValue, maxValue] = getNumericRangeValues(
+    rawMin,
+    rawMax,
+    MONTHLY_RENT_RANGE_MIN,
+    MONTHLY_RENT_RANGE_MAX,
+  );
+  return {
+    ...filters,
+    monthlyRentMin: minValue,
+    monthlyRentMax: maxValue,
+  };
+}
+
+function applyAreaRangeFilter(
+  filters: PropertyFilterState,
+  rawMin: number,
+  rawMax: number,
+) {
+  const [minValue, maxValue] = getNumericRangeValues(
+    rawMin,
+    rawMax,
+    AREA_RANGE_MIN,
+    AREA_RANGE_MAX,
+  );
+  return {
+    ...filters,
+    areaMin: minValue,
+    areaMax: maxValue,
+  };
+}
+
+function getNumericRangeValues(
+  rawMin: number,
+  rawMax: number,
+  rangeMin: number,
+  rangeMax: number,
+): [string, string] {
+  const min = clampNumericRange(Math.min(rawMin, rawMax), rangeMin, rangeMax);
+  const max = clampNumericRange(Math.max(rawMin, rawMax), rangeMin, rangeMax);
+  return [
+    min <= rangeMin ? '' : formatRangeNumber(min),
+    max >= rangeMax ? '' : formatRangeNumber(max),
+  ];
+}
+
+function movePriceRangeForTransaction(
+  filters: PropertyFilterState,
+  transactionType: (typeof transactionTypeOptions)[number]['value'],
+) {
+  if (transactionType === 'monthly') {
+    const hasDepositRange = Boolean(filters.depositMin || filters.depositMax);
+    return {
+      ...filters,
+      priceMin: '',
+      priceMax: '',
+      depositMin: hasDepositRange ? filters.depositMin : eokToManwon(filters.priceMin),
+      depositMax: hasDepositRange ? filters.depositMax : eokToManwon(filters.priceMax),
+    };
+  }
+
+  const hasPriceRange = Boolean(filters.priceMin || filters.priceMax);
+  return {
+    ...filters,
+    priceMin: hasPriceRange ? filters.priceMin : manwonToEok(filters.depositMin),
+    priceMax: hasPriceRange ? filters.priceMax : manwonToEok(filters.depositMax),
+    depositMin: '',
+    depositMax: '',
+  };
+}
+
+function getNumericPresetSpan(
+  range: [number, number],
+  segments: NumericRangePreset[],
+): [number, number] | null {
+  if (segments.length === 0) return null;
+  if (
+    range[0] === segments[0]?.min &&
+    range[1] === segments[segments.length - 1]?.max
+  ) {
+    return null;
+  }
+
+  for (let startIndex = 0; startIndex < segments.length; startIndex += 1) {
+    if (segments[startIndex]?.min !== range[0]) continue;
+
+    for (let endIndex = startIndex; endIndex < segments.length; endIndex += 1) {
+      if (segments[endIndex]?.max === range[1]) return [startIndex, endIndex];
+    }
+  }
+
+  return null;
+}
+
+function formatPriceRangeLabel(min: number, max: number) {
+  if (min <= PRICE_RANGE_MIN && max >= PRICE_RANGE_MAX) return '전체 가격';
+  if (min <= PRICE_RANGE_MIN) return `${formatRangeNumber(max)}억 이하`;
+  if (max >= PRICE_RANGE_MAX) return `${formatRangeNumber(min)}억 이상`;
+  if (min === max) return `${formatRangeNumber(min)}억`;
+  return `${formatRangeNumber(min)}억–${formatRangeNumber(max)}억`;
+}
+
+function formatNumericRangeLabel(
+  min: number,
+  max: number,
+  rangeMin: number,
+  rangeMax: number,
+  unit: string,
+  fullRangeLabel: string,
+) {
+  if (min <= rangeMin && max >= rangeMax) return fullRangeLabel;
+  if (min <= rangeMin) return `${formatRangeNumber(max)}${unit} 이하`;
+  if (max >= rangeMax) return `${formatRangeNumber(min)}${unit} 이상`;
+  if (min === max) return `${formatRangeNumber(min)}${unit}`;
+  return `${formatRangeNumber(min)}${unit}–${formatRangeNumber(max)}${unit}`;
+}
+
+function clampPriceRange(value: number) {
+  return Math.min(PRICE_RANGE_MAX, Math.max(PRICE_RANGE_MIN, value));
+}
+
+function clampNumericRange(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function formatRangeNumber(value: number) {
+  return Number.isInteger(value) ? String(value) : String(Number(value.toFixed(2)));
+}
+
+function eokToManwon(value: string) {
+  const numberValue = parseNumberFilter(value);
+  return numberValue === undefined ? '' : formatRangeNumber(numberValue * 10000);
+}
+
+function manwonToEok(value: string) {
+  const numberValue = parseNumberFilter(value);
+  return numberValue === undefined ? '' : formatRangeNumber(numberValue / 10000);
+}
+
+function getOptionLabel(options: ReadonlyArray<{ value: string; label: string }>, value: string) {
   return options.find((option) => option.value === value)?.label ?? value;
 }
 
@@ -4048,7 +4907,9 @@ function buildPropertyMapPoints(groups: PropertyListingGroup[]) {
   }
 
   return {
-    points: Array.from(pointMap.values()).sort((a, b) => b.groups.length - a.groups.length || a.siteName.localeCompare(b.siteName)),
+    points: Array.from(pointMap.values()).sort(
+      (a, b) => b.groups.length - a.groups.length || a.siteName.localeCompare(b.siteName),
+    ),
     missingGroups,
   };
 }
@@ -4082,9 +4943,7 @@ function getMapBounds(points: PropertyMapPoint[]) {
 
 function getPropertyMapUnitLabel(property?: ListingProperty) {
   if (!property?.unit) return '';
-  return [getDongName(property), property.unit.name]
-    .filter((item) => item && item !== '-')
-    .join(' ');
+  return [getDongName(property), property.unit.name].filter((item) => item && item !== '-').join(' ');
 }
 
 function getPropertyMapPriceLabel(listings: ListingSummary[]) {
@@ -4103,7 +4962,7 @@ function getPropertyMapPriceLabel(listings: ListingSummary[]) {
     .join(' · ');
 }
 
-function toListingSummary(listing: ListingSummary): ListingSummary {
+function toListingSummary(listing: ListingIntakeListing): ListingSummary {
   return {
     id: listing.id,
     intakeId: listing.intakeId,
@@ -4114,8 +4973,8 @@ function toListingSummary(listing: ListingSummary): ListingSummary {
     moveInAvailableType: listing.moveInAvailableType,
     moveInAvailableFrom: listing.moveInAvailableFrom,
     moveInAvailableTo: listing.moveInAvailableTo,
-    checkStatus: listing.checkStatus,
-    isHidden: listing.isHidden,
+    isPaused: listing.isPaused,
+    deals: listing.deals,
     maintenanceFee: listing.maintenanceFee,
     loanAmount: listing.loanAmount,
     memo: listing.memo,
@@ -4123,6 +4982,7 @@ function toListingSummary(listing: ListingSummary): ListingSummary {
     updatedAt: listing.updatedAt,
     advertisements: listing.advertisements,
     priceHistories: listing.priceHistories,
+    _count: listing._count,
   };
 }
 
@@ -4143,24 +5003,6 @@ function getOwnerContact(property?: ListingProperty) {
   const contacts = property?.propertyContacts ?? [];
   const owner = contacts.find((propertyContact) => propertyContact.role === 'owner');
   return owner?.contact ?? null;
-}
-
-function getPrimaryAdvertisement(
-  advertisements: NonNullable<ListingSummary['advertisements']>,
-) {
-  return advertisements
-    .slice()
-    .sort((a, b) => getAdStatusOrder(a.status) - getAdStatusOrder(b.status) || new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0] ?? null;
-}
-
-function getAdStatusOrder(status: string) {
-  if (status === 'active') return 0;
-  if (status === 'paused') return 1;
-  if (status === 'planned') return 2;
-  if (status === 'draft') return 3;
-  if (status === 'error') return 4;
-  if (status === 'ended') return 5;
-  return 9;
 }
 
 function getAdChannelLabel(channel: string) {
@@ -4184,7 +5026,11 @@ function getPropertySheetPriceHistoryCount(listings: PropertyListing[]) {
 
 function formatPriceHistorySnapshot(
   transactionType: string,
-  value: { price: number | null; deposit: number | null; monthlyRent: number | null },
+  value: {
+    price: number | null;
+    deposit: number | null;
+    monthlyRent: number | null;
+  },
 ) {
   if (transactionType === 'monthly') {
     const deposit = value.deposit ? formatPrice(value.deposit) : '-';
@@ -4201,12 +5047,8 @@ function formatAdvertisementPrice(
   advertisement: NonNullable<PropertyListing['advertisements']>[number],
 ) {
   if (listing.transactionType === 'monthly') {
-    const deposit = advertisement.advertisedDeposit
-      ? formatPrice(advertisement.advertisedDeposit)
-      : '-';
-    const monthlyRent = advertisement.advertisedMonthlyRent
-      ? formatPrice(advertisement.advertisedMonthlyRent)
-      : '-';
+    const deposit = advertisement.advertisedDeposit ? formatPrice(advertisement.advertisedDeposit) : '-';
+    const monthlyRent = advertisement.advertisedMonthlyRent ? formatPrice(advertisement.advertisedMonthlyRent) : '-';
     return `${deposit} / ${monthlyRent}`;
   }
 
@@ -4234,8 +5076,7 @@ function getSiteTypeLabel(value?: string | null) {
 }
 
 function getPropertySheetUnitLabel(property: Property) {
-  const dongName =
-    property.unit?.dong && !property.unit.dong.isPlaceholder ? property.unit.dong.name : '';
+  const dongName = property.unit?.dong && !property.unit.dong.isPlaceholder ? property.unit.dong.name : '';
   return [dongName, property.unit?.name].filter(Boolean).join(' ');
 }
 
@@ -4262,9 +5103,7 @@ function formatPropertySheetArea(property: Property) {
 function getLatestPropertyListingUpdatedAt(property: Property) {
   const latestListingUpdatedAt = (property.listings ?? []).reduce<string | null>((latest, listing) => {
     if (!latest) return listing.updatedAt;
-    return new Date(listing.updatedAt).getTime() > new Date(latest).getTime()
-      ? listing.updatedAt
-      : latest;
+    return new Date(listing.updatedAt).getTime() > new Date(latest).getTime() ? listing.updatedAt : latest;
   }, null);
 
   return latestListingUpdatedAt ?? property.updatedAt;
@@ -4285,8 +5124,10 @@ function getPropertySheetNotices(property: Property): PropertySheetNotice[] {
   const owner = contacts.find((contact) => contact.role === 'owner') ?? contacts[0];
   const latestUpdatedAt = getLatestPropertyListingUpdatedAt(property);
   const daysSinceLatestCheck = getDaysSince(latestUpdatedAt);
-  const unverifiedListings = listings.filter((listing) => listing.checkStatus === 'unverified');
-  const jointRequiredListings = listings.filter((listing) => listing.isJointBrokerageRequired);
+  const unverifiedListings = listings.filter(
+    (listing) => listing.intake && getIntakeConfirmationState(listing.intake) === IntakeConfirmationState.UNVERIFIED,
+  );
+  const jointRequiredListings = listings.filter((listing) => listing.intake?.isJointBrokerageRequired);
   const expiringTenant = tenants.find((tenant) => {
     if (!tenant.contractEnd) return false;
     const daysUntilEnd = getDaysUntil(tenant.contractEnd);
@@ -4417,19 +5258,16 @@ function formatTransactionTypeList(listings: Pick<PropertyListing, 'transactionT
   return labels.join(', ');
 }
 
-function formatJointBrokerageRequirementList(
-  listings: Pick<PropertyListing, 'transactionType' | 'jointBrokeragePartner'>[],
-) {
+function formatJointBrokerageRequirementList(listings: Pick<PropertyListing, 'transactionType' | 'intake'>[]) {
   return listings
     .map((listing) => {
       const transactionLabel = transactionTypeMeta[listing.transactionType]?.label ?? listing.transactionType;
-      return listing.jointBrokeragePartner?.name
-        ? `${transactionLabel} ${listing.jointBrokeragePartner.name}`
+      return listing.intake?.jointBrokeragePartner?.name
+        ? `${transactionLabel} ${listing.intake.jointBrokeragePartner.name}`
         : `${transactionLabel} 파트너 미지정`;
     })
     .join(', ');
 }
-
 
 function formatAreaPyeong(value?: number | null) {
   if (!value) return '-';

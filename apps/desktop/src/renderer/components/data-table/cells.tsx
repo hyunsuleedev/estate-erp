@@ -162,12 +162,3 @@ export function FloorCell({ value }: { value: number | null }) {
   if (!value) return <span className="text-sm text-muted-foreground">-</span>;
   return <span className="tabular-nums text-sm">{value}층</span>;
 }
-
-// ── Hidden indicator ────────────────────────────────────────────
-
-export function HiddenIndicator({ isHidden }: { isHidden: boolean }) {
-  if (!isHidden) return null;
-  return (
-    <span className="inline-flex size-1.5 rounded-full bg-amber-400" title="숨김 매물" />
-  );
-}

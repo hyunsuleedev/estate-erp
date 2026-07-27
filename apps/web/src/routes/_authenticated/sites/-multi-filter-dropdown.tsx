@@ -29,7 +29,7 @@ export function MultiFilterDropdown({
   const isAll = values.length === 0;
   const selectedLabels = options.filter((o) => values.includes(o.value)).map((o) => o.label);
   const trigger = (() => {
-    if (isAll) return `전체 ${label}`;
+    if (isAll) return '전체';
     if (selectedLabels.length === 1) return selectedLabels[0];
     return `${selectedLabels[0]} 외 ${selectedLabels.length - 1}`;
   })();
@@ -48,6 +48,7 @@ export function MultiFilterDropdown({
           variant={isAll ? 'ghost' : 'secondary'}
           size="sm"
           className="h-7 gap-1 px-2 text-xs"
+          aria-label={`${label} 필터: ${trigger}`}
         >
           <span className="text-muted-foreground">{label}</span>
           <span className="max-w-24 truncate">{trigger}</span>
@@ -73,6 +74,7 @@ export function MultiFilterDropdown({
                 type="button"
                 className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                 onClick={() => setQuery('')}
+                aria-label={`${label} 검색어 지우기`}
               >
                 <X className="size-3" />
               </button>

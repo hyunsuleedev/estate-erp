@@ -99,7 +99,7 @@ describe('serializeSharedProperty (마스킹 직렬화)', () => {
     expect(view.listing.availability).toBe('available');
   });
 
-  it('가용 상태는 완료 Deal을 의뢰 생명주기나 일시중지보다 우선한다', () => {
+  it('종결 Deal은 의뢰 생명주기나 일시중지와 무관하게 종료로 표시한다', () => {
     const record = buildRecord();
     record.listing.isPaused = true;
     record.listing.intake.lifecycleStatus = 'closed';
@@ -107,7 +107,7 @@ describe('serializeSharedProperty (마스킹 직렬화)', () => {
 
     const view = serializeSharedProperty(record, 'office-sharer');
 
-    expect(view.listing.availability).toBe('completed');
+    expect(view.listing.availability).toBe('closed');
   });
 
   it('타사무소 viewer는 꺼진 show* 플래그의 필드가 응답에서 제거된다', () => {

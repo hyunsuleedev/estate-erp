@@ -1,4 +1,5 @@
 import {
+  Fragment,
   useCallback,
   useEffect,
   useMemo,
@@ -42,6 +43,7 @@ export type PropertyListingGroup = {
 
 type PropertyListingColumnMeta = {
   cellClassName?: string;
+  grow?: boolean;
   onCellDoubleClick?: (group: PropertyListingGroup, event: ReactMouseEvent<HTMLTableCellElement>) => void;
 };
 
@@ -53,22 +55,20 @@ export type ListingSummary = Pick<
   | 'price'
   | 'deposit'
   | 'monthlyRent'
+  | 'maintenanceFee'
+  | 'loanAmount'
   | 'moveInAvailableType'
   | 'moveInAvailableFrom'
   | 'moveInAvailableTo'
-  | 'checkStatus'
-  | 'isHidden'
+  | 'isPaused'
+  | 'deals'
   | 'memo'
   | 'createdAt'
   | 'updatedAt'
   | 'advertisements'
   | 'priceHistories'
-> & {
-  // api-client ListingIntakeListing 타입에 아직 없지만 서버가 반환하는 비용 필드
-  // (웹 -property-intake-actions의 ListingCostExtras 대응) — 선택 컬럼(관리비/융자금)에서 사용.
-  maintenanceFee?: number | null;
-  loanAmount?: number | null;
-};
+  | '_count'
+>;
 
 interface PropertyListingsTableProps {
   columns: ColumnDef<PropertyListingGroup, unknown>[];
@@ -82,12 +82,12 @@ interface PropertyListingsTableProps {
   isLoadingMore?: boolean;
   onEndReached?: () => void;
   emptyMessage?: string;
-  renderStatusBar?: (args: {
-    focusedRow: PropertyListingGroup | null;
-    totalCount: number;
-  }) => ReactNode;
+  renderStatusBar?: (args: { focusedRow: PropertyListingGroup | null; totalCount: number }) => ReactNode;
   /** 선택된 행이 있을 때 표시할 일괄 작업 UI (웹 DataTable의 renderBulkActions 대응) */
   renderBulkActions?: (selectedRows: PropertyListingGroup[]) => ReactNode;
+  expandedRowIds?: ReadonlySet<string>;
+  renderExpandedRow?: (row: PropertyListingGroup) => ReactNode;
+  getExpandedRowHeight?: (row: PropertyListingGroup) => number;
 }
 
 export function PropertyListingsTable({
@@ -104,15 +104,21 @@ export function PropertyListingsTable({
   emptyMessage = '등록된 매물이 없습니다.',
   renderStatusBar,
   renderBulkActions,
+  expandedRowIds,
+  renderExpandedRow,
+  getExpandedRowHeight,
 }: PropertyListingsTableProps) {
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
-  const [focusedCell, setFocusedCell] = useState<{ row: number; col: number } | null>(null);
+  const [focusedCell, setFocusedCell] = useState<{
+    row: number;
+    col: number;
+  } | null>(null);
   const [columnResizeMode] = useState<ColumnResizeMode>('onChange');
   const tableRef = useRef<HTMLTableElement>(null);
   const scrollerRef = useRef<HTMLDivElement>(null);
 
   const resolvedPinning = useMemo<ColumnPinningState>(
-    () => ({ left: ['_select', 'info', 'site', 'dong', 'unit'], right: [] }),
+    () => ({ left: ['_select', 'info', 'site', 'dong', 'unit', 'actions'], right: [] }),
     [],
   );
 
@@ -126,10 +132,7 @@ export function PropertyListingsTable({
         enableResizing: false,
         header: ({ table }) => (
           <Checkbox
-            checked={
-              table.getIsAllPageRowsSelected() ||
-              (table.getIsSomePageRowsSelected() && 'indeterminate')
-            }
+            checked={table.getIsAllPageRowsSelected() || (table.getIsSomePageRowsSelected() && 'indeterminate')}
             onCheckedChange={(v) => table.toggleAllPageRowsSelected(!!v)}
             className="size-3.5"
           />
@@ -182,7 +185,13 @@ export function PropertyListingsTable({
   const rowVirtualizer = useVirtualizer({
     count: canVirtualize ? rows.length : 0,
     getScrollElement: () => scrollerRef.current,
-    estimateSize: (index) => estimatePropertyGroupRowHeight(rows[index]?.original),
+    estimateSize: (index) => {
+      const group = rows[index]?.original;
+      const baseHeight = estimatePropertyGroupRowHeight(group);
+      return expandedRowIds?.has(group?.id ?? '')
+        ? baseHeight + (group ? (getExpandedRowHeight?.(group) ?? 160) : 160)
+        : baseHeight;
+    },
     getItemKey: (index) => rows[index]?.id ?? index,
     overscan: 10,
   });
@@ -191,9 +200,7 @@ export function PropertyListingsTable({
   const totalVirtualSize = canVirtualize ? rowVirtualizer.getTotalSize() : 0;
   const paddingTop = canVirtualize && virtualRows.length > 0 ? virtualRows[0].start : 0;
   const paddingBottom =
-    canVirtualize && virtualRows.length > 0
-      ? totalVirtualSize - virtualRows[virtualRows.length - 1].end
-      : 0;
+    canVirtualize && virtualRows.length > 0 ? totalVirtualSize - virtualRows[virtualRows.length - 1].end : 0;
 
   useEffect(() => {
     if (focusedCell === null) return;
@@ -202,9 +209,14 @@ export function PropertyListingsTable({
       return;
     }
     if (!tableRef.current) return;
-    const trs = tableRef.current.querySelectorAll('tbody tr');
+    const trs = tableRef.current.querySelectorAll('tbody tr[data-property-row="true"]');
     trs[focusedCell.row]?.scrollIntoView({ block: 'nearest' });
   }, [focusedCell, canVirtualize, rowVirtualizer]);
+
+  useEffect(() => {
+    if (!canVirtualize) return;
+    rowVirtualizer.measure();
+  }, [canVirtualize, expandedRowIds, getExpandedRowHeight, rowVirtualizer]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -284,9 +296,12 @@ export function PropertyListingsTable({
     [isLoading, isLoadingMore, onEndReached],
   );
 
-  const focusedRow =
-    focusedCell !== null && rows[focusedCell.row]?.original ? rows[focusedCell.row].original : null;
+  const focusedRow = focusedCell !== null && rows[focusedCell.row]?.original ? rows[focusedCell.row].original : null;
   const tableTotalSize = table.getTotalSize();
+
+  const growColumnId = table
+    .getAllLeafColumns()
+    .find((column) => (column.columnDef.meta as PropertyListingColumnMeta | undefined)?.grow)?.id;
 
   const selectedRows = useMemo(
     () => rows.filter((row) => row.getIsSelected()).map((row) => row.original),
@@ -304,67 +319,82 @@ export function PropertyListingsTable({
     };
   };
 
-  const renderRow = (row: (typeof rows)[number], rowIndex: number) => (
-    <tr
-      key={row.id}
-      ref={canVirtualize ? rowVirtualizer.measureElement : undefined}
-      data-index={rowIndex}
-      data-state={row.getIsSelected() ? 'selected' : undefined}
-      className="group"
-    >
-      {row.getVisibleCells().map((cell, colIndex) => {
-        const isLastCol = colIndex === row.getVisibleCells().length - 1;
-        const isFocused = focusedCell?.row === rowIndex && focusedCell?.col === colIndex;
-        const isRowFocused = focusedCell?.row === rowIndex;
-        const isPinned = cell.column.getIsPinned() === 'left';
-        const isLastPinned = isPinned && cell.column.getIsLastColumn('left');
+  const renderRow = (row: (typeof rows)[number], rowIndex: number) => {
+    const isExpanded = Boolean(renderExpandedRow) && Boolean(expandedRowIds?.has(row.original.id));
 
-        const columnMeta = cell.column.columnDef.meta as PropertyListingColumnMeta | undefined;
+    return (
+      <Fragment key={row.id}>
+        <tr
+          ref={canVirtualize && !isExpanded ? rowVirtualizer.measureElement : undefined}
+          data-index={rowIndex}
+          data-property-row="true"
+          data-state={row.getIsSelected() ? 'selected' : undefined}
+          className="group"
+        >
+          {row.getVisibleCells().map((cell, colIndex) => {
+            const isLastCol = colIndex === row.getVisibleCells().length - 1;
+            const isFocused = focusedCell?.row === rowIndex && focusedCell?.col === colIndex;
+            const isRowFocused = focusedCell?.row === rowIndex;
+            const isPinned = cell.column.getIsPinned() === 'left';
+            const isLastPinned = isPinned && cell.column.getIsLastColumn('left');
 
-        return (
-          <td
-            key={cell.id}
-            data-table-col={colIndex}
-            data-table-row={rowIndex}
-            className={cn(
-              'relative select-none align-middle border-b border-[#eeeeec] px-2.5 text-[13px]',
-              !isLastCol && 'border-r border-r-[#eeeeec]',
-              'group-hover:bg-slate-50/70',
-              'group-data-[state=selected]:bg-primary/5',
-              isFocused && 'bg-blue-50/60 outline outline-1 -outline-offset-1 outline-blue-500/30',
-              isRowFocused && !isFocused && 'bg-slate-50',
-              onRowClick && 'cursor-default',
-              isPinned && 'bg-white group-hover:bg-slate-50/70 group-data-[state=selected]:bg-primary/5',
-              isLastPinned && 'shadow-[1px_0_0_0_#d9d9d6]',
-              columnMeta?.cellClassName,
-            )}
-            style={{
-              width: cell.column.getSize(),
-              ...getPinStyle(cell.column),
-            }}
-            onClick={() => {
-              setFocusedCell({ row: rowIndex, col: colIndex });
-            }}
-            onDoubleClick={(event) => {
-              setFocusedCell({ row: rowIndex, col: colIndex });
-              if (columnMeta?.onCellDoubleClick) {
-                columnMeta.onCellDoubleClick(row.original, event);
-                return;
-              }
-              onRowClick?.(row.original);
-            }}
-          >
-            {flexRender(cell.column.columnDef.cell, cell.getContext())}
-          </td>
-        );
-      })}
-    </tr>
-  );
+            const columnMeta = cell.column.columnDef.meta as PropertyListingColumnMeta | undefined;
+            const shouldGrow = cell.column.id === growColumnId;
+
+            return (
+              <td
+                key={cell.id}
+                data-table-col={colIndex}
+                data-table-row={rowIndex}
+                className={cn(
+                  'relative select-none align-middle border-b border-[#eeeeec] px-2.5 text-[13px]',
+                  !isLastCol && 'border-r border-r-[#eeeeec]',
+                  'group-hover:bg-slate-50/70',
+                  'group-data-[state=selected]:bg-primary/5',
+                  isFocused && 'bg-blue-50/60 outline outline-1 -outline-offset-1 outline-blue-500/30',
+                  isRowFocused && !isFocused && 'bg-slate-50',
+                  onRowClick && 'cursor-default',
+                  isPinned && 'bg-white group-hover:bg-slate-50/70 group-data-[state=selected]:bg-primary/5',
+                  isLastPinned && 'shadow-[1px_0_0_0_#d9d9d6]',
+                  columnMeta?.cellClassName,
+                )}
+                style={{
+                  width: shouldGrow ? undefined : cell.column.getSize(),
+                  ...getPinStyle(cell.column),
+                }}
+                onClick={() => {
+                  setFocusedCell({ row: rowIndex, col: colIndex });
+                }}
+                onDoubleClick={(event) => {
+                  setFocusedCell({ row: rowIndex, col: colIndex });
+                  if (columnMeta?.onCellDoubleClick) {
+                    columnMeta.onCellDoubleClick(row.original, event);
+                    return;
+                  }
+                  onRowClick?.(row.original);
+                }}
+              >
+                {flexRender(cell.column.columnDef.cell, cell.getContext())}
+              </td>
+            );
+          })}
+        </tr>
+        {isExpanded && (
+          <tr data-expanded-row={row.original.id}>
+            <td colSpan={allColumns.length} className="border-0 p-0 align-top">
+              {renderExpandedRow?.(row.original)}
+            </td>
+          </tr>
+        )}
+      </Fragment>
+    );
+  };
 
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div
         ref={scrollerRef}
+        data-property-table-scroller
         className="relative min-h-0 w-full flex-1 overflow-scroll bg-white outline-none focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0"
         tabIndex={0}
         onKeyDown={handleKeyDown}
@@ -373,26 +403,21 @@ export function PropertyListingsTable({
         <table
           ref={tableRef}
           className="w-full table-fixed border-separate border-spacing-0 caption-bottom text-sm"
-          style={{ width: tableTotalSize, minWidth: tableTotalSize }}
+          style={{ width: '100%', minWidth: tableTotalSize }}
         >
           <thead className="sticky top-0 z-20 bg-white">
             {table.getHeaderGroups().map((headerGroup) => (
               <tr key={headerGroup.id}>
                 {headerGroup.headers.map((header, colIndex) => {
                   const canSort =
-                    header.column.columnDef.enableSorting !== false &&
-                    !!onSortingChange &&
-                    header.id !== '_select';
+                    header.column.columnDef.enableSorting !== false && !!onSortingChange && header.id !== '_select';
                   const activeSort = (sorting ?? [])[0];
                   const sorted: false | 'asc' | 'desc' =
-                    activeSort?.id === header.column.id
-                      ? activeSort.desc
-                        ? 'desc'
-                        : 'asc'
-                      : false;
+                    activeSort?.id === header.column.id ? (activeSort.desc ? 'desc' : 'asc') : false;
                   const isLast = colIndex === headerGroup.headers.length - 1;
                   const isPinned = header.column.getIsPinned() === 'left';
                   const isLastPinned = isPinned && header.column.getIsLastColumn('left');
+                  const shouldGrow = header.column.id === growColumnId;
                   const handleSortToggle = () => {
                     if (!canSort) return;
                     const current = sorting ?? [];
@@ -419,17 +444,19 @@ export function PropertyListingsTable({
                         isLastPinned && 'shadow-[1px_0_0_0_#d9d9d6]',
                       )}
                       style={{
-                        width: header.getSize(),
+                        width: shouldGrow ? undefined : header.getSize(),
                         ...(isPinned
-                          ? { position: 'sticky', left: header.column.getStart('left'), zIndex: 30 }
+                          ? {
+                              position: 'sticky',
+                              left: header.column.getStart('left'),
+                              zIndex: 30,
+                            }
                           : {}),
                       }}
                       onClick={canSort ? handleSortToggle : undefined}
                     >
                       <div className="flex min-w-0 items-center gap-1 text-slate-500">
-                        {header.isPlaceholder
-                          ? null
-                          : flexRender(header.column.columnDef.header, header.getContext())}
+                        {header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}
                         {sorted === 'asc' && <ArrowUp className="size-3" />}
                         {sorted === 'desc' && <ArrowDown className="size-3" />}
                       </div>
@@ -439,9 +466,7 @@ export function PropertyListingsTable({
                           onTouchStart={header.getResizeHandler()}
                           className={cn(
                             'absolute right-0 top-0 h-full w-1 cursor-col-resize select-none touch-none',
-                            header.column.getIsResizing()
-                              ? 'bg-primary'
-                              : 'bg-transparent hover:bg-border',
+                            header.column.getIsResizing() ? 'bg-primary' : 'bg-transparent hover:bg-border',
                           )}
                         />
                       )}

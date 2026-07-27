@@ -10,15 +10,20 @@ import {
   IntakeClosedReason,
   IntakeConfirmationState,
   IntakeLifecycleStatus,
+  ListingAvailability,
   MaintenanceFeeInclude,
   NON_CLOSED_INTAKE_LIFECYCLE_STATUSES,
   OCCUPYING_DEAL_STAGES,
+  SiteType,
   TransactionType,
 } from '@estate-erp/shared';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ListingsService } from '../listings/listings.service';
-import { buildIntakeConfirmationWhere } from '../listings/listing-state';
+import {
+  buildIntakeConfirmationWhere,
+  buildListingAvailabilityWhere,
+} from '../listings/listing-state';
 import {
   contactPhonesIncludeOrdered,
   normalizePhone,
@@ -36,6 +41,10 @@ const VALID_INTAKE_CLOSED_REASONS: ReadonlySet<string> = new Set(
 const VALID_CONFIRMATION_STATES: ReadonlySet<string> = new Set(
   Object.values(IntakeConfirmationState),
 );
+const VALID_LISTING_AVAILABILITIES: ReadonlySet<string> = new Set(
+  Object.values(ListingAvailability),
+);
+const VALID_SITE_TYPES: ReadonlySet<string> = new Set(Object.values(SiteType));
 
 /** 의뢰 생명주기 전이 규칙 — 확인/거래 상태와 독립된 유일한 저장 상태 */
 const INTAKE_LIFECYCLE_TRANSITIONS: Record<string, string[]> = {
@@ -47,7 +56,10 @@ const INTAKE_LIFECYCLE_TRANSITIONS: Record<string, string[]> = {
     IntakeLifecycleStatus.OPEN,
     IntakeLifecycleStatus.CLOSED,
   ],
-  [IntakeLifecycleStatus.CLOSED]: [IntakeLifecycleStatus.OPEN],
+  [IntakeLifecycleStatus.CLOSED]: [
+    IntakeLifecycleStatus.OPEN,
+    IntakeLifecycleStatus.HOLD,
+  ],
 };
 
 const VALID_TRANSACTION_TYPES: ReadonlySet<string> = new Set(
@@ -85,6 +97,8 @@ const MAP_INTAKES_LIMIT = 5000;
 export interface ListingIntakeSearchQuery {
   lifecycleStatus?: string;
   confirmationState?: string;
+  availability?: string;
+  availabilities?: string[];
   nextConfirmFrom?: Date | string;
   nextConfirmTo?: Date | string;
   includeClosed?: boolean;
@@ -101,10 +115,12 @@ export interface ListingIntakeSearchQuery {
   hasAdvertisement?: boolean;
   isJointBrokerage?: boolean;
   siteType?: string;
+  siteTypes?: string[];
   provinceCode?: string;
   districtCode?: string;
   wardCode?: string;
   siteId?: string;
+  siteIds?: string[];
   search?: string;
   dong?: string;
   unit?: string;
@@ -696,12 +712,23 @@ export class ListingIntakesService {
       });
     }
 
-    if (query.siteId || query.siteType || query.provinceCode || query.districtCode || query.wardCode) {
+    const siteIdFilter = query.siteId
+      ? query.siteId
+      : query.siteIds?.length
+        ? { in: query.siteIds }
+        : undefined;
+    const siteTypeFilter = query.siteType
+      ? query.siteType
+      : query.siteTypes?.length
+        ? { in: query.siteTypes }
+        : undefined;
+
+    if (siteIdFilter || siteTypeFilter || query.provinceCode || query.districtCode || query.wardCode) {
       filters.push({
         property: {
-          ...(query.siteId && { siteId: query.siteId }),
+          ...(siteIdFilter && { siteId: siteIdFilter }),
           site: {
-            ...(query.siteType && { type: query.siteType }),
+            ...(siteTypeFilter && { type: siteTypeFilter }),
             ...(query.wardCode && { wardCode: query.wardCode }),
             ...(!query.wardCode && (query.districtCode || query.provinceCode) && {
               ward: {
@@ -753,6 +780,17 @@ export class ListingIntakesService {
 
   private buildListingWhere(query: ListingIntakeSearchQuery) {
     const where: Prisma.ListingWhereInput = {};
+    const availabilities = query.availability
+      ? [query.availability]
+      : query.availabilities;
+
+    if (availabilities?.length === 1) {
+      Object.assign(where, buildListingAvailabilityWhere(availabilities[0]));
+    } else if (availabilities && availabilities.length > 1) {
+      where.OR = availabilities.map((availability) =>
+        buildListingAvailabilityWhere(availability),
+      );
+    }
 
     if (query.transactionType) {
       where.transactionType = query.transactionType;
@@ -966,11 +1004,15 @@ export class ListingIntakesService {
           moveInAvailableFrom: true,
           moveInAvailableTo: true,
           isPaused: true,
-          isHidden: true,
           memo: true,
           createdAt: true,
           updatedAt: true,
           deals: OCCUPYING_DEALS_SELECT,
+          _count: {
+            select: {
+              matches: true,
+            },
+          },
           advertisements: {
             orderBy: { createdAt: 'desc' as const },
             take: 5,
@@ -978,6 +1020,11 @@ export class ListingIntakesService {
               id: true,
               channel: true,
               status: true,
+              advertisedPrice: true,
+              advertisedDeposit: true,
+              advertisedMonthlyRent: true,
+              startedAt: true,
+              url: true,
               createdAt: true,
             },
           },
@@ -1029,7 +1076,6 @@ export class ListingIntakesService {
           moveInAvailableFrom: true,
           moveInAvailableTo: true,
           isPaused: true,
-          isHidden: true,
           memo: true,
           createdAt: true,
           updatedAt: true,
@@ -1059,6 +1105,9 @@ export class ListingIntakesService {
           advertisements: {
             orderBy: { createdAt: 'desc' as const },
             take: 5,
+          },
+          priceHistories: {
+            orderBy: { createdAt: 'desc' as const },
           },
         },
       },
@@ -1202,6 +1251,26 @@ export class ListingIntakesService {
       !VALID_CONFIRMATION_STATES.has(query.confirmationState)
     ) {
       throw new BadRequestException('Invalid confirmation state');
+    }
+
+    if (
+      query.availability &&
+      !VALID_LISTING_AVAILABILITIES.has(query.availability)
+    ) {
+      throw new BadRequestException('Invalid listing availability');
+    }
+    if (
+      query.availabilities?.some(
+        (availability) => !VALID_LISTING_AVAILABILITIES.has(availability),
+      )
+    ) {
+      throw new BadRequestException('Invalid listing availability');
+    }
+    if (query.siteType && !VALID_SITE_TYPES.has(query.siteType)) {
+      throw new BadRequestException('Invalid siteType');
+    }
+    if (query.siteTypes?.some((siteType) => !VALID_SITE_TYPES.has(siteType))) {
+      throw new BadRequestException('Invalid siteType');
     }
 
     if (

@@ -462,7 +462,7 @@ def build_story(styles):
     )
     for item in [
         "<b>Property</b> — 사무소가 관리하는 부동산 단위. 소유자·세입자·메모를 보관.",
-        "<b>Listing</b> — 거래 단위. 매매/전세/월세 · 가격 · checkStatus · isHidden.",
+        "<b>Listing</b> — 거래 단위. 매매/전세/월세 · 가격 · 옵션 일시중단.",
         "<b>1 Property : N Listing</b> — 같은 호실을 매매·전세로 동시 등록 가능.",
         "<b>SiteUnitType</b> — 평형 카탈로그(84A, 59B). 네이버 pyeongList 1:1 대응.",
         "<b>Unit.floor + lineNo</b> — 동별 호실 그리드(네이버 스타일) 구현.",

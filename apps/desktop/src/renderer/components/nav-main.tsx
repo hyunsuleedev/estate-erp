@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { Link, useMatchRoute } from '@tanstack/react-router'
 import { ChevronRight } from 'lucide-react'
 
@@ -10,6 +11,7 @@ import {
   SidebarGroup,
   SidebarGroupLabel,
   SidebarMenu,
+  SidebarMenuAction,
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarMenuSub,
@@ -44,44 +46,30 @@ export function NavMain({
     return !hasMoreSpecificMatch
   }
 
+  // 부모와 자식이 같은 경로를 공유할 수 있으므로(예: 매물관리 ↔ 매물 목록 = /properties)
+  // 자식이 활성인 동안 부모 버튼은 강조하지 않는다 — 가장 깊은 매치만 하이라이트.
+  const isParentActive = (item: NavItem) =>
+    isActivePath(item.path) &&
+    !(item.children ?? []).some((child) => isActivePath(child.path))
+
   return (
-    <SidebarGroup>
-      <SidebarGroupLabel className="text-xs">{label}</SidebarGroupLabel>
+    <SidebarGroup className="py-1">
+      <SidebarGroupLabel className="h-7 px-2">{label}</SidebarGroupLabel>
       <SidebarMenu>
         {items.map((item) =>
           item.children && item.children.length > 0 ? (
-            <Collapsible
+            <NavItemWithChildren
               key={item.path}
-              asChild
-              defaultOpen={!!matchRoute({ to: item.path, fuzzy: true })}
-              className="group/collapsible"
-            >
-              <SidebarMenuItem>
-                <CollapsibleTrigger asChild>
-                  <SidebarMenuButton tooltip={item.label}>
-                    <item.icon />
-                    <span>{item.label}</span>
-                    <ChevronRight className="ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
-                  </SidebarMenuButton>
-                </CollapsibleTrigger>
-                <CollapsibleContent>
-                  <SidebarMenuSub>
-                    {item.children.map((child) => (
-                      <SidebarMenuSubItem key={child.path}>
-                        <SidebarMenuSubButton
-                          asChild
-                          isActive={isActivePath(child.path)}
-                        >
-                          <Link to={child.path}>
-                            <span>{child.label}</span>
-                          </Link>
-                        </SidebarMenuSubButton>
-                      </SidebarMenuSubItem>
-                    ))}
-                  </SidebarMenuSub>
-                </CollapsibleContent>
-              </SidebarMenuItem>
-            </Collapsible>
+              item={item}
+              isParentActive={isParentActive(item)}
+              isActivePath={isActivePath}
+              isRouteInside={
+                !!matchRoute({ to: item.path, fuzzy: true }) ||
+                item.children.some(
+                  (child) => !!matchRoute({ to: child.path, fuzzy: true }),
+                )
+              }
+            />
           ) : (
             <SidebarMenuItem key={item.path}>
               <SidebarMenuButton
@@ -99,5 +87,68 @@ export function NavMain({
         )}
       </SidebarMenu>
     </SidebarGroup>
+  )
+}
+
+/** 하위 메뉴가 있는 항목 — 라우트 변경을 따라 열림 상태를 동기화한다. */
+function NavItemWithChildren({
+  item,
+  isParentActive,
+  isActivePath,
+  isRouteInside,
+}: {
+  item: NavItem
+  isParentActive: boolean
+  isActivePath: (path: string) => boolean
+  isRouteInside: boolean
+}) {
+  const [open, setOpen] = useState(isRouteInside)
+
+  useEffect(() => {
+    setOpen(isRouteInside)
+  }, [isRouteInside])
+
+  return (
+    <Collapsible
+      asChild
+      open={open}
+      onOpenChange={setOpen}
+      className="group/collapsible"
+    >
+      <SidebarMenuItem>
+        <SidebarMenuButton
+          asChild
+          isActive={isParentActive}
+          tooltip={item.label}
+        >
+          <Link to={item.path}>
+            <item.icon />
+            <span>{item.label}</span>
+          </Link>
+        </SidebarMenuButton>
+        <CollapsibleTrigger asChild>
+          <SidebarMenuAction className="data-[state=open]:rotate-90 transition-transform duration-200">
+            <ChevronRight />
+            <span className="sr-only">{item.label} 하위 메뉴 토글</span>
+          </SidebarMenuAction>
+        </CollapsibleTrigger>
+        <CollapsibleContent>
+          <SidebarMenuSub>
+            {(item.children ?? []).map((child) => (
+              <SidebarMenuSubItem key={child.path}>
+                <SidebarMenuSubButton
+                  asChild
+                  isActive={isActivePath(child.path)}
+                >
+                  <Link to={child.path}>
+                    <span>{child.label}</span>
+                  </Link>
+                </SidebarMenuSubButton>
+              </SidebarMenuSubItem>
+            ))}
+          </SidebarMenuSub>
+        </CollapsibleContent>
+      </SidebarMenuItem>
+    </Collapsible>
   )
 }

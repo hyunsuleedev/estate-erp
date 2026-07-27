@@ -1,10 +1,11 @@
 import {
   getIntakeConfirmationState,
   getListingAvailability,
+  getListingRowAvailability,
+  planListingStatusChange,
 } from "@/lib/listing-status";
 import { invalidateListingDerivedCaches } from "@/lib/listing-cache";
 import {
-  DONE_DEAL_STAGES,
   IntakeCheckResult,
   IntakeClosedReason,
   IntakeConfirmationState,
@@ -44,7 +45,9 @@ import {
   FileText,
   GitBranch,
   Hash,
+  Handshake,
   LayoutList,
+  Loader2,
   Map as MapIcon,
   MapPin,
   Megaphone,
@@ -81,6 +84,18 @@ import type {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  RadioGroup,
+  RadioGroupItem,
+} from "@/components/ui/radio-group";
 import {
   Sheet,
   SheetContent,
@@ -139,6 +154,7 @@ import {
   PropertyRowActions,
   type ListingCostExtras,
 } from "./-property-intake-actions";
+import { PropertyMapView } from "./-property-map-view";
 import { MatchCreateDialog } from "../matches/-match-create-dialog";
 
 // ── Labels ──────────────────────────────────────────────────────
@@ -188,11 +204,11 @@ const LISTINGS_PAGE_SIZE = 50;
 
 // ── 커스텀 그리드 (시안 grid-template-columns 재현) ──────────────
 // 40 체크박스 / 234 단지 / 54 동 / 88 호수(±버튼) / 58 유형 / 92 면적 / 104 확인
-// / 74 상태 / 64 매칭 / 60 광고 / 66 거래 / 150 가격 / 76 월세 / 116 입주 / 300 메모
+// / 86 매물상태 / 64 매칭 / 60 광고 / 66 거래 / 150 가격 / 76 월세 / 116 입주 / 300 메모
 // 관리비(88)/융자금(96) 옵션 컬럼은 월세 뒤에 삽입된다.
 // 유형~광고 6개 컬럼은 호수 헤더의 ± 버튼으로 접을 수 있고, 접힌 공간은 메모가 흡수한다.
 const GRID_FIXED_PREFIX = [40, 234, 54, 88] as const; // 체크/단지/동/호수(±버튼 포함 88)
-const GRID_COLLAPSIBLE_MIDDLE = [58, 92, 128, 86, 64, 60] as const; // 유형~광고
+const GRID_COLLAPSIBLE_MIDDLE = [58, 92, 104, 86, 64, 60] as const; // 유형~광고
 const GRID_FIXED_REST = [66, 150, 76] as const; // 거래/가격/월세
 const GRID_FIXED_TAIL = [116] as const; // 입주
 const MEMO_COLUMN_WIDTH = 300;
@@ -213,8 +229,6 @@ function getMatchStageIndex(stage: string) {
 
 const CONFIRMATION_STATE_VALUES = Object.values(IntakeConfirmationState);
 const LISTING_AVAILABILITY_VALUES = Object.values(ListingAvailability);
-const INTAKE_LIFECYCLE_VALUES = Object.values(IntakeLifecycleStatus);
-
 const confirmationStateOptions = CONFIRMATION_STATE_VALUES.map((value) => ({
   value,
   label: getStatusMeta("confirmationState", value).label,
@@ -223,11 +237,6 @@ const confirmationStateOptions = CONFIRMATION_STATE_VALUES.map((value) => ({
 const listingAvailabilityOptions = LISTING_AVAILABILITY_VALUES.map((value) => ({
   value,
   label: getStatusMeta("listingAvailability", value).label,
-}));
-
-const intakeLifecycleOptions = INTAKE_LIFECYCLE_VALUES.map((value) => ({
-  value,
-  label: getStatusMeta("intakeLifecycle", value).label,
 }));
 
 const transactionTypeOptions = [
@@ -271,6 +280,22 @@ interface PropertyFilterState {
   monthlyRentMax: string;
   areaMin: string;
   areaMax: string;
+}
+
+interface StartDealPrompt {
+  propertyId: string;
+  propertyLabel: string;
+  listings: ListingSummary[];
+  requiresListingSelection: boolean;
+}
+
+interface ResumeClosedPrompt {
+  intakeId: string;
+  listingIds: string[];
+  propertyLabel: string;
+  canResume: boolean;
+  completedListingCount: number;
+  resumableListingCount: number;
 }
 
 const initialPropertyFilters: PropertyFilterState = {
@@ -342,6 +367,10 @@ function PropertiesPage() {
   const [selectedPropertyId, setSelectedPropertyId] = useState<string | null>(
     null,
   );
+  const [startDealPrompt, setStartDealPrompt] =
+    useState<StartDealPrompt | null>(null);
+  const [resumeClosedPrompt, setResumeClosedPrompt] =
+    useState<ResumeClosedPrompt | null>(null);
 
   // 대시보드 딥링크(confirmationState)로 재진입 시 필터 동기화
   useEffect(() => {
@@ -454,6 +483,28 @@ function PropertiesPage() {
       const { page: currentPage, totalPages } = lastPage.pagination;
       return currentPage < totalPages ? currentPage + 1 : undefined;
     },
+  });
+
+  const mapApiParams = useMemo(() => {
+    const params = { ...apiParams };
+    delete params.limit;
+    if (params.sortBy === "price") {
+      delete params.sortBy;
+      delete params.sortOrder;
+    }
+    return params as ListingIntakesFilter;
+  }, [apiParams]);
+
+  const {
+    data: mapData,
+    isLoading: isMapLoading,
+    isError: isMapError,
+    refetch: refetchMap,
+  } = useQuery({
+    queryKey: ["listing-intakes", "map", mapApiParams],
+    queryFn: () => api.listingIntakes.map(mapApiParams),
+    enabled: viewMode === "map",
+    staleTime: 30_000,
   });
 
   // 의뢰 컨텍스트는 listings 응답의 listing.intake 에 실려 온다 —
@@ -730,13 +781,67 @@ function PropertiesPage() {
     },
   });
 
-  const handleRowLifecycleSave = useCallback(
-    (
-      intakeId: string,
-      listingIds: string[],
-      value: IntakeLifecycleStatus,
-    ) => {
-      rowLifecycleMutation.mutate({ intakeId, listingIds, value });
+  const handleRowStatusSave = useCallback(
+    ({
+      intake,
+      listings,
+      propertyId,
+      propertyLabel,
+      value,
+    }: {
+      intake: IntakeRowSummary;
+      listings: ListingSummary[];
+      propertyId: string;
+      propertyLabel: string;
+      value: ListingAvailability;
+    }) => {
+      const currentValue = getListingRowAvailability(intake, listings);
+      const plan = planListingStatusChange(currentValue, value, listings);
+
+      if (plan.kind === "startDeal") {
+        setStartDealPrompt({
+          propertyId,
+          propertyLabel,
+          listings: plan.candidates,
+          requiresListingSelection: listings.length > 1,
+        });
+        return;
+      }
+
+      if (plan.kind === "reviewResume") {
+        setResumeClosedPrompt({
+          intakeId: intake.id,
+          listingIds: listings.map((listing) => listing.id),
+          propertyLabel,
+          canResume: plan.canResume,
+          completedListingCount: plan.completedListingCount,
+          resumableListingCount: plan.resumableListingCount,
+        });
+        return;
+      }
+
+      if (plan.kind === "blocked") {
+        toast.info(
+          plan.reason === "allHaveActiveDeals"
+            ? "모든 Listing에 이미 진행 중인 Deal이 있습니다."
+            : plan.reason === "completedDeal"
+              ? "이미 거래 완료된 Deal이 있어 종료된 Listing입니다. 기존 Deal을 되돌리거나 새 의뢰를 등록해 주세요."
+              : plan.reason === "closedIntake"
+                ? "의뢰 자체가 종료 상태입니다. 먼저 가용으로 재개해 주세요."
+                : plan.reason === "noCandidates"
+                  ? "Deal을 생성할 수 있는 Listing이 없습니다."
+                  : "거래중 상태는 연결된 Deal에서 단계를 변경하거나 취소해 주세요.",
+        );
+        return;
+      }
+
+      if (plan.kind === "noop") return;
+
+      rowLifecycleMutation.mutate({
+        intakeId: intake.id,
+        listingIds: listings.map((listing) => listing.id),
+        value: plan.lifecycleStatus,
+      });
     },
     [rowLifecycleMutation],
   );
@@ -944,10 +1049,15 @@ function PropertiesPage() {
               })}
             </TabsList>
           </Tabs>
-          <div className="flex shrink-0 rounded-lg bg-secondary p-[3px]">
+          <div
+            className="flex shrink-0 rounded-lg bg-secondary p-[3px]"
+            role="group"
+            aria-label="매물 보기 방식"
+          >
             <button
               type="button"
               onClick={() => setViewMode("list")}
+              aria-pressed={viewMode === "list"}
               className={cn(
                 "flex items-center gap-1.5 rounded-md px-2.5 py-[5px] text-[12.5px] font-medium transition-colors",
                 viewMode === "list"
@@ -961,6 +1071,7 @@ function PropertiesPage() {
             <button
               type="button"
               onClick={() => setViewMode("map")}
+              aria-pressed={viewMode === "map"}
               className={cn(
                 "flex items-center gap-1.5 rounded-md px-2.5 py-[5px] text-[12.5px] font-medium transition-colors",
                 viewMode === "map"
@@ -1268,23 +1379,16 @@ function PropertiesPage() {
         <section className="flex min-h-0 flex-1 bg-white">
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-white">
             {viewMode === "map" ? (
-              <div className="flex flex-1 items-center justify-center">
-                <EmptyState
-                  icon={MapIcon}
-                  title="지도 뷰는 준비 중입니다"
-                  description="지도 기반 매물 탐색은 곧 제공됩니다. 리스트 뷰에서 단지 필터를 사용해 주세요."
-                  action={
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setViewMode("list")}
-                    >
-                      <LayoutList className="size-3.5" />
-                      리스트 뷰로 돌아가기
-                    </Button>
-                  }
-                />
-              </div>
+              <PropertyMapView
+                items={mapData?.items ?? []}
+                isLoading={isMapLoading}
+                isError={isMapError}
+                truncated={mapData?.truncated ?? false}
+                limit={mapData?.limit}
+                hasActiveFilters={hasActiveFilters}
+                onSelectProperty={setSelectedPropertyId}
+                onRetry={() => void refetchMap()}
+              />
             ) : isError ? (
               <div className="flex flex-1 flex-col items-center justify-center gap-3 py-16">
                 <p className="text-sm text-muted-foreground">
@@ -1400,12 +1504,12 @@ function PropertiesPage() {
                         <GridHeaderCell icon={Type} label="유형" />
                         <GridHeaderCell icon={Ruler} label="전용면적" />
                         <GridHeaderCell icon={CalendarDays} label="확인" />
-                        <GridHeaderCell icon={Tag} label="의뢰" />
+                        <GridHeaderCell icon={Tag} label="매물상태" />
                         <GridHeaderCell icon={GitBranch} label="매칭" />
                         <GridHeaderCell icon={Megaphone} label="광고" />
                       </>
                     )}
-                    <GridHeaderCell icon={ArrowLeftRight} label="거래" />
+                    <GridHeaderCell icon={ArrowLeftRight} label="거래유형" />
                     <GridHeaderCell icon={CircleDollarSign} label="가격" />
                     <GridHeaderCell icon={CircleDollarSign} label="월세" />
                     {optionalColumns.maintenanceFee && (
@@ -1461,7 +1565,7 @@ function PropertiesPage() {
                                 setSelectedPropertyId(group.propertyId)
                               }
                               onSave={handleCellSave}
-                              onRowLifecycleSave={handleRowLifecycleSave}
+                              onRowStatusSave={handleRowStatusSave}
                               matchOpen={expandedMatchRows.has(group.id)}
                               adOpen={expandedAdRows.has(group.id)}
                               onToggleMatch={() => toggleMatchRow(group.id)}
@@ -1510,6 +1614,36 @@ function PropertiesPage() {
           propertyId={selectedPropertyId}
           onClose={() => setSelectedPropertyId(null)}
         />
+        {startDealPrompt && (
+          <StartDealFromStatusDialog
+            key={`${startDealPrompt.propertyId}:${startDealPrompt.listings
+              .map((listing) => listing.id)
+              .join(",")}`}
+            prompt={startDealPrompt}
+            onClose={() => setStartDealPrompt(null)}
+          />
+        )}
+        {resumeClosedPrompt && (
+          <ResumeClosedListingDialog
+            key={resumeClosedPrompt.intakeId}
+            prompt={resumeClosedPrompt}
+            pending={rowLifecycleMutation.isPending}
+            onClose={() => setResumeClosedPrompt(null)}
+            onResume={() => {
+              if (!resumeClosedPrompt.canResume) return;
+              rowLifecycleMutation.mutate(
+                {
+                  intakeId: resumeClosedPrompt.intakeId,
+                  listingIds: resumeClosedPrompt.listingIds,
+                  value: IntakeLifecycleStatus.OPEN,
+                },
+                {
+                  onSuccess: () => setResumeClosedPrompt(null),
+                },
+              );
+            }}
+          />
+        )}
       </div>
     </CellEditProvider>
   );
@@ -1644,7 +1778,7 @@ function PropertyGridRow({
   onToggleSelect,
   onOpenSheet,
   onSave,
-  onRowLifecycleSave,
+  onRowStatusSave,
   matchOpen,
   adOpen,
   onToggleMatch,
@@ -1663,12 +1797,14 @@ function PropertyGridRow({
   onToggleSelect: () => void;
   onOpenSheet: () => void;
   onSave: (recordId: string, field: string, value: unknown) => void;
-  /** 의뢰 생명주기 전환 */
-  onRowLifecycleSave: (
-    intakeId: string,
-    listingIds: string[],
-    value: IntakeLifecycleStatus,
-  ) => void;
+  /** 합성 매물상태 전환. 거래중은 Deal 생성 확인 흐름으로 분기한다. */
+  onRowStatusSave: (args: {
+    intake: IntakeRowSummary;
+    listings: ListingSummary[];
+    propertyId: string;
+    propertyLabel: string;
+    value: ListingAvailability;
+  }) => void;
   matchOpen: boolean;
   adOpen: boolean;
   onToggleMatch: () => void;
@@ -1693,6 +1829,19 @@ function PropertyGridRow({
     unitTypeName !== "-"
       ? unitTypeName
       : getSiteTypeLabel(property?.site?.type);
+  const intakeListings = intake
+    ? listings.filter((listing) => listing.intakeId === intake.id)
+    : [];
+  const rowAvailability = intake
+    ? getListingRowAvailability(intake, intakeListings)
+    : null;
+  const propertyLabel = [
+    property?.site?.name,
+    getDongName(property),
+    property?.unit?.name,
+  ]
+    .filter((part) => part && part !== "-")
+    .join(" ");
 
   return (
     <div>
@@ -1779,28 +1928,30 @@ function PropertyGridRow({
               {formatExclusiveArea(property)}
             </div>
 
-            {/* 7. 확인 — 확인 이력에서 파생한 상태 + 마지막 시도일 */}
+            {/* 7. 확인 — 신선도 dot + 확인일 + 상대시간 + hover ⟳ */}
             <div
               className={cn(
                 "flex min-h-10 items-center gap-1.5 px-2",
                 CELL_BORDER,
               )}
             >
-              <div className="flex min-w-0 flex-col leading-tight">
-                {intake && (
-                  <StatusBadge
-                    kind="confirmationState"
-                    status={getIntakeConfirmationState(intake)}
-                    size="sm"
-                  />
+              <span
+                className={cn(
+                  "size-[7px] shrink-0 rounded-full",
+                  freshness.dot,
                 )}
+              />
+              <div className="flex min-w-0 flex-col leading-tight">
                 <span
                   className={cn(
-                    "mt-0.5 text-[10.5px] tabular-nums",
-                    freshness.rel,
+                    "text-[12px] font-medium tabular-nums",
+                    freshness.date,
                   )}
                 >
                   {latestUpdatedAt ? formatDateShort(latestUpdatedAt) : "-"}
+                </span>
+                <span className={cn("text-[10.5px]", freshness.rel)}>
+                  {latestUpdatedAt ? formatDaysAgo(latestUpdatedAt) : ""}
                 </span>
               </div>
               <button
@@ -1817,29 +1968,29 @@ function PropertyGridRow({
               </button>
             </div>
 
-            {/* 8. 의뢰 생명주기 — 확인 결과·Deal 단계와 독립적으로만 변경 */}
+            {/* 8. 매물상태 — lifecycle + Deal에서 합성, 거래중 선택은 Deal 생성 */}
             <div className={cn("flex min-h-10 items-center px-1", CELL_BORDER)}>
-              {intake && (
+              {intake && rowAvailability && (
                 <EditableCell
                   recordId={intake.id}
-                  field="intakeLifecycle"
-                  value={intake.lifecycleStatus}
+                  field="listingAvailability"
+                  value={rowAvailability}
                   onSave={(_recordId, _field, value) => {
-                    onRowLifecycleSave(
-                      intake.id,
-                      listings
-                        .filter((listing) => listing.intakeId === intake.id)
-                        .map((listing) => listing.id),
-                      String(value) as IntakeLifecycleStatus,
-                    );
+                    onRowStatusSave({
+                      intake,
+                      listings: intakeListings,
+                      propertyId: group.propertyId,
+                      propertyLabel,
+                      value: String(value) as ListingAvailability,
+                    });
                   }}
                   editType="select-chip"
-                  chipOptions={intakeLifecycleChipOptions}
+                  chipOptions={listingStatusChipOptions}
                 >
                   <span className="flex h-full w-full items-center px-0.5">
                     <StatusBadge
-                      kind="intakeLifecycle"
-                      status={intake.lifecycleStatus}
+                      kind="listingAvailability"
+                      status={rowAvailability}
                       size="sm"
                     />
                   </span>
@@ -1907,33 +2058,13 @@ function PropertyGridRow({
           </>
         )}
 
-        {/* 11. 거래 (리스팅 스택) — Deal 점유(거래중/완료)는 옵션 단위로 표시 */}
+        {/* 11. 거래유형 (리스팅 스택) — Deal 상태는 앞의 매물상태 칩이 담당 */}
         <ListingStackCell listings={listings}>
-          {(listing) => {
-            const occupiedLabel = getListingOccupiedLabel(listing);
-            return (
-              <div className="flex min-w-0 flex-col items-start justify-center gap-0.5 px-2 py-1">
-                <TransactionMiniLabel transactionType={listing.transactionType} />
-                {occupiedLabel && (
-                  <span
-                    className={cn(
-                      "rounded-[4px] px-1 text-[10px] font-medium leading-4",
-                      occupiedLabel === "완료"
-                        ? "bg-neutral-soft text-muted-foreground"
-                        : "bg-info-soft text-info",
-                    )}
-                  >
-                    {occupiedLabel}
-                  </span>
-                )}
-                {listing.isHidden && (
-                  <span className="rounded-[4px] bg-destructive-soft px-1 text-[10px] font-medium leading-4 text-destructive">
-                    숨김
-                  </span>
-                )}
-              </div>
-            );
-          }}
+          {(listing) => (
+            <div className="flex min-w-0 flex-col items-start justify-center gap-0.5 px-2 py-1">
+              <TransactionMiniLabel transactionType={listing.transactionType} />
+            </div>
+          )}
         </ListingStackCell>
 
         {/* 12. 가격 (인라인 수정 + 보류 태그) */}
@@ -2646,11 +2777,6 @@ function PropertySheetListingCard({ listing }: { listing: PropertyListing }) {
           <TransactionBadge transactionType={listing.transactionType} />
           <StatusIndicator value={getListingAvailability(listing)} />
           <JointBrokerageBadge intake={listing.intake} />
-          {listing.isHidden && (
-            <span className="inline-flex rounded-md bg-[#fbe4e4] px-1.5 py-0.5 text-[11px] font-medium leading-5 text-[#9f5555]">
-              숨김
-            </span>
-          )}
         </div>
         <span className="shrink-0 text-[11px] text-muted-foreground">
           확인 {formatDateShort(listing.updatedAt)}
@@ -2959,8 +3085,243 @@ function StatusIndicator({ value }: { value: string }) {
   return <StatusBadge kind="listingAvailability" status={value} />;
 }
 
-const intakeLifecycleChipOptions = intakeLifecycleOptions.map((option) => {
-  const meta = getStatusMeta("intakeLifecycle", option.value);
+function ResumeClosedListingDialog({
+  prompt,
+  pending,
+  onClose,
+  onResume,
+}: {
+  prompt: ResumeClosedPrompt;
+  pending: boolean;
+  onClose: () => void;
+  onResume: () => void;
+}) {
+  const propertyLabel = prompt.propertyLabel || "선택한 매물";
+
+  return (
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open && !pending) onClose();
+      }}
+    >
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>
+            {prompt.canResume
+              ? "종료된 의뢰를 가용으로 재개할까요?"
+              : "가용으로 변경할 수 없습니다"}
+          </DialogTitle>
+          <DialogDescription>
+            {prompt.canResume
+              ? `${propertyLabel}의 종료된 의뢰를 다시 엽니다.`
+              : `${propertyLabel}의 Listing은 거래 완료된 Deal 때문에 종료 상태입니다.`}
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="rounded-md border bg-muted/30 px-3 py-2.5 text-sm leading-6 text-muted-foreground">
+          {prompt.canResume ? (
+            prompt.completedListingCount > 0 ? (
+              <>
+                완료 Deal이 없는 Listing {prompt.resumableListingCount}개를
+                재개합니다. 거래 완료된 Listing{" "}
+                {prompt.completedListingCount}개는 종료 상태를 유지합니다.
+              </>
+            ) : (
+              "재개하면 의뢰 상태가 open으로 바뀌고 매물 상태가 가용으로 표시됩니다."
+            )
+          ) : (
+            "기존 완료 Deal의 단계를 되돌리거나 취소해야 합니다. 새로운 거래라면 새 의뢰와 Listing을 등록해 주세요."
+          )}
+        </div>
+
+        <DialogFooter>
+          {prompt.canResume ? (
+            <>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={pending}
+                onClick={onClose}
+              >
+                취소
+              </Button>
+              <Button type="button" disabled={pending} onClick={onResume}>
+                {pending ? <Loader2 className="size-4 animate-spin" /> : null}
+                가용으로 재개
+              </Button>
+            </>
+          ) : (
+            <Button type="button" onClick={onClose}>
+              확인
+            </Button>
+          )}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function StartDealFromStatusDialog({
+  prompt,
+  onClose,
+}: {
+  prompt: StartDealPrompt;
+  onClose: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const isSingleListing = !prompt.requiresListingSelection;
+  const [selectedListingId, setSelectedListingId] = useState(
+    () => (isSingleListing ? (prompt.listings[0]?.id ?? "") : ""),
+  );
+  const selectedListing =
+    prompt.listings.find((listing) => listing.id === selectedListingId) ?? null;
+
+  const mutation = useMutation({
+    mutationFn: () => {
+      if (!selectedListing) {
+        throw new Error("Deal을 생성할 Listing을 선택해 주세요.");
+      }
+      return api.deals.create({
+        propertyId: prompt.propertyId,
+        listingId: selectedListing.id,
+        transactionType: selectedListing.transactionType,
+        resumeListing: true,
+      });
+    },
+    onSuccess: () => {
+      invalidateListingDerivedCaches(queryClient);
+      toast.success("Deal을 생성하고 매물 상태를 거래중으로 변경했습니다.");
+      onClose();
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || "Deal 생성에 실패했습니다.");
+    },
+  });
+
+  const resumesPausedListing =
+    selectedListing?.isPaused ||
+    selectedListing?.intake?.lifecycleStatus === IntakeLifecycleStatus.HOLD;
+
+  return (
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open && !mutation.isPending) onClose();
+      }}
+    >
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>
+            {isSingleListing
+              ? "Deal을 생성하시겠습니까?"
+              : "거래중으로 변경할 Listing 선택"}
+          </DialogTitle>
+          <DialogDescription>
+            {isSingleListing
+              ? `${prompt.propertyLabel || "선택한 매물"}에 Deal을 생성하면 상태가 거래중으로 변경됩니다.`
+              : "Deal을 생성할 거래유형을 선택하세요. 선택한 Listing만 거래중으로 전환됩니다."}
+          </DialogDescription>
+        </DialogHeader>
+
+        {isSingleListing && selectedListing ? (
+          <DealStartListingOption listing={selectedListing} />
+        ) : (
+          <RadioGroup
+            value={selectedListingId}
+            onValueChange={setSelectedListingId}
+            className="gap-2"
+          >
+            {prompt.listings.map((listing) => {
+              const id = `start-deal-${listing.id}`;
+              return (
+                <label
+                  key={listing.id}
+                  htmlFor={id}
+                  className={cn(
+                    "flex cursor-pointer items-center gap-3 rounded-md border px-3 py-2.5 transition-colors hover:bg-muted/50",
+                    selectedListingId === listing.id &&
+                      "border-info bg-info-soft/30",
+                  )}
+                >
+                  <RadioGroupItem id={id} value={listing.id} />
+                  <DealStartListingOption listing={listing} compact />
+                </label>
+              );
+            })}
+          </RadioGroup>
+        )}
+
+        {resumesPausedListing ? (
+          <p className="rounded-md bg-warning-soft/50 px-3 py-2 text-xs text-warning">
+            Deal 생성과 함께 선택한 Listing의 보류 상태를 해제합니다.
+          </p>
+        ) : null}
+
+        <DialogFooter>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={mutation.isPending}
+            onClick={onClose}
+          >
+            취소
+          </Button>
+          <Button
+            type="button"
+            disabled={!selectedListing || mutation.isPending}
+            onClick={() => mutation.mutate()}
+          >
+            {mutation.isPending ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <Handshake className="size-4" />
+            )}
+            Deal 생성
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function DealStartListingOption({
+  listing,
+  compact = false,
+}: {
+  listing: ListingSummary;
+  compact?: boolean;
+}) {
+  return (
+    <div
+      className={cn(
+        "flex min-w-0 flex-1 items-center gap-2",
+        !compact && "rounded-md border bg-muted/30 px-3 py-3",
+      )}
+    >
+      <StatusBadge
+        kind="transactionType"
+        status={listing.transactionType}
+        size="sm"
+      />
+      <span className="min-w-0 flex-1 truncate text-sm font-medium">
+        {getDealStartPriceLabel(listing)}
+      </span>
+    </div>
+  );
+}
+
+function getDealStartPriceLabel(listing: ListingSummary) {
+  if (listing.transactionType === "monthly") {
+    return `보증금 ${formatMoney(listing.deposit)} · 월세 ${formatMoney(
+      listing.monthlyRent,
+    )}`;
+  }
+  return formatMoney(listing.price);
+}
+
+const listingStatusChipOptions = listingAvailabilityOptions.map((option) => {
+  const meta = getStatusMeta("listingAvailability", option.value);
   return {
     value: option.value,
     label: meta.label,
@@ -3485,21 +3846,6 @@ function RangeFilter({
   );
 }
 
-/**
- * Deal 점유 파생 뱃지 라벨 — 점유 Deal 이 있을 때만 표시.
- * 의뢰 확인 상태는 행 상태 칩이 담당하므로 여기서는 폴백하지 않는다.
- */
-function getListingOccupiedLabel(
-  listing: Pick<ListingSummary, "deals">,
-): string | null {
-  const occupying = listing.deals ?? [];
-  if (occupying.length === 0) return null;
-  const doneStages: readonly string[] = DONE_DEAL_STAGES;
-  return occupying.some((deal) => doneStages.includes(deal.stage))
-    ? "완료"
-    : "거래중";
-}
-
 function buildListingFilterParams(filters: PropertyFilterState) {
   const params: Record<string, string | number | boolean | undefined> = {};
 
@@ -3663,7 +4009,7 @@ function mergeListingSummaries(
 }
 
 /** 같은 매물이 두 소스(최상위/property.listings)에서 오면 정의된 값만 덮어쓴다.
- *  (중첩 응답에는 isHidden·priceHistories가 빠져 있어 undefined로 지워지는 것 방지) */
+ *  (중첩 응답에 빠진 필드가 undefined로 지워지는 것 방지) */
 function mergeDefinedFields(
   previous: ListingSummary,
   next: ListingSummary,
@@ -3694,7 +4040,6 @@ function toListingSummary(listing: ListingSummary): ListingSummary {
     isPaused: listing.isPaused,
     intake: listing.intake,
     deals: listing.deals,
-    isHidden: listing.isHidden,
     memo: listing.memo,
     createdAt: listing.createdAt,
     updatedAt: listing.updatedAt,
@@ -3878,7 +4223,6 @@ function getPropertySheetNotices(property: Property): PropertySheetNotice[] {
       getIntakeConfirmationState(listing.intake) ===
         IntakeConfirmationState.UNVERIFIED,
   );
-  const hiddenListings = listings.filter((listing) => listing.isHidden);
   const jointRequiredListings = listings.filter(
     (listing) => listing.intake?.isJointBrokerageRequired,
   );
@@ -3926,14 +4270,6 @@ function getPropertySheetNotices(property: Property): PropertySheetNotice[] {
       title: "확인일 오래됨",
       detail: `마지막 확인이 ${daysSinceLatestCheck}일 전입니다. 광고 유지 전 소유주 확인이 필요합니다.`,
       tone: "warning",
-    });
-  }
-
-  if (hiddenListings.length > 0) {
-    notices.push({
-      title: "숨김 거래 포함",
-      detail: `${formatTransactionTypeList(hiddenListings)} 거래가 목록에서 숨김 처리되어 있습니다.`,
-      tone: "neutral",
     });
   }
 

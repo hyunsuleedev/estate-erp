@@ -82,9 +82,7 @@ export function MatchSection({ requirement }: { requirement: BuyerRequirement })
     queryFn: () => api.listings.findAll(candidateParams),
   });
 
-  const candidates = (candidatesData?.items ?? []).filter(
-    (l) => !matchedListingIds.has(l.id) && !l.isHidden,
-  );
+  const candidates = (candidatesData?.items ?? []).filter((listing) => !matchedListingIds.has(listing.id));
 
   const [creatingId, setCreatingId] = useState<string | null>(null);
   const createMatchMutation = useMutation({

@@ -99,16 +99,6 @@ export function buildListingAvailabilityWhere(
     },
   };
 
-  if (availability === ListingAvailability.COMPLETED) {
-    return {
-      deals: {
-        some: {
-          isCancelled: false,
-          stage: { in: [...DONE_DEAL_STAGES] },
-        },
-      },
-    };
-  }
   if (availability === ListingAvailability.IN_CONTRACT) {
     return {
       AND: [
@@ -133,8 +123,26 @@ export function buildListingAvailabilityWhere(
   }
   if (availability === ListingAvailability.CLOSED) {
     return {
-      intake: { lifecycleStatus: IntakeLifecycleStatus.CLOSED },
-      ...noOccupyingDeal,
+      OR: [
+        {
+          deals: {
+            some: {
+              isCancelled: false,
+              stage: { in: [...DONE_DEAL_STAGES] },
+            },
+          },
+        },
+        {
+          AND: [
+            {
+              intake: {
+                lifecycleStatus: IntakeLifecycleStatus.CLOSED,
+              },
+            },
+            noOccupyingDeal,
+          ],
+        },
+      ],
     };
   }
   if (availability === ListingAvailability.PAUSED) {
@@ -170,7 +178,6 @@ export function buildListingAvailabilityWhere(
 
 /** 대시보드·네트워크에서 공유하는 실제 가용 매물 조건 */
 export const MARKETABLE_LISTING_WHERE = {
-  isHidden: false,
   isPaused: false,
   intake: { lifecycleStatus: IntakeLifecycleStatus.OPEN },
   deals: {

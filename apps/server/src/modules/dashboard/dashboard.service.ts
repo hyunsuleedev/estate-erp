@@ -135,7 +135,6 @@ export class DashboardService {
       this.prisma.listing.count({
         where: {
           officeId,
-          isHidden: false,
           intake: {
             ...NON_CLOSED_INTAKE_WHERE,
             ...buildIntakeConfirmationWhere(

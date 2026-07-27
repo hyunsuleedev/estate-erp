@@ -87,6 +87,8 @@ export function MatchCreateDialog({
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['matches'] });
+      queryClient.invalidateQueries({ queryKey: ['listings'] });
+      queryClient.invalidateQueries({ queryKey: ['listing-intakes'] });
       toast.success('매칭이 생성되었습니다');
       onOpenChange(false);
     },

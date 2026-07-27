@@ -43,7 +43,6 @@ export interface BuyerRequirementMatch {
     isPaused: boolean;
     intake?: ListingIntakeState | null;
     deals?: ListingOccupyingDeal[];
-    isHidden: boolean;
     property?: {
       id: string;
       siteId: string;

@@ -17,6 +17,9 @@ export type Tone =
   | 'neutral';
 
 export type StatusKind =
+  | 'confirmationState'
+  | 'intakeLifecycle'
+  | 'listingAvailability'
   | 'checkStatus'
   | 'intakeStatus'
   | 'matchStage'
@@ -36,6 +39,26 @@ export interface StatusMeta {
 }
 
 export const STATUS_CONFIG: Record<StatusKind, Record<string, StatusMeta>> = {
+  /** ListingIntake 확인 이력에서 파생한 상태 */
+  confirmationState: {
+    unverified: { label: '미확인', tone: 'gray' },
+    verified: { label: '확인완료', tone: 'success' },
+    overdue: { label: '재확인 필요', tone: 'destructive' },
+    no_answer: { label: '부재중', tone: 'orange' },
+  },
+  /** ListingIntake.lifecycleStatus — 의뢰 생명주기 */
+  intakeLifecycle: {
+    open: { label: '진행중', tone: 'success' },
+    hold: { label: '보류', tone: 'warning' },
+    closed: { label: '종료', tone: 'neutral' },
+  },
+  /** Listing의 Deal·의뢰·옵션 중지를 합성한 가용 상태 */
+  listingAvailability: {
+    available: { label: '가용', tone: 'success' },
+    paused: { label: '보류', tone: 'warning' },
+    in_contract: { label: '거래중', tone: 'info' },
+    closed: { label: '종료', tone: 'neutral' },
+  },
   /** Listing.checkStatus — 매물 확인 상태 */
   checkStatus: {
     unverified: { label: '미확인', tone: 'gray' },
@@ -140,6 +163,9 @@ export const STATUS_CONFIG: Record<StatusKind, Record<string, StatusMeta>> = {
  * 파이프라인 단계 순서 (PipelineSteps용). 취소/예외 상태는 포함하지 않는다.
  */
 export const PIPELINE_STEPS: Partial<Record<StatusKind, string[]>> = {
+  confirmationState: ['unverified', 'no_answer', 'overdue', 'verified'],
+  intakeLifecycle: ['open', 'hold', 'closed'],
+  listingAvailability: ['available', 'paused', 'in_contract', 'closed'],
   checkStatus: ['unverified', 'verified', 'in_contract', 'hold', 'done'],
   intakeStatus: ['unverified', 'active', 'in_contract', 'hold', 'done'],
   matchStage: [

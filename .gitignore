@@ -23,13 +23,25 @@ prisma/*.db
 
 # Playwright / Claude tooling scratch
 .playwright-mcp/
+.playwright-cli/
 .claude/worktrees/
 .claude/scheduled_tasks.lock
 .superpowers/
 .tanstack/
+.lazyweb/
 
 # Local-only screenshots (root-level PNGs)
 /*.png
+/output/
+/tmp/
+
+# Local prototype caches and browser evidence
+prototypes/**/.npm-cache/
+prototypes/**/output/
+prototypes/**/qa/
+
+# Local handoff archives
+/*-handoff.zip
 
 # Reference material (extracted Hanbang binaries — local analysis only)
 docs/reference/hanbang/app/

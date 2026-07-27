@@ -1,4 +1,5 @@
 import { ConflictException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { ListingsService } from './listings.service';
 
 jest.mock('@estate-erp/shared', () => ({
@@ -25,11 +26,10 @@ jest.mock('@estate-erp/shared', () => ({
     AVAILABLE: 'available',
     PAUSED: 'paused',
     IN_CONTRACT: 'in_contract',
-    COMPLETED: 'completed',
     CLOSED: 'closed',
   },
-  IN_CONTRACT_DEAL_STAGES: ['preContract', 'contracted', 'settling'],
-  OCCUPYING_DEAL_STAGES: ['preContract', 'contracted', 'settling', 'completed', 'closed'],
+  IN_CONTRACT_DEAL_STAGES: ['selection', 'negotiating', 'preContract', 'contracted', 'settling'],
+  OCCUPYING_DEAL_STAGES: ['selection', 'negotiating', 'preContract', 'contracted', 'settling', 'completed', 'closed'],
   DONE_DEAL_STAGES: ['completed', 'closed'],
   TransactionType: {
     SALE: 'sale',
@@ -294,7 +294,12 @@ describe('ListingsService', () => {
       transactionType: 'sale',
       updatedAt: new Date('2026-05-20T01:00:00.000Z'),
     });
-    prisma.listing.updateMany.mockResolvedValue({ count: 0 });
+    prisma.listing.update.mockRejectedValue(
+      new Prisma.PrismaClientKnownRequestError('Record not found', {
+        code: 'P2025',
+        clientVersion: 'test',
+      }),
+    );
 
     await expect(
       service.update('listing-1', 'office-1', {
@@ -303,7 +308,54 @@ describe('ListingsService', () => {
       }),
     ).rejects.toBeInstanceOf(ConflictException);
 
-    expect(prisma.listing.update).not.toHaveBeenCalled();
+    expect(prisma.listing.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          id: 'listing-1',
+          officeId: 'office-1',
+          updatedAt: new Date('2026-05-20T00:00:00.000Z'),
+        },
+      }),
+    );
+    expect(prisma.listing.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('uses a single-row optimistic update so price history middleware receives the changed row', async () => {
+    const { prisma, service } = createService();
+    const updatedListing = {
+      id: 'listing-1',
+      officeId: 'office-1',
+      propertyId: 'property-1',
+      intakeId: 'intake-1',
+      transactionType: 'sale',
+      price: 270000,
+      updatedAt: new Date('2026-05-20T02:00:00.000Z'),
+    };
+    prisma.listing.findFirst.mockResolvedValue({
+      ...updatedListing,
+      price: 275000,
+      updatedAt: new Date('2026-05-20T00:00:00.000Z'),
+    });
+    prisma.listing.update.mockResolvedValue(updatedListing);
+
+    await expect(
+      service.update('listing-1', 'office-1', {
+        price: 270000,
+        expectedUpdatedAt: '2026-05-20T00:00:00.000Z',
+      }),
+    ).resolves.toBe(updatedListing);
+
+    expect(prisma.listing.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          id: 'listing-1',
+          officeId: 'office-1',
+          updatedAt: new Date('2026-05-20T00:00:00.000Z'),
+        },
+        data: { price: 270000 },
+      }),
+    );
+    expect(prisma.listing.updateMany).not.toHaveBeenCalled();
   });
 
   it('returns distinct filter sites from visible listings with counts', async () => {

@@ -1,12 +1,21 @@
+import { invalidateListingDerivedCaches } from '@/lib/listing-cache';
 import { createFileRoute } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDeferredValue, useEffect, useMemo, useState } from 'react';
-import { Handshake, List, PanelsTopLeft, Plus, RotateCcw } from 'lucide-react';
+import {
+  Handshake,
+  List,
+  PanelsTopLeft,
+  Plus,
+  RotateCcw,
+  Rows3,
+  Rows4,
+  Search,
+} from 'lucide-react';
 import { toast } from 'sonner';
 import { ApiError, type Deal } from '@estate-erp/api-client';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
-import { formatMoney } from '@/lib/format';
 import { getStatusMeta } from '@/lib/status-config';
 import { Button } from '@/components/ui/button';
 import {
@@ -27,15 +36,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
-import {
-  ConfirmDialog,
-  EmptyState,
-  FilterBar,
-  FilterCount,
-  FilterSearch,
-  FilterSelect,
-  PageHeader,
-} from '@/components/domain';
+import { ConfirmDialog, EmptyState, FilterCount, FilterSelect } from '@/components/domain';
 import { DealBoard } from './-deal-board';
 import { DealCreateDialog } from './-deal-create-dialog';
 import { DealDetailSheet } from './-deal-detail';
@@ -44,8 +45,10 @@ import {
   cancelledByLabels,
   dealStageOrder,
   getDealLocationLine,
+  getDealPipelineHealth,
   getDealTitle,
   getDealTransactionType,
+  type DealPipelineHealthState,
   type DealRowActions,
 } from './-deal-view-utils';
 
@@ -73,6 +76,13 @@ const CONTRACT_FILTER_OPTIONS = [
   { value: 'none', label: '계약서 없음' },
 ];
 
+const HEALTH_FILTER_OPTIONS: Array<{ value: DealPipelineHealthState; label: string }> = [
+  { value: 'overdue', label: '일정 지연' },
+  { value: 'stale', label: '단계 정체' },
+  { value: 'unscheduled', label: '다음 일정 미정' },
+  { value: 'healthy', label: '정상 진행' },
+];
+
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : '요청 처리에 실패했습니다.';
 }
@@ -88,7 +98,9 @@ function DealsPage() {
   const [stageFilter, setStageFilter] = useState('');
   const [jointFilter, setJointFilter] = useState('');
   const [contractFilter, setContractFilter] = useState('');
+  const [healthFilter, setHealthFilter] = useState('');
   const [viewMode, setViewMode] = useState<DealViewMode>('board');
+  const [compactCards, setCompactCards] = useState(false);
   const [selectedDealId, setSelectedDealId] = useState<string | null>(null);
   const [showClosed, setShowClosed] = useState(false);
   const [showCancelled, setShowCancelled] = useState(false);
@@ -117,17 +129,38 @@ function DealsPage() {
   const invalidateDeals = () => {
     void queryClient.invalidateQueries({ queryKey: ['deals'] });
     void queryClient.invalidateQueries({ queryKey: ['commission-payments'] });
+    // Deal 단계는 파생 상태의 원천 — 매물 목록·그리드·네트워크 노출도 함께 갱신
+    invalidateListingDerivedCaches(queryClient);
   };
 
   const stageMutation = useMutation({
     mutationFn: ({ deal, stage }: { deal: Deal; stage: string }) =>
       api.deals.updateStage(deal.id, { stage }),
-    onSuccess: (_, { stage }) => {
-      invalidateDeals();
+    onMutate: async ({ deal, stage }) => {
+      await queryClient.cancelQueries({ queryKey: ['deals'] });
+      const previousDeals = queryClient.getQueryData<Deal[]>(['deals']);
+
+      queryClient.setQueryData<Deal[]>(['deals'], (currentDeals) =>
+        currentDeals?.map((currentDeal) =>
+          currentDeal.id === deal.id
+            ? { ...currentDeal, stage, stageChangedAt: new Date().toISOString() }
+            : currentDeal,
+        ),
+      );
+
+      return { previousDeals };
+    },
+    onSuccess: (updatedDeal, { stage }) => {
+      queryClient.setQueryData<Deal[]>(['deals'], (currentDeals) =>
+        currentDeals?.map((deal) => (deal.id === updatedDeal.id ? updatedDeal : deal)),
+      );
       toast.success(`'${getStatusMeta('dealStage', stage).label}' 단계로 변경되었습니다.`);
       setPendingStage(null);
     },
-    onError: (error, { deal, stage }) => {
+    onError: (error, { deal, stage }, context) => {
+      if (context?.previousDeals) {
+        queryClient.setQueryData(['deals'], context.previousDeals);
+      }
       setPendingStage(null);
       const needsContract =
         error instanceof ApiError &&
@@ -146,6 +179,7 @@ function DealsPage() {
         toast.error(getErrorMessage(error));
       }
     },
+    onSettled: () => invalidateDeals(),
   });
 
   const cancelMutation = useMutation({
@@ -181,6 +215,7 @@ function DealsPage() {
       if (jointFilter === 'solo' && deal.isJointBrokerage) return false;
       if (contractFilter === 'has' && !contractByDealId.has(deal.id)) return false;
       if (contractFilter === 'none' && contractByDealId.has(deal.id)) return false;
+      if (healthFilter && getDealPipelineHealth(deal, referenceDate).state !== healthFilter) return false;
 
       if (!query) return true;
 
@@ -201,7 +236,17 @@ function DealsPage() {
         .toLowerCase()
         .includes(query);
     });
-  }, [deals, deferredSearch, txFilter, stageFilter, jointFilter, contractFilter, contractByDealId]);
+  }, [
+    deals,
+    deferredSearch,
+    txFilter,
+    stageFilter,
+    jointFilter,
+    contractFilter,
+    contractByDealId,
+    healthFilter,
+    referenceDate,
+  ]);
 
   const activeDeals = useMemo(
     () => filteredDeals.filter((deal) => !deal.isCancelled && deal.stage !== 'closed'),
@@ -226,17 +271,6 @@ function DealsPage() {
     }
   }, [deals, dealsQuery.isLoading, selectedDealId]);
 
-  const kpis = useMemo(() => {
-    const valid = deals.filter((deal) => !deal.isCancelled);
-    const active = valid.filter((deal) => deal.stage !== 'closed');
-    return {
-      activeCount: active.length,
-      expectedCommission: active.reduce((sum, deal) => sum + (deal.commissionSummary?.billed ?? 0), 0),
-      completedCount: valid.filter((deal) => deal.stage === 'completed').length,
-      jointCount: active.filter((deal) => deal.isJointBrokerage).length,
-    };
-  }, [deals]);
-
   const rowActions: DealRowActions = {
     onSelect: setSelectedDealId,
     onRequestStage: (deal, stage) => setPendingStage({ deal, stage }),
@@ -246,68 +280,143 @@ function DealsPage() {
   };
 
   const hasFilters =
-    Boolean(deferredSearch.trim()) || Boolean(txFilter) || Boolean(stageFilter) || Boolean(jointFilter) || Boolean(contractFilter);
+    Boolean(deferredSearch.trim()) ||
+    Boolean(txFilter) ||
+    Boolean(stageFilter) ||
+    Boolean(jointFilter) ||
+    Boolean(contractFilter) ||
+    Boolean(healthFilter);
 
   return (
     <div className="flex min-h-0 flex-col gap-4 pt-4">
-      <PageHeader
-        title="거래"
-        description="매칭에서 이관된 거래부터 정산 종료까지 파이프라인으로 관리합니다."
-        actions={
-          <Button type="button" onClick={() => setCreateOpen(true)}>
-            <Plus className="size-4" />
-            새 거래
-          </Button>
-        }
-        className="mb-0"
-      />
-
-      <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
-        <KpiTile label="진행 거래" value={`${kpis.activeCount}건`} />
-        <KpiTile
-          label="예상 수수료 (진행)"
-          value={kpis.expectedCommission ? formatMoney(kpis.expectedCommission) : '—'}
-        />
-        <KpiTile label="잔금완료" value={`${kpis.completedCount}건`} />
-        <KpiTile label="공동중개 (진행)" value={`${kpis.jointCount}건`} />
+      {/* 헤더 — 액션만 (제목은 상단 앱 헤더가 표시) */}
+      <div className="flex items-center justify-end">
+        <Button type="button" size="sm" onClick={() => setCreateOpen(true)}>
+          <Plus className="size-4" />
+          새 거래
+        </Button>
       </div>
 
-      <FilterBar>
-        <FilterSearch value={searchQuery} onChange={setSearchQuery} placeholder="매물·고객·주소 검색" />
-        <FilterSelect label="거래유형" value={txFilter} onChange={setTxFilter} options={TX_FILTER_OPTIONS} />
+      {/* 툴바 — 검색 + 거래유형 칩 + 상세 필터 + 뷰 전환 */}
+      <div className="flex flex-wrap items-center gap-2.5 rounded-[10px] border px-3 py-2">
+        <div className="flex h-8 w-60 items-center gap-2 rounded-lg border border-border/70 bg-muted px-2.5">
+          <Search className="size-3.5 shrink-0 text-muted-foreground/70" />
+          <input
+            value={searchQuery}
+            onChange={(event) => setSearchQuery(event.target.value)}
+            placeholder="매물 · 고객 · 주소 검색"
+            className="w-full bg-transparent text-xs text-foreground outline-none placeholder:text-muted-foreground/70"
+          />
+        </div>
+        <div className="flex gap-1">
+          {[{ value: '', label: '전체' }, ...TX_FILTER_OPTIONS].map((option) => (
+            <button
+              key={option.value || 'all'}
+              type="button"
+              onClick={() => setTxFilter(option.value)}
+              className={cn(
+                'h-7 rounded-[7px] px-2.5 text-xs font-medium transition-colors',
+                txFilter === option.value
+                  ? 'bg-primary text-primary-foreground'
+                  : 'text-muted-foreground hover:bg-secondary hover:text-foreground',
+              )}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
         <FilterSelect label="단계" value={stageFilter} onChange={setStageFilter} options={STAGE_FILTER_OPTIONS} />
         <FilterSelect label="공동중개" value={jointFilter} onChange={setJointFilter} options={JOINT_FILTER_OPTIONS} />
         <FilterSelect label="계약서" value={contractFilter} onChange={setContractFilter} options={CONTRACT_FILTER_OPTIONS} />
+        <FilterSelect
+          label="파이프라인 상태"
+          value={healthFilter}
+          onChange={setHealthFilter}
+          options={HEALTH_FILTER_OPTIONS}
+        />
         <FilterCount n={filteredDeals.length} />
-        <div className="flex w-fit items-center rounded-md bg-muted p-0.5">
+        {hasFilters ? (
           <Button
             type="button"
             variant="ghost"
             size="xs"
+            className="h-7 gap-1 px-2 text-[11px] text-muted-foreground"
+            onClick={() => {
+              setSearchQuery('');
+              setTxFilter('');
+              setStageFilter('');
+              setJointFilter('');
+              setContractFilter('');
+              setHealthFilter('');
+            }}
+          >
+            <RotateCcw className="size-3" aria-hidden="true" />
+            초기화
+          </Button>
+        ) : null}
+        {viewMode === 'board' ? (
+          <div className="flex w-fit items-center rounded-lg border border-border bg-background p-0.5">
+            <button
+              type="button"
+              aria-label="카드 자세히 보기"
+              aria-pressed={!compactCards}
+              title="카드 자세히"
+              onClick={() => setCompactCards(false)}
+              className={cn(
+                'flex size-7 items-center justify-center rounded-md transition-colors',
+                !compactCards
+                  ? 'bg-secondary text-foreground'
+                  : 'text-muted-foreground hover:text-foreground',
+              )}
+            >
+              <Rows4 className="size-3.5" />
+            </button>
+            <button
+              type="button"
+              aria-label="카드 간결하게 보기"
+              aria-pressed={compactCards}
+              title="카드 간결하게"
+              onClick={() => setCompactCards(true)}
+              className={cn(
+                'flex size-7 items-center justify-center rounded-md transition-colors',
+                compactCards
+                  ? 'bg-secondary text-foreground'
+                  : 'text-muted-foreground hover:text-foreground',
+              )}
+            >
+              <Rows3 className="size-3.5" />
+            </button>
+          </div>
+        ) : null}
+        <div className="flex w-fit items-center rounded-lg bg-secondary p-0.5">
+          <button
+            type="button"
             onClick={() => setViewMode('board')}
             className={cn(
-              'h-7 rounded px-2',
-              viewMode === 'board' && 'bg-background text-foreground shadow-xs hover:bg-background',
+              'flex h-7 items-center gap-1.5 rounded-md px-3 text-xs font-semibold transition-colors',
+              viewMode === 'board'
+                ? 'bg-background text-foreground shadow-xs'
+                : 'text-muted-foreground hover:text-foreground',
             )}
           >
             <PanelsTopLeft className="size-3.5" />
             보드
-          </Button>
-          <Button
+          </button>
+          <button
             type="button"
-            variant="ghost"
-            size="xs"
             onClick={() => setViewMode('list')}
             className={cn(
-              'h-7 rounded px-2',
-              viewMode === 'list' && 'bg-background text-foreground shadow-xs hover:bg-background',
+              'flex h-7 items-center gap-1.5 rounded-md px-3 text-xs font-semibold transition-colors',
+              viewMode === 'list'
+                ? 'bg-background text-foreground shadow-xs'
+                : 'text-muted-foreground hover:text-foreground',
             )}
           >
             <List className="size-3.5" />
             리스트
-          </Button>
+          </button>
         </div>
-      </FilterBar>
+      </div>
 
       {dealsQuery.isLoading ? (
         <div className="space-y-2">
@@ -342,7 +451,9 @@ function DealsPage() {
               deals={activeDeals}
               selectedDealId={selectedDeal?.id ?? null}
               referenceDate={referenceDate}
+              compact={compactCards}
               actions={rowActions}
+              onStageDrop={(deal, stage) => stageMutation.mutate({ deal, stage })}
             />
           ) : (
             <DealListView
@@ -445,15 +556,6 @@ function DealsPage() {
           if (deleteTarget) deleteMutation.mutate(deleteTarget);
         }}
       />
-    </div>
-  );
-}
-
-function KpiTile({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-md border bg-background px-3 py-2.5">
-      <div className="text-xs text-muted-foreground">{label}</div>
-      <div className="mt-0.5 text-lg font-semibold tracking-tight tabular-nums text-foreground">{value}</div>
     </div>
   );
 }

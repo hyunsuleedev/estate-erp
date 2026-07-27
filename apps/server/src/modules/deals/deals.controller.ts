@@ -54,6 +54,7 @@ export class DealsController {
       isJointBrokerage?: boolean;
       ourSide?: 'seller' | 'buyer' | 'both';
       partnerBrokerId?: string;
+      resumeListing?: boolean;
       memo?: string;
     },
     @CurrentUser() user: CurrentUserPayload,

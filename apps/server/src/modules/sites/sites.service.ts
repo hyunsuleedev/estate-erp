@@ -125,7 +125,6 @@ export class SitesService {
                       listings: {
                         where: {
                           ...(officeId ? { officeId } : {}),
-                          isHidden: false,
                           // 호실 그리드의 "매물 있음" 은 열린 의뢰만 — 목록과 동일 기준
                           intake: NON_CLOSED_INTAKE_WHERE,
                         },
@@ -222,7 +221,6 @@ export class SitesService {
             listings: {
               where: {
                 officeId,
-                isHidden: false,
                 // 호실 그리드의 "매물 있음" 은 열린 의뢰만 — 목록과 동일 기준
                 intake: NON_CLOSED_INTAKE_WHERE,
               },

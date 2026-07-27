@@ -28,12 +28,15 @@ export class ListingIntakesController {
   findAll(
     @Query('lifecycleStatus') lifecycleStatus: string,
     @Query('confirmationState') confirmationState: string,
+    @Query('availability') availability: string,
+    @Query('availabilities') availabilities: string,
     @Query('nextConfirmFrom') nextConfirmFrom: string,
     @Query('nextConfirmTo') nextConfirmTo: string,
     @Query('includeClosed') includeClosed: string,
     @Query('propertyId') propertyId: string,
     @Query('transactionType') transactionType: string,
     @Query('siteType') siteType: string,
+    @Query('siteTypes') siteTypes: string,
     @Query('priceMin') priceMin: string,
     @Query('priceMax') priceMax: string,
     @Query('depositMin') depositMin: string,
@@ -48,6 +51,7 @@ export class ListingIntakesController {
     @Query('districtCode') districtCode: string,
     @Query('wardCode') wardCode: string,
     @Query('siteId') siteId: string,
+    @Query('siteIds') siteIds: string,
     @Query('search') search: string,
     @Query('dong') dong: string,
     @Query('unit') unit: string,
@@ -62,12 +66,15 @@ export class ListingIntakesController {
     return this.listingIntakes.findAll(user.officeId, {
       lifecycleStatus: lifecycleStatus || undefined,
       confirmationState: confirmationState || undefined,
+      availability: availability || undefined,
+      availabilities: parseCsvQuery(availabilities),
       nextConfirmFrom: nextConfirmFrom || undefined,
       nextConfirmTo: nextConfirmTo || undefined,
       includeClosed: includeClosed === 'true',
       propertyId: propertyId || undefined,
       transactionType: transactionType || undefined,
       siteType: siteType || undefined,
+      siteTypes: parseCsvQuery(siteTypes),
       priceMin: priceMin ? Number(priceMin) : undefined,
       priceMax: priceMax ? Number(priceMax) : undefined,
       depositMin: depositMin ? Number(depositMin) : undefined,
@@ -82,6 +89,7 @@ export class ListingIntakesController {
       districtCode: districtCode || undefined,
       wardCode: wardCode || undefined,
       siteId: siteId || undefined,
+      siteIds: parseCsvQuery(siteIds),
       search: search || undefined,
       dong: dong || undefined,
       unit: unit || undefined,
@@ -228,12 +236,15 @@ function parseListingIntakeQuery(query: Record<string, string>) {
   return {
     lifecycleStatus: query.lifecycleStatus || undefined,
     confirmationState: query.confirmationState || undefined,
+    availability: query.availability || undefined,
+    availabilities: parseCsvQuery(query.availabilities),
     nextConfirmFrom: query.nextConfirmFrom || undefined,
     nextConfirmTo: query.nextConfirmTo || undefined,
     includeClosed: query.includeClosed === 'true',
     propertyId: query.propertyId || undefined,
     transactionType: query.transactionType || undefined,
     siteType: query.siteType || undefined,
+    siteTypes: parseCsvQuery(query.siteTypes),
     priceMin: query.priceMin ? Number(query.priceMin) : undefined,
     priceMax: query.priceMax ? Number(query.priceMax) : undefined,
     depositMin: query.depositMin ? Number(query.depositMin) : undefined,
@@ -248,6 +259,7 @@ function parseListingIntakeQuery(query: Record<string, string>) {
     districtCode: query.districtCode || undefined,
     wardCode: query.wardCode || undefined,
     siteId: query.siteId || undefined,
+    siteIds: parseCsvQuery(query.siteIds),
     search: query.search || undefined,
     dong: query.dong || undefined,
     unit: query.unit || undefined,
@@ -256,4 +268,11 @@ function parseListingIntakeQuery(query: Record<string, string>) {
     sortBy: (query.sortBy as 'receivedAt' | 'updatedAt' | 'createdAt') || undefined,
     sortOrder: (query.sortOrder as 'asc' | 'desc') || undefined,
   };
+}
+
+function parseCsvQuery(value: string | undefined) {
+  if (!value) return undefined;
+
+  const values = [...new Set(value.split(',').map((item) => item.trim()).filter(Boolean))];
+  return values.length > 0 ? values : undefined;
 }

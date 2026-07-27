@@ -180,13 +180,13 @@ export function serializeSharedProperty(
   const typeLabel = SITE_TYPE_LABELS[site.type] ?? '부동산';
   const regionLabel = districtName ? `${districtName} ${typeLabel}` : typeLabel;
 
-  // 가용 상태 우선순위: 완료 Deal > 진행 Deal > 의뢰 종결 > 보류 > 가용
+  // 가용 상태 우선순위: 종결 Deal > 진행 Deal > 의뢰 종료 > 보류 > 가용
   const occupyingDeals = listing.deals ?? [];
   const doneStages: readonly string[] = DONE_DEAL_STAGES;
   const availability =
     occupyingDeals.length > 0
       ? occupyingDeals.some((deal) => doneStages.includes(deal.stage))
-        ? ListingAvailability.COMPLETED
+        ? ListingAvailability.CLOSED
         : ListingAvailability.IN_CONTRACT
       : listing.intake?.lifecycleStatus === IntakeLifecycleStatus.CLOSED
         ? ListingAvailability.CLOSED

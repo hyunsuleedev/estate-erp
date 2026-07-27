@@ -31,9 +31,8 @@ export interface PropertyListing {
   isPaused: boolean;
   /** 의뢰 컨텍스트 — 확인 상태/공동중개의 단일 출처 */
   intake?: PropertyListingIntake | null;
-  /** 이 거래 옵션을 점유한 활성 Deal — 있으면 "거래중/완료" */
+  /** 이 거래 옵션의 비취소 Deal — 있으면 "거래중/종료" */
   deals?: Array<{ id: string; stage: string; stageChangedAt: string | null }>;
-  isHidden: boolean;
   memo: string | null;
   createdAt: string;
   updatedAt: string;

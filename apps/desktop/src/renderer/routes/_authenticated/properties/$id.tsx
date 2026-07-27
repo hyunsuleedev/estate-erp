@@ -8,8 +8,6 @@ import {
   CircleDollarSign,
   Download,
   Edit3,
-  Eye,
-  EyeOff,
   FileArchive,
   FileText,
   Handshake,
@@ -178,18 +176,6 @@ function PropertyDetailPage() {
       (a, b) => new Date(b.history.createdAt).getTime() - new Date(a.history.createdAt).getTime(),
     );
   }, [listings]);
-
-  const toggleHiddenMutation = useMutation({
-    mutationFn: ({ listingId, isHidden }: { listingId: string; isHidden: boolean }) =>
-      api.listings.setHidden(listingId, isHidden),
-    onSuccess: (_data, vars) => {
-      toast.success(vars.isHidden ? '매물을 목록에서 숨겼습니다.' : '매물 숨김을 해제했습니다.');
-      queryClient.invalidateQueries({ queryKey: ['listings'] });
-      queryClient.invalidateQueries({ queryKey: ['properties', id] });
-    },
-    onError: (err) =>
-      toast.error(err instanceof Error && err.message ? err.message : '숨김 설정에 실패했습니다.'),
-  });
 
   const deleteListingMutation = useMutation({
     mutationFn: (listingId: string) => api.listings.remove(listingId),
@@ -595,13 +581,6 @@ function PropertyDetailPage() {
                     isCommercial={isCommercial}
                     onEdit={() => openListingDialog(listing)}
                     onDelete={() => setDeleteTarget(listing)}
-                    onToggleHidden={() =>
-                      toggleHiddenMutation.mutate({
-                        listingId: listing.id,
-                        isHidden: !listing.isHidden,
-                      })
-                    }
-                    toggleHiddenPending={toggleHiddenMutation.isPending}
                   />
                 ))}
               </div>
@@ -926,41 +905,21 @@ function ListingRow({
   isCommercial,
   onEdit,
   onDelete,
-  onToggleHidden,
-  toggleHiddenPending,
 }: {
   listing: Listing;
   isCommercial: boolean;
   onEdit: () => void;
   onDelete: () => void;
-  onToggleHidden: () => void;
-  toggleHiddenPending: boolean;
 }) {
   return (
-    <div className={cn('px-5 py-4', listing.isHidden && 'bg-muted/30')}>
+    <div className="px-5 py-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
           <StatusBadge kind="transactionType" status={listing.transactionType} />
           <p className="font-medium tabular-nums text-slate-950">{listingPriceLabel(listing)}</p>
           <StatusBadge kind="checkStatus" status={listing.checkStatus} size="sm" />
-          {listing.isHidden && (
-            <Badge variant="outline" className="text-[10px]">
-              숨김
-            </Badge>
-          )}
         </div>
         <div className="flex items-center gap-1">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 gap-1 px-2 text-xs"
-            disabled={toggleHiddenPending}
-            onClick={onToggleHidden}
-            title={listing.isHidden ? '목록에 다시 표시' : '목록에서 숨김'}
-          >
-            {listing.isHidden ? <Eye className="size-3.5" /> : <EyeOff className="size-3.5" />}
-            {listing.isHidden ? '표시' : '숨김'}
-          </Button>
           <Button variant="ghost" size="sm" className="h-7 gap-1 px-2 text-xs" onClick={onEdit}>
             <Edit3 className="size-3.5" />
             수정

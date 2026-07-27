@@ -55,6 +55,7 @@ import {
 } from './-site-helpers';
 import { UnitConsultDialog, UnitEditDialog } from './-unit-dialogs';
 import { UnitTasksSection } from './-unit-tasks-section';
+import { getListingAvailability } from "@/lib/listing-status";
 
 const DOC_STATUS_META: Record<string, { label: string; className: string }> = {
   pending: { label: '발급중', className: 'bg-warning-soft text-warning' },
@@ -244,13 +245,13 @@ function UnitDetailBody({
         propertyId: primaryProperty?.id,
         siteId: site.id,
         type: 'registry',
-        title: '등기부등본',
+        title: '등기사항증명서',
         subtitle: unitLabel,
-        cost: REGISTRY_COST,
+        requestMode: 'view',
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['public-documents'] });
-      toast.success('등기부등본 발급을 요청했습니다');
+      toast.success('등기 열람 요청을 만들었습니다. 발급 PDF는 자료실에서 연결할 수 있습니다.');
     },
     onError: (error) => {
       toast.error(error instanceof Error ? error.message : '발급 요청에 실패했습니다');
@@ -308,7 +309,7 @@ function UnitDetailBody({
             disabled={issueMutation.isPending}
           >
             <ScrollText className="mr-1.5 size-3.5" />
-            {issueMutation.isPending ? '요청 중...' : `등기부등본 발급 (${REGISTRY_COST}원)`}
+            {issueMutation.isPending ? '요청 중...' : `등기 열람 요청 (${REGISTRY_COST}원)`}
           </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -405,7 +406,7 @@ function UnitDetailBody({
                           <span className="text-sm font-medium tabular-nums">
                             {formatListingPrice(listing)}
                           </span>
-                          <StatusBadge kind="checkStatus" status={listing.checkStatus} size="sm" />
+                          <StatusBadge kind="listingAvailability" status={getListingAvailability(listing)} size="sm" />
                         </div>
                         <div className="flex items-center justify-between gap-2">
                           <span className="text-[11px] text-muted-foreground">

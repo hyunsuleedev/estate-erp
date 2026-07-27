@@ -6,18 +6,14 @@ import {
   Search,
   Plus,
   Building2,
-  CalendarClock,
   ChevronDown,
   ChevronRight,
-  MapPin,
-  LayoutList,
-  FolderTree,
-  PanelLeftIcon,
-  LayoutGrid,
+  ChevronsLeft,
+  ChevronsRight,
+  Map as MapIcon,
   MoreHorizontal,
   RotateCcw,
   Trash2,
-  Users,
   X,
 } from 'lucide-react';
 import { api } from '@/lib/api';
@@ -27,7 +23,6 @@ import { DataTable } from '@/components/data-table';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
@@ -109,6 +104,7 @@ function SitesPage() {
   // ── Refs (키보드 단축키) ──────────────────────────────────────
   const unitSearchRef = useRef<HTMLInputElement>(null);
   const buildingSearchRef = useRef<HTMLInputElement>(null);
+  const didAutoSelectOfficeSite = useRef(false);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -138,6 +134,21 @@ function SitesPage() {
     queryKey: ['office-sites'],
     queryFn: () => api.officeSites.findAll(),
   });
+
+  useEffect(() => {
+    const firstOfficeSite = officeSites[0];
+    if (
+      didAutoSelectOfficeSite.current ||
+      isLoadingList ||
+      isListError ||
+      !firstOfficeSite
+    ) {
+      return;
+    }
+
+    didAutoSelectOfficeSite.current = true;
+    setSelectedOfficeSite((current) => current ?? firstOfficeSite);
+  }, [isListError, isLoadingList, officeSites]);
 
   const selectedSiteId = selectedOfficeSite?.siteId;
 
@@ -178,8 +189,13 @@ function SitesPage() {
     onSuccess: (_data, removedId) => {
       queryClient.invalidateQueries({ queryKey: ['office-sites'] });
       if (selectedOfficeSite?.id === removedId) {
-        setSelectedOfficeSite(null);
+        setSelectedOfficeSite(officeSites.find((site) => site.id !== removedId) ?? null);
         setSelectedUnitId(null);
+        setSelectedDongIds([]);
+        setSelectedUnitTypeIds([]);
+        setQuery('');
+        setUnitSort([]);
+        setOccupancyFilter([]);
       }
       setRemoveTarget(null);
       toast.success('관리단지에서 제거했습니다');
@@ -543,7 +559,9 @@ function SitesPage() {
           size: 80,
           enableSorting: true,
           cell: ({ row }) => (
-            <span className="text-[13px]">{getDongName(row.original.dongId) || '-'}</span>
+            <span className="whitespace-nowrap text-[13px]">
+              {getDongName(row.original.dongId) || '-'}
+            </span>
           ),
         } satisfies ColumnDef<Unit>]
       : []),
@@ -553,31 +571,41 @@ function SitesPage() {
       size: 90,
       enableSorting: true,
       cell: ({ row }) => (
-        <span className="text-[13px] font-medium tabular-nums">{row.original.name}</span>
+        <span className="whitespace-nowrap text-[13px] font-medium tabular-nums">
+          {row.original.name}
+        </span>
       ),
     },
     {
       id: 'supplyArea',
       header: '공급',
-      size: 120,
+      size: 150,
       enableSorting: true,
       cell: ({ row }) => {
         const unit = row.original;
         const m2 = unit.supplyAreaM2 ?? unit.siteUnitType?.supplyAreaM2;
         if (!m2) return <span className="text-[13px] text-muted-foreground">-</span>;
-        return <span className="text-[13px] tabular-nums">{formatArea(m2)}</span>;
+        return (
+          <span className="whitespace-nowrap text-[13px] tabular-nums">
+            {formatArea(m2)}
+          </span>
+        );
       },
     },
     {
       id: 'exclusiveArea',
       header: '전용',
-      size: 120,
+      size: 150,
       enableSorting: true,
       cell: ({ row }) => {
         const unit = row.original;
         const m2 = unit.exclusiveAreaM2 ?? unit.siteUnitType?.exclusiveAreaM2;
         if (!m2) return <span className="text-[13px] text-muted-foreground">-</span>;
-        return <span className="text-[13px] tabular-nums">{formatArea(m2)}</span>;
+        return (
+          <span className="whitespace-nowrap text-[13px] tabular-nums">
+            {formatArea(m2)}
+          </span>
+        );
       },
     },
     {
@@ -588,7 +616,7 @@ function SitesPage() {
       cell: ({ row }) => {
         const typeName = row.original.siteUnitType?.name;
         return typeName
-          ? <span className="text-[13px]">{typeName}</span>
+          ? <span className="whitespace-nowrap text-[13px]">{typeName}</span>
           : <span className="text-[13px] text-muted-foreground">-</span>;
       },
     },
@@ -694,7 +722,7 @@ function SitesPage() {
           .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
         if (!latest) return <span className="text-[13px] text-muted-foreground">-</span>;
         return (
-          <span className="text-[12px] tabular-nums text-muted-foreground">
+          <span className="whitespace-nowrap text-[12px] tabular-nums text-muted-foreground">
             {formatDate(latest.createdAt)}
           </span>
         );
@@ -711,38 +739,58 @@ function SitesPage() {
     const site = os.site;
     if (!site) return null;
     const isActive = selectedOfficeSite?.id === os.id;
+    const dongCount = site._count?.dongs ?? site.totalDongs;
+    const unitCount = site._count?.units ?? site.totalUnits;
+    const subline = [
+      extractRegionFromSite(site),
+      dongCount ? `${dongCount}개동` : null,
+      unitCount ? `${unitCount}호` : null,
+    ]
+      .filter(Boolean)
+      .join(' · ');
     return (
       <div
         key={os.id}
         className={cn(
-          'group flex items-center gap-1.5 px-3 py-2 rounded-md cursor-pointer text-sm transition-colors',
-          'hover:bg-accent',
-          isActive && 'bg-accent font-medium',
+          'group mb-1 flex items-start gap-1 rounded-lg px-2 py-1.5 transition-colors hover:bg-accent/60',
+          isActive && 'bg-accent shadow-sm ring-1 ring-border/60 hover:bg-accent',
         )}
-        onClick={() => handleSelectSite(os)}
       >
-        <div className="flex-1 min-w-0">
-          <div className="truncate text-[13px]">{site.name}</div>
-          <div className="text-[11px] text-muted-foreground truncate">
-            {site.roadAddress || site.jibunAddress || '-'}
+        <button
+          type="button"
+          className="min-w-0 flex-1 rounded-md px-1 py-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring/70"
+          aria-pressed={isActive}
+          onClick={() => handleSelectSite(os)}
+        >
+          <div className="flex min-w-0 items-center gap-1.5">
+            <span className="min-w-0 flex-1 truncate text-[13px] font-medium">
+              {site.name}
+            </span>
+            <span
+              className={cn(
+                'shrink-0 rounded-full bg-secondary px-[7px] py-px text-[10px] font-medium text-muted-foreground',
+                isActive && 'bg-background/80 text-foreground/70',
+              )}
+            >
+              {siteTypeShort[site.type] ?? site.type}
+            </span>
           </div>
-        </div>
-        <Badge variant="outline" className="text-[10px] px-1.5 py-0 shrink-0 font-normal">
-          {siteTypeShort[site.type] ?? site.type}
-        </Badge>
+          <div className="mt-0.5 truncate text-[11px] tabular-nums text-muted-foreground/90">
+            {subline || site.roadAddress || site.jibunAddress || '-'}
+          </div>
+        </button>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
               variant="ghost"
               size="icon"
-              className="size-6 shrink-0 opacity-0 transition-opacity group-hover:opacity-100 data-[state=open]:opacity-100"
-              onClick={(e) => e.stopPropagation()}
-              aria-label="단지 메뉴"
+              className="mt-0.5 size-6 shrink-0 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100"
+              aria-label={`${site.name} 단지 메뉴`}
             >
               <MoreHorizontal className="size-3.5" />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+          <DropdownMenuContent align="end">
             <DropdownMenuItem
               className="text-destructive"
               onClick={() => setRemoveTarget(os)}
@@ -756,49 +804,78 @@ function SitesPage() {
     );
   };
 
-  const siteNavToggleLabel = isSiteNavOpen ? '건물명 리스트 접기' : '건물명 리스트 펼치기';
   const canManageUnits = !!siteDetail && siteDetail.type !== 'land';
+
+  // 중앙 헤더 메타 라인 (주소 · 유형 · 동/호 수)
+  const realDongCount = dongs.filter((dong) => !dong.isPlaceholder).length;
+  const siteMetaLine = siteDetail
+    ? [
+        siteDetail.roadAddress || siteDetail.jibunAddress,
+        realDongCount > 0 ? `${realDongCount}개동` : null,
+        `${allUnits.length}호`,
+      ]
+        .filter(Boolean)
+        .join(' · ')
+    : '';
 
   // ── JSX ───────────────────────────────────────────────────────
 
   return (
-    <div className="relative flex flex-1 min-h-0 -m-4">
+    <div className="relative flex flex-1 min-h-0 -mx-4 -mb-4">
       {/* ─── Sidebar (단지 Nav) ──────────────────────────────── */}
-      <div
-        className={cn(
-          'relative shrink-0 overflow-visible transition-[width] duration-200 ease-linear',
-          isSiteNavOpen ? 'w-64' : 'w-0',
-        )}
-      >
-        <aside
-          className={cn(
-            'absolute inset-y-0 left-0 z-10 flex w-64 flex-col bg-background transition-[transform,opacity] duration-200 ease-linear',
-            isSiteNavOpen ? 'translate-x-0 opacity-100' : '-translate-x-full opacity-0 pointer-events-none',
-          )}
-        >
-          {/* Search + group */}
-          <div className="border-b border-border/40 p-2 space-y-2">
-            <div className="relative">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
-              <Input
-                ref={buildingSearchRef}
-                placeholder="건물명, 주소 검색..."
-                value={buildingSearch}
-                onChange={(e) => setBuildingSearch(e.target.value)}
-                className="pl-8 h-8 text-sm"
-              />
-            </div>
-            <div className="flex gap-1">
+      {isSiteNavOpen ? (
+        <aside className="flex w-[260px] shrink-0 flex-col border-r bg-background">
+          {/* 헤더: 타이틀 + 단지 추가 + 접기 */}
+          <div className="flex items-center gap-1.5 px-3 pb-2 pt-[11px]">
+            <span className="text-[13px] font-semibold">관리단지</span>
+            <span className="text-xs text-muted-foreground/80 tabular-nums">
+              {officeSites.length}
+            </span>
+            <div className="flex-1" />
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-[26px] gap-1 rounded-[7px] px-2 text-[11.5px] font-medium text-foreground/80"
+              onClick={() => setShowAddSiteDialog(true)}
+              title="단지 추가"
+            >
+              <Plus className="size-3" />
+              단지 추가
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-[26px] rounded-[7px] text-muted-foreground/80 hover:text-foreground"
+              onClick={() => setIsSiteNavOpen(false)}
+              aria-label="목록 접기"
+              title="목록 접기"
+            >
+              <ChevronsLeft className="size-3.5" />
+            </Button>
+          </div>
+
+          {/* 그룹 탭 (전체/지역/유형) */}
+          <div className="px-2.5 pb-1.5">
+            <div
+              className="flex rounded-lg bg-secondary p-0.5"
+              role="group"
+              aria-label="단지 묶음 방식"
+            >
               {([
-                { key: 'none', label: '전체', Icon: LayoutList },
-                { key: 'region', label: '지역', Icon: MapPin },
-                { key: 'type', label: '유형', Icon: FolderTree },
-              ] as const).map(({ key, label, Icon }) => (
-                <Button
+                { key: 'none', label: '전체' },
+                { key: 'region', label: '지역' },
+                { key: 'type', label: '유형' },
+              ] as const).map(({ key, label }) => (
+                <button
                   key={key}
-                  variant={groupBy === key ? 'secondary' : 'ghost'}
-                  size="sm"
-                  className="flex-1 h-7 text-xs"
+                  type="button"
+                  aria-pressed={groupBy === key}
+                  className={cn(
+                    'flex-1 rounded-md py-1 text-[11.5px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/70',
+                    groupBy === key
+                      ? 'bg-background font-semibold shadow-sm'
+                      : 'font-medium text-muted-foreground hover:text-foreground',
+                  )}
                   onClick={() => {
                     setGroupBy(key);
                     if (key !== 'none' && groupedSites) {
@@ -806,10 +883,24 @@ function SitesPage() {
                     }
                   }}
                 >
-                  <Icon className="size-3 mr-1" />
                   {label}
-                </Button>
+                </button>
               ))}
+            </div>
+          </div>
+
+          {/* 검색 */}
+          <div className="px-2.5 pb-2">
+            <div className="flex h-[30px] items-center gap-1.5 rounded-lg border border-border/80 bg-muted px-2">
+              <Search className="size-3.5 shrink-0 text-muted-foreground/70" />
+              <input
+                ref={buildingSearchRef}
+                placeholder="단지명 · 주소 검색"
+                value={buildingSearch}
+                onChange={(e) => setBuildingSearch(e.target.value)}
+                aria-label="관리단지 검색"
+                className="w-full min-w-0 bg-transparent text-xs outline-none placeholder:text-muted-foreground/60"
+              />
             </div>
           </div>
 
@@ -836,7 +927,7 @@ function SitesPage() {
                 </Button>
               </div>
             ) : groupBy === 'none' ? (
-              <div className="p-1.5 space-y-0.5">
+              <div className="px-2 pb-2.5">
                 {filteredSites.length === 0 ? (
                   buildingSearch ? (
                     <div className="py-8 text-xs text-muted-foreground text-center">
@@ -861,93 +952,87 @@ function SitesPage() {
                 )}
               </div>
             ) : (
-              <div className="p-1.5 space-y-0.5">
+              <div className="px-2 pb-2.5">
                 {groupedSites?.map(([groupKey, items]) => (
                   <div key={groupKey}>
                     <div
-                      className="flex items-center gap-1.5 px-2 py-1.5 rounded-md hover:bg-accent cursor-pointer text-xs font-medium text-muted-foreground"
+                      className="flex cursor-pointer items-center gap-[5px] rounded-md px-1.5 pb-1 pt-2 text-[11px] font-semibold text-muted-foreground/90 hover:text-foreground"
                       onClick={() => toggleGroup(groupKey)}
                     >
                       {expandedGroups.has(groupKey) ? (
-                        <ChevronDown className="size-3 text-muted-foreground" />
+                        <ChevronDown className="size-3" />
                       ) : (
-                        <ChevronRight className="size-3 text-muted-foreground" />
+                        <ChevronRight className="size-3" />
                       )}
-                      <span className="flex-1 uppercase tracking-wide">{groupKey}</span>
-                      <Badge variant="secondary" className="text-[10px] px-1.5 py-0 font-normal">
+                      <span>{groupKey}</span>
+                      <span className="font-medium text-muted-foreground/50 tabular-nums">
                         {items.length}
-                      </Badge>
+                      </span>
                     </div>
-                    {expandedGroups.has(groupKey) && (
-                      <div className="ml-2 space-y-0.5">{items.map(renderSiteItem)}</div>
-                    )}
+                    {expandedGroups.has(groupKey) && <div>{items.map(renderSiteItem)}</div>}
                   </div>
                 ))}
               </div>
             )}
           </ScrollArea>
-
-          {/* Add site button */}
-          <div className="p-2 border-t border-border/40">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="w-full h-8 text-xs border border-border/40"
-              onClick={() => setShowAddSiteDialog(true)}
-            >
-              <Plus className="size-3.5 mr-1" />
-              단지 추가
-            </Button>
-          </div>
         </aside>
-      </div>
-      {isSiteNavOpen && (
-        <Separator orientation="vertical" className="bg-border/80" />
+      ) : (
+        /* ─── 접힌 사이드바 레일 ─────────────────────────────── */
+        <div className="flex w-[38px] shrink-0 flex-col items-center gap-2 border-r bg-background pt-2.5">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-[26px] rounded-[7px] text-muted-foreground/80 hover:text-foreground"
+            onClick={() => setIsSiteNavOpen(true)}
+            aria-label="목록 펼치기"
+            title="목록 펼치기"
+          >
+            <ChevronsRight className="size-3.5" />
+          </Button>
+          <MapIcon className="size-[15px] text-muted-foreground/40" />
+        </div>
       )}
 
       {/* ─── Main area ───────────────────────────────────────── */}
       {!selectedOfficeSite ? (
         /* ── No site selected ──────────────────────────────────── */
-        <div className="flex-1 flex flex-col min-w-0 p-4">
-          <div className="flex items-center gap-2 pb-3">
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="size-8 shrink-0"
-              onClick={() => setIsSiteNavOpen((prev) => !prev)}
-              aria-label={siteNavToggleLabel}
-            >
-              <PanelLeftIcon className="size-4" />
-            </Button>
-            <Separator orientation="vertical" className="h-4" />
-            <span className="text-xs text-muted-foreground">관리 단지 패널</span>
-          </div>
-          <div className="flex flex-1 items-center justify-center">
-            <EmptyState
-              icon={Building2}
-              title="단지를 선택하세요"
-              description="왼쪽에서 관리 단지를 선택하면 호수 목록이 표시됩니다"
-            />
-          </div>
+        <div className="flex flex-1 items-center justify-center min-w-0 p-4">
+          <EmptyState
+            icon={Building2}
+            title={officeSites.length > 0 ? '단지를 선택하세요' : '관리 단지를 추가하세요'}
+            description={
+              officeSites.length > 0
+                ? '왼쪽에서 관리 단지를 선택하면 호수 목록이 표시됩니다'
+                : '자주 다루는 단지를 추가하면 호수와 연락처를 한곳에서 관리할 수 있습니다'
+            }
+            action={
+              officeSites.length > 0 ? (
+                <Button variant="outline" size="sm" onClick={() => handleSelectSite(officeSites[0])}>
+                  첫 단지 열기
+                </Button>
+              ) : (
+                <Button size="sm" onClick={() => setShowAddSiteDialog(true)}>
+                  <Plus className="size-3.5" />
+                  단지 추가
+                </Button>
+              )
+            }
+          />
         </div>
       ) : isLoadingDetail ? (
         /* ── Detail loading ────────────────────────────────────── */
-        <div className="flex-1 flex flex-col min-w-0 min-h-0 p-4 overflow-hidden">
-          <div className="rounded-xl border border-border/60 bg-background flex-1 flex flex-col min-h-0">
-            <div className="border-b border-border/40 px-3 py-2">
-              <div className="flex items-center gap-2">
-                <Skeleton className="size-8 rounded-md" />
-                <Skeleton className="h-7 w-24 rounded-md" />
-                <Skeleton className="h-7 w-24 rounded-md" />
-                <Skeleton className="ml-auto h-7 w-48 rounded-md" />
-              </div>
+        <div className="flex flex-1 flex-col min-w-0 min-h-0 overflow-hidden">
+          <div className="flex items-center gap-2.5 border-b border-border/60 px-5 py-3">
+            <div className="space-y-1.5">
+              <Skeleton className="h-5 w-40 rounded-md" />
+              <Skeleton className="h-3 w-64 rounded-md" />
             </div>
-            <div className="space-y-2 p-4">
-              {Array.from({ length: 8 }).map((_, i) => (
-                <Skeleton key={i} className="h-9 w-full rounded-md" />
-              ))}
-            </div>
+            <Skeleton className="ml-auto h-8 w-72 rounded-lg" />
+          </div>
+          <div className="space-y-2 p-5">
+            {Array.from({ length: 8 }).map((_, i) => (
+              <Skeleton key={i} className="h-9 w-full rounded-md" />
+            ))}
           </div>
         </div>
       ) : isDetailError ? (
@@ -966,141 +1051,149 @@ function SitesPage() {
           />
         </div>
       ) : siteDetail ? (
-        <div className="flex-1 flex flex-col min-w-0 min-h-0 p-4 overflow-hidden">
-          {/* ViewBar-style panel + Grid */}
-          <div className="rounded-xl border border-border/60 bg-background flex-1 flex flex-col min-h-0">
-            {/* Filter bar (ViewBar pattern) */}
-            <div className="border-b border-border/40 px-3 py-2">
-              <div className="flex flex-wrap items-center gap-2">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="size-8 shrink-0"
-                  onClick={() => setIsSiteNavOpen((prev) => !prev)}
-                  aria-label={siteNavToggleLabel}
+        <div className="flex flex-1 flex-col min-w-0 min-h-0 overflow-hidden">
+          {/* 단지 헤더: 단지명 + 메타 + 뷰 전환 탭 */}
+          <div className="flex flex-wrap items-center gap-2.5 border-b border-border/60 px-5 py-3">
+            <div className="min-w-0">
+              <div className="flex min-w-0 items-center gap-2">
+                <h1
+                  className="min-w-0 line-clamp-1 text-balance text-base font-semibold"
+                  title={siteDetail.name}
                 >
-                  <PanelLeftIcon className="size-4" />
-                </Button>
-                <Separator orientation="vertical" className="h-4" />
-
-                {/* 동 / 타입 필터 */}
-                {dongOptions.length > 0 && (
-                  <MultiFilterDropdown
-                    label="동"
-                    options={dongOptions}
-                    values={selectedDongIds}
-                    onChange={setSelectedDongIds}
-                  />
-                )}
-                {unitTypeOptions.length > 0 && (
-                  <MultiFilterDropdown
-                    label="타입"
-                    options={unitTypeOptions}
-                    values={selectedUnitTypeIds}
-                    onChange={setSelectedUnitTypeIds}
-                  />
-                )}
-
-                <Separator orientation="vertical" className="mx-1 h-4" />
-
-                {/* 통합 검색창 */}
-                <div className="relative min-w-0 flex-1">
-                  <Search className="absolute left-2 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
-                  <Input
-                    ref={unitSearchRef}
-                    placeholder="호수 · 이름 · 전화 · 상담내용 검색 (/)"
-                    value={query}
-                    onChange={(e) => setQuery(e.target.value)}
-                    className="h-8 border-0 bg-transparent pl-7 pr-7 text-xs shadow-none focus-visible:ring-0"
-                  />
-                  {query && (
-                    <button
-                      type="button"
-                      className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                      onClick={() => setQuery('')}
-                      aria-label="검색어 지우기"
-                    >
-                      <X className="size-3" />
-                    </button>
-                  )}
-                </div>
-
-                {hasActiveUnitFilters && (
-                  <Button
-                    variant="ghost"
-                    size="xs"
-                    className="h-7 text-xs text-muted-foreground"
-                    onClick={resetUnitFilters}
-                  >
-                    <X className="size-3" />
-                    초기화
-                  </Button>
-                )}
-
-                {/* 동/호수 추가 (토지는 호실 구조 없음) */}
-                {canManageUnits && (
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="outline" size="sm" className="h-7 gap-1 px-2 text-xs">
-                        <Plus className="size-3.5" />
-                        추가
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem onClick={() => setShowAddDongDialog(true)}>
-                        동 추가
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => setShowAddUnitDialog(true)}>
-                        호수 추가
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                )}
-
-                <div className="ml-0 flex items-center rounded-md border border-border/60 bg-background p-0.5">
-                  <Button
-                    variant={unitViewMode === 'table' ? 'secondary' : 'ghost'}
-                    size="sm"
-                    className="h-7 gap-1.5 px-2 text-xs"
-                    onClick={() => setUnitViewMode('table')}
-                  >
-                    <LayoutList className="size-3.5" />
-                    테이블
-                  </Button>
-                  <Button
-                    variant={unitViewMode === 'layout' ? 'secondary' : 'ghost'}
-                    size="sm"
-                    className="h-7 gap-1.5 px-2 text-xs"
-                    onClick={() => setUnitViewMode('layout')}
-                  >
-                    <LayoutGrid className="size-3.5" />
-                    배치표
-                  </Button>
-                  <Button
-                    variant={unitViewMode === 'occupancy' ? 'secondary' : 'ghost'}
-                    size="sm"
-                    className="h-7 gap-1.5 px-2 text-xs"
-                    onClick={() => setUnitViewMode('occupancy')}
-                  >
-                    <Users className="size-3.5" />
-                    점유상태
-                  </Button>
-                  <Button
-                    variant={unitViewMode === 'expiry' ? 'secondary' : 'ghost'}
-                    size="sm"
-                    className="h-7 gap-1.5 px-2 text-xs"
-                    onClick={() => setUnitViewMode('expiry')}
-                  >
-                    <CalendarClock className="size-3.5" />
-                    만기/변동
-                  </Button>
-                </div>
+                  {siteDetail.name}
+                </h1>
+                <Badge
+                  variant="secondary"
+                  className="h-5 shrink-0 rounded-md px-1.5 text-[10px] font-medium"
+                >
+                  {siteTypeLabels[siteDetail.type] ?? siteDetail.type}
+                </Badge>
+              </div>
+              <div className="mt-0.5 truncate text-[11.5px] tabular-nums text-muted-foreground/90">
+                {siteMetaLine}
               </div>
             </div>
+            <div className="flex-1" />
+            <div
+              className="flex rounded-lg bg-secondary p-[3px]"
+              role="group"
+              aria-label="단지 보기 방식"
+            >
+              {([
+                { key: 'table', label: '호수 목록' },
+                { key: 'layout', label: '배치표' },
+                { key: 'occupancy', label: '점유상태' },
+                { key: 'expiry', label: '만기/변동' },
+              ] as const).map(({ key, label }) => (
+                <button
+                  key={key}
+                  type="button"
+                  aria-pressed={unitViewMode === key}
+                  className={cn(
+                    'whitespace-nowrap rounded-md px-3 py-[5px] text-[12.5px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/70',
+                    unitViewMode === key
+                      ? 'bg-background font-semibold shadow-sm'
+                      : 'font-medium text-muted-foreground hover:text-foreground',
+                  )}
+                  onClick={() => setUnitViewMode(key)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
 
-            {/* Units View */}
-            <div className="flex-1 min-h-0 overflow-hidden">
+          {/* 필터 바 */}
+          <div className="flex flex-wrap items-center gap-[7px] border-b border-border/60 px-5 py-2">
+            {/* 동 / 타입 필터 */}
+            {dongOptions.length > 0 && (
+              <MultiFilterDropdown
+                label="동"
+                options={dongOptions}
+                values={selectedDongIds}
+                onChange={setSelectedDongIds}
+              />
+            )}
+            {unitTypeOptions.length > 0 && (
+              <MultiFilterDropdown
+                label="타입"
+                options={unitTypeOptions}
+                values={selectedUnitTypeIds}
+                onChange={setSelectedUnitTypeIds}
+              />
+            )}
+            {(dongOptions.length > 0 || unitTypeOptions.length > 0) && (
+              <div className="mx-0.5 h-4 w-px bg-border" />
+            )}
+
+            {/* 통합 검색창 */}
+            <div className="flex h-7 w-full max-w-[300px] min-w-0 items-center gap-1.5 rounded-lg border border-border/80 bg-muted px-2">
+              <Search className="size-3 shrink-0 text-muted-foreground/70" />
+              <input
+                ref={unitSearchRef}
+                placeholder="호수 · 이름 · 전화 · 상담 검색 (/)"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                aria-label="호수, 이름, 전화번호, 상담 내용 검색"
+                className="w-full min-w-0 bg-transparent text-xs outline-none placeholder:text-muted-foreground/60"
+              />
+              {query && (
+                <button
+                  type="button"
+                  className="shrink-0 text-muted-foreground hover:text-foreground"
+                  onClick={() => setQuery('')}
+                  aria-label="검색어 지우기"
+                >
+                  <X className="size-3" />
+                </button>
+              )}
+            </div>
+
+            {hasActiveUnitFilters && (
+              <button
+                type="button"
+                className="flex h-7 items-center gap-1 px-1.5 text-xs font-medium text-orange hover:opacity-80"
+                onClick={resetUnitFilters}
+              >
+                <RotateCcw className="size-3" />
+                초기화
+              </button>
+            )}
+
+            <span
+              className="whitespace-nowrap text-[11px] tabular-nums text-muted-foreground"
+              aria-live="polite"
+            >
+              {hasActiveUnitFilters
+                ? `${filteredUnits.length.toLocaleString()} / ${allUnits.length.toLocaleString()}호`
+                : `${allUnits.length.toLocaleString()}호`}
+            </span>
+
+            <div className="flex-1" />
+
+            {/* 동/호수 추가 (토지는 호실 구조 없음) */}
+            {canManageUnits && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="sm" className="h-7 gap-1 rounded-[7px] px-2 text-xs">
+                    <Plus className="size-3.5" />
+                    동·호수 추가
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={() => setShowAddDongDialog(true)}>
+                    동 추가
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setShowAddUnitDialog(true)}>
+                    호수 추가
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+          </div>
+
+          {/* Units View */}
+          <div className="flex-1 min-h-0 overflow-hidden">
               {unitViewMode === 'table' ? (
                 <DataTable
                   columns={unitColumns}
@@ -1173,7 +1266,6 @@ function SitesPage() {
                   onUnitOpen={handleSelectUnit}
                 />
               )}
-            </div>
           </div>
         </div>
       ) : null}

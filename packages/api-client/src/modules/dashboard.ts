@@ -16,7 +16,7 @@ export interface DashboardThisMonth {
 }
 
 export interface DashboardCounts {
-  /** unverified + verified, isHidden=false */
+  /** 열린 의뢰 중 실제 가용 매물 */
   activeListings: number;
   unverifiedListings: number;
   /** stage != closed */

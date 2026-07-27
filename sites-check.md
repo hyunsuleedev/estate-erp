@@ -1,0 +1,32 @@
+- generic [ref=f5e2]:
+  - main [ref=f5e46]:
+    - generic [ref=f5e47]:
+      - generic [ref=f5e48]:
+        - button "Toggle Sidebar" [ref=f5e49]
+        - heading "관리단지" [level=1] [ref=f5e53]
+      - generic [ref=f5e54]:
+        - button "전체 검색" [ref=f5e55]
+        - button "셸 테마 전환" [ref=f5e57]
+        - button "알림 (미읽음 2건)" [ref=f5e58]:
+          - generic [ref=f5e59]: "2"
+        - button [ref=f5e60]
+    - generic [ref=f5e62]:
+      - complementary [ref=f5e63]:
+        - generic [ref=f5e64]:
+          - generic [ref=f5e65]: 관리단지
+          - generic [ref=f5e66]: "0"
+          - button "추가" [ref=f5e67]
+          - button "목록 접기" [ref=f5e68]
+        - generic [ref=f5e70]:
+          - button "전체" [ref=f5e71]
+          - button "지역" [ref=f5e72]
+          - button "유형" [ref=f5e73]
+        - textbox "단지명 · 주소 검색" [ref=f5e79]
+        - generic [ref=f5e84]:
+          - paragraph [ref=f5e89]: 관리 단지가 없습니다
+          - paragraph [ref=f5e90]: 자주 다루는 단지를 추가해보세요
+          - button "단지 추가" [ref=f5e92]
+      - generic [ref=f5e94]:
+        - paragraph [ref=f5e99]: 단지를 선택하세요
+        - paragraph [ref=f5e100]: 왼쪽에서 관리 단지를 선택하면 호수 목록이 표시됩니다
+  - region "Notifications alt+T"

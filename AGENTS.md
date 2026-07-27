@@ -129,9 +129,9 @@ pnpm prisma:generate   # Generate Prisma client
 
 ## Key Pipelines
 
-- IntakeLifecycleStatus: open ↔ hold, open/hold → closed, closed → open
+- IntakeLifecycleStatus: open ↔ hold, open/hold → closed, closed → open/hold
 - IntakeConfirmationState (파생): unverified / verified / overdue / no_answer
-- ListingAvailability (파생): available / paused / in_contract / completed / closed
+- ListingAvailability (파생): available / paused / in_contract / closed
 - MatchStage: suggested → buyerContacted → viewing → ownerContacted → negotiating → dealCreated → closed
 - DealStage: selection → deposit → contract → completed → closed
 - TaskSource: manual / system / ai
@@ -139,7 +139,6 @@ pnpm prisma:generate   # Generate Prisma client
 ## Important Notes
 
 - Node.js >= 23.0.0
-- Property `isHidden` controls visibility in listing views
 - 복잡한 쿼리 (거리 계산, 통계)는 Prisma `$queryRaw` 사용
 - Enum 정의는 `packages/shared/src/enums.ts` 참조
 

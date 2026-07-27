@@ -135,7 +135,6 @@ export class ListingsController {
       moveInAvailableFrom?: string | null;
       moveInAvailableTo?: string | null;
       isPaused?: boolean;
-      isHidden?: boolean;
       memo?: string | null;
       expectedUpdatedAt?: string | null;
     },

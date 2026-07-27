@@ -55,5 +55,3 @@ unverified   미확인 (기본값)
 → hold       보류
 → done       완료/거래종료
 ```
-
-- `isHidden = true`이면 목록에서 미표시 (삭제 대신 숨김)

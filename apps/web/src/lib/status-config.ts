@@ -48,15 +48,14 @@ export const STATUS_CONFIG: Record<StatusKind, Record<string, StatusMeta>> = {
   intakeLifecycle: {
     open: { label: '진행중', tone: 'success' },
     hold: { label: '보류', tone: 'warning' },
-    closed: { label: '종결', tone: 'neutral' },
+    closed: { label: '종료', tone: 'neutral' },
   },
   /** Listing의 Deal·의뢰·옵션 중지를 합성한 가용 상태 */
   listingAvailability: {
     available: { label: '가용', tone: 'success' },
-    paused: { label: '일시중지', tone: 'warning' },
+    paused: { label: '보류', tone: 'warning' },
     in_contract: { label: '거래중', tone: 'info' },
-    completed: { label: '거래완료', tone: 'violet' },
-    closed: { label: '종결', tone: 'neutral' },
+    closed: { label: '종료', tone: 'neutral' },
   },
   /** Match.stage — 매칭 파이프라인 */
   matchStage: {
@@ -148,13 +147,7 @@ export const STATUS_CONFIG: Record<StatusKind, Record<string, StatusMeta>> = {
 export const PIPELINE_STEPS: Partial<Record<StatusKind, string[]>> = {
   confirmationState: ['unverified', 'no_answer', 'overdue', 'verified'],
   intakeLifecycle: ['open', 'hold', 'closed'],
-  listingAvailability: [
-    'available',
-    'paused',
-    'in_contract',
-    'completed',
-    'closed',
-  ],
+  listingAvailability: ['available', 'paused', 'in_contract', 'closed'],
   matchStage: [
     'suggested',
     'buyerContacted',
