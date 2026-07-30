@@ -183,3 +183,44 @@ model ExternalListingSnapshotSession {
   @@index([officeId, startedAt])
   @@map("external_listing_snapshot_sessions")
 }
+
+/// 사무소별 외부 수집 대상 정의. "우리 사무소가 어떤 단지를 외부 플랫폼의 어떤
+/// 코드로 수집하는가"라는 운영 설정이며, 단지의 객관적 식별자가 아니다.
+///
+/// 관리단지(OfficeSite)와는 별개 축이다. 관리단지는 즐겨찾기이고 여기는 수집
+/// 대상이므로, 관리단지가 아닌 단지(경쟁 단지 조사 등)도 수집할 수 있고 관리단지라고
+/// 자동으로 수집 대상이 되지도 않는다. 관리단지 → 수집 대상은 일괄 "가져오기"로만
+/// 연결한다.
+///
+/// Site.naverComplexCode와의 관계: 그 컬럼은 공공 import가 채우는 기본값 제안일
+/// 뿐이며, 수집 경로는 이 테이블만 읽는다. 한 번 등록된 뒤 import가 Site 컬럼을
+/// 갱신해도 이 행은 건드리지 않는다 (사무소가 단독 소유).
+///
+/// transactionType은 여기 두지 않는다 — 수집 스코프의 거래유형 축은
+/// ExternalListingSnapshotSession이 이미 소유한다.
+model ExternalListingSource {
+  id       String @id @default(uuid()) @db.Uuid
+  officeId String @map("office_id") @db.Uuid
+  siteId   String @map("site_id") @db.Uuid
+
+  provider     String // naver (향후 kb 등)
+  externalCode String @map("external_code") // 네이버 complexNo ("117842")
+
+  /// 단지 타입. Site.type과 같은 어휘(apartment / officetel / villa ...)를 쓰고,
+  /// 플랫폼별 필터 코드(네이버 a=APT:PRE:ABYG:JGC 등) 변환은 수집기 쪽 책임이다.
+  type String
+
+  isEnabled       Boolean   @default(true) @map("is_enabled")
+  lastCollectedAt DateTime? @map("last_collected_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  office Office @relation(fields: [officeId], references: [id])
+  site   Site   @relation(fields: [siteId], references: [id])
+
+  @@unique([officeId, siteId, provider])
+  @@index([officeId, provider, isEnabled])
+  @@index([officeId, externalCode])
+  @@map("external_listing_sources")
+}

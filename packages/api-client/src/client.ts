@@ -37,6 +37,7 @@ import { createNetworkApi } from './modules/network.js';
 import { createDashboardApi } from './modules/dashboard.js';
 import { createActivityLogsApi } from './modules/activity-logs.js';
 import { createCtiApi } from './modules/cti.js';
+import { createAgentActionRequestsApi } from './modules/agent-action-requests.js';
 
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
@@ -55,7 +56,8 @@ async function executeRequest<T>(
 ): Promise<Response> {
   // FormData(multipart) body는 Content-Type을 직접 지정하지 않는다 —
   // fetch가 boundary가 포함된 헤더를 자동으로 설정한다.
-  const isFormData = typeof FormData !== 'undefined' && body instanceof FormData;
+  const isFormData =
+    typeof FormData !== 'undefined' && body instanceof FormData;
   const headers: Record<string, string> = {};
   if (!isFormData) {
     headers['Content-Type'] = 'application/json';
@@ -66,7 +68,11 @@ async function executeRequest<T>(
   return fetch(url, {
     method,
     headers,
-    body: isFormData ? (body as FormData) : body ? JSON.stringify(body) : undefined,
+    body: isFormData
+      ? (body as FormData)
+      : body
+        ? JSON.stringify(body)
+        : undefined,
   });
 }
 
@@ -154,8 +160,12 @@ export function createApiClient(config: ApiClientConfig) {
     dashboard: createDashboardApi(req),
     activityLogs: createActivityLogsApi(req),
     cti: createCtiApi(req),
+    agentActionRequests: createAgentActionRequestsApi(req),
   };
 }
 
 export type ApiClient = ReturnType<typeof createApiClient>;
-export type RequestFn = <T>(path: string, options?: RequestOptions) => Promise<T>;
+export type RequestFn = <T>(
+  path: string,
+  options?: RequestOptions,
+) => Promise<T>;

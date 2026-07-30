@@ -18,8 +18,10 @@ model AgentSession {
   /// 실행 어댑터. 예: "mcp", "openai", "manual".
   adapter  String @default("mcp")
 
-  /// ERP Task 연결. Task.assignedTo는 사람 책임자, agentKey는 AI delegate다.
-  taskId  String? @map("task_id") @db.Uuid
+  /// 일반 직원 업무, 독립 AI 실행요청, 광고 동기화 단계 중 하나에만 연결할 수 있다.
+  taskId                    String? @map("task_id") @db.Uuid
+  agentActionRequestId      String? @map("agent_action_request_id") @db.Uuid
+  advertisementSyncStepId   String? @map("advertisement_sync_step_id") @db.Uuid
   /// 같은 agent/adapter가 업무 세션을 재사용하기 위한 안정 키.
   taskKey String  @map("task_key")
 
@@ -42,12 +44,16 @@ model AgentSession {
   runs       AgentRun[]
   wakeups    AgentWakeupRequest[]
   activities AgentActivity[]
-  office     Office               @relation(fields: [officeId], references: [id])
-  task       Task?                @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  office                Office                     @relation(fields: [officeId], references: [id])
+  task                  Task?                      @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  agentActionRequest    AgentActionRequest?        @relation(fields: [agentActionRequestId], references: [id], onDelete: Restrict)
+  advertisementSyncStep AdvertisementSyncStep?    @relation(fields: [advertisementSyncStepId], references: [id], onDelete: Restrict)
 
   @@unique([officeId, agentKey, adapter, taskKey])
   @@index([officeId, status, updatedAt])
   @@index([officeId, taskId])
+  @@index([officeId, agentActionRequestId])
+  @@index([officeId, advertisementSyncStepId])
   @@map("agent_sessions")
 }
 
@@ -147,4 +153,223 @@ model AgentActivity {
   @@index([officeId, createdAt])
   @@index([runId, sequence])
   @@map("agent_activities")
+}
+
+// ============================================================
+// 내 광고 전체 동기화 — Run / Step
+// ============================================================
+//
+// AgentSession은 각 Skill 실행을 추적하고, 아래 두 모델은 사용자가 보는
+// 업무 흐름과 단계 의존성을 추적한다. 한 단계가 성공해야 dependsOnKeys를
+// 만족한 다음 단계의 wakeup을 생성한다.
+
+model AdvertisementSyncRun {
+  id       String @id @default(uuid()) @db.Uuid
+  officeId String @map("office_id") @db.Uuid
+
+  workflowKey  String @map("workflow_key")
+  schemaVersion Int   @default(1) @map("schema_version")
+  /// queued | running | awaiting_input | completed | failed | cancelled
+  status       String @default("queued")
+
+  requestedBy String   @map("requested_by")
+  channels    String[]
+  context     Json     @default("{}") @db.JsonB
+
+  startedAt   DateTime? @map("started_at")
+  completedAt DateTime? @map("completed_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  office Office                      @relation(fields: [officeId], references: [id], onDelete: Restrict)
+  steps  AdvertisementSyncStep[]
+
+  @@index([officeId, workflowKey, createdAt])
+  @@index([officeId, status, updatedAt])
+  @@map("advertisement_sync_runs")
+}
+
+model AdvertisementSyncStep {
+  id       String @id @default(uuid()) @db.Uuid
+  officeId String @map("office_id") @db.Uuid
+  runId    String @map("run_id") @db.Uuid
+
+  stepKey  String @map("step_key")
+  position Int
+  kind     String
+  title    String
+  /// blocked | ready | queued | running | succeeded | failed |
+  /// needs_input | skipped | cancelled
+  status   String @default("blocked")
+
+  channel      String?
+  skillKey     String? @map("skill_key")
+  skillVersion String? @map("skill_version")
+  /// 같은 Run 안에서 먼저 성공해야 하는 stepKey 목록.
+  dependsOnKeys String[] @default([]) @map("depends_on_keys")
+
+  input         Json  @default("{}") @db.JsonB
+  output        Json? @db.JsonB
+  error         String?
+  waitingReason String? @map("waiting_reason")
+
+  attemptCount     Int @default(0) @map("attempt_count")
+  progressTotal    Int @default(0) @map("progress_total")
+  progressComplete Int @default(0) @map("progress_complete")
+  progressFailed   Int @default(0) @map("progress_failed")
+
+  startedAt  DateTime? @map("started_at")
+  finishedAt DateTime? @map("finished_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+
+  office   Office        @relation(fields: [officeId], references: [id], onDelete: Restrict)
+  run      AdvertisementSyncRun @relation(fields: [runId], references: [id], onDelete: Restrict)
+  sessions AgentSession[]
+
+  @@unique([runId, stepKey])
+  @@unique([runId, position])
+  @@index([officeId, status, updatedAt])
+  @@index([officeId, skillKey, status])
+  @@map("advertisement_sync_steps")
+}
+
+// ============================================================
+// Agent Action Request — 독립 AI 요청함의 단일 외부 부작용 승인 계약
+// ============================================================
+//
+// 일반 Task와 별도의 control-plane queue다. reviewer가 실제로 검토한 정확한
+// 외부 변경 한 건을 소유하며, 정상 승인/실행 흐름에서는 Task를 만들거나
+// 변경하지 않는다. CAPTCHA, 계정/대상 불일치, 저장 결과 불일치처럼 사람의
+// 추가 작업이 필요한 예외만 escalationTask로 승격한다.
+//
+// payload/preconditions/evidence와 contentHash는 생성 뒤 불변이며, 변경안
+// 수정은 새 요청 + supersedesId로 표현한다. 첫 슬라이스는
+// ListingAdvertisement의 CP 상태와 OfficeAdvertisementGroup의 네이버 비교
+// 스냅샷을 근거로 한 광고 내림/가격 조건 변경, 그리고 로컬 computer use 실행
+// 후 이실장 persisted 상태 검증만 지원한다. 광고노트 ExternalListing은 이
+// control-plane 계약과 연결하지 않는다.
+
+model AgentActionRequest {
+  id       String @id @default(uuid()) @db.Uuid
+  officeId String @map("office_id") @db.Uuid
+
+  /// 독립 AI 요청함의 기본 검토 담당자. owner/manager도 검토할 수 있다.
+  reviewerId String @map("reviewer_id") @db.Uuid
+  /// 정상 흐름에서는 null. 사람의 실제 후속 업무가 필요한 예외에만 생성한다.
+  escalationTaskId String? @map("escalation_task_id") @db.Uuid
+
+  listingAdvertisementId String @map("listing_advertisement_id") @db.Uuid
+
+  /// 이전 변경안을 대체할 때 새 요청이 이전 요청을 가리킨다.
+  supersedesId String? @unique @map("supersedes_id") @db.Uuid
+
+  /// advertisement.takedown | advertisement.terms.set
+  capability   String
+  schemaVersion Int    @default(1) @map("schema_version")
+
+  /// 관측/판단을 만든 skill release의 provenance.
+  sourceSkillKey     String? @map("source_skill_key")
+  sourceSkillVersion String? @map("source_skill_version")
+  /// 실행 계약을 담당하는 skill. MVP는 사람이 지켜보는 computer-use-v1이다.
+  executorSkillKey     String @map("executor_skill_key")
+  executorSkillVersion String @map("executor_skill_version")
+
+  title     String
+  summary   String @db.Text
+  rationale String @db.Text
+  riskLevel String @default("high") @map("risk_level")
+
+  /// manual | connector. manual은 로컬 attended computer use를 포함하고,
+  /// connector는 향후 unattended 전용 executor용이다.
+  executionMode String @default("manual") @map("execution_mode")
+
+  /// 사람이 승인할 실제 명령, 실행 전 기대 상태, 승인 근거 스냅샷.
+  payload       Json @db.JsonB
+  preconditions Json @db.JsonB
+  evidence      Json @db.JsonB
+  baseStateHash String @map("base_state_hash") @db.VarChar(64)
+  contentHash   String @map("content_hash") @db.VarChar(64)
+
+  /// pending | approved | rejected | withdrawn | expired | stale | superseded
+  reviewStatus String @default("pending") @map("review_status")
+  /// not_started | awaiting_manual | queued | running | succeeded | failed |
+  /// needs_input | cancelled
+  executionStatus String @default("not_started") @map("execution_status")
+  /// pending | matched | mismatch | not_found | blocked | not_required
+  verificationStatus String @default("pending") @map("verification_status")
+
+  /// 낙관적 동시성 제어. 승인/실행/검증 전이마다 증가한다.
+  version Int @default(1)
+
+  /// 같은 관측과 같은 명령을 반복 제안하지 않기 위한 안정 키.
+  dedupeKey String? @map("dedupe_key")
+
+  observedAt DateTime @map("observed_at")
+  expiresAt  DateTime @map("expires_at")
+
+  createdBy       String  @map("created_by")
+  createdByUserId String? @map("created_by_user_id") @db.Uuid
+
+  approvedContentHash String?   @map("approved_content_hash") @db.VarChar(64)
+  decidedById        String?   @map("decided_by_id") @db.Uuid
+  decidedAt          DateTime? @map("decided_at")
+  decisionNote       String?   @map("decision_note") @db.Text
+
+  executedById   String?   @map("executed_by_id") @db.Uuid
+  executedAt     DateTime? @map("executed_at")
+  executionResult Json?    @map("execution_result") @db.JsonB
+
+  verifiedAt DateTime? @map("verified_at")
+  lastError  String?   @map("last_error") @db.Text
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  office                Office               @relation(fields: [officeId], references: [id], onDelete: Restrict)
+  reviewer              User                 @relation("AgentActionRequestReviewer", fields: [reviewerId], references: [id], onDelete: Restrict)
+  escalationTask        Task?                @relation(fields: [escalationTaskId], references: [id], onDelete: Restrict)
+  listingAdvertisement  ListingAdvertisement @relation(fields: [listingAdvertisementId], references: [id], onDelete: Restrict)
+  createdByUser         User?                @relation("AgentActionRequestCreator", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  decidedBy             User?                @relation("AgentActionRequestDecider", fields: [decidedById], references: [id], onDelete: Restrict)
+  executedBy            User?                @relation("AgentActionRequestExecutor", fields: [executedById], references: [id], onDelete: Restrict)
+  supersedes            AgentActionRequest?  @relation("AgentActionRequestSupersession", fields: [supersedesId], references: [id], onDelete: SetNull)
+  supersededBy          AgentActionRequest?  @relation("AgentActionRequestSupersession")
+  verifications         AgentActionVerification[]
+  agentSessions         AgentSession[]
+
+  @@index([officeId, reviewStatus, createdAt])
+  @@index([officeId, reviewerId, reviewStatus, createdAt])
+  @@index([officeId, executionStatus, updatedAt])
+  @@index([officeId, escalationTaskId])
+  @@index([officeId, listingAdvertisementId])
+  @@index([contentHash])
+  @@map("agent_action_requests")
+}
+
+/// 실행 후 외부 상태를 다시 읽은 append-only 검증 기록.
+model AgentActionVerification {
+  id                    String @id @default(uuid()) @db.Uuid
+  officeId              String @map("office_id") @db.Uuid
+  requestId             String @map("request_id") @db.Uuid
+  /// esiljang
+  provider    String @default("esiljang")
+  /// computer_use_postcondition
+  captureKind String @default("computer_use_postcondition") @map("capture_kind")
+
+  /// matched | mismatch | not_found | blocked
+  result     String
+  state      Json   @db.JsonB
+  stateHash  String @map("state_hash") @db.VarChar(64)
+  captureKey String @map("capture_key")
+  observedAt DateTime @map("observed_at")
+  verifiedBy String   @map("verified_by")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  office                Office             @relation(fields: [officeId], references: [id], onDelete: Restrict)
+  request               AgentActionRequest @relation(fields: [requestId], references: [id], onDelete: Restrict)
+
+  @@unique([requestId, captureKey])
+  @@index([officeId, requestId, createdAt])
+  @@map("agent_action_verifications")
 }

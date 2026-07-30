@@ -63,6 +63,7 @@ model Site {
   publicDocuments                 PublicDocument[]
   externalListingGroups           ExternalListingGroup[]
   externalListingSnapshotSessions ExternalListingSnapshotSession[]
+  externalListingSources          ExternalListingSource[]
 
   @@index([officeId])
   @@index([wardCode])

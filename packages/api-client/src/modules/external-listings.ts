@@ -91,6 +91,8 @@ export interface ExternalListingGroup {
   maxYmd?: string | null;
   confirmDateDiff?: number | null;
   ownerVerified?: boolean;
+  /** 같은 그룹에서 확인된 우리 사무소 광고의 게시일 (YYYYMMDD). */
+  ownAdvertisementYmd?: string | null;
   offerRanking?: number | null;
 }
 
@@ -212,7 +214,8 @@ export function createExternalListingsApi(request: RequestFn) {
   return {
     findAllGroups: (filters?: ExternalListingGroupsFilter) => {
       const params: Record<string, string | number | boolean | undefined> = {};
-      if (filters?.transactionType) params.transactionType = filters.transactionType;
+      if (filters?.transactionType)
+        params.transactionType = filters.transactionType;
       if (filters?.status) params.status = filters.status;
       if (filters?.search) params.search = filters.search;
       if (filters?.siteId) params.siteId = filters.siteId;
@@ -221,7 +224,9 @@ export function createExternalListingsApi(request: RequestFn) {
       }
       if (filters?.bucket) params.bucket = filters.bucket;
       if (filters?.includeInactive) params.includeInactive = 'true';
-      return request<ExternalListingGroup[]>('/external-listings/groups', { params });
+      return request<ExternalListingGroup[]>('/external-listings/groups', {
+        params,
+      });
     },
 
     findGroupById: (id: string) =>

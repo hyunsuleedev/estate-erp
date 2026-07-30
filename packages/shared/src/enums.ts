@@ -157,14 +157,16 @@ export const MAINTENANCE_FEE_INCLUDE_LABELS: Record<
   heating: '난방',
 };
 
-/** 내 사무소의 광고 게재 상태 (ListingAdvertisement.status) */
+/**
+ * CP 광고 원장의 생명주기.
+ *
+ * ListingAdvertisement는 CP에서 실제로 관측한 광고만 저장한다. 작성·승인
+ * 대기는 AgentActionRequest가, 수집 실패는 AdvertisementSyncRun/Step이
+ * 소유하므로 광고 row에는 active / ended만 존재한다.
+ */
 export const ListingAdvertisementStatus = {
-  PLANNED: 'planned',
-  DRAFT: 'draft',
   ACTIVE: 'active',
-  PAUSED: 'paused',
   ENDED: 'ended',
-  ERROR: 'error',
 } as const;
 export type ListingAdvertisementStatus =
   (typeof ListingAdvertisementStatus)[keyof typeof ListingAdvertisementStatus];
@@ -172,23 +174,52 @@ export type ListingAdvertisementStatus =
 /** 광고 레코드 출처 (ListingAdvertisement.source) */
 export const ListingAdvertisementSource = {
   MANUAL: 'manual',
-  EXTERNAL_OBSERVED: 'external_observed',
   CP_SYNC: 'cp_sync',
 } as const;
 export type ListingAdvertisementSource =
   (typeof ListingAdvertisementSource)[keyof typeof ListingAdvertisementSource];
 
-/** 광고 채널 (ListingAdvertisement.channel) — 자주 쓰이는 채널 슬러그. 자유텍스트도 허용. */
+/** CP사 (ListingAdvertisement.channel) — 자주 쓰이는 CP 슬러그. 자유텍스트도 허용. */
 export const ListingAdvertisementChannel = {
-  NAVER: 'naver',
-  ASIL: 'asil',
-  ZIGBANG: 'zigbang',
-  DABANG: 'dabang',
-  HANBANG: 'hanbang',
-  ETC: 'etc',
+  ESILJANG: 'esiljang',
+  BUDONGSANBANK: 'budongsanbank',
 } as const;
 export type ListingAdvertisementChannel =
   (typeof ListingAdvertisementChannel)[keyof typeof ListingAdvertisementChannel];
+
+/**
+ * 네이버 광고에 공개된 층 정보의 표현 방식.
+ *
+ * - exact: "12/25", "B1/5"처럼 실제 층을 공개
+ * - band: "저/25", "중/25", "고/25"처럼 구간만 공개
+ * - unknown: 값이 없거나 현재 파서가 확정할 수 없는 표현
+ *
+ * 내부 Unit.floor와는 별개의 외부 광고 관측값이다.
+ */
+export const OfficeAdvertisementFloorExposureMode = {
+  EXACT: 'exact',
+  BAND: 'band',
+  UNKNOWN: 'unknown',
+} as const;
+export type OfficeAdvertisementFloorExposureMode =
+  (typeof OfficeAdvertisementFloorExposureMode)[keyof typeof OfficeAdvertisementFloorExposureMode];
+
+export function inferOfficeAdvertisementFloorExposureMode(
+  floorInfo: string | null | undefined,
+): OfficeAdvertisementFloorExposureMode {
+  const value = floorInfo?.trim();
+  if (!value) return OfficeAdvertisementFloorExposureMode.UNKNOWN;
+
+  const floorToken = value.split('/')[0]?.trim().replace(/층$/u, '');
+  if (!floorToken) return OfficeAdvertisementFloorExposureMode.UNKNOWN;
+  if (/^(저|중|고)$/u.test(floorToken)) {
+    return OfficeAdvertisementFloorExposureMode.BAND;
+  }
+  if (/^(?:-?\d+|B\d+|지하\s*\d+)$/iu.test(floorToken)) {
+    return OfficeAdvertisementFloorExposureMode.EXACT;
+  }
+  return OfficeAdvertisementFloorExposureMode.UNKNOWN;
+}
 
 /**
  * 의뢰(ListingIntake)의 생명주기만 저장한다.
@@ -286,13 +317,13 @@ export type MatchStage = (typeof MatchStage)[keyof typeof MatchStage];
 
 /** 거래 파이프라인 스테이지 */
 export const DealStage = {
-  SELECTION: 'selection',          // 매물 선정/임장
-  NEGOTIATING: 'negotiating',      // 조건 협상 중
-  PRE_CONTRACT: 'preContract',     // 가계약금 수령 (Contract 없음)
-  CONTRACTED: 'contracted',        // 본계약 체결 (Contract 생성됨)
-  SETTLING: 'settling',            // 중도금/잔금 진행
-  COMPLETED: 'completed',          // 잔금 완료 + 등기이전
-  CLOSED: 'closed',                // 수수료 정산까지 종료
+  SELECTION: 'selection', // 매물 선정/임장
+  NEGOTIATING: 'negotiating', // 조건 협상 중
+  PRE_CONTRACT: 'preContract', // 가계약금 수령 (Contract 없음)
+  CONTRACTED: 'contracted', // 본계약 체결 (Contract 생성됨)
+  SETTLING: 'settling', // 중도금/잔금 진행
+  COMPLETED: 'completed', // 잔금 완료 + 등기이전
+  CLOSED: 'closed', // 수수료 정산까지 종료
 } as const;
 export type DealStage = (typeof DealStage)[keyof typeof DealStage];
 
@@ -308,22 +339,22 @@ export type DealCancelledBy =
 
 /** 거래 대금 종류 */
 export const DealPaymentKind = {
-  PRE_CONTRACT: 'pre_contract',  // 가계약금
-  CONTRACT: 'contract',          // 계약금 (본계약 시)
-  INTERIM: 'interim',            // 중도금 (여러 차수 가능)
-  BALANCE: 'balance',            // 잔금
-  REFUND: 'refund',              // 환불 (파기 등)
+  PRE_CONTRACT: 'pre_contract', // 가계약금
+  CONTRACT: 'contract', // 계약금 (본계약 시)
+  INTERIM: 'interim', // 중도금 (여러 차수 가능)
+  BALANCE: 'balance', // 잔금
+  REFUND: 'refund', // 환불 (파기 등)
 } as const;
 export type DealPaymentKind =
   (typeof DealPaymentKind)[keyof typeof DealPaymentKind];
 
 /** 거래 대금 상태 */
 export const DealPaymentStatus = {
-  PENDING: 'pending',      // 예정
-  PARTIAL: 'partial',      // 부분 입금
-  PAID: 'paid',            // 완납
-  OVERDUE: 'overdue',      // 연체
-  CANCELLED: 'cancelled',  // 취소됨
+  PENDING: 'pending', // 예정
+  PARTIAL: 'partial', // 부분 입금
+  PAID: 'paid', // 완납
+  OVERDUE: 'overdue', // 연체
+  CANCELLED: 'cancelled', // 취소됨
 } as const;
 export type DealPaymentStatus =
   (typeof DealPaymentStatus)[keyof typeof DealPaymentStatus];
@@ -348,7 +379,7 @@ export type CommissionClientSide =
 
 /** 수수료 수금 주체 */
 export const CommissionCollectedBy = {
-  US: 'us',           // 우리 사무소가 수금
+  US: 'us', // 우리 사무소가 수금
   PARTNER: 'partner', // 파트너 사무소가 수금, 우리는 분배로만 몫 수취
 } as const;
 export type CommissionCollectedBy =
@@ -384,9 +415,9 @@ export type CommissionDistributionStatus =
 
 /** 수수료 조정 유형 */
 export const CommissionAdjustmentType = {
-  DISCOUNT: 'discount',   // 고객과 할인 합의
-  WAIVE: 'waive',         // 면제(서비스)
-  BAD_DEBT: 'bad_debt',   // 대손 처리
+  DISCOUNT: 'discount', // 고객과 할인 합의
+  WAIVE: 'waive', // 면제(서비스)
+  BAD_DEBT: 'bad_debt', // 대손 처리
 } as const;
 export type CommissionAdjustmentType =
   (typeof CommissionAdjustmentType)[keyof typeof CommissionAdjustmentType];
@@ -402,12 +433,12 @@ export type CommissionAdjustmentStatus =
 
 /** 계약 상태 */
 export const ContractStatus = {
-  DRAFT: 'draft',                // 작성 중
-  SIGNED: 'signed',              // 서명 완료
-  DEPOSIT_PAID: 'depositPaid',   // 계약금 납부
-  BALANCE_PAID: 'balancePaid',   // 잔금 납부
-  REGISTERED: 'registered',      // 등기 완료
-  CANCELLED: 'cancelled',        // 취소
+  DRAFT: 'draft', // 작성 중
+  SIGNED: 'signed', // 서명 완료
+  DEPOSIT_PAID: 'depositPaid', // 계약금 납부
+  BALANCE_PAID: 'balancePaid', // 잔금 납부
+  REGISTERED: 'registered', // 등기 완료
+  CANCELLED: 'cancelled', // 취소
 } as const;
 export type ContractStatus =
   (typeof ContractStatus)[keyof typeof ContractStatus];
@@ -431,11 +462,11 @@ export type SubscriptionPlan =
 
 /** 캘린더 이벤트 유형 */
 export const CalendarEventType = {
-  VIEWING: 'viewing',       // 현장 방문/임장
-  CONTRACT: 'contract',     // 계약 일정
-  MEETING: 'meeting',       // 미팅/상담
-  TASK: 'task',             // 할 일
-  GENERAL: 'general',       // 일반
+  VIEWING: 'viewing', // 현장 방문/임장
+  CONTRACT: 'contract', // 계약 일정
+  MEETING: 'meeting', // 미팅/상담
+  TASK: 'task', // 할 일
+  GENERAL: 'general', // 일반
 } as const;
 export type CalendarEventType =
   (typeof CalendarEventType)[keyof typeof CalendarEventType];

@@ -9,15 +9,17 @@ import type {
 import type { PaginatedResponse } from '../types.js';
 import type { Tenant } from './tenants.js';
 
-export type ListingAdvertisementStatus = 'planned' | 'draft' | 'active' | 'paused' | 'ended' | 'error';
-export type ListingAdvertisementSource = 'manual' | 'external_observed' | 'cp_sync';
+export type ListingAdvertisementStatus =
+  | 'active'
+  | 'ended';
+export type ListingAdvertisementSource = 'manual' | 'cp_sync';
 
 export interface ListingAdvertisement {
   id: string;
   officeId: string;
   listingId: string;
   channel: string;
-  status: ListingAdvertisementStatus | string;
+  status: ListingAdvertisementStatus;
   source: ListingAdvertisementSource | string;
   advertisedPrice: number | null;
   advertisedDeposit: number | null;
@@ -27,6 +29,8 @@ export interface ListingAdvertisement {
   url: string | null;
   memo: string | null;
   externalAdId: string | null;
+  naverArticleNo: string | null;
+  naverUrl: string | null;
   lastCheckedAt: string | null;
   lastSyncedAt: string | null;
   createdAt: string;
@@ -259,13 +263,15 @@ export function createListingsApi(request: RequestFn) {
   return {
     findAll: (filters?: ListingsFilter) =>
       request<PaginatedResponse<Listing>>('/listings', {
-        params: filters as Record<string, string | number | boolean | undefined>,
+        params: filters as Record<
+          string,
+          string | number | boolean | undefined
+        >,
       }),
 
     filterSites: () => request<ListingFilterSite[]>('/listings/filter-sites'),
 
-    findOne: (id: string) =>
-      request<Listing>(`/listings/${id}`),
+    findOne: (id: string) => request<Listing>(`/listings/${id}`),
 
     create: (dto: CreateListingDto) =>
       request<Listing>('/listings', { method: 'POST', body: dto }),

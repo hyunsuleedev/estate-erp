@@ -59,6 +59,10 @@ model Office {
   agentWakeupRequests       AgentWakeupRequest[]
   agentRuns                 AgentRun[]
   agentActivities           AgentActivity[]
+  advertisementSyncRuns     AdvertisementSyncRun[]
+  advertisementSyncSteps    AdvertisementSyncStep[]
+  agentActionRequests       AgentActionRequest[]
+  agentActionVerifications  AgentActionVerification[]
   contractDocumentRevisions ContractDocumentRevision[]
   calendarEvents            CalendarEvent[]
 
@@ -70,6 +74,7 @@ model Office {
   externalListings                ExternalListing[]
   externalListingGroups           ExternalListingGroup[]
   externalListingSnapshotSessions ExternalListingSnapshotSession[]
+  externalListingSources          ExternalListingSource[]
 
   // 재무
   commissionPayments      CommissionPayment[]
@@ -184,6 +189,11 @@ model User {
   // 외부 매물 스냅샷 세션
   externalListingSessionsStarted   ExternalListingSnapshotSession[] @relation("SnapshotSessionStartedBy")
   externalListingSessionsCompleted ExternalListingSnapshotSession[] @relation("SnapshotSessionCompletedBy")
+
+  createdAgentActionRequests  AgentActionRequest[] @relation("AgentActionRequestCreator")
+  reviewedAgentActionRequests AgentActionRequest[] @relation("AgentActionRequestReviewer")
+  decidedAgentActionRequests  AgentActionRequest[] @relation("AgentActionRequestDecider")
+  executedAgentActionRequests AgentActionRequest[] @relation("AgentActionRequestExecutor")
 
   @@map("users")
 }
