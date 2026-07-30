@@ -10,12 +10,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 
 const VALID_TRANSACTION_TYPES = new Set(['sale', 'jeonse', 'monthly']);
-const VALID_STATUSES = new Set([
-  'unmatched',
-  'matched',
-  'verified',
-  'on_hold',
-]);
+const VALID_STATUSES = new Set(['unmatched', 'matched', 'verified', 'on_hold']);
 
 const MAX_BATCH_SIZE = 100;
 
@@ -166,16 +161,15 @@ export class ExternalListingsService {
           'bucket requires siteId and transactionType',
         );
       }
-      const session = await this.prisma.externalListingSnapshotSession.findFirst(
-        {
+      const session =
+        await this.prisma.externalListingSnapshotSession.findFirst({
           where: {
             officeId,
             siteId: query.siteId,
             transactionType: query.transactionType,
             status: 'active',
           },
-        },
-      );
+        });
       if (!session) {
         throw new BadRequestException(
           'bucket specified but no active snapshot session for scope',
@@ -210,6 +204,8 @@ export class ExternalListingsService {
           where: { isActive: true },
           select: {
             id: true,
+            source: true,
+            articleNo: true,
             price: true,
             deposit: true,
             monthlyRent: true,
@@ -225,6 +221,36 @@ export class ExternalListingsService {
       },
       orderBy: { lastSeenAt: 'desc' },
     });
+
+    const activeArticleNos = [
+      ...new Set(
+        groups.flatMap((group) =>
+          group.listings.map((listing) => listing.articleNo),
+        ),
+      ),
+    ];
+    const ownAdvertisements =
+      activeArticleNos.length === 0
+        ? []
+        : await this.prisma.officeAdvertisement.findMany({
+            where: {
+              officeId,
+              isMine: true,
+              isActive: true,
+              articleNo: { in: activeArticleNos },
+            },
+            select: {
+              articleNo: true,
+              articleConfirmYmd: true,
+              ranking: true,
+            },
+          });
+    const ownAdvertisementByListing = new Map(
+      ownAdvertisements.map((advertisement) => [
+        advertisement.articleNo,
+        advertisement,
+      ]),
+    );
 
     return groups.map((group) => {
       const listings = group.listings ?? [];
@@ -263,6 +289,18 @@ export class ExternalListingsService {
       const ownerVerified =
         !!main?.verificationTypeCode &&
         main.verificationTypeCode.startsWith('OWNER');
+      const ownAdvertisement = listings
+        .flatMap((listing) => {
+          const advertisement = ownAdvertisementByListing.get(
+            listing.articleNo,
+          );
+          return advertisement ? [advertisement] : [];
+        })
+        .sort((left, right) =>
+          (right.articleConfirmYmd ?? '').localeCompare(
+            left.articleConfirmYmd ?? '',
+          ),
+        )[0];
 
       return {
         ...group,
@@ -276,7 +314,8 @@ export class ExternalListingsService {
         maxYmd,
         confirmDateDiff,
         ownerVerified,
-        offerRanking: main?.ranking ?? null,
+        ownAdvertisementYmd: ownAdvertisement?.articleConfirmYmd ?? null,
+        offerRanking: ownAdvertisement?.ranking ?? main?.ranking ?? null,
       };
     });
   }
@@ -289,11 +328,7 @@ export class ExternalListingsService {
    * 새 스냅샷 세션 생성. 같은 (office, site, transactionType) 스코프에 active
    * 세션이 이미 있으면 409. DB 부분 유니크 인덱스가 최종 경주 조건을 막는다.
    */
-  async createSession(
-    officeId: string,
-    userId: string,
-    dto: CreateSessionDto,
-  ) {
+  async createSession(officeId: string, userId: string, dto: CreateSessionDto) {
     if (!VALID_TRANSACTION_TYPES.has(dto.transactionType)) {
       throw new BadRequestException('Invalid transactionType');
     }
@@ -490,7 +525,11 @@ export class ExternalListingsService {
         unit: true,
         mainExternalListing: true,
         listings: {
-          orderBy: [{ isActive: 'desc' }, { ranking: 'asc' }, { lastSeenAt: 'desc' }],
+          orderBy: [
+            { isActive: 'desc' },
+            { ranking: 'asc' },
+            { lastSeenAt: 'desc' },
+          ],
         },
       },
     });
@@ -534,7 +573,9 @@ export class ExternalListingsService {
 
     const data: Prisma.ExternalListingGroupUpdateInput = {};
     if (dto.unitId !== undefined) {
-      data.unit = dto.unitId ? { connect: { id: dto.unitId } } : { disconnect: true };
+      data.unit = dto.unitId
+        ? { connect: { id: dto.unitId } }
+        : { disconnect: true };
     }
     if (dto.inferredHo !== undefined) data.inferredHo = dto.inferredHo;
     if (dto.memo !== undefined) data.memo = dto.memo;
@@ -588,13 +629,15 @@ export class ExternalListingsService {
       select: { id: true },
     });
     if (!site) {
-      throw new BadRequestException('siteId does not exist or is not accessible');
+      throw new BadRequestException(
+        'siteId does not exist or is not accessible',
+      );
     }
 
     // 스냅샷 세션 존재 시 경고 로그. 크롤러가 세션 중 부분 결과를 push하면
     // 나머지가 stale로 분류될 수 있다는 점에 대한 operational signal.
-    const activeSession = await this.prisma.externalListingSnapshotSession.findFirst(
-      {
+    const activeSession =
+      await this.prisma.externalListingSnapshotSession.findFirst({
         where: {
           officeId,
           siteId: dto.siteId,
@@ -602,8 +645,7 @@ export class ExternalListingsService {
           status: 'active',
         },
         select: { id: true, startedById: true },
-      },
-    );
+      });
     if (activeSession) {
       this.logger.warn(
         `batchUpsert into locked scope (session=${activeSession.id}) — listings will be treated as seen for this session. source=${dto.source}`,
@@ -776,7 +818,10 @@ export class ExternalListingsService {
         }
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        result.errors.push({ articleNo: item.articleNo ?? '(missing)', message });
+        result.errors.push({
+          articleNo: item.articleNo ?? '(missing)',
+          message,
+        });
       }
     }
 

@@ -3,24 +3,12 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { inferOfficeAdvertisementFloorExposureMode } from '@estate-erp/shared';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
-import {
-  LISTING_INTAKE_STATE_SELECT,
-  OCCUPYING_DEALS_SELECT,
-} from '../listings/listing-state';
-
-const VALID_GROUP_STATUSES = new Set([
-  'needs_unit_confirmation',
-  'linked',
-  'ignored',
-]);
 
 export interface OfficeAdvertisementGroupsQuery {
-  source?: string;
-  status?: string;
   search?: string;
-  onlyUnlinked?: boolean;
   page?: number;
   limit?: number;
 }
@@ -28,7 +16,6 @@ export interface OfficeAdvertisementGroupsQuery {
 export interface OfficeAdvertisementBatchItemDto {
   articleNo: string;
   sourceUrl?: string | null;
-  cpPcArticleUrl?: string | null;
   isMine?: boolean;
   isMain?: boolean;
   isActive?: boolean;
@@ -42,79 +29,102 @@ export interface OfficeAdvertisementBatchItemDto {
   ranking?: number | null;
   sameAddrCnt?: number | null;
   articleConfirmYmd?: string | null;
+  floorInfo?: string | null;
+  verificationTypeCode?: string | null;
   seango?: boolean | null;
   epju?: boolean | null;
   raw?: unknown;
 }
 
 export interface OfficeAdvertisementBatchGroupDto {
-  source?: string;
-  siteName?: string | null;
-  buildingName?: string | null;
-  dongHint?: string | null;
-  hoHint?: string | null;
-  floorInfo?: string | null;
-  areaName?: string | null;
-  exclusiveAreaM2?: number | null;
-  supplyAreaM2?: number | null;
-  transactionType?: string | null;
+  listingAdvertisementId: string;
   memo?: string | null;
   advertisements: OfficeAdvertisementBatchItemDto[];
 }
 
 export interface OfficeAdvertisementBatchUpsertDto {
-  source?: string;
   groups: OfficeAdvertisementBatchGroupDto[];
-}
-
-export interface UpdateOfficeAdvertisementGroupDto {
-  status?: string;
-  memo?: string | null;
-  hoHint?: string | null;
-  dongHint?: string | null;
-}
-
-export interface LinkOfficeAdvertisementGroupDto {
-  listingAdvertisementId: string;
-  hoHint?: string | null;
-  memo?: string | null;
 }
 
 @Injectable()
 export class OfficeAdvertisementsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async findAllGroups(officeId: string, query: OfficeAdvertisementGroupsQuery = {}) {
-    if (query.status && !VALID_GROUP_STATUSES.has(query.status)) {
-      throw new BadRequestException('Invalid office advertisement group status');
-    }
-
+  async findAllGroups(
+    officeId: string,
+    query: OfficeAdvertisementGroupsQuery = {},
+  ) {
     const page = Math.max(1, query.page || 1);
     const limit = Math.min(100, Math.max(1, query.limit || 20));
     const skip = (page - 1) * limit;
     const filters: Prisma.OfficeAdvertisementGroupWhereInput[] = [{ officeId }];
 
-    if (query.source) filters.push({ source: query.source });
-    if (query.status) filters.push({ status: query.status });
-    if (query.onlyUnlinked) {
-      filters.push({ listingAdvertisementId: null });
-      filters.push({ status: { not: 'ignored' } });
-    }
     if (query.search) {
       filters.push({
         OR: [
-          { siteName: { contains: query.search, mode: 'insensitive' } },
-          { buildingName: { contains: query.search, mode: 'insensitive' } },
-          { dongHint: { contains: query.search, mode: 'insensitive' } },
-          { hoHint: { contains: query.search, mode: 'insensitive' } },
           { memo: { contains: query.search, mode: 'insensitive' } },
+          {
+            listingAdvertisement: {
+              channel: { contains: query.search, mode: 'insensitive' },
+            },
+          },
+          {
+            listingAdvertisement: {
+              externalAdId: { contains: query.search, mode: 'insensitive' },
+            },
+          },
+          {
+            listingAdvertisement: {
+              naverArticleNo: {
+                contains: query.search,
+                mode: 'insensitive',
+              },
+            },
+          },
+          {
+            listingAdvertisement: {
+              listing: {
+                property: {
+                  site: {
+                    name: { contains: query.search, mode: 'insensitive' },
+                  },
+                },
+              },
+            },
+          },
+          {
+            listingAdvertisement: {
+              listing: {
+                property: {
+                  unit: {
+                    name: { contains: query.search, mode: 'insensitive' },
+                  },
+                },
+              },
+            },
+          },
           {
             advertisements: {
               some: {
                 OR: [
-                  { articleNo: { contains: query.search, mode: 'insensitive' } },
-                  { articleName: { contains: query.search, mode: 'insensitive' } },
-                  { realtorName: { contains: query.search, mode: 'insensitive' } },
+                  {
+                    articleNo: {
+                      contains: query.search,
+                      mode: 'insensitive',
+                    },
+                  },
+                  {
+                    articleName: {
+                      contains: query.search,
+                      mode: 'insensitive',
+                    },
+                  },
+                  {
+                    realtorName: {
+                      contains: query.search,
+                      mode: 'insensitive',
+                    },
+                  },
                 ],
               },
             },
@@ -150,33 +160,6 @@ export class OfficeAdvertisementsService {
     };
   }
 
-  async updateGroup(
-    id: string,
-    officeId: string,
-    dto: UpdateOfficeAdvertisementGroupDto,
-  ) {
-    if (dto.status && !VALID_GROUP_STATUSES.has(dto.status)) {
-      throw new BadRequestException('Invalid office advertisement group status');
-    }
-
-    const existing = await this.prisma.officeAdvertisementGroup.findFirst({
-      where: { id, officeId },
-      select: { id: true },
-    });
-    if (!existing) throw new NotFoundException('OfficeAdvertisementGroup not found');
-
-    return this.prisma.officeAdvertisementGroup.update({
-      where: { id },
-      data: {
-        status: dto.status,
-        memo: dto.memo,
-        hoHint: dto.hoHint,
-        dongHint: dto.dongHint,
-      },
-      include: this.groupInclude(),
-    });
-  }
-
   async batchUpsert(officeId: string, dto: OfficeAdvertisementBatchUpsertDto) {
     if (!dto.groups || dto.groups.length === 0) {
       throw new BadRequestException('groups is required');
@@ -192,81 +175,161 @@ export class OfficeAdvertisementsService {
     const errors: Array<{ articleNo: string; message: string }> = [];
 
     for (const groupDto of dto.groups) {
-      const source = groupDto.source || dto.source || 'naver';
-      const main = this.resolveMainAdvertisement(groupDto.advertisements);
-      if (!main) {
-        errors.push({ articleNo: '-', message: 'group requires at least one advertisement' });
-        continue;
-      }
-
       try {
-        const existingMain = await this.prisma.officeAdvertisement.findUnique({
-          where: {
-            officeId_source_articleNo: {
-              officeId,
-              source,
-              articleNo: main.articleNo,
-            },
-          },
-          select: { groupId: true },
-        });
+        if (!groupDto.listingAdvertisementId) {
+          throw new BadRequestException(
+            'listingAdvertisementId is required for every comparison group',
+          );
+        }
+        if (!groupDto.advertisements?.length) {
+          throw new BadRequestException(
+            'comparison group requires at least one advertisement',
+          );
+        }
 
-        let groupId = existingMain?.groupId;
-        if (groupId) {
+        const listingAdvertisement =
+          await this.prisma.listingAdvertisement.findFirst({
+            where: {
+              id: groupDto.listingAdvertisementId,
+              officeId,
+            },
+            select: {
+              id: true,
+              naverArticleNo: true,
+              listing: {
+                select: {
+                  transactionType: true,
+                },
+              },
+            },
+          });
+        if (!listingAdvertisement) {
+          throw new NotFoundException('ListingAdvertisement not found');
+        }
+        if (!listingAdvertisement.naverArticleNo) {
+          throw new BadRequestException(
+            'ListingAdvertisement.naverArticleNo is required before Naver comparison',
+          );
+        }
+
+        const main = groupDto.advertisements.find(
+          (advertisement) =>
+            advertisement.articleNo === listingAdvertisement.naverArticleNo,
+        );
+        if (!main) {
+          throw new BadRequestException(
+            'comparison data must contain the exact naverArticleNo of ListingAdvertisement',
+          );
+        }
+
+        const existingGroup =
+          await this.prisma.officeAdvertisementGroup.findUnique({
+            where: {
+              listingAdvertisementId: listingAdvertisement.id,
+            },
+            select: { id: true },
+          });
+
+        let groupId: string;
+        const observedAt = new Date();
+        if (existingGroup) {
+          groupId = existingGroup.id;
           groupsReused += 1;
           await this.prisma.officeAdvertisementGroup.update({
             where: { id: groupId },
-            data: this.groupUpdateData(groupDto, source),
+            data: {
+              memo: groupDto.memo ?? undefined,
+              lastSeenAt: observedAt,
+              lastSyncedAt: observedAt,
+            },
           });
         } else {
           const created = await this.prisma.officeAdvertisementGroup.create({
-            data: this.groupCreateData(officeId, groupDto, source),
+            data: {
+              officeId,
+              listingAdvertisementId: listingAdvertisement.id,
+              memo: groupDto.memo ?? null,
+              lastSeenAt: observedAt,
+              lastSyncedAt: observedAt,
+            },
             select: { id: true },
           });
           groupId = created.id;
           groupsCreated += 1;
         }
 
-        for (const ad of groupDto.advertisements) {
+        let mainAdvertisementId: string | null = null;
+        for (const advertisement of groupDto.advertisements) {
           const existed = await this.prisma.officeAdvertisement.findUnique({
             where: {
-              officeId_source_articleNo: {
+              officeId_articleNo: {
                 officeId,
-                source,
-                articleNo: ad.articleNo,
+                articleNo: advertisement.articleNo,
               },
             },
             select: { id: true },
           });
-
+          const isMain = advertisement.articleNo === main.articleNo;
+          const normalizedAdvertisement = {
+            ...advertisement,
+            isMine: isMain ? true : advertisement.isMine,
+            isMain: isMain ? true : advertisement.isMain,
+          };
           const saved = await this.prisma.officeAdvertisement.upsert({
             where: {
-              officeId_source_articleNo: {
+              officeId_articleNo: {
                 officeId,
-                source,
-                articleNo: ad.articleNo,
+                articleNo: advertisement.articleNo,
               },
             },
-            create: this.advertisementCreateData(officeId, groupId, source, ad),
-            update: this.advertisementUpdateData(groupId, ad),
-            select: { id: true, isMine: true, price: true, deposit: true, monthlyRent: true },
+            create: this.advertisementCreateData(
+              officeId,
+              groupId,
+              normalizedAdvertisement,
+              observedAt,
+            ),
+            update: this.advertisementUpdateData(
+              groupId,
+              normalizedAdvertisement,
+              observedAt,
+            ),
+            select: { id: true },
           });
 
           if (existed) advertisementsUpdated += 1;
           else advertisementsCreated += 1;
-
-          if (ad === main || ad.isMain) {
-            await this.prisma.officeAdvertisementGroup.update({
-              where: { id: groupId },
-              data: { mainAdvertisementId: saved.id },
-            });
-          }
+          if (isMain) mainAdvertisementId = saved.id;
         }
 
-        await this.refreshGroupAggregates(groupId);
+        await this.prisma.officeAdvertisement.deleteMany({
+          where: {
+            groupId,
+            articleNo: {
+              notIn: groupDto.advertisements.map(
+                (advertisement) => advertisement.articleNo,
+              ),
+            },
+          },
+        });
+
+        await this.prisma.officeAdvertisementGroup.update({
+          where: { id: groupId },
+          data: { mainAdvertisementId },
+        });
+        await this.refreshGroupAggregates(
+          groupId,
+          listingAdvertisement.listing.transactionType,
+        );
+        await this.prisma.listingAdvertisement.update({
+          where: { id: listingAdvertisement.id },
+          data: { lastCheckedAt: observedAt },
+        });
       } catch (error) {
         errors.push({
-          articleNo: main.articleNo,
+          articleNo:
+            groupDto.advertisements?.[0]?.articleNo ??
+            groupDto.listingAdvertisementId ??
+            '-',
           message: error instanceof Error ? error.message : 'unknown error',
         });
       }
@@ -282,138 +345,26 @@ export class OfficeAdvertisementsService {
     };
   }
 
-  async linkGroupToListingAdvertisement(
-    id: string,
-    officeId: string,
-    dto: LinkOfficeAdvertisementGroupDto,
-  ) {
-    if (!dto.listingAdvertisementId) {
-      throw new BadRequestException('listingAdvertisementId is required');
-    }
-
-    const [group, listingAdvertisement] = await Promise.all([
-      this.prisma.officeAdvertisementGroup.findFirst({
-        where: { id, officeId },
-        include: { mainAdvertisement: true },
-      }),
-      this.prisma.listingAdvertisement.findFirst({
-        where: { id: dto.listingAdvertisementId, officeId },
-        select: {
-          id: true,
-          listingId: true,
-          officeId: true,
-        },
-      }),
-    ]);
-
-    if (!group) throw new NotFoundException('OfficeAdvertisementGroup not found');
-    if (!listingAdvertisement) {
-      throw new NotFoundException('ListingAdvertisement not found');
-    }
-
-    return this.prisma.officeAdvertisementGroup.update({
-      where: { id },
-      data: {
-        listingAdvertisementId: listingAdvertisement.id,
-        hoHint: dto.hoHint ?? group.hoHint,
-        memo: dto.memo ?? group.memo,
-        status: 'linked',
-      },
-      include: this.groupInclude(),
-    });
-  }
-
   private groupInclude() {
     return {
       mainAdvertisement: true,
       advertisements: {
         orderBy: [{ isMine: 'desc' as const }, { ranking: 'asc' as const }],
       },
-      listingAdvertisement: {
-        include: {
-          listing: {
-            include: {
-              intake: { select: LISTING_INTAKE_STATE_SELECT },
-              deals: OCCUPYING_DEALS_SELECT,
-              property: {
-                include: {
-                  site: true,
-                  unit: { include: { dong: true, siteUnitType: true } },
-                },
-              },
-            },
-          },
-        },
-      },
-    };
-  }
-
-  private resolveMainAdvertisement(advertisements: OfficeAdvertisementBatchItemDto[]) {
-    return (
-      advertisements.find((ad) => ad.isMain && ad.isMine) ??
-      advertisements.find((ad) => ad.isMine) ??
-      advertisements.find((ad) => ad.isMain) ??
-      advertisements[0]
-    );
-  }
-
-  private groupCreateData(
-    officeId: string,
-    dto: OfficeAdvertisementBatchGroupDto,
-    source: string,
-  ): Prisma.OfficeAdvertisementGroupUncheckedCreateInput {
-    return {
-      officeId,
-      source,
-      status: 'needs_unit_confirmation',
-      siteName: dto.siteName ?? null,
-      buildingName: dto.buildingName ?? null,
-      dongHint: dto.dongHint ?? null,
-      hoHint: dto.hoHint ?? null,
-      floorInfo: dto.floorInfo ?? null,
-      areaName: dto.areaName ?? null,
-      exclusiveAreaM2: dto.exclusiveAreaM2 ?? null,
-      supplyAreaM2: dto.supplyAreaM2 ?? null,
-      transactionType: dto.transactionType ?? null,
-      memo: dto.memo ?? null,
-      lastSeenAt: new Date(),
-      lastSyncedAt: new Date(),
-    };
-  }
-
-  private groupUpdateData(
-    dto: OfficeAdvertisementBatchGroupDto,
-    source: string,
-  ): Prisma.OfficeAdvertisementGroupUncheckedUpdateInput {
-    return {
-      source,
-      siteName: dto.siteName ?? undefined,
-      buildingName: dto.buildingName ?? undefined,
-      dongHint: dto.dongHint ?? undefined,
-      floorInfo: dto.floorInfo ?? undefined,
-      areaName: dto.areaName ?? undefined,
-      exclusiveAreaM2: dto.exclusiveAreaM2 ?? undefined,
-      supplyAreaM2: dto.supplyAreaM2 ?? undefined,
-      transactionType: dto.transactionType ?? undefined,
-      memo: dto.memo ?? undefined,
-      lastSeenAt: new Date(),
-      lastSyncedAt: new Date(),
     };
   }
 
   private advertisementCreateData(
     officeId: string,
     groupId: string,
-    source: string,
     dto: OfficeAdvertisementBatchItemDto,
+    observedAt: Date,
   ): Prisma.OfficeAdvertisementUncheckedCreateInput {
     return {
       officeId,
       groupId,
-      source,
       articleNo: dto.articleNo,
       sourceUrl: dto.sourceUrl ?? null,
-      cpPcArticleUrl: dto.cpPcArticleUrl ?? null,
       isMine: dto.isMine ?? false,
       isMain: dto.isMain ?? false,
       isActive: dto.isActive ?? true,
@@ -427,21 +378,27 @@ export class OfficeAdvertisementsService {
       ranking: dto.ranking ?? null,
       sameAddrCnt: dto.sameAddrCnt ?? null,
       articleConfirmYmd: dto.articleConfirmYmd ?? null,
+      floorInfo: normalizeNullableText(dto.floorInfo),
+      floorExposureMode: inferOfficeAdvertisementFloorExposureMode(
+        dto.floorInfo,
+      ),
+      verificationTypeCode: normalizeNullableText(dto.verificationTypeCode),
       seango: dto.seango ?? false,
       epju: dto.epju ?? false,
-      raw: dto.raw === undefined ? undefined : (dto.raw as Prisma.InputJsonValue),
-      lastSeenAt: new Date(),
+      raw:
+        dto.raw === undefined ? undefined : (dto.raw as Prisma.InputJsonValue),
+      lastSeenAt: observedAt,
     };
   }
 
   private advertisementUpdateData(
     groupId: string,
     dto: OfficeAdvertisementBatchItemDto,
+    observedAt: Date,
   ): Prisma.OfficeAdvertisementUncheckedUpdateInput {
     return {
       groupId,
       sourceUrl: dto.sourceUrl ?? undefined,
-      cpPcArticleUrl: dto.cpPcArticleUrl ?? undefined,
       isMine: dto.isMine,
       isMain: dto.isMain,
       isActive: dto.isActive ?? true,
@@ -455,29 +412,53 @@ export class OfficeAdvertisementsService {
       ranking: dto.ranking ?? undefined,
       sameAddrCnt: dto.sameAddrCnt ?? undefined,
       articleConfirmYmd: dto.articleConfirmYmd ?? undefined,
+      floorInfo:
+        dto.floorInfo === undefined
+          ? undefined
+          : normalizeNullableText(dto.floorInfo),
+      floorExposureMode:
+        dto.floorInfo === undefined
+          ? undefined
+          : inferOfficeAdvertisementFloorExposureMode(dto.floorInfo),
+      verificationTypeCode:
+        dto.verificationTypeCode === undefined
+          ? undefined
+          : normalizeNullableText(dto.verificationTypeCode),
       seango: dto.seango ?? undefined,
       epju: dto.epju ?? undefined,
-      raw: dto.raw === undefined ? undefined : (dto.raw as Prisma.InputJsonValue),
-      lastSeenAt: new Date(),
+      raw:
+        dto.raw === undefined ? undefined : (dto.raw as Prisma.InputJsonValue),
+      lastSeenAt: observedAt,
     };
   }
 
-  private async refreshGroupAggregates(groupId: string) {
+  private async refreshGroupAggregates(
+    groupId: string,
+    transactionType: string,
+  ) {
     const advertisements = await this.prisma.officeAdvertisement.findMany({
-      where: { groupId },
+      where: { groupId, isActive: true },
       select: {
-        id: true,
         isMine: true,
         price: true,
         deposit: true,
         monthlyRent: true,
       },
     });
-    const own = advertisements.find((ad) => ad.isMine);
-    const relatedAmounts = advertisements
-      .filter((ad) => !ad.isMine)
-      .map((ad) => ad.price ?? ad.deposit)
-      .filter((amount): amount is number => typeof amount === 'number');
+    const own = advertisements.find((advertisement) => advertisement.isMine);
+    // 월세는 보증금 하나로 최저/최고를 축약하면 보증금·월세 trade-off를
+    // "더 싸다"로 오인할 수 있으므로 scalar 가격 범위를 만들지 않는다.
+    const relatedAmounts =
+      transactionType === 'monthly'
+        ? []
+        : advertisements
+            .filter((advertisement) => !advertisement.isMine)
+            .map((advertisement) =>
+              transactionType === 'jeonse'
+                ? (advertisement.deposit ?? advertisement.price)
+                : advertisement.price,
+            )
+            .filter((amount): amount is number => typeof amount === 'number');
 
     await this.prisma.officeAdvertisementGroup.update({
       where: { id: groupId },
@@ -486,9 +467,18 @@ export class OfficeAdvertisementsService {
         ownDeposit: own?.deposit ?? null,
         ownMonthlyRent: own?.monthlyRent ?? null,
         relatedCount: Math.max(0, advertisements.length - (own ? 1 : 0)),
-        relatedPriceMin: relatedAmounts.length > 0 ? Math.min(...relatedAmounts) : null,
-        relatedPriceMax: relatedAmounts.length > 0 ? Math.max(...relatedAmounts) : null,
+        relatedPriceMin:
+          relatedAmounts.length > 0 ? Math.min(...relatedAmounts) : null,
+        relatedPriceMax:
+          relatedAmounts.length > 0 ? Math.max(...relatedAmounts) : null,
       },
     });
   }
+}
+
+function normalizeNullableText(
+  value: string | null | undefined,
+): string | null {
+  const normalized = value?.trim();
+  return normalized ? normalized : null;
 }

@@ -43,9 +43,19 @@ export class McpServerFactory {
       },
     );
 
-    server.setRequestHandler(ListToolsRequestSchema, () => ({
-      tools: this.tools.getToolDefinitions(),
-    }));
+    server.setRequestHandler(ListToolsRequestSchema, () => {
+      const ctx = getRequestContext();
+      if (!ctx?.userId || !ctx?.officeId) {
+        throw new Error('Missing request context (auth guard did not run?)');
+      }
+      return {
+        tools: this.tools.getToolDefinitions({
+          userId: ctx.userId,
+          officeId: ctx.officeId,
+          role: ctx.role,
+        }),
+      };
+    });
 
     server.setRequestHandler(
       CallToolRequestSchema,
@@ -58,6 +68,7 @@ export class McpServerFactory {
         const result = await this.tools.executeTool(name, args ?? {}, {
           userId: ctx.userId,
           officeId: ctx.officeId,
+          role: ctx.role,
         });
         return result satisfies CallToolResult;
       },

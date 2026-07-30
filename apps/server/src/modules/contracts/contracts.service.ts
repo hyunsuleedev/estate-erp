@@ -1067,7 +1067,7 @@ export class ContractsService {
 
       // Document-local advisory lock makes revisionNo allocation safe when
       // multiple MCP workers prepare the same contract concurrently.
-      await tx.$queryRaw(
+      await tx.$executeRaw(
         Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${officeId}), hashtext(${document.id}))`,
       );
 
@@ -1201,7 +1201,7 @@ export class ContractsService {
     });
 
     return this.prisma.$transaction(async (tx) => {
-      await tx.$queryRaw(
+      await tx.$executeRaw(
         Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${officeId}), hashtext(${documentId}))`,
       );
       const latestRevision = await tx.contractDocumentRevision.findFirst({

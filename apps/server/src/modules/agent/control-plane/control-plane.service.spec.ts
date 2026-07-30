@@ -2,6 +2,51 @@ import { BadRequestException, ConflictException } from '@nestjs/common';
 import { AgentControlPlaneService } from './control-plane.service';
 
 describe('AgentControlPlaneService', () => {
+  it('links an agent session to an AgentActionRequest without a Task', async () => {
+    const session = {
+      id: 'session-1',
+      officeId: 'office-1',
+      taskId: null,
+      agentActionRequestId: 'action-1',
+    };
+    const prisma = {
+      agentActionRequest: {
+        findFirst: jest.fn().mockResolvedValue({ id: 'action-1' }),
+      },
+      agentSession: {
+        create: jest.fn().mockResolvedValue(session),
+      },
+    };
+    const service = new AgentControlPlaneService(prisma as never);
+
+    const result = await service.createSession('office-1', {
+      agentKey: 'esiljang-ad-manager',
+      taskKey: 'agent-action:action-1',
+      agentActionRequestId: 'action-1',
+    });
+
+    expect(result).toBe(session);
+    expect(prisma.agentSession.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        taskId: null,
+        agentActionRequestId: 'action-1',
+      }),
+    });
+  });
+
+  it('rejects a session linked to both Task and AgentActionRequest', async () => {
+    const service = new AgentControlPlaneService({} as never);
+
+    await expect(
+      service.createSession('office-1', {
+        agentKey: 'worker',
+        taskKey: 'invalid-mixed-work-item',
+        taskId: 'task-1',
+        agentActionRequestId: 'action-1',
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
   it('coalesces an active wakeup with the same office idempotency key', async () => {
     const session = { id: 'session-1', officeId: 'office-1' };
     const existing = {
@@ -64,6 +109,7 @@ describe('AgentControlPlaneService', () => {
     };
     const tx = {
       $queryRaw: jest.fn().mockResolvedValue([{ id: wakeup.id }]),
+      $executeRaw: jest.fn().mockResolvedValue(1),
       agentWakeupRequest: {
         findFirstOrThrow: jest.fn().mockResolvedValue(wakeup),
       },
@@ -217,6 +263,7 @@ describe('AgentControlPlaneService', () => {
     };
     const tx = {
       $queryRaw: jest.fn().mockResolvedValue([{ pg_advisory_xact_lock: '' }]),
+      $executeRaw: jest.fn().mockResolvedValue(1),
       agentSession: {
         findFirst: jest.fn().mockResolvedValue({ id: 'session-1' }),
       },

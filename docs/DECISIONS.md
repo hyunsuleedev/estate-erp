@@ -15,8 +15,15 @@
 | 모바일 | React Native Android only | 전화 감지/녹음 제약 대응 |
 | AI 전략 | 내장 안 함 | MCP로 외부 AI 연결 |
 | MCP 전략 | CRM MCP Server 우선 | AI 친화적 시스템으로 설계 |
+| agent 업무 단위 | 독립 `AgentActionRequest`, 예외만 `Task` 승격 | 일반 직원 업무와 고빈도 AI 검토함을 분리 |
+| 광고 자동화 MVP | 승인 후 `computer-use-v1` 실행 + 이실장 저장값 검증 | 저장 후 같은 광고를 reload해 persisted 값을 확인하고 네이버 재관측은 하지 않음 |
+| 내 광고 원장 | `ListingAdvertisement` + 정확한 Listing/Unit 귀속 | CP가 상세 주소를 제공하므로 별도 호실 연결·제외 상태가 불필요 |
+| CP 광고 상태 | row는 `active/ended`, 수집 실패는 `AdvertisementSyncRun/Step` | CP 조회는 현재 광고만 반환하며 실행 오류를 개별 광고 상태로 만들지 않음 |
+| 광고 식별자 | channel/externalAdId/url=CP, naverArticleNo/naverUrl=네이버 | CP 제출 원장과 네이버 비교 대상을 혼동하지 않음 |
+| 외부 effect 승인 | exact contentHash 필수 | 사람이 본 변경안과 실제 실행 명령의 불일치 차단 |
 | CTI 연동 | 별도 브리지 프로세스 | 32비트 SDK 제약 |
 | 스크래핑 실행 위치 | 사용자 로컬 우선 | 세션, IP, 법적 리스크 대응 |
+| CP 로그인 자격증명 | Electron OS 보안 저장소 + 기기 전용 로컬 MCP | 서버·Prisma에는 비밀번호를 저장하지 않고 로컬 runner에는 로그인 준비 결과만 제공 |
 | 주소 체계 | 법정동코드 + 도로명 + 지번 | 외부 시스템 연동 대비 |
 | 멀티테넌시 | `office_id` 기반 분리 | SaaS 격리 기본 전제 |
 | 킬러 피쳐 | 공동 중개 네트워크 | 네트워크 효과와 락인 |
@@ -30,6 +37,9 @@
 - AI는 승인/감사 가능한 구조로만 붙인다.
 - 데스크톱은 메인, 웹은 보조 채널로 본다.
 - 외부 연동은 “서버가 대신 해주는 구조”보다 “사용자 로컬에서 안전하게 실행되는 구조”를 우선한다.
+- 범용 AI 제안함을 만들지 않고 capability별 단일 외부 부작용만 승인한다.
+- provider computer use는 보이는 로컬 세션, exact-hash 승인, 즉시 중단,
+  persisted-state 재확인 조건으로 실행한다.
 
 ---
 

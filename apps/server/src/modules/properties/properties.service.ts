@@ -139,7 +139,9 @@ export class PropertiesService {
     }
 
     const where =
-      filters.length === 1 ? filters[0] : ({ AND: filters } as Prisma.PropertyWhereInput);
+      filters.length === 1
+        ? filters[0]
+        : ({ AND: filters } as Prisma.PropertyWhereInput);
     const sortBy = this.resolveSortField(query.sortBy);
     const sortOrder = this.resolveSortOrder(query.sortOrder);
     const page = Math.max(1, query.page || 1);
@@ -169,9 +171,15 @@ export class PropertiesService {
               siteUnitType: true,
             },
           },
-          propertyContacts: { include: { contact: { include: { phones: contactPhonesIncludeOrdered } } } },
+          propertyContacts: {
+            include: {
+              contact: { include: { phones: contactPhonesIncludeOrdered } },
+            },
+          },
           tenants: {
-            include: { contact: { include: { phones: contactPhonesIncludeOrdered } } },
+            include: {
+              contact: { include: { phones: contactPhonesIncludeOrdered } },
+            },
             orderBy: { createdAt: 'desc' },
           },
           listings: {
@@ -236,9 +244,15 @@ export class PropertiesService {
             siteUnitType: true,
           },
         },
-        propertyContacts: { include: { contact: { include: { phones: contactPhonesIncludeOrdered } } } },
+        propertyContacts: {
+          include: {
+            contact: { include: { phones: contactPhonesIncludeOrdered } },
+          },
+        },
         tenants: {
-          include: { contact: { include: { phones: contactPhonesIncludeOrdered } } },
+          include: {
+            contact: { include: { phones: contactPhonesIncludeOrdered } },
+          },
           orderBy: { createdAt: 'desc' },
         },
         listings: {
@@ -266,7 +280,9 @@ export class PropertiesService {
           },
         },
         consultations: {
-          include: { contact: { include: { phones: contactPhonesIncludeOrdered } } },
+          include: {
+            contact: { include: { phones: contactPhonesIncludeOrdered } },
+          },
           orderBy: { createdAt: 'desc' },
         },
       },
@@ -302,7 +318,12 @@ export class PropertiesService {
 
         let contact = ownerPhone
           ? await tx.contact.findFirst({
-              where: { officeId, phones: { some: { normalizedPhone: ownerPhone, isActive: true } } },
+              where: {
+                officeId,
+                phones: {
+                  some: { normalizedPhone: ownerPhone, isActive: true },
+                },
+              },
             })
           : null;
 
@@ -311,18 +332,21 @@ export class PropertiesService {
             data: {
               officeId,
               name: ownerName.trim(),
-              phones: ownerPhone && rawOwnerPhone
-                ? {
-                    create: [{
-                      phone: rawOwnerPhone,
-                      normalizedPhone: ownerPhone,
-                      label: 'mobile',
-                      isPrimary: true,
-                      isActive: true,
-                      office: { connect: { id: officeId } },
-                    }],
-                  }
-                : undefined,
+              phones:
+                ownerPhone && rawOwnerPhone
+                  ? {
+                      create: [
+                        {
+                          phone: rawOwnerPhone,
+                          normalizedPhone: ownerPhone,
+                          label: 'mobile',
+                          isPrimary: true,
+                          isActive: true,
+                          office: { connect: { id: officeId } },
+                        },
+                      ],
+                    }
+                  : undefined,
             },
           });
         }
@@ -337,19 +361,27 @@ export class PropertiesService {
           },
         });
 
-        return tx.property.findUnique({
-          where: { id: property.id },
-          include: {
-            site: true,
-            unit: {
-              include: {
-                dong: true,
-                siteUnitType: true,
+        return tx.property
+          .findUnique({
+            where: { id: property.id },
+            include: {
+              site: true,
+              unit: {
+                include: {
+                  dong: true,
+                  siteUnitType: true,
+                },
+              },
+              propertyContacts: {
+                include: {
+                  contact: { include: { phones: contactPhonesIncludeOrdered } },
+                },
               },
             },
-            propertyContacts: { include: { contact: { include: { phones: contactPhonesIncludeOrdered } } } },
-          },
-        }).then((created) => created ? this.withContactPhones(created) : created);
+          })
+          .then((created) =>
+            created ? this.withContactPhones(created) : created,
+          );
       });
     }
 
@@ -422,30 +454,44 @@ export class PropertiesService {
   }
 
   private resolveSortOrder(sortOrder?: string) {
-    return VALID_SORT_ORDERS.has(sortOrder || '') ? (sortOrder as 'asc' | 'desc') : 'desc';
+    return VALID_SORT_ORDERS.has(sortOrder || '')
+      ? (sortOrder as 'asc' | 'desc')
+      : 'desc';
   }
 
   private withContactPhones<T>(property: T): T {
     const draft = property as Record<string, unknown>;
-    const propertyContacts = draft.propertyContacts as Array<{ contact?: { phones?: [] } | null }> | undefined;
+    const propertyContacts = draft.propertyContacts as
+      | Array<{ contact?: { phones?: [] } | null }>
+      | undefined;
     if (propertyContacts) {
       draft.propertyContacts = propertyContacts.map((propertyContact) => ({
         ...propertyContact,
-        contact: propertyContact.contact ? withPrimaryPhone(propertyContact.contact) : propertyContact.contact,
+        contact: propertyContact.contact
+          ? withPrimaryPhone(propertyContact.contact)
+          : propertyContact.contact,
       }));
     }
-    const tenants = draft.tenants as Array<{ contact?: { phones?: [] } | null }> | undefined;
+    const tenants = draft.tenants as
+      | Array<{ contact?: { phones?: [] } | null }>
+      | undefined;
     if (tenants) {
       draft.tenants = tenants.map((tenant) => ({
         ...tenant,
-        contact: tenant.contact ? withPrimaryPhone(tenant.contact) : tenant.contact,
+        contact: tenant.contact
+          ? withPrimaryPhone(tenant.contact)
+          : tenant.contact,
       }));
     }
-    const consultations = draft.consultations as Array<{ contact?: { phones?: [] } | null }> | undefined;
+    const consultations = draft.consultations as
+      | Array<{ contact?: { phones?: [] } | null }>
+      | undefined;
     if (consultations) {
       draft.consultations = consultations.map((consultation) => ({
         ...consultation,
-        contact: consultation.contact ? withPrimaryPhone(consultation.contact) : consultation.contact,
+        contact: consultation.contact
+          ? withPrimaryPhone(consultation.contact)
+          : consultation.contact,
       }));
     }
     return property;
@@ -513,7 +559,9 @@ export class PropertiesService {
     });
 
     if (!unit) {
-      throw new BadRequestException('Unit does not belong to the selected site');
+      throw new BadRequestException(
+        'Unit does not belong to the selected site',
+      );
     }
 
     return unit;

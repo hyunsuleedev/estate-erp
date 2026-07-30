@@ -8,34 +8,62 @@ import {
   Post,
   Query,
   UseGuards,
-} from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
-import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+} from "@nestjs/common";
+import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
+import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
 import {
   CurrentUser,
   CurrentUserPayload,
-} from '../../common/decorators/current-user.decorator';
-import { ListingAdvertisementsService } from './listing-advertisements.service';
+} from "../../common/decorators/current-user.decorator";
+import {
+  ListingAdvertisementsService,
+  type FullSyncExecutionRequest,
+} from "./listing-advertisements.service";
 
-@ApiTags('광고 게재')
+@ApiTags("광고 게재")
 @ApiBearerAuth()
-@Controller('listing-advertisements')
+@Controller("listing-advertisements")
 @UseGuards(JwtAuthGuard)
 export class ListingAdvertisementsController {
   constructor(private readonly service: ListingAdvertisementsService) {}
 
+  @Get("full-sync/status")
+  getFullSyncStatus(@CurrentUser() user: CurrentUserPayload) {
+    return this.service.getFullSyncStatus(user.officeId);
+  }
+
+  @Post("full-sync")
+  requestFullSync(
+    @CurrentUser() user: CurrentUserPayload,
+    @Body() body: FullSyncExecutionRequest,
+  ) {
+    return this.service.requestFullSync(user.officeId, user.userId, body);
+  }
+
+  @Post("full-sync/steps/:stepId/retry")
+  retryFullSyncStep(
+    @Param("stepId") stepId: string,
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.service.retryFullSyncStep(
+      user.officeId,
+      stepId,
+      user.userId,
+    );
+  }
+
   @Get()
   findAll(
     @CurrentUser() user: CurrentUserPayload,
-    @Query('listingId') listingId: string,
-    @Query('channel') channel: string,
-    @Query('status') status: string,
-    @Query('source') source: string,
-    @Query('search') search: string,
-    @Query('sortBy') sortBy: string,
-    @Query('sortOrder') sortOrder: string,
-    @Query('page') page: string,
-    @Query('limit') limit: string,
+    @Query("listingId") listingId: string,
+    @Query("channel") channel: string,
+    @Query("status") status: string,
+    @Query("source") source: string,
+    @Query("search") search: string,
+    @Query("sortBy") sortBy: string,
+    @Query("sortOrder") sortOrder: string,
+    @Query("page") page: string,
+    @Query("limit") limit: string,
   ) {
     return this.service.findAll(user.officeId, {
       listingId: listingId || undefined,
@@ -43,8 +71,10 @@ export class ListingAdvertisementsController {
       status: status || undefined,
       source: source || undefined,
       search: search || undefined,
-      sortBy: (sortBy as 'createdAt' | 'updatedAt' | 'startedAt' | 'lastCheckedAt') || undefined,
-      sortOrder: (sortOrder as 'asc' | 'desc') || undefined,
+      sortBy:
+        (sortBy as "createdAt" | "updatedAt" | "startedAt" | "lastCheckedAt") ||
+        undefined,
+      sortOrder: (sortOrder as "asc" | "desc") || undefined,
       page: page ? Number(page) : undefined,
       limit: limit ? Number(limit) : undefined,
     });
@@ -67,6 +97,8 @@ export class ListingAdvertisementsController {
       url?: string | null;
       memo?: string | null;
       externalAdId?: string | null;
+      naverArticleNo?: string | null;
+      naverUrl?: string | null;
       lastCheckedAt?: string | null;
       lastSyncedAt?: string | null;
     },
@@ -74,9 +106,9 @@ export class ListingAdvertisementsController {
     return this.service.create(user.officeId, body);
   }
 
-  @Patch(':id')
+  @Patch(":id")
   update(
-    @Param('id') id: string,
+    @Param("id") id: string,
     @CurrentUser() user: CurrentUserPayload,
     @Body()
     body: Partial<{
@@ -91,6 +123,8 @@ export class ListingAdvertisementsController {
       url: string | null;
       memo: string | null;
       externalAdId: string | null;
+      naverArticleNo: string | null;
+      naverUrl: string | null;
       lastCheckedAt: string | null;
       lastSyncedAt: string | null;
     }>,
@@ -98,11 +132,8 @@ export class ListingAdvertisementsController {
     return this.service.update(id, user.officeId, body);
   }
 
-  @Delete(':id')
-  remove(
-    @Param('id') id: string,
-    @CurrentUser() user: CurrentUserPayload,
-  ) {
+  @Delete(":id")
+  remove(@Param("id") id: string, @CurrentUser() user: CurrentUserPayload) {
     return this.service.remove(id, user.officeId);
   }
 }

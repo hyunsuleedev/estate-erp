@@ -12,6 +12,7 @@ const TENANT_SCOPED_MODELS = new Set([
   'Property',
   'ListingIntake',
   'Listing',
+  'ListingAdvertisement',
   'PriceHistory',
   'BuyerRequirement',
   'Consultation',
@@ -36,6 +37,16 @@ const TENANT_SCOPED_MODELS = new Set([
   'AgentWakeupRequest',
   'AgentRun',
   'AgentActivity',
+  'AdvertisementSyncRun',
+  'AdvertisementSyncStep',
+  'AgentActionRequest',
+  'AgentActionVerification',
+  'ExternalListingGroup',
+  'ExternalListing',
+  'ExternalListingSnapshotSession',
+  'ExternalListingSource',
+  'OfficeAdvertisementGroup',
+  'OfficeAdvertisement',
   // 공동중개 네트워크 모델(NetworkRoom/NetworkRoomMember/NetworkSharedProperty/
   // NetworkInquiry/NetworkMessage)은 여러 사무소가 한 방을 공유하는 크로스 오피스
   // 데이터라 자동 officeId 주입 대상이 아니다 (NetworkInquiry는 officeId 컬럼 자체가

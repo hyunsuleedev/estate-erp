@@ -1,10 +1,11 @@
-import { Module } from '@nestjs/common';
-import { PrismaModule } from '../../prisma/prisma.module';
-import { ListingAdvertisementsController } from './listing-advertisements.controller';
-import { ListingAdvertisementsService } from './listing-advertisements.service';
+import { Module } from "@nestjs/common";
+import { PrismaModule } from "../../prisma/prisma.module";
+import { AgentModule } from "../agent/agent.module";
+import { ListingAdvertisementsController } from "./listing-advertisements.controller";
+import { ListingAdvertisementsService } from "./listing-advertisements.service";
 
 @Module({
-  imports: [PrismaModule],
+  imports: [PrismaModule, AgentModule],
   controllers: [ListingAdvertisementsController],
   providers: [ListingAdvertisementsService],
   exports: [ListingAdvertisementsService],

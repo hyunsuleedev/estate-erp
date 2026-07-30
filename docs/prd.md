@@ -4,7 +4,7 @@
 
 - 작성일: 2026년 3월 25일
 - 작성자: Hyunsu
-- 최종 수정: 2026년 4월 13일
+- 최종 수정: 2026년 7월 27일
 
 이 문서는 제품 범위와 우선순위를 빠르게 이해하기 위한 PRD다. 상세 설계와 전략 메모는 별도 문서로 분리한다.
 
@@ -15,6 +15,7 @@
 - [PRODUCT_STRATEGY.md](./PRODUCT_STRATEGY.md): 시장/경쟁/AI/MCP 전략
 - [DECISIONS.md](./DECISIONS.md): 핵심 결정, 미결정 사항, 후속 과제
 - [LOCAL_INFRA.md](./LOCAL_INFRA.md): 로컬 개발 인프라 실행 방법
+- [AGENTIC_WORKSPACE_ARCHITECTURE.md](./AGENTIC_WORKSPACE_ARCHITECTURE.md): 사람-agent 광고 운영 제어면과 skill 계약
 - [desktop-prd/README.md](./desktop-prd/README.md): desktop 페이지 상세 PRD 작성 하네스
 
 ---
@@ -99,7 +100,13 @@ Estate ERP는 대한민국 부동산 중개사무소를 위한 통합 ERP다. �
 - 고정비 관리: OfficeExpenseTemplate
 - 공적장부 발급 UI 스캐폴딩 (유료 API 업체 연동 포함)
 - 매물 사진 관리 스캐폴딩 (S3 업로드는 Phase 2)
-- 리모트 MCP Server 엔드포인트 (`/mcp/sse`, JWT 인증)
+- 리모트 MCP Server 엔드포인트 (`/mcp`, Streamable HTTP, JWT/API key/OAuth 인증)
+- 일반 Task와 분리된 좁은 `AgentActionRequest` 승인 계약
+  - ListingAdvertisement CP 상태 + OfficeAdvertisement 내 광고 비교 → exact-hash 변경안 → 사람 승인 → 로컬 computer use 실행 → 이실장 저장값 검증
+  - 광고노트 ExternalListing은 별도 관측 메모리로 유지하고 내 광고/AI 요청과 연결하지 않음
+  - 같은 호실의 활성 경쟁 광고 중 더 싼 비교 가능 조건이 하나라도 있으면 순위와 무관하게 경고하고, 순위·층 노출은 판단 근거로 함께 표시
+  - CAPTCHA·MFA·계정/대상/저장값 불일치처럼 사람이 처리할 예외에만 Task 생성
+  - 범용 엔터티 patch나 rule builder가 아니라 광고 capability만 지원
 - AWS 인프라 배포 (ECS Fargate + ALB + RDS + ElastiCache + S3 + ECR)
 - GitHub Actions CI/CD
 - Electron 자동 업데이트 (electron-updater + S3 + 커스텀 알림 UI)
@@ -110,7 +117,7 @@ Estate ERP는 대한민국 부동산 중개사무소를 위한 통합 ERP다. �
 - 인바운드/아웃바운드 콜 세션 처리
 - 데스크톱 실시간 통화 팝업
 - CTI 연동을 전제로 한 상담 시작 흐름
-- AI 검토함 및 Rule/Proposal 기반 승인 큐
+- 범용 AI 검토함 및 Rule/Proposal/EntityDraft 기반 승인 큐
 - 내부 AI 챗 (Phase 2)
 - pgvector 기반 의미 매칭 (Phase 2)
 
@@ -130,6 +137,7 @@ Estate ERP는 대한민국 부동산 중개사무소를 위한 통합 ERP다. �
 
 - 로컬 MCP 서버 (Electron 호스팅)
 - 네이버/외부 데이터 연동
+- 보이는 로컬 세션 기반 이실장 `agent-browser`/computer-use executor
 - CTI Bridge
 - Electron과 CTI Bridge 간 로컬 통신
 
@@ -209,7 +217,7 @@ Estate ERP는 대한민국 부동산 중개사무소를 위한 통합 ERP다. �
 
 ### 5.8 MCP Server
 
-- **리모트 MCP (Estate ERP)**: NestJS SSE 엔드포인트 (`/mcp/sse`). Claude Desktop/ChatGPT 등 외부 AI가 직접 연결.
+- **리모트 MCP (Estate ERP)**: NestJS Streamable HTTP 엔드포인트 (`/mcp`). Codex/ChatGPT 등 외부 AI가 직접 연결.
 - **크롤러 MCP (별도 패키지)**: 네이버 부동산 HTML 파싱 전용. `packages/mcp-crawler`로 분리, `npx @estate-erp/mcp-crawler`로 실행. 사용자 PC에서 로컬 실행 (IP 자연스러움 + 법적 분리).
 - **로컬 MCP** (Phase 3): Electron에서 호스팅. 크롤러 MCP 통합 등 로컬 전용 기능.
 - 인증: JWT 또는 API Key (`X-API-Key` 헤더). API Key는 만료 없이 자동화 전용.
@@ -471,6 +479,7 @@ Phase 1은 기본(9,900원)으로 출시. CTI/공적장부 API 연동이 완료�
 - 사무소당 광고노트 단지 수 제한: 무료 2개 / 기본 20개 / 프로 무제한
 - batch upsert (최대 200건/요청) + 스냅샷 세션 기반
 - `isActive=false` + `lastSeenAt` 30일 이전 → ExternalListing 자동 삭제
+  (`AgentActionRequest`/`AgentActionVerification` 근거로 참조 중인 행은 제외)
 - `raw` JSONB 7일 후 null 처리 (용량 70% 절감)
 
 ---

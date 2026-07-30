@@ -1,15 +1,4 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { OfficeAdvertisementsService } from './office-advertisements.service';
-
-jest.mock('@estate-erp/shared', () => ({
-  ...jest.requireActual('@estate-erp/shared'),
-  ListingAdvertisementChannel: {
-    NAVER: 'naver',
-  },
-  ListingAdvertisementSource: {
-    EXTERNAL_OBSERVED: 'external_observed',
-  },
-}));
 
 describe('OfficeAdvertisementsService', () => {
   function createService() {
@@ -17,18 +6,19 @@ describe('OfficeAdvertisementsService', () => {
       officeAdvertisementGroup: {
         findMany: jest.fn(),
         count: jest.fn(),
-        findFirst: jest.fn(),
+        findUnique: jest.fn(),
         create: jest.fn(),
         update: jest.fn(),
       },
       officeAdvertisement: {
         findUnique: jest.fn(),
         upsert: jest.fn(),
+        deleteMany: jest.fn(),
         findMany: jest.fn(),
       },
       listingAdvertisement: {
         findFirst: jest.fn(),
-        create: jest.fn(),
+        update: jest.fn(),
       },
     };
 
@@ -38,14 +28,15 @@ describe('OfficeAdvertisementsService', () => {
     };
   }
 
-  it('returns grouped office advertisements for the office', async () => {
+  it('returns Naver comparison snapshots scoped to the office', async () => {
     const { prisma, service } = createService();
-    prisma.officeAdvertisementGroup.findMany.mockResolvedValue([{ id: 'group-1' }]);
+    prisma.officeAdvertisementGroup.findMany.mockResolvedValue([
+      { id: 'group-1' },
+    ]);
     prisma.officeAdvertisementGroup.count.mockResolvedValue(1);
 
     const result = await service.findAllGroups('office-1', {
-      source: 'naver',
-      status: 'needs_unit_confirmation',
+      search: '2412345678',
       page: 1,
       limit: 50,
     });
@@ -56,13 +47,9 @@ describe('OfficeAdvertisementsService', () => {
     });
     expect(prisma.officeAdvertisementGroup.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: {
-          AND: [
-            { officeId: 'office-1' },
-            { source: 'naver' },
-            { status: 'needs_unit_confirmation' },
-          ],
-        },
+        where: expect.objectContaining({
+          AND: expect.arrayContaining([{ officeId: 'office-1' }]),
+        }),
         orderBy: { lastSeenAt: 'desc' },
         skip: 0,
         take: 50,
@@ -70,60 +57,64 @@ describe('OfficeAdvertisementsService', () => {
     );
   });
 
-  it('rejects invalid group status filters', async () => {
-    const { service } = createService();
-
-    await expect(
-      service.findAllGroups('office-1', { status: 'bogus' }),
-    ).rejects.toBeInstanceOf(BadRequestException);
-  });
-
-  it('batch upserts a new own ad group with related advertisements', async () => {
+  it('stores a comparison directly under the canonical ListingAdvertisement', async () => {
     const { prisma, service } = createService();
+    prisma.listingAdvertisement.findFirst.mockResolvedValue({
+      id: 'listing-ad-1',
+      naverArticleNo: '100',
+      listing: { transactionType: 'sale' },
+    });
+    prisma.officeAdvertisementGroup.findUnique.mockResolvedValue(null);
+    prisma.officeAdvertisementGroup.create.mockResolvedValue({
+      id: 'group-1',
+    });
     prisma.officeAdvertisement.findUnique
       .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce(null)
       .mockResolvedValueOnce(null);
-    prisma.officeAdvertisementGroup.create.mockResolvedValue({ id: 'group-1' });
     prisma.officeAdvertisement.upsert
-      .mockResolvedValueOnce({
-        id: 'ad-own',
+      .mockResolvedValueOnce({ id: 'ad-own' })
+      .mockResolvedValueOnce({ id: 'ad-related' });
+    prisma.officeAdvertisement.deleteMany.mockResolvedValue({ count: 0 });
+    prisma.officeAdvertisement.findMany.mockResolvedValue([
+      {
         isMine: true,
         price: 150000,
         deposit: null,
         monthlyRent: null,
-      })
-      .mockResolvedValueOnce({
-        id: 'ad-related',
+      },
+      {
         isMine: false,
         price: 149000,
         deposit: null,
         monthlyRent: null,
-      });
-    prisma.officeAdvertisement.findMany.mockResolvedValue([
-      { id: 'ad-own', isMine: true, price: 150000, deposit: null, monthlyRent: null },
-      { id: 'ad-related', isMine: false, price: 149000, deposit: null, monthlyRent: null },
+      },
     ]);
-    prisma.officeAdvertisementGroup.update.mockResolvedValue({ id: 'group-1' });
+    prisma.officeAdvertisementGroup.update.mockResolvedValue({
+      id: 'group-1',
+    });
+    prisma.listingAdvertisement.update.mockResolvedValue({
+      id: 'listing-ad-1',
+    });
 
     const result = await service.batchUpsert('office-1', {
-      source: 'naver',
       groups: [
         {
-          siteName: '고덕그라시움',
-          dongHint: '137',
-          transactionType: 'sale',
+          listingAdvertisementId: 'listing-ad-1',
           advertisements: [
             {
               articleNo: '100',
               isMine: true,
               isMain: true,
               price: 150000,
+              floorInfo: '중/25',
+              verificationTypeCode: 'OWNER',
             },
             {
               articleNo: '101',
               realtorName: '타부동산',
               price: 149000,
+              floorInfo: '12/25',
+              verificationTypeCode: 'PHONE',
             },
           ],
         },
@@ -139,13 +130,46 @@ describe('OfficeAdvertisementsService', () => {
     expect(prisma.officeAdvertisementGroup.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
         officeId: 'office-1',
-        source: 'naver',
-        siteName: '고덕그라시움',
-        dongHint: '137',
+        listingAdvertisementId: 'listing-ad-1',
       }),
       select: { id: true },
     });
-    expect(prisma.officeAdvertisement.upsert).toHaveBeenCalledTimes(2);
+    expect(prisma.officeAdvertisementGroup.create).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          status: expect.anything(),
+        }),
+      }),
+    );
+    expect(prisma.officeAdvertisement.upsert).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        create: expect.objectContaining({
+          floorInfo: '중/25',
+          floorExposureMode: 'band',
+          verificationTypeCode: 'OWNER',
+        }),
+      }),
+    );
+    expect(prisma.officeAdvertisement.upsert).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        create: expect.objectContaining({
+          floorInfo: '12/25',
+          floorExposureMode: 'exact',
+          verificationTypeCode: 'PHONE',
+        }),
+      }),
+    );
+    expect(prisma.officeAdvertisement.findMany).toHaveBeenCalledWith({
+      where: { groupId: 'group-1', isActive: true },
+      select: {
+        isMine: true,
+        price: true,
+        deposit: true,
+        monthlyRent: true,
+      },
+    });
     expect(prisma.officeAdvertisementGroup.update).toHaveBeenCalledWith({
       where: { id: 'group-1' },
       data: expect.objectContaining({
@@ -155,29 +179,70 @@ describe('OfficeAdvertisementsService', () => {
         relatedPriceMax: 149000,
       }),
     });
+    expect(prisma.listingAdvertisement.update).toHaveBeenCalledWith({
+      where: { id: 'listing-ad-1' },
+      data: { lastCheckedAt: expect.any(Date) },
+    });
   });
 
-  it('reuses an existing group when the main advertisement already exists', async () => {
+  it('rejects comparison data that does not contain the exact Naver article', async () => {
     const { prisma, service } = createService();
-    prisma.officeAdvertisement.findUnique
-      .mockResolvedValueOnce({ groupId: 'group-existing' })
-      .mockResolvedValueOnce({ id: 'ad-own' });
-    prisma.officeAdvertisement.upsert.mockResolvedValue({
-      id: 'ad-own',
-      isMine: true,
-      price: 150000,
-      deposit: null,
-      monthlyRent: null,
+    prisma.listingAdvertisement.findFirst.mockResolvedValue({
+      id: 'listing-ad-1',
+      naverArticleNo: '100',
+      listing: { transactionType: 'sale' },
     });
-    prisma.officeAdvertisement.findMany.mockResolvedValue([
-      { id: 'ad-own', isMine: true, price: 150000, deposit: null, monthlyRent: null },
-    ]);
-    prisma.officeAdvertisementGroup.update.mockResolvedValue({ id: 'group-existing' });
 
     const result = await service.batchUpsert('office-1', {
-      source: 'naver',
       groups: [
         {
+          listingAdvertisementId: 'listing-ad-1',
+          advertisements: [{ articleNo: '999', price: 150000 }],
+        },
+      ],
+    });
+
+    expect(result.errors).toEqual([
+      expect.objectContaining({
+        articleNo: '999',
+        message: expect.stringContaining('exact naverArticleNo'),
+      }),
+    ]);
+    expect(prisma.officeAdvertisementGroup.create).not.toHaveBeenCalled();
+  });
+
+  it('reuses the one comparison group owned by a ListingAdvertisement', async () => {
+    const { prisma, service } = createService();
+    prisma.listingAdvertisement.findFirst.mockResolvedValue({
+      id: 'listing-ad-1',
+      naverArticleNo: '100',
+      listing: { transactionType: 'sale' },
+    });
+    prisma.officeAdvertisementGroup.findUnique.mockResolvedValue({
+      id: 'group-existing',
+    });
+    prisma.officeAdvertisement.findUnique.mockResolvedValue({ id: 'ad-own' });
+    prisma.officeAdvertisement.upsert.mockResolvedValue({ id: 'ad-own' });
+    prisma.officeAdvertisement.deleteMany.mockResolvedValue({ count: 0 });
+    prisma.officeAdvertisement.findMany.mockResolvedValue([
+      {
+        isMine: true,
+        price: 150000,
+        deposit: null,
+        monthlyRent: null,
+      },
+    ]);
+    prisma.officeAdvertisementGroup.update.mockResolvedValue({
+      id: 'group-existing',
+    });
+    prisma.listingAdvertisement.update.mockResolvedValue({
+      id: 'listing-ad-1',
+    });
+
+    const result = await service.batchUpsert('office-1', {
+      groups: [
+        {
+          listingAdvertisementId: 'listing-ad-1',
           advertisements: [{ articleNo: '100', isMine: true, price: 150000 }],
         },
       ],
@@ -188,62 +253,45 @@ describe('OfficeAdvertisementsService', () => {
     expect(prisma.officeAdvertisementGroup.create).not.toHaveBeenCalled();
   });
 
-  it('links a group to an owned listing advertisement without creating a new internal ad', async () => {
+  it('does not flatten monthly deposit and rent into a scalar minimum', async () => {
     const { prisma, service } = createService();
-    prisma.officeAdvertisementGroup.findFirst.mockResolvedValue({
-      id: 'group-1',
-      officeId: 'office-1',
-      memo: '네이버 내 광고',
-      hoHint: null,
-      mainAdvertisement: {
-        articleNo: '100',
-        sourceUrl: 'https://m.land.naver.com/article/info/100',
-        cpPcArticleUrl: 'https://land.naver.com/article/100',
-        price: 150000,
-        deposit: null,
-        monthlyRent: null,
-        articleConfirmYmd: '20260526',
+    prisma.officeAdvertisement.findMany.mockResolvedValue([
+      {
+        isMine: true,
+        price: null,
+        deposit: 5000,
+        monthlyRent: 180,
       },
-    });
-    prisma.listingAdvertisement.findFirst.mockResolvedValue({
-      id: 'listing-ad-1',
-      listingId: 'listing-1',
-      officeId: 'office-1',
-    });
-    prisma.officeAdvertisementGroup.update.mockResolvedValue({ id: 'group-1', status: 'linked' });
-
-    const result = await service.linkGroupToListingAdvertisement('group-1', 'office-1', {
-      listingAdvertisementId: 'listing-ad-1',
-      hoHint: '702',
+      {
+        isMine: false,
+        price: null,
+        deposit: 4000,
+        monthlyRent: 200,
+      },
+    ]);
+    prisma.officeAdvertisementGroup.update.mockResolvedValue({
+      id: 'group-1',
     });
 
-    expect(result).toEqual({ id: 'group-1', status: 'linked' });
-    expect(prisma.listingAdvertisement.create).not.toHaveBeenCalled();
+    await (
+      service as unknown as {
+        refreshGroupAggregates: (
+          groupId: string,
+          transactionType: string,
+        ) => Promise<void>;
+      }
+    ).refreshGroupAggregates('group-1', 'monthly');
+
     expect(prisma.officeAdvertisementGroup.update).toHaveBeenCalledWith({
       where: { id: 'group-1' },
-      data: expect.objectContaining({
-        listingAdvertisementId: 'listing-ad-1',
-        hoHint: '702',
-        status: 'linked',
-      }),
-      include: expect.any(Object),
+      data: {
+        ownPrice: null,
+        ownDeposit: 5000,
+        ownMonthlyRent: 180,
+        relatedCount: 1,
+        relatedPriceMin: null,
+        relatedPriceMax: null,
+      },
     });
-  });
-
-  it('rejects linking a group to a listing advertisement from another office', async () => {
-    const { prisma, service } = createService();
-    prisma.officeAdvertisementGroup.findFirst.mockResolvedValue({
-      id: 'group-1',
-      mainAdvertisement: null,
-    });
-    prisma.listingAdvertisement.findFirst.mockResolvedValue(null);
-
-    await expect(
-      service.linkGroupToListingAdvertisement('group-1', 'office-1', {
-        listingAdvertisementId: 'other-listing-ad',
-      }),
-    ).rejects.toBeInstanceOf(NotFoundException);
-
-    expect(prisma.listingAdvertisement.create).not.toHaveBeenCalled();
   });
 });

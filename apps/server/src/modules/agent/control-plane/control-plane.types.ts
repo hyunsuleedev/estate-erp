@@ -42,6 +42,8 @@ export interface CreateAgentSessionInput {
   agentKey: string;
   adapter?: string;
   taskId?: string | null;
+  agentActionRequestId?: string | null;
+  advertisementSyncStepId?: string | null;
   taskKey: string;
   context?: Prisma.InputJsonValue;
   plan?: Prisma.InputJsonValue | null;
@@ -51,12 +53,16 @@ export interface ListAgentSessionsOptions {
   status?: AgentSessionStatus;
   agentKey?: string;
   taskId?: string;
+  agentActionRequestId?: string;
+  advertisementSyncStepId?: string;
   limit?: number;
 }
 
 export interface UpdateAgentSessionInput {
   status?: AgentSessionStatus;
   taskId?: string | null;
+  agentActionRequestId?: string | null;
+  advertisementSyncStepId?: string | null;
   waitingReason?: string | null;
   context?: Prisma.InputJsonValue;
   plan?: Prisma.InputJsonValue | null;
@@ -82,6 +88,11 @@ export interface ListAgentWakeupsOptions {
 export interface ClaimAgentWakeupOptions {
   source?: string;
   leaseMs?: number;
+  /**
+   * 로컬 자격증명/브라우저 상태가 필요한 wakeup은 지정된 기기만 claim한다.
+   * 값이 없으면 runnerDeviceId가 없는 일반 wakeup만 대상이다.
+   */
+  runnerDeviceId?: string;
 }
 
 export interface CreateAgentRunInput {

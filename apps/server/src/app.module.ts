@@ -28,7 +28,9 @@ import { ContractsModule } from './modules/contracts/contracts.module';
 import { EmployeesModule } from './modules/employees/employees.module';
 import { OfficesModule } from './modules/offices/offices.module';
 import { ExternalListingsModule } from './modules/external-listings/external-listings.module';
+import { ExternalListingSourcesModule } from './modules/external-listing-sources/external-listing-sources.module';
 import { AgentModule } from './modules/agent/agent.module';
+import { AgentActionRequestsModule } from './modules/agent-action-requests/agent-action-requests.module';
 import { FinanceModule } from './modules/finance/finance.module';
 import { PartnerBrokersModule } from './modules/partner-brokers/partner-brokers.module';
 import { PublicDocumentsModule } from './modules/public-documents/public-documents.module';
@@ -100,7 +102,9 @@ const AUTH_RATE_LIMIT_PER_MINUTE = 10;
     OfficesModule,
     CalendarEventsModule,
     ExternalListingsModule,
+    ExternalListingSourcesModule,
     AgentModule,
+    AgentActionRequestsModule,
     RegionsModule,
     FinanceModule,
     PartnerBrokersModule,

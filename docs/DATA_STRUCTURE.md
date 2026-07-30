@@ -408,6 +408,56 @@ ListingIntake 안의 거래/가격 옵션. 하나의 의뢰에 여러 Listing이
 - `in_contract`: 비취소 Deal이 selection / negotiating / preContract / contracted / settling
 - `closed`: 의뢰가 closed이거나 비취소 Deal이 completed / closed
 
+### ListingAdvertisement (내 광고 원장)
+
+이실장·부동산뱅크 등 CP에서 가져온 실제 광고다. CP가 상세 주소를 제공하므로
+생성 시점부터 하나의 `Listing`에 귀속되며 별도의 호실 연결 상태를 두지 않는다.
+CP 조회 결과에는 현재 광고 중인 항목만 포함된다. 작성·승인 대기는
+`AgentActionRequest`, 수집 성공·실패는 `AdvertisementSyncRun/Step`이
+소유하며 개별 광고 row의 상태로 저장하지 않는다.
+
+| 필드 | 타입 | 설명 |
+|------|------|------|
+| id | UUID | PK |
+| officeId | UUID | FK → Office |
+| listingId | UUID | FK → Listing |
+| channel | String | CP사 slug (`esiljang`, `budongsanbank`) |
+| status | String | active / ended |
+| source | String | manual / cp_sync |
+| advertisedPrice / Deposit / MonthlyRent | Int? | CP에 제출된 광고 조건 (만원) |
+| externalAdId | String? | CP사 광고 ID |
+| url | String? | CP 광고 관리 URL |
+| naverArticleNo | String? | CP가 제공한 네이버 매물번호(광고노트 FK 아님) |
+| naverUrl | String? | 네이버 비교 기준 URL |
+| lastSyncedAt | DateTime? | 마지막 CP 동기화 |
+| lastCheckedAt | DateTime? | 마지막 네이버 비교 |
+
+`channel`은 게시 플랫폼이 아니라 CP사다. 게시 플랫폼은 현재 네이버로 고정하며
+별도 `publicationPlatform` 필드를 두지 않는다.
+
+완전한 CP 조회가 성공하면 반환된 row를 `active`로 갱신하고, 그 성공한 전체
+조회에서 사라진 기존 row만 `ended`로 전환할 수 있다. 조회가 실패하거나
+일부만 수집됐으면 마지막 성공 스냅샷을 그대로 유지하고 Run/Step에 오류를
+기록한다.
+
+### OfficeAdvertisementGroup / OfficeAdvertisement (내 광고 네이버 비교)
+
+`OfficeAdvertisementGroup`은 반드시 하나의 `ListingAdvertisement`에 1:1로
+귀속된다. 현재 네이버 순위, 같은 호실 중복 수, 경쟁 최저·최고가를 저장하고
+`OfficeAdvertisement` 자식 row로 내 광고와 비교 광고의 관측값을 보관한다.
+단지·동·호 힌트, 수동 연결, 제외 상태는 두지 않으며 위치는
+`ListingAdvertisement → Listing → Property → Unit`에서만 읽는다.
+
+`OfficeAdvertisement.floorInfo`는 네이버에 실제로 노출된 값(`12/25`,
+`중/25` 등)이며 내부 `Unit.floor`와 별개다. 서버는 이를
+`floorExposureMode = exact | band | unknown`으로 분류하고 원본
+`verificationTypeCode`도 선택적으로 보존한다. 현재 비교에서 활성 경쟁 광고
+중 하나라도 내 광고보다 비교 가능한 가격 조건이 낮으면 순위와 무관하게
+`더 싼 광고 있음` 경고를 낸다. 월세는 보증금과 월세가 모두 같거나 낮고 둘 중
+하나 이상이 엄격히 낮은 경우만 더 싼 조건이며, 서로 반대 방향으로 움직이면
+비교 불가로 둔다. CP 광고는 활성인데 네이버의 내 광고 관측값이 비활성이면
+가격 비교보다 먼저 `내 광고 미노출` 경고를 낸다.
+
 ---
 
 ## 6. 구매고객
@@ -606,7 +656,10 @@ draft → signed → depositPaid → balancePaid → registered → cancelled
 | title | String | 제목 |
 | content | String? | 내용 |
 | source | String | manual, system, ai |
-| isDone | Boolean | 완료 여부 |
+| status | String | pending / in_progress / completed / cancelled |
+| priority | String | urgent / high / medium / low |
+| category | String | advertisement 등 업무 분류 |
+| assignedToId | UUID? | 실제 처리 담당 직원 |
 | dueDate | DateTime? | 마감일 |
 | contactId | UUID? | FK → Contact (관련 연락처) |
 | propertyId | UUID? | FK → Property (관련 호실/부동산 단위) |
@@ -614,6 +667,36 @@ draft → signed → depositPaid → balancePaid → registered → cancelled
 | consultationId | UUID? | FK → Consultation (상담에서 생성된 경우) |
 
 > 상담 후 "할 일 추가" → Task 생성 시 contactId, propertyId, listingId 자동 전달
+
+### AgentActionRequest (독립 AI 실행요청)
+
+일반 직원 업무인 `Task`와 별도 큐로 저장한다. 정상 제안·승인·반려·성공은
+Task를 만들거나 상태 변경하지 않으며, 실제 사람 작업이 필요한 예외만
+`escalationTaskId`로 Task에 승격한다.
+
+| 필드 | 타입 | 설명 |
+|------|------|------|
+| id | UUID | PK |
+| officeId | UUID | FK → Office |
+| reviewerId | UUID | 검토 담당 User |
+| escalationTaskId | UUID? | 예외 시에만 생성된 FK → Task |
+| listingAdvertisementId | UUID | 변경 대상 내부 광고 |
+| capability | String | advertisement.takedown / advertisement.terms.set |
+| payload | JSONB | 승인 대상 exact final-value 명령 |
+| preconditions | JSONB | 관측 상태 hash/만료 조건 |
+| evidence | JSONB | ListingAdvertisement CP 상태 + OfficeAdvertisement 비교 snapshot |
+| contentHash | String | 승인과 실행을 묶는 SHA-256 |
+| reviewStatus | String | pending / approved / rejected / withdrawn / expired / stale / superseded |
+| executionStatus | String | not_started / awaiting_manual / succeeded / failed / needs_input / cancelled |
+| verificationStatus | String | pending / matched / mismatch / not_found / blocked / not_required |
+| version | Int | optimistic concurrency |
+
+`AgentSession`은 `taskId` 또는 `agentActionRequestId` 중 하나에만 연결할 수 있다.
+따라서 Task와 AI 요청을 합치지 않고도 AgentRun/AgentActivity를 각 업무에 귀속한다.
+
+광고노트 `ExternalListing`은 이 요청과 연결하지 않는다. CP 광고의
+`naverArticleNo`는 내 광고 비교에서 `OfficeAdvertisement.isMain`을 식별하는
+스칼라 값이며 `ExternalListing` 조회 키로 사용하지 않는다.
 
 ## 10. 가격 이력
 

@@ -43,15 +43,17 @@ export class AgentControlPlaneService {
     this.assertNonBlank(input.taskKey, 'taskKey');
     const adapter = input.adapter?.trim() || 'mcp';
 
-    if (input.taskId) {
-      const task = await this.prisma.task.findFirst({
-        where: { id: input.taskId, officeId },
-        select: { id: true },
-      });
-      if (!task) {
-        throw new NotFoundException('Task not found in this office');
-      }
-    }
+    this.assertSingleWorkItem(
+      input.taskId ?? null,
+      input.agentActionRequestId ?? null,
+      input.advertisementSyncStepId ?? null,
+    );
+    await this.assertWorkItemAccess(
+      officeId,
+      input.taskId ?? null,
+      input.agentActionRequestId ?? null,
+      input.advertisementSyncStepId ?? null,
+    );
 
     return this.prisma.agentSession.create({
       data: {
@@ -59,6 +61,9 @@ export class AgentControlPlaneService {
         agentKey: input.agentKey.trim(),
         adapter,
         taskId: input.taskId ?? null,
+        agentActionRequestId: input.agentActionRequestId ?? null,
+        advertisementSyncStepId:
+          input.advertisementSyncStepId ?? null,
         taskKey: input.taskKey.trim(),
         context: input.context ?? {},
         ...(input.plan !== undefined
@@ -90,7 +95,25 @@ export class AgentControlPlaneService {
     const existing = await this.prisma.agentSession.findFirst({
       where: identity,
     });
-    if (existing) return existing;
+    if (existing) {
+      const associationWasSpecified =
+        input.taskId !== undefined ||
+        input.agentActionRequestId !== undefined ||
+        input.advertisementSyncStepId !== undefined;
+      if (
+        associationWasSpecified &&
+        (existing.taskId !== (input.taskId ?? null) ||
+          existing.agentActionRequestId !==
+            (input.agentActionRequestId ?? null) ||
+          existing.advertisementSyncStepId !==
+            (input.advertisementSyncStepId ?? null))
+      ) {
+        throw new ConflictException(
+          'The existing agent session is linked to a different work item',
+        );
+      }
+      return existing;
+    }
 
     try {
       return await this.createSession(officeId, { ...input, adapter });
@@ -122,6 +145,12 @@ export class AgentControlPlaneService {
         ...(options.status ? { status: options.status } : {}),
         ...(options.agentKey ? { agentKey: options.agentKey } : {}),
         ...(options.taskId ? { taskId: options.taskId } : {}),
+        ...(options.agentActionRequestId
+          ? { agentActionRequestId: options.agentActionRequestId }
+          : {}),
+        ...(options.advertisementSyncStepId
+          ? { advertisementSyncStepId: options.advertisementSyncStepId }
+          : {}),
       },
       orderBy: { updatedAt: 'desc' },
       take: this.normalizeLimit(options.limit),
@@ -133,21 +162,40 @@ export class AgentControlPlaneService {
     sessionId: string,
     input: UpdateAgentSessionInput,
   ) {
-    await this.getSession(officeId, sessionId);
-
-    if (input.taskId) {
-      const task = await this.prisma.task.findFirst({
-        where: { id: input.taskId, officeId },
-        select: { id: true },
-      });
-      if (!task) throw new NotFoundException('Task not found in this office');
-    }
+    const current = await this.getSession(officeId, sessionId);
+    const nextTaskId =
+      input.taskId === undefined ? current.taskId : input.taskId;
+    const nextAgentActionRequestId =
+      input.agentActionRequestId === undefined
+        ? current.agentActionRequestId
+        : input.agentActionRequestId;
+    const nextAdvertisementSyncStepId =
+      input.advertisementSyncStepId === undefined
+        ? current.advertisementSyncStepId
+        : input.advertisementSyncStepId;
+    this.assertSingleWorkItem(
+      nextTaskId,
+      nextAgentActionRequestId,
+      nextAdvertisementSyncStepId,
+    );
+    await this.assertWorkItemAccess(
+      officeId,
+      nextTaskId,
+      nextAgentActionRequestId,
+      nextAdvertisementSyncStepId,
+    );
 
     return this.prisma.agentSession.update({
       where: { id: sessionId },
       data: {
         ...(input.status ? { status: input.status } : {}),
         ...(input.taskId !== undefined ? { taskId: input.taskId } : {}),
+        ...(input.agentActionRequestId !== undefined
+          ? { agentActionRequestId: input.agentActionRequestId }
+          : {}),
+        ...(input.advertisementSyncStepId !== undefined
+          ? { advertisementSyncStepId: input.advertisementSyncStepId }
+          : {}),
         ...(input.waitingReason !== undefined
           ? { waitingReason: input.waitingReason }
           : {}),
@@ -286,7 +334,7 @@ export class AgentControlPlaneService {
     return this.prisma.$transaction(async (tx) => {
       let attempt = 1;
       if (input.wakeupRequestId) {
-        await tx.$queryRaw(
+        await tx.$executeRaw(
           Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${officeId}), hashtext(${input.wakeupRequestId}))`,
         );
         const previous = await tx.agentRun.aggregate({
@@ -346,6 +394,20 @@ export class AgentControlPlaneService {
     const sourceFilter = options.source
       ? Prisma.sql`AND pending_wakeup."source" = ${options.source}`
       : Prisma.empty;
+    const runnerDeviceId = options.runnerDeviceId?.trim();
+    if (options.runnerDeviceId !== undefined) {
+      this.assertNonBlank(runnerDeviceId ?? '', 'runnerDeviceId');
+    }
+    const runnerDeviceFilter = runnerDeviceId
+      ? Prisma.sql`
+          AND (
+            pending_wakeup."payload"->>'runnerDeviceId' IS NULL
+            OR pending_wakeup."payload"->>'runnerDeviceId' = ${runnerDeviceId}
+          )
+        `
+      : Prisma.sql`
+          AND pending_wakeup."payload"->>'runnerDeviceId' IS NULL
+        `;
 
     return this.prisma.$transaction(async (tx) => {
       const claimed = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
@@ -433,6 +495,7 @@ export class AgentControlPlaneService {
               WHERE previous_run."wakeup_request_id" = pending_wakeup."id"
             ), 0) < pending_wakeup."max_attempts"
             ${sourceFilter}
+            ${runnerDeviceFilter}
           ORDER BY pending_wakeup."requested_at" ASC
           FOR UPDATE SKIP LOCKED
           LIMIT 1
@@ -659,7 +722,7 @@ export class AgentControlPlaneService {
     }
 
     return this.prisma.$transaction(async (tx) => {
-      await tx.$queryRaw(
+      await tx.$executeRaw(
         Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${officeId}), hashtext(${input.sessionId}))`,
       );
 
@@ -730,6 +793,64 @@ export class AgentControlPlaneService {
         status: { in: ['queued', 'claimed'] },
       },
     });
+  }
+
+  private assertSingleWorkItem(
+    taskId: string | null,
+    agentActionRequestId: string | null,
+    advertisementSyncStepId: string | null,
+  ) {
+    const associations = [
+      taskId,
+      agentActionRequestId,
+      advertisementSyncStepId,
+    ].filter(Boolean);
+    if (associations.length > 1) {
+      throw new BadRequestException(
+        'An agent session can link to only one work item',
+      );
+    }
+  }
+
+  private async assertWorkItemAccess(
+    officeId: string,
+    taskId: string | null,
+    agentActionRequestId: string | null,
+    advertisementSyncStepId: string | null,
+  ) {
+    const [task, actionRequest, advertisementSyncStep] = await Promise.all([
+      taskId
+        ? this.prisma.task.findFirst({
+            where: { id: taskId, officeId },
+            select: { id: true },
+          })
+        : null,
+      agentActionRequestId
+        ? this.prisma.agentActionRequest.findFirst({
+            where: { id: agentActionRequestId, officeId },
+            select: { id: true },
+          })
+        : null,
+      advertisementSyncStepId
+        ? this.prisma.advertisementSyncStep.findFirst({
+            where: { id: advertisementSyncStepId, officeId },
+            select: { id: true },
+          })
+        : null,
+    ]);
+    if (taskId && !task) {
+      throw new NotFoundException('Task not found in this office');
+    }
+    if (agentActionRequestId && !actionRequest) {
+      throw new NotFoundException(
+        'AgentActionRequest not found in this office',
+      );
+    }
+    if (advertisementSyncStepId && !advertisementSyncStep) {
+      throw new NotFoundException(
+        'AdvertisementSyncStep not found in this office',
+      );
+    }
   }
 
   private normalizeLimit(limit?: number) {

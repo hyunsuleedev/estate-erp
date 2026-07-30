@@ -21,7 +21,7 @@ interface MockTx {
   contract: { findUnique: jest.Mock };
   commissionPayment: { updateMany: jest.Mock };
   /** advisory lock (pg_advisory_xact_lock) 호출 */
-  $queryRaw: jest.Mock;
+  $executeRaw: jest.Mock;
 }
 
 function buildMocks(options: {
@@ -58,7 +58,7 @@ function buildMocks(options: {
         ),
     },
     commissionPayment: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
-    $queryRaw: jest.fn().mockResolvedValue([{ pg_advisory_xact_lock: null }]),
+    $executeRaw: jest.fn().mockResolvedValue(1),
   };
 
   const prisma = {
@@ -107,10 +107,10 @@ describe('DealsService 배타 단계 가드', () => {
 
     await service.updateStage('deal-1', 'office-1', { stage: 'preContract' });
 
-    // 락(tx.$queryRaw) → 충돌 검사(tx.deal.findFirst) 순서
-    expect(tx.$queryRaw).toHaveBeenCalled();
+    // 락(tx.$executeRaw) → 충돌 검사(tx.deal.findFirst) 순서
+    expect(tx.$executeRaw).toHaveBeenCalled();
     expect(tx.deal.findFirst).toHaveBeenCalled();
-    expect(tx.$queryRaw.mock.invocationCallOrder[0]).toBeLessThan(
+    expect(tx.$executeRaw.mock.invocationCallOrder[0]).toBeLessThan(
       tx.deal.findFirst.mock.invocationCallOrder[0],
     );
   });
@@ -134,7 +134,7 @@ describe('DealsService 배타 단계 가드', () => {
 
     await service.updateStage('deal-1', 'office-1', { stage: 'negotiating' });
 
-    expect(tx.$queryRaw).not.toHaveBeenCalled();
+    expect(tx.$executeRaw).not.toHaveBeenCalled();
     expect(tx.listing.updateMany).not.toHaveBeenCalled();
     expect(tx.listingIntake.updateMany).not.toHaveBeenCalled();
   });
@@ -154,7 +154,7 @@ describe('DealsService completed 동기화', () => {
     // listing 에는 상태 컬럼이 없다 — 쓰기 없음
     expect(tx.listing.updateMany).not.toHaveBeenCalled();
     // 서로 다른 Listing의 동시 완료도 직렬화되도록 의뢰 lock 후 판정한다.
-    expect(tx.$queryRaw.mock.invocationCallOrder[0]).toBeLessThan(
+    expect(tx.$executeRaw.mock.invocationCallOrder[0]).toBeLessThan(
       tx.listing.count.mock.invocationCallOrder[0],
     );
     expect(tx.listingIntake.updateMany).toHaveBeenCalledWith(
@@ -347,7 +347,7 @@ describe('DealsService 취소', () => {
     await service.remove('deal-1', 'office-1');
 
     expect(tx.deal.delete).toHaveBeenCalledWith({ where: { id: 'deal-1' } });
-    expect(tx.$queryRaw.mock.invocationCallOrder[0]).toBeLessThan(
+    expect(tx.$executeRaw.mock.invocationCallOrder[0]).toBeLessThan(
       tx.deal.delete.mock.invocationCallOrder[0],
     );
     expect(tx.deal.delete.mock.invocationCallOrder[0]).toBeLessThan(

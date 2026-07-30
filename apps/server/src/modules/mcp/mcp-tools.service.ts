@@ -5,6 +5,10 @@ import {
   IntakeConfirmationState,
   IntakeLifecycleStatus,
   ListingAvailability,
+  AGENT_ACTION_BLOCKER_REASONS,
+  AGENT_ACTION_CAPABILITIES,
+  type AgentActionBlockerReason,
+  AgentActionCapability,
 } from '@estate-erp/shared';
 import { Prisma } from '@prisma/client';
 import { ListingsService } from '../listings/listings.service';
@@ -22,6 +26,7 @@ import { SitesService } from '../sites/sites.service';
 import { DongsService } from '../dongs/dongs.service';
 import { UnitsService } from '../units/units.service';
 import { OfficeSitesService } from '../office-sites/office-sites.service';
+import { ExternalListingSourcesService } from '../external-listing-sources/external-listing-sources.service';
 import { PropertyContactsService } from '../property-contacts/property-contacts.service';
 import { ContactRelationsService } from '../contact-relations/contact-relations.service';
 import { TenantsService } from '../tenants/tenants.service';
@@ -41,6 +46,8 @@ import {
   type OfficeAdvertisementBatchGroupDto,
 } from '../office-advertisements/office-advertisements.service';
 import { AgentControlPlaneService } from '../agent/control-plane/control-plane.service';
+import { AgentActionRequestsService } from '../agent-action-requests/agent-action-requests.service';
+import { getRoleScopes } from '../../constants/role-permissions';
 import type {
   AgentActivityType,
   AgentSessionStatus,
@@ -62,6 +69,7 @@ export interface ToolCallResult {
 interface McpContext {
   officeId: string;
   userId: string;
+  role?: string;
 }
 
 type ToolHandler = (
@@ -72,6 +80,7 @@ type ToolHandler = (
 interface ToolEntry {
   def: ToolDefinition;
   handler: ToolHandler;
+  requiredScopes: readonly string[];
 }
 
 // JSON Schema helpers
@@ -82,7 +91,10 @@ const strEnum = (desc: string, values: string[]) => ({
   description: desc,
 });
 const num = (desc: string) => ({ type: 'number' as const, description: desc });
-const bool = (desc: string) => ({ type: 'boolean' as const, description: desc });
+const bool = (desc: string) => ({
+  type: 'boolean' as const,
+  description: desc,
+});
 const strArr = (desc: string) => ({
   type: 'array' as const,
   items: { type: 'string' as const },
@@ -120,10 +132,7 @@ const maintenanceFeeIncludes = {
 };
 const listingInput = obj(
   {
-    transactionType: strEnum(
-      '거래유형',
-      LISTING_TRANSACTION_TYPES,
-    ),
+    transactionType: strEnum('거래유형', LISTING_TRANSACTION_TYPES),
     price: num('매매가/전세가 (만원)'),
     deposit: num('보증금 (만원)'),
     monthlyRent: num('월세 (만원)'),
@@ -166,6 +175,7 @@ export class McpToolsService {
     private readonly dongs: DongsService,
     private readonly units: UnitsService,
     private readonly officeSites: OfficeSitesService,
+    private readonly externalListingSources: ExternalListingSourcesService,
     private readonly propertyContacts: PropertyContactsService,
     private readonly contactRelations: ContactRelationsService,
     private readonly tenants: TenantsService,
@@ -180,12 +190,15 @@ export class McpToolsService {
     private readonly officeAdvertisements: OfficeAdvertisementsService,
     private readonly listingIntakes: ListingIntakesService,
     private readonly controlPlane: AgentControlPlaneService,
+    private readonly agentActionRequests: AgentActionRequestsService,
   ) {
     this.registerAll();
   }
 
-  getToolDefinitions(): ToolDefinition[] {
-    return this.tools.map((t) => t.def);
+  getToolDefinitions(ctx?: McpContext): ToolDefinition[] {
+    return this.tools
+      .filter((tool) => !ctx || this.canUseTool(tool, ctx))
+      .map((tool) => tool.def);
   }
 
   async executeTool(
@@ -197,6 +210,17 @@ export class McpToolsService {
     if (!entry) {
       return {
         content: [{ type: 'text', text: `Unknown tool: ${toolName}` }],
+        isError: true,
+      };
+    }
+    if (!this.canUseTool(entry, ctx)) {
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `Error: Missing MCP scope for tool ${toolName}`,
+          },
+        ],
         isError: true,
       };
     }
@@ -225,8 +249,19 @@ export class McpToolsService {
     description: string,
     inputSchema: Record<string, unknown>,
     handler: ToolHandler,
+    requiredScopes: readonly string[] = [],
   ) {
-    this.tools.push({ def: { name, description, inputSchema }, handler });
+    this.tools.push({
+      def: { name, description, inputSchema },
+      handler,
+      requiredScopes,
+    });
+  }
+
+  private canUseTool(entry: ToolEntry, ctx: McpContext) {
+    if (entry.requiredScopes.length === 0) return true;
+    const scopes = new Set(getRoleScopes(ctx.role ?? ''));
+    return entry.requiredScopes.every((scope) => scopes.has(scope));
   }
 
   /**
@@ -326,10 +361,7 @@ export class McpToolsService {
         nextConfirmTo: str('다음 확인 예정 종료일 (ISO)'),
         includeClosed: bool('종결 의뢰 포함'),
         propertyId: str('관리매물 ID'),
-        transactionType: strEnum(
-          '거래유형',
-          LISTING_TRANSACTION_TYPES,
-        ),
+        transactionType: strEnum('거래유형', LISTING_TRANSACTION_TYPES),
         siteId: str('단지 ID'),
         siteType: str('매물유형'),
         wardCode: str('법정동코드'),
@@ -391,10 +423,7 @@ export class McpToolsService {
             '의뢰 생명주기',
             Object.values(IntakeLifecycleStatus),
           ),
-          closedReason: strEnum(
-            '종결 사유',
-            Object.values(IntakeClosedReason),
-          ),
+          closedReason: strEnum('종결 사유', Object.values(IntakeClosedReason)),
           receivedAt: str('접수일 (ISO)'),
           lastCheckedAt: str('마지막 확인 시도일 (ISO)'),
           lastVerifiedAt: str('마지막 유효 확인일 (ISO)'),
@@ -437,10 +466,7 @@ export class McpToolsService {
             '의뢰 생명주기',
             Object.values(IntakeLifecycleStatus),
           ),
-          closedReason: strEnum(
-            '종결 사유',
-            Object.values(IntakeClosedReason),
-          ),
+          closedReason: strEnum('종결 사유', Object.values(IntakeClosedReason)),
           receivedAt: str('접수일 (ISO)'),
           lastCheckedAt: str('마지막 확인 시도일 (ISO)'),
           lastVerifiedAt: str('마지막 유효 확인일 (ISO)'),
@@ -476,8 +502,21 @@ export class McpToolsService {
       obj(
         {
           id: str('의뢰 ID'),
-          result: strEnum('확인 결과', ['alive', 'price_changed', 'unavailable', 'no_answer', 'pending']),
-          channel: strEnum('확인 채널', ['phone', 'sms', 'visit', 'owner_message', 'note', 'mcp']),
+          result: strEnum('확인 결과', [
+            'alive',
+            'price_changed',
+            'unavailable',
+            'no_answer',
+            'pending',
+          ]),
+          channel: strEnum('확인 채널', [
+            'phone',
+            'sms',
+            'visit',
+            'owner_message',
+            'note',
+            'mcp',
+          ]),
           memo: str('확인 메모'),
           checkedAt: str('확인 시각 (ISO)'),
           nextConfirmAt: str('다음 확인 예정일 (ISO)'),
@@ -510,10 +549,7 @@ export class McpToolsService {
       'find_listings',
       '매물(Listing) 목록을 검색합니다. 의뢰 생명주기·확인 상태·가용 상태와 거래 조건으로 필터링합니다.',
       obj({
-        transactionType: strEnum(
-          '거래유형',
-          LISTING_TRANSACTION_TYPES,
-        ),
+        transactionType: strEnum('거래유형', LISTING_TRANSACTION_TYPES),
         intakeLifecycleStatus: strEnum(
           '의뢰 생명주기',
           Object.values(IntakeLifecycleStatus),
@@ -563,10 +599,7 @@ export class McpToolsService {
         {
           intakeId: str('의뢰 ID'),
           propertyId: str('관리매물 ID'),
-          transactionType: strEnum(
-            '거래유형',
-            LISTING_TRANSACTION_TYPES,
-          ),
+          transactionType: strEnum('거래유형', LISTING_TRANSACTION_TYPES),
           price: num('매매가/전세가 (만원)'),
           deposit: num('보증금 (만원)'),
           monthlyRent: num('월세 (만원)'),
@@ -640,18 +673,23 @@ export class McpToolsService {
     );
 
     // ═══════════════════════════════════════════════════════════
-    // 내부 광고 row (ListingAdvertisements)
+    // CP 광고 원장 (ListingAdvertisements)
     // ═══════════════════════════════════════════════════════════
     this.add(
       'find_listing_advertisements',
-      '내부 광고 row(ListingAdvertisement) 목록을 검색합니다. listingId, 채널, 상태, 출처, 검색어로 필터링.',
+      'CP 광고 원장(ListingAdvertisement)을 검색합니다. 광고 row는 실제 CP 광고만 나타내며 상태는 active/ended입니다. CP 수집 실패는 광고 row가 아니라 AdvertisementSyncRun/Step에 기록됩니다.',
       obj({
         listingId: str('매물 ID'),
-        channel: str('광고 채널 slug (naver, asil, zigbang 등)'),
-        status: strEnum('광고 상태', ['planned', 'draft', 'active', 'paused', 'ended', 'error']),
-        source: strEnum('광고 row 출처', ['manual', 'external_observed', 'cp_sync']),
-        search: str('검색어 (채널, URL, 메모, 단지명 등)'),
-        sortBy: strEnum('정렬 필드', ['createdAt', 'updatedAt', 'startedAt', 'lastCheckedAt']),
+        channel: str('CP사 slug (esiljang, budongsanbank 등)'),
+        status: strEnum('광고 생명주기', ['active', 'ended']),
+        source: strEnum('광고 원장 출처', ['manual', 'cp_sync']),
+        search: str('검색어 (CP사, CP/네이버 광고번호, URL, 단지명 등)'),
+        sortBy: strEnum('정렬 필드', [
+          'createdAt',
+          'updatedAt',
+          'startedAt',
+          'lastCheckedAt',
+        ]),
         sortOrder: strEnum('정렬 방향', ['asc', 'desc']),
         ...page,
       }),
@@ -662,7 +700,11 @@ export class McpToolsService {
           status: a.status as string,
           source: a.source as string,
           search: a.search as string,
-          sortBy: a.sortBy as 'createdAt' | 'updatedAt' | 'startedAt' | 'lastCheckedAt',
+          sortBy: a.sortBy as
+            | 'createdAt'
+            | 'updatedAt'
+            | 'startedAt'
+            | 'lastCheckedAt',
           sortOrder: a.sortOrder as 'asc' | 'desc',
           page: (a.page as number) ?? 1,
           limit: this.clampLimit(a),
@@ -671,23 +713,25 @@ export class McpToolsService {
 
     this.add(
       'create_listing_advertisement',
-      '내부 광고 row(ListingAdvertisement)를 생성합니다. 같은 listingId+channel에 active 광고가 있으면 서비스에서 거절합니다.',
+      'CP에서 실제로 관측한 광고 원장(ListingAdvertisement)을 생성합니다. 작성·승인 대기 요청이나 동기화 오류 row를 만들지 않습니다.',
       obj(
         {
           listingId: str('매물 ID'),
-          channel: str('광고 채널 slug (naver, asil, zigbang 등)'),
-          status: strEnum('광고 상태', ['planned', 'draft', 'active', 'paused', 'ended', 'error']),
-          source: strEnum('광고 row 출처', ['manual', 'external_observed', 'cp_sync']),
+          channel: str('CP사 slug (esiljang, budongsanbank 등)'),
+          status: strEnum('광고 생명주기', ['active', 'ended']),
+          source: strEnum('광고 원장 출처', ['manual', 'cp_sync']),
           advertisedPrice: num('광고 매매가/전세가 (만원)'),
           advertisedDeposit: num('광고 보증금 (만원)'),
           advertisedMonthlyRent: num('광고 월세 (만원)'),
           startedAt: str('광고 시작일 (ISO)'),
           endedAt: str('광고 종료일 (ISO)'),
-          url: str('광고 URL'),
+          url: str('CP 광고 관리 URL'),
           memo: str('광고 메모'),
-          externalAdId: str('외부 광고 ID'),
-          lastCheckedAt: str('마지막 확인일 (ISO)'),
-          lastSyncedAt: str('마지막 동기화일 (ISO)'),
+          externalAdId: str('CP사 광고 ID'),
+          naverArticleNo: str('네이버 매물번호'),
+          naverUrl: str('네이버 광고 URL'),
+          lastCheckedAt: str('마지막 네이버 비교일 (ISO)'),
+          lastSyncedAt: str('마지막 CP 동기화일 (ISO)'),
         },
         ['listingId', 'channel'],
       ),
@@ -705,6 +749,8 @@ export class McpToolsService {
           url: a.url as string | null,
           memo: a.memo as string | null,
           externalAdId: a.externalAdId as string | null,
+          naverArticleNo: a.naverArticleNo as string | null,
+          naverUrl: a.naverUrl as string | null,
           lastCheckedAt: a.lastCheckedAt as string | null,
           lastSyncedAt: a.lastSyncedAt as string | null,
         }),
@@ -712,23 +758,25 @@ export class McpToolsService {
 
     this.add(
       'update_listing_advertisement',
-      '내부 광고 row(ListingAdvertisement)를 수정합니다. 정상 광고 내림은 status=ended를 사용하세요.',
+      'CP 광고 원장(ListingAdvertisement)을 수정합니다. 완전한 CP 수집 성공 후 더 이상 반환되지 않은 광고만 status=ended로 전환하세요. 수집 실패 시 기존 row를 변경하지 않습니다.',
       obj(
         {
-          id: str('광고 row ID'),
-          channel: str('광고 채널 slug (naver, asil, zigbang 등)'),
-          status: strEnum('광고 상태', ['planned', 'draft', 'active', 'paused', 'ended', 'error']),
-          source: strEnum('광고 row 출처', ['manual', 'external_observed', 'cp_sync']),
+          id: str('광고 원장 ID'),
+          channel: str('CP사 slug (esiljang, budongsanbank 등)'),
+          status: strEnum('광고 생명주기', ['active', 'ended']),
+          source: strEnum('광고 원장 출처', ['manual', 'cp_sync']),
           advertisedPrice: num('광고 매매가/전세가 (만원)'),
           advertisedDeposit: num('광고 보증금 (만원)'),
           advertisedMonthlyRent: num('광고 월세 (만원)'),
           startedAt: str('광고 시작일 (ISO)'),
           endedAt: str('광고 종료일 (ISO)'),
-          url: str('광고 URL'),
+          url: str('CP 광고 관리 URL'),
           memo: str('광고 메모'),
-          externalAdId: str('외부 광고 ID'),
-          lastCheckedAt: str('마지막 확인일 (ISO)'),
-          lastSyncedAt: str('마지막 동기화일 (ISO)'),
+          externalAdId: str('CP사 광고 ID'),
+          naverArticleNo: str('네이버 매물번호'),
+          naverUrl: str('네이버 광고 URL'),
+          lastCheckedAt: str('마지막 네이버 비교일 (ISO)'),
+          lastSyncedAt: str('마지막 CP 동기화일 (ISO)'),
         },
         ['id'],
       ),
@@ -745,6 +793,8 @@ export class McpToolsService {
           url: a.url as string | null,
           memo: a.memo as string | null,
           externalAdId: a.externalAdId as string | null,
+          naverArticleNo: a.naverArticleNo as string | null,
+          naverUrl: a.naverUrl as string | null,
           lastCheckedAt: a.lastCheckedAt as string | null,
           lastSyncedAt: a.lastSyncedAt as string | null,
         }),
@@ -754,121 +804,47 @@ export class McpToolsService {
       'delete_listing_advertisement',
       '잘못 등록한 내부 광고 row(ListingAdvertisement)를 삭제합니다. 정상 광고 내림은 update_listing_advertisement(status=ended)를 사용하세요.',
       obj({ id: str('광고 row ID') }, ['id']),
-      async (a, c) => this.listingAdvertisements.remove(a.id as string, c.officeId),
+      async (a, c) =>
+        this.listingAdvertisements.remove(a.id as string, c.officeId),
     );
 
     // ═══════════════════════════════════════════════════════════
-    // 내 사무소 외부 광고 인벤토리 (OfficeAdvertisements)
+    // 내 광고의 네이버 비교 스냅샷 (OfficeAdvertisements)
     // ═══════════════════════════════════════════════════════════
     this.add(
       'find_office_advertisement_groups',
-      '내 사무소 외부 광고 그룹(OfficeAdvertisementGroup) 목록을 검색합니다. 네이버 등 외부 플랫폼에서 가져온 "내 광고" 인벤토리. status/source/검색어/미연결 필터 지원.',
+      'ListingAdvertisement별 네이버 비교 스냅샷을 검색합니다.',
       obj({
-        source: str('출처 (기본 naver)'),
-        status: strEnum('그룹 상태', [
-          'needs_unit_confirmation',
-          'linked',
-          'ignored',
-        ]),
-        search: str('검색어 (단지명, 동 힌트, 호 힌트, 메모, articleNo, 매물명, 중개사명)'),
-        onlyUnlinked: bool('아직 내부 ListingAdvertisement에 연결되지 않은 그룹만 (ignored 제외)'),
+        search: str('검색어 (CP/네이버 광고번호, 단지명, 호수, 중개사명)'),
         ...page,
       }),
       async (a, c) =>
         this.officeAdvertisements.findAllGroups(c.officeId, {
-          source: a.source as string,
-          status: a.status as string,
           search: a.search as string,
-          onlyUnlinked: a.onlyUnlinked as boolean,
           page: (a.page as number) ?? 1,
           limit: this.clampLimit(a),
         }),
     );
 
     this.add(
-      'update_office_advertisement_group',
-      '내 광고 그룹의 상태/메모/호 힌트/동 힌트를 수정합니다. status 값: needs_unit_confirmation | linked | ignored.',
-      obj(
-        {
-          id: str('그룹 ID'),
-          status: strEnum('그룹 상태', [
-            'needs_unit_confirmation',
-            'linked',
-            'ignored',
-          ]),
-          memo: str('메모'),
-          hoHint: str('호수 추정 힌트 (예: 1503호)'),
-          dongHint: str('동 추정 힌트 (예: 101동)'),
-        },
-        ['id'],
-      ),
-      async (a, c) =>
-        this.officeAdvertisements.updateGroup(a.id as string, c.officeId, {
-          status: a.status as string,
-          memo: a.memo as string | null,
-          hoHint: a.hoHint as string | null,
-          dongHint: a.dongHint as string | null,
-        }),
-    );
-
-    this.add(
-      'link_office_advertisement_group_to_listing_advertisement',
-      '내 광고 그룹을 내부 ListingAdvertisement에 연결합니다. 연결 시 그룹 status는 자동으로 linked가 됩니다.',
-      obj(
-        {
-          id: str('그룹 ID'),
-          listingAdvertisementId: str('연결할 ListingAdvertisement ID'),
-          hoHint: str('호수 힌트 (선택)'),
-          memo: str('메모 (선택)'),
-        },
-        ['id', 'listingAdvertisementId'],
-      ),
-      async (a, c) =>
-        this.officeAdvertisements.linkGroupToListingAdvertisement(
-          a.id as string,
-          c.officeId,
-          {
-            listingAdvertisementId: a.listingAdvertisementId as string,
-            hoHint: a.hoHint as string | null,
-            memo: a.memo as string | null,
-          },
-        ),
-    );
-
-    this.add(
       'batch_upsert_office_advertisements',
-      '내 사무소 외부 광고를 그룹 단위로 일괄 upsert합니다. 같은 articleNo가 있는 그룹은 재사용, 없으면 새 그룹 생성. groups는 최대 100개. 각 그룹은 advertisements 1개 이상 필수.',
+      '각 ListingAdvertisement의 네이버 링크를 읽은 결과를 저장합니다. 모든 그룹은 listingAdvertisementId와 그 원장의 정확한 naverArticleNo를 포함해야 합니다.',
       obj(
         {
-          source: str('출처 (기본 naver). 그룹별 source가 없으면 이 값을 사용.'),
           groups: {
             type: 'array' as const,
-            description: '광고 그룹 배열 (최대 100)',
+            description: 'ListingAdvertisement별 네이버 비교 결과 (최대 100)',
             items: obj(
               {
-                source: str('그룹별 출처 override'),
-                siteName: str('단지명 (네이버 원본)'),
-                buildingName: str('건물명/동명 원본'),
-                dongHint: str('동 힌트'),
-                hoHint: str('호 힌트'),
-                floorInfo: str('층 정보 (저/중/고/숫자)'),
-                areaName: str('평형명 (예: 84A)'),
-                exclusiveAreaM2: num('전용면적 (m²)'),
-                supplyAreaM2: num('공급면적 (m²)'),
-                transactionType: strEnum('거래유형', [
-                  'sale',
-                  'jeonse',
-                  'monthly',
-                ]),
+                listingAdvertisementId: str('비교 대상 CP 광고 원장 ID'),
                 memo: str('메모'),
                 advertisements: {
                   type: 'array' as const,
                   description: '그룹에 속하는 개별 광고 (1개 이상 필수)',
                   items: obj(
                     {
-                      articleNo: str('네이버 등 외부 매물 번호'),
-                      sourceUrl: str('원본 URL'),
-                      cpPcArticleUrl: str('CP PC 상세 URL'),
+                      articleNo: str('네이버 매물번호'),
+                      sourceUrl: str('네이버 광고 URL'),
                       isMine: bool('내 사무소 광고 여부'),
                       isMain: bool('그룹 대표 광고 여부'),
                       isActive: bool('활성 여부 (기본 true)'),
@@ -882,6 +858,10 @@ export class McpToolsService {
                       ranking: num('노출 순위'),
                       sameAddrCnt: num('같은 주소 매물 수'),
                       articleConfirmYmd: str('네이버 매물 확인일 (YYYYMMDD)'),
+                      floorInfo: str(
+                        '네이버 공개 층 표현 (예: 12/25, 저/25)',
+                      ),
+                      verificationTypeCode: str('네이버 확인 방식 코드'),
                       seango: bool('선광고 여부'),
                       epju: bool('e편주 여부'),
                       raw: { type: 'object', description: '원본 응답 JSON' },
@@ -890,7 +870,7 @@ export class McpToolsService {
                   ),
                 },
               },
-              ['advertisements'],
+              ['listingAdvertisementId', 'advertisements'],
             ),
           },
         },
@@ -898,9 +878,9 @@ export class McpToolsService {
       ),
       async (a, c) =>
         this.officeAdvertisements.batchUpsert(c.officeId, {
-          source: a.source as string,
           groups: a.groups as OfficeAdvertisementBatchGroupDto[],
         }),
+      ['advertisements:observe'],
     );
 
     // ═══════════════════════════════════════════════════════════
@@ -909,7 +889,11 @@ export class McpToolsService {
     this.add(
       'find_contacts',
       '연락처 목록을 검색합니다. 이름, 전화번호, 이메일로 검색. 태그 필터.',
-      obj({ search: str('검색어'), tags: strArr('태그 (VIP, 단골 등)'), ...page }),
+      obj({
+        search: str('검색어'),
+        tags: strArr('태그 (VIP, 단골 등)'),
+        ...page,
+      }),
       async (a, c) =>
         this.contacts.findAll(c.officeId, {
           search: a.search as string,
@@ -936,7 +920,16 @@ export class McpToolsService {
     this.add(
       'create_contact',
       '새 연락처를 등록합니다.',
-      obj({ name: str('이름'), phone: str('대표 전화번호'), email: str('이메일'), tags: strArr('태그'), memo: str('메모') }, ['name']),
+      obj(
+        {
+          name: str('이름'),
+          phone: str('대표 전화번호'),
+          email: str('이메일'),
+          tags: strArr('태그'),
+          memo: str('메모'),
+        },
+        ['name'],
+      ),
       async (a, c) =>
         this.contacts.create(c.officeId, {
           name: a.name as string,
@@ -950,7 +943,17 @@ export class McpToolsService {
     this.add(
       'update_contact',
       '연락처 정보를 수정합니다.',
-      obj({ id: str('연락처 ID'), name: str('이름'), phone: str('전화'), email: str('이메일'), tags: strArr('태그'), memo: str('메모') }, ['id']),
+      obj(
+        {
+          id: str('연락처 ID'),
+          name: str('이름'),
+          phone: str('전화'),
+          email: str('이메일'),
+          tags: strArr('태그'),
+          memo: str('메모'),
+        },
+        ['id'],
+      ),
       async (a, c) =>
         this.contacts.update(a.id as string, c.officeId, {
           name: a.name as string,
@@ -967,7 +970,13 @@ export class McpToolsService {
     this.add(
       'find_properties',
       '관리매물(Property) 목록. 단지, 지역, 매물유형으로 필터링.',
-      obj({ siteId: str('단지 ID'), siteType: str('매물유형'), wardCode: str('법정동코드'), search: str('검색어'), ...page }),
+      obj({
+        siteId: str('단지 ID'),
+        siteType: str('매물유형'),
+        wardCode: str('법정동코드'),
+        search: str('검색어'),
+        ...page,
+      }),
       async (a, c) =>
         this.properties.findAll(c.officeId, {
           siteId: a.siteId as string,
@@ -1109,19 +1118,22 @@ export class McpToolsService {
     this.add(
       'create_buyer_requirement',
       '새 구매 희망조건을 등록합니다.',
-      obj({
-        contactId: str('연락처 ID'),
-        transactionType: strEnum('거래유형', ['sale', 'jeonse', 'monthly']),
-        siteTypes: strArr('희망 유형 (apartment, villa 등)'),
-        priceMin: num('최소 예산 (만원)'),
-        priceMax: num('최대 예산 (만원)'),
-        areaMin: num('최소 면적 (m²)'),
-        areaMax: num('최대 면적 (m²)'),
-        urgency: strEnum('긴급도', ['urgent', 'normal', 'flexible']),
-        mustConditions: strArr('필수 조건'),
-        preferConditions: strArr('선호 조건'),
-        memo: str('메모'),
-      }, ['contactId']),
+      obj(
+        {
+          contactId: str('연락처 ID'),
+          transactionType: strEnum('거래유형', ['sale', 'jeonse', 'monthly']),
+          siteTypes: strArr('희망 유형 (apartment, villa 등)'),
+          priceMin: num('최소 예산 (만원)'),
+          priceMax: num('최대 예산 (만원)'),
+          areaMin: num('최소 면적 (m²)'),
+          areaMax: num('최대 면적 (m²)'),
+          urgency: strEnum('긴급도', ['urgent', 'normal', 'flexible']),
+          mustConditions: strArr('필수 조건'),
+          preferConditions: strArr('선호 조건'),
+          memo: str('메모'),
+        },
+        ['contactId'],
+      ),
       async (a, c) =>
         this.buyerReqs.create(c.officeId, {
           contactId: a.contactId as string,
@@ -1179,16 +1191,19 @@ export class McpToolsService {
     this.add(
       'create_consultation',
       '새 상담기록을 작성합니다.',
-      obj({
-        contactId: str('연락처 ID'),
-        type: strEnum('상담유형', ['phone', 'visit', 'online']),
-        content: str('메모 내용'),
-        propertyId: str('관련 매물 ID'),
-        listingIntakeId: str('관련 의뢰 ID'),
-        listingId: str('관련 리스팅 ID'),
-        matchId: str('관련 매칭 ID'),
-        buyerReqId: str('관련 구매조건 ID'),
-      }, ['contactId', 'type', 'content']),
+      obj(
+        {
+          contactId: str('연락처 ID'),
+          type: strEnum('상담유형', ['phone', 'visit', 'online']),
+          content: str('메모 내용'),
+          propertyId: str('관련 매물 ID'),
+          listingIntakeId: str('관련 의뢰 ID'),
+          listingId: str('관련 리스팅 ID'),
+          matchId: str('관련 매칭 ID'),
+          buyerReqId: str('관련 구매조건 ID'),
+        },
+        ['contactId', 'type', 'content'],
+      ),
       async (a, c) =>
         this.consultations.create(c.officeId, c.userId, {
           contactId: a.contactId as string,
@@ -1206,17 +1221,15 @@ export class McpToolsService {
       'get_recent_consultations',
       '최근 상담기록을 조회합니다.',
       obj({ limit: num('조회 수 (기본 10)') }),
-      async (a, c) => this.consultations.getRecent(c.officeId, (a.limit as number) ?? 10),
+      async (a, c) =>
+        this.consultations.getRecent(c.officeId, (a.limit as number) ?? 10),
     );
 
     // ═══════════════════════════════════════════════════════════
     // 매칭 (Matches)
     // ═══════════════════════════════════════════════════════════
-    this.add(
-      'find_matches',
-      '매칭 파이프라인 목록.',
-      obj({}),
-      async (_a, c) => this.matches.findAll(c.officeId),
+    this.add('find_matches', '매칭 파이프라인 목록.', obj({}), async (_a, c) =>
+      this.matches.findAll(c.officeId),
     );
 
     this.add(
@@ -1229,7 +1242,14 @@ export class McpToolsService {
     this.add(
       'create_match',
       '매물과 구매조건을 매칭합니다.',
-      obj({ listingId: str('매물 ID'), buyerReqId: str('구매조건 ID'), memo: str('메모') }, ['listingId', 'buyerReqId']),
+      obj(
+        {
+          listingId: str('매물 ID'),
+          buyerReqId: str('구매조건 ID'),
+          memo: str('메모'),
+        },
+        ['listingId', 'buyerReqId'],
+      ),
       async (a, c) =>
         this.matches.create(c.officeId, {
           listingId: a.listingId as string,
@@ -1241,7 +1261,22 @@ export class McpToolsService {
     this.add(
       'update_match_stage',
       '매칭 단계를 변경합니다.',
-      obj({ id: str('매칭 ID'), stage: strEnum('단계', ['suggested', 'buyerContacted', 'viewing', 'ownerContacted', 'negotiating', 'dealCreated', 'closed']), memo: str('메모') }, ['id', 'stage']),
+      obj(
+        {
+          id: str('매칭 ID'),
+          stage: strEnum('단계', [
+            'suggested',
+            'buyerContacted',
+            'viewing',
+            'ownerContacted',
+            'negotiating',
+            'dealCreated',
+            'closed',
+          ]),
+          memo: str('메모'),
+        },
+        ['id', 'stage'],
+      ),
       async (a, c) =>
         this.matches.updateStage(a.id as string, c.officeId, {
           stage: a.stage as string,
@@ -1252,11 +1287,8 @@ export class McpToolsService {
     // ═══════════════════════════════════════════════════════════
     // 계약 (Contracts)
     // ═══════════════════════════════════════════════════════════
-    this.add(
-      'find_contracts',
-      '계약 목록.',
-      obj({}),
-      async (_a, c) => this.contracts.findAll(c.officeId),
+    this.add('find_contracts', '계약 목록.', obj({}), async (_a, c) =>
+      this.contracts.findAll(c.officeId),
     );
 
     this.add(
@@ -1299,11 +1331,8 @@ export class McpToolsService {
     // ═══════════════════════════════════════════════════════════
     // 업무 (Tasks)
     // ═══════════════════════════════════════════════════════════
-    this.add(
-      'find_tasks',
-      '업무 목록.',
-      obj({}),
-      async (_a, c) => this.tasks.findAll(c.officeId),
+    this.add('find_tasks', '업무 목록.', obj({}), async (_a, c) =>
+      this.tasks.findAll(c.officeId),
     );
 
     this.add(
@@ -1316,49 +1345,66 @@ export class McpToolsService {
     this.add(
       'create_task',
       '새 업무를 생성합니다.',
-      obj({
-        title: str('제목'),
-        content: str('내용'),
-        source: strEnum('출처', ['manual', 'system', 'ai']),
-        priority: str('우선순위'),
-        category: str('카테고리'),
-        dueDate: str('마감일 (ISO)'),
-        assignedToId: str('담당자 ID'),
-        contactId: str('관련 연락처 ID'),
-        propertyId: str('관련 매물 ID'),
-        listingIntakeId: str('관련 의뢰 ID'),
-        listingId: str('관련 리스팅 ID'),
-        consultationId: str('관련 상담 ID'),
-        buyerReqId: str('관련 구매조건 ID'),
-        matchId: str('관련 매칭 ID'),
-        dealId: str('관련 거래 ID'),
-        contractId: str('관련 계약 ID'),
-      }, ['title']),
+      obj(
+        {
+          title: str('제목'),
+          content: str('내용'),
+          source: strEnum('출처', ['manual', 'system', 'ai']),
+          priority: str('우선순위'),
+          category: str('카테고리'),
+          dueDate: str('마감일 (ISO)'),
+          assignedToId: str('담당자 ID'),
+          contactId: str('관련 연락처 ID'),
+          propertyId: str('관련 매물 ID'),
+          listingIntakeId: str('관련 의뢰 ID'),
+          listingId: str('관련 리스팅 ID'),
+          consultationId: str('관련 상담 ID'),
+          buyerReqId: str('관련 구매조건 ID'),
+          matchId: str('관련 매칭 ID'),
+          dealId: str('관련 거래 ID'),
+          contractId: str('관련 계약 ID'),
+        },
+        ['title'],
+      ),
       async (a, c) =>
-        this.tasks.create(c.officeId, {
-          title: a.title as string,
-          content: a.content as string,
-          source: (a.source as string) ?? 'ai',
-          priority: a.priority as string,
-          category: a.category as string,
-          dueDate: a.dueDate as string,
-          assignedToId: a.assignedToId as string,
-          contactId: a.contactId as string,
-          propertyId: a.propertyId as string,
-          listingIntakeId: a.listingIntakeId as string,
-          listingId: a.listingId as string,
-          consultationId: a.consultationId as string,
-          buyerReqId: a.buyerReqId as string,
-          matchId: a.matchId as string,
-          dealId: a.dealId as string,
-          contractId: a.contractId as string,
-        }, c.userId),
+        this.tasks.create(
+          c.officeId,
+          {
+            title: a.title as string,
+            content: a.content as string,
+            source: (a.source as string) ?? 'ai',
+            priority: a.priority as string,
+            category: a.category as string,
+            dueDate: a.dueDate as string,
+            assignedToId: a.assignedToId as string,
+            contactId: a.contactId as string,
+            propertyId: a.propertyId as string,
+            listingIntakeId: a.listingIntakeId as string,
+            listingId: a.listingId as string,
+            consultationId: a.consultationId as string,
+            buyerReqId: a.buyerReqId as string,
+            matchId: a.matchId as string,
+            dealId: a.dealId as string,
+            contractId: a.contractId as string,
+          },
+          c.userId,
+        ),
     );
 
     this.add(
       'update_task',
       '업무를 수정합니다.',
-      obj({ id: str('업무 ID'), title: str('제목'), content: str('내용'), status: str('상태'), priority: str('우선순위'), dueDate: str('마감일') }, ['id']),
+      obj(
+        {
+          id: str('업무 ID'),
+          title: str('제목'),
+          content: str('내용'),
+          status: str('상태'),
+          priority: str('우선순위'),
+          dueDate: str('마감일'),
+        },
+        ['id'],
+      ),
       async (a, c) =>
         this.tasks.update(a.id as string, c.officeId, {
           title: a.title as string,
@@ -1375,7 +1421,12 @@ export class McpToolsService {
     this.add(
       'find_calendar_events',
       '캘린더 일정을 조회합니다. 기간, 유형, 담당자 필터.',
-      obj({ start: str('시작일 (ISO)'), end: str('종료일 (ISO)'), type: str('유형'), userId: str('담당자 ID') }),
+      obj({
+        start: str('시작일 (ISO)'),
+        end: str('종료일 (ISO)'),
+        type: str('유형'),
+        userId: str('담당자 ID'),
+      }),
       async (a, c) =>
         this.calendarEvents.findAll(c.officeId, {
           start: a.start as string,
@@ -1388,19 +1439,28 @@ export class McpToolsService {
     this.add(
       'create_calendar_event',
       '새 일정을 등록합니다.',
-      obj({
-        title: str('제목'),
-        description: str('설명'),
-        type: strEnum('유형', ['viewing', 'contract', 'meeting', 'task', 'general']),
-        allDay: bool('종일 여부'),
-        start: str('시작 (ISO)'),
-        end: str('종료 (ISO)'),
-        contactId: str('연락처 ID'),
-        propertyId: str('매물 ID'),
-        listingIntakeId: str('의뢰 ID'),
-        listingId: str('리스팅 ID'),
-        dealId: str('거래 ID'),
-      }, ['title', 'start']),
+      obj(
+        {
+          title: str('제목'),
+          description: str('설명'),
+          type: strEnum('유형', [
+            'viewing',
+            'contract',
+            'meeting',
+            'task',
+            'general',
+          ]),
+          allDay: bool('종일 여부'),
+          start: str('시작 (ISO)'),
+          end: str('종료 (ISO)'),
+          contactId: str('연락처 ID'),
+          propertyId: str('매물 ID'),
+          listingIntakeId: str('의뢰 ID'),
+          listingId: str('리스팅 ID'),
+          dealId: str('거래 ID'),
+        },
+        ['title', 'start'],
+      ),
       async (a, c) =>
         this.calendarEvents.create(c.officeId, c.userId, {
           title: a.title as string,
@@ -1420,11 +1480,8 @@ export class McpToolsService {
     // ═══════════════════════════════════════════════════════════
     // 단지/동/호실 (Sites / Dongs / Units)
     // ═══════════════════════════════════════════════════════════
-    this.add(
-      'find_sites',
-      '단지/건물 목록.',
-      obj({}),
-      async (_a, c) => this.sites.findAll(c.officeId),
+    this.add('find_sites', '단지/건물 목록.', obj({}), async (_a, c) =>
+      this.sites.findAll(c.officeId),
     );
 
     this.add(
@@ -1488,6 +1545,26 @@ export class McpToolsService {
     );
 
     // ═══════════════════════════════════════════════════════════
+    // 외부 수집 대상 (External Listing Sources)
+    // ═══════════════════════════════════════════════════════════
+    // 수집 스코프의 유일한 권위. 등록/수정은 owner/manager 전용이라 REST에만 두고,
+    // MCP에는 조회만 노출한다.
+    this.add(
+      'find_external_listing_sources',
+      '외부 수집 대상 목록. siteId ↔ 외부 단지코드(네이버 complexNo) 매핑의 유일한 근거. ' +
+        '여기 없는 단지는 수집 스코프가 아니며, 단지명 검색으로 추측하지 않는다.',
+      obj({
+        provider: str('플랫폼 (naver)'),
+        isEnabled: bool('수집 활성 여부'),
+      }),
+      async (a, c) =>
+        this.externalListingSources.findAll(c.officeId, {
+          provider: a.provider as string | undefined,
+          isEnabled: a.isEnabled as boolean | undefined,
+        }),
+    );
+
+    // ═══════════════════════════════════════════════════════════
     // 매물 관련인 (Property Contacts)
     // ═══════════════════════════════════════════════════════════
     this.add(
@@ -1495,21 +1572,33 @@ export class McpToolsService {
       '매물의 관련인(소유자, 대리인 등) 목록.',
       obj({ propertyId: str('매물 ID') }, ['propertyId']),
       async (a, c) =>
-        this.propertyContacts.findByProperty(c.officeId, a.propertyId as string),
+        this.propertyContacts.findByProperty(
+          c.officeId,
+          a.propertyId as string,
+        ),
     );
 
     this.add(
       'create_property_contact',
       '매물에 관련인을 추가합니다.',
-      obj({
-        contactId: str('연락처 ID'),
-        propertyId: str('매물 ID'),
-        role: strEnum('역할', ['owner', 'co_owner', 'representative', 'lawyer', 'tax_agent']),
-        shareRatio: num('지분비율 (%)'),
-        isResident: bool('실거주 여부'),
-        isPrimary: bool('주 연락처'),
-        memo: str('메모'),
-      }, ['contactId', 'propertyId', 'role']),
+      obj(
+        {
+          contactId: str('연락처 ID'),
+          propertyId: str('매물 ID'),
+          role: strEnum('역할', [
+            'owner',
+            'co_owner',
+            'representative',
+            'lawyer',
+            'tax_agent',
+          ]),
+          shareRatio: num('지분비율 (%)'),
+          isResident: bool('실거주 여부'),
+          isPrimary: bool('주 연락처'),
+          memo: str('메모'),
+        },
+        ['contactId', 'propertyId', 'role'],
+      ),
       async (a, c) =>
         this.propertyContacts.create(c.officeId, {
           contactId: a.contactId as string,
@@ -1549,21 +1638,27 @@ export class McpToolsService {
       '임대 계약 만료 임박 세입자 목록.',
       obj({ withinDays: num('일수 (기본 90)') }),
       async (a, c) =>
-        this.tenants.findExpiringContracts(c.officeId, (a.withinDays as number) ?? 90),
+        this.tenants.findExpiringContracts(
+          c.officeId,
+          (a.withinDays as number) ?? 90,
+        ),
     );
 
     this.add(
       'create_tenant',
       '세입자를 등록합니다.',
-      obj({
-        propertyId: str('매물 ID'),
-        contactId: str('연락처 ID'),
-        deposit: num('보증금 (만원)'),
-        monthlyRent: num('월세 (만원)'),
-        contractStart: str('계약 시작일'),
-        contractEnd: str('계약 종료일'),
-        memo: str('메모'),
-      }, ['propertyId', 'contactId']),
+      obj(
+        {
+          propertyId: str('매물 ID'),
+          contactId: str('연락처 ID'),
+          deposit: num('보증금 (만원)'),
+          monthlyRent: num('월세 (만원)'),
+          contractStart: str('계약 시작일'),
+          contractEnd: str('계약 종료일'),
+          memo: str('메모'),
+        },
+        ['propertyId', 'contactId'],
+      ),
       async (a, c) =>
         this.tenants.create(c.officeId, {
           propertyId: a.propertyId as string,
@@ -1579,11 +1674,8 @@ export class McpToolsService {
     // ═══════════════════════════════════════════════════════════
     // 직원 (Employees) — 읽기만
     // ═══════════════════════════════════════════════════════════
-    this.add(
-      'find_employees',
-      '직원 목록.',
-      obj({}),
-      async (_a, c) => this.employees.findAll(c.officeId),
+    this.add('find_employees', '직원 목록.', obj({}), async (_a, c) =>
+      this.employees.findAll(c.officeId),
     );
 
     this.add(
@@ -1611,12 +1703,17 @@ export class McpToolsService {
     );
 
     // ═══════════════════════════════════════════════════════════
-    // 외부매물 광고노트 (External Listings) — 읽기만
+    // 외부매물 광고노트 (External Listings)
     // ═══════════════════════════════════════════════════════════
     this.add(
       'find_external_listing_groups',
       '외부 매물(광고노트) 그룹 목록. 단지/거래유형/상태 필터.',
-      obj({ siteId: str('단지 ID'), transactionType: strEnum('거래유형', ['sale', 'jeonse', 'monthly']), status: str('상태'), search: str('검색어') }),
+      obj({
+        siteId: str('단지 ID'),
+        transactionType: strEnum('거래유형', ['sale', 'jeonse', 'monthly']),
+        status: str('상태'),
+        search: str('검색어'),
+      }),
       async (a, c) =>
         this.externalListings.findAllGroups(c.officeId, {
           siteId: a.siteId as string,
@@ -1630,19 +1727,28 @@ export class McpToolsService {
       'get_external_listing_group',
       '외부 매물 그룹 상세. 개별 매물 목록 포함.',
       obj({ id: str('그룹 ID') }, ['id']),
-      async (a, c) => this.externalListings.findGroupById(a.id as string, c.officeId),
+      async (a, c) =>
+        this.externalListings.findGroupById(a.id as string, c.officeId),
     );
 
     this.add(
       'update_external_listing_group',
       '외부 매물 그룹의 호수 추정, 메모, 상태를 수정합니다.',
-      obj({
-        id: str('그룹 ID'),
-        unitId: str('매칭할 호실 ID (null이면 해제)'),
-        inferredHo: str('추정 호수 (예: "1503호")'),
-        memo: str('메모'),
-        status: strEnum('상태', ['unmatched', 'matched', 'verified', 'on_hold']),
-      }, ['id']),
+      obj(
+        {
+          id: str('그룹 ID'),
+          unitId: str('매칭할 호실 ID (null이면 해제)'),
+          inferredHo: str('추정 호수 (예: "1503호")'),
+          memo: str('메모'),
+          status: strEnum('상태', [
+            'unmatched',
+            'matched',
+            'verified',
+            'on_hold',
+          ]),
+        },
+        ['id'],
+      ),
       async (a, c) =>
         this.externalListings.updateGroup(a.id as string, c.officeId, {
           unitId: a.unitId as string | null,
@@ -1653,47 +1759,136 @@ export class McpToolsService {
     );
 
     this.add(
+      'get_active_external_listing_snapshot_session',
+      '광고노트 수집 스코프의 활성 스냅샷 세션을 조회합니다.',
+      obj(
+        {
+          siteId: str('단지 ID'),
+          transactionType: strEnum('거래유형', ['sale', 'jeonse', 'monthly']),
+        },
+        ['siteId', 'transactionType'],
+      ),
+      async (a, c) =>
+        this.externalListings.getActiveSession(
+          c.officeId,
+          a.siteId as string,
+          a.transactionType as string,
+        ),
+      ['advertisements:observe'],
+    );
+
+    this.add(
+      'create_external_listing_snapshot_session',
+      '네이버 광고노트의 완전한 수집 범위를 표시하는 스냅샷 세션을 시작합니다. 같은 단지·거래유형에는 활성 세션이 하나만 존재합니다.',
+      obj(
+        {
+          siteId: str('단지 ID'),
+          transactionType: strEnum('거래유형', ['sale', 'jeonse', 'monthly']),
+        },
+        ['siteId', 'transactionType'],
+      ),
+      async (a, c) =>
+        this.externalListings.createSession(c.officeId, c.userId, {
+          siteId: a.siteId as string,
+          transactionType: a.transactionType as string,
+        }),
+      ['advertisements:observe'],
+    );
+
+    this.add(
+      'complete_external_listing_snapshot_session',
+      '완전한 광고노트 수집이 끝난 뒤 스냅샷 세션을 완료하고, 이번 세션에서 보이지 않은 기존 광고를 비활성화합니다.',
+      obj({ id: str('ExternalListingSnapshotSession ID') }, ['id']),
+      async (a, c) =>
+        this.externalListings.completeSession(
+          c.officeId,
+          c.userId,
+          c.role ?? 'agent',
+          a.id as string,
+        ),
+      ['advertisements:observe'],
+    );
+
+    this.add(
+      'cancel_external_listing_snapshot_session',
+      '수집이 불완전하거나 중단됐을 때 스냅샷 세션을 취소합니다. 보이지 않은 기존 광고를 비활성화하지 않습니다.',
+      obj({ id: str('ExternalListingSnapshotSession ID') }, ['id']),
+      async (a, c) =>
+        this.externalListings.cancelSession(
+          c.officeId,
+          c.userId,
+          c.role ?? 'agent',
+          a.id as string,
+        ),
+      ['advertisements:observe'],
+    );
+
+    this.add(
       'batch_upsert_external_listings',
       '외부 매물(네이버 등 크롤링 데이터)을 일괄 적재합니다. 있으면 업데이트, 없으면 생성. 그룹 자동 매칭.',
-      obj({
-        source: str('데이터 소스 (naver, kb, manual 등)'),
-        siteId: str('단지 ID'),
-        transactionType: strEnum('거래유형', ['sale', 'jeonse', 'monthly']),
-        listings: {
-          type: 'array',
-          description: '매물 목록',
-          items: {
-            type: 'object',
-            properties: {
-              articleNo: str('매물번호 (필수)'),
-              price: num('가격 (만원)'),
-              deposit: num('보증금 (만원)'),
-              monthlyRent: num('월세 (만원)'),
-              articleName: str('매물명'),
-              articleFeatureDesc: str('특징 설명'),
-              floorInfo: str('층 정보'),
-              exclusiveAreaM2: num('전용면적 (m²)'),
-              supplyAreaM2: num('공급면적 (m²)'),
-              direction: str('향'),
-              realtorName: str('중개사명'),
-              representativeTelNo: str('대표번호'),
-              representativeArticleNo: str('대표 매물번호 (sameAddr 그룹)'),
-              buildingName: str('동명'),
-              areaName: str('평형명 (84A 등)'),
-              sourceUrl: str('원본 URL'),
-              raw: { type: 'object', description: '원본 응답 전체 (JSONB 보존)' },
+      obj(
+        {
+          source: str('데이터 소스 (naver, kb, manual 등)'),
+          siteId: str('단지 ID'),
+          transactionType: strEnum('거래유형', ['sale', 'jeonse', 'monthly']),
+          batchId: str('수집 실행을 식별하는 선택적 안정 키'),
+          listings: {
+            type: 'array',
+            description: '매물 목록',
+            items: {
+              type: 'object',
+              properties: {
+                articleNo: str('매물번호 (필수)'),
+                price: num('가격 (만원)'),
+                deposit: num('보증금 (만원)'),
+                monthlyRent: num('월세 (만원)'),
+                articleName: str('매물명'),
+                articleFeatureDesc: str('특징 설명'),
+                detailDescription: str('상세 설명'),
+                articleConfirmYmd: str('매물 확인일 YYYYMMDD'),
+                floorInfo: str('층 정보'),
+                exclusiveAreaM2: num('전용면적 (m²)'),
+                supplyAreaM2: num('공급면적 (m²)'),
+                direction: str('향'),
+                realtorName: str('중개사명'),
+                realtorId: str('중개사 식별자'),
+                representativeTelNo: str('대표번호'),
+                representativeArticleNo: str('대표 매물번호 (sameAddr 그룹)'),
+                sameAddrCnt: num('동일 주소 광고 수'),
+                sameAddrDirectCnt: num('동일 주소 직거래 광고 수'),
+                ranking: num('광고 노출 순위'),
+                isSharedRank: bool('공동 순위 여부'),
+                sharedRank: num('공동 순위'),
+                sameRankNum: num('동일 순위 수'),
+                seango: bool('선광고 여부'),
+                epju: bool('e편주 여부'),
+                exposeStartYmd: num('노출 시작일 YYYYMMDD'),
+                exposeEndYmd: num('노출 종료일 YYYYMMDD'),
+                priceChangeState: str('가격 변경 상태'),
+                isPriceModification: bool('가격 수정 여부'),
+                buildingName: str('동명'),
+                areaName: str('평형명 (84A 등)'),
+                sourceUrl: str('원본 URL'),
+                raw: {
+                  type: 'object',
+                  description: '원본 응답 전체 (JSONB 보존)',
+                },
+              },
+              required: ['articleNo'],
             },
-            required: ['articleNo'],
           },
         },
-      }, ['source', 'siteId', 'transactionType', 'listings']),
+        ['source', 'siteId', 'transactionType', 'listings'],
+      ),
       async (a, c) =>
         this.externalListings.batchUpsert(c.officeId, {
           source: a.source as string,
           siteId: a.siteId as string,
           transactionType: a.transactionType as string,
+          batchId: a.batchId as string | undefined,
           listings: a.listings as BatchListingItem[],
         }),
+      ['advertisements:observe'],
     );
 
     // ═══════════════════════════════════════════════════════════
@@ -1716,7 +1911,11 @@ export class McpToolsService {
       '월별 캐시플로우 요약 (수금, 고정비, 순이익).',
       obj({ year: num('연도'), month: num('월') }, ['year', 'month']),
       async (a, c) =>
-        this.cashflow.getSummary(c.officeId, a.year as number, a.month as number),
+        this.cashflow.getSummary(
+          c.officeId,
+          a.year as number,
+          a.month as number,
+        ),
     );
 
     // ═══════════════════════════════════════════════════════════
@@ -1750,17 +1949,261 @@ export class McpToolsService {
     );
 
     // ═══════════════════════════════════════════════════════════
+    // Agent Action Requests — Task와 분리된 AI 외부 실행요청 큐
+    // ═══════════════════════════════════════════════════════════
+    this.add(
+      'create_agent_action_request',
+      'ListingAdvertisement의 CP 상태와 내 광고 관리의 최신 OfficeAdvertisement 비교 스냅샷을 근거로 독립 exact-hash 광고 변경안을 만듭니다. 정상 흐름에서는 Task를 만들지 않으며, 직원의 앱 내 승인 뒤 로컬 computer use가 실행합니다.',
+      obj(
+        {
+          reviewerId: str('AI 요청함에서 이 변경안을 검토할 직원 User ID'),
+          listingAdvertisementId: str('내부 ListingAdvertisement ID'),
+          capability: strEnum(
+            '허용된 단일 광고 변경 capability',
+            AGENT_ACTION_CAPABILITIES,
+          ),
+          rationale: str('변경이 필요한 이유와 판단 근거'),
+          payload: {
+            type: 'object',
+            description:
+              'capability별 명령. takedown={reasonCode}, terms.set={advertisedPrice?, advertisedDeposit?, advertisedMonthlyRent?}; 가격 단위는 만원.',
+          },
+          sourceSkillKey: str('관측/판단 skill key'),
+          sourceSkillVersion: str('관측/판단 skill version'),
+          executorSkillVersion: str(
+            '이실장 광고관리 실행 계약 버전. 현재 computer-use-v1.',
+          ),
+          dedupeKey: str('같은 제안의 재생성을 막는 선택적 안정 키'),
+          supersedesId: str('새 변경안이 대체하는 pending request ID'),
+        },
+        [
+          'reviewerId',
+          'listingAdvertisementId',
+          'capability',
+          'rationale',
+          'payload',
+        ],
+      ),
+      async (a, c) =>
+        this.agentActionRequests.create(
+          c.officeId,
+          {
+            reviewerId: a.reviewerId as string,
+            listingAdvertisementId: a.listingAdvertisementId as string,
+            capability: a.capability as AgentActionCapability,
+            rationale: a.rationale as string,
+            payload: a.payload as Record<string, unknown>,
+            sourceSkillKey: a.sourceSkillKey as string | undefined,
+            sourceSkillVersion: a.sourceSkillVersion as string | undefined,
+            executorSkillVersion:
+              (a.executorSkillVersion as string | undefined) ??
+              'computer-use-v1',
+            executionMode: 'manual',
+            dedupeKey: a.dedupeKey as string | undefined,
+            supersedesId: a.supersedesId as string | undefined,
+          },
+          {
+            actor: `mcp:${c.userId}`,
+            source: 'mcp',
+            userId: c.userId,
+            role: c.role,
+          },
+        ),
+      ['advertisements:propose'],
+    );
+
+    this.add(
+      'list_agent_action_requests',
+      '현재 사무소의 독립 AI 광고 변경안과 검토·실행·검증·예외 Task 상태를 조회합니다.',
+      obj({
+        reviewerId: str('검토 담당 직원 User ID'),
+        escalationTaskId: str('예외 시 생성된 사람 Task ID'),
+        listingAdvertisementId: str('ListingAdvertisement ID'),
+        capability: strEnum('capability', AGENT_ACTION_CAPABILITIES),
+        reviewStatus: strEnum('검토 상태', [
+          'pending',
+          'approved',
+          'rejected',
+          'withdrawn',
+          'expired',
+          'stale',
+          'superseded',
+        ]),
+        executionStatus: str('실행 상태'),
+        verificationStatus: str('검증 상태'),
+        limit: num('최대 개수'),
+      }),
+      async (a, c) =>
+        this.agentActionRequests.list(c.officeId, {
+          reviewerId: a.reviewerId as string | undefined,
+          escalationTaskId: a.escalationTaskId as string | undefined,
+          listingAdvertisementId: a.listingAdvertisementId as
+            | string
+            | undefined,
+          capability: a.capability as AgentActionCapability | undefined,
+          reviewStatus: a.reviewStatus as
+            | 'pending'
+            | 'approved'
+            | 'rejected'
+            | 'withdrawn'
+            | 'expired'
+            | 'stale'
+            | 'superseded'
+            | undefined,
+          executionStatus: a.executionStatus as
+            | 'not_started'
+            | 'awaiting_manual'
+            | 'queued'
+            | 'running'
+            | 'succeeded'
+            | 'failed'
+            | 'needs_input'
+            | 'cancelled'
+            | undefined,
+          verificationStatus: a.verificationStatus as
+            | 'pending'
+            | 'matched'
+            | 'mismatch'
+            | 'not_found'
+            | 'blocked'
+            | 'not_required'
+            | undefined,
+          limit: a.limit as number | undefined,
+        }),
+      ['advertisements:read'],
+    );
+
+    this.add(
+      'get_agent_action_request',
+      '한 AI 광고 변경안의 exact contentHash, 광고노트 근거, 검토자, 결정, 실행, 검증 및 예외 Task를 조회합니다.',
+      obj({ id: str('AgentActionRequest ID') }, ['id']),
+      async (a, c) => this.agentActionRequests.get(c.officeId, a.id as string),
+      ['advertisements:read'],
+    );
+
+    this.add(
+      'withdraw_agent_action_request',
+      'agent가 만든 pending 광고 변경안이 더 이상 유효하지 않을 때 철회합니다. 사람 승인이나 반려를 대신하지 않으며 exact hash와 version이 일치해야 합니다.',
+      obj(
+        {
+          id: str('AgentActionRequest ID'),
+          contentHash: str('현재 SHA-256 contentHash'),
+          version: num('현재 optimistic version'),
+          reason: str('철회 사유'),
+        },
+        ['id', 'contentHash', 'version', 'reason'],
+      ),
+      async (a, c) =>
+        this.agentActionRequests.withdraw(
+          c.officeId,
+          a.id as string,
+          {
+            contentHash: a.contentHash as string,
+            version: a.version as number,
+            reason: a.reason as string,
+          },
+          {
+            actor: `mcp:${c.userId}`,
+            source: 'mcp',
+            userId: c.userId,
+            role: c.role,
+          },
+        ),
+      ['advertisements:propose'],
+    );
+
+    this.add(
+      'record_agent_action_execution',
+      '직원이 exact hash를 승인한 뒤 agent-browser/computer use가 이실장에 저장하고 같은 화면에서 persisted 값을 다시 확인한 receipt를 기록합니다. 서버가 receipt를 승인 payload와 비교해 즉시 성공 또는 불일치로 마감합니다.',
+      obj(
+        {
+          id: str('AgentActionRequest ID'),
+          contentHash: str('직원이 승인한 SHA-256 contentHash'),
+          version: num('현재 optimistic version'),
+          note: str('사람이 읽을 수 있는 실행 요약'),
+          receipt: {
+            type: 'object',
+            description:
+              '필수: operationKey, articleNo, observedAt, observedAfter={isActive,price,deposit,monthlyRent}. 선택: providerUrl, screenshotArtifactId, confirmationText. 비밀정보는 금지.',
+          },
+        },
+        ['id', 'contentHash', 'version', 'receipt'],
+      ),
+      async (a, c) =>
+        this.agentActionRequests.recordExecution(
+          c.officeId,
+          a.id as string,
+          {
+            contentHash: a.contentHash as string,
+            version: a.version as number,
+            note: a.note as string | undefined,
+            receipt: a.receipt as Prisma.InputJsonValue,
+          },
+          {
+            actor: `mcp:${c.userId}`,
+            source: 'mcp',
+            userId: c.userId,
+            role: c.role,
+          },
+        ),
+      ['advertisements:execute'],
+    );
+
+    this.add(
+      'report_agent_action_blocker',
+      '승인된 이실장 computer-use 실행이 CAPTCHA, MFA, 계정/대상/화면 불일치 등으로 사람 입력을 필요로 할 때 중단 사유를 기록합니다. 이때만 검토 담당자에게 일반 Task가 생성됩니다.',
+      obj(
+        {
+          id: str('AgentActionRequest ID'),
+          contentHash: str('직원이 승인한 SHA-256 contentHash'),
+          version: num('현재 optimistic version'),
+          reasonCode: strEnum('중단 사유', AGENT_ACTION_BLOCKER_REASONS),
+          summary: str('직원이 바로 이해하고 처리할 수 있는 문제 설명'),
+          evidence: {
+            type: 'object',
+            description:
+              '선택적 비밀정보 없는 구조화 근거. 쿠키, 비밀번호, OTP, authorization header 금지.',
+          },
+        },
+        ['id', 'contentHash', 'version', 'reasonCode', 'summary'],
+      ),
+      async (a, c) =>
+        this.agentActionRequests.reportBlocker(
+          c.officeId,
+          a.id as string,
+          {
+            contentHash: a.contentHash as string,
+            version: a.version as number,
+            reasonCode: a.reasonCode as AgentActionBlockerReason,
+            summary: a.summary as string,
+            evidence: a.evidence as Prisma.InputJsonValue | undefined,
+          },
+          {
+            actor: `mcp:${c.userId}`,
+            source: 'mcp',
+            userId: c.userId,
+            role: c.role,
+          },
+        ),
+      ['advertisements:execute'],
+    );
+
+    // ═══════════════════════════════════════════════════════════
     // Agent Control Plane — durable wakeup/run/activity protocol
     // ═══════════════════════════════════════════════════════════
     this.add(
       'agent_start_session',
-      '사람이 책임지는 업무 문맥에 지속형 AI 세션을 생성하거나 기존 세션을 재사용합니다.',
+      'Task 또는 독립 AgentActionRequest 한 건의 문맥에 지속형 AI 세션을 생성하거나 기존 세션을 재사용합니다. 두 work item ID를 동시에 지정할 수 없습니다.',
       obj(
         {
           agentKey: str('AI delegate 식별자 (예: contract-writer)'),
           taskKey: str('업무별 안정 키'),
           taskId: str('사람 담당자가 지정된 ERP Task ID'),
-          context: { type: 'object', description: '세션 재개용 도메인 ID 문맥' },
+          agentActionRequestId: str('독립 AI 실행요청 AgentActionRequest ID'),
+          context: {
+            type: 'object',
+            description: '세션 재개용 도메인 ID 문맥',
+          },
           plan: { type: 'array', description: '선택적 실행 계획' },
         },
         ['agentKey', 'taskKey'],
@@ -1771,6 +2214,7 @@ export class McpToolsService {
           adapter: 'mcp',
           taskKey: a.taskKey as string,
           taskId: a.taskId as string | undefined,
+          agentActionRequestId: a.agentActionRequestId as string | undefined,
           context: (a.context ?? {}) as Prisma.InputJsonValue,
           plan: a.plan as Prisma.InputJsonValue | undefined,
         }),
@@ -1790,6 +2234,7 @@ export class McpToolsService {
         ]),
         agentKey: str('AI delegate 식별자'),
         taskId: str('ERP Task ID'),
+        agentActionRequestId: str('AgentActionRequest ID'),
         limit: num('최대 개수'),
       }),
       async (a, c) =>
@@ -1797,6 +2242,7 @@ export class McpToolsService {
           status: a.status as AgentSessionStatus | undefined,
           agentKey: a.agentKey as string | undefined,
           taskId: a.taskId as string | undefined,
+          agentActionRequestId: a.agentActionRequestId as string | undefined,
           limit: a.limit as number | undefined,
         }),
     );
@@ -1831,25 +2277,24 @@ export class McpToolsService {
       obj({
         source: str('선택적 source 필터'),
         leaseMs: num('lease 길이(ms), 1초~1시간'),
+        runnerDeviceId: str(
+          '로컬 실행기 deviceId. 지정하면 이 기기에 연결된 작업과 일반 작업만 claim',
+        ),
       }),
       async (a, c) =>
-        this.controlPlane.claimNextWakeup(
-          c.officeId,
-          `mcp:${c.userId}`,
-          {
-            source: a.source as string | undefined,
-            leaseMs: a.leaseMs as number | undefined,
-          },
-        ),
+        this.controlPlane.claimNextWakeup(c.officeId, `mcp:${c.userId}`, {
+          source: a.source as string | undefined,
+          leaseMs: a.leaseMs as number | undefined,
+          runnerDeviceId: a.runnerDeviceId as string | undefined,
+        }),
     );
 
     this.add(
       'agent_renew_run',
       '장시간 실행 중인 AgentRun의 소유 lease를 연장합니다.',
-      obj(
-        { runId: str('AgentRun ID'), leaseMs: num('새 lease 길이(ms)') },
-        ['runId'],
-      ),
+      obj({ runId: str('AgentRun ID'), leaseMs: num('새 lease 길이(ms)') }, [
+        'runId',
+      ]),
       async (a, c) =>
         this.controlPlane.renewRunLease(
           c.officeId,
@@ -1915,15 +2360,11 @@ export class McpToolsService {
         ['sessionId'],
       ),
       async (a, c) =>
-        this.controlPlane.listActivities(
-          c.officeId,
-          a.sessionId as string,
-          {
-            runId: a.runId as string | undefined,
-            afterSequence: a.afterSequence as number | undefined,
-            limit: a.limit as number | undefined,
-          },
-        ),
+        this.controlPlane.listActivities(c.officeId, a.sessionId as string, {
+          runId: a.runId as string | undefined,
+          afterSequence: a.afterSequence as number | undefined,
+          limit: a.limit as number | undefined,
+        }),
     );
 
     this.add(
@@ -1944,8 +2385,8 @@ export class McpToolsService {
         },
         ['runId', 'outcome'],
       ),
-      async (a, c) =>
-        this.controlPlane.completeRun(
+      async (a, c) => {
+        const completedRun = await this.controlPlane.completeRun(
           c.officeId,
           a.runId as string,
           `mcp:${c.userId}`,
@@ -1956,8 +2397,13 @@ export class McpToolsService {
             error: a.error as string | undefined,
             waitingReason: a.waitingReason as string | undefined,
           },
-        ),
+        );
+        await this.listingAdvertisements.handleAgentRunCompletion(
+          c.officeId,
+          completedRun.id,
+        );
+        return completedRun;
+      },
     );
-
   }
 }

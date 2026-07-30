@@ -170,7 +170,7 @@ export class DealsService {
     tx: Prisma.TransactionClient,
     listingId: string,
   ) {
-    await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${listingId}::text, 0))`;
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${listingId}::text, 0))`;
   }
 
   /**
@@ -183,7 +183,7 @@ export class DealsService {
     intakeId: string,
   ) {
     const lockKey = `listing-intake:${intakeId}`;
-    await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}::text, 0))`;
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}::text, 0))`;
   }
 
   /** 거래유형은 sale/jeonse/monthly 3종만 허용 (연세 등 폐기 유형 저장 차단) */

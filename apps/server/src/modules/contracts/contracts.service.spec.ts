@@ -59,6 +59,7 @@ describe('ContractsService', () => {
         delete: jest.fn(),
       },
       $queryRaw: jest.fn().mockResolvedValue([]),
+      $executeRaw: jest.fn().mockResolvedValue(1),
       $transaction: jest.fn(),
     };
     prisma.$transaction.mockImplementation(async (callback) => callback(prisma));
