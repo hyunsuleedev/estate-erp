@@ -1,4 +1,11 @@
-import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
+import {
+  Fragment,
+  useState,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+} from 'react';
 import {
   flexRender,
   getCoreRowModel,
@@ -13,7 +20,7 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { cn } from '@/lib/utils';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Skeleton } from '@/components/ui/skeleton';
-import { ArrowUp, ArrowDown } from 'lucide-react';
+import { ArrowUp, ArrowDown, Minus, Plus } from 'lucide-react';
 import type { DataTableProps } from './types';
 import { DataTablePagination } from './data-table-pagination';
 
@@ -47,11 +54,17 @@ export function DataTable<TData extends { id: string }>({
   variant = 'default',
   rowHeight = DEFAULT_ROW_HEIGHT,
   pinnedColumns,
+  columnGroupControls = [],
   renderBulkActions,
   renderStatusBar,
+  expandedRowIds,
+  renderExpandedRow,
 }: DataTableProps<TData>) {
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
-  const [focusedCell, setFocusedCell] = useState<{ row: number; col: number } | null>(null);
+  const [focusedCell, setFocusedCell] = useState<{
+    row: number;
+    col: number;
+  } | null>(null);
   const [columnResizeMode] = useState<ColumnResizeMode>('onChange');
   const tableRef = useRef<HTMLTableElement>(null);
   const scrollerRef = useRef<HTMLDivElement>(null);
@@ -112,13 +125,16 @@ export function DataTable<TData extends { id: string }>({
       columnPinning: resolvedPinning,
     },
     onSortingChange: (updater) => {
-      const next = typeof updater === 'function' ? updater(sorting ?? []) : updater;
+      const next =
+        typeof updater === 'function' ? updater(sorting ?? []) : updater;
       onSortingChange?.(next);
     },
     onRowSelectionChange: (updater) => {
-      const next = typeof updater === 'function' ? updater(rowSelection) : updater;
+      const next =
+        typeof updater === 'function' ? updater(rowSelection) : updater;
       setRowSelection(next);
-      const selectedIds = Object.keys(next).filter((k) => next[k]).map((idx) => data[Number(idx)]?.id).filter(Boolean);
+      // getRowId 가 행 키를 row.id 로 만든다 — 키를 배열 인덱스로 다루면 안 된다.
+      const selectedIds = Object.keys(next).filter((k) => next[k]);
       onRowSelectionChange?.(selectedIds);
     },
     getCoreRowModel: getCoreRowModel(),
@@ -131,6 +147,35 @@ export function DataTable<TData extends { id: string }>({
     getRowId: (row) => row.id,
   });
   const tableTotalSize = table.getTotalSize();
+  const leafColumns = table.getAllLeafColumns();
+  const hasFillColumn = leafColumns.some(
+    (column) => column.columnDef.meta?.fill,
+  );
+  const columnGroupLayouts = columnGroupControls
+    .map((control) => {
+      const anchorIndex = leafColumns.findIndex(
+        (column) => column.id === control.anchorColumnId,
+      );
+      const anchorEnd =
+        anchorIndex >= 0
+          ? leafColumns
+              .slice(0, anchorIndex + 1)
+              .reduce((total, column) => total + column.getSize(), 0)
+          : 0;
+      const expandedWidth = leafColumns
+        .filter((column) => control.columnIds.includes(column.id))
+        .reduce((total, column) => total + column.getSize(), 0);
+
+      return {
+        control,
+        anchorIndex,
+        anchorEnd,
+        expandedWidth,
+        toggleOffset: Math.max(0, anchorEnd - 10),
+      };
+    })
+    .filter((layout) => layout.anchorIndex >= 0);
+  const hasColumnGroupGuide = columnGroupLayouts.length > 0;
 
   // ── Keyboard navigation (Twenty-inspired cell nav) ────────────
   const handleKeyDown = useCallback(
@@ -162,7 +207,8 @@ export function DataTable<TData extends { id: string }>({
           e.preventDefault();
           setFocusedCell((prev) => ({
             row: prev?.row ?? 0,
-            col: prev === null ? startCol : Math.min(colCount - 1, prev.col + 1),
+            col:
+              prev === null ? startCol : Math.min(colCount - 1, prev.col + 1),
           }));
           break;
         }
@@ -199,7 +245,14 @@ export function DataTable<TData extends { id: string }>({
         }
       }
     },
-    [enableKeyboardNav, focusedCell, onRowClick, enableRowSelection, table, allColumns.length],
+    [
+      enableKeyboardNav,
+      focusedCell,
+      onRowClick,
+      enableRowSelection,
+      table,
+      allColumns.length,
+    ],
   );
 
   const isFullHeight = layout === 'full-height';
@@ -210,7 +263,10 @@ export function DataTable<TData extends { id: string }>({
   // measured up front, so we skip virtualization there.
   const rows = table.getRowModel().rows;
   const canVirtualize =
-    isFullHeight && rows.length >= VIRTUALIZE_THRESHOLD && typeof rowCellHeight === 'number';
+    isFullHeight &&
+    rows.length >= VIRTUALIZE_THRESHOLD &&
+    typeof rowCellHeight === 'number' &&
+    (!expandedRowIds || expandedRowIds.size === 0);
 
   const rowVirtualizer = useVirtualizer({
     count: canVirtualize ? rows.length : 0,
@@ -221,7 +277,8 @@ export function DataTable<TData extends { id: string }>({
 
   const virtualRows = canVirtualize ? rowVirtualizer.getVirtualItems() : [];
   const totalVirtualSize = canVirtualize ? rowVirtualizer.getTotalSize() : 0;
-  const paddingTop = canVirtualize && virtualRows.length > 0 ? virtualRows[0].start : 0;
+  const paddingTop =
+    canVirtualize && virtualRows.length > 0 ? virtualRows[0].start : 0;
   const paddingBottom =
     canVirtualize && virtualRows.length > 0
       ? totalVirtualSize - virtualRows[virtualRows.length - 1].end
@@ -235,11 +292,15 @@ export function DataTable<TData extends { id: string }>({
       return;
     }
     if (!tableRef.current) return;
-    const trs = tableRef.current.querySelectorAll('tbody tr');
+    const trs = tableRef.current.querySelectorAll(
+      'tbody tr:not([data-table-expanded-row]):not([aria-hidden])',
+    );
     trs[focusedCell.row]?.scrollIntoView({ block: 'nearest' });
   }, [focusedCell, canVirtualize, rowVirtualizer]);
 
-  const getPinStyle = (column: ReturnType<typeof table.getAllLeafColumns>[number]) => {
+  const getPinStyle = (
+    column: ReturnType<typeof table.getAllLeafColumns>[number],
+  ) => {
     if (column.getIsPinned() !== 'left') return {};
     return {
       position: 'sticky' as const,
@@ -257,14 +318,17 @@ export function DataTable<TData extends { id: string }>({
     [rowSelection, data],
   );
   const focusedRow =
-    focusedCell !== null && rows[focusedCell.row]?.original ? rows[focusedCell.row].original : null;
+    focusedCell !== null && rows[focusedCell.row]?.original
+      ? rows[focusedCell.row].original
+      : null;
 
   const handleScroll = useCallback(
     (event: React.UIEvent<HTMLDivElement>) => {
       if (!onEndReached || isLoading || isLoadingMore) return;
 
       const target = event.currentTarget;
-      const distanceToBottom = target.scrollHeight - target.scrollTop - target.clientHeight;
+      const distanceToBottom =
+        target.scrollHeight - target.scrollTop - target.clientHeight;
       if (distanceToBottom <= endReachedThreshold) {
         onEndReached();
       }
@@ -305,13 +369,95 @@ export function DataTable<TData extends { id: string }>({
         onKeyDown={handleKeyDown}
         onScroll={handleScroll}
       >
+        {hasColumnGroupGuide && (
+          <div
+            data-data-table-column-guide
+            className="sticky top-0 z-40 h-9 border-b border-[#e7e5df] bg-[#f8f7f4]"
+            style={{ width: '100%', minWidth: tableTotalSize }}
+          >
+            <div
+              className="relative h-full pt-2"
+              style={{ width: tableTotalSize, minWidth: tableTotalSize }}
+            >
+              {columnGroupLayouts.map(
+                ({ control, anchorEnd, expandedWidth, toggleOffset }) => (
+                  <div
+                    key={`${control.anchorColumnId}-${control.label}`}
+                    className="pointer-events-none absolute inset-0"
+                  >
+                    {!control.collapsed && expandedWidth > 0 && (
+                      <>
+                        <span
+                          aria-hidden="true"
+                          data-data-table-column-group-line={control.label}
+                          className="absolute top-[18px] z-40 h-px bg-slate-400"
+                          style={{
+                            left: anchorEnd + 10,
+                            width: Math.max(0, expandedWidth - 10),
+                          }}
+                        />
+                        <span
+                          aria-hidden="true"
+                          data-data-table-column-group-cap={control.label}
+                          className="absolute top-[18px] z-40 h-2 w-px bg-slate-400"
+                          style={{ left: anchorEnd + expandedWidth }}
+                        />
+                      </>
+                    )}
+                    <button
+                      type="button"
+                      aria-label={
+                        control.collapsed
+                          ? `${control.label} 컬럼 펼치기`
+                          : `${control.label} 컬럼 접기`
+                      }
+                      aria-expanded={!control.collapsed}
+                      title={
+                        control.collapsed
+                          ? `${control.label} 컬럼 펼치기`
+                          : `${control.label} 컬럼 접기`
+                      }
+                      data-data-table-column-group-toggle={control.label}
+                      className="pointer-events-auto sticky z-50 mt-2 inline-flex size-5 items-center justify-center rounded-[3px] border border-border bg-white p-0 text-muted-foreground shadow-xs outline-none transition-colors hover:border-muted-foreground/40 hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/35 active:translate-y-px"
+                      style={{
+                        left: toggleOffset,
+                        marginLeft: toggleOffset,
+                      }}
+                      onClick={control.onToggle}
+                    >
+                      {control.collapsed ? (
+                        <Plus className="size-3" />
+                      ) : (
+                        <Minus className="size-3" />
+                      )}
+                    </button>
+                  </div>
+                ),
+              )}
+            </div>
+          </div>
+        )}
         <table
           ref={tableRef}
-          className={cn('w-full table-fixed caption-bottom text-sm', isNotion && 'border-separate border-spacing-0')}
-          style={{ width: tableTotalSize, minWidth: tableTotalSize }}
+          className={cn(
+            'w-full table-fixed caption-bottom text-sm',
+            isNotion && 'border-separate border-spacing-0',
+          )}
+          style={{
+            width: hasFillColumn
+              ? `max(100%, ${tableTotalSize}px)`
+              : tableTotalSize,
+            minWidth: tableTotalSize,
+          }}
         >
           {/* Header */}
-          <thead className={cn('sticky top-0 z-20 bg-background', isNotion && 'bg-white')}>
+          <thead
+            className={cn(
+              'sticky z-20 bg-background',
+              hasColumnGroupGuide ? 'top-9' : 'top-0',
+              isNotion && 'bg-[#f7f7f5]',
+            )}
+          >
             {table.getHeaderGroups().map((headerGroup) => (
               <tr key={headerGroup.id}>
                 {headerGroup.headers.map((header, colIndex) => {
@@ -332,7 +478,13 @@ export function DataTable<TData extends { id: string }>({
                       : false;
                   const isLast = colIndex === headerGroup.headers.length - 1;
                   const isPinned = header.column.getIsPinned() === 'left';
-                  const isLastPinned = isPinned && header.column.getIsLastColumn('left');
+                  const isLastPinned =
+                    isPinned && header.column.getIsLastColumn('left');
+                  const isColumnGroupDetail = Boolean(
+                    columnGroupControls.some((control) =>
+                      control.columnIds.includes(header.column.id),
+                    ),
+                  );
                   const handleSortToggle = () => {
                     if (!canSort) return;
                     const current = sorting ?? [];
@@ -353,41 +505,64 @@ export function DataTable<TData extends { id: string }>({
                       className={cn(
                         'relative text-left align-middle font-medium text-muted-foreground',
                         isNotion
-                          ? 'h-9 border-b border-[#eeeeec] px-2.5 text-[13px] normal-case tracking-normal'
+                          ? 'h-9 border-b border-[#d8d6d0] bg-[#f7f7f5] px-2.5 text-[13px] normal-case tracking-normal'
                           : 'h-8 border-b border-border/60 px-3 text-[11px] uppercase tracking-wider',
-                        !isLast && (isNotion ? 'border-r border-r-[#eeeeec]' : 'border-r border-r-border/40'),
-                        canSort && 'cursor-pointer select-none hover:text-foreground',
-                        isPinned && (isNotion ? 'bg-white' : 'bg-background'),
+                        !isLast &&
+                          (isNotion
+                            ? 'border-r border-r-[#eeeeec]'
+                            : 'border-r border-r-border/40'),
+                        canSort &&
+                          'cursor-pointer select-none hover:text-foreground',
+                        isColumnGroupDetail &&
+                          isNotion &&
+                          'bg-[#f2f6f4] text-[#52645e]',
+                        isPinned &&
+                          (isNotion ? 'bg-[#f5f4f1]' : 'bg-background'),
                         isLastPinned && 'shadow-[1px_0_0_0_#d9d9d6]',
                       )}
                       style={{
-                        width: header.getSize(),
+                        width: header.column.columnDef.meta?.fill
+                          ? undefined
+                          : header.getSize(),
                         ...(isPinned
-                          ? { position: 'sticky', left: header.column.getStart('left'), zIndex: 30 }
+                          ? {
+                              position: 'sticky',
+                              left: header.column.getStart('left'),
+                              zIndex: 30,
+                            }
                           : {}),
                       }}
                       onClick={canSort ? handleSortToggle : undefined}
                     >
-                      <div className={cn('flex items-center gap-1', isNotion && 'min-w-0 text-slate-500')}>
+                      <div
+                        className={cn(
+                          'flex items-center gap-1',
+                          isNotion && 'min-w-0 text-slate-500',
+                        )}
+                      >
                         {header.isPlaceholder
                           ? null
-                          : flexRender(header.column.columnDef.header, header.getContext())}
+                          : flexRender(
+                              header.column.columnDef.header,
+                              header.getContext(),
+                            )}
                         {sorted === 'asc' && <ArrowUp className="size-3" />}
                         {sorted === 'desc' && <ArrowDown className="size-3" />}
                       </div>
                       {/* Column resize handle */}
-                      {header.column.getCanResize() && (
-                        <div
-                          onMouseDown={header.getResizeHandler()}
-                          onTouchStart={header.getResizeHandler()}
-                          className={cn(
-                            'absolute top-0 right-0 h-full w-1 cursor-col-resize select-none touch-none',
-                            header.column.getIsResizing()
-                              ? 'bg-primary'
-                              : 'bg-transparent hover:bg-border',
-                          )}
-                        />
-                      )}
+                      {header.column.getCanResize() &&
+                        !header.column.columnDef.meta?.fill && (
+                          <div
+                            onMouseDown={header.getResizeHandler()}
+                            onTouchStart={header.getResizeHandler()}
+                            className={cn(
+                              'absolute top-0 right-0 h-full w-1 cursor-col-resize select-none touch-none',
+                              header.column.getIsResizing()
+                                ? 'bg-primary'
+                                : 'bg-transparent hover:bg-border',
+                            )}
+                          />
+                        )}
                     </th>
                   );
                 })}
@@ -405,8 +580,13 @@ export function DataTable<TData extends { id: string }>({
                       <td
                         key={j}
                         className={cn(
-                          isNotion ? 'border-b border-[#eeeeec] px-2.5' : 'border-b border-border/30 px-3',
-                          j < allColumns.length - 1 && (isNotion ? 'border-r border-r-[#eeeeec]' : 'border-r border-r-border/30'),
+                          isNotion
+                            ? 'border-b border-[#eeeeec] px-2.5'
+                            : 'border-b border-border/30 px-3',
+                          j < allColumns.length - 1 &&
+                            (isNotion
+                              ? 'border-r border-r-[#eeeeec]'
+                              : 'border-r border-r-border/30'),
                         )}
                         style={{ height: rowCellHeight }}
                       >
@@ -428,69 +608,127 @@ export function DataTable<TData extends { id: string }>({
                   </tr>
                 );
               }
-              const renderRow = (row: (typeof rows)[number], rowIndex: number) => (
-                <tr
-                  key={row.id}
-                  data-state={row.getIsSelected() ? 'selected' : undefined}
-                  className="group"
-                >
-                  {row.getVisibleCells().map((cell, colIndex) => {
-                    const isLastCol = colIndex === row.getVisibleCells().length - 1;
-                    const isFocused =
-                      focusedCell?.row === rowIndex && focusedCell?.col === colIndex;
-                    const isRowFocused = focusedCell?.row === rowIndex;
-                    const isPinned = cell.column.getIsPinned() === 'left';
-                    const isLastPinned = isPinned && cell.column.getIsLastColumn('left');
-                    return (
-                      <td
-                        key={cell.id}
-                        data-table-col={colIndex}
-                        data-table-row={rowIndex}
-                        className={cn(
-                          'relative align-middle select-none',
-                          isNotion ? 'border-b border-[#eeeeec] px-2.5 text-[13px]' : 'border-b border-border/30 px-3',
-                          !isLastCol && (isNotion ? 'border-r border-r-[#eeeeec]' : 'border-r border-r-border/30'),
-                          isNotion ? 'group-hover:bg-slate-50/70' : 'group-hover:bg-muted/40',
-                          'group-data-[state=selected]:bg-primary/5',
-                          isFocused && (isNotion ? 'bg-blue-50/60 outline outline-1 -outline-offset-1 outline-blue-500/30' : 'bg-accent/60 outline outline-1 -outline-offset-1 outline-primary/30'),
-                          isRowFocused && !isFocused && (isNotion ? 'bg-slate-50' : 'bg-accent/30'),
-                          onRowClick && 'cursor-pointer',
-                          isPinned && (isNotion ? 'bg-white group-hover:bg-slate-50/70 group-data-[state=selected]:bg-primary/5' : 'bg-background group-hover:bg-muted/40 group-data-[state=selected]:bg-primary/5'),
-                          isLastPinned && 'shadow-[1px_0_0_0_#d9d9d6]',
-                        )}
-                        style={{
-                          width: cell.column.getSize(),
-                          height: rowCellHeight,
-                          ...getPinStyle(cell.column),
-                        }}
-                        onClick={() => {
-                          setFocusedCell({ row: rowIndex, col: colIndex });
-                          onRowClick?.(row.original);
-                        }}
-                      >
-                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                      </td>
-                    );
-                  })}
-                </tr>
+              const renderRow = (
+                row: (typeof rows)[number],
+                rowIndex: number,
+              ) => (
+                <Fragment key={row.id}>
+                  <tr
+                    data-state={row.getIsSelected() ? 'selected' : undefined}
+                    className="group"
+                  >
+                    {row.getVisibleCells().map((cell, colIndex) => {
+                      const isLastCol =
+                        colIndex === row.getVisibleCells().length - 1;
+                      const isFocused =
+                        focusedCell?.row === rowIndex &&
+                        focusedCell?.col === colIndex;
+                      const isRowFocused = focusedCell?.row === rowIndex;
+                      const isPinned = cell.column.getIsPinned() === 'left';
+                      const isLastPinned =
+                        isPinned && cell.column.getIsLastColumn('left');
+                      return (
+                        <td
+                          key={cell.id}
+                          data-table-col={colIndex}
+                          data-table-row={rowIndex}
+                          className={cn(
+                            'relative align-middle select-none',
+                            isNotion
+                              ? 'border-b border-[#eeeeec] px-2.5 text-[13px]'
+                              : 'border-b border-border/30 px-3',
+                            !isLastCol &&
+                              (isNotion
+                                ? 'border-r border-r-[#eeeeec]'
+                                : 'border-r border-r-border/30'),
+                            isNotion
+                              ? 'group-hover:bg-slate-50/70'
+                              : 'group-hover:bg-muted/40',
+                            'group-data-[state=selected]:bg-primary/5',
+                            isFocused &&
+                              (isNotion
+                                ? 'bg-blue-50/60 outline outline-1 -outline-offset-1 outline-blue-500/30'
+                                : 'bg-accent/60 outline outline-1 -outline-offset-1 outline-primary/30'),
+                            isRowFocused &&
+                              !isFocused &&
+                              (isNotion ? 'bg-slate-50' : 'bg-accent/30'),
+                            onRowClick && 'cursor-pointer',
+                            isPinned &&
+                              (isNotion
+                                ? 'bg-white group-hover:bg-slate-50/70 group-data-[state=selected]:bg-primary/5'
+                                : 'bg-background group-hover:bg-muted/40 group-data-[state=selected]:bg-primary/5'),
+                            isLastPinned && 'shadow-[1px_0_0_0_#d9d9d6]',
+                          )}
+                          style={{
+                            width: cell.column.columnDef.meta?.fill
+                              ? undefined
+                              : cell.column.getSize(),
+                            height: rowCellHeight,
+                            ...getPinStyle(cell.column),
+                          }}
+                          onClick={() => {
+                            setFocusedCell({ row: rowIndex, col: colIndex });
+                            onRowClick?.(row.original);
+                          }}
+                        >
+                          {flexRender(
+                            cell.column.columnDef.cell,
+                            cell.getContext(),
+                          )}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                  {renderExpandedRow &&
+                    expandedRowIds?.has(row.original.id) && (
+                      <tr data-table-expanded-row>
+                        <td
+                          colSpan={allColumns.length}
+                          className={cn(
+                            'p-0 align-top',
+                            isNotion
+                              ? 'border-b border-[#eeeeec] bg-slate-50/40'
+                              : 'border-b border-border/30 bg-muted/20',
+                          )}
+                        >
+                          {renderExpandedRow(row.original)}
+                        </td>
+                      </tr>
+                    )}
+                </Fragment>
               );
               if (canVirtualize) {
                 return (
                   <>
                     {paddingTop > 0 && (
                       <tr aria-hidden="true">
-                        <td colSpan={allColumns.length} style={{ height: paddingTop, padding: 0, border: 0 }} />
+                        <td
+                          colSpan={allColumns.length}
+                          style={{ height: paddingTop, padding: 0, border: 0 }}
+                        />
                       </tr>
                     )}
-                    {virtualRows.map((virtualRow) => renderRow(rows[virtualRow.index], virtualRow.index))}
+                    {virtualRows.map((virtualRow) =>
+                      renderRow(rows[virtualRow.index], virtualRow.index),
+                    )}
                     {paddingBottom > 0 && (
                       <tr aria-hidden="true">
-                        <td colSpan={allColumns.length} style={{ height: paddingBottom, padding: 0, border: 0 }} />
+                        <td
+                          colSpan={allColumns.length}
+                          style={{
+                            height: paddingBottom,
+                            padding: 0,
+                            border: 0,
+                          }}
+                        />
                       </tr>
                     )}
                     {isLoadingMore && (
                       <tr>
-                        <td colSpan={allColumns.length} className="h-10 px-3 text-center text-xs text-muted-foreground">
+                        <td
+                          colSpan={allColumns.length}
+                          className="h-10 px-3 text-center text-xs text-muted-foreground"
+                        >
                           더 불러오는 중...
                         </td>
                       </tr>
@@ -503,7 +741,10 @@ export function DataTable<TData extends { id: string }>({
                   {rows.map(renderRow)}
                   {isLoadingMore && (
                     <tr>
-                      <td colSpan={allColumns.length} className="h-10 px-3 text-center text-xs text-muted-foreground">
+                      <td
+                        colSpan={allColumns.length}
+                        className="h-10 px-3 text-center text-xs text-muted-foreground"
+                      >
                         더 불러오는 중...
                       </td>
                     </tr>
@@ -529,7 +770,7 @@ export function DataTable<TData extends { id: string }>({
 
       {/* Status bar — shows focused row summary */}
       {renderStatusBar && (
-        <div className="flex min-h-7 items-center gap-2 border-t border-border/60 bg-muted/30 px-3 text-[11px] text-muted-foreground">
+        <div className="flex min-h-7 items-center gap-2 border-t border-border/60 bg-[#faf9f6] px-3 text-[11px] text-muted-foreground">
           {renderStatusBar({ focusedRow, totalCount: rows.length })}
         </div>
       )}

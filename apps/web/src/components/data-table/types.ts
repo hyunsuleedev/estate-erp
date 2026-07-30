@@ -151,6 +151,15 @@ export interface DataTableProps<TData> {
   rowHeight?: number | 'auto';
   // Column pinning (left only for now).
   pinnedColumns?: string[];
+  // Spreadsheet-style guides rendered above the table header. Each toggle
+  // stays beside its `anchorColumnId` while the listed columns expand/collapse.
+  columnGroupControls?: readonly {
+    collapsed: boolean;
+    onToggle: () => void;
+    anchorColumnId: string;
+    columnIds: readonly string[];
+    label: string;
+  }[];
   // Bulk-action toolbar rendered above the table when rows are selected.
   // Receives the selected row objects (not just ids).
   renderBulkActions?: (selectedRows: TData[]) => React.ReactNode;

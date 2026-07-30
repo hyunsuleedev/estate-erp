@@ -23,30 +23,45 @@ export interface MultiSelectOption {
   value: string
   label: string
   icon?: React.ReactNode
+  description?: string
+  meta?: React.ReactNode
+  disabled?: boolean
 }
 
 interface MultiSelectProps {
   options: MultiSelectOption[]
   selected: string[]
   onChange: (values: string[]) => void
+  ariaLabel?: string
   placeholder?: string
   className?: string
   badgeClassName?: string
+  popoverClassName?: string
   maxCount?: number
+  searchPlaceholder?: string
+  emptyText?: string
+  isLoading?: boolean
 }
 
 function MultiSelect({
   options,
   selected,
   onChange,
+  ariaLabel,
   placeholder = "선택...",
   className,
   badgeClassName,
+  popoverClassName,
   maxCount = 3,
+  searchPlaceholder = "검색...",
+  emptyText = "결과 없음",
+  isLoading = false,
 }: MultiSelectProps) {
   const [open, setOpen] = React.useState(false)
 
   const handleSelect = (value: string) => {
+    if (options.find((option) => option.value === value)?.disabled) return
+
     if (selected.includes(value)) {
       onChange(selected.filter((v) => v !== value))
     } else {
@@ -74,62 +89,78 @@ function MultiSelect({
           variant="outline"
           role="combobox"
           aria-expanded={open}
+          aria-label={
+            ariaLabel
+              ? `${ariaLabel}: ${hasSelection ? `${selected.length}개 선택됨` : placeholder}`
+              : hasSelection
+                ? `${selected.length}개 선택됨`
+                : placeholder
+          }
           className={cn(
-            "h-9 justify-between bg-background text-sm font-normal hover:bg-background",
+            "h-9 min-w-0 justify-between bg-background text-sm font-normal hover:bg-background",
             hasSelection ? "px-2" : "px-3",
             className,
           )}
         >
           {hasSelection ? (
-            <div className="flex items-center gap-1.5 flex-wrap">
+            <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
               {selectedOptions.slice(0, maxCount).map((option) => (
                 <Badge
                   key={option.value}
                   variant="secondary"
                   className={cn(
-                    "rounded-md px-2 py-0.5 text-xs font-normal",
+                    "min-w-0 max-w-full shrink rounded-md px-2 py-0.5 text-xs font-normal",
                     badgeClassName,
                   )}
                 >
                   {option.icon && <span className="mr-1">{option.icon}</span>}
-                  {option.label}
-                  <button
+                  <span className="truncate">{option.label}</span>
+                  <span
+                    role="button"
+                    tabIndex={-1}
+                    aria-label={`${option.label} 선택 해제`}
                     className="ml-1.5 rounded-full outline-none hover:bg-foreground/20"
                     onMouseDown={(e) => e.preventDefault()}
                     onClick={(e) => handleRemove(e, option.value)}
                   >
                     <X className="size-3" />
-                  </button>
+                  </span>
                 </Badge>
               ))}
               {selected.length > maxCount && (
-                <Badge variant="secondary" className={cn("rounded-md px-2 py-0.5 text-xs font-normal", badgeClassName)}>
+                <Badge
+                  variant="secondary"
+                  className={cn("shrink-0 rounded-md px-2 py-0.5 text-xs font-normal", badgeClassName)}
+                >
                   +{selected.length - maxCount}
                 </Badge>
               )}
             </div>
           ) : (
-            <span className="text-muted-foreground">{placeholder}</span>
+            <span className="truncate text-muted-foreground">{isLoading ? "불러오는 중..." : placeholder}</span>
           )}
-          <div className="flex items-center gap-1 ml-1">
+          <div className="ml-1 flex shrink-0 items-center gap-1">
             {hasSelection && (
-              <button
+              <span
+                role="button"
+                tabIndex={-1}
+                aria-label="선택 모두 해제"
                 className="rounded-full p-0.5 hover:bg-foreground/20"
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={handleClear}
               >
                 <X className="size-3" />
-              </button>
+              </span>
             )}
             <ChevronsUpDown className="size-3 shrink-0 opacity-50" />
           </div>
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-[220px] p-0" align="start">
+      <PopoverContent className={cn("w-[220px] p-0", popoverClassName)} align="start">
         <Command>
-          <CommandInput placeholder="검색..." />
+          <CommandInput placeholder={searchPlaceholder} />
           <CommandList>
-            <CommandEmpty>결과 없음</CommandEmpty>
+            <CommandEmpty>{isLoading ? "불러오는 중..." : emptyText}</CommandEmpty>
             <CommandGroup>
               {options.map((option) => {
                 const isSelected = selected.includes(option.value)
@@ -137,11 +168,12 @@ function MultiSelect({
                   <CommandItem
                     key={option.value}
                     onSelect={() => handleSelect(option.value)}
-                    className="gap-2"
+                    disabled={option.disabled}
+                    className="items-start gap-2 py-2"
                   >
                     <div
                       className={cn(
-                        "flex size-4 shrink-0 items-center justify-center rounded-sm border",
+                        "mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-sm border",
                         isSelected
                           ? "border-primary bg-primary text-primary-foreground"
                           : "border-muted-foreground/30 bg-transparent",
@@ -150,7 +182,17 @@ function MultiSelect({
                       {isSelected && <Check className="size-3" />}
                     </div>
                     {option.icon}
-                    <span>{option.label}</span>
+                    <span className="min-w-0 flex-1">
+                      <span className="flex min-w-0 items-center justify-between gap-2">
+                        <span className="truncate">{option.label}</span>
+                        {option.meta && (
+                          <span className="shrink-0 text-[11px] text-muted-foreground">{option.meta}</span>
+                        )}
+                      </span>
+                      {option.description && (
+                        <span className="block truncate text-[11px] text-muted-foreground">{option.description}</span>
+                      )}
+                    </span>
                   </CommandItem>
                 )
               })}

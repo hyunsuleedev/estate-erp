@@ -1,5 +1,27 @@
-import type { ReactNode } from 'react';
-import type { ColumnDef, SortingState, ColumnFiltersState } from '@tanstack/react-table';
+import type { MouseEvent, ReactNode } from 'react';
+import type {
+  ColumnDef,
+  RowData,
+  SortingState,
+  ColumnFiltersState,
+} from '@tanstack/react-table';
+
+declare module '@tanstack/react-table' {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  interface ColumnMeta<TData extends RowData, TValue> {
+    cellClassName?: string;
+    grow?: boolean;
+    onCellDoubleClick?: (
+      row: TData,
+      event: MouseEvent<HTMLTableCellElement>,
+    ) => void;
+    /**
+     * true면 이 컬럼이 남는 가로 공간을 흡수한다 (고정폭 대신 auto).
+     * size는 좁은 화면에서 유지할 최소폭으로 사용한다.
+     */
+    fill?: boolean;
+  }
+}
 
 // ── Filter types (Twenty-inspired) ──────────────────────────────
 
@@ -31,7 +53,9 @@ export interface FilterDefinition {
   operators: FilterOperator[];
   options?: { label: string; value: string; color?: string }[];
   // For asyncMultiSelect: fetch options from server as user types.
-  fetchOptions?: (query: string) => Promise<{ label: string; value: string; meta?: unknown }[]>;
+  fetchOptions?: (
+    query: string,
+  ) => Promise<{ label: string; value: string; meta?: unknown }[]>;
   // For numberRange: optional unit label (e.g. "만원", "평"). Shown next to
   // each input as a visual hint.
   unit?: string;
@@ -133,10 +157,26 @@ export interface DataTableProps<TData> {
   rowHeight?: number | 'auto';
   // Column pinning (left only for now).
   pinnedColumns?: string[];
+  // Spreadsheet-style guides rendered above the table header. Each toggle
+  // stays beside its `anchorColumnId` while the listed columns expand/collapse.
+  columnGroupControls?: readonly {
+    collapsed: boolean;
+    onToggle: () => void;
+    anchorColumnId: string;
+    columnIds: readonly string[];
+    label: string;
+  }[];
   // Bulk-action toolbar rendered above the table when rows are selected.
   // Receives the selected row objects (not just ids).
   renderBulkActions?: (selectedRows: TData[]) => React.ReactNode;
   // Status bar rendered below the table. Gets the currently focused row, if any,
   // and the total / visible counts so the parent can show summary info.
-  renderStatusBar?: (args: { focusedRow: TData | null; totalCount: number }) => React.ReactNode;
+  renderStatusBar?: (args: {
+    focusedRow: TData | null;
+    totalCount: number;
+  }) => React.ReactNode;
+  // Inline row expansion (controlled). When a row id is in `expandedRowIds`,
+  // `renderExpandedRow` is rendered as a full-width sub-row directly below it.
+  expandedRowIds?: ReadonlySet<string>;
+  renderExpandedRow?: (row: TData) => React.ReactNode;
 }

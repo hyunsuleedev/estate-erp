@@ -7,6 +7,12 @@ import { Button } from '@/components/ui/button';
 
 export interface PageHeaderProps {
   title: ReactNode;
+  /**
+   * web 과의 시그니처 호환용. web 은 정적 제목을 셸 헤더로 옮겨 showTitle 로
+   * 본문 표시를 제어하지만, desktop 셸(탭 바)은 페이지 제목을 그리지 않으므로
+   * desktop 은 값과 무관하게 항상 제목을 표시한다.
+   */
+  showTitle?: boolean;
   description?: ReactNode;
   /** 우측 액션 영역 (예: <Button>+ 매물 등록</Button>) */
   actions?: ReactNode;

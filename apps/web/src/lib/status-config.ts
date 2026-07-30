@@ -111,14 +111,10 @@ export const STATUS_CONFIG: Record<StatusKind, Record<string, StatusMeta>> = {
     completed: { label: '완료', tone: 'success' },
     cancelled: { label: '취소', tone: 'gray' },
   },
-  /** ListingAdvertisement.status — 광고 게재 상태 */
+  /** ListingAdvertisement.status — 실제 CP 광고 생명주기 */
   adStatus: {
-    planned: { label: '게재예정', tone: 'gray' },
-    draft: { label: '작성중', tone: 'gray' },
     active: { label: '게재중', tone: 'success' },
-    paused: { label: '일시중지', tone: 'warning' },
     ended: { label: '종료', tone: 'neutral' },
-    error: { label: '오류', tone: 'destructive' },
   },
   /** 거래유형 — 라벨/컬러 전 페이지 통일 */
   transactionType: {

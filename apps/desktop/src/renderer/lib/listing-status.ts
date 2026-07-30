@@ -97,6 +97,20 @@ export function getListingAvailability(
 }
 
 /**
+ * 한 intake 안에서 활성 Deal이 점유한 listing의 위치를 반환한다.
+ * 도메인 규칙상 intake당 활성 Deal은 최대 하나다.
+ */
+export function getActiveDealListingIndex(
+  listings: ListingAvailabilitySource[],
+): number {
+  return listings.findIndex((listing) =>
+    (listing.deals ?? []).some((deal) =>
+      IN_CONTRACT_STAGES.includes(deal.stage),
+    ),
+  );
+}
+
+/**
  * 한 의뢰의 여러 거래유형을 한 행에 표시할 때 사용할 대표 매물 상태.
  */
 export function getListingRowAvailability(

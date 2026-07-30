@@ -106,50 +106,6 @@ body {
   flex: 1;
 }
 
-@keyframes property-detail-group-line-scroll {
-  from {
-    transform: scaleX(1);
-  }
-
-  to {
-    transform: scaleX(0);
-  }
-}
-
-@keyframes property-detail-group-cap-scroll {
-  from {
-    transform: translateX(0);
-  }
-
-  to {
-    transform: translateX(-404px);
-  }
-}
-
-[data-property-table-scroll-scope] {
-  timeline-scope: --property-table-horizontal;
-}
-
-[data-property-table-scroller] {
-  scroll-timeline-name: --property-table-horizontal;
-  scroll-timeline-axis: x;
-}
-
-[data-column-group-line="property-details"] {
-  transform-origin: left center;
-  will-change: transform;
-  animation: property-detail-group-line-scroll 1s linear both;
-  animation-timeline: --property-table-horizontal;
-  animation-range: 0 404px;
-}
-
-[data-column-group-cap="property-details"] {
-  will-change: transform;
-  animation: property-detail-group-cap-scroll 1s linear both;
-  animation-timeline: --property-table-horizontal;
-  animation-range: 0 404px;
-}
-
 :is([data-properties-page], [data-property-quick-sheet]) :where(button, [data-slot="button"]) {
   transition:
     color 120ms ease,
@@ -260,4 +216,17 @@ body {
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
+}
+
+/* 접근성: 모션 최소화 선호 시 이동 애니메이션 전역 제거.
+   (위의 페이지 한정 규칙과 별개로, 모든 화면에 적용되는 최종 안전망) */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

@@ -119,7 +119,9 @@ function AuthenticatedLayout() {
           <div className="flex flex-1 overflow-hidden">
             <AppSidebar />
             <SidebarInset className="flex-1 min-h-0 min-w-0">
-              <div className="flex flex-1 flex-col gap-4 p-4 min-h-0 min-w-0 overflow-auto">
+              {/* p-4 는 TabContent 래퍼가 소유한다 — 페이지의 -mx-4 풀블리드가
+                  직접 부모의 패딩을 상쇄할 수 있어야 한다 (web 레이아웃과 동일 관계) */}
+              <div className="flex flex-1 flex-col gap-4 min-h-0 min-w-0 overflow-auto">
                 <TabContent autoCreateInitialTab={windowKind !== 'detached'} />
               </div>
             </SidebarInset>

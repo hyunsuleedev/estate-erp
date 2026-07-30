@@ -1,4 +1,11 @@
-import { Fragment, useState, useCallback, useEffect, useMemo, useRef } from 'react';
+import {
+  Fragment,
+  useState,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+} from "react";
 import {
   flexRender,
   getCoreRowModel,
@@ -8,14 +15,14 @@ import {
   type RowSelectionState,
   type ColumnResizeMode,
   type ColumnPinningState,
-} from '@tanstack/react-table';
-import { useVirtualizer } from '@tanstack/react-virtual';
-import { cn } from '@/lib/utils';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Skeleton } from '@/components/ui/skeleton';
-import { ArrowUp, ArrowDown } from 'lucide-react';
-import type { DataTableProps } from './types';
-import { DataTablePagination } from './data-table-pagination';
+} from "@tanstack/react-table";
+import { useVirtualizer } from "@tanstack/react-virtual";
+import { cn } from "@/lib/utils";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Skeleton } from "@/components/ui/skeleton";
+import { ArrowUp, ArrowDown, Minus, Plus } from "lucide-react";
+import type { DataTableProps } from "./types";
+import { DataTablePagination } from "./data-table-pagination";
 
 const DEFAULT_ROW_HEIGHT = 32;
 // Only virtualize when rows are worth virtualizing. Below this threshold the
@@ -42,37 +49,41 @@ export function DataTable<TData extends { id: string }>({
   onEndReached,
   endReachedThreshold = 320,
   enableKeyboardNav = true,
-  emptyMessage = '데이터가 없습니다.',
-  layout = 'paginated',
-  variant = 'default',
+  emptyMessage = "데이터가 없습니다.",
+  layout = "paginated",
+  variant = "default",
   rowHeight = DEFAULT_ROW_HEIGHT,
   pinnedColumns,
+  columnGroupControls = [],
   renderBulkActions,
   renderStatusBar,
   expandedRowIds,
   renderExpandedRow,
 }: DataTableProps<TData>) {
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
-  const [focusedCell, setFocusedCell] = useState<{ row: number; col: number } | null>(null);
-  const [columnResizeMode] = useState<ColumnResizeMode>('onChange');
+  const [focusedCell, setFocusedCell] = useState<{
+    row: number;
+    col: number;
+  } | null>(null);
+  const [columnResizeMode] = useState<ColumnResizeMode>("onChange");
   const tableRef = useRef<HTMLTableElement>(null);
   const scrollerRef = useRef<HTMLDivElement>(null);
 
   const resolvedPinning = useMemo<ColumnPinningState>(() => {
     const left: string[] = [];
-    if (enableRowSelection) left.push('_select');
+    if (enableRowSelection) left.push("_select");
     if (pinnedColumns) left.push(...pinnedColumns);
     return { left, right: [] };
   }, [enableRowSelection, pinnedColumns]);
 
-  const rowCellHeight = rowHeight === 'auto' ? undefined : rowHeight;
+  const rowCellHeight = rowHeight === "auto" ? undefined : rowHeight;
 
   // ── Build column defs with optional selection column ──────────
   const allColumns: ColumnDef<TData, unknown>[] = [];
 
   if (enableRowSelection) {
     allColumns.push({
-      id: '_select',
+      id: "_select",
       size: 36,
       minSize: 36,
       maxSize: 36,
@@ -81,7 +92,7 @@ export function DataTable<TData extends { id: string }>({
         <Checkbox
           checked={
             table.getIsAllPageRowsSelected() ||
-            (table.getIsSomePageRowsSelected() && 'indeterminate')
+            (table.getIsSomePageRowsSelected() && "indeterminate")
           }
           onCheckedChange={(v) => table.toggleAllPageRowsSelected(!!v)}
           className="size-3.5"
@@ -114,13 +125,16 @@ export function DataTable<TData extends { id: string }>({
       columnPinning: resolvedPinning,
     },
     onSortingChange: (updater) => {
-      const next = typeof updater === 'function' ? updater(sorting ?? []) : updater;
+      const next =
+        typeof updater === "function" ? updater(sorting ?? []) : updater;
       onSortingChange?.(next);
     },
     onRowSelectionChange: (updater) => {
-      const next = typeof updater === 'function' ? updater(rowSelection) : updater;
+      const next =
+        typeof updater === "function" ? updater(rowSelection) : updater;
       setRowSelection(next);
-      const selectedIds = Object.keys(next).filter((k) => next[k]).map((idx) => data[Number(idx)]?.id).filter(Boolean);
+      // getRowId 가 행 키를 row.id 로 만든다 — 키를 배열 인덱스로 다루면 안 된다.
+      const selectedIds = Object.keys(next).filter((k) => next[k]);
       onRowSelectionChange?.(selectedIds);
     },
     getCoreRowModel: getCoreRowModel(),
@@ -133,6 +147,35 @@ export function DataTable<TData extends { id: string }>({
     getRowId: (row) => row.id,
   });
   const tableTotalSize = table.getTotalSize();
+  const leafColumns = table.getAllLeafColumns();
+  const hasFillColumn = leafColumns.some(
+    (column) => column.columnDef.meta?.fill,
+  );
+  const columnGroupLayouts = columnGroupControls
+    .map((control) => {
+      const anchorIndex = leafColumns.findIndex(
+        (column) => column.id === control.anchorColumnId,
+      );
+      const anchorEnd =
+        anchorIndex >= 0
+          ? leafColumns
+              .slice(0, anchorIndex + 1)
+              .reduce((total, column) => total + column.getSize(), 0)
+          : 0;
+      const expandedWidth = leafColumns
+        .filter((column) => control.columnIds.includes(column.id))
+        .reduce((total, column) => total + column.getSize(), 0);
+
+      return {
+        control,
+        anchorIndex,
+        anchorEnd,
+        expandedWidth,
+        toggleOffset: Math.max(0, anchorEnd - 10),
+      };
+    })
+    .filter((layout) => layout.anchorIndex >= 0);
+  const hasColumnGroupGuide = columnGroupLayouts.length > 0;
 
   // ── Keyboard navigation (Twenty-inspired cell nav) ────────────
   const handleKeyDown = useCallback(
@@ -144,7 +187,7 @@ export function DataTable<TData extends { id: string }>({
       const startCol = enableRowSelection ? 1 : 0; // skip checkbox col
 
       switch (e.key) {
-        case 'ArrowDown': {
+        case "ArrowDown": {
           e.preventDefault();
           setFocusedCell((prev) => ({
             row: prev === null ? 0 : Math.min(rows.length - 1, prev.row + 1),
@@ -152,7 +195,7 @@ export function DataTable<TData extends { id: string }>({
           }));
           break;
         }
-        case 'ArrowUp': {
+        case "ArrowUp": {
           e.preventDefault();
           setFocusedCell((prev) => ({
             row: prev === null ? 0 : Math.max(0, prev.row - 1),
@@ -160,15 +203,16 @@ export function DataTable<TData extends { id: string }>({
           }));
           break;
         }
-        case 'ArrowRight': {
+        case "ArrowRight": {
           e.preventDefault();
           setFocusedCell((prev) => ({
             row: prev?.row ?? 0,
-            col: prev === null ? startCol : Math.min(colCount - 1, prev.col + 1),
+            col:
+              prev === null ? startCol : Math.min(colCount - 1, prev.col + 1),
           }));
           break;
         }
-        case 'ArrowLeft': {
+        case "ArrowLeft": {
           e.preventDefault();
           setFocusedCell((prev) => ({
             row: prev?.row ?? 0,
@@ -176,7 +220,7 @@ export function DataTable<TData extends { id: string }>({
           }));
           break;
         }
-        case 'Enter': {
+        case "Enter": {
           if (focusedCell !== null && onRowClick) {
             e.preventDefault();
             const row = rows[focusedCell.row];
@@ -184,8 +228,8 @@ export function DataTable<TData extends { id: string }>({
           }
           break;
         }
-        case 'x':
-        case 'X': {
+        case "x":
+        case "X": {
           if (focusedCell !== null && enableRowSelection) {
             e.preventDefault();
             const row = rows[focusedCell.row];
@@ -193,7 +237,7 @@ export function DataTable<TData extends { id: string }>({
           }
           break;
         }
-        case 'Escape': {
+        case "Escape": {
           e.preventDefault();
           setFocusedCell(null);
           table.resetRowSelection();
@@ -201,24 +245,36 @@ export function DataTable<TData extends { id: string }>({
         }
       }
     },
-    [enableKeyboardNav, focusedCell, onRowClick, enableRowSelection, table, allColumns.length],
+    [
+      enableKeyboardNav,
+      focusedCell,
+      onRowClick,
+      enableRowSelection,
+      table,
+      allColumns.length,
+    ],
   );
 
-  const isFullHeight = layout === 'full-height';
-  const isNotion = variant === 'notion';
+  const isFullHeight = layout === "full-height";
+  const isNotion = variant === "notion";
 
   // Virtualize only for full-height mode with a meaningful row count.
   // Paginated views are small (pageSize ~20) and auto-height rows can't be
   // measured up front, so we skip virtualization there.
   const rows = table.getRowModel().rows;
   const canVirtualize =
-    isFullHeight && rows.length >= VIRTUALIZE_THRESHOLD && typeof rowCellHeight === 'number';
+    isFullHeight &&
+    rows.length >= VIRTUALIZE_THRESHOLD &&
+    typeof rowCellHeight === "number";
 
   // 측정 캐시를 행 인덱스가 아닌 행 id에 묶는다 — 정렬/필터로 순서가 바뀌어도
   // 펼침 행의 실측 높이가 다른 행에 재사용되지 않는다.
   // rows(getRowModel 캐시)가 바뀔 때만 참조가 갱신되도록 useCallback으로 안정화 —
   // 인라인 함수면 스크롤 렌더마다 virtualizer가 키 매핑을 O(n) 재계산한다.
-  const getRowKey = useCallback((index: number) => rows[index]?.id ?? index, [rows]);
+  const getRowKey = useCallback(
+    (index: number) => rows[index]?.id ?? index,
+    [rows],
+  );
 
   // 확장 행(renderExpandedRow)은 높이가 가변이므로 measureElement(ResizeObserver)로
   // 행 단위(tbody) 실측 — 수천 행이 로드돼 있어도 펼친 상태에서 가상화가 유지된다.
@@ -232,7 +288,8 @@ export function DataTable<TData extends { id: string }>({
 
   const virtualRows = canVirtualize ? rowVirtualizer.getVirtualItems() : [];
   const totalVirtualSize = canVirtualize ? rowVirtualizer.getTotalSize() : 0;
-  const paddingTop = canVirtualize && virtualRows.length > 0 ? virtualRows[0].start : 0;
+  const paddingTop =
+    canVirtualize && virtualRows.length > 0 ? virtualRows[0].start : 0;
   const paddingBottom =
     canVirtualize && virtualRows.length > 0
       ? totalVirtualSize - virtualRows[virtualRows.length - 1].end
@@ -242,22 +299,24 @@ export function DataTable<TData extends { id: string }>({
   useEffect(() => {
     if (focusedCell === null) return;
     if (canVirtualize) {
-      rowVirtualizer.scrollToIndex(focusedCell.row, { align: 'auto' });
+      rowVirtualizer.scrollToIndex(focusedCell.row, { align: "auto" });
       return;
     }
     if (!tableRef.current) return;
     // 확장 서브행/로딩 행은 데이터 행 인덱스에서 제외
     const trs = tableRef.current.querySelectorAll(
-      'tbody tr:not([data-table-expanded-row]):not([aria-hidden])',
+      "tbody tr:not([data-table-expanded-row]):not([aria-hidden])",
     );
-    trs[focusedCell.row]?.scrollIntoView({ block: 'nearest' });
+    trs[focusedCell.row]?.scrollIntoView({ block: "nearest" });
   }, [focusedCell, canVirtualize, rowVirtualizer]);
 
-  const getPinStyle = (column: ReturnType<typeof table.getAllLeafColumns>[number]) => {
-    if (column.getIsPinned() !== 'left') return {};
+  const getPinStyle = (
+    column: ReturnType<typeof table.getAllLeafColumns>[number],
+  ) => {
+    if (column.getIsPinned() !== "left") return {};
     return {
-      position: 'sticky' as const,
-      left: column.getStart('left'),
+      position: "sticky" as const,
+      left: column.getStart("left"),
       zIndex: 1,
     };
   };
@@ -271,14 +330,17 @@ export function DataTable<TData extends { id: string }>({
     [rowSelection, data],
   );
   const focusedRow =
-    focusedCell !== null && rows[focusedCell.row]?.original ? rows[focusedCell.row].original : null;
+    focusedCell !== null && rows[focusedCell.row]?.original
+      ? rows[focusedCell.row].original
+      : null;
 
   const handleScroll = useCallback(
     (event: React.UIEvent<HTMLDivElement>) => {
       if (!onEndReached || isLoading || isLoadingMore) return;
 
       const target = event.currentTarget;
-      const distanceToBottom = target.scrollHeight - target.scrollTop - target.clientHeight;
+      const distanceToBottom =
+        target.scrollHeight - target.scrollTop - target.clientHeight;
       if (distanceToBottom <= endReachedThreshold) {
         onEndReached();
       }
@@ -287,7 +349,7 @@ export function DataTable<TData extends { id: string }>({
   );
 
   return (
-    <div className={cn('flex flex-col', isFullHeight && 'h-full min-h-0')}>
+    <div className={cn("flex flex-col", isFullHeight && "h-full min-h-0")}>
       {/* Bulk actions toolbar — visible when at least one row is selected */}
       {renderBulkActions && selectedRows.length > 0 && (
         <div className="flex items-center gap-2 border-b border-border/60 bg-accent/40 px-3 py-1.5 text-xs">
@@ -311,27 +373,103 @@ export function DataTable<TData extends { id: string }>({
       <div
         ref={scrollerRef}
         className={cn(
-          'relative w-full overflow-auto',
-          isFullHeight && 'flex-1 min-h-0',
-          isNotion && 'bg-white',
+          "relative w-full overflow-auto",
+          isFullHeight && "flex-1 min-h-0",
+          isNotion && "bg-white",
         )}
         tabIndex={0}
         onKeyDown={handleKeyDown}
         onScroll={handleScroll}
       >
+        {hasColumnGroupGuide && (
+          <div
+            data-data-table-column-guide
+            className="sticky top-0 z-40 h-9 border-b border-[#e7e5df] bg-[#f8f7f4]"
+            style={{ width: "100%", minWidth: tableTotalSize }}
+          >
+            <div
+              className="relative h-full pt-2"
+              style={{ width: tableTotalSize, minWidth: tableTotalSize }}
+            >
+              {columnGroupLayouts.map(
+                ({ control, anchorEnd, expandedWidth, toggleOffset }) => (
+                  <div
+                    key={`${control.anchorColumnId}-${control.label}`}
+                    className="pointer-events-none absolute inset-0"
+                  >
+                    {!control.collapsed && expandedWidth > 0 && (
+                      <>
+                        <span
+                          aria-hidden="true"
+                          data-data-table-column-group-line={control.label}
+                          className="absolute top-[18px] z-40 h-px bg-slate-400"
+                          style={{
+                            left: anchorEnd + 10,
+                            width: Math.max(0, expandedWidth - 10),
+                          }}
+                        />
+                        <span
+                          aria-hidden="true"
+                          data-data-table-column-group-cap={control.label}
+                          className="absolute top-[18px] z-40 h-2 w-px bg-slate-400"
+                          style={{ left: anchorEnd + expandedWidth }}
+                        />
+                      </>
+                    )}
+                    <button
+                      type="button"
+                      aria-label={
+                        control.collapsed
+                          ? `${control.label} 컬럼 펼치기`
+                          : `${control.label} 컬럼 접기`
+                      }
+                      aria-expanded={!control.collapsed}
+                      title={
+                        control.collapsed
+                          ? `${control.label} 컬럼 펼치기`
+                          : `${control.label} 컬럼 접기`
+                      }
+                      data-data-table-column-group-toggle={control.label}
+                      className="pointer-events-auto sticky z-50 mt-2 inline-flex size-5 items-center justify-center rounded-[3px] border border-border bg-white p-0 text-muted-foreground shadow-xs outline-none transition-colors hover:border-muted-foreground/40 hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/35 active:translate-y-px"
+                      style={{
+                        left: toggleOffset,
+                        marginLeft: toggleOffset,
+                      }}
+                      onClick={control.onToggle}
+                    >
+                      {control.collapsed ? (
+                        <Plus className="size-3" />
+                      ) : (
+                        <Minus className="size-3" />
+                      )}
+                    </button>
+                  </div>
+                ),
+              )}
+            </div>
+          </div>
+        )}
         <table
           ref={tableRef}
-          className={cn('w-full table-fixed caption-bottom text-sm', isNotion && 'border-separate border-spacing-0')}
+          className={cn(
+            "w-full table-fixed caption-bottom text-sm",
+            isNotion && "border-separate border-spacing-0",
+          )}
           style={{
-            // Keep dense grids horizontally scrollable when their configured
-            // columns are wider than the viewport, but let shorter grids use
-            // the available workspace instead of leaving a large dead area.
-            width: `max(100%, ${tableTotalSize}px)`,
+            width: hasFillColumn
+              ? `max(100%, ${tableTotalSize}px)`
+              : tableTotalSize,
             minWidth: tableTotalSize,
           }}
         >
           {/* Header */}
-          <thead className={cn('sticky top-0 z-20 bg-background', isNotion && 'bg-white')}>
+          <thead
+            className={cn(
+              "sticky z-20 bg-background",
+              hasColumnGroupGuide ? "top-9" : "top-0",
+              isNotion && "bg-[#f7f7f5]",
+            )}
+          >
             {table.getHeaderGroups().map((headerGroup) => (
               <tr key={headerGroup.id}>
                 {headerGroup.headers.map((header, colIndex) => {
@@ -342,17 +480,23 @@ export function DataTable<TData extends { id: string }>({
                   const canSort =
                     header.column.columnDef.enableSorting !== false &&
                     !!onSortingChange &&
-                    header.id !== '_select';
+                    header.id !== "_select";
                   const activeSort = (sorting ?? [])[0];
-                  const sorted: false | 'asc' | 'desc' =
+                  const sorted: false | "asc" | "desc" =
                     activeSort?.id === header.column.id
                       ? activeSort.desc
-                        ? 'desc'
-                        : 'asc'
+                        ? "desc"
+                        : "asc"
                       : false;
                   const isLast = colIndex === headerGroup.headers.length - 1;
-                  const isPinned = header.column.getIsPinned() === 'left';
-                  const isLastPinned = isPinned && header.column.getIsLastColumn('left');
+                  const isPinned = header.column.getIsPinned() === "left";
+                  const isLastPinned =
+                    isPinned && header.column.getIsLastColumn("left");
+                  const isColumnGroupDetail = Boolean(
+                    columnGroupControls.some((control) =>
+                      control.columnIds.includes(header.column.id),
+                    ),
+                  );
                   const handleSortToggle = () => {
                     if (!canSort) return;
                     const current = sorting ?? [];
@@ -371,14 +515,22 @@ export function DataTable<TData extends { id: string }>({
                     <th
                       key={header.id}
                       className={cn(
-                        'relative text-left align-middle font-medium text-muted-foreground',
+                        "relative text-left align-middle font-medium text-muted-foreground",
                         isNotion
-                          ? 'h-9 border-b border-[#eeeeec] px-2.5 text-[13px] normal-case tracking-normal'
-                          : 'h-8 border-b border-border/60 px-3 text-[11px] uppercase tracking-wider',
-                        !isLast && (isNotion ? 'border-r border-r-[#eeeeec]' : 'border-r border-r-border/40'),
-                        canSort && 'cursor-pointer select-none hover:text-foreground',
-                        isPinned && (isNotion ? 'bg-white' : 'bg-background'),
-                        isLastPinned && 'shadow-[1px_0_0_0_#d9d9d6]',
+                          ? "h-9 border-b border-[#d8d6d0] bg-[#f7f7f5] px-2.5 text-[13px] normal-case tracking-normal"
+                          : "h-8 border-b border-border/60 px-3 text-[11px] uppercase tracking-wider",
+                        !isLast &&
+                          (isNotion
+                            ? "border-r border-r-[#eeeeec]"
+                            : "border-r border-r-border/40"),
+                        canSort &&
+                          "cursor-pointer select-none hover:text-foreground",
+                        isColumnGroupDetail &&
+                          isNotion &&
+                          "bg-[#f2f6f4] text-[#52645e]",
+                        isPinned &&
+                          (isNotion ? "bg-[#f5f4f1]" : "bg-background"),
+                        isLastPinned && "shadow-[1px_0_0_0_#d9d9d6]",
                       )}
                       style={{
                         // fill 컬럼은 폭을 지정하지 않아 table-fixed 레이아웃의
@@ -387,31 +539,44 @@ export function DataTable<TData extends { id: string }>({
                           ? undefined
                           : header.getSize(),
                         ...(isPinned
-                          ? { position: 'sticky', left: header.column.getStart('left'), zIndex: 30 }
+                          ? {
+                              position: "sticky",
+                              left: header.column.getStart("left"),
+                              zIndex: 30,
+                            }
                           : {}),
                       }}
                       onClick={canSort ? handleSortToggle : undefined}
                     >
-                      <div className={cn('flex items-center gap-1', isNotion && 'min-w-0 text-slate-500')}>
+                      <div
+                        className={cn(
+                          "flex items-center gap-1",
+                          isNotion && "min-w-0 text-slate-500",
+                        )}
+                      >
                         {header.isPlaceholder
                           ? null
-                          : flexRender(header.column.columnDef.header, header.getContext())}
-                        {sorted === 'asc' && <ArrowUp className="size-3" />}
-                        {sorted === 'desc' && <ArrowDown className="size-3" />}
+                          : flexRender(
+                              header.column.columnDef.header,
+                              header.getContext(),
+                            )}
+                        {sorted === "asc" && <ArrowUp className="size-3" />}
+                        {sorted === "desc" && <ArrowDown className="size-3" />}
                       </div>
                       {/* Column resize handle — fill 컬럼은 폭 지정이 무시되므로 핸들도 숨김 */}
-                      {header.column.getCanResize() && !header.column.columnDef.meta?.fill && (
-                        <div
-                          onMouseDown={header.getResizeHandler()}
-                          onTouchStart={header.getResizeHandler()}
-                          className={cn(
-                            'absolute top-0 right-0 h-full w-1 cursor-col-resize select-none touch-none',
-                            header.column.getIsResizing()
-                              ? 'bg-primary'
-                              : 'bg-transparent hover:bg-border',
-                          )}
-                        />
-                      )}
+                      {header.column.getCanResize() &&
+                        !header.column.columnDef.meta?.fill && (
+                          <div
+                            onMouseDown={header.getResizeHandler()}
+                            onTouchStart={header.getResizeHandler()}
+                            className={cn(
+                              "absolute top-0 right-0 h-full w-1 cursor-col-resize select-none touch-none",
+                              header.column.getIsResizing()
+                                ? "bg-primary"
+                                : "bg-transparent hover:bg-border",
+                            )}
+                          />
+                        )}
                     </th>
                   );
                 })}
@@ -421,71 +586,97 @@ export function DataTable<TData extends { id: string }>({
 
           {/* Body — 가상화 시 행 단위 <tbody>로 감싸 measureElement 실측 대상이 되게 한다 */}
           {(() => {
-              if (isLoading) {
-                return (
-                  <tbody>
-                    {Array.from({ length: 8 }).map((_, i) => (
-                      <tr key={`skel-${i}`}>
-                        {allColumns.map((_, j) => (
-                          <td
-                            key={j}
-                            className={cn(
-                              isNotion ? 'border-b border-[#eeeeec] px-2.5' : 'border-b border-border/30 px-3',
-                              j < allColumns.length - 1 && (isNotion ? 'border-r border-r-[#eeeeec]' : 'border-r border-r-border/30'),
-                            )}
-                            style={{ height: rowCellHeight }}
-                          >
-                            <Skeleton className="h-4 w-full" />
-                          </td>
-                        ))}
-                      </tr>
-                    ))}
-                  </tbody>
-                );
-              }
-              if (rows.length === 0) {
-                return (
-                  <tbody>
-                    <tr>
-                      <td
-                        colSpan={allColumns.length}
-                        className="h-32 text-center text-sm text-muted-foreground"
-                      >
-                        {emptyMessage}
-                      </td>
+            if (isLoading) {
+              return (
+                <tbody>
+                  {Array.from({ length: 8 }).map((_, i) => (
+                    <tr key={`skel-${i}`}>
+                      {allColumns.map((_, j) => (
+                        <td
+                          key={j}
+                          className={cn(
+                            isNotion
+                              ? "border-b border-[#eeeeec] px-2.5"
+                              : "border-b border-border/30 px-3",
+                            j < allColumns.length - 1 &&
+                              (isNotion
+                                ? "border-r border-r-[#eeeeec]"
+                                : "border-r border-r-border/30"),
+                          )}
+                          style={{ height: rowCellHeight }}
+                        >
+                          <Skeleton className="h-4 w-full" />
+                        </td>
+                      ))}
                     </tr>
-                  </tbody>
-                );
-              }
-              const renderRow = (row: (typeof rows)[number], rowIndex: number) => (
-                <Fragment key={row.id}>
+                  ))}
+                </tbody>
+              );
+            }
+            if (rows.length === 0) {
+              return (
+                <tbody>
+                  <tr>
+                    <td
+                      colSpan={allColumns.length}
+                      className="h-32 text-center text-sm text-muted-foreground"
+                    >
+                      {emptyMessage}
+                    </td>
+                  </tr>
+                </tbody>
+              );
+            }
+            const renderRow = (
+              row: (typeof rows)[number],
+              rowIndex: number,
+            ) => (
+              <Fragment key={row.id}>
                 <tr
-                  data-state={row.getIsSelected() ? 'selected' : undefined}
+                  data-state={row.getIsSelected() ? "selected" : undefined}
                   className="group"
                 >
                   {row.getVisibleCells().map((cell, colIndex) => {
-                    const isLastCol = colIndex === row.getVisibleCells().length - 1;
+                    const isLastCol =
+                      colIndex === row.getVisibleCells().length - 1;
                     const isFocused =
-                      focusedCell?.row === rowIndex && focusedCell?.col === colIndex;
+                      focusedCell?.row === rowIndex &&
+                      focusedCell?.col === colIndex;
                     const isRowFocused = focusedCell?.row === rowIndex;
-                    const isPinned = cell.column.getIsPinned() === 'left';
-                    const isLastPinned = isPinned && cell.column.getIsLastColumn('left');
+                    const isPinned = cell.column.getIsPinned() === "left";
+                    const isLastPinned =
+                      isPinned && cell.column.getIsLastColumn("left");
                     return (
                       <td
                         key={cell.id}
                         data-table-col={colIndex}
                         data-table-row={rowIndex}
                         className={cn(
-                          'relative align-middle select-none',
-                          isNotion ? 'border-b border-[#eeeeec] px-2.5 text-[13px]' : 'border-b border-border/30 px-3',
-                          !isLastCol && (isNotion ? 'border-r border-r-[#eeeeec]' : 'border-r border-r-border/30'),
-                          isNotion ? 'group-hover:bg-slate-50/70' : 'group-hover:bg-muted/40',
-                          'group-data-[state=selected]:bg-primary/5',
-                          isFocused && (isNotion ? 'bg-blue-50/60 outline outline-1 -outline-offset-1 outline-blue-500/30' : 'bg-accent/60 outline outline-1 -outline-offset-1 outline-primary/30'),
-                          isRowFocused && !isFocused && (isNotion ? 'bg-slate-50' : 'bg-accent/30'),
-                          onRowClick && 'cursor-pointer',
-                          isPinned && (isNotion ? 'bg-white group-hover:bg-slate-50/70 group-data-[state=selected]:bg-primary/5' : 'bg-background group-hover:bg-muted/40 group-data-[state=selected]:bg-primary/5'),
-                          isLastPinned && 'shadow-[1px_0_0_0_#d9d9d6]',
+                          "relative align-middle select-none",
+                          isNotion
+                            ? "border-b border-[#eeeeec] px-2.5 text-[13px]"
+                            : "border-b border-border/30 px-3",
+                          !isLastCol &&
+                            (isNotion
+                              ? "border-r border-r-[#eeeeec]"
+                              : "border-r border-r-border/30"),
+                          isNotion
+                            ? "group-hover:bg-slate-50/70"
+                            : "group-hover:bg-muted/40",
+                          "group-data-[state=selected]:bg-primary/5",
+                          isFocused &&
+                            (isNotion
+                              ? "bg-blue-50/60 outline outline-1 -outline-offset-1 outline-blue-500/30"
+                              : "bg-accent/60 outline outline-1 -outline-offset-1 outline-primary/30"),
+                          isRowFocused &&
+                            !isFocused &&
+                            (isNotion ? "bg-slate-50" : "bg-accent/30"),
+                          onRowClick && "cursor-pointer",
+                          isPinned &&
+                            (isNotion
+                              ? "bg-white group-hover:bg-slate-50/70 group-data-[state=selected]:bg-primary/5"
+                              : "bg-background group-hover:bg-muted/40 group-data-[state=selected]:bg-primary/5"),
+                          isLastPinned && "shadow-[1px_0_0_0_#d9d9d6]",
                         )}
                         style={{
                           width: cell.column.columnDef.meta?.fill
@@ -499,7 +690,10 @@ export function DataTable<TData extends { id: string }>({
                           onRowClick?.(row.original);
                         }}
                       >
-                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                        {flexRender(
+                          cell.column.columnDef.cell,
+                          cell.getContext(),
+                        )}
                       </td>
                     );
                   })}
@@ -509,68 +703,86 @@ export function DataTable<TData extends { id: string }>({
                     <td
                       colSpan={allColumns.length}
                       className={cn(
-                        'p-0 align-top',
-                        isNotion ? 'border-b border-[#eeeeec] bg-slate-50/40' : 'border-b border-border/30 bg-muted/20',
+                        "p-0 align-top",
+                        isNotion
+                          ? "border-b border-[#eeeeec] bg-slate-50/40"
+                          : "border-b border-border/30 bg-muted/20",
                       )}
                     >
                       {renderExpandedRow(row.original)}
                     </td>
                   </tr>
                 )}
-                </Fragment>
-              );
-              if (canVirtualize) {
-                return (
-                  <>
-                    {paddingTop > 0 && (
-                      <tbody aria-hidden="true">
-                        <tr>
-                          <td colSpan={allColumns.length} style={{ height: paddingTop, padding: 0, border: 0 }} />
-                        </tr>
-                      </tbody>
-                    )}
-                    {virtualRows.map((virtualRow) => (
-                      // 행+확장행을 tbody 하나로 묶어 measureElement가 확장 높이까지 실측
-                      <tbody
-                        key={rows[virtualRow.index].id}
-                        data-index={virtualRow.index}
-                        ref={rowVirtualizer.measureElement}
-                      >
-                        {renderRow(rows[virtualRow.index], virtualRow.index)}
-                      </tbody>
-                    ))}
-                    {paddingBottom > 0 && (
-                      <tbody aria-hidden="true">
-                        <tr>
-                          <td colSpan={allColumns.length} style={{ height: paddingBottom, padding: 0, border: 0 }} />
-                        </tr>
-                      </tbody>
-                    )}
-                    {isLoadingMore && (
-                      <tbody>
-                        <tr>
-                          <td colSpan={allColumns.length} className="h-10 px-3 text-center text-xs text-muted-foreground">
-                            더 불러오는 중...
-                          </td>
-                        </tr>
-                      </tbody>
-                    )}
-                  </>
-                );
-              }
+              </Fragment>
+            );
+            if (canVirtualize) {
               return (
-                <tbody>
-                  {rows.map(renderRow)}
-                  {isLoadingMore && (
-                    <tr>
-                      <td colSpan={allColumns.length} className="h-10 px-3 text-center text-xs text-muted-foreground">
-                        더 불러오는 중...
-                      </td>
-                    </tr>
+                <>
+                  {paddingTop > 0 && (
+                    <tbody aria-hidden="true">
+                      <tr>
+                        <td
+                          colSpan={allColumns.length}
+                          style={{ height: paddingTop, padding: 0, border: 0 }}
+                        />
+                      </tr>
+                    </tbody>
                   )}
-                </tbody>
+                  {virtualRows.map((virtualRow) => (
+                    // 행+확장행을 tbody 하나로 묶어 measureElement가 확장 높이까지 실측
+                    <tbody
+                      key={rows[virtualRow.index].id}
+                      data-index={virtualRow.index}
+                      ref={rowVirtualizer.measureElement}
+                    >
+                      {renderRow(rows[virtualRow.index], virtualRow.index)}
+                    </tbody>
+                  ))}
+                  {paddingBottom > 0 && (
+                    <tbody aria-hidden="true">
+                      <tr>
+                        <td
+                          colSpan={allColumns.length}
+                          style={{
+                            height: paddingBottom,
+                            padding: 0,
+                            border: 0,
+                          }}
+                        />
+                      </tr>
+                    </tbody>
+                  )}
+                  {isLoadingMore && (
+                    <tbody>
+                      <tr>
+                        <td
+                          colSpan={allColumns.length}
+                          className="h-10 px-3 text-center text-xs text-muted-foreground"
+                        >
+                          더 불러오는 중...
+                        </td>
+                      </tr>
+                    </tbody>
+                  )}
+                </>
               );
-            })()}
+            }
+            return (
+              <tbody>
+                {rows.map(renderRow)}
+                {isLoadingMore && (
+                  <tr>
+                    <td
+                      colSpan={allColumns.length}
+                      className="h-10 px-3 text-center text-xs text-muted-foreground"
+                    >
+                      더 불러오는 중...
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            );
+          })()}
         </table>
       </div>
 
@@ -588,7 +800,7 @@ export function DataTable<TData extends { id: string }>({
 
       {/* Status bar — shows focused row summary */}
       {renderStatusBar && (
-        <div className="flex min-h-7 items-center gap-2 border-t border-border/60 bg-muted/30 px-3 text-[11px] text-muted-foreground">
+        <div className="flex min-h-7 items-center gap-2 border-t border-border/60 bg-[#faf9f6] px-3 text-[11px] text-muted-foreground">
           {renderStatusBar({ focusedRow, totalCount: rows.length })}
         </div>
       )}

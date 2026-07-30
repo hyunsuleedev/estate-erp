@@ -94,7 +94,7 @@ export function TabContent({ autoCreateInitialTab = true }: TabContentProps = {}
   }, [activeTab?.id, activeTab?.route, location.pathname, navigate, updateTabRoute, updateTabTitle]);
 
   return (
-    <div key={activeTab?.id ?? 'empty'} className="flex flex-1 flex-col min-h-0 min-w-0">
+    <div key={activeTab?.id ?? 'empty'} className="flex flex-1 flex-col min-h-0 min-w-0 p-4">
       <Outlet />
     </div>
   );

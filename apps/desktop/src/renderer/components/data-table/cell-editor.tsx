@@ -3,6 +3,7 @@ import {
   useRef,
   useEffect,
   useCallback,
+  useLayoutEffect,
   useMemo,
   useSyncExternalStore,
   createContext,
@@ -40,6 +41,20 @@ const CellEditContext = createContext<CellEditContextType>({
   stopEdit: () => undefined,
 });
 
+/** 가상화 스크롤아웃으로 포털이 언마운트돼도 입력 중이던 초안을 보존한다 (web 과 동일 설계) */
+/** 셀 편집 중간 상태 전체 — 텍스트 초안 + 칩 날짜 피커 진행 상태 */
+type CellDraft = {
+  text?: string;
+  /** 열려 있던 날짜/기간 피커의 ChipOption.value */
+  chipOptionValue?: string;
+  /** 고르던 기간 (ISO) */
+  range?: { from?: string; to?: string };
+  /** 달력에서 넘겨보던 표시 월 (ISO) — 날짜를 안 찍었어도 보존 */
+  month?: string;
+};
+const cellDraftStore = new Map<string, CellDraft>();
+const cellDraftKey = (recordId: string, field: string) => `${recordId}:${field}`;
+
 export function CellEditProvider({ children }: { children: React.ReactNode }) {
   const editingCellRef = useRef<{ recordId: string; field: string } | null>(null);
   const listenersRef = useRef(new Set<() => void>());
@@ -53,12 +68,14 @@ export function CellEditProvider({ children }: { children: React.ReactNode }) {
   const startEdit = useCallback((recordId: string, field: string) => {
     const current = editingCellRef.current;
     if (current?.recordId === recordId && current.field === field) return;
+    cellDraftStore.clear();
     editingCellRef.current = { recordId, field };
     notify();
   }, [notify]);
 
   const stopEdit = useCallback(() => {
     if (editingCellRef.current === null) return;
+    cellDraftStore.clear();
     editingCellRef.current = null;
     notify();
   }, [notify]);
@@ -142,6 +159,24 @@ interface EditableCellProps {
   children: React.ReactNode;
 }
 
+/**
+ * 가장 가까운 스크롤 컨테이너. 편집 오버레이를 fixed(뷰포트 고정)가 아니라
+ * 이 컨테이너 안에 absolute 로 심는다 — 오버레이가 콘텐츠의 일부가 되어
+ * 네이티브 스크롤(컴포지터)을 그대로 타므로, rAF 로 좌표를 쫓아가며
+ * 한 박자 늦게 따라오는 문제가 구조적으로 사라진다.
+ */
+function getScrollParent(el: HTMLElement): HTMLElement {
+  let node = el.parentElement;
+  while (node && node !== document.body) {
+    const style = getComputedStyle(node);
+    if (/(auto|scroll|overlay)/.test(style.overflowY + style.overflowX)) {
+      return node;
+    }
+    node = node.parentElement;
+  }
+  return document.body;
+}
+
 export function EditableCell({
   recordId,
   field,
@@ -175,6 +210,7 @@ export function EditableCell({
   return (
     <div
       ref={cellRef}
+      data-editing={isEditing || undefined}
       className={cn(
         'relative flex h-full min-h-[24px] w-full cursor-text items-center rounded-sm transition-colors',
         hoverHighlight && !isEditing && 'hover:bg-muted/50',
@@ -198,6 +234,8 @@ export function EditableCell({
       {isEditing && anchorEl && (
         <CellEditPortal
           anchorEl={anchorEl}
+          recordId={recordId}
+          field={field}
           value={value}
           chipValueOf={chipValueOf}
           editType={editType}
@@ -228,6 +266,8 @@ export function EditableCell({
 
 interface CellEditPortalProps {
   anchorEl: HTMLElement;
+  recordId: string;
+  field: string;
   value: unknown;
   chipValueOf?: (value: unknown) => string | undefined;
   editType: 'text' | 'number' | 'select' | 'select-chip';
@@ -250,6 +290,8 @@ function formatLocalDate(d: Date): string {
 
 function CellEditPortal({
   anchorEl,
+  recordId,
+  field,
   value,
   chipValueOf,
   editType,
@@ -261,68 +303,46 @@ function CellEditPortal({
 }: CellEditPortalProps) {
   const initialDraft =
     editType === 'select-chip' ? (chipValueOf?.(value) ?? '') : String(value ?? '');
-  const [draft, setDraft] = useState(initialDraft);
-  const [pendingDateOption, setPendingDateOption] = useState<ChipOption | null>(null);
+  // 언마운트(가상화 스크롤아웃) 후 재마운트 시 보존된 초안을 복원
+  const draftKey = cellDraftKey(recordId, field);
+  const storedDraft = cellDraftStore.get(draftKey);
+  const patchStore = (patch: Partial<CellDraft>) => {
+    cellDraftStore.set(draftKey, { ...cellDraftStore.get(draftKey), ...patch });
+  };
+  const [draft, setDraftState] = useState(() => storedDraft?.text ?? initialDraft);
+  const setDraft = (next: string) => {
+    patchStore({ text: next });
+    setDraftState(next);
+  };
+  // 언마운트(가상화 스크롤아웃) 후 재마운트 시 열려 있던 피커까지 복원
+  const [pendingDateOption, setPendingDateOptionState] =
+    useState<ChipOption | null>(() => {
+      const v = storedDraft?.chipOptionValue;
+      return v ? (chipOptions?.find((o) => o.value === v) ?? null) : null;
+    });
+  const setPendingDateOption = (opt: ChipOption | null) => {
+    patchStore({ chipOptionValue: opt?.value });
+    setPendingDateOptionState(opt);
+  };
   const inputRef = useRef<HTMLInputElement>(null);
-  const [rect, setRect] = useState(() => {
-    const initialRect = anchorEl.getBoundingClientRect();
-    return {
-      top: initialRect.top,
-      bottom: initialRect.bottom,
-      left: initialRect.left,
-      width: initialRect.width,
-      height: initialRect.height,
-    };
-  });
-
-  useEffect(() => {
-    let animationFrame: number | null = null;
-
-    const readRect = () => {
-      animationFrame = null;
-      if (!anchorEl.isConnected) {
-        onCancel();
-        return;
-      }
-
-      const nextRect = anchorEl.getBoundingClientRect();
-      setRect((current) => {
-        if (
-          current.top === nextRect.top &&
-          current.bottom === nextRect.bottom &&
-          current.left === nextRect.left &&
-          current.width === nextRect.width &&
-          current.height === nextRect.height
-        ) {
-          return current;
-        }
-
-        return {
-          top: nextRect.top,
-          bottom: nextRect.bottom,
-          left: nextRect.left,
-          width: nextRect.width,
-          height: nextRect.height,
-        };
-      });
-    };
-
-    const scheduleRead = () => {
-      if (animationFrame !== null) return;
-      animationFrame = window.requestAnimationFrame(readRect);
-    };
-
-    window.addEventListener('scroll', scheduleRead, true);
-    window.addEventListener('resize', scheduleRead);
-
-    return () => {
-      if (animationFrame !== null) {
-        window.cancelAnimationFrame(animationFrame);
-      }
-      window.removeEventListener('scroll', scheduleRead, true);
-      window.removeEventListener('resize', scheduleRead);
-    };
-  }, [anchorEl, onCancel]);
+  // 스크롤 컨테이너 기준 콘텐츠 좌표 (absolute 배치용)
+  const scrollParent = useMemo(() => getScrollParent(anchorEl), [anchorEl]);
+  useLayoutEffect(() => {
+    // absolute 의 기준이 되도록 컨테이너에 포지션 컨텍스트 보장
+    if (getComputedStyle(scrollParent).position === 'static') {
+      scrollParent.style.position = 'relative';
+    }
+  }, [scrollParent]);
+  const rect = (() => {
+    const a = anchorEl.getBoundingClientRect();
+    const p = scrollParent.getBoundingClientRect();
+    const top = a.top - p.top - scrollParent.clientTop + scrollParent.scrollTop;
+    const left = a.left - p.left - scrollParent.clientLeft + scrollParent.scrollLeft;
+    return { top, left, width: a.width, height: a.height, bottom: top + a.height };
+  })();
+  /** 팝오버가 컨테이너 오른쪽 밖으로 나가지 않게 하는 left 한계 */
+  const clampLeft = (popoverWidth: number) =>
+    Math.min(rect.left, scrollParent.scrollLeft + scrollParent.clientWidth - popoverWidth - 12);
 
   // Preselect for date/range pickers, derived from the cell's value via getPreselect.
   const preselect = pendingDateOption?.getPreselect?.(value);
@@ -332,8 +352,36 @@ function CellEditPortal({
     pendingDateOption?.picker === 'range' && preselect && !(preselect instanceof Date) && preselect.from
       ? { from: preselect.from, to: preselect.to }
       : undefined;
-  const [pendingRange, setPendingRange] = useState<DateRange | undefined>(initialRange);
-  const pendingRangeDefaultMonth = initialRange?.from ?? new Date();
+  const [pendingRange, setPendingRangeState] = useState<DateRange | undefined>(
+    () => {
+      const r = storedDraft?.range;
+      if (r?.from) {
+        return { from: new Date(r.from), to: r.to ? new Date(r.to) : undefined };
+      }
+      return initialRange;
+    },
+  );
+  const setPendingRange = (range: DateRange | undefined) => {
+    patchStore({
+      range: range?.from
+        ? { from: range.from.toISOString(), to: range.to?.toISOString() }
+        : undefined,
+    });
+    setPendingRangeState(range);
+  };
+  // 날짜를 아직 선택하지 않고 달만 넘겨본 상태도 재마운트에서 살린다
+  const [pickerMonth, setPickerMonthState] = useState<Date | undefined>(() => {
+    const m = storedDraft?.month;
+    return m ? new Date(m) : undefined;
+  });
+  const setPickerMonth = (month: Date) => {
+    patchStore({ month: month.toISOString() });
+    setPickerMonthState(month);
+  };
+  // 표시 월은 지금 고르고 있는(복원 초안 포함) 기간을 우선한다 —
+  // 스크롤아웃 복원 시 달력이 사용자가 찍어둔 날짜의 달로 열리도록.
+  const pendingRangeDefaultMonth =
+    pendingRange?.from ?? initialRange?.from ?? new Date();
 
   // Auto-focus on mount (skip for select/chip — has its own focus management)
   useEffect(() => {
@@ -395,7 +443,7 @@ function CellEditPortal({
       {editType !== 'select-chip' && (
         <div
           ref={popoverRef}
-          className="fixed z-50 overflow-hidden rounded-none bg-background outline outline-2 -outline-offset-1 outline-[#2383e2]"
+          className="absolute z-50 overflow-hidden rounded-none bg-background outline outline-2 -outline-offset-1 outline-info"
           style={{
             top: rect.top,
             left: rect.left,
@@ -438,10 +486,10 @@ function CellEditPortal({
       {editType === 'select-chip' && chipOptions && !pendingDateOption && (
         <div
           ref={popoverRef}
-          className="fixed z-50 w-[220px] rounded-md border border-border bg-popover p-1 shadow-lg"
+          className="absolute z-50 w-[220px] rounded-md border border-border bg-popover p-1 shadow-lg"
           style={{
             top: rect.bottom + 4,
-            left: Math.min(rect.left, window.innerWidth - 220 - 12),
+            left: clampLeft(220),
           }}
         >
           <div className="px-2 py-1.5 text-[11px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
@@ -489,10 +537,10 @@ function CellEditPortal({
       {editType === 'select-chip' && pendingDateOption && (
         <div
           ref={popoverRef}
-          className="fixed z-50 w-[280px] rounded-md border border-border bg-popover shadow-lg"
+          className="absolute z-50 w-[280px] rounded-md border border-border bg-popover shadow-lg"
           style={{
             top: rect.bottom + 4,
-            left: Math.min(rect.left, window.innerWidth - 280 - 12),
+            left: clampLeft(280),
           }}
         >
           <div className="flex items-center gap-1.5 border-b border-border px-3 py-2">
@@ -513,7 +561,8 @@ function CellEditPortal({
           {pendingDateOption.picker === 'range' ? (
             <Calendar
               mode="range"
-              defaultMonth={pendingRangeDefaultMonth}
+              month={pickerMonth ?? pendingRangeDefaultMonth}
+              onMonthChange={setPickerMonth}
               selected={pendingRange}
               onSelect={(range) => {
                 setPendingRange(range);
@@ -538,7 +587,8 @@ function CellEditPortal({
             <Calendar
               mode="single"
               required
-              defaultMonth={pendingSingleDate}
+              month={pickerMonth ?? pendingSingleDate}
+              onMonthChange={setPickerMonth}
               selected={pendingSingleDate}
               onSelect={(date) => {
                 if (!date) return;
@@ -556,5 +606,5 @@ function CellEditPortal({
     </>
   );
 
-  return createPortal(portalContent, document.body);
+  return createPortal(portalContent, scrollParent);
 }

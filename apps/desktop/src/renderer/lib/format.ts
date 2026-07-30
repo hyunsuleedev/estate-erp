@@ -49,6 +49,16 @@ export function formatArea(m2: number | string | null | undefined): string {
 }
 
 /**
+ * 면적의 평 단위만 표기. formatPyeong(154.34) = "46.7평".
+ */
+export function formatPyeong(m2: number | string | null | undefined): string {
+  if (m2 == null || m2 === '') return EMPTY;
+  const value = typeof m2 === 'string' ? Number(m2) : m2;
+  if (Number.isNaN(value) || value <= 0) return EMPTY;
+  return `${sqmToPyeong(value).toFixed(1)}평`;
+}
+
+/**
  * 전화번호 하이픈 표기.
  * "01012345678" → "010-1234-5678", "0212345678" → "02-1234-5678",
  * "021234567" → "02-123-4567", "15881234" → "1588-1234".
