@@ -1,4 +1,11 @@
-import { app, BrowserWindow, ipcMain, net, protocol } from 'electron';
+import {
+  app,
+  BrowserWindow,
+  ipcMain,
+  net,
+  protocol,
+  safeStorage,
+} from 'electron';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -10,6 +17,15 @@ import {
 } from './main/windowManager';
 import { UpdaterService } from './main/updaterService';
 import { CtiClient } from './main/ctiClient';
+import {
+  CpAuthManager,
+  registerCpAuthIpcHandlers,
+} from './main/cpAuthManager';
+import {
+  CpCredentialVault,
+  type CpCredentialCipher,
+} from './main/cpCredentialVault';
+import { LocalCpMcpServer } from './main/localCpMcpServer';
 
 const APP_PROTOCOL = 'estate-erp';
 
@@ -41,6 +57,8 @@ if (!app.isPackaged) {
 const windowManager = new WindowManager();
 const updaterService = new UpdaterService();
 const ctiClient = new CtiClient();
+let cpAuthManager: CpAuthManager | null = null;
+let localCpMcpServer: LocalCpMcpServer | null = null;
 let packagedRendererProtocolRegistered = false;
 
 function registerPackagedRendererProtocol() {
@@ -129,6 +147,7 @@ const CLAUDE_CODE_NESTING_VARS = [
 ] as const;
 
 const ESTATE_ERP_MCP_ENV_VAR = 'ESTATE_ERP_TOKEN';
+const ESTATE_ERP_LOCAL_MCP_ENV_VAR = 'ESTATE_ERP_LOCAL_MCP_TOKEN';
 
 function buildCodexEnv(authToken?: string): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...process.env };
@@ -140,6 +159,11 @@ function buildCodexEnv(authToken?: string): NodeJS.ProcessEnv {
   }
   if (authToken) {
     env[ESTATE_ERP_MCP_ENV_VAR] = authToken;
+  }
+  const localMcpConnection = localCpMcpServer?.getConnection();
+  if (localMcpConnection) {
+    env[ESTATE_ERP_LOCAL_MCP_ENV_VAR] =
+      localMcpConnection.bearerToken;
   }
   return env;
 }
@@ -201,10 +225,9 @@ type CodexStartArgs = {
 function buildCodexArgs(args: CodexStartArgs): string[] {
   const cliArgs: string[] = ['exec', '--json'];
 
-  // When auth token is present, codex needs full bypass to call MCP tools
-  // without interactive approval. This mirrors Paperclip's approach.
-  // Without auth token, respect the user-chosen sandbox mode.
-  if (args.dangerouslyBypass || args.authToken) {
+  // CRM authentication and local shell/filesystem authority are independent.
+  // A bearer token must never silently disable Codex approvals or sandboxing.
+  if (args.dangerouslyBypass) {
     cliArgs.push('--dangerously-bypass-approvals-and-sandbox');
   } else if (args.sandbox) {
     cliArgs.push('--sandbox', args.sandbox);
@@ -229,6 +252,14 @@ function buildCodexArgs(args: CodexStartArgs): string[] {
     cliArgs.push(
       '-c', `mcp_servers.estate_erp.url="${mcpUrl}"`,
       '-c', `mcp_servers.estate_erp.bearer_token_env_var="${ESTATE_ERP_MCP_ENV_VAR}"`,
+    );
+  }
+
+  const localMcpConnection = localCpMcpServer?.getConnection();
+  if (localMcpConnection) {
+    cliArgs.push(
+      '-c', `mcp_servers.estate_local.url="${localMcpConnection.url}"`,
+      '-c', `mcp_servers.estate_local.bearer_token_env_var="${ESTATE_ERP_LOCAL_MCP_ENV_VAR}"`,
     );
   }
 
@@ -368,6 +399,8 @@ ipcMain.handle('codex:stop', (_e, runId: string) => {
 
 app.on('before-quit', () => {
   ctiClient.stop();
+  cpAuthManager?.close();
+  void localCpMcpServer?.stop();
   for (const run of codexRuns.values()) {
     try {
       run.proc.kill('SIGTERM');
@@ -378,7 +411,42 @@ app.on('before-quit', () => {
   codexRuns.clear();
 });
 
-app.on('ready', () => {
+app.on('ready', async () => {
+  const secureStorageAvailable =
+    safeStorage.isEncryptionAvailable() &&
+    !(
+      process.platform === 'linux' &&
+      safeStorage.getSelectedStorageBackend() === 'basic_text'
+    );
+  const cipher: CpCredentialCipher = {
+    isAvailable: () => secureStorageAvailable,
+    encrypt: (value) => safeStorage.encryptString(value),
+    decrypt: (value) => safeStorage.decryptString(value),
+    backend: () =>
+      process.platform === 'darwin'
+        ? 'macOS Keychain'
+        : process.platform === 'win32'
+          ? 'Windows DPAPI'
+          : safeStorage.getSelectedStorageBackend(),
+  };
+  cpAuthManager = new CpAuthManager(
+    new CpCredentialVault(app.getPath('userData'), cipher),
+  );
+  registerCpAuthIpcHandlers(cpAuthManager, (event) =>
+    BrowserWindow.getAllWindows().some(
+      (window) => window.webContents === event.sender,
+    ),
+  );
+  localCpMcpServer = new LocalCpMcpServer(cpAuthManager);
+  try {
+    await localCpMcpServer.start();
+  } catch (error) {
+    console.error(
+      'Local CP authentication MCP failed to start:',
+      error instanceof Error ? error.message : error,
+    );
+  }
+
   createWindow();
   updaterService.checkForUpdates();
   ctiClient.start();

@@ -103,6 +103,12 @@ export function NotificationBell() {
       case 'task':
         void navigate({ to: '/tasks' })
         return true
+      case 'agentActionRequest':
+        void navigate({
+          to: '/ai-requests',
+          search: linkId ? { requestId: linkId } : {},
+        })
+        return true
       case 'match':
         void navigate({ to: '/matches' })
         return true

@@ -105,4 +105,22 @@ contextBridge.exposeInMainWorld('electronBridge', {
       };
     },
   },
+  cpAuth: {
+    getStatus: (input: { officeId: string }) =>
+      ipcRenderer.invoke('cp-auth:status', input),
+    save: (input: {
+      officeId: string;
+      provider: 'esiljang' | 'budongsanbank';
+      username: string;
+      password: string;
+    }) => ipcRenderer.invoke('cp-auth:save', input),
+    remove: (input: {
+      officeId: string;
+      provider: 'esiljang' | 'budongsanbank';
+    }) => ipcRenderer.invoke('cp-auth:remove', input),
+    prepareSession: (input: {
+      officeId: string;
+      provider: 'esiljang' | 'budongsanbank';
+    }) => ipcRenderer.invoke('cp-auth:prepare-session', input),
+  },
 });

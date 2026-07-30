@@ -138,6 +138,50 @@ interface CtiBridge {
   onStatus: (callback: (payload: CtiStatusPayload) => void) => () => void;
 }
 
+type CpCredentialProvider = 'esiljang' | 'budongsanbank';
+
+interface CpCredentialStatus {
+  provider: CpCredentialProvider;
+  hasCredentials: boolean;
+  maskedUsername: string | null;
+  updatedAt: string | null;
+  lastVerifiedAt: string | null;
+}
+
+interface CpCredentialVaultStatus {
+  available: boolean;
+  deviceId: string;
+  encryptionBackend: string;
+  providers: CpCredentialStatus[];
+}
+
+interface CpAuthPrepareResult {
+  provider: CpCredentialProvider;
+  deviceId: string;
+  status: 'authenticated' | 'credentials_missing' | 'needs_input' | 'error';
+  targetUrl: string | null;
+  windowId: number | null;
+  message: string;
+}
+
+interface CpAuthBridge {
+  getStatus: (input: { officeId: string }) => Promise<CpCredentialVaultStatus>;
+  save: (input: {
+    officeId: string;
+    provider: CpCredentialProvider;
+    username: string;
+    password: string;
+  }) => Promise<CpCredentialVaultStatus>;
+  remove: (input: {
+    officeId: string;
+    provider: CpCredentialProvider;
+  }) => Promise<CpCredentialVaultStatus>;
+  prepareSession: (input: {
+    officeId: string;
+    provider: CpCredentialProvider;
+  }) => Promise<CpAuthPrepareResult>;
+}
+
 interface ElectronBridge {
   platform: string;
   onToggleSidebar: (callback: () => void) => () => void;
@@ -148,6 +192,7 @@ interface ElectronBridge {
   tabs: TabsBridge;
   codex: CodexBridge;
   cti: CtiBridge;
+  cpAuth: CpAuthBridge;
 }
 
 declare global {

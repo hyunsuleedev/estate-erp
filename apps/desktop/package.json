@@ -59,6 +59,7 @@
     "@dnd-kit/utilities": "3.2.2",
     "@estate-erp/api-client": "workspace:*",
     "@estate-erp/shared": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "@tanstack/react-query": "^5.65.0",
     "@tanstack/react-router": "^1.120.0",
     "@tanstack/react-table": "^8.21.0",

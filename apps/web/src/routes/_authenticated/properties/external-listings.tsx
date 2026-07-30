@@ -1,30 +1,43 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from 'react';
 import {
   Building2,
   CheckCircle,
   ChevronDown,
-  ChevronUp,
+  CircleDollarSign,
+  Compass,
+  DoorOpen,
   ExternalLink,
-  Filter,
+  FileText,
+  Hash,
+  Layers3,
+  ListOrdered,
   Link2,
   Loader2,
   Lock,
-  Minus,
+  Megaphone,
   Plus,
   RefreshCw,
   RotateCcw,
+  Ruler,
   Search,
-  Star,
+  TrendingDown,
+  TrendingUp,
+  UserRound,
   X,
   XCircle,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import type { ColumnDef } from '@tanstack/react-table';
+import type { ColumnDef, SortingState } from '@tanstack/react-table';
 import type {
   ExternalListingGroup,
-  ExternalListingGroupStatus,
   ExternalListingTransactionType,
   SnapshotSession,
 } from '@estate-erp/api-client';
@@ -57,16 +70,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from '@/components/ui/tabs';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   MultiSelect,
   type MultiSelectOption,
 } from '@/components/ui/multi-select';
+import { sortExternalListingGroups } from './-external-listing-sort';
 
 const transactionTypes: Array<{
   value: ExternalListingTransactionType;
@@ -77,27 +86,13 @@ const transactionTypes: Array<{
   { value: 'monthly', label: '월세' },
 ];
 
-const statusMeta: Record<
-  ExternalListingGroupStatus,
-  { label: string; className: string }
-> = {
-  unmatched: {
-    label: '미매칭',
-    className: 'bg-[#f1f1ef] text-[#5f5e5b]',
-  },
-  matched: {
-    label: '매칭',
-    className: 'bg-[#e7f3f8] text-[#337ea9]',
-  },
-  verified: {
-    label: '확정',
-    className: 'bg-[#eef3ed] text-[#44745a]',
-  },
-  on_hold: {
-    label: '보류',
-    className: 'bg-[#fbf3db] text-[#9f6b00]',
-  },
-};
+const MARKET_DETAIL_COLUMN_IDS = [
+  'priceMin',
+  'priceMax',
+  'direction',
+  'features',
+] as const;
+const MARKET_DETAIL_COLUMN_ID_SET = new Set<string>(MARKET_DETAIL_COLUMN_IDS);
 
 export const Route = createFileRoute(
   '/_authenticated/properties/external-listings',
@@ -110,16 +105,17 @@ function ExternalListingsPage() {
   const { user } = useAuth();
   const [transactionType, setTransactionType] =
     useState<ExternalListingTransactionType>('sale');
+  const [sorting, setSorting] = useState<SortingState>([]);
+  const [areMarketDetailColumnsCollapsed, setAreMarketDetailColumnsCollapsed] =
+    useState(true);
   const [selectedSiteIds, setSelectedSiteIds] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
-  const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [buildingQuery, setBuildingQuery] = useState('');
   const [hoQuery, setHoQuery] = useState('');
   const [featureQuery, setFeatureQuery] = useState('');
   const [onlyOwner, setOnlyOwner] = useState(false);
   const [onlyAd, setOnlyAd] = useState(false);
   const [onlySeango, setOnlySeango] = useState(false);
-  const [onlyFavorite, setOnlyFavorite] = useState(false);
   const [priceMin, setPriceMin] = useState('');
   const [priceMax, setPriceMax] = useState('');
   // 월세 범위 (월세 탭 전용 — 보증금은 priceMin/Max가 담당)
@@ -157,11 +153,7 @@ function ExternalListingsPage() {
     selectedSiteIds.length === 1 ? selectedSiteIds[0] : undefined;
 
   const { data: activeSession = null } = useQuery({
-    queryKey: [
-      'external-listing-active-session',
-      scopeSiteId,
-      transactionType,
-    ],
+    queryKey: ['external-listing-active-session', scopeSiteId, transactionType],
     queryFn: () =>
       api.externalListings.getActiveSession(scopeSiteId!, transactionType),
     enabled: !!scopeSiteId,
@@ -230,8 +222,7 @@ function ExternalListingsPage() {
   });
 
   const completeSessionMutation = useMutation({
-    mutationFn: () =>
-      api.externalListings.completeSession(activeSession!.id),
+    mutationFn: () => api.externalListings.completeSession(activeSession!.id),
     onSuccess: (result) => {
       queryClient.invalidateQueries({
         queryKey: ['external-listing-active-session'],
@@ -267,7 +258,7 @@ function ExternalListingsPage() {
     },
   });
 
-  // ── Inline group updates (favorite / status / memo / inferredHo) ─
+  // ── Inline group updates (memo / inferredHo) ───────────────────
   const updateGroupMutation = useMutation({
     mutationFn: ({
       id,
@@ -275,15 +266,15 @@ function ExternalListingsPage() {
     }: {
       id: string;
       dto: {
-        favorite?: boolean;
-        status?: ExternalListingGroupStatus;
         memo?: string | null;
         inferredHo?: string | null;
       };
     }) => api.externalListings.updateGroup(id, dto),
     // Optimistic update so the table feels instant.
     onMutate: async ({ id, dto }) => {
-      await queryClient.cancelQueries({ queryKey: ['external-listing-groups'] });
+      await queryClient.cancelQueries({
+        queryKey: ['external-listing-groups'],
+      });
       const snapshots = queryClient.getQueriesData<ExternalListingGroup[]>({
         queryKey: ['external-listing-groups'],
       });
@@ -303,7 +294,9 @@ function ExternalListingsPage() {
         }
       }
       toast.error(
-        err instanceof Error && err.message ? err.message : '저장에 실패했습니다.',
+        err instanceof Error && err.message
+          ? err.message
+          : '저장에 실패했습니다.',
       );
     },
     onSettled: () => {
@@ -316,33 +309,31 @@ function ExternalListingsPage() {
     mutationFn: ({ id, unitId }: { id: string; unitId: string | null }) =>
       api.externalListings.updateGroup(id, { unitId }),
     onSuccess: (_data, vars) => {
-      toast.success(vars.unitId ? '호실이 연결되었습니다.' : '호실 연결이 해제되었습니다.');
+      toast.success(
+        vars.unitId ? '호실이 연결되었습니다.' : '호실 연결이 해제되었습니다.',
+      );
       queryClient.invalidateQueries({ queryKey: ['external-listing-groups'] });
     },
     onError: (err) =>
       toast.error(
-        err instanceof Error && err.message ? err.message : '호실 연결에 실패했습니다.',
+        err instanceof Error && err.message
+          ? err.message
+          : '호실 연결에 실패했습니다.',
       ),
   });
 
-  // ── 그룹 내 형제 매물 펼치기 다이얼로그 ──────────────────────────
-  const [siblingGroup, setSiblingGroup] = useState<ExternalListingGroup | null>(null);
-
-  // ── 최소최대~출처 접기 (호 헤더 ± 버튼 — 매물목록과 동일 패턴) ────
-  const [detailCollapsed, setDetailCollapsed] = useState(
-    () =>
-      typeof window !== 'undefined' &&
-      window.localStorage.getItem(
-        'estate-erp.external-listings.detail-collapsed',
-      ) === '1',
-  );
-  const toggleDetailCollapsed = useCallback(() => {
-    setDetailCollapsed((prev) => {
-      const next = !prev;
-      window.localStorage.setItem(
-        'estate-erp.external-listings.detail-collapsed',
-        next ? '1' : '0',
-      );
+  // ── 랭킹 셀에서 동일주소 광고를 인라인으로 펼친 행 ───────────────
+  const [expandedRankingRowIds, setExpandedRankingRowIds] = useState<
+    Set<string>
+  >(() => new Set());
+  const toggleRankingRow = useCallback((groupId: string) => {
+    setExpandedRankingRowIds((previous) => {
+      const next = new Set(previous);
+      if (next.has(groupId)) {
+        next.delete(groupId);
+      } else {
+        next.add(groupId);
+      }
       return next;
     });
   }, []);
@@ -376,7 +367,7 @@ function ExternalListingsPage() {
       return m.deposit ?? null;
     };
 
-    return groups.filter((g) => {
+    const filtered = groups.filter((g) => {
       // 동 필터: buildingName 문자열
       if (bq) {
         const dongText = (g.buildingName ?? '').toLowerCase();
@@ -389,17 +380,16 @@ function ExternalListingsPage() {
       }
       // 매물특징 필터: articleFeatureDesc + memo
       if (fq) {
-        const descText =
-          (g.mainExternalListing?.articleFeatureDesc ?? '').toLowerCase();
+        const descText = (
+          g.mainExternalListing?.articleFeatureDesc ?? ''
+        ).toLowerCase();
         const memoText = (g.memo ?? '').toLowerCase();
         if (!descText.includes(fq) && !memoText.includes(fq)) return false;
       }
-      // 즐겨찾기
-      if (onlyFavorite && !g.favorite) return false;
       // 집주인(소유주 확인된 매물만)
       if (onlyOwner && !g.ownerVerified) return false;
-      // 광고 O만 (= mainExternalListing.isActive)
-      if (onlyAd && !g.mainExternalListing?.isActive) return false;
+      // 내광고는 CP 원본의 실제 게시일이 확인된 행만 해당한다.
+      if (onlyAd && !formatMonthDay(g.ownAdvertisementYmd)) return false;
       // 세안고
       if (onlySeango) {
         const desc = g.mainExternalListing?.articleFeatureDesc ?? '';
@@ -421,12 +411,12 @@ function ExternalListingsPage() {
       }
       return true;
     });
+    return sortExternalListingGroups(filtered, sorting, transactionType);
   }, [
     groups,
     buildingQuery,
     hoQuery,
     featureQuery,
-    onlyFavorite,
     onlyOwner,
     onlyAd,
     onlySeango,
@@ -434,6 +424,7 @@ function ExternalListingsPage() {
     priceMax,
     monthlyRentMin,
     monthlyRentMax,
+    sorting,
     transactionType,
   ]);
 
@@ -441,7 +432,6 @@ function ExternalListingsPage() {
     (buildingQuery.trim() ? 1 : 0) +
     (hoQuery.trim() ? 1 : 0) +
     (featureQuery.trim() ? 1 : 0) +
-    (onlyFavorite ? 1 : 0) +
     (onlyOwner ? 1 : 0) +
     (onlyAd ? 1 : 0) +
     (onlySeango ? 1 : 0) +
@@ -455,7 +445,6 @@ function ExternalListingsPage() {
     setBuildingQuery('');
     setHoQuery('');
     setFeatureQuery('');
-    setOnlyFavorite(false);
     setOnlyOwner(false);
     setOnlyAd(false);
     setOnlySeango(false);
@@ -467,24 +456,26 @@ function ExternalListingsPage() {
 
   const columns = useMemo(
     () =>
-      buildColumns(transactionType, {
-        onUpdateStatus: (id, status) =>
-          updateGroupMutation.mutate({ id, dto: { status } }),
-        onUpdateMemo: (id, memo) =>
-          updateGroupMutation.mutate({ id, dto: { memo: memo || null } }),
-        onUpdateInferredHo: (id, ho) =>
-          updateGroupMutation.mutate({ id, dto: { inferredHo: ho || null } }),
-        onLinkUnit: (id, unitId) => linkUnitMutation.mutate({ id, unitId }),
-        onShowListings: (group) => setSiblingGroup(group),
-        detailCollapsed,
-        onToggleDetailCollapsed: toggleDetailCollapsed,
-      }),
+      buildColumns(
+        transactionType,
+        {
+          onUpdateMemo: (id, memo) =>
+            updateGroupMutation.mutate({ id, dto: { memo: memo || null } }),
+          onUpdateInferredHo: (id, ho) =>
+            updateGroupMutation.mutate({ id, dto: { inferredHo: ho || null } }),
+          onLinkUnit: (id, unitId) => linkUnitMutation.mutate({ id, unitId }),
+          expandedListingIds: expandedRankingRowIds,
+          onToggleListings: toggleRankingRow,
+        },
+        areMarketDetailColumnsCollapsed,
+      ),
     [
       transactionType,
+      areMarketDetailColumnsCollapsed,
+      expandedRankingRowIds,
+      toggleRankingRow,
       updateGroupMutation,
       linkUnitMutation,
-      detailCollapsed,
-      toggleDetailCollapsed,
     ],
   );
 
@@ -550,206 +541,149 @@ function ExternalListingsPage() {
         }
         className="flex min-h-0 min-w-0 flex-1 flex-col gap-0"
       >
-        {/* 필터 행 */}
-        <div className="shrink-0 border-b px-6 py-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <TabsList className="h-auto rounded-lg bg-secondary p-[3px]">
-              {transactionTypes.map((t) => (
-                <TabsTrigger
-                  key={t.value}
-                  value={t.value}
-                  className="rounded-md border-0 px-[13px] py-[5px] text-[13px] font-medium text-muted-foreground shadow-none data-[state=active]:bg-white data-[state=active]:text-foreground data-[state=active]:shadow-sm"
-                >
-                  {t.label}
-                </TabsTrigger>
-              ))}
-            </TabsList>
-            {!isLoading && (
-              <span className="text-[12.5px] tabular-nums text-muted-foreground/80">
-                {activeFilterCount > 0 &&
-                filteredGroups.length !== groups.length
-                  ? `${filteredGroups.length}/${groups.length}건`
-                  : `${groups.length}건`}
-              </span>
-            )}
+        <section
+          data-advertising-note-primary-filters
+          className="shrink-0 border-b border-border bg-white px-3 py-2.5"
+        >
+          <div className="flex min-w-0 items-center gap-2">
+            <div className="flex min-w-0 flex-1 items-center gap-1.5">
+              <TabsList className="max-w-full shrink-0 justify-start border border-border/80 bg-[#f5f4f1] p-0.5">
+                {transactionTypes.map((t) => (
+                  <TabsTrigger
+                    key={t.value}
+                    value={t.value}
+                    className="flex-none border-0 px-3 text-[13px] text-muted-foreground shadow-none data-[state=active]:border data-[state=active]:border-[#d9d9d6] data-[state=active]:bg-white data-[state=active]:text-slate-950 data-[state=active]:shadow-sm"
+                  >
+                    {t.label}
+                  </TabsTrigger>
+                ))}
+              </TabsList>
 
-            <div className="flex h-8 min-w-[150px] flex-[0_1_248px] items-center gap-1.5 rounded-lg border bg-muted px-2.5">
-              <Search className="size-3.5 shrink-0 text-muted-foreground/70" />
-              <input
+              <MultiSelect
+                options={siteOptions}
+                selected={selectedSiteIds}
+                onChange={setSelectedSiteIds}
+                ariaLabel="단지 필터"
+                placeholder="단지 전체"
+                searchPlaceholder="단지명 검색"
+                emptyText="일치하는 단지가 없습니다."
+                maxCount={1}
+                className={cn(
+                  'h-8 min-w-[150px] max-w-[280px] shrink-0 border-transparent bg-[#f7f6f3] px-2.5 text-[13px] shadow-none hover:border-border',
+                  selectedSiteIds.length > 0 &&
+                    'border-foreground/25 bg-foreground/[0.06]',
+                )}
+                badgeClassName="m-0 h-5 border-border bg-white px-1.5 text-[11px] text-foreground shadow-none"
+                popoverClassName="w-[360px]"
+              />
+
+              <QuickFilterInput
+                value={buildingQuery}
+                onChange={setBuildingQuery}
+                placeholder="동"
+                ariaLabel="동 필터"
+                className="w-20 shrink-0"
+              />
+              <QuickFilterInput
+                value={hoQuery}
+                onChange={setHoQuery}
+                placeholder="호"
+                ariaLabel="호 필터"
+                className="w-20 shrink-0"
+              />
+              <QuickFilterInput
                 value={searchQuery}
-                onChange={(event) => setSearchQuery(event.target.value)}
-                placeholder="단지 · 메모 · 부동산 검색"
-                className="w-full min-w-0 bg-transparent text-[13px] outline-none placeholder:text-muted-foreground/60"
+                onChange={setSearchQuery}
+                placeholder="단지, 특징, 메모, 부동산"
+                ariaLabel="광고노트 통합 검색"
+                withSearchIcon
+                className="ml-1 min-w-[170px] max-w-64 flex-1"
               />
             </div>
-            <div className="flex-1" />
-            <MultiSelect
-              options={siteOptions}
-              selected={selectedSiteIds}
-              onChange={setSelectedSiteIds}
-              placeholder="관리 단지 선택"
-              className="h-8 min-w-[180px] rounded-lg bg-white text-[12.5px]"
-            />
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className={cn(
-                'h-8 rounded-lg bg-white px-3 text-[12.5px] font-normal text-foreground/80',
-                isFilterOpen && 'border-foreground/40',
-              )}
-              onClick={() => setIsFilterOpen((v) => !v)}
-            >
-              <Filter className="mr-1.5 size-3.5 text-muted-foreground/70" />
-              상세 필터
-              {activeFilterCount > 0 && (
-                <span className="ml-1.5 inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-primary px-[5px] text-[11px] font-semibold text-primary-foreground">
-                  {activeFilterCount}
+
+            <div className="flex shrink-0 items-center gap-1.5">
+              {!isLoading && (
+                <span className="mr-1 text-[11px] tabular-nums text-muted-foreground">
+                  {filteredGroups.length !== groups.length
+                    ? `${filteredGroups.length}/${groups.length}건`
+                    : `${groups.length}건`}
                 </span>
               )}
-              {isFilterOpen ? (
-                <ChevronUp className="ml-1 size-3.5 text-muted-foreground/70" />
-              ) : (
-                <ChevronDown className="ml-1 size-3.5 text-muted-foreground/70" />
+              {activeSession && (
+                <>
+                  <Button
+                    size="sm"
+                    className="h-8 px-3 text-xs"
+                    disabled={
+                      !canManageSession || completeSessionMutation.isPending
+                    }
+                    onClick={() => setShowCompleteConfirm(true)}
+                    title={
+                      canManageSession
+                        ? undefined
+                        : '권한 부족: 본인 세션 또는 매니저/오너만 완료 가능'
+                    }
+                  >
+                    <CheckCircle className="size-3.5" />
+                    완료
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-8 px-3 text-xs"
+                    disabled={
+                      !canManageSession || cancelSessionMutation.isPending
+                    }
+                    onClick={() => setShowCancelConfirm(true)}
+                  >
+                    <XCircle className="size-3.5" />
+                    취소
+                  </Button>
+                </>
               )}
-            </Button>
-            {activeFilterCount > 0 && (
               <Button
-                type="button"
-                variant="ghost"
                 size="sm"
-                className="h-8 px-2.5 text-[12.5px] font-medium text-orange hover:text-orange"
-                onClick={resetFilters}
+                className="h-8 shrink-0 px-3.5"
+                onClick={handleManualButtonClick}
               >
-                <RotateCcw className="mr-1 size-3.5" />
-                초기화
+                <Plus className="size-3.5" />
+                광고 입력
               </Button>
-            )}
-            {activeSession && (
-              <>
-                <Button
-                  size="sm"
-                  variant="default"
-                  className="h-8 rounded-lg px-3 text-[12.5px]"
-                  disabled={!canManageSession || completeSessionMutation.isPending}
-                  onClick={() => setShowCompleteConfirm(true)}
-                  title={
-                    canManageSession
-                      ? undefined
-                      : '권한 부족: 본인 세션 또는 매니저/오너만 완료 가능'
-                  }
-                >
-                  <CheckCircle className="mr-1 size-3.5" />
-                  완료
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-8 rounded-lg px-3 text-[12.5px]"
-                  disabled={!canManageSession || cancelSessionMutation.isPending}
-                  onClick={() => setShowCancelConfirm(true)}
-                >
-                  <XCircle className="mr-1 size-3.5" />
-                  취소
-                </Button>
-              </>
-            )}
-            <Button
-              size="sm"
-              className="h-8 rounded-lg px-3 text-[12.5px]"
-              onClick={handleManualButtonClick}
-            >
-              <Plus className="mr-1 size-3.5" />
-              입력
-            </Button>
+            </div>
           </div>
+        </section>
 
-          {isFilterOpen && (
-            <div className="mt-3 flex flex-col gap-3.5 rounded-[10px] border bg-muted/50 p-4">
-              {/* 텍스트 필터: 동/호수/매물특징 */}
-              <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-                <div className="flex items-center gap-2">
-                  <Label
-                    htmlFor="filter-building"
-                    className="text-xs text-muted-foreground"
-                  >
-                    동
-                  </Label>
-                  <Input
-                    id="filter-building"
-                    value={buildingQuery}
-                    onChange={(e) => setBuildingQuery(e.target.value)}
-                    placeholder="143"
-                    className="h-8 w-[104px] bg-white text-[13px]"
-                  />
-                </div>
-                <div className="flex items-center gap-2">
-                  <Label
-                    htmlFor="filter-ho"
-                    className="text-xs text-muted-foreground"
-                  >
-                    호수
-                  </Label>
-                  <Input
-                    id="filter-ho"
-                    value={hoQuery}
-                    onChange={(e) => setHoQuery(e.target.value)}
-                    placeholder="1501"
-                    className="h-8 w-[104px] bg-white text-[13px]"
-                  />
-                </div>
-                <div className="flex min-w-[240px] flex-1 items-center gap-2">
-                  <Label
-                    htmlFor="filter-feature"
-                    className="whitespace-nowrap text-xs text-muted-foreground"
-                  >
-                    매물특징
-                  </Label>
-                  <Input
-                    id="filter-feature"
-                    value={featureQuery}
-                    onChange={(e) => setFeatureQuery(e.target.value)}
-                    placeholder="급매 · 올수리 · 세안고 등"
-                    className="h-8 bg-white text-[13px]"
-                  />
-                </div>
-              </div>
+        <section
+          data-advertising-note-secondary-filters
+          className="shrink-0 overflow-x-auto border-b border-border bg-[#faf9f6] px-3 py-2"
+        >
+          <div className="flex w-full min-w-max items-center gap-2">
+            <div className="flex shrink-0 items-center gap-1.5">
+              <FilterToggleChip
+                label="집주인"
+                active={onlyOwner}
+                onToggle={() => setOnlyOwner((value) => !value)}
+              />
+              <FilterToggleChip
+                label="내광고만"
+                active={onlyAd}
+                onToggle={() => setOnlyAd((value) => !value)}
+              />
+              <FilterToggleChip
+                label="세안고"
+                active={onlySeango}
+                onToggle={() => setOnlySeango((value) => !value)}
+              />
+            </div>
 
-              {/* 조건 토글 칩 */}
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="mr-0.5 text-xs text-muted-foreground">
-                  조건
-                </span>
-                {(
-                  [
-                    { label: '집주인', active: onlyOwner, toggle: setOnlyOwner },
-                    { label: '광고 O만', active: onlyAd, toggle: setOnlyAd },
-                    { label: '세안고', active: onlySeango, toggle: setOnlySeango },
-                    {
-                      label: '즐겨찾기',
-                      active: onlyFavorite,
-                      toggle: setOnlyFavorite,
-                    },
-                  ] as const
-                ).map((chip) => (
-                  <button
-                    key={chip.label}
-                    type="button"
-                    onClick={() => chip.toggle(!chip.active)}
-                    className={cn(
-                      'flex h-[30px] cursor-pointer items-center gap-1.5 rounded-[7px] border px-3 text-[12.5px] font-medium transition-colors',
-                      chip.active
-                        ? 'border-primary bg-primary text-primary-foreground'
-                        : 'bg-white text-muted-foreground hover:text-foreground',
-                    )}
-                  >
-                    {chip.label}
-                  </button>
-                ))}
-              </div>
+            <div className="h-5 w-px shrink-0 bg-border" aria-hidden="true" />
 
-              {/* 범위 필터 카드 (electron-estate 스타일) */}
-              <div className="flex flex-wrap gap-3.5">
+            <div className="flex shrink-0 items-center gap-1.5">
+              <AdRangeFilterPopover
+                label={priceFilterLabel}
+                value={formatRangeFilterSummary(priceMin, priceMax)}
+                active={Boolean(priceMin || priceMax)}
+              >
                 <RangeFilterCard
                   title={`${priceFilterLabel} 범위`}
                   max={priceRangeMax}
@@ -760,9 +694,18 @@ function ExternalListingsPage() {
                   onLoChange={setPriceMin}
                   onHiChange={setPriceMax}
                   detail={priceDetailMode}
-                  onToggleDetail={() => setPriceDetailMode((v) => !v)}
+                  onToggleDetail={() => setPriceDetailMode((value) => !value)}
                 />
-                {transactionType === 'monthly' && (
+              </AdRangeFilterPopover>
+              {transactionType === 'monthly' && (
+                <AdRangeFilterPopover
+                  label="월세"
+                  value={formatRangeFilterSummary(
+                    monthlyRentMin,
+                    monthlyRentMax,
+                  )}
+                  active={Boolean(monthlyRentMin || monthlyRentMax)}
+                >
                   <RangeFilterCard
                     title="월세 범위"
                     max={500}
@@ -773,13 +716,36 @@ function ExternalListingsPage() {
                     onLoChange={setMonthlyRentMin}
                     onHiChange={setMonthlyRentMax}
                     detail={monthlyDetailMode}
-                    onToggleDetail={() => setMonthlyDetailMode((v) => !v)}
+                    onToggleDetail={() =>
+                      setMonthlyDetailMode((value) => !value)
+                    }
                   />
-                )}
-              </div>
+                </AdRangeFilterPopover>
+              )}
+              <QuickFilterInput
+                value={featureQuery}
+                onChange={setFeatureQuery}
+                placeholder="특징·메모 검색"
+                ariaLabel="특징·메모 필터"
+                className="w-[220px]"
+                inputClassName="border-border bg-white"
+              />
             </div>
-          )}
-        </div>
+
+            {activeFilterCount > 0 && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="ml-auto h-8 gap-1.5 px-2.5 text-xs text-muted-foreground"
+                onClick={resetFilters}
+              >
+                <RotateCcw className="size-3.5" />
+                초기화
+              </Button>
+            )}
+          </div>
+        </section>
 
         {/* 테이블 영역 */}
         <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-white">
@@ -816,7 +782,11 @@ function ExternalListingsPage() {
                   <p className="text-sm text-muted-foreground">
                     외부 매물 목록을 불러오지 못했습니다.
                   </p>
-                  <Button variant="outline" size="sm" onClick={() => refetchGroups()}>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => refetchGroups()}
+                  >
                     <RefreshCw className="mr-1 size-3.5" />
                     다시 시도
                   </Button>
@@ -829,25 +799,44 @@ function ExternalListingsPage() {
                   data={filteredGroups}
                   layout="full-height"
                   variant="notion"
-                  rowHeight="auto"
-                  pinnedColumns={['ad', 'owner', 'site', 'dong', 'floor', 'ho']}
-                  enableRowSelection
-                  renderSelectionAccessory={(group) => (
-                    <FavoriteToggle
-                      favorite={group.favorite}
-                      onToggle={() =>
-                        updateGroupMutation.mutate({
-                          id: group.id,
-                          dto: { favorite: !group.favorite },
-                        })
-                      }
-                    />
+                  rowHeight={40}
+                  pinnedColumns={['site', 'dong', 'floor', 'ho']}
+                  columnGroupControls={[
+                    {
+                      collapsed: areMarketDetailColumnsCollapsed,
+                      onToggle: () => {
+                        if (!areMarketDetailColumnsCollapsed) {
+                          setSorting((previous) =>
+                            previous.some(({ id }) =>
+                              MARKET_DETAIL_COLUMN_ID_SET.has(id),
+                            )
+                              ? []
+                              : previous,
+                          );
+                        }
+                        setAreMarketDetailColumnsCollapsed(
+                          (previous) => !previous,
+                        );
+                      },
+                      anchorColumnId: 'price',
+                      columnIds: MARKET_DETAIL_COLUMN_IDS,
+                      label: '최소가–매물특징',
+                    },
+                  ]}
+                  sorting={sorting}
+                  onSortingChange={setSorting}
+                  expandedRowIds={expandedRankingRowIds}
+                  renderExpandedRow={(group) => (
+                    <ExternalListingRankPanel group={group} />
                   )}
+                  enableRowSelection
                   isLoading={isLoading}
                   renderStatusBar={() => (
                     <span>
                       광고 {filteredGroups.length.toLocaleString()}건 표시
-                      {groups.length !== filteredGroups.length ? ` · 전체 ${groups.length.toLocaleString()}건` : ''}
+                      {groups.length !== filteredGroups.length
+                        ? ` · 전체 ${groups.length.toLocaleString()}건`
+                        : ''}
                     </span>
                   )}
                   emptyMessage={
@@ -869,7 +858,9 @@ function ExternalListingsPage() {
         defaultSiteId={scopeSiteId ?? selectedSiteIds[0]}
         defaultTransactionType={transactionType}
         onSuccess={() => {
-          queryClient.invalidateQueries({ queryKey: ['external-listing-groups'] });
+          queryClient.invalidateQueries({
+            queryKey: ['external-listing-groups'],
+          });
           queryClient.invalidateQueries({
             queryKey: ['external-listing-active-session'],
           });
@@ -907,78 +898,244 @@ function ExternalListingsPage() {
         onConfirm={() => cancelSessionMutation.mutate()}
         pending={cancelSessionMutation.isPending}
       />
-
-      <GroupListingsDialog
-        group={siblingGroup}
-        onOpenChange={(open) => {
-          if (!open) setSiblingGroup(null);
-        }}
-      />
     </div>
   );
 }
 
-// ── 그룹 내 형제 매물 펼치기 다이얼로그 ──────────────────────────────
-
-function GroupListingsDialog({
-  group,
-  onOpenChange,
+function QuickFilterInput({
+  value,
+  onChange,
+  placeholder,
+  ariaLabel,
+  withSearchIcon = false,
+  className,
+  inputClassName,
 }: {
-  group: ExternalListingGroup | null;
-  onOpenChange: (open: boolean) => void;
+  value: string;
+  onChange: (value: string) => void;
+  placeholder: string;
+  ariaLabel: string;
+  withSearchIcon?: boolean;
+  className?: string;
+  inputClassName?: string;
 }) {
+  return (
+    <div className={cn('relative', className)}>
+      {withSearchIcon && (
+        <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+      )}
+      <Input
+        aria-label={ariaLabel}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder={placeholder}
+        className={cn(
+          'h-8 border-transparent bg-[#f7f6f3] pr-7 text-[13px] shadow-none hover:border-border focus:border-input focus:bg-white',
+          withSearchIcon ? 'pl-8' : 'pl-2',
+          inputClassName,
+        )}
+      />
+      {value && (
+        <button
+          type="button"
+          aria-label={`${ariaLabel} 지우기`}
+          onClick={() => onChange('')}
+          className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded-sm p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+        >
+          <X className="size-3.5" />
+        </button>
+      )}
+    </div>
+  );
+}
+
+function FilterToggleChip({
+  label,
+  active,
+  onToggle,
+}: {
+  label: string;
+  active: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      onClick={onToggle}
+      className={cn(
+        'inline-flex h-8 items-center rounded-md border border-border bg-white px-2.5 text-xs text-muted-foreground shadow-none transition-colors hover:text-foreground',
+        active &&
+          'border-foreground/25 bg-foreground/[0.06] font-medium text-foreground',
+      )}
+    >
+      {label}
+    </button>
+  );
+}
+
+function AdRangeFilterPopover({
+  label,
+  value,
+  active,
+  children,
+}: {
+  label: string;
+  value: string;
+  active: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className={cn(
+            'h-8 max-w-[190px] gap-1.5 bg-white px-2.5 text-xs font-normal text-muted-foreground shadow-none',
+            active &&
+              'border-foreground/25 bg-foreground/[0.06] text-foreground',
+          )}
+        >
+          <span className="font-medium">{label}</span>
+          <span className="truncate tabular-nums">{value}</span>
+          <ChevronDown className="size-3.5 shrink-0 opacity-60" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent
+        align="start"
+        sideOffset={6}
+        className="w-auto border-0 bg-transparent p-0 shadow-none"
+      >
+        {children}
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+function formatRangeFilterSummary(min: string, max: string): string {
+  if (!min.trim() && !max.trim()) return '전체';
+
+  const minNumber = Number(min);
+  const maxNumber = Number(max);
+  const minLabel =
+    min.trim() && Number.isFinite(minNumber) ? formatPrice(minNumber) : '최소';
+  const maxLabel =
+    max.trim() && Number.isFinite(maxNumber) ? formatPrice(maxNumber) : '최대';
+  return `${minLabel}–${maxLabel}`;
+}
+
+// ── 랭킹 상세 — 매물관리 광고 컬럼과 같은 인라인 확장 행 ─────────────
+
+function ExternalListingRankPanel({ group }: { group: ExternalListingGroup }) {
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ['external-listing-group-detail', group?.id],
-    queryFn: () => api.externalListings.findGroupById(group!.id),
-    enabled: !!group,
+    queryKey: ['external-listing-group-detail', group.id],
+    queryFn: () => api.externalListings.findGroupById(group.id),
   });
 
   const listings = data?.listings ?? [];
-  const tType = group?.transactionType ?? 'sale';
+  const locationLabel = [
+    group.site?.name,
+    group.buildingName,
+    group.unit?.name ?? group.inferredHo,
+  ]
+    .filter(Boolean)
+    .join(' · ');
 
   return (
-    <Dialog open={!!group} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl">
-        <DialogHeader>
-          <DialogTitle>
-            그룹 매물 {data?.listingCount ?? listings.length ?? ''}건
-            <span className="ml-2 text-sm font-normal text-muted-foreground">
-              {group?.site?.name}
-              {group?.buildingName ? ` · ${group.buildingName}` : ''}
-              {group?.unit?.name
-                ? ` · ${group.unit.name}`
-                : group?.inferredHo
-                  ? ` · ${group.inferredHo}(추정)`
-                  : ''}
-            </span>
-          </DialogTitle>
-        </DialogHeader>
-        {isLoading ? (
-          <div className="space-y-2">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <Skeleton key={i} className="h-12 w-full rounded-md" />
-            ))}
-          </div>
-        ) : isError ? (
-          <div className="flex flex-col items-center gap-2 py-8 text-center">
-            <p className="text-sm text-muted-foreground">매물 목록을 불러오지 못했습니다.</p>
-            <Button variant="outline" size="sm" onClick={() => refetch()}>
-              <RefreshCw className="mr-1 size-3.5" />
-              다시 시도
-            </Button>
-          </div>
-        ) : listings.length === 0 ? (
-          <p className="py-8 text-center text-sm text-muted-foreground">
-            이 그룹에 수집된 매물이 없습니다.
+    <div
+      id={`external-listing-rank-panel-${group.id}`}
+      role="region"
+      aria-label={`${locationLabel || '동일주소'} 광고 랭킹 상세`}
+      className="border-b border-border bg-[#f3f9fb] py-3 pl-[48px] pr-4"
+    >
+      <div className="mb-2 flex min-w-0 items-center gap-1.5">
+        <ListOrdered className="size-3.5 shrink-0 text-[#337ea9]" />
+        <span className="shrink-0 text-xs font-semibold text-[#337ea9]">
+          동일주소 광고{' '}
+          {data?.listingCount ?? group.listingCount ?? listings.length}건
+        </span>
+        <span className="shrink-0 text-[11.5px] text-[#6b9fba]">
+          · 네이버 노출 순서 비교
+        </span>
+        {locationLabel && (
+          <span className="ml-auto truncate text-[11px] text-muted-foreground">
+            {locationLabel}
+          </span>
+        )}
+      </div>
+
+      {isLoading ? (
+        <div className="max-w-[940px] space-y-1.5">
+          {Array.from({ length: 3 }).map((_, index) => (
+            <Skeleton key={index} className="h-11 w-full rounded-md" />
+          ))}
+        </div>
+      ) : isError ? (
+        <div className="flex max-w-[940px] items-center gap-2 rounded-md border border-[#d8ebf3] bg-white px-3 py-2">
+          <p className="text-xs text-muted-foreground">
+            동일주소 광고를 불러오지 못했습니다.
           </p>
-        ) : (
-          <div className="max-h-[55vh] divide-y overflow-y-auto rounded-md border">
-            {listings.map((listing) => {
-              const href = listing.cpPcArticleUrl ?? listing.sourceUrl;
-              return (
-                <div key={listing.id} className="flex items-start gap-3 px-3 py-2.5">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-1.5">
+          <Button
+            variant="outline"
+            size="xs"
+            className="ml-auto"
+            onClick={() => refetch()}
+          >
+            <RefreshCw className="size-3" />
+            다시 시도
+          </Button>
+        </div>
+      ) : listings.length === 0 ? (
+        <p className="text-xs text-muted-foreground">
+          이 주소에 수집된 광고가 없습니다.
+        </p>
+      ) : (
+        <div className="overflow-x-auto">
+          <div className="min-w-[806px] max-w-[940px]">
+            <div className="flex items-center gap-1.5 pb-1.5 pl-[13px] pr-1">
+              <span className="w-[52px] shrink-0 text-[11px] font-semibold text-muted-foreground">
+                순위
+              </span>
+              <span className="w-[72px] shrink-0 text-[11px] font-semibold text-muted-foreground">
+                광고
+              </span>
+              <span className="w-[64px] shrink-0 text-[11px] font-semibold text-muted-foreground">
+                주인
+              </span>
+              <span className="w-[160px] shrink-0 text-[11px] font-semibold text-muted-foreground">
+                부동산
+              </span>
+              <span className="w-[125px] shrink-0 text-[11px] font-semibold text-muted-foreground">
+                가격
+              </span>
+              <span className="w-[82px] shrink-0 text-[11px] font-semibold text-muted-foreground">
+                확인일
+              </span>
+              <span className="w-[110px] shrink-0 text-[11px] font-semibold text-muted-foreground">
+                매물번호
+              </span>
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              {listings.map((listing) => {
+                const href = listing.cpPcArticleUrl ?? listing.sourceUrl;
+                const realtorName =
+                  listing.realtorName ??
+                  listing.originalRealtorName ??
+                  '중개사 미상';
+                const isOwner = listing.verificationTypeCode === 'OWNER';
+
+                return (
+                  <div
+                    key={listing.id}
+                    className="flex min-h-11 items-center gap-1.5 rounded-lg border border-[#d8ebf3] bg-white px-3 py-2"
+                  >
+                    <div className="w-[52px] shrink-0 text-[12.5px] font-semibold tabular-nums text-[#337ea9]">
+                      {listing.ranking != null ? `${listing.ranking}위` : '-'}
+                    </div>
+                    <div className="w-[72px] shrink-0">
                       <NotionTag
                         className={
                           listing.isActive
@@ -988,46 +1145,61 @@ function GroupListingsDialog({
                       >
                         {listing.isActive ? '광고 O' : '광고 X'}
                       </NotionTag>
-                      <span className="text-[13px] font-medium tabular-nums text-slate-950">
-                        {formatListingPrice(listing, tType)}
-                      </span>
-                      {listing.ranking != null && (
-                        <NotionTag className="bg-[#f1f1ef] text-[#5f5e5b] tabular-nums">
-                          순위 {listing.ranking}
-                        </NotionTag>
-                      )}
-                      {listing.verificationTypeCode === 'OWNER' && (
-                        <NotionTag className="bg-[#eef3ed] text-[#44745a]">집주인</NotionTag>
+                    </div>
+                    <div className="w-[64px] shrink-0">
+                      <NotionTag
+                        className={
+                          isOwner
+                            ? 'bg-[#eef3ed] text-[#44745a]'
+                            : 'bg-[#f1f1ef] text-[#787774]'
+                        }
+                      >
+                        {isOwner ? '집주인' : '중개사'}
+                      </NotionTag>
+                    </div>
+                    <div className="w-[160px] shrink-0">
+                      <p className="truncate text-[12.5px] font-semibold text-foreground">
+                        {realtorName}
+                      </p>
+                      {listing.articleFeatureDesc && (
+                        <p className="truncate text-[10.5px] text-muted-foreground">
+                          {listing.articleFeatureDesc}
+                        </p>
                       )}
                     </div>
-                    <p className="mt-1 truncate text-xs text-muted-foreground">
-                      {listing.realtorName ?? '중개사 미상'} · 확인일{' '}
-                      {formatYmd(listing.articleConfirmYmd)} · {listing.articleNo}
-                    </p>
-                    {listing.articleFeatureDesc && (
-                      <p className="mt-0.5 line-clamp-1 text-[11px] text-muted-foreground/80">
-                        {listing.articleFeatureDesc}
-                      </p>
+                    <div className="w-[125px] shrink-0 truncate text-[12.5px] font-medium tabular-nums text-foreground">
+                      {formatListingPrice(listing, group.transactionType)}
+                    </div>
+                    <div className="w-[82px] shrink-0 truncate text-[12px] tabular-nums text-foreground/70">
+                      {formatYmd(listing.articleConfirmYmd)}
+                    </div>
+                    <div className="w-[110px] shrink-0 truncate text-[12px] tabular-nums text-foreground/70">
+                      {listing.articleNo}
+                    </div>
+                    {href ? (
+                      <a
+                        href={href}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(event) => event.stopPropagation()}
+                        className="ml-auto inline-flex shrink-0 items-center gap-1 text-[11.5px] font-medium text-[#337ea9] hover:underline"
+                      >
+                        {getExternalSourceLabel(listing.source)}
+                        <ExternalLink className="size-3" />
+                      </a>
+                    ) : (
+                      <span className="ml-auto shrink-0 text-[11px] text-muted-foreground">
+                        {getExternalSourceLabel(listing.source)}
+                      </span>
                     )}
                   </div>
-                  {href && (
-                    <a
-                      href={href}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex shrink-0 items-center gap-1 rounded-[4px] bg-[#e7f3f8] px-1.5 py-0.5 text-[11px] font-medium text-[#337ea9] hover:bg-[#dcecf3]"
-                    >
-                      <ExternalLink className="size-3" />
-                      {getExternalSourceLabel(listing.source)}
-                    </a>
-                  )}
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
           </div>
-        )}
-      </DialogContent>
-    </Dialog>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -1103,12 +1275,43 @@ function formatYmd(dateStr: string | null | undefined): string {
   return `${dateStr.slice(2, 4)}-${dateStr.slice(4, 6)}-${dateStr.slice(6, 8)}`;
 }
 
+function formatMonthDay(dateStr: string | null | undefined): string | null {
+  if (!dateStr || !/^\d{8}$/.test(dateStr)) return null;
+  return `${dateStr.slice(4, 6)}-${dateStr.slice(6, 8)}`;
+}
+
+const DIRECTION_LABELS: Record<string, string> = {
+  E: '동향',
+  EE: '동향',
+  ES: '남동향',
+  SE: '남동향',
+  S: '남향',
+  SS: '남향',
+  SW: '남서향',
+  WS: '남서향',
+  W: '서향',
+  WW: '서향',
+  WN: '북서향',
+  NW: '북서향',
+  N: '북향',
+  NN: '북향',
+  NE: '북동향',
+  EN: '북동향',
+};
+
+function formatListingDirection(direction: string | null | undefined): string {
+  const value = direction?.trim();
+  if (!value) return '-';
+  return DIRECTION_LABELS[value.toUpperCase()] ?? value;
+}
+
 function getExternalSourceLabel(source: string | null | undefined): string {
   const normalized = source?.trim().toLowerCase();
   if (!normalized) return '출처';
   if (normalized.includes('naver')) return '네이버';
   if (normalized.includes('asil')) return '아실';
-  if (normalized.includes('manual') || normalized.includes('수동')) return '입력';
+  if (normalized.includes('manual') || normalized.includes('수동'))
+    return '입력';
   return source ?? '출처';
 }
 
@@ -1120,12 +1323,15 @@ function hasSeangoMarker(text: string | null | undefined): boolean {
 function NotionTag({
   children,
   className,
+  title,
 }: {
   children: ReactNode;
   className?: string;
+  title?: string;
 }) {
   return (
     <span
+      title={title}
       className={cn(
         'inline-flex max-w-full items-center rounded-[4px] px-1.5 py-0.5 text-[11px] font-medium leading-5',
         className,
@@ -1133,39 +1339,6 @@ function NotionTag({
     >
       <span className="truncate">{children}</span>
     </span>
-  );
-}
-
-function StatusTag({ status }: { status: ExternalListingGroupStatus }) {
-  const meta = statusMeta[status];
-  return <NotionTag className={meta.className}>{meta.label}</NotionTag>;
-}
-
-function FavoriteToggle({
-  favorite,
-  onToggle,
-}: {
-  favorite: boolean;
-  onToggle: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      aria-label={favorite ? '즐겨찾기 해제' : '즐겨찾기'}
-      onClick={(e) => {
-        e.stopPropagation();
-        onToggle();
-      }}
-      className={cn(
-        'flex size-4 items-center justify-center rounded-[3px] transition-colors hover:bg-[#f1f1ef] hover:text-yellow-500',
-        favorite ? 'text-yellow-400' : 'text-muted-foreground/55',
-      )}
-    >
-      <Star
-        className={cn('size-3.5', favorite && 'fill-yellow-400')}
-        strokeWidth={1.6}
-      />
-    </button>
   );
 }
 
@@ -1334,142 +1507,87 @@ function RangeFilterCard({
 // ── Table column factory (electron-estate parity) ──────────────────
 
 interface ColumnFactoryContext {
-  onUpdateStatus: (groupId: string, status: ExternalListingGroupStatus) => void;
   onUpdateMemo: (groupId: string, memo: string) => void;
   onUpdateInferredHo: (groupId: string, ho: string) => void;
   onLinkUnit: (groupId: string, unitId: string | null) => void;
-  onShowListings: (group: ExternalListingGroup) => void;
-  /** 최소최대~출처 컬럼 접힘 여부 (호 헤더 ± 버튼) */
-  detailCollapsed: boolean;
-  onToggleDetailCollapsed: () => void;
+  expandedListingIds: ReadonlySet<string>;
+  onToggleListings: (groupId: string) => void;
 }
 
-/** 호 헤더의 ± 버튼으로 접히는 컬럼들 (최소최대~출처) */
-const DETAIL_COLUMN_IDS = new Set([
-  'minMax',
-  'direction',
-  'dates',
-  'realtor',
-  'link',
-]);
+function TableHeaderLabel({ icon, label }: { icon: ReactNode; label: string }) {
+  return (
+    <span
+      data-advertising-note-header-label
+      className="inline-flex min-w-0 items-center gap-1 text-[12px] font-normal text-muted-foreground"
+    >
+      <span
+        aria-hidden="true"
+        className="shrink-0 [&>svg]:size-3 [&>svg]:text-muted-foreground/70"
+      >
+        {icon}
+      </span>
+      <span className="truncate">{label}</span>
+    </span>
+  );
+}
 
 function buildColumns(
   transactionType: ExternalListingTransactionType,
   ctx: ColumnFactoryContext,
+  areMarketDetailColumnsCollapsed: boolean,
 ): ColumnDef<ExternalListingGroup, unknown>[] {
   const columns: ColumnDef<ExternalListingGroup, unknown>[] = [];
 
-  // ── 1. 광고 (활성 광고 여부) — sticky 고정 컬럼 ─────────────
-  columns.push({
-    id: 'ad',
-    header: '광고',
-    size: 64,
-    enableResizing: false,
-    cell: ({ row }) => {
-      const isActive = !!row.original.mainExternalListing?.isActive;
-      // 비활성은 오류가 아니므로 붉은 태그 대신 저채도 텍스트로 — 활성만 색을 가진다
-      return isActive ? (
-        <NotionTag className="bg-[#e7f3f8] text-[#337ea9]">광고 O</NotionTag>
-      ) : (
-        <span className="px-1 text-[12px] text-slate-600">광고 X</span>
-      );
-    },
-  });
-
-  // ── 2. 주 (소유주 확인 여부: 집=집주인 / 중=중개사) — sticky 고정 컬럼
-  columns.push({
-    id: 'owner',
-    header: '주',
-    size: 44,
-    enableResizing: false,
-    cell: ({ row }) => {
-      const g = row.original;
-      return (
-        <NotionTag
-          className={
-            g.ownerVerified
-              ? 'bg-[#eef3ed] text-[#44745a]'
-              : 'bg-[#f1f1ef] text-[#787774]'
-          }
-        >
-          {g.ownerVerified ? '집' : '중'}
-        </NotionTag>
-      );
-    },
-  });
-
-  // ── 3. 아파트 (단지명) — sticky 고정 컬럼: 폭 고정 (리사이즈 금지)
+  // ── 1. 단지 — 정렬과 가로 스크롤 기준이 되는 sticky 컬럼 ────────
   columns.push({
     id: 'site',
-    header: '아파트',
+    header: () => (
+      <TableHeaderLabel icon={<Building2 className="size-4" />} label="단지" />
+    ),
     size: 200,
     enableResizing: false,
     cell: ({ row }) => (
-      <span className="truncate text-[13px] font-medium">
+      <span className="truncate text-[14px] font-semibold text-slate-900">
         {row.original.site?.name ?? '-'}
       </span>
     ),
   });
 
-  // ── 4. 동 — sticky 고정 컬럼: 폭 고정 (리사이즈 금지) ─────────
+  // ── 2. 동 — 단지와 별도 정렬 가능 ─────────────────────────
   columns.push({
     id: 'dong',
-    header: '동',
+    header: () => (
+      <TableHeaderLabel icon={<Hash className="size-4" />} label="동" />
+    ),
     size: 70,
     enableResizing: false,
     cell: ({ row }) => (
-      <span className="truncate text-[13px]">
+      <span className="truncate text-[13px] font-medium text-slate-900">
         {row.original.buildingName ?? '-'}
       </span>
     ),
   });
 
-  // ── 5. 층 (floorInfo: 저/중/고 또는 층수/전체층) — sticky 고정 컬럼
+  // ── 3. 층 (floorInfo: 저/중/고 또는 층수/전체층) ───────────
   columns.push({
     id: 'floor',
-    header: '층',
+    header: () => (
+      <TableHeaderLabel icon={<Layers3 className="size-4" />} label="층" />
+    ),
     size: 56,
     enableResizing: false,
     cell: ({ row }) => (
-      <span className="truncate text-[12px] tabular-nums text-slate-700">
+      <span className="truncate text-[13px] font-medium tabular-nums text-slate-700">
         {row.original.mainExternalListing?.floorInfo ?? '-'}
       </span>
     ),
   });
 
-  // ── 6. 호 (인라인 편집 + Unit 수동 링크) ──────────────────────
-  //    헤더의 ± 버튼으로 최소최대~출처 컬럼을 접는다 (매물목록과 동일 패턴)
+  // ── 4. 호 (인라인 편집 + Unit 수동 링크, 별도 정렬 가능) ─────
   columns.push({
     id: 'ho',
     header: () => (
-      <div className="flex w-full min-w-0 items-center gap-1">
-        <span>호</span>
-        <button
-          type="button"
-          title={
-            ctx.detailCollapsed
-              ? '최소최대~출처 컬럼 펼치기'
-              : '최소최대~출처 컬럼 접기'
-          }
-          aria-label={
-            ctx.detailCollapsed
-              ? '최소최대~출처 컬럼 펼치기'
-              : '최소최대~출처 컬럼 접기'
-          }
-          aria-expanded={!ctx.detailCollapsed}
-          onClick={(e) => {
-            e.stopPropagation();
-            ctx.onToggleDetailCollapsed();
-          }}
-          className="ml-auto flex size-5 shrink-0 items-center justify-center rounded border border-border/70 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
-        >
-          {ctx.detailCollapsed ? (
-            <Plus className="size-3" />
-          ) : (
-            <Minus className="size-3" />
-          )}
-        </button>
-      </div>
+      <TableHeaderLabel icon={<DoorOpen className="size-4" />} label="호" />
     ),
     size: 104,
     enableResizing: false,
@@ -1478,7 +1596,7 @@ function buildColumns(
       // If a Unit is linked, the ho is authoritative (read-only with unlink).
       if (g.unit?.name) {
         return (
-          <div className="flex min-w-0 items-center gap-1 text-[12px]">
+          <div className="flex min-w-0 items-center gap-1 text-[13px]">
             <span
               className="flex min-w-0 items-center gap-1 truncate font-medium text-slate-800"
               title="호실이 확정되었습니다. 변경하려면 연결을 해제하세요."
@@ -1507,16 +1625,21 @@ function buildColumns(
             initial={g.inferredHo}
             onSave={ctx.onUpdateInferredHo}
           />
-          <UnitLinkPopover group={g} onLink={(unitId) => ctx.onLinkUnit(g.id, unitId)} />
+          <UnitLinkPopover
+            group={g}
+            onLink={(unitId) => ctx.onLinkUnit(g.id, unitId)}
+          />
         </div>
       );
     },
   });
 
-  // ── 6. 타입 (areaName + pyeong/pyeong) ─────────────────────
+  // ── 5. 타입 (areaName + pyeong/pyeong) ─────────────────────
   columns.push({
     id: 'type',
-    header: '타입',
+    header: () => (
+      <TableHeaderLabel icon={<Ruler className="size-4" />} label="타입" />
+    ),
     size: 80,
     cell: ({ row }) => {
       const g = row.original;
@@ -1526,11 +1649,14 @@ function buildColumns(
       );
       const supplyPyeong = sqmToPyeong(main?.supplyAreaM2);
       return (
-        <div className="flex min-w-0 flex-col gap-1 text-[12px]">
-          <span className="truncate font-medium text-slate-800">{g.areaName ?? '-'}</span>
+        <div className="flex min-w-0 flex-col gap-1">
+          <span className="truncate text-[13px] font-medium text-slate-900">
+            {g.areaName ?? '-'}
+          </span>
           {exclusivePyeong != null && (
             <span className="truncate text-[11px] tabular-nums text-slate-500">
-              {exclusivePyeong}/{supplyPyeong ?? '-'}평
+              {exclusivePyeong}
+              {supplyPyeong != null ? `/${supplyPyeong}` : ''}평
             </span>
           )}
         </div>
@@ -1538,299 +1664,274 @@ function buildColumns(
     },
   });
 
-  // ── 7. 중복 (순위/동일주소 개수 — 클릭 시 그룹 매물 펼치기) ────
+  // ── 6. 내광고 — 실제 게시일은 월-일, 없으면 광고 X ─────────
+  columns.push({
+    id: 'myAd',
+    header: () => (
+      <TableHeaderLabel
+        icon={<Megaphone className="size-4" />}
+        label="내광고"
+      />
+    ),
+    size: 80,
+    enableResizing: false,
+    cell: ({ row }) => {
+      const group = row.original;
+      const postedAt = formatMonthDay(group.ownAdvertisementYmd);
+      if (postedAt) {
+        return (
+          <NotionTag
+            className="bg-[#e7f3f8] text-[#337ea9] tabular-nums"
+            title={`내 광고 게시일 ${formatYmd(group.ownAdvertisementYmd)}`}
+          >
+            {postedAt}
+          </NotionTag>
+        );
+      }
+
+      return <span className="px-1 text-[12px] text-slate-600">광고 X</span>;
+    },
+  });
+
+  // ── 7. 주인 (집주인 확인 / 중개사) ─────────────────────────
+  columns.push({
+    id: 'owner',
+    header: () => (
+      <TableHeaderLabel icon={<UserRound className="size-4" />} label="주인" />
+    ),
+    size: 72,
+    enableResizing: false,
+    cell: ({ row }) => (
+      <NotionTag
+        className={
+          row.original.ownerVerified
+            ? 'bg-[#eef3ed] text-[#44745a]'
+            : 'bg-[#f1f1ef] text-[#787774]'
+        }
+      >
+        {row.original.ownerVerified ? '집주인' : '중개사'}
+      </NotionTag>
+    ),
+  });
+
+  // ── 8. 랭킹 (내 광고 순위/동일주소 개수) ──────────────────
   columns.push({
     id: 'duplicate',
-    header: '중복',
-    size: 54,
+    header: () => (
+      <TableHeaderLabel
+        icon={<ListOrdered className="size-4" />}
+        label="랭킹"
+      />
+    ),
+    size: 68,
     cell: ({ row }) => {
       const g = row.original;
       const ranking = g.offerRanking ?? null;
       const sameAddrCnt =
         g.mainExternalListing?.sameAddrCnt ?? g.listingCount ?? null;
+      const isOpen = ctx.expandedListingIds.has(g.id);
       const label =
         ranking && sameAddrCnt
           ? `${ranking}/${sameAddrCnt}`
           : sameAddrCnt != null
             ? `${sameAddrCnt}개`
             : '-';
+      const detailLabel = ranking
+        ? `내 광고 ${ranking}위, 동일주소 ${sameAddrCnt ?? 0}개`
+        : `동일주소 ${sameAddrCnt ?? 0}개`;
       return (
-        <button
-          type="button"
-          title="그룹 내 매물 전체 보기"
-          onClick={(e) => {
-            e.stopPropagation();
-            ctx.onShowListings(g);
-          }}
-          className="cursor-pointer"
+        <div
+          className="-mx-2.5 flex h-full items-center justify-center"
+          onClick={(event) => event.stopPropagation()}
+          onDoubleClick={(event) => event.stopPropagation()}
         >
-          <NotionTag className="bg-[#f1f1ef] text-[#5f5e5b] tabular-nums transition-colors hover:bg-[#e3e3e0]">
-            {label}
-          </NotionTag>
-        </button>
-      );
-    },
-  });
-
-  // ── 8. 상태 (인라인 Select) ──────────────────────────────
-  columns.push({
-    id: 'status',
-    header: '상태',
-    size: 100,
-    cell: ({ row }) => {
-      const g = row.original;
-      return (
-        <Select
-          value={g.status}
-          onValueChange={(v) =>
-            ctx.onUpdateStatus(g.id, v as ExternalListingGroupStatus)
-          }
-        >
-          <SelectTrigger
-            className="h-auto w-fit border-0 bg-transparent p-0 shadow-none focus-visible:ring-0 [&>svg]:hidden"
-            onClick={(e) => e.stopPropagation()}
+          <Button
+            type="button"
+            variant={isOpen ? 'secondary' : 'outline'}
+            size="xs"
+            aria-expanded={isOpen}
+            aria-controls={`external-listing-rank-panel-${g.id}`}
+            aria-label={`${detailLabel} 광고 상세 ${isOpen ? '접기' : '펼치기'}`}
+            title={isOpen ? '동일주소 광고 접기' : '동일주소 광고 펼치기'}
+            onClick={() => ctx.onToggleListings(g.id)}
+            className="min-w-12 px-1.5 text-[11px] tabular-nums shadow-none"
           >
-            <StatusTag status={g.status} />
-          </SelectTrigger>
-          <SelectContent align="start">
-            {Object.entries(statusMeta).map(([value, meta]) => (
-              <SelectItem key={value} value={value} className="text-xs">
-                <NotionTag className={meta.className}>{meta.label}</NotionTag>
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+            {label}
+            <ChevronDown
+              aria-hidden="true"
+              className={cn(
+                'size-3 transition-transform duration-150',
+                isOpen && 'rotate-180',
+              )}
+            />
+          </Button>
+        </div>
       );
     },
   });
 
   // ── 9. 가격 (탭별 다름) ───────────────────────────────────
-  if (transactionType === 'sale') {
-    columns.push({
-      id: 'price',
-      header: '매매가',
-      size: 110,
-      cell: ({ row }) => (
-        <span className="text-[13px] font-medium tabular-nums text-slate-950">
-          {row.original.mainExternalListing?.price
-            ? formatPrice(row.original.mainExternalListing.price)
-            : '-'}
-        </span>
-      ),
-    });
-  } else if (transactionType === 'jeonse') {
-    columns.push({
-      id: 'deposit',
-      header: '전세가',
-      size: 110,
-      cell: ({ row }) => (
-        <span className="text-[13px] font-medium tabular-nums text-slate-950">
-          {row.original.mainExternalListing?.deposit
-            ? formatPrice(row.original.mainExternalListing.deposit)
-            : '-'}
-        </span>
-      ),
-    });
-  } else {
-    columns.push({
-      id: 'deposit',
-      header: '보증금',
-      size: 95,
-      cell: ({ row }) => (
-        <span className="text-[13px] tabular-nums text-slate-950">
-          {row.original.mainExternalListing?.deposit
-            ? formatPrice(row.original.mainExternalListing.deposit)
-            : '-'}
-        </span>
-      ),
-    });
-    columns.push({
-      id: 'monthlyRent',
-      header: '월세',
-      size: 80,
-      cell: ({ row }) => (
-        <span className="text-[13px] tabular-nums text-slate-950">
-          {row.original.mainExternalListing?.monthlyRent
-            ? formatPrice(row.original.mainExternalListing.monthlyRent)
-            : '-'}
-        </span>
-      ),
-    });
-  }
-
-  // ── 10. 최소최대 (접기 대상) (같은 주소 가격 범위) ──────────────────────
   columns.push({
-    id: 'minMax',
-    header: '최소최대',
-    size: 110,
+    id: 'price',
+    header: () => (
+      <TableHeaderLabel
+        icon={<CircleDollarSign className="size-4" />}
+        label={
+          transactionType === 'sale'
+            ? '매매가'
+            : transactionType === 'jeonse'
+              ? '전세가'
+              : '보증금/월세'
+        }
+      />
+    ),
+    size: transactionType === 'monthly' ? 128 : 110,
     cell: ({ row }) => {
-      const g = row.original;
-      const main = g.mainExternalListing;
-      const max =
-        main?.sameAddrMaxPrc ??
-        (g.priceMax != null ? formatPrice(g.priceMax) : null);
-      const min =
-        main?.sameAddrMinPrc ??
-        (g.priceMin != null ? formatPrice(g.priceMin) : null);
-      if (!max && !min) {
-        return <span className="text-[12px] text-muted-foreground">-</span>;
-      }
-      if (!max || max === min) {
+      const listing = row.original.mainExternalListing;
+      if (transactionType === 'monthly') {
         return (
-          <span className="text-[12px] tabular-nums text-slate-700">
-            {max ?? min}
-          </span>
+          <div className="flex flex-col gap-0.5 tabular-nums">
+            <span className="whitespace-nowrap text-[13px] font-semibold text-slate-950">
+              {listing?.deposit ? formatPrice(listing.deposit) : '-'}
+            </span>
+            <span className="whitespace-nowrap text-[12px] text-slate-500">
+              월 {listing?.monthlyRent ? formatPrice(listing.monthlyRent) : '-'}
+            </span>
+          </div>
         );
       }
+      const price =
+        transactionType === 'sale' ? listing?.price : listing?.deposit;
       return (
-        <div className="flex flex-col gap-0.5 text-[12px] leading-4 tabular-nums">
-          <span className="whitespace-nowrap text-slate-700">
-            <span className="mr-1 text-[10px] text-slate-400">최고</span>
-            {max}
-          </span>
-          <span className="whitespace-nowrap text-slate-700">
-            <span className="mr-1 text-[10px] text-slate-400">최저</span>
-            {min ?? '-'}
-          </span>
-        </div>
+        <span className="whitespace-nowrap text-[13px] font-semibold tabular-nums text-slate-950">
+          {price ? formatPrice(price) : '-'}
+        </span>
       );
     },
   });
 
-  // ── 11. 방향 (접기 대상) ────────────────────────────────────────────
+  // ── 10–11. 동일주소 활성 광고의 최소·최대 가격 ─────────────
+  const rangePriceColumnSize = transactionType === 'monthly' ? 124 : 112;
+  columns.push({
+    id: 'priceMin',
+    header: () => (
+      <TableHeaderLabel
+        icon={<TrendingDown className="size-4" />}
+        label={transactionType === 'monthly' ? '최소보증금' : '최소가'}
+      />
+    ),
+    size: rangePriceColumnSize,
+    cell: ({ row }) => (
+      <span className="whitespace-nowrap text-[13px] font-medium tabular-nums text-slate-700">
+        {row.original.priceMin != null
+          ? formatPrice(row.original.priceMin)
+          : '-'}
+      </span>
+    ),
+  });
+
+  columns.push({
+    id: 'priceMax',
+    header: () => (
+      <TableHeaderLabel
+        icon={<TrendingUp className="size-4" />}
+        label={transactionType === 'monthly' ? '최대보증금' : '최대가'}
+      />
+    ),
+    size: rangePriceColumnSize,
+    cell: ({ row }) => (
+      <span className="whitespace-nowrap text-[13px] font-medium tabular-nums text-slate-700">
+        {row.original.priceMax != null
+          ? formatPrice(row.original.priceMax)
+          : '-'}
+      </span>
+    ),
+  });
+
+  // ── 12. 방향 — 네이버 원본 코드를 사용자 표기로 변환 ────────
   columns.push({
     id: 'direction',
-    header: '방향',
-    size: 60,
+    header: () => (
+      <TableHeaderLabel icon={<Compass className="size-4" />} label="방향" />
+    ),
+    size: 72,
     cell: ({ row }) => (
-      <span className="text-[13px] text-slate-800">
-        {row.original.mainExternalListing?.direction ?? '-'}
+      <span className="truncate text-[13px] text-slate-700">
+        {formatListingDirection(row.original.mainExternalListing?.direction)}
       </span>
     ),
   });
 
-  // ── 12. 확인일 (최신/최초 + 경과일, 접기 대상) ───────────────────────
-  columns.push({
-    id: 'dates',
-    header: '확인일',
-    size: 112,
-    cell: ({ row }) => {
-      const g = row.original;
-      const latest = formatYmd(g.maxYmd);
-      const first = formatYmd(g.minYmd);
-      const hasLatest = latest !== '-';
-      const hasFirst = first !== '-';
-      const showFirst = hasFirst && first !== latest;
-      const subText = [
-        showFirst ? `최초 ${first}` : null,
-        g.confirmDateDiff != null ? `${g.confirmDateDiff}일` : null,
-      ]
-        .filter(Boolean)
-        .join(' · ');
-
-      if (!hasLatest && !hasFirst && !subText) {
-        return <span className="text-[12px] text-muted-foreground">-</span>;
-      }
-
-      return (
-        <div className="flex flex-col gap-0.5 text-[12px] leading-4 tabular-nums">
-          <span className="text-slate-800">{hasLatest ? latest : first}</span>
-          {subText && (
-            <span className="text-[11px] text-slate-400">{subText}</span>
-          )}
-        </div>
-      );
-    },
-  });
-
-  // ── 13. 부동산 (접기 대상) ──────────────────────────────────────────
-  columns.push({
-    id: 'realtor',
-    header: '부동산',
-    size: 100,
-    minSize: 88,
-    maxSize: 180,
-    cell: ({ row }) => (
-      <span className="block w-full whitespace-normal break-words text-[12px] leading-4 text-slate-700">
-        {row.original.mainExternalListing?.realtorName ?? '-'}
-      </span>
-    ),
-  });
-
-  // ── 14. 출처 (외부 링크, 접기 대상) ──────────────────────────────────
-  columns.push({
-    id: 'link',
-    header: '출처',
-    size: 64,
-    cell: ({ row }) => {
-      const main = row.original.mainExternalListing;
-      if (!main) {
-        return <span className="text-[12px] text-muted-foreground">-</span>;
-      }
-      const href = main.cpPcArticleUrl ?? main.sourceUrl;
-      const sourceLabel = getExternalSourceLabel(main.source);
-      if (!href) {
-        return (
-          <NotionTag className="bg-[#f1f1ef] text-[#787774]">
-            {sourceLabel}
-          </NotionTag>
-        );
-      }
-      return (
-        <a
-          href={href}
-          target="_blank"
-          rel="noopener noreferrer"
-          title={`${sourceLabel} 링크 열기`}
-          onClick={(e) => e.stopPropagation()}
-          className="inline-flex max-w-full items-center rounded-[4px] bg-[#e7f3f8] px-1.5 py-0.5 text-[11px] font-medium leading-5 text-[#337ea9] hover:bg-[#dcecf3] hover:underline"
-        >
-          <span className="truncate">{sourceLabel}</span>
-        </a>
-      );
-    },
-  });
-
-  // ── 15. 매물특징 + 메모(인라인) ────────────────────────────
+  // ── 13. 매물특징 — 외부 광고에서 수집한 원문 요약 ───────────
   columns.push({
     id: 'features',
-    header: '매물특징',
-    size: 400,
-    minSize: 280,
-    // 남는 가로 공간을 흡수 — 다른 컬럼(특히 sticky)의 폭이 늘어나지 않게 한다
-    meta: { fill: true },
+    header: () => (
+      <TableHeaderLabel
+        icon={<FileText className="size-4" />}
+        label="매물특징"
+      />
+    ),
+    size: 280,
+    minSize: 220,
+    enableSorting: false,
     cell: ({ row }) => {
       const g = row.original;
       const main = g.mainExternalListing;
       const desc = main?.articleFeatureDesc ?? '';
       const seango = hasSeangoMarker(desc) || hasSeangoMarker(g.memo);
       return (
-        <div className="flex flex-col gap-1">
-          {/* 특징이 없으면 줄 자체를 생략 — 빈 행마다 '-'가 반복되는 노이즈 제거 */}
-          {(seango || desc) && (
-            <div
-              className="text-[11px] whitespace-pre-line leading-snug text-foreground/80"
-              onClick={(e) => e.stopPropagation()}
-            >
-              {seango && <NotionTag className="mr-1 bg-[#e7f3f8] text-[#337ea9]">세안고</NotionTag>}
-              {desc}
-            </div>
+        <div
+          className="flex min-w-0 items-center gap-1.5 text-[13px] text-slate-700"
+          title={desc || undefined}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {seango && (
+            <NotionTag className="shrink-0 bg-[#e7f3f8] text-[#337ea9]">
+              세안고
+            </NotionTag>
           )}
-          <CommentInput
-            groupId={g.id}
-            initial={g.memo}
-            onSave={ctx.onUpdateMemo}
-          />
+          {desc ? (
+            <span className="truncate">{desc}</span>
+          ) : !seango ? (
+            <span className="text-muted-foreground">-</span>
+          ) : null}
         </div>
       );
     },
   });
 
-  // 접힘 상태면 최소최대~출처 컬럼 제외 — 남는 폭은 매물특징이 흡수한다
-  if (ctx.detailCollapsed) {
-    return columns.filter((c) => !DETAIL_COLUMN_IDS.has(c.id ?? ''));
-  }
-  return columns;
+  // ── 14. 내 메모 — 사무소 전용 편집 데이터 ──────────────────
+  columns.push({
+    id: 'memo',
+    header: () => (
+      <TableHeaderLabel
+        icon={<FileText className="size-4" />}
+        label="내 메모"
+      />
+    ),
+    size: 320,
+    minSize: 240,
+    enableSorting: false,
+    meta: { fill: true },
+    cell: ({ row }) => (
+      <CommentInput
+        groupId={row.original.id}
+        initial={row.original.memo}
+        onSave={ctx.onUpdateMemo}
+      />
+    ),
+  });
+
+  return columns.filter((column) => {
+    const columnId = column.id ?? '';
+    if (
+      areMarketDetailColumnsCollapsed &&
+      MARKET_DETAIL_COLUMN_ID_SET.has(columnId)
+    ) {
+      return false;
+    }
+    return true;
+  });
 }
 
 // ── Inline ho (호수) editor — only used when unit is not yet linked ──
@@ -1869,7 +1970,7 @@ function HoInput({
       }}
       onClick={(e) => e.stopPropagation()}
       placeholder="호수"
-      className="h-6 rounded-[5px] border-0 bg-transparent px-1.5 py-0 text-[12px] shadow-none tabular-nums placeholder:text-transparent hover:ring-1 hover:ring-[#eeeeec] focus-visible:ring-1 focus-visible:ring-slate-300 focus-visible:placeholder:text-slate-500 group-hover:placeholder:text-slate-500"
+      className="h-6 rounded-[5px] border-0 bg-transparent px-1.5 py-0 text-[13px] font-medium text-slate-800 shadow-none tabular-nums placeholder:text-transparent hover:ring-1 hover:ring-[#eeeeec] focus-visible:ring-1 focus-visible:ring-slate-300 focus-visible:placeholder:text-slate-500 group-hover:placeholder:text-slate-500 md:text-[13px]"
     />
   );
 }
@@ -1897,12 +1998,16 @@ function UnitLinkPopover({
     () => dongs.find((d) => d.isPlaceholder) ?? null,
     [dongs],
   );
-  const visibleDongs = useMemo(() => dongs.filter((d) => !d.isPlaceholder), [dongs]);
+  const visibleDongs = useMemo(
+    () => dongs.filter((d) => !d.isPlaceholder),
+    [dongs],
+  );
   const effectiveDongId = dongId || placeholderDong?.id || '';
 
   const { data: units = [], isLoading: isUnitsLoading } = useQuery({
     queryKey: ['units', group.siteId, effectiveDongId],
-    queryFn: () => api.units.findAll({ siteId: group.siteId, dongId: effectiveDongId }),
+    queryFn: () =>
+      api.units.findAll({ siteId: group.siteId, dongId: effectiveDongId }),
     enabled: open && !!effectiveDongId,
   });
 
@@ -1945,8 +2050,8 @@ function UnitLinkPopover({
         <p className="text-xs font-medium">호실 연결</p>
         <p className="mt-0.5 text-[11px] text-muted-foreground">
           {group.site?.name}
-          {group.buildingName ? ` · ${group.buildingName}` : ''} 그룹을 실제 호실에
-          연결합니다.
+          {group.buildingName ? ` · ${group.buildingName}` : ''} 그룹을 실제
+          호실에 연결합니다.
         </p>
         <div className="mt-2 space-y-2">
           {visibleDongs.length > 0 && (
@@ -2044,13 +2149,17 @@ function CommentInput({
       }}
       onClick={(e) => e.stopPropagation()}
       placeholder="메모 입력..."
-      className="h-6 rounded-[5px] border-0 bg-transparent px-2 text-[11px] shadow-none placeholder:text-transparent hover:ring-1 hover:ring-[#eeeeec] focus-visible:ring-1 focus-visible:ring-slate-300 focus-visible:placeholder:text-slate-500 group-hover:placeholder:text-slate-500"
+      className="h-6 rounded-[5px] border-0 bg-transparent px-2 text-[13px] text-slate-700 shadow-none placeholder:text-transparent hover:ring-1 hover:ring-[#eeeeec] focus-visible:ring-1 focus-visible:ring-slate-300 focus-visible:placeholder:text-slate-500 group-hover:placeholder:text-slate-500 md:text-[13px]"
     />
   );
 }
 
 function formatListingPrice(
-  listing: { price: number | null; deposit: number | null; monthlyRent: number | null },
+  listing: {
+    price: number | null;
+    deposit: number | null;
+    monthlyRent: number | null;
+  },
   transactionType: ExternalListingTransactionType,
 ) {
   if (transactionType === 'monthly') {
@@ -2226,7 +2335,8 @@ function ManualEntryDialog({
             floorInfo:
               selectedUnit?.floor != null ? `${selectedUnit.floor}` : null,
             direction: form.direction.trim() || unitType?.direction || null,
-            price: form.transactionType === 'sale' ? parseManwon(form.price) : null,
+            price:
+              form.transactionType === 'sale' ? parseManwon(form.price) : null,
             deposit:
               form.transactionType === 'sale'
                 ? null
@@ -2244,7 +2354,9 @@ function ManualEntryDialog({
     },
     onSuccess: (result) => {
       if (result.errors.length > 0) {
-        setErrorMessage(result.errors[0]?.message ?? '등록 중 오류가 발생했습니다.');
+        setErrorMessage(
+          result.errors[0]?.message ?? '등록 중 오류가 발생했습니다.',
+        );
         return;
       }
       onSuccess();
@@ -2252,7 +2364,9 @@ function ManualEntryDialog({
       onOpenChange(false);
     },
     onError: (err) => {
-      setErrorMessage(err instanceof Error ? err.message : '등록에 실패했습니다.');
+      setErrorMessage(
+        err instanceof Error ? err.message : '등록에 실패했습니다.',
+      );
     },
   });
 
@@ -2316,7 +2430,9 @@ function ManualEntryDialog({
               <Input
                 placeholder="비워두면 자동 생성"
                 value={form.articleNo}
-                onChange={(e) => setForm({ ...form, articleNo: e.target.value })}
+                onChange={(e) =>
+                  setForm({ ...form, articleNo: e.target.value })
+                }
               />
             </div>
             <div>
@@ -2364,9 +2480,7 @@ function ManualEntryDialog({
               >
                 <SelectTrigger>
                   <SelectValue
-                    placeholder={
-                      !form.dongId ? '동 먼저 선택' : '호수 선택'
-                    }
+                    placeholder={!form.dongId ? '동 먼저 선택' : '호수 선택'}
                   />
                 </SelectTrigger>
                 <SelectContent>
@@ -2391,7 +2505,9 @@ function ManualEntryDialog({
                     : form.siteUnitTypeId
                 }
                 onValueChange={(v) => setForm({ ...form, siteUnitTypeId: v })}
-                disabled={!form.siteId || !!form.unitId || siteUnitTypes.length === 0}
+                disabled={
+                  !form.siteId || !!form.unitId || siteUnitTypes.length === 0
+                }
               >
                 <SelectTrigger>
                   <SelectValue

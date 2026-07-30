@@ -6,6 +6,7 @@ import {
   FolderOpen,
   GitBranch,
   Handshake,
+  Inbox,
   LayoutDashboard,
   ListTodo,
   Map,
@@ -146,6 +147,12 @@ export const NAV_ITEMS: NavItem[] = [
   // ── 업무·운영
   { path: '/tasks', label: '업무', icon: ListTodo, group: 'operations' },
   {
+    path: '/ai-requests',
+    label: 'AI 요청함',
+    icon: Inbox,
+    group: 'operations',
+  },
+  {
     path: '/calendar',
     label: '캘린더',
     icon: CalendarDays,
@@ -214,6 +221,7 @@ export const ROUTE_LABELS: Record<string, string> = {
   // 홈
   '/_authenticated/dashboard': '대시보드',
   '/_authenticated/tasks/': '업무',
+  '/_authenticated/ai-requests/': 'AI 요청함',
   '/_authenticated/calendar/': '캘린더',
   // 매물
   '/_authenticated/properties/': '매물 목록',

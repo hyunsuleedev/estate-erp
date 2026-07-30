@@ -17,9 +17,10 @@ import {
   Network,
   Wrench,
   Home,
+  Inbox,
   type LucideIcon,
-} from 'lucide-react';
-import type { TabKind } from '@estate-erp/shared';
+} from "lucide-react";
+import type { TabKind } from "@estate-erp/shared";
 
 export interface RouteMeta {
   title: string;
@@ -28,33 +29,66 @@ export interface RouteMeta {
 }
 
 const STATIC_ROUTES: Record<string, RouteMeta> = {
-  '/dashboard': { title: '대시보드', kind: 'dashboard', icon: SquareTerminal },
-  '/properties': { title: '매물관리', kind: 'property', icon: Building },
-  '/properties/new': { title: '매물 등록', kind: 'property', icon: Building },
-  '/properties/external-listings': { title: '광고노트', kind: 'property', icon: Building },
-  '/properties/my-ads': { title: '내광고관리', kind: 'property', icon: Building },
-  '/contacts': { title: '연락처', kind: 'contact', icon: BookUser },
-  '/contacts/new': { title: '연락처 추가', kind: 'contact', icon: BookUser },
-  '/partner-brokers': { title: '파트너 중개사', kind: 'contact', icon: Handshake },
-  '/service-vendors': { title: '서비스 업체', kind: 'contact', icon: Wrench },
-  '/deals': { title: '거래관리', kind: 'deal', icon: Handshake },
-  '/matches': { title: '매칭', kind: 'match', icon: GitBranch },
-  '/consultations': { title: '상담기록', kind: 'consultation', icon: MessageSquare },
-  '/calls': { title: '통화', kind: 'consultation', icon: PhoneCall },
-  '/buyer-requirements': { title: '구매고객', kind: 'contact', icon: UserSearch },
-  '/tasks': { title: '업무', kind: 'task', icon: ListTodo },
-  '/calendar': { title: '캘린더', kind: 'calendar', icon: CalendarDays },
-  '/sites': { title: '관리단지', kind: 'site', icon: MapIcon },
-  '/contracts': { title: '계약서 관리', kind: 'contract', icon: FileText },
-  '/cashflow': { title: '캐시플로우', kind: 'cashflow', icon: Wallet },
-  '/cashflow/ledger': { title: '수금 원장', kind: 'cashflow', icon: Wallet },
-  '/cashflow/expenses': { title: '고정비', kind: 'cashflow', icon: Wallet },
-  '/cashflow/partner-commissions': { title: '파트너 수수료', kind: 'cashflow', icon: Wallet },
-  '/cashflow/employee-settlements': { title: '직원 정산', kind: 'cashflow', icon: Wallet },
-  '/cashflow/my-settlement': { title: '내 정산', kind: 'cashflow', icon: Wallet },
-  '/employees': { title: '직원관리', kind: 'employee', icon: Users },
-  '/settings': { title: '설정', kind: 'settings', icon: SettingsIcon },
-  '/network': { title: '네트워크', kind: 'generic', icon: Network },
+  "/dashboard": { title: "대시보드", kind: "dashboard", icon: SquareTerminal },
+  "/properties": { title: "매물관리", kind: "property", icon: Building },
+  "/properties/new": { title: "매물 등록", kind: "property", icon: Building },
+  "/properties/external-listings": {
+    title: "광고노트",
+    kind: "property",
+    icon: Building,
+  },
+  "/properties/naver-my-ads": {
+    title: "내광고관리",
+    kind: "property",
+    icon: Building,
+  },
+  "/contacts": { title: "연락처", kind: "contact", icon: BookUser },
+  "/contacts/new": { title: "연락처 추가", kind: "contact", icon: BookUser },
+  "/partner-brokers": {
+    title: "파트너 중개사",
+    kind: "contact",
+    icon: Handshake,
+  },
+  "/service-vendors": { title: "서비스 업체", kind: "contact", icon: Wrench },
+  "/deals": { title: "거래관리", kind: "deal", icon: Handshake },
+  "/matches": { title: "매칭", kind: "match", icon: GitBranch },
+  "/consultations": {
+    title: "상담기록",
+    kind: "consultation",
+    icon: MessageSquare,
+  },
+  "/calls": { title: "통화", kind: "consultation", icon: PhoneCall },
+  "/buyer-requirements": {
+    title: "구매고객",
+    kind: "contact",
+    icon: UserSearch,
+  },
+  "/tasks": { title: "업무", kind: "task", icon: ListTodo },
+  "/ai-requests": { title: "AI 요청함", kind: "generic", icon: Inbox },
+  "/calendar": { title: "캘린더", kind: "calendar", icon: CalendarDays },
+  "/sites": { title: "관리단지", kind: "site", icon: MapIcon },
+  "/contracts": { title: "계약서 관리", kind: "contract", icon: FileText },
+  "/cashflow": { title: "캐시플로우", kind: "cashflow", icon: Wallet },
+  "/cashflow/ledger": { title: "수금 원장", kind: "cashflow", icon: Wallet },
+  "/cashflow/expenses": { title: "고정비", kind: "cashflow", icon: Wallet },
+  "/cashflow/partner-commissions": {
+    title: "파트너 수수료",
+    kind: "cashflow",
+    icon: Wallet,
+  },
+  "/cashflow/employee-settlements": {
+    title: "직원 정산",
+    kind: "cashflow",
+    icon: Wallet,
+  },
+  "/cashflow/my-settlement": {
+    title: "내 정산",
+    kind: "cashflow",
+    icon: Wallet,
+  },
+  "/employees": { title: "직원관리", kind: "employee", icon: Users },
+  "/settings": { title: "설정", kind: "settings", icon: SettingsIcon },
+  "/network": { title: "네트워크", kind: "generic", icon: Network },
 };
 
 const DYNAMIC_ROUTE_META: Array<{
@@ -63,11 +97,11 @@ const DYNAMIC_ROUTE_META: Array<{
 }> = [
   {
     match: /^\/properties\/([^/]+)$/,
-    meta: () => ({ title: '매물 상세', kind: 'property', icon: Building }),
+    meta: () => ({ title: "매물 상세", kind: "property", icon: Building }),
   },
   {
     match: /^\/contacts\/([^/]+)$/,
-    meta: () => ({ title: '연락처 상세', kind: 'contact', icon: BookUser }),
+    meta: () => ({ title: "연락처 상세", kind: "contact", icon: BookUser }),
   },
 ];
 
@@ -78,9 +112,9 @@ export function getRouteMeta(route: string): RouteMeta {
     const result = route.match(match);
     if (result) return meta(result);
   }
-  return { title: route, kind: 'generic', icon: Home };
+  return { title: route, kind: "generic", icon: Home };
 }
 
 export function isDetachableRoute(route: string): boolean {
-  return route !== '/login' && !route.startsWith('/_');
+  return route !== "/login" && !route.startsWith("/_");
 }

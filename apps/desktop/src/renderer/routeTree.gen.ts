@@ -35,6 +35,7 @@ import { Route as AuthenticatedCashflowIndexRouteImport } from './routes/_authen
 import { Route as AuthenticatedCallsIndexRouteImport } from './routes/_authenticated/calls/index'
 import { Route as AuthenticatedCalendarIndexRouteImport } from './routes/_authenticated/calendar/index'
 import { Route as AuthenticatedBuyerRequirementsIndexRouteImport } from './routes/_authenticated/buyer-requirements/index'
+import { Route as AuthenticatedAiRequestsIndexRouteImport } from './routes/_authenticated/ai-requests/index'
 import { Route as AuthenticatedPropertiesNewRouteImport } from './routes/_authenticated/properties/new'
 import { Route as AuthenticatedPropertiesNaverMyAdsRouteImport } from './routes/_authenticated/properties/naver-my-ads'
 import { Route as AuthenticatedPropertiesMyAdsRouteImport } from './routes/_authenticated/properties/my-ads'
@@ -195,6 +196,12 @@ const AuthenticatedBuyerRequirementsIndexRoute =
     path: '/buyer-requirements/',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const AuthenticatedAiRequestsIndexRoute =
+  AuthenticatedAiRequestsIndexRouteImport.update({
+    id: '/ai-requests/',
+    path: '/ai-requests/',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedPropertiesNewRoute =
   AuthenticatedPropertiesNewRouteImport.update({
     id: '/properties/new',
@@ -319,6 +326,7 @@ export interface FileRoutesByFullPath {
   '/properties/my-ads': typeof AuthenticatedPropertiesMyAdsRoute
   '/properties/naver-my-ads': typeof AuthenticatedPropertiesNaverMyAdsRoute
   '/properties/new': typeof AuthenticatedPropertiesNewRoute
+  '/ai-requests/': typeof AuthenticatedAiRequestsIndexRoute
   '/buyer-requirements/': typeof AuthenticatedBuyerRequirementsIndexRoute
   '/calendar/': typeof AuthenticatedCalendarIndexRoute
   '/calls/': typeof AuthenticatedCallsIndexRoute
@@ -362,6 +370,7 @@ export interface FileRoutesByTo {
   '/properties/my-ads': typeof AuthenticatedPropertiesMyAdsRoute
   '/properties/naver-my-ads': typeof AuthenticatedPropertiesNaverMyAdsRoute
   '/properties/new': typeof AuthenticatedPropertiesNewRoute
+  '/ai-requests': typeof AuthenticatedAiRequestsIndexRoute
   '/buyer-requirements': typeof AuthenticatedBuyerRequirementsIndexRoute
   '/calendar': typeof AuthenticatedCalendarIndexRoute
   '/calls': typeof AuthenticatedCallsIndexRoute
@@ -408,6 +417,7 @@ export interface FileRoutesById {
   '/_authenticated/properties/my-ads': typeof AuthenticatedPropertiesMyAdsRoute
   '/_authenticated/properties/naver-my-ads': typeof AuthenticatedPropertiesNaverMyAdsRoute
   '/_authenticated/properties/new': typeof AuthenticatedPropertiesNewRoute
+  '/_authenticated/ai-requests/': typeof AuthenticatedAiRequestsIndexRoute
   '/_authenticated/buyer-requirements/': typeof AuthenticatedBuyerRequirementsIndexRoute
   '/_authenticated/calendar/': typeof AuthenticatedCalendarIndexRoute
   '/_authenticated/calls/': typeof AuthenticatedCallsIndexRoute
@@ -453,6 +463,7 @@ export interface FileRouteTypes {
     | '/properties/my-ads'
     | '/properties/naver-my-ads'
     | '/properties/new'
+    | '/ai-requests/'
     | '/buyer-requirements/'
     | '/calendar/'
     | '/calls/'
@@ -496,6 +507,7 @@ export interface FileRouteTypes {
     | '/properties/my-ads'
     | '/properties/naver-my-ads'
     | '/properties/new'
+    | '/ai-requests'
     | '/buyer-requirements'
     | '/calendar'
     | '/calls'
@@ -541,6 +553,7 @@ export interface FileRouteTypes {
     | '/_authenticated/properties/my-ads'
     | '/_authenticated/properties/naver-my-ads'
     | '/_authenticated/properties/new'
+    | '/_authenticated/ai-requests/'
     | '/_authenticated/buyer-requirements/'
     | '/_authenticated/calendar/'
     | '/_authenticated/calls/'
@@ -754,6 +767,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedBuyerRequirementsIndexRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/ai-requests/': {
+      id: '/_authenticated/ai-requests/'
+      path: '/ai-requests'
+      fullPath: '/ai-requests/'
+      preLoaderRoute: typeof AuthenticatedAiRequestsIndexRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/properties/new': {
       id: '/_authenticated/properties/new'
       path: '/properties/new'
@@ -906,6 +926,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedPropertiesMyAdsRoute: typeof AuthenticatedPropertiesMyAdsRoute
   AuthenticatedPropertiesNaverMyAdsRoute: typeof AuthenticatedPropertiesNaverMyAdsRoute
   AuthenticatedPropertiesNewRoute: typeof AuthenticatedPropertiesNewRoute
+  AuthenticatedAiRequestsIndexRoute: typeof AuthenticatedAiRequestsIndexRoute
   AuthenticatedBuyerRequirementsIndexRoute: typeof AuthenticatedBuyerRequirementsIndexRoute
   AuthenticatedCalendarIndexRoute: typeof AuthenticatedCalendarIndexRoute
   AuthenticatedCallsIndexRoute: typeof AuthenticatedCallsIndexRoute
@@ -951,6 +972,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedPropertiesNaverMyAdsRoute:
     AuthenticatedPropertiesNaverMyAdsRoute,
   AuthenticatedPropertiesNewRoute: AuthenticatedPropertiesNewRoute,
+  AuthenticatedAiRequestsIndexRoute: AuthenticatedAiRequestsIndexRoute,
   AuthenticatedBuyerRequirementsIndexRoute:
     AuthenticatedBuyerRequirementsIndexRoute,
   AuthenticatedCalendarIndexRoute: AuthenticatedCalendarIndexRoute,
