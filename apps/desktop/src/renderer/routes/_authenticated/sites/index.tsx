@@ -48,10 +48,15 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { ConfirmDialog, EmptyState } from '@/components/domain';
 import { cn } from '@/lib/utils';
-import { formatArea, formatDate, formatPhone } from '@/lib/format';
+import { formatDate, formatPhone, formatPyeong } from '@/lib/format';
 import {
   extractRegionFromSite,
+  filterOfficeSites,
   formatListingPrice,
+  getInitialDongScope,
+  getSiteGroupKeys,
+  groupOfficeSites,
+  isDefaultDongScope,
   parseUnitPlacement,
   siteTypeLabels,
   siteTypeShort,
@@ -59,6 +64,7 @@ import {
   type MultiSelectOption,
   type OccupancyStatus,
   type PositionedUnit,
+  type SiteGroupMode,
 } from './-site-helpers';
 import { MultiFilterDropdown } from './-multi-filter-dropdown';
 import { UnitLayoutBoard } from './-unit-layout-board';
@@ -72,13 +78,15 @@ export const Route = createFileRoute('/_authenticated/sites/')({
 });
 
 type UnitViewMode = 'table' | 'layout' | 'occupancy' | 'expiry';
+type DongScope = { siteId: string; dongIds: string[] };
+type DongWithUnitCount = Dong & { _count?: { units: number } | null };
 
 function SitesPage() {
   const queryClient = useQueryClient();
 
   // ── Sidebar state ─────────────────────────────────────────────
   const [buildingSearch, setBuildingSearch] = useState('');
-  const [groupBy, setGroupBy] = useState<'none' | 'region' | 'type'>('none');
+  const [groupBy, setGroupBy] = useState<SiteGroupMode>('none');
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [isSiteNavOpen, setIsSiteNavOpen] = useState(true);
   const [removeTarget, setRemoveTarget] = useState<OfficeSite | null>(null);
@@ -86,7 +94,7 @@ function SitesPage() {
   // ── Selection state ───────────────────────────────────────────
   const [selectedOfficeSite, setSelectedOfficeSite] = useState<OfficeSite | null>(null);
   const [selectedUnitId, setSelectedUnitId] = useState<string | null>(null);
-  const [selectedDongIds, setSelectedDongIds] = useState<string[]>([]);
+  const [dongScope, setDongScope] = useState<DongScope | null>(null);
   const [selectedUnitTypeIds, setSelectedUnitTypeIds] = useState<string[]>([]);
   const [query, setQuery] = useState('');
   const [unitSort, setUnitSort] = useState<SortingState>([]);
@@ -158,9 +166,53 @@ function SitesPage() {
     isError: isDetailError,
     refetch: refetchDetail,
   } = useQuery({
-    queryKey: ['sites', selectedSiteId],
-    queryFn: () => api.sites.findOne(selectedSiteId!),
+    queryKey: ['sites', selectedSiteId, 'overview'],
+    queryFn: () => {
+      if (!selectedSiteId) throw new Error('단지가 선택되지 않았습니다');
+      return api.sites.overview(selectedSiteId);
+    },
     enabled: !!selectedSiteId,
+  });
+
+  const hasDongScopeForSite = dongScope?.siteId === selectedSiteId;
+  const selectedDongIds = dongScope && dongScope.siteId === selectedSiteId
+    ? dongScope.dongIds
+    : getInitialDongScope(siteDetail?.defaultDongId ?? null);
+
+  useEffect(() => {
+    if (!siteDetail || hasDongScopeForSite) return;
+    setDongScope({
+      siteId: siteDetail.id,
+      dongIds: getInitialDongScope(siteDetail.defaultDongId),
+    });
+  }, [hasDongScopeForSite, siteDetail]);
+
+  const usesOverviewUnits =
+    !!siteDetail && isDefaultDongScope(selectedDongIds, siteDetail.defaultDongId);
+  const selectedDongId = selectedDongIds[0];
+  const shouldLoadScopedUnits =
+    !!selectedSiteId &&
+    !!siteDetail &&
+    hasDongScopeForSite &&
+    siteDetail.type !== 'land' &&
+    !usesOverviewUnits;
+
+  const {
+    data: scopedUnits,
+    isLoading: isLoadingUnits,
+    isError: isUnitsError,
+    refetch: refetchUnits,
+  } = useQuery({
+    queryKey: ['sites', selectedSiteId, 'units', selectedDongId ?? 'all'],
+    queryFn: () => {
+      if (!selectedSiteId) throw new Error('단지가 선택되지 않았습니다');
+      return api.units.findAll(
+        selectedDongId
+          ? { siteId: selectedSiteId, dongId: selectedDongId }
+          : { siteId: selectedSiteId },
+      );
+    },
+    enabled: shouldLoadScopedUnits,
   });
 
   const { data: searchResults, isError: isSearchError } = useQuery({
@@ -191,7 +243,7 @@ function SitesPage() {
       if (selectedOfficeSite?.id === removedId) {
         setSelectedOfficeSite(officeSites.find((site) => site.id !== removedId) ?? null);
         setSelectedUnitId(null);
-        setSelectedDongIds([]);
+        setDongScope(null);
         setSelectedUnitTypeIds([]);
         setQuery('');
         setUnitSort([]);
@@ -218,8 +270,8 @@ function SitesPage() {
     },
   });
 
-  const dongs: Dong[] = siteDetail?.dongs ?? [];
-  const allUnits: Unit[] = siteDetail?.units ?? [];
+  const dongs: DongWithUnitCount[] = siteDetail?.dongs ?? [];
+  const allUnits: Unit[] = usesOverviewUnits ? (siteDetail?.units ?? []) : (scopedUnits ?? []);
 
   const addUnitMutation = useMutation({
     mutationFn: async (dto: { name: string; area: string; dongId: string }) => {
@@ -254,35 +306,21 @@ function SitesPage() {
 
   const existingSiteIds = new Set(officeSites.map((os) => os.siteId));
 
-  const filteredSites = useMemo(() => {
-    if (!buildingSearch) return officeSites;
-    const q = buildingSearch.toLowerCase();
-    return officeSites.filter((os) => {
-      const site = os.site;
-      if (!site) return false;
-      return (
-        site.name.toLowerCase().includes(q) ||
-        site.roadAddress?.toLowerCase().includes(q) ||
-        site.jibunAddress?.toLowerCase().includes(q)
-      );
-    });
-  }, [officeSites, buildingSearch]);
+  const hasSiteSearch = buildingSearch.trim().length > 0;
+  const filteredSites = useMemo(
+    () => filterOfficeSites(officeSites, buildingSearch),
+    [officeSites, buildingSearch],
+  );
 
-  const groupedSites = useMemo(() => {
-    if (groupBy === 'none') return null;
-    const groups: Record<string, OfficeSite[]> = {};
-    for (const os of filteredSites) {
-      const site = os.site;
-      if (!site) continue;
-      const key =
-        groupBy === 'region'
-          ? extractRegionFromSite(site)
-          : (siteTypeLabels[site.type] ?? site.type);
-      if (!groups[key]) groups[key] = [];
-      groups[key].push(os);
-    }
-    return Object.entries(groups).sort((a, b) => a[0].localeCompare(b[0], 'ko'));
-  }, [filteredSites, groupBy]);
+  const groupedSites = useMemo(
+    () => groupOfficeSites(filteredSites, groupBy),
+    [filteredSites, groupBy],
+  );
+
+  useEffect(() => {
+    if (!hasSiteSearch || !groupedSites?.length) return;
+    setExpandedGroups(new Set(groupedSites.map(([groupKey]) => groupKey)));
+  }, [groupedSites, hasSiteSearch]);
 
   const getDongName = useCallback(
     (dongId: string | null) => dongs.find((d) => d.id === dongId)?.name ?? '',
@@ -302,9 +340,9 @@ function SitesPage() {
         .map((dong) => ({
           value: dong.id,
           label: dong.name,
-          helper: `${allUnits.filter((unit) => unit.dongId === dong.id).length}호`,
+          helper: `${(dong._count?.units ?? 0).toLocaleString()}호`,
         })),
-    [allUnits, dongs],
+    [dongs],
   );
 
   const unitTypeOptions = useMemo<MultiSelectOption[]>(() => {
@@ -326,17 +364,17 @@ function SitesPage() {
     );
   }, [allUnits]);
 
+  const hasChangedDongScope =
+    !!siteDetail?.defaultDongId &&
+    hasDongScopeForSite &&
+    !isDefaultDongScope(selectedDongIds, siteDetail.defaultDongId);
   const hasActiveUnitFilters =
-    selectedDongIds.length > 0 ||
+    hasChangedDongScope ||
     selectedUnitTypeIds.length > 0 ||
     query.trim().length > 0;
 
   const filteredUnits = useMemo(() => {
-    let units = allUnits;
-
-    if (selectedDongIds.length > 0) {
-      units = units.filter((unit) => !!unit.dongId && selectedDongIds.includes(unit.dongId));
-    }
+    let units = [...allUnits];
 
     if (selectedUnitTypeIds.length > 0) {
       units = units.filter(
@@ -437,7 +475,7 @@ function SitesPage() {
       const fallback = defaultSort(a, b);
       return direction === 'asc' ? fallback : -fallback;
     });
-  }, [allUnits, query, selectedDongIds, selectedUnitTypeIds, unitSort, getDongName]);
+  }, [allUnits, query, selectedUnitTypeIds, unitSort, getDongName]);
 
   const layoutSections = useMemo<LayoutSection[]>(() => {
     const sectionMap = new Map<
@@ -456,16 +494,17 @@ function SitesPage() {
       const sectionKey = hasRealDongs ? (unit.dongId ?? '__no_dong__') : '__site__';
       const sectionLabel = hasRealDongs ? getDongName(unit.dongId) || '미지정 동' : '전체';
 
-      if (!sectionMap.has(sectionKey)) {
-        sectionMap.set(sectionKey, {
+      let section = sectionMap.get(sectionKey);
+      if (!section) {
+        section = {
           key: sectionKey,
           label: sectionLabel,
           positionedUnits: [],
           unpositionedUnits: [],
-        });
+        };
+        sectionMap.set(sectionKey, section);
       }
 
-      const section = sectionMap.get(sectionKey)!;
       const placement = parseUnitPlacement(unit);
 
       if (placement.floor == null || placement.lineNo == null) {
@@ -513,10 +552,19 @@ function SitesPage() {
   const handleSelectSite = (os: OfficeSite) => {
     setSelectedOfficeSite(os);
     setSelectedUnitId(null);
-    setSelectedDongIds([]);
+    setDongScope(null);
     setSelectedUnitTypeIds([]);
     setQuery('');
     setUnitSort([]);
+    setOccupancyFilter([]);
+  };
+
+  const handleDongScopeChange = (dongIds: string[]) => {
+    if (!selectedSiteId) return;
+    setDongScope({ siteId: selectedSiteId, dongIds });
+    setSelectedUnitId(null);
+    setSelectedUnitTypeIds([]);
+    setQuery('');
     setOccupancyFilter([]);
   };
 
@@ -543,7 +591,12 @@ function SitesPage() {
   };
 
   const resetUnitFilters = () => {
-    setSelectedDongIds([]);
+    if (selectedSiteId && siteDetail) {
+      setDongScope({
+        siteId: selectedSiteId,
+        dongIds: getInitialDongScope(siteDetail.defaultDongId),
+      });
+    }
     setSelectedUnitTypeIds([]);
     setQuery('');
     setOccupancyFilter([]);
@@ -579,7 +632,7 @@ function SitesPage() {
     {
       id: 'supplyArea',
       header: '공급',
-      size: 150,
+      size: 80,
       enableSorting: true,
       cell: ({ row }) => {
         const unit = row.original;
@@ -587,7 +640,7 @@ function SitesPage() {
         if (!m2) return <span className="text-[13px] text-muted-foreground">-</span>;
         return (
           <span className="whitespace-nowrap text-[13px] tabular-nums">
-            {formatArea(m2)}
+            {formatPyeong(m2)}
           </span>
         );
       },
@@ -595,7 +648,7 @@ function SitesPage() {
     {
       id: 'exclusiveArea',
       header: '전용',
-      size: 150,
+      size: 80,
       enableSorting: true,
       cell: ({ row }) => {
         const unit = row.original;
@@ -603,7 +656,7 @@ function SitesPage() {
         if (!m2) return <span className="text-[13px] text-muted-foreground">-</span>;
         return (
           <span className="whitespace-nowrap text-[13px] tabular-nums">
-            {formatArea(m2)}
+            {formatPyeong(m2)}
           </span>
         );
       },
@@ -808,11 +861,15 @@ function SitesPage() {
 
   // 중앙 헤더 메타 라인 (주소 · 유형 · 동/호 수)
   const realDongCount = dongs.filter((dong) => !dong.isPlaceholder).length;
+  const totalUnitCount = siteDetail?._count?.units ?? siteDetail?.totalUnits ?? allUnits.length;
+  const selectedDongName =
+    selectedDongIds.length === 1 ? getDongName(selectedDongIds[0]) : '';
+  const unitScopeLabel = selectedDongName || (realDongCount > 0 ? '전체 동' : '');
   const siteMetaLine = siteDetail
     ? [
         siteDetail.roadAddress || siteDetail.jibunAddress,
         realDongCount > 0 ? `${realDongCount}개동` : null,
-        `${allUnits.length}호`,
+        `전체 ${totalUnitCount.toLocaleString()}호`,
       ]
         .filter(Boolean)
         .join(' · ')
@@ -821,7 +878,7 @@ function SitesPage() {
   // ── JSX ───────────────────────────────────────────────────────
 
   return (
-    <div className="relative flex flex-1 min-h-0 -mx-4 -mb-4">
+    <div className="relative -m-4 flex min-h-0 flex-1">
       {/* ─── Sidebar (단지 Nav) ──────────────────────────────── */}
       {isSiteNavOpen ? (
         <aside className="flex w-[260px] shrink-0 flex-col border-r bg-background">
@@ -829,7 +886,7 @@ function SitesPage() {
           <div className="flex items-center gap-1.5 px-3 pb-2 pt-[11px]">
             <span className="text-[13px] font-semibold">관리단지</span>
             <span className="text-xs text-muted-foreground/80 tabular-nums">
-              {officeSites.length}
+              {hasSiteSearch ? `${filteredSites.length}/${officeSites.length}` : officeSites.length}
             </span>
             <div className="flex-1" />
             <Button
@@ -878,9 +935,7 @@ function SitesPage() {
                   )}
                   onClick={() => {
                     setGroupBy(key);
-                    if (key !== 'none' && groupedSites) {
-                      setExpandedGroups(new Set(groupedSites.map(([k]) => k)));
-                    }
+                    setExpandedGroups(new Set(getSiteGroupKeys(filteredSites, key)));
                   }}
                 >
                   {label}
@@ -895,12 +950,28 @@ function SitesPage() {
               <Search className="size-3.5 shrink-0 text-muted-foreground/70" />
               <input
                 ref={buildingSearchRef}
-                placeholder="단지명 · 주소 검색"
+                placeholder="단지명 · 주소 · 유형 검색"
                 value={buildingSearch}
                 onChange={(e) => setBuildingSearch(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') setBuildingSearch('');
+                }}
                 aria-label="관리단지 검색"
                 className="w-full min-w-0 bg-transparent text-xs outline-none placeholder:text-muted-foreground/60"
               />
+              {buildingSearch && (
+                <button
+                  type="button"
+                  className="rounded-sm text-muted-foreground/70 outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/70"
+                  onClick={() => {
+                    setBuildingSearch('');
+                    buildingSearchRef.current?.focus();
+                  }}
+                  aria-label="관리단지 검색 지우기"
+                >
+                  <X className="size-3" />
+                </button>
+              )}
             </div>
           </div>
 
@@ -926,30 +997,30 @@ function SitesPage() {
                   다시 시도
                 </Button>
               </div>
+            ) : filteredSites.length === 0 ? (
+              <div className="px-2 pb-2.5">
+                {hasSiteSearch ? (
+                  <div className="py-8 text-center text-xs text-muted-foreground">
+                    검색 결과가 없습니다
+                  </div>
+                ) : (
+                  <EmptyState
+                    icon={Building2}
+                    title="관리 단지가 없습니다"
+                    description="자주 다루는 단지를 추가해보세요"
+                    action={
+                      <Button size="sm" variant="outline" onClick={() => setShowAddSiteDialog(true)}>
+                        <Plus className="size-3.5" />
+                        단지 추가
+                      </Button>
+                    }
+                    className="py-8"
+                  />
+                )}
+              </div>
             ) : groupBy === 'none' ? (
               <div className="px-2 pb-2.5">
-                {filteredSites.length === 0 ? (
-                  buildingSearch ? (
-                    <div className="py-8 text-xs text-muted-foreground text-center">
-                      검색 결과가 없습니다
-                    </div>
-                  ) : (
-                    <EmptyState
-                      icon={Building2}
-                      title="관리 단지가 없습니다"
-                      description="자주 다루는 단지를 추가해보세요"
-                      action={
-                        <Button size="sm" variant="outline" onClick={() => setShowAddSiteDialog(true)}>
-                          <Plus className="size-3.5" />
-                          단지 추가
-                        </Button>
-                      }
-                      className="py-8"
-                    />
-                  )
-                ) : (
-                  filteredSites.map(renderSiteItem)
-                )}
+                {filteredSites.map(renderSiteItem)}
               </div>
             ) : (
               <div className="px-2 pb-2.5">
@@ -1111,7 +1182,9 @@ function SitesPage() {
                 label="동"
                 options={dongOptions}
                 values={selectedDongIds}
-                onChange={setSelectedDongIds}
+                onChange={handleDongScopeChange}
+                selectionMode="single"
+                allOptionLabel={`전체 동 · ${totalUnitCount.toLocaleString()}호`}
               />
             )}
             {unitTypeOptions.length > 0 && (
@@ -1131,10 +1204,11 @@ function SitesPage() {
               <Search className="size-3 shrink-0 text-muted-foreground/70" />
               <input
                 ref={unitSearchRef}
-                placeholder="호수 · 이름 · 전화 · 상담 검색 (/)"
+                placeholder={`${unitScopeLabel ? `${unitScopeLabel}에서 ` : ''}호수 · 이름 · 전화 · 상담 검색 (/)`}
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 aria-label="호수, 이름, 전화번호, 상담 내용 검색"
+                disabled={isLoadingUnits}
                 className="w-full min-w-0 bg-transparent text-xs outline-none placeholder:text-muted-foreground/60"
               />
               {query && (
@@ -1164,9 +1238,11 @@ function SitesPage() {
               className="whitespace-nowrap text-[11px] tabular-nums text-muted-foreground"
               aria-live="polite"
             >
-              {hasActiveUnitFilters
+              {isLoadingUnits
+                ? `${unitScopeLabel || '호수'} 불러오는 중`
+                : hasActiveUnitFilters
                 ? `${filteredUnits.length.toLocaleString()} / ${allUnits.length.toLocaleString()}호`
-                : `${allUnits.length.toLocaleString()}호`}
+                : `${unitScopeLabel ? `${unitScopeLabel} · ` : ''}${allUnits.length.toLocaleString()}호`}
             </span>
 
             <div className="flex-1" />
@@ -1194,7 +1270,27 @@ function SitesPage() {
 
           {/* Units View */}
           <div className="flex-1 min-h-0 overflow-hidden">
-              {unitViewMode === 'table' ? (
+              {isLoadingUnits ? (
+                <div className="space-y-2 p-5" aria-label={`${unitScopeLabel || '호수'} 불러오는 중`}>
+                  {Array.from({ length: 10 }).map((_, i) => (
+                    <Skeleton key={i} className="h-9 w-full rounded-md" />
+                  ))}
+                </div>
+              ) : isUnitsError ? (
+                <div className="flex h-full items-center justify-center p-4">
+                  <EmptyState
+                    icon={Building2}
+                    title={`${unitScopeLabel || '선택한 범위'} 호수를 불러오지 못했습니다`}
+                    description="네트워크 상태를 확인한 뒤 다시 시도해주세요"
+                    action={
+                      <Button variant="outline" size="sm" onClick={() => refetchUnits()}>
+                        <RotateCcw className="size-3.5" />
+                        다시 시도
+                      </Button>
+                    }
+                  />
+                </div>
+              ) : unitViewMode === 'table' ? (
                 <DataTable
                   columns={unitColumns}
                   data={filteredUnits}
@@ -1204,7 +1300,6 @@ function SitesPage() {
                   layout="full-height"
                   rowHeight={36}
                   pinnedColumns={unitPinnedColumns}
-                  enableRowSelection
                   emptyMessage={hasActiveUnitFilters ? '검색 결과가 없습니다' : '등록된 호수가 없습니다'}
                   renderStatusBar={({ focusedRow, totalCount }) => {
                     if (!focusedRow) {

@@ -12,6 +12,7 @@ import { cn } from '@/lib/utils';
 interface MultiFilterOption {
   value: string;
   label: string;
+  helper?: string;
 }
 
 export function MultiFilterDropdown({
@@ -19,13 +20,18 @@ export function MultiFilterDropdown({
   options,
   values,
   onChange,
+  selectionMode = 'multiple',
+  allOptionLabel,
 }: {
   label: string;
   options: MultiFilterOption[];
   values: string[];
   onChange: (values: string[]) => void;
+  selectionMode?: 'multiple' | 'single';
+  allOptionLabel?: string;
 }) {
   const [query, setQuery] = useState('');
+  const [open, setOpen] = useState(false);
   const isAll = values.length === 0;
   const selectedLabels = options.filter((o) => values.includes(o.value)).map((o) => o.label);
   const trigger = (() => {
@@ -34,6 +40,11 @@ export function MultiFilterDropdown({
     return `${selectedLabels[0]} 외 ${selectedLabels.length - 1}`;
   })();
   const toggle = (value: string) => {
+    if (selectionMode === 'single') {
+      onChange([value]);
+      setOpen(false);
+      return;
+    }
     onChange(values.includes(value) ? values.filter((v) => v !== value) : [...values, value]);
   };
   const filteredOptions = useMemo(() => {
@@ -42,7 +53,13 @@ export function MultiFilterDropdown({
     return options.filter((o) => o.label.toLowerCase().includes(q));
   }, [options, query]);
   return (
-    <DropdownMenu onOpenChange={(open) => !open && setQuery('')}>
+    <DropdownMenu
+      open={open}
+      onOpenChange={(nextOpen) => {
+        setOpen(nextOpen);
+        if (!nextOpen) setQuery('');
+      }}
+    >
       <DropdownMenuTrigger asChild>
         <Button
           variant={isAll ? 'ghost' : 'secondary'}
@@ -88,7 +105,10 @@ export function MultiFilterDropdown({
               'mb-1 flex w-full items-center gap-2 rounded-md px-2 py-1 text-xs transition-colors',
               isAll ? 'bg-accent font-medium' : 'hover:bg-accent/60',
             )}
-            onClick={() => onChange([])}
+            onClick={() => {
+              onChange([]);
+              if (selectionMode === 'single') setOpen(false);
+            }}
           >
             <span
               className={cn(
@@ -98,7 +118,7 @@ export function MultiFilterDropdown({
             >
               {isAll && '✓'}
             </span>
-            전체 {label}
+            {allOptionLabel ?? `전체 ${label}`}
           </button>
           <div className="max-h-64 overflow-y-auto">
             {filteredOptions.length === 0 ? (
@@ -125,7 +145,12 @@ export function MultiFilterDropdown({
                     >
                       {checked && '✓'}
                     </span>
-                    {option.label}
+                    <span className="min-w-0 flex-1 truncate text-left">{option.label}</span>
+                    {option.helper && (
+                      <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">
+                        {option.helper}
+                      </span>
+                    )}
                   </button>
                 );
               })

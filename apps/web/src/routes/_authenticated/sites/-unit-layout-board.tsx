@@ -151,7 +151,7 @@ export function UnitLayoutBoard({
             );
           })}
           <span className="ml-1 text-[10px] text-muted-foreground">
-            내부 CRM 데이터 기준 · 신호 없으면 공실/미상
+            내부 CRM 데이터 기준 · 신호가 없으면 미확인
           </span>
         </div>
       )}

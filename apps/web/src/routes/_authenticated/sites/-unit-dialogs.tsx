@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { toast } from 'sonner';
-import { FileText } from 'lucide-react';
+import { FileText, Home } from 'lucide-react';
 import { api } from '@/lib/api';
 import type { Dong, SiteDetail, Unit, UpdateUnitDto } from '@estate-erp/api-client';
 import { Button } from '@/components/ui/button';
@@ -317,6 +317,18 @@ export function UnitConsultDialog({
     },
   });
 
+  const registerManagedUnitMutation = useMutation({
+    mutationFn: () => api.properties.create({ siteId: site.id, unitId: unit.id }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['sites', site.id] });
+      queryClient.invalidateQueries({ queryKey: ['properties'] });
+      toast.success('관리호수로 등록했습니다');
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : '관리호수 등록에 실패했습니다');
+    },
+  });
+
   const unitLabel = `${dongName ? `${dongName} ` : ''}${unit.name}`;
 
   return (
@@ -331,20 +343,30 @@ export function UnitConsultDialog({
 
         {!primaryProperty ? (
           <div className="space-y-3 rounded-lg border border-dashed p-5 text-center">
-            <FileText className="mx-auto size-6 text-muted-foreground/40" />
+            <Home className="mx-auto size-6 text-muted-foreground/40" />
             <p className="text-sm text-muted-foreground">
-              이 호실에 연결된 관리 매물(Property)이 없어 호실 상담을 기록할 수 없습니다.
+              이 호실은 아직 우리 사무소의 관리호수로 등록되지 않았습니다.
               <br />
-              먼저 매물을 등록해주세요.
+              관리호수로 연결한 뒤 소유자·세입자와 상담을 기록할 수 있습니다.
             </p>
-            <Button size="sm" variant="outline" asChild>
-              <Link
-                to="/properties/new"
-                search={{ siteId: site.id, dongId: unit.dongId, unitId: unit.id }}
+            <div className="flex flex-wrap justify-center gap-2">
+              <Button
+                size="sm"
+                onClick={() => registerManagedUnitMutation.mutate()}
+                disabled={registerManagedUnitMutation.isPending}
               >
-                매물 등록으로 이동
-              </Link>
-            </Button>
+                {registerManagedUnitMutation.isPending ? '등록 중...' : '관리호수로 등록'}
+              </Button>
+              <Button size="sm" variant="outline" asChild>
+                <Link
+                  to="/properties/new"
+                  search={{ siteId: site.id, dongId: unit.dongId, unitId: unit.id }}
+                >
+                  <FileText className="size-3.5" />
+                  매물 의뢰 등록
+                </Link>
+              </Button>
+            </div>
           </div>
         ) : (
           <>

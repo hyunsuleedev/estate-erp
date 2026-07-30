@@ -1,6 +1,6 @@
 import { Link } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import type {
   BuyerRequirement,
   Consultation,
@@ -8,7 +8,17 @@ import type {
   ContactRelation,
   PropertyContact,
 } from '@estate-erp/api-client';
-import { AlertCircle, Clock3, ExternalLink, Mail, Phone } from 'lucide-react';
+import {
+  AlertCircle,
+  Building2,
+  Clock3,
+  ExternalLink,
+  ListTodo,
+  Mail,
+  MessageSquarePlus,
+  Phone,
+  Target,
+} from 'lucide-react';
 import { api } from '@/lib/api';
 import { formatPhone } from '@/lib/format';
 import { splitContactTags } from '@/lib/contacts';
@@ -43,6 +53,12 @@ import {
   relationTypeLabels,
   urgencyLabels,
 } from './-detail-cards';
+import {
+  BuyerReqAddDialog,
+  ConsultationAddDialog,
+  PropertyLinkDialog,
+  TaskAddDialog,
+} from './-detail-action-dialogs';
 
 /**
  * ContactQuickSheet — 연락처 목록 행 클릭 시 우측에서 열리는 빠른 확인 패널.
@@ -68,6 +84,8 @@ const transactionTypeTones: Record<string, { label: string; className: string }>
   jeonse: { label: '전세', className: 'bg-[#e7f3f8] text-[#337ea9]' },
   monthly: { label: '월세', className: 'bg-[#fbf3db] text-[#8f6b1f]' },
 };
+
+type ContactQuickAction = 'consultation' | 'task' | 'buyerReq' | 'propertyLink' | null;
 
 export function ContactQuickSheet({
   contactId,
@@ -157,6 +175,7 @@ function ContactSheetContent({
   contact: ContactDetail;
   onNavigateToDetail: (id: string) => void;
 }) {
+  const [quickAction, setQuickAction] = useState<ContactQuickAction>(null);
   const phones = useMemo(() => collectContactPhones(contact), [contact]);
   const primaryPhone = phones[0]?.phone ?? null;
   const { groupTags, customTags } = useMemo(
@@ -242,11 +261,6 @@ function ContactSheetContent({
         </div>
 
         <div className="flex flex-wrap items-center gap-1.5">
-          {/*
-            properties 패턴(소유주 전화 / 상담 기록 2슬롯)에 맞춘 액션 행.
-            전화는 항상 노출(없으면 disabled), 메일은 있을 때만 노출.
-            "상세 페이지" 버튼은 우상단 "전체 페이지로 열기"와 중복이라 생략.
-          */}
           <Button
             variant="outline"
             size="sm"
@@ -265,6 +279,41 @@ function ContactSheetContent({
                 전화번호 없음
               </span>
             )}
+          </Button>
+          <Button
+            size="sm"
+            className="h-8 gap-1.5 px-3 text-[13px] font-medium"
+            onClick={() => setQuickAction('consultation')}
+          >
+            <MessageSquarePlus className="size-3.5" />
+            상담 기록
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 gap-1.5 px-3 text-[13px] font-medium"
+            onClick={() => setQuickAction('task')}
+          >
+            <ListTodo className="size-3.5" />
+            후속 업무
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 gap-1.5 px-3 text-[13px] font-medium"
+            onClick={() => setQuickAction('buyerReq')}
+          >
+            <Target className="size-3.5" />
+            구매 희망조건
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 gap-1.5 px-3 text-[13px] font-medium"
+            onClick={() => setQuickAction('propertyLink')}
+          >
+            <Building2 className="size-3.5" />
+            매물 연결
           </Button>
           {contact.email && (
             <Button
@@ -389,6 +438,31 @@ function ContactSheetContent({
           )}
         </SheetSection>
       </div>
+
+      <ConsultationAddDialog
+        contactId={contact.id}
+        contactName={contact.name}
+        open={quickAction === 'consultation'}
+        onOpenChange={(open) => setQuickAction(open ? 'consultation' : null)}
+      />
+      <TaskAddDialog
+        contactId={contact.id}
+        contactName={contact.name}
+        open={quickAction === 'task'}
+        onOpenChange={(open) => setQuickAction(open ? 'task' : null)}
+      />
+      <BuyerReqAddDialog
+        contactId={contact.id}
+        contactName={contact.name}
+        open={quickAction === 'buyerReq'}
+        onOpenChange={(open) => setQuickAction(open ? 'buyerReq' : null)}
+      />
+      <PropertyLinkDialog
+        contactId={contact.id}
+        contactName={contact.name}
+        open={quickAction === 'propertyLink'}
+        onOpenChange={(open) => setQuickAction(open ? 'propertyLink' : null)}
+      />
     </div>
   );
 }

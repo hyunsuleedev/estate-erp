@@ -1,5 +1,11 @@
 import { createFileRoute, Link } from '@tanstack/react-router';
-import { keepPreviousData, useInfiniteQuery, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import {
+  keepPreviousData,
+  useInfiniteQuery,
+  useQuery,
+  useMutation,
+  useQueryClient,
+} from '@tanstack/react-query';
 import {
   Fragment,
   useState,
@@ -28,7 +34,6 @@ import {
   MapPin,
   Megaphone,
   MessageSquare,
-  Minus,
   Phone,
   Plus,
   RefreshCw,
@@ -75,7 +80,13 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   DropdownMenu,
@@ -83,10 +94,23 @@ import {
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Slider } from '@/components/ui/slider';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { MultiSelect, type MultiSelectOption } from '@/components/ui/multi-select';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
+import {
+  MultiSelect,
+  type MultiSelectOption,
+} from '@/components/ui/multi-select';
 import { StatusBadge } from '@/components/domain';
 import { cn } from '@/lib/utils';
 import { formatPhoneNumber } from '@/lib/contacts';
@@ -102,6 +126,7 @@ import {
 import { useTabStore } from '@/features/tabs/store/useTabStore';
 import { getRouteMeta } from '@/features/tabs/lib/routeMeta';
 import {
+  getActiveDealListingIndex,
   getIntakeConfirmationState,
   getListingAvailability,
   getListingRowAvailability,
@@ -154,35 +179,32 @@ const listingAvailabilityMeta: Record<
   },
 };
 
-const transactionTypeMeta: Record<string, { label: string; className: string }> = {
+const transactionTypeMeta: Record<
+  string,
+  { label: string; className: string }
+> = {
   sale: { label: '매매', className: 'bg-[#fdebec] text-[#8f4b46]' },
   jeonse: { label: '전세', className: 'bg-[#e7f3f8] text-[#337ea9]' },
   monthly: { label: '월세', className: 'bg-[#fbf3db] text-[#8f6b1f]' },
 };
 
 // 웹의 합성 매물상태를 사용하되 pill 색상은 데스크톱 팔레트를 유지한다.
-const listingAvailabilityChipOptions: ChipOption[] = Object.entries(listingAvailabilityMeta).map(([value, meta]) => ({
+const listingAvailabilityChipOptions: ChipOption[] = Object.entries(
+  listingAvailabilityMeta,
+).map(([value, meta]) => ({
   value,
   label: meta.label,
   className: meta.pillClassName,
 }));
 
 const adStatusMeta: Record<string, { label: string; className: string }> = {
-  planned: { label: '보류', className: 'bg-[#f1f1ef] text-[#5f5e5b]' },
-  draft: { label: '준비', className: 'bg-[#f1f1ef] text-[#787774]' },
   active: { label: '광고중', className: 'bg-[#eef3ed] text-[#44745a]' },
-  paused: { label: '중단', className: 'bg-[#fbf3db] text-[#8f6b1f]' },
   ended: { label: '종료', className: 'bg-[#f1f1ef] text-[#787774]' },
-  error: { label: '오류', className: 'bg-[#fbe4e4] text-[#9f5555]' },
 };
 
 const adChannelLabels: Record<string, string> = {
-  naver: '네이버',
-  asil: '아실',
-  zigbang: '직방',
-  dabang: '다방',
-  hanbang: '한방',
-  etc: '기타',
+  esiljang: '이실장',
+  budongsanbank: '부동산뱅크',
 };
 
 const contactRoleLabels: Record<string, string> = {
@@ -209,13 +231,15 @@ function getMatchStageIndex(stage: string) {
   return MATCH_STAGE_STEPS.indexOf(stage);
 }
 
-const listingAvailabilityFilterOptions: MultiSelectOption[] = Object.entries(listingAvailabilityMeta).map(
-  ([value, meta]) => ({
-    value,
-    label: meta.label,
-  }),
-);
-const NAVER_MAPS_NCP_KEY_ID = import.meta.env.VITE_NAVER_MAPS_NCP_KEY_ID as string | undefined;
+const listingAvailabilityFilterOptions: MultiSelectOption[] = Object.entries(
+  listingAvailabilityMeta,
+).map(([value, meta]) => ({
+  value,
+  label: meta.label,
+}));
+const NAVER_MAPS_NCP_KEY_ID = import.meta.env.VITE_NAVER_MAPS_NCP_KEY_ID as
+  | string
+  | undefined;
 
 type NaverMapsApi = {
   LatLng: new (lat: number, lng: number) => NaverLatLng;
@@ -237,7 +261,11 @@ type NaverMapsApi = {
     setMap: (map: unknown | null) => void;
   };
   Event: {
-    addListener: (target: unknown, eventName: string, handler: () => void) => unknown;
+    addListener: (
+      target: unknown,
+      eventName: string,
+      handler: () => void,
+    ) => unknown;
     removeListener?: (listener: unknown) => void;
   };
 };
@@ -261,7 +289,9 @@ declare global {
 
 function handleMutationError(error: unknown) {
   if (error instanceof ApiError && error.statusCode === 409) {
-    toast.error('다른 사용자가 먼저 수정했습니다. 최신 내용으로 다시 불러옵니다.');
+    toast.error(
+      '다른 사용자가 먼저 수정했습니다. 최신 내용으로 다시 불러옵니다.',
+    );
     return;
   }
 
@@ -447,13 +477,21 @@ function PropertiesPage() {
   const [search, setSearch] = useState('');
   const [selectedTransactionType, setSelectedTransactionType] =
     useState<(typeof transactionTypeOptions)[number]['value']>('all');
-  const [propertyFilters, setPropertyFilters] = useState<PropertyFilterState>(initialPropertyFilters);
+  const [propertyFilters, setPropertyFilters] = useState<PropertyFilterState>(
+    initialPropertyFilters,
+  );
   const [selectedIntakeId, setSelectedIntakeId] = useState<string | null>(null);
-  const [startDealPrompt, setStartDealPrompt] = useState<StartDealPrompt | null>(null);
-  const [resumeClosedPrompt, setResumeClosedPrompt] = useState<ResumeClosedPrompt | null>(null);
+  const [startDealPrompt, setStartDealPrompt] =
+    useState<StartDealPrompt | null>(null);
+  const [resumeClosedPrompt, setResumeClosedPrompt] =
+    useState<ResumeClosedPrompt | null>(null);
   const [viewMode, setViewMode] = useState<PropertyViewMode>('list');
-  const [expandedAdRows, setExpandedAdRows] = useState<ReadonlySet<string>>(() => new Set());
-  const [expandedMatchRows, setExpandedMatchRows] = useState<ReadonlySet<string>>(() => new Set());
+  const [expandedAdRows, setExpandedAdRows] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const [expandedMatchRows, setExpandedMatchRows] = useState<
+    ReadonlySet<string>
+  >(() => new Set());
   const [arePropertyDetailColumnsCollapsed, setArePropertyDetailColumnsCollapsed] = useState(true);
   const [isPriceFilterOpen, setIsPriceFilterOpen] = useState(false);
   const [isMonthlyRentFilterOpen, setIsMonthlyRentFilterOpen] = useState(false);
@@ -465,8 +503,14 @@ function PropertiesPage() {
     loanAmount: false,
   });
   const debouncedSearch = useDebouncedValue(search, 300);
-  const debouncedDongSearch = useDebouncedValue(propertyFilters.dongSearch, 300);
-  const debouncedUnitSearch = useDebouncedValue(propertyFilters.unitSearch, 300);
+  const debouncedDongSearch = useDebouncedValue(
+    propertyFilters.dongSearch,
+    300,
+  );
+  const debouncedUnitSearch = useDebouncedValue(
+    propertyFilters.unitSearch,
+    300,
+  );
 
   const { data: filterSites = [], isLoading: isFilterSitesLoading } = useQuery({
     queryKey: ['listings', 'filter-sites'],
@@ -482,7 +526,10 @@ function PropertiesPage() {
         .map((site) => ({
           value: site.id,
           label: site.name,
-          description: site.roadAddress ?? site.jibunAddress ?? getSiteTypeLabel(site.type),
+          description:
+            site.roadAddress ??
+            site.jibunAddress ??
+            getSiteTypeLabel(site.type),
           meta: `${site.propertyCount.toLocaleString()}건`,
         })),
     [filterSites],
@@ -494,13 +541,15 @@ function PropertiesPage() {
   });
   const { data: districts = [] } = useQuery({
     queryKey: ['regions', 'districts', propertyFilters.provinceCode],
-    queryFn: () => api.regions.findDistricts(propertyFilters.provinceCode || undefined),
+    queryFn: () =>
+      api.regions.findDistricts(propertyFilters.provinceCode || undefined),
     enabled: Boolean(propertyFilters.provinceCode),
     staleTime: 24 * 60_000,
   });
   const { data: wards = [] } = useQuery({
     queryKey: ['regions', 'wards', propertyFilters.districtCode],
-    queryFn: () => api.regions.findWards(propertyFilters.districtCode || undefined),
+    queryFn: () =>
+      api.regions.findWards(propertyFilters.districtCode || undefined),
     enabled: Boolean(propertyFilters.districtCode),
     staleTime: 24 * 60_000,
   });
@@ -525,7 +574,10 @@ function PropertiesPage() {
     [districts],
   );
   const wardOptions = useMemo(
-    () => [{ value: '', label: '전체' }, ...wards.map((ward) => ({ value: ward.code, label: ward.name }))],
+    () => [
+      { value: '', label: '전체' },
+      ...wards.map((ward) => ({ value: ward.code, label: ward.name })),
+    ],
     [wards],
   );
 
@@ -560,22 +612,31 @@ function PropertiesPage() {
   ]);
 
   // ── Query ─────────────────────────────────────────────────────
-  const { data, isLoading, isFetchingNextPage, fetchNextPage, hasNextPage } = useInfiniteQuery({
-    queryKey: ['listing-intakes', apiParams],
-    queryFn: ({ pageParam }) => api.listingIntakes.findAll({ ...apiParams, page: pageParam } as any),
-    initialPageParam: 1,
-    placeholderData: keepPreviousData,
-    getNextPageParam: (lastPage) => {
-      const { page: currentPage, hasNextPage: hasMore } = lastPage.pagination;
-      return hasMore ? currentPage + 1 : undefined;
-    },
-  });
+  const { data, isLoading, isFetchingNextPage, fetchNextPage, hasNextPage } =
+    useInfiniteQuery({
+      queryKey: ['listing-intakes', apiParams],
+      queryFn: ({ pageParam }) =>
+        api.listingIntakes.findAll({ ...apiParams, page: pageParam } as any),
+      initialPageParam: 1,
+      placeholderData: keepPreviousData,
+      getNextPageParam: (lastPage) => {
+        const { page: currentPage, hasNextPage: hasMore } = lastPage.pagination;
+        return hasMore ? currentPage + 1 : undefined;
+      },
+    });
 
-  const listingIntakes = useMemo(() => data?.pages.flatMap((pageData) => pageData.items) ?? [], [data?.pages]);
+  const listingIntakes = useMemo(
+    () => data?.pages.flatMap((pageData) => pageData.items) ?? [],
+    [data?.pages],
+  );
   const loadedIntakes = listingIntakes.length;
   const intakeCountLabel = `${loadedIntakes.toLocaleString()}${hasNextPage ? '+' : ''}`;
   const loadedListings = useMemo(
-    () => listingIntakes.reduce((total, intake) => total + (intake.listings?.length ?? 0), 0),
+    () =>
+      listingIntakes.reduce(
+        (total, intake) => total + (intake.listings?.length ?? 0),
+        0,
+      ),
     [listingIntakes],
   );
   const listingUpdatedAtById = useMemo(() => {
@@ -595,7 +656,10 @@ function PropertiesPage() {
     return map;
   }, [listingIntakes]);
 
-  const propertyGroups = useMemo(() => buildPropertyListingGroups(listingIntakes), [listingIntakes]);
+  const propertyGroups = useMemo(
+    () => buildPropertyListingGroups(listingIntakes),
+    [listingIntakes],
+  );
   const mapApiParams = useMemo(() => {
     const { limit, page, ...params } = apiParams;
     void limit;
@@ -613,26 +677,47 @@ function PropertiesPage() {
     placeholderData: keepPreviousData,
   });
   const mapIntakes = mapData?.items ?? listingIntakes;
-  const mapGroups = useMemo(() => buildPropertyListingGroups(mapIntakes), [mapIntakes]);
-  const mapPoints = useMemo(() => buildPropertyMapPoints(mapGroups), [mapGroups]);
+  const mapGroups = useMemo(
+    () => buildPropertyListingGroups(mapIntakes),
+    [mapIntakes],
+  );
+  const mapPoints = useMemo(
+    () => buildPropertyMapPoints(mapGroups),
+    [mapGroups],
+  );
   const selectedProvince = propertyFilters.provinceCode
-    ? provinces.find((province) => province.code === propertyFilters.provinceCode)
+    ? provinces.find(
+        (province) => province.code === propertyFilters.provinceCode,
+      )
     : undefined;
   const selectedDistrict = propertyFilters.districtCode
-    ? districts.find((district) => district.code === propertyFilters.districtCode)
+    ? districts.find(
+        (district) => district.code === propertyFilters.districtCode,
+      )
     : undefined;
   const selectedWard = propertyFilters.wardCode
     ? wards.find((ward) => ward.code === propertyFilters.wardCode)
     : undefined;
-  const selectedRegionName = selectedWard?.name ?? selectedDistrict?.name ?? selectedProvince?.name;
-  const priceDepositFilterSummary = getPriceDepositFilterSummary(propertyFilters, selectedTransactionType);
+  const selectedRegionName =
+    selectedWard?.name ?? selectedDistrict?.name ?? selectedProvince?.name;
+  const priceDepositFilterSummary = getPriceDepositFilterSummary(
+    propertyFilters,
+    selectedTransactionType,
+  );
   const monthlyRentFilterSummary = getRangeSummary(
     propertyFilters.monthlyRentMin,
     propertyFilters.monthlyRentMax,
     '만원',
   );
-  const areaFilterSummary = getRangeSummary(propertyFilters.areaMin, propertyFilters.areaMax, '평');
-  const moveInFilterSummary = getDateRangeSummary(propertyFilters.moveInFrom, propertyFilters.moveInTo);
+  const areaFilterSummary = getRangeSummary(
+    propertyFilters.areaMin,
+    propertyFilters.areaMax,
+    '평',
+  );
+  const moveInFilterSummary = getDateRangeSummary(
+    propertyFilters.moveInFrom,
+    propertyFilters.moveInTo,
+  );
 
   const hasActiveFilters = Boolean(
     search.trim() ||
@@ -660,7 +745,8 @@ function PropertiesPage() {
 
   // ── Inline edit mutation ──────────────────────────────────────
   const updateMutation = useMutation({
-    mutationFn: ({ id, patch }: { id: string; patch: UpdateListingDto }) => api.listings.update(id, patch),
+    mutationFn: ({ id, patch }: { id: string; patch: UpdateListingDto }) =>
+      api.listings.update(id, patch),
     onMutate: async () => {
       await queryClient.cancelQueries({ queryKey: ['listing-intakes'] });
     },
@@ -679,7 +765,12 @@ function PropertiesPage() {
       expectedUpdatedAt,
     }: {
       intakeId: string;
-      result: 'alive' | 'price_changed' | 'unavailable' | 'no_answer' | 'pending';
+      result:
+        | 'alive'
+        | 'price_changed'
+        | 'unavailable'
+        | 'no_answer'
+        | 'pending';
       expectedUpdatedAt?: string | null;
     }) =>
       api.listingIntakes.confirm(intakeId, {
@@ -701,7 +792,14 @@ function PropertiesPage() {
     },
   });
   const invalidateListingStatusQueries = useCallback(() => {
-    for (const queryKey of [['listing-intakes'], ['listings'], ['properties'], ['deals'], ['dashboard'], ['network']]) {
+    for (const queryKey of [
+      ['listing-intakes'],
+      ['listings'],
+      ['properties'],
+      ['deals'],
+      ['dashboard'],
+      ['network'],
+    ]) {
       void queryClient.invalidateQueries({ queryKey });
     }
     if (selectedIntakeId) {
@@ -723,7 +821,10 @@ function PropertiesPage() {
       expectedUpdatedAt?: string | null;
     }) =>
       api.listingIntakes.updateLifecycleStatus(intakeId, value, {
-        closedReason: value === IntakeLifecycleStatus.CLOSED ? IntakeClosedReason.WITHDRAWN : null,
+        closedReason:
+          value === IntakeLifecycleStatus.CLOSED
+            ? IntakeClosedReason.WITHDRAWN
+            : null,
         expectedUpdatedAt,
       }),
     onSettled: invalidateListingStatusQueries,
@@ -776,14 +877,23 @@ function PropertiesPage() {
         id: recordId,
         patch: {
           ...patch,
-          expectedUpdatedAt: patch.expectedUpdatedAt ?? listingUpdatedAtById.get(recordId),
+          expectedUpdatedAt:
+            patch.expectedUpdatedAt ?? listingUpdatedAtById.get(recordId),
         },
       });
     },
     [listingUpdatedAtById, updateMutation],
   );
   const handleIntakeConfirm = useCallback(
-    (intakeId: string, result: 'alive' | 'price_changed' | 'unavailable' | 'no_answer' | 'pending') => {
+    (
+      intakeId: string,
+      result:
+        | 'alive'
+        | 'price_changed'
+        | 'unavailable'
+        | 'no_answer'
+        | 'pending',
+    ) => {
       confirmMutation.mutate({
         intakeId,
         result,
@@ -799,9 +909,20 @@ function PropertiesPage() {
         ...listing,
         intake: { lifecycleStatus: intake.lifecycleStatus },
       }));
-      const currentValue = getListingRowAvailability(intake, listingsWithIntake);
-      const plan = planListingStatusChange(currentValue, value, listingsWithIntake);
-      const propertyLabel = [group.property?.site?.name, getDongName(group.property), group.property?.unit?.name]
+      const currentValue = getListingRowAvailability(
+        intake,
+        listingsWithIntake,
+      );
+      const plan = planListingStatusChange(
+        currentValue,
+        value,
+        listingsWithIntake,
+      );
+      const propertyLabel = [
+        group.property?.site?.name,
+        getDongName(group.property),
+        group.property?.unit?.name,
+      ]
         .filter((part) => part && part !== '-')
         .join(' ');
 
@@ -868,7 +989,10 @@ function PropertiesPage() {
   );
   // ── Filter handlers ───────────────────────────────────────────
   const updatePropertyFilter = useCallback(
-    <K extends keyof PropertyFilterState>(field: K, value: PropertyFilterState[K]) => {
+    <K extends keyof PropertyFilterState>(
+      field: K,
+      value: PropertyFilterState[K],
+    ) => {
       setPropertyFilters((prev) => ({ ...prev, [field]: value }));
       setPage(1);
     },
@@ -907,16 +1031,20 @@ function PropertiesPage() {
   }, []);
 
   // 특정 필터 필드만 초기값으로 되돌림 (chip X / summary pill X 공용).
-  const clearFilterFields = useCallback((fields: (keyof PropertyFilterState)[]) => {
-    setPropertyFilters((prev) => {
-      const next = { ...prev };
-      for (const field of fields) {
-        (next[field] as PropertyFilterState[typeof field]) = initialPropertyFilters[field];
-      }
-      return next;
-    });
-    setPage(1);
-  }, []);
+  const clearFilterFields = useCallback(
+    (fields: (keyof PropertyFilterState)[]) => {
+      setPropertyFilters((prev) => {
+        const next = { ...prev };
+        for (const field of fields) {
+          (next[field] as PropertyFilterState[typeof field]) =
+            initialPropertyFilters[field];
+        }
+        return next;
+      });
+      setPage(1);
+    },
+    [],
+  );
 
   const handleSortingChange = useCallback((newSorting: SortingState) => {
     setSorting(newSorting);
@@ -936,16 +1064,24 @@ function PropertiesPage() {
   }, []);
 
   const handleTransactionTabChange = useCallback((transactionType: string) => {
-    const nextTransactionType = transactionType as (typeof transactionTypeOptions)[number]['value'];
+    const nextTransactionType =
+      transactionType as (typeof transactionTypeOptions)[number]['value'];
     setSelectedTransactionType(nextTransactionType);
-    setPropertyFilters((previous) => movePriceRangeForTransaction(previous, nextTransactionType));
+    setPropertyFilters((previous) =>
+      movePriceRangeForTransaction(previous, nextTransactionType),
+    );
     setPage(1);
   }, []);
 
   const handlePriceRangeApply = useCallback(
     (range: [number, number]) => {
       setPropertyFilters((previous) =>
-        applyPriceRangeFilter(previous, selectedTransactionType, range[0], range[1]),
+        applyPriceRangeFilter(
+          previous,
+          selectedTransactionType,
+          range[0],
+          range[1],
+        ),
       );
       setPage(1);
       setIsPriceFilterOpen(false);
@@ -962,7 +1098,9 @@ function PropertiesPage() {
   }, []);
 
   const handleAreaRangeApply = useCallback((range: [number, number]) => {
-    setPropertyFilters((previous) => applyAreaRangeFilter(previous, range[0], range[1]));
+    setPropertyFilters((previous) =>
+      applyAreaRangeFilter(previous, range[0], range[1]),
+    );
     setPage(1);
     setIsAreaFilterOpen(false);
   }, []);
@@ -1011,7 +1149,9 @@ function PropertiesPage() {
   const renderExpandedPropertyRow = useCallback(
     (group: PropertyListingGroup) => (
       <>
-        {expandedMatchRows.has(group.id) && <PropertyMatchPanel group={group} />}
+        {expandedMatchRows.has(group.id) && (
+          <PropertyMatchPanel group={group} />
+        )}
         {expandedAdRows.has(group.id) && <PropertyAdPanel group={group} />}
       </>
     ),
@@ -1020,7 +1160,9 @@ function PropertiesPage() {
 
   const getExpandedPropertyRowHeight = useCallback(
     (group: PropertyListingGroup) =>
-      (expandedMatchRows.has(group.id) ? estimatePropertyMatchPanelHeight(group) : 0) +
+      (expandedMatchRows.has(group.id)
+        ? estimatePropertyMatchPanelHeight(group)
+        : 0) +
       (expandedAdRows.has(group.id) ? estimatePropertyAdPanelHeight(group) : 0),
     [expandedAdRows, expandedMatchRows],
   );
@@ -1030,14 +1172,20 @@ function PropertiesPage() {
     () => [
       {
         id: 'info',
-        header: () => <TableHeaderLabel icon={<Tag className="size-4" />} label="거래" />,
+        header: () => (
+          <TableHeaderLabel icon={<Tag className="size-4" />} label="거래" />
+        ),
         size: 60,
         enableSorting: false,
-        cell: ({ row }) => <TransactionStack listings={row.original.listings} />,
+        cell: ({ row }) => (
+          <TransactionStack listings={row.original.listings} />
+        ),
       },
       {
         id: 'site',
-        header: () => <TableHeaderLabel icon={<Type className="size-4" />} label="단지" />,
+        header: () => (
+          <TableHeaderLabel icon={<Type className="size-4" />} label="단지" />
+        ),
         size: 240,
         enableSorting: false,
         cell: ({ row }) => {
@@ -1053,16 +1201,22 @@ function PropertiesPage() {
       },
       {
         id: 'dong',
-        header: () => <TableHeaderLabel icon={<Hash className="size-4" />} label="동" />,
+        header: () => (
+          <TableHeaderLabel icon={<Hash className="size-4" />} label="동" />
+        ),
         size: 58,
         enableSorting: false,
         cell: ({ row }) => (
-          <span className="truncate text-[13px] font-medium text-slate-900">{getDongName(row.original.property)}</span>
+          <span className="truncate text-[13px] font-medium text-slate-900">
+            {getDongName(row.original.property)}
+          </span>
         ),
       },
       {
         id: 'unit',
-        header: () => <TableHeaderLabel icon={<Hash className="size-4" />} label="호" />,
+        header: () => (
+          <TableHeaderLabel icon={<Hash className="size-4" />} label="호" />
+        ),
         size: 58,
         enableSorting: false,
         cell: ({ row }) => (
@@ -1082,33 +1236,63 @@ function PropertiesPage() {
         meta: {
           cellClassName: 'px-0',
         },
-        cell: ({ row }) => <PropertyRowActions listings={row.original.listings} intake={row.original.representative} />,
+        cell: ({ row }) => (
+          <PropertyRowActions
+            listings={row.original.listings}
+            intake={row.original.representative}
+          />
+        ),
       },
       ...(!arePropertyDetailColumnsCollapsed
         ? [
             {
               id: 'unitType',
-              header: () => <TableHeaderLabel icon={<Type className="size-4" />} label="타입" />,
+              header: () => (
+                <TableHeaderLabel
+                  icon={<Type className="size-4" />}
+                  label="타입"
+                />
+              ),
               size: 58,
               enableSorting: false,
               cell: ({ row }) => {
                 const value = getUnitTypeName(row.original.property);
-                return <span className="truncate text-[13px] text-slate-700">{value === '-' ? '' : value}</span>;
+                return (
+                  <span className="truncate text-[13px] text-slate-700">
+                    {value === '-' ? '' : value}
+                  </span>
+                );
               },
             } satisfies ColumnDef<PropertyListingGroup, unknown>,
             {
               id: 'exclusiveArea',
-              header: () => <TableHeaderLabel icon={<Ruler className="size-4" />} label="전용면적" />,
+              header: () => (
+                <TableHeaderLabel
+                  icon={<Ruler className="size-4" />}
+                  label="전용면적"
+                />
+              ),
               size: 96,
               enableSorting: false,
               cell: ({ row }) => {
-                const value = formatAreaPyeong(getExclusiveAreaM2(row.original.property));
-                return <span className="truncate text-[13px] text-slate-700 tabular-nums">{value === '-' ? '' : value}</span>;
+                const value = formatAreaPyeong(
+                  getExclusiveAreaM2(row.original.property),
+                );
+                return (
+                  <span className="truncate text-[13px] text-slate-700 tabular-nums">
+                    {value === '-' ? '' : value}
+                  </span>
+                );
               },
             } satisfies ColumnDef<PropertyListingGroup, unknown>,
             {
               id: 'matching',
-              header: () => <TableHeaderLabel icon={<GitBranch className="size-4" />} label="매칭" />,
+              header: () => (
+                <TableHeaderLabel
+                  icon={<GitBranch className="size-4" />}
+                  label="매칭"
+                />
+              ),
               size: 64,
               enableSorting: false,
               cell: ({ row }) => (
@@ -1121,7 +1305,12 @@ function PropertiesPage() {
             } satisfies ColumnDef<PropertyListingGroup, unknown>,
             {
               id: 'advertisement',
-              header: () => <TableHeaderLabel icon={<Megaphone className="size-4" />} label="광고" />,
+              header: () => (
+                <TableHeaderLabel
+                  icon={<Megaphone className="size-4" />}
+                  label="광고"
+                />
+              ),
               size: 64,
               enableSorting: false,
               cell: ({ row }) => (
@@ -1134,7 +1323,12 @@ function PropertiesPage() {
             } satisfies ColumnDef<PropertyListingGroup, unknown>,
             {
               id: 'updatedAt',
-              header: () => <TableHeaderLabel icon={<CalendarDays className="size-4" />} label="확인" />,
+              header: () => (
+                <TableHeaderLabel
+                  icon={<CalendarDays className="size-4" />}
+                  label="확인"
+                />
+              ),
               size: 112,
               enableSorting: true,
               cell: ({ row }) => (
@@ -1143,7 +1337,8 @@ function PropertiesPage() {
                   onConfirm={handleIntakeConfirm}
                   isPending={
                     confirmMutation.isPending &&
-                    confirmMutation.variables?.intakeId === row.original.representative.id
+                    confirmMutation.variables?.intakeId ===
+                      row.original.representative.id
                   }
                 />
               ),
@@ -1152,9 +1347,17 @@ function PropertiesPage() {
         : []),
       {
         id: 'listingAvailability',
-        header: () => <TableHeaderLabel icon={<Tag className="size-4" />} label="매물상태" />,
+        header: () => (
+          <TableHeaderLabel
+            icon={<Tag className="size-4" />}
+            label="매물상태"
+          />
+        ),
         size: 120,
         enableSorting: false,
+        meta: {
+          cellClassName: 'z-[2] overflow-visible',
+        },
         cell: ({ row }) => (
           <ListingAvailabilityCell
             intake={row.original.representative}
@@ -1165,18 +1368,33 @@ function PropertiesPage() {
       },
       {
         id: 'price',
-        header: () => <TableHeaderLabel icon={<CircleDollarSign className="size-4" />} label="가격/보증금" />,
+        header: () => (
+          <TableHeaderLabel
+            icon={<CircleDollarSign className="size-4" />}
+            label="가격/보증금"
+          />
+        ),
         size: 155,
         enableSorting: true,
         meta: {
           cellClassName: 'hover:bg-muted/50',
-          onCellDoubleClick: (_group: PropertyListingGroup, event: ReactMouseEvent<HTMLTableCellElement>) => {
+          onCellDoubleClick: (
+            _group: PropertyListingGroup,
+            event: ReactMouseEvent<HTMLTableCellElement>,
+          ) => {
             triggerStackCellEditor(event);
           },
         },
         cell: ({ row }) => (
           <ListingPriceDepositStack
             listings={row.original.listings}
+            activeDealListingId={
+              row.original.listings.length > 1
+                ? (row.original.listings[
+                    getActiveDealListingIndex(row.original.listings)
+                  ]?.id ?? null)
+                : null
+            }
             onSave={handleCellSave}
             onPatch={handleListingPatch}
           />
@@ -1184,59 +1402,107 @@ function PropertiesPage() {
       },
       {
         id: 'monthlyRent',
-        header: () => <TableHeaderLabel icon={<CircleDollarSign className="size-4" />} label="월세" />,
+        header: () => (
+          <TableHeaderLabel
+            icon={<CircleDollarSign className="size-4" />}
+            label="월세"
+          />
+        ),
         size: 82,
         enableSorting: false,
         meta: {
           cellClassName: 'hover:bg-muted/50',
-          onCellDoubleClick: (_group: PropertyListingGroup, event: ReactMouseEvent<HTMLTableCellElement>) => {
+          onCellDoubleClick: (
+            _group: PropertyListingGroup,
+            event: ReactMouseEvent<HTMLTableCellElement>,
+          ) => {
             triggerStackCellEditor(event);
           },
         },
-        cell: ({ row }) => <ListingMonthlyRentStack listings={row.original.listings} onPatch={handleListingPatch} />,
+        cell: ({ row }) => (
+          <ListingMonthlyRentStack
+            listings={row.original.listings}
+            onPatch={handleListingPatch}
+          />
+        ),
       },
       ...(optionalColumns.loanAmount
         ? [
             {
               id: 'loanAmount',
-              header: () => <TableHeaderLabel icon={<CircleDollarSign className="size-4" />} label="융자금" />,
+              header: () => (
+                <TableHeaderLabel
+                  icon={<CircleDollarSign className="size-4" />}
+                  label="융자금"
+                />
+              ),
               size: 96,
               enableSorting: false,
               meta: {
                 cellClassName: 'hover:bg-muted/50',
-                onCellDoubleClick: (_group: PropertyListingGroup, event: ReactMouseEvent<HTMLTableCellElement>) => {
+                onCellDoubleClick: (
+                  _group: PropertyListingGroup,
+                  event: ReactMouseEvent<HTMLTableCellElement>,
+                ) => {
                   triggerStackCellEditor(event);
                 },
               },
               cell: ({ row }) => (
-                <ListingNumberFieldStack listings={row.original.listings} field="loanAmount" onSave={handleCellSave} />
+                <ListingNumberFieldStack
+                  listings={row.original.listings}
+                  field="loanAmount"
+                  onSave={handleCellSave}
+                />
               ),
             } satisfies ColumnDef<PropertyListingGroup, unknown>,
           ]
         : []),
-    {
-      id: 'moveInAvailable',
-      header: () => <TableHeaderLabel icon={<DoorOpen className="size-4" />} label="입주가능일" />,
-      size: 120,
-      enableSorting: false,
-      cell: ({ row }) => <MoveInAvailableStack listings={row.original.listings} onPatch={handleListingPatch} />,
-    },
-    {
-      id: 'memo',
-      header: () => <TableHeaderLabel icon={<FileText className="size-4" />} label="의뢰 메모" />,
-      size: 320,
-      minSize: 220,
-      enableResizing: false,
-      enableSorting: false,
-      meta: {
-        cellClassName: 'hover:bg-muted/50',
-        grow: true,
-        onCellDoubleClick: (_group: PropertyListingGroup, event: ReactMouseEvent<HTMLTableCellElement>) => {
-          triggerStackCellEditor(event);
-        },
+      {
+        id: 'moveInAvailable',
+        header: () => (
+          <TableHeaderLabel
+            icon={<DoorOpen className="size-4" />}
+            label="입주가능일"
+          />
+        ),
+        size: 120,
+        enableSorting: false,
+        cell: ({ row }) => (
+          <MoveInAvailableStack
+            listings={row.original.listings}
+            onPatch={handleListingPatch}
+          />
+        ),
       },
-      cell: ({ row }) => <IntakeMemoCell intake={row.original.representative} onSave={handleIntakeMemoSave} />,
-    },
+      {
+        id: 'memo',
+        header: () => (
+          <TableHeaderLabel
+            icon={<FileText className="size-4" />}
+            label="의뢰 메모"
+          />
+        ),
+        size: 320,
+        minSize: 220,
+        enableResizing: false,
+        enableSorting: false,
+        meta: {
+          cellClassName: 'hover:bg-muted/50',
+          grow: true,
+          onCellDoubleClick: (
+            _group: PropertyListingGroup,
+            event: ReactMouseEvent<HTMLTableCellElement>,
+          ) => {
+            triggerStackCellEditor(event);
+          },
+        },
+        cell: ({ row }) => (
+          <IntakeMemoCell
+            intake={row.original.representative}
+            onSave={handleIntakeMemoSave}
+          />
+        ),
+      },
     ],
     [
       arePropertyDetailColumnsCollapsed,
@@ -1258,18 +1524,24 @@ function PropertiesPage() {
 
   return (
     <CellEditProvider>
-      <div data-properties-page className="-m-4 flex min-h-0 flex-1 flex-col bg-white">
-        <section className="border-b border-border bg-white px-3 py-2">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-              <Tabs value={selectedTransactionType} onValueChange={handleTransactionTabChange} className="min-w-0 gap-0">
-                <TabsList className="max-w-full justify-start bg-muted">
+      <div
+        data-properties-page
+        className="-m-4 flex min-h-0 flex-1 flex-col bg-white"
+      >
+        <section className="shrink-0 border-b border-border bg-white px-3 py-2.5">
+          <div className="flex min-w-0 items-center gap-2">
+            <div className="flex min-w-0 flex-1 items-center gap-1.5">
+              <Tabs value={selectedTransactionType}
+                onValueChange={handleTransactionTabChange}
+                className="min-w-0 shrink-0 gap-0"
+              >
+                <TabsList className="max-w-full justify-start border border-border/80 bg-[#f5f4f1] p-0.5">
                   {transactionTypeOptions.map((tab) => {
                     return (
                       <TabsTrigger
                         key={tab.value}
                         value={tab.value}
-                        className="flex-none border-0 px-3 text-[13px] shadow-none data-[state=active]:border data-[state=active]:border-[#d9d9d6] data-[state=active]:bg-white data-[state=active]:text-slate-950 data-[state=active]:shadow-sm"
+                        className="flex-none border-0 px-3 text-[13px] text-muted-foreground shadow-none data-[state=active]:border data-[state=active]:border-[#d9d9d6] data-[state=active]:bg-white data-[state=active]:text-slate-950 data-[state=active]:shadow-sm"
                       >
                         <span>{tab.label}</span>
                       </TabsTrigger>
@@ -1289,8 +1561,9 @@ function PropertiesPage() {
                 isLoading={isFilterSitesLoading}
                 maxCount={1}
                 className={cn(
-                  'h-8 min-w-[150px] max-w-[280px] border-border bg-white px-2.5 text-[13px] shadow-none',
-                  propertyFilters.siteIds.length > 0 && 'border-foreground/25 bg-foreground/[0.06]',
+                  'h-8 min-w-[150px] max-w-[280px] shrink-0 border-transparent bg-[#f7f6f3] px-2.5 text-[13px] shadow-none hover:border-border',
+                  propertyFilters.siteIds.length > 0 &&
+                    'border-foreground/25 bg-foreground/[0.06]',
                 )}
                 badgeClassName="m-0 h-5 border-border bg-white px-1.5 text-[11px] text-foreground shadow-none"
                 popoverClassName="w-[360px]"
@@ -1299,9 +1572,11 @@ function PropertiesPage() {
               <div className="relative w-20">
                 <Input
                   value={propertyFilters.dongSearch}
-                  onChange={(event) => updatePropertyFilter('dongSearch', event.target.value)}
+                  onChange={(event) =>
+                    updatePropertyFilter('dongSearch', event.target.value)
+                  }
                   placeholder="동"
-                  className="h-8 border-transparent bg-white px-2 pr-6 text-[13px] shadow-none hover:border-border focus:border-input"
+                  className="h-8 border-transparent bg-[#f7f6f3] px-2 pr-6 text-[13px] shadow-none hover:border-border focus:border-input focus:bg-white"
                 />
                 {propertyFilters.dongSearch && (
                   <button
@@ -1318,9 +1593,11 @@ function PropertiesPage() {
               <div className="relative w-20">
                 <Input
                   value={propertyFilters.unitSearch}
-                  onChange={(event) => updatePropertyFilter('unitSearch', event.target.value)}
+                  onChange={(event) =>
+                    updatePropertyFilter('unitSearch', event.target.value)
+                  }
                   placeholder="호"
-                  className="h-8 border-transparent bg-white px-2 pr-6 text-[13px] shadow-none hover:border-border focus:border-input"
+                  className="h-8 border-transparent bg-[#f7f6f3] px-2 pr-6 text-[13px] shadow-none hover:border-border focus:border-input focus:bg-white"
                 />
                 {propertyFilters.unitSearch && (
                   <button
@@ -1334,13 +1611,13 @@ function PropertiesPage() {
                 )}
               </div>
 
-              <div className="relative ml-1 w-56 max-w-full">
+              <div className="relative ml-1 min-w-[160px] max-w-56 flex-1">
                 <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   value={search}
                   onChange={(event) => handleSearchChange(event.target.value)}
                   placeholder="주소, 연락처, 메모"
-                  className="h-8 border-transparent bg-white pl-8 pr-8 text-[13px] shadow-none hover:border-border focus:border-input"
+                  className="h-8 border-transparent bg-[#f7f6f3] pl-8 pr-8 text-[13px] shadow-none hover:border-border focus:border-input focus:bg-white"
                 />
                 {search && (
                   <button
@@ -1368,227 +1645,284 @@ function PropertiesPage() {
           </div>
         </section>
 
-        <section className="border-b border-border bg-white px-3 py-2.5">
-          <div className="flex flex-wrap items-center gap-1.5">
-            <FilterPopoverChip
-              label="지역"
-              value={selectedRegionName ?? '전체'}
-              active={Boolean(propertyFilters.provinceCode || propertyFilters.districtCode || propertyFilters.wardCode)}
-              tier={2}
-              onClear={() => clearFilterFields(['provinceCode', 'districtCode', 'wardCode'])}
-              contentClassName="w-[360px]"
-            >
-              <div className="space-y-3">
-                <PopoverTitle title="지역" description="시도, 시군구, 법정동을 한 번에 좁힙니다." />
-                <div className="grid grid-cols-3 gap-2">
-                  <FilterField label="시도">
-                    <SelectFilter
-                      value={propertyFilters.provinceCode}
-                      onChange={handleProvinceFilterChange}
-                      options={provinceOptions}
-                    />
-                  </FilterField>
-                  <FilterField label="시군구">
-                    <SelectFilter
-                      value={propertyFilters.districtCode}
-                      onChange={handleDistrictFilterChange}
-                      options={districtOptions}
-                    />
-                  </FilterField>
-                  <FilterField label="법정동">
-                    <SelectFilter
-                      value={propertyFilters.wardCode}
-                      onChange={(value) => updatePropertyFilter('wardCode', value)}
-                      options={wardOptions}
-                    />
-                  </FilterField>
-                </div>
-              </div>
-            </FilterPopoverChip>
-
-            <MultiSelect
-              options={siteTypeOptions}
-              selected={propertyFilters.siteTypes}
-              onChange={(values) => updatePropertyFilter('siteTypes', values)}
-              ariaLabel="유형 필터"
-              placeholder="유형 전체"
-              searchPlaceholder="유형 검색"
-              emptyText="일치하는 유형이 없습니다."
-              maxCount={1}
-              className={cn(
-                'h-8 min-w-[126px] max-w-[220px] border-border bg-white px-2.5 text-[13px] shadow-none',
-                propertyFilters.siteTypes.length > 0 && 'border-foreground/25 bg-foreground/[0.06]',
-              )}
-              badgeClassName="m-0 h-5 border-border bg-white px-1.5 text-[11px] text-foreground shadow-none"
-              popoverClassName="w-[240px]"
-            />
-
-            <MultiSelect
-              options={listingAvailabilityFilterOptions}
-              selected={propertyFilters.availabilities}
-              onChange={(values) => updatePropertyFilter('availabilities', values)}
-              ariaLabel="매물상태 필터"
-              placeholder="매물상태 전체"
-              searchPlaceholder="매물상태 검색"
-              emptyText="일치하는 상태가 없습니다."
-              maxCount={1}
-              className={cn(
-                'h-8 min-w-[150px] max-w-[240px] border-border bg-white px-2.5 text-[13px] shadow-none',
-                propertyFilters.availabilities.length > 0 && 'border-foreground/25 bg-foreground/[0.06]',
-              )}
-              badgeClassName="m-0 h-5 border-border bg-white px-1.5 text-[11px] text-foreground shadow-none"
-              popoverClassName="w-[240px]"
-            />
-
-            <FilterPopoverChip
-              label="가격/보증금"
-              value={priceDepositFilterSummary ?? '전체'}
-              active={Boolean(priceDepositFilterSummary)}
-              tier={2}
-              open={isPriceFilterOpen}
-              onOpenChange={setIsPriceFilterOpen}
-              onClear={() => clearFilterFields(['priceMin', 'priceMax', 'depositMin', 'depositMax'])}
-              contentClassName="w-[430px] max-w-[calc(100vw-24px)] overflow-hidden p-0"
-            >
-              <PriceRangeFilterPanel
-                initialRange={getPriceRangeFilter(propertyFilters, selectedTransactionType)}
-                onApply={handlePriceRangeApply}
-                onClear={() => {
-                  clearFilterFields(['priceMin', 'priceMax', 'depositMin', 'depositMax']);
-                  setIsPriceFilterOpen(false);
-                }}
-                onCancel={() => setIsPriceFilterOpen(false)}
-              />
-            </FilterPopoverChip>
-
-            <FilterPopoverChip
-              label="월세"
-              value={monthlyRentFilterSummary ?? '전체'}
-              active={Boolean(monthlyRentFilterSummary)}
-              tier={3}
-              open={isMonthlyRentFilterOpen}
-              onOpenChange={setIsMonthlyRentFilterOpen}
-              onClear={() => clearFilterFields(['monthlyRentMin', 'monthlyRentMax'])}
-              contentClassName="w-[430px] max-w-[calc(100vw-24px)] overflow-hidden p-0"
-            >
-              <NumericRangeFilterPanel
-                ariaLabel="월세 필터"
-                title="월세"
-                description="월 납부액 기준 · 만원 단위"
-                initialRange={getMonthlyRentRangeFilter(propertyFilters)}
-                min={MONTHLY_RENT_RANGE_MIN}
-                max={MONTHLY_RENT_RANGE_MAX}
-                step={10}
-                presets={MONTHLY_RENT_RANGE_PRESETS}
-                tickLabels={['전체', '200만', '400만', '최대']}
-                formatLabel={(min, max) =>
-                  formatNumericRangeLabel(
-                    min,
-                    max,
-                    MONTHLY_RENT_RANGE_MIN,
-                    MONTHLY_RENT_RANGE_MAX,
-                    '만원',
-                    '전체 월세',
-                  )
-                }
-                thumbLabels={['최소 월세', '최대 월세']}
-                onApply={handleMonthlyRentRangeApply}
-                onClear={() => {
-                  clearFilterFields(['monthlyRentMin', 'monthlyRentMax']);
-                  setIsMonthlyRentFilterOpen(false);
-                }}
-                onCancel={() => setIsMonthlyRentFilterOpen(false)}
-              />
-            </FilterPopoverChip>
-
-            <FilterPopoverChip
-              label="면적"
-              value={areaFilterSummary ?? '전체'}
-              active={Boolean(areaFilterSummary)}
-              tier={2}
-              open={isAreaFilterOpen}
-              onOpenChange={setIsAreaFilterOpen}
-              onClear={() => clearFilterFields(['areaMin', 'areaMax'])}
-              contentClassName="w-[430px] max-w-[calc(100vw-24px)] overflow-hidden p-0"
-            >
-              <NumericRangeFilterPanel
-                ariaLabel="면적 필터"
-                title="전용면적"
-                description="전용면적 기준 · 평 단위"
-                initialRange={getAreaRangeFilter(propertyFilters)}
-                min={AREA_RANGE_MIN}
-                max={AREA_RANGE_MAX}
-                step={1}
-                presets={AREA_RANGE_PRESETS}
-                tickLabels={['전체', '20평', '40평', '60평', '최대']}
-                formatLabel={(min, max) =>
-                  formatNumericRangeLabel(
-                    min,
-                    max,
-                    AREA_RANGE_MIN,
-                    AREA_RANGE_MAX,
-                    '평',
-                    '전체 면적',
-                  )
-                }
-                thumbLabels={['최소 면적', '최대 면적']}
-                onApply={handleAreaRangeApply}
-                onClear={() => {
-                  clearFilterFields(['areaMin', 'areaMax']);
-                  setIsAreaFilterOpen(false);
-                }}
-                onCancel={() => setIsAreaFilterOpen(false)}
-              />
-            </FilterPopoverChip>
-
-            <FilterPopoverChip
-              label="입주일"
-              value={moveInFilterSummary ?? '전체'}
-              active={Boolean(moveInFilterSummary)}
-              tier={3}
-              onClear={() => clearFilterFields(['moveInFrom', 'moveInTo'])}
-              contentClassName="w-[320px]"
-            >
-              <div className="space-y-3">
-                <PopoverTitle title="입주일" description="입주가능일 시작 날짜 기준으로 검색합니다." />
-                <DateRangeFilter
-                  fromValue={propertyFilters.moveInFrom}
-                  toValue={propertyFilters.moveInTo}
-                  onFromChange={(value) => updatePropertyFilter('moveInFrom', value)}
-                  onToChange={(value) => updatePropertyFilter('moveInTo', value)}
-                />
-              </div>
-            </FilterPopoverChip>
-
-            <Select
-              value={propertyFilters.advertisement}
-              onValueChange={(value) =>
-                updatePropertyFilter(
-                  'advertisement',
-                  value as PropertyFilterState['advertisement'],
-                )
-              }
-            >
-              <SelectTrigger
-                size="sm"
-                aria-label="광고 필터"
-                className={cn(
-                  'h-8 w-[116px] border-border bg-white px-2.5 text-xs text-muted-foreground shadow-none',
-                  propertyFilters.advertisement !== 'all' &&
-                    'border-foreground/25 bg-foreground/[0.06] text-foreground',
+        <section className="shrink-0 overflow-x-auto border-b border-border bg-[#faf9f6] px-3 py-2">
+          <div className="flex w-full min-w-max items-center gap-2">
+            <div className="flex shrink-0 items-center gap-1.5">
+              <FilterPopoverChip
+                label="지역"
+                value={selectedRegionName ?? '전체'}
+                active={Boolean(
+                  propertyFilters.provinceCode ||
+                  propertyFilters.districtCode ||
+                  propertyFilters.wardCode,
                 )}
+                tier={2}
+                onClear={() =>
+                  clearFilterFields([
+                    'provinceCode',
+                    'districtCode',
+                    'wardCode',
+                  ])
+                }
+                contentClassName="w-[360px]"
               >
-                <Megaphone className="size-3.5" />
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent align="start">
-                {advertisementFilterOptions.map((option) => (
-                  <SelectItem key={option.value} value={option.value} className="text-[13px]">
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+                <div className="space-y-3">
+                  <PopoverTitle
+                    title="지역"
+                    description="시도, 시군구, 법정동을 한 번에 좁힙니다."
+                  />
+                  <div className="grid grid-cols-3 gap-2">
+                    <FilterField label="시도">
+                      <SelectFilter
+                        value={propertyFilters.provinceCode}
+                        onChange={handleProvinceFilterChange}
+                        options={provinceOptions}
+                      />
+                    </FilterField>
+                    <FilterField label="시군구">
+                      <SelectFilter
+                        value={propertyFilters.districtCode}
+                        onChange={handleDistrictFilterChange}
+                        options={districtOptions}
+                      />
+                    </FilterField>
+                    <FilterField label="법정동">
+                      <SelectFilter
+                        value={propertyFilters.wardCode}
+                        onChange={(value) =>
+                          updatePropertyFilter('wardCode', value)
+                        }
+                        options={wardOptions}
+                      />
+                    </FilterField>
+                  </div>
+                </div>
+              </FilterPopoverChip>
+
+              <MultiSelect
+                options={siteTypeOptions}
+                selected={propertyFilters.siteTypes}
+                onChange={(values) => updatePropertyFilter('siteTypes', values)}
+                ariaLabel="유형 필터"
+                placeholder="유형 전체"
+                searchPlaceholder="유형 검색"
+                emptyText="일치하는 유형이 없습니다."
+                maxCount={1}
+                className={cn(
+                  'h-8 min-w-[126px] max-w-[220px] border-border bg-white px-2.5 text-[13px] shadow-none',
+                  propertyFilters.siteTypes.length > 0 &&
+                    'border-foreground/25 bg-foreground/[0.06]',
+                )}
+                badgeClassName="m-0 h-5 border-border bg-white px-1.5 text-[11px] text-foreground shadow-none"
+                popoverClassName="w-[240px]"
+              />
+            </div>
+
+            <div className="h-5 w-px shrink-0 bg-border" aria-hidden="true" />
+
+            <div className="flex shrink-0 items-center gap-1.5">
+              <MultiSelect
+                options={listingAvailabilityFilterOptions}
+                selected={propertyFilters.availabilities}
+                onChange={(values) =>
+                  updatePropertyFilter('availabilities', values)
+                }
+                ariaLabel="매물상태 필터"
+                placeholder="매물상태 전체"
+                searchPlaceholder="매물상태 검색"
+                emptyText="일치하는 상태가 없습니다."
+                maxCount={1}
+                className={cn(
+                  'h-8 min-w-[150px] max-w-[240px] border-border bg-white px-2.5 text-[13px] shadow-none',
+                  propertyFilters.availabilities.length > 0 &&
+                    'border-foreground/25 bg-foreground/[0.06]',
+                )}
+                badgeClassName="m-0 h-5 border-border bg-white px-1.5 text-[11px] text-foreground shadow-none"
+                popoverClassName="w-[240px]"
+              />
+
+              <FilterPopoverChip
+                label="가격/보증금"
+                value={priceDepositFilterSummary ?? '전체'}
+                active={Boolean(priceDepositFilterSummary)}
+                tier={2}
+                open={isPriceFilterOpen}
+                onOpenChange={setIsPriceFilterOpen}
+                onClear={() =>
+                  clearFilterFields([
+                    'priceMin',
+                    'priceMax',
+                    'depositMin',
+                    'depositMax',
+                  ])
+                }
+                contentClassName="w-[430px] max-w-[calc(100vw-24px)] overflow-hidden p-0"
+              >
+                <PriceRangeFilterPanel
+                  initialRange={getPriceRangeFilter(
+                    propertyFilters,
+                    selectedTransactionType,
+                  )}
+                  onApply={handlePriceRangeApply}
+                  onClear={() => {
+                    clearFilterFields([
+                      'priceMin',
+                      'priceMax',
+                      'depositMin',
+                      'depositMax',
+                    ]);
+                    setIsPriceFilterOpen(false);
+                  }}
+                  onCancel={() => setIsPriceFilterOpen(false)}
+                />
+              </FilterPopoverChip>
+
+              <FilterPopoverChip
+                label="월세"
+                value={monthlyRentFilterSummary ?? '전체'}
+                active={Boolean(monthlyRentFilterSummary)}
+                tier={3}
+                open={isMonthlyRentFilterOpen}
+                onOpenChange={setIsMonthlyRentFilterOpen}
+                onClear={() =>
+                  clearFilterFields(['monthlyRentMin', 'monthlyRentMax'])
+                }
+                contentClassName="w-[430px] max-w-[calc(100vw-24px)] overflow-hidden p-0"
+              >
+                <NumericRangeFilterPanel
+                  ariaLabel="월세 필터"
+                  title="월세"
+                  description="월 납부액 기준 · 만원 단위"
+                  initialRange={getMonthlyRentRangeFilter(propertyFilters)}
+                  min={MONTHLY_RENT_RANGE_MIN}
+                  max={MONTHLY_RENT_RANGE_MAX}
+                  step={10}
+                  presets={MONTHLY_RENT_RANGE_PRESETS}
+                  tickLabels={['전체', '200만', '400만', '최대']}
+                  formatLabel={(min, max) =>
+                    formatNumericRangeLabel(
+                      min,
+                      max,
+                      MONTHLY_RENT_RANGE_MIN,
+                      MONTHLY_RENT_RANGE_MAX,
+                      '만원',
+                      '전체 월세',
+                    )
+                  }
+                  thumbLabels={['최소 월세', '최대 월세']}
+                  onApply={handleMonthlyRentRangeApply}
+                  onClear={() => {
+                    clearFilterFields(['monthlyRentMin', 'monthlyRentMax']);
+                    setIsMonthlyRentFilterOpen(false);
+                  }}
+                  onCancel={() => setIsMonthlyRentFilterOpen(false)}
+                />
+              </FilterPopoverChip>
+
+              <FilterPopoverChip
+                label="면적"
+                value={areaFilterSummary ?? '전체'}
+                active={Boolean(areaFilterSummary)}
+                tier={2}
+                open={isAreaFilterOpen}
+                onOpenChange={setIsAreaFilterOpen}
+                onClear={() => clearFilterFields(['areaMin', 'areaMax'])}
+                contentClassName="w-[430px] max-w-[calc(100vw-24px)] overflow-hidden p-0"
+              >
+                <NumericRangeFilterPanel
+                  ariaLabel="면적 필터"
+                  title="전용면적"
+                  description="전용면적 기준 · 평 단위"
+                  initialRange={getAreaRangeFilter(propertyFilters)}
+                  min={AREA_RANGE_MIN}
+                  max={AREA_RANGE_MAX}
+                  step={1}
+                  presets={AREA_RANGE_PRESETS}
+                  tickLabels={['전체', '20평', '40평', '60평', '최대']}
+                  formatLabel={(min, max) =>
+                    formatNumericRangeLabel(
+                      min,
+                      max,
+                      AREA_RANGE_MIN,
+                      AREA_RANGE_MAX,
+                      '평',
+                      '전체 면적',
+                    )
+                  }
+                  thumbLabels={['최소 면적', '최대 면적']}
+                  onApply={handleAreaRangeApply}
+                  onClear={() => {
+                    clearFilterFields(['areaMin', 'areaMax']);
+                    setIsAreaFilterOpen(false);
+                  }}
+                  onCancel={() => setIsAreaFilterOpen(false)}
+                />
+              </FilterPopoverChip>
+
+              <FilterPopoverChip
+                label="입주일"
+                value={moveInFilterSummary ?? '전체'}
+                active={Boolean(moveInFilterSummary)}
+                tier={3}
+                onClear={() => clearFilterFields(['moveInFrom', 'moveInTo'])}
+                contentClassName="w-[320px]"
+              >
+                <div className="space-y-3">
+                  <PopoverTitle
+                    title="입주일"
+                    description="입주가능일 시작 날짜 기준으로 검색합니다."
+                  />
+                  <DateRangeFilter
+                    fromValue={propertyFilters.moveInFrom}
+                    toValue={propertyFilters.moveInTo}
+                    onFromChange={(value) =>
+                      updatePropertyFilter('moveInFrom', value)
+                    }
+                    onToChange={(value) =>
+                      updatePropertyFilter('moveInTo', value)
+                    }
+                  />
+                </div>
+              </FilterPopoverChip>
+            </div>
+
+            <div className="h-5 w-px shrink-0 bg-border" aria-hidden="true" />
+
+            <div className="flex shrink-0 items-center gap-1.5">
+              <Select
+                value={propertyFilters.advertisement}
+                onValueChange={(value) =>
+                  updatePropertyFilter(
+                    'advertisement',
+                    value as PropertyFilterState['advertisement'],
+                  )
+                }
+              >
+                <SelectTrigger
+                  size="sm"
+                  aria-label="광고 필터"
+                  className={cn(
+                    'h-8 w-[116px] border-border bg-white px-2.5 text-xs text-muted-foreground shadow-none',
+                    propertyFilters.advertisement !== 'all' &&
+                      'border-foreground/25 bg-foreground/[0.06] text-foreground',
+                  )}
+                >
+                  <Megaphone className="size-3.5" />
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent align="start">
+                  {advertisementFilterOptions.map((option) => (
+                    <SelectItem
+                      key={option.value}
+                      value={option.value}
+                      className="text-[13px]"
+                    >
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
 
             {/* 표시 설정과 초기화 — 우측 정렬 */}
             <div className="ml-auto flex items-center gap-1.5">
@@ -1597,7 +1931,11 @@ function PropertiesPage() {
               </span>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="sm" className="h-8 gap-1.5 px-2.5 text-xs text-muted-foreground">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 gap-1.5 px-2.5 text-xs text-muted-foreground"
+                  >
                     <Columns3 className="size-3.5" />
                     컬럼
                   </Button>
@@ -1636,55 +1974,20 @@ function PropertiesPage() {
         </section>
 
         <section className="flex min-h-0 flex-1 bg-white px-0 py-0">
-          <div data-property-table-scroll-scope className="flex min-h-0 flex-1 flex-col overflow-hidden bg-white">
-            <div className="relative flex min-h-9 shrink-0 flex-wrap items-center justify-between gap-2 overflow-hidden border-b border-border/60 bg-muted/20 px-3 py-1.5 text-[12px] text-muted-foreground">
-              {viewMode === 'list' && (
-                <>
-                  {!arePropertyDetailColumnsCollapsed && (
-                    <>
-                      <span
-                        aria-hidden="true"
-                        data-column-group-line="property-details"
-                        className="pointer-events-none absolute left-[482px] top-1/2 z-[9] h-px w-[404px] -translate-y-1/2 bg-slate-400"
-                      />
-                      <span
-                        aria-hidden="true"
-                        data-column-group-cap="property-details"
-                        className="pointer-events-none absolute left-[886px] top-1/2 z-[9] h-2 w-px -translate-x-full -translate-y-[0.5px] bg-slate-400"
-                      />
-                    </>
-                  )}
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="icon-xs"
-                    aria-label={
-                      arePropertyDetailColumnsCollapsed ? '타입–확인 컬럼 펼치기' : '타입–확인 컬럼 접기'
-                    }
-                    aria-expanded={!arePropertyDetailColumnsCollapsed}
-                    title={
-                      arePropertyDetailColumnsCollapsed ? '타입–확인 컬럼 펼치기' : '타입–확인 컬럼 접기'
-                    }
-                    data-column-group-toggle="property-details"
-                    className="pointer-events-auto absolute left-[472px] top-1/2 z-10 size-5 -translate-x-1/2 -translate-y-1/2 rounded-[3px] border-slate-400 bg-white p-0 text-slate-600 shadow-none hover:border-slate-500 hover:bg-slate-50 hover:text-slate-900"
-                    onClick={() => setArePropertyDetailColumnsCollapsed((previous) => !previous)}
-                  >
-                    {arePropertyDetailColumnsCollapsed ? (
-                      <Plus className="size-3" />
-                    ) : (
-                      <Minus className="size-3" />
-                    )}
-                  </Button>
-                </>
-              )}
-              {isLoading || (viewMode === 'map' && isMapDataLoading) ? (
-                <span>불러오는 중</span>
-              ) : loadedIntakes === 0 && hasActiveFilters ? (
-                <span>조건을 줄이거나 초기화해 보세요.</span>
-              ) : viewMode === 'map' ? (
-                <span>마커나 우측 매물을 클릭하면 빠른 확인 패널이 열립니다.</span>
-              ) : null}
-            </div>
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-white">
+            {viewMode === 'map' && (
+              <div className="flex min-h-9 shrink-0 items-center border-b border-border/60 bg-[#f8f7f4] px-3 py-1.5 text-[12px] text-muted-foreground">
+                {isLoading || isMapDataLoading ? (
+                  <span>불러오는 중</span>
+                ) : loadedIntakes === 0 && hasActiveFilters ? (
+                  <span>조건을 줄이거나 초기화해 보세요.</span>
+                ) : (
+                  <span>
+                    마커나 우측 매물을 클릭하면 빠른 확인 패널이 열립니다.
+                  </span>
+                )}
+              </div>
+            )}
             {viewMode === 'list' ? (
               <PropertyListingsTable
                 columns={columns}
@@ -1697,16 +2000,33 @@ function PropertiesPage() {
                 expandedRowIds={expandedRowIds}
                 renderExpandedRow={renderExpandedPropertyRow}
                 getExpandedRowHeight={getExpandedPropertyRowHeight}
+                columnGroupControl={{
+                  collapsed: arePropertyDetailColumnsCollapsed,
+                  onToggle: () =>
+                    setArePropertyDetailColumnsCollapsed(
+                      (previous) => !previous,
+                    ),
+                }}
                 isLoading={isLoading}
                 isLoadingMore={isFetchingNextPage}
                 onEndReached={handleEndReached}
-                emptyMessage={hasActiveFilters ? '조건에 맞는 매물이 없습니다.' : '등록된 매물이 없습니다.'}
-                renderBulkActions={(selectedRows) => <PropertyBulkActions groups={selectedRows} />}
+                emptyMessage={
+                  hasActiveFilters
+                    ? '조건에 맞는 매물이 없습니다.'
+                    : '등록된 매물이 없습니다.'
+                }
+                renderBulkActions={(selectedRows) => (
+                  <PropertyBulkActions groups={selectedRows} />
+                )}
                 renderStatusBar={() => (
                   <span>
                     의뢰 {intakeCountLabel}건 표시
-                    {loadedListings > 0 ? ` · 거래 ${loadedListings.toLocaleString()}건` : ''}
-                    {hasNextPage && !isFetchingNextPage ? ' · 아래로 스크롤하면 더 불러옵니다' : ''}
+                    {loadedListings > 0
+                      ? ` · 거래 ${loadedListings.toLocaleString()}건`
+                      : ''}
+                    {hasNextPage && !isFetchingNextPage
+                      ? ' · 아래로 스크롤하면 더 불러옵니다'
+                      : ''}
                     {isFetchingNextPage ? ' · 더 불러오는 중...' : ''}
                   </span>
                 )}
@@ -1715,7 +2035,12 @@ function PropertiesPage() {
               <PropertyMapView
                 points={mapPoints.points}
                 missingGroups={mapPoints.missingGroups}
-                isLoading={isLoading || (viewMode === 'map' && isMapDataLoading && listingIntakes.length === 0)}
+                isLoading={
+                  isLoading ||
+                  (viewMode === 'map' &&
+                    isMapDataLoading &&
+                    listingIntakes.length === 0)
+                }
                 isFallback={isMapDataError}
                 truncated={Boolean(mapData?.truncated)}
                 limit={mapData?.limit}
@@ -1725,7 +2050,10 @@ function PropertiesPage() {
             )}
           </div>
         </section>
-        <PropertyQuickSheet intakeId={selectedIntakeId} onClose={() => setSelectedIntakeId(null)} />
+        <PropertyQuickSheet
+          intakeId={selectedIntakeId}
+          onClose={() => setSelectedIntakeId(null)}
+        />
         {startDealPrompt && (
           <StartDealFromStatusDialog
             key={`${startDealPrompt.propertyId}:${startDealPrompt.listings.map((listing) => listing.id).join(',')}`}
@@ -1747,10 +2075,13 @@ function PropertiesPage() {
                   intakeId: resumeClosedPrompt.intakeId,
                   listingIds: resumeClosedPrompt.listingIds,
                   value:
-                    resumeClosedPrompt.targetAvailability === ListingAvailability.PAUSED
+                    resumeClosedPrompt.targetAvailability ===
+                    ListingAvailability.PAUSED
                       ? IntakeLifecycleStatus.HOLD
                       : IntakeLifecycleStatus.OPEN,
-                  expectedUpdatedAt: intakeUpdatedAtById.get(resumeClosedPrompt.intakeId),
+                  expectedUpdatedAt: intakeUpdatedAtById.get(
+                    resumeClosedPrompt.intakeId,
+                  ),
                 },
                 {
                   onSuccess: () => setResumeClosedPrompt(null),
@@ -1767,18 +2098,26 @@ function PropertiesPage() {
 function TableHeaderLabel({ icon, label }: { icon: ReactNode; label: string }) {
   return (
     <span className="inline-flex min-w-0 items-center gap-1 text-[12px] font-normal text-muted-foreground">
-      <span className="shrink-0 [&>svg]:size-3 [&>svg]:text-muted-foreground/70">{icon}</span>
+      <span className="shrink-0 [&>svg]:size-3 [&>svg]:text-muted-foreground/70">
+        {icon}
+      </span>
       <span className="truncate">{label}</span>
     </span>
   );
 }
 
-function ViewModeSwitch({ value, onChange }: { value: PropertyViewMode; onChange: (value: PropertyViewMode) => void }) {
+function ViewModeSwitch({
+  value,
+  onChange,
+}: {
+  value: PropertyViewMode;
+  onChange: (value: PropertyViewMode) => void;
+}) {
   return (
     <div
       role="group"
       aria-label="매물 보기 방식"
-      className="flex h-8 items-center rounded-md border border-border bg-white p-0.5"
+      className="flex h-8 items-center rounded-md border border-border bg-[#f5f4f1] p-0.5"
     >
       <Button
         type="button"
@@ -1786,7 +2125,9 @@ function ViewModeSwitch({ value, onChange }: { value: PropertyViewMode; onChange
         size="sm"
         className={cn(
           'h-7 gap-1.5 rounded-[5px] px-2.5 text-xs font-medium',
-          value === 'list' ? 'bg-muted text-foreground shadow-sm hover:bg-muted' : 'text-muted-foreground',
+          value === 'list'
+            ? 'border border-border/80 bg-white text-foreground shadow-sm hover:bg-white'
+            : 'text-muted-foreground',
         )}
         onClick={() => onChange('list')}
         aria-pressed={value === 'list'}
@@ -1800,7 +2141,9 @@ function ViewModeSwitch({ value, onChange }: { value: PropertyViewMode; onChange
         size="sm"
         className={cn(
           'h-7 gap-1.5 rounded-[5px] px-2.5 text-xs font-medium',
-          value === 'map' ? 'bg-muted text-foreground shadow-sm hover:bg-muted' : 'text-muted-foreground',
+          value === 'map'
+            ? 'border border-border/80 bg-white text-foreground shadow-sm hover:bg-white'
+            : 'text-muted-foreground',
         )}
         onClick={() => onChange('map')}
         aria-pressed={value === 'map'}
@@ -1838,7 +2181,9 @@ function PropertyMapView({
   if (points.length === 0 && missingGroups.length === 0) {
     return (
       <div className="flex min-h-0 flex-1 items-center justify-center bg-white text-sm text-muted-foreground">
-        {hasActiveFilters ? '조건에 맞는 매물이 없습니다.' : '등록된 매물이 없습니다.'}
+        {hasActiveFilters
+          ? '조건에 맞는 매물이 없습니다.'
+          : '등록된 매물이 없습니다.'}
       </div>
     );
   }
@@ -1846,12 +2191,18 @@ function PropertyMapView({
   return (
     <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_320px] bg-white">
       <div className="relative min-h-0 overflow-hidden border-r border-border bg-[#f7f7f5]">
-        <NaverPropertyMap points={points} missingCount={missingGroups.length} onSelectIntake={onSelectIntake} />
+        <NaverPropertyMap
+          points={points}
+          missingCount={missingGroups.length}
+          onSelectIntake={onSelectIntake}
+        />
       </div>
 
       <aside className="flex min-h-0 flex-col bg-white">
         <div className="shrink-0 border-b border-border px-3 py-2">
-          <div className="text-[12px] font-medium text-foreground">지도 매물</div>
+          <div className="text-[12px] font-medium text-foreground">
+            지도 매물
+          </div>
           <div className="mt-0.5 text-[11px] text-muted-foreground">
             좌표 있는 단지 {points.length.toLocaleString()}곳
             {truncated && limit ? ` · 최대 ${limit.toLocaleString()}건` : ''}
@@ -1875,7 +2226,12 @@ function PropertyMapView({
             </div>
           )}
           {missingGroups.map((group) => (
-            <MapPropertyRow key={group.id} group={group} onClick={() => onSelectIntake(group.intakeId)} muted />
+            <MapPropertyRow
+              key={group.id}
+              group={group}
+              onClick={() => onSelectIntake(group.intakeId)}
+              muted
+            />
           ))}
         </div>
       </aside>
@@ -1913,10 +2269,12 @@ function NaverPropertyMap({
   const listenersRef = useRef<unknown[]>([]);
   const clusterListenersRef = useRef<unknown[]>([]);
   const hasAutoFittedRef = useRef(false);
-  const [mapsApi, setMapsApi] = useState<NaverMapsApi | null>(() => getReadyNaverMapsApi());
-  const [loadState, setLoadState] = useState<'idle' | 'loading' | 'ready' | 'error'>(
-    getReadyNaverMapsApi() ? 'ready' : 'idle',
+  const [mapsApi, setMapsApi] = useState<NaverMapsApi | null>(() =>
+    getReadyNaverMapsApi(),
   );
+  const [loadState, setLoadState] = useState<
+    'idle' | 'loading' | 'ready' | 'error'
+  >(getReadyNaverMapsApi() ? 'ready' : 'idle');
 
   useEffect(() => {
     if (mapsApi || !NAVER_MAPS_NCP_KEY_ID) return;
@@ -1957,7 +2315,9 @@ function NaverPropertyMap({
     if (!mapsApi || !map) return;
 
     const clearMarkers = () => {
-      removePropertyMapListeners(listenersRef.current, (listener) => mapsApi.Event.removeListener?.(listener));
+      removePropertyMapListeners(listenersRef.current, (listener) =>
+        mapsApi.Event.removeListener?.(listener),
+      );
       for (const marker of markersRef.current) {
         marker.setMap(null);
       }
@@ -1966,7 +2326,9 @@ function NaverPropertyMap({
     };
 
     const clearClusterListeners = () => {
-      removePropertyMapListeners(clusterListenersRef.current, (listener) => mapsApi.Event.removeListener?.(listener));
+      removePropertyMapListeners(clusterListenersRef.current, (listener) =>
+        mapsApi.Event.removeListener?.(listener),
+      );
       clusterListenersRef.current = [];
     };
 
@@ -1986,10 +2348,16 @@ function NaverPropertyMap({
         const marker = new mapsApi.Marker({
           map,
           position,
-          title: isCluster ? `${cluster.groupCount}건` : cluster.points[0].siteName,
+          title: isCluster
+            ? `${cluster.groupCount}건`
+            : cluster.points[0].siteName,
           icon: {
-            content: isCluster ? getNaverClusterMarkerHtml(cluster) : getNaverMarkerHtml(cluster.points[0]),
-            anchor: isCluster ? new mapsApi.Point(24, 24) : new mapsApi.Point(20, 20),
+            content: isCluster
+              ? getNaverClusterMarkerHtml(cluster)
+              : getNaverMarkerHtml(cluster.points[0]),
+            anchor: isCluster
+              ? new mapsApi.Point(24, 24)
+              : new mapsApi.Point(20, 20),
           },
         });
         const listener = mapsApi.Event.addListener(marker, 'click', () => {
@@ -2039,8 +2407,12 @@ function NaverPropertyMap({
     <div className="relative h-full min-h-0 w-full">
       <div ref={mapElementRef} className="h-full w-full" />
       <div className="absolute left-4 top-4 z-10 rounded-md border border-border bg-white/95 px-3 py-2 shadow-sm">
-        <div className="text-[12px] font-medium text-foreground">지도 표시 {points.length.toLocaleString()}곳</div>
-        <div className="mt-0.5 text-[11px] text-muted-foreground">좌표 없음 {missingCount.toLocaleString()}건</div>
+        <div className="text-[12px] font-medium text-foreground">
+          지도 표시 {points.length.toLocaleString()}곳
+        </div>
+        <div className="mt-0.5 text-[11px] text-muted-foreground">
+          좌표 없음 {missingCount.toLocaleString()}건
+        </div>
       </div>
       {!NAVER_MAPS_NCP_KEY_ID && (
         <NaverMapOverlayMessage
@@ -2066,17 +2438,25 @@ function NaverPropertyMap({
           }
         />
       )}
-      {NAVER_MAPS_NCP_KEY_ID && loadState === 'ready' && points.length === 0 && (
-        <NaverMapOverlayMessage
-          title="좌표가 등록된 매물이 없습니다"
-          detail="단지 좌표가 있는 매물부터 지도에 표시됩니다."
-        />
-      )}
+      {NAVER_MAPS_NCP_KEY_ID &&
+        loadState === 'ready' &&
+        points.length === 0 && (
+          <NaverMapOverlayMessage
+            title="좌표가 등록된 매물이 없습니다"
+            detail="단지 좌표가 있는 매물부터 지도에 표시됩니다."
+          />
+        )}
     </div>
   );
 }
 
-function NaverMapOverlayMessage({ title, detail }: { title: string; detail: ReactNode }) {
+function NaverMapOverlayMessage({
+  title,
+  detail,
+}: {
+  title: string;
+  detail: ReactNode;
+}) {
   return (
     <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/65">
       <div className="rounded-md border border-border bg-white px-4 py-3 text-center shadow-sm">
@@ -2120,7 +2500,9 @@ function buildPropertyMapClusters(
   });
 }
 
-function buildSinglePropertyMapCluster(point: PropertyMapPoint): PropertyMapCluster {
+function buildSinglePropertyMapCluster(
+  point: PropertyMapPoint,
+): PropertyMapCluster {
   return {
     id: point.id,
     lat: point.lat,
@@ -2158,50 +2540,62 @@ function loadNaverMaps(ncpKeyId: string) {
     return window.__estateErpNaverMapsPromise;
   }
 
-  window.__estateErpNaverMapsPromise = new Promise<NaverMapsApi>((resolve, reject) => {
-    const existingScript = document.getElementById('naver-maps-js-sdk') as HTMLScriptElement | null;
+  window.__estateErpNaverMapsPromise = new Promise<NaverMapsApi>(
+    (resolve, reject) => {
+      const existingScript = document.getElementById(
+        'naver-maps-js-sdk',
+      ) as HTMLScriptElement | null;
 
-    const handleLoad = () => {
-      const loadedMapsApi = getReadyNaverMapsApi();
-      if (loadedMapsApi) {
-        resolve(loadedMapsApi);
+      const handleLoad = () => {
+        const loadedMapsApi = getReadyNaverMapsApi();
+        if (loadedMapsApi) {
+          resolve(loadedMapsApi);
+          return;
+        }
+        reject(new Error('NAVER Maps SDK loaded without ready maps API'));
+      };
+
+      if (existingScript) {
+        const loadedMapsApi = getReadyNaverMapsApi();
+        if (loadedMapsApi) {
+          resolve(loadedMapsApi);
+          return;
+        }
+        if (existingScript.dataset.loadState === 'loaded') {
+          reject(new Error('NAVER Maps SDK is present but not ready'));
+          return;
+        }
+        existingScript.addEventListener('load', handleLoad, { once: true });
+        existingScript.addEventListener(
+          'error',
+          () => reject(new Error('NAVER Maps SDK failed to load')),
+          {
+            once: true,
+          },
+        );
         return;
       }
-      reject(new Error('NAVER Maps SDK loaded without ready maps API'));
-    };
 
-    if (existingScript) {
-      const loadedMapsApi = getReadyNaverMapsApi();
-      if (loadedMapsApi) {
-        resolve(loadedMapsApi);
-        return;
-      }
-      if (existingScript.dataset.loadState === 'loaded') {
-        reject(new Error('NAVER Maps SDK is present but not ready'));
-        return;
-      }
-      existingScript.addEventListener('load', handleLoad, { once: true });
-      existingScript.addEventListener('error', () => reject(new Error('NAVER Maps SDK failed to load')), {
-        once: true,
-      });
-      return;
-    }
-
-    const script = document.createElement('script');
-    script.id = 'naver-maps-js-sdk';
-    script.async = true;
-    script.src = `https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=${encodeURIComponent(ncpKeyId)}`;
-    script.addEventListener(
-      'load',
-      () => {
-        script.dataset.loadState = 'loaded';
-        handleLoad();
-      },
-      { once: true },
-    );
-    script.addEventListener('error', () => reject(new Error('NAVER Maps SDK failed to load')), { once: true });
-    document.head.appendChild(script);
-  });
+      const script = document.createElement('script');
+      script.id = 'naver-maps-js-sdk';
+      script.async = true;
+      script.src = `https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=${encodeURIComponent(ncpKeyId)}`;
+      script.addEventListener(
+        'load',
+        () => {
+          script.dataset.loadState = 'loaded';
+          handleLoad();
+        },
+        { once: true },
+      );
+      script.addEventListener(
+        'error',
+        () => reject(new Error('NAVER Maps SDK failed to load')),
+        { once: true },
+      );
+      document.head.appendChild(script);
+    },
+  );
 
   return window.__estateErpNaverMapsPromise;
 }
@@ -2263,7 +2657,11 @@ function MapPropertyRow({
 }) {
   const property = group.property;
   const siteName = property?.site?.name ?? '매물 정보 없음';
-  const address = point?.address ?? property?.site?.roadAddress ?? property?.site?.jibunAddress ?? '주소 미등록';
+  const address =
+    point?.address ??
+    property?.site?.roadAddress ??
+    property?.site?.jibunAddress ??
+    '주소 미등록';
   const unitLabel = getPropertyMapUnitLabel(property);
   const priceLabel = getPropertyMapPriceLabel(group.listings);
 
@@ -2278,18 +2676,27 @@ function MapPropertyRow({
     >
       <div className="flex min-w-0 items-start justify-between gap-2">
         <div className="min-w-0">
-          <div className="truncate text-[13px] font-semibold text-foreground">{siteName}</div>
+          <div className="truncate text-[13px] font-semibold text-foreground">
+            {siteName}
+          </div>
           <div className="mt-0.5 truncate text-[12px] text-muted-foreground">
             {[unitLabel, address].filter(Boolean).join(' · ')}
           </div>
         </div>
-        <span className="shrink-0 text-[11px] text-muted-foreground">{group.listings.length.toLocaleString()}건</span>
+        <span className="shrink-0 text-[11px] text-muted-foreground">
+          {group.listings.length.toLocaleString()}건
+        </span>
       </div>
       <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-1.5">
         {group.listings.slice(0, 3).map((listing) => (
-          <TransactionBadge key={listing.id} transactionType={listing.transactionType} />
+          <TransactionBadge
+            key={listing.id}
+            transactionType={listing.transactionType}
+          />
         ))}
-        <span className="truncate text-[12px] font-medium text-slate-700">{priceLabel}</span>
+        <span className="truncate text-[12px] font-medium text-slate-700">
+          {priceLabel}
+        </span>
       </div>
     </button>
   );
@@ -2306,7 +2713,13 @@ function useDebouncedValue<T>(value: T, delayMs: number) {
   return debouncedValue;
 }
 
-function PropertyQuickSheet({ intakeId, onClose }: { intakeId: string | null; onClose: () => void }) {
+function PropertyQuickSheet({
+  intakeId,
+  onClose,
+}: {
+  intakeId: string | null;
+  onClose: () => void;
+}) {
   const { data: intake, isLoading } = useQuery({
     queryKey: ['listing-intakes', 'quick-sheet', intakeId],
     queryFn: () => api.listingIntakes.findOne(intakeId as string),
@@ -2320,7 +2733,10 @@ function PropertyQuickSheet({ intakeId, onClose }: { intakeId: string | null; on
       setContentReady(false);
       return;
     }
-    const timer = window.setTimeout(() => setContentReady(true), PROPERTY_QUICK_SHEET_CONTENT_DELAY_MS);
+    const timer = window.setTimeout(
+      () => setContentReady(true),
+      PROPERTY_QUICK_SHEET_CONTENT_DELAY_MS,
+    );
     return () => window.clearTimeout(timer);
   }, [intakeId]);
 
@@ -2344,7 +2760,9 @@ function PropertyQuickSheet({ intakeId, onClose }: { intakeId: string | null; on
           <div className="flex h-full flex-col">
             <SheetHeader className="sr-only">
               <SheetTitle>의뢰를 찾을 수 없습니다</SheetTitle>
-              <SheetDescription>요청하신 의뢰 정보가 존재하지 않습니다.</SheetDescription>
+              <SheetDescription>
+                요청하신 의뢰 정보가 존재하지 않습니다.
+              </SheetDescription>
             </SheetHeader>
             <div className="flex flex-1 items-center justify-center text-sm text-slate-500">
               의뢰를 찾을 수 없습니다.
@@ -2387,7 +2805,9 @@ function PropertySheetContent({
   onClose: () => void;
 }) {
   const openTab = useTabStore((s) => s.openTab);
-  const listings = (property.listings ?? []).slice().sort(comparePropertyListing);
+  const listings = (property.listings ?? [])
+    .slice()
+    .sort(comparePropertyListing);
   const contacts = property.propertyContacts ?? [];
   const tenants = property.tenants ?? [];
   const consultations = property.consultations ?? [];
@@ -2395,15 +2815,24 @@ function PropertySheetContent({
   const unitLabel = getPropertySheetUnitLabel(property);
   const unitTypeName = property.unit?.siteUnitType?.name;
   const floorLabel = property.unit?.floor ? `${property.unit.floor}층` : null;
-  const unitSummaryItems = [unitTypeName ? `${unitTypeName}타입` : null, floorLabel].filter(Boolean);
-  const address = property.site?.roadAddress ?? property.site?.jibunAddress ?? '주소 미등록';
-  const owner = contacts.find((contact) => contact.role === 'owner') ?? contacts[0];
+  const unitSummaryItems = [
+    unitTypeName ? `${unitTypeName}타입` : null,
+    floorLabel,
+  ].filter(Boolean);
+  const address =
+    property.site?.roadAddress ?? property.site?.jibunAddress ?? '주소 미등록';
+  const owner =
+    contacts.find((contact) => contact.role === 'owner') ?? contacts[0];
   const ownerPhone = owner?.contact?.phone;
   const areaLabel = formatPropertySheetArea(property);
   const notices = getPropertySheetNotices(property);
-  const intakeListings = listings.filter((listing) => listing.intakeId === intake.id);
+  const intakeListings = listings.filter(
+    (listing) => listing.intakeId === intake.id,
+  );
   const availability = getListingRowAvailability(intake, intakeListings);
-  const memo = intake.memo?.trim() || listings.find((listing) => listing.memo?.trim())?.memo?.trim();
+  const memo =
+    intake.memo?.trim() ||
+    listings.find((listing) => listing.memo?.trim())?.memo?.trim();
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-white">
@@ -2418,7 +2847,8 @@ function PropertySheetContent({
             onClick={() => {
               const route = `/properties/${property.id}`;
               const meta = getRouteMeta(route);
-              const tabTitle = [title, unitLabel].filter(Boolean).join(' ') || meta.title;
+              const tabTitle =
+                [title, unitLabel].filter(Boolean).join(' ') || meta.title;
               onClose();
               openTab({ route, kind: meta.kind, title: tabTitle });
             }}
@@ -2426,7 +2856,12 @@ function PropertySheetContent({
             <ExternalLink />
             전체 페이지로 열기
           </Button>
-          <Button variant="ghost" size="icon-sm" onClick={onClose} aria-label="닫기">
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={onClose}
+            aria-label="닫기"
+          >
             <X />
           </Button>
         </div>
@@ -2438,7 +2873,9 @@ function PropertySheetContent({
             {unitLabel && <span className="text-foreground">{unitLabel}</span>}
           </SheetTitle>
           {unitSummaryItems.length > 0 && (
-            <div className="text-[14px] leading-6 text-muted-foreground">{unitSummaryItems.join(' · ')}</div>
+            <div className="text-[14px] leading-6 text-muted-foreground">
+              {unitSummaryItems.join(' · ')}
+            </div>
           )}
           <SheetDescription className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-muted-foreground">
             <span className="inline-flex min-w-0 items-center gap-1.5">
@@ -2451,13 +2888,19 @@ function PropertySheetContent({
             </span>
             <span className="inline-flex items-center gap-1.5">
               <CalendarDays className="size-3.5" />
-              확인 {intake.lastCheckedAt ? formatDateShort(intake.lastCheckedAt) : '미확인'}
+              확인{' '}
+              {intake.lastCheckedAt
+                ? formatDateShort(intake.lastCheckedAt)
+                : '미확인'}
             </span>
             <span>접수 {formatDateShort(intake.receivedAt)}</span>
           </SheetDescription>
           <div className="flex flex-wrap items-center gap-1.5 pt-1">
             {listings.map((listing) => (
-              <TransactionBadge key={listing.id} transactionType={listing.transactionType} />
+              <TransactionBadge
+                key={listing.id}
+                transactionType={listing.transactionType}
+              />
             ))}
             <StatusIndicator value={availability} />
           </div>
@@ -2483,7 +2926,12 @@ function PropertySheetContent({
               </span>
             )}
           </Button>
-          <Button variant="outline" size="sm" className="h-8 gap-1.5 px-3 text-[13px] font-medium" asChild>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 gap-1.5 px-3 text-[13px] font-medium"
+            asChild
+          >
             <Link to="/properties/$id" params={{ id: property.id }}>
               <MessageSquare className="size-3.5" />
               상담 기록
@@ -2497,7 +2945,10 @@ function PropertySheetContent({
           {notices.length > 0 ? (
             <div className="space-y-2">
               {notices.map((notice) => (
-                <PropertySheetNoticeRow key={`${notice.title}-${notice.detail}`} notice={notice} />
+                <PropertySheetNoticeRow
+                  key={`${notice.title}-${notice.detail}`}
+                  notice={notice}
+                />
               ))}
             </div>
           ) : (
@@ -2517,11 +2968,15 @@ function PropertySheetContent({
           )}
         </SheetSection>
 
-        <SheetSection title={`가격 변경 ${getPropertySheetPriceHistoryCount(listings)}`}>
+        <SheetSection
+          title={`가격 변경 ${getPropertySheetPriceHistoryCount(listings)}`}
+        >
           <PropertySheetPriceHistoryList listings={listings} />
         </SheetSection>
 
-        <SheetSection title={`광고 ${getPropertySheetAdvertisementCount(listings)}`}>
+        <SheetSection
+          title={`광고 ${getPropertySheetAdvertisementCount(listings)}`}
+        >
           <PropertySheetAdvertisementList listings={listings} />
         </SheetSection>
 
@@ -2529,7 +2984,10 @@ function PropertySheetContent({
           {contacts.length > 0 || tenants.length > 0 ? (
             <div className="divide-y divide-[#eeeeec] rounded-md border border-[#eeeeec]">
               {contacts.map((contact) => (
-                <PropertySheetContactRow key={contact.id} propertyContact={contact} />
+                <PropertySheetContactRow
+                  key={contact.id}
+                  propertyContact={contact}
+                />
               ))}
               {tenants.map((tenant) => (
                 <PropertySheetTenantRow key={tenant.id} tenant={tenant} />
@@ -2555,14 +3013,23 @@ function PropertySheetContent({
           <div className="space-y-2">
             {memo && (
               <div className="rounded-md border border-[#eeeeec] bg-slate-50/60 p-3">
-                <div className="mb-1 text-[11px] font-medium text-slate-500">의뢰 메모</div>
-                <p className="whitespace-pre-wrap text-sm leading-6 text-slate-700">{memo}</p>
+                <div className="mb-1 text-[11px] font-medium text-slate-500">
+                  의뢰 메모
+                </div>
+                <p className="whitespace-pre-wrap text-sm leading-6 text-slate-700">
+                  {memo}
+                </p>
               </div>
             )}
             {consultations.slice(0, 3).map((consultation) => (
-              <PropertySheetConsultationRow key={consultation.id} consultation={consultation} />
+              <PropertySheetConsultationRow
+                key={consultation.id}
+                consultation={consultation}
+              />
             ))}
-            {!memo && consultations.length === 0 && <SheetEmptyState text="상담 기록과 메모가 없습니다." compact />}
+            {!memo && consultations.length === 0 && (
+              <SheetEmptyState text="상담 기록과 메모가 없습니다." compact />
+            )}
           </div>
         </SheetSection>
       </div>
@@ -2570,10 +3037,18 @@ function PropertySheetContent({
   );
 }
 
-function SheetSection({ title, children }: { title: string; children: ReactNode }) {
+function SheetSection({
+  title,
+  children,
+}: {
+  title: string;
+  children: ReactNode;
+}) {
   return (
     <section className="space-y-2.5">
-      <h3 className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">{title}</h3>
+      <h3 className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+        {title}
+      </h3>
       {children}
     </section>
   );
@@ -2591,8 +3066,12 @@ function PropertySheetNoticeRow({ notice }: { notice: PropertySheetNotice }) {
         )}
       />
       <div className="min-w-0 flex-1">
-        <div className="text-[13px] font-medium text-foreground">{notice.title}</div>
-        <p className="mt-0.5 text-[12px] leading-5 text-muted-foreground">{notice.detail}</p>
+        <div className="text-[13px] font-medium text-foreground">
+          {notice.title}
+        </div>
+        <p className="mt-0.5 text-[12px] leading-5 text-muted-foreground">
+          {notice.detail}
+        </p>
       </div>
     </div>
   );
@@ -2607,7 +3086,9 @@ function PropertySheetListingCard({ listing }: { listing: PropertyListing }) {
           <StatusIndicator value={getListingAvailability(listing)} />
           <JointBrokerageBadge intake={listing.intake} />
         </div>
-        <span className="shrink-0 text-[11px] text-muted-foreground">확인 {formatDateShort(listing.updatedAt)}</span>
+        <span className="shrink-0 text-[11px] text-muted-foreground">
+          확인 {formatDateShort(listing.updatedAt)}
+        </span>
       </div>
       <div className="mt-2 text-[18px] font-semibold tracking-[-0.01em] text-foreground">
         <PriceCell
@@ -2621,7 +3102,9 @@ function PropertySheetListingCard({ listing }: { listing: PropertyListing }) {
         <span>등록 {formatDateShort(listing.createdAt)}</span>
         <span>확인 {formatDaysAgo(listing.updatedAt)}</span>
       </div>
-      <ListingCostSummary listing={listing as PropertyListing & ListingCostExtras} />
+      <ListingCostSummary
+        listing={listing as PropertyListing & ListingCostExtras}
+      />
       {listing.memo?.trim() && (
         <p className="mt-2.5 line-clamp-2 border-l-2 border-border pl-2.5 text-[12px] leading-5 text-muted-foreground">
           {listing.memo.trim()}
@@ -2631,7 +3114,11 @@ function PropertySheetListingCard({ listing }: { listing: PropertyListing }) {
   );
 }
 
-function PropertySheetPriceHistoryList({ listings }: { listings: PropertyListing[] }) {
+function PropertySheetPriceHistoryList({
+  listings,
+}: {
+  listings: PropertyListing[];
+}) {
   const historyRows = listings
     .flatMap((listing) =>
       (listing.priceHistories ?? []).map((history) => ({
@@ -2639,7 +3126,11 @@ function PropertySheetPriceHistoryList({ listings }: { listings: PropertyListing
         history,
       })),
     )
-    .sort((a, b) => new Date(b.history.createdAt).getTime() - new Date(a.history.createdAt).getTime());
+    .sort(
+      (a, b) =>
+        new Date(b.history.createdAt).getTime() -
+        new Date(a.history.createdAt).getTime(),
+    );
 
   if (historyRows.length === 0) {
     return <SheetEmptyState text="등록된 가격 변경 이력이 없습니다." compact />;
@@ -2648,7 +3139,11 @@ function PropertySheetPriceHistoryList({ listings }: { listings: PropertyListing
   return (
     <div className="divide-y divide-[#eeeeec] rounded-md border border-[#eeeeec]">
       {historyRows.map(({ listing, history }) => (
-        <PropertySheetPriceHistoryRow key={history.id} listing={listing} history={history} />
+        <PropertySheetPriceHistoryRow
+          key={history.id}
+          listing={listing}
+          history={history}
+        />
       ))}
     </div>
   );
@@ -2676,21 +3171,33 @@ function PropertySheetPriceHistoryRow({
     <div className="px-3 py-3">
       <div className="flex min-w-0 flex-wrap items-center gap-1.5">
         <TransactionBadge transactionType={listing.transactionType} />
-        <span className="text-[11px] text-slate-500">{formatDateTime(history.createdAt)}</span>
+        <span className="text-[11px] text-slate-500">
+          {formatDateTime(history.createdAt)}
+        </span>
       </div>
       <div className="mt-2 flex min-w-0 flex-wrap items-center gap-2 text-sm">
-        <span className="font-medium tabular-nums text-slate-500">{beforePrice}</span>
+        <span className="font-medium tabular-nums text-slate-500">
+          {beforePrice}
+        </span>
         <span className="text-slate-300">→</span>
-        <span className="font-semibold tabular-nums text-slate-950">{afterPrice}</span>
+        <span className="font-semibold tabular-nums text-slate-950">
+          {afterPrice}
+        </span>
       </div>
       {history.reason?.trim() && (
-        <p className="mt-1.5 line-clamp-2 text-xs leading-5 text-slate-500">{history.reason.trim()}</p>
+        <p className="mt-1.5 line-clamp-2 text-xs leading-5 text-slate-500">
+          {history.reason.trim()}
+        </p>
       )}
     </div>
   );
 }
 
-function PropertySheetAdvertisementList({ listings }: { listings: PropertyListing[] }) {
+function PropertySheetAdvertisementList({
+  listings,
+}: {
+  listings: PropertyListing[];
+}) {
   const advertisementRows = listings.flatMap((listing) =>
     (listing.advertisements ?? []).map((advertisement) => ({
       listing,
@@ -2705,7 +3212,11 @@ function PropertySheetAdvertisementList({ listings }: { listings: PropertyListin
   return (
     <div className="divide-y divide-[#eeeeec] rounded-md border border-[#eeeeec]">
       {advertisementRows.map(({ listing, advertisement }) => (
-        <PropertySheetAdvertisementRow key={advertisement.id} listing={listing} advertisement={advertisement} />
+        <PropertySheetAdvertisementRow
+          key={advertisement.id}
+          listing={listing}
+          advertisement={advertisement}
+        />
       ))}
     </div>
   );
@@ -2718,13 +3229,21 @@ function PropertySheetAdvertisementRow({
   listing: PropertyListing;
   advertisement: NonNullable<PropertyListing['advertisements']>[number];
 }) {
-  const statusMeta = adStatusMeta[advertisement.status] ?? adStatusMeta.draft;
+  const statusMeta = adStatusMeta[advertisement.status] ?? adStatusMeta.active;
   const priceLabel = formatAdvertisementPrice(listing, advertisement);
   const dateItems = [
-    advertisement.startedAt ? `시작 ${formatDateShort(advertisement.startedAt)}` : null,
-    advertisement.endedAt ? `종료 ${formatDateShort(advertisement.endedAt)}` : null,
-    advertisement.lastCheckedAt ? `확인 ${formatDateShort(advertisement.lastCheckedAt)}` : null,
-    advertisement.lastSyncedAt ? `동기화 ${formatDateShort(advertisement.lastSyncedAt)}` : null,
+    advertisement.startedAt
+      ? `시작 ${formatDateShort(advertisement.startedAt)}`
+      : null,
+    advertisement.endedAt
+      ? `종료 ${formatDateShort(advertisement.endedAt)}`
+      : null,
+    advertisement.lastCheckedAt
+      ? `확인 ${formatDateShort(advertisement.lastCheckedAt)}`
+      : null,
+    advertisement.lastSyncedAt
+      ? `동기화 ${formatDateShort(advertisement.lastSyncedAt)}`
+      : null,
   ].filter(Boolean);
 
   return (
@@ -2746,7 +3265,9 @@ function PropertySheetAdvertisementRow({
             rel="noreferrer"
             className="inline-flex min-w-0 items-center gap-1 rounded-[4px] bg-[#f1f1ef] px-1.5 py-0.5 text-[11px] font-medium leading-5 text-[#5f5e5b] hover:bg-[#e9e9e7]"
           >
-            <span className="truncate">{getAdChannelLabel(advertisement.channel)}</span>
+            <span className="truncate">
+              {getAdChannelLabel(advertisement.channel)}
+            </span>
             <ExternalLink className="size-3" />
           </a>
         ) : (
@@ -2769,25 +3290,35 @@ function PropertySheetAdvertisementRow({
         </div>
       </div>
       {advertisement.memo?.trim() && (
-        <p className="mt-2 line-clamp-2 text-xs leading-5 text-slate-500">{advertisement.memo.trim()}</p>
+        <p className="mt-2 line-clamp-2 text-xs leading-5 text-slate-500">
+          {advertisement.memo.trim()}
+        </p>
       )}
     </div>
   );
 }
 
-function PropertySheetContactRow({ propertyContact }: { propertyContact: PropertyContact }) {
+function PropertySheetContactRow({
+  propertyContact,
+}: {
+  propertyContact: PropertyContact;
+}) {
   const name = propertyContact.contact?.name ?? '이름 없음';
   const phone = propertyContact.contact?.phone;
   return (
     <div className="flex items-center justify-between gap-3 px-3 py-3">
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="truncate text-sm font-medium text-slate-900">{name}</span>
+          <span className="truncate text-sm font-medium text-slate-900">
+            {name}
+          </span>
           <span className="rounded-[4px] bg-[#f1f1ef] px-1.5 py-0.5 text-[11px] text-[#5f5e5b]">
             {getContactRoleLabel(propertyContact.role)}
           </span>
           {propertyContact.isPrimary && (
-            <span className="rounded-[4px] bg-[#e7f3f8] px-1.5 py-0.5 text-[11px] text-[#337ea9]">주 연락처</span>
+            <span className="rounded-[4px] bg-[#e7f3f8] px-1.5 py-0.5 text-[11px] text-[#337ea9]">
+              주 연락처
+            </span>
           )}
         </div>
         <p className="mt-0.5 truncate text-xs text-slate-500">
@@ -2813,8 +3344,12 @@ function PropertySheetTenantRow({ tenant }: { tenant: Tenant }) {
     <div className="flex items-center justify-between gap-3 px-3 py-3">
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="truncate text-sm font-medium text-slate-900">{name}</span>
-          <span className="rounded-[4px] bg-[#f1f1ef] px-1.5 py-0.5 text-[11px] text-[#5f5e5b]">임차인</span>
+          <span className="truncate text-sm font-medium text-slate-900">
+            {name}
+          </span>
+          <span className="rounded-[4px] bg-[#f1f1ef] px-1.5 py-0.5 text-[11px] text-[#5f5e5b]">
+            임차인
+          </span>
           <span className="rounded-[4px] bg-[#fbf3db] px-1.5 py-0.5 text-[11px] text-[#8f6b1f]">
             {getTenantStatusLabel(tenant.status)}
           </span>
@@ -2834,17 +3369,29 @@ function PropertySheetTenantRow({ tenant }: { tenant: Tenant }) {
   );
 }
 
-function PropertySheetConsultationRow({ consultation }: { consultation: Consultation }) {
+function PropertySheetConsultationRow({
+  consultation,
+}: {
+  consultation: Consultation;
+}) {
   return (
     <div className="rounded-md border border-[#eeeeec] px-3 py-3">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="rounded-[4px] bg-[#f1f1ef] px-1.5 py-0.5 text-[11px] text-[#5f5e5b]">{consultation.type}</span>
-        <span className="text-[11px] text-slate-500">{formatDateTime(consultation.createdAt)}</span>
+        <span className="rounded-[4px] bg-[#f1f1ef] px-1.5 py-0.5 text-[11px] text-[#5f5e5b]">
+          {consultation.type}
+        </span>
+        <span className="text-[11px] text-slate-500">
+          {formatDateTime(consultation.createdAt)}
+        </span>
         {consultation.contact?.name && (
-          <span className="text-[11px] text-slate-500">· {consultation.contact.name}</span>
+          <span className="text-[11px] text-slate-500">
+            · {consultation.contact.name}
+          </span>
         )}
       </div>
-      <p className="mt-2 line-clamp-3 text-sm leading-6 text-slate-700">{consultation.content}</p>
+      <p className="mt-2 line-clamp-3 text-sm leading-6 text-slate-700">
+        {consultation.content}
+      </p>
     </div>
   );
 }
@@ -2887,7 +3434,15 @@ function SheetActionButton({
   );
 }
 
-function SheetEmptyState({ text, compact = false, action }: { text: string; compact?: boolean; action?: ReactNode }) {
+function SheetEmptyState({
+  text,
+  compact = false,
+  action,
+}: {
+  text: string;
+  compact?: boolean;
+  action?: ReactNode;
+}) {
   return (
     <div
       className={cn(
@@ -2933,9 +3488,12 @@ function ResumeClosedListingDialog({
   onResume: () => void;
 }) {
   const propertyLabel = prompt.propertyLabel || '선택한 매물';
-  const targetLabel = prompt.targetAvailability === ListingAvailability.PAUSED ? '보류' : '가용';
+  const targetLabel =
+    prompt.targetAvailability === ListingAvailability.PAUSED ? '보류' : '가용';
   const targetLabelWithParticle =
-    prompt.targetAvailability === ListingAvailability.PAUSED ? '보류로' : '가용으로';
+    prompt.targetAvailability === ListingAvailability.PAUSED
+      ? '보류로'
+      : '가용으로';
 
   return (
     <Dialog
@@ -2962,8 +3520,8 @@ function ResumeClosedListingDialog({
           {prompt.canResume ? (
             prompt.completedListingCount > 0 ? (
               <>
-                완료 Deal이 없는 거래유형 {prompt.resumableListingCount}개를 재개합니다. 거래 완료된 거래유형{' '}
-                {prompt.completedListingCount}
+                완료 Deal이 없는 거래유형 {prompt.resumableListingCount}개를
+                재개합니다. 거래 완료된 거래유형 {prompt.completedListingCount}
                 개는 종료 상태를 유지합니다.
               </>
             ) : (
@@ -2977,7 +3535,12 @@ function ResumeClosedListingDialog({
         <DialogFooter>
           {prompt.canResume ? (
             <>
-              <Button type="button" variant="outline" disabled={pending} onClick={onClose}>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={pending}
+                onClick={onClose}
+              >
                 취소
               </Button>
               <Button type="button" disabled={pending} onClick={onResume}>
@@ -3009,7 +3572,8 @@ function StartDealFromStatusDialog({
   const [selectedListingId, setSelectedListingId] = useState(() =>
     isSingleListing ? (prompt.listings[0]?.id ?? '') : '',
   );
-  const selectedListing = prompt.listings.find((listing) => listing.id === selectedListingId) ?? null;
+  const selectedListing =
+    prompt.listings.find((listing) => listing.id === selectedListingId) ?? null;
 
   const mutation = useMutation({
     mutationFn: () => {
@@ -3033,7 +3597,9 @@ function StartDealFromStatusDialog({
     },
   });
 
-  const resumesPausedListing = selectedListing?.isPaused || prompt.intakeLifecycleStatus === IntakeLifecycleStatus.HOLD;
+  const resumesPausedListing =
+    selectedListing?.isPaused ||
+    prompt.intakeLifecycleStatus === IntakeLifecycleStatus.HOLD;
 
   return (
     <Dialog
@@ -3044,7 +3610,11 @@ function StartDealFromStatusDialog({
     >
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>{isSingleListing ? 'Deal을 생성하시겠습니까?' : '거래중으로 변경할 거래유형 선택'}</DialogTitle>
+          <DialogTitle>
+            {isSingleListing
+              ? 'Deal을 생성하시겠습니까?'
+              : '거래중으로 변경할 거래유형 선택'}
+          </DialogTitle>
           <DialogDescription>
             {isSingleListing
               ? `${prompt.propertyLabel || '선택한 매물'}에 Deal을 생성하면 상태가 거래중으로 변경됩니다.`
@@ -3055,7 +3625,11 @@ function StartDealFromStatusDialog({
         {isSingleListing && selectedListing ? (
           <DealStartListingOption listing={selectedListing} />
         ) : (
-          <RadioGroup value={selectedListingId} onValueChange={setSelectedListingId} className="gap-2">
+          <RadioGroup
+            value={selectedListingId}
+            onValueChange={setSelectedListingId}
+            className="gap-2"
+          >
             {prompt.listings.map((listing) => {
               const id = `start-deal-${listing.id}`;
               return (
@@ -3064,7 +3638,8 @@ function StartDealFromStatusDialog({
                   htmlFor={id}
                   className={cn(
                     'flex cursor-pointer items-center gap-3 rounded-md border px-3 py-2.5 transition-colors hover:bg-muted/50',
-                    selectedListingId === listing.id && 'border-[#529cca] bg-[#e7f3f8]/40',
+                    selectedListingId === listing.id &&
+                      'border-[#529cca] bg-[#e7f3f8]/40',
                   )}
                 >
                   <RadioGroupItem id={id} value={listing.id} />
@@ -3082,11 +3657,24 @@ function StartDealFromStatusDialog({
         )}
 
         <DialogFooter>
-          <Button type="button" variant="outline" disabled={mutation.isPending} onClick={onClose}>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={mutation.isPending}
+            onClick={onClose}
+          >
             취소
           </Button>
-          <Button type="button" disabled={!selectedListing || mutation.isPending} onClick={() => mutation.mutate()}>
-            {mutation.isPending ? <Loader2 className="size-4 animate-spin" /> : <Handshake className="size-4" />}
+          <Button
+            type="button"
+            disabled={!selectedListing || mutation.isPending}
+            onClick={() => mutation.mutate()}
+          >
+            {mutation.isPending ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <Handshake className="size-4" />
+            )}
             Deal 생성
           </Button>
         </DialogFooter>
@@ -3095,13 +3683,24 @@ function StartDealFromStatusDialog({
   );
 }
 
-function DealStartListingOption({ listing, compact = false }: { listing: ListingSummary; compact?: boolean }) {
+function DealStartListingOption({
+  listing,
+  compact = false,
+}: {
+  listing: ListingSummary;
+  compact?: boolean;
+}) {
   return (
     <div
-      className={cn('flex min-w-0 flex-1 items-center gap-2', !compact && 'rounded-md border bg-muted/30 px-3 py-3')}
+      className={cn(
+        'flex min-w-0 flex-1 items-center gap-2',
+        !compact && 'rounded-md border bg-muted/30 px-3 py-3',
+      )}
     >
       <TransactionBadge transactionType={listing.transactionType} />
-      <span className="min-w-0 flex-1 truncate text-sm font-medium">{getDealStartPriceLabel(listing)}</span>
+      <span className="min-w-0 flex-1 truncate text-sm font-medium">
+        {getDealStartPriceLabel(listing)}
+      </span>
     </div>
   );
 }
@@ -3109,11 +3708,14 @@ function DealStartListingOption({ listing, compact = false }: { listing: Listing
 function getDealStartPriceLabel(listing: ListingSummary) {
   if (listing.transactionType === 'monthly') {
     const deposit = listing.deposit ? formatPrice(listing.deposit) : '-';
-    const monthlyRent = listing.monthlyRent ? formatPrice(listing.monthlyRent) : '-';
+    const monthlyRent = listing.monthlyRent
+      ? formatPrice(listing.monthlyRent)
+      : '-';
     return `보증금 ${deposit} · 월세 ${monthlyRent}`;
   }
 
-  const price = listing.transactionType === 'jeonse' ? listing.deposit : listing.price;
+  const price =
+    listing.transactionType === 'jeonse' ? listing.deposit : listing.price;
   return price ? formatPrice(price) : '-';
 }
 
@@ -3137,15 +3739,20 @@ function getConfirmStatusMeta(value?: string | null) {
 }
 
 function getListingStackStyle(listings: ListingSummary[]) {
-  return listings.length > 1 ? { minHeight: listings.length * PROPERTY_LISTING_STACK_ITEM_HEIGHT } : undefined;
+  return listings.length > 1
+    ? { minHeight: listings.length * PROPERTY_LISTING_STACK_ITEM_HEIGHT }
+    : undefined;
 }
 
 function triggerStackCellEditor(event: ReactMouseEvent<HTMLTableCellElement>) {
   const target = event.target instanceof Element ? event.target : null;
   const directEditor = target?.closest('.cursor-text');
-  const editors = Array.from(event.currentTarget.querySelectorAll<HTMLElement>('.cursor-text'));
+  const editors = Array.from(
+    event.currentTarget.querySelectorAll<HTMLElement>('.cursor-text'),
+  );
   const editor =
-    directEditor instanceof HTMLElement && event.currentTarget.contains(directEditor)
+    directEditor instanceof HTMLElement &&
+    event.currentTarget.contains(directEditor)
       ? directEditor
       : getNearestEditorByY(editors, event.clientY);
 
@@ -3171,8 +3778,12 @@ function getNearestEditorByY(editors: HTMLElement[], y: number) {
     if (!nearest) return editor;
     const editorRect = editor.getBoundingClientRect();
     const nearestRect = nearest.getBoundingClientRect();
-    const editorDistance = Math.abs(y - (editorRect.top + editorRect.height / 2));
-    const nearestDistance = Math.abs(y - (nearestRect.top + nearestRect.height / 2));
+    const editorDistance = Math.abs(
+      y - (editorRect.top + editorRect.height / 2),
+    );
+    const nearestDistance = Math.abs(
+      y - (nearestRect.top + nearestRect.height / 2),
+    );
     return editorDistance < nearestDistance ? editor : nearest;
   }, null);
 }
@@ -3205,22 +3816,87 @@ function ListingAvailabilityCell({
       intake: { lifecycleStatus: intake.lifecycleStatus },
     })),
   );
+  const activeDealListingIndex = getActiveDealListingIndex(listings);
+  const activeDealListing = listings[activeDealListingIndex];
+  const showActiveDealConnector =
+    listings.length > 1 &&
+    availability === ListingAvailability.IN_CONTRACT &&
+    activeDealListingIndex >= 0;
+  const activeTransactionLabel = activeDealListing
+    ? (transactionTypeMeta[activeDealListing.transactionType]?.label ??
+      activeDealListing.transactionType)
+    : null;
 
   return (
-    <div className="-mx-2.5 flex h-full items-stretch" onClick={(event) => event.stopPropagation()}>
-      <EditableCell
-        recordId={intake.id}
-        field="listingAvailability"
-        value={availability}
-        onSave={(_id, _field, value) => onChange(String(value) as ListingAvailability)}
-        editType="select-chip"
-        chipOptions={listingAvailabilityChipOptions}
-      >
-        <span className="flex h-full w-full items-center px-2.5">
-          <StatusIndicator value={availability} />
-        </span>
-      </EditableCell>
+    <div
+      className="-mx-2.5 relative flex h-full items-stretch overflow-visible"
+      style={getListingStackStyle(listings)}
+      data-active-deal-status={showActiveDealConnector ? 'true' : undefined}
+      onClick={(event) => event.stopPropagation()}
+    >
+      <div className="relative z-10 flex w-full items-stretch self-stretch">
+        <EditableCell
+          recordId={intake.id}
+          field="listingAvailability"
+          value={availability}
+          onSave={(_id, _field, value) =>
+            onChange(String(value) as ListingAvailability)
+          }
+          editType="select-chip"
+          chipOptions={listingAvailabilityChipOptions}
+        >
+          <span className="flex h-full w-full items-center px-2.5">
+            <StatusIndicator value={availability} />
+            {showActiveDealConnector && activeTransactionLabel && (
+              <span className="sr-only">
+                {activeTransactionLabel} listing에 활성 Deal 연결
+              </span>
+            )}
+          </span>
+        </EditableCell>
+      </div>
+      {showActiveDealConnector && (
+        <ActiveDealListingConnector
+          listingCount={listings.length}
+          targetIndex={activeDealListingIndex}
+        />
+      )}
     </div>
+  );
+}
+
+function ActiveDealListingConnector({
+  listingCount,
+  targetIndex,
+}: {
+  listingCount: number;
+  targetIndex: number;
+}) {
+  const height = listingCount * PROPERTY_LISTING_STACK_ITEM_HEIGHT;
+  const startY = height / 2;
+  const targetY =
+    targetIndex * PROPERTY_LISTING_STACK_ITEM_HEIGHT +
+    PROPERTY_LISTING_STACK_ITEM_HEIGHT / 2;
+  const path = `M 0 ${startY} C 20 ${startY}, 26 ${targetY}, 62 ${targetY}`;
+
+  return (
+    <svg
+      data-active-deal-connector
+      className="pointer-events-none absolute left-[64px] top-0 z-0 w-16 overflow-visible opacity-60 transition-opacity duration-150 ease-out group-hover:opacity-100"
+      style={{ height }}
+      viewBox={`0 0 64 ${height}`}
+      preserveAspectRatio="none"
+      aria-hidden="true"
+    >
+      <path
+        d={path}
+        className="fill-none stroke-[#529cca]"
+        strokeWidth="1.25"
+        strokeLinecap="round"
+        vectorEffect="non-scaling-stroke"
+      />
+      <circle cx="62" cy={targetY} r="2.5" className="fill-[#529cca]" />
+    </svg>
   );
 }
 
@@ -3260,17 +3936,28 @@ function IntakeConfirmationCell({
   isPending,
 }: {
   intake: ListingIntake;
-  onConfirm: (intakeId: string, result: 'alive' | 'price_changed' | 'unavailable' | 'no_answer' | 'pending') => void;
+  onConfirm: (
+    intakeId: string,
+    result: 'alive' | 'price_changed' | 'unavailable' | 'no_answer' | 'pending',
+  ) => void;
   isPending?: boolean;
 }) {
   const checkedAt = intake.lastCheckedAt ?? intake.lastVerifiedAt;
   const freshness = getConfirmFreshness(checkedAt);
 
   return (
-    <div className="flex h-8 min-w-0 items-center gap-1.5" onClick={(event) => event.stopPropagation()}>
+    <div
+      className="flex h-8 min-w-0 items-center gap-1.5"
+      onClick={(event) => event.stopPropagation()}
+    >
       <span className={cn('size-[7px] shrink-0 rounded-full', freshness.dot)} />
       <div className="flex min-w-0 flex-col leading-tight">
-        <span className={cn('truncate text-[12px] font-medium tabular-nums', freshness.date)}>
+        <span
+          className={cn(
+            'truncate text-[12px] font-medium tabular-nums',
+            freshness.date,
+          )}
+        >
           {checkedAt ? formatDateShort(checkedAt) : '-'}
         </span>
         <span className={cn('truncate text-[10.5px]', freshness.relative)}>
@@ -3293,61 +3980,90 @@ function IntakeConfirmationCell({
 
 function ListingPriceDepositStack({
   listings,
+  activeDealListingId,
   onSave,
   onPatch,
 }: {
   listings: ListingSummary[];
+  activeDealListingId: string | null;
   onSave: (recordId: string, field: string, value: unknown) => void;
   onPatch: (recordId: string, patch: UpdateListingDto) => void;
 }) {
   const hasMultiple = listings.length > 1;
   return (
     <div
-      className={cn('-mx-2.5 flex h-full min-w-0 flex-col items-stretch', hasMultiple && 'divide-y divide-[#d9d9d6]')}
+      className={cn(
+        '-mx-2.5 flex h-full min-w-0 flex-col items-stretch',
+        hasMultiple && 'divide-y divide-[#d9d9d6]',
+      )}
       style={getListingStackStyle(listings)}
       onClick={(event) => event.stopPropagation()}
     >
-      {listings.map((listing) => (
-        <div key={listing.id} className="flex min-w-0 flex-1 items-center">
-          {listing.transactionType === 'monthly' ? (
-            <EditableCell
-              recordId={listing.id}
-              field="deposit"
-              value={listing.deposit}
-              onSave={(recordId, field, value) => {
-                onPatch(recordId, {
-                  [field]: parseEditorCellValue(value),
-                } as UpdateListingDto);
-              }}
-              editType="number"
-              activation="doubleClick"
-              portalAnchor={hasMultiple ? 'self' : 'tableCell'}
-              hoverHighlight={false}
-            >
-              <span className="flex h-full w-full items-center gap-1.5 px-2.5">
-                {hasMultiple && <TransactionMiniLabel transactionType={listing.transactionType} />}
-                <PriceDepositValue listing={listing} />
-              </span>
-            </EditableCell>
-          ) : (
-            <EditableCell
-              recordId={listing.id}
-              field="price"
-              value={listing.price}
-              onSave={onSave}
-              editType="number"
-              activation="doubleClick"
-              portalAnchor={hasMultiple ? 'self' : 'tableCell'}
-              hoverHighlight={false}
-            >
-              <span className="flex h-full w-full items-center gap-1.5 px-2.5">
-                {hasMultiple && <TransactionMiniLabel transactionType={listing.transactionType} />}
-                <PriceDepositValue listing={listing} />
-              </span>
-            </EditableCell>
-          )}
-        </div>
-      ))}
+      {listings.map((listing) => {
+        const isActiveDealListing = listing.id === activeDealListingId;
+        return (
+          <div
+            key={listing.id}
+            data-active-deal-listing={isActiveDealListing ? 'true' : undefined}
+            className={cn(
+              'flex min-w-0 flex-1 items-center transition-colors duration-150',
+              isActiveDealListing && 'group-hover:bg-[#e7f3f8]/40',
+            )}
+          >
+            {listing.transactionType === 'monthly' ? (
+              <EditableCell
+                recordId={listing.id}
+                field="deposit"
+                value={listing.deposit}
+                onSave={(recordId, field, value) => {
+                  onPatch(recordId, {
+                    [field]: parseEditorCellValue(value),
+                  } as UpdateListingDto);
+                }}
+                editType="number"
+                activation="doubleClick"
+                portalAnchor={hasMultiple ? 'self' : 'tableCell'}
+                hoverHighlight={false}
+              >
+                <span className="flex h-full w-full items-center gap-1.5 px-2.5">
+                  {hasMultiple && (
+                    <TransactionMiniLabel
+                      transactionType={listing.transactionType}
+                    />
+                  )}
+                  <PriceDepositValue listing={listing} />
+                  {isActiveDealListing && (
+                    <span className="sr-only">활성 Deal 연결 대상</span>
+                  )}
+                </span>
+              </EditableCell>
+            ) : (
+              <EditableCell
+                recordId={listing.id}
+                field="price"
+                value={listing.price}
+                onSave={onSave}
+                editType="number"
+                activation="doubleClick"
+                portalAnchor={hasMultiple ? 'self' : 'tableCell'}
+                hoverHighlight={false}
+              >
+                <span className="flex h-full w-full items-center gap-1.5 px-2.5">
+                  {hasMultiple && (
+                    <TransactionMiniLabel
+                      transactionType={listing.transactionType}
+                    />
+                  )}
+                  <PriceDepositValue listing={listing} />
+                  {isActiveDealListing && (
+                    <span className="sr-only">활성 Deal 연결 대상</span>
+                  )}
+                </span>
+              </EditableCell>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -3362,7 +4078,10 @@ function ListingMonthlyRentStack({
   const hasMultiple = listings.length > 1;
   return (
     <div
-      className={cn('-mx-2.5 flex h-full min-w-0 flex-col items-stretch', hasMultiple && 'divide-y divide-[#d9d9d6]')}
+      className={cn(
+        '-mx-2.5 flex h-full min-w-0 flex-col items-stretch',
+        hasMultiple && 'divide-y divide-[#d9d9d6]',
+      )}
       style={getListingStackStyle(listings)}
       onClick={(event) => event.stopPropagation()}
     >
@@ -3388,7 +4107,9 @@ function ListingMonthlyRentStack({
               </span>
             </EditableCell>
           ) : (
-            <span className="flex h-full w-full items-center px-2.5 text-[13px] text-muted-foreground">-</span>
+            <span className="flex h-full w-full items-center px-2.5 text-[13px] text-muted-foreground">
+              -
+            </span>
           )}
         </div>
       ))}
@@ -3409,7 +4130,10 @@ function ListingNumberFieldStack({
   const hasMultiple = listings.length > 1;
   return (
     <div
-      className={cn('-mx-2.5 flex h-full min-w-0 flex-col items-stretch', hasMultiple && 'divide-y divide-[#d9d9d6]')}
+      className={cn(
+        '-mx-2.5 flex h-full min-w-0 flex-col items-stretch',
+        hasMultiple && 'divide-y divide-[#d9d9d6]',
+      )}
       style={getListingStackStyle(listings)}
       onClick={(event) => event.stopPropagation()}
     >
@@ -3438,9 +4162,16 @@ function ListingNumberFieldStack({
 }
 
 function PriceDepositValue({ listing }: { listing: ListingSummary }) {
-  const value = listing.transactionType === 'monthly' ? listing.deposit : (listing.price ?? listing.deposit);
+  const value =
+    listing.transactionType === 'monthly'
+      ? listing.deposit
+      : (listing.price ?? listing.deposit);
 
-  return <span className="tabular-nums text-sm font-medium">{value ? formatPrice(value) : '-'}</span>;
+  return (
+    <span className="tabular-nums text-sm font-medium">
+      {value ? formatPrice(value) : '-'}
+    </span>
+  );
 }
 
 function MonthlyRentValue({ listing }: { listing: ListingSummary }) {
@@ -3494,7 +4225,10 @@ function ListingPanelToggle({
       {count}
       <ChevronDown
         aria-hidden="true"
-        className={cn('size-3 transition-transform duration-150', isOpen && 'rotate-180')}
+        className={cn(
+          'size-3 transition-transform duration-150',
+          isOpen && 'rotate-180',
+        )}
       />
     </Button>
   );
@@ -3532,7 +4266,10 @@ function ListingMatchToggle({
 }
 
 function getPropertyMatchCount(group: PropertyListingGroup) {
-  return group.listings.reduce((total, listing) => total + (listing._count?.matches ?? 0), 0);
+  return group.listings.reduce(
+    (total, listing) => total + (listing._count?.matches ?? 0),
+    0,
+  );
 }
 
 function estimatePropertyMatchPanelHeight(group: PropertyListingGroup) {
@@ -3542,11 +4279,26 @@ function estimatePropertyMatchPanelHeight(group: PropertyListingGroup) {
 function PropertyMatchPanel({ group }: { group: PropertyListingGroup }) {
   const queryClient = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);
-  const listingIds = useMemo(() => group.listings.map((listing) => listing.id), [group.listings]);
-  const { data: matches = [], isLoading, isError, refetch } = useQuery({
-    queryKey: ['matches', 'property-list-panel', group.id, listingIds.join(',')],
+  const listingIds = useMemo(
+    () => group.listings.map((listing) => listing.id),
+    [group.listings],
+  );
+  const {
+    data: matches = [],
+    isLoading,
+    isError,
+    refetch,
+  } = useQuery({
+    queryKey: [
+      'matches',
+      'property-list-panel',
+      group.id,
+      listingIds.join(','),
+    ],
     queryFn: async () => {
-      const results = await Promise.all(listingIds.map((listingId) => api.matches.findAll({ listingId })));
+      const results = await Promise.all(
+        listingIds.map((listingId) => api.matches.findAll({ listingId })),
+      );
       return results.flat();
     },
   });
@@ -3565,7 +4317,12 @@ function PropertyMatchPanel({ group }: { group: PropertyListingGroup }) {
   });
 
   const sortedMatches = useMemo(
-    () => matches.slice().sort((a, b) => getMatchStageIndex(b.stage) - getMatchStageIndex(a.stage)),
+    () =>
+      matches
+        .slice()
+        .sort(
+          (a, b) => getMatchStageIndex(b.stage) - getMatchStageIndex(a.stage),
+        ),
     [matches],
   );
 
@@ -3588,7 +4345,9 @@ function PropertyMatchPanel({ group }: { group: PropertyListingGroup }) {
                 <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-md bg-muted px-1.5 text-[10.5px] font-semibold tabular-nums text-muted-foreground">
                   {isLoading ? getPropertyMatchCount(group) : matches.length}
                 </span>
-                <span className="text-[11px] text-muted-foreground">진행 단계가 높은 순</span>
+                <span className="text-[11px] text-muted-foreground">
+                  진행 단계가 높은 순
+                </span>
               </div>
             </div>
           </div>
@@ -3610,7 +4369,9 @@ function PropertyMatchPanel({ group }: { group: PropertyListingGroup }) {
           </div>
         ) : isError ? (
           <div className="flex h-20 items-center justify-between rounded-lg border border-destructive/20 bg-white px-3.5">
-            <span className="text-xs text-destructive">연결된 구매의뢰를 불러오지 못했습니다.</span>
+            <span className="text-xs text-destructive">
+              연결된 구매의뢰를 불러오지 못했습니다.
+            </span>
             <Button variant="outline" size="xs" onClick={() => void refetch()}>
               다시 시도
             </Button>
@@ -3625,15 +4386,24 @@ function PropertyMatchPanel({ group }: { group: PropertyListingGroup }) {
               <MatchPanelCard
                 key={match.id}
                 match={match}
-                pending={stageMutation.isPending && stageMutation.variables?.matchId === match.id}
-                onStageChange={(stage) => stageMutation.mutate({ matchId: match.id, stage })}
+                pending={
+                  stageMutation.isPending &&
+                  stageMutation.variables?.matchId === match.id
+                }
+                onStageChange={(stage) =>
+                  stageMutation.mutate({ matchId: match.id, stage })
+                }
               />
             ))}
           </div>
         )}
       </div>
 
-      <MatchCreateDialog open={createOpen} onOpenChange={setCreateOpen} matches={matches} />
+      <MatchCreateDialog
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        matches={matches}
+      />
     </div>
   );
 }
@@ -3662,11 +4432,19 @@ function MatchPanelCard({
           <span className="flex size-6 shrink-0 items-center justify-center rounded-md bg-muted/70 text-muted-foreground">
             <UserRound className="size-3.5" />
           </span>
-          <span className="whitespace-nowrap text-[13px] font-semibold text-foreground">{buyerName}</span>
+          <span className="whitespace-nowrap text-[13px] font-semibold text-foreground">
+            {buyerName}
+          </span>
           {buyer?.transactionType && (
-            <StatusBadge kind="transactionType" status={buyer.transactionType} size="sm" />
+            <StatusBadge
+              kind="transactionType"
+              status={buyer.transactionType}
+              size="sm"
+            />
           )}
-          {buyer?.urgency && <StatusBadge kind="buyerUrgency" status={buyer.urgency} size="sm" />}
+          {buyer?.urgency && (
+            <StatusBadge kind="buyerUrgency" status={buyer.urgency} size="sm" />
+          )}
           <span className="h-3.5 w-px shrink-0 bg-border" />
           <span className="truncate text-[10.5px] text-muted-foreground">
             {buyerPhone ? formatPhoneNumber(buyerPhone) : '연락처 없음'}
@@ -3677,8 +4455,16 @@ function MatchPanelCard({
         <div className="flex shrink-0 items-center gap-1.5">
           <StatusBadge kind="matchStage" status={match.stage} size="sm" />
           {buyerPhone && (
-            <Button variant="outline" size="icon-sm" className="size-7 shrink-0 shadow-none" asChild>
-              <a href={`tel:${buyerPhone}`} aria-label={`${buyerName} ${formatPhoneNumber(buyerPhone)} 전화`}>
+            <Button
+              variant="outline"
+              size="icon-sm"
+              className="size-7 shrink-0 shadow-none"
+              asChild
+            >
+              <a
+                href={`tel:${buyerPhone}`}
+                aria-label={`${buyerName} ${formatPhoneNumber(buyerPhone)} 전화`}
+              >
                 <Phone className="size-3.5" />
               </a>
             </Button>
@@ -3689,18 +4475,24 @@ function MatchPanelCard({
       <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 pl-8 text-[11px]">
         <div className="inline-flex min-w-0 items-center gap-1.5">
           <span className="shrink-0 text-muted-foreground">예산</span>
-          <span className="whitespace-nowrap font-medium tabular-nums text-foreground">{formatBuyerBudget(buyer)}</span>
+          <span className="whitespace-nowrap font-medium tabular-nums text-foreground">
+            {formatBuyerBudget(buyer)}
+          </span>
         </div>
         {areaLabel && (
           <div className="inline-flex min-w-0 items-center gap-1.5">
             <span className="shrink-0 text-muted-foreground">면적</span>
-            <span className="whitespace-nowrap font-medium tabular-nums text-foreground">{areaLabel}</span>
+            <span className="whitespace-nowrap font-medium tabular-nums text-foreground">
+              {areaLabel}
+            </span>
           </div>
         )}
         {buyer?.moveInDate && (
           <div className="inline-flex min-w-0 items-center gap-1.5">
             <span className="shrink-0 text-muted-foreground">입주</span>
-            <span className="whitespace-nowrap font-medium text-foreground">{formatDateShort(buyer.moveInDate)}</span>
+            <span className="whitespace-nowrap font-medium text-foreground">
+              {formatDateShort(buyer.moveInDate)}
+            </span>
           </div>
         )}
         {requirementNote && (
@@ -3713,8 +4505,12 @@ function MatchPanelCard({
 
       <div className="mt-2.5 flex items-center gap-3 border-t border-border/70 pt-2.5">
         <div className="flex w-12 shrink-0 flex-col">
-          <span className="text-[10.5px] font-medium text-muted-foreground">진행</span>
-          <span className="truncate text-[9.5px] text-muted-foreground/75">{currentStageLabel}</span>
+          <span className="text-[10.5px] font-medium text-muted-foreground">
+            진행
+          </span>
+          <span className="truncate text-[9.5px] text-muted-foreground/75">
+            {currentStageLabel}
+          </span>
         </div>
         <div className="min-w-0 flex-1 overflow-x-auto pb-0.5">
           <div className="flex min-w-[700px] items-center">
@@ -3745,7 +4541,11 @@ function MatchPanelCard({
                           : 'border-border bg-white text-muted-foreground hover:bg-muted/60 hover:text-foreground',
                     )}
                   >
-                    {pending && isCurrent ? <Loader2 className="size-3 animate-spin" /> : meta.label}
+                    {pending && isCurrent ? (
+                      <Loader2 className="size-3 animate-spin" />
+                    ) : (
+                      meta.label
+                    )}
                   </button>
                   {index < MATCH_STAGE_STEPS.length - 1 && (
                     <span
@@ -3780,7 +4580,8 @@ function formatBuyerBudget(buyer?: BuyerRequirement) {
 
   const min = buyer.priceMin ?? buyer.depositMin;
   const max = buyer.priceMax ?? buyer.depositMax;
-  if (min && max && min !== max) return `${formatMoney(min)} ~ ${formatMoney(max)}`;
+  if (min && max && min !== max)
+    return `${formatMoney(min)} ~ ${formatMoney(max)}`;
   return formatMoney(max ?? min).replace('—', '-');
 }
 
@@ -3792,14 +4593,19 @@ function formatBuyerArea(buyer?: BuyerRequirement) {
   return max ?? min;
 }
 
-function formatBuyerRequirementNote(buyer: BuyerRequirement | undefined, matchMemo: string | null) {
+function formatBuyerRequirementNote(
+  buyer: BuyerRequirement | undefined,
+  matchMemo: string | null,
+) {
   const conditions = [
     ...(buyer?.mustConditions ?? []),
     ...(buyer?.preferConditions ?? []),
   ].filter((condition) => condition.trim());
   if (conditions.length > 0) {
     const visible = conditions.slice(0, 3).join(' · ');
-    return conditions.length > 3 ? `${visible} 외 ${conditions.length - 3}개` : visible;
+    return conditions.length > 3
+      ? `${visible} 외 ${conditions.length - 3}개`
+      : visible;
   }
   return matchMemo?.trim() || buyer?.memo?.trim() || null;
 }
@@ -3860,7 +4666,9 @@ function PropertyAdPanel({ group }: { group: PropertyListingGroup }) {
     >
       <div className="mb-2 flex items-center gap-1.5">
         <Megaphone className="size-3.5 text-[#337ea9]" />
-        <span className="text-xs font-semibold text-[#337ea9]">광고 노출 {adRows.length}개</span>
+        <span className="text-xs font-semibold text-[#337ea9]">
+          광고 노출 {adRows.length}개
+        </span>
         <span className="text-[11.5px] text-[#6b9fba]">· CP사별 현황</span>
       </div>
 
@@ -3870,18 +4678,33 @@ function PropertyAdPanel({ group }: { group: PropertyListingGroup }) {
         <div className="overflow-x-auto">
           <div className="min-w-[650px] max-w-[760px]">
             <div className="flex items-center gap-1.5 pb-1.5 pl-[13px] pr-1">
-              <span className="w-[52px] shrink-0 text-[11px] font-semibold text-muted-foreground">거래</span>
-              <span className="w-[128px] shrink-0 text-[11px] font-semibold text-muted-foreground">CP사</span>
-              <span className="w-[72px] shrink-0 text-[11px] font-semibold text-muted-foreground">상태</span>
-              <span className="w-[130px] shrink-0 text-[11px] font-semibold text-muted-foreground">가격/보증금</span>
-              <span className="w-[90px] shrink-0 text-[11px] font-semibold text-muted-foreground">월세</span>
-              <span className="w-[72px] shrink-0 text-[11px] font-semibold text-muted-foreground">등록일</span>
+              <span className="w-[52px] shrink-0 text-[11px] font-semibold text-muted-foreground">
+                거래
+              </span>
+              <span className="w-[128px] shrink-0 text-[11px] font-semibold text-muted-foreground">
+                CP사
+              </span>
+              <span className="w-[72px] shrink-0 text-[11px] font-semibold text-muted-foreground">
+                상태
+              </span>
+              <span className="w-[130px] shrink-0 text-[11px] font-semibold text-muted-foreground">
+                가격/보증금
+              </span>
+              <span className="w-[90px] shrink-0 text-[11px] font-semibold text-muted-foreground">
+                월세
+              </span>
+              <span className="w-[72px] shrink-0 text-[11px] font-semibold text-muted-foreground">
+                등록일
+              </span>
             </div>
 
             <div className="flex flex-col gap-1.5">
               {adRows.map(({ listing, advertisement }) => {
-                const statusMeta = adStatusMeta[advertisement.status] ?? adStatusMeta.draft;
-                const advertisedPrice = advertisement.advertisedPrice ?? advertisement.advertisedDeposit;
+                const statusMeta =
+                  adStatusMeta[advertisement.status] ?? adStatusMeta.active;
+                const advertisedPrice =
+                  advertisement.advertisedPrice ??
+                  advertisement.advertisedDeposit;
 
                 return (
                   <div
@@ -3889,7 +4712,9 @@ function PropertyAdPanel({ group }: { group: PropertyListingGroup }) {
                     className="flex items-center gap-1.5 rounded-lg border border-[#d8ebf3] bg-white px-3 py-2"
                   >
                     <div className="w-[52px] shrink-0">
-                      <TransactionMiniLabel transactionType={listing.transactionType} />
+                      <TransactionMiniLabel
+                        transactionType={listing.transactionType}
+                      />
                     </div>
                     <div className="w-[128px] shrink-0 truncate text-[13px] font-semibold text-foreground">
                       {getAdChannelLabel(advertisement.channel)}
@@ -3905,7 +4730,9 @@ function PropertyAdPanel({ group }: { group: PropertyListingGroup }) {
                       </span>
                     </div>
                     <div className="w-[130px] shrink-0 truncate text-[12.5px] font-medium tabular-nums text-foreground">
-                      {advertisedPrice != null ? formatPrice(advertisedPrice) : '-'}
+                      {advertisedPrice != null
+                        ? formatPrice(advertisedPrice)
+                        : '-'}
                     </div>
                     <div className="w-[90px] shrink-0 truncate text-[12.5px] tabular-nums text-foreground/70">
                       {advertisement.advertisedMonthlyRent != null
@@ -3959,7 +4786,7 @@ function IntakeMemoCell({
       portalAnchor="tableCell"
       hoverHighlight={false}
     >
-      <p className="line-clamp-2 min-w-0 px-2.5 text-[11px] leading-snug text-slate-600">
+      <p className="line-clamp-2 min-w-0 px-2.5 text-[13px] leading-4 text-slate-600">
         {value || <span className="text-slate-400">-</span>}
       </p>
     </EditableCell>
@@ -4039,7 +4866,10 @@ function MoveInAvailableStack({
             recordId={listing.id}
             field="moveInAvailableType"
             value={listing}
-            chipValueOf={(v) => (v as ListingSummary | undefined)?.moveInAvailableType ?? 'unknown'}
+            chipValueOf={(v) =>
+              (v as ListingSummary | undefined)?.moveInAvailableType ??
+              'unknown'
+            }
             onSave={(recordId, field, value) => {
               onPatch(recordId, { [field]: value } as UpdateListingDto);
             }}
@@ -4080,7 +4910,11 @@ function MoveInAvailableSummary({ listing }: { listing: ListingSummary }) {
       >
         <span className="truncate">{summary.label}</span>
       </span>
-      {summary.detail && <span className="truncate text-[11px] text-slate-500">{summary.detail}</span>}
+      {summary.detail && (
+        <span className="truncate text-[11px] text-slate-500">
+          {summary.detail}
+        </span>
+      )}
     </div>
   );
 }
@@ -4099,7 +4933,11 @@ function TransactionBadge({ transactionType }: { transactionType: string }) {
   );
 }
 
-function TransactionMiniLabel({ transactionType }: { transactionType: string }) {
+function TransactionMiniLabel({
+  transactionType,
+}: {
+  transactionType: string;
+}) {
   const transactionMeta = transactionTypeMeta[transactionType];
   return (
     <span
@@ -4166,19 +5004,38 @@ function FilterPopoverChip({
           variant="ghost"
           size="sm"
           className={cn(
-            'h-8 max-w-[240px] gap-1.5 rounded-md border text-xs',
+            'h-8 max-w-[240px] gap-1.5 rounded-md border border-border bg-white text-xs shadow-none',
             onClear && active ? 'pl-2.5 pr-1.5' : 'px-2.5',
             // 활성: 강한 inverse (모노톤)
-            active && 'border-foreground/25 bg-foreground/[0.06] text-foreground hover:bg-foreground/[0.09]',
+            active &&
+              'border-foreground/25 bg-foreground/[0.06] text-foreground hover:bg-foreground/[0.09]',
             // 비활성 + tier별 weight
-            !active && tier === 1 && 'border-border bg-white text-foreground hover:border-foreground/40',
-            !active && tier === 2 && 'border-transparent text-muted-foreground hover:border-border hover:bg-white',
-            !active && tier === 3 && 'border-transparent text-muted-foreground/70 hover:border-border hover:bg-white',
+            !active &&
+              tier === 1 &&
+              'text-foreground hover:border-foreground/40 hover:bg-white',
+            !active &&
+              tier === 2 &&
+              'text-muted-foreground hover:border-foreground/30 hover:bg-white',
+            !active &&
+              tier === 3 &&
+              'text-muted-foreground/80 hover:border-foreground/30 hover:bg-white',
           )}
         >
-          <span className={cn('shrink-0', active ? 'text-muted-foreground' : 'text-muted-foreground')}>{label}</span>
           <span
-            className={cn('min-w-0 truncate', active ? 'font-semibold text-foreground' : 'font-medium text-foreground')}
+            className={cn(
+              'shrink-0',
+              active ? 'text-muted-foreground' : 'text-muted-foreground',
+            )}
+          >
+            {label}
+          </span>
+          <span
+            className={cn(
+              'min-w-0 truncate',
+              active
+                ? 'font-semibold text-foreground'
+                : 'font-medium text-foreground',
+            )}
           >
             {value}
           </span>
@@ -4205,23 +5062,42 @@ function FilterPopoverChip({
           )}
         </Button>
       </PopoverTrigger>
-      <PopoverContent align="start" className={cn('w-80 p-3', contentClassName)}>
+      <PopoverContent
+        align="start"
+        className={cn('w-80 p-3', contentClassName)}
+      >
         {children}
       </PopoverContent>
     </Popover>
   );
 }
 
-function PopoverTitle({ title, description }: { title: string; description: string }) {
+function PopoverTitle({
+  title,
+  description,
+}: {
+  title: string;
+  description: string;
+}) {
   return (
     <div>
       <h3 className="text-[13px] font-semibold text-foreground">{title}</h3>
-      <p className="mt-0.5 text-[11px] leading-4 text-muted-foreground">{description}</p>
+      <p className="mt-0.5 text-[11px] leading-4 text-muted-foreground">
+        {description}
+      </p>
     </div>
   );
 }
 
-function FilterField({ label, className, children }: { label: string; className?: string; children: ReactNode }) {
+function FilterField({
+  label,
+  className,
+  children,
+}: {
+  label: string;
+  className?: string;
+  children: ReactNode;
+}) {
   return (
     <div className={cn('flex min-w-0 flex-col gap-1', className)}>
       <span className="text-[11px] font-medium text-slate-500">{label}</span>
@@ -4241,13 +5117,23 @@ function SelectFilter({
 }) {
   const SENTINEL = '__all__';
   return (
-    <Select value={value === '' ? SENTINEL : value} onValueChange={(next) => onChange(next === SENTINEL ? '' : next)}>
-      <SelectTrigger size="sm" className="w-full border-border bg-white text-[13px] text-foreground">
+    <Select
+      value={value === '' ? SENTINEL : value}
+      onValueChange={(next) => onChange(next === SENTINEL ? '' : next)}
+    >
+      <SelectTrigger
+        size="sm"
+        className="w-full border-border bg-white text-[13px] text-foreground"
+      >
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
         {options.map((option) => (
-          <SelectItem key={option.value} value={option.value === '' ? SENTINEL : option.value} className="text-[13px]">
+          <SelectItem
+            key={option.value}
+            value={option.value === '' ? SENTINEL : option.value}
+            className="text-[13px]"
+          >
             {option.label}
           </SelectItem>
         ))}
@@ -4321,9 +5207,9 @@ function NumericRangeFilterPanel({
   const segments = presets.filter((preset) => !preset.isAll);
   const [draftRange, setDraftRange] = useState<[number, number]>(initialRange);
   const [rangeAnchor, setRangeAnchor] = useState<number | null>(null);
-  const [selectedPresetSpan, setSelectedPresetSpan] = useState<[number, number] | null>(() =>
-    getNumericPresetSpan(initialRange, segments),
-  );
+  const [selectedPresetSpan, setSelectedPresetSpan] = useState<
+    [number, number] | null
+  >(() => getNumericPresetSpan(initialRange, segments));
   const isFullRange = draftRange[0] === min && draftRange[1] === max;
 
   const handleSliderChange = (value: number[]) => {
@@ -4367,7 +5253,9 @@ function NumericRangeFilterPanel({
       <div className="flex items-start justify-between gap-3 border-b px-4 py-3">
         <div>
           <h3 className="text-[13px] font-semibold text-foreground">{title}</h3>
-          <p className="mt-0.5 text-[11px] leading-4 text-muted-foreground">{description}</p>
+          <p className="mt-0.5 text-[11px] leading-4 text-muted-foreground">
+            {description}
+          </p>
         </div>
         <Button
           type="button"
@@ -4421,8 +5309,10 @@ function NumericRangeFilterPanel({
             const isSpanEdge =
               isInSelectedSpan &&
               selectedPresetSpan !== null &&
-              (segmentIndex === selectedPresetSpan[0] || segmentIndex === selectedPresetSpan[1]);
-            const isAllSelected = isAllPreset && selectedPresetSpan === null && isFullRange;
+              (segmentIndex === selectedPresetSpan[0] ||
+                segmentIndex === selectedPresetSpan[1]);
+            const isAllSelected =
+              isAllPreset && selectedPresetSpan === null && isFullRange;
             const isSelected = isInSelectedSpan || isAllSelected;
             return (
               <Button
@@ -4431,14 +5321,21 @@ function NumericRangeFilterPanel({
                 variant={isSpanEdge || isAllSelected ? 'default' : 'ghost'}
                 size="sm"
                 aria-pressed={isSelected}
-                data-range-state={isSelected ? (isSpanEdge || isAllSelected ? 'edge' : 'inside') : 'off'}
+                data-range-state={
+                  isSelected
+                    ? isSpanEdge || isAllSelected
+                      ? 'edge'
+                      : 'inside'
+                    : 'off'
+                }
                 onClick={() => handlePresetClick(preset)}
                 className={cn(
                   'h-8 rounded-none border-b border-r px-1 text-[11px] shadow-none',
                   isInSelectedSpan &&
                     !isSpanEdge &&
                     'bg-muted text-foreground hover:bg-muted hover:text-foreground',
-                  !isSelected && 'text-muted-foreground hover:bg-muted/60 hover:text-foreground',
+                  !isSelected &&
+                    'text-muted-foreground hover:bg-muted/60 hover:text-foreground',
                 )}
               >
                 {preset.label}
@@ -4459,10 +5356,21 @@ function NumericRangeFilterPanel({
             조건 삭제
           </Button>
           <div className="flex gap-1.5">
-            <Button type="button" variant="outline" size="sm" onClick={onCancel} className="text-[11px]">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={onCancel}
+              className="text-[11px]"
+            >
               취소
             </Button>
-            <Button type="button" size="sm" onClick={() => onApply(draftRange)} className="text-[11px]">
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => onApply(draftRange)}
+              className="text-[11px]"
+            >
               적용
             </Button>
           </div>
@@ -4557,8 +5465,10 @@ function buildListingFilterParams(filters: PropertyFilterState) {
   if (filters.provinceCode) params.provinceCode = filters.provinceCode;
   if (filters.districtCode) params.districtCode = filters.districtCode;
   if (filters.wardCode) params.wardCode = filters.wardCode;
-  if (filters.siteTypes.length > 0) params.siteTypes = filters.siteTypes.join(',');
-  if (filters.availabilities.length > 0) params.availabilities = filters.availabilities.join(',');
+  if (filters.siteTypes.length > 0)
+    params.siteTypes = filters.siteTypes.join(',');
+  if (filters.availabilities.length > 0)
+    params.availabilities = filters.availabilities.join(',');
   // 가격(매매가/전세가)은 state를 억 단위로 보관 → API는 만원 단위 (×10000)
   addEokParam(params, 'priceMin', filters.priceMin);
   addEokParam(params, 'priceMax', filters.priceMax);
@@ -4582,13 +5492,21 @@ function buildListingFilterParams(filters: PropertyFilterState) {
   return params;
 }
 
-function addNumberParam(params: Record<string, string | number | boolean | undefined>, key: string, value: string) {
+function addNumberParam(
+  params: Record<string, string | number | boolean | undefined>,
+  key: string,
+  value: string,
+) {
   const numberValue = parseNumberFilter(value);
   if (numberValue !== undefined) params[key] = numberValue;
 }
 
 /** 억 단위 입력값을 만원 단위 API 파라미터로 변환 (1억 = 10,000만원). */
-function addEokParam(params: Record<string, string | number | boolean | undefined>, key: string, value: string) {
+function addEokParam(
+  params: Record<string, string | number | boolean | undefined>,
+  key: string,
+  value: string,
+) {
   const numberValue = parseNumberFilter(value);
   if (numberValue !== undefined) params[key] = Math.round(numberValue * 10000);
 }
@@ -4641,15 +5559,25 @@ function getPriceRangeFilter(
 ): [number, number] {
   const usesDeposit = transactionType === 'monthly';
   const divisor = usesDeposit ? 10000 : 1;
-  const rawMin = parseNumberFilter(usesDeposit ? filters.depositMin : filters.priceMin);
-  const rawMax = parseNumberFilter(usesDeposit ? filters.depositMax : filters.priceMax);
-  const min = clampPriceRange(rawMin === undefined ? PRICE_RANGE_MIN : rawMin / divisor);
-  const max = clampPriceRange(rawMax === undefined ? PRICE_RANGE_MAX : rawMax / divisor);
+  const rawMin = parseNumberFilter(
+    usesDeposit ? filters.depositMin : filters.priceMin,
+  );
+  const rawMax = parseNumberFilter(
+    usesDeposit ? filters.depositMax : filters.priceMax,
+  );
+  const min = clampPriceRange(
+    rawMin === undefined ? PRICE_RANGE_MIN : rawMin / divisor,
+  );
+  const max = clampPriceRange(
+    rawMax === undefined ? PRICE_RANGE_MAX : rawMax / divisor,
+  );
 
   return min <= max ? [min, max] : [max, min];
 }
 
-function getMonthlyRentRangeFilter(filters: PropertyFilterState): [number, number] {
+function getMonthlyRentRangeFilter(
+  filters: PropertyFilterState,
+): [number, number] {
   return getNumericRangeFilter(
     filters.monthlyRentMin,
     filters.monthlyRentMax,
@@ -4771,16 +5699,24 @@ function movePriceRangeForTransaction(
       ...filters,
       priceMin: '',
       priceMax: '',
-      depositMin: hasDepositRange ? filters.depositMin : eokToManwon(filters.priceMin),
-      depositMax: hasDepositRange ? filters.depositMax : eokToManwon(filters.priceMax),
+      depositMin: hasDepositRange
+        ? filters.depositMin
+        : eokToManwon(filters.priceMin),
+      depositMax: hasDepositRange
+        ? filters.depositMax
+        : eokToManwon(filters.priceMax),
     };
   }
 
   const hasPriceRange = Boolean(filters.priceMin || filters.priceMax);
   return {
     ...filters,
-    priceMin: hasPriceRange ? filters.priceMin : manwonToEok(filters.depositMin),
-    priceMax: hasPriceRange ? filters.priceMax : manwonToEok(filters.depositMax),
+    priceMin: hasPriceRange
+      ? filters.priceMin
+      : manwonToEok(filters.depositMin),
+    priceMax: hasPriceRange
+      ? filters.priceMax
+      : manwonToEok(filters.depositMax),
     depositMin: '',
     depositMax: '',
   };
@@ -4841,20 +5777,29 @@ function clampNumericRange(value: number, min: number, max: number) {
 }
 
 function formatRangeNumber(value: number) {
-  return Number.isInteger(value) ? String(value) : String(Number(value.toFixed(2)));
+  return Number.isInteger(value)
+    ? String(value)
+    : String(Number(value.toFixed(2)));
 }
 
 function eokToManwon(value: string) {
   const numberValue = parseNumberFilter(value);
-  return numberValue === undefined ? '' : formatRangeNumber(numberValue * 10000);
+  return numberValue === undefined
+    ? ''
+    : formatRangeNumber(numberValue * 10000);
 }
 
 function manwonToEok(value: string) {
   const numberValue = parseNumberFilter(value);
-  return numberValue === undefined ? '' : formatRangeNumber(numberValue / 10000);
+  return numberValue === undefined
+    ? ''
+    : formatRangeNumber(numberValue / 10000);
 }
 
-function getOptionLabel(options: ReadonlyArray<{ value: string; label: string }>, value: string) {
+function getOptionLabel(
+  options: ReadonlyArray<{ value: string; label: string }>,
+  value: string,
+) {
   return options.find((option) => option.value === value)?.label ?? value;
 }
 
@@ -4866,7 +5811,9 @@ function buildPropertyListingGroups(intakes: ListingIntake[]) {
     property: intake.property,
     representative: intake,
     matchedIntakes: [intake],
-    listings: (intake.listings ?? []).map(toListingSummary).sort(compareListingSummary),
+    listings: (intake.listings ?? [])
+      .map(toListingSummary)
+      .sort(compareListingSummary),
   }));
 }
 
@@ -4908,7 +5855,9 @@ function buildPropertyMapPoints(groups: PropertyListingGroup[]) {
 
   return {
     points: Array.from(pointMap.values()).sort(
-      (a, b) => b.groups.length - a.groups.length || a.siteName.localeCompare(b.siteName),
+      (a, b) =>
+        b.groups.length - a.groups.length ||
+        a.siteName.localeCompare(b.siteName),
     ),
     missingGroups,
   };
@@ -4943,7 +5892,9 @@ function getMapBounds(points: PropertyMapPoint[]) {
 
 function getPropertyMapUnitLabel(property?: ListingProperty) {
   if (!property?.unit) return '';
-  return [getDongName(property), property.unit.name].filter((item) => item && item !== '-').join(' ');
+  return [getDongName(property), property.unit.name]
+    .filter((item) => item && item !== '-')
+    .join(' ');
 }
 
 function getPropertyMapPriceLabel(listings: ListingSummary[]) {
@@ -4953,10 +5904,13 @@ function getPropertyMapPriceLabel(listings: ListingSummary[]) {
     .map((listing) => {
       if (listing.transactionType === 'monthly') {
         const deposit = listing.deposit ? formatPrice(listing.deposit) : '-';
-        const rent = listing.monthlyRent ? formatPrice(listing.monthlyRent) : '-';
+        const rent = listing.monthlyRent
+          ? formatPrice(listing.monthlyRent)
+          : '-';
         return `${deposit}/${rent}`;
       }
-      const price = listing.transactionType === 'jeonse' ? listing.deposit : listing.price;
+      const price =
+        listing.transactionType === 'jeonse' ? listing.deposit : listing.price;
       return price ? formatPrice(price) : '-';
     })
     .join(' · ');
@@ -4987,7 +5941,9 @@ function toListingSummary(listing: ListingIntakeListing): ListingSummary {
 }
 
 function compareListingSummary(a: ListingSummary, b: ListingSummary) {
-  const typeOrder = getTransactionTypeOrder(a.transactionType) - getTransactionTypeOrder(b.transactionType);
+  const typeOrder =
+    getTransactionTypeOrder(a.transactionType) -
+    getTransactionTypeOrder(b.transactionType);
   if (typeOrder !== 0) return typeOrder;
   return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
 }
@@ -5001,7 +5957,9 @@ function getTransactionTypeOrder(value: string) {
 
 function getOwnerContact(property?: ListingProperty) {
   const contacts = property?.propertyContacts ?? [];
-  const owner = contacts.find((propertyContact) => propertyContact.role === 'owner');
+  const owner = contacts.find(
+    (propertyContact) => propertyContact.role === 'owner',
+  );
   return owner?.contact ?? null;
 }
 
@@ -5011,17 +5969,22 @@ function getAdChannelLabel(channel: string) {
 
 function getAdvertisementSourceLabel(source: string) {
   if (source === 'manual') return '입력';
-  if (source === 'external_observed') return '외부확인';
   if (source === 'cp_sync') return 'CP연동';
   return source;
 }
 
 function getPropertySheetAdvertisementCount(listings: PropertyListing[]) {
-  return listings.reduce((total, listing) => total + (listing.advertisements?.length ?? 0), 0);
+  return listings.reduce(
+    (total, listing) => total + (listing.advertisements?.length ?? 0),
+    0,
+  );
 }
 
 function getPropertySheetPriceHistoryCount(listings: PropertyListing[]) {
-  return listings.reduce((total, listing) => total + (listing.priceHistories?.length ?? 0), 0);
+  return listings.reduce(
+    (total, listing) => total + (listing.priceHistories?.length ?? 0),
+    0,
+  );
 }
 
 function formatPriceHistorySnapshot(
@@ -5034,7 +5997,9 @@ function formatPriceHistorySnapshot(
 ) {
   if (transactionType === 'monthly') {
     const deposit = value.deposit ? formatPrice(value.deposit) : '-';
-    const monthlyRent = value.monthlyRent ? formatPrice(value.monthlyRent) : '-';
+    const monthlyRent = value.monthlyRent
+      ? formatPrice(value.monthlyRent)
+      : '-';
     return `${deposit} / ${monthlyRent}`;
   }
 
@@ -5047,12 +6012,17 @@ function formatAdvertisementPrice(
   advertisement: NonNullable<PropertyListing['advertisements']>[number],
 ) {
   if (listing.transactionType === 'monthly') {
-    const deposit = advertisement.advertisedDeposit ? formatPrice(advertisement.advertisedDeposit) : '-';
-    const monthlyRent = advertisement.advertisedMonthlyRent ? formatPrice(advertisement.advertisedMonthlyRent) : '-';
+    const deposit = advertisement.advertisedDeposit
+      ? formatPrice(advertisement.advertisedDeposit)
+      : '-';
+    const monthlyRent = advertisement.advertisedMonthlyRent
+      ? formatPrice(advertisement.advertisedMonthlyRent)
+      : '-';
     return `${deposit} / ${monthlyRent}`;
   }
 
-  const price = advertisement.advertisedPrice ?? advertisement.advertisedDeposit;
+  const price =
+    advertisement.advertisedPrice ?? advertisement.advertisedDeposit;
   return price ? formatPrice(price) : '-';
 }
 
@@ -5063,7 +6033,10 @@ function getDongName(property?: ListingProperty) {
 }
 
 function getExclusiveAreaM2(property?: ListingProperty) {
-  return property?.unit?.exclusiveAreaM2 ?? property?.unit?.siteUnitType?.exclusiveAreaM2;
+  return (
+    property?.unit?.exclusiveAreaM2 ??
+    property?.unit?.siteUnitType?.exclusiveAreaM2
+  );
 }
 
 function getUnitTypeName(property?: ListingProperty) {
@@ -5076,16 +6049,24 @@ function getSiteTypeLabel(value?: string | null) {
 }
 
 function getPropertySheetUnitLabel(property: Property) {
-  const dongName = property.unit?.dong && !property.unit.dong.isPlaceholder ? property.unit.dong.name : '';
+  const dongName =
+    property.unit?.dong && !property.unit.dong.isPlaceholder
+      ? property.unit.dong.name
+      : '';
   return [dongName, property.unit?.name].filter(Boolean).join(' ');
 }
 
 function getPropertySheetExclusiveAreaM2(property: Property) {
-  return property.unit?.exclusiveAreaM2 ?? property.unit?.siteUnitType?.exclusiveAreaM2;
+  return (
+    property.unit?.exclusiveAreaM2 ??
+    property.unit?.siteUnitType?.exclusiveAreaM2
+  );
 }
 
 function getPropertySheetSupplyAreaM2(property: Property) {
-  return property.unit?.supplyAreaM2 ?? property.unit?.siteUnitType?.supplyAreaM2;
+  return (
+    property.unit?.supplyAreaM2 ?? property.unit?.siteUnitType?.supplyAreaM2
+  );
 }
 
 function formatPropertySheetArea(property: Property) {
@@ -5101,16 +6082,22 @@ function formatPropertySheetArea(property: Property) {
 }
 
 function getLatestPropertyListingUpdatedAt(property: Property) {
-  const latestListingUpdatedAt = (property.listings ?? []).reduce<string | null>((latest, listing) => {
+  const latestListingUpdatedAt = (property.listings ?? []).reduce<
+    string | null
+  >((latest, listing) => {
     if (!latest) return listing.updatedAt;
-    return new Date(listing.updatedAt).getTime() > new Date(latest).getTime() ? listing.updatedAt : latest;
+    return new Date(listing.updatedAt).getTime() > new Date(latest).getTime()
+      ? listing.updatedAt
+      : latest;
   }, null);
 
   return latestListingUpdatedAt ?? property.updatedAt;
 }
 
 function comparePropertyListing(a: PropertyListing, b: PropertyListing) {
-  const typeOrder = getTransactionTypeOrder(a.transactionType) - getTransactionTypeOrder(b.transactionType);
+  const typeOrder =
+    getTransactionTypeOrder(a.transactionType) -
+    getTransactionTypeOrder(b.transactionType);
   if (typeOrder !== 0) return typeOrder;
   return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
 }
@@ -5121,13 +6108,19 @@ function getPropertySheetNotices(property: Property): PropertySheetNotice[] {
   const tenants = property.tenants ?? [];
   const consultations = property.consultations ?? [];
   const notices: PropertySheetNotice[] = [];
-  const owner = contacts.find((contact) => contact.role === 'owner') ?? contacts[0];
+  const owner =
+    contacts.find((contact) => contact.role === 'owner') ?? contacts[0];
   const latestUpdatedAt = getLatestPropertyListingUpdatedAt(property);
   const daysSinceLatestCheck = getDaysSince(latestUpdatedAt);
   const unverifiedListings = listings.filter(
-    (listing) => listing.intake && getIntakeConfirmationState(listing.intake) === IntakeConfirmationState.UNVERIFIED,
+    (listing) =>
+      listing.intake &&
+      getIntakeConfirmationState(listing.intake) ===
+        IntakeConfirmationState.UNVERIFIED,
   );
-  const jointRequiredListings = listings.filter((listing) => listing.intake?.isJointBrokerageRequired);
+  const jointRequiredListings = listings.filter(
+    (listing) => listing.intake?.isJointBrokerageRequired,
+  );
   const expiringTenant = tenants.find((tenant) => {
     if (!tenant.contractEnd) return false;
     const daysUntilEnd = getDaysUntil(tenant.contractEnd);
@@ -5161,7 +6154,8 @@ function getPropertySheetNotices(property: Property): PropertySheetNotice[] {
   if (!owner?.contact?.phone) {
     notices.push({
       title: '소유주 연락처 없음',
-      detail: '목록에서 바로 전화할 수 있도록 소유주 또는 대리인 번호를 등록해야 합니다.',
+      detail:
+        '목록에서 바로 전화할 수 있도록 소유주 또는 대리인 번호를 등록해야 합니다.',
       tone: 'danger',
     });
   }
@@ -5186,7 +6180,8 @@ function getPropertySheetNotices(property: Property): PropertySheetNotice[] {
   if (!hasAnyListingMemo && consultations.length === 0) {
     notices.push({
       title: '상담 기록 없음',
-      detail: '최근 통화나 확인 메모가 없어 매물 히스토리를 판단하기 어렵습니다.',
+      detail:
+        '최근 통화나 확인 메모가 없어 매물 히스토리를 판단하기 어렵습니다.',
       tone: 'neutral',
     });
   }
@@ -5251,17 +6246,29 @@ function formatDaysAgo(value?: string | null) {
   return `${days}일 전`;
 }
 
-function formatTransactionTypeList(listings: Pick<PropertyListing, 'transactionType'>[]) {
+function formatTransactionTypeList(
+  listings: Pick<PropertyListing, 'transactionType'>[],
+) {
   const labels = Array.from(
-    new Set(listings.map((listing) => transactionTypeMeta[listing.transactionType]?.label ?? listing.transactionType)),
+    new Set(
+      listings.map(
+        (listing) =>
+          transactionTypeMeta[listing.transactionType]?.label ??
+          listing.transactionType,
+      ),
+    ),
   );
   return labels.join(', ');
 }
 
-function formatJointBrokerageRequirementList(listings: Pick<PropertyListing, 'transactionType' | 'intake'>[]) {
+function formatJointBrokerageRequirementList(
+  listings: Pick<PropertyListing, 'transactionType' | 'intake'>[],
+) {
   return listings
     .map((listing) => {
-      const transactionLabel = transactionTypeMeta[listing.transactionType]?.label ?? listing.transactionType;
+      const transactionLabel =
+        transactionTypeMeta[listing.transactionType]?.label ??
+        listing.transactionType;
       return listing.intake?.jointBrokeragePartner?.name
         ? `${transactionLabel} ${listing.intake.jointBrokeragePartner.name}`
         : `${transactionLabel} 파트너 미지정`;

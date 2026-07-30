@@ -1,11 +1,11 @@
-import { useEffect, useRef, useState } from 'react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { toast } from 'sonner';
+import { useEffect, useRef, useState } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import type {
   ListingAdvertisement,
   PropertyListing,
-} from '@estate-erp/api-client';
-import { formatPrice } from '@estate-erp/shared';
+} from "@estate-erp/api-client";
+import { formatPrice } from "@estate-erp/shared";
 import {
   AlertTriangle,
   Megaphone,
@@ -13,11 +13,11 @@ import {
   Plus,
   TrendingDown,
   TrendingUp,
-} from 'lucide-react';
-import { api } from '@/lib/api';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { cn } from '@/lib/utils';
+} from "lucide-react";
+import { api } from "@/lib/api";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
 import {
   checkStatusColors,
   checkStatusLabels,
@@ -26,8 +26,8 @@ import {
   formatListingPrice,
   transactionTypeColors,
   transactionTypeLabels,
-} from '../utils';
-import { MainSection, MainSectionEmpty } from './MainSection';
+} from "../utils";
+import { MainSection, MainSectionEmpty } from "./MainSection";
 
 interface Props {
   listings: PropertyListing[];
@@ -97,7 +97,7 @@ function ListingCard({
         <div className="flex items-center gap-1.5">
           <Badge
             className={cn(
-              'border-0 text-[11px]',
+              "border-0 text-[11px]",
               transactionTypeColors[listing.transactionType],
             )}
           >
@@ -106,7 +106,7 @@ function ListingCard({
           </Badge>
           <Badge
             className={cn(
-              'border-0 text-[11px]',
+              "border-0 text-[11px]",
               checkStatusColors[listing.checkStatus],
             )}
           >
@@ -149,12 +149,12 @@ function ListingMemo({
 }) {
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(listing.memo ?? '');
+  const [draft, setDraft] = useState(listing.memo ?? "");
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   // 외부 갱신 동기화
   useEffect(() => {
-    if (!editing) setDraft(listing.memo ?? '');
+    if (!editing) setDraft(listing.memo ?? "");
   }, [listing.memo, editing]);
 
   useEffect(() => {
@@ -169,19 +169,19 @@ function ListingMemo({
     mutationFn: (memo: string | null) =>
       api.listings.update(listing.id, { memo: memo ?? undefined }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['properties', propertyId] });
-      queryClient.invalidateQueries({ queryKey: ['listings'] });
-      toast.success('의뢰 메모가 저장되었습니다.');
+      queryClient.invalidateQueries({ queryKey: ["properties", propertyId] });
+      queryClient.invalidateQueries({ queryKey: ["listings"] });
+      toast.success("의뢰 메모가 저장되었습니다.");
       setEditing(false);
     },
     onError: () => {
-      toast.error('의뢰 메모 저장에 실패했습니다.');
+      toast.error("의뢰 메모 저장에 실패했습니다.");
     },
   });
 
   const handleSave = () => {
     const next = draft.trim();
-    const current = listing.memo?.trim() ?? '';
+    const current = listing.memo?.trim() ?? "";
     if (next === current) {
       setEditing(false);
       return;
@@ -190,7 +190,7 @@ function ListingMemo({
   };
 
   const handleCancel = () => {
-    setDraft(listing.memo ?? '');
+    setDraft(listing.memo ?? "");
     setEditing(false);
   };
 
@@ -205,11 +205,11 @@ function ListingMemo({
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+            if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
               e.preventDefault();
               handleSave();
             }
-            if (e.key === 'Escape') {
+            if (e.key === "Escape") {
               e.preventDefault();
               handleCancel();
             }
@@ -273,24 +273,16 @@ const adStatusMeta: Record<
   { label: string; cls: string; dot: string }
 > = {
   active: {
-    label: '게재중',
-    cls: 'text-emerald-700',
-    dot: 'bg-emerald-500',
+    label: "게재중",
+    cls: "text-emerald-700",
+    dot: "bg-emerald-500",
   },
-  planned: { label: '대기', cls: 'text-amber-700', dot: 'bg-amber-500' },
-  draft: { label: '준비', cls: 'text-slate-600', dot: 'bg-slate-400' },
-  paused: { label: '내림', cls: 'text-slate-500', dot: 'bg-slate-300' },
-  ended: { label: '종료', cls: 'text-slate-400', dot: 'bg-slate-300' },
-  error: { label: '오류', cls: 'text-rose-700', dot: 'bg-rose-500' },
+  ended: { label: "종료", cls: "text-slate-400", dot: "bg-slate-300" },
 };
 
 const channelLabels: Record<string, string> = {
-  naver: '네이버',
-  kb: 'KB',
-  daum: '다음',
-  hanbang: '한방',
-  kmls: 'KMLS',
-  app: '앱',
+  esiljang: "이실장",
+  budongsanbank: "부동산뱅크",
 };
 
 function ListingAdRow({
@@ -328,8 +320,8 @@ function AdChip({
 }) {
   const meta = adStatusMeta[ad.status] ?? {
     label: ad.status,
-    cls: 'text-muted-foreground',
-    dot: 'bg-muted-foreground',
+    cls: "text-muted-foreground",
+    dot: "bg-muted-foreground",
   };
   const channelLabel = channelLabels[ad.channel] ?? ad.channel;
   const stale = isAdvertisedPriceStale(listing, ad);
@@ -338,20 +330,20 @@ function AdChip({
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-1 rounded-full border border-border bg-white px-2 py-0.5',
+        "inline-flex items-center gap-1 rounded-full border border-border bg-white px-2 py-0.5",
         meta.cls,
       )}
     >
-      <span className={cn('size-1.5 rounded-full', meta.dot)} />
+      <span className={cn("size-1.5 rounded-full", meta.dot)} />
       <span className="font-medium">{channelLabel}</span>
       <span className="text-[10px] text-muted-foreground">{meta.label}</span>
       {adPrice && (
         <span
           className={cn(
-            'text-[10px]',
-            stale ? 'text-amber-700' : 'text-muted-foreground',
+            "text-[10px]",
+            stale ? "text-amber-700" : "text-muted-foreground",
           )}
-          title={stale ? '광고 가격' : undefined}
+          title={stale ? "광고 가격" : undefined}
         >
           {adPrice}
         </span>
@@ -371,15 +363,18 @@ function AdChip({
 
 /**
  * 현재 listing 가격과 광고에 등록된 가격(advertisedPrice/Deposit/MonthlyRent)이
- * 다른지 확인. ad가 active 상태일 때만 의미 있음 (이미 paused/ended면 stale 표시 안 함).
+ * 다른지 확인. 현재 CP 광고(active)에만 의미가 있고 종료 이력은 비교하지 않는다.
  */
 function isAdvertisedPriceStale(
   listing: PropertyListing,
   ad: ListingAdvertisement,
 ): boolean {
-  if (ad.status !== 'active') return false;
-  if (listing.transactionType === 'monthly') {
-    if (ad.advertisedDeposit != null && ad.advertisedDeposit !== listing.deposit) {
+  if (ad.status !== "active") return false;
+  if (listing.transactionType === "monthly") {
+    if (
+      ad.advertisedDeposit != null &&
+      ad.advertisedDeposit !== listing.deposit
+    ) {
       return true;
     }
     if (
@@ -403,7 +398,7 @@ function formatAdPrice(
   listing: PropertyListing,
   ad: ListingAdvertisement,
 ): string | null {
-  if (listing.transactionType === 'monthly') {
+  if (listing.transactionType === "monthly") {
     const dep = ad.advertisedDeposit;
     const rent = ad.advertisedMonthlyRent;
     if (dep != null && rent != null) {
@@ -419,13 +414,13 @@ function formatAdPrice(
 function PriceChangeIndicator({
   change,
 }: {
-  change: { delta: number; direction: 'up' | 'down' };
+  change: { delta: number; direction: "up" | "down" };
 }) {
-  const Icon = change.direction === 'up' ? TrendingUp : TrendingDown;
+  const Icon = change.direction === "up" ? TrendingUp : TrendingDown;
   const colorClass =
-    change.direction === 'up' ? 'text-rose-600' : 'text-emerald-600';
+    change.direction === "up" ? "text-rose-600" : "text-emerald-600";
   return (
-    <span className={cn('inline-flex items-center gap-0.5', colorClass)}>
+    <span className={cn("inline-flex items-center gap-0.5", colorClass)}>
       <Icon className="size-3" />
       {Math.abs(change.delta).toLocaleString()}만
     </span>
@@ -440,11 +435,12 @@ interface PriceHistoryEntry {
 
 function computePriceChange(
   histories: PriceHistoryEntry[],
-): { delta: number; direction: 'up' | 'down' } | null {
+): { delta: number; direction: "up" | "down" } | null {
   const sorted = histories
     .slice()
     .sort(
-      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+      (a, b) =>
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
     );
   const latest = sorted[0];
   if (!latest || latest.priceAfter == null || latest.priceBefore == null) {
@@ -452,5 +448,5 @@ function computePriceChange(
   }
   const delta = latest.priceAfter - latest.priceBefore;
   if (delta === 0) return null;
-  return { delta, direction: delta > 0 ? 'up' : 'down' };
+  return { delta, direction: delta > 0 ? "up" : "down" };
 }

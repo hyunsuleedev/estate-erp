@@ -19,7 +19,7 @@ import {
   type SortingState,
 } from '@tanstack/react-table';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { ArrowDown, ArrowUp } from 'lucide-react';
+import { ArrowDown, ArrowUp, Minus, Plus } from 'lucide-react';
 import type { ListingIntake, ListingIntakeListing } from '@estate-erp/api-client';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -28,6 +28,7 @@ import { cn } from '@/lib/utils';
 const VIRTUALIZE_THRESHOLD = 50;
 const PROPERTY_LISTING_ITEM_HEIGHT = 40;
 const END_REACHED_THRESHOLD = 320;
+const PINNED_BODY_CELL_Z_INDEX = 10;
 
 type ListingProperty = NonNullable<ListingIntake['property']>;
 
@@ -82,12 +83,17 @@ interface PropertyListingsTableProps {
   isLoadingMore?: boolean;
   onEndReached?: () => void;
   emptyMessage?: string;
-  renderStatusBar?: (args: { focusedRow: PropertyListingGroup | null; totalCount: number }) => ReactNode;
+  renderStatusBar?: (args: { focusedRow: PropertyListingGroup | null; totalCount: number;
+  }) => ReactNode;
   /** 선택된 행이 있을 때 표시할 일괄 작업 UI (웹 DataTable의 renderBulkActions 대응) */
   renderBulkActions?: (selectedRows: PropertyListingGroup[]) => ReactNode;
   expandedRowIds?: ReadonlySet<string>;
   renderExpandedRow?: (row: PropertyListingGroup) => ReactNode;
   getExpandedRowHeight?: (row: PropertyListingGroup) => number;
+  columnGroupControl?: {
+    collapsed: boolean;
+    onToggle: () => void;
+  };
 }
 
 export function PropertyListingsTable({
@@ -107,6 +113,7 @@ export function PropertyListingsTable({
   expandedRowIds,
   renderExpandedRow,
   getExpandedRowHeight,
+  columnGroupControl,
 }: PropertyListingsTableProps) {
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
   const [focusedCell, setFocusedCell] = useState<{
@@ -315,7 +322,7 @@ export function PropertyListingsTable({
     return {
       position: 'sticky' as const,
       left: column.getStart('left'),
-      zIndex: 1,
+      zIndex: PINNED_BODY_CELL_Z_INDEX,
     };
   };
 
@@ -338,7 +345,8 @@ export function PropertyListingsTable({
             const isPinned = cell.column.getIsPinned() === 'left';
             const isLastPinned = isPinned && cell.column.getIsLastColumn('left');
 
-            const columnMeta = cell.column.columnDef.meta as PropertyListingColumnMeta | undefined;
+            const columnMeta = cell.column.columnDef.meta as
+              | PropertyListingColumnMeta | undefined;
             const shouldGrow = cell.column.id === growColumnId;
 
             return (
@@ -400,12 +408,66 @@ export function PropertyListingsTable({
         onKeyDown={handleKeyDown}
         onScroll={handleScroll}
       >
+        {columnGroupControl && (
+          <div
+            data-property-column-guide
+            className="sticky top-0 z-40 h-9 border-b border-[#e7e5df] bg-[#f8f7f4]"
+            style={{ width: "100%", minWidth: tableTotalSize }}
+          >
+            <div
+              className="relative h-full pt-2"
+              style={{ width: tableTotalSize, minWidth: tableTotalSize }}
+            >
+              {!columnGroupControl.collapsed && (
+                <>
+                  <span
+                    aria-hidden="true"
+                    data-column-group-line="property-details"
+                    className="pointer-events-none absolute left-[482px] top-[18px] z-40 h-px w-[404px] bg-slate-400"
+                  />
+                  <span
+                    aria-hidden="true"
+                    data-column-group-cap="property-details"
+                    className="pointer-events-none absolute left-[885px] top-[18px] z-40 h-2 w-px bg-slate-400"
+                  />
+                </>
+              )}
+              <button
+                type="button"
+                aria-label={
+                  columnGroupControl.collapsed
+                    ? "타입–확인 컬럼 펼치기"
+                    : "타입–확인 컬럼 접기"
+                }
+                aria-expanded={!columnGroupControl.collapsed}
+                title={
+                  columnGroupControl.collapsed
+                    ? "타입–확인 컬럼 펼치기"
+                    : "타입–확인 컬럼 접기"
+                }
+                data-column-group-toggle="property-details"
+                className="sticky left-[462px] z-50 ml-[462px] inline-flex size-5 items-center justify-center rounded-[3px] border border-[#9ba7a3] bg-white p-0 text-[#536b64] shadow-[0_1px_1px_rgba(42,51,47,0.05)] outline-none transition-colors hover:border-[#738b83] hover:bg-[#f4f8f6] hover:text-[#315d50] focus-visible:ring-2 focus-visible:ring-[#4c8c7c]/35 active:translate-y-px"
+                onClick={columnGroupControl.onToggle}
+              >
+                {columnGroupControl.collapsed ? (
+                  <Plus className="size-3" />
+                ) : (
+                  <Minus className="size-3" />
+                )}
+              </button>
+            </div>
+          </div>
+        )}
         <table
           ref={tableRef}
           className="w-full table-fixed border-separate border-spacing-0 caption-bottom text-sm"
           style={{ width: '100%', minWidth: tableTotalSize }}
         >
-          <thead className="sticky top-0 z-20 bg-white">
+          <thead className={cn(
+              "sticky z-20 bg-[#f7f7f5]",
+              columnGroupControl ? "top-9" : "top-0",
+            )}
+          >
             {table.getHeaderGroups().map((headerGroup) => (
               <tr key={headerGroup.id}>
                 {headerGroup.headers.map((header, colIndex) => {
@@ -413,11 +475,19 @@ export function PropertyListingsTable({
                     header.column.columnDef.enableSorting !== false && !!onSortingChange && header.id !== '_select';
                   const activeSort = (sorting ?? [])[0];
                   const sorted: false | 'asc' | 'desc' =
-                    activeSort?.id === header.column.id ? (activeSort.desc ? 'desc' : 'asc') : false;
+                    activeSort?.id === header.column.id ? activeSort.desc ? 'desc' : 'asc'
+                      : false;
                   const isLast = colIndex === headerGroup.headers.length - 1;
                   const isPinned = header.column.getIsPinned() === 'left';
                   const isLastPinned = isPinned && header.column.getIsLastColumn('left');
                   const shouldGrow = header.column.id === growColumnId;
+                  const isDetailColumn = [
+                    "unitType",
+                    "exclusiveArea",
+                    "matching",
+                    "advertisement",
+                    "updatedAt",
+                  ].includes(header.column.id);
                   const handleSortToggle = () => {
                     if (!canSort) return;
                     const current = sorting ?? [];
@@ -437,10 +507,11 @@ export function PropertyListingsTable({
                     <th
                       key={header.id}
                       className={cn(
-                        'relative h-9 border-b border-[#eeeeec] px-2.5 text-left align-middle text-[13px] font-medium normal-case tracking-normal text-muted-foreground',
+                        "relative h-9 border-b border-[#d8d6d0] bg-[#f7f7f5] px-2.5 text-left align-middle text-[13px] font-medium normal-case tracking-normal text-muted-foreground",
                         !isLast && 'border-r border-r-[#eeeeec]',
                         canSort && 'cursor-pointer select-none hover:text-foreground',
-                        isPinned && 'bg-white',
+                        isDetailColumn && "bg-[#f2f6f4] text-[#52645e]",
+                        isPinned && "bg-[#f5f4f1]",
                         isLastPinned && 'shadow-[1px_0_0_0_#d9d9d6]',
                       )}
                       style={{
@@ -513,7 +584,9 @@ export function PropertyListingsTable({
       </div>
       {renderBulkActions && selectedRows.length > 0 && (
         <div className="flex min-h-9 flex-wrap items-center gap-2 border-t border-border/60 bg-white px-3 py-1.5 text-xs">
-          <span className="font-medium text-slate-900">{selectedRows.length}개 호실 선택</span>
+          <span className="font-medium text-slate-900">
+            {selectedRows.length}개 호실 선택
+          </span>
           {renderBulkActions(selectedRows)}
           <button
             type="button"
@@ -525,7 +598,7 @@ export function PropertyListingsTable({
         </div>
       )}
       {renderStatusBar && (
-        <div className="flex min-h-7 items-center gap-2 border-t border-border/60 bg-muted/30 px-3 text-[11px] text-muted-foreground">
+        <div className="flex min-h-7 items-center gap-2 border-t border-border/60 bg-[#faf9f6] px-3 text-[11px] text-muted-foreground">
           {renderStatusBar({ focusedRow, totalCount: totalCount || pageSize })}
         </div>
       )}
@@ -534,7 +607,9 @@ export function PropertyListingsTable({
 }
 
 function estimatePropertyGroupRowHeight(group?: PropertyListingGroup) {
-  return Math.max(1, group?.listings.length ?? 1) * PROPERTY_LISTING_ITEM_HEIGHT;
+  return (
+    Math.max(1, group?.listings.length ?? 1) * PROPERTY_LISTING_ITEM_HEIGHT
+  );
 }
 
 function LoadingRows({ columns }: { columns: number }) {

@@ -169,7 +169,7 @@ function UnitDeleteConfirm({
       title="호실 삭제"
       description={
         propertyCount > 0
-          ? `'${unit.name}' 호실에 연결된 관리 매물이 ${propertyCount}건 있습니다. 연결 데이터가 있으면 삭제가 거부될 수 있습니다.`
+          ? `'${unit.name}' 호실에 연결된 관리호수가 ${propertyCount}건 있습니다. 연결 데이터가 있으면 삭제가 거부될 수 있습니다.`
           : `'${unit.name}' 호실을 삭제합니다. 이 작업은 되돌릴 수 없습니다.`
       }
       confirmLabel="삭제"
@@ -258,6 +258,18 @@ function UnitDetailBody({
     },
   });
 
+  const registerManagedUnitMutation = useMutation({
+    mutationFn: () => api.properties.create({ siteId: site.id, unitId: unit.id }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['sites', site.id] });
+      queryClient.invalidateQueries({ queryKey: ['properties'] });
+      toast.success('관리호수로 등록했습니다');
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : '관리호수 등록에 실패했습니다');
+    },
+  });
+
   const exclusiveArea = unit.exclusiveAreaM2 ?? unit.siteUnitType?.exclusiveAreaM2;
   const supplyArea = unit.supplyAreaM2 ?? unit.siteUnitType?.supplyAreaM2;
 
@@ -273,6 +285,11 @@ function UnitDetailBody({
           <Badge className={cn('text-[10px] font-medium', occupancyMeta.badgeClass)}>
             {occupancyMeta.label}
           </Badge>
+          {primaryProperty && (
+            <Badge variant="outline" className="text-[10px] font-medium">
+              관리호수
+            </Badge>
+          )}
           {unit.siteUnitType?.name && (
             <Badge variant="secondary" className="text-[10px] font-normal">
               {unit.siteUnitType.name}
@@ -288,13 +305,24 @@ function UnitDetailBody({
       {/* 액션 바 */}
       <div className="border-b px-6 py-3">
         <div className="flex flex-wrap items-center gap-2">
+          {!primaryProperty && (
+            <Button
+              size="sm"
+              className="h-8 text-xs"
+              onClick={() => registerManagedUnitMutation.mutate()}
+              disabled={registerManagedUnitMutation.isPending}
+            >
+              <Home className="mr-1.5 size-3.5" />
+              {registerManagedUnitMutation.isPending ? '등록 중...' : '관리호수로 등록'}
+            </Button>
+          )}
           <Button variant="outline" size="sm" className="h-8 text-xs" asChild>
             <Link
               to="/properties/new"
               search={{ siteId: site.id, dongId: unit.dongId, unitId: unit.id }}
             >
               <FileText className="mr-1.5 size-3.5" />
-              매물 등록
+              매물 의뢰 등록
             </Link>
           </Button>
           <Button variant="outline" size="sm" className="h-8 text-xs" onClick={onAddConsult}>
@@ -424,15 +452,15 @@ function UnitDetailBody({
                 ) : (
                   <EmptyState
                     icon={FileText}
-                    title="등록된 매물이 없습니다"
-                    description="이 호실 맥락으로 바로 매물 등록을 시작할 수 있습니다"
+                    title="등록된 매물 의뢰가 없습니다"
+                    description="이 관리호수에서 매도·임대 의뢰를 접수할 수 있습니다"
                     action={
                       <Button size="sm" variant="outline" asChild>
                         <Link
                           to="/properties/new"
                           search={{ siteId: site.id, dongId: unit.dongId, unitId: unit.id }}
                         >
-                          새 매물 등록
+                          매물 의뢰 등록
                         </Link>
                       </Button>
                     }

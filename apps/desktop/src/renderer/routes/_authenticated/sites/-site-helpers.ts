@@ -1,7 +1,7 @@
 /**
  * 관리단지 페이지 보조 헬퍼 — 라벨, 배치 파싱, 점유상태 분류, 가격 표기.
  */
-import type { Unit } from '@estate-erp/api-client';
+import type { OfficeSite, Unit } from '@estate-erp/api-client';
 import { formatMoney, formatRent } from '@/lib/format';
 
 // ── Labels ──────────────────────────────────────────────────────
@@ -58,6 +58,74 @@ export function extractRegionFromSite(site: {
     return `${site.ward.district.name} ${site.ward.name ?? ''}`.trim();
   }
   return extractRegion(site.roadAddress ?? site.jibunAddress ?? null);
+}
+
+// ── 관리단지 검색 / 그룹 ────────────────────────────────────────
+
+export type SiteGroupMode = 'none' | 'region' | 'type';
+
+function compactSiteSearchText(value: string): string {
+  return value.toLocaleLowerCase('ko-KR').replace(/[^\p{L}\p{N}]+/gu, '');
+}
+
+function getSiteSearchTokens(query: string): string[] {
+  return query
+    .trim()
+    .split(/[\s·,./()_-]+/u)
+    .map(compactSiteSearchText)
+    .filter(Boolean);
+}
+
+export function filterOfficeSites(officeSites: OfficeSite[], query: string): OfficeSite[] {
+  const tokens = getSiteSearchTokens(query);
+  if (tokens.length === 0) return officeSites;
+
+  return officeSites.filter((officeSite) => {
+    const site = officeSite.site;
+    if (!site) return false;
+
+    const searchableText = compactSiteSearchText(
+      [
+        site.name,
+        siteTypeLabels[site.type],
+        siteTypeShort[site.type],
+        site.roadAddress,
+        site.jibunAddress,
+        site.ward?.district?.province?.name,
+        site.ward?.district?.name,
+        site.ward?.name,
+      ]
+        .filter(Boolean)
+        .join(' '),
+    );
+
+    return tokens.every((token) => searchableText.includes(token));
+  });
+}
+
+export function groupOfficeSites(
+  officeSites: OfficeSite[],
+  groupBy: SiteGroupMode,
+): Array<[string, OfficeSite[]]> | null {
+  if (groupBy === 'none') return null;
+
+  const groups: Record<string, OfficeSite[]> = {};
+  for (const officeSite of officeSites) {
+    const site = officeSite.site;
+    if (!site) continue;
+    const key =
+      groupBy === 'region'
+        ? extractRegionFromSite(site)
+        : (siteTypeLabels[site.type] ?? site.type);
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(officeSite);
+  }
+
+  return Object.entries(groups).sort((a, b) => a[0].localeCompare(b[0], 'ko'));
+}
+
+export function getSiteGroupKeys(officeSites: OfficeSite[], groupBy: SiteGroupMode): string[] {
+  return groupOfficeSites(officeSites, groupBy)?.map(([groupKey]) => groupKey) ?? [];
 }
 
 export function parseUnitPlacement(unit: Unit): { floor: number | null; lineNo: number | null } {
@@ -136,7 +204,7 @@ export const OCCUPANCY_META: Record<OccupancyStatus, OccupancyMeta> = {
     badgeClass: 'bg-orange-soft text-orange',
   },
   vacant_or_unknown: {
-    label: '공실/미상',
+    label: '미확인',
     cellClass: 'border-dashed border-border/70 bg-background hover:bg-accent/60',
     dotClass: 'bg-muted-foreground/40',
     badgeClass: 'bg-neutral-soft text-muted-foreground',
@@ -148,7 +216,7 @@ export const OCCUPANCY_META: Record<OccupancyStatus, OccupancyMeta> = {
  * 1. 세입자(residing) 있음 + 월세 금액 있음 → 월세
  * 2. 세입자(residing) 있음 + 월세 없음 → 전세
  * 3. 소유자(owner, active) 실거주 → 자가
- * 4. 신호 없음 → 공실/미상
+ * 4. 신호 없음 → 미확인 (공실로 단정하지 않음)
  */
 export function getUnitOccupancy(unit: Unit): OccupancyStatus {
   const properties = unit.properties ?? [];
@@ -169,6 +237,14 @@ export interface MultiSelectOption {
   value: string;
   label: string;
   helper?: string;
+}
+
+export function getInitialDongScope(defaultDongId: string | null): string[] {
+  return defaultDongId ? [defaultDongId] : [];
+}
+
+export function isDefaultDongScope(dongIds: string[], defaultDongId: string | null): boolean {
+  return defaultDongId != null && dongIds.length === 1 && dongIds[0] === defaultDongId;
 }
 
 export interface PositionedUnit {

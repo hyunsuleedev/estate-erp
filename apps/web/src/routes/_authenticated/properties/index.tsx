@@ -92,10 +92,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  RadioGroup,
-  RadioGroupItem,
-} from "@/components/ui/radio-group";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
   Sheet,
   SheetContent,
@@ -161,12 +158,8 @@ import { MatchCreateDialog } from "../matches/-match-create-dialog";
 // 상태 뱃지 컬러/라벨은 StatusBadge + status-config가 단일 소스.
 
 const adChannelLabels: Record<string, string> = {
-  naver: "네이버",
-  asil: "아실",
-  zigbang: "직방",
-  dabang: "다방",
-  hanbang: "한방",
-  etc: "기타",
+  esiljang: "이실장",
+  budongsanbank: "부동산뱅크",
 };
 
 const contactRoleLabels: Record<string, string> = {
@@ -1110,9 +1103,7 @@ function PropertiesPage() {
             <FilterPillSelect
               label="가용"
               value={propertyFilters.availability}
-              onChange={(value) =>
-                updatePropertyFilter("availability", value)
-              }
+              onChange={(value) => updatePropertyFilter("availability", value)}
               options={listingAvailabilityFilterOptions}
             />
             <FilterPillSelect
@@ -1344,9 +1335,7 @@ function PropertiesPage() {
                 size="sm"
                 className="h-6 gap-1 bg-white px-2 text-[11.5px] font-medium"
                 disabled={refreshConfirmMutation.isPending}
-                onClick={() =>
-                  refreshConfirmMutation.mutate(selectedIntakeIds)
-                }
+                onClick={() => refreshConfirmMutation.mutate(selectedIntakeIds)}
               >
                 <RefreshCw className="size-3" />
                 확인일 갱신
@@ -1728,6 +1717,7 @@ function ListingStackCell({
       {listings.map((listing, index) => (
         <div
           key={listing.id}
+          data-lane={listings.length > 1 ? index : undefined}
           className={cn(
             "flex min-h-10 min-w-0 flex-1 items-stretch",
             index > 0 && "border-t border-border/60",
@@ -1846,6 +1836,7 @@ function PropertyGridRow({
   return (
     <div>
       <div
+        data-split-row={group.listings.length > 1 ? "" : undefined}
         className="group grid transition-colors hover:bg-muted"
         style={{ gridTemplateColumns: gridTemplate }}
       >
@@ -2186,44 +2177,31 @@ function PropertyGridRow({
           )}
         </ListingStackCell>
 
-        {/* 15. 메모 (1줄 ellipsis, 인라인 수정) */}
-        <div
-          className="flex min-w-0 border-b border-border/60"
-          onClick={(event) => event.stopPropagation()}
-        >
-          <div className="flex min-w-0 flex-1 flex-col">
-            {listings.map((listing, index) => (
-              <div
-                key={listing.id}
-                className={cn(
-                  "flex min-h-10 min-w-0 flex-1 items-stretch",
-                  index > 0 && "border-t border-border/60",
-                )}
-              >
-                <EditableCell
-                  recordId={listing.id}
-                  field="memo"
-                  value={listing.memo ?? ""}
-                  onSave={onSave}
-                  editType="text"
+        {/* 15. 메모 (1줄 ellipsis, 인라인 수정) — 마지막 컬럼이라 border-r 만 제거 */}
+        <ListingStackCell listings={listings} className="border-r-0">
+          {(listing) => (
+            <EditableCell
+              recordId={listing.id}
+              field="memo"
+              value={listing.memo ?? ""}
+              onSave={onSave}
+              editType="text"
+            >
+              <span className="flex h-full w-full min-w-0 items-center px-2.5">
+                <span
+                  className={cn(
+                    "truncate text-[12.5px]",
+                    listing.memo?.trim()
+                      ? "text-foreground/80"
+                      : "text-muted-foreground/50",
+                  )}
                 >
-                  <span className="flex h-full w-full min-w-0 items-center px-2.5">
-                    <span
-                      className={cn(
-                        "truncate text-[12.5px]",
-                        listing.memo?.trim()
-                          ? "text-foreground/80"
-                          : "text-muted-foreground/50",
-                      )}
-                    >
-                      {listing.memo?.trim() || "-"}
-                    </span>
-                  </span>
-                </EditableCell>
-              </div>
-            ))}
-          </div>
-        </div>
+                  {listing.memo?.trim() || "-"}
+                </span>
+              </span>
+            </EditableCell>
+          )}
+        </ListingStackCell>
       </div>
 
       {/* 펼침 패널 — 연관 구매의뢰 / 광고 노출 */}
@@ -2633,9 +2611,7 @@ function PropertySheetContent({
             ))}
             {listings[0] && (
               <>
-                <StatusIndicator
-                  value={getListingAvailability(listings[0])}
-                />
+                <StatusIndicator value={getListingAvailability(listings[0])} />
                 {listings[0].intake && (
                   <StatusBadge
                     kind="confirmationState"
@@ -3124,8 +3100,8 @@ function ResumeClosedListingDialog({
             prompt.completedListingCount > 0 ? (
               <>
                 완료 Deal이 없는 Listing {prompt.resumableListingCount}개를
-                재개합니다. 거래 완료된 Listing{" "}
-                {prompt.completedListingCount}개는 종료 상태를 유지합니다.
+                재개합니다. 거래 완료된 Listing {prompt.completedListingCount}
+                개는 종료 상태를 유지합니다.
               </>
             ) : (
               "재개하면 의뢰 상태가 open으로 바뀌고 매물 상태가 가용으로 표시됩니다."
@@ -3171,8 +3147,8 @@ function StartDealFromStatusDialog({
 }) {
   const queryClient = useQueryClient();
   const isSingleListing = !prompt.requiresListingSelection;
-  const [selectedListingId, setSelectedListingId] = useState(
-    () => (isSingleListing ? (prompt.listings[0]?.id ?? "") : ""),
+  const [selectedListingId, setSelectedListingId] = useState(() =>
+    isSingleListing ? (prompt.listings[0]?.id ?? "") : "",
   );
   const selectedListing =
     prompt.listings.find((listing) => listing.id === selectedListingId) ?? null;
@@ -4070,7 +4046,6 @@ function getAdChannelLabel(channel: string) {
 
 function getAdvertisementSourceLabel(source: string) {
   if (source === "manual") return "입력";
-  if (source === "external_observed") return "외부확인";
   if (source === "cp_sync") return "CP연동";
   return source;
 }

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import {
+  getActiveDealListingIndex,
   getListingAvailability,
   getListingRowAvailability,
   planListingStatusChange,
@@ -67,6 +68,24 @@ describe('desktop listing availability', () => {
         kind: 'startDeal',
         candidates: [availableListing],
       },
+    );
+  });
+
+  it('locates the one listing occupied by the active Deal', () => {
+    assert.equal(
+      getActiveDealListingIndex([
+        { deals: [{ stage: 'completed' }] },
+        { deals: [{ stage: 'contracted' }] },
+        { deals: [] },
+      ]),
+      1,
+    );
+    assert.equal(
+      getActiveDealListingIndex([
+        { deals: [{ stage: 'completed' }] },
+        { deals: [] },
+      ]),
+      -1,
     );
   });
 

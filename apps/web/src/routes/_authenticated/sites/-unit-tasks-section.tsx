@@ -64,7 +64,7 @@ export function UnitTasksSection({ propertyIds }: { propertyIds: Set<string> }) 
       </div>
       {propertyIds.size === 0 ? (
         <p className="rounded-lg border border-dashed px-4 py-3 text-xs text-muted-foreground">
-          연결된 관리 매물(Property)이 없어 후속 작업을 연결할 수 없습니다.
+          관리호수(Property)로 등록하면 이 호실에 후속 작업을 연결할 수 있습니다.
         </p>
       ) : tasksQuery.isLoading ? (
         <div className="space-y-2">
