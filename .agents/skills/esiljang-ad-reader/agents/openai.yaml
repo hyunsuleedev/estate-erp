@@ -1,0 +1,4 @@
+interface:
+  display_name: "이실장 광고 읽기"
+  short_description: "이실장 전체 광고를 안전하게 수집하고 검증합니다"
+  default_prompt: "Use $esiljang-ad-reader to collect every current Esiljang advertisement into a complete, read-only Estate ERP snapshot."
