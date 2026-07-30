@@ -242,7 +242,12 @@ export function MatchExpandPanel({
 }) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
-  const { data: matches, isLoading } = useQuery({
+  const {
+    data: matches,
+    isLoading,
+    isError,
+    refetch,
+  } = useQuery({
     queryKey: ["matches", "by-buyer", requirement.id],
     queryFn: () => api.matches.findAll({ buyerReqId: requirement.id }),
   });
@@ -268,7 +273,7 @@ export function MatchExpandPanel({
         <GitBranch className="size-3.5 text-[#b06f3c]" aria-hidden="true" />
         <span className="text-[12px] font-semibold text-[#8a5a2b]">
           {requirement.contact?.name ?? "고객"} 님의 매칭 후보{" "}
-          {matches?.length ?? 0}건
+          {matches ? matches.length : "—"}건
         </span>
         <div className="flex-1" />
         <Button
@@ -290,6 +295,22 @@ export function MatchExpandPanel({
 
       {isLoading ? (
         <Skeleton className="h-16 max-w-[860px] rounded-lg" />
+      ) : isError ? (
+        // 조회 실패를 "매칭 없음"으로 보이게 하면 안 된다 — 실패는 실패로 말한다
+        <div className="flex items-center gap-2">
+          <p className="text-[12px] text-destructive">
+            매칭을 불러오지 못했습니다.
+          </p>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-6 px-2 text-[11.5px]"
+            onClick={() => void refetch()}
+          >
+            다시 시도
+          </Button>
+        </div>
       ) : !matches?.length ? (
         <p className="text-[12px] text-slate-600">
           아직 매칭이 없습니다. 매칭 생성에서 후보 매물을 연결해 보세요.
