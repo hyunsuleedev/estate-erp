@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Estate ERP 매물관리 현행 구조를 유지한 UI 개선 HTML 데모"
+    />
+    <title>매물관리 · 현행 구조 개선 데모</title>
+    <link rel="stylesheet" href="./current-styles.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#mainContent">본문으로 건너뛰기</a>
+
+    <div class="app-shell">
+      <header class="titlebar">
+        <div class="brand">Estaitt</div>
+        <button class="title-icon" type="button" aria-label="사이드바 접기">▯</button>
+        <div class="open-tab" aria-current="page">
+          <span aria-hidden="true">▤</span>
+          <span>매물관리</span>
+          <button type="button" aria-label="매물관리 탭 닫기">×</button>
+        </div>
+        <button class="title-icon" type="button" aria-label="새 탭">＋</button>
+        <span class="title-spacer"></span>
+        <button class="account-button" type="button">우리두나 · 김영</button>
+      </header>
+
+      <nav class="nav-rail" aria-label="주요 메뉴">
+        <button type="button" data-label="대시보드" aria-label="대시보드">대</button>
+        <button class="active" type="button" data-label="매물관리" aria-label="매물관리">매</button>
+        <button type="button" data-label="관리단지" aria-label="관리단지">단</button>
+        <button type="button" data-label="연락처" aria-label="연락처">연</button>
+        <button type="button" data-label="구매고객" aria-label="구매고객">구</button>
+        <button type="button" data-label="상담기록" aria-label="상담기록">상</button>
+        <button type="button" data-label="매칭" aria-label="매칭">맞</button>
+        <button type="button" data-label="거래관리" aria-label="거래관리">거</button>
+        <span class="nav-spacer"></span>
+        <button type="button" data-label="설정" aria-label="설정">설</button>
+      </nav>
+
+      <main id="mainContent" class="workspace">
+        <section class="command-row" aria-label="매물 검색과 보기">
+          <div id="transactionTabs" class="transaction-tabs" role="tablist" aria-label="거래 유형">
+            <button class="active" type="button" role="tab" aria-selected="true" data-value="전체">전체</button>
+            <button type="button" role="tab" aria-selected="false" data-value="매매">매매</button>
+            <button type="button" role="tab" aria-selected="false" data-value="전세">전세</button>
+            <button type="button" role="tab" aria-selected="false" data-value="월세">월세</button>
+          </div>
+
+          <label class="field site-field">
+            <span class="sr-only">단지</span>
+            <select id="siteFilter" aria-label="단지 필터">
+              <option value="전체">단지 전체</option>
+            </select>
+          </label>
+          <label class="field short-field">
+            <span class="sr-only">동</span>
+            <input id="dongFilter" placeholder="동" inputmode="numeric" aria-label="동 검색" />
+          </label>
+          <label class="field short-field">
+            <span class="sr-only">호</span>
+            <input id="unitFilter" placeholder="호" inputmode="numeric" aria-label="호 검색" />
+          </label>
+          <label class="search-field">
+            <span class="search-icon" aria-hidden="true">⌕</span>
+            <span class="sr-only">주소, 연락처, 메모 검색</span>
+            <input id="searchFilter" placeholder="주소, 연락처, 메모" />
+            <button id="clearSearch" type="button" aria-label="검색어 지우기" hidden>×</button>
+          </label>
+
+          <span class="command-spacer"></span>
+
+          <div class="view-switch" role="group" aria-label="보기 방식">
+            <button id="listViewButton" class="active" type="button" aria-pressed="true">
+              <span aria-hidden="true">☷</span> 목록
+            </button>
+            <button id="mapViewButton" type="button" aria-pressed="false">
+              <span aria-hidden="true">⌖</span> 지도
+            </button>
+          </div>
+          <button id="newPropertyButton" class="primary-button" type="button">＋ 새 매물 등록</button>
+        </section>
+
+        <section class="filter-row" aria-label="상세 필터">
+          <div class="filter-cluster location-cluster">
+            <label class="filter-chip">
+              <span aria-hidden="true">⌖</span>
+              <select id="regionFilter" aria-label="지역 필터">
+                <option value="전체">지역 전체</option>
+                <option value="강동구">강동구</option>
+                <option value="송파구">송파구</option>
+                <option value="서초구">서초구</option>
+              </select>
+            </label>
+            <label class="filter-chip">
+              <select id="typeFilter" aria-label="유형 필터">
+                <option value="전체">유형 전체</option>
+                <option value="아파트">아파트</option>
+                <option value="오피스텔">오피스텔</option>
+              </select>
+            </label>
+          </div>
+
+          <span class="filter-divider" aria-hidden="true"></span>
+
+          <div class="filter-cluster condition-cluster">
+            <label class="filter-chip">
+              <select id="statusFilter" aria-label="매물상태 필터">
+                <option value="전체">매물상태 전체</option>
+                <option value="가용">가용</option>
+                <option value="보류">보류</option>
+                <option value="거래중">거래중</option>
+                <option value="종료">종료</option>
+              </select>
+            </label>
+            <label class="filter-chip">
+              <select id="priceFilter" aria-label="가격 또는 보증금 필터">
+                <option value="전체">가격/보증금 전체</option>
+                <option value="10억 미만">10억 미만</option>
+                <option value="10–20억">10–20억</option>
+                <option value="20억 이상">20억 이상</option>
+              </select>
+            </label>
+            <label class="filter-chip">
+              <select id="rentFilter" aria-label="월세 필터">
+                <option value="전체">월세 전체</option>
+                <option value="있음">월세 있음</option>
+                <option value="200만 미만">200만 미만</option>
+                <option value="200만 이상">200만 이상</option>
+              </select>
+            </label>
+            <label class="filter-chip">
+              <select id="areaFilter" aria-label="면적 필터">
+                <option value="전체">면적 전체</option>
+                <option value="25평 미만">25평 미만</option>
+                <option value="25–35평">25–35평</option>
+                <option value="35평 이상">35평 이상</option>
+              </select>
+            </label>
+            <label class="filter-chip">
+              <select id="moveFilter" aria-label="입주일 필터">
+                <option value="전체">입주일 전체</option>
+                <option value="즉시">즉시 입주</option>
+                <option value="협의">입주 협의</option>
+                <option value="날짜 지정">날짜 지정</option>
+              </select>
+            </label>
+          </div>
+
+          <span class="filter-divider" aria-hidden="true"></span>
+
+          <div class="filter-cluster operation-cluster">
+            <label class="filter-chip">
+              <span aria-hidden="true">◉</span>
+              <select id="adFilter" aria-label="광고 필터">
+                <option value="전체">광고 전체</option>
+                <option value="광고중">광고중</option>
+                <option value="미등록">미등록</option>
+              </select>
+            </label>
+          </div>
+
+          <span class="filter-spacer"></span>
+
+          <div class="column-control">
+            <button id="columnMenuButton" class="ghost-button" type="button" aria-expanded="false">
+              ▥ 컬럼
+            </button>
+            <div id="columnMenu" class="column-menu" hidden>
+              <label>
+                <input id="loanColumnToggle" type="checkbox" />
+                융자금
+              </label>
+            </div>
+          </div>
+          <button id="resetFiltersButton" class="ghost-button" type="button" hidden>↻ 초기화</button>
+        </section>
+
+        <section id="dataSurface" class="data-surface" aria-label="매물 목록">
+          <div id="listView" class="list-view">
+            <div id="tableScroll" class="table-scroll">
+              <div id="guideTrack" class="guide-track" aria-label="보조 컬럼 표시">
+                <button
+                  id="detailColumnToggle"
+                  class="detail-column-toggle"
+                  type="button"
+                  aria-expanded="true"
+                  aria-label="타입–확인 컬럼 접기"
+                  title="타입–확인 컬럼 접기"
+                >−</button>
+                <span class="group-line" aria-hidden="true"></span>
+                <span class="group-cap" aria-hidden="true"></span>
+              </div>
+
+              <table id="propertyTable" class="property-table">
+                <caption class="sr-only">매물관리 목록</caption>
+                <colgroup id="propertyColgroup"></colgroup>
+                <thead id="propertyHead"></thead>
+                <tbody id="propertyBody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div id="mapView" class="map-view" hidden>
+            <div class="map-canvas" aria-label="매물 지도 와이어프레임">
+              <div class="map-road road-one"></div>
+              <div class="map-road road-two"></div>
+              <div class="map-road road-three"></div>
+              <div class="map-water"></div>
+              <div id="mapPins"></div>
+              <div class="map-legend"><span></span> 현재 조건의 매물</div>
+            </div>
+            <aside class="map-results" aria-label="지도 매물 결과">
+              <div class="map-results-head">
+                <strong>지도 내 매물</strong>
+                <span id="mapResultCount"></span>
+              </div>
+              <div id="mapResultList" class="map-result-list"></div>
+            </aside>
+          </div>
+
+          <footer class="result-footer">
+            <span id="resultCount">0건</span>
+            <span id="resultSummary">전체 매물</span>
+            <span class="footer-spacer"></span>
+            <span>행 더블클릭: 상세 보기</span>
+          </footer>
+        </section>
+      </main>
+    </div>
+
+    <div id="propertyModal" class="modal-layer" hidden>
+      <button id="modalScrim" class="modal-scrim" type="button" aria-label="상세 닫기"></button>
+      <aside class="property-sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
+        <header class="sheet-header">
+          <div>
+            <span class="sheet-eyebrow">매물 상세</span>
+            <h2 id="sheetTitle">매물 상세</h2>
+          </div>
+          <button id="closeModalButton" class="sheet-close" type="button" aria-label="상세 닫기">×</button>
+        </header>
+        <div id="sheetContent" class="sheet-content"></div>
+      </aside>
+    </div>
+
+    <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
+    <script src="./current-app.js"></script>
+  </body>
+</html>
