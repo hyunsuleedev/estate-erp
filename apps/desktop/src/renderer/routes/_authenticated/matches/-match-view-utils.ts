@@ -425,6 +425,15 @@ export function formatRequirementSummary(match: MatchViewListItem) {
 export function formatRequirementSummaryFromBuyerRequirement(
   requirement: NonNullable<MatchViewListItem['buyerRequirement']>,
 ) {
+  const { regionText, siteTypeText, budgetText } =
+    getBuyerRequirementSummaryParts(requirement);
+
+  return `${regionText} · ${siteTypeText} · ${budgetText}`;
+}
+
+export function getBuyerRequirementSummaryParts(
+  requirement: NonNullable<MatchViewListItem['buyerRequirement']>,
+) {
   const regionLabels = (requirement.preferredRegions ?? [])
     .map((region) => region.ward?.name ?? region.district?.name ?? region.province?.name ?? '')
     .filter(Boolean);
@@ -434,7 +443,11 @@ export function formatRequirementSummaryFromBuyerRequirement(
     ? siteTypes.map((type) => siteTypeLabel[type] ?? type).join(', ')
     : '유형 협의';
 
-  return `${regionText} · ${siteTypeText} · ${formatBudgetSummary(requirement)}`;
+  return {
+    regionText,
+    siteTypeText,
+    budgetText: formatBudgetSummary(requirement),
+  };
 }
 
 export const siteTypeLabel: Record<string, string> = {

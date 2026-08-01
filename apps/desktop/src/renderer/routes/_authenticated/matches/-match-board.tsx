@@ -2,7 +2,10 @@ import { useEffect, useState } from 'react';
 import {
   ArrowRight,
   CalendarClock,
+  Check,
   CheckCircle2,
+  Circle,
+  CircleDot,
   CircleOff,
   MoreVertical,
   Trash2,
@@ -16,7 +19,7 @@ import {
   getActiveDealLink,
   getDefaultViewingStartDate,
   getInitials,
-  getMatchStageHeaderClass,
+  getMatchStageDotClass,
   getMatchStageLabel,
   getMatchTitle,
   getNextMatchStage,
@@ -64,6 +67,8 @@ export function MatchActionsMenu({
           type="button"
           variant="ghost"
           size="icon-xs"
+          aria-label={`${match.buyerRequirement?.contact?.name ?? '미지정'} · ${getMatchTitle(match)} 매칭 작업 메뉴`}
+          title="매칭 작업 메뉴"
           disabled={actions.isUpdating}
           onClick={(event) => event.stopPropagation()}
           onDoubleClick={(event) => event.stopPropagation()}
@@ -130,17 +135,24 @@ export function ProgressNode({
   const disabled = actions.isUpdating || actions.isScheduling;
 
   const baseClassName = cn(
-    'inline-flex items-center gap-1 rounded-md border px-2.5 py-1 text-xs font-medium whitespace-nowrap transition-colors',
-    state === 'completed' && 'border-success/30 bg-success-soft text-success',
-    state === 'current' && 'border-info/40 bg-info-soft text-info ring-1 ring-info/30',
-    state === 'pending' && 'border-border bg-muted/40 text-muted-foreground',
-    isClosed && 'border-border bg-muted/30 text-muted-foreground/60',
+    'inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-xs font-medium whitespace-nowrap outline-none focus-visible:ring-2 focus-visible:ring-ring/40',
+    state === 'completed' && 'text-success hover:bg-success-soft/70',
+    state === 'current' && 'bg-info-soft text-info',
+    state === 'pending' && 'text-muted-foreground hover:bg-muted',
+    isClosed && 'bg-transparent text-muted-foreground/70 hover:bg-transparent',
   );
   const lineClassName = cn(
-    'h-px w-4',
-    state === 'completed' && !isClosed ? 'bg-success/40' : 'bg-border',
+    'h-px w-3',
+    state === 'completed' && !isClosed ? 'bg-success/50' : 'bg-border',
   );
   const label = getMatchStageLabel(stage);
+  const stateIcon = upcomingViewingEvent && stage === 'viewing'
+    ? <CalendarClock className="size-3.5" />
+    : state === 'completed'
+      ? <Check className="size-3.5" />
+      : state === 'current'
+        ? <CircleDot className="size-3.5" />
+        : <Circle className="size-3.5" />;
 
   useEffect(() => {
     if (!open || stage !== 'viewing') {
@@ -157,7 +169,10 @@ export function ProgressNode({
   if (isClosed) {
     return (
       <div className="flex items-center">
-        <div className={baseClassName}>{label}</div>
+        <div className={baseClassName}>
+          {stateIcon}
+          {label}
+        </div>
         {!isLast && <div className={lineClassName} />}
       </div>
     );
@@ -169,12 +184,12 @@ export function ProgressNode({
         <PopoverTrigger asChild>
           <button
             type="button"
-            className={cn(baseClassName, 'cursor-pointer hover:bg-accent')}
+            className={cn(baseClassName, 'cursor-pointer')}
             onClick={(event) => event.stopPropagation()}
             onDoubleClick={(event) => event.stopPropagation()}
             disabled={disabled}
           >
-            {stage === 'viewing' && upcomingViewingEvent && <CalendarClock className="size-3" />}
+            {stateIcon}
             {label}
           </button>
         </PopoverTrigger>
@@ -359,22 +374,18 @@ export function MatchColumn({
   actions: MatchRowActions;
 }) {
   return (
-    <section className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-lg border border-border/60 bg-muted/20">
-      <div
-        className={cn(
-          'flex items-center justify-between px-4 py-3 text-sm font-medium',
-          getMatchStageHeaderClass(stage),
-        )}
-      >
+    <section className="flex w-[280px] shrink-0 flex-col overflow-hidden rounded-md border border-border bg-background">
+      <div className="flex items-center gap-2 border-b border-border/70 px-3 py-2.5 text-[13px] font-medium">
+        <span className={cn('size-2 rounded-full', getMatchStageDotClass(stage))} />
         <span>{getMatchStageLabel(stage)}</span>
-        <Badge variant="secondary" className="bg-background/80 text-foreground">
+        <Badge variant="secondary" className="ml-auto rounded-md bg-muted text-foreground tabular-nums">
           {matches.length}
         </Badge>
       </div>
 
-      <div className="flex min-h-[440px] flex-1 flex-col gap-3 p-3">
+      <div className="flex min-h-[360px] flex-1 flex-col gap-2 bg-muted/20 p-2">
         {matches.length === 0 ? (
-          <div className="flex min-h-[180px] items-center justify-center rounded-md border border-dashed border-border/80 bg-background/70 text-sm text-muted-foreground">
+          <div className="flex min-h-[140px] items-center justify-center rounded-md border border-dashed border-border/80 bg-background px-3 text-center text-xs text-muted-foreground">
             해당 단계의 매칭이 없습니다.
           </div>
         ) : (
@@ -397,7 +408,7 @@ export function MatchCard({
 
   return (
     <article
-      className="cursor-pointer rounded-md border border-border/60 bg-background p-3 shadow-xs transition-colors hover:border-border"
+      className="cursor-pointer rounded-md border border-border/80 bg-background p-3 hover:bg-muted/20"
       onClick={() => actions.onOpenDetail(match.id)}
       title="클릭하여 상세보기"
     >
@@ -431,17 +442,19 @@ export function MatchCard({
         <MatchActionsMenu match={match} actions={actions} />
       </div>
 
-      <div className="mt-3 rounded-md bg-muted/40 p-2">
-        <p className="text-[11px] text-muted-foreground">매수 요건</p>
-        <p className="mt-1 text-sm">{formatRequirementSummary(match)}</p>
+      <div className="mt-3 border-t border-border/70 pt-2">
+        <p className="text-xs text-muted-foreground">매수 요건</p>
+        <p className="mt-1 text-[13px] text-pretty">{formatRequirementSummary(match)}</p>
       </div>
 
       {match.memo && (
         <p className="mt-3 line-clamp-2 text-xs leading-5 text-muted-foreground">{match.memo}</p>
       )}
 
-      <div className="mt-4 flex items-center justify-between gap-2">
-        <span className="text-[11px] text-muted-foreground">{formatElapsedDays(match.createdAt)}</span>
+      <div className="mt-3 flex items-center justify-between gap-2">
+        <span className="text-xs text-muted-foreground tabular-nums">
+          {formatElapsedDays(match.createdAt)}
+        </span>
         {nextStage && (
           <Button
             type="button"
@@ -476,19 +489,19 @@ export function ResultPanel({
   actions: MatchRowActions;
 }) {
   return (
-    <section className="rounded-lg border border-border/60 bg-background">
-      <div className="flex items-center justify-between border-b border-border/60 px-4 py-3">
-        <h2 className="text-sm font-semibold">{title}</h2>
-        <Badge variant="secondary">{matches.length}</Badge>
+    <section className="overflow-hidden rounded-md border border-border bg-background">
+      <div className="flex items-center justify-between border-b border-border/70 px-3 py-2.5">
+        <h2 className="text-balance text-[13px] font-semibold">{title}</h2>
+        <Badge variant="secondary" className="rounded-md tabular-nums">{matches.length}</Badge>
       </div>
-      <div className="divide-y divide-border/60">
+      <div className="divide-y divide-border/70">
         {matches.length === 0 ? (
-          <div className="px-4 py-8 text-sm text-muted-foreground">{emptyMessage}</div>
+          <div className="px-3 py-7 text-sm text-muted-foreground">{emptyMessage}</div>
         ) : (
           matches.map((match) => (
             <div
               key={match.id}
-              className="flex cursor-pointer items-center justify-between gap-3 px-4 py-3 hover:bg-muted/20"
+              className="flex cursor-pointer items-center justify-between gap-3 px-3 py-2.5 hover:bg-muted/20"
               onClick={() => actions.onOpenDetail(match.id)}
               title="클릭하여 상세보기"
             >

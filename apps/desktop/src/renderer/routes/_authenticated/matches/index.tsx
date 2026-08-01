@@ -1,7 +1,15 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
-import { Building2, GitBranch, List, ListOrdered, Plus, RefreshCw } from 'lucide-react';
+import {
+  Building2,
+  GitBranch,
+  List,
+  ListOrdered,
+  Plus,
+  RefreshCw,
+  RotateCcw,
+} from 'lucide-react';
 import { toast } from 'sonner';
 import type { Match } from '@estate-erp/api-client';
 import {
@@ -31,11 +39,8 @@ import { formatDate } from '@/lib/format';
 import {
   ConfirmDialog,
   EmptyState,
-  FilterBar,
-  FilterCount,
   FilterSearch,
   FilterSelect,
-  PageHeader,
   StatusBadge,
 } from '@/components/domain';
 import { Button } from '@/components/ui/button';
@@ -309,205 +314,254 @@ function MatchesPage() {
     [filteredMatches],
   );
 
+  const hasActiveFilters =
+    searchQuery.trim().length > 0 ||
+    stageFilters.length > 0 ||
+    transactionTypeFilter.length > 0;
+
+  const resetFilters = () => {
+    setSearchQuery('');
+    setStageFilters([]);
+    setTransactionTypeFilter('');
+  };
+
   return (
-    <div className="flex min-h-0 flex-col gap-4 pt-4">
-      <PageHeader
-        title="매칭"
-        description="구매고객 조건과 매물을 연결해 제안 → 방문 → 협상 → 거래 전환까지 추적합니다."
-        actions={
-          <Button type="button" onClick={() => setCreateOpen(true)}>
+    <div
+      data-matches-page
+      className="-m-4 flex min-h-0 min-w-0 flex-1 flex-col bg-background"
+    >
+      <section
+        aria-label="매칭 요약"
+        className="flex shrink-0 flex-wrap items-center gap-y-2 border-b border-border bg-background px-4 py-2.5"
+      >
+        <MatchSummaryItem label="진행" value={kpis.active} />
+        <MatchSummaryItem label="임장" value={kpis.viewing} />
+        <MatchSummaryItem label="거래 전환" value={kpis.converted} />
+        <MatchSummaryItem label="종료" value={kpis.closed} />
+        <p className="ml-auto text-xs text-muted-foreground tabular-nums">
+          고객 {groupedBuyerMatches.length.toLocaleString()}명 · 전체{' '}
+          {matches.length.toLocaleString()}건
+        </p>
+      </section>
+
+      <section
+        aria-label="매칭 보기 및 필터"
+        className="shrink-0 border-b border-border bg-background"
+      >
+        <div className="flex flex-wrap items-center gap-2 bg-muted/30 px-3 py-2">
+          <div ref={searchWrapRef}>
+            <FilterSearch
+              value={searchQuery}
+              onChange={setSearchQuery}
+              placeholder="고객, 연락처, 매물, 주소 검색"
+              className="w-72 max-w-full"
+            />
+          </div>
+
+          <MultiSelect
+            options={matchStageOrder.map((stage) => ({
+              value: stage,
+              label: getMatchStageLabel(stage),
+            }))}
+            selected={stageFilters}
+            onChange={setStageFilters}
+            ariaLabel="매칭 단계 필터"
+            placeholder="단계"
+            className="h-8 max-w-80 shadow-none"
+            maxCount={3}
+          />
+
+          <FilterSelect
+            label="거래유형"
+            value={transactionTypeFilter}
+            onChange={setTransactionTypeFilter}
+            options={TRANSACTION_TYPE_OPTIONS}
+            className="h-8 shadow-none"
+          />
+
+          {hasActiveFilters && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-8 text-xs text-muted-foreground"
+              onClick={resetFilters}
+            >
+              <RotateCcw className="size-3.5" />
+              초기화
+            </Button>
+          )}
+
+          <p className="ml-auto text-xs text-muted-foreground tabular-nums">
+            {filteredMatches.length.toLocaleString()}건
+          </p>
+
+          <div className="flex items-center gap-1 rounded-md border bg-background p-1">
+            <Button
+              variant={viewMode === 'buyer' ? 'secondary' : 'ghost'}
+              size="sm"
+              onClick={() => setViewMode('buyer')}
+              className="gap-1.5 text-xs"
+              title="단축키 1"
+            >
+              <GitBranch className="size-3.5" />
+              고객별
+            </Button>
+            <Button
+              variant={viewMode === 'property' ? 'secondary' : 'ghost'}
+              size="sm"
+              onClick={() => setViewMode('property')}
+              className="gap-1.5 text-xs"
+              title="단축키 2"
+            >
+              <Building2 className="size-3.5" />
+              매물별
+            </Button>
+            <Button
+              variant={viewMode === 'stage' ? 'secondary' : 'ghost'}
+              size="sm"
+              onClick={() => setViewMode('stage')}
+              className="gap-1.5 text-xs"
+              title="단축키 3"
+            >
+              <ListOrdered className="size-3.5" />
+              단계별
+            </Button>
+            <Button
+              variant={viewMode === 'kanban' ? 'secondary' : 'ghost'}
+              size="sm"
+              onClick={() => setViewMode('kanban')}
+              className="gap-1.5 text-xs"
+              title="단축키 4"
+            >
+              칸반
+            </Button>
+            <Button
+              variant={viewMode === 'list' ? 'secondary' : 'ghost'}
+              size="sm"
+              onClick={() => setViewMode('list')}
+              className="gap-1.5 text-xs"
+              title="단축키 5"
+            >
+              <List className="size-3.5" />
+              전체
+            </Button>
+          </div>
+
+          <Button type="button" size="sm" className="h-8" onClick={() => setCreateOpen(true)}>
             <Plus className="size-4" />
             매칭 생성
           </Button>
-        }
-      />
-
-      {/* KPI tiles */}
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <KpiTile label="진행 매칭" value={kpis.active} />
-        <KpiTile label="방문 단계" value={kpis.viewing} />
-        <KpiTile label="거래 전환" value={kpis.converted} />
-        <KpiTile label="종료" value={kpis.closed} />
-      </div>
-
-      <FilterBar>
-        <div ref={searchWrapRef} className="contents">
-          <FilterSearch
-            value={searchQuery}
-            onChange={setSearchQuery}
-            placeholder="고객명, 연락처, 매물명, 주소 검색"
-          />
         </div>
+      </section>
 
-        <MultiSelect
-          options={matchStageOrder.map((stage) => ({
-            value: stage,
-            label: getMatchStageLabel(stage),
-          }))}
-          selected={stageFilters}
-          onChange={setStageFilters}
-          placeholder="단계 필터"
-          maxCount={4}
-        />
-
-        <FilterSelect
-          label="거래유형"
-          value={transactionTypeFilter}
-          onChange={setTransactionTypeFilter}
-          options={TRANSACTION_TYPE_OPTIONS}
-        />
-
-        <FilterCount n={filteredMatches.length} />
-
-        <div className="flex items-center gap-1 rounded-md border bg-background p-1">
-          <Button
-            variant={viewMode === 'buyer' ? 'secondary' : 'ghost'}
-            size="sm"
-            onClick={() => setViewMode('buyer')}
-            className="gap-1.5 text-xs"
-            title="단축키 1"
-          >
-            <GitBranch className="size-3.5" />
-            고객별
-          </Button>
-          <Button
-            variant={viewMode === 'property' ? 'secondary' : 'ghost'}
-            size="sm"
-            onClick={() => setViewMode('property')}
-            className="gap-1.5 text-xs"
-            title="단축키 2"
-          >
-            <Building2 className="size-3.5" />
-            매물별
-          </Button>
-          <Button
-            variant={viewMode === 'stage' ? 'secondary' : 'ghost'}
-            size="sm"
-            onClick={() => setViewMode('stage')}
-            className="gap-1.5 text-xs"
-            title="단축키 3"
-          >
-            <ListOrdered className="size-3.5" />
-            단계별
-          </Button>
-          <Button
-            variant={viewMode === 'kanban' ? 'secondary' : 'ghost'}
-            size="sm"
-            onClick={() => setViewMode('kanban')}
-            className="gap-1.5 text-xs"
-            title="단축키 4"
-          >
-            칸반
-          </Button>
-          <Button
-            variant={viewMode === 'list' ? 'secondary' : 'ghost'}
-            size="sm"
-            onClick={() => setViewMode('list')}
-            className="gap-1.5 text-xs"
-            title="단축키 5"
-          >
-            <List className="size-3.5" />
-            전체
-          </Button>
-        </div>
-      </FilterBar>
-
-      {isLoading ? (
-        <div className="space-y-3">
-          {Array.from({ length: 5 }).map((_, index) => (
-            <Skeleton key={index} className="h-20 w-full rounded-lg" />
-          ))}
-        </div>
-      ) : isError ? (
-        <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed border-border/80 px-4 py-14 text-center">
-          <p className="text-sm text-muted-foreground">매칭 목록을 불러오지 못했습니다.</p>
-          <Button type="button" variant="outline" size="sm" onClick={() => refetch()}>
-            <RefreshCw className="size-4" />
-            재시도
-          </Button>
-        </div>
-      ) : matches.length === 0 ? (
-        <EmptyState
-          icon={GitBranch}
-          title="등록된 매칭이 없습니다"
-          description="구매고객 조건에 맞는 매물을 연결해 매칭 파이프라인을 시작하세요."
-          action={
-            <Button type="button" onClick={() => setCreateOpen(true)}>
-              <Plus className="size-4" />
-              매칭 생성
+      <main className="min-h-0 min-w-0 flex-1 overflow-auto bg-muted/20 p-3">
+        {isLoading ? (
+          <div className="space-y-2">
+            {Array.from({ length: 5 }).map((_, index) => (
+              <Skeleton key={index} className="h-16 w-full rounded-md" />
+            ))}
+          </div>
+        ) : isError ? (
+          <div className="flex flex-col items-center gap-3 rounded-md border border-dashed border-border/80 bg-background px-4 py-14 text-center">
+            <p className="text-sm text-muted-foreground">매칭 목록을 불러오지 못했습니다.</p>
+            <Button type="button" variant="outline" size="sm" onClick={() => refetch()}>
+              <RefreshCw className="size-4" />
+              재시도
             </Button>
-          }
-        />
-      ) : (
-        <div className="min-h-0">
-          {viewMode === 'buyer' && (
-            <div className="space-y-4">
-              {groupedBuyerMatches.length === 0 ? (
-                <ViewEmpty message="고객별로 묶어 보여줄 매칭이 없습니다." />
-              ) : (
-                groupedBuyerMatches.map((group) => (
-                  <BuyerMatchGroup
-                    key={group.buyerReqId}
-                    buyerRequirement={group.buyerRequirement}
-                    matches={group.matches}
+          </div>
+        ) : matches.length === 0 ? (
+          <EmptyState
+            icon={GitBranch}
+            title="등록된 매칭이 없습니다"
+            description="구매고객 조건에 맞는 매물을 연결해 매칭 파이프라인을 시작하세요."
+            action={
+              <Button type="button" onClick={() => setCreateOpen(true)}>
+                <Plus className="size-4" />
+                매칭 생성
+              </Button>
+            }
+          />
+        ) : filteredMatches.length === 0 ? (
+          <ViewEmpty
+            message="현재 검색과 필터에 맞는 매칭이 없습니다."
+            onReset={resetFilters}
+          />
+        ) : (
+          <div className="min-h-0">
+            {viewMode === 'buyer' && (
+              <div className="space-y-2">
+                {groupedBuyerMatches.length === 0 ? (
+                  <ViewEmpty message="고객별로 묶어 보여줄 매칭이 없습니다." />
+                ) : (
+                  groupedBuyerMatches.map((group) => (
+                    <BuyerMatchGroup
+                      key={group.buyerReqId}
+                      buyerRequirement={group.buyerRequirement}
+                      matches={group.matches}
+                      actions={actions}
+                    />
+                  ))
+                )}
+              </div>
+            )}
+
+            {viewMode === 'property' && (
+              <div className="space-y-2">
+                {groupedPropertyMatches.length === 0 ? (
+                  <ViewEmpty message="매물별로 묶어 보여줄 매칭이 없습니다." />
+                ) : (
+                  groupedPropertyMatches.map((group) => (
+                    <PropertyMatchGroup key={group.listingId} group={group} actions={actions} />
+                  ))
+                )}
+              </div>
+            )}
+
+            {viewMode === 'stage' && (
+              <StageMatchView groups={stageGroupedMatches} actions={actions} />
+            )}
+
+            {viewMode === 'kanban' && (
+              <div className="space-y-3">
+                <div className="flex gap-3 overflow-x-auto pb-1">
+                  {matchBoardStages.map((stage) => (
+                    <MatchColumn
+                      key={stage}
+                      stage={stage}
+                      matches={activeMatches.filter((match) => match.stage === stage)}
+                      actions={actions}
+                    />
+                  ))}
+                </div>
+
+                {activeMatches.length === 0 && (
+                  <ViewEmpty message="조건에 맞는 진행 매칭이 없습니다." />
+                )}
+
+                <div className="grid gap-3 xl:grid-cols-2">
+                  <ResultPanel
+                    title="거래 전환"
+                    emptyMessage="거래 전환된 매칭이 없습니다."
+                    matches={convertedMatches}
                     actions={actions}
                   />
-                ))
-              )}
-            </div>
-          )}
-
-          {viewMode === 'property' && (
-            <div className="space-y-4">
-              {groupedPropertyMatches.length === 0 ? (
-                <ViewEmpty message="매물별로 묶어 보여줄 매칭이 없습니다." />
-              ) : (
-                groupedPropertyMatches.map((group) => (
-                  <PropertyMatchGroup key={group.listingId} group={group} actions={actions} />
-                ))
-              )}
-            </div>
-          )}
-
-          {viewMode === 'stage' && <StageMatchView groups={stageGroupedMatches} actions={actions} />}
-
-          {viewMode === 'kanban' && (
-            <div className="space-y-4">
-              <div className="flex gap-3 overflow-x-auto">
-                {matchBoardStages.map((stage) => (
-                  <MatchColumn
-                    key={stage}
-                    stage={stage}
-                    matches={activeMatches.filter((match) => match.stage === stage)}
+                  <ResultPanel
+                    title="종료"
+                    emptyMessage="종료된 매칭이 없습니다."
+                    matches={closedMatches}
                     actions={actions}
                   />
-                ))}
+                </div>
               </div>
+            )}
 
-              {activeMatches.length === 0 && (
-                <ViewEmpty message="조건에 맞는 진행 매칭이 없습니다." />
-              )}
-
-              <div className="grid gap-4 xl:grid-cols-2">
-                <ResultPanel
-                  title="거래 전환"
-                  emptyMessage="거래 전환된 매칭이 없습니다."
-                  matches={convertedMatches}
-                  actions={actions}
-                />
-                <ResultPanel
-                  title="종료"
-                  emptyMessage="종료된 매칭이 없습니다."
-                  matches={closedMatches}
-                  actions={actions}
-                />
-              </div>
-            </div>
-          )}
-
-          {viewMode === 'list' && <MatchListTable matches={filteredMatches} actions={actions} />}
-        </div>
-      )}
+            {viewMode === 'list' && (
+              <MatchListTable matches={filteredMatches} actions={actions} />
+            )}
+          </div>
+        )}
+      </main>
 
       <MatchDetailDialog
         match={selectedMatch}
@@ -558,19 +612,25 @@ function MatchesPage() {
   );
 }
 
-function KpiTile({ label, value }: { label: string; value: number }) {
+function MatchSummaryItem({ label, value }: { label: string; value: number }) {
   return (
-    <div className="rounded-md border border-border/60 bg-background px-4 py-3">
-      <p className="text-xs text-muted-foreground">{label}</p>
-      <p className="mt-1 text-xl font-semibold tabular-nums">{value}</p>
+    <div className="flex items-baseline gap-2 border-r border-border/70 px-4 first:pl-0 last:border-r-0">
+      <span className="text-xs text-muted-foreground">{label}</span>
+      <strong className="text-sm font-semibold tabular-nums">{value.toLocaleString()}</strong>
     </div>
   );
 }
 
-function ViewEmpty({ message }: { message: string }) {
+function ViewEmpty({ message, onReset }: { message: string; onReset?: () => void }) {
   return (
-    <div className="rounded-md border border-dashed border-border/80 px-4 py-10 text-center text-sm text-muted-foreground">
-      {message}
+    <div className="flex flex-col items-center gap-3 rounded-md border border-dashed border-border/80 bg-background px-4 py-10 text-center">
+      <p className="text-sm text-muted-foreground">{message}</p>
+      {onReset && (
+        <Button type="button" variant="outline" size="sm" onClick={onReset}>
+          <RotateCcw className="size-3.5" />
+          검색·필터 초기화
+        </Button>
+      )}
     </div>
   );
 }
@@ -583,18 +643,18 @@ function MatchListTable({
   actions: MatchRowActions;
 }) {
   return (
-    <div className="overflow-hidden rounded-lg border border-border/60">
+    <div className="overflow-hidden rounded-md border border-border bg-background">
       <div className="overflow-x-auto">
-        <table className="min-w-full text-sm">
-          <thead className="bg-muted/40 text-left text-xs text-muted-foreground">
+        <table className="min-w-[1000px] text-[13px]">
+          <thead className="bg-muted/50 text-left text-xs text-muted-foreground">
             <tr>
-              <th className="px-4 py-3 font-medium">단계</th>
-              <th className="px-4 py-3 font-medium">고객</th>
-              <th className="px-4 py-3 font-medium">매물</th>
-              <th className="px-4 py-3 font-medium">조건</th>
-              <th className="px-4 py-3 font-medium">메모</th>
-              <th className="px-4 py-3 font-medium">최근 수정</th>
-              <th className="px-4 py-3 font-medium" />
+              <th className="px-3 py-2 font-medium">단계</th>
+              <th className="px-3 py-2 font-medium">고객</th>
+              <th className="px-3 py-2 font-medium">매물</th>
+              <th className="px-3 py-2 font-medium">조건</th>
+              <th className="px-3 py-2 font-medium">메모</th>
+              <th className="px-3 py-2 font-medium">최근 수정</th>
+              <th className="px-3 py-2 font-medium" />
             </tr>
           </thead>
           <tbody>
@@ -608,14 +668,14 @@ function MatchListTable({
               matches.map((match) => (
                 <tr
                   key={match.id}
-                  className="border-t border-border/60 align-top hover:bg-muted/30"
+                  className="border-t border-border/70 align-top hover:bg-muted/30"
                   onDoubleClick={() => actions.onOpenDetail(match.id)}
                   title="더블클릭하여 상세보기"
                 >
-                  <td className="px-4 py-3">
+                  <td className="px-3 py-2.5">
                     <StatusBadge kind="matchStage" status={match.stage} size="sm" />
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-3 py-2.5">
                     <div className="space-y-1">
                       <p className="font-medium">
                         {match.buyerRequirement?.contact?.name ?? '미지정'}
@@ -625,9 +685,15 @@ function MatchListTable({
                       </p>
                     </div>
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-3 py-2.5">
                     <div className="space-y-1">
-                      <p className="font-medium">{getMatchTitle(match)}</p>
+                      <button
+                        type="button"
+                        className="max-w-64 truncate text-left font-medium hover:underline"
+                        onClick={() => actions.onOpenDetail(match.id)}
+                      >
+                        {getMatchTitle(match)}
+                      </button>
                       <div className="flex flex-wrap items-center gap-2">
                         {match.listing?.transactionType && (
                           <StatusBadge
@@ -642,16 +708,16 @@ function MatchListTable({
                       </div>
                     </div>
                   </td>
-                  <td className="px-4 py-3 text-xs text-muted-foreground">
+                  <td className="px-3 py-2.5 text-xs text-muted-foreground">
                     {formatRequirementSummary(match)}
                   </td>
-                  <td className="px-4 py-3 text-xs text-muted-foreground">
+                  <td className="px-3 py-2.5 text-xs text-muted-foreground">
                     <p className="line-clamp-2">{match.memo ?? '—'}</p>
                   </td>
-                  <td className="px-4 py-3 text-xs text-muted-foreground">
+                  <td className="px-3 py-2.5 text-xs text-muted-foreground tabular-nums">
                     {formatDate(match.updatedAt)}
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-3 py-2.5">
                     <div className="flex justify-end">
                       <MatchActionsMenu match={match} actions={actions} />
                     </div>
