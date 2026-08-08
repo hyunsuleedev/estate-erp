@@ -41,14 +41,6 @@ export type {
   ListingAdvertisementsFilter,
   ListingAdvertisementWithListing,
   ListingAdvertisementActionContext,
-  MyAdvertisementsSyncSession,
-  MyAdvertisementsSyncWakeup,
-  MyAdvertisementsSyncRun,
-  MyAdvertisementsSyncRunStatus,
-  MyAdvertisementsSyncStep,
-  MyAdvertisementsSyncStepStatus,
-  MyAdvertisementsSyncStatus,
-  RequestMyAdvertisementsSyncResult,
   CreateListingAdvertisementDto,
   UpdateListingAdvertisementDto,
 } from "./modules/listing-advertisements.js";
@@ -115,6 +107,7 @@ export type {
   TaskPropertySummary,
   CreateTaskDto,
   UpdateTaskDto,
+  TasksFilter,
 } from "./modules/tasks.js";
 export type { Match, CreateMatchDto } from "./modules/matches.js";
 export type { Deal, CreateDealDto } from "./modules/deals.js";
@@ -167,7 +160,31 @@ export type {
   WardOption,
 } from "./modules/regions.js";
 export type {
+  BuyerIntake,
+  BuyerIntakeContact,
+  BuyerIntakeContactInput,
+  BuyerIntakeContactRole,
+  BuyerIntakeLifecycleStatus,
+  BuyerIntakesFilter,
+  CreateBuyerIntakeDto,
+  UpdateBuyerIntakeContactDto,
+  UpdateBuyerIntakeDto,
+} from "./modules/buyer-intakes.js";
+export type {
+  BrokerageCase,
+  BrokerageCaseParticipant,
+  BrokerageCaseDemandIntent,
+  BrokerageCaseSupplyIntent,
+  BrokerageCaseDependency,
+  BrokerageCaseLedgerMode,
+  BrokerageCaseLedgerSortField,
+  BrokerageCaseLedgerFilter,
+  BrokerageCaseLedgerResponse,
+  CreateBrokerageCaseDependencyDto,
+} from "./modules/brokerage-cases.js";
+export type {
   BuyerRequirement,
+  BuyerRequirementStatus,
   BuyerRequirementPreferredSite,
   BuyerRequirementPreferredRegion,
   BuyerRequirementMatch,
@@ -193,6 +210,7 @@ export type {
   ContactRelationsByContact,
   CreateContactRelationDto,
   CreateContactRelationWithNewContactDto,
+  UpdateContactRelationDto,
 } from "./modules/contact-relations.js";
 export type {
   Tenant,
@@ -219,6 +237,7 @@ export type {
   ExternalListingGroup,
   ExternalListingGroupsFilter,
   ExternalListingGroupStatus,
+  ExternalListingDiscoveryStatus,
   ExternalListingTransactionType,
   UpdateExternalListingGroupDto,
   BatchListingItem,
@@ -260,21 +279,6 @@ export type {
   McpApiKeyStatus,
   McpApiKeyGenerateResponse,
 } from "./modules/mcp.js";
-export type {
-  AgentActionRequest,
-  AgentActionVerification,
-  AgentActionPerson,
-  AgentActionEscalationTask,
-  AgentActionListingAdvertisement,
-  AgentActionRequestFilter,
-  CreateAgentActionRequestDto,
-  DecideAgentActionRequestDto,
-  RejectAgentActionRequestDto,
-  WithdrawAgentActionRequestDto,
-  RecordAgentActionExecutionDto,
-  RecordManualAgentActionExecutionDto,
-  ReportAgentActionBlockerDto,
-} from "./modules/agent-action-requests.js";
 export type {
   ServiceVendor,
   VendorContact,

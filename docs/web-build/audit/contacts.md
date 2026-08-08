@@ -3,7 +3,7 @@
 목록(무한스크롤+ViewBar 검색/필터/정렬), 행 클릭 QuickSheet(운영 알림 룰 포함), 상세 탭 페이지(기본정보/연결매물/매수요건/상담/관계), 수정 다이얼로그, 삭제, 전화번호 중복 확인이 붙은 신규 등록까지 핵심 CRUD 흐름이 동작하며 만원→억 표기, 평 변환, 전화번호 포맷 등 한국 실무 표기 품질도 양호하다. 다만 PRD의 핵심인 그룹 사이드바/그룹 필터가 전혀 없고(그룹 태그로 목록을 좁힐 수단 자체가 부재), 관계(ContactRelation) 추가·삭제 UI가 없으며, 수정 다이얼로그가 phones[]를 2개 슬롯으로 통째 교체해 3개 이상 전화번호가 소실되는 데이터 손실 버그가 있다. 삭제 가드·에러 재시도·소유물건 컬럼 등 PRD 수용 기준 대비 갭이 남아 partial로 판정한다.
 
 ## 구현돼 있는 것 (건드리지 말고 유지/개선)
-- 연락처 목록: 무한스크롤(50건/페이지) + 이름/전화(정규화 숫자)/이메일 통합 검색 (서버 normalizedPhone contains 검색)
+- 연락처 목록: 무한스크롤(50건/페이지) + 이름/전화(숫자 canonical 값)/이메일 통합 검색 (서버 ContactPhone.phone contains 검색)
 - ViewBar 필터: 매물 연결 있음, 매수요건 있음, 추가 태그(데이터에서 동적 수집) + 정렬(최근 수정/등록일/이름, 헤더 정렬 동기화)
 - 다중 전화번호(ContactPhone[]) 표시: primary 우선 정렬, legacy contact.phone 폴백, 02/010 하이픈 포맷팅
 - 목록 컬럼: 연결 카운트 칩(_count.propertyContacts/buyerRequirements), 마지막 상담내역+날짜(latestConsultation 서버 projection), 수정일 relative 표시

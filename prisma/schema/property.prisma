@@ -38,11 +38,12 @@ model Property {
 // ============================================================
 
 model ListingIntake {
-  id         String @id @default(uuid()) @db.Uuid
-  officeId   String @map("office_id") @db.Uuid
-  propertyId String @map("property_id") @db.Uuid
+  id               String @id @default(uuid()) @db.Uuid
+  officeId         String @map("office_id") @db.Uuid
+  brokerageCaseId  String @map("brokerage_case_id") @db.Uuid
+  casePriorityRank Int    @default(1) @map("case_priority_rank")
+  propertyId       String @map("property_id") @db.Uuid
 
-  requesterContactId String?  @map("requester_contact_id") @db.Uuid
   /// 의뢰 생명주기만 저장: open | hold | closed
   lifecycleStatus    String   @default("open") @map("lifecycle_status")
   lifecycleChangedAt DateTime @default(now()) @map("lifecycle_changed_at")
@@ -71,21 +72,25 @@ model ListingIntake {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  office                Office          @relation(fields: [officeId], references: [id])
-  property              Property        @relation(fields: [propertyId], references: [id])
-  requesterContact      Contact?        @relation(fields: [requesterContactId], references: [id])
-  jointBrokeragePartner PartnerBroker?  @relation("ListingIntakeJointBrokeragePartner", fields: [jointBrokeragePartnerId], references: [id])
+  office                Office                    @relation(fields: [officeId], references: [id])
+  brokerageCase         BrokerageCase             @relation(fields: [officeId, brokerageCaseId], references: [officeId, id], onDelete: Restrict)
+  property              Property                  @relation(fields: [propertyId], references: [id])
+  jointBrokeragePartner PartnerBroker?            @relation("ListingIntakeJointBrokeragePartner", fields: [jointBrokeragePartnerId], references: [id])
   listings              Listing[]
   consultations         Consultation[]
   tasks                 Task[]
   calendarEvents        CalendarEvent[]
+  caseDependencies      BrokerageCaseDependency[] @relation("BrokerageCaseDependencySource")
+
+  @@unique([officeId, id])
+  @@unique([officeId, brokerageCaseId, id])
+  @@index([officeId, brokerageCaseId, lifecycleStatus, casePriorityRank])
   @@index([officeId, receivedAt])
   @@index([officeId, lifecycleStatus, updatedAt])
   @@index([officeId, lifecycleStatus, lifecycleChangedAt])
   @@index([officeId, lastVerifiedAt])
   @@index([officeId, lastCheckResult, lastCheckedAt])
   @@index([propertyId])
-  @@index([requesterContactId])
   @@index([jointBrokeragePartnerId])
   @@index([officeId, nextConfirmAt])
   @@index([nextConfirmAt])
@@ -136,15 +141,16 @@ model Listing {
   property Property      @relation(fields: [propertyId], references: [id])
   intake   ListingIntake @relation(fields: [intakeId], references: [id])
 
-  matches        Match[]
-  deals          Deal[]
-  consultations  Consultation[]
-  tasks          Task[]
-  calendarEvents CalendarEvent[]
-  priceHistories PriceHistory[]
-  advertisements ListingAdvertisement[]
+  matches                    Match[]
+  deals                      Deal[]
+  consultations              Consultation[]
+  tasks                      Task[]
+  calendarEvents             CalendarEvent[]
+  priceHistories             PriceHistory[]
+  advertisements             ListingAdvertisement[]
+  advertisementSnapshotItems ListingAdvertisementSnapshotItem[]
   // 공동 중개망
-  networkSharedProperties NetworkSharedProperty[]
+  networkSharedProperties    NetworkSharedProperty[]
 
   @@unique([intakeId, transactionType])
   @@index([officeId, transactionType, intakeId])
@@ -160,7 +166,7 @@ model Listing {
 // 식별값이다. 광고노트 ExternalListing과의 FK나 논리적 연결에는 사용하지 않는다.
 // CP 동기화는 lastSyncedAt, 네이버 비교 확인은 lastCheckedAt으로 분리한다.
 // CP는 현재 광고 중인 항목만 반환하므로 row 상태는 active/ended만 사용한다.
-// 수집 실패는 AdvertisementSyncRun/Step에 기록하고 기존 광고 row를 변경하지 않는다.
+// 로컬 Skill의 수집 실패는 로컬 실행 상태에만 기록하고 기존 광고 row를 변경하지 않는다.
 // ============================================================
 
 model ListingAdvertisement {
@@ -181,11 +187,11 @@ model ListingAdvertisement {
   url       String? // CP 광고 관리 URL
   memo      String?
 
-  externalAdId  String?   @map("external_ad_id") // CP사 광고 ID
+  externalAdId   String?   @map("external_ad_id") // CP사 광고 ID
   naverArticleNo String?   @map("naver_article_no")
   naverUrl       String?   @map("naver_url")
-  lastCheckedAt DateTime? @map("last_checked_at")
-  lastSyncedAt  DateTime? @map("last_synced_at")
+  lastCheckedAt  DateTime? @map("last_checked_at")
+  lastSyncedAt   DateTime? @map("last_synced_at")
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -193,7 +199,6 @@ model ListingAdvertisement {
   office                   Office                    @relation(fields: [officeId], references: [id])
   listing                  Listing                   @relation(fields: [listingId], references: [id], onDelete: Cascade)
   officeAdvertisementGroup OfficeAdvertisementGroup?
-  agentActionRequests      AgentActionRequest[]
 
   @@index([officeId])
   @@index([listingId, status])

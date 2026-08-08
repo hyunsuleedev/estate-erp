@@ -1,6 +1,7 @@
 import {
   buildIntakeConfirmationWhere,
   buildListingAvailabilityWhere,
+  getIntakeConfirmationState,
 } from './listing-state';
 
 describe('listing state query predicates', () => {
@@ -31,6 +32,44 @@ describe('listing state query predicates', () => {
     });
   });
 
+  it('derives the same confirmation state used by match progression guards', () => {
+    expect(
+      getIntakeConfirmationState(
+        {
+          lifecycleStatus: 'open',
+          lastVerifiedAt: null,
+          lastCheckResult: null,
+          nextConfirmAt: null,
+        },
+        now,
+      ),
+    ).toBe('unverified');
+
+    expect(
+      getIntakeConfirmationState(
+        {
+          lifecycleStatus: 'open',
+          lastVerifiedAt: new Date('2026-07-20T12:00:00.000Z'),
+          lastCheckResult: 'alive',
+          nextConfirmAt: new Date('2026-07-23T12:00:00.000Z'),
+        },
+        now,
+      ),
+    ).toBe('overdue');
+
+    expect(
+      getIntakeConfirmationState(
+        {
+          lifecycleStatus: 'open',
+          lastVerifiedAt: new Date('2026-07-24T11:00:00.000Z'),
+          lastCheckResult: 'alive',
+          nextConfirmAt: new Date('2026-07-25T12:00:00.000Z'),
+        },
+        now,
+      ),
+    ).toBe('verified');
+  });
+
   it('excludes completed Deals from the in-contract availability filter', () => {
     expect(buildListingAvailabilityWhere('in_contract')).toEqual({
       AND: [
@@ -40,8 +79,7 @@ describe('listing state query predicates', () => {
               isCancelled: false,
               stage: {
                 in: [
-                  'selection',
-                  'negotiating',
+                  'preparing',
                   'preContract',
                   'contracted',
                   'settling',
@@ -86,8 +124,7 @@ describe('listing state query predicates', () => {
                   isCancelled: false,
                   stage: {
                     in: [
-                      'selection',
-                      'negotiating',
+                      'preparing',
                       'preContract',
                       'contracted',
                       'settling',

@@ -116,14 +116,14 @@ describe('listing status derivation', () => {
     assert.equal(
       getListingAvailability({
         intake: { lifecycleStatus: 'open' },
-        deals: [{ stage: 'selection' }],
+        deals: [{ stage: 'preparing' }],
       }),
       'in_contract',
     );
     assert.equal(
       isListingOccupied({
         intake: { lifecycleStatus: 'open' },
-        deals: [{ stage: 'negotiating' }],
+        deals: [{ stage: 'preparing' }],
       }),
       true,
     );
@@ -132,7 +132,7 @@ describe('listing status derivation', () => {
   it('opens Deal creation for a remaining Listing when the row is already in-contract', () => {
     const occupiedListing = {
       intake: { lifecycleStatus: 'open' },
-      deals: [{ stage: 'selection' }],
+      deals: [{ stage: 'preparing' }],
     };
     const availableListing = {
       intake: { lifecycleStatus: 'open' },
@@ -149,6 +149,28 @@ describe('listing status derivation', () => {
         kind: 'startDeal',
         candidates: [availableListing],
       },
+    );
+  });
+
+  it('requires confirmation when closing a row with active Deals', () => {
+    const listings = [
+      {
+        intake: { lifecycleStatus: 'open' },
+        deals: [{ stage: 'preparing' }, { stage: 'contracted' }],
+      },
+      {
+        intake: { lifecycleStatus: 'open' },
+        deals: [],
+      },
+    ];
+
+    assert.deepEqual(
+      planListingStatusChange('in_contract', 'closed', listings),
+      { kind: 'closeWithActiveDeals', activeDealCount: 2 },
+    );
+    assert.deepEqual(
+      planListingStatusChange('in_contract', 'available', listings),
+      { kind: 'blocked', reason: 'activeDeal' },
     );
   });
 

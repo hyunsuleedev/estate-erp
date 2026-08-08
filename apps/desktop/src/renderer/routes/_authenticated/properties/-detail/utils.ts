@@ -49,13 +49,15 @@ export const roleLabels: Record<string, string> = {
 };
 
 export const matchStageLabels: Record<string, string> = {
-  suggested: '제안됨',
-  buyerContacted: '매수자 연락',
-  viewing: '방문 예정',
-  ownerContacted: '소유주 확인',
+  suggested: '내부 후보',
+  buyerInterested: '고객 관심',
+  viewingConfirmed: '임장 가능 확인',
+  viewing: '임장',
   negotiating: '협상중',
   dealCreated: '거래 생성',
   closed: '종료',
+  buyerContacted: '고객 관심',
+  ownerContacted: '임장 가능 확인',
 };
 
 export const consultationTypeLabels: Record<string, string> = {

@@ -7,6 +7,7 @@ import {
   getLocalDateKey,
   isMultiDayEvent,
   isSameCalendarDate,
+  WEEK_DAY_LABELS,
 } from './-calendar-view-utils';
 import {
   formatEventContext,
@@ -14,8 +15,6 @@ import {
   getEventColor,
   withAlpha,
 } from './-event-meta';
-import { WEEK_DAY_LABELS } from './-month-view';
-
 /**
  * 주/일 타임그리드 — 종일·멀티데이 이벤트는 상단 all-day 영역에,
  * 시간 지정 이벤트는 시간 슬롯에 배치한다. 슬롯은 기본 09~18시에서

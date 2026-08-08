@@ -132,8 +132,7 @@ describe('DashboardService', () => {
             isCancelled: false,
             stage: {
               in: [
-                'selection',
-                'negotiating',
+                'preparing',
                 'preContract',
                 'contracted',
                 'settling',

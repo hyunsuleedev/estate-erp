@@ -63,7 +63,7 @@ Estate ERP는 대한민국 부동산 중개사무소를 위한 통합 ERP다. �
 웹앱은 보조 접근 채널이고, 메인 사용 환경은 Electron 데스크톱 앱이다. 이유는 다음과 같다.
 
 - 한국 시장에서 설치형 프로그램에 대한 신뢰가 여전히 강하다.
-- CTI Bridge, 로컬 MCP 호스팅, 시스템 트레이, OS 알림 등 로컬 기능이 필요하다.
+- CTI Bridge, 내장 Codex 실행, 시스템 트레이, OS 알림 등 로컬 기능이 필요하다.
 - 장기적으로 모바일/웹보다 데스크톱 중심의 업무 흐름이 더 자연스럽다.
 
 ### 3.2 CRM이 먼저고 AI는 두 계층으로 연결한다
@@ -101,12 +101,17 @@ Estate ERP는 대한민국 부동산 중개사무소를 위한 통합 ERP다. �
 - 공적장부 발급 UI 스캐폴딩 (유료 API 업체 연동 포함)
 - 매물 사진 관리 스캐폴딩 (S3 업로드는 Phase 2)
 - 리모트 MCP Server 엔드포인트 (`/mcp`, Streamable HTTP, JWT/API key/OAuth 인증)
-- 일반 Task와 분리된 좁은 `AgentActionRequest` 승인 계약
-  - ListingAdvertisement CP 상태 + OfficeAdvertisement 내 광고 비교 → exact-hash 변경안 → 사람 승인 → 로컬 computer use 실행 → 이실장 저장값 검증
-  - 광고노트 ExternalListing은 별도 관측 메모리로 유지하고 내 광고/AI 요청과 연결하지 않음
+- 일반 `Task(category=advertisement)` 기반 광고 업무
+  - 사용자가 내광고관리 또는 업무 화면에서 요청을 만들고, 사용자가 시작한 외부 AI가 MCP `claim_task`로 원자적으로 선점
+  - 서버는 agent를 기다리거나 깨우는 queue/wakeup/run을 두지 않으며 Task에는 pending / in_progress / completed / cancelled만 표시
+  - CP 실행의 대상 확인·저장·재광고·재검증 단계와 재시도는 `estate-erp-ad-task-runner` 로컬 SQLite에만 기록
+  - 전체 CP 조회가 완전할 때만 ListingAdvertisement 원장을 갱신하고, 저장 후 같은 provider record를 reload해 persisted 값을 확인한 뒤 Task 완료
+  - 네이버 비교는 선택 사항이며 광고노트 ExternalListing과 내 광고 비교 projection은 계속 독립 저장
   - 같은 호실의 활성 경쟁 광고 중 더 싼 비교 가능 조건이 하나라도 있으면 순위와 무관하게 경고하고, 순위·층 노출은 판단 근거로 함께 표시
-  - CAPTCHA·MFA·계정/대상/저장값 불일치처럼 사람이 처리할 예외에만 Task 생성
-  - 범용 엔터티 patch나 rule builder가 아니라 광고 capability만 지원
+  - CAPTCHA·MFA·계정/대상/저장값 불일치는 로컬 blocker로 남기고 일반 Task를 pending 또는 in_progress로 유지
+- 광고노트 수집 범위는 `naver-complex-collector` 로컬 SQLite에 저장
+  - 관리단지 가져오기와 경쟁단지 추가는 사용자 명시 요청·후보 확인 뒤 수행
+  - ERP 서버에는 수집 범위·스케줄이 아니라 완전한 관측 snapshot만 저장
 - AWS 인프라 배포 (ECS Fargate + ALB + RDS + ElastiCache + S3 + ECR)
 - GitHub Actions CI/CD
 - Electron 자동 업데이트 (electron-updater + S3 + 커스텀 알림 UI)
@@ -135,9 +140,10 @@ Estate ERP는 대한민국 부동산 중개사무소를 위한 통합 ERP다. �
 
 ### 4.3 Phase 3 범위
 
-- 로컬 MCP 서버 (Electron 호스팅)
-- 네이버/외부 데이터 연동
+- Electron과 독립된 로컬 자동화 Skills
+- 네이버/CP 외부 데이터 연동
 - 보이는 로컬 세션 기반 이실장 `agent-browser`/computer-use executor
+- Skill 전용 `config.js` 기반 CP 계정 설정과 온디맨드 로그인
 - CTI Bridge
 - Electron과 CTI Bridge 간 로컬 통신
 
@@ -219,9 +225,9 @@ Estate ERP는 대한민국 부동산 중개사무소를 위한 통합 ERP다. �
 
 - **리모트 MCP (Estate ERP)**: NestJS Streamable HTTP 엔드포인트 (`/mcp`). Codex/ChatGPT 등 외부 AI가 직접 연결.
 - **크롤러 MCP (별도 패키지)**: 네이버 부동산 HTML 파싱 전용. `packages/mcp-crawler`로 분리, `npx @estate-erp/mcp-crawler`로 실행. 사용자 PC에서 로컬 실행 (IP 자연스러움 + 법적 분리).
-- **로컬 MCP** (Phase 3): Electron에서 호스팅. 크롤러 MCP 통합 등 로컬 전용 기능.
+- **로컬 자동화 Skill** (Phase 3): Electron과 독립 실행. 일반 광고 Task를 claim하고, CP 자격증명 설정·Skill 소유 브라우저 제어·외부 데이터 수집·세부 SQLite 실행 상태를 담당하며 ERP에는 검증된 결과와 Task 상태만 기록.
 - 인증: JWT 또는 API Key (`X-API-Key` 헤더). API Key는 만료 없이 자동화 전용.
-- 도구 목록: search_listings, get_property, create_task, create_consultation, search_buyers, get_deal, upsert_external_listings 등
+- 도구 목록: search_listings, get_property, find_tasks, claim_task, update_task, create_consultation, search_buyers, get_deal, upsert_external_listings 등
 
 **크롤러 연동 흐름**:
 
@@ -270,9 +276,9 @@ Site/Unit 등록
 
 ```
 suggested
-→ buyerContacted
+→ buyerInterested
+→ viewingConfirmed
 → viewing
-→ ownerContacted
 → negotiating
 → dealCreated
 → closed
@@ -281,9 +287,10 @@ suggested
 ### 6.3 거래 흐름
 
 ```
-selection
-→ deposit
-→ contract
+preparing
+→ preContract (선택)
+→ contracted
+→ settling
 → completed
 → closed
 ```
@@ -362,12 +369,12 @@ selection
 
 ## 7. 제품 패키지
 
-| 제품 | 대상 | 역할 |
-|------|------|------|
-| Electron 데스크톱 앱 | 모든 직원 PC | 메인 제품 |
-| 웹 앱 | 브라우저 사용자 | CTI 제외 CRM 접근 |
-| CTI Bridge | 사무실 메인 PC | 전화 시스템 연동 |
-| Android 모바일 앱 | 직원 폰 | 전화 오버레이/상담 등록 |
+| 제품                 | 대상            | 역할                    |
+| -------------------- | --------------- | ----------------------- |
+| Electron 데스크톱 앱 | 모든 직원 PC    | 메인 제품               |
+| 웹 앱                | 브라우저 사용자 | CTI 제외 CRM 접근       |
+| CTI Bridge           | 사무실 메인 PC  | 전화 시스템 연동        |
+| Android 모바일 앱    | 직원 폰         | 전화 오버레이/상담 등록 |
 
 ---
 
@@ -389,11 +396,11 @@ selection
 
 SaaS 구독형 모델을 전제로 한다. 광고 노출 기능이 없는 업무 효율화 도구이므로 경쟁사(중개왕 3만원, 부기사 3만원) 대비 낮은 진입 가격으로 시작하고 기능 추가에 따라 인상한다.
 
-| 플랜 | 월 가격 | 광고노트 단지 | 핵심 기능 |
-|------|--------|------------|----------|
-| 무료 | 0원 | 2개 | CRM 기본 (매물/고객/상담/거래) |
-| 기본 | 9,900원 | 20개 | 수수료 정산 + 광고노트 + 공적장부 |
-| 프로 | 29,900원 | 무제한 | 직원관리 + 내부 AI 챗 + MCP |
+| 플랜 | 월 가격  | 광고노트 단지 | 핵심 기능                         |
+| ---- | -------- | ------------- | --------------------------------- |
+| 무료 | 0원      | 2개           | CRM 기본 (매물/고객/상담/거래)    |
+| 기본 | 9,900원  | 20개          | 수수료 정산 + 광고노트 + 공적장부 |
+| 프로 | 29,900원 | 무제한        | 직원관리 + 내부 AI 챗 + MCP       |
 
 Phase 1은 기본(9,900원)으로 출시. CTI/공적장부 API 연동이 완료되는 Phase 2에서 가격 재검토.
 가격, 패키징, 세부 상업 정책은 [PRODUCT_STRATEGY.md](./PRODUCT_STRATEGY.md)에서 관리한다.
@@ -402,17 +409,17 @@ Phase 1은 기본(9,900원)으로 출시. CTI/공적장부 API 연동이 완료�
 
 ## 10. 주요 리스크
 
-| 리스크 | 대응 방향 |
-|--------|-----------|
-| 외부 스크래핑 차단 | 로컬 실행, 대체 데이터 소스 준비 |
-| CTI 특정 벤더 의존 | 브리지 추상화 |
-| Android 권한/Play 정책 제약 | `ROLE_CALL_SCREENING` 중심으로 시작하고 `READ_CALL_LOG`는 초기 범위에서 제외 |
-| 제조사별 통화앱/녹음 설정 차이 | 앱별 딥링크 + 일반 설정 fallback + 사용자 가이드 |
-| Electron 보안/운영 부담 | 자동 업데이트, 보안 기준 유지 |
-| 개발 범위 과대 | Phase별 축소, 코어 흐름 우선 |
-| 단순 CRM으로 차별화 실패 | 네트워크 공유 + MCP 연결에 집중 |
-| AI API 비용 증가 | 사무소당 월 ~3만원 추정, 플랜 가격에 반영 |
-| 광고노트 서버 부하 | 사무소당 단지 수 제한 (무료 2개 / 유료 20개), 30일 이상 비활성 매물 자동 삭제 |
+| 리스크                         | 대응 방향                                                                     |
+| ------------------------------ | ----------------------------------------------------------------------------- |
+| 외부 스크래핑 차단             | 로컬 실행, 대체 데이터 소스 준비                                              |
+| CTI 특정 벤더 의존             | 브리지 추상화                                                                 |
+| Android 권한/Play 정책 제약    | `ROLE_CALL_SCREENING` 중심으로 시작하고 `READ_CALL_LOG`는 초기 범위에서 제외  |
+| 제조사별 통화앱/녹음 설정 차이 | 앱별 딥링크 + 일반 설정 fallback + 사용자 가이드                              |
+| Electron 보안/운영 부담        | 자동 업데이트, 보안 기준 유지                                                 |
+| 개발 범위 과대                 | Phase별 축소, 코어 흐름 우선                                                  |
+| 단순 CRM으로 차별화 실패       | 네트워크 공유 + MCP 연결에 집중                                               |
+| AI API 비용 증가               | 사무소당 월 ~3만원 추정, 플랜 가격에 반영                                     |
+| 광고노트 서버 부하             | 사무소당 단지 수 제한 (무료 2개 / 유료 20개), 30일 이상 비활성 매물 자동 삭제 |
 
 상세 전략과 경쟁 환경은 [PRODUCT_STRATEGY.md](./PRODUCT_STRATEGY.md)를 참조한다.
 
@@ -459,12 +466,12 @@ Phase 1은 기본(9,900원)으로 출시. CTI/공적장부 API 연동이 완료�
 
 ### 12.2 비용 추정
 
-| 사무소 수 | 월 서버비 | 사무소당 |
-|----------|---------|---------|
-| 10개 | ~$15 (프리티어) | ~$1.5 |
-| 50개 | ~$60 | ~$1.2 |
-| 200개 | ~$150 | ~$0.75 |
-| 1,000개 | ~$600 | ~$0.6 |
+| 사무소 수 | 월 서버비       | 사무소당 |
+| --------- | --------------- | -------- |
+| 10개      | ~$15 (프리티어) | ~$1.5    |
+| 50개      | ~$60            | ~$1.2    |
+| 200개     | ~$150           | ~$0.75   |
+| 1,000개   | ~$600           | ~$0.6    |
 
 ### 12.3 Electron 자동 업데이트
 
@@ -479,7 +486,6 @@ Phase 1은 기본(9,900원)으로 출시. CTI/공적장부 API 연동이 완료�
 - 사무소당 광고노트 단지 수 제한: 무료 2개 / 기본 20개 / 프로 무제한
 - batch upsert (최대 200건/요청) + 스냅샷 세션 기반
 - `isActive=false` + `lastSeenAt` 30일 이전 → ExternalListing 자동 삭제
-  (`AgentActionRequest`/`AgentActionVerification` 근거로 참조 중인 행은 제외)
 - `raw` JSONB 7일 후 null 처리 (용량 70% 절감)
 
 ---

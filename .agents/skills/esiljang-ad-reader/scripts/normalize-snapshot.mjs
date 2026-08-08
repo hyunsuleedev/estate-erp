@@ -187,6 +187,7 @@ function normalizeItem(item, snapshotObservedAt, index) {
     item?.naverUrl,
     errors,
   );
+  const providerStatus = cleanText(item?.providerStatus)?.toLowerCase() ?? null;
 
   const normalized = {
     provider: 'esiljang',
@@ -219,7 +220,7 @@ function normalizeItem(item, snapshotObservedAt, index) {
     ),
     direction: cleanText(item?.direction),
     registeredAt: normalizeDate(item?.registeredAt, 'registeredAt', errors),
-    providerStatus: cleanText(item?.providerStatus)?.toLowerCase() ?? null,
+    providerStatus,
     features: normalizeStringArray(item?.features),
     memo: cleanText(item?.memo),
     observedAt: snapshotObservedAt,
@@ -264,6 +265,16 @@ async function main() {
   if (input?.provider !== 'esiljang') {
     envelopeErrors.push({ message: 'provider must be esiljang' });
   }
+  if (input?.scope !== 'active_advertisements') {
+    envelopeErrors.push({ message: 'scope must be active_advertisements' });
+  }
+  const activeFilter = input?.activeFilter;
+  if (activeFilter?.dataValue !== 'ad') {
+    envelopeErrors.push({ message: 'activeFilter.dataValue must be ad' });
+  }
+  if (activeFilter?.selected !== true) {
+    envelopeErrors.push({ message: 'activeFilter.selected must be true' });
+  }
 
   const observedAtErrors = [];
   const observedAt = normalizeDate(
@@ -295,6 +306,22 @@ async function main() {
       message: 'expectedTotal must be a non-negative integer or null',
     });
   }
+  const activeFilterCount =
+    activeFilter?.count === null || activeFilter?.count === undefined
+      ? null
+      : Number(activeFilter.count);
+  if (
+    activeFilterCount !== null &&
+    (!Number.isInteger(activeFilterCount) || activeFilterCount < 0)
+  ) {
+    envelopeErrors.push({
+      message: 'activeFilter.count must be a non-negative integer or null',
+    });
+  } else if (activeFilterCount !== expectedTotal) {
+    envelopeErrors.push({
+      message: 'activeFilter.count must match expectedTotal',
+    });
+  }
 
   const visitedPages = Array.isArray(input?.visitedPages)
     ? input.visitedPages.map(Number)
@@ -309,6 +336,12 @@ async function main() {
   ];
   const output = {
     provider: 'esiljang',
+    scope: 'active_advertisements',
+    activeFilter: {
+      dataValue: cleanText(activeFilter?.dataValue),
+      selected: activeFilter?.selected === true,
+      count: activeFilterCount,
+    },
     observedAt,
     expectedTotal,
     paginationComplete: input?.paginationComplete === true,

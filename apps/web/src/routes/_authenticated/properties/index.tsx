@@ -134,6 +134,7 @@ import {
   type QuickSheetNoticeTone,
 } from "@/components/quick-sheet";
 import { EmptyState, StatusBadge } from "@/components/domain";
+import { ConfirmDialog } from "@/components/domain/confirm-dialog";
 import { getStatusMeta, PIPELINE_STEPS } from "@/lib/status-config";
 import { formatArea, formatMoney, formatPhone } from "@/lib/format";
 import {
@@ -291,6 +292,12 @@ interface ResumeClosedPrompt {
   resumableListingCount: number;
 }
 
+interface CloseActiveDealsPrompt {
+  intakeId: string;
+  activeDealCount: number;
+  expectedUpdatedAt?: string | null;
+}
+
 const initialPropertyFilters: PropertyFilterState = {
   siteId: "",
   confirmationState: "all",
@@ -364,6 +371,8 @@ function PropertiesPage() {
     useState<StartDealPrompt | null>(null);
   const [resumeClosedPrompt, setResumeClosedPrompt] =
     useState<ResumeClosedPrompt | null>(null);
+  const [closeActiveDealsPrompt, setCloseActiveDealsPrompt] =
+    useState<CloseActiveDealsPrompt | null>(null);
 
   // 대시보드 딥링크(confirmationState)로 재진입 시 필터 동기화
   useEffect(() => {
@@ -773,6 +782,23 @@ function PropertiesPage() {
       toast.error(error.message || "상태 변경에 실패했습니다.");
     },
   });
+  const closeActiveDealsMutation = useMutation({
+    mutationFn: ({
+      intakeId,
+      expectedUpdatedAt,
+    }: CloseActiveDealsPrompt) =>
+      api.listingIntakes.closeWithActiveDeals(intakeId, {
+        expectedUpdatedAt,
+      }),
+    onSuccess: () => {
+      toast.success("거래와 매물이 종료되었습니다.");
+      setCloseActiveDealsPrompt(null);
+    },
+    onSettled: () => invalidateListingDerivedCaches(queryClient),
+    onError: (error: Error) => {
+      toast.error(error.message || "거래와 매물 종료에 실패했습니다.");
+    },
+  });
 
   const handleRowStatusSave = useCallback(
     ({
@@ -809,6 +835,15 @@ function PropertiesPage() {
           canResume: plan.canResume,
           completedListingCount: plan.completedListingCount,
           resumableListingCount: plan.resumableListingCount,
+        });
+        return;
+      }
+
+      if (plan.kind === "closeWithActiveDeals") {
+        setCloseActiveDealsPrompt({
+          intakeId: intake.id,
+          activeDealCount: plan.activeDealCount,
+          expectedUpdatedAt: intake.updatedAt,
         });
         return;
       }
@@ -1286,10 +1321,10 @@ function PropertiesPage() {
 
             <FilterSection
               title="면적"
-              description="전용면적은 평으로 입력합니다."
+              description="공급평형을 평으로 입력합니다."
             >
               <RangeFilter
-                label="전용면적"
+                label="공급평형"
                 unit="평"
                 minValue={propertyFilters.areaMin}
                 maxValue={propertyFilters.areaMax}
@@ -1631,6 +1666,26 @@ function PropertiesPage() {
                 },
               );
             }}
+          />
+        )}
+        {closeActiveDealsPrompt && (
+          <ConfirmDialog
+            open
+            onOpenChange={(open) => {
+              if (!open) setCloseActiveDealsPrompt(null);
+            }}
+            title="연결된 거래가 있습니다"
+            description={`${
+              closeActiveDealsPrompt.activeDealCount > 1
+                ? `진행 중인 거래 ${closeActiveDealsPrompt.activeDealCount}건을`
+                : "진행 중인 거래를"
+            } 종료 처리하고 매물도 종료하시겠습니까? 거래는 취소 이력으로 남습니다.`}
+            confirmLabel="거래와 매물 종료"
+            destructive
+            loading={closeActiveDealsMutation.isPending}
+            onConfirm={() =>
+              closeActiveDealsMutation.mutate(closeActiveDealsPrompt)
+            }
           />
         )}
       </div>
@@ -3443,12 +3498,12 @@ const moveInAvailableChipOptions: ChipOption[] = [
   {
     value: "immediate",
     label: "즉시",
-    className: "bg-[#eef3ed] text-[#44745a]",
+    className: "bg-neutral-soft text-neutral-strong",
   },
   {
     value: "date",
     label: "특정일 이후",
-    className: "bg-[#e7f3f8] text-[#337ea9]",
+    className: "bg-neutral-soft text-neutral-strong",
     picker: "date",
     fromField: "moveInAvailableFrom",
     getPreselect: (rowValue) => {
@@ -3462,7 +3517,7 @@ const moveInAvailableChipOptions: ChipOption[] = [
   {
     value: "range",
     label: "기간 협의",
-    className: "bg-[#fbf3db] text-[#8f6b1f]",
+    className: "bg-neutral-soft text-neutral-strong",
     picker: "range",
     fromField: "moveInAvailableFrom",
     toField: "moveInAvailableTo",
@@ -3481,12 +3536,12 @@ const moveInAvailableChipOptions: ChipOption[] = [
   {
     value: "negotiable",
     label: "협의",
-    className: "bg-[#fbf3db] text-[#8f6b1f]",
+    className: "bg-neutral-soft text-neutral-strong",
   },
   {
     value: "unknown",
     label: "확인 필요",
-    className: "bg-[#f1f1ef] text-[#787774]",
+    className: "bg-warning-soft text-warning-strong",
   },
 ];
 
@@ -3879,7 +3934,7 @@ function buildActiveFilterChips(
   }
 
   addRangeChip(chips, "가격", filters.priceMin, filters.priceMax, "만원");
-  addRangeChip(chips, "전용면적", filters.areaMin, filters.areaMax, "평");
+  addRangeChip(chips, "공급평형", filters.areaMin, filters.areaMax, "평");
   addRangeChip(chips, "보증금", filters.depositMin, filters.depositMax, "만원");
   addRangeChip(
     chips,

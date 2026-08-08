@@ -1,4 +1,5 @@
 import type { Deal } from '@estate-erp/api-client';
+import { normalizeDealStage } from '@estate-erp/shared';
 import { formatMoney, formatRent } from '@/lib/format';
 
 export type DealListItem = Deal;
@@ -28,8 +29,7 @@ export const ourSideLabels: Record<string, string> = {
 };
 
 export const dealPipelineStages = [
-  'selection',
-  'negotiating',
+  'preparing',
   'preContract',
   'contracted',
   'settling',
@@ -41,7 +41,7 @@ export const dealStageOrder = [...dealPipelineStages, 'closed'] as const;
 export type DealPipelineStage = (typeof dealPipelineStages)[number];
 
 export type DealDisplayGroupKey =
-  | 'coordination'
+  | 'preparing'
   | 'preContract'
   | 'contracted'
   | 'settling'
@@ -71,9 +71,9 @@ export interface DealNotionListGroup {
 
 export const dealDisplayGroups: DealDisplayGroup[] = [
   {
-    key: 'coordination',
-    label: '조율',
-    stages: ['selection', 'negotiating'],
+    key: 'preparing',
+    label: '계약 준비',
+    stages: ['preparing'],
     dotClassName: 'bg-slate-500',
   },
   {
@@ -90,13 +90,13 @@ export const dealDisplayGroups: DealDisplayGroup[] = [
   },
   {
     key: 'settling',
-    label: '잔금/완료',
+    label: '중도금·잔금',
     stages: ['settling'],
     dotClassName: 'bg-emerald-600',
   },
   {
     key: 'completed',
-    label: '정산',
+    label: '잔금 완료',
     stages: ['completed'],
     dotClassName: 'bg-slate-400',
   },
@@ -109,8 +109,7 @@ const stageToGroup = new Map<string, DealDisplayGroupKey>(
 );
 
 const stageProgress: Record<string, number> = {
-  selection: 1,
-  negotiating: 1,
+  preparing: 1,
   preContract: 2,
   contracted: 3,
   settling: 4,
@@ -119,7 +118,7 @@ const stageProgress: Record<string, number> = {
 };
 
 export const dealStageTargetDays: Record<DealDisplayGroupKey, number> = {
-  coordination: 7,
+  preparing: 7,
   preContract: 5,
   contracted: 14,
   settling: 7,
@@ -128,9 +127,8 @@ export const dealStageTargetDays: Record<DealDisplayGroupKey, number> = {
 };
 
 const dealStageProbability: Record<string, number> = {
-  selection: 0.2,
-  negotiating: 0.35,
-  preContract: 0.55,
+  preparing: 0.55,
+  preContract: 0.7,
   contracted: 0.8,
   settling: 0.95,
   completed: 1,
@@ -164,12 +162,13 @@ export function formatPaymentKind(kind: string, sequence?: number) {
 }
 
 export function getDealDisplayGroupKey(stage: string): DealDisplayGroupKey {
-  if (stage === 'closed') return 'closed';
-  return stageToGroup.get(stage) ?? 'coordination';
+  const normalizedStage = normalizeDealStage(stage);
+  if (normalizedStage === 'closed') return 'closed';
+  return stageToGroup.get(normalizedStage) ?? 'preparing';
 }
 
 export function getDealProgressStep(stage: string): number {
-  return stageProgress[stage] ?? 1;
+  return stageProgress[normalizeDealStage(stage)] ?? 1;
 }
 
 export function summarizeDealGroup(
@@ -204,7 +203,7 @@ export function getDealCommissionValue(deal: DealListItem): number {
 }
 
 export function getWeightedCommissionValue(deal: DealListItem): number {
-  const probability = dealStageProbability[deal.stage] ?? 0;
+  const probability = dealStageProbability[normalizeDealStage(deal.stage)] ?? 0;
   return Math.round(getDealCommissionValue(deal) * probability);
 }
 
@@ -405,7 +404,9 @@ export function getDealShortCode(id: string) {
 }
 
 export function getNextDealStage(stage: string) {
-  const currentIndex = dealPipelineStages.indexOf(stage as DealPipelineStage);
+  const currentIndex = dealPipelineStages.indexOf(
+    normalizeDealStage(stage) as DealPipelineStage,
+  );
   if (currentIndex < 0 || currentIndex >= dealPipelineStages.length - 1) {
     return null;
   }

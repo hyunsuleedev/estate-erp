@@ -46,7 +46,6 @@ export type ContractDocumentEngineContact = {
   phones?: Array<{
     phone: string;
     isPrimary: boolean;
-    isActive: boolean;
   }>;
 };
 
@@ -1878,9 +1877,8 @@ function formatSingleArea(prefix: string, m2: number | string | null | undefined
 }
 
 function getEngineContactPhone(contact: ContractDocumentEngineContact | null | undefined) {
-  const primary = contact?.phones?.find((phone) => phone.isActive && phone.isPrimary);
-  const active = contact?.phones?.find((phone) => phone.isActive);
-  return primary?.phone ?? active?.phone ?? contact?.phone ?? '';
+  const primary = contact?.phones?.find((phone) => phone.isPrimary);
+  return primary?.phone ?? contact?.phones?.[0]?.phone ?? contact?.phone ?? '';
 }
 
 function toNullableEngineNumber(value: number | string | null | undefined) {

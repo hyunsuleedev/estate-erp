@@ -1,13 +1,14 @@
 import { Plus, Trash2 } from 'lucide-react';
 import type { ContactPhone, ContactPhoneInput } from '@estate-erp/api-client';
 import { cn } from '@/lib/utils';
+import { formatPhoneNumber } from '@/lib/contacts';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
 /**
  * ContactPhone[] 동적 행 편집기.
  * 기존 수정 다이얼로그가 전화 2개 슬롯만 지원하면서 3개 이상 번호가 소실되던
- * 데이터 손실 버그를 해결하기 위해 라벨/메모/활성 상태를 보존하는 행 단위 편집을 제공한다.
+ * 데이터 손실 버그를 해결하기 위해 라벨/메모를 보존하는 행 단위 편집을 제공한다.
  */
 
 export interface EditablePhone {
@@ -16,9 +17,8 @@ export interface EditablePhone {
   phone: string;
   label: string;
   isPrimary: boolean;
-  /** 기존 레코드의 메모/활성 상태 보존용 (UI 편집 대상 아님) */
+  /** 기존 레코드의 메모 보존용 (UI 편집 대상 아님) */
   memo: string | null;
-  isActive: boolean;
 }
 
 let phoneRowSeq = 0;
@@ -31,7 +31,6 @@ export function createEmptyPhone(isPrimary = false): EditablePhone {
     label: '',
     isPrimary,
     memo: null,
-    isActive: true,
   };
 }
 
@@ -53,11 +52,10 @@ export function toEditablePhones(contact: {
     .sort((a, b) => Number(b.isPrimary) - Number(a.isPrimary))
     .map<EditablePhone>((phone) => ({
       key: phone.id,
-      phone: phone.phone,
+      phone: formatPhoneNumber(phone.phone),
       label: displayLabel(phone.label ?? ''),
       isPrimary: phone.isPrimary,
       memo: phone.memo ?? null,
-      isActive: phone.isActive,
     }));
 
   if (fromPhones.length > 0) return fromPhones;
@@ -71,7 +69,6 @@ export function toEditablePhones(contact: {
         label: '',
         isPrimary: true,
         memo: null,
-        isActive: true,
       },
     ];
   }
@@ -90,7 +87,6 @@ export function toPhoneInputs(phones: EditablePhone[]): ContactPhoneInput[] {
       phone: row.phone.trim(),
       label: row.label.trim() || undefined,
       isPrimary: row.isPrimary,
-      isActive: row.isActive,
       memo: row.memo,
     }));
 

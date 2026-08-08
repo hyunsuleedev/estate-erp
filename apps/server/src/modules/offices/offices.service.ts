@@ -111,6 +111,7 @@ export class OfficesService {
       ceoName?: string | null;
       phone?: string | null;
       address?: string | null;
+      naverVerificationId?: string | null;
     },
   ) {
     await this.getMe(officeId);
@@ -200,6 +201,7 @@ export class OfficesService {
     ceoName: string | null;
     phone: string | null;
     address: string | null;
+    naverVerificationId: string | null;
     subscription: string;
     maxUsers: number;
     isActive: boolean;
@@ -226,6 +228,7 @@ export class OfficesService {
       ceoName: office.ceoName,
       phone: office.phone,
       address: office.address,
+      naverVerificationId: office.naverVerificationId,
       subscription: office.subscription,
       maxUsers: office.maxUsers,
       isActive: office.isActive,

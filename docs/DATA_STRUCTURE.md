@@ -15,8 +15,8 @@
 │  ├── Dong (동)                                                   │
 │  └── Unit (호) ── siteUnitTypeId FK, floor, lineNo               │
 │                                                                  │
-│  OfficeSite (관리 단지 = 즐겨찾기)                                │
-│  └── Office ↔ Site 연결                                          │
+│  OfficeSite (사무소별 관리 단지 구독)                              │
+│  └── Office ↔ Site 연결 + isFavorite                             │
 ├─────────────────────────────────────────────────────────────────┤
 │  Property (관리 단위) ── siteId(필수) + unitId(선택)               │
 │  ├── PropertyContact (매물 관련인: 소유자, 대리인, 법무사...)       │
@@ -44,30 +44,33 @@
 ## 1. 멀티테넌시
 
 ### Office (사무소)
-| 필드 | 타입 | 설명 |
-|------|------|------|
-| id | UUID | PK |
-| name | String | 사무소명 |
-| licenseNo | String? | 중개업 등록번호 |
-| ceoName | String? | 대표자명 |
-| phone | String? | 사무소 전화 |
-| address | String? | 사무소 주소 |
-| subscription | String | basic / pro / premium |
-| maxUsers | Int | 최대 사용자 수 (기본 3) |
-| isActive | Boolean | 활성 여부 |
+
+| 필드                | 타입    | 설명                                                            |
+| ------------------- | ------- | --------------------------------------------------------------- |
+| id                  | UUID    | PK                                                              |
+| name                | String  | 사무소명                                                        |
+| licenseNo           | String? | 중개업 등록번호                                                 |
+| ceoName             | String? | 대표자명                                                        |
+| phone               | String? | 사무소 전화                                                     |
+| address             | String? | 사무소 주소                                                     |
+| naverVerificationId | String? | 네이버 부동산 광고 등록 시 사용하는 사무소 공통 실명인증 아이디 |
+| subscription        | String  | basic / pro / premium                                           |
+| maxUsers            | Int     | 최대 사용자 수 (기본 3)                                         |
+| isActive            | Boolean | 활성 여부                                                       |
 
 ### User (사용자)
-| 필드 | 타입 | 설명 |
-|------|------|------|
-| id | UUID | PK |
-| officeId | UUID | FK → Office |
-| loginId | String | 로그인 ID (unique, owner/직원 모두 별도 아이디 사용 가능) |
-| email | String? | 이메일 (nullable, owner 필수, 직원 선택) |
-| password | String | 해시된 비밀번호 |
-| name | String | 이름 |
-| phone | String? | 전화번호 |
-| role | String | owner / manager / agent |
-| isActive | Boolean | 활성 여부 |
+
+| 필드     | 타입    | 설명                                                      |
+| -------- | ------- | --------------------------------------------------------- |
+| id       | UUID    | PK                                                        |
+| officeId | UUID    | FK → Office                                               |
+| loginId  | String  | 로그인 ID (unique, owner/직원 모두 별도 아이디 사용 가능) |
+| email    | String? | 이메일 (nullable, owner 필수, 직원 선택)                  |
+| password | String  | 해시된 비밀번호                                           |
+| name     | String  | 이름                                                      |
+| phone    | String? | 전화번호                                                  |
+| role     | String  | owner / manager / agent                                   |
+| isActive | Boolean | 활성 여부                                                 |
 
 ---
 
@@ -81,24 +84,27 @@ Province (시도, 2자리) → District (시군구, 5자리) → Ward (읍면동
 ```
 
 ### Province (시도)
-| 필드 | 타입 | 설명 |
-|------|------|------|
-| code | VarChar(2) | PK ("11" = 서울) |
-| name | String | 시도명 (서울특별시) |
+
+| 필드 | 타입       | 설명                |
+| ---- | ---------- | ------------------- |
+| code | VarChar(2) | PK ("11" = 서울)    |
+| name | String     | 시도명 (서울특별시) |
 
 ### District (시군구)
-| 필드 | 타입 | 설명 |
-|------|------|------|
-| code | VarChar(5) | PK ("11740" = 강동구) |
-| provinceCode | VarChar(2) | FK → Province |
-| name | String | 시군구명 (강동구) |
+
+| 필드         | 타입       | 설명                  |
+| ------------ | ---------- | --------------------- |
+| code         | VarChar(5) | PK ("11740" = 강동구) |
+| provinceCode | VarChar(2) | FK → Province         |
+| name         | String     | 시군구명 (강동구)     |
 
 ### Ward (읍면동)
-| 필드 | 타입 | 설명 |
-|------|------|------|
-| code | VarChar(10) | PK ("1174010100" = 고덕동) |
-| districtCode | VarChar(5) | FK → District |
-| name | String | 읍면동명 (고덕동) |
+
+| 필드         | 타입        | 설명                       |
+| ------------ | ----------- | -------------------------- |
+| code         | VarChar(10) | PK ("1174010100" = 고덕동) |
+| districtCode | VarChar(5)  | FK → District              |
+| name         | String      | 읍면동명 (고덕동)          |
 
 > 데이터 소스: 국토교통부 법정동코드 (data.go.kr/data/15123287)
 > 주기적 동기화로 행정구역 변경 반영
@@ -117,30 +123,32 @@ officeId = UUID, isPublic = false  →  사무소가 등록한 비공개 단지 
 - 가시성 쿼리: `WHERE is_public = true OR office_id = ?`
 - 공공데이터는 `isLocked = true`로 수정/삭제 보호
 - 공공데이터 소스: 국토부 공공데이터, 네이버 부동산 (Phase 3)
-- `OfficeSite`로 즐겨찾기 (공공이든 내가 만든 거든 통합 관리)
+- `OfficeSite`로 관리단지 구독 (공공이든 내가 만든 거든 통합 관리)
+- 즐겨찾기는 구독 관계의 `isFavorite`로 별도 관리
 
 ### Site (장소)
+
 아파트 단지, 오피스텔, 빌라, 단독주택, 상가, 토지 등 모든 부동산 위치.
 
-| 필드 | 타입 | 설명 |
-|------|------|------|
-| id | UUID | PK (자체 고유 ID) |
-| officeId | UUID? | null = 공공데이터 import |
-| isPublic | Boolean | true = 모든 사무소 열람 가능 |
-| isLocked | Boolean | 공공데이터 수정 보호 |
-| type | String | apartment, officetel, villa, house, commercial, land, living_accommodation |
-| name | String | 단지명/건물명 |
-| wardCode | VarChar(10) | FK → Ward (법정동 코드 참조) |
-| roadAddress | String? | 전체 도로명주소 (표시용) |
-| jibunAddress | String? | 전체 지번주소 (표시용) |
-| lat / lng | Decimal? | 좌표 (PostGIS geometry는 migration에서 추가) |
-| kaptComplexCode | String? | K-apt 단지코드 (아파트만) |
-| naverComplexCode | String? | 네이버 부동산 단지코드 (아파트+오피스텔+빌라) |
-| kbComplexCode | String? | KB 부동산 단지코드 |
-| builtYear | Int? | 준공년도 |
-| totalUnits | Int? | 총세대수 |
-| totalDongs | Int? | 총동수 |
-| metadata | JSONB? | 타입별 가변 속성 (아래 참고) |
+| 필드             | 타입        | 설명                                                                       |
+| ---------------- | ----------- | -------------------------------------------------------------------------- |
+| id               | UUID        | PK (자체 고유 ID)                                                          |
+| officeId         | UUID?       | null = 공공데이터 import                                                   |
+| isPublic         | Boolean     | true = 모든 사무소 열람 가능                                               |
+| isLocked         | Boolean     | 공공데이터 수정 보호                                                       |
+| type             | String      | apartment, officetel, villa, house, commercial, land, living_accommodation |
+| name             | String      | 단지명/건물명                                                              |
+| wardCode         | VarChar(10) | FK → Ward (법정동 코드 참조)                                               |
+| roadAddress      | String?     | 전체 도로명주소 (표시용)                                                   |
+| jibunAddress     | String?     | 전체 지번주소 (표시용)                                                     |
+| lat / lng        | Decimal?    | 좌표 (PostGIS geometry는 migration에서 추가)                               |
+| kaptComplexCode  | String?     | K-apt 단지코드 (아파트만)                                                  |
+| naverComplexCode | String?     | 네이버 부동산 단지코드 (아파트+오피스텔+빌라)                              |
+| kbComplexCode    | String?     | KB 부동산 단지코드                                                         |
+| builtYear        | Int?        | 준공년도                                                                   |
+| totalUnits       | Int?        | 총세대수                                                                   |
+| totalDongs       | Int?        | 총동수                                                                     |
+| metadata         | JSONB?      | 타입별 가변 속성 (아래 참고)                                               |
 
 > **주소 정규화**: 기존 sido/sigungu/eupmyeondong 자유텍스트 → wardCode FK 참조로 변경. Ward → District → Province 체인으로 시도/시군구/읍면동 조회.
 
@@ -157,59 +165,62 @@ officeId = UUID, isPublic = false  →  사무소가 등록한 비공개 단지 
 > **PostGIS**: lat/lng는 Prisma용 fallback. 공간 쿼리(반경 검색 등)는 migration SQL에서 추가하는 `geometry(Point, 5179)` 컬럼 + GIST 인덱스 사용. Prisma `$queryRaw`로 접근.
 
 ### SiteUnitType (평형 카탈로그)
+
 단지별 평형 타입 정의. 네이버 부동산 `pyeongList` API와 1:1 대응.
 
-| 필드 | 타입 | 설명 |
-|------|------|------|
-| id | UUID | PK |
-| officeId | UUID? | null = 공공데이터 |
-| siteId | UUID | FK → Site |
-| name | String | 타입명 (84A, 59B, 133A) |
-| nameType | String? | 변형 문자 (A, B, C, D) |
-| exclusiveAreaM2 | Decimal? | 전용면적 (m²) |
-| supplyAreaM2 | Decimal? | 공급면적 (m²) |
-| contractAreaM2 | Decimal? | 계약면적 (m²) |
-| roomCount | Int? | 방 수 |
-| bathRoomCount | Int? | 욕실 수 |
-| householdCount | Int? | 해당 타입 총 세대수 |
-| entranceType | String? | 주출입(10) / 부출입(20) |
-| direction | String? | 향 (SS=남남, ES=동남 등) |
-| isDuplex | Boolean | 복층 여부 |
-| naverPyeongNo | String? | 네이버 평형번호 (매핑용) |
-| floorPlanUrls | JSONB? | 평면도 이미지 URL |
+| 필드            | 타입     | 설명                     |
+| --------------- | -------- | ------------------------ |
+| id              | UUID     | PK                       |
+| officeId        | UUID?    | null = 공공데이터        |
+| siteId          | UUID     | FK → Site                |
+| name            | String   | 타입명 (84A, 59B, 133A)  |
+| nameType        | String?  | 변형 문자 (A, B, C, D)   |
+| exclusiveAreaM2 | Decimal? | 전용면적 (m²)            |
+| supplyAreaM2    | Decimal? | 공급면적 (m²)            |
+| contractAreaM2  | Decimal? | 계약면적 (m²)            |
+| roomCount       | Int?     | 방 수                    |
+| bathRoomCount   | Int?     | 욕실 수                  |
+| householdCount  | Int?     | 해당 타입 총 세대수      |
+| entranceType    | String?  | 주출입(10) / 부출입(20)  |
+| direction       | String?  | 향 (SS=남남, ES=동남 등) |
+| isDuplex        | Boolean  | 복층 여부                |
+| naverPyeongNo   | String?  | 네이버 평형번호 (매핑용) |
+| floorPlanUrls   | JSONB?   | 평면도 이미지 URL        |
 
 > unique: [siteId, name]
 
 > **네이버 대응**: `GET /api/complexes/{id}/pyeongList`의 각 항목이 SiteUnitType 1개에 대응. 같은 타입(84A)은 단지 내 어느 동이든 동일한 면적/방수를 가짐.
 
 ### Dong (동)
-| 필드 | 타입 | 설명 |
-|------|------|------|
-| id | UUID | PK |
-| officeId | UUID? | null = 중앙 데이터 |
-| siteId | UUID | FK → Site |
-| name | String | 동 이름 (101동, A동, 단일 동 건물은 "-" 등) |
-| isPlaceholder | Boolean | true = 실제 동 구분 없음 (UI 숨김 처리) |
+
+| 필드          | 타입    | 설명                                        |
+| ------------- | ------- | ------------------------------------------- |
+| id            | UUID    | PK                                          |
+| officeId      | UUID?   | null = 중앙 데이터                          |
+| siteId        | UUID    | FK → Site                                   |
+| name          | String  | 동 이름 (101동, A동, 단일 동 건물은 "-" 등) |
+| isPlaceholder | Boolean | true = 실제 동 구분 없음 (UI 숨김 처리)     |
 
 > **Placeholder 규칙**: 단일 동 건물(빌라, 단일동 오피스텔·상가 등)도 반드시 Dong 하나를 생성한다. 이 경우 `isPlaceholder = true`로 마킹하고 `name`은 `"-"` 또는 `"본동"` 사용. `Site → Dong → Unit` 체인을 타입과 무관하게 통일해 쿼리·UI를 단순화하기 위함.
 > **확장성**: 단일동으로 시작한 건물에 나중에 B동이 증축되면 → placeholder를 실제 이름(예: "A동")으로 rename하고 `isPlaceholder = false`, 새 Dong("B동") 추가.
 > **층수 정보**는 Unit.floor에서 파생 (`SELECT MAX(floor) FROM units WHERE dong_id = ?`)
 
 ### Unit (호)
-| 필드 | 타입 | 설명 |
-|------|------|------|
-| id | UUID | PK |
-| officeId | UUID? | null = 중앙 데이터 |
-| siteId | UUID | FK → Site |
-| dongId | UUID | FK → Dong (NOT NULL, 단일 동 건물은 placeholder Dong 참조) |
-| siteUnitTypeId | UUID? | FK → SiteUnitType (평형 타입) |
-| name | String | 호수 (3501호) |
-| floor | Int? | 층 (35) |
-| lineNo | Int? | 라인번호 (같은 타입 수직 스택, 그리드 컬럼) |
-| exclusiveAreaM2 | Decimal? | 전용면적 (m², 타입 미지정 시 fallback) |
-| supplyAreaM2 | Decimal? | 공급면적 (m², 타입 미지정 시 fallback) |
-| isPiloti | Boolean | 필로티 여부 |
-| cellType | String | 호실 그리드 표시 타입 (`unit`, `empty`, `piloti`, `common_facility`, `commercial_facility`, `safety_area`) |
+
+| 필드            | 타입     | 설명                                                                                                       |
+| --------------- | -------- | ---------------------------------------------------------------------------------------------------------- |
+| id              | UUID     | PK                                                                                                         |
+| officeId        | UUID?    | null = 중앙 데이터                                                                                         |
+| siteId          | UUID     | FK → Site                                                                                                  |
+| dongId          | UUID     | FK → Dong (NOT NULL, 단일 동 건물은 placeholder Dong 참조)                                                 |
+| siteUnitTypeId  | UUID?    | FK → SiteUnitType (평형 타입)                                                                              |
+| name            | String   | 호수 (3501호)                                                                                              |
+| floor           | Int?     | 층 (35)                                                                                                    |
+| lineNo          | Int?     | 라인번호 (같은 타입 수직 스택, 그리드 컬럼)                                                                |
+| exclusiveAreaM2 | Decimal? | 전용면적 (m², 타입 미지정 시 fallback)                                                                     |
+| supplyAreaM2    | Decimal? | 공급면적 (m², 타입 미지정 시 fallback)                                                                     |
+| isPiloti        | Boolean  | 필로티 여부                                                                                                |
+| cellType        | String   | 호실 그리드 표시 타입 (`unit`, `empty`, `piloti`, `common_facility`, `commercial_facility`, `safety_area`) |
 
 > 면적은 m² 기준 저장. 평 변환: m² × 0.3025
 > 면적은 SiteUnitType에서 가져오는 것이 정석. Unit의 면적 필드는 타입이 미지정된 호실(빌라, 비정형 등)용 fallback.
@@ -219,18 +230,21 @@ officeId = UUID, isPublic = false  →  사무소가 등록한 비공개 단지 
 > **그리드 UI**: Dong의 Unit 목록을 floor(행) × lineNo(열)로 배치하면 네이버와 동일한 동별 호실 그리드 구현 가능.
 
 ### OfficeSite (관리 단지)
-사무소가 관리하는 단지 목록. 즐겨찾기 개념.
 
-| 필드 | 타입 | 설명 |
-|------|------|------|
-| id | UUID | PK |
-| officeId | UUID | FK → Office |
-| siteId | UUID | FK → Site |
-| memo | String? | 메모 ("주력 단지" 등) |
+사무소가 구독·관리하는 단지 목록. 즐겨찾기는 구독 관계의 별도 표시 속성이다.
+
+| 필드       | 타입    | 설명                       |
+| ---------- | ------- | -------------------------- |
+| id         | UUID    | PK                         |
+| officeId   | UUID    | FK → Office                |
+| siteId     | UUID    | FK → Site                  |
+| memo       | String? | 메모 ("주력 단지" 등)      |
+| isFavorite | Boolean | 즐겨찾기 여부 (기본 false) |
 
 > unique: [officeId, siteId]
 
 **흐름:**
+
 1. 중개사가 "래미안고덕" 검색 → 중앙 Site 목록에서 선택
 2. OfficeSite 생성 → "관리 단지"에 추가
 3. 매물 등록 시 → 관리 단지 목록에서 빠르게 선택
@@ -240,43 +254,60 @@ officeId = UUID, isPublic = false  →  사무소가 등록한 비공개 단지 
 ## 4. 인물 관계 체계
 
 ### Contact (연락처)
+
 모든 사람의 기본 정보. 판매자/구매자/세입자/관련인 구분 없이 통합.
 
-| 필드 | 타입 | 설명 |
-|------|------|------|
-| id | UUID | PK |
-| officeId | UUID | FK → Office |
-| name | String | 이름 |
-| phone | String? | 주 전화번호 |
-| phone2 | String? | 보조 전화번호 |
-| email | String? | 이메일 |
-| tags | String[] | 사용자 정의 태그 (VIP, 단골 등) |
-| memo | String? | 메모 |
+| 필드     | 타입     | 설명                            |
+| -------- | -------- | ------------------------------- |
+| id       | UUID     | PK                              |
+| officeId | UUID     | FK → Office                     |
+| name     | String   | 이름                            |
+| email    | String?  | 이메일                          |
+| tags     | String[] | 사용자 정의 태그 (VIP, 단골 등) |
+| memo     | String?  | 메모                            |
 
-> index: [officeId, phone]
+전화번호는 `Contact`에 직접 두지 않고 `ContactPhone`으로 1:N 관리한다.
+
+### ContactPhone (연락처 전화번호)
+
+| 필드     | 타입    | 설명                                                        |
+| -------- | ------- | ----------------------------------------------------------- |
+| id       | UUID    | PK                                                          |
+| officeId | UUID    | FK → Office                                                 |
+| contactId | UUID    | FK → Contact                                               |
+| phone    | String  | 숫자만 저장하는 canonical 번호. 하이픈 표시는 프론트엔드 담당 |
+| label    | String  | mobile / home / work / office / fax / other                |
+| isPrimary | Boolean | 연락처의 대표 번호 여부                                   |
+| memo     | String? | 번호별 메모                                                 |
+
+> unique: [officeId, phone] (같은 사무소에서 번호 하나는 하나의 ContactPhone만 소유)
+> partial unique: [officeId, contactId] WHERE isPrimary = true (연락처당 대표 번호 최대 1개)
 
 역할은 관계 테이블로 구분:
+
 - **판매자/소유자** → PropertyContact
 - **구매자** → BuyerRequirement
 - **세입자** → Tenant
 - **가족/전문가** → ContactRelation
 
 ### ContactRelation (사람 ↔ 사람 관계)
+
 영구적인 인간관계. 거래와 무관하게 유지됨.
 
-| 필드 | 타입 | 설명 |
-|------|------|------|
-| id | UUID | PK |
-| officeId | UUID | FK → Office |
-| contactId | UUID | FK → Contact (주체) |
-| relatedContactId | UUID | FK → Contact (관련인) |
-| relationType | String | parent, spouse, child, sibling, lawyer, tax_agent, other |
-| label | String? | 보충 설명 ("큰어머니", "담당 법무사") |
-| memo | String? | 메모 |
+| 필드             | 타입    | 설명                                                     |
+| ---------------- | ------- | -------------------------------------------------------- |
+| id               | UUID    | PK                                                       |
+| officeId         | UUID    | FK → Office                                              |
+| contactId        | UUID    | FK → Contact (주체)                                      |
+| relatedContactId | UUID    | FK → Contact (관련인)                                    |
+| relationType     | String  | parent, spouse, child, sibling, lawyer, tax_agent, other |
+| label            | String? | 보충 설명 ("큰어머니", "담당 법무사")                    |
+| memo             | String? | 메모                                                     |
 
 > unique: [contactId, relatedContactId]
 
 **등록 UI:**
+
 ```
 관계: [어머니] [아버지] [배우자] [자녀] [형제] [법무사] [세무사] [기타: ___]
 + [010-5555-6666] [어머니 ▼]  [추가]
@@ -287,26 +318,31 @@ officeId = UUID, isPublic = false  →  사무소가 등록한 비공개 단지 
 - 나중에 이름 알게 되면 Contact.name 수정
 
 ### PropertyContact (매물 ↔ 사람, 역할별)
+
 매물에 관련된 사람들. 기존 Ownership을 확장 통합.
 
-| 필드 | 타입 | 설명 |
-|------|------|------|
-| id | UUID | PK |
-| officeId | UUID | FK → Office |
-| contactId | UUID | FK → Contact |
-| propertyId | UUID | FK → Property |
-| role | String | owner, co_owner, representative, lawyer, tax_agent |
-| shareRatio | Decimal? | 지분비율 % (owner/co_owner만) |
-| isResident | Boolean | 실거주 여부 |
-| isPrimary | Boolean | 주 연락처 여부 |
-| status | String | active, transferred, archived |
-| memo | String? | 메모 |
+| 필드       | 타입     | 설명                                               |
+| ---------- | -------- | -------------------------------------------------- |
+| id         | UUID     | PK                                                 |
+| officeId   | UUID     | FK → Office                                        |
+| contactId  | UUID     | FK → Contact                                       |
+| propertyId | UUID     | FK → Property                                      |
+| role       | String   | owner, co_owner, representative, lawyer, tax_agent |
+| shareRatio | Decimal? | 지분비율 % (owner/co_owner만)                      |
+| isResident | Boolean  | 실거주 여부                                        |
+| isPrimary  | Boolean  | 주 연락처 여부                                     |
+| status     | String   | active, transferred, archived                      |
+| memo       | String?  | 메모                                               |
 
 > unique: [contactId, propertyId, role]
+
+> 활성(`status=active`) 주 연락처는 Property당 최대 한 명이다. `isPrimary`는
+> Contact 자체가 아니라 해당 Property에서의 대표 연락 창구를 뜻한다.
 
 **소유권 이전 시:** status를 `transferred`로 변경 (삭제 안 함 → 이력 보존)
 
 **예시: 공동소유 + 어머니**
+
 ```
 PropertyContact: 김집주인 → 래미안101호 (role: owner, 50%, isPrimary)
 PropertyContact: 박어머니 → 래미안101호 (role: co_owner, 50%)
@@ -314,89 +350,98 @@ ContactRelation: 김집주인 → 박어머니 (type: parent)
 ```
 
 ### Tenant (세입자 + 계약정보)
-| 필드 | 타입 | 설명 |
-|------|------|------|
-| id | UUID | PK |
-| officeId | UUID | FK → Office |
-| propertyId | UUID | FK → Property |
-| contactId | UUID | FK → Contact |
-| deposit | Int? | 보증금 (만원) |
-| monthlyRent | Int? | 월세 (만원) |
-| contractStart | DateTime? | 계약 시작일 |
-| contractEnd | DateTime? | 계약 만료일 |
-| moveOutDate | DateTime? | 퇴거 예정일 |
-| status | String | residing, moving_out, moved |
-| memo | String? | 메모 |
+
+| 필드          | 타입      | 설명                        |
+| ------------- | --------- | --------------------------- |
+| id            | UUID      | PK                          |
+| officeId      | UUID      | FK → Office                 |
+| propertyId    | UUID      | FK → Property               |
+| contactId     | UUID      | FK → Contact                |
+| deposit       | Int?      | 보증금 (만원)               |
+| monthlyRent   | Int?      | 월세 (만원)                 |
+| contractStart | DateTime? | 계약 시작일                 |
+| contractEnd   | DateTime? | 계약 만료일                 |
+| moveOutDate   | DateTime? | 퇴거 예정일                 |
+| status        | String    | residing, moving_out, moved |
+| memo          | String?   | 메모                        |
 
 ---
 
 ## 5. 매물
 
 ### Property (관리 단위)
+
 사무소가 관리하는 부동산 단위 레코드. 장소(Site/Unit)에 사무소 컨텍스트를 부여한 것. 거래 정보(가격, 거래유형)는 Listing에 분리.
 
-| 필드 | 타입 | 설명 |
-|------|------|------|
-| id | UUID | PK |
-| officeId | UUID | FK → Office |
-| siteId | UUID | FK → Site (필수) |
-| unitId | UUID? | FK → Unit (토지/단독은 null) |
-| memo | String? | 메모 |
+| 필드     | 타입    | 설명                         |
+| -------- | ------- | ---------------------------- |
+| id       | UUID    | PK                           |
+| officeId | UUID    | FK → Office                  |
+| siteId   | UUID    | FK → Site (필수)             |
+| unitId   | UUID?   | FK → Unit (토지/단독은 null) |
+| memo     | String? | 메모                         |
 
 > Property는 "이 호실/토지를 우리 사무소가 관리한다"는 의미. 거래 조건(매매/전세/월세, 가격)은 Listing으로 분리.
 > 하나의 Property에 여러 Listing이 붙을 수 있음 (예: 같은 호실에 매매 매물 + 전세 매물 동시 등록).
 
 **siteId + unitId 구조:**
+
 - `siteId`는 항상 필수 → 쿼리에서 바로 JOIN 가능
 - `unitId`는 아파트/오피스텔만 → 토지/단독은 null
 - Unit이 있어도 siteId를 중복 저장 (의도적 denormalization, 성능)
 
 **Property에 연결되는 것들:**
+
 - PropertyContact (소유자, 대리인 등 — 호실 단위)
 - Tenant (세입자 — 호실 단위)
 - ListingIntake[] (의뢰/접수 이력 — 1:N, 단 non-closed는 하나)
 - Listing[] (의뢰 안의 거래 옵션 — 1:N)
 
 ### ListingIntake (의뢰/접수 단위)
+
 한 번 들어온 매도·임대 의뢰의 공통 정보와 확인 이력을 소유한다. 확인 여부와
 거래 진행 상태를 한 상태 컬럼에 섞지 않는다.
 
-| 필드 | 타입 | 설명 |
-|------|------|------|
-| id | UUID | PK |
-| officeId | UUID | FK → Office |
-| propertyId | UUID | FK → Property |
-| lifecycleStatus | String | open, hold, closed |
-| lifecycleChangedAt | DateTime | 마지막 생명주기 전이 시각 |
-| lifecycleChangedBy | String | user, system:deal |
-| closedReason | String? | closed일 때 종결 사유 |
-| lastCheckedAt | DateTime? | 마지막 확인 시도 시각 |
-| lastVerifiedAt | DateTime? | alive/price_changed로 유효성을 확인한 마지막 시각 |
-| lastCheckResult | String? | alive, price_changed, unavailable, no_answer, pending |
-| nextConfirmAt | DateTime? | 다음 확인 예정 시각 |
+| 필드               | 타입      | 설명                                                  |
+| ------------------ | --------- | ----------------------------------------------------- |
+| id                 | UUID      | PK                                                    |
+| officeId           | UUID      | FK → Office                                           |
+| propertyId         | UUID      | FK → Property                                         |
+| lifecycleStatus    | String    | open, hold, closed                                    |
+| lifecycleChangedAt | DateTime  | 마지막 생명주기 전이 시각                             |
+| lifecycleChangedBy | String    | user, system:deal                                     |
+| closedReason       | String?   | closed일 때 종결 사유                                 |
+| lastCheckedAt      | DateTime? | 마지막 확인 시도 시각                                 |
+| lastVerifiedAt     | DateTime? | alive/price_changed로 유효성을 확인한 마지막 시각     |
+| lastCheckResult    | String?   | alive, price_changed, unavailable, no_answer, pending |
+| nextConfirmAt      | DateTime? | 다음 확인 예정 시각                                   |
 
 - 생명주기: `open ↔ hold`, `open/hold → closed`, 필요 시 `closed → open/hold`
 - 확인 표시: `lastVerifiedAt`, `lastCheckResult`, `nextConfirmAt`에서
   `unverified | verified | overdue | no_answer`를 파생
 - `unavailable` 확인은 의뢰를 `closed`로 종결한다.
 - 같은 Property에는 `open | hold` 의뢰가 최대 하나만 존재한다.
+- 의뢰를 처음 전달한 사람은 ListingIntake의 속성으로 저장하지 않는다. 통화·상담은
+  `CallLog`/`Consultation`에 남기고, 지속적인 소유자·대리인·연락 담당 관계는
+  `PropertyContact`가 소유한다.
 
 ### Listing (매물 = 거래 단위)
+
 ListingIntake 안의 거래/가격 옵션. 하나의 의뢰에 여러 Listing이 있을 수 있다
 (매매 + 전세 동시 등록 등).
 
-| 필드 | 타입 | 설명 |
-|------|------|------|
-| id | UUID | PK |
-| officeId | UUID | FK → Office |
-| propertyId | UUID | FK → Property |
-| intakeId | UUID | FK → ListingIntake |
-| transactionType | String | sale, jeonse, monthly |
-| price | Int? | 매매가/전세가 (만원) |
-| deposit | Int? | 보증금 (만원) |
-| monthlyRent | Int? | 월세 (만원) |
-| isPaused | Boolean | 이 거래 옵션만 일시 중단 |
-| memo | String? | 메모 |
+| 필드            | 타입    | 설명                     |
+| --------------- | ------- | ------------------------ |
+| id              | UUID    | PK                       |
+| officeId        | UUID    | FK → Office              |
+| propertyId      | UUID    | FK → Property            |
+| intakeId        | UUID    | FK → ListingIntake       |
+| transactionType | String  | sale, jeonse, monthly    |
+| price           | Int?    | 매매가/전세가 (만원)     |
+| deposit         | Int?    | 보증금 (만원)            |
+| monthlyRent     | Int?    | 월세 (만원)              |
+| isPaused        | Boolean | 이 거래 옵션만 일시 중단 |
+| memo            | String? | 메모                     |
 
 > 가격은 모두 만원(10,000 KRW) 단위
 > Listing은 Match, Deal, PriceHistory의 참조 대상
@@ -405,40 +450,40 @@ ListingIntake 안의 거래/가격 옵션. 하나의 의뢰에 여러 Listing이
 
 - `available`: 의뢰 open + Listing 미중단 + 점유 Deal 없음
 - `paused`: 의뢰 hold 또는 Listing.isPaused
-- `in_contract`: 비취소 Deal이 selection / negotiating / preContract / contracted / settling
+- `in_contract`: 비취소 Deal이 preparing / preContract / contracted / settling
 - `closed`: 의뢰가 closed이거나 비취소 Deal이 completed / closed
 
 ### ListingAdvertisement (내 광고 원장)
 
 이실장·부동산뱅크 등 CP에서 가져온 실제 광고다. CP가 상세 주소를 제공하므로
 생성 시점부터 하나의 `Listing`에 귀속되며 별도의 호실 연결 상태를 두지 않는다.
-CP 조회 결과에는 현재 광고 중인 항목만 포함된다. 작성·승인 대기는
-`AgentActionRequest`, 수집 성공·실패는 `AdvertisementSyncRun/Step`이
-소유하며 개별 광고 row의 상태로 저장하지 않는다.
+CP 조회 결과에는 현재 광고 중인 항목만 포함된다. 사용자의 광고 요청은 일반
+`Task(category=advertisement)`가 소유하고 수집·실행의 세부 성공/실패는 로컬
+Skill SQLite에 남기므로 개별 광고 row의 상태로 저장하지 않는다.
 
-| 필드 | 타입 | 설명 |
-|------|------|------|
-| id | UUID | PK |
-| officeId | UUID | FK → Office |
-| listingId | UUID | FK → Listing |
-| channel | String | CP사 slug (`esiljang`, `budongsanbank`) |
-| status | String | active / ended |
-| source | String | manual / cp_sync |
-| advertisedPrice / Deposit / MonthlyRent | Int? | CP에 제출된 광고 조건 (만원) |
-| externalAdId | String? | CP사 광고 ID |
-| url | String? | CP 광고 관리 URL |
-| naverArticleNo | String? | CP가 제공한 네이버 매물번호(광고노트 FK 아님) |
-| naverUrl | String? | 네이버 비교 기준 URL |
-| lastSyncedAt | DateTime? | 마지막 CP 동기화 |
-| lastCheckedAt | DateTime? | 마지막 네이버 비교 |
+| 필드                                    | 타입      | 설명                                          |
+| --------------------------------------- | --------- | --------------------------------------------- |
+| id                                      | UUID      | PK                                            |
+| officeId                                | UUID      | FK → Office                                   |
+| listingId                               | UUID      | FK → Listing                                  |
+| channel                                 | String    | CP사 slug (`esiljang`, `budongsanbank`)       |
+| status                                  | String    | active / ended                                |
+| source                                  | String    | manual / cp_sync                              |
+| advertisedPrice / Deposit / MonthlyRent | Int?      | CP에 제출된 광고 조건 (만원)                  |
+| externalAdId                            | String?   | CP사 광고 ID                                  |
+| url                                     | String?   | CP 광고 관리 URL                              |
+| naverArticleNo                          | String?   | CP가 제공한 네이버 매물번호(광고노트 FK 아님) |
+| naverUrl                                | String?   | 네이버 비교 기준 URL                          |
+| lastSyncedAt                            | DateTime? | 마지막 CP 동기화                              |
+| lastCheckedAt                           | DateTime? | 마지막 네이버 비교                            |
 
 `channel`은 게시 플랫폼이 아니라 CP사다. 게시 플랫폼은 현재 네이버로 고정하며
 별도 `publicationPlatform` 필드를 두지 않는다.
 
 완전한 CP 조회가 성공하면 반환된 row를 `active`로 갱신하고, 그 성공한 전체
 조회에서 사라진 기존 row만 `ended`로 전환할 수 있다. 조회가 실패하거나
-일부만 수집됐으면 마지막 성공 스냅샷을 그대로 유지하고 Run/Step에 오류를
-기록한다.
+일부만 수집됐으면 마지막 성공 스냅샷을 그대로 유지하고 로컬 Skill run에
+오류를 기록한다.
 
 ### OfficeAdvertisementGroup / OfficeAdvertisement (내 광고 네이버 비교)
 
@@ -462,47 +507,70 @@ CP 조회 결과에는 현재 광고 중인 항목만 포함된다. 작성·승�
 
 ## 6. 구매고객
 
+### BuyerIntake (구매 의뢰)
+
+하나의 구매 프로젝트에 참여하는 여러 Contact와 여러 BuyerRequirement를 묶는다.
+같은 Contact가 서로 다른 구매 프로젝트를 동시에 가질 수 있다.
+
+- 참여자는 `BuyerIntakeContact`로 연결한다.
+- `role`은 buyer, co_buyer, representative, supporter, advisor, other 중 하나다.
+- `isPrimary`는 해당 구매 프로젝트의 주 연락 창구이며 Intake당 한 명만 허용한다.
+- 최초 문의자는 관계 속성으로 저장하지 않고 `CallLog`와 `Consultation`에 기록한다.
+
 ### BuyerRequirement (구매 희망조건)
-| 필드 | 타입 | 설명 |
-|------|------|------|
-| id | UUID | PK |
-| officeId | UUID | FK → Office |
-| contactId | UUID | FK → Contact |
-| status | String | active, matched, completed, inactive |
-| urgency | String | urgent, normal, flexible |
-| transactionType | String? | sale, jeonse, monthly |
-| siteTypes | String[] | 희망 매물유형 (apartment, villa...) |
-| regions | String[] | 희망 지역 (강동구, 고덕동...) |
-| priceMin / priceMax | Int? | 예산 범위 (만원) |
-| depositMin / depositMax | Int? | 보증금 범위 (만원) |
-| monthlyRentMax | Int? | 월세 상한 (만원) |
-| areaMin / areaMax | Decimal? | 면적 범위 (m²) |
-| mustConditions | String[] | 필수 조건 |
-| preferConditions | String[] | 선호 조건 |
-| moveInDate | DateTime? | 입주 희망일 |
-| assignedToId | UUID? | FK → User (담당 중개사) |
-| lastContactDate | DateTime? | 최근 연락일 |
-| nextContactDate | DateTime? | 다음 연락 예정일 |
+
+한 BuyerIntake가 여러 BuyerRequirement를 가질 수 있다. 각 행은 고객 자체가 아니라
+매칭에 사용하는 하나의 독립적인 탐색 조건이다. 가격과 면적은 정규화된 숫자로,
+그 밖의 자유 조건은 `memo`에 기록한다.
+
+| 필드                    | 타입      | 설명                                |
+| ----------------------- | --------- | ----------------------------------- |
+| id                      | UUID      | PK                                  |
+| officeId                | UUID      | FK → Office                         |
+| buyerIntakeId           | UUID      | FK → BuyerIntake                    |
+| priorityRank            | Int       | 같은 Intake 안의 조건 우선순위      |
+| status                  | String    | active, hold, completed             |
+| urgency                 | String    | urgent, normal, flexible            |
+| transactionType         | String?   | sale, jeonse, monthly               |
+| siteTypes               | String[]  | 희망 매물유형 (apartment, villa...) |
+| priceMin / priceMax     | Int?      | 예산 범위 (만원)                    |
+| depositMin / depositMax | Int?      | 보증금 범위 (만원)                  |
+| monthlyRentMin / monthlyRentMax | Int? | 월세 범위 (만원)                  |
+| areaMin / areaMax       | Decimal?  | 희망 공급면적 범위 (m² 저장, UI는 평) |
+| moveInDate              | DateTime? | 입주 희망일                         |
+| assignedToId            | UUID?     | FK → User (담당 중개사)             |
+| lastContactDate         | DateTime? | 최근 연락일                         |
+| nextContactDate         | DateTime? | 다음 연락 예정일                    |
+| memo                    | String?   | 추가 조건과 상담 배경을 적는 요건 메모 |
+
+- 희망 지역: `BuyerRequirementRegion`에서 법정동 코드로 관리
+- 희망 단지: `BuyerRequirementSite`에서 Site FK와 우선순위로 관리
 
 ---
 
 ## 7. 상담
 
 ### Consultation (상담 메모)
+
 순수 메모. 누구와 무슨 이야기를 했는지 기록. context FK로 맥락 자동 연결.
 
-| 필드 | 타입 | 설명 |
-|------|------|------|
-| id | UUID | PK |
-| officeId | UUID | FK → Office |
-| contactId | UUID | FK → Contact (상담 상대방) |
-| createdById | UUID | FK → User (기록자) |
-| type | String | phone, visit, online |
-| content | String | 메모 내용 |
-| propertyId | UUID? | FK → Property (호실 맥락 — 소유자 상담 등) |
-| listingId | UUID? | FK → Listing (매물 맥락 — 가격 협상, 매물 문의 등) |
-| matchId | UUID? | FK → Match (매칭 탭에서 기록 시 자동 연결) |
-| buyerReqId | UUID? | FK → BuyerRequirement (구매조건 탭에서 자동 연결) |
+| 필드        | 타입   | 설명                                               |
+| ----------- | ------ | -------------------------------------------------- |
+| id          | UUID   | PK                                                 |
+| officeId    | UUID   | FK → Office                                        |
+| contactId   | UUID   | FK → Contact (상담 상대방)                         |
+| createdById | UUID   | FK → User (기록자)                                 |
+| type        | String | phone, visit, online                               |
+| content     | String | 메모 내용                                          |
+| propertyId  | UUID?  | FK → Property (호실 맥락 — 소유자 상담 등)         |
+| listingId   | UUID?  | FK → Listing (매물 맥락 — 가격 협상, 매물 문의 등) |
+| matchId     | UUID?  | FK → Match (매칭 탭에서 기록 시 자동 연결)         |
+| buyerIntakeId | UUID? | FK → BuyerIntake (구매 프로젝트 전체 상담)         |
+| buyerReqId  | UUID?  | FK → BuyerRequirement (구매조건 탭에서 자동 연결)  |
+
+`buyerReqId`가 있으면 서버가 소속 `buyerIntakeId`를 자동으로 채운다. 두 값을 함께
+보낼 때는 같은 구매 프로젝트를 가리켜야 하며, 상담 상대방은 해당 BuyerIntake의
+참여자로 연결되어 있어야 한다.
 
 > propertyId: 호실/부동산 단위 맥락 (소유자 연락, 세입자 관련 상담 등)
 > listingId: 거래 매물 맥락 (가격 협상, 매물 확인 상담 등)
@@ -515,87 +583,96 @@ CP 조회 결과에는 현재 광고 중인 항목만 포함된다. 작성·승�
 ## 8. 파이프라인
 
 ### Match (매칭)
+
 매물(Listing)과 구매 희망조건을 연결.
 
-| 필드 | 타입 | 설명 |
-|------|------|------|
-| id | UUID | PK |
-| officeId | UUID | FK → Office |
-| listingId | UUID | FK → Listing |
-| buyerReqId | UUID | FK → BuyerRequirement |
-| stage | String | 매칭 단계 |
-| memo | String? | 메모 |
+| 필드       | 타입    | 설명                  |
+| ---------- | ------- | --------------------- |
+| id         | UUID    | PK                    |
+| officeId   | UUID    | FK → Office           |
+| listingId  | UUID    | FK → Listing          |
+| buyerReqId | UUID    | FK → BuyerRequirement |
+| stage      | String  | 매칭 단계             |
+| memo       | String? | 메모                  |
 
 **매칭 파이프라인:**
+
 ```
-suggested → buyerContacted → viewing → ownerContacted → negotiating → dealCreated → closed
+suggested → buyerInterested → viewingConfirmed → viewing → negotiating → dealCreated → closed
 ```
 
 ### Deal (거래)
+
 거래 진행 관리. Match에서 전환되어 생성. 중개사 입장의 비즈니스 관리 데이터.
 
-| 필드 | 타입 | 설명 |
-|------|------|------|
-| id | UUID | PK |
-| officeId | UUID | FK → Office |
-| listingId | UUID | FK → Listing |
-| stage | String | 거래 단계 (DealStage) |
-| price | Int? | 최종 거래가 (만원) |
-| buyerContactId | UUID? | FK → Contact (매수인) |
-| sellerContactId | UUID? | FK → Contact (매도인) |
-| commissionSellerRate | Decimal? | 매도측 수수료율 (%) |
-| commissionSellerAmount | Int? | 매도측 수수료 (만원) |
-| commissionBuyerRate | Decimal? | 매수측 수수료율 (%) |
-| commissionBuyerAmount | Int? | 매수측 수수료 (만원) |
-| commissionTotal | Int? | 수수료 총액 (만원) |
-| vat | Int? | 부가세 (만원) |
-| isJointBrokerage | Boolean | 공동중개 여부 |
-| partnerBrokerName | String? | 상대 중개사무소명 |
-| partnerBrokerPhone | String? | 상대 중개사 연락처 |
-| partnerCommission | Int? | 상대 중개사 수수료 (만원) |
-| memo | String? | 메모 |
+| 필드                   | 타입     | 설명                      |
+| ---------------------- | -------- | ------------------------- |
+| id                     | UUID     | PK                        |
+| officeId               | UUID     | FK → Office               |
+| listingId              | UUID     | FK → Listing              |
+| stage                  | String   | 거래 단계 (DealStage)     |
+| price                  | Int?     | 최종 거래가 (만원)        |
+| buyerContactId         | UUID?    | FK → Contact (매수인)     |
+| sellerContactId        | UUID?    | FK → Contact (매도인)     |
+| commissionSellerRate   | Decimal? | 매도측 수수료율 (%)       |
+| commissionSellerAmount | Int?     | 매도측 수수료 (만원)      |
+| commissionBuyerRate    | Decimal? | 매수측 수수료율 (%)       |
+| commissionBuyerAmount  | Int?     | 매수측 수수료 (만원)      |
+| commissionTotal        | Int?     | 수수료 총액 (만원)        |
+| vat                    | Int?     | 부가세 (만원)             |
+| isJointBrokerage       | Boolean  | 공동중개 여부             |
+| partnerBrokerName      | String?  | 상대 중개사무소명         |
+| partnerBrokerPhone     | String?  | 상대 중개사 연락처        |
+| partnerCommission      | Int?     | 상대 중개사 수수료 (만원) |
+| memo                   | String?  | 메모                      |
 
 > 수수료는 단독중개든 공동중개든 항상 매도측/매수측으로 분리 기록
 > `commissionTotal` = `commissionSellerAmount` + `commissionBuyerAmount`
 > 공동중개 시 `partnerCommission`은 상대방이 가져가는 몫 (우리 수수료와 별도)
 
 **거래 파이프라인:**
+
 ```
-selection → deposit → contract → completed → closed
+preparing → preContract(선택) → contracted → settling → completed → closed
 ```
+
+Match가 매물 선정·임장·협상·거래 전환까지 담당한다. Deal은 거래 전환 후 계약
+준비부터 시작하며, 가계약이 없는 거래는 `preparing`에서 `contracted`로 바로 이동한다.
 
 ### Contract (계약 상세, Deal 1:1)
+
 Deal이 계약 단계에 도달하면 생성. 계약서에 기재되는 법적 내용.
 
-| 필드 | 타입 | 설명 |
-|------|------|------|
-| id | UUID | PK |
-| officeId | UUID | FK → Office |
-| dealId | UUID | FK → Deal (unique, 1:1) |
-| transactionType | String | sale, jeonse, monthly |
-| buyerContactId | UUID | FK → Contact (매수인/임차인) |
-| sellerContactId | UUID | FK → Contact (매도인/임대인) |
-| totalPrice | Int | 총 거래금액 (만원) |
-| monthlyRent | Int? | 월세 (만원, monthly일 때만) |
-| status | String | 계약 상태 |
-| contractDate | DateTime? | 계약일 |
-| contractDeposit | Int? | 계약금 (만원) |
-| contractDepositDate | DateTime? | 계약금 지급일 |
-| contractDepositPaid | Boolean | 계약금 입금 확인 |
-| middlePayment | Int? | 중도금 (만원) |
-| middlePaymentDate | DateTime? | 중도금 지급일 |
-| middlePaymentPaid | Boolean | 중도금 입금 확인 |
-| finalPayment | Int? | 잔금 (만원) |
-| finalPaymentDate | DateTime? | 잔금 지급일 |
-| finalPaymentPaid | Boolean | 잔금 입금 확인 |
-| moveInDate | DateTime? | 입주일 |
-| leaseStartDate | DateTime? | 임대 시작일 (전세/월세) |
-| leaseEndDate | DateTime? | 임대 종료일 (전세/월세) |
-| specialTerms | String? | 특약사항 |
-| attachments | String[] | 첨부파일 URL 목록 |
-| memo | String? | 메모 |
+| 필드                | 타입      | 설명                         |
+| ------------------- | --------- | ---------------------------- |
+| id                  | UUID      | PK                           |
+| officeId            | UUID      | FK → Office                  |
+| dealId              | UUID      | FK → Deal (unique, 1:1)      |
+| transactionType     | String    | sale, jeonse, monthly        |
+| buyerContactId      | UUID      | FK → Contact (매수인/임차인) |
+| sellerContactId     | UUID      | FK → Contact (매도인/임대인) |
+| totalPrice          | Int       | 총 거래금액 (만원)           |
+| monthlyRent         | Int?      | 월세 (만원, monthly일 때만)  |
+| status              | String    | 계약 상태                    |
+| contractDate        | DateTime? | 계약일                       |
+| contractDeposit     | Int?      | 계약금 (만원)                |
+| contractDepositDate | DateTime? | 계약금 지급일                |
+| contractDepositPaid | Boolean   | 계약금 입금 확인             |
+| middlePayment       | Int?      | 중도금 (만원)                |
+| middlePaymentDate   | DateTime? | 중도금 지급일                |
+| middlePaymentPaid   | Boolean   | 중도금 입금 확인             |
+| finalPayment        | Int?      | 잔금 (만원)                  |
+| finalPaymentDate    | DateTime? | 잔금 지급일                  |
+| finalPaymentPaid    | Boolean   | 잔금 입금 확인               |
+| moveInDate          | DateTime? | 입주일                       |
+| leaseStartDate      | DateTime? | 임대 시작일 (전세/월세)      |
+| leaseEndDate        | DateTime? | 임대 종료일 (전세/월세)      |
+| specialTerms        | String?   | 특약사항                     |
+| attachments         | String[]  | 첨부파일 URL 목록            |
+| memo                | String?   | 메모                         |
 
 **계약 상태 파이프라인:**
+
 ```
 draft → signed → depositPaid → balancePaid → registered → cancelled
 ```
@@ -604,25 +681,27 @@ draft → signed → depositPaid → balancePaid → registered → cancelled
 > Contract의 당사자(buyerContactId/sellerContactId)는 계약서 기준이므로 Deal의 당사자와 다를 수 있음 (대리인 등)
 
 ### DealParticipant (거래 참여자 + 수수료 정산)
+
 거래에 참여한 직원별 역할/수수료 배분/정산 상태. 직원 실적 관리의 핵심.
 
-| 필드 | 타입 | 설명 |
-|------|------|------|
-| id | UUID | PK |
-| officeId | UUID | FK → Office |
-| dealId | UUID | FK → Deal |
-| userId | UUID | FK → User (참여 직원) |
-| role | String | 역할 (아래 참고) |
-| side | String | seller, buyer, both — 수수료 출처 |
-| commissionAmount | Int? | 배분 금액 (만원) |
-| commissionRate | Decimal? | 배분 비율 (%) |
-| settlementStatus | String | unsettled, settled |
-| settlementDate | DateTime? | 정산일 |
-| memo | String? | 메모 |
+| 필드             | 타입      | 설명                              |
+| ---------------- | --------- | --------------------------------- |
+| id               | UUID      | PK                                |
+| officeId         | UUID      | FK → Office                       |
+| dealId           | UUID      | FK → Deal                         |
+| userId           | UUID      | FK → User (참여 직원)             |
+| role             | String    | 역할 (아래 참고)                  |
+| side             | String    | seller, buyer, both — 수수료 출처 |
+| commissionAmount | Int?      | 배분 금액 (만원)                  |
+| commissionRate   | Decimal?  | 배분 비율 (%)                     |
+| settlementStatus | String    | unsettled, settled                |
+| settlementDate   | DateTime? | 정산일                            |
+| memo             | String?   | 메모                              |
 
 > unique: [dealId, userId, role]
 
 **role 값:**
+
 - `listing_agent` — 매도측 전담 (side: seller)
 - `buying_agent` — 매수측 전담 (side: buyer)
 - `dual_agent` — 단독중개 시 양측 모두 (side: both)
@@ -632,6 +711,7 @@ draft → signed → depositPaid → balancePaid → registered → cancelled
 
 **Office.commissionConfig (JSONB):**
 사장님이 설정하는 기본 수수료 배분 규칙. Deal 생성 시 자동 적용.
+
 ```json
 {
   "distributionType": "percentage",
@@ -649,96 +729,83 @@ draft → signed → depositPaid → balancePaid → registered → cancelled
 ## 9. 업무/인사이트
 
 ### Task (업무)
-| 필드 | 타입 | 설명 |
-|------|------|------|
-| id | UUID | PK |
-| officeId | UUID | FK → Office |
-| title | String | 제목 |
-| content | String? | 내용 |
-| source | String | manual, system, ai |
-| status | String | pending / in_progress / completed / cancelled |
-| priority | String | urgent / high / medium / low |
-| category | String | advertisement 등 업무 분류 |
-| assignedToId | UUID? | 실제 처리 담당 직원 |
-| dueDate | DateTime? | 마감일 |
-| contactId | UUID? | FK → Contact (관련 연락처) |
-| propertyId | UUID? | FK → Property (관련 호실/부동산 단위) |
-| listingId | UUID? | FK → Listing (관련 매물/거래 단위) |
-| consultationId | UUID? | FK → Consultation (상담에서 생성된 경우) |
+
+| 필드           | 타입      | 설명                                          |
+| -------------- | --------- | --------------------------------------------- |
+| id             | UUID      | PK                                            |
+| officeId       | UUID      | FK → Office                                   |
+| title          | String    | 제목                                          |
+| content        | String?   | 내용                                          |
+| source         | String    | manual, system, ai                            |
+| status         | String    | pending / in_progress / completed / cancelled |
+| priority       | String    | urgent / high / medium / low                  |
+| category       | String    | advertisement 등 업무 분류                    |
+| assignedToId   | UUID?     | 실제 처리 담당 직원                           |
+| dueDate        | DateTime? | 마감일                                        |
+| contactId      | UUID?     | FK → Contact (관련 연락처)                    |
+| propertyId     | UUID?     | FK → Property (관련 호실/부동산 단위)         |
+| listingId      | UUID?     | FK → Listing (관련 매물/거래 단위)            |
+| consultationId | UUID?     | FK → Consultation (상담에서 생성된 경우)      |
 
 > 상담 후 "할 일 추가" → Task 생성 시 contactId, propertyId, listingId 자동 전달
 
-### AgentActionRequest (독립 AI 실행요청)
+광고 작업은 별도 agent queue 없이 위 `Task`를 그대로 사용한다. 외부 AI는
+`find_tasks(category=advertisement, status=pending)`로 조회하고 `claim_task`로
+원자적으로 `in_progress` 전환한다. CP 대상 확인·저장·재광고·최종 확인 단계와
+시도 이력은 `estate-erp-ad-task-runner` 로컬 SQLite에만 저장한다.
 
-일반 직원 업무인 `Task`와 별도 큐로 저장한다. 정상 제안·승인·반려·성공은
-Task를 만들거나 상태 변경하지 않으며, 실제 사람 작업이 필요한 예외만
-`escalationTaskId`로 Task에 승격한다.
+서버에는 `AgentSession`, wakeup/run/activity, `AgentActionRequest`,
+`AdvertisementSyncRun/Step`을 두지 않는다. provider 상태를 다시 읽어 확인하고
+완전한 CP 스냅샷을 반영한 뒤에만 Task를 `completed`로 바꾼다.
 
-| 필드 | 타입 | 설명 |
-|------|------|------|
-| id | UUID | PK |
-| officeId | UUID | FK → Office |
-| reviewerId | UUID | 검토 담당 User |
-| escalationTaskId | UUID? | 예외 시에만 생성된 FK → Task |
-| listingAdvertisementId | UUID | 변경 대상 내부 광고 |
-| capability | String | advertisement.takedown / advertisement.terms.set |
-| payload | JSONB | 승인 대상 exact final-value 명령 |
-| preconditions | JSONB | 관측 상태 hash/만료 조건 |
-| evidence | JSONB | ListingAdvertisement CP 상태 + OfficeAdvertisement 비교 snapshot |
-| contentHash | String | 승인과 실행을 묶는 SHA-256 |
-| reviewStatus | String | pending / approved / rejected / withdrawn / expired / stale / superseded |
-| executionStatus | String | not_started / awaiting_manual / succeeded / failed / needs_input / cancelled |
-| verificationStatus | String | pending / matched / mismatch / not_found / blocked / not_required |
-| version | Int | optimistic concurrency |
-
-`AgentSession`은 `taskId` 또는 `agentActionRequestId` 중 하나에만 연결할 수 있다.
-따라서 Task와 AI 요청을 합치지 않고도 AgentRun/AgentActivity를 각 업무에 귀속한다.
-
-광고노트 `ExternalListing`은 이 요청과 연결하지 않는다. CP 광고의
-`naverArticleNo`는 내 광고 비교에서 `OfficeAdvertisement.isMain`을 식별하는
-스칼라 값이며 `ExternalListing` 조회 키로 사용하지 않는다.
+네이버 수집 범위(ERP `siteId`와 Naver `complexNo` 매핑)는
+`naver-complex-collector` 로컬 SQLite가 소유한다. ERP는 관리단지와 완전한
+광고 관측 snapshot만 저장한다.
 
 ## 10. 가격 이력
 
 ### PriceHistory (가격 변경 이력)
+
 매물(Listing)의 가격 변화를 자동으로 추적한다.
 
-| 필드 | 타입 | 설명 |
-|------|------|------|
-| id | UUID | PK |
-| officeId | UUID | FK → Office |
-| listingId | UUID | FK → Listing |
-| changedBy | UUID | FK → User (변경을 기록한 사용자) |
-| priceBefore | Int? | 변경 전 매매가 (만원) |
-| priceAfter | Int? | 변경 후 매매가 (만원) |
-| depositBefore | Int? | 변경 전 보증금 (만원) |
-| depositAfter | Int? | 변경 후 보증금 (만원) |
-| monthlyRentBefore | Int? | 변경 전 월세 (만원) |
-| monthlyRentAfter | Int? | 변경 후 월세 (만원) |
-| reason | String? | 가격 변경 사유 |
-| createdAt | DateTime | 변경 기록일 |
+| 필드              | 타입     | 설명                             |
+| ----------------- | -------- | -------------------------------- |
+| id                | UUID     | PK                               |
+| officeId          | UUID     | FK → Office                      |
+| listingId         | UUID     | FK → Listing                     |
+| changedBy         | UUID     | FK → User (변경을 기록한 사용자) |
+| priceBefore       | Int?     | 변경 전 매매가 (만원)            |
+| priceAfter        | Int?     | 변경 후 매매가 (만원)            |
+| depositBefore     | Int?     | 변경 전 보증금 (만원)            |
+| depositAfter      | Int?     | 변경 후 보증금 (만원)            |
+| monthlyRentBefore | Int?     | 변경 전 월세 (만원)              |
+| monthlyRentAfter  | Int?     | 변경 후 월세 (만원)              |
+| reason            | String?  | 가격 변경 사유                   |
+| createdAt         | DateTime | 변경 기록일                      |
 
 > 자동 추적: Listing의 price/deposit/monthlyRent가 변경되면 middleware에서 PriceHistory 레코드 자동 생성
+
 ---
 
 ## 11. 활동 로그
 
 ### ActivityLog (활동 로그, 감사 추적)
+
 모든 데이터 변경을 추적하는 감사 로그. HubSpot Audit Cards 패턴 참고.
 
-| 필드 | 타입 | 설명 |
-|------|------|------|
-| id | UUID | PK |
-| officeId | UUID | FK → Office |
-| userId | UUID? | FK → User (직원이 한 작업이면 FK, 시스템/MCP는 null) |
-| actor | String | 행위자 ("user", "mcp:claude", "system:rule_engine") |
-| source | String | 출처 ("web" \| "mcp" \| "system") |
-| action | String | 작업 유형 ("create" \| "update" \| "delete") |
-| entityType | String | 엔티티 타입 (Property, Contact, Deal 등) |
-| entityId | UUID | 변경된 엔티티 ID |
-| changes | JSONB? | 변경 내용 ({"field": {"before": v1, "after": v2}}) |
-| reason | String? | 변경 사유 (선택적, AI가 제공할 수 있음) |
-| createdAt | DateTime | 기록 시간 |
+| 필드       | 타입     | 설명                                                 |
+| ---------- | -------- | ---------------------------------------------------- |
+| id         | UUID     | PK                                                   |
+| officeId   | UUID     | FK → Office                                          |
+| userId     | UUID?    | FK → User (직원이 한 작업이면 FK, 시스템/MCP는 null) |
+| actor      | String   | 행위자 ("user", "mcp:claude", "system:rule_engine")  |
+| source     | String   | 출처 ("web" \| "mcp" \| "system")                    |
+| action     | String   | 작업 유형 ("create" \| "update" \| "delete")         |
+| entityType | String   | 엔티티 타입 (Property, Contact, Deal 등)             |
+| entityId   | UUID     | 변경된 엔티티 ID                                     |
+| changes    | JSONB?   | 변경 내용 ({"field": {"before": v1, "after": v2}})   |
+| reason     | String?  | 변경 사유 (선택적, AI가 제공할 수 있음)              |
+| createdAt  | DateTime | 기록 시간                                            |
 
 > **목적**: 모든 데이터 변경 내역 추적. 누가(userId+actor), 어떤 출처(source)에서, 뭘(action+entityType), 언제(createdAt) 했는지 기록
 > **활용**: 감사/컴플라이언스, AI 에이전트 동작 검증, 직원별 변경 이력 조회
@@ -750,80 +817,85 @@ Task를 만들거나 상태 변경하지 않으며, 실제 사람 작업이 필�
 ## 12. 공동 중개망
 
 ### NetworkRoom (중개방)
+
 카카오톡 그룹방처럼 운영되는 매물 공유 방.
 
-| 필드 | 타입 | 설명 |
-|------|------|------|
-| id | UUID | PK |
-| name | String | 방 이름 ("강동구 공동중개") |
-| description | String? | 방 설명 |
-| type | String | public (공개방), private (비공개방) |
-| createdBy | UUID | FK → Office (방 생성 사무소) |
-| region | String? | 지역 태그 |
-| maxMembers | Int? | 최대 참여 사무소 수 (null = 무제한) |
-| isActive | Boolean | 활성 여부 |
+| 필드        | 타입    | 설명                                |
+| ----------- | ------- | ----------------------------------- |
+| id          | UUID    | PK                                  |
+| name        | String  | 방 이름 ("강동구 공동중개")         |
+| description | String? | 방 설명                             |
+| type        | String  | public (공개방), private (비공개방) |
+| createdBy   | UUID    | FK → Office (방 생성 사무소)        |
+| region      | String? | 지역 태그                           |
+| maxMembers  | Int?    | 최대 참여 사무소 수 (null = 무제한) |
+| isActive    | Boolean | 활성 여부                           |
 
 ### NetworkRoomMember (방 참여자)
-| 필드 | 타입 | 설명 |
-|------|------|------|
-| id | UUID | PK |
-| roomId | UUID | FK → NetworkRoom |
-| officeId | UUID | FK → Office |
-| role | String | admin (방장), member |
-| status | String | pending, approved, rejected, left |
-| joinedAt | DateTime? | 승인 시점 |
+
+| 필드     | 타입      | 설명                              |
+| -------- | --------- | --------------------------------- |
+| id       | UUID      | PK                                |
+| roomId   | UUID      | FK → NetworkRoom                  |
+| officeId | UUID      | FK → Office                       |
+| role     | String    | admin (방장), member              |
+| status   | String    | pending, approved, rejected, left |
+| joinedAt | DateTime? | 승인 시점                         |
 
 > unique: [roomId, officeId]
 > 방 생성자 → 자동으로 admin + approved
 
 ### NetworkSharedProperty (공유 매물)
+
 내 매물장에서 선택하여 중개방에 공유. 공개 항목을 공유자가 직접 선택 (마스킹).
 
-| 필드 | 타입 | 설명 |
-|------|------|------|
-| id | UUID | PK |
-| roomId | UUID | FK → NetworkRoom |
-| listingId | UUID | FK → Listing |
-| officeId | UUID | FK → Office (공유한 사무소) |
-| sharedBy | UUID | FK → User (공유한 사용자) |
-| showSiteName | Boolean | 단지명 공개 (기본 true) |
-| showDong | Boolean | 동 공개 (기본 false) |
-| showUnit | Boolean | 호수 공개 (기본 false) |
-| showPrice | Boolean | 가격 공개 (기본 true) |
-| showArea | Boolean | 면적 공개 (기본 true) |
-| showFloor | Boolean | 층수 공개 (기본 false) |
-| showMemo | Boolean | 메모 공개 (기본 false) |
-| showPhotos | Boolean | 사진 공개 (기본 false) |
-| contactName | String? | 담당자명 |
-| contactPhone | String? | 담당자 전화 |
-| description | String? | 공유 코멘트 ("급매" 등) |
-| isActive | Boolean | 공유 활성 여부 |
+| 필드         | 타입    | 설명                        |
+| ------------ | ------- | --------------------------- |
+| id           | UUID    | PK                          |
+| roomId       | UUID    | FK → NetworkRoom            |
+| listingId    | UUID    | FK → Listing                |
+| officeId     | UUID    | FK → Office (공유한 사무소) |
+| sharedBy     | UUID    | FK → User (공유한 사용자)   |
+| showSiteName | Boolean | 단지명 공개 (기본 true)     |
+| showDong     | Boolean | 동 공개 (기본 false)        |
+| showUnit     | Boolean | 호수 공개 (기본 false)      |
+| showPrice    | Boolean | 가격 공개 (기본 true)       |
+| showArea     | Boolean | 면적 공개 (기본 true)       |
+| showFloor    | Boolean | 층수 공개 (기본 false)      |
+| showMemo     | Boolean | 메모 공개 (기본 false)      |
+| showPhotos   | Boolean | 사진 공개 (기본 false)      |
+| contactName  | String? | 담당자명                    |
+| contactPhone | String? | 담당자 전화                 |
+| description  | String? | 공유 코멘트 ("급매" 등)     |
+| isActive     | Boolean | 공유 활성 여부              |
 
 > unique: [roomId, listingId]
 > 같은 매물을 여러 방에 공유 가능 (방마다 공개 범위 다름)
 > 마스킹 이유: 다른 사무소가 매물 추적해서 빼갈 수 있으므로
 
 ### NetworkInquiry (매물 문의)
-| 필드 | 타입 | 설명 |
-|------|------|------|
-| id | UUID | PK |
-| sharedPropertyId | UUID | FK → NetworkSharedProperty |
-| fromOfficeId | UUID | FK → Office |
-| fromUserId | UUID | FK → User |
-| status | String | pending, accepted, rejected, expired |
-| message | String? | 문의 내용 |
-| response | String? | 응답 내용 |
-| respondedAt | DateTime? | 응답 시점 |
+
+| 필드             | 타입      | 설명                                 |
+| ---------------- | --------- | ------------------------------------ |
+| id               | UUID      | PK                                   |
+| sharedPropertyId | UUID      | FK → NetworkSharedProperty           |
+| fromOfficeId     | UUID      | FK → Office                          |
+| fromUserId       | UUID      | FK → User                            |
+| status           | String    | pending, accepted, rejected, expired |
+| message          | String?   | 문의 내용                            |
+| response         | String?   | 응답 내용                            |
+| respondedAt      | DateTime? | 응답 시점                            |
 
 ### NetworkMessage (중개방 채팅)
-| 필드 | 타입 | 설명 |
-|------|------|------|
-| id | UUID | PK |
-| roomId | UUID | FK → NetworkRoom |
-| officeId | UUID | FK → Office |
-| userId | UUID | FK → User |
-| content | String | 메시지 내용 |
-| sharedPropertyId | UUID? | FK → NetworkSharedProperty (매물 카드 첨부) |
+
+| 필드             | 타입   | 설명                                        |
+| ---------------- | ------ | ------------------------------------------- |
+| id               | UUID   | PK                                          |
+| roomId           | UUID   | FK → NetworkRoom                            |
+| officeId         | UUID   | FK → Office                                 |
+| userId           | UUID   | FK → User                                   |
+| content          | String | 메시지 내용                                 |
+| sharedPropertyId | UUID?  | FK → NetworkSharedProperty (매물 카드 첨부) |
 
 ---
 
@@ -834,83 +906,83 @@ Task를 만들거나 상태 변경하지 않으며, 실제 사람 작업이 필�
 ### 설계 원칙
 
 1. **사무소별 귀속**: 모든 외부 매물은 `officeId` NOT NULL. 다른 사무소와 공유하지 않음 (법적 책임 격리).
-2. **2단 구조**: `ExternalListingGroup`(호실 단위 그룹) → `ExternalListing`(개별 매물). electron-estate의 `HouseProperty` / `Offer`에 1:1 대응.
-3. **기억 보존**: 사용자가 확인한 `unitId`, `inferredHo`, `memo`는 Group에 저장되며 **크롤러가 절대 덮어쓰지 않는다**.
+2. **2단 구조**: `ExternalListingGroup`(동일주소 그룹) → `ExternalListing`(개별 매물). electron-estate의 `HouseProperty` / `Offer`에 1:1 대응.
+3. **기억 보존**: 사용자가 확인한 `ho`, `memo`는 Group에 저장되며 **크롤러가 절대 덮어쓰지 않는다**.
 4. **매칭 규칙** (electron-estate 방식):
    - 새 `articleNo`가 DB에 있으면 기존 그룹 재사용
    - 없으면 네이버 `sameAddr` 그룹 내 다른 `articleNo` 중 DB에 있는 것 찾아 그룹 병합
-   - 둘 다 없으면 새 그룹 생성 (`unitId = null`)
-5. **호수 자동 추정 없음**: Phase 1에서는 호수 자동 추출 로직을 구현하지 않는다. 사용자가 UI에서 `inferredHo` 텍스트 입력 또는 `unitId` 수동 링크.
+   - 둘 다 없으면 새 그룹 생성
+5. **호수는 텍스트**: 호수는 내부 Unit과 연결하지 않고 사용자가 `ho`에 일반 문자열로 기록한다.
 6. **ActivityLog 추적 대상 아님**: 매일 크롤러 upsert가 감사 로그를 오염시키지 않도록 분리.
-7. **Unit 매칭은 느슨한 연결**: `unitId` nullable. 사용자가 UI에서 "이 그룹 = 101동 1503호"로 수동 링크. 자동 추론은 오매칭 리스크 때문에 하지 않음.
 
-### ExternalListingGroup (호실 단위 외부 매물 그룹)
-| 필드 | 타입 | 설명 |
-|------|------|------|
-| id | UUID | PK |
-| officeId | UUID | FK → Office (NOT NULL) |
-| siteId | UUID | FK → Site (단지 — 거의 항상 식별 가능) |
-| unitId | UUID? | FK → Unit (null = 호수 미매칭) |
-| buildingName | String? | 네이버가 준 동명 원문 ("101동" 등) |
-| inferredHo | String? | 사용자가 기록한 추정 호수 ("1503호") |
-| areaName | String? | 평형명 ("84A") |
-| exclusiveAreaM2 | Decimal? | 전용면적 |
-| transactionType | String | sale / jeonse / monthly |
-| memo | String? | 사용자 메모 — 크롤러 덮어쓰기 금지 |
-| status | String | unmatched / matched / verified / on_hold |
-| mainExternalListingId | UUID? | 대표 매물 FK (1:1, 네이버 representative 대응) |
-| firstSeenAt | DateTime | 최초 관측일 |
-| lastSeenAt | DateTime | 마지막 관측일 |
+### ExternalListingGroup (동일주소 외부 매물 그룹)
 
-> **핵심 불변 조건**: 같은 Group의 모든 Listing이 사라져도 Group은 유지된다. 사용자가 확정한 `unitId`·`memo`·`inferredHo`는 다음 크롤링에서 같은 호실 매물이 다시 올라오면 자동 재사용된다.
+| 필드                  | 타입     | 설명                                           |
+| --------------------- | -------- | ---------------------------------------------- |
+| id                    | UUID     | PK                                             |
+| officeId              | UUID     | FK → Office (NOT NULL)                         |
+| siteId                | UUID     | FK → Site (단지 — 거의 항상 식별 가능)         |
+| buildingName          | String?  | 네이버가 준 동명 원문 ("101동" 등)             |
+| ho                    | String?  | 사용자가 기록한 호수 텍스트 ("1503호")         |
+| areaName              | String?  | 평형명 ("84A")                                 |
+| exclusiveAreaM2       | Decimal? | 전용면적                                       |
+| transactionType       | String   | sale / jeonse / monthly                        |
+| memo                  | String?  | 사용자 메모 — 크롤러 덮어쓰기 금지             |
+| status                | String   | unmatched / verified / on_hold                 |
+| mainExternalListingId | UUID?    | 대표 매물 FK (1:1, 네이버 representative 대응) |
+| firstSeenAt           | DateTime | 최초 관측일                                    |
+| lastSeenAt            | DateTime | 마지막 관측일                                  |
+
+> **핵심 불변 조건**: 같은 Group의 모든 Listing이 사라져도 Group은 유지된다. 사용자가 기록한 `ho`·`memo`는 다음 크롤링에서 같은 동일주소 그룹이 다시 올라오면 자동 재사용된다.
 
 ### ExternalListing (개별 외부 매물 1건)
-| 필드 | 타입 | 설명 |
-|------|------|------|
-| id | UUID | PK |
-| officeId | UUID | FK → Office |
-| groupId | UUID | FK → ExternalListingGroup |
-| source | String | naver / kb / manual 등 (기본 "naver") |
-| articleNo | String | 네이버 매물번호 |
-| sourceUrl | String? | 원본 URL |
-| cpName | String? | 등록 채널명 (네이버/직방/부동산114) |
-| cpid | String? | 채널 ID |
-| cpPcArticleUrl | String? | PC 상세 URL |
-| representativeArticleNo | String? | 네이버 sameAddr 대표 articleNo (매칭 키) |
-| sameAddrCnt | Int? | 같은 주소 매물 수 |
-| sameAddrDirectCnt | Int? | 같은 주소 직접거래 수 |
-| sameAddrMaxPrc / sameAddrMinPrc | String? | 같은 주소 최고/최저가 |
-| transactionType | String | sale / jeonse / monthly |
-| price | Int? | 매매가/전세가 (만원) |
-| deposit | Int? | 보증금 (만원) |
-| monthlyRent | Int? | 월세 (만원) |
-| articleName | String? | 네이버 매물명 |
-| articleFeatureDesc | Text? | 특징 설명 |
-| detailDescription | Text? | 상세 설명 |
-| articleConfirmYmd | String? | 네이버 매물 확인일 |
-| floorInfo | String? | "저/중/고/23" 마스킹 원본 |
-| exclusiveAreaM2 | Decimal? | 전용면적 |
-| supplyAreaM2 | Decimal? | 공급면적 |
-| direction | String? | 향 |
-| tagList | JSONB? | 태그 배열 |
-| verificationTypeCode | String? | 소유주 확인 코드 (OWNER / NDOC1 등) |
-| realtorId | String? | 등록 중개사 ID |
-| realtorName | String? | 등록 중개사명 |
-| originalRealtorName | String? | 원 등록 중개사명 |
-| representativeTelNo | String? | 대표 번호 |
-| cellPhoneNo | String? | 휴대폰 |
-| ranking | Int? | 노출 순위 |
-| isSharedRank | Boolean | 공유 순위 여부 |
-| sharedRank | Int? | 공유 순위 |
-| sameRankNum | Int? | 같은 순위 매물 수 |
-| seango | Boolean | 선광고 (유료 상단 노출) |
-| epju | Boolean | e편주 (유료 광고) |
-| exposeStartYmd / exposeEndYmd | Int? | 노출 기간 |
-| priceChangeState | String? | 가격 변동 상태 |
-| isPriceModification | Boolean | 가격 수정 여부 |
-| raw | JSONB? | 원본 응답 전체 보존 |
-| firstSeenAt / lastSeenAt | DateTime | 관측 메타 |
-| isActive | Boolean | 최근 크롤링에서 살아있는지 |
+
+| 필드                            | 타입     | 설명                                     |
+| ------------------------------- | -------- | ---------------------------------------- |
+| id                              | UUID     | PK                                       |
+| officeId                        | UUID     | FK → Office                              |
+| groupId                         | UUID     | FK → ExternalListingGroup                |
+| source                          | String   | naver / kb / manual 등 (기본 "naver")    |
+| articleNo                       | String   | 네이버 매물번호                          |
+| sourceUrl                       | String?  | 원본 URL                                 |
+| cpName                          | String?  | 등록 채널명 (네이버/직방/부동산114)      |
+| cpid                            | String?  | 채널 ID                                  |
+| cpPcArticleUrl                  | String?  | PC 상세 URL                              |
+| representativeArticleNo         | String?  | 네이버 sameAddr 대표 articleNo (매칭 키) |
+| sameAddrCnt                     | Int?     | 같은 주소 매물 수                        |
+| sameAddrDirectCnt               | Int?     | 같은 주소 직접거래 수                    |
+| sameAddrMaxPrc / sameAddrMinPrc | String?  | 같은 주소 최고/최저가                    |
+| transactionType                 | String   | sale / jeonse / monthly                  |
+| price                           | Int?     | 매매가/전세가 (만원)                     |
+| deposit                         | Int?     | 보증금 (만원)                            |
+| monthlyRent                     | Int?     | 월세 (만원)                              |
+| articleName                     | String?  | 네이버 매물명                            |
+| articleFeatureDesc              | Text?    | 특징 설명                                |
+| detailDescription               | Text?    | 상세 설명                                |
+| articleConfirmYmd               | String?  | 네이버 매물 확인일                       |
+| floorInfo                       | String?  | "저/중/고/23" 마스킹 원본                |
+| exclusiveAreaM2                 | Decimal? | 전용면적                                 |
+| supplyAreaM2                    | Decimal? | 공급면적                                 |
+| direction                       | String?  | 향                                       |
+| tagList                         | JSONB?   | 태그 배열                                |
+| verificationTypeCode            | String?  | 소유주 확인 코드 (OWNER / NDOC1 등)      |
+| realtorId                       | String?  | 등록 중개사 ID                           |
+| realtorName                     | String?  | 등록 중개사명                            |
+| originalRealtorName             | String?  | 원 등록 중개사명                         |
+| representativeTelNo             | String?  | 대표 번호                                |
+| cellPhoneNo                     | String?  | 휴대폰                                   |
+| ranking                         | Int?     | 노출 순위                                |
+| isSharedRank                    | Boolean  | 공유 순위 여부                           |
+| sharedRank                      | Int?     | 공유 순위                                |
+| sameRankNum                     | Int?     | 같은 순위 매물 수                        |
+| seango                          | Boolean  | 선광고 (유료 상단 노출)                  |
+| epju                            | Boolean  | e편주 (유료 광고)                        |
+| exposeStartYmd / exposeEndYmd   | Int?     | 노출 기간                                |
+| priceChangeState                | String?  | 가격 변동 상태                           |
+| isPriceModification             | Boolean  | 가격 수정 여부                           |
+| raw                             | JSONB?   | 원본 응답 전체 보존                      |
+| firstSeenAt / lastSeenAt        | DateTime | 관측 메타                                |
+| isActive                        | Boolean  | 최근 크롤링에서 살아있는지               |
 
 > **unique**: `[officeId, source, articleNo]` — 같은 사무소가 같은 플랫폼의 같은 매물을 중복 등록 못 함.
 > **매칭 키로 쓰이는 컬럼**: `articleNo`, `representativeArticleNo`. 새 매물을 upsert할 때 이 두 값으로 기존 그룹을 찾음.
@@ -921,7 +993,13 @@ Task를 만들거나 상태 변경하지 않으며, 실제 사람 작업이 필�
 async function upsertExternalListing(officeId, naverArticle, sameAddrSiblings) {
   // 1. 같은 articleNo가 있나?
   let existing = await db.externalListing.findUnique({
-    where: { officeId_source_articleNo: { officeId, source: 'naver', articleNo: naverArticle.articleNo } },
+    where: {
+      officeId_source_articleNo: {
+        officeId,
+        source: "naver",
+        articleNo: naverArticle.articleNo,
+      },
+    },
     include: { group: true },
   });
   let group = existing?.group;
@@ -930,7 +1008,13 @@ async function upsertExternalListing(officeId, naverArticle, sameAddrSiblings) {
   if (!group) {
     for (const sibling of sameAddrSiblings) {
       const siblingExisting = await db.externalListing.findUnique({
-        where: { officeId_source_articleNo: { officeId, source: 'naver', articleNo: sibling.articleNo } },
+        where: {
+          officeId_source_articleNo: {
+            officeId,
+            source: "naver",
+            articleNo: sibling.articleNo,
+          },
+        },
         include: { group: true },
       });
       if (siblingExisting?.group) {
@@ -940,7 +1024,7 @@ async function upsertExternalListing(officeId, naverArticle, sameAddrSiblings) {
     }
   }
 
-  // 3. 그래도 없으면 새 그룹 생성 (unitId = null, 사용자가 나중에 링크)
+  // 3. 그래도 없으면 새 그룹 생성
   if (!group) {
     group = await db.externalListingGroup.create({
       data: {
@@ -954,9 +1038,15 @@ async function upsertExternalListing(officeId, naverArticle, sameAddrSiblings) {
     });
   }
 
-  // 4. Listing upsert (group의 unitId·memo·inferredHo는 절대 건드리지 않음)
+  // 4. Listing upsert (group의 ho·memo는 절대 건드리지 않음)
   await db.externalListing.upsert({
-    where: { officeId_source_articleNo: { officeId, source: 'naver', articleNo: naverArticle.articleNo } },
+    where: {
+      officeId_source_articleNo: {
+        officeId,
+        source: "naver",
+        articleNo: naverArticle.articleNo,
+      },
+    },
     create: { groupId: group.id, officeId, ...fieldsFromArticle },
     update: { price, ranking, lastSeenAt, ...updatableFields },
   });
@@ -987,36 +1077,38 @@ officeId = UUID   →  사장님이 직접 등록한 단골 업체
 - 공용 업체 풀은 광고비 없음 (순수 편의 기능)
 
 ### ServiceCategory (서비스 카테고리 마스터)
+
 읽기 전용 마스터 데이터. 대분류 → 세부 서비스 트리 구조.
 
-| 필드 | 타입 | 설명 |
-|------|------|------|
-| id | UUID | PK |
-| parentId | UUID? | FK → ServiceCategory (대분류면 null) |
-| name | String | 카테고리명 ("배관/수도", "누수 수리") |
-| slug | String | 코드명 ("plumbing", "leak_repair") |
-| sortOrder | Int | 정렬 순서 |
+| 필드      | 타입   | 설명                                  |
+| --------- | ------ | ------------------------------------- |
+| id        | UUID   | PK                                    |
+| parentId  | UUID?  | FK → ServiceCategory (대분류면 null)  |
+| name      | String | 카테고리명 ("배관/수도", "누수 수리") |
+| slug      | String | 코드명 ("plumbing", "leak_repair")    |
+| sortOrder | Int    | 정렬 순서                             |
 
 > 대분류 예시: 배관/수도, 보일러/난방, 전기/조명, 도배/장판, 방수/방충, 타일/욕실, 잠금/보안, 청소, 인테리어, 이사, 전문가
 > 세부 예시: 배관/수도 > 누수 수리, 배관 교체, 하수구 뚫음, 수전 교체, 동파 복구
 
 ### ServiceVendor (업체)
+
 서비스 업체 정보. 1인 업체부터 법인까지.
 
-| 필드 | 타입 | 설명 |
-|------|------|------|
-| id | UUID | PK |
-| officeId | UUID? | null = 공용 풀 / UUID = 사무소 개인 등록 |
-| name | String | 업체명 ("김사장수리", "(주)한솔설비") |
-| address | String? | 사무실/작업장 주소 |
+| 필드              | 타입     | 설명                                                    |
+| ----------------- | -------- | ------------------------------------------------------- |
+| id                | UUID     | PK                                                      |
+| officeId          | UUID?    | null = 공용 풀 / UUID = 사무소 개인 등록                |
+| name              | String   | 업체명 ("김사장수리", "(주)한솔설비")                   |
+| address           | String?  | 사무실/작업장 주소                                      |
 | serviceCategories | String[] | 서비스 카테고리 slug 목록 (["plumbing", "leak_repair"]) |
 | coverageDistricts | String[] | 서비스 가능 지역 districtCode 목록 (["11740", "11710"]) |
-| priceNote | String? | 대략적 단가 메모 ("누수 15~25만, 출장비 별도") |
-| memo | String? | 메모 ("야간 긴급 가능, 작업 깔끔") |
-| tags | String[] | 사용자 정의 태그 (["단골", "저렴"]) |
-| isActive | Boolean | 활성 여부 |
-| createdAt | DateTime | 생성일 |
-| updatedAt | DateTime | 수정일 |
+| priceNote         | String?  | 대략적 단가 메모 ("누수 15~25만, 출장비 별도")          |
+| memo              | String?  | 메모 ("야간 긴급 가능, 작업 깔끔")                      |
+| tags              | String[] | 사용자 정의 태그 (["단골", "저렴"])                     |
+| isActive          | Boolean  | 활성 여부                                               |
+| createdAt         | DateTime | 생성일                                                  |
+| updatedAt         | DateTime | 수정일                                                  |
 
 > index: [officeId]
 > index: coverageDistricts GIN (지역 검색)
@@ -1027,45 +1119,28 @@ officeId = UUID   →  사장님이 직접 등록한 단골 업체
 > **카테고리**: ServiceCategory 마스터의 slug를 String[]로 저장. 대분류와 세부 모두 포함 가능 ("plumbing" + "leak_repair").
 
 ### VendorContact (업체 담당자/연락처)
+
 업체별 연락처 목록. 대표번호, 기사별 직통 등.
 
-| 필드 | 타입 | 설명 |
-|------|------|------|
-| id | UUID | PK |
-| vendorId | UUID | FK → ServiceVendor |
-| name | String | 담당자명 또는 연락처명 ("김기사", "대표번호", "사무실") |
-| phone | String | 전화번호 |
-| role | String? | 역할 ("배관 담당", "대표", "야간 긴급") |
-| memo | String? | 메모 |
-| createdAt | DateTime | 생성일 |
+| 필드      | 타입     | 설명                                                    |
+| --------- | -------- | ------------------------------------------------------- |
+| id        | UUID     | PK                                                      |
+| vendorId  | UUID     | FK → ServiceVendor                                      |
+| name      | String   | 담당자명 또는 연락처명 ("김기사", "대표번호", "사무실") |
+| phone     | String   | 전화번호                                                |
+| role      | String?  | 역할 ("배관 담당", "대표", "야간 긴급")                 |
+| memo      | String?  | 메모                                                    |
+| createdAt | DateTime | 생성일                                                  |
 
 > index: [vendorId]
 > index: [phone] (CTI 검색용)
 > 1인 업체: VendorContact 1개 (사장님 본인 번호)
 > 법인 업체: VendorContact N개 (대표번호 + 기사별 + 사무실)
 
-### 연락처 통합 검색 (DB View)
+### 연락처 통합 검색
 
-Contact(사람)와 VendorContact(업체 담당자)를 통합 검색하기 위한 DB View.
-
-```sql
-CREATE VIEW all_contacts_view AS
--- 사람
-SELECT id, office_id, name, phone, phone2,
-       'person' as source_type, NULL as vendor_id, NULL as vendor_name
-FROM contacts
-
-UNION ALL
-
--- 업체 담당자
-SELECT vc.id, sv.office_id, vc.name, vc.phone, NULL as phone2,
-       'vendor' as source_type, sv.id as vendor_id, sv.name as vendor_name
-FROM vendor_contacts vc
-JOIN service_vendors sv ON vc.vendor_id = sv.id;
-```
-
-> CTI 전화 팝업: `SELECT * FROM all_contacts_view WHERE phone = ?`
-> 통합 검색: `SELECT * FROM all_contacts_view WHERE name LIKE ? AND (office_id = ? OR office_id IS NULL)`
+현재는 DB View 없이 `ContactPhone.phone`과 `VendorContact.normalizedPhone`을 병렬 조회한다.
+사람 연락처의 `phone`은 이미 숫자만 저장되므로 별도 정규화 컬럼이 필요하지 않다.
 
 ### 업체 검색 흐름
 
@@ -1090,52 +1165,52 @@ ORDER BY
 
 ## 테이블 목록 (총 39개)
 
-| # | 테이블 | DB명 | 설명 |
-|---|--------|------|------|
-| — | **법정동 마스터 (공공데이터 import)** | | |
-| 1 | Province | provinces | 시도 (서울특별시 등) |
-| 2 | District | districts | 시군구 (강동구 등) |
-| 3 | Ward | wards | 읍면동 (고덕동 등) |
-| — | **멀티테넌시** | | |
-| 4 | Office | offices | 사무소 (멀티테넌시, commissionConfig JSONB) |
-| 5 | User | users | 사용자/인증 |
-| — | **장소/매물** | | |
-| 6 | Site | sites | 장소 (wardCode FK → Ward) |
-| 7 | SiteUnitType | site_unit_types | 평형 카탈로그 (84A, 59B 등 타입별 면적/방수) |
-| 8 | Dong | dongs | 동 |
-| 9 | Unit | units | 호 (floor, lineNo, siteUnitTypeId FK) |
-| 10 | OfficeSite | office_sites | 관리 단지 (즐겨찾기) |
-| 11 | Property | properties | 관리 단위 (사무소가 관리하는 부동산 단위) |
-| 12 | Listing | listings | 매물 (거래 단위 — 가격, 거래유형, 확인상태) |
-| 13 | PriceHistory | price_histories | 가격 변경 이력 (Listing 참조) |
-| — | **연락처** | | |
-| 14 | Contact | contacts | 연락처 (모든 사람) |
-| 15 | ContactRelation | contact_relations | 사람 간 관계 (가족, 전문가) |
-| 16 | PropertyContact | property_contacts | 매물 관련인 (소유자, 대리인) |
-| 17 | Tenant | tenants | 세입자 + 계약정보 |
-| — | **CRM 핵심** | | |
-| 18 | BuyerRequirement | buyer_requirements | 구매 희망조건 |
-| 19 | Consultation | consultations | 상담 기록 |
-| 20 | Match | matches | 매칭 파이프라인 (Listing 참조) |
-| 21 | Deal | deals | 거래 (Listing 참조, 수수료 매도측/매수측 분리, 공동중개) |
-| 22 | Contract | contracts | 계약 상세 (Deal 1:1, 금액 스케줄, 임대기간) |
-| 23 | DealParticipant | deal_participants | 거래 참여자 (직원별 역할/수수료/정산) |
-| — | **업무** | | |
-| 24 | Task | tasks | 업무 |
-| 25 | CalendarEvent | calendar_events | 캘린더 |
-| 26 | ActivityLog | activity_logs | 활동 로그 (감사 추적) |
-| — | **알림** | | |
-| 27 | Notification | notifications | 인앱 알림 (WebSocket + DB) |
-| — | **공동 중개망** | | |
-| 28 | NetworkRoom | network_rooms | 중개방 |
-| 29 | NetworkRoomMember | network_room_members | 중개방 참여자 |
-| 30 | NetworkSharedProperty | network_shared_properties | 공유 매물 (Listing 참조, 마스킹) |
-| 31 | NetworkInquiry | network_inquiries | 공유 매물 문의 |
-| 32 | NetworkMessage | network_messages | 중개방 채팅 |
-| — | **외부 시장 매물 (광고노트)** | | |
-| 33 | ExternalListingGroup | external_listing_groups | 호실 단위 외부 매물 그룹 (HouseProperty 대응, 사용자 기억 보존) |
-| 34 | ExternalListing | external_listings | 개별 외부 매물 1건 (Offer 대응, articleNo 기준 unique) |
-| — | **업체 디렉토리** | | |
-| 35 | ServiceCategory | service_categories | 서비스 카테고리 마스터 (대분류→세부) |
-| 36 | ServiceVendor | service_vendors | 업체 (officeId nullable, 공용 풀 + 사무소별) |
-| 37 | VendorContact | vendor_contacts | 업체 담당자/연락처 (1:N) |
+| #   | 테이블                                | DB명                      | 설명                                                            |
+| --- | ------------------------------------- | ------------------------- | --------------------------------------------------------------- |
+| —   | **법정동 마스터 (공공데이터 import)** |                           |                                                                 |
+| 1   | Province                              | provinces                 | 시도 (서울특별시 등)                                            |
+| 2   | District                              | districts                 | 시군구 (강동구 등)                                              |
+| 3   | Ward                                  | wards                     | 읍면동 (고덕동 등)                                              |
+| —   | **멀티테넌시**                        |                           |                                                                 |
+| 4   | Office                                | offices                   | 사무소 (멀티테넌시, commissionConfig JSONB)                     |
+| 5   | User                                  | users                     | 사용자/인증                                                     |
+| —   | **장소/매물**                         |                           |                                                                 |
+| 6   | Site                                  | sites                     | 장소 (wardCode FK → Ward)                                       |
+| 7   | SiteUnitType                          | site_unit_types           | 평형 카탈로그 (84A, 59B 등 타입별 면적/방수)                    |
+| 8   | Dong                                  | dongs                     | 동                                                              |
+| 9   | Unit                                  | units                     | 호 (floor, lineNo, siteUnitTypeId FK)                           |
+| 10  | OfficeSite                            | office_sites              | 사무소별 관리 단지 구독 + 즐겨찾기                              |
+| 11  | Property                              | properties                | 관리 단위 (사무소가 관리하는 부동산 단위)                       |
+| 12  | Listing                               | listings                  | 매물 (거래 단위 — 가격, 거래유형, 확인상태)                     |
+| 13  | PriceHistory                          | price_histories           | 가격 변경 이력 (Listing 참조)                                   |
+| —   | **연락처**                            |                           |                                                                 |
+| 14  | Contact                               | contacts                  | 연락처 (모든 사람)                                              |
+| 15  | ContactRelation                       | contact_relations         | 사람 간 관계 (가족, 전문가)                                     |
+| 16  | PropertyContact                       | property_contacts         | 매물 관련인 (소유자, 대리인)                                    |
+| 17  | Tenant                                | tenants                   | 세입자 + 계약정보                                               |
+| —   | **CRM 핵심**                          |                           |                                                                 |
+| 18  | BuyerRequirement                      | buyer_requirements        | 구매 희망조건                                                   |
+| 19  | Consultation                          | consultations             | 상담 기록                                                       |
+| 20  | Match                                 | matches                   | 매칭 파이프라인 (Listing 참조)                                  |
+| 21  | Deal                                  | deals                     | 거래 (Listing 참조, 수수료 매도측/매수측 분리, 공동중개)        |
+| 22  | Contract                              | contracts                 | 계약 상세 (Deal 1:1, 금액 스케줄, 임대기간)                     |
+| 23  | DealParticipant                       | deal_participants         | 거래 참여자 (직원별 역할/수수료/정산)                           |
+| —   | **업무**                              |                           |                                                                 |
+| 24  | Task                                  | tasks                     | 업무                                                            |
+| 25  | CalendarEvent                         | calendar_events           | 캘린더                                                          |
+| 26  | ActivityLog                           | activity_logs             | 활동 로그 (감사 추적)                                           |
+| —   | **알림**                              |                           |                                                                 |
+| 27  | Notification                          | notifications             | 인앱 알림 (WebSocket + DB)                                      |
+| —   | **공동 중개망**                       |                           |                                                                 |
+| 28  | NetworkRoom                           | network_rooms             | 중개방                                                          |
+| 29  | NetworkRoomMember                     | network_room_members      | 중개방 참여자                                                   |
+| 30  | NetworkSharedProperty                 | network_shared_properties | 공유 매물 (Listing 참조, 마스킹)                                |
+| 31  | NetworkInquiry                        | network_inquiries         | 공유 매물 문의                                                  |
+| 32  | NetworkMessage                        | network_messages          | 중개방 채팅                                                     |
+| —   | **외부 시장 매물 (광고노트)**         |                           |                                                                 |
+| 33  | ExternalListingGroup                  | external_listing_groups   | 호실 단위 외부 매물 그룹 (HouseProperty 대응, 사용자 기억 보존) |
+| 34  | ExternalListing                       | external_listings         | 개별 외부 매물 1건 (Offer 대응, articleNo 기준 unique)          |
+| —   | **업체 디렉토리**                     |                           |                                                                 |
+| 35  | ServiceCategory                       | service_categories        | 서비스 카테고리 마스터 (대분류→세부)                            |
+| 36  | ServiceVendor                         | service_vendors           | 업체 (officeId nullable, 공용 풀 + 사무소별)                    |
+| 37  | VendorContact                         | vendor_contacts           | 업체 담당자/연락처 (1:N)                                        |

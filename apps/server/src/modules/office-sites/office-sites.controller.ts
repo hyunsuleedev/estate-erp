@@ -44,7 +44,7 @@ export class OfficeSitesController {
 
   @Post()
   add(
-    @Body() dto: { siteId: string; memo?: string },
+    @Body() dto: { siteId: string; memo?: string; isFavorite?: boolean },
     @CurrentUser() user: CurrentUserPayload,
   ) {
     return this.service.add(user.officeId, dto);
@@ -53,7 +53,7 @@ export class OfficeSitesController {
   @Patch(':id')
   update(
     @Param('id') id: string,
-    @Body() dto: { memo?: string | null },
+    @Body() dto: { memo?: string | null; isFavorite?: boolean },
     @CurrentUser() user: CurrentUserPayload,
   ) {
     return this.service.update(id, user.officeId, dto);

@@ -26,6 +26,82 @@ export const TRANSACTION_TYPE_LABELS: Record<TransactionType, string> = {
 };
 
 /**
+ * 연락처 사이에 저장할 수 있는 관계.
+ *
+ * relationType은 `relatedContactId`가 `contactId`에게 어떤 관계인지를 뜻한다.
+ * 예: contactId=자녀, relatedContactId=어머니, relationType=parent.
+ */
+export const ContactRelationType = {
+  PARENT: 'parent',
+  SPOUSE: 'spouse',
+  CHILD: 'child',
+  SIBLING: 'sibling',
+  LAWYER: 'lawyer',
+  TAX_AGENT: 'tax_agent',
+  OTHER: 'other',
+} as const;
+export type ContactRelationType =
+  (typeof ContactRelationType)[keyof typeof ContactRelationType];
+
+export const CONTACT_RELATION_TYPES = Object.values(ContactRelationType);
+
+/** 구매 의뢰 안에서 Contact가 맡는 업무상 역할. 가족관계와는 별개다. */
+export const BuyerIntakeContactRole = {
+  BUYER: 'buyer',
+  CO_BUYER: 'co_buyer',
+  REPRESENTATIVE: 'representative',
+  SUPPORTER: 'supporter',
+  ADVISOR: 'advisor',
+  OTHER: 'other',
+} as const;
+export type BuyerIntakeContactRole =
+  (typeof BuyerIntakeContactRole)[keyof typeof BuyerIntakeContactRole];
+
+export const BUYER_INTAKE_CONTACT_ROLES = Object.values(
+  BuyerIntakeContactRole,
+);
+
+/** 반대쪽 Contact에서 조회할 때만 사용하는 파생 관계 유형. */
+export type ContactRelationDisplayType = ContactRelationType | 'client';
+
+export const CONTACT_RELATION_INVERSE_TYPES: Record<
+  ContactRelationType,
+  ContactRelationDisplayType
+> = {
+  parent: 'child',
+  child: 'parent',
+  spouse: 'spouse',
+  sibling: 'sibling',
+  lawyer: 'client',
+  tax_agent: 'client',
+  other: 'other',
+};
+
+export const CONTACT_RELATION_TYPE_LABELS: Record<
+  ContactRelationDisplayType,
+  string
+> = {
+  parent: '부모',
+  spouse: '배우자',
+  child: '자녀',
+  sibling: '형제자매',
+  lawyer: '법무사',
+  tax_agent: '세무사',
+  other: '기타',
+  client: '의뢰인',
+};
+
+export function invertContactRelationType(
+  relationType: string,
+): ContactRelationDisplayType | string {
+  return (
+    CONTACT_RELATION_INVERSE_TYPES[
+      relationType as ContactRelationType
+    ] ?? relationType
+  );
+}
+
+/**
  * 계약서 거래 유형 (Contract 단계).
  * Listing 의 3종에 더해 교환·전대·권리양도·권리승계를 추가로 표현한다.
  * 매물 등록 UX 는 단순하게 두고, 계약서 작성 시점에만 확장 유형을 선택한다.
@@ -160,9 +236,9 @@ export const MAINTENANCE_FEE_INCLUDE_LABELS: Record<
 /**
  * CP 광고 원장의 생명주기.
  *
- * ListingAdvertisement는 CP에서 실제로 관측한 광고만 저장한다. 작성·승인
- * 대기는 AgentActionRequest가, 수집 실패는 AdvertisementSyncRun/Step이
- * 소유하므로 광고 row에는 active / ended만 존재한다.
+ * ListingAdvertisement는 CP에서 실제로 관측한 광고만 저장한다. 사용자가
+ * 요청한 광고 작업은 일반 Task가 나타내고, 세부 실행·재시도 상태는 로컬
+ * Skill이 소유하므로 광고 row에는 active / ended만 존재한다.
  */
 export const ListingAdvertisementStatus = {
   ACTIVE: 'active',
@@ -222,7 +298,7 @@ export function inferOfficeAdvertisementFloorExposureMode(
 }
 
 /**
- * 의뢰(ListingIntake)의 생명주기만 저장한다.
+ * 의뢰(ListingIntake / BuyerIntake)의 생명주기만 저장한다.
  *
  * - 확인 여부/신선도는 lastVerifiedAt, lastCheckResult, nextConfirmAt에서 파생
  * - Listing의 거래중/종료는 비취소 Deal에서 파생
@@ -286,8 +362,7 @@ export type ListingAvailability =
 
 /** Listing을 현재 거래 진행 중으로 표시하는 활성 Deal 단계 */
 export const IN_CONTRACT_DEAL_STAGES = [
-  'selection',
-  'negotiating',
+  'preparing',
   'preContract',
   'contracted',
   'settling',
@@ -306,26 +381,70 @@ export const OCCUPYING_DEAL_STAGES = [
 /** 매칭 파이프라인 스테이지 */
 export const MatchStage = {
   SUGGESTED: 'suggested',
-  BUYER_CONTACTED: 'buyerContacted',
+  BUYER_INTERESTED: 'buyerInterested',
+  VIEWING_CONFIRMED: 'viewingConfirmed',
   VIEWING: 'viewing',
-  OWNER_CONTACTED: 'ownerContacted',
   NEGOTIATING: 'negotiating',
   DEAL_CREATED: 'dealCreated',
   CLOSED: 'closed',
 } as const;
 export type MatchStage = (typeof MatchStage)[keyof typeof MatchStage];
 
+/** 화면·서버·MCP가 공유하는 매칭 단계 순서 */
+export const MATCH_STAGE_ORDER = [
+  MatchStage.SUGGESTED,
+  MatchStage.BUYER_INTERESTED,
+  MatchStage.VIEWING_CONFIRMED,
+  MatchStage.VIEWING,
+  MatchStage.NEGOTIATING,
+  MatchStage.DEAL_CREATED,
+  MatchStage.CLOSED,
+] as const;
+
+/** 2026-08 파이프라인 개편 이전 저장값 — 마이그레이션 중 읽기 호환용 */
+export const LEGACY_MATCH_STAGE_VALUES = [
+  'buyerContacted',
+  'ownerContacted',
+] as const;
+export type LegacyMatchStage = (typeof LEGACY_MATCH_STAGE_VALUES)[number];
+
+export function normalizeMatchStage(stage: string): string {
+  if (stage === 'buyerContacted') return MatchStage.BUYER_INTERESTED;
+  if (stage === 'ownerContacted') return MatchStage.VIEWING_CONFIRMED;
+  return stage;
+}
+
 /** 거래 파이프라인 스테이지 */
 export const DealStage = {
-  SELECTION: 'selection', // 매물 선정/임장
-  NEGOTIATING: 'negotiating', // 조건 협상 중
+  PREPARING: 'preparing', // 최종 조건/당사자/계약 일정·서류 준비
   PRE_CONTRACT: 'preContract', // 가계약금 수령 (Contract 없음)
-  CONTRACTED: 'contracted', // 본계약 체결 (Contract 생성됨)
+  CONTRACTED: 'contracted', // 본계약 진행 (이 단계에서 Contract 작성)
   SETTLING: 'settling', // 중도금/잔금 진행
   COMPLETED: 'completed', // 잔금 완료 + 등기이전
   CLOSED: 'closed', // 수수료 정산까지 종료
 } as const;
 export type DealStage = (typeof DealStage)[keyof typeof DealStage];
+
+/** 화면·서버·MCP가 공유하는 거래 단계 순서. 가계약은 선택 단계다. */
+export const DEAL_STAGE_ORDER = [
+  DealStage.PREPARING,
+  DealStage.PRE_CONTRACT,
+  DealStage.CONTRACTED,
+  DealStage.SETTLING,
+  DealStage.COMPLETED,
+  DealStage.CLOSED,
+] as const;
+
+/** 2026-08 거래 경계 개편 이전 저장값 — 마이그레이션 중 읽기 호환용 */
+export const LEGACY_DEAL_STAGE_VALUES = ['selection', 'negotiating'] as const;
+export type LegacyDealStage = (typeof LEGACY_DEAL_STAGE_VALUES)[number];
+
+export function normalizeDealStage(stage: string): string {
+  if (stage === 'selection' || stage === 'negotiating') {
+    return DealStage.PREPARING;
+  }
+  return stage;
+}
 
 /** 거래 취소 주체 */
 export const DealCancelledBy = {

@@ -1,8 +1,8 @@
 /**
  * External Listing 더미 seed (광고노트 UI 테스트용)
  *
- * 고덕그라시움 + KY1234 사무소를 전제로 외부 매물 30건을 생성한다.
- * 거래유형 3가지, 일부 호실은 unitId 확정, 일부는 미매칭, 같은 호실에
+ * 고덕그라시움 + 테스트 사무소를 전제로 외부 매물 30건을 생성한다.
+ * 거래유형 3가지, 일부 호수는 텍스트로 확인, 일부는 미확인, 같은 호실에
  * 경쟁 매물 여러 개가 걸린 케이스도 포함.
  *
  * 실행: pnpm exec tsx prisma/seed-external-listings.ts
@@ -12,7 +12,7 @@ import { PrismaClient, Prisma } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
-const OFFICE_CODE = 'KY1234';
+const TEST_OFFICE_LICENSE_NO = '11740-2026-0001';
 const SITE_NAME = '고덕그라시움';
 
 type Txn = 'sale' | 'jeonse' | 'monthly';
@@ -39,7 +39,7 @@ interface DummyItem {
   epju?: boolean;
   verificationTypeCode?: string;
   articleFeatureDesc?: string;
-  // 사용자가 호수를 확정했는지 (true면 unitId 연결 + status = verified)
+  // 사용자가 호수 텍스트를 확인했는지
   isVerified: boolean;
 }
 
@@ -593,11 +593,17 @@ const DUMMY_ITEMS: DummyItem[] = [
 
 async function main() {
   // 1. Office 조회
-  const office = await prisma.office.findUnique({
-    where: { code: OFFICE_CODE },
-  });
+  const office = process.env.SEED_OFFICE_ID
+    ? await prisma.office.findUnique({
+        where: { id: process.env.SEED_OFFICE_ID },
+      })
+    : await prisma.office.findFirst({
+        where: { licenseNo: TEST_OFFICE_LICENSE_NO },
+      });
   if (!office) {
-    throw new Error(`Office ${OFFICE_CODE} not found. seed-test-office를 먼저 실행하세요.`);
+    throw new Error(
+      '테스트 Office를 찾을 수 없습니다. seed-test-office를 먼저 실행하세요.',
+    );
   }
 
   // 2. Site 조회
@@ -608,7 +614,7 @@ async function main() {
     throw new Error(`Site ${SITE_NAME} not found. seed-gracium을 먼저 실행하세요.`);
   }
 
-  console.log(`Office: ${office.name} (${office.code})`);
+  console.log(`Office: ${office.name}`);
   console.log(`Site:   ${site.name}`);
 
   // 3. 기존 더미 정리 (멱등 실행)
@@ -622,13 +628,7 @@ async function main() {
     `기존 정리: listings ${deletedListings.count}건 / groups ${deletedGroups.count}건`,
   );
 
-  // 4. dongName → dong 조회
-  const dongs = await prisma.dong.findMany({
-    where: { siteId: site.id },
-  });
-  const dongByName = new Map(dongs.map((d) => [d.name, d]));
-
-  // 5. groupKey별로 묶어서 Group 생성 → Listings upsert
+  // 4. groupKey별로 묶어서 Group 생성 → Listings upsert
   const groupedItems = new Map<string, DummyItem[]>();
   for (const item of DUMMY_ITEMS) {
     const list = groupedItems.get(item.groupKey) ?? [];
@@ -645,42 +645,18 @@ async function main() {
   for (const [groupKey, items] of groupedItems) {
     const rep = items.find((x) => x.isRepresentative) ?? items[0];
 
-    // Unit 매칭 (확정인 경우만)
-    // 더미 ho가 실제 DB에 없으면 같은 동의 임의 호실로 fallback
-    let unitId: string | null = null;
-    let resolvedHo = rep.ho;
-    if (rep.isVerified) {
-      const dong = dongByName.get(rep.dongName);
-      if (dong) {
-        let unit = rep.ho
-          ? await prisma.unit.findFirst({
-              where: { siteId: site.id, dongId: dong.id, name: rep.ho },
-            })
-          : null;
-        if (!unit) {
-          unit = await prisma.unit.findFirst({
-            where: { siteId: site.id, dongId: dong.id, floor: { not: null } },
-            orderBy: { floor: 'desc' },
-          });
-          if (unit) resolvedHo = unit.name;
-        }
-        if (unit) unitId = unit.id;
-      }
-    }
-
-    const status = rep.isVerified && unitId ? 'verified' : 'unmatched';
+    const status = rep.isVerified ? 'verified' : 'unmatched';
 
     const group = await prisma.externalListingGroup.create({
       data: {
         officeId: office.id,
         siteId: site.id,
-        unitId,
         buildingName: rep.dongName,
-        inferredHo: rep.isVerified ? resolvedHo : null,
+        ho: rep.isVerified ? rep.ho : null,
         areaName: rep.areaName,
         exclusiveAreaM2: new Prisma.Decimal(rep.exclusiveAreaM2),
         transactionType: rep.transactionType,
-        memo: rep.isVerified ? `${rep.dongName} ${resolvedHo}호 확인 완료` : null,
+        memo: rep.isVerified ? `${rep.dongName} ${rep.ho}호 확인 완료` : null,
         status,
         firstSeenAt: now,
         lastSeenAt: now,

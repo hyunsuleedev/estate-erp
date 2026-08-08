@@ -7,29 +7,27 @@
 // 법적 책임은 입력 주체(사무소) 측에 있으며, Estate ERP는 입력 API만 제공.
 //
 // 매칭 모델 — electron-estate 방식:
-//   - ExternalListingGroup = 호실 단위의 경쟁 매물 묶음 (= HouseProperty 대응)
+//   - ExternalListingGroup = 동일주소 경쟁 매물 묶음 (= HouseProperty 대응)
 //   - ExternalListing      = 개별 매물 1건 (= Offer 대응, articleNo 고유)
 //   - 같은 articleNo 재등장 또는 네이버 sameAddr 그룹 내 다른 articleNo가
-//     DB에 있으면 기존 그룹에 자동 합류 → memo·unitId·inferredHo 승계.
-//   - 호수 자동 추정은 Phase 1에서 하지 않음. unitId 매칭은 사용자가 UI에서
-//     수동으로 Unit에 링크하는 방식(느슨한 연결).
+//     DB에 있으면 기존 그룹에 자동 합류 → memo·ho 승계.
+//   - 호수는 Unit과 연결하지 않고 사용자가 기록한 텍스트로만 보존한다.
 //   - ActivityLog 추적 대상 아님. 크롤러 upsert가 감사 로그를 오염시키지 않도록
 //     분리.
 
-/// 호실 단위 외부 매물 그룹. 네이버 sameAddr 그룹 + 사용자가 확인한 호수·메모를
+/// 동일주소 외부 매물 그룹. 네이버 sameAddr 그룹 + 사용자가 확인한 호수·메모를
 /// 기억하는 중간 레이어. 그룹에 속한 모든 ExternalListing이 사라져도 그룹 자체는
-/// 유지되며, 사용자가 확정한 unitId·memo는 크롤러가 덮어쓸 수 없다.
+/// 유지되며, 사용자가 기록한 ho·memo는 크롤러가 덮어쓸 수 없다.
 model ExternalListingGroup {
   id       String @id @default(uuid()) @db.Uuid
   officeId String @map("office_id") @db.Uuid
 
-  // 매칭 대상 (느슨한 연결)
-  siteId String  @map("site_id") @db.Uuid // 단지는 거의 항상 식별 가능
-  unitId String? @map("unit_id") @db.Uuid // null = 호수 미매칭, 값 = 사용자가 수동 링크
+  // 단지는 식별하지만 호수는 Unit 관계 없이 텍스트로만 저장한다.
+  siteId String @map("site_id") @db.Uuid
 
   // 네이버 원본 힌트 (호수 매칭 실패 시 사용자가 보고 판단)
   buildingName    String?  @map("building_name") // "101동" 등 네이버 원문
-  inferredHo      String?  @map("inferred_ho") // 사용자가 기록한 추정 호수 ("1503호" 등)
+  ho              String? // 사용자가 기록한 호수 텍스트 ("1503호" 등)
   areaName        String?  @map("area_name") // "84A" 평형명
   exclusiveAreaM2 Decimal? @map("exclusive_area_m2") @db.Decimal
   transactionType String   @map("transaction_type") // sale / jeonse / monthly
@@ -37,7 +35,7 @@ model ExternalListingGroup {
   // 사용자 메모 — 크롤러가 절대 덮어쓰지 않음
   memo     String?
   favorite Boolean @default(false) // 별표 토글 (electron-estate HouseProperty.favorite 대응)
-  status   String  @default("unmatched") // unmatched / matched / verified / on_hold
+  status   String  @default("unmatched") // unmatched / verified / on_hold
 
   // 대표 매물 (electron-estate의 HouseProperty.mainOfferId 대응)
   mainExternalListingId String? @unique @map("main_external_listing_id") @db.Uuid
@@ -49,12 +47,10 @@ model ExternalListingGroup {
 
   office              Office            @relation(fields: [officeId], references: [id])
   site                Site              @relation(fields: [siteId], references: [id])
-  unit                Unit?             @relation(fields: [unitId], references: [id])
   mainExternalListing ExternalListing?  @relation("GroupMainListing", fields: [mainExternalListingId], references: [id])
   listings            ExternalListing[] @relation("GroupListings")
 
   @@index([officeId, siteId])
-  @@index([officeId, unitId])
   @@index([officeId, status])
   @@index([officeId, lastSeenAt])
   @@map("external_listing_groups")
@@ -153,7 +149,7 @@ model ExternalListing {
 /// (office, site, transactionType) 스코프에 대한 batchUpsert들을 마친 뒤 완료를
 /// 호출하면, 세션 시작 이후 한 번도 touch되지 않은 external_listings 행이
 /// is_active=false로 소프트 삭제된다. Group 행은 절대 삭제하지 않는다 (사용자가
-/// 확정한 unitId·memo·inferredHo 보존).
+/// 기록한 ho·memo 보존).
 ///
 /// 동시성: 같은 스코프에 active 세션이 하나만 존재할 수 있도록 부분 유니크 인덱스로
 /// 강제한다 (migration SQL에서 직접 추가 — Prisma는 부분 인덱스를 표현 못 함).
@@ -182,45 +178,4 @@ model ExternalListingSnapshotSession {
   @@index([officeId, siteId, transactionType, status])
   @@index([officeId, startedAt])
   @@map("external_listing_snapshot_sessions")
-}
-
-/// 사무소별 외부 수집 대상 정의. "우리 사무소가 어떤 단지를 외부 플랫폼의 어떤
-/// 코드로 수집하는가"라는 운영 설정이며, 단지의 객관적 식별자가 아니다.
-///
-/// 관리단지(OfficeSite)와는 별개 축이다. 관리단지는 즐겨찾기이고 여기는 수집
-/// 대상이므로, 관리단지가 아닌 단지(경쟁 단지 조사 등)도 수집할 수 있고 관리단지라고
-/// 자동으로 수집 대상이 되지도 않는다. 관리단지 → 수집 대상은 일괄 "가져오기"로만
-/// 연결한다.
-///
-/// Site.naverComplexCode와의 관계: 그 컬럼은 공공 import가 채우는 기본값 제안일
-/// 뿐이며, 수집 경로는 이 테이블만 읽는다. 한 번 등록된 뒤 import가 Site 컬럼을
-/// 갱신해도 이 행은 건드리지 않는다 (사무소가 단독 소유).
-///
-/// transactionType은 여기 두지 않는다 — 수집 스코프의 거래유형 축은
-/// ExternalListingSnapshotSession이 이미 소유한다.
-model ExternalListingSource {
-  id       String @id @default(uuid()) @db.Uuid
-  officeId String @map("office_id") @db.Uuid
-  siteId   String @map("site_id") @db.Uuid
-
-  provider     String // naver (향후 kb 등)
-  externalCode String @map("external_code") // 네이버 complexNo ("117842")
-
-  /// 단지 타입. Site.type과 같은 어휘(apartment / officetel / villa ...)를 쓰고,
-  /// 플랫폼별 필터 코드(네이버 a=APT:PRE:ABYG:JGC 등) 변환은 수집기 쪽 책임이다.
-  type String
-
-  isEnabled       Boolean   @default(true) @map("is_enabled")
-  lastCollectedAt DateTime? @map("last_collected_at")
-
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  office Office @relation(fields: [officeId], references: [id])
-  site   Site   @relation(fields: [siteId], references: [id])
-
-  @@unique([officeId, siteId, provider])
-  @@index([officeId, provider, isEnabled])
-  @@index([officeId, externalCode])
-  @@map("external_listing_sources")
 }

@@ -78,7 +78,7 @@ const baseDeal = {
   officeId: 'office-1',
   listingId: 'listing-1',
   listing: { id: 'listing-1', intakeId: 'intake-1' },
-  stage: 'negotiating',
+  stage: 'preparing',
   isCancelled: false,
   buyerContact: null,
   sellerContact: null,
@@ -126,17 +126,83 @@ describe('DealsService 배타 단계 가드', () => {
     expect(tx.listingIntake.updateMany).not.toHaveBeenCalled();
   });
 
-  it('selection → negotiating (비배타 전이) 는 가드/동기화 없이 통과', async () => {
+  it('계약 준비 단계의 조건 수정은 가드/동기화 없이 통과', async () => {
     const { prisma, tx } = buildMocks({
-      existingDeal: { ...baseDeal, stage: 'selection' },
+      existingDeal: baseDeal,
     });
     const service = new DealsService(prisma);
 
-    await service.updateStage('deal-1', 'office-1', { stage: 'negotiating' });
+    await service.updateStage('deal-1', 'office-1', { stage: 'preparing' });
 
     expect(tx.$executeRaw).not.toHaveBeenCalled();
     expect(tx.listing.updateMany).not.toHaveBeenCalled();
     expect(tx.listingIntake.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('가계약 없이 계약 준비에서 본계약으로 바로 이동할 수 있다', async () => {
+    const { prisma, tx } = buildMocks({
+      existingDeal: baseDeal,
+    });
+    const service = new DealsService(prisma);
+
+    await service.updateStage('deal-1', 'office-1', { stage: 'contracted' });
+
+    expect(tx.deal.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ stage: 'contracted' }),
+      }),
+    );
+  });
+
+  it('가계약에서 계약서 없이 본계약으로 이동할 수 있다', async () => {
+    const { prisma, tx } = buildMocks({
+      existingDeal: { ...baseDeal, stage: 'preContract' },
+    });
+    const service = new DealsService(prisma);
+
+    await service.updateStage('deal-1', 'office-1', { stage: 'contracted' });
+
+    expect(tx.deal.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ stage: 'contracted' }),
+      }),
+    );
+  });
+
+  it('계약서 없이 본계약에서 중도금·잔금 단계로 이동할 수 없다', async () => {
+    const { prisma } = buildMocks({
+      existingDeal: { ...baseDeal, stage: 'contracted' },
+    });
+    const service = new DealsService(prisma);
+
+    await expect(
+      service.updateStage('deal-1', 'office-1', { stage: 'settling' }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('계약서가 있으면 본계약에서 중도금·잔금 단계로 이동할 수 있다', async () => {
+    const { prisma, tx } = buildMocks({
+      existingDeal: { ...baseDeal, stage: 'contracted' },
+      contractExists: true,
+    });
+    const service = new DealsService(prisma);
+
+    await service.updateStage('deal-1', 'office-1', { stage: 'settling' });
+
+    expect(tx.deal.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ stage: 'settling' }),
+      }),
+    );
+  });
+
+  it('거래 파이프라인에 없는 단계는 거부한다', async () => {
+    const { prisma } = buildMocks({ existingDeal: baseDeal });
+    const service = new DealsService(prisma);
+
+    await expect(
+      service.updateStage('deal-1', 'office-1', { stage: 'viewing' }),
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 });
 
@@ -215,9 +281,9 @@ describe('DealsService 취소', () => {
     expect(tx.listingIntake.updateMany).not.toHaveBeenCalled();
   });
 
-  it('selection 단계 취소도 상태 쓰기 없이 통과한다', async () => {
+  it('계약 준비 단계 취소도 상태 쓰기 없이 통과한다', async () => {
     const { prisma, tx } = buildMocks({
-      existingDeal: { ...baseDeal, stage: 'selection' },
+      existingDeal: baseDeal,
     });
     const service = new DealsService(prisma);
 

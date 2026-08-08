@@ -49,8 +49,8 @@ import {
   formatAreaSummary,
   formatBudgetSummary,
   formatRegionSummary,
+  getContactRelationLabel,
   propertyRoleLabels,
-  relationTypeLabels,
   urgencyLabels,
 } from './-detail-cards';
 import {
@@ -68,9 +68,10 @@ import {
 
 const buyerStatusTones: Record<string, string> = {
   active: 'bg-[#eef3ed] text-[#44745a]',
-  matched: 'bg-[#e7f3f8] text-[#337ea9]',
+  matched: 'bg-[#eef3ed] text-[#44745a]',
+  hold: 'bg-[#fbf3db] text-[#8f6b1f]',
+  inactive: 'bg-[#fbf3db] text-[#8f6b1f]',
   completed: 'bg-[#f1f1ef] text-[#5f5e5b]',
-  inactive: 'bg-[#f1f1ef] text-[#9b9a97]',
 };
 
 const urgencyTones: Record<string, string> = {
@@ -680,7 +681,6 @@ function ContactSheetConsultationRow({ consultation }: { consultation: Consultat
 
 interface SheetRelationItem {
   id: string;
-  direction: '연결함' | '연결됨';
   relation: ContactRelation;
   counterpartId: string | null;
   counterpartName: string;
@@ -691,7 +691,6 @@ function mergeContactRelationships(contact: ContactDetail): SheetRelationItem[] 
   return [
     ...contact.relationsAsMain.map<SheetRelationItem>((relation) => ({
       id: `main-${relation.id}`,
-      direction: '연결함',
       relation,
       counterpartId: relation.relatedContact?.id ?? relation.relatedContactId ?? null,
       counterpartName: relation.relatedContact?.name ?? '이름 없음',
@@ -699,7 +698,6 @@ function mergeContactRelationships(contact: ContactDetail): SheetRelationItem[] 
     })),
     ...contact.relationsAsRelated.map<SheetRelationItem>((relation) => ({
       id: `related-${relation.id}`,
-      direction: '연결됨',
       relation,
       counterpartId: relation.contact?.id ?? relation.contactId ?? null,
       counterpartName: relation.contact?.name ?? '이름 없음',
@@ -709,10 +707,7 @@ function mergeContactRelationships(contact: ContactDetail): SheetRelationItem[] 
 }
 
 function ContactSheetRelationRow({ item }: { item: SheetRelationItem }) {
-  const relationLabel =
-    item.relation.label ||
-    relationTypeLabels[item.relation.relationType] ||
-    item.relation.relationType;
+  const relationLabel = getContactRelationLabel(item.relation);
 
   return (
     <div className="flex items-center justify-between gap-3 px-3 py-3">
@@ -733,9 +728,6 @@ function ContactSheetRelationRow({ item }: { item: SheetRelationItem }) {
           )}
           <span className="rounded-[4px] bg-[#f1f1ef] px-1.5 py-0.5 text-[11px] text-[#5f5e5b]">
             {relationLabel}
-          </span>
-          <span className="rounded-[4px] bg-transparent px-1 py-0.5 text-[11px] text-slate-400">
-            {item.direction}
           </span>
         </div>
         <p className="mt-0.5 truncate text-xs text-slate-500">

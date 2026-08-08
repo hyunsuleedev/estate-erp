@@ -1,7 +1,8 @@
 # Esiljang snapshot field mapping
 
-Normalize provider observations without resolving them to public site or unit
-data. All prices use Estate ERP's 만원 unit.
+Normalize provider observations without resolving them to any consumer's site,
+unit, listing, or advertisement records. All prices use 만원 as the standalone
+snapshot unit.
 
 ## Snapshot envelope
 
@@ -10,6 +11,12 @@ The normalization script accepts this shape:
 ```json
 {
   "provider": "esiljang",
+  "scope": "active_advertisements",
+  "activeFilter": {
+    "dataValue": "ad",
+    "selected": true,
+    "count": 2
+  },
   "observedAt": "2026-07-29T08:30:00.000Z",
   "expectedTotal": 2,
   "paginationComplete": true,
@@ -18,26 +25,43 @@ The normalization script accepts this shape:
 }
 ```
 
-`expectedTotal` may be `null` only when the provider does not expose a total.
-`paginationComplete` becomes true only after a clean terminal page.
+`scope` must be `active_advertisements`. `expectedTotal` is the count shown on
+the selected `광고중` control, never the default `전체` count. It may be `null`
+only when the active count is unavailable. `paginationComplete` becomes true
+only after a clean terminal page while the active filter remains selected.
+`activeFilter.dataValue` must be `ad`, `selected` must be true, and its `count`
+must equal `expectedTotal` when the count is available.
 
 ## Item identity
 
+The provider page exposes identifiers through CSS classes. Treat the Korean
+meaning as the field definition and the class name only as its extraction
+selector:
+
+- 이실장 매물번호 (`.numberA`) → `externalAdId`
+- 네이버 매물번호 (`.numberN`) → `naverArticleNo`
+- 의미 미확정 보조번호 (`.numberM`) → 정식 필드에 매핑하지 않음
+
 Every accepted item requires:
 
-- `externalAdId`: the exact Esiljang provider advertisement ID.
+- `externalAdId`: the exact 이실장 매물번호 extracted from
+  `td:nth-child(3) > div.numberA`.
 - `sourcePage`: the page number on which it was observed.
 - `providerUrl`: the Esiljang management or detail URL when available.
 
 Never derive `externalAdId` from an arbitrary 8–11 digit string, address,
 Naver article number, row position, or display order.
 
-`naverArticleNo` is optional. Accept it only from:
+`naverArticleNo` is the optional 네이버 매물번호. Accept it only from:
 
-- an explicitly labelled Naver article-number field; or
+- `td:nth-child(3) > div.numberN`, when present and numeric;
+- another explicitly labelled Naver article-number field; or
 - the exact article identifier parsed from a URL on a Naver-owned host.
 
 Do not assume the CP advertisement ID and Naver article number are equal.
+The meaning of `.numberM` is not verified. Do not map it to a canonical snapshot
+field or use it as either identity. When it is visible, preserve it only as
+`sourceFields["보조번호 (의미 미확정)"]` so the raw observation is not lost.
 
 ## Address and listing detail
 
@@ -59,8 +83,8 @@ Keep `floor` as a string so provider values such as basement, low, middle, or
 high floor are not silently converted. Trim a simple trailing `동` or `호` only
 from exact `dong` and `ho` fields; never parse them from free-form address text.
 
-The downstream resolver may link these observations to an office-scoped
-listing and a public Unit. This reader must not create or change a Unit.
+A downstream consumer may link these observations to its own domain records.
+This Reader must not create, resolve, or change those records.
 
 ## Terms
 
@@ -86,8 +110,10 @@ Reject negative, non-finite, or fractional 만원 values.
 - `observedAt`: one capture timestamp for the snapshot, not a guessed provider
   date.
 
-The staged record may preserve any provider status. Only atomic completion of a
-full snapshot may reconcile unseen previously active records as ended.
+Preserve any row status returned by the selected provider `광고중` filter. The
+filter selection, not the row's status text, defines snapshot membership. Only
+atomic completion of a full snapshot may reconcile unseen previously active
+records as ended.
 
 ## Optional source evidence
 

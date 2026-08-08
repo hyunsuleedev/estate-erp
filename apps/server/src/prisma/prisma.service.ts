@@ -1,52 +1,50 @@
-import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
-import { Prisma, PrismaClient } from '@prisma/client';
-import { getRequestContext } from '../common/request-context/request-context';
+import { Injectable, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
+import { Prisma, PrismaClient } from "@prisma/client";
+import { getRequestContext } from "../common/request-context/request-context";
 
 const TENANT_SCOPED_MODELS = new Set([
-  'User',
-  'OfficeSite',
-  'Contact',
-  'ContactRelation',
-  'PropertyContact',
-  'Tenant',
-  'Property',
-  'ListingIntake',
-  'Listing',
-  'ListingAdvertisement',
-  'PriceHistory',
-  'BuyerRequirement',
-  'Consultation',
-  'Match',
-  'Deal',
-  'Contract',
-  'DealParticipant',
-  'ContractDocument',
-  'ContractDocumentRevision',
-  'PublicDocument',
+  "User",
+  "OfficeSite",
+  "Contact",
+  "ContactRelation",
+  "PropertyContact",
+  "Tenant",
+  "Property",
+  "ListingIntake",
+  "Listing",
+  "ListingAdvertisement",
+  "ListingAdvertisementSnapshotSession",
+  "ListingAdvertisementSnapshotItem",
+  "PriceHistory",
+  "BuyerIntake",
+  "BuyerIntakeContact",
+  "BrokerageCase",
+  "BrokerageCaseParticipant",
+  "BrokerageCaseDependency",
+  "BuyerRequirement",
+  "Consultation",
+  "Match",
+  "Deal",
+  "Contract",
+  "DealParticipant",
+  "ContractDocument",
+  "ContractDocumentRevision",
+  "PublicDocument",
   // ContractParty는 주민번호 등 민감 PII 보유 — 테넌트 격리는 필수이되,
   // AUDITED_MODELS에는 의도적으로 넣지 않는다 (idNumber/phone이 activity_logs.changes에 복사되는 것 방지)
-  'ContractParty',
-  'OfficePrintTemplate',
-  'PublicDocument',
-  'ContractClauseTemplate',
-  'Task',
-  'CalendarEvent',
-  'ActivityLog',
-  'Notification',
-  'AgentSession',
-  'AgentWakeupRequest',
-  'AgentRun',
-  'AgentActivity',
-  'AdvertisementSyncRun',
-  'AdvertisementSyncStep',
-  'AgentActionRequest',
-  'AgentActionVerification',
-  'ExternalListingGroup',
-  'ExternalListing',
-  'ExternalListingSnapshotSession',
-  'ExternalListingSource',
-  'OfficeAdvertisementGroup',
-  'OfficeAdvertisement',
+  "ContractParty",
+  "OfficePrintTemplate",
+  "PublicDocument",
+  "ContractClauseTemplate",
+  "Task",
+  "CalendarEvent",
+  "ActivityLog",
+  "Notification",
+  "ExternalListingGroup",
+  "ExternalListing",
+  "ExternalListingSnapshotSession",
+  "OfficeAdvertisementGroup",
+  "OfficeAdvertisement",
   // 공동중개 네트워크 모델(NetworkRoom/NetworkRoomMember/NetworkSharedProperty/
   // NetworkInquiry/NetworkMessage)은 여러 사무소가 한 방을 공유하는 크로스 오피스
   // 데이터라 자동 officeId 주입 대상이 아니다 (NetworkInquiry는 officeId 컬럼 자체가
@@ -55,81 +53,86 @@ const TENANT_SCOPED_MODELS = new Set([
 ]);
 
 const AUDITED_MODELS = new Set([
-  'Property',
-  'ListingIntake',
-  'Listing',
-  'Contact',
-  'PropertyContact',
-  'Tenant',
-  'BuyerRequirement',
-  'Match',
-  'Deal',
-  'Consultation',
-  'Task',
-  'NetworkSharedProperty',
-  'Contract',
-  'ContractDocument',
-  'ContractClauseTemplate',
-  'OfficePrintTemplate',
+  "Property",
+  "ListingIntake",
+  "Listing",
+  "Contact",
+  "PropertyContact",
+  "Tenant",
+  "BuyerIntake",
+  "BuyerIntakeContact",
+  "BrokerageCase",
+  "BrokerageCaseParticipant",
+  "BrokerageCaseDependency",
+  "BuyerRequirement",
+  "Match",
+  "Deal",
+  "Consultation",
+  "Task",
+  "NetworkSharedProperty",
+  "Contract",
+  "ContractDocument",
+  "ContractClauseTemplate",
+  "OfficePrintTemplate",
 ]);
 
 const AUDITED_OPERATIONS = new Set<PrismaOperation>([
-  'create',
-  'update',
-  'delete',
-  'upsert',
+  "create",
+  "update",
+  "delete",
+  "upsert",
 ]);
 
-const PRICE_TRACKED_FIELDS = ['price', 'deposit', 'monthlyRent'] as const;
+const PRICE_TRACKED_FIELDS = ["price", "deposit", "monthlyRent"] as const;
 const SKIPPED_ACTIVITY_FIELDS = new Set([
-  'updatedAt',
+  "updatedAt",
   // 공급자 원문은 크기가 크고 파일 URL에는 만료형 서명이 포함될 수 있으므로
   // 업무 감사 로그에 복제하지 않는다. 상태/provider 변경 자체는 계속 기록한다.
-  'metadata',
-  'fileUrl',
+  "metadata",
+  "fileUrl",
 ]);
 
 type PrismaOperation =
-  | 'findUnique'
-  | 'findUniqueOrThrow'
-  | 'findFirst'
-  | 'findFirstOrThrow'
-  | 'findMany'
-  | 'count'
-  | 'aggregate'
-  | 'update'
-  | 'updateMany'
-  | 'updateManyAndReturn'
-  | 'delete'
-  | 'deleteMany'
-  | 'create'
-  | 'createMany'
-  | 'createManyAndReturn'
-  | 'upsert';
+  | "findUnique"
+  | "findUniqueOrThrow"
+  | "findFirst"
+  | "findFirstOrThrow"
+  | "findMany"
+  | "count"
+  | "aggregate"
+  | "update"
+  | "updateMany"
+  | "updateManyAndReturn"
+  | "delete"
+  | "deleteMany"
+  | "create"
+  | "createMany"
+  | "createManyAndReturn"
+  | "upsert";
 
-type AuditAction = 'create' | 'update' | 'delete';
+type AuditAction = "create" | "update" | "delete";
 type RecordLike = Record<string, unknown>;
 
 const OFFICE_SCOPING_OPERATIONS = new Set<PrismaOperation>([
-  'findUnique',
-  'findUniqueOrThrow',
-  'findFirst',
-  'findFirstOrThrow',
-  'findMany',
-  'count',
-  'aggregate',
-  'update',
-  'updateMany',
-  'updateManyAndReturn',
-  'delete',
-  'deleteMany',
+  "findUnique",
+  "findUniqueOrThrow",
+  "findFirst",
+  "findFirstOrThrow",
+  "findMany",
+  "count",
+  "aggregate",
+  "update",
+  "updateMany",
+  "updateManyAndReturn",
+  "delete",
+  "deleteMany",
 ]);
 
 const OFFICE_DATA_OPERATIONS = new Set<PrismaOperation>([
-  'create',
-  'createMany',
-  'createManyAndReturn',
-  'upsert',
+  "create",
+  "createMany",
+  "createManyAndReturn",
+  "upsert",
 ]);
 
 @Injectable()
@@ -151,9 +154,7 @@ export class PrismaService
               const requestContext = getRequestContext();
               const officeId = requestContext?.officeId;
               const nextArgs =
-                officeId &&
-                model &&
-                TENANT_SCOPED_MODELS.has(model)
+                officeId && model && TENANT_SCOPED_MODELS.has(model)
                   ? PrismaService.applyOfficeScope(
                       operation as PrismaOperation,
                       args,
@@ -164,7 +165,7 @@ export class PrismaService
               const shouldReadBefore =
                 !!model &&
                 AUDITED_MODELS.has(model) &&
-                ['update', 'delete', 'upsert'].includes(operation);
+                ["update", "delete", "upsert"].includes(operation);
               const beforeRecord = shouldReadBefore
                 ? await PrismaService.readRecord(baseClient, model!, nextArgs)
                 : null;
@@ -184,7 +185,11 @@ export class PrismaService
                 PrismaService.extractString(beforeRecord?.officeId) ??
                 officeId;
 
-              if (model === 'Listing' && operation !== 'delete' && resolvedOfficeId) {
+              if (
+                model === "Listing" &&
+                operation !== "delete" &&
+                resolvedOfficeId
+              ) {
                 await PrismaService.createPriceHistoryIfNeeded(
                   baseClient,
                   beforeRecord,
@@ -223,7 +228,11 @@ export class PrismaService
     return new Proxy(this, {
       get: (target, property, receiver) => {
         if (property in target.extendedClient) {
-          return Reflect.get(target.extendedClient as object, property, receiver);
+          return Reflect.get(
+            target.extendedClient as object,
+            property,
+            receiver,
+          );
         }
 
         return Reflect.get(target, property, receiver);
@@ -244,18 +253,21 @@ export class PrismaService
     args: unknown,
     officeId: string,
   ) {
-    if (!args || typeof args !== 'object' || Array.isArray(args)) {
+    if (!args || typeof args !== "object" || Array.isArray(args)) {
       return args;
     }
 
     const nextArgs = { ...(args as Record<string, unknown>) };
 
     if (OFFICE_SCOPING_OPERATIONS.has(operation)) {
-      nextArgs.where = PrismaService.attachOfficeIdToWhere(nextArgs.where, officeId);
+      nextArgs.where = PrismaService.attachOfficeIdToWhere(
+        nextArgs.where,
+        officeId,
+      );
     }
 
     if (OFFICE_DATA_OPERATIONS.has(operation)) {
-      if (operation === 'upsert') {
+      if (operation === "upsert") {
         nextArgs.create = PrismaService.attachOfficeIdToData(
           nextArgs.create,
           officeId,
@@ -273,11 +285,11 @@ export class PrismaService
   }
 
   private static attachOfficeIdToWhere(where: unknown, officeId: string) {
-    if (!where || typeof where !== 'object' || Array.isArray(where)) {
+    if (!where || typeof where !== "object" || Array.isArray(where)) {
       return { officeId };
     }
 
-    if ('officeId' in where) {
+    if ("officeId" in where) {
       return where;
     }
 
@@ -288,11 +300,11 @@ export class PrismaService
   }
 
   private static attachOfficeIdToData(data: unknown, officeId: string) {
-    if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    if (!data || typeof data !== "object" || Array.isArray(data)) {
       return data;
     }
 
-    if ('officeId' in data) {
+    if ("officeId" in data) {
       return data;
     }
 
@@ -359,7 +371,9 @@ export class PrismaService
         monthlyRentBefore: PrismaService.toOptionalNumber(
           beforeRecord.monthlyRent,
         ),
-        monthlyRentAfter: PrismaService.toOptionalNumber(afterRecord.monthlyRent),
+        monthlyRentAfter: PrismaService.toOptionalNumber(
+          afterRecord.monthlyRent,
+        ),
       },
     });
   }
@@ -373,8 +387,8 @@ export class PrismaService
     afterRecord: RecordLike,
     officeId: string,
     userId?: string,
-    actor = 'user',
-    source = 'web',
+    actor = "user",
+    source = "web",
   ) {
     const action = PrismaService.resolveAuditAction(operation, beforeRecord);
     const entityId =
@@ -422,7 +436,7 @@ export class PrismaService
     beforeRecord: RecordLike | null,
     afterRecord: RecordLike,
   ) {
-    if (operation === 'delete') {
+    if (operation === "delete") {
       return Object.keys(beforeRecord ?? afterRecord);
     }
 
@@ -431,7 +445,7 @@ export class PrismaService
     }
 
     const data =
-      operation === 'upsert'
+      operation === "upsert"
         ? beforeRecord
           ? args.update
           : args.create
@@ -458,13 +472,15 @@ export class PrismaService
       }
 
       const beforeValue =
-        action === 'create'
+        action === "create"
           ? undefined
           : PrismaService.normalizeValue(beforeRecord?.[key]);
       const afterValue =
-        action === 'delete' ? undefined : PrismaService.normalizeValue(afterRecord[key]);
+        action === "delete"
+          ? undefined
+          : PrismaService.normalizeValue(afterRecord[key]);
 
-      if (action === 'create') {
+      if (action === "create") {
         if (afterValue === undefined) {
           continue;
         }
@@ -473,7 +489,7 @@ export class PrismaService
         continue;
       }
 
-      if (action === 'delete') {
+      if (action === "delete") {
         if (beforeValue === undefined) {
           continue;
         }
@@ -531,26 +547,26 @@ export class PrismaService
       return value.toNumber();
     }
 
-    return typeof value === 'number' ? value : Number(value);
+    return typeof value === "number" ? value : Number(value);
   }
 
   private static resolveAuditAction(
     operation: PrismaOperation,
     beforeRecord: RecordLike | null,
   ): AuditAction {
-    if (operation === 'create') {
-      return 'create';
+    if (operation === "create") {
+      return "create";
     }
 
-    if (operation === 'delete') {
-      return 'delete';
+    if (operation === "delete") {
+      return "delete";
     }
 
-    if (operation === 'upsert') {
-      return beforeRecord ? 'update' : 'create';
+    if (operation === "upsert") {
+      return beforeRecord ? "update" : "create";
     }
 
-    return 'update';
+    return "update";
   }
 
   private static toEntityType(model: string) {
@@ -560,19 +576,21 @@ export class PrismaService
   private static getModelDelegate(client: PrismaClient, model: string) {
     const delegateName = `${model.charAt(0).toLowerCase()}${model.slice(1)}`;
 
-    return (client as unknown as Record<
-      string,
-      {
-        findFirst?: (args: { where: RecordLike }) => Promise<unknown>;
-      }
-    >)[delegateName];
+    return (
+      client as unknown as Record<
+        string,
+        {
+          findFirst?: (args: { where: RecordLike }) => Promise<unknown>;
+        }
+      >
+    )[delegateName];
   }
 
   private static isRecord(value: unknown): value is RecordLike {
-    return !!value && typeof value === 'object' && !Array.isArray(value);
+    return !!value && typeof value === "object" && !Array.isArray(value);
   }
 
   private static extractString(value: unknown) {
-    return typeof value === 'string' && value.length > 0 ? value : undefined;
+    return typeof value === "string" && value.length > 0 ? value : undefined;
   }
 }

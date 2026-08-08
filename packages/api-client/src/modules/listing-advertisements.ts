@@ -23,104 +23,6 @@ export interface ListingAdvertisementActionContext {
   monthlyRent: number | null;
 }
 
-export interface MyAdvertisementsSyncSession {
-  id: string;
-  status: string;
-  waitingReason: string | null;
-  lastRunAt: string | null;
-  completedAt: string | null;
-  error: string | null;
-  updatedAt: string;
-}
-
-export interface MyAdvertisementsSyncWakeup {
-  id: string;
-  status: string;
-  requestedAt: string;
-  claimedAt: string | null;
-  finishedAt: string | null;
-  error: string | null;
-  coalescedCount: number;
-}
-
-export type MyAdvertisementsSyncRunStatus =
-  | "queued"
-  | "running"
-  | "awaiting_input"
-  | "completed"
-  | "failed"
-  | "cancelled";
-
-export type MyAdvertisementsSyncStepStatus =
-  | "blocked"
-  | "ready"
-  | "queued"
-  | "running"
-  | "succeeded"
-  | "failed"
-  | "needs_input"
-  | "skipped"
-  | "cancelled";
-
-export interface MyAdvertisementsSyncStep {
-  id: string;
-  runId: string;
-  stepKey: string;
-  position: number;
-  kind: string;
-  title: string;
-  status: MyAdvertisementsSyncStepStatus;
-  channel: string | null;
-  skillKey: string | null;
-  skillVersion: string | null;
-  dependsOnKeys: string[];
-  input: Record<string, unknown>;
-  output: Record<string, unknown> | null;
-  error: string | null;
-  waitingReason: string | null;
-  attemptCount: number;
-  progressTotal: number;
-  progressComplete: number;
-  progressFailed: number;
-  startedAt: string | null;
-  finishedAt: string | null;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface MyAdvertisementsSyncRun {
-  id: string;
-  workflowKey: string;
-  schemaVersion: number;
-  status: MyAdvertisementsSyncRunStatus;
-  requestedBy: string;
-  channels: string[];
-  context: Record<string, unknown>;
-  currentStepId: string | null;
-  currentStepKey: string | null;
-  steps: MyAdvertisementsSyncStep[];
-  startedAt: string | null;
-  completedAt: string | null;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface MyAdvertisementsSyncStatus {
-  run: MyAdvertisementsSyncRun | null;
-  session: MyAdvertisementsSyncSession | null;
-  wakeup: MyAdvertisementsSyncWakeup | null;
-}
-
-export interface RequestMyAdvertisementsSyncResult extends MyAdvertisementsSyncStatus {
-  created: boolean;
-}
-
-export interface RequestMyAdvertisementsSyncInput {
-  executionTarget: "local";
-  runnerDeviceId: string;
-  credentialProviders: Array<"esiljang" | "budongsanbank">;
-}
-
 export interface ListingAdvertisementsFilter {
   listingId?: string;
   channel?: string;
@@ -172,23 +74,6 @@ export interface UpdateListingAdvertisementDto {
 
 export function createListingAdvertisementsApi(request: RequestFn) {
   return {
-    getFullSyncStatus: () =>
-      request<MyAdvertisementsSyncStatus>(
-        "/listing-advertisements/full-sync/status",
-      ),
-
-    requestFullSync: (input: RequestMyAdvertisementsSyncInput) =>
-      request<RequestMyAdvertisementsSyncResult>(
-        "/listing-advertisements/full-sync",
-        { method: "POST", body: input },
-      ),
-
-    retryFullSyncStep: (stepId: string) =>
-      request<MyAdvertisementsSyncStatus>(
-        `/listing-advertisements/full-sync/steps/${stepId}/retry`,
-        { method: "POST" },
-      ),
-
     findAll: (filters?: ListingAdvertisementsFilter) =>
       request<PaginatedResponse<ListingAdvertisementWithListing>>(
         "/listing-advertisements",

@@ -109,7 +109,7 @@ export function MatchCreateDialog({
         <DialogHeader>
           <DialogTitle>매칭 생성</DialogTitle>
           <DialogDescription>
-            매물과 구매조건을 연결해 매칭 파이프라인에 올립니다. 생성 후 단계는 ‘제안’으로 시작합니다.
+            매물과 구매조건을 연결해 매칭 파이프라인에 올립니다. 생성 후에는 ‘내부 후보’로 시작합니다.
           </DialogDescription>
         </DialogHeader>
 

@@ -13,6 +13,7 @@ function group(
     priceMin?: number | null;
     priceMax?: number | null;
     direction?: string | null;
+    area?: number | null;
     ownAdvertisementYmd?: string | null;
   },
 ): ExternalListingGroup {
@@ -20,13 +21,14 @@ function group(
     id,
     site: values.site ? ({ name: values.site } as never) : undefined,
     buildingName: values.dong ?? null,
-    inferredHo: values.ho ?? null,
+    ho: values.ho ?? null,
     ownAdvertisementYmd: values.ownAdvertisementYmd ?? null,
     priceMin: values.priceMin ?? null,
     priceMax: values.priceMax ?? null,
     mainExternalListing: {
       price: values.price ?? null,
       direction: values.direction ?? null,
+      exclusiveAreaM2: values.area ?? null,
     } as never,
   } as ExternalListingGroup;
 }
@@ -41,6 +43,7 @@ describe('external listing table sorting', () => {
       priceMin: 220000,
       priceMax: 240000,
       direction: 'SS',
+      area: 120,
       ownAdvertisementYmd: null,
     }),
     group('first', {
@@ -51,6 +54,7 @@ describe('external listing table sorting', () => {
       priceMin: 175000,
       priceMax: 190000,
       direction: 'ES',
+      area: 59,
       ownAdvertisementYmd: '20260701',
     }),
     group('second', {
@@ -61,6 +65,7 @@ describe('external listing table sorting', () => {
       priceMin: 200000,
       priceMax: 225000,
       direction: 'WS',
+      area: 84,
       ownAdvertisementYmd: '20260720',
     }),
   ];
@@ -119,7 +124,7 @@ describe('external listing table sorting', () => {
     );
   });
 
-  it('sorts direction independently', () => {
+  it('sorts direction and area independently', () => {
     assert.deepEqual(
       sortExternalListingGroups(
         groups,
@@ -127,6 +132,14 @@ describe('external listing table sorting', () => {
         'sale',
       ).map((item) => item.id),
       ['first', 'third', 'second'],
+    );
+    assert.deepEqual(
+      sortExternalListingGroups(
+        groups,
+        [{ id: 'area', desc: false }],
+        'sale',
+      ).map((item) => item.id),
+      ['first', 'second', 'third'],
     );
   });
 });

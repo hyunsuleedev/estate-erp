@@ -1,0 +1,82 @@
+// ============================================================
+// CP 광고 원본 스냅샷 가져오기
+//
+// 외부 에이전트가 로컬 Reader JSON을 한 건씩 읽고
+// Site → Dong → Unit → Property → ListingIntake → Listing에 연결한 뒤,
+// 해당 원문과 연결 결과를 한 요청으로 제출한다.
+// 모든 항목이 resolved일 때만 ListingAdvertisement 원장에 반영한다.
+// ============================================================
+
+model ListingAdvertisementSnapshotSession {
+  id       String @id @default(uuid()) @db.Uuid
+  officeId String @map("office_id") @db.Uuid
+
+  channel String // esiljang, budongsanbank 등. Reader provider와 동일해야 한다.
+  scope   String @default("active_advertisements")
+  status  String @default("processing") // processing / completed / cancelled
+
+  observedAt         DateTime @map("observed_at")
+  expectedTotal      Int?     @map("expected_total")
+  manifestHash       String   @map("manifest_hash") @db.VarChar(64)
+  fileSha256         String?  @map("file_sha256") @db.VarChar(64)
+  activeFilter       Json     @map("active_filter") @db.JsonB
+  paginationComplete Boolean  @map("pagination_complete")
+  visitedPages       Int[]    @default([]) @map("visited_pages")
+
+  receivedCount Int @default(0) @map("received_count")
+  resolvedCount Int @default(0) @map("resolved_count")
+
+  startedById   String    @map("started_by_id") @db.Uuid
+  completedById String?   @map("completed_by_id") @db.Uuid
+  completedAt   DateTime? @map("completed_at")
+
+  createdAdvertisements     Int? @map("created_advertisements")
+  updatedAdvertisements     Int? @map("updated_advertisements")
+  staleAdvertisementsMarked Int? @map("stale_advertisements_marked")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  office      Office                             @relation(fields: [officeId], references: [id])
+  startedBy   User                               @relation("ListingAdvertisementSnapshotStartedBy", fields: [startedById], references: [id])
+  completedBy User?                              @relation("ListingAdvertisementSnapshotCompletedBy", fields: [completedById], references: [id])
+  items       ListingAdvertisementSnapshotItem[]
+
+  @@unique([officeId, channel, manifestHash], map: "listing_ad_snapshot_session_identity_key")
+  @@index([officeId, channel, status], map: "listing_ad_snapshot_session_channel_status_idx")
+  @@index([officeId, createdAt], map: "listing_ad_snapshot_session_created_idx")
+  @@map("listing_advertisement_snapshot_sessions")
+}
+
+model ListingAdvertisementSnapshotItem {
+  id        String @id @default(uuid()) @db.Uuid
+  officeId  String @map("office_id") @db.Uuid
+  sessionId String @map("session_id") @db.Uuid
+
+  externalAdId String @map("external_ad_id")
+  status       String // resolved / failed
+  raw          Json   @db.JsonB
+  itemHash     String @map("item_hash") @db.VarChar(64)
+
+  listingId  String? @map("listing_id") @db.Uuid
+  resolution Json?   @db.JsonB
+  error      String? @db.Text
+
+  submittedById String   @map("submitted_by_id") @db.Uuid
+  submittedAt   DateTime @default(now()) @map("submitted_at")
+  attemptCount  Int      @default(1) @map("attempt_count")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  office      Office                              @relation(fields: [officeId], references: [id])
+  session     ListingAdvertisementSnapshotSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  listing     Listing?                            @relation(fields: [listingId], references: [id], onDelete: SetNull)
+  submittedBy User                                @relation("ListingAdvertisementSnapshotSubmittedBy", fields: [submittedById], references: [id])
+
+  @@unique([sessionId, externalAdId], map: "listing_ad_snapshot_item_external_key")
+  @@index([officeId, sessionId, status], map: "listing_ad_snapshot_item_status_idx")
+  @@index([officeId, listingId])
+  @@index([sessionId, createdAt])
+  @@map("listing_advertisement_snapshot_items")
+}

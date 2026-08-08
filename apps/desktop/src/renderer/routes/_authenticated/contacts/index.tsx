@@ -13,18 +13,26 @@ import type { ColumnDef, SortingState } from '@tanstack/react-table';
 import type { Contact } from '@estate-erp/api-client';
 import {
   AlertCircle,
+  ArrowUpRight,
   Building2,
   CalendarDays,
   ChevronDown,
   ChevronRight,
+  Copy,
+  EllipsisVertical,
   FileText,
   Loader2,
+  PanelRightOpen,
   Phone,
   Plus,
+  RotateCcw,
+  Search,
   Tags,
   Target,
   UserRound,
+  X,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { TRANSACTION_TYPE_LABELS, type TransactionType } from '@estate-erp/shared';
 import { api } from '@/lib/api';
 import { formatPhone } from '@/lib/format';
@@ -35,44 +43,41 @@ import {
 } from '@/lib/contacts';
 import { EmptyState, StatusBadge } from '@/components/domain';
 import { formatAreaRange, formatBudget } from '../buyer-requirements/-buyer-utils';
-import { ContactGroupChips } from './-group-chips';
+import { propertyRoleLabels } from './-detail-cards';
 import { ContactQuickSheet } from './-quick-sheet';
 import {
   DataTable,
   DateCell,
-  ViewBar,
   type ActiveFilter,
-  type FilterDefinition,
   type SortDefinition,
 } from '@/components/data-table';
 import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { Input } from '@/components/ui/input';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
+  MultiSelect,
+  type MultiSelectOption,
+} from '@/components/ui/multi-select';
 import { formatDateShort } from '@/components/quick-sheet';
+import { cn } from '@/lib/utils';
 
 /**
- * boolean 타입은 ViewBar fallback에서 빈 칩으로 렌더되어 사용자에게 모호함.
- * select 타입 + 단일 옵션("있음")으로 변환해 칩에 "매물 연결: 있음"이 분명히 노출되도록 함.
- * apiParams의 `activeFilters.some(f => f.field === 'hasPropertyContact')` 매칭은 그대로 동작.
+ * boolean 타입 필터는 칩 토글로 표현.
  * '최근 상담 있음' 필터(PRD 7장)는 서버 GET /contacts에 파라미터가 없어 의도적으로 생략.
  */
-const baseFilterDefinitions: FilterDefinition[] = [
-  {
-    id: 'hasPropertyContact',
-    field: 'hasPropertyContact',
-    label: '매물 연결',
-    type: 'select',
-    operators: ['is'],
-    options: [{ label: '있음', value: 'true' }],
-  },
-  {
-    id: 'hasBuyerReq',
-    field: 'hasBuyerReq',
-    label: '매수요건',
-    type: 'select',
-    operators: ['is'],
-    options: [{ label: '있음', value: 'true' }],
-  },
-];
-
 const sortDefinitions = [
   { field: 'updatedAt', label: '최근 수정' },
   { field: 'createdAt', label: '등록일' },
@@ -82,6 +87,25 @@ const sortDefinitions = [
 const CONTACTS_PAGE_SIZE = 50;
 /** 디자인 시안 기준 단일 행 높이(40px) — 고정 높이라 50행 이상에서 가상화가 동작한다. */
 const CONTACT_ROW_HEIGHT = 40;
+
+type ContactExpandedPanel = 'buyerRequirements' | 'propertyContacts';
+
+function getContactExpandedPanelId(contactId: string) {
+  return `contact-expanded-panel-${contactId}`;
+}
+
+const CONTACT_GROUP_STYLES: Record<string, string> = {
+  '매수/투자': 'bg-[#e7f3f8] text-[#337ea9]',
+  구매고객: 'bg-[#e7f3f8] text-[#337ea9]',
+  임차: 'bg-[#fbf3db] text-[#9a6b16]',
+  세입자: 'bg-[#fbf3db] text-[#9a6b16]',
+  매물상담: 'bg-[#f1f1ef] text-[#5f5e5b]',
+  소유자: 'bg-[#edf3ec] text-[#448361]',
+  소유주: 'bg-[#edf3ec] text-[#448361]',
+  거래처: 'bg-[#eee8f7] text-[#6940a5]',
+  법무사: 'bg-[#eee8f7] text-[#6940a5]',
+  세무사: 'bg-[#eee8f7] text-[#6940a5]',
+};
 
 export const Route = createFileRoute('/_authenticated/contacts/')({
   component: ContactsPage,
@@ -93,36 +117,44 @@ function ContactsPage() {
   const [search, setSearch] = useState('');
   const deferredSearch = useDeferredValue(search);
   const [activeFilters, setActiveFilters] = useState<ActiveFilter[]>([]);
-  /** 상단 그룹 칩 선택 (null = 전체 연락처). ViewBar 필터와 AND로 결합된다. */
-  const [selectedGroupTag, setSelectedGroupTag] = useState<string | null>(null);
   const [activeSorts, setActiveSorts] = useState<SortDefinition[]>([
     { field: 'updatedAt', label: '최근 수정', direction: 'desc' },
   ]);
   const [sorting, setSorting] = useState<SortingState>([
     { id: 'updatedAt', desc: true },
   ]);
-  /** 희망 칩 클릭으로 펼친 행(연락처 id) 집합 — 행 아래에 구매 희망조건 패널 표시 */
-  const [expandedBuyerReqIds, setExpandedBuyerReqIds] = useState<ReadonlySet<string>>(new Set());
-  const viewBarRef = useRef<HTMLDivElement | null>(null);
+  const [selectedContactIds, setSelectedContactIds] = useState<string[]>([]);
+  /** 카운트 칩 클릭으로 펼친 패널 — 연락처별로 희망조건/연결물건 중 하나만 표시 */
+  const [expandedPanels, setExpandedPanels] = useState<
+    ReadonlyMap<string, ContactExpandedPanel>
+  >(() => new Map());
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
 
-  const toggleBuyerReqExpanded = useCallback((contactId: string) => {
-    setExpandedBuyerReqIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(contactId)) next.delete(contactId);
-      else next.add(contactId);
-      return next;
-    });
-  }, []);
+  const toggleExpandedPanel = useCallback(
+    (contactId: string, panel: ContactExpandedPanel) => {
+      setExpandedPanels((previous) => {
+        const next = new Map(previous);
+        if (next.get(contactId) === panel) next.delete(contactId);
+        else next.set(contactId, panel);
+        return next;
+      });
+    },
+    [],
+  );
 
-  // PRD 13장 키보드 단축키 — Cmd/Ctrl+F: 검색 포커스 (Cmd/Ctrl+N은 브라우저 예약 키라 미지원)
+  const expandedRowIds = useMemo<ReadonlySet<string>>(
+    () => new Set(expandedPanels.keys()),
+    [expandedPanels],
+  );
+
+  // PRD 13장 키보드 단축키 — Cmd/Ctrl+F: 검색 포커스
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
       if (!(event.metaKey || event.ctrlKey)) return;
       if (event.key === 'f' || event.key === 'F') {
-        const input = viewBarRef.current?.querySelector('input');
-        if (input) {
+        if (searchInputRef.current) {
           event.preventDefault();
-          input.focus();
+          searchInputRef.current.focus();
         }
       }
     };
@@ -130,27 +162,36 @@ function ContactsPage() {
     return () => window.removeEventListener('keydown', handler);
   }, []);
 
+  const hasPropertyContact = activeFilters.some((f) => f.field === 'hasPropertyContact');
+  const hasBuyerReq = activeFilters.some((f) => f.field === 'hasBuyerReq');
+  const selectedCustomTags = useMemo(
+    () =>
+      activeFilters
+        .filter((filter) => filter.field === 'tags')
+        .map((filter) => filter.value),
+    [activeFilters],
+  );
+
   const apiParams = useMemo(() => {
-    const customTagFilters = activeFilters
-      .filter((filter) => filter.field === 'tags')
-      .map((filter) => filter.value);
-
-    const tags = Array.from(
-      new Set([
-        ...(selectedGroupTag ? [selectedGroupTag] : []),
-        ...customTagFilters,
-      ]),
-    );
-
     return {
       search: deferredSearch.trim() || undefined,
-      tags: tags.length > 0 ? tags.join(',') : undefined,
-      hasPropertyContact: activeFilters.some((filter) => filter.field === 'hasPropertyContact') || undefined,
-      hasBuyerReq: activeFilters.some((filter) => filter.field === 'hasBuyerReq') || undefined,
+      tags: selectedCustomTags.length > 0 ? selectedCustomTags.join(',') : undefined,
+      hasPropertyContact: hasPropertyContact || undefined,
+      hasBuyerReq: hasBuyerReq || undefined,
       sortBy: activeSorts[0]?.field as 'name' | 'createdAt' | 'updatedAt' | undefined,
       sortOrder: activeSorts[0]?.direction ?? 'desc',
     };
-  }, [activeFilters, activeSorts, deferredSearch, selectedGroupTag]);
+  }, [
+    activeSorts,
+    deferredSearch,
+    hasBuyerReq,
+    hasPropertyContact,
+    selectedCustomTags,
+  ]);
+
+  useEffect(() => {
+    setSelectedContactIds([]);
+  }, [apiParams]);
 
   const {
     data,
@@ -178,118 +219,165 @@ function ContactsPage() {
   const contacts = useMemo(() => data?.pages.flatMap((page) => page.items) ?? [], [data?.pages]);
   const totalContacts = data?.pages[0]?.pagination.total ?? 0;
 
-  const filterDefinitions = useMemo<FilterDefinition[]>(() => {
-    const uniqueCustomTags = Array.from(new Set([
-      ...contacts
-        .flatMap((contact) => contact.tags)
-        .filter((tag) => !CONTACT_GROUP_TAGS.includes(tag) && isContactTagVisible(tag)),
-      ...activeFilters
-        .filter((filter) => filter.field === 'tags')
-        .map((filter) => filter.value),
-    ])).slice(0, 12);
+  const customTagOptions = useMemo<MultiSelectOption[]>(() => {
+    const uniqueCustomTags = Array.from(
+      new Set([
+        ...contacts
+          .flatMap((contact) => contact.tags)
+          .filter((tag) => !CONTACT_GROUP_TAGS.includes(tag) && isContactTagVisible(tag)),
+        ...selectedCustomTags,
+      ]),
+    ).slice(0, 24);
 
-    if (uniqueCustomTags.length === 0) return baseFilterDefinitions;
+    return uniqueCustomTags.map((tag) => ({ label: tag, value: tag }));
+  }, [contacts, selectedCustomTags]);
 
-    return [
-      ...baseFilterDefinitions,
-      {
-        id: 'tags',
-        field: 'tags',
-        label: '추가 태그',
-        type: 'select',
-        operators: ['is'],
-        options: uniqueCustomTags.map((tag) => ({ label: tag, value: tag })),
-      },
-    ];
-  }, [activeFilters, contacts]);
+  const openQuickSheet = useCallback((contact: Contact) => {
+    setSelectedContactId(contact.id);
+  }, []);
 
-  // 디자인 시안 컬럼 순서: 이름(고정) → 구분 → 전화 → 희망 → 물건 → 최근 상담 → 수정일.
-  // '담당' 컬럼과 희망조건/연결물건 인라인 펼침 패널은 GET /contacts 응답에
-  // 해당 projection이 없어 생략 — 상세는 행 클릭 시 ContactQuickSheet에서 확인.
+  const openContactDetail = useCallback(
+    (contact: Contact) => {
+      void navigate({ to: '/contacts/$id', params: { id: contact.id } });
+    },
+    [navigate],
+  );
+
+  // 매물관리 표 밀도에 맞춘 컬럼: 핵심 식별 정보(고정) → 작업 → 관계 데이터 → 최근 상담(fill) → 수정일.
   const columns = useMemo<ColumnDef<Contact, unknown>[]>(
     () => [
       {
+        id: 'name',
         accessorKey: 'name',
-        header: () => <ContactHeaderLabel icon={<UserRound className="size-3.5" />} label="이름" />,
-        size: 160,
+        header: () => <ContactHeaderLabel icon={<UserRound className="size-4" />} label="이름" />,
+        size: 180,
         enableSorting: true,
         cell: ({ row }) => <ContactNameCell contact={row.original} />,
       },
       {
+        id: 'phone',
+        accessorKey: 'phone',
+        header: () => <ContactHeaderLabel icon={<Phone className="size-4" />} label="전화" />,
+        size: 148,
+        enableSorting: false,
+        cell: ({ row }) => <PhoneLineCell contact={row.original} />,
+      },
+      {
+        id: 'actions',
+        header: () => <span className="text-[12px] font-normal">작업</span>,
+        size: 52,
+        minSize: 52,
+        maxSize: 52,
+        enableResizing: false,
+        enableSorting: false,
+        meta: { cellClassName: 'px-1.5' },
+        cell: ({ row }) => (
+          <ContactRowActions
+            contact={row.original}
+            onQuickOpen={openQuickSheet}
+            onOpenDetail={openContactDetail}
+          />
+        ),
+      },
+      {
+        id: 'tags',
         accessorKey: 'tags',
-        header: () => <ContactHeaderLabel icon={<Tags className="size-3.5" />} label="구분" />,
-        size: 104,
+        header: () => <ContactHeaderLabel icon={<Tags className="size-4" />} label="구분" />,
+        size: 120,
         enableSorting: false,
         cell: ({ row }) => <GroupTagCell tags={row.original.tags} />,
       },
       {
-        accessorKey: 'phone',
-        header: () => <ContactHeaderLabel icon={<Phone className="size-3.5" />} label="전화번호" />,
-        size: 150,
-        cell: ({ row }) => <PhoneLineCell contact={row.original} />,
-      },
-      {
+        id: 'buyerRequirements',
         accessorKey: 'buyerRequirements',
-        header: () => <ContactHeaderLabel icon={<Target className="size-3.5" />} label="희망" />,
-        size: 72,
+        header: () => <ContactHeaderLabel icon={<Target className="size-4" />} label="희망" />,
+        size: 76,
         enableSorting: false,
         cell: ({ row }) => (
-          <BuyerReqToggleChip
+          <ExpandableCountChip
+            icon={<Target className="size-3" aria-hidden="true" />}
             count={row.original._count?.buyerRequirements ?? 0}
-            expanded={expandedBuyerReqIds.has(row.original.id)}
-            onToggle={() => toggleBuyerReqExpanded(row.original.id)}
+            label="매수 희망조건"
+            expanded={expandedPanels.get(row.original.id) === 'buyerRequirements'}
+            panelId={getContactExpandedPanelId(row.original.id)}
+            onToggle={() => toggleExpandedPanel(row.original.id, 'buyerRequirements')}
           />
         ),
       },
       {
+        id: 'propertyContacts',
         accessorKey: 'propertyContacts',
-        header: () => <ContactHeaderLabel icon={<Building2 className="size-3.5" />} label="물건" />,
-        size: 72,
+        header: () => <ContactHeaderLabel icon={<Building2 className="size-4" />} label="물건" />,
+        size: 76,
         enableSorting: false,
         cell: ({ row }) => (
-          <CountChip
-            icon={<Building2 className="size-3" />}
+          <ExpandableCountChip
+            icon={<Building2 className="size-3" aria-hidden="true" />}
             count={row.original._count?.propertyContacts ?? 0}
-            title="연결 물건"
+            label="연결 물건"
+            expanded={expandedPanels.get(row.original.id) === 'propertyContacts'}
+            panelId={getContactExpandedPanelId(row.original.id)}
+            onToggle={() => toggleExpandedPanel(row.original.id, 'propertyContacts')}
           />
         ),
       },
       {
+        id: 'latestConsultation',
         accessorKey: 'latestConsultation',
-        header: () => <ContactHeaderLabel icon={<FileText className="size-3.5" />} label="최근 상담" />,
-        size: 340,
+        header: () => <ContactHeaderLabel icon={<FileText className="size-4" />} label="최근 상담" />,
+        size: 280,
         enableSorting: false,
+        meta: { fill: true },
         cell: ({ row }) => <LatestConsultationCell contact={row.original} />,
       },
       {
+        id: 'updatedAt',
         accessorKey: 'updatedAt',
-        header: () => <ContactHeaderLabel icon={<CalendarDays className="size-3.5" />} label="수정일" />,
-        size: 92,
+        header: () => <ContactHeaderLabel icon={<CalendarDays className="size-4" />} label="수정" />,
+        size: 100,
         enableSorting: true,
-        cell: ({ row }) => <DateCell value={row.original.updatedAt} relative />,
+        cell: ({ row }) => (
+          <span className="truncate text-[13px] tabular-nums text-slate-700">
+            <DateCell value={row.original.updatedAt} relative />
+          </span>
+        ),
       },
     ],
-    [expandedBuyerReqIds, toggleBuyerReqExpanded],
+    [
+      expandedPanels,
+      openContactDetail,
+      openQuickSheet,
+      toggleExpandedPanel,
+    ],
   );
 
-  const handleFilterAdd = useCallback((filter: ActiveFilter) => {
+  const setBooleanFilter = useCallback((field: 'hasPropertyContact' | 'hasBuyerReq', enabled: boolean) => {
     setActiveFilters((previous) => {
-      if (filter.field === 'tags') {
-        if (previous.some((item) => item.field === 'tags' && item.value === filter.value)) {
-          return previous;
-        }
-        return [...previous, filter];
-      }
-
-      return [
-        ...previous.filter((item) => item.field !== filter.field),
-        filter,
-      ];
+      const without = previous.filter((item) => item.field !== field);
+      if (!enabled) return without;
+      const next: ActiveFilter = {
+        id: field,
+        field,
+        operator: 'is',
+        value: 'true',
+        displayValue: '있음',
+      };
+      return [...without, next];
     });
   }, []);
 
-  const handleFilterRemove = useCallback((filterId: string) => {
-    setActiveFilters((previous) => previous.filter((filter) => filter.id !== filterId));
+  const handleCustomTagsChange = useCallback((values: string[]) => {
+    setActiveFilters((previous) => {
+      const withoutTags = previous.filter((item) => item.field !== 'tags');
+      const next: ActiveFilter[] = values.map((value) => ({
+        id: `tags-${value}`,
+        field: 'tags',
+        operator: 'is',
+        value,
+        displayValue: value,
+      }));
+      return [...withoutTags, ...next];
+    });
   }, []);
 
   const handleFiltersReset = useCallback(() => {
@@ -299,9 +387,11 @@ function ContactsPage() {
     setSearch('');
   }, []);
 
-  const handleSortAdd = useCallback((sort: SortDefinition) => {
-    setActiveSorts([sort]);
-    setSorting([{ id: sort.field, desc: sort.direction === 'desc' }]);
+  const handleSortChange = useCallback((field: string) => {
+    const definition = sortDefinitions.find((item) => item.field === field);
+    if (!definition) return;
+    setActiveSorts([{ ...definition, direction: 'desc' }]);
+    setSorting([{ id: field, desc: true }]);
   }, []);
 
   const handleEndReached = useCallback(() => {
@@ -309,109 +399,228 @@ function ContactsPage() {
     void fetchNextPage();
   }, [fetchNextPage, hasNextPage, isFetchingNextPage]);
 
-  const emptyMessage = deferredSearch.trim() || activeFilters.length > 0 || selectedGroupTag
+  const hasActiveFilters =
+    Boolean(search.trim()) ||
+    activeFilters.length > 0 ||
+    activeSorts[0]?.field !== 'updatedAt' ||
+    activeSorts[0]?.direction !== 'desc';
+
+  const emptyMessage =
+    deferredSearch.trim() || activeFilters.length > 0
       ? '조건에 맞는 연락처가 없습니다.'
       : '등록된 연락처가 없습니다.';
 
   return (
-    <div className="flex h-[calc(100svh-4rem)] min-h-0 flex-col bg-white">
-      {/* 디자인 시안 헤더 — 그룹 필터 칩 + 우측 연락처 추가 (그룹 카운트 포함) */}
-      <section className="flex flex-wrap items-center gap-2.5 border-b border-border bg-white px-6 py-3">
-        <ContactGroupChips selectedGroupTag={selectedGroupTag} onSelect={setSelectedGroupTag} />
-
-        <div className="flex-1" />
-
-        <Button size="sm" asChild className="shrink-0 px-3.5">
-          <Link to="/contacts/new">
-            <Plus className="size-3.5" />
-            연락처 추가
-          </Link>
-        </Button>
-      </section>
-
-      {/* 검색·필터·정렬 ViewBar */}
-      <section ref={viewBarRef} className="border-b border-slate-200 bg-white px-3 py-0">
-        <ViewBar
-          search={search}
-          onSearchChange={(value) => {
-            setSearch(value);
-          }}
-          searchPlaceholder="이름, 전화번호 검색..."
-          searchAlwaysVisible
-          filterDefinitions={filterDefinitions}
-          activeFilters={activeFilters}
-          onFilterAdd={handleFilterAdd}
-          onFilterRemove={handleFilterRemove}
-          onFiltersReset={handleFiltersReset}
-          sortDefinitions={sortDefinitions}
-          activeSorts={activeSorts}
-          onSortAdd={handleSortAdd}
-          onSortRemove={() => {
-            setActiveSorts([]);
-            setSorting([]);
-          }}
-        />
-      </section>
-
-      <section className="flex min-h-0 flex-1 flex-col overflow-hidden bg-white">
-        {isError ? (
-          <EmptyState
-            icon={AlertCircle}
-            title="연락처 목록을 불러오지 못했습니다"
-            description="네트워크 상태를 확인한 뒤 다시 시도하세요."
-            className="flex-1"
-            action={
-              <Button variant="outline" onClick={() => void refetch()}>
-                다시 시도
-              </Button>
-            }
-          />
-        ) : (
-          <DataTable
-            columns={columns}
-            data={contacts}
-            totalCount={totalContacts}
-            pageSize={CONTACTS_PAGE_SIZE}
-            sorting={sorting}
-            onSortingChange={(nextSorting) => {
-              setSorting(nextSorting);
-              if (nextSorting.length === 0) {
-                setActiveSorts([]);
-                return;
-              }
-
-              const next = nextSorting[0];
-              setActiveSorts([
-                {
-                  field: next.id,
-                  label: sortDefinitions.find((definition) => definition.field === next.id)?.label ?? next.id,
-                  direction: next.desc ? 'desc' : 'asc',
-                },
-              ]);
-            }}
-            layout="full-height"
-            variant="notion"
-            rowHeight={CONTACT_ROW_HEIGHT}
-            pinnedColumns={['name']}
-            isLoading={isLoading}
-            isLoadingMore={isFetchingNextPage}
-            onEndReached={handleEndReached}
-            emptyMessage={emptyMessage}
-            renderStatusBar={() => (
-              <span>
-                연락처 {contacts.length.toLocaleString()} / {totalContacts.toLocaleString()}건 표시
-                {activeSorts[0] ? ` · ${activeSorts[0].label}순` : ''}
-                {hasNextPage && !isFetchingNextPage ? ' · 아래로 스크롤하면 더 불러옵니다' : ''}
-                {isFetchingNextPage ? ' · 더 불러오는 중...' : ''}
-              </span>
+    <div data-contacts-page className="-m-4 flex min-h-0 flex-1 flex-col bg-white">
+      {/* 1행: 검색 + 추가 — 매물관리 상단 툴바 정렬 */}
+      <section className="shrink-0 border-b border-border bg-white px-3 py-2.5">
+        <div className="flex min-w-0 items-center gap-2">
+          <div className="relative min-w-[200px] max-w-md flex-1">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              ref={searchInputRef}
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="이름, 전화번호 검색"
+              className="h-8 border-transparent bg-[#f7f6f3] pl-8 pr-8 text-[13px] shadow-none hover:border-border focus:border-input focus:bg-white"
+            />
+            {search && (
+              <button
+                type="button"
+                aria-label="검색어 지우기"
+                onClick={() => setSearch('')}
+                className="absolute right-2 top-1/2 -translate-y-1/2 rounded-sm p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+              >
+                <X className="size-3.5" />
+              </button>
             )}
-            onRowClick={(contact) => {
-              setSelectedContactId(contact.id);
-            }}
-            expandedRowIds={expandedBuyerReqIds}
-            renderExpandedRow={(contact) => <BuyerReqExpandedPanel contact={contact} />}
-          />
-        )}
+          </div>
+
+          <div className="ml-auto flex shrink-0 items-center gap-2">
+            <Button size="sm" asChild className="shrink-0 px-3.5">
+              <Link to="/contacts/new">
+                <Plus className="size-3.5" />
+                연락처 추가
+              </Link>
+            </Button>
+          </div>
+        </div>
+      </section>
+
+      {/* 2행: 필터·정렬 — 매물관리 보조 필터 바 */}
+      <section className="shrink-0 overflow-x-auto border-b border-border bg-[#faf9f6] px-3 py-2">
+        <div className="flex w-full min-w-max items-center gap-2">
+          <div className="flex shrink-0 items-center gap-1.5">
+            <FilterToggleChip
+              label="매물 연결"
+              active={hasPropertyContact}
+              onToggle={() => setBooleanFilter('hasPropertyContact', !hasPropertyContact)}
+            />
+            <FilterToggleChip
+              label="매수요건"
+              active={hasBuyerReq}
+              onToggle={() => setBooleanFilter('hasBuyerReq', !hasBuyerReq)}
+            />
+
+            {customTagOptions.length > 0 && (
+              <MultiSelect
+                options={customTagOptions}
+                selected={selectedCustomTags}
+                onChange={handleCustomTagsChange}
+                ariaLabel="추가 태그 필터"
+                placeholder="추가 태그"
+                searchPlaceholder="태그 검색"
+                emptyText="일치하는 태그가 없습니다."
+                maxCount={1}
+                className={cn(
+                  'h-8 min-w-[120px] max-w-[220px] border-border bg-white px-2.5 text-[13px] shadow-none',
+                  selectedCustomTags.length > 0 &&
+                    'border-foreground/25 bg-foreground/[0.06]',
+                )}
+                badgeClassName="m-0 h-5 border-border bg-white px-1.5 text-[11px] text-foreground shadow-none"
+                popoverClassName="w-[240px]"
+              />
+            )}
+          </div>
+
+          <div className="h-5 w-px shrink-0 bg-border" aria-hidden="true" />
+
+          <div className="flex shrink-0 items-center gap-1.5">
+            <Select
+              value={activeSorts[0]?.field ?? 'updatedAt'}
+              onValueChange={handleSortChange}
+            >
+              <SelectTrigger
+                aria-label="정렬"
+                className="h-8 w-[132px] border-border bg-white px-2.5 text-[13px] shadow-none"
+              >
+                <SelectValue placeholder="정렬" />
+              </SelectTrigger>
+              <SelectContent>
+                {sortDefinitions.map((definition) => (
+                  <SelectItem key={definition.field} value={definition.field}>
+                    {definition.label}순
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="ml-auto flex items-center gap-1.5">
+            {hasActiveFilters && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 gap-1.5 px-2.5 text-xs text-muted-foreground"
+                onClick={handleFiltersReset}
+              >
+                <RotateCcw className="size-3.5" />
+                초기화
+              </Button>
+            )}
+          </div>
+        </div>
+      </section>
+
+      <section className="flex min-h-0 flex-1 bg-white px-0 py-0">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-white">
+          {isError ? (
+            <EmptyState
+              icon={AlertCircle}
+              title="연락처 목록을 불러오지 못했습니다"
+              description="네트워크 상태를 확인한 뒤 다시 시도하세요."
+              className="flex-1"
+              action={
+                <Button variant="outline" onClick={() => void refetch()}>
+                  다시 시도
+                </Button>
+              }
+            />
+          ) : (
+            <DataTable
+              columns={columns}
+              data={contacts}
+              totalCount={totalContacts}
+              pageSize={CONTACTS_PAGE_SIZE}
+              sorting={sorting}
+              onSortingChange={(nextSorting) => {
+                setSorting(nextSorting);
+                if (nextSorting.length === 0) {
+                  setActiveSorts([]);
+                  return;
+                }
+
+                const next = nextSorting[0];
+                setActiveSorts([
+                  {
+                    field: next.id,
+                    label:
+                      sortDefinitions.find((definition) => definition.field === next.id)
+                        ?.label ?? next.id,
+                    direction: next.desc ? 'desc' : 'asc',
+                  },
+                ]);
+              }}
+              layout="full-height"
+              variant="notion"
+              rowHeight={CONTACT_ROW_HEIGHT}
+              enableRowSelection
+              selectedRowIds={selectedContactIds}
+              onRowSelectionChange={setSelectedContactIds}
+              activateOnDoubleClick
+              pinnedColumns={['name', 'phone', 'actions']}
+              isLoading={isLoading}
+              isLoadingMore={isFetchingNextPage}
+              onEndReached={handleEndReached}
+              emptyMessage={emptyMessage}
+              onRowClick={(contact) => {
+                openQuickSheet(contact);
+              }}
+              renderBulkActions={(selectedContacts) => (
+                <ContactBulkActions
+                  contacts={selectedContacts}
+                  onQuickOpen={openQuickSheet}
+                  onOpenDetail={openContactDetail}
+                />
+              )}
+              expandedRowIds={expandedRowIds}
+              renderExpandedRow={(contact) => {
+                const panel = expandedPanels.get(contact.id);
+                if (!panel) return null;
+
+                return (
+                  <div id={getContactExpandedPanelId(contact.id)}>
+                    {panel === 'buyerRequirements' ? (
+                      <BuyerReqExpandedPanel contact={contact} />
+                    ) : (
+                      <PropertyContactsExpandedPanel contact={contact} />
+                    )}
+                  </div>
+                );
+              }}
+              renderStatusBar={({ focusedRow, totalCount }) => {
+                const focusedPhone = focusedRow
+                  ? collectContactPhoneStrings(focusedRow)[0]
+                  : undefined;
+                return (
+                  <span>
+                    {isLoading
+                      ? '불러오는 중'
+                      : focusedRow
+                        ? `${focusedRow.name}${focusedPhone ? ` · ${formatPhone(focusedPhone)}` : ''}`
+                        : `연락처 ${contacts.length.toLocaleString()} / ${totalCount.toLocaleString()}건`}
+                    {!isLoading && activeSorts[0] ? ` · ${activeSorts[0].label}순` : ''}
+                    {!isLoading && hasNextPage && !isFetchingNextPage
+                      ? ' · 아래로 스크롤하면 더 불러옵니다'
+                      : ''}
+                    {isFetchingNextPage ? ' · 더 불러오는 중...' : ''}
+                    {!isLoading && !focusedRow ? ' · 더블클릭으로 빠른 확인' : ''}
+                  </span>
+                );
+              }}
+            />
+          )}
+        </div>
       </section>
 
       <ContactQuickSheet
@@ -426,65 +635,202 @@ function ContactsPage() {
   );
 }
 
+function FilterToggleChip({
+  label,
+  active,
+  onToggle,
+}: {
+  label: string;
+  active: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      onClick={onToggle}
+      className={cn(
+        'inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-[13px] font-medium shadow-none transition-colors',
+        active
+          ? 'border-foreground/25 bg-foreground/[0.06] text-foreground'
+          : 'border-border bg-white text-muted-foreground hover:bg-white hover:text-foreground',
+      )}
+    >
+      {label}
+      {active && (
+        <span className="text-[11px] font-semibold text-foreground/70">있음</span>
+      )}
+    </button>
+  );
+}
+
 function ContactHeaderLabel({ icon, label }: { icon: ReactNode; label: string }) {
   return (
-    <span className="inline-flex min-w-0 items-center gap-1.5 text-[11.5px] text-muted-foreground">
-      <span className="shrink-0 text-muted-foreground/70">{icon}</span>
+    <span className="inline-flex min-w-0 items-center gap-1 text-[12px] font-normal text-muted-foreground">
+      <span className="shrink-0 [&>svg]:size-3.5 [&>svg]:text-muted-foreground/70">{icon}</span>
       <span className="truncate">{label}</span>
     </span>
   );
 }
 
 function ContactNameCell({ contact }: { contact: Contact }) {
-  // 행 클릭 → ContactQuickSheet 일관성 유지를 위해 이름 셀에 별도 링크 두지 않음.
+  // 더블클릭 → QuickSheet. 이름 셀에 별도 링크 두지 않음.
   return (
-    <span className="block min-w-0 truncate text-[13px] font-semibold text-foreground">
-      {contact.name}
-    </span>
+    <div className="flex min-w-0 items-center">
+      <span className="truncate text-[13px] font-semibold text-slate-900">{contact.name}</span>
+    </div>
   );
 }
 
-/** 고정 그룹 태그 — 대표 그룹 1개 + 추가 개수 축약 (디자인 시안 '구분' 칩) */
-function GroupTagCell({ tags }: { tags: string[] }) {
-  const { groupTags } = splitContactTags(tags);
+function ContactRowActions({
+  contact,
+  onQuickOpen,
+  onOpenDetail,
+}: {
+  contact: Contact;
+  onQuickOpen: (contact: Contact) => void;
+  onOpenDetail: (contact: Contact) => void;
+}) {
+  const hasPhone = collectContactPhoneStrings(contact).length > 0;
 
-  if (groupTags.length === 0) {
-    return <span className="text-[12px] text-muted-foreground/60">—</span>;
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-xs"
+          aria-label={`${contact.name} 작업 메뉴`}
+          title="행 작업 메뉴"
+          className="mx-auto text-[#627d98] hover:bg-[#eef1f3] hover:text-slate-900 data-[state=open]:bg-[#eef1f3] data-[state=open]:text-slate-900"
+          onClick={(event) => event.stopPropagation()}
+        >
+          <EllipsisVertical className="size-3.5" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-40">
+        <DropdownMenuItem onClick={() => onQuickOpen(contact)}>
+          <PanelRightOpen className="size-3.5" />
+          빠른 확인
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => onOpenDetail(contact)}>
+          <ArrowUpRight className="size-3.5" />
+          상세 보기
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem
+          disabled={!hasPhone}
+          onClick={() => void copyContactPhoneNumbers([contact])}
+        >
+          <Copy className="size-3.5" />
+          전화번호 복사
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function ContactBulkActions({
+  contacts,
+  onQuickOpen,
+  onOpenDetail,
+}: {
+  contacts: Contact[];
+  onQuickOpen: (contact: Contact) => void;
+  onOpenDetail: (contact: Contact) => void;
+}) {
+  const singleContact = contacts.length === 1 ? contacts[0] : null;
+  const hasPhone = contacts.some(
+    (contact) => collectContactPhoneStrings(contact).length > 0,
+  );
+
+  return (
+    <>
+      <Button
+        type="button"
+        variant="outline"
+        size="xs"
+        disabled={!singleContact}
+        onClick={() => singleContact && onQuickOpen(singleContact)}
+        className="text-slate-600"
+      >
+        <PanelRightOpen className="size-3" />
+        빠른 확인
+      </Button>
+      <Button
+        type="button"
+        variant="outline"
+        size="xs"
+        disabled={!singleContact}
+        onClick={() => singleContact && onOpenDetail(singleContact)}
+        className="text-slate-600"
+      >
+        <ArrowUpRight className="size-3" />
+        상세 보기
+      </Button>
+      <Button
+        type="button"
+        variant="outline"
+        size="xs"
+        disabled={!hasPhone}
+        onClick={() => void copyContactPhoneNumbers(contacts)}
+        className="text-slate-600"
+      >
+        <Copy className="size-3" />
+        전화번호 복사
+      </Button>
+    </>
+  );
+}
+
+/** 고정 그룹 태그 — 대표 그룹 1개 + 추가 개수 축약 */
+function GroupTagCell({ tags }: { tags: string[] }) {
+  const { groupTags, customTags } = splitContactTags(tags);
+  const visibleTags = [...groupTags, ...customTags];
+  const primaryTag = visibleTags[0];
+
+  if (!primaryTag) {
+    return <span className="text-[13px] text-slate-400">—</span>;
   }
 
   return (
     <div className="flex min-w-0 items-center gap-1">
-      <span className="inline-flex h-[22px] max-w-full items-center truncate rounded-md bg-[#e7f3f8] px-2 text-[11.5px] font-medium text-[#337ea9]">
-        {groupTags[0]}
+      <span
+        className={cn(
+          'inline-flex h-[22px] max-w-full items-center truncate rounded-md px-2 text-[11.5px] font-medium',
+          CONTACT_GROUP_STYLES[primaryTag] ?? 'bg-[#f1f1ef] text-[#5f5e5b]',
+        )}
+      >
+        {primaryTag}
       </span>
-      {groupTags.length > 1 && (
-        <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground/70">
-          +{groupTags.length - 1}
+      {visibleTags.length > 1 && (
+        <span className="shrink-0 text-[11px] tabular-nums text-slate-500">
+          +{visibleTags.length - 1}
         </span>
       )}
     </div>
   );
 }
 
-/** 대표 전화 1줄 + 나머지 개수 "+N" 배지 (title로 전체 번호 노출) */
+/** 대표 전화 1줄 + 나머지 개수 "+N" 배지 */
 function PhoneLineCell({ contact }: { contact: Contact }) {
   const phones = collectContactPhoneStrings(contact);
 
   if (phones.length === 0) {
-    return <span className="text-[12px] text-muted-foreground/60">—</span>;
+    return <span className="text-[13px] text-slate-400">—</span>;
   }
 
   const [primary, ...rest] = phones;
 
   return (
     <div className="flex min-w-0 items-center gap-1.5">
-      <span className="truncate text-[12.5px] tabular-nums text-foreground">
+      <span className="truncate text-[13px] tabular-nums text-slate-900">
         {formatPhone(primary)}
       </span>
       {rest.length > 0 && (
         <span
           title={rest.map((phone) => formatPhone(phone)).join(', ')}
-          className="inline-flex h-4 shrink-0 cursor-default items-center rounded-full bg-[#f1f1ef] px-1.5 text-[9.5px] font-bold text-muted-foreground"
+          className="inline-flex h-4 shrink-0 cursor-default items-center rounded-full bg-[#f1f1ef] px-1.5 text-[9.5px] font-bold text-slate-500"
         >
           +{rest.length}
         </span>
@@ -509,40 +855,69 @@ function collectContactPhoneStrings(contact: Contact): string[] {
   return contact.phone ? [contact.phone] : [];
 }
 
-/** 희망 칩 — 클릭 시 행 아래로 구매 희망조건 패널을 펼친다 (0건이면 "—") */
-function BuyerReqToggleChip({
+async function copyContactPhoneNumbers(contacts: Contact[]) {
+  const phones = Array.from(
+    new Set(
+      contacts.flatMap((contact) => collectContactPhoneStrings(contact)),
+    ),
+  ).map(formatPhone);
+
+  if (phones.length === 0) {
+    toast.error('선택한 연락처에 전화번호가 없습니다.');
+    return;
+  }
+
+  try {
+    await navigator.clipboard.writeText(phones.join(', '));
+    toast.success(`전화번호 ${phones.length}건을 복사했습니다.`);
+  } catch {
+    toast.error('전화번호를 복사하지 못했습니다.');
+  }
+}
+
+/** 카운트 칩 — 클릭 시 행 아래의 연결 데이터를 펼친다 (0건이면 "—") */
+function ExpandableCountChip({
+  icon,
   count,
+  label,
   expanded,
+  panelId,
   onToggle,
 }: {
+  icon: ReactNode;
   count: number;
+  label: string;
   expanded: boolean;
+  panelId: string;
   onToggle: () => void;
 }) {
   if (count === 0) {
-    return <span className="text-[12px] text-muted-foreground/60">—</span>;
+    return <span className="text-[13px] text-slate-400">—</span>;
   }
 
   const Chevron = expanded ? ChevronDown : ChevronRight;
   return (
     <button
       type="button"
-      title="매수 희망조건 펼치기"
+      title={`${label} ${expanded ? '접기' : '펼치기'}`}
+      aria-label={`${label} ${count}건 ${expanded ? '접기' : '펼치기'}`}
       aria-expanded={expanded}
+      aria-controls={panelId}
+      data-state={expanded ? 'open' : 'closed'}
       onClick={(event) => {
-        // 행 클릭(QuickSheet 열기)과 분리
         event.stopPropagation();
         onToggle();
       }}
-      className={`inline-flex h-5 items-center gap-1 rounded-full border px-2 text-[11px] font-semibold tabular-nums transition-colors ${
+      className={cn(
+        'inline-flex h-6 items-center gap-1 rounded-md border px-1.5 text-[12px] font-semibold tabular-nums transition-colors motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50',
         expanded
           ? 'border-foreground/30 bg-foreground text-background'
-          : 'border-border bg-muted/60 text-foreground/80 hover:bg-muted'
-      }`}
+          : 'border-[#e7e5df] bg-[#f7f6f3] text-slate-700 hover:bg-[#f1f0ec]',
+      )}
     >
-      <Target className="size-3" />
+      {icon}
       {count}
-      <Chevron className="size-3" />
+      <Chevron className="size-3 opacity-70" aria-hidden="true" />
     </button>
   );
 }
@@ -550,7 +925,6 @@ function BuyerReqToggleChip({
 /** 희망 펼침 패널 — 해당 연락처의 구매 희망조건을 행 아래에 인라인 표시 */
 function BuyerReqExpandedPanel({ contact }: { contact: Contact }) {
   const PANEL_LIMIT = 20;
-  // limit 초과분은 '더 보기'로 패널 안에서 직접 로드 (조용한 누락 방지)
   const [limit, setLimit] = useState(PANEL_LIMIT);
   const { data, isLoading, isError } = useQuery({
     queryKey: ['contact-buyer-requirements', contact.id, limit],
@@ -563,7 +937,7 @@ function BuyerReqExpandedPanel({ contact }: { contact: Contact }) {
 
   if (isLoading) {
     return (
-      <div className="flex items-center gap-2 px-6 py-3 text-[12px] text-muted-foreground">
+      <div className="flex items-center gap-2 border-b border-[#eeeeec] bg-[#faf9f6] px-4 py-2.5 text-[12px] text-slate-500">
         <Loader2 className="size-3.5 animate-spin" />
         희망조건 불러오는 중...
       </div>
@@ -571,22 +945,25 @@ function BuyerReqExpandedPanel({ contact }: { contact: Contact }) {
   }
   if (isError) {
     return (
-      <div className="px-6 py-3 text-[12px] text-destructive">희망조건을 불러오지 못했습니다.</div>
+      <div className="border-b border-[#eeeeec] bg-[#faf9f6] px-4 py-2.5 text-[12px] text-destructive">
+        희망조건을 불러오지 못했습니다.
+      </div>
     );
   }
   if (items.length === 0) {
     return (
-      <div className="px-6 py-3 text-[12px] text-muted-foreground">등록된 희망조건이 없습니다.</div>
+      <div className="border-b border-[#eeeeec] bg-[#faf9f6] px-4 py-2.5 text-[12px] text-slate-500">
+        등록된 희망조건이 없습니다.
+      </div>
     );
   }
 
   return (
-    <div className="flex flex-col gap-1.5 px-6 py-2.5">
+    <div className="flex flex-col gap-1.5 border-b border-[#eeeeec] bg-[#faf9f6] px-4 py-2.5">
       {items.map((req) => {
         const txLabel = req.transactionType
           ? (TRANSACTION_TYPE_LABELS[req.transactionType as TransactionType] ?? req.transactionType)
           : null;
-        // 구매고객 페이지와 동일 헬퍼 재사용 — 표기 일관성 유지
         const budget = formatBudget(req);
         const area =
           req.areaMin != null || req.areaMax != null
@@ -598,38 +975,35 @@ function BuyerReqExpandedPanel({ contact }: { contact: Contact }) {
             key={req.id}
             to="/buyer-requirements/$id"
             params={{ id: req.id }}
-            className="flex min-w-0 items-center gap-2 rounded-[8px] border border-border bg-white px-3 py-1.5 transition-colors hover:bg-muted/40"
+            className="flex min-w-0 items-center gap-2 rounded-md border border-[#e7e5df] bg-white px-3 py-1.5 transition-colors hover:bg-slate-50"
           >
             <StatusBadge kind="buyerUrgency" status={req.urgency} size="sm" />
-            {txLabel && <span className="shrink-0 text-[12px] font-semibold">{txLabel}</span>}
+            {txLabel && (
+              <span className="shrink-0 text-[12px] font-semibold text-slate-900">{txLabel}</span>
+            )}
             {budget !== '—' && (
-              <span className="shrink-0 text-[12px] tabular-nums text-foreground/80">{budget}</span>
+              <span className="shrink-0 text-[12px] tabular-nums text-slate-700">{budget}</span>
             )}
-            {area && (
-              <span className="shrink-0 text-[11.5px] text-muted-foreground">{area}</span>
-            )}
-            {req.mustConditions.length > 0 && (
-              <span className="truncate text-[11.5px] text-muted-foreground">
-                필수: {req.mustConditions.join(', ')}
+            {area && <span className="shrink-0 text-[11.5px] text-slate-500">{area}</span>}
+            {req.memo?.trim() && (
+              <span className="truncate text-[11.5px] text-slate-500">
+                메모: {req.memo.replace(/\s+/g, ' ')}
               </span>
             )}
             <span className="flex-1" />
             {req.assignedTo && (
-              <span className="shrink-0 text-[11px] text-muted-foreground/70">
-                담당 {req.assignedTo.name}
-              </span>
+              <span className="shrink-0 text-[11px] text-slate-500">담당 {req.assignedTo.name}</span>
             )}
             <StatusBadge kind="buyerStatus" status={req.status} size="sm" />
-            <ChevronRight className="size-3 shrink-0 text-muted-foreground/50" />
+            <ChevronRight className="size-3 shrink-0 text-slate-400" />
           </Link>
         );
       })}
-      {/* limit 초과분은 조용히 숨기지 않고 패널 안에서 이어서 로드 */}
       {hiddenCount > 0 && (
         <button
           type="button"
           onClick={() => setLimit(total)}
-          className="flex items-center justify-center gap-1 rounded-[8px] border border-dashed border-border px-3 py-1.5 text-[11.5px] text-muted-foreground transition-colors hover:bg-muted/40"
+          className="flex items-center justify-center gap-1 rounded-md border border-dashed border-[#e7e5df] bg-white px-3 py-1.5 text-[11.5px] text-slate-500 transition-colors hover:bg-slate-50"
         >
           외 {hiddenCount}건 더 보기
           <ChevronDown className="size-3" />
@@ -639,39 +1013,114 @@ function BuyerReqExpandedPanel({ contact }: { contact: Contact }) {
   );
 }
 
-/** 희망조건/연결물건 카운트 칩 — 0건이면 "—" (디자인 시안의 확장 칩을 카운트 표기로 대체) */
-function CountChip({ icon, count, title }: { icon: ReactNode; count: number; title: string }) {
-  if (count === 0) {
-    return <span className="text-[12px] text-muted-foreground/60">—</span>;
+/** 연결 물건 펼침 패널 — 해당 연락처와 연결된 매물을 행 아래에 인라인 표시 */
+function PropertyContactsExpandedPanel({ contact }: { contact: Contact }) {
+  const { data: items = [], isLoading, isError } = useQuery({
+    queryKey: ['contacts', contact.id, 'property-contacts'],
+    queryFn: () => api.contacts.getPropertyContacts(contact.id),
+  });
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center gap-2 border-b border-[#eeeeec] bg-[#faf9f6] px-4 py-2.5 text-[12px] text-slate-500">
+        <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+        연결 물건 불러오는 중...
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <div className="border-b border-[#eeeeec] bg-[#faf9f6] px-4 py-2.5 text-[12px] text-destructive">
+        연결 물건을 불러오지 못했습니다.
+      </div>
+    );
+  }
+
+  if (items.length === 0) {
+    return (
+      <div className="border-b border-[#eeeeec] bg-[#faf9f6] px-4 py-2.5 text-[12px] text-slate-500">
+        연결된 물건이 없습니다.
+      </div>
+    );
   }
 
   return (
-    <span
-      title={title}
-      className="inline-flex h-5 items-center gap-1 rounded-full border border-border bg-muted/60 px-2 text-[11px] font-semibold tabular-nums text-foreground/80"
-    >
-      {icon}
-      {count}
-    </span>
+    <div className="flex flex-col gap-1.5 border-b border-[#eeeeec] bg-[#faf9f6] px-4 py-2.5">
+      {items.map((propertyContact) => {
+        const siteName = propertyContact.property?.site?.name?.trim() || '이름 없는 물건';
+        const unitName = propertyContact.property?.unit?.name?.trim();
+        const title = unitName ? `${siteName} · ${unitName}` : siteName;
+        const address =
+          propertyContact.property?.site?.roadAddress ??
+          propertyContact.property?.site?.jibunAddress ??
+          null;
+        const content = (
+          <>
+            <Building2 className="size-3.5 shrink-0 text-slate-400" aria-hidden="true" />
+            <div className="min-w-0 flex-1">
+              <div className="flex min-w-0 items-center gap-1.5">
+                <span className="truncate text-[12px] font-semibold text-slate-900">{title}</span>
+                <span className="shrink-0 rounded-[4px] bg-[#f1f1ef] px-1.5 py-0.5 text-[10.5px] text-[#5f5e5b]">
+                  {propertyRoleLabels[propertyContact.role] ?? propertyContact.role}
+                </span>
+                {propertyContact.isPrimary && (
+                  <span className="shrink-0 rounded-[4px] bg-[#e7f3f8] px-1.5 py-0.5 text-[10.5px] text-[#337ea9]">
+                    주 연락처
+                  </span>
+                )}
+                {propertyContact.isResident && (
+                  <span className="shrink-0 rounded-[4px] bg-[#edf3ec] px-1.5 py-0.5 text-[10.5px] text-[#448361]">
+                    거주중
+                  </span>
+                )}
+                {propertyContact.shareRatio !== null && (
+                  <span className="shrink-0 text-[11px] tabular-nums text-slate-500">
+                    지분 {propertyContact.shareRatio}%
+                  </span>
+                )}
+              </div>
+              {address && <p className="mt-0.5 truncate text-[11px] text-slate-500">{address}</p>}
+            </div>
+            <ChevronRight className="size-3 shrink-0 text-slate-400" aria-hidden="true" />
+          </>
+        );
+        const rowClassName =
+          'flex min-w-0 items-center gap-2 rounded-md border border-[#e7e5df] bg-white px-3 py-1.5 transition-colors hover:bg-slate-50';
+
+        return propertyContact.property ? (
+          <Link
+            key={propertyContact.id}
+            to="/properties/$id"
+            params={{ id: propertyContact.propertyId }}
+            className={rowClassName}
+          >
+            {content}
+          </Link>
+        ) : (
+          <div key={propertyContact.id} className={rowClassName}>
+            {content}
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
-/** 최근 상담 — 날짜 + 내용 1줄 요약 (디자인 시안 lastTxt) */
+/** 최근 상담 — 날짜 + 내용 1줄 요약 */
 function LatestConsultationCell({ contact }: { contact: Contact }) {
   const consultation = contact.latestConsultation;
 
   if (!consultation) {
-    return <span className="text-[12px] text-muted-foreground/60">—</span>;
+    return <span className="text-[13px] text-slate-400">—</span>;
   }
 
   return (
-    <div className="flex min-w-0 items-center gap-1.5">
-      <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground/70">
+    <div className="flex min-w-0 items-center gap-2">
+      <span className="shrink-0 text-[12px] tabular-nums text-slate-500">
         {formatDateShort(consultation.createdAt)}
       </span>
-      <span className="truncate text-[12px] text-foreground/80">
-        {consultation.content}
-      </span>
+      <span className="truncate text-[13px] text-slate-700">{consultation.content}</span>
     </div>
   );
 }

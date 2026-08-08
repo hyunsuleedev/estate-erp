@@ -19,6 +19,7 @@ model Consultation {
   listingIntakeId String? @map("listing_intake_id") @db.Uuid // 의뢰 맥락 (방문/권리/현장 메모 등)
   listingId       String? @map("listing_id") @db.Uuid // 매물 맥락 (거래 상담)
   matchId         String? @map("match_id") @db.Uuid
+  buyerIntakeId   String? @map("buyer_intake_id") @db.Uuid
   buyerReqId      String? @map("buyer_req_id") @db.Uuid
 
   createdAt DateTime @default(now()) @map("created_at")
@@ -32,7 +33,8 @@ model Consultation {
   listingIntake    ListingIntake?    @relation(fields: [listingIntakeId], references: [id])
   listing          Listing?          @relation(fields: [listingId], references: [id])
   match            Match?            @relation(fields: [matchId], references: [id])
-  buyerRequirement BuyerRequirement? @relation(fields: [buyerReqId], references: [id])
+  buyerIntake      BuyerIntake?      @relation(fields: [officeId, buyerIntakeId], references: [officeId, id], onDelete: Restrict)
+  buyerRequirement BuyerRequirement? @relation(fields: [officeId, buyerIntakeId, buyerReqId], references: [officeId, buyerIntakeId, id], onDelete: Restrict)
   tasks            Task[]
   callLogs         CallLog[]
 
@@ -41,7 +43,61 @@ model Consultation {
   @@index([officeId, propertyId])
   @@index([officeId, listingIntakeId])
   @@index([officeId, listingId])
+  @@index([officeId, buyerIntakeId])
   @@map("consultations")
+}
+
+// ============================================================
+// 구매 의뢰 (여러 사람과 여러 희망조건을 묶는 업무 단위)
+// ============================================================
+
+model BuyerIntake {
+  id               String   @id @default(uuid()) @db.Uuid
+  officeId         String   @map("office_id") @db.Uuid
+  brokerageCaseId  String   @map("brokerage_case_id") @db.Uuid
+  casePriorityRank Int      @default(1) @map("case_priority_rank")
+  lifecycleStatus  String   @default("open") @map("lifecycle_status") // open, hold, closed
+  receivedAt       DateTime @default(now()) @map("received_at")
+  memo             String?
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  office           Office                    @relation(fields: [officeId], references: [id])
+  brokerageCase    BrokerageCase             @relation(fields: [officeId, brokerageCaseId], references: [officeId, id], onDelete: Restrict)
+  contacts         BuyerIntakeContact[]
+  requirements     BuyerRequirement[]
+  consultations    Consultation[]
+  caseDependencies BrokerageCaseDependency[] @relation("BrokerageCaseDependencyTarget")
+
+  // 하위 테이블의 복합 FK가 office_id까지 함께 검증한다.
+  @@unique([officeId, id])
+  @@unique([officeId, brokerageCaseId, id])
+  @@index([officeId, brokerageCaseId, lifecycleStatus, casePriorityRank])
+  @@index([officeId, lifecycleStatus, updatedAt])
+  @@index([officeId, receivedAt])
+  @@map("buyer_intakes")
+}
+
+// 구매 의뢰에 실제로 참여하는 사람. 가족관계(ContactRelation)와 별개다.
+model BuyerIntakeContact {
+  id            String   @id @default(uuid()) @db.Uuid
+  officeId      String   @map("office_id") @db.Uuid
+  buyerIntakeId String   @map("buyer_intake_id") @db.Uuid
+  contactId     String   @map("contact_id") @db.Uuid
+  role          String   @default("buyer") // buyer, co_buyer, representative, supporter, advisor, other
+  /// 이 BuyerIntake에서의 주 연락 창구. 최초 문의자는 Consultation/CallLog로 기록한다.
+  isPrimary     Boolean  @default(false) @map("is_primary")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  office      Office      @relation(fields: [officeId], references: [id])
+  buyerIntake BuyerIntake @relation(fields: [officeId, buyerIntakeId], references: [officeId, id], onDelete: Cascade)
+  contact     Contact     @relation(fields: [officeId, contactId], references: [officeId, id])
+
+  @@unique([buyerIntakeId, contactId])
+  @@index([officeId, contactId, buyerIntakeId])
+  // BuyerIntake당 주 연락 창구는 한 명. partial unique index는 migration SQL에서 생성한다.
+  @@map("buyer_intake_contacts")
 }
 
 // ============================================================
@@ -49,32 +105,34 @@ model Consultation {
 // ============================================================
 
 model BuyerRequirement {
-  id               String    @id @default(uuid()) @db.Uuid
-  officeId         String    @map("office_id") @db.Uuid
-  contactId        String    @map("contact_id") @db.Uuid
-  status           String    @default("active") // active, matched, completed, inactive
-  urgency          String    @default("normal") // urgent, normal, flexible
-  transactionType  String?   @map("transaction_type")
-  siteTypes        String[]  @map("site_types")
-  priceMin         Int?      @map("price_min")
-  priceMax         Int?      @map("price_max")
-  depositMin       Int?      @map("deposit_min")
-  depositMax       Int?      @map("deposit_max")
-  monthlyRentMax   Int?      @map("monthly_rent_max")
-  areaMin          Decimal?  @map("area_min") @db.Decimal
-  areaMax          Decimal?  @map("area_max") @db.Decimal
-  mustConditions   String[]  @map("must_conditions")
-  preferConditions String[]  @map("prefer_conditions")
-  moveInDate       DateTime? @map("move_in_date")
-  assignedToId     String?   @map("assigned_to_id") @db.Uuid
-  lastContactDate  DateTime? @map("last_contact_date")
-  nextContactDate  DateTime? @map("next_contact_date")
-  memo             String?
-  createdAt        DateTime  @default(now()) @map("created_at")
-  updatedAt        DateTime  @updatedAt @map("updated_at")
+  id              String    @id @default(uuid()) @db.Uuid
+  officeId        String    @map("office_id") @db.Uuid
+  buyerIntakeId   String    @map("buyer_intake_id") @db.Uuid
+  priorityRank    Int       @default(1) @map("priority_rank")
+  status          String    @default("active") // active, hold, completed
+  urgency         String    @default("normal") // urgent, normal, flexible
+  transactionType String?   @map("transaction_type")
+  siteTypes       String[]  @map("site_types")
+  priceMin        Int?      @map("price_min")
+  priceMax        Int?      @map("price_max")
+  depositMin      Int?      @map("deposit_min")
+  depositMax      Int?      @map("deposit_max")
+  monthlyRentMin  Int?      @map("monthly_rent_min")
+  monthlyRentMax  Int?      @map("monthly_rent_max")
+  /// 희망 공급면적 하한. DB는 m², 사용자 화면은 평 단위로 입력·표시한다.
+  areaMin         Decimal?  @map("area_min") @db.Decimal(10, 2)
+  /// 희망 공급면적 상한. DB는 m², 사용자 화면은 평 단위로 입력·표시한다.
+  areaMax         Decimal?  @map("area_max") @db.Decimal(10, 2)
+  moveInDate      DateTime? @map("move_in_date")
+  assignedToId    String?   @map("assigned_to_id") @db.Uuid
+  lastContactDate DateTime? @map("last_contact_date")
+  nextContactDate DateTime? @map("next_contact_date")
+  memo            String?
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
 
   office           Office                   @relation(fields: [officeId], references: [id])
-  contact          Contact                  @relation(fields: [contactId], references: [id])
+  buyerIntake      BuyerIntake              @relation(fields: [officeId, buyerIntakeId], references: [officeId, id], onDelete: Cascade)
   assignedTo       User?                    @relation("AssignedAgent", fields: [assignedToId], references: [id])
   matches          Match[]
   consultations    Consultation[]
@@ -82,7 +140,10 @@ model BuyerRequirement {
   preferredSites   BuyerRequirementSite[]
   preferredRegions BuyerRequirementRegion[]
 
+  // Consultation의 (office_id, buyer_intake_id, buyer_req_id) 복합 FK 대상.
+  @@unique([officeId, buyerIntakeId, id])
   @@index([officeId, status])
+  @@index([buyerIntakeId, priorityRank])
   @@map("buyer_requirements")
 }
 
@@ -131,14 +192,15 @@ model BuyerRequirementRegion {
 // ============================================================
 
 model Match {
-  id         String   @id @default(uuid()) @db.Uuid
-  officeId   String   @map("office_id") @db.Uuid
-  listingId  String   @map("listing_id") @db.Uuid
-  buyerReqId String   @map("buyer_req_id") @db.Uuid
-  stage      String   @default("suggested") // MatchStage enum
-  memo       String?
-  createdAt  DateTime @default(now()) @map("created_at")
-  updatedAt  DateTime @updatedAt @map("updated_at")
+  id              String   @id @default(uuid()) @db.Uuid
+  officeId        String   @map("office_id") @db.Uuid
+  listingId       String   @map("listing_id") @db.Uuid
+  buyerReqId      String   @map("buyer_req_id") @db.Uuid
+  stage           String   @default("suggested") // MatchStage enum
+  closedFromStage String?  @map("closed_from_stage") // 종료 직전 단계 (실패 지점 표시용)
+  memo            String?
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
 
   office           Office           @relation(fields: [officeId], references: [id])
   listing          Listing          @relation(fields: [listingId], references: [id])
@@ -148,13 +210,16 @@ model Match {
   tasks            Task[]
   deals            Deal[]
 
+  // 고객 원장 등에서 요건·매물별 매칭 카운트 상관 서브쿼리가 사용한다.
+  @@index([buyerReqId])
+  @@index([listingId])
   @@map("matches")
 }
 
 // ============================================================
 // 거래 (Deal)
-// 매물 × 고객 조합의 실제 거래 추적. Contract 없이도 자기완결적.
-// 조건(가격/특약)은 협상 중 변동 가능하며 ActivityLog 로 이력이 남는다.
+// 매칭에서 거래 전환된 매물 × 고객 조합의 계약 실행 추적.
+// 최종 조건(가격/특약)은 계약 준비 중 보완 가능하며 ActivityLog 로 이력이 남는다.
 // ============================================================
 
 model Deal {
@@ -170,10 +235,10 @@ model Deal {
   matchId           String? @map("match_id") @db.Uuid
 
   // ─── 파이프라인 ────────────────────────────────────────────
-  /// selection → negotiating → preContract → contracted → settling → completed → closed
-  /// `contracted` 이상 단계로 가려면 Contract 레코드가 반드시 존재해야 함
-  /// (service layer 에서 강제).
-  stage          String   @default("selection")
+  /// preparing → preContract(선택) → contracted → settling → completed → closed
+  /// `contracted` 단계에서 Contract를 작성하며, `settling` 이상 단계로 가려면
+  /// Contract 레코드가 반드시 존재해야 함 (service layer 에서 강제).
+  stage          String   @default("preparing")
   stageChangedAt DateTime @default(now()) @map("stage_changed_at")
 
   /// 취소 여부 (stage 와 직교. 취소되면 stage 는 취소 시점 값으로 동결)
@@ -236,6 +301,7 @@ model Deal {
   commissionPayments CommissionPayment[]
   calendarEvents     CalendarEvent[]
   tasks              Task[]
+
   @@index([officeId, stage])
   @@index([officeId, isCancelled, stage])
   @@index([listingId])

@@ -1,96 +1,361 @@
 import { createFileRoute, Link, type LinkProps } from '@tanstack/react-router';
-import { useQuery } from '@tanstack/react-query';
-import {
-  ArrowRight,
-  CalendarDays,
-  CircleDollarSign,
-  FileSignature,
-  FilePlus2,
-  FileText,
-  Handshake,
-  ListTodo,
-  SearchX,
-  TriangleAlert,
-  UserPlus,
-  Wallet,
-} from 'lucide-react';
-import type { LucideIcon } from 'lucide-react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { ArrowRight, Check } from 'lucide-react';
 import type { ReactNode } from 'react';
+import type { Task } from '@estate-erp/api-client';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { Skeleton } from '@/components/ui/skeleton';
-import { PageHeader } from '@/components/domain';
+import { useAuth } from '@/providers/auth-provider';
 import { formatDate, formatMoney } from '@/lib/format';
-import {
-  ExpiringTenantsWidget,
-  PendingTasksWidget,
-  QueryErrorState,
-  TodayEventsWidget,
-  UpcomingBalancesWidget,
-  localDateKey,
-} from './-dashboard-widgets';
+import { getStatusMeta, PIPELINE_STEPS } from '@/lib/status-config';
+import { consultationTypeLabels } from './consultations/-consultation-badges';
+import { QueryErrorState, WidgetSkeleton, daysUntil, localDateKey } from './-dashboard-widgets';
 
 export const Route = createFileRoute('/_authenticated/dashboard')({
   component: DashboardPage,
 });
 
-/* --------------------------------- KPI 카드 --------------------------------- */
+/* --------------------------------- 공통 --------------------------------- */
 
-interface StatCardProps {
-  label: string;
-  icon: LucideIcon;
-  value: ReactNode;
-  to: LinkProps['to'];
-  /** 대상 라우트로 전달할 검색 파라미터 (라우트별 validateSearch 정의에 의존) */
-  search?: Record<string, unknown>;
-  valueClassName?: string;
-  loading?: boolean;
+function byDateAsc(a: string | null, b: string | null): number {
+  if (!a && !b) return 0;
+  if (!a) return 1;
+  if (!b) return -1;
+  return a.localeCompare(b);
 }
 
-function StatCard({
-  label,
-  icon: Icon,
-  value,
-  to,
-  search,
-  valueClassName,
-  loading,
-}: StatCardProps) {
+/** 상태 tone → 파이프라인 점 색 (텍스트 아님 — 라벨이 의미를 전달) */
+const TONE_DOT: Record<string, string> = {
+  gray: 'bg-muted-foreground/50',
+  violet: 'bg-violet',
+  info: 'bg-info',
+  orange: 'bg-orange',
+  warning: 'bg-warning',
+  success: 'bg-success',
+  neutral: 'bg-neutral-strong',
+  destructive: 'bg-destructive',
+};
+
+function greetingByHour(hour: number): string {
+  if (hour < 5) return '늦은 시간까지 수고 많으세요';
+  if (hour < 12) return '좋은 아침이에요';
+  if (hour < 18) return '좋은 오후예요';
+  return '오늘도 수고 많으셨어요';
+}
+
+/* -------------------------------- 카드 프레임 -------------------------------- */
+
+function DashCard({
+  title,
+  count,
+  moreTo,
+  moreLabel,
+  children,
+}: {
+  title: string;
+  count?: number;
+  moreTo?: LinkProps['to'];
+  moreLabel?: string;
+  children: ReactNode;
+}) {
   return (
-    <Link
-      to={to}
-      search={search as never}
-      className="rounded-lg border bg-card p-4 transition-colors hover:bg-muted/50"
-    >
-      <div className="flex items-center justify-between gap-1.5">
-        <div className="flex min-w-0 items-center gap-1.5">
-          <Icon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-          <span className="truncate text-xs font-medium text-muted-foreground">{label}</span>
-        </div>
+    <section className="rounded-lg border bg-card">
+      <div className="flex items-center px-4 pt-3 pb-1.5">
+        <h2 className="text-sm font-semibold">{title}</h2>
+        {count != null && (
+          <span className="ml-1.5 inline-flex h-[18px] items-center rounded-full bg-muted px-1.5 text-[11px] font-medium text-muted-foreground tabular-nums">
+            {count}
+          </span>
+        )}
+        {moreTo && (
+          <Link
+            to={moreTo}
+            className="ml-auto flex items-center gap-0.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
+          >
+            {moreLabel ?? '전체 보기'} <ArrowRight className="size-3" aria-hidden="true" />
+          </Link>
+        )}
       </div>
-      {loading ? (
-        <Skeleton className="mt-2 h-7 w-16" />
-      ) : (
-        <span
-          className={cn(
-            'mt-1 block truncate text-xl font-semibold tracking-tight tabular-nums',
-            valueClassName,
-          )}
-        >
-          {value}
-        </span>
-      )}
-    </Link>
+      <div className="px-4 pt-0.5 pb-3.5">{children}</div>
+    </section>
   );
 }
 
-function countText(n: number | undefined, unit = '건'): string {
-  return `${(n ?? 0).toLocaleString()}${unit}`;
+/* -------------------------------- 미완료 업무 -------------------------------- */
+
+function isPendingTask(task: Task): boolean {
+  return task.status !== 'completed' && task.status !== 'cancelled';
+}
+
+function TaskDue({ dueDate }: { dueDate: string | null }) {
+  if (!dueDate) return <span className="w-[76px]" />;
+  const days = daysUntil(dueDate);
+  const overdue = days != null && days < 0;
+  const today = days === 0;
+  return (
+    <span
+      className={cn(
+        'w-[76px] shrink-0 text-right text-[11px] tabular-nums',
+        overdue
+          ? 'font-semibold text-destructive-strong'
+          : today
+            ? 'font-semibold text-warning-strong'
+            : 'text-muted-foreground',
+      )}
+    >
+      {today ? '오늘' : formatDate(dueDate)}
+    </span>
+  );
+}
+
+function PendingTasksCard() {
+  const queryClient = useQueryClient();
+  const tasks = useQuery({
+    queryKey: ['tasks'],
+    queryFn: () => api.tasks.findAll(),
+  });
+
+  const toggle = useMutation({
+    mutationFn: (task: Task) =>
+      api.tasks.update(task.id, {
+        status: isPendingTask(task) ? 'completed' : 'pending',
+      }),
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['tasks'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+    },
+  });
+
+  const pending = (tasks.data ?? [])
+    .filter(isPendingTask)
+    .sort((a, b) => byDateAsc(a.dueDate, b.dueDate));
+
+  return (
+    <DashCard
+      title="미완료 업무"
+      count={tasks.data ? pending.length : undefined}
+      moreTo="/tasks"
+      moreLabel="업무 전체"
+    >
+      {tasks.isLoading ? (
+        <WidgetSkeleton rows={5} />
+      ) : tasks.isError ? (
+        <QueryErrorState onRetry={() => void tasks.refetch()} />
+      ) : pending.length === 0 ? (
+        <p className="py-5 text-center text-sm text-muted-foreground">모든 업무를 완료했습니다.</p>
+      ) : (
+        <ul>
+          {pending.slice(0, 7).map((task) => (
+            <li
+              key={task.id}
+              className="flex items-center gap-2.5 border-b border-border/60 py-[7px] last:border-b-0"
+            >
+              <button
+                type="button"
+                aria-label={`${task.title} 완료 처리`}
+                disabled={toggle.isPending}
+                onClick={() => toggle.mutate(task)}
+                className="flex size-4 shrink-0 items-center justify-center rounded-sm border-[1.5px] border-input text-transparent transition-colors hover:border-foreground hover:bg-foreground hover:text-primary-foreground"
+              >
+                <Check className="size-2.5" aria-hidden="true" />
+              </button>
+              <Link to="/tasks" className="min-w-0 flex-1 truncate text-[12.5px] hover:underline">
+                {task.title}
+              </Link>
+              {task.assignedTo?.name && (
+                <span className="shrink-0 text-[11px] text-muted-foreground">
+                  {task.assignedTo.name}
+                </span>
+              )}
+              <TaskDue dueDate={task.dueDate} />
+            </li>
+          ))}
+        </ul>
+      )}
+    </DashCard>
+  );
+}
+
+/* -------------------------------- 오늘 일정 -------------------------------- */
+
+function TodayScheduleCard() {
+  const now = new Date();
+  const todayKey = localDateKey(now);
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
+  const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1).toISOString();
+
+  const events = useQuery({
+    queryKey: ['calendar-events', 'today', todayKey],
+    queryFn: () => api.calendarEvents.findAll({ start: todayStart, end: todayEnd }),
+  });
+
+  const rows = [...(events.data ?? [])].sort((a, b) => byDateAsc(a.start, b.start));
+
+  return (
+    <DashCard title="오늘 일정" moreTo="/calendar" moreLabel="캘린더">
+      {events.isLoading ? (
+        <WidgetSkeleton rows={3} />
+      ) : events.isError ? (
+        <QueryErrorState onRetry={() => void events.refetch()} />
+      ) : rows.length === 0 ? (
+        <p className="py-5 text-center text-sm text-muted-foreground">오늘 일정이 없습니다.</p>
+      ) : (
+        <ul>
+          {rows.slice(0, 4).map((event) => (
+            <li
+              key={event.id}
+              className="flex items-center gap-2.5 border-b border-border/60 py-[7px] last:border-b-0"
+            >
+              <span className="w-[52px] shrink-0 text-[11px] font-semibold text-muted-foreground tabular-nums">
+                {event.allDay
+                  ? '종일'
+                  : new Date(event.start).toLocaleTimeString('ko-KR', {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}
+              </span>
+              <span
+                className="h-4 w-[2.5px] shrink-0 rounded-full"
+                style={{ backgroundColor: event.color || 'var(--color-info)' }}
+                aria-hidden="true"
+              />
+              <Link
+                to="/calendar"
+                className="min-w-0 flex-1 truncate text-[12.5px] hover:underline"
+              >
+                {event.title}
+              </Link>
+              {event.user?.name && (
+                <span className="shrink-0 text-[11px] text-muted-foreground">
+                  {event.user.name}
+                </span>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </DashCard>
+  );
+}
+
+/* -------------------------------- 최근 활동 -------------------------------- */
+
+function timeAgoShort(iso: string): string {
+  const diffMs = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diffMs / 60_000);
+  if (mins < 1) return '방금';
+  if (mins < 60) return `${mins}분`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}시간`;
+  return formatDate(iso).slice(5); // "MM.DD"
+}
+
+function RecentActivityCard() {
+  const consultations = useQuery({
+    queryKey: ['consultations', 'recent'],
+    queryFn: () => api.consultations.getRecent(6),
+  });
+
+  const rows = consultations.data ?? [];
+
+  return (
+    <DashCard title="최근 활동" moreTo="/consultations" moreLabel="상담기록">
+      {consultations.isLoading ? (
+        <WidgetSkeleton rows={4} />
+      ) : consultations.isError ? (
+        <QueryErrorState onRetry={() => void consultations.refetch()} />
+      ) : rows.length === 0 ? (
+        <p className="py-5 text-center text-sm text-muted-foreground">최근 상담 기록이 없습니다.</p>
+      ) : (
+        <ul>
+          {rows.slice(0, 6).map((consultation) => (
+            <li
+              key={consultation.id}
+              className="flex items-center gap-2 border-b border-border/60 py-[6.5px] last:border-b-0"
+            >
+              <span className="w-9 shrink-0 text-[11px] text-muted-foreground tabular-nums">
+                {timeAgoShort(consultation.createdAt)}
+              </span>
+              <span className="inline-flex h-[18px] shrink-0 items-center rounded-sm bg-muted px-1.5 text-[11px] font-medium text-muted-foreground-strong">
+                {consultationTypeLabels[consultation.type] ?? consultation.type}
+              </span>
+              <Link
+                to="/consultations"
+                className="min-w-0 flex-1 truncate text-xs text-foreground hover:underline"
+              >
+                {consultation.contact?.name && (
+                  <span className="font-medium">{consultation.contact.name} · </span>
+                )}
+                {consultation.content}
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+    </DashCard>
+  );
+}
+
+/* ------------------------------ 거래 파이프라인 ------------------------------ */
+
+const PIPELINE_STAGES = (PIPELINE_STEPS.dealStage ?? []).filter((stage) => stage !== 'closed');
+
+function DealPipelineStrip() {
+  const deals = useQuery({
+    queryKey: ['deals'],
+    queryFn: () => api.deals.findAll(),
+  });
+
+  const countByStage = new Map<string, number>();
+  for (const deal of deals.data ?? []) {
+    if (deal.isCancelled) continue;
+    countByStage.set(deal.stage, (countByStage.get(deal.stage) ?? 0) + 1);
+  }
+
+  return (
+    <Link
+      to="/deals"
+      className="flex items-center gap-0 rounded-lg border bg-card px-4 py-3 transition-colors hover:bg-muted/40"
+    >
+      <span className="mr-4 shrink-0 text-[12.5px] font-semibold">거래 파이프라인</span>
+      {deals.isLoading ? (
+        <Skeleton className="h-4 flex-1" />
+      ) : deals.isError ? (
+        <span className="flex-1 text-xs text-muted-foreground">
+          거래 현황을 불러오지 못했습니다.
+        </span>
+      ) : (
+        <span className="flex min-w-0 flex-1 items-center">
+          {PIPELINE_STAGES.map((stage) => {
+            const meta = getStatusMeta('dealStage', stage);
+            return (
+              <span key={stage} className="flex min-w-0 flex-1 items-center gap-1.5">
+                <span
+                  className={cn(
+                    'size-2 shrink-0 rounded-full',
+                    TONE_DOT[meta.tone] ?? 'bg-muted-foreground/50',
+                  )}
+                  aria-hidden="true"
+                />
+                <span className="truncate text-xs text-muted-foreground-strong">{meta.label}</span>
+                <span className="text-[13px] font-semibold tabular-nums">
+                  {countByStage.get(stage) ?? 0}
+                </span>
+              </span>
+            );
+          })}
+        </span>
+      )}
+      <ArrowRight className="ml-2.5 size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+    </Link>
+  );
 }
 
 /* --------------------------------- 페이지 --------------------------------- */
 
 function DashboardPage() {
+  const { user } = useAuth();
   const todayKey = localDateKey();
 
   const summary = useQuery({
@@ -98,179 +363,44 @@ function DashboardPage() {
     queryFn: () => api.dashboard.summary(),
   });
 
-  const cashflow = useQuery({
-    queryKey: ['cashflow'],
-    queryFn: () => api.finance.cashflow.summary(),
-  });
-
-  const month = summary.data?.thisMonth;
   const counts = summary.data?.counts;
+  const month = summary.data?.thisMonth;
   const loading = summary.isLoading;
 
   return (
-    <div className="flex flex-col gap-4">
-      <PageHeader
-        title="대시보드"
-        description={`${formatDate(new Date())} 기준 사무소 현황`}
-        className="mb-0"
-      />
-
-      {summary.isError ? (
-        <div className="rounded-lg border bg-card">
-          <QueryErrorState onRetry={() => void summary.refetch()} />
-        </div>
-      ) : (
-        <>
-          {/* 이번달 실적 KPI */}
-          <section>
-            <h2 className="mb-2 text-sm font-semibold">이번달 실적</h2>
-            <div className="grid gap-3 grid-cols-2 md:grid-cols-3 xl:grid-cols-5">
-              <StatCard
-                label="수금 완료"
-                icon={Wallet}
-                to="/cashflow"
-                loading={loading}
-                value={formatMoney(month?.collectedAmount)}
-              />
-              <StatCard
-                label="수금 예정"
-                icon={CircleDollarSign}
-                to="/cashflow"
-                loading={loading}
-                value={formatMoney(month?.expectedAmount)}
-              />
-              <StatCard
-                label="미수금"
-                icon={TriangleAlert}
-                to="/cashflow/ledger"
-                loading={loading}
-                value={formatMoney(month?.overdueAmount)}
-                valueClassName={
-                  (month?.overdueAmount ?? 0) > 0 ? 'text-destructive' : undefined
-                }
-              />
-              <StatCard
-                label="이번달 계약"
-                icon={FileSignature}
-                to="/contracts"
-                loading={loading}
-                value={countText(month?.contractCount)}
-              />
-              <StatCard
-                label="신규 의뢰"
-                icon={FilePlus2}
-                to="/properties"
-                loading={loading}
-                value={countText(month?.newIntakeCount)}
-              />
-              <StatCard
-                label="신규 구매고객"
-                icon={UserPlus}
-                to="/buyer-requirements"
-                loading={loading}
-                value={countText(month?.newBuyerCount)}
-              />
-            </div>
-          </section>
-
-          {/* 진행 현황 카운트 */}
-          <section>
-            <h2 className="mb-2 text-sm font-semibold">진행 현황</h2>
-            <div className="grid gap-3 grid-cols-2 md:grid-cols-3 xl:grid-cols-6">
-              <StatCard
-                label="미확인 매물"
-                icon={SearchX}
-                to="/properties"
-                search={{ checkStatus: 'unverified' }}
-                loading={loading}
-                value={counts?.unverifiedListings ?? 0}
-                valueClassName={
-                  (counts?.unverifiedListings ?? 0) > 0 ? 'text-warning' : undefined
-                }
-              />
-              <StatCard
-                label="진행 매칭"
-                icon={Handshake}
-                to="/matches"
-                loading={loading}
-                value={counts?.activeMatches ?? 0}
-              />
-              <StatCard
-                label="진행 거래"
-                icon={FileText}
-                to="/deals"
-                loading={loading}
-                value={counts?.activeDeals ?? 0}
-              />
-              <StatCard
-                label="미완료 업무"
-                icon={ListTodo}
-                to="/tasks"
-                loading={loading}
-                value={counts?.pendingTasks ?? 0}
-              />
-              <StatCard
-                label="오늘 일정"
-                icon={CalendarDays}
-                to="/calendar"
-                loading={loading}
-                value={counts?.todayEvents ?? 0}
-              />
-            </div>
-          </section>
-        </>
-      )}
-
-      {/* 캐시플로우 누적 요약 바 → /cashflow */}
-      {cashflow.isLoading ? (
-        <Skeleton className="h-[60px] rounded-lg" />
-      ) : cashflow.isError ? (
-        <div className="rounded-lg border bg-card">
-          <QueryErrorState onRetry={() => void cashflow.refetch()} className="py-4" />
-        </div>
-      ) : cashflow.data ? (
-        <Link to="/cashflow" className="block">
-          <div className="flex items-center justify-between rounded-lg border bg-card p-4 transition-colors hover:bg-muted/50">
-            <div className="flex flex-wrap items-center gap-x-6 gap-y-1.5">
-              <div className="flex items-center gap-2">
-                <Wallet className="size-4 text-muted-foreground" aria-hidden="true" />
-                <span className="text-sm font-semibold">캐시플로우</span>
-              </div>
-              <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm tabular-nums">
-                <div>
-                  <span className="text-muted-foreground">수금 완료 </span>
-                  <span className="font-semibold">{formatMoney(cashflow.data.collected)}</span>
-                </div>
-                <div>
-                  <span className="text-muted-foreground">수금 예정 </span>
-                  <span className="font-semibold">{formatMoney(cashflow.data.pending)}</span>
-                </div>
-                {cashflow.data.overdue > 0 && (
-                  <div>
-                    <span className="text-destructive">미수금 </span>
-                    <span className="font-semibold text-destructive">
-                      {formatMoney(cashflow.data.overdue)}
-                    </span>
-                  </div>
-                )}
-                <div>
-                  <span className="text-muted-foreground">순이익 </span>
-                  <span className="font-semibold">{formatMoney(cashflow.data.netProfit)}</span>
-                </div>
-              </div>
-            </div>
-            <ArrowRight className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+    <div className="flex max-w-[1180px] flex-col gap-3.5">
+      {/* 브리핑 */}
+      <div>
+        <h1 className="text-lg font-semibold tracking-tight">
+          {greetingByHour(new Date().getHours())}
+          {user?.name ? `, ${user.name}님` : ''}
+        </h1>
+        {summary.isError ? (
+          <div className="mt-2 max-w-md rounded-lg border bg-card">
+            <QueryErrorState onRetry={() => void summary.refetch()} className="py-4" />
           </div>
-        </Link>
-      ) : null}
-
-      {/* 위젯 */}
-      <div className="grid gap-4 md:grid-cols-2">
-        <ExpiringTenantsWidget />
-        <UpcomingBalancesWidget />
-        <TodayEventsWidget />
-        <PendingTasksWidget />
+        ) : loading ? (
+          <Skeleton className="mt-1.5 h-4 w-64" />
+        ) : (
+          <p className="mt-1 text-xs text-muted-foreground">
+            오늘 일정 {counts?.todayEvents ?? 0}건 · 미완료 업무 {counts?.pendingTasks ?? 0}건 ·
+            진행 거래 {counts?.activeDeals ?? 0}건 · 이번달 수금{' '}
+            {formatMoney(month?.collectedAmount)}
+          </p>
+        )}
       </div>
+
+      {/* 미완료 업무 | 오늘 일정 + 최근 활동 */}
+      <div className="grid items-start gap-3.5 xl:grid-cols-[1.15fr_1fr]">
+        <PendingTasksCard />
+        <div className="flex flex-col gap-3.5">
+          <TodayScheduleCard />
+          <RecentActivityCard />
+        </div>
+      </div>
+
+      {/* 거래 파이프라인 */}
+      <DealPipelineStrip />
     </div>
   );
 }

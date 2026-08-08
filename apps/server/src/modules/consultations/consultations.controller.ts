@@ -46,6 +46,7 @@ export class ConsultationsController {
     @Query('listingIntakeId') listingIntakeId: string,
     @Query('listingId') listingId: string,
     @Query('matchId') matchId: string,
+    @Query('buyerIntakeId') buyerIntakeId: string,
     @Query('buyerReqId') buyerReqId: string,
     @Query('context') context: string,
     @Query('outcome') outcome: string,
@@ -68,8 +69,17 @@ export class ConsultationsController {
       listingIntakeId: listingIntakeId || undefined,
       listingId: listingId || undefined,
       matchId: matchId || undefined,
+      buyerIntakeId: buyerIntakeId || undefined,
       buyerReqId: buyerReqId || undefined,
-      context: (context as 'property' | 'listingIntake' | 'listing' | 'match' | 'buyerRequirement' | 'unlinked') || undefined,
+      context:
+        (context as
+          | 'property'
+          | 'listingIntake'
+          | 'listing'
+          | 'match'
+          | 'buyerIntake'
+          | 'buyerRequirement'
+          | 'unlinked') || undefined,
       outcome: (outcome as 'actionRequired' | 'confirmed' | 'held') || undefined,
       type: type || undefined,
       createdById: createdById || undefined,
@@ -101,6 +111,7 @@ export class ConsultationsController {
       listingIntakeId?: string;
       listingId?: string;
       matchId?: string;
+      buyerIntakeId?: string;
       buyerReqId?: string;
       callRecordingId?: string;
     },

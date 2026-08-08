@@ -99,8 +99,6 @@ describe('match view utilities', () => {
           monthlyRentMax: null,
           areaMin: null,
           areaMax: null,
-          mustConditions: [],
-          preferConditions: [],
           moveInDate: null,
           assignedToId: null,
           lastContactDate: null,

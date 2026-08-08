@@ -4,9 +4,9 @@ import {
   ipcMain,
   net,
   protocol,
-  safeStorage,
 } from 'electron';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { rm } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import started from 'electron-squirrel-startup';
@@ -17,15 +17,6 @@ import {
 } from './main/windowManager';
 import { UpdaterService } from './main/updaterService';
 import { CtiClient } from './main/ctiClient';
-import {
-  CpAuthManager,
-  registerCpAuthIpcHandlers,
-} from './main/cpAuthManager';
-import {
-  CpCredentialVault,
-  type CpCredentialCipher,
-} from './main/cpCredentialVault';
-import { LocalCpMcpServer } from './main/localCpMcpServer';
 
 const APP_PROTOCOL = 'estate-erp';
 
@@ -57,8 +48,6 @@ if (!app.isPackaged) {
 const windowManager = new WindowManager();
 const updaterService = new UpdaterService();
 const ctiClient = new CtiClient();
-let cpAuthManager: CpAuthManager | null = null;
-let localCpMcpServer: LocalCpMcpServer | null = null;
 let packagedRendererProtocolRegistered = false;
 
 function registerPackagedRendererProtocol() {
@@ -147,7 +136,23 @@ const CLAUDE_CODE_NESTING_VARS = [
 ] as const;
 
 const ESTATE_ERP_MCP_ENV_VAR = 'ESTATE_ERP_TOKEN';
-const ESTATE_ERP_LOCAL_MCP_ENV_VAR = 'ESTATE_ERP_LOCAL_MCP_TOKEN';
+const LEGACY_CP_CREDENTIAL_VAULT = path.join(
+  'credentials',
+  'cp-credentials.v1.json',
+);
+
+async function removeLegacyCpCredentialVault(): Promise<void> {
+  try {
+    await rm(path.join(app.getPath('userData'), LEGACY_CP_CREDENTIAL_VAULT), {
+      force: true,
+    });
+  } catch (error) {
+    console.warn(
+      'Legacy Electron CP credential vault cleanup failed:',
+      error instanceof Error ? error.message : error,
+    );
+  }
+}
 
 function buildCodexEnv(authToken?: string): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...process.env };
@@ -159,11 +164,6 @@ function buildCodexEnv(authToken?: string): NodeJS.ProcessEnv {
   }
   if (authToken) {
     env[ESTATE_ERP_MCP_ENV_VAR] = authToken;
-  }
-  const localMcpConnection = localCpMcpServer?.getConnection();
-  if (localMcpConnection) {
-    env[ESTATE_ERP_LOCAL_MCP_ENV_VAR] =
-      localMcpConnection.bearerToken;
   }
   return env;
 }
@@ -252,14 +252,6 @@ function buildCodexArgs(args: CodexStartArgs): string[] {
     cliArgs.push(
       '-c', `mcp_servers.estate_erp.url="${mcpUrl}"`,
       '-c', `mcp_servers.estate_erp.bearer_token_env_var="${ESTATE_ERP_MCP_ENV_VAR}"`,
-    );
-  }
-
-  const localMcpConnection = localCpMcpServer?.getConnection();
-  if (localMcpConnection) {
-    cliArgs.push(
-      '-c', `mcp_servers.estate_local.url="${localMcpConnection.url}"`,
-      '-c', `mcp_servers.estate_local.bearer_token_env_var="${ESTATE_ERP_LOCAL_MCP_ENV_VAR}"`,
     );
   }
 
@@ -399,8 +391,6 @@ ipcMain.handle('codex:stop', (_e, runId: string) => {
 
 app.on('before-quit', () => {
   ctiClient.stop();
-  cpAuthManager?.close();
-  void localCpMcpServer?.stop();
   for (const run of codexRuns.values()) {
     try {
       run.proc.kill('SIGTERM');
@@ -412,41 +402,7 @@ app.on('before-quit', () => {
 });
 
 app.on('ready', async () => {
-  const secureStorageAvailable =
-    safeStorage.isEncryptionAvailable() &&
-    !(
-      process.platform === 'linux' &&
-      safeStorage.getSelectedStorageBackend() === 'basic_text'
-    );
-  const cipher: CpCredentialCipher = {
-    isAvailable: () => secureStorageAvailable,
-    encrypt: (value) => safeStorage.encryptString(value),
-    decrypt: (value) => safeStorage.decryptString(value),
-    backend: () =>
-      process.platform === 'darwin'
-        ? 'macOS Keychain'
-        : process.platform === 'win32'
-          ? 'Windows DPAPI'
-          : safeStorage.getSelectedStorageBackend(),
-  };
-  cpAuthManager = new CpAuthManager(
-    new CpCredentialVault(app.getPath('userData'), cipher),
-  );
-  registerCpAuthIpcHandlers(cpAuthManager, (event) =>
-    BrowserWindow.getAllWindows().some(
-      (window) => window.webContents === event.sender,
-    ),
-  );
-  localCpMcpServer = new LocalCpMcpServer(cpAuthManager);
-  try {
-    await localCpMcpServer.start();
-  } catch (error) {
-    console.error(
-      'Local CP authentication MCP failed to start:',
-      error instanceof Error ? error.message : error,
-    );
-  }
-
+  await removeLegacyCpCredentialVault();
   createWindow();
   updaterService.checkForUpdates();
   ctiClient.start();

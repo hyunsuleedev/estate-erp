@@ -1,6 +1,9 @@
-# Estate ERP
+# 에스테잇플로우 (Estait Flow)
 
 부동산 중개사 전용 SaaS ERP. 기존 estate-crm을 NestJS 기반으로 재구축.
+
+- **제품명(사용자 대면)**: 에스테잇플로우 / 영문·코드 표기: EstaitFlow (법인: Estait Inc., 도메인: estaitt.com)
+- **내부 코드네임**: estate-erp — 패키지 스코프(`@estate-erp/*`), repo 폴더, env 변수는 아직 코드네임 유지
 
 ## Tech Stack
 
@@ -90,7 +93,11 @@ prisma/
 ### MCP Strategy
 - CRM 자체가 MCP Server (NestJS API = MCP 도구)
 - AI 내장 안 함 — 외부 Claude/ChatGPT가 MCP로 연결
-- 스크래핑 등 로컬 기능은 별도 MCP (Electron 호스팅)
+- CP 스크래핑·브라우저 자동화는 독립 Skill이 담당
+- CP 자격증명은 Skill 전용 로컬 `config.js`에 저장하며 Electron은 보관하거나 로컬 인증 MCP를 호스팅하지 않음
+- 광고 자동화의 서버 상태는 일반 `Task(category=advertisement)`만 사용하며 MCP `claim_task`로 중복 실행을 막음
+- CP 실행 단계·재시도·검증은 `estate-erp-ad-task-runner` 로컬 SQLite가 소유하고 서버는 agent를 대기·호출·wakeup하지 않음
+- 네이버 수집 범위(`siteId ↔ complexNo`)는 `naver-complex-collector` 로컬 SQLite가 소유하며 ERP에는 완전한 관측 결과만 저장
 
 ## Dev Commands
 
@@ -128,8 +135,8 @@ pnpm prisma:generate   # Generate Prisma client
 ## Key Pipelines
 
 - CheckStatus (Listing): unverified → verified → in_contract → hold → done
-- MatchStage: suggested → buyerContacted → viewing → ownerContacted → negotiating → dealCreated → closed
-- DealStage: selection → deposit → contract → completed → closed
+- MatchStage: suggested → buyerInterested → viewingConfirmed → viewing → negotiating → dealCreated → closed
+- DealStage: preparing → preContract(선택) → contracted → settling → completed → closed
 - TaskSource: manual / system / ai
 
 ## Important Notes

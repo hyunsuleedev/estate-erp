@@ -396,7 +396,7 @@ def build_story(styles):
     story.append(Paragraph("4.2 제품 패키지", styles["KH2"]))
     pkg_rows = [
         ["제품", "대상", "역할"],
-        ["Electron 데스크톱 앱", "모든 직원 PC", "메인 제품 · CTI · 로컬 MCP · 트레이"],
+        ["Electron 데스크톱 앱", "모든 직원 PC", "메인 제품 · CTI · Codex · 트레이"],
         ["웹 앱 (Vite SPA)", "브라우저 사용자", "CTI 제외 CRM 접근 (사장님·외근용)"],
         ["CTI Bridge", "사무실 메인 PC", "전화 시스템 연동 (32비트)"],
         ["Android 모바일 앱", "직원 폰", "전화 오버레이 · 통화 후 상담 기록"],
@@ -407,7 +407,7 @@ def build_story(styles):
     for item in [
         "<b>리모트 MCP</b> — NestJS SSE 엔드포인트 /mcp/sse. JWT 또는 API Key 인증.",
         "<b>크롤러 MCP</b> — 네이버 부동산 HTML 파싱 전용, 별도 패키지 @estate-erp/mcp-crawler.",
-        "<b>로컬 MCP (Phase 3)</b> — Electron 호스팅, 크롤러 MCP 통합 등 로컬 전용 기능.",
+        "<b>독립 로컬 Skills (Phase 3)</b> — CP 계정 설정, Skill 소유 브라우저 제어, 외부 데이터 수집.",
         "<b>도구 예시</b> — search_listings, get_property, create_task, create_consultation, search_buyers, get_deal, upsert_external_listings.",
     ]:
         story.append(bullet(item, styles))
@@ -529,7 +529,7 @@ def build_story(styles):
 
     story.append(Paragraph("6.5 외부 매물(광고노트) · 업체 디렉토리", styles["KH2"]))
     for item in [
-        "<b>광고노트</b> — ExternalListingGroup(호실 단위) + ExternalListing(개별 매물). 크롤러는 사용자 확정한 unitId/memo/inferredHo를 절대 덮어쓰지 않음.",
+        "<b>광고노트</b> — ExternalListingGroup(동일주소 단위) + ExternalListing(개별 매물). 크롤러는 사용자가 기록한 ho/memo를 절대 덮어쓰지 않음.",
         "<b>업체 디렉토리</b> — ServiceVendor (officeId nullable, 공용 풀 + 사무소별), VendorContact(담당자 1:N), ServiceCategory(배관·도배·청소 등).",
         "<b>통합 검색</b> — all_contacts_view(Contact ∪ VendorContact)로 CTI 전화 팝업 단일 쿼리 2-3ms.",
     ]:
@@ -553,7 +553,7 @@ def build_story(styles):
     pipe_rows = [
         ["파이프라인", "단계"],
         ["Listing.checkStatus", "unverified → verified → in_contract → hold → done"],
-        ["Match.stage", "suggested → buyerContacted → viewing → ownerContacted → negotiating → dealCreated → closed"],
+        ["Match.stage", "suggested → buyerInterested → viewingConfirmed → viewing → negotiating → dealCreated → closed"],
         ["Deal.stage", "selection → deposit → contract → completed → closed"],
         ["Contract.status", "draft → signed → depositPaid → balancePaid → registered → cancelled"],
         ["CommissionPayment", "pending → collected / overdue / partial / waived"],
@@ -620,10 +620,11 @@ def build_story(styles):
     ]:
         story.append(bullet(item, styles))
 
-    story.append(Paragraph("Phase 3 — 로컬 MCP · 외부 데이터 · CTI Bridge", styles["KH2"]))
+    story.append(Paragraph("Phase 3 — 로컬 Skills · 외부 데이터 · CTI Bridge", styles["KH2"]))
     for item in [
-        "로컬 MCP 서버(Electron 호스팅)",
-        "네이버 / 외부 데이터 연동 (크롤러 MCP 통합)",
+        "Electron과 독립된 로컬 자동화 Skills",
+        "네이버 / CP 외부 데이터 연동",
+        "Skill 전용 config.js 계정 설정과 온디맨드 로그인",
         "CTI Bridge · Electron ↔ CTI 로컬 통신",
     ]:
         story.append(bullet(item, styles))

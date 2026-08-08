@@ -47,6 +47,7 @@
   --color-destructive-strong: #bb3430;
   --color-info-strong: #1b64b1;
   --color-warning-strong: #8a5a13;
+  --color-muted-foreground-strong: #6f6d6a;
   --color-neutral-strong: #37352f;
   --color-neutral-soft: #f1f1ef;
   --color-card: #ffffff;
@@ -106,7 +107,40 @@ body {
   flex: 1;
 }
 
-:is([data-properties-page], [data-property-quick-sheet]) :where(button, [data-slot="button"]) {
+/* Keep the long app navigation quiet until the user interacts with it. */
+[data-app-sidebar-scroll] {
+  --app-sidebar-scroll-thumb: transparent;
+
+  scrollbar-color: var(--app-sidebar-scroll-thumb) transparent;
+  scrollbar-width: thin;
+}
+
+[data-app-sidebar-scroll]::-webkit-scrollbar {
+  width: 8px;
+}
+
+[data-app-sidebar-scroll]::-webkit-scrollbar-track,
+[data-app-sidebar-scroll]::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+[data-app-sidebar-scroll]::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background-color: var(--app-sidebar-scroll-thumb);
+  background-clip: padding-box;
+}
+
+[data-app-sidebar]:hover [data-app-sidebar-scroll],
+[data-app-sidebar-scroll]:focus-within {
+  --app-sidebar-scroll-thumb: color-mix(
+    in srgb,
+    var(--color-sidebar-foreground) 24%,
+    transparent
+  );
+}
+
+:is([data-properties-page], [data-property-inspector]) :where(button, [data-slot="button"]) {
   transition:
     color 120ms ease,
     background-color 120ms ease,
@@ -117,49 +151,43 @@ body {
 }
 
 @media (hover: hover) and (pointer: fine) {
-  :is([data-properties-page], [data-property-quick-sheet])
+  :is([data-properties-page], [data-property-inspector])
     :where(button, [data-slot="button"]):not(:disabled):active:hover {
     scale: 0.97;
   }
 }
 
-[data-property-quick-sheet][data-state="open"] {
-  will-change: transform;
-  animation-duration: 280ms;
-  animation-timing-function: cubic-bezier(0.32, 0.72, 0, 1);
-  transition-duration: 280ms;
-  transition-timing-function: cubic-bezier(0.32, 0.72, 0, 1);
+/* Clip the scrolling detail-column guide at its sticky toggle boundary. */
+[data-column-group-toggle="property-details"][aria-expanded="true"]::before {
+  position: absolute;
+  right: calc(100% + 1px);
+  top: 7px;
+  width: 100vw;
+  height: 11px;
+  background: #f8f7f4;
+  content: "";
+  pointer-events: none;
 }
 
-[data-property-quick-sheet][data-state="closed"] {
-  animation-duration: 180ms;
-  animation-timing-function: cubic-bezier(0.23, 1, 0.32, 1);
-  transition-duration: 180ms;
-  transition-timing-function: cubic-bezier(0.23, 1, 0.32, 1);
+[data-property-inspector] {
+  animation: property-inspector-enter 180ms cubic-bezier(0.23, 1, 0.32, 1);
+  transform-origin: right center;
 }
 
-@keyframes property-quick-sheet-fade-in {
+@keyframes property-inspector-enter {
   from {
     opacity: 0;
+    transform: translateX(12px);
   }
 
   to {
     opacity: 1;
-  }
-}
-
-@keyframes property-quick-sheet-fade-out {
-  from {
-    opacity: 1;
-  }
-
-  to {
-    opacity: 0;
+    transform: translateX(0);
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  :is([data-properties-page], [data-property-quick-sheet]) :where(button, [data-slot="button"]) {
+  :is([data-properties-page], [data-property-inspector]) :where(button, [data-slot="button"]) {
     scale: 1;
     transition:
       color 120ms ease,
@@ -169,19 +197,8 @@ body {
       opacity 120ms ease;
   }
 
-  [data-property-quick-sheet][data-state="open"] {
-    will-change: opacity;
-    animation-duration: 120ms;
-    animation-name: property-quick-sheet-fade-in;
-    animation-timing-function: ease;
-    transition-duration: 120ms;
-  }
-
-  [data-property-quick-sheet][data-state="closed"] {
-    animation-duration: 120ms;
-    animation-name: property-quick-sheet-fade-out;
-    animation-timing-function: ease;
-    transition-duration: 120ms;
+  [data-property-inspector] {
+    animation-duration: 1ms;
   }
 }
 

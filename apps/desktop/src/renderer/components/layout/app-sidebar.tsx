@@ -14,8 +14,8 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const groups = getNavGroups(user?.role)
 
   return (
-    <Sidebar collapsible="icon" {...props}>
-      <SidebarContent>
+    <Sidebar data-app-sidebar collapsible="icon" {...props}>
+      <SidebarContent data-app-sidebar-scroll>
         {groups.map((group) => (
           <NavMain key={group.key} label={group.label} items={group.items} />
         ))}

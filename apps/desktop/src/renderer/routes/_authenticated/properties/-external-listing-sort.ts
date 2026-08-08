@@ -34,9 +34,13 @@ function getSortValue(
     case 'floor':
       return group.mainExternalListing?.floorInfo;
     case 'ho':
-      return group.unit?.name ?? group.inferredHo;
+      return group.ho;
     case 'type':
       return group.areaName;
+    case 'area':
+      return (
+        group.mainExternalListing?.exclusiveAreaM2 ?? group.exclusiveAreaM2
+      );
     case 'direction':
       return group.mainExternalListing?.direction;
     case 'myAd':

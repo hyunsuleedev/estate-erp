@@ -14,7 +14,6 @@ import { SitesModule } from '../sites/sites.module';
 import { DongsModule } from '../dongs/dongs.module';
 import { UnitsModule } from '../units/units.module';
 import { OfficeSitesModule } from '../office-sites/office-sites.module';
-import { ExternalListingSourcesModule } from '../external-listing-sources/external-listing-sources.module';
 import { PropertyContactsModule } from '../property-contacts/property-contacts.module';
 import { ContactRelationsModule } from '../contact-relations/contact-relations.module';
 import { TenantsModule } from '../tenants/tenants.module';
@@ -25,9 +24,8 @@ import { FinanceModule } from '../finance/finance.module';
 import { PublicDocumentsModule } from '../public-documents/public-documents.module';
 import { PropertyPhotosModule } from '../property-photos/property-photos.module';
 import { ListingAdvertisementsModule } from '../listing-advertisements/listing-advertisements.module';
+import { ListingAdvertisementSnapshotsModule } from '../listing-advertisement-snapshots/listing-advertisement-snapshots.module';
 import { OfficeAdvertisementsModule } from '../office-advertisements/office-advertisements.module';
-import { AgentModule } from '../agent/agent.module';
-import { AgentActionRequestsModule } from '../agent-action-requests/agent-action-requests.module';
 import { McpController } from './mcp.controller';
 import { OAuthDiscoveryController } from './oauth-discovery.controller';
 import { McpServerFactory } from './mcp-server.factory';
@@ -53,7 +51,6 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
     DongsModule,
     UnitsModule,
     OfficeSitesModule,
-    ExternalListingSourcesModule,
     PropertyContactsModule,
     ContactRelationsModule,
     TenantsModule,
@@ -64,9 +61,8 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
     PublicDocumentsModule,
     PropertyPhotosModule,
     ListingAdvertisementsModule,
+    ListingAdvertisementSnapshotsModule,
     OfficeAdvertisementsModule,
-    AgentModule,
-    AgentActionRequestsModule,
   ],
   controllers: [McpController, OAuthDiscoveryController],
   providers: [

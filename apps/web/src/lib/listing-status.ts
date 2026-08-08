@@ -27,6 +27,7 @@ export interface ListingAvailabilitySource {
 
 export type ListingStatusChangePlan<T extends ListingAvailabilitySource> =
   | { kind: "startDeal"; candidates: T[] }
+  | { kind: "closeWithActiveDeals"; activeDealCount: number }
   | {
       kind: "reviewResume";
       canResume: boolean;
@@ -245,6 +246,19 @@ export function planListingStatusChange<
   }
 
   if (currentValue === ListingAvailability.IN_CONTRACT) {
+    if (targetValue === ListingAvailability.CLOSED) {
+      const activeDealCount = listings.reduce(
+        (count, listing) =>
+          count +
+          (listing.deals ?? []).filter((deal) =>
+            IN_CONTRACT_STAGES.includes(deal.stage),
+          ).length,
+        0,
+      );
+
+      return { kind: "closeWithActiveDeals", activeDealCount };
+    }
+
     return { kind: "blocked", reason: "activeDeal" };
   }
 

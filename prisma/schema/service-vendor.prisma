@@ -69,7 +69,7 @@ model VendorContact {
 
   name            String // "김철수", "대표번호", "김기사"
   phone           String
-  /// CTI 발신번호 매칭용 (ContactPhone.normalizedPhone과 동일 규칙, 쓰기 시 자동 세팅)
+  /// CTI 발신번호 매칭용 (ContactPhone.phone과 동일한 canonical 규칙, 쓰기 시 자동 세팅)
   normalizedPhone String  @map("normalized_phone")
   role            String? // "대표" | "배관기사" | "야간긴급"
   memo            String?

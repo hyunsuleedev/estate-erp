@@ -46,4 +46,5 @@ describe('RealtimeService', () => {
       }),
     ).not.toThrow();
   });
+
 });

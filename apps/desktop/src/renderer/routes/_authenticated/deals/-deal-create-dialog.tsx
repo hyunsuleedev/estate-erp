@@ -133,7 +133,7 @@ export function DealCreateDialog({
     onSuccess: (deal) => {
       void queryClient.invalidateQueries({ queryKey: ['deals'] });
       void queryClient.invalidateQueries({ queryKey: ['commission-payments'] });
-      toast.success('거래가 생성되었습니다. 합의가가 있으면 수수료 청구가 자동 생성됩니다.');
+      toast.success('계약 준비 거래가 생성되었습니다. 합의가가 있으면 수수료 청구가 자동 생성됩니다.');
       onOpenChange(false);
       reset();
       onCreated(deal);
@@ -161,7 +161,8 @@ export function DealCreateDialog({
         <DialogHeader>
           <DialogTitle>새 거래 생성</DialogTitle>
           <DialogDescription>
-            매물을 연결하거나, 매물 없이 거래유형만으로 생성할 수 있습니다. 금액은 만원 단위입니다.
+            계약 준비 단계에서 시작합니다. 매물을 연결하거나, 매물 없이 거래유형만으로 생성할 수 있습니다.
+            금액은 만원 단위입니다.
           </DialogDescription>
         </DialogHeader>
 

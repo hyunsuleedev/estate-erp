@@ -35,7 +35,7 @@ export class OfficeSitesService {
           },
         },
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ isFavorite: 'desc' }, { createdAt: 'desc' }],
     });
   }
 
@@ -67,7 +67,10 @@ export class OfficeSitesService {
     return officeSite;
   }
 
-  async add(officeId: string, dto: { siteId: string; memo?: string }) {
+  async add(
+    officeId: string,
+    dto: { siteId: string; memo?: string; isFavorite?: boolean },
+  ) {
     await this.findAccessibleSite(dto.siteId, officeId);
 
     return this.prisma.officeSite.upsert({
@@ -79,6 +82,7 @@ export class OfficeSitesService {
       },
       update: {
         memo: dto.memo,
+        isFavorite: dto.isFavorite,
       },
       create: { officeId, ...dto },
       include: {
@@ -99,7 +103,11 @@ export class OfficeSitesService {
     });
   }
 
-  async update(id: string, officeId: string, dto: { memo?: string | null }) {
+  async update(
+    id: string,
+    officeId: string,
+    dto: { memo?: string | null; isFavorite?: boolean },
+  ) {
     const officeSite = await this.findOne(id, officeId);
 
     return this.prisma.officeSite.update({

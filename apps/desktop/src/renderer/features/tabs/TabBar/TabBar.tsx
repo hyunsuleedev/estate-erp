@@ -63,17 +63,14 @@ export function TabBar({ className }: Props) {
           items={tabs.map((t) => t.id)}
           strategy={horizontalListSortingStrategy}
         >
-          <div className="flex h-full min-w-0 flex-1 items-center gap-0 overflow-x-auto [&::-webkit-scrollbar]:hidden">
-            {tabs.map((tab, idx) => {
+          <div className="flex h-full min-w-0 flex-1 items-center gap-0 overflow-x-auto pl-1.5 [&::-webkit-scrollbar]:hidden">
+            {tabs.map((tab) => {
               const isActive = tab.id === activeTabId;
-              const prevIsActive = idx > 0 && tabs[idx - 1].id === activeTabId;
-              const hideDivider = isActive || prevIsActive || idx === 0;
               return (
                 <Tab
                   key={tab.id}
                   tab={tab}
                   isActive={isActive}
-                  hideDivider={hideDivider}
                   onActivate={() => activateTab(tab.id)}
                   onClose={() => closeTab(tab.id)}
                 />

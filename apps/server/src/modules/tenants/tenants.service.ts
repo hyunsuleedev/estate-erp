@@ -73,10 +73,10 @@ export class TenantsService {
   ) {
     const { name, phone, contractStart, contractEnd, moveOutDate, ...rest } = dto;
     return this.prisma.$transaction(async (tx) => {
-      const normalizedPhone = phone ? normalizePhone(phone) : null;
-      let contact = normalizedPhone
+      const canonicalPhone = phone ? normalizePhone(phone) : null;
+      let contact = canonicalPhone
         ? await tx.contact.findFirst({
-            where: { officeId, phones: { some: { normalizedPhone, isActive: true } } },
+            where: { officeId, phones: { some: { phone: canonicalPhone } } },
           })
         : null;
 
@@ -85,14 +85,12 @@ export class TenantsService {
           data: {
             officeId,
             name,
-            phones: normalizedPhone
+            phones: canonicalPhone
               ? {
                   create: [{
-                    phone: phone as string,
-                    normalizedPhone,
+                    phone: canonicalPhone,
                     label: 'mobile',
                     isPrimary: true,
-                    isActive: true,
                     office: { connect: { id: officeId } },
                   }],
                 }

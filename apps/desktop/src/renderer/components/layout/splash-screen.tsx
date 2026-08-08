@@ -43,7 +43,7 @@ export function SplashScreen() {
             </div>
 
             <div className="space-y-3">
-              <p className="text-3xl font-semibold tracking-tight sm:text-4xl">Estate ERP</p>
+              <p className="text-3xl font-semibold tracking-tight sm:text-4xl">에스테잇플로우</p>
               <p className="mx-auto max-w-md text-sm leading-6 text-muted-foreground lg:mx-0">
                 사무소 데이터와 업무 화면을 정리하고 있습니다.
               </p>

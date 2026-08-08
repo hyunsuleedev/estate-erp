@@ -102,6 +102,15 @@ export function formatDate(d: string | number | Date | null | undefined): string
   return `${date.getFullYear()}.${pad2(date.getMonth() + 1)}.${pad2(date.getDate())}`;
 }
 
+/** "26.06.10" — 연도 2자리 단축 */
+export function formatDateShortYear(
+  d: string | number | Date | null | undefined,
+): string {
+  const date = toDate(d);
+  if (!date) return EMPTY;
+  return `${pad2(date.getFullYear() % 100)}.${pad2(date.getMonth() + 1)}.${pad2(date.getDate())}`;
+}
+
 /** "06.10 14:30" */
 export function formatDateTime(d: string | number | Date | null | undefined): string {
   const date = toDate(d);

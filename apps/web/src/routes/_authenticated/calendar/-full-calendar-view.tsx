@@ -19,7 +19,6 @@ import { cn } from '@/lib/utils';
 import { getLocalDateKey } from './-calendar-view-utils';
 import { formatEventContext, getEventColor, withAlpha } from './-event-meta';
 import { OVERLAY_META, type OverlayItem } from './-calendar-overlay';
-import { SelectedDayPanel } from './-month-view';
 
 type FullCalendarViewMode = 'month' | 'week' | 'day';
 
@@ -35,7 +34,6 @@ type FullCalendarViewProps = {
   selectedDate: Date;
   events: CalendarEvent[];
   overlaysByDate: Map<string, OverlayItem[]>;
-  selectedDateEvents: CalendarEvent[];
   onCreate: (start: Date, end: Date, allDay: boolean) => void;
   onEdit: (event: CalendarEvent) => void;
   onSelectDate: (date: Date) => void;
@@ -126,7 +124,6 @@ export function FullCalendarView({
   selectedDate,
   events,
   overlaysByDate,
-  selectedDateEvents,
   onCreate,
   onEdit,
   onSelectDate,
@@ -259,24 +256,7 @@ export function FullCalendarView({
     </div>
   );
 
-  if (viewMode !== 'month') {
-    return <div className="overflow-x-auto rounded-[12px] border border-border bg-background">{calendar}</div>;
-  }
-
   return (
-    <div className="grid overflow-hidden rounded-[12px] border border-border bg-background xl:grid-cols-[minmax(0,1fr)_320px] 2xl:grid-cols-[minmax(0,1fr)_360px]">
-      <div className="min-w-0 overflow-x-auto xl:border-r">{calendar}</div>
-      <SelectedDayPanel
-        selectedDate={selectedDate}
-        selectedDateEvents={selectedDateEvents}
-        selectedDateOverlays={overlaysByDate.get(getLocalDateKey(selectedDate)) ?? []}
-        onCreate={(date) => {
-          const end = new Date(date);
-          end.setHours(date.getHours() + 1);
-          onCreate(date, end, false);
-        }}
-        onEdit={onEdit}
-      />
-    </div>
+    <div className="min-w-0 overflow-x-auto rounded-lg border border-border bg-background">{calendar}</div>
   );
 }

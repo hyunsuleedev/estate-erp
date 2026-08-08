@@ -5,12 +5,8 @@ import {
   IntakeConfirmationState,
   IntakeLifecycleStatus,
   ListingAvailability,
-  AGENT_ACTION_BLOCKER_REASONS,
-  AGENT_ACTION_CAPABILITIES,
-  type AgentActionBlockerReason,
-  AgentActionCapability,
+  MATCH_STAGE_ORDER,
 } from '@estate-erp/shared';
-import { Prisma } from '@prisma/client';
 import { ListingsService } from '../listings/listings.service';
 import { ListingIntakesService } from '../listing-intakes/listing-intakes.service';
 import { ContactsService } from '../contacts/contacts.service';
@@ -26,7 +22,6 @@ import { SitesService } from '../sites/sites.service';
 import { DongsService } from '../dongs/dongs.service';
 import { UnitsService } from '../units/units.service';
 import { OfficeSitesService } from '../office-sites/office-sites.service';
-import { ExternalListingSourcesService } from '../external-listing-sources/external-listing-sources.service';
 import { PropertyContactsService } from '../property-contacts/property-contacts.service';
 import { ContactRelationsService } from '../contact-relations/contact-relations.service';
 import { TenantsService } from '../tenants/tenants.service';
@@ -41,19 +36,12 @@ import { CashflowService } from '../finance/cashflow.service';
 import { PublicDocumentsService } from '../public-documents/public-documents.service';
 import { PropertyPhotosService } from '../property-photos/property-photos.service';
 import { ListingAdvertisementsService } from '../listing-advertisements/listing-advertisements.service';
+import { ListingAdvertisementSnapshotsService } from '../listing-advertisement-snapshots/listing-advertisement-snapshots.service';
 import {
   OfficeAdvertisementsService,
   type OfficeAdvertisementBatchGroupDto,
 } from '../office-advertisements/office-advertisements.service';
-import { AgentControlPlaneService } from '../agent/control-plane/control-plane.service';
-import { AgentActionRequestsService } from '../agent-action-requests/agent-action-requests.service';
 import { getRoleScopes } from '../../constants/role-permissions';
-import type {
-  AgentActivityType,
-  AgentSessionStatus,
-  AgentWakeupStatus,
-  CompleteAgentRunOutcome,
-} from '../agent/control-plane/control-plane.types';
 
 export interface ToolDefinition {
   name: string;
@@ -175,7 +163,6 @@ export class McpToolsService {
     private readonly dongs: DongsService,
     private readonly units: UnitsService,
     private readonly officeSites: OfficeSitesService,
-    private readonly externalListingSources: ExternalListingSourcesService,
     private readonly propertyContacts: PropertyContactsService,
     private readonly contactRelations: ContactRelationsService,
     private readonly tenants: TenantsService,
@@ -189,8 +176,7 @@ export class McpToolsService {
     private readonly listingAdvertisements: ListingAdvertisementsService,
     private readonly officeAdvertisements: OfficeAdvertisementsService,
     private readonly listingIntakes: ListingIntakesService,
-    private readonly controlPlane: AgentControlPlaneService,
-    private readonly agentActionRequests: AgentActionRequestsService,
+    private readonly listingAdvertisementSnapshots: ListingAdvertisementSnapshotsService,
   ) {
     this.registerAll();
   }
@@ -295,30 +281,6 @@ export class McpToolsService {
     return Math.min(Math.max((args.limit as number) ?? 20, 1), max);
   }
 
-  private async assertMcpRunOwnership(
-    officeId: string,
-    userId: string,
-    sessionId: string,
-    runId: string,
-  ) {
-    const run = await this.controlPlane.getRun(officeId, runId);
-    const leaseExpiresAt = run.leaseExpiresAt
-      ? new Date(run.leaseExpiresAt)
-      : null;
-    if (
-      run.sessionId !== sessionId ||
-      run.status !== 'running' ||
-      run.workerId !== `mcp:${userId}` ||
-      !leaseExpiresAt ||
-      leaseExpiresAt <= new Date()
-    ) {
-      throw new BadRequestException(
-        'agentRunId는 이 MCP worker가 현재 소유한 유효한 실행 lease여야 합니다.',
-      );
-    }
-    return run;
-  }
-
   private async prepareSaleContractDraft(
     args: Record<string, unknown>,
     ctx: McpContext,
@@ -372,8 +334,8 @@ export class McpToolsService {
         depositMax: num('최대 보증금 (만원)'),
         monthlyRentMin: num('최소 월세 (만원)'),
         monthlyRentMax: num('최대 월세 (만원)'),
-        areaMin: num('최소 면적 (m²)'),
-        areaMax: num('최대 면적 (m²)'),
+        areaMin: num('최소 공급면적 (m²)'),
+        areaMax: num('최대 공급면적 (m²)'),
         sortBy: strEnum('정렬 필드', ['receivedAt', 'updatedAt', 'createdAt']),
         sortOrder: strEnum('정렬 방향', ['asc', 'desc']),
         ...page,
@@ -549,6 +511,7 @@ export class McpToolsService {
       'find_listings',
       '매물(Listing) 목록을 검색합니다. 의뢰 생명주기·확인 상태·가용 상태와 거래 조건으로 필터링합니다.',
       obj({
+        propertyId: str('관리매물 ID'),
         transactionType: strEnum('거래유형', LISTING_TRANSACTION_TYPES),
         intakeLifecycleStatus: strEnum(
           '의뢰 생명주기',
@@ -571,6 +534,7 @@ export class McpToolsService {
       }),
       async (a, c) =>
         this.listings.findAll(c.officeId, {
+          propertyId: a.propertyId as string,
           transactionType: a.transactionType as string,
           intakeLifecycleStatus: a.intakeLifecycleStatus as string,
           confirmationState: a.confirmationState as string,
@@ -677,7 +641,7 @@ export class McpToolsService {
     // ═══════════════════════════════════════════════════════════
     this.add(
       'find_listing_advertisements',
-      'CP 광고 원장(ListingAdvertisement)을 검색합니다. 광고 row는 실제 CP 광고만 나타내며 상태는 active/ended입니다. CP 수집 실패는 광고 row가 아니라 AdvertisementSyncRun/Step에 기록됩니다.',
+      'CP 광고 원장(ListingAdvertisement)을 검색합니다. 광고 row는 실제 CP 광고만 나타내며 상태는 active/ended입니다. 수집 실패와 세부 단계는 로컬 Skill run에 기록됩니다.',
       obj({
         listingId: str('매물 ID'),
         channel: str('CP사 slug (esiljang, budongsanbank 등)'),
@@ -809,6 +773,144 @@ export class McpToolsService {
     );
 
     // ═══════════════════════════════════════════════════════════
+    // CP 광고 원본 스냅샷 → 에이전트 매물 연결 → 광고 원장 반영
+    // ═══════════════════════════════════════════════════════════
+    this.add(
+      'begin_listing_advertisement_snapshot',
+      'Reader가 저장한 완전한 CP 광고 JSON의 메타데이터로 가져오기 세션을 시작합니다. 원본 항목은 아직 광고 원장에 반영되지 않습니다.',
+      obj(
+        {
+          channel: str('CP사 slug. snapshot provider와 동일해야 함'),
+          provider: str('Reader snapshot provider'),
+          scope: strEnum('Reader 수집 범위', ['active_advertisements']),
+          observedAt: str('스냅샷 관측 시각 (ISO timestamp)'),
+          expectedTotal: {
+            oneOf: [{ type: 'integer', minimum: 0 }, { type: 'null' }],
+            description: 'Reader가 확인한 광고중 총 건수 또는 null',
+          },
+          manifestHash: str('Reader canonical manifest SHA-256'),
+          fileSha256: str('저장된 JSON 파일 SHA-256 (선택)'),
+          activeFilter: {
+            type: 'object',
+            description: 'Reader가 증명한 광고중 필터 상태',
+            additionalProperties: true,
+          },
+          paginationComplete: bool('마지막 페이지까지 수집 완료 여부'),
+          visitedPages: {
+            type: 'array',
+            items: { type: 'integer', minimum: 1 },
+            description: '1부터 연속된 방문 페이지 목록',
+          },
+        },
+        [
+          'channel',
+          'provider',
+          'scope',
+          'observedAt',
+          'expectedTotal',
+          'manifestHash',
+          'activeFilter',
+          'paginationComplete',
+          'visitedPages',
+        ],
+      ),
+      async (a, c) =>
+        this.listingAdvertisementSnapshots.begin(c.officeId, c.userId, {
+          channel: a.channel as string,
+          provider: a.provider as string,
+          scope: a.scope as string,
+          observedAt: a.observedAt as string,
+          expectedTotal: a.expectedTotal as number | null,
+          manifestHash: a.manifestHash as string,
+          fileSha256: a.fileSha256 as string | null,
+          activeFilter: a.activeFilter as Record<string, unknown>,
+          paginationComplete: a.paginationComplete as boolean,
+          visitedPages: a.visitedPages as number[],
+        }),
+      ['advertisements:observe'],
+    );
+
+    this.add(
+      'submit_listing_advertisement_snapshot_item',
+      '에이전트가 로컬 JSON에서 읽고 매물 연결을 판단한 CP 광고 한 건을 원문과 함께 제출합니다. listingId+resolution 또는 error 중 하나만 보냅니다.',
+      obj(
+        {
+          sessionId: str('광고 snapshot session ID'),
+          raw: {
+            type: 'object',
+            description: 'Reader JSON의 광고 한 건 원문',
+            properties: { externalAdId: str('CP사 광고 ID') },
+            required: ['externalAdId'],
+            additionalProperties: true,
+          },
+          listingId: str('확정한 Listing ID. 실패 제출이면 생략'),
+          resolution: {
+            type: 'object',
+            description:
+              '선택한 siteId/dongId/unitId/propertyId/intakeId와 판단 근거. listingId와 함께 제출',
+            additionalProperties: true,
+          },
+          error: str('연결하지 못한 구체적인 이유. 실패 제출일 때만 사용'),
+        },
+        ['sessionId', 'raw'],
+      ),
+      async (a, c) =>
+        this.listingAdvertisementSnapshots.submitItem(
+          c.officeId,
+          c.userId,
+          c.role ?? 'agent',
+          {
+            sessionId: a.sessionId as string,
+            raw: a.raw as Record<string, unknown>,
+            listingId: a.listingId as string | null,
+            resolution: a.resolution as Record<string, unknown> | null,
+            error: a.error as string | null,
+          },
+        ),
+      ['advertisements:observe'],
+    );
+
+    this.add(
+      'get_listing_advertisement_snapshot',
+      'CP 광고 가져오기 세션의 제출·연결·실패·남은 건수와 실패 항목을 조회합니다.',
+      obj({ sessionId: str('광고 snapshot session ID') }, ['sessionId']),
+      async (a, c) =>
+        this.listingAdvertisementSnapshots.get(
+          c.officeId,
+          a.sessionId as string,
+        ),
+      ['advertisements:observe'],
+    );
+
+    this.add(
+      'complete_listing_advertisement_snapshot',
+      '모든 원본 항목이 Listing에 연결되고 manifest가 일치할 때 한 트랜잭션으로 광고 원장을 갱신하고, 이번 완전 스냅샷에서 사라진 CP 광고를 ended 처리합니다.',
+      obj({ sessionId: str('광고 snapshot session ID') }, ['sessionId']),
+      async (a, c) =>
+        this.listingAdvertisementSnapshots.complete(
+          c.officeId,
+          c.userId,
+          c.role ?? 'agent',
+          a.sessionId as string,
+        ),
+      ['advertisements:observe'],
+    );
+
+    this.add(
+      'cancel_listing_advertisement_snapshot',
+      '불완전하거나 잘못된 CP 스냅샷 세션을 취소합니다. 기존 ListingAdvertisement 원장은 변경하지 않습니다.',
+      obj({ sessionId: str('광고 snapshot session ID') }, ['sessionId']),
+      async (a, c) =>
+        this.listingAdvertisementSnapshots.cancel(
+          c.officeId,
+          c.userId,
+          c.role ?? 'agent',
+          a.sessionId as string,
+        ),
+      ['advertisements:observe'],
+    );
+
+    // ═══════════════════════════════════════════════════════════
     // 내 광고의 네이버 비교 스냅샷 (OfficeAdvertisements)
     // ═══════════════════════════════════════════════════════════
     this.add(
@@ -858,9 +960,7 @@ export class McpToolsService {
                       ranking: num('노출 순위'),
                       sameAddrCnt: num('같은 주소 매물 수'),
                       articleConfirmYmd: str('네이버 매물 확인일 (YYYYMMDD)'),
-                      floorInfo: str(
-                        '네이버 공개 층 표현 (예: 12/25, 저/25)',
-                      ),
+                      floorInfo: str('네이버 공개 층 표현 (예: 12/25, 저/25)'),
                       verificationTypeCode: str('네이버 확인 방식 코드'),
                       seango: bool('선광고 여부'),
                       epju: bool('e편주 여부'),
@@ -972,6 +1072,7 @@ export class McpToolsService {
       '관리매물(Property) 목록. 단지, 지역, 매물유형으로 필터링.',
       obj({
         siteId: str('단지 ID'),
+        unitId: str('호실 ID'),
         siteType: str('매물유형'),
         wardCode: str('법정동코드'),
         search: str('검색어'),
@@ -980,6 +1081,7 @@ export class McpToolsService {
       async (a, c) =>
         this.properties.findAll(c.officeId, {
           siteId: a.siteId as string,
+          unitId: a.unitId as string,
           siteType: a.siteType as string,
           wardCode: a.wardCode as string,
           search: a.search as string,
@@ -1054,13 +1156,12 @@ export class McpToolsService {
 
     this.add(
       'update_deal_stage',
-      '거래 단계를 변경합니다. `contracted` 이상 단계는 Contract 가 존재해야 합니다.',
+      '거래 단계를 변경합니다. `contracted` 단계에서 계약서를 작성하며, `settling` 이상 단계는 Contract가 존재해야 합니다.',
       obj(
         {
           id: str('거래 ID'),
           stage: strEnum('단계', [
-            'selection',
-            'negotiating',
+            'preparing',
             'preContract',
             'contracted',
             'settling',
@@ -1091,10 +1192,12 @@ export class McpToolsService {
       'find_buyer_requirements',
       '구매 희망조건 목록. 상태, 긴급도, 거래유형, 담당자 필터.',
       obj({
-        status: strEnum('상태', ['active', 'matched', 'completed', 'inactive']),
+        status: strEnum('상태', ['active', 'hold', 'completed']),
         urgency: strEnum('긴급도', ['urgent', 'normal', 'flexible']),
         transactionType: strEnum('거래유형', ['sale', 'jeonse', 'monthly']),
         assignedToId: str('담당자 ID'),
+        monthlyRentMin: num('최소 월세 (만원)'),
+        monthlyRentMax: num('최대 월세 (만원)'),
         ...page,
       }),
       async (a, c) =>
@@ -1103,6 +1206,8 @@ export class McpToolsService {
           urgency: a.urgency as string,
           transactionType: a.transactionType as string,
           assignedToId: a.assignedToId as string,
+          monthlyRentMin: a.monthlyRentMin as number,
+          monthlyRentMax: a.monthlyRentMax as number,
           page: (a.page as number) ?? 1,
           limit: this.clampLimit(a),
         }),
@@ -1125,12 +1230,14 @@ export class McpToolsService {
           siteTypes: strArr('희망 유형 (apartment, villa 등)'),
           priceMin: num('최소 예산 (만원)'),
           priceMax: num('최대 예산 (만원)'),
-          areaMin: num('최소 면적 (m²)'),
-          areaMax: num('최대 면적 (m²)'),
+          depositMin: num('최소 보증금 (만원)'),
+          depositMax: num('최대 보증금 (만원)'),
+          monthlyRentMin: num('최소 월세 (만원)'),
+          monthlyRentMax: num('최대 월세 (만원)'),
+          areaMin: num('최소 공급면적 (m²)'),
+          areaMax: num('최대 공급면적 (m²)'),
           urgency: strEnum('긴급도', ['urgent', 'normal', 'flexible']),
-          mustConditions: strArr('필수 조건'),
-          preferConditions: strArr('선호 조건'),
-          memo: str('메모'),
+          memo: str('요건 메모'),
         },
         ['contactId'],
       ),
@@ -1141,11 +1248,13 @@ export class McpToolsService {
           siteTypes: a.siteTypes as string[],
           priceMin: a.priceMin as number,
           priceMax: a.priceMax as number,
+          depositMin: a.depositMin as number,
+          depositMax: a.depositMax as number,
+          monthlyRentMin: a.monthlyRentMin as number,
+          monthlyRentMax: a.monthlyRentMax as number,
           areaMin: a.areaMin as number,
           areaMax: a.areaMax as number,
           urgency: a.urgency as string,
-          mustConditions: a.mustConditions as string[],
-          preferConditions: a.preferConditions as string[],
           memo: a.memo as string,
         }),
     );
@@ -1168,6 +1277,7 @@ export class McpToolsService {
         propertyId: str('매물 ID'),
         listingIntakeId: str('의뢰 ID'),
         listingId: str('리스팅 ID'),
+        buyerIntakeId: str('구매 의뢰 ID'),
         ...page,
       }),
       async (a, c) =>
@@ -1176,6 +1286,7 @@ export class McpToolsService {
           propertyId: a.propertyId as string,
           listingIntakeId: a.listingIntakeId as string,
           listingId: a.listingId as string,
+          buyerIntakeId: a.buyerIntakeId as string,
           page: (a.page as number) ?? 1,
           limit: this.clampLimit(a),
         }),
@@ -1200,6 +1311,7 @@ export class McpToolsService {
           listingIntakeId: str('관련 의뢰 ID'),
           listingId: str('관련 리스팅 ID'),
           matchId: str('관련 매칭 ID'),
+          buyerIntakeId: str('관련 구매 의뢰 ID'),
           buyerReqId: str('관련 구매조건 ID'),
         },
         ['contactId', 'type', 'content'],
@@ -1213,6 +1325,7 @@ export class McpToolsService {
           listingIntakeId: a.listingIntakeId as string,
           listingId: a.listingId as string,
           matchId: a.matchId as string,
+          buyerIntakeId: a.buyerIntakeId as string,
           buyerReqId: a.buyerReqId as string,
         }),
     );
@@ -1264,15 +1377,7 @@ export class McpToolsService {
       obj(
         {
           id: str('매칭 ID'),
-          stage: strEnum('단계', [
-            'suggested',
-            'buyerContacted',
-            'viewing',
-            'ownerContacted',
-            'negotiating',
-            'dealCreated',
-            'closed',
-          ]),
+          stage: strEnum('단계', [...MATCH_STAGE_ORDER]),
           memo: str('메모'),
         },
         ['id', 'stage'],
@@ -1331,8 +1436,26 @@ export class McpToolsService {
     // ═══════════════════════════════════════════════════════════
     // 업무 (Tasks)
     // ═══════════════════════════════════════════════════════════
-    this.add('find_tasks', '업무 목록.', obj({}), async (_a, c) =>
-      this.tasks.findAll(c.officeId),
+    this.add(
+      'find_tasks',
+      '업무 목록. 광고 자동화는 category=advertisement, status=pending으로 조회합니다.',
+      obj({
+        status: strEnum('업무 상태', [
+          'pending',
+          'in_progress',
+          'completed',
+          'cancelled',
+        ]),
+        category: str('업무 카테고리 (광고작업은 advertisement)'),
+        assignedToId: str('담당자 ID'),
+      }),
+      async (a, c) =>
+        this.tasks.findAll(c.officeId, {
+          status: a.status as string | undefined,
+          category: a.category as string | undefined,
+          assignedToId: a.assignedToId as string | undefined,
+        }),
+      ['tasks:read'],
     );
 
     this.add(
@@ -1340,6 +1463,7 @@ export class McpToolsService {
       '업무 상세.',
       obj({ id: str('업무 ID') }, ['id']),
       async (a, c) => this.tasks.findOne(a.id as string, c.officeId),
+      ['tasks:read'],
     );
 
     this.add(
@@ -1389,6 +1513,16 @@ export class McpToolsService {
           },
           c.userId,
         ),
+      ['tasks:write'],
+    );
+
+    this.add(
+      'claim_task',
+      'pending 업무를 현재 MCP 사용자에게 원자적으로 선점하고 in_progress로 전환합니다. 이미 다른 실행자가 선점했으면 실패합니다.',
+      obj({ id: str('업무 ID') }, ['id']),
+      async (a, c) =>
+        this.tasks.claim(a.id as string, c.officeId, c.userId),
+      ['tasks:write'],
     );
 
     this.add(
@@ -1413,6 +1547,7 @@ export class McpToolsService {
           priority: a.priority as string,
           dueDate: a.dueDate as string,
         }),
+      ['tasks:write'],
     );
 
     // ═══════════════════════════════════════════════════════════
@@ -1517,11 +1652,11 @@ export class McpToolsService {
     );
 
     // ═══════════════════════════════════════════════════════════
-    // 관리단지 즐겨찾기 (Office Sites)
+    // 관리단지 구독 (Office Sites)
     // ═══════════════════════════════════════════════════════════
     this.add(
       'find_office_sites',
-      '관리 단지(즐겨찾기) 목록.',
+      '사무소가 구독 중인 관리 단지 목록.',
       obj({}),
       async (_a, c) => this.officeSites.findAll(c.officeId),
     );
@@ -1541,26 +1676,6 @@ export class McpToolsService {
         this.officeSites.add(c.officeId, {
           siteId: a.siteId as string,
           memo: a.memo as string,
-        }),
-    );
-
-    // ═══════════════════════════════════════════════════════════
-    // 외부 수집 대상 (External Listing Sources)
-    // ═══════════════════════════════════════════════════════════
-    // 수집 스코프의 유일한 권위. 등록/수정은 owner/manager 전용이라 REST에만 두고,
-    // MCP에는 조회만 노출한다.
-    this.add(
-      'find_external_listing_sources',
-      '외부 수집 대상 목록. siteId ↔ 외부 단지코드(네이버 complexNo) 매핑의 유일한 근거. ' +
-        '여기 없는 단지는 수집 스코프가 아니며, 단지명 검색으로 추측하지 않는다.',
-      obj({
-        provider: str('플랫폼 (naver)'),
-        isEnabled: bool('수집 활성 여부'),
-      }),
-      async (a, c) =>
-        this.externalListingSources.findAll(c.officeId, {
-          provider: a.provider as string | undefined,
-          isEnabled: a.isEnabled as boolean | undefined,
         }),
     );
 
@@ -1733,26 +1848,19 @@ export class McpToolsService {
 
     this.add(
       'update_external_listing_group',
-      '외부 매물 그룹의 호수 추정, 메모, 상태를 수정합니다.',
+      '외부 매물 그룹의 호수 텍스트, 메모, 상태를 수정합니다.',
       obj(
         {
           id: str('그룹 ID'),
-          unitId: str('매칭할 호실 ID (null이면 해제)'),
-          inferredHo: str('추정 호수 (예: "1503호")'),
+          ho: str('호수 텍스트 (예: "1503호")'),
           memo: str('메모'),
-          status: strEnum('상태', [
-            'unmatched',
-            'matched',
-            'verified',
-            'on_hold',
-          ]),
+          status: strEnum('상태', ['unmatched', 'verified', 'on_hold']),
         },
         ['id'],
       ),
       async (a, c) =>
         this.externalListings.updateGroup(a.id as string, c.officeId, {
-          unitId: a.unitId as string | null,
-          inferredHo: a.inferredHo as string | null,
+          ho: a.ho as string | null,
           memo: a.memo as string | null,
           status: a.status as string,
         }),
@@ -1867,6 +1975,7 @@ export class McpToolsService {
                 priceChangeState: str('가격 변경 상태'),
                 isPriceModification: bool('가격 수정 여부'),
                 buildingName: str('동명'),
+                ho: str('호수 텍스트'),
                 areaName: str('평형명 (84A 등)'),
                 sourceUrl: str('원본 URL'),
                 raw: {
@@ -1949,461 +2058,5 @@ export class McpToolsService {
     );
 
     // ═══════════════════════════════════════════════════════════
-    // Agent Action Requests — Task와 분리된 AI 외부 실행요청 큐
-    // ═══════════════════════════════════════════════════════════
-    this.add(
-      'create_agent_action_request',
-      'ListingAdvertisement의 CP 상태와 내 광고 관리의 최신 OfficeAdvertisement 비교 스냅샷을 근거로 독립 exact-hash 광고 변경안을 만듭니다. 정상 흐름에서는 Task를 만들지 않으며, 직원의 앱 내 승인 뒤 로컬 computer use가 실행합니다.',
-      obj(
-        {
-          reviewerId: str('AI 요청함에서 이 변경안을 검토할 직원 User ID'),
-          listingAdvertisementId: str('내부 ListingAdvertisement ID'),
-          capability: strEnum(
-            '허용된 단일 광고 변경 capability',
-            AGENT_ACTION_CAPABILITIES,
-          ),
-          rationale: str('변경이 필요한 이유와 판단 근거'),
-          payload: {
-            type: 'object',
-            description:
-              'capability별 명령. takedown={reasonCode}, terms.set={advertisedPrice?, advertisedDeposit?, advertisedMonthlyRent?}; 가격 단위는 만원.',
-          },
-          sourceSkillKey: str('관측/판단 skill key'),
-          sourceSkillVersion: str('관측/판단 skill version'),
-          executorSkillVersion: str(
-            '이실장 광고관리 실행 계약 버전. 현재 computer-use-v1.',
-          ),
-          dedupeKey: str('같은 제안의 재생성을 막는 선택적 안정 키'),
-          supersedesId: str('새 변경안이 대체하는 pending request ID'),
-        },
-        [
-          'reviewerId',
-          'listingAdvertisementId',
-          'capability',
-          'rationale',
-          'payload',
-        ],
-      ),
-      async (a, c) =>
-        this.agentActionRequests.create(
-          c.officeId,
-          {
-            reviewerId: a.reviewerId as string,
-            listingAdvertisementId: a.listingAdvertisementId as string,
-            capability: a.capability as AgentActionCapability,
-            rationale: a.rationale as string,
-            payload: a.payload as Record<string, unknown>,
-            sourceSkillKey: a.sourceSkillKey as string | undefined,
-            sourceSkillVersion: a.sourceSkillVersion as string | undefined,
-            executorSkillVersion:
-              (a.executorSkillVersion as string | undefined) ??
-              'computer-use-v1',
-            executionMode: 'manual',
-            dedupeKey: a.dedupeKey as string | undefined,
-            supersedesId: a.supersedesId as string | undefined,
-          },
-          {
-            actor: `mcp:${c.userId}`,
-            source: 'mcp',
-            userId: c.userId,
-            role: c.role,
-          },
-        ),
-      ['advertisements:propose'],
-    );
-
-    this.add(
-      'list_agent_action_requests',
-      '현재 사무소의 독립 AI 광고 변경안과 검토·실행·검증·예외 Task 상태를 조회합니다.',
-      obj({
-        reviewerId: str('검토 담당 직원 User ID'),
-        escalationTaskId: str('예외 시 생성된 사람 Task ID'),
-        listingAdvertisementId: str('ListingAdvertisement ID'),
-        capability: strEnum('capability', AGENT_ACTION_CAPABILITIES),
-        reviewStatus: strEnum('검토 상태', [
-          'pending',
-          'approved',
-          'rejected',
-          'withdrawn',
-          'expired',
-          'stale',
-          'superseded',
-        ]),
-        executionStatus: str('실행 상태'),
-        verificationStatus: str('검증 상태'),
-        limit: num('최대 개수'),
-      }),
-      async (a, c) =>
-        this.agentActionRequests.list(c.officeId, {
-          reviewerId: a.reviewerId as string | undefined,
-          escalationTaskId: a.escalationTaskId as string | undefined,
-          listingAdvertisementId: a.listingAdvertisementId as
-            | string
-            | undefined,
-          capability: a.capability as AgentActionCapability | undefined,
-          reviewStatus: a.reviewStatus as
-            | 'pending'
-            | 'approved'
-            | 'rejected'
-            | 'withdrawn'
-            | 'expired'
-            | 'stale'
-            | 'superseded'
-            | undefined,
-          executionStatus: a.executionStatus as
-            | 'not_started'
-            | 'awaiting_manual'
-            | 'queued'
-            | 'running'
-            | 'succeeded'
-            | 'failed'
-            | 'needs_input'
-            | 'cancelled'
-            | undefined,
-          verificationStatus: a.verificationStatus as
-            | 'pending'
-            | 'matched'
-            | 'mismatch'
-            | 'not_found'
-            | 'blocked'
-            | 'not_required'
-            | undefined,
-          limit: a.limit as number | undefined,
-        }),
-      ['advertisements:read'],
-    );
-
-    this.add(
-      'get_agent_action_request',
-      '한 AI 광고 변경안의 exact contentHash, 광고노트 근거, 검토자, 결정, 실행, 검증 및 예외 Task를 조회합니다.',
-      obj({ id: str('AgentActionRequest ID') }, ['id']),
-      async (a, c) => this.agentActionRequests.get(c.officeId, a.id as string),
-      ['advertisements:read'],
-    );
-
-    this.add(
-      'withdraw_agent_action_request',
-      'agent가 만든 pending 광고 변경안이 더 이상 유효하지 않을 때 철회합니다. 사람 승인이나 반려를 대신하지 않으며 exact hash와 version이 일치해야 합니다.',
-      obj(
-        {
-          id: str('AgentActionRequest ID'),
-          contentHash: str('현재 SHA-256 contentHash'),
-          version: num('현재 optimistic version'),
-          reason: str('철회 사유'),
-        },
-        ['id', 'contentHash', 'version', 'reason'],
-      ),
-      async (a, c) =>
-        this.agentActionRequests.withdraw(
-          c.officeId,
-          a.id as string,
-          {
-            contentHash: a.contentHash as string,
-            version: a.version as number,
-            reason: a.reason as string,
-          },
-          {
-            actor: `mcp:${c.userId}`,
-            source: 'mcp',
-            userId: c.userId,
-            role: c.role,
-          },
-        ),
-      ['advertisements:propose'],
-    );
-
-    this.add(
-      'record_agent_action_execution',
-      '직원이 exact hash를 승인한 뒤 agent-browser/computer use가 이실장에 저장하고 같은 화면에서 persisted 값을 다시 확인한 receipt를 기록합니다. 서버가 receipt를 승인 payload와 비교해 즉시 성공 또는 불일치로 마감합니다.',
-      obj(
-        {
-          id: str('AgentActionRequest ID'),
-          contentHash: str('직원이 승인한 SHA-256 contentHash'),
-          version: num('현재 optimistic version'),
-          note: str('사람이 읽을 수 있는 실행 요약'),
-          receipt: {
-            type: 'object',
-            description:
-              '필수: operationKey, articleNo, observedAt, observedAfter={isActive,price,deposit,monthlyRent}. 선택: providerUrl, screenshotArtifactId, confirmationText. 비밀정보는 금지.',
-          },
-        },
-        ['id', 'contentHash', 'version', 'receipt'],
-      ),
-      async (a, c) =>
-        this.agentActionRequests.recordExecution(
-          c.officeId,
-          a.id as string,
-          {
-            contentHash: a.contentHash as string,
-            version: a.version as number,
-            note: a.note as string | undefined,
-            receipt: a.receipt as Prisma.InputJsonValue,
-          },
-          {
-            actor: `mcp:${c.userId}`,
-            source: 'mcp',
-            userId: c.userId,
-            role: c.role,
-          },
-        ),
-      ['advertisements:execute'],
-    );
-
-    this.add(
-      'report_agent_action_blocker',
-      '승인된 이실장 computer-use 실행이 CAPTCHA, MFA, 계정/대상/화면 불일치 등으로 사람 입력을 필요로 할 때 중단 사유를 기록합니다. 이때만 검토 담당자에게 일반 Task가 생성됩니다.',
-      obj(
-        {
-          id: str('AgentActionRequest ID'),
-          contentHash: str('직원이 승인한 SHA-256 contentHash'),
-          version: num('현재 optimistic version'),
-          reasonCode: strEnum('중단 사유', AGENT_ACTION_BLOCKER_REASONS),
-          summary: str('직원이 바로 이해하고 처리할 수 있는 문제 설명'),
-          evidence: {
-            type: 'object',
-            description:
-              '선택적 비밀정보 없는 구조화 근거. 쿠키, 비밀번호, OTP, authorization header 금지.',
-          },
-        },
-        ['id', 'contentHash', 'version', 'reasonCode', 'summary'],
-      ),
-      async (a, c) =>
-        this.agentActionRequests.reportBlocker(
-          c.officeId,
-          a.id as string,
-          {
-            contentHash: a.contentHash as string,
-            version: a.version as number,
-            reasonCode: a.reasonCode as AgentActionBlockerReason,
-            summary: a.summary as string,
-            evidence: a.evidence as Prisma.InputJsonValue | undefined,
-          },
-          {
-            actor: `mcp:${c.userId}`,
-            source: 'mcp',
-            userId: c.userId,
-            role: c.role,
-          },
-        ),
-      ['advertisements:execute'],
-    );
-
-    // ═══════════════════════════════════════════════════════════
-    // Agent Control Plane — durable wakeup/run/activity protocol
-    // ═══════════════════════════════════════════════════════════
-    this.add(
-      'agent_start_session',
-      'Task 또는 독립 AgentActionRequest 한 건의 문맥에 지속형 AI 세션을 생성하거나 기존 세션을 재사용합니다. 두 work item ID를 동시에 지정할 수 없습니다.',
-      obj(
-        {
-          agentKey: str('AI delegate 식별자 (예: contract-writer)'),
-          taskKey: str('업무별 안정 키'),
-          taskId: str('사람 담당자가 지정된 ERP Task ID'),
-          agentActionRequestId: str('독립 AI 실행요청 AgentActionRequest ID'),
-          context: {
-            type: 'object',
-            description: '세션 재개용 도메인 ID 문맥',
-          },
-          plan: { type: 'array', description: '선택적 실행 계획' },
-        },
-        ['agentKey', 'taskKey'],
-      ),
-      async (a, c) =>
-        this.controlPlane.getOrCreateSession(c.officeId, {
-          agentKey: a.agentKey as string,
-          adapter: 'mcp',
-          taskKey: a.taskKey as string,
-          taskId: a.taskId as string | undefined,
-          agentActionRequestId: a.agentActionRequestId as string | undefined,
-          context: (a.context ?? {}) as Prisma.InputJsonValue,
-          plan: a.plan as Prisma.InputJsonValue | undefined,
-        }),
-    );
-
-    this.add(
-      'agent_list_sessions',
-      '현재 사무소의 AI 세션과 pending/active/awaiting_input 상태를 조회합니다.',
-      obj({
-        status: strEnum('세션 상태', [
-          'pending',
-          'active',
-          'awaiting_input',
-          'complete',
-          'error',
-          'stale',
-        ]),
-        agentKey: str('AI delegate 식별자'),
-        taskId: str('ERP Task ID'),
-        agentActionRequestId: str('AgentActionRequest ID'),
-        limit: num('최대 개수'),
-      }),
-      async (a, c) =>
-        this.controlPlane.listSessions(c.officeId, {
-          status: a.status as AgentSessionStatus | undefined,
-          agentKey: a.agentKey as string | undefined,
-          taskId: a.taskId as string | undefined,
-          agentActionRequestId: a.agentActionRequestId as string | undefined,
-          limit: a.limit as number | undefined,
-        }),
-    );
-
-    this.add(
-      'agent_list_wakeups',
-      '승인·코멘트·이벤트로 생성된 durable wakeup을 조회합니다.',
-      obj({
-        sessionId: str('AgentSession ID'),
-        status: strEnum('wakeup 상태', [
-          'queued',
-          'claimed',
-          'completed',
-          'failed',
-          'cancelled',
-        ]),
-        source: str('approval, comment, schedule, event 등'),
-        limit: num('최대 개수'),
-      }),
-      async (a, c) =>
-        this.controlPlane.listWakeups(c.officeId, {
-          sessionId: a.sessionId as string | undefined,
-          status: a.status as AgentWakeupStatus | undefined,
-          source: a.source as string | undefined,
-          limit: a.limit as number | undefined,
-        }),
-    );
-
-    this.add(
-      'agent_claim_wakeup',
-      '가장 오래된 wakeup 하나를 lease로 원자적 claim하고 새 AgentRun을 시작합니다. 대기 작업이 없으면 null입니다.',
-      obj({
-        source: str('선택적 source 필터'),
-        leaseMs: num('lease 길이(ms), 1초~1시간'),
-        runnerDeviceId: str(
-          '로컬 실행기 deviceId. 지정하면 이 기기에 연결된 작업과 일반 작업만 claim',
-        ),
-      }),
-      async (a, c) =>
-        this.controlPlane.claimNextWakeup(c.officeId, `mcp:${c.userId}`, {
-          source: a.source as string | undefined,
-          leaseMs: a.leaseMs as number | undefined,
-          runnerDeviceId: a.runnerDeviceId as string | undefined,
-        }),
-    );
-
-    this.add(
-      'agent_renew_run',
-      '장시간 실행 중인 AgentRun의 소유 lease를 연장합니다.',
-      obj({ runId: str('AgentRun ID'), leaseMs: num('새 lease 길이(ms)') }, [
-        'runId',
-      ]),
-      async (a, c) =>
-        this.controlPlane.renewRunLease(
-          c.officeId,
-          a.runId as string,
-          `mcp:${c.userId}`,
-          a.leaseMs as number | undefined,
-        ),
-    );
-
-    this.add(
-      'agent_append_activity',
-      '수정 가능한 댓글과 분리된 append-only AI 실행 활동을 기록합니다.',
-      obj(
-        {
-          sessionId: str('AgentSession ID'),
-          runId: str('AgentRun ID'),
-          type: strEnum('활동 유형', [
-            'thought',
-            'action',
-            'elicitation',
-            'response',
-            'error',
-            'system',
-          ]),
-          message: str('사람이 읽을 수 있는 요약'),
-          payload: { type: 'object', description: '구조화 활동 데이터' },
-          ephemeral: bool('UI에서 축약 가능한 중간 활동 여부'),
-        },
-        ['sessionId', 'type'],
-      ),
-      async (a, c) => {
-        const sessionId = a.sessionId as string;
-        const runId = a.runId as string | undefined;
-        if (runId) {
-          await this.assertMcpRunOwnership(
-            c.officeId,
-            c.userId,
-            sessionId,
-            runId,
-          );
-        }
-        return this.controlPlane.appendActivity(c.officeId, {
-          sessionId,
-          runId,
-          type: a.type as AgentActivityType,
-          message: a.message as string | undefined,
-          payload: a.payload as Prisma.InputJsonValue | undefined,
-          ephemeral: a.ephemeral as boolean | undefined,
-        });
-      },
-    );
-
-    this.add(
-      'agent_list_activities',
-      '세션의 append-only 활동 스트림을 sequence 순서로 조회합니다.',
-      obj(
-        {
-          sessionId: str('AgentSession ID'),
-          runId: str('AgentRun ID'),
-          afterSequence: num('이 sequence 이후만 조회'),
-          limit: num('최대 개수'),
-        },
-        ['sessionId'],
-      ),
-      async (a, c) =>
-        this.controlPlane.listActivities(c.officeId, a.sessionId as string, {
-          runId: a.runId as string | undefined,
-          afterSequence: a.afterSequence as number | undefined,
-          limit: a.limit as number | undefined,
-        }),
-    );
-
-    this.add(
-      'agent_complete_run',
-      '소유한 AgentRun을 completed/awaiting_input/failed로 마감하고 wakeup·세션 상태를 함께 전이합니다.',
-      obj(
-        {
-          runId: str('AgentRun ID'),
-          outcome: strEnum('실행 결과', [
-            'completed',
-            'awaiting_input',
-            'failed',
-          ]),
-          result: { type: 'object', description: '실행 결과' },
-          usage: { type: 'object', description: '토큰/비용 등 사용량' },
-          error: str('failed 사유'),
-          waitingReason: str('awaiting_input 사유'),
-        },
-        ['runId', 'outcome'],
-      ),
-      async (a, c) => {
-        const completedRun = await this.controlPlane.completeRun(
-          c.officeId,
-          a.runId as string,
-          `mcp:${c.userId}`,
-          {
-            outcome: a.outcome as CompleteAgentRunOutcome,
-            result: a.result as Prisma.InputJsonValue | undefined,
-            usage: a.usage as Prisma.InputJsonValue | undefined,
-            error: a.error as string | undefined,
-            waitingReason: a.waitingReason as string | undefined,
-          },
-        );
-        await this.listingAdvertisements.handleAgentRunCompletion(
-          c.officeId,
-          completedRun.id,
-        );
-        return completedRun;
-      },
-    );
   }
 }

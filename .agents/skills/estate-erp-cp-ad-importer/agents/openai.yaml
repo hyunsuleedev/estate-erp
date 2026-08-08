@@ -1,0 +1,4 @@
+interface:
+  display_name: "CP 광고 스냅샷 가져오기"
+  short_description: "저장된 CP 광고 JSON을 Estate ERP 광고 원장으로 연결"
+  default_prompt: "$estate-erp-cp-ad-importer로 저장된 CP 광고 스냅샷을 매물에 연결해 가져와 주세요."

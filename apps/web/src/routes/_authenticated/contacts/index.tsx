@@ -608,9 +608,9 @@ function BuyerReqExpandedPanel({ contact }: { contact: Contact }) {
             {area && (
               <span className="shrink-0 text-[11.5px] text-muted-foreground">{area}</span>
             )}
-            {req.mustConditions.length > 0 && (
+            {req.memo?.trim() && (
               <span className="truncate text-[11.5px] text-muted-foreground">
-                필수: {req.mustConditions.join(', ')}
+                메모: {req.memo.replace(/\s+/g, ' ')}
               </span>
             )}
             <span className="flex-1" />

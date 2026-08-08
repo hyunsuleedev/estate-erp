@@ -5,7 +5,11 @@ describe('McpToolsService', () => {
 
   function createService() {
     const listings = {
+      findAll: jest.fn().mockResolvedValue({ items: [] }),
       create: jest.fn().mockResolvedValue({ id: 'listing-1' }),
+    };
+    const properties = {
+      findAll: jest.fn().mockResolvedValue({ items: [] }),
     };
     const listingAdvertisements = {
       findAll: jest
@@ -14,7 +18,6 @@ describe('McpToolsService', () => {
       create: jest.fn().mockResolvedValue({ id: 'ad-1' }),
       update: jest.fn().mockResolvedValue({ id: 'ad-1' }),
       remove: jest.fn().mockResolvedValue({ id: 'ad-1' }),
-      handleAgentRunCompletion: jest.fn().mockResolvedValue(null),
     };
     const listingIntakes = {
       findAll: jest
@@ -49,31 +52,14 @@ describe('McpToolsService', () => {
       }),
     };
     const tasks = {
+      findAll: jest.fn().mockResolvedValue([]),
+      findOne: jest.fn().mockResolvedValue({ id: 'task-1' }),
       create: jest.fn().mockResolvedValue({ id: 'task-1' }),
       update: jest.fn().mockResolvedValue({ id: 'task-1' }),
-    };
-    const controlPlane = {
-      getOrCreateSession: jest.fn().mockResolvedValue({
-        id: 'session-1',
-        taskId: null,
-      }),
-      updateSession: jest
-        .fn()
-        .mockImplementation(
-          async (
-            _officeId: string,
-            _sessionId: string,
-            input: Record<string, unknown>,
-          ) => ({
-            id: 'session-1',
-            taskId: input.taskId ?? 'task-1',
-            ...input,
-          }),
-        ),
-      appendActivity: jest.fn().mockResolvedValue({ id: 'activity-1' }),
-      completeRun: jest.fn().mockResolvedValue({
-        id: 'agent-run-1',
-        status: 'completed',
+      claim: jest.fn().mockResolvedValue({
+        id: 'task-1',
+        category: 'advertisement',
+        status: 'in_progress',
       }),
     };
     const externalListings = {
@@ -96,46 +82,33 @@ describe('McpToolsService', () => {
         errors: [],
       }),
     };
-    const agentActionRequests = {
-      create: jest.fn().mockResolvedValue({
-        id: 'agent-action-1',
-        contentHash: 'a'.repeat(64),
+    const listingAdvertisementSnapshots = {
+      begin: jest.fn().mockResolvedValue({
+        session: { id: 'cp-snapshot-1', status: 'processing' },
+        reused: false,
       }),
-      list: jest.fn().mockResolvedValue([]),
-      get: jest.fn().mockResolvedValue({ id: 'agent-action-1' }),
-      recordExecution: jest.fn().mockResolvedValue({
-        id: 'agent-action-1',
-        executionStatus: 'succeeded',
-        verificationStatus: 'matched',
+      submitItem: jest.fn().mockResolvedValue({
+        item: { id: 'cp-snapshot-item-1', status: 'resolved' },
+        progress: { receivedCount: 1, resolvedCount: 1 },
       }),
-      reportBlocker: jest.fn().mockResolvedValue({
-        id: 'agent-action-1',
-        executionStatus: 'needs_input',
-        escalationTaskId: 'task-1',
+      get: jest.fn().mockResolvedValue({
+        session: { id: 'cp-snapshot-1', status: 'processing' },
       }),
-      withdraw: jest.fn().mockResolvedValue({
-        id: 'agent-action-1',
-        reviewStatus: 'withdrawn',
+      complete: jest.fn().mockResolvedValue({
+        sessionId: 'cp-snapshot-1',
+        status: 'completed',
       }),
-    };
-    const externalListingSources = {
-      findAll: jest.fn().mockResolvedValue([
-        {
-          id: 'source-1',
-          siteId: 'site-1',
-          provider: 'naver',
-          externalCode: '113907',
-          type: 'apartment',
-          isEnabled: true,
-        },
-      ]),
+      cancel: jest.fn().mockResolvedValue({
+        id: 'cp-snapshot-1',
+        status: 'cancelled',
+      }),
     };
     const noop = {};
 
     const service = new (McpToolsService as any)(
       listings,
       noop, // contacts
-      noop, // properties
+      properties,
       noop, // deals
       noop, // buyerReqs
       noop, // consultations
@@ -147,7 +120,6 @@ describe('McpToolsService', () => {
       noop, // dongs
       noop, // units
       noop, // officeSites
-      externalListingSources,
       noop, // propertyContacts
       noop, // contactRelations
       noop, // tenants
@@ -161,21 +133,19 @@ describe('McpToolsService', () => {
       listingAdvertisements,
       noop, // officeAdvertisements
       listingIntakes,
-      controlPlane,
-      agentActionRequests,
+      listingAdvertisementSnapshots,
     ) as McpToolsService;
 
     return {
       service,
       listings,
+      properties,
       listingAdvertisements,
       listingIntakes,
       contracts,
       tasks,
-      controlPlane,
       externalListings,
-      externalListingSources,
-      agentActionRequests,
+      listingAdvertisementSnapshots,
     };
   }
 
@@ -234,24 +204,35 @@ describe('McpToolsService', () => {
     );
   });
 
-  it('delegates find_external_listing_sources to the collection source service', async () => {
-    const { service, externalListingSources } = createService();
+  it('exposes exact Property and Listing lookup filters for snapshot resolution', async () => {
+    const { service, properties, listings } = createService();
 
-    const result = await service.executeTool(
-      'find_external_listing_sources',
-      { provider: 'naver', isEnabled: true },
+    await service.executeTool(
+      'find_properties',
+      { siteId: 'site-1', unitId: 'unit-1' },
+      ctx,
+    );
+    await service.executeTool(
+      'find_listings',
+      {
+        propertyId: 'property-1',
+        transactionType: 'sale',
+        includeClosed: false,
+      },
       ctx,
     );
 
-    expect(externalListingSources.findAll).toHaveBeenCalledWith('office-1', {
-      provider: 'naver',
-      isEnabled: true,
-    });
-    // 스킬이 siteId → complexNo 매핑을 읽으려면 이 세 필드가 반드시 나와야 한다.
-    expect(result.isError).toBe(false);
-    expect(result.content[0].text).toContain('113907');
-    expect(result.content[0].text).toContain('site-1');
-    expect(result.content[0].text).toContain('apartment');
+    expect(properties.findAll).toHaveBeenCalledWith(
+      'office-1',
+      expect.objectContaining({ siteId: 'site-1', unitId: 'unit-1' }),
+    );
+    expect(listings.findAll).toHaveBeenCalledWith(
+      'office-1',
+      expect.objectContaining({
+        propertyId: 'property-1',
+        transactionType: 'sale',
+      }),
+    );
   });
 
   it('delegates create_listing_intake to the listing intake service', async () => {
@@ -352,6 +333,82 @@ describe('McpToolsService', () => {
     );
   });
 
+  it('registers the one-item CP advertisement snapshot workflow', () => {
+    const { service } = createService();
+    const names = service.getToolDefinitions().map((tool) => tool.name);
+
+    expect(names).toEqual(
+      expect.arrayContaining([
+        'begin_listing_advertisement_snapshot',
+        'submit_listing_advertisement_snapshot_item',
+        'get_listing_advertisement_snapshot',
+        'complete_listing_advertisement_snapshot',
+        'cancel_listing_advertisement_snapshot',
+      ]),
+    );
+    expect(names).not.toEqual(
+      expect.arrayContaining([
+        'append_listing_advertisement_snapshot_items',
+        'claim_listing_advertisement_snapshot_item',
+        'resolve_listing_advertisement_snapshot_item',
+        'fail_listing_advertisement_snapshot_item',
+        'retry_listing_advertisement_snapshot_item',
+      ]),
+    );
+  });
+
+  it('delegates one resolved CP snapshot item in a single call', async () => {
+    const { service, listingAdvertisementSnapshots } = createService();
+    const metadata = {
+      channel: 'esiljang',
+      provider: 'esiljang',
+      scope: 'active_advertisements',
+      observedAt: '2026-08-04T14:48:01.956Z',
+      expectedTotal: 1,
+      manifestHash: 'a'.repeat(64),
+      activeFilter: { dataValue: 'ad', selected: true, count: 1 },
+      paginationComplete: true,
+      visitedPages: [1],
+    };
+
+    await service.executeTool(
+      'begin_listing_advertisement_snapshot',
+      metadata,
+      ctx,
+    );
+    await service.executeTool(
+      'submit_listing_advertisement_snapshot_item',
+      {
+        sessionId: 'cp-snapshot-1',
+        raw: {
+          externalAdId: '64850265',
+          provider: 'esiljang',
+          observedAt: '2026-08-04T14:48:01.956Z',
+          sourcePage: 1,
+        },
+        listingId: 'listing-1',
+        resolution: { siteId: 'site-1', unitId: 'unit-1' },
+      },
+      ctx,
+    );
+
+    expect(listingAdvertisementSnapshots.begin).toHaveBeenCalledWith(
+      'office-1',
+      'user-1',
+      expect.objectContaining(metadata),
+    );
+    expect(listingAdvertisementSnapshots.submitItem).toHaveBeenCalledWith(
+      'office-1',
+      'user-1',
+      'agent',
+      expect.objectContaining({
+        sessionId: 'cp-snapshot-1',
+        listingId: 'listing-1',
+        raw: expect.objectContaining({ externalAdId: '64850265' }),
+      }),
+    );
+  });
+
   it('registers sale contract draft preparation and validation tools', () => {
     const { service } = createService();
     const definitions = service.getToolDefinitions();
@@ -396,137 +453,45 @@ describe('McpToolsService', () => {
     );
   });
 
-  it('registers the durable agent run protocol tools', () => {
-    const { service } = createService();
-    expect(service.getToolDefinitions().map((tool) => tool.name)).toEqual(
-      expect.arrayContaining([
-        'agent_start_session',
-        'agent_claim_wakeup',
-        'agent_renew_run',
-        'agent_append_activity',
-        'agent_complete_run',
-      ]),
+  it('uses ordinary Tasks as the advertisement work contract', async () => {
+    const { service, tasks } = createService();
+
+    const found = await service.executeTool(
+      'find_tasks',
+      { category: 'advertisement', status: 'pending' },
+      ctx,
     );
-  });
-
-  it('starts an agent session for an AgentActionRequest without a Task', async () => {
-    const { service, controlPlane } = createService();
-
-    const result = await service.executeTool(
-      'agent_start_session',
-      {
-        agentKey: 'esiljang-ad-manager',
-        taskKey: 'agent-action:agent-action-1',
-        agentActionRequestId: 'agent-action-1',
-        context: { articleNo: '2412345678' },
-      },
+    const claimed = await service.executeTool(
+      'claim_task',
+      { id: 'task-1' },
       ctx,
     );
 
-    expect(result.isError).toBe(false);
-    expect(controlPlane.getOrCreateSession).toHaveBeenCalledWith(
+    expect(found.isError).toBe(false);
+    expect(claimed.isError).toBe(false);
+    expect(tasks.findAll).toHaveBeenCalledWith('office-1', {
+      category: 'advertisement',
+      status: 'pending',
+      assignedToId: undefined,
+    });
+    expect(tasks.claim).toHaveBeenCalledWith(
+      'task-1',
       'office-1',
-      expect.objectContaining({
-        taskId: undefined,
-        agentActionRequestId: 'agent-action-1',
-      }),
+      'user-1',
     );
   });
 
-  it('advances an advertisement workflow after the linked agent run completes', async () => {
-    const { service, controlPlane, listingAdvertisements } = createService();
-
-    const result = await service.executeTool(
-      'agent_complete_run',
-      {
-        runId: 'agent-run-1',
-        outcome: 'completed',
-        result: { processedCount: 12, totalCount: 12 },
-      },
-      ctx,
-    );
-
-    expect(result.isError).toBe(false);
-    expect(controlPlane.completeRun).toHaveBeenCalledWith(
-      'office-1',
-      'agent-run-1',
-      'mcp:user-1',
-      expect.objectContaining({ outcome: 'completed' }),
-    );
-    expect(
-      listingAdvertisements.handleAgentRunCompletion,
-    ).toHaveBeenCalledWith('office-1', 'agent-run-1');
-  });
-
-  it('exposes proposal and approved execution tools but no MCP approval tool', () => {
+  it('does not expose a server-side agent queue or action-request workflow', () => {
     const { service } = createService();
     const names = service.getToolDefinitions(ctx).map((tool) => tool.name);
 
-    expect(names).toEqual(
-      expect.arrayContaining([
-        'create_agent_action_request',
-        'list_agent_action_requests',
-        'get_agent_action_request',
-        'withdraw_agent_action_request',
-        'record_agent_action_execution',
-        'report_agent_action_blocker',
-        'create_external_listing_snapshot_session',
-        'complete_external_listing_snapshot_session',
-        'cancel_external_listing_snapshot_session',
-      ]),
-    );
-    expect(names).not.toContain('approve_agent_action_request');
-    expect(names).not.toContain('reject_agent_action_request');
-    expect(names).not.toContain('verify_agent_action_request');
-  });
-
-  it('hides scoped agent action tools from a role without advertisement scopes', () => {
-    const { service } = createService();
-    const names = service
-      .getToolDefinitions({
-        officeId: 'office-1',
-        userId: 'user-1',
-        role: 'unknown',
-      })
-      .map((tool) => tool.name);
-
+    expect(names).not.toContain('agent_start_session');
+    expect(names).not.toContain('agent_claim_wakeup');
     expect(names).not.toContain('create_agent_action_request');
-    expect(names).not.toContain('list_agent_action_requests');
+    expect(names).not.toContain('record_agent_action_execution');
+    expect(names).not.toContain('find_external_listing_sources');
   });
 
-  it('creates an attended computer-use exact-hash request through MCP', async () => {
-    const { service, agentActionRequests } = createService();
-
-    const result = await service.executeTool(
-      'create_agent_action_request',
-      {
-        reviewerId: 'reviewer-1',
-        listingAdvertisementId: 'listing-ad-1',
-        capability: 'advertisement.terms.set',
-        rationale: '네이버 가격이 ERP 확정가와 다릅니다.',
-        payload: { advertisedPrice: 158000 },
-        sourceSkillKey: 'naver-real-estate-reader',
-        sourceSkillVersion: '0.1.0',
-      },
-      ctx,
-    );
-
-    expect(result.isError).toBe(false);
-    expect(agentActionRequests.create).toHaveBeenCalledWith(
-      'office-1',
-      expect.objectContaining({
-        reviewerId: 'reviewer-1',
-        executionMode: 'manual',
-        executorSkillVersion: 'computer-use-v1',
-        capability: 'advertisement.terms.set',
-      }),
-      expect.objectContaining({
-        actor: 'mcp:user-1',
-        source: 'mcp',
-        role: 'agent',
-      }),
-    );
-  });
 
   it('exposes complete advertising-note snapshot semantics through MCP', async () => {
     const { service, externalListings } = createService();
@@ -557,78 +522,6 @@ describe('McpToolsService', () => {
     );
   });
 
-  it('records an approved computer-use execution without exposing approval', async () => {
-    const { service, agentActionRequests } = createService();
-
-    const result = await service.executeTool(
-      'record_agent_action_execution',
-      {
-        id: 'agent-action-1',
-        contentHash: 'a'.repeat(64),
-        version: 2,
-        note: '이실장 가격 조건 저장 완료',
-        receipt: {
-          operationKey: 'op-1',
-          articleNo: '2412345678',
-          observedAt: '2026-07-28T00:00:00.000Z',
-          observedAfter: {
-            isActive: true,
-            price: 158000,
-            deposit: null,
-            monthlyRent: null,
-          },
-          screenshotArtifactId: 'shot-1',
-        },
-      },
-      ctx,
-    );
-
-    expect(result.isError).toBe(false);
-    expect(agentActionRequests.recordExecution).toHaveBeenCalledWith(
-      'office-1',
-      'agent-action-1',
-      expect.objectContaining({
-        contentHash: 'a'.repeat(64),
-        version: 2,
-        receipt: expect.objectContaining({ operationKey: 'op-1' }),
-      }),
-      expect.objectContaining({
-        actor: 'mcp:user-1',
-        source: 'mcp',
-        role: 'agent',
-      }),
-    );
-  });
-
-  it('escalates a computer-use blocker to a human Task through MCP', async () => {
-    const { service, agentActionRequests } = createService();
-
-    const result = await service.executeTool(
-      'report_agent_action_blocker',
-      {
-        id: 'agent-action-1',
-        contentHash: 'a'.repeat(64),
-        version: 2,
-        reasonCode: 'captcha',
-        summary: 'CAPTCHA가 나타나 직원 확인이 필요합니다.',
-      },
-      ctx,
-    );
-
-    expect(result.isError).toBe(false);
-    expect(agentActionRequests.reportBlocker).toHaveBeenCalledWith(
-      'office-1',
-      'agent-action-1',
-      expect.objectContaining({
-        reasonCode: 'captcha',
-        version: 2,
-      }),
-      expect.objectContaining({
-        actor: 'mcp:user-1',
-        source: 'mcp',
-      }),
-    );
-  });
 
   it('delegates sale contract draft validation as a read-only tool', async () => {
     const { service, contracts } = createService();

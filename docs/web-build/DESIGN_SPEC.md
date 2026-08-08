@@ -26,8 +26,8 @@
 |---|---|
 | Listing.checkStatus | unverified=gray, verified=success, in_contract=info, hold=warning, done=neutral(진한 회색) |
 | ListingIntake.status | unverified=gray, active=success, in_contract=info, hold=warning, done=neutral |
-| MatchStage | suggested=gray, buyerContacted=info, viewing=violet, ownerContacted=info, negotiating=warning, dealCreated=success, closed=neutral |
-| DealStage | selection=gray, negotiating=warning, preContract=violet, contracted=info, settling=orange, completed=success, closed=neutral |
+| MatchStage | suggested=gray, buyerInterested=info, viewingConfirmed=orange, viewing=violet, negotiating=warning, dealCreated=success, closed=neutral |
+| DealStage | preparing=gray, preContract=violet, contracted=info, settling=orange, completed=success, closed=neutral |
 | ContractStatus | draft=gray, signed=info, depositPaid=violet, balancePaid=success, registered=neutral, cancelled=destructive |
 | CommissionPayment.status | draft=gray, pending=warning, partial=orange, collected=success, overdue=destructive, waived=gray, cancelled=gray |
 | DealPayment.status | pending=warning, partial=orange, paid=success, overdue=destructive, cancelled=gray |
@@ -111,4 +111,4 @@
 수금=CommissionPayment, 분배=CommissionDistribution, 조정=CommissionAdjustment,
 업무함=EntityDraft inbox, 광고노트=ExternalListing(시장 관찰), 내 광고=OfficeAdvertisement,
 거래유형: sale=매매, jeonse=전세, monthly=월세 (만원 단위).
-단계 라벨: suggested=제안 · buyerContacted=고객연락 · viewing=임장 · ownerContacted=집주인연락 · negotiating=협상 · dealCreated=거래전환 · closed=종료 / selection=검토 · negotiating=협상 · preContract=가계약 · contracted=계약 · settling=중도금/잔금 · completed=잔금완료 · closed=정산종료
+단계 라벨: suggested=내부 후보 · buyerInterested=고객 관심 · viewingConfirmed=임장 가능 확인 · viewing=임장 · negotiating=협상 · dealCreated=거래전환 · closed=종료 / preparing=계약 준비 · preContract=가계약 · contracted=본계약 · settling=중도금/잔금 · completed=잔금완료 · closed=정산종료

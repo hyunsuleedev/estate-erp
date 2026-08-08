@@ -41,6 +41,7 @@ export function DataTable<TData extends { id: string }>({
   sorting,
   onSortingChange,
   enableRowSelection = false,
+  selectedRowIds,
   onRowSelectionChange,
   renderSelectionAccessory,
   onRowClick,
@@ -56,11 +57,13 @@ export function DataTable<TData extends { id: string }>({
   pinnedColumns,
   columnGroupControls = [],
   renderBulkActions,
+  alwaysShowSelectionToolbar = false,
   renderStatusBar,
   expandedRowIds,
   renderExpandedRow,
 }: DataTableProps<TData>) {
-  const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
+  const [internalRowSelection, setInternalRowSelection] =
+    useState<RowSelectionState>({});
   const [focusedCell, setFocusedCell] = useState<{
     row: number;
     col: number;
@@ -77,6 +80,13 @@ export function DataTable<TData extends { id: string }>({
   }, [enableRowSelection, pinnedColumns]);
 
   const rowCellHeight = rowHeight === "auto" ? undefined : rowHeight;
+  const rowSelection = useMemo<RowSelectionState>(
+    () =>
+      selectedRowIds === undefined
+        ? internalRowSelection
+        : Object.fromEntries(selectedRowIds.map((id) => [id, true])),
+    [internalRowSelection, selectedRowIds],
+  );
 
   // ── Build column defs with optional selection column ──────────
   const allColumns: ColumnDef<TData, unknown>[] = [];
@@ -95,6 +105,7 @@ export function DataTable<TData extends { id: string }>({
             (table.getIsSomePageRowsSelected() && "indeterminate")
           }
           onCheckedChange={(v) => table.toggleAllPageRowsSelected(!!v)}
+          aria-label="현재 목록 전체 행 선택"
           className="size-3.5"
         />
       ),
@@ -104,6 +115,7 @@ export function DataTable<TData extends { id: string }>({
             checked={row.getIsSelected()}
             onCheckedChange={(v) => row.toggleSelected(!!v)}
             onClick={(e) => e.stopPropagation()}
+            aria-label={`${row.index + 1}번째 행 선택`}
             className="size-3.5"
           />
           {renderSelectionAccessory?.(row.original)}
@@ -132,7 +144,7 @@ export function DataTable<TData extends { id: string }>({
     onRowSelectionChange: (updater) => {
       const next =
         typeof updater === "function" ? updater(rowSelection) : updater;
-      setRowSelection(next);
+      if (selectedRowIds === undefined) setInternalRowSelection(next);
       // getRowId 가 행 키를 row.id 로 만든다 — 키를 배열 인덱스로 다루면 안 된다.
       const selectedIds = Object.keys(next).filter((k) => next[k]);
       onRowSelectionChange?.(selectedIds);
@@ -350,24 +362,31 @@ export function DataTable<TData extends { id: string }>({
 
   return (
     <div className={cn("flex flex-col", isFullHeight && "h-full min-h-0")}>
-      {/* Bulk actions toolbar — visible when at least one row is selected */}
-      {renderBulkActions && selectedRows.length > 0 && (
-        <div className="flex items-center gap-2 border-b border-border/60 bg-accent/40 px-3 py-1.5 text-xs">
-          <span className="font-medium">{selectedRows.length}개 선택됨</span>
-          <div className="mx-1 h-3 w-px bg-border/60" />
-          {renderBulkActions(selectedRows)}
-          <button
-            type="button"
-            className="ml-auto text-muted-foreground hover:text-foreground"
-            onClick={() => {
-              setRowSelection({});
-              onRowSelectionChange?.([]);
-            }}
+      {/* Bulk actions toolbar — optionally reserved to prevent layout shift. */}
+      {renderBulkActions &&
+        (alwaysShowSelectionToolbar || selectedRows.length > 0) && (
+          <div
+            data-data-table-selection-toolbar
+            className="flex h-9 shrink-0 items-center gap-2 border-b border-border/60 bg-accent/40 px-3 text-xs"
           >
-            선택 해제
-          </button>
-        </div>
-      )}
+            <span className="shrink-0 font-medium">
+              {selectedRows.length}개 선택됨
+            </span>
+            <div className="mx-1 h-3 w-px bg-border/60" />
+            {renderBulkActions(selectedRows)}
+            <button
+              type="button"
+              className="ml-auto shrink-0 text-muted-foreground hover:text-foreground disabled:cursor-default disabled:opacity-40"
+              disabled={selectedRows.length === 0}
+              onClick={() => {
+                if (selectedRowIds === undefined) setInternalRowSelection({});
+                onRowSelectionChange?.([]);
+              }}
+            >
+              선택 해제
+            </button>
+          </div>
+        )}
 
       {/* Table */}
       <div
@@ -677,6 +696,7 @@ export function DataTable<TData extends { id: string }>({
                               ? "bg-white group-hover:bg-slate-50/70 group-data-[state=selected]:bg-primary/5"
                               : "bg-background group-hover:bg-muted/40 group-data-[state=selected]:bg-primary/5"),
                           isLastPinned && "shadow-[1px_0_0_0_#d9d9d6]",
+                          cell.column.columnDef.meta?.cellClassName,
                         )}
                         style={{
                           width: cell.column.columnDef.meta?.fill

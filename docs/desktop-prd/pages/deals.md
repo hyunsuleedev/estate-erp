@@ -108,13 +108,13 @@
 2. 시스템은 Listing, BuyerRequirement, Contact 문맥을 바탕으로 Deal 초안을 만든다.
 3. 사용자는 Deal 상세에서 매수인/매도인, 가격, 수수료, 메모를 보완한다.
 4. 완료 조건:
-   - Deal이 `selection` 단계로 생성되고
+   - Deal이 `preparing` 단계로 생성되고
    - 이후 Deals 화면에서 바로 추적 가능하다.
 
 ### 시나리오 B: 진행 거래 보드 관리
 
 1. 사용자는 거래관리 페이지에 들어와 현재 진행 거래를 훑는다.
-2. 시스템은 `selection -> deposit -> contract -> completed` 단계로 보드를 보여주고, `closed`는 별도 아카이브로 분리한다.
+2. 시스템은 `preparing -> preContract(선택) -> contracted -> settling -> completed` 단계로 보드를 보여주고, `closed`는 별도 아카이브로 분리한다.
 3. 사용자는 카드에서 다음 단계로 이동하거나 상세를 연다.
 4. 완료 조건:
    - 현재 진행 중인 거래와 막힌 거래가 한눈에 보이고
@@ -131,7 +131,7 @@
 
 ### 시나리오 D: 계약 및 완료 관리
 
-1. 사용자는 `contract` 단계 Deal에서 계약 상태와 대금 일정 진행을 확인한다.
+1. 사용자는 `contracted` 이후 Deal에서 계약 상태와 대금 일정 진행을 확인한다.
 2. 시스템은 연결된 Contract의 상태 요약과 일정 마일스톤을 보여준다.
 3. 사용자는 Contract 화면으로 이동해 상세를 처리하거나, Deal을 `completed`로 넘긴다.
 4. 완료 조건:
@@ -176,7 +176,7 @@
   - `새 거래 생성` 버튼
 - 본문 영역:
   - `보드 뷰`
-    - 컬럼: `selection`, `deposit`, `contract`, `completed`
+    - 컬럼: `preparing`, `preContract`, `contracted`, `settling`, `completed`
     - 각 컬럼은 Deal 카드 리스트
     - `closed`는 하단 접이식 아카이브
   - `리스트 뷰`
@@ -326,7 +326,7 @@
 
 | 액션 | 설명 | 권한 | 성공 결과 | 실패/예외 |
 | --- | --- | --- | --- | --- |
-| Deal 생성 | Listing/Property 또는 Match에서 새 Deal 생성 | 전체 | `selection` Deal 생성 | Listing 미존재 |
+| Deal 생성 | Listing/Property 또는 Match에서 새 Deal 생성 | 전체 | `preparing` Deal 생성 | Listing 미존재 |
 | 상세 열기 | 카드 클릭 또는 row 더블클릭 | 전체 | 상세 작업공간 표시 | stale data |
 | 단계 변경 | 현재 Deal을 다음/임의 단계로 이동 | 전체 | stage 저장 | 필수 정보 미입력 |
 | 거래 정보 수정 | 당사자, 가격, 메모 수정 | 전체 | 저장 반영 | validation 실패 |
@@ -346,9 +346,9 @@
 
 - 필수 입력값:
   - 생성 시 `listingId` 또는 `propertyId`
-  - `deposit` 단계 이상으로 올리기 전 `buyerContactId`, `sellerContactId`, `price`
+  - `settling` 단계 이상으로 올리기 전 연결 Contract
 - 기본값:
-  - 생성 시 stage는 `selection`
+  - 생성 시 stage는 `preparing`
   - Match에서 생성 시 관련 Listing과 buyer 문맥을 최대한 자동 채움
   - 가격은 Listing의 대표 가격을 초기값으로 제안 가능
 - 자동 계산:
@@ -360,9 +360,9 @@
   - 수수료율과 수수료 금액은 상호 보정 가능해야 한다
   - DealParticipant의 rate/amount는 Deal 수수료 총액과 논리적으로 연결된다
 - 저장 전 검증:
-  - `deposit` 단계 이상: 양측 당사자와 가격 필요
-  - `contract` 단계 이상: 수수료 정보와 공동중개 정보가 있으면 완결성 검증
-  - `completed` 단계: 연결 Contract 존재 여부 확인이 필요
+  - `contracted`: 연결 Contract 없이 진입 가능하며 이 단계에서 계약서를 작성
+  - `settling` 이상: 연결 Contract가 반드시 필요
+  - `preContract`는 선택 단계이며, 가계약이 없으면 `preparing`에서 `contracted`로 바로 이동 가능
 - 저장 후 후속 액션:
   - board/list 재집계
   - ActivityLog 기록
@@ -374,9 +374,10 @@
 이 페이지가 직접 다루는 상태:
 
 - Deal.stage
-  - `selection`
-  - `deposit`
-  - `contract`
+  - `preparing`
+  - `preContract` (선택)
+  - `contracted`
+  - `settling`
   - `completed`
   - `closed`
 - Contract.status 요약 표시
@@ -390,7 +391,7 @@
 상태 전이 규칙:
 
 ```text
-selection -> deposit -> contract -> completed -> closed
+preparing -> preContract(선택) -> contracted -> settling -> completed -> closed
 ```
 
 보조 상태 전이:
@@ -401,16 +402,16 @@ draft -> signed -> depositPaid -> balancePaid -> registered -> cancelled
 
 상태별 UI 차이:
 
-- `selection`
-  - 거래 초안 성격
-  - 가격/당사자 보완 필요 강조
-- `deposit`
-  - 가계약금 및 계약 준비 정보 강조
-- `contract`
+- `preparing`
+  - 최종 조건, 당사자, 계약 일정과 필요 서류 확인
+- `preContract`
+  - 가계약을 진행한 거래만 가계약금과 본계약 일정 강조
+- `contracted`
   - Contract 요약 패널과 `계약서 열기` CTA를 가장 강하게 노출
+- `settling`
+  - 중도금·잔금 일정과 인도·등기 준비 강조
 - `completed`
-  - 완료 직전/완료 직후 정리 상태
-  - 참여자 배분과 정산 준비 요약 강조
+  - 잔금 완료 후 수수료 수금과 참여자 배분 정산 강조
 - `closed`
   - 기본 보드에서 제외
   - 아카이브 섹션에서만 노출
@@ -487,7 +488,7 @@ draft -> signed -> depositPaid -> balancePaid -> registered -> cancelled
 - actor / source 규칙:
   - desktop 사용자는 `actor=user`, `source=web` 또는 desktop source 확장 필요
 - 중요 감사 이벤트:
-  - `contract` 단계 진입
+  - `contracted` 단계 진입
   - `completed` 처리
   - `closed` 처리
   - 수수료 총액 및 배분 변경

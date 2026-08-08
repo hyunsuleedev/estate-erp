@@ -12,6 +12,7 @@ describe('UnitsService — site type guard', () => {
       },
       unit: {
         create: jest.fn().mockResolvedValue({ id: 'unit-1' }),
+        findMany: jest.fn().mockResolvedValue([]),
         findFirst: jest.fn(),
       },
     };
@@ -72,5 +73,27 @@ describe('UnitsService — site type guard', () => {
     ).rejects.toThrow('Units are not supported for land sites');
 
     expect(prisma.unit.create).not.toHaveBeenCalled();
+  });
+
+  it('loads several selected dongs with one unit query', async () => {
+    const { prisma, service } = createService();
+    prisma.site.findFirst.mockResolvedValue({ id: 'site-1', type: 'apartment' });
+
+    await expect(
+      service.findAll('office-1', {
+        siteId: 'site-1',
+        dongIds: ['dong-101', 'dong-102', 'dong-101'],
+      }),
+    ).resolves.toEqual([]);
+
+    expect(prisma.dong.findFirst).toHaveBeenCalledTimes(2);
+    expect(prisma.unit.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          siteId: 'site-1',
+          dongId: { in: ['dong-101', 'dong-102'] },
+        }),
+      }),
+    );
   });
 });

@@ -92,6 +92,15 @@ async function main() {
     : [];
 
   if (snapshot?.provider !== 'esiljang') errors.push('provider must be esiljang');
+  if (snapshot?.scope !== 'active_advertisements') {
+    errors.push('scope must be active_advertisements');
+  }
+  if (snapshot?.activeFilter?.dataValue !== 'ad') {
+    errors.push('activeFilter.dataValue must be ad');
+  }
+  if (snapshot?.activeFilter?.selected !== true) {
+    errors.push('activeFilter.selected must be true');
+  }
   if (!snapshot?.observedAt || Number.isNaN(Date.parse(snapshot.observedAt))) {
     errors.push('observedAt must be a valid timestamp');
   }
@@ -161,7 +170,7 @@ async function main() {
   if (expectedTotal === null || expectedTotal === undefined) {
     warnings.push({
       message:
-        'provider total was unavailable; terminal pagination is the only completeness signal',
+        'active filter total was unavailable; terminal pagination is the only completeness signal',
     });
   } else if (!Number.isInteger(expectedTotal) || expectedTotal < 0) {
     errors.push('expectedTotal must be a non-negative integer or null');
@@ -170,9 +179,14 @@ async function main() {
       `expectedTotal ${expectedTotal} does not match ${items.length} collected items`,
     );
   }
+  if (snapshot?.activeFilter?.count !== expectedTotal) {
+    errors.push('activeFilter.count must match expectedTotal');
+  }
 
   const manifest = canonicalize({
     provider: snapshot?.provider,
+    scope: snapshot?.scope,
+    activeFilter: snapshot?.activeFilter,
     observedAt: snapshot?.observedAt,
     expectedTotal: expectedTotal ?? null,
     paginationComplete: snapshot?.paginationComplete,

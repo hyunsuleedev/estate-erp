@@ -1,3 +1,4 @@
+import { BadRequestException } from '@nestjs/common';
 import { ConsultationsService } from './consultations.service';
 
 describe('ConsultationsService', () => {
@@ -6,7 +7,13 @@ describe('ConsultationsService', () => {
       consultation: {
         findMany: jest.fn(),
         count: jest.fn(),
+        create: jest.fn(),
       },
+      contact: { findFirst: jest.fn() },
+      buyerRequirement: { findFirst: jest.fn() },
+      buyerIntake: { findFirst: jest.fn() },
+      buyerIntakeContact: { findFirst: jest.fn() },
+      callRecording: { findFirst: jest.fn() },
     };
 
     return {
@@ -69,6 +76,7 @@ describe('ConsultationsService', () => {
             listingIntakeId: null,
             listingId: null,
             matchId: null,
+            buyerIntakeId: null,
             buyerReqId: null,
           },
         ],
@@ -99,5 +107,74 @@ describe('ConsultationsService', () => {
         },
       }),
     );
+  });
+
+  it('구매요건 상담의 BuyerIntake를 자동으로 채운다', async () => {
+    const { prisma, service } = createService();
+    prisma.contact.findFirst.mockResolvedValue({ id: 'contact-1' });
+    prisma.buyerRequirement.findFirst.mockResolvedValue({
+      id: 'requirement-1',
+      buyerIntakeId: 'intake-1',
+    });
+    prisma.buyerIntakeContact.findFirst.mockResolvedValue({
+      id: 'participant-1',
+    });
+    prisma.consultation.create.mockResolvedValue({
+      id: 'consultation-1',
+      contact: { id: 'contact-1', phones: [] },
+    });
+
+    await service.create('office-1', 'user-1', {
+      contactId: 'contact-1',
+      type: 'phone',
+      content: '예산 조건을 다시 확인함',
+      buyerReqId: 'requirement-1',
+    });
+
+    expect(prisma.consultation.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          buyerIntakeId: 'intake-1',
+          buyerReqId: 'requirement-1',
+        }),
+      }),
+    );
+  });
+
+  it('구매요건과 다른 BuyerIntake를 동시에 지정하면 거부한다', async () => {
+    const { prisma, service } = createService();
+    prisma.contact.findFirst.mockResolvedValue({ id: 'contact-1' });
+    prisma.buyerRequirement.findFirst.mockResolvedValue({
+      id: 'requirement-1',
+      buyerIntakeId: 'intake-1',
+    });
+
+    await expect(
+      service.create('office-1', 'user-1', {
+        contactId: 'contact-1',
+        type: 'phone',
+        content: '잘못 연결된 상담',
+        buyerIntakeId: 'intake-2',
+        buyerReqId: 'requirement-1',
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    expect(prisma.consultation.create).not.toHaveBeenCalled();
+  });
+
+  it('BuyerIntake 참여자가 아닌 연락처의 상담 연결을 거부한다', async () => {
+    const { prisma, service } = createService();
+    prisma.contact.findFirst.mockResolvedValue({ id: 'contact-1' });
+    prisma.buyerIntake.findFirst.mockResolvedValue({ id: 'intake-1' });
+    prisma.buyerIntakeContact.findFirst.mockResolvedValue(null);
+
+    await expect(
+      service.create('office-1', 'user-1', {
+        contactId: 'contact-1',
+        type: 'phone',
+        content: '참여자가 아닌 연락처',
+        buyerIntakeId: 'intake-1',
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 });

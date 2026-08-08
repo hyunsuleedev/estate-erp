@@ -20,10 +20,8 @@ export interface ContactLatestConsultation {
 export interface ContactPhone {
   id: string;
   phone: string;
-  normalizedPhone: string;
   label: string;
   isPrimary: boolean;
-  isActive: boolean;
   memo: string | null;
   createdAt: string;
   updatedAt: string;
@@ -33,7 +31,6 @@ export interface ContactPhoneInput {
   phone: string;
   label?: string;
   isPrimary?: boolean;
-  isActive?: boolean;
   memo?: string | null;
 }
 

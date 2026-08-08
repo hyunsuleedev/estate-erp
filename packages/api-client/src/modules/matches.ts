@@ -18,6 +18,7 @@ export interface Match {
   propertyId: string;
   buyerReqId: string;
   stage: string;
+  closedFromStage: string | null;
   memo: string | null;
   createdAt: string;
   updatedAt: string;

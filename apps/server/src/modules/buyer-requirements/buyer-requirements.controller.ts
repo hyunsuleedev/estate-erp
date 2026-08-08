@@ -35,6 +35,7 @@ export class BuyerRequirementsController {
     @Query('urgency') urgency: string,
     @Query('transactionType') transactionType: string,
     @Query('siteTypes') siteTypes: string,
+    @Query('buyerIntakeId') buyerIntakeId: string,
     @Query('contactId') contactId: string,
     @Query('assignedToId') assignedToId: string,
     @Query('preferredSiteIds') preferredSiteIds: string,
@@ -45,6 +46,7 @@ export class BuyerRequirementsController {
     @Query('priceMax') priceMax: string,
     @Query('depositMin') depositMin: string,
     @Query('depositMax') depositMax: string,
+    @Query('monthlyRentMin') monthlyRentMin: string,
     @Query('monthlyRentMax') monthlyRentMax: string,
     @Query('areaMin') areaMin: string,
     @Query('areaMax') areaMax: string,
@@ -65,6 +67,7 @@ export class BuyerRequirementsController {
       urgency: urgency || undefined,
       transactionType: transactionType || undefined,
       siteTypes: siteTypes || undefined,
+      buyerIntakeId: buyerIntakeId || undefined,
       contactId: contactId || undefined,
       assignedToId: assignedToId || undefined,
       preferredSiteIds: preferredSiteIds || undefined,
@@ -75,6 +78,7 @@ export class BuyerRequirementsController {
       priceMax: num(priceMax),
       depositMin: num(depositMin),
       depositMax: num(depositMax),
+      monthlyRentMin: num(monthlyRentMin),
       monthlyRentMax: num(monthlyRentMax),
       areaMin: num(areaMin),
       areaMax: num(areaMax),
@@ -83,7 +87,8 @@ export class BuyerRequirementsController {
       moveInAfter: moveInAfter || undefined,
       moveInBefore: moveInBefore || undefined,
       search: search || undefined,
-      sortBy: (sortBy as 'createdAt' | 'nextContactDate' | 'urgency') || undefined,
+      sortBy:
+        (sortBy as 'createdAt' | 'nextContactDate' | 'urgency') || undefined,
       sortOrder: (sortOrder as 'asc' | 'desc') || undefined,
       page: page ? Number(page) : undefined,
       limit: limit ? Number(limit) : undefined,
@@ -91,10 +96,7 @@ export class BuyerRequirementsController {
   }
 
   @Get(':id')
-  findOne(
-    @Param('id') id: string,
-    @CurrentUser() user: CurrentUserPayload,
-  ) {
+  findOne(@Param('id') id: string, @CurrentUser() user: CurrentUserPayload) {
     return this.service.findOne(id, user.officeId);
   }
 
@@ -102,18 +104,19 @@ export class BuyerRequirementsController {
   create(
     @Body()
     dto: {
-      contactId: string;
+      buyerIntakeId?: string;
+      contactId?: string;
+      priorityRank?: number;
       transactionType?: string;
       siteTypes?: string[];
       priceMin?: number;
       priceMax?: number;
       depositMin?: number;
       depositMax?: number;
+      monthlyRentMin?: number;
       monthlyRentMax?: number;
       areaMin?: number;
       areaMax?: number;
-      mustConditions?: string[];
-      preferConditions?: string[];
       moveInDate?: string;
       urgency?: string;
       assignedToId?: string;
@@ -149,10 +152,7 @@ export class BuyerRequirementsController {
   }
 
   @Delete(':id')
-  remove(
-    @Param('id') id: string,
-    @CurrentUser() user: CurrentUserPayload,
-  ) {
+  remove(@Param('id') id: string, @CurrentUser() user: CurrentUserPayload) {
     return this.service.remove(id, user.officeId);
   }
 }

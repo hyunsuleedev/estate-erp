@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { ArrowRight, Building2, ChevronDown, ChevronRight } from 'lucide-react';
 import type { Match } from '@estate-erp/api-client';
+import { MatchStage, normalizeMatchStage } from '@estate-erp/shared';
 import {
   formatListingPrice,
   formatMatchPrice,
@@ -39,11 +40,16 @@ export function BuyerMatchGroup({
 }) {
   const [expanded, setExpanded] = useState(true);
   const buyerName = buyerRequirement.contact?.name ?? '미지정';
-  const activeCount = matches.filter(
-    (match) => !['dealCreated', 'closed'].includes(match.stage),
+  const activeCount = matches.filter((match) => {
+    const stage = normalizeMatchStage(match.stage);
+    return stage !== MatchStage.DEAL_CREATED && stage !== MatchStage.CLOSED;
+  }).length;
+  const convertedCount = matches.filter(
+    (match) => normalizeMatchStage(match.stage) === MatchStage.DEAL_CREATED,
   ).length;
-  const convertedCount = matches.filter((match) => match.stage === 'dealCreated').length;
-  const closedCount = matches.filter((match) => match.stage === 'closed').length;
+  const closedCount = matches.filter(
+    (match) => normalizeMatchStage(match.stage) === MatchStage.CLOSED,
+  ).length;
   const sortedMatches = [...matches].sort(
     (left, right) => new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime(),
   );
@@ -130,7 +136,7 @@ function BuyerMatchLane({
           {transactionType && (
             <StatusBadge kind="transactionType" status={transactionType} size="sm" />
           )}
-          {match.stage === 'closed' && (
+          {normalizeMatchStage(match.stage) === MatchStage.CLOSED && (
             <Badge className="border-0 bg-neutral-soft text-neutral-strong">종료</Badge>
           )}
         </div>

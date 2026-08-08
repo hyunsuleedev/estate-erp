@@ -22,7 +22,7 @@
 - naver-my-ads(내광고관리) 스텁: 사이드바 네비 미등록 고아 라우트, officeAdvertisements/listingAdvertisements API 미사용, ERP 매물을 확인/광고 상태 기준으로 분류하지 못함. limit 200 단일 페이지 고정, 실제 네이버 광고 데이터 연동 없음
 - 상세 페이지에 가격변동 이력(PriceHistory) 탭 없음 — 빠른확인 시트에는 있으나 전체 페이지에는 미노출
 - 광고(ListingAdvertisement) 등록/수정 UI 없음: 목록·시트에 조회만 가능, api-client listing-advertisements 모듈 미사용 (광고 시작/종료/채널/광고가 기록 불가)
-- 외부매물 그룹 ↔ Unit 수동 링크/해제 UI 없음: UpdateExternalListingGroupDto.unitId 지원하나 inferredHo 텍스트 입력만 가능. 그룹 내 형제 매물(listingCount) 펼쳐보기·ERP 매물 전환 액션도 없음
+- 광고노트 호수는 내부 Unit과 연결하지 않고 `ho` 텍스트로만 기록한다. 그룹 내 형제 매물은 랭킹 셀에서 펼쳐볼 수 있다.
 - 상세 매칭 조회 비효율: api.matches.findAll() 전체 조회 후 클라이언트 필터 (propertyId 서버 필터 없음)
 - 사진 업로드 미구현: propertyPhotos.create/update/reorder/remove API 있으나 미사용, S3 presigned 업로드 엔드포인트 자체가 없음 (PRD상 Phase 2이나 버튼이 동작하는 척 노출됨)
 - 쿼리 에러 상태 처리 없음: 5개 라우트 모두 isError/재시도 UI 부재 (로딩·빈 상태만 처리)

@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
 import type { Contact, ContactDetail } from '@estate-erp/api-client';
+import { CONTACT_RELATION_TYPES, type ContactRelationType } from '@estate-erp/shared';
 import { Check, Search, UserRound } from 'lucide-react';
 import { api } from '@/lib/api';
 import { formatPhone } from '@/lib/format';
@@ -29,7 +30,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
-import { relationTypeLabels } from './-detail-cards';
+import { relationTypeLabels, type RelationItem } from './-detail-cards';
 
 /**
  * 연락처 상세 — 연락처 자체를 다루는 다이얼로그 (수정 / 관계 추가).
@@ -208,8 +209,9 @@ export function RelationAddDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   const queryClient = useQueryClient();
-  const [relationType, setRelationType] = useState('parent');
+  const [relationType, setRelationType] = useState<ContactRelationType>('parent');
   const [label, setLabel] = useState('');
+  const [inverseLabel, setInverseLabel] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [selected, setSelected] = useState<Contact | null>(null);
   const [newPhone, setNewPhone] = useState('');
@@ -221,6 +223,7 @@ export function RelationAddDialog({
     if (!open) return;
     setRelationType('parent');
     setLabel('');
+    setInverseLabel('');
     setSearchQuery('');
     setSelected(null);
     setNewPhone('');
@@ -238,6 +241,7 @@ export function RelationAddDialog({
   const candidates = (candidatesQuery.data?.items ?? []).filter(
     (candidate) => candidate.id !== contactId,
   );
+  const counterpartDraftName = selected?.name || newName.trim() || '상대 연락처';
 
   const mutation = useMutation({
     mutationFn: () => {
@@ -247,6 +251,7 @@ export function RelationAddDialog({
           relatedContactId: selected.id,
           relationType,
           label: label.trim() || undefined,
+          inverseLabel: inverseLabel.trim() || undefined,
           memo: memo.trim() || undefined,
         });
       }
@@ -254,6 +259,7 @@ export function RelationAddDialog({
         contactId,
         relationType,
         label: label.trim() || undefined,
+        inverseLabel: inverseLabel.trim() || undefined,
         phone: newPhone.trim(),
         name: newName.trim() || undefined,
         memo: memo.trim() || undefined,
@@ -299,32 +305,46 @@ export function RelationAddDialog({
           )}
 
           <FormField label="관계 유형" required>
-            <div className="flex flex-wrap gap-1.5">
-              {Object.entries(relationTypeLabels).map(([value, typeLabel]) => (
-                <button
-                  key={value}
-                  type="button"
-                  onClick={() => setRelationType(value)}
-                  className={cn(
-                    'rounded-md border px-2.5 py-1 text-xs font-medium transition-colors',
-                    relationType === value
-                      ? 'border-transparent bg-info-soft text-info'
-                      : 'border-border bg-background text-muted-foreground hover:bg-muted',
-                  )}
-                >
-                  {typeLabel}
-                </button>
-              ))}
+            <div className="space-y-2">
+              <div className="flex flex-wrap gap-1.5">
+                {CONTACT_RELATION_TYPES.map((value) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setRelationType(value)}
+                    className={cn(
+                      'rounded-md border px-2.5 py-1 text-xs font-medium transition-colors',
+                      relationType === value
+                        ? 'border-transparent bg-info-soft text-info'
+                        : 'border-border bg-background text-muted-foreground hover:bg-muted',
+                    )}
+                  >
+                    {relationTypeLabels[value]}
+                  </button>
+                ))}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {counterpartDraftName} 님은 {contactName} 님의 {relationTypeLabels[relationType]}입니다.
+              </p>
             </div>
           </FormField>
 
-          <FormField label="보충 설명">
-            <Input
-              value={label}
-              onChange={(event) => setLabel(event.target.value)}
-              placeholder='예: "큰어머니", "담당 법무사"'
-            />
-          </FormField>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <FormField label={`${contactName} 화면의 호칭`}>
+              <Input
+                value={label}
+                onChange={(event) => setLabel(event.target.value)}
+                placeholder='예: "큰어머니"'
+              />
+            </FormField>
+            <FormField label={`${counterpartDraftName} 화면의 호칭`}>
+              <Input
+                value={inverseLabel}
+                onChange={(event) => setInverseLabel(event.target.value)}
+                placeholder='예: "조카"'
+              />
+            </FormField>
+          </div>
 
           <FormField label="상대 연락처" required>
             <div className="space-y-2">
@@ -419,6 +439,136 @@ export function RelationAddDialog({
             </Button>
             <Button type="submit" disabled={mutation.isPending}>
               {mutation.isPending ? '등록 중...' : '관계 등록'}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ── 3. 관계 수정 (DB 원본 방향을 두 사람 이름으로 명시) ──
+
+export function RelationEditDialog({
+  item,
+  open,
+  onOpenChange,
+}: {
+  item: RelationItem | null;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const queryClient = useQueryClient();
+  const [relationType, setRelationType] = useState<ContactRelationType>('other');
+  const [label, setLabel] = useState('');
+  const [inverseLabel, setInverseLabel] = useState('');
+  const [memo, setMemo] = useState('');
+
+  useEffect(() => {
+    if (!open || !item) return;
+    setRelationType(item.relation.relationType);
+    setLabel(item.relation.label ?? '');
+    setInverseLabel(item.relation.inverseLabel ?? '');
+    setMemo(item.relation.memo ?? '');
+  }, [open, item]);
+
+  const mutation = useMutation({
+    mutationFn: () => {
+      if (!item) throw new Error('수정할 관계가 없습니다.');
+      return api.contactRelations.update(item.relationId, {
+        relationType,
+        label: label.trim() || null,
+        inverseLabel: inverseLabel.trim() || null,
+        memo: memo.trim() || null,
+      });
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['contacts'] });
+      toast.success('관계가 수정되었습니다.');
+      onOpenChange(false);
+    },
+    onError: () => {
+      toast.error('관계 수정에 실패했습니다.');
+    },
+  });
+
+  if (!item) return null;
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>관계 수정</DialogTitle>
+          <DialogDescription>
+            두 연락처에서 관계가 자연스럽게 보이도록 유형과 각 화면의 호칭을 수정합니다.
+          </DialogDescription>
+        </DialogHeader>
+
+        <form
+          className="space-y-4"
+          onSubmit={(event) => {
+            event.preventDefault();
+            mutation.mutate();
+          }}
+        >
+          <div className="rounded-md border bg-muted/30 px-3 py-2 text-sm">
+            <span className="font-medium">{item.targetName}</span> 님은{' '}
+            <span className="font-medium">{item.sourceName}</span> 님의{' '}
+            <span className="font-medium">{relationTypeLabels[relationType]}</span>입니다.
+          </div>
+
+          <FormField label="관계 유형" required>
+            <div className="flex flex-wrap gap-1.5">
+              {CONTACT_RELATION_TYPES.map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setRelationType(value)}
+                  className={cn(
+                    'rounded-md border px-2.5 py-1 text-xs font-medium transition-colors',
+                    relationType === value
+                      ? 'border-transparent bg-info-soft text-info'
+                      : 'border-border bg-background text-muted-foreground hover:bg-muted',
+                  )}
+                >
+                  {relationTypeLabels[value]}
+                </button>
+              ))}
+            </div>
+          </FormField>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <FormField label={`${item.sourceName} 화면의 호칭`}>
+              <Input
+                value={label}
+                onChange={(event) => setLabel(event.target.value)}
+                placeholder="관계 유형 이름을 그대로 쓰면 비워두세요"
+              />
+            </FormField>
+            <FormField label={`${item.targetName} 화면의 호칭`}>
+              <Input
+                value={inverseLabel}
+                onChange={(event) => setInverseLabel(event.target.value)}
+                placeholder="반대쪽 호칭이 필요할 때 입력"
+              />
+            </FormField>
+          </div>
+
+          <FormField label="메모">
+            <Textarea
+              rows={3}
+              value={memo}
+              onChange={(event) => setMemo(event.target.value)}
+              placeholder="두 사람의 관계에 함께 보관할 메모"
+            />
+          </FormField>
+
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+              취소
+            </Button>
+            <Button type="submit" disabled={mutation.isPending}>
+              {mutation.isPending ? '저장 중...' : '저장'}
             </Button>
           </DialogFooter>
         </form>

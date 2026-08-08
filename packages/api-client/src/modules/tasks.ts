@@ -194,10 +194,21 @@ export interface UpdateTaskDto {
   contractId?: string | null;
 }
 
+export interface TasksFilter {
+  status?: string;
+  category?: string;
+  assignedToId?: string;
+}
+
 export function createTasksApi(request: RequestFn) {
   return {
-    findAll: () =>
-      request<Task[]>('/tasks'),
+    findAll: (filter: TasksFilter = {}) =>
+      request<Task[]>('/tasks', {
+        params: filter as Record<
+          string,
+          string | number | boolean | undefined
+        >,
+      }),
 
     findOne: (id: string) =>
       request<Task>(`/tasks/${id}`),
@@ -207,6 +218,9 @@ export function createTasksApi(request: RequestFn) {
 
     update: (id: string, dto: UpdateTaskDto) =>
       request<Task>(`/tasks/${id}`, { method: 'PATCH', body: dto }),
+
+    claim: (id: string) =>
+      request<Task>(`/tasks/${id}/claim`, { method: 'POST' }),
 
     reorder: (orderedIds: string[]) =>
       request<{ count: number }>('/tasks/reorder', { method: 'POST', body: { orderedIds } }),

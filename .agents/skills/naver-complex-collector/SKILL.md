@@ -1,99 +1,107 @@
 ---
 name: naver-complex-collector
-description: Read Naver complex listings for an office's registered collection scope, using ExternalListingSource as the only authority for which complex maps to which Naver complexNo. Never guess a complex mapping and never write to Naver.
+description: Read Naver complex listings for a collection scope stored in the user's local SQLite, then persist only complete listing observations to Estate ERP. Use when the user asks to add or manage collection complexes, import managed ERP sites into a local scope, or refresh competitor/complex advertising notes. Never write to Naver and never use a server collection-source table.
 ---
 
 # Naver Complex Collector
 
-Two MCP servers, one boundary. `naverestate-mcp` reads Naver and knows nothing
-about Estate ERP. Estate ERP MCP owns every durable write. This skill is the only
-thing that connects them — it carries `externalCode` from ERP into the collector
-and carries observations back into ERP.
+Keep the collection target mapping local. Estate ERP remains the durable home of
+managed sites and collected listing observations, but it does not store or run a
+collection schedule/scope.
 
-Never add ERP credentials, ERP tool calls, or ERP concepts to `naverestate-mcp`.
-Never let the collector's local `data/complex-name-cache.json` decide what to
-collect; it is that package's own memory, not the office's.
+`naverestate-mcp` reads Naver and knows nothing about Estate ERP. This Skill
+carries a locally confirmed Naver `complexNo` into the collector and carries a
+complete observation snapshot back into ERP.
 
-## The mapping rule
+## Local scope authority
 
-`ExternalListingSource` is the single authority for "which Naver complex is this
-ERP site":
+The database defaults to
+`~/.agents/data/naver-complex-collector/scope.sqlite`. Override only for tests or
+an isolated profile with `NAVER_COLLECTION_SCOPE_DB_PATH`.
 
+```bash
+node scripts/collection-scope.mjs list --enabled true
 ```
-ExternalListingSource (officeId, siteId, provider="naver")
-  → externalCode = Naver complexNo
+
+Each enabled local row is an exact mapping:
+
+```text
+(siteId, provider="naver") -> externalCode = Naver complexNo
 ```
 
-`Site.naverComplexCode` is only a default suggestion used when registering. It is
-never a collection input. If the two disagree, `ExternalListingSource` wins —
-the office may have corrected it on purpose.
+Never infer this mapping while collecting. `Site.naverComplexCode` may be an
+explicit import suggestion, but it is not authoritative until it is saved in
+the local scope. The collector package's own complex-name cache is also not the
+office scope.
 
-Resolve `siteId` → `externalCode` through this table and nothing else. Do not
-search Naver by complex name to decide what to open.
+## Add a target
 
-## Collect a registered scope
+Only add targets when the user explicitly asks.
 
-1. Confirm the office and the visible local browser session. Stop on login
-   challenges, CAPTCHA, account ambiguity, or unexpected UI.
-2. Read the office's enabled sources with
-   `find_external_listing_sources` (`provider="naver"`, `isEnabled=true`).
-   These rows, and only these, are the collection scope.
-3. For each source, call `create_external_listing_snapshot_session` with that
-   source's `siteId` and one `transactionType`. The session owns the transaction
-   axis; the source does not carry one.
-4. Call `naver_collect_complex` with `filter.complexNo = source.externalCode`.
-   Keep the default `order: "dateDesc"`. Open the complex by code, never by a
-   name search.
-5. Write observations with `batch_upsert_external_listings`. Preserve article
-   number, source URL, active presence, terms in 만원, confirmation date, group
-   hints, ranking, and exposure fields. Never persist cookies, passwords, OTPs,
+1. For an ERP managed site, call `find_office_sites` and select the exact
+   `siteId`. For a competitor-only target without an ERP Site, first use
+   `search_central_sites` and let the user select or create the intended site.
+2. Search Naver with `naver_search_complex`. If multiple candidates exist,
+   present them and wait for the user to choose. Never auto-select by name.
+3. Resolve the chosen candidate with `naver_resolve_complex` and show its exact
+   `complexNo`, name, and address.
+4. After confirmation, store the mapping locally:
+
+   ```bash
+   node scripts/collection-scope.mjs add \
+     --site-id <erp-site-id> --site-name '<name>' \
+     --external-code <naver-complex-no> --type apartment
+   ```
+
+Use `update`, `disable`, or `remove` only on an explicit user request. Prefer
+`disable` when the user may restore the scope later.
+
+## Import managed sites as suggestions
+
+When the user asks to initialize from managed sites:
+
+1. Call `find_office_sites` once.
+2. Present sites that already carry a `naverComplexCode` as suggestions.
+3. Confirm the list with the user before saving any mapping locally.
+4. Add confirmed rows with the script. Report sites without a code as
+   `unmapped`; resolve them individually through Naver search and user choice.
+
+There is no automatic server-to-local sync. This avoids silently expanding a
+user's collection scope when ERP managed sites change.
+
+## Collect enabled targets
+
+1. Read enabled rows from local SQLite. These rows, and only these rows, are the
+   requested scope.
+2. For each row and requested transaction type, call
+   `create_external_listing_snapshot_session` with its exact ERP `siteId`.
+3. Call `naver_collect_complex` with
+   `filter.complexNo = local.externalCode`; keep `order="dateDesc"`. Open by
+   code, never by a name search.
+4. Write observations through `batch_upsert_external_listings`. Preserve article
+   number, URL, active presence, terms in 만원, confirmation date, group hints,
+   ranking, and exposure fields. Never persist cookies, passwords, OTPs,
    authorization headers, or browser profile data.
-6. Call `complete_external_listing_snapshot_session` only if that scope was
-   captured completely. On partial collection or interruption, call
-   `cancel_external_listing_snapshot_session` — completion deactivates unseen
-   rows and must not run on a partial capture.
-7. Report per-source counts: collected, skipped, failed.
+5. Call `complete_external_listing_snapshot_session` only after the entire
+   target/transaction scope was captured. On any partial capture or interruption,
+   call `cancel_external_listing_snapshot_session`; completion deactivates unseen
+   rows and is unsafe for partial data.
+6. Mark the local source only after successful completion:
 
-## Handle an unregistered complex
+   ```bash
+   node scripts/collection-scope.mjs mark-collected --site-id <site-id>
+   ```
 
-A site with no `ExternalListingSource` row is out of scope. It is not an error to
-recover from silently and not something to infer.
-
-- Do not search Naver by name and pick a plausible complex.
-- Do not fall back to `Site.naverComplexCode`.
-- Report it as `unmapped_site` with the `siteId` and site name, and continue with
-  the remaining sources.
-
-Registration is a separate, human-facing path (below), not a step this workflow
-performs on its own.
-
-## Register a new source
-
-Only when the user explicitly asks to add a collection target.
-
-1. `naver_search_complex` with the site name as keyword.
-2. If more than one candidate returns, present them and let the user choose. Do
-   not auto-select on ambiguity — a wrong complexNo silently poisons every later
-   collection.
-3. `naver_resolve_complex` to obtain `complexNo`.
-4. Hand the resolved `complexNo` to the user for registration. Registration is
-   owner/manager-only and is deliberately **not** exposed through MCP — report
-   the `siteId` and `complexNo` and stop. Staff register it in the UI
-   (`POST /external-listing-sources`, or the bulk
-   `POST /external-listing-sources/import-from-office-sites` which auto-registers
-   managed sites already carrying `Site.naverComplexCode` and reports the rest as
-   `no_external_code`).
-
-`type` uses ERP vocabulary (`apartment`, `officetel`, `villa`, ...), matching
-`Site.type`. Naver's filter codes are the collector's concern, not ERP's.
+7. Report collected, skipped, and failed counts per local source.
 
 ## Fail closed
 
-- Stop on incomplete snapshots, layout or schema mismatch, ambiguous target
-  identity, or inaccessible data.
-- Never mutate a Naver listing. This skill reads only.
-- Never complete a snapshot session for a scope you did not fully capture.
-- Never write a collected observation to a `siteId` other than the one on the
-  source row that produced its `externalCode`.
-- Treat an observation older than two hours as stale for later action review.
-- Record concise rationale and stable evidence IDs, never hidden reasoning.
+- Stop on login challenges, CAPTCHA, ambiguous account, unexpected UI, schema
+  mismatch, incomplete snapshot, or target identity mismatch.
+- Never mutate a Naver listing.
+- Never complete a partial ERP snapshot session.
+- Never write an observation to a `siteId` different from the local mapping that
+  supplied its `complexNo`.
+- A missing local mapping is `unmapped_site`, not permission to guess.
+- Store no credentials or hidden reasoning. Keep only stable identifiers and a
+  concise operational result.

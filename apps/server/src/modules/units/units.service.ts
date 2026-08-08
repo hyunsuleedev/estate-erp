@@ -37,12 +37,19 @@ const UNIT_CELL_TYPE_SET: ReadonlySet<string> = new Set(UNIT_CELL_TYPES);
 export class UnitsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async findAll(officeId: string, query: { siteId?: string; dongId?: string }) {
+  async findAll(
+    officeId: string,
+    query: { siteId?: string; dongId?: string; dongIds?: string[] },
+  ) {
+    const dongIds = Array.from(new Set((query.dongIds ?? []).filter(Boolean)));
+
     if (query.siteId) {
       await this.findAccessibleSite(query.siteId, officeId);
     }
 
-    if (query.dongId) {
+    if (dongIds.length > 0) {
+      await Promise.all(dongIds.map((dongId) => this.findAccessibleDong(dongId, officeId)));
+    } else if (query.dongId) {
       await this.findAccessibleDong(query.dongId, officeId);
     }
 
@@ -50,7 +57,9 @@ export class UnitsService {
       where: {
         OR: [{ officeId }, { officeId: null }],
         ...(query.siteId && { siteId: query.siteId }),
-        ...(query.dongId && { dongId: query.dongId }),
+        ...(dongIds.length > 0
+          ? { dongId: { in: dongIds } }
+          : query.dongId && { dongId: query.dongId }),
         site: {
           OR: [{ officeId }, { isPublic: true }],
         },

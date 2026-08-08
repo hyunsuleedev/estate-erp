@@ -15,10 +15,7 @@ import {
   CurrentUser,
   CurrentUserPayload,
 } from "../../common/decorators/current-user.decorator";
-import {
-  ListingAdvertisementsService,
-  type FullSyncExecutionRequest,
-} from "./listing-advertisements.service";
+import { ListingAdvertisementsService } from "./listing-advertisements.service";
 
 @ApiTags("광고 게재")
 @ApiBearerAuth()
@@ -26,31 +23,6 @@ import {
 @UseGuards(JwtAuthGuard)
 export class ListingAdvertisementsController {
   constructor(private readonly service: ListingAdvertisementsService) {}
-
-  @Get("full-sync/status")
-  getFullSyncStatus(@CurrentUser() user: CurrentUserPayload) {
-    return this.service.getFullSyncStatus(user.officeId);
-  }
-
-  @Post("full-sync")
-  requestFullSync(
-    @CurrentUser() user: CurrentUserPayload,
-    @Body() body: FullSyncExecutionRequest,
-  ) {
-    return this.service.requestFullSync(user.officeId, user.userId, body);
-  }
-
-  @Post("full-sync/steps/:stepId/retry")
-  retryFullSyncStep(
-    @Param("stepId") stepId: string,
-    @CurrentUser() user: CurrentUserPayload,
-  ) {
-    return this.service.retryFullSyncStep(
-      user.officeId,
-      stepId,
-      user.userId,
-    );
-  }
 
   @Get()
   findAll(

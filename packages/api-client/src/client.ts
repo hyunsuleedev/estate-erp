@@ -1,45 +1,46 @@
-import type { ApiClientConfig } from './types.js';
-import { ApiError } from './types.js';
-import { createAuthApi } from './modules/auth.js';
-import { createPropertiesApi } from './modules/properties.js';
-import { createListingIntakesApi } from './modules/listing-intakes.js';
-import { createListingsApi } from './modules/listings.js';
-import { createListingAdvertisementsApi } from './modules/listing-advertisements.js';
-import { createOfficeAdvertisementsApi } from './modules/office-advertisements.js';
-import { createContactsApi } from './modules/contacts.js';
-import { createSitesApi } from './modules/sites.js';
-import { createDongsApi } from './modules/dongs.js';
-import { createUnitsApi } from './modules/units.js';
-import { createTasksApi } from './modules/tasks.js';
-import { createMatchesApi } from './modules/matches.js';
-import { createDealsApi } from './modules/deals.js';
-import { createContractsApi } from './modules/contracts.js';
-import { createConsultationsApi } from './modules/consultations.js';
-import { createBuyerRequirementsApi } from './modules/buyer-requirements.js';
-import { createCalendarEventsApi } from './modules/calendar-events.js';
-import { createPropertyContactsApi } from './modules/property-contacts.js';
-import { createContactRelationsApi } from './modules/contact-relations.js';
-import { createTenantsApi } from './modules/tenants.js';
-import { createOfficeSitesApi } from './modules/office-sites.js';
-import { createEmployeesApi } from './modules/employees.js';
-import { createOfficesApi } from './modules/offices.js';
-import { createExternalListingsApi } from './modules/external-listings.js';
-import { createFinanceApi } from './modules/finance.js';
-import { createPartnerBrokersApi } from './modules/partner-brokers.js';
-import { createPublicDocumentsApi } from './modules/public-documents.js';
-import { createPropertyPhotosApi } from './modules/property-photos.js';
-import { createCallRecordingsApi } from './modules/call-recordings.js';
-import { createMcpApi } from './modules/mcp.js';
-import { createRegionsApi } from './modules/regions.js';
-import { createServiceVendorsApi } from './modules/service-vendors.js';
-import { createNotificationsApi } from './modules/notifications.js';
-import { createNetworkApi } from './modules/network.js';
-import { createDashboardApi } from './modules/dashboard.js';
-import { createActivityLogsApi } from './modules/activity-logs.js';
-import { createCtiApi } from './modules/cti.js';
-import { createAgentActionRequestsApi } from './modules/agent-action-requests.js';
+import type { ApiClientConfig } from "./types.js";
+import { ApiError } from "./types.js";
+import { createAuthApi } from "./modules/auth.js";
+import { createPropertiesApi } from "./modules/properties.js";
+import { createListingIntakesApi } from "./modules/listing-intakes.js";
+import { createListingsApi } from "./modules/listings.js";
+import { createListingAdvertisementsApi } from "./modules/listing-advertisements.js";
+import { createOfficeAdvertisementsApi } from "./modules/office-advertisements.js";
+import { createContactsApi } from "./modules/contacts.js";
+import { createSitesApi } from "./modules/sites.js";
+import { createDongsApi } from "./modules/dongs.js";
+import { createUnitsApi } from "./modules/units.js";
+import { createTasksApi } from "./modules/tasks.js";
+import { createMatchesApi } from "./modules/matches.js";
+import { createDealsApi } from "./modules/deals.js";
+import { createContractsApi } from "./modules/contracts.js";
+import { createConsultationsApi } from "./modules/consultations.js";
+import { createBuyerIntakesApi } from "./modules/buyer-intakes.js";
+import { createBrokerageCasesApi } from "./modules/brokerage-cases.js";
+import { createBuyerRequirementsApi } from "./modules/buyer-requirements.js";
+import { createCalendarEventsApi } from "./modules/calendar-events.js";
+import { createPropertyContactsApi } from "./modules/property-contacts.js";
+import { createContactRelationsApi } from "./modules/contact-relations.js";
+import { createTenantsApi } from "./modules/tenants.js";
+import { createOfficeSitesApi } from "./modules/office-sites.js";
+import { createEmployeesApi } from "./modules/employees.js";
+import { createOfficesApi } from "./modules/offices.js";
+import { createExternalListingsApi } from "./modules/external-listings.js";
+import { createFinanceApi } from "./modules/finance.js";
+import { createPartnerBrokersApi } from "./modules/partner-brokers.js";
+import { createPublicDocumentsApi } from "./modules/public-documents.js";
+import { createPropertyPhotosApi } from "./modules/property-photos.js";
+import { createCallRecordingsApi } from "./modules/call-recordings.js";
+import { createMcpApi } from "./modules/mcp.js";
+import { createRegionsApi } from "./modules/regions.js";
+import { createServiceVendorsApi } from "./modules/service-vendors.js";
+import { createNotificationsApi } from "./modules/notifications.js";
+import { createNetworkApi } from "./modules/network.js";
+import { createDashboardApi } from "./modules/dashboard.js";
+import { createActivityLogsApi } from "./modules/activity-logs.js";
+import { createCtiApi } from "./modules/cti.js";
 
-export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
 export interface RequestOptions {
   method?: HttpMethod;
@@ -57,13 +58,13 @@ async function executeRequest<T>(
   // FormData(multipart) body는 Content-Type을 직접 지정하지 않는다 —
   // fetch가 boundary가 포함된 헤더를 자동으로 설정한다.
   const isFormData =
-    typeof FormData !== 'undefined' && body instanceof FormData;
+    typeof FormData !== "undefined" && body instanceof FormData;
   const headers: Record<string, string> = {};
   if (!isFormData) {
-    headers['Content-Type'] = 'application/json';
+    headers["Content-Type"] = "application/json";
   }
   if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
+    headers["Authorization"] = `Bearer ${token}`;
   }
   return fetch(url, {
     method,
@@ -81,14 +82,14 @@ export async function request<T>(
   path: string,
   options: RequestOptions = {},
 ): Promise<T> {
-  const { method = 'GET', body, params } = options;
+  const { method = "GET", body, params } = options;
 
   let url = `${config.baseUrl}${path}`;
 
   if (params) {
     const search = new URLSearchParams();
     for (const [key, value] of Object.entries(params)) {
-      if (value !== undefined && value !== null && value !== '') {
+      if (value !== undefined && value !== null && value !== "") {
         search.set(key, String(value));
       }
     }
@@ -115,7 +116,10 @@ export async function request<T>(
 
   if (res.status === 204) return undefined as T;
 
-  return res.json() as Promise<T>;
+  const responseText = await res.text();
+  if (!responseText) return undefined as T;
+
+  return JSON.parse(responseText) as T;
 }
 
 export function createApiClient(config: ApiClientConfig) {
@@ -138,6 +142,8 @@ export function createApiClient(config: ApiClientConfig) {
     deals: createDealsApi(req),
     contracts: createContractsApi(req),
     consultations: createConsultationsApi(req),
+    buyerIntakes: createBuyerIntakesApi(req),
+    brokerageCases: createBrokerageCasesApi(req),
     buyerRequirements: createBuyerRequirementsApi(req),
     calendarEvents: createCalendarEventsApi(req),
     propertyContacts: createPropertyContactsApi(req),
@@ -160,7 +166,6 @@ export function createApiClient(config: ApiClientConfig) {
     dashboard: createDashboardApi(req),
     activityLogs: createActivityLogsApi(req),
     cti: createCtiApi(req),
-    agentActionRequests: createAgentActionRequestsApi(req),
   };
 }
 

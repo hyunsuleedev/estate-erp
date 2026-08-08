@@ -54,14 +54,15 @@ describe('deal view utilities', () => {
     assert.equal(getDealTitle(target), '그라시움 302호');
   });
 
-  it('maps current deal stages into the five Paper display groups', () => {
+  it('maps the post-matching deal stages into five execution groups', () => {
     assert.deepEqual(
       dealDisplayGroups.map((group) => group.label),
-      ['조율', '가계약', '본계약', '잔금/완료', '정산'],
+      ['계약 준비', '가계약', '본계약', '중도금·잔금', '잔금 완료'],
     );
 
-    assert.equal(getDealDisplayGroupKey('selection'), 'coordination');
-    assert.equal(getDealDisplayGroupKey('negotiating'), 'coordination');
+    assert.equal(getDealDisplayGroupKey('preparing'), 'preparing');
+    assert.equal(getDealDisplayGroupKey('selection'), 'preparing');
+    assert.equal(getDealDisplayGroupKey('negotiating'), 'preparing');
     assert.equal(getDealDisplayGroupKey('preContract'), 'preContract');
     assert.equal(getDealDisplayGroupKey('contracted'), 'contracted');
     assert.equal(getDealDisplayGroupKey('settling'), 'settling');
@@ -70,8 +71,7 @@ describe('deal view utilities', () => {
   });
 
   it('returns progress steps for board card progress bars', () => {
-    assert.equal(getDealProgressStep('selection'), 1);
-    assert.equal(getDealProgressStep('negotiating'), 1);
+    assert.equal(getDealProgressStep('preparing'), 1);
     assert.equal(getDealProgressStep('preContract'), 2);
     assert.equal(getDealProgressStep('contracted'), 3);
     assert.equal(getDealProgressStep('settling'), 4);
@@ -80,36 +80,35 @@ describe('deal view utilities', () => {
 
   it('summarizes a display group count and deal amount total', () => {
     const deals: DealListItem[] = [
-      deal({ id: 'd1', stage: 'selection', agreedPrice: 128000 }),
-      deal({ id: 'd2', stage: 'negotiating', agreedPrice: 65000 }),
+      deal({ id: 'd1', stage: 'preparing', agreedPrice: 128000 }),
       deal({ id: 'd3', stage: 'preContract', agreedPrice: 87000 }),
     ];
 
-    assert.deepEqual(summarizeDealGroup(deals, 'coordination'), {
-      count: 2,
-      amountTotal: 193000,
+    assert.deepEqual(summarizeDealGroup(deals, 'preparing'), {
+      count: 1,
+      amountTotal: 128000,
     });
   });
 
   it('builds Notion-style list groups with row numbers scoped per stage group', () => {
     const groups = getDealNotionListGroups([
       deal({ id: 'settling-1', stage: 'settling', agreedPrice: 132000 }),
-      deal({ id: 'selection-1', stage: 'selection', agreedPrice: 268000 }),
-      deal({ id: 'selection-2', stage: 'negotiating', agreedPrice: 88000 }),
+      deal({ id: 'preparing-1', stage: 'preparing', agreedPrice: 268000 }),
+      deal({ id: 'preparing-2', stage: 'preparing', agreedPrice: 88000 }),
     ]);
 
-    const coordination = groups.find((group) => group.group.key === 'coordination');
+    const preparing = groups.find((group) => group.group.key === 'preparing');
     const settling = groups.find((group) => group.group.key === 'settling');
 
     assert.deepEqual(
-      coordination?.rows.map((row) => ({ rowNumber: row.rowNumber, id: row.deal.id })),
+      preparing?.rows.map((row) => ({ rowNumber: row.rowNumber, id: row.deal.id })),
       [
-        { rowNumber: 1, id: 'selection-1' },
-        { rowNumber: 2, id: 'selection-2' },
+        { rowNumber: 1, id: 'preparing-1' },
+        { rowNumber: 2, id: 'preparing-2' },
       ],
     );
-    assert.equal(coordination?.summary.count, 2);
-    assert.equal(coordination?.summary.amountTotal, 356000);
+    assert.equal(preparing?.summary.count, 2);
+    assert.equal(preparing?.summary.amountTotal, 356000);
 
     assert.deepEqual(
       settling?.rows.map((row) => ({ rowNumber: row.rowNumber, id: row.deal.id })),
@@ -146,7 +145,7 @@ describe('deal view utilities', () => {
     });
     const stale = deal({
       id: 'stale',
-      stage: 'negotiating',
+      stage: 'preparing',
       stageChangedAt: '2026-04-28T00:00:00.000Z',
     });
 
@@ -194,7 +193,7 @@ function deal(overrides: Partial<DealListItem> = {}): DealListItem {
     listingId: null,
     externalListingId: null,
     matchId: null,
-    stage: 'selection',
+    stage: 'preparing',
     stageChangedAt: '2026-04-20T00:00:00.000Z',
     isCancelled: false,
     cancelledAt: null,

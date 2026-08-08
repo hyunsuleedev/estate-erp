@@ -54,7 +54,7 @@ import {
 
 type DealViewMode = 'board' | 'list';
 
-const CONTRACT_REQUIRED_STAGES = new Set(['contracted', 'settling', 'completed', 'closed']);
+const CONTRACT_REQUIRED_STAGES = new Set(['settling', 'completed', 'closed']);
 
 const TX_FILTER_OPTIONS = ['sale', 'jeonse', 'monthly'].map((value) => ({
   value,
@@ -168,8 +168,8 @@ function DealsPage() {
         CONTRACT_REQUIRED_STAGES.has(stage) &&
         !contractByDealId.has(deal.id);
       if (needsContract) {
-        toast.error('계약서가 있어야 본계약 이후 단계로 변경할 수 있습니다.', {
-          description: '거래 상세의 계약 요약에서 계약서를 먼저 작성하세요.',
+        toast.error('계약서를 작성해야 중도금/잔금 이후 단계로 변경할 수 있습니다.', {
+          description: '본계약 거래 상세의 계약 요약에서 계약서를 먼저 작성하세요.',
           action: {
             label: '거래 열기',
             onClick: () => setSelectedDealId(deal.id),
@@ -515,7 +515,7 @@ function DealsPage() {
                 pendingStage.stage === 'closed' ? ' 정산종료된 거래는 보드에서 제외되고 아카이브로 이동합니다.' : ''
               }${
                 CONTRACT_REQUIRED_STAGES.has(pendingStage.stage) && !contractByDealId.has(pendingStage.deal.id)
-                  ? ' 이 단계는 계약서가 필요합니다. 계약서가 없으면 변경이 거부됩니다.'
+                  ? ' 이 단계로 이동하려면 본계약 계약서가 필요합니다. 계약서를 먼저 작성해 주세요.'
                   : ''
               }`
             : undefined

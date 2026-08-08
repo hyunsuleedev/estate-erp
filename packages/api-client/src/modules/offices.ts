@@ -18,6 +18,7 @@ export interface OfficeProfile {
   ceoName: string | null;
   phone: string | null;
   address: string | null;
+  naverVerificationId: string | null;
   subscription: string;
   maxUsers: number;
   isActive: boolean;
@@ -39,6 +40,7 @@ export interface UpdateOfficeDto {
   ceoName?: string | null;
   phone?: string | null;
   address?: string | null;
+  naverVerificationId?: string | null;
 }
 
 export interface CreateOfficeDto {

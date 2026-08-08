@@ -25,6 +25,7 @@ export interface Consultation {
   listingIntakeId: string | null;
   listingId: string | null;
   matchId: string | null;
+  buyerIntakeId: string | null;
   buyerReqId: string | null;
   createdAt: string;
   updatedAt: string;
@@ -58,8 +59,14 @@ export interface Consultation {
     id: string;
     stage: string;
   } | null;
+  buyerIntake?: {
+    id: string;
+    lifecycleStatus: string;
+    receivedAt: string;
+  } | null;
   buyerRequirement?: {
     id: string;
+    buyerIntakeId: string;
     status: string;
     transactionType: string | null;
   } | null;
@@ -75,8 +82,16 @@ export interface ConsultationsFilter {
   listingIntakeId?: string;
   listingId?: string;
   matchId?: string;
+  buyerIntakeId?: string;
   buyerReqId?: string;
-  context?: 'property' | 'listingIntake' | 'listing' | 'match' | 'buyerRequirement' | 'unlinked';
+  context?:
+    | 'property'
+    | 'listingIntake'
+    | 'listing'
+    | 'match'
+    | 'buyerIntake'
+    | 'buyerRequirement'
+    | 'unlinked';
   outcome?: 'actionRequired' | 'confirmed' | 'held';
   type?: string;
   createdById?: string;
@@ -96,6 +111,7 @@ export interface CreateConsultationDto {
   listingIntakeId?: string;
   listingId?: string;
   matchId?: string;
+  buyerIntakeId?: string;
   buyerReqId?: string;
   /** 기존 통화 녹음(CallRecording)을 상담에 연결 */
   callRecordingId?: string;

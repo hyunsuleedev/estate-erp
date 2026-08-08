@@ -199,7 +199,9 @@ export interface ListingsFilter {
   depositMax?: number;
   monthlyRentMin?: number;
   monthlyRentMax?: number;
+  /** 공급면적 하한 (m²) */
   areaMin?: number;
+  /** 공급면적 상한 (m²) */
   areaMax?: number;
   sido?: string;
   sigungu?: string;

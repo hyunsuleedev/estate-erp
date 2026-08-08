@@ -1,0 +1,1736 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" href="data:," />
+    <title>Estate ERP · 자동화 업무 UI</title>
+    <style>
+      @font-face {
+        font-family: "Pretendard Variable";
+        src: url("../listing-status-stack-demo/public/assets/PretendardVariable.woff2") format("woff2");
+        font-style: normal;
+        font-weight: 100 900;
+        font-display: swap;
+      }
+
+      :root {
+        color-scheme: light;
+        --bg: #f7f7f5;
+        --surface: #ffffff;
+        --surface-subtle: #fafaf8;
+        --text: #37352f;
+        --text-strong: #24231f;
+        --muted: #78766f;
+        --faint: #a09e98;
+        --line: #e8e7e3;
+        --line-strong: #dcdad5;
+        --hover: #f3f3f0;
+        --selected: #eef4ff;
+        --blue: #2563eb;
+        --blue-soft: #edf4ff;
+        --green: #16835b;
+        --green-soft: #edf8f3;
+        --amber: #9a6700;
+        --amber-soft: #fff8e6;
+        --red: #c23d36;
+        --red-soft: #fff1ef;
+        --sidebar: 220px;
+        --properties: 294px;
+        --radius: 8px;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        width: 100%;
+        min-width: 1120px;
+        height: 100%;
+        margin: 0;
+        overflow: hidden;
+        background: var(--bg);
+        color: var(--text);
+        font-family: "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        font-size: 13px;
+        line-height: 1.45;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      button,
+      input {
+        font: inherit;
+      }
+
+      button {
+        color: inherit;
+      }
+
+      .app {
+        display: grid;
+        grid-template-columns: var(--sidebar) minmax(0, 1fr);
+        height: 100vh;
+      }
+
+      .sidebar {
+        display: flex;
+        min-height: 0;
+        flex-direction: column;
+        border-right: 1px solid var(--line);
+        background: #fbfbfa;
+      }
+
+      .brand {
+        display: flex;
+        height: 52px;
+        align-items: center;
+        gap: 9px;
+        padding: 0 17px;
+        color: var(--text-strong);
+        font-weight: 700;
+      }
+
+      .brand-mark {
+        display: grid;
+        width: 25px;
+        height: 25px;
+        place-items: center;
+        border-radius: 7px;
+        background: var(--text-strong);
+        color: white;
+        font-size: 11px;
+        letter-spacing: -0.03em;
+      }
+
+      .sidebar-scroll {
+        min-height: 0;
+        flex: 1;
+        overflow: auto;
+        padding: 8px 10px 18px;
+      }
+
+      .nav-label {
+        margin: 18px 8px 6px;
+        color: var(--faint);
+        font-size: 10px;
+        font-weight: 650;
+        letter-spacing: 0.08em;
+      }
+
+      .nav-item {
+        display: flex;
+        width: 100%;
+        height: 34px;
+        align-items: center;
+        gap: 10px;
+        padding: 0 9px;
+        border: 0;
+        border-radius: 6px;
+        background: transparent;
+        cursor: pointer;
+        text-align: left;
+      }
+
+      .nav-item:hover {
+        background: var(--hover);
+      }
+
+      .nav-item.active {
+        background: #ececea;
+        color: var(--text-strong);
+        font-weight: 600;
+      }
+
+      .nav-icon {
+        display: grid;
+        width: 16px;
+        height: 16px;
+        flex: 0 0 auto;
+        place-items: center;
+        color: var(--muted);
+      }
+
+      .nav-icon svg,
+      .icon svg {
+        display: block;
+        width: 100%;
+        height: 100%;
+        fill: none;
+        stroke: currentColor;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        stroke-width: 1.7;
+      }
+
+      .nav-count {
+        margin-left: auto;
+        color: var(--muted);
+        font-size: 11px;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .office {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        border-top: 1px solid var(--line);
+        padding: 12px 14px;
+      }
+
+      .avatar {
+        display: grid;
+        width: 27px;
+        height: 27px;
+        flex: 0 0 auto;
+        place-items: center;
+        border: 1px solid var(--line-strong);
+        border-radius: 50%;
+        background: white;
+        color: var(--muted);
+        font-size: 10px;
+        font-weight: 700;
+      }
+
+      .workspace {
+        display: flex;
+        min-width: 0;
+        min-height: 0;
+        flex-direction: column;
+      }
+
+      .topbar {
+        display: flex;
+        height: 45px;
+        flex: 0 0 auto;
+        align-items: center;
+        justify-content: space-between;
+        border-bottom: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.92);
+        padding: 0 18px;
+      }
+
+      .breadcrumbs {
+        display: flex;
+        min-width: 0;
+        align-items: center;
+        gap: 7px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .breadcrumbs strong {
+        max-width: 560px;
+        overflow: hidden;
+        color: var(--text);
+        font-weight: 550;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .top-actions {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+      }
+
+      .icon-button {
+        display: grid;
+        width: 30px;
+        height: 30px;
+        place-items: center;
+        border: 0;
+        border-radius: 6px;
+        background: transparent;
+        color: var(--muted);
+        cursor: pointer;
+      }
+
+      .icon-button:hover {
+        background: var(--hover);
+        color: var(--text);
+      }
+
+      .icon-button .icon {
+        width: 15px;
+        height: 15px;
+      }
+
+      .view {
+        min-height: 0;
+        flex: 1;
+      }
+
+      .view[hidden] {
+        display: none;
+      }
+
+      .list-view {
+        overflow: auto;
+      }
+
+      .list-shell {
+        width: min(1120px, calc(100% - 64px));
+        margin: 0 auto;
+        padding: 30px 0 60px;
+      }
+
+      .page-heading {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 24px;
+        margin-bottom: 24px;
+      }
+
+      h1,
+      h2,
+      h3,
+      p {
+        margin: 0;
+      }
+
+      .page-heading h1 {
+        color: var(--text-strong);
+        font-size: 22px;
+        font-weight: 720;
+        letter-spacing: -0.025em;
+      }
+
+      .page-heading p {
+        margin-top: 5px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .button {
+        display: inline-flex;
+        height: 32px;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        padding: 0 11px;
+        border: 1px solid var(--line-strong);
+        border-radius: 6px;
+        background: white;
+        box-shadow: 0 1px 1px rgba(32, 31, 28, 0.03);
+        color: var(--text);
+        cursor: pointer;
+        font-size: 12px;
+        font-weight: 550;
+      }
+
+      .button:hover {
+        border-color: #cfcdc8;
+        background: #fdfdfc;
+      }
+
+      .button.primary {
+        border-color: var(--blue);
+        background: var(--blue);
+        box-shadow: none;
+        color: white;
+      }
+
+      .button.primary:hover {
+        background: #1f57d1;
+      }
+
+      .button.ghost {
+        border-color: transparent;
+        background: transparent;
+        box-shadow: none;
+        color: var(--muted);
+      }
+
+      .button.ghost:hover {
+        background: var(--hover);
+        color: var(--text);
+      }
+
+      .button:disabled {
+        cursor: default;
+        opacity: 0.58;
+      }
+
+      .toolbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        margin-bottom: 18px;
+      }
+
+      .toolbar-left,
+      .toolbar-right,
+      .filters {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+      }
+
+      .search {
+        position: relative;
+        width: 270px;
+      }
+
+      .search input {
+        width: 100%;
+        height: 32px;
+        border: 1px solid var(--line-strong);
+        border-radius: 6px;
+        outline: none;
+        background: white;
+        padding: 0 10px 0 31px;
+        color: var(--text);
+        font-size: 12px;
+      }
+
+      .search input:focus {
+        border-color: #aabce6;
+        box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.08);
+      }
+
+      .search .icon {
+        position: absolute;
+        top: 9px;
+        left: 10px;
+        width: 13px;
+        height: 13px;
+        color: var(--faint);
+      }
+
+      .filter {
+        height: 30px;
+        padding: 0 10px;
+        border: 0;
+        border-radius: 6px;
+        background: transparent;
+        color: var(--muted);
+        cursor: pointer;
+        font-size: 11.5px;
+      }
+
+      .filter:hover {
+        background: var(--hover);
+      }
+
+      .filter.active {
+        background: #ebeae7;
+        color: var(--text-strong);
+        font-weight: 600;
+      }
+
+      .group + .group {
+        margin-top: 20px;
+      }
+
+      .group-heading {
+        display: flex;
+        height: 32px;
+        align-items: center;
+        gap: 7px;
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 650;
+      }
+
+      .group-heading .count {
+        color: var(--faint);
+        font-variant-numeric: tabular-nums;
+        font-weight: 500;
+      }
+
+      .task-list {
+        border-top: 1px solid var(--line);
+      }
+
+      .task-row {
+        display: grid;
+        min-height: 50px;
+        grid-template-columns: 22px 76px minmax(280px, 1fr) 116px 105px 70px;
+        align-items: center;
+        gap: 10px;
+        border: 0;
+        border-bottom: 1px solid var(--line);
+        background: transparent;
+        padding: 0 6px;
+        cursor: pointer;
+        text-align: left;
+      }
+
+      .task-row:hover {
+        background: rgba(255, 255, 255, 0.72);
+      }
+
+      .status-symbol {
+        position: relative;
+        width: 14px;
+        height: 14px;
+        border: 1.5px solid var(--faint);
+        border-radius: 50%;
+      }
+
+      .status-symbol.attention {
+        border-color: #d39b28;
+        background: var(--amber-soft);
+      }
+
+      .status-symbol.attention::after {
+        position: absolute;
+        top: 3px;
+        left: 5px;
+        width: 2px;
+        height: 4px;
+        border-radius: 2px;
+        background: #b67b05;
+        box-shadow: 0 5px 0 -0.4px #b67b05;
+        content: "";
+      }
+
+      .status-symbol.running {
+        border-color: var(--blue);
+        border-left-color: #b6caf6;
+      }
+
+      .status-symbol.done {
+        border-color: var(--green);
+        background: var(--green);
+      }
+
+      .status-symbol.done::after {
+        position: absolute;
+        top: 3px;
+        left: 3px;
+        width: 6px;
+        height: 3px;
+        transform: rotate(-45deg);
+        border-bottom: 1.5px solid white;
+        border-left: 1.5px solid white;
+        content: "";
+      }
+
+      .task-id {
+        color: var(--muted);
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 11px;
+      }
+
+      .task-title {
+        min-width: 0;
+      }
+
+      .task-title strong {
+        display: block;
+        overflow: hidden;
+        color: var(--text-strong);
+        font-size: 12.5px;
+        font-weight: 590;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .task-title span {
+        display: block;
+        margin-top: 2px;
+        overflow: hidden;
+        color: var(--muted);
+        font-size: 10.5px;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .task-meta {
+        overflow: hidden;
+        color: var(--muted);
+        font-size: 11px;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .task-progress {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+      }
+
+      .mini-track {
+        width: 52px;
+        height: 3px;
+        overflow: hidden;
+        border-radius: 3px;
+        background: #e6e5e1;
+      }
+
+      .mini-track span {
+        display: block;
+        height: 100%;
+        border-radius: inherit;
+        background: var(--green);
+      }
+
+      .task-progress small {
+        color: var(--muted);
+        font-size: 10px;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .detail-view {
+        display: grid;
+        min-height: 0;
+        grid-template-columns: minmax(0, 1fr) var(--properties);
+        background: var(--surface);
+      }
+
+      .detail-view.properties-hidden {
+        grid-template-columns: minmax(0, 1fr) 0;
+      }
+
+      .detail-scroll {
+        min-width: 0;
+        min-height: 0;
+        overflow: auto;
+      }
+
+      .detail-main {
+        width: min(920px, calc(100% - 64px));
+        margin: 0 auto;
+        padding: 28px 0 72px;
+      }
+
+      .issue-eyebrow {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--muted);
+        font-size: 11px;
+      }
+
+      .issue-eyebrow .status-symbol {
+        width: 15px;
+        height: 15px;
+      }
+
+      .issue-key {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        color: var(--muted);
+      }
+
+      .plain-status {
+        color: var(--amber);
+        font-weight: 600;
+      }
+
+      .issue-heading-row {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 24px;
+        margin-top: 11px;
+      }
+
+      .issue-heading-row h1 {
+        color: var(--text-strong);
+        font-size: clamp(20px, 2vw, 26px);
+        font-weight: 735;
+        letter-spacing: -0.035em;
+        line-height: 1.25;
+      }
+
+      .issue-actions {
+        display: flex;
+        flex: 0 0 auto;
+        align-items: center;
+        gap: 6px;
+      }
+
+      .issue-summary {
+        max-width: 760px;
+        margin-top: 11px;
+        color: var(--muted);
+        font-size: 12.5px;
+        line-height: 1.65;
+      }
+
+      .summary-strip {
+        display: flex;
+        align-items: center;
+        gap: 0;
+        margin-top: 24px;
+        border-top: 1px solid var(--line);
+        border-bottom: 1px solid var(--line);
+        padding: 12px 0;
+      }
+
+      .summary-cell {
+        min-width: 95px;
+        padding: 0 18px;
+        border-right: 1px solid var(--line);
+      }
+
+      .summary-cell:first-child {
+        padding-left: 0;
+      }
+
+      .summary-cell span {
+        display: block;
+        color: var(--muted);
+        font-size: 10px;
+      }
+
+      .summary-cell strong {
+        display: block;
+        margin-top: 1px;
+        color: var(--text-strong);
+        font-size: 15px;
+        font-variant-numeric: tabular-nums;
+        font-weight: 690;
+      }
+
+      .summary-cell strong.warning {
+        color: var(--amber);
+      }
+
+      .progress-wrap {
+        min-width: 180px;
+        flex: 1;
+        padding-left: 18px;
+      }
+
+      .progress-copy {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        color: var(--muted);
+        font-size: 10px;
+      }
+
+      .progress-track {
+        height: 4px;
+        margin-top: 6px;
+        overflow: hidden;
+        border-radius: 4px;
+        background: #e8e7e4;
+      }
+
+      .progress-track span {
+        display: block;
+        width: 83.333%;
+        height: 100%;
+        border-radius: inherit;
+        background: var(--green);
+        transition: width 180ms ease-out;
+      }
+
+      .section {
+        margin-top: 30px;
+      }
+
+      .section-heading {
+        display: flex;
+        min-height: 32px;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        margin-bottom: 8px;
+      }
+
+      .section-heading h2 {
+        color: var(--text-strong);
+        font-size: 13px;
+        font-weight: 680;
+      }
+
+      .section-heading p {
+        margin-left: 7px;
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 450;
+      }
+
+      .section-title-wrap {
+        display: flex;
+        align-items: baseline;
+      }
+
+      .segmented {
+        display: flex;
+        gap: 2px;
+        padding: 2px;
+        border-radius: 6px;
+        background: #f0f0ed;
+      }
+
+      .segmented button {
+        height: 25px;
+        padding: 0 8px;
+        border: 0;
+        border-radius: 4px;
+        background: transparent;
+        color: var(--muted);
+        cursor: pointer;
+        font-size: 10.5px;
+      }
+
+      .segmented button.active {
+        background: white;
+        box-shadow: 0 1px 2px rgba(32, 31, 28, 0.07);
+        color: var(--text);
+        font-weight: 600;
+      }
+
+      .ad-table {
+        border-top: 1px solid var(--line-strong);
+      }
+
+      .ad-head,
+      .ad-row {
+        display: grid;
+        grid-template-columns: 28px minmax(220px, 1fr) minmax(160px, 0.7fr) 132px 74px 22px;
+        align-items: center;
+        column-gap: 12px;
+      }
+
+      .ad-head {
+        height: 31px;
+        border-bottom: 1px solid var(--line);
+        color: var(--faint);
+        font-size: 9.5px;
+        font-weight: 620;
+      }
+
+      .ad-item {
+        border-bottom: 1px solid var(--line);
+      }
+
+      .ad-row {
+        width: 100%;
+        min-height: 54px;
+        border: 0;
+        background: transparent;
+        cursor: pointer;
+        padding: 0;
+        text-align: left;
+      }
+
+      .ad-row:hover {
+        background: #fbfbfa;
+      }
+
+      .ad-item.attention > .ad-row {
+        background: linear-gradient(90deg, rgba(255, 248, 230, 0.82), rgba(255, 255, 255, 0) 64%);
+      }
+
+      .row-status {
+        display: grid;
+        width: 18px;
+        height: 18px;
+        place-items: center;
+        border-radius: 50%;
+        color: var(--green);
+        font-size: 11px;
+        font-weight: 700;
+      }
+
+      .row-status.failed {
+        color: var(--amber);
+      }
+
+      .ad-primary {
+        min-width: 0;
+      }
+
+      .ad-primary strong {
+        display: block;
+        overflow: hidden;
+        color: var(--text-strong);
+        font-size: 11.5px;
+        font-weight: 610;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .ad-primary span,
+      .ad-change span,
+      .ad-step span {
+        display: block;
+        margin-top: 2px;
+        color: var(--muted);
+        font-size: 9.8px;
+      }
+
+      .ad-change,
+      .ad-step,
+      .ad-time {
+        min-width: 0;
+        overflow: hidden;
+        color: var(--text);
+        font-size: 10.5px;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .ad-step.failed {
+        color: var(--amber);
+        font-weight: 610;
+      }
+
+      .ad-time {
+        color: var(--muted);
+        font-variant-numeric: tabular-nums;
+      }
+
+      .chevron {
+        color: var(--faint);
+        font-size: 15px;
+        transition: transform 160ms ease-out;
+      }
+
+      .ad-item.expanded .chevron {
+        transform: rotate(90deg);
+      }
+
+      .ad-details {
+        display: none;
+        padding: 3px 0 16px 40px;
+      }
+
+      .ad-item.expanded .ad-details {
+        display: block;
+      }
+
+      .detail-note {
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+        margin-bottom: 12px;
+        color: var(--amber);
+        font-size: 10.5px;
+      }
+
+      .detail-note strong {
+        color: #74500b;
+        font-weight: 650;
+      }
+
+      .steps {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(110px, 1fr));
+        border-top: 1px solid var(--line);
+        border-left: 1px solid var(--line);
+      }
+
+      .step {
+        min-height: 54px;
+        border-right: 1px solid var(--line);
+        border-bottom: 1px solid var(--line);
+        padding: 8px 9px;
+      }
+
+      .step-top {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+
+      .step-dot {
+        position: relative;
+        width: 13px;
+        height: 13px;
+        flex: 0 0 auto;
+        border: 1px solid var(--line-strong);
+        border-radius: 50%;
+        background: white;
+      }
+
+      .step.done .step-dot {
+        border-color: var(--green);
+        background: var(--green);
+      }
+
+      .step.done .step-dot::after {
+        position: absolute;
+        top: 3px;
+        left: 3px;
+        width: 5px;
+        height: 2px;
+        transform: rotate(-45deg);
+        border-bottom: 1px solid white;
+        border-left: 1px solid white;
+        content: "";
+      }
+
+      .step.failed {
+        background: var(--amber-soft);
+      }
+
+      .step.failed .step-dot {
+        border-color: #d39b28;
+        background: #fffdf7;
+      }
+
+      .step.pending {
+        color: var(--faint);
+      }
+
+      .step-title {
+        overflow: hidden;
+        color: inherit;
+        font-size: 10px;
+        font-weight: 610;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .step-meta {
+        margin-top: 5px;
+        color: var(--muted);
+        font-size: 9px;
+      }
+
+      .activity {
+        position: relative;
+        margin-top: 5px;
+      }
+
+      .activity::before {
+        position: absolute;
+        top: 17px;
+        bottom: 18px;
+        left: 7px;
+        width: 1px;
+        background: var(--line);
+        content: "";
+      }
+
+      .event {
+        position: relative;
+        display: grid;
+        grid-template-columns: 16px minmax(0, 1fr) auto;
+        gap: 10px;
+        padding: 8px 0;
+      }
+
+      .event-node {
+        z-index: 1;
+        width: 15px;
+        height: 15px;
+        margin-top: 1px;
+        border: 3px solid white;
+        border-radius: 50%;
+        background: var(--faint);
+        box-shadow: 0 0 0 1px var(--line);
+      }
+
+      .event-node.green {
+        background: var(--green);
+      }
+
+      .event-node.amber {
+        background: #d39b28;
+      }
+
+      .event-node.blue {
+        background: var(--blue);
+      }
+
+      .event-copy strong {
+        color: var(--text-strong);
+        font-size: 11.5px;
+        font-weight: 610;
+      }
+
+      .event-copy p {
+        margin-top: 2px;
+        color: var(--muted);
+        font-size: 10.5px;
+      }
+
+      .event-time {
+        padding-top: 1px;
+        color: var(--faint);
+        font-size: 9.5px;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .run-line {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        margin-top: 7px;
+        color: var(--muted);
+        font-size: 9.5px;
+      }
+
+      .run-line span {
+        padding-right: 7px;
+        border-right: 1px solid var(--line);
+      }
+
+      .run-line span:last-child {
+        border-right: 0;
+      }
+
+      .properties {
+        min-width: 0;
+        min-height: 0;
+        overflow: auto;
+        border-left: 1px solid var(--line);
+        background: var(--surface-subtle);
+        transition: opacity 160ms ease-out;
+      }
+
+      .properties[hidden] {
+        display: none;
+      }
+
+      .properties-header {
+        position: sticky;
+        top: 0;
+        z-index: 2;
+        display: flex;
+        height: 43px;
+        align-items: center;
+        justify-content: space-between;
+        border-bottom: 1px solid var(--line);
+        background: rgba(250, 250, 248, 0.96);
+        padding: 0 15px;
+      }
+
+      .properties-header h2 {
+        color: var(--text-strong);
+        font-size: 12px;
+        font-weight: 650;
+      }
+
+      .properties-body {
+        padding: 15px 16px 32px;
+      }
+
+      .property-section + .property-section {
+        margin-top: 20px;
+        padding-top: 16px;
+        border-top: 1px solid var(--line);
+      }
+
+      .property-title {
+        margin-bottom: 7px;
+        color: var(--faint);
+        font-size: 9px;
+        font-weight: 720;
+        letter-spacing: 0.085em;
+      }
+
+      .property-row {
+        display: grid;
+        min-height: 29px;
+        grid-template-columns: 82px minmax(0, 1fr);
+        align-items: start;
+        gap: 8px;
+        padding: 5px 0;
+      }
+
+      .property-row dt {
+        color: var(--muted);
+        font-size: 10.5px;
+      }
+
+      .property-row dd {
+        min-width: 0;
+        margin: 0;
+        color: var(--text);
+        font-size: 10.8px;
+      }
+
+      .property-row dd strong {
+        color: var(--text-strong);
+        font-weight: 610;
+      }
+
+      .property-row dd.warning {
+        color: var(--amber);
+        font-weight: 610;
+      }
+
+      .property-row dd a {
+        color: var(--blue);
+        text-decoration: none;
+      }
+
+      .execution-list {
+        margin-top: 3px;
+      }
+
+      .execution-item {
+        display: grid;
+        grid-template-columns: 16px minmax(0, 1fr);
+        gap: 8px;
+        padding: 7px 0;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .execution-item:last-child {
+        border-bottom: 0;
+      }
+
+      .execution-number {
+        color: var(--faint);
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 9.5px;
+      }
+
+      .execution-copy strong {
+        display: block;
+        color: var(--text-strong);
+        font-size: 10.5px;
+        font-weight: 610;
+      }
+
+      .execution-copy span {
+        display: block;
+        margin-top: 1px;
+        color: var(--muted);
+        font-size: 9.5px;
+      }
+
+      .toast {
+        position: fixed;
+        right: 18px;
+        bottom: 18px;
+        z-index: 20;
+        display: flex;
+        min-width: 280px;
+        align-items: center;
+        gap: 10px;
+        transform: translateY(10px);
+        border: 1px solid #d9d7d1;
+        border-radius: 8px;
+        background: #282722;
+        box-shadow: 0 12px 34px rgba(31, 30, 27, 0.18);
+        padding: 11px 13px;
+        color: white;
+        opacity: 0;
+        pointer-events: none;
+        visibility: hidden;
+        transition: transform 180ms ease-out, opacity 180ms ease-out;
+      }
+
+      .toast.show {
+        transform: translateY(0);
+        opacity: 1;
+        visibility: visible;
+      }
+
+      .toast-dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: #71a1ff;
+        box-shadow: 0 0 0 4px rgba(113, 161, 255, 0.15);
+      }
+
+      .toast strong {
+        display: block;
+        font-size: 11.5px;
+        font-weight: 620;
+      }
+
+      .toast span {
+        display: block;
+        margin-top: 1px;
+        color: #c9c8c3;
+        font-size: 10px;
+      }
+
+      .retry-event {
+        animation: reveal 180ms ease-out;
+      }
+
+      @keyframes reveal {
+        from {
+          transform: translateY(-4px);
+          opacity: 0;
+        }
+        to {
+          transform: translateY(0);
+          opacity: 1;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+          scroll-behavior: auto !important;
+          animation-duration: 0.01ms !important;
+          transition-duration: 0.01ms !important;
+        }
+      }
+
+      @media (max-width: 1240px) {
+        :root {
+          --sidebar: 190px;
+          --properties: 270px;
+        }
+
+        .detail-main {
+          width: calc(100% - 44px);
+        }
+
+        .steps {
+          grid-template-columns: repeat(2, minmax(130px, 1fr));
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <aside class="sidebar" aria-label="주요 메뉴">
+        <div class="brand">
+          <span class="brand-mark">E</span>
+          <span>Estate ERP</span>
+        </div>
+        <div class="sidebar-scroll">
+          <div class="nav-label">업무</div>
+          <button class="nav-item">
+            <span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M4 5h16M4 12h16M4 19h10" /></svg></span>
+            대시보드
+          </button>
+          <button class="nav-item">
+            <span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M5 4h14v16H5zM8 8h8M8 12h8M8 16h5" /></svg></span>
+            매물관리
+          </button>
+
+          <div class="nav-label">자동화</div>
+          <button class="nav-item">
+            <span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16M7 4v4M15 10v4M10 16v4" /></svg></span>
+            광고노트
+          </button>
+          <button class="nav-item">
+            <span class="nav-icon"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="2" /><path d="M8 9h8M8 13h5" /></svg></span>
+            내광고관리
+          </button>
+          <button class="nav-item active" data-open-list>
+            <span class="nav-icon"><svg viewBox="0 0 24 24"><circle cx="6" cy="7" r="2" /><circle cx="18" cy="17" r="2" /><path d="M8 7h4a3 3 0 0 1 3 3v4a3 3 0 0 0 3 3M6 9v8" /></svg></span>
+            자동화 업무
+            <span class="nav-count">3</span>
+          </button>
+          <button class="nav-item">
+            <span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M12 3v3M12 18v3M3 12h3M18 12h3" /><circle cx="12" cy="12" r="4" /></svg></span>
+            자동화단지
+          </button>
+
+          <div class="nav-label">CRM</div>
+          <button class="nav-item">
+            <span class="nav-icon"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3" /><path d="M3 20v-2a5 5 0 0 1 5-5h2a5 5 0 0 1 5 5v2M16 8h5M18.5 5.5v5" /></svg></span>
+            연락처
+          </button>
+          <button class="nav-item">
+            <span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M5 4h14v16H5zM8 8h8M8 12h5" /></svg></span>
+            거래관리
+          </button>
+        </div>
+        <div class="office">
+          <span class="avatar">현</span>
+          <div>
+            <div style="font-size: 11.5px; font-weight: 620">현수공인중개사</div>
+            <div style="margin-top: 1px; color: var(--muted); font-size: 9.5px">대표 이현수</div>
+          </div>
+        </div>
+      </aside>
+
+      <section class="workspace">
+        <header class="topbar">
+          <div class="breadcrumbs" id="breadcrumbs">
+            <span>자동화</span><span>›</span><strong>자동화 업무</strong>
+          </div>
+          <div class="top-actions">
+            <button class="icon-button" type="button" aria-label="검색">
+              <span class="icon"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6" /><path d="m16 16 4 4" /></svg></span>
+            </button>
+            <button class="icon-button" type="button" aria-label="알림">
+              <span class="icon"><svg viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4" /></svg></span>
+            </button>
+          </div>
+        </header>
+
+        <main class="view list-view" id="listView">
+          <div class="list-shell">
+            <div class="page-heading">
+              <div>
+                <h1>자동화 업무</h1>
+                <p>여러 광고에 요청한 수정·재광고 업무를 한 건씩 추적합니다.</p>
+              </div>
+              <button class="button" type="button">새 업무</button>
+            </div>
+
+            <div class="toolbar">
+              <div class="toolbar-left">
+                <div class="search">
+                  <span class="icon"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6" /><path d="m16 16 4 4" /></svg></span>
+                  <input aria-label="자동화 업무 검색" placeholder="업무, 단지, 광고번호 검색" />
+                </div>
+                <div class="filters" aria-label="상태 필터">
+                  <button class="filter active" type="button">전체 11</button>
+                  <button class="filter" type="button">진행 2</button>
+                  <button class="filter" type="button">확인 필요 1</button>
+                  <button class="filter" type="button">완료 8</button>
+                </div>
+              </div>
+              <div class="toolbar-right">
+                <button class="button ghost" type="button">최근 수정순⌄</button>
+              </div>
+            </div>
+
+            <section class="group">
+              <div class="group-heading"><span>확인 필요</span><span class="count">1</span></div>
+              <div class="task-list">
+                <button class="task-row" type="button" data-open-detail>
+                  <span class="status-symbol attention"></span>
+                  <span class="task-id">AUTO-104</span>
+                  <span class="task-title">
+                    <strong>아크로리버파크 광고 12건 가격 수정·재광고</strong>
+                    <span>가격 변경 8건 · 문구 수정 4건 · 전체 재광고</span>
+                  </span>
+                  <span class="task-meta">최종 확인</span>
+                  <span class="task-progress"><span class="mini-track"><span style="width: 83%"></span></span><small>10/12</small></span>
+                  <span class="task-meta">4분 전</span>
+                </button>
+              </div>
+            </section>
+
+            <section class="group">
+              <div class="group-heading"><span>진행 중</span><span class="count">2</span></div>
+              <div class="task-list">
+                <button class="task-row" type="button">
+                  <span class="status-symbol running"></span>
+                  <span class="task-id">AUTO-103</span>
+                  <span class="task-title"><strong>래미안 원베일리 광고 6건 재광고</strong><span>조건 변경 없음 · 재광고만 실행</span></span>
+                  <span class="task-meta">저장·전송</span>
+                  <span class="task-progress"><span class="mini-track"><span style="width: 50%"></span></span><small>3/6</small></span>
+                  <span class="task-meta">방금</span>
+                </button>
+                <button class="task-row" type="button">
+                  <span class="status-symbol running"></span>
+                  <span class="task-id">AUTO-102</span>
+                  <span class="task-title"><strong>반포자이 광고 4건 가격 일괄 수정</strong><span>매매가 변경 · 재광고 제외</span></span>
+                  <span class="task-meta">저장값 확인</span>
+                  <span class="task-progress"><span class="mini-track"><span style="width: 25%"></span></span><small>1/4</small></span>
+                  <span class="task-meta">2분 전</span>
+                </button>
+              </div>
+            </section>
+
+            <section class="group">
+              <div class="group-heading"><span>완료</span><span class="count">8</span></div>
+              <div class="task-list">
+                <button class="task-row" type="button">
+                  <span class="status-symbol done"></span>
+                  <span class="task-id">AUTO-101</span>
+                  <span class="task-title"><strong>디에이치 퍼스티어 아이파크 광고 9건 수정</strong><span>가격 변경 9건 · 재광고 완료</span></span>
+                  <span class="task-meta">완료</span>
+                  <span class="task-progress"><span class="mini-track"><span style="width: 100%"></span></span><small>9/9</small></span>
+                  <span class="task-meta">오늘</span>
+                </button>
+              </div>
+            </section>
+          </div>
+        </main>
+
+        <main class="view detail-view" id="detailView" hidden>
+          <div class="detail-scroll">
+            <article class="detail-main">
+              <div class="issue-eyebrow">
+                <span class="status-symbol attention" id="issueStatusSymbol"></span>
+                <span class="issue-key">AUTO-104</span>
+                <span>·</span>
+                <span class="plain-status" id="issueStatusText">확인 필요</span>
+                <span>·</span>
+                <span>이실장</span>
+              </div>
+
+              <div class="issue-heading-row">
+                <h1>아크로리버파크 광고 12건<br />가격 수정·재광고</h1>
+                <div class="issue-actions">
+                  <button class="button ghost" type="button">중단</button>
+                  <button class="button primary" type="button" id="retryButton">실패 2건 재시도</button>
+                </div>
+              </div>
+              <p class="issue-summary">
+                내광고관리에서 선택한 12개 광고의 가격과 광고 문구를 저장한 뒤 재광고합니다.
+                최초 실행에서 10건은 완료됐고 2건은 외부 화면 확인이 필요합니다.
+              </p>
+
+              <div class="summary-strip" aria-label="업무 진행 요약">
+                <div class="summary-cell"><span>대상</span><strong>12</strong></div>
+                <div class="summary-cell"><span>완료</span><strong id="completedCount">10</strong></div>
+                <div class="summary-cell"><span>확인 필요</span><strong class="warning" id="attentionCount">2</strong></div>
+                <div class="progress-wrap">
+                  <div class="progress-copy"><span>전체 진행률</span><span id="progressCopy">83%</span></div>
+                  <div class="progress-track"><span id="progressBar"></span></div>
+                </div>
+              </div>
+
+              <section class="section">
+                <div class="section-heading">
+                  <div class="section-title-wrap"><h2>대상 광고</h2><p>문제 있는 행만 펼쳐서 단계 확인</p></div>
+                  <div class="segmented" aria-label="광고 필터">
+                    <button class="active" type="button" data-ad-filter="all">전체 12</button>
+                    <button type="button" data-ad-filter="attention">확인 필요 2</button>
+                  </div>
+                </div>
+
+                <div class="ad-table">
+                  <div class="ad-head" aria-hidden="true">
+                    <span></span><span>광고</span><span>요청 변경</span><span>현재 단계</span><span>최근 기록</span><span></span>
+                  </div>
+
+                  <div class="ad-item attention expanded" data-ad-state="attention">
+                    <button class="ad-row" type="button" aria-expanded="true">
+                      <span class="row-status failed">!</span>
+                      <span class="ad-primary"><strong>101동 1803호 · 매매</strong><span>네이버 2519874301 · 아크로리버파크</span></span>
+                      <span class="ad-change">22억 → 21억 8,000<span>재광고 포함</span></span>
+                      <span class="ad-step failed">최종 확인 실패<span>외부 응답 불일치</span></span>
+                      <span class="ad-time">14:06</span>
+                      <span class="chevron">›</span>
+                    </button>
+                    <div class="ad-details">
+                      <div class="detail-note"><span>●</span><span><strong>확인 필요</strong> · 저장 후 광고 상태가 “노출중”으로 바뀌지 않았습니다.</span></div>
+                      <div class="steps">
+                        <div class="step done"><div class="step-top"><span class="step-dot"></span><span class="step-title">대상 확인</span></div><div class="step-meta">14:02 완료</div></div>
+                        <div class="step done"><div class="step-top"><span class="step-dot"></span><span class="step-title">조건 저장</span></div><div class="step-meta">14:03 완료</div></div>
+                        <div class="step done"><div class="step-top"><span class="step-dot"></span><span class="step-title">저장값 확인</span></div><div class="step-meta">14:03 완료</div></div>
+                        <div class="step done"><div class="step-top"><span class="step-dot"></span><span class="step-title">재광고 시작</span></div><div class="step-meta">14:04 완료</div></div>
+                        <div class="step done"><div class="step-top"><span class="step-dot"></span><span class="step-title">노출종료 동의</span></div><div class="step-meta">14:04 완료</div></div>
+                        <div class="step done"><div class="step-top"><span class="step-dot"></span><span class="step-title">홍보확인·서류</span></div><div class="step-meta">14:05 완료</div></div>
+                        <div class="step done"><div class="step-top"><span class="step-dot"></span><span class="step-title">저장·전송</span></div><div class="step-meta">14:05 완료</div></div>
+                        <div class="step failed"><div class="step-top"><span class="step-dot"></span><span class="step-title">최종 확인</span></div><div class="step-meta">응답 불일치</div></div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="ad-item attention" data-ad-state="attention">
+                    <button class="ad-row" type="button" aria-expanded="false">
+                      <span class="row-status failed">!</span>
+                      <span class="ad-primary"><strong>103동 1202호 · 전세</strong><span>네이버 2519874418 · 아크로리버파크</span></span>
+                      <span class="ad-change">12억 5,000 → 12억<span>문구 수정 · 재광고</span></span>
+                      <span class="ad-step failed">홍보확인 대기<span>본인확인 필요</span></span>
+                      <span class="ad-time">14:05</span>
+                      <span class="chevron">›</span>
+                    </button>
+                    <div class="ad-details">
+                      <div class="detail-note"><span>●</span><span><strong>본인확인 필요</strong> · 이실장 본인확인 창에서 직접 확인한 뒤 계속할 수 있습니다.</span></div>
+                      <div class="steps">
+                        <div class="step done"><div class="step-top"><span class="step-dot"></span><span class="step-title">대상 확인</span></div><div class="step-meta">14:02 완료</div></div>
+                        <div class="step done"><div class="step-top"><span class="step-dot"></span><span class="step-title">조건 저장</span></div><div class="step-meta">14:03 완료</div></div>
+                        <div class="step done"><div class="step-top"><span class="step-dot"></span><span class="step-title">저장값 확인</span></div><div class="step-meta">14:03 완료</div></div>
+                        <div class="step done"><div class="step-top"><span class="step-dot"></span><span class="step-title">재광고 시작</span></div><div class="step-meta">14:04 완료</div></div>
+                        <div class="step done"><div class="step-top"><span class="step-dot"></span><span class="step-title">노출종료 동의</span></div><div class="step-meta">14:04 완료</div></div>
+                        <div class="step failed"><div class="step-top"><span class="step-dot"></span><span class="step-title">홍보확인·서류</span></div><div class="step-meta">본인확인 대기</div></div>
+                        <div class="step pending"><div class="step-top"><span class="step-dot"></span><span class="step-title">저장·전송</span></div><div class="step-meta">대기</div></div>
+                        <div class="step pending"><div class="step-top"><span class="step-dot"></span><span class="step-title">최종 확인</span></div><div class="step-meta">대기</div></div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="ad-item" data-ad-state="done">
+                    <button class="ad-row" type="button" aria-expanded="false">
+                      <span class="row-status">✓</span>
+                      <span class="ad-primary"><strong>101동 1501호 · 매매</strong><span>네이버 2519874104 · 아크로리버파크</span></span>
+                      <span class="ad-change">23억 → 22억 7,000<span>재광고 포함</span></span>
+                      <span class="ad-step">완료<span>노출 상태 확인</span></span>
+                      <span class="ad-time">14:06</span>
+                      <span class="chevron">›</span>
+                    </button>
+                    <div class="ad-details"><div class="detail-note" style="color: var(--green)"><span>●</span><span><strong style="color: var(--green)">완료</strong> · 수정된 가격과 노출 상태를 확인했습니다.</span></div></div>
+                  </div>
+
+                  <div class="ad-item" data-ad-state="done">
+                    <button class="ad-row" type="button" aria-expanded="false">
+                      <span class="row-status">✓</span>
+                      <span class="ad-primary"><strong>102동 2104호 · 매매</strong><span>네이버 2519874225 · 아크로리버파크</span></span>
+                      <span class="ad-change">가격 유지<span>문구 수정 · 재광고</span></span>
+                      <span class="ad-step">완료<span>노출 상태 확인</span></span>
+                      <span class="ad-time">14:05</span>
+                      <span class="chevron">›</span>
+                    </button>
+                    <div class="ad-details"><div class="detail-note" style="color: var(--green)"><span>●</span><span><strong style="color: var(--green)">완료</strong> · 광고 문구와 노출 상태를 확인했습니다.</span></div></div>
+                  </div>
+                </div>
+              </section>
+
+              <section class="section">
+                <div class="section-heading">
+                  <div class="section-title-wrap"><h2>업무 기록</h2><p>사람의 요청과 자동화 실행을 한 흐름으로 표시</p></div>
+                </div>
+                <div class="activity" id="activity">
+                  <div class="event">
+                    <span class="event-node"></span>
+                    <div class="event-copy"><strong>이현수님이 업무를 만들었습니다</strong><p>내광고관리에서 광고 12건을 선택 · 가격 수정 및 재광고 승인</p></div>
+                    <time class="event-time">14:01</time>
+                  </div>
+                  <div class="event">
+                    <span class="event-node blue"></span>
+                    <div class="event-copy">
+                      <strong>최초 실행을 시작했습니다</strong>
+                      <p>승인된 변경사항을 이실장 광고 12건에 적용</p>
+                      <div class="run-line"><span>대상 12건</span><span>자동 실행</span><span>실행 1</span></div>
+                    </div>
+                    <time class="event-time">14:02</time>
+                  </div>
+                  <div class="event">
+                    <span class="event-node amber"></span>
+                    <div class="event-copy">
+                      <strong>최초 실행이 일부 완료됐습니다</strong>
+                      <p>10건 완료 · 1건 외부 응답 불일치 · 1건 본인확인 필요</p>
+                      <div class="run-line"><span>6분 12초</span><span>10/12 완료</span><span>실행 1 종료</span></div>
+                    </div>
+                    <time class="event-time">14:08</time>
+                  </div>
+                </div>
+              </section>
+            </article>
+          </div>
+
+          <aside class="properties" id="properties" aria-label="업무 속성">
+            <div class="properties-header">
+              <h2>업무 속성</h2>
+              <button class="icon-button" id="closeProperties" type="button" aria-label="속성 닫기">
+                <span class="icon"><svg viewBox="0 0 24 24"><path d="m7 7 10 10M17 7 7 17" /></svg></span>
+              </button>
+            </div>
+            <div class="properties-body">
+              <section class="property-section">
+                <div class="property-title">업무</div>
+                <dl>
+                  <div class="property-row"><dt>상태</dt><dd class="warning" id="propertyStatus">확인 필요</dd></div>
+                  <div class="property-row"><dt>채널</dt><dd>이실장</dd></div>
+                  <div class="property-row"><dt>작업</dt><dd>조건 수정 · 재광고</dd></div>
+                  <div class="property-row"><dt>대상</dt><dd><strong>광고 12건</strong></dd></div>
+                  <div class="property-row"><dt>현재 실행</dt><dd id="currentExecution">최초 실행 종료</dd></div>
+                </dl>
+              </section>
+
+              <section class="property-section">
+                <div class="property-title">실행 이력</div>
+                <div class="execution-list" id="executionList">
+                  <div class="execution-item">
+                    <span class="execution-number">1</span>
+                    <div class="execution-copy"><strong>최초 실행</strong><span>12건 · 10 완료 · 2 확인 필요</span></div>
+                  </div>
+                </div>
+              </section>
+
+              <section class="property-section">
+                <div class="property-title">정보</div>
+                <dl>
+                  <div class="property-row"><dt>요청자</dt><dd>이현수</dd></div>
+                  <div class="property-row"><dt>생성</dt><dd>오늘 14:01</dd></div>
+                  <div class="property-row"><dt>수정</dt><dd>4분 전</dd></div>
+                  <div class="property-row"><dt>원본</dt><dd><a href="#">내광고관리 선택 12건</a></dd></div>
+                </dl>
+              </section>
+            </div>
+          </aside>
+        </main>
+      </section>
+    </div>
+
+    <div class="toast" id="toast" role="status" aria-live="polite" aria-hidden="true">
+      <span class="toast-dot"></span>
+      <div><strong>실패한 광고 2건을 다시 실행합니다</strong><span>기존 업무는 유지되고 실행 기록만 한 번 추가됩니다.</span></div>
+    </div>
+
+    <script>
+      const listView = document.querySelector("#listView");
+      const detailView = document.querySelector("#detailView");
+      const breadcrumbs = document.querySelector("#breadcrumbs");
+      const properties = document.querySelector("#properties");
+      const retryButton = document.querySelector("#retryButton");
+      const toast = document.querySelector("#toast");
+
+      function showList() {
+        detailView.hidden = true;
+        listView.hidden = false;
+        breadcrumbs.innerHTML = "<span>자동화</span><span>›</span><strong>자동화 업무</strong>";
+      }
+
+      function showDetail() {
+        listView.hidden = true;
+        detailView.hidden = false;
+        breadcrumbs.innerHTML = '<button type="button" data-back-list style="border:0;background:transparent;padding:0;color:inherit;cursor:pointer">자동화 업무</button><span>›</span><strong>AUTO-104</strong>';
+        breadcrumbs.querySelector("[data-back-list]").addEventListener("click", showList);
+      }
+
+      document.querySelectorAll("[data-open-detail]").forEach((button) => button.addEventListener("click", showDetail));
+      document.querySelectorAll("[data-open-list]").forEach((button) => button.addEventListener("click", showList));
+
+      document.querySelectorAll(".ad-row").forEach((row) => {
+        row.addEventListener("click", () => {
+          const item = row.closest(".ad-item");
+          const expanded = item.classList.toggle("expanded");
+          row.setAttribute("aria-expanded", String(expanded));
+        });
+      });
+
+      document.querySelectorAll("[data-ad-filter]").forEach((button) => {
+        button.addEventListener("click", () => {
+          document.querySelectorAll("[data-ad-filter]").forEach((candidate) => candidate.classList.remove("active"));
+          button.classList.add("active");
+          const filter = button.dataset.adFilter;
+          document.querySelectorAll(".ad-item").forEach((item) => {
+            item.style.display = filter === "all" || item.dataset.adState === filter ? "block" : "none";
+          });
+        });
+      });
+
+      document.querySelector("#closeProperties").addEventListener("click", () => {
+        properties.hidden = true;
+        detailView.classList.add("properties-hidden");
+        const openButton = document.createElement("button");
+        openButton.className = "button ghost";
+        openButton.id = "openProperties";
+        openButton.type = "button";
+        openButton.textContent = "업무 속성";
+        document.querySelector(".issue-actions").prepend(openButton);
+        openButton.addEventListener("click", () => {
+          properties.hidden = false;
+          detailView.classList.remove("properties-hidden");
+          openButton.remove();
+        });
+      });
+
+      retryButton.addEventListener("click", () => {
+        if (retryButton.dataset.started === "true") return;
+        retryButton.dataset.started = "true";
+        retryButton.disabled = true;
+        retryButton.textContent = "재시도 실행 중";
+        document.querySelector("#issueStatusText").textContent = "진행 중";
+        document.querySelector("#issueStatusText").style.color = "var(--blue)";
+        document.querySelector("#issueStatusSymbol").className = "status-symbol running";
+        document.querySelector("#propertyStatus").textContent = "진행 중";
+        document.querySelector("#propertyStatus").style.color = "var(--blue)";
+        document.querySelector("#currentExecution").textContent = "실패 2건 재시도 중";
+
+        const execution = document.createElement("div");
+        execution.className = "execution-item retry-event";
+        execution.innerHTML = '<span class="execution-number">2</span><div class="execution-copy"><strong>실패 광고 재시도</strong><span>실패했던 2건만 다시 실행 중</span></div>';
+        document.querySelector("#executionList").append(execution);
+
+        const event = document.createElement("div");
+        event.className = "event retry-event";
+        event.innerHTML = '<span class="event-node blue"></span><div class="event-copy"><strong>실패한 광고만 다시 실행합니다</strong><p>새 업무를 만들지 않고 AUTO-104 안에서 실패한 2건만 재시도</p><div class="run-line"><span>대상 2건</span><span>재시도 1차</span><span>실행 2</span></div></div><time class="event-time">지금</time>';
+        document.querySelector("#activity").append(event);
+        event.scrollIntoView({ behavior: "smooth", block: "nearest" });
+
+        toast.setAttribute("aria-hidden", "false");
+        toast.classList.add("show");
+        window.setTimeout(() => {
+          toast.classList.remove("show");
+          toast.setAttribute("aria-hidden", "true");
+        }, 3200);
+      });
+    </script>
+  </body>
+</html>

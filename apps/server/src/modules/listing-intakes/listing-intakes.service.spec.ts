@@ -5,12 +5,40 @@ describe('ListingIntakesService', () => {
     const tx = {
       listingIntake: {
         create: jest.fn().mockResolvedValue({ id: 'intake-1' }),
+        findFirst: jest.fn(),
+        aggregate: jest.fn().mockResolvedValue({
+          _max: { casePriorityRank: null },
+        }),
         update: jest.fn().mockResolvedValue({ id: 'intake-1' }),
-        updateMany: jest.fn(),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
+      propertyContact: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            contactId: 'owner-1',
+            role: 'owner',
+            isPrimary: true,
+          },
+        ]),
+      },
+      brokerageCase: {
+        findFirst: jest.fn(),
+        findMany: jest.fn().mockResolvedValue([]),
+        create: jest.fn().mockResolvedValue({ id: 'case-1' }),
+        update: jest.fn().mockResolvedValue({}),
+      },
+      brokerageCaseParticipant: {
+        findMany: jest.fn().mockResolvedValue([]),
+        create: jest.fn().mockResolvedValue({}),
+        update: jest.fn().mockResolvedValue({}),
+      },
+      deal: {
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
       consultation: {
         create: jest.fn().mockResolvedValue({ id: 'consultation-1' }),
       },
+      $executeRaw: jest.fn().mockResolvedValue(0),
     };
     const prisma = {
       listingIntake: {
@@ -136,6 +164,63 @@ describe('ListingIntakesService', () => {
       total: null,
       totalPages: null,
     });
+  });
+
+  it('sorts the full filtered intake set by the displayed listing price', async () => {
+    const { prisma, service } = createService();
+    const candidate = (id: string, price: number, receivedAt: string) => ({
+      id,
+      lifecycleStatus: 'open',
+      receivedAt: new Date(receivedAt),
+      lastCheckedAt: null,
+      lastVerifiedAt: null,
+      memo: null,
+      createdAt: new Date(receivedAt),
+      updatedAt: new Date(receivedAt),
+      property: { site: { name: '고덕그라시움' }, unit: null },
+      listings: [
+        {
+          transactionType: 'sale',
+          price,
+          deposit: null,
+          monthlyRent: null,
+          loanAmount: null,
+          moveInAvailableType: 'immediate',
+          moveInAvailableFrom: null,
+          moveInAvailableTo: null,
+          isPaused: false,
+          updatedAt: new Date(receivedAt),
+          deals: [],
+          _count: { matches: 0 },
+          advertisements: [],
+        },
+      ],
+    });
+
+    prisma.listingIntake.findMany
+      .mockResolvedValueOnce([
+        candidate('expensive', 300000, '2026-08-01T00:00:00.000Z'),
+        candidate('cheap', 100000, '2026-07-01T00:00:00.000Z'),
+      ])
+      // DB의 IN 조회 반환 순서와 무관하게 정렬된 ID 순서를 복원해야 한다.
+      .mockResolvedValueOnce([{ id: 'expensive' }, { id: 'cheap' }]);
+
+    const result = await service.findAll('office-1', {
+      sortBy: 'price',
+      sortOrder: 'asc',
+      limit: 2,
+    });
+
+    expect(result.items.map((item) => item.id)).toEqual([
+      'cheap',
+      'expensive',
+    ]);
+    expect(prisma.listingIntake.findMany).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        where: { id: { in: ['cheap', 'expensive'] } },
+      }),
+    );
   });
 
   it('filters by advertisement presence', async () => {
@@ -480,6 +565,71 @@ describe('ListingIntakesService', () => {
     );
   });
 
+  it('closes an intake and cancels its active Deals in one transaction', async () => {
+    const { service, tx } = createService();
+    tx.listingIntake.findFirst.mockResolvedValue({
+      id: 'intake-1',
+      propertyId: 'property-1',
+      lifecycleStatus: 'open',
+    });
+
+    await service.closeWithActiveDeals(
+      'intake-1',
+      'office-1',
+      '2026-05-20T00:00:00.000Z',
+    );
+
+    expect(tx.listingIntake.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: 'intake-1',
+        officeId: 'office-1',
+        updatedAt: new Date('2026-05-20T00:00:00.000Z'),
+      },
+      data: {
+        lifecycleStatus: 'closed',
+        lifecycleChangedAt: expect.any(Date),
+        lifecycleChangedBy: 'user',
+        closedReason: 'withdrawn',
+      },
+    });
+    expect(tx.deal.updateMany).toHaveBeenCalledWith({
+      where: {
+        officeId: 'office-1',
+        isCancelled: false,
+        stage: {
+          in: ['preparing', 'preContract', 'contracted', 'settling'],
+        },
+        listing: { intakeId: 'intake-1' },
+      },
+      data: {
+        isCancelled: true,
+        cancelledAt: expect.any(Date),
+        cancelledBy: 'office',
+        cancelReason: '매물 종료와 함께 취소 처리',
+      },
+    });
+  });
+
+  it('does not cancel a Deal when the intake version is stale', async () => {
+    const { service, tx } = createService();
+    tx.listingIntake.findFirst.mockResolvedValue({
+      id: 'intake-1',
+      propertyId: 'property-1',
+      lifecycleStatus: 'open',
+    });
+    tx.listingIntake.updateMany.mockResolvedValue({ count: 0 });
+
+    await expect(
+      service.closeWithActiveDeals(
+        'intake-1',
+        'office-1',
+        '2026-05-20T00:00:00.000Z',
+      ),
+    ).rejects.toThrow('다른 사용자가 먼저 수정했습니다.');
+
+    expect(tx.deal.updateMany).not.toHaveBeenCalled();
+  });
+
   it('rejects a confirmation value as a lifecycle status', async () => {
     const { prisma, service } = createService();
     prisma.listingIntake.findFirst.mockResolvedValue({
@@ -654,10 +804,34 @@ describe('ListingIntakesService', () => {
     const tx = {
       listingIntake: {
         create: jest.fn().mockResolvedValue({ id: 'intake-1' }),
+        aggregate: jest.fn().mockResolvedValue({
+          _max: { casePriorityRank: null },
+        }),
       },
       listing: {
         create: jest.fn(),
       },
+      propertyContact: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            contactId: 'owner-1',
+            role: 'owner',
+            isPrimary: true,
+          },
+        ]),
+      },
+      brokerageCase: {
+        findFirst: jest.fn(),
+        findMany: jest.fn().mockResolvedValue([]),
+        create: jest.fn().mockResolvedValue({ id: 'case-1' }),
+        update: jest.fn().mockResolvedValue({}),
+      },
+      brokerageCaseParticipant: {
+        findMany: jest.fn().mockResolvedValue([]),
+        create: jest.fn().mockResolvedValue({}),
+        update: jest.fn().mockResolvedValue({}),
+      },
+      $executeRaw: jest.fn().mockResolvedValue(0),
     };
     prisma.$transaction.mockImplementationOnce(async (fn) => fn(tx));
 

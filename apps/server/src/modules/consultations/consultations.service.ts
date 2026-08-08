@@ -1,4 +1,9 @@
-import { Injectable, NotFoundException, Logger } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
@@ -23,8 +28,16 @@ export interface ConsultationSearchQuery {
   listingIntakeId?: string;
   listingId?: string;
   matchId?: string;
+  buyerIntakeId?: string;
   buyerReqId?: string;
-  context?: 'property' | 'listingIntake' | 'listing' | 'match' | 'buyerRequirement' | 'unlinked';
+  context?:
+    | 'property'
+    | 'listingIntake'
+    | 'listing'
+    | 'match'
+    | 'buyerIntake'
+    | 'buyerRequirement'
+    | 'unlinked';
   outcome?: 'actionRequired' | 'confirmed' | 'held';
   type?: string;
   createdById?: string;
@@ -79,7 +92,17 @@ export class ConsultationsService {
       },
     },
     match: { select: { id: true, stage: true } },
-    buyerRequirement: { select: { id: true, status: true, transactionType: true } },
+    buyerIntake: {
+      select: { id: true, lifecycleStatus: true, receivedAt: true },
+    },
+    buyerRequirement: {
+      select: {
+        id: true,
+        buyerIntakeId: true,
+        status: true,
+        transactionType: true,
+      },
+    },
     createdBy: { select: { id: true, name: true } },
   };
 
@@ -94,6 +117,9 @@ export class ConsultationsService {
     if (query.listingIntakeId) filters.push({ listingIntakeId: query.listingIntakeId });
     if (query.listingId) filters.push({ listingId: query.listingId });
     if (query.matchId) filters.push({ matchId: query.matchId });
+    if (query.buyerIntakeId) {
+      filters.push({ buyerIntakeId: query.buyerIntakeId });
+    }
     if (query.buyerReqId) filters.push({ buyerReqId: query.buyerReqId });
     if (query.type) filters.push({ type: query.type });
     if (query.createdById) filters.push({ createdById: query.createdById });
@@ -117,11 +143,14 @@ export class ConsultationsService {
 
     const q = query.q?.trim();
     if (q) {
+      const canonicalPhone = normalizePhone(q);
       filters.push({
         OR: [
           { content: { contains: q, mode: 'insensitive' } },
           { contact: { name: { contains: q, mode: 'insensitive' } } },
-          { contact: { phones: { some: { normalizedPhone: { contains: normalizePhone(q) } } } } },
+          ...(canonicalPhone
+            ? [{ contact: { phones: { some: { phone: { contains: canonicalPhone } } } } }]
+            : []),
           { property: { site: { name: { contains: q, mode: 'insensitive' } } } },
           { property: { unit: { name: { contains: q, mode: 'insensitive' } } } },
           { property: { unit: { dong: { name: { contains: q, mode: 'insensitive' } } } } },
@@ -160,12 +189,14 @@ export class ConsultationsService {
     if (context === 'listingIntake') return { listingIntakeId: { not: null } };
     if (context === 'listing') return { listingId: { not: null } };
     if (context === 'match') return { matchId: { not: null } };
+    if (context === 'buyerIntake') return { buyerIntakeId: { not: null } };
     if (context === 'buyerRequirement') return { buyerReqId: { not: null } };
     return {
       propertyId: null,
       listingIntakeId: null,
       listingId: null,
       matchId: null,
+      buyerIntakeId: null,
       buyerReqId: null,
     };
   }
@@ -198,20 +229,78 @@ export class ConsultationsService {
     officeId: string,
     userId: string,
     dto: {
-	      contactId: string;
-	      type: string;
-	      purpose?: string;
-	      content: string;
+      contactId: string;
+      type: string;
+      purpose?: string;
+      content: string;
       propertyId?: string;
       listingIntakeId?: string;
       listingId?: string;
       matchId?: string;
+      buyerIntakeId?: string;
       buyerReqId?: string;
       /** 통화 녹음 연결 (통화 → 상담 전환) */
       callRecordingId?: string;
     },
   ) {
-    const { propertyId, listingIntakeId, listingId, matchId, buyerReqId, callRecordingId, ...rest } = dto;
+    const {
+      propertyId,
+      listingIntakeId,
+      listingId,
+      matchId,
+      buyerIntakeId,
+      buyerReqId,
+      callRecordingId,
+      ...rest
+    } = dto;
+
+    const contact = await this.prisma.contact.findFirst({
+      where: { id: dto.contactId, officeId },
+      select: { id: true },
+    });
+    if (!contact) throw new NotFoundException('Contact not found');
+
+    let resolvedBuyerIntakeId = buyerIntakeId || undefined;
+    if (buyerReqId) {
+      const requirement = await this.prisma.buyerRequirement.findFirst({
+        where: { id: buyerReqId, officeId },
+        select: { id: true, buyerIntakeId: true },
+      });
+      if (!requirement) {
+        throw new NotFoundException('BuyerRequirement not found');
+      }
+      if (
+        resolvedBuyerIntakeId &&
+        resolvedBuyerIntakeId !== requirement.buyerIntakeId
+      ) {
+        throw new BadRequestException(
+          'BuyerRequirement가 지정한 BuyerIntake와 일치하지 않습니다.',
+        );
+      }
+      resolvedBuyerIntakeId = requirement.buyerIntakeId;
+    } else if (resolvedBuyerIntakeId) {
+      const intake = await this.prisma.buyerIntake.findFirst({
+        where: { id: resolvedBuyerIntakeId, officeId },
+        select: { id: true },
+      });
+      if (!intake) throw new NotFoundException('BuyerIntake not found');
+    }
+
+    if (resolvedBuyerIntakeId) {
+      const participant = await this.prisma.buyerIntakeContact.findFirst({
+        where: {
+          officeId,
+          buyerIntakeId: resolvedBuyerIntakeId,
+          contactId: dto.contactId,
+        },
+        select: { id: true },
+      });
+      if (!participant) {
+        throw new BadRequestException(
+          '상담 연락처를 BuyerIntake 참여자로 먼저 연결해야 합니다.',
+        );
+      }
+    }
 
     // 통화 녹음 연결 시 같은 사무소 소유인지 확인
     if (callRecordingId) {
@@ -222,20 +311,23 @@ export class ConsultationsService {
       if (!recording) throw new NotFoundException('Recording not found');
     }
 
-    return this.prisma.consultation.create({
-      data: {
-        officeId,
-        createdById: userId,
-        ...rest,
-        propertyId: propertyId || undefined,
-        listingIntakeId: listingIntakeId || undefined,
-        listingId: listingId || undefined,
-        matchId: matchId || undefined,
-        buyerReqId: buyerReqId || undefined,
-        callRecordingId: callRecordingId || undefined,
-      },
-      include: this.defaultInclude,
-    }).then(withPrimaryContactPhone);
+    return this.prisma.consultation
+      .create({
+        data: {
+          officeId,
+          createdById: userId,
+          ...rest,
+          propertyId: propertyId || undefined,
+          listingIntakeId: listingIntakeId || undefined,
+          listingId: listingId || undefined,
+          matchId: matchId || undefined,
+          buyerIntakeId: resolvedBuyerIntakeId,
+          buyerReqId: buyerReqId || undefined,
+          callRecordingId: callRecordingId || undefined,
+        },
+        include: this.defaultInclude,
+      })
+      .then(withPrimaryContactPhone);
   }
 
   async update(
@@ -613,7 +705,10 @@ export class ConsultationsService {
     let contactId = dto.contactId || null;
     if (!contactId && dto.phoneNumber) {
       const contact = await this.prisma.contact.findFirst({
-        where: { officeId, phones: { some: { normalizedPhone: normalizePhone(dto.phoneNumber), isActive: true } } },
+        where: {
+          officeId,
+          phones: { some: { phone: normalizePhone(dto.phoneNumber) } },
+        },
         select: { id: true },
       });
       contactId = contact?.id || null;

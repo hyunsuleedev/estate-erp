@@ -12,29 +12,31 @@ model Contact {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  office                  Office              @relation(fields: [officeId], references: [id])
-  phones                  ContactPhone[]
-  propertyContacts        PropertyContact[]
-  listingIntakesRequested ListingIntake[]
-  buyerRequirements       BuyerRequirement[]
-  consultations           Consultation[]
-  tenants                 Tenant[]
-  tasks                   Task[]
-  calendarEvents          CalendarEvent[]
-  dealsAsBuyer            Deal[]              @relation("DealBuyer")
-  dealsAsSeller           Deal[]              @relation("DealSeller")
-  contractsAsBuyer        Contract[]          @relation("ContractBuyer")
-  contractsAsSeller       Contract[]          @relation("ContractSeller")
-  contractParties         ContractParty[]
-  commissionPayments      CommissionPayment[] @relation("CommissionPayer")
+  office                    Office                     @relation(fields: [officeId], references: [id])
+  phones                    ContactPhone[]
+  propertyContacts          PropertyContact[]
+  buyerIntakeContacts       BuyerIntakeContact[]
+  brokerageCaseParticipants BrokerageCaseParticipant[]
+  consultations             Consultation[]
+  tenants                   Tenant[]
+  tasks                     Task[]
+  calendarEvents            CalendarEvent[]
+  dealsAsBuyer              Deal[]                     @relation("DealBuyer")
+  dealsAsSeller             Deal[]                     @relation("DealSeller")
+  contractsAsBuyer          Contract[]                 @relation("ContractBuyer")
+  contractsAsSeller         Contract[]                 @relation("ContractSeller")
+  contractParties           ContractParty[]
+  commissionPayments        CommissionPayment[]        @relation("CommissionPayer")
   // 통화 녹음
-  callRecordings          CallRecording[]
+  callRecordings            CallRecording[]
   // 통화 이벤트 로그 (CTI)
-  callLogs                CallLog[]
+  callLogs                  CallLog[]
   // ContactRelation 양방향
-  relationsAsMain         ContactRelation[]   @relation("MainContact")
-  relationsAsRelated      ContactRelation[]   @relation("RelatedContact")
+  relationsAsMain           ContactRelation[]          @relation("MainContact")
+  relationsAsRelated        ContactRelation[]          @relation("RelatedContact")
 
+  // office_id를 포함하는 관계 FK가 tenant 경계를 DB에서도 강제할 수 있게 한다.
+  @@unique([officeId, id])
   @@map("contacts")
 }
 
@@ -43,24 +45,24 @@ model Contact {
 // ============================================================
 
 model ContactPhone {
-  id              String   @id @default(uuid()) @db.Uuid
-  officeId        String   @map("office_id") @db.Uuid
-  contactId       String   @map("contact_id") @db.Uuid
-  phone           String
-  normalizedPhone String   @map("normalized_phone")
-  label           String   @default("mobile") // mobile, home, work, office, fax, old, other
-  isPrimary       Boolean  @default(false) @map("is_primary")
-  isActive        Boolean  @default(true) @map("is_active")
-  memo            String?
-  createdAt       DateTime @default(now()) @map("created_at")
-  updatedAt       DateTime @updatedAt @map("updated_at")
+  id        String   @id @default(uuid()) @db.Uuid
+  officeId  String   @map("office_id") @db.Uuid
+  contactId String   @map("contact_id") @db.Uuid
+  /// 숫자만 저장하는 canonical 전화번호. 화면 포맷은 클라이언트가 담당한다.
+  phone     String
+  label     String   @default("mobile") // mobile, home, work, office, fax, other
+  isPrimary Boolean  @default(false) @map("is_primary")
+  memo      String?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   office  Office  @relation(fields: [officeId], references: [id])
   contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
 
-  @@unique([officeId, contactId, normalizedPhone])
-  @@index([officeId, normalizedPhone])
+  // 같은 사무소의 canonical 번호는 정확히 한 ContactPhone만 소유할 수 있다.
+  @@unique([officeId, phone])
   @@index([contactId])
+  // Contact당 대표번호는 최대 한 개. partial unique index는 migration SQL에서 생성한다.
   @@map("contact_phones")
 }
 
@@ -71,19 +73,27 @@ model ContactPhone {
 model ContactRelation {
   id               String   @id @default(uuid()) @db.Uuid
   officeId         String   @map("office_id") @db.Uuid
+  /// 기준 인물.
   contactId        String   @map("contact_id") @db.Uuid
+  /// 상대 인물. relationType은 이 인물이 기준 인물에게 어떤 관계인지 뜻한다.
   relatedContactId String   @map("related_contact_id") @db.Uuid
   relationType     String   @map("relation_type") // parent, spouse, child, sibling, lawyer, tax_agent, other
-  label            String? // 기타일 때 또는 보충 ("큰어머니", "담당 법무사")
+  /// 기준 인물 화면에서 보여줄 보충 라벨 ("큰어머니", "담당 법무사")
+  label            String?
+  /// 상대 인물 화면에서 보여줄 역방향 보충 라벨 ("조카", "의뢰인")
+  inverseLabel     String?  @map("inverse_label")
   memo             String?
   createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
 
   office         Office  @relation(fields: [officeId], references: [id])
   contact        Contact @relation("MainContact", fields: [contactId], references: [id])
   relatedContact Contact @relation("RelatedContact", fields: [relatedContactId], references: [id])
 
-  @@unique([contactId, relatedContactId])
-  @@index([officeId])
+  // 자기 연결 금지, relationType 허용값, 방향을 무시한 Contact 쌍 고유성은
+  // PostgreSQL CHECK / expression unique index로 강제한다 (migration SQL 참조).
+  @@index([contactId, officeId])
+  @@index([relatedContactId, officeId])
   @@map("contact_relations")
 }
 
@@ -99,7 +109,8 @@ model PropertyContact {
   role       String // owner, co_owner, representative, lawyer, tax_agent
   shareRatio Decimal? @map("share_ratio") @db.Decimal // owner/co_owner 지분비율 (%)
   isResident Boolean  @default(false) @map("is_resident")
-  isPrimary  Boolean  @default(false) @map("is_primary") // 주 연락처
+  /// 이 Property에서의 주 연락 창구. Contact 자체의 전역 대표 여부가 아니다.
+  isPrimary  Boolean  @default(false) @map("is_primary")
   status     String   @default("active") // active, transferred, archived
   memo       String?
   createdAt  DateTime @default(now()) @map("created_at")
@@ -112,6 +123,8 @@ model PropertyContact {
   @@unique([contactId, propertyId, role])
   @@index([officeId])
   @@index([propertyId])
+  // 활성 주 연락처는 Property당 최대 한 명. Prisma가 partial unique index를
+  // 표현하지 못하므로 migration SQL에서 DB 제약을 생성한다.
   @@map("property_contacts")
 }
 
@@ -134,9 +147,10 @@ model Tenant {
   createdAt     DateTime  @default(now()) @map("created_at")
   updatedAt     DateTime  @updatedAt @map("updated_at")
 
-  office    Office     @relation(fields: [officeId], references: [id])
-  property  Property   @relation(fields: [propertyId], references: [id])
-  contact   Contact    @relation(fields: [contactId], references: [id])
+  office   Office   @relation(fields: [officeId], references: [id])
+  property Property @relation(fields: [propertyId], references: [id])
+  contact  Contact  @relation(fields: [contactId], references: [id])
+
   @@index([officeId])
   @@index([officeId, status, contractEnd])
   @@index([propertyId])

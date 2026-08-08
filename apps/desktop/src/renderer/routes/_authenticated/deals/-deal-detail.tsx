@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { Contact, Contract, Deal } from '@estate-erp/api-client';
+import { normalizeDealStage } from '@estate-erp/shared';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { formatArea, formatDate, formatMoney, formatPhone, formatRent } from '@/lib/format';
@@ -130,7 +131,10 @@ function DealDetailPanel({
   const participantNames = [
     ...new Set((deal.participants ?? []).map((participant) => participant.user.name)),
   ];
-  const nextStage = getNextDealStage(deal.stage);
+  const currentStage = normalizeDealStage(deal.stage);
+  const nextStage = getNextDealStage(currentStage);
+  const canSkipPreContract = currentStage === 'preparing';
+  const canCreateContract = ['contracted', 'settling', 'completed', 'closed'].includes(currentStage);
   const billed = deal.commissionSummary?.billed ?? 0;
   const [termsOpen, setTermsOpen] = useState(false);
   const [contractOpen, setContractOpen] = useState(false);
@@ -146,7 +150,7 @@ function DealDetailPanel({
     <section className="min-h-full overflow-hidden bg-background">
       <div className="border-b bg-muted/50 px-6 py-5 pr-12">
         <div className="flex flex-wrap items-center gap-1.5">
-          <StatusBadge kind="dealStage" status={deal.stage} />
+          <StatusBadge kind="dealStage" status={currentStage} />
           {transactionType ? <StatusBadge kind="transactionType" status={transactionType} /> : null}
           {deal.isJointBrokerage ? (
             <Badge className="rounded-md bg-violet-soft px-2 py-1 text-[11px] text-violet">공동중개</Badge>
@@ -166,7 +170,7 @@ function DealDetailPanel({
           {billed ? <span className="text-xs text-muted-foreground">예상 수수료 {formatMoney(billed)}</span> : null}
         </div>
 
-        <PipelineSteps kind="dealStage" current={deal.stage} cancelled={deal.isCancelled} className="mt-4" />
+        <PipelineSteps kind="dealStage" current={currentStage} cancelled={deal.isCancelled} className="mt-4" />
 
         {!deal.isCancelled ? (
           <div
@@ -403,9 +407,11 @@ function DealDetailPanel({
             <div className="space-y-2 rounded-md border border-dashed bg-muted/50 px-3 py-3">
               <p className="text-sm text-foreground">아직 계약서가 없습니다.</p>
               <p className="text-xs text-muted-foreground">
-                본계약(계약) 단계로 진입하려면 계약서가 필요합니다.
+                {canCreateContract
+                  ? '중도금/잔금 단계로 진행하기 전에 계약서를 작성해 주세요.'
+                  : '본계약 단계로 이동한 뒤 계약서를 작성할 수 있습니다.'}
               </p>
-              {!deal.isCancelled ? (
+              {canCreateContract && !deal.isCancelled ? (
                 <Button type="button" size="xs" className="w-full" onClick={() => setContractOpen(true)}>
                   <FilePlus2 className="size-3" />
                   계약서 작성
@@ -416,15 +422,27 @@ function DealDetailPanel({
 
           <DealCommissionSection key={deal.id} deal={deal} />
 
-          <div className="flex gap-2 pt-1">
+          <div className="flex flex-wrap gap-2 pt-1">
             {nextStage && !deal.isCancelled ? (
               <Button
                 type="button"
-                className="flex-1"
+                className="min-w-[160px] flex-1"
                 onClick={() => actions.onRequestStage(deal, nextStage)}
                 disabled={actions.isUpdating}
               >
-                다음 단계
+                다음: {getStatusMeta('dealStage', nextStage).label}
+                <ArrowRight className="size-4" />
+              </Button>
+            ) : null}
+            {canSkipPreContract && !deal.isCancelled ? (
+              <Button
+                type="button"
+                variant="outline"
+                className="min-w-[160px] flex-1"
+                onClick={() => actions.onRequestStage(deal, 'contracted')}
+                disabled={actions.isUpdating}
+              >
+                가계약 없이 본계약
                 <ArrowRight className="size-4" />
               </Button>
             ) : null}
@@ -583,7 +601,7 @@ function EditTermsDialog({
   );
 }
 
-/** Deal 컨텍스트에서 계약서 바로 생성 — contracted 단계 진입 가드 해소용 */
+/** 본계약 단계의 Deal 컨텍스트에서 계약서를 바로 생성한다. */
 function CreateContractDialog({
   deal,
   open,
@@ -617,7 +635,7 @@ function CreateContractDialog({
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['contracts'] });
       void queryClient.invalidateQueries({ queryKey: ['deals'] });
-      toast.success('계약서가 생성되었습니다. 이제 본계약 단계로 변경할 수 있습니다.');
+      toast.success('계약서가 생성되었습니다. 이제 중도금/잔금 단계로 진행할 수 있습니다.');
       onOpenChange(false);
     },
     onError: (error) => toast.error(getErrorMessage(error)),
@@ -677,8 +695,8 @@ function getNextActions(stage: string) {
   if (stage === 'cancelled') {
     return ['취소 사유 기록 확인', '수수료 청구 취소/조정 확인', '관련 일정 정리'];
   }
-  if (stage === 'selection' || stage === 'negotiating') {
-    return ['당사자 조건 재확인', '거래가 조율 기록', '가계약 가능 일정 확인'];
+  if (normalizeDealStage(stage) === 'preparing') {
+    return ['최종 합의 조건 확인', '계약 당사자·필요 서류 확인', '가계약 여부와 본계약 일정 결정'];
   }
   if (stage === 'preContract') {
     return ['가계약금 입금 확인', '본계약 일정 확정', '계약 필요 서류 안내'];

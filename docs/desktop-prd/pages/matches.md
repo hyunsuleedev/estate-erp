@@ -106,7 +106,7 @@
 ### 시나리오 B: 고객 반응과 협의 단계 추적
 
 1. 사용자는 `고객 -> 구매조건 -> 매물들` 구조의 구매고객별 뷰 또는 칸반 뷰에서 Match를 확인한다.
-2. 시스템은 같은 고객 아래 여러 BuyerRequirement를 분리해서 보여주고, 각 BuyerRequirement마다 `suggested -> buyerContacted -> viewing -> ownerContacted -> negotiating` 흐름을 추적한다.
+2. 시스템은 같은 고객 아래 여러 BuyerRequirement를 분리해서 보여주고, 각 BuyerRequirement마다 `suggested -> buyerInterested -> viewingConfirmed -> viewing -> negotiating` 흐름을 추적한다.
 3. 사용자는 현재 단계에 따라 다음 단계로 이동하거나 메모를 남긴다.
 4. 완료 조건:
    - 각 Match의 현재 진척도가 명확하고
@@ -164,7 +164,7 @@
     - 각 BuyerRequirement 카드 아래에 해당 조건에 연결된 Match lane 또는 카드 리스트를 배치한다
     - 같은 고객이더라도 서로 다른 요구조건은 절대 한 그룹으로 합치지 않는다
   - `칸반 뷰`
-    - suggested, buyerContacted, viewing, ownerContacted, negotiating 컬럼
+    - suggested, buyerInterested, viewingConfirmed, viewing, negotiating 컬럼
     - dealCreated / closed는 하단 결과 패널
   - `리스트 뷰`
     - 단일 표 형태
@@ -308,9 +308,9 @@
 
 - `Match.stage`
   - `suggested`
-  - `buyerContacted`
+  - `buyerInterested`
+  - `viewingConfirmed`
   - `viewing`
-  - `ownerContacted`
   - `negotiating`
   - `dealCreated`
   - `closed`
@@ -318,24 +318,24 @@
 상태 전이 규칙:
 
 ```text
-suggested -> buyerContacted -> viewing -> ownerContacted -> negotiating -> dealCreated
+suggested -> buyerInterested -> viewingConfirmed -> viewing -> negotiating -> dealCreated
 suggested -> closed
-buyerContacted -> closed
+buyerInterested -> closed
+viewingConfirmed -> closed
 viewing -> closed
-ownerContacted -> closed
 negotiating -> closed
 ```
 
 상태별 UI 차이:
 
 - `suggested`
-  - 추천 단계, 빠른 다음 단계 이동 CTA 제공
-- `buyerContacted`
-  - 고객 반응 대기/관심 확인 상태
+  - 내부 후보 단계. 매물 확인이 유효해야 다음 단계로 이동 가능
+- `buyerInterested`
+  - 고객 관심을 확인한 상태
+- `viewingConfirmed`
+  - 집주인·점유자에게 임장 가능 여부를 확인한 상태
 - `viewing`
   - 방문/임장 관련 follow-up 강조
-- `ownerContacted`
-  - 매도측/소유자 컨택이 이뤄진 상태
 - `negotiating`
   - 가격/조건 협의 강조
 - `dealCreated`
@@ -410,7 +410,7 @@ negotiating -> closed
   - desktop UI 작업은 `actor=user`
   - 향후 MCP가 Match를 만들거나 stage를 바꾸면 source 분리
 - 중요 감사 이벤트:
-  - `buyerContacted`, `viewing`, `negotiating`, `dealCreated`, `closed` 전환
+  - `buyerInterested`, `viewingConfirmed`, `viewing`, `negotiating`, `dealCreated`, `closed` 전환
 
 ## 15. 비기능 요구사항
 
@@ -469,7 +469,7 @@ negotiating -> closed
 - 사용자는 이 페이지에서 `구매고객과 매물을 연결한 뒤 진행 단계를 추적`할 수 있어야 한다.
 - 사용자는 `구매고객별`, `칸반`, `리스트` 세 가지 뷰로 같은 Match 데이터를 볼 수 있어야 한다.
 - `구매고객별` 뷰에서는 한 고객 아래 여러 구매조건이 분리되어 보여야 하고, 각 구매조건 아래에 해당 매물들이 연결돼 보여야 한다.
-- Match는 `suggested -> buyerContacted -> viewing -> ownerContacted -> negotiating -> dealCreated -> closed` 흐름으로 관리되어야 한다.
+- Match는 `suggested -> buyerInterested -> viewingConfirmed -> viewing -> negotiating -> dealCreated -> closed` 흐름으로 관리되어야 한다.
 - 목록/카드/레인에서는 최소 `고객, 연락처, 매물, 가격, 조건 요약, 현재 단계`를 빠르게 파악할 수 있어야 한다.
 - Match는 `더블클릭`으로 상세를 열 수 있어야 한다.
 - 거래 전환은 장기적으로 실제 Deal 생성과 논리적으로 연결되어야 한다.

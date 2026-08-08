@@ -7,6 +7,10 @@ describe('OfficesService', () => {
       user: {
         findUnique: jest.fn(),
       },
+      office: {
+        findUnique: jest.fn(),
+        update: jest.fn(),
+      },
       $transaction: jest.fn(),
     };
 
@@ -32,6 +36,7 @@ describe('OfficesService', () => {
       ceoName: '홍길동',
       phone: null,
       address: null,
+      naverVerificationId: null,
       subscription: 'basic',
       maxUsers: 3,
       isActive: true,
@@ -84,5 +89,56 @@ describe('OfficesService', () => {
     await expect(
       service.createForCurrentUser('user-1', { name: '새 사무소' }),
     ).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('updates the office-wide Naver advertisement verification ID', async () => {
+    const { prisma, service } = createService();
+    const updatedAt = new Date('2026-07-31T14:30:00.000Z');
+    const office = {
+      id: 'office-1',
+      name: '강남공인중개사',
+      licenseNo: null,
+      ceoName: '홍길동',
+      phone: null,
+      address: null,
+      naverVerificationId: null,
+      subscription: 'basic',
+      maxUsers: 3,
+      isActive: true,
+      commissionConfig: null,
+      createdAt: updatedAt,
+      updatedAt,
+      users: [
+        {
+          id: 'user-1',
+          name: '홍길동',
+          email: 'owner@example.com',
+          phone: null,
+          role: 'owner',
+          licenseType: 'broker_owner',
+          isActive: true,
+        },
+      ],
+    };
+    prisma.office.findUnique.mockResolvedValue(office);
+    prisma.office.update.mockResolvedValue({
+      ...office,
+      naverVerificationId: 'naver-agent-id',
+    });
+
+    await expect(
+      service.updateMe('office-1', {
+        naverVerificationId: 'naver-agent-id',
+      }),
+    ).resolves.toMatchObject({
+      id: 'office-1',
+      naverVerificationId: 'naver-agent-id',
+    });
+    expect(prisma.office.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'office-1' },
+        data: { naverVerificationId: 'naver-agent-id' },
+      }),
+    );
   });
 });

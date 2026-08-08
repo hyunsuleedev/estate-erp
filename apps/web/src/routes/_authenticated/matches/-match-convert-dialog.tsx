@@ -4,6 +4,7 @@ import { useNavigate } from '@tanstack/react-router';
 import { Info } from 'lucide-react';
 import { toast } from 'sonner';
 import type { Match } from '@estate-erp/api-client';
+import { MatchStage } from '@estate-erp/shared';
 import {
   formatMatchPrice,
   getActiveDealLink,
@@ -96,13 +97,13 @@ export function MatchConvertDialog({
         });
       }
 
-      await api.matches.updateStage(match.id, { stage: 'dealCreated' });
+      await api.matches.updateStage(match.id, { stage: MatchStage.DEAL_CREATED });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['matches'] });
       queryClient.invalidateQueries({ queryKey: ['deals'] });
       onOpenChange(false);
-      toast.success(activeDeal ? '거래 전환 단계로 변경했습니다' : '거래가 생성되었습니다', {
+      toast.success(activeDeal ? '거래 전환 단계로 변경했습니다' : '계약 준비 거래가 생성되었습니다', {
         action: {
           label: '거래 보기',
           onClick: () => navigate({ to: '/deals' }),
@@ -128,7 +129,7 @@ export function MatchConvertDialog({
               <DialogDescription>
                 {activeDeal
                   ? '이미 연결된 거래가 있어 매칭 단계만 거래 전환으로 변경합니다.'
-                  : '매칭을 거래 전환하면 거래(Deal)가 함께 생성되어 계약/수수료 관리로 이어집니다.'}
+                  : '매칭을 거래 전환하면 계약 준비 단계의 거래가 생성되어 계약·대금·수수료 관리로 이어집니다.'}
               </DialogDescription>
             </DialogHeader>
 

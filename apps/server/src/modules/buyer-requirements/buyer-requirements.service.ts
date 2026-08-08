@@ -1,15 +1,23 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
-import {
-  contactPhonesIncludeOrdered,
-  normalizePhone,
-  withPrimaryContactPhone,
-} from '../contacts/contact-phone.utils';
+import { normalizePhone } from '../contacts/contact-phone.utils';
 import {
   LISTING_INTAKE_STATE_SELECT,
   OCCUPYING_DEALS_SELECT,
 } from '../listings/listing-state';
+import {
+  buyerIntakeContactsInclude,
+  withBuyerRequirementContact,
+} from './buyer-requirement.presenter';
+import {
+  buyerCaseParticipants,
+  resolveBrokerageCaseForIntake,
+} from '../brokerage-cases/brokerage-case.resolver';
 
 export interface BuyerRequirementSearchQuery {
   // Multi-value filters (comma-separated or arrays). Single string is treated
@@ -18,6 +26,7 @@ export interface BuyerRequirementSearchQuery {
   urgency?: string | string[];
   transactionType?: string | string[];
   siteTypes?: string | string[];
+  buyerIntakeId?: string;
   contactId?: string;
   assignedToId?: string | string[];
   // Preferred Site filter: list of site UUIDs. Matches buyers with any of them.
@@ -36,6 +45,7 @@ export interface BuyerRequirementSearchQuery {
   priceMax?: number;
   depositMin?: number;
   depositMax?: number;
+  monthlyRentMin?: number;
   monthlyRentMax?: number;
   areaMin?: number;
   areaMax?: number;
@@ -52,11 +62,16 @@ export interface BuyerRequirementSearchQuery {
   limit?: number;
 }
 
+const BUYER_REQUIREMENT_STATUSES = new Set(['active', 'hold', 'completed']);
+
 function toArray(value: string | string[] | undefined): string[] | undefined {
   if (value === undefined || value === null || value === '') return undefined;
   const arr = Array.isArray(value)
     ? value
-    : value.split(',').map((v) => v.trim()).filter(Boolean);
+    : value
+        .split(',')
+        .map((v) => v.trim())
+        .filter(Boolean);
   return arr.length > 0 ? arr : undefined;
 }
 
@@ -111,7 +126,12 @@ export class BuyerRequirementsService {
       });
     }
 
-    if (query.contactId) where.contactId = query.contactId;
+    if (query.buyerIntakeId) where.buyerIntakeId = query.buyerIntakeId;
+    if (query.contactId) {
+      where.buyerIntake = {
+        contacts: { some: { contactId: query.contactId } },
+      };
+    }
 
     // ── Range filters: overlap semantics ────────────────────────
     // Filter [F.min, F.max] overlaps Buyer [priceMin, priceMax] when:
@@ -138,15 +158,13 @@ export class BuyerRequirementsService {
 
     addOverlap('priceMin', 'priceMax', query.priceMin, query.priceMax);
     addOverlap('depositMin', 'depositMax', query.depositMin, query.depositMax);
+    addOverlap(
+      'monthlyRentMin',
+      'monthlyRentMax',
+      query.monthlyRentMin,
+      query.monthlyRentMax,
+    );
     addOverlap('areaMin', 'areaMax', query.areaMin, query.areaMax);
-
-    // monthlyRentMax: single upper-bound field, not a range. Interpret as
-    // "show buyers whose acceptable monthly rent is at least this much".
-    if (query.monthlyRentMax !== undefined) {
-      AND.push({
-        OR: [{ monthlyRentMax: null }, { monthlyRentMax: { gte: query.monthlyRentMax } }],
-      });
-    }
 
     // ── Date ranges ─────────────────────────────────────────────
     if (query.nextContactAfter || query.nextContactBefore) {
@@ -165,13 +183,41 @@ export class BuyerRequirementsService {
     // ── Free-text search ────────────────────────────────────────
     if (query.search && query.search.trim()) {
       const q = query.search.trim();
-      const normalized = normalizePhone(q);
+      const canonicalPhone = normalizePhone(q);
       AND.push({
         OR: [
-          { contact: { name: { contains: q, mode: 'insensitive' } } },
-          { contact: { phones: { some: { normalizedPhone: { contains: normalized } } } } },
+          {
+            buyerIntake: {
+              contacts: {
+                some: {
+                  contact: { name: { contains: q, mode: 'insensitive' } },
+                },
+              },
+            },
+          },
+          ...(canonicalPhone
+            ? [{
+                buyerIntake: {
+                  contacts: {
+                    some: {
+                      contact: {
+                        phones: {
+                          some: {
+                            phone: { contains: canonicalPhone },
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
+              }]
+            : []),
           { memo: { contains: q, mode: 'insensitive' } },
-          { preferredSites: { some: { site: { name: { contains: q, mode: 'insensitive' } } } } },
+          {
+            preferredSites: {
+              some: { site: { name: { contains: q, mode: 'insensitive' } } },
+            },
+          },
         ],
       });
     }
@@ -188,7 +234,7 @@ export class BuyerRequirementsService {
       this.prisma.buyerRequirement.findMany({
         where,
         include: {
-          contact: { include: { phones: contactPhonesIncludeOrdered } },
+          buyerIntake: { include: { contacts: buyerIntakeContactsInclude } },
           assignedTo: { select: { id: true, name: true } },
           preferredSites: {
             include: {
@@ -213,7 +259,7 @@ export class BuyerRequirementsService {
     ]);
 
     return {
-      items: items.map(withPrimaryContactPhone),
+      items: items.map(withBuyerRequirementContact),
       pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
     };
   }
@@ -222,7 +268,7 @@ export class BuyerRequirementsService {
     const req = await this.prisma.buyerRequirement.findFirst({
       where: { id, officeId },
       include: {
-        contact: true,
+        buyerIntake: { include: { contacts: buyerIntakeContactsInclude } },
         assignedTo: { select: { id: true, name: true } },
         matches: {
           include: {
@@ -246,24 +292,25 @@ export class BuyerRequirementsService {
       },
     });
     if (!req) throw new NotFoundException('BuyerRequirement not found');
-    return req;
+    return withBuyerRequirementContact(req);
   }
 
   async create(
     officeId: string,
     dto: {
-      contactId: string;
+      buyerIntakeId?: string;
+      contactId?: string;
+      priorityRank?: number;
       transactionType?: string;
       siteTypes?: string[];
       priceMin?: number;
       priceMax?: number;
       depositMin?: number;
       depositMax?: number;
+      monthlyRentMin?: number;
       monthlyRentMax?: number;
       areaMin?: number;
       areaMax?: number;
-      mustConditions?: string[];
-      preferConditions?: string[];
       moveInDate?: string;
       urgency?: string;
       assignedToId?: string;
@@ -277,25 +324,146 @@ export class BuyerRequirementsService {
       }[];
     },
   ) {
-    const { moveInDate, nextContactDate, preferredSites, preferredRegions, ...rest } = dto;
-    return this.prisma.buyerRequirement.create({
-      data: {
-        officeId,
-        ...rest,
-        moveInDate: moveInDate ? new Date(moveInDate) : undefined,
-        nextContactDate: nextContactDate ? new Date(nextContactDate) : undefined,
-        preferredSites: preferredSites?.length
-          ? { create: preferredSites }
-          : undefined,
-        preferredRegions: preferredRegions?.length
-          ? { create: preferredRegions }
-          : undefined,
-      },
-      include: {
-        contact: true,
-        preferredSites: { include: { site: { select: { id: true, name: true, type: true } } } },
-        preferredRegions: { include: { province: true, district: true, ward: true } },
-      },
+    const {
+      buyerIntakeId,
+      contactId,
+      priorityRank,
+      moveInDate,
+      nextContactDate,
+      preferredSites,
+      preferredRegions,
+      ...rest
+    } = dto;
+    if (!buyerIntakeId && !contactId) {
+      throw new BadRequestException(
+        'buyerIntakeId 또는 기존 호환용 contactId가 필요합니다.',
+      );
+    }
+    if (priorityRank !== undefined && priorityRank < 1) {
+      throw new BadRequestException('priorityRank는 1 이상이어야 합니다.');
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      let intake = buyerIntakeId
+        ? await tx.buyerIntake.findFirst({
+            where: { id: buyerIntakeId, officeId },
+            include: { contacts: true },
+          })
+        : null;
+
+      if (buyerIntakeId && !intake) {
+        throw new NotFoundException('BuyerIntake not found');
+      }
+      if (
+        intake &&
+        contactId &&
+        !intake.contacts.some((contact) => contact.contactId === contactId)
+      ) {
+        throw new BadRequestException(
+          '선택한 연락처가 해당 구매 의뢰에 참여하고 있지 않습니다.',
+        );
+      }
+
+      if (!intake && contactId) {
+        const contact = await tx.contact.findFirst({
+          where: { id: contactId, officeId },
+          select: { id: true },
+        });
+        if (!contact) throw new NotFoundException('Contact not found');
+
+        // 구버전 UI의 contactId 기반 등록은 그 연락처가 실제 구매자로 참여한
+        // 가장 최근 열린 Intake를 재사용한다. 새 UI는 buyerIntakeId를 명시한다.
+        intake = await tx.buyerIntake.findFirst({
+          where: {
+            officeId,
+            lifecycleStatus: 'open',
+            contacts: {
+              some: {
+                contactId,
+                role: { in: ['buyer', 'co_buyer'] },
+              },
+            },
+          },
+          include: { contacts: true },
+          orderBy: { updatedAt: 'desc' },
+        });
+
+        if (!intake) {
+          const contacts = [
+            { contactId, role: 'buyer', isPrimary: true },
+          ];
+          const resolvedCase = await resolveBrokerageCaseForIntake(tx, {
+            officeId,
+            intakeKind: 'buyer',
+            participants: buyerCaseParticipants(contacts),
+          });
+          intake = await tx.buyerIntake.create({
+            data: {
+              officeId,
+              ...resolvedCase,
+              contacts: {
+                create: {
+                  role: 'buyer',
+                  isPrimary: true,
+                  office: { connect: { id: officeId } },
+                  contact: {
+                    connect: {
+                      officeId_id: { officeId, id: contactId },
+                    },
+                  },
+                },
+              },
+            },
+            include: { contacts: true },
+          });
+        }
+      }
+
+      if (!intake) {
+        throw new BadRequestException('구매 의뢰를 확인할 수 없습니다.');
+      }
+
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`buyer-intake:${intake.id}`}::text, 0))`;
+      const lastRequirement = await tx.buyerRequirement.findFirst({
+        where: { buyerIntakeId: intake.id },
+        orderBy: [{ priorityRank: 'desc' }, { createdAt: 'desc' }],
+        select: { priorityRank: true },
+      });
+      const resolvedPriorityRank =
+        priorityRank ?? (lastRequirement?.priorityRank ?? 0) + 1;
+
+      const requirement = await tx.buyerRequirement.create({
+        data: {
+          officeId,
+          buyerIntakeId: intake.id,
+          priorityRank: resolvedPriorityRank,
+          ...rest,
+          moveInDate: moveInDate ? new Date(moveInDate) : undefined,
+          nextContactDate: nextContactDate
+            ? new Date(nextContactDate)
+            : undefined,
+          preferredSites: preferredSites?.length
+            ? { create: preferredSites }
+            : undefined,
+          preferredRegions: preferredRegions?.length
+            ? { create: preferredRegions }
+            : undefined,
+        },
+        include: {
+          buyerIntake: {
+            include: { contacts: buyerIntakeContactsInclude },
+          },
+          preferredSites: {
+            include: {
+              site: { select: { id: true, name: true, type: true } },
+            },
+          },
+          preferredRegions: {
+            include: { province: true, district: true, ward: true },
+          },
+        },
+      });
+      return withBuyerRequirementContact(requirement);
     });
   }
 
@@ -303,17 +471,17 @@ export class BuyerRequirementsService {
     id: string,
     officeId: string,
     dto: {
+      priorityRank?: number;
       transactionType?: string;
       siteTypes?: string[];
       priceMin?: number;
       priceMax?: number;
       depositMin?: number;
       depositMax?: number;
+      monthlyRentMin?: number;
       monthlyRentMax?: number;
       areaMin?: number;
       areaMax?: number;
-      mustConditions?: string[];
-      preferConditions?: string[];
       moveInDate?: string;
       urgency?: string;
       assignedToId?: string;
@@ -329,14 +497,21 @@ export class BuyerRequirementsService {
     },
   ) {
     await this.findOne(id, officeId);
+    if (dto.priorityRank !== undefined && dto.priorityRank < 1) {
+      throw new BadRequestException('priorityRank는 1 이상이어야 합니다.');
+    }
     const { preferredSites, preferredRegions, ...rest } = dto;
-    return this.prisma.buyerRequirement.update({
+    const requirement = await this.prisma.buyerRequirement.update({
       where: { id },
       data: {
         ...rest,
         moveInDate: rest.moveInDate ? new Date(rest.moveInDate) : undefined,
-        lastContactDate: rest.lastContactDate ? new Date(rest.lastContactDate) : undefined,
-        nextContactDate: rest.nextContactDate ? new Date(rest.nextContactDate) : undefined,
+        lastContactDate: rest.lastContactDate
+          ? new Date(rest.lastContactDate)
+          : undefined,
+        nextContactDate: rest.nextContactDate
+          ? new Date(rest.nextContactDate)
+          : undefined,
         // Replace-all semantics for nested sets on update
         preferredSites: preferredSites
           ? { deleteMany: {}, create: preferredSites }
@@ -346,24 +521,48 @@ export class BuyerRequirementsService {
           : undefined,
       },
       include: {
-        contact: true,
-        preferredSites: { include: { site: { select: { id: true, name: true, type: true } } } },
-        preferredRegions: { include: { province: true, district: true, ward: true } },
+        buyerIntake: { include: { contacts: buyerIntakeContactsInclude } },
+        preferredSites: {
+          include: { site: { select: { id: true, name: true, type: true } } },
+        },
+        preferredRegions: {
+          include: { province: true, district: true, ward: true },
+        },
       },
     });
+    return withBuyerRequirementContact(requirement);
   }
 
   async updateStatus(id: string, officeId: string, status: string) {
+    if (!BUYER_REQUIREMENT_STATUSES.has(status)) {
+      throw new BadRequestException(
+        '구매고객 상태는 active, hold, completed 중 하나여야 합니다.',
+      );
+    }
     await this.findOne(id, officeId);
-    return this.prisma.buyerRequirement.update({
+    const requirement = await this.prisma.buyerRequirement.update({
       where: { id },
       data: { status },
+      include: {
+        buyerIntake: { include: { contacts: buyerIntakeContactsInclude } },
+      },
     });
+    return withBuyerRequirementContact(requirement);
   }
 
   async remove(id: string, officeId: string) {
     await this.findOne(id, officeId);
-    return this.prisma.buyerRequirement.delete({ where: { id } });
+    return this.prisma.$transaction(async (tx) => {
+      // A consultation belongs to the buyer project even when one detailed
+      // requirement is removed. Keep the intake context and detach only the
+      // requirement-level context before deleting it.
+      await tx.consultation.updateMany({
+        where: { officeId, buyerReqId: id },
+        data: { buyerReqId: null },
+      });
+
+      return tx.buyerRequirement.delete({ where: { id } });
+    });
   }
 
   async findDueContacts(officeId: string) {
@@ -375,11 +574,11 @@ export class BuyerRequirementsService {
         nextContactDate: { lte: now },
       },
       include: {
-        contact: { include: { phones: contactPhonesIncludeOrdered } },
+        buyerIntake: { include: { contacts: buyerIntakeContactsInclude } },
         assignedTo: { select: { id: true, name: true } },
       },
       orderBy: { nextContactDate: 'asc' },
     });
-    return items.map(withPrimaryContactPhone);
+    return items.map(withBuyerRequirementContact);
   }
 }

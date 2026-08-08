@@ -17,7 +17,6 @@ import {
   Network,
   Wrench,
   Home,
-  Inbox,
   type LucideIcon,
 } from "lucide-react";
 import type { TabKind } from "@estate-erp/shared";
@@ -43,6 +42,7 @@ const STATIC_ROUTES: Record<string, RouteMeta> = {
     icon: Building,
   },
   "/contacts": { title: "연락처", kind: "contact", icon: BookUser },
+  "/customers": { title: "고객 원장", kind: "contact", icon: Users },
   "/contacts/new": { title: "연락처 추가", kind: "contact", icon: BookUser },
   "/partner-brokers": {
     title: "파트너 중개사",
@@ -64,7 +64,6 @@ const STATIC_ROUTES: Record<string, RouteMeta> = {
     icon: UserSearch,
   },
   "/tasks": { title: "업무", kind: "task", icon: ListTodo },
-  "/ai-requests": { title: "AI 요청함", kind: "generic", icon: Inbox },
   "/calendar": { title: "캘린더", kind: "calendar", icon: CalendarDays },
   "/sites": { title: "관리단지", kind: "site", icon: MapIcon },
   "/contracts": { title: "계약서 관리", kind: "contract", icon: FileText },

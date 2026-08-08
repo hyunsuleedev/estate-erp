@@ -1,43 +1,40 @@
-# Execution policy
+# Local execution policy
 
-## Computer-use-v1 contract
+## Authority
 
-- Input: approved `AgentActionRequest`.
-- Human authority: assigned reviewer, owner, or manager.
-- Runtime: visible local agent-browser or Orca computer-use session.
-- Effect: performed only after a human approved the exact content hash.
-- Receipt: operation key, article number, observation timestamp, persisted
-  active/price/deposit/monthly-rent state, and optional non-secret artifact ref.
-- Completion: the reloaded Esiljang state must match the approved desired state.
+Input is a claimed Estate ERP advertisement Task plus an exact local plan. The
+human authority is the user's confirmation in the current conversation. A Task
+title alone does not authorize unspecified provider effects.
 
-## Browser execution contract
+## Runtime and progress
 
-- Provider cookie/profile remains local and is never copied into Estate ERP.
-- Use the account already selected in the visible browser.
-- Use one permanent operation key per external effect.
-- Approval binds capability, target, exact final values, evidence, expiry, and
-  content hash.
-- A lost acknowledgement is not permission to replay. Read provider state first
-  and report `outcome_unknown` when certainty cannot be restored.
-- Verification reloads and reads the same Esiljang record after saving; Naver is
-  not queried again for completion.
+- Runtime is a visible local agent-browser or Orca computer-use session.
+- Detailed progress is stored only by `estate-erp-ad-task-runner` in local
+  SQLite. Estate ERP stores only the ordinary Task and verified business data.
+- One stable operation key is used per external effect.
+- A failed later republish step does not erase a verified earlier terms save.
+  Recovery starts at the first locally non-succeeded step after re-reading the
+  provider.
 
-## Queue boundary
+## Completion
 
-- `AgentActionRequest` owns review, execution, and verification.
-- `Task` owns only exceptional human follow-up.
-- Approval, rejection, successful execution, and matched verification never
-  mutate a Task.
-- `report_agent_action_blocker` and execution mismatch are the only MVP paths
-  that create `escalationTaskId`.
+Completion requires a provider reload showing the same article and exact
+confirmed state. A non-secret receipt is returned to the task runner, which
+performs a complete CP read/import before marking the Task completed.
+
+## Lost acknowledgement
+
+A lost acknowledgement is not permission to replay. Read provider state first.
+If certainty cannot be restored, return `outcome_unknown` and keep the ERP Task
+in progress for explicit recovery.
 
 ## Test matrix
 
-- wrong office/account/capability/target rejected;
-- hash or skill version mismatch rejected;
-- duplicate operation key has no second effect;
-- target/current-state drift produces a blocker without a write;
+- wrong account or target causes no write;
+- local active-run uniqueness prevents duplicate execution;
+- current-state drift causes no write;
+- modify-only, republish-only, and combined plans run only applicable steps;
 - lost acknowledgement resolves by read without replay;
-- challenge/layout mismatch performs no write and creates one escalation Task;
-- screenshots and logs contain no secrets;
-- user takeover and disconnect leave a recoverable AgentActionRequest.
+- challenge/layout mismatch stores no secret and returns a blocker;
+- final success requires reloaded provider state, not a toast;
+- user takeover leaves a locally resumable run and an ordinary ERP Task.

@@ -6,8 +6,8 @@ export interface OfficeSite {
   officeId: string;
   siteId: string;
   memo: string | null;
+  isFavorite: boolean;
   createdAt: string;
-  updatedAt: string;
   site?: Site;
 }
 
@@ -19,10 +19,10 @@ export function createOfficeSitesApi(request: RequestFn) {
     searchCentral: (q: string) =>
       request<Site[]>('/office-sites/search', { params: { q } }),
 
-    add: (dto: { siteId: string; memo?: string }) =>
+    add: (dto: { siteId: string; memo?: string; isFavorite?: boolean }) =>
       request<OfficeSite>('/office-sites', { method: 'POST', body: dto }),
 
-    update: (id: string, dto: { memo?: string | null }) =>
+    update: (id: string, dto: { memo?: string | null; isFavorite?: boolean }) =>
       request<OfficeSite>(`/office-sites/${id}`, { method: 'PATCH', body: dto }),
 
     remove: (id: string) =>

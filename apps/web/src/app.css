@@ -48,6 +48,7 @@
   --color-info-strong: #1b64b1;
   /* warning-soft 틴트 배경 위 소형 텍스트 AA(4.5:1) 확보용 진한 앰버 */
   --color-warning-strong: #8a5a13;
+  --color-muted-foreground-strong: #6f6d6a;
   --color-neutral-strong: #37352f;
   --color-neutral-soft: #f1f1ef;
   --color-card: #ffffff;
@@ -262,20 +263,20 @@ body {
   color: #757575;
 }
 
-/* FullCalendar — 기존 shadcn/Notion 톤과 Google Calendar형 시간 그리드 정렬 */
+/* Calendar workspace — warm paper surfaces, quiet grid, color only for meaning. */
 .estate-full-calendar {
   --fc-page-bg-color: var(--color-background);
   --fc-neutral-bg-color: var(--color-muted);
   --fc-neutral-text-color: var(--color-muted-foreground);
   --fc-border-color: var(--color-border);
-  --fc-today-bg-color: color-mix(in srgb, var(--color-info-soft) 36%, transparent);
+  --fc-today-bg-color: color-mix(in srgb, var(--color-secondary) 62%, transparent);
   --fc-now-indicator-color: var(--color-destructive);
-  --fc-highlight-color: color-mix(in srgb, var(--color-info-soft) 64%, transparent);
+  --fc-highlight-color: color-mix(in srgb, var(--color-secondary) 82%, transparent);
   --fc-non-business-color: color-mix(in srgb, var(--color-muted) 64%, transparent);
   --fc-more-link-bg-color: var(--color-secondary);
   --fc-more-link-text-color: var(--color-muted-foreground);
   color: var(--color-foreground);
-  font-size: 12.5px;
+  font-size: 12px;
 }
 
 .estate-full-calendar .fc-scrollgrid {
@@ -283,43 +284,53 @@ body {
 }
 
 .estate-full-calendar .fc-col-header-cell {
-  background: color-mix(in srgb, var(--color-muted) 72%, var(--color-background));
+  background: color-mix(in srgb, var(--color-muted) 42%, var(--color-background));
 }
 
 .estate-full-calendar .fc-col-header-cell-cushion {
-  padding: 10px 6px;
+  padding: 8px 6px;
   color: var(--color-muted-foreground);
   font-size: 11px;
-  font-weight: 650;
-  letter-spacing: 0.025em;
+  font-weight: 500;
+  letter-spacing: 0;
 }
 
 .estate-full-calendar .fc-daygrid-day-frame {
-  min-height: 124px;
+  min-height: 112px;
+}
+
+.estate-full-calendar .fc-daygrid-day {
+  transition: background-color 120ms ease;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .estate-full-calendar .fc-daygrid-day:not(.estate-calendar-selected-day):hover {
+    background: color-mix(in srgb, var(--color-muted) 34%, transparent);
+  }
 }
 
 .estate-full-calendar .fc-daygrid-day-number {
   display: inline-flex;
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
   align-items: center;
   justify-content: center;
-  margin: 4px;
+  margin: 5px 6px;
   padding: 0;
   border-radius: 9999px;
   color: var(--color-foreground);
   font-size: 12px;
-  font-weight: 650;
+  font-weight: 600;
 }
 
 .estate-full-calendar .fc-day-today .fc-daygrid-day-number {
-  background: var(--color-primary);
-  color: var(--color-primary-foreground);
+  background: var(--color-foreground);
+  color: var(--color-background);
 }
 
 .estate-full-calendar .estate-calendar-selected-day {
-  background: color-mix(in srgb, var(--color-info-soft) 46%, transparent);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-info) 24%, transparent);
+  background: color-mix(in srgb, var(--color-secondary) 64%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-foreground) 10%, transparent);
 }
 
 .estate-full-calendar .fc-day-other .fc-daygrid-day-number {
@@ -327,16 +338,24 @@ body {
 }
 
 .estate-full-calendar .fc-event {
-  border-radius: 6px;
+  border-width: 0 0 0 2px;
+  border-radius: 5px;
   padding: 2px 3px;
-  box-shadow: 0 1px 1px rgb(55 53 47 / 5%);
+  box-shadow: none;
+  transition: filter 120ms ease;
 }
 
 .estate-full-calendar .fc-event:hover {
-  filter: saturate(1.08) brightness(0.98);
+  filter: brightness(0.97);
+}
+
+.estate-full-calendar .fc-event:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--color-ring) 58%, transparent);
+  outline-offset: 1px;
 }
 
 .estate-full-calendar .estate-calendar-overlay-event {
+  border-width: 1px;
   border-style: dashed;
   box-shadow: none;
 }
@@ -344,13 +363,13 @@ body {
 .estate-full-calendar .fc-daygrid-more-link {
   margin: 2px 4px;
   padding: 3px 6px;
-  border-radius: 6px;
+  border-radius: 5px;
   font-size: 11px;
   font-weight: 600;
 }
 
 .estate-full-calendar .fc-timegrid-slot {
-  height: 2.65rem;
+  height: 2.5rem;
 }
 
 .estate-full-calendar .fc-timegrid-slot-label-cushion,
@@ -362,7 +381,7 @@ body {
 
 .estate-full-calendar .fc-timegrid-event {
   min-height: 24px;
-  border-left-width: 3px;
+  border-left-width: 2px;
   padding: 3px 4px;
 }
 

@@ -69,7 +69,12 @@ export interface CtiLookupProperty {
 export interface CtiLookupResult {
   phone: string;
   isNew: boolean;
-  contact: { id: string; name: string; tags: string[]; memo: string | null } | null;
+  contact: {
+    id: string;
+    name: string;
+    tags: string[];
+    memo: string | null;
+  } | null;
   vendorContacts: CtiLookupVendorContact[];
   recentConsultations: Array<{
     id: string;
@@ -86,6 +91,7 @@ export interface CtiLookupResult {
     priceMax: number | null;
     depositMin: number | null;
     depositMax: number | null;
+    monthlyRentMin: number | null;
     monthlyRentMax: number | null;
     urgency: string;
   } | null;

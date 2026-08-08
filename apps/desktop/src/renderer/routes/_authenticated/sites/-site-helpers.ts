@@ -64,6 +64,11 @@ export function extractRegionFromSite(site: {
 
 export type SiteGroupMode = 'none' | 'region' | 'type';
 
+export interface OfficeSiteFacetFilters {
+  regions?: string[];
+  types?: string[];
+}
+
 function compactSiteSearchText(value: string): string {
   return value.toLocaleLowerCase('ko-KR').replace(/[^\p{L}\p{N}]+/gu, '');
 }
@@ -76,13 +81,25 @@ function getSiteSearchTokens(query: string): string[] {
     .filter(Boolean);
 }
 
-export function filterOfficeSites(officeSites: OfficeSite[], query: string): OfficeSite[] {
+export function filterOfficeSites(
+  officeSites: OfficeSite[],
+  query: string,
+  facets: OfficeSiteFacetFilters = {},
+): OfficeSite[] {
   const tokens = getSiteSearchTokens(query);
-  if (tokens.length === 0) return officeSites;
+  const regions = facets.regions ?? [];
+  const types = facets.types ?? [];
+  if (tokens.length === 0 && regions.length === 0 && types.length === 0) {
+    return officeSites;
+  }
 
   return officeSites.filter((officeSite) => {
     const site = officeSite.site;
     if (!site) return false;
+    if (regions.length > 0 && !regions.includes(extractRegionFromSite(site))) {
+      return false;
+    }
+    if (types.length > 0 && !types.includes(site.type)) return false;
 
     const searchableText = compactSiteSearchText(
       [
@@ -101,6 +118,52 @@ export function filterOfficeSites(officeSites: OfficeSite[], query: string): Off
 
     return tokens.every((token) => searchableText.includes(token));
   });
+}
+
+export type RecordPresenceFilter = 'all' | 'present' | 'missing';
+
+export interface UnitRecordFilters {
+  owner: RecordPresenceFilter;
+  tenant: RecordPresenceFilter;
+  listing: RecordPresenceFilter;
+  consultation: RecordPresenceFilter;
+}
+
+function matchesPresence(hasRecord: boolean, filter: RecordPresenceFilter): boolean {
+  if (filter === 'all') return true;
+  return filter === 'present' ? hasRecord : !hasRecord;
+}
+
+/** 호수 표의 관계형 정보 등록 여부를 같은 규칙으로 필터링한다. */
+export function filterUnitsByRecordPresence(
+  units: Unit[],
+  filters: UnitRecordFilters,
+): Unit[] {
+  return units.filter((unit) => {
+    const properties = unit.properties ?? [];
+    const hasOwner = properties.some((property) =>
+      (property.propertyContacts ?? []).some((contact) => contact.role === 'owner'),
+    );
+    const hasTenant = properties.some((property) => (property.tenants ?? []).length > 0);
+    const hasListing = properties.some((property) => (property.listings ?? []).length > 0);
+    const hasConsultation = properties.some(
+      (property) => (property.consultations ?? []).length > 0,
+    );
+
+    return (
+      matchesPresence(hasOwner, filters.owner) &&
+      matchesPresence(hasTenant, filters.tenant) &&
+      matchesPresence(hasListing, filters.listing) &&
+      matchesPresence(hasConsultation, filters.consultation)
+    );
+  });
+}
+
+/** 즐겨찾기를 먼저 보여주되 서버가 내려준 최신 구독 순서는 그대로 유지한다. */
+export function prioritizeFavoriteOfficeSites(officeSites: OfficeSite[]): OfficeSite[] {
+  return [...officeSites].sort(
+    (left, right) => Number(right.isFavorite) - Number(left.isFavorite),
+  );
 }
 
 export function groupOfficeSites(

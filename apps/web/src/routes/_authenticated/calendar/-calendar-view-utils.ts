@@ -1,5 +1,7 @@
 export type CalendarViewMode = 'month' | 'week' | 'day' | 'agenda';
 
+export const WEEK_DAY_LABELS = ['일', '월', '화', '수', '목', '금', '토'];
+
 export type CalendarLikeEvent = {
   id?: string;
   start: string;

@@ -162,7 +162,6 @@ describe('contract document engine', () => {
             {
               phone: '010-1111-2222',
               isPrimary: true,
-              isActive: true,
             },
           ],
         },

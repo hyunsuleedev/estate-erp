@@ -79,6 +79,7 @@ interface PropertyListingsTableProps {
   sorting?: SortingState;
   onSortingChange?: (sorting: SortingState) => void;
   onRowClick?: (row: PropertyListingGroup) => void;
+  onRequestClose?: () => void;
   isLoading?: boolean;
   isLoadingMore?: boolean;
   onEndReached?: () => void;
@@ -104,6 +105,7 @@ export function PropertyListingsTable({
   sorting,
   onSortingChange,
   onRowClick,
+  onRequestClose,
   isLoading = false,
   isLoadingMore = false,
   onEndReached,
@@ -281,13 +283,17 @@ export function PropertyListingsTable({
         }
         case 'Escape': {
           e.preventDefault();
+          if (onRequestClose) {
+            onRequestClose();
+            break;
+          }
           setFocusedCell(null);
           table.resetRowSelection();
           break;
         }
       }
     },
-    [allColumns.length, focusedCell, onRowClick, rows, table],
+    [allColumns.length, focusedCell, onRequestClose, onRowClick, rows, table],
   );
 
   const handleScroll = useCallback(
@@ -446,7 +452,7 @@ export function PropertyListingsTable({
                     : "타입–확인 컬럼 접기"
                 }
                 data-column-group-toggle="property-details"
-                className="sticky left-[462px] z-50 ml-[462px] inline-flex size-5 items-center justify-center rounded-[3px] border border-[#9ba7a3] bg-white p-0 text-[#536b64] shadow-[0_1px_1px_rgba(42,51,47,0.05)] outline-none transition-colors hover:border-[#738b83] hover:bg-[#f4f8f6] hover:text-[#315d50] focus-visible:ring-2 focus-visible:ring-[#4c8c7c]/35 active:translate-y-px"
+                className="sticky left-[462px] z-50 ml-[462px] inline-flex size-5 items-center justify-center rounded-[3px] border border-[#9ba7a3] bg-white p-0 text-[#536b64] shadow-[0_1px_1px_rgba(42,51,47,0.05)] outline-none transition-colors hover:border-[#738b83] hover:bg-[#f4f8f6] hover:text-[#315d50] focus-visible:ring-2 focus-visible:ring-[#4c8c7c]/35"
                 onClick={columnGroupControl.onToggle}
               >
                 {columnGroupControl.collapsed ? (
@@ -486,7 +492,7 @@ export function PropertyListingsTable({
                     "exclusiveArea",
                     "matching",
                     "advertisement",
-                    "updatedAt",
+                    "confirmationAt",
                   ].includes(header.column.id);
                   const handleSortToggle = () => {
                     if (!canSort) return;
@@ -506,10 +512,19 @@ export function PropertyListingsTable({
                   return (
                     <th
                       key={header.id}
+                      aria-sort={
+                        sorted === 'asc'
+                          ? 'ascending'
+                          : sorted === 'desc'
+                            ? 'descending'
+                            : canSort
+                              ? 'none'
+                              : undefined
+                      }
                       className={cn(
                         "relative h-9 border-b border-[#d8d6d0] bg-[#f7f7f5] px-2.5 text-left align-middle text-[13px] font-medium normal-case tracking-normal text-muted-foreground",
                         !isLast && 'border-r border-r-[#eeeeec]',
-                        canSort && 'cursor-pointer select-none hover:text-foreground',
+                        canSort && 'select-none hover:text-foreground',
                         isDetailColumn && "bg-[#f2f6f4] text-[#52645e]",
                         isPinned && "bg-[#f5f4f1]",
                         isLastPinned && 'shadow-[1px_0_0_0_#d9d9d6]',
@@ -524,12 +539,33 @@ export function PropertyListingsTable({
                             }
                           : {}),
                       }}
-                      onClick={canSort ? handleSortToggle : undefined}
                     >
-                      <div className="flex min-w-0 items-center gap-1 text-slate-500">
-                        {header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}
-                        {sorted === 'asc' && <ArrowUp className="size-3" />}
-                        {sorted === 'desc' && <ArrowDown className="size-3" />}
+                      <div className="flex h-full min-w-0 items-center gap-1 text-slate-500">
+                        {canSort ? (
+                          <button
+                            type="button"
+                            onClick={handleSortToggle}
+                            className="-mx-1 flex h-full min-w-0 flex-1 items-center gap-1 rounded-sm px-1 text-left outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-[#4c8c7c]/35"
+                          >
+                            {header.isPlaceholder
+                              ? null
+                              : flexRender(
+                                  header.column.columnDef.header,
+                                  header.getContext(),
+                                )}
+                            {sorted === 'asc' && (
+                              <ArrowUp aria-hidden="true" className="size-3 shrink-0" />
+                            )}
+                            {sorted === 'desc' && (
+                              <ArrowDown aria-hidden="true" className="size-3 shrink-0" />
+                            )}
+                          </button>
+                        ) : header.isPlaceholder ? null : (
+                          flexRender(
+                            header.column.columnDef.header,
+                            header.getContext(),
+                          )
+                        )}
                       </div>
                       {header.column.getCanResize() && (
                         <div

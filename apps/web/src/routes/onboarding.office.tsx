@@ -81,7 +81,7 @@ function OfficeOnboardingPage() {
                   <Building2 className="size-5" />
                 </div>
                 <div>
-                  <p className="text-sm font-medium text-muted-foreground">Estate ERP</p>
+                  <p className="text-sm font-medium text-muted-foreground">에스테잇플로우</p>
                   <h1 className="text-2xl font-semibold tracking-tight">사무소 생성</h1>
                 </div>
               </div>

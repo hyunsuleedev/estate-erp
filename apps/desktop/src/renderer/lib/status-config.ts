@@ -36,6 +36,23 @@ export type StatusKind =
 export interface StatusMeta {
   label: string;
   tone: Tone;
+  /** 특정 도메인에서 공유하는 고정 팔레트. 없으면 tone의 기본 팔레트를 사용한다. */
+  className?: string;
+}
+
+export type BuyerStatus = 'active' | 'hold' | 'completed';
+
+/**
+ * 구매 의뢰 상태는 가동 여부만 나타낸다.
+ * matched/inactive는 이전 버전 데이터의 호환을 위해 각각 active/hold로 읽는다.
+ */
+export function normalizeBuyerStatus(
+  value: string | null | undefined,
+): BuyerStatus | null {
+  if (value === 'active' || value === 'matched') return 'active';
+  if (value === 'hold' || value === 'inactive') return 'hold';
+  if (value === 'completed') return 'completed';
+  return null;
 }
 
 export const STATUS_CONFIG: Record<StatusKind, Record<string, StatusMeta>> = {
@@ -54,7 +71,7 @@ export const STATUS_CONFIG: Record<StatusKind, Record<string, StatusMeta>> = {
   },
   /** Listing의 Deal·의뢰·옵션 중지를 합성한 가용 상태 */
   listingAvailability: {
-    available: { label: '가용', tone: 'success' },
+    available: { label: '활성', tone: 'success' },
     paused: { label: '보류', tone: 'warning' },
     in_contract: { label: '거래중', tone: 'info' },
     closed: { label: '종료', tone: 'neutral' },
@@ -77,23 +94,28 @@ export const STATUS_CONFIG: Record<StatusKind, Record<string, StatusMeta>> = {
   },
   /** Match.stage — 매칭 파이프라인 */
   matchStage: {
-    suggested: { label: '제안', tone: 'gray' },
-    buyerContacted: { label: '고객연락', tone: 'info' },
+    suggested: { label: '내부 후보', tone: 'gray' },
+    buyerInterested: { label: '고객 관심', tone: 'info' },
+    viewingConfirmed: { label: '임장 가능 확인', tone: 'orange' },
     viewing: { label: '임장', tone: 'violet' },
-    ownerContacted: { label: '집주인연락', tone: 'info' },
     negotiating: { label: '협상', tone: 'warning' },
     dealCreated: { label: '거래전환', tone: 'success' },
-    closed: { label: '종료', tone: 'neutral' },
+    closed: { label: '종료', tone: 'destructive' },
+    // 마이그레이션 전 데이터의 표시 호환
+    buyerContacted: { label: '고객 관심', tone: 'info' },
+    ownerContacted: { label: '임장 가능 확인', tone: 'orange' },
   },
   /** Deal.stage — 거래 파이프라인 */
   dealStage: {
-    selection: { label: '검토', tone: 'gray' },
-    negotiating: { label: '협상', tone: 'warning' },
+    preparing: { label: '계약 준비', tone: 'gray' },
     preContract: { label: '가계약', tone: 'violet' },
-    contracted: { label: '계약', tone: 'info' },
+    contracted: { label: '본계약', tone: 'info' },
     settling: { label: '중도금/잔금', tone: 'orange' },
     completed: { label: '잔금완료', tone: 'success' },
     closed: { label: '정산종료', tone: 'neutral' },
+    // 거래 경계 개편 전 데이터의 표시 호환
+    selection: { label: '계약 준비', tone: 'gray' },
+    negotiating: { label: '계약 준비', tone: 'gray' },
   },
   /** Contract.status — 계약 상태 */
   contractStatus: {
@@ -136,16 +158,27 @@ export const STATUS_CONFIG: Record<StatusKind, Record<string, StatusMeta>> = {
   },
   /** 거래유형 — 라벨/컬러 전 페이지 통일 */
   transactionType: {
-    sale: { label: '매매', tone: 'info' },
-    jeonse: { label: '전세', tone: 'success' },
-    monthly: { label: '월세', tone: 'orange' },
+    sale: {
+      label: '매매',
+      tone: 'pink',
+      className: 'bg-[#fdebec] text-[#8f4b46]',
+    },
+    jeonse: {
+      label: '전세',
+      tone: 'info',
+      className: 'bg-[#e7f3f8] text-[#337ea9]',
+    },
+    monthly: {
+      label: '월세',
+      tone: 'warning',
+      className: 'bg-[#fbf3db] text-[#8f6b1f]',
+    },
   },
   /** BuyerRequirement.status — 구매고객 상태 */
   buyerStatus: {
     active: { label: '활성', tone: 'success' },
-    matched: { label: '매칭됨', tone: 'info' },
+    hold: { label: '보류', tone: 'warning' },
     completed: { label: '완료', tone: 'neutral' },
-    inactive: { label: '비활성', tone: 'gray' },
   },
   /** BuyerRequirement.urgency — 긴급도 */
   buyerUrgency: {
@@ -166,16 +199,15 @@ export const PIPELINE_STEPS: Partial<Record<StatusKind, string[]>> = {
   intakeStatus: ['unverified', 'active', 'in_contract', 'hold', 'done'],
   matchStage: [
     'suggested',
-    'buyerContacted',
+    'buyerInterested',
+    'viewingConfirmed',
     'viewing',
-    'ownerContacted',
     'negotiating',
     'dealCreated',
     'closed',
   ],
   dealStage: [
-    'selection',
-    'negotiating',
+    'preparing',
     'preContract',
     'contracted',
     'settling',
@@ -190,5 +222,6 @@ export const PIPELINE_STEPS: Partial<Record<StatusKind, string[]>> = {
  */
 export function getStatusMeta(kind: StatusKind, value: string | null | undefined): StatusMeta {
   if (!value) return { label: '—', tone: 'gray' };
-  return STATUS_CONFIG[kind]?.[value] ?? { label: value, tone: 'gray' };
+  const normalizedValue = kind === 'buyerStatus' ? normalizeBuyerStatus(value) ?? value : value;
+  return STATUS_CONFIG[kind]?.[normalizedValue] ?? { label: value, tone: 'gray' };
 }

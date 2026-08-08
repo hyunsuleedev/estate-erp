@@ -20,5 +20,6 @@ describe('managed site dong scope', () => {
   it('distinguishes an explicit all-dong scope from the default dong', () => {
     assert.equal(isDefaultDongScope([], 'dong-101'), false);
     assert.equal(isDefaultDongScope(['dong-102'], 'dong-101'), false);
+    assert.equal(isDefaultDongScope(['dong-101', 'dong-102'], 'dong-101'), false);
   });
 });

@@ -16,6 +16,14 @@ describe('property list view utilities', () => {
 
     assert.equal(summary.label, '5. 1.~5. 31.');
     assert.equal(summary.detail, null);
+    assert.equal(summary.className, 'bg-neutral-soft text-neutral-strong');
+  });
+
+  it('uses warning color only when move-in availability needs confirmation', () => {
+    assert.equal(
+      getMoveInAvailability({ moveInAvailableType: 'unknown' }).className,
+      'bg-warning-soft text-warning-strong',
+    );
   });
 
   it('puts tenant lease expiry next to the phone number', () => {

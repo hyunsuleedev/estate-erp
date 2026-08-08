@@ -87,7 +87,11 @@ prisma/
 ### MCP Strategy
 - CRM 자체가 MCP Server (NestJS API = MCP 도구)
 - AI 내장 안 함 — 외부 Codex/ChatGPT가 MCP로 연결
-- 스크래핑 등 로컬 기능은 별도 MCP (Electron 호스팅)
+- CP 스크래핑·브라우저 자동화는 독립 Skill이 담당
+- CP 자격증명은 Skill 전용 로컬 `config.js`에 저장하며 Electron은 보관하거나 로컬 인증 MCP를 호스팅하지 않음
+- 광고 자동화의 서버 상태는 일반 `Task(category=advertisement)`만 사용하며 MCP `claim_task`로 중복 실행을 막음
+- CP 실행 단계·재시도·검증은 `estate-erp-ad-task-runner` 로컬 SQLite가 소유하고 서버는 agent를 대기·호출·wakeup하지 않음
+- 네이버 수집 범위(`siteId ↔ complexNo`)는 `naver-complex-collector` 로컬 SQLite가 소유하며 ERP에는 완전한 관측 결과만 저장
 
 ## Dev Commands
 
@@ -132,8 +136,8 @@ pnpm prisma:generate   # Generate Prisma client
 - IntakeLifecycleStatus: open ↔ hold, open/hold → closed, closed → open/hold
 - IntakeConfirmationState (파생): unverified / verified / overdue / no_answer
 - ListingAvailability (파생): available / paused / in_contract / closed
-- MatchStage: suggested → buyerContacted → viewing → ownerContacted → negotiating → dealCreated → closed
-- DealStage: selection → deposit → contract → completed → closed
+- MatchStage: suggested → buyerInterested → viewingConfirmed → viewing → negotiating → dealCreated → closed
+- DealStage: preparing → preContract(선택) → contracted → settling → completed → closed
 - TaskSource: manual / system / ai
 
 ## Important Notes

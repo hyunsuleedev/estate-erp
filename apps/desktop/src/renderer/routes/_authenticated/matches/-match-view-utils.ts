@@ -4,8 +4,15 @@ import type {
   Match,
   UpdateCalendarEventDto,
 } from '@estate-erp/api-client';
+import {
+  IntakeConfirmationState,
+  IntakeLifecycleStatus,
+  MatchStage,
+  normalizeMatchStage,
+} from '@estate-erp/shared';
 import { getStatusMeta, type Tone } from '@/lib/status-config';
 import { formatDateTime, formatMoney, formatPhone } from '@/lib/format';
+import { getIntakeConfirmationState } from '@/lib/listing-status';
 
 export type MatchViewListItem = Match;
 
@@ -13,7 +20,9 @@ export type MatchViewListItem = Match;
 export interface MatchRowActions {
   isUpdating: boolean;
   isScheduling: boolean;
+  savingMemoId: string | null;
   onStageChange: (id: string, stage: string) => void;
+  onSaveMemo: (match: Match, memo: string | null) => Promise<void>;
   onRequestDelete: (id: string) => void;
   onOpenDetail: (id: string) => void;
   onScheduleViewing: (match: Match, startLocalValue: string) => void;
@@ -23,13 +32,14 @@ export interface MatchRowActions {
 export function getMatchKpis(matches: MatchViewListItem[]) {
   return matches.reduce(
     (kpis, match) => {
-      if (match.stage === 'dealCreated') {
+      const stage = normalizeMatchStage(match.stage);
+      if (stage === MatchStage.DEAL_CREATED) {
         kpis.converted += 1;
-      } else if (match.stage === 'closed') {
+      } else if (stage === MatchStage.CLOSED) {
         kpis.closed += 1;
       } else {
         kpis.active += 1;
-        if (match.stage === 'viewing') {
+        if (stage === MatchStage.VIEWING) {
           kpis.viewing += 1;
         }
       }
@@ -42,22 +52,61 @@ export function getMatchKpis(matches: MatchViewListItem[]) {
 // ── 단계 정의 (라벨/컬러는 status-config 단일 소스) ──────────────────────────
 
 export const matchBoardStages = [
-  'suggested',
-  'buyerContacted',
-  'viewing',
-  'ownerContacted',
-  'negotiating',
+  MatchStage.SUGGESTED,
+  MatchStage.BUYER_INTERESTED,
+  MatchStage.VIEWING_CONFIRMED,
+  MatchStage.VIEWING,
+  MatchStage.NEGOTIATING,
 ] as const;
 
-export const buyerProgressStages = [...matchBoardStages, 'dealCreated'] as const;
+export const buyerProgressStages = [
+  ...matchBoardStages,
+  MatchStage.DEAL_CREATED,
+] as const;
 
-export const matchStageOrder = [...buyerProgressStages, 'closed'] as const;
+export const matchStageOrder = [
+  ...buyerProgressStages,
+  MatchStage.CLOSED,
+] as const;
 
 export type MatchBoardStage = (typeof matchBoardStages)[number];
 export type MatchProgressStage = (typeof buyerProgressStages)[number];
+export type MatchProgressNodeState = 'completed' | 'current' | 'pending' | 'failed';
+
+export interface MatchStageActionCopy {
+  progressLabel: string;
+  closeLabel: string;
+}
+
+const MATCH_STAGE_ACTION_COPY: Partial<Record<MatchProgressStage, MatchStageActionCopy>> = {
+  [MatchStage.SUGGESTED]: {
+    progressLabel: '고객에게 제안',
+    closeLabel: '후보에서 제외 · 종료',
+  },
+  [MatchStage.BUYER_INTERESTED]: {
+    progressLabel: '관심 있음 · 임장 가능 확인으로',
+    closeLabel: '관심 없음 · 종료',
+  },
+  [MatchStage.VIEWING_CONFIRMED]: {
+    progressLabel: '임장 가능 · 임장으로',
+    closeLabel: '임장 불가 · 종료',
+  },
+  [MatchStage.VIEWING]: {
+    progressLabel: '임장 후 관심 있음 · 협상으로',
+    closeLabel: '임장 후 관심 없음 · 종료',
+  },
+  [MatchStage.NEGOTIATING]: {
+    progressLabel: '조건 합의 · 거래로 전환',
+    closeLabel: '협상 결렬 · 종료',
+  },
+};
+
+export function getMatchStageActionCopy(stage: string): MatchStageActionCopy | null {
+  return MATCH_STAGE_ACTION_COPY[normalizeMatchStage(stage) as MatchProgressStage] ?? null;
+}
 
 export function getMatchStageLabel(stage: string): string {
-  return getStatusMeta('matchStage', stage).label;
+  return getStatusMeta('matchStage', normalizeMatchStage(stage)).label;
 }
 
 const TONE_HEADER_CLASS: Record<Tone, string> = {
@@ -103,18 +152,6 @@ export type MatchStageGroupDefinition = {
   isResult: boolean;
 };
 
-export type MatchListingGroup = {
-  listingId: string;
-  listing: MatchViewListItem['listing'] | null;
-  matches: MatchViewListItem[];
-  summary: {
-    total: number;
-    active: number;
-    converted: number;
-    closed: number;
-  };
-};
-
 export type MatchStageRow = {
   rowNumber: number;
   match: MatchViewListItem;
@@ -132,50 +169,8 @@ export const matchStageGroups: MatchStageGroupDefinition[] = matchStageOrder.map
   stage,
   label: getMatchStageLabel(stage),
   dotClassName: getMatchStageDotClass(stage),
-  isResult: stage === 'dealCreated' || stage === 'closed',
+  isResult: stage === MatchStage.DEAL_CREATED || stage === MatchStage.CLOSED,
 }));
-
-export function getMatchListingGroups(matches: MatchViewListItem[]): MatchListingGroup[] {
-  const grouped = new Map<string, MatchListingGroup>();
-
-  for (const match of matches) {
-    const listingId = match.listingId || 'unassigned-listing';
-    const existing = grouped.get(listingId);
-
-    if (existing) {
-      existing.matches.push(match);
-      continue;
-    }
-
-    grouped.set(listingId, {
-      listingId,
-      listing: match.listing ?? null,
-      matches: [match],
-      summary: {
-        total: 0,
-        active: 0,
-        converted: 0,
-        closed: 0,
-      },
-    });
-  }
-
-  return Array.from(grouped.values())
-    .map((group) => {
-      const matchesForListing = sortMatchesByUpdatedAt(group.matches);
-
-      return {
-        ...group,
-        matches: matchesForListing,
-        summary: summarizeListingMatches(matchesForListing),
-      };
-    })
-    .sort((left, right) => {
-      const leftTime = getLatestUpdatedAt(left.matches);
-      const rightTime = getLatestUpdatedAt(right.matches);
-      return rightTime - leftTime;
-    });
-}
 
 export function getMatchStageGroups(
   matches: MatchViewListItem[],
@@ -184,7 +179,9 @@ export function getMatchStageGroups(
   return matchStageGroups
     .map((group) => {
       const stageMatches = sortMatchesByUpdatedAt(
-        matches.filter((match) => match.stage === group.stage),
+        matches.filter(
+          (match) => normalizeMatchStage(match.stage) === group.stage,
+        ),
       );
 
       return {
@@ -277,7 +274,10 @@ export function formatViewingEventTime(event: CalendarEvent) {
 // ── 단계 전이 ────────────────────────────────────────────────────────────────
 
 export function getNextMatchStage(stage: string) {
-  const currentIndex = matchStageOrder.indexOf(stage as (typeof matchStageOrder)[number]);
+  const currentStage = normalizeMatchStage(stage);
+  const currentIndex = matchStageOrder.indexOf(
+    currentStage as (typeof matchStageOrder)[number],
+  );
   if (currentIndex < 0 || currentIndex >= matchStageOrder.length - 2) {
     return null;
   }
@@ -285,26 +285,117 @@ export function getNextMatchStage(stage: string) {
 }
 
 export function shouldMoveToViewingOnSchedule(stage: string) {
-  const currentIndex = buyerProgressStages.indexOf(stage as MatchProgressStage);
-  const viewingIndex = buyerProgressStages.indexOf('viewing');
+  return normalizeMatchStage(stage) === MatchStage.VIEWING_CONFIRMED;
+}
 
-  return currentIndex >= 0 && currentIndex < viewingIndex;
+/** 단계 이동 전에 사용자에게 설명해야 하는 업무상 선행 조건 */
+export function getMatchStageBlockReason(
+  match: MatchViewListItem,
+  targetStage: string,
+  now = new Date(),
+): string | null {
+  const currentStage = normalizeMatchStage(match.stage);
+  const normalizedTarget = normalizeMatchStage(targetStage);
+  const currentIndex = matchStageOrder.indexOf(
+    currentStage as (typeof matchStageOrder)[number],
+  );
+  const targetIndex = matchStageOrder.indexOf(
+    normalizedTarget as (typeof matchStageOrder)[number],
+  );
+  const buyerInterestedIndex = matchStageOrder.indexOf(
+    MatchStage.BUYER_INTERESTED,
+  );
+  const viewingConfirmedIndex = matchStageOrder.indexOf(
+    MatchStage.VIEWING_CONFIRMED,
+  );
+
+  const isCrossingBuyerInterest =
+    normalizedTarget !== MatchStage.CLOSED &&
+    currentIndex < buyerInterestedIndex &&
+    targetIndex >= buyerInterestedIndex;
+
+  if (isCrossingBuyerInterest) {
+    const listing = match.listing;
+    const intake = listing?.intake;
+    if (!intake) {
+      return '매물 확인 정보가 없습니다. 매물관리에서 집주인·의뢰인 확인을 먼저 완료해 주세요.';
+    }
+    if (intake.lifecycleStatus === IntakeLifecycleStatus.CLOSED) {
+      return '종료된 매물입니다. 의뢰를 다시 연 뒤 고객에게 제안해 주세요.';
+    }
+    if (
+      listing.isPaused ||
+      intake.lifecycleStatus === IntakeLifecycleStatus.HOLD
+    ) {
+      return '보류된 매물입니다. 매물을 재개한 뒤 고객에게 제안해 주세요.';
+    }
+
+    const confirmationState = getIntakeConfirmationState(intake, now);
+    if (confirmationState === IntakeConfirmationState.NO_ANSWER) {
+      return '집주인·의뢰인 확인이 되지 않았습니다. 다시 확인한 뒤 진행해 주세요.';
+    }
+    if (confirmationState === IntakeConfirmationState.OVERDUE) {
+      return '매물 확인 기한이 지났습니다. 다시 확인한 뒤 고객에게 제안해 주세요.';
+    }
+    if (confirmationState !== IntakeConfirmationState.VERIFIED) {
+      return '매물 확인을 완료한 뒤 고객 관심 단계로 이동할 수 있습니다.';
+    }
+  }
+
+  if (
+    normalizedTarget === MatchStage.VIEWING &&
+    currentIndex >= 0 &&
+    currentIndex < viewingConfirmedIndex
+  ) {
+    return '집주인·점유자의 임장 가능 확인을 먼저 완료해 주세요.';
+  }
+
+  if (
+    normalizedTarget !== MatchStage.CLOSED &&
+    currentIndex >= 0 &&
+    targetIndex > currentIndex + 1
+  ) {
+    const nextStage = matchStageOrder[currentIndex + 1];
+    return `${getMatchStageLabel(nextStage)} 단계를 먼저 완료해 주세요.`;
+  }
+
+  return null;
 }
 
 export function getProgressNodeState(
-  currentStage: string,
+  match: Pick<MatchViewListItem, 'stage' | 'closedFromStage'>,
   stage: MatchProgressStage,
-): 'completed' | 'current' | 'pending' {
-  if (currentStage === 'closed') {
+): MatchProgressNodeState {
+  const normalizedCurrentStage = normalizeMatchStage(match.stage);
+  const nodeIndex = buyerProgressStages.indexOf(stage);
+
+  if (normalizedCurrentStage === MatchStage.CLOSED) {
+    if (!match.closedFromStage) {
+      return 'pending';
+    }
+
+    const failedIndex = buyerProgressStages.indexOf(
+      normalizeMatchStage(match.closedFromStage) as MatchProgressStage,
+    );
+    if (failedIndex < 0) {
+      return 'pending';
+    }
+    if (nodeIndex < failedIndex) {
+      return 'completed';
+    }
+    if (nodeIndex === failedIndex) {
+      return 'failed';
+    }
     return 'pending';
   }
 
-  if (currentStage === 'dealCreated') {
+  if (normalizedCurrentStage === MatchStage.DEAL_CREATED) {
     return 'completed';
   }
 
-  const currentIndex = buyerProgressStages.indexOf(currentStage as MatchProgressStage);
-  const nodeIndex = buyerProgressStages.indexOf(stage);
+  const currentIndex = buyerProgressStages.indexOf(
+    normalizedCurrentStage as MatchProgressStage,
+  );
 
   if (nodeIndex < currentIndex) {
     return 'completed';
@@ -401,6 +492,20 @@ export function formatMatchPrice(match: MatchViewListItem) {
   return formatListingPrice(match.listing);
 }
 
+export function formatBudgetRange(
+  min: number | null | undefined,
+  max: number | null | undefined,
+) {
+  if (min && max) {
+    return min === max
+      ? formatMoney(min)
+      : `${formatMoney(min)} ~ ${formatMoney(max)}`;
+  }
+  if (min) return `${formatMoney(min)} 이상`;
+  if (max) return `${formatMoney(max)} 이하`;
+  return '협의';
+}
+
 export function formatRequirementSummary(match: MatchViewListItem) {
   const requirement = match.buyerRequirement;
   if (!requirement?.transactionType) {
@@ -408,17 +513,22 @@ export function formatRequirementSummary(match: MatchViewListItem) {
   }
 
   if (requirement.transactionType === 'monthly') {
-    const deposit = requirement.depositMax ? formatMoney(requirement.depositMax) : '협의';
-    const monthlyRent = requirement.monthlyRentMax ? formatMoney(requirement.monthlyRentMax) : '협의';
+    const deposit = formatBudgetRange(
+      requirement.depositMin,
+      requirement.depositMax,
+    );
+    const monthlyRent = requirement.monthlyRentMax
+      ? `${formatMoney(requirement.monthlyRentMax)} 이하`
+      : '협의';
     return `월세 · 보증금 ${deposit} / 월세 ${monthlyRent}`;
   }
 
   if (requirement.transactionType === 'jeonse') {
-    const price = requirement.depositMax ? formatMoney(requirement.depositMax) : '협의';
+    const price = formatBudgetRange(requirement.priceMin, requirement.priceMax);
     return `전세 · ${price}`;
   }
 
-  const price = requirement.priceMax ? formatMoney(requirement.priceMax) : '협의';
+  const price = formatBudgetRange(requirement.priceMin, requirement.priceMax);
   return `매매 · ${price}`;
 }
 
@@ -462,17 +572,22 @@ export const siteTypeLabel: Record<string, string> = {
 
 export function formatBudgetSummary(requirement: NonNullable<MatchViewListItem['buyerRequirement']>) {
   if (requirement.transactionType === 'monthly') {
-    const deposit = requirement.depositMax ? formatMoney(requirement.depositMax) : '협의';
-    const monthlyRent = requirement.monthlyRentMax ? formatMoney(requirement.monthlyRentMax) : '협의';
-    return `월세 ${deposit} / ${monthlyRent}`;
+    const deposit = formatBudgetRange(
+      requirement.depositMin,
+      requirement.depositMax,
+    );
+    const monthlyRent = requirement.monthlyRentMax
+      ? `${formatMoney(requirement.monthlyRentMax)} 이하`
+      : '협의';
+    return `월세 보증금 ${deposit} / 월 ${monthlyRent}`;
   }
 
   if (requirement.transactionType === 'jeonse') {
-    return `전세 ${requirement.depositMax ? formatMoney(requirement.depositMax) : '협의'}`;
+    return `전세 ${formatBudgetRange(requirement.priceMin, requirement.priceMax)}`;
   }
 
   if (requirement.transactionType === 'sale') {
-    return `매매 ${requirement.priceMax ? formatMoney(requirement.priceMax) : '협의'}`;
+    return `매매 ${formatBudgetRange(requirement.priceMin, requirement.priceMax)}`;
   }
 
   return '예산 협의';
@@ -497,34 +612,8 @@ export function getInitials(name: string) {
   return name.slice(0, 2);
 }
 
-function summarizeListingMatches(matches: MatchViewListItem[]) {
-  return matches.reduce(
-    (summary, match) => {
-      summary.total += 1;
-
-      if (match.stage === 'dealCreated') {
-        summary.converted += 1;
-      } else if (match.stage === 'closed') {
-        summary.closed += 1;
-      } else {
-        summary.active += 1;
-      }
-
-      return summary;
-    },
-    { total: 0, active: 0, converted: 0, closed: 0 },
-  );
-}
-
 function sortMatchesByUpdatedAt(matches: MatchViewListItem[]) {
   return [...matches].sort(
     (left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime(),
-  );
-}
-
-function getLatestUpdatedAt(matches: MatchViewListItem[]) {
-  return matches.reduce(
-    (latest, match) => Math.max(latest, new Date(match.updatedAt).getTime()),
-    0,
   );
 }

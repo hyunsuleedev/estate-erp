@@ -11,6 +11,7 @@ import {
   Rows3,
   Rows4,
   Search,
+  X,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { ApiError, type Deal } from '@estate-erp/api-client';
@@ -36,11 +37,11 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
-import { ConfirmDialog, EmptyState, FilterCount, FilterSelect } from '@/components/domain';
+import { ConfirmDialog, EmptyState, FilterSelect } from '@/components/domain';
 import { DealBoard } from './-deal-board';
 import { DealCreateDialog } from './-deal-create-dialog';
 import { DealDetailSheet } from './-deal-detail';
-import { CancelledDealArchive, ClosedDealArchive, DealListView } from './-deal-list';
+import { CancelledDealArchive, DealListView } from './-deal-list';
 import {
   cancelledByLabels,
   dealStageOrder,
@@ -54,7 +55,7 @@ import {
 
 type DealViewMode = 'board' | 'list';
 
-const CONTRACT_REQUIRED_STAGES = new Set(['contracted', 'settling', 'completed', 'closed']);
+const CONTRACT_REQUIRED_STAGES = new Set(['settling', 'completed', 'closed']);
 
 const TX_FILTER_OPTIONS = ['sale', 'jeonse', 'monthly'].map((value) => ({
   value,
@@ -102,7 +103,6 @@ function DealsPage() {
   const [viewMode, setViewMode] = useState<DealViewMode>('board');
   const [compactCards, setCompactCards] = useState(false);
   const [selectedDealId, setSelectedDealId] = useState<string | null>(null);
-  const [showClosed, setShowClosed] = useState(false);
   const [showCancelled, setShowCancelled] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [pendingStage, setPendingStage] = useState<{ deal: Deal; stage: string } | null>(null);
@@ -168,8 +168,8 @@ function DealsPage() {
         CONTRACT_REQUIRED_STAGES.has(stage) &&
         !contractByDealId.has(deal.id);
       if (needsContract) {
-        toast.error('계약서가 있어야 본계약 이후 단계로 변경할 수 있습니다.', {
-          description: '거래 상세의 계약 요약에서 계약서를 먼저 작성하세요.',
+        toast.error('계약서를 작성해야 중도금/잔금 이후 단계로 변경할 수 있습니다.', {
+          description: '본계약 거래 상세의 계약 요약에서 계약서를 먼저 작성하세요.',
           action: {
             label: '거래 열기',
             onClick: () => setSelectedDealId(deal.id),
@@ -252,13 +252,13 @@ function DealsPage() {
     () => filteredDeals.filter((deal) => !deal.isCancelled && deal.stage !== 'closed'),
     [filteredDeals],
   );
-  const closedDeals = useMemo(
-    () => filteredDeals.filter((deal) => !deal.isCancelled && deal.stage === 'closed'),
-    [filteredDeals],
-  );
   const cancelledDeals = useMemo(
     () => filteredDeals.filter((deal) => deal.isCancelled),
     [filteredDeals],
+  );
+  const atRiskDealCount = useMemo(
+    () => activeDeals.filter((deal) => getDealPipelineHealth(deal, referenceDate).isAtRisk).length,
+    [activeDeals, referenceDate],
   );
   const selectedDeal = useMemo(
     () => deals.find((deal) => deal.id === selectedDealId) ?? null,
@@ -288,203 +288,267 @@ function DealsPage() {
     Boolean(healthFilter);
 
   return (
-    <div className="flex min-h-0 flex-col gap-4 pt-4">
-      {/* 헤더 — 액션만 (제목은 상단 앱 헤더가 표시) */}
-      <div className="flex items-center justify-end">
-        <Button type="button" size="sm" onClick={() => setCreateOpen(true)}>
-          <Plus className="size-4" />
-          새 거래
-        </Button>
-      </div>
+    <div data-deals-page className="-m-4 flex min-h-0 flex-1 flex-col bg-white">
+      {/* 1행: 검색 + 현재 파이프라인 요약 + 생성 */}
+      <section className="shrink-0 border-b border-border bg-white px-3 py-2.5">
+        <div className="flex min-w-0 items-center gap-2">
+          <div className="relative min-w-[260px] max-w-md flex-1">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+              placeholder="매물, 고객, 주소 검색"
+              className="h-8 border-transparent bg-[#f7f6f3] pl-8 pr-8 text-[13px] shadow-none hover:border-border focus:border-input focus:bg-white"
+            />
+            {searchQuery ? (
+              <button
+                type="button"
+                aria-label="검색어 지우기"
+                onClick={() => setSearchQuery('')}
+                className="absolute right-2 top-1/2 -translate-y-1/2 rounded-sm p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+              >
+                <X className="size-3.5" aria-hidden="true" />
+              </button>
+            ) : null}
+          </div>
 
-      {/* 툴바 — 검색 + 거래유형 칩 + 상세 필터 + 뷰 전환 */}
-      <div className="flex flex-wrap items-center gap-2.5 rounded-[10px] border px-3 py-2">
-        <div className="flex h-8 w-60 items-center gap-2 rounded-lg border border-border/70 bg-muted px-2.5">
-          <Search className="size-3.5 shrink-0 text-muted-foreground/70" />
-          <input
-            value={searchQuery}
-            onChange={(event) => setSearchQuery(event.target.value)}
-            placeholder="매물 · 고객 · 주소 검색"
-            className="w-full bg-transparent text-xs text-foreground outline-none placeholder:text-muted-foreground/70"
-          />
-        </div>
-        <div className="flex gap-1">
-          {[{ value: '', label: '전체' }, ...TX_FILTER_OPTIONS].map((option) => (
-            <button
-              key={option.value || 'all'}
-              type="button"
-              onClick={() => setTxFilter(option.value)}
-              className={cn(
-                'h-7 rounded-[7px] px-2.5 text-xs font-medium transition-colors',
-                txFilter === option.value
-                  ? 'bg-primary text-primary-foreground'
-                  : 'text-muted-foreground hover:bg-secondary hover:text-foreground',
-              )}
-            >
-              {option.label}
-            </button>
-          ))}
-        </div>
-        <FilterSelect label="단계" value={stageFilter} onChange={setStageFilter} options={STAGE_FILTER_OPTIONS} />
-        <FilterSelect label="공동중개" value={jointFilter} onChange={setJointFilter} options={JOINT_FILTER_OPTIONS} />
-        <FilterSelect label="계약서" value={contractFilter} onChange={setContractFilter} options={CONTRACT_FILTER_OPTIONS} />
-        <FilterSelect
-          label="파이프라인 상태"
-          value={healthFilter}
-          onChange={setHealthFilter}
-          options={HEALTH_FILTER_OPTIONS}
-        />
-        <FilterCount n={filteredDeals.length} />
-        {hasFilters ? (
-          <Button
-            type="button"
-            variant="ghost"
-            size="xs"
-            className="h-7 gap-1 px-2 text-[11px] text-muted-foreground"
-            onClick={() => {
-              setSearchQuery('');
-              setTxFilter('');
-              setStageFilter('');
-              setJointFilter('');
-              setContractFilter('');
-              setHealthFilter('');
-            }}
+          <div
+            className="ml-auto flex shrink-0 items-center gap-2.5 text-[12px] text-muted-foreground"
+            aria-label={`진행 거래 ${activeDeals.length}건, 일정 주의 ${atRiskDealCount}건`}
           >
-            <RotateCcw className="size-3" aria-hidden="true" />
-            초기화
+            <span>
+              진행 <strong className="font-semibold tabular-nums text-foreground">{activeDeals.length}</strong>
+            </span>
+            <span className="h-3.5 w-px bg-border" aria-hidden="true" />
+            <span>
+              일정 주의{' '}
+              <strong
+                className={cn(
+                  'font-semibold tabular-nums',
+                  atRiskDealCount > 0 ? 'text-amber-700' : 'text-foreground',
+                )}
+              >
+                {atRiskDealCount}
+              </strong>
+            </span>
+          </div>
+
+          <Button type="button" size="sm" className="shrink-0 px-3.5" onClick={() => setCreateOpen(true)}>
+            <Plus className="size-3.5" aria-hidden="true" />
+            새 거래
           </Button>
-        ) : null}
-        {viewMode === 'board' ? (
-          <div className="flex w-fit items-center rounded-lg border border-border bg-background p-0.5">
+        </div>
+      </section>
+
+      {/* 2행: 데이터베이스 보기 + 필터 + 밀도 */}
+      <section className="shrink-0 overflow-x-auto border-b border-border bg-[#faf9f6] px-3 py-2">
+        <div className="flex w-full min-w-max items-center gap-1.5">
+          <div className="flex shrink-0 rounded-lg bg-[#f1f0ed] p-[3px]">
             <button
               type="button"
-              aria-label="카드 자세히 보기"
-              aria-pressed={!compactCards}
-              title="카드 자세히"
-              onClick={() => setCompactCards(false)}
+              aria-pressed={viewMode === 'board'}
+              onClick={() => setViewMode('board')}
               className={cn(
-                'flex size-7 items-center justify-center rounded-md transition-colors',
-                !compactCards
-                  ? 'bg-secondary text-foreground'
+                'flex h-7 items-center gap-1.5 rounded-md px-2.5 text-[12px] font-medium transition-colors',
+                viewMode === 'board'
+                  ? 'bg-white text-foreground shadow-xs'
                   : 'text-muted-foreground hover:text-foreground',
               )}
             >
-              <Rows4 className="size-3.5" />
+              <PanelsTopLeft className="size-3.5" aria-hidden="true" />
+              보드
             </button>
             <button
               type="button"
-              aria-label="카드 간결하게 보기"
-              aria-pressed={compactCards}
-              title="카드 간결하게"
-              onClick={() => setCompactCards(true)}
+              aria-pressed={viewMode === 'list'}
+              onClick={() => setViewMode('list')}
               className={cn(
-                'flex size-7 items-center justify-center rounded-md transition-colors',
-                compactCards
-                  ? 'bg-secondary text-foreground'
+                'flex h-7 items-center gap-1.5 rounded-md px-2.5 text-[12px] font-medium transition-colors',
+                viewMode === 'list'
+                  ? 'bg-white text-foreground shadow-xs'
                   : 'text-muted-foreground hover:text-foreground',
               )}
             >
-              <Rows3 className="size-3.5" />
+              <List className="size-3.5" aria-hidden="true" />
+              리스트
             </button>
           </div>
-        ) : null}
-        <div className="flex w-fit items-center rounded-lg bg-secondary p-0.5">
-          <button
-            type="button"
-            onClick={() => setViewMode('board')}
-            className={cn(
-              'flex h-7 items-center gap-1.5 rounded-md px-3 text-xs font-semibold transition-colors',
-              viewMode === 'board'
-                ? 'bg-background text-foreground shadow-xs'
-                : 'text-muted-foreground hover:text-foreground',
-            )}
-          >
-            <PanelsTopLeft className="size-3.5" />
-            보드
-          </button>
-          <button
-            type="button"
-            onClick={() => setViewMode('list')}
-            className={cn(
-              'flex h-7 items-center gap-1.5 rounded-md px-3 text-xs font-semibold transition-colors',
-              viewMode === 'list'
-                ? 'bg-background text-foreground shadow-xs'
-                : 'text-muted-foreground hover:text-foreground',
-            )}
-          >
-            <List className="size-3.5" />
-            리스트
-          </button>
-        </div>
-      </div>
 
-      {dealsQuery.isLoading ? (
-        <div className="space-y-2">
-          {Array.from({ length: 5 }, (_, index) => (
-            <Skeleton key={index} className="h-16 w-full" />
-          ))}
-        </div>
-      ) : dealsQuery.isError ? (
-        <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed px-4 py-12 text-center">
-          <p className="text-sm text-muted-foreground">거래 목록을 불러오지 못했습니다.</p>
-          <Button type="button" variant="outline" size="sm" onClick={() => void dealsQuery.refetch()}>
-            <RotateCcw className="size-4" />
-            재시도
-          </Button>
-        </div>
-      ) : deals.length === 0 ? (
-        <EmptyState
-          icon={Handshake}
-          title="등록된 거래가 없습니다"
-          description="매칭에서 거래로 전환하거나, 새 거래를 직접 생성하세요."
-          action={
-            <Button type="button" onClick={() => setCreateOpen(true)}>
-              <Plus className="size-4" />
-              새 거래
+          <div className="mx-0.5 h-5 w-px shrink-0 bg-border" aria-hidden="true" />
+
+          <div className="flex shrink-0 rounded-lg bg-[#f1f0ed] p-[3px]">
+            {[{ value: '', label: '전체' }, ...TX_FILTER_OPTIONS].map((option) => (
+              <button
+                key={option.value || 'all'}
+                type="button"
+                aria-pressed={txFilter === option.value}
+                onClick={() => setTxFilter(option.value)}
+                className={cn(
+                  'h-7 rounded-md px-2.5 text-[12px] font-medium transition-colors',
+                  txFilter === option.value
+                    ? 'bg-[#37352f] text-white shadow-xs'
+                    : 'text-muted-foreground hover:text-foreground',
+                )}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+
+          <FilterSelect
+            label="단계"
+            value={stageFilter}
+            onChange={setStageFilter}
+            options={STAGE_FILTER_OPTIONS}
+            className="h-8 border-[#e7e5df] bg-white px-2.5 text-[12px] shadow-none"
+          />
+          <FilterSelect
+            label="공동중개"
+            value={jointFilter}
+            onChange={setJointFilter}
+            options={JOINT_FILTER_OPTIONS}
+            className="h-8 border-[#e7e5df] bg-white px-2.5 text-[12px] shadow-none"
+          />
+          <FilterSelect
+            label="계약서"
+            value={contractFilter}
+            onChange={setContractFilter}
+            options={CONTRACT_FILTER_OPTIONS}
+            className="h-8 border-[#e7e5df] bg-white px-2.5 text-[12px] shadow-none"
+          />
+          <FilterSelect
+            label="진행 상태"
+            value={healthFilter}
+            onChange={setHealthFilter}
+            options={HEALTH_FILTER_OPTIONS}
+            className="h-8 border-[#e7e5df] bg-white px-2.5 text-[12px] shadow-none"
+          />
+
+          {hasFilters ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="xs"
+              className="h-8 gap-1 px-2 text-[11px] text-muted-foreground"
+              onClick={() => {
+                setSearchQuery('');
+                setTxFilter('');
+                setStageFilter('');
+                setJointFilter('');
+                setContractFilter('');
+                setHealthFilter('');
+              }}
+            >
+              <RotateCcw className="size-3" aria-hidden="true" />
+              초기화
             </Button>
-          }
-        />
-      ) : (
-        <>
-          {viewMode === 'board' ? (
-            <DealBoard
-              deals={activeDeals}
-              selectedDealId={selectedDeal?.id ?? null}
-              referenceDate={referenceDate}
-              compact={compactCards}
-              actions={rowActions}
-              onStageDrop={(deal, stage) => stageMutation.mutate({ deal, stage })}
-            />
-          ) : (
-            <DealListView
-              deals={activeDeals}
-              contractByDealId={contractByDealId}
-              selectedDealId={selectedDeal?.id ?? null}
-              referenceDate={referenceDate}
-              actions={rowActions}
-            />
-          )}
-
-          {activeDeals.length === 0 && hasFilters ? (
-            <div className="rounded-lg border border-dashed bg-muted/50 px-4 py-10 text-center text-sm text-muted-foreground">
-              조건에 맞는 진행 거래가 없습니다.
-            </div>
           ) : null}
 
-          <ClosedDealArchive
-            deals={closedDeals}
-            open={showClosed}
-            onToggle={() => setShowClosed((prev) => !prev)}
-            actions={rowActions}
+          <span className="ml-auto px-1 text-[12px] tabular-nums text-muted-foreground">
+            {filteredDeals.length.toLocaleString()}건
+          </span>
+
+          {viewMode === 'board' ? (
+            <div className="flex shrink-0 items-center rounded-lg border border-[#e7e5df] bg-white p-[3px]">
+              <button
+                type="button"
+                aria-label="카드 자세히 보기"
+                aria-pressed={!compactCards}
+                title="카드 자세히"
+                onClick={() => setCompactCards(false)}
+                className={cn(
+                  'flex size-7 items-center justify-center rounded-md transition-colors',
+                  !compactCards
+                    ? 'bg-[#f1f0ed] text-foreground'
+                    : 'text-muted-foreground hover:text-foreground',
+                )}
+              >
+                <Rows4 className="size-3.5" aria-hidden="true" />
+              </button>
+              <button
+                type="button"
+                aria-label="카드 간결하게 보기"
+                aria-pressed={compactCards}
+                title="카드 간결하게"
+                onClick={() => setCompactCards(true)}
+                className={cn(
+                  'flex size-7 items-center justify-center rounded-md transition-colors',
+                  compactCards
+                    ? 'bg-[#f1f0ed] text-foreground'
+                    : 'text-muted-foreground hover:text-foreground',
+                )}
+              >
+                <Rows3 className="size-3.5" aria-hidden="true" />
+              </button>
+            </div>
+          ) : null}
+        </div>
+      </section>
+
+      <section className="flex min-h-0 flex-1 flex-col overflow-auto bg-white px-3 py-3">
+        {dealsQuery.isLoading ? (
+          <div className="space-y-2">
+            {Array.from({ length: 5 }, (_, index) => (
+              <Skeleton key={index} className="h-16 w-full" />
+            ))}
+          </div>
+        ) : dealsQuery.isError ? (
+          <div className="flex flex-1 flex-col items-center justify-center gap-3 border border-dashed border-[#e7e5df] px-4 py-12 text-center">
+            <p className="text-sm text-muted-foreground">거래 목록을 불러오지 못했습니다.</p>
+            <Button type="button" variant="outline" size="sm" onClick={() => void dealsQuery.refetch()}>
+              <RotateCcw className="size-4" />
+              재시도
+            </Button>
+          </div>
+        ) : deals.length === 0 ? (
+          <EmptyState
+            icon={Handshake}
+            title="등록된 거래가 없습니다"
+            description="매칭에서 거래로 전환하거나, 새 거래를 직접 생성하세요."
+            className="flex-1"
+            action={
+              <Button type="button" onClick={() => setCreateOpen(true)}>
+                <Plus className="size-4" />
+                새 거래
+              </Button>
+            }
           />
-          <CancelledDealArchive
-            deals={cancelledDeals}
-            open={showCancelled}
-            onToggle={() => setShowCancelled((prev) => !prev)}
-            actions={rowActions}
-          />
-        </>
-      )}
+        ) : (
+          <div className="space-y-3">
+            {viewMode === 'board' ? (
+              <DealBoard
+                deals={activeDeals}
+                selectedDealId={selectedDeal?.id ?? null}
+                referenceDate={referenceDate}
+                compact={compactCards}
+                actions={rowActions}
+                onStageDrop={(deal, stage) => stageMutation.mutate({ deal, stage })}
+              />
+            ) : (
+              <DealListView
+                deals={activeDeals}
+                contractByDealId={contractByDealId}
+                selectedDealId={selectedDeal?.id ?? null}
+                referenceDate={referenceDate}
+                actions={rowActions}
+              />
+            )}
+
+            {activeDeals.length === 0 && hasFilters ? (
+              <div className="border border-dashed border-[#e7e5df] bg-[#faf9f6] px-4 py-10 text-center text-sm text-muted-foreground">
+                조건에 맞는 진행 거래가 없습니다.
+              </div>
+            ) : null}
+
+            <CancelledDealArchive
+              deals={cancelledDeals}
+              open={showCancelled}
+              onToggle={() => setShowCancelled((prev) => !prev)}
+              actions={rowActions}
+            />
+          </div>
+        )}
+      </section>
 
       <DealDetailSheet
         deal={selectedDeal}
@@ -512,10 +576,10 @@ function DealsPage() {
         description={
           pendingStage
             ? `'${getDealTitle(pendingStage.deal)}' 거래를 '${getStatusMeta('dealStage', pendingStage.stage).label}' 단계로 변경할까요?${
-                pendingStage.stage === 'closed' ? ' 정산종료된 거래는 보드에서 제외되고 아카이브로 이동합니다.' : ''
+                pendingStage.stage === 'closed' ? ' 정산종료된 거래는 진행 보드에서 제외됩니다.' : ''
               }${
                 CONTRACT_REQUIRED_STAGES.has(pendingStage.stage) && !contractByDealId.has(pendingStage.deal.id)
-                  ? ' 이 단계는 계약서가 필요합니다. 계약서가 없으면 변경이 거부됩니다.'
+                  ? ' 이 단계로 이동하려면 본계약 계약서가 필요합니다. 계약서를 먼저 작성해 주세요.'
                   : ''
               }`
             : undefined

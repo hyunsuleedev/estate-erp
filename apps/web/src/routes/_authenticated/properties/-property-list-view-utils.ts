@@ -164,7 +164,7 @@ export function getMoveInAvailability(listing: MoveInAvailabilityInput) {
     return {
       label: '즉시',
       detail: null,
-      className: 'bg-[#eef3ed] text-[#44745a]',
+      className: 'bg-neutral-soft text-neutral-strong',
     };
   }
 
@@ -172,7 +172,9 @@ export function getMoveInAvailability(listing: MoveInAvailabilityInput) {
     return {
       label: from ? `${formatDateShort(from)} 이후` : '확인 필요',
       detail: null,
-      className: from ? 'bg-[#e7f3f8] text-[#337ea9]' : 'bg-[#f1f1ef] text-[#787774]',
+      className: from
+        ? 'bg-neutral-soft text-neutral-strong'
+        : 'bg-warning-soft text-warning-strong',
     };
   }
 
@@ -180,7 +182,7 @@ export function getMoveInAvailability(listing: MoveInAvailabilityInput) {
     return {
       label: formatMoveInRange(from, to),
       detail: null,
-      className: 'bg-[#fbf3db] text-[#8f6b1f]',
+      className: 'bg-neutral-soft text-neutral-strong',
     };
   }
 
@@ -188,14 +190,14 @@ export function getMoveInAvailability(listing: MoveInAvailabilityInput) {
     return {
       label: '협의',
       detail: null,
-      className: 'bg-[#fbf3db] text-[#8f6b1f]',
+      className: 'bg-neutral-soft text-neutral-strong',
     };
   }
 
   return {
     label: '확인 필요',
     detail: null,
-    className: 'bg-[#f1f1ef] text-[#787774]',
+    className: 'bg-warning-soft text-warning-strong',
   };
 }
 

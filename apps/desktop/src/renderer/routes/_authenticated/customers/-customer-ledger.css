@@ -1,0 +1,349 @@
+/* 고객 원장 — 매물관리(PropertyListingsTable)의 Notion식 플랫 그리드 언어 적용
+   헤어라인 그리드, 13px 셀, tabular-nums, 좌측 선택·고객 열 pinning + 경계 그림자 */
+
+.customer-ledger-table {
+  width: 100%;
+  min-width: 1030px;
+  table-layout: fixed;
+  border-collapse: separate;
+  border-spacing: 0;
+  color: var(--color-foreground);
+}
+
+/* 선택·고객·작업·거래 열을 고정하고, 나머지 열은 남은 폭을 같은 비율로 나눈다. */
+.customer-ledger-table col.ledger-select-column {
+  width: 38px;
+}
+
+.customer-ledger-table col.ledger-customer-column {
+  width: 190px;
+}
+
+.customer-ledger-table col.ledger-action-column {
+  width: 48px;
+}
+
+.customer-ledger-table col.ledger-transaction-column {
+  width: 60px;
+}
+
+.customer-ledger-table col.ledger-fluid-column {
+  width: auto;
+}
+
+.customer-ledger-table thead {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+}
+
+.customer-ledger-table thead th {
+  height: 36px;
+  padding: 0 10px;
+  border-right: 1px solid #eeeeec;
+  border-bottom: 1px solid #d8d6d0;
+  background: #f7f7f5;
+  color: var(--color-muted-foreground);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: normal;
+  text-align: left;
+  text-transform: none;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.customer-ledger-table thead th:last-child {
+  border-right: 0;
+}
+
+.customer-ledger-table thead th:nth-child(1) {
+  text-align: center;
+}
+
+.customer-ledger-table thead th:nth-child(3),
+.customer-ledger-table thead th:nth-child(5) {
+  text-align: center;
+}
+
+.customer-ledger-table thead th:nth-child(6) {
+  padding-right: 8px;
+  padding-left: 8px;
+}
+
+.customer-ledger-table thead th:nth-child(7),
+.customer-ledger-table thead th:nth-child(8) {
+  text-align: right;
+}
+
+.customer-ledger-table thead th:nth-child(9),
+.customer-ledger-table thead th:nth-child(10) {
+  text-align: right;
+}
+
+.customer-ledger-table thead th:nth-child(11),
+.customer-ledger-table thead th:nth-child(12) {
+  text-align: right;
+}
+
+.customer-ledger-table thead th:nth-child(13),
+.customer-ledger-table thead th:nth-child(14) {
+  text-align: center;
+}
+
+.customer-ledger-table td {
+  height: 36px;
+  padding: 0 10px;
+  border-right: 1px solid
+    color-mix(in srgb, var(--color-border) 55%, transparent);
+  background: var(--color-background);
+  font-size: 12.5px;
+  transition: background-color 120ms ease;
+}
+
+.customer-ledger-table .ledger-case-start > td,
+.customer-ledger-table .ledger-case-start > th {
+  border-top: 1px solid var(--color-border);
+}
+
+.customer-ledger-table tbody > .ledger-case-start:first-child > td,
+.customer-ledger-table tbody > .ledger-case-start:first-child > th {
+  border-top: 0;
+}
+
+/* intent 행 hover/focus 시 짝이 되는 context 행까지 함께 하이라이트 */
+.ledger-intent-row:hover > td,
+.ledger-intent-row:focus-within > td,
+.ledger-intent-row:hover + .ledger-context-row > td,
+.ledger-intent-row:focus-within + .ledger-context-row > td {
+  background: color-mix(
+    in srgb,
+    var(--color-muted) 45%,
+    var(--color-background)
+  );
+}
+
+/* sticky 고객 셀은 기본 배경이 !important라 hover/focus 규칙도 !important로 덮는다 */
+.ledger-intent-row:hover > .ledger-customer-cell,
+.ledger-intent-row:focus-within > .ledger-customer-cell {
+  background: color-mix(
+    in srgb,
+    var(--color-muted) 45%,
+    var(--color-background)
+  ) !important;
+}
+
+.ledger-case-selected > td,
+.ledger-case-selected > th.ledger-customer-cell {
+  background: color-mix(
+    in srgb,
+    var(--color-primary) 7%,
+    var(--color-background)
+  ) !important;
+}
+
+/* context 행: 지역·매물·노트를 전체 폭으로 보여주는 독립 보조 라인.
+   위 intent 행과 border-top으로 경계를 구분하고, 높이는 기본 행과 같은 36px */
+.ledger-context-row td {
+  height: 36px;
+  padding: 0;
+  border-top: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-border);
+  background: color-mix(
+    in srgb,
+    var(--color-muted) 40%,
+    var(--color-background)
+  );
+}
+
+/* 좌측 pinning — 선택 + 고객 + 작업 열, 마지막 고정 열에 경계 그림자 */
+.ledger-sticky-select {
+  position: sticky;
+  left: 0;
+  z-index: 13;
+}
+
+.ledger-sticky-customer {
+  position: sticky;
+  left: 38px;
+  z-index: 12;
+}
+
+.ledger-sticky-action {
+  position: sticky;
+  left: 228px;
+  z-index: 11;
+  box-shadow: 1px 0 0 0 var(--color-border);
+}
+
+.customer-ledger-table thead .ledger-sticky-customer {
+  z-index: 40;
+  background: #f5f4f1;
+}
+
+.customer-ledger-table thead .ledger-sticky-action {
+  z-index: 39;
+  padding: 0;
+  background: #f5f4f1;
+  box-shadow: 1px 0 0 0 #d9d9d6;
+}
+
+.customer-ledger-table thead .ledger-sticky-select {
+  z-index: 41;
+  padding: 0;
+  background: #f5f4f1;
+}
+
+.customer-ledger-table td.ledger-select-cell {
+  padding: 0;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-background);
+  text-align: center;
+  vertical-align: middle;
+}
+
+.customer-ledger-table td.ledger-action-cell {
+  padding: 0;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-background);
+  text-align: center;
+  vertical-align: middle;
+}
+
+.customer-ledger-table th.ledger-customer-cell {
+  padding: 4px 10px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-background) !important;
+  color: var(--color-foreground);
+  font-size: 12px;
+  font-weight: 400;
+  text-align: left;
+  vertical-align: middle;
+  white-space: normal;
+  transition: background-color 120ms ease;
+}
+
+.customer-ledger-table td.ledger-updated-cell {
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-muted-foreground);
+  font-size: 11px;
+  text-align: center;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.customer-ledger-table td.ledger-number-cell {
+  color: var(--color-foreground);
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+  text-align: right;
+  white-space: nowrap;
+}
+
+/* 납품 행의 월세·평형 단일값 셀 (범위 2열을 합쳐 중앙 정렬) */
+.customer-ledger-table td.ledger-exact-cell,
+.customer-ledger-table .ledger-stack-line.ledger-exact-cell {
+  color: var(--color-foreground);
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.ledger-sort-button {
+  display: inline-flex;
+  width: 100%;
+  height: 100%;
+  align-items: center;
+  justify-content: inherit;
+  gap: 4px;
+  color: inherit;
+  cursor: pointer;
+  outline: none;
+  transition: color 120ms ease;
+}
+
+.ledger-sort-button:hover,
+.ledger-sort-button:focus-visible {
+  color: var(--color-foreground);
+}
+
+.ledger-sort-button:focus-visible {
+  border-radius: 3px;
+  box-shadow: inset 0 0 0 2px
+    color-mix(in srgb, var(--color-ring) 35%, transparent);
+}
+
+.customer-ledger-table
+  thead
+  th:nth-child(n + 7):nth-child(-n + 12)
+  .ledger-sort-button {
+  justify-content: flex-end;
+}
+
+.customer-ledger-table thead th:nth-child(13) .ledger-sort-button,
+.customer-ledger-table thead th:nth-child(14) .ledger-sort-button {
+  justify-content: center;
+}
+
+.ledger-sort-button > svg {
+  color: var(--color-muted-foreground);
+}
+
+.customer-ledger-table tbody tr:last-child td {
+  border-bottom: 1px solid var(--color-border);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .customer-ledger-table td,
+  .customer-ledger-table th.ledger-customer-cell,
+  .ledger-sort-button {
+    transition: none;
+  }
+}
+
+/* ===== ListingIntake 스택 (같은 호실 묶음) ===== */
+
+/* 스택 행 — 셀 안에 listing을 36px 라인(기본 행과 같은 높이)으로 세로 적층, 행 높이는 내용만큼 */
+.ledger-stack-row > td {
+  height: auto;
+  vertical-align: top;
+}
+
+/* negative margin + 라인 padding으로 구분선을 셀 좌우 끝까지 잇는다 */
+/* 매칭 셀 — 같은 ListingIntake 묶음은 가상 분리 없이 하나로 통합해 세로 중앙 정렬 */
+.customer-ledger-table td.ledger-stack-merged-cell {
+  text-align: center;
+  vertical-align: middle;
+}
+
+/* 구분처럼 좌측 정렬을 유지하는 통합 셀 */
+.customer-ledger-table td.ledger-stack-merged-cell.ledger-stack-merged-left {
+  text-align: left;
+}
+
+.ledger-stack {
+  display: flex;
+  flex-direction: column;
+  margin: 0 -10px;
+}
+
+.ledger-stack-line {
+  display: flex;
+  align-items: center;
+  height: 36px;
+  padding: 0 10px;
+}
+
+/* 적층 라인 사이 가상 구분선 */
+.ledger-stack-line:not(:last-child) {
+  border-bottom: 1px solid
+    color-mix(in srgb, var(--color-border) 55%, transparent);
+}
+
+.ledger-stack-right .ledger-stack-line {
+  justify-content: flex-end;
+}
+.ledger-stack-center .ledger-stack-line {
+  justify-content: center;
+}

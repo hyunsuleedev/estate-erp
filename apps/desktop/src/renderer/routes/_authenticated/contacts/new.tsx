@@ -45,14 +45,14 @@ function NewContactPage() {
 
   const primaryPhoneValue = firstPhoneValue(phones);
   const deferredPhone = useDeferredValue(primaryPhoneValue);
-  const normalizedPhone = normalizePhone(deferredPhone);
+  const canonicalPhone = normalizePhone(deferredPhone);
 
   const duplicateContactsQuery = useQuery({
-    queryKey: ['contacts', 'search-by-phone', normalizedPhone],
-    queryFn: () => api.contacts.findByPhone(normalizedPhone),
-    enabled: normalizedPhone.length >= 7,
+    queryKey: ['contacts', 'search-by-phone', canonicalPhone],
+    queryFn: () => api.contacts.findByPhone(canonicalPhone),
+    enabled: canonicalPhone.length >= 7,
   });
-  const duplicates = normalizedPhone.length >= 7 ? duplicateContactsQuery.data ?? [] : [];
+  const duplicates = canonicalPhone.length >= 7 ? duplicateContactsQuery.data ?? [] : [];
   const hasDuplicates = duplicates.length > 0;
 
   const parsedTags = useMemo(() => parseContactTags(form.customTagsInput), [form.customTagsInput]);
@@ -248,7 +248,7 @@ function NewContactPage() {
             </p>
           </div>
           <div className="space-y-3 px-5 py-5">
-            {normalizedPhone.length < 7 ? (
+            {canonicalPhone.length < 7 ? (
               <StatusNotice
                 icon={Phone}
                 title="번호 입력 대기"

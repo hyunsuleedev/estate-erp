@@ -15,7 +15,10 @@ import {
   CurrentUserPayload,
 } from '../../common/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
-import { ListingIntakesService } from './listing-intakes.service';
+import {
+  ListingIntakesService,
+  type ListingIntakeSortField,
+} from './listing-intakes.service';
 
 @ApiTags('매물 의뢰')
 @ApiBearerAuth()
@@ -95,7 +98,7 @@ export class ListingIntakesController {
       unit: unit || undefined,
       moveInFrom: moveInFrom || undefined,
       moveInTo: moveInTo || undefined,
-      sortBy: (sortBy as 'receivedAt' | 'updatedAt' | 'createdAt') || undefined,
+      sortBy: (sortBy as ListingIntakeSortField) || undefined,
       sortOrder: (sortOrder as 'asc' | 'desc') || undefined,
       page: page ? Number(page) : undefined,
       limit: limit ? Number(limit) : undefined,
@@ -117,6 +120,7 @@ export class ListingIntakesController {
     @Body()
     dto: {
       propertyId: string;
+      brokerageCaseId?: string;
       lifecycleStatus?: string;
       closedReason?: string | null;
       receivedAt?: string | null;
@@ -202,6 +206,19 @@ export class ListingIntakesController {
     });
   }
 
+  @Patch(':id/close-with-active-deals')
+  closeWithActiveDeals(
+    @Param('id') id: string,
+    @Body() dto: { expectedUpdatedAt?: string | null },
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.listingIntakes.closeWithActiveDeals(
+      id,
+      user.officeId,
+      dto.expectedUpdatedAt,
+    );
+  }
+
   @Post(':id/confirm')
   confirm(
     @Param('id') id: string,
@@ -265,7 +282,7 @@ function parseListingIntakeQuery(query: Record<string, string>) {
     unit: query.unit || undefined,
     moveInFrom: query.moveInFrom || undefined,
     moveInTo: query.moveInTo || undefined,
-    sortBy: (query.sortBy as 'receivedAt' | 'updatedAt' | 'createdAt') || undefined,
+    sortBy: (query.sortBy as ListingIntakeSortField) || undefined,
     sortOrder: (query.sortOrder as 'asc' | 'desc') || undefined,
   };
 }

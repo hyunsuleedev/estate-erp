@@ -3,20 +3,18 @@ import {
   ArrowRight,
   CalendarClock,
   CheckCircle2,
+  CircleAlert,
   CircleOff,
   MoreVertical,
   Trash2,
 } from 'lucide-react';
 import type { CalendarEvent, Match } from '@estate-erp/api-client';
+import { MatchStage, normalizeMatchStage } from '@estate-erp/shared';
 import {
   buyerProgressStages,
-  formatElapsedDays,
-  formatMatchPrice,
-  formatRequirementSummary,
   getActiveDealLink,
   getDefaultViewingStartDate,
-  getInitials,
-  getMatchStageHeaderClass,
+  getMatchStageBlockReason,
   getMatchStageLabel,
   getMatchTitle,
   getNextMatchStage,
@@ -26,14 +24,10 @@ import {
   shouldMoveToViewingOnSchedule,
   toDateTimeLocalInputValue,
   formatViewingEventTime,
-  type MatchBoardStage,
   type MatchProgressStage,
   type MatchRowActions,
 } from './-match-view-utils';
 import { cn } from '@/lib/utils';
-import { StatusBadge } from '@/components/domain';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -81,16 +75,21 @@ export function MatchActionsMenu({
           <DropdownMenuItem
             key={stage}
             onSelect={() => actions.onStageChange(match.id, stage)}
-            className={cn(stage === match.stage && 'font-medium text-foreground')}
+            className={cn(
+              stage === normalizeMatchStage(match.stage) &&
+                'font-medium text-foreground',
+            )}
           >
-            {stage === 'dealCreated' ? '거래 전환…' : getMatchStageLabel(stage)}
+            {stage === MatchStage.DEAL_CREATED
+              ? '거래 전환…'
+              : getMatchStageLabel(stage)}
           </DropdownMenuItem>
         ))}
         <DropdownMenuSeparator />
         <DropdownMenuItem
           variant="destructive"
-          onSelect={() => actions.onStageChange(match.id, 'closed')}
-          disabled={match.stage === 'closed'}
+          onSelect={() => actions.onStageChange(match.id, MatchStage.CLOSED)}
+          disabled={normalizeMatchStage(match.stage) === MatchStage.CLOSED}
         >
           <CircleOff className="size-4" />
           종료
@@ -125,7 +124,7 @@ export function ProgressNode({
   const [open, setOpen] = useState(false);
   const [viewingStartLocalValue, setViewingStartLocalValue] = useState('');
   const state = getProgressNodeState(match.stage, stage);
-  const isClosed = match.stage === 'closed';
+  const isClosed = normalizeMatchStage(match.stage) === MatchStage.CLOSED;
   const upcomingViewingEvent = getUpcomingViewingEvent(match);
   const disabled = actions.isUpdating || actions.isScheduling;
 
@@ -174,7 +173,9 @@ export function ProgressNode({
             onDoubleClick={(event) => event.stopPropagation()}
             disabled={disabled}
           >
-            {stage === 'viewing' && upcomingViewingEvent && <CalendarClock className="size-3" />}
+            {stage === MatchStage.VIEWING && upcomingViewingEvent && (
+              <CalendarClock className="size-3" />
+            )}
             {label}
           </button>
         </PopoverTrigger>
@@ -232,20 +233,34 @@ function StageActionPopoverContent({
   const stageLabel = getMatchStageLabel(stage);
   const nextStage = getNextMatchStage(match.stage);
   const shouldAdvanceToViewing = shouldMoveToViewingOnSchedule(match.stage);
+  const requestedStage = state === 'current' ? nextStage : stage;
+  const blockReason = requestedStage
+    ? getMatchStageBlockReason(match, requestedStage)
+    : null;
 
-  if (stage === 'viewing') {
+  if (stage === MatchStage.VIEWING) {
     return (
       <div className="space-y-3">
         <div>
           <p className="text-sm font-semibold">방문 작업</p>
           <p className="mt-1 text-xs text-muted-foreground">
-            방문 일정을 캘린더에 남기고, 방문 완료 시 다음 단계로 넘깁니다.
+            방문 일정을 캘린더에 남기고, 방문 완료 시 협상 단계로 이동합니다.
           </p>
         </div>
 
         {upcomingViewingEvent && (
           <div className="rounded-md bg-info-soft px-3 py-2 text-xs text-info">
             예정된 방문: {formatViewingEventTime(upcomingViewingEvent)}
+          </div>
+        )}
+
+        {blockReason && (
+          <div
+            role="alert"
+            className="flex gap-2 rounded-md bg-warning-soft px-3 py-2 text-xs text-warning"
+          >
+            <CircleAlert className="mt-0.5 size-3.5 shrink-0" />
+            <span>{blockReason}</span>
           </div>
         )}
 
@@ -264,7 +279,7 @@ function StageActionPopoverContent({
             type="button"
             size="sm"
             onClick={() => onScheduleViewing(match, viewingStartLocalValue)}
-            disabled={disabled || !viewingStartLocalValue}
+            disabled={disabled || !viewingStartLocalValue || Boolean(blockReason)}
           >
             <CalendarClock className="size-4" />
             {upcomingViewingEvent
@@ -274,24 +289,24 @@ function StageActionPopoverContent({
                 : '방문 일정 잡기'}
           </Button>
 
-          {match.stage === 'viewing' ? (
+          {normalizeMatchStage(match.stage) === MatchStage.VIEWING ? (
             <Button
               type="button"
               variant="outline"
               size="sm"
-              onClick={() => onStageChange('ownerContacted')}
+              onClick={() => onStageChange(MatchStage.NEGOTIATING)}
               disabled={disabled}
             >
               <CheckCircle2 className="size-4" />
-              방문 완료
+              방문 완료하고 협상으로
             </Button>
           ) : (
             <Button
               type="button"
               variant="outline"
               size="sm"
-              onClick={() => onStageChange('viewing')}
-              disabled={disabled}
+              onClick={() => onStageChange(MatchStage.VIEWING)}
+              disabled={disabled || Boolean(blockReason)}
             >
               방문 단계로 이동
             </Button>
@@ -306,13 +321,25 @@ function StageActionPopoverContent({
       <div>
         <p className="text-sm font-semibold">{stageLabel}</p>
         <p className="mt-1 text-xs text-muted-foreground">
-          {state === 'current'
+          {stage === MatchStage.VIEWING_CONFIRMED
+            ? '집주인·점유자에게 임장 가능 여부를 확인한 뒤 다음 단계로 진행합니다.'
+            : state === 'current'
             ? '현재 단계입니다. 다음 업무로 넘기거나 다른 단계로 이동할 수 있습니다.'
             : state === 'completed'
               ? '이미 지난 단계입니다. 필요하면 이 단계로 되돌립니다.'
-              : '아직 도달하지 않은 단계입니다. 필요한 경우 바로 이동합니다.'}
+              : '아직 도달하지 않은 단계입니다. 앞 단계를 완료한 뒤 진행합니다.'}
         </p>
       </div>
+
+      {blockReason && (
+        <div
+          role="alert"
+          className="flex gap-2 rounded-md bg-warning-soft px-3 py-2 text-xs text-warning"
+        >
+          <CircleAlert className="mt-0.5 size-3.5 shrink-0" />
+          <span>{blockReason}</span>
+        </div>
+      )}
 
       <div className="grid gap-2">
         {state !== 'current' && (
@@ -321,9 +348,9 @@ function StageActionPopoverContent({
             variant="outline"
             size="sm"
             onClick={() => onStageChange(stage)}
-            disabled={disabled}
+            disabled={disabled || Boolean(blockReason)}
           >
-            {stage === 'dealCreated'
+            {stage === MatchStage.DEAL_CREATED
               ? '거래 전환…'
               : state === 'completed'
                 ? '이 단계로 되돌리기'
@@ -336,176 +363,16 @@ function StageActionPopoverContent({
             type="button"
             size="sm"
             onClick={() => onStageChange(nextStage)}
-            disabled={disabled}
+            disabled={disabled || Boolean(blockReason)}
           >
-            {nextStage === 'dealCreated' ? '거래 전환…' : `다음: ${getMatchStageLabel(nextStage)}`}
+            {nextStage === MatchStage.DEAL_CREATED
+              ? '거래 전환…'
+              : `다음: ${getMatchStageLabel(nextStage)}`}
             <ArrowRight className="size-4" />
           </Button>
         )}
       </div>
     </div>
-  );
-}
-
-// ── 칸반 컬럼 / 카드 ─────────────────────────────────────────────────────────
-
-export function MatchColumn({
-  stage,
-  matches,
-  actions,
-}: {
-  stage: MatchBoardStage;
-  matches: Match[];
-  actions: MatchRowActions;
-}) {
-  return (
-    <section className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-lg border border-border/60 bg-muted/20">
-      <div
-        className={cn(
-          'flex items-center justify-between px-4 py-3 text-sm font-medium',
-          getMatchStageHeaderClass(stage),
-        )}
-      >
-        <span>{getMatchStageLabel(stage)}</span>
-        <Badge variant="secondary" className="bg-background/80 text-foreground">
-          {matches.length}
-        </Badge>
-      </div>
-
-      <div className="flex min-h-[440px] flex-1 flex-col gap-3 p-3">
-        {matches.length === 0 ? (
-          <div className="flex min-h-[180px] items-center justify-center rounded-md border border-dashed border-border/80 bg-background/70 text-sm text-muted-foreground">
-            해당 단계의 매칭이 없습니다.
-          </div>
-        ) : (
-          matches.map((match) => <MatchCard key={match.id} match={match} actions={actions} />)
-        )}
-      </div>
-    </section>
-  );
-}
-
-export function MatchCard({
-  match,
-  actions,
-}: {
-  match: Match;
-  actions: MatchRowActions;
-}) {
-  const nextStage = getNextMatchStage(match.stage);
-  const buyerName = match.buyerRequirement?.contact?.name ?? '미지정';
-
-  return (
-    <article
-      className="cursor-pointer rounded-md border border-border/60 bg-background p-3 shadow-xs transition-colors hover:border-border"
-      onClick={() => actions.onOpenDetail(match.id)}
-      title="클릭하여 상세보기"
-    >
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0 space-y-2">
-          <div className="flex items-center gap-2">
-            <Avatar size="sm">
-              <AvatarFallback>{getInitials(buyerName)}</AvatarFallback>
-            </Avatar>
-            <div className="min-w-0">
-              <p className="truncate text-sm font-semibold">{buyerName}</p>
-              <p className="truncate text-xs text-muted-foreground">
-                {match.buyerRequirement?.contact?.phone ?? '연락처 없음'}
-              </p>
-            </div>
-          </div>
-
-          <div>
-            <p className="truncate text-sm font-medium">{getMatchTitle(match)}</p>
-            <div className="mt-1 flex flex-wrap items-center gap-2">
-              {match.listing?.transactionType && (
-                <StatusBadge kind="transactionType" status={match.listing.transactionType} size="sm" />
-              )}
-              <span className="text-xs font-medium tabular-nums text-foreground">
-                {formatMatchPrice(match)}
-              </span>
-            </div>
-          </div>
-        </div>
-
-        <MatchActionsMenu match={match} actions={actions} />
-      </div>
-
-      <div className="mt-3 rounded-md bg-muted/40 p-2">
-        <p className="text-[11px] text-muted-foreground">매수 요건</p>
-        <p className="mt-1 text-sm">{formatRequirementSummary(match)}</p>
-      </div>
-
-      {match.memo && (
-        <p className="mt-3 line-clamp-2 text-xs leading-5 text-muted-foreground">{match.memo}</p>
-      )}
-
-      <div className="mt-4 flex items-center justify-between gap-2">
-        <span className="text-[11px] text-muted-foreground">{formatElapsedDays(match.createdAt)}</span>
-        {nextStage && (
-          <Button
-            type="button"
-            variant="outline"
-            size="xs"
-            onClick={(event) => {
-              event.stopPropagation();
-              actions.onStageChange(match.id, nextStage);
-            }}
-            disabled={actions.isUpdating}
-          >
-            {nextStage === 'dealCreated' ? '거래 전환' : '다음 단계'}
-            <ArrowRight className="size-3" />
-          </Button>
-        )}
-      </div>
-    </article>
-  );
-}
-
-// ── 칸반 하단 결과 패널 (거래 전환 / 종료) ──────────────────────────────────
-
-export function ResultPanel({
-  title,
-  emptyMessage,
-  matches,
-  actions,
-}: {
-  title: string;
-  emptyMessage: string;
-  matches: Match[];
-  actions: MatchRowActions;
-}) {
-  return (
-    <section className="rounded-lg border border-border/60 bg-background">
-      <div className="flex items-center justify-between border-b border-border/60 px-4 py-3">
-        <h2 className="text-sm font-semibold">{title}</h2>
-        <Badge variant="secondary">{matches.length}</Badge>
-      </div>
-      <div className="divide-y divide-border/60">
-        {matches.length === 0 ? (
-          <div className="px-4 py-8 text-sm text-muted-foreground">{emptyMessage}</div>
-        ) : (
-          matches.map((match) => (
-            <div
-              key={match.id}
-              className="flex cursor-pointer items-center justify-between gap-3 px-4 py-3 hover:bg-muted/20"
-              onClick={() => actions.onOpenDetail(match.id)}
-              title="클릭하여 상세보기"
-            >
-              <div className="min-w-0 space-y-1">
-                <p className="truncate text-sm font-medium">
-                  {match.buyerRequirement?.contact?.name ?? '미지정'}
-                </p>
-                <p className="truncate text-xs text-muted-foreground">
-                  {getMatchTitle(match)} · {formatMatchPrice(match)}
-                </p>
-              </div>
-              <MatchActionsMenu match={match} actions={actions} />
-            </div>
-          ))
-        )}
-      </div>
-    </section>
   );
 }
 

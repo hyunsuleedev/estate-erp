@@ -1,4 +1,4 @@
 interface:
   display_name: "네이버 부동산 읽기"
-  short_description: "네이버 광고를 관측하고 승인 가능한 변경안을 만듭니다"
-  default_prompt: "Use $naver-real-estate-reader to refresh our Naver advertisement memory and propose any exact changes that need staff review."
+  short_description: "로컬 수집범위로 네이버 광고를 관측·비교합니다"
+  default_prompt: "Use $naver-real-estate-reader to refresh Naver observations for the locally configured scope and return comparison evidence."

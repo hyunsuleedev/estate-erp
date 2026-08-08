@@ -1551,7 +1551,7 @@ describe('ContractsService', () => {
       const conditions = (prisma.contract.findMany.mock.calls as any)[0][0].where.AND;
       const searchClause = conditions.find((condition: any) => condition.OR);
       const contains = { contains: '010-1234-5678', mode: 'insensitive' };
-      const normalizedContains = { contains: '01012345678', mode: 'insensitive' };
+      const canonicalContains = { contains: '01012345678', mode: 'insensitive' };
 
       expect(searchClause.OR).toEqual(
         expect.arrayContaining([
@@ -1561,17 +1561,23 @@ describe('ContractsService', () => {
                 OR: [
                   { phone: contains },
                   { mobilePhone: contains },
-                  { contact: { phones: { some: { phone: contains } } } },
+                  {
+                    contact: {
+                      phones: { some: { phone: canonicalContains } },
+                    },
+                  },
                 ],
               },
             },
           },
-          { buyerContact: { phones: { some: { phone: contains } } } },
-          { sellerContact: { phones: { some: { phone: contains } } } },
-          // 숫자만 정규화된 번호로도 매칭 (CTI 발신번호 형식 대응)
           {
             buyerContact: {
-              phones: { some: { normalizedPhone: normalizedContains } },
+              phones: { some: { phone: canonicalContains } },
+            },
+          },
+          {
+            sellerContact: {
+              phones: { some: { phone: canonicalContains } },
             },
           },
         ]),

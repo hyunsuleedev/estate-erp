@@ -154,7 +154,7 @@ export class WindowManager {
       minHeight: 600,
       x: Math.max(0, Math.round(position.x - 200)),
       y: Math.max(0, Math.round(position.y - 18)),
-      title: `${tab.title} — Estate ERP`,
+      title: `${tab.title} — 에스테잇플로우`,
     });
 
     const target = rendererUrlFor({ window: 'detached', tabId: tab.id });
@@ -207,7 +207,7 @@ export class WindowManager {
       minHeight: 600,
       x,
       y,
-      title: `${tab.title} — Estate ERP`,
+      title: `${tab.title} — 에스테잇플로우`,
       // 드래그 중에 다른 창 위에 떠있도록
       alwaysOnTop: true,
     });

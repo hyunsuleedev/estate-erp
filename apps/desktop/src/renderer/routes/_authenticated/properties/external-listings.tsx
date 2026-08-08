@@ -4,30 +4,35 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import {
   Building2,
   CheckCircle,
   ChevronDown,
+  CircleDot,
   CircleDollarSign,
   Compass,
+  CopyPlus,
   DoorOpen,
   ExternalLink,
   FileText,
   Hash,
   Layers3,
   ListOrdered,
-  Link2,
-  Loader2,
   Lock,
   Megaphone,
+  Pencil,
   Plus,
   RefreshCw,
   RotateCcw,
   Ruler,
   Search,
+  Tag,
+  Trash2,
   TrendingDown,
   TrendingUp,
   UserRound,
@@ -37,12 +42,16 @@ import {
 import { toast } from 'sonner';
 import type { ColumnDef, SortingState } from '@tanstack/react-table';
 import type {
+  ExternalListingDiscoveryStatus,
   ExternalListingGroup,
   ExternalListingTransactionType,
-  SnapshotSession,
 } from '@estate-erp/api-client';
 import { formatPrice } from '@estate-erp/shared';
-import { DataTable } from '@/components/data-table';
+import {
+  CellEditProvider,
+  DataTable,
+  EditableCell,
+} from '@/components/data-table';
 import { useAuth } from '@/providers/auth-provider';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
@@ -53,6 +62,7 @@ import { Textarea } from '@/components/ui/textarea';
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -85,6 +95,30 @@ const transactionTypes: Array<{
   { value: 'jeonse', label: '전세' },
   { value: 'monthly', label: '월세' },
 ];
+
+const MAX_MANUAL_ENTRY_DRAFTS = 3_000;
+const EXTERNAL_LISTING_BATCH_SIZE = 100;
+
+const DISCOVERY_STATUS_META: Record<
+  ExternalListingDiscoveryStatus,
+  { label: string; description: string; className: string }
+> = {
+  new: {
+    label: '신규',
+    description: '이전 자료에 같은 매물과 광고가 없습니다.',
+    className: 'bg-[#e8f3ec] text-[#2f6b45]',
+  },
+  added: {
+    label: '추가',
+    description: '기존 매물에 새로운 광고가 추가됐습니다.',
+    className: 'bg-[#fdecc8] text-[#8a5d16]',
+  },
+  existing: {
+    label: '기존',
+    description: '이전 자료에도 동일한 광고가 있습니다.',
+    className: 'bg-[#f1f1ef] text-[#787774]',
+  },
+};
 
 const MARKET_DETAIL_COLUMN_IDS = [
   'priceMin',
@@ -126,7 +160,6 @@ function ExternalListingsPage() {
   const [monthlyDetailMode, setMonthlyDetailMode] = useState(false);
   const [showManualDialog, setShowManualDialog] = useState(false);
   const [innerTab, setInnerTab] = useState<'new' | 'old'>('new');
-  const [showStartConfirm, setShowStartConfirm] = useState(false);
   const [showCompleteConfirm, setShowCompleteConfirm] = useState(false);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [sessionError, setSessionError] = useState<string | null>(null);
@@ -195,32 +228,6 @@ function ExternalListingsPage() {
       user?.role === 'manager' ||
       activeSession.startedById === user?.id);
 
-  const createSessionMutation = useMutation({
-    mutationFn: () =>
-      api.externalListings.createSession({
-        siteId: scopeSiteId!,
-        transactionType,
-      }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: [
-          'external-listing-active-session',
-          scopeSiteId,
-          transactionType,
-        ],
-      });
-      setShowStartConfirm(false);
-      setInnerTab('new');
-      setShowManualDialog(true);
-    },
-    onError: (err: unknown) => {
-      const msg =
-        err instanceof Error ? err.message : '스냅샷 세션 시작에 실패했습니다.';
-      setSessionError(msg);
-      setShowStartConfirm(false);
-    },
-  });
-
   const completeSessionMutation = useMutation({
     mutationFn: () => api.externalListings.completeSession(activeSession!.id),
     onSuccess: (result) => {
@@ -258,7 +265,7 @@ function ExternalListingsPage() {
     },
   });
 
-  // ── Inline group updates (memo / inferredHo) ───────────────────
+  // ── Inline group updates (memo / ho) ──────────────────────────
   const updateGroupMutation = useMutation({
     mutationFn: ({
       id,
@@ -267,7 +274,7 @@ function ExternalListingsPage() {
       id: string;
       dto: {
         memo?: string | null;
-        inferredHo?: string | null;
+        ho?: string | null;
       };
     }) => api.externalListings.updateGroup(id, dto),
     // Optimistic update so the table feels instant.
@@ -302,24 +309,6 @@ function ExternalListingsPage() {
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['external-listing-groups'] });
     },
-  });
-
-  // ── 호실(Unit) 수동 링크/해제 — unit 객체가 함께 갱신돼야 하므로 낙관적 갱신 없이 invalidate
-  const linkUnitMutation = useMutation({
-    mutationFn: ({ id, unitId }: { id: string; unitId: string | null }) =>
-      api.externalListings.updateGroup(id, { unitId }),
-    onSuccess: (_data, vars) => {
-      toast.success(
-        vars.unitId ? '호실이 연결되었습니다.' : '호실 연결이 해제되었습니다.',
-      );
-      queryClient.invalidateQueries({ queryKey: ['external-listing-groups'] });
-    },
-    onError: (err) =>
-      toast.error(
-        err instanceof Error && err.message
-          ? err.message
-          : '호실 연결에 실패했습니다.',
-      ),
   });
 
   // ── 랭킹 셀에서 동일주소 광고를 인라인으로 펼친 행 ───────────────
@@ -373,9 +362,9 @@ function ExternalListingsPage() {
         const dongText = (g.buildingName ?? '').toLowerCase();
         if (!dongText.includes(bq)) return false;
       }
-      // 호수 필터: inferredHo 또는 unit.name
+      // 호수 필터: 사용자가 기록한 텍스트
       if (hq) {
-        const hoText = (g.inferredHo ?? g.unit?.name ?? '').toLowerCase();
+        const hoText = (g.ho ?? '').toLowerCase();
         if (!hoText.includes(hq)) return false;
       }
       // 매물특징 필터: articleFeatureDesc + memo
@@ -461,9 +450,8 @@ function ExternalListingsPage() {
         {
           onUpdateMemo: (id, memo) =>
             updateGroupMutation.mutate({ id, dto: { memo: memo || null } }),
-          onUpdateInferredHo: (id, ho) =>
-            updateGroupMutation.mutate({ id, dto: { inferredHo: ho || null } }),
-          onLinkUnit: (id, unitId) => linkUnitMutation.mutate({ id, unitId }),
+          onUpdateHo: (id, ho) =>
+            updateGroupMutation.mutate({ id, dto: { ho: ho || null } }),
           expandedListingIds: expandedRankingRowIds,
           onToggleListings: toggleRankingRow,
         },
@@ -475,20 +463,12 @@ function ExternalListingsPage() {
       expandedRankingRowIds,
       toggleRankingRow,
       updateGroupMutation,
-      linkUnitMutation,
     ],
   );
 
   const handleManualButtonClick = () => {
-    if (!scopeSiteId) {
-      setSessionError('입력을 시작하려면 단지를 1개만 선택하세요.');
-      return;
-    }
-    if (activeSession) {
-      setShowManualDialog(true);
-    } else {
-      setShowStartConfirm(true);
-    }
+    setSessionError(null);
+    setShowManualDialog(true);
   };
 
   // 범위 카드 구성 — 거래유형별 라벨/프리셋 (만원)
@@ -508,8 +488,8 @@ function ExternalListingsPage() {
         : [1000, 3000, 5000, 10000, 30000, 50000, 100000];
 
   return (
-    // 래퍼는 pt-0이므로 top 마진 상쇄 불필요 — -mt까지 주면 헤더 뒤로 16px 파고든다
-    <div className="-mx-4 -mb-4 flex min-h-0 min-w-0 flex-1 flex-col bg-white">
+    // 매물관리와 동일하게 콘텐츠 패딩을 네 방향 모두 상쇄해 첫 필터를 상단에 붙인다.
+    <div className="-m-4 flex min-h-0 min-w-0 flex-1 flex-col bg-white">
       {activeSession && (
         <div className="mx-6 mt-3 flex items-center gap-2 rounded-md border border-warning-soft bg-warning-soft/50 px-3 py-2 text-sm">
           <Lock className="size-4 text-warning" />
@@ -794,57 +774,66 @@ function ExternalListingsPage() {
               ) : !isLoading && groups.length === 0 ? (
                 <EmptyState hasSiteFilter={selectedSiteIds.length > 0} />
               ) : (
-                <DataTable
-                  columns={columns}
-                  data={filteredGroups}
-                  layout="full-height"
-                  variant="notion"
-                  rowHeight={40}
-                  pinnedColumns={['site', 'dong', 'floor', 'ho']}
-                  columnGroupControls={[
-                    {
-                      collapsed: areMarketDetailColumnsCollapsed,
-                      onToggle: () => {
-                        if (!areMarketDetailColumnsCollapsed) {
-                          setSorting((previous) =>
-                            previous.some(({ id }) =>
-                              MARKET_DETAIL_COLUMN_ID_SET.has(id),
-                            )
-                              ? []
-                              : previous,
+                <CellEditProvider>
+                  <DataTable
+                    columns={columns}
+                    data={filteredGroups}
+                    layout="full-height"
+                    variant="notion"
+                    rowHeight={40}
+                    pinnedColumns={[
+                      'discoveryStatus',
+                      'myAd',
+                      'owner',
+                      'site',
+                      'dong',
+                      'ho',
+                    ]}
+                    columnGroupControls={[
+                      {
+                        collapsed: areMarketDetailColumnsCollapsed,
+                        onToggle: () => {
+                          if (!areMarketDetailColumnsCollapsed) {
+                            setSorting((previous) =>
+                              previous.some(({ id }) =>
+                                MARKET_DETAIL_COLUMN_ID_SET.has(id),
+                              )
+                                ? []
+                                : previous,
+                            );
+                          }
+                          setAreMarketDetailColumnsCollapsed(
+                            (previous) => !previous,
                           );
-                        }
-                        setAreMarketDetailColumnsCollapsed(
-                          (previous) => !previous,
-                        );
+                        },
+                        anchorColumnId: 'price',
+                        columnIds: MARKET_DETAIL_COLUMN_IDS,
+                        label: '최소가–매물특징',
                       },
-                      anchorColumnId: 'price',
-                      columnIds: MARKET_DETAIL_COLUMN_IDS,
-                      label: '최소가–매물특징',
-                    },
-                  ]}
-                  sorting={sorting}
-                  onSortingChange={setSorting}
-                  expandedRowIds={expandedRankingRowIds}
-                  renderExpandedRow={(group) => (
-                    <ExternalListingRankPanel group={group} />
-                  )}
-                  enableRowSelection
-                  isLoading={isLoading}
-                  renderStatusBar={() => (
-                    <span>
-                      광고 {filteredGroups.length.toLocaleString()}건 표시
-                      {groups.length !== filteredGroups.length
-                        ? ` · 전체 ${groups.length.toLocaleString()}건`
-                        : ''}
-                    </span>
-                  )}
-                  emptyMessage={
-                    activeFilterCount > 0
-                      ? '필터에 맞는 매물이 없습니다'
-                      : '매물이 없습니다'
-                  }
-                />
+                    ]}
+                    sorting={sorting}
+                    onSortingChange={setSorting}
+                    expandedRowIds={expandedRankingRowIds}
+                    renderExpandedRow={(group) => (
+                      <ExternalListingRankPanel group={group} />
+                    )}
+                    enableRowSelection
+                    isLoading={isLoading}
+                    renderStatusBar={() => (
+                      <span>
+                        광고 {filteredGroups.length.toLocaleString()}건 표시
+                        {groups.length !== filteredGroups.length
+                          ? ` · 전체 ${groups.length.toLocaleString()}건`
+                          : ''}
+                      </span>
+                    )}
+                    emptyMessage={
+                      activeFilterCount > 0
+                        ? '필터에 맞는 매물이 없습니다'
+                        : '매물이 없습니다'
+                    }
+                  />
+                </CellEditProvider>
               )}
             </TabsContent>
           ))}
@@ -855,7 +844,7 @@ function ExternalListingsPage() {
         open={showManualDialog}
         onOpenChange={setShowManualDialog}
         siteOptions={siteOptions}
-        defaultSiteId={scopeSiteId ?? selectedSiteIds[0]}
+        defaultSiteId={scopeSiteId}
         defaultTransactionType={transactionType}
         onSuccess={() => {
           queryClient.invalidateQueries({
@@ -865,18 +854,6 @@ function ExternalListingsPage() {
             queryKey: ['external-listing-active-session'],
           });
         }}
-      />
-
-      <ConfirmDialog
-        open={showStartConfirm}
-        onOpenChange={setShowStartConfirm}
-        title="새 스냅샷을 시작하시겠습니까?"
-        description={
-          '현재 목록이 "구 데이터"로 이동하고, 새로 입력한 매물만 "신규"에 표시됩니다. 완료 버튼을 누르기 전까지는 변경되지 않으며, 취소 시 구 데이터가 복구됩니다.'
-        }
-        confirmLabel="시작"
-        onConfirm={() => createSessionMutation.mutate()}
-        pending={createSessionMutation.isPending}
       />
 
       <ConfirmDialog
@@ -1035,11 +1012,7 @@ function ExternalListingRankPanel({ group }: { group: ExternalListingGroup }) {
   });
 
   const listings = data?.listings ?? [];
-  const locationLabel = [
-    group.site?.name,
-    group.buildingName,
-    group.unit?.name ?? group.inferredHo,
-  ]
+  const locationLabel = [group.site?.name, group.buildingName, group.ho]
     .filter(Boolean)
     .join(' · ');
 
@@ -1067,13 +1040,13 @@ function ExternalListingRankPanel({ group }: { group: ExternalListingGroup }) {
       </div>
 
       {isLoading ? (
-        <div className="max-w-[940px] space-y-1.5">
+        <div className="max-w-[720px] space-y-1.5">
           {Array.from({ length: 3 }).map((_, index) => (
             <Skeleton key={index} className="h-11 w-full rounded-md" />
           ))}
         </div>
       ) : isError ? (
-        <div className="flex max-w-[940px] items-center gap-2 rounded-md border border-[#d8ebf3] bg-white px-3 py-2">
+        <div className="flex max-w-[720px] items-center gap-2 rounded-md border border-[#d8ebf3] bg-white px-3 py-2">
           <p className="text-xs text-muted-foreground">
             동일주소 광고를 불러오지 못했습니다.
           </p>
@@ -1093,18 +1066,15 @@ function ExternalListingRankPanel({ group }: { group: ExternalListingGroup }) {
         </p>
       ) : (
         <div className="overflow-x-auto">
-          <div className="min-w-[806px] max-w-[940px]">
+          <div className="min-w-[620px] max-w-[720px]">
             <div className="flex items-center gap-1.5 pb-1.5 pl-[13px] pr-1">
               <span className="w-[52px] shrink-0 text-[11px] font-semibold text-muted-foreground">
                 순위
               </span>
-              <span className="w-[72px] shrink-0 text-[11px] font-semibold text-muted-foreground">
-                광고
-              </span>
               <span className="w-[64px] shrink-0 text-[11px] font-semibold text-muted-foreground">
                 주인
               </span>
-              <span className="w-[160px] shrink-0 text-[11px] font-semibold text-muted-foreground">
+              <span className="w-[200px] shrink-0 text-[11px] font-semibold text-muted-foreground">
                 부동산
               </span>
               <span className="w-[125px] shrink-0 text-[11px] font-semibold text-muted-foreground">
@@ -1112,9 +1082,6 @@ function ExternalListingRankPanel({ group }: { group: ExternalListingGroup }) {
               </span>
               <span className="w-[82px] shrink-0 text-[11px] font-semibold text-muted-foreground">
                 확인일
-              </span>
-              <span className="w-[110px] shrink-0 text-[11px] font-semibold text-muted-foreground">
-                매물번호
               </span>
             </div>
 
@@ -1135,17 +1102,6 @@ function ExternalListingRankPanel({ group }: { group: ExternalListingGroup }) {
                     <div className="w-[52px] shrink-0 text-[12.5px] font-semibold tabular-nums text-[#337ea9]">
                       {listing.ranking != null ? `${listing.ranking}위` : '-'}
                     </div>
-                    <div className="w-[72px] shrink-0">
-                      <NotionTag
-                        className={
-                          listing.isActive
-                            ? 'bg-[#e7f3f8] text-[#337ea9]'
-                            : 'bg-[#fbe4e4] text-[#9f5555]'
-                        }
-                      >
-                        {listing.isActive ? '광고 O' : '광고 X'}
-                      </NotionTag>
-                    </div>
                     <div className="w-[64px] shrink-0">
                       <NotionTag
                         className={
@@ -1157,7 +1113,7 @@ function ExternalListingRankPanel({ group }: { group: ExternalListingGroup }) {
                         {isOwner ? '집주인' : '중개사'}
                       </NotionTag>
                     </div>
-                    <div className="w-[160px] shrink-0">
+                    <div className="w-[200px] shrink-0">
                       <p className="truncate text-[12.5px] font-semibold text-foreground">
                         {realtorName}
                       </p>
@@ -1172,9 +1128,6 @@ function ExternalListingRankPanel({ group }: { group: ExternalListingGroup }) {
                     </div>
                     <div className="w-[82px] shrink-0 truncate text-[12px] tabular-nums text-foreground/70">
                       {formatYmd(listing.articleConfirmYmd)}
-                    </div>
-                    <div className="w-[110px] shrink-0 truncate text-[12px] tabular-nums text-foreground/70">
-                      {listing.articleNo}
                     </div>
                     {href ? (
                       <a
@@ -1277,7 +1230,9 @@ function formatYmd(dateStr: string | null | undefined): string {
 
 function formatMonthDay(dateStr: string | null | undefined): string | null {
   if (!dateStr || !/^\d{8}$/.test(dateStr)) return null;
-  return `${dateStr.slice(4, 6)}-${dateStr.slice(6, 8)}`;
+  const month = Number(dateStr.slice(4, 6));
+  const day = Number(dateStr.slice(6, 8));
+  return `${month}/${day}`;
 }
 
 const DIRECTION_LABELS: Record<string, string> = {
@@ -1324,14 +1279,17 @@ function NotionTag({
   children,
   className,
   title,
+  ariaLabel,
 }: {
   children: ReactNode;
   className?: string;
   title?: string;
+  ariaLabel?: string;
 }) {
   return (
     <span
       title={title}
+      aria-label={ariaLabel}
       className={cn(
         'inline-flex max-w-full items-center rounded-[4px] px-1.5 py-0.5 text-[11px] font-medium leading-5',
         className,
@@ -1508,8 +1466,7 @@ function RangeFilterCard({
 
 interface ColumnFactoryContext {
   onUpdateMemo: (groupId: string, memo: string) => void;
-  onUpdateInferredHo: (groupId: string, ho: string) => void;
-  onLinkUnit: (groupId: string, unitId: string | null) => void;
+  onUpdateHo: (groupId: string, ho: string) => void;
   expandedListingIds: ReadonlySet<string>;
   onToggleListings: (groupId: string) => void;
 }
@@ -1538,168 +1495,78 @@ function buildColumns(
 ): ColumnDef<ExternalListingGroup, unknown>[] {
   const columns: ColumnDef<ExternalListingGroup, unknown>[] = [];
 
-  // ── 1. 단지 — 정렬과 가로 스크롤 기준이 되는 sticky 컬럼 ────────
+  // ── 1. 상태 — 이전 수집과 비교한 신규/추가/기존 구분 ───────────
   columns.push({
-    id: 'site',
+    id: 'discoveryStatus',
     header: () => (
-      <TableHeaderLabel icon={<Building2 className="size-4" />} label="단지" />
+      <TableHeaderLabel icon={<CircleDot className="size-4" />} label="상태" />
     ),
-    size: 200,
+    size: 58,
     enableResizing: false,
-    cell: ({ row }) => (
-      <span className="truncate text-[14px] font-semibold text-slate-900">
-        {row.original.site?.name ?? '-'}
-      </span>
-    ),
-  });
-
-  // ── 2. 동 — 단지와 별도 정렬 가능 ─────────────────────────
-  columns.push({
-    id: 'dong',
-    header: () => (
-      <TableHeaderLabel icon={<Hash className="size-4" />} label="동" />
-    ),
-    size: 70,
-    enableResizing: false,
-    cell: ({ row }) => (
-      <span className="truncate text-[13px] font-medium text-slate-900">
-        {row.original.buildingName ?? '-'}
-      </span>
-    ),
-  });
-
-  // ── 3. 층 (floorInfo: 저/중/고 또는 층수/전체층) ───────────
-  columns.push({
-    id: 'floor',
-    header: () => (
-      <TableHeaderLabel icon={<Layers3 className="size-4" />} label="층" />
-    ),
-    size: 56,
-    enableResizing: false,
-    cell: ({ row }) => (
-      <span className="truncate text-[13px] font-medium tabular-nums text-slate-700">
-        {row.original.mainExternalListing?.floorInfo ?? '-'}
-      </span>
-    ),
-  });
-
-  // ── 4. 호 (인라인 편집 + Unit 수동 링크, 별도 정렬 가능) ─────
-  columns.push({
-    id: 'ho',
-    header: () => (
-      <TableHeaderLabel icon={<DoorOpen className="size-4" />} label="호" />
-    ),
-    size: 104,
-    enableResizing: false,
+    enableSorting: false,
     cell: ({ row }) => {
-      const g = row.original;
-      // If a Unit is linked, the ho is authoritative (read-only with unlink).
-      if (g.unit?.name) {
-        return (
-          <div className="flex min-w-0 items-center gap-1 text-[13px]">
-            <span
-              className="flex min-w-0 items-center gap-1 truncate font-medium text-slate-800"
-              title="호실이 확정되었습니다. 변경하려면 연결을 해제하세요."
-            >
-              <Link2 className="size-3 shrink-0 text-[#337ea9]" />
-              {g.unit.name}
-            </span>
-            <button
-              type="button"
-              title="호실 연결 해제"
-              onClick={(e) => {
-                e.stopPropagation();
-                ctx.onLinkUnit(g.id, null);
-              }}
-              className="rounded-[3px] p-0.5 text-slate-500 transition-colors hover:bg-[#f1f1ef] hover:text-destructive"
-            >
-              <X className="size-3" />
-            </button>
-          </div>
-        );
-      }
+      const status = row.original.discoveryStatus ?? 'existing';
+      const meta = DISCOVERY_STATUS_META[status];
       return (
-        <div className="flex min-w-0 items-center gap-0.5">
-          <HoInput
-            groupId={g.id}
-            initial={g.inferredHo}
-            onSave={ctx.onUpdateInferredHo}
-          />
-          <UnitLinkPopover
-            group={g}
-            onLink={(unitId) => ctx.onLinkUnit(g.id, unitId)}
-          />
-        </div>
+        <NotionTag
+          title={meta.description}
+          ariaLabel={`수집 상태 ${meta.label}. ${meta.description}`}
+          className={cn('min-w-10 justify-center', meta.className)}
+        >
+          {meta.label}
+        </NotionTag>
       );
     },
   });
 
-  // ── 5. 타입 (areaName + pyeong/pyeong) ─────────────────────
-  columns.push({
-    id: 'type',
-    header: () => (
-      <TableHeaderLabel icon={<Ruler className="size-4" />} label="타입" />
-    ),
-    size: 80,
-    cell: ({ row }) => {
-      const g = row.original;
-      const main = g.mainExternalListing;
-      const exclusivePyeong = sqmToPyeong(
-        main?.exclusiveAreaM2 ?? g.exclusiveAreaM2,
-      );
-      const supplyPyeong = sqmToPyeong(main?.supplyAreaM2);
-      return (
-        <div className="flex min-w-0 flex-col gap-1">
-          <span className="truncate text-[13px] font-medium text-slate-900">
-            {g.areaName ?? '-'}
-          </span>
-          {exclusivePyeong != null && (
-            <span className="truncate text-[11px] tabular-nums text-slate-500">
-              {exclusivePyeong}
-              {supplyPyeong != null ? `/${supplyPyeong}` : ''}평
-            </span>
-          )}
-        </div>
-      );
-    },
-  });
-
-  // ── 6. 내광고 — 실제 게시일은 월-일, 없으면 광고 X ─────────
+  // ── 2. 내광고 — 관계 판단의 첫 기준, 실제 게시일은 월-일 ───────
   columns.push({
     id: 'myAd',
     header: () => (
-      <TableHeaderLabel
-        icon={<Megaphone className="size-4" />}
-        label="내광고"
-      />
+      <TableHeaderLabel icon={<Megaphone className="size-4" />} label="광고" />
     ),
-    size: 80,
+    size: 68,
     enableResizing: false,
     cell: ({ row }) => {
       const group = row.original;
       const postedAt = formatMonthDay(group.ownAdvertisementYmd);
       if (postedAt) {
         return (
-          <NotionTag
-            className="bg-[#e7f3f8] text-[#337ea9] tabular-nums"
-            title={`내 광고 게시일 ${formatYmd(group.ownAdvertisementYmd)}`}
+          <span
+            aria-label={`내 광고 게시일 ${formatYmd(group.ownAdvertisementYmd)}`}
+            className="inline-flex max-w-full items-center gap-1 rounded-[4px] bg-[#e7f3f8] px-1.5 py-0.5 text-[12px] font-medium leading-5 whitespace-nowrap tabular-nums text-[#337ea9]"
           >
+            <span
+              aria-hidden="true"
+              className="size-1.5 shrink-0 rounded-full bg-[#529cca]"
+            />
             {postedAt}
-          </NotionTag>
+          </span>
         );
       }
 
-      return <span className="px-1 text-[12px] text-slate-600">광고 X</span>;
+      return (
+        <span
+          aria-label="내 광고 없음"
+          className="inline-flex max-w-full items-center gap-1 rounded-[4px] bg-[#f1f1ef] px-1.5 py-0.5 text-[12px] font-medium leading-5 whitespace-nowrap text-[#787774]"
+        >
+          <span
+            aria-hidden="true"
+            className="size-1.5 shrink-0 rounded-full bg-[#b4b4b1]"
+          />
+          없음
+        </span>
+      );
     },
   });
 
-  // ── 7. 주인 (집주인 확인 / 중개사) ─────────────────────────
+  // ── 3. 주인 — 집주인 확인 여부를 내광고와 함께 고정 ───────────
   columns.push({
     id: 'owner',
     header: () => (
       <TableHeaderLabel icon={<UserRound className="size-4" />} label="주인" />
     ),
-    size: 72,
+    size: 62,
     enableResizing: false,
     cell: ({ row }) => (
       <NotionTag
@@ -1714,7 +1581,125 @@ function buildColumns(
     ),
   });
 
-  // ── 8. 랭킹 (내 광고 순위/동일주소 개수) ──────────────────
+  // ── 4. 단지 — 관계 판단 뒤 매물을 식별하는 sticky 컬럼 ─────────
+  columns.push({
+    id: 'site',
+    header: () => (
+      <TableHeaderLabel icon={<Building2 className="size-4" />} label="단지" />
+    ),
+    size: 200,
+    enableResizing: false,
+    cell: ({ row }) => (
+      <span className="truncate text-[14px] font-semibold text-slate-900">
+        {row.original.site?.name ?? '-'}
+      </span>
+    ),
+  });
+
+  // ── 5. 동 — 단지와 별도 정렬 가능 ─────────────────────────
+  columns.push({
+    id: 'dong',
+    header: () => (
+      <TableHeaderLabel icon={<Hash className="size-4" />} label="동" />
+    ),
+    size: 70,
+    enableResizing: false,
+    cell: ({ row }) => (
+      <span className="truncate text-[13px] font-medium text-slate-900">
+        {row.original.buildingName ?? '-'}
+      </span>
+    ),
+  });
+
+  // ── 6. 호 — 매물 식별에 필요한 마지막 sticky 컬럼 ───────────
+  columns.push({
+    id: 'ho',
+    header: () => (
+      <TableHeaderLabel icon={<DoorOpen className="size-4" />} label="호" />
+    ),
+    size: 104,
+    enableResizing: false,
+    meta: {
+      cellClassName: 'hover:bg-muted/50',
+    },
+    cell: ({ row }) => (
+      <HoCell
+        groupId={row.original.id}
+        initial={row.original.ho}
+        onSave={ctx.onUpdateHo}
+      />
+    ),
+  });
+
+  // ── 7. 층 (floorInfo: 저/중/고 또는 층수/전체층) ───────────
+  columns.push({
+    id: 'floor',
+    header: () => (
+      <TableHeaderLabel icon={<Layers3 className="size-4" />} label="층" />
+    ),
+    size: 56,
+    enableResizing: false,
+    cell: ({ row }) => (
+      <span className="truncate text-[13px] font-medium tabular-nums text-slate-700">
+        {row.original.mainExternalListing?.floorInfo ?? '-'}
+      </span>
+    ),
+  });
+
+  // ── 8. 타입 — 외부 광고의 평형 타입 식별값 ─────────────────
+  columns.push({
+    id: 'type',
+    header: () => (
+      <TableHeaderLabel icon={<Tag className="size-4" />} label="타입" />
+    ),
+    size: 64,
+    cell: ({ row }) => (
+      <span className="block truncate text-[13px] font-medium text-slate-900">
+        {row.original.areaName ?? '-'}
+      </span>
+    ),
+  });
+
+  // ── 9. 면적 — 전용/공급 평을 독립된 숫자 열로 표시 ───────────
+  columns.push({
+    id: 'area',
+    header: () => (
+      <TableHeaderLabel icon={<Ruler className="size-4" />} label="면적" />
+    ),
+    size: 72,
+    cell: ({ row }) => {
+      const g = row.original;
+      const main = g.mainExternalListing;
+      const exclusivePyeong = sqmToPyeong(
+        main?.exclusiveAreaM2 ?? g.exclusiveAreaM2,
+      );
+      const supplyPyeong = sqmToPyeong(main?.supplyAreaM2);
+      const areaLabel =
+        exclusivePyeong != null
+          ? `${exclusivePyeong}${supplyPyeong != null ? `/${supplyPyeong}` : ''}평`
+          : supplyPyeong != null
+            ? `${supplyPyeong}평`
+            : '-';
+      const areaDescription =
+        exclusivePyeong != null
+          ? `전용 ${exclusivePyeong}평${supplyPyeong != null ? ` · 공급 ${supplyPyeong}평` : ''}`
+          : supplyPyeong != null
+            ? `공급 ${supplyPyeong}평`
+            : undefined;
+
+      return (
+        <span
+          aria-label={areaDescription}
+          title={areaDescription}
+          className="block truncate whitespace-nowrap text-[12px] font-medium tabular-nums text-slate-600"
+        >
+          {areaLabel}
+        </span>
+      );
+    },
+  });
+
+  // ── 10. 랭킹 (내 광고 순위/동일주소 개수) ─────────────────
   columns.push({
     id: 'duplicate',
     header: () => (
@@ -1770,7 +1755,7 @@ function buildColumns(
     },
   });
 
-  // ── 9. 가격 (탭별 다름) ───────────────────────────────────
+  // ── 11. 가격 (탭별 다름) ──────────────────────────────────
   columns.push({
     id: 'price',
     header: () => (
@@ -1810,7 +1795,7 @@ function buildColumns(
     },
   });
 
-  // ── 10–11. 동일주소 활성 광고의 최소·최대 가격 ─────────────
+  // ── 11–12. 동일주소 활성 광고의 최소·최대 가격 ─────────────
   const rangePriceColumnSize = transactionType === 'monthly' ? 124 : 112;
   columns.push({
     id: 'priceMin',
@@ -1848,7 +1833,7 @@ function buildColumns(
     ),
   });
 
-  // ── 12. 방향 — 네이버 원본 코드를 사용자 표기로 변환 ────────
+  // ── 14. 방향 — 네이버 원본 코드를 사용자 표기로 변환 ────────
   columns.push({
     id: 'direction',
     header: () => (
@@ -1862,7 +1847,7 @@ function buildColumns(
     ),
   });
 
-  // ── 13. 매물특징 — 외부 광고에서 수집한 원문 요약 ───────────
+  // ── 15. 매물특징 — 외부 광고에서 수집한 원문 요약 ───────────
   columns.push({
     id: 'features',
     header: () => (
@@ -1900,7 +1885,7 @@ function buildColumns(
     },
   });
 
-  // ── 14. 내 메모 — 사무소 전용 편집 데이터 ──────────────────
+  // ── 16. 내 메모 — 사무소 전용 편집 데이터 ──────────────────
   columns.push({
     id: 'memo',
     header: () => (
@@ -1912,9 +1897,12 @@ function buildColumns(
     size: 320,
     minSize: 240,
     enableSorting: false,
-    meta: { fill: true },
+    meta: {
+      fill: true,
+      cellClassName: 'hover:bg-muted/50',
+    },
     cell: ({ row }) => (
-      <CommentInput
+      <MemoCell
         groupId={row.original.id}
         initial={row.original.memo}
         onSave={ctx.onUpdateMemo}
@@ -1934,9 +1922,9 @@ function buildColumns(
   });
 }
 
-// ── Inline ho (호수) editor — only used when unit is not yet linked ──
+// ── Property-table style text editors ───────────────────────────
 
-function HoInput({
+function HoCell({
   groupId,
   initial,
   onSave,
@@ -1945,176 +1933,32 @@ function HoInput({
   initial: string | null;
   onSave: (groupId: string, ho: string) => void;
 }) {
-  const [value, setValue] = useState(initial ?? '');
-  useEffect(() => {
-    setValue(initial ?? '');
-  }, [initial]);
-
-  const commit = () => {
-    const next = value.trim();
-    if ((initial ?? '') === next) return;
-    onSave(groupId, next);
-  };
+  const value = initial?.trim() ?? '';
 
   return (
-    <Input
+    <EditableCell
+      recordId={groupId}
+      field="ho"
       value={value}
-      onChange={(e) => setValue(e.target.value)}
-      onBlur={commit}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter') e.currentTarget.blur();
-        if (e.key === 'Escape') {
-          setValue(initial ?? '');
-          e.currentTarget.blur();
-        }
+      onSave={(recordId, _field, nextValue) => {
+        const next = String(nextValue ?? '').trim();
+        if (next === value) return;
+        onSave(recordId, next);
       }}
-      onClick={(e) => e.stopPropagation()}
-      placeholder="호수"
-      className="h-6 rounded-[5px] border-0 bg-transparent px-1.5 py-0 text-[13px] font-medium text-slate-800 shadow-none tabular-nums placeholder:text-transparent hover:ring-1 hover:ring-[#eeeeec] focus-visible:ring-1 focus-visible:ring-slate-300 focus-visible:placeholder:text-slate-500 group-hover:placeholder:text-slate-500 md:text-[13px]"
-    />
+      editType="text"
+      activation="doubleClick"
+      portalAnchor="tableCell"
+      editorChrome="floating"
+      hoverHighlight={false}
+    >
+      <span className="flex h-full w-full items-center truncate text-[13px] font-medium tabular-nums text-slate-800">
+        {value || <span className="text-slate-400">-</span>}
+      </span>
+    </EditableCell>
   );
 }
 
-// ── Unit 수동 링크 팝오버 (동 → 호 선택) ─────────────────────────────
-
-function UnitLinkPopover({
-  group,
-  onLink,
-}: {
-  group: ExternalListingGroup;
-  onLink: (unitId: string) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const [dongId, setDongId] = useState('');
-
-  const { data: dongs = [], isLoading: isDongsLoading } = useQuery({
-    queryKey: ['dongs', group.siteId],
-    queryFn: () => api.dongs.findAll(group.siteId),
-    enabled: open,
-  });
-
-  // 단일 동 건물(placeholder)이면 동 선택을 건너뛰고 바로 호실을 보여준다.
-  const placeholderDong = useMemo(
-    () => dongs.find((d) => d.isPlaceholder) ?? null,
-    [dongs],
-  );
-  const visibleDongs = useMemo(
-    () => dongs.filter((d) => !d.isPlaceholder),
-    [dongs],
-  );
-  const effectiveDongId = dongId || placeholderDong?.id || '';
-
-  const { data: units = [], isLoading: isUnitsLoading } = useQuery({
-    queryKey: ['units', group.siteId, effectiveDongId],
-    queryFn: () =>
-      api.units.findAll({ siteId: group.siteId, dongId: effectiveDongId }),
-    enabled: open && !!effectiveDongId,
-  });
-
-  const sortedUnits = useMemo(
-    () =>
-      [...units].sort((a, b) => {
-        const af = a.floor ?? 0;
-        const bf = b.floor ?? 0;
-        if (af !== bf) return bf - af;
-        return a.name.localeCompare(b.name, 'ko', { numeric: true });
-      }),
-    [units],
-  );
-
-  const handleOpenChange = (next: boolean) => {
-    setOpen(next);
-    if (next) {
-      // 네이버가 준 동명 원문과 이름이 같은 동을 기본 선택
-      setDongId('');
-    }
-  };
-
-  return (
-    <Popover open={open} onOpenChange={handleOpenChange}>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          title="호실(Unit) 연결"
-          onClick={(e) => e.stopPropagation()}
-          className="rounded-[3px] p-0.5 text-slate-500 transition-colors hover:bg-[#f1f1ef] hover:text-[#337ea9]"
-        >
-          <Link2 className="size-3.5" />
-        </button>
-      </PopoverTrigger>
-      <PopoverContent
-        align="start"
-        className="w-64 p-3"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <p className="text-xs font-medium">호실 연결</p>
-        <p className="mt-0.5 text-[11px] text-muted-foreground">
-          {group.site?.name}
-          {group.buildingName ? ` · ${group.buildingName}` : ''} 그룹을 실제
-          호실에 연결합니다.
-        </p>
-        <div className="mt-2 space-y-2">
-          {visibleDongs.length > 0 && (
-            <Select value={dongId} onValueChange={(v) => setDongId(v)}>
-              <SelectTrigger className="h-8 w-full text-xs">
-                <SelectValue
-                  placeholder={isDongsLoading ? '동 불러오는 중...' : '동 선택'}
-                />
-              </SelectTrigger>
-              <SelectContent>
-                {visibleDongs.map((d) => (
-                  <SelectItem key={d.id} value={d.id} className="text-xs">
-                    {d.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
-          {!effectiveDongId ? (
-            <p className="py-2 text-center text-[11px] text-muted-foreground">
-              {isDongsLoading
-                ? '동 정보를 불러오는 중...'
-                : visibleDongs.length === 0
-                  ? '등록된 동/호실 정보가 없습니다. 관리단지에서 호실을 먼저 등록하세요.'
-                  : '동을 먼저 선택하세요.'}
-            </p>
-          ) : isUnitsLoading ? (
-            <div className="flex items-center justify-center py-3">
-              <Loader2 className="size-4 animate-spin text-muted-foreground" />
-            </div>
-          ) : sortedUnits.length === 0 ? (
-            <p className="py-2 text-center text-[11px] text-muted-foreground">
-              이 동에 등록된 호실이 없습니다.
-            </p>
-          ) : (
-            <div className="max-h-48 overflow-y-auto rounded-md border">
-              {sortedUnits.map((u) => (
-                <button
-                  key={u.id}
-                  type="button"
-                  onClick={() => {
-                    onLink(u.id);
-                    setOpen(false);
-                  }}
-                  className="flex w-full items-center justify-between border-b px-2.5 py-1.5 text-left text-xs transition-colors last:border-b-0 hover:bg-[#f1f1ef]"
-                >
-                  <span className="font-medium">{u.name}</span>
-                  <span className="text-[11px] text-muted-foreground">
-                    {u.siteUnitType?.name ?? ''}
-                  </span>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      </PopoverContent>
-    </Popover>
-  );
-}
-
-// ── Inline comment editor ──────────────────────────────────────────
-
-function CommentInput({
+function MemoCell({
   groupId,
   initial,
   onSave,
@@ -2123,34 +1967,29 @@ function CommentInput({
   initial: string | null;
   onSave: (groupId: string, memo: string) => void;
 }) {
-  const [value, setValue] = useState(initial ?? '');
-  useEffect(() => {
-    setValue(initial ?? '');
-  }, [initial]);
-
-  const commit = () => {
-    if ((initial ?? '') === value) return;
-    onSave(groupId, value);
-  };
+  const value = initial ?? '';
+  const displayValue = value.trim();
 
   return (
-    <Input
+    <EditableCell
+      recordId={groupId}
+      field="memo"
       value={value}
-      onChange={(e) => setValue(e.target.value)}
-      onBlur={commit}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter') {
-          e.currentTarget.blur();
-        }
-        if (e.key === 'Escape') {
-          setValue(initial ?? '');
-          e.currentTarget.blur();
-        }
+      onSave={(recordId, _field, nextValue) => {
+        const next = String(nextValue ?? '');
+        if (next === value) return;
+        onSave(recordId, next);
       }}
-      onClick={(e) => e.stopPropagation()}
-      placeholder="메모 입력..."
-      className="h-6 rounded-[5px] border-0 bg-transparent px-2 text-[13px] text-slate-700 shadow-none placeholder:text-transparent hover:ring-1 hover:ring-[#eeeeec] focus-visible:ring-1 focus-visible:ring-slate-300 focus-visible:placeholder:text-slate-500 group-hover:placeholder:text-slate-500 md:text-[13px]"
-    />
+      editType="text"
+      activation="doubleClick"
+      portalAnchor="tableCell"
+      editorChrome="floating"
+      hoverHighlight={false}
+    >
+      <p className="w-full truncate text-[13px] text-slate-700">
+        {displayValue || <span className="text-slate-400">-</span>}
+      </p>
+    </EditableCell>
   );
 }
 
@@ -2187,8 +2026,7 @@ interface ManualEntryForm {
   transactionType: ExternalListingTransactionType;
   articleNo: string;
   dongId: string;
-  unitId: string;
-  /** 호수 미선택 시 평형만 지정 */
+  ho: string;
   siteUnitTypeId: string;
   direction: string;
   price: string;
@@ -2197,6 +2035,10 @@ interface ManualEntryForm {
   realtorName: string;
   representativeTelNo: string;
   articleFeatureDesc: string;
+}
+
+interface ManualEntryDraft extends ManualEntryForm {
+  clientId: string;
 }
 
 function createInitialForm(
@@ -2208,7 +2050,7 @@ function createInitialForm(
     transactionType,
     articleNo: '',
     dongId: '',
-    unitId: '',
+    ho: '',
     siteUnitTypeId: '',
     direction: '',
     price: '',
@@ -2227,6 +2069,32 @@ function parseManwon(value: string): number | null {
   return Number.isFinite(parsed) ? Math.round(parsed) : null;
 }
 
+function createManualEntryDraft(
+  form: ManualEntryForm,
+  clientId = `draft-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+): ManualEntryDraft {
+  return {
+    ...form,
+    clientId,
+    articleNo:
+      form.articleNo.trim() ||
+      `manual-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+  };
+}
+
+function formatManualEntryDraftPrice(draft: ManualEntryDraft): string {
+  if (draft.transactionType === 'monthly') {
+    const deposit = parseManwon(draft.deposit);
+    const monthlyRent = parseManwon(draft.monthlyRent);
+    return `${deposit == null ? '-' : formatPrice(deposit)} / ${monthlyRent == null ? '-' : formatPrice(monthlyRent)}`;
+  }
+
+  const amount = parseManwon(
+    draft.transactionType === 'sale' ? draft.price : draft.deposit,
+  );
+  return amount == null ? '가격 미입력' : formatPrice(amount);
+}
+
 function ManualEntryDialog({
   open,
   onOpenChange,
@@ -2242,10 +2110,43 @@ function ManualEntryDialog({
   defaultTransactionType: ExternalListingTransactionType;
   onSuccess: () => void;
 }) {
+  const queryClient = useQueryClient();
   const [form, setForm] = useState<ManualEntryForm>(() =>
     createInitialForm(defaultSiteId, defaultTransactionType),
   );
+  const [drafts, setDrafts] = useState<ManualEntryDraft[]>([]);
+  const [showDraftDialog, setShowDraftDialog] = useState(false);
+  const [editingDraftId, setEditingDraftId] = useState<string | null>(null);
+  const [isDuplicatingDraft, setIsDuplicatingDraft] = useState(false);
+  const [submittedCount, setSubmittedCount] = useState(0);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    setForm(createInitialForm(defaultSiteId, defaultTransactionType));
+    setDrafts([]);
+    setShowDraftDialog(false);
+    setEditingDraftId(null);
+    setIsDuplicatingDraft(false);
+    setSubmittedCount(0);
+    setErrorMessage(null);
+  }, [defaultSiteId, defaultTransactionType, open]);
+
+  const {
+    data: entrySession = null,
+    isLoading: isEntrySessionLoading,
+    isError: isEntrySessionError,
+    refetch: refetchEntrySession,
+  } = useQuery({
+    queryKey: [
+      'external-listing-active-session',
+      form.siteId,
+      form.transactionType,
+    ],
+    queryFn: () =>
+      api.externalListings.getActiveSession(form.siteId, form.transactionType),
+    enabled: open && !!form.siteId,
+  });
 
   const { data: siteDetail } = useQuery({
     queryKey: ['site-detail', form.siteId],
@@ -2259,44 +2160,29 @@ function ManualEntryDialog({
     enabled: !!form.siteId,
   });
 
-  const { data: units = [] } = useQuery({
-    queryKey: ['units', form.siteId, form.dongId],
-    queryFn: () =>
-      api.units.findAll({ siteId: form.siteId, dongId: form.dongId }),
-    enabled: !!form.siteId && !!form.dongId,
-  });
-
   const siteUnitTypes = siteDetail?.siteUnitTypes ?? [];
-
-  const selectedDong = useMemo(
-    () => dongs.find((d) => d.id === form.dongId),
-    [dongs, form.dongId],
-  );
-  const selectedUnit = useMemo(
-    () => units.find((u) => u.id === form.unitId),
-    [units, form.unitId],
-  );
-  const selectedSiteUnitType = useMemo(
-    () => siteUnitTypes.find((t) => t.id === form.siteUnitTypeId),
-    [siteUnitTypes, form.siteUnitTypeId],
-  );
-
-  const sortedUnits = useMemo(() => {
-    return [...units].sort((a, b) => {
-      const af = a.floor ?? 0;
-      const bf = b.floor ?? 0;
-      if (af !== bf) return bf - af;
-      return a.name.localeCompare(b.name, 'ko', { numeric: true });
-    });
-  }, [units]);
 
   const visibleDongs = useMemo(
     () => dongs.filter((d) => !d.isPlaceholder),
     [dongs],
   );
 
+  const draftListViewportRef = useRef<HTMLDivElement>(null);
+  const draftListVirtualizer = useVirtualizer({
+    count: drafts.length,
+    getScrollElement: () => draftListViewportRef.current,
+    estimateSize: () => 52,
+    getItemKey: (index) => drafts[index]?.clientId ?? index,
+    overscan: 8,
+  });
+
   const resetForm = () => {
     setForm(createInitialForm(defaultSiteId, defaultTransactionType));
+    setDrafts([]);
+    setShowDraftDialog(false);
+    setEditingDraftId(null);
+    setIsDuplicatingDraft(false);
+    setSubmittedCount(0);
     setErrorMessage(null);
   };
 
@@ -2305,52 +2191,154 @@ function ManualEntryDialog({
     onOpenChange(next);
   };
 
+  const handleDraftDialogOpenChange = (next: boolean) => {
+    setShowDraftDialog(next);
+    if (!next) {
+      setForm(createInitialForm(form.siteId, form.transactionType));
+      setEditingDraftId(null);
+      setIsDuplicatingDraft(false);
+      setErrorMessage(null);
+    }
+  };
+
+  const openNewDraftDialog = () => {
+    setForm(createInitialForm(form.siteId, form.transactionType));
+    setEditingDraftId(null);
+    setIsDuplicatingDraft(false);
+    setErrorMessage(null);
+    setShowDraftDialog(true);
+  };
+
+  const openDraftForEditing = (draft: ManualEntryDraft) => {
+    setForm(draft);
+    setEditingDraftId(draft.clientId);
+    setIsDuplicatingDraft(false);
+    setErrorMessage(null);
+    setShowDraftDialog(true);
+  };
+
+  const openDuplicateDraft = (draft: ManualEntryDraft) => {
+    setForm({
+      ...createInitialForm(draft.siteId, draft.transactionType),
+      dongId: draft.dongId,
+      ho: draft.ho,
+      siteUnitTypeId: draft.siteUnitTypeId,
+      direction: draft.direction,
+    });
+    setEditingDraftId(null);
+    setIsDuplicatingDraft(true);
+    setErrorMessage(null);
+    setShowDraftDialog(true);
+  };
+
+  const commitDraftToList = () => {
+    if (!editingDraftId && drafts.length >= MAX_MANUAL_ENTRY_DRAFTS) {
+      setErrorMessage(
+        `한 번에 최대 ${MAX_MANUAL_ENTRY_DRAFTS.toLocaleString('ko-KR')}건까지 등록할 수 있습니다.`,
+      );
+      setShowDraftDialog(false);
+      return;
+    }
+    const nextDraft = createManualEntryDraft(form, editingDraftId ?? undefined);
+    setDrafts((current) =>
+      editingDraftId
+        ? current.map((draft) =>
+            draft.clientId === editingDraftId ? nextDraft : draft,
+          )
+        : [...current, nextDraft],
+    );
+    setForm(createInitialForm(form.siteId, form.transactionType));
+    setEditingDraftId(null);
+    setIsDuplicatingDraft(false);
+    setErrorMessage(null);
+    setShowDraftDialog(false);
+  };
+
+  const removeDraft = (clientId: string) => {
+    setDrafts((current) =>
+      current.filter((draft) => draft.clientId !== clientId),
+    );
+  };
+
   const mutation = useMutation({
     mutationFn: async () => {
       if (!form.siteId) throw new Error('단지를 선택하세요.');
-      const articleNo = form.articleNo.trim() || `manual-${Date.now()}`;
+      if (drafts.length === 0) throw new Error('등록할 광고를 추가하세요.');
+      if (drafts.length > MAX_MANUAL_ENTRY_DRAFTS) {
+        throw new Error(
+          `한 번에 최대 ${MAX_MANUAL_ENTRY_DRAFTS.toLocaleString('ko-KR')}건까지 등록할 수 있습니다.`,
+        );
+      }
+      setSubmittedCount(0);
+      if (!entrySession) {
+        await api.externalListings.createSession({
+          siteId: form.siteId,
+          transactionType: form.transactionType,
+        });
+      }
 
-      // 호수를 선택한 경우 그 Unit의 SiteUnitType에서 평형/면적 자동 채움.
-      // 호수를 모르면 사용자가 고른 평형(siteUnitType)에서 면적을 가져온다.
-      const unitType =
-        selectedUnit?.siteUnitType ?? selectedSiteUnitType ?? null;
-
-      return api.externalListings.batchUpsert({
-        source: 'manual',
-        siteId: form.siteId,
-        transactionType: form.transactionType,
-        listings: [
-          {
-            articleNo,
-            unitId: selectedUnit?.id ?? null,
-            buildingName: selectedDong?.name ?? null,
-            inferredHo: selectedUnit?.name ?? null,
-            areaName: unitType?.name ?? null,
-            exclusiveAreaM2:
-              unitType?.exclusiveAreaM2 ??
-              selectedUnit?.exclusiveAreaM2 ??
-              null,
-            supplyAreaM2:
-              unitType?.supplyAreaM2 ?? selectedUnit?.supplyAreaM2 ?? null,
-            floorInfo:
-              selectedUnit?.floor != null ? `${selectedUnit.floor}` : null,
-            direction: form.direction.trim() || unitType?.direction || null,
-            price:
-              form.transactionType === 'sale' ? parseManwon(form.price) : null,
-            deposit:
-              form.transactionType === 'sale'
-                ? null
-                : parseManwon(form.deposit),
-            monthlyRent:
-              form.transactionType === 'monthly'
-                ? parseManwon(form.monthlyRent)
-                : null,
-            realtorName: form.realtorName.trim() || null,
-            representativeTelNo: form.representativeTelNo.trim() || null,
-            articleFeatureDesc: form.articleFeatureDesc.trim() || null,
-          },
-        ],
+      const listings = drafts.map((draft) => {
+        const dong = dongs.find((item) => item.id === draft.dongId);
+        const unitType = siteUnitTypes.find(
+          (item) => item.id === draft.siteUnitTypeId,
+        );
+        return {
+          articleNo: draft.articleNo,
+          buildingName: dong?.name ?? null,
+          ho: draft.ho.trim() || null,
+          areaName: unitType?.name ?? null,
+          exclusiveAreaM2: unitType?.exclusiveAreaM2 ?? null,
+          supplyAreaM2: unitType?.supplyAreaM2 ?? null,
+          direction: draft.direction.trim() || unitType?.direction || null,
+          price:
+            draft.transactionType === 'sale' ? parseManwon(draft.price) : null,
+          deposit:
+            draft.transactionType === 'sale'
+              ? null
+              : parseManwon(draft.deposit),
+          monthlyRent:
+            draft.transactionType === 'monthly'
+              ? parseManwon(draft.monthlyRent)
+              : null,
+          realtorName: draft.realtorName.trim() || null,
+          representativeTelNo: draft.representativeTelNo.trim() || null,
+          articleFeatureDesc: draft.articleFeatureDesc.trim() || null,
+        };
       });
+      const combinedResult = {
+        received: 0,
+        created: 0,
+        updated: 0,
+        groupsCreated: 0,
+        groupsReused: 0,
+        errors: [] as Array<{ articleNo: string; message: string }>,
+      };
+
+      for (
+        let offset = 0;
+        offset < listings.length;
+        offset += EXTERNAL_LISTING_BATCH_SIZE
+      ) {
+        const chunk = listings.slice(
+          offset,
+          offset + EXTERNAL_LISTING_BATCH_SIZE,
+        );
+        const result = await api.externalListings.batchUpsert({
+          source: 'manual',
+          siteId: form.siteId,
+          transactionType: form.transactionType,
+          listings: chunk,
+        });
+        combinedResult.received += result.received;
+        combinedResult.created += result.created;
+        combinedResult.updated += result.updated;
+        combinedResult.groupsCreated += result.groupsCreated;
+        combinedResult.groupsReused += result.groupsReused;
+        combinedResult.errors.push(...result.errors);
+        setSubmittedCount(Math.min(offset + chunk.length, listings.length));
+      }
+
+      return combinedResult;
     },
     onSuccess: (result) => {
       if (result.errors.length > 0) {
@@ -2368,265 +2356,355 @@ function ManualEntryDialog({
         err instanceof Error ? err.message : '등록에 실패했습니다.',
       );
     },
+    onSettled: () => {
+      queryClient.invalidateQueries({
+        queryKey: ['external-listing-active-session'],
+      });
+    },
   });
+
+  const selectedSiteLabel =
+    siteOptions.find((site) => site.value === form.siteId)?.label ??
+    '선택한 단지';
+  const selectedTransactionLabel =
+    transactionTypes.find((type) => type.value === form.transactionType)
+      ?.label ?? '';
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-xl">
-        <DialogHeader>
-          <DialogTitle>외부 매물 입력</DialogTitle>
+      <DialogContent className="max-h-[calc(100vh-2rem)] gap-0 overflow-hidden p-0 sm:max-w-3xl">
+        <DialogHeader className="border-b border-border/70 px-5 pb-4 pt-5">
+          <DialogTitle>광고 입력</DialogTitle>
+          <DialogDescription>
+            단지와 거래유형을 고정한 뒤 광고를 하나씩 목록에 추가하세요.
+          </DialogDescription>
         </DialogHeader>
-        <div className="max-h-[60vh] overflow-y-auto pr-1">
-          <div className="grid grid-cols-2 gap-3">
-            <div className="col-span-2">
-              <Label className="text-sm">단지 *</Label>
-              <Select
-                value={form.siteId}
-                onValueChange={(v) =>
-                  setForm({
-                    ...form,
-                    siteId: v,
-                    dongId: '',
-                    unitId: '',
-                    siteUnitTypeId: '',
-                  })
-                }
+
+        <div className="px-5 pt-4">
+          <div className="rounded-lg border border-border bg-muted/20 p-3">
+            <div className="grid grid-cols-[minmax(0,1fr)_132px] gap-2">
+              <div className="min-w-0 space-y-1.5">
+                <Label className="text-xs font-medium text-foreground">
+                  입력할 단지 *
+                </Label>
+                <Select
+                  value={form.siteId}
+                  disabled={drafts.length > 0}
+                  onValueChange={(siteId) => {
+                    setForm((current) => ({
+                      ...current,
+                      siteId,
+                      dongId: '',
+                      ho: '',
+                      siteUnitTypeId: '',
+                    }));
+                    setErrorMessage(null);
+                  }}
+                >
+                  <SelectTrigger className="h-9 w-full bg-white">
+                    <SelectValue placeholder="단지를 선택하세요" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {siteOptions.map((site) => (
+                      <SelectItem key={site.value} value={site.value}>
+                        {site.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs font-medium text-foreground">
+                  거래유형 *
+                </Label>
+                <Select
+                  value={form.transactionType}
+                  disabled={drafts.length > 0}
+                  onValueChange={(value) => {
+                    setForm((current) => ({
+                      ...current,
+                      transactionType: value as ExternalListingTransactionType,
+                      price: '',
+                      deposit: '',
+                      monthlyRent: '',
+                    }));
+                    setErrorMessage(null);
+                  }}
+                >
+                  <SelectTrigger className="h-9 w-full bg-white">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="sale">매매</SelectItem>
+                    <SelectItem value="jeonse">전세</SelectItem>
+                    <SelectItem value="monthly">월세</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {drafts.length > 0 && (
+              <p className="mt-2 text-[11px] text-muted-foreground">
+                목록에 광고가 있어 단지와 거래유형을 고정했습니다. 목록을 비우면
+                다시 선택할 수 있습니다.
+              </p>
+            )}
+
+            {form.siteId && (
+              <div
+                aria-live="polite"
+                className={cn(
+                  'mt-2.5 flex min-h-8 items-center gap-2 rounded-md px-2.5 text-xs',
+                  isEntrySessionError
+                    ? 'bg-destructive-soft text-destructive'
+                    : entrySession
+                      ? 'bg-success-soft text-success'
+                      : 'bg-warning-soft/60 text-foreground',
+                )}
               >
-                <SelectTrigger>
-                  <SelectValue placeholder="단지 선택" />
-                </SelectTrigger>
-                <SelectContent>
-                  {siteOptions.map((s) => (
-                    <SelectItem key={s.value} value={s.value}>
-                      {s.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label className="text-sm">거래유형 *</Label>
-              <Select
-                value={form.transactionType}
-                onValueChange={(v) =>
-                  setForm({
-                    ...form,
-                    transactionType: v as ExternalListingTransactionType,
-                  })
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="sale">매매</SelectItem>
-                  <SelectItem value="jeonse">전세</SelectItem>
-                  <SelectItem value="monthly">월세</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label className="text-sm">매물번호</Label>
-              <Input
-                placeholder="비워두면 자동 생성"
-                value={form.articleNo}
-                onChange={(e) =>
-                  setForm({ ...form, articleNo: e.target.value })
-                }
-              />
-            </div>
-            <div>
-              <Label className="text-sm">동</Label>
-              <Select
-                value={form.dongId}
-                onValueChange={(v) =>
-                  setForm({ ...form, dongId: v, unitId: '' })
-                }
-                disabled={!form.siteId || visibleDongs.length === 0}
-              >
-                <SelectTrigger>
-                  <SelectValue
-                    placeholder={
-                      !form.siteId
-                        ? '단지 먼저 선택'
-                        : visibleDongs.length === 0
-                          ? '동 정보 없음'
-                          : '동 선택'
-                    }
-                  />
-                </SelectTrigger>
-                <SelectContent>
-                  {visibleDongs.map((d) => (
-                    <SelectItem key={d.id} value={d.id}>
-                      {d.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label className="text-sm">호수 (선택)</Label>
-              <Select
-                value={form.unitId || 'none'}
-                onValueChange={(v) =>
-                  setForm({
-                    ...form,
-                    unitId: v === 'none' ? '' : v,
-                    // 호수를 선택하면 siteUnitType은 Unit에서 자동 유래되므로 초기화
-                    siteUnitTypeId: v === 'none' ? form.siteUnitTypeId : '',
-                  })
-                }
-                disabled={!form.dongId}
-              >
-                <SelectTrigger>
-                  <SelectValue
-                    placeholder={!form.dongId ? '동 먼저 선택' : '호수 선택'}
-                  />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">호수 모름</SelectItem>
-                  {sortedUnits.map((u) => (
-                    <SelectItem key={u.id} value={u.id}>
-                      {u.name}
-                      {u.siteUnitType?.name ? ` · ${u.siteUnitType.name}` : ''}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="col-span-2">
-              <Label className="text-sm">
-                평형 {form.unitId ? '(호수에서 자동)' : '(호수 미선택 시)'}
-              </Label>
-              <Select
-                value={
-                  form.unitId
-                    ? (selectedUnit?.siteUnitType?.id ?? '')
-                    : form.siteUnitTypeId
-                }
-                onValueChange={(v) => setForm({ ...form, siteUnitTypeId: v })}
-                disabled={
-                  !form.siteId || !!form.unitId || siteUnitTypes.length === 0
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue
-                    placeholder={
-                      siteUnitTypes.length === 0
-                        ? '평형 정보 없음'
-                        : '평형 선택'
-                    }
-                  />
-                </SelectTrigger>
-                <SelectContent>
-                  {siteUnitTypes.map((t) => (
-                    <SelectItem key={t.id} value={t.id}>
-                      {t.name}
-                      {t.exclusiveAreaM2
-                        ? ` · 전용 ${Number(t.exclusiveAreaM2).toFixed(2)}㎡`
-                        : ''}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label className="text-sm">향</Label>
-              <Input
-                placeholder="예: 남향"
-                value={form.direction}
-                onChange={(e) =>
-                  setForm({ ...form, direction: e.target.value })
-                }
-              />
-            </div>
-            {form.transactionType === 'sale' && (
-              <div className="col-span-2">
-                <Label className="text-sm">매매가 (만원)</Label>
-                <Input
-                  type="number"
-                  placeholder="예: 158000"
-                  value={form.price}
-                  onChange={(e) => setForm({ ...form, price: e.target.value })}
-                />
+                {isEntrySessionLoading ? (
+                  <>
+                    <RefreshCw className="size-3.5 animate-spin text-muted-foreground" />
+                    <span className="text-muted-foreground">
+                      스냅샷 상태를 확인하는 중입니다.
+                    </span>
+                  </>
+                ) : isEntrySessionError ? (
+                  <>
+                    <XCircle className="size-3.5" />
+                    <span>스냅샷 상태를 확인하지 못했습니다.</span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="xs"
+                      className="ml-auto h-6 px-2"
+                      onClick={() => refetchEntrySession()}
+                    >
+                      다시 확인
+                    </Button>
+                  </>
+                ) : entrySession ? (
+                  <>
+                    <CheckCircle className="size-3.5" />
+                    <span>진행 중인 스냅샷에 입력됩니다.</span>
+                  </>
+                ) : (
+                  <>
+                    <CircleDot className="size-3.5 text-warning" />
+                    <span>등록과 함께 이 단지의 새 스냅샷을 시작합니다.</span>
+                  </>
+                )}
               </div>
             )}
-            {form.transactionType === 'jeonse' && (
-              <div className="col-span-2">
-                <Label className="text-sm">전세보증금 (만원)</Label>
-                <Input
-                  type="number"
-                  placeholder="예: 80000"
-                  value={form.deposit}
-                  onChange={(e) =>
-                    setForm({ ...form, deposit: e.target.value })
-                  }
-                />
-              </div>
-            )}
-            {form.transactionType === 'monthly' && (
-              <>
-                <div>
-                  <Label className="text-sm">보증금 (만원)</Label>
-                  <Input
-                    type="number"
-                    placeholder="예: 5000"
-                    value={form.deposit}
-                    onChange={(e) =>
-                      setForm({ ...form, deposit: e.target.value })
-                    }
-                  />
-                </div>
-                <div>
-                  <Label className="text-sm">월세 (만원)</Label>
-                  <Input
-                    type="number"
-                    placeholder="예: 150"
-                    value={form.monthlyRent}
-                    onChange={(e) =>
-                      setForm({ ...form, monthlyRent: e.target.value })
-                    }
-                  />
-                </div>
-              </>
-            )}
-            <div>
-              <Label className="text-sm">등록 중개사</Label>
-              <Input
-                placeholder="예: 강동부동산"
-                value={form.realtorName}
-                onChange={(e) =>
-                  setForm({ ...form, realtorName: e.target.value })
-                }
-              />
-            </div>
-            <div>
-              <Label className="text-sm">연락처</Label>
-              <Input
-                placeholder="예: 02-0000-0000"
-                value={form.representativeTelNo}
-                onChange={(e) =>
-                  setForm({ ...form, representativeTelNo: e.target.value })
-                }
-              />
-            </div>
-            <div className="col-span-2">
-              <Label className="text-sm">특징/메모</Label>
-              <Textarea
-                rows={3}
-                placeholder="매물 특징, 확인 사항 등"
-                value={form.articleFeatureDesc}
-                onChange={(e) =>
-                  setForm({ ...form, articleFeatureDesc: e.target.value })
-                }
-              />
-            </div>
           </div>
+        </div>
+
+        <div className="min-h-0 overflow-y-auto px-5 pb-4 pt-4">
+          {!form.siteId ? (
+            <div className="flex min-h-44 flex-col items-center justify-center rounded-lg border border-dashed border-border bg-muted/15 px-6 text-center">
+              <span className="mb-3 flex size-9 items-center justify-center rounded-full bg-muted text-muted-foreground">
+                <Building2 className="size-4" />
+              </span>
+              <p className="text-sm font-medium text-foreground">
+                먼저 단지를 선택하세요
+              </p>
+              <p className="mt-1 max-w-sm text-xs leading-5 text-muted-foreground">
+                선택한 단지와 거래유형을 기준으로 동·평형 정보를 불러오고
+                광고노트를 저장합니다.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-sm font-semibold text-foreground">
+                      입력 목록
+                    </h3>
+                    <span className="rounded-md bg-muted px-1.5 py-0.5 text-[11px] font-medium tabular-nums text-muted-foreground">
+                      {drafts.length.toLocaleString('ko-KR')}건
+                    </span>
+                  </div>
+                  <p className="mt-0.5 text-[11px] text-muted-foreground">
+                    한 번에 최대{' '}
+                    {MAX_MANUAL_ENTRY_DRAFTS.toLocaleString('ko-KR')}건까지
+                    등록할 수 있습니다.
+                  </p>
+                </div>
+                <div className="flex shrink-0 items-center gap-1.5">
+                  {drafts.length > 0 && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="text-muted-foreground"
+                      onClick={() => {
+                        setDrafts([]);
+                        setErrorMessage(null);
+                      }}
+                    >
+                      목록 비우기
+                    </Button>
+                  )}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={drafts.length >= MAX_MANUAL_ENTRY_DRAFTS}
+                    onClick={openNewDraftDialog}
+                  >
+                    <Plus className="size-3.5" />
+                    광고 추가
+                  </Button>
+                </div>
+              </div>
+
+              <div className="overflow-hidden rounded-lg border border-border bg-white">
+                {drafts.length === 0 ? (
+                  <div className="flex min-h-48 flex-col items-center justify-center px-6 text-center">
+                    <span className="mb-3 flex size-9 items-center justify-center rounded-full bg-muted text-muted-foreground">
+                      <ListOrdered className="size-4" />
+                    </span>
+                    <p className="text-sm font-medium text-foreground">
+                      아직 추가한 광고가 없습니다
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      광고 추가를 눌러 1건씩 입력하면 여기에 쌓입니다.
+                    </p>
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="mt-4"
+                      onClick={openNewDraftDialog}
+                    >
+                      <Plus className="size-3.5" />첫 광고 추가
+                    </Button>
+                  </div>
+                ) : (
+                  <>
+                    <div className="grid grid-cols-[32px_minmax(132px,1.25fr)_minmax(92px,.75fr)_minmax(112px,.85fr)_minmax(120px,1fr)_94px] items-center gap-2 border-b border-border bg-muted/40 px-3 py-2 text-[10.5px] font-medium text-muted-foreground">
+                      <span>#</span>
+                      <span>동 · 호</span>
+                      <span>평형</span>
+                      <span>가격</span>
+                      <span>등록 중개사</span>
+                      <span className="text-right">관리</span>
+                    </div>
+                    <div
+                      ref={draftListViewportRef}
+                      className="max-h-[32vh] overflow-y-auto"
+                    >
+                      <div
+                        className="relative w-full"
+                        style={{
+                          height: `${draftListVirtualizer.getTotalSize()}px`,
+                        }}
+                      >
+                        {draftListVirtualizer
+                          .getVirtualItems()
+                          .map((virtualRow) => {
+                            const index = virtualRow.index;
+                            const draft = drafts[index];
+                            if (!draft) return null;
+                            const dongName = dongs.find(
+                              (dong) => dong.id === draft.dongId,
+                            )?.name;
+                            const unitTypeName = siteUnitTypes.find(
+                              (unitType) =>
+                                unitType.id === draft.siteUnitTypeId,
+                            )?.name;
+                            const location = [dongName, draft.ho.trim()]
+                              .filter(Boolean)
+                              .join(' · ');
+
+                            return (
+                              <div
+                                key={draft.clientId}
+                                ref={draftListVirtualizer.measureElement}
+                                data-index={virtualRow.index}
+                                className={cn(
+                                  'absolute left-0 top-0 grid w-full grid-cols-[32px_minmax(132px,1.25fr)_minmax(92px,.75fr)_minmax(112px,.85fr)_minmax(120px,1fr)_94px] items-center gap-2 border-b border-border/70 px-3 py-2.5 text-xs hover:bg-muted/15',
+                                  index === drafts.length - 1 && 'border-b-0',
+                                )}
+                                style={{
+                                  transform: `translateY(${virtualRow.start}px)`,
+                                }}
+                              >
+                                <span className="tabular-nums text-muted-foreground">
+                                  {index + 1}
+                                </span>
+                                <span className="truncate font-medium text-foreground">
+                                  {location || '동·호 미입력'}
+                                </span>
+                                <span className="truncate text-muted-foreground">
+                                  {unitTypeName || '-'}
+                                </span>
+                                <span className="truncate font-medium tabular-nums text-foreground">
+                                  {formatManualEntryDraftPrice(draft)}
+                                </span>
+                                <div className="min-w-0">
+                                  <p className="truncate text-foreground">
+                                    {draft.realtorName.trim() ||
+                                      '중개사 미입력'}
+                                  </p>
+                                  {draft.representativeTelNo.trim() && (
+                                    <p className="truncate text-[10.5px] text-muted-foreground">
+                                      {draft.representativeTelNo.trim()}
+                                    </p>
+                                  )}
+                                </div>
+                                <div className="flex justify-end gap-0.5">
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon-xs"
+                                    title="중복매물 추가"
+                                    aria-label={`${index + 1}번째 광고를 중복매물로 추가`}
+                                    disabled={
+                                      drafts.length >= MAX_MANUAL_ENTRY_DRAFTS
+                                    }
+                                    onClick={() => openDuplicateDraft(draft)}
+                                  >
+                                    <CopyPlus className="size-3" />
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon-xs"
+                                    aria-label={`${index + 1}번째 광고 수정`}
+                                    onClick={() => openDraftForEditing(draft)}
+                                  >
+                                    <Pencil className="size-3" />
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon-xs"
+                                    className="text-muted-foreground hover:text-destructive"
+                                    aria-label={`${index + 1}번째 광고 삭제`}
+                                    onClick={() => removeDraft(draft.clientId)}
+                                  >
+                                    <Trash2 className="size-3" />
+                                  </Button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+
           {errorMessage && (
             <p className="mt-3 text-xs text-destructive">{errorMessage}</p>
           )}
         </div>
-        <DialogFooter>
+
+        <DialogFooter className="border-t border-border/70 px-5 py-3">
           <Button
             variant="outline"
             size="sm"
@@ -2636,13 +2714,279 @@ function ManualEntryDialog({
           </Button>
           <Button
             size="sm"
-            disabled={!form.siteId || mutation.isPending}
+            disabled={
+              !form.siteId ||
+              drafts.length === 0 ||
+              isEntrySessionLoading ||
+              isEntrySessionError ||
+              mutation.isPending
+            }
             onClick={() => mutation.mutate()}
           >
-            {mutation.isPending ? '저장 중...' : '등록'}
+            {mutation.isPending
+              ? `${submittedCount.toLocaleString('ko-KR')}/${drafts.length.toLocaleString('ko-KR')}건 등록 중...`
+              : !form.siteId
+                ? '단지를 먼저 선택하세요'
+                : drafts.length === 0
+                  ? '광고를 추가하세요'
+                  : isEntrySessionLoading
+                    ? '확인 중...'
+                    : entrySession
+                      ? `${drafts.length.toLocaleString('ko-KR')}건 등록`
+                      : `${drafts.length.toLocaleString('ko-KR')}건 시작하고 등록`}
           </Button>
         </DialogFooter>
       </DialogContent>
+
+      <Dialog open={showDraftDialog} onOpenChange={handleDraftDialogOpenChange}>
+        <DialogContent className="z-[70] max-h-[calc(100vh-2rem)] gap-0 overflow-hidden p-0 shadow-2xl sm:max-w-xl">
+          <DialogHeader className="border-b border-border/70 px-5 pb-4 pt-5">
+            <DialogTitle>
+              {editingDraftId
+                ? '광고 수정'
+                : isDuplicatingDraft
+                  ? '중복매물 추가'
+                  : '광고 1건 추가'}
+            </DialogTitle>
+            <DialogDescription>
+              {isDuplicatingDraft
+                ? '동·호·평형·향만 복사했습니다. 새 광고의 가격·중개사 정보를 입력하세요.'
+                : `${selectedSiteLabel} · ${selectedTransactionLabel} 광고 내용을 입력하세요.`}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="max-h-[68vh] overflow-y-auto px-5 py-4">
+            <div className="grid grid-cols-2 gap-x-3 gap-y-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs">동</Label>
+                <Select
+                  value={form.dongId}
+                  onValueChange={(dongId) =>
+                    setForm((current) => ({ ...current, dongId }))
+                  }
+                  disabled={visibleDongs.length === 0}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue
+                      placeholder={
+                        visibleDongs.length === 0 ? '동 정보 없음' : '동 선택'
+                      }
+                    />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {visibleDongs.map((dong) => (
+                      <SelectItem key={dong.id} value={dong.id}>
+                        {dong.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs">호수</Label>
+                <Input
+                  placeholder="예: 1503호"
+                  value={form.ho}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      ho: event.target.value,
+                    }))
+                  }
+                />
+              </div>
+
+              <div className="col-span-2 space-y-1.5">
+                <Label className="text-xs">평형</Label>
+                <Select
+                  value={form.siteUnitTypeId}
+                  onValueChange={(siteUnitTypeId) =>
+                    setForm((current) => ({ ...current, siteUnitTypeId }))
+                  }
+                  disabled={siteUnitTypes.length === 0}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue
+                      placeholder={
+                        siteUnitTypes.length === 0
+                          ? '평형 정보 없음'
+                          : '평형 선택'
+                      }
+                    />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {siteUnitTypes.map((unitType) => (
+                      <SelectItem key={unitType.id} value={unitType.id}>
+                        {unitType.name}
+                        {unitType.exclusiveAreaM2
+                          ? ` · 전용 ${Number(unitType.exclusiveAreaM2).toFixed(2)}㎡`
+                          : ''}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs">향</Label>
+                <Input
+                  placeholder="예: 남향"
+                  value={form.direction}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      direction: event.target.value,
+                    }))
+                  }
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs">매물번호</Label>
+                <Input
+                  placeholder="비워두면 자동 생성"
+                  value={form.articleNo}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      articleNo: event.target.value,
+                    }))
+                  }
+                />
+              </div>
+
+              {form.transactionType === 'sale' && (
+                <div className="col-span-2 space-y-1.5">
+                  <Label className="text-xs">매매가 (만원)</Label>
+                  <Input
+                    type="number"
+                    placeholder="예: 158000"
+                    value={form.price}
+                    onChange={(event) =>
+                      setForm((current) => ({
+                        ...current,
+                        price: event.target.value,
+                      }))
+                    }
+                  />
+                </div>
+              )}
+
+              {form.transactionType === 'jeonse' && (
+                <div className="col-span-2 space-y-1.5">
+                  <Label className="text-xs">전세보증금 (만원)</Label>
+                  <Input
+                    type="number"
+                    placeholder="예: 80000"
+                    value={form.deposit}
+                    onChange={(event) =>
+                      setForm((current) => ({
+                        ...current,
+                        deposit: event.target.value,
+                      }))
+                    }
+                  />
+                </div>
+              )}
+
+              {form.transactionType === 'monthly' && (
+                <>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">보증금 (만원)</Label>
+                    <Input
+                      type="number"
+                      placeholder="예: 5000"
+                      value={form.deposit}
+                      onChange={(event) =>
+                        setForm((current) => ({
+                          ...current,
+                          deposit: event.target.value,
+                        }))
+                      }
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">월세 (만원)</Label>
+                    <Input
+                      type="number"
+                      placeholder="예: 150"
+                      value={form.monthlyRent}
+                      onChange={(event) =>
+                        setForm((current) => ({
+                          ...current,
+                          monthlyRent: event.target.value,
+                        }))
+                      }
+                    />
+                  </div>
+                </>
+              )}
+
+              <div className="space-y-1.5">
+                <Label className="text-xs">등록 중개사</Label>
+                <Input
+                  placeholder="예: 강동부동산"
+                  value={form.realtorName}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      realtorName: event.target.value,
+                    }))
+                  }
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs">연락처</Label>
+                <Input
+                  placeholder="예: 02-0000-0000"
+                  value={form.representativeTelNo}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      representativeTelNo: event.target.value,
+                    }))
+                  }
+                />
+              </div>
+
+              <div className="col-span-2 space-y-1.5">
+                <Label className="text-xs">특징/메모</Label>
+                <Textarea
+                  rows={3}
+                  placeholder="매물 특징, 확인 사항 등"
+                  value={form.articleFeatureDesc}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      articleFeatureDesc: event.target.value,
+                    }))
+                  }
+                />
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter className="border-t border-border/70 px-5 py-3">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => handleDraftDialogOpenChange(false)}
+            >
+              취소
+            </Button>
+            <Button type="button" size="sm" onClick={commitDraftToList}>
+              {editingDraftId
+                ? '목록에 반영'
+                : isDuplicatingDraft
+                  ? '중복매물로 추가'
+                  : '목록에 추가'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Dialog>
   );
 }

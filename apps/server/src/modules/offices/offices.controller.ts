@@ -47,6 +47,7 @@ export class OfficesController {
       ceoName?: string | null;
       phone?: string | null;
       address?: string | null;
+      naverVerificationId?: string | null;
     },
     @CurrentUser() user: CurrentUserPayload,
   ) {

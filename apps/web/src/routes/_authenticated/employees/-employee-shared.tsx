@@ -48,10 +48,11 @@ export const taskPriorityLabels: Record<string, string> = {
 };
 
 export const buyerStatusLabels: Record<string, string> = {
-  active: '진행중',
-  matched: '매칭됨',
+  active: '활성',
+  matched: '활성',
+  hold: '보류',
+  inactive: '보류',
   completed: '완료',
-  inactive: '중지',
 };
 
 export function getErrorMessage(error: unknown): string {

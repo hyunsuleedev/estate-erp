@@ -1,23 +1,45 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import {
+  useState,
+  useMemo,
+  useCallback,
+  useEffect,
+  useRef,
+  type ReactNode,
+} from 'react';
 import { toast } from 'sonner';
 import {
   Search,
   Plus,
   Building2,
+  CalendarDays,
   ChevronDown,
   ChevronRight,
   ChevronsLeft,
   ChevronsRight,
+  Hash,
   Map as MapIcon,
+  MessageSquareText,
   MoreHorizontal,
+  Phone,
   RotateCcw,
+  Ruler,
+  Star,
+  Tag,
   Trash2,
+  Type,
+  User,
+  Users,
   X,
 } from 'lucide-react';
 import { api } from '@/lib/api';
-import type { Dong, Unit, OfficeSite } from '@estate-erp/api-client';
+import type {
+  Dong,
+  Unit,
+  OfficeSite,
+  UnitPropertyContact,
+} from '@estate-erp/api-client';
 import type { ColumnDef, SortingState } from '@tanstack/react-table';
 import { DataTable } from '@/components/data-table';
 import { Button } from '@/components/ui/button';
@@ -52,18 +74,21 @@ import { formatDate, formatPhone, formatPyeong } from '@/lib/format';
 import {
   extractRegionFromSite,
   filterOfficeSites,
+  filterUnitsByRecordPresence,
   formatListingPrice,
   getInitialDongScope,
   getSiteGroupKeys,
   groupOfficeSites,
   isDefaultDongScope,
   parseUnitPlacement,
+  prioritizeFavoriteOfficeSites,
   siteTypeLabels,
   siteTypeShort,
   type LayoutSection,
   type MultiSelectOption,
   type OccupancyStatus,
   type PositionedUnit,
+  type RecordPresenceFilter,
   type SiteGroupMode,
 } from './-site-helpers';
 import { MultiFilterDropdown } from './-multi-filter-dropdown';
@@ -81,11 +106,122 @@ type UnitViewMode = 'table' | 'layout' | 'occupancy' | 'expiry';
 type DongScope = { siteId: string; dongIds: string[] };
 type DongWithUnitCount = Dong & { _count?: { units: number } | null };
 
+const unitListingTransactionMeta: Record<
+  string,
+  { label: string; className: string }
+> = {
+  sale: { label: '매매', className: 'bg-[#fdebec] text-[#8f4b46]' },
+  jeonse: { label: '전세', className: 'bg-[#e7f3f8] text-[#337ea9]' },
+  monthly: { label: '월세', className: 'bg-[#fbf3db] text-[#8f6b1f]' },
+};
+
+const UNIT_RELATIONSHIP_COLUMN_IDS = ['tenant', 'listing'] as const;
+const UNIT_RELATIONSHIP_COLUMN_ID_SET = new Set<string>(
+  UNIT_RELATIONSHIP_COLUMN_IDS,
+);
+
+function UnitTableHeaderLabel({
+  icon,
+  label,
+}: {
+  icon: ReactNode;
+  label: string;
+}) {
+  return (
+    <span className="inline-flex min-w-0 items-center gap-1 text-[12px] font-normal text-muted-foreground">
+      <span className="shrink-0 [&>svg]:size-3 [&>svg]:text-muted-foreground/70">
+        {icon}
+      </span>
+      <span className="truncate">{label}</span>
+    </span>
+  );
+}
+
+function UnitTableEmptyCell() {
+  return <span className="sr-only">미등록</span>;
+}
+
+function getUnitOwnerContacts(unit: Unit): UnitPropertyContact[] {
+  const uniqueOwners = new Map<string, UnitPropertyContact>();
+  for (const owner of (unit.properties ?? [])
+    .flatMap((property) => property.propertyContacts ?? [])
+    .filter((propertyContact) => propertyContact.role === 'owner')) {
+    const existing = uniqueOwners.get(owner.contact.id);
+    if (!existing || (owner.isPrimary && !existing.isPrimary)) {
+      uniqueOwners.set(owner.contact.id, owner);
+    }
+  }
+  return Array.from(uniqueOwners.values()).sort(
+    (left, right) =>
+      Number(right.isPrimary) - Number(left.isPrimary) ||
+      left.contact.name.localeCompare(right.contact.name, 'ko'),
+  );
+}
+
+const registeredPresenceOptions: ReadonlyArray<{
+  value: RecordPresenceFilter;
+  label: string;
+}> = [
+  { value: 'all', label: '전체' },
+  { value: 'present', label: '등록' },
+  { value: 'missing', label: '미등록' },
+];
+
+const existencePresenceOptions: ReadonlyArray<{
+  value: RecordPresenceFilter;
+  label: string;
+}> = [
+  { value: 'all', label: '전체' },
+  { value: 'present', label: '있음' },
+  { value: 'missing', label: '없음' },
+];
+
+function UnitRecordFilterSelect({
+  label,
+  value,
+  onChange,
+  options,
+}: {
+  label: string;
+  value: RecordPresenceFilter;
+  onChange: (value: RecordPresenceFilter) => void;
+  options: ReadonlyArray<{ value: RecordPresenceFilter; label: string }>;
+}) {
+  return (
+    <Select
+      value={value}
+      onValueChange={(nextValue) => onChange(nextValue as RecordPresenceFilter)}
+    >
+      <SelectTrigger
+        size="sm"
+        aria-label={`${label} 필터`}
+        className={cn(
+          'h-8 w-[128px] border-border bg-white px-2.5 text-xs font-normal text-foreground shadow-none',
+          value !== 'all' && 'border-foreground/25 bg-foreground/[0.06]',
+        )}
+      >
+        <span className="text-muted-foreground">{label}</span>
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {options.map((option) => (
+          <SelectItem key={option.value} value={option.value} className="text-xs">
+            {option.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
 function SitesPage() {
   const queryClient = useQueryClient();
 
   // ── Sidebar state ─────────────────────────────────────────────
   const [buildingSearch, setBuildingSearch] = useState('');
+  const [favoritesOnly, setFavoritesOnly] = useState(false);
+  const [selectedSiteRegions, setSelectedSiteRegions] = useState<string[]>([]);
+  const [selectedSiteTypes, setSelectedSiteTypes] = useState<string[]>([]);
   const [groupBy, setGroupBy] = useState<SiteGroupMode>('none');
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [isSiteNavOpen, setIsSiteNavOpen] = useState(true);
@@ -99,7 +235,14 @@ function SitesPage() {
   const [query, setQuery] = useState('');
   const [unitSort, setUnitSort] = useState<SortingState>([]);
   const [unitViewMode, setUnitViewMode] = useState<UnitViewMode>('table');
+  const [areUnitRelationshipColumnsCollapsed, setAreUnitRelationshipColumnsCollapsed] =
+    useState(true);
   const [occupancyFilter, setOccupancyFilter] = useState<OccupancyStatus[]>([]);
+  const [ownerFilter, setOwnerFilter] = useState<RecordPresenceFilter>('all');
+  const [tenantFilter, setTenantFilter] = useState<RecordPresenceFilter>('all');
+  const [listingFilter, setListingFilter] = useState<RecordPresenceFilter>('all');
+  const [consultationFilter, setConsultationFilter] =
+    useState<RecordPresenceFilter>('all');
 
   // ── Modal state ───────────────────────────────────────────────
   const [showAddSiteDialog, setShowAddSiteDialog] = useState(false);
@@ -189,7 +332,8 @@ function SitesPage() {
 
   const usesOverviewUnits =
     !!siteDetail && isDefaultDongScope(selectedDongIds, siteDetail.defaultDongId);
-  const selectedDongId = selectedDongIds[0];
+  const selectedDongScopeKey =
+    selectedDongIds.length > 0 ? [...selectedDongIds].sort().join(',') : 'all';
   const shouldLoadScopedUnits =
     !!selectedSiteId &&
     !!siteDetail &&
@@ -203,14 +347,13 @@ function SitesPage() {
     isError: isUnitsError,
     refetch: refetchUnits,
   } = useQuery({
-    queryKey: ['sites', selectedSiteId, 'units', selectedDongId ?? 'all'],
+    queryKey: ['sites', selectedSiteId, 'units', selectedDongScopeKey],
     queryFn: () => {
       if (!selectedSiteId) throw new Error('단지가 선택되지 않았습니다');
-      return api.units.findAll(
-        selectedDongId
-          ? { siteId: selectedSiteId, dongId: selectedDongId }
-          : { siteId: selectedSiteId },
-      );
+      return api.units.findAll({
+        siteId: selectedSiteId,
+        dongIds: selectedDongIds.length > 0 ? selectedDongIds : undefined,
+      });
     },
     enabled: shouldLoadScopedUnits,
   });
@@ -254,6 +397,47 @@ function SitesPage() {
     },
     onError: (error) => {
       toast.error(error instanceof Error ? error.message : '관리단지 제거에 실패했습니다');
+    },
+  });
+
+  const toggleFavoriteMutation = useMutation({
+    mutationFn: ({ id, isFavorite }: Pick<OfficeSite, 'id' | 'isFavorite'>) =>
+      api.officeSites.update(id, { isFavorite: !isFavorite }),
+    onMutate: async ({ id }) => {
+      await queryClient.cancelQueries({ queryKey: ['office-sites'] });
+      const previousSites = queryClient.getQueryData<OfficeSite[]>(['office-sites']);
+      const previousSelectedSite = selectedOfficeSite;
+
+      queryClient.setQueryData<OfficeSite[]>(['office-sites'], (current = []) =>
+        current.map((officeSite) =>
+          officeSite.id === id
+            ? { ...officeSite, isFavorite: !officeSite.isFavorite }
+            : officeSite,
+        ),
+      );
+      setSelectedOfficeSite((current) =>
+        current?.id === id
+          ? { ...current, isFavorite: !current.isFavorite }
+          : current,
+      );
+
+      return { previousSites, previousSelectedSite };
+    },
+    onError: (error, variables, context) => {
+      if (context?.previousSites) {
+        queryClient.setQueryData(['office-sites'], context.previousSites);
+      }
+      setSelectedOfficeSite((current) =>
+        current?.id === variables.id
+          ? (context?.previousSelectedSite ?? null)
+          : current,
+      );
+      toast.error(
+        error instanceof Error ? error.message : '즐겨찾기 변경에 실패했습니다',
+      );
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['office-sites'] });
     },
   });
 
@@ -306,11 +490,53 @@ function SitesPage() {
 
   const existingSiteIds = new Set(officeSites.map((os) => os.siteId));
 
+  const siteRegionOptions = useMemo<MultiSelectOption[]>(() => {
+    const counts = new Map<string, number>();
+    for (const officeSite of officeSites) {
+      if (!officeSite.site) continue;
+      const region = extractRegionFromSite(officeSite.site);
+      counts.set(region, (counts.get(region) ?? 0) + 1);
+    }
+    return Array.from(counts, ([value, count]) => ({
+      value,
+      label: value,
+      helper: `${count.toLocaleString()}개`,
+    })).sort((left, right) => left.label.localeCompare(right.label, 'ko'));
+  }, [officeSites]);
+
+  const siteTypeFilterOptions = useMemo<MultiSelectOption[]>(() => {
+    const counts = new Map<string, number>();
+    for (const officeSite of officeSites) {
+      if (!officeSite.site) continue;
+      counts.set(officeSite.site.type, (counts.get(officeSite.site.type) ?? 0) + 1);
+    }
+    return Array.from(counts, ([value, count]) => ({
+      value,
+      label: siteTypeLabels[value] ?? value,
+      helper: `${count.toLocaleString()}개`,
+    })).sort((left, right) => left.label.localeCompare(right.label, 'ko'));
+  }, [officeSites]);
+
   const hasSiteSearch = buildingSearch.trim().length > 0;
-  const filteredSites = useMemo(
-    () => filterOfficeSites(officeSites, buildingSearch),
-    [officeSites, buildingSearch],
-  );
+  const hasSiteFacetFilter =
+    selectedSiteRegions.length > 0 || selectedSiteTypes.length > 0;
+  const hasSiteFilter = hasSiteSearch || favoritesOnly || hasSiteFacetFilter;
+  const filteredSites = useMemo(() => {
+    const matchingSites = filterOfficeSites(officeSites, buildingSearch, {
+      regions: selectedSiteRegions,
+      types: selectedSiteTypes,
+    });
+    const scopedSites = favoritesOnly
+      ? matchingSites.filter((officeSite) => officeSite.isFavorite)
+      : matchingSites;
+    return prioritizeFavoriteOfficeSites(scopedSites);
+  }, [
+    officeSites,
+    buildingSearch,
+    favoritesOnly,
+    selectedSiteRegions,
+    selectedSiteTypes,
+  ]);
 
   const groupedSites = useMemo(
     () => groupOfficeSites(filteredSites, groupBy),
@@ -318,9 +544,9 @@ function SitesPage() {
   );
 
   useEffect(() => {
-    if (!hasSiteSearch || !groupedSites?.length) return;
+    if (!hasSiteFilter || !groupedSites?.length) return;
     setExpandedGroups(new Set(groupedSites.map(([groupKey]) => groupKey)));
-  }, [groupedSites, hasSiteSearch]);
+  }, [groupedSites, hasSiteFilter]);
 
   const getDongName = useCallback(
     (dongId: string | null) => dongs.find((d) => d.id === dongId)?.name ?? '',
@@ -368,13 +594,22 @@ function SitesPage() {
     !!siteDetail?.defaultDongId &&
     hasDongScopeForSite &&
     !isDefaultDongScope(selectedDongIds, siteDetail.defaultDongId);
-  const hasActiveUnitFilters =
-    hasChangedDongScope ||
+  const hasActiveUnitContentFilters =
     selectedUnitTypeIds.length > 0 ||
-    query.trim().length > 0;
+    query.trim().length > 0 ||
+    ownerFilter !== 'all' ||
+    tenantFilter !== 'all' ||
+    listingFilter !== 'all' ||
+    consultationFilter !== 'all';
+  const hasActiveUnitFilters = hasChangedDongScope || hasActiveUnitContentFilters;
 
   const filteredUnits = useMemo(() => {
-    let units = [...allUnits];
+    let units = filterUnitsByRecordPresence(allUnits, {
+      owner: ownerFilter,
+      tenant: tenantFilter,
+      listing: listingFilter,
+      consultation: consultationFilter,
+    });
 
     if (selectedUnitTypeIds.length > 0) {
       units = units.filter(
@@ -418,11 +653,11 @@ function SitesPage() {
       return units.sort(defaultSort);
     }
 
-    const getOwnerLabel = (unit: Unit) =>
-      (unit.properties ?? [])
-        .flatMap((property) => property.propertyContacts)
-        .filter((propertyContact) => propertyContact.role === 'owner')
-        .map((propertyContact) => propertyContact.contact.name)[0] ?? '';
+    const getOwnerName = (unit: Unit) =>
+      getUnitOwnerContacts(unit)[0]?.contact.name ?? '';
+
+    const getOwnerPhone = (unit: Unit) =>
+      getUnitOwnerContacts(unit)[0]?.contact.phone ?? '';
 
     const getTenantLabel = (unit: Unit) =>
       (unit.properties ?? [])
@@ -454,7 +689,8 @@ function SitesPage() {
         Number(b.exclusiveAreaM2 ?? b.siteUnitType?.exclusiveAreaM2 ?? 0),
       unitType: (a, b) =>
         (a.siteUnitType?.name ?? '').localeCompare(b.siteUnitType?.name ?? '', 'ko', { numeric: true }),
-      owner: (a, b) => getOwnerLabel(a).localeCompare(getOwnerLabel(b), 'ko', { numeric: true }),
+      ownerName: (a, b) => getOwnerName(a).localeCompare(getOwnerName(b), 'ko', { numeric: true }),
+      ownerPhone: (a, b) => getOwnerPhone(a).localeCompare(getOwnerPhone(b), 'ko', { numeric: true }),
       tenant: (a, b) => getTenantLabel(a).localeCompare(getTenantLabel(b), 'ko', { numeric: true }),
       listing: (a, b) => getListingLabel(a).localeCompare(getListingLabel(b), 'ko', { numeric: true }),
       lastConsultation: (a, b) => getConsultationDate(a) - getConsultationDate(b),
@@ -475,7 +711,17 @@ function SitesPage() {
       const fallback = defaultSort(a, b);
       return direction === 'asc' ? fallback : -fallback;
     });
-  }, [allUnits, query, selectedUnitTypeIds, unitSort, getDongName]);
+  }, [
+    allUnits,
+    consultationFilter,
+    getDongName,
+    listingFilter,
+    ownerFilter,
+    query,
+    selectedUnitTypeIds,
+    tenantFilter,
+    unitSort,
+  ]);
 
   const layoutSections = useMemo<LayoutSection[]>(() => {
     const sectionMap = new Map<
@@ -549,6 +795,13 @@ function SitesPage() {
 
   // ── Handlers ──────────────────────────────────────────────────
 
+  const resetSiteFilters = () => {
+    setBuildingSearch('');
+    setFavoritesOnly(false);
+    setSelectedSiteRegions([]);
+    setSelectedSiteTypes([]);
+  };
+
   const handleSelectSite = (os: OfficeSite) => {
     setSelectedOfficeSite(os);
     setSelectedUnitId(null);
@@ -557,6 +810,10 @@ function SitesPage() {
     setQuery('');
     setUnitSort([]);
     setOccupancyFilter([]);
+    setOwnerFilter('all');
+    setTenantFilter('all');
+    setListingFilter('all');
+    setConsultationFilter('all');
   };
 
   const handleDongScopeChange = (dongIds: string[]) => {
@@ -566,6 +823,10 @@ function SitesPage() {
     setSelectedUnitTypeIds([]);
     setQuery('');
     setOccupancyFilter([]);
+    setOwnerFilter('all');
+    setTenantFilter('all');
+    setListingFilter('all');
+    setConsultationFilter('all');
   };
 
   const handleSelectUnit = useCallback((unit: Unit) => {
@@ -600,46 +861,53 @@ function SitesPage() {
     setSelectedUnitTypeIds([]);
     setQuery('');
     setOccupancyFilter([]);
+    setOwnerFilter('all');
+    setTenantFilter('all');
+    setListingFilter('all');
+    setConsultationFilter('all');
   };
 
   // ── Render helpers ────────────────────────────────────────────
 
-  const unitColumns: ColumnDef<Unit>[] = useMemo(() => [
+  const unitColumns: ColumnDef<Unit>[] = useMemo(() => {
+    const columns: ColumnDef<Unit>[] = [
     ...(dongs.some((dong) => !dong.isPlaceholder)
       ? [{
           id: 'dong',
-          header: '동',
-          size: 80,
+          header: () => (
+            <UnitTableHeaderLabel icon={<Building2 />} label="동" />
+          ),
+          size: 68,
           enableSorting: true,
           cell: ({ row }) => (
-            <span className="whitespace-nowrap text-[13px]">
-              {getDongName(row.original.dongId) || '-'}
+            <span className="truncate text-[13px] font-medium text-slate-700">
+              {getDongName(row.original.dongId) || ''}
             </span>
           ),
         } satisfies ColumnDef<Unit>]
       : []),
     {
       id: 'name',
-      header: '호수',
-      size: 90,
+      header: () => <UnitTableHeaderLabel icon={<Hash />} label="호" />,
+      size: 72,
       enableSorting: true,
       cell: ({ row }) => (
-        <span className="whitespace-nowrap text-[13px] font-medium tabular-nums">
+        <span className="truncate text-[13px] font-semibold tabular-nums text-slate-900">
           {row.original.name}
         </span>
       ),
     },
     {
       id: 'supplyArea',
-      header: '공급',
-      size: 80,
+      header: () => <UnitTableHeaderLabel icon={<Ruler />} label="공급" />,
+      size: 78,
       enableSorting: true,
       cell: ({ row }) => {
         const unit = row.original;
         const m2 = unit.supplyAreaM2 ?? unit.siteUnitType?.supplyAreaM2;
-        if (!m2) return <span className="text-[13px] text-muted-foreground">-</span>;
+        if (!m2) return <UnitTableEmptyCell />;
         return (
-          <span className="whitespace-nowrap text-[13px] tabular-nums">
+          <span className="whitespace-nowrap text-[13px] tabular-nums text-slate-700">
             {formatPyeong(m2)}
           </span>
         );
@@ -647,15 +915,15 @@ function SitesPage() {
     },
     {
       id: 'exclusiveArea',
-      header: '전용',
-      size: 80,
+      header: () => <UnitTableHeaderLabel icon={<Ruler />} label="전용" />,
+      size: 78,
       enableSorting: true,
       cell: ({ row }) => {
         const unit = row.original;
         const m2 = unit.exclusiveAreaM2 ?? unit.siteUnitType?.exclusiveAreaM2;
-        if (!m2) return <span className="text-[13px] text-muted-foreground">-</span>;
+        if (!m2) return <UnitTableEmptyCell />;
         return (
-          <span className="whitespace-nowrap text-[13px] tabular-nums">
+          <span className="whitespace-nowrap text-[13px] tabular-nums text-slate-700">
             {formatPyeong(m2)}
           </span>
         );
@@ -663,33 +931,39 @@ function SitesPage() {
     },
     {
       id: 'unitType',
-      header: '타입',
-      size: 70,
+      header: () => <UnitTableHeaderLabel icon={<Type />} label="타입" />,
+      size: 72,
       enableSorting: true,
       cell: ({ row }) => {
         const typeName = row.original.siteUnitType?.name;
-        return typeName
-          ? <span className="whitespace-nowrap text-[13px]">{typeName}</span>
-          : <span className="text-[13px] text-muted-foreground">-</span>;
+        return typeName ? (
+          <span className="truncate text-[13px] text-slate-700">
+            {typeName}
+          </span>
+        ) : (
+          <UnitTableEmptyCell />
+        );
       },
     },
     {
-      id: 'owner',
-      header: '소유자',
-      size: 200,
+      id: 'ownerName',
+      header: () => <UnitTableHeaderLabel icon={<User />} label="소유자명" />,
+      size: 140,
+      minSize: 112,
       enableSorting: true,
       cell: ({ row }) => {
-        const contact = (row.original.properties ?? [])
-          .flatMap((property) => property.propertyContacts)
-          .filter((pc) => pc.role === 'owner')
-          .map((pc) => pc.contact)[0];
-        if (!contact) return <span className="text-[13px] text-muted-foreground">-</span>;
+        const owners = getUnitOwnerContacts(row.original);
+        const primaryOwner = owners[0];
+        if (!primaryOwner) return <UnitTableEmptyCell />;
+        const ownerNames = owners.map(({ contact }) => contact.name).join('\n');
         return (
-          <div className="flex min-w-0 items-center gap-1.5">
-            <span className="truncate text-[13px]">{contact.name}</span>
-            {contact.phone && (
-              <span className="shrink-0 text-[12px] tabular-nums text-muted-foreground">
-                {formatPhone(contact.phone)}
+          <div className="flex min-w-0 items-center gap-1.5" title={ownerNames}>
+            <span className="truncate text-[13px] font-medium text-slate-900">
+              {primaryOwner.contact.name}
+            </span>
+            {owners.length > 1 && (
+              <span className="shrink-0 rounded-[4px] bg-[#f1f1ef] px-1.5 py-0.5 text-[10px] font-medium text-[#787774]">
+                외 {owners.length - 1}명
               </span>
             )}
           </div>
@@ -697,20 +971,52 @@ function SitesPage() {
       },
     },
     {
-      id: 'tenant',
-      header: '세입자',
-      size: 170,
+      id: 'ownerPhone',
+      header: () => (
+        <UnitTableHeaderLabel icon={<Phone />} label="소유자 전화번호" />
+      ),
+      size: 132,
+      minSize: 120,
       enableSorting: true,
       cell: ({ row }) => {
-        const tenants = (row.original.properties ?? []).flatMap((property) => property.tenants ?? []);
-        if (!tenants.length) return <span className="text-[13px] text-muted-foreground">-</span>;
+        const owners = getUnitOwnerContacts(row.original);
+        const primaryOwner = owners[0];
+        const phone = primaryOwner?.contact.phone;
+        if (!phone) return <UnitTableEmptyCell />;
+        const phoneSummary = owners
+          .flatMap(({ contact }) =>
+            contact.phone ? [`${contact.name} ${formatPhone(contact.phone)}`] : [],
+          )
+          .join('\n');
+        return (
+          <span
+            className="block min-w-0 truncate whitespace-nowrap text-[12px] tabular-nums text-slate-500"
+            title={phoneSummary}
+          >
+            {formatPhone(phone)}
+          </span>
+        );
+      },
+    },
+    {
+      id: 'tenant',
+      header: () => <UnitTableHeaderLabel icon={<Users />} label="세입자" />,
+      size: 180,
+      enableSorting: true,
+      cell: ({ row }) => {
+        const tenants = (row.original.properties ?? []).flatMap(
+          (property) => property.tenants ?? [],
+        );
+        if (!tenants.length) return <UnitTableEmptyCell />;
 
         const primary = tenants[0];
         return (
           <div className="flex min-w-0 items-center gap-1.5">
-            <span className="truncate text-[13px]">{primary.contact.name}</span>
+            <span className="truncate text-[13px] font-medium text-slate-800">
+              {primary.contact.name}
+            </span>
             {primary.contact.phone && (
-              <span className="shrink-0 text-[12px] text-muted-foreground tabular-nums">
+              <span className="shrink-0 text-[12px] tabular-nums text-slate-500">
                 {formatPhone(primary.contact.phone)}
               </span>
             )}
@@ -720,32 +1026,42 @@ function SitesPage() {
     },
     {
       id: 'listing',
-      header: '등록 매물',
-      size: 160,
+      header: () => <UnitTableHeaderLabel icon={<Tag />} label="등록 매물" />,
+      size: 180,
       enableSorting: true,
       cell: ({ row }) => {
-        const listings = (row.original.properties ?? []).flatMap((property) => property.listings ?? []);
-        if (!listings.length) return <span className="text-[13px] text-muted-foreground">-</span>;
+        const listings = (row.original.properties ?? []).flatMap(
+          (property) => property.listings ?? [],
+        );
+        if (!listings.length) return <UnitTableEmptyCell />;
 
         const primary = listings[0];
+        const transactionMeta = unitListingTransactionMeta[
+          primary.transactionType
+        ] ?? {
+          label: primary.transactionType,
+          className: 'bg-[#f1f1ef] text-[#787774]',
+        };
         return (
           <div className="flex min-w-0 items-center gap-1.5">
-            <Badge variant="outline" className="h-4 px-1 text-[10px] font-normal">
-              {primary.transactionType === 'sale'
-                ? '매매'
-                : primary.transactionType === 'jeonse'
-                  ? '전세'
-                  : primary.transactionType === 'monthly'
-                    ? '월세'
-                    : primary.transactionType}
-            </Badge>
-            <span className="truncate text-[13px] tabular-nums">
+            <span
+              className={cn(
+                'inline-flex shrink-0 rounded-[4px] px-1.5 py-0.5 text-[12px] font-medium leading-5',
+                transactionMeta.className,
+              )}
+            >
+              {transactionMeta.label}
+            </span>
+            <span
+              className="truncate text-[13px] font-medium tabular-nums text-slate-900"
+              title={formatListingPrice(primary)}
+            >
               {formatListingPrice(primary)}
             </span>
             {listings.length > 1 && (
-              <Badge variant="secondary" className="h-4 px-1 text-[9px] font-normal">
+              <span className="shrink-0 rounded-[4px] bg-[#f1f1ef] px-1.5 py-0.5 text-[10px] font-medium text-[#787774]">
                 +{listings.length - 1}
-              </Badge>
+              </span>
             )}
           </div>
         );
@@ -753,35 +1069,68 @@ function SitesPage() {
     },
     {
       id: 'lastConsultation',
-      header: '최근 상담',
-      size: 240,
+      header: () => (
+        <UnitTableHeaderLabel icon={<MessageSquareText />} label="최근 상담" />
+      ),
+      size: 280,
+      minSize: 220,
       enableSorting: true,
+      meta: { fill: true },
       cell: ({ row }) => {
         const latest = (row.original.properties ?? [])
           .flatMap((property) => property.consultations ?? [])
-          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
-        if (!latest) return <span className="text-[13px] text-muted-foreground">-</span>;
-        return <span className="truncate text-[13px]">{latest.content}</span>;
+          .sort(
+            (a, b) =>
+              new Date(b.createdAt).getTime() -
+              new Date(a.createdAt).getTime(),
+          )[0];
+        if (!latest) return <UnitTableEmptyCell />;
+        return (
+          <div className="flex min-w-0 items-center gap-1.5" title={latest.content}>
+            <span className="max-w-20 shrink-0 truncate text-[12px] font-medium text-slate-700">
+              {latest.contact.name}
+            </span>
+            <span className="text-slate-300">·</span>
+            <span className="truncate text-[13px] text-slate-700">
+              {latest.content}
+            </span>
+          </div>
+        );
       },
     },
     {
       id: 'lastConsultationDate',
-      header: '상담일',
+      header: () => (
+        <UnitTableHeaderLabel icon={<CalendarDays />} label="상담일" />
+      ),
       size: 100,
       enableSorting: true,
       cell: ({ row }) => {
         const latest = (row.original.properties ?? [])
           .flatMap((property) => property.consultations ?? [])
-          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
-        if (!latest) return <span className="text-[13px] text-muted-foreground">-</span>;
+          .sort(
+            (a, b) =>
+              new Date(b.createdAt).getTime() -
+              new Date(a.createdAt).getTime(),
+          )[0];
+        if (!latest) return <UnitTableEmptyCell />;
         return (
-          <span className="whitespace-nowrap text-[12px] tabular-nums text-muted-foreground">
+          <span className="whitespace-nowrap text-[12px] tabular-nums text-slate-500">
             {formatDate(latest.createdAt)}
           </span>
         );
       },
     },
-  ], [dongs, getDongName]);
+  ];
+
+    return columns.filter((column) => {
+      const columnId = column.id ?? '';
+      return !(
+        areUnitRelationshipColumnsCollapsed &&
+        UNIT_RELATIONSHIP_COLUMN_ID_SET.has(columnId)
+      );
+    });
+  }, [areUnitRelationshipColumnsCollapsed, dongs, getDongName]);
 
   const unitPinnedColumns = useMemo(
     () => (dongs.some((dong) => !dong.isPlaceholder) ? ['dong', 'name'] : ['name']),
@@ -832,6 +1181,27 @@ function SitesPage() {
             {subline || site.roadAddress || site.jibunAddress || '-'}
           </div>
         </button>
+        <button
+          type="button"
+          disabled={
+            toggleFavoriteMutation.isPending &&
+            toggleFavoriteMutation.variables?.id === os.id
+          }
+          onClick={() => toggleFavoriteMutation.mutate(os)}
+          className={cn(
+            'mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-md outline-none transition-[color,opacity,transform] active:scale-[0.96] focus-visible:ring-2 focus-visible:ring-ring/70 disabled:pointer-events-none disabled:opacity-40',
+            os.isFavorite
+              ? 'text-yellow-500 opacity-100'
+              : 'text-muted-foreground/50 opacity-0 hover:text-yellow-500 group-hover:opacity-100 focus-visible:opacity-100',
+          )}
+          aria-label={`${site.name} ${os.isFavorite ? '즐겨찾기 해제' : '즐겨찾기 추가'}`}
+          title={os.isFavorite ? '즐겨찾기 해제' : '즐겨찾기 추가'}
+        >
+          <Star
+            className={cn('size-3.5', os.isFavorite && 'fill-current')}
+            strokeWidth={1.7}
+          />
+        </button>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
@@ -859,21 +1229,15 @@ function SitesPage() {
 
   const canManageUnits = !!siteDetail && siteDetail.type !== 'land';
 
-  // 중앙 헤더 메타 라인 (주소 · 유형 · 동/호 수)
+  // 선택 범위와 전체 호수 메타
   const realDongCount = dongs.filter((dong) => !dong.isPlaceholder).length;
   const totalUnitCount = siteDetail?._count?.units ?? siteDetail?.totalUnits ?? allUnits.length;
   const selectedDongName =
     selectedDongIds.length === 1 ? getDongName(selectedDongIds[0]) : '';
-  const unitScopeLabel = selectedDongName || (realDongCount > 0 ? '전체 동' : '');
-  const siteMetaLine = siteDetail
-    ? [
-        siteDetail.roadAddress || siteDetail.jibunAddress,
-        realDongCount > 0 ? `${realDongCount}개동` : null,
-        `전체 ${totalUnitCount.toLocaleString()}호`,
-      ]
-        .filter(Boolean)
-        .join(' · ')
-    : '';
+  const unitScopeLabel =
+    selectedDongIds.length > 1
+      ? `${selectedDongIds.length}개 동`
+      : selectedDongName || (realDongCount > 0 ? '전체 동' : '');
 
   // ── JSX ───────────────────────────────────────────────────────
 
@@ -886,8 +1250,24 @@ function SitesPage() {
           <div className="flex items-center gap-1.5 px-3 pb-2 pt-[11px]">
             <span className="text-[13px] font-semibold">관리단지</span>
             <span className="text-xs text-muted-foreground/80 tabular-nums">
-              {hasSiteSearch ? `${filteredSites.length}/${officeSites.length}` : officeSites.length}
+              {hasSiteFilter ? `${filteredSites.length}/${officeSites.length}` : officeSites.length}
             </span>
+            <Button
+              variant="ghost"
+              size="icon"
+              className={cn(
+                'size-[26px] rounded-[7px] transition-[color,background-color,transform] active:scale-[0.96]',
+                favoritesOnly
+                  ? 'bg-yellow-50 text-yellow-600 hover:bg-yellow-100 hover:text-yellow-700'
+                  : 'text-muted-foreground/70 hover:text-foreground',
+              )}
+              onClick={() => setFavoritesOnly((current) => !current)}
+              aria-label={favoritesOnly ? '즐겨찾기 필터 해제' : '즐겨찾기만 보기'}
+              aria-pressed={favoritesOnly}
+              title={favoritesOnly ? '즐겨찾기 필터 해제' : '즐겨찾기만 보기'}
+            >
+              <Star className={cn('size-3.5', favoritesOnly && 'fill-current')} />
+            </Button>
             <div className="flex-1" />
             <Button
               variant="outline"
@@ -911,7 +1291,7 @@ function SitesPage() {
             </Button>
           </div>
 
-          {/* 그룹 탭 (전체/지역/유형) */}
+          {/* 단지 묶음 방식 */}
           <div className="px-2.5 pb-1.5">
             <div
               className="flex rounded-lg bg-secondary p-0.5"
@@ -919,9 +1299,9 @@ function SitesPage() {
               aria-label="단지 묶음 방식"
             >
               {([
-                { key: 'none', label: '전체' },
-                { key: 'region', label: '지역' },
-                { key: 'type', label: '유형' },
+                { key: 'none', label: '목록' },
+                { key: 'region', label: '지역별' },
+                { key: 'type', label: '유형별' },
               ] as const).map(({ key, label }) => (
                 <button
                   key={key}
@@ -975,6 +1355,47 @@ function SitesPage() {
             </div>
           </div>
 
+          {/* 실제 단지 조건 */}
+          {(siteRegionOptions.length > 0 || siteTypeFilterOptions.length > 0) && (
+            <div className="px-2.5 pb-2">
+              <div className="mb-1 flex h-5 items-center justify-between">
+                <span className="text-[10.5px] font-medium text-muted-foreground">
+                  단지 필터
+                </span>
+                {hasSiteFilter && (
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-1 rounded px-1 text-[10.5px] text-muted-foreground hover:bg-muted hover:text-foreground"
+                    onClick={resetSiteFilters}
+                  >
+                    <RotateCcw className="size-2.5" />
+                    초기화
+                  </button>
+                )}
+              </div>
+              <div className="flex items-center gap-1">
+                {siteRegionOptions.length > 0 && (
+                  <MultiFilterDropdown
+                    label="지역"
+                    options={siteRegionOptions}
+                    values={selectedSiteRegions}
+                    onChange={setSelectedSiteRegions}
+                    triggerClassName="min-w-0 flex-1"
+                  />
+                )}
+                {siteTypeFilterOptions.length > 0 && (
+                  <MultiFilterDropdown
+                    label="유형"
+                    options={siteTypeFilterOptions}
+                    values={selectedSiteTypes}
+                    onChange={setSelectedSiteTypes}
+                    triggerClassName="min-w-0 flex-1"
+                  />
+                )}
+              </div>
+            </div>
+          )}
+
           {/* Site list */}
           <ScrollArea className="flex-1">
             {isLoadingList ? (
@@ -999,9 +1420,17 @@ function SitesPage() {
               </div>
             ) : filteredSites.length === 0 ? (
               <div className="px-2 pb-2.5">
-                {hasSiteSearch ? (
-                  <div className="py-8 text-center text-xs text-muted-foreground">
-                    검색 결과가 없습니다
+                {hasSiteFilter ? (
+                  <div className="flex flex-col items-center gap-2 py-8 text-center">
+                    <p className="text-xs text-muted-foreground">조건에 맞는 관리단지가 없습니다</p>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2 text-[11.5px]"
+                      onClick={resetSiteFilters}
+                    >
+                      필터 초기화
+                    </Button>
                   </div>
                 ) : (
                   <EmptyState
@@ -1123,149 +1552,156 @@ function SitesPage() {
         </div>
       ) : siteDetail ? (
         <div className="flex flex-1 flex-col min-w-0 min-h-0 overflow-hidden">
-          {/* 단지 헤더: 단지명 + 메타 + 뷰 전환 탭 */}
-          <div className="flex flex-wrap items-center gap-2.5 border-b border-border/60 px-5 py-3">
-            <div className="min-w-0">
-              <div className="flex min-w-0 items-center gap-2">
-                <h1
-                  className="min-w-0 line-clamp-1 text-balance text-base font-semibold"
-                  title={siteDetail.name}
-                >
-                  {siteDetail.name}
-                </h1>
-                <Badge
-                  variant="secondary"
-                  className="h-5 shrink-0 rounded-md px-1.5 text-[10px] font-medium"
-                >
-                  {siteTypeLabels[siteDetail.type] ?? siteDetail.type}
-                </Badge>
-              </div>
-              <div className="mt-0.5 truncate text-[11.5px] tabular-nums text-muted-foreground/90">
-                {siteMetaLine}
-              </div>
-            </div>
-            <div className="flex-1" />
-            <div
-              className="flex rounded-lg bg-secondary p-[3px]"
-              role="group"
-              aria-label="단지 보기 방식"
-            >
-              {([
-                { key: 'table', label: '호수 목록' },
-                { key: 'layout', label: '배치표' },
-                { key: 'occupancy', label: '점유상태' },
-                { key: 'expiry', label: '만기/변동' },
-              ] as const).map(({ key, label }) => (
-                <button
-                  key={key}
-                  type="button"
-                  aria-pressed={unitViewMode === key}
-                  className={cn(
-                    'whitespace-nowrap rounded-md px-3 py-[5px] text-[12.5px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/70',
-                    unitViewMode === key
-                      ? 'bg-background font-semibold shadow-sm'
-                      : 'font-medium text-muted-foreground hover:text-foreground',
+          {/* 1차 필터: 선택 범위 · 검색 · 보기 방식 */}
+          <div className="shrink-0 border-b border-border/60">
+            <div className="overflow-x-auto px-5 py-2">
+              <div className="flex w-full min-w-max items-center gap-1.5">
+                {dongOptions.length > 0 && (
+                  <MultiFilterDropdown
+                    label="동"
+                    options={dongOptions}
+                    values={selectedDongIds}
+                    onChange={handleDongScopeChange}
+                    allOptionLabel={`전체 동 · ${totalUnitCount.toLocaleString()}호`}
+                  />
+                )}
+                {unitTypeOptions.length > 0 && (
+                  <MultiFilterDropdown
+                    label="타입"
+                    options={unitTypeOptions}
+                    values={selectedUnitTypeIds}
+                    onChange={setSelectedUnitTypeIds}
+                  />
+                )}
+                {(dongOptions.length > 0 || unitTypeOptions.length > 0) && (
+                  <div className="mx-0.5 h-5 w-px bg-border" aria-hidden="true" />
+                )}
+
+                <div className="flex h-8 w-[280px] min-w-0 items-center gap-1.5 rounded-md border border-transparent bg-[#f7f6f3] px-2.5 hover:border-border focus-within:border-input focus-within:bg-white">
+                  <Search className="size-3.5 shrink-0 text-muted-foreground" />
+                  <input
+                    ref={unitSearchRef}
+                    placeholder="호수 · 이름 · 전화 · 상담 검색 (/)"
+                    value={query}
+                    onChange={(event) => setQuery(event.target.value)}
+                    aria-label="호수, 이름, 전화번호, 상담 내용 검색"
+                    disabled={isLoadingUnits}
+                    className="w-full min-w-0 bg-transparent text-[13px] outline-none placeholder:text-muted-foreground/60"
+                  />
+                  {query && (
+                    <button
+                      type="button"
+                      className="rounded-sm p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                      onClick={() => setQuery('')}
+                      aria-label="검색어 지우기"
+                    >
+                      <X className="size-3.5" />
+                    </button>
                   )}
-                  onClick={() => setUnitViewMode(key)}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          </div>
+                </div>
 
-          {/* 필터 바 */}
-          <div className="flex flex-wrap items-center gap-[7px] border-b border-border/60 px-5 py-2">
-            {/* 동 / 타입 필터 */}
-            {dongOptions.length > 0 && (
-              <MultiFilterDropdown
-                label="동"
-                options={dongOptions}
-                values={selectedDongIds}
-                onChange={handleDongScopeChange}
-                selectionMode="single"
-                allOptionLabel={`전체 동 · ${totalUnitCount.toLocaleString()}호`}
-              />
-            )}
-            {unitTypeOptions.length > 0 && (
-              <MultiFilterDropdown
-                label="타입"
-                options={unitTypeOptions}
-                values={selectedUnitTypeIds}
-                onChange={setSelectedUnitTypeIds}
-              />
-            )}
-            {(dongOptions.length > 0 || unitTypeOptions.length > 0) && (
-              <div className="mx-0.5 h-4 w-px bg-border" />
-            )}
-
-            {/* 통합 검색창 */}
-            <div className="flex h-7 w-full max-w-[300px] min-w-0 items-center gap-1.5 rounded-lg border border-border/80 bg-muted px-2">
-              <Search className="size-3 shrink-0 text-muted-foreground/70" />
-              <input
-                ref={unitSearchRef}
-                placeholder={`${unitScopeLabel ? `${unitScopeLabel}에서 ` : ''}호수 · 이름 · 전화 · 상담 검색 (/)`}
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                aria-label="호수, 이름, 전화번호, 상담 내용 검색"
-                disabled={isLoadingUnits}
-                className="w-full min-w-0 bg-transparent text-xs outline-none placeholder:text-muted-foreground/60"
-              />
-              {query && (
-                <button
-                  type="button"
-                  className="shrink-0 text-muted-foreground hover:text-foreground"
-                  onClick={() => setQuery('')}
-                  aria-label="검색어 지우기"
+                <div className="flex-1" />
+                <div
+                  className="flex rounded-lg bg-secondary p-[3px]"
+                  role="group"
+                  aria-label="단지 보기 방식"
                 >
-                  <X className="size-3" />
-                </button>
-              )}
+                  {([
+                    { key: 'table', label: '호수 목록' },
+                    { key: 'layout', label: '배치표' },
+                    { key: 'occupancy', label: '점유상태' },
+                    { key: 'expiry', label: '만기/변동' },
+                  ] as const).map(({ key, label }) => (
+                    <button
+                      key={key}
+                      type="button"
+                      aria-pressed={unitViewMode === key}
+                      className={cn(
+                        'whitespace-nowrap rounded-md px-2.5 py-[5px] text-[12px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/70',
+                        unitViewMode === key
+                          ? 'bg-background font-semibold shadow-sm'
+                          : 'font-medium text-muted-foreground hover:text-foreground',
+                      )}
+                      onClick={() => setUnitViewMode(key)}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+
+                {canManageUnits && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="outline" size="sm" className="h-8 gap-1 px-2.5 text-xs">
+                        <Plus className="size-3.5" />
+                        동·호수 추가
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={() => setShowAddDongDialog(true)}>
+                        동 추가
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => setShowAddUnitDialog(true)}>
+                        호수 추가
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
+              </div>
             </div>
 
-            {hasActiveUnitFilters && (
-              <button
-                type="button"
-                className="flex h-7 items-center gap-1 px-1.5 text-xs font-medium text-orange hover:opacity-80"
-                onClick={resetUnitFilters}
-              >
-                <RotateCcw className="size-3" />
-                초기화
-              </button>
-            )}
+            {/* 2차 필터: 호수별 CRM 등록 상태 */}
+            <div className="overflow-x-auto border-t border-border/60 bg-[#faf9f6] px-5 py-2">
+              <div className="flex w-full min-w-max items-center gap-1.5">
+                <UnitRecordFilterSelect
+                  label="소유자"
+                  value={ownerFilter}
+                  onChange={setOwnerFilter}
+                  options={registeredPresenceOptions}
+                />
+                <UnitRecordFilterSelect
+                  label="세입자"
+                  value={tenantFilter}
+                  onChange={setTenantFilter}
+                  options={existencePresenceOptions}
+                />
+                <UnitRecordFilterSelect
+                  label="등록 매물"
+                  value={listingFilter}
+                  onChange={setListingFilter}
+                  options={registeredPresenceOptions}
+                />
+                <UnitRecordFilterSelect
+                  label="상담"
+                  value={consultationFilter}
+                  onChange={setConsultationFilter}
+                  options={existencePresenceOptions}
+                />
 
-            <span
-              className="whitespace-nowrap text-[11px] tabular-nums text-muted-foreground"
-              aria-live="polite"
-            >
-              {isLoadingUnits
-                ? `${unitScopeLabel || '호수'} 불러오는 중`
-                : hasActiveUnitFilters
-                ? `${filteredUnits.length.toLocaleString()} / ${allUnits.length.toLocaleString()}호`
-                : `${unitScopeLabel ? `${unitScopeLabel} · ` : ''}${allUnits.length.toLocaleString()}호`}
-            </span>
+                {hasActiveUnitFilters && (
+                  <button
+                    type="button"
+                    className="flex h-8 items-center gap-1 rounded-md px-2 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
+                    onClick={resetUnitFilters}
+                  >
+                    <RotateCcw className="size-3" />
+                    초기화
+                  </button>
+                )}
 
-            <div className="flex-1" />
-
-            {/* 동/호수 추가 (토지는 호실 구조 없음) */}
-            {canManageUnits && (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="sm" className="h-7 gap-1 rounded-[7px] px-2 text-xs">
-                    <Plus className="size-3.5" />
-                    동·호수 추가
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem onClick={() => setShowAddDongDialog(true)}>
-                    동 추가
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setShowAddUnitDialog(true)}>
-                    호수 추가
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            )}
+                <div className="flex-1" />
+                <span
+                  className="whitespace-nowrap text-[11px] tabular-nums text-muted-foreground"
+                  aria-live="polite"
+                >
+                  {isLoadingUnits
+                    ? `${unitScopeLabel || '호수'} 불러오는 중`
+                    : hasActiveUnitContentFilters
+                    ? `${filteredUnits.length.toLocaleString()} / ${allUnits.length.toLocaleString()}호`
+                    : `${unitScopeLabel ? `${unitScopeLabel} · ` : ''}${allUnits.length.toLocaleString()}호`}
+                </span>
+              </div>
+            </div>
           </div>
 
           {/* Units View */}
@@ -1294,30 +1730,52 @@ function SitesPage() {
                 <DataTable
                   columns={unitColumns}
                   data={filteredUnits}
+                  enableRowSelection
                   sorting={unitSort}
                   onSortingChange={setUnitSort}
                   onRowClick={handleSelectUnit}
                   layout="full-height"
-                  rowHeight={36}
+                  variant="notion"
+                  rowHeight={40}
                   pinnedColumns={unitPinnedColumns}
+                  columnGroupControls={[
+                    {
+                      collapsed: areUnitRelationshipColumnsCollapsed,
+                      onToggle: () => {
+                        if (!areUnitRelationshipColumnsCollapsed) {
+                          setUnitSort((previous) =>
+                            previous.some(({ id }) =>
+                              UNIT_RELATIONSHIP_COLUMN_ID_SET.has(id),
+                            )
+                              ? []
+                              : previous,
+                          );
+                        }
+                        setAreUnitRelationshipColumnsCollapsed(
+                          (collapsed) => !collapsed,
+                        );
+                      },
+                      anchorColumnId: 'ownerPhone',
+                      columnIds: UNIT_RELATIONSHIP_COLUMN_IDS,
+                      label: '세입자·등록 매물',
+                    },
+                  ]}
                   emptyMessage={hasActiveUnitFilters ? '검색 결과가 없습니다' : '등록된 호수가 없습니다'}
                   renderStatusBar={({ focusedRow, totalCount }) => {
                     if (!focusedRow) {
                       return (
                         <span className="tabular-nums">
-                          총 {totalCount.toLocaleString()}개 호수
+                          호수 {totalCount.toLocaleString()}건 표시
                         </span>
                       );
                     }
                     const dongName = getDongName(focusedRow.dongId);
-                    const owner = (focusedRow.properties ?? [])
-                      .flatMap((property) => property.propertyContacts)
-                      .filter((pc) => pc.role === 'owner')
-                      .map((pc) => pc.contact)[0];
+                  const focusedOwners = getUnitOwnerContacts(focusedRow);
+                  const owner = focusedOwners[0]?.contact;
                     return (
                       <>
                         <span className="tabular-nums text-foreground/80">
-                          {totalCount.toLocaleString()}개 호수
+                          호수 {totalCount.toLocaleString()}건
                         </span>
                         <span className="text-border">|</span>
                         <span className="font-medium text-foreground">
@@ -1327,13 +1785,18 @@ function SitesPage() {
                           <>
                             <span className="text-border">|</span>
                             <span>소유자: {owner.name}</span>
-                            {owner.phone && (
-                              <span className="tabular-nums text-foreground/70">
-                                {formatPhone(owner.phone)}
-                              </span>
-                            )}
-                          </>
-                        )}
+                          {owner.phone && (
+                            <span className="tabular-nums text-foreground/70">
+                              {formatPhone(owner.phone)}
+                            </span>
+                          )}
+                          {focusedOwners.length > 1 && (
+                            <span className="text-foreground/70">
+                              외 {focusedOwners.length - 1}명
+                            </span>
+                          )}
+                        </>
+                      )}
                       </>
                     );
                   }}

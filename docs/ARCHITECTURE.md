@@ -24,6 +24,7 @@ Estate ERP는 하나의 앱이 아니라, 같은 도메인 모델을 공유하�
 | NestJS 서버 | API, 인증, 멀티테넌시, 규칙 엔진, CRM MCP |
 | CTI Bridge | 전화 시스템 연동용 별도 로컬 프로세스 |
 | Android 모바일 앱 | 전화 오버레이, 통화 후 입력 |
+| 독립 자동화 Skills | CP 수집·실행, 로컬 계정 설정, Skill 소유 브라우저 제어 |
 
 ### 시스템 토폴로지
 
@@ -35,7 +36,7 @@ Electron Desktop / Web / Mobile
 PostgreSQL + Redis + S3/R2
 ```
 
-CTI와 로컬 MCP는 서버 밖에서 추가로 연결된다.
+CTI Bridge와 독립 자동화 Skills는 서버 밖에서 추가로 연결된다.
 
 ```
 전화 시스템
@@ -117,7 +118,7 @@ mcp
 - 설치형 신뢰감
 - 로컬 CTI 연동
 - 시스템 트레이 / OS 알림
-- 로컬 MCP Host
+- 내장 Codex 실행과 업무 화면 연결
 - 장시간 상주 실행
 
 ### 4.2 웹 앱
@@ -184,15 +185,18 @@ CRM 자체를 MCP 서버처럼 설계한다. 즉, NestJS API를 잘 만드는 �
 - 매칭/거래 조회 및 업데이트
 - 인사이트/알림 검토
 
-### 6.3 로컬 MCP Host
+### 6.3 독립 로컬 Skills
 
-서버가 아니라 사용자 PC에서 동작해야 하는 작업은 Electron 메인 프로세스 쪽 MCP로 분리한다.
+사용자 PC의 브라우저와 계정이 필요한 CP 작업은 Electron 메인 프로세스가 아니라
+독립 Skill로 분리한다. Skill은 ERP의 원격 MCP를 데이터 경계로 사용한다.
 
 예시:
 
-- 네이버 부동산 스크래핑
-- 로컬 세션이 필요한 외부 사이트 작업
-- 향후 로컬 문서/파일 자동화
+- 이실장·부동산뱅크 광고 수집 및 승인된 광고 실행
+- 네이버 부동산 읽기
+- Skill 전용 `config.js` 설정과 Skill 소유 agent-browser 로그인
+
+Electron은 CP 비밀번호를 저장하지 않으며 CP 인증용 로컬 MCP를 열지 않는다.
 
 ### 6.4 제품 내장 AI를 하지 않는 이유
 
@@ -268,9 +272,17 @@ docs/
 
 ## 9. 자동화 레이어
 
+광고 provider 자동화는 서버 규칙 엔진과 분리한다. 사용자가 자신의 외부 AI를
+시작하면 MCP로 `Task(category=advertisement, status=pending)`를 조회하고
+`claim_task`로 선점한다. 상세 단계·재시도·검증은 로컬 Skill SQLite에 남고,
+서버에는 일반 Task 상태와 완전하게 검증된 광고 관측 결과만 저장한다.
+
+서버는 광고 agent session, wakeup, run, action request를 생성하거나 polling하지
+않는다. 네이버 단지 수집 범위도 로컬 `naver-complex-collector`가 소유한다.
+
 ### 9.1 규칙 엔진
 
-초기 자동화는 BullMQ 기반 규칙 엔진이 담당한다.
+ERP 내부 알림·기한 업무 자동화는 BullMQ 기반 규칙 엔진이 담당한다.
 
 예시:
 

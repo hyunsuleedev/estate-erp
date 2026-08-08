@@ -1,7 +1,12 @@
 import { Link } from '@tanstack/react-router';
 import type { BuyerRequirement, Consultation, ContactRelation, PropertyContact } from '@estate-erp/api-client';
-import { sqmToPyeong } from '@estate-erp/shared';
-import { Link2, Trash2 } from 'lucide-react';
+import {
+  CONTACT_RELATION_TYPES,
+  CONTACT_RELATION_TYPE_LABELS,
+  sqmToPyeong,
+  type ContactRelationType,
+} from '@estate-erp/shared';
+import { Link2, Pencil, Trash2 } from 'lucide-react';
 import { formatDate, formatDateTime, formatMoney, formatPhone } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { EntityChip, StatusBadge } from '@/components/domain';
@@ -27,16 +32,18 @@ const consultationTypeColors: Record<string, string> = {
 
 export const buyerStatusLabels: Record<string, string> = {
   active: '활성',
-  matched: '매칭됨',
+  matched: '활성',
+  hold: '보류',
+  inactive: '보류',
   completed: '완료',
-  inactive: '비활성',
 };
 
 const buyerStatusColors: Record<string, string> = {
   active: 'bg-success-soft text-success',
-  matched: 'bg-info-soft text-info',
+  matched: 'bg-success-soft text-success',
+  hold: 'bg-warning-soft text-warning',
+  inactive: 'bg-warning-soft text-warning',
   completed: 'bg-neutral-soft text-neutral-strong',
-  inactive: 'bg-neutral-soft text-muted-foreground',
 };
 
 export const urgencyLabels: Record<string, string> = {
@@ -59,15 +66,21 @@ export const propertyRoleLabels: Record<string, string> = {
   tax_agent: '세무사',
 };
 
-export const relationTypeLabels: Record<string, string> = {
-  parent: '부모',
-  spouse: '배우자',
-  child: '자녀',
-  sibling: '형제자매',
-  lawyer: '법무사',
-  tax_agent: '세무사',
-  other: '기타',
-};
+export const relationTypeLabels = Object.fromEntries(
+  CONTACT_RELATION_TYPES.map((type) => [
+    type,
+    CONTACT_RELATION_TYPE_LABELS[type],
+  ]),
+) as Record<ContactRelationType, string>;
+
+export function getContactRelationLabel(relation: ContactRelation) {
+  const displayType = relation.displayRelationType ?? relation.relationType;
+  return (
+    relation.displayLabel ||
+    CONTACT_RELATION_TYPE_LABELS[displayType] ||
+    displayType
+  );
+}
 
 export function formatBudgetSummary(requirement: BuyerRequirement) {
   if (requirement.transactionType === 'monthly') {
@@ -241,31 +254,33 @@ export interface RelationItem {
   id: string;
   /** 관계 레코드 id (삭제용) */
   relationId: string;
-  direction: '연결함' | '연결됨';
   relation: ContactRelation;
   counterpartId: string | null;
   counterpartName: string;
   counterpartPhone: string | null;
+  /** DB 원본 관계 방향을 편집 화면에서 사람 이름으로 설명하기 위한 값 */
+  sourceName: string;
+  targetName: string;
 }
 
 export function RelationCard({
   item,
+  onEdit,
   onDelete,
   deleting,
 }: {
   item: RelationItem;
+  onEdit: () => void;
   onDelete: () => void;
   deleting: boolean;
 }) {
-  const relationLabel =
-    item.relation.label || relationTypeLabels[item.relation.relationType] || item.relation.relationType;
+  const relationLabel = getContactRelationLabel(item.relation);
 
   return (
     <div className="rounded-md border bg-card px-4 py-3">
       <div className="flex items-start justify-between gap-3">
         <div className="space-y-1">
           <div className="flex items-center gap-1.5">
-            <Badge variant="outline">{item.direction}</Badge>
             <Badge variant="secondary">{relationLabel}</Badge>
           </div>
           {item.counterpartId ? (
@@ -282,16 +297,27 @@ export function RelationCard({
           )}
           <p className="text-sm text-muted-foreground">{formatPhone(item.counterpartPhone)}</p>
         </div>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          className="shrink-0 text-muted-foreground hover:text-destructive"
-          aria-label="관계 삭제"
-          disabled={deleting}
-          onClick={onDelete}
-        >
-          <Trash2 className="size-3.5" />
-        </Button>
+        <div className="flex shrink-0 items-center gap-0.5">
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className="text-muted-foreground"
+            aria-label="관계 수정"
+            onClick={onEdit}
+          >
+            <Pencil className="size-3.5" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className="text-muted-foreground hover:text-destructive"
+            aria-label="관계 삭제"
+            disabled={deleting}
+            onClick={onDelete}
+          >
+            <Trash2 className="size-3.5" />
+          </Button>
+        </div>
       </div>
 
       {item.relation.memo && (

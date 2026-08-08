@@ -377,7 +377,7 @@ Phase 1은 **첫 번째(Electron 경유)** 로 시작. 무인 수신 요구가 �
 - [x] `CallLog` prisma 모델 + 마이그레이션 (`20260706030749_add_call_log`).
       direction은 inbound/outbound만, missed는 status로 (계획 §4.4에서 정제).
 - [x] `cti` 모듈: `GET /cti/lookup`, `POST /cti/call-events`, `GET/PATCH /cti/call-logs`.
-- [x] 발신번호 매칭: `ContactPhone.normalizedPhone` + `VendorContact.phone` 병렬 조회
+- [x] 발신번호 매칭: 숫자만 저장된 `ContactPhone.phone` + `VendorContact.normalizedPhone` 병렬 조회
       (`all_contacts_view` 대신 — view가 아직 없고 Prisma 쿼리로 충분).
 - [x] `RealtimeService`로 `cti.incoming`/`cti.call.updated` 브로드캐스트.
 - [x] 단위 테스트 6개 (ring dedupe, terminate missed/ended, ring 유실 대비, lookup isNew).

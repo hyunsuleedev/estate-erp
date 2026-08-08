@@ -1,5 +1,6 @@
 import { Link } from '@tanstack/react-router';
 import type { Match } from '@estate-erp/api-client';
+import { MatchStage, normalizeMatchStage } from '@estate-erp/shared';
 import { ChevronRight, User } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
@@ -16,9 +17,9 @@ interface Props {
 
 const stageColors: Record<string, string> = {
   suggested: 'bg-slate-50 text-slate-600',
-  buyerContacted: 'bg-blue-50 text-blue-700',
+  buyerInterested: 'bg-blue-50 text-blue-700',
+  viewingConfirmed: 'bg-orange-50 text-orange-700',
   viewing: 'bg-indigo-50 text-indigo-700',
-  ownerContacted: 'bg-violet-50 text-violet-700',
   negotiating: 'bg-amber-50 text-amber-700',
   dealCreated: 'bg-emerald-50 text-emerald-700',
   closed: 'bg-gray-100 text-gray-500',
@@ -26,7 +27,9 @@ const stageColors: Record<string, string> = {
 
 export function ActiveMatchesSection({ matches }: Props) {
   // active = not closed
-  const active = matches.filter((m) => m.stage !== 'closed');
+  const active = matches.filter(
+    (match) => normalizeMatchStage(match.stage) !== MatchStage.CLOSED,
+  );
 
   return (
     <MainSection title="진행 중 매칭" count={active.length}>
@@ -45,7 +48,8 @@ export function ActiveMatchesSection({ matches }: Props) {
 
 function MatchRow({ match }: { match: Match }) {
   const buyer = match.buyerRequirement;
-  const stage = matchStageLabels[match.stage] ?? match.stage;
+  const normalizedStage = normalizeMatchStage(match.stage);
+  const stage = matchStageLabels[normalizedStage] ?? normalizedStage;
   const budget = formatBuyerBudget(match);
 
   return (
@@ -65,7 +69,7 @@ function MatchRow({ match }: { match: Match }) {
             <Badge
               className={cn(
                 'border-0 text-[10px]',
-                stageColors[match.stage] ?? 'bg-muted text-muted-foreground',
+                stageColors[normalizedStage] ?? 'bg-muted text-muted-foreground',
               )}
             >
               {stage}

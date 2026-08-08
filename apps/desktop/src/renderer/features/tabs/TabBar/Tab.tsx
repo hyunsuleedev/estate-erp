@@ -8,12 +8,11 @@ import { getRouteMeta } from '../lib/routeMeta';
 interface Props {
   tab: TabType;
   isActive: boolean;
-  hideDivider: boolean;
   onActivate: () => void;
   onClose: () => void;
 }
 
-export function Tab({ tab, isActive, hideDivider, onActivate, onClose }: Props) {
+export function Tab({ tab, isActive, onActivate, onClose }: Props) {
   const {
     attributes,
     listeners,
@@ -44,19 +43,12 @@ export function Tab({ tab, isActive, hideDivider, onActivate, onClose }: Props) 
           onClose();
         }
       }}
-      data-hide-divider={hideDivider ? 'true' : 'false'}
       className={cn(
-        'group relative flex min-w-[120px] max-w-[220px] shrink-0 gap-2 px-3 text-sm',
-        'cursor-default select-none',
-        // inactive 탭 사이 세로 구분선 (왼쪽). active이거나 active 인접 또는 첫 탭이면 숨김.
-        'before:pointer-events-none before:absolute before:left-0 before:top-1/2 before:h-4 before:w-px before:-translate-y-1/2 before:bg-border',
-        'data-[hide-divider=true]:before:hidden',
+        'app-tab group relative -ml-px flex h-8 min-w-[112px] max-w-[220px] shrink-0 items-center gap-2 border border-border px-3 text-sm first:ml-0',
+        'cursor-default select-none transition-colors',
         isActive
-          // 박스 h-[34px]: 헤더(40) - 위 여백(6) = 34. self-end + -mb-px로 헤더 바닥 1px overlap.
-          // items-center + pb-[3px]로 컨텐츠를 위쪽으로 살짝 올려 inactive와 글자 baseline 맞춤.
-          // 모든 자식(아이콘/글자)이 동일하게 박스 가운데에서 위로 이동 → 어긋남 없음.
-          ? 'h-[34px] self-end -mb-px items-center pb-[8px] bg-background text-foreground rounded-t-md border-t border-l border-r border-border'
-          : 'h-8 items-center text-muted-foreground rounded-t-md hover:bg-muted/60',
+          ? 'z-10 -mb-px h-9 self-end border-b-background! bg-background text-foreground'
+          : 'bg-sidebar text-muted-foreground hover:bg-muted/60 hover:text-foreground',
       )}
       {...attributes}
       {...listeners}
@@ -71,9 +63,9 @@ export function Tab({ tab, isActive, hideDivider, onActivate, onClose }: Props) 
         }}
         onPointerDown={(e) => e.stopPropagation()}
         className={cn(
-          'shrink-0 grid place-items-center size-5 rounded transition-opacity',
-          'hover:bg-foreground/10',
-          isActive ? 'opacity-70 hover:opacity-100' : 'opacity-0 group-hover:opacity-100',
+          'grid size-5 shrink-0 place-items-center rounded transition-opacity',
+          'opacity-0 hover:bg-foreground/10 hover:opacity-100 group-hover:opacity-70 group-focus-within:opacity-70',
+          'focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',
         )}
         aria-label="탭 닫기"
       >

@@ -6,11 +6,11 @@ import { fileURLToPath } from 'node:url';
 
 const testDir = dirname(fileURLToPath(import.meta.url));
 
+// index.tsx is desktop-specific (properties-aligned toolbar, no group chips).
+// -group-chips.tsx removed from desktop — not used.
 const contactRouteFiles = [
-  'index.tsx',
   '$id.tsx',
   'new.tsx',
-  '-group-chips.tsx',
   '-quick-sheet.tsx',
   '-detail-action-dialogs.tsx',
   '-detail-cards.tsx',

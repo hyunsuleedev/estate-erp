@@ -1,6 +1,5 @@
 import type { RequestFn } from '../client.js';
 import type { Site } from './sites.js';
-import type { Unit } from './units.js';
 
 export type ExternalListingTransactionType = 'sale' | 'jeonse' | 'monthly';
 
@@ -55,19 +54,15 @@ export interface ExternalListing {
   updatedAt: string;
 }
 
-export type ExternalListingGroupStatus =
-  | 'unmatched'
-  | 'matched'
-  | 'verified'
-  | 'on_hold';
+export type ExternalListingGroupStatus = 'unmatched' | 'verified' | 'on_hold';
+export type ExternalListingDiscoveryStatus = 'new' | 'added' | 'existing';
 
 export interface ExternalListingGroup {
   id: string;
   officeId: string;
   siteId: string;
-  unitId: string | null;
   buildingName: string | null;
-  inferredHo: string | null;
+  ho: string | null;
   areaName: string | null;
   exclusiveAreaM2: number | null;
   transactionType: ExternalListingTransactionType;
@@ -80,7 +75,6 @@ export interface ExternalListingGroup {
   createdAt: string;
   updatedAt: string;
   site?: Site;
-  unit?: Unit | null;
   mainExternalListing?: ExternalListing | null;
   listings?: ExternalListing[];
   listingCount?: number;
@@ -91,6 +85,8 @@ export interface ExternalListingGroup {
   maxYmd?: string | null;
   confirmDateDiff?: number | null;
   ownerVerified?: boolean;
+  /** 마지막 수집 세션과 비교한 동일주소 그룹의 발견 상태. */
+  discoveryStatus?: ExternalListingDiscoveryStatus;
   /** 같은 그룹에서 확인된 우리 사무소 광고의 게시일 (YYYYMMDD). */
   ownAdvertisementYmd?: string | null;
   offerRanking?: number | null;
@@ -136,8 +132,7 @@ export interface CompleteSessionResult {
 }
 
 export interface UpdateExternalListingGroupDto {
-  unitId?: string | null;
-  inferredHo?: string | null;
+  ho?: string | null;
   memo?: string | null;
   status?: ExternalListingGroupStatus;
   favorite?: boolean;
@@ -186,9 +181,8 @@ export interface BatchListingItem {
   /** 새 그룹 생성 힌트 (기존 그룹의 사용자 입력은 덮어쓰지 않음) */
   buildingName?: string | null;
   areaName?: string | null;
-  /** 새 그룹 생성 시 Unit에 즉시 링크. 수동 입력 경로에서만 사용. */
-  unitId?: string | null;
-  inferredHo?: string | null;
+  /** 새 그룹 생성 시 저장할 호수 텍스트. */
+  ho?: string | null;
 }
 
 export interface BatchUpsertDto {
@@ -250,13 +244,16 @@ export function createExternalListingsApi(request: RequestFn) {
 
     // ─── 스냅샷 세션 ───────────────────────────────────────────
 
-    getActiveSession: (
+    getActiveSession: async (
       siteId: string,
       transactionType: ExternalListingTransactionType,
     ) =>
-      request<SnapshotSession | null>('/external-listings/sessions/active', {
-        params: { siteId, transactionType },
-      }),
+      (await request<SnapshotSession | null | undefined>(
+        '/external-listings/sessions/active',
+        {
+          params: { siteId, transactionType },
+        },
+      )) ?? null,
 
     createSession: (dto: {
       siteId: string;

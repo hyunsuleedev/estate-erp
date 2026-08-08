@@ -1,4 +1,9 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
@@ -12,6 +17,11 @@ import {
   LISTING_INTAKE_STATE_SELECT,
   OCCUPYING_DEALS_SELECT,
 } from '../listings/listing-state';
+import { withContactRelationPerspective } from '../contact-relations/contact-relation.presenter';
+import {
+  buyerIntakeContactsInclude,
+  withBuyerRequirementContact,
+} from '../buyer-requirements/buyer-requirement.presenter';
 
 export interface ContactSearchQuery {
   search?: string;
@@ -28,7 +38,6 @@ export interface ContactPhoneInput {
   phone: string;
   label?: string;
   isPrimary?: boolean;
-  isActive?: boolean;
   memo?: string | null;
 }
 
@@ -49,10 +58,12 @@ export class ContactsService {
     const where: Prisma.ContactWhereInput = { officeId };
 
     if (query.search) {
-      const normalizedSearch = normalizePhone(query.search);
+      const canonicalSearch = normalizePhone(query.search);
       where.OR = [
         { name: { contains: query.search, mode: 'insensitive' } },
-        { phones: { some: { normalizedPhone: { contains: normalizedSearch } } } },
+        ...(canonicalSearch
+          ? [{ phones: { some: { phone: { contains: canonicalSearch } } } }]
+          : []),
         { email: { contains: query.search, mode: 'insensitive' } },
       ];
     }
@@ -66,7 +77,9 @@ export class ContactsService {
     }
 
     if (query.hasBuyerReq) {
-      where.buyerRequirements = { some: {} };
+      where.buyerIntakeContacts = {
+        some: { buyerIntake: { requirements: { some: {} } } },
+      };
     }
 
     const sortBy = query.sortBy || 'createdAt';
@@ -79,7 +92,16 @@ export class ContactsService {
       this.prisma.contact.findMany({
         where,
         include: {
-          _count: { select: { propertyContacts: true, buyerRequirements: true, consultations: true } },
+          _count: {
+            select: { propertyContacts: true, consultations: true },
+          },
+          buyerIntakeContacts: {
+            select: {
+              buyerIntake: {
+                select: { _count: { select: { requirements: true } } },
+              },
+            },
+          },
           phones: this.contactPhonesInclude(),
           consultations: {
             orderBy: { createdAt: 'desc' },
@@ -99,10 +121,20 @@ export class ContactsService {
     ]);
 
     return {
-      items: items.map(({ consultations, ...contact }) => ({
-        ...withPrimaryPhone(contact),
-        latestConsultation: this.formatLatestConsultation(consultations[0]),
-      })),
+      items: items.map(
+        ({ consultations, buyerIntakeContacts, _count, ...contact }) => ({
+          ...withPrimaryPhone(contact),
+          _count: {
+            ..._count,
+            buyerRequirements: (buyerIntakeContacts ?? []).reduce(
+              (total, participant) =>
+                total + participant.buyerIntake._count.requirements,
+              0,
+            ),
+          },
+          latestConsultation: this.formatLatestConsultation(consultations[0]),
+        }),
+      ),
       pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
     };
   }
@@ -113,23 +145,55 @@ export class ContactsService {
       include: {
         phones: this.contactPhonesInclude(),
         propertyContacts: { include: { property: { include: { site: true } } } },
-        buyerRequirements: { where: { status: 'active' } },
+        buyerIntakeContacts: {
+          include: {
+            buyerIntake: {
+              include: {
+                contacts: buyerIntakeContactsInclude,
+                requirements: {
+                  where: { status: 'active' },
+                  orderBy: [
+                    { priorityRank: 'asc' },
+                    { createdAt: 'asc' },
+                  ],
+                },
+              },
+            },
+          },
+        },
         consultations: { orderBy: { createdAt: 'desc' }, take: 10, include: { createdBy: { select: { id: true, name: true } } } },
         relationsAsMain: { include: { relatedContact: { include: { phones: this.contactPhonesInclude() } } } },
         relationsAsRelated: { include: { contact: { include: { phones: this.contactPhonesInclude() } } } },
       },
     });
     if (!contact) throw new NotFoundException('Contact not found');
+    const buyerRequirements = contact.buyerIntakeContacts.flatMap(
+      ({ buyerIntake }) =>
+        buyerIntake.requirements.map((requirement) =>
+          withBuyerRequirementContact({ ...requirement, buyerIntake }),
+        ),
+    );
     return {
       ...withPrimaryPhone(contact),
-      relationsAsMain: contact.relationsAsMain.map((relation) => ({
-        ...relation,
-        relatedContact: withPrimaryPhone(relation.relatedContact),
-      })),
-      relationsAsRelated: contact.relationsAsRelated.map((relation) => ({
-        ...relation,
-        contact: withPrimaryPhone(relation.contact),
-      })),
+      buyerRequirements,
+      relationsAsMain: contact.relationsAsMain.map((relation) =>
+        withContactRelationPerspective(
+          {
+            ...relation,
+            relatedContact: withPrimaryPhone(relation.relatedContact),
+          },
+          false,
+        ),
+      ),
+      relationsAsRelated: contact.relationsAsRelated.map((relation) =>
+        withContactRelationPerspective(
+          {
+            ...relation,
+            contact: withPrimaryPhone(relation.contact),
+          },
+          true,
+        ),
+      ),
     };
   }
 
@@ -138,24 +202,29 @@ export class ContactsService {
     dto: ContactWriteInput & { name: string },
   ) {
     const { phones } = this.prepareContactPhones(dto);
-    return this.prisma.contact.create({
-      data: {
-        officeId,
-        name: dto.name,
-        email: dto.email ?? null,
-        tags: dto.tags ?? [],
-        memo: dto.memo ?? null,
-        phones: phones.length > 0
-          ? {
-              create: phones.map((phone) => ({
-                ...phone,
-                office: { connect: { id: officeId } },
-              })),
-            }
-          : undefined,
-      },
-      include: { phones: this.contactPhonesInclude() },
-    }).then(withPrimaryPhone);
+    try {
+      const contact = await this.prisma.contact.create({
+        data: {
+          officeId,
+          name: dto.name,
+          email: dto.email ?? null,
+          tags: dto.tags ?? [],
+          memo: dto.memo ?? null,
+          phones: phones.length > 0
+            ? {
+                create: phones.map((phone) => ({
+                  ...phone,
+                  office: { connect: { id: officeId } },
+                })),
+              }
+            : undefined,
+        },
+        include: { phones: this.contactPhonesInclude() },
+      });
+      return withPrimaryPhone(contact);
+    } catch (error) {
+      this.rethrowPhoneConflict(error);
+    }
   }
 
   async update(
@@ -183,11 +252,16 @@ export class ContactsService {
       }),
     };
 
-    return this.prisma.contact.update({
-      where: { id },
-      data,
-      include: { phones: this.contactPhonesInclude() },
-    }).then(withPrimaryPhone);
+    try {
+      const contact = await this.prisma.contact.update({
+        where: { id },
+        data,
+        include: { phones: this.contactPhonesInclude() },
+      });
+      return withPrimaryPhone(contact);
+    } catch (error) {
+      this.rethrowPhoneConflict(error);
+    }
   }
 
   async remove(id: string, officeId: string) {
@@ -199,7 +273,7 @@ export class ContactsService {
     const contacts = await this.prisma.contact.findMany({
       where: {
         officeId,
-        phones: { some: { isActive: true } },
+        phones: { some: {} },
       },
       select: {
         id: true,
@@ -260,12 +334,12 @@ export class ContactsService {
 
   async findByPhone(officeId: string, phone?: string) {
     if (!phone) return [];
-    const normalized = normalizePhone(phone);
-    if (normalized.length < 4) return [];
+    const canonicalPhone = normalizePhone(phone);
+    if (canonicalPhone.length < 4) return [];
     const contacts = await this.prisma.contact.findMany({
       where: {
         officeId,
-        phones: { some: { normalizedPhone: normalized, isActive: true } },
+        phones: { some: { phone: canonicalPhone } },
       },
       select: {
         id: true,
@@ -334,10 +408,21 @@ export class ContactsService {
 
   async getBuyerRequirements(id: string, officeId: string) {
     await this.findOne(id, officeId);
-    return this.prisma.buyerRequirement.findMany({
-      where: { contactId: id, officeId },
-      orderBy: { createdAt: 'desc' },
+    const requirements = await this.prisma.buyerRequirement.findMany({
+      where: {
+        officeId,
+        buyerIntake: { contacts: { some: { contactId: id } } },
+      },
+      include: {
+        buyerIntake: { include: { contacts: buyerIntakeContactsInclude } },
+      },
+      orderBy: [
+        { buyerIntakeId: 'asc' },
+        { priorityRank: 'asc' },
+        { createdAt: 'asc' },
+      ],
     });
+    return requirements.map(withBuyerRequirementContact);
   }
 
   async getConsultations(id: string, officeId: string) {
@@ -379,27 +464,41 @@ export class ContactsService {
     const seen = new Set<string>();
     const phones = sourcePhones
       .map((item) => {
-        const rawPhone = item.phone.trim();
-        const normalizedPhone = normalizePhone(rawPhone);
-        if (!rawPhone || !normalizedPhone || seen.has(normalizedPhone)) return null;
-        seen.add(normalizedPhone);
+        const canonicalPhone = normalizePhone(item.phone);
+        if (!canonicalPhone || seen.has(canonicalPhone)) return null;
+        seen.add(canonicalPhone);
         return {
-          phone: rawPhone,
-          normalizedPhone,
+          phone: canonicalPhone,
           label: item.label?.trim() || 'mobile',
           isPrimary: item.isPrimary ?? false,
-          isActive: item.isActive ?? true,
           memo: item.memo?.trim() || null,
         };
       })
       .filter((item): item is NonNullable<typeof item> => item !== null);
 
+    if (phones.filter((phone) => phone.isPrimary).length > 1) {
+      throw new BadRequestException(
+        '대표 전화번호는 연락처당 하나만 지정할 수 있습니다.',
+      );
+    }
+
     if (phones.length > 0 && !phones.some((phone) => phone.isPrimary)) {
-      const firstActive = phones.find((phone) => phone.isActive) ?? phones[0];
-      firstActive.isPrimary = true;
+      phones[0].isPrimary = true;
     }
 
     return { phones };
+  }
+
+  private rethrowPhoneConflict(error: unknown): never {
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === 'P2002'
+    ) {
+      throw new ConflictException(
+        '이미 이 사무소의 다른 연락처가 사용 중인 전화번호입니다.',
+      );
+    }
+    throw error;
   }
 
   private contactPhonesInclude() {

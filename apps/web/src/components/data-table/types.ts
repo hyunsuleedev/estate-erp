@@ -9,6 +9,7 @@ import type {
 declare module '@tanstack/react-table' {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   interface ColumnMeta<TData extends RowData, TValue> {
+    cellClassName?: string;
     /**
      * true면 이 컬럼이 남는 가로 공간을 흡수한다 (고정폭 대신 auto).
      * 테이블이 뷰포트보다 좁을 때 다른 컬럼(특히 sticky 고정 컬럼)이
@@ -128,6 +129,7 @@ export interface DataTableProps<TData> {
   onSortingChange?: (sorting: SortingState) => void;
   // Selection
   enableRowSelection?: boolean;
+  selectedRowIds?: readonly string[];
   onRowSelectionChange?: (selectedIds: string[]) => void;
   renderSelectionAccessory?: (row: TData) => ReactNode;
   // Row click
@@ -163,6 +165,9 @@ export interface DataTableProps<TData> {
   // Bulk-action toolbar rendered above the table when rows are selected.
   // Receives the selected row objects (not just ids).
   renderBulkActions?: (selectedRows: TData[]) => React.ReactNode;
+  // Keeps the selection toolbar mounted at zero selections so the table does
+  // not jump vertically as selection changes.
+  alwaysShowSelectionToolbar?: boolean;
   // Status bar rendered below the table. Gets the currently focused row, if any,
   // and the total / visible counts so the parent can show summary info.
   renderStatusBar?: (args: { focusedRow: TData | null; totalCount: number }) => React.ReactNode;

@@ -3,15 +3,17 @@
 // ============================================================
 
 model Office {
-  id           String  @id @default(uuid()) @db.Uuid
-  name         String // 사무소명
-  licenseNo    String? @map("license_no") // 중개업 등록번호
-  ceoName      String? @map("ceo_name")
-  phone        String?
-  address      String?
-  subscription String  @default("basic") // basic, pro, premium
-  maxUsers     Int     @default(3) @map("max_users")
-  isActive     Boolean @default(true) @map("is_active")
+  id                  String  @id @default(uuid()) @db.Uuid
+  name                String // 사무소명
+  licenseNo           String? @map("license_no") // 중개업 등록번호
+  ceoName             String? @map("ceo_name")
+  phone               String?
+  address             String?
+  /// 네이버 부동산 광고 등록 시 실명인증에 사용하는 사무소 공통 아이디
+  naverVerificationId String? @map("naver_verification_id")
+  subscription        String  @default("basic") // basic, pro, premium
+  maxUsers            Int     @default(3) @map("max_users")
+  isActive            Boolean @default(true) @map("is_active")
 
   // 수수료 배분 설정 (사장님이 세팅)
   // { "distributionType": "percentage"|"fixed"|"custom",
@@ -26,45 +28,44 @@ model Office {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  users                     User[]
-  officeSites               OfficeSite[]
-  sites                     Site[]
-  dongs                     Dong[]
-  units                     Unit[]
-  contacts                  Contact[]
-  contactPhones             ContactPhone[]
-  contactRelations          ContactRelation[]
-  propertyContacts          PropertyContact[]
-  tenants                   Tenant[]
-  properties                Property[]
-  listingIntakes            ListingIntake[]
-  listings                  Listing[]
-  listingAdvertisements     ListingAdvertisement[]
-  officeAdvertisementGroups OfficeAdvertisementGroup[]
-  officeAdvertisements      OfficeAdvertisement[]
-  tasks                     Task[]
-  consultations             Consultation[]
-  buyerRequirements         BuyerRequirement[]
-  matches                   Match[]
-  deals                     Deal[]
-  dealPayments              DealPayment[]
-  contracts                 Contract[]
-  contractDocumentTemplates ContractDocumentTemplate[]
-  contractDocuments         ContractDocument[]
-  contractParties           ContractParty[]
-  officePrintTemplates      OfficePrintTemplate[]
-  contractClauseTemplates   ContractClauseTemplate[]
-  dealParticipants          DealParticipant[]
-  agentSessions             AgentSession[]
-  agentWakeupRequests       AgentWakeupRequest[]
-  agentRuns                 AgentRun[]
-  agentActivities           AgentActivity[]
-  advertisementSyncRuns     AdvertisementSyncRun[]
-  advertisementSyncSteps    AdvertisementSyncStep[]
-  agentActionRequests       AgentActionRequest[]
-  agentActionVerifications  AgentActionVerification[]
-  contractDocumentRevisions ContractDocumentRevision[]
-  calendarEvents            CalendarEvent[]
+  users                                User[]
+  officeSites                          OfficeSite[]
+  sites                                Site[]
+  dongs                                Dong[]
+  units                                Unit[]
+  contacts                             Contact[]
+  contactPhones                        ContactPhone[]
+  contactRelations                     ContactRelation[]
+  propertyContacts                     PropertyContact[]
+  tenants                              Tenant[]
+  properties                           Property[]
+  listingIntakes                       ListingIntake[]
+  listings                             Listing[]
+  listingAdvertisements                ListingAdvertisement[]
+  listingAdvertisementSnapshotSessions ListingAdvertisementSnapshotSession[]
+  listingAdvertisementSnapshotItems    ListingAdvertisementSnapshotItem[]
+  officeAdvertisementGroups            OfficeAdvertisementGroup[]
+  officeAdvertisements                 OfficeAdvertisement[]
+  tasks                                Task[]
+  consultations                        Consultation[]
+  buyerIntakes                         BuyerIntake[]
+  buyerIntakeContacts                  BuyerIntakeContact[]
+  buyerRequirements                    BuyerRequirement[]
+  brokerageCases                       BrokerageCase[]
+  brokerageCaseParticipants            BrokerageCaseParticipant[]
+  brokerageCaseDependencies            BrokerageCaseDependency[]
+  matches                              Match[]
+  deals                                Deal[]
+  dealPayments                         DealPayment[]
+  contracts                            Contract[]
+  contractDocumentTemplates            ContractDocumentTemplate[]
+  contractDocuments                    ContractDocument[]
+  contractParties                      ContractParty[]
+  officePrintTemplates                 OfficePrintTemplate[]
+  contractClauseTemplates              ContractClauseTemplate[]
+  dealParticipants                     DealParticipant[]
+  contractDocumentRevisions            ContractDocumentRevision[]
+  calendarEvents                       CalendarEvent[]
 
   siteUnitTypes  SiteUnitType[]
   priceHistories PriceHistory[]
@@ -74,7 +75,6 @@ model Office {
   externalListings                ExternalListing[]
   externalListingGroups           ExternalListingGroup[]
   externalListingSnapshotSessions ExternalListingSnapshotSession[]
-  externalListingSources          ExternalListingSource[]
 
   // 재무
   commissionPayments      CommissionPayment[]
@@ -190,10 +190,9 @@ model User {
   externalListingSessionsStarted   ExternalListingSnapshotSession[] @relation("SnapshotSessionStartedBy")
   externalListingSessionsCompleted ExternalListingSnapshotSession[] @relation("SnapshotSessionCompletedBy")
 
-  createdAgentActionRequests  AgentActionRequest[] @relation("AgentActionRequestCreator")
-  reviewedAgentActionRequests AgentActionRequest[] @relation("AgentActionRequestReviewer")
-  decidedAgentActionRequests  AgentActionRequest[] @relation("AgentActionRequestDecider")
-  executedAgentActionRequests AgentActionRequest[] @relation("AgentActionRequestExecutor")
+  listingAdvertisementSnapshotSessionsStarted   ListingAdvertisementSnapshotSession[] @relation("ListingAdvertisementSnapshotStartedBy")
+  listingAdvertisementSnapshotSessionsCompleted ListingAdvertisementSnapshotSession[] @relation("ListingAdvertisementSnapshotCompletedBy")
+  listingAdvertisementSnapshotItemsSubmitted    ListingAdvertisementSnapshotItem[]    @relation("ListingAdvertisementSnapshotSubmittedBy")
 
   @@map("users")
 }

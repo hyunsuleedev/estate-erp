@@ -126,7 +126,7 @@ export class LedgerService {
     const startOfThisMonth = new Date(nowYear, nowMonth, 1);
     const endOfThisMonth = new Date(nowYear, nowMonth + 1, 0, 23, 59, 59, 999);
 
-    // 원장은 draft(협상 단계 선생성 시뮬레이션) payment 는 제외
+    // 원장은 draft(계약 준비 단계 선생성) payment 는 제외
     //
     // - upcoming: 앞으로 받을 것 + 이미 연체 (시간 무관 미완료 전부 + 최근 30일 수금)
     // - this-month: 이번 달 진행 페이스 — 이번 달 dueDate/paidAt + 이월된 연체/미수

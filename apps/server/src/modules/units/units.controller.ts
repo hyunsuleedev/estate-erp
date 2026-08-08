@@ -28,9 +28,17 @@ export class UnitsController {
   findAll(
     @Query('siteId') siteId: string,
     @Query('dongId') dongId: string,
+    @Query('dongIds') dongIds: string | undefined,
     @CurrentUser() user: CurrentUserPayload,
   ) {
-    return this.unitsService.findAll(user.officeId, { siteId, dongId });
+    return this.unitsService.findAll(user.officeId, {
+      siteId,
+      dongId,
+      dongIds: dongIds
+        ?.split(',')
+        .map((id) => id.trim())
+        .filter(Boolean),
+    });
   }
 
   @Get(':id')

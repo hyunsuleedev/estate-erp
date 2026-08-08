@@ -134,10 +134,16 @@ export interface DataTableProps<TData> {
   onSortingChange?: (sorting: SortingState) => void;
   // Selection
   enableRowSelection?: boolean;
+  selectedRowIds?: readonly string[];
   onRowSelectionChange?: (selectedIds: string[]) => void;
   renderSelectionAccessory?: (row: TData) => ReactNode;
   // Row click
   onRowClick?: (row: TData) => void;
+  /**
+   * true면 단일 클릭은 셀 포커스만, 더블 클릭(및 Enter)으로 onRowClick 호출.
+   * 매물관리 PropertyListingsTable 과 동일한 조작 리듬.
+   */
+  activateOnDoubleClick?: boolean;
   // Loading
   isLoading?: boolean;
   isLoadingMore?: boolean;
@@ -169,6 +175,9 @@ export interface DataTableProps<TData> {
   // Bulk-action toolbar rendered above the table when rows are selected.
   // Receives the selected row objects (not just ids).
   renderBulkActions?: (selectedRows: TData[]) => React.ReactNode;
+  // Keeps the selection toolbar mounted at zero selections so the table does
+  // not jump vertically as selection changes.
+  alwaysShowSelectionToolbar?: boolean;
   // Status bar rendered below the table. Gets the currently focused row, if any,
   // and the total / visible counts so the parent can show summary info.
   renderStatusBar?: (args: {

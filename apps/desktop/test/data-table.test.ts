@@ -7,6 +7,47 @@ import { fileURLToPath } from 'node:url';
 const testDir = dirname(fileURLToPath(import.meta.url));
 
 describe('desktop data table', () => {
+  it('supports controlled row selection for edit-triggered selection', () => {
+    const tableSource = readFileSync(
+      resolve(testDir, '../src/renderer/components/data-table/data-table.tsx'),
+      'utf8',
+    );
+    const typesSource = readFileSync(
+      resolve(testDir, '../src/renderer/components/data-table/types.ts'),
+      'utf8',
+    );
+
+    assert.match(typesSource, /selectedRowIds\?: readonly string\[\]/);
+    assert.match(
+      tableSource,
+      /selectedRowIds === undefined[\s\S]*internalRowSelection[\s\S]*Object\.fromEntries/,
+    );
+    assert.match(
+      tableSource,
+      /if \(selectedRowIds === undefined\) setInternalRowSelection\(next\)/,
+    );
+  });
+
+  it('can reserve the selection toolbar while no rows are selected', () => {
+    const tableSource = readFileSync(
+      resolve(testDir, '../src/renderer/components/data-table/data-table.tsx'),
+      'utf8',
+    );
+    const typesSource = readFileSync(
+      resolve(testDir, '../src/renderer/components/data-table/types.ts'),
+      'utf8',
+    );
+
+    assert.match(typesSource, /alwaysShowSelectionToolbar\?: boolean/);
+    assert.match(
+      tableSource,
+      /alwaysShowSelectionToolbar \|\| selectedRows\.length > 0/,
+    );
+    assert.match(tableSource, /data-data-table-selection-toolbar/);
+    assert.match(tableSource, /className="flex h-9 shrink-0/);
+    assert.match(tableSource, /disabled=\{selectedRows\.length === 0\}/);
+  });
+
   it('lets an explicit fill column absorb remaining table width', () => {
     const tableSource = readFileSync(
       resolve(testDir, '../src/renderer/components/data-table/data-table.tsx'),
@@ -78,6 +119,30 @@ describe('desktop data table', () => {
     );
   });
 
+  it('labels an available property listing as active in the interface', () => {
+    const pageSource = readFileSync(
+      resolve(
+        testDir,
+        '../src/renderer/routes/_authenticated/properties/index.tsx',
+      ),
+      'utf8',
+    );
+    const statusConfigSource = readFileSync(
+      resolve(testDir, '../src/renderer/lib/status-config.ts'),
+      'utf8',
+    );
+
+    assert.match(
+      pageSource,
+      /\[ListingAvailability\.AVAILABLE\]:\s*\{\s*label: '활성'/,
+    );
+    assert.match(
+      statusConfigSource,
+      /listingAvailability:\s*\{\s*available: \{ label: '활성'/,
+    );
+    assert.match(pageSource, /'활성으로'/);
+  });
+
   it('combines confirm action, date, and next-confirm columns into the web-style confirm column', () => {
     const source = readFileSync(
       resolve(
@@ -89,12 +154,62 @@ describe('desktop data table', () => {
 
     assert.match(
       source,
-      /id: 'updatedAt'[\s\S]*?label="확인"[\s\S]*?<IntakeConfirmationCell/,
+      /id: 'confirmationAt'[\s\S]*?label="확인"[\s\S]*?<IntakeConfirmationCell/,
     );
     assert.match(source, /title="오늘로 확인 갱신"/);
     assert.doesNotMatch(source, /id: 'confirmAction'/);
     assert.doesNotMatch(source, /label="확인일"/);
     assert.doesNotMatch(source, /label="다음확인"/);
+  });
+
+  it('makes property data headers keyboard-sortable with announced direction', () => {
+    const pageSource = readFileSync(
+      resolve(
+        testDir,
+        '../src/renderer/routes/_authenticated/properties/index.tsx',
+      ),
+      'utf8',
+    );
+    const tableSource = readFileSync(
+      resolve(
+        testDir,
+        '../src/renderer/routes/_authenticated/properties/-components/property-listings-table.tsx',
+      ),
+      'utf8',
+    );
+
+    for (const columnId of [
+      'info',
+      'site',
+      'dong',
+      'unit',
+      'unitType',
+      'exclusiveArea',
+      'matching',
+      'advertisement',
+      'confirmationAt',
+      'listingAvailability',
+      'price',
+      'monthlyRent',
+      'loanAmount',
+      'moveInAvailable',
+      'memo',
+    ]) {
+      const columnStart = pageSource.indexOf(`id: '${columnId}'`);
+      assert.notEqual(columnStart, -1, `${columnId} column should exist`);
+      assert.match(
+        pageSource.slice(columnStart, columnStart + 700),
+        /enableSorting: true/,
+        `${columnId} should opt in to sorting`,
+      );
+    }
+
+    assert.match(tableSource, /aria-sort=\{/);
+    assert.match(
+      tableSource,
+      /<button[\s\S]*?type="button"[\s\S]*?onClick=\{handleSortToggle\}/,
+    );
+    assert.match(tableSource, /focus-visible:ring-2/);
   });
 
   it('keeps the confirmation column within the compact property row height', () => {
@@ -133,7 +248,7 @@ describe('desktop data table', () => {
     assert.match(pageSource, /data-properties-page/);
     assert.match(
       cssSource,
-      /:is\(\[data-properties-page\], \[data-property-quick-sheet\]\) :where\(button, \[data-slot="button"\]\)[\s\S]*?scale 140ms cubic-bezier\(0\.23, 1, 0\.32, 1\)/,
+      /:is\(\[data-properties-page\], \[data-property-inspector\]\) :where\(button, \[data-slot="button"\]\)[\s\S]*?scale 140ms cubic-bezier\(0\.23, 1, 0\.32, 1\)/,
     );
     assert.match(
       cssSource,
@@ -145,7 +260,7 @@ describe('desktop data table', () => {
     );
   });
 
-  it('opens the property quick sheet in under 300ms and defers heavy content until motion completes', () => {
+  it('overlays a full-page resizable three-tab inspector above the filters', () => {
     const pageSource = readFileSync(
       resolve(
         testDir,
@@ -158,31 +273,73 @@ describe('desktop data table', () => {
       'utf8',
     );
 
+    assert.match(pageSource, /<PropertyInspector/);
     assert.match(
       pageSource,
-      /const PROPERTY_QUICK_SHEET_OPEN_DURATION_MS = 280/,
+      /data-properties-page[\s\S]*?className="relative -m-4 flex min-h-0 flex-1 flex-col bg-white"/,
     );
+    assert.match(pageSource, /data-property-workspace/);
     assert.match(
       pageSource,
-      /const PROPERTY_QUICK_SHEET_CONTENT_DELAY_MS = PROPERTY_QUICK_SHEET_OPEN_DURATION_MS \+ 20/,
+      /data-property-workspace[\s\S]*?className="relative flex min-h-0 flex-1 overflow-hidden/,
     );
-    assert.match(pageSource, /data-property-quick-sheet/);
+    assert.match(pageSource, /data-property-inspector/);
+    assert.match(
+      pageSource,
+      /data-property-inspector[\s\S]*?className="absolute inset-y-0 right-0 z-50/,
+    );
+    assert.match(pageSource, /data-property-inspector-resize-handle/);
+    assert.match(
+      pageSource,
+      /<\/section>\s*\{selectedIntakeId && \(\s*<PropertyInspector/,
+      'the inspector should be a page-level sibling after the workspace so it covers both filter rows',
+    );
+    assert.match(pageSource, /role="separator"/);
+    assert.match(pageSource, /aria-label="상세 패널 너비 조절"/);
+    assert.match(pageSource, /요약/);
+    assert.match(pageSource, /연락·상담/);
+    assert.match(pageSource, /광고·이력/);
+    assert.equal(
+      pageSource.match(
+        /className="h-10 flex-none border-0 px-0 text-xs focus-visible:border-0"/g,
+      )?.length,
+      3,
+      'inspector tabs should use only the line indicator without button borders',
+    );
+    assert.match(pageSource, /의뢰 상태/);
+    assert.match(pageSource, /매물 상태/);
+    assert.match(pageSource, /onRequestClose=/);
+    assert.doesNotMatch(pageSource, /aria-label="빠른 보기"/);
     assert.match(
       cssSource,
-      /\[data-property-quick-sheet\]\[data-state="open"\][\s\S]*?animation-duration: 280ms/,
+      /\[data-property-inspector\][\s\S]*?animation: property-inspector-enter 180ms/,
     );
     assert.match(
       cssSource,
-      /\[data-property-quick-sheet\]\[data-state="closed"\][\s\S]*?animation-duration: 180ms/,
+      /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\[data-property-inspector\][\s\S]*?animation-duration: 1ms/,
     );
-    assert.match(
-      cssSource,
-      /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\[data-property-quick-sheet\]\[data-state="open"\][\s\S]*?animation-name: property-quick-sheet-fade-in/,
+  });
+
+  it('closes the property inspector with Escape and restores table focus', () => {
+    const pageSource = readFileSync(
+      resolve(
+        testDir,
+        '../src/renderer/routes/_authenticated/properties/index.tsx',
+      ),
+      'utf8',
     );
-    assert.match(
-      cssSource,
-      /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\[data-property-quick-sheet\]\[data-state="closed"\][\s\S]*?animation-name: property-quick-sheet-fade-out/,
+    const tableSource = readFileSync(
+      resolve(
+        testDir,
+        '../src/renderer/routes/_authenticated/properties/-components/property-listings-table.tsx',
+      ),
+      'utf8',
     );
+
+    assert.match(pageSource, /closePropertyInspector/);
+    assert.match(pageSource, /\[data-property-table-scroller\]/);
+    assert.match(pageSource, /focus\(\{ preventScroll: true \}\)/);
+    assert.match(tableSource, /case 'Escape':[\s\S]*?if \(onRequestClose\)/);
   });
 
   it('removes the joint brokerage column from the desktop property table', () => {
@@ -285,7 +442,7 @@ describe('desktop data table', () => {
     assert.match(tableSource, /<Minus className="size-3" \/>/);
     assert.match(
       pageSource,
-      /\.\.\.\(!arePropertyDetailColumnsCollapsed[\s\S]*?id: 'unitType'[\s\S]*?id: 'exclusiveArea'[\s\S]*?id: 'matching'[\s\S]*?id: 'advertisement'[\s\S]*?id: 'updatedAt'/,
+      /\.\.\.\(!arePropertyDetailColumnsCollapsed[\s\S]*?id: 'unitType'[\s\S]*?id: 'exclusiveArea'[\s\S]*?id: 'matching'[\s\S]*?id: 'advertisement'[\s\S]*?id: 'confirmationAt'/,
     );
     assert.match(tableSource, /타입–확인 컬럼 펼치기/);
   });
@@ -323,6 +480,16 @@ describe('desktop data table', () => {
     assert.match(
       tableSource,
       /data-column-group-toggle="property-details"[\s\S]*?sticky left-\[462px\]/,
+    );
+    assert.doesNotMatch(
+      tableSource,
+      /data-column-group-toggle="property-details"[\s\S]*?className="[^"]*active:translate-y-px/,
+      'pressing the sticky toggle must not move its guide mask',
+    );
+    assert.match(
+      cssSource,
+      /\[data-column-group-toggle="property-details"\]\[aria-expanded="true"\]::before[\s\S]*?right: calc\(100% \+ 1px\);[\s\S]*?top: 7px;[\s\S]*?width: 100vw;[\s\S]*?height: 11px;[\s\S]*?background: #f8f7f4;/,
+      'the sticky toggle should mask guide segments without covering its border',
     );
     assert.doesNotMatch(
       cssSource,
@@ -381,6 +548,74 @@ describe('desktop data table', () => {
     assert.match(source, /zIndex: PINNED_BODY_CELL_Z_INDEX/);
   });
 
+  it('moves chip editor popups in the same native scroll layer as their cells', () => {
+    const source = readFileSync(
+      resolve(testDir, '../src/renderer/components/data-table/cell-editor.tsx'),
+      'utf8',
+    );
+
+    assert.equal(
+      source.match(/data-cell-chip-popup/g)?.length,
+      2,
+      'both option and date-picker popups should use the native scroll layer',
+    );
+    assert.match(source, /className="absolute z-50 w-\[220px\]/);
+    assert.match(source, /className="absolute z-50 w-\[280px\]/);
+    assert.match(source, /top: rect\.top \+ rect\.height \+ 4/);
+    assert.match(source, /left: clampPopupLeft\(220\)/);
+    assert.match(source, /left: clampPopupLeft\(280\)/);
+    assert.match(source, /return createPortal\(portalContent, scrollParent\)/);
+    assert.doesNotMatch(source, /updatePositionStrategy="always"/);
+    assert.doesNotMatch(source, /<PopoverContent/);
+  });
+
+  it('uses Korean month, weekday, and accessibility labels in date pickers', () => {
+    const calendarSource = readFileSync(
+      resolve(testDir, '../src/renderer/components/ui/calendar.tsx'),
+      'utf8',
+    );
+
+    assert.match(calendarSource, /import \{ ko \} from 'react-day-picker\/locale'/);
+    assert.match(calendarSource, /locale = ko/);
+    assert.match(calendarSource, /<DayPicker[\s\S]*?locale=\{locale\}/);
+  });
+
+  it('uses a pencil-free floating popup for editable property text and number cells', () => {
+    const editorSource = readFileSync(
+      resolve(testDir, '../src/renderer/components/data-table/cell-editor.tsx'),
+      'utf8',
+    );
+    const pageSource = readFileSync(
+      resolve(
+        testDir,
+        '../src/renderer/routes/_authenticated/properties/index.tsx',
+      ),
+      'utf8',
+    );
+
+    assert.match(editorSource, /editorChrome\?: 'cell' \| 'floating'/);
+    assert.match(editorSource, /data-cell-edit-popup=\{isFloatingEditor/);
+    assert.match(
+      editorSource,
+      /rounded-md border border-border p-1 shadow-\[0_12px_28px_rgba\(15,23,42,0\.2\)\]/,
+    );
+    assert.match(
+      pageSource,
+      /activation="doubleClick"[\s\S]*?editorChrome="floating"/,
+    );
+    assert.doesNotMatch(editorSource, /\bPencil\b/);
+  });
+
+  it('focuses text and number editors without selecting the existing value', () => {
+    const editorSource = readFileSync(
+      resolve(testDir, '../src/renderer/components/data-table/cell-editor.tsx'),
+      'utf8',
+    );
+
+    assert.match(editorSource, /inputRef\.current\?\.focus\(\)/);
+    assert.doesNotMatch(editorSource, /inputRef\.current\?\.select\(\)/);
+  });
+
   it('uses a vertical ellipsis for the property row actions menu', () => {
     const source = readFileSync(
       resolve(
@@ -430,7 +665,7 @@ describe('desktop data table', () => {
     assert.match(tableSource, /renderExpandedRow\?\.\(row\.original\)/);
   });
 
-  it('shows web-style match counts beside advertisements and expands their buyer requirements', () => {
+  it('shows match counts beside advertisements and expands buyers as property branches', () => {
     const pageSource = readFileSync(
       resolve(
         testDir,
@@ -449,7 +684,9 @@ describe('desktop data table', () => {
     const matchingColumnIndex = pageSource.indexOf("id: 'matching'");
     const advertisementColumnIndex = pageSource.indexOf("id: 'advertisement'");
     const exclusiveAreaColumnIndex = pageSource.indexOf("id: 'exclusiveArea'");
-    const updatedAtColumnIndex = pageSource.indexOf("id: 'updatedAt'");
+    const confirmationAtColumnIndex = pageSource.indexOf(
+      "id: 'confirmationAt'",
+    );
 
     assert.ok(matchingColumnIndex !== -1, 'matching column should be rendered');
     assert.ok(
@@ -461,31 +698,30 @@ describe('desktop data table', () => {
       'exclusive area column should be rendered',
     );
     assert.ok(
-      updatedAtColumnIndex !== -1,
+      confirmationAtColumnIndex !== -1,
       'confirmation column should be rendered',
     );
     assert.ok(
       exclusiveAreaColumnIndex < matchingColumnIndex &&
         matchingColumnIndex < advertisementColumnIndex &&
-        advertisementColumnIndex < updatedAtColumnIndex,
+        advertisementColumnIndex < confirmationAtColumnIndex,
       'matching and advertisement should sit directly after exclusive area',
     );
     assert.match(pageSource, /label="매칭"/);
-    assert.match(pageSource, /label="연관 구매의뢰"/);
+    assert.match(pageSource, /label="연결 구매고객"/);
     assert.match(
       pageSource,
-      /<span className="text-\[12\.5px\] font-semibold text-foreground">연관 구매의뢰<\/span>/,
+      /<span className="text-\[12\.5px\] font-semibold text-foreground">\s*연결 구매고객\s*<\/span>/,
     );
-    assert.match(
-      pageSource,
-      /<StatusBadge kind="matchStage" status=\{match\.stage\} size="sm" \/>/,
-    );
-    assert.match(pageSource, /className="flex min-w-\[700px\] items-center"/);
-    assert.match(pageSource, /data-match-stage-connector="true"/);
-    assert.match(
-      pageSource,
-      /aria-current=\{isCurrent \? 'step' : undefined\}/,
-    );
+    assert.match(pageSource, /data-property-match-branch-list/);
+    assert.match(pageSource, /data-property-match-branch-trunk/);
+    assert.match(pageSource, /data-property-match-branch-connector/);
+    assert.match(pageSource, /d="M0 0C0 18 14 32 32 32"/);
+    assert.match(pageSource, /xl:grid-cols-\[minmax\(260px,320px\)_minmax\(620px,1fr\)_auto\]/);
+    assert.match(pageSource, /<MatchProgressTrack match=\{match\} actions=\{actions\} \/>/);
+    assert.match(pageSource, /data-property-match-memo-trigger/);
+    assert.match(pageSource, /<MatchConvertDialog/);
+    assert.match(pageSource, /buildViewingCalendarEventPayload/);
     assert.match(pageSource, /api\.matches\.updateStage/);
     assert.match(pageSource, /_count: listing\._count/);
     assert.match(clientSource, /_count\?: \{ matches: number \}/);

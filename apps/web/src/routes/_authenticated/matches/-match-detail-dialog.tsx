@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, CalendarPlus, MessageSquarePlus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { Match } from '@estate-erp/api-client';
+import { MatchStage, normalizeMatchStage } from '@estate-erp/shared';
 import {
   formatMatchPrice,
   formatRequirementSummaryFromBuyerRequirement,
@@ -61,7 +62,10 @@ export function MatchDetailDialog({
   }, [match?.id]);
 
   const activeDeal = match ? getActiveDealLink(match) : null;
-  const dealMismatch = match?.stage === 'dealCreated' && !activeDeal;
+  const dealMismatch =
+    match !== null &&
+    normalizeMatchStage(match.stage) === MatchStage.DEAL_CREATED &&
+    !activeDeal;
 
   const memoMutation = useMutation({
     mutationFn: ({ id, stage, memo }: { id: string; stage: string; memo: string | null }) =>

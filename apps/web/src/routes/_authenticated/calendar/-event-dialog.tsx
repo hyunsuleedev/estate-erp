@@ -272,15 +272,16 @@ export function EventDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[calc(100dvh-4rem)] overflow-y-auto sm:max-w-xl">
-        <DialogHeader>
-          <DialogTitle>{event ? '일정 수정' : '일정 추가'}</DialogTitle>
-          <DialogDescription>
+      <DialogContent className="max-h-[calc(100dvh-3rem)] grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden p-0 sm:max-w-2xl">
+        <DialogHeader className="border-b border-border px-6 pb-4 pt-5">
+          <DialogTitle className="text-base">{event ? '일정 수정' : '새 일정'}</DialogTitle>
+          <DialogDescription className="text-xs">
             날짜와 시간, 유형, 설명을 입력하고 관련 CRM 항목을 연결할 수 있습니다.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="min-h-0 overflow-y-auto px-6 py-5">
+          <div className="grid gap-4 md:grid-cols-2">
           <div className="space-y-2 md:col-span-2">
             <Label>
               제목 <span className="text-destructive">*</span>
@@ -291,13 +292,14 @@ export function EventDialog({
                 setForm((prev) => ({ ...prev, title: changeEvent.target.value }))
               }
               placeholder="예: 래미안고덕 101동 임장"
+              className="h-10 text-[15px] font-medium shadow-none"
             />
           </div>
 
           <div className="space-y-2">
             <Label>일정 유형</Label>
             <Select value={form.type} onValueChange={handleTypeChange}>
-              <SelectTrigger className="w-full">
+              <SelectTrigger className="w-full bg-muted/25 shadow-none">
                 <SelectValue placeholder="유형 선택" />
               </SelectTrigger>
               <SelectContent>
@@ -325,9 +327,9 @@ export function EventDialog({
                 onChange={(changeEvent) =>
                   setForm((prev) => ({ ...prev, color: changeEvent.target.value }))
                 }
-                className="h-9 w-16 p-1"
+                className="h-9 w-16 bg-muted/25 p-1 shadow-none"
               />
-              <label className="flex h-9 flex-1 items-center justify-between gap-2 rounded-md border px-3 text-xs text-muted-foreground">
+              <label className="flex h-9 flex-1 items-center justify-between gap-2 rounded-md border bg-muted/25 px-3 text-xs text-muted-foreground">
                 종일
                 <Switch size="sm" checked={form.allDay} onCheckedChange={handleAllDayChange} />
               </label>
@@ -344,6 +346,7 @@ export function EventDialog({
               onChange={(changeEvent) =>
                 setForm((prev) => ({ ...prev, start: changeEvent.target.value }))
               }
+              className="shadow-none"
             />
           </div>
 
@@ -366,6 +369,7 @@ export function EventDialog({
               onChange={(changeEvent) =>
                 setForm((prev) => ({ ...prev, end: changeEvent.target.value }))
               }
+              className="shadow-none"
             />
           </div>
 
@@ -377,12 +381,17 @@ export function EventDialog({
               onChange={(changeEvent) =>
                 setForm((prev) => ({ ...prev, description: changeEvent.target.value }))
               }
+              placeholder="메모, 준비할 내용, 상대방 요청사항을 적어두세요."
+              className="min-h-24 resize-y shadow-none"
             />
           </div>
 
-          <div className="space-y-1 rounded-md border bg-muted/20 p-3 md:col-span-2">
-            <div className="mb-1 text-xs font-semibold text-muted-foreground">
-              CRM 연결 — 칩을 클릭하면 해당 화면으로 이동합니다
+          <div className="space-y-1 border-t border-border pt-4 md:col-span-2">
+            <div className="mb-2">
+              <div className="text-xs font-semibold text-foreground">CRM 연결</div>
+              <div className="mt-0.5 text-[11px] text-muted-foreground">
+                연결한 항목은 일정에서 바로 열 수 있습니다.
+              </div>
             </div>
             {LINK_KINDS.map((kind) => (
               <EventLinkRow
@@ -395,9 +404,10 @@ export function EventDialog({
               />
             ))}
           </div>
+          </div>
         </div>
 
-        <DialogFooter className="justify-between sm:justify-between">
+        <DialogFooter className="border-t border-border bg-muted/25 px-6 py-3.5 sm:justify-between">
           <div>
             {event ? (
               <Button

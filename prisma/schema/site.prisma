@@ -63,7 +63,6 @@ model Site {
   publicDocuments                 PublicDocument[]
   externalListingGroups           ExternalListingGroup[]
   externalListingSnapshotSessions ExternalListingSnapshotSession[]
-  externalListingSources          ExternalListingSource[]
 
   @@index([officeId])
   @@index([wardCode])
@@ -77,20 +76,22 @@ model Site {
 }
 
 // ============================================================
-// 사무소별 관리 단지 (즐겨찾기)
+// 사무소별 관리 단지 구독
 // ============================================================
 
 model OfficeSite {
-  id        String   @id @default(uuid()) @db.Uuid
-  officeId  String   @map("office_id") @db.Uuid
-  siteId    String   @map("site_id") @db.Uuid
-  memo      String?
-  createdAt DateTime @default(now()) @map("created_at")
+  id         String   @id @default(uuid()) @db.Uuid
+  officeId   String   @map("office_id") @db.Uuid
+  siteId     String   @map("site_id") @db.Uuid
+  memo       String?
+  isFavorite Boolean  @default(false) @map("is_favorite")
+  createdAt  DateTime @default(now()) @map("created_at")
 
   office Office @relation(fields: [officeId], references: [id])
   site   Site   @relation(fields: [siteId], references: [id])
 
   @@unique([officeId, siteId])
+  @@index([officeId, isFavorite, createdAt])
   @@map("office_sites")
 }
 
@@ -190,8 +191,6 @@ model Unit {
   dong         Dong          @relation(fields: [dongId], references: [id])
   siteUnitType SiteUnitType? @relation(fields: [siteUnitTypeId], references: [id])
   properties   Property[]
-
-  externalListingGroups ExternalListingGroup[]
 
   @@index([siteId, dongId, floor])
   @@map("units")

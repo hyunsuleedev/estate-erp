@@ -1,4 +1,5 @@
 import { TasksService } from './tasks.service';
+import { ConflictException } from '@nestjs/common';
 
 describe('TasksService', () => {
   function createService() {
@@ -7,6 +8,7 @@ describe('TasksService', () => {
         create: jest.fn(),
         findFirst: jest.fn(),
         update: jest.fn(),
+        updateMany: jest.fn(),
       },
       notification: {
         create: jest.fn(),
@@ -124,5 +126,58 @@ describe('TasksService', () => {
         linkId: 'task-1',
       },
     });
+  });
+
+  it('atomically claims a pending advertisement task for the current user', async () => {
+    const { prisma, service } = createService();
+    prisma.task.findFirst
+      .mockResolvedValueOnce({
+        id: 'task-1',
+        officeId: 'office-1',
+        status: 'pending',
+        assignedToId: null,
+        assignedById: null,
+        assignedAt: null,
+      })
+      .mockResolvedValueOnce({
+        id: 'task-1',
+        officeId: 'office-1',
+        status: 'in_progress',
+        assignedToId: 'user-1',
+      });
+    prisma.task.updateMany.mockResolvedValue({ count: 1 });
+
+    const task = await service.claim('task-1', 'office-1', 'user-1');
+
+    expect(prisma.task.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: 'task-1',
+        officeId: 'office-1',
+        status: 'pending',
+        OR: [{ assignedToId: null }, { assignedToId: 'user-1' }],
+      },
+      data: expect.objectContaining({
+        status: 'in_progress',
+        assignedToId: 'user-1',
+        assignedById: 'user-1',
+        assignedAt: expect.any(Date),
+      }),
+    });
+    expect(task).toEqual(expect.objectContaining({ status: 'in_progress' }));
+  });
+
+  it('rejects a task already assigned to another user', async () => {
+    const { prisma, service } = createService();
+    prisma.task.findFirst.mockResolvedValue({
+      id: 'task-1',
+      officeId: 'office-1',
+      status: 'pending',
+      assignedToId: 'other-user',
+    });
+
+    await expect(
+      service.claim('task-1', 'office-1', 'user-1'),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(prisma.task.updateMany).not.toHaveBeenCalled();
   });
 });

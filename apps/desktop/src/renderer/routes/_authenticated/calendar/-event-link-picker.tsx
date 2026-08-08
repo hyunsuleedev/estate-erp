@@ -1,19 +1,28 @@
-import { useDeferredValue, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { useNavigate } from '@tanstack/react-router';
-import { Loader2, Plus, Search, X } from 'lucide-react';
-import type { CalendarEvent } from '@estate-erp/api-client';
+import { useDeferredValue, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useNavigate } from "@tanstack/react-router";
+import { Loader2, Plus, Search, X } from "lucide-react";
+import type { CalendarEvent, Task } from "@estate-erp/api-client";
 
-import { api } from '@/lib/api';
-import { cn } from '@/lib/utils';
-import { formatMoney, formatPhone } from '@/lib/format';
-import { getStatusMeta } from '@/lib/status-config';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { EntityChip } from '@/components/domain';
+import { api } from "@/lib/api";
+import { cn } from "@/lib/utils";
+import { formatMoney, formatPhone } from "@/lib/format";
+import { getStatusMeta } from "@/lib/status-config";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { EntityChip } from "@/components/domain";
 
-export type EventLinkKind = 'contact' | 'property' | 'listing' | 'match' | 'deal';
+export type EventLinkKind =
+  | "contact"
+  | "property"
+  | "listing"
+  | "match"
+  | "deal";
 
 export interface LinkedEntity {
   id: string;
@@ -34,11 +43,11 @@ export const EMPTY_EVENT_LINKS: EventLinks = {
 };
 
 export const LINK_KIND_LABEL: Record<EventLinkKind, string> = {
-  contact: '연락처',
-  property: '매물',
-  listing: '매물 조건',
-  match: '매칭',
-  deal: '거래',
+  contact: "연락처",
+  property: "매물",
+  listing: "매물 조건",
+  match: "매칭",
+  deal: "거래",
 };
 
 /** CalendarEvent include 데이터를 폼 연결 상태로 변환 */
@@ -47,41 +56,105 @@ export function linksFromEvent(event: CalendarEvent): EventLinks {
     contact: event.contactId
       ? {
           id: event.contactId,
-          label: event.contact?.name ?? '연락처',
-          sublabel: event.contact?.phone ? formatPhone(event.contact.phone) : null,
+          label: event.contact?.name ?? "연락처",
+          sublabel: event.contact?.phone
+            ? formatPhone(event.contact.phone)
+            : null,
         }
       : null,
     property: event.propertyId
-      ? { id: event.propertyId, label: event.property?.site?.name ?? '매물' }
+      ? { id: event.propertyId, label: event.property?.site?.name ?? "매물" }
       : null,
     listing: event.listingId
       ? {
           id: event.listingId,
           label: event.listing
             ? [
-                getStatusMeta('transactionType', event.listing.transactionType).label,
+                getStatusMeta("transactionType", event.listing.transactionType)
+                  .label,
                 event.listing.price ? formatMoney(event.listing.price) : null,
               ]
                 .filter(Boolean)
-                .join(' ')
-            : '매물 조건',
-          propertyId: event.propertyId ?? event.listingIntake?.propertyId ?? null,
+                .join(" ")
+            : "매물 조건",
+          propertyId:
+            event.propertyId ?? event.listingIntake?.propertyId ?? null,
         }
       : null,
     match: event.matchId
       ? {
           id: event.matchId,
           label: event.match
-            ? `매칭 · ${getStatusMeta('matchStage', event.match.stage).label}`
-            : '매칭',
+            ? `매칭 · ${getStatusMeta("matchStage", event.match.stage).label}`
+            : "매칭",
         }
       : null,
     deal: event.dealId
       ? {
           id: event.dealId,
           label: event.deal
-            ? `거래 · ${getStatusMeta('dealStage', event.deal.stage).label}`
-            : '거래',
+            ? `거래 · ${getStatusMeta("dealStage", event.deal.stage).label}`
+            : "거래",
+        }
+      : null,
+  };
+}
+
+/** 업무함의 업무를 일정 초안으로 옮길 때 CRM 연결 문맥도 함께 보존한다. */
+export function linksFromTask(task: Task): EventLinks {
+  const listingLabel = task.listing
+    ? [
+        getStatusMeta("transactionType", task.listing.transactionType).label,
+        task.listing.price ? formatMoney(task.listing.price) : null,
+      ]
+        .filter(Boolean)
+        .join(" ")
+    : "매물 조건";
+
+  return {
+    contact: task.contactId
+      ? {
+          id: task.contactId,
+          label: task.contact?.name ?? "연락처",
+          sublabel: task.contact?.phone
+            ? formatPhone(task.contact.phone)
+            : null,
+        }
+      : null,
+    property: task.propertyId
+      ? {
+          id: task.propertyId,
+          label:
+            [task.property?.site?.name, task.property?.unit?.name]
+              .filter(Boolean)
+              .join(" ") || "매물",
+        }
+      : null,
+    listing: task.listingId
+      ? {
+          id: task.listingId,
+          label: listingLabel,
+          propertyId:
+            task.propertyId ??
+            task.listing?.propertyId ??
+            task.listingIntake?.propertyId ??
+            null,
+        }
+      : null,
+    match: task.matchId
+      ? {
+          id: task.matchId,
+          label: task.match?.stage
+            ? `매칭 · ${getStatusMeta("matchStage", task.match.stage).label}`
+            : "매칭",
+        }
+      : null,
+    deal: task.dealId
+      ? {
+          id: task.dealId,
+          label: task.deal?.stage
+            ? `거래 · ${getStatusMeta("dealStage", task.deal.stage).label}`
+            : "거래",
         }
       : null,
   };
@@ -89,23 +162,39 @@ export function linksFromEvent(event: CalendarEvent): EventLinks {
 
 function propertyLabel(property: {
   site?: { name: string } | null;
-  unit?: { name: string; dong?: { name: string; isPlaceholder?: boolean } | null } | null;
+  unit?: {
+    name: string;
+    dong?: { name: string; isPlaceholder?: boolean } | null;
+  } | null;
 }) {
   const dongName =
-    property.unit?.dong && !property.unit.dong.isPlaceholder ? property.unit.dong.name : null;
-  return [property.site?.name ?? '매물', dongName, property.unit?.name].filter(Boolean).join(' ');
+    property.unit?.dong && !property.unit.dong.isPlaceholder
+      ? property.unit.dong.name
+      : null;
+  return [property.site?.name ?? "매물", dongName, property.unit?.name]
+    .filter(Boolean)
+    .join(" ");
 }
 
-function matchesNeedle(needle: string, ...values: Array<string | null | undefined>) {
+function matchesNeedle(
+  needle: string,
+  ...values: Array<string | null | undefined>
+) {
   if (!needle) return true;
   return values.some((value) => value?.toLowerCase().includes(needle));
 }
 
-async function searchEntities(kind: EventLinkKind, query: string): Promise<LinkedEntity[]> {
+async function searchEntities(
+  kind: EventLinkKind,
+  query: string,
+): Promise<LinkedEntity[]> {
   const needle = query.trim().toLowerCase();
 
-  if (kind === 'contact') {
-    const result = await api.contacts.findAll({ search: query.trim() || undefined, limit: 8 });
+  if (kind === "contact") {
+    const result = await api.contacts.findAll({
+      search: query.trim() || undefined,
+      limit: 8,
+    });
     return result.items.map((contact) => ({
       id: contact.id,
       label: contact.name,
@@ -113,8 +202,11 @@ async function searchEntities(kind: EventLinkKind, query: string): Promise<Linke
     }));
   }
 
-  if (kind === 'property') {
-    const result = await api.properties.findAll({ search: query.trim() || undefined, limit: 8 });
+  if (kind === "property") {
+    const result = await api.properties.findAll({
+      search: query.trim() || undefined,
+      limit: 8,
+    });
     return result.items.map((property) => ({
       id: property.id,
       label: propertyLabel(property),
@@ -122,22 +214,25 @@ async function searchEntities(kind: EventLinkKind, query: string): Promise<Linke
     }));
   }
 
-  if (kind === 'listing') {
-    const result = await api.listings.findAll({ search: query.trim() || undefined, limit: 8 });
+  if (kind === "listing") {
+    const result = await api.listings.findAll({
+      search: query.trim() || undefined,
+      limit: 8,
+    });
     return result.items.map((listing) => ({
       id: listing.id,
-      label: listing.property ? propertyLabel(listing.property) : '매물 조건',
+      label: listing.property ? propertyLabel(listing.property) : "매물 조건",
       sublabel: [
-        getStatusMeta('transactionType', listing.transactionType).label,
+        getStatusMeta("transactionType", listing.transactionType).label,
         listing.price ? formatMoney(listing.price) : null,
       ]
         .filter(Boolean)
-        .join(' '),
+        .join(" "),
       propertyId: listing.propertyId,
     }));
   }
 
-  if (kind === 'match') {
+  if (kind === "match") {
     const matches = await api.matches.findAll();
     return matches
       .filter((match) =>
@@ -145,13 +240,13 @@ async function searchEntities(kind: EventLinkKind, query: string): Promise<Linke
           needle,
           match.property?.site?.name,
           match.buyerRequirement?.contact?.name,
-          getStatusMeta('matchStage', match.stage).label,
+          getStatusMeta("matchStage", match.stage).label,
         ),
       )
       .slice(0, 8)
       .map((match) => ({
         id: match.id,
-        label: `${match.property?.site?.name ?? '매칭'} · ${getStatusMeta('matchStage', match.stage).label}`,
+        label: `${match.property?.site?.name ?? "매칭"} · ${getStatusMeta("matchStage", match.stage).label}`,
         sublabel: match.buyerRequirement?.contact?.name
           ? `구매고객 ${match.buyerRequirement.contact.name}`
           : null,
@@ -166,13 +261,13 @@ async function searchEntities(kind: EventLinkKind, query: string): Promise<Linke
         deal.property?.site?.name,
         deal.buyerContact?.name,
         deal.sellerContact?.name,
-        getStatusMeta('dealStage', deal.stage).label,
+        getStatusMeta("dealStage", deal.stage).label,
       ),
     )
     .slice(0, 8)
     .map((deal) => ({
       id: deal.id,
-      label: `${deal.property?.site?.name ?? getStatusMeta('transactionType', deal.transactionType).label} · ${getStatusMeta('dealStage', deal.stage).label}`,
+      label: `${deal.property?.site?.name ?? getStatusMeta("transactionType", deal.transactionType).label} · ${getStatusMeta("dealStage", deal.stage).label}`,
       sublabel: deal.agreedPrice ? formatMoney(deal.agreedPrice) : null,
     }));
 }
@@ -191,32 +286,38 @@ export function EventLinkRow({
   onChange: (value: LinkedEntity | null) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState("");
   const deferredQuery = useDeferredValue(query);
   const navigate = useNavigate();
 
   const { data: results = [], isFetching } = useQuery({
-    queryKey: ['calendar-event-link-search', kind, deferredQuery],
+    queryKey: ["calendar-event-link-search", kind, deferredQuery],
     queryFn: () => searchEntities(kind, deferredQuery),
     enabled: open,
     staleTime: 30_000,
   });
 
   return (
-    <div className="flex min-h-9 items-center gap-2">
-      <span className="w-16 shrink-0 text-xs text-muted-foreground">{LINK_KIND_LABEL[kind]}</span>
+    <div className="-mx-2 flex min-h-9 items-center gap-2 rounded-md px-2 transition-colors hover:bg-muted/45">
+      <span className="w-20 shrink-0 text-xs text-muted-foreground">
+        {LINK_KIND_LABEL[kind]}
+      </span>
 
       {value ? (
         <div className="flex min-w-0 items-center gap-1">
-          {kind === 'match' ? (
+          {kind === "match" ? (
             <button
               type="button"
-              onClick={() => void navigate({ to: '/matches' })}
+              onClick={() => void navigate({ to: "/matches" })}
               className="inline-flex max-w-full items-center gap-1.5 rounded-full border bg-background py-0.5 pr-2.5 pl-2.5 text-xs transition-colors hover:bg-accent"
             >
-              <span className="truncate font-medium text-foreground">{value.label}</span>
+              <span className="truncate font-medium text-foreground">
+                {value.label}
+              </span>
               {value.sublabel ? (
-                <span className="truncate text-muted-foreground">{value.sublabel}</span>
+                <span className="truncate text-muted-foreground">
+                  {value.sublabel}
+                </span>
               ) : null}
             </button>
           ) : (
@@ -243,11 +344,16 @@ export function EventLinkRow({
           open={open}
           onOpenChange={(nextOpen) => {
             setOpen(nextOpen);
-            if (!nextOpen) setQuery('');
+            if (!nextOpen) setQuery("");
           }}
         >
           <PopoverTrigger asChild>
-            <Button type="button" variant="outline" size="sm" className="h-7 gap-1 px-2 text-xs">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-7 gap-1 px-2 text-xs text-muted-foreground"
+            >
               <Plus className="size-3.5" />
               연결
             </Button>
@@ -281,13 +387,15 @@ export function EventLinkRow({
                     onClick={() => {
                       onChange(item);
                       setOpen(false);
-                      setQuery('');
+                      setQuery("");
                     }}
                     className={cn(
-                      'flex w-full flex-col items-start gap-0.5 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-muted',
+                      "flex w-full flex-col items-start gap-0.5 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-muted",
                     )}
                   >
-                    <span className="w-full truncate text-sm font-medium">{item.label}</span>
+                    <span className="w-full truncate text-sm font-medium">
+                      {item.label}
+                    </span>
                     {item.sublabel ? (
                       <span className="w-full truncate text-xs text-muted-foreground">
                         {item.sublabel}

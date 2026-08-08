@@ -582,9 +582,8 @@ async function main() {
             id: externalGroupId,
             officeId,
             siteId: listing.property.siteId,
-            unitId: listing.property.unitId,
             buildingName: listing.property.unit.dong.name,
-            inferredHo: `${listing.property.unit.name}호`,
+            ho: listing.property.unit.name,
             areaName: listing.property.unit.siteUnitType?.name ?? null,
             exclusiveAreaM2:
               listing.property.unit.siteUnitType?.exclusiveAreaM2 ?? null,
@@ -598,9 +597,8 @@ async function main() {
           update: {
             officeId,
             siteId: listing.property.siteId,
-            unitId: listing.property.unitId,
             buildingName: listing.property.unit.dong.name,
-            inferredHo: `${listing.property.unit.name}호`,
+            ho: listing.property.unit.name,
             areaName: listing.property.unit.siteUnitType?.name ?? null,
             exclusiveAreaM2:
               listing.property.unit.siteUnitType?.exclusiveAreaM2 ?? null,

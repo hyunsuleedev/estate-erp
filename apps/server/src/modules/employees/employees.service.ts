@@ -15,6 +15,10 @@ import {
   LISTING_INTAKE_STATE_SELECT,
   OCCUPYING_DEALS_SELECT,
 } from '../listings/listing-state';
+import {
+  buyerIntakeContactsInclude,
+  withBuyerRequirementContact,
+} from '../buyer-requirements/buyer-requirement.presenter';
 
 const taskInclude = {
   contact: { select: { id: true, name: true, phones: contactPhonesSelectOrdered } },
@@ -73,7 +77,7 @@ const employeeDetailInclude = {
   },
   assignedRequirements: {
     include: {
-      contact: { select: { id: true, name: true, phones: contactPhonesSelectOrdered } },
+      buyerIntake: { include: { contacts: buyerIntakeContactsInclude } },
     },
     orderBy: [{ nextContactDate: 'asc' }, { createdAt: 'desc' }],
     take: 20,
@@ -121,7 +125,7 @@ export class EmployeesService {
           select: { id: true },
         },
         assignedRequirements: {
-          where: { status: { in: ['active', 'matched'] } },
+          where: { status: 'active' },
           select: { id: true },
         },
         dealParticipants: {
@@ -473,7 +477,7 @@ export class EmployeesService {
         where: {
           officeId,
           assignedToId: id,
-          status: { in: ['active', 'matched'] },
+          status: 'active',
         },
       }),
       this.prisma.dealParticipant.findMany({
@@ -514,8 +518,8 @@ export class EmployeesService {
     const activeTasks = employee.assignedTasks.filter(
       (task) => !['completed', 'cancelled'].includes(task.status),
     );
-    const activeRequirements = employee.assignedRequirements.filter((requirement) =>
-      ['active', 'matched'].includes(requirement.status),
+    const activeRequirements = employee.assignedRequirements.filter(
+      (requirement) => requirement.status === 'active',
     );
     const activeDeals = employee.dealParticipants.filter(
       (participant) => participant.deal.stage !== 'closed',
@@ -548,7 +552,9 @@ export class EmployeesService {
         ).length,
       },
       assignedTasks: employee.assignedTasks,
-      assignedBuyerRequirements: employee.assignedRequirements,
+      assignedBuyerRequirements: employee.assignedRequirements.map(
+        withBuyerRequirementContact,
+      ),
       dealParticipants: employee.dealParticipants,
       recentConsultations: employee.consultations,
       recentActivities: employee.activityLogs,

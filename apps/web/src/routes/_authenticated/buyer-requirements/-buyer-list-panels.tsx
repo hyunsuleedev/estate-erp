@@ -16,6 +16,7 @@ import { cn } from "@/lib/utils";
 import { formatDate, formatDday, formatMoney, formatPhone } from "@/lib/format";
 import {
   getStatusMeta,
+  normalizeBuyerStatus,
   PIPELINE_STEPS,
   STATUS_CONFIG,
 } from "@/lib/status-config";
@@ -45,7 +46,7 @@ export function NextActionCell({ r }: { r: BuyerRequirement }) {
 
   if (state === "none") {
     // 활성 의뢰인데 다음 연락 계획이 없으면 방치 위험 — 시안의 노랑 경고 배지
-    if (r.status === "active" || r.status === "matched") {
+    if (normalizeBuyerStatus(r.status) === "active") {
       return (
         <span className="inline-flex h-[18px] items-center rounded-[5px] bg-warning-soft px-[7px] text-[10px] font-bold text-warning-strong">
           다음 액션 없음
@@ -96,8 +97,6 @@ export function wantSummary(r: BuyerRequirement): string {
 export function WantExpandPanel({ r }: { r: BuyerRequirement }) {
   const regions = regionLabels(r);
   const sites = r.preferredSites ?? [];
-  const must = r.mustConditions ?? [];
-  const prefer = r.preferConditions ?? [];
   const kinds = (r.siteTypes ?? [])
     .map((t) => SITE_TYPE_LABELS[t] ?? t)
     .join(", ");
@@ -134,7 +133,9 @@ export function WantExpandPanel({ r }: { r: BuyerRequirement }) {
             </span>
           </div>
           <div className="flex min-w-[150px] flex-col gap-1">
-            <span className="text-[10.5px] text-slate-500">물건 · 면적</span>
+            <span className="text-[10.5px] text-slate-500">
+              물건 · 공급평형
+            </span>
             <span className="text-[12.5px] font-medium text-foreground">
               {kindDisp}
             </span>
@@ -186,24 +187,12 @@ export function WantExpandPanel({ r }: { r: BuyerRequirement }) {
             )}
           </div>
         )}
-        {(must.length > 0 || prefer.length > 0) && (
-          <div className="mt-2 flex flex-wrap items-center gap-1.5">
-            {must.map((label) => (
-              <span
-                key={`m-${label}`}
-                className="inline-flex h-5 items-center rounded-md bg-destructive-soft px-2 text-[11px] font-semibold text-destructive-strong"
-              >
-                필수 · {label}
-              </span>
-            ))}
-            {prefer.map((label) => (
-              <span
-                key={`p-${label}`}
-                className="inline-flex h-5 items-center rounded-md bg-secondary px-2 text-[11px] text-slate-600"
-              >
-                선호 · {label}
-              </span>
-            ))}
+        {r.memo?.trim() && (
+          <div className="mt-2 flex items-start gap-2 border-t border-[#f3f2f0] pt-2.5">
+            <span className="shrink-0 text-[10.5px] text-slate-500">메모</span>
+            <p className="line-clamp-2 whitespace-pre-wrap text-[11.5px] text-slate-600">
+              {r.memo}
+            </p>
           </div>
         )}
       </div>
@@ -437,7 +426,9 @@ export function BuyerBulkActions({
         );
       }
       if (succeeded > 0) {
-        void queryClient.invalidateQueries({ queryKey: ["buyer-requirements"] });
+        void queryClient.invalidateQueries({
+          queryKey: ["buyer-requirements"],
+        });
       }
     } finally {
       setAssignPending(false);
@@ -488,7 +479,7 @@ export function BuyerBulkActions({
 
 /* ══════════════ 파이프라인(칸반) 뷰 (시안 brIsPipe) ══════════════ */
 
-const LANE_ORDER = ["active", "matched", "completed", "inactive"] as const;
+const LANE_ORDER = ["active", "hold", "completed"] as const;
 
 export function BuyerPipelineView({
   items,
@@ -502,7 +493,9 @@ export function BuyerPipelineView({
       <div className="flex min-w-[1060px] items-start gap-3">
         {LANE_ORDER.map((status) => {
           const meta = STATUS_CONFIG.buyerStatus[status];
-          const cards = items.filter((r) => r.status === status);
+          const cards = items.filter(
+            (r) => normalizeBuyerStatus(r.status) === status,
+          );
           return (
             <div
               key={status}
@@ -545,6 +538,9 @@ export function BuyerPipelineView({
                       </div>
                       <div className="text-[12px] font-semibold tabular-nums text-foreground">
                         {formatBudget(r)}
+                      </div>
+                      <div className="truncate text-[11.5px] font-medium tabular-nums text-slate-600">
+                        공급 {formatAreaRange(r.areaMin, r.areaMax)}
                       </div>
                       <div className="truncate text-[11.5px] text-slate-600">
                         {wantSummary(r)}

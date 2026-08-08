@@ -3,13 +3,14 @@ import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Building2, Check, ChevronsUpDown, Search } from 'lucide-react';
-import { formatPrice, sqmToPyeong, TRANSACTION_TYPE_LABELS } from '@estate-erp/shared';
+import { sqmToPyeong, TRANSACTION_TYPE_LABELS } from '@estate-erp/shared';
 import type {
   CreateListingForIntakeDto,
   Property,
   PropertyListing,
 } from '@estate-erp/api-client';
 import { api } from '@/lib/api';
+import { formatMoney } from '@/lib/format';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -401,15 +402,11 @@ function NewPropertyPage() {
   };
 
   return (
-    <div className="-m-4 flex min-h-0 flex-1 flex-col bg-slate-50">
-      <header className="border-b border-border bg-white px-6 py-4">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="min-w-0">
-            <h1 className="text-xl font-semibold tracking-tight text-slate-950">매물 등록</h1>
-          </div>
-          <Badge variant="outline" className="mt-1 rounded-md bg-white">
-            가격 단위: 만원
-          </Badge>
+    <div className="-m-4 flex min-h-0 flex-1 flex-col bg-background">
+      <header className="border-b px-6 py-4">
+        <div className="flex flex-wrap items-baseline justify-between gap-3">
+          <h1 className="text-lg font-semibold">매물 등록</h1>
+          <span className="text-xs text-muted-foreground">가격 단위: 만원</span>
         </div>
       </header>
 
@@ -423,7 +420,7 @@ function NewPropertyPage() {
       >
         <div className="min-w-0 space-y-5">
           {error && (
-            <div className="rounded-lg border border-destructive/20 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            <div className="rounded-md border border-destructive/30 bg-destructive-soft px-3 py-2 text-sm text-destructive-strong">
               {error}
             </div>
           )}
@@ -537,7 +534,7 @@ function NewPropertyPage() {
                     </p>
                   )}
                   {units && units.length === 0 && (
-                    <p className="mt-1.5 text-xs text-amber-600">
+                    <p className="mt-1.5 text-xs text-warning-strong">
                       등록된 호실이 없습니다.{' '}
                       <Link to="/sites" className="underline">
                         단지 관리에서 호실을 먼저 추가하세요.
@@ -576,7 +573,7 @@ function NewPropertyPage() {
                       >
                         {TX_LABELS[t]}
                         {hasExisting && (
-                          <span className="ml-1.5 text-[10px] opacity-70" title="이미 등록된 거래">
+                          <span className="ml-1.5 text-[11px] opacity-70" title="이미 등록된 거래">
                             ●
                           </span>
                         )}
@@ -586,7 +583,7 @@ function NewPropertyPage() {
                 </div>
               </FieldRow>
               {txConflicts.length > 0 && (
-                <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                <div className="rounded-md border border-warning/40 bg-warning-soft px-3 py-2 text-xs text-warning-strong">
                   이 호실에 이미 <b>{txConflicts.map((listing) => TX_LABELS[listing.transactionType] ?? listing.transactionType).join(', ')}</b> 매물이 있습니다.
                   다른 거래유형을 선택하거나 기존 매물을 수정하세요.
                 </div>
@@ -596,7 +593,7 @@ function NewPropertyPage() {
                 <FieldRow
                   label="매매가 (만원)"
                   required
-                  hint={form.salePrice ? formatPrice(Number(form.salePrice)) : '예: 158000 = 15억 8천만'}
+                  hint={form.salePrice ? formatMoney(Number(form.salePrice)) : '예: 158000 = 15억 8천만'}
                 >
                   <Input
                     type="number"
@@ -613,7 +610,7 @@ function NewPropertyPage() {
                 <FieldRow
                   label="전세가 (만원)"
                   required
-                  hint={form.jeonsePrice ? formatPrice(Number(form.jeonsePrice)) : '예: 75000 = 7억 5천만'}
+                  hint={form.jeonsePrice ? formatMoney(Number(form.jeonsePrice)) : '예: 75000 = 7억 5천만'}
                 >
                   <Input
                     type="number"
@@ -630,7 +627,7 @@ function NewPropertyPage() {
                 <div className="grid grid-cols-2 gap-3">
                   <FieldRow
                     label="보증금 (만원)"
-                    hint={form.monthlyDeposit ? formatPrice(Number(form.monthlyDeposit)) : undefined}
+                    hint={form.monthlyDeposit ? formatMoney(Number(form.monthlyDeposit)) : undefined}
                   >
                     <Input
                       type="number"
@@ -777,7 +774,7 @@ function NewPropertyPage() {
           </Section>
 
           <Section step={5} title="관련인" subtitle="등록 안 해도 나중에 추가할 수 있어요.">
-          <div className="rounded-lg border bg-white">
+          <div className="rounded-md border bg-card">
             <div className="flex items-center justify-between p-3">
               <div>
                 <div className="text-sm font-medium">집주인 / 소유자</div>
@@ -813,7 +810,7 @@ function NewPropertyPage() {
             )}
           </div>
 
-          <div className="rounded-lg border bg-white">
+          <div className="rounded-md border bg-card">
             <div className="flex items-center justify-between p-3">
               <div>
                 <div className="text-sm font-medium">현재 임차인</div>
@@ -935,9 +932,9 @@ function RegistrationSummaryPanel({
 
   return (
     <aside className="min-w-0">
-      <div className="sticky top-0 space-y-3 rounded-xl border bg-white p-4 shadow-xs">
+      <div className="sticky top-0 space-y-3 rounded-lg border bg-card p-4">
         <div>
-          <h2 className="text-sm font-semibold text-slate-950">등록 요약</h2>
+          <h2 className="text-sm font-semibold">등록 요약</h2>
           <p className="mt-1 text-xs text-muted-foreground">
             저장하면 매물 상세 탭이 열리고 이 등록 탭은 닫힙니다.
           </p>
@@ -953,7 +950,7 @@ function RegistrationSummaryPanel({
           <SummaryRow label="입주" value={moveInLabel} />
         </dl>
 
-        <div className="space-y-2 rounded-lg bg-slate-50 p-3 text-xs text-slate-600">
+        <div className="space-y-2 rounded-md bg-muted p-3 text-xs text-muted-foreground">
           {existingProperty ? (
             <p>기존 Property에 새 거래를 추가합니다.</p>
           ) : (
@@ -965,7 +962,7 @@ function RegistrationSummaryPanel({
         </div>
 
         {txConflicts.length > 0 && (
-          <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900">
+          <div className="rounded-md border border-warning/40 bg-warning-soft p-3 text-xs text-warning-strong">
             같은 거래유형이 이미 있어 저장할 수 없습니다.
           </div>
         )}
@@ -995,7 +992,7 @@ function SummaryRow({
   return (
     <div className="grid grid-cols-[64px_minmax(0,1fr)] gap-3">
       <dt className="text-xs font-medium text-muted-foreground">{label}</dt>
-      <dd className={muted ? 'truncate text-slate-400' : 'truncate text-slate-900'}>
+      <dd className={muted ? 'truncate text-muted-foreground-strong' : 'truncate text-foreground'}>
         {value || '-'}
       </dd>
     </div>
@@ -1006,15 +1003,15 @@ function getListingAmountLabel(form: FormState) {
   const parts: string[] = [];
 
   if (form.transactionTypes.includes('sale') && form.salePrice) {
-    parts.push(`매매 ${formatPrice(Number(form.salePrice))}`);
+    parts.push(`매매 ${formatMoney(Number(form.salePrice))}`);
   }
 
   if (form.transactionTypes.includes('jeonse') && form.jeonsePrice) {
-    parts.push(`전세 ${formatPrice(Number(form.jeonsePrice))}`);
+    parts.push(`전세 ${formatMoney(Number(form.jeonsePrice))}`);
   }
 
   if (form.transactionTypes.includes('monthly') && (form.monthlyDeposit || form.monthlyRent)) {
-    parts.push(`월세 보증금 ${form.monthlyDeposit ? formatPrice(Number(form.monthlyDeposit)) : '-'} / 월 ${
+    parts.push(`월세 보증금 ${form.monthlyDeposit ? formatMoney(Number(form.monthlyDeposit)) : '-'} / 월 ${
       form.monthlyRent ? `${Number(form.monthlyRent).toLocaleString()}만` : '-'
     }`);
   }
@@ -1084,7 +1081,7 @@ function ExistingPropertyNotice({
 }) {
   const listings = property.listings ?? [];
   return (
-    <div className="rounded-md border border-blue-300 bg-blue-50 px-3 py-2.5 text-xs text-blue-900">
+    <div className="rounded-md border border-info/40 bg-info-soft px-3 py-2.5 text-xs text-info-strong">
       <div className="font-medium">
         {needsUnit ? '이 호실' : '이 부동산'}은 이미 등록되어 있어요.
       </div>
@@ -1094,15 +1091,15 @@ function ExistingPropertyNotice({
           <ul className="mt-1 space-y-0.5">
             {listings.map((l) => (
               <li key={l.id} className="flex items-center gap-1.5">
-                <span className="inline-block min-w-9 rounded bg-white/60 px-1.5 py-px text-[10px] font-medium">
+                <span className="inline-block min-w-9 rounded-sm bg-background/70 px-1.5 py-px text-[11px] font-medium">
                   {TX_LABELS[l.transactionType as keyof typeof TX_LABELS] ??
                     l.transactionType}
                 </span>
                 <span>
                   {l.transactionType === 'monthly'
-                    ? `보증금 ${l.deposit ? formatPrice(l.deposit) : '-'} / 월 ${l.monthlyRent?.toLocaleString() ?? '-'}만`
+                    ? `보증금 ${l.deposit ? formatMoney(l.deposit) : '-'} / 월 ${l.monthlyRent?.toLocaleString() ?? '-'}만`
                     : l.price
-                      ? formatPrice(l.price)
+                      ? formatMoney(l.price)
                       : '가격 미입력'}
                 </span>
                 <Link
@@ -1115,7 +1112,7 @@ function ExistingPropertyNotice({
               </li>
             ))}
           </ul>
-          <div className="mt-1.5 text-blue-800/80">
+          <div className="mt-1.5 text-info-strong">
             아래 거래유형을 골라 새 거래를 추가하거나, 상세에서 기존 거래를 수정할 수 있어요.
           </div>
         </div>
@@ -1231,7 +1228,7 @@ function SitePicker({
                         {value === s.id && <Check className="size-3.5" />}
                         <span className="truncate">{s.name}</span>
                       </span>
-                      <Badge variant="secondary" className="text-[10px]">
+                      <Badge variant="secondary" className="text-[11px]">
                         {SITE_TYPE_LABELS[s.type] ?? s.type}
                       </Badge>
                     </CommandItem>
@@ -1262,7 +1259,7 @@ function SitePicker({
                       <Search className="size-3.5 text-muted-foreground" />
                       <span className="truncate">{s.name}</span>
                     </span>
-                    <Badge variant="outline" className="text-[10px]">
+                    <Badge variant="outline" className="text-[11px]">
                       {SITE_TYPE_LABELS[s.type] ?? s.type}
                     </Badge>
                   </CommandItem>

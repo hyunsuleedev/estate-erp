@@ -35,7 +35,7 @@ export function useDetachedInitialTab(enabled: boolean) {
           routeParams: tab.routeParams,
         });
       }
-      document.title = `${tab.title} — Estate ERP`;
+      document.title = `${tab.title} — 에스테잇플로우`;
     });
   }, [enabled, openTab]);
 }

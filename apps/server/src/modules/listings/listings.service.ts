@@ -27,6 +27,10 @@ import {
   NON_CLOSED_INTAKE_WHERE,
   OCCUPYING_DEALS_SELECT,
 } from './listing-state';
+import {
+  listingCaseParticipants,
+  resolveBrokerageCaseForIntake,
+} from '../brokerage-cases/brokerage-case.resolver';
 
 const VALID_TRANSACTION_TYPES: ReadonlySet<string> = new Set(
   Object.values(TransactionType),
@@ -120,7 +124,9 @@ export interface ListingSearchQuery {
   depositMax?: number;
   monthlyRentMin?: number;
   monthlyRentMax?: number;
+  /** 공급면적 하한 (m²) */
   areaMin?: number;
+  /** 공급면적 상한 (m²) */
   areaMax?: number;
   siteType?: string;
   wardCode?: string;
@@ -273,6 +279,8 @@ export class ListingsService {
     }
 
     if (query.areaMin !== undefined || query.areaMax !== undefined) {
+      // BuyerRequirement의 areaMin/areaMax와 같은 의미: 희망 공급면적(m²).
+      // Unit의 개별값을 우선하고, 없을 때만 평형 카탈로그 값을 사용한다.
       const areaRange = {
         ...(query.areaMin !== undefined && { gte: query.areaMin }),
         ...(query.areaMax !== undefined && { lte: query.areaMax }),
@@ -282,8 +290,11 @@ export class ListingsService {
         property: {
           unit: {
             OR: [
-              { exclusiveAreaM2: areaRange },
-              { siteUnitType: { exclusiveAreaM2: areaRange } },
+              { supplyAreaM2: areaRange },
+              {
+                supplyAreaM2: null,
+                siteUnitType: { supplyAreaM2: areaRange },
+              },
             ],
           },
         },
@@ -303,7 +314,7 @@ export class ListingsService {
     }
 
     if (query.search) {
-      const normalizedSearch = normalizePhone(query.search);
+      const canonicalPhone = normalizePhone(query.search);
       filters.push({
         OR: [
           { property: { site: { name: { contains: query.search, mode: 'insensitive' } } } },
@@ -355,17 +366,19 @@ export class ListingsService {
               },
             },
           },
-          {
-            property: {
-              propertyContacts: {
-                some: {
-                  contact: {
-                    phones: { some: { normalizedPhone: { contains: normalizedSearch } } },
+          ...(canonicalPhone
+            ? [{
+                property: {
+                  propertyContacts: {
+                    some: {
+                      contact: {
+                        phones: { some: { phone: { contains: canonicalPhone } } },
+                      },
+                    },
                   },
                 },
-              },
-            },
-          },
+              }]
+            : []),
           { memo: { contains: query.search, mode: 'insensitive' } },
         ],
       });
@@ -877,14 +890,27 @@ export class ListingsService {
     }
 
     try {
-      return await this.prisma.listingIntake.create({
-        data: {
+      return await this.prisma.$transaction(async (tx) => {
+        const participants = await listingCaseParticipants(
+          tx,
           officeId,
           propertyId,
-          lifecycleChangedAt: new Date(),
-          lifecycleChangedBy: 'user',
-        },
-        select: { id: true },
+        );
+        const resolvedCase = await resolveBrokerageCaseForIntake(tx, {
+          officeId,
+          intakeKind: 'listing',
+          participants,
+        });
+        return tx.listingIntake.create({
+          data: {
+            officeId,
+            ...resolvedCase,
+            propertyId,
+            lifecycleChangedAt: new Date(),
+            lifecycleChangedBy: 'user',
+          },
+          select: { id: true },
+        });
       });
     } catch (error) {
       // 동시 생성 경쟁 — partial unique index 충돌이면 먼저 생성된 열린 의뢰 재사용

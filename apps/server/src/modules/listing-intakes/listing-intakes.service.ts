@@ -6,6 +6,8 @@ import {
   Optional,
 } from '@nestjs/common';
 import {
+  DONE_DEAL_STAGES,
+  IN_CONTRACT_DEAL_STAGES,
   IntakeCheckResult,
   IntakeClosedReason,
   IntakeConfirmationState,
@@ -30,6 +32,10 @@ import {
   withPrimaryPhone,
 } from '../contacts/contact-phone.utils';
 import { RealtimeService } from '../../realtime/realtime.service';
+import {
+  listingCaseParticipants,
+  resolveBrokerageCaseForIntake,
+} from '../brokerage-cases/brokerage-case.resolver';
 
 const DEFAULT_INTAKE_LIFECYCLE_STATUS = IntakeLifecycleStatus.OPEN;
 const VALID_INTAKE_LIFECYCLE_STATUSES: ReadonlySet<string> = new Set(
@@ -94,6 +100,105 @@ const VALID_CONFIRM_CHANNELS = new Set([
 ]);
 const MAP_INTAKES_LIMIT = 5000;
 
+export type ListingIntakeSortField =
+  | 'receivedAt'
+  | 'createdAt'
+  | 'updatedAt'
+  | 'info'
+  | 'site'
+  | 'dong'
+  | 'unit'
+  | 'unitType'
+  | 'exclusiveArea'
+  | 'matching'
+  | 'advertisement'
+  | 'confirmationAt'
+  | 'listingAvailability'
+  | 'price'
+  | 'monthlyRent'
+  | 'loanAmount'
+  | 'moveInAvailable'
+  | 'memo';
+
+const VALID_LISTING_INTAKE_SORT_FIELDS: ReadonlySet<string> = new Set([
+  'receivedAt',
+  'createdAt',
+  'updatedAt',
+  'info',
+  'site',
+  'dong',
+  'unit',
+  'unitType',
+  'exclusiveArea',
+  'matching',
+  'advertisement',
+  'confirmationAt',
+  'listingAvailability',
+  'price',
+  'monthlyRent',
+  'loanAmount',
+  'moveInAvailable',
+  'memo',
+]);
+
+const NATIVE_LISTING_INTAKE_SORT_FIELDS: ReadonlySet<string> = new Set([
+  'receivedAt',
+  'createdAt',
+  'updatedAt',
+]);
+
+const LISTING_INTAKE_SORT_CANDIDATE_SELECT = {
+  id: true,
+  lifecycleStatus: true,
+  receivedAt: true,
+  lastCheckedAt: true,
+  lastVerifiedAt: true,
+  memo: true,
+  createdAt: true,
+  updatedAt: true,
+  property: {
+    select: {
+      site: { select: { name: true } },
+      unit: {
+        select: {
+          name: true,
+          exclusiveAreaM2: true,
+          dong: { select: { name: true } },
+          siteUnitType: {
+            select: { name: true, exclusiveAreaM2: true },
+          },
+        },
+      },
+    },
+  },
+  listings: {
+    orderBy: { createdAt: 'desc' as const },
+    select: {
+      transactionType: true,
+      price: true,
+      deposit: true,
+      monthlyRent: true,
+      loanAmount: true,
+      moveInAvailableType: true,
+      moveInAvailableFrom: true,
+      moveInAvailableTo: true,
+      isPaused: true,
+      updatedAt: true,
+      deals: OCCUPYING_DEALS_SELECT,
+      _count: { select: { matches: true } },
+      advertisements: {
+        orderBy: { createdAt: 'desc' as const },
+        take: 5,
+        select: { id: true },
+      },
+    },
+  },
+} satisfies Prisma.ListingIntakeSelect;
+
+type ListingIntakeSortCandidate = Prisma.ListingIntakeGetPayload<{
+  select: typeof LISTING_INTAKE_SORT_CANDIDATE_SELECT;
+}>;
+
 export interface ListingIntakeSearchQuery {
   lifecycleStatus?: string;
   confirmationState?: string;
@@ -110,7 +215,9 @@ export interface ListingIntakeSearchQuery {
   depositMax?: number;
   monthlyRentMin?: number;
   monthlyRentMax?: number;
+  /** 공급면적 하한 (m²) */
   areaMin?: number;
+  /** 공급면적 상한 (m²) */
   areaMax?: number;
   hasAdvertisement?: boolean;
   isJointBrokerage?: boolean;
@@ -126,7 +233,7 @@ export interface ListingIntakeSearchQuery {
   unit?: string;
   moveInFrom?: Date | string;
   moveInTo?: Date | string;
-  sortBy?: 'receivedAt' | 'updatedAt' | 'createdAt';
+  sortBy?: ListingIntakeSortField;
   sortOrder?: 'asc' | 'desc';
   page?: number;
   limit?: number;
@@ -151,6 +258,7 @@ interface ListingInputDto {
 
 interface ListingIntakeCreateDto {
   propertyId: string;
+  brokerageCaseId?: string;
   lifecycleStatus?: string;
   closedReason?: string | null;
   receivedAt?: Date | string | null;
@@ -206,6 +314,21 @@ export class ListingIntakesService {
     const orderBy = this.resolveOrderBy(query.sortBy, query.sortOrder);
     const includedListingWhere = {};
 
+    if (
+      query.sortBy &&
+      !NATIVE_LISTING_INTAKE_SORT_FIELDS.has(query.sortBy)
+    ) {
+      return this.findAllWithTableSort(
+        where,
+        includedListingWhere,
+        query.sortBy,
+        query.sortOrder,
+        page,
+        limit,
+        skip,
+      );
+    }
+
     const rows = await this.prisma.listingIntake.findMany({
       where,
       select: this.buildListSelect(includedListingWhere),
@@ -215,6 +338,58 @@ export class ListingIntakesService {
     });
     const hasNextPage = rows.length > limit;
     const items = hasNextPage ? rows.slice(0, limit) : rows;
+
+    return {
+      items: items.map((item) => this.toResponse(item)),
+      pagination: {
+        page,
+        limit,
+        hasNextPage,
+        total: null,
+        totalPages: null,
+      },
+    };
+  }
+
+  /**
+   * Prisma는 ListingIntake.listings 같은 to-many 관계의 가격 최솟값이나
+   * 파생 상태를 직접 orderBy 할 수 없다. 정렬에 필요한 최소 필드만 먼저
+   * 읽고 ID를 정렬한 뒤, 현재 페이지의 전체 행만 다시 조회한다.
+   */
+  private async findAllWithTableSort(
+    where: Prisma.ListingIntakeWhereInput,
+    listingWhere: Prisma.ListingWhereInput,
+    sortBy: ListingIntakeSortField,
+    sortOrder: ListingIntakeSearchQuery['sortOrder'],
+    page: number,
+    limit: number,
+    skip: number,
+  ) {
+    const candidates = await this.prisma.listingIntake.findMany({
+      where,
+      select: LISTING_INTAKE_SORT_CANDIDATE_SELECT,
+    });
+    const sortedCandidates = sortListingIntakeCandidates(
+      candidates,
+      sortBy,
+      sortOrder,
+    );
+    const pageCandidates = sortedCandidates.slice(skip, skip + limit + 1);
+    const hasNextPage = pageCandidates.length > limit;
+    const visibleIds = pageCandidates
+      .slice(0, limit)
+      .map((candidate) => candidate.id);
+    const rows = visibleIds.length
+      ? await this.prisma.listingIntake.findMany({
+          where: { id: { in: visibleIds } },
+          select: this.buildListSelect(listingWhere),
+        })
+      : [];
+    const rowsById = new Map(rows.map((row) => [row.id, row]));
+    const items = visibleIds.flatMap((id) => {
+      const row = rowsById.get(id);
+      return row ? [row] : [];
+    });
 
     return {
       items: items.map((item) => this.toResponse(item)),
@@ -305,10 +480,23 @@ export class ListingIntakesService {
     }
 
     const intake = await this.prisma.$transaction(async (tx) => {
+      const participants = await listingCaseParticipants(
+        tx,
+        officeId,
+        dto.propertyId,
+      );
+      const resolvedCase = await resolveBrokerageCaseForIntake(tx, {
+        officeId,
+        requestedCaseId: dto.brokerageCaseId,
+        autoAttach: lifecycleStatus !== IntakeLifecycleStatus.CLOSED,
+        intakeKind: 'listing',
+        participants,
+      });
       const created = await tx.listingIntake
         .create({
           data: {
             officeId,
+            ...resolvedCase,
             propertyId: dto.propertyId,
             lifecycleStatus,
             lifecycleChangedAt: new Date(),
@@ -504,6 +692,91 @@ export class ListingIntakesService {
     return this.update(id, officeId, { lifecycleStatus, closedReason });
   }
 
+  /**
+   * 매물 목록의 `거래중 → 종료` 명령.
+   * 진행 Deal은 완료로 오인되지 않도록 취소 이력으로 남기고, 의뢰 종료와 같은
+   * 트랜잭션에서 처리해 어느 한쪽만 바뀌는 상태를 만들지 않는다.
+   */
+  async closeWithActiveDeals(
+    id: string,
+    officeId: string,
+    expectedUpdatedAt?: Date | string | null,
+  ) {
+    const changedAt = new Date();
+    const expectedUpdatedAtDate = expectedUpdatedAt
+      ? this.parseExpectedUpdatedAt(expectedUpdatedAt)
+      : null;
+    const result = await this.prisma.$transaction(async (tx) => {
+      await this.lockIntakeForLifecycleSync(tx, id);
+
+      const existing = await tx.listingIntake.findFirst({
+        where: { id, officeId },
+        select: {
+          id: true,
+          propertyId: true,
+          lifecycleStatus: true,
+        },
+      });
+      if (!existing) {
+        throw new NotFoundException('ListingIntake not found');
+      }
+
+      if (existing.lifecycleStatus !== IntakeLifecycleStatus.CLOSED) {
+        this.assertIntakeLifecycleTransition(
+          existing.lifecycleStatus,
+          IntakeLifecycleStatus.CLOSED,
+        );
+      }
+
+      const intakeUpdate = await tx.listingIntake.updateMany({
+        where: {
+          id,
+          officeId,
+          ...(expectedUpdatedAtDate
+            ? { updatedAt: expectedUpdatedAtDate }
+            : {}),
+        },
+        data: {
+          lifecycleStatus: IntakeLifecycleStatus.CLOSED,
+          lifecycleChangedAt:
+            existing.lifecycleStatus === IntakeLifecycleStatus.CLOSED
+              ? undefined
+              : changedAt,
+          lifecycleChangedBy: 'user',
+          closedReason: IntakeClosedReason.WITHDRAWN,
+        },
+      });
+      if (intakeUpdate.count === 0) {
+        throw new ConflictException('다른 사용자가 먼저 수정했습니다.');
+      }
+
+      await tx.deal.updateMany({
+        where: {
+          officeId,
+          isCancelled: false,
+          stage: { in: [...IN_CONTRACT_DEAL_STAGES] },
+          listing: { intakeId: id },
+        },
+        data: {
+          isCancelled: true,
+          cancelledAt: changedAt,
+          cancelledBy: 'office',
+          cancelReason: '매물 종료와 함께 취소 처리',
+        },
+      });
+
+      return { propertyId: existing.propertyId };
+    });
+
+    this.realtime?.emitListingIntakeUpdated({
+      officeId,
+      intakeId: id,
+      propertyId: result.propertyId,
+    });
+
+    return this.findOne(id, officeId);
+  }
+
   async addListing(id: string, officeId: string, dto: ListingInputDto) {
     this.assertValidListingInputs([dto]);
 
@@ -695,6 +968,7 @@ export class ListingIntakesService {
     }
 
     if (query.areaMin !== undefined || query.areaMax !== undefined) {
+      // 평 단위 UI에서 변환된 공급면적(m²). Unit 값을 우선하고 카탈로그는 fallback.
       const areaRange = {
         ...(query.areaMin !== undefined && { gte: query.areaMin }),
         ...(query.areaMax !== undefined && { lte: query.areaMax }),
@@ -704,8 +978,11 @@ export class ListingIntakesService {
         property: {
           unit: {
             OR: [
-              { exclusiveAreaM2: areaRange },
-              { siteUnitType: { exclusiveAreaM2: areaRange } },
+              { supplyAreaM2: areaRange },
+              {
+                supplyAreaM2: null,
+                siteUnitType: { supplyAreaM2: areaRange },
+              },
             ],
           },
         },
@@ -840,7 +1117,7 @@ export class ListingIntakesService {
   }
 
   private buildSearchFilter(search: string): Prisma.ListingIntakeWhereInput {
-    const normalizedSearch = normalizePhone(search);
+    const canonicalPhone = normalizePhone(search);
     return {
       OR: [
         { property: { site: { name: { contains: search, mode: 'insensitive' } } } },
@@ -892,17 +1169,19 @@ export class ListingIntakesService {
             },
           },
         },
-        {
-          property: {
-            propertyContacts: {
-              some: {
-                contact: {
-                  phones: { some: { normalizedPhone: { contains: normalizedSearch } } },
+        ...(canonicalPhone
+          ? [{
+              property: {
+                propertyContacts: {
+                  some: {
+                    contact: {
+                      phones: { some: { phone: { contains: canonicalPhone } } },
+                    },
+                  },
                 },
               },
-            },
-          },
-        },
+            }]
+          : []),
         { memo: { contains: search, mode: 'insensitive' } },
         { listings: { some: { memo: { contains: search, mode: 'insensitive' } } } },
       ],
@@ -911,16 +1190,12 @@ export class ListingIntakesService {
 
   private toResponse<T extends Record<string, unknown>>(intake: T) {
     const {
-      requesterContactId,
-      requesterContact,
       occupancyStatus,
       viewingMemo,
       rightsMemo,
       fieldMemo,
       ...rest
     } = intake;
-    void requesterContactId;
-    void requesterContact;
     void occupancyStatus;
     void viewingMemo;
     void rightsMemo;
@@ -1243,6 +1518,12 @@ export class ListingIntakesService {
   }
 
   private assertValidQuery(query: ListingIntakeSearchQuery) {
+    if (
+      query.sortBy &&
+      !VALID_LISTING_INTAKE_SORT_FIELDS.has(query.sortBy)
+    ) {
+      throw new BadRequestException('Invalid sort field');
+    }
     if (query.lifecycleStatus) {
       this.assertValidIntakeLifecycleStatus(query.lifecycleStatus);
     }
@@ -1450,6 +1731,14 @@ export class ListingIntakesService {
     );
   }
 
+  private async lockIntakeForLifecycleSync(
+    tx: Prisma.TransactionClient,
+    intakeId: string,
+  ) {
+    const lockKey = `listing-intake:${intakeId}`;
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}::text, 0))`;
+  }
+
   private async assertNoNonClosedIntake(
     officeId: string,
     propertyId: string,
@@ -1490,4 +1779,244 @@ export class ListingIntakesService {
     }
   }
 
+}
+
+type ListingIntakeTableSortValue =
+  | string
+  | number
+  | readonly [number, number]
+  | null;
+
+const DONE_DEAL_STAGE_SET = new Set<string>(DONE_DEAL_STAGES);
+const IN_CONTRACT_DEAL_STAGE_SET = new Set<string>(IN_CONTRACT_DEAL_STAGES);
+
+function sortListingIntakeCandidates(
+  candidates: ListingIntakeSortCandidate[],
+  sortBy: ListingIntakeSortField,
+  sortOrder: ListingIntakeSearchQuery['sortOrder'],
+) {
+  const direction = sortOrder === 'desc' ? -1 : 1;
+
+  return candidates.slice().sort((left, right) => {
+    const leftValue = getListingIntakeTableSortValue(left, sortBy);
+    const rightValue = getListingIntakeTableSortValue(right, sortBy);
+
+    // 값이 없는 행은 정렬 방향과 무관하게 항상 마지막에 둔다.
+    if (leftValue == null && rightValue == null) {
+      return compareListingIntakeSortTie(left, right);
+    }
+    if (leftValue == null) return 1;
+    if (rightValue == null) return -1;
+
+    const comparison = compareListingIntakeTableSortValues(
+      leftValue,
+      rightValue,
+    );
+    if (comparison !== 0) return comparison * direction;
+    return compareListingIntakeSortTie(left, right);
+  });
+}
+
+function getListingIntakeTableSortValue(
+  candidate: ListingIntakeSortCandidate,
+  sortBy: ListingIntakeSortField,
+): ListingIntakeTableSortValue {
+  const listings = candidate.listings.slice().sort(compareCandidateListings);
+  const primaryListing = listings[0];
+  const unit = candidate.property.unit;
+
+  switch (sortBy) {
+    case 'info':
+      return primaryListing
+        ? getTransactionTypeSortOrder(primaryListing.transactionType)
+        : null;
+    case 'site':
+      return normalizeSortText(candidate.property.site.name);
+    case 'dong':
+      return normalizeSortText(unit?.dong.name);
+    case 'unit':
+      return normalizeSortText(unit?.name);
+    case 'unitType':
+      return normalizeSortText(unit?.siteUnitType?.name);
+    case 'exclusiveArea':
+      return readSortNumber(
+        unit?.siteUnitType?.exclusiveAreaM2 ?? unit?.exclusiveAreaM2,
+      );
+    case 'matching':
+      return listings.reduce(
+        (total, listing) => total + listing._count.matches,
+        0,
+      );
+    case 'advertisement':
+      return listings.reduce(
+        (total, listing) => total + listing.advertisements.length,
+        0,
+      );
+    case 'confirmationAt':
+      return readSortDate(
+        candidate.lastCheckedAt ?? candidate.lastVerifiedAt,
+      );
+    case 'listingAvailability':
+      return getListingAvailabilitySortRank(candidate, listings);
+    case 'price':
+      return primaryListing
+        ? primaryListing.transactionType === TransactionType.MONTHLY
+          ? primaryListing.deposit
+          : (primaryListing.price ?? primaryListing.deposit)
+        : null;
+    case 'monthlyRent':
+      return (
+        listings.find(
+          (listing) => listing.transactionType === TransactionType.MONTHLY,
+        )?.monthlyRent ?? null
+      );
+    case 'loanAmount':
+      return primaryListing?.loanAmount ?? null;
+    case 'moveInAvailable':
+      return primaryListing
+        ? getMoveInAvailabilitySortValue(primaryListing)
+        : null;
+    case 'memo':
+      return normalizeSortText(candidate.memo);
+    default:
+      return null;
+  }
+}
+
+function compareCandidateListings(
+  left: ListingIntakeSortCandidate['listings'][number],
+  right: ListingIntakeSortCandidate['listings'][number],
+) {
+  const transactionOrder =
+    getTransactionTypeSortOrder(left.transactionType) -
+    getTransactionTypeSortOrder(right.transactionType);
+  if (transactionOrder !== 0) return transactionOrder;
+  return right.updatedAt.getTime() - left.updatedAt.getTime();
+}
+
+function getTransactionTypeSortOrder(transactionType: string) {
+  if (transactionType === TransactionType.SALE) return 0;
+  if (transactionType === TransactionType.JEONSE) return 1;
+  if (transactionType === TransactionType.MONTHLY) return 2;
+  return 99;
+}
+
+function getListingAvailabilitySortRank(
+  candidate: ListingIntakeSortCandidate,
+  listings: ListingIntakeSortCandidate['listings'],
+) {
+  const availabilities = listings.map((listing) => {
+    if (
+      listing.deals.some((deal) => DONE_DEAL_STAGE_SET.has(deal.stage))
+    ) {
+      return ListingAvailability.CLOSED;
+    }
+    if (
+      listing.deals.some((deal) =>
+        IN_CONTRACT_DEAL_STAGE_SET.has(deal.stage),
+      )
+    ) {
+      return ListingAvailability.IN_CONTRACT;
+    }
+    if (candidate.lifecycleStatus === IntakeLifecycleStatus.CLOSED) {
+      return ListingAvailability.CLOSED;
+    }
+    if (
+      listing.isPaused ||
+      candidate.lifecycleStatus === IntakeLifecycleStatus.HOLD
+    ) {
+      return ListingAvailability.PAUSED;
+    }
+    return ListingAvailability.AVAILABLE;
+  });
+
+  if (
+    availabilities.some(
+      (availability) => availability === ListingAvailability.IN_CONTRACT,
+    )
+  ) {
+    return 2;
+  }
+  if (
+    availabilities.length > 0 &&
+    availabilities.every(
+      (availability) => availability === ListingAvailability.CLOSED,
+    )
+  ) {
+    return 3;
+  }
+  if (candidate.lifecycleStatus === IntakeLifecycleStatus.CLOSED) return 3;
+  if (candidate.lifecycleStatus === IntakeLifecycleStatus.HOLD) return 1;
+
+  const nonClosedAvailabilities = availabilities.filter(
+    (availability) => availability !== ListingAvailability.CLOSED,
+  );
+  if (
+    nonClosedAvailabilities.length > 0 &&
+    nonClosedAvailabilities.every(
+      (availability) => availability === ListingAvailability.PAUSED,
+    )
+  ) {
+    return 1;
+  }
+  return 0;
+}
+
+function getMoveInAvailabilitySortValue(
+  listing: ListingIntakeSortCandidate['listings'][number],
+): readonly [number, number] {
+  if (listing.moveInAvailableType === 'immediate') return [0, 0];
+  if (listing.moveInAvailableType === 'date') {
+    return [1, readSortDate(listing.moveInAvailableFrom) ?? 0];
+  }
+  if (listing.moveInAvailableType === 'range') {
+    return [
+      1,
+      readSortDate(
+        listing.moveInAvailableFrom ?? listing.moveInAvailableTo,
+      ) ?? 0,
+    ];
+  }
+  if (listing.moveInAvailableType === 'negotiable') return [2, 0];
+  return [3, 0];
+}
+
+function compareListingIntakeTableSortValues(
+  left: Exclude<ListingIntakeTableSortValue, null>,
+  right: Exclude<ListingIntakeTableSortValue, null>,
+) {
+  if (Array.isArray(left) && Array.isArray(right)) {
+    return left[0] - right[0] || left[1] - right[1];
+  }
+  if (typeof left === 'number' && typeof right === 'number') {
+    return left - right;
+  }
+  return String(left).localeCompare(String(right), 'ko', { numeric: true });
+}
+
+function compareListingIntakeSortTie(
+  left: ListingIntakeSortCandidate,
+  right: ListingIntakeSortCandidate,
+) {
+  return (
+    right.receivedAt.getTime() - left.receivedAt.getTime() ||
+    left.id.localeCompare(right.id)
+  );
+}
+
+function normalizeSortText(value?: string | null) {
+  const normalized = value?.trim();
+  return normalized || null;
+}
+
+function readSortNumber(value: unknown) {
+  if (value == null) return null;
+  const numberValue = Number(value);
+  return Number.isFinite(numberValue) ? numberValue : null;
+}
+
+function readSortDate(value?: Date | string | null) {
+  if (!value) return null;
+  const time = new Date(value).getTime();
+  return Number.isFinite(time) ? time : null;
 }

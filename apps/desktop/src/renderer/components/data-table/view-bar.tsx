@@ -1,5 +1,13 @@
-import { useState, useEffect } from 'react';
-import { X, Plus, Search, SlidersHorizontal, ArrowUpDown, Check } from 'lucide-react';
+import { Fragment, useState, useEffect } from 'react';
+import {
+  X,
+  Plus,
+  Search,
+  SlidersHorizontal,
+  ArrowUpDown,
+  Check,
+  ChevronDown,
+} from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -30,10 +38,14 @@ const operatorLabels: Record<string, string> = {
 // ── ViewBar Props ───────────────────────────────────────────────
 
 interface ViewBarProps {
+  /** Use the denser, bordered filter hierarchy from workbench list pages. */
+  variant?: 'default' | 'workbench';
   // Search
   search?: string;
   onSearchChange?: (value: string) => void;
   searchPlaceholder?: string;
+  /** Hide search when the page already owns a primary search field. */
+  showSearch?: boolean;
   /** Keep the search field visible for search-heavy workbench pages. */
   searchAlwaysVisible?: boolean;
   // Filters
@@ -46,19 +58,25 @@ interface ViewBarProps {
   // definitions are rendered inline between search and sort; the "+ 필터" menu
   // only lists the remaining fields.
   inlineFilters?: string[];
+  /** Optional visual groups for inline filters. Workbench groups get dividers. */
+  inlineFilterGroups?: string[][];
   // Sorts
   sortDefinitions?: { field: string; label: string }[];
   activeSorts?: SortDefinition[];
   onSortAdd?: (sort: SortDefinition) => void;
   onSortRemove?: (field: string) => void;
+  /** Hide the secondary chip row while keeping inline filter state visible. */
+  showActiveChips?: boolean;
   // Actions (right side)
   actions?: React.ReactNode;
 }
 
 export function ViewBar({
+  variant = 'default',
   search,
   onSearchChange,
   searchPlaceholder = '검색...',
+  showSearch = true,
   searchAlwaysVisible = false,
   filterDefinitions = [],
   activeFilters = [],
@@ -66,95 +84,125 @@ export function ViewBar({
   onFilterRemove,
   onFiltersReset,
   inlineFilters,
+  inlineFilterGroups,
   sortDefinitions = [],
   activeSorts = [],
   onSortAdd,
   onSortRemove,
+  showActiveChips = true,
   actions,
 }: ViewBarProps) {
   const [searchExpanded, setSearchExpanded] = useState(searchAlwaysVisible || !!search);
   const isSearchVisible = searchAlwaysVisible || searchExpanded;
+  const isWorkbench = variant === 'workbench';
 
   const hasActiveItems = activeFilters.length > 0 || activeSorts.length > 0;
 
-  const inlineDefs = inlineFilters
-    ? (inlineFilters
-        .map((field) => filterDefinitions.find((d) => d.field === field))
-        .filter(Boolean) as FilterDefinition[])
-    : [];
+  const resolvedInlineGroups = (
+    inlineFilterGroups ?? (inlineFilters ? [inlineFilters] : [])
+  )
+    .map(
+      (group) =>
+        group
+          .map((field) => filterDefinitions.find((d) => d.field === field))
+          .filter(Boolean) as FilterDefinition[],
+    )
+    .filter((group) => group.length > 0);
+  const inlineDefs = resolvedInlineGroups.flat();
   const inlineFieldSet = new Set(inlineDefs.map((d) => d.field));
   const menuDefs = filterDefinitions.filter((d) => !inlineFieldSet.has(d.field));
 
   return (
     <div className="flex flex-col gap-0">
       {/* Main bar */}
-      <div className="flex items-center gap-1.5 px-3 py-2">
-        {/* Search */}
-        <div className="flex items-center gap-1">
-          {isSearchVisible ? (
-            <div className="flex items-center gap-1 rounded-md border border-border/70 bg-background px-2 shadow-[0_1px_1px_rgba(0,0,0,0.02)] focus-within:border-ring/50 focus-within:ring-2 focus-within:ring-ring/10">
-              <Search className="size-3.5 text-muted-foreground" />
-              <Input
-                type="text"
-                value={search ?? ''}
-                onChange={(e) => onSearchChange?.(e.target.value)}
-                placeholder={searchPlaceholder}
-                className={cn(
-                  'h-7 border-0 bg-transparent px-1 text-sm shadow-none focus-visible:ring-0',
-                  searchAlwaysVisible ? 'w-52 lg:w-72' : 'w-36',
-                )}
-                autoFocus={!searchAlwaysVisible}
-                onBlur={() => {
-                  if (!searchAlwaysVisible && !search) setSearchExpanded(false);
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Escape') {
-                    onSearchChange?.('');
-                    if (!searchAlwaysVisible) setSearchExpanded(false);
-                  }
-                }}
-              />
-              {search && (
-                <button
-                  onClick={() => {
-                    onSearchChange?.('');
-                    if (!searchAlwaysVisible) setSearchExpanded(false);
-                  }}
-                  aria-label="검색어 지우기"
-                  className="text-muted-foreground hover:text-foreground"
+      <div
+        data-view-bar-variant={variant}
+        className={cn(
+          'flex items-center px-3 py-2',
+          isWorkbench ? 'gap-2' : 'gap-1.5',
+        )}
+      >
+        {showSearch && (
+          <>
+            {/* Search */}
+            <div className="flex items-center gap-1">
+              {isSearchVisible ? (
+                <div className="flex items-center gap-1 rounded-md border border-border/70 bg-background px-2 shadow-[0_1px_1px_rgba(0,0,0,0.02)] focus-within:border-ring/50 focus-within:ring-2 focus-within:ring-ring/10">
+                  <Search className="size-3.5 text-muted-foreground" />
+                  <Input
+                    type="text"
+                    value={search ?? ''}
+                    onChange={(e) => onSearchChange?.(e.target.value)}
+                    placeholder={searchPlaceholder}
+                    className={cn(
+                      'h-7 border-0 bg-transparent px-1 text-sm shadow-none focus-visible:ring-0',
+                      searchAlwaysVisible ? 'w-52 lg:w-72' : 'w-36',
+                    )}
+                    autoFocus={!searchAlwaysVisible}
+                    onBlur={() => {
+                      if (!searchAlwaysVisible && !search) setSearchExpanded(false);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Escape') {
+                        onSearchChange?.('');
+                        if (!searchAlwaysVisible) setSearchExpanded(false);
+                      }
+                    }}
+                  />
+                  {search && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onSearchChange?.('');
+                        if (!searchAlwaysVisible) setSearchExpanded(false);
+                      }}
+                      aria-label="검색어 지우기"
+                      className="text-muted-foreground hover:text-foreground"
+                    >
+                      <X className="size-3" />
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 gap-1 px-2 text-xs text-muted-foreground"
+                  onClick={() => setSearchExpanded(true)}
                 >
-                  <X className="size-3" />
-                </button>
+                  <Search className="size-3.5" />
+                  검색
+                </Button>
               )}
             </div>
-          ) : (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 gap-1 px-2 text-xs text-muted-foreground"
-              onClick={() => setSearchExpanded(true)}
-            >
-              <Search className="size-3.5" />
-              검색
-            </Button>
-          )}
-        </div>
 
-        <div className="h-4 w-px bg-border/50" />
+            <div className="h-4 w-px bg-border/50" />
+          </>
+        )}
 
         {/* Inline filter chips (always visible) */}
-        {inlineDefs.map((def) => {
-          const existing = activeFilters.find((f) => f.field === def.field);
-          return (
-            <InlineFilterChip
-              key={def.field}
-              def={def}
-              existing={existing}
-              onApply={(filter) => onFilterAdd?.(filter)}
-              onClear={() => existing && onFilterRemove?.(existing.id)}
-            />
-          );
-        })}
+        {resolvedInlineGroups.map((group, groupIndex) => (
+          <Fragment key={group.map((def) => def.field).join('-')}>
+            {isWorkbench && groupIndex > 0 && (
+              <div className="h-5 w-px shrink-0 bg-border" aria-hidden="true" />
+            )}
+            <div className="flex shrink-0 items-center gap-1.5">
+              {group.map((def) => {
+                const existing = activeFilters.find((f) => f.field === def.field);
+                return (
+                  <InlineFilterChip
+                    key={def.field}
+                    def={def}
+                    existing={existing}
+                    workbench={isWorkbench}
+                    onApply={(filter) => onFilterAdd?.(filter)}
+                    onClear={() => existing && onFilterRemove?.(existing.id)}
+                  />
+                );
+              })}
+            </div>
+          </Fragment>
+        ))}
 
         {/* "+ 필터" dropdown — shows only non-inline definitions */}
         {menuDefs.length > 0 && (
@@ -162,6 +210,7 @@ export function ViewBar({
             definitions={menuDefs}
             activeFilters={activeFilters}
             onFilterAdd={onFilterAdd}
+            workbench={isWorkbench}
           />
         )}
 
@@ -171,6 +220,7 @@ export function ViewBar({
             definitions={sortDefinitions}
             activeSorts={activeSorts}
             onSortAdd={onSortAdd}
+            workbench={isWorkbench}
           />
         )}
 
@@ -182,7 +232,7 @@ export function ViewBar({
       </div>
 
       {/* Active filters/sorts chips (Twenty-inspired chip bar) */}
-      {hasActiveItems && (
+      {showActiveChips && hasActiveItems && (
         <div className="flex flex-wrap items-center gap-1.5 border-t border-border/30 px-3 py-1.5">
           {/* Filter chips */}
           {activeFilters.map((filter) => {
@@ -275,27 +325,48 @@ function FilterDropdown({
   definitions,
   activeFilters,
   onFilterAdd,
+  workbench = false,
 }: {
   definitions: FilterDefinition[];
   activeFilters: ActiveFilter[];
   onFilterAdd?: (filter: ActiveFilter) => void;
+  workbench?: boolean;
 }) {
   const [openField, setOpenField] = useState<string | null>(null);
+  const activeCount = workbench
+    ? activeFilters.filter((filter) =>
+        definitions.some((definition) => definition.field === filter.field),
+      ).length
+    : activeFilters.length;
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button
           variant="ghost"
           size="sm"
-          className="h-7 gap-1 px-2 text-xs text-muted-foreground"
+          className={cn(
+            'text-xs text-muted-foreground',
+            workbench
+              ? 'h-8 gap-1.5 rounded-md border border-border bg-white px-2.5 shadow-none hover:border-foreground/30 hover:bg-white hover:text-foreground'
+              : 'h-7 gap-1 px-2',
+          )}
         >
           <SlidersHorizontal className="size-3.5" />
           필터
-          {activeFilters.length > 0 && (
-            <span className="flex size-4 items-center justify-center rounded-full bg-primary text-[10px] text-primary-foreground">
-              {activeFilters.length}
+          {activeCount > 0 && (
+            <span
+              className={cn(
+                'flex size-4 items-center justify-center rounded-full text-[10px]',
+                workbench
+                  ? 'bg-foreground/[0.08] font-semibold text-foreground'
+                  : 'bg-primary text-primary-foreground',
+              )}
+            >
+              {activeCount}
             </span>
           )}
+          {workbench && <ChevronDown className="size-3.5" />}
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-56">
@@ -655,26 +726,47 @@ function SortDropdown({
   definitions,
   activeSorts,
   onSortAdd,
+  workbench = false,
 }: {
   definitions: { field: string; label: string }[];
   activeSorts: SortDefinition[];
   onSortAdd?: (sort: SortDefinition) => void;
+  workbench?: boolean;
 }) {
+  const primarySort = activeSorts[0];
+  const primaryDefinition = primarySort
+    ? definitions.find((definition) => definition.field === primarySort.field)
+    : null;
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button
           variant="ghost"
           size="sm"
-          className="h-7 gap-1 px-2 text-xs text-muted-foreground"
+          className={cn(
+            'text-xs text-muted-foreground',
+            workbench
+              ? cn(
+                  'h-8 gap-1.5 rounded-md border border-border bg-white px-2.5 shadow-none hover:border-foreground/30 hover:bg-white hover:text-foreground',
+                  primarySort && 'border-foreground/25 bg-foreground/[0.06]',
+                )
+              : 'h-7 gap-1 px-2',
+          )}
         >
           <ArrowUpDown className="size-3.5" />
           정렬
-          {activeSorts.length > 0 && (
+          {workbench && primarySort ? (
+            <span className="font-semibold text-foreground">
+              {primaryDefinition?.label ?? primarySort.field}{' '}
+              {primarySort.direction === 'asc' ? '↑' : '↓'}
+            </span>
+          ) : activeSorts.length > 0 ? (
             <span className="flex size-4 items-center justify-center rounded-full bg-primary text-[10px] text-primary-foreground">
               {activeSorts.length}
             </span>
-          )}
+          ) : null}
+          {workbench && <ChevronDown className="size-3.5" />}
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-48">
@@ -719,11 +811,13 @@ function InlineFilterChip({
   existing,
   onApply,
   onClear,
+  workbench = false,
 }: {
   def: FilterDefinition;
   existing?: ActiveFilter;
   onApply: (filter: ActiveFilter) => void;
   onClear: () => void;
+  workbench?: boolean;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -756,17 +850,35 @@ function InlineFilterChip({
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <Button
-          variant={active ? 'secondary' : 'ghost'}
+          variant={workbench ? 'ghost' : active ? 'secondary' : 'ghost'}
           size="sm"
-          className="h-7 gap-1 px-2 text-xs"
+          className={cn(
+            workbench
+              ? 'h-8 max-w-[240px] gap-1.5 rounded-md border border-border bg-white px-2.5 text-xs shadow-none hover:border-foreground/30 hover:bg-white'
+              : 'h-7 gap-1 px-2 text-xs',
+            workbench && active &&
+              'border-foreground/25 bg-foreground/[0.06] text-foreground hover:bg-foreground/[0.09]',
+          )}
         >
           <span className="text-muted-foreground">{def.label}</span>
-          <span className={cn('max-w-28 truncate', active && 'font-medium')}>{summary}</span>
+          <span
+            className={cn(
+              'max-w-28 truncate',
+              active ? 'font-semibold text-foreground' : 'font-medium text-foreground',
+            )}
+          >
+            {summary}
+          </span>
           {active && (
             <span
               role="button"
-              tabIndex={0}
-              aria-label="필터 해제"
+              tabIndex={workbench ? -1 : 0}
+              aria-label={`${def.label} 필터 해제`}
+              onPointerDown={(e) => {
+                if (!workbench) return;
+                e.preventDefault();
+                e.stopPropagation();
+              }}
               onClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
@@ -776,6 +888,9 @@ function InlineFilterChip({
             >
               <X className="size-3" />
             </span>
+          )}
+          {workbench && !active && (
+            <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
           )}
         </Button>
       </PopoverTrigger>

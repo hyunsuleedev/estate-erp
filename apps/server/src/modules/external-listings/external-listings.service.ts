@@ -10,9 +10,11 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 
 const VALID_TRANSACTION_TYPES = new Set(['sale', 'jeonse', 'monthly']);
-const VALID_STATUSES = new Set(['unmatched', 'matched', 'verified', 'on_hold']);
+const VALID_STATUSES = new Set(['unmatched', 'verified', 'on_hold']);
 
 const MAX_BATCH_SIZE = 100;
+
+type DiscoveryStatus = 'new' | 'added' | 'existing';
 
 export interface FindGroupsQuery {
   transactionType?: string;
@@ -33,8 +35,7 @@ export interface CreateSessionDto {
 }
 
 export interface UpdateGroupDto {
-  unitId?: string | null;
-  inferredHo?: string | null;
+  ho?: string | null;
   memo?: string | null;
   status?: string;
   favorite?: boolean;
@@ -83,8 +84,7 @@ export interface BatchListingItem {
   // 그룹 생성 힌트 (새 그룹 생성 시에만 사용, 기존 그룹의 사용자 입력은 덮어쓰지 않음)
   buildingName?: string | null;
   areaName?: string | null;
-  unitId?: string | null;
-  inferredHo?: string | null;
+  ho?: string | null;
 }
 
 export interface BatchUpsertDto {
@@ -145,7 +145,7 @@ export class ExternalListingsService {
       const q = query.search.trim();
       if (q) {
         where.OR = [
-          { inferredHo: { contains: q, mode: 'insensitive' } },
+          { ho: { contains: q, mode: 'insensitive' } },
           { buildingName: { contains: q, mode: 'insensitive' } },
           { areaName: { contains: q, mode: 'insensitive' } },
           { memo: { contains: q, mode: 'insensitive' } },
@@ -195,7 +195,6 @@ export class ExternalListingsService {
       where,
       include: {
         site: true,
-        unit: true,
         mainExternalListing: true,
         // Pull all listings so we can compute group-level aggregates
         // (price min/max, confirm-date min/max, offer ranking) without
@@ -215,12 +214,48 @@ export class ExternalListingsService {
             ranking: true,
             seango: true,
             epju: true,
+            firstSeenAt: true,
           },
         },
         _count: { select: { listings: true } },
       },
       orderBy: { lastSeenAt: 'desc' },
     });
+
+    // 각 단지·거래유형의 현재 세션(없으면 마지막 완료 세션)을 기준으로
+    // 이번 수집에서 처음 등장한 동일주소 그룹/광고를 구분한다. cancelled 세션은
+    // 비교 기준에서 제외해 취소된 작업이 다음 조회의 상태를 바꾸지 않게 한다.
+    const scopePairs = [
+      ...new Map(
+        groups.map((group) => [
+          `${group.siteId}:${group.transactionType}`,
+          { siteId: group.siteId, transactionType: group.transactionType },
+        ]),
+      ).values(),
+    ];
+    const comparisonSessions =
+      scopePairs.length === 0
+        ? []
+        : await this.prisma.externalListingSnapshotSession.findMany({
+            where: {
+              officeId,
+              status: { in: ['active', 'completed'] },
+              OR: scopePairs,
+            },
+            select: {
+              siteId: true,
+              transactionType: true,
+              startedAt: true,
+            },
+            orderBy: { startedAt: 'desc' },
+          });
+    const comparisonStartedAtByScope = new Map<string, Date>();
+    for (const session of comparisonSessions) {
+      const scopeKey = `${session.siteId}:${session.transactionType}`;
+      if (!comparisonStartedAtByScope.has(scopeKey)) {
+        comparisonStartedAtByScope.set(scopeKey, session.startedAt);
+      }
+    }
 
     const activeArticleNos = [
       ...new Set(
@@ -254,6 +289,14 @@ export class ExternalListingsService {
 
     return groups.map((group) => {
       const listings = group.listings ?? [];
+      const comparisonStartedAt = comparisonStartedAtByScope.get(
+        `${group.siteId}:${group.transactionType}`,
+      );
+      const discoveryStatus = this.getDiscoveryStatus(
+        group.firstSeenAt,
+        listings,
+        comparisonStartedAt,
+      );
       // Pick the right price field for this group's transactionType
       const priceField: 'price' | 'deposit' =
         group.transactionType === 'sale' ? 'price' : 'deposit';
@@ -314,10 +357,31 @@ export class ExternalListingsService {
         maxYmd,
         confirmDateDiff,
         ownerVerified,
+        discoveryStatus,
         ownAdvertisementYmd: ownAdvertisement?.articleConfirmYmd ?? null,
         offerRanking: ownAdvertisement?.ranking ?? main?.ranking ?? null,
       };
     });
+  }
+
+  private getDiscoveryStatus(
+    groupFirstSeenAt: Date,
+    listings: Array<{ firstSeenAt: Date }>,
+    comparisonStartedAt?: Date,
+  ): DiscoveryStatus {
+    if (!comparisonStartedAt) return 'existing';
+
+    if (groupFirstSeenAt >= comparisonStartedAt) {
+      return 'new';
+    }
+
+    if (
+      listings.some((listing) => listing.firstSeenAt >= comparisonStartedAt)
+    ) {
+      return 'added';
+    }
+
+    return 'existing';
   }
 
   // ─────────────────────────────────────────────────────────────
@@ -522,7 +586,6 @@ export class ExternalListingsService {
       where: { id, officeId },
       include: {
         site: true,
-        unit: true,
         mainExternalListing: true,
         listings: {
           orderBy: [
@@ -554,30 +617,8 @@ export class ExternalListingsService {
       throw new BadRequestException('Invalid status');
     }
 
-    if (dto.unitId) {
-      // unitId가 실제로 이 사무소/사이트 하위에 존재하는지 검증
-      const unit = await this.prisma.unit.findFirst({
-        where: {
-          id: dto.unitId,
-          siteId: existing.siteId,
-          OR: [{ officeId }, { officeId: null }],
-          site: {
-            OR: [{ officeId }, { isPublic: true }],
-          },
-        },
-      });
-      if (!unit) {
-        throw new BadRequestException('Unit does not belong to this site');
-      }
-    }
-
     const data: Prisma.ExternalListingGroupUpdateInput = {};
-    if (dto.unitId !== undefined) {
-      data.unit = dto.unitId
-        ? { connect: { id: dto.unitId } }
-        : { disconnect: true };
-    }
-    if (dto.inferredHo !== undefined) data.inferredHo = dto.inferredHo;
+    if (dto.ho !== undefined) data.ho = dto.ho?.trim() || null;
     if (dto.memo !== undefined) data.memo = dto.memo;
     if (dto.status !== undefined) data.status = dto.status;
     if (dto.favorite !== undefined) data.favorite = dto.favorite;
@@ -587,7 +628,6 @@ export class ExternalListingsService {
       data,
       include: {
         site: true,
-        unit: true,
         mainExternalListing: true,
       },
     });
@@ -601,7 +641,7 @@ export class ExternalListingsService {
    *      DB에 있는 것을 찾아 그 Group 재사용
    *   3. 둘 다 없으면 새 Group 생성
    *
-   * Group의 memo/unitId/inferredHo/status는 크롤러가 절대 덮어쓰지 않는다.
+   * Group의 memo/ho/status는 크롤러가 절대 덮어쓰지 않는다.
    * lastSeenAt만 갱신한다.
    */
   async batchUpsert(
@@ -732,38 +772,23 @@ export class ExternalListingsService {
 
         if (groupId) {
           result.groupsReused++;
-          // 기존 그룹의 lastSeenAt만 갱신 (memo/unitId/inferredHo는 건드리지 않음)
+          // 기존 그룹의 lastSeenAt만 갱신 (memo/ho는 건드리지 않음)
           await this.prisma.externalListingGroup.update({
             where: { id: groupId },
             data: { lastSeenAt: now },
           });
         } else {
-          // 새 그룹 생성. 수동 입력은 unitId/inferredHo를 같이 넘길 수 있다.
-          // unitId가 지정되면 status를 matched로 올려 사용자 확정 상태를 반영한다.
-          if (item.unitId) {
-            const unit = await this.prisma.unit.findFirst({
-              where: {
-                id: item.unitId,
-                siteId: dto.siteId,
-                OR: [{ officeId }, { officeId: null }],
-              },
-              select: { id: true },
-            });
-            if (!unit) {
-              throw new Error('unitId does not belong to this site');
-            }
-          }
+          // 새 그룹 생성. 수동 입력은 일반 호수 텍스트를 함께 넘길 수 있다.
           const newGroup = await this.prisma.externalListingGroup.create({
             data: {
               officeId,
               siteId: dto.siteId,
-              unitId: item.unitId ?? null,
               buildingName: item.buildingName ?? null,
-              inferredHo: item.inferredHo ?? null,
+              ho: item.ho?.trim() || null,
               areaName: item.areaName ?? null,
               exclusiveAreaM2: item.exclusiveAreaM2 ?? null,
               transactionType: dto.transactionType,
-              status: item.unitId ? 'matched' : 'unmatched',
+              status: item.ho?.trim() ? 'verified' : 'unmatched',
               firstSeenAt: now,
               lastSeenAt: now,
             },

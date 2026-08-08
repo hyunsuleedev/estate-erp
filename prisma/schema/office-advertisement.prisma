@@ -45,8 +45,8 @@ model OfficeAdvertisement {
   officeId String @map("office_id") @db.Uuid
   groupId  String @map("group_id") @db.Uuid
 
-  articleNo      String  @map("article_no")
-  sourceUrl      String? @map("source_url")
+  articleNo String  @map("article_no")
+  sourceUrl String? @map("source_url")
 
   isMine   Boolean @default(false) @map("is_mine")
   isMain   Boolean @default(false) @map("is_main")
@@ -57,16 +57,16 @@ model OfficeAdvertisement {
   realtorId           String? @map("realtor_id")
   representativeTelNo String? @map("representative_tel_no")
 
-  price             Int?
-  deposit           Int?
-  monthlyRent       Int?    @map("monthly_rent")
-  ranking           Int?
-  sameAddrCnt       Int?    @map("same_addr_cnt")
-  articleConfirmYmd String? @map("article_confirm_ymd")
+  price                Int?
+  deposit              Int?
+  monthlyRent          Int?    @map("monthly_rent")
+  ranking              Int?
+  sameAddrCnt          Int?    @map("same_addr_cnt")
+  articleConfirmYmd    String? @map("article_confirm_ymd")
   // 네이버에 공개된 층 표현. 내부 Unit.floor와 별개다.
   // 예: "12/25" = 정확한 층, "저/25" = 구간만 노출.
-  floorInfo         String? @map("floor_info")
-  floorExposureMode String  @default("unknown") @map("floor_exposure_mode")
+  floorInfo            String? @map("floor_info")
+  floorExposureMode    String  @default("unknown") @map("floor_exposure_mode")
   verificationTypeCode String? @map("verification_type_code")
 
   seango Boolean @default(false)

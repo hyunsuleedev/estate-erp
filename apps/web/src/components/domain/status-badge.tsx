@@ -22,7 +22,7 @@ export interface StatusBadgeProps {
   kind: StatusKind;
   /** 상태 원문 값 (예: 'verified', 'preContract') */
   status: string | null | undefined;
-  size?: 'sm' | 'default';
+  size?: 'sm' | 'default' | 'table';
   className?: string;
 }
 
@@ -37,7 +37,11 @@ export function StatusBadge({ kind, status, size = 'default', className }: Statu
       data-slot="status-badge"
       className={cn(
         'inline-flex w-fit shrink-0 items-center rounded-md font-medium whitespace-nowrap',
-        size === 'sm' ? 'px-1.5 py-px text-[11px]' : 'px-2 py-0.5 text-xs',
+        size === 'sm'
+          ? 'px-1.5 py-px text-[11px]'
+          : size === 'table'
+            ? 'h-6 px-2 text-[11px]'
+            : 'px-2 py-0.5 text-xs',
         TONE_CLASSES[meta.tone],
         className,
       )}

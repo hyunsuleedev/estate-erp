@@ -20,6 +20,8 @@ import { UnitsModule } from './modules/units/units.module';
 import { PropertyContactsModule } from './modules/property-contacts/property-contacts.module';
 import { ContactRelationsModule } from './modules/contact-relations/contact-relations.module';
 import { TenantsModule } from './modules/tenants/tenants.module';
+import { BuyerIntakesModule } from './modules/buyer-intakes/buyer-intakes.module';
+import { BrokerageCasesModule } from './modules/brokerage-cases/brokerage-cases.module';
 import { BuyerRequirementsModule } from './modules/buyer-requirements/buyer-requirements.module';
 import { ConsultationsModule } from './modules/consultations/consultations.module';
 import { OfficeSitesModule } from './modules/office-sites/office-sites.module';
@@ -28,9 +30,6 @@ import { ContractsModule } from './modules/contracts/contracts.module';
 import { EmployeesModule } from './modules/employees/employees.module';
 import { OfficesModule } from './modules/offices/offices.module';
 import { ExternalListingsModule } from './modules/external-listings/external-listings.module';
-import { ExternalListingSourcesModule } from './modules/external-listing-sources/external-listing-sources.module';
-import { AgentModule } from './modules/agent/agent.module';
-import { AgentActionRequestsModule } from './modules/agent-action-requests/agent-action-requests.module';
 import { FinanceModule } from './modules/finance/finance.module';
 import { PartnerBrokersModule } from './modules/partner-brokers/partner-brokers.module';
 import { PublicDocumentsModule } from './modules/public-documents/public-documents.module';
@@ -47,7 +46,6 @@ import { RequestContextMiddleware } from './common/request-context/request-conte
 import { RealtimeModule } from './realtime/realtime.module';
 
 const GENERAL_API_RATE_LIMIT_PER_MINUTE = 600;
-const AUTH_RATE_LIMIT_PER_MINUTE = 10;
 
 @Module({
   imports: [
@@ -60,7 +58,7 @@ const AUTH_RATE_LIMIT_PER_MINUTE = 10;
      * Throttler — 인증/쓰기 API 보호용 rate limit.
      *
      * - default: 일반 API 600 req/min/IP
-     * - auth: 민감 endpoint는 컨트롤러에서 @Throttle({ auth: ... }) 명시
+     * - 민감 endpoint는 컨트롤러에서 default 제한을 더 낮게 override
      *
      * Phase 2+: Redis storage로 전환 (`ThrottlerStorageRedisService`) — 멀티 인스턴스 환경 대비.
      */
@@ -69,11 +67,6 @@ const AUTH_RATE_LIMIT_PER_MINUTE = 10;
         name: 'default',
         ttl: 60_000, // 1분
         limit: GENERAL_API_RATE_LIMIT_PER_MINUTE,
-      },
-      {
-        name: 'auth',
-        ttl: 60_000, // 1분
-        limit: AUTH_RATE_LIMIT_PER_MINUTE, // 로그인 시도 분당 10회
       },
     ]),
     PrismaModule,
@@ -92,6 +85,8 @@ const AUTH_RATE_LIMIT_PER_MINUTE = 10;
     ContactRelationsModule,
     PropertyContactsModule,
     TenantsModule,
+    BuyerIntakesModule,
+    BrokerageCasesModule,
     BuyerRequirementsModule,
     ConsultationsModule,
     TasksModule,
@@ -102,9 +97,6 @@ const AUTH_RATE_LIMIT_PER_MINUTE = 10;
     OfficesModule,
     CalendarEventsModule,
     ExternalListingsModule,
-    ExternalListingSourcesModule,
-    AgentModule,
-    AgentActionRequestsModule,
     RegionsModule,
     FinanceModule,
     PartnerBrokersModule,
@@ -119,7 +111,7 @@ const AUTH_RATE_LIMIT_PER_MINUTE = 10;
     McpModule,
   ],
   providers: [
-    // 글로벌 Throttler 가드 — 모든 라우트에 default(60req/min) 자동 적용
+    // 글로벌 Throttler 가드 — 모든 라우트에 default(600 req/min) 적용
     { provide: APP_GUARD, useClass: ThrottlerGuard },
   ],
 })

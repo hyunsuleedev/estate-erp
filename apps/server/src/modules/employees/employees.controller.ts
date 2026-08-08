@@ -113,7 +113,7 @@ export class EmployeesController {
   @Post(':id/reset-password')
   @Roles('owner', 'manager')
   @UseGuards(RolesGuard)
-  @Throttle({ auth: { limit: 5, ttl: 60_000 } })
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
   resetPassword(
     @Param('id') id: string,
     @Body() dto: { newPassword: string },

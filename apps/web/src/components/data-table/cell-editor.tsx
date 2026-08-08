@@ -1,4 +1,13 @@
-import { useState, useRef, useEffect, useCallback, useLayoutEffect, useMemo, createContext, useContext } from 'react';
+import {
+  useState,
+  useRef,
+  useEffect,
+  useCallback,
+  useLayoutEffect,
+  useMemo,
+  createContext,
+  useContext,
+} from 'react';
 import { createPortal } from 'react-dom';
 import type { DateRange } from 'react-day-picker';
 import { Input } from '@/components/ui/input';
@@ -11,7 +20,6 @@ import {
 } from '@/components/ui/select';
 import { Calendar } from '@/components/ui/calendar';
 import { cn } from '@/lib/utils';
-
 
 // ── Cell Edit Context (Twenty-inspired draft pattern) ───────────
 // Portal-based editing prevents table reflow.
@@ -43,10 +51,14 @@ type CellDraft = {
   month?: string;
 };
 const cellDraftStore = new Map<string, CellDraft>();
-const cellDraftKey = (recordId: string, field: string) => `${recordId}:${field}`;
+const cellDraftKey = (recordId: string, field: string) =>
+  `${recordId}:${field}`;
 
 export function CellEditProvider({ children }: { children: React.ReactNode }) {
-  const [editingCell, setEditingCell] = useState<{ recordId: string; field: string } | null>(null);
+  const [editingCell, setEditingCell] = useState<{
+    recordId: string;
+    field: string;
+  } | null>(null);
 
   const startEdit = useCallback((recordId: string, field: string) => {
     // startEdit는 항상 새 편집 세션의 시작이다 — 가상화 스크롤아웃 복원 경로는
@@ -91,10 +103,9 @@ export interface ChipOption {
   toField?: string;
   /** Optional preselect callback. Receives the cell's full record value
    *  (when callers pass it via `value`); returns the date(s) to preselect. */
-  getPreselect?: (rowValue: unknown) =>
-    | Date
-    | undefined
-    | { from?: Date; to?: Date };
+  getPreselect?: (
+    rowValue: unknown,
+  ) => Date | undefined | { from?: Date; to?: Date };
 }
 
 export interface DateWrite {
@@ -120,6 +131,11 @@ interface EditableCellProps {
   /** For select-chip: extracts the currently-selected option value from the cell's `value`.
    *  Useful when `value` is the full record (so chip pickers can preselect dates). */
   chipValueOf?: (value: unknown) => string | undefined;
+  activation?: 'click' | 'doubleClick';
+  portalAnchor?: 'self' | 'tableCell';
+  /** Elevated editor chrome used by dense ledger tables. */
+  editorChrome?: 'cell' | 'floating';
+  hoverHighlight?: boolean;
   children: React.ReactNode;
 }
 
@@ -151,11 +167,20 @@ export function EditableCell({
   selectOptions,
   chipOptions,
   chipValueOf,
+  activation = 'click',
+  portalAnchor = 'self',
+  editorChrome = 'cell',
+  hoverHighlight = true,
   children,
 }: EditableCellProps) {
   const { editingCell, startEdit, stopEdit } = useCellEdit();
   const cellRef = useRef<HTMLDivElement>(null);
-  const isEditing = editingCell?.recordId === recordId && editingCell?.field === field;
+  const isEditing =
+    editingCell?.recordId === recordId && editingCell?.field === field;
+  const anchorEl =
+    portalAnchor === 'tableCell'
+      ? (cellRef.current?.closest<HTMLElement>('td') ?? cellRef.current)
+      : cellRef.current;
 
   return (
     <div
@@ -163,12 +188,17 @@ export function EditableCell({
       data-editing={isEditing || undefined}
       className={cn(
         'relative flex h-full min-h-[24px] w-full cursor-text items-center rounded-sm transition-colors',
-        !isEditing && 'hover:bg-muted/50',
+        hoverHighlight && !isEditing && 'hover:bg-muted/50',
         isEditing && editType !== 'select-chip' && 'bg-white',
       )}
       onClick={(event) => {
-        if (isEditing) return;
         event.stopPropagation();
+        if (activation !== 'click' || isEditing) return;
+        startEdit(recordId, field);
+      }}
+      onDoubleClick={(event) => {
+        event.stopPropagation();
+        if (activation !== 'doubleClick' || isEditing) return;
         startEdit(recordId, field);
       }}
     >
@@ -176,9 +206,9 @@ export function EditableCell({
       {children}
 
       {/* Edit mode — portal overlay */}
-      {isEditing && cellRef.current && (
+      {isEditing && anchorEl && (
         <CellEditPortal
-          anchorEl={cellRef.current}
+          anchorEl={anchorEl}
           recordId={recordId}
           field={field}
           value={value}
@@ -186,6 +216,7 @@ export function EditableCell({
           editType={editType}
           selectOptions={selectOptions}
           chipOptions={chipOptions}
+          editorChrome={editorChrome}
           onSave={(newValue) => {
             onSave(recordId, field, newValue);
             stopEdit();
@@ -218,6 +249,7 @@ interface CellEditPortalProps {
   editType: 'text' | 'number' | 'select' | 'select-chip';
   selectOptions?: { label: string; value: string }[];
   chipOptions?: ChipOption[];
+  editorChrome: 'cell' | 'floating';
   onSave: (value: unknown) => void;
   onChipSave?: (payload: ChipSavePayload) => void;
   onCancel: () => void;
@@ -242,19 +274,24 @@ function CellEditPortal({
   editType,
   selectOptions,
   chipOptions,
+  editorChrome,
   onSave,
   onChipSave,
   onCancel,
 }: CellEditPortalProps) {
   const initialDraft =
-    editType === 'select-chip' ? (chipValueOf?.(value) ?? '') : String(value ?? '');
+    editType === 'select-chip'
+      ? (chipValueOf?.(value) ?? '')
+      : String(value ?? '');
   // 언마운트(가상화 스크롤아웃) 후 재마운트 시 보존된 초안을 복원
   const draftKey = cellDraftKey(recordId, field);
   const storedDraft = cellDraftStore.get(draftKey);
   const patchStore = (patch: Partial<CellDraft>) => {
     cellDraftStore.set(draftKey, { ...cellDraftStore.get(draftKey), ...patch });
   };
-  const [draft, setDraftState] = useState(() => storedDraft?.text ?? initialDraft);
+  const [draft, setDraftState] = useState(
+    () => storedDraft?.text ?? initialDraft,
+  );
   const setDraft = (next: string) => {
     patchStore({ text: next });
     setDraftState(next);
@@ -292,26 +329,59 @@ function CellEditPortal({
     const a = anchorEl.getBoundingClientRect();
     const p = scrollParent.getBoundingClientRect();
     const top = a.top - p.top - scrollParent.clientTop + scrollParent.scrollTop;
-    const left = a.left - p.left - scrollParent.clientLeft + scrollParent.scrollLeft;
-    return { top, left, width: a.width, height: a.height, bottom: top + a.height };
+    const left =
+      a.left - p.left - scrollParent.clientLeft + scrollParent.scrollLeft;
+    return {
+      top,
+      left,
+      width: a.width,
+      height: a.height,
+      bottom: top + a.height,
+    };
   })();
   /** 팝오버가 컨테이너 오른쪽 밖으로 나가지 않게 하는 left 한계 */
   const clampLeft = (popoverWidth: number) =>
-    Math.min(rect.left, scrollParent.scrollLeft + scrollParent.clientWidth - popoverWidth - 12);
+    Math.min(
+      rect.left,
+      scrollParent.scrollLeft + scrollParent.clientWidth - popoverWidth - 12,
+    );
+  const isFloatingEditor =
+    editorChrome === 'floating' && editType !== 'select-chip';
+  const floatingWidth = Math.max(
+    rect.width + 12,
+    editType === 'number' ? 132 : rect.width,
+  );
+  const floatingViewportLeft = scrollParent.scrollLeft + 8;
+  const floatingViewportRight =
+    scrollParent.scrollLeft + scrollParent.clientWidth - floatingWidth - 8;
+  const floatingLeft = Math.max(
+    floatingViewportLeft,
+    Math.min(rect.left - 6, floatingViewportRight),
+  );
+  const floatingHeight = 40;
+  const floatingTop = rect.top + (rect.height - floatingHeight) / 2;
 
   // Preselect for date/range pickers, derived from the cell's value via getPreselect.
   const preselect = pendingDateOption?.getPreselect?.(value);
   const pendingSingleDate =
-    pendingDateOption?.picker === 'date' && preselect instanceof Date ? preselect : undefined;
+    pendingDateOption?.picker === 'date' && preselect instanceof Date
+      ? preselect
+      : undefined;
   const initialRange: DateRange | undefined =
-    pendingDateOption?.picker === 'range' && preselect && !(preselect instanceof Date) && preselect.from
+    pendingDateOption?.picker === 'range' &&
+    preselect &&
+    !(preselect instanceof Date) &&
+    preselect.from
       ? { from: preselect.from, to: preselect.to }
       : undefined;
   const [pendingRange, setPendingRangeState] = useState<DateRange | undefined>(
     () => {
       const r = storedDraft?.range;
       if (r?.from) {
-        return { from: new Date(r.from), to: r.to ? new Date(r.to) : undefined };
+        return {
+          from: new Date(r.from),
+          to: r.to ? new Date(r.to) : undefined,
+        };
       }
       return initialRange;
     },
@@ -342,7 +412,6 @@ function CellEditPortal({
   useEffect(() => {
     if (editType === 'select' || editType === 'select-chip') return;
     inputRef.current?.focus();
-    inputRef.current?.select();
   }, [editType]);
 
   // Close on click outside (consider portal popover too)
@@ -389,12 +458,19 @@ function CellEditPortal({
     <>
       {editType !== 'select-chip' && (
         <div
-          className="absolute z-50 overflow-hidden rounded-sm bg-background outline outline-2 -outline-offset-1 outline-info"
+          ref={popoverRef}
+          data-cell-edit-popup={isFloatingEditor ? 'true' : undefined}
+          className={cn(
+            'absolute z-50 overflow-hidden bg-background',
+            isFloatingEditor
+              ? 'rounded-md border border-border p-1 shadow-[0_12px_28px_rgba(15,23,42,0.2)] focus-within:border-ring'
+              : 'rounded-none outline outline-2 -outline-offset-1 outline-info',
+          )}
           style={{
-            top: rect.top,
-            left: rect.left,
-            width: rect.width,
-            minHeight: rect.height,
+            top: isFloatingEditor ? floatingTop : rect.top,
+            left: isFloatingEditor ? floatingLeft : rect.left,
+            width: isFloatingEditor ? floatingWidth : rect.width,
+            minHeight: isFloatingEditor ? floatingHeight : rect.height,
           }}
         >
           {editType === 'select' && selectOptions ? (
@@ -409,7 +485,11 @@ function CellEditPortal({
               </SelectTrigger>
               <SelectContent>
                 {selectOptions.map((opt) => (
-                  <SelectItem key={opt.value} value={opt.value} className="text-[13px]">
+                  <SelectItem
+                    key={opt.value}
+                    value={opt.value}
+                    className="text-[13px]"
+                  >
                     {opt.label}
                   </SelectItem>
                 ))}
@@ -423,8 +503,13 @@ function CellEditPortal({
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={handleKeyDown}
-              className="h-full w-full bg-transparent px-2.5 text-[13px] font-medium tabular-nums tracking-tight text-foreground outline-none placeholder:text-muted-foreground"
-              style={{ height: rect.height }}
+              aria-label={`${field} 편집`}
+              className={cn(
+                'w-full bg-transparent text-[13px] font-medium tabular-nums tracking-tight text-foreground outline-none placeholder:text-muted-foreground',
+                isFloatingEditor ? 'h-8 px-2' : 'h-full px-2.5',
+                editType === 'number' && 'text-right',
+              )}
+              style={isFloatingEditor ? undefined : { height: rect.height }}
             />
           )}
         </div>
@@ -449,7 +534,12 @@ function CellEditPortal({
                 onClick={() => {
                   if (opt.picker && onChipSave) {
                     const pre = opt.getPreselect?.(value);
-                    if (opt.picker === 'range' && pre && !(pre instanceof Date) && pre.from) {
+                    if (
+                      opt.picker === 'range' &&
+                      pre &&
+                      !(pre instanceof Date) &&
+                      pre.from
+                    ) {
                       setPendingRange({ from: pre.from, to: pre.to });
                     } else {
                       setPendingRange(undefined);
@@ -473,7 +563,9 @@ function CellEditPortal({
                   {opt.label}
                 </span>
                 {draft === opt.value && (
-                  <span className="ml-2 text-[11px] text-muted-foreground">선택됨</span>
+                  <span className="ml-2 text-[11px] text-muted-foreground">
+                    선택됨
+                  </span>
                 )}
               </button>
             ))}
@@ -544,7 +636,9 @@ function CellEditPortal({
                 clearDraft();
                 onChipSave?.({
                   type: pendingDateOption.value,
-                  dateWrites: [{ field: fromField, value: formatLocalDate(date) }],
+                  dateWrites: [
+                    { field: fromField, value: formatLocalDate(date) },
+                  ],
                 });
               }}
             />
@@ -556,4 +650,3 @@ function CellEditPortal({
 
   return createPortal(portalContent, scrollParent);
 }
-

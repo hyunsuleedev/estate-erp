@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, CalendarPlus, MessageSquarePlus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { Match } from '@estate-erp/api-client';
+import { MatchStage, normalizeMatchStage } from '@estate-erp/shared';
 import {
   formatMatchPrice,
   formatRequirementSummaryFromBuyerRequirement,
@@ -15,6 +16,7 @@ import {
 import { MatchProgressTrack } from './-match-board';
 import { api } from '@/lib/api';
 import { formatDate, formatDateTime, formatPhone } from '@/lib/format';
+import { getIntakeConfirmationState } from '@/lib/listing-status';
 import { getStatusMeta } from '@/lib/status-config';
 import { DetailField, EntityChip, StatusBadge } from '@/components/domain';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -60,7 +62,13 @@ export function MatchDetailDialog({
   }, [match?.id]);
 
   const activeDeal = match ? getActiveDealLink(match) : null;
-  const dealMismatch = match?.stage === 'dealCreated' && !activeDeal;
+  const dealMismatch =
+    match !== null &&
+    normalizeMatchStage(match.stage) === MatchStage.DEAL_CREATED &&
+    !activeDeal;
+  const listingConfirmationState = match?.listing?.intake
+    ? getIntakeConfirmationState(match.listing.intake)
+    : null;
 
   const memoMutation = useMutation({
     mutationFn: ({ id, stage, memo }: { id: string; stage: string; memo: string | null }) =>
@@ -184,8 +192,12 @@ export function MatchDetailDialog({
                         )}
                       </DetailField>
                       <DetailField label="확인상태">
-                        {match.listing?.checkStatus ? (
-                          <StatusBadge kind="checkStatus" status={match.listing.checkStatus} size="sm" />
+                        {listingConfirmationState ? (
+                          <StatusBadge
+                            kind="confirmationState"
+                            status={listingConfirmationState}
+                            size="sm"
+                          />
                         ) : (
                           '—'
                         )}
@@ -307,25 +319,6 @@ export function MatchDetailDialog({
               </Button>
 
               <div className="flex items-center gap-2">
-                {match.stage !== 'dealCreated' && match.stage !== 'closed' && (
-                  <Button
-                    type="button"
-                    onClick={() => actions.onStageChange(match.id, 'dealCreated')}
-                    disabled={actions.isUpdating}
-                  >
-                    거래 전환
-                  </Button>
-                )}
-                {match.stage !== 'closed' && (
-                  <Button
-                    type="button"
-                    variant="destructive"
-                    onClick={() => actions.onStageChange(match.id, 'closed')}
-                    disabled={actions.isUpdating}
-                  >
-                    종료
-                  </Button>
-                )}
                 <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
                   닫기
                 </Button>

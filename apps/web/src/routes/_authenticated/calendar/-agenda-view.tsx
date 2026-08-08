@@ -5,7 +5,11 @@ import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/domain';
-import { getLocalDateKey, isSameCalendarDate } from './-calendar-view-utils';
+import {
+  getLocalDateKey,
+  isSameCalendarDate,
+  WEEK_DAY_LABELS,
+} from './-calendar-view-utils';
 import {
   formatEventContext,
   formatEventTimeRange,
@@ -13,8 +17,6 @@ import {
   getEventColor,
   getEventStatus,
 } from './-event-meta';
-import { WEEK_DAY_LABELS } from './-month-view';
-
 export function AgendaCalendarView({
   dates,
   eventsByDate,
@@ -33,7 +35,7 @@ export function AgendaCalendarView({
 
   if (dayGroups.every((group) => group.events.length === 0)) {
     return (
-      <div className="rounded-[12px] border border-border bg-background py-6">
+      <div className="rounded-lg border border-border bg-background py-6">
         <EmptyState
           icon={CalendarDays}
           title="이번 달 일정이 없습니다"
@@ -50,7 +52,7 @@ export function AgendaCalendarView({
   }
 
   return (
-    <div className="overflow-hidden rounded-[12px] border border-border bg-background">
+    <div className="overflow-hidden rounded-lg border border-border bg-background">
       {dayGroups.map(({ date, events }) => {
         if (events.length === 0) return null;
 
@@ -59,7 +61,7 @@ export function AgendaCalendarView({
             key={getLocalDateKey(date)}
             className="grid border-b last:border-b-0 md:grid-cols-[116px_minmax(0,1fr)]"
           >
-            <div className="border-b bg-muted/40 px-4 py-4 md:border-r md:border-b-0">
+            <div className="border-b bg-muted/30 px-4 py-4 md:border-r md:border-b-0">
               <div className="flex items-center gap-3 md:block">
                 <div
                   className={cn(
@@ -116,8 +118,8 @@ function AgendaEventRow({
       type="button"
       onClick={() => onEdit(event)}
       className={cn(
-        'grid w-full grid-cols-[18px_minmax(0,1fr)_auto] items-center gap-3 px-4 py-3.5 text-left transition-colors hover:bg-muted/60 sm:grid-cols-[18px_118px_minmax(0,1fr)_auto] sm:px-5',
-        status.state === 'active' && 'bg-info-soft/40',
+        'grid w-full grid-cols-[18px_minmax(0,1fr)_auto] items-center gap-3 px-4 py-3.5 text-left transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40 sm:grid-cols-[18px_118px_minmax(0,1fr)_auto] sm:px-5',
+        status.state === 'active' && 'bg-secondary/60',
       )}
     >
       <span

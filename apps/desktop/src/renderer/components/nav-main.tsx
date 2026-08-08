@@ -140,7 +140,10 @@ function NavItemWithChildren({
                   asChild
                   isActive={isActivePath(child.path)}
                 >
-                  <Link to={child.path}>
+                  <Link
+                    to={child.path}
+                    search={child.resetSearch ? {} : undefined}
+                  >
                     <span>{child.label}</span>
                   </Link>
                 </SidebarMenuSubButton>

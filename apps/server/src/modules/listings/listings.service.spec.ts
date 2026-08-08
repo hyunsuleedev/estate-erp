@@ -28,8 +28,8 @@ jest.mock('@estate-erp/shared', () => ({
     IN_CONTRACT: 'in_contract',
     CLOSED: 'closed',
   },
-  IN_CONTRACT_DEAL_STAGES: ['selection', 'negotiating', 'preContract', 'contracted', 'settling'],
-  OCCUPYING_DEAL_STAGES: ['selection', 'negotiating', 'preContract', 'contracted', 'settling', 'completed', 'closed'],
+  IN_CONTRACT_DEAL_STAGES: ['preparing', 'preContract', 'contracted', 'settling'],
+  OCCUPYING_DEAL_STAGES: ['preparing', 'preContract', 'contracted', 'settling', 'completed', 'closed'],
   DONE_DEAL_STAGES: ['completed', 'closed'],
   TransactionType: {
     SALE: 'sale',
@@ -66,8 +66,32 @@ describe('ListingsService', () => {
       listingIntake: {
         findFirst: jest.fn(),
         create: jest.fn(),
+        aggregate: jest.fn().mockResolvedValue({
+          _max: { casePriorityRank: null },
+        }),
+      },
+      propertyContact: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            contactId: 'owner-1',
+            role: 'owner',
+            isPrimary: true,
+          },
+        ]),
+      },
+      brokerageCase: {
+        findFirst: jest.fn(),
+        findMany: jest.fn().mockResolvedValue([]),
+        create: jest.fn().mockResolvedValue({ id: 'case-1' }),
+        update: jest.fn().mockResolvedValue({}),
+      },
+      brokerageCaseParticipant: {
+        findMany: jest.fn().mockResolvedValue([]),
+        create: jest.fn().mockResolvedValue({}),
+        update: jest.fn().mockResolvedValue({}),
       },
       $queryRaw: jest.fn(),
+      $executeRaw: jest.fn(),
       $transaction: jest.fn(),
     };
     // 인터랙티브 트랜잭션은 tx 로 prisma mock 자신을 넘겨 공유한다.
@@ -101,6 +125,8 @@ describe('ListingsService', () => {
     expect(prisma.listingIntake.create).toHaveBeenCalledWith({
       data: {
         officeId: 'office-1',
+        brokerageCaseId: 'case-1',
+        casePriorityRank: 1,
         propertyId: 'property-1',
         lifecycleChangedAt: expect.any(Date),
         lifecycleChangedBy: 'user',
@@ -501,6 +527,38 @@ describe('ListingsService', () => {
             {
               intake: {
                 lifecycleStatus: { in: ['open', 'hold'] },
+              },
+            },
+          ]),
+        }),
+      }),
+    );
+  });
+
+  it('filters buyer candidates by supply area with unit-type fallback', async () => {
+    const { prisma, service } = createService();
+    prisma.listing.findMany.mockResolvedValue([]);
+    prisma.listing.count.mockResolvedValue(0);
+
+    await service.findAll('office-1', { areaMin: 99.17, areaMax: 112.4 });
+
+    expect(prisma.listing.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          AND: expect.arrayContaining([
+            {
+              property: {
+                unit: {
+                  OR: [
+                    { supplyAreaM2: { gte: 99.17, lte: 112.4 } },
+                    {
+                      supplyAreaM2: null,
+                      siteUnitType: {
+                        supplyAreaM2: { gte: 99.17, lte: 112.4 },
+                      },
+                    },
+                  ],
+                },
               },
             },
           ]),

@@ -7,20 +7,23 @@ import {
   useQueryClient,
 } from '@tanstack/react-query';
 import {
-  Fragment,
   useState,
   useCallback,
   useEffect,
   useMemo,
   useRef,
+  type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from 'react';
 import { toast } from 'sonner';
 import {
   CalendarDays,
+  Check,
   ChevronDown,
   CircleDollarSign,
+  Clock3,
   Columns3,
   DoorOpen,
   ExternalLink,
@@ -34,6 +37,7 @@ import {
   MapPin,
   Megaphone,
   MessageSquare,
+  Pencil,
   Phone,
   Plus,
   RefreshCw,
@@ -43,7 +47,7 @@ import {
   Tag,
   Trash2,
   Type,
-  UserRound,
+  UserPlus,
   X,
 } from 'lucide-react';
 import type { ColumnDef, SortingState } from '@tanstack/react-table';
@@ -67,6 +71,8 @@ import {
   IntakeConfirmationState,
   IntakeLifecycleStatus,
   ListingAvailability,
+  MatchStage,
+  normalizeMatchStage,
 } from '@estate-erp/shared';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -80,14 +86,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from '@/components/ui/sheet';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -112,12 +111,11 @@ import {
   type MultiSelectOption,
 } from '@/components/ui/multi-select';
 import { StatusBadge } from '@/components/domain';
+import { ConfirmDialog } from '@/components/domain/confirm-dialog';
 import { cn } from '@/lib/utils';
 import { formatPhoneNumber } from '@/lib/contacts';
 import { formatMoney } from '@/lib/format';
-import { getStatusMeta, PIPELINE_STEPS } from '@/lib/status-config';
 import {
-  PriceCell,
   CellEditProvider,
   EditableCell,
   type SortDefinition,
@@ -132,7 +130,14 @@ import {
   getListingRowAvailability,
   planListingStatusChange,
 } from '@/lib/listing-status';
-import { getMoveInAvailability } from './-property-list-view-utils';
+import {
+  getListingPrimaryPrice,
+  getMoveInAvailability,
+} from './-property-list-view-utils';
+import {
+  ConsultationAddDialog,
+  PropertyContactAddDialog,
+} from './-property-detail-dialogs';
 import {
   PropertyListingsTable,
   type ListingSummary,
@@ -144,12 +149,25 @@ import {
   type PropertyMapClusterSource,
 } from './-property-map-utils';
 import {
-  ListingCostSummary,
   PropertyBulkActions,
   PropertyRowActions,
-  type ListingCostExtras,
 } from './-property-intake-actions';
 import { MatchCreateDialog } from '../matches/-match-create-dialog';
+import { MatchConvertDialog } from '../matches/-match-convert-dialog';
+import {
+  MatchProgressTrack,
+  type MatchProgressActions,
+} from '../matches/-match-board';
+import {
+  buildViewingCalendarEventPayload,
+  formatViewingEventTime,
+  getMatchStageBlockReason,
+  getMatchStageLabel,
+  getUpcomingViewingEvent,
+  matchStageOrder,
+  shouldMoveToViewingOnSchedule,
+  toCalendarEventUpdatePayload,
+} from '../matches/-match-view-utils';
 
 // ── Labels & Colors ─────────────────────────────────────────────
 
@@ -158,7 +176,7 @@ const listingAvailabilityMeta: Record<
   { label: string; dotClassName: string; pillClassName: string }
 > = {
   [ListingAvailability.AVAILABLE]: {
-    label: '가용',
+    label: '활성',
     dotClassName: 'bg-[#6c9b7a]',
     pillClassName: 'bg-[#eef3ed] text-[#44745a]',
   },
@@ -217,18 +235,27 @@ const contactRoleLabels: Record<string, string> = {
 
 // 정렬은 표 헤더 클릭으로 처리. 헤더 라벨 매핑만 유지.
 const sortDefinitions = [
+  { field: 'info', label: '거래' },
+  { field: 'site', label: '단지' },
+  { field: 'dong', label: '동' },
+  { field: 'unit', label: '호' },
+  { field: 'unitType', label: '타입' },
+  { field: 'exclusiveArea', label: '전용면적' },
+  { field: 'matching', label: '매칭' },
+  { field: 'advertisement', label: '광고' },
+  { field: 'confirmationAt', label: '확인' },
+  { field: 'listingAvailability', label: '매물상태' },
   { field: 'price', label: '가격' },
-  { field: 'createdAt', label: '등록일' },
-  { field: 'updatedAt', label: '확인' },
+  { field: 'monthlyRent', label: '월세' },
+  { field: 'loanAmount', label: '융자금' },
+  { field: 'moveInAvailable', label: '입주가능일' },
+  { field: 'memo', label: '의뢰 메모' },
 ];
 
 const LISTINGS_PAGE_SIZE = 50;
-const PROPERTY_QUICK_SHEET_OPEN_DURATION_MS = 280;
-const PROPERTY_QUICK_SHEET_CONTENT_DELAY_MS = PROPERTY_QUICK_SHEET_OPEN_DURATION_MS + 20;
-const MATCH_STAGE_STEPS = PIPELINE_STEPS.matchStage ?? [];
-
 function getMatchStageIndex(stage: string) {
-  return MATCH_STAGE_STEPS.indexOf(stage);
+  const normalizedStage = normalizeMatchStage(stage);
+  return matchStageOrder.findIndex((candidate) => candidate === normalizedStage);
 }
 
 const listingAvailabilityFilterOptions: MultiSelectOption[] = Object.entries(
@@ -462,6 +489,11 @@ interface ResumeClosedPrompt {
   resumableListingCount: number;
 }
 
+interface CloseActiveDealsPrompt {
+  intakeId: string;
+  activeDealCount: number;
+}
+
 // ── Route ───────────────────────────────────────────────────────
 
 export const Route = createFileRoute('/_authenticated/properties/')({
@@ -481,10 +513,13 @@ function PropertiesPage() {
     initialPropertyFilters,
   );
   const [selectedIntakeId, setSelectedIntakeId] = useState<string | null>(null);
+  const shouldRestorePropertyTableFocusRef = useRef(false);
   const [startDealPrompt, setStartDealPrompt] =
     useState<StartDealPrompt | null>(null);
   const [resumeClosedPrompt, setResumeClosedPrompt] =
     useState<ResumeClosedPrompt | null>(null);
+  const [closeActiveDealsPrompt, setCloseActiveDealsPrompt] =
+    useState<CloseActiveDealsPrompt | null>(null);
   const [viewMode, setViewMode] = useState<PropertyViewMode>('list');
   const [expandedAdRows, setExpandedAdRows] = useState<ReadonlySet<string>>(
     () => new Set(),
@@ -782,7 +817,7 @@ function PropertiesPage() {
       queryClient.invalidateQueries({ queryKey: ['listing-intakes'] });
       if (selectedIntakeId) {
         queryClient.invalidateQueries({
-          queryKey: ['listing-intakes', 'quick-sheet', selectedIntakeId],
+          queryKey: ['listing-intakes', 'inspector', selectedIntakeId],
         });
       }
     },
@@ -804,7 +839,7 @@ function PropertiesPage() {
     }
     if (selectedIntakeId) {
       void queryClient.invalidateQueries({
-        queryKey: ['listing-intakes', 'quick-sheet', selectedIntakeId],
+        queryKey: ['listing-intakes', 'inspector', selectedIntakeId],
       });
     }
   }, [queryClient, selectedIntakeId]);
@@ -832,6 +867,26 @@ function PropertiesPage() {
       handleMutationError(error);
     },
   });
+  const closeActiveDealsMutation = useMutation({
+    mutationFn: ({
+      intakeId,
+      expectedUpdatedAt,
+    }: {
+      intakeId: string;
+      expectedUpdatedAt?: string | null;
+    }) =>
+      api.listingIntakes.closeWithActiveDeals(intakeId, {
+        expectedUpdatedAt,
+      }),
+    onSuccess: () => {
+      toast.success('거래와 매물이 종료되었습니다.');
+      setCloseActiveDealsPrompt(null);
+    },
+    onSettled: invalidateListingStatusQueries,
+    onError: (error) => {
+      handleMutationError(error);
+    },
+  });
   const intakeMemoMutation = useMutation({
     mutationFn: ({
       intakeId,
@@ -850,7 +905,7 @@ function PropertiesPage() {
       queryClient.invalidateQueries({ queryKey: ['listing-intakes'] });
       if (selectedIntakeId) {
         queryClient.invalidateQueries({
-          queryKey: ['listing-intakes', 'quick-sheet', selectedIntakeId],
+          queryKey: ['listing-intakes', 'inspector', selectedIntakeId],
         });
       }
     },
@@ -874,6 +929,19 @@ function PropertiesPage() {
   const handleListingPatch = useCallback(
     (recordId: string, patch: UpdateListingDto) => {
       updateMutation.mutate({
+        id: recordId,
+        patch: {
+          ...patch,
+          expectedUpdatedAt:
+            patch.expectedUpdatedAt ?? listingUpdatedAtById.get(recordId),
+        },
+      });
+    },
+    [listingUpdatedAtById, updateMutation],
+  );
+  const handleInspectorListingUpdate = useCallback(
+    async (recordId: string, patch: UpdateListingDto) => {
+      await updateMutation.mutateAsync({
         id: recordId,
         patch: {
           ...patch,
@@ -950,6 +1018,14 @@ function PropertiesPage() {
         return;
       }
 
+      if (plan.kind === 'closeWithActiveDeals') {
+        setCloseActiveDealsPrompt({
+          intakeId: intake.id,
+          activeDealCount: plan.activeDealCount,
+        });
+        return;
+      }
+
       if (plan.kind === 'blocked') {
         toast.info(
           plan.reason === 'allHaveActiveDeals'
@@ -957,7 +1033,7 @@ function PropertiesPage() {
             : plan.reason === 'completedDeal'
               ? '이미 거래 완료된 Deal이 있어 종료된 매물입니다.'
               : plan.reason === 'closedIntake'
-                ? '종료된 의뢰입니다. 먼저 가용으로 재개해 주세요.'
+                ? '종료된 의뢰입니다. 먼저 활성으로 재개해 주세요.'
                 : plan.reason === 'noCandidates'
                   ? 'Deal을 생성할 수 있는 거래유형이 없습니다.'
                   : '거래중 상태는 연결된 Deal에서 단계를 변경하거나 취소해 주세요.',
@@ -976,6 +1052,41 @@ function PropertiesPage() {
     },
     [intakeUpdatedAtById, rowLifecycleMutation],
   );
+  const handleInspectorAvailabilityChange = useCallback(
+    (
+      intake: ListingIntake,
+      property: Property,
+      value: ListingAvailability,
+    ) => {
+      handleRowStatusSave(
+        {
+          id: property.id,
+          intakeId: intake.id,
+          propertyId: property.id,
+          property,
+          representative: intake,
+          listings: (intake.listings ?? []).map(toListingSummary),
+          matchedIntakes: [intake],
+        },
+        value,
+      );
+    },
+    [handleRowStatusSave],
+  );
+  const closePropertyInspector = useCallback(() => {
+    shouldRestorePropertyTableFocusRef.current = true;
+    setSelectedIntakeId(null);
+  }, []);
+  useEffect(() => {
+    if (selectedIntakeId || !shouldRestorePropertyTableFocusRef.current) return;
+    const timer = window.setTimeout(() => {
+      document
+        .querySelector<HTMLElement>('[data-property-table-scroller]')
+        ?.focus({ preventScroll: true });
+      shouldRestorePropertyTableFocusRef.current = false;
+    }, 100);
+    return () => window.clearTimeout(timer);
+  }, [selectedIntakeId]);
   const handleIntakeMemoSave = useCallback(
     (intakeId: string, value: unknown) => {
       const memo = parseEditorTextValue(value);
@@ -1176,7 +1287,7 @@ function PropertiesPage() {
           <TableHeaderLabel icon={<Tag className="size-4" />} label="거래" />
         ),
         size: 60,
-        enableSorting: false,
+        enableSorting: true,
         cell: ({ row }) => (
           <TransactionStack listings={row.original.listings} />
         ),
@@ -1187,7 +1298,7 @@ function PropertiesPage() {
           <TableHeaderLabel icon={<Type className="size-4" />} label="단지" />
         ),
         size: 240,
-        enableSorting: false,
+        enableSorting: true,
         cell: ({ row }) => {
           const group = row.original;
           return (
@@ -1205,7 +1316,7 @@ function PropertiesPage() {
           <TableHeaderLabel icon={<Hash className="size-4" />} label="동" />
         ),
         size: 58,
-        enableSorting: false,
+        enableSorting: true,
         cell: ({ row }) => (
           <span className="truncate text-[13px] font-medium text-slate-900">
             {getDongName(row.original.property)}
@@ -1218,7 +1329,7 @@ function PropertiesPage() {
           <TableHeaderLabel icon={<Hash className="size-4" />} label="호" />
         ),
         size: 58,
-        enableSorting: false,
+        enableSorting: true,
         cell: ({ row }) => (
           <span className="truncate text-[13px] font-medium text-slate-900">
             {row.original.property?.unit?.name ?? ''}
@@ -1254,7 +1365,7 @@ function PropertiesPage() {
                 />
               ),
               size: 58,
-              enableSorting: false,
+              enableSorting: true,
               cell: ({ row }) => {
                 const value = getUnitTypeName(row.original.property);
                 return (
@@ -1273,7 +1384,7 @@ function PropertiesPage() {
                 />
               ),
               size: 96,
-              enableSorting: false,
+              enableSorting: true,
               cell: ({ row }) => {
                 const value = formatAreaPyeong(
                   getExclusiveAreaM2(row.original.property),
@@ -1294,7 +1405,7 @@ function PropertiesPage() {
                 />
               ),
               size: 64,
-              enableSorting: false,
+              enableSorting: true,
               cell: ({ row }) => (
                 <ListingMatchToggle
                   group={row.original}
@@ -1312,7 +1423,7 @@ function PropertiesPage() {
                 />
               ),
               size: 64,
-              enableSorting: false,
+              enableSorting: true,
               cell: ({ row }) => (
                 <ListingAdToggle
                   group={row.original}
@@ -1322,7 +1433,7 @@ function PropertiesPage() {
               ),
             } satisfies ColumnDef<PropertyListingGroup, unknown>,
             {
-              id: 'updatedAt',
+              id: 'confirmationAt',
               header: () => (
                 <TableHeaderLabel
                   icon={<CalendarDays className="size-4" />}
@@ -1354,7 +1465,7 @@ function PropertiesPage() {
           />
         ),
         size: 120,
-        enableSorting: false,
+        enableSorting: true,
         meta: {
           cellClassName: 'z-[2] overflow-visible',
         },
@@ -1409,7 +1520,7 @@ function PropertiesPage() {
           />
         ),
         size: 82,
-        enableSorting: false,
+        enableSorting: true,
         meta: {
           cellClassName: 'hover:bg-muted/50',
           onCellDoubleClick: (
@@ -1437,7 +1548,7 @@ function PropertiesPage() {
                 />
               ),
               size: 96,
-              enableSorting: false,
+              enableSorting: true,
               meta: {
                 cellClassName: 'hover:bg-muted/50',
                 onCellDoubleClick: (
@@ -1466,7 +1577,7 @@ function PropertiesPage() {
           />
         ),
         size: 120,
-        enableSorting: false,
+        enableSorting: true,
         cell: ({ row }) => (
           <MoveInAvailableStack
             listings={row.original.listings}
@@ -1485,7 +1596,7 @@ function PropertiesPage() {
         size: 320,
         minSize: 220,
         enableResizing: false,
-        enableSorting: false,
+        enableSorting: true,
         meta: {
           cellClassName: 'hover:bg-muted/50',
           grow: true,
@@ -1526,7 +1637,7 @@ function PropertiesPage() {
     <CellEditProvider>
       <div
         data-properties-page
-        className="-m-4 flex min-h-0 flex-1 flex-col bg-white"
+        className="relative -m-4 flex min-h-0 flex-1 flex-col bg-white"
       >
         <section className="shrink-0 border-b border-border bg-white px-3 py-2.5">
           <div className="flex min-w-0 items-center gap-2">
@@ -1820,7 +1931,7 @@ function PropertiesPage() {
               </FilterPopoverChip>
 
               <FilterPopoverChip
-                label="면적"
+                label="공급평형"
                 value={areaFilterSummary ?? '전체'}
                 active={Boolean(areaFilterSummary)}
                 tier={2}
@@ -1830,9 +1941,9 @@ function PropertiesPage() {
                 contentClassName="w-[430px] max-w-[calc(100vw-24px)] overflow-hidden p-0"
               >
                 <NumericRangeFilterPanel
-                  ariaLabel="면적 필터"
-                  title="전용면적"
-                  description="전용면적 기준 · 평 단위"
+                  ariaLabel="공급평형 필터"
+                  title="공급평형"
+                  description="공급면적 기준 · 평 단위"
                   initialRange={getAreaRangeFilter(propertyFilters)}
                   min={AREA_RANGE_MIN}
                   max={AREA_RANGE_MAX}
@@ -1973,8 +2084,11 @@ function PropertiesPage() {
           </div>
         </section>
 
-        <section className="flex min-h-0 flex-1 bg-white px-0 py-0">
-          <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-white">
+        <section
+          data-property-workspace
+          className="relative flex min-h-0 flex-1 overflow-hidden bg-white px-0 py-0"
+        >
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-white">
             {viewMode === 'map' && (
               <div className="flex min-h-9 shrink-0 items-center border-b border-border/60 bg-[#f8f7f4] px-3 py-1.5 text-[12px] text-muted-foreground">
                 {isLoading || isMapDataLoading ? (
@@ -1997,6 +2111,9 @@ function PropertiesPage() {
                 sorting={sorting}
                 onSortingChange={handleSortingChange}
                 onRowClick={(row) => setSelectedIntakeId(row.intakeId)}
+                onRequestClose={
+                  selectedIntakeId ? closePropertyInspector : undefined
+                }
                 expandedRowIds={expandedRowIds}
                 renderExpandedRow={renderExpandedPropertyRow}
                 getExpandedRowHeight={getExpandedPropertyRowHeight}
@@ -2050,10 +2167,21 @@ function PropertiesPage() {
             )}
           </div>
         </section>
-        <PropertyQuickSheet
-          intakeId={selectedIntakeId}
-          onClose={() => setSelectedIntakeId(null)}
-        />
+        {selectedIntakeId && (
+          <PropertyInspector
+            intakeId={selectedIntakeId}
+            onClose={closePropertyInspector}
+            onConfirm={(intakeId) =>
+              handleIntakeConfirm(intakeId, 'alive')
+            }
+            isConfirming={
+              confirmMutation.isPending &&
+              confirmMutation.variables?.intakeId === selectedIntakeId
+            }
+            onSaveListing={handleInspectorListingUpdate}
+            onAvailabilityChange={handleInspectorAvailabilityChange}
+          />
+        )}
         {startDealPrompt && (
           <StartDealFromStatusDialog
             key={`${startDealPrompt.propertyId}:${startDealPrompt.listings.map((listing) => listing.id).join(',')}`}
@@ -2088,6 +2216,31 @@ function PropertiesPage() {
                 },
               );
             }}
+          />
+        )}
+        {closeActiveDealsPrompt && (
+          <ConfirmDialog
+            open
+            onOpenChange={(open) => {
+              if (!open) setCloseActiveDealsPrompt(null);
+            }}
+            title="연결된 거래가 있습니다"
+            description={`${
+              closeActiveDealsPrompt.activeDealCount > 1
+                ? `진행 중인 거래 ${closeActiveDealsPrompt.activeDealCount}건을`
+                : '진행 중인 거래를'
+            } 종료 처리하고 매물도 종료하시겠습니까? 거래는 취소 이력으로 남습니다.`}
+            confirmLabel="거래와 매물 종료"
+            destructive
+            loading={closeActiveDealsMutation.isPending}
+            onConfirm={() =>
+              closeActiveDealsMutation.mutate({
+                intakeId: closeActiveDealsPrompt.intakeId,
+                expectedUpdatedAt: intakeUpdatedAtById.get(
+                  closeActiveDealsPrompt.intakeId,
+                ),
+              })
+            }
           />
         )}
       </div>
@@ -2713,350 +2866,738 @@ function useDebouncedValue<T>(value: T, delayMs: number) {
   return debouncedValue;
 }
 
-function PropertyQuickSheet({
+const PROPERTY_INSPECTOR_MIN_WIDTH = 520;
+const PROPERTY_INSPECTOR_MAX_WIDTH = 640;
+const PROPERTY_INSPECTOR_DEFAULT_WIDTH = 584;
+
+function PropertyInspector({
   intakeId,
   onClose,
+  onConfirm,
+  isConfirming,
+  onSaveListing,
+  onAvailabilityChange,
 }: {
-  intakeId: string | null;
+  intakeId: string;
   onClose: () => void;
+  onConfirm: (intakeId: string) => void;
+  isConfirming: boolean;
+  onSaveListing: (id: string, patch: UpdateListingDto) => Promise<void>;
+  onAvailabilityChange: (
+    intake: ListingIntake,
+    property: Property,
+    value: ListingAvailability,
+  ) => void;
 }) {
-  const { data: intake, isLoading } = useQuery({
-    queryKey: ['listing-intakes', 'quick-sheet', intakeId],
-    queryFn: () => api.listingIntakes.findOne(intakeId as string),
-    enabled: Boolean(intakeId),
+  const [width, setWidth] = useState(PROPERTY_INSPECTOR_DEFAULT_WIDTH);
+  const { data: intake, isLoading, isError, refetch } = useQuery({
+    queryKey: ['listing-intakes', 'inspector', intakeId],
+    queryFn: () => api.listingIntakes.findOne(intakeId),
   });
 
-  // 무거운 상세 트리는 짧은 drawer 전환이 끝난 뒤 mount해 이동 중 frame drop을 막는다.
-  const [contentReady, setContentReady] = useState(false);
   useEffect(() => {
-    if (!intakeId) {
-      setContentReady(false);
+    const handleWindowKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      if (
+        document.querySelector(
+          '[role="dialog"], [role="listbox"], [data-slot="popover-content"], [data-slot="dropdown-menu-content"]',
+        )
+      ) {
+        return;
+      }
+      event.preventDefault();
+      onClose();
+    };
+
+    window.addEventListener('keydown', handleWindowKeyDown, true);
+    return () =>
+      window.removeEventListener('keydown', handleWindowKeyDown, true);
+  }, [onClose]);
+
+  const handleKeyDown = (event: ReactKeyboardEvent<HTMLElement>) => {
+    if (event.key !== 'Escape') return;
+    const target = event.target instanceof Element ? event.target : null;
+    if (
+      target?.closest(
+        '[role="dialog"], [role="listbox"], [data-slot="popover-content"], [data-slot="dropdown-menu-content"]',
+      )
+    ) {
       return;
     }
-    const timer = window.setTimeout(
-      () => setContentReady(true),
-      PROPERTY_QUICK_SHEET_CONTENT_DELAY_MS,
-    );
-    return () => window.clearTimeout(timer);
-  }, [intakeId]);
+    event.preventDefault();
+    event.stopPropagation();
+    onClose();
+  };
 
   return (
-    <Sheet open={Boolean(intakeId)} onOpenChange={(open) => !open && onClose()}>
-      <SheetContent
-        data-property-quick-sheet
-        side="right"
-        showCloseButton={false}
-        className="!w-full !max-w-full !gap-0 overflow-hidden p-0 sm:!max-w-[720px]"
-      >
-        {intakeId && (!contentReady || isLoading) && <PropertySheetSkeleton />}
-        {intakeId && contentReady && !isLoading && intake?.property && (
-          <PropertySheetContent
-            intake={intake}
-            property={{ ...intake.property, listings: intake.listings ?? [] }}
-            onClose={onClose}
-          />
-        )}
-        {intakeId && contentReady && !isLoading && !intake?.property && (
-          <div className="flex h-full flex-col">
-            <SheetHeader className="sr-only">
-              <SheetTitle>의뢰를 찾을 수 없습니다</SheetTitle>
-              <SheetDescription>
-                요청하신 의뢰 정보가 존재하지 않습니다.
-              </SheetDescription>
-            </SheetHeader>
-            <div className="flex flex-1 items-center justify-center text-sm text-slate-500">
-              의뢰를 찾을 수 없습니다.
-            </div>
+    <aside
+      data-property-inspector
+      aria-label="매물 상세 패널"
+      className="absolute inset-y-0 right-0 z-50 flex min-h-0 flex-col border-l border-[#dddcd8] bg-white shadow-[-12px_0_32px_rgba(15,23,42,0.1)]"
+      style={{ width }}
+      onKeyDownCapture={handleKeyDown}
+    >
+      <PropertyInspectorResizeHandle width={width} onResize={setWidth} />
+      {isLoading && <PropertyInspectorSkeleton />}
+      {!isLoading && isError && (
+        <div className="flex h-full flex-col items-center justify-center gap-3 px-8 text-center">
+          <p className="text-sm text-muted-foreground">
+            매물 정보를 불러오지 못했습니다.
+          </p>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={() => refetch()}>
+              다시 시도
+            </Button>
+            <Button variant="ghost" size="sm" onClick={onClose}>
+              닫기
+            </Button>
           </div>
-        )}
-      </SheetContent>
-    </Sheet>
+        </div>
+      )}
+      {!isLoading && !isError && intake?.property && (
+        <PropertyInspectorContent
+          key={intake.id}
+          intake={intake}
+          property={intake.property}
+          onClose={onClose}
+          onConfirm={onConfirm}
+          isConfirming={isConfirming}
+          onSaveListing={onSaveListing}
+          onAvailabilityChange={onAvailabilityChange}
+        />
+      )}
+      {!isLoading && !isError && !intake?.property && (
+        <div className="flex h-full items-center justify-center px-8 text-sm text-muted-foreground">
+          의뢰 정보를 찾을 수 없습니다.
+        </div>
+      )}
+    </aside>
   );
 }
 
-function PropertySheetSkeleton() {
+function PropertyInspectorResizeHandle({
+  width,
+  onResize,
+}: {
+  width: number;
+  onResize: (width: number) => void;
+}) {
+  const cleanupRef = useRef<(() => void) | null>(null);
+
+  useEffect(() => () => cleanupRef.current?.(), []);
+
+  const handlePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = width;
+
+    const handlePointerMove = (pointerEvent: PointerEvent) => {
+      onResize(
+        clampPropertyInspectorWidth(
+          startWidth + startX - pointerEvent.clientX,
+        ),
+      );
+    };
+    const stopResizing = () => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', stopResizing);
+      document.body.style.removeProperty('cursor');
+      document.body.style.removeProperty('user-select');
+      cleanupRef.current = null;
+    };
+
+    cleanupRef.current?.();
+    cleanupRef.current = stopResizing;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', stopResizing, { once: true });
+  };
+
+  const handleKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (event.key === 'ArrowLeft') {
+      event.preventDefault();
+      onResize(clampPropertyInspectorWidth(width + 24));
+    }
+    if (event.key === 'ArrowRight') {
+      event.preventDefault();
+      onResize(clampPropertyInspectorWidth(width - 24));
+    }
+  };
+
+  return (
+    <div
+      data-property-inspector-resize-handle
+      role="separator"
+      aria-label="상세 패널 너비 조절"
+      aria-orientation="vertical"
+      aria-valuemin={PROPERTY_INSPECTOR_MIN_WIDTH}
+      aria-valuemax={PROPERTY_INSPECTOR_MAX_WIDTH}
+      aria-valuenow={width}
+      tabIndex={0}
+      className="group absolute inset-y-0 -left-1 z-20 w-2 cursor-col-resize touch-none outline-none"
+      onPointerDown={handlePointerDown}
+      onKeyDown={handleKeyDown}
+    >
+      <span className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-transparent transition-colors group-hover:bg-[#6c9b7a] group-focus-visible:bg-[#6c9b7a]" />
+    </div>
+  );
+}
+
+function clampPropertyInspectorWidth(value: number) {
+  return Math.min(
+    PROPERTY_INSPECTOR_MAX_WIDTH,
+    Math.max(PROPERTY_INSPECTOR_MIN_WIDTH, value),
+  );
+}
+
+function PropertyInspectorSkeleton() {
   return (
     <div className="flex h-full flex-col">
-      <SheetHeader className="sr-only">
-        <SheetTitle>의뢰 빠른 확인</SheetTitle>
-        <SheetDescription>의뢰 정보를 불러오는 중입니다.</SheetDescription>
-      </SheetHeader>
-      <div className="space-y-3 border-b px-6 py-5">
-        <Skeleton className="h-5 w-24" />
-        <Skeleton className="h-7 w-72" />
-        <Skeleton className="h-4 w-full max-w-md" />
+      <div className="space-y-3 border-b px-5 py-4">
+        <Skeleton className="h-4 w-24" />
+        <Skeleton className="h-7 w-64" />
+        <Skeleton className="h-4 w-full" />
       </div>
-      <div className="space-y-5 p-6">
-        <Skeleton className="h-28 rounded-lg" />
-        <Skeleton className="h-40 rounded-lg" />
-        <Skeleton className="h-32 rounded-lg" />
+      <div className="grid grid-cols-4 gap-2 border-b px-5 py-4">
+        {Array.from({ length: 4 }).map((_, index) => (
+          <Skeleton key={index} className="h-12" />
+        ))}
+      </div>
+      <div className="space-y-4 p-5">
+        <Skeleton className="h-9 w-full" />
+        <Skeleton className="h-28 w-full" />
+        <Skeleton className="h-36 w-full" />
       </div>
     </div>
   );
 }
 
-function PropertySheetContent({
+function PropertyInspectorContent({
   intake,
   property,
   onClose,
+  onConfirm,
+  isConfirming,
+  onSaveListing,
+  onAvailabilityChange,
 }: {
   intake: ListingIntake;
   property: Property;
   onClose: () => void;
+  onConfirm: (intakeId: string) => void;
+  isConfirming: boolean;
+  onSaveListing: (id: string, patch: UpdateListingDto) => Promise<void>;
+  onAvailabilityChange: (
+    intake: ListingIntake,
+    property: Property,
+    value: ListingAvailability,
+  ) => void;
 }) {
-  const openTab = useTabStore((s) => s.openTab);
-  const listings = (property.listings ?? [])
-    .slice()
+  const queryClient = useQueryClient();
+  const openTab = useTabStore((state) => state.openTab);
+  const [activeTab, setActiveTab] = useState('overview');
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [isContactOpen, setIsContactOpen] = useState(false);
+  const [isConsultationOpen, setIsConsultationOpen] = useState(false);
+  const intakeState = {
+    lifecycleStatus: intake.lifecycleStatus,
+    lifecycleChangedAt: intake.lifecycleChangedAt,
+    lifecycleChangedBy: intake.lifecycleChangedBy,
+    closedReason: intake.closedReason,
+    lastCheckedAt: intake.lastCheckedAt,
+    lastVerifiedAt: intake.lastVerifiedAt,
+    lastCheckResult: intake.lastCheckResult,
+    nextConfirmAt: intake.nextConfirmAt,
+    isJointBrokerageRequired: intake.isJointBrokerageRequired,
+    jointBrokeragePartner: intake.jointBrokeragePartner,
+  };
+  const listings = (intake.listings ?? [])
+    .map((listing) => ({ ...listing, intake: intakeState }) as PropertyListing)
     .sort(comparePropertyListing);
+  const propertyWithListings: Property = { ...property, listings };
   const contacts = property.propertyContacts ?? [];
   const tenants = property.tenants ?? [];
   const consultations = property.consultations ?? [];
-  const title = property.site?.name ?? '매물 상세';
-  const unitLabel = getPropertySheetUnitLabel(property);
-  const unitTypeName = property.unit?.siteUnitType?.name;
-  const floorLabel = property.unit?.floor ? `${property.unit.floor}층` : null;
-  const unitSummaryItems = [
-    unitTypeName ? `${unitTypeName}타입` : null,
-    floorLabel,
-  ].filter(Boolean);
-  const address =
-    property.site?.roadAddress ?? property.site?.jibunAddress ?? '주소 미등록';
   const owner =
     contacts.find((contact) => contact.role === 'owner') ?? contacts[0];
   const ownerPhone = owner?.contact?.phone;
-  const areaLabel = formatPropertySheetArea(property);
-  const notices = getPropertySheetNotices(property);
-  const intakeListings = listings.filter(
-    (listing) => listing.intakeId === intake.id,
-  );
-  const availability = getListingRowAvailability(intake, intakeListings);
+  const title = property.site?.name ?? '매물 상세';
+  const unitLabel = getPropertySheetUnitLabel(property);
+  const address =
+    property.site?.roadAddress ?? property.site?.jibunAddress ?? '주소 미등록';
+  const primaryListing = listings[0];
+  const availability = getListingRowAvailability(intake, listings);
+  const moveIn = primaryListing
+    ? getMoveInAvailability(primaryListing)
+    : { label: '-', detail: null };
+  const notices = getPropertySheetNotices(propertyWithListings);
   const memo =
     intake.memo?.trim() ||
     listings.find((listing) => listing.memo?.trim())?.memo?.trim();
+  const activityCount =
+    getPropertySheetAdvertisementCount(listings) +
+    getPropertySheetPriceHistoryCount(listings);
+  const suggestedContacts = contacts.flatMap((propertyContact) =>
+    propertyContact.contact
+      ? [
+          {
+            ...propertyContact.contact,
+            label: getContactRoleLabel(propertyContact.role),
+          },
+        ]
+      : [],
+  );
+
+  const invalidateInspector = () => {
+    void queryClient.invalidateQueries({
+      queryKey: ['listing-intakes', 'inspector', intake.id],
+    });
+    void queryClient.invalidateQueries({ queryKey: ['listing-intakes'] });
+  };
+
+  const openFullPage = () => {
+    const route = `/properties/${property.id}`;
+    const meta = getRouteMeta(route);
+    const tabTitle = [title, unitLabel].filter(Boolean).join(' ') || meta.title;
+    onClose();
+    openTab({ route, kind: meta.kind, title: tabTitle });
+  };
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-white">
-      <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border bg-white px-8 py-3">
-        <span className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
-          의뢰 빠른 확인
+      <div className="flex h-10 shrink-0 items-center justify-between border-b border-[#e7e5df] px-3 pl-5">
+        <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+          매물 상세
         </span>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-0.5">
           <Button
-            variant="outline"
+            variant="ghost"
             size="sm"
-            onClick={() => {
-              const route = `/properties/${property.id}`;
-              const meta = getRouteMeta(route);
-              const tabTitle =
-                [title, unitLabel].filter(Boolean).join(' ') || meta.title;
-              onClose();
-              openTab({ route, kind: meta.kind, title: tabTitle });
-            }}
+            className="h-7 gap-1.5 px-2 text-xs text-muted-foreground"
+            onClick={openFullPage}
           >
-            <ExternalLink />
-            전체 페이지로 열기
+            <ExternalLink className="size-3.5" />
+            전체 페이지
           </Button>
           <Button
             variant="ghost"
             size="icon-sm"
+            aria-label="상세 패널 닫기"
             onClick={onClose}
-            aria-label="닫기"
           >
-            <X />
+            <X className="size-4" />
           </Button>
         </div>
       </div>
-      <SheetHeader className="space-y-5 border-b border-border px-8 pb-6 pt-5">
-        <div className="space-y-3">
-          <SheetTitle className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1 text-[28px] font-bold leading-tight tracking-[-0.02em] text-foreground">
-            <span>{title}</span>
-            {unitLabel && <span className="text-foreground">{unitLabel}</span>}
-          </SheetTitle>
-          {unitSummaryItems.length > 0 && (
-            <div className="text-[14px] leading-6 text-muted-foreground">
-              {unitSummaryItems.join(' · ')}
-            </div>
-          )}
-          <SheetDescription className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-muted-foreground">
-            <span className="inline-flex min-w-0 items-center gap-1.5">
+
+      <div className="shrink-0 border-b border-[#e7e5df] px-5 pb-4 pt-4">
+        <div className="flex min-w-0 items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h2 className="truncate text-xl font-semibold tracking-[-0.02em] text-foreground">
+              {title}
+              {unitLabel && (
+                <span className="ml-2 text-foreground/80">{unitLabel}</span>
+              )}
+            </h2>
+            <p className="mt-1 flex min-w-0 items-center gap-1.5 truncate text-xs text-muted-foreground">
               <MapPin className="size-3.5 shrink-0" />
               <span className="truncate">{address}</span>
-            </span>
-            <span className="inline-flex items-center gap-1.5">
-              <Ruler className="size-3.5" />
-              {areaLabel}
-            </span>
-            <span className="inline-flex items-center gap-1.5">
-              <CalendarDays className="size-3.5" />
-              확인{' '}
-              {intake.lastCheckedAt
-                ? formatDateShort(intake.lastCheckedAt)
-                : '미확인'}
-            </span>
-            <span>접수 {formatDateShort(intake.receivedAt)}</span>
-          </SheetDescription>
-          <div className="flex flex-wrap items-center gap-1.5 pt-1">
-            {listings.map((listing) => (
-              <TransactionBadge
-                key={listing.id}
-                transactionType={listing.transactionType}
-              />
-            ))}
-            <StatusIndicator value={availability} />
+            </p>
+          </div>
+          <div className="shrink-0 text-right">
+            <div className="text-[11px] text-muted-foreground">대표 가격</div>
+            <div className="mt-0.5 text-base font-semibold tabular-nums text-foreground">
+              {primaryListing
+                ? formatInspectorListingPrice(primaryListing)
+                : '-'}
+            </div>
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-1.5">
+        <div className="mt-3 grid grid-cols-4 gap-x-3 border-y border-[#eeeeec] py-2.5">
+          <PropertyInspectorFact
+            icon={<CircleDollarSign />}
+            label="거래"
+            value={
+              primaryListing
+                ? transactionTypeMeta[primaryListing.transactionType]?.label ??
+                  primaryListing.transactionType
+                : '-'
+            }
+          />
+          <PropertyInspectorFact
+            icon={<DoorOpen />}
+            label="입주"
+            value={moveIn.label}
+          />
+          <PropertyInspectorFact
+            icon={<Ruler />}
+            label="면적"
+            value={formatPropertySheetArea(property)}
+          />
+          <PropertyInspectorFact
+            icon={<Clock3 />}
+            label="최근 확인"
+            value={
+              intake.lastCheckedAt
+                ? formatDateShort(intake.lastCheckedAt)
+                : '미확인'
+            }
+          />
+        </div>
+
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <PropertyInspectorState
+            label="의뢰 상태"
+            value={getIntakeLifecycleLabel(intake.lifecycleStatus)}
+            className={getIntakeLifecycleClassName(intake.lifecycleStatus)}
+          />
+          <PropertyInspectorState
+            label="매물 상태"
+            value={listingAvailabilityMeta[availability].label}
+            className={listingAvailabilityMeta[availability].pillClassName}
+          />
+          {listings.length > 1 && (
+            <span className="text-[11px] text-muted-foreground">
+              거래유형 {listings.length}개
+            </span>
+          )}
+        </div>
+
+        <div className="mt-3 grid grid-cols-4 gap-1.5">
+          <Button
+            size="sm"
+            className="h-8 gap-1 px-2 text-xs"
+            disabled={isConfirming}
+            onClick={() => onConfirm(intake.id)}
+          >
+            {isConfirming ? (
+              <Loader2 className="size-3.5 animate-spin" />
+            ) : (
+              <Check className="size-3.5" />
+            )}
+            확인 완료
+          </Button>
           <Button
             variant="outline"
             size="sm"
-            className="h-8 gap-1.5 px-3 text-[13px] font-medium"
-            disabled={!ownerPhone}
-            asChild={!!ownerPhone}
+            className="h-8 gap-1 px-2 text-xs"
+            onClick={() => setIsConsultationOpen(true)}
           >
-            {ownerPhone ? (
+            <MessageSquare className="size-3.5" />
+            상담 기록
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 gap-1 px-2 text-xs"
+            onClick={() => setIsEditOpen(true)}
+          >
+            <Pencil className="size-3.5" />
+            가격·상태
+          </Button>
+          {ownerPhone ? (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 gap-1 px-2 text-xs"
+              asChild
+            >
               <a href={`tel:${ownerPhone}`}>
                 <Phone className="size-3.5" />
-                {owner?.contact?.name ?? '소유주'} 전화
+                소유주 전화
               </a>
-            ) : (
-              <span>
-                <Phone className="size-3.5" />
-                소유주 연락처 없음
+            </Button>
+          ) : (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 gap-1 px-2 text-xs"
+              onClick={() => setIsContactOpen(true)}
+            >
+              <UserPlus className="size-3.5" />
+              소유주 등록
+            </Button>
+          )}
+        </div>
+      </div>
+
+      <Tabs
+        value={activeTab}
+        onValueChange={setActiveTab}
+        className="min-h-0 flex-1 gap-0"
+      >
+        <TabsList
+          variant="line"
+          aria-label="매물 상세 구역"
+          className="h-10 w-full shrink-0 justify-start gap-5 border-b border-[#e7e5df] px-5 py-0"
+        >
+          <TabsTrigger
+            value="overview"
+            className="h-10 flex-none border-0 px-0 text-xs focus-visible:border-0"
+          >
+            요약
+          </TabsTrigger>
+          <TabsTrigger
+            value="contacts"
+            className="h-10 flex-none border-0 px-0 text-xs focus-visible:border-0"
+          >
+            연락·상담
+            {contacts.length + tenants.length + consultations.length > 0 && (
+              <span className="text-[10px] tabular-nums text-muted-foreground">
+                {contacts.length + tenants.length + consultations.length}
               </span>
             )}
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-8 gap-1.5 px-3 text-[13px] font-medium"
-            asChild
+          </TabsTrigger>
+          <TabsTrigger
+            value="activity"
+            className="h-10 flex-none border-0 px-0 text-xs focus-visible:border-0"
           >
-            <Link to="/properties/$id" params={{ id: property.id }}>
-              <MessageSquare className="size-3.5" />
-              상담 기록
-            </Link>
-          </Button>
-        </div>
-      </SheetHeader>
+            광고·이력
+            {activityCount > 0 && (
+              <span className="text-[10px] tabular-nums text-muted-foreground">
+                {activityCount}
+              </span>
+            )}
+          </TabsTrigger>
+        </TabsList>
 
-      <div className="min-h-0 flex-1 space-y-6 overflow-y-auto p-6">
-        <SheetSection title="지금 확인할 것">
-          {notices.length > 0 ? (
-            <div className="space-y-2">
-              {notices.map((notice) => (
-                <PropertySheetNoticeRow
-                  key={`${notice.title}-${notice.detail}`}
-                  notice={notice}
-                />
-              ))}
-            </div>
-          ) : (
-            <SheetEmptyState text="즉시 확인할 운영 이슈가 없습니다." compact />
-          )}
-        </SheetSection>
-
-        <SheetSection title={`거래 카드 ${listings.length}`}>
-          {listings.length > 0 ? (
-            <div className="grid gap-2">
-              {listings.map((listing) => (
-                <PropertySheetListingCard key={listing.id} listing={listing} />
-              ))}
-            </div>
-          ) : (
-            <SheetEmptyState text="등록된 거래 정보가 없습니다." />
-          )}
-        </SheetSection>
-
-        <SheetSection
-          title={`가격 변경 ${getPropertySheetPriceHistoryCount(listings)}`}
+        <TabsContent
+          value="overview"
+          className="min-h-0 overflow-y-auto px-5 py-4"
         >
-          <PropertySheetPriceHistoryList listings={listings} />
-        </SheetSection>
-
-        <SheetSection
-          title={`광고 ${getPropertySheetAdvertisementCount(listings)}`}
-        >
-          <PropertySheetAdvertisementList listings={listings} />
-        </SheetSection>
-
-        <SheetSection title={`연락처 ${contacts.length + tenants.length}`}>
-          {contacts.length > 0 || tenants.length > 0 ? (
-            <div className="divide-y divide-[#eeeeec] rounded-md border border-[#eeeeec]">
-              {contacts.map((contact) => (
-                <PropertySheetContactRow
-                  key={contact.id}
-                  propertyContact={contact}
-                />
-              ))}
-              {tenants.map((tenant) => (
-                <PropertySheetTenantRow key={tenant.id} tenant={tenant} />
-              ))}
-            </div>
-          ) : (
-            <SheetEmptyState
-              text="등록된 소유주, 대리인, 임차인이 없습니다. 소유주 연락처가 있어야 목록과 상세에서 바로 전화할 수 있습니다."
-              action={
-                <Link
-                  to="/properties/$id"
-                  params={{ id: property.id }}
-                  className="inline-flex h-8 items-center rounded-md border border-border bg-white px-3 text-[12px] font-medium text-foreground hover:bg-muted"
-                >
-                  전체 페이지에서 상담/관련인 추가
-                </Link>
-              }
-            />
-          )}
-        </SheetSection>
-
-        <SheetSection title="최근 상담 / 메모">
-          <div className="space-y-2">
-            {memo && (
-              <div className="rounded-md border border-[#eeeeec] bg-slate-50/60 p-3">
-                <div className="mb-1 text-[11px] font-medium text-slate-500">
-                  의뢰 메모
+          <div className="space-y-6">
+            {notices.length > 0 && (
+              <PropertyInspectorSection title="지금 확인할 것">
+                <div className="divide-y divide-[#eeeeec] border-y border-[#eeeeec]">
+                  {notices.map((notice) => (
+                    <PropertyInspectorNoticeRow
+                      key={`${notice.title}-${notice.detail}`}
+                      notice={notice}
+                      action={
+                        notice.title === '소유주 연락처 없음' ? (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 shrink-0 px-2 text-xs"
+                            onClick={() => setIsContactOpen(true)}
+                          >
+                            등록
+                          </Button>
+                        ) : undefined
+                      }
+                    />
+                  ))}
                 </div>
-                <p className="whitespace-pre-wrap text-sm leading-6 text-slate-700">
+              </PropertyInspectorSection>
+            )}
+
+            <PropertyInspectorSection title={`가격·거래 조건 ${listings.length}`}>
+              {listings.length > 0 ? (
+                <div className="divide-y divide-[#eeeeec] border-y border-[#eeeeec]">
+                  {listings.map((listing) => (
+                    <PropertyInspectorListingRow
+                      key={listing.id}
+                      listing={listing}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <PropertyInspectorEmptyText text="등록된 거래 조건이 없습니다." />
+              )}
+            </PropertyInspectorSection>
+
+            {memo && (
+              <PropertyInspectorSection title="의뢰 메모">
+                <p className="whitespace-pre-wrap border-l-2 border-[#d8d6d0] pl-3 text-[13px] leading-6 text-slate-700">
                   {memo}
                 </p>
-              </div>
-            )}
-            {consultations.slice(0, 3).map((consultation) => (
-              <PropertySheetConsultationRow
-                key={consultation.id}
-                consultation={consultation}
-              />
-            ))}
-            {!memo && consultations.length === 0 && (
-              <SheetEmptyState text="상담 기록과 메모가 없습니다." compact />
+              </PropertyInspectorSection>
             )}
           </div>
-        </SheetSection>
+        </TabsContent>
+
+        <TabsContent
+          value="contacts"
+          className="min-h-0 overflow-y-auto px-5 py-4"
+        >
+          <div className="space-y-6">
+            <PropertyInspectorSection
+              title={`관련인 ${contacts.length + tenants.length}`}
+              action={
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 gap-1 px-2 text-xs"
+                  onClick={() => setIsContactOpen(true)}
+                >
+                  <UserPlus className="size-3.5" />
+                  관련인 추가
+                </Button>
+              }
+            >
+              {contacts.length > 0 || tenants.length > 0 ? (
+                <div className="divide-y divide-[#eeeeec] border-y border-[#eeeeec]">
+                  {contacts.map((contact) => (
+                    <PropertyInspectorContactRow
+                      key={contact.id}
+                      propertyContact={contact}
+                    />
+                  ))}
+                  {tenants.map((tenant) => (
+                    <PropertyInspectorTenantRow key={tenant.id} tenant={tenant} />
+                  ))}
+                </div>
+              ) : (
+                <PropertyInspectorEmptyText text="등록된 소유주, 대리인, 임차인이 없습니다." />
+              )}
+            </PropertyInspectorSection>
+
+            <PropertyInspectorSection
+              title={`최근 상담 ${consultations.length}`}
+              action={
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 gap-1 px-2 text-xs"
+                  onClick={() => setIsConsultationOpen(true)}
+                >
+                  <Plus className="size-3.5" />
+                  상담 기록
+                </Button>
+              }
+            >
+              {consultations.length > 0 ? (
+                <div className="divide-y divide-[#eeeeec] border-y border-[#eeeeec]">
+                  {consultations.map((consultation) => (
+                    <PropertyInspectorConsultationRow
+                      key={consultation.id}
+                      consultation={consultation}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <PropertyInspectorEmptyText text="상담 기록이 없습니다." />
+              )}
+            </PropertyInspectorSection>
+          </div>
+        </TabsContent>
+
+        <TabsContent
+          value="activity"
+          className="min-h-0 overflow-y-auto px-5 py-4"
+        >
+          <PropertyInspectorSection title="광고·가격 활동">
+            <PropertyInspectorActivityTimeline listings={listings} />
+          </PropertyInspectorSection>
+        </TabsContent>
+      </Tabs>
+
+      <PropertyInspectorEditDialog
+        open={isEditOpen}
+        onOpenChange={setIsEditOpen}
+        listings={listings}
+        availability={availability}
+        onSaveListing={onSaveListing}
+        onAvailabilityChange={(value) =>
+          onAvailabilityChange(intake, propertyWithListings, value)
+        }
+      />
+      <PropertyContactAddDialog
+        open={isContactOpen}
+        onOpenChange={(open) => {
+          setIsContactOpen(open);
+          if (!open) invalidateInspector();
+        }}
+        propertyId={property.id}
+      />
+      <ConsultationAddDialog
+        open={isConsultationOpen}
+        onOpenChange={(open) => {
+          setIsConsultationOpen(open);
+          if (!open) invalidateInspector();
+        }}
+        propertyId={property.id}
+        suggestedContacts={suggestedContacts}
+        defaultContact={owner?.contact ?? null}
+      />
+    </div>
+  );
+}
+
+function PropertyInspectorFact({
+  icon,
+  label,
+  value,
+}: {
+  icon: ReactNode;
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="min-w-0">
+      <div className="flex items-center gap-1 text-[10px] text-muted-foreground [&>svg]:size-3">
+        {icon}
+        <span>{label}</span>
+      </div>
+      <div className="mt-1 truncate text-[12px] font-medium text-foreground" title={value}>
+        {value}
       </div>
     </div>
   );
 }
 
-function SheetSection({
+function PropertyInspectorState({
+  label,
+  value,
+  className,
+}: {
+  label: string;
+  value: string;
+  className: string;
+}) {
+  return (
+    <span className="inline-flex items-center gap-1.5 text-[11px]">
+      <span className="text-muted-foreground">{label}</span>
+      <span className={cn('rounded-[4px] px-1.5 py-0.5 font-medium', className)}>
+        {value}
+      </span>
+    </span>
+  );
+}
+
+function PropertyInspectorSection({
   title,
+  action,
   children,
 }: {
   title: string;
+  action?: ReactNode;
   children: ReactNode;
 }) {
   return (
-    <section className="space-y-2.5">
-      <h3 className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
-        {title}
-      </h3>
+    <section>
+      <div className="mb-2 flex h-7 items-center justify-between gap-3">
+        <h3 className="text-[11px] font-semibold uppercase tracking-[0.07em] text-muted-foreground">
+          {title}
+        </h3>
+        {action}
+      </div>
       {children}
     </section>
   );
 }
 
-function PropertySheetNoticeRow({ notice }: { notice: PropertySheetNotice }) {
+function PropertyInspectorNoticeRow({
+  notice,
+  action,
+}: {
+  notice: PropertySheetNotice;
+  action?: ReactNode;
+}) {
   return (
-    <div className="flex items-start gap-2.5 rounded-md border border-border bg-muted/40 px-3 py-2.5">
+    <div className="flex items-start gap-3 py-2.5">
       <span
         className={cn(
           'mt-1.5 size-1.5 shrink-0 rounded-full',
@@ -3066,47 +3607,38 @@ function PropertySheetNoticeRow({ notice }: { notice: PropertySheetNotice }) {
         )}
       />
       <div className="min-w-0 flex-1">
-        <div className="text-[13px] font-medium text-foreground">
-          {notice.title}
-        </div>
+        <div className="text-[13px] font-medium text-foreground">{notice.title}</div>
         <p className="mt-0.5 text-[12px] leading-5 text-muted-foreground">
           {notice.detail}
         </p>
       </div>
+      {action}
     </div>
   );
 }
 
-function PropertySheetListingCard({ listing }: { listing: PropertyListing }) {
+function PropertyInspectorListingRow({ listing }: { listing: PropertyListing }) {
+  const moveIn = getMoveInAvailability(listing);
   return (
-    <div className="rounded-md border border-border bg-white p-3 transition-colors hover:bg-muted/30">
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-1.5">
-          <TransactionBadge transactionType={listing.transactionType} />
-          <StatusIndicator value={getListingAvailability(listing)} />
-          <JointBrokerageBadge intake={listing.intake} />
+    <div className="py-3">
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <TransactionBadge transactionType={listing.transactionType} />
+            <StatusIndicator value={getListingAvailability(listing)} />
+            <JointBrokerageBadge intake={listing.intake} />
+          </div>
+          <div className="mt-1.5 text-base font-semibold tabular-nums text-foreground">
+            {formatInspectorListingPrice(listing)}
+          </div>
         </div>
-        <span className="shrink-0 text-[11px] text-muted-foreground">
-          확인 {formatDateShort(listing.updatedAt)}
-        </span>
+        <div className="shrink-0 text-right text-[11px] leading-5 text-muted-foreground">
+          <div>입주 {moveIn.label}</div>
+          <div>수정 {formatDaysAgo(listing.updatedAt)}</div>
+        </div>
       </div>
-      <div className="mt-2 text-[18px] font-semibold tracking-[-0.01em] text-foreground">
-        <PriceCell
-          transactionType={listing.transactionType}
-          price={listing.price}
-          deposit={listing.deposit}
-          monthlyRent={listing.monthlyRent}
-        />
-      </div>
-      <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[12px] text-muted-foreground">
-        <span>등록 {formatDateShort(listing.createdAt)}</span>
-        <span>확인 {formatDaysAgo(listing.updatedAt)}</span>
-      </div>
-      <ListingCostSummary
-        listing={listing as PropertyListing & ListingCostExtras}
-      />
       {listing.memo?.trim() && (
-        <p className="mt-2.5 line-clamp-2 border-l-2 border-border pl-2.5 text-[12px] leading-5 text-muted-foreground">
+        <p className="mt-2 line-clamp-2 text-[12px] leading-5 text-muted-foreground">
           {listing.memo.trim()}
         </p>
       )}
@@ -3114,191 +3646,7 @@ function PropertySheetListingCard({ listing }: { listing: PropertyListing }) {
   );
 }
 
-function PropertySheetPriceHistoryList({
-  listings,
-}: {
-  listings: PropertyListing[];
-}) {
-  const historyRows = listings
-    .flatMap((listing) =>
-      (listing.priceHistories ?? []).map((history) => ({
-        listing,
-        history,
-      })),
-    )
-    .sort(
-      (a, b) =>
-        new Date(b.history.createdAt).getTime() -
-        new Date(a.history.createdAt).getTime(),
-    );
-
-  if (historyRows.length === 0) {
-    return <SheetEmptyState text="등록된 가격 변경 이력이 없습니다." compact />;
-  }
-
-  return (
-    <div className="divide-y divide-[#eeeeec] rounded-md border border-[#eeeeec]">
-      {historyRows.map(({ listing, history }) => (
-        <PropertySheetPriceHistoryRow
-          key={history.id}
-          listing={listing}
-          history={history}
-        />
-      ))}
-    </div>
-  );
-}
-
-function PropertySheetPriceHistoryRow({
-  listing,
-  history,
-}: {
-  listing: PropertyListing;
-  history: NonNullable<PropertyListing['priceHistories']>[number];
-}) {
-  const beforePrice = formatPriceHistorySnapshot(listing.transactionType, {
-    price: history.priceBefore,
-    deposit: history.depositBefore,
-    monthlyRent: history.monthlyRentBefore,
-  });
-  const afterPrice = formatPriceHistorySnapshot(listing.transactionType, {
-    price: history.priceAfter,
-    deposit: history.depositAfter,
-    monthlyRent: history.monthlyRentAfter,
-  });
-
-  return (
-    <div className="px-3 py-3">
-      <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-        <TransactionBadge transactionType={listing.transactionType} />
-        <span className="text-[11px] text-slate-500">
-          {formatDateTime(history.createdAt)}
-        </span>
-      </div>
-      <div className="mt-2 flex min-w-0 flex-wrap items-center gap-2 text-sm">
-        <span className="font-medium tabular-nums text-slate-500">
-          {beforePrice}
-        </span>
-        <span className="text-slate-300">→</span>
-        <span className="font-semibold tabular-nums text-slate-950">
-          {afterPrice}
-        </span>
-      </div>
-      {history.reason?.trim() && (
-        <p className="mt-1.5 line-clamp-2 text-xs leading-5 text-slate-500">
-          {history.reason.trim()}
-        </p>
-      )}
-    </div>
-  );
-}
-
-function PropertySheetAdvertisementList({
-  listings,
-}: {
-  listings: PropertyListing[];
-}) {
-  const advertisementRows = listings.flatMap((listing) =>
-    (listing.advertisements ?? []).map((advertisement) => ({
-      listing,
-      advertisement,
-    })),
-  );
-
-  if (advertisementRows.length === 0) {
-    return <SheetEmptyState text="등록된 광고 기록이 없습니다." compact />;
-  }
-
-  return (
-    <div className="divide-y divide-[#eeeeec] rounded-md border border-[#eeeeec]">
-      {advertisementRows.map(({ listing, advertisement }) => (
-        <PropertySheetAdvertisementRow
-          key={advertisement.id}
-          listing={listing}
-          advertisement={advertisement}
-        />
-      ))}
-    </div>
-  );
-}
-
-function PropertySheetAdvertisementRow({
-  listing,
-  advertisement,
-}: {
-  listing: PropertyListing;
-  advertisement: NonNullable<PropertyListing['advertisements']>[number];
-}) {
-  const statusMeta = adStatusMeta[advertisement.status] ?? adStatusMeta.active;
-  const priceLabel = formatAdvertisementPrice(listing, advertisement);
-  const dateItems = [
-    advertisement.startedAt
-      ? `시작 ${formatDateShort(advertisement.startedAt)}`
-      : null,
-    advertisement.endedAt
-      ? `종료 ${formatDateShort(advertisement.endedAt)}`
-      : null,
-    advertisement.lastCheckedAt
-      ? `확인 ${formatDateShort(advertisement.lastCheckedAt)}`
-      : null,
-    advertisement.lastSyncedAt
-      ? `동기화 ${formatDateShort(advertisement.lastSyncedAt)}`
-      : null,
-  ].filter(Boolean);
-
-  return (
-    <div className="px-3 py-3">
-      <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-        <TransactionBadge transactionType={listing.transactionType} />
-        <span
-          className={cn(
-            'inline-flex rounded-[4px] px-1.5 py-0.5 text-[11px] font-medium leading-5',
-            statusMeta.className,
-          )}
-        >
-          {statusMeta.label}
-        </span>
-        {advertisement.url ? (
-          <a
-            href={advertisement.url}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex min-w-0 items-center gap-1 rounded-[4px] bg-[#f1f1ef] px-1.5 py-0.5 text-[11px] font-medium leading-5 text-[#5f5e5b] hover:bg-[#e9e9e7]"
-          >
-            <span className="truncate">
-              {getAdChannelLabel(advertisement.channel)}
-            </span>
-            <ExternalLink className="size-3" />
-          </a>
-        ) : (
-          <span className="inline-flex rounded-[4px] bg-[#f1f1ef] px-1.5 py-0.5 text-[11px] font-medium leading-5 text-[#5f5e5b]">
-            {getAdChannelLabel(advertisement.channel)}
-          </span>
-        )}
-        <span className="rounded-[4px] bg-[#f8f5f0] px-1.5 py-0.5 text-[11px] leading-5 text-[#8f6b1f]">
-          {getAdvertisementSourceLabel(advertisement.source)}
-        </span>
-      </div>
-      <div className="mt-2 grid gap-2 text-xs text-slate-600 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
-        <div className="min-w-0">
-          <span className="text-slate-400">광고가 </span>
-          <span className="font-medium text-slate-900">{priceLabel}</span>
-        </div>
-        <div className="min-w-0 truncate">
-          <span className="text-slate-400">기간 </span>
-          <span>{dateItems.length > 0 ? dateItems.join(' · ') : '-'}</span>
-        </div>
-      </div>
-      {advertisement.memo?.trim() && (
-        <p className="mt-2 line-clamp-2 text-xs leading-5 text-slate-500">
-          {advertisement.memo.trim()}
-        </p>
-      )}
-    </div>
-  );
-}
-
-function PropertySheetContactRow({
+function PropertyInspectorContactRow({
   propertyContact,
 }: {
   propertyContact: PropertyContact;
@@ -3306,23 +3654,19 @@ function PropertySheetContactRow({
   const name = propertyContact.contact?.name ?? '이름 없음';
   const phone = propertyContact.contact?.phone;
   return (
-    <div className="flex items-center justify-between gap-3 px-3 py-3">
+    <div className="flex items-center justify-between gap-3 py-3">
       <div className="min-w-0">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="truncate text-sm font-medium text-slate-900">
-            {name}
-          </span>
-          <span className="rounded-[4px] bg-[#f1f1ef] px-1.5 py-0.5 text-[11px] text-[#5f5e5b]">
+        <div className="flex items-center gap-2">
+          <span className="truncate text-[13px] font-medium">{name}</span>
+          <span className="rounded-[4px] bg-[#f1f1ef] px-1.5 py-0.5 text-[10px] text-[#5f5e5b]">
             {getContactRoleLabel(propertyContact.role)}
           </span>
           {propertyContact.isPrimary && (
-            <span className="rounded-[4px] bg-[#e7f3f8] px-1.5 py-0.5 text-[11px] text-[#337ea9]">
-              주 연락처
-            </span>
+            <span className="text-[10px] text-[#337ea9]">주 연락처</span>
           )}
         </div>
-        <p className="mt-0.5 truncate text-xs text-slate-500">
-          {phone ?? '연락처 없음'}
+        <p className="mt-1 truncate text-[12px] text-muted-foreground">
+          {phone ?? '전화번호 없음'}
           {propertyContact.memo ? ` · ${propertyContact.memo}` : ''}
         </p>
       </div>
@@ -3337,25 +3681,23 @@ function PropertySheetContactRow({
   );
 }
 
-function PropertySheetTenantRow({ tenant }: { tenant: Tenant }) {
+function PropertyInspectorTenantRow({ tenant }: { tenant: Tenant }) {
   const name = tenant.contact?.name ?? '이름 없음';
   const phone = tenant.contact?.phone;
   return (
-    <div className="flex items-center justify-between gap-3 px-3 py-3">
+    <div className="flex items-center justify-between gap-3 py-3">
       <div className="min-w-0">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="truncate text-sm font-medium text-slate-900">
-            {name}
-          </span>
-          <span className="rounded-[4px] bg-[#f1f1ef] px-1.5 py-0.5 text-[11px] text-[#5f5e5b]">
+        <div className="flex items-center gap-2">
+          <span className="truncate text-[13px] font-medium">{name}</span>
+          <span className="rounded-[4px] bg-[#f1f1ef] px-1.5 py-0.5 text-[10px] text-[#5f5e5b]">
             임차인
           </span>
-          <span className="rounded-[4px] bg-[#fbf3db] px-1.5 py-0.5 text-[11px] text-[#8f6b1f]">
+          <span className="text-[10px] text-[#8f6b1f]">
             {getTenantStatusLabel(tenant.status)}
           </span>
         </div>
-        <p className="mt-0.5 truncate text-xs text-slate-500">
-          {phone ?? '연락처 없음'} · {getTenantPeriodLabel(tenant)}
+        <p className="mt-1 truncate text-[12px] text-muted-foreground">
+          {phone ?? '전화번호 없음'} · {getTenantPeriodLabel(tenant)}
         </p>
       </div>
       {phone && (
@@ -3369,91 +3711,391 @@ function PropertySheetTenantRow({ tenant }: { tenant: Tenant }) {
   );
 }
 
-function PropertySheetConsultationRow({
+function PropertyInspectorConsultationRow({
   consultation,
 }: {
   consultation: Consultation;
 }) {
   return (
-    <div className="rounded-md border border-[#eeeeec] px-3 py-3">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="rounded-[4px] bg-[#f1f1ef] px-1.5 py-0.5 text-[11px] text-[#5f5e5b]">
+    <div className="py-3">
+      <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+        <span className="rounded-[4px] bg-[#f1f1ef] px-1.5 py-0.5 text-[#5f5e5b]">
           {consultation.type}
         </span>
-        <span className="text-[11px] text-slate-500">
-          {formatDateTime(consultation.createdAt)}
-        </span>
-        {consultation.contact?.name && (
-          <span className="text-[11px] text-slate-500">
-            · {consultation.contact.name}
-          </span>
-        )}
+        <span>{formatDateTime(consultation.createdAt)}</span>
+        {consultation.contact?.name && <span>· {consultation.contact.name}</span>}
       </div>
-      <p className="mt-2 line-clamp-3 text-sm leading-6 text-slate-700">
+      <p className="mt-1.5 whitespace-pre-wrap text-[13px] leading-6 text-slate-700">
         {consultation.content}
       </p>
     </div>
   );
 }
 
-function SheetActionButton({
-  icon,
-  label,
-  href,
-  disabled,
-  emphasis,
-}: {
-  icon: ReactNode;
-  label: string;
-  href?: string;
-  disabled?: boolean;
-  emphasis?: boolean;
-}) {
-  const className = cn(
-    'flex h-9 items-center justify-center gap-2 rounded-md border px-3 text-sm font-medium transition-colors',
-    emphasis
-      ? 'border-slate-950 bg-slate-950 text-white hover:bg-slate-800'
-      : 'border-[#eeeeec] bg-white text-slate-700 hover:bg-slate-50',
-    disabled && 'pointer-events-none opacity-45',
-  );
+interface PropertyInspectorActivityItem {
+  id: string;
+  kind: 'price' | 'advertisement';
+  occurredAt: string | null;
+  title: string;
+  detail: string;
+  note?: string | null;
+  url?: string | null;
+}
 
-  if (href) {
-    return (
-      <a className={className} href={href}>
-        {icon}
-        <span className="truncate">{label}</span>
-      </a>
+function PropertyInspectorActivityTimeline({
+  listings,
+}: {
+  listings: PropertyListing[];
+}) {
+  const items = listings
+    .flatMap<PropertyInspectorActivityItem>((listing) => [
+      ...(listing.priceHistories ?? []).map((history) => ({
+        id: `price-${history.id}`,
+        kind: 'price' as const,
+        occurredAt: history.createdAt,
+        title: `${transactionTypeMeta[listing.transactionType]?.label ?? listing.transactionType} 가격 변경`,
+        detail: `${formatPriceHistorySnapshot(listing.transactionType, {
+          price: history.priceBefore,
+          deposit: history.depositBefore,
+          monthlyRent: history.monthlyRentBefore,
+        })} → ${formatPriceHistorySnapshot(listing.transactionType, {
+          price: history.priceAfter,
+          deposit: history.depositAfter,
+          monthlyRent: history.monthlyRentAfter,
+        })}`,
+        note: history.reason,
+      })),
+      ...(listing.advertisements ?? []).map((advertisement) => ({
+        id: `advertisement-${advertisement.id}`,
+        kind: 'advertisement' as const,
+        occurredAt:
+          advertisement.lastSyncedAt ??
+          advertisement.lastCheckedAt ??
+          advertisement.startedAt ??
+          advertisement.endedAt ??
+          advertisement.updatedAt,
+        title: `${getAdChannelLabel(advertisement.channel)} · ${adStatusMeta[advertisement.status]?.label ?? advertisement.status}`,
+        detail: `${transactionTypeMeta[listing.transactionType]?.label ?? listing.transactionType} ${formatAdvertisementPrice(listing, advertisement)}`,
+        note: advertisement.memo,
+        url: advertisement.url,
+      })),
+    ])
+    .sort(
+      (a, b) =>
+        new Date(b.occurredAt ?? 0).getTime() -
+        new Date(a.occurredAt ?? 0).getTime(),
     );
+
+  if (items.length === 0) {
+    return <PropertyInspectorEmptyText text="광고 또는 가격 변경 이력이 없습니다." />;
   }
 
   return (
-    <button type="button" className={className} disabled={disabled}>
-      {icon}
-      <span className="truncate">{label}</span>
-    </button>
+    <ol className="border-y border-[#eeeeec]">
+      {items.map((item, index) => (
+        <li
+          key={item.id}
+          className={cn(
+            'relative flex gap-3 py-3',
+            index < items.length - 1 && 'border-b border-[#eeeeec]',
+          )}
+        >
+          <span className="mt-0.5 grid size-7 shrink-0 place-items-center rounded-full bg-[#f3f3f1] text-muted-foreground">
+            {item.kind === 'price' ? (
+              <CircleDollarSign className="size-3.5" />
+            ) : (
+              <Megaphone className="size-3.5" />
+            )}
+          </span>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0 text-[13px] font-medium text-foreground">
+                {item.url ? (
+                  <a
+                    href={item.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex max-w-full items-center gap-1 hover:underline"
+                  >
+                    <span className="truncate">{item.title}</span>
+                    <ExternalLink className="size-3 shrink-0" />
+                  </a>
+                ) : (
+                  item.title
+                )}
+              </div>
+              <span className="shrink-0 text-[10px] text-muted-foreground">
+                {formatDateTime(item.occurredAt)}
+              </span>
+            </div>
+            <p className="mt-1 text-[12px] font-medium tabular-nums text-slate-700">
+              {item.detail}
+            </p>
+            {item.note?.trim() && (
+              <p className="mt-1 line-clamp-2 text-[12px] leading-5 text-muted-foreground">
+                {item.note.trim()}
+              </p>
+            )}
+          </div>
+        </li>
+      ))}
+    </ol>
   );
 }
 
-function SheetEmptyState({
-  text,
-  compact = false,
-  action,
-}: {
-  text: string;
-  compact?: boolean;
-  action?: ReactNode;
-}) {
+function PropertyInspectorEmptyText({ text }: { text: string }) {
   return (
-    <div
-      className={cn(
-        'rounded-md border border-dashed border-[#e3e2df] px-3 text-center text-sm text-slate-500',
-        compact ? 'py-4' : 'py-8',
-      )}
-    >
-      <div>{text}</div>
-      {action && <div className="mt-3 flex justify-center">{action}</div>}
-    </div>
+    <p className="border-y border-[#eeeeec] py-3 text-[12px] text-muted-foreground">
+      {text}
+    </p>
   );
+}
+
+interface PropertyInspectorListingDraft {
+  id: string;
+  transactionType: string;
+  price: string;
+  deposit: string;
+  monthlyRent: string;
+}
+
+function PropertyInspectorEditDialog({
+  open,
+  onOpenChange,
+  listings,
+  availability,
+  onSaveListing,
+  onAvailabilityChange,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  listings: PropertyListing[];
+  availability: ListingAvailability;
+  onSaveListing: (id: string, patch: UpdateListingDto) => Promise<void>;
+  onAvailabilityChange: (value: ListingAvailability) => void;
+}) {
+  const [drafts, setDrafts] = useState<PropertyInspectorListingDraft[]>([]);
+  const [nextAvailability, setNextAvailability] = useState(availability);
+  const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    setDrafts(listings.map(toPropertyInspectorDraft));
+    setNextAvailability(availability);
+  }, [availability, listings, open]);
+
+  const updateDraft = (
+    id: string,
+    patch: Partial<PropertyInspectorListingDraft>,
+  ) => {
+    setDrafts((previous) =>
+      previous.map((draft) =>
+        draft.id === id ? { ...draft, ...patch } : draft,
+      ),
+    );
+  };
+
+  const hasChanges =
+    nextAvailability !== availability ||
+    drafts.some((draft) => {
+      const listing = listings.find((candidate) => candidate.id === draft.id);
+      return listing ? hasPropertyInspectorPriceChange(listing, draft) : false;
+    });
+
+  const handleSave = async () => {
+    setIsSaving(true);
+    try {
+      const changedDrafts = drafts.filter((draft) => {
+        const listing = listings.find((candidate) => candidate.id === draft.id);
+        return listing ? hasPropertyInspectorPriceChange(listing, draft) : false;
+      });
+      await Promise.all(
+        changedDrafts.map((draft) =>
+          onSaveListing(
+            draft.id,
+            draft.transactionType === 'monthly'
+              ? {
+                  deposit: parsePropertyInspectorNumber(draft.deposit),
+                  monthlyRent: parsePropertyInspectorNumber(draft.monthlyRent),
+                }
+              : { price: parsePropertyInspectorNumber(draft.price) },
+          ),
+        ),
+      );
+      if (nextAvailability !== availability) {
+        onAvailabilityChange(nextAvailability);
+      }
+      if (changedDrafts.length > 0) {
+        toast.success('가격 정보를 저장했습니다.');
+      }
+      onOpenChange(false);
+    } catch {
+      // updateMutation의 onError가 충돌/저장 오류 메시지와 재조회까지 처리한다.
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(nextOpen) => !isSaving && onOpenChange(nextOpen)}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>가격·상태 수정</DialogTitle>
+          <DialogDescription>
+            거래유형별 가격과 현재 매물 상태를 한 번에 변경합니다.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="max-h-[58vh] space-y-5 overflow-y-auto pr-1">
+          <div>
+            <label className="text-xs font-medium text-foreground">매물 상태</label>
+            <Select
+              value={nextAvailability}
+              onValueChange={(value) =>
+                setNextAvailability(value as ListingAvailability)
+              }
+            >
+              <SelectTrigger className="mt-1.5 h-9 w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {Object.entries(listingAvailabilityMeta).map(([value, meta]) => (
+                  <SelectItem key={value} value={value}>
+                    {meta.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="mt-1.5 text-[11px] leading-5 text-muted-foreground">
+              거래중 전환은 연결할 Deal을 선택하는 단계로 이어질 수 있습니다.
+            </p>
+          </div>
+
+          <div className="divide-y divide-[#eeeeec] border-y border-[#eeeeec]">
+            {drafts.map((draft) => (
+              <div key={draft.id} className="py-3">
+                <TransactionBadge transactionType={draft.transactionType} />
+                {draft.transactionType === 'monthly' ? (
+                  <div className="mt-2 grid grid-cols-2 gap-3">
+                    <label className="text-xs text-muted-foreground">
+                      보증금 (만원)
+                      <Input
+                        type="number"
+                        min={0}
+                        value={draft.deposit}
+                        onChange={(event) =>
+                          updateDraft(draft.id, { deposit: event.target.value })
+                        }
+                        className="mt-1 h-9 text-right tabular-nums"
+                      />
+                    </label>
+                    <label className="text-xs text-muted-foreground">
+                      월세 (만원)
+                      <Input
+                        type="number"
+                        min={0}
+                        value={draft.monthlyRent}
+                        onChange={(event) =>
+                          updateDraft(draft.id, {
+                            monthlyRent: event.target.value,
+                          })
+                        }
+                        className="mt-1 h-9 text-right tabular-nums"
+                      />
+                    </label>
+                  </div>
+                ) : (
+                  <label className="mt-2 block text-xs text-muted-foreground">
+                    {draft.transactionType === 'sale' ? '매매가' : '전세가'} (만원)
+                    <Input
+                      type="number"
+                      min={0}
+                      value={draft.price}
+                      onChange={(event) =>
+                        updateDraft(draft.id, { price: event.target.value })
+                      }
+                      className="mt-1 h-9 text-right tabular-nums"
+                    />
+                  </label>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+        <DialogFooter>
+          <Button
+            variant="outline"
+            disabled={isSaving}
+            onClick={() => onOpenChange(false)}
+          >
+            취소
+          </Button>
+          <Button disabled={!hasChanges || isSaving} onClick={handleSave}>
+            {isSaving && <Loader2 className="size-4 animate-spin" />}
+            저장
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function toPropertyInspectorDraft(
+  listing: PropertyListing,
+): PropertyInspectorListingDraft {
+  return {
+    id: listing.id,
+    transactionType: listing.transactionType,
+    price: listing.price?.toString() ?? '',
+    deposit: listing.deposit?.toString() ?? '',
+    monthlyRent: listing.monthlyRent?.toString() ?? '',
+  };
+}
+
+function hasPropertyInspectorPriceChange(
+  listing: PropertyListing,
+  draft: PropertyInspectorListingDraft,
+) {
+  if (draft.transactionType === 'monthly') {
+    return (
+      parsePropertyInspectorNumber(draft.deposit) !== listing.deposit ||
+      parsePropertyInspectorNumber(draft.monthlyRent) !== listing.monthlyRent
+    );
+  }
+  return parsePropertyInspectorNumber(draft.price) !== listing.price;
+}
+
+function parsePropertyInspectorNumber(value: string) {
+  const normalized = value.trim();
+  if (!normalized) return null;
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? Math.max(0, Math.round(parsed)) : null;
+}
+
+function formatInspectorListingPrice(
+  listing: Pick<
+    PropertyListing,
+    'transactionType' | 'price' | 'deposit' | 'monthlyRent'
+  >,
+) {
+  if (listing.transactionType === 'monthly') {
+    return `${listing.deposit ? formatPrice(listing.deposit) : '-'} / ${
+      listing.monthlyRent ? formatPrice(listing.monthlyRent) : '-'
+    }`;
+  }
+  const price = listing.price ?? listing.deposit;
+  return price ? formatPrice(price) : '-';
+}
+
+function getIntakeLifecycleLabel(value: IntakeLifecycleStatus) {
+  if (value === IntakeLifecycleStatus.OPEN) return '진행';
+  if (value === IntakeLifecycleStatus.HOLD) return '보류';
+  return '종료';
+}
+
+function getIntakeLifecycleClassName(value: IntakeLifecycleStatus) {
+  if (value === IntakeLifecycleStatus.OPEN) return 'bg-[#eef3ed] text-[#44745a]';
+  if (value === IntakeLifecycleStatus.HOLD) return 'bg-[#fbf3db] text-[#9f6b00]';
+  return 'bg-[#f1f1ef] text-[#787774]';
 }
 
 function StatusIndicator({ value }: { value: string }) {
@@ -3489,11 +4131,11 @@ function ResumeClosedListingDialog({
 }) {
   const propertyLabel = prompt.propertyLabel || '선택한 매물';
   const targetLabel =
-    prompt.targetAvailability === ListingAvailability.PAUSED ? '보류' : '가용';
+    prompt.targetAvailability === ListingAvailability.PAUSED ? '보류' : '활성';
   const targetLabelWithParticle =
     prompt.targetAvailability === ListingAvailability.PAUSED
       ? '보류로'
-      : '가용으로';
+      : '활성으로';
 
   return (
     <Dialog
@@ -3714,8 +4356,7 @@ function getDealStartPriceLabel(listing: ListingSummary) {
     return `보증금 ${deposit} · 월세 ${monthlyRent}`;
   }
 
-  const price =
-    listing.transactionType === 'jeonse' ? listing.deposit : listing.price;
+  const price = getListingPrimaryPrice(listing);
   return price ? formatPrice(price) : '-';
 }
 
@@ -4023,6 +4664,7 @@ function ListingPriceDepositStack({
                 editType="number"
                 activation="doubleClick"
                 portalAnchor={hasMultiple ? 'self' : 'tableCell'}
+                editorChrome="floating"
                 hoverHighlight={false}
               >
                 <span className="flex h-full w-full items-center gap-1.5 px-2.5">
@@ -4046,6 +4688,7 @@ function ListingPriceDepositStack({
                 editType="number"
                 activation="doubleClick"
                 portalAnchor={hasMultiple ? 'self' : 'tableCell'}
+                editorChrome="floating"
                 hoverHighlight={false}
               >
                 <span className="flex h-full w-full items-center gap-1.5 px-2.5">
@@ -4100,6 +4743,7 @@ function ListingMonthlyRentStack({
               editType="number"
               activation="doubleClick"
               portalAnchor={hasMultiple ? 'self' : 'tableCell'}
+              editorChrome="floating"
               hoverHighlight={false}
             >
               <span className="flex h-full w-full items-center px-2.5">
@@ -4149,6 +4793,7 @@ function ListingNumberFieldStack({
             editType="number"
             activation="doubleClick"
             portalAnchor={hasMultiple ? 'self' : 'tableCell'}
+            editorChrome="floating"
             hoverHighlight={false}
           >
             <span className="flex h-full w-full items-center px-2.5 text-sm font-medium tabular-nums">
@@ -4162,10 +4807,7 @@ function ListingNumberFieldStack({
 }
 
 function PriceDepositValue({ listing }: { listing: ListingSummary }) {
-  const value =
-    listing.transactionType === 'monthly'
-      ? listing.deposit
-      : (listing.price ?? listing.deposit);
+  const value = getListingPrimaryPrice(listing);
 
   return (
     <span className="tabular-nums text-sm font-medium">
@@ -4258,7 +4900,7 @@ function ListingMatchToggle({
         icon={<GitBranch className="size-3" />}
         isOpen={isOpen}
         panelId={`property-match-panel-${group.id}`}
-        label="연관 구매의뢰"
+        label="연결 구매고객"
         onToggle={() => onToggle(group.id)}
       />
     </div>
@@ -4279,6 +4921,7 @@ function estimatePropertyMatchPanelHeight(group: PropertyListingGroup) {
 function PropertyMatchPanel({ group }: { group: PropertyListingGroup }) {
   const queryClient = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);
+  const [convertMatchId, setConvertMatchId] = useState<string | null>(null);
   const listingIds = useMemo(
     () => group.listings.map((listing) => listing.id),
     [group.listings],
@@ -4306,13 +4949,69 @@ function PropertyMatchPanel({ group }: { group: PropertyListingGroup }) {
   const stageMutation = useMutation({
     mutationFn: ({ matchId, stage }: { matchId: string; stage: string }) =>
       api.matches.updateStage(matchId, { stage }),
-    onSuccess: () => {
-      toast.success('매칭 단계를 변경했습니다.');
+    onSuccess: (_updatedMatch, variables) => {
+      toast.success(
+        variables.stage === MatchStage.CLOSED
+          ? '매칭을 종료했습니다.'
+          : `${getMatchStageLabel(variables.stage)} 단계로 변경했습니다.`,
+      );
       queryClient.invalidateQueries({ queryKey: ['matches'] });
       queryClient.invalidateQueries({ queryKey: ['listing-intakes'] });
     },
     onError: (error: Error) => {
       toast.error(error.message || '매칭 단계 변경에 실패했습니다.');
+    },
+  });
+
+  const memoMutation = useMutation({
+    mutationFn: ({ match, memo }: { match: Match; memo: string | null }) =>
+      api.matches.updateStage(match.id, {
+        stage: normalizeMatchStage(match.stage),
+        memo,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['matches'] });
+      toast.success('매칭 메모를 저장했습니다.');
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || '매칭 메모 저장에 실패했습니다.');
+    },
+  });
+
+  const viewingScheduleMutation = useMutation({
+    mutationFn: async ({
+      match,
+      startLocalValue,
+    }: {
+      match: Match;
+      startLocalValue: string;
+    }) => {
+      const blockReason = getMatchStageBlockReason(match, MatchStage.VIEWING);
+      if (blockReason) throw new Error(blockReason);
+
+      const payload = buildViewingCalendarEventPayload(match, startLocalValue);
+      const upcomingViewingEvent = getUpcomingViewingEvent(match);
+
+      if (upcomingViewingEvent) {
+        await api.calendarEvents.update(
+          upcomingViewingEvent.id,
+          toCalendarEventUpdatePayload(payload),
+        );
+      } else {
+        await api.calendarEvents.create(payload);
+      }
+
+      if (shouldMoveToViewingOnSchedule(match.stage)) {
+        await api.matches.updateStage(match.id, { stage: MatchStage.VIEWING });
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['matches'] });
+      queryClient.invalidateQueries({ queryKey: ['calendar-events'] });
+      toast.success('방문 일정을 저장했습니다.');
+    },
+    onError: (error: Error) => {
+      toast.error(`방문 일정 저장에 실패했습니다: ${error.message}`);
     },
   });
 
@@ -4326,29 +5025,87 @@ function PropertyMatchPanel({ group }: { group: PropertyListingGroup }) {
     [matches],
   );
 
+  const summary = useMemo(
+    () =>
+      sortedMatches.reduce(
+        (counts, match) => {
+          const stage = normalizeMatchStage(match.stage);
+          if (stage === MatchStage.DEAL_CREATED) counts.converted += 1;
+          else if (stage === MatchStage.CLOSED) counts.closed += 1;
+          else counts.active += 1;
+          return counts;
+        },
+        { active: 0, converted: 0, closed: 0 },
+      ),
+    [sortedMatches],
+  );
+
+  const handleStageChange = (matchId: string, stage: string) => {
+    const match = matches.find((candidate) => candidate.id === matchId);
+    if (match) {
+      const blockReason = getMatchStageBlockReason(match, stage);
+      if (blockReason) {
+        toast.error('단계 이동 전 확인이 필요합니다.', {
+          description: blockReason,
+        });
+        return;
+      }
+    }
+
+    if (stage === MatchStage.DEAL_CREATED) {
+      setConvertMatchId(matchId);
+      return;
+    }
+
+    stageMutation.mutate({ matchId, stage });
+  };
+
+  const progressActions: MatchProgressActions = {
+    isUpdating: stageMutation.isPending,
+    isScheduling: viewingScheduleMutation.isPending,
+    onStageChange: handleStageChange,
+    onScheduleViewing: (match, startLocalValue) =>
+      viewingScheduleMutation.mutate({ match, startLocalValue }),
+  };
+
+  const convertMatch =
+    matches.find((match) => match.id === convertMatchId) ?? null;
+
   return (
     <div
       id={`property-match-panel-${group.id}`}
       role="region"
-      aria-label={`${group.property?.site?.name ?? '매물'} 연관 구매의뢰`}
+      aria-label={`${group.property?.site?.name ?? '매물'} 연결 구매고객`}
       className="border-b border-border bg-[#fbfbfa] py-3 pl-[60px] pr-4"
     >
-      <div className="max-w-[1120px]">
+      <div className="max-w-[1320px]">
         <div className="mb-2.5 flex items-center justify-between gap-3">
           <div className="flex min-w-0 items-center gap-2.5">
-            <span className="flex size-7 shrink-0 items-center justify-center text-[#8f6b1f]">
+            <span className="flex size-7 shrink-0 items-center justify-center text-muted-foreground">
               <GitBranch className="size-3.5" />
             </span>
-            <div className="min-w-0">
-              <div className="flex items-center gap-1.5">
-                <span className="text-[12.5px] font-semibold text-foreground">연관 구매의뢰</span>
-                <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-md bg-muted px-1.5 text-[10.5px] font-semibold tabular-nums text-muted-foreground">
-                  {isLoading ? getPropertyMatchCount(group) : matches.length}
+            <div className="flex min-w-0 flex-wrap items-center gap-1.5 text-xs tabular-nums">
+              <span className="text-[12.5px] font-semibold text-foreground">
+                연결 구매고객
+              </span>
+              <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-md bg-muted px-1.5 text-[10.5px] font-semibold text-muted-foreground">
+                {isLoading ? getPropertyMatchCount(group) : matches.length}
+              </span>
+              {!isLoading && summary.active > 0 && (
+                <span className="rounded-md border border-info/25 bg-info-soft px-1.5 py-0.5 font-medium text-info-strong">
+                  진행 {summary.active}
                 </span>
-                <span className="text-[11px] text-muted-foreground">
-                  진행 단계가 높은 순
+              )}
+              {!isLoading && summary.converted > 0 && (
+                <span className="rounded-md border border-success/25 bg-success-soft px-1.5 py-0.5 font-medium text-success">
+                  거래 {summary.converted}
                 </span>
-              </div>
+              )}
+              {!isLoading && summary.closed > 0 && (
+                <span className="rounded-md border border-destructive/25 bg-destructive-soft px-1.5 py-0.5 font-medium text-destructive-strong">
+                  종료 {summary.closed}
+                </span>
+              )}
             </div>
           </div>
           <Button
@@ -4363,35 +5120,45 @@ function PropertyMatchPanel({ group }: { group: PropertyListingGroup }) {
         </div>
 
         {isLoading ? (
-          <div className="flex h-20 items-center justify-center rounded-lg border border-dashed border-border bg-white/70 text-xs text-muted-foreground">
+          <div className="ml-8 flex h-20 items-center justify-center rounded-lg border border-dashed border-border bg-white/70 text-xs text-muted-foreground">
             <Loader2 className="mr-1.5 size-3.5 animate-spin" />
-            구매의뢰를 불러오는 중...
+            구매고객을 불러오는 중...
           </div>
         ) : isError ? (
-          <div className="flex h-20 items-center justify-between rounded-lg border border-destructive/20 bg-white px-3.5">
+          <div className="ml-8 flex h-20 items-center justify-between rounded-lg border border-destructive/20 bg-white px-3.5">
             <span className="text-xs text-destructive">
-              연결된 구매의뢰를 불러오지 못했습니다.
+              연결된 구매고객을 불러오지 못했습니다.
             </span>
             <Button variant="outline" size="xs" onClick={() => void refetch()}>
               다시 시도
             </Button>
           </div>
         ) : sortedMatches.length === 0 ? (
-          <div className="flex h-20 items-center justify-center rounded-lg border border-dashed border-border bg-white/70 text-xs text-muted-foreground">
-            연결된 구매의뢰가 없습니다.
+          <div className="ml-8 flex h-20 items-center justify-center rounded-lg border border-dashed border-border bg-white/70 text-xs text-muted-foreground">
+            연결된 구매고객이 없습니다.
           </div>
         ) : (
-          <div className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-white">
-            {sortedMatches.map((match) => (
-              <MatchPanelCard
+          <div
+            data-property-match-branch-list
+            className="relative ml-8 space-y-1 pl-12"
+          >
+            <span
+              data-property-match-branch-trunk
+              aria-hidden="true"
+              className="pointer-events-none absolute -top-2 bottom-0 left-0 w-px bg-border"
+            />
+            {sortedMatches.map((match, index) => (
+              <PropertyBuyerMatchLane
                 key={match.id}
                 match={match}
-                pending={
-                  stageMutation.isPending &&
-                  stageMutation.variables?.matchId === match.id
+                isLast={index === sortedMatches.length - 1}
+                actions={progressActions}
+                isSavingMemo={
+                  memoMutation.isPending &&
+                  memoMutation.variables?.match.id === match.id
                 }
-                onStageChange={(stage) =>
-                  stageMutation.mutate({ matchId: match.id, stage })
+                onSaveMemo={(memo) =>
+                  memoMutation.mutateAsync({ match, memo }).then(() => undefined)
                 }
               />
             ))}
@@ -4404,37 +5171,121 @@ function PropertyMatchPanel({ group }: { group: PropertyListingGroup }) {
         onOpenChange={setCreateOpen}
         matches={matches}
       />
+
+      <MatchConvertDialog
+        match={convertMatch}
+        open={convertMatchId !== null}
+        onOpenChange={(open) => {
+          if (!open) setConvertMatchId(null);
+        }}
+      />
     </div>
   );
 }
 
-function MatchPanelCard({
+function PropertyBuyerMatchLane({
   match,
-  pending,
-  onStageChange,
+  isLast,
+  actions,
+  isSavingMemo,
+  onSaveMemo,
 }: {
   match: Match;
-  pending: boolean;
-  onStageChange: (stage: string) => void;
+  isLast: boolean;
+  actions: MatchProgressActions;
+  isSavingMemo: boolean;
+  onSaveMemo: (memo: string | null) => Promise<void>;
 }) {
   const buyer = match.buyerRequirement;
   const buyerName = buyer?.contact?.name ?? '구매자 미상';
   const buyerPhone = buyer?.contact?.phone;
-  const currentIndex = getMatchStageIndex(match.stage);
-  const currentStageLabel = getStatusMeta('matchStage', match.stage).label;
   const areaLabel = formatBuyerArea(buyer);
-  const requirementNote = formatBuyerRequirementNote(buyer, match.memo);
+  const requirementNote = formatBuyerRequirementNote(buyer, null);
+  const upcomingViewingEvent = getUpcomingViewingEvent(match);
+  const [isEditingMemo, setIsEditingMemo] = useState(false);
+  const [memoDraft, setMemoDraft] = useState(match.memo ?? '');
+  const saveInFlightRef = useRef(false);
+  const skipBlurSaveRef = useRef(false);
+
+  const startMemoEdit = () => {
+    skipBlurSaveRef.current = false;
+    setMemoDraft(match.memo ?? '');
+    setIsEditingMemo(true);
+  };
+
+  const cancelMemoEdit = () => {
+    if (saveInFlightRef.current) return;
+    skipBlurSaveRef.current = true;
+    setMemoDraft(match.memo ?? '');
+    setIsEditingMemo(false);
+  };
+
+  const saveMemo = async () => {
+    if (saveInFlightRef.current) return;
+
+    const nextMemo = memoDraft.trim();
+    if (nextMemo === (match.memo?.trim() ?? '')) {
+      skipBlurSaveRef.current = true;
+      setIsEditingMemo(false);
+      return;
+    }
+
+    saveInFlightRef.current = true;
+    try {
+      await onSaveMemo(nextMemo || null);
+      skipBlurSaveRef.current = true;
+      setIsEditingMemo(false);
+    } catch {
+      // mutation이 오류를 안내하며 입력 상태는 재시도를 위해 유지한다.
+    } finally {
+      saveInFlightRef.current = false;
+    }
+  };
 
   return (
-    <article className="group bg-white px-3.5 py-3 transition-colors hover:bg-muted/20">
-      <div className="flex min-w-0 items-center justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-2">
-          <span className="flex size-6 shrink-0 items-center justify-center rounded-md bg-muted/70 text-muted-foreground">
-            <UserRound className="size-3.5" />
-          </span>
-          <span className="whitespace-nowrap text-[13px] font-semibold text-foreground">
-            {buyerName}
-          </span>
+    <article
+      data-property-match-branch
+      className="relative grid gap-3 rounded-md px-2 py-2.5 hover:bg-muted/30 xl:grid-cols-[minmax(260px,320px)_minmax(620px,1fr)_auto] xl:items-center"
+    >
+      {isLast && (
+        <span
+          data-property-match-branch-end
+          aria-hidden="true"
+          className="pointer-events-none absolute -left-12 bottom-0 top-[calc(50%_-_32px)] z-[1] w-0.5 bg-[#fbfbfa]"
+        />
+      )}
+      <svg
+        data-property-match-branch-connector
+        aria-hidden="true"
+        viewBox="0 0 48 64"
+        preserveAspectRatio="none"
+        className="pointer-events-none absolute -left-12 top-1/2 z-[2] h-16 w-12 -translate-y-1/2 overflow-visible text-border"
+      >
+        <path
+          d="M0 0C0 18 14 32 32 32"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          vectorEffect="non-scaling-stroke"
+        />
+      </svg>
+
+      <div className="min-w-0">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          {buyer ? (
+            <Link
+              to="/buyer-requirements/$id"
+              params={{ id: buyer.id }}
+              className="min-w-0 truncate text-[13px] font-semibold text-foreground hover:underline"
+            >
+              {buyerName}
+            </Link>
+          ) : (
+            <span className="min-w-0 truncate text-[13px] font-semibold text-foreground">
+              {buyerName}
+            </span>
+          )}
           {buyer?.transactionType && (
             <StatusBadge
               kind="transactionType"
@@ -4445,123 +5296,135 @@ function MatchPanelCard({
           {buyer?.urgency && (
             <StatusBadge kind="buyerUrgency" status={buyer.urgency} size="sm" />
           )}
-          <span className="h-3.5 w-px shrink-0 bg-border" />
-          <span className="truncate text-[10.5px] text-muted-foreground">
+          {normalizeMatchStage(match.stage) === MatchStage.CLOSED && (
+            <span className="rounded-md border border-destructive/25 bg-destructive-soft px-1.5 py-0.5 text-xs font-medium text-destructive-strong">
+              종료
+            </span>
+          )}
+          {normalizeMatchStage(match.stage) === MatchStage.DEAL_CREATED && (
+            <span className="rounded-md border border-success/25 bg-success-soft px-1.5 py-0.5 text-xs font-medium text-success">
+              거래 전환
+            </span>
+          )}
+        </div>
+        <div className="mt-1 flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
+          <span className="truncate">
             {buyerPhone ? formatPhoneNumber(buyerPhone) : '연락처 없음'}
             {buyer?.assignedTo?.name ? ` · 담당 ${buyer.assignedTo.name}` : ''}
           </span>
         </div>
-
-        <div className="flex shrink-0 items-center gap-1.5">
-          <StatusBadge kind="matchStage" status={match.stage} size="sm" />
-          {buyerPhone && (
-            <Button
-              variant="outline"
-              size="icon-sm"
-              className="size-7 shrink-0 shadow-none"
-              asChild
-            >
-              <a
-                href={`tel:${buyerPhone}`}
-                aria-label={`${buyerName} ${formatPhoneNumber(buyerPhone)} 전화`}
-              >
-                <Phone className="size-3.5" />
-              </a>
-            </Button>
+        <dl className="mt-1.5 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-[11px]">
+          <div className="flex min-w-0 items-baseline gap-1">
+            <dt className="shrink-0 text-muted-foreground">예산</dt>
+            <dd className="truncate font-semibold tabular-nums text-foreground">
+              {formatBuyerBudget(buyer)}
+            </dd>
+          </div>
+          {areaLabel && (
+            <div className="flex min-w-0 items-baseline gap-1">
+              <dt className="shrink-0 text-muted-foreground">면적</dt>
+              <dd className="truncate font-medium tabular-nums text-foreground">
+                {areaLabel}
+              </dd>
+            </div>
           )}
-        </div>
-      </div>
-
-      <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 pl-8 text-[11px]">
-        <div className="inline-flex min-w-0 items-center gap-1.5">
-          <span className="shrink-0 text-muted-foreground">예산</span>
-          <span className="whitespace-nowrap font-medium tabular-nums text-foreground">
-            {formatBuyerBudget(buyer)}
-          </span>
-        </div>
-        {areaLabel && (
-          <div className="inline-flex min-w-0 items-center gap-1.5">
-            <span className="shrink-0 text-muted-foreground">면적</span>
-            <span className="whitespace-nowrap font-medium tabular-nums text-foreground">
-              {areaLabel}
-            </span>
-          </div>
-        )}
-        {buyer?.moveInDate && (
-          <div className="inline-flex min-w-0 items-center gap-1.5">
-            <span className="shrink-0 text-muted-foreground">입주</span>
-            <span className="whitespace-nowrap font-medium text-foreground">
-              {formatDateShort(buyer.moveInDate)}
-            </span>
-          </div>
-        )}
+          {buyer?.moveInDate && (
+            <div className="flex min-w-0 items-baseline gap-1">
+              <dt className="shrink-0 text-muted-foreground">입주</dt>
+              <dd className="truncate font-medium text-foreground">
+                {formatDateShort(buyer.moveInDate)}
+              </dd>
+            </div>
+          )}
+        </dl>
         {requirementNote && (
-          <div className="inline-flex min-w-[240px] flex-1 items-center gap-1.5">
-            <span className="shrink-0 text-muted-foreground">조건</span>
-            <span className="truncate text-foreground">{requirementNote}</span>
-          </div>
+          <p className="mt-1 line-clamp-1 text-[11px] text-muted-foreground">
+            조건 · {requirementNote}
+          </p>
         )}
       </div>
 
-      <div className="mt-2.5 flex items-center gap-3 border-t border-border/70 pt-2.5">
-        <div className="flex w-12 shrink-0 flex-col">
-          <span className="text-[10.5px] font-medium text-muted-foreground">
-            진행
-          </span>
-          <span className="truncate text-[9.5px] text-muted-foreground/75">
-            {currentStageLabel}
+      <div className="min-w-0 overflow-x-auto">
+        <MatchProgressTrack match={match} actions={actions} />
+        <div className="mt-1.5 flex min-w-0 items-center justify-between gap-3 text-xs text-muted-foreground">
+          {isEditingMemo ? (
+            <Input
+              autoFocus
+              aria-label={`${buyerName} 매칭 메모`}
+              value={memoDraft}
+              placeholder="메모 입력"
+              title="Enter 저장 · Esc 취소"
+              className="h-7 min-w-0 flex-1 px-2 py-0 text-xs shadow-none"
+              disabled={isSavingMemo}
+              onChange={(event) => setMemoDraft(event.target.value)}
+              onBlur={() => {
+                if (skipBlurSaveRef.current) {
+                  skipBlurSaveRef.current = false;
+                  return;
+                }
+                void saveMemo();
+              }}
+              onKeyDown={(event) => {
+                if (event.key === 'Escape') {
+                  event.preventDefault();
+                  cancelMemoEdit();
+                  return;
+                }
+                if (event.key === 'Enter' && !event.nativeEvent.isComposing) {
+                  event.preventDefault();
+                  void saveMemo();
+                }
+              }}
+            />
+          ) : (
+            <button
+              type="button"
+              data-property-match-memo-trigger
+              aria-label={`${buyerName} 매칭 메모 편집`}
+              title="클릭하여 메모 편집"
+              className="group/memo flex min-h-6 min-w-0 flex-1 items-center gap-1 rounded-sm px-1 text-left hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
+              onClick={startMemoEdit}
+            >
+              <span
+                className={cn(
+                  'line-clamp-1',
+                  !match.memo?.trim() && 'italic text-muted-foreground/70',
+                )}
+              >
+                {match.memo?.trim() || '메모 추가'}
+              </span>
+              <Pencil
+                aria-hidden="true"
+                className="size-3 shrink-0 opacity-0 group-hover/memo:opacity-100 group-focus-visible/memo:opacity-100"
+              />
+            </button>
+          )}
+          <span role="status" aria-live="polite" className="shrink-0 tabular-nums">
+            {isSavingMemo
+              ? '저장 중…'
+              : upcomingViewingEvent
+                ? `방문 ${formatViewingEventTime(upcomingViewingEvent)}`
+                : `${formatDateShort(match.updatedAt)} 수정`}
           </span>
         </div>
-        <div className="min-w-0 flex-1 overflow-x-auto pb-0.5">
-          <div className="flex min-w-[700px] items-center">
-            {MATCH_STAGE_STEPS.map((stage, index) => {
-              const meta = getStatusMeta('matchStage', stage);
-              const isCurrent = stage === match.stage;
-              const isPassed = currentIndex >= 0 && index < currentIndex;
+      </div>
 
-              return (
-                <Fragment key={stage}>
-                  <button
-                    type="button"
-                    disabled={pending || isCurrent}
-                    aria-current={isCurrent ? 'step' : undefined}
-                    aria-label={
-                      isCurrent
-                        ? `${meta.label}, 현재 단계`
-                        : `${buyerName} 매칭 단계를 ${meta.label}(으)로 변경`
-                    }
-                    title={isCurrent ? '현재 단계' : `${meta.label}(으)로 변경`}
-                    onClick={() => onStageChange(stage)}
-                    className={cn(
-                      'inline-flex h-6 shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-full border px-2.5 text-[10.5px] font-semibold transition-colors disabled:cursor-default',
-                      isCurrent
-                        ? 'border-foreground bg-foreground text-background'
-                        : isPassed
-                          ? 'border-[#ead9aa] bg-[#fbf3db]/70 text-[#8f6b1f] hover:bg-[#fbf3db]'
-                          : 'border-border bg-white text-muted-foreground hover:bg-muted/60 hover:text-foreground',
-                    )}
-                  >
-                    {pending && isCurrent ? (
-                      <Loader2 className="size-3 animate-spin" />
-                    ) : (
-                      meta.label
-                    )}
-                  </button>
-                  {index < MATCH_STAGE_STEPS.length - 1 && (
-                    <span
-                      data-match-stage-connector="true"
-                      aria-hidden="true"
-                      className={cn(
-                        'mx-1.5 h-px min-w-3 flex-1',
-                        index < currentIndex ? 'bg-[#dfc56d]' : 'bg-border',
-                      )}
-                    />
-                  )}
-                </Fragment>
-              );
-            })}
-          </div>
-        </div>
+      <div className="flex justify-end">
+        {buyerPhone && (
+          <Button
+            variant="outline"
+            size="icon-sm"
+            className="size-7 shrink-0 shadow-none"
+            asChild
+          >
+            <a
+              href={`tel:${buyerPhone}`}
+              aria-label={`${buyerName} ${formatPhoneNumber(buyerPhone)} 전화`}
+            >
+              <Phone className="size-3.5" />
+            </a>
+          </Button>
+        )}
       </div>
     </article>
   );
@@ -4597,16 +5460,6 @@ function formatBuyerRequirementNote(
   buyer: BuyerRequirement | undefined,
   matchMemo: string | null,
 ) {
-  const conditions = [
-    ...(buyer?.mustConditions ?? []),
-    ...(buyer?.preferConditions ?? []),
-  ].filter((condition) => condition.trim());
-  if (conditions.length > 0) {
-    const visible = conditions.slice(0, 3).join(' · ');
-    return conditions.length > 3
-      ? `${visible} 외 ${conditions.length - 3}개`
-      : visible;
-  }
   return matchMemo?.trim() || buyer?.memo?.trim() || null;
 }
 
@@ -4784,6 +5637,7 @@ function IntakeMemoCell({
       editType="text"
       activation="doubleClick"
       portalAnchor="tableCell"
+      editorChrome="floating"
       hoverHighlight={false}
     >
       <p className="line-clamp-2 min-w-0 px-2.5 text-[13px] leading-4 text-slate-600">
@@ -4797,12 +5651,12 @@ const moveInAvailableChipOptions: ChipOption[] = [
   {
     value: 'immediate',
     label: '즉시',
-    className: 'bg-[#eef3ed] text-[#44745a]',
+    className: 'bg-neutral-soft text-neutral-strong',
   },
   {
     value: 'date',
     label: '특정일 이후',
-    className: 'bg-[#e7f3f8] text-[#337ea9]',
+    className: 'bg-neutral-soft text-neutral-strong',
     picker: 'date',
     fromField: 'moveInAvailableFrom',
     getPreselect: (rowValue) => {
@@ -4816,7 +5670,7 @@ const moveInAvailableChipOptions: ChipOption[] = [
   {
     value: 'range',
     label: '기간 협의',
-    className: 'bg-[#fbf3db] text-[#8f6b1f]',
+    className: 'bg-neutral-soft text-neutral-strong',
     picker: 'range',
     fromField: 'moveInAvailableFrom',
     toField: 'moveInAvailableTo',
@@ -4835,12 +5689,12 @@ const moveInAvailableChipOptions: ChipOption[] = [
   {
     value: 'negotiable',
     label: '협의',
-    className: 'bg-[#fbf3db] text-[#8f6b1f]',
+    className: 'bg-neutral-soft text-neutral-strong',
   },
   {
     value: 'unknown',
     label: '확인 필요',
-    className: 'bg-[#f1f1ef] text-[#787774]',
+    className: 'bg-warning-soft text-warning-strong',
   },
 ];
 
@@ -5909,8 +6763,7 @@ function getPropertyMapPriceLabel(listings: ListingSummary[]) {
           : '-';
         return `${deposit}/${rent}`;
       }
-      const price =
-        listing.transactionType === 'jeonse' ? listing.deposit : listing.price;
+      const price = getListingPrimaryPrice(listing);
       return price ? formatPrice(price) : '-';
     })
     .join(' · ');
@@ -5955,22 +6808,8 @@ function getTransactionTypeOrder(value: string) {
   return 99;
 }
 
-function getOwnerContact(property?: ListingProperty) {
-  const contacts = property?.propertyContacts ?? [];
-  const owner = contacts.find(
-    (propertyContact) => propertyContact.role === 'owner',
-  );
-  return owner?.contact ?? null;
-}
-
 function getAdChannelLabel(channel: string) {
   return adChannelLabels[channel] ?? channel;
-}
-
-function getAdvertisementSourceLabel(source: string) {
-  if (source === 'manual') return '입력';
-  if (source === 'cp_sync') return 'CP연동';
-  return source;
 }
 
 function getPropertySheetAdvertisementCount(listings: PropertyListing[]) {

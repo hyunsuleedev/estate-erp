@@ -46,12 +46,14 @@ const roleLabel: Record<string, string> = {
 };
 
 const stageLabel: Record<string, string> = {
-  selection: '선정',
-  deposit: '계약금',
-  contract: '계약',
-  contracted: '계약 체결',
-  completed: '완료',
-  closed: '종결',
+  preparing: '계약 준비',
+  preContract: '가계약',
+  contracted: '본계약',
+  settling: '중도금/잔금',
+  completed: '잔금완료',
+  closed: '정산종료',
+  selection: '계약 준비',
+  negotiating: '계약 준비',
 };
 
 function MySettlementPage() {
@@ -265,4 +267,3 @@ function SummaryCard({
     </Card>
   );
 }
-

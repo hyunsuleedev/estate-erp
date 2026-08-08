@@ -1,4 +1,9 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -71,13 +76,17 @@ export class CtiService {
 
   private findContactByPhone(officeId: string, phoneNumber: string) {
     return this.prisma.contactPhone.findFirst({
-      where: { officeId, normalizedPhone: phoneNumber, isActive: true },
+      where: { officeId, phone: phoneNumber },
       orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }],
       select: { contactId: true, contact: this.contactBrief },
     });
   }
 
-  private async handleRing(officeId: string, userId: string, dto: CallEventDto) {
+  private async handleRing(
+    officeId: string,
+    userId: string,
+    dto: CallEventDto,
+  ) {
     const phoneNumber = normalizePhone(dto.caller);
     const occurredAt = this.parseOccurredAt(dto.occurredAt);
     const lineNumber = dto.lineId ?? dto.callee ?? null;
@@ -102,7 +111,12 @@ export class CtiService {
 
     if (dto.seqno) {
       const key = CtiService.ringDedupeKey(dto.seqno, occurredAt);
-      ({ callLog, created } = await this.createRingDeduped(officeId, dto.vendor, key, data));
+      ({ callLog, created } = await this.createRingDeduped(
+        officeId,
+        dto.vendor,
+        key,
+        data,
+      ));
     } else {
       callLog = await this.prisma.callLog.create({
         data,
@@ -141,7 +155,10 @@ export class CtiService {
   ) {
     try {
       const callLog = await this.prisma.callLog.create({
-        data: { ...data, vendorSeqno: key } as Prisma.CallLogUncheckedCreateInput,
+        data: {
+          ...data,
+          vendorSeqno: key,
+        } as Prisma.CallLogUncheckedCreateInput,
         include: { contact: this.contactBrief },
       });
       return { callLog, created: true };
@@ -180,13 +197,18 @@ export class CtiService {
     }
   }
 
-  private async handleTerminate(officeId: string, userId: string, dto: CallEventDto) {
+  private async handleTerminate(
+    officeId: string,
+    userId: string,
+    dto: CallEventDto,
+  ) {
     const phoneNumber = normalizePhone(dto.caller);
     const occurredAt = this.parseOccurredAt(dto.occurredAt);
     const durationSec = dto.durationSec ?? 0;
     const direction = dto.direction ?? 'inbound';
     // 발신 통화는 "부재중" 개념이 없다 — 0초여도 ended(불발신)로 기록
-    const status = durationSec > 0 || direction === 'outbound' ? 'ended' : 'missed';
+    const status =
+      durationSec > 0 || direction === 'outbound' ? 'ended' : 'missed';
 
     let existing = null;
 
@@ -194,7 +216,10 @@ export class CtiService {
       const keys = [
         CtiService.ringDedupeKey(dto.seqno, occurredAt),
         // 자정 넘김: ring이 전날 키로 저장된 경우
-        CtiService.ringDedupeKey(dto.seqno, new Date(occurredAt.getTime() - 24 * 60 * 60 * 1000)),
+        CtiService.ringDedupeKey(
+          dto.seqno,
+          new Date(occurredAt.getTime() - 24 * 60 * 60 * 1000),
+        ),
       ];
       for (const key of keys) {
         const byKey = await this.prisma.callLog.findUnique({
@@ -224,13 +249,19 @@ export class CtiService {
           officeId,
           phoneNumber,
           direction, // 모바일 발신 종료가 수신 ringing 행을 닫지 않도록
-          startedAt: { gte: new Date(occurredAt.getTime() - TERMINATE_MATCH_WINDOW_MS) },
+          startedAt: {
+            gte: new Date(occurredAt.getTime() - TERMINATE_MATCH_WINDOW_MS),
+          },
         },
         orderBy: { startedAt: 'desc' },
       });
     }
 
-    if (existing && existing.status !== 'ringing' && existing.status !== 'answered') {
+    if (
+      existing &&
+      existing.status !== 'ringing' &&
+      existing.status !== 'answered'
+    ) {
       // 이미 다른 PC의 terminate가 종료 처리 — endedAt이 근접하면 중복 보고로 간주
       const closeInTime =
         existing.endedAt &&
@@ -323,7 +354,7 @@ export class CtiService {
 
     const [matchedPhone, vendorContacts, recentCalls] = await Promise.all([
       this.prisma.contactPhone.findFirst({
-        where: { officeId, normalizedPhone: phone, isActive: true },
+        where: { officeId, phone },
         orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }],
         select: {
           contact: { select: { id: true, name: true, tags: true, memo: true } },
@@ -402,7 +433,13 @@ export class CtiService {
           },
         }),
         this.prisma.buyerRequirement.findFirst({
-          where: { officeId, contactId: contact.id, status: 'active' },
+          where: {
+            officeId,
+            status: 'active',
+            buyerIntake: {
+              contacts: { some: { contactId: contact.id } },
+            },
+          },
           orderBy: { updatedAt: 'desc' },
           select: {
             id: true,
@@ -412,6 +449,7 @@ export class CtiService {
             priceMax: true,
             depositMin: true,
             depositMax: true,
+            monthlyRentMin: true,
             monthlyRentMax: true,
             urgency: true,
           },
@@ -448,7 +486,8 @@ export class CtiService {
   async listCallLogs(officeId: string, query: CallLogListQuery) {
     // NaN(비숫자 쿼리 파라미터)이 Prisma까지 흐르지 않도록 방어
     const rawPage = Number(query.page);
-    const page = Number.isFinite(rawPage) && rawPage >= 1 ? Math.trunc(rawPage) : 1;
+    const page =
+      Number.isFinite(rawPage) && rawPage >= 1 ? Math.trunc(rawPage) : 1;
     const rawLimit = Number(query.limit);
     const limit = Number.isFinite(rawLimit)
       ? Math.min(100, Math.max(1, Math.trunc(rawLimit)))
@@ -526,7 +565,9 @@ export class CtiService {
         ...(dto.consultationId !== undefined
           ? { consultationId: dto.consultationId }
           : {}),
-        ...(dto.recordingId !== undefined ? { recordingId: dto.recordingId } : {}),
+        ...(dto.recordingId !== undefined
+          ? { recordingId: dto.recordingId }
+          : {}),
         ...(dto.status !== undefined ? { status: dto.status } : {}),
       },
       include: { contact: this.contactBrief },

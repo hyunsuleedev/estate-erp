@@ -8,9 +8,11 @@ import {
   calculateCommissionAmount,
   calculateCommissionBase,
   computeDealCommissionSummary,
+  DealStage,
   IntakeClosedReason,
   IntakeLifecycleStatus,
   NON_CLOSED_INTAKE_LIFECYCLE_STATUSES,
+  normalizeDealStage,
   OCCUPYING_DEAL_STAGES,
   siteTypeToCommissionKind,
   TransactionType,
@@ -74,6 +76,18 @@ const EXCLUSIVE_STAGES: ReadonlySet<string> = new Set([
 
 /// ListingIntake 생명주기를 closed로 확정하는 단계 (산하 매물 전부 종결 시).
 const DONE_STAGES: ReadonlySet<string> = new Set(['completed', 'closed']);
+
+/// 본계약(contracted) 단계에서 Contract를 작성한다.
+/// 따라서 Contract는 대금 이행(settling) 단계로 넘어갈 때부터 필수다.
+const CONTRACT_REQUIRED_STAGES: ReadonlySet<string> = new Set([
+  'settling',
+  'completed',
+  'closed',
+]);
+
+const DEAL_STAGE_VALUES: ReadonlySet<string> = new Set(
+  Object.values(DealStage),
+);
 
 @Injectable()
 export class DealsService {
@@ -195,6 +209,12 @@ export class DealsService {
     }
   }
 
+  private assertValidStage(stage: string) {
+    if (!DEAL_STAGE_VALUES.has(stage)) {
+      throw new BadRequestException(`지원하지 않는 거래 단계입니다: ${stage}`);
+    }
+  }
+
   async create(
     officeId: string,
     dto: {
@@ -280,6 +300,7 @@ export class DealsService {
           officeId,
           listingId,
           matchId: dto.matchId,
+          stage: DealStage.PREPARING,
           transactionType,
           agreedPrice: dto.agreedPrice,
           agreedDeposit: dto.agreedDeposit,
@@ -450,58 +471,56 @@ export class DealsService {
       memo?: string;
     },
   ) {
-    const existing = await this.findOne(id, officeId);
+    const requestedStage = normalizeDealStage(dto.stage);
+    this.assertValidStage(requestedStage);
 
-    // stage 가 contracted 이상이면 Contract 필수
-    const contractRequiredStages = new Set([
-      'contracted',
-      'settling',
-      'completed',
-      'closed',
-    ]);
-    if (contractRequiredStages.has(dto.stage)) {
+    const existing = await this.findOne(id, officeId);
+    const existingStage = normalizeDealStage(existing.stage);
+
+    // 본계약 단계에서 계약서를 작성하므로 settling 진입부터 Contract 필수
+    if (CONTRACT_REQUIRED_STAGES.has(requestedStage)) {
       const contract = await this.prisma.contract.findUnique({
         where: { dealId: id },
         select: { id: true },
       });
       if (!contract) {
         throw new BadRequestException(
-          `Contract 가 존재해야 stage='${dto.stage}' 로 전이할 수 있습니다.`,
+          `Contract 가 존재해야 stage='${requestedStage}' 로 전이할 수 있습니다.`,
         );
       }
     }
 
-    const stageChanged = dto.stage !== existing.stage;
+    const stageChanged = requestedStage !== existingStage;
 
     // 배타 단계 진입 시 같은 매물의 다른 활성 Deal 이 이미 배타 단계면 거부.
-    // (이중계약 방지 — selection/negotiating 병행은 허용)
+    // (이중계약 방지 — 계약 준비 단계의 병행은 허용)
     // 검사는 트랜잭션 안에서 매물 단위 advisory lock 을 잡고 수행한다 —
     // 동시 요청 두 건이 모두 검사를 통과하는 check-then-write 경주 방지.
     const enteringExclusive =
       stageChanged &&
-      EXCLUSIVE_STAGES.has(dto.stage) &&
-      !EXCLUSIVE_STAGES.has(existing.stage);
+      EXCLUSIVE_STAGES.has(requestedStage) &&
+      !EXCLUSIVE_STAGES.has(existingStage);
 
     // contracted 진입 시 draft 수수료 청구를 pending 으로 확정하고
     // Contract.finalPaymentDate 가 있으면 dueDate 기본값으로 세팅.
     const enteringContracted =
       stageChanged &&
-      dto.stage === 'contracted' &&
-      existing.stage !== 'contracted';
+      requestedStage === 'contracted' &&
+      existingStage !== 'contracted';
 
     const enteringDone =
       stageChanged &&
       !existing.isCancelled &&
-      DONE_STAGES.has(dto.stage) &&
-      !DONE_STAGES.has(existing.stage);
+      DONE_STAGES.has(requestedStage) &&
+      !DONE_STAGES.has(existingStage);
 
     // 종결 단계에서 되돌아 나가는 전이 (completed → settling 등) —
     // 이 Deal이 의뢰를 자동 closed 처리했을 수 있으므로 커밋 후 재평가한다.
     const leavingDone =
       stageChanged &&
       !existing.isCancelled &&
-      !DONE_STAGES.has(dto.stage) &&
-      DONE_STAGES.has(existing.stage);
+      !DONE_STAGES.has(requestedStage) &&
+      DONE_STAGES.has(existingStage);
 
     const deal = await this.prisma.$transaction(async (tx) => {
       if (enteringExclusive && existing.listingId) {
@@ -588,7 +607,7 @@ export class DealsService {
       const updated = await tx.deal.update({
         where: { id },
         data: {
-          stage: dto.stage,
+          stage: requestedStage,
           stageChangedAt: stageChanged ? new Date() : undefined,
           agreedPrice: dto.agreedPrice,
           agreedDeposit: dto.agreedDeposit,
@@ -867,6 +886,7 @@ export class DealsService {
 
     return {
       ...deal,
+      stage: normalizeDealStage(deal.stage),
       propertyId: property?.id ?? null,
       property,
       commissionSummary,

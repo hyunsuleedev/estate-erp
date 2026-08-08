@@ -155,15 +155,19 @@ interface EditableCellProps {
   chipValueOf?: (value: unknown) => string | undefined;
   activation?: 'click' | 'doubleClick';
   portalAnchor?: 'self' | 'tableCell';
+  /**
+   * `floating` keeps the editor anchored to the cell without replacing its
+   * layout, and adds the elevated popup chrome used by dense ledgers.
+   */
+  editorChrome?: 'cell' | 'floating';
   hoverHighlight?: boolean;
   children: React.ReactNode;
 }
 
 /**
- * 가장 가까운 스크롤 컨테이너. 편집 오버레이를 fixed(뷰포트 고정)가 아니라
- * 이 컨테이너 안에 absolute 로 심는다 — 오버레이가 콘텐츠의 일부가 되어
- * 네이티브 스크롤(컴포지터)을 그대로 타므로, rAF 로 좌표를 쫓아가며
- * 한 박자 늦게 따라오는 문제가 구조적으로 사라진다.
+ * 가장 가까운 스크롤 컨테이너. 모든 편집 팝업을 이 컨테이너 안에 absolute로
+ * 렌더하면 브라우저가 셀과 팝업을 같은 스크롤 레이어에서 함께 이동시킨다.
+ * body 기준 좌표를 매 프레임 다시 계산하지 않으므로 스크롤 추적 지연이 없다.
  */
 function getScrollParent(el: HTMLElement): HTMLElement {
   let node = el.parentElement;
@@ -189,6 +193,7 @@ export function EditableCell({
   chipValueOf,
   activation = 'click',
   portalAnchor = 'self',
+  editorChrome = 'cell',
   hoverHighlight = true,
   children,
 }: EditableCellProps) {
@@ -241,6 +246,7 @@ export function EditableCell({
           editType={editType}
           selectOptions={selectOptions}
           chipOptions={chipOptions}
+          editorChrome={editorChrome}
           onSave={(newValue) => {
             onSave(recordId, field, newValue);
             stopEdit();
@@ -273,6 +279,7 @@ interface CellEditPortalProps {
   editType: 'text' | 'number' | 'select' | 'select-chip';
   selectOptions?: { label: string; value: string }[];
   chipOptions?: ChipOption[];
+  editorChrome: 'cell' | 'floating';
   onSave: (value: unknown) => void;
   onChipSave?: (payload: ChipSavePayload) => void;
   onCancel: () => void;
@@ -297,6 +304,7 @@ function CellEditPortal({
   editType,
   selectOptions,
   chipOptions,
+  editorChrome,
   onSave,
   onChipSave,
   onCancel,
@@ -338,12 +346,31 @@ function CellEditPortal({
     const p = scrollParent.getBoundingClientRect();
     const top = a.top - p.top - scrollParent.clientTop + scrollParent.scrollTop;
     const left = a.left - p.left - scrollParent.clientLeft + scrollParent.scrollLeft;
-    return { top, left, width: a.width, height: a.height, bottom: top + a.height };
+    return { top, left, width: a.width, height: a.height };
   })();
-  /** 팝오버가 컨테이너 오른쪽 밖으로 나가지 않게 하는 left 한계 */
-  const clampLeft = (popoverWidth: number) =>
-    Math.min(rect.left, scrollParent.scrollLeft + scrollParent.clientWidth - popoverWidth - 12);
-
+  const clampPopupLeft = (popupWidth: number) => {
+    const viewportLeft = scrollParent.scrollLeft + 12;
+    const viewportRight = Math.max(
+      viewportLeft,
+      scrollParent.scrollLeft + scrollParent.clientWidth - popupWidth - 12,
+    );
+    return Math.max(viewportLeft, Math.min(rect.left, viewportRight));
+  };
+  const isFloatingEditor =
+    editorChrome === 'floating' && editType !== 'select-chip';
+  const floatingWidth = Math.max(
+    rect.width + 12,
+    editType === 'number' ? 132 : rect.width,
+  );
+  const floatingViewportLeft = scrollParent.scrollLeft + 8;
+  const floatingViewportRight =
+    scrollParent.scrollLeft + scrollParent.clientWidth - floatingWidth - 8;
+  const floatingLeft = Math.max(
+    floatingViewportLeft,
+    Math.min(rect.left - 6, floatingViewportRight),
+  );
+  const floatingHeight = 40;
+  const floatingTop = rect.top + (rect.height - floatingHeight) / 2;
   // Preselect for date/range pickers, derived from the cell's value via getPreselect.
   const preselect = pendingDateOption?.getPreselect?.(value);
   const pendingSingleDate =
@@ -387,7 +414,6 @@ function CellEditPortal({
   useEffect(() => {
     if (editType === 'select' || editType === 'select-chip') return;
     inputRef.current?.focus();
-    inputRef.current?.select();
   }, [editType]);
 
   // Close on click outside (consider portal popover too)
@@ -443,12 +469,18 @@ function CellEditPortal({
       {editType !== 'select-chip' && (
         <div
           ref={popoverRef}
-          className="absolute z-50 overflow-hidden rounded-none bg-background outline outline-2 -outline-offset-1 outline-info"
+          data-cell-edit-popup={isFloatingEditor ? 'true' : undefined}
+          className={cn(
+            'absolute z-50 overflow-hidden bg-background',
+            isFloatingEditor
+              ? 'rounded-md border border-border p-1 shadow-[0_12px_28px_rgba(15,23,42,0.2)] focus-within:border-ring'
+              : 'rounded-none outline outline-2 -outline-offset-1 outline-info',
+          )}
           style={{
-            top: rect.top,
-            left: rect.left,
-            width: rect.width,
-            minHeight: rect.height,
+            top: isFloatingEditor ? floatingTop : rect.top,
+            left: isFloatingEditor ? floatingLeft : rect.left,
+            width: isFloatingEditor ? floatingWidth : rect.width,
+            minHeight: isFloatingEditor ? floatingHeight : rect.height,
           }}
         >
           {editType === 'select' && selectOptions ? (
@@ -477,8 +509,13 @@ function CellEditPortal({
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={handleKeyDown}
-              className="h-full w-full bg-transparent px-2.5 text-[13px] font-medium tabular-nums tracking-tight text-foreground outline-none placeholder:text-muted-foreground"
-              style={{ height: rect.height }}
+              aria-label={`${field} 편집`}
+              className={cn(
+                'w-full bg-transparent text-[13px] font-medium tabular-nums tracking-tight text-foreground outline-none placeholder:text-muted-foreground',
+                isFloatingEditor ? 'h-8 px-2' : 'h-full px-2.5',
+                editType === 'number' && 'text-right',
+              )}
+              style={isFloatingEditor ? undefined : { height: rect.height }}
             />
           )}
         </div>
@@ -486,10 +523,13 @@ function CellEditPortal({
       {editType === 'select-chip' && chipOptions && !pendingDateOption && (
         <div
           ref={popoverRef}
-          className="absolute z-50 w-[220px] rounded-md border border-border bg-popover p-1 shadow-lg"
+          data-cell-chip-popup
+          role="dialog"
+          aria-label="옵션 선택"
+          className="absolute z-50 w-[220px] rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md"
           style={{
-            top: rect.bottom + 4,
-            left: clampLeft(220),
+            top: rect.top + rect.height + 4,
+            left: clampPopupLeft(220),
           }}
         >
           <div className="px-2 py-1.5 text-[11px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
@@ -537,10 +577,13 @@ function CellEditPortal({
       {editType === 'select-chip' && pendingDateOption && (
         <div
           ref={popoverRef}
-          className="absolute z-50 w-[280px] rounded-md border border-border bg-popover shadow-lg"
+          data-cell-chip-popup
+          role="dialog"
+          aria-label={`${pendingDateOption.label} 날짜 선택`}
+          className="absolute z-50 w-[280px] rounded-md border border-border bg-popover text-popover-foreground shadow-md"
           style={{
-            top: rect.bottom + 4,
-            left: clampLeft(280),
+            top: rect.top + rect.height + 4,
+            left: clampPopupLeft(280),
           }}
         >
           <div className="flex items-center gap-1.5 border-b border-border px-3 py-2">

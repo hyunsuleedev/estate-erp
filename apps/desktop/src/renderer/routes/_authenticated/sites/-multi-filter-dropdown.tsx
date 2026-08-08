@@ -22,6 +22,7 @@ export function MultiFilterDropdown({
   onChange,
   selectionMode = 'multiple',
   allOptionLabel,
+  triggerClassName,
 }: {
   label: string;
   options: MultiFilterOption[];
@@ -29,6 +30,7 @@ export function MultiFilterDropdown({
   onChange: (values: string[]) => void;
   selectionMode?: 'multiple' | 'single';
   allOptionLabel?: string;
+  triggerClassName?: string;
 }) {
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
@@ -62,9 +64,14 @@ export function MultiFilterDropdown({
     >
       <DropdownMenuTrigger asChild>
         <Button
-          variant={isAll ? 'ghost' : 'secondary'}
+          variant="outline"
           size="sm"
-          className="h-7 gap-1 px-2 text-xs"
+          className={cn(
+            'h-8 min-w-[112px] justify-start gap-1.5 rounded-md border-transparent bg-[#f7f6f3] px-2.5 text-xs font-normal shadow-none hover:border-border hover:bg-[#f7f6f3]',
+            !isAll &&
+              'border-foreground/25 bg-foreground/[0.06] hover:bg-foreground/[0.06]',
+            triggerClassName,
+          )}
           aria-label={`${label} 필터: ${trigger}`}
         >
           <span className="text-muted-foreground">{label}</span>

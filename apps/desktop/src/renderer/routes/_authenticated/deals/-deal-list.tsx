@@ -12,7 +12,6 @@ import {
   formatDaysLabel,
   formatDealAmount,
   formatNextPaymentName,
-  getDealAmountValue,
   getDealLocationLine,
   getDealNotionListGroups,
   getDealShortCode,
@@ -40,7 +39,7 @@ export function DealListView({
   const groups = getDealNotionListGroups(deals, referenceDate);
 
   return (
-    <section>
+    <section className="min-w-0">
       <ScrollArea className="w-full">
         <div className="min-w-[1040px]">
           {groups.map((group) => (
@@ -81,10 +80,12 @@ function DealListGroup({
   const [isCollapsed, setIsCollapsed] = useState(false);
 
   return (
-    <section className="mb-3">
+    <section className="mb-2.5">
       <button
         type="button"
-        className="flex w-full items-center gap-2 rounded-[7px] px-1.5 py-1.5 text-left hover:bg-muted/60"
+        aria-expanded={!isCollapsed}
+        aria-controls={`deal-list-group-${group.key}`}
+        className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-[#f7f6f3] motion-reduce:transition-none"
         onClick={() => setIsCollapsed(!isCollapsed)}
       >
         {isCollapsed ? (
@@ -93,7 +94,7 @@ function DealListGroup({
           <ChevronDown className="size-3 text-muted-foreground/80" />
         )}
         <span className={cn('size-2 rounded-full', group.dotClassName)} />
-        <h2 className="text-[13px] font-bold text-foreground">{group.label}</h2>
+        <h2 className="text-[13px] font-semibold text-foreground">{group.label}</h2>
         <span className="text-xs tabular-nums text-muted-foreground/80">{summary.count}</span>
         <span className="ml-auto pr-1 text-[11.5px] tabular-nums text-muted-foreground/80">
           합계 {summary.amountTotal ? formatMoney(summary.amountTotal) : '—'}
@@ -101,7 +102,7 @@ function DealListGroup({
       </button>
 
       {!isCollapsed ? (
-        <>
+        <div id={`deal-list-group-${group.key}`}>
           <DealListHeader />
 
           <div className="min-h-10 rounded transition-colors">
@@ -126,7 +127,7 @@ function DealListGroup({
           <div className="pt-1.5 pb-0.5 text-center text-[11px] text-muted-foreground/60">
             거래 {rows.length}건
           </div>
-        </>
+        </div>
       ) : null}
     </section>
   );
@@ -134,7 +135,7 @@ function DealListGroup({
 
 function DealListHeader() {
   return (
-    <div className="flex items-center border-b text-[11.5px] text-muted-foreground/70">
+    <div className="flex items-center border-b border-[#e7e5df] bg-[#fbfbfa] text-[11.5px] text-muted-foreground/70">
       <div className="w-10 shrink-0 px-2.5 py-1.5">No</div>
       <div className="w-[250px] shrink-0 px-2.5 py-1.5">매물</div>
       <div className="w-[84px] shrink-0 px-2.5 py-1.5">단계</div>
@@ -170,9 +171,8 @@ function DealListRow({
   return (
     <div
       className={cn(
-        'relative flex cursor-pointer items-center border-b border-border/60 transition-colors hover:bg-muted/40',
-        selected && 'bg-muted/50',
-        urgent && !selected && 'bg-destructive-soft/30',
+        'relative flex cursor-pointer items-center border-b border-[#eeeeec] transition-colors hover:bg-[#faf9f6] motion-reduce:transition-none',
+        selected && 'bg-[#f7f6f3]',
       )}
       onClick={() => actions.onSelect(deal.id)}
     >
@@ -200,7 +200,7 @@ function DealListRow({
       <div className="w-[76px] shrink-0 truncate px-2.5 py-2 text-xs text-foreground">
         {deal.buyerContact?.name ?? '미지정'}
       </div>
-      <div className="w-[124px] shrink-0 truncate px-2.5 py-2 text-right text-[12.5px] font-bold tabular-nums text-foreground">
+      <div className="w-[124px] shrink-0 truncate px-2.5 py-2 text-right text-[12.5px] font-semibold tabular-nums text-foreground">
         {formatDealAmount(deal)}
       </div>
       <div className="w-[148px] shrink-0 px-2.5 py-2">
@@ -248,62 +248,6 @@ function DealListRow({
   );
 }
 
-/** 종료(closed) 거래 접이식 아카이브 */
-export function ClosedDealArchive({
-  deals,
-  open,
-  onToggle,
-  actions,
-}: {
-  deals: Deal[];
-  open: boolean;
-  onToggle: () => void;
-  actions: DealRowActions;
-}) {
-  const summary = deals.reduce((sum, deal) => sum + getDealAmountValue(deal), 0);
-
-  return (
-    <section className="overflow-hidden rounded-[10px] border bg-background">
-      <button
-        type="button"
-        className="flex w-full items-center gap-2 bg-muted/50 px-3.5 py-2.5 text-left transition-colors hover:bg-muted"
-        onClick={onToggle}
-      >
-        {open ? (
-          <ChevronDown className="size-3 text-muted-foreground/80" />
-        ) : (
-          <ChevronRight className="size-3 text-muted-foreground/80" />
-        )}
-        <span className="size-2 rounded-full bg-muted-foreground/50" />
-        <h2 className="text-[12.5px] font-bold text-muted-foreground">종료 거래</h2>
-        <Badge
-          variant="outline"
-          className="h-[18px] rounded-full bg-background px-1.5 text-[10.5px] font-semibold tabular-nums text-muted-foreground/80"
-        >
-          {deals.length}건
-        </Badge>
-        <span className="ml-auto text-[11.5px] tabular-nums text-muted-foreground/80">
-          합계 {summary ? formatMoney(summary) : '—'}
-        </span>
-      </button>
-
-      {open ? (
-        <div>
-          {deals.length === 0 ? (
-            <div className="border-t px-4 py-6 text-center text-xs text-muted-foreground/60">
-              종료된 거래가 없습니다.
-            </div>
-          ) : (
-            deals.map((deal) => (
-              <ArchiveDealRow key={deal.id} deal={deal} actions={actions} />
-            ))
-          )}
-        </div>
-      ) : null}
-    </section>
-  );
-}
-
 /** 취소(isCancelled) 거래 접이식 아카이브 — 단계와 무관하게 별도 표시 */
 export function CancelledDealArchive({
   deals,
@@ -319,10 +263,12 @@ export function CancelledDealArchive({
   if (deals.length === 0) return null;
 
   return (
-    <section className="overflow-hidden rounded-[10px] border bg-background">
+    <section className="overflow-hidden rounded-lg border border-[#e7e5df] bg-white">
       <button
         type="button"
-        className="flex w-full items-center gap-2 bg-destructive-soft/40 px-3.5 py-2.5 text-left transition-colors hover:bg-destructive-soft/60"
+        aria-expanded={open}
+        aria-controls="cancelled-deals-archive"
+        className="flex w-full items-center gap-2 bg-destructive-soft/25 px-3.5 py-2.5 text-left transition-colors hover:bg-destructive-soft/40 motion-reduce:transition-none"
         onClick={onToggle}
       >
         {open ? (
@@ -341,7 +287,7 @@ export function CancelledDealArchive({
       </button>
 
       {open ? (
-        <div>
+        <div id="cancelled-deals-archive">
           {deals.map((deal) => (
             <ArchiveDealRow key={deal.id} deal={deal} actions={actions} cancelled />
           ))}
@@ -361,7 +307,7 @@ function ArchiveDealRow({
   cancelled?: boolean;
 }) {
   return (
-    <div className="flex items-center gap-3 border-t px-4 py-2.5">
+    <div className="flex items-center gap-3 border-t border-[#eeeeec] px-4 py-2.5 transition-colors hover:bg-[#faf9f6]">
       <button
         type="button"
         className="min-w-0 flex-1 text-left"

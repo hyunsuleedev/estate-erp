@@ -65,6 +65,7 @@ describe('DealsService 상태 토글 Deal 생성', () => {
       expect.objectContaining({
         data: expect.objectContaining({
           listingId: 'listing-1',
+          stage: 'preparing',
           transactionType: 'sale',
         }),
       }),

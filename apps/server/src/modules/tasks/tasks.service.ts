@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
   contactPhonesSelectOrdered,
@@ -8,6 +12,10 @@ import {
   LISTING_INTAKE_STATE_SELECT,
   OCCUPYING_DEALS_SELECT,
 } from '../listings/listing-state';
+import {
+  buyerIntakeContactsInclude,
+  withBuyerRequirementContact,
+} from '../buyer-requirements/buyer-requirement.presenter';
 
 @Injectable()
 export class TasksService {
@@ -38,7 +46,9 @@ export class TasksService {
       select: {
         id: true,
         status: true,
-        contact: { select: { id: true, name: true, phones: contactPhonesSelectOrdered } },
+        buyerIntake: {
+          include: { contacts: buyerIntakeContactsInclude },
+        },
       },
     },
     match: { select: { id: true, stage: true, listingId: true, buyerReqId: true } },
@@ -64,9 +74,23 @@ export class TasksService {
     },
   } as const;
 
-  async findAll(officeId: string) {
+  async findAll(
+    officeId: string,
+    query: {
+      status?: string;
+      category?: string;
+      assignedToId?: string;
+    } = {},
+  ) {
     const tasks = await this.prisma.task.findMany({
-      where: { officeId },
+      where: {
+        officeId,
+        ...(query.status ? { status: query.status } : {}),
+        ...(query.category ? { category: query.category } : {}),
+        ...(query.assignedToId
+          ? { assignedToId: query.assignedToId }
+          : {}),
+      },
       include: this.taskInclude,
       orderBy: [{ status: 'asc' }, { sortOrder: 'asc' }, { createdAt: 'desc' }],
     });
@@ -205,6 +229,44 @@ export class TasksService {
     return task;
   }
 
+  /**
+   * 외부 Agent가 Task를 실행하기 직전에 한 번만 호출하는 원자적 claim.
+   * 세부 실행 단계는 로컬 Skill이 소유하며 서버에는 일반 Task 상태만 남긴다.
+   */
+  async claim(id: string, officeId: string, actorUserId: string) {
+    const current = await this.findOne(id, officeId);
+    if (current.status !== 'pending') {
+      throw new ConflictException('대기 중인 업무만 시작할 수 있습니다.');
+    }
+    if (current.assignedToId && current.assignedToId !== actorUserId) {
+      throw new ConflictException('다른 담당자에게 배정된 업무입니다.');
+    }
+
+    const claimed = await this.prisma.task.updateMany({
+      where: {
+        id,
+        officeId,
+        status: 'pending',
+        OR: [{ assignedToId: null }, { assignedToId: actorUserId }],
+      },
+      data: {
+        status: 'in_progress',
+        assignedToId: current.assignedToId ?? actorUserId,
+        assignedById: current.assignedToId
+          ? current.assignedById
+          : actorUserId,
+        assignedAt: current.assignedToId
+          ? current.assignedAt
+          : new Date(),
+      },
+    });
+    if (claimed.count !== 1) {
+      throw new ConflictException('이미 다른 실행자가 시작한 업무입니다.');
+    }
+
+    return this.findOne(id, officeId);
+  }
+
   async bulkUpdateStatus(ids: string[], officeId: string, status: string) {
     return this.prisma.task.updateMany({
       where: { id: { in: ids }, officeId },
@@ -288,15 +350,9 @@ export class TasksService {
       draft.contact = withPrimaryPhone(contact);
     }
 
-    const buyerRequirement = draft.buyerRequirement as
-      | ({ contact?: ({ phones?: [] } & Record<string, unknown>) | null } & Record<string, unknown>)
-      | null
-      | undefined;
-    if (buyerRequirement?.contact) {
-      draft.buyerRequirement = {
-        ...buyerRequirement,
-        contact: withPrimaryPhone(buyerRequirement.contact),
-      };
+    const buyerRequirement = draft.buyerRequirement as any;
+    if (buyerRequirement?.buyerIntake?.contacts) {
+      draft.buyerRequirement = withBuyerRequirementContact(buyerRequirement);
     }
 
     return task;

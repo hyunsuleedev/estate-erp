@@ -22,6 +22,7 @@ import {
   decryptContractPartyField,
   encryptContractPartyField,
 } from './contract-party-crypto.util';
+import { normalizePhone } from '../contacts/contact-phone.utils';
 
 const CONTRACT_TRANSACTION_TYPES = new Set<string>(Object.values(ContractTransactionType));
 
@@ -80,7 +81,6 @@ const contractDocumentInclude = {
 
 const contactWithPhonesInclude = {
   phones: {
-    where: { isActive: true },
     orderBy: [{ isPrimary: 'desc' as const }, { createdAt: 'asc' as const }],
   },
 } satisfies Prisma.ContactInclude;
@@ -2099,8 +2099,13 @@ export class ContractsService {
 
     if (searchField === 'phone' || searchField === 'all') {
       // 레거시 SearchClsf=PhneNo — CTI 발신번호로 계약 찾기.
-      // 주 검색 경로는 연동된 Contact.phones (평문). ContractParty.phone 은
-      // 암호화 저장이므로 contains 는 암호화 이전 평문 행만 매칭한다.
+      // ContractParty.phone 은 암호화 저장이므로 contains 는 암호화 이전 평문
+      // 행만 매칭한다. ContactPhone.phone 은 canonical 숫자 문자열로 조회한다.
+      const canonicalPhone = normalizePhone(search);
+      const canonicalContains = {
+        contains: canonicalPhone,
+        mode: 'insensitive' as const,
+      };
       clauses.push(
         {
           parties: {
@@ -2108,45 +2113,32 @@ export class ContractsService {
               OR: [
                 { phone: contains },
                 { mobilePhone: contains },
-                { contact: { phones: { some: { phone: contains } } } },
+                ...(canonicalPhone
+                  ? [{
+                      contact: {
+                        phones: { some: { phone: canonicalContains } },
+                      },
+                    }]
+                  : []),
               ],
             },
           },
         },
-        { buyerContact: { phones: { some: { phone: contains } } } },
-        { sellerContact: { phones: { some: { phone: contains } } } },
-      );
-
-      // normalizedPhone(숫자만 저장)도 함께 검색 — 숫자만 입력(CTI 발신번호)이든
-      // 하이픈 포함 입력이든 하이픈 저장 번호와 매칭되도록 항상 추가
-      const digits = search.replace(/\D/g, '');
-      if (digits.length > 0) {
-        const normalizedContains = {
-          contains: digits,
-          mode: 'insensitive' as const,
-        };
-        clauses.push(
-          {
-            parties: {
-              some: {
-                contact: {
-                  phones: { some: { normalizedPhone: normalizedContains } },
+        ...(canonicalPhone
+          ? [
+              {
+                buyerContact: {
+                  phones: { some: { phone: canonicalContains } },
                 },
               },
-            },
-          },
-          {
-            buyerContact: {
-              phones: { some: { normalizedPhone: normalizedContains } },
-            },
-          },
-          {
-            sellerContact: {
-              phones: { some: { normalizedPhone: normalizedContains } },
-            },
-          },
-        );
-      }
+              {
+                sellerContact: {
+                  phones: { some: { phone: canonicalContains } },
+                },
+              },
+            ]
+          : []),
+      );
     }
 
     if (searchField === 'partnerOffice' || searchField === 'all') {

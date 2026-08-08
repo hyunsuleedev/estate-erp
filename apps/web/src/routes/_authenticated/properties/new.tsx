@@ -377,7 +377,7 @@ function NewPropertyPage() {
         className="flex flex-col gap-6"
       >
         {error && (
-          <div className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          <div className="rounded-md border border-destructive/30 bg-destructive-soft px-3 py-2 text-sm text-destructive-strong">
             {error}
           </div>
         )}
@@ -498,7 +498,7 @@ function NewPropertyPage() {
                 </p>
               )}
               {units && units.length === 0 && (
-                <p className="mt-1.5 text-xs text-amber-600">
+                <p className="mt-1.5 text-xs text-warning-strong">
                   등록된 호실이 없습니다.{' '}
                   <Link to="/sites" className="underline">
                     단지 관리에서 호실을 먼저 추가하세요.
@@ -538,7 +538,7 @@ function NewPropertyPage() {
                     {TX_LABELS[t]}
                     {hasExisting && (
                       <span
-                        className="ml-1.5 text-[10px] opacity-70"
+                        className="ml-1.5 text-[11px] opacity-70"
                         title="이미 등록된 거래"
                       >
                         ●
@@ -550,7 +550,7 @@ function NewPropertyPage() {
             </div>
           </FieldRow>
           {txConflict && (
-            <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+            <div className="rounded-md border border-warning/40 bg-warning-soft px-3 py-2 text-xs text-warning-strong">
               이 호실에 이미 <b>{TX_LABELS[form.transactionType]}</b> 매물이 있습니다.
               새로 만들 수 없어요. 다른 거래유형을 선택하거나, 기존 매물을 수정하세요.
             </div>
@@ -863,7 +863,7 @@ function ExistingPropertyNotice({
 }) {
   const listings = property.listings ?? [];
   return (
-    <div className="rounded-md border border-blue-300 bg-blue-50 px-3 py-2.5 text-xs text-blue-900">
+    <div className="rounded-md border border-info/40 bg-info-soft px-3 py-2.5 text-xs text-info-strong">
       <div className="font-medium">
         {needsUnit ? '이 호실' : '이 부동산'}은 이미 등록되어 있어요.
       </div>
@@ -873,7 +873,7 @@ function ExistingPropertyNotice({
           <ul className="mt-1 space-y-0.5">
             {listings.map((l) => (
               <li key={l.id} className="flex items-center gap-1.5">
-                <span className="inline-block min-w-9 rounded bg-white/60 px-1.5 py-px text-[10px] font-medium">
+                <span className="inline-block min-w-9 rounded-sm bg-background/70 px-1.5 py-px text-[11px] font-medium">
                   {TX_LABELS[l.transactionType as keyof typeof TX_LABELS] ??
                     l.transactionType}
                 </span>
@@ -894,7 +894,7 @@ function ExistingPropertyNotice({
               </li>
             ))}
           </ul>
-          <div className="mt-1.5 text-blue-800/80">
+          <div className="mt-1.5 text-info-strong">
             아래 거래유형을 골라 새 거래를 추가하거나, 상세에서 기존 거래를 수정할 수 있어요.
           </div>
         </div>
@@ -1010,7 +1010,7 @@ function SitePicker({
                         {value === s.id && <Check className="size-3.5" />}
                         <span className="truncate">{s.name}</span>
                       </span>
-                      <Badge variant="secondary" className="text-[10px]">
+                      <Badge variant="secondary" className="text-[11px]">
                         {SITE_TYPE_LABELS[s.type] ?? s.type}
                       </Badge>
                     </CommandItem>
@@ -1041,7 +1041,7 @@ function SitePicker({
                       <Search className="size-3.5 text-muted-foreground" />
                       <span className="truncate">{s.name}</span>
                     </span>
-                    <Badge variant="outline" className="text-[10px]">
+                    <Badge variant="outline" className="text-[11px]">
                       {SITE_TYPE_LABELS[s.type] ?? s.type}
                     </Badge>
                   </CommandItem>

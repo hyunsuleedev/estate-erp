@@ -44,7 +44,7 @@ export interface CashflowSummary {
   netProfit: number;
   taxInvoicePending: number;
   pipeline: {
-    negotiating: { count: number; amount: number };
+    preparing: { count: number; amount: number };
     contract: { count: number; amount: number };
     balanceWaiting: { count: number; amount: number };
     collected: { count: number; amount: number };
@@ -61,8 +61,7 @@ export interface CashflowSummary {
 
 // Deal 파이프라인에서 "활성" 구간으로 볼 stage 값
 const ACTIVE_STAGES = [
-  'selection',
-  'negotiating',
+  'preparing',
   'preContract',
   'contracted',
   'settling',
@@ -144,7 +143,7 @@ export class CashflowService {
     const now = new Date();
 
     const pipelineCounts = {
-      negotiating: { count: 0, amount: 0 },
+      preparing: { count: 0, amount: 0 },
       contract: { count: 0, amount: 0 },
       balanceWaiting: { count: 0, amount: 0 },
       collected: { count: 0, amount: 0 },
@@ -256,12 +255,12 @@ export class CashflowService {
         pipelineCounts.contract.count++;
         pipelineCounts.contract.amount += dealCommission;
       } else {
-        pipelineCounts.negotiating.count++;
-        pipelineCounts.negotiating.amount += dealCommission;
+        pipelineCounts.preparing.count++;
+        pipelineCounts.preparing.amount += dealCommission;
       }
     }
 
-    const expected = pending + pipelineCounts.negotiating.amount;
+    const expected = pending + pipelineCounts.preparing.amount;
     const monthlyExpense = await this.expenseService.getMonthlyTotal(officeId);
 
     // 월별 추이 (최근 6개월)

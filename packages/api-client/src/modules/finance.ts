@@ -274,7 +274,7 @@ export interface CashflowSummary {
   netProfit: number;
   taxInvoicePending: number;
   pipeline: {
-    negotiating: PipelineBucket;
+    preparing: PipelineBucket;
     contract: PipelineBucket;
     balanceWaiting: PipelineBucket;
     collected: PipelineBucket;

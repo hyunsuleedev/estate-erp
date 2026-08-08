@@ -1,13 +1,12 @@
 import { IsIn, IsOptional, IsString, IsUUID } from 'class-validator';
+import {
+  LEGACY_MATCH_STAGE_VALUES,
+  MATCH_STAGE_ORDER,
+} from '@estate-erp/shared';
 
 export const MATCH_STAGES = [
-  'suggested',
-  'buyerContacted',
-  'viewing',
-  'ownerContacted',
-  'negotiating',
-  'dealCreated',
-  'closed',
+  ...MATCH_STAGE_ORDER,
+  ...LEGACY_MATCH_STAGE_VALUES,
 ] as const;
 
 export class CreateMatchDto {

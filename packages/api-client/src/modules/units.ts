@@ -120,8 +120,14 @@ export interface UpdateUnitDto {
 
 export function createUnitsApi(request: RequestFn) {
   return {
-    findAll: (filters?: { siteId?: string; dongId?: string }) =>
-      request<Unit[]>('/units', { params: filters }),
+    findAll: (filters?: { siteId?: string; dongId?: string; dongIds?: string[] }) =>
+      request<Unit[]>('/units', {
+        params: {
+          siteId: filters?.siteId,
+          dongId: filters?.dongId,
+          dongIds: filters?.dongIds?.join(','),
+        },
+      }),
 
     findOne: (id: string) =>
       request<Unit>(`/units/${id}`),

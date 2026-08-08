@@ -95,7 +95,7 @@ function AuthenticatedLayout() {
         <ElectronSidebarBridge />
         <div className="flex h-screen w-full flex-col">
           {/* Titlebar: SidebarTrigger + TabBar inline (no breadcrumb) */}
-          <header className="app-titlebar flex h-10 shrink-0 items-center gap-2 border-b border-border bg-sidebar pr-2">
+          <header className="app-titlebar flex h-10 shrink-0 items-center gap-0 border-b border-border bg-sidebar pr-2">
             <div
               className={`flex h-full w-(--sidebar-width) shrink-0 items-center gap-1 ${titlebarLeftPadding}`}
               style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
@@ -108,7 +108,7 @@ function AuthenticatedLayout() {
               </span>
               <span data-slot="titlebar-brand-spacer" className="min-w-0 flex-1" aria-hidden />
               <SidebarTrigger className="-ml-1" />
-              <Separator orientation="vertical" className="ml-1 mr-0 data-[orientation=vertical]:h-4" />
+              <Separator orientation="vertical" className="ml-1 mr-0 self-stretch" />
             </div>
             <TabBar className="min-w-0" />
             {/* Windows: titleBarOverlay 자리 확보 */}

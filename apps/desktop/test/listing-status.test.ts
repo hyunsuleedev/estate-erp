@@ -28,7 +28,7 @@ describe('desktop listing availability', () => {
     assert.equal(
       getListingAvailability({
         intake: { lifecycleStatus: 'open' },
-        deals: [{ stage: 'selection' }],
+        deals: [{ stage: 'preparing' }],
       }),
       'in_contract',
     );
@@ -86,6 +86,28 @@ describe('desktop listing availability', () => {
         { deals: [] },
       ]),
       -1,
+    );
+  });
+
+  it('requires confirmation when closing a row with active Deals', () => {
+    const listings = [
+      {
+        intake: { lifecycleStatus: 'open' },
+        deals: [{ stage: 'preparing' }, { stage: 'contracted' }],
+      },
+      {
+        intake: { lifecycleStatus: 'open' },
+        deals: [],
+      },
+    ];
+
+    assert.deepEqual(
+      planListingStatusChange('in_contract', 'closed', listings),
+      { kind: 'closeWithActiveDeals', activeDealCount: 2 },
+    );
+    assert.deepEqual(
+      planListingStatusChange('in_contract', 'paused', listings),
+      { kind: 'blocked', reason: 'activeDeal' },
     );
   });
 

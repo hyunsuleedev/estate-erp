@@ -1,0 +1,74 @@
+// ============================================================
+// 중개 케이스 — 여러 구매/매도 의뢰를 함께 보는 활성 업무철
+// ============================================================
+
+model BrokerageCase {
+  id         String    @id @default(uuid()) @db.Uuid
+  officeId   String    @map("office_id") @db.Uuid
+  title      String?
+  memo       String?   @db.Text
+  archivedAt DateTime? @map("archived_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+
+  office         Office                     @relation(fields: [officeId], references: [id], onDelete: Restrict)
+  participants   BrokerageCaseParticipant[]
+  buyerIntakes   BuyerIntake[]
+  listingIntakes ListingIntake[]
+  dependencies   BrokerageCaseDependency[]
+
+  // 하위 테이블의 복합 FK가 office_id까지 함께 검증한다.
+  @@unique([officeId, id])
+  @@index([officeId, archivedAt, updatedAt])
+  @@map("brokerage_cases")
+}
+
+model BrokerageCaseParticipant {
+  id                     String   @id @default(uuid()) @db.Uuid
+  officeId               String   @map("office_id") @db.Uuid
+  brokerageCaseId        String   @map("brokerage_case_id") @db.Uuid
+  contactId              String   @map("contact_id") @db.Uuid
+  roles                  String[] @default([])
+  isPrincipal            Boolean  @default(false) @map("is_principal")
+  isCommunicationPrimary Boolean  @default(false) @map("is_communication_primary")
+  memo                   String?
+  createdAt              DateTime @default(now()) @map("created_at")
+  updatedAt              DateTime @updatedAt @map("updated_at")
+
+  office        Office        @relation(fields: [officeId], references: [id], onDelete: Restrict)
+  brokerageCase BrokerageCase @relation(fields: [officeId, brokerageCaseId], references: [officeId, id], onDelete: Cascade)
+  contact       Contact       @relation(fields: [officeId, contactId], references: [officeId, id], onDelete: Restrict)
+
+  @@unique([brokerageCaseId, contactId])
+  @@index([officeId, contactId, brokerageCaseId])
+  @@index([officeId, brokerageCaseId, isPrincipal])
+  // 케이스당 주 연락창구는 최대 한 명. partial unique index는 migration SQL에서 생성한다.
+  @@map("brokerage_case_participants")
+}
+
+model BrokerageCaseDependency {
+  id                  String    @id @default(uuid()) @db.Uuid
+  officeId            String    @map("office_id") @db.Uuid
+  brokerageCaseId     String    @map("brokerage_case_id") @db.Uuid
+  fromListingIntakeId String    @map("from_listing_intake_id") @db.Uuid
+  toBuyerIntakeId     String    @map("to_buyer_intake_id") @db.Uuid
+  type                String // sale_proceeds, timing, move_sequence, other
+  isRequired          Boolean   @default(true) @map("is_required")
+  expectedAmount      Int?      @map("expected_amount") // 예상 순유입/배정액, 만원
+  requiredBy          DateTime? @map("required_by")
+  status              String    @default("planned") // planned, confirmed, resolved, cancelled
+  memo                String?   @db.Text
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
+
+  office            Office        @relation(fields: [officeId], references: [id], onDelete: Restrict)
+  brokerageCase     BrokerageCase @relation(fields: [officeId, brokerageCaseId], references: [officeId, id], onDelete: Cascade)
+  fromListingIntake ListingIntake @relation("BrokerageCaseDependencySource", fields: [officeId, brokerageCaseId, fromListingIntakeId], references: [officeId, brokerageCaseId, id], onDelete: Restrict)
+  toBuyerIntake     BuyerIntake   @relation("BrokerageCaseDependencyTarget", fields: [officeId, brokerageCaseId, toBuyerIntakeId], references: [officeId, brokerageCaseId, id], onDelete: Restrict)
+
+  @@unique([brokerageCaseId, fromListingIntakeId, toBuyerIntakeId, type])
+  @@index([officeId, brokerageCaseId])
+  @@index([fromListingIntakeId])
+  @@index([toBuyerIntakeId])
+  @@map("brokerage_case_dependencies")
+}

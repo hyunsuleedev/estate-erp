@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Patch,
   Delete,
   Param,
   Body,
@@ -15,6 +16,12 @@ import {
   CurrentUser,
   CurrentUserPayload,
 } from '../../common/decorators/current-user.decorator';
+import {
+  ContactRelationQueryDto,
+  CreateContactRelationDto,
+  CreateContactRelationWithNewContactDto,
+  UpdateContactRelationDto,
+} from './dto/contact-relation.dto';
 
 @ApiTags('연락처 관계')
 @ApiBearerAuth()
@@ -25,22 +32,15 @@ export class ContactRelationsController {
 
   @Get()
   findByContact(
-    @Query('contactId') contactId: string,
+    @Query() query: ContactRelationQueryDto,
     @CurrentUser() user: CurrentUserPayload,
   ) {
-    return this.service.findByContact(user.officeId, contactId);
+    return this.service.findByContact(user.officeId, query.contactId);
   }
 
   @Post()
   create(
-    @Body()
-    dto: {
-      contactId: string;
-      relatedContactId: string;
-      relationType: string;
-      label?: string;
-      memo?: string;
-    },
+    @Body() dto: CreateContactRelationDto,
     @CurrentUser() user: CurrentUserPayload,
   ) {
     return this.service.create(user.officeId, dto);
@@ -48,18 +48,19 @@ export class ContactRelationsController {
 
   @Post('with-contact')
   createWithNewContact(
-    @Body()
-    dto: {
-      contactId: string;
-      relationType: string;
-      label?: string;
-      phone: string;
-      name?: string;
-      memo?: string;
-    },
+    @Body() dto: CreateContactRelationWithNewContactDto,
     @CurrentUser() user: CurrentUserPayload,
   ) {
     return this.service.createWithNewContact(user.officeId, dto);
+  }
+
+  @Patch(':id')
+  update(
+    @Param('id') id: string,
+    @Body() dto: UpdateContactRelationDto,
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.service.update(id, user.officeId, dto);
   }
 
   @Delete(':id')

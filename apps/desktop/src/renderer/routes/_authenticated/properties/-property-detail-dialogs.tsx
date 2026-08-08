@@ -29,6 +29,7 @@ import { Textarea } from '@/components/ui/textarea';
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -613,6 +614,9 @@ export function PropertyContactAddDialog({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>관련인 추가</DialogTitle>
+          <DialogDescription>
+            소유주나 대리인을 기존 연락처에서 선택하거나 새로 등록합니다.
+          </DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
           <div className="grid grid-cols-2 gap-3">
@@ -732,6 +736,9 @@ export function ConsultationAddDialog({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>상담 기록 추가</DialogTitle>
+          <DialogDescription>
+            상담 상대와 내용을 기록해 이 매물에 연결합니다.
+          </DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
           <ContactSelector value={selection} onChange={setSelection} suggested={suggestedContacts} />

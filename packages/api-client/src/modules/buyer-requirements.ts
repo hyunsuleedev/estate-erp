@@ -1,9 +1,8 @@
 import type { RequestFn } from '../client.js';
 import type { PaginatedResponse } from '../types.js';
-import type {
-  ListingIntakeState,
-  ListingOccupyingDeal,
-} from './listings.js';
+import type { ListingIntakeState, ListingOccupyingDeal } from './listings.js';
+
+export type BuyerRequirementStatus = 'active' | 'hold' | 'completed';
 
 export interface BuyerRequirementPreferredSite {
   id: string;
@@ -73,8 +72,11 @@ export interface BuyerRequirementConsultation {
 export interface BuyerRequirement {
   id: string;
   officeId: string;
+  buyerIntakeId: string;
+  priorityRank: number;
+  /** @deprecated 대표 연락 대상에서 파생되는 구버전 응답 별칭 */
   contactId: string;
-  status: string;
+  status: BuyerRequirementStatus;
   urgency: string;
   transactionType: string | null;
   siteTypes: string[];
@@ -82,11 +84,12 @@ export interface BuyerRequirement {
   priceMax: number | null;
   depositMin: number | null;
   depositMax: number | null;
+  monthlyRentMin: number | null;
   monthlyRentMax: number | null;
+  /** 희망 공급면적 하한 (m²). 사용자 화면에서는 평으로 변환한다. */
   areaMin: number | null;
+  /** 희망 공급면적 상한 (m²). 사용자 화면에서는 평으로 변환한다. */
   areaMax: number | null;
-  mustConditions: string[];
-  preferConditions: string[];
   moveInDate: string | null;
   assignedToId: string | null;
   lastContactDate: string | null;
@@ -95,6 +98,18 @@ export interface BuyerRequirement {
   createdAt: string;
   updatedAt: string;
   contact?: { id: string; name: string; phone: string | null };
+  buyerIntake?: {
+    id: string;
+    officeId: string;
+    lifecycleStatus: 'open' | 'hold' | 'closed';
+    contacts: Array<{
+      id: string;
+      contactId: string;
+      role: string;
+      isPrimary: boolean;
+      contact?: { id: string; name: string; phone: string | null };
+    }>;
+  };
   /** findAll/findOne include — 담당자 요약 */
   assignedTo?: { id: string; name: string } | null;
   /** findAll include — 연결 매칭/상담 수 */
@@ -112,6 +127,7 @@ export interface BuyerRequirementsFilter {
   urgency?: string;
   transactionType?: string;
   siteTypes?: string;
+  buyerIntakeId?: string;
   contactId?: string;
   assignedToId?: string;
   // Preferred Site UUIDs (CSV)
@@ -125,6 +141,7 @@ export interface BuyerRequirementsFilter {
   priceMax?: number;
   depositMin?: number;
   depositMax?: number;
+  monthlyRentMin?: number;
   monthlyRentMax?: number;
   areaMin?: number;
   areaMax?: number;
@@ -142,7 +159,10 @@ export interface BuyerRequirementsFilter {
 }
 
 export interface CreateBuyerRequirementDto {
-  contactId: string;
+  buyerIntakeId?: string;
+  /** 구버전 UI 호환. 신규 코드는 buyerIntakeId를 사용한다. */
+  contactId?: string;
+  priorityRank?: number;
   transactionType?: string;
   siteTypes?: string[];
   // 범위 필드는 null 허용 — 수정 시 null을 보내면 서버가 해당 값을 비움 (replace 의미)
@@ -150,11 +170,12 @@ export interface CreateBuyerRequirementDto {
   priceMax?: number | null;
   depositMin?: number | null;
   depositMax?: number | null;
+  monthlyRentMin?: number | null;
   monthlyRentMax?: number | null;
+  /** 희망 공급면적 하한 (m²) */
   areaMin?: number | null;
+  /** 희망 공급면적 상한 (m²) */
   areaMax?: number | null;
-  mustConditions?: string[];
-  preferConditions?: string[];
   moveInDate?: string;
   urgency?: string;
   assignedToId?: string;
@@ -168,8 +189,10 @@ export interface CreateBuyerRequirementDto {
   }[];
 }
 
-export interface UpdateBuyerRequirementDto
-  extends Omit<CreateBuyerRequirementDto, 'contactId'> {
+export interface UpdateBuyerRequirementDto extends Omit<
+  CreateBuyerRequirementDto,
+  'buyerIntakeId' | 'contactId'
+> {
   lastContactDate?: string;
 }
 
@@ -180,19 +203,28 @@ export function createBuyerRequirementsApi(request: RequestFn) {
 
     findAll: (filters?: BuyerRequirementsFilter) =>
       request<PaginatedResponse<BuyerRequirement>>('/buyer-requirements', {
-        params: filters as Record<string, string | number | boolean | undefined>,
+        params: filters as Record<
+          string,
+          string | number | boolean | undefined
+        >,
       }),
 
     findOne: (id: string) =>
       request<BuyerRequirement>(`/buyer-requirements/${id}`),
 
     create: (dto: CreateBuyerRequirementDto) =>
-      request<BuyerRequirement>('/buyer-requirements', { method: 'POST', body: dto }),
+      request<BuyerRequirement>('/buyer-requirements', {
+        method: 'POST',
+        body: dto,
+      }),
 
     update: (id: string, dto: UpdateBuyerRequirementDto) =>
-      request<BuyerRequirement>(`/buyer-requirements/${id}`, { method: 'PATCH', body: dto }),
+      request<BuyerRequirement>(`/buyer-requirements/${id}`, {
+        method: 'PATCH',
+        body: dto,
+      }),
 
-    updateStatus: (id: string, status: string) =>
+    updateStatus: (id: string, status: BuyerRequirementStatus) =>
       request<BuyerRequirement>(`/buyer-requirements/${id}/status`, {
         method: 'PATCH',
         body: { status },

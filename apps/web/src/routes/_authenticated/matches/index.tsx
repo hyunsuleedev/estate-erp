@@ -4,23 +4,24 @@ import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { Building2, GitBranch, List, ListOrdered, Plus, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import type { Match } from '@estate-erp/api-client';
+import { MatchStage, normalizeMatchStage } from '@estate-erp/shared';
 import {
   buildViewingCalendarEventPayload,
   formatMatchPrice,
   formatRequirementSummary,
   getMatchKpis,
   getMatchListingGroups,
+  getMatchStageBlockReason,
   getMatchStageGroups,
   getMatchStageLabel,
   getMatchTitle,
   getUpcomingViewingEvent,
-  matchBoardStages,
   matchStageOrder,
   shouldMoveToViewingOnSchedule,
   toCalendarEventUpdatePayload,
   type MatchRowActions,
 } from './-match-view-utils';
-import { MatchColumn, ResultPanel, MatchActionsMenu } from './-match-board';
+import { MatchActionsMenu } from './-match-board';
 import { BuyerMatchGroup, PropertyMatchGroup, StageMatchView } from './-match-groups';
 import { MatchDetailDialog } from './-match-detail-dialog';
 import { MatchCreateDialog } from './-match-create-dialog';
@@ -42,7 +43,7 @@ import { Button } from '@/components/ui/button';
 import { MultiSelect } from '@/components/ui/multi-select';
 import { Skeleton } from '@/components/ui/skeleton';
 
-type MatchViewMode = 'buyer' | 'property' | 'stage' | 'kanban' | 'list';
+type MatchViewMode = 'buyer' | 'property' | 'stage' | 'list';
 
 interface BuyerMatchGroupData {
   buyerReqId: string;
@@ -78,7 +79,7 @@ function MatchesPage() {
   const deferredSearch = useDeferredValue(searchQuery);
   const searchWrapRef = useRef<HTMLDivElement>(null);
 
-  // 키보드 단축키: Cmd/Ctrl+F 검색 포커스, 1~5 뷰 전환 (입력 중/다이얼로그 안에서는 무시)
+  // 키보드 단축키: Cmd/Ctrl+F 검색 포커스, 1~4 뷰 전환 (입력 중/다이얼로그 안에서는 무시)
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key === 'f') {
@@ -107,8 +108,7 @@ function MatchesPage() {
         '1': 'buyer',
         '2': 'property',
         '3': 'stage',
-        '4': 'kanban',
-        '5': 'list',
+        '4': 'list',
       };
       const nextView = viewByKey[event.key];
       if (nextView) {
@@ -144,7 +144,7 @@ function MatchesPage() {
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['matches'] });
       toast.success(
-        variables.stage === 'closed'
+        variables.stage === MatchStage.CLOSED
           ? '매칭을 종료했습니다'
           : `${getMatchStageLabel(variables.stage)} 단계로 변경했습니다`,
       );
@@ -156,6 +156,14 @@ function MatchesPage() {
 
   const viewingScheduleMutation = useMutation({
     mutationFn: async ({ match, startLocalValue }: { match: Match; startLocalValue: string }) => {
+      const blockReason = getMatchStageBlockReason(
+        match,
+        MatchStage.VIEWING,
+      );
+      if (blockReason) {
+        throw new Error(blockReason);
+      }
+
       const payload = buildViewingCalendarEventPayload(match, startLocalValue);
       const upcomingViewingEvent = getUpcomingViewingEvent(match);
 
@@ -169,7 +177,7 @@ function MatchesPage() {
       }
 
       if (shouldMoveToViewingOnSchedule(match.stage)) {
-        await api.matches.updateStage(match.id, { stage: 'viewing' });
+        await api.matches.updateStage(match.id, { stage: MatchStage.VIEWING });
       }
     },
     onSuccess: () => {
@@ -199,7 +207,18 @@ function MatchesPage() {
 
   // dealCreated 진입은 항상 거래 생성 확인 다이얼로그를 거친다
   const handleStageChange = (id: string, stage: string) => {
-    if (stage === 'dealCreated') {
+    const match = matches.find((candidate) => candidate.id === id);
+    if (match) {
+      const blockReason = getMatchStageBlockReason(match, stage);
+      if (blockReason) {
+        toast.error('단계 이동 전 확인이 필요합니다', {
+          description: blockReason,
+        });
+        return;
+      }
+    }
+
+    if (stage === MatchStage.DEAL_CREATED) {
       setConvertMatchId(id);
       return;
     }
@@ -233,7 +252,10 @@ function MatchesPage() {
     const query = deferredSearch.trim().toLowerCase();
 
     return matches.filter((match) => {
-      if (stageFilters.length > 0 && !stageFilters.includes(match.stage)) {
+      if (
+        stageFilters.length > 0 &&
+        !stageFilters.includes(normalizeMatchStage(match.stage))
+      ) {
         return false;
       }
 
@@ -264,11 +286,6 @@ function MatchesPage() {
   }, [deferredSearch, matches, stageFilters, transactionTypeFilter]);
 
   const kpis = useMemo(() => getMatchKpis(matches), [matches]);
-  const activeMatches = filteredMatches.filter(
-    (match) => match.stage !== 'dealCreated' && match.stage !== 'closed',
-  );
-  const convertedMatches = filteredMatches.filter((match) => match.stage === 'dealCreated');
-  const closedMatches = filteredMatches.filter((match) => match.stage === 'closed');
 
   const groupedBuyerMatches = useMemo<BuyerMatchGroupData[]>(() => {
     const grouped = new Map<string, BuyerMatchGroupData>();
@@ -313,7 +330,7 @@ function MatchesPage() {
     <div className="flex min-h-0 flex-col gap-4 pt-4">
       <PageHeader
         title="매칭"
-        description="구매고객 조건과 매물을 연결해 제안 → 방문 → 협상 → 거래 전환까지 추적합니다."
+        description="내부 후보 → 고객 관심 → 임장 가능 확인 → 임장 → 협상 → 거래 전환을 추적합니다."
         actions={
           <Button type="button" onClick={() => setCreateOpen(true)}>
             <Plus className="size-4" />
@@ -391,20 +408,11 @@ function MatchesPage() {
             단계별
           </Button>
           <Button
-            variant={viewMode === 'kanban' ? 'secondary' : 'ghost'}
-            size="sm"
-            onClick={() => setViewMode('kanban')}
-            className="gap-1.5 text-xs"
-            title="단축키 4"
-          >
-            칸반
-          </Button>
-          <Button
             variant={viewMode === 'list' ? 'secondary' : 'ghost'}
             size="sm"
             onClick={() => setViewMode('list')}
             className="gap-1.5 text-xs"
-            title="단축키 5"
+            title="단축키 4"
           >
             <List className="size-3.5" />
             전체
@@ -470,40 +478,6 @@ function MatchesPage() {
           )}
 
           {viewMode === 'stage' && <StageMatchView groups={stageGroupedMatches} actions={actions} />}
-
-          {viewMode === 'kanban' && (
-            <div className="space-y-4">
-              <div className="flex gap-3 overflow-x-auto">
-                {matchBoardStages.map((stage) => (
-                  <MatchColumn
-                    key={stage}
-                    stage={stage}
-                    matches={activeMatches.filter((match) => match.stage === stage)}
-                    actions={actions}
-                  />
-                ))}
-              </div>
-
-              {activeMatches.length === 0 && (
-                <ViewEmpty message="조건에 맞는 진행 매칭이 없습니다." />
-              )}
-
-              <div className="grid gap-4 xl:grid-cols-2">
-                <ResultPanel
-                  title="거래 전환"
-                  emptyMessage="거래 전환된 매칭이 없습니다."
-                  matches={convertedMatches}
-                  actions={actions}
-                />
-                <ResultPanel
-                  title="종료"
-                  emptyMessage="종료된 매칭이 없습니다."
-                  matches={closedMatches}
-                  actions={actions}
-                />
-              </div>
-            </div>
-          )}
 
           {viewMode === 'list' && <MatchListTable matches={filteredMatches} actions={actions} />}
         </div>

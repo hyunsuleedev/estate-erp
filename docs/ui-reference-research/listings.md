@@ -30,7 +30,7 @@
 | `/properties/$id` | 개요, 매칭, 상담, 매물·가격, 거래, 관련인, 사진, 공적장부의 8개 탭 | [코드](../../apps/desktop/src/renderer/routes/_authenticated/properties/$id.tsx#L385)의 상위 탭 수가 많아 관계형 정보가 분절된다.
 | `/properties/new` | 단지/호실, 거래조건, 비용, 메모, 소유자/임차인, 중복·거래충돌 확인, 우측 등록 요약 | [등록 요약](../../apps/desktop/src/renderer/routes/_authenticated/properties/new.tsx#L940)은 좋은 골격이다. 폼의 스캔성과 조건부 노출을 다듬는 일이 우선이다.
 | `/sites` | 단지 좌측 탐색, 동·평형 필터, 표/배치/점유/만기 4개 모드, 층×라인 호실 그리드, 호실 상세 다이얼로그 | 현행 층×라인 매트릭스는 일반 SaaS에 없는 도메인 자산이다. 범용 테이블로 치환하면 안 된다.
-| `/properties/external-listings` | 단지·거래유형 기준 스냅샷 세션, 신규/기존 구분, 외부매물↔호실 연결, 중복 비교, 즐겨찾기, 일괄 작업, 세션 완료 | 단순 “외부 매물 목록”이 아니라 **가져온 데이터와 내부 원장의 대조** 업무다.
+| `/properties/external-listings` | 단지·거래유형 기준 스냅샷 세션, 신규/기존 구분, 호수 텍스트·메모 기록, 중복 비교, 일괄 작업, 세션 완료 | 단순 “외부 매물 목록”이 아니라 **가져온 데이터를 검토하는 광고노트 작업대**다.
 | `/properties/my-ads` 및 `/properties/naver-my-ads` | 미연결/연결/무시, 내부 매물 연결, 가격·동일 호실 타 광고·원본 링크 비교 | 두 구현이 겹친다. 실제 내비게이션은 [`/properties/naver-my-ads`](../../apps/desktop/src/renderer/components/layout/nav-config.ts#L81)를 가리킨다.
 | `/documents` | 발급 상태, 종류/기간/단지 필터, 발급비, 처리중 polling, 보기/재시도/삭제 | 작업 큐 상태와 문서 열람을 한 목록에서 다룬다. 미리보기 분할이 필요하다.
 | `/documents/photos` | 단지·유형·카테고리 필터, 매물별 그룹, 4/6/8열 썸네일, lightbox, 대표 사진·카테고리·삭제 | [업로드는 아직 미구현](../../apps/desktop/src/renderer/routes/_authenticated/documents/photos.tsx#L190)이며, 대량 정리 동작이 부족하다.
@@ -206,9 +206,9 @@
 적용안:
 
 - 세션 시작 시 화면 상단 전체를 `광고 수집 대조 중 · OO단지 · 매매 · 시작 시각`의 sticky reconcile bar로 전환한다.
-- 요약은 `신규`, `변경`, `그대로`, `누락/종료 후보`, `호실 미연결`, `중복 의심`으로 나눈다.
-- 왼쪽 300~360px review queue, 중앙 외부매물, 오른쪽 내부 호실 후보의 3-pane 또는 queue+detail 2-pane을 쓴다.
-- 가격·동·호·중개사·확인일의 before/after를 셀 안에서 비교하고, 자동 연결에는 confidence와 근거를 표시한다.
+- 요약은 `신규`, `변경`, `그대로`, `누락/종료 후보`, `호수 미기록`, `중복 의심`으로 나눈다.
+- 왼쪽 300~360px review queue와 중앙 외부매물의 queue+detail 2-pane을 쓴다.
+- 가격·동·호·중개사·확인일의 before/after를 셀 안에서 비교한다.
 - `세션 완료` 전에 종료될 외부 광고와 미처리 건 수를 preview하고, 완료 뒤에는 session log를 남긴다.
 - 한 외부 그룹을 한 행으로 두고 동일 호실/중복 원본은 expandable children으로 접는다.
 

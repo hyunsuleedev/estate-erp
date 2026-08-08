@@ -203,8 +203,8 @@ export function EventLinkRow({
   });
 
   return (
-    <div className="flex min-h-9 items-center gap-2">
-      <span className="w-16 shrink-0 text-xs text-muted-foreground">{LINK_KIND_LABEL[kind]}</span>
+    <div className="-mx-2 flex min-h-9 items-center gap-2 rounded-md px-2 transition-colors hover:bg-muted/45">
+      <span className="w-20 shrink-0 text-xs text-muted-foreground">{LINK_KIND_LABEL[kind]}</span>
 
       {value ? (
         <div className="flex min-w-0 items-center gap-1">
@@ -247,7 +247,7 @@ export function EventLinkRow({
           }}
         >
           <PopoverTrigger asChild>
-            <Button type="button" variant="outline" size="sm" className="h-7 gap-1 px-2 text-xs">
+            <Button type="button" variant="ghost" size="sm" className="h-7 gap-1 px-2 text-xs text-muted-foreground">
               <Plus className="size-3.5" />
               연결
             </Button>

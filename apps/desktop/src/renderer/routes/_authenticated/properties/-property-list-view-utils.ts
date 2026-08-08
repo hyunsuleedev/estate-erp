@@ -43,6 +43,18 @@ export interface PropertyListingGroup {
   matchedListings: Listing[];
 }
 
+type ListingPrimaryPriceInput = Pick<
+  Listing,
+  'transactionType' | 'price' | 'deposit'
+>;
+
+/** 목록·지도·거래 시작 UI에서 공통으로 표시할 대표 가격을 반환한다. */
+export function getListingPrimaryPrice(listing: ListingPrimaryPriceInput) {
+  return listing.transactionType === 'monthly'
+    ? listing.deposit
+    : listing.price;
+}
+
 /**
  * StatusBadge 톤 → EditableCell 칩 클래스 매핑.
  * (EditableCell chipOptions는 className 문자열을 요구하므로
@@ -157,7 +169,7 @@ export function getMoveInAvailability(listing: MoveInAvailabilityInput) {
     return {
       label: '즉시',
       detail: null,
-      className: 'bg-[#eef3ed] text-[#44745a]',
+      className: 'bg-neutral-soft text-neutral-strong',
     };
   }
 
@@ -165,7 +177,9 @@ export function getMoveInAvailability(listing: MoveInAvailabilityInput) {
     return {
       label: from ? `${formatDateShort(from)} 이후` : '확인 필요',
       detail: null,
-      className: from ? 'bg-[#e7f3f8] text-[#337ea9]' : 'bg-[#f1f1ef] text-[#787774]',
+      className: from
+        ? 'bg-neutral-soft text-neutral-strong'
+        : 'bg-warning-soft text-warning-strong',
     };
   }
 
@@ -173,7 +187,7 @@ export function getMoveInAvailability(listing: MoveInAvailabilityInput) {
     return {
       label: formatMoveInRange(from, to),
       detail: null,
-      className: 'bg-[#fbf3db] text-[#8f6b1f]',
+      className: 'bg-neutral-soft text-neutral-strong',
     };
   }
 
@@ -181,14 +195,14 @@ export function getMoveInAvailability(listing: MoveInAvailabilityInput) {
     return {
       label: '협의',
       detail: null,
-      className: 'bg-[#fbf3db] text-[#8f6b1f]',
+      className: 'bg-neutral-soft text-neutral-strong',
     };
   }
 
   return {
     label: '확인 필요',
     detail: null,
-    className: 'bg-[#f1f1ef] text-[#787774]',
+    className: 'bg-warning-soft text-warning-strong',
   };
 }
 

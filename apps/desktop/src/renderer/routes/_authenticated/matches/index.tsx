@@ -2,9 +2,7 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Building2,
   GitBranch,
-  List,
   ListOrdered,
   Plus,
   RefreshCw,
@@ -12,42 +10,38 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { Match } from '@estate-erp/api-client';
+import { MatchStage, normalizeMatchStage } from '@estate-erp/shared';
 import {
   buildViewingCalendarEventPayload,
-  formatMatchPrice,
-  formatRequirementSummary,
   getMatchKpis,
-  getMatchListingGroups,
+  getMatchStageBlockReason,
   getMatchStageGroups,
   getMatchStageLabel,
   getMatchTitle,
   getUpcomingViewingEvent,
-  matchBoardStages,
   matchStageOrder,
   shouldMoveToViewingOnSchedule,
   toCalendarEventUpdatePayload,
   type MatchRowActions,
 } from './-match-view-utils';
-import { MatchColumn, ResultPanel, MatchActionsMenu } from './-match-board';
-import { BuyerMatchGroup, PropertyMatchGroup, StageMatchView } from './-match-groups';
+import { BuyerMatchGroup, StageMatchView } from './-match-groups';
 import { MatchDetailDialog } from './-match-detail-dialog';
 import { MatchCreateDialog } from './-match-create-dialog';
 import { MatchConvertDialog } from './-match-convert-dialog';
 import { api } from '@/lib/api';
 import { getStatusMeta } from '@/lib/status-config';
-import { formatDate } from '@/lib/format';
 import {
   ConfirmDialog,
   EmptyState,
   FilterSearch,
   FilterSelect,
-  StatusBadge,
 } from '@/components/domain';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { MultiSelect } from '@/components/ui/multi-select';
 import { Skeleton } from '@/components/ui/skeleton';
 
-type MatchViewMode = 'buyer' | 'property' | 'stage' | 'kanban' | 'list';
+type MatchViewMode = 'buyer' | 'stage';
 
 interface BuyerMatchGroupData {
   buyerReqId: string;
@@ -76,6 +70,9 @@ function MatchesPage() {
   const [stageFilters, setStageFilters] = useState<string[]>([]);
   const [transactionTypeFilter, setTransactionTypeFilter] = useState('');
   const [viewMode, setViewMode] = useState<MatchViewMode>('buyer');
+  const [selectedItemIds, setSelectedItemIds] = useState<Set<string>>(
+    () => new Set(),
+  );
   const [selectedMatchId, setSelectedMatchId] = useState<string | null>(null);
   const [convertMatchId, setConvertMatchId] = useState<string | null>(null);
   const [deleteMatchId, setDeleteMatchId] = useState<string | null>(null);
@@ -83,7 +80,7 @@ function MatchesPage() {
   const deferredSearch = useDeferredValue(searchQuery);
   const searchWrapRef = useRef<HTMLDivElement>(null);
 
-  // 키보드 단축키: Cmd/Ctrl+F 검색 포커스, 1~5 뷰 전환 (입력 중/다이얼로그 안에서는 무시)
+  // 키보드 단축키: Cmd/Ctrl+F 검색 포커스, 1~2 뷰 전환 (입력 중/다이얼로그 안에서는 무시)
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key === 'f') {
@@ -110,10 +107,7 @@ function MatchesPage() {
 
       const viewByKey: Record<string, MatchViewMode> = {
         '1': 'buyer',
-        '2': 'property',
-        '3': 'stage',
-        '4': 'kanban',
-        '5': 'list',
+        '2': 'stage',
       };
       const nextView = viewByKey[event.key];
       if (nextView) {
@@ -144,12 +138,19 @@ function MatchesPage() {
   }, [deepLinkMatchId, navigate]);
 
   const stageMutation = useMutation({
-    mutationFn: ({ id, stage, memo }: { id: string; stage: string; memo?: string }) =>
-      api.matches.updateStage(id, { stage, memo }),
+    mutationFn: ({
+      id,
+      stage,
+      memo,
+    }: {
+      id: string;
+      stage: string;
+      memo?: string;
+    }) => api.matches.updateStage(id, { stage, memo }),
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['matches'] });
       toast.success(
-        variables.stage === 'closed'
+        variables.stage === MatchStage.CLOSED
           ? '매칭을 종료했습니다'
           : `${getMatchStageLabel(variables.stage)} 단계로 변경했습니다`,
       );
@@ -159,8 +160,43 @@ function MatchesPage() {
     },
   });
 
+  const memoMutation = useMutation({
+    mutationFn: ({
+      id,
+      stage,
+      memo,
+    }: {
+      id: string;
+      stage: string;
+      memo: string | null;
+    }) => api.matches.updateStage(id, { stage, memo }),
+    onSuccess: (updatedMatch) => {
+      queryClient.setQueryData<Match[]>(['matches'], (current) =>
+        current?.map((match) =>
+          match.id === updatedMatch.id ? updatedMatch : match,
+        ),
+      );
+      queryClient.invalidateQueries({ queryKey: ['matches'] });
+      toast.success('메모를 저장했습니다');
+    },
+    onError: (error: Error) => {
+      toast.error(`메모 저장에 실패했습니다: ${error.message}`);
+    },
+  });
+
   const viewingScheduleMutation = useMutation({
-    mutationFn: async ({ match, startLocalValue }: { match: Match; startLocalValue: string }) => {
+    mutationFn: async ({
+      match,
+      startLocalValue,
+    }: {
+      match: Match;
+      startLocalValue: string;
+    }) => {
+      const blockReason = getMatchStageBlockReason(match, MatchStage.VIEWING);
+      if (blockReason) {
+        throw new Error(blockReason);
+      }
+
       const payload = buildViewingCalendarEventPayload(match, startLocalValue);
       const upcomingViewingEvent = getUpcomingViewingEvent(match);
 
@@ -174,7 +210,7 @@ function MatchesPage() {
       }
 
       if (shouldMoveToViewingOnSchedule(match.stage)) {
-        await api.matches.updateStage(match.id, { stage: 'viewing' });
+        await api.matches.updateStage(match.id, { stage: MatchStage.VIEWING });
       }
     },
     onSuccess: () => {
@@ -204,7 +240,18 @@ function MatchesPage() {
 
   // dealCreated 진입은 항상 거래 생성 확인 다이얼로그를 거친다
   const handleStageChange = (id: string, stage: string) => {
-    if (stage === 'dealCreated') {
+    const match = matches.find((candidate) => candidate.id === id);
+    if (match) {
+      const blockReason = getMatchStageBlockReason(match, stage);
+      if (blockReason) {
+        toast.error('단계 이동 전 확인이 필요합니다', {
+          description: blockReason,
+        });
+        return;
+      }
+    }
+
+    if (stage === MatchStage.DEAL_CREATED) {
       setConvertMatchId(id);
       return;
     }
@@ -214,7 +261,17 @@ function MatchesPage() {
   const actions: MatchRowActions = {
     isUpdating: stageMutation.isPending,
     isScheduling: viewingScheduleMutation.isPending,
+    savingMemoId: memoMutation.isPending
+      ? (memoMutation.variables?.id ?? null)
+      : null,
     onStageChange: handleStageChange,
+    onSaveMemo: async (match, memo) => {
+      await memoMutation.mutateAsync({
+        id: match.id,
+        stage: normalizeMatchStage(match.stage),
+        memo,
+      });
+    },
     onRequestDelete: setDeleteMatchId,
     onOpenDetail: setSelectedMatchId,
     onScheduleViewing: (match, startLocalValue) =>
@@ -238,7 +295,10 @@ function MatchesPage() {
     const query = deferredSearch.trim().toLowerCase();
 
     return matches.filter((match) => {
-      if (stageFilters.length > 0 && !stageFilters.includes(match.stage)) {
+      if (
+        stageFilters.length > 0 &&
+        !stageFilters.includes(normalizeMatchStage(match.stage))
+      ) {
         return false;
       }
 
@@ -269,11 +329,6 @@ function MatchesPage() {
   }, [deferredSearch, matches, stageFilters, transactionTypeFilter]);
 
   const kpis = useMemo(() => getMatchKpis(matches), [matches]);
-  const activeMatches = filteredMatches.filter(
-    (match) => match.stage !== 'dealCreated' && match.stage !== 'closed',
-  );
-  const convertedMatches = filteredMatches.filter((match) => match.stage === 'dealCreated');
-  const closedMatches = filteredMatches.filter((match) => match.stage === 'closed');
 
   const groupedBuyerMatches = useMemo<BuyerMatchGroupData[]>(() => {
     const grouped = new Map<string, BuyerMatchGroupData>();
@@ -305,14 +360,58 @@ function MatchesPage() {
     );
   }, [filteredMatches]);
 
-  const groupedPropertyMatches = useMemo(
-    () => getMatchListingGroups(filteredMatches),
-    [filteredMatches],
-  );
   const stageGroupedMatches = useMemo(
     () => getMatchStageGroups(filteredMatches),
     [filteredMatches],
   );
+
+  const visibleItemIds = useMemo(
+    () =>
+      viewMode === 'buyer'
+        ? groupedBuyerMatches.map((group) => group.buyerReqId)
+        : filteredMatches.map((match) => match.id),
+    [filteredMatches, groupedBuyerMatches, viewMode],
+  );
+
+  // 선택은 현재 뷰와 필터 결과에만 유지한다. 숨겨진 항목이 선택된 채 남아
+  // 이후 벌크 액션 범위를 오해하게 만드는 것을 방지한다.
+  useEffect(() => {
+    const visibleIds = new Set(visibleItemIds);
+    setSelectedItemIds((current) => {
+      const next = new Set(
+        Array.from(current).filter((id) => visibleIds.has(id)),
+      );
+      return next.size === current.size ? current : next;
+    });
+  }, [visibleItemIds]);
+
+  const selectedVisibleItemCount = visibleItemIds.reduce(
+    (count, id) => count + (selectedItemIds.has(id) ? 1 : 0),
+    0,
+  );
+  const allVisibleItemsSelected =
+    visibleItemIds.length > 0 &&
+    selectedVisibleItemCount === visibleItemIds.length;
+  const visibleSelectionState: boolean | 'indeterminate' =
+    allVisibleItemsSelected
+      ? true
+      : selectedVisibleItemCount > 0
+        ? 'indeterminate'
+        : false;
+
+  const updateItemSelection = (itemIds: string[], selected: boolean) => {
+    setSelectedItemIds((current) => {
+      const next = new Set(current);
+      for (const itemId of itemIds) {
+        if (selected) {
+          next.add(itemId);
+        } else {
+          next.delete(itemId);
+        }
+      }
+      return next;
+    });
+  };
 
   const hasActiveFilters =
     searchQuery.trim().length > 0 ||
@@ -408,47 +507,23 @@ function MatchesPage() {
               고객별
             </Button>
             <Button
-              variant={viewMode === 'property' ? 'secondary' : 'ghost'}
-              size="sm"
-              onClick={() => setViewMode('property')}
-              className="gap-1.5 text-xs"
-              title="단축키 2"
-            >
-              <Building2 className="size-3.5" />
-              매물별
-            </Button>
-            <Button
               variant={viewMode === 'stage' ? 'secondary' : 'ghost'}
               size="sm"
               onClick={() => setViewMode('stage')}
               className="gap-1.5 text-xs"
-              title="단축키 3"
+              title="단축키 2"
             >
               <ListOrdered className="size-3.5" />
               단계별
             </Button>
-            <Button
-              variant={viewMode === 'kanban' ? 'secondary' : 'ghost'}
-              size="sm"
-              onClick={() => setViewMode('kanban')}
-              className="gap-1.5 text-xs"
-              title="단축키 4"
-            >
-              칸반
-            </Button>
-            <Button
-              variant={viewMode === 'list' ? 'secondary' : 'ghost'}
-              size="sm"
-              onClick={() => setViewMode('list')}
-              className="gap-1.5 text-xs"
-              title="단축키 5"
-            >
-              <List className="size-3.5" />
-              전체
-            </Button>
           </div>
 
-          <Button type="button" size="sm" className="h-8" onClick={() => setCreateOpen(true)}>
+          <Button
+            type="button"
+            size="sm"
+            className="h-8"
+            onClick={() => setCreateOpen(true)}
+          >
             <Plus className="size-4" />
             매칭 생성
           </Button>
@@ -464,8 +539,15 @@ function MatchesPage() {
           </div>
         ) : isError ? (
           <div className="flex flex-col items-center gap-3 rounded-md border border-dashed border-border/80 bg-background px-4 py-14 text-center">
-            <p className="text-sm text-muted-foreground">매칭 목록을 불러오지 못했습니다.</p>
-            <Button type="button" variant="outline" size="sm" onClick={() => refetch()}>
+            <p className="text-sm text-muted-foreground">
+              매칭 목록을 불러오지 못했습니다.
+            </p>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => refetch()}
+            >
               <RefreshCw className="size-4" />
               재시도
             </Button>
@@ -489,6 +571,20 @@ function MatchesPage() {
           />
         ) : (
           <div className="min-h-0">
+            <MatchListStickyHeader
+              checked={visibleSelectionState}
+              selectedCount={selectedVisibleItemCount}
+              summary={
+                viewMode === 'buyer'
+                  ? `고객 ${groupedBuyerMatches.length.toLocaleString()}명 · 매칭 ${filteredMatches.length.toLocaleString()}건`
+                  : `매칭 ${filteredMatches.length.toLocaleString()}건`
+              }
+              onToggleAll={(selected) =>
+                updateItemSelection(visibleItemIds, selected)
+              }
+              onClear={() => setSelectedItemIds(new Set())}
+            />
+
             {viewMode === 'buyer' && (
               <div className="space-y-2">
                 {groupedBuyerMatches.length === 0 ? (
@@ -500,64 +596,23 @@ function MatchesPage() {
                       buyerRequirement={group.buyerRequirement}
                       matches={group.matches}
                       actions={actions}
+                      selected={selectedItemIds.has(group.buyerReqId)}
+                      onSelectedChange={(selected) =>
+                        updateItemSelection([group.buyerReqId], selected)
+                      }
                     />
-                  ))
-                )}
-              </div>
-            )}
-
-            {viewMode === 'property' && (
-              <div className="space-y-2">
-                {groupedPropertyMatches.length === 0 ? (
-                  <ViewEmpty message="매물별로 묶어 보여줄 매칭이 없습니다." />
-                ) : (
-                  groupedPropertyMatches.map((group) => (
-                    <PropertyMatchGroup key={group.listingId} group={group} actions={actions} />
                   ))
                 )}
               </div>
             )}
 
             {viewMode === 'stage' && (
-              <StageMatchView groups={stageGroupedMatches} actions={actions} />
-            )}
-
-            {viewMode === 'kanban' && (
-              <div className="space-y-3">
-                <div className="flex gap-3 overflow-x-auto pb-1">
-                  {matchBoardStages.map((stage) => (
-                    <MatchColumn
-                      key={stage}
-                      stage={stage}
-                      matches={activeMatches.filter((match) => match.stage === stage)}
-                      actions={actions}
-                    />
-                  ))}
-                </div>
-
-                {activeMatches.length === 0 && (
-                  <ViewEmpty message="조건에 맞는 진행 매칭이 없습니다." />
-                )}
-
-                <div className="grid gap-3 xl:grid-cols-2">
-                  <ResultPanel
-                    title="거래 전환"
-                    emptyMessage="거래 전환된 매칭이 없습니다."
-                    matches={convertedMatches}
-                    actions={actions}
-                  />
-                  <ResultPanel
-                    title="종료"
-                    emptyMessage="종료된 매칭이 없습니다."
-                    matches={closedMatches}
-                    actions={actions}
-                  />
-                </div>
-              </div>
-            )}
-
-            {viewMode === 'list' && (
-              <MatchListTable matches={filteredMatches} actions={actions} />
+              <StageMatchView
+                groups={stageGroupedMatches}
+                actions={actions}
+                selectedItemIds={selectedItemIds}
+                onSelectionChange={updateItemSelection}
+              />
             )}
           </div>
         )}
@@ -574,7 +629,11 @@ function MatchesPage() {
         actions={actions}
       />
 
-      <MatchCreateDialog open={createOpen} onOpenChange={setCreateOpen} matches={matches} />
+      <MatchCreateDialog
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        matches={matches}
+      />
 
       <MatchConvertDialog
         match={convertMatch}
@@ -612,16 +671,74 @@ function MatchesPage() {
   );
 }
 
-function MatchSummaryItem({ label, value }: { label: string; value: number }) {
+function MatchListStickyHeader({
+  checked,
+  selectedCount,
+  summary,
+  onToggleAll,
+  onClear,
+}: {
+  checked: boolean | 'indeterminate';
+  selectedCount: number;
+  summary: string;
+  onToggleAll: (selected: boolean) => void;
+  onClear: () => void;
+}) {
   return (
-    <div className="flex items-baseline gap-2 border-r border-border/70 px-4 first:pl-0 last:border-r-0">
-      <span className="text-xs text-muted-foreground">{label}</span>
-      <strong className="text-sm font-semibold tabular-nums">{value.toLocaleString()}</strong>
+    <div
+      data-match-list-sticky-header
+      className="sticky -top-3 z-20 -mx-3 -mt-3 mb-3 flex h-10 items-center gap-2 border-b border-border/70 bg-background/95 px-3 backdrop-blur-sm"
+    >
+      <Checkbox
+        id="matches-select-all"
+        checked={checked}
+        onCheckedChange={(value) => onToggleAll(value === true)}
+        aria-label="현재 매칭 목록 전체 선택"
+      />
+      <label
+        htmlFor="matches-select-all"
+        className="cursor-pointer text-xs font-medium"
+      >
+        {selectedCount > 0
+          ? `${selectedCount.toLocaleString()}개 선택됨`
+          : '전체 선택'}
+      </label>
+      <span className="ml-auto text-xs text-muted-foreground tabular-nums">
+        {summary}
+      </span>
+      {selectedCount > 0 && (
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-7 px-2 text-xs text-muted-foreground"
+          onClick={onClear}
+        >
+          선택 해제
+        </Button>
+      )}
     </div>
   );
 }
 
-function ViewEmpty({ message, onReset }: { message: string; onReset?: () => void }) {
+function MatchSummaryItem({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="flex items-baseline gap-2 border-r border-border/70 px-4 first:pl-0 last:border-r-0">
+      <span className="text-xs text-muted-foreground">{label}</span>
+      <strong className="text-sm font-semibold tabular-nums">
+        {value.toLocaleString()}
+      </strong>
+    </div>
+  );
+}
+
+function ViewEmpty({
+  message,
+  onReset,
+}: {
+  message: string;
+  onReset?: () => void;
+}) {
   return (
     <div className="flex flex-col items-center gap-3 rounded-md border border-dashed border-border/80 bg-background px-4 py-10 text-center">
       <p className="text-sm text-muted-foreground">{message}</p>
@@ -631,103 +748,6 @@ function ViewEmpty({ message, onReset }: { message: string; onReset?: () => void
           검색·필터 초기화
         </Button>
       )}
-    </div>
-  );
-}
-
-function MatchListTable({
-  matches,
-  actions,
-}: {
-  matches: Match[];
-  actions: MatchRowActions;
-}) {
-  return (
-    <div className="overflow-hidden rounded-md border border-border bg-background">
-      <div className="overflow-x-auto">
-        <table className="min-w-[1000px] text-[13px]">
-          <thead className="bg-muted/50 text-left text-xs text-muted-foreground">
-            <tr>
-              <th className="px-3 py-2 font-medium">단계</th>
-              <th className="px-3 py-2 font-medium">고객</th>
-              <th className="px-3 py-2 font-medium">매물</th>
-              <th className="px-3 py-2 font-medium">조건</th>
-              <th className="px-3 py-2 font-medium">메모</th>
-              <th className="px-3 py-2 font-medium">최근 수정</th>
-              <th className="px-3 py-2 font-medium" />
-            </tr>
-          </thead>
-          <tbody>
-            {matches.length === 0 ? (
-              <tr>
-                <td colSpan={7} className="px-4 py-10 text-center text-sm text-muted-foreground">
-                  매칭이 없습니다.
-                </td>
-              </tr>
-            ) : (
-              matches.map((match) => (
-                <tr
-                  key={match.id}
-                  className="border-t border-border/70 align-top hover:bg-muted/30"
-                  onDoubleClick={() => actions.onOpenDetail(match.id)}
-                  title="더블클릭하여 상세보기"
-                >
-                  <td className="px-3 py-2.5">
-                    <StatusBadge kind="matchStage" status={match.stage} size="sm" />
-                  </td>
-                  <td className="px-3 py-2.5">
-                    <div className="space-y-1">
-                      <p className="font-medium">
-                        {match.buyerRequirement?.contact?.name ?? '미지정'}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {match.buyerRequirement?.contact?.phone ?? '—'}
-                      </p>
-                    </div>
-                  </td>
-                  <td className="px-3 py-2.5">
-                    <div className="space-y-1">
-                      <button
-                        type="button"
-                        className="max-w-64 truncate text-left font-medium hover:underline"
-                        onClick={() => actions.onOpenDetail(match.id)}
-                      >
-                        {getMatchTitle(match)}
-                      </button>
-                      <div className="flex flex-wrap items-center gap-2">
-                        {match.listing?.transactionType && (
-                          <StatusBadge
-                            kind="transactionType"
-                            status={match.listing.transactionType}
-                            size="sm"
-                          />
-                        )}
-                        <span className="text-xs tabular-nums text-muted-foreground">
-                          {formatMatchPrice(match)}
-                        </span>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-3 py-2.5 text-xs text-muted-foreground">
-                    {formatRequirementSummary(match)}
-                  </td>
-                  <td className="px-3 py-2.5 text-xs text-muted-foreground">
-                    <p className="line-clamp-2">{match.memo ?? '—'}</p>
-                  </td>
-                  <td className="px-3 py-2.5 text-xs text-muted-foreground tabular-nums">
-                    {formatDate(match.updatedAt)}
-                  </td>
-                  <td className="px-3 py-2.5">
-                    <div className="flex justify-end">
-                      <MatchActionsMenu match={match} actions={actions} />
-                    </div>
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
     </div>
   );
 }

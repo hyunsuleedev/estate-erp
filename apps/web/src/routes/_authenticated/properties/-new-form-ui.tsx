@@ -2,7 +2,6 @@ import { Lock } from 'lucide-react';
 import { MAINTENANCE_FEE_INCLUDE_LABELS } from '@estate-erp/shared';
 import { cn } from '@/lib/utils';
 import { formatMoney } from '@/lib/format';
-import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -21,11 +20,11 @@ export function Section({
   children: React.ReactNode;
 }) {
   return (
-    <section className="rounded-xl border bg-card p-5 shadow-xs">
+    <section className="rounded-lg border bg-card p-5">
       <header className="mb-4 flex items-baseline gap-2">
-        <Badge variant="outline" className="rounded-md">
+        <span className="flex size-5 shrink-0 translate-y-0.5 items-center justify-center rounded-sm bg-muted text-[11px] font-medium tabular-nums text-muted-foreground">
           {step}
-        </Badge>
+        </span>
         <h2 className="text-sm font-semibold">{title}</h2>
         {subtitle && (
           <span className="text-xs text-muted-foreground">{subtitle}</span>
@@ -123,7 +122,7 @@ export function ListingCostFields({
       </div>
 
       {isJeonse && (
-        <p className="text-xs text-amber-700">
+        <p className="text-xs text-warning-strong">
           전세 매물은 융자금(근저당) 확인이 중요합니다 — 보증금 보호(깡통 위험) 판단 기준이 됩니다.
         </p>
       )}
@@ -184,7 +183,7 @@ export function PrivateMemoField({
       <div className="flex items-center gap-1.5">
         <Lock className="size-3.5 text-muted-foreground" />
         <Label className="text-xs font-medium text-muted-foreground">내부 전용 메모</Label>
-        <span className="rounded-sm bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+        <span className="rounded-sm bg-muted px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground">
           외부 비공개
         </span>
       </div>

@@ -6,6 +6,7 @@ import {
   Delete,
   Param,
   Body,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
@@ -24,8 +25,17 @@ export class TasksController {
   constructor(private readonly tasksService: TasksService) {}
 
   @Get()
-  findAll(@CurrentUser() user: CurrentUserPayload) {
-    return this.tasksService.findAll(user.officeId);
+  findAll(
+    @CurrentUser() user: CurrentUserPayload,
+    @Query('status') status?: string,
+    @Query('category') category?: string,
+    @Query('assignedToId') assignedToId?: string,
+  ) {
+    return this.tasksService.findAll(user.officeId, {
+      status: status || undefined,
+      category: category || undefined,
+      assignedToId: assignedToId || undefined,
+    });
   }
 
   @Get(':id')
@@ -61,6 +71,14 @@ export class TasksController {
     @CurrentUser() user: CurrentUserPayload,
   ) {
     return this.tasksService.create(user.officeId, dto, user.userId);
+  }
+
+  @Post(':id/claim')
+  claim(
+    @Param('id') id: string,
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.tasksService.claim(id, user.officeId, user.userId);
   }
 
   @Patch(':id')

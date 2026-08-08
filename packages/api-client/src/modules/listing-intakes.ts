@@ -41,6 +41,8 @@ export interface ListingIntakeListing {
 export interface ListingIntake {
   id: string;
   officeId: string;
+  brokerageCaseId: string;
+  casePriorityRank: number;
   propertyId: string;
   lifecycleStatus: IntakeLifecycleStatus;
   lifecycleChangedAt: string;
@@ -76,6 +78,26 @@ export type ListingIntakeConfirmChannel =
   | 'note'
   | 'mcp';
 
+export type ListingIntakeSortField =
+  | 'receivedAt'
+  | 'createdAt'
+  | 'updatedAt'
+  | 'info'
+  | 'site'
+  | 'dong'
+  | 'unit'
+  | 'unitType'
+  | 'exclusiveArea'
+  | 'matching'
+  | 'advertisement'
+  | 'confirmationAt'
+  | 'listingAvailability'
+  | 'price'
+  | 'monthlyRent'
+  | 'loanAmount'
+  | 'moveInAvailable'
+  | 'memo';
+
 export interface ListingIntakesFilter {
   lifecycleStatus?: IntakeLifecycleStatus;
   confirmationState?: IntakeConfirmationState;
@@ -94,7 +116,9 @@ export interface ListingIntakesFilter {
   depositMax?: number;
   monthlyRentMin?: number;
   monthlyRentMax?: number;
+  /** 공급면적 하한 (m²) */
   areaMin?: number;
+  /** 공급면적 상한 (m²) */
   areaMax?: number;
   hasAdvertisement?: boolean;
   isJointBrokerage?: boolean;
@@ -110,7 +134,7 @@ export interface ListingIntakesFilter {
   unit?: string;
   moveInFrom?: string;
   moveInTo?: string;
-  sortBy?: 'receivedAt' | 'createdAt' | 'updatedAt';
+  sortBy?: ListingIntakeSortField;
   sortOrder?: 'asc' | 'desc';
   page?: number;
   limit?: number;
@@ -147,6 +171,7 @@ export interface CreateListingForIntakeDto {
 
 export interface CreateListingIntakeDto {
   propertyId: string;
+  brokerageCaseId?: string;
   lifecycleStatus?: IntakeLifecycleStatus;
   closedReason?: IntakeClosedReason | null;
   receivedAt?: string | null;
@@ -221,6 +246,18 @@ export function createListingIntakesApi(request: RequestFn) {
           expectedUpdatedAt: options?.expectedUpdatedAt,
         },
       }),
+
+    closeWithActiveDeals: (
+      id: string,
+      options?: { expectedUpdatedAt?: string | null },
+    ) =>
+      request<ListingIntake>(
+        `/listing-intakes/${id}/close-with-active-deals`,
+        {
+          method: 'PATCH',
+          body: { expectedUpdatedAt: options?.expectedUpdatedAt },
+        },
+      ),
 
     confirm: (id: string, dto: ConfirmListingIntakeDto) =>
       request<ListingIntake>(`/listing-intakes/${id}/confirm`, {

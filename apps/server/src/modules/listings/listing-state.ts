@@ -29,6 +29,36 @@ export const LISTING_INTAKE_STATE_SELECT = {
   nextConfirmAt: true,
 } satisfies Prisma.ListingIntakeSelect;
 
+export interface IntakeConfirmationStateSource {
+  lifecycleStatus: string;
+  lastVerifiedAt?: Date | string | null;
+  lastCheckResult?: string | null;
+  nextConfirmAt?: Date | string | null;
+}
+
+/** 확인 이력의 최신 결과와 재확인 기한으로 현재 확인 상태를 계산한다. */
+export function getIntakeConfirmationState(
+  intake: IntakeConfirmationStateSource,
+  now = new Date(),
+): IntakeConfirmationState {
+  if (intake.lastCheckResult === IntakeCheckResult.NO_ANSWER) {
+    return IntakeConfirmationState.NO_ANSWER;
+  }
+  if (!intake.lastVerifiedAt) {
+    return IntakeConfirmationState.UNVERIFIED;
+  }
+  if (
+    intake.lifecycleStatus !== IntakeLifecycleStatus.CLOSED &&
+    intake.nextConfirmAt
+  ) {
+    const nextConfirmTime = new Date(intake.nextConfirmAt).getTime();
+    if (Number.isFinite(nextConfirmTime) && nextConfirmTime < now.getTime()) {
+      return IntakeConfirmationState.OVERDUE;
+    }
+  }
+  return IntakeConfirmationState.VERIFIED;
+}
+
 /** Listing 응답에서 파생 상태 계산에 필요한 최소 Deal select */
 export const OCCUPYING_DEALS_SELECT = {
   where: {

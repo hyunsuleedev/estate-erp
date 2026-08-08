@@ -6,7 +6,7 @@
 - 5가지 뷰 모드: 고객별(Contact→BuyerRequirement→Match 계층), 매물별(Listing 그룹+소유자 표시 시도), 단계별 그룹 테이블, 칸반(5 active 컬럼+거래전환/종료 결과 패널), 전체 리스트 — PRD의 3뷰 + 후속 확장(매물별)까지 커버
 - 검색(고객명/연락처/매물명/도로명·지번주소/메모, useDeferredValue) + 단계 multi-select 필터
 - stage 전환: 진행 노드 popover(현재/완료/예정 상태별 액션), '다음 단계' 버튼, 드롭다운 메뉴의 임의 단계 이동, 종료(destructive)
-- suggested→buyerContacted→viewing→ownerContacted→negotiating→dealCreated→closed 7단계 파이프라인 전체 시각화(progress node, 단계별 색상)
+- suggested→buyerInterested→viewingConfirmed→viewing→negotiating→dealCreated→closed 7단계 파이프라인 전체 시각화(progress node, 단계별 색상)
 - 방문(viewing) 일정 캘린더 연동: CalendarEvent 생성/변경 + 일정 등록 시 viewing 단계 자동 이동, 예정 방문 표시 — PRD MVP 초과 구현
 - 매칭 상세 다이얼로그(더블클릭 진입): 진행 단계 progress, 구매자 정보, 매물 정보(단지/호실/주소/가격), 메모 인라인 편집, 거래 전환/종료 버튼
 - 만원→억 표기(formatPrice: 158000→'15억 8,000만'), 월세 보증금/월세 분리 표기, placeholder Dong 숨김 처리 등 한국 실무 표기 준수

@@ -70,7 +70,7 @@ describe('CtiService', () => {
 
       expect(prisma.contactPhone.findFirst).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { officeId: 'office-1', normalizedPhone: '01012345678', isActive: true },
+          where: { officeId: 'office-1', phone: '01012345678' },
         }),
       );
       expect(prisma.callLog.create).toHaveBeenCalledWith(

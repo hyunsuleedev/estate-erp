@@ -1,7 +1,11 @@
-import type { RequestFn } from '../client.js';
-import type { PaginatedResponse } from '../types.js';
+import type { RequestFn } from "../client.js";
+import type { PaginatedResponse } from "../types.js";
 
-export type ActivityLogAction = 'create' | 'update' | 'delete';
+/**
+ * Core CRUD actions as well as domain actions such as approve, pause, and
+ * retry_failed are stored in the same audit stream.
+ */
+export type ActivityLogAction = string;
 
 export interface ActivityLogChange {
   before: unknown;
@@ -19,7 +23,7 @@ export interface ActivityLog {
   action: ActivityLogAction;
   entityType: string;
   entityId: string;
-  changes: Record<string, ActivityLogChange> | null;
+  changes: Record<string, unknown> | null;
   reason: string | null;
   createdAt: string;
   user: { id: string; name: string } | null;
@@ -37,7 +41,7 @@ export interface ActivityLogsFilter {
 export function createActivityLogsApi(request: RequestFn) {
   return {
     list: (filter: ActivityLogsFilter = {}) =>
-      request<PaginatedResponse<ActivityLog>>('/activity-logs', {
+      request<PaginatedResponse<ActivityLog>>("/activity-logs", {
         params: filter as Record<string, string | number | boolean | undefined>,
       }),
   };

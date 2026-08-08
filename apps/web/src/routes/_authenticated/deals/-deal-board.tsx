@@ -1,4 +1,4 @@
-import { useState, type CSSProperties } from 'react';
+import { memo, useState } from 'react';
 import {
   DndContext,
   DragOverlay,
@@ -11,11 +11,10 @@ import {
   type DragEndEvent,
   type DragStartEvent,
 } from '@dnd-kit/core';
-import { CalendarClock, GripVertical } from 'lucide-react';
+import { CalendarClock } from 'lucide-react';
 import type { Deal } from '@estate-erp/api-client';
 import { cn } from '@/lib/utils';
 import { formatMoney } from '@/lib/format';
-import { Badge } from '@/components/ui/badge';
 import { DealActionsMenu } from './-deal-shared';
 import {
   dealDisplayGroups,
@@ -24,7 +23,6 @@ import {
   getDealCommissionValue,
   getDealDisplayGroupKey,
   getDealPipelineHealth,
-  getDealShortCode,
   getDealTitle,
   getDealTransactionType,
   getNextDealPaymentSummary,
@@ -33,6 +31,36 @@ import {
   type DealDisplayGroup,
   type DealRowActions,
 } from './-deal-view-utils';
+
+const DEAL_COLUMN_TONE: Record<
+  DealDisplayGroup['key'],
+  { surface: string; label: string }
+> = {
+  preparing: {
+    surface: 'bg-[#f5f5f3]',
+    label: 'bg-[#e8e8e5] text-[#5f5e59]',
+  },
+  preContract: {
+    surface: 'bg-[#f2f7fa]',
+    label: 'bg-[#dceaf3] text-[#38647a]',
+  },
+  contracted: {
+    surface: 'bg-[#f7f3fa]',
+    label: 'bg-[#e8def2] text-[#694c80]',
+  },
+  settling: {
+    surface: 'bg-[#faf7f0]',
+    label: 'bg-[#f2e7cd] text-[#765d2f]',
+  },
+  completed: {
+    surface: 'bg-[#f2f8f4]',
+    label: 'bg-[#dceee2] text-[#35684a]',
+  },
+  closed: {
+    surface: 'bg-[#f5f5f3]',
+    label: 'bg-[#e8e8e5] text-[#5f5e59]',
+  },
+};
 
 export function DealBoard({
   deals,
@@ -64,7 +92,9 @@ export function DealBoard({
     setActiveDeal(null);
     if (!deal || !event.over) return;
 
-    const targetGroup = dealDisplayGroups.find((group) => group.key === event.over?.id);
+    const targetGroup = dealDisplayGroups.find(
+      (group) => group.key === event.over?.id,
+    );
     if (!targetGroup || targetGroup.stages.includes(deal.stage)) return;
 
     const targetStage = targetGroup.stages[targetGroup.stages.length - 1];
@@ -78,14 +108,19 @@ export function DealBoard({
       onDragCancel={() => setActiveDeal(null)}
       onDragEnd={handleDragEnd}
     >
-      <section className="overflow-x-auto pb-2" aria-label="거래 단계 칸반 보드">
-        <div className="flex min-w-max items-stretch gap-3">
+      <section
+        className="overflow-x-auto pb-2"
+        aria-label="거래 단계 칸반 보드"
+      >
+        <div className="flex min-w-max items-start gap-3 pr-1">
           {dealDisplayGroups.map((group) => (
             <DealColumn
               key={group.key}
               group={group}
               deals={sortDealsForDisplay(
-                deals.filter((deal) => getDealDisplayGroupKey(deal.stage) === group.key),
+                deals.filter(
+                  (deal) => getDealDisplayGroupKey(deal.stage) === group.key,
+                ),
                 referenceDate,
               )}
               selectedDealId={selectedDealId}
@@ -97,8 +132,20 @@ export function DealBoard({
         </div>
       </section>
 
-      <DragOverlay dropAnimation={null}>
-        {activeDeal ? <DealDragPreview deal={activeDeal} referenceDate={referenceDate} /> : null}
+      <DragOverlay
+        adjustScale={false}
+        className="will-change-transform"
+        dropAnimation={null}
+        transition="none"
+      >
+        {activeDeal ? (
+          <DealDragPreview
+            deal={activeDeal}
+            referenceDate={referenceDate}
+            compact={compact}
+            actions={actions}
+          />
+        ) : null}
       </DragOverlay>
     </DndContext>
   );
@@ -120,41 +167,51 @@ function DealColumn({
   actions: DealRowActions;
 }) {
   const summary = summarizeDealGroup(deals, group.key);
-  const commissionTotal = deals.reduce((sum, deal) => sum + getDealCommissionValue(deal), 0);
+  const commissionTotal = deals.reduce(
+    (sum, deal) => sum + getDealCommissionValue(deal),
+    0,
+  );
   const { setNodeRef, isOver } = useDroppable({ id: group.key });
+  const tone = DEAL_COLUMN_TONE[group.key];
 
   return (
     <section
       ref={setNodeRef}
       className={cn(
-        'flex min-h-[560px] shrink-0 flex-col overflow-hidden rounded-[12px] border bg-muted/45 transition-[width,box-shadow,border-color]',
-        compact ? 'w-[196px]' : 'w-[246px]',
-        isOver && 'border-info/60 bg-info-soft/30 ring-2 ring-info/20',
+        'flex min-h-[148px] shrink-0 self-start flex-col overflow-hidden rounded-xl',
+        compact ? 'w-[228px]' : 'w-[272px]',
+        tone.surface,
+        isOver && 'ring-2 ring-inset ring-info/30',
       )}
     >
-      {/* 헤더 — 도트 + 단계명 + 건수 + 수수료 합계 한 줄 (Attio/HubSpot 관례) */}
-      <header className="sticky top-0 z-10 flex items-center gap-1.5 border-b bg-background/95 px-3 py-2.5 backdrop-blur">
-        <span className={cn('size-2 shrink-0 rounded-full', group.dotClassName)} />
-        <h2 className="text-xs font-bold text-foreground">{group.label}</h2>
-        <Badge
-          variant="outline"
-          className="h-[18px] rounded-full bg-background px-1.5 text-[10px] font-semibold tabular-nums text-muted-foreground"
+      <header className="flex min-h-11 items-center gap-2 px-3 py-2.5">
+        <h2
+          className={cn(
+            'inline-flex h-6 items-center rounded-md px-2 text-[11.5px] font-semibold',
+            tone.label,
+          )}
         >
+          {group.label}
+        </h2>
+        <span className="text-[12px] font-medium tabular-nums text-muted-foreground">
           {summary.count}
-        </Badge>
+        </span>
         {commissionTotal > 0 ? (
-          <span className="ml-auto truncate text-[10px] tabular-nums text-slate-600">
+          <span
+            title="예상 수수료 합계"
+            className="ml-auto truncate text-[10px] tabular-nums text-slate-500"
+          >
             {formatMoney(commissionTotal)}
           </span>
         ) : null}
       </header>
 
-      <div className="flex flex-1 flex-col gap-2 p-2">
+      <div className="flex flex-col gap-2 px-2 pb-2">
         {deals.length === 0 ? (
           <div
             className={cn(
-              'flex min-h-[116px] flex-1 items-center justify-center break-keep rounded-lg border border-dashed bg-background/70 px-3 text-center text-[11px] text-slate-600',
-              isOver && 'border-info/50 bg-info-soft/40 text-info-strong',
+              'flex min-h-[88px] items-center justify-center break-keep rounded-lg border border-dashed border-black/10 bg-white/55 px-3 text-center text-[11px] text-slate-500',
+              isOver && 'border-info/45 bg-info-soft/35 text-info-strong',
             )}
           >
             {isOver ? '여기로 이동' : '해당 단계의 거래가 없습니다'}
@@ -189,23 +246,19 @@ function DraggableDealCard({
   compact: boolean;
   actions: DealRowActions;
 }) {
-  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: deal.id,
   });
-  const style: CSSProperties | undefined = transform
-    ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)` }
-    : undefined;
 
   return (
     <div
       ref={setNodeRef}
-      style={style}
       {...attributes}
       {...listeners}
       aria-label={`${getDealTitle(deal)} 거래 카드 단계 이동`}
       className={cn(
-        'touch-none cursor-grab rounded-[9px] outline-none active:cursor-grabbing focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
-        isDragging && 'opacity-25',
+        'touch-none cursor-grab rounded-md outline-none active:cursor-grabbing focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-offset-1',
+        isDragging && 'opacity-20',
       )}
     >
       <DealCard
@@ -219,11 +272,10 @@ function DraggableDealCard({
   );
 }
 
-/** 거래유형 → 좌측 색 띠 (Trello 라벨 관례: 배지 대신 3px 스트라이프) */
-const TRANSACTION_STRIPE: Record<string, string> = {
-  sale: 'bg-info',
-  jeonse: 'bg-success',
-  monthly: 'bg-orange',
+const TRANSACTION_TONE: Record<string, string> = {
+  sale: 'bg-[#e2eef8] text-[#315f7c]',
+  jeonse: 'bg-[#e2f1e7] text-[#37684b]',
+  monthly: 'bg-[#f8e8dc] text-[#865a35]',
 };
 
 const TRANSACTION_LABEL: Record<string, string> = {
@@ -232,116 +284,165 @@ const TRANSACTION_LABEL: Record<string, string> = {
   monthly: '월세',
 };
 
-function DealCard({
+const DealCard = memo(function DealCard({
   deal,
   selected,
   referenceDate,
   compact,
   actions,
+  dragPreview = false,
 }: {
   deal: Deal;
   selected: boolean;
   referenceDate: Date;
   compact: boolean;
   actions: DealRowActions;
+  dragPreview?: boolean;
 }) {
   const transactionType = getDealTransactionType(deal);
   const nextPayment = getNextDealPaymentSummary(deal, referenceDate);
   const health = getDealPipelineHealth(deal, referenceDate);
   const urgent = health.state === 'overdue' || nextPayment?.isUrgent;
-
-  // 메타 한 줄: 유형 · 다음 일정 · 체류일 · 공동.
-  // 색(띠·배경 틴트)에만 의존하지 않도록 유형은 텍스트로도 표기한다.
-  // 지연/정체 라벨은 truncate에 잘리지 않게 별도 shrink-0 요소로 렌더링.
-  const metaParts = [
-    transactionType ? TRANSACTION_LABEL[transactionType] : null,
-    formatNextPaymentLabel(nextPayment),
-    `${health.stageAgeDays}일 체류`,
-    deal.isJointBrokerage ? '공동' : null,
+  const partyParts = [
+    deal.sellerContact?.name ? `매도 ${deal.sellerContact.name}` : null,
+    deal.buyerContact?.name ? `매수 ${deal.buyerContact.name}` : null,
   ].filter(Boolean);
 
   return (
     <article
       title={health.isAtRisk ? health.description : undefined}
       className={cn(
-        'group relative overflow-hidden rounded-[9px] border bg-background shadow-xs transition-shadow hover:shadow-md',
-        compact ? 'py-2 pl-3 pr-2' : 'py-2.5 pl-3.5 pr-2.5',
-        selected ? 'border-info ring-1 ring-info' : 'border-border',
-        // 상태 신호는 카드 배경 틴트 하나로 (Pipedrive rotting 방식)
-        health.state === 'overdue' && !selected && 'border-destructive/45 bg-destructive-soft/40',
-        health.state === 'stale' && !selected && 'border-warning/50 bg-warning-soft/35',
+        'group relative overflow-hidden rounded-lg border border-black/[0.08] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.05)]',
+        compact ? 'p-2.5' : 'p-3',
+        !dragPreview && 'hover:border-black/[0.14]',
+        dragPreview && 'h-full w-full shadow-[0_12px_32px_rgba(15,23,42,0.16)]',
+        selected && 'border-foreground/35 ring-1 ring-foreground/10',
+        health.state === 'overdue' && !selected && 'border-destructive/35',
+        health.state === 'stale' && !selected && 'border-warning/40',
       )}
     >
-      {transactionType ? (
-        <span
-          aria-hidden="true"
-          className={cn(
-            'absolute inset-y-0 left-0 w-[3px]',
-            TRANSACTION_STRIPE[transactionType],
-          )}
-        />
-      ) : null}
-
       <div className="flex items-start gap-1">
-        <button
-          type="button"
-          className="min-w-0 flex-1 text-left"
-          onClick={() => actions.onSelect(deal.id)}
-          onKeyDown={(event) => event.stopPropagation()}
-        >
-          <p className="truncate text-[12.5px] font-semibold leading-[1.35] text-foreground">
-            {getDealTitle(deal)}
-          </p>
-        </button>
-        <div
-          className="shrink-0"
-          onPointerDown={(event) => event.stopPropagation()}
-          onKeyDown={(event) => event.stopPropagation()}
-        >
-          <DealActionsMenu deal={deal} actions={actions} />
-        </div>
+        {dragPreview ? (
+          <div className="min-w-0 flex-1 text-left">
+            <p className="truncate text-[13px] font-semibold leading-[1.4] text-foreground">
+              {getDealTitle(deal)}
+            </p>
+          </div>
+        ) : (
+          <button
+            type="button"
+            className="min-w-0 flex-1 text-left"
+            onClick={() => actions.onSelect(deal.id)}
+            onKeyDown={(event) => event.stopPropagation()}
+          >
+            <p className="truncate text-[13px] font-semibold leading-[1.4] text-foreground">
+              {getDealTitle(deal)}
+            </p>
+          </button>
+        )}
+        {dragPreview ? (
+          <span aria-hidden="true" className="size-6 shrink-0" />
+        ) : (
+          <div
+            className="shrink-0"
+            onPointerDown={(event) => event.stopPropagation()}
+            onKeyDown={(event) => event.stopPropagation()}
+          >
+            <DealActionsMenu deal={deal} actions={actions} />
+          </div>
+        )}
       </div>
 
-      <div className="mt-1.5 truncate text-[14.5px] font-bold leading-5 tabular-nums text-foreground">
-        {formatDealAmount(deal)}
+      {!compact && partyParts.length > 0 ? (
+        <p
+          title={partyParts.join(' · ')}
+          className="mt-1.5 truncate text-[11px] leading-4 text-muted-foreground"
+        >
+          {partyParts.join(' · ')}
+        </p>
+      ) : null}
+
+      <div className="mt-2 flex min-w-0 items-center gap-1.5">
+        <div className="min-w-0 flex-1 truncate text-[15px] font-semibold leading-5 tabular-nums text-foreground">
+          {formatDealAmount(deal)}
+        </div>
+        {transactionType ? (
+          <span
+            className={cn(
+              'shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold',
+              TRANSACTION_TONE[transactionType] ??
+                'bg-muted text-muted-foreground',
+            )}
+          >
+            {TRANSACTION_LABEL[transactionType] ?? transactionType}
+          </span>
+        ) : null}
+        {deal.isJointBrokerage ? (
+          <span className="shrink-0 rounded bg-[#efefed] px-1.5 py-0.5 text-[10px] font-medium text-[#66645f]">
+            공동
+          </span>
+        ) : null}
       </div>
 
       <div
         className={cn(
-          'mt-1.5 flex items-center gap-1 text-[10.5px]',
+          'mt-2 flex min-w-0 items-center gap-1.5 text-[10.5px]',
           urgent ? 'font-medium text-destructive-strong' : 'text-slate-600',
         )}
       >
         <CalendarClock className="size-3 shrink-0" aria-hidden="true" />
-        <span className="min-w-0 truncate">{metaParts.join(' · ')}</span>
-        {health.isAtRisk ? (
+        <span className="min-w-0 truncate">
+          {formatNextPaymentLabel(nextPayment)}
+        </span>
+        <span aria-hidden="true" className="text-black/20">
+          ·
+        </span>
+        <span className="shrink-0 tabular-nums">
+          {health.stageAgeDays}일 체류
+        </span>
+      </div>
+
+      {health.isAtRisk ? (
+        <div className="mt-2 flex justify-end">
           <span
             className={cn(
-              'ml-auto shrink-0 whitespace-nowrap font-semibold',
+              'shrink-0 whitespace-nowrap rounded px-1.5 py-0.5 text-[9.5px] font-semibold',
               health.state === 'overdue'
-                ? 'text-destructive-strong'
-                : 'text-warning-strong',
+                ? 'bg-destructive-soft text-destructive-strong'
+                : health.state === 'stale'
+                  ? 'bg-warning-soft text-warning-strong'
+                  : 'bg-[#efefed] text-slate-600',
             )}
           >
             {health.label}
           </span>
-        ) : null}
-      </div>
+        </div>
+      ) : null}
     </article>
   );
-}
+});
 
-function DealDragPreview({ deal, referenceDate }: { deal: Deal; referenceDate: Date }) {
-  const health = getDealPipelineHealth(deal, referenceDate);
-
+function DealDragPreview({
+  deal,
+  referenceDate,
+  compact,
+  actions,
+}: {
+  deal: Deal;
+  referenceDate: Date;
+  compact: boolean;
+  actions: DealRowActions;
+}) {
   return (
-    <div className="w-[232px] rotate-2 rounded-[10px] border border-info/50 bg-background p-3 shadow-xl">
-      <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
-        <GripVertical className="size-3.5" aria-hidden="true" />
-        {getDealShortCode(deal.id)} · {health.stageAgeDays}일 체류
-      </div>
-      <div className="mt-2 truncate text-sm font-semibold">{getDealTitle(deal)}</div>
-      <div className="mt-1 text-base font-bold tabular-nums">{formatDealAmount(deal)}</div>
+    <div aria-hidden="true" className="pointer-events-none h-full w-full">
+      <DealCard
+        deal={deal}
+        selected={false}
+        referenceDate={referenceDate}
+        compact={compact}
+        actions={actions}
+        dragPreview
+      />
     </div>
   );
 }

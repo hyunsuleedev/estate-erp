@@ -12,8 +12,8 @@
    for this step.
 6. Write each own advertisement's independent current comparison with
    `batch_upsert_office_advertisements`.
-7. Return analysis and recommendations for every CP-imported advertisement.
-   Staff create action requests later in My Ads Management.
+7. Return analysis and recommendations for every CP-imported advertisement to
+   the caller. A local advertisement Task runner may use them as evidence.
 
 ## Snapshot calls
 
@@ -24,12 +24,11 @@
 }
 ```
 
-The `siteId` must come from an `ExternalListingSource` row
-(`find_external_listing_sources` with `provider="naver"`, `isEnabled=true`). That row's
-`externalCode` is the site's Naver `complexNo`; `Site.naverComplexCode` is a
-registration-time suggestion only and is never a collection input. A site with no
-source row is out of scope — report `unmapped_site` rather than resolving the
-complex by name.
+The `siteId` and Naver `complexNo` must come from an enabled row in the local
+SQLite owned by `naver-complex-collector`. Its `externalCode` is the exact Naver
+`complexNo`. `Site.naverComplexCode` is at most an explicit import suggestion
+and is never a direct collection input. A site with no local row is out of scope
+— report `unmapped_site` rather than resolving the complex by name.
 
 Use the returned session ID for
 `complete_external_listing_snapshot_session` or

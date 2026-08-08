@@ -33,10 +33,15 @@ import {
   ConsultationCard,
   PropertyContactCard,
   RelationCard,
-  relationTypeLabels,
+  getContactRelationLabel,
   type RelationItem,
 } from './-detail-cards';
-import { ContactEditDialog, ContactTagBadges, RelationAddDialog } from './-detail-dialogs';
+import {
+  ContactEditDialog,
+  ContactTagBadges,
+  RelationAddDialog,
+  RelationEditDialog,
+} from './-detail-dialogs';
 import {
   BuyerReqAddDialog,
   ConsultationAddDialog,
@@ -64,6 +69,7 @@ function ContactDetailPage() {
   const queryClient = useQueryClient();
   const { id } = Route.useParams();
   const [openDialog, setOpenDialog] = useState<DialogKind>(null);
+  const [relationToEdit, setRelationToEdit] = useState<RelationItem | null>(null);
   const [relationToDelete, setRelationToDelete] = useState<RelationItem | null>(null);
 
   const contactQuery = useQuery({
@@ -100,20 +106,22 @@ function ContactDetailPage() {
       ...contact.relationsAsMain.map<RelationItem>((relation) => ({
         id: `main-${relation.id}`,
         relationId: relation.id,
-        direction: '연결함',
         relation,
         counterpartId: relation.relatedContact?.id ?? relation.relatedContactId ?? null,
         counterpartName: relation.relatedContact?.name ?? '이름 없음',
         counterpartPhone: relation.relatedContact?.phone ?? null,
+        sourceName: contact.name,
+        targetName: relation.relatedContact?.name ?? '이름 없음',
       })),
       ...contact.relationsAsRelated.map<RelationItem>((relation) => ({
         id: `related-${relation.id}`,
         relationId: relation.id,
-        direction: '연결됨',
         relation,
         counterpartId: relation.contact?.id ?? relation.contactId ?? null,
         counterpartName: relation.contact?.name ?? '이름 없음',
         counterpartPhone: relation.contact?.phone ?? null,
+        sourceName: relation.contact?.name ?? '이름 없음',
+        targetName: contact.name,
       })),
     ];
   }, [contact]);
@@ -371,6 +379,7 @@ function ContactDetailPage() {
                         removeRelationMutation.isPending &&
                         relationToDelete?.relationId === item.relationId
                       }
+                      onEdit={() => setRelationToEdit(item)}
                       onDelete={() => setRelationToDelete(item)}
                     />
                   ))}
@@ -513,6 +522,13 @@ function ContactDetailPage() {
         open={openDialog === 'relation'}
         onOpenChange={(open) => setOpenDialog(open ? 'relation' : null)}
       />
+      <RelationEditDialog
+        item={relationToEdit}
+        open={relationToEdit !== null}
+        onOpenChange={(open) => {
+          if (!open) setRelationToEdit(null);
+        }}
+      />
       <ConsultationAddDialog
         contactId={contact.id}
         contactName={contact.name}
@@ -569,11 +585,9 @@ function ContactDetailPage() {
         title="관계를 삭제할까요?"
         description={
           relationToDelete
-            ? `${relationToDelete.counterpartName} 님과의 "${
-                relationToDelete.relation.label ||
-                relationTypeLabels[relationToDelete.relation.relationType] ||
-                relationToDelete.relation.relationType
-              }" 관계만 삭제됩니다. 상대 연락처는 유지됩니다.`
+            ? `${relationToDelete.counterpartName} 님과의 "${getContactRelationLabel(
+                relationToDelete.relation,
+              )}" 관계만 삭제됩니다. 상대 연락처는 유지됩니다.`
             : undefined
         }
         confirmLabel="삭제"

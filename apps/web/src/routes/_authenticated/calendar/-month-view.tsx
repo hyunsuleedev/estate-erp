@@ -1,14 +1,14 @@
 import { useNavigate } from '@tanstack/react-router';
-import { CalendarPlus2, Landmark } from 'lucide-react';
+import { CalendarDays, CalendarPlus2, Landmark, Plus } from 'lucide-react';
 import type { CalendarEvent } from '@estate-erp/api-client';
 
 import { cn } from '@/lib/utils';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
   buildMonthCells,
   getLocalDateKey,
   isSameCalendarDate,
+  WEEK_DAY_LABELS,
 } from './-calendar-view-utils';
 import {
   formatDayTitle,
@@ -19,8 +19,6 @@ import {
   withAlpha,
 } from './-event-meta';
 import { OVERLAY_META, type OverlayItem } from './-calendar-overlay';
-
-export const WEEK_DAY_LABELS = ['일', '월', '화', '수', '목', '금', '토'];
 
 export function MonthCalendarView({
   currentDate,
@@ -224,52 +222,79 @@ export function SelectedDayPanel({
   const navigate = useNavigate();
 
   return (
-    <aside className="flex min-h-[280px] flex-col border-t bg-muted/40 xl:min-h-[560px] xl:border-t-0">
-      <div className="border-b bg-background px-5 py-4">
-        <div className="flex items-start justify-between gap-4">
-          <div className="min-w-0">
-            <div className="text-[11px] font-medium uppercase tracking-[0.05em] text-muted-foreground">
-              선택된 날짜
-            </div>
-            <div className="mt-2 flex flex-wrap items-baseline gap-2">
-              <h2 className="text-lg font-bold tracking-[-0.02em] text-foreground">{formatDayTitle(selectedDate)}</h2>
-              <span className="text-[12.5px] text-muted-foreground">{formatWeekday(selectedDate)}</span>
-            </div>
+    <aside className="hidden w-[292px] shrink-0 flex-col border-l border-border bg-muted/15 xl:flex">
+      <div className="border-b border-border px-5 pb-4 pt-5">
+        <div className="flex items-start gap-3">
+          <div
+            className={cn(
+              'flex size-11 shrink-0 items-center justify-center rounded-lg bg-secondary text-xl font-semibold tabular-nums text-foreground',
+              isSameCalendarDate(new Date(), selectedDate) && 'bg-foreground text-background',
+            )}
+          >
+            {selectedDate.getDate()}
           </div>
-          {isSameCalendarDate(new Date(), selectedDate) ? (
-            <Badge className="border-0 bg-primary text-primary-foreground">오늘</Badge>
-          ) : null}
+          <div className="min-w-0 flex-1 pt-0.5">
+            <div className="flex items-center gap-2">
+              <h2 className="truncate text-sm font-semibold text-foreground">{formatWeekday(selectedDate)}</h2>
+              {isSameCalendarDate(new Date(), selectedDate) ? (
+                <span className="rounded bg-secondary px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                  오늘
+                </span>
+              ) : null}
+            </div>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              {selectedDate.getFullYear()}년 {formatDayTitle(selectedDate)}
+            </p>
+          </div>
         </div>
-        <div className="mt-3 flex items-center justify-between rounded-[9px] border border-border bg-muted px-3 py-2 text-xs">
-          <span className="text-muted-foreground">선택일 일정</span>
-          <span className="font-semibold tabular-nums text-foreground">
-            {selectedDateEvents.length + selectedDateOverlays.length}건
-          </span>
+        <div className="mt-4 flex items-center gap-2 text-[11px] text-muted-foreground">
+          <span>일정</span>
+          <strong className="font-semibold tabular-nums text-foreground">
+            {selectedDateEvents.length + selectedDateOverlays.length}
+          </strong>
+          <span>·</span>
+          <span>{selectedDateEvents.length > 0 ? '시간순으로 정렬됨' : '비어 있음'}</span>
         </div>
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         {selectedDateEvents.length === 0 && selectedDateOverlays.length === 0 ? (
-          <div className="px-5 py-10 text-sm text-muted-foreground">등록된 일정이 없습니다.</div>
+          <div className="flex h-full min-h-56 flex-col items-center justify-center px-8 text-center">
+            <div className="flex size-10 items-center justify-center rounded-lg bg-secondary text-muted-foreground">
+              <CalendarDays className="size-[18px]" />
+            </div>
+            <div className="mt-3 text-sm font-medium text-foreground">비어 있는 날입니다</div>
+            <p className="mt-1 break-keep text-xs leading-5 text-muted-foreground">
+              방문, 미팅, 계약 일정을 추가하면 이곳에 시간순으로 표시됩니다.
+            </p>
+            <Button variant="ghost" size="sm" className="mt-3" onClick={() => onCreate(selectedDate)}>
+              <Plus className="size-3.5" /> 일정 추가
+            </Button>
+          </div>
         ) : (
           <>
+            {selectedDateEvents.length > 0 ? (
+              <div className="border-b border-border px-5 py-2 text-[10px] font-semibold tracking-[0.04em] text-muted-foreground">
+                SCHEDULE
+              </div>
+            ) : null}
             {selectedDateEvents.map((event) => (
               <button
                 key={event.id}
                 type="button"
                 onClick={() => onEdit(event)}
-                className="flex w-full items-start gap-3 border-b bg-background px-5 py-3.5 text-left transition-colors hover:bg-muted/60"
+                className="group flex w-full items-start gap-3 border-b border-border bg-background px-5 py-3.5 text-left transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40"
               >
                 <span
-                  className="mt-1 h-11 w-1 shrink-0 rounded-full"
+                  className="mt-1.5 size-2 shrink-0 rounded-full ring-4 ring-background"
                   style={{ backgroundColor: getEventColor(event) }}
                 />
                 <span className="min-w-0 flex-1">
-                  <span className="block text-[11px] tabular-nums text-muted-foreground">
+                  <span className="block text-[10px] tabular-nums text-muted-foreground">
                     {formatEventTimeRange(event)}
                   </span>
                   <span className="mt-1 block truncate text-[13px] font-semibold text-foreground">{event.title}</span>
-                  <span className="mt-1 block truncate text-xs text-muted-foreground">
+                  <span className="mt-1 block truncate text-[11px] text-muted-foreground">
                     {formatEventContext(event)}
                   </span>
                 </span>
@@ -277,8 +302,8 @@ export function SelectedDayPanel({
             ))}
 
             {selectedDateOverlays.length > 0 ? (
-              <div className="border-b bg-muted/60 px-5 py-2 text-[11px] font-semibold uppercase tracking-[0.05em] text-muted-foreground">
-                재무 일정 (계약·수금 자동 표시)
+              <div className="border-b border-border px-5 py-2 text-[10px] font-semibold tracking-[0.04em] text-muted-foreground">
+                FINANCE
               </div>
             ) : null}
             {selectedDateOverlays.map((item) => {
@@ -288,13 +313,13 @@ export function SelectedDayPanel({
                   key={item.id}
                   type="button"
                   onClick={() => void navigate({ to: meta.link })}
-                  className="flex w-full items-start gap-3 border-b bg-background px-5 py-3 text-left transition-colors hover:bg-muted/60"
+                  className="flex w-full items-start gap-3 border-b border-border bg-background px-5 py-3 text-left transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40"
                 >
                   <Landmark className="mt-0.5 size-4 shrink-0" style={{ color: meta.color }} />
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-[13px] font-medium text-foreground">{item.title}</span>
                     {item.sublabel ? (
-                      <span className="mt-0.5 block truncate text-xs tabular-nums text-muted-foreground">
+                      <span className="mt-0.5 block truncate text-[11px] tabular-nums text-muted-foreground">
                         {item.sublabel}
                       </span>
                     ) : null}
@@ -309,8 +334,8 @@ export function SelectedDayPanel({
         )}
       </div>
 
-      <div className="border-t bg-background p-3">
-        <Button variant="outline" className="w-full justify-start" onClick={() => onCreate(selectedDate)}>
+      <div className="border-t border-border bg-background p-3">
+        <Button variant="secondary" className="w-full justify-start" onClick={() => onCreate(selectedDate)}>
           <CalendarPlus2 className="size-4" />
           이 날짜에 일정 추가
         </Button>

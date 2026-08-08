@@ -3,12 +3,12 @@ import {
   Building2,
   CalendarDays,
   FileText,
-  FolderOpen,
   GitBranch,
   Handshake,
   LayoutDashboard,
   ListTodo,
   Map,
+  Megaphone,
   MessageSquare,
   Network,
   PhoneCall,
@@ -82,13 +82,18 @@ export const NAV_ITEMS: NavItem[] = [
     label: '매물관리',
     icon: Building2,
     group: 'properties',
+  },
+  { path: '/sites', label: '관리단지', icon: Map, group: 'properties' },
+  {
+    path: '/properties/external-listings',
+    label: '광고관리',
+    icon: Megaphone,
+    group: 'properties',
     children: [
-      { path: '/properties', label: '매물 목록' },
       { path: '/properties/external-listings', label: '광고노트' },
       { path: '/properties/naver-my-ads', label: '내광고관리' },
     ],
   },
-  { path: '/sites', label: '관리단지', icon: Map, group: 'properties' },
 
   // ── 고객·상담
   { path: '/contacts', label: '연락처', icon: BookUser, group: 'customers' },
@@ -170,12 +175,7 @@ export const NAV_ITEMS: NavItem[] = [
     icon: Store,
     group: 'operations',
   },
-  {
-    path: '/documents',
-    label: '자료실',
-    icon: FolderOpen,
-    group: 'operations',
-  },
+  // 자료실은 현재 사이드바에서 제외 — 기존 라우트와 데이터는 유지한다.
   { path: '/settings', label: '설정', icon: Settings, group: 'operations' },
 ]
 

@@ -28,6 +28,7 @@ import { Route as AuthenticatedMatchesIndexRouteImport } from './routes/_authent
 import { Route as AuthenticatedEmployeesIndexRouteImport } from './routes/_authenticated/employees/index'
 import { Route as AuthenticatedDocumentsIndexRouteImport } from './routes/_authenticated/documents/index'
 import { Route as AuthenticatedDealsIndexRouteImport } from './routes/_authenticated/deals/index'
+import { Route as AuthenticatedCustomersIndexRouteImport } from './routes/_authenticated/customers/index'
 import { Route as AuthenticatedContractsIndexRouteImport } from './routes/_authenticated/contracts/index'
 import { Route as AuthenticatedContactsIndexRouteImport } from './routes/_authenticated/contacts/index'
 import { Route as AuthenticatedConsultationsIndexRouteImport } from './routes/_authenticated/consultations/index'
@@ -35,7 +36,9 @@ import { Route as AuthenticatedCashflowIndexRouteImport } from './routes/_authen
 import { Route as AuthenticatedCallsIndexRouteImport } from './routes/_authenticated/calls/index'
 import { Route as AuthenticatedCalendarIndexRouteImport } from './routes/_authenticated/calendar/index'
 import { Route as AuthenticatedBuyerRequirementsIndexRouteImport } from './routes/_authenticated/buyer-requirements/index'
-import { Route as AuthenticatedAiRequestsIndexRouteImport } from './routes/_authenticated/ai-requests/index'
+import { Route as AuthenticatedPrototypesCustomerManagementRouteImport } from './routes/_authenticated/prototypes/customer-management'
+import { Route as AuthenticatedPrototypesCustomerLedgerRouteImport } from './routes/_authenticated/prototypes/customer-ledger'
+import { Route as AuthenticatedPrototypesBuyerCustomersRouteImport } from './routes/_authenticated/prototypes/buyer-customers'
 import { Route as AuthenticatedPropertiesNewRouteImport } from './routes/_authenticated/properties/new'
 import { Route as AuthenticatedPropertiesNaverMyAdsRouteImport } from './routes/_authenticated/properties/naver-my-ads'
 import { Route as AuthenticatedPropertiesMyAdsRouteImport } from './routes/_authenticated/properties/my-ads'
@@ -155,6 +158,12 @@ const AuthenticatedDealsIndexRoute = AuthenticatedDealsIndexRouteImport.update({
   path: '/deals/',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const AuthenticatedCustomersIndexRoute =
+  AuthenticatedCustomersIndexRouteImport.update({
+    id: '/customers/',
+    path: '/customers/',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedContractsIndexRoute =
   AuthenticatedContractsIndexRouteImport.update({
     id: '/contracts/',
@@ -196,10 +205,22 @@ const AuthenticatedBuyerRequirementsIndexRoute =
     path: '/buyer-requirements/',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
-const AuthenticatedAiRequestsIndexRoute =
-  AuthenticatedAiRequestsIndexRouteImport.update({
-    id: '/ai-requests/',
-    path: '/ai-requests/',
+const AuthenticatedPrototypesCustomerManagementRoute =
+  AuthenticatedPrototypesCustomerManagementRouteImport.update({
+    id: '/prototypes/customer-management',
+    path: '/prototypes/customer-management',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedPrototypesCustomerLedgerRoute =
+  AuthenticatedPrototypesCustomerLedgerRouteImport.update({
+    id: '/prototypes/customer-ledger',
+    path: '/prototypes/customer-ledger',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedPrototypesBuyerCustomersRoute =
+  AuthenticatedPrototypesBuyerCustomersRouteImport.update({
+    id: '/prototypes/buyer-customers',
+    path: '/prototypes/buyer-customers',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
 const AuthenticatedPropertiesNewRoute =
@@ -326,7 +347,9 @@ export interface FileRoutesByFullPath {
   '/properties/my-ads': typeof AuthenticatedPropertiesMyAdsRoute
   '/properties/naver-my-ads': typeof AuthenticatedPropertiesNaverMyAdsRoute
   '/properties/new': typeof AuthenticatedPropertiesNewRoute
-  '/ai-requests/': typeof AuthenticatedAiRequestsIndexRoute
+  '/prototypes/buyer-customers': typeof AuthenticatedPrototypesBuyerCustomersRoute
+  '/prototypes/customer-ledger': typeof AuthenticatedPrototypesCustomerLedgerRoute
+  '/prototypes/customer-management': typeof AuthenticatedPrototypesCustomerManagementRoute
   '/buyer-requirements/': typeof AuthenticatedBuyerRequirementsIndexRoute
   '/calendar/': typeof AuthenticatedCalendarIndexRoute
   '/calls/': typeof AuthenticatedCallsIndexRoute
@@ -334,6 +357,7 @@ export interface FileRoutesByFullPath {
   '/consultations/': typeof AuthenticatedConsultationsIndexRoute
   '/contacts/': typeof AuthenticatedContactsIndexRoute
   '/contracts/': typeof AuthenticatedContractsIndexRoute
+  '/customers/': typeof AuthenticatedCustomersIndexRoute
   '/deals/': typeof AuthenticatedDealsIndexRoute
   '/documents/': typeof AuthenticatedDocumentsIndexRoute
   '/employees/': typeof AuthenticatedEmployeesIndexRoute
@@ -370,7 +394,9 @@ export interface FileRoutesByTo {
   '/properties/my-ads': typeof AuthenticatedPropertiesMyAdsRoute
   '/properties/naver-my-ads': typeof AuthenticatedPropertiesNaverMyAdsRoute
   '/properties/new': typeof AuthenticatedPropertiesNewRoute
-  '/ai-requests': typeof AuthenticatedAiRequestsIndexRoute
+  '/prototypes/buyer-customers': typeof AuthenticatedPrototypesBuyerCustomersRoute
+  '/prototypes/customer-ledger': typeof AuthenticatedPrototypesCustomerLedgerRoute
+  '/prototypes/customer-management': typeof AuthenticatedPrototypesCustomerManagementRoute
   '/buyer-requirements': typeof AuthenticatedBuyerRequirementsIndexRoute
   '/calendar': typeof AuthenticatedCalendarIndexRoute
   '/calls': typeof AuthenticatedCallsIndexRoute
@@ -378,6 +404,7 @@ export interface FileRoutesByTo {
   '/consultations': typeof AuthenticatedConsultationsIndexRoute
   '/contacts': typeof AuthenticatedContactsIndexRoute
   '/contracts': typeof AuthenticatedContractsIndexRoute
+  '/customers': typeof AuthenticatedCustomersIndexRoute
   '/deals': typeof AuthenticatedDealsIndexRoute
   '/documents': typeof AuthenticatedDocumentsIndexRoute
   '/employees': typeof AuthenticatedEmployeesIndexRoute
@@ -417,7 +444,9 @@ export interface FileRoutesById {
   '/_authenticated/properties/my-ads': typeof AuthenticatedPropertiesMyAdsRoute
   '/_authenticated/properties/naver-my-ads': typeof AuthenticatedPropertiesNaverMyAdsRoute
   '/_authenticated/properties/new': typeof AuthenticatedPropertiesNewRoute
-  '/_authenticated/ai-requests/': typeof AuthenticatedAiRequestsIndexRoute
+  '/_authenticated/prototypes/buyer-customers': typeof AuthenticatedPrototypesBuyerCustomersRoute
+  '/_authenticated/prototypes/customer-ledger': typeof AuthenticatedPrototypesCustomerLedgerRoute
+  '/_authenticated/prototypes/customer-management': typeof AuthenticatedPrototypesCustomerManagementRoute
   '/_authenticated/buyer-requirements/': typeof AuthenticatedBuyerRequirementsIndexRoute
   '/_authenticated/calendar/': typeof AuthenticatedCalendarIndexRoute
   '/_authenticated/calls/': typeof AuthenticatedCallsIndexRoute
@@ -425,6 +454,7 @@ export interface FileRoutesById {
   '/_authenticated/consultations/': typeof AuthenticatedConsultationsIndexRoute
   '/_authenticated/contacts/': typeof AuthenticatedContactsIndexRoute
   '/_authenticated/contracts/': typeof AuthenticatedContractsIndexRoute
+  '/_authenticated/customers/': typeof AuthenticatedCustomersIndexRoute
   '/_authenticated/deals/': typeof AuthenticatedDealsIndexRoute
   '/_authenticated/documents/': typeof AuthenticatedDocumentsIndexRoute
   '/_authenticated/employees/': typeof AuthenticatedEmployeesIndexRoute
@@ -463,7 +493,9 @@ export interface FileRouteTypes {
     | '/properties/my-ads'
     | '/properties/naver-my-ads'
     | '/properties/new'
-    | '/ai-requests/'
+    | '/prototypes/buyer-customers'
+    | '/prototypes/customer-ledger'
+    | '/prototypes/customer-management'
     | '/buyer-requirements/'
     | '/calendar/'
     | '/calls/'
@@ -471,6 +503,7 @@ export interface FileRouteTypes {
     | '/consultations/'
     | '/contacts/'
     | '/contracts/'
+    | '/customers/'
     | '/deals/'
     | '/documents/'
     | '/employees/'
@@ -507,7 +540,9 @@ export interface FileRouteTypes {
     | '/properties/my-ads'
     | '/properties/naver-my-ads'
     | '/properties/new'
-    | '/ai-requests'
+    | '/prototypes/buyer-customers'
+    | '/prototypes/customer-ledger'
+    | '/prototypes/customer-management'
     | '/buyer-requirements'
     | '/calendar'
     | '/calls'
@@ -515,6 +550,7 @@ export interface FileRouteTypes {
     | '/consultations'
     | '/contacts'
     | '/contracts'
+    | '/customers'
     | '/deals'
     | '/documents'
     | '/employees'
@@ -553,7 +589,9 @@ export interface FileRouteTypes {
     | '/_authenticated/properties/my-ads'
     | '/_authenticated/properties/naver-my-ads'
     | '/_authenticated/properties/new'
-    | '/_authenticated/ai-requests/'
+    | '/_authenticated/prototypes/buyer-customers'
+    | '/_authenticated/prototypes/customer-ledger'
+    | '/_authenticated/prototypes/customer-management'
     | '/_authenticated/buyer-requirements/'
     | '/_authenticated/calendar/'
     | '/_authenticated/calls/'
@@ -561,6 +599,7 @@ export interface FileRouteTypes {
     | '/_authenticated/consultations/'
     | '/_authenticated/contacts/'
     | '/_authenticated/contracts/'
+    | '/_authenticated/customers/'
     | '/_authenticated/deals/'
     | '/_authenticated/documents/'
     | '/_authenticated/employees/'
@@ -718,6 +757,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedDealsIndexRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/customers/': {
+      id: '/_authenticated/customers/'
+      path: '/customers'
+      fullPath: '/customers/'
+      preLoaderRoute: typeof AuthenticatedCustomersIndexRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/contracts/': {
       id: '/_authenticated/contracts/'
       path: '/contracts'
@@ -767,11 +813,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedBuyerRequirementsIndexRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
-    '/_authenticated/ai-requests/': {
-      id: '/_authenticated/ai-requests/'
-      path: '/ai-requests'
-      fullPath: '/ai-requests/'
-      preLoaderRoute: typeof AuthenticatedAiRequestsIndexRouteImport
+    '/_authenticated/prototypes/customer-management': {
+      id: '/_authenticated/prototypes/customer-management'
+      path: '/prototypes/customer-management'
+      fullPath: '/prototypes/customer-management'
+      preLoaderRoute: typeof AuthenticatedPrototypesCustomerManagementRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/prototypes/customer-ledger': {
+      id: '/_authenticated/prototypes/customer-ledger'
+      path: '/prototypes/customer-ledger'
+      fullPath: '/prototypes/customer-ledger'
+      preLoaderRoute: typeof AuthenticatedPrototypesCustomerLedgerRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/prototypes/buyer-customers': {
+      id: '/_authenticated/prototypes/buyer-customers'
+      path: '/prototypes/buyer-customers'
+      fullPath: '/prototypes/buyer-customers'
+      preLoaderRoute: typeof AuthenticatedPrototypesBuyerCustomersRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/properties/new': {
@@ -926,7 +986,9 @@ interface AuthenticatedRouteChildren {
   AuthenticatedPropertiesMyAdsRoute: typeof AuthenticatedPropertiesMyAdsRoute
   AuthenticatedPropertiesNaverMyAdsRoute: typeof AuthenticatedPropertiesNaverMyAdsRoute
   AuthenticatedPropertiesNewRoute: typeof AuthenticatedPropertiesNewRoute
-  AuthenticatedAiRequestsIndexRoute: typeof AuthenticatedAiRequestsIndexRoute
+  AuthenticatedPrototypesBuyerCustomersRoute: typeof AuthenticatedPrototypesBuyerCustomersRoute
+  AuthenticatedPrototypesCustomerLedgerRoute: typeof AuthenticatedPrototypesCustomerLedgerRoute
+  AuthenticatedPrototypesCustomerManagementRoute: typeof AuthenticatedPrototypesCustomerManagementRoute
   AuthenticatedBuyerRequirementsIndexRoute: typeof AuthenticatedBuyerRequirementsIndexRoute
   AuthenticatedCalendarIndexRoute: typeof AuthenticatedCalendarIndexRoute
   AuthenticatedCallsIndexRoute: typeof AuthenticatedCallsIndexRoute
@@ -934,6 +996,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedConsultationsIndexRoute: typeof AuthenticatedConsultationsIndexRoute
   AuthenticatedContactsIndexRoute: typeof AuthenticatedContactsIndexRoute
   AuthenticatedContractsIndexRoute: typeof AuthenticatedContractsIndexRoute
+  AuthenticatedCustomersIndexRoute: typeof AuthenticatedCustomersIndexRoute
   AuthenticatedDealsIndexRoute: typeof AuthenticatedDealsIndexRoute
   AuthenticatedDocumentsIndexRoute: typeof AuthenticatedDocumentsIndexRoute
   AuthenticatedEmployeesIndexRoute: typeof AuthenticatedEmployeesIndexRoute
@@ -972,7 +1035,12 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedPropertiesNaverMyAdsRoute:
     AuthenticatedPropertiesNaverMyAdsRoute,
   AuthenticatedPropertiesNewRoute: AuthenticatedPropertiesNewRoute,
-  AuthenticatedAiRequestsIndexRoute: AuthenticatedAiRequestsIndexRoute,
+  AuthenticatedPrototypesBuyerCustomersRoute:
+    AuthenticatedPrototypesBuyerCustomersRoute,
+  AuthenticatedPrototypesCustomerLedgerRoute:
+    AuthenticatedPrototypesCustomerLedgerRoute,
+  AuthenticatedPrototypesCustomerManagementRoute:
+    AuthenticatedPrototypesCustomerManagementRoute,
   AuthenticatedBuyerRequirementsIndexRoute:
     AuthenticatedBuyerRequirementsIndexRoute,
   AuthenticatedCalendarIndexRoute: AuthenticatedCalendarIndexRoute,
@@ -981,6 +1049,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedConsultationsIndexRoute: AuthenticatedConsultationsIndexRoute,
   AuthenticatedContactsIndexRoute: AuthenticatedContactsIndexRoute,
   AuthenticatedContractsIndexRoute: AuthenticatedContractsIndexRoute,
+  AuthenticatedCustomersIndexRoute: AuthenticatedCustomersIndexRoute,
   AuthenticatedDealsIndexRoute: AuthenticatedDealsIndexRoute,
   AuthenticatedDocumentsIndexRoute: AuthenticatedDocumentsIndexRoute,
   AuthenticatedEmployeesIndexRoute: AuthenticatedEmployeesIndexRoute,

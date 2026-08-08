@@ -321,7 +321,7 @@ export class PropertiesService {
               where: {
                 officeId,
                 phones: {
-                  some: { normalizedPhone: ownerPhone, isActive: true },
+                  some: { phone: ownerPhone },
                 },
               },
             })
@@ -337,11 +337,9 @@ export class PropertiesService {
                   ? {
                       create: [
                         {
-                          phone: rawOwnerPhone,
-                          normalizedPhone: ownerPhone,
+                          phone: ownerPhone,
                           label: 'mobile',
                           isPrimary: true,
-                          isActive: true,
                           office: { connect: { id: officeId } },
                         },
                       ],
