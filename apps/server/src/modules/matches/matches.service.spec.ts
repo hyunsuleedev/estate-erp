@@ -1,4 +1,5 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, ConflictException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { MatchesService } from './matches.service';
 
 function buildMatch(
@@ -21,7 +22,7 @@ function buildMatch(
     buyerReqId: 'buyer-1',
     stage,
     closedFromStage: null as string | null,
-    memo: null,
+    memo: null as string | null,
     createdAt: new Date('2026-08-01T09:00:00.000Z'),
     updatedAt: new Date('2026-08-01T09:00:00.000Z'),
     listing: {
@@ -177,6 +178,85 @@ describe('MatchesService stage progression', () => {
     ).rejects.toThrow(
       new BadRequestException('현재 단계의 다음 업무를 먼저 완료해 주세요'),
     );
+    expect(prisma.match.update).not.toHaveBeenCalled();
+  });
+});
+
+describe('MatchesService memo updates', () => {
+  it('updates only memo and applies optimistic concurrency without writing stage', async () => {
+    const match = buildMatch('viewing');
+    const { service, prisma } = setup(match);
+
+    await service.updateMemo('match-1', 'office-1', {
+      memo: '방문 전 주차 확인',
+      expectedUpdatedAt: '2026-08-01T09:00:00.000Z',
+    });
+
+    expect(prisma.match.update).toHaveBeenCalledWith({
+      where: {
+        id: 'match-1',
+        officeId: 'office-1',
+        updatedAt: new Date('2026-08-01T09:00:00.000Z'),
+      },
+      data: { memo: '방문 전 주차 확인' },
+      include: expect.any(Object),
+    });
+    expect(prisma.match.update.mock.calls[0]?.[0].data).not.toHaveProperty(
+      'stage',
+    );
+  });
+
+  it('allows clearing memo without changing stage', async () => {
+    const { service, prisma } = setup({
+      ...buildMatch('negotiating'),
+      memo: '삭제할 메모',
+    });
+
+    await service.updateMemo('match-1', 'office-1', { memo: null });
+
+    expect(prisma.match.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'match-1', officeId: 'office-1' },
+        data: { memo: null },
+      }),
+    );
+  });
+
+  it('rejects a stale memo update and preserves the current record', async () => {
+    const { service, prisma } = setup(buildMatch('viewingConfirmed'));
+    prisma.match.update.mockRejectedValue(
+      new Prisma.PrismaClientKnownRequestError('Record not found', {
+        code: 'P2025',
+        clientVersion: 'test',
+      }),
+    );
+
+    await expect(
+      service.updateMemo('match-1', 'office-1', {
+        memo: '오래된 화면의 메모',
+        expectedUpdatedAt: '2026-08-01T08:00:00.000Z',
+      }),
+    ).rejects.toBeInstanceOf(ConflictException);
+
+    expect(prisma.match.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: { memo: '오래된 화면의 메모' },
+      }),
+    );
+  });
+
+  it('rejects an invalid optimistic concurrency timestamp before writing', async () => {
+    const { service, prisma } = setup(buildMatch('suggested'));
+
+    await expect(
+      service.updateMemo('match-1', 'office-1', {
+        memo: '메모',
+        expectedUpdatedAt: 'not-a-date',
+      }),
+    ).rejects.toThrow(
+      new BadRequestException('expectedUpdatedAt must be a valid date'),
+    );
+
     expect(prisma.match.update).not.toHaveBeenCalled();
   });
 });

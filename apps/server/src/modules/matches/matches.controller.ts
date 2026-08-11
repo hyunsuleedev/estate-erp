@@ -11,7 +11,11 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { MatchesService } from './matches.service';
-import { CreateMatchDto, UpdateMatchStageDto } from './dto/match.dto';
+import {
+  CreateMatchDto,
+  UpdateMatchMemoDto,
+  UpdateMatchStageDto,
+} from './dto/match.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import {
   CurrentUser,
@@ -64,6 +68,15 @@ export class MatchesController {
     @CurrentUser() user: CurrentUserPayload,
   ) {
     return this.matchesService.updateStage(id, user.officeId, dto);
+  }
+
+  @Patch(':id/memo')
+  updateMemo(
+    @Param('id') id: string,
+    @Body() dto: UpdateMatchMemoDto,
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.matchesService.updateMemo(id, user.officeId, dto);
   }
 
   @Delete(':id')

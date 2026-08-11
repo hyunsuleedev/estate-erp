@@ -30,15 +30,27 @@ export function useDetachDrag(tabBarRef: React.RefObject<HTMLDivElement | null>)
   const removeTabById = useTabStore((s) => s.removeTabById);
 
   const beginDrag = useCallback(
-    async (tab: Tab, pointerScreen: { x: number; y: number }, mouseOffset: { x: number; y: number }) => {
+    async (
+      tab: Tab,
+      pointerScreen: { x: number; y: number },
+      mouseOffset: { x: number; y: number },
+    ) => {
       if (!window.electronBridge?.tabs) return;
-      await window.electronBridge.tabs.beginDrag({
-        tab,
-        pointerScreen,
-        mouseOffset,
-      });
-      // source 창에서 그 탭 제거 — 시각적으로 사라지고 새 창이 그 자리에 등장한 모양이 됨
-      removeTabById(tab.id);
+      try {
+        const result = await window.electronBridge.tabs.beginDrag({
+          tab,
+          pointerScreen,
+          mouseOffset,
+        });
+        if (!result.ok) {
+          console.error('[tabs] 탭 분리 창을 만들지 못했습니다:', result.error);
+          return;
+        }
+        // 새 창 생성이 확인된 뒤 source 창에서 제거한다.
+        removeTabById(tab.id);
+      } catch (error) {
+        console.error('[tabs] 탭 분리 중 오류가 발생했습니다:', error);
+      }
     },
     [removeTabById],
   );
@@ -84,18 +96,19 @@ export function useDetachDrag(tabBarRef: React.RefObject<HTMLDivElement | null>)
 
     const onPointerMove = (e: PointerEvent) => {
       if (!session) return;
-      if (e.pointerId !== session.pointerId) return;
+      const currentSession = session;
+      if (e.pointerId !== currentSession.pointerId) return;
 
       const screen = clientToScreen(e.clientX, e.clientY);
 
-      if (!session.detached) {
-        const dy = screen.y - session.startScreen.y;
+      if (!currentSession.detached) {
+        const dy = screen.y - currentSession.startScreen.y;
         // 수직 임계값(아래로 8px)에서만 detach. 수평 이동은 dnd-kit sortable이 처리.
         if (dy < DETACH_THRESHOLD) return;
 
-        const tab = useTabStore.getState().tabs.find(
-          (t) => t.id === session!.tabId,
-        );
+        const tab = useTabStore
+          .getState()
+          .tabs.find((t) => t.id === currentSession.tabId);
         if (!tab) {
           session = null;
           return;
@@ -112,7 +125,7 @@ export function useDetachDrag(tabBarRef: React.RefObject<HTMLDivElement | null>)
         } catch {
           // ignore — capture 실패해도 document listener가 이벤트는 받음
         }
-        void beginDrag(tab, screen, session.mouseOffset);
+        void beginDrag(tab, screen, currentSession.mouseOffset);
         return;
       }
 

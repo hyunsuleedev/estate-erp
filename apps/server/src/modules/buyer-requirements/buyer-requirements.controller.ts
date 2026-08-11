@@ -133,6 +133,15 @@ export class BuyerRequirementsController {
     return this.service.create(user.officeId, dto);
   }
 
+  @Patch(':id/priority')
+  reorder(
+    @Param('id') id: string,
+    @Body() dto: { priorityRank: number },
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.service.reorder(id, user.officeId, dto.priorityRank);
+  }
+
   @Patch(':id')
   update(
     @Param('id') id: string,

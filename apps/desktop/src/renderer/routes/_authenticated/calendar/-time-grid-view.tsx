@@ -53,7 +53,7 @@ export function TimeGridCalendarView({
   );
 
   return (
-    <div className="overflow-x-auto rounded-lg border border-border bg-background">
+    <div className="overflow-x-auto bg-background">
       <div
         className="grid"
         style={{

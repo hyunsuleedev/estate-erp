@@ -29,6 +29,7 @@ import { Route as AuthenticatedEmployeesIndexRouteImport } from './routes/_authe
 import { Route as AuthenticatedDocumentsIndexRouteImport } from './routes/_authenticated/documents/index'
 import { Route as AuthenticatedDealsIndexRouteImport } from './routes/_authenticated/deals/index'
 import { Route as AuthenticatedCustomersIndexRouteImport } from './routes/_authenticated/customers/index'
+import { Route as AuthenticatedCustomersNextIndexRouteImport } from './routes/_authenticated/customers-next/index'
 import { Route as AuthenticatedContractsIndexRouteImport } from './routes/_authenticated/contracts/index'
 import { Route as AuthenticatedContactsIndexRouteImport } from './routes/_authenticated/contacts/index'
 import { Route as AuthenticatedConsultationsIndexRouteImport } from './routes/_authenticated/consultations/index'
@@ -162,6 +163,12 @@ const AuthenticatedCustomersIndexRoute =
   AuthenticatedCustomersIndexRouteImport.update({
     id: '/customers/',
     path: '/customers/',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedCustomersNextIndexRoute =
+  AuthenticatedCustomersNextIndexRouteImport.update({
+    id: '/customers-next/',
+    path: '/customers-next/',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
 const AuthenticatedContractsIndexRoute =
@@ -357,6 +364,7 @@ export interface FileRoutesByFullPath {
   '/consultations/': typeof AuthenticatedConsultationsIndexRoute
   '/contacts/': typeof AuthenticatedContactsIndexRoute
   '/contracts/': typeof AuthenticatedContractsIndexRoute
+  '/customers-next/': typeof AuthenticatedCustomersNextIndexRoute
   '/customers/': typeof AuthenticatedCustomersIndexRoute
   '/deals/': typeof AuthenticatedDealsIndexRoute
   '/documents/': typeof AuthenticatedDocumentsIndexRoute
@@ -404,6 +412,7 @@ export interface FileRoutesByTo {
   '/consultations': typeof AuthenticatedConsultationsIndexRoute
   '/contacts': typeof AuthenticatedContactsIndexRoute
   '/contracts': typeof AuthenticatedContractsIndexRoute
+  '/customers-next': typeof AuthenticatedCustomersNextIndexRoute
   '/customers': typeof AuthenticatedCustomersIndexRoute
   '/deals': typeof AuthenticatedDealsIndexRoute
   '/documents': typeof AuthenticatedDocumentsIndexRoute
@@ -454,6 +463,7 @@ export interface FileRoutesById {
   '/_authenticated/consultations/': typeof AuthenticatedConsultationsIndexRoute
   '/_authenticated/contacts/': typeof AuthenticatedContactsIndexRoute
   '/_authenticated/contracts/': typeof AuthenticatedContractsIndexRoute
+  '/_authenticated/customers-next/': typeof AuthenticatedCustomersNextIndexRoute
   '/_authenticated/customers/': typeof AuthenticatedCustomersIndexRoute
   '/_authenticated/deals/': typeof AuthenticatedDealsIndexRoute
   '/_authenticated/documents/': typeof AuthenticatedDocumentsIndexRoute
@@ -503,6 +513,7 @@ export interface FileRouteTypes {
     | '/consultations/'
     | '/contacts/'
     | '/contracts/'
+    | '/customers-next/'
     | '/customers/'
     | '/deals/'
     | '/documents/'
@@ -550,6 +561,7 @@ export interface FileRouteTypes {
     | '/consultations'
     | '/contacts'
     | '/contracts'
+    | '/customers-next'
     | '/customers'
     | '/deals'
     | '/documents'
@@ -599,6 +611,7 @@ export interface FileRouteTypes {
     | '/_authenticated/consultations/'
     | '/_authenticated/contacts/'
     | '/_authenticated/contracts/'
+    | '/_authenticated/customers-next/'
     | '/_authenticated/customers/'
     | '/_authenticated/deals/'
     | '/_authenticated/documents/'
@@ -762,6 +775,13 @@ declare module '@tanstack/react-router' {
       path: '/customers'
       fullPath: '/customers/'
       preLoaderRoute: typeof AuthenticatedCustomersIndexRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/customers-next/': {
+      id: '/_authenticated/customers-next/'
+      path: '/customers-next'
+      fullPath: '/customers-next/'
+      preLoaderRoute: typeof AuthenticatedCustomersNextIndexRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/contracts/': {
@@ -996,6 +1016,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedConsultationsIndexRoute: typeof AuthenticatedConsultationsIndexRoute
   AuthenticatedContactsIndexRoute: typeof AuthenticatedContactsIndexRoute
   AuthenticatedContractsIndexRoute: typeof AuthenticatedContractsIndexRoute
+  AuthenticatedCustomersNextIndexRoute: typeof AuthenticatedCustomersNextIndexRoute
   AuthenticatedCustomersIndexRoute: typeof AuthenticatedCustomersIndexRoute
   AuthenticatedDealsIndexRoute: typeof AuthenticatedDealsIndexRoute
   AuthenticatedDocumentsIndexRoute: typeof AuthenticatedDocumentsIndexRoute
@@ -1049,6 +1070,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedConsultationsIndexRoute: AuthenticatedConsultationsIndexRoute,
   AuthenticatedContactsIndexRoute: AuthenticatedContactsIndexRoute,
   AuthenticatedContractsIndexRoute: AuthenticatedContractsIndexRoute,
+  AuthenticatedCustomersNextIndexRoute: AuthenticatedCustomersNextIndexRoute,
   AuthenticatedCustomersIndexRoute: AuthenticatedCustomersIndexRoute,
   AuthenticatedDealsIndexRoute: AuthenticatedDealsIndexRoute,
   AuthenticatedDocumentsIndexRoute: AuthenticatedDocumentsIndexRoute,

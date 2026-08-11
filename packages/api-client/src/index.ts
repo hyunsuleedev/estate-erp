@@ -109,7 +109,11 @@ export type {
   UpdateTaskDto,
   TasksFilter,
 } from "./modules/tasks.js";
-export type { Match, CreateMatchDto } from "./modules/matches.js";
+export type {
+  Match,
+  CreateMatchDto,
+  UpdateMatchMemoDto,
+} from "./modules/matches.js";
 export type { Deal, CreateDealDto } from "./modules/deals.js";
 export type {
   Contract,
@@ -174,7 +178,7 @@ export type {
   BrokerageCase,
   BrokerageCaseParticipant,
   BrokerageCaseDemandIntent,
-  BrokerageCaseSupplyIntent,
+  BrokerageCaseListingIntent,
   BrokerageCaseDependency,
   BrokerageCaseLedgerMode,
   BrokerageCaseLedgerSortField,

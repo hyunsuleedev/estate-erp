@@ -138,15 +138,8 @@ function MatchesPage() {
   }, [deepLinkMatchId, navigate]);
 
   const stageMutation = useMutation({
-    mutationFn: ({
-      id,
-      stage,
-      memo,
-    }: {
-      id: string;
-      stage: string;
-      memo?: string;
-    }) => api.matches.updateStage(id, { stage, memo }),
+    mutationFn: ({ id, stage }: { id: string; stage: string }) =>
+      api.matches.updateStage(id, { stage }),
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['matches'] });
       toast.success(
@@ -161,15 +154,11 @@ function MatchesPage() {
   });
 
   const memoMutation = useMutation({
-    mutationFn: ({
-      id,
-      stage,
-      memo,
-    }: {
-      id: string;
-      stage: string;
-      memo: string | null;
-    }) => api.matches.updateStage(id, { stage, memo }),
+    mutationFn: ({ match, memo }: { match: Match; memo: string | null }) =>
+      api.matches.updateMemo(match.id, {
+        memo,
+        expectedUpdatedAt: match.updatedAt,
+      }),
     onSuccess: (updatedMatch) => {
       queryClient.setQueryData<Match[]>(['matches'], (current) =>
         current?.map((match) =>
@@ -262,15 +251,11 @@ function MatchesPage() {
     isUpdating: stageMutation.isPending,
     isScheduling: viewingScheduleMutation.isPending,
     savingMemoId: memoMutation.isPending
-      ? (memoMutation.variables?.id ?? null)
+      ? (memoMutation.variables?.match.id ?? null)
       : null,
     onStageChange: handleStageChange,
     onSaveMemo: async (match, memo) => {
-      await memoMutation.mutateAsync({
-        id: match.id,
-        stage: normalizeMatchStage(match.stage),
-        memo,
-      });
+      await memoMutation.mutateAsync({ match, memo });
     },
     onRequestDelete: setDeleteMatchId,
     onOpenDetail: setSelectedMatchId,

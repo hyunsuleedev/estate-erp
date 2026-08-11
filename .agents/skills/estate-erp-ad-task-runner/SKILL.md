@@ -1,6 +1,6 @@
 ---
 name: estate-erp-ad-task-runner
-description: Run an Estate ERP Task whose category is advertisement using the user's local CP and Naver Skills. Use when the user asks Codex or Claude to process pending advertising work, update or take down CP ads, refresh CP snapshots, or optionally compare the result with Naver. The ERP Task is the only server-visible work state; detailed steps, retries, evidence, and failures stay in local SQLite.
+description: Run an Estate ERP Task whose category is advertisement using the user's local CP and Naver Skills. Use when the user asks Codex or Claude to process pending advertising work, update or take down CP ads, refresh CP snapshots, or optionally save raw Naver duplicate-ad JSON. The ERP Task is the only server-visible work state; detailed steps, retries, evidence, and failures stay in local SQLite.
 ---
 
 # Estate ERP Advertisement Task Runner
@@ -19,7 +19,8 @@ Task or invoking a provider-writing Skill.
   non-secret evidence in local SQLite.
 - CP reader/importer Skills refresh durable observations in ERP only after a
   complete read.
-- Naver comparison is optional unless the Task explicitly requires it.
+- Raw Naver duplicate-ad collection is optional and runs only when the Task or
+  current user explicitly requests it. Its JSON stays local and unclassified.
 - Provider credentials remain in the provider auth Skill. Never copy them into
   Task content, SQLite details, screenshots, or MCP payloads.
 
@@ -47,9 +48,10 @@ or an explicitly isolated profile with `ESTATE_ERP_AD_TASK_DB_PATH`.
    identifiers such as `listingAdvertisementId`, provider, and provider article
    number. Read the current CP state with the appropriate reader and import a
    complete snapshot with `estate-erp-cp-ad-importer` before proposing changes.
-5. If requested or useful for the stated Task, use `naver-real-estate-reader` to
-   compare the same resolved listing. A comparison is evidence, not permission
-   to change either system.
+5. Only when explicitly requested, pass the completed Esiljang Reader JSON to
+   `naver-real-estate-reader` and save its raw duplicate-ad JSON to the selected
+   local path. Do not compare rows, classify ownership, or upload that Naver
+   snapshot to ERP.
 6. Present the exact provider changes to the user: target, current value, new
    value, and whether save, exposure end, or republish is involved. Obtain clear
    confirmation in the current conversation before the first provider write.

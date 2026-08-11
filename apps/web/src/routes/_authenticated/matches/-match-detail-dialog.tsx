@@ -68,8 +68,11 @@ export function MatchDetailDialog({
     !activeDeal;
 
   const memoMutation = useMutation({
-    mutationFn: ({ id, stage, memo }: { id: string; stage: string; memo: string | null }) =>
-      api.matches.updateStage(id, { stage, memo }),
+    mutationFn: ({ match, memo }: { match: Match; memo: string | null }) =>
+      api.matches.updateMemo(match.id, {
+        memo,
+        expectedUpdatedAt: match.updatedAt,
+      }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['matches'] });
       setIsEditingMemo(false);
@@ -265,8 +268,7 @@ export function MatchDetailDialog({
                           size="xs"
                           onClick={() =>
                             memoMutation.mutate({
-                              id: match.id,
-                              stage: match.stage,
+                              match,
                               memo: memoDraft.trim() || null,
                             })
                           }

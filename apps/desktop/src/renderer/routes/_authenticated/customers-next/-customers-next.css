@@ -1,0 +1,132 @@
+.customers-next-page {
+  container-type: inline-size;
+}
+
+.customers-next-case-skeleton {
+  height: 48px;
+}
+
+.customers-next-case-summary {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  grid-template-columns: minmax(190px, 0.75fr) minmax(260px, 1.25fr) auto;
+  grid-template-areas: "identity overview counts";
+  align-items: center;
+  gap: 20px;
+}
+
+.customers-next-case-identity {
+  grid-area: identity;
+}
+
+.customers-next-case-overview {
+  grid-area: overview;
+}
+
+.customers-next-case-counts {
+  grid-area: counts;
+}
+
+.customers-next-intent-branch-list {
+  --customers-next-branch-left: 1rem;
+  --customers-next-branch-row-padding: 3.5rem;
+  --customers-next-branch-width: 2.5rem;
+}
+
+.customers-next-intent-branch-trunk,
+.customers-next-intent-branch-end,
+.customers-next-intent-branch-connector {
+  left: var(--customers-next-branch-left);
+}
+
+.customers-next-intent-branch-connector {
+  width: var(--customers-next-branch-width);
+}
+
+.customers-next-intent-branch-row {
+  padding-left: var(--customers-next-branch-row-padding);
+}
+
+.customers-next-intake-child-stem {
+  top: 1.625rem;
+  left: calc(var(--customers-next-branch-row-padding) + 0.75rem);
+}
+
+.customers-next-intake-children.customers-next-intent-branch-list {
+  --customers-next-branch-left: 1rem;
+  --customers-next-branch-row-padding: 2.25rem;
+  --customers-next-branch-width: 1rem;
+
+  margin-left: 3.25rem;
+}
+
+.customers-next-demand-match-panel,
+.customers-next-listing-match-panel {
+  margin-inline-start: -3.25rem;
+}
+
+@container (max-width: 960px) {
+  .customers-next-case-skeleton {
+    height: 77px;
+  }
+
+  .customers-next-case-summary {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "identity counts"
+      "overview overview";
+    row-gap: 6px;
+  }
+}
+
+@container (max-width: 520px) {
+  .customers-next-intent-branch-list {
+    --customers-next-branch-left: 0.75rem;
+    --customers-next-branch-row-padding: 3rem;
+    --customers-next-branch-width: 2.25rem;
+  }
+
+  .customers-next-intake-children.customers-next-intent-branch-list {
+    --customers-next-branch-left: 0.5rem;
+    --customers-next-branch-row-padding: 1.25rem;
+    --customers-next-branch-width: 0.75rem;
+  }
+
+  .customers-next-case-skeleton {
+    height: 101px;
+  }
+
+  .customers-next-case-date {
+    display: none;
+  }
+
+  .customers-next-intake-date {
+    display: none;
+  }
+
+  .customers-next-case-summary {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "identity"
+      "overview"
+      "counts";
+  }
+
+  .customers-next-case-counts {
+    justify-content: flex-start;
+  }
+
+  .customers-next-consultation-meta {
+    display: none;
+  }
+
+  .customers-next-intent-match-toggle {
+    gap: 0.25rem;
+    padding-inline: 0.5rem;
+  }
+
+  .customers-next-intent-match-label {
+    display: none;
+  }
+}

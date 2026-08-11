@@ -19,13 +19,14 @@ import { cn } from '@/lib/utils';
 
 interface Props {
   className?: string;
+  showNewTabButton?: boolean;
 }
 
 /**
  * TabBar는 부모(타이틀바 헤더) 안에 inline으로 들어간다.
  * 자체 row 스타일(border-b, bg-sidebar, h-9 등)은 갖지 않음 — 부모 헤더가 그 역할.
  */
-export function TabBar({ className }: Props) {
+export function TabBar({ className, showNewTabButton = true }: Props) {
   const tabs = useTabStore((s) => s.tabs);
   const activeTabId = useTabStore((s) => s.activeTabId);
   const activateTab = useTabStore((s) => s.activateTab);
@@ -76,7 +77,7 @@ export function TabBar({ className }: Props) {
                 />
               );
             })}
-            <NewTabButton />
+            {showNewTabButton ? <NewTabButton /> : null}
           </div>
         </SortableContext>
       </DndContext>

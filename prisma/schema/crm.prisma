@@ -142,8 +142,8 @@ model BuyerRequirement {
 
   // Consultation의 (office_id, buyer_intake_id, buyer_req_id) 복합 FK 대상.
   @@unique([officeId, buyerIntakeId, id])
+  @@unique([buyerIntakeId, priorityRank], map: "buyer_requirements_buyer_intake_id_priority_rank_key")
   @@index([officeId, status])
-  @@index([buyerIntakeId, priorityRank])
   @@map("buyer_requirements")
 }
 

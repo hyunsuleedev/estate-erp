@@ -23,7 +23,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import type { BuyerRequirement, Match } from "@estate-erp/api-client";
-import { MatchStage, normalizeMatchStage } from "@estate-erp/shared";
+import { MatchStage } from "@estate-erp/shared";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { formatDate, formatDday, formatPhone } from "@/lib/format";
@@ -514,9 +514,9 @@ export function MatchExpandPanel({
 
   const memoMutation = useMutation({
     mutationFn: ({ match, memo }: { match: Match; memo: string | null }) =>
-      api.matches.updateStage(match.id, {
-        stage: normalizeMatchStage(match.stage),
+      api.matches.updateMemo(match.id, {
         memo,
+        expectedUpdatedAt: match.updatedAt,
       }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["matches"] });

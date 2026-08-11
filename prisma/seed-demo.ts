@@ -606,15 +606,16 @@ async function seedContacts(ctx: Ctx) {
 }
 
 // ─────────────────────────────────────────────────────────────
-// Property — 6 개 (기존 Unit 재사용)
+// Property — 7 개 (기존 Unit 재사용)
 // 각 Property 에 owner PropertyContact 붙이고, 2개는 Tenant 도 붙임.
 // ─────────────────────────────────────────────────────────────
 async function seedProperties(
   ctx: Ctx,
   contacts: Awaited<ReturnType<typeof seedContacts>>,
 ) {
-  // 원장에 한 고객의 서로 무관한 아파트가 여러 채 묶이지 않도록
-  // 데모 Property마다 서로 다른 소유자를 배정한다.
+  // 기본적으로 데모 Property마다 서로 다른 소유자를 배정한다.
+  // 마지막 Property는 복수 ListingIntake 브랜치 검증을 위해 김민준에게
+  // 두 번째 소유 물건으로 배정한다.
   const owners = [
     contacts[0],
     contacts[1],
@@ -622,9 +623,10 @@ async function seedProperties(
     contacts[3],
     contacts[12],
     contacts[13],
+    contacts[0],
   ];
   const tenants = contacts.slice(8, 10);
-  // 6개 Property 에 owner 를 1:1로 배치.
+  // 7개 Property 에 owner 를 배치.
   // memo 는 PropertyContact 에만 남기고, cleanup 도 PropertyContact.memo 태그로 한다.
   const propertyDefs = owners.map((_, i) => ({
     unitIdx: i,
@@ -694,8 +696,8 @@ async function seedProperties(
 }
 
 // ─────────────────────────────────────────────────────────────
-// ListingIntake + Listing — 의뢰(intake) 7 건 / 매물 8 개
-// (매매 5 / 전세 2 / 월세 1)
+// ListingIntake + Listing — 의뢰(intake) 8 건 / 매물 9 개
+// (매매 5 / 전세 3 / 월세 1)
 // 같은 intake 에 transactionType 중복 불가 (@@unique [intakeId, transactionType])
 // → 같은 Property 의 매매 2건(P2/P2B)은 별도 의뢰로 분리.
 // ─────────────────────────────────────────────────────────────
@@ -810,6 +812,19 @@ async function seedListings(
       fieldMemo: '반려동물 가능, 단기 임대 협의 가능',
       nextConfirmInDays: 10,
       memo: `${DEMO_TAG} 월세 의뢰`,
+    },
+    {
+      // 김민준 고객의 두 번째 독립 내놓음 의뢰.
+      key: 'P6',
+      propertyIdx: 6,
+      lifecycleStatus: 'open',
+      receivedDaysAgo: 5,
+      verifiedDaysAgo: 4,
+      occupancyStatus: 'vacant',
+      viewingMemo: '공실 — 평일·주말 모두 방문 가능',
+      fieldMemo: '전세 수요 확인용 복수 ListingIntake 데모',
+      nextConfirmInDays: 6,
+      memo: `${DEMO_TAG} 김민준 두 번째 내놓음 의뢰`,
     },
   ];
 
@@ -962,6 +977,17 @@ async function seedListings(
       isPaused: true,
       memo: `${DEMO_TAG} 보류 · 집주인 여행중`,
     },
+    {
+      // 기존 배열 인덱스를 사용하는 match/deal seed를 보존하기 위해 끝에 추가한다.
+      propertyIdx: 6,
+      intakeKey: 'P6',
+      transactionType: 'jeonse',
+      price: 108000,
+      maintenanceFee: 20,
+      maintenanceFeeIncludes: ['water', 'parking'],
+      moveInAvailableType: 'immediate',
+      memo: `${DEMO_TAG} 김민준 두 번째 물건 · 공실 · 즉시입주`,
+    },
   ];
 
   const created = [];
@@ -1005,8 +1031,11 @@ async function seedListings(
 }
 
 // ─────────────────────────────────────────────────────────────
-// BuyerRequirement — 5개
-// 순수 매수 4명은 각 1개 조건만, 기존 소유주 1명은 매도 후 갈아타기 조건 1개.
+// BuyerRequirement — 7개
+// 강수연 고객은 하나의 BuyerIntake에 1·2순위 조건을 함께 두고,
+// 김민준 고객은 별도의 두 번째 BuyerIntake에 전세 조건 1개를 둬
+// 한 케이스 안의 구함 2 + 내놓음 2 브랜치를 검증한다.
+// 나머지 순수 매수 3명과 기존 소유주 1명은 각 1개 조건을 둔다.
 // ─────────────────────────────────────────────────────────────
 async function seedBuyerRequirements(
   ctx: Ctx,
@@ -1019,9 +1048,17 @@ async function seedBuyerRequirements(
     d.setDate(d.getDate() + n);
     return d;
   };
+  const daysAgo = (n: number) => {
+    const d = new Date(now);
+    d.setDate(d.getDate() - n);
+    return d;
+  };
 
   const defs: Array<{
     contact: (typeof contacts)[number];
+    intakeKey?: string;
+    intakeMemo?: string;
+    receivedDaysAgo?: number;
     status: 'active' | 'hold';
     urgency: 'urgent' | 'normal' | 'flexible';
     transactionType: 'sale' | 'jeonse' | 'monthly';
@@ -1114,16 +1151,53 @@ async function seedBuyerRequirements(
       nextContactDate: daysFromNow(5),
       memo: `${DEMO_TAG} 실거주 주택 1채 매도 후 40평대로 갈아타기\n매도 잔금과 매수 잔금 일정 연동 필수`,
     },
+    {
+      // 강수연 고객의 첫 의뢰 안에 두는 2순위 대안.
+      contact: buyers[3],
+      status: 'active',
+      urgency: 'flexible',
+      transactionType: 'sale',
+      priceMin: 180000,
+      priceMax: 220000,
+      areaMin: 82.65,
+      areaMax: 99.17,
+      siteTypes: ['apartment'],
+      regions: ['송파구'],
+      assignedToId: ctx.managerUserId,
+      nextContactDate: daysFromNow(14),
+      memo: `${DEMO_TAG} 우선순위 예시 2순위\n송파구까지 범위를 넓힌 대안 조건, 학군·남향 선호`,
+    },
+    {
+      // 별도 상담 목표로 접수된 김민준의 두 번째 BuyerIntake.
+      // 기존 match seed가 사용하는 requirement 인덱스를 보존하기 위해 끝에 추가한다.
+      contact: contacts[0],
+      intakeKey: 'family-jeonse',
+      intakeMemo: `${DEMO_TAG} 김민준 가족용 별도 전세 의뢰`,
+      receivedDaysAgo: 2,
+      status: 'active',
+      urgency: 'urgent',
+      transactionType: 'jeonse',
+      priceMin: 120000,
+      priceMax: 150000,
+      areaMin: 82.65,
+      areaMax: 112.4,
+      siteTypes: ['apartment'],
+      regions: ['강동구', '고덕동'],
+      assignedToId: ctx.managerUserId,
+      nextContactDate: daysFromNow(1),
+      memo: `${DEMO_TAG} 가족 거주용 전세 별도 확보\n갈아타기 매수 의뢰와 분리해 즉시 입주 가능한 전세 탐색`,
+    },
   ];
 
-  const intakeByContactId = new Map<
+  const intakeByKey = new Map<
     string,
     Awaited<ReturnType<typeof ctx.prisma.buyerIntake.create>>
   >();
   const nextPriorityByIntakeId = new Map<string, number>();
   const created = [];
   for (const def of defs) {
-    let intake = intakeByContactId.get(def.contact.id);
+    const intakeKey = `${def.contact.id}:${def.intakeKey ?? 'primary'}`;
+    let intake = intakeByKey.get(intakeKey);
     if (!intake) {
       const resolvedCase = await seedBrokerageCase(
         ctx,
@@ -1136,8 +1210,8 @@ async function seedBuyerRequirements(
           officeId: ctx.officeId,
           ...resolvedCase,
           lifecycleStatus: 'open',
-          receivedAt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
-          memo: `${DEMO_TAG} ${def.contact.name} 구매 의뢰`,
+          receivedAt: daysAgo(def.receivedDaysAgo ?? 7),
+          memo: def.intakeMemo ?? `${DEMO_TAG} ${def.contact.name} 구매 의뢰`,
           contacts: {
             create: {
               role: 'buyer',
@@ -1155,7 +1229,7 @@ async function seedBuyerRequirements(
           },
         },
       });
-      intakeByContactId.set(def.contact.id, intake);
+      intakeByKey.set(intakeKey, intake);
       nextPriorityByIntakeId.set(intake.id, 1);
     }
     const priorityRank = nextPriorityByIntakeId.get(intake.id) ?? 1;
@@ -1190,8 +1264,9 @@ async function seedBuyerRequirements(
   return created;
 }
 
-// 기존 집 매도대금이 새 집 매수의 선행조건인 현실적인 갈아타기 케이스.
-// 같은 ListingIntake 안의 매매/전세 Listing은 처분 방식의 대안으로 유지한다.
+// 우선순위 1 기존 집 매도대금이 우선순위 1 새 집 매수의 선행조건인
+// 현실적인 갈아타기 케이스. 추가 Intake는 별도 의뢰로 유지한다.
+// 같은 ListingIntake 안의 매매/전세 Listing은 처분 방식의 대안이다.
 async function seedTradeUpScenario(
   ctx: Ctx,
   contact: Awaited<ReturnType<typeof seedContacts>>[number],
@@ -1207,21 +1282,23 @@ async function seedTradeUpScenario(
       id: true,
       listingIntakes: {
         where: { lifecycleStatus: { in: ['open', 'hold'] } },
-        select: { id: true },
+        orderBy: { casePriorityRank: 'asc' },
+        select: { id: true, casePriorityRank: true },
       },
       buyerIntakes: {
         where: { lifecycleStatus: { in: ['open', 'hold'] } },
-        select: { id: true },
+        orderBy: { casePriorityRank: 'asc' },
+        select: { id: true, casePriorityRank: true },
       },
     },
   });
 
   if (
-    brokerageCase.listingIntakes.length !== 1 ||
-    brokerageCase.buyerIntakes.length !== 1
+    brokerageCase.listingIntakes.length < 1 ||
+    brokerageCase.buyerIntakes.length < 1
   ) {
     throw new Error(
-      `${contact.name} 갈아타기 케이스는 활성 매도 주택과 매수 의뢰가 각각 1개여야 합니다.`,
+      `${contact.name} 갈아타기 케이스에는 활성 매도 주택과 매수 의뢰가 각각 1개 이상 필요합니다.`,
     );
   }
 
@@ -1253,7 +1330,7 @@ async function seedTradeUpScenario(
   });
 }
 
-// 데모 데이터가 다시 비현실적인 다주택 동시 진행 형태로 퇴행하지 않게
+// 현실적인 범위 안에서 복수 의뢰 UI 극단값을 유지하도록
 // seed 실행 자체에서 고객 원장 시나리오를 검증한다.
 async function verifyCustomerLedgerScenarios(ctx: Ctx) {
   const cases = await ctx.prisma.brokerageCase.findMany({
@@ -1272,7 +1349,7 @@ async function verifyCustomerLedgerScenarios(ctx: Ctx) {
         select: {
           requirements: {
             where: { status: { in: ['active', 'hold'] } },
-            select: { id: true },
+            select: { id: true, priorityRank: true },
           },
         },
       },
@@ -1302,7 +1379,7 @@ async function verifyCustomerLedgerScenarios(ctx: Ctx) {
     const propertyCount = new Set(
       item.listingIntakes.map((intake) => intake.propertyId),
     ).size;
-    return demandCount > 1 || propertyCount > 1
+    return demandCount > 2 || propertyCount > 2
       ? [`${customer}(매수 ${demandCount}, 매도주택 ${propertyCount})`]
       : [];
   });
@@ -1314,21 +1391,39 @@ async function verifyCustomerLedgerScenarios(ctx: Ctx) {
 
   const hasTradeUpCase = cases.some(
     (item) =>
-      item.buyerIntakes.length === 1 &&
-      item.listingIntakes.length === 1 &&
+      item.buyerIntakes.length >= 1 &&
+      item.listingIntakes.length >= 1 &&
       item.dependencies.length > 0,
   );
   const hasAlternativeListings = cases.some((item) =>
     item.listingIntakes.some((intake) => intake.listings.length > 1),
   );
-  if (!hasTradeUpCase || !hasAlternativeListings) {
+  const hasDemandPriorityExample = cases.some((item) =>
+    item.buyerIntakes.some(
+      (intake) =>
+        intake.requirements.length === 2 &&
+        intake.requirements
+          .map((requirement) => requirement.priorityRank)
+          .sort((left, right) => left - right)
+          .join(',') === '1,2',
+    ),
+  );
+  const hasMultipleIntakeStressCase = cases.some(
+    (item) => item.buyerIntakes.length >= 2 && item.listingIntakes.length >= 2,
+  );
+  if (
+    !hasTradeUpCase ||
+    !hasAlternativeListings ||
+    !hasDemandPriorityExample ||
+    !hasMultipleIntakeStressCase
+  ) {
     throw new Error(
-      '고객 원장 데모에는 갈아타기 1건과 동일 intake의 복수 listing이 필요합니다.',
+      '고객 원장 데모에는 갈아타기, 동일 intake의 복수 listing, 구함 1·2순위, 동일 케이스의 복수 BuyerIntake/ListingIntake 예시가 필요합니다.',
     );
   }
 
   console.log(
-    `   고객 원장 ${cases.length}건 검증 완료 (갈아타기 1건, 고객당 활성 주택/매수요건 최대 1건)`,
+    `   고객 원장 ${cases.length}건 검증 완료 (갈아타기, 구함 우선순위, 동일 케이스 BuyerIntake 2 + ListingIntake 2 예시 포함)`,
   );
 }
 

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTabStore } from '../store/useTabStore';
 import { getRouteMeta } from '../lib/routeMeta';
 
@@ -7,35 +7,61 @@ import { getRouteMeta } from '../lib/routeMeta';
  * VSCode 모델: 떼어낸 창도 자기만의 탭 풀을 가지며, 시작 탭이 1개 들어있음.
  * `enabled === true`일 때만 동작 (메인 윈도우에서는 호출하지 않음).
  */
-export function useDetachedInitialTab(enabled: boolean) {
+export function useDetachedInitialTab(enabled: boolean): boolean {
   const openTab = useTabStore((s) => s.openTab);
   const handledRef = useRef(false);
+  const [isReady, setIsReady] = useState(false);
 
   useEffect(() => {
     if (!enabled) return;
-    if (handledRef.current) return;
-    if (!window.electronBridge?.tabs) return;
+    if (handledRef.current) {
+      setIsReady(true);
+      return;
+    }
 
-    void window.electronBridge.tabs.getInitialTab().then((tab) => {
-      if (!tab) return;
-      if (handledRef.current) return;
-      handledRef.current = true;
+    const tabsBridge = window.electronBridge?.tabs;
+    if (!tabsBridge) {
+      setIsReady(true);
+      return;
+    }
 
-      // 이미 같은 route의 탭이 있으면 그걸 활성화 (이론상 발생 안 해야 함)
-      const existing = useTabStore
-        .getState()
-        .tabs.find((t) => t.route === tab.route);
-      if (existing) {
-        useTabStore.getState().activateTab(existing.id);
-      } else {
-        openTab({
-          route: tab.route,
-          kind: tab.kind as ReturnType<typeof getRouteMeta>['kind'],
-          title: tab.title,
-          routeParams: tab.routeParams,
-        });
-      }
-      document.title = `${tab.title} — 에스테잇플로우`;
-    });
+    let cancelled = false;
+
+    void tabsBridge
+      .getInitialTab()
+      .then((tab) => {
+        if (cancelled || !tab || handledRef.current) return;
+        handledRef.current = true;
+
+        // 이미 같은 route의 탭이 있으면 그걸 활성화 (이론상 발생 안 해야 함)
+        const existing = useTabStore
+          .getState()
+          .tabs.find((t) => t.route === tab.route);
+        if (existing) {
+          useTabStore.getState().activateTab(existing.id);
+        } else {
+          openTab({
+            route: tab.route,
+            kind: tab.kind as ReturnType<typeof getRouteMeta>['kind'],
+            title: tab.title,
+            routeParams: tab.routeParams,
+          });
+        }
+        document.title = `${tab.title} — 에스테잇플로우`;
+      })
+      .catch((error) => {
+        console.error('[tabs] detached 초기 탭을 불러오지 못했습니다:', error);
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setIsReady(true);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [enabled, openTab]);
+
+  return !enabled || isReady;
 }

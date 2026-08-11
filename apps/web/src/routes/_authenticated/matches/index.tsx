@@ -139,8 +139,8 @@ function MatchesPage() {
   }, [deepLinkMatchId, navigate]);
 
   const stageMutation = useMutation({
-    mutationFn: ({ id, stage, memo }: { id: string; stage: string; memo?: string }) =>
-      api.matches.updateStage(id, { stage, memo }),
+    mutationFn: ({ id, stage }: { id: string; stage: string }) =>
+      api.matches.updateStage(id, { stage }),
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['matches'] });
       toast.success(

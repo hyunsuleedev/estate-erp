@@ -64,6 +64,23 @@ export interface BuyerRequirementSearchQuery {
 
 const BUYER_REQUIREMENT_STATUSES = new Set(['active', 'hold', 'completed']);
 
+const buyerRequirementMutationInclude = {
+  buyerIntake: { include: { contacts: buyerIntakeContactsInclude } },
+  preferredSites: {
+    include: { site: { select: { id: true, name: true, type: true } } },
+    orderBy: { priority: 'asc' as const },
+  },
+  preferredRegions: {
+    include: { province: true, district: true, ward: true },
+  },
+} satisfies Prisma.BuyerRequirementInclude;
+
+function assertPositivePriorityRank(priorityRank: number) {
+  if (!Number.isInteger(priorityRank) || priorityRank < 1) {
+    throw new BadRequestException('priorityRank는 1 이상의 정수여야 합니다.');
+  }
+}
+
 function toArray(value: string | string[] | undefined): string[] | undefined {
   if (value === undefined || value === null || value === '') return undefined;
   const arr = Array.isArray(value)
@@ -339,9 +356,7 @@ export class BuyerRequirementsService {
         'buyerIntakeId 또는 기존 호환용 contactId가 필요합니다.',
       );
     }
-    if (priorityRank !== undefined && priorityRank < 1) {
-      throw new BadRequestException('priorityRank는 1 이상이어야 합니다.');
-    }
+    if (priorityRank !== undefined) assertPositivePriorityRank(priorityRank);
 
     return this.prisma.$transaction(async (tx) => {
       let intake = buyerIntakeId
@@ -429,8 +444,24 @@ export class BuyerRequirementsService {
         orderBy: [{ priorityRank: 'desc' }, { createdAt: 'desc' }],
         select: { priorityRank: true },
       });
-      const resolvedPriorityRank =
-        priorityRank ?? (lastRequirement?.priorityRank ?? 0) + 1;
+      const appendPriorityRank = (lastRequirement?.priorityRank ?? 0) + 1;
+      if (priorityRank !== undefined && priorityRank > appendPriorityRank) {
+        throw new BadRequestException(
+          `priorityRank는 1부터 ${appendPriorityRank}까지 지정할 수 있습니다.`,
+        );
+      }
+      const resolvedPriorityRank = priorityRank ?? appendPriorityRank;
+
+      if (resolvedPriorityRank < appendPriorityRank) {
+        await tx.buyerRequirement.updateMany({
+          where: {
+            officeId,
+            buyerIntakeId: intake.id,
+            priorityRank: { gte: resolvedPriorityRank },
+          },
+          data: { priorityRank: { increment: 1 } },
+        });
+      }
 
       const requirement = await tx.buyerRequirement.create({
         data: {
@@ -449,19 +480,7 @@ export class BuyerRequirementsService {
             ? { create: preferredRegions }
             : undefined,
         },
-        include: {
-          buyerIntake: {
-            include: { contacts: buyerIntakeContactsInclude },
-          },
-          preferredSites: {
-            include: {
-              site: { select: { id: true, name: true, type: true } },
-            },
-          },
-          preferredRegions: {
-            include: { province: true, district: true, ward: true },
-          },
-        },
+        include: buyerRequirementMutationInclude,
       });
       return withBuyerRequirementContact(requirement);
     });
@@ -496,11 +515,21 @@ export class BuyerRequirementsService {
       }[];
     },
   ) {
-    await this.findOne(id, officeId);
-    if (dto.priorityRank !== undefined && dto.priorityRank < 1) {
-      throw new BadRequestException('priorityRank는 1 이상이어야 합니다.');
+    const { priorityRank, preferredSites, preferredRegions, ...rest } = dto;
+    if (priorityRank !== undefined) {
+      const hasOtherChanges =
+        preferredSites !== undefined ||
+        preferredRegions !== undefined ||
+        Object.keys(rest).length > 0;
+      if (hasOtherChanges) {
+        throw new BadRequestException(
+          '우선순위 변경은 다른 희망조건 수정과 분리해서 요청해야 합니다.',
+        );
+      }
+      return this.reorder(id, officeId, priorityRank);
     }
-    const { preferredSites, preferredRegions, ...rest } = dto;
+
+    await this.findOne(id, officeId);
     const requirement = await this.prisma.buyerRequirement.update({
       where: { id },
       data: {
@@ -520,17 +549,70 @@ export class BuyerRequirementsService {
           ? { deleteMany: {}, create: preferredRegions }
           : undefined,
       },
-      include: {
-        buyerIntake: { include: { contacts: buyerIntakeContactsInclude } },
-        preferredSites: {
-          include: { site: { select: { id: true, name: true, type: true } } },
-        },
-        preferredRegions: {
-          include: { province: true, district: true, ward: true },
-        },
-      },
+      include: buyerRequirementMutationInclude,
     });
     return withBuyerRequirementContact(requirement);
+  }
+
+  async reorder(id: string, officeId: string, priorityRank: number) {
+    assertPositivePriorityRank(priorityRank);
+
+    return this.prisma.$transaction(async (tx) => {
+      const identity = await tx.buyerRequirement.findFirst({
+        where: { id, officeId },
+        select: { id: true, buyerIntakeId: true },
+      });
+      if (!identity) throw new NotFoundException('BuyerRequirement not found');
+
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`buyer-intake:${identity.buyerIntakeId}`}::text, 0))`;
+      const current = await tx.buyerRequirement.findFirst({
+        where: { id, officeId, buyerIntakeId: identity.buyerIntakeId },
+        select: { id: true, buyerIntakeId: true, priorityRank: true },
+      });
+      if (!current) throw new NotFoundException('BuyerRequirement not found');
+
+      const requirementCount = await tx.buyerRequirement.count({
+        where: { officeId, buyerIntakeId: current.buyerIntakeId },
+      });
+      if (priorityRank > requirementCount) {
+        throw new BadRequestException(
+          `priorityRank는 1부터 ${requirementCount}까지 지정할 수 있습니다.`,
+        );
+      }
+
+      if (priorityRank < current.priorityRank) {
+        await tx.buyerRequirement.updateMany({
+          where: {
+            officeId,
+            buyerIntakeId: current.buyerIntakeId,
+            priorityRank: { gte: priorityRank, lt: current.priorityRank },
+          },
+          data: { priorityRank: { increment: 1 } },
+        });
+      } else if (priorityRank > current.priorityRank) {
+        await tx.buyerRequirement.updateMany({
+          where: {
+            officeId,
+            buyerIntakeId: current.buyerIntakeId,
+            priorityRank: { gt: current.priorityRank, lte: priorityRank },
+          },
+          data: { priorityRank: { decrement: 1 } },
+        });
+      }
+
+      if (priorityRank !== current.priorityRank) {
+        await tx.buyerRequirement.update({
+          where: { id },
+          data: { priorityRank },
+        });
+      }
+
+      const requirement = await tx.buyerRequirement.findUniqueOrThrow({
+        where: { id },
+        include: buyerRequirementMutationInclude,
+      });
+      return withBuyerRequirementContact(requirement);
+    });
   }
 
   async updateStatus(id: string, officeId: string, status: string) {
@@ -551,8 +633,20 @@ export class BuyerRequirementsService {
   }
 
   async remove(id: string, officeId: string) {
-    await this.findOne(id, officeId);
     return this.prisma.$transaction(async (tx) => {
+      const identity = await tx.buyerRequirement.findFirst({
+        where: { id, officeId },
+        select: { id: true, buyerIntakeId: true },
+      });
+      if (!identity) throw new NotFoundException('BuyerRequirement not found');
+
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`buyer-intake:${identity.buyerIntakeId}`}::text, 0))`;
+      const current = await tx.buyerRequirement.findFirst({
+        where: { id, officeId, buyerIntakeId: identity.buyerIntakeId },
+        select: { id: true, buyerIntakeId: true, priorityRank: true },
+      });
+      if (!current) throw new NotFoundException('BuyerRequirement not found');
+
       // A consultation belongs to the buyer project even when one detailed
       // requirement is removed. Keep the intake context and detach only the
       // requirement-level context before deleting it.
@@ -561,7 +655,16 @@ export class BuyerRequirementsService {
         data: { buyerReqId: null },
       });
 
-      return tx.buyerRequirement.delete({ where: { id } });
+      const deleted = await tx.buyerRequirement.delete({ where: { id } });
+      await tx.buyerRequirement.updateMany({
+        where: {
+          officeId,
+          buyerIntakeId: current.buyerIntakeId,
+          priorityRank: { gt: current.priorityRank },
+        },
+        data: { priorityRank: { decrement: 1 } },
+      });
+      return deleted;
     });
   }
 

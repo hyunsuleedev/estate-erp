@@ -380,7 +380,13 @@ export function registerTabIpcHandlers(manager: WindowManager) {
 
   ipcMain.on('tabs:closeWindow', (event) => {
     const win = BrowserWindow.fromWebContents(event.sender);
-    if (win && !win.isDestroyed()) win.close();
+    if (
+      win &&
+      !win.isDestroyed() &&
+      manager.getKind(win.id) === 'detached'
+    ) {
+      win.close();
+    }
   });
 
   ipcMain.handle('tabs:openInMainWindow', (_event, route: string) => {

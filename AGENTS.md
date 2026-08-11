@@ -91,7 +91,7 @@ prisma/
 - CP 자격증명은 Skill 전용 로컬 `config.js`에 저장하며 Electron은 보관하거나 로컬 인증 MCP를 호스팅하지 않음
 - 광고 자동화의 서버 상태는 일반 `Task(category=advertisement)`만 사용하며 MCP `claim_task`로 중복 실행을 막음
 - CP 실행 단계·재시도·검증은 `estate-erp-ad-task-runner` 로컬 SQLite가 소유하고 서버는 agent를 대기·호출·wakeup하지 않음
-- 네이버 수집 범위(`siteId ↔ complexNo`)는 `naver-complex-collector` 로컬 SQLite가 소유하며 ERP에는 완전한 관측 결과만 저장
+- 네이버 중복광고 수집은 `naver-real-estate-reader`가 완료된 이실장 JSON의 명시적 `naverArticleNo`만 사용해 독립 로컬 JSON으로 저장하며 ERP·SQLite·단지 매핑·광고 비교를 수행하지 않음
 
 ## Dev Commands
 

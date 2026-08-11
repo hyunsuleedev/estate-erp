@@ -37,7 +37,7 @@ export function AgendaCalendarView({
 
   if (dayGroups.every((group) => group.events.length === 0)) {
     return (
-      <div className="rounded-lg border border-border bg-background py-6">
+      <div className="flex min-h-full items-center justify-center bg-background py-6">
         <EmptyState
           icon={CalendarDays}
           title="이번 달 일정이 없습니다"
@@ -53,7 +53,7 @@ export function AgendaCalendarView({
   }
 
   return (
-    <div className="overflow-hidden rounded-lg border border-border bg-background">
+    <div className="overflow-hidden bg-background">
       {dayGroups.map(({ date, events }) => {
         if (events.length === 0) return null;
 

@@ -271,6 +271,53 @@ export class MatchesService {
     return this.withPropertyContext(match);
   }
 
+  async updateMemo(
+    id: string,
+    officeId: string,
+    dto: {
+      memo: string | null;
+      expectedUpdatedAt?: string | Date | null;
+    },
+  ) {
+    const expectedUpdatedAt = dto.expectedUpdatedAt
+      ? this.parseExpectedUpdatedAt(dto.expectedUpdatedAt)
+      : null;
+    const where: Prisma.MatchWhereUniqueInput = {
+      id,
+      officeId,
+      ...(expectedUpdatedAt ? { updatedAt: expectedUpdatedAt } : {}),
+    };
+
+    try {
+      const match = await this.prisma.match.update({
+        where,
+        // 메모 전용 경로에서는 클라이언트가 마지막으로 본 stage를 다시 쓰지 않는다.
+        data: { memo: dto.memo },
+        include: this.matchInclude,
+      });
+
+      return this.withPropertyContext(match);
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2025'
+      ) {
+        const accessibleMatch = await this.prisma.match.findFirst({
+          where: { id, officeId },
+          select: { id: true },
+        });
+        if (!accessibleMatch) {
+          throw new NotFoundException('Match not found');
+        }
+        if (expectedUpdatedAt) {
+          throw new ConflictException('다른 사용자가 먼저 수정했습니다.');
+        }
+        throw new NotFoundException('Match not found');
+      }
+      throw error;
+    }
+  }
+
   async remove(id: string, officeId: string) {
     await this.findOne(id, officeId);
     return this.prisma.match.delete({ where: { id } });
@@ -288,5 +335,13 @@ export class MatchesService {
         ? withBuyerRequirementContact(match.buyerRequirement)
         : null,
     };
+  }
+
+  private parseExpectedUpdatedAt(value: string | Date) {
+    const parsed = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(parsed.getTime())) {
+      throw new BadRequestException('expectedUpdatedAt must be a valid date');
+    }
+    return parsed;
   }
 }

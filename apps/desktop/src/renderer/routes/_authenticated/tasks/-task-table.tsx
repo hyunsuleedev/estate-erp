@@ -1,7 +1,7 @@
 /**
  * tasks 페이지 테이블 뷰 — Notion 스타일 행(전체/카테고리별) + 상태별 DnD 그룹.
  */
-import { useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
 import {
   DndContext,
   DragOverlay,
@@ -20,13 +20,12 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { Edit, GripVertical } from 'lucide-react';
+import { FileText, GripVertical } from 'lucide-react';
 import type { Task } from '@estate-erp/api-client';
 import { cn } from '@/lib/utils';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import {
   TaskContextChips,
   TaskSourceBadge,
@@ -47,6 +46,43 @@ import {
 
 export type { TaskRowHandlers };
 
+const ROW_CONTROL_SELECTOR =
+  'button, a, input, select, textarea, [role="button"], [role="menuitem"], [data-row-control]';
+
+function openTaskFromRow(event: ReactMouseEvent<HTMLElement>, task: Task, onRowClick: (task: Task) => void) {
+  const target = event.target;
+  if (target instanceof Element) {
+    const control = target.closest(ROW_CONTROL_SELECTOR);
+    if (control && control !== event.currentTarget) return;
+  }
+  onRowClick(task);
+}
+
+function TaskTitleCell({ task, onOpen }: { task: Task; onOpen: (task: Task) => void }) {
+  const completed = task.status === 'completed';
+
+  return (
+    <div className="grid min-w-0 gap-1">
+      <div className="flex min-w-0 items-center gap-2">
+        <FileText className="size-3.5 shrink-0 text-muted-foreground/70" aria-hidden="true" />
+        <button
+          type="button"
+          className={cn(
+            'min-w-0 flex-1 truncate text-left text-[13px] font-medium leading-5 underline-offset-4 hover:underline focus-visible:outline-none focus-visible:underline',
+            completed && 'text-muted-foreground line-through',
+          )}
+          aria-label={`${task.title} 업무 열기`}
+          onClick={() => onOpen(task)}
+        >
+          {task.title}
+        </button>
+        <TaskSourceBadge source={task.source} />
+      </div>
+      <TaskContextChips task={task} compact className="pl-5" />
+    </div>
+  );
+}
+
 // ─── Notion Table Header ──────────────────────────────────
 
 export function NotionTableHeader({
@@ -66,17 +102,17 @@ export function NotionTableHeader({
     <tr className="border-b border-border/40 text-xs text-muted-foreground">
       {showDragHandle && <th className="w-[28px]" />}
       {showCheckbox && (
-        <th className="w-[40px] px-3 py-2">
+        <th className="w-[40px] px-2.5 py-2">
           <Checkbox checked={isAllSelected} onCheckedChange={onToggleAll} />
         </th>
       )}
-      <th className="w-[50px] px-3 py-2 text-left font-medium">No</th>
-      <th className="px-3 py-2 text-left font-medium">작업</th>
-      <th className="w-[90px] px-3 py-2 text-left font-medium">상태</th>
-      <th className="w-[80px] px-3 py-2 text-left font-medium">담당자</th>
-      <th className="w-[100px] px-3 py-2 text-left font-medium">마감일</th>
-      <th className="w-[70px] px-3 py-2 text-left font-medium">우선순위</th>
-      {showCategory && <th className="w-[110px] px-3 py-2 text-left font-medium">카테고리</th>}
+      <th className="w-[50px] px-2.5 py-2 text-left font-medium">No</th>
+      <th className="px-2.5 py-2 text-left font-medium">작업</th>
+      <th className="w-[90px] px-2.5 py-2 text-left font-medium">상태</th>
+      <th className="w-[80px] px-2.5 py-2 text-left font-medium">담당자</th>
+      <th className="w-[100px] px-2.5 py-2 text-left font-medium">마감일</th>
+      <th className="w-[70px] px-2.5 py-2 text-left font-medium">우선순위</th>
+      {showCategory && <th className="w-[110px] px-2.5 py-2 text-left font-medium">카테고리</th>}
       <th className="w-[40px]" />
     </tr>
   );
@@ -110,6 +146,7 @@ export function NotionTableRow({
 
   return (
     <tr
+      onDoubleClick={(event) => openTaskFromRow(event, task, onRowClick)}
       className={cn(
         'group/row border-b border-border/40 text-sm transition-colors hover:bg-muted/30',
         overdue && 'bg-destructive-soft/30',
@@ -117,7 +154,7 @@ export function NotionTableRow({
       )}
     >
       {showCheckbox && (
-        <td className="px-3 py-2">
+        <td className="px-2.5 py-1.5">
           <Checkbox checked={isSelected} onCheckedChange={() => onToggleSelect?.(task.id)} />
         </td>
       )}
@@ -153,54 +190,40 @@ function NotionTableRowCells({
 
   return (
     <>
-      <td className="border-r border-border/40 px-3 py-2 text-muted-foreground">{index}</td>
-      <td className="border-r border-border/40 px-3 py-2">
-        <div className="grid gap-1">
-          <div className="flex items-center gap-1.5">
-            <span className={cn('flex-1', task.status === 'completed' ? 'text-muted-foreground line-through' : '')}>{task.title}</span>
-            <TaskSourceBadge source={task.source} />
-            <Button
-              variant="ghost"
-              size="sm"
-              className="size-6 shrink-0 p-0 opacity-0 transition-opacity group-hover/row:opacity-100"
-              onClick={() => onRowClick(task)}
-            >
-              <Edit className="size-3.5" />
-            </Button>
-          </div>
-          <TaskContextChips task={task} />
-        </div>
+      <td className="px-2.5 py-1.5 tabular-nums text-muted-foreground">{index}</td>
+      <td className="px-2.5 py-1.5">
+        <TaskTitleCell task={task} onOpen={onRowClick} />
       </td>
 
       {/* 상태 — 클릭 시 인라인 선택 */}
-      <td className="border-r border-border/40 px-3 py-2">
+      <td className="px-2.5 py-1.5">
         <StatusPickerPopover task={task} onUpdate={onUpdate} />
       </td>
 
       {/* 담당자 — 클릭 시 인라인 표시 */}
-      <td className="border-r border-border/40 px-3 py-2">
+      <td className="px-2.5 py-1.5">
         <TaskAssigneePicker task={task} employeeOptions={employeeOptions} onUpdate={onUpdate} />
       </td>
 
       {/* 마감일 — 클릭 시 인라인 날짜 선택 */}
-      <td className="border-r border-border/40 px-3 py-2">
+      <td className="px-2.5 py-1.5">
         <DueDatePickerPopover task={task} onUpdate={onUpdate} />
       </td>
 
       {/* 우선순위 — 클릭 시 인라인 선택 */}
-      <td className="border-r border-border/40 px-3 py-2">
+      <td className="px-2.5 py-1.5">
         <PriorityPickerPopover task={task} onUpdate={onUpdate} />
       </td>
 
       {showCategory && (
-        <td className="border-r border-border/40 px-3 py-2">
+        <td className="px-2.5 py-1.5">
           <Badge className={cn(cCfg.color, 'gap-1 text-xs')}>
             {cCfg.icon}
             {cCfg.label}
           </Badge>
         </td>
       )}
-      <td className="px-3 py-2">
+      <td className="px-2 py-1.5">
         <TaskRowActionsMenu task={task} onRowClick={onRowClick} onStatusChange={onStatusChange} onDelete={onDelete} />
       </td>
     </>
@@ -399,13 +422,13 @@ function StatusGroup({
           {/* Header row */}
           <div className="flex items-center border-b border-border/40 text-xs text-muted-foreground">
             <div className="w-[28px] shrink-0" />
-            <div className="w-[50px] shrink-0 px-3 py-2 font-medium">No</div>
-            <div className="flex-1 px-3 py-2 font-medium">작업</div>
-            <div className="w-[90px] shrink-0 px-3 py-2 font-medium">상태</div>
-            <div className="w-[80px] shrink-0 px-3 py-2 font-medium">담당자</div>
-            <div className="w-[100px] shrink-0 px-3 py-2 font-medium">마감일</div>
-            <div className="w-[70px] shrink-0 px-3 py-2 font-medium">우선순위</div>
-            <div className="w-[110px] shrink-0 px-3 py-2 font-medium">카테고리</div>
+            <div className="w-[50px] shrink-0 px-2.5 py-2 font-medium">No</div>
+            <div className="flex-1 px-2.5 py-2 font-medium">작업</div>
+            <div className="w-[90px] shrink-0 px-2.5 py-2 font-medium">상태</div>
+            <div className="w-[80px] shrink-0 px-2.5 py-2 font-medium">담당자</div>
+            <div className="w-[100px] shrink-0 px-2.5 py-2 font-medium">마감일</div>
+            <div className="w-[70px] shrink-0 px-2.5 py-2 font-medium">우선순위</div>
+            <div className="w-[110px] shrink-0 px-2.5 py-2 font-medium">카테고리</div>
             <div className="w-[40px] shrink-0" />
           </div>
           <div ref={setNodeRef} className={cn('min-h-[40px] rounded transition-colors', isOver && 'bg-accent/50')}>
@@ -456,6 +479,7 @@ function SortableTableRow(props: TaskRowHandlers & { task: Task; index: number }
       ref={setNodeRef}
       style={style}
       {...attributes}
+      onDoubleClick={(event) => openTaskFromRow(event, props.task, props.onRowClick)}
       className={cn(
         'group/row flex items-center border-b border-border/40 text-sm transition-colors hover:bg-muted/30',
         overdue && 'bg-destructive-soft/30',
@@ -466,53 +490,42 @@ function SortableTableRow(props: TaskRowHandlers & { task: Task; index: number }
       <div
         ref={setActivatorNodeRef}
         {...listeners}
-        className="flex w-[28px] shrink-0 cursor-grab touch-none items-center justify-center px-1 py-2 active:cursor-grabbing"
+        data-row-control
+        className="flex w-[28px] shrink-0 cursor-grab touch-none items-center justify-center px-1 py-1.5 active:cursor-grabbing"
       >
         <GripVertical className="size-4 text-muted-foreground/40 hover:text-muted-foreground" />
       </div>
       {/* No */}
-      <div className="w-[50px] shrink-0 border-r border-border/40 px-3 py-2 text-muted-foreground">{props.index}</div>
+      <div className="w-[50px] shrink-0 px-2.5 py-1.5 tabular-nums text-muted-foreground">{props.index}</div>
       {/* 작업 */}
-      <div className="min-w-0 flex-1 border-r border-border/40 px-3 py-2">
-        <div className="flex items-center gap-1.5">
-          <span className={cn('flex-1 truncate', props.task.status === 'completed' ? 'text-muted-foreground line-through' : '')}>{props.task.title}</span>
-          <TaskSourceBadge source={props.task.source} />
-          <Button
-            variant="ghost"
-            size="sm"
-            className="size-6 shrink-0 p-0 opacity-0 transition-opacity group-hover/row:opacity-100"
-            onClick={() => props.onRowClick(props.task)}
-          >
-            <Edit className="size-3.5" />
-          </Button>
-        </div>
-        <TaskContextChips task={props.task} compact className="mt-1" />
+      <div className="min-w-0 flex-1 px-2.5 py-1.5">
+        <TaskTitleCell task={props.task} onOpen={props.onRowClick} />
       </div>
       {/* 상태 */}
-      <div className="w-[90px] shrink-0 border-r border-border/40 px-3 py-2">
+      <div className="w-[90px] shrink-0 px-2.5 py-1.5">
         <StatusPickerPopover task={props.task} onUpdate={props.onUpdate} />
       </div>
       {/* 담당자 */}
-      <div className="w-[80px] shrink-0 border-r border-border/40 px-3 py-2">
+      <div className="w-[80px] shrink-0 px-2.5 py-1.5">
         <TaskAssigneePicker task={props.task} employeeOptions={props.employeeOptions} onUpdate={props.onUpdate} />
       </div>
       {/* 마감일 */}
-      <div className="w-[100px] shrink-0 border-r border-border/40 px-3 py-2">
+      <div className="w-[100px] shrink-0 px-2.5 py-1.5">
         <DueDatePickerPopover task={props.task} onUpdate={props.onUpdate} />
       </div>
       {/* 우선순위 */}
-      <div className="w-[70px] shrink-0 border-r border-border/40 px-3 py-2">
+      <div className="w-[70px] shrink-0 px-2.5 py-1.5">
         <PriorityPickerPopover task={props.task} onUpdate={props.onUpdate} />
       </div>
       {/* 카테고리 */}
-      <div className="w-[110px] shrink-0 border-r border-border/40 px-3 py-2">
+      <div className="w-[110px] shrink-0 px-2.5 py-1.5">
         <Badge className={cn(cCfg.color, 'gap-1 text-xs')}>
           {cCfg.icon}
           {cCfg.label}
         </Badge>
       </div>
       {/* 액션 */}
-      <div className="w-[40px] shrink-0 px-3 py-2">
+      <div className="w-[40px] shrink-0 px-2 py-1.5">
         <TaskRowActionsMenu task={props.task} onRowClick={props.onRowClick} onStatusChange={props.onStatusChange} onDelete={props.onDelete} />
       </div>
     </div>

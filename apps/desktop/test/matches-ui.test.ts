@@ -13,6 +13,31 @@ const webMatchesPageSource = readFileSync(
   resolve(testDir, '../../web/src/routes/_authenticated/matches/index.tsx'),
   'utf8',
 );
+const matchDetailSource = readFileSync(
+  resolve(
+    testDir,
+    '../src/renderer/routes/_authenticated/matches/-match-detail-dialog.tsx',
+  ),
+  'utf8',
+);
+const webMatchDetailSource = readFileSync(
+  resolve(
+    testDir,
+    '../../web/src/routes/_authenticated/matches/-match-detail-dialog.tsx',
+  ),
+  'utf8',
+);
+const buyerListPanelsSource = readFileSync(
+  resolve(
+    testDir,
+    '../src/renderer/routes/_authenticated/buyer-requirements/-buyer-list-panels.tsx',
+  ),
+  'utf8',
+);
+const propertiesPageSource = readFileSync(
+  resolve(testDir, '../src/renderer/routes/_authenticated/properties/index.tsx'),
+  'utf8',
+);
 const matchGroupsSource = readFileSync(
   resolve(
     testDir,
@@ -243,6 +268,33 @@ describe('desktop matches workbench', () => {
     assert.match(matchGroupsSource, /role="status"\s+aria-live="polite"/);
     assert.match(matchesPageSource, /const memoMutation = useMutation/);
     assert.match(matchesPageSource, /savingMemoId: memoMutation\.isPending/);
+  });
+
+  it('saves memo-only edits without replaying a stale match stage', () => {
+    for (const source of [
+      matchesPageSource,
+      matchDetailSource,
+      buyerListPanelsSource,
+      propertiesPageSource,
+      webMatchDetailSource,
+    ]) {
+      assert.match(
+        source,
+        /api\.matches\.updateMemo\(match\.id, \{[\s\S]*?memo,[\s\S]*?expectedUpdatedAt: match\.updatedAt/,
+      );
+      assert.doesNotMatch(
+        source,
+        /stage: normalizeMatchStage\(match\.stage\),\s*memo/,
+      );
+    }
+    assert.doesNotMatch(
+      matchesPageSource,
+      /api\.matches\.updateStage\(id, \{ stage, memo \}\)/,
+    );
+    assert.doesNotMatch(
+      webMatchesPageSource,
+      /api\.matches\.updateStage\(id, \{ stage, memo \}\)/,
+    );
   });
 
   it('keeps stage actions accessible while reducing pipeline chrome', () => {

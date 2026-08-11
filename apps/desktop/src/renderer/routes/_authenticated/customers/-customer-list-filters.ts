@@ -16,7 +16,6 @@ export const customerLedgerSortDefinitions: Array<{
   label: string;
 }> = [
   { field: "customer", label: "고객명" },
-  { field: "intentCount", label: "요건 수" },
   { field: "budgetMin", label: "최소예산" },
   { field: "budgetMax", label: "최대예산" },
   { field: "monthlyRentMin", label: "최소월세" },
@@ -24,7 +23,7 @@ export const customerLedgerSortDefinitions: Array<{
   { field: "areaMin", label: "최소평형" },
   { field: "areaMax", label: "최대평형" },
   { field: "matchCount", label: "매칭 수" },
-  { field: "updatedAt", label: "최근 갱신" },
+  { field: "createdAt", label: "등록일" },
 ];
 
 function numberBoundary(value: string | undefined) {

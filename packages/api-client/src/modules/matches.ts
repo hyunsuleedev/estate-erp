@@ -35,6 +35,11 @@ export interface CreateMatchDto {
   memo?: string;
 }
 
+export interface UpdateMatchMemoDto {
+  memo: string | null;
+  expectedUpdatedAt?: string | null;
+}
+
 export interface MatchesFilter {
   propertyId?: string;
   listingId?: string;
@@ -59,6 +64,10 @@ export function createMatchesApi(request: RequestFn) {
     /** memo: null = 메모 비우기, undefined = 변경 없음 */
     updateStage: (id: string, dto: { stage: string; memo?: string | null }) =>
       request<Match>(`/matches/${id}/stage`, { method: 'PATCH', body: dto }),
+
+    /** stage를 건드리지 않는 메모 전용 수정. expectedUpdatedAt 지정 시 충돌을 감지한다. */
+    updateMemo: (id: string, dto: UpdateMatchMemoDto) =>
+      request<Match>(`/matches/${id}/memo`, { method: 'PATCH', body: dto }),
 
     remove: (id: string) =>
       request<void>(`/matches/${id}`, { method: 'DELETE' }),

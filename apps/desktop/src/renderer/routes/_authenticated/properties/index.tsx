@@ -4965,9 +4965,9 @@ function PropertyMatchPanel({ group }: { group: PropertyListingGroup }) {
 
   const memoMutation = useMutation({
     mutationFn: ({ match, memo }: { match: Match; memo: string | null }) =>
-      api.matches.updateStage(match.id, {
-        stage: normalizeMatchStage(match.stage),
+      api.matches.updateMemo(match.id, {
         memo,
+        expectedUpdatedAt: match.updatedAt,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['matches'] });
@@ -5640,9 +5640,9 @@ function IntakeMemoCell({
       editorChrome="floating"
       hoverHighlight={false}
     >
-      <p className="line-clamp-2 min-w-0 px-2.5 text-[13px] leading-4 text-slate-600">
+      <span className="line-clamp-2 min-w-0 px-2.5 text-[13px] leading-4 text-slate-600">
         {value || <span className="text-slate-400">-</span>}
-      </p>
+      </span>
     </EditableCell>
   );
 }

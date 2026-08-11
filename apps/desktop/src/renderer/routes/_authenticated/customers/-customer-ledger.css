@@ -1,6 +1,41 @@
 /* 고객 원장 — 매물관리(PropertyListingsTable)의 Notion식 플랫 그리드 언어 적용
    헤어라인 그리드, 13px 셀, tabular-nums, 좌측 선택·고객 열 pinning + 경계 그림자 */
 
+.customer-ledger-scroll-shell {
+  isolation: isolate;
+}
+
+.customer-ledger-scroll-region {
+  position: relative;
+  container-type: inline-size;
+}
+
+/* 가로로 숨은 열이 있을 때만 우측에 얇은 그림자를 남긴다. */
+.customer-ledger-overflow-cue {
+  position: absolute;
+  top: 36px;
+  right: 0;
+  bottom: 0;
+  z-index: 20;
+  width: 1px;
+  background: #d8d6d0;
+  box-shadow: -6px 0 8px rgb(55 53 47 / 14%);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.customer-ledger-scroll-shell[data-can-scroll-right="true"]
+  .customer-ledger-overflow-cue {
+  opacity: 1;
+}
+
+/* 가로 스크롤 위치와 무관하게 다음 페이지 감지 면적을 유지한다. */
+.customer-ledger-load-sentinel {
+  width: 100%;
+  min-width: 1030px;
+  height: 1px;
+}
+
 .customer-ledger-table {
   width: 100%;
   min-width: 1030px;
@@ -101,6 +136,11 @@
   transition: background-color 120ms ease;
 }
 
+/* 거래·예산·월세·평형·매칭 그룹의 끝만 기존 헤어라인보다 한 단계 진하게. */
+.customer-ledger-table .ledger-group-end {
+  border-right-color: #d8d6d0;
+}
+
 .customer-ledger-table .ledger-case-start > td,
 .customer-ledger-table .ledger-case-start > th {
   border-top: 1px solid var(--color-border);
@@ -156,6 +196,42 @@
   );
 }
 
+/* context 행은 반복 라벨 대신 장소와 노트를 두 개의 의미 그룹으로 읽는다. */
+.ledger-context-layout {
+  display: grid;
+  grid-template-columns: minmax(180px, 240px) minmax(0, 1fr);
+  min-width: 0;
+  height: 100%;
+  align-items: center;
+  padding: 0 10px;
+}
+
+.ledger-context-link {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  color: var(--color-foreground);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.ledger-context-link:hover > span {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.ledger-context-memo {
+  display: flex;
+  min-width: 0;
+  height: 24px;
+  align-items: center;
+  gap: 2px;
+  padding-left: 10px;
+  border-left: 1px solid
+    color-mix(in srgb, var(--color-border) 85%, transparent);
+}
+
 /* 좌측 pinning — 선택 + 고객 + 작업 열, 마지막 고정 열에 경계 그림자 */
 .ledger-sticky-select {
   position: sticky;
@@ -196,6 +272,7 @@
 
 .customer-ledger-table td.ledger-select-cell {
   padding: 0;
+  padding-top: 11px;
   border-bottom: 1px solid var(--color-border);
   background: var(--color-background);
   text-align: center;
@@ -204,6 +281,7 @@
 
 .customer-ledger-table td.ledger-action-cell {
   padding: 0;
+  padding-top: 6px;
   border-bottom: 1px solid var(--color-border);
   background: var(--color-background);
   text-align: center;
@@ -211,7 +289,7 @@
 }
 
 .customer-ledger-table th.ledger-customer-cell {
-  padding: 4px 10px;
+  padding: 8px 10px 4px;
   border-bottom: 1px solid var(--color-border);
   background: var(--color-background) !important;
   color: var(--color-foreground);
@@ -224,12 +302,18 @@
 }
 
 .customer-ledger-table td.ledger-updated-cell {
+  padding-top: 10px;
   border-bottom: 1px solid var(--color-border);
   color: var(--color-muted-foreground);
   font-size: 11px;
   text-align: center;
   vertical-align: middle;
   white-space: nowrap;
+}
+
+/* rowSpan 셀은 케이스의 첫 행에 정렬해 고객 블록의 시작점을 고정한다. */
+.customer-ledger-table :is(td, th).ledger-rowspan-top {
+  vertical-align: top;
 }
 
 .customer-ledger-table td.ledger-number-cell {
@@ -240,7 +324,37 @@
   white-space: nowrap;
 }
 
-/* 납품 행의 월세·평형 단일값 셀 (범위 2열을 합쳐 중앙 정렬) */
+/* 편집 trigger가 셀 전체 hit-area를 소유하되 기존 36px frame은 유지한다. */
+.customer-ledger-table td.ledger-editable-cell {
+  padding: 0;
+}
+
+.customer-ledger-table .ledger-editable-cell [data-ledger-cell-value],
+.customer-ledger-table .ledger-editable-stack-line [data-ledger-cell-value] {
+  display: flex;
+  width: 100%;
+  min-height: 36px;
+  align-items: center;
+  padding: 0 10px;
+}
+
+.customer-ledger-table .ledger-match-panel-row > td {
+  height: auto;
+  padding: 0;
+  border-right: 0;
+  border-bottom: 1px solid var(--color-border);
+  background: #fbfbfa;
+  vertical-align: top;
+}
+
+/* 케이스 묶음 아래의 패널은 가로 스크롤 위치와 무관하게 가시 폭 전체를 쓴다. */
+.customer-ledger-match-panel-frame {
+  position: sticky;
+  left: 0;
+  width: min(100%, 100cqw);
+}
+
+/* 매물 의뢰 행의 월세·평형 단일값 셀 (범위 2열을 합쳐 중앙 정렬) */
 .customer-ledger-table td.ledger-exact-cell,
 .customer-ledger-table .ledger-stack-line.ledger-exact-cell {
   color: var(--color-foreground);
@@ -333,6 +447,10 @@
   align-items: center;
   height: 36px;
   padding: 0 10px;
+}
+
+.ledger-stack-line.ledger-editable-stack-line {
+  padding: 0;
 }
 
 /* 적층 라인 사이 가상 구분선 */

@@ -217,6 +217,7 @@ export const ROUTE_LABELS: Record<string, string> = {
   "/_authenticated/sites/": "관리단지",
   // 고객
   "/_authenticated/customers/": "고객 원장",
+  "/_authenticated/customers-next/": "고객 원장 새 보기",
   "/_authenticated/contacts/": "연락처",
   "/_authenticated/contacts/$id": "연락처 상세",
   "/_authenticated/contacts/new": "연락처 추가",

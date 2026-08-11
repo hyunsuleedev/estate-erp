@@ -2,7 +2,7 @@ import { useDeferredValue, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { Loader2, Plus, Search, X } from "lucide-react";
-import type { CalendarEvent, Task } from "@estate-erp/api-client";
+import type { CalendarEvent } from "@estate-erp/api-client";
 
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -94,66 +94,6 @@ export function linksFromEvent(event: CalendarEvent): EventLinks {
           id: event.dealId,
           label: event.deal
             ? `거래 · ${getStatusMeta("dealStage", event.deal.stage).label}`
-            : "거래",
-        }
-      : null,
-  };
-}
-
-/** 업무함의 업무를 일정 초안으로 옮길 때 CRM 연결 문맥도 함께 보존한다. */
-export function linksFromTask(task: Task): EventLinks {
-  const listingLabel = task.listing
-    ? [
-        getStatusMeta("transactionType", task.listing.transactionType).label,
-        task.listing.price ? formatMoney(task.listing.price) : null,
-      ]
-        .filter(Boolean)
-        .join(" ")
-    : "매물 조건";
-
-  return {
-    contact: task.contactId
-      ? {
-          id: task.contactId,
-          label: task.contact?.name ?? "연락처",
-          sublabel: task.contact?.phone
-            ? formatPhone(task.contact.phone)
-            : null,
-        }
-      : null,
-    property: task.propertyId
-      ? {
-          id: task.propertyId,
-          label:
-            [task.property?.site?.name, task.property?.unit?.name]
-              .filter(Boolean)
-              .join(" ") || "매물",
-        }
-      : null,
-    listing: task.listingId
-      ? {
-          id: task.listingId,
-          label: listingLabel,
-          propertyId:
-            task.propertyId ??
-            task.listing?.propertyId ??
-            task.listingIntake?.propertyId ??
-            null,
-        }
-      : null,
-    match: task.matchId
-      ? {
-          id: task.matchId,
-          label: task.match?.stage
-            ? `매칭 · ${getStatusMeta("matchStage", task.match.stage).label}`
-            : "매칭",
-        }
-      : null,
-    deal: task.dealId
-      ? {
-          id: task.dealId,
-          label: task.deal?.stage
-            ? `거래 · ${getStatusMeta("dealStage", task.deal.stage).label}`
             : "거래",
         }
       : null,

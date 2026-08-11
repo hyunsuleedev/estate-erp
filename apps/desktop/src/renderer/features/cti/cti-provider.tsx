@@ -68,7 +68,7 @@ declare global {
 export function CtiProvider({
   children,
   /**
-   * detached 탭 창에도 같은 레이아웃이 뜨므로, Bridge 이벤트 구독(+ingest)은
+   * detached 창에서도 context 경계는 유지하지만, Bridge 이벤트 구독(+ingest)은
    * 메인 창 하나만 해야 한다 — 아니면 통화 1건이 창 수만큼 중복 POST된다.
    */
   enabled = true,

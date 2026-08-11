@@ -224,6 +224,12 @@ export function createBuyerRequirementsApi(request: RequestFn) {
         body: dto,
       }),
 
+    reorder: (id: string, priorityRank: number) =>
+      request<BuyerRequirement>(`/buyer-requirements/${id}/priority`, {
+        method: 'PATCH',
+        body: { priorityRank },
+      }),
+
     updateStatus: (id: string, status: BuyerRequirementStatus) =>
       request<BuyerRequirement>(`/buyer-requirements/${id}/status`, {
         method: 'PATCH',

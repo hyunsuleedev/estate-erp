@@ -19,7 +19,7 @@ model BrokerageCase {
 
   // 하위 테이블의 복합 FK가 office_id까지 함께 검증한다.
   @@unique([officeId, id])
-  @@index([officeId, archivedAt, updatedAt])
+  @@index([officeId, archivedAt, createdAt])
   @@map("brokerage_cases")
 }
 

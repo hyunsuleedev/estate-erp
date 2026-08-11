@@ -1,4 +1,11 @@
-import { IsIn, IsOptional, IsString, IsUUID } from 'class-validator';
+import {
+  IsIn,
+  IsISO8601,
+  IsOptional,
+  IsString,
+  IsUUID,
+  ValidateIf,
+} from 'class-validator';
 import {
   LEGACY_MATCH_STAGE_VALUES,
   MATCH_STAGE_ORDER,
@@ -29,4 +36,16 @@ export class UpdateMatchStageDto {
   @IsOptional()
   @IsString()
   memo?: string | null;
+}
+
+export class UpdateMatchMemoDto {
+  /** null = 메모 비우기 */
+  @ValidateIf((_object, value) => value !== null)
+  @IsString()
+  memo!: string | null;
+
+  /** 마지막 조회 시점과 다르면 409 Conflict */
+  @IsOptional()
+  @IsISO8601()
+  expectedUpdatedAt?: string | null;
 }

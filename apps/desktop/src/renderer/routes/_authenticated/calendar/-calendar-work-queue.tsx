@@ -120,7 +120,6 @@ export function CalendarWorkQueue({
   isError,
   onRetry,
   onEdit,
-  onSchedule,
   onComplete,
   completingTaskId,
   variant = "rail",
@@ -131,7 +130,6 @@ export function CalendarWorkQueue({
   isError: boolean;
   onRetry: () => void;
   onEdit: (task: Task) => void;
-  onSchedule: (task: Task) => void;
   onComplete: (task: Task) => void;
   completingTaskId?: string;
   variant?: "rail" | "drawer";
@@ -172,8 +170,8 @@ export function CalendarWorkQueue({
 
       <div
         className={cn(
-          "mt-2 grid grid-cols-4 gap-1",
-          variant === "rail" && "grid-cols-2",
+          "mt-2 gap-1",
+          variant === "rail" ? "flex" : "grid grid-cols-4",
         )}
       >
         {QUEUE_BUCKETS.map(({ id, label, icon: Icon }) => (
@@ -183,13 +181,14 @@ export function CalendarWorkQueue({
             aria-pressed={bucket === id}
             onClick={() => setBucket(id)}
             className={cn(
-              "flex min-h-9 min-w-0 items-center justify-center gap-1 rounded-md px-1.5 text-[10px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+              "flex min-w-0 items-center justify-center gap-1 rounded-md text-[10px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+              variant === "rail" ? "h-7 flex-1 px-1" : "min-h-9 px-1.5",
               bucket === id
                 ? "bg-foreground text-background"
                 : "bg-muted/65 text-muted-foreground hover:bg-muted hover:text-foreground",
             )}
           >
-            <Icon className="size-3 shrink-0" />
+            {variant === "rail" ? null : <Icon className="size-3 shrink-0" />}
             <span className="truncate">{label}</span>
             <span className="tabular-nums opacity-70">{counts[id]}</span>
           </button>
@@ -232,7 +231,7 @@ export function CalendarWorkQueue({
             </p>
           </div>
         ) : (
-          <ul className="space-y-1">
+          <ul className="divide-y divide-border/60">
             {visibleTasks.map((task) => {
               const category =
                 categoryConfig[task.category as keyof typeof categoryConfig];
@@ -241,25 +240,25 @@ export function CalendarWorkQueue({
               return (
                 <li
                   key={task.id}
-                  className="group relative min-w-0 overflow-hidden rounded-md border border-transparent bg-background transition-colors hover:border-border hover:bg-muted/30"
+                  className="group relative min-w-0 transition-colors hover:bg-muted/40"
                 >
                   <button
                     type="button"
                     onClick={() => onEdit(task)}
-                    className="flex min-h-[58px] w-full min-w-0 items-start gap-2 px-2.5 py-2 pr-[74px] text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40"
+                    className="flex w-full min-w-0 items-start gap-2 py-2 pl-1 pr-9 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40"
                     title={`${task.title} 업무 열기`}
                   >
                     <span
                       className={cn(
-                        "mt-1.5 size-2 shrink-0 rounded-full",
+                        "mt-[5px] size-2 shrink-0 rounded-full",
                         priorityDotClass(task.priority),
                       )}
                     />
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[11px] font-semibold text-foreground">
+                      <span className="block truncate text-[11.5px] text-foreground">
                         {task.title}
                       </span>
-                      <span className="mt-1 flex min-w-0 items-center gap-1.5 text-[10px] text-muted-foreground">
+                      <span className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[10px] text-muted-foreground">
                         <span className="truncate">
                           {category?.label ?? "기타"}
                         </span>
@@ -273,7 +272,7 @@ export function CalendarWorkQueue({
                     </span>
                   </button>
 
-                  <div className="absolute top-1/2 right-1.5 flex -translate-y-1/2 items-center gap-0.5">
+                  <div className="absolute top-1/2 right-0 flex -translate-y-1/2 items-center gap-0.5 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
                     <Button
                       type="button"
                       variant="ghost"
@@ -285,17 +284,6 @@ export function CalendarWorkQueue({
                       title="완료 처리"
                     >
                       <Check className="size-3.5" />
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon-sm"
-                      className="size-8 bg-background/85 text-muted-foreground hover:text-foreground"
-                      onClick={() => onSchedule(task)}
-                      aria-label={`${task.title} 캘린더에 배치`}
-                      title="캘린더에 배치"
-                    >
-                      <CalendarClock className="size-3.5" />
                     </Button>
                   </div>
                 </li>

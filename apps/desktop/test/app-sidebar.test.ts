@@ -164,6 +164,38 @@ describe("desktop app sidebar", () => {
     assert.equal(layoutSource.includes("QuickCreate"), false);
   });
 
+  it("renders detached windows as a focused tab shell without sidebar navigation", () => {
+    const layoutSource = readFileSync(
+      resolve(testDir, "../src/renderer/routes/_authenticated.tsx"),
+      "utf8",
+    );
+    const detachedStart = layoutSource.indexOf(
+      "function DetachedAuthenticatedShell",
+    );
+    const detachedEnd = layoutSource.indexOf(
+      "function AuthenticatedLayout",
+      detachedStart,
+    );
+    const detachedSource = layoutSource.slice(detachedStart, detachedEnd);
+
+    assert.ok(detachedStart !== -1, "detached shell should exist");
+    assert.ok(detachedEnd > detachedStart, "detached shell should be isolated");
+    assert.match(detachedSource, /data-window-shell="detached"/);
+    assert.match(
+      detachedSource,
+      /<TabBar[^>]*showNewTabButton=\{false\}/,
+      "detached windows should keep the tab strip without exposing the global new-tab action",
+    );
+    assert.match(
+      detachedSource,
+      /<TabContent autoCreateInitialTab=\{false\}/,
+    );
+    assert.doesNotMatch(detachedSource, /<AppSidebar/);
+    assert.doesNotMatch(detachedSource, /<SidebarTrigger/);
+    assert.doesNotMatch(detachedSource, /data-slot="desktop-brand"/);
+    assert.doesNotMatch(detachedSource, /<CallPopup/);
+  });
+
   it("renders titlebar tabs as compact bordered rectangles", () => {
     const tabSource = readFileSync(
       resolve(testDir, "../src/renderer/features/tabs/TabBar/Tab.tsx"),

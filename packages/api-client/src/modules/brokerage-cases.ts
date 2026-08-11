@@ -1,17 +1,17 @@
-import type { RequestFn } from '../client.js';
+import type { RequestFn } from "../client.js";
 
-export type BrokerageCaseLedgerMode = 'all' | 'demand' | 'supply' | 'both';
+export type BrokerageCaseLedgerMode = "all" | "demand" | "listing" | "both";
 export type BrokerageCaseLedgerSortField =
-  | 'customer'
-  | 'intentCount'
-  | 'budgetMin'
-  | 'budgetMax'
-  | 'monthlyRentMin'
-  | 'monthlyRentMax'
-  | 'areaMin'
-  | 'areaMax'
-  | 'matchCount'
-  | 'updatedAt';
+  | "customer"
+  | "intentCount"
+  | "budgetMin"
+  | "budgetMax"
+  | "monthlyRentMin"
+  | "monthlyRentMax"
+  | "areaMin"
+  | "areaMax"
+  | "matchCount"
+  | "createdAt";
 
 export interface BrokerageCaseParticipant {
   id: string;
@@ -29,9 +29,10 @@ export interface BrokerageCaseParticipant {
 }
 
 export interface BrokerageCaseDemandIntent {
-  kind: 'demand';
+  kind: "demand";
   buyerIntakeId: string;
   intakePriorityRank: number;
+  intakeRequirementCount: number;
   lifecycleStatus: string;
   receivedAt: string;
   requirementId: string;
@@ -72,18 +73,24 @@ export interface BrokerageCaseDemandIntent {
   contextLabel: string;
 }
 
-export interface BrokerageCaseSupplyIntent {
-  kind: 'supply';
+export interface BrokerageCaseListingIntent {
+  kind: "listing";
   listingIntakeId: string;
+  intakeUpdatedAt: string;
+  intakeMemo: string | null;
   intakePriorityRank: number;
   lifecycleStatus: string;
   receivedAt: string;
   listingId: string;
+  listingUpdatedAt: string;
   transactionType: string;
   askingPrice: number | null;
   price: number | null;
   deposit: number | null;
   monthlyRent: number | null;
+  moveInAvailableType: string | null;
+  moveInAvailableFrom: string | null;
+  moveInAvailableTo: string | null;
   area: number | null;
   isPaused: boolean;
   matchCount: number;
@@ -114,6 +121,13 @@ export interface BrokerageCaseDependency {
   updatedAt: string;
 }
 
+export interface BrokerageCaseLatestConsultation {
+  id: string;
+  type: string;
+  content: string;
+  createdAt: string;
+}
+
 export interface BrokerageCase {
   id: string;
   title: string | null;
@@ -123,10 +137,12 @@ export interface BrokerageCase {
   updatedAt: string;
   participants: BrokerageCaseParticipant[];
   primaryParticipant: BrokerageCaseParticipant | null;
+  /** 대표 연락 고객에게 기록된 가장 최근 상담. 특정 케이스에 한정된 기록은 아니다. */
+  latestConsultation: BrokerageCaseLatestConsultation | null;
   demandIntents: BrokerageCaseDemandIntent[];
-  supplyIntents: BrokerageCaseSupplyIntent[];
+  listingIntents: BrokerageCaseListingIntent[];
   intentCount: number;
-  mode: Exclude<BrokerageCaseLedgerMode, 'all'>;
+  mode: Exclude<BrokerageCaseLedgerMode, "all">;
   dependencies: BrokerageCaseDependency[];
 }
 
@@ -156,46 +172,45 @@ export interface BrokerageCaseLedgerFilter {
   nextContactBefore?: string;
   moveInAfter?: string;
   moveInBefore?: string;
-  /** 이전 고객원장 가격 필터 호환용 납품 조건. 신규 구매고객 필터에서는 사용하지 않는다. */
-  supplyPriceMin?: number;
-  supplyPriceMax?: number;
+  /** 매물 의뢰 가격 조건. 구매고객 필터와는 별도로 적용된다. */
+  listingPriceMin?: number;
+  listingPriceMax?: number;
   sortBy?: BrokerageCaseLedgerSortField;
-  sortOrder?: 'asc' | 'desc';
-  page?: number;
+  sortOrder?: "asc" | "desc";
+  cursor?: string;
   limit?: number;
 }
 
 export interface BrokerageCaseLedgerResponse {
   items: BrokerageCase[];
   pagination: {
-    page: number;
     limit: number;
     total: number;
-    totalPages: number;
+    nextCursor: string | null;
   };
   summary: {
     cases: number;
     demand: number;
-    supply: number;
+    listing: number;
     both: number;
-  };
+  } | null;
 }
 
 export interface CreateBrokerageCaseDependencyDto {
   fromListingIntakeId: string;
   toBuyerIntakeId: string;
-  type: 'sale_proceeds' | 'timing' | 'move_sequence' | 'other';
+  type: "sale_proceeds" | "timing" | "move_sequence" | "other";
   isRequired?: boolean;
   expectedAmount?: number | null;
   requiredBy?: string | null;
-  status?: 'planned' | 'confirmed' | 'resolved' | 'cancelled';
+  status?: "planned" | "confirmed" | "resolved" | "cancelled";
   memo?: string | null;
 }
 
 export function createBrokerageCasesApi(request: RequestFn) {
   return {
     ledger: (filters?: BrokerageCaseLedgerFilter) =>
-      request<BrokerageCaseLedgerResponse>('/brokerage-cases/ledger', {
+      request<BrokerageCaseLedgerResponse>("/brokerage-cases/ledger", {
         params: filters as Record<
           string,
           string | number | boolean | undefined
@@ -207,18 +222,18 @@ export function createBrokerageCasesApi(request: RequestFn) {
       dto: { title?: string | null; memo?: string | null; archived?: boolean },
     ) =>
       request<BrokerageCase>(`/brokerage-cases/${id}`, {
-        method: 'PATCH',
+        method: "PATCH",
         body: dto,
       }),
     createDependency: (id: string, dto: CreateBrokerageCaseDependencyDto) =>
       request<BrokerageCase>(`/brokerage-cases/${id}/dependencies`, {
-        method: 'POST',
+        method: "POST",
         body: dto,
       }),
     removeDependency: (caseId: string, dependencyId: string) =>
       request<BrokerageCase>(
         `/brokerage-cases/${caseId}/dependencies/${dependencyId}`,
-        { method: 'DELETE' },
+        { method: "DELETE" },
       ),
   };
 }

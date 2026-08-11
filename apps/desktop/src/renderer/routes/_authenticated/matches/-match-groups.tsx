@@ -15,7 +15,7 @@ import {
 } from './-match-view-utils';
 import { MatchActionsMenu, MatchProgressTrack } from './-match-board';
 import { cn } from '@/lib/utils';
-import { formatDate } from '@/lib/format';
+import { formatDate, formatPhone } from '@/lib/format';
 import { StatusBadge } from '@/components/domain';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -177,10 +177,12 @@ export function BuyerMatchGroup({
 export function BuyerMatchBranchList({
   matches,
   actions,
+  counterparty = 'listing',
   className,
 }: {
   matches: Match[];
   actions: MatchRowActions;
+  counterparty?: 'listing' | 'buyer';
   className?: string;
 }) {
   const sortedMatches = [...matches].sort(
@@ -206,6 +208,7 @@ export function BuyerMatchBranchList({
           key={match.id}
           match={match}
           actions={actions}
+          counterparty={counterparty}
           isLast={index === sortedMatches.length - 1}
         />
       ))}
@@ -245,14 +248,32 @@ function BuyerRequirementSummaryItem({
 function BuyerMatchLane({
   match,
   actions,
+  counterparty,
   isLast,
 }: {
   match: Match;
   actions: MatchRowActions;
+  counterparty: 'listing' | 'buyer';
   isLast: boolean;
 }) {
-  const transactionType = match.listing?.transactionType;
+  const transactionType =
+    counterparty === 'buyer'
+      ? match.buyerRequirement?.transactionType
+      : match.listing?.transactionType;
   const upcomingViewingEvent = getUpcomingViewingEvent(match);
+  const buyerName = match.buyerRequirement?.contact?.name ?? '구매자 미상';
+  const buyerPhone = match.buyerRequirement?.contact?.phone;
+  const listingTitle = getMatchTitle(match);
+  const counterpartyTitle = counterparty === 'buyer' ? buyerName : listingTitle;
+  const counterpartyPrimaryMeta =
+    counterparty === 'buyer'
+      ? buyerPhone
+        ? formatPhone(buyerPhone)
+        : '연락처 없음'
+      : formatMatchPrice(match);
+  const counterpartySecondaryMeta =
+    counterparty === 'buyer' ? listingTitle : getListingAddress(match.listing);
+  const accessibleMatchLabel = `${buyerName} · ${listingTitle}`;
   const [isEditingMemo, setIsEditingMemo] = useState(false);
   const [memoDraft, setMemoDraft] = useState(match.memo ?? '');
   const saveInFlightRef = useRef(false);
@@ -333,7 +354,7 @@ function BuyerMatchLane({
             className="min-w-0 truncate text-left text-[13px] font-semibold hover:underline"
             onClick={() => actions.onOpenDetail(match.id)}
           >
-            {getMatchTitle(match)}
+            {counterpartyTitle}
           </button>
           {transactionType && (
             <StatusBadge
@@ -355,10 +376,10 @@ function BuyerMatchLane({
         </div>
         <div className="mt-1 flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
           <span className="shrink-0 font-medium text-foreground tabular-nums">
-            {formatMatchPrice(match)}
+            {counterpartyPrimaryMeta}
           </span>
           <span className="text-border">·</span>
-          <span className="truncate">{getListingAddress(match.listing)}</span>
+          <span className="truncate">{counterpartySecondaryMeta}</span>
         </div>
       </div>
 
@@ -368,7 +389,7 @@ function BuyerMatchLane({
           {isEditingMemo ? (
             <Input
               autoFocus
-              aria-label={`${getMatchTitle(match)} 매칭 메모`}
+              aria-label={`${accessibleMatchLabel} 매칭 메모`}
               value={memoDraft}
               placeholder="메모 입력"
               title="Enter 저장 · Esc 취소"
@@ -403,7 +424,7 @@ function BuyerMatchLane({
             <button
               type="button"
               data-match-memo-trigger
-              aria-label={`${getMatchTitle(match)} 매칭 메모 편집`}
+              aria-label={`${accessibleMatchLabel} 매칭 메모 편집`}
               title="클릭하여 메모 편집"
               className="group/memo flex min-h-6 min-w-0 flex-1 items-center gap-1 rounded-sm px-1 text-left hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
               onClick={(event) => {

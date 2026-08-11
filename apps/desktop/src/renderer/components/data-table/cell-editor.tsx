@@ -11,7 +11,6 @@ import {
 } from 'react';
 import { createPortal } from 'react-dom';
 import type { DateRange } from 'react-day-picker';
-import { Input } from '@/components/ui/input';
 import {
   Select,
   SelectContent,
@@ -21,7 +20,6 @@ import {
 } from '@/components/ui/select';
 import { Calendar } from '@/components/ui/calendar';
 import { cn } from '@/lib/utils';
-
 
 // ── Cell Edit Context (Twenty-inspired draft pattern) ───────────
 // Portal-based editing prevents table reflow.
@@ -53,10 +51,13 @@ type CellDraft = {
   month?: string;
 };
 const cellDraftStore = new Map<string, CellDraft>();
-const cellDraftKey = (recordId: string, field: string) => `${recordId}:${field}`;
+const cellDraftKey = (recordId: string, field: string) =>
+  `${recordId}:${field}`;
 
 export function CellEditProvider({ children }: { children: React.ReactNode }) {
-  const editingCellRef = useRef<{ recordId: string; field: string } | null>(null);
+  const editingCellRef = useRef<{ recordId: string; field: string } | null>(
+    null,
+  );
   const listenersRef = useRef(new Set<() => void>());
 
   const notify = useCallback(() => {
@@ -65,13 +66,16 @@ export function CellEditProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  const startEdit = useCallback((recordId: string, field: string) => {
-    const current = editingCellRef.current;
-    if (current?.recordId === recordId && current.field === field) return;
-    cellDraftStore.clear();
-    editingCellRef.current = { recordId, field };
-    notify();
-  }, [notify]);
+  const startEdit = useCallback(
+    (recordId: string, field: string) => {
+      const current = editingCellRef.current;
+      if (current?.recordId === recordId && current.field === field) return;
+      cellDraftStore.clear();
+      editingCellRef.current = { recordId, field };
+      notify();
+    },
+    [notify],
+  );
 
   const stopEdit = useCallback(() => {
     if (editingCellRef.current === null) return;
@@ -124,10 +128,9 @@ export interface ChipOption {
   toField?: string;
   /** Optional preselect callback. Receives the cell's full record value
    *  (when callers pass it via `value`); returns the date(s) to preselect. */
-  getPreselect?: (rowValue: unknown) =>
-    | Date
-    | undefined
-    | { from?: Date; to?: Date };
+  getPreselect?: (
+    rowValue: unknown,
+  ) => Date | undefined | { from?: Date; to?: Date };
 }
 
 export interface DateWrite {
@@ -144,7 +147,12 @@ interface EditableCellProps {
   recordId: string;
   field: string;
   value: unknown;
-  onSave: (recordId: string, field: string, value: unknown) => void;
+  /** Return false to keep the editor open when validation rejects a draft. */
+  onSave: (
+    recordId: string,
+    field: string,
+    value: unknown,
+  ) => boolean | void;
   /** Optional richer save callback for select-chip cells that may also save dates. */
   onChipSave?: (recordId: string, payload: ChipSavePayload) => void;
   editType: 'text' | 'number' | 'select' | 'select-chip';
@@ -161,6 +169,9 @@ interface EditableCellProps {
    */
   editorChrome?: 'cell' | 'floating';
   hoverHighlight?: boolean;
+  /** Accessible name for the edit trigger. Defaults to the field name. */
+  ariaLabel?: string;
+  className?: string;
   children: React.ReactNode;
 }
 
@@ -195,10 +206,12 @@ export function EditableCell({
   portalAnchor = 'self',
   editorChrome = 'cell',
   hoverHighlight = true,
+  ariaLabel,
+  className,
   children,
 }: EditableCellProps) {
   const { getEditingCell, subscribe, startEdit, stopEdit } = useCellEdit();
-  const cellRef = useRef<HTMLDivElement>(null);
+  const cellRef = useRef<HTMLButtonElement>(null);
   const isEditing = useSyncExternalStore(
     subscribe,
     () => {
@@ -209,17 +222,44 @@ export function EditableCell({
   );
   const anchorEl =
     portalAnchor === 'tableCell'
-      ? cellRef.current?.closest<HTMLElement>('td') ?? cellRef.current
+      ? (cellRef.current?.closest<HTMLElement>('td, th') ?? cellRef.current)
       : cellRef.current;
+  const finishEdit = (
+    focusTarget: 'current' | 'next' | 'previous' | 'none' = 'current',
+  ) => {
+    const trigger = cellRef.current;
+    stopEdit();
+    if (focusTarget === 'none') return;
+    requestAnimationFrame(() => {
+      if (!trigger) return;
+      if (focusTarget === 'current') {
+        trigger.focus({ preventScroll: true });
+        return;
+      }
+      const triggers = Array.from(
+        document.querySelectorAll<HTMLButtonElement>(
+          '[data-editable-cell-trigger]',
+        ),
+      ).filter((candidate) => !candidate.disabled && candidate.offsetParent);
+      const currentIndex = triggers.indexOf(trigger);
+      const nextIndex =
+        focusTarget === 'next' ? currentIndex + 1 : currentIndex - 1;
+      (triggers[nextIndex] ?? trigger).focus({ preventScroll: true });
+    });
+  };
 
   return (
-    <div
+    <button
+      type="button"
       ref={cellRef}
+      data-editable-cell-trigger
       data-editing={isEditing || undefined}
+      aria-label={ariaLabel ?? `${field} 편집`}
       className={cn(
-        'relative flex h-full min-h-[24px] w-full cursor-text items-center rounded-sm transition-colors',
+        'relative flex h-full min-h-[24px] w-full cursor-text items-center rounded-sm border-0 bg-transparent p-0 text-left font-inherit text-inherit transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1',
         hoverHighlight && !isEditing && 'hover:bg-muted/50',
         isEditing && editType !== 'select-chip' && 'bg-white',
+        className,
       )}
       onClick={(event) => {
         event.stopPropagation();
@@ -229,6 +269,15 @@ export function EditableCell({
       onDoubleClick={(event) => {
         event.stopPropagation();
         if (activation !== 'doubleClick' || isEditing) return;
+        startEdit(recordId, field);
+      }}
+      onKeyDown={(event) => {
+        if (isEditing) return;
+        if (event.key !== 'Enter' && event.key !== ' ' && event.key !== 'F2') {
+          return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
         startEdit(recordId, field);
       }}
     >
@@ -247,9 +296,10 @@ export function EditableCell({
           selectOptions={selectOptions}
           chipOptions={chipOptions}
           editorChrome={editorChrome}
-          onSave={(newValue) => {
-            onSave(recordId, field, newValue);
-            stopEdit();
+          onSave={(newValue, navigation = 'current') => {
+            const accepted = onSave(recordId, field, newValue);
+            if (accepted === false) return;
+            finishEdit(navigation);
           }}
           onChipSave={(payload) => {
             if (onChipSave) {
@@ -257,12 +307,14 @@ export function EditableCell({
             } else {
               onSave(recordId, field, payload.type);
             }
-            stopEdit();
+            finishEdit();
           }}
-          onCancel={stopEdit}
+          onCancel={(restoreFocus) =>
+            finishEdit(restoreFocus ? 'current' : 'none')
+          }
         />
       )}
-    </div>
+    </button>
   );
 }
 
@@ -280,9 +332,12 @@ interface CellEditPortalProps {
   selectOptions?: { label: string; value: string }[];
   chipOptions?: ChipOption[];
   editorChrome: 'cell' | 'floating';
-  onSave: (value: unknown) => void;
+  onSave: (
+    value: unknown,
+    navigation?: 'current' | 'next' | 'previous',
+  ) => void;
   onChipSave?: (payload: ChipSavePayload) => void;
-  onCancel: () => void;
+  onCancel: (restoreFocus: boolean) => void;
 }
 
 function formatLocalDate(d: Date): string {
@@ -310,14 +365,18 @@ function CellEditPortal({
   onCancel,
 }: CellEditPortalProps) {
   const initialDraft =
-    editType === 'select-chip' ? (chipValueOf?.(value) ?? '') : String(value ?? '');
+    editType === 'select-chip'
+      ? (chipValueOf?.(value) ?? '')
+      : String(value ?? '');
   // 언마운트(가상화 스크롤아웃) 후 재마운트 시 보존된 초안을 복원
   const draftKey = cellDraftKey(recordId, field);
   const storedDraft = cellDraftStore.get(draftKey);
   const patchStore = (patch: Partial<CellDraft>) => {
     cellDraftStore.set(draftKey, { ...cellDraftStore.get(draftKey), ...patch });
   };
-  const [draft, setDraftState] = useState(() => storedDraft?.text ?? initialDraft);
+  const [draft, setDraftState] = useState(
+    () => storedDraft?.text ?? initialDraft,
+  );
   const setDraft = (next: string) => {
     patchStore({ text: next });
     setDraftState(next);
@@ -345,7 +404,8 @@ function CellEditPortal({
     const a = anchorEl.getBoundingClientRect();
     const p = scrollParent.getBoundingClientRect();
     const top = a.top - p.top - scrollParent.clientTop + scrollParent.scrollTop;
-    const left = a.left - p.left - scrollParent.clientLeft + scrollParent.scrollLeft;
+    const left =
+      a.left - p.left - scrollParent.clientLeft + scrollParent.scrollLeft;
     return { top, left, width: a.width, height: a.height };
   })();
   const clampPopupLeft = (popupWidth: number) => {
@@ -374,16 +434,24 @@ function CellEditPortal({
   // Preselect for date/range pickers, derived from the cell's value via getPreselect.
   const preselect = pendingDateOption?.getPreselect?.(value);
   const pendingSingleDate =
-    pendingDateOption?.picker === 'date' && preselect instanceof Date ? preselect : undefined;
+    pendingDateOption?.picker === 'date' && preselect instanceof Date
+      ? preselect
+      : undefined;
   const initialRange: DateRange | undefined =
-    pendingDateOption?.picker === 'range' && preselect && !(preselect instanceof Date) && preselect.from
+    pendingDateOption?.picker === 'range' &&
+    preselect &&
+    !(preselect instanceof Date) &&
+    preselect.from
       ? { from: preselect.from, to: preselect.to }
       : undefined;
   const [pendingRange, setPendingRangeState] = useState<DateRange | undefined>(
     () => {
       const r = storedDraft?.range;
       if (r?.from) {
-        return { from: new Date(r.from), to: r.to ? new Date(r.to) : undefined };
+        return {
+          from: new Date(r.from),
+          to: r.to ? new Date(r.to) : undefined,
+        };
       }
       return initialRange;
     },
@@ -423,7 +491,7 @@ function CellEditPortal({
       const target = e.target as Node;
       if (anchorEl.contains(target)) return;
       if (popoverRef.current?.contains(target)) return;
-      onCancel();
+      onCancel(false);
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
@@ -432,15 +500,22 @@ function CellEditPortal({
   // Close on Escape (handles select-chip where input isn't focused)
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onCancel();
+      if (e.key === 'Escape') onCancel(true);
     };
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
   }, [onCancel]);
 
-  const commitDraft = () => {
-    const finalValue = editType === 'number' ? Number(draft) : draft;
-    onSave(finalValue);
+  const commitDraft = (
+    navigation: 'current' | 'next' | 'previous' = 'current',
+  ) => {
+    const finalValue =
+      editType === 'number'
+        ? draft.trim() === ''
+          ? null
+          : Number(draft)
+        : draft;
+    onSave(finalValue, navigation);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -454,13 +529,12 @@ function CellEditPortal({
     if (e.key === 'Escape') {
       e.preventDefault();
       e.stopPropagation();
-      onCancel();
+      onCancel(true);
     }
     if (e.key === 'Tab') {
       e.preventDefault();
       e.stopPropagation();
-      commitDraft();
-      // TODO: move to next cell
+      commitDraft(e.shiftKey ? 'previous' : 'next');
     }
   };
 
@@ -487,7 +561,7 @@ function CellEditPortal({
             <Select
               value={draft}
               onValueChange={(v) => {
-                onSave(v);
+                onSave(v, 'current');
               }}
             >
               <SelectTrigger className="h-full w-full rounded-none border-0 px-2.5 text-[13px] shadow-none focus:ring-0">
@@ -495,7 +569,11 @@ function CellEditPortal({
               </SelectTrigger>
               <SelectContent>
                 {selectOptions.map((opt) => (
-                  <SelectItem key={opt.value} value={opt.value} className="text-[13px]">
+                  <SelectItem
+                    key={opt.value}
+                    value={opt.value}
+                    className="text-[13px]"
+                  >
                     {opt.label}
                   </SelectItem>
                 ))}
@@ -505,7 +583,7 @@ function CellEditPortal({
             <input
               ref={inputRef}
               type="text"
-              inputMode={editType === 'number' ? 'numeric' : undefined}
+              inputMode={editType === 'number' ? 'decimal' : undefined}
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={handleKeyDown}
@@ -536,14 +614,20 @@ function CellEditPortal({
             옵션 선택
           </div>
           <div className="flex flex-col gap-0.5">
-            {chipOptions.map((opt) => (
+            {chipOptions.map((opt, index) => (
               <button
                 key={opt.value}
                 type="button"
+                autoFocus={draft === opt.value || (!draft && index === 0)}
                 onClick={() => {
                   if (opt.picker && onChipSave) {
                     const pre = opt.getPreselect?.(value);
-                    if (opt.picker === 'range' && pre && !(pre instanceof Date) && pre.from) {
+                    if (
+                      opt.picker === 'range' &&
+                      pre &&
+                      !(pre instanceof Date) &&
+                      pre.from
+                    ) {
                       setPendingRange({ from: pre.from, to: pre.to });
                     } else {
                       setPendingRange(undefined);
@@ -551,7 +635,7 @@ function CellEditPortal({
                     setPendingDateOption(opt);
                     return;
                   }
-                  onSave(opt.value);
+                  onSave(opt.value, 'current');
                 }}
                 className={cn(
                   'flex items-center justify-between rounded-sm px-2 py-1.5 text-left transition-colors hover:bg-muted',
@@ -567,7 +651,9 @@ function CellEditPortal({
                   {opt.label}
                 </span>
                 {draft === opt.value && (
-                  <span className="ml-2 text-[11px] text-muted-foreground">선택됨</span>
+                  <span className="ml-2 text-[11px] text-muted-foreground">
+                    선택됨
+                  </span>
                 )}
               </button>
             ))}
@@ -639,7 +725,9 @@ function CellEditPortal({
                 if (!fromField) return;
                 onChipSave?.({
                   type: pendingDateOption.value,
-                  dateWrites: [{ field: fromField, value: formatLocalDate(date) }],
+                  dateWrites: [
+                    { field: fromField, value: formatLocalDate(date) },
+                  ],
                 });
               }}
             />

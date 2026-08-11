@@ -1986,9 +1986,9 @@ function MemoCell({
       editorChrome="floating"
       hoverHighlight={false}
     >
-      <p className="w-full truncate text-[13px] text-slate-700">
+      <span className="w-full truncate text-[13px] text-slate-700">
         {displayValue || <span className="text-slate-400">-</span>}
-      </p>
+      </span>
     </EditableCell>
   );
 }

@@ -115,6 +115,8 @@ an item error; do not synthesize one.
 
 Report the snapshot path and hashes, session ID, received/resolved/failed
 counts, final created/updated/ended counts, and any unresolved externalAdIds.
-After completion, return the verified ledger result to the caller. A local
-advertisement Task runner may optionally invoke the Naver comparison workflow;
-this skill never creates a server workflow or crawls Naver itself.
+After completion, return the verified ledger result to the caller. When the
+user separately requests it, a local advertisement Task runner may pass the
+same completed Reader JSON to `naver-real-estate-reader` for an unclassified
+local duplicate-ad JSON snapshot. This skill never creates a server workflow or
+crawls Naver itself.

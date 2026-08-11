@@ -113,9 +113,6 @@ export const useTabStore = create<TabStore>((set, get) => ({
   },
 
   removeTabById(id) {
-    set((state) => ({
-      tabs: state.tabs.filter((t) => t.id !== id),
-      activeTabId: state.activeTabId === id ? null : state.activeTabId,
-    }));
+    get().closeTab(id);
   },
 }));

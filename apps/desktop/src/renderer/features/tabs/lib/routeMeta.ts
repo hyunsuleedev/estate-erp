@@ -43,6 +43,11 @@ const STATIC_ROUTES: Record<string, RouteMeta> = {
   },
   "/contacts": { title: "연락처", kind: "contact", icon: BookUser },
   "/customers": { title: "고객 원장", kind: "contact", icon: Users },
+  "/customers-next": {
+    title: "고객 원장 새 보기",
+    kind: "contact",
+    icon: Users,
+  },
   "/contacts/new": { title: "연락처 추가", kind: "contact", icon: BookUser },
   "/partner-brokers": {
     title: "파트너 중개사",

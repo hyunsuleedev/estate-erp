@@ -105,7 +105,16 @@ describe("BuyerRequirementsService", () => {
     const deleted = { id: requirementId };
     const tx = {
       consultation: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
-      buyerRequirement: { delete: jest.fn().mockResolvedValue(deleted) },
+      buyerRequirement: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: requirementId,
+          buyerIntakeId: INTAKE_ID,
+          priorityRank: 2,
+        }),
+        delete: jest.fn().mockResolvedValue(deleted),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
+      $executeRaw: jest.fn().mockResolvedValue(0),
     };
     const prisma = {
       $transaction: jest.fn((callback: (client: typeof tx) => unknown) =>
@@ -113,7 +122,6 @@ describe("BuyerRequirementsService", () => {
       ),
     };
     const service = new BuyerRequirementsService(prisma as never);
-    jest.spyOn(service, "findOne").mockResolvedValue(deleted as never);
 
     await expect(service.remove(requirementId, OFFICE_ID)).resolves.toBe(
       deleted,
@@ -125,5 +133,91 @@ describe("BuyerRequirementsService", () => {
     expect(tx.buyerRequirement.delete).toHaveBeenCalledWith({
       where: { id: requirementId },
     });
+    expect(tx.buyerRequirement.updateMany).toHaveBeenCalledWith({
+      where: {
+        officeId: OFFICE_ID,
+        buyerIntakeId: INTAKE_ID,
+        priorityRank: { gt: 2 },
+      },
+      data: { priorityRank: { decrement: 1 } },
+    });
+  });
+
+  it("희망조건을 앞으로 이동하면 사이 순위를 원자적으로 한 칸씩 민다", async () => {
+    const requirementId = "00000000-0000-4000-8000-000000000004";
+    const reordered = {
+      id: requirementId,
+      officeId: OFFICE_ID,
+      buyerIntakeId: INTAKE_ID,
+      priorityRank: 1,
+      buyerIntake: { contacts: [] },
+      preferredSites: [],
+      preferredRegions: [],
+    };
+    const tx = {
+      buyerRequirement: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: requirementId,
+          buyerIntakeId: INTAKE_ID,
+          priorityRank: 3,
+        }),
+        count: jest.fn().mockResolvedValue(3),
+        updateMany: jest.fn().mockResolvedValue({ count: 2 }),
+        update: jest.fn().mockResolvedValue({}),
+        findUniqueOrThrow: jest.fn().mockResolvedValue(reordered),
+      },
+      $executeRaw: jest.fn().mockResolvedValue(0),
+    };
+    const prisma = {
+      $transaction: jest.fn((callback: (client: typeof tx) => unknown) =>
+        callback(tx),
+      ),
+    };
+    const service = new BuyerRequirementsService(prisma as never);
+
+    const result = await service.reorder(requirementId, OFFICE_ID, 1);
+
+    expect(tx.buyerRequirement.updateMany).toHaveBeenCalledWith({
+      where: {
+        officeId: OFFICE_ID,
+        buyerIntakeId: INTAKE_ID,
+        priorityRank: { gte: 1, lt: 3 },
+      },
+      data: { priorityRank: { increment: 1 } },
+    });
+    expect(tx.buyerRequirement.update).toHaveBeenCalledWith({
+      where: { id: requirementId },
+      data: { priorityRank: 1 },
+    });
+    expect(result).toMatchObject({ id: requirementId, priorityRank: 1 });
+  });
+
+  it("희망조건 개수를 벗어난 순위 이동을 거부한다", async () => {
+    const requirementId = "00000000-0000-4000-8000-000000000004";
+    const tx = {
+      buyerRequirement: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: requirementId,
+          buyerIntakeId: INTAKE_ID,
+          priorityRank: 1,
+        }),
+        count: jest.fn().mockResolvedValue(2),
+        updateMany: jest.fn(),
+        update: jest.fn(),
+      },
+      $executeRaw: jest.fn().mockResolvedValue(0),
+    };
+    const prisma = {
+      $transaction: jest.fn((callback: (client: typeof tx) => unknown) =>
+        callback(tx),
+      ),
+    };
+    const service = new BuyerRequirementsService(prisma as never);
+
+    await expect(
+      service.reorder(requirementId, OFFICE_ID, 3),
+    ).rejects.toThrow("priorityRank는 1부터 2까지 지정할 수 있습니다.");
+    expect(tx.buyerRequirement.updateMany).not.toHaveBeenCalled();
+    expect(tx.buyerRequirement.update).not.toHaveBeenCalled();
   });
 });

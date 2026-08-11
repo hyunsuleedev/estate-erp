@@ -218,7 +218,7 @@ export function TaskRowActionsMenu({ task, onRowClick, onStatusChange, onDelete 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="sm" className="size-6 p-0">
+        <Button variant="ghost" size="sm" className="size-6 p-0" aria-label={`${task.title} 업무 작업 메뉴`}>
           <MoreHorizontal className="size-4" />
         </Button>
       </DropdownMenuTrigger>

@@ -1,0 +1,4 @@
+interface:
+  display_name: "로컬 광고 순위·경쟁 비교"
+  short_description: "이실장과 네이버 스냅샷의 순위·대표·경쟁광고를 판정"
+  default_prompt: "Use $local-ad-comparison-analyzer to analyze my local Esiljang and Naver snapshots for observed rank, leading ad, and competitors."

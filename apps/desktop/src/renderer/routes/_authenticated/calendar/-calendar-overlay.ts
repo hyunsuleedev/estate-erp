@@ -11,16 +11,14 @@ export type OverlayKind = 'contractDate' | 'interimDate' | 'balanceDate' | 'comm
 export type OverlayMeta = {
   label: string;
   color: string;
-  /** 클릭 시 이동할 페이지 */
-  link: '/contracts' | '/cashflow';
 };
 
 /** 계약/수금에서 자동 도출되는 일정 — 시맨틱 토큰 색상 사용 (info/violet/orange/success) */
 export const OVERLAY_META: Record<OverlayKind, OverlayMeta> = {
-  contractDate: { label: '계약일', color: '#2383e2', link: '/contracts' },
-  interimDate: { label: '중도금일', color: '#6940a5', link: '/contracts' },
-  balanceDate: { label: '잔금일', color: '#d9730d', link: '/contracts' },
-  commissionDue: { label: '수금예정', color: '#0f7b6c', link: '/cashflow' },
+  contractDate: { label: '계약일', color: '#2383e2' },
+  interimDate: { label: '중도금일', color: '#6940a5' },
+  balanceDate: { label: '잔금일', color: '#d9730d' },
+  commissionDue: { label: '수금예정', color: '#0f7b6c' },
 };
 
 export interface OverlayItem {
@@ -29,6 +27,9 @@ export interface OverlayItem {
   dateKey: string;
   title: string;
   sublabel: string | null;
+  source:
+    | { type: 'contract'; contract: Contract }
+    | { type: 'commissionPayment'; payment: CommissionPayment };
 }
 
 function contractPlaceLabel(contract: Contract) {
@@ -57,6 +58,7 @@ function pushContractItem(
     dateKey: getLocalDateKey(new Date(date)),
     title: `${OVERLAY_META[kind].label} · ${contractPlaceLabel(contract)}`,
     sublabel: amount ? formatMoney(amount) : null,
+    source: { type: 'contract', contract },
   });
 }
 
@@ -82,6 +84,7 @@ export function buildOverlayItems(
       dateKey: getLocalDateKey(new Date(payment.dueDate)),
       title: `수금예정 · ${payment.payerContact?.name ?? (payment.clientSide === 'seller' ? '매도측' : '매수측')}`,
       sublabel: formatMoney(payment.expectedAmount),
+      source: { type: 'commissionPayment', payment },
     });
   }
 

@@ -1,0 +1,4 @@
+interface:
+  display_name: "로컬 내광고관리"
+  short_description: "순위·가격·층 노출 비교와 수정·재광고 요청 작성"
+  default_prompt: "Use $local-my-ads-viewer to render matching local advertisement snapshots as an offline comparison workbench and export exact condition-change or republish request JSON drafts."

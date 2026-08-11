@@ -3,23 +3,22 @@ import {
   ConflictException,
   Injectable,
   NotFoundException,
-} from '@nestjs/common';
-import { Prisma } from '@prisma/client';
-import { PrismaService } from '../../prisma/prisma.service';
-import { contactPhonesIncludeOrdered } from '../contacts/contact-phone.utils';
+} from "@nestjs/common";
+import { Prisma } from "@prisma/client";
+import { PrismaService } from "../../prisma/prisma.service";
+import { contactPhonesIncludeOrdered } from "../contacts/contact-phone.utils";
+import {
+  BROKERAGE_CASE_LEDGER_SORT_FIELDS,
+  buildBrokerageCaseLedgerCursorCondition,
+  decodeBrokerageCaseLedgerCursor,
+  encodeBrokerageCaseLedgerCursor,
+  type BrokerageCaseLedgerCursorRow,
+  type BrokerageCaseLedgerSortField,
+  type BrokerageCaseLedgerSortOrder,
+} from "./brokerage-case-ledger-cursor";
 
-export type BrokerageCaseLedgerMode = 'all' | 'demand' | 'supply' | 'both';
-export type BrokerageCaseLedgerSortField =
-  | 'customer'
-  | 'intentCount'
-  | 'budgetMin'
-  | 'budgetMax'
-  | 'monthlyRentMin'
-  | 'monthlyRentMax'
-  | 'areaMin'
-  | 'areaMax'
-  | 'matchCount'
-  | 'updatedAt';
+export type BrokerageCaseLedgerMode = "all" | "demand" | "listing" | "both";
+export type { BrokerageCaseLedgerSortField } from "./brokerage-case-ledger-cursor";
 
 export interface BrokerageCaseLedgerQuery {
   search?: string;
@@ -42,69 +41,60 @@ export interface BrokerageCaseLedgerQuery {
   monthlyRentMax?: number;
   areaMin?: number;
   areaMax?: number;
-  supplyPriceMin?: number;
-  supplyPriceMax?: number;
+  listingPriceMin?: number;
+  listingPriceMax?: number;
   nextContactAfter?: string;
   nextContactBefore?: string;
   moveInAfter?: string;
   moveInBefore?: string;
   sortBy?: BrokerageCaseLedgerSortField;
-  sortOrder?: 'asc' | 'desc';
-  page?: number;
+  sortOrder?: BrokerageCaseLedgerSortOrder;
+  cursor?: string;
   limit?: number;
 }
 
 const CASE_MODES = new Set<BrokerageCaseLedgerMode>([
-  'all',
-  'demand',
-  'supply',
-  'both',
+  "all",
+  "demand",
+  "listing",
+  "both",
 ]);
-const CASE_SORT_FIELDS = new Set<BrokerageCaseLedgerSortField>([
-  'customer',
-  'intentCount',
-  'budgetMin',
-  'budgetMax',
-  'monthlyRentMin',
-  'monthlyRentMax',
-  'areaMin',
-  'areaMax',
-  'matchCount',
-  'updatedAt',
-]);
-const TRANSACTION_TYPES = new Set(['sale', 'jeonse', 'monthly']);
+const CASE_SORT_FIELDS = new Set<BrokerageCaseLedgerSortField>(
+  BROKERAGE_CASE_LEDGER_SORT_FIELDS,
+);
+const TRANSACTION_TYPES = new Set(["sale", "jeonse", "monthly"]);
 const BUYER_REQUIREMENT_STATUSES = new Set([
-  'active',
-  'matched',
-  'hold',
-  'inactive',
-  'completed',
+  "active",
+  "matched",
+  "hold",
+  "inactive",
+  "completed",
 ]);
 const ACTIVE_BUYER_REQUIREMENT_STATUSES = [
-  'active',
-  'matched',
-  'hold',
-  'inactive',
+  "active",
+  "matched",
+  "hold",
+  "inactive",
 ] as const;
-const BUYER_URGENCIES = new Set(['urgent', 'normal', 'flexible']);
+const BUYER_URGENCIES = new Set(["urgent", "normal", "flexible"]);
 const DEPENDENCY_TYPES = new Set([
-  'sale_proceeds',
-  'timing',
-  'move_sequence',
-  'other',
+  "sale_proceeds",
+  "timing",
+  "move_sequence",
+  "other",
 ]);
 const DEPENDENCY_STATUSES = new Set([
-  'planned',
-  'confirmed',
-  'resolved',
-  'cancelled',
+  "planned",
+  "confirmed",
+  "resolved",
+  "cancelled",
 ]);
 
 function parseCsvValues(value: string | undefined) {
   return [
     ...new Set(
-      (value ?? '')
-        .split(',')
+      (value ?? "")
+        .split(",")
         .map((item) => item.trim())
         .filter(Boolean),
     ),
@@ -112,28 +102,28 @@ function parseCsvValues(value: string | undefined) {
 }
 
 const BUYER_REQUIREMENT_FILTER_FIELDS = [
-  'status',
-  'urgency',
-  'transactionType',
-  'assignedToId',
-  'preferredSiteIds',
-  'provinceCodes',
-  'districtCodes',
-  'wardCodes',
-  'priceMin',
-  'priceMax',
-  'depositMin',
-  'depositMax',
-  'budgetMin',
-  'budgetMax',
-  'monthlyRentMin',
-  'monthlyRentMax',
-  'areaMin',
-  'areaMax',
-  'nextContactAfter',
-  'nextContactBefore',
-  'moveInAfter',
-  'moveInBefore',
+  "status",
+  "urgency",
+  "transactionType",
+  "assignedToId",
+  "preferredSiteIds",
+  "provinceCodes",
+  "districtCodes",
+  "wardCodes",
+  "priceMin",
+  "priceMax",
+  "depositMin",
+  "depositMax",
+  "budgetMin",
+  "budgetMax",
+  "monthlyRentMin",
+  "monthlyRentMax",
+  "areaMin",
+  "areaMax",
+  "nextContactAfter",
+  "nextContactBefore",
+  "moveInAfter",
+  "moveInBefore",
 ] as const satisfies readonly (keyof BrokerageCaseLedgerQuery)[];
 
 export function hasBuyerRequirementLedgerFilters(
@@ -141,97 +131,118 @@ export function hasBuyerRequirementLedgerFilters(
 ) {
   return BUYER_REQUIREMENT_FILTER_FIELDS.some((field) => {
     const value = query[field];
-    return typeof value === 'string'
+    return typeof value === "string"
       ? value.trim().length > 0
       : value !== undefined;
   });
 }
 
-const activeCaseInclude = {
-  participants: {
-    include: {
-      contact: { include: { phones: contactPhonesIncludeOrdered } },
-    },
-    orderBy: [
-      { isCommunicationPrimary: 'desc' as const },
-      { isPrincipal: 'desc' as const },
-      { createdAt: 'asc' as const },
-    ],
-  },
-  buyerIntakes: {
-    where: { lifecycleStatus: { in: ['open', 'hold'] } },
-    orderBy: [
-      { casePriorityRank: 'asc' as const },
-      { receivedAt: 'asc' as const },
-    ],
-    include: {
-      contacts: {
-        include: {
-          contact: { include: { phones: contactPhonesIncludeOrdered } },
-        },
-        orderBy: [
-          { isPrimary: 'desc' as const },
-          { createdAt: 'asc' as const },
-        ],
-      },
-      requirements: {
-        orderBy: [
-          { priorityRank: 'asc' as const },
-          { createdAt: 'asc' as const },
-        ],
-        include: {
-          preferredSites: {
-            include: { site: { select: { id: true, name: true, type: true } } },
-            orderBy: { priority: 'asc' as const },
-          },
-          preferredRegions: {
-            include: { province: true, district: true, ward: true },
-          },
-          assignedTo: { select: { id: true, name: true } },
-          _count: { select: { matches: true } },
-        },
-      },
-    },
-  },
-  listingIntakes: {
-    where: { lifecycleStatus: { in: ['open', 'hold'] } },
-    orderBy: [
-      { casePriorityRank: 'asc' as const },
-      { receivedAt: 'asc' as const },
-    ],
-    include: {
-      property: {
-        include: {
-          site: {
-            include: {
-              ward: {
-                include: { district: { include: { province: true } } },
+const activeCaseInclude = (officeId: string) =>
+  ({
+    participants: {
+      include: {
+        contact: {
+          include: {
+            phones: contactPhonesIncludeOrdered,
+            consultations: {
+              where: { officeId },
+              orderBy: [
+                { createdAt: "desc" as const },
+                { id: "desc" as const },
+              ],
+              take: 1,
+              select: {
+                id: true,
+                type: true,
+                content: true,
+                createdAt: true,
               },
             },
           },
-          unit: { include: { dong: true, siteUnitType: true } },
         },
       },
-      listings: {
-        orderBy: [{ createdAt: 'asc' as const }],
-        include: { _count: { select: { matches: true } } },
+      orderBy: [
+        { isCommunicationPrimary: "desc" as const },
+        { isPrincipal: "desc" as const },
+        { createdAt: "asc" as const },
+      ],
+    },
+    buyerIntakes: {
+      where: { lifecycleStatus: { in: ["open", "hold"] } },
+      orderBy: [
+        { casePriorityRank: "asc" as const },
+        { receivedAt: "asc" as const },
+      ],
+      include: {
+        contacts: {
+          include: {
+            contact: { include: { phones: contactPhonesIncludeOrdered } },
+          },
+          orderBy: [
+            { isPrimary: "desc" as const },
+            { createdAt: "asc" as const },
+          ],
+        },
+        requirements: {
+          orderBy: [
+            { priorityRank: "asc" as const },
+            { createdAt: "asc" as const },
+          ],
+          include: {
+            preferredSites: {
+              include: {
+                site: { select: { id: true, name: true, type: true } },
+              },
+              orderBy: { priority: "asc" as const },
+            },
+            preferredRegions: {
+              include: { province: true, district: true, ward: true },
+            },
+            assignedTo: { select: { id: true, name: true } },
+            _count: { select: { matches: true } },
+          },
+        },
       },
     },
-  },
-  dependencies: {
-    where: { status: { not: 'cancelled' } },
-    orderBy: [{ isRequired: 'desc' as const }, { createdAt: 'asc' as const }],
-  },
-} satisfies Prisma.BrokerageCaseInclude;
+    listingIntakes: {
+      where: { lifecycleStatus: { in: ["open", "hold"] } },
+      orderBy: [
+        { casePriorityRank: "asc" as const },
+        { receivedAt: "asc" as const },
+      ],
+      include: {
+        property: {
+          include: {
+            site: {
+              include: {
+                ward: {
+                  include: { district: { include: { province: true } } },
+                },
+              },
+            },
+            unit: { include: { dong: true, siteUnitType: true } },
+          },
+        },
+        listings: {
+          orderBy: [{ createdAt: "asc" as const }],
+          include: { _count: { select: { matches: true } } },
+        },
+      },
+    },
+    dependencies: {
+      where: { status: { not: "cancelled" } },
+      orderBy: [{ isRequired: "desc" as const }, { createdAt: "asc" as const }],
+    },
+  }) satisfies Prisma.BrokerageCaseInclude;
 
 type ActiveCaseWithRelations = Prisma.BrokerageCaseGetPayload<{
-  include: typeof activeCaseInclude;
+  include: ReturnType<typeof activeCaseInclude>;
 }>;
 
-interface CaseIdRow {
+interface CaseIdRow extends BrokerageCaseLedgerCursorRow {
   id: string;
   buyerRequirementIds: string[] | null;
-  total: bigint;
+  total: bigint | null;
 }
 
 @Injectable()
@@ -240,12 +251,15 @@ export class BrokerageCasesService {
 
   async findLedger(officeId: string, query: BrokerageCaseLedgerQuery = {}) {
     this.assertLedgerQuery(query);
-    const page = Math.max(1, Math.floor(query.page ?? 1));
     const limit = Math.min(100, Math.max(1, Math.floor(query.limit ?? 20)));
-    const offset = (page - 1) * limit;
-    const mode = query.mode ?? 'all';
-    const sortBy = query.sortBy ?? 'updatedAt';
-    const sortOrder = query.sortOrder === 'asc' ? 'ASC' : 'DESC';
+    const mode = query.mode ?? "all";
+    const sortBy = query.sortBy ?? "createdAt";
+    const sortOrder: BrokerageCaseLedgerSortOrder =
+      query.sortOrder === "asc" ? "asc" : "desc";
+    const sqlSortOrder = sortOrder === "asc" ? "ASC" : "DESC";
+    const cursor = query.cursor
+      ? decodeBrokerageCaseLedgerCursor(query.cursor, sortBy, sortOrder)
+      : null;
     const statusFilters = parseCsvValues(query.status);
     const urgencyFilters = parseCsvValues(query.urgency);
     const transactionTypes = parseCsvValues(query.transactionType);
@@ -331,7 +345,7 @@ export class BrokerageCasesService {
         SELECT 1
         FROM "buyer_requirement_regions" brr_filter
         WHERE brr_filter."buyer_req_id" = br."id"
-          AND (${Prisma.join(regionConditions, ' OR ')})
+          AND (${Prisma.join(regionConditions, " OR ")})
       )`);
     }
     if (query.priceMin !== undefined) {
@@ -406,16 +420,16 @@ export class BrokerageCasesService {
     if (moveInBefore) {
       buyerConditions.push(Prisma.sql`br."move_in_date" <= ${moveInBefore}`);
     }
-    if (query.supplyPriceMin !== undefined) {
+    if (query.listingPriceMin !== undefined) {
       listingConditions.push(Prisma.sql`
         CASE WHEN l."transaction_type" = 'monthly'
-          THEN l."deposit" ELSE l."price" END >= ${query.supplyPriceMin}
+          THEN l."deposit" ELSE l."price" END >= ${query.listingPriceMin}
       `);
     }
-    if (query.supplyPriceMax !== undefined) {
+    if (query.listingPriceMax !== undefined) {
       listingConditions.push(Prisma.sql`
         CASE WHEN l."transaction_type" = 'monthly'
-          THEN l."deposit" ELSE l."price" END <= ${query.supplyPriceMax}
+          THEN l."deposit" ELSE l."price" END <= ${query.listingPriceMax}
       `);
     }
 
@@ -432,21 +446,21 @@ export class BrokerageCasesService {
     ];
     // 요건 존재 여부는 buyer_totals/listing_totals LATERAL이 이미 계산하므로
     // 별도 EXISTS로 CTE를 다시 스캔하지 않는다.
-    if (mode === 'demand') {
+    if (mode === "demand") {
       caseConditions.push(Prisma.sql`buyer_totals.intent_count > 0`);
-    } else if (mode === 'supply') {
+    } else if (mode === "listing") {
       caseConditions.push(Prisma.sql`listing_totals.intent_count > 0`);
       if (buyerFiltersActive) {
         caseConditions.push(Prisma.sql`buyer_totals.intent_count > 0`);
       }
-    } else if (mode === 'both') {
+    } else if (mode === "both") {
       caseConditions.push(
         Prisma.sql`buyer_totals.intent_count > 0`,
         Prisma.sql`listing_totals.intent_count > 0`,
       );
     } else if (buyerFiltersActive) {
       // 구매고객 필터가 켜진 순간부터 고객원장은 "조건에 맞는 구함이 있는 케이스"다.
-      // 따라서 납품 전용 BrokerageCase는 결과에서 제외한다.
+      // 따라서 매물 의뢰 전용 BrokerageCase는 결과에서 제외한다.
       caseConditions.push(Prisma.sql`buyer_totals.intent_count > 0`);
     } else {
       caseConditions.push(
@@ -457,7 +471,7 @@ export class BrokerageCasesService {
     const search = query.search?.trim();
     if (search) {
       const pattern = `%${search}%`;
-      const phonePattern = `%${search.replace(/\D/g, '')}%`;
+      const phonePattern = `%${search.replace(/\D/g, "")}%`;
       caseConditions.push(Prisma.sql`(
         bc."title" ILIKE ${pattern}
         OR EXISTS (
@@ -490,16 +504,26 @@ export class BrokerageCasesService {
     const sortExpressions: Record<BrokerageCaseLedgerSortField, Prisma.Sql> = {
       customer: Prisma.sql`eligible.customer_name`,
       intentCount: Prisma.sql`eligible.intent_count`,
-      budgetMin: Prisma.sql`COALESCE(eligible.budget_min, eligible.supply_price)`,
-      budgetMax: Prisma.sql`COALESCE(eligible.budget_max, eligible.supply_price)`,
+      budgetMin: Prisma.sql`COALESCE(eligible.budget_min, eligible.listing_price)`,
+      budgetMax: Prisma.sql`COALESCE(eligible.budget_max, eligible.listing_price)`,
       monthlyRentMin: Prisma.sql`eligible.monthly_rent_min`,
       monthlyRentMax: Prisma.sql`eligible.monthly_rent_max`,
       areaMin: Prisma.sql`eligible.area_min`,
       areaMax: Prisma.sql`eligible.area_max`,
       matchCount: Prisma.sql`eligible.match_count`,
-      updatedAt: Prisma.sql`eligible.updated_at`,
+      createdAt: Prisma.sql`eligible.created_at`,
     };
     const orderExpression = sortExpressions[sortBy];
+    const cursorCondition = cursor
+      ? buildBrokerageCaseLedgerCursorCondition({ cursor, orderExpression })
+      : null;
+    const tieBreakerOrder =
+      sortBy === "createdAt"
+        ? Prisma.sql`eligible.id ASC`
+        : Prisma.sql`eligible.customer_name ASC NULLS LAST, eligible.id ASC`;
+    const totalExpression = cursor
+      ? Prisma.sql`NULL::bigint`
+      : Prisma.sql`COUNT(*) OVER()`;
 
     // context_text는 검색 EXISTS에서만 쓰이므로 검색이 없으면 계산을 생략한다.
     const buyerContextText = search
@@ -539,7 +563,7 @@ export class BrokerageCasesService {
           ${buyerContextText} AS context_text
         FROM "buyer_intakes" bi
         JOIN "buyer_requirements" br ON br."buyer_intake_id" = bi."id"
-        WHERE ${Prisma.join(buyerConditions, ' AND ')}
+        WHERE ${Prisma.join(buyerConditions, " AND ")}
       ),
       listing_matches AS (
         SELECT
@@ -548,7 +572,7 @@ export class BrokerageCasesService {
           l."id" AS intent_id,
           1 AS intent_rank,
           CASE WHEN l."transaction_type" = 'monthly'
-            THEN l."deposit" ELSE l."price" END AS supply_price,
+            THEN l."deposit" ELSE l."price" END AS listing_price,
           l."monthly_rent" AS monthly_rent,
           COALESCE(u."supply_area_m2", sut."supply_area_m2") AS area,
           (SELECT COUNT(*)::int FROM "matches" m WHERE m."listing_id" = l."id") AS match_count,
@@ -561,12 +585,12 @@ export class BrokerageCasesService {
         LEFT JOIN "dongs" d ON d."id" = u."dong_id"
         LEFT JOIN "site_unit_types" sut ON sut."id" = u."site_unit_type_id"
         LEFT JOIN "wards" w ON w."code" = s."ward_code"
-        WHERE ${Prisma.join(listingConditions, ' AND ')}
+        WHERE ${Prisma.join(listingConditions, " AND ")}
       ),
       eligible AS (
         SELECT
           bc."id",
-          bc."updated_at",
+          bc."created_at",
           primary_contact.customer_name,
           buyer_rep.budget_min,
           buyer_rep.budget_max,
@@ -574,7 +598,7 @@ export class BrokerageCasesService {
           COALESCE(buyer_rep.monthly_rent_max, listing_rep.monthly_rent) AS monthly_rent_max,
           COALESCE(buyer_rep.area_min, listing_rep.area) AS area_min,
           COALESCE(buyer_rep.area_max, listing_rep.area) AS area_max,
-          listing_rep.supply_price,
+          listing_rep.listing_price,
           buyer_totals.intent_ids AS buyer_requirement_ids,
           COALESCE(buyer_totals.intent_count, 0) + COALESCE(listing_totals.intent_count, 0) AS intent_count,
           COALESCE(buyer_totals.match_count, 0) + COALESCE(listing_totals.match_count, 0) AS match_count
@@ -620,30 +644,33 @@ export class BrokerageCasesService {
           FROM listing_matches lm
           WHERE lm.case_id = bc."id"
         ) listing_totals ON true
-        WHERE ${Prisma.join(caseConditions, ' AND ')}
+        WHERE ${Prisma.join(caseConditions, " AND ")}
       )
       SELECT
         eligible."id",
         eligible.buyer_requirement_ids AS "buyerRequirementIds",
-        COUNT(*) OVER() AS total
+        ${orderExpression} AS "sortValue",
+        eligible.customer_name AS "customerName",
+        ${totalExpression} AS total
       FROM eligible
-      ORDER BY ${orderExpression} ${Prisma.raw(sortOrder)} NULLS LAST,
-               eligible.customer_name ASC NULLS LAST,
-               eligible.id ASC
-      LIMIT ${limit}
-      OFFSET ${offset}
+      ${cursorCondition ? Prisma.sql`WHERE ${cursorCondition}` : Prisma.sql``}
+      ORDER BY ${orderExpression} ${Prisma.raw(sqlSortOrder)} NULLS LAST,
+               ${tieBreakerOrder}
+      LIMIT ${limit + 1}
     `);
 
-    const ids = idRows.map((row) => row.id);
+    const hasNextPage = idRows.length > limit;
+    const pageRows = hasNextPage ? idRows.slice(0, limit) : idRows;
+    const ids = pageRows.map((row) => row.id);
     const cases = ids.length
       ? await this.prisma.brokerageCase.findMany({
           where: { officeId, id: { in: ids }, archivedAt: null },
-          include: activeCaseInclude,
+          include: activeCaseInclude(officeId),
         })
       : [];
     const casesById = new Map(cases.map((item) => [item.id, item]));
     const matchingRequirementIdsByCase = new Map(
-      idRows.map(
+      pageRows.map(
         (row) => [row.id, new Set(row.buyerRequirementIds ?? [])] as const,
       ),
     );
@@ -661,16 +688,24 @@ export class BrokerageCasesService {
           ]
         : [];
     });
-    const total = Number(idRows[0]?.total ?? 0);
-    const summary = await this.getSummary(officeId);
+    const total = cursor?.total ?? Number(pageRows[0]?.total ?? 0);
+    const lastRow = hasNextPage ? pageRows.at(-1) : undefined;
+    const nextCursor = lastRow
+      ? encodeBrokerageCaseLedgerCursor({
+          sortBy,
+          sortOrder,
+          row: lastRow,
+          total,
+        })
+      : null;
+    const summary = cursor ? null : await this.getSummary(officeId);
 
     return {
       items,
       pagination: {
-        page,
         limit,
         total,
-        totalPages: Math.ceil(total / limit),
+        nextCursor,
       },
       summary,
     };
@@ -679,10 +714,10 @@ export class BrokerageCasesService {
   async findOne(id: string, officeId: string) {
     const brokerageCase = await this.prisma.brokerageCase.findFirst({
       where: { id, officeId },
-      include: activeCaseInclude,
+      include: activeCaseInclude(officeId),
     });
     if (!brokerageCase)
-      throw new NotFoundException('중개 케이스를 찾을 수 없습니다.');
+      throw new NotFoundException("중개 케이스를 찾을 수 없습니다.");
     return this.present(brokerageCase);
   }
 
@@ -696,7 +731,7 @@ export class BrokerageCasesService {
       select: { id: true },
     });
     if (!existing)
-      throw new NotFoundException('중개 케이스를 찾을 수 없습니다.');
+      throw new NotFoundException("중개 케이스를 찾을 수 없습니다.");
     await this.prisma.brokerageCase.update({
       where: { id },
       data: {
@@ -729,19 +764,19 @@ export class BrokerageCasesService {
   ) {
     if (!DEPENDENCY_TYPES.has(dto.type)) {
       throw new BadRequestException(
-        '유효하지 않은 케이스 의존관계 유형입니다.',
+        "유효하지 않은 케이스 의존관계 유형입니다.",
       );
     }
-    const status = dto.status ?? 'planned';
+    const status = dto.status ?? "planned";
     if (!DEPENDENCY_STATUSES.has(status)) {
       throw new BadRequestException(
-        '유효하지 않은 케이스 의존관계 상태입니다.',
+        "유효하지 않은 케이스 의존관계 상태입니다.",
       );
     }
     if (dto.expectedAmount !== undefined && dto.expectedAmount !== null) {
       if (!Number.isInteger(dto.expectedAmount) || dto.expectedAmount < 0) {
         throw new BadRequestException(
-          '예상 금액은 0 이상의 만원 단위 정수여야 합니다.',
+          "예상 금액은 0 이상의 만원 단위 정수여야 합니다.",
         );
       }
     }
@@ -762,7 +797,7 @@ export class BrokerageCasesService {
     ]);
     if (!source || !target) {
       throw new BadRequestException(
-        '같은 케이스 안의 매도 의뢰와 구매 의뢰만 연결할 수 있습니다.',
+        "같은 케이스 안의 매도 의뢰와 구매 의뢰만 연결할 수 있습니다.",
       );
     }
 
@@ -784,9 +819,9 @@ export class BrokerageCasesService {
     } catch (error) {
       if (
         error instanceof Prisma.PrismaClientKnownRequestError &&
-        error.code === 'P2002'
+        error.code === "P2002"
       ) {
-        throw new ConflictException('이미 등록된 케이스 의존관계입니다.');
+        throw new ConflictException("이미 등록된 케이스 의존관계입니다.");
       }
       throw error;
     }
@@ -803,7 +838,7 @@ export class BrokerageCasesService {
       select: { id: true },
     });
     if (!dependency) {
-      throw new NotFoundException('케이스 의존관계를 찾을 수 없습니다.');
+      throw new NotFoundException("케이스 의존관계를 찾을 수 없습니다.");
     }
     await this.prisma.brokerageCaseDependency.delete({
       where: { id: dependency.id },
@@ -818,6 +853,17 @@ export class BrokerageCasesService {
     ),
     visibleRequirementIds?: ReadonlySet<string>,
   ) {
+    const primarySourceParticipant =
+      brokerageCase.participants.find(
+        (participant) => participant.isCommunicationPrimary,
+      ) ??
+      brokerageCase.participants.find(
+        (participant) => participant.isPrincipal,
+      ) ??
+      brokerageCase.participants[0] ??
+      null;
+    const latestConsultation =
+      primarySourceParticipant?.contact.consultations[0] ?? null;
     const participants = brokerageCase.participants.map((participant) => ({
       id: participant.id,
       contactId: participant.contactId,
@@ -860,19 +906,20 @@ export class BrokerageCasesService {
             wardName: item.ward?.name ?? null,
           }));
           const contextParts = [
-            preferredSites.map((site) => site.name).join('·'),
+            preferredSites.map((site) => site.name).join("·"),
             preferredRegions
               .map(
                 (region) =>
                   region.wardName ?? region.districtName ?? region.provinceName,
               )
               .filter(Boolean)
-              .join('·'),
+              .join("·"),
           ].filter(Boolean);
           return {
-            kind: 'demand' as const,
+            kind: "demand" as const,
             buyerIntakeId: intake.id,
             intakePriorityRank: intake.casePriorityRank,
+            intakeRequirementCount: intake.requirements.length,
             lifecycleStatus: intake.lifecycleStatus,
             receivedAt: intake.receivedAt,
             requirementId: requirement.id,
@@ -881,11 +928,11 @@ export class BrokerageCasesService {
             urgency: requirement.urgency,
             transactionType: requirement.transactionType,
             budgetMin:
-              requirement.transactionType === 'monthly'
+              requirement.transactionType === "monthly"
                 ? requirement.depositMin
                 : requirement.priceMin,
             budgetMax:
-              requirement.transactionType === 'monthly'
+              requirement.transactionType === "monthly"
                 ? requirement.depositMax
                 : requirement.priceMax,
             priceMin: requirement.priceMin,
@@ -904,12 +951,12 @@ export class BrokerageCasesService {
             matchCount: requirement._count.matches,
             preferredSites,
             preferredRegions,
-            contextLabel: contextParts.join(' · ') || '선호 지역 미등록',
+            contextLabel: contextParts.join(" · ") || "선호 지역 미등록",
           };
         }),
     );
 
-    const supplyIntents = brokerageCase.listingIntakes.flatMap((intake) => {
+    const listingIntents = brokerageCase.listingIntakes.flatMap((intake) => {
       const property = intake.property;
       const unit = property.unit;
       const area = toNumber(
@@ -918,27 +965,33 @@ export class BrokerageCasesService {
       const locationParts = [
         property.site.name,
         unit?.dong && !unit.dong.isPlaceholder
-          ? unit.dong.name.endsWith('동')
+          ? unit.dong.name.endsWith("동")
             ? unit.dong.name
             : `${unit.dong.name}동`
           : null,
         unit?.name ?? null,
       ].filter(Boolean);
       return intake.listings.map((listing) => ({
-        kind: 'supply' as const,
+        kind: "listing" as const,
         listingIntakeId: intake.id,
+        intakeUpdatedAt: intake.updatedAt,
+        intakeMemo: intake.memo,
         intakePriorityRank: intake.casePriorityRank,
         lifecycleStatus: intake.lifecycleStatus,
         receivedAt: intake.receivedAt,
         listingId: listing.id,
+        listingUpdatedAt: listing.updatedAt,
         transactionType: listing.transactionType,
         askingPrice:
-          listing.transactionType === 'monthly'
+          listing.transactionType === "monthly"
             ? listing.deposit
             : listing.price,
         price: listing.price,
         deposit: listing.deposit,
         monthlyRent: listing.monthlyRent,
+        moveInAvailableType: listing.moveInAvailableType,
+        moveInAvailableFrom: listing.moveInAvailableFrom,
+        moveInAvailableTo: listing.moveInAvailableTo,
         area,
         isPaused: listing.isPaused,
         matchCount: listing._count.matches,
@@ -949,7 +1002,7 @@ export class BrokerageCasesService {
         wardName: property.site.ward.name,
         dongName: unit?.dong?.name ?? null,
         unitName: unit?.name ?? null,
-        contextLabel: locationParts.join(' '),
+        contextLabel: locationParts.join(" "),
         memo: listing.memo ?? intake.memo,
       }));
     });
@@ -969,15 +1022,23 @@ export class BrokerageCasesService {
         participants.find((participant) => participant.isPrincipal) ??
         participants[0] ??
         null,
+      latestConsultation: latestConsultation
+        ? {
+            id: latestConsultation.id,
+            type: latestConsultation.type,
+            content: latestConsultation.content,
+            createdAt: latestConsultation.createdAt,
+          }
+        : null,
       demandIntents,
-      supplyIntents,
-      intentCount: demandIntents.length + supplyIntents.length,
+      listingIntents,
+      intentCount: demandIntents.length + listingIntents.length,
       mode:
-        demandIntents.length && supplyIntents.length
-          ? ('both' as const)
+        demandIntents.length && listingIntents.length
+          ? ("both" as const)
           : demandIntents.length
-            ? ('demand' as const)
-            : ('supply' as const),
+            ? ("demand" as const)
+            : ("listing" as const),
       dependencies: brokerageCase.dependencies,
     };
   }
@@ -985,7 +1046,7 @@ export class BrokerageCasesService {
   private async getSummary(officeId: string) {
     const activeBuyer = {
       some: {
-        lifecycleStatus: { in: ['open', 'hold'] },
+        lifecycleStatus: { in: ["open", "hold"] },
         requirements: {
           some: { status: { in: [...ACTIVE_BUYER_REQUIREMENT_STATUSES] } },
         },
@@ -993,7 +1054,7 @@ export class BrokerageCasesService {
     } satisfies Prisma.BuyerIntakeListRelationFilter;
     const activeListing = {
       some: {
-        lifecycleStatus: { in: ['open', 'hold'] },
+        lifecycleStatus: { in: ["open", "hold"] },
         listings: { some: { isPaused: false } },
       },
     } satisfies Prisma.ListingIntakeListRelationFilter;
@@ -1002,7 +1063,7 @@ export class BrokerageCasesService {
       archivedAt: null,
       participants: { some: {} },
     };
-    const [cases, demand, supply, both] = await Promise.all([
+    const [cases, demand, listing, both] = await Promise.all([
       this.prisma.brokerageCase.count({
         where: {
           ...base,
@@ -1026,50 +1087,50 @@ export class BrokerageCasesService {
         },
       }),
     ]);
-    return { cases, demand, supply, both };
+    return { cases, demand, listing, both };
   }
 
   private assertLedgerQuery(query: BrokerageCaseLedgerQuery) {
     if (query.mode && !CASE_MODES.has(query.mode)) {
-      throw new BadRequestException('유효하지 않은 고객 원장 보기 방식입니다.');
+      throw new BadRequestException("유효하지 않은 고객 원장 보기 방식입니다.");
     }
     if (query.sortBy && !CASE_SORT_FIELDS.has(query.sortBy)) {
-      throw new BadRequestException('유효하지 않은 고객 원장 정렬 필드입니다.');
+      throw new BadRequestException("유효하지 않은 고객 원장 정렬 필드입니다.");
     }
-    if (query.sortOrder && !['asc', 'desc'].includes(query.sortOrder)) {
-      throw new BadRequestException('유효하지 않은 정렬 방향입니다.');
+    if (query.sortOrder && !["asc", "desc"].includes(query.sortOrder)) {
+      throw new BadRequestException("유효하지 않은 정렬 방향입니다.");
     }
     if (
       parseCsvValues(query.status).some(
         (status) => !BUYER_REQUIREMENT_STATUSES.has(status),
       )
     ) {
-      throw new BadRequestException('유효하지 않은 구매 요건 상태입니다.');
+      throw new BadRequestException("유효하지 않은 구매 요건 상태입니다.");
     }
     if (
       parseCsvValues(query.urgency).some(
         (urgency) => !BUYER_URGENCIES.has(urgency),
       )
     ) {
-      throw new BadRequestException('유효하지 않은 긴급도입니다.');
+      throw new BadRequestException("유효하지 않은 긴급도입니다.");
     }
     if (
       parseCsvValues(query.transactionType).some(
         (transactionType) => !TRANSACTION_TYPES.has(transactionType),
       )
     ) {
-      throw new BadRequestException('유효하지 않은 거래 유형입니다.');
+      throw new BadRequestException("유효하지 않은 거래 유형입니다.");
     }
     for (const [field, value] of Object.entries(query)) {
-      if (typeof value === 'number' && (!Number.isFinite(value) || value < 0)) {
+      if (typeof value === "number" && (!Number.isFinite(value) || value < 0)) {
         throw new BadRequestException(`${field} 값이 올바르지 않습니다.`);
       }
     }
     for (const field of [
-      'nextContactAfter',
-      'nextContactBefore',
-      'moveInAfter',
-      'moveInBefore',
+      "nextContactAfter",
+      "nextContactBefore",
+      "moveInAfter",
+      "moveInBefore",
     ] as const) {
       const value = query[field];
       if (value && Number.isNaN(new Date(value).getTime())) {
