@@ -103,14 +103,16 @@ export function invertContactRelationType(
 
 /**
  * 계약서 거래 유형 (Contract 단계).
- * Listing 의 3종에 더해 교환·전대·권리양도·권리승계를 추가로 표현한다.
+ * Listing 의 3종에 더해 연세·교환·전대·권리양도·권리승계를 추가로 표현한다.
  * 매물 등록 UX 는 단순하게 두고, 계약서 작성 시점에만 확장 유형을 선택한다.
- * 마이스파이더 V2 의 Tran_Clsf 01~07 과 1:1 매핑.
+ * 마이스파이더 V2 의 화면상 거래유형과 1:1 매핑한다.
+ * 연세는 매물/Deal 타입을 확장하지 않고 Contract 단계에서만 사용한다.
  */
 export const ContractTransactionType = {
   SALE: 'sale',
   JEONSE: 'jeonse',
   MONTHLY: 'monthly',
+  YEARLY: 'yearly',
   EXCHANGE: 'exchange',
   SUBLEASE: 'sublease',
   TRANSFER: 'transfer',
@@ -126,6 +128,7 @@ export const CONTRACT_TRANSACTION_TYPE_LABELS: Record<
   sale: '매매',
   jeonse: '전세',
   monthly: '월세',
+  yearly: '연세',
   exchange: '교환',
   sublease: '전대',
   transfer: '권리양도',
@@ -164,6 +167,7 @@ export const CONTRACT_DOCUMENT_KINDS = [
   'real_estate_transaction_cancel_report',
   'house_transaction_report',
   'lease_declaration',
+  'house_lease_declaration',
   'lease_change_declaration',
   'renewal_confirmation',
   'guarantee_non_enrollment_agreement',

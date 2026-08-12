@@ -30,7 +30,7 @@ export type ContractTemplateBodySeed = {
  * 서식별 필드그룹 스키마 (documentEngine.fieldGroups).
  * 레거시 MySpider InputForm/WebForm의 입력 필드를 데이터 스키마로 이식한 것.
  * - amount 타입 필드는 **만원 단위 정수(Int)** 관례를 따른다 (레거시는 원 단위였음 — 이관 시 ÷10,000).
- * - appliesTo: 해당 거래유형(sale/jeonse/monthly/exchange/sublease/transfer/succession)에서만 표시.
+ * - appliesTo: 해당 거래유형(sale/jeonse/monthly/yearly/exchange/sublease/transfer/succession)에서만 표시.
  */
 export type ContractTemplateFieldType =
   | 'text'
@@ -73,9 +73,22 @@ export type ContractTemplateDefinitionSeed = {
   metadata: Record<string, unknown>;
 };
 
+export type ContractTemplateParityPatch = {
+  code: string;
+  title?: string;
+  category?: string;
+  transactionTypes?: string[];
+  isRequired?: boolean;
+  isActive?: boolean;
+  sortOrder?: number;
+  metadata?: Record<string, unknown>;
+};
+
 type ContractTemplatePrisma = {
   contractDocumentTemplate: {
-    findMany(args: unknown): Promise<Array<{ id: string; code: string; metadata: unknown }>>;
+    findMany(
+      args: unknown,
+    ): Promise<Array<{ id: string; code: string; metadata: unknown }>>;
     update(args: unknown): Promise<unknown>;
     create(args: unknown): Promise<unknown>;
   };
@@ -135,157 +148,181 @@ export const MYSPIDER_REFERENCED_TEMPLATE_CODES = CONTRACT_DOCUMENT_KINDS;
  * 구서식 3종(33 주택취득자금조달계획서(구), 39 임대차계약신고서(구), 40 임대차계약변경신고서(구))은
  * documents-form-catalog.md §5에 따라 마이그레이션에서 제외한다.
  */
-export const CONTRACT_TEMPLATE_DEFINITION_SEEDS: ContractTemplateDefinitionSeed[] = [
-  {
-    code: 'exchange_contract',
-    title: '부동산 교환계약서',
-    category: 'contract',
-    transactionTypes: ['exchange'],
-    isRequired: false,
-    sortOrder: 21,
-    metadata: {
-      mySpiderService: ['DMSV003I01', 'DMSV003Q01'],
-      mySpiderCntrClsf: ['03'],
-      mySpiderTranClsf: ['04'],
-      mySpiderForm: ['ChangeContractInputForm', 'ChangeWebForm'],
-      mySpiderReport: ['RealStateExchangeContractReport'],
-      mySpiderTableName: ['TPCT01M'],
-      partyLabels: { partyOne: '갑', partyTwo: '을' },
+export const CONTRACT_TEMPLATE_DEFINITION_SEEDS: ContractTemplateDefinitionSeed[] =
+  [
+    {
+      code: 'exchange_contract',
+      title: '부동산 교환계약서',
+      category: 'contract',
+      transactionTypes: ['exchange'],
+      isRequired: false,
+      sortOrder: 21,
+      metadata: {
+        mySpiderService: ['DMSV003I01', 'DMSV003Q01'],
+        mySpiderCntrClsf: ['03'],
+        mySpiderTranClsf: ['04'],
+        mySpiderForm: ['ChangeContractInputForm', 'ChangeWebForm'],
+        mySpiderReport: ['RealStateExchangeContractReport'],
+        mySpiderTableName: ['TPCT01M'],
+        partyLabels: { partyOne: '갑', partyTwo: '을' },
+      },
     },
-  },
-  {
-    code: 'private_rental_standard_lease_contract',
-    title: '표준임대차계약서 (민간임대주택)',
-    category: 'contract',
-    transactionTypes: ['jeonse', 'monthly'],
-    isRequired: false,
-    sortOrder: 22,
-    metadata: {
-      mySpiderService: ['DMSV003I01', 'DMSV003Q01'],
-      mySpiderCntrClsf: ['13'],
-      mySpiderForm: ['StandardLeaseContractInputForm', 'StandardLeaseWebForm'],
-      mySpiderReport: ['StandardLeaseContractReport'],
-      mySpiderTableName: ['TPCT18S'],
-      // §5.3-1 명칭 충돌 해결: standard_lease_contract는 법무부 주택임대차표준계약서(레거시 14),
-      // 이 코드는 민간임대주택특별법 표준임대차계약서(레거시 13, 임대사업자 의무 서식).
-      relatedTemplateCodes: [
-        'guarantee_non_enrollment_agreement',
-        'guarantee_partial_enrollment_agreement',
-        'jeonse_registration_not_requested',
-      ],
+    {
+      code: 'private_rental_standard_lease_contract',
+      title: '표준임대차계약서 (민간임대주택)',
+      category: 'contract',
+      transactionTypes: ['jeonse', 'monthly'],
+      isRequired: false,
+      sortOrder: 22,
+      metadata: {
+        mySpiderService: ['DMSV003I01', 'DMSV003Q01'],
+        mySpiderCntrClsf: ['13'],
+        mySpiderForm: [
+          'StandardLeaseContractInputForm',
+          'StandardLeaseWebForm',
+        ],
+        mySpiderReport: ['StandardLeaseContractReport'],
+        mySpiderTableName: ['TPCT18S'],
+        // §5.3-1 명칭 충돌 해결: standard_lease_contract는 법무부 주택임대차표준계약서(레거시 14),
+        // 이 코드는 민간임대주택특별법 표준임대차계약서(레거시 13, 임대사업자 의무 서식).
+        relatedTemplateCodes: [
+          'guarantee_non_enrollment_agreement',
+          'guarantee_partial_enrollment_agreement',
+          'jeonse_registration_not_requested',
+        ],
+      },
     },
-  },
-  {
-    code: 'trade_agreement',
-    title: '부동산 매매약정서',
-    category: 'contract',
-    transactionTypes: ['sale'],
-    isRequired: false,
-    sortOrder: 23,
-    metadata: {
-      mySpiderService: ['DMSV003I01', 'DMSV003Q01'],
-      mySpiderCntrClsf: ['37'],
-      mySpiderForm: ['RealStateTradeAgreementInputForm', 'TradeAgreeWebForm'],
-      mySpiderReport: ['RealStateTradeAgreementReport'],
-      partyLabels: { partyOne: '매도약정인', partyTwo: '매수약정인' },
-      legacyCategory: '약정서',
-      usage: '토지거래허가구역 허가 전 약정',
+    {
+      code: 'trade_agreement',
+      title: '부동산 매매약정서',
+      category: 'contract',
+      transactionTypes: ['sale'],
+      isRequired: false,
+      sortOrder: 23,
+      metadata: {
+        mySpiderService: ['DMSV003I01', 'DMSV003Q01'],
+        mySpiderCntrClsf: ['37'],
+        mySpiderForm: ['RealStateTradeAgreementInputForm', 'TradeAgreeWebForm'],
+        mySpiderReport: ['RealStateTradeAgreementReport'],
+        partyLabels: { partyOne: '매도약정인', partyTwo: '매수약정인' },
+        legacyCategory: '약정서',
+        usage: '토지거래허가구역 허가 전 약정',
+      },
     },
-  },
-  {
-    code: 'exclusive_brokerage_contract',
-    title: '전속중개계약서',
-    category: 'brokerage',
-    transactionTypes: [],
-    isRequired: false,
-    sortOrder: 25,
-    metadata: {
-      mySpiderService: ['DMSV003I01', 'DMSV003Q01'],
-      mySpiderCntrClsf: ['42'],
-      mySpiderForm: ['TransferMediationContractInputForm', 'ExclusiveWebForm'],
-      mySpiderReport: ['TransferMediationContractReport'],
-      legalForm: '공인중개사법 시행규칙 별지 제15호 서식',
-      legacyCategory: '중개계약서',
+    {
+      code: 'exclusive_brokerage_contract',
+      title: '전속중개계약서',
+      category: 'brokerage',
+      transactionTypes: [],
+      isRequired: false,
+      sortOrder: 25,
+      metadata: {
+        mySpiderService: ['DMSV003I01', 'DMSV003Q01'],
+        mySpiderCntrClsf: ['42'],
+        mySpiderForm: [
+          'TransferMediationContractInputForm',
+          'ExclusiveWebForm',
+        ],
+        mySpiderReport: ['TransferMediationContractReport'],
+        legalForm: '공인중개사법 시행규칙 별지 제15호 서식',
+        legacyCategory: '중개계약서',
+      },
     },
-  },
-  {
-    code: 'transaction_power_of_attorney',
-    title: '부동산 거래위임장',
-    category: 'power_of_attorney',
-    transactionTypes: [],
-    isRequired: false,
-    sortOrder: 55,
-    metadata: {
-      mySpiderService: ['DMSV003I01', 'DMSV003Q01'],
-      mySpiderCntrClsf: ['31'],
-      mySpiderForm: ['RealStateTradeProxyInputForm', 'DelegateWebForm'],
-      mySpiderReport: ['RealStateTradeProxyReport'],
-      // 레거시 Cntr_Clsf_Orde: 위임장은 계약당 N매 발행 가능
-      repeatablePerContract: true,
-      legacyCategory: '위임장',
+    {
+      code: 'transaction_power_of_attorney',
+      title: '부동산 거래위임장',
+      category: 'power_of_attorney',
+      transactionTypes: [],
+      isRequired: false,
+      sortOrder: 55,
+      metadata: {
+        mySpiderService: ['DMSV003I01', 'DMSV003Q01'],
+        mySpiderCntrClsf: ['31'],
+        mySpiderForm: ['RealStateTradeProxyInputForm', 'DelegateWebForm'],
+        mySpiderReport: ['RealStateTradeProxyReport'],
+        // 레거시 Cntr_Clsf_Orde: 위임장은 계약당 N매 발행 가능
+        repeatablePerContract: true,
+        legacyCategory: '위임장',
+      },
     },
-  },
-  {
-    code: 'house_funds_and_occupancy_plan',
-    title: '주택취득자금 조달 및 입주계획서',
-    category: 'report',
-    transactionTypes: ['sale'],
-    isRequired: false,
-    sortOrder: 65,
-    metadata: {
-      mySpiderService: ['DMSV003I01', 'DMSV003Q01'],
-      mySpiderCntrClsf: ['46'],
-      mySpiderForm: ['HousFundsPlanInputForm', 'HousePlanWebForm'],
-      mySpiderReport: ['HouseFundsPlanReport'],
-      // 레거시 런처 규칙: 33(구서식 자금조달계획서)과 동시 등록 금지. 33은 승계하지 않음.
-      mutuallyExclusiveMySpiderCntrClsf: ['33'],
-      usage: '규제지역·6억 초과 주택 매매 거래신고 시 법정 첨부',
+    {
+      code: 'house_funds_and_occupancy_plan',
+      title: '주택취득자금 조달 및 입주계획서',
+      category: 'report',
+      transactionTypes: ['sale'],
+      isRequired: false,
+      sortOrder: 65,
+      metadata: {
+        mySpiderService: ['DMSV003I01', 'DMSV003Q01'],
+        mySpiderCntrClsf: ['46'],
+        mySpiderForm: ['HousFundsPlanInputForm', 'HousePlanWebForm'],
+        mySpiderReport: ['HouseFundsPlanReport'],
+        // 레거시 런처 규칙: 33(구서식 자금조달계획서)과 동시 등록 금지. 33은 승계하지 않음.
+        mutuallyExclusiveMySpiderCntrClsf: ['33'],
+        usage: '규제지역·6억 초과 주택 매매 거래신고 시 법정 첨부',
+      },
     },
-  },
-  {
-    code: 'fact_confirmation',
-    title: '거래사실확인원',
-    category: 'confirmation',
-    transactionTypes: [],
-    isRequired: false,
-    sortOrder: 74,
-    metadata: {
-      mySpiderService: ['DMSV003I01', 'DMSV003Q01'],
-      mySpiderCntrClsf: ['36'],
-      mySpiderForm: ['TradeFactConfirmInputForm', 'TradeFactWebForm'],
-      mySpiderReport: ['TradeFactConfirmReport'],
-      usage: '대출·세무 등 제출용 거래사실 확인 발급',
+    {
+      code: 'fact_confirmation',
+      title: '거래사실확인원',
+      category: 'confirmation',
+      transactionTypes: [],
+      isRequired: false,
+      sortOrder: 74,
+      metadata: {
+        mySpiderService: ['DMSV003I01', 'DMSV003Q01'],
+        mySpiderCntrClsf: ['36'],
+        mySpiderForm: ['TradeFactConfirmInputForm', 'TradeFactWebForm'],
+        mySpiderReport: ['TradeFactConfirmReport'],
+        usage: '대출·세무 등 제출용 거래사실 확인 발급',
+      },
     },
-  },
-  {
-    code: 'balance_settlement_sheet',
-    title: '매매(잔금) 대금 정산서',
-    category: 'settlement',
-    transactionTypes: [],
-    isRequired: false,
-    sortOrder: 91,
-    metadata: {
-      mySpiderForm: ['InvoiceForm'],
-      mySpiderReport: ['BalanceAccountReport'],
-      legacyCategory: '정산서',
-      usage: '당사자 교부용 매매·전세·월세 대금/잔금 정산서 (내부 수수료 정산과 별개)',
+    {
+      code: 'house_lease_declaration',
+      title: '주택임대차계약 신고서',
+      category: 'report',
+      transactionTypes: ['jeonse', 'monthly', 'yearly'],
+      isRequired: false,
+      sortOrder: 66,
+      metadata: {
+        mySpiderService: ['DMSV003I01', 'DMSV003Q01'],
+        mySpiderCntrClsf: ['49'],
+        mySpiderForm: ['HouseLeaseDeclarationInputForm', 'HouseReportWebForm'],
+        mySpiderReport: ['HouseLeaseDeclarationReport'],
+        mySpiderTableName: ['TPCT36S'],
+        usage: '주택 임대차계약 신고용 현행 Web 서식',
+      },
     },
-  },
-  {
-    code: 'management_fee_settlement_sheet',
-    title: '관리비(공과금) 정산서',
-    category: 'settlement',
-    transactionTypes: [],
-    isRequired: false,
-    sortOrder: 92,
-    metadata: {
-      mySpiderForm: ['InvoiceForm'],
-      mySpiderReport: ['ManagementExpReport'],
-      legacyCategory: '정산서',
-      usage: '입주·퇴거일 기준 관리비/공과금 검침 정산',
+    {
+      code: 'balance_settlement_sheet',
+      title: '매매(잔금) 대금 정산서',
+      category: 'settlement',
+      transactionTypes: [],
+      isRequired: false,
+      sortOrder: 91,
+      metadata: {
+        mySpiderForm: ['InvoiceForm'],
+        mySpiderReport: ['BalanceAccountReport'],
+        legacyCategory: '정산서',
+        usage:
+          '당사자 교부용 매매·전세·월세 대금/잔금 정산서 (내부 수수료 정산과 별개)',
+      },
     },
-  },
-];
+    {
+      code: 'management_fee_settlement_sheet',
+      title: '관리비(공과금) 정산서',
+      category: 'settlement',
+      transactionTypes: [],
+      isRequired: false,
+      sortOrder: 92,
+      metadata: {
+        mySpiderForm: ['InvoiceForm'],
+        mySpiderReport: ['ManagementExpReport'],
+        legacyCategory: '정산서',
+        usage: '입주·퇴거일 기준 관리비/공과금 검침 정산',
+      },
+    },
+  ];
 
 export const CONTRACT_TEMPLATE_BODY_SEEDS: ContractTemplateBodySeed[] = [
   seed('base_contract', '부동산 거래계약 일반 조항', [
@@ -304,11 +341,15 @@ export const CONTRACT_TEMPLATE_BODY_SEEDS: ContractTemplateBodySeed[] = [
     '제2조 양수인은 조합 정관, 사업 진행 단계, 승계 요건을 확인한 뒤 잔금 지급 여부를 결정한다.',
     '제3조 조합 승인 또는 관계기관 신고가 필요한 경우 그 기한과 미이행 책임을 특약으로 정한다.',
   ]),
-  seed('commercial_premium_contract', '상가건물 임대차보호법 권리금 회수기회 보호 취지', [
-    '제1조 기존 임차인은 신규 임차인에게 영업시설, 거래처, 신용, 영업상 이익 등 권리금 대상 가치를 이전한다.',
-    '제2조 신규 임차인은 권리금 지급 전 임대차계약 체결 가능성, 임대인의 동의 및 업종 제한을 확인한다.',
-    '제3조 권리금 계약은 임대차계약 성립을 전제로 하며, 불성립 시 반환 범위와 손해배상을 특약으로 정한다.',
-  ]),
+  seed(
+    'commercial_premium_contract',
+    '상가건물 임대차보호법 권리금 회수기회 보호 취지',
+    [
+      '제1조 기존 임차인은 신규 임차인에게 영업시설, 거래처, 신용, 영업상 이익 등 권리금 대상 가치를 이전한다.',
+      '제2조 신규 임차인은 권리금 지급 전 임대차계약 체결 가능성, 임대인의 동의 및 업종 제한을 확인한다.',
+      '제3조 권리금 계약은 임대차계약 성립을 전제로 하며, 불성립 시 반환 범위와 손해배상을 특약으로 정한다.',
+    ],
+  ),
   seed('right_transfer_contract', '권리 양도 계약 실무 확인 항목', [
     '제1조 양도인은 대상 권리의 존재, 제한, 담보 제공 여부를 양수인에게 고지한다.',
     '제2조 양수인은 잔금 지급 전 권리 이전에 필요한 동의, 신고, 승계 절차를 확인한다.',
@@ -319,19 +360,29 @@ export const CONTRACT_TEMPLATE_BODY_SEEDS: ContractTemplateBodySeed[] = [
     '제2조 양도인은 상대방 또는 관리 주체의 승낙이 필요한 사항을 잔금 전까지 협조한다.',
     '제3조 승계일 이후 발생하는 비용과 책임은 승계인이 부담하되, 이전 기간의 책임은 별도 정산한다.',
   ]),
-  seed('standard_lease_contract', '법무부 주택임대차표준계약서', [
-    '제1조 임대인은 목적 주택을 임차인에게 사용ㆍ수익하게 하고 임차인은 보증금과 차임을 지급한다.',
-    '제2조 임대차 기간, 보증금, 차임, 관리비 및 지급 방법은 계약서 표시 내용에 따른다.',
-    '제3조 임대인은 계약 체결 후 입주 전 권리관계 변동이 있을 경우 임차인에게 알려야 한다.',
-    '제4조 임차인은 대항력, 우선변제권, 확정일자, 전입신고 등 보증금 보호 절차를 확인한다.',
-    '제5조 수선, 원상회복, 계약갱신, 해지 및 보증금 반환은 주택임대차보호법과 특약에 따른다.',
-  ], 'https://moj.go.kr/moj/314/subview.do'),
-  seed('commercial_standard_lease_contract', '상가건물 임대차보호법 표준계약 취지', [
-    '제1조 임대인은 상가건물을 영업 목적으로 사용하게 하고 임차인은 보증금과 차임을 지급한다.',
-    '제2조 업종, 사용 범위, 관리비, 부가세, 원상회복 및 시설물 귀속 여부를 계약서에 명확히 적는다.',
-    '제3조 임차인은 사업자등록, 확정일자, 권리금 회수기회 보호 및 갱신요구권 관련 사항을 확인한다.',
-    '제4조 임대차 종료 시 보증금 반환, 명도, 시설물 정산 및 권리금 관련 분쟁 처리는 특약에 따른다.',
-  ], 'https://www.moj.go.kr'),
+  seed(
+    'standard_lease_contract',
+    '법무부 주택임대차표준계약서',
+    [
+      '제1조 임대인은 목적 주택을 임차인에게 사용ㆍ수익하게 하고 임차인은 보증금과 차임을 지급한다.',
+      '제2조 임대차 기간, 보증금, 차임, 관리비 및 지급 방법은 계약서 표시 내용에 따른다.',
+      '제3조 임대인은 계약 체결 후 입주 전 권리관계 변동이 있을 경우 임차인에게 알려야 한다.',
+      '제4조 임차인은 대항력, 우선변제권, 확정일자, 전입신고 등 보증금 보호 절차를 확인한다.',
+      '제5조 수선, 원상회복, 계약갱신, 해지 및 보증금 반환은 주택임대차보호법과 특약에 따른다.',
+    ],
+    'https://moj.go.kr/moj/314/subview.do',
+  ),
+  seed(
+    'commercial_standard_lease_contract',
+    '상가건물 임대차보호법 표준계약 취지',
+    [
+      '제1조 임대인은 상가건물을 영업 목적으로 사용하게 하고 임차인은 보증금과 차임을 지급한다.',
+      '제2조 업종, 사용 범위, 관리비, 부가세, 원상회복 및 시설물 귀속 여부를 계약서에 명확히 적는다.',
+      '제3조 임차인은 사업자등록, 확정일자, 권리금 회수기회 보호 및 갱신요구권 관련 사항을 확인한다.',
+      '제4조 임대차 종료 시 보증금 반환, 명도, 시설물 정산 및 권리금 관련 분쟁 처리는 특약에 따른다.',
+    ],
+    'https://www.moj.go.kr',
+  ),
   seed('house_lease_contract', '주택임대차보호법 및 주택 임대차 일반 조항', [
     '제1조 임대인은 주택을 임차인에게 인도하고 임차인은 약정 보증금과 차임을 지급한다.',
     '제2조 임차인은 입주 전 등기사항, 선순위 보증금, 조세 체납 가능성 및 관리비 내역을 확인한다.',
@@ -350,27 +401,52 @@ export const CONTRACT_TEMPLATE_BODY_SEEDS: ContractTemplateBodySeed[] = [
     '당사자의 성명, 생년월일, 주소, 연락처와 신분증 표시 내용의 일치 여부를 확인한다.',
     '대리인이 있는 경우 위임장, 인감증명서 또는 본인확인 자료를 함께 확인한다.',
   ]),
-  seed('broker_explanation', '공인중개사법 시행규칙 중개대상물 확인ㆍ설명서', [
-    '개업공인중개사는 중개대상물의 권리관계, 공법상 제한, 시설 상태, 거래 조건을 성실하고 정확하게 설명한다.',
-    '설명의 근거가 되는 등기사항증명서, 건축물대장, 토지대장, 토지이용계획확인서 등 자료를 확인한다.',
-    '거래당사자는 설명을 듣고 확인ㆍ설명서와 손해배상책임 보장 증명서류를 수령한다.',
-  ], 'https://www.law.go.kr'),
-  seed('broker_explanation_residential', '공인중개사법 시행규칙 별지 제20호서식 계열', [
-    '주거용 건축물의 소재지, 면적, 권리관계, 비선호시설, 관리비, 입지조건 및 내부ㆍ외부 시설 상태를 확인한다.',
-    '임대차인 경우 선순위 권리, 보증금 보호, 전입신고와 확정일자 관련 사항을 설명한다.',
-  ], 'https://www.law.go.kr'),
-  seed('broker_explanation_non_residential', '공인중개사법 시행규칙 별지 제20호의2서식 계열', [
-    '비주거용 건축물의 용도, 권리관계, 공법상 제한, 관리비, 시설 상태, 업종 제한 및 인도 조건을 확인한다.',
-    '영업용 건물은 부가세, 권리금, 원상회복, 인허가 가능성을 별도 확인 항목으로 관리한다.',
-  ], 'https://www.law.go.kr'),
-  seed('broker_explanation_land', '공인중개사법 시행규칙 별지 제20호의3서식 계열', [
-    '토지의 지목, 면적, 경계, 도로, 토지이용계획, 공법상 제한, 거래허가 대상 여부를 확인한다.',
-    '건축 가능성, 농지ㆍ산지 전용, 개발행위허가 등은 관계기관 자료를 기준으로 설명한다.',
-  ], 'https://www.law.go.kr'),
-  seed('broker_explanation_special', '공인중개사법 시행규칙 확인ㆍ설명 특수 항목', [
-    '입목, 광업재단, 공장재단 등 특수 물건은 목적물의 표시, 권리관계, 이용 제한 및 이전 절차를 별도 확인한다.',
-    '일반 부동산 서식으로 설명하기 어려운 항목은 첨부 자료와 특약에 근거를 남긴다.',
-  ], 'https://www.law.go.kr'),
+  seed(
+    'broker_explanation',
+    '공인중개사법 시행규칙 중개대상물 확인ㆍ설명서',
+    [
+      '개업공인중개사는 중개대상물의 권리관계, 공법상 제한, 시설 상태, 거래 조건을 성실하고 정확하게 설명한다.',
+      '설명의 근거가 되는 등기사항증명서, 건축물대장, 토지대장, 토지이용계획확인서 등 자료를 확인한다.',
+      '거래당사자는 설명을 듣고 확인ㆍ설명서와 손해배상책임 보장 증명서류를 수령한다.',
+    ],
+    'https://www.law.go.kr',
+  ),
+  seed(
+    'broker_explanation_residential',
+    '공인중개사법 시행규칙 별지 제20호서식 계열',
+    [
+      '주거용 건축물의 소재지, 면적, 권리관계, 비선호시설, 관리비, 입지조건 및 내부ㆍ외부 시설 상태를 확인한다.',
+      '임대차인 경우 선순위 권리, 보증금 보호, 전입신고와 확정일자 관련 사항을 설명한다.',
+    ],
+    'https://www.law.go.kr',
+  ),
+  seed(
+    'broker_explanation_non_residential',
+    '공인중개사법 시행규칙 별지 제20호의2서식 계열',
+    [
+      '비주거용 건축물의 용도, 권리관계, 공법상 제한, 관리비, 시설 상태, 업종 제한 및 인도 조건을 확인한다.',
+      '영업용 건물은 부가세, 권리금, 원상회복, 인허가 가능성을 별도 확인 항목으로 관리한다.',
+    ],
+    'https://www.law.go.kr',
+  ),
+  seed(
+    'broker_explanation_land',
+    '공인중개사법 시행규칙 별지 제20호의3서식 계열',
+    [
+      '토지의 지목, 면적, 경계, 도로, 토지이용계획, 공법상 제한, 거래허가 대상 여부를 확인한다.',
+      '건축 가능성, 농지ㆍ산지 전용, 개발행위허가 등은 관계기관 자료를 기준으로 설명한다.',
+    ],
+    'https://www.law.go.kr',
+  ),
+  seed(
+    'broker_explanation_special',
+    '공인중개사법 시행규칙 확인ㆍ설명 특수 항목',
+    [
+      '입목, 광업재단, 공장재단 등 특수 물건은 목적물의 표시, 권리관계, 이용 제한 및 이전 절차를 별도 확인한다.',
+      '일반 부동산 서식으로 설명하기 어려운 항목은 첨부 자료와 특약에 근거를 남긴다.',
+    ],
+    'https://www.law.go.kr',
+  ),
   seed('registry_document', '등기사항 및 권리관계 확인 체크리스트', [
     '등기사항증명서, 건축물대장, 토지대장 등 공적장부를 계약 직전 기준으로 확인한다.',
     '소유자, 근저당권, 가압류, 가처분, 전세권, 임차권등기 등 권리 제한 사항을 당사자에게 설명한다.',
@@ -379,10 +455,14 @@ export const CONTRACT_TEMPLATE_BODY_SEEDS: ContractTemplateBodySeed[] = [
     '매매계약 체결 후 신고 대상, 신고 기한, 실제 거래가격, 계약 조건 및 당사자 정보를 확인한다.',
     '공동중개 또는 대리 신고가 있는 경우 신고 주체와 제출 자료를 명확히 한다.',
   ]),
-  seed('real_estate_transaction_cancel_report', '부동산 거래계약 해제등 신고 확인 항목', [
-    '계약 해제, 무효, 취소가 발생한 경우 해제 사유, 해제일, 당사자 확인 및 신고 기한을 확인한다.',
-    '이미 신고된 거래의 정정 또는 해제 신고에 필요한 증빙 자료를 첨부한다.',
-  ]),
+  seed(
+    'real_estate_transaction_cancel_report',
+    '부동산 거래계약 해제등 신고 확인 항목',
+    [
+      '계약 해제, 무효, 취소가 발생한 경우 해제 사유, 해제일, 당사자 확인 및 신고 기한을 확인한다.',
+      '이미 신고된 거래의 정정 또는 해제 신고에 필요한 증빙 자료를 첨부한다.',
+    ],
+  ),
   seed('house_transaction_report', '주택 거래계약 신고 확인 항목', [
     '주택 매매의 실제 거래가격, 자금조달 관련 확인사항, 계약 조건 및 신고 자료를 확인한다.',
     '신고 내용과 계약서 금액, 지급 일정, 당사자 정보가 일치하는지 대조한다.',
@@ -390,6 +470,11 @@ export const CONTRACT_TEMPLATE_BODY_SEEDS: ContractTemplateBodySeed[] = [
   seed('lease_declaration', '주택 임대차계약 신고 제도 확인 항목', [
     '임대차계약의 보증금, 차임, 계약기간, 계약일, 임대인ㆍ임차인 정보를 신고 기준에 맞게 확인한다.',
     '신고 대상 지역과 금액 기준, 신고 기한, 변경ㆍ해제 신고 필요 여부를 확인한다.',
+  ]),
+  seed('house_lease_declaration', '주택 임대차계약 신고 제도 확인 항목', [
+    '임대차 목적물, 보증금, 차임, 계약기간, 계약일과 임대인ㆍ임차인 정보를 신고서에 기재한다.',
+    '신규·갱신 계약 여부, 계약갱신요구권 행사 여부와 종전 임대차 금액을 함께 확인한다.',
+    '신고 내용은 계약서와 대조하고 공동신고 또는 단독신고 사유를 표시한다.',
   ]),
   seed('lease_change_declaration', '임대차계약 변경신고 확인 항목', [
     '보증금, 차임, 계약기간, 당사자 등 신고된 임대차계약 내용이 변경된 경우 변경 전후 내용을 확인한다.',
@@ -399,14 +484,22 @@ export const CONTRACT_TEMPLATE_BODY_SEEDS: ContractTemplateBodySeed[] = [
     '임차인의 계약갱신요구권 행사 여부, 행사일, 거절 사유, 갱신 조건 변경 여부를 확인한다.',
     '당사자 확인 문구와 서명란을 통해 향후 분쟁 시 확인 자료로 보관한다.',
   ]),
-  seed('guarantee_non_enrollment_agreement', '민간임대주택 보증 관련 확인 항목', [
-    '임대보증금 보증 가입 대상 여부, 미가입 사유, 임차인의 설명 청취 및 동의 여부를 확인한다.',
-    '보증 미가입에 따른 위험과 대체 보증 수단은 계약 전 별도로 고지한다.',
-  ]),
-  seed('guarantee_partial_enrollment_agreement', '민간임대주택 일부 보증 확인 항목', [
-    '보증 가입 금액, 미보증 금액, 보증 기간, 보증기관 및 임차인 동의 여부를 확인한다.',
-    '일부 가입으로 보호되지 않는 범위는 임차인이 이해할 수 있도록 별도 표시한다.',
-  ]),
+  seed(
+    'guarantee_non_enrollment_agreement',
+    '민간임대주택 보증 관련 확인 항목',
+    [
+      '임대보증금 보증 가입 대상 여부, 미가입 사유, 임차인의 설명 청취 및 동의 여부를 확인한다.',
+      '보증 미가입에 따른 위험과 대체 보증 수단은 계약 전 별도로 고지한다.',
+    ],
+  ),
+  seed(
+    'guarantee_partial_enrollment_agreement',
+    '민간임대주택 일부 보증 확인 항목',
+    [
+      '보증 가입 금액, 미보증 금액, 보증 기간, 보증기관 및 임차인 동의 여부를 확인한다.',
+      '일부 가입으로 보호되지 않는 범위는 임차인이 이해할 수 있도록 별도 표시한다.',
+    ],
+  ),
   seed('jeonse_registration_not_requested', '전세권설정 미요청 확인 항목', [
     '임차인이 전세권설정 등기를 요청하지 않는 경우 그 사실과 대체 보호 절차를 확인한다.',
     '전입신고, 확정일자, 점유 유지 등 보증금 보호 절차를 안내한다.',
@@ -431,56 +524,87 @@ export const CONTRACT_TEMPLATE_BODY_SEEDS: ContractTemplateBodySeed[] = [
     '제4조 각 목적물에 설정된 제한물권, 임대차, 조세ㆍ공과금은 인도일을 기준으로 각 소유자가 정산ㆍ처리한다.',
     '제5조 계약 해제, 위약금, 하자 담보책임 및 그 밖의 사항은 본 계약서의 특약과 관계 법령에 따른다.',
   ]),
-  seed('private_rental_standard_lease_contract', '민간임대주택에 관한 특별법 표준임대차계약서 취지 (레거시 13 대응)', [
-    '제1조 임대사업자는 등록된 민간임대주택을 임차인에게 임대하고, 임차인은 임대보증금과 월임대료를 지급한다.',
-    '제2조 임대의무기간, 임대료 증액 제한(연 5% 범위), 임대차계약 신고 의무는 민간임대주택에 관한 특별법에 따른다.',
-    '제3조 임대사업자는 임대보증금 보증 가입 의무와 보증대상 금액을 임차인에게 설명하고 증빙 서류를 제시한다.',
-    '제4조 임대주택의 표시, 임대조건, 관리비, 수선 의무 및 원상회복 범위는 표준임대차계약서 서식 기재 내용에 따른다.',
-    '제5조 임대보증 미가입ㆍ일부가입 동의서, 전세권설정 미요청 확인서, 개인정보 제3자 제공 동의는 별지 서식으로 첨부한다.',
-  ], 'https://www.law.go.kr'),
-  seed('trade_agreement', '토지거래허가 전 매매약정 실무 확인 항목 (레거시 37 대응)', [
-    '제1조 매도약정인과 매수약정인은 관할관청의 토지거래계약 허가를 받을 것을 조건으로 표시 부동산의 매매계약 체결을 약정한다.',
-    '제2조 매수약정인은 약정금을 지급하고, 허가가 있은 날부터 약정한 기한 내에 쌍방은 본 매매계약을 체결한다.',
-    '제3조 허가 신청이 불허되거나 허가구역 지정 사유로 계약 체결이 불가능하게 된 경우 약정은 효력을 잃고, 수령한 약정금은 지체 없이 반환한다.',
-    '제4조 쌍방은 허가 신청에 필요한 서류 제출 등 협력 의무를 부담하며, 협력 의무 위반 시 위약 책임은 특약에 따른다.',
-  ]),
-  seed('exclusive_brokerage_contract', '공인중개사법 별지 제15호 전속중개계약 취지 (레거시 42 대응)', [
-    '제1조 중개의뢰인은 표시된 중개대상물의 중개를 개업공인중개사에게 전속하여 의뢰한다.',
-    '제2조 전속중개계약의 유효기간은 3개월을 원칙으로 하되, 당사자 합의로 달리 정할 수 있다.',
-    '제3조 유효기간 내에 의뢰인이 다른 개업공인중개사에게 의뢰하거나 스스로 거래한 경우의 위약금(중개보수 상당액 등)은 서식 기재 내용에 따른다.',
-    '제4조 개업공인중개사는 2주에 1회 이상 업무처리상황을 의뢰인에게 통지하고, 의뢰인이 비공개를 요청하지 않은 경우 중개대상물 정보를 공개한다.',
-    '제5조 중개보수의 요율 또는 금액과 지급 시기는 서식에 기재하고, 관계 법령의 한도를 초과할 수 없다.',
-  ], 'https://www.law.go.kr'),
-  seed('transaction_power_of_attorney', '부동산 거래위임장 확인 항목 (레거시 31 대응)', [
-    '위임인은 표시 부동산의 거래(매매ㆍ임대차 등 해당 거래)에 관한 아래 권한을 수임인에게 위임한다.',
-    '위임 범위: 계약의 체결, 계약금ㆍ중도금ㆍ잔금의 수령 또는 지급, 관련 서류의 작성ㆍ제출, 그 밖에 위임장에 기재한 사항.',
-    '수임인의 인적사항을 확인하고, 위임인의 인감증명서(또는 본인서명사실확인서) 첨부 여부를 확인한다.',
-    '위임 기간과 위임의 철회 방법을 기재하며, 위임 범위를 벗어난 행위는 위임인에게 효력이 없다.',
-  ]),
-  seed('house_funds_and_occupancy_plan', '부동산 거래신고 등에 관한 법령 자금조달ㆍ입주계획 항목 (레거시 46 대응)', [
-    '1. 자금조달계획(자기자금): 금융기관 예금액, 주식ㆍ채권 매각대금, 증여ㆍ상속, 현금 등 그 밖의 자금, 부동산 처분대금을 구분하여 기재한다.',
-    '2. 자금조달계획(차입금 등): 금융기관 대출액(주택담보ㆍ신용ㆍ그 밖의 대출), 임대보증금, 회사지원금ㆍ사채, 그 밖의 차입금을 구분하여 기재한다.',
-    '3. 조달자금 지급방식: 계좌이체 금액, 보증금ㆍ대출 승계 금액, 현금 및 그 밖의 지급방식 금액을 구분하여 기재한다.',
-    '4. 입주계획: 본인입주, 본인 외 가족입주(입주 예정 시기), 임대, 그 밖의 경우 중 해당 사항을 선택하여 기재한다.',
-    '※ 구서식 주택취득자금조달계획서와 동시 작성할 수 없다.',
-  ], 'https://www.law.go.kr'),
+  seed(
+    'private_rental_standard_lease_contract',
+    '민간임대주택에 관한 특별법 표준임대차계약서 취지 (레거시 13 대응)',
+    [
+      '제1조 임대사업자는 등록된 민간임대주택을 임차인에게 임대하고, 임차인은 임대보증금과 월임대료를 지급한다.',
+      '제2조 임대의무기간, 임대료 증액 제한(연 5% 범위), 임대차계약 신고 의무는 민간임대주택에 관한 특별법에 따른다.',
+      '제3조 임대사업자는 임대보증금 보증 가입 의무와 보증대상 금액을 임차인에게 설명하고 증빙 서류를 제시한다.',
+      '제4조 임대주택의 표시, 임대조건, 관리비, 수선 의무 및 원상회복 범위는 표준임대차계약서 서식 기재 내용에 따른다.',
+      '제5조 임대보증 미가입ㆍ일부가입 동의서, 전세권설정 미요청 확인서, 개인정보 제3자 제공 동의는 별지 서식으로 첨부한다.',
+    ],
+    'https://www.law.go.kr',
+  ),
+  seed(
+    'trade_agreement',
+    '토지거래허가 전 매매약정 실무 확인 항목 (레거시 37 대응)',
+    [
+      '제1조 매도약정인과 매수약정인은 관할관청의 토지거래계약 허가를 받을 것을 조건으로 표시 부동산의 매매계약 체결을 약정한다.',
+      '제2조 매수약정인은 약정금을 지급하고, 허가가 있은 날부터 약정한 기한 내에 쌍방은 본 매매계약을 체결한다.',
+      '제3조 허가 신청이 불허되거나 허가구역 지정 사유로 계약 체결이 불가능하게 된 경우 약정은 효력을 잃고, 수령한 약정금은 지체 없이 반환한다.',
+      '제4조 쌍방은 허가 신청에 필요한 서류 제출 등 협력 의무를 부담하며, 협력 의무 위반 시 위약 책임은 특약에 따른다.',
+    ],
+  ),
+  seed(
+    'exclusive_brokerage_contract',
+    '공인중개사법 별지 제15호 전속중개계약 취지 (레거시 42 대응)',
+    [
+      '제1조 중개의뢰인은 표시된 중개대상물의 중개를 개업공인중개사에게 전속하여 의뢰한다.',
+      '제2조 전속중개계약의 유효기간은 3개월을 원칙으로 하되, 당사자 합의로 달리 정할 수 있다.',
+      '제3조 유효기간 내에 의뢰인이 다른 개업공인중개사에게 의뢰하거나 스스로 거래한 경우의 위약금(중개보수 상당액 등)은 서식 기재 내용에 따른다.',
+      '제4조 개업공인중개사는 2주에 1회 이상 업무처리상황을 의뢰인에게 통지하고, 의뢰인이 비공개를 요청하지 않은 경우 중개대상물 정보를 공개한다.',
+      '제5조 중개보수의 요율 또는 금액과 지급 시기는 서식에 기재하고, 관계 법령의 한도를 초과할 수 없다.',
+    ],
+    'https://www.law.go.kr',
+  ),
+  seed(
+    'transaction_power_of_attorney',
+    '부동산 거래위임장 확인 항목 (레거시 31 대응)',
+    [
+      '위임인은 표시 부동산의 거래(매매ㆍ임대차 등 해당 거래)에 관한 아래 권한을 수임인에게 위임한다.',
+      '위임 범위: 계약의 체결, 계약금ㆍ중도금ㆍ잔금의 수령 또는 지급, 관련 서류의 작성ㆍ제출, 그 밖에 위임장에 기재한 사항.',
+      '수임인의 인적사항을 확인하고, 위임인의 인감증명서(또는 본인서명사실확인서) 첨부 여부를 확인한다.',
+      '위임 기간과 위임의 철회 방법을 기재하며, 위임 범위를 벗어난 행위는 위임인에게 효력이 없다.',
+    ],
+  ),
+  seed(
+    'house_funds_and_occupancy_plan',
+    '부동산 거래신고 등에 관한 법령 자금조달ㆍ입주계획 항목 (레거시 46 대응)',
+    [
+      '1. 자금조달계획(자기자금): 금융기관 예금액, 주식ㆍ채권 매각대금, 증여ㆍ상속, 현금 등 그 밖의 자금, 부동산 처분대금을 구분하여 기재한다.',
+      '2. 자금조달계획(차입금 등): 금융기관 대출액(주택담보ㆍ신용ㆍ그 밖의 대출), 임대보증금, 회사지원금ㆍ사채, 그 밖의 차입금을 구분하여 기재한다.',
+      '3. 조달자금 지급방식: 계좌이체 금액, 보증금ㆍ대출 승계 금액, 현금 및 그 밖의 지급방식 금액을 구분하여 기재한다.',
+      '4. 입주계획: 본인입주, 본인 외 가족입주(입주 예정 시기), 임대, 그 밖의 경우 중 해당 사항을 선택하여 기재한다.',
+      '※ 구서식 주택취득자금조달계획서와 동시 작성할 수 없다.',
+    ],
+    'https://www.law.go.kr',
+  ),
   seed('fact_confirmation', '거래사실확인원 표시 항목 (레거시 36 대응)', [
     '확인 대상 거래의 표시: 소재지, 거래구분, 거래금액, 계약일자를 기재한다.',
     '위 부동산 거래가 본 개업공인중개사의 중개로 체결되었음을 확인한다.',
     '발급 용도(대출ㆍ세무 등)와 제출처를 기재하고, 용도 외 사용을 금지한다.',
     '개업공인중개사의 사무소 명칭, 등록번호, 소재지, 대표자 성명을 기재하고 인장을 날인하며, 필요 시 인감증명서를 첨부한다.',
   ]),
-  seed('balance_settlement_sheet', '매매(잔금) 대금 정산서 표시 항목 (레거시 BalanceAccountReport 대응)', [
-    '1. 거래대금: 총 거래금액과 기지급액(계약금ㆍ중도금), 잔금을 구분하여 기재한다.',
-    '2. 정산 항목: 융자금 승계 또는 상환, 임대보증금 승계, 장기수선충당금, 관리비ㆍ공과금 일할 정산, 선수관리비 등 항목별 금액과 가감 방향을 기재한다.',
-    '3. 정산 결과: 가감 합계를 반영한 실지급액과 정산 기준일을 기재하고, 당사자 쌍방이 확인한다.',
-  ]),
-  seed('management_fee_settlement_sheet', '관리비(공과금) 정산서 표시 항목 (레거시 ManagementExpReport 대응)', [
-    '1. 정산 대상: 물건 소재지와 정산기간(부터~까지), 정산 기준일(인도일)을 기재한다.',
-    '2. 검침 내역: 전기(kWh), 도시가스, 상하수도 사용량을 검침값 기준으로 기재한다.',
-    '3. 정산 금액: 관리사무소 확인 정산금, 월 납입액, 미납ㆍ선납 정산액과 부담 주체를 구분하여 기재한다.',
-    '4. 기타사항: 정산에서 제외한 항목과 사후 정산 방법을 기재한다.',
-  ]),
+  seed(
+    'balance_settlement_sheet',
+    '매매(잔금) 대금 정산서 표시 항목 (레거시 BalanceAccountReport 대응)',
+    [
+      '1. 거래대금: 총 거래금액과 기지급액(계약금ㆍ중도금), 잔금을 구분하여 기재한다.',
+      '2. 정산 항목: 융자금 승계 또는 상환, 임대보증금 승계, 장기수선충당금, 관리비ㆍ공과금 일할 정산, 선수관리비 등 항목별 금액과 가감 방향을 기재한다.',
+      '3. 정산 결과: 가감 합계를 반영한 실지급액과 정산 기준일을 기재하고, 당사자 쌍방이 확인한다.',
+    ],
+  ),
+  seed(
+    'management_fee_settlement_sheet',
+    '관리비(공과금) 정산서 표시 항목 (레거시 ManagementExpReport 대응)',
+    [
+      '1. 정산 대상: 물건 소재지와 정산기간(부터~까지), 정산 기준일(인도일)을 기재한다.',
+      '2. 검침 내역: 전기(kWh), 도시가스, 상하수도 사용량을 검침값 기준으로 기재한다.',
+      '3. 정산 금액: 관리사무소 확인 정산금, 월 납입액, 미납ㆍ선납 정산액과 부담 주체를 구분하여 기재한다.',
+      '4. 기타사항: 정산에서 제외한 항목과 사후 정산 방법을 기재한다.',
+    ],
+  ),
 ];
 
 // ─────────────────────────────────────────────────────────────
@@ -528,14 +652,25 @@ function baseLeaseBody(terminationClause: string): string {
   );
 }
 
+const COMMERCIAL_PREMIUM_DEFAULT_BODY = clauses(
+  '제1조 (권리금의 지급) 신규임차인은 임차인에게 계약서에 기재한 권리금을 지급 일정(계약금ㆍ잔금)에 따라 지급한다.',
+  '제2조 (임차인의 의무) 임차인은 신규임차인을 임대인에게 주선하고, 임대차계약이 체결될 수 있도록 협력한다. 임차인은 권리금의 대가로 영업시설ㆍ비품, 거래처, 신용, 영업상의 노하우 및 점포 위치에 따른 이점 등을 계약서에 기재한 바에 따라 신규임차인에게 이전한다.',
+  '제3조 (임대차계약과의 관계) 본 권리금 계약은 임차인과 신규임차인 사이의 임대차계약 체결을 전제로 한다. 임대인의 거절 등으로 임대차계약이 체결되지 아니한 경우 임차인은 이미 수령한 권리금을 신규임차인에게 즉시 반환한다.',
+  '제4조 (계약의 해제 및 손해배상) 신규임차인이 잔금을 지급하기 전까지 임차인은 계약금의 배액을 상환하고, 신규임차인은 계약금을 포기하고 본 계약을 해제할 수 있다. 일방의 채무불이행이 있는 경우 상대방은 서면으로 최고하고 계약을 해제하며 손해배상을 청구할 수 있다.',
+  '제5조 (중개보수) 중개보수는 본 계약 체결과 동시에 당사자 쌍방이 각각 지불하며, 개업공인중개사의 고의나 과실 없이 본 계약이 무효ㆍ취소 또는 해제되어도 중개보수는 지급한다.',
+);
+
 /**
  * template code → (거래유형 → 기본 본문 조항) 맵.
  * `seedContractTemplateBodies()`가 metadata.documentEngine.defaultBody 로 병합하고,
  * 문서 엔진(buildContractDocumentEngineDraft)이 **신규 문서**의 bodyText 기본값으로 주입한다.
  * 저장된 문서(사용자 편집)는 덮어쓰지 않는다.
  */
-export const CONTRACT_TEMPLATE_BODY_CLAUSES: Record<string, ContractTemplateDefaultBodyMap> = {
-  /** 아파트/오피스텔/부동산/상가 계약서 — 매매/전세/월세 (레거시 01~05 × 01/02/03. 연세 08 은 제품 결정으로 미지원 — 월세 환산 이관) */
+export const CONTRACT_TEMPLATE_BODY_CLAUSES: Record<
+  string,
+  ContractTemplateDefaultBodyMap
+> = {
+  /** 아파트/오피스텔/부동산/상가 계약서 — 매매/전세/월세/연세 (레거시 01~05) */
   base_contract: {
     sale: clauses(
       '제3조 (제한물권 등의 소멸) 매도인은 위 부동산에 설정된 저당권, 지상권, 임차권 등 소유권의 행사를 제한하는 사유가 있거나 제세공과금과 그 밖의 부담금의 미납금 등이 있을 때에는 잔금 수수일까지 그 권리의 하자 및 부담 등을 제거하여 완전한 소유권을 매수인에게 이전한다. 다만, 승계하기로 합의하는 권리 및 금액은 그러하지 아니하다.',
@@ -549,6 +684,9 @@ export const CONTRACT_TEMPLATE_BODY_CLAUSES: Record<string, ContractTemplateDefa
     ),
     monthly: baseLeaseBody(
       '제4조 (계약의 해지) 임차인의 차임 연체액이 2기의 차임액에 달하거나 임차인이 제3조를 위반하였을 때 임대인은 즉시 본 계약을 해지할 수 있다.',
+    ),
+    yearly: baseLeaseBody(
+      '제4조 (계약의 해지) 임차인이 약정한 연 차임을 지급기일부터 2개월 이상 지급하지 않거나 임차인이 제3조를 위반하였을 때 임대인은 본 계약을 해지할 수 있다.',
     ),
   },
 
@@ -704,13 +842,8 @@ export const CONTRACT_TEMPLATE_BODY_CLAUSES: Record<string, ContractTemplateDefa
 
   /** 상가건물 임대차 권리금계약서 (국토부 표준권리금계약서 취지, 레거시 11 대응) */
   commercial_premium_contract: {
-    monthly: clauses(
-      '제1조 (권리금의 지급) 신규임차인은 임차인에게 계약서에 기재한 권리금을 지급 일정(계약금ㆍ잔금)에 따라 지급한다.',
-      '제2조 (임차인의 의무) 임차인은 신규임차인을 임대인에게 주선하고, 임대차계약이 체결될 수 있도록 협력한다. 임차인은 권리금의 대가로 영업시설ㆍ비품, 거래처, 신용, 영업상의 노하우 및 점포 위치에 따른 이점 등을 계약서에 기재한 바에 따라 신규임차인에게 이전한다.',
-      '제3조 (임대차계약과의 관계) 본 권리금 계약은 임차인과 신규임차인 사이의 임대차계약 체결을 전제로 한다. 임대인의 거절 등으로 임대차계약이 체결되지 아니한 경우 임차인은 이미 수령한 권리금을 신규임차인에게 즉시 반환한다.',
-      '제4조 (계약의 해제 및 손해배상) 신규임차인이 잔금을 지급하기 전까지 임차인은 계약금의 배액을 상환하고, 신규임차인은 계약금을 포기하고 본 계약을 해제할 수 있다. 일방의 채무불이행이 있는 경우 상대방은 서면으로 최고하고 계약을 해제하며 손해배상을 청구할 수 있다.',
-      '제5조 (중개보수) 중개보수는 본 계약 체결과 동시에 당사자 쌍방이 각각 지불하며, 개업공인중개사의 고의나 과실 없이 본 계약이 무효ㆍ취소 또는 해제되어도 중개보수는 지급한다.',
-    ),
+    jeonse: COMMERCIAL_PREMIUM_DEFAULT_BODY,
+    monthly: COMMERCIAL_PREMIUM_DEFAULT_BODY,
   },
 
   /** 권리 양도 계약서 (레거시 06×양도 대응) */
@@ -783,7 +916,9 @@ function field(
   key: string,
   label: string,
   type: ContractTemplateFieldType,
-  extra: Partial<Pick<ContractTemplateField, 'options' | 'appliesTo' | 'unit'>> = {},
+  extra: Partial<
+    Pick<ContractTemplateField, 'options' | 'appliesTo' | 'unit'>
+  > = {},
 ): ContractTemplateField {
   return { key, label, type, ...extra };
 }
@@ -796,7 +931,10 @@ function amountField(
   return field(key, label, 'amount', { unit: '만원', ...extra });
 }
 
-function partyFields(prefix: string, roleLabel: string): ContractTemplateField[] {
+function partyFields(
+  prefix: string,
+  roleLabel: string,
+): ContractTemplateField[] {
   return [
     field(`${prefix}Name`, `${roleLabel} 성명`, 'text'),
     field(`${prefix}IdNumber`, `${roleLabel} 주민(법인)등록번호`, 'text'),
@@ -805,7 +943,10 @@ function partyFields(prefix: string, roleLabel: string): ContractTemplateField[]
   ];
 }
 
-function partiesGroup(partyOneLabel: string, partyTwoLabel: string): ContractTemplateFieldGroup {
+function partiesGroup(
+  partyOneLabel: string,
+  partyTwoLabel: string,
+): ContractTemplateFieldGroup {
   return {
     key: 'parties',
     title: '당사자',
@@ -835,7 +976,9 @@ function brokerOfficeGroup(): ContractTemplateFieldGroup {
   };
 }
 
-function propertyIndicationGroup(withLease = false): ContractTemplateFieldGroup {
+function propertyIndicationGroup(
+  withLease = false,
+): ContractTemplateFieldGroup {
   return {
     key: 'propertyIndication',
     title: '부동산의 표시',
@@ -850,14 +993,14 @@ function propertyIndicationGroup(withLease = false): ContractTemplateFieldGroup 
       ...(withLease
         ? [
             field('rentedPart', '임대할 부분', 'text', {
-              appliesTo: ['jeonse', 'monthly'],
+              appliesTo: ['jeonse', 'monthly', 'yearly'],
             }),
             field('rentedArea', '임대 면적', 'number', {
               unit: 'm2',
-              appliesTo: ['jeonse', 'monthly'],
+              appliesTo: ['jeonse', 'monthly', 'yearly'],
             }),
             field('rentedUse', '임차 용도 (상가)', 'text', {
-              appliesTo: ['jeonse', 'monthly'],
+              appliesTo: ['jeonse', 'monthly', 'yearly'],
             }),
           ]
         : []),
@@ -871,21 +1014,75 @@ function specialTermsGroup(): ContractTemplateFieldGroup {
     title: '특약사항',
     fields: [
       field('specialTerms', '특약사항', 'textarea'),
-      field('includePrivacyClause', '개인정보 수집ㆍ이용 동의 문구 삽입', 'checkbox'),
+      field(
+        'includePrivacyClause',
+        '개인정보 수집ㆍ이용 동의 문구 삽입',
+        'checkbox',
+      ),
       field('specialTermsAnnex', '특약사항 별지 출력', 'checkbox'),
     ],
   };
 }
 
-/** §4.1 아파트(오피스텔/부동산/상가) 매매·전세·월세 계약서 */
+/** §4.1 아파트(오피스텔/부동산/상가) 매매·전세·월세·연세 계약서 */
 const BASE_CONTRACT_FIELD_GROUPS: ContractTemplateFieldGroup[] = [
+  {
+    key: 'contractClassification',
+    title: '계약 종류',
+    fields: [
+      field('propertyClass', '타입', 'select', {
+        options: [
+          '아파트',
+          '오피스텔',
+          '부동산',
+          '분양권',
+          '상가',
+          '권리',
+          '상가 권리금',
+          '상가 표준',
+          '민간임대 표준',
+          '주택 표준',
+          '조합원 입주권',
+        ],
+      }),
+      field('contractSubject', '목적물 종별', 'select', {
+        options: [
+          '직접입력',
+          '부동산',
+          '건물',
+          '고급주택',
+          '공장',
+          '농가주택',
+          '다가구',
+          '다세대',
+          '단독주택',
+          '독채',
+          '빌딩',
+          '빌라',
+          '사무실',
+          '상가주택',
+          '아파트형공장',
+          '연립',
+          '원룸',
+          '임야',
+          '전원주택',
+          '창고',
+          '토지',
+          '투룸',
+        ],
+      }),
+      field('customContractSubject', '직접입력 종별', 'text'),
+    ],
+  },
   propertyIndicationGroup(true),
   {
     key: 'paymentTerms',
     title: '계약내용 (금액 스케줄)',
     fields: [
       amountField('salePrice', '매매대금', { appliesTo: ['sale'] }),
-      amountField('deposit', '보증금', { appliesTo: ['jeonse', 'monthly'] }),
+      amountField('deposit', '보증금', {
+        appliesTo: ['jeonse', 'monthly', 'yearly'],
+      }),
       amountField('downPayment', '계약금'),
       // 레거시 contractPriceComboBox — text → select (조항 임베디드 에디터 2지 문구 verbatim)
       field('downPaymentPayTime', '계약금 지급 시기', 'select', {
@@ -905,13 +1102,15 @@ const BASE_CONTRACT_FIELD_GROUPS: ContractTemplateFieldGroup[] = [
         options: [...BASE_CONTRACT_LOAN_HANDLING_OPTIONS],
         appliesTo: ['sale'],
       }),
-      amountField('currentTenantDeposit', '현 임차보증금', { appliesTo: ['sale'] }),
+      amountField('currentTenantDeposit', '현 임차보증금', {
+        appliesTo: ['sale'],
+      }),
       // 레거시 rentGrantPriceComboBox 3지 — 축약형 ['승계','반환'] 에서 verbatim 문구로 보강
       field('currentTenantDepositHandling', '현 임차보증금 처리', 'select', {
         options: [...BASE_CONTRACT_TENANT_DEPOSIT_HANDLING_OPTIONS],
         appliesTo: ['sale'],
       }),
-      // 레거시 Mntr — 월세 차임 (연세 08 은 미지원, 월세 환산 이관)
+      // 레거시 Mntr — 월세/연세 차임. Contract.monthlyRent 컬럼을 금액 저장 슬롯으로 공유한다.
       amountField('monthlyRent', '차임 (월세)', { appliesTo: ['monthly'] }),
       field('monthlyRentPayDay', '차임 지급일 (매월 N일)', 'number', {
         appliesTo: ['monthly'],
@@ -920,11 +1119,17 @@ const BASE_CONTRACT_FIELD_GROUPS: ContractTemplateFieldGroup[] = [
         options: ['선불', '후불'],
         appliesTo: ['monthly'],
       }),
+      amountField('annualRent', '연 차임 (연세)', { appliesTo: ['yearly'] }),
+      field('yearlyRentPayDate', '연 차임 지급일', 'date', {
+        appliesTo: ['yearly'],
+      }),
       field('vatMode', '부가세 구분 (상가ㆍ오피스텔)', 'select', {
         options: ['포함', '별도', '포괄양도양수'],
-        appliesTo: ['sale', 'monthly'],
+        appliesTo: ['sale', 'monthly', 'yearly'],
       }),
-      amountField('vatAmount', '부가세 금액', { appliesTo: ['sale', 'monthly'] }),
+      amountField('vatAmount', '부가세 금액', {
+        appliesTo: ['sale', 'monthly', 'yearly'],
+      }),
     ],
   },
   {
@@ -933,14 +1138,14 @@ const BASE_CONTRACT_FIELD_GROUPS: ContractTemplateFieldGroup[] = [
     fields: [
       field('handoverDate', '인도일', 'date'),
       field('leaseStartDate', '임대차 시작일', 'date', {
-        appliesTo: ['jeonse', 'monthly'],
+        appliesTo: ['jeonse', 'monthly', 'yearly'],
       }),
       field('leaseEndDate', '임대차 만기일', 'date', {
-        appliesTo: ['jeonse', 'monthly'],
+        appliesTo: ['jeonse', 'monthly', 'yearly'],
       }),
       field('leaseMonths', '임대차 기간(개월)', 'number', {
         unit: '개월',
-        appliesTo: ['jeonse', 'monthly'],
+        appliesTo: ['jeonse', 'monthly', 'yearly'],
       }),
       field('contractDate', '계약 체결일', 'date'),
       field('issueDate', '계약서 교부일', 'date'),
@@ -966,7 +1171,11 @@ const HOUSE_STANDARD_LEASE_FIELD_GROUPS: ContractTemplateFieldGroup[] = [
     title: '계약의 종류',
     fields: [
       field('leaseContractKind', '계약 종류', 'select', {
-        options: ['신규 계약', '합의에 의한 재계약', '계약갱신요구권 행사에 의한 갱신계약'],
+        options: [
+          '신규 계약',
+          '합의에 의한 재계약',
+          '계약갱신요구권 행사에 의한 갱신계약',
+        ],
       }),
     ],
   },
@@ -975,8 +1184,12 @@ const HOUSE_STANDARD_LEASE_FIELD_GROUPS: ContractTemplateFieldGroup[] = [
     key: 'priorRightsCheck',
     title: '미납 국세ㆍ선순위 확정일자 현황',
     fields: [
-      field('unpaidNationalTax', '미납 국세ㆍ지방세', 'select', { options: ['없음', '해당 있음'] }),
-      field('priorFixedDates', '선순위 확정일자 현황', 'select', { options: ['없음', '해당 있음'] }),
+      field('unpaidNationalTax', '미납 국세ㆍ지방세', 'select', {
+        options: ['없음', '해당 있음'],
+      }),
+      field('priorFixedDates', '선순위 확정일자 현황', 'select', {
+        options: ['없음', '해당 있음'],
+      }),
     ],
   },
   {
@@ -991,9 +1204,13 @@ const HOUSE_STANDARD_LEASE_FIELD_GROUPS: ContractTemplateFieldGroup[] = [
       field('balancePaymentDate', '잔금 지급일', 'date'),
       field('balanceAccount', '잔금 입금계좌', 'text'),
       amountField('monthlyRent', '차임(월세)', { appliesTo: ['monthly'] }),
-      field('monthlyRentPayDay', '차임 지급일 (매월 N일)', 'number', { appliesTo: ['monthly'] }),
+      field('monthlyRentPayDay', '차임 지급일 (매월 N일)', 'number', {
+        appliesTo: ['monthly'],
+      }),
       amountField('managementFee', '관리비'),
-      field('managementFeeType', '관리비 부과 방식', 'select', { options: ['정액', '정액이 아닌 경우'] }),
+      field('managementFeeType', '관리비 부과 방식', 'select', {
+        options: ['정액', '정액이 아닌 경우'],
+      }),
       field('managementFeeVatIncluded', '관리비 부가가치세 포함', 'checkbox'),
     ],
   },
@@ -1001,10 +1218,14 @@ const HOUSE_STANDARD_LEASE_FIELD_GROUPS: ContractTemplateFieldGroup[] = [
     key: 'repairs',
     title: '입주 전 수리',
     fields: [
-      field('repairNeeded', '수리 필요 시설', 'select', { options: ['없음', '있음'] }),
+      field('repairNeeded', '수리 필요 시설', 'select', {
+        options: ['없음', '있음'],
+      }),
       field('repairContent', '수리할 내용', 'textarea'),
       field('repairDeadline', '수리 완료 시기', 'date'),
-      field('repairCostBearer', '수리 비용 부담', 'select', { options: ['임대인 부담', '임차인 부담'] }),
+      field('repairCostBearer', '수리 비용 부담', 'select', {
+        options: ['임대인 부담', '임차인 부담'],
+      }),
     ],
   },
   {
@@ -1057,7 +1278,9 @@ const COMMERCIAL_STANDARD_LEASE_FIELD_GROUPS: ContractTemplateFieldGroup[] = [
       amountField('balancePayment', '잔금'),
       field('balancePaymentDate', '잔금 지급일', 'date'),
       amountField('monthlyRent', '차임(월세)', { appliesTo: ['monthly'] }),
-      field('monthlyRentPayDay', '차임 지급일 (매월 N일)', 'number', { appliesTo: ['monthly'] }),
+      field('monthlyRentPayDay', '차임 지급일 (매월 N일)', 'number', {
+        appliesTo: ['monthly'],
+      }),
       field('monthlyRentVat', '차임 부가세', 'select', {
         options: ['포함', '불포함'],
         appliesTo: ['monthly'],
@@ -1101,458 +1324,550 @@ const COMMERCIAL_STANDARD_LEASE_FIELD_GROUPS: ContractTemplateFieldGroup[] = [
 ];
 
 /** §4.4 중개대상물 확인ㆍ설명서[Ⅰ] 주거용 (2024 개정 서식) */
-const BROKER_EXPLANATION_RESIDENTIAL_FIELD_GROUPS: ContractTemplateFieldGroup[] = [
-  {
-    key: 'header',
-    title: '기본 정보',
-    fields: [
-      field('dealForm', '거래 형태', 'select', { options: ['매매ㆍ교환', '임대'] }),
-      field('housingType', '주택 유형', 'select', {
-        options: ['단독주택', '공동주택', '주거용 오피스텔', '그 밖의 유형'],
-      }),
-      field('evidenceMaterials', '확인ㆍ설명 근거자료', 'textarea'),
-      field('dataRequestNote', '대상물건 상태에 관한 자료요구사항', 'textarea'),
-    ],
-  },
-  {
-    key: 'objectIndication',
-    title: 'Ⅰ-① 대상물건의 표시',
-    fields: [
-      field('landAddress', '토지 소재지', 'text'),
-      field('landArea', '토지 면적', 'number', { unit: 'm2' }),
-      field('landCategoryOfficial', '공부상 지목', 'text'),
-      field('landCategoryActual', '실제 이용 상태', 'text'),
-      field('exclusiveArea', '건축물 전용면적', 'number', { unit: 'm2' }),
-      field('landShare', '대지지분', 'number', { unit: 'm2' }),
-      field('builtYear', '준공년도(증개축년도)', 'number'),
-      field('buildingUseOfficial', '건축물대장상 용도', 'text'),
-      field('buildingUseActual', '실제 용도', 'text'),
-      field('buildingStructure', '구조', 'text'),
-      field('buildingDirection', '방향', 'text'),
-      field('seismicDesign', '내진설계 적용 여부', 'checkbox'),
-      field('seismicCapacity', '내진능력', 'text'),
-      field('illegalBuilding', '건축물대장상 위반건축물 여부', 'checkbox'),
-      field('illegalBuildingContent', '위반 내용', 'text'),
-    ],
-  },
-  {
-    key: 'rights',
-    title: 'Ⅰ-② 권리관계 (등기부 기재사항)',
-    fields: [
-      field('landOwnership', '소유권에 관한 사항 (토지)', 'textarea'),
-      field('buildingOwnership', '소유권에 관한 사항 (건축물)', 'textarea'),
-      field('otherRights', '소유권 외의 권리사항', 'textarea'),
-      field('rentalRegistration', '민간임대 등록 여부', 'select', {
-        options: ['해당 없음', '공공지원 민간임대', '장기일반 민간임대'],
-      }),
-      field('rentalMandatoryPeriod', '임대의무기간', 'text'),
-      field('rentalStartDate', '임대개시일', 'date'),
-      field('renewalRightExercised', '계약갱신요구권 행사 여부', 'select', {
-        options: ['확인(행사)', '확인(미행사)', '미확인', '해당 없음'],
-      }),
-      field('multiHouseholdDocs', '다가구주택 확인서류 제출 여부', 'checkbox'),
-    ],
-  },
-  {
-    key: 'landUsePlan',
-    title: 'Ⅰ-③ 토지이용계획ㆍ공법상 이용제한 및 거래규제',
-    fields: [
-      field('useZone', '용도지역', 'text'),
-      field('useDistrict', '용도지구', 'text'),
-      field('useArea', '용도구역', 'text'),
-      field('buildingCoverageRatio', '건폐율 상한', 'number', { unit: '%' }),
-      field('floorAreaRatio', '용적률 상한', 'number', { unit: '%' }),
-      field('plannedFacilities', '도시ㆍ군계획시설', 'text'),
-      field('permitZone', '토지거래허가구역 여부', 'checkbox'),
-      field('speculationZone', '투기지역ㆍ거래신고지역 여부', 'text'),
-      field('otherRestrictions', '그 밖의 이용제한 및 거래규제', 'textarea'),
-    ],
-  },
-  {
-    key: 'leaseChecks',
-    title: 'Ⅰ-④ 임대차 확인사항 (2024 신설)',
-    fields: [
-      field('fixedDateInfo', '확정일자 부여현황 정보', 'select', {
-        options: ['임대인 자료 제출', '열람 동의', '해당 없음'],
-        appliesTo: ['jeonse', 'monthly'],
-      }),
-      field('taxArrearsInfo', '국세 및 지방세 체납정보', 'select', {
-        options: ['임대인 자료 제출', '열람 동의', '해당 없음'],
-        appliesTo: ['jeonse', 'monthly'],
-      }),
-      field('residentRegisterCheck', '전입세대 확인서', 'select', {
-        options: ['확인', '미확인', '해당 없음'],
-        appliesTo: ['jeonse', 'monthly'],
-      }),
-      amountField('smallTenantDepositRange', '소액임차인 범위 (보증금)', {
-        appliesTo: ['jeonse', 'monthly'],
-      }),
-      amountField('minPriorityPaymentAmount', '최우선변제금액', {
-        appliesTo: ['jeonse', 'monthly'],
-      }),
-      field('guaranteeExplained', '민간임대주택 임대보증금 보증 설명', 'checkbox', {
-        appliesTo: ['jeonse', 'monthly'],
-      }),
-      field('tenantRightsExplained', '임차인 권리 설명', 'checkbox', {
-        appliesTo: ['jeonse', 'monthly'],
-      }),
-    ],
-  },
-  {
-    key: 'location',
-    title: 'Ⅰ-⑤ 입지조건',
-    fields: [
-      field('roadRelation', '도로와의 관계 (m×m)', 'text'),
-      field('roadPaved', '도로 포장 여부', 'select', { options: ['포장', '비포장'] }),
-      field('accessibility', '접근성', 'select', { options: ['용이함', '불편함'] }),
-      field('busStop', '버스 정류장 (도보 소요)', 'text'),
-      field('subwayStation', '지하철역 (도보 소요)', 'text'),
-      field('parking', '주차장', 'select', {
-        options: ['없음', '전용주차시설', '공동주차시설', '그 밖의 주차시설'],
-      }),
-      field('schools', '교육시설 (초ㆍ중ㆍ고)', 'text'),
-    ],
-  },
-  {
-    key: 'management',
-    title: 'Ⅰ-⑥ 관리에 관한 사항',
-    fields: [
-      field('securityOffice', '경비실', 'select', { options: ['있음', '없음'] }),
-      field('managementType', '관리주체', 'select', {
-        options: ['위탁관리', '자체관리', '그 밖의 유형'],
-      }),
-      amountField('managementFeeTotal', '관리비 금액(총액)'),
-      field('managementFeeMethod', '관리비 부과방식', 'select', {
-        options: ['관리규약에 따라 부과', '임대인이 직접 부과', '그 밖의 방식'],
-      }),
-      field('managementFeeItems', '관리비 포함 비목', 'textarea'),
-    ],
-  },
-  {
-    key: 'undesirableFacility',
-    title: 'Ⅰ-⑦ 비선호시설 (1km 이내)',
-    fields: [
-      field('undesirableFacility', '비선호시설', 'select', { options: ['없음', '있음'] }),
-      field('undesirableFacilityDetail', '종류 및 위치', 'text'),
-    ],
-  },
-  {
-    key: 'expectedPrice',
-    title: 'Ⅰ-⑧ 거래예정금액 등',
-    fields: [
-      amountField('expectedPrice', '거래예정금액'),
-      amountField('officialLandPricePerM2', '개별공시지가 (㎡당)'),
-      amountField('buildingPublishedPrice', '건물(주택) 공시가격'),
-    ],
-  },
-  {
-    key: 'taxes',
-    title: 'Ⅰ-⑨~⑪ 취득 시 부담할 조세',
-    fields: [
-      field('acquisitionTaxRate', '취득세', 'number', { unit: '%', appliesTo: ['sale'] }),
-      field('ruralSpecialTaxRate', '농어촌특별세', 'number', { unit: '%', appliesTo: ['sale'] }),
-      field('localEducationTaxRate', '지방교육세', 'number', { unit: '%', appliesTo: ['sale'] }),
-    ],
-  },
-  {
-    key: 'detailChecks',
-    title: 'Ⅱ 세부 확인사항',
-    fields: [
-      field('actualRights', '⑫ 실제 권리관계 또는 공시되지 않은 물건의 권리 사항', 'textarea'),
-      field('wallCrack', '벽면 균열', 'select', { options: ['없음', '있음'] }),
-      field('wallLeak', '벽면 누수', 'select', { options: ['없음', '있음'] }),
-      field('floorCondition', '바닥면', 'select', { options: ['깨끗함', '보통임', '수리 필요'] }),
-      field('wallpaperCondition', '도배 상태', 'select', { options: ['깨끗함', '보통임', '도배 필요'] }),
-      field('sunlight', '⑬ 일조량', 'select', { options: ['풍부함', '보통임', '불충분'] }),
-      field('noiseVibration', '소음ㆍ진동', 'select', { options: ['아주 작음', '보통임', '심한 편임'] }),
-      field('siteGuide', '⑭ 현장안내 안내자', 'select', {
-        options: ['개업공인중개사', '소속공인중개사', '중개보조원', '해당 없음'],
-      }),
-      field('assistantIdentityNotified', '중개보조원 신분고지 여부', 'checkbox'),
-    ],
-  },
-  {
-    key: 'facilities',
-    title: '내ㆍ외부 시설물의 상태',
-    fields: [
-      field('waterSupply', '수도 (파손ㆍ용수량)', 'text'),
-      field('electricitySupply', '전기 (공급상태)', 'text'),
-      field('gasSupply', '가스(취사용)', 'text'),
-      field('fireAlarmCount', '소방 — 단독경보형감지기 수량', 'number'),
-      field('heatingType', '난방방식', 'select', { options: ['중앙공급', '개별공급', '지역난방'] }),
-      field('heatingFuel', '난방 연료공급', 'select', {
-        options: ['도시가스', '기름', '프로판가스', '연탄', '그 밖의 종류'],
-      }),
-      field('heatingWorking', '난방 시설작동', 'select', { options: ['정상', '수선 필요'] }),
-      field('elevator', '승강기', 'select', { options: ['있음(양호)', '있음(불량)', '없음'] }),
-      field('drainage', '배수', 'select', { options: ['정상', '수선 필요'] }),
-      field('otherFacilities', '그 밖의 시설물', 'textarea'),
-    ],
-  },
-  {
-    key: 'brokerFee',
-    title: 'Ⅲ 중개보수 등에 관한 사항',
-    fields: [
-      field('brokerFeeRate', '중개보수 요율', 'number', { unit: '%' }),
-      amountField('brokerFee', '중개보수'),
-      amountField('actualExpenses', '실비'),
-      amountField('brokerFeeTotal', '계'),
-      field('brokerFeeCalculation', '산출내역', 'textarea'),
-      field('brokerFeeVatMode', '부가세', 'select', {
-        options: ['별도(일반 10%)', '간이과세', '중개보수 없음'],
-      }),
-      field('brokerFeePaymentTiming', '지급시기', 'text'),
-    ],
-  },
-];
+const BROKER_EXPLANATION_RESIDENTIAL_FIELD_GROUPS: ContractTemplateFieldGroup[] =
+  [
+    {
+      key: 'header',
+      title: '기본 정보',
+      fields: [
+        field('dealForm', '거래 형태', 'select', {
+          options: ['매매ㆍ교환', '임대'],
+        }),
+        field('housingType', '주택 유형', 'select', {
+          options: ['단독주택', '공동주택', '주거용 오피스텔', '그 밖의 유형'],
+        }),
+        field('evidenceMaterials', '확인ㆍ설명 근거자료', 'textarea'),
+        field(
+          'dataRequestNote',
+          '대상물건 상태에 관한 자료요구사항',
+          'textarea',
+        ),
+      ],
+    },
+    {
+      key: 'objectIndication',
+      title: 'Ⅰ-① 대상물건의 표시',
+      fields: [
+        field('landAddress', '토지 소재지', 'text'),
+        field('landArea', '토지 면적', 'number', { unit: 'm2' }),
+        field('landCategoryOfficial', '공부상 지목', 'text'),
+        field('landCategoryActual', '실제 이용 상태', 'text'),
+        field('exclusiveArea', '건축물 전용면적', 'number', { unit: 'm2' }),
+        field('landShare', '대지지분', 'number', { unit: 'm2' }),
+        field('builtYear', '준공년도(증개축년도)', 'number'),
+        field('buildingUseOfficial', '건축물대장상 용도', 'text'),
+        field('buildingUseActual', '실제 용도', 'text'),
+        field('buildingStructure', '구조', 'text'),
+        field('buildingDirection', '방향', 'text'),
+        field('seismicDesign', '내진설계 적용 여부', 'checkbox'),
+        field('seismicCapacity', '내진능력', 'text'),
+        field('illegalBuilding', '건축물대장상 위반건축물 여부', 'checkbox'),
+        field('illegalBuildingContent', '위반 내용', 'text'),
+      ],
+    },
+    {
+      key: 'rights',
+      title: 'Ⅰ-② 권리관계 (등기부 기재사항)',
+      fields: [
+        field('landOwnership', '소유권에 관한 사항 (토지)', 'textarea'),
+        field('buildingOwnership', '소유권에 관한 사항 (건축물)', 'textarea'),
+        field('otherRights', '소유권 외의 권리사항', 'textarea'),
+        field('rentalRegistration', '민간임대 등록 여부', 'select', {
+          options: ['해당 없음', '공공지원 민간임대', '장기일반 민간임대'],
+        }),
+        field('rentalMandatoryPeriod', '임대의무기간', 'text'),
+        field('rentalStartDate', '임대개시일', 'date'),
+        field('renewalRightExercised', '계약갱신요구권 행사 여부', 'select', {
+          options: ['확인(행사)', '확인(미행사)', '미확인', '해당 없음'],
+        }),
+        field(
+          'multiHouseholdDocs',
+          '다가구주택 확인서류 제출 여부',
+          'checkbox',
+        ),
+      ],
+    },
+    {
+      key: 'landUsePlan',
+      title: 'Ⅰ-③ 토지이용계획ㆍ공법상 이용제한 및 거래규제',
+      fields: [
+        field('useZone', '용도지역', 'text'),
+        field('useDistrict', '용도지구', 'text'),
+        field('useArea', '용도구역', 'text'),
+        field('buildingCoverageRatio', '건폐율 상한', 'number', { unit: '%' }),
+        field('floorAreaRatio', '용적률 상한', 'number', { unit: '%' }),
+        field('plannedFacilities', '도시ㆍ군계획시설', 'text'),
+        field('permitZone', '토지거래허가구역 여부', 'checkbox'),
+        field('speculationZone', '투기지역ㆍ거래신고지역 여부', 'text'),
+        field('otherRestrictions', '그 밖의 이용제한 및 거래규제', 'textarea'),
+      ],
+    },
+    {
+      key: 'leaseChecks',
+      title: 'Ⅰ-④ 임대차 확인사항 (2024 신설)',
+      fields: [
+        field('fixedDateInfo', '확정일자 부여현황 정보', 'select', {
+          options: ['임대인 자료 제출', '열람 동의', '해당 없음'],
+          appliesTo: ['jeonse', 'monthly'],
+        }),
+        field('taxArrearsInfo', '국세 및 지방세 체납정보', 'select', {
+          options: ['임대인 자료 제출', '열람 동의', '해당 없음'],
+          appliesTo: ['jeonse', 'monthly'],
+        }),
+        field('residentRegisterCheck', '전입세대 확인서', 'select', {
+          options: ['확인', '미확인', '해당 없음'],
+          appliesTo: ['jeonse', 'monthly'],
+        }),
+        amountField('smallTenantDepositRange', '소액임차인 범위 (보증금)', {
+          appliesTo: ['jeonse', 'monthly'],
+        }),
+        amountField('minPriorityPaymentAmount', '최우선변제금액', {
+          appliesTo: ['jeonse', 'monthly'],
+        }),
+        field(
+          'guaranteeExplained',
+          '민간임대주택 임대보증금 보증 설명',
+          'checkbox',
+          {
+            appliesTo: ['jeonse', 'monthly'],
+          },
+        ),
+        field('tenantRightsExplained', '임차인 권리 설명', 'checkbox', {
+          appliesTo: ['jeonse', 'monthly'],
+        }),
+      ],
+    },
+    {
+      key: 'location',
+      title: 'Ⅰ-⑤ 입지조건',
+      fields: [
+        field('roadRelation', '도로와의 관계 (m×m)', 'text'),
+        field('roadPaved', '도로 포장 여부', 'select', {
+          options: ['포장', '비포장'],
+        }),
+        field('accessibility', '접근성', 'select', {
+          options: ['용이함', '불편함'],
+        }),
+        field('busStop', '버스 정류장 (도보 소요)', 'text'),
+        field('subwayStation', '지하철역 (도보 소요)', 'text'),
+        field('parking', '주차장', 'select', {
+          options: ['없음', '전용주차시설', '공동주차시설', '그 밖의 주차시설'],
+        }),
+        field('schools', '교육시설 (초ㆍ중ㆍ고)', 'text'),
+      ],
+    },
+    {
+      key: 'management',
+      title: 'Ⅰ-⑥ 관리에 관한 사항',
+      fields: [
+        field('securityOffice', '경비실', 'select', {
+          options: ['있음', '없음'],
+        }),
+        field('managementType', '관리주체', 'select', {
+          options: ['위탁관리', '자체관리', '그 밖의 유형'],
+        }),
+        amountField('managementFeeTotal', '관리비 금액(총액)'),
+        field('managementFeeMethod', '관리비 부과방식', 'select', {
+          options: [
+            '관리규약에 따라 부과',
+            '임대인이 직접 부과',
+            '그 밖의 방식',
+          ],
+        }),
+        field('managementFeeItems', '관리비 포함 비목', 'textarea'),
+      ],
+    },
+    {
+      key: 'undesirableFacility',
+      title: 'Ⅰ-⑦ 비선호시설 (1km 이내)',
+      fields: [
+        field('undesirableFacility', '비선호시설', 'select', {
+          options: ['없음', '있음'],
+        }),
+        field('undesirableFacilityDetail', '종류 및 위치', 'text'),
+      ],
+    },
+    {
+      key: 'expectedPrice',
+      title: 'Ⅰ-⑧ 거래예정금액 등',
+      fields: [
+        amountField('expectedPrice', '거래예정금액'),
+        amountField('officialLandPricePerM2', '개별공시지가 (㎡당)'),
+        amountField('buildingPublishedPrice', '건물(주택) 공시가격'),
+      ],
+    },
+    {
+      key: 'taxes',
+      title: 'Ⅰ-⑨~⑪ 취득 시 부담할 조세',
+      fields: [
+        field('acquisitionTaxRate', '취득세', 'number', {
+          unit: '%',
+          appliesTo: ['sale'],
+        }),
+        field('ruralSpecialTaxRate', '농어촌특별세', 'number', {
+          unit: '%',
+          appliesTo: ['sale'],
+        }),
+        field('localEducationTaxRate', '지방교육세', 'number', {
+          unit: '%',
+          appliesTo: ['sale'],
+        }),
+      ],
+    },
+    {
+      key: 'detailChecks',
+      title: 'Ⅱ 세부 확인사항',
+      fields: [
+        field(
+          'actualRights',
+          '⑫ 실제 권리관계 또는 공시되지 않은 물건의 권리 사항',
+          'textarea',
+        ),
+        field('wallCrack', '벽면 균열', 'select', {
+          options: ['없음', '있음'],
+        }),
+        field('wallLeak', '벽면 누수', 'select', { options: ['없음', '있음'] }),
+        field('floorCondition', '바닥면', 'select', {
+          options: ['깨끗함', '보통임', '수리 필요'],
+        }),
+        field('wallpaperCondition', '도배 상태', 'select', {
+          options: ['깨끗함', '보통임', '도배 필요'],
+        }),
+        field('sunlight', '⑬ 일조량', 'select', {
+          options: ['풍부함', '보통임', '불충분'],
+        }),
+        field('noiseVibration', '소음ㆍ진동', 'select', {
+          options: ['아주 작음', '보통임', '심한 편임'],
+        }),
+        field('siteGuide', '⑭ 현장안내 안내자', 'select', {
+          options: [
+            '개업공인중개사',
+            '소속공인중개사',
+            '중개보조원',
+            '해당 없음',
+          ],
+        }),
+        field(
+          'assistantIdentityNotified',
+          '중개보조원 신분고지 여부',
+          'checkbox',
+        ),
+      ],
+    },
+    {
+      key: 'facilities',
+      title: '내ㆍ외부 시설물의 상태',
+      fields: [
+        field('waterSupply', '수도 (파손ㆍ용수량)', 'text'),
+        field('electricitySupply', '전기 (공급상태)', 'text'),
+        field('gasSupply', '가스(취사용)', 'text'),
+        field('fireAlarmCount', '소방 — 단독경보형감지기 수량', 'number'),
+        field('heatingType', '난방방식', 'select', {
+          options: ['중앙공급', '개별공급', '지역난방'],
+        }),
+        field('heatingFuel', '난방 연료공급', 'select', {
+          options: ['도시가스', '기름', '프로판가스', '연탄', '그 밖의 종류'],
+        }),
+        field('heatingWorking', '난방 시설작동', 'select', {
+          options: ['정상', '수선 필요'],
+        }),
+        field('elevator', '승강기', 'select', {
+          options: ['있음(양호)', '있음(불량)', '없음'],
+        }),
+        field('drainage', '배수', 'select', { options: ['정상', '수선 필요'] }),
+        field('otherFacilities', '그 밖의 시설물', 'textarea'),
+      ],
+    },
+    {
+      key: 'brokerFee',
+      title: 'Ⅲ 중개보수 등에 관한 사항',
+      fields: [
+        field('brokerFeeRate', '중개보수 요율', 'number', { unit: '%' }),
+        amountField('brokerFee', '중개보수'),
+        amountField('actualExpenses', '실비'),
+        amountField('brokerFeeTotal', '계'),
+        field('brokerFeeCalculation', '산출내역', 'textarea'),
+        field('brokerFeeVatMode', '부가세', 'select', {
+          options: ['별도(일반 10%)', '간이과세', '중개보수 없음'],
+        }),
+        field('brokerFeePaymentTiming', '지급시기', 'text'),
+      ],
+    },
+  ];
 
 /** §4.5 중개대상물 확인ㆍ설명서[Ⅱ] 비주거용 */
-const BROKER_EXPLANATION_NON_RESIDENTIAL_FIELD_GROUPS: ContractTemplateFieldGroup[] = [
-  {
-    key: 'header',
-    title: '기본 정보',
-    fields: [
-      field('dealForm', '거래 형태', 'select', { options: ['매매ㆍ교환', '임대'] }),
-      field('buildingUseKind', '용도 구분', 'select', {
-        options: ['상업용', '공업용', '업무용', '그 밖의 경우'],
-      }),
-      field('evidenceMaterials', '확인ㆍ설명 근거자료', 'textarea'),
-      field('dataRequestNote', '대상물건 상태에 관한 자료요구사항', 'textarea'),
-    ],
-  },
-  {
-    key: 'objectIndication',
-    title: '① 대상물건의 표시',
-    fields: [
-      field('landAddress', '토지 소재지', 'text'),
-      field('landArea', '토지 면적', 'number', { unit: 'm2' }),
-      field('landCategoryOfficial', '공부상 지목', 'text'),
-      field('landCategoryActual', '실제 이용 상태', 'text'),
-      field('exclusiveArea', '건축물 전용면적', 'number', { unit: 'm2' }),
-      field('landShare', '대지지분', 'number', { unit: 'm2' }),
-      field('builtYear', '준공년도(증개축년도)', 'number'),
-      field('buildingUseOfficial', '건축물대장상 용도', 'text'),
-      field('buildingUseActual', '실제 용도', 'text'),
-      field('buildingStructure', '구조', 'text'),
-      field('buildingDirection', '방향', 'text'),
-      field('illegalBuilding', '건축물대장상 위반건축물 여부', 'checkbox'),
-      field('illegalBuildingContent', '위반 내용', 'text'),
-    ],
-  },
-  {
-    key: 'rights',
-    title: '② 권리관계 (등기부 기재사항)',
-    fields: [
-      field('landOwnership', '소유권에 관한 사항 (토지)', 'textarea'),
-      field('buildingOwnership', '소유권에 관한 사항 (건축물)', 'textarea'),
-      field('otherRights', '소유권 외의 권리사항', 'textarea'),
-      field('rentalRegistration', '민간임대 등록 여부', 'select', {
-        options: ['해당 없음', '공공지원 민간임대', '장기일반 민간임대'],
-      }),
-      field('renewalRightExercised', '계약갱신요구권 행사 여부', 'select', {
-        options: ['확인(행사)', '확인(미행사)', '미확인', '해당 없음'],
-      }),
-    ],
-  },
-  {
-    key: 'landUsePlan',
-    title: '③ 토지이용계획ㆍ공법상 이용제한 및 거래규제',
-    fields: [
-      field('useZone', '용도지역', 'text'),
-      field('useDistrict', '용도지구', 'text'),
-      field('useArea', '용도구역', 'text'),
-      field('buildingCoverageRatio', '건폐율 상한', 'number', { unit: '%' }),
-      field('floorAreaRatio', '용적률 상한', 'number', { unit: '%' }),
-      field('plannedFacilities', '도시ㆍ군계획시설', 'text'),
-      field('permitZone', '토지거래허가구역 여부', 'checkbox'),
-      field('otherRestrictions', '그 밖의 이용제한 및 거래규제', 'textarea'),
-    ],
-  },
-  {
-    key: 'location',
-    title: '④ 입지조건',
-    fields: [
-      field('roadRelation', '도로와의 관계 (m×m)', 'text'),
-      field('accessibility', '접근성', 'select', { options: ['용이함', '불편함'] }),
-      field('busStop', '버스 정류장 (도보 소요)', 'text'),
-      field('subwayStation', '지하철역 (도보 소요)', 'text'),
-      field('parking', '주차장', 'select', {
-        options: ['없음', '전용주차시설', '공동주차시설', '그 밖의 주차시설'],
-      }),
-    ],
-  },
-  {
-    key: 'management',
-    title: '⑤ 관리에 관한 사항',
-    fields: [
-      field('securityOffice', '경비실', 'select', { options: ['있음', '없음'] }),
-      field('managementType', '관리주체', 'select', {
-        options: ['위탁관리', '자체관리', '그 밖의 유형'],
-      }),
-      amountField('managementFeeTotal', '관리비 금액(총액)'),
-    ],
-  },
-  {
-    key: 'expectedPrice',
-    title: '⑥ 거래예정금액 등',
-    fields: [
-      amountField('expectedPrice', '거래예정금액'),
-      amountField('officialLandPricePerM2', '개별공시지가 (㎡당)'),
-      amountField('buildingPublishedPrice', '건물 공시가격'),
-    ],
-  },
-  {
-    key: 'detailChecks',
-    title: '세부 확인사항',
-    fields: [
-      field('actualRights', '실제 권리관계 또는 공시되지 않은 물건의 권리 사항', 'textarea'),
-      field('wallCrack', '벽면 균열', 'select', { options: ['없음', '있음'] }),
-      field('wallLeak', '벽면 누수', 'select', { options: ['없음', '있음'] }),
-      field('floorCondition', '바닥면', 'select', { options: ['깨끗함', '보통임', '수리 필요'] }),
-    ],
-  },
-  {
-    key: 'facilities',
-    title: '내ㆍ외부 시설물의 상태',
-    fields: [
-      field('waterSupply', '수도 (파손ㆍ용수량)', 'text'),
-      field('electricitySupply', '전기 (공급상태)', 'text'),
-      field('gasSupply', '가스(취사용)', 'text'),
-      field('fireHydrant', '소방 — 소화전', 'checkbox'),
-      field('emergencyBell', '소방 — 비상벨', 'checkbox'),
-      field('heatingType', '난방방식', 'select', { options: ['중앙공급', '개별공급', '지역난방'] }),
-      field('heatingWorking', '난방 시설작동', 'select', { options: ['정상', '수선 필요'] }),
-      field('elevator', '승강기', 'select', { options: ['있음(양호)', '있음(불량)', '없음'] }),
-      field('drainage', '배수', 'select', { options: ['정상', '수선 필요'] }),
-      field('otherFacilities', '그 밖의 시설물', 'textarea'),
-    ],
-  },
-  {
-    key: 'brokerFee',
-    title: '중개보수 등에 관한 사항',
-    fields: [
-      field('brokerFeeRate', '중개보수 요율', 'number', { unit: '%' }),
-      amountField('brokerFee', '중개보수'),
-      amountField('actualExpenses', '실비'),
-      amountField('brokerFeeTotal', '계'),
-      field('brokerFeeCalculation', '산출내역', 'textarea'),
-      field('brokerFeeVatMode', '부가세', 'select', {
-        options: ['별도(일반 10%)', '간이과세', '중개보수 없음'],
-      }),
-    ],
-  },
-];
+const BROKER_EXPLANATION_NON_RESIDENTIAL_FIELD_GROUPS: ContractTemplateFieldGroup[] =
+  [
+    {
+      key: 'header',
+      title: '기본 정보',
+      fields: [
+        field('dealForm', '거래 형태', 'select', {
+          options: ['매매ㆍ교환', '임대'],
+        }),
+        field('buildingUseKind', '용도 구분', 'select', {
+          options: ['상업용', '공업용', '업무용', '그 밖의 경우'],
+        }),
+        field('evidenceMaterials', '확인ㆍ설명 근거자료', 'textarea'),
+        field(
+          'dataRequestNote',
+          '대상물건 상태에 관한 자료요구사항',
+          'textarea',
+        ),
+      ],
+    },
+    {
+      key: 'objectIndication',
+      title: '① 대상물건의 표시',
+      fields: [
+        field('landAddress', '토지 소재지', 'text'),
+        field('landArea', '토지 면적', 'number', { unit: 'm2' }),
+        field('landCategoryOfficial', '공부상 지목', 'text'),
+        field('landCategoryActual', '실제 이용 상태', 'text'),
+        field('exclusiveArea', '건축물 전용면적', 'number', { unit: 'm2' }),
+        field('landShare', '대지지분', 'number', { unit: 'm2' }),
+        field('builtYear', '준공년도(증개축년도)', 'number'),
+        field('buildingUseOfficial', '건축물대장상 용도', 'text'),
+        field('buildingUseActual', '실제 용도', 'text'),
+        field('buildingStructure', '구조', 'text'),
+        field('buildingDirection', '방향', 'text'),
+        field('illegalBuilding', '건축물대장상 위반건축물 여부', 'checkbox'),
+        field('illegalBuildingContent', '위반 내용', 'text'),
+      ],
+    },
+    {
+      key: 'rights',
+      title: '② 권리관계 (등기부 기재사항)',
+      fields: [
+        field('landOwnership', '소유권에 관한 사항 (토지)', 'textarea'),
+        field('buildingOwnership', '소유권에 관한 사항 (건축물)', 'textarea'),
+        field('otherRights', '소유권 외의 권리사항', 'textarea'),
+        field('rentalRegistration', '민간임대 등록 여부', 'select', {
+          options: ['해당 없음', '공공지원 민간임대', '장기일반 민간임대'],
+        }),
+        field('renewalRightExercised', '계약갱신요구권 행사 여부', 'select', {
+          options: ['확인(행사)', '확인(미행사)', '미확인', '해당 없음'],
+        }),
+      ],
+    },
+    {
+      key: 'landUsePlan',
+      title: '③ 토지이용계획ㆍ공법상 이용제한 및 거래규제',
+      fields: [
+        field('useZone', '용도지역', 'text'),
+        field('useDistrict', '용도지구', 'text'),
+        field('useArea', '용도구역', 'text'),
+        field('buildingCoverageRatio', '건폐율 상한', 'number', { unit: '%' }),
+        field('floorAreaRatio', '용적률 상한', 'number', { unit: '%' }),
+        field('plannedFacilities', '도시ㆍ군계획시설', 'text'),
+        field('permitZone', '토지거래허가구역 여부', 'checkbox'),
+        field('otherRestrictions', '그 밖의 이용제한 및 거래규제', 'textarea'),
+      ],
+    },
+    {
+      key: 'location',
+      title: '④ 입지조건',
+      fields: [
+        field('roadRelation', '도로와의 관계 (m×m)', 'text'),
+        field('accessibility', '접근성', 'select', {
+          options: ['용이함', '불편함'],
+        }),
+        field('busStop', '버스 정류장 (도보 소요)', 'text'),
+        field('subwayStation', '지하철역 (도보 소요)', 'text'),
+        field('parking', '주차장', 'select', {
+          options: ['없음', '전용주차시설', '공동주차시설', '그 밖의 주차시설'],
+        }),
+      ],
+    },
+    {
+      key: 'management',
+      title: '⑤ 관리에 관한 사항',
+      fields: [
+        field('securityOffice', '경비실', 'select', {
+          options: ['있음', '없음'],
+        }),
+        field('managementType', '관리주체', 'select', {
+          options: ['위탁관리', '자체관리', '그 밖의 유형'],
+        }),
+        amountField('managementFeeTotal', '관리비 금액(총액)'),
+      ],
+    },
+    {
+      key: 'expectedPrice',
+      title: '⑥ 거래예정금액 등',
+      fields: [
+        amountField('expectedPrice', '거래예정금액'),
+        amountField('officialLandPricePerM2', '개별공시지가 (㎡당)'),
+        amountField('buildingPublishedPrice', '건물 공시가격'),
+      ],
+    },
+    {
+      key: 'detailChecks',
+      title: '세부 확인사항',
+      fields: [
+        field(
+          'actualRights',
+          '실제 권리관계 또는 공시되지 않은 물건의 권리 사항',
+          'textarea',
+        ),
+        field('wallCrack', '벽면 균열', 'select', {
+          options: ['없음', '있음'],
+        }),
+        field('wallLeak', '벽면 누수', 'select', { options: ['없음', '있음'] }),
+        field('floorCondition', '바닥면', 'select', {
+          options: ['깨끗함', '보통임', '수리 필요'],
+        }),
+      ],
+    },
+    {
+      key: 'facilities',
+      title: '내ㆍ외부 시설물의 상태',
+      fields: [
+        field('waterSupply', '수도 (파손ㆍ용수량)', 'text'),
+        field('electricitySupply', '전기 (공급상태)', 'text'),
+        field('gasSupply', '가스(취사용)', 'text'),
+        field('fireHydrant', '소방 — 소화전', 'checkbox'),
+        field('emergencyBell', '소방 — 비상벨', 'checkbox'),
+        field('heatingType', '난방방식', 'select', {
+          options: ['중앙공급', '개별공급', '지역난방'],
+        }),
+        field('heatingWorking', '난방 시설작동', 'select', {
+          options: ['정상', '수선 필요'],
+        }),
+        field('elevator', '승강기', 'select', {
+          options: ['있음(양호)', '있음(불량)', '없음'],
+        }),
+        field('drainage', '배수', 'select', { options: ['정상', '수선 필요'] }),
+        field('otherFacilities', '그 밖의 시설물', 'textarea'),
+      ],
+    },
+    {
+      key: 'brokerFee',
+      title: '중개보수 등에 관한 사항',
+      fields: [
+        field('brokerFeeRate', '중개보수 요율', 'number', { unit: '%' }),
+        amountField('brokerFee', '중개보수'),
+        amountField('actualExpenses', '실비'),
+        amountField('brokerFeeTotal', '계'),
+        field('brokerFeeCalculation', '산출내역', 'textarea'),
+        field('brokerFeeVatMode', '부가세', 'select', {
+          options: ['별도(일반 10%)', '간이과세', '중개보수 없음'],
+        }),
+      ],
+    },
+  ];
 
 /** §4.6 부동산거래계약신고서 (레거시 34) */
-const REAL_ESTATE_TRANSACTION_REPORT_FIELD_GROUPS: ContractTemplateFieldGroup[] = [
-  {
-    key: 'seller',
-    title: '① 매도인',
-    fields: [
-      ...partyFields('seller', '매도인'),
-      field('sellerNationality', '매도인 국적', 'text'),
-      field('sellerVisaStatus', '체류자격 (외국인)', 'text'),
-      field('sellerSharePercent', '거래지분 비율 (N분의 M)', 'text'),
-    ],
-  },
-  {
-    key: 'buyer',
-    title: '② 매수인',
-    fields: [
-      ...partyFields('buyer', '매수인'),
-      field('buyerNationality', '매수인 국적', 'text'),
-      field('buyerVisaStatus', '체류자격 (외국인)', 'text'),
-      field('buyerSharePercent', '거래지분 비율 (N분의 M)', 'text'),
-      field('foreignBuyerUse', '외국인의 부동산등 매수용도', 'select', {
-        options: [
-          '주거용(아파트)',
-          '주거용(단독주택)',
-          '주거용(그 밖의 주택)',
-          '레저용',
-          '상업용',
-          '공업용',
-          '그 밖의 용도',
-        ],
-      }),
-    ],
-  },
-  {
-    key: 'corporateReport',
-    title: '③ 법인신고서등',
-    fields: [
-      field('corporateReport', '법인신고서 제출 여부', 'select', {
-        options: ['제출', '별도 제출', '해당 없음'],
-      }),
-    ],
-  },
-  {
-    key: 'brokers',
-    title: '④⑤ 개업공인중개사',
-    fields: [
-      field('brokerName', '성명', 'text'),
-      field('brokerPhone', '전화번호', 'text'),
-      field('brokerOfficeName', '상호', 'text'),
-      field('brokerOfficeRegNo', '등록번호', 'text'),
-      field('brokerOfficeAddress', '사무소 소재지', 'text'),
-    ],
-  },
-  {
-    key: 'objectIndication',
-    title: '⑥ 소재지ㆍ지목ㆍ면적',
-    fields: [
-      field('dealObjectKind', '거래대상 종류', 'select', {
-        options: [
-          '토지',
-          '건축물',
-          '토지 및 건축물',
-          '공급계약',
-          '전매(분양권)',
-          '전매(입주권)',
-        ],
-      }),
-      field('supplyPhase', '공급ㆍ전매 구분', 'select', {
-        options: ['준공 전', '준공 후', '임대주택 분양전환', '해당 없음'],
-      }),
-      field('propertyAddress', '소재지', 'text'),
-      field('landCategory', '지목', 'text'),
-      field('landArea', '토지면적', 'number', { unit: 'm2' }),
-      field('landShareRatio', '토지 거래지분 (N분의 M)', 'text'),
-      field('landRightRatio', '대지권비율 (N분의 M)', 'text'),
-      field('buildingArea', '건축물면적', 'number', { unit: 'm2' }),
-      field('buildingShareRatio', '건축물 거래지분 (N분의 M)', 'text'),
-    ],
-  },
-  {
-    key: 'price',
-    title: '⑦⑧⑨ 계약대상 면적ㆍ거래가격',
-    fields: [
-      field('contractArea', '계약대상 면적', 'number', { unit: 'm2' }),
-      amountField('itemPrice', '물건별 거래가격'),
-      amountField('supplyPrice', '분양가격'),
-      amountField('optionCost', '발코니 확장 등 선택비용'),
-      amountField('additionalPayment', '추가 지급액 등'),
-      amountField('rightPrice', '권리가격'),
-      amountField('totalActualPrice', '총 실제거래가격 (합계)'),
-    ],
-  },
-  {
-    key: 'extras',
-    title: '⑩⑪ 종전 부동산ㆍ계약 조건',
-    fields: [
-      field('previousProperty', '종전 부동산', 'textarea'),
-      field('contractConditions', '계약의 조건 및 참고사항', 'textarea'),
-    ],
-  },
-  {
-    key: 'dates',
-    title: '계약 일정',
-    fields: [
-      field('contractDate', '계약 체결일', 'date'),
-      field('interimPaymentDate', '중도금 지급일', 'date'),
-      field('balancePaymentDate', '잔금 지급일', 'date'),
-    ],
-  },
-];
+const REAL_ESTATE_TRANSACTION_REPORT_FIELD_GROUPS: ContractTemplateFieldGroup[] =
+  [
+    {
+      key: 'seller',
+      title: '① 매도인',
+      fields: [
+        ...partyFields('seller', '매도인'),
+        field('sellerNationality', '매도인 국적', 'text'),
+        field('sellerVisaStatus', '체류자격 (외국인)', 'text'),
+        field('sellerSharePercent', '거래지분 비율 (N분의 M)', 'text'),
+      ],
+    },
+    {
+      key: 'buyer',
+      title: '② 매수인',
+      fields: [
+        ...partyFields('buyer', '매수인'),
+        field('buyerNationality', '매수인 국적', 'text'),
+        field('buyerVisaStatus', '체류자격 (외국인)', 'text'),
+        field('buyerSharePercent', '거래지분 비율 (N분의 M)', 'text'),
+        field('foreignBuyerUse', '외국인의 부동산등 매수용도', 'select', {
+          options: [
+            '주거용(아파트)',
+            '주거용(단독주택)',
+            '주거용(그 밖의 주택)',
+            '레저용',
+            '상업용',
+            '공업용',
+            '그 밖의 용도',
+          ],
+        }),
+      ],
+    },
+    {
+      key: 'corporateReport',
+      title: '③ 법인신고서등',
+      fields: [
+        field('corporateReport', '법인신고서 제출 여부', 'select', {
+          options: ['제출', '별도 제출', '해당 없음'],
+        }),
+      ],
+    },
+    {
+      key: 'brokers',
+      title: '④⑤ 개업공인중개사',
+      fields: [
+        field('brokerName', '성명', 'text'),
+        field('brokerPhone', '전화번호', 'text'),
+        field('brokerOfficeName', '상호', 'text'),
+        field('brokerOfficeRegNo', '등록번호', 'text'),
+        field('brokerOfficeAddress', '사무소 소재지', 'text'),
+      ],
+    },
+    {
+      key: 'objectIndication',
+      title: '⑥ 소재지ㆍ지목ㆍ면적',
+      fields: [
+        field('dealObjectKind', '거래대상 종류', 'select', {
+          options: [
+            '토지',
+            '건축물',
+            '토지 및 건축물',
+            '공급계약',
+            '전매(분양권)',
+            '전매(입주권)',
+          ],
+        }),
+        field('supplyPhase', '공급ㆍ전매 구분', 'select', {
+          options: ['준공 전', '준공 후', '임대주택 분양전환', '해당 없음'],
+        }),
+        field('propertyAddress', '소재지', 'text'),
+        field('landCategory', '지목', 'text'),
+        field('landArea', '토지면적', 'number', { unit: 'm2' }),
+        field('landShareRatio', '토지 거래지분 (N분의 M)', 'text'),
+        field('landRightRatio', '대지권비율 (N분의 M)', 'text'),
+        field('buildingArea', '건축물면적', 'number', { unit: 'm2' }),
+        field('buildingShareRatio', '건축물 거래지분 (N분의 M)', 'text'),
+      ],
+    },
+    {
+      key: 'price',
+      title: '⑦⑧⑨ 계약대상 면적ㆍ거래가격',
+      fields: [
+        field('contractArea', '계약대상 면적', 'number', { unit: 'm2' }),
+        amountField('itemPrice', '물건별 거래가격'),
+        amountField('supplyPrice', '분양가격'),
+        amountField('optionCost', '발코니 확장 등 선택비용'),
+        amountField('additionalPayment', '추가 지급액 등'),
+        amountField('rightPrice', '권리가격'),
+        amountField('totalActualPrice', '총 실제거래가격 (합계)'),
+      ],
+    },
+    {
+      key: 'extras',
+      title: '⑩⑪ 종전 부동산ㆍ계약 조건',
+      fields: [
+        field('previousProperty', '종전 부동산', 'textarea'),
+        field('contractConditions', '계약의 조건 및 참고사항', 'textarea'),
+      ],
+    },
+    {
+      key: 'dates',
+      title: '계약 일정',
+      fields: [
+        field('contractDate', '계약 체결일', 'date'),
+        field('interimPaymentDate', '중도금 지급일', 'date'),
+        field('balancePaymentDate', '잔금 지급일', 'date'),
+      ],
+    },
+  ];
 
 /** §4.7 주택임대차계약신고서 (레거시 49 계열 — lease_declaration) */
 const LEASE_DECLARATION_FIELD_GROUPS: ContractTemplateFieldGroup[] = [
@@ -1571,7 +1886,16 @@ const LEASE_DECLARATION_FIELD_GROUPS: ContractTemplateFieldGroup[] = [
     title: '③~⑤ 임대 목적물 현황',
     fields: [
       field('housingKind', '주택 종류', 'select', {
-        options: ['아파트', '연립', '다세대', '단독', '다가구', '오피스텔', '고시원', '그 밖의 주거용'],
+        options: [
+          '아파트',
+          '연립',
+          '다세대',
+          '단독',
+          '다가구',
+          '오피스텔',
+          '고시원',
+          '그 밖의 주거용',
+        ],
       }),
       field('buildingName', '건물명', 'text'),
       field('dongText', '동', 'text'),
@@ -1628,7 +1952,9 @@ const BROKER_FEE_RECEIPT_FIELD_GROUPS: ContractTemplateFieldGroup[] = [
       field('recipientName', '수취인 (귀하)', 'text'),
       amountField('receiptAmount', '일금 (영수 금액)'),
       field('receiptAmountText', '금액 한글 병기 (자동 생성 가능)', 'text'),
-      field('feeSide', '발행 구분', 'select', { options: ['통합', '매도측', '매수측'] }),
+      field('feeSide', '발행 구분', 'select', {
+        options: ['통합', '매도측', '매수측'],
+      }),
     ],
   },
   {
@@ -1693,7 +2019,9 @@ const PRIVACY_AGREEMENT_FIELD_GROUPS: ContractTemplateFieldGroup[] = [
     title: '개인정보 제공자',
     fields: [
       field('providerName', '제공자 성명', 'text'),
-      field('providerConsent', '동의 여부', 'select', { options: ['동의', '미동의'] }),
+      field('providerConsent', '동의 여부', 'select', {
+        options: ['동의', '미동의'],
+      }),
       field('consentDate', '수집일자', 'date'),
       field('copies', '발행 매수 (계약당 N매)', 'number'),
     ],
@@ -1763,7 +2091,9 @@ const EXCHANGE_CONTRACT_FIELD_GROUPS: ContractTemplateFieldGroup[] = [
     title: '차액(보충금) 정산',
     fields: [
       amountField('differenceAmount', '차액(보충금)'),
-      field('differencePayer', '보충금 지급 당사자', 'select', { options: ['갑', '을'] }),
+      field('differencePayer', '보충금 지급 당사자', 'select', {
+        options: ['갑', '을'],
+      }),
       amountField('downPayment', '계약금'),
       amountField('interimPayment', '중도금'),
       field('interimPaymentDate', '중도금 지급일', 'date'),
@@ -1785,65 +2115,77 @@ const EXCHANGE_CONTRACT_FIELD_GROUPS: ContractTemplateFieldGroup[] = [
 ];
 
 /** 신규: 표준임대차계약서 (민간임대주택특별법, 레거시 13) */
-const PRIVATE_RENTAL_STANDARD_LEASE_FIELD_GROUPS: ContractTemplateFieldGroup[] = [
-  {
-    key: 'rentalBusiness',
-    title: '임대사업자 등록 정보',
-    fields: [
-      field('lessorRentalRegNo', '임대사업자 등록번호', 'text'),
-      field('rentalHousingKind', '민간임대주택 종류', 'select', {
-        options: ['공공지원 민간임대', '장기일반 민간임대'],
-      }),
-      field('mandatoryRentalYears', '임대의무기간', 'number', { unit: '년' }),
-      field('rentalStartDate', '임대개시일', 'date'),
-    ],
-  },
-  propertyIndicationGroup(true),
-  {
-    key: 'paymentTerms',
-    title: '임대조건',
-    fields: [
-      amountField('deposit', '임대보증금'),
-      amountField('monthlyRent', '월임대료', { appliesTo: ['monthly'] }),
-      field('monthlyRentPayDay', '월임대료 지급일 (매월 N일)', 'number', {
-        appliesTo: ['monthly'],
-      }),
-      field('rentIncreaseLimitNote', '임대료 증액 제한 (연 5% 범위)', 'text'),
-      amountField('managementFee', '관리비'),
-    ],
-  },
-  {
-    key: 'guarantee',
-    title: '임대보증금 보증',
-    fields: [
-      field('guaranteeEnrollment', '보증 가입 구분', 'select', {
-        options: ['전부 가입', '일부 가입', '미가입(임차인 동의)', '가입 면제'],
-      }),
-      amountField('guaranteeAmount', '보증대상 금액'),
-      field('guaranteeCompany', '보증기관', 'text'),
-      field('guaranteePeriod', '보증 기간', 'text'),
-      field('guaranteeExplained', '보증 내용 설명 확인', 'checkbox'),
-    ],
-  },
-  {
-    key: 'period',
-    title: '계약기간',
-    fields: [
-      field('handoverDate', '인도일', 'date'),
-      field('leaseStartDate', '임대차 시작일', 'date'),
-      field('leaseEndDate', '임대차 종료일', 'date'),
-      field('leaseMonths', '기간(개월)', 'number', { unit: '개월' }),
-    ],
-  },
-  {
-    key: 'privacy',
-    title: '개인정보 제공 동의',
-    fields: [field('privacyThirdPartyConsent', '개인정보 제3자 제공 동의', 'checkbox')],
-  },
-  specialTermsGroup(),
-  partiesGroup('임대사업자(임대인)', '임차인'),
-  brokerOfficeGroup(),
-];
+const PRIVATE_RENTAL_STANDARD_LEASE_FIELD_GROUPS: ContractTemplateFieldGroup[] =
+  [
+    {
+      key: 'rentalBusiness',
+      title: '임대사업자 등록 정보',
+      fields: [
+        field('lessorRentalRegNo', '임대사업자 등록번호', 'text'),
+        field('rentalHousingKind', '민간임대주택 종류', 'select', {
+          options: ['공공지원 민간임대', '장기일반 민간임대'],
+        }),
+        field('mandatoryRentalYears', '임대의무기간', 'number', { unit: '년' }),
+        field('rentalStartDate', '임대개시일', 'date'),
+      ],
+    },
+    propertyIndicationGroup(true),
+    {
+      key: 'paymentTerms',
+      title: '임대조건',
+      fields: [
+        amountField('deposit', '임대보증금'),
+        amountField('monthlyRent', '월임대료', { appliesTo: ['monthly'] }),
+        field('monthlyRentPayDay', '월임대료 지급일 (매월 N일)', 'number', {
+          appliesTo: ['monthly'],
+        }),
+        field('rentIncreaseLimitNote', '임대료 증액 제한 (연 5% 범위)', 'text'),
+        amountField('managementFee', '관리비'),
+      ],
+    },
+    {
+      key: 'guarantee',
+      title: '임대보증금 보증',
+      fields: [
+        field('guaranteeEnrollment', '보증 가입 구분', 'select', {
+          options: [
+            '전부 가입',
+            '일부 가입',
+            '미가입(임차인 동의)',
+            '가입 면제',
+          ],
+        }),
+        amountField('guaranteeAmount', '보증대상 금액'),
+        field('guaranteeCompany', '보증기관', 'text'),
+        field('guaranteePeriod', '보증 기간', 'text'),
+        field('guaranteeExplained', '보증 내용 설명 확인', 'checkbox'),
+      ],
+    },
+    {
+      key: 'period',
+      title: '계약기간',
+      fields: [
+        field('handoverDate', '인도일', 'date'),
+        field('leaseStartDate', '임대차 시작일', 'date'),
+        field('leaseEndDate', '임대차 종료일', 'date'),
+        field('leaseMonths', '기간(개월)', 'number', { unit: '개월' }),
+      ],
+    },
+    {
+      key: 'privacy',
+      title: '개인정보 제공 동의',
+      fields: [
+        field(
+          'privacyThirdPartyConsent',
+          '개인정보 제3자 제공 동의',
+          'checkbox',
+        ),
+      ],
+    },
+    specialTermsGroup(),
+    partiesGroup('임대사업자(임대인)', '임차인'),
+    brokerOfficeGroup(),
+  ];
 
 /** 신규: 부동산 매매약정서 (레거시 37) */
 const TRADE_AGREEMENT_FIELD_GROUPS: ContractTemplateFieldGroup[] = [
@@ -1882,149 +2224,164 @@ const TRADE_AGREEMENT_FIELD_GROUPS: ContractTemplateFieldGroup[] = [
 ];
 
 /** 신규: 전속중개계약서 (레거시 42) */
-const EXCLUSIVE_BROKERAGE_CONTRACT_FIELD_GROUPS: ContractTemplateFieldGroup[] = [
-  {
-    key: 'client',
-    title: '중개의뢰인',
-    fields: [
-      field('clientName', '의뢰인 성명', 'text'),
-      field('clientAddress', '의뢰인 주소', 'text'),
-      field('clientPhone', '의뢰인 연락처', 'text'),
-    ],
-  },
-  {
-    key: 'request',
-    title: '의뢰 내용',
-    fields: [
-      field('requestKind', '의뢰 구분', 'select', { options: ['매도', '매수', '임대', '임차'] }),
-      field('propertyAddress', '중개대상물 소재지', 'text'),
-      field('propertyDetail', '중개대상물 표시', 'textarea'),
-      amountField('desiredPrice', '희망 거래가격'),
-    ],
-  },
-  {
-    key: 'terms',
-    title: '전속중개 조건',
-    fields: [
-      field('validFrom', '유효기간 시작', 'date'),
-      field('validTo', '유효기간 종료', 'date'),
-      field('validMonths', '유효기간(개월, 원칙 3개월)', 'number', { unit: '개월' }),
-      field('progressReportCycle', '업무처리상황 통지 주기 (2주 1회 이상)', 'text'),
-      field('informationDisclosure', '중개대상물 정보 공개', 'select', {
-        options: ['공개', '비공개 요청'],
-      }),
-      field('penaltyTerms', '위약금 (중개보수 상당액 등)', 'textarea'),
-    ],
-  },
-  {
-    key: 'fee',
-    title: '중개보수',
-    fields: [
-      field('brokerFeeRate', '중개보수 요율', 'number', { unit: '%' }),
-      amountField('brokerFee', '중개보수 금액'),
-      field('brokerFeePaymentTiming', '지급 시기', 'text'),
-    ],
-  },
-  brokerOfficeGroup(),
-];
+const EXCLUSIVE_BROKERAGE_CONTRACT_FIELD_GROUPS: ContractTemplateFieldGroup[] =
+  [
+    {
+      key: 'client',
+      title: '중개의뢰인',
+      fields: [
+        field('clientName', '의뢰인 성명', 'text'),
+        field('clientAddress', '의뢰인 주소', 'text'),
+        field('clientPhone', '의뢰인 연락처', 'text'),
+      ],
+    },
+    {
+      key: 'request',
+      title: '의뢰 내용',
+      fields: [
+        field('requestKind', '의뢰 구분', 'select', {
+          options: ['매도', '매수', '임대', '임차'],
+        }),
+        field('propertyAddress', '중개대상물 소재지', 'text'),
+        field('propertyDetail', '중개대상물 표시', 'textarea'),
+        amountField('desiredPrice', '희망 거래가격'),
+      ],
+    },
+    {
+      key: 'terms',
+      title: '전속중개 조건',
+      fields: [
+        field('validFrom', '유효기간 시작', 'date'),
+        field('validTo', '유효기간 종료', 'date'),
+        field('validMonths', '유효기간(개월, 원칙 3개월)', 'number', {
+          unit: '개월',
+        }),
+        field(
+          'progressReportCycle',
+          '업무처리상황 통지 주기 (2주 1회 이상)',
+          'text',
+        ),
+        field('informationDisclosure', '중개대상물 정보 공개', 'select', {
+          options: ['공개', '비공개 요청'],
+        }),
+        field('penaltyTerms', '위약금 (중개보수 상당액 등)', 'textarea'),
+      ],
+    },
+    {
+      key: 'fee',
+      title: '중개보수',
+      fields: [
+        field('brokerFeeRate', '중개보수 요율', 'number', { unit: '%' }),
+        amountField('brokerFee', '중개보수 금액'),
+        field('brokerFeePaymentTiming', '지급 시기', 'text'),
+      ],
+    },
+    brokerOfficeGroup(),
+  ];
 
 /** 신규: 부동산 거래위임장 (레거시 31) */
-const TRANSACTION_POWER_OF_ATTORNEY_FIELD_GROUPS: ContractTemplateFieldGroup[] = [
-  {
-    key: 'principal',
-    title: '위임인',
-    fields: partyFields('principal', '위임인'),
-  },
-  {
-    key: 'agent',
-    title: '수임인',
-    fields: [
-      ...partyFields('agent', '수임인'),
-      field('agentRelationship', '위임인과의 관계', 'text'),
-    ],
-  },
-  {
-    key: 'objectIndication',
-    title: '부동산의 표시',
-    fields: [
-      field('propertyAddress', '소재지', 'text'),
-      field('propertyDetail', '부동산 표시', 'textarea'),
-    ],
-  },
-  {
-    key: 'scope',
-    title: '위임 범위',
-    fields: [
-      field('delegatedTransaction', '위임 거래 구분', 'select', {
-        options: ['매매', '전세', '월세', '교환', '기타'],
-      }),
-      field('delegatedPowers', '위임 권한의 범위', 'textarea'),
-      field('paymentReceiptAuthority', '대금 수령ㆍ지급 권한 포함', 'checkbox'),
-    ],
-  },
-  {
-    key: 'validity',
-    title: '위임 기간ㆍ증빙',
-    fields: [
-      field('delegationDate', '위임일', 'date'),
-      field('expiryDate', '위임 만료일', 'date'),
-      field('sealCertificateAttached', '인감증명서 첨부', 'checkbox'),
-    ],
-  },
-];
+const TRANSACTION_POWER_OF_ATTORNEY_FIELD_GROUPS: ContractTemplateFieldGroup[] =
+  [
+    {
+      key: 'principal',
+      title: '위임인',
+      fields: partyFields('principal', '위임인'),
+    },
+    {
+      key: 'agent',
+      title: '수임인',
+      fields: [
+        ...partyFields('agent', '수임인'),
+        field('agentRelationship', '위임인과의 관계', 'text'),
+      ],
+    },
+    {
+      key: 'objectIndication',
+      title: '부동산의 표시',
+      fields: [
+        field('propertyAddress', '소재지', 'text'),
+        field('propertyDetail', '부동산 표시', 'textarea'),
+      ],
+    },
+    {
+      key: 'scope',
+      title: '위임 범위',
+      fields: [
+        field('delegatedTransaction', '위임 거래 구분', 'select', {
+          options: ['매매', '전세', '월세', '교환', '기타'],
+        }),
+        field('delegatedPowers', '위임 권한의 범위', 'textarea'),
+        field(
+          'paymentReceiptAuthority',
+          '대금 수령ㆍ지급 권한 포함',
+          'checkbox',
+        ),
+      ],
+    },
+    {
+      key: 'validity',
+      title: '위임 기간ㆍ증빙',
+      fields: [
+        field('delegationDate', '위임일', 'date'),
+        field('expiryDate', '위임 만료일', 'date'),
+        field('sealCertificateAttached', '인감증명서 첨부', 'checkbox'),
+      ],
+    },
+  ];
 
 /** 신규: 주택취득자금 조달 및 입주계획서 (레거시 46) */
-const HOUSE_FUNDS_AND_OCCUPANCY_PLAN_FIELD_GROUPS: ContractTemplateFieldGroup[] = [
-  {
-    key: 'selfFunds',
-    title: '자금조달계획 — 자기자금',
-    fields: [
-      amountField('bankDeposit', '금융기관 예금액'),
-      amountField('stockBondSale', '주식ㆍ채권 매각대금'),
-      amountField('giftInheritance', '증여ㆍ상속'),
-      amountField('cashEtc', '현금 등 그 밖의 자금'),
-      amountField('realEstateSaleProceeds', '부동산 처분대금'),
-      amountField('selfFundsTotal', '자기자금 소계'),
-    ],
-  },
-  {
-    key: 'loans',
-    title: '자금조달계획 — 차입금 등',
-    fields: [
-      amountField('mortgageLoan', '금융기관 대출액 (주택담보대출)'),
-      amountField('creditLoan', '금융기관 대출액 (신용대출)'),
-      amountField('otherBankLoan', '금융기관 대출액 (그 밖의 대출)'),
-      amountField('tenantDeposit', '임대보증금'),
-      amountField('companySupport', '회사지원금ㆍ사채'),
-      amountField('otherBorrowing', '그 밖의 차입금'),
-      amountField('loansTotal', '차입금 등 소계'),
-    ],
-  },
-  {
-    key: 'total',
-    title: '합계',
-    fields: [amountField('fundsTotal', '조달자금 합계')],
-  },
-  {
-    key: 'paymentMethod',
-    title: '조달자금 지급방식',
-    fields: [
-      amountField('paymentByTransfer', '계좌이체 금액'),
-      amountField('paymentBySuccession', '보증금ㆍ대출 승계 금액'),
-      amountField('paymentByCash', '현금 및 그 밖의 지급방식 금액'),
-    ],
-  },
-  {
-    key: 'occupancy',
-    title: '입주계획',
-    fields: [
-      field('occupancyPlan', '입주 계획', 'select', {
-        options: ['본인입주', '본인 외 가족입주', '임대', '그 밖의 경우'],
-      }),
-      field('occupancyDate', '입주 예정 시기', 'date'),
-    ],
-  },
-];
+const HOUSE_FUNDS_AND_OCCUPANCY_PLAN_FIELD_GROUPS: ContractTemplateFieldGroup[] =
+  [
+    {
+      key: 'selfFunds',
+      title: '자금조달계획 — 자기자금',
+      fields: [
+        amountField('bankDeposit', '금융기관 예금액'),
+        amountField('stockBondSale', '주식ㆍ채권 매각대금'),
+        amountField('giftInheritance', '증여ㆍ상속'),
+        amountField('cashEtc', '현금 등 그 밖의 자금'),
+        amountField('realEstateSaleProceeds', '부동산 처분대금'),
+        amountField('selfFundsTotal', '자기자금 소계'),
+      ],
+    },
+    {
+      key: 'loans',
+      title: '자금조달계획 — 차입금 등',
+      fields: [
+        amountField('mortgageLoan', '금융기관 대출액 (주택담보대출)'),
+        amountField('creditLoan', '금융기관 대출액 (신용대출)'),
+        amountField('otherBankLoan', '금융기관 대출액 (그 밖의 대출)'),
+        amountField('tenantDeposit', '임대보증금'),
+        amountField('companySupport', '회사지원금ㆍ사채'),
+        amountField('otherBorrowing', '그 밖의 차입금'),
+        amountField('loansTotal', '차입금 등 소계'),
+      ],
+    },
+    {
+      key: 'total',
+      title: '합계',
+      fields: [amountField('fundsTotal', '조달자금 합계')],
+    },
+    {
+      key: 'paymentMethod',
+      title: '조달자금 지급방식',
+      fields: [
+        amountField('paymentByTransfer', '계좌이체 금액'),
+        amountField('paymentBySuccession', '보증금ㆍ대출 승계 금액'),
+        amountField('paymentByCash', '현금 및 그 밖의 지급방식 금액'),
+      ],
+    },
+    {
+      key: 'occupancy',
+      title: '입주계획',
+      fields: [
+        field('occupancyPlan', '입주 계획', 'select', {
+          options: ['본인입주', '본인 외 가족입주', '임대', '그 밖의 경우'],
+        }),
+        field('occupancyDate', '입주 예정 시기', 'date'),
+      ],
+    },
+  ];
 
 /** 신규: 거래사실확인원 (레거시 36) */
 const FACT_CONFIRMATION_FIELD_GROUPS: ContractTemplateFieldGroup[] = [
@@ -2103,62 +2460,950 @@ const BALANCE_SETTLEMENT_SHEET_FIELD_GROUPS: ContractTemplateFieldGroup[] = [
 ];
 
 /** 신규: 관리비(공과금) 정산서 (ManagementExpReport) */
-const MANAGEMENT_FEE_SETTLEMENT_SHEET_FIELD_GROUPS: ContractTemplateFieldGroup[] = [
+const MANAGEMENT_FEE_SETTLEMENT_SHEET_FIELD_GROUPS: ContractTemplateFieldGroup[] =
+  [
+    {
+      key: 'objectIndication',
+      title: '정산 대상',
+      fields: [
+        field('propertyAddress', '물건 소재지', 'text'),
+        field('periodFrom', '정산기간 (부터)', 'date'),
+        field('periodTo', '정산기간 (까지)', 'date'),
+        field('settlementBaseDate', '정산 기준일 (인도일)', 'date'),
+      ],
+    },
+    {
+      key: 'metering',
+      title: '검침 내역',
+      fields: [
+        field('electricityReading', '전기 사용량', 'number', { unit: 'kWh' }),
+        field('gasReading', '도시가스 사용량', 'number', { unit: 'm3' }),
+        field('waterReading', '상하수도 사용량', 'number', { unit: 'm3' }),
+      ],
+    },
+    {
+      key: 'settlement',
+      title: '정산 금액',
+      fields: [
+        amountField(
+          'managementOfficeConfirmedAmount',
+          '관리비 정산금 (관리사무소 확인분)',
+        ),
+        amountField('monthlyPaymentAmount', '월 납입액'),
+        amountField('unpaidAmount', '미납액'),
+        amountField('prepaidAmount', '선납액'),
+        field('costBearer', '부담 주체', 'select', {
+          options: ['매도인', '매수인', '임대인', '임차인'],
+        }),
+        field('settlementNote', '기타사항', 'textarea'),
+      ],
+    },
+  ];
+
+/**
+ * 초기 migration의 추정 매핑을 실측한 MySpider 현행 Web 서식으로 보정한다.
+ * 신규 설치뿐 아니라 이미 생성된 전역 템플릿에도 반복 적용되는 멱등 패치다.
+ */
+export const CONTRACT_TEMPLATE_PARITY_PATCHES: ContractTemplateParityPatch[] = [
   {
-    key: 'objectIndication',
-    title: '정산 대상',
+    code: 'base_contract',
+    title: '부동산 계약서',
+    transactionTypes: ['sale', 'jeonse', 'monthly', 'yearly'],
+    metadata: {
+      mySpiderCntrClsf: ['01', '02', '03', '05'],
+      mySpiderTranClsf: ['01', '02', '03', '08'],
+      mySpiderForm: ['ContractInputForm', 'ContractWebForm'],
+      mySpiderReport: ['ApartmentTradeContractReport', 'AnnexedReport'],
+      mySpiderTableName: ['TPCT01M'],
+    },
+  },
+  {
+    code: 'identity',
+    isRequired: false,
+    isActive: false,
+    metadata: {
+      documentRole: 'supportingEvidence',
+      authoredForm: false,
+    },
+  },
+  {
+    code: 'purchase_right_contract',
+    metadata: {
+      mySpiderForm: ['SalesRightContractInputForm', 'SaleRightWebForm'],
+      mySpiderReport: ['PurchaseRightTradeContractReport'],
+      mySpiderTableName: ['TPCT01M'],
+    },
+  },
+  {
+    code: 'union_member_right_contract',
+    metadata: {
+      mySpiderForm: ['HProjectMembersContractFrom', 'UnionWebForm'],
+      mySpiderReport: ['HProjectMembersContractReport'],
+      mySpiderTableName: ['TPCT32S'],
+    },
+  },
+  {
+    code: 'commercial_premium_contract',
+    transactionTypes: ['jeonse', 'monthly'],
+    metadata: {
+      mySpiderForm: [
+        'BuildingLeasePremiumContractInputForm',
+        'BuildingPremiumWebForm',
+      ],
+      mySpiderReport: ['BuildingLeasePremiumContractReport'],
+      mySpiderTableName: ['TPCT20S'],
+    },
+  },
+  {
+    code: 'right_transfer_contract',
+    metadata: {
+      mySpiderForm: ['TransferContractInputForm', 'TransferWebForm'],
+      mySpiderReport: ['RightTransferContractReport'],
+    },
+  },
+  {
+    code: 'right_succession_contract',
+    metadata: {
+      mySpiderForm: ['SuccessionContractInputForm', 'SuccessionWebForm'],
+      mySpiderReport: ['RightSuccessionContractReport'],
+    },
+  },
+  {
+    code: 'standard_lease_contract',
+    title: '표준임대차계약서 (구 호환 별칭)',
+    isActive: false,
+    metadata: {
+      aliasOf: 'private_rental_standard_lease_contract',
+      deprecatedReason:
+        '레거시 13은 private_rental_standard_lease_contract가 정식 코드로 대체함',
+    },
+  },
+  {
+    code: 'commercial_standard_lease_contract',
+    metadata: {
+      mySpiderForm: [
+        'BuildingLeaseStandardContractInputForm',
+        'BuildingStandardWebForm',
+      ],
+      mySpiderReport: ['BuildingLeaseStandardContractReport'],
+      mySpiderTableName: ['TPCT19S'],
+    },
+  },
+  {
+    code: 'house_lease_contract',
+    metadata: {
+      mySpiderCntrClsf: ['14'],
+      mySpiderForm: ['HouseLeaseContractInputForm', 'HouseStandardWebForm'],
+      mySpiderReport: ['HouseLeaseContractReport'],
+      mySpiderTableName: ['TPCT12S'],
+    },
+  },
+  {
+    code: 'sublease_contract',
+    metadata: {
+      mySpiderCntrClsf: ['03'],
+      mySpiderTranClsf: ['05'],
+      mySpiderForm: ['SubleaseContractInputForm', 'SubleaseWebForm'],
+      mySpiderReport: ['RealStateSubleaseContractReport'],
+      mySpiderTableName: ['TPCT01M'],
+    },
+  },
+  {
+    code: 'sublease_agreement',
+    metadata: {
+      mySpiderForm: ['SubleaseAgreeInputForm', 'SubleaseAgreeWebForm'],
+      mySpiderReport: ['SubleaseAgreeReport'],
+      mySpiderTableName: ['TPCT29S'],
+    },
+  },
+  ...[
+    [
+      'broker_explanation_residential',
+      'ConfirmExplanationInputForm1',
+      'ConfirmExplanationWeb1',
+      'ConfExp1Report',
+    ],
+    [
+      'broker_explanation_non_residential',
+      'ConfirmExplanationInputForm2',
+      'ConfirmExplanationWeb2',
+      'MediationTargetConfrimExplanation2Report',
+    ],
+    [
+      'broker_explanation_land',
+      'ConfirmExplanationInputForm3',
+      'ConfirmExplanationWeb3',
+      'MediationTargetConfrimExplanation3Report',
+    ],
+    [
+      'broker_explanation_special',
+      'ConfirmExplanationInputForm4',
+      'ConfirmExplanationWeb4',
+      'MediationTargetConfrimExplanation4Report',
+    ],
+  ].map(([code, input, web, report], index) => ({
+    code,
+    transactionTypes: ['sale', 'jeonse', 'monthly', 'yearly'],
+    metadata: {
+      mySpiderChckSetnClsf: [String(index + 1)],
+      mySpiderForm: [input, web],
+      mySpiderReport: [report],
+    },
+  })),
+  {
+    code: 'registry_document',
+    transactionTypes: ['sale', 'jeonse', 'monthly', 'yearly'],
+  },
+  {
+    code: 'house_transaction_report',
+    metadata: {
+      mySpiderCntrClsf: ['32'],
+      mySpiderForm: ['HouseTradeContractInputForm', 'HouseTradeReportWebForm'],
+      mySpiderReport: ['HouseTradeContractReport'],
+      mySpiderTableName: ['TPCT23S'],
+    },
+  },
+  {
+    code: 'real_estate_transaction_report',
+    metadata: {
+      mySpiderCntrClsf: ['34'],
+      mySpiderForm: ['RealStateTradeContractInputForm', 'TradeReportWebForm'],
+      mySpiderReport: ['RealStateTradeContractReport'],
+      mySpiderTableName: ['TPCT26S'],
+    },
+  },
+  {
+    code: 'real_estate_transaction_cancel_report',
+    metadata: {
+      mySpiderCntrClsf: ['35'],
+      mySpiderForm: [
+        'RealStateTradeContractRemoveInputForm',
+        'TradeCancelReportWebForm',
+      ],
+      mySpiderReport: ['RealStateTradeContractRemoveReport'],
+      mySpiderTableName: ['TPCT25S'],
+    },
+  },
+  {
+    code: 'lease_declaration',
+    title: '임대차계약 신고·변경신고서 (통합)',
+    transactionTypes: ['jeonse', 'monthly', 'yearly'],
+    metadata: {
+      mySpiderCntrClsf: ['47'],
+      mySpiderForm: ['LeaseForm', 'LeaseWebForm'],
+      mySpiderReport: ['LeaseContractReport'],
+      mySpiderTableName: ['TPCT33S'],
+    },
+  },
+  {
+    code: 'lease_change_declaration',
+    title: '임대차계약 변경신고서 (구 네이티브 서식)',
+    isActive: false,
+    metadata: {
+      mySpiderCntrClsf: ['45'],
+      mySpiderForm: ['LeaseChangeInputForm'],
+      mySpiderReport: ['LeaseChangeReport'],
+      legacyNativeOnly: true,
+    },
+  },
+  {
+    code: 'cash_receipt_document',
+    metadata: {
+      mySpiderCntrClsf: ['41'],
+      mySpiderForm: ['CashReceiptInputForm', 'CashWebForm'],
+      mySpiderReport: ['CashReceipReport'],
+      mySpiderTableName: ['TPCT15S'],
+    },
+  },
+  {
+    code: 'privacy_agreement',
+    metadata: {
+      mySpiderCntrClsf: ['43'],
+      mySpiderForm: ['PrivateInfoAgreeInputForm', 'PrivateWebForm'],
+      mySpiderReport: ['PrivateInfoAgreeReport'],
+      mySpiderTableName: ['TPCT16S'],
+    },
+  },
+  {
+    code: 'renewal_confirmation',
+    metadata: {
+      mySpiderCntrClsf: ['48'],
+      mySpiderForm: ['RenewalInputForm', 'RenewalWebForm'],
+      mySpiderReport: ['RenewalReport'],
+      mySpiderTableName: ['TPCT35S'],
+    },
+  },
+  {
+    code: 'guarantee_non_enrollment_agreement',
+    metadata: {
+      mySpiderCntrClsf: ['50'],
+      mySpiderForm: ['RenterAgreeInputForm', 'RenterAgreeWebForm'],
+      mySpiderReport: ['RenterAgreeReport'],
+      mySpiderTableName: ['TPCT37S'],
+    },
+  },
+  {
+    code: 'guarantee_partial_enrollment_agreement',
+    metadata: {
+      mySpiderCntrClsf: ['52'],
+      mySpiderForm: ['RenterAgreeInputForm2', 'RenterAgreeWebForm2'],
+      mySpiderReport: ['RenterAgreeReport2'],
+      mySpiderTableName: ['TPCT39S'],
+    },
+  },
+  {
+    code: 'jeonse_registration_not_requested',
+    metadata: {
+      mySpiderCntrClsf: ['51'],
+      mySpiderForm: ['NotRequestInputForm', 'NoRequestWebForm'],
+      mySpiderReport: ['NotRequestReport'],
+      mySpiderTableName: ['TPCT38S'],
+    },
+  },
+];
+
+/** 분양권 매매계약서 (레거시 04 / TPCT01M) */
+const PURCHASE_RIGHT_CONTRACT_FIELD_GROUPS: ContractTemplateFieldGroup[] = [
+  {
+    key: 'project',
+    title: '분양 목적물과 사업',
     fields: [
-      field('propertyAddress', '물건 소재지', 'text'),
-      field('periodFrom', '정산기간 (부터)', 'date'),
-      field('periodTo', '정산기간 (까지)', 'date'),
-      field('settlementBaseDate', '정산 기준일 (인도일)', 'date'),
+      field('projectName', '사업명ㆍ단지명', 'text'),
+      field('propertyAddress', '소재지', 'text'),
+      field('supplierName', '사업주체ㆍ시행사', 'text'),
+      field('buildingDong', '동', 'text'),
+      field('buildingUnit', '호', 'text'),
+      field('supplyArea', '공급면적', 'number', { unit: 'm2' }),
+      field('exclusiveArea', '전용면적', 'number', { unit: 'm2' }),
     ],
   },
   {
-    key: 'metering',
-    title: '검침 내역',
+    key: 'rightPrice',
+    title: '분양권과 거래대금',
     fields: [
-      field('electricityReading', '전기 사용량', 'number', { unit: 'kWh' }),
-      field('gasReading', '도시가스 사용량', 'number', { unit: 'm3' }),
-      field('waterReading', '상하수도 사용량', 'number', { unit: 'm3' }),
+      amountField('supplyPrice', '분양대금'),
+      amountField('paidSupplyAmount', '납부한 분양대금'),
+      amountField('premiumAmount', '프리미엄'),
+      amountField('totalPrice', '총 매매대금'),
+      amountField('downPayment', '계약금'),
+      amountField('interimPayment', '중도금'),
+      field('interimPaymentDate', '중도금 지급일', 'date'),
+      amountField('balancePayment', '잔금'),
+      field('balancePaymentDate', '잔금 지급일', 'date'),
     ],
   },
   {
-    key: 'settlement',
-    title: '정산 금액',
+    key: 'transferConditions',
+    title: '명의변경ㆍ대출ㆍ제한',
     fields: [
-      amountField('managementOfficeConfirmedAmount', '관리비 정산금 (관리사무소 확인분)'),
-      amountField('monthlyPaymentAmount', '월 납입액'),
-      amountField('unpaidAmount', '미납액'),
-      amountField('prepaidAmount', '선납액'),
-      field('costBearer', '부담 주체', 'select', {
-        options: ['매도인', '매수인', '임대인', '임차인'],
+      amountField('loanAmount', '중도금 대출 잔액'),
+      field('loanSuccession', '대출 승계 여부', 'select', {
+        options: ['승계', '상환', '해당 없음'],
       }),
-      field('settlementNote', '기타사항', 'textarea'),
+      field('transferRestriction', '전매 제한 확인', 'textarea'),
+      field('nameChangeDeadline', '명의변경 예정일', 'date'),
+      field('supplierApproval', '사업주체 승인 필요 여부', 'select', {
+        options: ['필요', '불필요', '확인 중'],
+      }),
+    ],
+  },
+  specialTermsGroup(),
+  partiesGroup('양도인', '양수인'),
+  brokerOfficeGroup(),
+];
+
+/** 조합원 입주권 매매계약서 (레거시 15 / TPCT32S) */
+const UNION_MEMBER_RIGHT_CONTRACT_FIELD_GROUPS: ContractTemplateFieldGroup[] = [
+  {
+    key: 'unionProject',
+    title: '조합ㆍ사업 표시',
+    fields: [
+      field('unionName', '조합명', 'text'),
+      field('projectName', '정비사업명', 'text'),
+      field('propertyAddress', '종전 부동산 소재지', 'text'),
+      field('scheduledDongUnit', '예정 동ㆍ호수', 'text'),
+      field('memberNumber', '조합원 번호', 'text'),
+      field('projectStage', '사업 진행 단계', 'select', {
+        options: [
+          '조합설립',
+          '사업시행인가',
+          '관리처분인가',
+          '착공',
+          '입주예정',
+        ],
+      }),
+    ],
+  },
+  {
+    key: 'unionPrice',
+    title: '권리가액ㆍ분담금ㆍ매매대금',
+    fields: [
+      amountField('appraisedRightValue', '권리가액'),
+      amountField('contributionPaid', '납부 분담금'),
+      amountField('contributionRemaining', '추가분담금 예상액'),
+      amountField('totalPrice', '매매대금'),
+      amountField('downPayment', '계약금'),
+      amountField('interimPayment', '중도금'),
+      amountField('balancePayment', '잔금'),
+      field('balancePaymentDate', '잔금 지급일', 'date'),
+    ],
+  },
+  {
+    key: 'succession',
+    title: '조합원 지위 승계',
+    fields: [
+      field('successionEligible', '승계요건 확인', 'select', {
+        options: ['확인', '조건부', '확인 필요'],
+      }),
+      field('unionApprovalDate', '조합 승인 예정일', 'date'),
+      field('taxAndFeeBearer', '세금ㆍ명의변경비 부담', 'textarea'),
+      field('arrears', '미납금ㆍ체납금', 'textarea'),
+    ],
+  },
+  specialTermsGroup(),
+  partiesGroup('양도인', '양수인'),
+  brokerOfficeGroup(),
+];
+
+/** 상가건물 임대차 권리금계약서 (레거시 11 / TPCT20S) */
+const COMMERCIAL_PREMIUM_CONTRACT_FIELD_GROUPS: ContractTemplateFieldGroup[] = [
+  propertyIndicationGroup(true),
+  {
+    key: 'existingLease',
+    title: '기존 임대차',
+    fields: [
+      field('lessorName', '임대인', 'text'),
+      amountField('leaseDeposit', '임대차 보증금'),
+      amountField('monthlyRent', '월 차임'),
+      field('businessType', '영업 업종', 'text'),
+      field('leaseEndDate', '기존 임대차 종료일', 'date'),
+      field('lessorConsentStatus', '임대인 협의 상태', 'select', {
+        options: ['동의', '협의 중', '미동의'],
+      }),
+    ],
+  },
+  {
+    key: 'premiumAssets',
+    title: '권리금 대상',
+    fields: [
+      amountField('facilityPremium', '시설 권리금'),
+      amountField('businessPremium', '영업 권리금'),
+      amountField('locationPremium', '바닥 권리금'),
+      field('facilityInventory', '시설ㆍ비품 목록', 'textarea'),
+      field('customerAndKnowhow', '거래처ㆍ신용ㆍ영업 노하우', 'textarea'),
+    ],
+  },
+  {
+    key: 'premiumPayment',
+    title: '권리금 지급',
+    fields: [
+      amountField('premiumTotal', '권리금 총액'),
+      amountField('downPayment', '계약금'),
+      amountField('interimPayment', '중도금'),
+      field('interimPaymentDate', '중도금 지급일', 'date'),
+      amountField('balancePayment', '잔금'),
+      field('balancePaymentDate', '잔금 지급일', 'date'),
+      field('handoverDate', '영업ㆍ시설 인도일', 'date'),
+    ],
+  },
+  specialTermsGroup(),
+  partiesGroup('기존 임차인', '신규 임차인'),
+  brokerOfficeGroup(),
+];
+
+function rightContractFieldGroups(
+  mode: 'transfer' | 'succession',
+): ContractTemplateFieldGroup[] {
+  const isSuccession = mode === 'succession';
+  return [
+    {
+      key: 'rightIndication',
+      title: isSuccession ? '승계할 권리ㆍ의무' : '양도할 권리',
+      fields: [
+        field('rightName', '권리 명칭', 'text'),
+        field('rightBasis', '발생 근거ㆍ원계약', 'textarea'),
+        field('rightHolder', '현재 권리자', 'text'),
+        field('obligorOrApprover', '의무자ㆍ승낙권자', 'text'),
+        field('rightScope', '권리 범위', 'textarea'),
+        field('restrictionDetails', '양도ㆍ승계 제한', 'textarea'),
+      ],
+    },
+    {
+      key: 'rightPayment',
+      title: '대금과 이전 일정',
+      fields: [
+        amountField('totalPrice', isSuccession ? '승계 대가' : '양도 대금'),
+        amountField('downPayment', '계약금'),
+        amountField('interimPayment', '중도금'),
+        amountField('balancePayment', '잔금'),
+        field('balancePaymentDate', '잔금 지급일', 'date'),
+        field(
+          'transferDate',
+          isSuccession ? '승계 기준일' : '권리 이전일',
+          'date',
+        ),
+      ],
+    },
+    ...(isSuccession
+      ? [
+          {
+            key: 'obligations',
+            title: '승계 채무와 정산',
+            fields: [
+              amountField('depositSuccession', '승계 보증금'),
+              amountField('unpaidAmount', '미납금'),
+              field('continuingObligations', '계속 의무', 'textarea'),
+              field('priorLiability', '기준일 이전 책임', 'textarea'),
+            ],
+          },
+        ]
+      : []),
+    specialTermsGroup(),
+    partiesGroup('양도인', '양수인'),
+    brokerOfficeGroup(),
+  ];
+}
+
+const RIGHT_TRANSFER_CONTRACT_FIELD_GROUPS =
+  rightContractFieldGroups('transfer');
+const RIGHT_SUCCESSION_CONTRACT_FIELD_GROUPS =
+  rightContractFieldGroups('succession');
+
+/** 전대차계약서 (범용 부동산 전대) */
+const SUBLEASE_CONTRACT_FIELD_GROUPS: ContractTemplateFieldGroup[] = [
+  propertyIndicationGroup(true),
+  {
+    key: 'originalLease',
+    title: '원 임대차계약',
+    fields: [
+      field('originalLessorName', '임대인', 'text'),
+      field('originalLeaseDate', '원 계약일', 'date'),
+      field('originalLeaseEndDate', '원 계약 만기일', 'date'),
+      amountField('originalDeposit', '원 임대차 보증금'),
+      amountField('originalMonthlyRent', '원 임대차 월차임'),
+      field('lessorConsentAttached', '임대인 전대동의서 첨부', 'checkbox'),
+    ],
+  },
+  {
+    key: 'subleaseTerms',
+    title: '전대차 조건',
+    fields: [
+      amountField('deposit', '전대차 보증금'),
+      amountField('monthlyRent', '전대차 월차임'),
+      amountField('downPayment', '계약금'),
+      amountField('balancePayment', '잔금'),
+      field('leaseStartDate', '전대차 시작일', 'date'),
+      field('leaseEndDate', '전대차 종료일', 'date'),
+      field('rentedUse', '사용 목적', 'text'),
+    ],
+  },
+  specialTermsGroup(),
+  partiesGroup('전대인', '전차인'),
+  brokerOfficeGroup(),
+];
+
+/** 전대차 동의서 (레거시 38 / TPCT29S) */
+const SUBLEASE_AGREEMENT_FIELD_GROUPS: ContractTemplateFieldGroup[] = [
+  propertyIndicationGroup(true),
+  {
+    key: 'consentParties',
+    title: '동의 관계인',
+    fields: [
+      ...partyFields('lessor', '임대인'),
+      ...partyFields('tenant', '임차인(전대인)'),
+      ...partyFields('subtenant', '전차인'),
+    ],
+  },
+  {
+    key: 'consentScope',
+    title: '전대 동의 범위',
+    fields: [
+      field('originalLeaseDate', '원 임대차 계약일', 'date'),
+      field('subleaseStartDate', '전대 시작일', 'date'),
+      field('subleaseEndDate', '전대 종료일', 'date'),
+      field('subleaseUse', '전대 목적ㆍ업종', 'text'),
+      field('consentConditions', '동의 조건', 'textarea'),
+      field('depositLiability', '보증금 반환 책임 확인', 'textarea'),
+      field('consentDate', '동의일', 'date'),
     ],
   },
 ];
+
+const IDENTITY_FIELD_GROUPS: ContractTemplateFieldGroup[] = [
+  {
+    key: 'person',
+    title: '확인 대상자',
+    fields: [
+      field('personRole', '계약상 역할', 'text'),
+      ...partyFields('person', '본인'),
+      field('nationality', '국적', 'text'),
+    ],
+  },
+  {
+    key: 'identityDocument',
+    title: '신분증 확인',
+    fields: [
+      field('identityType', '신분증 종류', 'select', {
+        options: [
+          '주민등록증',
+          '운전면허증',
+          '여권',
+          '외국인등록증',
+          '법인서류',
+          '그 밖의 서류',
+        ],
+      }),
+      field('identityNumber', '문서번호', 'text'),
+      field('issuedBy', '발급기관', 'text'),
+      field('issuedDate', '발급일', 'date'),
+      field('verifiedAt', '확인일시', 'date'),
+      field('originalSeen', '원본 대면 확인', 'checkbox'),
+      field('agentDocumentsChecked', '대리권 서류 확인', 'checkbox'),
+      field('verificationMemo', '확인 메모', 'textarea'),
+    ],
+  },
+];
+
+const BROKER_EXPLANATION_GENERIC_FIELD_GROUPS: ContractTemplateFieldGroup[] = [
+  propertyIndicationGroup(true),
+  {
+    key: 'publicRecords',
+    title: '권리관계ㆍ공적장부 확인',
+    fields: [
+      field('registryCheckedAt', '등기사항 확인일', 'date'),
+      field('ownerAndRights', '소유권ㆍ소유권 외 권리', 'textarea'),
+      field('landLedgerChecked', '토지대장 확인', 'checkbox'),
+      field('buildingLedgerChecked', '건축물대장 확인', 'checkbox'),
+      field('landUsePlanChecked', '토지이용계획 확인', 'checkbox'),
+    ],
+  },
+  {
+    key: 'actualCondition',
+    title: '실제 상태와 거래 조건',
+    fields: [
+      field('actualConditionMemo', '시설ㆍ환경ㆍ입지 상태', 'textarea'),
+      field('managementFeeDetails', '관리비 내역', 'textarea'),
+      field('taxAndFeeDetails', '조세ㆍ공과금', 'textarea'),
+      field('brokerExplanationMemo', '중개사의 확인ㆍ설명', 'textarea'),
+    ],
+  },
+  partiesGroup('소유자ㆍ매도(임대)인', '매수(임차)인'),
+  brokerOfficeGroup(),
+];
+
+const BROKER_EXPLANATION_LAND_FIELD_GROUPS: ContractTemplateFieldGroup[] = [
+  {
+    key: 'landIndication',
+    title: '토지의 표시',
+    fields: [
+      field('propertyAddress', '소재지', 'text'),
+      field('landCategory', '지목', 'text'),
+      field('landArea', '면적', 'number', { unit: 'm2' }),
+      field('actualLandUse', '실제 이용상태', 'text'),
+      field('boundaryStatus', '경계ㆍ현황', 'textarea'),
+      field('roadAccess', '도로 접면', 'text'),
+    ],
+  },
+  {
+    key: 'landRestrictions',
+    title: '공법상 이용제한',
+    fields: [
+      field('zoning', '용도지역ㆍ지구ㆍ구역', 'textarea'),
+      field('transactionPermit', '토지거래허가', 'select', {
+        options: ['대상 아님', '허가 대상', '확인 필요'],
+      }),
+      field('farmlandStatus', '농지 관련 사항', 'textarea'),
+      field('forestStatus', '산지 관련 사항', 'textarea'),
+      field('developmentPermit', '개발행위ㆍ건축 가능성', 'textarea'),
+    ],
+  },
+  {
+    key: 'landRights',
+    title: '권리관계와 세금',
+    fields: [
+      field('ownershipDetails', '소유권 사항', 'textarea'),
+      field('otherRights', '소유권 외 권리', 'textarea'),
+      field('taxDetails', '조세ㆍ공과금', 'textarea'),
+      field('brokerExplanationMemo', '중개사의 확인ㆍ설명', 'textarea'),
+    ],
+  },
+  partiesGroup('매도(임대)인', '매수(임차)인'),
+  brokerOfficeGroup(),
+];
+
+const BROKER_EXPLANATION_SPECIAL_FIELD_GROUPS: ContractTemplateFieldGroup[] = [
+  {
+    key: 'specialObject',
+    title: '특수 중개대상물의 표시',
+    fields: [
+      field('specialObjectType', '종류', 'select', {
+        options: ['입목', '광업재단', '공장재단', '그 밖의 특수물건'],
+      }),
+      field('propertyAddress', '소재지', 'text'),
+      field('objectDescription', '목적물 상세', 'textarea'),
+      field('registrationOrLedgerNo', '등록ㆍ원부 번호', 'text'),
+      field('valuationBasis', '평가ㆍ거래 기준', 'textarea'),
+    ],
+  },
+  {
+    key: 'specialRights',
+    title: '권리ㆍ이용 제한과 이전 절차',
+    fields: [
+      field('ownershipDetails', '소유권ㆍ권리관계', 'textarea'),
+      field('publicRestrictions', '공법상 제한', 'textarea'),
+      field('transferProcedure', '이전ㆍ등록 절차', 'textarea'),
+      field('attachedEvidence', '첨부 확인자료', 'textarea'),
+      field('brokerExplanationMemo', '중개사의 확인ㆍ설명', 'textarea'),
+    ],
+  },
+  partiesGroup('매도(임대)인', '매수(임차)인'),
+  brokerOfficeGroup(),
+];
+
+const REGISTRY_DOCUMENT_FIELD_GROUPS: ContractTemplateFieldGroup[] = [
+  {
+    key: 'registrySummary',
+    title: '공적장부 확인',
+    fields: [
+      field('propertyAddress', '소재지', 'text'),
+      field('registryIssuedAt', '등기사항증명서 발급일시', 'date'),
+      field('registryType', '등기 구분', 'select', {
+        options: ['토지', '건물', '집합건물', '그 밖의 등기'],
+      }),
+      field('ownerName', '등기명의인', 'text'),
+      field('ledgerDocuments', '함께 확인한 공적장부', 'textarea'),
+    ],
+  },
+  {
+    key: 'registryRights',
+    title: '권리 제한 사항',
+    fields: [
+      field('ownershipSection', '갑구 요약', 'textarea'),
+      field('encumbranceSection', '을구 요약', 'textarea'),
+      amountField('securedDebtTotal', '채권최고액 합계'),
+      field('provisionalSeizure', '가압류ㆍ가처분ㆍ압류', 'textarea'),
+      field('leaseholdRights', '전세권ㆍ임차권등기', 'textarea'),
+      field('registryMemo', '확인 메모', 'textarea'),
+    ],
+  },
+];
+
+const TRANSACTION_CANCEL_REPORT_FIELD_GROUPS: ContractTemplateFieldGroup[] = [
+  {
+    key: 'originalReport',
+    title: '원 거래신고',
+    fields: [
+      field('reportReceiptNo', '신고 접수번호', 'text'),
+      field('propertyAddress', '부동산 소재지', 'text'),
+      field('originalContractDate', '원 계약일', 'date'),
+      amountField('originalDealPrice', '신고 거래금액'),
+      field('reportOffice', '신고 관청', 'text'),
+    ],
+  },
+  {
+    key: 'cancellation',
+    title: '해제ㆍ무효ㆍ취소 내용',
+    fields: [
+      field('cancellationType', '구분', 'select', {
+        options: ['해제', '무효', '취소'],
+      }),
+      field('cancellationDate', '발생일', 'date'),
+      field('cancellationReason', '사유', 'textarea'),
+      field('refundCompleted', '지급금 반환 완료', 'checkbox'),
+      field('evidenceAttached', '증빙서류 첨부', 'checkbox'),
+    ],
+  },
+  partiesGroup('매도인', '매수인'),
+  brokerOfficeGroup(),
+];
+
+const HOUSE_TRANSACTION_REPORT_FIELD_GROUPS: ContractTemplateFieldGroup[] = [
+  ...REAL_ESTATE_TRANSACTION_REPORT_FIELD_GROUPS,
+  {
+    key: 'houseReportDetails',
+    title: '주택 거래 추가사항',
+    fields: [
+      field('housingType', '주택 유형', 'select', {
+        options: [
+          '아파트',
+          '연립ㆍ다세대',
+          '단독ㆍ다가구',
+          '오피스텔',
+          '그 밖의 주택',
+        ],
+      }),
+      field('regulatedArea', '규제지역 여부', 'select', {
+        options: ['해당', '해당 없음', '확인 필요'],
+      }),
+      field('fundPlanAttached', '자금조달ㆍ입주계획서 첨부', 'checkbox'),
+      field('actualOccupancyPlan', '입주 계획', 'textarea'),
+    ],
+  },
+];
+
+const LEASE_CHANGE_DECLARATION_FIELD_GROUPS: ContractTemplateFieldGroup[] = [
+  {
+    key: 'reportedLease',
+    title: '기존 임대차 신고',
+    fields: [
+      field('reportReceiptNo', '신고 접수번호', 'text'),
+      field('propertyAddress', '주택 소재지', 'text'),
+      field('originalContractDate', '종전 계약일', 'date'),
+      field('changeDate', '변경 합의일', 'date'),
+    ],
+  },
+  {
+    key: 'beforeAfter',
+    title: '변경 전ㆍ후 내용',
+    fields: [
+      amountField('beforeDeposit', '변경 전 보증금'),
+      amountField('afterDeposit', '변경 후 보증금'),
+      amountField('beforeMonthlyRent', '변경 전 차임'),
+      amountField('afterMonthlyRent', '변경 후 차임'),
+      field('beforeLeaseEndDate', '변경 전 종료일', 'date'),
+      field('afterLeaseEndDate', '변경 후 종료일', 'date'),
+      field('otherChanges', '그 밖의 변경사항', 'textarea'),
+    ],
+  },
+  partiesGroup('임대인', '임차인'),
+  brokerOfficeGroup(),
+];
+
+const RENEWAL_CONFIRMATION_FIELD_GROUPS: ContractTemplateFieldGroup[] = [
+  propertyIndicationGroup(true),
+  {
+    key: 'leaseHistory',
+    title: '임대차와 갱신 확인',
+    fields: [
+      field('originalLeaseDate', '최초 계약일', 'date'),
+      field('currentLeaseStartDate', '현재 계약 시작일', 'date'),
+      field('currentLeaseEndDate', '현재 계약 종료일', 'date'),
+      amountField('currentDeposit', '현재 보증금'),
+      amountField('currentMonthlyRent', '현재 차임'),
+      field('renewalRightExercised', '계약갱신요구권 행사 여부', 'select', {
+        options: ['행사함', '행사하지 않음', '확인 불가'],
+      }),
+      field('renewalRequestDate', '행사ㆍ확인일', 'date'),
+      field('rejectionReason', '갱신 거절 사유', 'textarea'),
+      field('confirmationText', '당사자 확인 문구', 'textarea'),
+    ],
+  },
+  partiesGroup('임대인ㆍ매도인', '임차인'),
+];
+
+const GUARANTEE_NON_ENROLLMENT_FIELD_GROUPS: ContractTemplateFieldGroup[] = [
+  propertyIndicationGroup(true),
+  {
+    key: 'guaranteeStatus',
+    title: '임대보증금 보증 미가입 확인',
+    fields: [
+      amountField('deposit', '임대보증금'),
+      amountField('priorityRepaymentLimit', '우선변제금 기준액'),
+      field('nonEnrollmentReason', '미가입 사유', 'select', {
+        options: ['우선변제금 이하', '보증대상 아님', '그 밖의 사유'],
+      }),
+      field('riskExplanation', '미가입 위험 설명', 'textarea'),
+      field('alternativeProtection', '대체 보증금 보호수단', 'textarea'),
+      field('lesseeAgreed', '임차인 설명 청취ㆍ동의', 'checkbox'),
+      field('agreementDate', '동의일', 'date'),
+    ],
+  },
+  partiesGroup('임대사업자', '임차인'),
+];
+
+const GUARANTEE_PARTIAL_ENROLLMENT_FIELD_GROUPS: ContractTemplateFieldGroup[] =
+  [
+    propertyIndicationGroup(true),
+    {
+      key: 'partialGuarantee',
+      title: '임대보증 일부가입 확인',
+      fields: [
+        amountField('deposit', '임대보증금'),
+        amountField('guaranteedAmount', '보증 가입금액'),
+        amountField('unguaranteedAmount', '미보증 금액'),
+        field('guaranteeAgency', '보증기관', 'text'),
+        field('guaranteeStartDate', '보증 시작일', 'date'),
+        field('guaranteeEndDate', '보증 종료일', 'date'),
+        field('unguaranteedRiskExplanation', '미보증 범위 설명', 'textarea'),
+        field('lesseeAgreed', '임차인 설명 청취ㆍ동의', 'checkbox'),
+        field('agreementDate', '동의일', 'date'),
+      ],
+    },
+    partiesGroup('임대사업자', '임차인'),
+  ];
+
+const JEONSE_REGISTRATION_NOT_REQUESTED_FIELD_GROUPS: ContractTemplateFieldGroup[] =
+  [
+    propertyIndicationGroup(true),
+    {
+      key: 'registrationDecision',
+      title: '전세권설정 미요청 확인',
+      fields: [
+        amountField('deposit', '보증금'),
+        field('leaseStartDate', '임대차 시작일', 'date'),
+        field('leaseEndDate', '임대차 종료일', 'date'),
+        field(
+          'notRequestedReason',
+          '전세권설정을 요청하지 않는 사유',
+          'textarea',
+        ),
+        field('moveInReportExplained', '전입신고 안내', 'checkbox'),
+        field('fixedDateExplained', '확정일자 안내', 'checkbox'),
+        field('possessionRequirementExplained', '점유 유지 안내', 'checkbox'),
+        field('riskAcknowledged', '위험 설명 청취ㆍ확인', 'checkbox'),
+        field('confirmationDate', '확인일', 'date'),
+      ],
+    },
+    partiesGroup('임대인', '임차인'),
+  ];
 
 /**
  * template code → documentEngine.fieldGroups 매핑.
  * 10대 핵심 문서(documents-form-catalog.md §4) + 이번 갭 보강 신규 코드 전부.
  */
-export const CONTRACT_TEMPLATE_FIELD_GROUPS: Record<string, ContractTemplateFieldGroup[]> = {
+export const CONTRACT_TEMPLATE_FIELD_GROUPS: Record<
+  string,
+  ContractTemplateFieldGroup[]
+> = {
   // §4 10대 핵심 문서
   base_contract: BASE_CONTRACT_FIELD_GROUPS,
+  purchase_right_contract: PURCHASE_RIGHT_CONTRACT_FIELD_GROUPS,
+  union_member_right_contract: UNION_MEMBER_RIGHT_CONTRACT_FIELD_GROUPS,
+  commercial_premium_contract: COMMERCIAL_PREMIUM_CONTRACT_FIELD_GROUPS,
+  right_transfer_contract: RIGHT_TRANSFER_CONTRACT_FIELD_GROUPS,
+  right_succession_contract: RIGHT_SUCCESSION_CONTRACT_FIELD_GROUPS,
   standard_lease_contract: HOUSE_STANDARD_LEASE_FIELD_GROUPS,
   house_lease_contract: HOUSE_STANDARD_LEASE_FIELD_GROUPS,
   commercial_standard_lease_contract: COMMERCIAL_STANDARD_LEASE_FIELD_GROUPS,
+  sublease_contract: SUBLEASE_CONTRACT_FIELD_GROUPS,
+  sublease_agreement: SUBLEASE_AGREEMENT_FIELD_GROUPS,
+  identity: IDENTITY_FIELD_GROUPS,
+  broker_explanation: BROKER_EXPLANATION_GENERIC_FIELD_GROUPS,
   broker_explanation_residential: BROKER_EXPLANATION_RESIDENTIAL_FIELD_GROUPS,
-  broker_explanation_non_residential: BROKER_EXPLANATION_NON_RESIDENTIAL_FIELD_GROUPS,
+  broker_explanation_non_residential:
+    BROKER_EXPLANATION_NON_RESIDENTIAL_FIELD_GROUPS,
+  broker_explanation_land: BROKER_EXPLANATION_LAND_FIELD_GROUPS,
+  broker_explanation_special: BROKER_EXPLANATION_SPECIAL_FIELD_GROUPS,
+  registry_document: REGISTRY_DOCUMENT_FIELD_GROUPS,
   real_estate_transaction_report: REAL_ESTATE_TRANSACTION_REPORT_FIELD_GROUPS,
+  real_estate_transaction_cancel_report: TRANSACTION_CANCEL_REPORT_FIELD_GROUPS,
+  house_transaction_report: HOUSE_TRANSACTION_REPORT_FIELD_GROUPS,
   lease_declaration: LEASE_DECLARATION_FIELD_GROUPS,
+  house_lease_declaration: LEASE_DECLARATION_FIELD_GROUPS,
+  lease_change_declaration: LEASE_CHANGE_DECLARATION_FIELD_GROUPS,
+  renewal_confirmation: RENEWAL_CONFIRMATION_FIELD_GROUPS,
+  guarantee_non_enrollment_agreement: GUARANTEE_NON_ENROLLMENT_FIELD_GROUPS,
+  guarantee_partial_enrollment_agreement:
+    GUARANTEE_PARTIAL_ENROLLMENT_FIELD_GROUPS,
+  jeonse_registration_not_requested:
+    JEONSE_REGISTRATION_NOT_REQUESTED_FIELD_GROUPS,
   broker_fee_receipt: BROKER_FEE_RECEIPT_FIELD_GROUPS,
   privacy_agreement: PRIVACY_AGREEMENT_FIELD_GROUPS,
   cash_receipt_document: CASH_RECEIPT_FIELD_GROUPS,
   // 신규 코드
   exchange_contract: EXCHANGE_CONTRACT_FIELD_GROUPS,
-  private_rental_standard_lease_contract: PRIVATE_RENTAL_STANDARD_LEASE_FIELD_GROUPS,
+  private_rental_standard_lease_contract:
+    PRIVATE_RENTAL_STANDARD_LEASE_FIELD_GROUPS,
   trade_agreement: TRADE_AGREEMENT_FIELD_GROUPS,
   exclusive_brokerage_contract: EXCLUSIVE_BROKERAGE_CONTRACT_FIELD_GROUPS,
   transaction_power_of_attorney: TRANSACTION_POWER_OF_ATTORNEY_FIELD_GROUPS,
@@ -2277,13 +3522,19 @@ export const OFFICE_CLAUSE_TEMPLATE_SEEDS: OfficeClauseTemplateSeed[] = [
  * - 이미 존재하는 코드는 정의 컬럼(title/category/transactionTypes/isRequired/sortOrder)만 갱신하고
  *   metadata는 병합(기존 documentEngine 등 보존)한다. isActive는 건드리지 않는다.
  */
-export async function seedContractTemplateDefinitions(prisma: ContractTemplatePrisma) {
-  const codes = CONTRACT_TEMPLATE_DEFINITION_SEEDS.map((definition) => definition.code);
+export async function seedContractTemplateDefinitions(
+  prisma: ContractTemplatePrisma,
+) {
+  const codes = CONTRACT_TEMPLATE_DEFINITION_SEEDS.map(
+    (definition) => definition.code,
+  );
   const existing = await prisma.contractDocumentTemplate.findMany({
     where: { officeId: null, code: { in: codes } },
     select: { id: true, code: true, metadata: true },
   });
-  const existingByCode = new Map(existing.map((template) => [template.code, template]));
+  const existingByCode = new Map(
+    existing.map((template) => [template.code, template]),
+  );
 
   for (const definition of CONTRACT_TEMPLATE_DEFINITION_SEEDS) {
     const current = existingByCode.get(definition.code);
@@ -2322,8 +3573,51 @@ export async function seedContractTemplateDefinitions(prisma: ContractTemplatePr
   }
 }
 
-export async function seedContractTemplateBodies(prisma: ContractTemplatePrisma) {
-  const seedMap = new Map(CONTRACT_TEMPLATE_BODY_SEEDS.map((seed) => [seed.code, seed]));
+/** 기존 전역 템플릿을 현행 MySpider 매핑으로 멱등 보정한다. */
+export async function seedContractTemplateParity(
+  prisma: ContractTemplatePrisma,
+) {
+  const codes = CONTRACT_TEMPLATE_PARITY_PATCHES.map((patch) => patch.code);
+  const templates = await prisma.contractDocumentTemplate.findMany({
+    where: { officeId: null, code: { in: codes } },
+    select: { id: true, code: true, metadata: true },
+  });
+  const patchByCode = new Map(
+    CONTRACT_TEMPLATE_PARITY_PATCHES.map((patch) => [patch.code, patch]),
+  );
+
+  for (const template of templates) {
+    const patch = patchByCode.get(template.code);
+    if (!patch) continue;
+
+    await prisma.contractDocumentTemplate.update({
+      where: { id: template.id },
+      data: {
+        title: patch.title,
+        category: patch.category,
+        transactionTypes: patch.transactionTypes,
+        isRequired: patch.isRequired,
+        isActive: patch.isActive,
+        sortOrder: patch.sortOrder,
+        ...(patch.metadata
+          ? {
+              metadata: {
+                ...asRecord(template.metadata),
+                ...patch.metadata,
+              },
+            }
+          : {}),
+      },
+    });
+  }
+}
+
+export async function seedContractTemplateBodies(
+  prisma: ContractTemplatePrisma,
+) {
+  const seedMap = new Map(
+    CONTRACT_TEMPLATE_BODY_SEEDS.map((seed) => [seed.code, seed]),
+  );
   const templates = await prisma.contractDocumentTemplate.findMany({
     where: {
       officeId: null,

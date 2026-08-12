@@ -365,7 +365,7 @@ model DealPayment {
 }
 
 // ============================================================
-// 계약서 (Contract, Deal 1:1)
+// 계약서 (Deal 연결 시 1:1, 독립 서식 묶음은 dealId=null)
 // 본계약이 체결되면 생성. 계약서 작성 자체가 트리거이며, 계약금 입금과는
 // 별개 이벤트다 (소액 월세·가계약금 승계·법인 거래 등 계약금 없는 케이스 존재).
 // 실제 돈 흐름은 DealPayment, 계약서 문서의 명목 금액은 Contract.stated*.
@@ -374,14 +374,14 @@ model DealPayment {
 model Contract {
   id       String @id @default(uuid()) @db.Uuid
   officeId String @map("office_id") @db.Uuid
-  dealId   String @unique @map("deal_id") @db.Uuid
+  dealId   String? @unique @map("deal_id") @db.Uuid
 
   // 거래 유형 (계약서 기준)
-  transactionType String @map("transaction_type") // sale / jeonse / monthly
+  transactionType String @map("transaction_type") // sale / jeonse / monthly / yearly / exchange / sublease / transfer / succession
 
   // 당사자 (계약서 기재자. Deal 의 당사자와 다를 수 있음 - 대리인 등)
-  buyerContactId  String @map("buyer_contact_id") @db.Uuid
-  sellerContactId String @map("seller_contact_id") @db.Uuid
+  buyerContactId  String? @map("buyer_contact_id") @db.Uuid
+  sellerContactId String? @map("seller_contact_id") @db.Uuid
 
   // ─── 계약서 상 총액 (Deal.agreedPrice 의 시점 스냅샷) ────────
   /// 계약서 맨 위에 찍히는 총 거래금액 (매매가/전세금, 만원)
@@ -397,8 +397,8 @@ model Contract {
   statedBalance        Int?      @map("stated_balance")
   statedBalanceDate    DateTime? @map("stated_balance_date")
 
-  // 월세인 경우
-  monthlyRent Int? @map("monthly_rent") // 계약서상 월세 (만원)
+  // 월세·연세인 경우 (연세는 같은 금액 슬롯에 연 차임을 저장)
+  monthlyRent Int? @map("monthly_rent") // 계약서상 월/연 차임 (만원)
 
   // ─── 상태 ────────────────────────────────────────────────
   /// draft / signed / depositPaid / balancePaid / registered / cancelled
@@ -410,7 +410,7 @@ model Contract {
   /// 입주/이전일
   moveInDate   DateTime? @map("move_in_date")
 
-  // 임대 기간 (전세/월세)
+  // 임대 기간 (전세/월세/연세)
   leaseStartDate DateTime? @map("lease_start_date")
   leaseEndDate   DateTime? @map("lease_end_date")
 
@@ -427,9 +427,9 @@ model Contract {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   office        Office             @relation(fields: [officeId], references: [id])
-  deal          Deal               @relation(fields: [dealId], references: [id])
-  buyerContact  Contact            @relation("ContractBuyer", fields: [buyerContactId], references: [id])
-  sellerContact Contact            @relation("ContractSeller", fields: [sellerContactId], references: [id])
+  deal          Deal?              @relation(fields: [dealId], references: [id])
+  buyerContact  Contact?           @relation("ContractBuyer", fields: [buyerContactId], references: [id])
+  sellerContact Contact?           @relation("ContractSeller", fields: [sellerContactId], references: [id])
   tasks         Task[]
   documents     ContractDocument[]
   parties       ContractParty[]

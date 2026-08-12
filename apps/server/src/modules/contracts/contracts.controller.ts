@@ -446,7 +446,7 @@ export class ContractsController {
   create(
     @Body()
     dto: {
-      dealId: string;
+      dealId?: string;
       transactionType?: string;
       buyerContactId?: string;
       sellerContactId?: string;

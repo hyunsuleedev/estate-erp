@@ -55,14 +55,17 @@ export {
   collectContractClauseFieldKeys,
   getClauseFieldValue,
   getContractClauseLayout,
+  getContractClauseLayoutContext,
   isClauseRowVisible,
   isContractPrintOptionFieldKey,
+  resolveContractClauseSubject,
 } from '@estate-erp/shared';
 export type {
   ClauseArticle,
   ClauseFieldControl,
   ClauseRow,
   ClauseSegment,
+  ContractClauseLayoutContext,
   ContractAmountNotation,
   ContractPrintOptionFieldKey,
 } from '@estate-erp/shared';

@@ -104,6 +104,65 @@ describe('contract document engine — 거래유형별 기본 본문 조항 주�
     assert.equal(draft.fields.bodyText, '사용자가 직접 고친 본문 조항');
   });
 
+  it('upgrades only a saved body that exactly matches the old common template body', () => {
+    const draft = buildContractDocumentEngineDraft({
+      contract: contract({ transactionType: 'sale' }),
+      template: templateWithDefaultBody(),
+      document: {
+        metadata: {
+          documentEngine: {
+            version: 1,
+            fields: { bodyText: COMMON_BODY, specialTerms: '기존 특약' },
+          },
+        },
+      },
+    });
+
+    assert.equal(draft.fields.bodyText, SALE_BODY);
+    assert.equal(draft.fields.specialTerms, '기존 특약');
+  });
+
+  it('uses the registered property type in a base-contract default body', () => {
+    const body = getContractDocumentEngineDefaultBodyText(
+      templateWithDefaultBody({
+        metadata: {
+          documentEngine: {
+            fields: { bodyText: COMMON_BODY },
+            defaultBody: {
+              sale: '제3조 매도인은 위 부동산의 권리 제한을 제거한다.',
+            },
+          },
+        },
+      }),
+      'sale',
+      {
+        documentMetadata: {
+          formRegistration: { propertyClass: 'apartment', cntrClsf: '01' },
+        },
+      },
+    );
+
+    assert.equal(body, '제3조 매도인은 위 아파트의 권리 제한을 제거한다.');
+  });
+
+  it('removes article 1 and 2 from a dedicated template body rendered structurally', () => {
+    const body = getContractDocumentEngineDefaultBodyText(
+      templateWithDefaultBody({
+        code: 'purchase_right_contract',
+        metadata: {
+          documentEngine: {
+            defaultBody: {
+              sale: ['제1조 첫 조항', '제2조 둘째 조항', '제3조 셋째 조항'].join('\n'),
+            },
+          },
+        },
+      }),
+      'sale',
+    );
+
+    assert.equal(body, '제3조 셋째 조항');
+  });
+
   it('does not inject into a saved document even when bodyText key is absent', () => {
     // 저장된 엔진 필드가 하나라도 있으면 기존 문서로 취급한다 —
     // 기본 본문 주입은 신규 문서에만 적용 (사용자 편집/저장 상태 보존).

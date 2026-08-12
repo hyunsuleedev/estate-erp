@@ -1,6 +1,6 @@
 /**
  * contracts 라우트 공용 유틸/소형 컴포넌트.
- * 페이지(index) · 상세(-contract-detail) · 문서 편집기(-document-editor)에서 공유한다.
+ * 페이지(index)와 문서 편집기(-document-editor)에서 공유한다.
  */
 import type {
   Contract,
@@ -27,7 +27,7 @@ import { cn } from '@/lib/utils';
 // 상수
 // ---------------------------------------------------------------------------
 
-/** 계약서 거래 유형 (shared ContractTransactionType 7종, 라벨은 shared 단일 소스) */
+/** 계약서 거래 유형 (shared ContractTransactionType 전종, 라벨은 shared 단일 소스) */
 export const CONTRACT_TRANSACTION_TYPES: Array<{ value: string; label: string }> =
   Object.entries(CONTRACT_TRANSACTION_TYPE_LABELS).map(([value, label]) => ({
     value,
@@ -38,11 +38,14 @@ const CONTRACT_TRANSACTION_TYPE_SET = new Set(
   CONTRACT_TRANSACTION_TYPES.map((type) => type.value),
 );
 
-/** StatusBadge(kind=transactionType)가 커버하는 기본 거래유형 */
-const BASE_TRANSACTION_TYPES = new Set(['sale', 'jeonse', 'monthly']);
+/** StatusBadge(kind=transactionType)가 커버하는 매물/Deal 기본 거래유형 */
+const DEAL_TRANSACTION_TYPES = new Set(['sale', 'jeonse', 'monthly']);
+
+/** 문서관리 기본 필터에 노출하는 부동산 계약 거래유형 */
+const BASE_TRANSACTION_TYPES = new Set(['sale', 'jeonse', 'monthly', 'yearly']);
 
 /**
- * 목록 필터바용 기본 거래유형 3종 (제품 결정 — 연세(yearly) 없음).
+ * 목록 필터바용 기본 거래유형 4종.
  * 계약서 확장 유형(교환/전대/양도/승계)은 필터 대상에서 제외한다.
  */
 export const BASE_CONTRACT_TRANSACTION_TYPES: Array<{ value: string; label: string }> =
@@ -145,7 +148,7 @@ export function ContractTransactionTypeBadge({
   className?: string;
 }) {
   if (!type) return null;
-  if (BASE_TRANSACTION_TYPES.has(type)) {
+  if (DEAL_TRANSACTION_TYPES.has(type)) {
     return <StatusBadge kind="transactionType" status={type} className={className} />;
   }
   return (
@@ -268,15 +271,18 @@ export function validateContractForm(form: ContractForm): string | null {
   if (signedPlus && !form.contractDate) {
     return '서명완료 이상 상태는 계약일 입력이 필요합니다.';
   }
-  if (form.transactionType === 'monthly' && !toOptionalNumber(form.monthlyRent)) {
-    return '월세 계약은 월세 금액 입력이 필요합니다.';
+  if (
+    (form.transactionType === 'monthly' || form.transactionType === 'yearly') &&
+    !toOptionalNumber(form.monthlyRent)
+  ) {
+    return `${form.transactionType === 'yearly' ? '연세' : '월세'} 계약은 차임 금액 입력이 필요합니다.`;
   }
   if (
     signedPlus &&
-    (form.transactionType === 'jeonse' || form.transactionType === 'monthly') &&
+    ['jeonse', 'monthly', 'yearly'].includes(form.transactionType) &&
     (!form.leaseStartDate || !form.leaseEndDate)
   ) {
-    return '전세/월세 계약은 임대 시작일과 종료일 입력이 필요합니다.';
+    return '전세/월세/연세 계약은 임대 시작일과 종료일 입력이 필요합니다.';
   }
   return null;
 }

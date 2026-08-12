@@ -68,6 +68,15 @@ export type ClauseArticle = {
   rows: ClauseRow[];
 };
 
+/** 문서 등록 메뉴의 종류 선택값. 레이아웃 문구의 목적물 명칭 치환에만 사용한다. */
+export type ContractClauseLayoutContext = {
+  propertyClass?: string | null;
+  cntrClsf?: string | null;
+  groupLabel?: string | null;
+  contractSubject?: string | null;
+  customContractSubject?: string | null;
+};
+
 // ─────────────────────────────────────────────────────────────
 // printOptions 키 판별 — 렌더러의 읽기/쓰기 라우팅 기준
 // ─────────────────────────────────────────────────────────────
@@ -305,19 +314,437 @@ export const BASE_CONTRACT_SALE_CLAUSES: ClauseArticle[] = [
 ];
 
 // ─────────────────────────────────────────────────────────────
+// 임대차 및 전용 계약서 제1·2조 레이아웃
+// ─────────────────────────────────────────────────────────────
+
+function bodyArticle(): ClauseArticle {
+  return {
+    no: '제3조~',
+    title: '본문 조항',
+    rows: [{ key: 'bodyClauses', segments: [slot('bodyText', 'text')] }],
+  };
+}
+
+function amountRow(
+  key: string,
+  label: string,
+  suffix = '만원정',
+  dateKey?: string,
+): ClauseRow {
+  return {
+    key,
+    label,
+    segments: [
+      text('金'),
+      slot(key, 'amount', { suffix }),
+      ...(dateKey ? [slot(dateKey, 'date', { suffix: '에 지급하기로 함.' })] : []),
+    ],
+  };
+}
+
+function createBaseLeaseClauses(
+  transactionType: 'jeonse' | 'monthly' | 'yearly',
+): ClauseArticle[] {
+  const rentRows: ClauseRow[] =
+    transactionType === 'monthly'
+      ? [amountRow('monthlyRent', '차임(월세)', '만원정')]
+      : transactionType === 'yearly'
+        ? [amountRow('annualRent', '연 차임', '만원정', 'yearlyRentPayDate')]
+        : [];
+
+  return [
+    {
+      no: '제1조',
+      intro:
+        '위 부동산의 임대차에 있어 임차인은 보증금과 차임을 아래와 같이 지불하기로 한다.',
+      rows: [
+        amountRow('deposit', '보증금'),
+        amountRow('downPayment', '계약금'),
+        amountRow('interimPayment', '중도금', '만원정', 'interimPaymentDate'),
+        amountRow('balancePayment', '잔금', '만원정', 'balancePaymentDate'),
+        ...rentRows,
+        {
+          key: 'directClause2Toggle',
+          segments: [slot('directClause2', 'check', { suffix: '계약사항2조 직접입력' })],
+        },
+      ],
+    },
+    {
+      no: '제2조',
+      rows: [
+        {
+          key: 'leasePeriod',
+          visibleWhen: { fieldKey: 'directClause2', equals: '' },
+          segments: [
+            text(
+              '임대인은 위 부동산을 임대차 목적대로 사용할 수 있는 상태로 임차인에게 인도하며, 인도일은',
+            ),
+            slot('handoverDate', 'date', { suffix: '로 하고 임대차기간은' }),
+            slot('leaseStartDate', 'date', { suffix: '부터' }),
+            slot('leaseEndDate', 'date', { suffix: '까지로 한다.' }),
+          ],
+        },
+      ],
+    },
+    bodyArticle(),
+  ];
+}
+
+export const BASE_CONTRACT_JEONSE_CLAUSES = createBaseLeaseClauses('jeonse');
+export const BASE_CONTRACT_MONTHLY_CLAUSES = createBaseLeaseClauses('monthly');
+export const BASE_CONTRACT_YEARLY_CLAUSES = createBaseLeaseClauses('yearly');
+
+function createPaymentContractClauses({
+  article1Intro,
+  totalKey,
+  totalLabel,
+  article2Intro,
+  article2Rows = [],
+  includeInterimDate = false,
+}: {
+  article1Intro: string;
+  totalKey: string;
+  totalLabel: string;
+  article2Intro: string;
+  article2Rows?: ClauseRow[];
+  includeInterimDate?: boolean;
+}): ClauseArticle[] {
+  return [
+    {
+      no: '제1조',
+      intro: article1Intro,
+      rows: [
+        amountRow(totalKey, totalLabel),
+        amountRow('downPayment', '계약금'),
+        amountRow(
+          'interimPayment',
+          '중도금',
+          '만원정',
+          includeInterimDate ? 'interimPaymentDate' : undefined,
+        ),
+        amountRow('balancePayment', '잔금', '만원정', 'balancePaymentDate'),
+      ],
+    },
+    {
+      no: '제2조',
+      intro: article2Intro,
+      rows: article2Rows,
+    },
+    bodyArticle(),
+  ];
+}
+
+const EXCHANGE_CONTRACT_CLAUSES: ClauseArticle[] = [
+  {
+    no: '제1조',
+    intro:
+      '갑과 을은 각자 소유하는 표시 부동산을 상호 교환하고 목적물 평가액의 차액을 아래와 같이 정한다.',
+    rows: [
+      amountRow('differenceAmount', '차액(보충금)'),
+      {
+        key: 'differencePayer',
+        label: '지급 당사자',
+        segments: [slot('differencePayer', 'select', { options: ['갑', '을'] })],
+      },
+    ],
+  },
+  {
+    no: '제2조',
+    intro: '보충금 지급 당사자는 아래 일정에 따라 상대방에게 보충금을 지급한다.',
+    rows: [
+      amountRow('downPayment', '계약금'),
+      amountRow('interimPayment', '중도금', '만원정', 'interimPaymentDate'),
+      amountRow('balancePayment', '잔금', '만원정', 'balancePaymentDate'),
+    ],
+  },
+  bodyArticle(),
+];
+
+const SUBLEASE_CONTRACT_CLAUSES: ClauseArticle[] = [
+  {
+    no: '제1조',
+    intro:
+      '전대인은 표시 부동산을 전차인에게 전대하고 전차인은 보증금과 차임을 아래와 같이 지급한다.',
+    rows: [
+      amountRow('deposit', '전대차 보증금'),
+      amountRow('monthlyRent', '월 차임'),
+      amountRow('downPayment', '계약금'),
+      amountRow('balancePayment', '잔금'),
+    ],
+  },
+  {
+    no: '제2조',
+    intro:
+      '전대인은 원 임대차계약상 전대 가능 여부와 임대인의 동의 여부를 전차인에게 고지한다.',
+    rows: [
+      {
+        key: 'lessorConsentAttached',
+        segments: [slot('lessorConsentAttached', 'check', { suffix: '임대인 전대동의서 첨부' })],
+      },
+    ],
+  },
+  bodyArticle(),
+];
+
+const PURCHASE_RIGHT_CONTRACT_CLAUSES = createPaymentContractClauses({
+  article1Intro:
+    '양도인은 분양계약에 따른 권리와 의무를 양수인에게 매도하고 양수인은 매매대금을 아래와 같이 지급한다.',
+  totalKey: 'totalPrice',
+  totalLabel: '총 매매대금',
+  includeInterimDate: true,
+  article2Intro:
+    '양수인은 분양대금 납부 현황, 중도금 대출과 전매 제한을 확인하고 권리와 의무를 승계한다.',
+  article2Rows: [
+    amountRow('loanAmount', '중도금 대출 잔액'),
+    {
+      key: 'loanSuccession',
+      label: '대출 처리',
+      segments: [
+        slot('loanSuccession', 'select', { options: ['승계', '상환', '해당 없음'] }),
+      ],
+    },
+    {
+      key: 'nameChangeDeadline',
+      label: '명의변경 예정일',
+      segments: [slot('nameChangeDeadline', 'date')],
+    },
+  ],
+});
+
+const UNION_RIGHT_CONTRACT_CLAUSES = createPaymentContractClauses({
+  article1Intro:
+    '양도인은 조합원 지위와 입주권 등 권리·의무 일체를 양수인에게 매도하고 양수인은 매매대금을 아래와 같이 지급한다.',
+  totalKey: 'totalPrice',
+  totalLabel: '매매대금',
+  article2Intro:
+    '양수인은 권리가액, 추가분담금, 이주비 대출 및 조합 정관상의 권리와 의무를 확인하고 승계한다.',
+  article2Rows: [
+    amountRow('appraisedRightValue', '권리가액'),
+    amountRow('contributionRemaining', '미납 추가분담금'),
+  ],
+});
+
+const RIGHT_TRANSFER_CONTRACT_CLAUSES = createPaymentContractClauses({
+  article1Intro:
+    '양도인은 표시된 권리를 양수인에게 양도하고 양수인은 양도대금을 아래와 같이 지급한다.',
+  totalKey: 'totalPrice',
+  totalLabel: '양도대금',
+  article2Intro:
+    '양도인은 잔금 수령과 동시에 권리 이전에 필요한 서류를 교부하고 이전 절차에 협력한다.',
+  article2Rows: [
+    {
+      key: 'transferDate',
+      label: '권리 이전일',
+      segments: [slot('transferDate', 'date')],
+    },
+  ],
+});
+
+const RIGHT_SUCCESSION_CONTRACT_CLAUSES = createPaymentContractClauses({
+  article1Intro:
+    '양도인은 기존 계약상 권리와 의무를 승계인에게 승계시키고 승계인은 그 대가를 아래와 같이 지급한다.',
+  totalKey: 'totalPrice',
+  totalLabel: '승계대가',
+  article2Intro:
+    '승계인은 기존 계약의 조건, 보증금, 미납금과 관리비 등 승계 범위를 확인한다.',
+  article2Rows: [
+    {
+      key: 'transferDate',
+      label: '승계 기준일',
+      segments: [slot('transferDate', 'date')],
+    },
+  ],
+});
+
+const COMMERCIAL_PREMIUM_CONTRACT_CLAUSES = createPaymentContractClauses({
+  article1Intro:
+    '신규임차인은 기존 임차인에게 영업시설·비품과 영업상 이익 등의 대가인 권리금을 아래와 같이 지급한다.',
+  totalKey: 'premiumTotal',
+  totalLabel: '권리금 총액',
+  includeInterimDate: true,
+  article2Intro:
+    '기존 임차인은 신규임차인을 임대인에게 주선하고 영업시설과 영업상 가치를 이전한다.',
+  article2Rows: [
+    {
+      key: 'handoverDate',
+      label: '영업·시설 인도일',
+      segments: [slot('handoverDate', 'date')],
+    },
+  ],
+});
+
+function createStandardLeaseClauses(
+  subject: string,
+  transactionType: 'jeonse' | 'monthly',
+  options: { privateRental?: boolean } = {},
+): ClauseArticle[] {
+  const paymentRows: ClauseRow[] = [amountRow('deposit', '보증금')];
+  if (!options.privateRental) {
+    paymentRows.push(
+      amountRow('downPayment', '계약금'),
+      amountRow('interimPayment', '중도금', '만원정', 'interimPaymentDate'),
+      amountRow('balancePayment', '잔금', '만원정', 'balancePaymentDate'),
+    );
+  }
+  if (transactionType === 'monthly') paymentRows.push(amountRow('monthlyRent', '차임(월세)'));
+
+  return [
+    {
+      no: '제1조',
+      intro: `위 ${subject}의 임대차에 관하여 임대인과 임차인은 보증금과 차임을 아래와 같이 지급하기로 한다.`,
+      rows: paymentRows,
+    },
+    {
+      no: '제2조',
+      intro: `임대인은 ${subject}을 임대차 목적대로 사용할 수 있는 상태로 임차인에게 인도한다.`,
+      rows: [
+        {
+          key: 'leasePeriod',
+          segments: [
+            slot('handoverDate', 'date', { suffix: '에 인도하고, 임대차기간은' }),
+            slot('leaseStartDate', 'date', { suffix: '부터' }),
+            slot('leaseEndDate', 'date', { suffix: '까지로 한다.' }),
+          ],
+        },
+      ],
+    },
+    bodyArticle(),
+  ];
+}
+
+const COMMERCIAL_STANDARD_JEONSE_CLAUSES = createStandardLeaseClauses('상가건물', 'jeonse');
+const COMMERCIAL_STANDARD_MONTHLY_CLAUSES = createStandardLeaseClauses('상가건물', 'monthly');
+const PRIVATE_RENTAL_JEONSE_CLAUSES = createStandardLeaseClauses('민간임대주택', 'jeonse', {
+  privateRental: true,
+});
+const PRIVATE_RENTAL_MONTHLY_CLAUSES = createStandardLeaseClauses(
+  '민간임대주택',
+  'monthly',
+  { privateRental: true },
+);
+const HOUSE_LEASE_JEONSE_CLAUSES = createStandardLeaseClauses('주택', 'jeonse');
+const HOUSE_LEASE_MONTHLY_CLAUSES = createStandardLeaseClauses('주택', 'monthly');
+
+// ─────────────────────────────────────────────────────────────
 // 레이아웃 조회 — CLAUSE_LAYOUTS[templateCode][transactionType]
 // ─────────────────────────────────────────────────────────────
 
-/** templateCode × transactionType → 조항 레이아웃. P2 에서 jeonse/monthly 확장 예정 */
+/** templateCode × transactionType → 조항 레이아웃. 계약서 등록 메뉴 30개 조합을 모두 포괄한다. */
 export const CONTRACT_CLAUSE_LAYOUTS: Record<string, Record<string, ClauseArticle[]>> = {
   base_contract: {
     sale: BASE_CONTRACT_SALE_CLAUSES,
+    jeonse: BASE_CONTRACT_JEONSE_CLAUSES,
+    monthly: BASE_CONTRACT_MONTHLY_CLAUSES,
+    yearly: BASE_CONTRACT_YEARLY_CLAUSES,
+  },
+  exchange_contract: { exchange: EXCHANGE_CONTRACT_CLAUSES },
+  sublease_contract: { sublease: SUBLEASE_CONTRACT_CLAUSES },
+  purchase_right_contract: { sale: PURCHASE_RIGHT_CONTRACT_CLAUSES },
+  union_member_right_contract: { sale: UNION_RIGHT_CONTRACT_CLAUSES },
+  right_transfer_contract: { transfer: RIGHT_TRANSFER_CONTRACT_CLAUSES },
+  right_succession_contract: { succession: RIGHT_SUCCESSION_CONTRACT_CLAUSES },
+  commercial_premium_contract: {
+    jeonse: COMMERCIAL_PREMIUM_CONTRACT_CLAUSES,
+    monthly: COMMERCIAL_PREMIUM_CONTRACT_CLAUSES,
+  },
+  commercial_standard_lease_contract: {
+    jeonse: COMMERCIAL_STANDARD_JEONSE_CLAUSES,
+    monthly: COMMERCIAL_STANDARD_MONTHLY_CLAUSES,
+  },
+  private_rental_standard_lease_contract: {
+    jeonse: PRIVATE_RENTAL_JEONSE_CLAUSES,
+    monthly: PRIVATE_RENTAL_MONTHLY_CLAUSES,
+  },
+  standard_lease_contract: {
+    jeonse: HOUSE_LEASE_JEONSE_CLAUSES,
+    monthly: HOUSE_LEASE_MONTHLY_CLAUSES,
+  },
+  house_lease_contract: {
+    jeonse: HOUSE_LEASE_JEONSE_CLAUSES,
+    monthly: HOUSE_LEASE_MONTHLY_CLAUSES,
   },
 };
+
+const SUBJECT_BY_PROPERTY_CLASS: Record<string, string> = {
+  apartment: '아파트',
+  officetel: '오피스텔',
+  real_estate: '부동산',
+  commercial: '상가',
+};
+
+const SUBJECT_BY_CNTR_CLSF: Record<string, string> = {
+  '01': '아파트',
+  '02': '오피스텔',
+  '03': '부동산',
+  '05': '상가',
+};
+
+export function getContractClauseLayoutContext(
+  metadata?: Record<string, unknown> | null,
+  fields: Record<string, string> = {},
+): ContractClauseLayoutContext {
+  const registrationValue = metadata?.formRegistration;
+  const registration =
+    registrationValue && typeof registrationValue === 'object' && !Array.isArray(registrationValue)
+      ? (registrationValue as Record<string, unknown>)
+      : {};
+  const read = (key: string) => {
+    const value = registration[key];
+    return typeof value === 'string' ? value : undefined;
+  };
+
+  return {
+    propertyClass: read('propertyClass'),
+    cntrClsf: read('cntrClsf'),
+    groupLabel: read('groupLabel'),
+    contractSubject: fields.contractSubject || read('subjectDefault'),
+    customContractSubject: fields.customContractSubject,
+  };
+}
+
+export function resolveContractClauseSubject(
+  context: ContractClauseLayoutContext = {},
+): string {
+  const explicit = context.contractSubject?.trim();
+  if (explicit === '직접입력') {
+    return context.customContractSubject?.trim() || '부동산';
+  }
+  if (explicit) return explicit;
+
+  const propertyClass = context.propertyClass?.trim();
+  if (propertyClass && SUBJECT_BY_PROPERTY_CLASS[propertyClass]) {
+    return SUBJECT_BY_PROPERTY_CLASS[propertyClass]!;
+  }
+  if (propertyClass && !['form'].includes(propertyClass)) return propertyClass;
+
+  const cntrClsf = context.cntrClsf?.trim();
+  if (cntrClsf && SUBJECT_BY_CNTR_CLSF[cntrClsf]) return SUBJECT_BY_CNTR_CLSF[cntrClsf]!;
+  return context.groupLabel?.trim() || '부동산';
+}
+
+/** base_contract의 관용구만 목적물 종별로 치환한다. 원본 상수는 변경하지 않는다. */
+function applySubjectToLayout(articles: ClauseArticle[], subject: string): ClauseArticle[] {
+  if (subject === '부동산') return articles;
+  return articles.map((article) => ({
+    ...article,
+    intro: article.intro?.replaceAll('부동산', subject),
+    rows: article.rows.map((row) => ({
+      ...row,
+      segments: row.segments.map((segment) =>
+        segment.kind === 'text'
+          ? { ...segment, text: segment.text.replaceAll('부동산', subject) }
+          : segment,
+      ),
+    })),
+  }));
+}
 
 export function getContractClauseLayout(
   templateCode: string,
   transactionType: string,
+  context: ContractClauseLayoutContext = {},
 ): ClauseArticle[] | null {
-  return CONTRACT_CLAUSE_LAYOUTS[templateCode]?.[transactionType] ?? null;
+  const articles = CONTRACT_CLAUSE_LAYOUTS[templateCode]?.[transactionType] ?? null;
+  if (!articles || templateCode !== 'base_contract') return articles;
+  return applySubjectToLayout(articles, resolveContractClauseSubject(context));
 }

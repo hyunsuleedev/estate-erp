@@ -100,14 +100,6 @@ describe('ContractsService', () => {
         sortOrder: 10,
       },
       {
-        id: 'template-identity',
-        officeId: null,
-        code: 'identity',
-        title: '신분증',
-        isRequired: true,
-        sortOrder: 20,
-      },
-      {
         id: 'template-report',
         officeId: null,
         code: 'lease_report',
@@ -120,9 +112,9 @@ describe('ContractsService', () => {
     const result = await service.findOne('contract-1', 'office-1');
 
     expect(result.documentCount).toBe(1);
-    expect(result.requiredDocuments).toEqual(['임대차계약서', '신분증', '임대차 신고서']);
-    expect(result.missingDocumentCount).toBe(2);
-    expect(result.missingDocuments).toEqual(['신분증', '임대차 신고서']);
+    expect(result.requiredDocuments).toEqual(['임대차계약서', '임대차 신고서']);
+    expect(result.missingDocumentCount).toBe(1);
+    expect(result.missingDocuments).toEqual(['임대차 신고서']);
   });
 
   it('creates a contract document only after verifying contract ownership', async () => {
@@ -358,8 +350,17 @@ describe('ContractsService', () => {
     expect(prisma.contractClauseTemplate.delete).toHaveBeenCalledTimes(1);
   });
 
-  it('accepts all seven contract transaction types when creating a contract', async () => {
-    const allowed = ['sale', 'jeonse', 'monthly', 'exchange', 'sublease', 'transfer', 'succession'];
+  it('accepts all contract transaction types when creating a contract', async () => {
+    const allowed = [
+      'sale',
+      'jeonse',
+      'monthly',
+      'yearly',
+      'exchange',
+      'sublease',
+      'transfer',
+      'succession',
+    ];
 
     for (const transactionType of allowed) {
       const { prisma, service } = createService();
@@ -397,6 +398,7 @@ describe('ContractsService', () => {
         dealId: 'deal-1',
         transactionType,
         totalPrice: 50000,
+        monthlyRent: ['monthly', 'yearly'].includes(transactionType) ? 1200 : undefined,
       });
 
       expect(prisma.contract.create).toHaveBeenCalledWith(
@@ -405,6 +407,38 @@ describe('ContractsService', () => {
         }),
       );
     }
+  });
+
+  it('creates a standalone document bundle without a Deal or representative contacts', async () => {
+    const { prisma, service } = createService();
+    prisma.contract.create.mockResolvedValue({
+      id: 'standalone-contract-1',
+      officeId: 'office-1',
+      dealId: null,
+      buyerContactId: null,
+      sellerContactId: null,
+      transactionType: 'sale',
+      totalPrice: 0,
+      attachments: [],
+      documents: [],
+    });
+    prisma.contractDocumentTemplate.findMany.mockResolvedValue([]);
+
+    await (service as any).create('office-1', {
+      transactionType: 'sale',
+    });
+
+    expect(prisma.deal.findFirst).not.toHaveBeenCalled();
+    expect(prisma.contract.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          dealId: null,
+          buyerContactId: null,
+          sellerContactId: null,
+          totalPrice: 0,
+        }),
+      }),
+    );
   });
 
   it('rejects unknown contract transaction types', async () => {

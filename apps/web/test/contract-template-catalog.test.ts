@@ -8,6 +8,7 @@ const {
   CONTRACT_TEMPLATE_BODY_SEEDS,
   CONTRACT_TEMPLATE_DEFINITION_SEEDS,
   CONTRACT_TEMPLATE_FIELD_GROUPS,
+  CONTRACT_TEMPLATE_PARITY_PATCHES,
   MYSPIDER_REFERENCED_TEMPLATE_CODES,
 } = catalogModule as typeof import('../../../prisma/contract-template-catalog');
 
@@ -51,6 +52,18 @@ const EXISTING_SORT_ORDERS = new Set([
 ]);
 
 describe('contract template catalog', () => {
+  it('keeps identity evidence out of authorable required forms', () => {
+    const identityPatch = CONTRACT_TEMPLATE_PARITY_PATCHES.find(
+      (patch) => patch.code === 'identity',
+    );
+
+    assert.ok(identityPatch);
+    assert.equal(identityPatch.isRequired, false);
+    assert.equal(identityPatch.isActive, false);
+    assert.equal(identityPatch.metadata?.documentRole, 'supportingEvidence');
+    assert.equal(identityPatch.metadata?.authoredForm, false);
+  });
+
   it('provides safe test body text for every MySpider-referenced document template', () => {
     const seededCodes = new Set(CONTRACT_TEMPLATE_BODY_SEEDS.map((seed) => seed.code));
 
@@ -126,22 +139,8 @@ describe('contract template catalog', () => {
     }
   });
 
-  it('provides fieldGroups schemas for the 10 core documents and all new codes', () => {
-    const coreCodes = [
-      'base_contract',
-      'standard_lease_contract',
-      'commercial_standard_lease_contract',
-      'broker_explanation_residential',
-      'broker_explanation_non_residential',
-      'real_estate_transaction_report',
-      'lease_declaration',
-      'broker_fee_receipt',
-      'privacy_agreement',
-      'cash_receipt_document',
-    ];
-    const newCodes = CONTRACT_TEMPLATE_DEFINITION_SEEDS.map((d) => d.code);
-
-    for (const code of [...coreCodes, ...newCodes]) {
+  it('provides fieldGroups schemas for every supported document kind', () => {
+    for (const code of MYSPIDER_REFERENCED_TEMPLATE_CODES) {
       const groups = CONTRACT_TEMPLATE_FIELD_GROUPS[code];
       assert.ok(groups && groups.length > 0, `${code} should define fieldGroups`);
 
@@ -205,6 +204,7 @@ describe('contract template default body clauses (레거시 DMSV001Q03 — kind�
     'sale',
     'jeonse',
     'monthly',
+    'yearly',
     'exchange',
     'sublease',
     'transfer',
@@ -213,7 +213,7 @@ describe('contract template default body clauses (레거시 DMSV001Q03 — kind�
 
   // 계약서(contract category) 서식별 필수 거래유형 커버리지
   const REQUIRED_COVERAGE: Record<string, string[]> = {
-    base_contract: ['sale', 'jeonse', 'monthly'],
+    base_contract: ['sale', 'jeonse', 'monthly', 'yearly'],
     standard_lease_contract: ['jeonse', 'monthly'],
     private_rental_standard_lease_contract: ['jeonse', 'monthly'],
     commercial_standard_lease_contract: ['jeonse', 'monthly'],
@@ -221,7 +221,7 @@ describe('contract template default body clauses (레거시 DMSV001Q03 — kind�
     exchange_contract: ['exchange'],
     purchase_right_contract: ['sale'],
     union_member_right_contract: ['sale'],
-    commercial_premium_contract: ['monthly'],
+    commercial_premium_contract: ['jeonse', 'monthly'],
     right_transfer_contract: ['transfer'],
     right_succession_contract: ['succession'],
     sublease_contract: ['sublease'],

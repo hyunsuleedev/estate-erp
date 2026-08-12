@@ -42,3 +42,14 @@ Use this for lifecycle, availability, urgency, and similarly small controlled en
 - Property-management table behavior is the reference for inline status editing.
 - Buyer lifecycle status and buyer urgency use the same interaction, with their existing semantic palettes preserved.
 - Dense repeated actions should feel immediate; avoid decorative motion. Use only the shared popover transition and respect reduced-motion settings.
+
+## Contract document workspace
+
+- Open a contract row directly in the document editor. Do not insert a contract-detail dashboard or document hub between the list and the editing task.
+- Keep `문서 목록` as the first explicit back action. Closing the editor returns to the document-management list without resetting the application tab.
+- Keep every opened contract document in one persistent horizontal tab rail. Use the saved document title as the tab label, append the copy number when relevant, and allow horizontal scrolling when tabs exceed the available width.
+- Communicate document state inside the tab: a semantic status dot for saved documents, a quiet `새 문서` marker for an unsaved form, and an accessible dirty-state label when the active document has local changes.
+- Switching tabs replaces the editor content in place. If the active document is dirty, require confirmation before discarding it; saving keeps the editor open and makes a newly saved copy the active tab.
+- Keep the rail compact and operational: 44px height, thin separators, restrained active background, no decorative accent colors, and native tab semantics for arrow-key navigation.
+- Render contract articles in document order: structured Article 1 and Article 2 inputs first, followed by the type- and transaction-specific body from Article 3 onward. Keep contract-matter templates separate from special-term templates.
+- Identity documents are supporting evidence, not authorable required forms. They may be attached to the bundle but must not count toward required-document completion.

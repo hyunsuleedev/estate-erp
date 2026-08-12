@@ -2,16 +2,7 @@ import { createFileRoute, Link } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Dispatch, RefObject, SetStateAction } from 'react';
-import {
-  ChevronLeft,
-  ChevronRight,
-  CirclePlus,
-  Copy,
-  FileText,
-  LayoutGrid,
-  List,
-  Trash2,
-} from 'lucide-react';
+import { ChevronLeft, ChevronRight, FileText, LayoutGrid, List } from 'lucide-react';
 import { toast } from 'sonner';
 import type {
   Contract,
@@ -30,8 +21,20 @@ import { mergeResidentialSaleAgreementMetadata } from '@estate-erp/shared';
 import {
   applyEngineFieldsToResidentialSaleAgreement,
   getContractClauseLayout,
+  getContractClauseLayoutContext,
   mergeContractDocumentEngineMetadata,
 } from './-document-engine';
+import {
+  DocumentListTable,
+  DOC_STATE_PRESETS,
+  getDealSummaryLabel,
+  type DocStatePreset,
+} from './-document-list-table';
+import {
+  toFormRegistrationMetadata,
+  type FormRegistrationSpec,
+} from './-form-registration-catalog';
+import { FormRegistrationMenu } from './-form-registration-menu';
 import {
   BASE_CONTRACT_TRANSACTION_TYPES,
   ContractTransactionTypeBadge,
@@ -40,19 +43,16 @@ import {
   MetricTile,
   NumberField,
   SIGNED_OR_LATER,
-  emptyContractForm,
-  getContractProperty,
   getContractPropertyLabel,
   hasContractFile,
+  resolveDocumentTemplate,
+  sortContractDocuments,
   stringifyOptionalNumber,
-  toContractForm,
   toContractTransactionType,
   toOptionalNumber,
   todayInput,
   transactionReportStatusMeta,
-  type ContractForm,
 } from './-contract-shared';
-import { ContractDetailCard } from './-contract-detail';
 import {
   DocumentEditorSheet,
   emptyDocumentEditorForm,
@@ -63,7 +63,7 @@ import type { ContractDocumentEngineFields } from './-document-engine';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { sanitizeContractRichTextForSave } from '@/lib/contract-rich-text';
-import { formatDate, formatDateTime, formatDday, formatMoney } from '@/lib/format';
+import { formatDate, formatDateTime, formatMoney } from '@/lib/format';
 import {
   ConfirmDialog,
   EmptyState,
@@ -96,14 +96,6 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
 
 const DOC_FILTER_OPTIONS = [
   { value: 'missing', label: '자료 누락' },
@@ -112,7 +104,10 @@ const DOC_FILTER_OPTIONS = [
   { value: 'noFile', label: 'PDF/파일 없음' },
 ];
 
-const CONTRACT_DATE_FIELD_OPTIONS: Array<{ value: ContractDateField; label: string }> = [
+const CONTRACT_DATE_FIELD_OPTIONS: Array<{
+  value: ContractDateField;
+  label: string;
+}> = [
   { value: 'contractDate', label: '계약일자' },
   { value: 'statedInterimDate', label: '중도금일자' },
   { value: 'statedBalanceDate', label: '잔금일자' },
@@ -120,20 +115,27 @@ const CONTRACT_DATE_FIELD_OPTIONS: Array<{ value: ContractDateField; label: stri
   { value: 'createdAt', label: '등록일자' },
 ];
 
-const CONTRACT_PRICE_FIELD_OPTIONS: Array<{ value: ContractPriceField; label: string }> = [
+const CONTRACT_PRICE_FIELD_OPTIONS: Array<{
+  value: ContractPriceField;
+  label: string;
+}> = [
   { value: 'totalPrice', label: '거래금액' },
   { value: 'statedDeposit', label: '계약금' },
   { value: 'monthlyRent', label: '월차임' },
 ];
 
-const CONTRACT_SEARCH_FIELD_OPTIONS: Array<{ value: ContractSearchField; label: string }> = [
+const CONTRACT_SEARCH_FIELD_OPTIONS: Array<{
+  value: ContractSearchField;
+  label: string;
+}> = [
   { value: 'party', label: '고객명' },
   { value: 'phone', label: '연락처' },
   { value: 'address', label: '소재지' },
   { value: 'partnerOffice', label: '공동중개사무소' },
 ];
 
-const CONTRACTS_PAGE_SIZE = 20;
+/** 레거시 문서관리 고밀도 목록 — 페이지 당 행 수 (DMLS 스크롤 체감) */
+const CONTRACTS_PAGE_SIZE = 40;
 
 /** 목록 필터 상태 (레거시 DMLS001Q01 검색 조건) — '' = 전체 */
 type ContractListFilterState = {
@@ -196,9 +198,7 @@ function toContractsFilter(filters: ContractListFilterState): ContractsPaginated
     priceField: hasPriceRange ? filters.priceField : undefined,
     priceMin,
     priceMax,
-    searchField: search
-      ? ((filters.searchField || 'all') as ContractSearchField)
-      : undefined,
+    searchField: search ? ((filters.searchField || 'all') as ContractSearchField) : undefined,
     search: search || undefined,
     isJointBrokerage: filters.isJointBrokerage ? true : undefined,
     retentionOverdue: filters.retentionOverdue ? true : undefined,
@@ -224,23 +224,31 @@ function ContractsPage() {
   const queryClient = useQueryClient();
   const searchWrapRef = useRef<HTMLDivElement>(null);
   const appliedDealIdRef = useRef<string | null>(null);
+  const editorOpenRequestRef = useRef(0);
   const [selectedContractId, setSelectedContractId] = useState<string | null>(null);
   const [filters, setFilters] = useState<ContractListFilterState>(defaultListFilters());
   /** 클라이언트 보조 필터 (문서 준비 상태 — 서버 필터 없음, 현재 페이지에만 적용) */
   const [docFilter, setDocFilter] = useState('');
   const [page, setPage] = useState(1);
   const [view, setView] = useState<'list' | 'docs'>('list');
+  /** 레거시 showCust — 목록에 연락처 표시 */
+  const [showPhones, setShowPhones] = useState(true);
+  /** 레거시 State_Type: 전체 / 진행중 / 완료 */
+  const [statePreset, setStatePreset] = useState<DocStatePreset>('all');
+  /** 목록 포커스 행 (하단 상태바) */
+  const [focusedContractId, setFocusedContractId] = useState<string | null>(null);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
-  const [isDetailOpen, setIsDetailOpen] = useState(false);
+  /**
+   * MySpider ShowNewContract — 메뉴에서 고른 서식(종별×거래유형).
+   * 계약 생성 후 해당 양식 문서를 자동 작성하고 편집기를 연다.
+   */
+  const [pendingFormSpec, setPendingFormSpec] = useState<FormRegistrationSpec | null>(null);
   const [isDocumentEditorOpen, setIsDocumentEditorOpen] = useState(false);
   const [documentFormError, setDocumentFormError] = useState<string | null>(null);
-  const [documentEditorForm, setDocumentEditorForm] = useState<DocumentEditorForm>(
-    emptyDocumentEditorForm(),
-  );
+  const [documentEditorForm, setDocumentEditorForm] =
+    useState<DocumentEditorForm>(emptyDocumentEditorForm());
   /** 에디터 오픈 시점 스냅샷 — §3.1 dirty tracking (미저장 변경 감지) */
-  const [documentEditorBaseline, setDocumentEditorBaseline] = useState<string | null>(
-    null,
-  );
+  const [documentEditorBaseline, setDocumentEditorBaseline] = useState<string | null>(null);
   const [deleteContractTarget, setDeleteContractTarget] = useState<Contract | null>(null);
   const [createForm, setCreateForm] = useState<CreateContractDto>({
     dealId: '',
@@ -249,23 +257,28 @@ function ContractsPage() {
     monthlyRent: undefined,
     contractDate: todayInput(),
   });
-  /** 상세 폼 — 페이지가 소유 (§3.1 dirty tracking + 문서 편집기 전환에도 유지) */
-  const [detailForm, setDetailForm] = useState<ContractForm>(emptyContractForm());
-
   // 텍스트/금액 입력은 디바운스 후 서버 검색 (레거시 DMLS001Q01 필터)
   const debouncedSearch = useDebouncedValue(filters.search);
   const debouncedPriceMin = useDebouncedValue(filters.priceMin);
   const debouncedPriceMax = useDebouncedValue(filters.priceMax);
 
-  const effectiveFilters = useMemo<ContractListFilterState>(
-    () => ({
+  const effectiveFilters = useMemo<ContractListFilterState>(() => {
+    const next: ContractListFilterState = {
       ...filters,
       search: debouncedSearch,
       priceMin: debouncedPriceMin,
       priceMax: debouncedPriceMax,
-    }),
-    [filters, debouncedSearch, debouncedPriceMin, debouncedPriceMax],
-  );
+    };
+    // 진행중/완료 프리셋이 있으면 단일 status 필터를 덮어쓴다
+    // (서버 status 쿼리는 단건 — 클라이언트 페이지 내 2차 필터로 보완)
+    if (statePreset !== 'all' && !filters.status) {
+      // status 단일값 API 한계: 진행중은 draft 우선 조회 후 클라 필터, 완료는 registered
+      if (statePreset === 'done') {
+        next.status = 'registered';
+      }
+    }
+    return next;
+  }, [filters, debouncedSearch, debouncedPriceMin, debouncedPriceMax, statePreset]);
 
   const filterKey = JSON.stringify(effectiveFilters);
 
@@ -284,10 +297,7 @@ function ContractsPage() {
       }),
   });
 
-  const pageContracts = useMemo(
-    () => contractsQuery.data?.items ?? [],
-    [contractsQuery.data],
-  );
+  const pageContracts = useMemo(() => contractsQuery.data?.items ?? [], [contractsQuery.data]);
   const pagination = contractsQuery.data?.pagination;
 
   // 지표 + "이미 계약된 거래 제외" 계산용 전체 목록 (필터 무관)
@@ -295,10 +305,7 @@ function ContractsPage() {
     queryKey: ['contracts'],
     queryFn: () => api.contracts.findAll(),
   });
-  const allContracts = useMemo(
-    () => allContractsQuery.data ?? [],
-    [allContractsQuery.data],
-  );
+  const allContracts = useMemo(() => allContractsQuery.data ?? [], [allContractsQuery.data]);
 
   const { data: deals = [] } = useQuery({
     queryKey: ['deals'],
@@ -326,20 +333,6 @@ function ContractsPage() {
   });
   const contractDetail = detailQuery.data;
 
-  const { data: documentTemplates = [], isLoading: isDocumentTemplatesLoading } = useQuery({
-    queryKey: ['contract-document-templates', contractDetail?.transactionType],
-    queryFn: () =>
-      api.contracts.documentTemplates({
-        transactionType: contractDetail?.transactionType,
-      }),
-    enabled: !!contractDetail?.transactionType,
-  });
-
-  useEffect(() => {
-    if (!contractDetail) return;
-    setDetailForm(toContractForm(contractDetail));
-  }, [contractDetail]);
-
   // '/' 키로 검색 포커스 (PRD 키보드 단축키)
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
@@ -347,9 +340,7 @@ function ContractsPage() {
       const target = event.target as HTMLElement | null;
       if (
         target &&
-        (target.tagName === 'INPUT' ||
-          target.tagName === 'TEXTAREA' ||
-          target.isContentEditable)
+        (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)
       ) {
         return;
       }
@@ -370,8 +361,7 @@ function ContractsPage() {
       ['signed', 'depositPaid'].includes(contract.status),
     );
     const missingDocs = allContracts.filter(
-      (contract) =>
-        (contract.missingDocumentCount ?? 0) > 0 && contract.status !== 'cancelled',
+      (contract) => (contract.missingDocumentCount ?? 0) > 0 && contract.status !== 'cancelled',
     );
 
     return {
@@ -382,10 +372,8 @@ function ContractsPage() {
     };
   }, [allContracts]);
 
-  // 문서 준비 필터 — 서버 필터가 없어 현재 페이지 결과에만 적용한다
+  // 문서 준비 + 진행중 프리셋 — 서버 단건 status 한계를 페이지 내 필터로 보완
   const visibleContracts = useMemo(() => {
-    if (!docFilter) return pageContracts;
-
     return pageContracts.filter((contract) => {
       if (docFilter === 'missing' && (contract.missingDocumentCount ?? 0) === 0) {
         return false;
@@ -395,18 +383,159 @@ function ContractsPage() {
       }
       if (docFilter === 'hasFile' && !hasContractFile(contract)) return false;
       if (docFilter === 'noFile' && hasContractFile(contract)) return false;
+
+      if (statePreset === 'active') {
+        return (DOC_STATE_PRESETS.active.statuses as readonly string[]).includes(contract.status);
+      }
+      if (statePreset === 'done') {
+        return contract.status === 'registered';
+      }
       return true;
     });
-  }, [pageContracts, docFilter]);
+  }, [pageContracts, docFilter, statePreset]);
+
+  /**
+   * 메뉴 선택 → 템플릿 조회 → 문서 생성/재사용 → 편집기 오픈을 한 번에 수행한다.
+   * 쿼리 갱신을 감시하는 effect에서 생성하면 재실행 시 반복 서식이 중복될 수 있으므로,
+   * 사용자 이벤트에서 시작하는 단일 mutation으로 직렬화한다.
+   */
+  const applyFormMutation = useMutation({
+    mutationFn: async ({
+      contractId,
+      spec,
+    }: {
+      contractId: string;
+      spec: FormRegistrationSpec;
+    }) => {
+      const [currentContract, fetchedTemplates] = await Promise.all([
+        api.contracts.findOne(contractId),
+        allDocumentTemplates.length > 0
+          ? Promise.resolve(allDocumentTemplates)
+          : api.contracts.documentTemplates(),
+      ]);
+      const template = fetchedTemplates.find((item) => item.code === spec.templateCode);
+
+      if (!template) {
+        throw new Error(
+          `「${spec.title}」 템플릿(${spec.templateCode})을 찾을 수 없습니다. 시드/마이그레이션을 확인하세요.`,
+        );
+      }
+
+      const existing = (currentContract.documents ?? []).find((document) => {
+        if (
+          document.kind !== spec.templateCode &&
+          document.template?.code !== spec.templateCode
+        ) {
+          return false;
+        }
+
+        const registrationValue = document.metadata?.formRegistration;
+        const registration =
+          registrationValue &&
+          typeof registrationValue === 'object' &&
+          !Array.isArray(registrationValue)
+            ? (registrationValue as Record<string, unknown>)
+            : null;
+
+        // 같은 templateCode를 공유하는 아파트/오피스텔/부동산/상가 문서를
+        // 서로 재사용하지 않는다. 등록 스냅샷이 있는 문서는 타입과 거래유형이
+        // 모두 같은 경우에만 기존 탭을 연다.
+        if (registration) {
+          return (
+            registration.cntrClsf === spec.cntrClsf &&
+            registration.transactionType === spec.transactionType
+          );
+        }
+
+        // 구버전 base_contract는 목적물 타입을 알 수 없어 안전하게 새 문서를 만든다.
+        // 전용 서식은 계약의 거래유형이 같은 경우에만 하위 호환 재사용한다.
+        return (
+          spec.templateCode !== 'base_contract' &&
+          currentContract.transactionType === spec.transactionType
+        );
+      });
+      const registrationMetadata = toFormRegistrationMetadata(spec);
+      const document =
+        !spec.repeatable && existing
+          ? await api.contracts.updateDocument(contractId, existing.id, {
+              metadata: {
+                ...existing.metadata,
+                formRegistration: registrationMetadata,
+              },
+            })
+          : await api.contracts.createDocument(contractId, {
+              templateId: template.id,
+              kind: spec.templateCode,
+              category: template.category,
+              title: spec.title,
+              status: 'draft',
+              metadata: {
+                formRegistration: registrationMetadata,
+              },
+            });
+      const refreshed = await api.contracts.findOne(contractId);
+
+      return {
+        contractId,
+        document,
+        refreshed,
+        reused: Boolean(!spec.repeatable && existing),
+        spec,
+        template,
+      };
+    },
+    onSuccess: ({ contractId, document, refreshed, reused, spec, template }) => {
+      queryClient.invalidateQueries({ queryKey: ['contracts'] });
+      queryClient.setQueryData(['contract', contractId], refreshed);
+
+      const refreshedDocument =
+        refreshed.documents?.find((item) => item.id === document.id) ?? document;
+      const nextForm = toDocumentEditorForm(refreshed, template, refreshedDocument);
+      nextForm.title = spec.title;
+
+      setDocumentFormError(null);
+      setDocumentEditorForm(nextForm);
+      setDocumentEditorBaseline(JSON.stringify(nextForm));
+      setSelectedContractId(contractId);
+      setIsDocumentEditorOpen(true);
+      toast.success(
+        reused
+          ? `기존 「${spec.title}」 서식을 열었습니다.`
+          : `「${spec.title}」 양식을 추가했습니다.`,
+      );
+    },
+    onError: (error, { contractId }) => {
+      toast.error(error instanceof Error ? error.message : '선택한 양식 문서를 만들지 못했습니다.');
+      setSelectedContractId(contractId);
+    },
+  });
 
   const createMutation = useMutation({
-    mutationFn: (payload: CreateContractDto) => api.contracts.create(payload),
-    onSuccess: (created) => {
-      toast.success('계약을 생성했습니다.');
+    mutationFn: ({
+      formSpec,
+      ...payload
+    }: CreateContractDto & { formSpec?: FormRegistrationSpec | null }) => {
+      void formSpec;
+      return api.contracts.create(payload);
+    },
+    onSuccess: (created, variables) => {
+      const formSpec = variables.formSpec ?? null;
+      toast.success(
+        formSpec
+          ? variables.dealId
+            ? `계약을 생성했습니다. 「${formSpec.title}」 양식을 적용합니다.`
+            : `독립 문서 묶음을 만들었습니다. 「${formSpec.title}」 양식을 적용합니다.`
+          : '계약을 생성했습니다.',
+      );
       queryClient.invalidateQueries({ queryKey: ['contracts'] });
       setSelectedContractId(created.id);
-      setIsDetailOpen(true);
+      if (formSpec) {
+        applyFormMutation.mutate({ contractId: created.id, spec: formSpec });
+      } else {
+        void openContractEditor(created.id);
+      }
       setIsCreateOpen(false);
+      setPendingFormSpec(null);
       appliedDealIdRef.current = null;
       setCreateForm({
         dealId: '',
@@ -425,10 +554,13 @@ function ContractsPage() {
     mutationFn: ({
       documentId,
       dto,
+      saveAsNew: _saveAsNew,
     }: {
       documentId?: string;
       dto: CreateContractDocumentDto | UpdateContractDocumentDto;
+      saveAsNew: boolean;
     }) => {
+      void _saveAsNew;
       if (!selectedContractId) {
         throw new Error('계약을 먼저 선택해주세요.');
       }
@@ -441,24 +573,59 @@ function ContractsPage() {
         );
       }
 
-      return api.contracts.createDocument(
-        selectedContractId,
-        dto as CreateContractDocumentDto,
-      );
+      return api.contracts.createDocument(selectedContractId, dto as CreateContractDocumentDto);
     },
-    onSuccess: () => {
-      toast.success('문서를 저장했습니다.');
+    onSuccess: (savedDocument, { saveAsNew }) => {
+      toast.success(saveAsNew ? '문서 사본을 새 탭으로 저장했습니다.' : '문서를 저장했습니다.');
       queryClient.invalidateQueries({ queryKey: ['contracts'] });
-      queryClient.invalidateQueries({ queryKey: ['contract', selectedContractId] });
-      setIsDocumentEditorOpen(false);
-      setDocumentEditorForm(emptyDocumentEditorForm());
-      setDocumentEditorBaseline(null);
-      // 문서 작업이 끝나면 계약 상세 워크스페이스로 복귀
-      setIsDetailOpen(true);
+
+      if (selectedContractId && contractDetail) {
+        const nextDocuments = [
+          ...(contractDetail.documents ?? []).filter(
+            (document) => document.id !== savedDocument.id,
+          ),
+          savedDocument,
+        ];
+        const nextContract: Contract = {
+          ...contractDetail,
+          documents: nextDocuments,
+          documentCount: nextDocuments.filter((document) => document.status !== 'cancelled').length,
+        };
+        const template = resolveDocumentTemplate(savedDocument, allDocumentTemplates);
+        const nextForm = toDocumentEditorForm(nextContract, template, savedDocument);
+
+        queryClient.setQueryData(['contract', selectedContractId], nextContract);
+        setDocumentEditorForm(nextForm);
+        setDocumentEditorBaseline(JSON.stringify(nextForm));
+      } else {
+        const nextForm: DocumentEditorForm = {
+          ...documentEditorForm,
+          documentId: savedDocument.id,
+          templateId: savedDocument.templateId ?? undefined,
+          title: savedDocument.title,
+          status: savedDocument.status,
+          fileUrl: savedDocument.fileUrl ?? '',
+          signedAt: savedDocument.signedAt ?? '',
+          submittedAt: savedDocument.submittedAt ?? '',
+          memo: savedDocument.memo ?? '',
+          metadata: savedDocument.metadata,
+          kind: savedDocument.kind,
+          sortOrder: savedDocument.sortOrder,
+          kindOrder: savedDocument.kindOrder,
+        };
+        setDocumentEditorForm(nextForm);
+        setDocumentEditorBaseline(JSON.stringify(nextForm));
+      }
+
+      setDocumentFormError(null);
+      setIsDocumentEditorOpen(true);
+
+      queryClient.invalidateQueries({
+        queryKey: ['contract', selectedContractId],
+      });
     },
     onError: (error) => {
-      const message =
-        error instanceof Error ? error.message : '문서를 저장하지 못했습니다.';
+      const message = error instanceof Error ? error.message : '문서를 저장하지 못했습니다.';
       setDocumentFormError(message);
       toast.error(message);
     },
@@ -474,29 +641,13 @@ function ContractsPage() {
       queryClient.removeQueries({ queryKey: ['contract', contractId] });
       if (selectedContractId === contractId) {
         setSelectedContractId(null);
-        setIsDetailOpen(false);
+        setIsDocumentEditorOpen(false);
+        setDocumentEditorForm(emptyDocumentEditorForm());
+        setDocumentEditorBaseline(null);
       }
     },
     onError: (error) => {
       toast.error(error instanceof Error ? error.message : '계약을 삭제하지 못했습니다.');
-    },
-  });
-
-  // 문서 단건 삭제 — 취소(status=cancelled) 우회가 아닌 영구 삭제
-  const deleteDocumentMutation = useMutation({
-    mutationFn: (documentId: string) => {
-      if (!selectedContractId) {
-        throw new Error('계약을 먼저 선택해주세요.');
-      }
-      return api.contracts.removeDocument(selectedContractId, documentId);
-    },
-    onSuccess: () => {
-      toast.success('문서를 삭제했습니다.');
-      queryClient.invalidateQueries({ queryKey: ['contracts'] });
-      queryClient.invalidateQueries({ queryKey: ['contract', selectedContractId] });
-    },
-    onError: (error) => {
-      toast.error(error instanceof Error ? error.message : '문서를 삭제하지 못했습니다.');
     },
   });
 
@@ -508,25 +659,7 @@ function ContractsPage() {
       queryClient.invalidateQueries({ queryKey: ['contracts'] });
       queryClient.invalidateQueries({ queryKey: ['contract', copied.id] });
       setSelectedContractId(copied.id);
-      setIsDetailOpen(true);
-    },
-    onError: (error) => {
-      toast.error(error instanceof Error ? error.message : '사본을 만들지 못했습니다.');
-    },
-  });
-
-  // 서식 단건 사본 (레거시 "다른저장") — 같은 kind 는 kindOrder 자동 증가
-  const copyDocumentMutation = useMutation({
-    mutationFn: (documentId: string) => {
-      if (!selectedContractId) {
-        throw new Error('계약을 먼저 선택해주세요.');
-      }
-      return api.contracts.copyDocument(selectedContractId, documentId);
-    },
-    onSuccess: () => {
-      toast.success('문서 사본을 추가했습니다.');
-      queryClient.invalidateQueries({ queryKey: ['contracts'] });
-      queryClient.invalidateQueries({ queryKey: ['contract', selectedContractId] });
+      void openContractEditor(copied.id);
     },
     onError: (error) => {
       toast.error(error instanceof Error ? error.message : '사본을 만들지 못했습니다.');
@@ -544,96 +677,175 @@ function ContractsPage() {
   );
 
   // 거래 선택 시 거래유형/금액 기본값 채움.
-  // (기존 `prev.transactionType ?? ...` 폴백은 초기값 'sale'이 truthy라 동작하지 않던 버그 수정)
+  // 서식 메뉴에서 고른 양식(pendingFormSpec)이 있으면 거래유형은 양식 값을 유지한다.
   useEffect(() => {
     if (!selectedCreateDeal || appliedDealIdRef.current === selectedCreateDeal.id) {
       return;
     }
     appliedDealIdRef.current = selectedCreateDeal.id;
 
-    const transactionType = toContractTransactionType(selectedCreateDeal);
-    setCreateForm((prev) => ({
-      ...prev,
-      transactionType,
-      totalPrice:
-        selectedCreateDeal.agreedPrice ??
-        selectedCreateDeal.agreedDeposit ??
-        selectedCreateDeal.listing?.price ??
-        selectedCreateDeal.listing?.deposit ??
-        undefined,
-      monthlyRent:
-        transactionType === 'monthly'
-          ? selectedCreateDeal.agreedMonthlyRent ??
+    const dealTransactionType = toContractTransactionType(selectedCreateDeal);
+    setCreateForm((prev) => {
+      const transactionType = pendingFormSpec?.transactionType ?? dealTransactionType;
+      return {
+        ...prev,
+        transactionType,
+        totalPrice:
+          selectedCreateDeal.agreedPrice ??
+          selectedCreateDeal.agreedDeposit ??
+          selectedCreateDeal.listing?.price ??
+          selectedCreateDeal.listing?.deposit ??
+          undefined,
+        monthlyRent: ['monthly', 'yearly'].includes(transactionType)
+          ? (selectedCreateDeal.agreedMonthlyRent ??
             selectedCreateDeal.listing?.monthlyRent ??
-            undefined
+            undefined)
           : undefined,
-    }));
-  }, [selectedCreateDeal]);
+      };
+    });
+  }, [selectedCreateDeal, pendingFormSpec]);
 
   // §3.1 dirty tracking — 저장 버튼 활성화 + 닫기 시 미저장 확인
   const isDocumentEditorDirty =
     documentEditorBaseline !== null &&
     JSON.stringify(documentEditorForm) !== documentEditorBaseline;
 
-  const isDetailDirty = useMemo(
-    () =>
-      contractDetail
-        ? JSON.stringify(detailForm) !== JSON.stringify(toContractForm(contractDetail))
-        : false,
-    [contractDetail, detailForm],
-  );
-
-  function openDocumentEditor(
-    template: ContractDocumentTemplate,
-    document?: ContractDocument,
-  ) {
-    if (!contractDetail) return;
-
-    setDocumentFormError(null);
-    const nextForm = toDocumentEditorForm(contractDetail, template, document);
-    setDocumentEditorForm(nextForm);
-    // §3.1 dirty tracking — 오픈 시점 스냅샷 보관
-    setDocumentEditorBaseline(JSON.stringify(nextForm));
-    // 상세 폼 상태는 페이지가 소유하므로 다이얼로그를 닫아도 편집값이 유지된다
-    setIsDetailOpen(false);
-    setIsDocumentEditorOpen(true);
-  }
-
-  function openContractDetail(contractId: string) {
+  /** 목록에서 계약을 열면 중간 허브 없이 대표 문서 편집기로 바로 진입한다. */
+  async function openContractEditor(contractId: string) {
+    const requestId = ++editorOpenRequestRef.current;
     setSelectedContractId(contractId);
-    setIsDetailOpen(true);
+    setDocumentFormError(null);
+
+    try {
+      const contract = await queryClient.fetchQuery({
+        queryKey: ['contract', contractId],
+        queryFn: () => api.contracts.findOne(contractId),
+      });
+      if (requestId !== editorOpenRequestRef.current) return;
+
+      const documents = sortContractDocuments(contract.documents ?? []);
+      const document =
+        documents.find(
+          (item) => item.status !== 'cancelled' && item.category === 'contract',
+        ) ??
+        documents.find((item) => item.status !== 'cancelled') ??
+        documents[0];
+
+      let template: ContractDocumentTemplate;
+      if (document) {
+        template = resolveDocumentTemplate(document, allDocumentTemplates);
+      } else {
+        const templates = await queryClient.fetchQuery({
+          queryKey: ['contract-document-templates', contract.transactionType],
+          queryFn: () =>
+            api.contracts.documentTemplates({
+              transactionType: contract.transactionType,
+            }),
+        });
+        if (requestId !== editorOpenRequestRef.current) return;
+
+        const primaryTemplate =
+          templates.find((item) => item.category === 'contract' && item.isRequired) ??
+          templates.find((item) => item.category === 'contract') ??
+          templates.find((item) => item.isRequired) ??
+          templates[0];
+
+        if (!primaryTemplate) {
+          throw new Error('이 계약에 적용할 수 있는 작성 서식이 없습니다.');
+        }
+        template = primaryTemplate;
+      }
+
+      const nextForm = toDocumentEditorForm(contract, template, document);
+      setDocumentEditorForm(nextForm);
+      setDocumentEditorBaseline(JSON.stringify(nextForm));
+      setIsDocumentEditorOpen(true);
+    } catch (error) {
+      if (requestId !== editorOpenRequestRef.current) return;
+      toast.error(error instanceof Error ? error.message : '문서 편집기를 열지 못했습니다.');
+    }
   }
 
-  /** 문서 편집기 닫기 — 미저장 변경이 있으면 확인 후 폐기, 계약 상세로 복귀 */
+  /** 편집기 상단 문서 탭 전환 — 미저장 변경은 확인한 뒤에만 폐기한다. */
+  function switchDocumentEditor(document: ContractDocument) {
+    if (!contractDetail || document.id === documentEditorForm.documentId) return;
+    if (saveDocumentMutation.isPending || applyFormMutation.isPending) return;
+
+    if (isDocumentEditorDirty) {
+      const confirmed = window.confirm(
+        '현재 문서에 저장하지 않은 변경사항이 있습니다. 변경을 버리고 다른 문서로 이동할까요?',
+      );
+      if (!confirmed) return;
+    }
+
+    const template = resolveDocumentTemplate(document, allDocumentTemplates);
+    const nextForm = toDocumentEditorForm(contractDetail, template, document);
+    setDocumentFormError(null);
+    setDocumentEditorForm(nextForm);
+    setDocumentEditorBaseline(JSON.stringify(nextForm));
+  }
+
+  /** 편집기 안에서 새 서식을 추가할 때도 현재 탭의 미저장 변경을 보호한다. */
+  function handleEditorAddForm(spec: FormRegistrationSpec) {
+    if (isDocumentEditorDirty) {
+      const confirmed = window.confirm(
+        '현재 문서에 저장하지 않은 변경사항이 있습니다. 변경을 버리고 새 서식을 열까요?',
+      );
+      if (!confirmed) return;
+    }
+    handleFormRegistrationSelect(spec);
+  }
+
+  /** MySpider 계약서/서식 등록 메뉴 선택 → 거래 연결 후 해당 양식 적용 */
+  function handleFormRegistrationSelect(spec: FormRegistrationSpec) {
+    if (applyFormMutation.isPending) return;
+
+    if (spec.isAnnex) {
+      const targetContractId =
+        (isDocumentEditorOpen ? contractDetail?.id : null) ??
+        focusedContractId ??
+        selectedContractId;
+
+      if (!targetContractId) {
+        createMutation.mutate({
+          transactionType: spec.transactionType,
+          totalPrice: 0,
+          formSpec: spec,
+        });
+        return;
+      }
+
+      setSelectedContractId(targetContractId);
+      applyFormMutation.mutate({ contractId: targetContractId, spec });
+      return;
+    }
+
+    setPendingFormSpec(spec);
+    setCreateForm((prev) => ({
+      ...prev,
+      dealId: '',
+      transactionType: spec.transactionType,
+      totalPrice: undefined,
+      monthlyRent: undefined,
+      contractDate: todayInput(),
+    }));
+    appliedDealIdRef.current = null;
+    setIsCreateOpen(true);
+  }
+
+  /** 문서 편집기 닫기 — 미저장 변경을 확인한 뒤 문서 목록으로 복귀 */
   function handleDocumentEditorOpenChange(nextOpen: boolean) {
     if (!nextOpen && isDocumentEditorDirty && !saveDocumentMutation.isPending) {
-      const confirmed = window.confirm(
-        '저장하지 않은 변경사항이 있습니다. 저장 없이 닫을까요?',
-      );
+      const confirmed = window.confirm('저장하지 않은 변경사항이 있습니다. 저장 없이 닫을까요?');
       if (!confirmed) return;
     }
     setIsDocumentEditorOpen(nextOpen);
     if (!nextOpen) {
+      editorOpenRequestRef.current += 1;
       setDocumentEditorForm(emptyDocumentEditorForm());
       setDocumentEditorBaseline(null);
       setDocumentFormError(null);
-      if (selectedContractId) {
-        setIsDetailOpen(true);
-      }
     }
-  }
-
-  /** 상세 다이얼로그 닫기 — 미저장 변경이 있으면 확인 후 서버 상태로 리셋 */
-  function handleDetailOpenChange(nextOpen: boolean) {
-    if (!nextOpen && isDetailDirty && !isDocumentEditorOpen) {
-      const confirmed = window.confirm(
-        '저장하지 않은 계약 정보 변경이 있습니다. 저장 없이 닫을까요?',
-      );
-      if (!confirmed) return;
-      // 폐기 확정 — 다음 오픈 때 서버 상태 기준으로 리셋
-      if (contractDetail) setDetailForm(toContractForm(contractDetail));
-    }
-    setIsDetailOpen(nextOpen);
   }
 
   /**
@@ -659,6 +871,10 @@ function ContractsPage() {
       ? getContractClauseLayout(
           documentEditorForm.kind,
           documentEditorForm.transactionType,
+          getContractClauseLayoutContext(
+            documentEditorForm.metadata,
+            documentEditorForm.engineFields,
+          ),
         )
       : null;
 
@@ -684,12 +900,12 @@ function ContractsPage() {
     const metadata = agreementToSave
       ? mergeResidentialSaleAgreementMetadata(engineMetadata, agreementToSave)
       : engineMetadata;
-    const title =
-      documentEditorForm.engineFields.documentTitle.trim() || documentEditorForm.title;
+    const title = documentEditorForm.engineFields.documentTitle.trim() || documentEditorForm.title;
     const status = saveAsNew ? 'draft' : documentEditorForm.status;
 
     saveDocumentMutation.mutate({
       documentId: saveAsNew ? undefined : documentEditorForm.documentId,
+      saveAsNew,
       dto: {
         templateId: documentEditorForm.templateId,
         type: documentEditorForm.type,
@@ -705,7 +921,7 @@ function ContractsPage() {
         kindOrder: saveAsNew ? undefined : documentEditorForm.kindOrder,
         fileUrl: documentEditorForm.fileUrl.trim() || undefined,
         // 서명완료/제출완료로 저장 시 자동 스탬프 (web 과 동일 —
-        // 거래신고 D-day 배지(-document-hub isReportPending)가 해제되도록)
+        // 문서 편집기의 거래신고 제출 상태가 즉시 갱신되도록
         signedAt:
           status === 'signed'
             ? documentEditorForm.signedAt || savedAt
@@ -727,13 +943,14 @@ function ContractsPage() {
   return (
     <div className="flex flex-col">
       <PageHeader
-        title="계약"
-        description="거래에서 이어지는 계약 일정과 문서 상태를 계약 단위로 관리합니다."
+        title="문서관리"
+        description="아파트·오피스텔 등 종별과 매매·전세 등 거래유형을 고르면 해당 계약 양식이 그대로 적용됩니다."
         actions={
-          <Button onClick={() => setIsCreateOpen(true)} disabled={availableDeals.length === 0}>
-            <CirclePlus className="size-4" />
-            계약 생성
-          </Button>
+          <FormRegistrationMenu
+            contractDisabled={createMutation.isPending || applyFormMutation.isPending}
+            annexDisabled={createMutation.isPending || applyFormMutation.isPending}
+            onSelect={handleFormRegistrationSelect}
+          />
         }
       />
 
@@ -751,9 +968,13 @@ function ContractsPage() {
         kindOptions={kindOptions}
         totalCount={totalCount}
         view={view}
+        statePreset={statePreset}
+        showPhones={showPhones}
         onChange={setFilters}
         onDocFilterChange={setDocFilter}
         onViewChange={setView}
+        onStatePresetChange={setStatePreset}
+        onShowPhonesChange={setShowPhones}
       />
 
       {contractsQuery.isLoading ? (
@@ -773,13 +994,10 @@ function ContractsPage() {
         <EmptyState
           icon={FileText}
           title="등록된 계약이 없습니다"
-          description="거래(Deal)에서 계약을 생성하면 이곳에서 일정과 문서를 관리할 수 있습니다."
+          description="계약서 등록 메뉴에서 아파트·오피스텔 등 양식을 고른 뒤, 거래를 연결하세요."
           action={
             availableDeals.length > 0 ? (
-              <Button onClick={() => setIsCreateOpen(true)}>
-                <CirclePlus className="size-4" />
-                계약 생성
-              </Button>
+              <FormRegistrationMenu showAnnex={false} onSelect={handleFormRegistrationSelect} />
             ) : (
               <Button asChild variant="outline">
                 <Link to="/deals">거래 만들러 가기</Link>
@@ -790,10 +1008,13 @@ function ContractsPage() {
       ) : (
         <>
           {view === 'list' ? (
-            <ContractsTable
+            <DocumentListTable
               contracts={visibleContracts}
               isFiltered={isFiltered}
-              onOpen={openContractDetail}
+              showPhones={showPhones}
+              focusedId={focusedContractId}
+              onFocus={setFocusedContractId}
+              onOpen={(contractId) => void openContractEditor(contractId)}
               onCopy={(contract) => copyContractMutation.mutate(contract.id)}
               isCopying={copyContractMutation.isPending}
               onDelete={setDeleteContractTarget}
@@ -803,7 +1024,7 @@ function ContractsPage() {
             <ContractsDocGrid
               contracts={visibleContracts}
               isFiltered={isFiltered}
-              onOpen={openContractDetail}
+              onOpen={(contractId) => void openContractEditor(contractId)}
             />
           )}
 
@@ -837,46 +1058,63 @@ function ContractsPage() {
         </>
       )}
 
-      <Dialog open={isDetailOpen} onOpenChange={handleDetailOpenChange}>
-        <DialogContent className="h-[calc(100vh-32px)] max-h-[calc(100vh-32px)] w-[calc(100vw-32px)] max-w-none gap-0 overflow-hidden p-0 sm:max-w-none xl:w-[1180px]">
-          <ContractDetailCard
-            open={isDetailOpen}
-            contract={contractDetail}
-            isLoading={detailQuery.isLoading}
-            isError={detailQuery.isError}
-            onRetry={() => detailQuery.refetch()}
-            documentTemplates={documentTemplates}
-            isDocumentTemplatesLoading={isDocumentTemplatesLoading}
-            form={detailForm}
-            onFormChange={setDetailForm}
-            isDirty={isDetailDirty}
-            onOpenDocument={openDocumentEditor}
-            onCopyDocument={(documentId) => copyDocumentMutation.mutate(documentId)}
-            isCopyingDocument={copyDocumentMutation.isPending}
-            onDeleteDocument={(documentId) => deleteDocumentMutation.mutate(documentId)}
-            isDeletingDocument={deleteDocumentMutation.isPending}
-          />
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
+      <Dialog
+        open={isCreateOpen}
+        onOpenChange={(open) => {
+          setIsCreateOpen(open);
+          if (!open) setPendingFormSpec(null);
+        }}
+      >
         <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
-            <DialogTitle>계약 생성</DialogTitle>
+            <DialogTitle>{pendingFormSpec ? pendingFormSpec.title : '계약 생성'}</DialogTitle>
             <DialogDescription>
-              거래에 연결된 당사자와 가격을 기준으로 계약서를 시작합니다.
+              {pendingFormSpec
+                ? `선택한 양식 「${pendingFormSpec.groupLabel} · ${pendingFormSpec.tradeLabel}」을 거래에 연결한 뒤 바로 적용합니다.`
+                : '거래에 연결된 당사자와 가격을 기준으로 계약서를 시작합니다.'}
             </DialogDescription>
           </DialogHeader>
+
+          {pendingFormSpec ? (
+            <div className="rounded-md border border-primary/20 bg-primary/5 px-3 py-2 text-sm">
+              <p className="font-medium text-foreground">{pendingFormSpec.title}</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                서식 {pendingFormSpec.templateCode} · 종별 {pendingFormSpec.groupLabel} · 거래{' '}
+                {pendingFormSpec.tradeLabel} (Cntr_Clsf {pendingFormSpec.cntrClsf})
+              </p>
+            </div>
+          ) : null}
+
+          {availableDeals.length === 0 ? (
+            <div className="flex items-center justify-between gap-4 rounded-md border border-warning/30 bg-warning-soft px-4 py-3">
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-foreground">
+                  연결할 수 있는 거래가 없습니다
+                </p>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  서식은 선택되었습니다. 먼저 거래를 만든 뒤 다시 연결해주세요.
+                </p>
+              </div>
+              <Button asChild variant="outline" size="sm" className="shrink-0">
+                <Link to="/deals">거래 만들기</Link>
+              </Button>
+            </div>
+          ) : null}
 
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2 md:col-span-2">
               <Label>대상 거래 *</Label>
               <Select
                 value={createForm.dealId}
+                disabled={availableDeals.length === 0}
                 onValueChange={(value) => setCreateForm((prev) => ({ ...prev, dealId: value }))}
               >
                 <SelectTrigger className="w-full">
-                  <SelectValue placeholder="거래 선택" />
+                  <SelectValue
+                    placeholder={
+                      availableDeals.length === 0 ? '연결 가능한 거래 없음' : '거래 선택'
+                    }
+                  />
                 </SelectTrigger>
                 <SelectContent>
                   {availableDeals.map((deal) => (
@@ -895,6 +1133,7 @@ function ContractsPage() {
                 onValueChange={(value) =>
                   setCreateForm((prev) => ({ ...prev, transactionType: value }))
                 }
+                disabled={Boolean(pendingFormSpec)}
               >
                 <SelectTrigger className="w-full">
                   <SelectValue placeholder="유형 선택" />
@@ -907,25 +1146,36 @@ function ContractsPage() {
                   ))}
                 </SelectContent>
               </Select>
+              {pendingFormSpec ? (
+                <p className="text-[11px] text-muted-foreground">
+                  메뉴에서 고른 양식의 거래유형이 고정됩니다.
+                </p>
+              ) : null}
             </div>
 
             <NumberField
               label="총 거래금액 *"
               value={stringifyOptionalNumber(createForm.totalPrice)}
               onChange={(value) =>
-                setCreateForm((prev) => ({ ...prev, totalPrice: toOptionalNumber(value) }))
+                setCreateForm((prev) => ({
+                  ...prev,
+                  totalPrice: toOptionalNumber(value),
+                }))
               }
               suffix="만원"
             />
 
             <NumberField
-              label="월세"
+              label={createForm.transactionType === 'yearly' ? '연세' : '월세'}
               value={stringifyOptionalNumber(createForm.monthlyRent)}
               onChange={(value) =>
-                setCreateForm((prev) => ({ ...prev, monthlyRent: toOptionalNumber(value) }))
+                setCreateForm((prev) => ({
+                  ...prev,
+                  monthlyRent: toOptionalNumber(value),
+                }))
               }
               suffix="만원"
-              disabled={createForm.transactionType !== 'monthly'}
+              disabled={!['monthly', 'yearly'].includes(createForm.transactionType ?? '')}
             />
 
             <div className="space-y-2">
@@ -934,7 +1184,10 @@ function ContractsPage() {
                 type="date"
                 value={createForm.contractDate ?? ''}
                 onChange={(event) =>
-                  setCreateForm((prev) => ({ ...prev, contractDate: event.target.value }))
+                  setCreateForm((prev) => ({
+                    ...prev,
+                    contractDate: event.target.value,
+                  }))
                 }
               />
             </div>
@@ -956,20 +1209,34 @@ function ContractsPage() {
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsCreateOpen(false)}>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setIsCreateOpen(false);
+                setPendingFormSpec(null);
+              }}
+            >
               닫기
             </Button>
             <Button
-              onClick={() => createMutation.mutate(createForm)}
+              onClick={() =>
+                createMutation.mutate({
+                  ...createForm,
+                  formSpec: pendingFormSpec,
+                })
+              }
               disabled={
                 createMutation.isPending ||
+                applyFormMutation.isPending ||
                 !createForm.dealId ||
                 !selectedCreateDeal?.buyerContactId ||
                 !selectedCreateDeal?.sellerContactId ||
-                !createForm.totalPrice
+                !createForm.totalPrice ||
+                (['monthly', 'yearly'].includes(createForm.transactionType ?? '') &&
+                  !createForm.monthlyRent)
               }
             >
-              생성
+              {pendingFormSpec ? '생성 후 양식 열기' : '생성'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -978,11 +1245,15 @@ function ContractsPage() {
       <DocumentEditorSheet
         open={isDocumentEditorOpen}
         form={documentEditorForm}
+        documents={contractDetail?.documents ?? []}
         error={documentFormError}
         isSaving={saveDocumentMutation.isPending}
+        isAddingForm={applyFormMutation.isPending}
         isDirty={isDocumentEditorDirty}
         onOpenChange={handleDocumentEditorOpenChange}
         onFormChange={setDocumentEditorForm}
+        onSelectDocument={switchDocumentEditor}
+        onAddForm={handleEditorAddForm}
         onSave={() => saveDocument(false)}
         onSaveAsNew={() => saveDocument(true)}
       />
@@ -1019,9 +1290,13 @@ function ContractListFilterBar({
   kindOptions,
   totalCount,
   view,
+  statePreset,
+  showPhones,
   onChange,
   onDocFilterChange,
   onViewChange,
+  onStatePresetChange,
+  onShowPhonesChange,
 }: {
   searchWrapRef: RefObject<HTMLDivElement | null>;
   filters: ContractListFilterState;
@@ -1029,19 +1304,53 @@ function ContractListFilterBar({
   kindOptions: Array<{ value: string; label: string }>;
   totalCount: number;
   view: 'list' | 'docs';
+  statePreset: DocStatePreset;
+  showPhones: boolean;
   onChange: Dispatch<SetStateAction<ContractListFilterState>>;
   onDocFilterChange: (value: string) => void;
   onViewChange: (view: 'list' | 'docs') => void;
+  onStatePresetChange: (value: DocStatePreset) => void;
+  onShowPhonesChange: (value: boolean) => void;
 }) {
   function patch(partial: Partial<ContractListFilterState>) {
     onChange((prev) => ({ ...prev, ...partial }));
   }
 
   const isDefault =
-    JSON.stringify(filters) === JSON.stringify(defaultListFilters()) && !docFilter;
+    JSON.stringify(filters) === JSON.stringify(defaultListFilters()) &&
+    !docFilter &&
+    statePreset === 'all';
 
   return (
     <div className="mb-3 space-y-2">
+      {/* 레거시 State_Type 전체/진행중/완료 */}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="flex items-center gap-0.5 rounded-md border border-border/60 p-0.5">
+          {(Object.keys(DOC_STATE_PRESETS) as DocStatePreset[]).map((key) => (
+            <Button
+              key={key}
+              variant={statePreset === key ? 'secondary' : 'ghost'}
+              size="sm"
+              className="h-7 px-2.5 text-xs"
+              onClick={() => {
+                onStatePresetChange(key);
+                if (key === 'done') patch({ status: 'registered' });
+                else if (filters.status === 'registered') patch({ status: '' });
+              }}
+            >
+              {DOC_STATE_PRESETS[key].label}
+            </Button>
+          ))}
+        </div>
+        <label className="flex cursor-pointer items-center gap-2 px-1 text-xs text-muted-foreground">
+          <Checkbox
+            checked={showPhones}
+            onCheckedChange={(checked) => onShowPhonesChange(checked === true)}
+          />
+          고객정보(연락처) 표시
+        </label>
+      </div>
+
       <FilterBar>
         <div ref={searchWrapRef}>
           <FilterSearch
@@ -1074,7 +1383,10 @@ function ContractListFilterBar({
         <FilterSelect
           label="상태"
           value={filters.status}
-          onChange={(value) => patch({ status: value })}
+          onChange={(value) => {
+            onStatePresetChange('all');
+            patch({ status: value });
+          }}
           options={CONTRACT_STATUS_OPTIONS}
         />
         <FilterSelect
@@ -1207,193 +1519,12 @@ function ContractListFilterBar({
           onClick={() => {
             onChange(defaultListFilters());
             onDocFilterChange('');
+            onStatePresetChange('all');
           }}
         >
           필터 초기화
         </Button>
       </FilterBar>
-    </div>
-  );
-}
-
-function ContractsTable({
-  contracts,
-  isFiltered,
-  onOpen,
-  onCopy,
-  isCopying,
-  onDelete,
-  isDeleting,
-}: {
-  contracts: Contract[];
-  isFiltered: boolean;
-  onOpen: (contractId: string) => void;
-  onCopy: (contract: Contract) => void;
-  isCopying: boolean;
-  onDelete: (contract: Contract) => void;
-  isDeleting: boolean;
-}) {
-  return (
-    <div className="overflow-hidden rounded-md border border-border/60">
-      <div className="overflow-x-auto">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="min-w-24 text-xs text-muted-foreground">계약일</TableHead>
-              <TableHead className="min-w-28 text-xs text-muted-foreground">유형</TableHead>
-              <TableHead className="min-w-36 text-xs text-muted-foreground">매물</TableHead>
-              <TableHead className="min-w-36 text-xs text-muted-foreground">당사자</TableHead>
-              <TableHead className="min-w-28 text-right text-xs text-muted-foreground">
-                금액
-              </TableHead>
-              <TableHead className="min-w-28 text-xs text-muted-foreground">잔금일</TableHead>
-              <TableHead className="min-w-24 text-xs text-muted-foreground">상태</TableHead>
-              <TableHead className="min-w-24 text-xs text-muted-foreground">문서</TableHead>
-              <TableHead className="min-w-24 text-xs text-muted-foreground">거래신고</TableHead>
-              <TableHead className="min-w-24 text-xs text-muted-foreground">수정일</TableHead>
-              <TableHead className="w-32 text-right text-xs text-muted-foreground">
-                작업
-              </TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {contracts.map((contract) => {
-              const missingCount = contract.missingDocumentCount ?? 0;
-              const propertyLabel = getContractPropertyLabel(contract.deal);
-              const balanceDday = getBalanceDday(contract);
-              const reportStatus = contract.transactionReportStatus ?? 'none';
-
-              return (
-                <TableRow
-                  key={contract.id}
-                  tabIndex={0}
-                  onClick={() => onOpen(contract.id)}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter' || event.key === ' ') {
-                      event.preventDefault();
-                      onOpen(contract.id);
-                    }
-                  }}
-                  className="h-10 cursor-pointer text-sm outline-none hover:bg-muted/40 focus-visible:bg-muted/50"
-                >
-                  <TableCell className="font-medium">
-                    {formatDate(contract.contractDate)}
-                  </TableCell>
-                  <TableCell>
-                    <ContractTransactionTypeBadge type={contract.transactionType} />
-                  </TableCell>
-                  <TableCell>
-                    <p className="max-w-52 truncate text-sm font-medium">
-                      {propertyLabel || '매물 미지정'}
-                    </p>
-                  </TableCell>
-                  <TableCell>
-                    <div className="text-sm">
-                      {contract.buyerContact?.name ?? '매수인 미지정'} /{' '}
-                      {contract.sellerContact?.name ?? '매도인 미지정'}
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-right font-medium tabular-nums">
-                    {formatMoney(contract.totalPrice)}
-                    {contract.transactionType === 'monthly' && contract.monthlyRent ? (
-                      <span className="block text-xs text-muted-foreground">
-                        월 {formatMoney(contract.monthlyRent)}
-                      </span>
-                    ) : null}
-                  </TableCell>
-                  <TableCell>
-                    {contract.statedBalanceDate ? (
-                      <div className="text-sm">
-                        {formatDate(contract.statedBalanceDate)}
-                        {balanceDday ? (
-                          <span
-                            className={cn(
-                              'ml-1 text-xs',
-                              balanceDday.overdue
-                                ? 'font-medium text-destructive'
-                                : 'text-muted-foreground',
-                            )}
-                          >
-                            {balanceDday.text}
-                          </span>
-                        ) : null}
-                      </div>
-                    ) : (
-                      <span className="text-sm text-muted-foreground">—</span>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <StatusBadge kind="contractStatus" status={contract.status} />
-                  </TableCell>
-                  <TableCell>
-                    <Badge
-                      variant={missingCount > 0 ? 'outline' : 'secondary'}
-                      className={cn(missingCount > 0 && 'text-destructive')}
-                    >
-                      {missingCount > 0
-                        ? `누락 ${missingCount}건`
-                        : `완료 ${contract.documentCount ?? 0}건`}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <Badge
-                      className={cn(
-                        'border-0',
-                        transactionReportStatusMeta[reportStatus]?.className ??
-                          transactionReportStatusMeta.none.className,
-                      )}
-                    >
-                      {transactionReportStatusMeta[reportStatus]?.label ?? reportStatus}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-sm text-muted-foreground">
-                    {formatDateTime(contract.updatedAt)}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex justify-end gap-1">
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        disabled={isCopying}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          onCopy(contract);
-                        }}
-                      >
-                        <Copy className="size-3.5" />
-                        사본
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="text-muted-foreground hover:text-destructive"
-                        disabled={isDeleting}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          onDelete(contract);
-                        }}
-                      >
-                        <Trash2 className="size-3.5" />
-                        삭제
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              );
-            })}
-            {contracts.length === 0 ? (
-              <TableRow>
-                <TableCell
-                  colSpan={11}
-                  className="h-32 text-center text-sm text-muted-foreground"
-                >
-                  {isFiltered ? '조건에 맞는 계약이 없습니다.' : '계약이 없습니다.'}
-                </TableCell>
-              </TableRow>
-            ) : null}
-          </TableBody>
-        </Table>
-      </div>
     </div>
   );
 }
@@ -1440,9 +1571,7 @@ function ContractsDocGrid({
             <CardContent className="space-y-3 px-4">
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-medium">
-                    {propertyLabel || '매물 미지정'}
-                  </p>
+                  <p className="truncate text-sm font-medium">{propertyLabel || '매물 미지정'}</p>
                   <p className="text-xs text-muted-foreground">
                     {contract.buyerContact?.name ?? '매수인 미지정'} /{' '}
                     {contract.sellerContact?.name ?? '매도인 미지정'}
@@ -1500,17 +1629,6 @@ function ContractsDocGrid({
   );
 }
 
-function getBalanceDday(contract: Contract): { text: string; overdue: boolean } | null {
-  if (!contract.statedBalanceDate) return null;
-  if (['balancePaid', 'registered', 'cancelled'].includes(contract.status)) return null;
-
-  const text = formatDday(contract.statedBalanceDate);
-  return { text, overdue: text.startsWith('D+') };
-}
-
 function getDealLabel(deal: Deal) {
-  const propertyLabel = getContractPropertyLabel(deal) || '매물 미지정';
-  const buyer = deal.buyerContact?.name ?? '매수인 미지정';
-  const seller = deal.sellerContact?.name ?? '매도인 미지정';
-  return `${propertyLabel} · ${buyer} / ${seller}`;
+  return getDealSummaryLabel(deal);
 }

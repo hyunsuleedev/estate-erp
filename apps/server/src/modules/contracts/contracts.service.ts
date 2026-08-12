@@ -151,7 +151,7 @@ type ContractDocumentTemplateWithRelations = Prisma.ContractDocumentTemplateGetP
 >;
 
 type ContractCreateDto = {
-  dealId: string;
+  dealId?: string;
   transactionType?: string;
   buyerContactId?: string;
   sellerContactId?: string;
@@ -415,53 +415,72 @@ export class ContractsService {
   }
 
   async create(officeId: string, dto: ContractCreateDto) {
-    const deal = await this.prisma.deal.findFirst({
-      where: { id: dto.dealId, officeId },
-      include: {
-        listing: true,
-        buyerContact: true,
-        sellerContact: true,
-        contract: { select: { id: true } },
-      },
-    });
+    const deal = dto.dealId
+      ? await this.prisma.deal.findFirst({
+          where: { id: dto.dealId, officeId },
+          include: {
+            listing: true,
+            buyerContact: true,
+            sellerContact: true,
+            contract: { select: { id: true } },
+          },
+        })
+      : null;
 
-    if (!deal) {
+    if (dto.dealId && !deal) {
       throw new NotFoundException('Deal not found');
     }
 
-    if (deal.contract) {
+    if (deal?.contract) {
       throw new BadRequestException('이미 계약서가 생성된 거래입니다.');
     }
 
     const transactionType =
-      dto.transactionType ?? deal.transactionType ?? deal.listing?.transactionType;
+      dto.transactionType ?? deal?.transactionType ?? deal?.listing?.transactionType;
     if (!transactionType) {
       throw new BadRequestException('거래 유형이 지정되지 않았습니다.');
     }
     this.assertContractTransactionType(transactionType);
 
-    const buyerContactId = dto.buyerContactId ?? deal.buyerContactId;
-    const sellerContactId = dto.sellerContactId ?? deal.sellerContactId;
+    const buyerContactId = dto.buyerContactId ?? deal?.buyerContactId ?? null;
+    const sellerContactId = dto.sellerContactId ?? deal?.sellerContactId ?? null;
 
-    if (!buyerContactId || !sellerContactId) {
+    if (deal && (!buyerContactId || !sellerContactId)) {
       throw new BadRequestException('거래 당사자가 연결된 뒤 계약서를 생성할 수 있습니다.');
     }
 
-    const totalPrice = this.resolveTotalPrice(deal, dto.totalPrice);
+    const totalPrice =
+      (deal ? this.resolveTotalPrice(deal, dto.totalPrice) : dto.totalPrice) ?? 0;
 
-    if (!totalPrice) {
+    if (deal && !totalPrice) {
       throw new BadRequestException('총 거래금액을 입력해주세요.');
+    }
+
+    const periodicRent =
+      dto.monthlyRent ??
+      (deal && transactionType === ContractTransactionType.MONTHLY
+        ? deal.agreedMonthlyRent ?? deal.listing?.monthlyRent
+        : undefined);
+    if (
+      (transactionType === ContractTransactionType.MONTHLY ||
+        transactionType === ContractTransactionType.YEARLY) &&
+      deal &&
+      !periodicRent
+    ) {
+      throw new BadRequestException(
+        `${transactionType === ContractTransactionType.YEARLY ? '연세' : '월세'} 금액을 입력해주세요.`,
+      );
     }
 
     const contract = await this.prisma.contract.create({
       data: {
         officeId,
-        dealId: dto.dealId,
+        dealId: dto.dealId ?? null,
         transactionType,
         buyerContactId,
         sellerContactId,
         totalPrice,
-        monthlyRent: dto.monthlyRent ?? deal.agreedMonthlyRent ?? deal.listing?.monthlyRent,
+        monthlyRent: periodicRent,
         status: dto.status ?? 'draft',
         contractDate: this.toDate(dto.contractDate),
         statedDeposit: dto.statedDeposit,
@@ -474,7 +493,7 @@ export class ContractsService {
         leaseEndDate: this.toDate(dto.leaseEndDate),
         // 특약(rich text HTML)은 방어적 새니타이즈 후 저장 (plain text 는 그대로)
         specialTerms: sanitizeContractRichTextValue(
-          dto.specialTerms ?? deal.specialTerms ?? undefined,
+          dto.specialTerms ?? deal?.specialTerms ?? undefined,
         ),
         attachments: dto.attachments ?? [],
         memo: dto.memo,
@@ -482,7 +501,7 @@ export class ContractsService {
       include: this.contractInclude,
     });
 
-    return this.enrichContract(contract);
+    return this.enrichContract(contract as ContractWithRelations);
   }
 
   async update(id: string, officeId: string, dto: ContractUpdateDto) {
@@ -1565,7 +1584,7 @@ export class ContractsService {
   }
 
   private buildSaleAgreementDraft(contract: ContractWithRelations): ResidentialSaleAgreementDraft {
-    const property = contract.deal.listing?.property;
+    const property = contract.deal?.listing?.property;
     const site = property?.site;
     const unit = property?.unit;
     const siteMetadata = this.asRecord(site?.metadata);
@@ -1614,14 +1633,14 @@ export class ContractsService {
         explanationDeliveredAt: actualAgreementAt,
       },
       seller: {
-        contactId: contract.sellerContact.id,
-        name: contract.sellerContact.name,
-        phone: this.primaryPhone(contract.sellerContact.phones),
+        contactId: contract.sellerContact?.id ?? null,
+        name: contract.sellerContact?.name ?? '',
+        phone: this.primaryPhone(contract.sellerContact?.phones ?? []),
       },
       buyer: {
-        contactId: contract.buyerContact.id,
-        name: contract.buyerContact.name,
-        phone: this.primaryPhone(contract.buyerContact.phones),
+        contactId: contract.buyerContact?.id ?? null,
+        name: contract.buyerContact?.name ?? '',
+        phone: this.primaryPhone(contract.buyerContact?.phones ?? []),
       },
       brokerage: {
         officeName: contract.office.name,

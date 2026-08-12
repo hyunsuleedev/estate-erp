@@ -185,8 +185,34 @@ describe('contract clause layouts — base_contract × sale 무결성', () => {
   it('exposes the layout via CONTRACT_CLAUSE_LAYOUTS / getContractClauseLayout', () => {
     assert.equal(getContractClauseLayout('base_contract', 'sale'), BASE_CONTRACT_SALE_CLAUSES);
     assert.equal(CONTRACT_CLAUSE_LAYOUTS.base_contract!.sale, BASE_CONTRACT_SALE_CLAUSES);
-    assert.equal(getContractClauseLayout('base_contract', 'jeonse'), null);
+    assert.equal(
+      getContractClauseLayout('base_contract', 'jeonse'),
+      CONTRACT_CLAUSE_LAYOUTS.base_contract!.jeonse,
+    );
+    assert.ok(getContractClauseLayout('base_contract', 'monthly'));
+    assert.ok(getContractClauseLayout('base_contract', 'yearly'));
+    assert.ok(getContractClauseLayout('commercial_standard_lease_contract', 'monthly'));
     assert.equal(getContractClauseLayout('standard_lease_contract', 'sale'), null);
+  });
+
+  it('applies the registered property type to base-contract article wording', () => {
+    const apartment = getContractClauseLayout('base_contract', 'sale', {
+      propertyClass: 'apartment',
+      cntrClsf: '01',
+    })!;
+    const officetel = getContractClauseLayout('base_contract', 'jeonse', {
+      propertyClass: 'officetel',
+      cntrClsf: '02',
+    })!;
+
+    assert.ok(apartment[0]!.intro!.includes('위 아파트'));
+    assert.ok(
+      officetel[1]!.rows[0]!.segments.some(
+        (segment) => segment.kind === 'text' && segment.text.includes('위 오피스텔'),
+      ),
+    );
+    // 공유 상수는 치환 과정에서 오염되지 않는다.
+    assert.ok(BASE_CONTRACT_SALE_CLAUSES[0]!.intro!.includes('위 부동산'));
   });
 });
 

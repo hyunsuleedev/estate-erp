@@ -45,11 +45,15 @@ describe('contract document engine — metadata-driven field groups', () => {
     // appliesTo: ['jeonse','monthly'] — sale 계약에서는 숨김
     assert.ok(!payment.fields.some((field) => field.key === 'deposit'));
 
-    const loanHandling = payment.fields.find((field) => field.key === 'loanHandling');
+    const loanHandling = payment.fields.find(
+      (field) => field.key === 'loanHandling',
+    );
     assert.equal(loanHandling?.inputType, 'select');
     assert.deepEqual(loanHandling?.options, ['승계', '말소']);
 
-    const specialTerms = groups[1]!.fields.find((field) => field.key === 'specialTerms');
+    const specialTerms = groups[1]!.fields.find(
+      (field) => field.key === 'specialTerms',
+    );
     assert.equal(specialTerms?.inputType, 'textarea');
     assert.equal(specialTerms?.multiline, true);
   });
@@ -72,13 +76,20 @@ describe('contract document engine — metadata-driven field groups', () => {
                 key: 'leaseOnly',
                 title: '임대차 전용',
                 fields: [
-                  { key: 'deposit', label: '보증금', type: 'amount', appliesTo: ['jeonse'] },
+                  {
+                    key: 'deposit',
+                    label: '보증금',
+                    type: 'amount',
+                    appliesTo: ['jeonse'],
+                  },
                 ],
               },
               {
                 key: 'common',
                 title: '공통',
-                fields: [{ key: 'contractDate', label: '계약 체결일', type: 'date' }],
+                fields: [
+                  { key: 'contractDate', label: '계약 체결일', type: 'date' },
+                ],
               },
             ],
           },
@@ -101,13 +112,13 @@ describe('contract document engine — metadata-driven field groups', () => {
     assert.equal(groups[0]?.title, '문서 기본');
   });
 
-  it('initializes metadata-driven field keys as empty strings in the draft', () => {
+  it('prefills known metadata-driven contract fields and initializes unknown keys', () => {
     const draft = buildContractDocumentEngineDraft({
       contract: contract(),
       template: template({ metadata: metadataWithFieldGroups() }),
     });
 
-    assert.equal(draft.fields.salePrice, '');
+    assert.equal(draft.fields.salePrice, '158000');
     assert.equal(draft.fields.loanHandling, '');
     // 기존 기본 필드는 유지
     assert.equal(draft.fields.specialTerms, '현 시설물 상태에서 계약한다.');
@@ -139,13 +150,34 @@ describe('contract document engine — 거래유형 라벨/당사자 역할 (§2
   });
 
   it('maps party side labels per the legacy role table', () => {
-    assert.deepEqual(getContractPartySideLabels('sale'), { one: '매도인', two: '매수인' });
-    assert.deepEqual(getContractPartySideLabels('jeonse'), { one: '임대인', two: '임차인' });
-    assert.deepEqual(getContractPartySideLabels('monthly'), { one: '임대인', two: '임차인' });
-    assert.deepEqual(getContractPartySideLabels('exchange'), { one: '갑', two: '을' });
-    assert.deepEqual(getContractPartySideLabels('sublease'), { one: '전대인', two: '전차인' });
-    assert.deepEqual(getContractPartySideLabels('transfer'), { one: '양도인', two: '양수인' });
-    assert.deepEqual(getContractPartySideLabels('succession'), { one: '양도인', two: '양수인' });
+    assert.deepEqual(getContractPartySideLabels('sale'), {
+      one: '매도인',
+      two: '매수인',
+    });
+    assert.deepEqual(getContractPartySideLabels('jeonse'), {
+      one: '임대인',
+      two: '임차인',
+    });
+    assert.deepEqual(getContractPartySideLabels('monthly'), {
+      one: '임대인',
+      two: '임차인',
+    });
+    assert.deepEqual(getContractPartySideLabels('exchange'), {
+      one: '갑',
+      two: '을',
+    });
+    assert.deepEqual(getContractPartySideLabels('sublease'), {
+      one: '전대인',
+      two: '전차인',
+    });
+    assert.deepEqual(getContractPartySideLabels('transfer'), {
+      one: '양도인',
+      two: '양수인',
+    });
+    assert.deepEqual(getContractPartySideLabels('succession'), {
+      one: '양도인',
+      two: '양수인',
+    });
   });
 
   it('applies the role table to default party fields in the draft', () => {
@@ -189,9 +221,12 @@ describe('contract document engine — metadata fieldGroups 섹션 렌더', () =
     // salePrice 는 공통 '거래 조건' 행으로 미러되는 주 금액 필드 — 중복 제외
     assert.ok(!payment?.rows.some((row) => row.label === '매매대금 (만원)'));
 
-    const special = draft.sections.find((section) => section.title === '특약사항');
+    const special = draft.sections.find(
+      (section) => section.title === '특약사항',
+    );
     assert.equal(
-      special?.rows.find((row) => row.label === '개인정보 동의 문구 삽입')?.value,
+      special?.rows.find((row) => row.label === '개인정보 동의 문구 삽입')
+        ?.value,
       '예',
     );
     // specialTerms 키는 공통 '5. 특약 및 확인사항' 섹션이 렌더 — 중복 제외
@@ -212,7 +247,13 @@ describe('contract document engine — metadata fieldGroups 섹션 렌더', () =
           {
             key: 'loan',
             title: '융자',
-            fields: [{ key: 'loanAmount', label: '융자금 (만원)', inputType: 'amount' }],
+            fields: [
+              {
+                key: 'loanAmount',
+                label: '융자금 (만원)',
+                inputType: 'amount',
+              },
+            ],
           },
         ],
       },
@@ -224,14 +265,14 @@ describe('contract document engine — metadata fieldGroups 섹션 렌더', () =
     assert.equal(loanRow?.value, '5000 — 일금 오천만원정 (₩50,000,000)');
   });
 
-  it('skips empty values and emits no extra sections for fallback groups', () => {
+  it('skips empty values and renders contract-prefilled metadata groups', () => {
     const withMetadata = buildContractDocumentEngineDraft({
       contract: contract(),
       template: template({ metadata: metadataWithFieldGroups() }),
     });
-    // 값을 채우지 않은 metadata 그룹은 섹션을 만들지 않는다
+    // 계약 스냅샷에서 매매대금/잔금일을 채우므로 해당 그룹은 바로 미리보기에 표시된다.
     assert.ok(
-      !withMetadata.sections.some(
+      withMetadata.sections.some(
         (section) => section.title === '계약내용 (금액 스케줄)',
       ),
     );
@@ -266,7 +307,9 @@ describe('contract document engine — 한글 금액 병기 (GetHangulFromNum)',
       '일금 일십오억팔천만원정 (₩1,580,000,000)',
     );
 
-    const conditions = draft.sections.find((section) => section.title === '3. 거래 조건');
+    const conditions = draft.sections.find(
+      (section) => section.title === '3. 거래 조건',
+    );
     const priceRow = conditions?.rows.find((row) => row.label === '거래 금액');
     assert.equal(
       priceRow?.value,
@@ -276,7 +319,11 @@ describe('contract document engine — 한글 금액 병기 (GetHangulFromNum)',
 
   it('renders 월 차임 with hangul when set and "-" when missing', () => {
     const monthly = buildContractDocumentEngineDraft({
-      contract: contract({ transactionType: 'monthly', totalPrice: 5000, monthlyRent: 120 }),
+      contract: contract({
+        transactionType: 'monthly',
+        totalPrice: 5000,
+        monthlyRent: 120,
+      }),
       template: template({}),
     });
 
@@ -346,8 +393,9 @@ describe('contract document engine — 한글 금액 병기 (GetHangulFromNum)',
       },
     );
 
-    const fields = (metadata.documentEngine as { fields: Record<string, string> })
-      .fields;
+    const fields = (
+      metadata.documentEngine as { fields: Record<string, string> }
+    ).fields;
     assert.equal(fields.totalPriceHangulText, '일금 사억원정 (₩400,000,000)');
     assert.equal(fields.salePriceHangulText, '일금 이억원정 (₩200,000,000)');
   });
@@ -449,11 +497,20 @@ describe('contract document engine — ContractParty 반영', () => {
       { parties: parties() },
     );
 
-    const partySection = sections.find((section) => section.title === '2. 계약 당사자');
+    const partySection = sections.find(
+      (section) => section.title === '2. 계약 당사자',
+    );
     assert.ok(partySection);
     assert.deepEqual(
       partySection?.rows.map((row) => row.label),
-      ['매도인 1', '매도인 1 대리인', '매도인 2', '매수인', '개업공인중개사', '공동중개 1'],
+      [
+        '매도인 1',
+        '매도인 1 대리인',
+        '매도인 2',
+        '매수인',
+        '개업공인중개사',
+        '공동중개 1',
+      ],
     );
 
     const principal = partySection!.rows[0]!;
@@ -487,6 +544,87 @@ describe('contract document engine — ContractParty 반영', () => {
   });
 });
 
+describe('contract document engine — MySpider 등록 메타데이터와 연세', () => {
+  it('prefers the recorded WebForm/report and applies the selected property subtype', () => {
+    const draft = buildContractDocumentEngineDraft({
+      contract: contract({ transactionType: 'yearly', monthlyRent: 2400 }),
+      template: template({
+        metadata: {
+          mySpiderForm: ['ContractInputForm', 'ContractWebForm'],
+          mySpiderReport: ['ApartmentTradeContractReport'],
+          documentEngine: {
+            fieldGroups: [
+              {
+                key: 'classification',
+                title: '계약 종류',
+                fields: [
+                  { key: 'propertyClass', label: '타입', type: 'text' },
+                  {
+                    key: 'contractSubject',
+                    label: '목적물 종별',
+                    type: 'text',
+                  },
+                ],
+              },
+              {
+                key: 'rent',
+                title: '차임',
+                fields: [
+                  {
+                    key: 'monthlyRent',
+                    label: '월 차임',
+                    type: 'amount',
+                    appliesTo: ['monthly'],
+                  },
+                  {
+                    key: 'annualRent',
+                    label: '연 차임',
+                    type: 'amount',
+                    appliesTo: ['yearly'],
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      }),
+      document: {
+        title: '아파트 연세 계약서',
+        metadata: {
+          formRegistration: {
+            groupLabel: '아파트',
+            subjectDefault: '아파트',
+            cntrClsf: '01',
+            legacyTableName: 'TPCT01M',
+          },
+        },
+      },
+    });
+
+    assert.equal(draft.workflow.inputFormName, 'ContractWebForm');
+    assert.equal(draft.workflow.reportName, 'ApartmentTradeContractReport');
+    assert.equal(draft.fields.propertyClass, '아파트');
+    assert.equal(draft.fields.contractSubject, '아파트');
+    assert.equal(draft.fields.annualRent, '2400');
+    assert.ok(
+      draft.fieldGroups.some((group) =>
+        group.fields.some((field) => field.key === 'annualRent'),
+      ),
+    );
+    assert.equal(
+      draft.fieldGroups.some((group) =>
+        group.fields.some((field) => field.key === 'monthlyRent'),
+      ),
+      false,
+    );
+    assert.equal(
+      draft.sections.find((section) => section.title === '3. 거래 조건')
+        ?.rows[3]?.label,
+      '연 차임',
+    );
+  });
+});
+
 function metadataWithFieldGroups(): Record<string, unknown> {
   return {
     documentEngine: {
@@ -497,9 +635,27 @@ function metadataWithFieldGroups(): Record<string, unknown> {
           key: 'paymentTerms',
           title: '계약내용 (금액 스케줄)',
           fields: [
-            { key: 'salePrice', label: '매매대금', type: 'amount', unit: '만원', appliesTo: ['sale'] },
-            { key: 'deposit', label: '보증금', type: 'amount', unit: '만원', appliesTo: ['jeonse', 'monthly'] },
-            { key: 'loanHandling', label: '융자금 처리', type: 'select', options: ['승계', '말소'], appliesTo: ['sale'] },
+            {
+              key: 'salePrice',
+              label: '매매대금',
+              type: 'amount',
+              unit: '만원',
+              appliesTo: ['sale'],
+            },
+            {
+              key: 'deposit',
+              label: '보증금',
+              type: 'amount',
+              unit: '만원',
+              appliesTo: ['jeonse', 'monthly'],
+            },
+            {
+              key: 'loanHandling',
+              label: '융자금 처리',
+              type: 'select',
+              options: ['승계', '말소'],
+              appliesTo: ['sale'],
+            },
             { key: 'balancePaymentDate', label: '잔금 지급일', type: 'date' },
           ],
         },
@@ -508,7 +664,11 @@ function metadataWithFieldGroups(): Record<string, unknown> {
           title: '특약사항',
           fields: [
             { key: 'specialTerms', label: '특약사항', type: 'textarea' },
-            { key: 'includePrivacyClause', label: '개인정보 동의 문구 삽입', type: 'checkbox' },
+            {
+              key: 'includePrivacyClause',
+              label: '개인정보 동의 문구 삽입',
+              type: 'checkbox',
+            },
           ],
         },
       ],

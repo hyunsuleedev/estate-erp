@@ -220,10 +220,10 @@ export interface ContractOffice {
 export interface Contract {
   id: string;
   officeId: string;
-  dealId: string;
+  dealId: string | null;
   transactionType: string;
-  buyerContactId: string;
-  sellerContactId: string;
+  buyerContactId: string | null;
+  sellerContactId: string | null;
   totalPrice: number;
   monthlyRent: number | null;
   status: string;
@@ -265,7 +265,7 @@ export interface Contract {
 }
 
 export interface CreateContractDto {
-  dealId: string;
+  dealId?: string;
   transactionType?: string;
   buyerContactId?: string;
   sellerContactId?: string;

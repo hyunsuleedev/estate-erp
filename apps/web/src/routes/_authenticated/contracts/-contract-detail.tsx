@@ -126,7 +126,7 @@ export function ContractDetailCard({
         status: nextForm.status,
         totalPrice: toOptionalNumber(nextForm.totalPrice),
         monthlyRent:
-          nextForm.transactionType === 'monthly'
+          ['monthly', 'yearly'].includes(nextForm.transactionType)
             ? toOptionalNumber(nextForm.monthlyRent) ?? null
             : null,
         contractDate: emptyDateToNull(nextForm.contractDate),
@@ -263,7 +263,10 @@ export function ContractDetailCard({
   }
 
   const property = getContractProperty(contract.deal);
-  const propertyLabel = getContractPropertyLabel(contract.deal) || '계약';
+  const propertyLabel =
+    getContractPropertyLabel(contract.deal) ||
+    contract.documents?.[0]?.title ||
+    '독립 문서 묶음';
   const nextStatus = getNextContractStatus(form.status);
   const mismatch = getPaymentSumMismatch(form);
   const reportDeadline = getReportDeadline(form.contractDate || contract.contractDate);
@@ -529,11 +532,11 @@ export function ContractDetailCard({
                   />
 
                   <NumberField
-                    label="월세"
+                    label={form.transactionType === 'yearly' ? '연세' : '월세'}
                     value={form.monthlyRent}
                     onChange={(value) => onFormChange((prev) => ({ ...prev, monthlyRent: value }))}
                     suffix="만원"
-                    disabled={form.transactionType !== 'monthly'}
+                    disabled={!['monthly', 'yearly'].includes(form.transactionType)}
                   />
 
                   <div className="space-y-2">

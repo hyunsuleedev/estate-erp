@@ -122,7 +122,12 @@ function DealsPage() {
     queryFn: () => api.contracts.findAll(),
   });
   const contractByDealId = useMemo(
-    () => new Map((contractsQuery.data ?? []).map((contract) => [contract.dealId, contract])),
+    () =>
+      new Map(
+        (contractsQuery.data ?? [])
+          .filter((contract) => contract.dealId !== null)
+          .map((contract) => [contract.dealId as string, contract]),
+      ),
     [contractsQuery.data],
   );
 

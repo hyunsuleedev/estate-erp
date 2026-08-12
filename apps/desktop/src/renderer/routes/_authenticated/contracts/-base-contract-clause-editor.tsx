@@ -56,13 +56,6 @@ const EXCLUDED_LEFTOVER_KEYS: ReadonlySet<string> = new Set([
   'specialTerms',
 ]);
 
-/** 조항 밖 필드로 남길 그룹 (카탈로그 key 기준) */
-const LEFTOVER_GROUP_KEYS: ReadonlySet<string> = new Set([
-  'paymentTerms',
-  'schedule',
-  'clauses',
-]);
-
 type GroupSplit = {
   propertyIndication: ContractDocumentEngineFieldGroup | null;
   leftoverGroups: ContractDocumentEngineFieldGroup[];
@@ -97,15 +90,19 @@ function splitFieldGroups(
       result.brokerOffice = group;
       continue;
     }
-    if (group.key && LEFTOVER_GROUP_KEYS.has(group.key)) {
-      const leftover = group.fields.filter(
-        (field) => !coveredKeys.has(field.key) && !EXCLUDED_LEFTOVER_KEYS.has(field.key),
-      );
-      if (leftover.length > 0) {
-        result.leftoverGroups.push({ ...group, fields: leftover });
-      }
+    // parties 그룹은 당사자 요약(읽기 전용)으로 대체 — 당사자 탭이 단일 편집원.
+    // contractClassification은 등록 메뉴의 타입 선택 스냅샷이 단일 진실이므로
+    // 문서 안에서 다시 선택하게 하지 않는다.
+    if (group.key === 'parties' || group.key === 'contractClassification') continue;
+
+    // 전용 계약서마다 그룹 키가 다르므로 허용목록으로 버리지 않는다. 제1·2조가
+    // 이미 흡수한 필드만 제외하고 나머지 카탈로그 필드를 원래 그룹/순서대로 보인다.
+    const leftover = group.fields.filter(
+      (field) => !coveredKeys.has(field.key) && !EXCLUDED_LEFTOVER_KEYS.has(field.key),
+    );
+    if (leftover.length > 0) {
+      result.leftoverGroups.push({ ...group, fields: leftover });
     }
-    // parties 그룹은 당사자 요약(읽기 전용)으로 대체 — 당사자 탭이 단일 편집원
   }
 
   return result;

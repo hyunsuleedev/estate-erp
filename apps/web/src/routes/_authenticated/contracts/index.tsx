@@ -878,13 +878,13 @@ function ContractsPage() {
             />
 
             <NumberField
-              label="월세"
+              label={createForm.transactionType === 'yearly' ? '연세' : '월세'}
               value={stringifyOptionalNumber(createForm.monthlyRent)}
               onChange={(value) =>
                 setCreateForm((prev) => ({ ...prev, monthlyRent: toOptionalNumber(value) }))
               }
               suffix="만원"
-              disabled={createForm.transactionType !== 'monthly'}
+              disabled={!['monthly', 'yearly'].includes(createForm.transactionType ?? '')}
             />
 
             <div className="space-y-2">
@@ -925,7 +925,9 @@ function ContractsPage() {
                 !createForm.dealId ||
                 !selectedCreateDeal?.buyerContactId ||
                 !selectedCreateDeal?.sellerContactId ||
-                !createForm.totalPrice
+                !createForm.totalPrice ||
+                (['monthly', 'yearly'].includes(createForm.transactionType ?? '') &&
+                  !createForm.monthlyRent)
               }
             >
               생성
@@ -1019,7 +1021,7 @@ function ContractListFilterBar({
           label="거래유형"
           value={filters.transactionType}
           onChange={(value) => patch({ transactionType: value })}
-          // 제품 결정 — 기본 3종만 필터 (연세 없음, 확장 유형 필터 제외)
+          // 기본 4종만 필터 (확장 유형 필터 제외)
           options={BASE_CONTRACT_TRANSACTION_TYPES}
         />
         <FilterSelect
@@ -1201,7 +1203,11 @@ function ContractsTable({
           <TableBody>
             {contracts.map((contract) => {
               const missingCount = contract.missingDocumentCount ?? 0;
-              const propertyLabel = getContractPropertyLabel(contract.deal);
+              const propertyLabel =
+                getContractPropertyLabel(contract.deal) ||
+                (!contract.dealId
+                  ? contract.documents?.[0]?.title || '독립 문서 묶음'
+                  : '');
               const balanceDday = getBalanceDday(contract);
               const reportStatus = contract.transactionReportStatus ?? 'none';
 
@@ -1237,9 +1243,10 @@ function ContractsTable({
                   </TableCell>
                   <TableCell className="text-right font-medium tabular-nums">
                     {formatMoney(contract.totalPrice)}
-                    {contract.transactionType === 'monthly' && contract.monthlyRent ? (
+                    {['monthly', 'yearly'].includes(contract.transactionType) && contract.monthlyRent ? (
                       <span className="block text-xs text-muted-foreground">
-                        월 {formatMoney(contract.monthlyRent)}
+                        {contract.transactionType === 'yearly' ? '연' : '월'}{' '}
+                        {formatMoney(contract.monthlyRent)}
                       </span>
                     ) : null}
                   </TableCell>
@@ -1362,7 +1369,11 @@ function ContractsDocGrid({
       {contracts.map((contract) => {
         const missingCount = contract.missingDocumentCount ?? 0;
         const requiredCount = contract.requiredDocumentTemplates?.length ?? 0;
-        const propertyLabel = getContractPropertyLabel(contract.deal);
+        const propertyLabel =
+          getContractPropertyLabel(contract.deal) ||
+          (!contract.dealId
+            ? contract.documents?.[0]?.title || '독립 문서 묶음'
+            : '');
         const reportStatus = contract.transactionReportStatus ?? 'none';
 
         return (
