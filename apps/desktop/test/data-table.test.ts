@@ -183,8 +183,8 @@ describe('desktop data table', () => {
       'site',
       'dong',
       'unit',
+      'supplyArea',
       'unitType',
-      'exclusiveArea',
       'matching',
       'advertisement',
       'confirmationAt',
@@ -367,7 +367,7 @@ describe('desktop data table', () => {
     assert.doesNotMatch(source, /행 더블클릭 시 빠른 확인 패널을 엽니다/);
   });
 
-  it('places the row actions column immediately after the unit column', () => {
+  it('places the row actions column after the unit and supply columns', () => {
     const source = readFileSync(
       resolve(
         testDir,
@@ -377,16 +377,19 @@ describe('desktop data table', () => {
     );
 
     const unitColumnIndex = source.indexOf("id: 'unit'");
+    const supplyAreaColumnIndex = source.indexOf("id: 'supplyArea'");
     const actionsColumnIndex = source.indexOf("id: 'actions'");
     const unitTypeColumnIndex = source.indexOf("id: 'unitType'");
 
     assert.ok(unitColumnIndex !== -1, 'unit column should exist');
+    assert.ok(supplyAreaColumnIndex !== -1, 'supply area column should exist');
     assert.ok(actionsColumnIndex !== -1, 'row actions column should exist');
     assert.ok(unitTypeColumnIndex !== -1, 'unit type column should exist');
     assert.ok(
-      unitColumnIndex < actionsColumnIndex &&
+      unitColumnIndex < supplyAreaColumnIndex &&
+        supplyAreaColumnIndex < actionsColumnIndex &&
         actionsColumnIndex < unitTypeColumnIndex,
-      'row actions should be positioned between unit and unit type',
+      'row actions should be positioned between supply area and unit type',
     );
     assert.match(
       source,
@@ -425,8 +428,18 @@ describe('desktop data table', () => {
       tableSource,
       /aria-expanded=\{!columnGroupControl\.collapsed\}/,
     );
-    assert.match(tableSource, /sticky left-\[462px\]/);
-    assert.match(tableSource, /left-\[482px\][\s\S]*?w-\[404px\]/);
+    assert.match(
+      tableSource,
+      /const leafColumns = table\.getAllLeafColumns\(\)[\s\S]*?column\.id === 'unitType'[\s\S]*?column\.id === 'listingAvailability'[\s\S]*?const propertyDetailGroupStart =/,
+    );
+    assert.match(
+      tableSource,
+      /data-column-group-line="property-details"[\s\S]*?left: propertyDetailGuideLeft,[\s\S]*?width: propertyDetailGuideWidth/,
+    );
+    assert.match(
+      tableSource,
+      /data-column-group-toggle="property-details"[\s\S]*?left: propertyDetailToggleLeft,[\s\S]*?marginLeft: propertyDetailToggleLeft/,
+    );
     assert.match(
       tableSource,
       /border-\[#9ba7a3\] bg-white[\s\S]*?text-\[#536b64\]/,
@@ -442,8 +455,9 @@ describe('desktop data table', () => {
     assert.match(tableSource, /<Minus className="size-3" \/>/);
     assert.match(
       pageSource,
-      /\.\.\.\(!arePropertyDetailColumnsCollapsed[\s\S]*?id: 'unitType'[\s\S]*?id: 'exclusiveArea'[\s\S]*?id: 'matching'[\s\S]*?id: 'advertisement'[\s\S]*?id: 'confirmationAt'/,
+      /\.\.\.\(!arePropertyDetailColumnsCollapsed[\s\S]*?id: 'unitType'[\s\S]*?id: 'matching'[\s\S]*?id: 'advertisement'[\s\S]*?id: 'confirmationAt'/,
     );
+    assert.doesNotMatch(pageSource, /id: 'exclusiveArea'/);
     assert.match(tableSource, /타입–확인 컬럼 펼치기/);
   });
 
@@ -475,11 +489,16 @@ describe('desktop data table', () => {
     assert.match(tableSource, /className="relative h-full pt-2"/);
     assert.match(
       tableSource,
-      /data-column-group-cap="property-details"[\s\S]*?left-\[885px\] top-\[18px\][\s\S]*?h-2 w-px/,
+      /data-column-group-cap="property-details"[\s\S]*?top-\[18px\][\s\S]*?h-2 w-px[\s\S]*?left: propertyDetailGuideCapLeft/,
     );
     assert.match(
       tableSource,
-      /data-column-group-toggle="property-details"[\s\S]*?sticky left-\[462px\]/,
+      /data-column-group-toggle="property-details"[\s\S]*?className="sticky z-50/,
+    );
+    assert.doesNotMatch(
+      tableSource,
+      /data-column-group-(?:line|cap|toggle)="property-details"[\s\S]*?left-\[\d+px\]/,
+      'the property detail guide must follow live TanStack column sizes',
     );
     assert.doesNotMatch(
       tableSource,
@@ -508,6 +527,46 @@ describe('desktop data table', () => {
     assert.doesNotMatch(tableSource, /onHorizontalScroll/);
   });
 
+  it('resizes the active Deal connector without distorting its stroke or endpoint', () => {
+    const pageSource = readFileSync(
+      resolve(
+        testDir,
+        '../src/renderer/routes/_authenticated/properties/index.tsx',
+      ),
+      'utf8',
+    );
+    const connectorSource = pageSource.slice(
+      pageSource.indexOf('function ActiveDealListingConnector'),
+      pageSource.indexOf('function getConfirmFreshness'),
+    );
+
+    assert.match(
+      pageSource,
+      /id: 'listingAvailability'[\s\S]*?size: 120,[\s\S]*?minSize: 96/,
+    );
+    assert.match(
+      pageSource,
+      /grid-cols-\[max-content_minmax\(0,1fr\)\][\s\S]*?<ActiveDealListingConnector/,
+    );
+    assert.match(connectorSource, /w-\[calc\(100%\+1rem\)\]/);
+    assert.match(connectorSource, /const curveWidth = 28/);
+    assert.match(
+      connectorSource,
+      /viewBox=\{`0 0 \$\{curveWidth\} \$\{height\}`\}/,
+    );
+    assert.match(connectorSource, /data-active-deal-connector-line/);
+    assert.match(
+      connectorSource,
+      /data-active-deal-connector-end[\s\S]*?size-\[5px\]/,
+    );
+    assert.doesNotMatch(connectorSource, /new ResizeObserver/);
+    assert.doesNotMatch(connectorSource, /preserveAspectRatio="none"/);
+    assert.doesNotMatch(
+      connectorSource,
+      /data-active-deal-connector[\s\S]*?left-\[64px\][\s\S]*?w-16/,
+    );
+  });
+
   it('keeps the property site column compact', () => {
     const source = readFileSync(
       resolve(
@@ -518,6 +577,31 @@ describe('desktop data table', () => {
     );
 
     assert.match(source, /id: 'site'[\s\S]*?size: 240,/);
+  });
+
+  it('shows the supply area directly after the unit with the unit-type fallback', () => {
+    const source = readFileSync(
+      resolve(
+        testDir,
+        '../src/renderer/routes/_authenticated/properties/index.tsx',
+      ),
+      'utf8',
+    );
+
+    const unitColumnIndex = source.indexOf("id: 'unit'");
+    const supplyAreaColumnIndex = source.indexOf("id: 'supplyArea'");
+    const actionsColumnIndex = source.indexOf("id: 'actions'");
+
+    assert.ok(unitColumnIndex < supplyAreaColumnIndex);
+    assert.ok(supplyAreaColumnIndex < actionsColumnIndex);
+    assert.match(
+      source.slice(supplyAreaColumnIndex, actionsColumnIndex),
+      /label="공급"[\s\S]*?getSupplyAreaM2\(row\.original\.property\)[\s\S]*?tabular-nums/,
+    );
+    assert.match(
+      source,
+      /property\?\.unit\?\.supplyAreaM2 \?\?[\s\S]*?property\?\.unit\?\.siteUnitType\?\.supplyAreaM2/,
+    );
   });
 
   it('keeps the row actions column in the left sticky column group', () => {
@@ -531,7 +615,7 @@ describe('desktop data table', () => {
 
     assert.match(
       source,
-      /left: \['_select', 'info', 'site', 'dong', 'unit', 'actions'\]/,
+      /left: \['_select', 'info', 'site', 'dong', 'unit', 'supplyArea', 'actions'\]/,
     );
   });
 
@@ -683,7 +767,6 @@ describe('desktop data table', () => {
 
     const matchingColumnIndex = pageSource.indexOf("id: 'matching'");
     const advertisementColumnIndex = pageSource.indexOf("id: 'advertisement'");
-    const exclusiveAreaColumnIndex = pageSource.indexOf("id: 'exclusiveArea'");
     const confirmationAtColumnIndex = pageSource.indexOf(
       "id: 'confirmationAt'",
     );
@@ -693,19 +776,16 @@ describe('desktop data table', () => {
       advertisementColumnIndex !== -1,
       'advertisement column should be rendered',
     );
-    assert.ok(
-      exclusiveAreaColumnIndex !== -1,
-      'exclusive area column should be rendered',
-    );
+    assert.doesNotMatch(pageSource, /id: 'exclusiveArea'/);
+    assert.doesNotMatch(pageSource, /label="전용면적"/);
     assert.ok(
       confirmationAtColumnIndex !== -1,
       'confirmation column should be rendered',
     );
     assert.ok(
-      exclusiveAreaColumnIndex < matchingColumnIndex &&
-        matchingColumnIndex < advertisementColumnIndex &&
+      matchingColumnIndex < advertisementColumnIndex &&
         advertisementColumnIndex < confirmationAtColumnIndex,
-      'matching and advertisement should sit directly after exclusive area',
+      'matching and advertisement should sit between type and confirmation',
     );
     assert.match(pageSource, /label="매칭"/);
     assert.match(pageSource, /label="연결 구매고객"/);

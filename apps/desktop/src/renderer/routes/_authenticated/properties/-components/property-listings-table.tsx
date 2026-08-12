@@ -29,6 +29,8 @@ const VIRTUALIZE_THRESHOLD = 50;
 const PROPERTY_LISTING_ITEM_HEIGHT = 40;
 const END_REACHED_THRESHOLD = 320;
 const PINNED_BODY_CELL_Z_INDEX = 10;
+const PROPERTY_DETAIL_GUIDE_LEAD = 10;
+const PROPERTY_DETAIL_GUIDE_TOGGLE_SIZE = 20;
 
 type ListingProperty = NonNullable<ListingIntake['property']>;
 
@@ -127,7 +129,7 @@ export function PropertyListingsTable({
   const scrollerRef = useRef<HTMLDivElement>(null);
 
   const resolvedPinning = useMemo<ColumnPinningState>(
-    () => ({ left: ['_select', 'info', 'site', 'dong', 'unit', 'actions'], right: [] }),
+    () => ({ left: ['_select', 'info', 'site', 'dong', 'unit', 'supplyArea', 'actions'], right: [] }),
     [],
   );
 
@@ -311,10 +313,41 @@ export function PropertyListingsTable({
 
   const focusedRow = focusedCell !== null && rows[focusedCell.row]?.original ? rows[focusedCell.row].original : null;
   const tableTotalSize = table.getTotalSize();
+  const leafColumns = table.getAllLeafColumns();
+  const propertyDetailStartColumn = leafColumns.find(
+    (column) => column.id === 'unitType',
+  );
+  const listingAvailabilityColumn = leafColumns.find(
+    (column) => column.id === 'listingAvailability',
+  );
+  const propertyDetailGroupStart =
+    propertyDetailStartColumn?.getStart() ??
+    listingAvailabilityColumn?.getStart() ??
+    0;
+  const propertyDetailGroupEnd =
+    listingAvailabilityColumn?.getStart() ??
+    propertyDetailGroupStart;
+  const propertyDetailGuideLeft = Math.max(
+    0,
+    propertyDetailGroupStart - PROPERTY_DETAIL_GUIDE_LEAD,
+  );
+  const propertyDetailGuideWidth = Math.max(
+    0,
+    propertyDetailGroupEnd - propertyDetailGuideLeft,
+  );
+  const propertyDetailGuideCapLeft = Math.max(
+    0,
+    propertyDetailGroupEnd - 1,
+  );
+  const propertyDetailToggleLeft = Math.max(
+    0,
+    propertyDetailGuideLeft - PROPERTY_DETAIL_GUIDE_TOGGLE_SIZE,
+  );
 
-  const growColumnId = table
-    .getAllLeafColumns()
-    .find((column) => (column.columnDef.meta as PropertyListingColumnMeta | undefined)?.grow)?.id;
+  const growColumnId = leafColumns.find(
+    (column) =>
+      (column.columnDef.meta as PropertyListingColumnMeta | undefined)?.grow,
+  )?.id;
 
   const selectedRows = useMemo(
     () => rows.filter((row) => row.getIsSelected()).map((row) => row.original),
@@ -429,12 +462,17 @@ export function PropertyListingsTable({
                   <span
                     aria-hidden="true"
                     data-column-group-line="property-details"
-                    className="pointer-events-none absolute left-[482px] top-[18px] z-40 h-px w-[404px] bg-slate-400"
+                    className="pointer-events-none absolute top-[18px] z-40 h-px bg-slate-400"
+                    style={{
+                      left: propertyDetailGuideLeft,
+                      width: propertyDetailGuideWidth,
+                    }}
                   />
                   <span
                     aria-hidden="true"
                     data-column-group-cap="property-details"
-                    className="pointer-events-none absolute left-[885px] top-[18px] z-40 h-2 w-px bg-slate-400"
+                    className="pointer-events-none absolute top-[18px] z-40 h-2 w-px bg-slate-400"
+                    style={{ left: propertyDetailGuideCapLeft }}
                   />
                 </>
               )}
@@ -452,7 +490,11 @@ export function PropertyListingsTable({
                     : "타입–확인 컬럼 접기"
                 }
                 data-column-group-toggle="property-details"
-                className="sticky left-[462px] z-50 ml-[462px] inline-flex size-5 items-center justify-center rounded-[3px] border border-[#9ba7a3] bg-white p-0 text-[#536b64] shadow-[0_1px_1px_rgba(42,51,47,0.05)] outline-none transition-colors hover:border-[#738b83] hover:bg-[#f4f8f6] hover:text-[#315d50] focus-visible:ring-2 focus-visible:ring-[#4c8c7c]/35"
+                className="sticky z-50 inline-flex size-5 items-center justify-center rounded-[3px] border border-[#9ba7a3] bg-white p-0 text-[#536b64] shadow-[0_1px_1px_rgba(42,51,47,0.05)] outline-none transition-colors hover:border-[#738b83] hover:bg-[#f4f8f6] hover:text-[#315d50] focus-visible:ring-2 focus-visible:ring-[#4c8c7c]/35"
+                style={{
+                  left: propertyDetailToggleLeft,
+                  marginLeft: propertyDetailToggleLeft,
+                }}
                 onClick={columnGroupControl.onToggle}
               >
                 {columnGroupControl.collapsed ? (
@@ -489,7 +531,6 @@ export function PropertyListingsTable({
                   const shouldGrow = header.column.id === growColumnId;
                   const isDetailColumn = [
                     "unitType",
-                    "exclusiveArea",
                     "matching",
                     "advertisement",
                     "confirmationAt",

@@ -239,8 +239,8 @@ const sortDefinitions = [
   { field: 'site', label: '단지' },
   { field: 'dong', label: '동' },
   { field: 'unit', label: '호' },
+  { field: 'supplyArea', label: '공급' },
   { field: 'unitType', label: '타입' },
-  { field: 'exclusiveArea', label: '전용면적' },
   { field: 'matching', label: '매칭' },
   { field: 'advertisement', label: '광고' },
   { field: 'confirmationAt', label: '확인' },
@@ -1337,6 +1337,27 @@ function PropertiesPage() {
         ),
       },
       {
+        id: 'supplyArea',
+        header: () => (
+          <TableHeaderLabel
+            icon={<Ruler className="size-4" />}
+            label="공급"
+          />
+        ),
+        size: 80,
+        enableSorting: true,
+        cell: ({ row }) => {
+          const value = formatAreaPyeong(
+            getSupplyAreaM2(row.original.property),
+          );
+          return (
+            <span className="truncate text-[13px] text-slate-700 tabular-nums">
+              {value === '-' ? '' : value}
+            </span>
+          );
+        },
+      },
+      {
         id: 'actions',
         header: () => <span className="sr-only">작업</span>,
         size: 40,
@@ -1370,27 +1391,6 @@ function PropertiesPage() {
                 const value = getUnitTypeName(row.original.property);
                 return (
                   <span className="truncate text-[13px] text-slate-700">
-                    {value === '-' ? '' : value}
-                  </span>
-                );
-              },
-            } satisfies ColumnDef<PropertyListingGroup, unknown>,
-            {
-              id: 'exclusiveArea',
-              header: () => (
-                <TableHeaderLabel
-                  icon={<Ruler className="size-4" />}
-                  label="전용면적"
-                />
-              ),
-              size: 96,
-              enableSorting: true,
-              cell: ({ row }) => {
-                const value = formatAreaPyeong(
-                  getExclusiveAreaM2(row.original.property),
-                );
-                return (
-                  <span className="truncate text-[13px] text-slate-700 tabular-nums">
                     {value === '-' ? '' : value}
                   </span>
                 );
@@ -1465,6 +1465,7 @@ function PropertiesPage() {
           />
         ),
         size: 120,
+        minSize: 96,
         enableSorting: true,
         meta: {
           cellClassName: 'z-[2] overflow-visible',
@@ -4486,22 +4487,31 @@ function ListingAvailabilityCell({
           editType="select-chip"
           chipOptions={listingAvailabilityChipOptions}
         >
-          <span className="flex h-full w-full items-center px-2.5">
-            <StatusIndicator value={availability} />
-            {showActiveDealConnector && activeTransactionLabel && (
-              <span className="sr-only">
-                {activeTransactionLabel} listing에 활성 Deal 연결
-              </span>
+          <span
+            className={cn(
+              'h-full w-full px-2.5',
+              showActiveDealConnector
+                ? 'grid grid-cols-[max-content_minmax(0,1fr)] items-stretch gap-x-1.5'
+                : 'flex items-center',
+            )}
+          >
+            <span className="relative z-10 flex min-w-0 items-center">
+              <StatusIndicator value={availability} />
+              {showActiveDealConnector && activeTransactionLabel && (
+                <span className="sr-only">
+                  {activeTransactionLabel} listing에 활성 Deal 연결
+                </span>
+              )}
+            </span>
+            {showActiveDealConnector && (
+              <ActiveDealListingConnector
+                listingCount={listings.length}
+                targetIndex={activeDealListingIndex}
+              />
             )}
           </span>
         </EditableCell>
       </div>
-      {showActiveDealConnector && (
-        <ActiveDealListingConnector
-          listingCount={listings.length}
-          targetIndex={activeDealListingIndex}
-        />
-      )}
     </div>
   );
 }
@@ -4518,26 +4528,42 @@ function ActiveDealListingConnector({
   const targetY =
     targetIndex * PROPERTY_LISTING_STACK_ITEM_HEIGHT +
     PROPERTY_LISTING_STACK_ITEM_HEIGHT / 2;
-  const path = `M 0 ${startY} C 20 ${startY}, 26 ${targetY}, 62 ${targetY}`;
+  // 컬럼 폭이 바뀌어도 곡선과 끝점은 고정하고 수평 구간만 늘린다.
+  const curveWidth = 28;
+  const path = `M 0 ${startY} C 10 ${startY}, 18 ${targetY}, ${curveWidth} ${targetY}`;
 
   return (
-    <svg
-      data-active-deal-connector
-      className="pointer-events-none absolute left-[64px] top-0 z-0 w-16 overflow-visible opacity-60 transition-opacity duration-150 ease-out group-hover:opacity-100"
+    <span
+      data-active-deal-connector-frame
+      className="pointer-events-none relative -mr-4 h-full min-w-0 w-[calc(100%+1rem)] self-stretch opacity-60 transition-opacity duration-150 ease-out group-hover:opacity-100"
       style={{ height }}
-      viewBox={`0 0 64 ${height}`}
-      preserveAspectRatio="none"
       aria-hidden="true"
     >
-      <path
-        d={path}
-        className="fill-none stroke-[#529cca]"
-        strokeWidth="1.25"
-        strokeLinecap="round"
-        vectorEffect="non-scaling-stroke"
+      <svg
+        data-active-deal-connector
+        className="absolute inset-y-0 left-0 w-7 overflow-visible"
+        style={{ height }}
+        viewBox={`0 0 ${curveWidth} ${height}`}
+      >
+        <path
+          d={path}
+          className="fill-none stroke-[#529cca]"
+          strokeWidth="1.25"
+          strokeLinecap="round"
+          vectorEffect="non-scaling-stroke"
+        />
+      </svg>
+      <span
+        data-active-deal-connector-line
+        className="absolute right-0 h-px -translate-y-1/2 bg-[#529cca]"
+        style={{ left: curveWidth, top: targetY }}
       />
-      <circle cx="62" cy={targetY} r="2.5" className="fill-[#529cca]" />
-    </svg>
+      <span
+        data-active-deal-connector-end
+        className="absolute right-0 size-[5px] translate-x-1/2 -translate-y-1/2 rounded-full bg-[#529cca]"
+        style={{ top: targetY }}
+      />
+    </span>
   );
 }
 
@@ -6871,10 +6897,10 @@ function getDongName(property?: ListingProperty) {
   return dong.name.replace(/\s*동$/, '');
 }
 
-function getExclusiveAreaM2(property?: ListingProperty) {
+function getSupplyAreaM2(property?: ListingProperty) {
   return (
-    property?.unit?.exclusiveAreaM2 ??
-    property?.unit?.siteUnitType?.exclusiveAreaM2
+    property?.unit?.supplyAreaM2 ??
+    property?.unit?.siteUnitType?.supplyAreaM2
   );
 }
 
