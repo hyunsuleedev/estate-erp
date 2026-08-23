@@ -1,7 +1,13 @@
 # Esiljang standalone snapshot contract
 
-The Reader returns one provider snapshot to its caller. Collection success does
-not depend on a database, tenant, application, workflow engine, or MCP server.
+The Reader saves one provider snapshot and returns its location to the caller.
+Collection and storage do not depend on a database, tenant, application,
+workflow engine, or MCP server.
+
+The canonical implementation is `scripts/read-active-ads.mjs`. It calls the
+bundled normalizer and validator directly in memory, persists only the final
+valid result, and returns one JSON value on stdout. Callers must not add a PTY
+or temporary snapshot file between collection and validation.
 
 ## Inputs
 
@@ -15,7 +21,7 @@ Use the one locally saved Esiljang credential. Account selection is not part of
 the Reader input.
 
 Never require or synthesize an office ID, tenant ID, workflow run ID, workflow
-step ID, attempt number, device ID, snapshot ID, or write target.
+step ID, attempt number, device ID, or application-owned snapshot ID.
 
 ## Successful result
 
@@ -27,6 +33,11 @@ succeed:
   "status": "succeeded",
   "provider": "esiljang",
   "scope": "active_advertisements",
+  "activeFilter": {
+    "dataValue": "ad",
+    "selected": true,
+    "count": 24
+  },
   "observedAt": "2026-08-04T09:00:00.000Z",
   "expectedTotal": 24,
   "collectedTotal": 24,
@@ -35,7 +46,14 @@ succeed:
   "paginationComplete": true,
   "manifestHash": "<sha256>",
   "items": [],
-  "warnings": []
+  "warnings": [],
+  "snapshotFile": {
+    "path": "/Users/example/.agents/data/esiljang-ad-reader/snapshots/<file>.json",
+    "fileName": "<file>.json",
+    "sha256": "<file-sha256>",
+    "bytes": 12345,
+    "reused": false
+  }
 }
 ```
 
@@ -47,19 +65,49 @@ When the active count is genuinely unavailable, `expectedTotal` may be `null`.
 The result may still succeed only after terminal pagination is proven; preserve
 the validator warning explaining that count equality could not be checked.
 
-Return the JSON value directly to the caller. If the caller explicitly requests
-a file, write the same value to the caller-selected path; do not assume a
-project directory or application-owned storage location.
+The default archive is
+`~/.agents/data/esiljang-ad-reader/snapshots/`. Create the leaf directory with
+permission `0700` and each snapshot with permission `0600`. Name a snapshot
+`<observedAt>--<manifestHash>.json`, replacing timestamp colons with hyphens.
+
+Persist the successful result without the runtime-only `snapshotFile` field,
+then return `snapshotFile` on stdout. `manifestHash` covers the canonical
+advertisement manifest; `snapshotFile.sha256` covers the exact pretty-printed
+JSON bytes on disk. Persist `activeFilter` so the file independently proves the
+selected provider scope. Recompute and compare `manifestHash`, then verify the
+stored bytes before returning success.
+
+Create the final filename without overwriting an existing file. If the same
+validated snapshot already exists, verify it byte-for-byte and return
+`reused=true`. Never save a partial or non-success result.
 
 ## Non-success result
 
-For a human-resolvable state:
+`needs_agent` is an internal recoverable handoff, not a user decision:
+
+```json
+{
+  "status": "needs_agent",
+  "reasonCode": "ui_obstruction",
+  "message": "에이전트가 열린 이실장 화면을 확인한 뒤 재개해야 합니다.",
+  "diagnostics": {
+    "browserSession": "esiljang-reader-1234-abcd1234",
+    "resumeCommand": "node scripts/read-active-ads.mjs --resume-session esiljang-reader-1234-abcd1234"
+  }
+}
+```
+
+The calling agent inspects that exact session with agent-browser, closes only
+UI unrelated to the read workflow, and executes `resumeCommand`. Do not surface
+this state as a user question by default.
+
+When the saved credential is missing:
 
 ```json
 {
   "status": "needs_input",
-  "reasonCode": "captcha",
-  "message": "열린 이실장 로그인 화면에서 추가 인증을 완료해 주세요."
+  "reasonCode": "credentials_missing",
+  "message": "로컬 설정창에서 이실장 계정을 저장해 주세요."
 }
 ```
 
@@ -80,11 +128,11 @@ For a technical or provider failure:
 
 Do not include credentials, browser state, raw HTML, cookies, tokens, or
 partially collected advertisement items in a non-success result by default.
+Use `snapshot_persistence_failed` when a complete in-memory snapshot cannot be
+durably stored; do not return `succeeded` in that case.
 
 ## Consumer boundary
 
-A caller may store, compare, enrich, or map the successful snapshot after the
-Reader returns it. Add consumer-specific IDs and idempotency metadata outside
-the Reader result. A persistence failure must not retroactively turn a valid
-provider read into a Reader failure, and the Reader must not call downstream
-skills on the consumer's behalf.
+A caller may compare, enrich, or map the saved snapshot after the Reader returns
+it. Add consumer-specific IDs and idempotency metadata outside the Reader
+result. The Reader must not call downstream skills on the consumer's behalf.

@@ -24,6 +24,14 @@ import { ListingAdvertisementsService } from "./listing-advertisements.service";
 export class ListingAdvertisementsController {
   constructor(private readonly service: ListingAdvertisementsService) {}
 
+  @Get("price-history")
+  findPriceHistory(
+    @CurrentUser() user: CurrentUserPayload,
+    @Query("listingId") listingId: string,
+  ) {
+    return this.service.findPriceHistory(user.officeId, listingId);
+  }
+
   @Get()
   findAll(
     @CurrentUser() user: CurrentUserPayload,

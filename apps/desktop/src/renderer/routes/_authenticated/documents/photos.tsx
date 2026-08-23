@@ -147,6 +147,7 @@ function PhotoSearchPage() {
   const updateCategoryMutation = useMutation({
     mutationFn: ({ id, category }: { id: string; category: string }) =>
       api.propertyPhotos.update(id, { category }),
+    meta: { invalidates: [['property-photos']] },
     onSuccess: (updated) => {
       toast.success('사진 카테고리가 변경되었습니다.');
       queryClient.invalidateQueries({ queryKey: ['property-photos'] });
@@ -165,6 +166,7 @@ function PhotoSearchPage() {
       const reordered = [photo.id, ...ids.filter((id) => id !== photo.id)];
       return api.propertyPhotos.reorder(photo.propertyId, reordered);
     },
+    meta: { invalidates: [['property-photos']] },
     onSuccess: () => {
       toast.success('대표 사진으로 설정되었습니다.');
       queryClient.invalidateQueries({ queryKey: ['property-photos'] });
@@ -174,6 +176,7 @@ function PhotoSearchPage() {
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => api.propertyPhotos.remove(id),
+    meta: { invalidates: [['property-photos']] },
     onSuccess: () => {
       toast.success('사진이 삭제되었습니다.');
       queryClient.invalidateQueries({ queryKey: ['property-photos'] });

@@ -1,7 +1,11 @@
 export { createApiClient } from "./client.js";
 export type { ApiClient, RequestFn } from "./client.js";
 export { ApiError } from "./types.js";
-export type { ApiClientConfig, PaginatedResponse } from "./types.js";
+export type {
+  ApiClientConfig,
+  AuthFailureContext,
+  PaginatedResponse,
+} from "./types.js";
 
 // Module types
 export type { MeResponse } from "./modules/auth.js";
@@ -41,6 +45,7 @@ export type {
   ListingAdvertisementsFilter,
   ListingAdvertisementWithListing,
   ListingAdvertisementActionContext,
+  ListingAdvertisementPriceHistory,
   CreateListingAdvertisementDto,
   UpdateListingAdvertisementDto,
 } from "./modules/listing-advertisements.js";
@@ -111,6 +116,7 @@ export type {
 } from "./modules/tasks.js";
 export type {
   Match,
+  MatchDealLink,
   CreateMatchDto,
   UpdateMatchMemoDto,
 } from "./modules/matches.js";

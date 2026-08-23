@@ -190,6 +190,7 @@ officeId = UUID, isPublic = false  →  사무소가 등록한 비공개 단지 
 > unique: [siteId, name]
 
 > **네이버 대응**: `GET /api/complexes/{id}/pyeongList`의 각 항목이 SiteUnitType 1개에 대응. 같은 타입(84A)은 단지 내 어느 동이든 동일한 면적/방수를 가짐.
+> 방/욕실 수는 면적만으로 추정하지 않고 `단지정보 → 단지 내 면적별 정보`의 타입별 값을 사용한다. 같은 전용면적대라도 타입별 구조가 다를 수 있다.
 
 ### Dong (동)
 
@@ -219,11 +220,14 @@ officeId = UUID, isPublic = false  →  사무소가 등록한 비공개 단지 
 | lineNo          | Int?     | 라인번호 (같은 타입 수직 스택, 그리드 컬럼)                                                                |
 | exclusiveAreaM2 | Decimal? | 전용면적 (m², 타입 미지정 시 fallback)                                                                     |
 | supplyAreaM2    | Decimal? | 공급면적 (m², 타입 미지정 시 fallback)                                                                     |
+| roomCount       | Int?     | 호실별 방 수 override (null이면 SiteUnitType.roomCount 사용)                                               |
+| bathRoomCount   | Int?     | 호실별 욕실 수 override (null이면 SiteUnitType.bathRoomCount 사용)                                         |
 | isPiloti        | Boolean  | 필로티 여부                                                                                                |
 | cellType        | String   | 호실 그리드 표시 타입 (`unit`, `empty`, `piloti`, `common_facility`, `commercial_facility`, `safety_area`) |
 
 > 면적은 m² 기준 저장. 평 변환: m² × 0.3025
 > 면적은 SiteUnitType에서 가져오는 것이 정석. Unit의 면적 필드는 타입이 미지정된 호실(빌라, 비정형 등)용 fallback.
+> 방/욕실 수도 같은 규칙을 사용한다. 검색·표시는 `Unit 값 ?? SiteUnitType 값`으로 계산하며, 타입과 다른 호실만 Unit에 override를 저장한다.
 
 > **네이버 대응**: `GET /api/complexes/{id}/buildings/pyeongtype?dongNo={dongNo}`의 각 호실(hoNo)이 Unit 1개에 대응. `pyeongNo` → `siteUnitTypeId`, `lineNo` → `lineNo`, `hoFloor` → `floor`. `existHo: "N"`인 셀은 기본적으로 Unit 레코드를 만들지 않되, 필로티/공용시설/상가/대피공간처럼 그리드에 표시해야 하는 칸은 `cellType`으로 구분해 Unit 레코드를 만든다.
 
@@ -453,13 +457,23 @@ ListingIntake 안의 거래/가격 옵션. 하나의 의뢰에 여러 Listing이
 - `in_contract`: 비취소 Deal이 preparing / preContract / contracted / settling
 - `closed`: 의뢰가 closed이거나 비취소 Deal이 completed / closed
 
-### ListingAdvertisement (내 광고 원장)
+### ListingAdvertisement (실제 광고 게재 기록)
 
 이실장·부동산뱅크 등 CP에서 가져온 실제 광고다. CP가 상세 주소를 제공하므로
 생성 시점부터 하나의 `Listing`에 귀속되며 별도의 호실 연결 상태를 두지 않는다.
 CP 조회 결과에는 현재 광고 중인 항목만 포함된다. 사용자의 광고 요청은 일반
 `Task(category=advertisement)`가 소유하고 수집·실행의 세부 성공/실패는 로컬
 Skill SQLite에 남기므로 개별 광고 row의 상태로 저장하지 않는다.
+하나의 row는 특정 `Listing`을 한 CP에 연속해서 게재한 한 회차다. 광고가
+내려가도 삭제하지 않고 관측 종료 시각을 남기며, 이후 재광고는 같은 Listing
+아래 새 row로 생성한다. Listing의 거래유형과 CP `channel`이 각각 분리되어
+있으므로 거래유형별·CP별 동시 광고가 가능하다.
+
+저장 테이블에는 active와 ended 회차가 함께 있지만 조회 의미는 분리한다.
+매물관리 목록은 `status=active`인 관계만 `activeAdvertisements`로 반환하고,
+`activeAdvertisementCount`도 같은 조건으로 DB에서 계산한다. 전체
+`advertisements` 관계는 상세의 광고 이력에서만 사용한다. 따라서 전체 관계의
+배열 길이를 현재 광고 개수로 해석하지 않는다.
 
 | 필드                                    | 타입      | 설명                                          |
 | --------------------------------------- | --------- | --------------------------------------------- |
@@ -470,10 +484,14 @@ Skill SQLite에 남기므로 개별 광고 row의 상태로 저장하지 않는�
 | status                                  | String    | active / ended                                |
 | source                                  | String    | manual / cp_sync                              |
 | advertisedPrice / Deposit / MonthlyRent | Int?      | CP에 제출된 광고 조건 (만원)                  |
+| startedAt                               | DateTime? | CP가 제공한 등록/게재 시작일                  |
+| firstSeenAt / lastSeenAt                | DateTime  | ERP의 최초/마지막 관측 시각                   |
+| endedAt                                 | DateTime? | 전체 스냅샷에서 사라진 관측 시각              |
 | externalAdId                            | String?   | CP사 광고 ID                                  |
 | url                                     | String?   | CP 광고 관리 URL                              |
 | naverArticleNo                          | String?   | CP가 제공한 네이버 매물번호(광고노트 FK 아님) |
 | naverUrl                                | String?   | 네이버 비교 기준 URL                          |
+| providerStatus                          | String?   | CP 화면에서 관측한 상태                       |
 | lastSyncedAt                            | DateTime? | 마지막 CP 동기화                              |
 | lastCheckedAt                           | DateTime? | 마지막 네이버 비교                            |
 
@@ -484,6 +502,20 @@ Skill SQLite에 남기므로 개별 광고 row의 상태로 저장하지 않는�
 조회에서 사라진 기존 row만 `ended`로 전환할 수 있다. 조회가 실패하거나
 일부만 수집됐으면 마지막 성공 스냅샷을 그대로 유지하고 로컬 Skill run에
 오류를 기록한다.
+
+`endedAt`은 광고 종료 예정일이 아니라 관측 종료 시각이다. 기존의 종료된
+externalAdId는 새 게재 row에서 다시 사용할 수 있지만, 활성 범위에서는
+`(officeId, channel, externalAdId)`와 `(officeId, listingId, channel)`을 각각
+유일하게 유지한다. CP의 `providerStatus=거래완료`는 현재 관측값만 저장하며
+ListingIntake 자동 종료 정책은 아직 적용하지 않는다.
+
+### ListingAdvertisementPriceHistory (광고 가격 관측 이력)
+
+광고가 처음 발견됐을 때 최초 가격 상태를 하나 저장하고, 같은 게재 회차의
+매매가·보증금·월세 중 하나라도 바뀌었을 때만 새 상태를 append한다. 단순한
+반복 스냅샷은 이력을 만들지 않는다. `ListingAdvertisement → Listing` 조인으로
+한 Listing의 모든 CP와 재광고 회차 가격을 시간순으로 조회한다. 이는 사무소
+원장 가격 변경을 나타내는 `PriceHistory`와 별개다.
 
 ### OfficeAdvertisementGroup / OfficeAdvertisement (내 광고 네이버 비교)
 

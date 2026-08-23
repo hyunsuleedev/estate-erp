@@ -53,6 +53,48 @@ describe('UnitsService — site type guard', () => {
     ).resolves.toEqual({ id: 'unit-1' });
   });
 
+  it('stores nullable room and bathroom overrides on an independent unit', async () => {
+    const { prisma, service } = createService();
+    prisma.site.findFirst.mockResolvedValue({ id: 'site-1', type: 'villa' });
+
+    await service.create('office-1', {
+      siteId: 'site-1',
+      dongId: 'dong-1',
+      name: '201호',
+      roomCount: 2,
+      bathRoomCount: 1,
+    });
+
+    expect(prisma.unit.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ roomCount: 2, bathRoomCount: 1 }),
+      }),
+    );
+  });
+
+  it('rejects invalid unit layout counts', async () => {
+    const { prisma, service } = createService();
+    prisma.site.findFirst.mockResolvedValue({ id: 'site-1', type: 'villa' });
+
+    await expect(
+      service.create('office-1', {
+        siteId: 'site-1',
+        dongId: 'dong-1',
+        name: '201호',
+        roomCount: -1,
+      }),
+    ).rejects.toThrow('roomCount must be a non-negative integer or null');
+
+    await expect(
+      service.create('office-1', {
+        siteId: 'site-1',
+        dongId: 'dong-1',
+        name: '201호',
+        bathRoomCount: 1.5,
+      }),
+    ).rejects.toThrow('bathRoomCount must be a non-negative integer or null');
+  });
+
   it('rejects creating a unit on a land site', async () => {
     const { prisma, service } = createService();
     prisma.site.findFirst.mockResolvedValue({ id: 'site-1', type: 'land' });

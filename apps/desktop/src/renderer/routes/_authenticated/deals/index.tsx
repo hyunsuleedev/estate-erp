@@ -88,11 +88,22 @@ function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : '요청 처리에 실패했습니다.';
 }
 
+interface DealsSearch {
+  dealId?: string;
+}
+
 export const Route = createFileRoute('/_authenticated/deals/')({
+  validateSearch: (search: Record<string, unknown>): DealsSearch => ({
+    dealId:
+      typeof search.dealId === 'string' && search.dealId.trim()
+        ? search.dealId
+        : undefined,
+  }),
   component: DealsPage,
 });
 
 function DealsPage() {
+  const { dealId: deepLinkDealId } = Route.useSearch();
   const queryClient = useQueryClient();
   const [searchQuery, setSearchQuery] = useState('');
   const [txFilter, setTxFilter] = useState('');
@@ -102,7 +113,9 @@ function DealsPage() {
   const [healthFilter, setHealthFilter] = useState('');
   const [viewMode, setViewMode] = useState<DealViewMode>('board');
   const [compactCards, setCompactCards] = useState(false);
-  const [selectedDealId, setSelectedDealId] = useState<string | null>(null);
+  const [selectedDealId, setSelectedDealId] = useState<string | null>(
+    deepLinkDealId ?? null,
+  );
   const [showCancelled, setShowCancelled] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [pendingStage, setPendingStage] = useState<{ deal: Deal; stage: string } | null>(null);
@@ -116,6 +129,10 @@ function DealsPage() {
     queryFn: () => api.deals.findAll(),
   });
   const deals = useMemo(() => dealsQuery.data ?? [], [dealsQuery.data]);
+
+  useEffect(() => {
+    if (deepLinkDealId) setSelectedDealId(deepLinkDealId);
+  }, [deepLinkDealId]);
 
   const contractsQuery = useQuery({
     queryKey: ['contracts'],

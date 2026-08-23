@@ -1,5 +1,5 @@
 /**
- * 조항 임베디드 편집 프리미티브 5종 + 금액 표기 옵션 바.
+ * 조항 임베디드 편집 프리미티브 5종 + 금액 단위 옵션 바.
  *
  * 레거시 MySpider ContractInputForm 의 "제N조 문장 안에 컨트롤이 임베디드된"
  * 편집면을 웹으로 이식한 표현 컴포넌트 (document-hub-editor-plan.md §4.2).
@@ -211,7 +211,7 @@ export function ClauseRowFrame({
 }
 
 // ---------------------------------------------------------------------------
-// 2. ClauseAmountInput — "金 [입력] 만원정" 인라인 금액 + 실시간 한글/漢字 병기
+// 2. ClauseAmountInput — "金 [입력] 만원정" 인라인 금액 + 실시간 한글 병기
 // ---------------------------------------------------------------------------
 
 export function ClauseAmountInput({
@@ -227,7 +227,7 @@ export function ClauseAmountInput({
   onChange?: (manwonText: string) => void;
   /** printOptions.amountUnit — 입력 해석/표시 단위 (저장은 항상 만원) */
   amountUnit: ContractDocumentEngineAmountUnit;
-  /** printOptions.amountNotation — 병기 표기 (한글/漢字) */
+  /** printOptions.amountNotation — 과거 문서 호환용. 편집기에서는 한글로 정규화한다. */
   amountNotation: ContractAmountNotation;
   /** "만원정(은)" 등 접미 문구 — 표시 단위에 맞게 치환됨 */
   suffix?: string;
@@ -518,8 +518,8 @@ export function ClauseReceiptButton({ label }: { label: string }) {
 }
 
 // ---------------------------------------------------------------------------
-// AmountNotationBar — 금액단위(만원/천원/원) + 금액인쇄형식(한글/漢字) 옵션 바
-// 레거시 priceUnitRadioGroup / pricePrintTypeRadioGroup 대응. printOptions 바인딩.
+// AmountUnitBar — 금액단위(만원/천원/원) 옵션 바
+// 레거시 priceUnitRadioGroup 대응. 저장값은 항상 만원 단위다.
 // ---------------------------------------------------------------------------
 
 const AMOUNT_UNIT_OPTIONS: Array<{ value: ContractDocumentEngineAmountUnit; label: string }> = [
@@ -528,12 +528,7 @@ const AMOUNT_UNIT_OPTIONS: Array<{ value: ContractDocumentEngineAmountUnit; labe
   { value: 'won', label: '원' },
 ];
 
-const AMOUNT_NOTATION_OPTIONS: Array<{ value: ContractAmountNotation; label: string }> = [
-  { value: 'hangul', label: '한글' },
-  { value: 'hanja', label: '漢字' },
-];
-
-export function AmountNotationBar({
+export function AmountUnitBar({
   printOptions,
   onChange,
 }: {
@@ -541,53 +536,28 @@ export function AmountNotationBar({
   onChange: (partial: Partial<ContractDocumentEnginePrintOptions>) => void;
 }) {
   return (
-    <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 rounded-sm border border-border/60 bg-muted/40 px-3 py-2">
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-        <span className="text-sm font-medium">금액단위 :</span>
-        <RadioGroup
-          value={printOptions.amountUnit}
-          onValueChange={(value) =>
-            onChange({ amountUnit: value as ContractDocumentEngineAmountUnit })
-          }
-          className="flex flex-row items-center gap-3"
-        >
-          {AMOUNT_UNIT_OPTIONS.map((option) => (
-            <span key={option.value} className="inline-flex items-center gap-1.5">
-              <RadioGroupItem value={option.value} id={`amount-unit-${option.value}`} />
-              <Label
-                htmlFor={`amount-unit-${option.value}`}
-                className="cursor-pointer text-sm font-normal"
-              >
-                {option.label}
-              </Label>
-            </span>
-          ))}
-        </RadioGroup>
-        <span className="text-xs text-destructive">[금액은 숫자로 입력]</span>
-      </div>
-
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-        <span className="text-sm font-medium">금액인쇄형식 :</span>
-        <RadioGroup
-          value={printOptions.amountNotation}
-          onValueChange={(value) =>
-            onChange({ amountNotation: value as ContractAmountNotation })
-          }
-          className="flex flex-row items-center gap-3"
-        >
-          {AMOUNT_NOTATION_OPTIONS.map((option) => (
-            <span key={option.value} className="inline-flex items-center gap-1.5">
-              <RadioGroupItem value={option.value} id={`amount-notation-${option.value}`} />
-              <Label
-                htmlFor={`amount-notation-${option.value}`}
-                className="cursor-pointer text-sm font-normal"
-              >
-                {option.label}
-              </Label>
-            </span>
-          ))}
-        </RadioGroup>
-      </div>
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-sm border border-border/60 bg-muted/40 px-3 py-2">
+      <span className="text-sm font-medium">금액단위 :</span>
+      <RadioGroup
+        value={printOptions.amountUnit}
+        onValueChange={(value) =>
+          onChange({ amountUnit: value as ContractDocumentEngineAmountUnit })
+        }
+        className="flex flex-row items-center gap-3"
+      >
+        {AMOUNT_UNIT_OPTIONS.map((option) => (
+          <span key={option.value} className="inline-flex items-center gap-1.5">
+            <RadioGroupItem value={option.value} id={`amount-unit-${option.value}`} />
+            <Label
+              htmlFor={`amount-unit-${option.value}`}
+              className="cursor-pointer text-sm font-normal"
+            >
+              {option.label}
+            </Label>
+          </span>
+        ))}
+      </RadioGroup>
+      <span className="text-xs text-destructive">[금액은 숫자로 입력]</span>
     </div>
   );
 }

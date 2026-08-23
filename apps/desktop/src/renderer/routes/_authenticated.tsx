@@ -1,5 +1,5 @@
-import { createFileRoute, Navigate } from '@tanstack/react-router';
-import { useEffect, useRef, useState } from 'react';
+import { createFileRoute, Navigate, Outlet } from '@tanstack/react-router';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { SplashScreen } from '@/components/layout/splash-screen';
 import { useAuth } from '@/providers/auth-provider';
 import { AppSidebar } from '@/components/layout/app-sidebar';
@@ -11,11 +11,19 @@ import {
 } from '@/components/ui/sidebar';
 import { Separator } from '@/components/ui/separator';
 import { TabBar } from '@/features/tabs/TabBar/TabBar';
-import { TabContent } from '@/features/tabs/TabContent';
+import {
+  TabContent,
+  TabWorkspaceController,
+} from '@/features/tabs/TabContent';
 import { useDetachedInitialTab } from '@/features/tabs/hooks/useDetachedInitialTab';
+import { useWindowWorkspace } from '@/features/tabs/hooks/useWindowWorkspace';
 import { useTabStore } from '@/features/tabs/store/useTabStore';
-import { CtiProvider } from '@/features/cti/cti-provider';
+import { CtiProvider, useCti } from '@/features/cti/cti-provider';
 import { CallPopup } from '@/features/cti/call-popup';
+import { NativeTabViewport } from '@/features/tabs/native/NativeTabViewport';
+import { NativeTabRetentionReporter } from '@/features/tabs/native/NativeTabRetentionReporter';
+import { getRendererSurface } from '@/features/tabs/native/rendererSurface';
+import { resolveNativeTabRoute } from '../../common/nativeTabs';
 
 const isMac = window.electronBridge?.platform === 'darwin';
 const isWin = window.electronBridge?.platform === 'win32';
@@ -29,7 +37,7 @@ function ElectronSidebarBridge() {
   const { toggleSidebar } = useSidebar();
 
   useEffect(() => {
-    const cleanup = window.electronBridge?.onToggleSidebar(() => {
+    const cleanup = window.electronBridge?.onToggleSidebar?.(() => {
       toggleSidebar();
     });
     return cleanup;
@@ -43,8 +51,9 @@ function useFullscreen() {
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   useEffect(() => {
-    window.electronBridge?.isFullscreen().then(setIsFullscreen);
-    const cleanup = window.electronBridge?.onFullscreenChanged(setIsFullscreen);
+    void window.electronBridge?.isFullscreen?.().then(setIsFullscreen);
+    const cleanup =
+      window.electronBridge?.onFullscreenChanged?.(setIsFullscreen);
     return cleanup;
   }, []);
 
@@ -88,55 +97,84 @@ function MainAuthenticatedShell({ isFullscreen }: { isFullscreen: boolean }) {
   const titlebarLeftPadding = isMac && !isFullscreen ? 'pl-[92px]' : 'pl-4';
 
   return (
-    <SidebarProvider>
-      <CtiProvider enabled>
-        <ElectronSidebarBridge />
-        <div data-window-shell="main" className="flex h-screen w-full flex-col">
-          {/* Titlebar: SidebarTrigger + TabBar inline (no breadcrumb) */}
-          <header className="app-titlebar flex h-10 shrink-0 items-center gap-0 border-b border-border bg-sidebar pr-2">
-            <div
-              className={`flex h-full w-(--sidebar-width) shrink-0 items-center gap-1 ${titlebarLeftPadding}`}
-              style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
-            >
-              <span
-                data-slot="desktop-brand"
-                className="mr-2 select-none text-sm font-semibold tracking-[-0.02em] text-sidebar-foreground"
-              >
-                Estaitt
-              </span>
-              <span data-slot="titlebar-brand-spacer" className="min-w-0 flex-1" aria-hidden />
-              <SidebarTrigger className="-ml-1" />
-              <Separator orientation="vertical" className="ml-1 mr-0 self-stretch" />
-            </div>
-            <TabBar className="min-w-0" />
-            {/* Windows: titleBarOverlay 자리 확보 */}
-            {isWin ? <div className="w-[140px] shrink-0" aria-hidden /> : null}
-          </header>
+    <CtiProvider enabled>
+      <MainAuthenticatedShellContent
+        isFullscreen={isFullscreen}
+        titlebarLeftPadding={titlebarLeftPadding}
+      />
+    </CtiProvider>
+  );
+}
 
-          {/* Sidebar + Content below titlebar */}
-          <div className="flex flex-1 overflow-hidden">
-            <AppSidebar />
-            <SidebarInset className="flex-1 min-h-0 min-w-0">
-              {/* p-4 는 TabContent 래퍼가 소유한다 — 페이지의 -mx-4 풀블리드가
-                  직접 부모의 패딩을 상쇄할 수 있어야 한다 (web 레이아웃과 동일 관계) */}
-              <div className="flex flex-1 flex-col gap-4 min-h-0 min-w-0 overflow-auto">
-                <TabContent />
-              </div>
-            </SidebarInset>
+function MainAuthenticatedShellContent({
+  titlebarLeftPadding,
+}: {
+  isFullscreen: boolean;
+  titlebarLeftPadding: string;
+}) {
+  const { activeCall } = useCti();
+  return (
+    <SidebarProvider>
+      <TabWorkspaceController />
+      <ElectronSidebarBridge />
+      <div data-window-shell="main" className="flex h-screen w-full flex-col">
+        {/* Titlebar: SidebarTrigger + TabBar inline (no breadcrumb) */}
+        <header className="app-titlebar flex h-10 shrink-0 items-center gap-0 border-b border-border bg-sidebar pr-2">
+          <div
+            className={`app-titlebar-drag-region flex h-full w-(--sidebar-width) shrink-0 items-center gap-1 ${titlebarLeftPadding}`}
+          >
+            <span
+              data-slot="desktop-brand"
+              className="mr-2 select-none text-sm font-semibold tracking-[-0.02em] text-sidebar-foreground"
+            >
+              Estaitt
+            </span>
+            <span
+              data-slot="titlebar-brand-spacer"
+              className="min-w-0 flex-1"
+              aria-hidden
+            />
+            <SidebarTrigger className="-ml-1" />
+            <Separator
+              orientation="vertical"
+              className="ml-1 mr-0 self-stretch"
+            />
           </div>
+          <TabBar className="min-w-0" />
+          {/* Windows: titleBarOverlay 자리 확보 */}
+          {isWin ? <div className="w-[140px] shrink-0" aria-hidden /> : null}
+        </header>
+
+        {/* Sidebar + Content below titlebar */}
+        <div className="flex flex-1 overflow-hidden">
+          <AppSidebar />
+          <SidebarInset className="flex-1 min-h-0 min-w-0">
+            {/* p-4 는 TabContent 래퍼가 소유한다 — 페이지의 -mx-4 풀블리드가
+                  직접 부모의 패딩을 상쇄할 수 있어야 한다 (web 레이아웃과 동일 관계) */}
+            <div className="flex flex-1 flex-col gap-4 min-h-0 min-w-0 overflow-auto">
+              <NativeTabViewport suspended={activeCall !== null}>
+                <TabContent />
+              </NativeTabViewport>
+            </div>
+          </SidebarInset>
         </div>
-        {/* CTI 전화 수신 팝업 — 메인 창에서만 표시 */}
-        <CallPopup />
-      </CtiProvider>
+      </div>
+      {/* CTI 전화 수신 팝업 — 메인 창에서만 표시 */}
+      <CallPopup />
     </SidebarProvider>
   );
 }
 
-function DetachedAuthenticatedShell({ isFullscreen }: { isFullscreen: boolean }) {
+function DetachedAuthenticatedShell({
+  isFullscreen,
+}: {
+  isFullscreen: boolean;
+}) {
   const titlebarSpacerWidth = isMac && !isFullscreen ? 'w-[92px]' : 'w-4';
 
   return (
     <CtiProvider enabled={false}>
+      <TabWorkspaceController autoCreateInitialTab={false} />
       <div
         data-window-shell="detached"
         className="flex h-screen w-full flex-col bg-background"
@@ -151,25 +189,44 @@ function DetachedAuthenticatedShell({ isFullscreen }: { isFullscreen: boolean })
           {isWin ? <div className="w-[140px] shrink-0" aria-hidden /> : null}
         </header>
         <main className="flex min-h-0 min-w-0 flex-1 overflow-auto">
-          <TabContent autoCreateInitialTab={false} />
+          <NativeTabViewport deferNativeFallback>
+            <TabContent />
+          </NativeTabViewport>
         </main>
       </div>
     </CtiProvider>
   );
 }
 
-function AuthenticatedLayout() {
+function WindowAuthenticatedLayout() {
   const { user, isAuthenticated, isLoading } = useAuth();
   const isFullscreen = useFullscreen();
   const windowKind = useWindowKind();
   const isDetached = windowKind === 'detached';
+  const userId = user?.id;
+  const officeId = user?.office?.id;
+  const workspaceOwner = useMemo(
+    () =>
+      typeof userId === 'string' && typeof officeId === 'string'
+        ? { userId, officeId }
+        : null,
+    [officeId, userId],
+  );
 
-  const detachedInitialTabReady = useDetachedInitialTab(isDetached);
+  const detachedInitialTabReady = useDetachedInitialTab(
+    isDetached,
+    workspaceOwner,
+  );
+  const mainWorkspaceReady = useWindowWorkspace(
+    windowKind === 'main' && Boolean(workspaceOwner),
+    workspaceOwner,
+  );
   useCloseDetachedWindowWhenEmpty(isDetached, detachedInitialTabReady);
 
   if (
     isLoading ||
     windowKind === null ||
+    (windowKind === 'main' && !mainWorkspaceReady) ||
     (isDetached && !detachedInitialTabReady)
   ) {
     return <SplashScreen />;
@@ -188,4 +245,60 @@ function AuthenticatedLayout() {
   }
 
   return <MainAuthenticatedShell isFullscreen={isFullscreen} />;
+}
+
+function NativeTabAuthenticatedLayout() {
+  const { user, isAuthenticated, isLoading } = useAuth();
+  if (isLoading) return <SplashScreen />;
+  if (!isAuthenticated || !user?.office) return <SplashScreen />;
+  return (
+    <>
+      <NativeTabNavigationBridge />
+      <NativeTabRetentionReporter />
+      <main
+        data-window-shell="native-tab"
+        className="flex h-screen min-h-0 min-w-0 flex-col overflow-auto [overflow-anchor:none] bg-background p-4"
+      >
+        <Outlet />
+      </main>
+    </>
+  );
+}
+
+function NativeTabNavigationBridge() {
+  useEffect(() => {
+    const onClick = (event: MouseEvent) => {
+      if (
+        event.defaultPrevented ||
+        event.button !== 0 ||
+        event.metaKey ||
+        event.ctrlKey ||
+        event.altKey ||
+        event.shiftKey
+      ) {
+        return;
+      }
+      const anchor = (event.target as Element | null)?.closest('a[href]');
+      if (!(anchor instanceof HTMLAnchorElement) || anchor.download) return;
+      const rawHref = anchor.getAttribute('href');
+      if (!rawHref?.startsWith('/')) return;
+      if (resolveNativeTabRoute(rawHref)) return;
+      const openInMainWindow = window.electronBridge?.tabs.openInMainWindow;
+      if (!openInMainWindow) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      void openInMainWindow(rawHref);
+    };
+    document.addEventListener('click', onClick, true);
+    return () => document.removeEventListener('click', onClick, true);
+  }, []);
+  return null;
+}
+
+function AuthenticatedLayout() {
+  return getRendererSurface().kind === 'native-tab' ? (
+    <NativeTabAuthenticatedLayout />
+  ) : (
+    <WindowAuthenticatedLayout />
+  );
 }

@@ -272,6 +272,8 @@ function UnitDetailBody({
 
   const exclusiveArea = unit.exclusiveAreaM2 ?? unit.siteUnitType?.exclusiveAreaM2;
   const supplyArea = unit.supplyAreaM2 ?? unit.siteUnitType?.supplyAreaM2;
+  const roomCount = unit.roomCount ?? unit.siteUnitType?.roomCount;
+  const bathRoomCount = unit.bathRoomCount ?? unit.siteUnitType?.bathRoomCount;
 
   return (
     <>
@@ -392,7 +394,7 @@ function UnitDetailBody({
                 <h3 className="mb-3 text-xs font-medium uppercase tracking-wider text-muted-foreground">
                   기본 정보
                 </h3>
-                <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
                   <OverviewField icon={Building2} label="단지" value={site.name} />
                   <OverviewField
                     icon={Ruler}
@@ -410,6 +412,15 @@ function UnitDetailBody({
                     value={`${unit.floor != null ? `${unit.floor}층` : '—'} / ${
                       unit.lineNo != null ? `${unit.lineNo}라인` : '—'
                     }${unit.isPiloti ? ' · 필로티' : ''}`}
+                  />
+                  <OverviewField
+                    icon={Home}
+                    label="방 / 욕실"
+                    value={
+                      roomCount != null || bathRoomCount != null
+                        ? `방 ${roomCount ?? '—'} / 욕실 ${bathRoomCount ?? '—'}`
+                        : '—'
+                    }
                   />
                 </div>
               </section>

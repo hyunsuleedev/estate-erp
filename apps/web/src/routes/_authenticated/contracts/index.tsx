@@ -618,7 +618,7 @@ function ContractsPage() {
     };
 
     // 조항 임베디드 에디터 서식(base_contract × sale)은 표기/인쇄 옵션
-    // (금액단위·한글/漢字·공란인쇄·행 토글)을 printOptions 로 함께 저장한다.
+    // (금액단위·한글 금액 병기·공란인쇄·행 토글)을 printOptions 로 함께 저장한다.
     // 그 외 서식은 인자를 생략 — merge 가 기존 저장값을 보존한다.
     const clauseLayout = documentEditorForm.kind
       ? getContractClauseLayout(

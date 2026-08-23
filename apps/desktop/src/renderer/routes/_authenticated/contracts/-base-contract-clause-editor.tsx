@@ -2,13 +2,13 @@
  * base_contract(아파트/오피스텔/부동산/상가 계약서) 조항 임베디드 에디터 + A4 프리뷰.
  *
  * 레거시 MySpider ContractInputForm 의 편집면 구성 이식 (document-hub-editor-plan.md §4.2):
- *   1. 부동산의 표시 (문서형 표) → 2. 계약내용 (AmountNotationBar + 제1조~제3조 조항
+ *   1. 부동산의 표시 (문서형 표) → 2. 계약내용 (AmountUnitBar + 제1조~제3조 조항
  *   임베디드) → 기타 계약 조건(부가세·계약 일자 등 조항 밖 필드) → 특약(rich text)
  *   → 당사자 요약(당사자 탭에서 편집 — 중복 편집 금지) → 중개사무소.
  *
  * - 값은 전부 기존 engineFields 카탈로그 키(단일 진실), 표기 옵션은 printOptions.
  * - 프리뷰는 같은 CLAUSE_LAYOUTS 를 읽기 전용으로 렌더해 편집면=인쇄면 정합 보장.
- *   금액 병기는 printOptions.amountNotation(한글/漢字)을 따른다.
+ *   금액 병기는 한글 표기로 단일화한다.
  * - 특약 HTML 은 반드시 새니타이즈 후 렌더 (DOMPurify — lib/contract-rich-text).
  */
 import { useMemo } from 'react';
@@ -22,7 +22,7 @@ import {
   type ContractDocumentEngineFields,
   type ContractDocumentEnginePrintOptions,
 } from './-document-engine';
-import { AmountNotationBar } from './-clause-primitives';
+import { AmountUnitBar } from './-clause-primitives';
 import { ContractClauseEditor, type ClauseFieldChangeHandler } from './-clause-editor';
 import { cn } from '@/lib/utils';
 import {
@@ -443,7 +443,7 @@ export function BaseContractClauseEditor({
       <section className="rounded-md border border-border/60 bg-background p-4">
         <p className="text-sm font-semibold">2. 계약내용</p>
         <div className="mt-3 space-y-3">
-          <AmountNotationBar printOptions={printOptions} onChange={onPrintOptionsChange} />
+          <AmountUnitBar printOptions={printOptions} onChange={onPrintOptionsChange} />
           <ContractClauseEditor
             articles={articles}
             fields={fields}

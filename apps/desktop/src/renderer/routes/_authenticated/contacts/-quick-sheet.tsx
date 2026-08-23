@@ -381,10 +381,10 @@ function ContactSheetContent({
                 <ContactSheetBuyerReqCard key={requirement.id} requirement={requirement} />
               ))}
               <Link
-                to="/buyer-requirements"
+                to="/customers"
                 className="inline-flex items-center gap-1 text-[12px] text-slate-500 hover:text-slate-800 hover:underline"
               >
-                구매고객 페이지에서 보기
+                고객 원장에서 보기
                 <ExternalLink className="size-3" />
               </Link>
             </div>

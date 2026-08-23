@@ -1,5 +1,5 @@
 /**
- * 계약서 템플릿 관리 카드 — 특약 템플릿(clause-templates) + 인쇄 서식(print-templates) CRUD.
+ * 계약서 템플릿 관리 패널 — 특약 템플릿(clause-templates) + 인쇄 서식(print-templates) CRUD.
  * 계약 페이지(-special-terms-card.tsx)와 동일한 queryKey 프리픽스를 invalidate해 양쪽 동기화.
  */
 import { useState } from 'react';
@@ -14,13 +14,6 @@ import { api } from '@/lib/api';
 import { ConfirmDialog, EmptyState } from '@/components/domain';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
 import {
   Dialog,
   DialogContent,
@@ -68,19 +61,28 @@ const txTypeLabel = (value: string) =>
 
 export function ContractTemplatesCard({ canEdit }: { canEdit: boolean }) {
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          <FileText className="size-4" />
-          계약서 템플릿
-        </CardTitle>
-        <CardDescription>
-          계약서 작성 시 불러오는 특약 문구와 인쇄 서식을 사무소 단위로 관리합니다.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
+    <section className="overflow-hidden rounded-lg border border-border/80 bg-card shadow-[0_1px_2px_rgba(55,53,47,0.035)]">
+      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border/70 px-5 py-4">
+        <div className="flex min-w-0 items-start gap-3">
+          <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md bg-neutral-soft">
+            <FileText className="size-4" />
+          </div>
+          <div>
+            <h3 className="text-[13px] font-semibold">사무소 계약서 라이브러리</h3>
+            <p className="mt-1 text-xs leading-5 text-muted-foreground">
+              계약서 작성 시 불러오는 특약 문구와 인쇄 서식을 사무소 단위로 관리합니다.
+            </p>
+          </div>
+        </div>
+        {!canEdit ? (
+          <Badge variant="secondary" className="font-normal">
+            읽기 전용
+          </Badge>
+        ) : null}
+      </div>
+      <div className="p-5">
         <Tabs defaultValue="clause">
-          <TabsList>
+          <TabsList className="h-8">
             <TabsTrigger value="clause">특약 템플릿</TabsTrigger>
             <TabsTrigger value="print">인쇄 서식</TabsTrigger>
           </TabsList>
@@ -91,8 +93,8 @@ export function ContractTemplatesCard({ canEdit }: { canEdit: boolean }) {
             <PrintTemplateSection canEdit={canEdit} />
           </TabsContent>
         </Tabs>
-      </CardContent>
-    </Card>
+      </div>
+    </section>
   );
 }
 
@@ -265,7 +267,7 @@ function ClauseTemplateSection({ canEdit }: { canEdit: boolean }) {
         <p className="text-xs text-muted-foreground">
           계약서 작성 화면의 특약 입력에서 바로 불러올 수 있습니다.
         </p>
-        {canEdit ? (
+        {canEdit && templates.length > 0 ? (
           <Button size="sm" variant="outline" onClick={openCreate}>
             <Plus className="size-3.5" />
             특약 추가
@@ -552,7 +554,7 @@ function PrintTemplateSection({ canEdit }: { canEdit: boolean }) {
         <p className="text-xs text-muted-foreground">
           계약서 표지·영수증·정산서 등 인쇄물의 기본 서식을 지정합니다.
         </p>
-        {canEdit ? (
+        {canEdit && templates.length > 0 ? (
           <Button size="sm" variant="outline" onClick={openCreate}>
             <Plus className="size-3.5" />
             서식 추가

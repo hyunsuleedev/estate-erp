@@ -60,6 +60,68 @@ No actionable P0, P1, or P2 findings remain.
 
 final result: passed
 
+# New Customer Ledger Hierarchical Selection QA
+
+## Result
+
+**passed**
+
+## Source and implementation
+
+- Reference capture: `/var/folders/vr/xtms8l792xxd4n01trx_356m0000gn/T/orca-paste-1786614082029-e59db525-841a-4abc-930d-583d4110a523.png`
+- Rejected overlapping Electron capture: `/private/tmp/customers-next-checkboxes-final-1477.png`
+- Final Electron capture: `/private/tmp/customers-next-checkboxes-separated-final-1477.png`
+- Full-view combined comparison: `/private/tmp/customers-next-checkboxes-separated-qa-full.png`
+- Focused reference/rejected/final comparison: `/private/tmp/customers-next-checkboxes-separated-qa-focus.png`
+- Implementation:
+  - `/Users/hyunsulee/estate-erp/apps/desktop/src/renderer/routes/_authenticated/customers-next/index.tsx`
+  - `/Users/hyunsulee/estate-erp/apps/desktop/src/renderer/routes/_authenticated/customers-next/-customers-next-model.ts`
+  - `/Users/hyunsulee/estate-erp/apps/desktop/src/renderer/routes/_authenticated/customers-next/-customers-next.css`
+  - `/Users/hyunsulee/estate-erp/apps/desktop/src/renderer/components/ui/checkbox.tsx`
+
+## Comparison setup
+
+- Runtime: the actual Electron desktop app connected through its CDP debugging port.
+- Reference: 2954 × 1796 px at 2× density, normalized to its 1477 × 898 CSS-pixel viewport.
+- Implementation: 1477 × 898 CSS px and 1477 × 898 image px.
+- State: the first customer case is expanded and fully selected; its intake and both child requirements are selected; all other cases are unselected.
+- The full comparison places the normalized reference on the left and the final implementation on the right. The focused comparison uses matching 1215 × 280 px crops in reference → rejected overlap → final separated order.
+
+## Findings
+
+No actionable P0, P1, or P2 findings remain.
+
+| Surface | Review |
+| --- | --- |
+| Hierarchy | Selection follows the supplied customer → intake → individual condition/listing-option structure. |
+| Placement | Checkboxes use a dedicated leading lane. Customer selection is a normal header column; intake and child selections end at least 2 px before their tree connectors begin, so no checkbox intersects a disclosure control, connector, marker, or content. |
+| Visual state | Checked and mixed states remain visible in destructive red. Unchecked boxes stay quiet until the related customer card or control is hovered or keyboard-focused. |
+| Partial selection | A selected subset renders a minus at the customer and intake levels instead of incorrectly showing a full check. |
+| Components | The existing Radix-backed checkbox primitive is reused; its indicator now distinguishes checked and indeterminate states with Lucide icons. |
+| Accessibility | Every level has a descriptive accessible name and exposes native `checked=true`, `checked=false`, or `checked=mixed` semantics. Keyboard Space toggling works. |
+
+## Interaction checks
+
+- Selected the first customer and confirmed the customer, intake, and both requirement checkboxes changed to `checked=true` together.
+- Deselected one requirement and confirmed both ancestors changed to `checked=mixed` while the sibling remained selected.
+- Selected the mixed intake and confirmed both children returned to selected.
+- Toggled the customer off and on again through click interaction and confirmed every descendant followed both times.
+- Repeated the parent-selection flow on a listing customer and confirmed the listing intake and transaction option were selected together.
+- Focused an individual condition and toggled it with Space; the two ancestors became mixed.
+- Verified unchecked controls remain discoverable on hover and selected controls remain visible after the pointer leaves.
+- Measured every rendered branch at 1477, 1000, 760, and 500 px viewports; checkbox/connector intersection count remained zero and the document introduced no horizontal page overflow.
+- Targeted desktop tests passed: 40/40. Targeted ESLint and `git diff --check` completed successfully.
+- Full desktop typecheck remains blocked by existing unrelated model-migration errors around `status`, `checkStatus`, and `includeInactive`; none point to the files changed for this selection feature.
+
+## Comparison history
+
+1. The first source-faithful pass placed intake and child checkboxes directly on top of the tree connectors. The user reported this as excessive UI overlap, making it a P1 usability issue despite matching the supplied image.
+2. The customer checkbox was restored to its own header column. Branch selection positions and connector starts were split into separate layout variables while content markers kept their existing positions.
+3. The focused three-state comparison shows the reference and rejected overlap on the left and center, followed by the final separated selection and connector lanes on the right.
+4. Post-fix geometry checks found zero intersections across all 20 rendered branches at desktop, intermediate, and narrow widths. Click, keyboard, full-selection, partial-selection, and listing-intake flows still pass.
+
+final result: passed
+
 # Desktop Property Price Range Popover QA
 
 ## Result

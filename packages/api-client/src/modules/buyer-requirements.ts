@@ -162,6 +162,8 @@ export interface CreateBuyerRequirementDto {
   buyerIntakeId?: string;
   /** 구버전 UI 호환. 신규 코드는 buyerIntakeId를 사용한다. */
   contactId?: string;
+  /** contactId 고객에게 기존 열린 의뢰와 분리된 새 BuyerIntake를 만든다. */
+  createNewIntake?: boolean;
   priorityRank?: number;
   transactionType?: string;
   siteTypes?: string[];
@@ -191,7 +193,7 @@ export interface CreateBuyerRequirementDto {
 
 export interface UpdateBuyerRequirementDto extends Omit<
   CreateBuyerRequirementDto,
-  'buyerIntakeId' | 'contactId'
+  'buyerIntakeId' | 'contactId' | 'createNewIntake'
 > {
   lastContactDate?: string;
 }

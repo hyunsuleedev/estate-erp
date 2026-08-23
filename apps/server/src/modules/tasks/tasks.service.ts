@@ -26,7 +26,16 @@ export class TasksService {
     createdBy: { select: { id: true, name: true } },
     assignedBy: { select: { id: true, name: true } },
     contact: { select: { id: true, name: true, phones: contactPhonesSelectOrdered } },
-    property: { include: { site: true, unit: true } },
+    property: {
+      include: {
+        site: true,
+        unit: {
+          include: {
+            dong: { select: { id: true, name: true, isPlaceholder: true } },
+          },
+        },
+      },
+    },
     listingIntake: {
       select: {
         id: true,

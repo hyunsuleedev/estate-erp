@@ -135,7 +135,7 @@ export type DocumentEditorForm = {
   engineFields: ContractDocumentEngineFields;
   /**
    * 문서 단위 표기/인쇄 옵션 (metadata.documentEngine.printOptions) —
-   * 금액단위(만원/천원/원)·금액인쇄형식(한글/漢字)·공란인쇄·행 토글.
+   * 금액단위(만원/천원/원)·공란인쇄·행 토글. 금액 병기는 한글로 고정한다.
    * 조항 에디터 서식에서만 저장 페이로드에 포함한다.
    */
   printOptions: ContractDocumentEnginePrintOptions;
@@ -229,8 +229,11 @@ export function toDocumentEditorForm(
     metadata: document?.metadata ?? template.metadata ?? {},
     workflow: draft.workflow,
     engineFields,
-    // 표기 옵션은 문서 metadata 에서만 읽는다 (신규 문서는 기본값 만원/한글)
-    printOptions: getContractDocumentEnginePrintOptions(document?.metadata),
+    // 과거 한자 문서도 편집·미리보기·다음 저장부터 한글 표기로 정규화한다.
+    printOptions: {
+      ...getContractDocumentEnginePrintOptions(document?.metadata),
+      amountNotation: 'hangul',
+    },
     // 조항 에디터 서식은 engineFields 가 단일 진실 — 매매초안 전용 폼은 dormant.
     saleAgreement: clauseLayout
       ? null
@@ -544,11 +547,11 @@ export function DocumentEditorSheet({
     }));
   }
 
-  /** 표기/인쇄 옵션 갱신 (AmountNotationBar·공란인쇄·행 토글 → printOptions) */
+  /** 입력/인쇄 옵션 갱신 (금액단위·공란인쇄·행 토글 → printOptions) */
   function updatePrintOptions(partial: Partial<ContractDocumentEnginePrintOptions>) {
     onFormChange((prev) => ({
       ...prev,
-      printOptions: { ...prev.printOptions, ...partial },
+      printOptions: { ...prev.printOptions, ...partial, amountNotation: 'hangul' },
     }));
   }
 

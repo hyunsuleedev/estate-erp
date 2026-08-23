@@ -196,10 +196,6 @@ export class PropertiesService {
                 },
               },
               deals: OCCUPYING_DEALS_SELECT,
-              advertisements: {
-                orderBy: { createdAt: 'desc' },
-                take: 5,
-              },
             },
           },
         },
@@ -271,7 +267,6 @@ export class PropertiesService {
             deals: OCCUPYING_DEALS_SELECT,
             advertisements: {
               orderBy: { createdAt: 'desc' },
-              take: 5,
             },
             priceHistories: {
               orderBy: { createdAt: 'desc' },

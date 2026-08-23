@@ -5,14 +5,17 @@ import type {
   UpdateCalendarEventDto,
 } from '@estate-erp/api-client';
 import {
+  DealStage,
   IntakeConfirmationState,
   IntakeLifecycleStatus,
   MatchStage,
+  normalizeDealStage,
   normalizeMatchStage,
 } from '@estate-erp/shared';
 import { getStatusMeta, type Tone } from '@/lib/status-config';
 import { formatDateTime, formatMoney, formatPhone } from '@/lib/format';
 import { getIntakeConfirmationState } from '@/lib/listing-status';
+import { formatAreaRange } from '../buyer-requirements/-buyer-utils';
 
 export type MatchViewListItem = Match;
 
@@ -415,6 +418,56 @@ export function getActiveDealLink(match: MatchViewListItem) {
   return (match.deals ?? []).find((deal) => !deal.isCancelled) ?? null;
 }
 
+// ── 거래 전환 후 거래관리 파이프라인 미러 ────────────────────────────────────
+// 매칭 레인은 연결 Deal의 단계를 읽기 전용으로 이어서 보여주고,
+// 실제 단계 변경은 거래관리(/deals)가 소유한다.
+
+const dealProgressBaseStages: string[] = [
+  DealStage.PREPARING,
+  DealStage.CONTRACTED,
+  DealStage.SETTLING,
+  DealStage.COMPLETED,
+  DealStage.CLOSED,
+];
+
+/** 가계약(preContract)은 선택 단계 — 거래가 그 단계에 머무를 때만 트랙에 표시한다 */
+export function getDealProgressStages(dealStage: string): string[] {
+  if (normalizeDealStage(dealStage) === DealStage.PRE_CONTRACT) {
+    return [
+      DealStage.PREPARING,
+      DealStage.PRE_CONTRACT,
+      DealStage.CONTRACTED,
+      DealStage.SETTLING,
+      DealStage.COMPLETED,
+      DealStage.CLOSED,
+    ];
+  }
+  return dealProgressBaseStages;
+}
+
+export function getDealProgressNodeState(
+  dealStage: string,
+  nodeStage: string,
+): MatchProgressNodeState {
+  const stages = getDealProgressStages(dealStage);
+  const currentIndex = stages.indexOf(normalizeDealStage(dealStage));
+  const nodeIndex = stages.indexOf(nodeStage);
+  if (currentIndex < 0 || nodeIndex < 0) {
+    return 'pending';
+  }
+  if (nodeIndex < currentIndex) {
+    return 'completed';
+  }
+  if (nodeIndex === currentIndex) {
+    return 'current';
+  }
+  return 'pending';
+}
+
+export function getDealStageLabel(stage: string): string {
+  return getStatusMeta('dealStage', normalizeDealStage(stage)).label;
+}
+
 /** 동일 listingId + buyerReqId 조합 중복 여부 */
 export function isDuplicateMatch(
   matches: MatchViewListItem[],
@@ -556,6 +609,7 @@ export function getBuyerRequirementSummaryParts(
   return {
     regionText,
     siteTypeText,
+    areaText: formatAreaRange(requirement.areaMin, requirement.areaMax),
     budgetText: formatBudgetSummary(requirement),
   };
 }

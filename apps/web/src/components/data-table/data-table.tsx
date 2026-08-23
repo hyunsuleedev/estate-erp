@@ -449,11 +449,8 @@ export function DataTable<TData extends { id: string }>({
                           : `${control.label} 컬럼 접기`
                       }
                       data-data-table-column-group-toggle={control.label}
-                      className="pointer-events-auto sticky z-50 mt-2 inline-flex size-5 items-center justify-center rounded-[3px] border border-border bg-white p-0 text-muted-foreground shadow-xs outline-none transition-colors hover:border-muted-foreground/40 hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/35 active:translate-y-px"
-                      style={{
-                        left: toggleOffset,
-                        marginLeft: toggleOffset,
-                      }}
+                      className="pointer-events-auto absolute z-50 mt-2 inline-flex size-5 items-center justify-center rounded-[3px] border border-border bg-white p-0 text-muted-foreground shadow-xs outline-none transition-colors hover:border-muted-foreground/40 hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/35 active:translate-y-px"
+                      style={{ left: toggleOffset }}
                       onClick={control.onToggle}
                     >
                       {control.collapsed ? (

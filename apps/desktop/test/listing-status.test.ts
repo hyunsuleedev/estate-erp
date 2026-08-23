@@ -1,156 +1,164 @@
-import assert from 'node:assert/strict';
-import { describe, it } from 'node:test';
+import assert from "node:assert/strict";
+import { describe, it } from "node:test";
 
 import {
   getActiveDealListingIndex,
   getListingAvailability,
   getListingRowAvailability,
   planListingStatusChange,
-} from '../src/renderer/lib/listing-status';
+} from "../src/renderer/lib/listing-status";
 
-describe('desktop listing availability', () => {
-  it('derives the four listing states without a stored status column', () => {
+describe("desktop listing availability", () => {
+  it("derives the four listing states without a stored status column", () => {
     assert.equal(
       getListingAvailability({
-        intake: { lifecycleStatus: 'open' },
+        intake: { lifecycleStatus: "open" },
         deals: [],
       }),
-      'available',
+      "available",
     );
     assert.equal(
       getListingAvailability({
         isPaused: true,
-        intake: { lifecycleStatus: 'open' },
+        intake: { lifecycleStatus: "open" },
         deals: [],
       }),
-      'paused',
+      "paused",
     );
     assert.equal(
       getListingAvailability({
-        intake: { lifecycleStatus: 'open' },
-        deals: [{ stage: 'preparing' }],
+        intake: { lifecycleStatus: "open" },
+        deals: [{ stage: "preparing" }],
       }),
-      'in_contract',
+      "in_contract",
     );
     assert.equal(
       getListingAvailability({
-        intake: { lifecycleStatus: 'open' },
-        deals: [{ stage: 'completed' }],
+        intake: { lifecycleStatus: "open" },
+        deals: [{ stage: "completed" }],
       }),
-      'closed',
+      "closed",
     );
   });
 
-  it('keeps a multi-transaction row available while one option remains usable', () => {
+  it("keeps a multi-transaction row available while one option remains usable", () => {
     const completedListing = {
-      intake: { lifecycleStatus: 'open' },
-      deals: [{ stage: 'completed' }],
+      intake: { lifecycleStatus: "open" },
+      deals: [{ stage: "completed" }],
     };
     const availableListing = {
-      intake: { lifecycleStatus: 'open' },
+      intake: { lifecycleStatus: "open" },
       deals: [],
     };
 
     assert.equal(
-      getListingRowAvailability(
-        { lifecycleStatus: 'open' },
-        [completedListing, availableListing],
-      ),
-      'available',
+      getListingRowAvailability({ lifecycleStatus: "open" }, [
+        completedListing,
+        availableListing,
+      ]),
+      "available",
     );
     assert.deepEqual(
-      planListingStatusChange(
-        'available',
-        'in_contract',
-        [completedListing, availableListing],
-      ),
+      planListingStatusChange("available", "in_contract", [
+        completedListing,
+        availableListing,
+      ]),
       {
-        kind: 'startDeal',
+        kind: "startDeal",
         candidates: [availableListing],
       },
     );
   });
 
-  it('locates the one listing occupied by the active Deal', () => {
+  it("locates the one listing occupied by the active Deal", () => {
     assert.equal(
       getActiveDealListingIndex([
-        { deals: [{ stage: 'completed' }] },
-        { deals: [{ stage: 'contracted' }] },
+        { deals: [{ stage: "completed" }] },
+        { deals: [{ stage: "contracted" }] },
         { deals: [] },
       ]),
       1,
     );
     assert.equal(
       getActiveDealListingIndex([
-        { deals: [{ stage: 'completed' }] },
+        { deals: [{ stage: "completed" }] },
         { deals: [] },
       ]),
       -1,
     );
   });
 
-  it('requires confirmation when closing a row with active Deals', () => {
+  it("requires confirmation when closing a row with active Deals", () => {
     const listings = [
       {
-        intake: { lifecycleStatus: 'open' },
-        deals: [{ stage: 'preparing' }, { stage: 'contracted' }],
+        intake: { lifecycleStatus: "open" },
+        deals: [
+          { id: "deal-1", stage: "preparing" },
+          { id: "deal-2", stage: "contracted" },
+        ],
       },
       {
-        intake: { lifecycleStatus: 'open' },
+        intake: { lifecycleStatus: "open" },
         deals: [],
       },
     ];
 
     assert.deepEqual(
-      planListingStatusChange('in_contract', 'closed', listings),
-      { kind: 'closeWithActiveDeals', activeDealCount: 2 },
+      planListingStatusChange("in_contract", "closed", listings),
+      {
+        kind: "closeWithActiveDeals",
+        activeDealCount: 2,
+        activeDealIds: ["deal-1", "deal-2"],
+      },
     );
     assert.deepEqual(
-      planListingStatusChange('in_contract', 'paused', listings),
-      { kind: 'blocked', reason: 'activeDeal' },
+      planListingStatusChange("in_contract", "available", listings),
+      {
+        kind: "deleteActiveDealsAndReactivate",
+        activeDealCount: 2,
+        activeDealIds: ["deal-1", "deal-2"],
+      },
+    );
+    assert.deepEqual(
+      planListingStatusChange("in_contract", "paused", listings),
+      { kind: "blocked", reason: "activeDeal" },
     );
   });
 
-  it('requires confirmation before reopening a manually closed intake', () => {
+  it("requires confirmation before reopening a manually closed intake", () => {
     const listing = {
-      intake: { lifecycleStatus: 'closed' },
+      intake: { lifecycleStatus: "closed" },
       deals: [],
     };
 
     assert.deepEqual(
-      planListingStatusChange('closed', 'available', [listing]),
+      planListingStatusChange("closed", "available", [listing]),
       {
-        kind: 'reviewResume',
+        kind: "reviewResume",
         canResume: true,
         completedListingCount: 0,
         resumableListingCount: 1,
       },
     );
-    assert.deepEqual(
-      planListingStatusChange('closed', 'paused', [listing]),
-      {
-        kind: 'reviewResume',
-        canResume: true,
-        completedListingCount: 0,
-        resumableListingCount: 1,
-      },
-    );
+    assert.deepEqual(planListingStatusChange("closed", "paused", [listing]), {
+      kind: "reviewResume",
+      canResume: true,
+      completedListingCount: 0,
+      resumableListingCount: 1,
+    });
   });
 
-  it('does not reopen a completed Deal as paused', () => {
+  it("does not reopen a completed Deal as paused", () => {
     const listing = {
-      intake: { lifecycleStatus: 'open' },
-      deals: [{ stage: 'completed' }],
+      intake: { lifecycleStatus: "open" },
+      deals: [{ stage: "completed" }],
     };
 
-    assert.deepEqual(
-      planListingStatusChange('closed', 'paused', [listing]),
-      {
-        kind: 'reviewResume',
-        canResume: false,
-        completedListingCount: 1,
-        resumableListingCount: 0,
-      },
-    );
+    assert.deepEqual(planListingStatusChange("closed", "paused", [listing]), {
+      kind: "reviewResume",
+      canResume: false,
+      completedListingCount: 1,
+      resumableListingCount: 0,
+    });
   });
 });

@@ -11,44 +11,74 @@ const employeesPageSource = readFileSync(
 );
 
 describe('desktop employees workspace', () => {
-  it('uses the app-wide full-bleed workbench instead of a dashboard of cards', () => {
+  it('uses a people-centered team overview instead of a spreadsheet ledger', () => {
     assert.match(employeesPageSource, /data-employees-page/);
-    assert.match(
-      employeesPageSource,
-      /className="-m-4 flex min-h-0 min-w-0 flex-1/,
-    );
+    assert.match(employeesPageSource, /data-employee-header/);
     assert.match(employeesPageSource, /data-employee-toolbar/);
-    assert.doesNotMatch(employeesPageSource, /<PageHeader/);
-    assert.doesNotMatch(employeesPageSource, /function MetricTile/);
-    assert.doesNotMatch(employeesPageSource, /function SectionPanel/);
+    assert.match(employeesPageSource, /data-team-overview/);
+    assert.match(employeesPageSource, /data-employee-roster/);
+    assert.match(employeesPageSource, /팀 멤버/);
+    assert.doesNotMatch(employeesPageSource, /<DataTable/);
+    assert.doesNotMatch(employeesPageSource, /data-employee-inspector/);
   });
 
-  it('keeps a compact filterable directory beside the selected employee document', () => {
-    assert.match(employeesPageSource, /data-employee-directory/);
-    assert.match(employeesPageSource, /data-employee-detail/);
-    assert.match(employeesPageSource, /<FilterSearch/);
-    assert.equal((employeesPageSource.match(/<FilterSelect/g) ?? []).length, 3);
-    assert.match(employeesPageSource, /<AvatarBadge/);
+  it('gives every employee a substantial identity row with operational context', () => {
+    assert.match(employeesPageSource, /function EmployeeGroup/);
+    assert.match(employeesPageSource, /data-employee-row/);
     assert.match(
       employeesPageSource,
-      /업무 \{employee\.counts\.activeTaskCount\}/,
+      /aria-label=\{`\$\{employee\.name\} 직원 상세 열기`\}/,
     );
-    assert.match(employeesPageSource, /employee\.counts\.activeDealCount/);
+    assert.match(employeesPageSource, /label="업무"/);
+    assert.match(employeesPageSource, /label="고객"/);
+    assert.match(employeesPageSource, /label="거래"/);
+    assert.match(
+      employeesPageSource,
+      /미정산 \{employee\.counts\.unsettledDealCount\}/,
+    );
   });
 
-  it('separates profile, work and activity into focused shadcn tabs', () => {
+  it('keeps search and filters keyboard accessible and announces result changes', () => {
+    assert.match(employeesPageSource, /<FilterSearch/);
+    assert.equal((employeesPageSource.match(/<FilterSelect/g) ?? []).length, 2);
+    assert.match(employeesPageSource, /role="group"/);
+    assert.match(employeesPageSource, /aria-pressed=\{statusFilter/);
+    assert.match(employeesPageSource, /aria-live="polite"/);
+  });
+
+  it('opens employee management as a dedicated full-width workspace', () => {
+    assert.match(employeesPageSource, /data-employee-workspace/);
+    assert.match(employeesPageSource, /function EmployeeWorkspace/);
+    assert.match(employeesPageSource, /직원 목록/);
+    assert.match(employeesPageSource, /onBack=\{closeEmployeeWorkspace\}/);
+    assert.match(employeesPageSource, /selectedEmployeeId \? \(/);
+    assert.match(employeesPageSource, /event\.key !== ["']Escape["']/);
+    assert.match(employeesPageSource, /\[data-employee-row\]/);
+  });
+
+  it('separates account, workload and activity into focused shadcn tabs', () => {
     assert.match(employeesPageSource, /<Tabs[\s\S]*?defaultValue="profile"/);
     assert.match(employeesPageSource, /<TabsList[\s\S]*?variant="line"/);
-    assert.match(employeesPageSource, /<TabsTrigger value="profile"/);
-    assert.match(employeesPageSource, /<TabsTrigger value="work"/);
-    assert.match(employeesPageSource, /<TabsTrigger value="activity"/);
+    assert.match(employeesPageSource, /value="profile"/);
+    assert.match(employeesPageSource, /value="work"/);
+    assert.match(employeesPageSource, /value="activity"/);
+    assert.match(employeesPageSource, /aria-label="직원 상세 구역"/);
     assert.equal((employeesPageSource.match(/<TabsContent/g) ?? []).length, 3);
+  });
+
+  it('balances sparse teams with a factual operations summary', () => {
+    assert.match(employeesPageSource, /data-team-operations/);
+    assert.match(employeesPageSource, />운영 요약</);
+    assert.match(employeesPageSource, /직원 계정 슬롯 사용량/);
+    assert.match(employeesPageSource, />현재 업무</);
+    assert.match(employeesPageSource, />직원 정산</);
+    assert.match(employeesPageSource, />권한 안내</);
   });
 
   it('shows employee compensation settings only for non-owner accounts', () => {
     assert.match(
       employeesPageSource,
-      /employee\.role !== 'owner'[\s\S]*?title="급여와 배분"/,
+      /employee\.role !== ["']owner["'][\s\S]*?title="급여와 배분"/,
     );
   });
 

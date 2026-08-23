@@ -290,6 +290,7 @@ export function EditableCell({
           anchorEl={anchorEl}
           recordId={recordId}
           field={field}
+          ariaLabel={ariaLabel}
           value={value}
           chipValueOf={chipValueOf}
           editType={editType}
@@ -326,6 +327,7 @@ interface CellEditPortalProps {
   anchorEl: HTMLElement;
   recordId: string;
   field: string;
+  ariaLabel?: string;
   value: unknown;
   chipValueOf?: (value: unknown) => string | undefined;
   editType: 'text' | 'number' | 'select' | 'select-chip';
@@ -354,6 +356,7 @@ function CellEditPortal({
   anchorEl,
   recordId,
   field,
+  ariaLabel,
   value,
   chipValueOf,
   editType,
@@ -587,7 +590,7 @@ function CellEditPortal({
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={handleKeyDown}
-              aria-label={`${field} 편집`}
+              aria-label={ariaLabel ?? `${field} 편집`}
               className={cn(
                 'w-full bg-transparent text-[13px] font-medium tabular-nums tracking-tight text-foreground outline-none placeholder:text-muted-foreground',
                 isFloatingEditor ? 'h-8 px-2' : 'h-full px-2.5',

@@ -1,5 +1,5 @@
 /**
- * MCP 연결 키 카드 — 발급/폐기/복사 + Claude Desktop 연결 가이드.
+ * 개인 MCP 연결 키 패널 — 발급/폐기/복사 + Claude Desktop 연결 가이드.
  * 엔드포인트는 API base URL(VITE_API_BASE_URL) 기준으로 계산한다 (운영 환경 대응).
  */
 import { useState } from 'react';
@@ -10,13 +10,6 @@ import { useTranslation } from 'react-i18next';
 import { api } from '@/lib/api';
 import { ConfirmDialog } from '@/components/domain';
 import { Button } from '@/components/ui/button';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 
 /**
@@ -32,7 +25,7 @@ function resolveMcpEndpoint(): string {
   return `${origin}/mcp`;
 }
 
-export function McpApiKeyCard({ canEdit }: { canEdit: boolean }) {
+export function McpApiKeyCard() {
   const { t } = useTranslation('settings');
   const qc = useQueryClient();
   const [freshKey, setFreshKey] = useState<string | null>(null);
@@ -100,15 +93,19 @@ export function McpApiKeyCard({ canEdit }: { canEdit: boolean }) {
     : null;
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
+    <section className="overflow-hidden rounded-lg border border-border/80 bg-card shadow-[0_1px_2px_rgba(55,53,47,0.035)]">
+      <div className="flex items-start gap-3 border-b border-border/70 px-5 py-4">
+        <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md bg-neutral-soft">
           <KeyRound className="size-4" />
-          {t('sections.mcp')}
-        </CardTitle>
-        <CardDescription>{t('sections.mcpDescription')}</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
+        </div>
+        <div>
+          <h3 className="text-[13px] font-semibold">{t('sections.mcp')}</h3>
+          <p className="mt-1 text-xs leading-5 text-muted-foreground">
+            {t('sections.mcpDescription')}
+          </p>
+        </div>
+      </div>
+      <div className="space-y-4 p-5">
         {isLoading ? (
           <Skeleton className="h-9 w-full" />
         ) : isError ? (
@@ -172,42 +169,34 @@ export function McpApiKeyCard({ canEdit }: { canEdit: boolean }) {
                 {status.prefix}···
               </code>
             </div>
-            {canEdit && (
-              <Button
-                size="sm"
-                variant="outline"
-                className="gap-1 text-destructive"
-                onClick={() => setRevokeOpen(true)}
-                disabled={revokeMutation.isPending}
-              >
-                <Trash2 className="size-3.5" />
-                {revokeMutation.isPending ? t('mcp.revoking') : t('mcp.revoke')}
-              </Button>
-            )}
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-1 text-destructive"
+              onClick={() => setRevokeOpen(true)}
+              disabled={revokeMutation.isPending}
+            >
+              <Trash2 className="size-3.5" />
+              {revokeMutation.isPending ? t('mcp.revoking') : t('mcp.revoke')}
+            </Button>
           </div>
         ) : (
           <div className="flex flex-wrap items-center justify-between gap-3">
             <p className="text-[13px] text-muted-foreground">{t('mcp.empty')}</p>
-            {canEdit ? (
-              <Button
-                size="sm"
-                onClick={() => generateMutation.mutate()}
-                disabled={generateMutation.isPending}
-                className="gap-1"
-              >
-                <KeyRound className="size-3.5" />
-                {generateMutation.isPending
-                  ? t('mcp.generating')
-                  : t('mcp.generate')}
-              </Button>
-            ) : (
-              <p className="text-[12px] text-muted-foreground">
-                {t('mcp.ownerOnly')}
-              </p>
-            )}
+            <Button
+              size="sm"
+              onClick={() => generateMutation.mutate()}
+              disabled={generateMutation.isPending}
+              className="gap-1"
+            >
+              <KeyRound className="size-3.5" />
+              {generateMutation.isPending
+                ? t('mcp.generating')
+                : t('mcp.generate')}
+            </Button>
           </div>
         )}
-      </CardContent>
+      </div>
 
       <ConfirmDialog
         open={revokeOpen}
@@ -219,6 +208,6 @@ export function McpApiKeyCard({ canEdit }: { canEdit: boolean }) {
         loading={revokeMutation.isPending}
         onConfirm={() => revokeMutation.mutate()}
       />
-    </Card>
+    </section>
   );
 }

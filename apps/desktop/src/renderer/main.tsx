@@ -9,6 +9,7 @@ import {
 } from '@tanstack/react-router';
 import { routeTree } from './routeTree.gen';
 import './i18n';
+import { getRendererSurface } from './features/tabs/native/rendererSurface';
 
 const router = createRouter({
   routeTree,
@@ -51,22 +52,29 @@ declare module '@tanstack/react-router' {
   }
 }
 
+const routerRoot = <RouterProvider router={router} />;
+const surface = getRendererSurface();
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <ClerkProvider
-      publishableKey={import.meta.env.VITE_CLERK_PUBLISHABLE_KEY}
-      localization={localization}
-      routerPush={(to) =>
-        router.navigate({ to: normalizeClerkNavigationTarget(to) })
-      }
-      routerReplace={(to) =>
-        router.navigate({
-          to: normalizeClerkNavigationTarget(to),
-          replace: true,
-        })
-      }
-    >
-      <RouterProvider router={router} />
-    </ClerkProvider>
+    {surface.kind === 'native-tab' ? (
+      routerRoot
+    ) : (
+      <ClerkProvider
+        publishableKey={import.meta.env.VITE_CLERK_PUBLISHABLE_KEY}
+        localization={localization}
+        routerPush={(to) =>
+          router.navigate({ to: normalizeClerkNavigationTarget(to) })
+        }
+        routerReplace={(to) =>
+          router.navigate({
+            to: normalizeClerkNavigationTarget(to),
+            replace: true,
+          })
+        }
+      >
+        {routerRoot}
+      </ClerkProvider>
+    )}
   </StrictMode>,
 );

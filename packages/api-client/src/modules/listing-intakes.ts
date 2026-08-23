@@ -32,6 +32,11 @@ export interface ListingIntakeListing {
   updatedAt: string;
   /** 이 거래 옵션의 비취소 Deal — 있으면 "거래중/종료" */
   deals?: Array<{ id: string; stage: string; stageChangedAt: string | null }>;
+  /** 매물관리 목록에 필요한 현재 게재 중 광고. */
+  activeAdvertisements?: ListingAdvertisement[];
+  /** status=active 조건으로 서버가 계산한 현재 광고 수. */
+  activeAdvertisementCount?: number;
+  /** 상세 응답의 전체 광고 게재 이력. 목록 응답에는 포함하지 않는다. */
   advertisements?: ListingAdvertisement[];
   priceHistories?: ListingPriceHistory[];
   /** 목록의 매칭 칩에 표시할 연결 매칭 수 */
@@ -86,6 +91,7 @@ export type ListingIntakeSortField =
   | 'site'
   | 'dong'
   | 'unit'
+  | 'supplyArea'
   | 'unitType'
   | 'exclusiveArea'
   | 'matching'
@@ -120,6 +126,14 @@ export interface ListingIntakesFilter {
   areaMin?: number;
   /** 공급면적 상한 (m²) */
   areaMax?: number;
+  /** Unit override를 우선 적용한 유효 방 수 exact */
+  roomCount?: number;
+  /** 유효 방 수 하한 (예: 4개 이상) */
+  roomCountMin?: number;
+  /** Unit override를 우선 적용한 유효 욕실 수 exact */
+  bathRoomCount?: number;
+  /** 유효 욕실 수 하한 (예: 3개 이상) */
+  bathRoomCountMin?: number;
   hasAdvertisement?: boolean;
   isJointBrokerage?: boolean;
   provinceCode?: string;
@@ -201,6 +215,7 @@ export interface UpdateListingIntakeDto {
 
 export interface ConfirmListingIntakeDto {
   result: ListingIntakeConfirmResult;
+  closedReason?: IntakeClosedReason | null;
   channel?: ListingIntakeConfirmChannel | string;
   memo?: string | null;
   checkedAt?: string | null;
@@ -249,13 +264,19 @@ export function createListingIntakesApi(request: RequestFn) {
 
     closeWithActiveDeals: (
       id: string,
-      options?: { expectedUpdatedAt?: string | null },
+      options?: {
+        closedReason?: IntakeClosedReason;
+        expectedUpdatedAt?: string | null;
+      },
     ) =>
       request<ListingIntake>(
         `/listing-intakes/${id}/close-with-active-deals`,
         {
           method: 'PATCH',
-          body: { expectedUpdatedAt: options?.expectedUpdatedAt },
+          body: {
+            closedReason: options?.closedReason,
+            expectedUpdatedAt: options?.expectedUpdatedAt,
+          },
         },
       ),
 

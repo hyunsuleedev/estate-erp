@@ -25,12 +25,16 @@ export interface ListingAdvertisement {
   advertisedDeposit: number | null;
   advertisedMonthlyRent: number | null;
   startedAt: string | null;
+  firstSeenAt: string;
+  lastSeenAt: string;
   endedAt: string | null;
   url: string | null;
   memo: string | null;
   externalAdId: string | null;
   naverArticleNo: string | null;
   naverUrl: string | null;
+  providerStatus: string | null;
+  providerStatusObservedAt: string | null;
   lastCheckedAt: string | null;
   lastSyncedAt: string | null;
   createdAt: string;
@@ -108,6 +112,11 @@ export interface Listing {
   intake?: ListingIntakeSummary;
   /** 이 거래 옵션의 비취소 Deal — 있으면 "거래중/종료" */
   deals?: ListingOccupyingDeal[];
+  /** 매물관리 목록에 필요한 현재 게재 중 광고. */
+  activeAdvertisements?: ListingAdvertisement[];
+  /** status=active 조건으로 서버가 계산한 현재 광고 수. */
+  activeAdvertisementCount?: number;
+  /** 상세 응답의 전체 광고 게재 이력. 목록 응답에는 포함하지 않는다. */
   advertisements?: ListingAdvertisement[];
   priceHistories?: ListingPriceHistory[];
   /** findAll include — 매물 목록 매칭 칩 카운트 */

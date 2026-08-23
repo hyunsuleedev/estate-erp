@@ -3,6 +3,8 @@ import { BuyerRequirementsService } from "./buyer-requirements.service";
 const OFFICE_ID = "00000000-0000-4000-8000-000000000001";
 const INTAKE_ID = "00000000-0000-4000-8000-000000000002";
 const CONTACT_ID = "00000000-0000-4000-8000-000000000003";
+const NEW_INTAKE_ID = "00000000-0000-4000-8000-000000000004";
+const CASE_ID = "00000000-0000-4000-8000-000000000005";
 
 describe("BuyerRequirementsService", () => {
   it("구버전 contactId 등록도 열린 Intake를 재사용하고 다음 우선순위를 부여한다", async () => {
@@ -97,6 +99,135 @@ describe("BuyerRequirementsService", () => {
       buyerIntakeId: INTAKE_ID,
       contactId: CONTACT_ID,
       contact: { id: CONTACT_ID, name: "김구매", phone: null },
+    });
+  });
+
+  it("새 구함 의뢰 등록은 기존 열린 Intake와 분리해 첫 조건을 만든다", async () => {
+    const participant = {
+      id: "participant-1",
+      officeId: OFFICE_ID,
+      buyerIntakeId: NEW_INTAKE_ID,
+      contactId: CONTACT_ID,
+      role: "buyer",
+      isPrimary: true,
+      createdAt: new Date("2026-08-20T10:00:00.000Z"),
+      updatedAt: new Date("2026-08-20T10:00:00.000Z"),
+      contact: {
+        id: CONTACT_ID,
+        name: "신규의뢰",
+        phones: [],
+      },
+    };
+    const newIntake = {
+      id: NEW_INTAKE_ID,
+      officeId: OFFICE_ID,
+      brokerageCaseId: CASE_ID,
+      casePriorityRank: 2,
+      lifecycleStatus: "open",
+      receivedAt: new Date("2026-08-20T10:00:00.000Z"),
+      memo: null,
+      createdAt: new Date("2026-08-20T10:00:00.000Z"),
+      updatedAt: new Date("2026-08-20T10:00:00.000Z"),
+      contacts: [{ ...participant, contact: undefined }],
+    };
+    const created = {
+      id: "requirement-new",
+      officeId: OFFICE_ID,
+      buyerIntakeId: NEW_INTAKE_ID,
+      priorityRank: 1,
+      status: "active",
+      urgency: "normal",
+      transactionType: "sale",
+      siteTypes: [],
+      priceMin: null,
+      priceMax: null,
+      depositMin: null,
+      depositMax: null,
+      monthlyRentMin: null,
+      monthlyRentMax: null,
+      areaMin: null,
+      areaMax: null,
+      moveInDate: null,
+      assignedToId: null,
+      lastContactDate: null,
+      nextContactDate: null,
+      memo: null,
+      createdAt: new Date("2026-08-20T10:00:00.000Z"),
+      updatedAt: new Date("2026-08-20T10:00:00.000Z"),
+      buyerIntake: { ...newIntake, contacts: [participant] },
+      preferredSites: [],
+      preferredRegions: [],
+    };
+    const tx = {
+      contact: { findFirst: jest.fn().mockResolvedValue({ id: CONTACT_ID }) },
+      brokerageCase: {
+        findMany: jest.fn().mockResolvedValue([
+          { id: CASE_ID, participants: [{ contactId: CONTACT_ID }] },
+        ]),
+        create: jest.fn(),
+        update: jest.fn().mockResolvedValue({}),
+      },
+      brokerageCaseParticipant: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            id: "case-participant-1",
+            contactId: CONTACT_ID,
+            roles: ["buyer"],
+            isPrincipal: true,
+            isCommunicationPrimary: true,
+          },
+        ]),
+        create: jest.fn(),
+        update: jest.fn().mockResolvedValue({}),
+      },
+      buyerIntake: {
+        findFirst: jest.fn(),
+        aggregate: jest.fn().mockResolvedValue({
+          _max: { casePriorityRank: 1 },
+        }),
+        create: jest.fn().mockResolvedValue(newIntake),
+      },
+      buyerRequirement: {
+        findFirst: jest.fn().mockResolvedValue(null),
+        create: jest.fn().mockResolvedValue(created),
+      },
+      $executeRaw: jest.fn().mockResolvedValue(0),
+    };
+    const prisma = {
+      $transaction: jest.fn((callback: (client: typeof tx) => unknown) =>
+        callback(tx),
+      ),
+    };
+    const service = new BuyerRequirementsService(prisma as never);
+
+    const result = await service.create(OFFICE_ID, {
+      contactId: CONTACT_ID,
+      createNewIntake: true,
+      transactionType: "sale",
+      siteTypes: [],
+    });
+
+    expect(tx.buyerIntake.findFirst).not.toHaveBeenCalled();
+    expect(tx.buyerIntake.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          brokerageCaseId: CASE_ID,
+          casePriorityRank: 2,
+        }),
+      }),
+    );
+    expect(tx.buyerRequirement.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          buyerIntakeId: NEW_INTAKE_ID,
+          priorityRank: 1,
+        }),
+      }),
+    );
+    expect(result).toMatchObject({
+      buyerIntakeId: NEW_INTAKE_ID,
+      priorityRank: 1,
+      contactId: CONTACT_ID,
     });
   });
 

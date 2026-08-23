@@ -9,6 +9,7 @@ import {
   customerLedgerFilterDefinitions,
   customerLedgerFiltersToApiParams,
   customerLedgerSortDefinitions,
+  getNextCustomerLedgerSort,
 } from "../src/renderer/routes/_authenticated/customers/-customer-list-filters.ts";
 import {
   getNextLedgerCursor,
@@ -20,8 +21,16 @@ const customerRouteDir = resolve(
   testDir,
   "../src/renderer/routes/_authenticated/customers",
 );
+const customerTableRouteDir = resolve(
+  testDir,
+  "../src/renderer/routes/_authenticated/customers-table",
+);
 const customerPageSource = readFileSync(
-  resolve(customerRouteDir, "index.tsx"),
+  resolve(customerTableRouteDir, "index.tsx"),
+  "utf8",
+);
+const customerCaseActionMenuSource = readFileSync(
+  resolve(customerRouteDir, "-customer-case-action-menu.tsx"),
   "utf8",
 );
 const customerLedgerStyles = readFileSync(
@@ -57,6 +66,17 @@ function ledgerPage(
 }
 
 describe("desktop customer ledger", () => {
+  it("keeps the legacy table ledger on the customers-table route", () => {
+    assert.match(
+      customerPageSource,
+      /createFileRoute\("\/_authenticated\/customers-table\/"\)/,
+    );
+    assert.match(
+      customerPageSource,
+      /<Link to="\/customers" aria-label="고객 중심 새 보기 열기">/,
+    );
+  });
+
   it("sorts and labels the ledger by the case registration date", () => {
     assert.deepEqual(customerLedgerSortDefinitions.at(-1), {
       field: "createdAt",
@@ -64,7 +84,7 @@ describe("desktop customer ledger", () => {
     });
     assert.match(
       customerPageSource,
-      /useState<BrokerageCaseLedgerSortField>\("createdAt"\)/,
+      /useState<BrokerageCaseLedgerSortField \| null>\("createdAt"\)/,
     );
     assert.match(customerPageSource, /label="등록일"[\s\S]*?field="createdAt"/);
     assert.match(
@@ -72,6 +92,20 @@ describe("desktop customer ledger", () => {
       /formatDateShortYear\(brokerageCase\.createdAt\)/,
     );
     assert.doesNotMatch(customerPageSource, /최근 갱신/);
+  });
+
+  it("clears a sortable customer-ledger header on its third state", () => {
+    const first = getNextCustomerLedgerSort(
+      { sortBy: null, sortOrder: "desc" },
+      "budgetMin",
+    );
+    const second = getNextCustomerLedgerSort(first, "budgetMin");
+    const third = getNextCustomerLedgerSort(second, "budgetMin");
+
+    assert.deepEqual(first, { sortBy: "budgetMin", sortOrder: "desc" });
+    assert.deepEqual(second, { sortBy: "budgetMin", sortOrder: "asc" });
+    assert.deepEqual(third, { sortBy: null, sortOrder: "desc" });
+    assert.match(customerPageSource, /getNextCustomerLedgerSort/);
   });
 
   it("keeps the category column visible without offering intent-count sorting", () => {
@@ -88,6 +122,42 @@ describe("desktop customer ledger", () => {
     assert.doesNotMatch(customerPageSource, /field="intentCount"/);
   });
 
+  it("centers the listing category pill in stacked ledger rows", () => {
+    assert.match(
+      customerPageSource,
+      /<td className="ledger-stack-merged-cell">\s*<KindLabel kind="listing" \/>/,
+    );
+    assert.match(
+      customerLedgerStyles,
+      /td\.ledger-stack-merged-cell\s*\{[\s\S]*?text-align: center;/,
+    );
+    assert.doesNotMatch(customerPageSource, /ledger-stack-merged-left/);
+    assert.doesNotMatch(customerLedgerStyles, /ledger-stack-merged-left/);
+  });
+
+  it("uses compact squared category pills without decorative dots", () => {
+    assert.match(
+      customerPageSource,
+      /inline-flex whitespace-nowrap rounded-\[4px\] px-1\.5 py-0\.5 text-\[11px\] font-medium leading-5/,
+    );
+    assert.doesNotMatch(customerPageSource, /"size-1\.5 rounded-full"/);
+  });
+
+  it("centers transaction badges in demand and stacked listing cells", () => {
+    const transactionEditors = customerPageSource.match(
+      /field="transactionType"[\s\S]*?className="justify-center"[\s\S]*?<span data-ledger-cell-value className="justify-center">/g,
+    );
+    assert.equal(transactionEditors?.length, 2);
+  });
+
+  it("promotes customer phone numbers and keeps context links text-only", () => {
+    assert.match(
+      customerPageSource,
+      /text-\[12px\] font-medium leading-\[18px\] tabular-nums text-muted-foreground[\s\S]*?formatPhone\(primary\?\.contact\.phone\)/,
+    );
+    assert.doesNotMatch(customerPageSource, /<MapPin/);
+  });
+
   it("shows the persisted demand rank and reorders it through the dedicated API", () => {
     assert.match(
       customerPageSource,
@@ -102,8 +172,14 @@ describe("desktop customer ledger", () => {
       customerPageSource,
       /api\.buyerRequirements\.reorder\(\s*request\.id,\s*request\.priorityRank/,
     );
-    assert.match(customerPageSource, /구함 \{line\.priorityRank\} 상세 열기/);
-    assert.doesNotMatch(customerPageSource, /구함 \{index \+ 1\} 상세 열기/);
+    assert.match(
+      customerCaseActionMenuSource,
+      /구함 \{line\.priorityRank\} 상세 열기/,
+    );
+    assert.doesNotMatch(
+      customerCaseActionMenuSource,
+      /구함 \{index \+ 1\} 상세 열기/,
+    );
   });
 
   it("selects each brokerage case from the first table column", () => {
@@ -227,7 +303,11 @@ describe("desktop customer ledger", () => {
     );
     assert.match(
       customerLedgerStyles,
-      /col\.ledger-transaction-column\s*\{[\s\S]*?width: 60px;/,
+      /\.customer-ledger-table\s*\{[\s\S]*?--ledger-transaction-column-width: 60px;/,
+    );
+    assert.match(
+      customerLedgerStyles,
+      /col\.ledger-transaction-column\s*\{[\s\S]*?width: var\(--ledger-transaction-column-width\);/,
     );
     assert.match(
       customerLedgerStyles,
@@ -243,6 +323,18 @@ describe("desktop customer ledger", () => {
     assert.match(
       customerLedgerStyles,
       /\.customer-ledger-table thead \.ledger-sticky-action\s*\{[\s\S]*?background: #f5f4f1;[\s\S]*?box-shadow: 1px 0 0 0 #d9d9d6;/,
+    );
+    assert.match(
+      customerLedgerStyles,
+      /\.customer-ledger-table thead th\s*\{[\s\S]*?text-align: left;/,
+    );
+    assert.match(
+      customerLedgerStyles,
+      /\.ledger-sort-button\s*\{[\s\S]*?justify-content: flex-start;/,
+    );
+    assert.doesNotMatch(
+      customerLedgerStyles,
+      /thead th:nth-child\([^)]*\)[^{]*\{[^}]*text-align:/,
     );
     assert.match(customerPageSource, /function LedgerHeaderLabel/);
     assert.match(
@@ -296,19 +388,25 @@ describe("desktop customer ledger", () => {
     assert.doesNotMatch(customerPageSource, />\s*매물 데이터\s*</);
     assert.match(
       customerPageSource,
-      /aria-label=\{`\$\{line\.contextLabel\} 구함 상세 열기`\}/,
+      /aria-label=\{`\$\{placeLabel\} 구함 상세 열기`\}/,
     );
+    assert.match(customerPageSource, /function demandSiteLabel/);
+    assert.match(customerPageSource, /line\.preferredSites\.map/);
     assert.match(
       customerPageSource,
       /aria-label=\{`\$\{first\.contextLabel\} 매물 상세 열기`\}/,
     );
     assert.match(
       customerLedgerStyles,
-      /\.ledger-context-layout\s*\{[\s\S]*?grid-template-columns: minmax\(180px, 240px\) minmax\(0, 1fr\);/,
+      /\.ledger-context-layout\s*\{[\s\S]*?grid-template-columns:[\s\S]*?repeat\(2, minmax\(0, 1fr\)\)[\s\S]*?var\(--ledger-transaction-column-width\)[\s\S]*?repeat\(7, minmax\(0, 1fr\)\);/,
     );
     assert.match(
       customerLedgerStyles,
-      /\.ledger-context-memo\s*\{[\s\S]*?border-left:/,
+      /\.ledger-context-link\s*\{[\s\S]*?grid-column: 1 \/ span 5;/,
+    );
+    assert.match(
+      customerLedgerStyles,
+      /\.ledger-context-memo\s*\{[\s\S]*?grid-column: 6 \/ -1;[\s\S]*?border-left:/,
     );
   });
 
@@ -475,14 +573,17 @@ describe("desktop customer ledger", () => {
       customerPageSource,
       /className="ledger-sticky-action ledger-action-cell ledger-rowspan-top"/,
     );
-    assert.match(customerPageSource, /function CaseActionMenu/);
+    assert.match(customerPageSource, /<CustomerCaseActionMenu/);
     assert.match(
-      customerPageSource,
+      customerCaseActionMenuSource,
       /aria-label=\{`\$\{customerName\} 케이스 작업 메뉴`\}/,
     );
-    assert.match(customerPageSource, />고객 정보 열기</);
-    assert.match(customerPageSource, /구함 \{line\.priorityRank\} 상세 열기/);
-    assert.match(customerPageSource, /매물 \{index \+ 1\} 열기/);
+    assert.match(customerCaseActionMenuSource, />고객 정보 열기</);
+    assert.match(
+      customerCaseActionMenuSource,
+      /구함 \{line\.priorityRank\} 상세 열기/,
+    );
+    assert.match(customerCaseActionMenuSource, /매물 \{index \+ 1\} 열기/);
   });
 
   it("mirrors the buyer workbench filter hierarchy above the ledger", () => {

@@ -1,18 +1,24 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from '@tanstack/react-router';
 import {
   ArrowRight,
   CalendarClock,
+  Check,
   CheckCircle2,
+  ChevronsRight,
   CircleAlert,
   CircleOff,
   MoreVertical,
   Trash2,
 } from 'lucide-react';
-import type { CalendarEvent, Match } from '@estate-erp/api-client';
+import type { CalendarEvent, Match, MatchDealLink } from '@estate-erp/api-client';
 import { MatchStage, normalizeMatchStage } from '@estate-erp/shared';
 import {
   buyerProgressStages,
   getActiveDealLink,
+  getDealProgressNodeState,
+  getDealProgressStages,
+  getDealStageLabel,
   getDefaultViewingStartDate,
   getMatchStageBlockReason,
   getMatchStageLabel,
@@ -385,6 +391,14 @@ export function MatchProgressTrack({
   match: Match;
   actions: MatchRowActions;
 }) {
+  const isConverted =
+    normalizeMatchStage(match.stage) === MatchStage.DEAL_CREATED;
+  const activeDeal = getActiveDealLink(match);
+
+  if (isConverted && activeDeal) {
+    return <DealHandoffTrack match={match} deal={activeDeal} actions={actions} />;
+  }
+
   return (
     <div className="flex min-w-max items-center">
       {buyerProgressStages.map((stage, index) => (
@@ -396,6 +410,109 @@ export function MatchProgressTrack({
           actions={actions}
         />
       ))}
+    </div>
+  );
+}
+
+// ── 거래 전환 후: 매칭 요약 + 거래관리 파이프라인 이어달리기 ──────────────────
+// 매칭 단계는 "매칭 완료" 칩으로 접고, 연결 Deal의 단계를 읽기 전용으로 이어서
+// 보여준다. 거래 노드를 클릭하면 거래관리(/deals)로 이동해 실제 단계를 관리한다.
+
+function DealHandoffTrack({
+  match,
+  deal,
+  actions,
+}: {
+  match: Match;
+  deal: MatchDealLink;
+  actions: MatchRowActions;
+}) {
+  const navigate = useNavigate();
+  const dealStages = getDealProgressStages(deal.stage);
+
+  const goToDeal = () => {
+    navigate({ to: '/deals', search: { dealId: deal.id } });
+  };
+
+  return (
+    <div data-deal-handoff-track className="flex min-w-max items-center">
+      <Popover>
+        <PopoverTrigger asChild>
+          <button
+            type="button"
+            title="완료된 매칭 단계 펼쳐보기"
+            className="inline-flex cursor-pointer items-center gap-1 whitespace-nowrap rounded-md border border-success/30 bg-success-soft px-2.5 py-1 text-xs font-medium text-success transition-colors hover:bg-accent"
+            onClick={(event) => event.stopPropagation()}
+            onDoubleClick={(event) => event.stopPropagation()}
+          >
+            <Check className="size-3" />
+            매칭 완료
+          </button>
+        </PopoverTrigger>
+        <PopoverContent
+          align="start"
+          className="w-auto max-w-[min(90vw,640px)] p-3"
+          onClick={(event) => event.stopPropagation()}
+          onDoubleClick={(event) => event.stopPropagation()}
+        >
+          <p className="mb-2 text-xs font-medium text-muted-foreground">
+            완료된 매칭 단계
+          </p>
+          <div className="flex items-center overflow-x-auto">
+            {buyerProgressStages.map((stage, index) => (
+              <ProgressNode
+                key={stage}
+                match={match}
+                stage={stage}
+                isLast={index === buyerProgressStages.length - 1}
+                actions={actions}
+              />
+            ))}
+          </div>
+        </PopoverContent>
+      </Popover>
+
+      <ChevronsRight
+        aria-hidden="true"
+        className="mx-0.5 size-3.5 shrink-0 text-success/60"
+      />
+
+      {dealStages.map((stage, index) => {
+        const state = getDealProgressNodeState(deal.stage, stage);
+        return (
+          <div key={stage} className="flex items-center">
+            <button
+              type="button"
+              title="거래관리에서 진행 · 클릭하여 이동"
+              aria-label={`거래 ${getDealStageLabel(stage)} 단계 — 거래관리로 이동`}
+              className={cn(
+                'inline-flex cursor-pointer items-center gap-1 whitespace-nowrap rounded-md border px-2.5 py-1 text-xs font-medium transition-colors hover:bg-accent',
+                state === 'completed' &&
+                  'border-success/30 bg-success-soft text-success',
+                state === 'current' &&
+                  'border-info/40 bg-info-soft text-info ring-1 ring-info/30',
+                state === 'pending' &&
+                  'border-border bg-muted/40 text-muted-foreground',
+              )}
+              onClick={(event) => {
+                event.stopPropagation();
+                goToDeal();
+              }}
+              onDoubleClick={(event) => event.stopPropagation()}
+            >
+              {getDealStageLabel(stage)}
+            </button>
+            {index < dealStages.length - 1 && (
+              <div
+                className={cn(
+                  'h-px w-4',
+                  state === 'completed' ? 'bg-success/40' : 'bg-border',
+                )}
+              />
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }

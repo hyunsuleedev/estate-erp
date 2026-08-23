@@ -64,17 +64,7 @@ const dealInclude = {
 
 type DealWithRelations = Prisma.DealGetPayload<{ include: typeof dealInclude }>;
 
-/// 가계약금 수령(preContract) 이상 = 매물을 점유하는 배타 단계.
-/// 같은 Listing 에 이 단계의 활성(비취소) Deal 은 동시에 하나만 허용 (이중계약 방지).
-const EXCLUSIVE_STAGES: ReadonlySet<string> = new Set([
-  'preContract',
-  'contracted',
-  'settling',
-  'completed',
-  'closed',
-]);
-
-/// ListingIntake 생명주기를 closed로 확정하는 단계 (산하 매물 전부 종결 시).
+/// ListingIntake 생명주기를 closed로 확정하는 Deal 단계.
 const DONE_STAGES: ReadonlySet<string> = new Set(['completed', 'closed']);
 
 /// 본계약(contracted) 단계에서 Contract를 작성한다.
@@ -115,30 +105,23 @@ export class DealsService {
   }
 
   /**
-   * 의뢰 자동 closed의 근거("산하 매물 전부가 활성 종결 Deal 보유")가 무너졌으면
+   * 의뢰 자동 closed의 근거("이 의뢰의 미취소 종결 Deal 보유")가 무너졌으면
    * 의뢰를 open으로 되살린다. 종결 Deal 취소·단계 롤백 후 호출 —
    * 호출 시점에는 해당 변경이 이미 tx 에 반영돼 있어야 한다.
-   *
-   * 다중 Listing 의뢰에서 일부 옵션의 종결만 무산된 경우도 여기서 잡힌다
-   * (예: 매매+전세 모두 완료 → 의뢰 closed → 전세 취소 → 의뢰 재개).
    * 같은 Property에 새 non-closed 의뢰가 있으면 되살리지 않는다.
    */
   private async reopenAutoClosedIntakeIfBasisBroken(
     tx: Prisma.TransactionClient,
     intakeId: string,
   ) {
-    const listingsWithoutDoneDeal = await tx.listing.count({
+    const remainingDoneDeals = await tx.deal.count({
       where: {
-        intakeId,
-        deals: {
-          none: {
-            isCancelled: false,
-            stage: { in: [...DONE_STAGES] },
-          },
-        },
+        isCancelled: false,
+        stage: { in: [...DONE_STAGES] },
+        listing: { intakeId },
       },
     });
-    if (listingsWithoutDoneDeal === 0) return; // 여전히 전부 종결 — closed 유지
+    if (remainingDoneDeals > 0) return; // 여전히 종결 거래가 있음 — closed 유지
 
     const intakeRow = await tx.listingIntake.findFirst({
       where: { id: intakeId },
@@ -177,20 +160,9 @@ export class DealsService {
   }
 
   /**
-   * 매물 단위 트랜잭션 advisory lock. 같은 Listing 에 대한 배타 단계 진입/취소
-   * 트랜잭션을 직렬화해 check-then-write 경주를 막는다. 트랜잭션 종료 시 자동 해제.
-   */
-  private async lockListingForStageChange(
-    tx: Prisma.TransactionClient,
-    listingId: string,
-  ) {
-    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${listingId}::text, 0))`;
-  }
-
-  /**
-   * 하나의 의뢰에 속한 서로 다른 Listing의 Deal이 동시에 완료/취소될 수 있다.
-   * 의뢰 단위 판정과 쓰기를 직렬화해 둘 다 상대 트랜잭션의 이전 상태를 보고
-   * 자동 closed/reopen을 놓치는 경쟁을 막는다.
+   * 의뢰 단위 트랜잭션 advisory lock. Deal 생성·단계 전이·취소와
+   * 의뢰 생명주기 동기화를 직렬화해 같은 ListingIntake에 미취소
+   * Deal 두 건이 동시에 생기는 check-then-write 경주를 막는다.
    */
   private async lockIntakeForLifecycleSync(
     tx: Prisma.TransactionClient,
@@ -238,16 +210,33 @@ export class DealsService {
     },
   ) {
     this.assertValidTransactionType(dto.transactionType);
-    const { listingId, transactionType, siteType } = await this.resolveListing(
-      officeId,
-      dto,
-    );
+    const { listingId, intakeId, transactionType, siteType } =
+      await this.resolveListing(officeId, dto);
     // listing에서 유도된 값도 방어적으로 확인 (과거 데이터가 남아있는 경우 차단)
     this.assertValidTransactionType(transactionType);
 
     const ourSide = dto.ourSide ?? 'both';
 
     const deal = await this.prisma.$transaction(async (tx) => {
+      if (intakeId) {
+        await this.lockIntakeForLifecycleSync(tx, intakeId);
+        const conflicting = await tx.deal.findFirst({
+          where: {
+            officeId,
+            isCancelled: false,
+            stage: { in: [...OCCUPYING_DEAL_STAGES] },
+            listing: { intakeId },
+          },
+          select: { id: true, stage: true },
+        });
+        if (conflicting) {
+          throw new BadRequestException(
+            `이 의뢰에 이미 진행 중인 거래가 있습니다 (stage='${conflicting.stage}'). ` +
+              '기존 거래를 취소한 후 진행하세요.',
+          );
+        }
+      }
+
       if (dto.resumeListing && listingId) {
         const listingToResume = await tx.listing.findFirst({
           where: { id: listingId, officeId },
@@ -492,14 +481,12 @@ export class DealsService {
 
     const stageChanged = requestedStage !== existingStage;
 
-    // 배타 단계 진입 시 같은 매물의 다른 활성 Deal 이 이미 배타 단계면 거부.
-    // (이중계약 방지 — 계약 준비 단계의 병행은 허용)
-    // 검사는 트랜잭션 안에서 매물 단위 advisory lock 을 잡고 수행한다 —
-    // 동시 요청 두 건이 모두 검사를 통과하는 check-then-write 경주 방지.
-    const enteringExclusive =
+    // 같은 의뢰의 매매·전세·월세 Listing은 서로 대안이다.
+    // 단계를 바꾸는 동안에도 의뢰 전체에 미취소 Deal은 하나만 허용한다.
+    const shouldCheckIntakeDealUniqueness =
       stageChanged &&
-      EXCLUSIVE_STAGES.has(requestedStage) &&
-      !EXCLUSIVE_STAGES.has(existingStage);
+      !existing.isCancelled &&
+      Boolean(existing.listing?.intakeId);
 
     // contracted 진입 시 draft 수수료 청구를 pending 으로 확정하고
     // Contract.finalPaymentDate 가 있으면 dueDate 기본값으로 세팅.
@@ -523,20 +510,21 @@ export class DealsService {
       DONE_STAGES.has(existingStage);
 
     const deal = await this.prisma.$transaction(async (tx) => {
-      if (enteringExclusive && existing.listingId) {
-        await this.lockListingForStageChange(tx, existing.listingId);
+      if (shouldCheckIntakeDealUniqueness && existing.listing?.intakeId) {
+        await this.lockIntakeForLifecycleSync(tx, existing.listing.intakeId);
         const conflicting = await tx.deal.findFirst({
           where: {
-            listingId: existing.listingId,
+            officeId,
             id: { not: id },
             isCancelled: false,
-            stage: { in: [...EXCLUSIVE_STAGES] },
+            stage: { in: [...OCCUPYING_DEAL_STAGES] },
+            listing: { intakeId: existing.listing.intakeId },
           },
           select: { id: true, stage: true },
         });
         if (conflicting) {
           throw new BadRequestException(
-            `이 매물에 이미 진행 중인 거래가 있습니다 (stage='${conflicting.stage}'). ` +
+            `이 의뢰에 이미 진행 중인 거래가 있습니다 (stage='${conflicting.stage}'). ` +
               '기존 거래를 취소한 후 진행하세요.',
           );
         }
@@ -544,12 +532,10 @@ export class DealsService {
 
       if (
         (enteringDone || leavingDone) &&
-        existing.listing?.intakeId
+        existing.listing?.intakeId &&
+        !shouldCheckIntakeDealUniqueness
       ) {
-        await this.lockIntakeForLifecycleSync(
-          tx,
-          existing.listing.intakeId,
-        );
+        await this.lockIntakeForLifecycleSync(tx, existing.listing.intakeId);
       }
 
       if (enteringContracted) {
@@ -569,39 +555,23 @@ export class DealsService {
       }
 
       // ── 상태 동기화 — Deal 이 거래 사실의 source of truth ──
-      // "이 거래 옵션이 거래중/종료" 는 비취소 Deal 에서 파생하므로 (Listing 에
-      // 상태 컬럼 없음) 배타 단계 진입 시 쓸 것이 없다. 세안고 매매처럼 같은
-      // 의뢰의 다른 거래유형은 계속 진행 가능 — 의뢰 상태도 건드리지 않는다.
+      // "이 의뢰가 거래중/종료" 는 비취소 Deal 에서 파생하므로
+      // Listing/Intake에 별도의 거래 상태를 저장하지 않는다.
       //
-      // completed/closed 진입: 의뢰는 산하 매물이 전부 종결 Deal 을 가지면 done.
+      // completed/closed 진입: 해당 Deal이 성사된 거래이므로 의뢰 전체를 종료.
       if (enteringDone && existing.listing?.intakeId) {
-        const remaining = await tx.listing.count({
+        await tx.listingIntake.updateMany({
           where: {
-            intakeId: existing.listing.intakeId,
-            deals: {
-              none: {
-                isCancelled: false,
-                stage: { in: [...DONE_STAGES] },
-              },
-            },
-            // 지금 갱신 중인 Deal 의 stage 는 아직 커밋 전이므로 자신의 매물은 제외
-            id: { not: existing.listingId ?? undefined },
+            id: existing.listing.intakeId,
+            lifecycleStatus: { not: IntakeLifecycleStatus.CLOSED },
+          },
+          data: {
+            lifecycleStatus: IntakeLifecycleStatus.CLOSED,
+            lifecycleChangedAt: new Date(),
+            lifecycleChangedBy: 'system:deal',
+            closedReason: IntakeClosedReason.DEAL_COMPLETED,
           },
         });
-        if (remaining === 0) {
-          await tx.listingIntake.updateMany({
-            where: {
-              id: existing.listing.intakeId,
-              lifecycleStatus: { not: IntakeLifecycleStatus.CLOSED },
-            },
-            data: {
-              lifecycleStatus: IntakeLifecycleStatus.CLOSED,
-              lifecycleChangedAt: new Date(),
-              lifecycleChangedBy: 'system:deal',
-              closedReason: IntakeClosedReason.DEAL_COMPLETED,
-            },
-          });
-        }
       }
 
       const updated = await tx.deal.update({
@@ -903,6 +873,7 @@ export class DealsService {
     },
   ): Promise<{
     listingId: string | undefined;
+    intakeId: string | undefined;
     transactionType: string;
     /** Listing → Property → Site.type (법정 중개보수 물건유형 결정용) */
     siteType: string | null;
@@ -911,7 +882,7 @@ export class DealsService {
       id: true,
       transactionType: true,
       isPaused: true,
-      intake: { select: { lifecycleStatus: true } },
+      intake: { select: { id: true, lifecycleStatus: true } },
       property: { select: { site: { select: { type: true } } } },
     } satisfies Prisma.ListingSelect;
 
@@ -932,6 +903,7 @@ export class DealsService {
       }
       return {
         listingId: listing.id,
+        intakeId: listing.intake.id,
         transactionType: listing.transactionType,
         siteType: listing.property?.site?.type ?? null,
       };
@@ -954,6 +926,7 @@ export class DealsService {
       if (!listing) throw new NotFoundException('Available Listing not found');
       return {
         listingId: listing.id,
+        intakeId: listing.intake.id,
         transactionType: listing.transactionType,
         siteType: listing.property?.site?.type ?? null,
       };
@@ -967,6 +940,7 @@ export class DealsService {
 
     return {
       listingId: undefined,
+      intakeId: undefined,
       transactionType: dto.transactionType,
       siteType: null,
     };

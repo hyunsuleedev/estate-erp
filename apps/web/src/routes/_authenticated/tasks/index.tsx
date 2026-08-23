@@ -71,6 +71,7 @@ import {
   TaskSourceBadge,
   boardColumns,
   categoryConfig,
+  getPropertyLabel,
   isOverdue,
   priorityConfig,
   taskStatusLabel,
@@ -302,6 +303,8 @@ function TasksPage() {
             task.contact?.phone,
             task.property?.site?.name,
             task.property?.unit?.name,
+            task.property?.unit?.dong?.name,
+            task.property ? getPropertyLabel(task) : null,
             task.assignedTo?.name,
           ]
             .filter(Boolean)

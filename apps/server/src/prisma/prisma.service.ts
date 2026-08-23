@@ -13,6 +13,7 @@ const TENANT_SCOPED_MODELS = new Set([
   "ListingIntake",
   "Listing",
   "ListingAdvertisement",
+  "ListingAdvertisementPriceHistory",
   "ListingAdvertisementSnapshotSession",
   "ListingAdvertisementSnapshotItem",
   "PriceHistory",

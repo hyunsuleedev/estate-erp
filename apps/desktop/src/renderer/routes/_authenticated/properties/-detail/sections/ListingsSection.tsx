@@ -2,44 +2,50 @@ import { useEffect, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import type {
+  Listing,
   ListingAdvertisement,
-  PropertyListing,
 } from "@estate-erp/api-client";
 import { formatPrice } from "@estate-erp/shared";
 import {
   AlertTriangle,
+  Lock,
   Megaphone,
   Pencil,
   Plus,
+  Trash2,
   TrendingDown,
   TrendingUp,
 } from "lucide-react";
 import { api } from "@/lib/api";
+import {
+  getIntakeConfirmationState,
+  getListingAvailability,
+} from "@/lib/listing-status";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/domain";
 import { cn } from "@/lib/utils";
 import {
-  checkStatusColors,
-  checkStatusLabels,
   comparePropertyListing,
   formatDateShort,
   formatListingPrice,
-  transactionTypeColors,
   transactionTypeLabels,
 } from "../utils";
+import { getMoveInAvailability } from "../../-property-list-view-utils";
 import { MainSection, MainSectionEmpty } from "./MainSection";
 
 interface Props {
-  listings: PropertyListing[];
+  listings: Listing[];
   propertyId: string;
-  onEditPrice: (listing: PropertyListing) => void;
+  onEditListing: (listing: Listing) => void;
+  onDeleteListing: (listing: Listing) => void;
   onAddListing?: () => void;
 }
 
 export function ListingsSection({
   listings,
   propertyId,
-  onEditPrice,
+  onEditListing,
+  onDeleteListing,
   onAddListing,
 }: Props) {
   const sorted = listings.slice().sort(comparePropertyListing);
@@ -70,7 +76,8 @@ export function ListingsSection({
               key={listing.id}
               listing={listing}
               propertyId={propertyId}
-              onEditPrice={() => onEditPrice(listing)}
+              onEdit={() => onEditListing(listing)}
+              onDelete={() => onDeleteListing(listing)}
             />
           ))}
         </div>
@@ -82,45 +89,59 @@ export function ListingsSection({
 function ListingCard({
   listing,
   propertyId,
-  onEditPrice,
+  onEdit,
+  onDelete,
 }: {
-  listing: PropertyListing;
+  listing: Listing;
   propertyId: string;
-  onEditPrice: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
 }) {
   const priceChange = computePriceChange(listing.priceHistories ?? []);
   const ads = listing.advertisements ?? [];
+  const moveIn = getMoveInAvailability(listing);
 
   return (
-    <div className="rounded-lg border border-border bg-white px-3 py-2.5">
+    <article className="rounded-lg border border-border bg-white px-3 py-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-1.5">
-          <Badge
-            className={cn(
-              "border-0 text-[11px]",
-              transactionTypeColors[listing.transactionType],
-            )}
-          >
-            {transactionTypeLabels[listing.transactionType] ??
-              listing.transactionType}
-          </Badge>
-          <Badge
-            className={cn(
-              "border-0 text-[11px]",
-              checkStatusColors[listing.checkStatus],
-            )}
-          >
-            {checkStatusLabels[listing.checkStatus] ?? listing.checkStatus}
-          </Badge>
+          <StatusBadge
+            kind="transactionType"
+            status={listing.transactionType}
+            size="sm"
+          />
+          <StatusBadge
+            kind="listingAvailability"
+            status={getListingAvailability(listing)}
+            size="sm"
+          />
+          {listing.intake && (
+            <StatusBadge
+              kind="confirmationState"
+              status={getIntakeConfirmationState(listing.intake)}
+              size="sm"
+            />
+          )}
         </div>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-7 px-2 text-[11px] text-muted-foreground hover:text-foreground"
-          onClick={onEditPrice}
-        >
-          가격 수정
-        </Button>
+        <div className="flex items-center gap-0.5">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 px-2 text-[11px] text-muted-foreground hover:text-foreground"
+            onClick={onEdit}
+          >
+            수정
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className="size-7 text-muted-foreground hover:text-destructive"
+            aria-label={`${transactionTypeLabels[listing.transactionType] ?? listing.transactionType} 거래 조건 삭제`}
+            onClick={onDelete}
+          >
+            <Trash2 className="size-3.5" />
+          </Button>
+        </div>
       </div>
       <div className="mt-1 flex flex-wrap items-end justify-between gap-2">
         <div className="text-[22px] font-semibold leading-tight tracking-tight text-foreground">
@@ -134,8 +155,46 @@ function ListingCard({
           )}
         </div>
       </div>
+      <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 border-t border-border/60 pt-2 text-[11px] sm:grid-cols-4">
+        <ListingFact label="입주" value={moveIn.label} />
+        <ListingFact
+          label="관리비"
+          value={
+            listing.maintenanceFee != null
+              ? `${listing.maintenanceFee.toLocaleString()}만`
+              : "-"
+          }
+        />
+        <ListingFact
+          label="융자금"
+          value={
+            listing.loanAmount != null
+              ? formatPrice(listing.loanAmount)
+              : "-"
+          }
+        />
+        <ListingFact
+          label="매칭"
+          value={`${listing._count?.matches ?? 0}건`}
+        />
+      </dl>
       <ListingAdRow listing={listing} ads={ads} />
+      {listing.privateMemo && (
+        <div className="mt-2 flex items-start gap-1.5 rounded bg-amber-50/70 px-2 py-1.5 text-[11px] leading-5 text-amber-950">
+          <Lock className="mt-0.5 size-3 shrink-0 text-amber-700" />
+          <span className="whitespace-pre-wrap">{listing.privateMemo}</span>
+        </div>
+      )}
       <ListingMemo listing={listing} propertyId={propertyId} />
+    </article>
+  );
+}
+
+function ListingFact({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex min-w-0 items-baseline gap-1.5">
+      <dt className="shrink-0 text-muted-foreground">{label}</dt>
+      <dd className="truncate font-medium text-foreground">{value}</dd>
     </div>
   );
 }
@@ -144,7 +203,7 @@ function ListingMemo({
   listing,
   propertyId,
 }: {
-  listing: PropertyListing;
+  listing: Listing;
   propertyId: string;
 }) {
   const queryClient = useQueryClient();
@@ -196,7 +255,13 @@ function ListingMemo({
 
   if (editing) {
     return (
-      <div className="mt-2 space-y-1.5">
+      <div
+        className="mt-2 space-y-1.5"
+        data-native-tab-discard-blocker="true"
+        data-native-tab-dirty={
+          draft !== (listing.memo ?? "") ? "true" : undefined
+        }
+      >
         <div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
           의뢰 메모
         </div>
@@ -289,7 +354,7 @@ function ListingAdRow({
   listing,
   ads,
 }: {
-  listing: PropertyListing;
+  listing: Listing;
   ads: ListingAdvertisement[];
 }) {
   if (ads.length === 0) {
@@ -315,7 +380,7 @@ function AdChip({
   listing,
   ad,
 }: {
-  listing: PropertyListing;
+  listing: Listing;
   ad: ListingAdvertisement;
 }) {
   const meta = adStatusMeta[ad.status] ?? {
@@ -366,7 +431,7 @@ function AdChip({
  * 다른지 확인. 현재 CP 광고(active)에만 의미가 있고 종료 이력은 비교하지 않는다.
  */
 function isAdvertisedPriceStale(
-  listing: PropertyListing,
+  listing: Listing,
   ad: ListingAdvertisement,
 ): boolean {
   if (ad.status !== "active") return false;
@@ -395,7 +460,7 @@ function isAdvertisedPriceStale(
  * - 광고에 가격이 하나도 없으면 null
  */
 function formatAdPrice(
-  listing: PropertyListing,
+  listing: Listing,
   ad: ListingAdvertisement,
 ): string | null {
   if (listing.transactionType === "monthly") {

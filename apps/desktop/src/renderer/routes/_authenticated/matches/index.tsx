@@ -13,7 +13,6 @@ import type { Match } from '@estate-erp/api-client';
 import { MatchStage, normalizeMatchStage } from '@estate-erp/shared';
 import {
   buildViewingCalendarEventPayload,
-  getMatchKpis,
   getMatchStageBlockReason,
   getMatchStageGroups,
   getMatchStageLabel,
@@ -313,8 +312,6 @@ function MatchesPage() {
     });
   }, [deferredSearch, matches, stageFilters, transactionTypeFilter]);
 
-  const kpis = useMemo(() => getMatchKpis(matches), [matches]);
-
   const groupedBuyerMatches = useMemo<BuyerMatchGroupData[]>(() => {
     const grouped = new Map<string, BuyerMatchGroupData>();
 
@@ -414,20 +411,6 @@ function MatchesPage() {
       data-matches-page
       className="-m-4 flex min-h-0 min-w-0 flex-1 flex-col bg-background"
     >
-      <section
-        aria-label="매칭 요약"
-        className="flex shrink-0 flex-wrap items-center gap-y-2 border-b border-border bg-background px-4 py-2.5"
-      >
-        <MatchSummaryItem label="진행" value={kpis.active} />
-        <MatchSummaryItem label="임장" value={kpis.viewing} />
-        <MatchSummaryItem label="거래 전환" value={kpis.converted} />
-        <MatchSummaryItem label="종료" value={kpis.closed} />
-        <p className="ml-auto text-xs text-muted-foreground tabular-nums">
-          고객 {groupedBuyerMatches.length.toLocaleString()}명 · 전체{' '}
-          {matches.length.toLocaleString()}건
-        </p>
-      </section>
-
       <section
         aria-label="매칭 보기 및 필터"
         className="shrink-0 border-b border-border bg-background"
@@ -702,17 +685,6 @@ function MatchListStickyHeader({
           선택 해제
         </Button>
       )}
-    </div>
-  );
-}
-
-function MatchSummaryItem({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="flex items-baseline gap-2 border-r border-border/70 px-4 first:pl-0 last:border-r-0">
-      <span className="text-xs text-muted-foreground">{label}</span>
-      <strong className="text-sm font-semibold tabular-nums">
-        {value.toLocaleString()}
-      </strong>
     </div>
   );
 }

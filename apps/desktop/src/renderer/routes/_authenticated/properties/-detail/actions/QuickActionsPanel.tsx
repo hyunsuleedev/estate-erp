@@ -1,8 +1,8 @@
 import {
   CircleDollarSign,
+  Handshake,
   MessageSquare,
   Phone,
-  Share2,
   Users,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -14,14 +14,13 @@ interface Props {
   onCallOwner: () => void;
   onAddConsultation: () => void;
   onCreateMatch: () => void;
-  onEditPrice: () => void;
-  onShareNetwork: () => void;
+  onEditListing: () => void;
+  onCreateDeal: () => void;
 }
 
 interface ActionItem {
   icon: LucideIcon;
   label: string;
-  shortcut?: string;
   onClick: () => void;
   disabled?: boolean;
   tone?: 'default' | 'primary';
@@ -32,13 +31,13 @@ export function QuickActionsPanel({
   onCallOwner,
   onAddConsultation,
   onCreateMatch,
-  onEditPrice,
-  onShareNetwork,
+  onEditListing,
+  onCreateDeal,
 }: Props) {
   const actions: ActionItem[] = [
     {
       icon: Phone,
-      label: '소유자에 전화',
+      label: '소유주에게 전화',
       onClick: onCallOwner,
       disabled: !ownerPhone,
     },
@@ -46,29 +45,28 @@ export function QuickActionsPanel({
       icon: MessageSquare,
       label: '상담 기록 추가',
       onClick: onAddConsultation,
+      tone: 'primary',
     },
     {
       icon: Users,
       label: '매칭 생성',
       onClick: onCreateMatch,
-      tone: 'primary',
+    },
+    {
+      icon: Handshake,
+      label: '거래 생성',
+      onClick: onCreateDeal,
     },
     {
       icon: CircleDollarSign,
-      label: '가격 수정',
-      onClick: onEditPrice,
-    },
-    {
-      icon: Share2,
-      label: '공동중개망 공유',
-      onClick: onShareNetwork,
-      disabled: true,
+      label: '가격·조건 수정',
+      onClick: onEditListing,
     },
   ];
 
   return (
-    <SideCard title="빠른 액션">
-      <div className="-mx-1 flex flex-col">
+    <SideCard title="바로 하기">
+      <div className="-mx-1 flex flex-col gap-0.5">
         {actions.map((action) => (
           <button
             key={action.label}
@@ -76,11 +74,11 @@ export function QuickActionsPanel({
             onClick={action.onClick}
             disabled={action.disabled}
             className={cn(
-              'flex items-center gap-2 rounded px-2 py-1.5 text-left text-[12px] transition-colors',
+              'flex h-8 items-center gap-2 rounded px-2 text-left text-[12px] transition-colors',
               action.disabled
-                ? 'cursor-not-allowed text-muted-foreground/50'
+                ? 'cursor-not-allowed text-muted-foreground/45'
                 : action.tone === 'primary'
-                  ? 'text-foreground hover:bg-foreground hover:text-background'
+                  ? 'bg-foreground text-background hover:bg-foreground/90'
                   : 'text-foreground hover:bg-muted',
             )}
           >

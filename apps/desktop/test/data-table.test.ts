@@ -284,15 +284,21 @@ describe('desktop data table', () => {
       /data-property-workspace[\s\S]*?className="relative flex min-h-0 flex-1 overflow-hidden/,
     );
     assert.match(pageSource, /data-property-inspector/);
+    assert.match(pageSource, /data-property-inspector-backdrop/);
     assert.match(
       pageSource,
       /data-property-inspector[\s\S]*?className="absolute inset-y-0 right-0 z-50/,
     );
+    assert.match(
+      pageSource,
+      /data-property-inspector-backdrop[\s\S]*?bg-slate-950\/10[\s\S]*?onClick=\{closePropertyInspector\}/,
+      'the inspector backdrop should dim the page and close the inspector when clicked',
+    );
     assert.match(pageSource, /data-property-inspector-resize-handle/);
     assert.match(
       pageSource,
-      /<\/section>\s*\{selectedIntakeId && \(\s*<PropertyInspector/,
-      'the inspector should be a page-level sibling after the workspace so it covers both filter rows',
+      /<\/section>\s*\{selectedIntakeId && \(\s*<>[\s\S]*?<PropertyInspector/,
+      'the inspector and its backdrop should be page-level siblings after the workspace so they cover both filter rows',
     );
     assert.match(pageSource, /role="separator"/);
     assert.match(pageSource, /aria-label="상세 패널 너비 조절"/);
@@ -313,6 +319,10 @@ describe('desktop data table', () => {
     assert.match(
       cssSource,
       /\[data-property-inspector\][\s\S]*?animation: property-inspector-enter 180ms/,
+    );
+    assert.match(
+      cssSource,
+      /\[data-property-inspector-backdrop\][\s\S]*?animation: property-inspector-backdrop-enter 160ms/,
     );
     assert.match(
       cssSource,
@@ -549,10 +559,12 @@ describe('desktop data table', () => {
       /grid-cols-\[max-content_minmax\(0,1fr\)\][\s\S]*?<ActiveDealListingConnector/,
     );
     assert.match(connectorSource, /w-\[calc\(100%\+1rem\)\]/);
+    assert.match(connectorSource, /-left-1\.5/);
     assert.match(connectorSource, /const curveWidth = 28/);
+    assert.match(connectorSource, /const chipGap = 6/);
     assert.match(
       connectorSource,
-      /viewBox=\{`0 0 \$\{curveWidth\} \$\{height\}`\}/,
+      /viewBox=\{`0 0 \$\{curveWidth \+ chipGap\} \$\{height\}`\}/,
     );
     assert.match(connectorSource, /data-active-deal-connector-line/);
     assert.match(
@@ -596,7 +608,11 @@ describe('desktop data table', () => {
     assert.ok(supplyAreaColumnIndex < actionsColumnIndex);
     assert.match(
       source.slice(supplyAreaColumnIndex, actionsColumnIndex),
-      /label="공급"[\s\S]*?getSupplyAreaM2\(row\.original\.property\)[\s\S]*?tabular-nums/,
+      /label="공급"[\s\S]*?size: 72,[\s\S]*?getSupplyAreaM2\(row\.original\.property\),[\s\S]*?0,[\s\S]*?tabular-nums/,
+    );
+    assert.match(
+      source,
+      /function formatAreaPyeong\(value\?: number \| null, fractionDigits = 1\)[\s\S]*?toFixed\(fractionDigits\)/,
     );
     assert.match(
       source,
@@ -737,7 +753,12 @@ describe('desktop data table', () => {
 
     assert.match(pageSource, /const \[expandedAdRows, setExpandedAdRows\]/);
     assert.match(pageSource, /label="광고 현황"/);
-    assert.match(pageSource, /광고 노출 \{adRows\.length\}개/);
+    assert.match(pageSource, /listing\.activeAdvertisements/);
+    assert.match(pageSource, /listing\.activeAdvertisementCount/);
+    assert.match(
+      pageSource,
+      /광고 노출 \{activeAdvertisementCount\}개/,
+    );
     assert.match(pageSource, /renderExpandedRow=\{renderExpandedPropertyRow\}/);
     assert.equal(
       pageSource.match(/<ListingPanelToggle/g)?.length,
@@ -804,6 +825,7 @@ describe('desktop data table', () => {
     assert.match(pageSource, /buildViewingCalendarEventPayload/);
     assert.match(pageSource, /api\.matches\.updateStage/);
     assert.match(pageSource, /_count: listing\._count/);
+    assert.match(clientSource, /activeAdvertisementCount\?: number/);
     assert.match(clientSource, /_count\?: \{ matches: number \}/);
   });
 
@@ -961,5 +983,55 @@ describe('desktop data table', () => {
       apiClientSource,
       /request<ListingIntakesMapResponse>\('\/listing-intakes\/map'/,
     );
+  });
+
+  it('asks how to resolve an active Deal before closing its listing intake', () => {
+    const propertiesSource = readFileSync(
+      resolve(
+        testDir,
+        '../src/renderer/routes/_authenticated/properties/index.tsx',
+      ),
+      'utf8',
+    );
+    const dealsSource = readFileSync(
+      resolve(
+        testDir,
+        '../src/renderer/routes/_authenticated/deals/index.tsx',
+      ),
+      'utf8',
+    );
+    const intakeActionsSource = readFileSync(
+      resolve(
+        testDir,
+        '../src/renderer/routes/_authenticated/properties/-property-intake-actions.tsx',
+      ),
+      'utf8',
+    );
+
+    const manualReasonOptions = propertiesSource.slice(
+      propertiesSource.indexOf('const MANUAL_INTAKE_CLOSE_REASON_OPTIONS'),
+      propertiesSource.indexOf('type ManualIntakeCloseReason'),
+    );
+    const confirmReasonOptions = intakeActionsSource.slice(
+      intakeActionsSource.indexOf('const CONFIRM_CLOSED_REASON_OPTIONS'),
+      intakeActionsSource.indexOf('type ConfirmClosedReason'),
+    );
+
+    assert.match(propertiesSource, /진행 중인 거래가 있습니다/);
+    assert.match(propertiesSource, /거래 취소 후 종료/);
+    assert.match(propertiesSource, /거래 완료 처리/);
+    assert.match(propertiesSource, /다른 중개사·직거래로 계약됨/);
+    assert.doesNotMatch(manualReasonOptions, /IntakeClosedReason\.UNAVAILABLE/);
+    assert.doesNotMatch(manualReasonOptions, /IntakeClosedReason\.SUPERSEDED/);
+    assert.doesNotMatch(confirmReasonOptions, /IntakeClosedReason\.UNAVAILABLE/);
+    assert.match(manualReasonOptions, /IntakeClosedReason\.OTHER/);
+    assert.match(confirmReasonOptions, /IntakeClosedReason\.OTHER/);
+    assert.match(
+      propertiesSource,
+      /closedReason:\s*resolvedClosedReason|closedReason,/,
+    );
+    assert.match(propertiesSource, /`\/deals\?dealId=\$\{encodeURIComponent\(dealId\)\}`/);
+    assert.match(dealsSource, /dealId:\s*typeof search\.dealId/);
+    assert.match(dealsSource, /setSelectedDealId\(deepLinkDealId\)/);
   });
 });

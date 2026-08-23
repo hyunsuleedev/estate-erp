@@ -421,14 +421,6 @@ export function ConsultationContextLinkCard({ card }: { card: ConsultationContex
     );
   }
 
-  if (card.to === '/buyer-requirements') {
-    return (
-      <Link to="/buyer-requirements" className="block rounded-lg focus:outline-none focus:ring-2 focus:ring-ring">
-        {content}
-      </Link>
-    );
-  }
-
   return (
     <Link to="/properties" className="block rounded-lg focus:outline-none focus:ring-2 focus:ring-ring">
       {content}

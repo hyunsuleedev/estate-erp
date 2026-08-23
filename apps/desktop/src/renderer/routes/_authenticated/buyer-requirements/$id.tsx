@@ -261,7 +261,7 @@ function BuyerRequirementDetailPage() {
       toast.success("구매고객 조건이 삭제되었습니다.");
       setDeleteOpen(false);
       await queryClient.invalidateQueries({ queryKey: ["buyer-requirements"] });
-      navigate({ to: "/buyer-requirements" });
+      navigate({ to: "/customers" });
     },
     onError: () => toast.error("삭제에 실패했습니다."),
   });
@@ -324,7 +324,7 @@ function BuyerRequirementDetailPage() {
   return (
     <div className="pt-4">
       <PageHeader
-        backTo="/buyer-requirements"
+        backTo="/customers"
         showTitle
         title={r.contact?.name ? `${r.contact.name} 고객` : "구매고객 상세"}
         description={

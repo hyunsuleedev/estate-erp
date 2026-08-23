@@ -1,0 +1,1141 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>EstaitFlow · Desktop shell v1</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
+  <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js"></script>
+  <style>
+    :root {
+      color-scheme: light;
+      --paper: #f3f1eb;
+      --paper-2: #e7e4db;
+      --bg: #ffffff;
+      --ink: #2a2823;
+      --ink-2: #4d4a43;
+      --muted: #7a776e;
+      --faint: #a8a49a;
+      --line: #e3e0d7;
+      --line-strong: #cfcabe;
+      --focus: #2f6f9f;
+      --action: #2a2823;
+      --danger: #9a3f38;
+      --sale-fg: #8f3d38;
+      --sale-bg: #f6e6e4;
+      --jeonse-fg: #2d6a8a;
+      --jeonse-bg: #e3eef4;
+      --month-fg: #8a6418;
+      --month-bg: #f4ead0;
+      --live: #2f6b4f;
+      --deal: #2f6f9f;
+      --ended: #7a776e;
+      --seek: #2d6a8a;
+      --offer: #2f6b4f;
+    }
+
+    * { box-sizing: border-box; }
+    html, body {
+      height: 100%;
+      margin: 0;
+      background: var(--paper);
+      color: var(--ink);
+      font-family: "Pretendard Variable", Pretendard, "Apple SD Gothic Neo", sans-serif;
+      font-size: 13px;
+      -webkit-font-smoothing: antialiased;
+    }
+    button, input, select { font: inherit; color: inherit; }
+    button { cursor: pointer; }
+    button:active:not(:disabled) { transform: scale(0.97); }
+    [hidden] { display: none !important; }
+
+    .app {
+      display: grid;
+      grid-template-rows: 36px 32px minmax(0, 1fr);
+      height: 100vh;
+      min-width: 1180px;
+      overflow: hidden;
+    }
+
+    /* ── Titlebar ── */
+    .titlebar {
+      display: grid;
+      grid-template-columns: 212px 1fr auto;
+      align-items: center;
+      padding: 0 10px 0 12px;
+      background: var(--paper);
+      border-bottom: 1px solid transparent;
+    }
+    .traffic {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .dot { width: 10px; height: 10px; border-radius: 50%; }
+    .dot.r { background: #ed6a5e; }
+    .dot.y { background: #f4bf4f; }
+    .dot.g { background: #61c554; }
+    .brand {
+      margin-left: 12px;
+      font-size: 12.5px;
+      font-weight: 650;
+      letter-spacing: -0.03em;
+    }
+    .office {
+      justify-self: center;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      height: 24px;
+      padding: 0 10px;
+      border-radius: 6px;
+      color: var(--ink-2);
+      font-weight: 550;
+    }
+    .office:hover { background: rgba(42, 40, 35, 0.05); }
+    .office b { font-weight: 650; color: var(--ink); }
+    .office .sep { color: var(--faint); }
+    .title-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .cmd {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      height: 24px;
+      padding: 0 8px 0 10px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #fff;
+      color: var(--muted);
+      min-width: 168px;
+    }
+    .cmd kbd {
+      margin-left: auto;
+      padding: 1px 5px;
+      border-radius: 4px;
+      background: var(--paper);
+      font-size: 10px;
+      color: var(--faint);
+    }
+    .who {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      height: 24px;
+      padding: 0 6px 0 4px;
+      border: 0;
+      border-radius: 6px;
+      background: transparent;
+    }
+    .avatar {
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: #d8c4a8;
+      color: #5a4630;
+      display: grid;
+      place-items: center;
+      font-size: 9px;
+      font-weight: 700;
+    }
+
+    /* ── Tabs: flush, not boxed ── */
+    .tabs {
+      display: flex;
+      align-items: stretch;
+      gap: 2px;
+      padding: 0 8px 0 212px;
+      background: var(--paper);
+      border-bottom: 1px solid var(--line);
+    }
+    .tab {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      min-width: 108px;
+      max-width: 180px;
+      padding: 0 10px;
+      border: 0;
+      background: transparent;
+      color: var(--muted);
+    }
+    .tab svg { width: 13px; height: 13px; }
+    .tab:hover { color: var(--ink-2); }
+    .tab.active {
+      color: var(--ink);
+      font-weight: 600;
+    }
+    .tab.active::after {
+      content: "";
+      position: absolute;
+      left: 10px;
+      right: 10px;
+      bottom: -1px;
+      height: 2px;
+      background: var(--ink);
+    }
+    .tab .x {
+      width: 14px;
+      height: 14px;
+      margin-left: auto;
+      border: 0;
+      border-radius: 4px;
+      background: transparent;
+      color: var(--faint);
+      opacity: 0;
+    }
+    .tab:hover .x { opacity: 1; }
+    .tab .x:hover { background: rgba(42, 40, 35, 0.08); color: var(--ink); }
+    .tab-add {
+      width: 28px;
+      border: 0;
+      background: transparent;
+      color: var(--faint);
+    }
+    .tab-add:hover { color: var(--ink); }
+
+    /* ── Body ── */
+    .body {
+      display: grid;
+      grid-template-columns: 212px minmax(0, 1fr);
+      min-height: 0;
+      background: var(--bg);
+    }
+
+    .sidebar {
+      display: flex;
+      flex-direction: column;
+      padding: 10px 8px 12px;
+      background: var(--paper);
+      border-right: 1px solid var(--line);
+    }
+    .side-label {
+      margin: 12px 8px 4px;
+      color: var(--muted);
+      font-size: 10.5px;
+      font-weight: 650;
+      letter-spacing: 0.04em;
+    }
+    .side-label:first-child { margin-top: 2px; }
+    .nav {
+      display: flex;
+      width: 100%;
+      height: 30px;
+      align-items: center;
+      gap: 8px;
+      padding: 0 8px;
+      border: 0;
+      border-radius: 6px;
+      background: transparent;
+      color: var(--ink-2);
+      text-align: left;
+    }
+    .nav svg { width: 15px; height: 15px; color: var(--muted); }
+    .nav:hover { background: rgba(42, 40, 35, 0.045); }
+    .nav.active {
+      background: #e4e1d7;
+      color: var(--ink);
+      font-weight: 650;
+    }
+    .nav.active svg { color: var(--ink); }
+    .nav.ghost { color: var(--muted); }
+
+    .main {
+      display: flex;
+      min-width: 0;
+      min-height: 0;
+      flex-direction: column;
+      background: var(--bg);
+    }
+    .page { display: none; min-height: 0; flex: 1; flex-direction: column; }
+    .page.on { display: flex; }
+
+    .note {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-height: 32px;
+      padding: 0 16px;
+      border-bottom: 1px solid var(--line);
+      background: #faf8f3;
+      color: var(--ink-2);
+      font-size: 12px;
+    }
+    .note b { font-weight: 650; color: var(--ink); }
+
+    /* ── Shared list chrome ── */
+    .workhead {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 44px;
+      padding: 8px 16px 6px;
+    }
+    .seg {
+      display: inline-flex;
+      padding: 2px;
+      border-radius: 7px;
+      background: var(--paper);
+    }
+    .seg button {
+      height: 26px;
+      padding: 0 10px;
+      border: 0;
+      border-radius: 5px;
+      background: transparent;
+      color: var(--muted);
+    }
+    .seg button.on {
+      background: #fff;
+      color: var(--ink);
+      font-weight: 650;
+      box-shadow: 0 0 0 1px var(--line);
+    }
+    .cluster {
+      display: inline-flex;
+      align-items: center;
+      height: 30px;
+      padding: 0 2px 0 8px;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      background: #fff;
+    }
+    .cluster input {
+      width: 72px;
+      height: 26px;
+      border: 0;
+      outline: 0;
+      background: transparent;
+    }
+    .cluster input.wide { width: 168px; }
+    .cluster .div {
+      width: 1px;
+      height: 14px;
+      background: var(--line);
+    }
+    .search {
+      position: relative;
+      width: 220px;
+    }
+    .search svg {
+      position: absolute;
+      top: 50%;
+      left: 9px;
+      width: 13px;
+      height: 13px;
+      transform: translateY(-50%);
+      color: var(--faint);
+    }
+    .search input {
+      width: 100%;
+      height: 30px;
+      padding: 0 10px 0 28px;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      outline: 0;
+      background: #fff;
+    }
+    .search input:focus,
+    .cluster:focus-within { border-color: var(--focus); }
+    .grow { margin-left: auto; }
+    .primary {
+      height: 30px;
+      padding: 0 12px;
+      border: 0;
+      border-radius: 7px;
+      background: var(--action);
+      color: #fff;
+      font-weight: 600;
+    }
+    .ghost {
+      height: 30px;
+      padding: 0 9px;
+      border: 0;
+      border-radius: 7px;
+      background: transparent;
+      color: var(--ink-2);
+    }
+    .ghost:hover { background: var(--paper); }
+
+    .filters {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 0 16px 10px;
+    }
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      height: 26px;
+      padding: 0 8px;
+      border: 0;
+      border-radius: 6px;
+      background: transparent;
+      color: var(--muted);
+    }
+    .chip:hover { background: var(--paper); color: var(--ink-2); }
+    .chip.on {
+      background: var(--paper);
+      color: var(--ink);
+      font-weight: 600;
+    }
+    .chip .v { color: var(--ink); font-weight: 650; }
+    .chip .clear {
+      width: 14px;
+      height: 14px;
+      border: 0;
+      border-radius: 4px;
+      background: transparent;
+      color: var(--faint);
+    }
+
+    .sheet {
+      min-height: 0;
+      flex: 1;
+      overflow: auto;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    .sheet table { table-layout: fixed; }
+    .props th:nth-child(1), .props td:nth-child(1),
+    .cust th:nth-child(1), .cust td:nth-child(1),
+    .props th:last-child, .props td:last-child,
+    .cust th:last-child, .cust td:last-child { width: 36px; }
+    .props th:nth-child(2), .props td:nth-child(2) { width: 72px; }
+    .props th:nth-child(3), .props td:nth-child(3) { width: 22%; }
+    .props th:nth-child(6), .props td:nth-child(6) { width: 18%; }
+    .cust th:nth-child(2), .cust td:nth-child(2) { width: 18%; }
+    .cust th:nth-child(5), .cust td:nth-child(5) { width: 16%; }
+    th {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      padding: 7px 10px;
+      border-bottom: 1px solid var(--line);
+      background: #fff;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 600;
+      text-align: left;
+      white-space: nowrap;
+    }
+    td {
+      padding: 8px 10px;
+      border-bottom: 1px solid #f0eee8;
+      vertical-align: middle;
+      white-space: nowrap;
+    }
+    tr:hover td { background: #faf9f6; }
+    .num {
+      font-variant-numeric: tabular-nums;
+      font-feature-settings: "tnum";
+    }
+    .price {
+      color: var(--ink);
+      font-size: 13.5px;
+      font-weight: 650;
+      letter-spacing: -0.02em;
+      font-variant-numeric: tabular-nums;
+    }
+    .sub { color: var(--muted); font-size: 11.5px; }
+    .muted { color: var(--muted); }
+    .dash { color: var(--faint); }
+
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      height: 18px;
+      padding: 0 6px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 650;
+    }
+    .tag.sale { background: var(--sale-bg); color: var(--sale-fg); }
+    .tag.jeonse { background: var(--jeonse-bg); color: var(--jeonse-fg); }
+    .tag.month { background: var(--month-bg); color: var(--month-fg); }
+    .tag.seek { background: var(--jeonse-bg); color: var(--seek); }
+    .tag.offer { background: #e5f0ea; color: var(--offer); }
+
+    .st {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+    }
+    .st i {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--ended);
+    }
+    .st.live i { background: var(--live); }
+    .st.deal i { background: var(--deal); }
+    .st.warn i { background: #c48a1a; }
+
+    .addr { display: flex; flex-direction: column; gap: 1px; }
+    .addr strong { font-weight: 650; }
+    .more {
+      width: 24px;
+      height: 24px;
+      border: 0;
+      border-radius: 6px;
+      background: transparent;
+      color: var(--faint);
+      opacity: 0;
+    }
+    tr:hover .more { opacity: 1; }
+    .more:hover { background: var(--paper); color: var(--ink); }
+
+    .split td { background: #fcfbf8; }
+    .split-mark {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      padding-left: 6px;
+      border-left: 2px solid #b7c9d6;
+    }
+
+    /* ── Dashboard ── */
+    .dash {
+      display: flex;
+      min-height: 0;
+      flex: 1;
+      flex-direction: column;
+      padding: 18px 22px 20px;
+      gap: 16px;
+    }
+    .dash-top {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+    }
+    .dash-top h1 {
+      margin: 0;
+      font-size: 16px;
+      font-weight: 650;
+      letter-spacing: -0.03em;
+    }
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .metric {
+      padding: 12px 14px 11px;
+      border-right: 1px solid var(--line);
+    }
+    .metric:last-child { border-right: 0; }
+    .metric .k { color: var(--muted); font-size: 11px; font-weight: 600; }
+    .metric .n {
+      margin-top: 4px;
+      font-size: 22px;
+      font-weight: 650;
+      letter-spacing: -0.04em;
+      font-variant-numeric: tabular-nums;
+    }
+    .metric .n em {
+      font-style: normal;
+      font-size: 13px;
+      font-weight: 550;
+      color: var(--muted);
+    }
+    .metric.hot .n { color: var(--danger); }
+    .board {
+      display: grid;
+      grid-template-columns: 1.15fr 1fr;
+      gap: 28px;
+      min-height: 0;
+      flex: 1;
+    }
+    .col h2 {
+      margin: 0 0 8px;
+      font-size: 12px;
+      font-weight: 650;
+    }
+    .row {
+      display: grid;
+      grid-template-columns: 16px minmax(0, 1fr) 64px 56px;
+      align-items: center;
+      gap: 8px;
+      height: 34px;
+      border-bottom: 1px solid #f0eee8;
+    }
+    .row.cal { grid-template-columns: 44px 3px minmax(0, 1fr) 48px; }
+    .row .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .row .who, .row .when { color: var(--muted); font-size: 11.5px; text-align: right; }
+    .row .when.late { color: var(--danger); font-weight: 650; }
+    .box {
+      width: 14px;
+      height: 14px;
+      border: 1.5px solid var(--line-strong);
+      border-radius: 3px;
+      background: #fff;
+    }
+    .tick { width: 3px; height: 14px; border-radius: 2px; background: var(--deal); }
+    .pipe {
+      display: flex;
+      align-items: center;
+      gap: 18px;
+      padding: 10px 14px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+    .pipe b { font-size: 12px; }
+    .stage { display: inline-flex; align-items: center; gap: 6px; color: var(--ink-2); }
+    .stage i { width: 7px; height: 7px; border-radius: 50%; }
+    .stage strong { font-variant-numeric: tabular-nums; }
+
+    /* ── Settings ── */
+    .set {
+      display: grid;
+      grid-template-columns: 220px minmax(0, 1fr);
+      min-height: 0;
+      flex: 1;
+    }
+    .set-nav {
+      padding: 16px 12px;
+      border-right: 1px solid var(--line);
+      background: #fcfbf8;
+    }
+    .set-nav input {
+      width: 100%;
+      height: 30px;
+      margin-bottom: 12px;
+      padding: 0 10px;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+    }
+    .set-group { margin: 14px 8px 6px; color: var(--muted); font-size: 10.5px; font-weight: 650; }
+    .set-item {
+      display: flex;
+      width: 100%;
+      height: 30px;
+      align-items: center;
+      padding: 0 8px;
+      border: 0;
+      border-radius: 6px;
+      background: transparent;
+      text-align: left;
+    }
+    .set-item.on { background: #e4e1d7; font-weight: 650; }
+    .plan {
+      margin-top: 24px;
+      padding: 10px 8px 0;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 11.5px;
+    }
+    .plan strong { display: block; color: var(--ink); margin-bottom: 2px; }
+    .set-body { padding: 22px 28px; max-width: 520px; }
+    .set-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+    .set-body h1 { margin: 0; font-size: 18px; font-weight: 650; letter-spacing: -0.03em; }
+    .crumb { margin: 4px 0 18px; color: var(--muted); font-size: 12px; }
+    .block { margin-bottom: 22px; }
+    .block h2 { margin: 0 0 10px; font-size: 12.5px; font-weight: 650; }
+    .field {
+      display: grid;
+      grid-template-columns: 1fr 72px;
+      align-items: center;
+      gap: 16px;
+      min-height: 36px;
+      padding: 4px 0;
+      border-bottom: 1px solid #f0eee8;
+    }
+    .field label { color: var(--ink-2); }
+    .field input, .field select {
+      height: 30px;
+      width: 72px;
+      padding: 0 8px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #fff;
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+    .field.wide { grid-template-columns: 1fr 148px; }
+    .field.wide select, .field.wide input { width: 148px; text-align: left; }
+    .hint { margin-top: 8px; color: var(--muted); font-size: 12px; }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header class="titlebar">
+      <div class="traffic">
+        <span class="dot r"></span>
+        <span class="dot y"></span>
+        <span class="dot g"></span>
+        <span class="brand">EstaitFlow</span>
+      </div>
+      <button class="office" type="button">
+        <b>강동부동산</b>
+        <span class="sep">·</span>
+        기본 플랜
+      </button>
+      <div class="title-actions">
+        <div class="cmd">
+          <i data-lucide="search"></i>
+          검색
+          <kbd>⌘K</kbd>
+        </div>
+        <button class="who" type="button">
+          <span class="avatar">K</span>
+          kimyoung
+        </button>
+      </div>
+    </header>
+
+    <nav class="tabs" aria-label="열린 탭">
+      <button class="tab active" data-tab="dashboard" type="button">
+        <i data-lucide="layout-dashboard"></i>대시보드
+        <span class="x" data-lucide="x"></span>
+      </button>
+      <button class="tab" data-tab="properties" type="button">
+        <i data-lucide="building-2"></i>매물관리
+        <span class="x" data-lucide="x"></span>
+      </button>
+      <button class="tab" data-tab="customers" type="button">
+        <i data-lucide="book-user"></i>고객 원장
+        <span class="x" data-lucide="x"></span>
+      </button>
+      <button class="tab" data-tab="settings" type="button">
+        <i data-lucide="settings"></i>설정
+        <span class="x" data-lucide="x"></span>
+      </button>
+      <button class="tab-add" type="button" aria-label="새 탭"><i data-lucide="plus"></i></button>
+    </nav>
+
+    <div class="body">
+      <aside class="sidebar">
+        <div class="side-label">시작</div>
+        <button class="nav active" data-nav="dashboard" type="button"><i data-lucide="layout-dashboard"></i>대시보드</button>
+        <div class="side-label">매물 · 공간</div>
+        <button class="nav" data-nav="properties" type="button"><i data-lucide="building-2"></i>매물관리</button>
+        <button class="nav ghost" type="button"><i data-lucide="map"></i>관리단지</button>
+        <button class="nav ghost" type="button"><i data-lucide="megaphone"></i>광고관리</button>
+        <div class="side-label">고객 · 상담</div>
+        <button class="nav" data-nav="customers" type="button"><i data-lucide="book-user"></i>고객 원장</button>
+        <button class="nav ghost" type="button"><i data-lucide="contact"></i>연락처</button>
+        <button class="nav ghost" type="button"><i data-lucide="message-square"></i>상담기록</button>
+        <div class="side-label">거래 · 계약</div>
+        <button class="nav ghost" type="button"><i data-lucide="git-branch"></i>매칭</button>
+        <button class="nav ghost" type="button"><i data-lucide="handshake"></i>거래관리</button>
+        <button class="nav ghost" type="button"><i data-lucide="file-text"></i>계약서 관리</button>
+        <button class="nav ghost" type="button"><i data-lucide="wallet"></i>수수료/정산</button>
+        <div class="side-label">업무 · 운영</div>
+        <button class="nav ghost" type="button"><i data-lucide="list-todo"></i>업무</button>
+        <button class="nav ghost" type="button"><i data-lucide="calendar-days"></i>캘린더</button>
+        <button class="nav ghost" type="button"><i data-lucide="users"></i>직원관리</button>
+        <button class="nav" data-nav="settings" type="button"><i data-lucide="settings"></i>설정</button>
+      </aside>
+
+      <main class="main">
+        <!-- DASHBOARD -->
+        <section class="page on" data-page="dashboard">
+          <div class="note"><b>대시보드</b> 인사말 카드 대신 오늘 숫자. 카드 벽 대신 할 일·일정이 주인공.</div>
+          <div class="dash">
+            <div class="dash-top">
+              <h1>8월 14일 금요일</h1>
+              <span class="sub">강동부동산 · kimyoung</span>
+            </div>
+            <div class="metrics">
+              <div class="metric hot">
+                <div class="k">미완료 업무</div>
+                <div class="n">5 <em>건</em></div>
+              </div>
+              <div class="metric">
+                <div class="k">오늘 일정</div>
+                <div class="n">3 <em>건</em></div>
+              </div>
+              <div class="metric">
+                <div class="k">진행 거래</div>
+                <div class="n">4 <em>건</em></div>
+              </div>
+              <div class="metric">
+                <div class="k">이번 달 수금</div>
+                <div class="n">1.2<em>억</em></div>
+              </div>
+            </div>
+            <div class="board">
+              <div class="col">
+                <h2>오늘 할 일</h2>
+                <div class="row"><span class="box"></span><span class="t">고덕그라시움 101-3403 집주인 확인</span><span class="who">김영</span><span class="when late">어제</span></div>
+                <div class="row"><span class="box"></span><span class="t">강수연 고객 매물 3건 회신</span><span class="who">김영</span><span class="when late">오늘</span></div>
+                <div class="row"><span class="box"></span><span class="t">102-3401 매매 가격 재확인</span><span class="who">이수</span><span class="when">8.15</span></div>
+                <div class="row"><span class="box"></span><span class="t">전세 광고 재등록 · 이실장</span><span class="who">김영</span><span class="when">8.16</span></div>
+                <div class="row"><span class="box"></span><span class="t">계약서 특약 초안 검토</span><span class="who">박실장</span><span class="when">8.18</span></div>
+              </div>
+              <div class="col">
+                <h2>오늘 일정</h2>
+                <div class="row cal"><span class="num muted">10:00</span><span class="tick"></span><span class="t">고덕그라시움 101-3501 방문</span><span class="who">김영</span></div>
+                <div class="row cal"><span class="num muted">14:30</span><span class="tick" style="background:#8a6418"></span><span class="t">강수연 전화 상담</span><span class="who">김영</span></div>
+                <div class="row cal"><span class="num muted">16:00</span><span class="tick" style="background:#2f6b4f"></span><span class="t">잔금 일정 확인</span><span class="who">박실장</span></div>
+                <h2 style="margin-top:22px">최근 상담</h2>
+                <div class="row cal"><span class="num muted">12분</span><span class="tick"></span><span class="t">이민호 · 전세 한도 재확인</span><span class="who">전화</span></div>
+                <div class="row cal"><span class="num muted">1시간</span><span class="tick" style="background:#8f3d38"></span><span class="t">강수연 · 매매 3건 비교</span><span class="who">방문</span></div>
+                <div class="row cal"><span class="num muted">어제</span><span class="tick" style="background:#2f6b4f"></span><span class="t">최유진 · 월세 입주 가능일</span><span class="who">온라인</span></div>
+              </div>
+            </div>
+            <div class="pipe">
+              <b>거래 파이프라인</b>
+              <span class="stage"><i style="background:#a8a49a"></i>준비 <strong>1</strong></span>
+              <span class="stage"><i style="background:#6940a5"></i>가계약 <strong>1</strong></span>
+              <span class="stage"><i style="background:#2f6f9f"></i>본계약 <strong>2</strong></span>
+              <span class="stage"><i style="background:#c48a1a"></i>잔금 <strong>0</strong></span>
+              <span class="stage"><i style="background:#2f6b4f"></i>완료 <strong>0</strong></span>
+            </div>
+          </div>
+        </section>
+
+        <!-- PROPERTIES -->
+        <section class="page" data-page="properties">
+          <div class="note"><b>매물</b> 필터는 한 줄. 가격이 가장 크게. 케밥은 hover에만. 매매+전세 연결은 유지.</div>
+          <div class="workhead">
+            <div class="seg" data-seg="deal">
+              <button class="on" type="button">전체</button>
+              <button type="button">매매</button>
+              <button type="button">전세</button>
+              <button type="button">월세</button>
+            </div>
+            <div class="cluster">
+              <input value="단지 전체" />
+              <span class="div"></span>
+              <input placeholder="동" style="width:44px" />
+              <span class="div"></span>
+              <input placeholder="호" style="width:52px" />
+            </div>
+            <div class="search">
+              <i data-lucide="search"></i>
+              <input placeholder="주소, 연락처, 메모" />
+            </div>
+            <div class="grow"></div>
+            <button class="ghost" type="button">목록</button>
+            <button class="primary" type="button">새 매물</button>
+          </div>
+          <div class="filters">
+            <button class="chip on" type="button">지역 <span class="v">강동구</span> <span class="clear">×</span></button>
+            <button class="chip" type="button">유형 전체</button>
+            <button class="chip on" type="button">상태 <span class="v">활성·거래중</span> <span class="clear">×</span></button>
+            <button class="chip" type="button">가격</button>
+            <button class="chip" type="button">공급</button>
+            <button class="chip" type="button">입주</button>
+            <button class="chip" type="button">광고</button>
+            <span class="grow"></span>
+            <button class="chip" type="button">컬럼</button>
+          </div>
+          <div class="sheet">
+            <table class="props">
+              <thead>
+                <tr>
+                  <th style="width:36px"></th>
+                  <th>거래</th>
+                  <th>단지 · 동호</th>
+                  <th>공급</th>
+                  <th>상태</th>
+                  <th>가격</th>
+                  <th>입주</th>
+                  <th>메모</th>
+                  <th style="width:36px"></th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><input type="checkbox" /></td>
+                  <td><span class="tag sale">매매</span></td>
+                  <td><div class="addr"><strong>고덕그라시움</strong><span class="sub">102동 3401호</span></div></td>
+                  <td class="num">74평</td>
+                  <td><span class="st deal"><i></i>거래중</span></td>
+                  <td class="price">31억 9,000</td>
+                  <td><span class="st warn"><i></i>확인 필요</span></td>
+                  <td class="muted">펜트하우스 의뢰</td>
+                  <td><button class="more" type="button">···</button></td>
+                </tr>
+                <tr>
+                  <td><input type="checkbox" /></td>
+                  <td><span class="tag jeonse">전세</span></td>
+                  <td><div class="addr"><strong>고덕그라시움</strong><span class="sub">101동 3404호</span></div></td>
+                  <td class="num">47평</td>
+                  <td><span class="st live"><i></i>활성</span></td>
+                  <td class="price">10억 8,000</td>
+                  <td>즉시</td>
+                  <td class="dash">—</td>
+                  <td><button class="more" type="button">···</button></td>
+                </tr>
+                <tr>
+                  <td><input type="checkbox" /></td>
+                  <td><span class="tag month">월세</span></td>
+                  <td><div class="addr"><strong>고덕그라시움</strong><span class="sub">101동 3403호</span></div></td>
+                  <td class="num">47평</td>
+                  <td><span class="st deal"><i></i>거래중</span></td>
+                  <td><span class="price">5,000</span> <span class="sub">/ 180</span></td>
+                  <td><span class="st warn"><i></i>확인 필요</span></td>
+                  <td class="muted">집주인 확인 중</td>
+                  <td><button class="more" type="button">···</button></td>
+                </tr>
+                <tr class="split">
+                  <td><input type="checkbox" /></td>
+                  <td>
+                    <div class="split-mark">
+                      <span class="tag sale">매매</span>
+                      <span class="tag jeonse">전세</span>
+                    </div>
+                  </td>
+                  <td><div class="addr"><strong>고덕그라시움</strong><span class="sub">101동 3501호</span></div></td>
+                  <td class="num">74평</td>
+                  <td>
+                    <div class="split-mark">
+                      <span class="st deal"><i></i>거래중</span>
+                      <span class="st live"><i></i>활성</span>
+                    </div>
+                  </td>
+                  <td>
+                    <div class="split-mark">
+                      <span class="price">26억 8,000</span>
+                      <span class="price">13억</span>
+                    </div>
+                  </td>
+                  <td>
+                    <div class="split-mark">
+                      <span>즉시</span>
+                      <span class="st warn"><i></i>확인 필요</span>
+                    </div>
+                  </td>
+                  <td class="muted">같은 호실 동시 의뢰</td>
+                  <td><button class="more" type="button">···</button></td>
+                </tr>
+                <tr>
+                  <td><input type="checkbox" /></td>
+                  <td><span class="tag sale">매매</span></td>
+                  <td><div class="addr"><strong>고덕그라시움</strong><span class="sub">101동 3401호</span></div></td>
+                  <td class="num">47평</td>
+                  <td><span class="st deal"><i></i>거래중</span></td>
+                  <td class="price">19억 8,000</td>
+                  <td><span class="st warn"><i></i>확인 필요</span></td>
+                  <td class="dash">—</td>
+                  <td><button class="more" type="button">···</button></td>
+                </tr>
+                <tr>
+                  <td><input type="checkbox" /></td>
+                  <td><span class="tag jeonse">전세</span></td>
+                  <td><div class="addr"><strong>고덕그라시움</strong><span class="sub">101동 3402호</span></div></td>
+                  <td class="num">52평</td>
+                  <td><span class="st"><i></i>종료</span></td>
+                  <td class="price">9억 5,000</td>
+                  <td>즉시</td>
+                  <td class="dash">—</td>
+                  <td><button class="more" type="button">···</button></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- CUSTOMERS -->
+        <section class="page" data-page="customers">
+          <div class="note"><b>고객 원장</b> 새 보기 제거. 예산은 한 칸. 빈 대시 열을 없애 스캔 경로를 살림.</div>
+          <div class="workhead">
+            <div class="seg" data-seg="kind">
+              <button class="on" type="button">전체 10</button>
+              <button type="button">구함 5</button>
+              <button type="button">내놓음 5</button>
+            </div>
+            <div class="search">
+              <i data-lucide="search"></i>
+              <input placeholder="고객, 전화, 지역, 매물" />
+            </div>
+            <div class="grow"></div>
+            <button class="primary" type="button">고객 등록</button>
+          </div>
+          <div class="filters">
+            <button class="chip on" type="button">지역 <span class="v">송파·강동</span> <span class="clear">×</span></button>
+            <button class="chip" type="button">단지</button>
+            <button class="chip on" type="button">거래 <span class="v">매매</span> <span class="clear">×</span></button>
+            <button class="chip" type="button">상태</button>
+            <button class="chip" type="button">예산</button>
+            <span class="grow"></span>
+            <button class="chip" type="button">등록일순</button>
+          </div>
+          <div class="sheet">
+            <table class="cust">
+              <thead>
+                <tr>
+                  <th style="width:36px"></th>
+                  <th>고객</th>
+                  <th>구분</th>
+                  <th>거래</th>
+                  <th>예산</th>
+                  <th>매칭</th>
+                  <th>메모</th>
+                  <th>등록</th>
+                  <th style="width:36px"></th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><input type="checkbox" /></td>
+                  <td><div class="addr"><strong>강수연</strong><span class="sub">010-3001-0004</span></div></td>
+                  <td><span class="tag seek">구함</span><div class="sub">송파구</div></td>
+                  <td><span class="tag sale">매매</span></td>
+                  <td class="price">18–24억</td>
+                  <td class="num">3</td>
+                  <td class="muted">초중 인근, 선호 층</td>
+                  <td class="num muted">08.13</td>
+                  <td><button class="more" type="button">···</button></td>
+                </tr>
+                <tr>
+                  <td><input type="checkbox" /></td>
+                  <td><div class="addr"><strong>이민호</strong><span class="sub">010-3001-0011</span></div></td>
+                  <td><span class="tag seek">구함</span><div class="sub">고덕그라시움</div></td>
+                  <td><span class="tag jeonse">전세</span></td>
+                  <td class="price">9–12억</td>
+                  <td class="num">2</td>
+                  <td class="muted">즉시 입주</td>
+                  <td class="num muted">08.12</td>
+                  <td><button class="more" type="button">···</button></td>
+                </tr>
+                <tr>
+                  <td><input type="checkbox" /></td>
+                  <td><div class="addr"><strong>최유진</strong><span class="sub">010-3001-0020</span></div></td>
+                  <td><span class="tag offer">내놓음</span><div class="sub">101-3403</div></td>
+                  <td><span class="tag month">월세</span></td>
+                  <td><span class="price">5,000</span> <span class="sub">/ 180</span></td>
+                  <td class="num">1</td>
+                  <td class="muted">집주인 확인 필요</td>
+                  <td class="num muted">08.11</td>
+                  <td><button class="more" type="button">···</button></td>
+                </tr>
+                <tr>
+                  <td><input type="checkbox" /></td>
+                  <td><div class="addr"><strong>박지훈</strong><span class="sub">010-3001-0008</span></div></td>
+                  <td><span class="tag seek">구함</span><div class="sub">강동구</div></td>
+                  <td><span class="tag sale">매매</span></td>
+                  <td class="price">24억+</td>
+                  <td class="num">4</td>
+                  <td class="muted">VIP, 고층</td>
+                  <td class="num muted">08.10</td>
+                  <td><button class="more" type="button">···</button></td>
+                </tr>
+                <tr>
+                  <td><input type="checkbox" /></td>
+                  <td><div class="addr"><strong>한소희</strong><span class="sub">010-3001-0015</span></div></td>
+                  <td><span class="tag offer">내놓음</span><div class="sub">102-3401</div></td>
+                  <td><span class="tag sale">매매</span></td>
+                  <td class="price">31억 9,000</td>
+                  <td class="num">0</td>
+                  <td class="dash">—</td>
+                  <td class="num muted">08.09</td>
+                  <td><button class="more" type="button">···</button></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- SETTINGS -->
+        <section class="page" data-page="settings">
+          <div class="note"><b>설정</b> 숫자 칸은 숫자 폭만큼. 플랜은 떠다니는 카드가 아니라 왼쪽 바닥에.</div>
+          <div class="set">
+            <aside class="set-nav">
+              <input placeholder="설정 검색" />
+              <div class="set-group">개인</div>
+              <button class="set-item" type="button">계정 및 언어</button>
+              <div class="set-group">사무소 운영</div>
+              <button class="set-item" type="button">사무소 정보</button>
+              <button class="set-item on" type="button">수수료 배분</button>
+              <button class="set-item" type="button">계약 서식</button>
+              <div class="set-group">연결</div>
+              <button class="set-item" type="button">외부 연결</button>
+              <div class="plan">
+                <strong>강동부동산</strong>
+                기본 플랜
+              </div>
+            </aside>
+            <div class="set-body">
+              <div class="set-head">
+                <h1>수수료 배분</h1>
+                <button class="primary" type="button">저장</button>
+              </div>
+              <div class="crumb">설정 · 사무소 운영</div>
+              <div class="block">
+                <h2>기본 계산</h2>
+                <div class="field wide">
+                  <label>배분 방식</label>
+                  <select>
+                    <option>비율 기준</option>
+                    <option>금액 기준</option>
+                  </select>
+                </div>
+              </div>
+              <div class="block">
+                <h2>직원 기본 비율</h2>
+                <div class="field"><label>기본 직원</label><input value="50%" /></div>
+                <div class="field"><label>매도측</label><input value="70%" /></div>
+                <div class="field"><label>매수측</label><input value="50%" /></div>
+                <div class="field"><label>단독중개</label><input value="100%" /></div>
+                <div class="field"><label>관리자</label><input value="10%" /></div>
+              </div>
+              <div class="block">
+                <h2>추가 지급</h2>
+                <div class="field"><label>마감 보너스</label><input value="0" /></div>
+                <p class="hint">단위: 만원. 거래 생성 시 기본값으로만 들어가고, 건별로 다시 정합니다.</p>
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <script>
+    lucide.createIcons();
+
+    const pages = ["dashboard", "properties", "customers", "settings"];
+
+    function show(id) {
+      document.querySelectorAll("[data-page]").forEach((el) => {
+        el.classList.toggle("on", el.dataset.page === id);
+      });
+      document.querySelectorAll("[data-nav]").forEach((el) => {
+        el.classList.toggle("active", el.dataset.nav === id);
+      });
+      document.querySelectorAll("[data-tab]").forEach((el) => {
+        el.classList.toggle("active", el.dataset.tab === id);
+      });
+    }
+
+    document.querySelectorAll("[data-nav], [data-tab]").forEach((el) => {
+      el.addEventListener("click", () => {
+        const id = el.dataset.nav || el.dataset.tab;
+        if (pages.includes(id)) show(id);
+      });
+    });
+
+    document.querySelectorAll("[data-seg]").forEach((group) => {
+      group.addEventListener("click", (event) => {
+        const btn = event.target.closest("button");
+        if (!btn) return;
+        group.querySelectorAll("button").forEach((b) => b.classList.toggle("on", b === btn));
+      });
+    });
+
+    document.querySelectorAll(".chip").forEach((chip) => {
+      chip.addEventListener("click", (event) => {
+        if (event.target.classList.contains("clear")) {
+          chip.classList.remove("on");
+          event.stopPropagation();
+          return;
+        }
+        chip.classList.toggle("on");
+      });
+    });
+  </script>
+</body>
+</html>

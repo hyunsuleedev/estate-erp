@@ -27,6 +27,17 @@ interface NaverPyeong {
   grandPlanUrl?: string;
 }
 
+interface UnitTypeLayoutSnapshot {
+  schemaVersion: number;
+  complexNo: string;
+  items: Array<{
+    name: string;
+    naverPyeongNo: number;
+    roomCount: number;
+    bathRoomCount: number;
+  }>;
+}
+
 interface NaverDongOverview {
   dongNo: string;
   bildName: string;
@@ -108,6 +119,40 @@ async function main() {
   }
   console.log(`Loading: ${jsonPath}`);
   const data: NaverComplex = JSON.parse(fs.readFileSync(jsonPath, 'utf-8'));
+  const layoutPath = path.join(
+    path.dirname(jsonPath),
+    'gracium_unit_type_layout.json',
+  );
+  const layoutSnapshot: UnitTypeLayoutSnapshot | null = fs.existsSync(layoutPath)
+    ? JSON.parse(fs.readFileSync(layoutPath, 'utf-8'))
+    : null;
+  if (layoutSnapshot && layoutSnapshot.complexNo !== data.complexNo) {
+    throw new Error(
+      `평형 구조 스냅샷 단지코드 불일치: ${layoutSnapshot.complexNo} != ${data.complexNo}`,
+    );
+  }
+  if (layoutSnapshot?.schemaVersion !== undefined && layoutSnapshot.schemaVersion !== 1) {
+    throw new Error(
+      `지원하지 않는 평형 구조 스냅샷 버전: ${layoutSnapshot.schemaVersion}`,
+    );
+  }
+  for (const item of layoutSnapshot?.items ?? []) {
+    if (
+      !Number.isInteger(item.naverPyeongNo) ||
+      !Number.isInteger(item.roomCount) ||
+      item.roomCount < 0 ||
+      !Number.isInteger(item.bathRoomCount) ||
+      item.bathRoomCount < 0
+    ) {
+      throw new Error(`유효하지 않은 평형 구조 값: ${JSON.stringify(item)}`);
+    }
+  }
+  const layoutByPyeongNo = new Map(
+    (layoutSnapshot?.items ?? []).map((item) => [
+      String(item.naverPyeongNo),
+      item,
+    ]),
+  );
 
   const cortarNo = data.complexDetail.complex.cortarNo; // "1174010200"
   const wardCode = cortarNo; // "1174010200"
@@ -190,7 +235,64 @@ async function main() {
     console.log(`   Site: ${site.name} (id: ${site.id}) — 재사용`);
   }
 
-  // 이미 Dong 이 채워져 있으면 호실 import 스킵 (idempotency)
+  // ============================================================
+  // 3. SiteUnitType (평형 카탈로그)
+  // ============================================================
+  console.log('3. SiteUnitType 생성...');
+
+  const pyeongs = data.overview.pyeongs;
+  if (
+    layoutSnapshot &&
+    (layoutByPyeongNo.size !== layoutSnapshot.items.length ||
+      pyeongs.some((pyeong) => !layoutByPyeongNo.has(String(pyeong.pyeongNo))))
+  ) {
+    throw new Error('평형 구조 스냅샷에 중복 또는 누락된 pyeongNo가 있습니다.');
+  }
+  const pyeongNoToTypeId: Record<string, string> = {};
+
+  for (const p of pyeongs) {
+    // pyeongName에서 nameType 추출: "82A" → "A", "172" → null
+    const nameMatch = p.pyeongName.match(/^(\d+)([A-Z])?$/);
+    const nameType = nameMatch?.[2] || null;
+    const layout = layoutByPyeongNo.get(String(p.pyeongNo));
+    if (layout && layout.name !== p.pyeongName) {
+      throw new Error(
+        `평형 구조 스냅샷 타입명 불일치: ${layout.name} != ${p.pyeongName}`,
+      );
+    }
+
+    const sut = await prisma.siteUnitType.upsert({
+      where: {
+        siteId_name: { siteId: site.id, name: p.pyeongName },
+      },
+      update: layout
+        ? {
+            roomCount: layout.roomCount,
+            bathRoomCount: layout.bathRoomCount,
+          }
+        : {},
+      create: {
+        officeId: null,
+        siteId: site.id,
+        name: p.pyeongName,
+        nameType: nameType,
+        exclusiveAreaM2: parseFloat(p.exclusiveArea),
+        supplyAreaM2: p.supplyAreaDouble,
+        roomCount: layout?.roomCount,
+        bathRoomCount: layout?.bathRoomCount,
+        naverPyeongNo: String(p.pyeongNo),
+        floorPlanUrls: p.grandPlanUrl ? [p.grandPlanUrl] : undefined,
+      },
+    });
+
+    pyeongNoToTypeId[String(p.pyeongNo)] = sut.id;
+  }
+
+  console.log(
+    `   ${pyeongs.length}개 평형 생성/갱신 완료 (방/욕실 ${layoutByPyeongNo.size}개 타입)`,
+  );
+
+  // 이미 Dong 이 채워져 있으면 호실 import 스킵 (평형 카탈로그 갱신은 위에서 항상 수행)
   const existingDongCount = await prisma.dong.count({
     where: { siteId: site.id },
   });
@@ -201,47 +303,12 @@ async function main() {
     const existingUnitCount = await prisma.unit.count({
       where: { siteId: site.id },
     });
-    console.log(`\n=== Import 스킵 (이미 채워져 있음) ===`);
+    console.log(`\n=== 평형 갱신 완료 / 호실 Import 스킵 ===`);
     console.log(`Site: ${site.name} (${site.id})`);
     console.log(`  Dong: ${existingDongCount}개`);
     console.log(`  Unit: ${existingUnitCount}개`);
     return;
   }
-
-  // ============================================================
-  // 3. SiteUnitType (평형 카탈로그)
-  // ============================================================
-  console.log('3. SiteUnitType 생성...');
-
-  const pyeongs = data.overview.pyeongs;
-  const pyeongNoToTypeId: Record<string, string> = {};
-
-  for (const p of pyeongs) {
-    // pyeongName에서 nameType 추출: "82A" → "A", "172" → null
-    const nameMatch = p.pyeongName.match(/^(\d+)([A-Z])?$/);
-    const nameType = nameMatch?.[2] || null;
-
-    const sut = await prisma.siteUnitType.upsert({
-      where: {
-        siteId_name: { siteId: site.id, name: p.pyeongName },
-      },
-      update: {},
-      create: {
-        officeId: null,
-        siteId: site.id,
-        name: p.pyeongName,
-        nameType: nameType,
-        exclusiveAreaM2: parseFloat(p.exclusiveArea),
-        supplyAreaM2: p.supplyAreaDouble,
-        naverPyeongNo: String(p.pyeongNo),
-        floorPlanUrls: p.grandPlanUrl ? [p.grandPlanUrl] : undefined,
-      },
-    });
-
-    pyeongNoToTypeId[String(p.pyeongNo)] = sut.id;
-  }
-
-  console.log(`   ${pyeongs.length}개 평형 생성 완료`);
 
   // ============================================================
   // 4. Dong (동)

@@ -5,9 +5,10 @@ import {
   IntakeConfirmationState,
   IntakeLifecycleStatus,
   ListingAvailability,
-} from '@estate-erp/shared';
+} from "@estate-erp/shared";
 
 interface OccupyingDealLike {
+  id?: string;
   stage: string;
 }
 
@@ -25,25 +26,34 @@ export interface ListingAvailabilitySource {
 }
 
 export type ListingStatusChangePlan<T extends ListingAvailabilitySource> =
-  | { kind: 'startDeal'; candidates: T[] }
-  | { kind: 'closeWithActiveDeals'; activeDealCount: number }
+  | { kind: "startDeal"; candidates: T[] }
   | {
-      kind: 'reviewResume';
+      kind: "deleteActiveDealsAndReactivate";
+      activeDealCount: number;
+      activeDealIds: string[];
+    }
+  | {
+      kind: "closeWithActiveDeals";
+      activeDealCount: number;
+      activeDealIds: string[];
+    }
+  | {
+      kind: "reviewResume";
       canResume: boolean;
       completedListingCount: number;
       resumableListingCount: number;
     }
-  | { kind: 'lifecycle'; lifecycleStatus: IntakeLifecycleStatus }
+  | { kind: "lifecycle"; lifecycleStatus: IntakeLifecycleStatus }
   | {
-      kind: 'blocked';
+      kind: "blocked";
       reason:
-        | 'allHaveActiveDeals'
-        | 'completedDeal'
-        | 'closedIntake'
-        | 'noCandidates'
-        | 'activeDeal';
+        | "allHaveActiveDeals"
+        | "completedDeal"
+        | "closedIntake"
+        | "noCandidates"
+        | "activeDeal";
     }
-  | { kind: 'noop' };
+  | { kind: "noop" };
 
 const DONE_STAGES: readonly string[] = DONE_DEAL_STAGES;
 const IN_CONTRACT_STAGES: readonly string[] = IN_CONTRACT_DEAL_STAGES;
@@ -164,9 +174,7 @@ export function getListingRowAvailability(
  * 사용자가 선택한 매물 상태를 실제 소유 축의 명령으로 변환한다.
  * 거래중은 Deal 생성, 나머지는 의뢰 생명주기 전환으로 처리한다.
  */
-export function planListingStatusChange<
-  T extends ListingAvailabilitySource,
->(
+export function planListingStatusChange<T extends ListingAvailabilitySource>(
   currentValue: ListingAvailability,
   targetValue: ListingAvailability,
   listings: T[],
@@ -183,12 +191,11 @@ export function planListingStatusChange<
       (listing) =>
         !(listing.deals ?? []).some((deal) =>
           DONE_STAGES.includes(deal.stage),
-        ) &&
-        listing.intake?.lifecycleStatus === IntakeLifecycleStatus.CLOSED,
+        ) && listing.intake?.lifecycleStatus === IntakeLifecycleStatus.CLOSED,
     ).length;
 
     return {
-      kind: 'reviewResume',
+      kind: "reviewResume",
       canResume: resumableListingCount > 0,
       completedListingCount,
       resumableListingCount,
@@ -205,28 +212,25 @@ export function planListingStatusChange<
     });
 
     if (candidates.length > 0) {
-      return { kind: 'startDeal', candidates };
+      return { kind: "startDeal", candidates };
     }
 
     if (
       listings.some((listing) =>
-        (listing.deals ?? []).some((deal) =>
-          DONE_STAGES.includes(deal.stage),
-        ),
+        (listing.deals ?? []).some((deal) => DONE_STAGES.includes(deal.stage)),
       )
     ) {
-      return { kind: 'blocked', reason: 'completedDeal' };
+      return { kind: "blocked", reason: "completedDeal" };
     }
 
     if (
       listings.length > 0 &&
       listings.every(
         (listing) =>
-          getListingAvailability(listing) ===
-          ListingAvailability.IN_CONTRACT,
+          getListingAvailability(listing) === ListingAvailability.IN_CONTRACT,
       )
     ) {
-      return { kind: 'blocked', reason: 'allHaveActiveDeals' };
+      return { kind: "blocked", reason: "allHaveActiveDeals" };
     }
 
     if (
@@ -235,35 +239,48 @@ export function planListingStatusChange<
           listing.intake?.lifecycleStatus === IntakeLifecycleStatus.CLOSED,
       )
     ) {
-      return { kind: 'blocked', reason: 'closedIntake' };
+      return { kind: "blocked", reason: "closedIntake" };
     }
 
-    return { kind: 'blocked', reason: 'noCandidates' };
+    return { kind: "blocked", reason: "noCandidates" };
   }
 
   if (targetValue === currentValue) {
-    return { kind: 'noop' };
+    return { kind: "noop" };
   }
 
   if (currentValue === ListingAvailability.IN_CONTRACT) {
-    if (targetValue === ListingAvailability.CLOSED) {
-      const activeDealCount = listings.reduce(
-        (count, listing) =>
-          count +
-          (listing.deals ?? []).filter((deal) =>
-            IN_CONTRACT_STAGES.includes(deal.stage),
-          ).length,
-        0,
-      );
+    const activeDeals = listings.flatMap((listing) =>
+      (listing.deals ?? []).filter((deal) =>
+        IN_CONTRACT_STAGES.includes(deal.stage),
+      ),
+    );
 
-      return { kind: 'closeWithActiveDeals', activeDealCount };
+    if (targetValue === ListingAvailability.AVAILABLE) {
+      return {
+        kind: "deleteActiveDealsAndReactivate",
+        activeDealCount: activeDeals.length,
+        activeDealIds: activeDeals.flatMap((deal) =>
+          deal.id ? [deal.id] : [],
+        ),
+      };
     }
 
-    return { kind: 'blocked', reason: 'activeDeal' };
+    if (targetValue === ListingAvailability.CLOSED) {
+      return {
+        kind: "closeWithActiveDeals",
+        activeDealCount: activeDeals.length,
+        activeDealIds: activeDeals.flatMap((deal) =>
+          deal.id ? [deal.id] : [],
+        ),
+      };
+    }
+
+    return { kind: "blocked", reason: "activeDeal" };
   }
 
   return {
-    kind: 'lifecycle',
+    kind: "lifecycle",
     lifecycleStatus:
       targetValue === ListingAvailability.AVAILABLE
         ? IntakeLifecycleStatus.OPEN

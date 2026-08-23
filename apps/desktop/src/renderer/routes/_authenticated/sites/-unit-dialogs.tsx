@@ -56,6 +56,8 @@ export function UnitEditDialog({
     siteUnitTypeId: unit.siteUnitTypeId ?? NONE,
     exclusiveArea: unit.exclusiveAreaM2 != null ? String(unit.exclusiveAreaM2) : '',
     supplyArea: unit.supplyAreaM2 != null ? String(unit.supplyAreaM2) : '',
+    roomCount: unit.roomCount != null ? String(unit.roomCount) : '',
+    bathRoomCount: unit.bathRoomCount != null ? String(unit.bathRoomCount) : '',
   });
 
   // 다이얼로그가 열릴 때마다 현재 호실 값으로 초기화
@@ -69,6 +71,8 @@ export function UnitEditDialog({
       siteUnitTypeId: unit.siteUnitTypeId ?? NONE,
       exclusiveArea: unit.exclusiveAreaM2 != null ? String(unit.exclusiveAreaM2) : '',
       supplyArea: unit.supplyAreaM2 != null ? String(unit.supplyAreaM2) : '',
+      roomCount: unit.roomCount != null ? String(unit.roomCount) : '',
+      bathRoomCount: unit.bathRoomCount != null ? String(unit.bathRoomCount) : '',
     });
   }, [open, unit]);
 
@@ -99,6 +103,8 @@ export function UnitEditDialog({
       lineNo: parseNum(form.lineNo),
       exclusiveAreaM2: parseNum(form.exclusiveArea) ?? undefined,
       supplyAreaM2: parseNum(form.supplyArea) ?? undefined,
+      roomCount: parseNum(form.roomCount),
+      bathRoomCount: parseNum(form.bathRoomCount),
     });
   };
 
@@ -205,6 +211,39 @@ export function UnitEditDialog({
                 placeholder="예: 112.45"
               />
             </div>
+          </div>
+          <div className="space-y-1.5">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-sm">방 수</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  step={1}
+                  value={form.roomCount}
+                  onChange={(e) =>
+                    setForm((prev) => ({ ...prev, roomCount: e.target.value }))
+                  }
+                  placeholder="예: 2"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-sm">욕실 수</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  step={1}
+                  value={form.bathRoomCount}
+                  onChange={(e) =>
+                    setForm((prev) => ({ ...prev, bathRoomCount: e.target.value }))
+                  }
+                  placeholder="예: 1"
+                />
+              </div>
+            </div>
+            <p className="text-[11px] text-muted-foreground">
+              비워두면 선택한 평형 타입의 방/욕실 수를 사용합니다.
+            </p>
           </div>
         </div>
         <DialogFooter>

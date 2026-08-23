@@ -3,11 +3,16 @@ import { useTabStore } from '../store/useTabStore';
 import { getRouteMeta } from '../lib/routeMeta';
 
 export function NewTabButton() {
-  const openTab = useTabStore((s) => s.openTab);
+  const createTab = useTabStore((s) => s.createTab);
 
   const handleClick = () => {
     const meta = getRouteMeta('/dashboard');
-    openTab({ route: '/dashboard', kind: meta.kind, title: meta.title });
+    createTab({
+      route: '/dashboard',
+      kind: meta.kind,
+      title: meta.title,
+      resourceKey: null,
+    });
   };
 
   return (

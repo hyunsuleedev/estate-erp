@@ -1,131 +1,123 @@
 ---
 name: esiljang-ad-reader
-description: Read every actively advertising Esiljang/AIPartner advertisement through a Skill-owned browser, normalize and validate one complete standalone provider snapshot, and return it to the caller. Use for direct Codex or Claude requests, scheduled reads, and integrations that need current Esiljang advertisement data. Never modify, end, republish, approve, or persist advertisements on the caller's behalf.
+description: Read every actively advertising Esiljang/AIPartner advertisement and preserve each complete validated result as an append-only local JSON snapshot. Use for direct Codex or Claude requests, scheduled reads, and integrations that need an auditable current Esiljang advertisement snapshot. Never modify, end, republish, or approve advertisements.
 ---
 
 # Esiljang Ad Reader
 
-Treat Esiljang as the source of the authenticated account's submitted
-advertisement details. The agent and this Skill own collection. The independent
-`cp-browser-auth` Skill owns local credential setup and one-time login filling.
-Do not require Electron, an application project, a database, or an MCP server.
+Read the authenticated account's complete `광고중` snapshot and save the
+validated result without requiring Electron, an application project, a
+database, or an MCP server. Let the independent `cp-browser-auth` Skill own the
+one locally saved credential and one-time login filling. Treat
+`provider=esiljang` and `scope=active_advertisements` as fixed output facts.
+
+## Run the canonical reader
+
+1. Load the agent-browser core Skill and `cp-browser-auth` before a live run.
+2. Execute the bundled runner from this Skill directory:
+
+   ```bash
+   node scripts/read-active-ads.mjs
+   ```
+
+   Use `--pretty` only when human-readable JSON is useful. Do not pass provider,
+   account, office, tenant, workflow, device, or persistence identifiers.
+3. Treat the runner's single stdout JSON value as the Skill result. Exit code
+   `0` means the complete snapshot was both validated and saved. Exit code `3`
+   means `needs_agent`, `2` means `needs_input`, and `1` means `failed`.
+4. Read `snapshotFile.path` from a successful result. The immutable JSON is
+   stored under `~/.agents/data/esiljang-ad-reader/snapshots/` by default.
+
+Use the runner for the normal browser and pagination path. Keep the agent in
+control of unexpected page UI instead of encoding every popup into static
+rules. Never pass snapshot JSON through a PTY; the runner imports the
+normalizer and validator directly.
+
+## Resolve unexpected UI as the agent
+
+When the runner returns `status=needs_agent` and `reasonCode=ui_obstruction`,
+do not ask the user merely because a popup appeared:
+
+1. Read `diagnostics.browserSession` and inspect that same headed session:
+
+   ```bash
+   agent-browser --session <browserSession> snapshot -i -c
+   ```
+
+2. Judge the visible popup, banner, overlay, or notice against the current
+   read-only goal. If it is unrelated to selecting and reading `광고중`, click
+   its close control with a fresh snapshot ref.
+3. Re-snapshot and confirm the obstruction disappeared. Do not click an action
+   that changes an advertisement or expands the workflow's scope.
+4. Run the exact `diagnostics.resumeCommand`. It restarts collection from page
+   1 in the same authenticated browser, so no partial in-memory page is reused.
+5. Repeat this inspection-and-resume loop if another unrelated UI obstruction
+   appears.
+
+Do not maintain a fixed list of popup texts. The agent decides relevance from
+the live UI and the requested workflow.
+
+## Trust the runner's narrow workflow
+
+The runner performs these steps atomically:
+
+- Check or configure the one saved `esiljang` credential through
+  `cp-browser-auth` without reading its secret config.
+- Create one unique headed agent-browser session restricted to
+  `aipartner.com`, with automatic dialog handling disabled.
+- Authenticate through the browser-level loopback CDP URL and require the exact
+  advertisement-list target.
+- Select only
+  `.statusWrap.ver3 .statusItem.statusIng.GTM_offerings_ad_list_ad_ing[data-value="ad"]`
+  and prove `aria-selected="true"`, stable page identity, and the unchanged
+  active count. A mismatch is `active_filter_mismatch`.
+- Read every page by visible table headers, using `.numberA` as the stable
+  Esiljang identity and `.numberN` only as the optional Naver identity.
+- Detect duplicate IDs, repeated pages, filter resets, layout changes, partial
+  counts, and pagination contradictions.
+- Normalize, sort, validate, and hash the complete in-memory snapshot.
+- Atomically persist only that successful final snapshot as a permission-`0600`
+  JSON file, verify the stored bytes, return its path and file hash, then close
+  the browser. No partial collection or browser state is persisted.
+
+The provider's selected `광고중` filter defines membership. Preserve every row
+it returns, including an exceptional row status such as `거래완료`; never add a
+second local status filter.
 
 ## Keep the responsibility narrow
 
-- Read every row under Esiljang's explicit `광고중` filter. Never treat the
-  default `전체` view as the current-ad snapshot.
-- Preserve the provider advertisement ID, full address, unit detail, terms,
-  dates, status, and Naver identity exposed by Esiljang.
 - Return provider observations without resolving or mutating any consumer's
   site, unit, property, listing, advertisement, or workflow records.
-- Do not invoke Naver comparison, reporting, recommendation, persistence, or
-  another downstream workflow. The caller decides how to use the snapshot.
+- Do not invoke Naver comparison, reporting, recommendation, application
+  persistence, or another downstream workflow. Own only the standalone JSON
+  snapshot archive.
 - Never click or call edit, exposure-end, delete, republish, payment, approval,
   or bulk-action controls.
+- Never return partial advertisement items as a successful current snapshot.
 
-Read [references/provider-ui.md](references/provider-ui.md) before live browser
-work, [references/field-mapping.md](references/field-mapping.md) before
-normalization, and [references/snapshot-contract.md](references/snapshot-contract.md)
-before returning a result.
+## Handle non-success results
 
-## Choose the browser surface
+Keep the Skill browser visible for `needs_agent` so the agent can inspect and
+resume it. Credential setup remains owned by the separate local configuration
+page in `cp-browser-auth`.
 
-1. Load the agent-browser core skill. Create one unique, headed agent-browser
-   session for this collection. Never attach to an Electron window or a browser
-   owned by a calling application.
-2. Start the session with content boundaries, automatic dialog handling
-   disabled, and navigation limited to `aipartner.com` and its subdomains.
-3. Open the exact Esiljang login URL and obtain the browser-level loopback CDP
-   URL with `agent-browser get cdp-url --json`.
-4. Load `cp-browser-auth`. Check its one saved `esiljang` account. If the
-   account is missing, let that Skill run its own configuration flow. Then let
-   it fill and submit the matching AIPartner login tab through the CDP URL.
-5. Require `status=authenticated`, `browserOwner=skill`, provider `esiljang`,
-   and the exact advertisement-list URL. Never request a
-   password, cookie, token, config file, profile contents, or browser state.
-6. Continue every read, navigation, snapshot, and extraction through that same
-   agent-browser session. Close it after success or technical failure. Leave it
-   visible only for an explicit `needs_input` state such as CAPTCHA or MFA.
-7. If agent-browser or the authentication Skill is unavailable, stop with
-   `browser_login_unavailable`. Do not fall back to Electron or a local MCP
-   server. A Playwright adapter may implement the same Skill-owned browser
-   contract in the future.
+Return safe diagnostics for these result codes:
 
-## Read one complete snapshot
+- `needs_agent`: `ui_obstruction`
+- `needs_input`: `credentials_missing` or a rare auth state that truly requires
+  the account owner
+- `failed`: `active_filter_mismatch`, `layout_mismatch`, `partial_snapshot`,
+  `provider_unavailable`, `browser_login_unavailable`,
+  `snapshot_persistence_failed`
 
-1. Treat `provider=esiljang` and `scope=active_advertisements` as fixed output
-   facts, not caller inputs. Never require an application, tenant, office,
-   workflow run, workflow step, attempt, device, or persistence identifier.
-2. Confirm the authenticated account from a non-secret page marker. Stop on
-   account ambiguity, login challenge, CAPTCHA, MFA, consent, or provider
-   warning.
-3. On the exact advertisement-list page, locate only
-   `.statusWrap.ver3 .statusItem.statusIng.GTM_offerings_ad_list_ad_ing[data-value="ad"]`.
-   Read its `.cnt` as the active expected total. The `statusAll` count is a
-   diagnostic only and must never become `expectedTotal`.
-4. Snapshot the filter, click that exact `광고중` control, and treat its POST
-   navigation as a possible target replacement. Reattach and re-snapshot.
-   Require the exact list URL, `aria-selected="true"`, active page 1, the same
-   active count, and a stable row identity set. Stop with
-   `active_filter_mismatch` if any condition fails. Preserve every row returned
-   by the provider filter; do not add a second local status filter.
-5. Only after the filter is proven active, record one capture timestamp, the
-   fixed scope, active count, and an empty in-memory item collection. Do not
-   begin a database transaction or create consumer-specific records.
-6. Read the first page and every following page. Re-snapshot after each
-   navigation or dynamic update. Scope extraction and pagination to the active
-   advertisement list. Read the 이실장 매물번호 (`.numberA`) as the stable
-   identity; never substitute the 네이버 매물번호 (`.numberN`). Extract other
-   fields by visible table headers, not by an unverified fixed column order.
-7. Normalize each page with `scripts/normalize-snapshot.mjs`. Preserve source
-   page and provider URL. Accumulate normalized observations by
-   `externalAdId`. Never infer an external ID from arbitrary digits or infer a
-   Naver article number from anything except an explicit field or Naver URL.
-8. Continue until the provider exposes no next page. Pagination may replace the
-   target, so discard DOM references and reattach before reading. On every page,
-   re-require the selected `광고중` control and count. Require the active page
-   marker and the number of rows containing `.numberA` to remain stable across
-   two observations. Detect repeated pages, duplicate IDs, disappearing rows,
-   layout changes, filter resets, and pagination loops.
-9. Build the final manifest and run `scripts/validate-snapshot.mjs`. Require the
-   fixed scope, unique stable IDs, contiguous visited pages,
-   `paginationComplete=true`, and exact agreement with the active filter count.
-10. Return the complete normalized snapshot and manifest hash exactly as
-    described in `references/snapshot-contract.md`. Successful reading must not
-    depend on any database, application API, workflow engine, or MCP tool.
+Never expose passwords, cookies, OTPs, authorization headers, browser storage,
+raw HTML, or the auth Skill's generated `config.js`.
 
-## Return incomplete work safely
+## Load references only when needed
 
-Return `needs_input` when a person can resolve the condition:
-
-- `credentials_missing`
-- `captcha`
-- `mfa`
-- `account_ambiguous`
-- `provider_warning`
-
-Return `failed` for technical or provider failures:
-
-- `active_filter_mismatch`
-- `layout_mismatch`
-- `partial_snapshot`
-- `provider_unavailable`
-- `browser_login_unavailable`
-
-Never label partial items as a successful current-ad snapshot. Return only safe
-diagnostics such as reason code, observed count, expected count, and visited
-page count. Do not return partially collected advertisement details unless the
-caller explicitly requests diagnostic evidence and the data contains no
-secrets.
-
-## Fail closed
-
-- Never persist or expose passwords, cookies, OTPs, authorization headers,
-  browser storage, raw HTML, or screenshots containing secrets.
-- Never read, print, edit, snapshot, or upload the `cp-browser-auth` local
-  `config.js`. Only execute that Skill's bundled scripts.
-- Never let a popup or dialog approve itself. Stop when it changes scope or
-  state.
-- Never mutate advertisements or any caller-owned records.
-- Never claim success from a loaded page, toast, one-page row count, or script
-  exit alone. Require the final completeness validator to succeed.
+- Read [references/snapshot-contract.md](references/snapshot-contract.md) before
+  returning or persisting a result.
+- Read [references/provider-ui.md](references/provider-ui.md) when diagnosing a
+  provider/layout failure or changing browser extraction.
+- Read [references/field-mapping.md](references/field-mapping.md) when changing
+  normalization or consumer field handling.

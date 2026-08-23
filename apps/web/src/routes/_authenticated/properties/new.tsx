@@ -230,6 +230,10 @@ function NewPropertyPage() {
     () => units?.find((u) => u.id === form.unitId),
     [units, form.unitId],
   );
+  const selectedUnitRoomCount =
+    selectedUnit?.roomCount ?? selectedUnit?.siteUnitType?.roomCount;
+  const selectedUnitBathRoomCount =
+    selectedUnit?.bathRoomCount ?? selectedUnit?.siteUnitType?.bathRoomCount;
 
   // Detect existing Property for the same Site/Unit (find-or-create)
   // house는 통건물(unitId=null)·호실(unitId 지정) 둘 다 가능
@@ -489,11 +493,11 @@ function NewPropertyPage() {
                       m²)
                     </>
                   )}
-                  {selectedUnit.siteUnitType?.roomCount != null && (
-                    <> · {selectedUnit.siteUnitType.roomCount}룸</>
+                  {selectedUnitRoomCount != null && (
+                    <> · {selectedUnitRoomCount}룸</>
                   )}
-                  {selectedUnit.siteUnitType?.bathRoomCount != null && (
-                    <>/{selectedUnit.siteUnitType.bathRoomCount}욕실</>
+                  {selectedUnitBathRoomCount != null && (
+                    <>/{selectedUnitBathRoomCount}욕실</>
                   )}
                 </p>
               )}

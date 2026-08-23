@@ -430,7 +430,7 @@ function ContactDetailPage() {
               action={
                 <div className="flex items-center gap-1">
                   <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" asChild>
-                    <Link to="/buyer-requirements">구매고객 페이지</Link>
+                    <Link to="/customers">고객 원장</Link>
                   </Button>
                   <Button variant="ghost" size="sm" className="h-7 gap-1 px-2 text-xs" onClick={() => setOpenDialog('buyerReq')}>
                     <Plus className="size-3.5" />

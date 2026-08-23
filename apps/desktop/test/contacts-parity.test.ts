@@ -7,10 +7,10 @@ import { fileURLToPath } from 'node:url';
 const testDir = dirname(fileURLToPath(import.meta.url));
 
 // index.tsx is desktop-specific (properties-aligned toolbar, no group chips).
+// new.tsx owns desktop-only tab draft/replace lifecycle and intentionally differs from web.
 // -group-chips.tsx removed from desktop — not used.
 const contactRouteFiles = [
   '$id.tsx',
-  'new.tsx',
   '-quick-sheet.tsx',
   '-detail-action-dialogs.tsx',
   '-detail-cards.tsx',
@@ -32,4 +32,15 @@ describe('desktop contacts pages', () => {
       assert.equal(desktopSource, webSource);
     });
   }
+
+  it('keeps the new-contact form in its owning tab and replaces it after save', () => {
+    const source = readFileSync(
+      resolve(testDir, '../src/renderer/routes/_authenticated/contacts/new.tsx'),
+      'utf8',
+    );
+
+    assert.match(source, /useTabScopedState\('contact-new:form:v1'/);
+    assert.match(source, /replaceTabResource\(ownerTabIdRef\.current/);
+    assert.match(source, /tabResourceKeys\.entity\('contact', created\.id\)/);
+  });
 });

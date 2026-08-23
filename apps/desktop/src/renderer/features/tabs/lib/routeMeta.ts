@@ -20,6 +20,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import type { TabKind } from "@estate-erp/shared";
+import { getTabPathname } from "./tabResource";
 
 export interface RouteMeta {
   title: string;
@@ -41,10 +42,15 @@ const STATIC_ROUTES: Record<string, RouteMeta> = {
     kind: "property",
     icon: Building,
   },
+  "/properties/my-ads": {
+    title: "내광고관리",
+    kind: "property",
+    icon: Building,
+  },
   "/contacts": { title: "연락처", kind: "contact", icon: BookUser },
   "/customers": { title: "고객 원장", kind: "contact", icon: Users },
-  "/customers-next": {
-    title: "고객 원장 새 보기",
+  "/customers-table": {
+    title: "고객 원장 표 보기",
     kind: "contact",
     icon: Users,
   },
@@ -63,8 +69,8 @@ const STATIC_ROUTES: Record<string, RouteMeta> = {
     icon: MessageSquare,
   },
   "/calls": { title: "통화", kind: "consultation", icon: PhoneCall },
-  "/buyer-requirements": {
-    title: "구매고객",
+  "/buyer-requirements/new": {
+    title: "구함 의뢰 추가",
     kind: "contact",
     icon: UserSearch,
   },
@@ -107,18 +113,28 @@ const DYNAMIC_ROUTE_META: Array<{
     match: /^\/contacts\/([^/]+)$/,
     meta: () => ({ title: "연락처 상세", kind: "contact", icon: BookUser }),
   },
+  {
+    match: /^\/buyer-requirements\/([^/]+)(?:\/edit)?$/,
+    meta: (match) => ({
+      title: match[0].endsWith("/edit") ? "구매고객 수정" : "구매고객 상세",
+      kind: "contact",
+      icon: UserSearch,
+    }),
+  },
 ];
 
 export function getRouteMeta(route: string): RouteMeta {
-  const direct = STATIC_ROUTES[route];
+  const pathname = getTabPathname(route);
+  const direct = STATIC_ROUTES[pathname];
   if (direct) return direct;
   for (const { match, meta } of DYNAMIC_ROUTE_META) {
-    const result = route.match(match);
+    const result = pathname.match(match);
     if (result) return meta(result);
   }
-  return { title: route, kind: "generic", icon: Home };
+  return { title: pathname, kind: "generic", icon: Home };
 }
 
 export function isDetachableRoute(route: string): boolean {
-  return route !== "/login" && !route.startsWith("/_");
+  const pathname = getTabPathname(route);
+  return pathname !== "/login" && !pathname.startsWith("/_");
 }

@@ -37,6 +37,8 @@
 }
 
 .customer-ledger-table {
+  --ledger-transaction-column-width: 60px;
+
   width: 100%;
   min-width: 1030px;
   table-layout: fixed;
@@ -59,7 +61,7 @@
 }
 
 .customer-ledger-table col.ledger-transaction-column {
-  width: 60px;
+  width: var(--ledger-transaction-column-width);
 }
 
 .customer-ledger-table col.ledger-fluid-column {
@@ -92,38 +94,9 @@
   border-right: 0;
 }
 
-.customer-ledger-table thead th:nth-child(1) {
-  text-align: center;
-}
-
-.customer-ledger-table thead th:nth-child(3),
-.customer-ledger-table thead th:nth-child(5) {
-  text-align: center;
-}
-
 .customer-ledger-table thead th:nth-child(6) {
   padding-right: 8px;
   padding-left: 8px;
-}
-
-.customer-ledger-table thead th:nth-child(7),
-.customer-ledger-table thead th:nth-child(8) {
-  text-align: right;
-}
-
-.customer-ledger-table thead th:nth-child(9),
-.customer-ledger-table thead th:nth-child(10) {
-  text-align: right;
-}
-
-.customer-ledger-table thead th:nth-child(11),
-.customer-ledger-table thead th:nth-child(12) {
-  text-align: right;
-}
-
-.customer-ledger-table thead th:nth-child(13),
-.customer-ledger-table thead th:nth-child(14) {
-  text-align: center;
 }
 
 .customer-ledger-table td {
@@ -199,18 +172,21 @@
 /* context 행은 반복 라벨 대신 장소와 노트를 두 개의 의미 그룹으로 읽는다. */
 .ledger-context-layout {
   display: grid;
-  grid-template-columns: minmax(180px, 240px) minmax(0, 1fr);
+  grid-template-columns:
+    repeat(2, minmax(0, 1fr)) var(--ledger-transaction-column-width)
+    repeat(7, minmax(0, 1fr));
   min-width: 0;
   height: 100%;
   align-items: center;
-  padding: 0 10px;
 }
 
 .ledger-context-link {
   display: flex;
+  grid-column: 1 / span 5;
   min-width: 0;
   align-items: center;
   gap: 6px;
+  padding: 0 10px;
   color: var(--color-foreground);
   font-size: 12px;
   font-weight: 600;
@@ -223,11 +199,12 @@
 
 .ledger-context-memo {
   display: flex;
+  grid-column: 6 / -1;
   min-width: 0;
   height: 24px;
   align-items: center;
   gap: 2px;
-  padding-left: 10px;
+  padding: 0 10px;
   border-left: 1px solid
     color-mix(in srgb, var(--color-border) 85%, transparent);
 }
@@ -369,7 +346,7 @@
   width: 100%;
   height: 100%;
   align-items: center;
-  justify-content: inherit;
+  justify-content: flex-start;
   gap: 4px;
   color: inherit;
   cursor: pointer;
@@ -386,18 +363,6 @@
   border-radius: 3px;
   box-shadow: inset 0 0 0 2px
     color-mix(in srgb, var(--color-ring) 35%, transparent);
-}
-
-.customer-ledger-table
-  thead
-  th:nth-child(n + 7):nth-child(-n + 12)
-  .ledger-sort-button {
-  justify-content: flex-end;
-}
-
-.customer-ledger-table thead th:nth-child(13) .ledger-sort-button,
-.customer-ledger-table thead th:nth-child(14) .ledger-sort-button {
-  justify-content: center;
 }
 
 .ledger-sort-button > svg {
@@ -429,11 +394,6 @@
 .customer-ledger-table td.ledger-stack-merged-cell {
   text-align: center;
   vertical-align: middle;
-}
-
-/* 구분처럼 좌측 정렬을 유지하는 통합 셀 */
-.customer-ledger-table td.ledger-stack-merged-cell.ledger-stack-merged-left {
-  text-align: left;
 }
 
 .ledger-stack {

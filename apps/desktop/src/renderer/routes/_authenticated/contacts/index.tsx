@@ -27,7 +27,6 @@ import {
   Plus,
   RotateCcw,
   Search,
-  Tags,
   Target,
   UserRound,
   X,
@@ -36,11 +35,6 @@ import { toast } from 'sonner';
 import { TRANSACTION_TYPE_LABELS, type TransactionType } from '@estate-erp/shared';
 import { api } from '@/lib/api';
 import { formatPhone } from '@/lib/format';
-import {
-  CONTACT_GROUP_TAGS,
-  isContactTagVisible,
-  splitContactTags,
-} from '@/lib/contacts';
 import { EmptyState, StatusBadge } from '@/components/domain';
 import { formatAreaRange, formatBudget } from '../buyer-requirements/-buyer-utils';
 import { propertyRoleLabels } from './-detail-cards';
@@ -67,10 +61,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import {
-  MultiSelect,
-  type MultiSelectOption,
-} from '@/components/ui/multi-select';
 import { formatDateShort } from '@/components/quick-sheet';
 import { cn } from '@/lib/utils';
 
@@ -93,19 +83,6 @@ type ContactExpandedPanel = 'buyerRequirements' | 'propertyContacts';
 function getContactExpandedPanelId(contactId: string) {
   return `contact-expanded-panel-${contactId}`;
 }
-
-const CONTACT_GROUP_STYLES: Record<string, string> = {
-  '매수/투자': 'bg-[#e7f3f8] text-[#337ea9]',
-  구매고객: 'bg-[#e7f3f8] text-[#337ea9]',
-  임차: 'bg-[#fbf3db] text-[#9a6b16]',
-  세입자: 'bg-[#fbf3db] text-[#9a6b16]',
-  매물상담: 'bg-[#f1f1ef] text-[#5f5e5b]',
-  소유자: 'bg-[#edf3ec] text-[#448361]',
-  소유주: 'bg-[#edf3ec] text-[#448361]',
-  거래처: 'bg-[#eee8f7] text-[#6940a5]',
-  법무사: 'bg-[#eee8f7] text-[#6940a5]',
-  세무사: 'bg-[#eee8f7] text-[#6940a5]',
-};
 
 export const Route = createFileRoute('/_authenticated/contacts/')({
   component: ContactsPage,
@@ -164,30 +141,16 @@ function ContactsPage() {
 
   const hasPropertyContact = activeFilters.some((f) => f.field === 'hasPropertyContact');
   const hasBuyerReq = activeFilters.some((f) => f.field === 'hasBuyerReq');
-  const selectedCustomTags = useMemo(
-    () =>
-      activeFilters
-        .filter((filter) => filter.field === 'tags')
-        .map((filter) => filter.value),
-    [activeFilters],
-  );
 
   const apiParams = useMemo(() => {
     return {
       search: deferredSearch.trim() || undefined,
-      tags: selectedCustomTags.length > 0 ? selectedCustomTags.join(',') : undefined,
       hasPropertyContact: hasPropertyContact || undefined,
       hasBuyerReq: hasBuyerReq || undefined,
       sortBy: activeSorts[0]?.field as 'name' | 'createdAt' | 'updatedAt' | undefined,
       sortOrder: activeSorts[0]?.direction ?? 'desc',
     };
-  }, [
-    activeSorts,
-    deferredSearch,
-    hasBuyerReq,
-    hasPropertyContact,
-    selectedCustomTags,
-  ]);
+  }, [activeSorts, deferredSearch, hasBuyerReq, hasPropertyContact]);
 
   useEffect(() => {
     setSelectedContactIds([]);
@@ -219,19 +182,6 @@ function ContactsPage() {
   const contacts = useMemo(() => data?.pages.flatMap((page) => page.items) ?? [], [data?.pages]);
   const totalContacts = data?.pages[0]?.pagination.total ?? 0;
 
-  const customTagOptions = useMemo<MultiSelectOption[]>(() => {
-    const uniqueCustomTags = Array.from(
-      new Set([
-        ...contacts
-          .flatMap((contact) => contact.tags)
-          .filter((tag) => !CONTACT_GROUP_TAGS.includes(tag) && isContactTagVisible(tag)),
-        ...selectedCustomTags,
-      ]),
-    ).slice(0, 24);
-
-    return uniqueCustomTags.map((tag) => ({ label: tag, value: tag }));
-  }, [contacts, selectedCustomTags]);
-
   const openQuickSheet = useCallback((contact: Contact) => {
     setSelectedContactId(contact.id);
   }, []);
@@ -250,7 +200,7 @@ function ContactsPage() {
         id: 'name',
         accessorKey: 'name',
         header: () => <ContactHeaderLabel icon={<UserRound className="size-4" />} label="이름" />,
-        size: 180,
+        size: 200,
         enableSorting: true,
         cell: ({ row }) => <ContactNameCell contact={row.original} />,
       },
@@ -278,14 +228,6 @@ function ContactsPage() {
             onOpenDetail={openContactDetail}
           />
         ),
-      },
-      {
-        id: 'tags',
-        accessorKey: 'tags',
-        header: () => <ContactHeaderLabel icon={<Tags className="size-4" />} label="구분" />,
-        size: 120,
-        enableSorting: false,
-        cell: ({ row }) => <GroupTagCell tags={row.original.tags} />,
       },
       {
         id: 'buyerRequirements',
@@ -363,20 +305,6 @@ function ContactsPage() {
         displayValue: '있음',
       };
       return [...without, next];
-    });
-  }, []);
-
-  const handleCustomTagsChange = useCallback((values: string[]) => {
-    setActiveFilters((previous) => {
-      const withoutTags = previous.filter((item) => item.field !== 'tags');
-      const next: ActiveFilter[] = values.map((value) => ({
-        id: `tags-${value}`,
-        field: 'tags',
-        operator: 'is',
-        value,
-        displayValue: value,
-      }));
-      return [...withoutTags, ...next];
     });
   }, []);
 
@@ -461,26 +389,6 @@ function ContactsPage() {
               active={hasBuyerReq}
               onToggle={() => setBooleanFilter('hasBuyerReq', !hasBuyerReq)}
             />
-
-            {customTagOptions.length > 0 && (
-              <MultiSelect
-                options={customTagOptions}
-                selected={selectedCustomTags}
-                onChange={handleCustomTagsChange}
-                ariaLabel="추가 태그 필터"
-                placeholder="추가 태그"
-                searchPlaceholder="태그 검색"
-                emptyText="일치하는 태그가 없습니다."
-                maxCount={1}
-                className={cn(
-                  'h-8 min-w-[120px] max-w-[220px] border-border bg-white px-2.5 text-[13px] shadow-none',
-                  selectedCustomTags.length > 0 &&
-                    'border-foreground/25 bg-foreground/[0.06]',
-                )}
-                badgeClassName="m-0 h-5 border-border bg-white px-1.5 text-[11px] text-foreground shadow-none"
-                popoverClassName="w-[240px]"
-              />
-            )}
           </div>
 
           <div className="h-5 w-px shrink-0 bg-border" aria-hidden="true" />
@@ -492,7 +400,7 @@ function ContactsPage() {
             >
               <SelectTrigger
                 aria-label="정렬"
-                className="h-8 w-[132px] border-border bg-white px-2.5 text-[13px] shadow-none"
+                className="h-8 w-[124px] border-transparent bg-[#f7f6f3] px-2.5 text-[13px] shadow-none hover:border-border"
               >
                 <SelectValue placeholder="정렬" />
               </SelectTrigger>
@@ -650,15 +558,15 @@ function FilterToggleChip({
       aria-pressed={active}
       onClick={onToggle}
       className={cn(
-        'inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-[13px] font-medium shadow-none transition-colors',
+        'inline-flex h-8 items-center gap-1 rounded-md border px-2.5 text-[13px] shadow-none transition-colors',
         active
-          ? 'border-foreground/25 bg-foreground/[0.06] text-foreground'
-          : 'border-border bg-white text-muted-foreground hover:bg-white hover:text-foreground',
+          ? 'border-foreground/25 bg-foreground/[0.06] font-medium text-foreground'
+          : 'border-transparent bg-[#f7f6f3] text-muted-foreground hover:border-border hover:text-foreground',
       )}
     >
       {label}
       {active && (
-        <span className="text-[11px] font-semibold text-foreground/70">있음</span>
+        <X className="size-3.5 text-muted-foreground" aria-hidden="true" />
       )}
     </button>
   );
@@ -783,35 +691,6 @@ function ContactBulkActions({
   );
 }
 
-/** 고정 그룹 태그 — 대표 그룹 1개 + 추가 개수 축약 */
-function GroupTagCell({ tags }: { tags: string[] }) {
-  const { groupTags, customTags } = splitContactTags(tags);
-  const visibleTags = [...groupTags, ...customTags];
-  const primaryTag = visibleTags[0];
-
-  if (!primaryTag) {
-    return <span className="text-[13px] text-slate-400">—</span>;
-  }
-
-  return (
-    <div className="flex min-w-0 items-center gap-1">
-      <span
-        className={cn(
-          'inline-flex h-[22px] max-w-full items-center truncate rounded-md px-2 text-[11.5px] font-medium',
-          CONTACT_GROUP_STYLES[primaryTag] ?? 'bg-[#f1f1ef] text-[#5f5e5b]',
-        )}
-      >
-        {primaryTag}
-      </span>
-      {visibleTags.length > 1 && (
-        <span className="shrink-0 text-[11px] tabular-nums text-slate-500">
-          +{visibleTags.length - 1}
-        </span>
-      )}
-    </div>
-  );
-}
-
 /** 대표 전화 1줄 + 나머지 개수 "+N" 배지 */
 function PhoneLineCell({ contact }: { contact: Contact }) {
   const phones = collectContactPhoneStrings(contact);
@@ -875,7 +754,7 @@ async function copyContactPhoneNumbers(contacts: Contact[]) {
   }
 }
 
-/** 카운트 칩 — 클릭 시 행 아래의 연결 데이터를 펼친다 (0건이면 "—") */
+/** 카운트 칩 — 클릭 시 행 아래의 연결 데이터를 펼친다 (0건이면 "—"). 매물관리 광고/매칭 토글(ListingPanelToggle)과 동일 스타일. */
 function ExpandableCountChip({
   icon,
   count,
@@ -895,38 +774,42 @@ function ExpandableCountChip({
     return <span className="text-[13px] text-slate-400">—</span>;
   }
 
-  const Chevron = expanded ? ChevronDown : ChevronRight;
   return (
-    <button
-      type="button"
-      title={`${label} ${expanded ? '접기' : '펼치기'}`}
-      aria-label={`${label} ${count}건 ${expanded ? '접기' : '펼치기'}`}
-      aria-expanded={expanded}
-      aria-controls={panelId}
-      data-state={expanded ? 'open' : 'closed'}
-      onClick={(event) => {
-        event.stopPropagation();
-        onToggle();
-      }}
-      className={cn(
-        'inline-flex h-6 items-center gap-1 rounded-md border px-1.5 text-[12px] font-semibold tabular-nums transition-colors motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50',
-        expanded
-          ? 'border-foreground/30 bg-foreground text-background'
-          : 'border-[#e7e5df] bg-[#f7f6f3] text-slate-700 hover:bg-[#f1f0ec]',
-      )}
+    <div
+      className="-mx-2.5 flex h-full items-center justify-center"
+      onClick={(event) => event.stopPropagation()}
+      onDoubleClick={(event) => event.stopPropagation()}
     >
-      {icon}
-      {count}
-      <Chevron className="size-3 opacity-70" aria-hidden="true" />
-    </button>
+      <Button
+        type="button"
+        variant={expanded ? 'secondary' : 'outline'}
+        size="xs"
+        aria-expanded={expanded}
+        aria-controls={panelId}
+        aria-label={`${label} ${count}건 ${expanded ? '접기' : '펼치기'}`}
+        title={`${label} ${expanded ? '접기' : '펼치기'}`}
+        onClick={onToggle}
+        className="min-w-11 px-1.5 text-[11px] tabular-nums shadow-none"
+      >
+        {icon}
+        {count}
+        <ChevronDown
+          aria-hidden="true"
+          className={cn(
+            'size-3 transition-transform duration-150',
+            expanded && 'rotate-180',
+          )}
+        />
+      </Button>
+    </div>
   );
 }
 
-/** 희망 펼침 패널 — 해당 연락처의 구매 희망조건을 행 아래에 인라인 표시 */
+/** 희망 펼침 패널 — 고객 원장 매칭 패널(LedgerMatchPanel) 스타일: 헤더(아이콘+건수+상태 요약) + 2단 카드 목록 */
 function BuyerReqExpandedPanel({ contact }: { contact: Contact }) {
   const PANEL_LIMIT = 20;
   const [limit, setLimit] = useState(PANEL_LIMIT);
-  const { data, isLoading, isError } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['contact-buyer-requirements', contact.id, limit],
     queryFn: () => api.buyerRequirements.findAll({ contactId: contact.id, limit }),
     placeholderData: (previous) => previous,
@@ -934,175 +817,263 @@ function BuyerReqExpandedPanel({ contact }: { contact: Contact }) {
   const items = data?.items ?? [];
   const total = data?.pagination?.total ?? items.length;
   const hiddenCount = Math.max(0, total - items.length);
-
-  if (isLoading) {
-    return (
-      <div className="flex items-center gap-2 border-b border-[#eeeeec] bg-[#faf9f6] px-4 py-2.5 text-[12px] text-slate-500">
-        <Loader2 className="size-3.5 animate-spin" />
-        희망조건 불러오는 중...
-      </div>
-    );
-  }
-  if (isError) {
-    return (
-      <div className="border-b border-[#eeeeec] bg-[#faf9f6] px-4 py-2.5 text-[12px] text-destructive">
-        희망조건을 불러오지 못했습니다.
-      </div>
-    );
-  }
-  if (items.length === 0) {
-    return (
-      <div className="border-b border-[#eeeeec] bg-[#faf9f6] px-4 py-2.5 text-[12px] text-slate-500">
-        등록된 희망조건이 없습니다.
-      </div>
-    );
-  }
+  const summary = useMemo(
+    () => ({
+      active: items.filter((req) => req.status === 'active').length,
+      hold: items.filter((req) => req.status === 'hold').length,
+      completed: items.filter((req) => req.status === 'completed').length,
+    }),
+    [items],
+  );
 
   return (
-    <div className="flex flex-col gap-1.5 border-b border-[#eeeeec] bg-[#faf9f6] px-4 py-2.5">
-      {items.map((req) => {
-        const txLabel = req.transactionType
-          ? (TRANSACTION_TYPE_LABELS[req.transactionType as TransactionType] ?? req.transactionType)
-          : null;
-        const budget = formatBudget(req);
-        const area =
-          req.areaMin != null || req.areaMax != null
-            ? formatAreaRange(req.areaMin, req.areaMax)
-            : null;
-
-        return (
-          <Link
-            key={req.id}
-            to="/buyer-requirements/$id"
-            params={{ id: req.id }}
-            className="flex min-w-0 items-center gap-2 rounded-md border border-[#e7e5df] bg-white px-3 py-1.5 transition-colors hover:bg-slate-50"
-          >
-            <StatusBadge kind="buyerUrgency" status={req.urgency} size="sm" />
-            {txLabel && (
-              <span className="shrink-0 text-[12px] font-semibold text-slate-900">{txLabel}</span>
-            )}
-            {budget !== '—' && (
-              <span className="shrink-0 text-[12px] tabular-nums text-slate-700">{budget}</span>
-            )}
-            {area && <span className="shrink-0 text-[11.5px] text-slate-500">{area}</span>}
-            {req.memo?.trim() && (
-              <span className="truncate text-[11.5px] text-slate-500">
-                메모: {req.memo.replace(/\s+/g, ' ')}
+    <div
+      role="region"
+      aria-label={`${contact.name} 매수 희망조건`}
+      className="border-b border-border bg-[#fbfbfa] py-3 pl-4 pr-4"
+    >
+      <div className="max-w-[1320px]">
+        <div className="mb-2.5 flex items-center gap-2.5">
+          <span className="flex size-7 shrink-0 items-center justify-center text-muted-foreground">
+            <Target className="size-3.5" aria-hidden="true" />
+          </span>
+          <div className="flex min-w-0 flex-wrap items-center gap-1.5 text-xs tabular-nums">
+            <span className="text-[12.5px] font-semibold text-foreground">매수 희망조건</span>
+            <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-md bg-muted px-1.5 text-[10.5px] font-semibold text-muted-foreground">
+              {total}
+            </span>
+            {!isLoading && summary.active > 0 && (
+              <span className="rounded-md border border-info/25 bg-info-soft px-1.5 py-0.5 font-medium text-info-strong">
+                활성 {summary.active}
               </span>
             )}
-            <span className="flex-1" />
-            {req.assignedTo && (
-              <span className="shrink-0 text-[11px] text-slate-500">담당 {req.assignedTo.name}</span>
+            {!isLoading && summary.hold > 0 && (
+              <span className="rounded-md border border-warning/25 bg-warning-soft px-1.5 py-0.5 font-medium text-warning">
+                보류 {summary.hold}
+              </span>
             )}
-            <StatusBadge kind="buyerStatus" status={req.status} size="sm" />
-            <ChevronRight className="size-3 shrink-0 text-slate-400" />
-          </Link>
-        );
-      })}
-      {hiddenCount > 0 && (
-        <button
-          type="button"
-          onClick={() => setLimit(total)}
-          className="flex items-center justify-center gap-1 rounded-md border border-dashed border-[#e7e5df] bg-white px-3 py-1.5 text-[11.5px] text-slate-500 transition-colors hover:bg-slate-50"
-        >
-          외 {hiddenCount}건 더 보기
-          <ChevronDown className="size-3" />
-        </button>
-      )}
+            {!isLoading && summary.completed > 0 && (
+              <span className="rounded-md border border-success/25 bg-success-soft px-1.5 py-0.5 font-medium text-success">
+                완료 {summary.completed}
+              </span>
+            )}
+          </div>
+        </div>
+
+        {isLoading ? (
+          <div className="ml-8 flex h-20 items-center justify-center rounded-lg border border-dashed border-border bg-white/70 text-xs text-muted-foreground">
+            <Loader2
+              className="mr-1.5 size-3.5 animate-spin motion-reduce:animate-none"
+              aria-hidden="true"
+            />
+            희망조건을 불러오는 중...
+          </div>
+        ) : isError ? (
+          <div
+            role="alert"
+            className="ml-8 flex h-20 items-center justify-between rounded-lg border border-destructive/20 bg-white px-3.5"
+          >
+            <span className="text-xs text-destructive">희망조건을 불러오지 못했습니다.</span>
+            <Button type="button" variant="outline" size="xs" onClick={() => void refetch()}>
+              다시 시도
+            </Button>
+          </div>
+        ) : items.length === 0 ? (
+          <div className="ml-8 flex h-20 items-center justify-center rounded-lg border border-dashed border-border bg-white/70 text-xs text-muted-foreground">
+            등록된 희망조건이 없습니다.
+          </div>
+        ) : (
+          <div className="mb-0 ml-8 mr-0 mt-1.5 flex flex-col gap-1.5">
+            {items.map((req) => {
+              const txLabel = req.transactionType
+                ? (TRANSACTION_TYPE_LABELS[req.transactionType as TransactionType] ?? req.transactionType)
+                : null;
+              const budget = formatBudget(req);
+              const area =
+                req.areaMin != null || req.areaMax != null
+                  ? formatAreaRange(req.areaMin, req.areaMax)
+                  : null;
+
+              return (
+                <Link
+                  key={req.id}
+                  to="/buyer-requirements/$id"
+                  params={{ id: req.id }}
+                  className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] overflow-hidden rounded-md border border-border/90 bg-white transition-colors hover:border-muted-foreground/35"
+                >
+                  <div className="flex min-w-0 items-center gap-2.5 px-3 py-2">
+                    <StatusBadge kind="buyerUrgency" status={req.urgency} size="sm" />
+                    {txLabel && <ExpandedPanelTerm label="거래" value={txLabel} />}
+                    {budget !== '—' && <ExpandedPanelTerm label="예산" value={budget} />}
+                    {area && <ExpandedPanelTerm label="면적" value={area} />}
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2 py-2 pl-2 pr-3">
+                    {req.assignedTo && (
+                      <span className="text-[11px] text-slate-500">담당 {req.assignedTo.name}</span>
+                    )}
+                    <StatusBadge kind="buyerStatus" status={req.status} size="sm" />
+                    <ChevronRight className="size-3 shrink-0 text-slate-400" aria-hidden="true" />
+                  </div>
+                  {req.memo?.trim() && (
+                    <div className="col-span-2 truncate border-t border-border/70 bg-muted/30 px-3 py-1.5 text-[11.5px] text-slate-500">
+                      메모: {req.memo.replace(/\s+/g, ' ')}
+                    </div>
+                  )}
+                </Link>
+              );
+            })}
+            {hiddenCount > 0 && (
+              <button
+                type="button"
+                onClick={() => setLimit(total)}
+                className="flex items-center justify-center gap-1 rounded-md border border-dashed border-border bg-white/70 px-3 py-1.5 text-[11.5px] text-slate-500 transition-colors hover:bg-white"
+              >
+                외 {hiddenCount}건 더 보기
+                <ChevronDown className="size-3" />
+              </button>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
 
-/** 연결 물건 펼침 패널 — 해당 연락처와 연결된 매물을 행 아래에 인라인 표시 */
+/** 펼침 패널 카드의 라벨+값 한 쌍 — 고객 원장 조건 카드의 term 스타일 */
+function ExpandedPanelTerm({ label, value }: { label: string; value: ReactNode }) {
+  return (
+    <span className="flex min-w-0 items-baseline gap-1">
+      <span className="shrink-0 text-[11.5px] text-slate-500">{label}</span>
+      <span className="truncate text-[13px] font-semibold tabular-nums text-slate-900">{value}</span>
+    </span>
+  );
+}
+
+/** 연결 물건 펼침 패널 — 고객 원장 패널 스타일: 헤더(아이콘+건수+요약) + 2단 카드 목록 */
 function PropertyContactsExpandedPanel({ contact }: { contact: Contact }) {
-  const { data: items = [], isLoading, isError } = useQuery({
+  const { data: items = [], isLoading, isError, refetch } = useQuery({
     queryKey: ['contacts', contact.id, 'property-contacts'],
     queryFn: () => api.contacts.getPropertyContacts(contact.id),
   });
-
-  if (isLoading) {
-    return (
-      <div className="flex items-center gap-2 border-b border-[#eeeeec] bg-[#faf9f6] px-4 py-2.5 text-[12px] text-slate-500">
-        <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
-        연결 물건 불러오는 중...
-      </div>
-    );
-  }
-
-  if (isError) {
-    return (
-      <div className="border-b border-[#eeeeec] bg-[#faf9f6] px-4 py-2.5 text-[12px] text-destructive">
-        연결 물건을 불러오지 못했습니다.
-      </div>
-    );
-  }
-
-  if (items.length === 0) {
-    return (
-      <div className="border-b border-[#eeeeec] bg-[#faf9f6] px-4 py-2.5 text-[12px] text-slate-500">
-        연결된 물건이 없습니다.
-      </div>
-    );
-  }
+  const primaryCount = items.filter((item) => item.isPrimary).length;
+  const residentCount = items.filter((item) => item.isResident).length;
 
   return (
-    <div className="flex flex-col gap-1.5 border-b border-[#eeeeec] bg-[#faf9f6] px-4 py-2.5">
-      {items.map((propertyContact) => {
-        const siteName = propertyContact.property?.site?.name?.trim() || '이름 없는 물건';
-        const unitName = propertyContact.property?.unit?.name?.trim();
-        const title = unitName ? `${siteName} · ${unitName}` : siteName;
-        const address =
-          propertyContact.property?.site?.roadAddress ??
-          propertyContact.property?.site?.jibunAddress ??
-          null;
-        const content = (
-          <>
-            <Building2 className="size-3.5 shrink-0 text-slate-400" aria-hidden="true" />
-            <div className="min-w-0 flex-1">
-              <div className="flex min-w-0 items-center gap-1.5">
-                <span className="truncate text-[12px] font-semibold text-slate-900">{title}</span>
-                <span className="shrink-0 rounded-[4px] bg-[#f1f1ef] px-1.5 py-0.5 text-[10.5px] text-[#5f5e5b]">
-                  {propertyRoleLabels[propertyContact.role] ?? propertyContact.role}
-                </span>
-                {propertyContact.isPrimary && (
-                  <span className="shrink-0 rounded-[4px] bg-[#e7f3f8] px-1.5 py-0.5 text-[10.5px] text-[#337ea9]">
-                    주 연락처
-                  </span>
-                )}
-                {propertyContact.isResident && (
-                  <span className="shrink-0 rounded-[4px] bg-[#edf3ec] px-1.5 py-0.5 text-[10.5px] text-[#448361]">
-                    거주중
-                  </span>
-                )}
-                {propertyContact.shareRatio !== null && (
-                  <span className="shrink-0 text-[11px] tabular-nums text-slate-500">
-                    지분 {propertyContact.shareRatio}%
-                  </span>
-                )}
-              </div>
-              {address && <p className="mt-0.5 truncate text-[11px] text-slate-500">{address}</p>}
-            </div>
-            <ChevronRight className="size-3 shrink-0 text-slate-400" aria-hidden="true" />
-          </>
-        );
-        const rowClassName =
-          'flex min-w-0 items-center gap-2 rounded-md border border-[#e7e5df] bg-white px-3 py-1.5 transition-colors hover:bg-slate-50';
-
-        return propertyContact.property ? (
-          <Link
-            key={propertyContact.id}
-            to="/properties/$id"
-            params={{ id: propertyContact.propertyId }}
-            className={rowClassName}
-          >
-            {content}
-          </Link>
-        ) : (
-          <div key={propertyContact.id} className={rowClassName}>
-            {content}
+    <div
+      role="region"
+      aria-label={`${contact.name} 연결 물건`}
+      className="border-b border-border bg-[#fbfbfa] py-3 pl-4 pr-4"
+    >
+      <div className="max-w-[1320px]">
+        <div className="mb-2.5 flex items-center gap-2.5">
+          <span className="flex size-7 shrink-0 items-center justify-center text-muted-foreground">
+            <Building2 className="size-3.5" aria-hidden="true" />
+          </span>
+          <div className="flex min-w-0 flex-wrap items-center gap-1.5 text-xs tabular-nums">
+            <span className="text-[12.5px] font-semibold text-foreground">연결 물건</span>
+            <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-md bg-muted px-1.5 text-[10.5px] font-semibold text-muted-foreground">
+              {items.length}
+            </span>
+            {!isLoading && primaryCount > 0 && (
+              <span className="rounded-md border border-info/25 bg-info-soft px-1.5 py-0.5 font-medium text-info-strong">
+                주 연락처 {primaryCount}
+              </span>
+            )}
+            {!isLoading && residentCount > 0 && (
+              <span className="rounded-md border border-success/25 bg-success-soft px-1.5 py-0.5 font-medium text-success">
+                거주중 {residentCount}
+              </span>
+            )}
           </div>
-        );
-      })}
+        </div>
+
+        {isLoading ? (
+          <div className="ml-8 flex h-20 items-center justify-center rounded-lg border border-dashed border-border bg-white/70 text-xs text-muted-foreground">
+            <Loader2
+              className="mr-1.5 size-3.5 animate-spin motion-reduce:animate-none"
+              aria-hidden="true"
+            />
+            연결 물건을 불러오는 중...
+          </div>
+        ) : isError ? (
+          <div
+            role="alert"
+            className="ml-8 flex h-20 items-center justify-between rounded-lg border border-destructive/20 bg-white px-3.5"
+          >
+            <span className="text-xs text-destructive">연결 물건을 불러오지 못했습니다.</span>
+            <Button type="button" variant="outline" size="xs" onClick={() => void refetch()}>
+              다시 시도
+            </Button>
+          </div>
+        ) : items.length === 0 ? (
+          <div className="ml-8 flex h-20 items-center justify-center rounded-lg border border-dashed border-border bg-white/70 text-xs text-muted-foreground">
+            연결된 물건이 없습니다.
+          </div>
+        ) : (
+          <div className="mb-0 ml-8 mr-0 mt-1.5 flex flex-col gap-1.5">
+            {items.map((propertyContact) => {
+              const siteName = propertyContact.property?.site?.name?.trim() || '이름 없는 물건';
+              const unitName = propertyContact.property?.unit?.name?.trim();
+              const title = unitName ? `${siteName} · ${unitName}` : siteName;
+              const address =
+                propertyContact.property?.site?.roadAddress ??
+                propertyContact.property?.site?.jibunAddress ??
+                null;
+              const content = (
+                <>
+                  <div className="flex min-w-0 items-center gap-2 px-3 py-2">
+                    <Building2 className="size-3.5 shrink-0 text-slate-400" aria-hidden="true" />
+                    <span className="truncate text-[13px] font-semibold text-slate-900">{title}</span>
+                    <span className="shrink-0 rounded-[4px] bg-[#f1f1ef] px-1.5 py-0.5 text-[10.5px] text-[#5f5e5b]">
+                      {propertyRoleLabels[propertyContact.role] ?? propertyContact.role}
+                    </span>
+                    {propertyContact.isPrimary && (
+                      <span className="shrink-0 rounded-[4px] bg-[#e7f3f8] px-1.5 py-0.5 text-[10.5px] text-[#337ea9]">
+                        주 연락처
+                      </span>
+                    )}
+                    {propertyContact.isResident && (
+                      <span className="shrink-0 rounded-[4px] bg-[#edf3ec] px-1.5 py-0.5 text-[10.5px] text-[#448361]">
+                        거주중
+                      </span>
+                    )}
+                    {propertyContact.shareRatio !== null && (
+                      <span className="shrink-0 text-[11px] tabular-nums text-slate-500">
+                        지분 {propertyContact.shareRatio}%
+                      </span>
+                    )}
+                  </div>
+                  <span className="flex items-center py-2 pl-2 pr-3">
+                    <ChevronRight className="size-3 shrink-0 text-slate-400" aria-hidden="true" />
+                  </span>
+                  {address && (
+                    <div className="col-span-2 truncate border-t border-border/70 bg-muted/30 px-3 py-1.5 text-[11.5px] text-slate-500">
+                      {address}
+                    </div>
+                  )}
+                </>
+              );
+              const rowClassName =
+                'grid min-w-0 grid-cols-[minmax(0,1fr)_auto] overflow-hidden rounded-md border border-border/90 bg-white transition-colors hover:border-muted-foreground/35';
+
+              return propertyContact.property ? (
+                <Link
+                  key={propertyContact.id}
+                  to="/properties/$id"
+                  params={{ id: propertyContact.propertyId }}
+                  className={rowClassName}
+                >
+                  {content}
+                </Link>
+              ) : (
+                <div key={propertyContact.id} className={rowClassName}>
+                  {content}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

@@ -1,0 +1,874 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>에스테잇플로우 · 고객 원장</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
+  <style>
+    :root {
+      color-scheme: light;
+      --paper: #f0eee8;
+      --sheet: #ffffff;
+      --sidebar: #eceae3;
+      --ink: #1c1b17;
+      --ink-2: #3f3d37;
+      --muted: #6b6860;
+      --faint: #9a968c;
+      --line: #d4d1c7;
+      --line-strong: #bdb9ae;
+      --row: #f6f4ee;
+      --hover: #f3f1ea;
+      --sel: #e7eef4;
+      --sel-line: #dce8f1;
+      --seek: #1f5f86;
+      --offer: #2a6a4a;
+      --sale-bg: #f3e4e2;
+      --sale-fg: #8a3d38;
+      --jeonse-bg: #dceaf1;
+      --jeonse-fg: #21597a;
+      --month-bg: #f3ead0;
+      --month-fg: #7a5a16;
+      --live: #2a6a4a;
+      --focus: #21597a;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      height: 100%;
+      margin: 0;
+      background: var(--paper);
+      color: var(--ink);
+      font-family: "Pretendard Variable", Pretendard, "Apple SD Gothic Neo", sans-serif;
+      font-size: 13px;
+      -webkit-font-smoothing: antialiased;
+    }
+    button, input { font: inherit; color: inherit; }
+    button { cursor: pointer; }
+    button:active:not(:disabled) { transform: scale(0.97); }
+    button:focus-visible, input:focus-visible {
+      outline: 2px solid var(--focus);
+      outline-offset: 1px;
+    }
+    [hidden] { display: none !important; }
+
+    .app {
+      display: grid;
+      grid-template-rows: 36px minmax(0, 1fr);
+      height: 100vh;
+      min-width: 1440px;
+      overflow: hidden;
+    }
+    .titlebar {
+      display: grid;
+      grid-template-columns: 196px 1fr auto;
+      align-items: center;
+      padding: 0 12px;
+      background: var(--paper);
+      border-bottom: 1px solid var(--line);
+    }
+    .traffic { display: flex; gap: 6px; align-items: center; }
+    .dot { width: 10px; height: 10px; border-radius: 50%; }
+    .dot.r { background: #ed6a5e; }
+    .dot.y { background: #f4bf4f; }
+    .dot.g { background: #61c554; }
+    .brand { margin-left: 12px; font-size: 12.5px; font-weight: 650; letter-spacing: -0.02em; }
+    .win-title { color: var(--muted); font-size: 12px; }
+    .office { color: var(--muted); font-size: 11.5px; }
+
+    .shell {
+      display: grid;
+      grid-template-columns: 196px minmax(0, 1fr);
+      min-height: 0;
+    }
+    .sidebar {
+      display: flex;
+      flex-direction: column;
+      padding: 10px 8px 12px;
+      background: var(--sidebar);
+      border-right: 1px solid var(--line);
+    }
+    .side-group {
+      margin: 12px 8px 4px;
+      color: var(--faint);
+      font-size: 10.5px;
+      font-weight: 650;
+      letter-spacing: 0.02em;
+    }
+    .side-group:first-child { margin-top: 2px; }
+    .nav {
+      display: flex;
+      width: 100%;
+      height: 28px;
+      align-items: center;
+      gap: 8px;
+      padding: 0 8px;
+      border: 0;
+      border-radius: 4px;
+      background: transparent;
+      color: var(--ink-2);
+      text-align: left;
+    }
+    .nav svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 1.8; }
+    .nav.on { background: #ddd9ce; color: var(--ink); font-weight: 650; }
+
+    .workspace {
+      display: grid;
+      grid-template-rows: 32px 36px minmax(0, 1fr) 24px;
+      min-width: 0;
+      background: var(--sheet);
+    }
+    .tabs {
+      display: flex;
+      align-items: end;
+      padding: 0 0 0 10px;
+      background: var(--paper);
+      border-bottom: 1px solid var(--line);
+    }
+    .tab {
+      display: flex;
+      height: 28px;
+      align-items: center;
+      padding: 0 12px;
+      border: 1px solid var(--line);
+      border-bottom-color: var(--sheet);
+      border-radius: 4px 4px 0 0;
+      background: var(--sheet);
+      font-size: 12.5px;
+      font-weight: 650;
+    }
+    .toolbar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 0 10px;
+      border-bottom: 1px solid var(--line);
+      background: var(--sheet);
+    }
+    .modes {
+      display: inline-flex;
+      height: 26px;
+      padding: 2px;
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      background: #f3f1ea;
+    }
+    .mode {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      height: 20px;
+      padding: 0 8px;
+      border: 0;
+      border-radius: 3px;
+      background: transparent;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .mode em { font-style: normal; font-size: 11px; font-variant-numeric: tabular-nums; opacity: 0.7; }
+    .mode.on {
+      background: var(--sheet);
+      color: var(--ink);
+      font-weight: 650;
+      box-shadow: 0 1px 1px rgb(28 27 23 / 8%);
+    }
+    .search { position: relative; width: 240px; }
+    .search svg {
+      position: absolute; top: 6px; left: 7px; width: 13px; height: 13px;
+      stroke: var(--faint); fill: none; stroke-width: 1.8;
+    }
+    .search input {
+      width: 100%;
+      height: 26px;
+      padding: 0 8px 0 24px;
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      background: #f7f6f1;
+    }
+    .search input:focus { background: #fff; }
+    .grow { flex: 1; }
+    .count { color: var(--muted); font-size: 11.5px; font-variant-numeric: tabular-nums; }
+
+    .body {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 300px;
+      min-height: 0;
+    }
+    .sheet { min-width: 0; overflow: auto; }
+
+    table.ledger {
+      width: max-content;
+      min-width: 100%;
+      border-collapse: separate;
+      border-spacing: 0;
+    }
+    .ledger thead th {
+      position: sticky;
+      top: 0;
+      z-index: 4;
+      height: 28px;
+      padding: 0 8px;
+      border-bottom: 1px solid var(--line-strong);
+      background: #f4f2eb;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 650;
+      text-align: left;
+      white-space: nowrap;
+    }
+    .ledger thead th.num,
+    .ledger thead th.match { text-align: right; }
+    .ledger thead th.center { text-align: center; }
+    .sort {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      width: 100%;
+      height: 28px;
+      padding: 0;
+      border: 0;
+      background: transparent;
+      color: inherit;
+      font: inherit;
+      font-weight: 650;
+    }
+    .sort .arrow { color: var(--faint); font-size: 10px; }
+    .sort.on { color: var(--ink); }
+    .sort.on .arrow { color: var(--ink); }
+
+    .ledger tbody td,
+    .ledger tbody th {
+      padding: 0 8px;
+      border-bottom: 1px solid #ece9e1;
+      background: var(--sheet);
+      vertical-align: middle;
+      font-weight: 400;
+    }
+    .ledger tbody tr.intent td,
+    .ledger tbody tr.intent th { height: 30px; }
+    .ledger tbody tr.note td {
+      height: 22px;
+      padding-bottom: 6px;
+      color: var(--muted);
+      font-size: 11.5px;
+    }
+    .ledger tbody tr.case-end td,
+    .ledger tbody tr.case-end th { border-bottom-color: var(--line); }
+    .ledger tbody tr.on td,
+    .ledger tbody tr.on th { background: var(--sel); }
+    .ledger tbody tr.on.intent td { box-shadow: inset 0 -1px 0 var(--sel-line); }
+    .ledger tbody tr:hover td,
+    .ledger tbody tr:hover th { background: var(--hover); }
+    .ledger tbody tr.on:hover td,
+    .ledger tbody tr.on:hover th { background: var(--sel); }
+
+    .sticky-chk, .sticky-who, .sticky-act {
+      position: sticky;
+      z-index: 2;
+      background: inherit;
+    }
+    thead .sticky-chk, thead .sticky-who, thead .sticky-act { z-index: 5; }
+    .sticky-chk { left: 0; width: 28px; min-width: 28px; }
+    .sticky-who { left: 28px; width: 148px; min-width: 148px; }
+    .sticky-act { left: 176px; width: 44px; min-width: 44px; box-shadow: 6px 0 8px rgb(28 27 23 / 4%); }
+    .who-cell { border-right: 1px solid #ece9e1; text-align: left; }
+    .who-cell strong {
+      display: block;
+      font-size: 13px;
+      font-weight: 650;
+      letter-spacing: -0.02em;
+    }
+    .who-cell .phone {
+      color: var(--muted);
+      font-size: 11.5px;
+      font-variant-numeric: tabular-nums;
+    }
+    .who-cell .both {
+      display: inline-block;
+      margin-left: 4px;
+      color: var(--ink-2);
+      font-size: 10.5px;
+      font-weight: 650;
+    }
+
+    .kind { font-size: 11.5px; font-weight: 650; white-space: nowrap; }
+    .kind.seek { color: var(--seek); }
+    .kind.offer { color: var(--offer); }
+    .status {
+      display: inline-flex;
+      align-items: center;
+      height: 18px;
+      padding: 0 6px;
+      border-radius: 3px;
+      background: #eef3ed;
+      color: #44745a;
+      font-size: 11px;
+      font-weight: 550;
+    }
+    .tx {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 28px;
+      height: 16px;
+      padding: 0 5px;
+      border-radius: 2px;
+      font-size: 10.5px;
+      font-weight: 650;
+    }
+    .tx.sale { background: var(--sale-bg); color: var(--sale-fg); }
+    .tx.jeonse { background: var(--jeonse-bg); color: var(--jeonse-fg); }
+    .tx.month { background: var(--month-bg); color: var(--month-fg); }
+    .num, .match, .date {
+      font-variant-numeric: tabular-nums;
+      font-feature-settings: "tnum";
+      white-space: nowrap;
+    }
+    .num {
+      text-align: right;
+      font-size: 13px;
+      font-weight: 650;
+      letter-spacing: -0.03em;
+    }
+    .num.empty, .match.empty { color: var(--faint); font-weight: 500; }
+    .match { text-align: right; font-weight: 650; }
+    .date { color: var(--muted); font-size: 12px; }
+    .note-where { font-weight: 650; color: var(--ink-2); }
+    .note-memo { color: var(--muted); }
+    .line-btn {
+      display: block;
+      width: 100%;
+      padding: 0;
+      border: 0;
+      background: transparent;
+      text-align: inherit;
+      color: inherit;
+      font: inherit;
+    }
+
+    .inspector {
+      display: flex;
+      min-width: 0;
+      flex-direction: column;
+      overflow: auto;
+      border-left: 1px solid var(--line-strong);
+      background: #faf9f5;
+    }
+    .ins-who {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 12px 14px 10px;
+      border-bottom: 1px solid var(--line);
+    }
+    .ins-who h2 { margin: 0; font-size: 16px; font-weight: 650; letter-spacing: -0.03em; }
+    .ins-who .phone { margin-top: 2px; font-size: 12px; }
+    .ins-who .meta { margin-top: 4px; color: var(--muted); font-size: 11.5px; }
+    .ins-acts { display: flex; gap: 4px; }
+    .ins-acts button {
+      height: 26px;
+      padding: 0 8px;
+      border: 1px solid var(--line);
+      border-radius: 3px;
+      background: #fff;
+      font-size: 12px;
+      font-weight: 550;
+    }
+    .ins-acts .primary { border-color: var(--ink); background: var(--ink); color: #fff; }
+    .picked { padding: 10px 14px 12px; border-bottom: 1px solid var(--line); }
+    .picked .k { color: var(--muted); font-size: 11px; font-weight: 650; }
+    .picked .title { display: flex; align-items: baseline; gap: 6px; margin-top: 4px; }
+    .picked .title strong { font-size: 13px; }
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px 12px;
+      margin-top: 10px;
+    }
+    .grid .k { color: var(--muted); font-size: 11px; }
+    .grid .v {
+      margin-top: 2px;
+      font-size: 14px;
+      font-weight: 650;
+      letter-spacing: -0.03em;
+      font-variant-numeric: tabular-nums;
+    }
+    .block { padding: 10px 14px 12px; }
+    .block h3 {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      margin: 0 0 8px;
+      font-size: 11.5px;
+      font-weight: 650;
+    }
+    .block h3 em { font-style: normal; font-variant-numeric: tabular-nums; }
+    .hit {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 2px 10px;
+      width: 100%;
+      padding: 7px 8px;
+      border: 1px solid transparent;
+      border-radius: 3px;
+      background: #fff;
+      text-align: left;
+    }
+    .hit + .hit { margin-top: 4px; }
+    .hit.on { box-shadow: inset 2px 0 0 var(--seek); }
+    .hit .name { font-size: 12.5px; font-weight: 650; }
+    .hit .sub { color: var(--muted); font-size: 11.5px; }
+    .hit .won {
+      font-size: 13.5px;
+      font-weight: 650;
+      letter-spacing: -0.03em;
+      font-variant-numeric: tabular-nums;
+      text-align: right;
+    }
+    .note-box {
+      padding: 8px 10px;
+      border: 1px solid var(--line);
+      border-radius: 3px;
+      background: #fff;
+      color: var(--ink-2);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+    .statusbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 12px;
+      border-top: 1px solid var(--line);
+      background: #f3f1ea;
+      color: var(--muted);
+      font-size: 11px;
+      font-variant-numeric: tabular-nums;
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header class="titlebar">
+      <div class="traffic">
+        <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
+        <span class="brand">에스테잇플로우</span>
+      </div>
+      <div class="win-title">고객 원장</div>
+      <div class="office">강동 부동산 · 김영</div>
+    </header>
+    <div class="shell">
+      <aside class="sidebar">
+        <div class="side-group">시작</div>
+        <button class="nav" type="button"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>대시보드</button>
+        <div class="side-group">매물·공간</div>
+        <button class="nav" type="button"><svg viewBox="0 0 24 24"><path d="M3 21V8l9-5 9 5v13"/><path d="M9 21v-8h6v8"/></svg>매물</button>
+        <div class="side-group">고객·상담</div>
+        <button class="nav on" type="button"><svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>고객 원장</button>
+        <button class="nav" type="button"><svg viewBox="0 0 24 24"><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z"/></svg>상담</button>
+        <button class="nav" type="button"><svg viewBox="0 0 24 24"><circle cx="6" cy="6" r="3"/><circle cx="18" cy="18" r="3"/><path d="M8.5 7.5 15 15"/><path d="M15 8.5 8.5 15"/></svg>매칭</button>
+        <div class="side-group">거래·업무</div>
+        <button class="nav" type="button"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>계약</button>
+        <button class="nav" type="button"><svg viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>업무</button>
+      </aside>
+      <main class="workspace">
+        <div class="tabs"><div class="tab">고객 원장</div></div>
+        <section class="toolbar" aria-label="원장 필터">
+          <div class="modes" role="tablist">
+            <button class="mode on" type="button" data-mode="all">전체 <em id="n-all">10</em></button>
+            <button class="mode" type="button" data-mode="seek">구함 <em id="n-seek">5</em></button>
+            <button class="mode" type="button" data-mode="offer">내놓음 <em id="n-offer">6</em></button>
+          </div>
+          <label class="search">
+            <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+            <input id="q" type="search" placeholder="고객, 전화, 지역, 매물 ⌘F" aria-label="고객 원장 검색" />
+          </label>
+          <span class="grow"></span>
+          <span class="count" id="visible-count">10명</span>
+        </section>
+        <div class="body">
+          <section class="sheet" aria-label="고객 원장">
+            <table class="ledger">
+              <thead>
+                <tr>
+                  <th class="sticky-chk"></th>
+                  <th class="sticky-who"><button class="sort" type="button" data-sort="customer">고객 <span class="arrow"></span></button></th>
+                  <th class="sticky-act">작업</th>
+                  <th>구분</th>
+                  <th class="center">상태</th>
+                  <th class="center">거래</th>
+                  <th class="num"><button class="sort" type="button" data-sort="budgetMin">최소예산 <span class="arrow"></span></button></th>
+                  <th class="num"><button class="sort" type="button" data-sort="budgetMax">최대예산 <span class="arrow"></span></button></th>
+                  <th class="num"><button class="sort" type="button" data-sort="rentMin">최소월세 <span class="arrow"></span></button></th>
+                  <th class="num"><button class="sort" type="button" data-sort="rentMax">최대월세 <span class="arrow"></span></button></th>
+                  <th class="num"><button class="sort" type="button" data-sort="areaMin">최소평형 <span class="arrow"></span></button></th>
+                  <th class="num"><button class="sort" type="button" data-sort="areaMax">최대평형 <span class="arrow"></span></button></th>
+                  <th class="match"><button class="sort" type="button" data-sort="match">매칭 <span class="arrow"></span></button></th>
+                  <th><button class="sort on" type="button" data-sort="createdAt">등록일 <span class="arrow">↓</span></button></th>
+                </tr>
+              </thead>
+              <tbody id="rows"></tbody>
+            </table>
+          </section>
+          <aside class="inspector" id="inspector" aria-label="선택 의뢰"></aside>
+        </div>
+        <footer class="statusbar">
+          <span id="status-left">10 / 10명</span>
+          <span>열 제목 클릭으로 정렬 · J/K 이동</span>
+        </footer>
+      </main>
+    </div>
+  </div>
+  <script>
+    const money = (v) => {
+      if (v == null) return "—";
+      if (v >= 10000) {
+        const eok = Math.floor(v / 10000);
+        const man = v % 10000;
+        return man ? `${eok}억 ${man.toLocaleString()}만` : `${eok}억`;
+      }
+      return `${v.toLocaleString()}만`;
+    };
+    const area = (v) => (v == null ? "—" : `${v.toFixed(1)}평`);
+    const txClass = (tx) => (tx === "전세" ? "jeonse" : tx === "월세" ? "month" : "sale");
+
+    const CASES = [
+      {
+        id: "ksy", name: "강수연", phone: "010-3001-0004", createdAt: "2026-08-13T15:00:00",
+        seek: true, offer: false, search: "강수연 010-3001-0004 강동구 고덕동 송파구 학군",
+        budgetMin: 230000, budgetMax: 260000, rentMin: null, rentMax: null, areaMin: 25, areaMax: 34, match: 2,
+        lines: [
+          { id: "ksy-1", kind: "구함", rank: 1, status: "진행중", tx: "매매", where: "강동구·고덕동",
+            note: "학군 중심 초등학교·학원가 필수, 중층·남향 선호",
+            budgetMin: 230000, budgetMax: 260000, rentMin: null, rentMax: null, areaMin: 25, areaMax: 34, match: 2,
+            hits: [
+              { name: "고덕그라시움 101동 3503", sub: "매매 · 73.7평 · 이서현", won: "24억 2,000만", on: true },
+              { name: "고덕그라시움 101동 3501", sub: "매매 · 73.5평 · 김민준", won: "26억 8,000만" }
+            ]
+          },
+          { id: "ksy-2", kind: "구함", rank: 2, status: "진행중", tx: "매매", where: "송파구",
+            note: "2순위 송파구까지 범위를 넓힌 대안 조건, 학군·남향 선호",
+            budgetMin: 180000, budgetMax: 220000, rentMin: null, rentMax: null, areaMin: 25, areaMax: 30, match: 0,
+            hits: []
+          }
+        ]
+      },
+      {
+        id: "bhw", name: "배현우", phone: "010-3001-0003", createdAt: "2026-08-13T14:00:00",
+        seek: true, offer: false, search: "배현우 010-3001-0003 강동구 송파구 투자 전세",
+        budgetMin: 180000, budgetMax: 220000, rentMin: null, rentMax: null, areaMin: 25, areaMax: 34, match: 1,
+        lines: [
+          { id: "bhw-1", kind: "구함", rank: 1, status: "진행중", tx: "매매", where: "강동구·송파구",
+            note: "투자용 / 전세 끼고 매매 수익률 우선",
+            budgetMin: 180000, budgetMax: 220000, rentMin: null, rentMax: null, areaMin: 25, areaMax: 34, match: 1,
+            hits: [{ name: "고덕그라시움 101동 3401", sub: "매매 · 46.7평 · 정유진", won: "19억 8,000만", on: true }]
+          }
+        ]
+      },
+      {
+        id: "cdy", name: "최도윤", phone: "010-3001-0002", createdAt: "2026-08-13T13:00:00",
+        seek: true, offer: false, search: "최도윤 010-3001-0002 강동구 VIP 한강뷰 펜트",
+        budgetMin: 300000, budgetMax: 340000, rentMin: null, rentMax: null, areaMin: 40, areaMax: 50, match: 1,
+        lines: [
+          { id: "cdy-1", kind: "구함", rank: 1, status: "진행중", tx: "매매", where: "강동구",
+            note: "VIP 고객 고층·한강뷰 필수, 대단지·펜트하우스 선호",
+            budgetMin: 300000, budgetMax: 340000, rentMin: null, rentMax: null, areaMin: 40, areaMax: 50, match: 1,
+            hits: [{ name: "고덕그라시움 102동 3401", sub: "매매 · 73.7평 · 박성호", won: "31억 9,000만", on: true }]
+          }
+        ]
+      },
+      {
+        id: "hjw", name: "한지우", phone: "010-3001-0001", createdAt: "2026-08-13T12:00:00",
+        seek: true, offer: false, search: "한지우 010-3001-0001 강동구 고덕동 신혼 초품아",
+        budgetMin: 240000, budgetMax: 270000, rentMin: null, rentMax: null, areaMin: 30, areaMax: 34, match: 2,
+        lines: [
+          { id: "hjw-1", kind: "구함", rank: 1, status: "진행중", tx: "매매", where: "강동구·고덕동",
+            note: "급하게 찾는 신혼부부 남향·초품아 필수, 로얄층·리모델링 선호",
+            budgetMin: 240000, budgetMax: 270000, rentMin: null, rentMax: null, areaMin: 30, areaMax: 34, match: 2,
+            hits: [
+              { name: "고덕그라시움 101동 3503", sub: "매매 · 73.7평 · 이서현", won: "24억 2,000만", on: true },
+              { name: "고덕그라시움 101동 3501", sub: "매매 · 73.5평 · 김민준", won: "26억 8,000만" }
+            ]
+          }
+        ]
+      },
+      {
+        id: "mjh", name: "문지훈", phone: "010-2001-0006", createdAt: "2026-08-13T11:00:00",
+        seek: false, offer: true, search: "문지훈 010-2001-0006 고덕그라시움 101동 3403 월세",
+        budgetMin: 5000, budgetMax: 5000, rentMin: 180, rentMax: 180, areaMin: 47, areaMax: 47, match: 0,
+        lines: [
+          { id: "mjh-1", kind: "내놓음", status: "진행중", tx: "월세", where: "고덕그라시움 101동 3403",
+            note: "월세 의뢰",
+            budgetMin: 5000, budgetMax: null, rentMin: 180, rentMax: null, areaMin: 47, areaMax: null, match: 0,
+            hits: []
+          }
+        ]
+      },
+      {
+        id: "oej", name: "오은정", phone: "010-2001-0005", createdAt: "2026-08-13T10:00:00",
+        seek: false, offer: true, search: "오은정 010-2001-0005 고덕그라시움 101동 3402 전세",
+        budgetMin: 95000, budgetMax: 95000, rentMin: null, rentMax: null, areaMin: 52.3, areaMax: 52.3, match: 1,
+        lines: [
+          { id: "oej-1", kind: "내놓음", status: "진행중", tx: "전세", where: "고덕그라시움 101동 3402",
+            note: "전세 재임대 의뢰",
+            budgetMin: 95000, budgetMax: null, rentMin: null, rentMax: null, areaMin: 52.3, areaMax: null, match: 1,
+            hits: [{ name: "김민준 가족전세", sub: "구함 전세 12억–15억 · 고덕동", won: "12억–15억", on: true }]
+          }
+        ]
+      },
+      {
+        id: "jyj", name: "정유진", phone: "010-2001-0004", createdAt: "2026-08-13T09:00:00",
+        seek: false, offer: true, search: "정유진 010-2001-0004 고덕그라시움 101동 3401 매매 계약",
+        budgetMin: 198000, budgetMax: 198000, rentMin: null, rentMax: null, areaMin: 46.7, areaMax: 46.7, match: 1,
+        lines: [
+          { id: "jyj-1", kind: "내놓음", status: "진행중", tx: "매매", where: "고덕그라시움 101동 3401",
+            note: "계약 진행중 의뢰",
+            budgetMin: 198000, budgetMax: null, rentMin: null, rentMax: null, areaMin: 46.7, areaMax: null, match: 1,
+            hits: [{ name: "배현우", sub: "구함 매매 18억–22억 · 강동·송파", won: "18억–22억", on: true }]
+          }
+        ]
+      },
+      {
+        id: "psh", name: "박성호", phone: "010-2001-0003", createdAt: "2026-08-13T08:00:00",
+        seek: false, offer: true, search: "박성호 010-2001-0003 고덕그라시움 102동 3401 펜트하우스",
+        budgetMin: 319000, budgetMax: 319000, rentMin: null, rentMax: null, areaMin: 73.7, areaMax: 73.7, match: 2,
+        lines: [
+          { id: "psh-1", kind: "내놓음", status: "진행중", tx: "매매", where: "고덕그라시움 102동 3401",
+            note: "펜트하우스 매매 의뢰 (미확인)",
+            budgetMin: 319000, budgetMax: null, rentMin: null, rentMax: null, areaMin: 73.7, areaMax: null, match: 2,
+            hits: [
+              { name: "최도윤", sub: "구함 매매 30억–34억 · 강동구", won: "30억–34억", on: true },
+              { name: "김민준", sub: "구함 매매 28억–33억 · 강동·송파", won: "28억–33억" }
+            ]
+          }
+        ]
+      },
+      {
+        id: "lsh", name: "이서현", phone: "010-2001-0002", createdAt: "2026-08-13T07:00:00",
+        seek: false, offer: true, search: "이서현 010-2001-0002 고덕그라시움 101동 3503 공실",
+        budgetMin: 242000, budgetMax: 242000, rentMin: null, rentMax: null, areaMin: 73.7, areaMax: 73.7, match: 1,
+        lines: [
+          { id: "lsh-1", kind: "내놓음", status: "진행중", tx: "매매", where: "고덕그라시움 101동 3503",
+            note: "매매 의뢰 (공실)",
+            budgetMin: 242000, budgetMax: null, rentMin: null, rentMax: null, areaMin: 73.7, areaMax: null, match: 1,
+            hits: [{ name: "강수연", sub: "구함 매매 23억–26억 · 고덕동", won: "23억–26억", on: true }]
+          }
+        ]
+      },
+      {
+        id: "kmj", name: "김민준", phone: "010-2001-0001", createdAt: "2026-08-13T06:00:00",
+        seek: true, offer: true, search: "김민준 010-2001-0001 강동구 송파구 고덕동 고덕그라시움 갈아타기",
+        budgetMin: 280000, budgetMax: 330000, rentMin: null, rentMax: null, areaMin: 34, areaMax: 40, match: 3,
+        lines: [
+          { id: "kmj-1", kind: "구함", rank: 1, status: "진행중", tx: "매매", where: "강동구·송파구",
+            note: "실거주 주택 1채 매도 후 40평대로 갈아타기. 매도 잔금과 매수 잔금 일정 연동 필수",
+            budgetMin: 280000, budgetMax: 330000, rentMin: null, rentMax: null, areaMin: 34, areaMax: 40, match: 1,
+            hits: [{ name: "고덕그라시움 102동 3401", sub: "매매 · 73.7평 · 박성호", won: "31억 9,000만", on: true }]
+          },
+          { id: "kmj-2", kind: "구함", rank: 1, status: "진행중", tx: "전세", where: "강동구·고덕동",
+            note: "가족 거주용 전세 별도 확보. 갈아타기 매수 의뢰와 분리해 즉시 입주 가능한 전세 탐색",
+            budgetMin: 120000, budgetMax: 150000, rentMin: null, rentMax: null, areaMin: 25, areaMax: 34, match: 0,
+            hits: []
+          },
+          { id: "kmj-3", kind: "내놓음", status: "진행중", tx: "매매", where: "고덕그라시움 101동 3501",
+            note: "매매+전세 동시 의뢰",
+            budgetMin: 268000, budgetMax: null, rentMin: null, rentMax: null, areaMin: 73.5, areaMax: null, match: 2,
+            hits: [
+              { name: "한지우", sub: "구함 매매 24억–27억 · 고덕동", won: "24억–27억", on: true },
+              { name: "강수연", sub: "구함 매매 23억–26억 · 고덕동", won: "23억–26억" }
+            ]
+          },
+          { id: "kmj-4", kind: "내놓음", status: "진행중", tx: "전세", where: "고덕그라시움 101동 3501",
+            note: "매매+전세 동시 의뢰",
+            budgetMin: 130000, budgetMax: null, rentMin: null, rentMax: null, areaMin: 73.5, areaMax: null, match: 0,
+            hits: []
+          },
+          { id: "kmj-5", kind: "내놓음", status: "진행중", tx: "전세", where: "고덕그라시움 101동 3404",
+            note: "두 번째 내놓음 의뢰",
+            budgetMin: 108000, budgetMax: null, rentMin: null, rentMax: null, areaMin: 46.6, areaMax: null, match: 0,
+            hits: []
+          }
+        ]
+      }
+    ];
+
+    const tbody = document.getElementById("rows");
+    const inspector = document.getElementById("inspector");
+    const search = document.getElementById("q");
+    const modeButtons = [...document.querySelectorAll(".mode")];
+    let mode = "all";
+    let sortBy = "createdAt";
+    let sortDir = "desc";
+    let selected = "ksy-1";
+
+    const num = (el, v) => `<td class="num${v == null ? " empty" : ""}">${v == null ? "—" : el(v)}</td>`;
+    const matchCell = (n) => `<td class="match${n ? "" : " empty"}">${n || "—"}</td>`;
+
+    function lineCells(line) {
+      const kind = line.kind === "구함"
+        ? `<span class="kind seek">구함 ${line.rank ?? 1}</span>`
+        : `<span class="kind offer">내놓음</span>`;
+      return `
+        <td>${kind}</td>
+        <td class="center"><span class="status">${line.status}</span></td>
+        <td class="center"><span class="tx ${txClass(line.tx)}">${line.tx}</span></td>
+        ${num(money, line.budgetMin)}
+        ${num(money, line.budgetMax)}
+        ${num(money, line.rentMin)}
+        ${num(money, line.rentMax)}
+        ${num(area, line.areaMin)}
+        ${num(area, line.areaMax)}
+        ${matchCell(line.match)}
+      `;
+    }
+
+    function visibleCases() {
+      const q = search.value.trim().toLowerCase();
+      const filtered = CASES.filter((c) => {
+        const modeOk = mode === "all" || (mode === "seek" && c.seek) || (mode === "offer" && c.offer);
+        return modeOk && (!q || c.search.toLowerCase().includes(q));
+      });
+      const dir = sortDir === "asc" ? 1 : -1;
+      return filtered.slice().sort((a, b) => {
+        if (sortBy === "customer") return a.name.localeCompare(b.name, "ko") * dir;
+        if (sortBy === "createdAt") return (Date.parse(a.createdAt) - Date.parse(b.createdAt)) * dir;
+        const av = a[sortBy];
+        const bv = b[sortBy];
+        if (av == null && bv == null) return a.name.localeCompare(b.name, "ko");
+        if (av == null) return 1;
+        if (bv == null) return -1;
+        if (av === bv) return a.name.localeCompare(b.name, "ko");
+        return av > bv ? dir : -dir;
+      });
+    }
+
+    function renderInspector(id) {
+      const person = CASES.find((c) => c.lines.some((l) => l.id === id));
+      const line = person?.lines.find((l) => l.id === id);
+      if (!line) return;
+      const hits = line.hits.map((h) => `
+        <button class="hit${h.on ? " on" : ""}" type="button">
+          <span><span class="name">${h.name}</span><span class="sub">${h.sub}</span></span>
+          <span class="won">${h.won}</span>
+        </button>`).join("");
+      inspector.innerHTML = `
+        <div class="ins-who">
+          <div>
+            <h2>${person.name}</h2>
+            <div class="phone">${person.phone}</div>
+            <div class="meta">${line.where} · 등록 26.08.13</div>
+          </div>
+          <div class="ins-acts">
+            <button class="primary" type="button">전화</button>
+            <button type="button">상담</button>
+          </div>
+        </div>
+        <div class="picked">
+          <div class="k">선택 의뢰</div>
+          <div class="title"><strong>${line.kind}${line.rank ? " " + line.rank : ""} · ${line.tx}</strong><span class="status">${line.status}</span></div>
+          <div class="grid">
+            <div><div class="k">최소예산</div><div class="v">${money(line.budgetMin)}</div></div>
+            <div><div class="k">최대예산</div><div class="v">${money(line.budgetMax)}</div></div>
+            <div><div class="k">최소월세</div><div class="v">${money(line.rentMin)}</div></div>
+            <div><div class="k">최대월세</div><div class="v">${money(line.rentMax)}</div></div>
+            <div><div class="k">최소평형</div><div class="v">${area(line.areaMin)}</div></div>
+            <div><div class="k">최대평형</div><div class="v">${area(line.areaMax)}</div></div>
+          </div>
+        </div>
+        <div class="block">
+          <h3>매칭 <em>${line.match}</em></h3>
+          ${hits || `<div class="note-box">연결된 매칭이 없습니다.</div>`}
+        </div>
+        <div class="block">
+          <h3>의뢰 메모</h3>
+          <div class="note-box">${line.note}</div>
+        </div>
+      `;
+    }
+
+    function render() {
+      const list = visibleCases();
+      document.getElementById("visible-count").textContent = `${list.length}명`;
+      document.getElementById("status-left").textContent = `${list.length} / 10명`;
+      document.querySelectorAll(".sort").forEach((btn) => {
+        const on = btn.dataset.sort === sortBy;
+        btn.classList.toggle("on", on);
+        btn.querySelector(".arrow").textContent = on ? (sortDir === "asc" ? "↑" : "↓") : "";
+      });
+      tbody.innerHTML = list.map((c) => {
+        const span = c.lines.length * 2;
+        return c.lines.map((line, i) => {
+          const on = line.id === selected ? " on" : "";
+          const last = i === c.lines.length - 1;
+          const who = i === 0 ? `
+            <th class="sticky-who who-cell" scope="rowgroup" rowspan="${span}">
+              <strong>${c.name}${c.seek && c.offer ? '<span class="both">구함+내놓음</span>' : ""}</strong>
+              <span class="phone">${c.phone}</span>
+            </th>
+            <td class="sticky-act" rowspan="${span}"></td>` : "";
+          const chk = i === 0 ? `<td class="sticky-chk" rowspan="${span}"><input type="checkbox" aria-label="${c.name} 선택" /></td>` : "";
+          const date = i === 0 ? `<td class="date" rowspan="${span}">26.08.13</td>` : "";
+          return `
+            <tr class="intent${on}${last ? "" : ""}" data-line="${line.id}">
+              ${chk}${who}
+              ${lineCells(line)}
+              ${date}
+            </tr>
+            <tr class="note${on}${last ? " case-end" : ""}" data-line="${line.id}">
+              <td colspan="10"><span class="note-where">${line.where}</span> <span class="note-memo">${line.note}</span></td>
+            </tr>`;
+        }).join("");
+      }).join("");
+      tbody.querySelectorAll("tr[data-line]").forEach((tr) => {
+        tr.addEventListener("click", () => {
+          selected = tr.dataset.line;
+          render();
+        });
+      });
+      renderInspector(selected);
+    }
+
+    document.querySelectorAll(".sort").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const field = btn.dataset.sort;
+        if (sortBy === field) sortDir = sortDir === "asc" ? "desc" : "asc";
+        else {
+          sortBy = field;
+          sortDir = field === "customer" ? "asc" : "desc";
+        }
+        render();
+      });
+    });
+    modeButtons.forEach((b) => {
+      b.addEventListener("click", () => {
+        modeButtons.forEach((x) => x.classList.remove("on"));
+        b.classList.add("on");
+        mode = b.dataset.mode;
+        render();
+      });
+    });
+    search.addEventListener("input", render);
+    window.addEventListener("keydown", (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "f") {
+        e.preventDefault();
+        search.focus();
+        return;
+      }
+      if (e.target === search) return;
+      const lines = visibleCases().flatMap((c) => c.lines);
+      const i = lines.findIndex((l) => l.id === selected);
+      if (e.key === "j" || e.key === "ArrowDown") {
+        e.preventDefault();
+        selected = lines[Math.min(lines.length - 1, Math.max(0, i) + 1)].id;
+        render();
+      }
+      if (e.key === "k" || e.key === "ArrowUp") {
+        e.preventDefault();
+        selected = lines[Math.max(0, (i < 0 ? 1 : i) - 1)].id;
+        render();
+      }
+    });
+    render();
+  </script>
+</body>
+</html>

@@ -29,6 +29,9 @@ import { cn } from '@/lib/utils';
 import { formatDate, formatDday, formatMoney, formatPhone, formatRent } from '@/lib/format';
 import { getStatusMeta } from '@/lib/status-config';
 import { EntityChip } from '@/components/domain';
+import { getPropertyLabel } from './-task-property-label';
+
+export { getPropertyLabel } from './-task-property-label';
 
 // ─── Types ────────────────────────────────────────────────
 
@@ -167,15 +170,6 @@ export function TaskSourceBadge({ source, className }: { source: string; classNa
   return null;
 }
 
-export function getPropertyLabel(task: Task): string {
-  const siteName = task.property?.site?.name;
-  const unitName = task.property?.unit?.name;
-  if (siteName && unitName) return `${siteName} ${unitName}`;
-  if (siteName) return siteName;
-  if (unitName) return unitName;
-  return '매물';
-}
-
 export function getListingLabel(listing: TaskListingSummary | null): string {
   if (!listing) return '매물';
   const typeLabel = getStatusMeta('transactionType', listing.transactionType).label;
@@ -194,7 +188,7 @@ export const consultationTypeLabels: Record<string, string> = {
 
 // ─── Context Chips (관련 엔터티 점프) ──────────────────────
 
-/** EntityChip이 지원하지 않는 엔터티(매칭/구매고객/상담)용 — 동일 스타일, 목록 페이지로 점프 */
+/** EntityChip이 지원하지 않는 엔터티(매칭/구매요건/상담)용 — 동일 스타일, 관련 목록으로 점프 */
 function ListLinkChip({
   icon: Icon,
   label,
@@ -205,7 +199,7 @@ function ListLinkChip({
   icon: LucideIcon;
   label: string;
   sublabel?: string;
-  to: '/matches' | '/buyer-requirements' | '/consultations';
+  to: '/matches' | '/customers' | '/consultations';
   className?: string;
 }) {
   const navigate = useNavigate();
@@ -240,6 +234,7 @@ export function TaskContextChips({
 }) {
   const chips: ReactNode[] = [];
   const chipWidth = compact ? 'max-w-[160px]' : 'max-w-[240px]';
+  const propertyChipWidth = compact ? 'max-w-48' : chipWidth;
 
   if (task.contactId || task.contact) {
     chips.push(
@@ -262,7 +257,7 @@ export function TaskContextChips({
           kind="property"
           id={task.propertyId ?? task.property!.id}
           label={getPropertyLabel(task)}
-          className={chipWidth}
+          className={propertyChipWidth}
         />
       </span>,
     );
@@ -291,7 +286,7 @@ export function TaskContextChips({
       <ListLinkChip
         key="buyerRequirement"
         icon={Search}
-        to="/buyer-requirements"
+        to="/customers"
         label={
           task.buyerRequirement?.contact?.name
             ? `구매고객 ${task.buyerRequirement.contact.name}`

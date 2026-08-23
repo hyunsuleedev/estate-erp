@@ -68,6 +68,8 @@ export type ListingSummary = Pick<
   | 'memo'
   | 'createdAt'
   | 'updatedAt'
+  | 'activeAdvertisements'
+  | 'activeAdvertisementCount'
   | 'advertisements'
   | 'priceHistories'
   | '_count'

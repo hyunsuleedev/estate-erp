@@ -28,6 +28,10 @@ jest.mock('@estate-erp/shared', () => ({
     IN_CONTRACT: 'in_contract',
     CLOSED: 'closed',
   },
+  ListingAdvertisementStatus: {
+    ACTIVE: 'active',
+    ENDED: 'ended',
+  },
   IN_CONTRACT_DEAL_STAGES: ['preparing', 'preContract', 'contracted', 'settling'],
   OCCUPYING_DEAL_STAGES: ['preparing', 'preContract', 'contracted', 'settling', 'completed', 'closed'],
   DONE_DEAL_STAGES: ['completed', 'closed'],
@@ -602,9 +606,15 @@ describe('ListingsService', () => {
       expect.objectContaining({
         include: expect.objectContaining({
           advertisements: expect.objectContaining({
+            where: { status: 'active' },
             orderBy: { createdAt: 'desc' },
-            take: 5,
           }),
+          _count: {
+            select: {
+              matches: true,
+              advertisements: { where: { status: 'active' } },
+            },
+          },
           property: expect.objectContaining({
             include: expect.objectContaining({
               tenants: expect.objectContaining({
@@ -627,15 +637,80 @@ describe('ListingsService', () => {
                     select: { id: true, stage: true, stageChangedAt: true },
                   }),
                   advertisements: expect.objectContaining({
+                    where: { status: 'active' },
                     orderBy: { createdAt: 'desc' },
-                    take: 5,
                   }),
+                  _count: {
+                    select: {
+                      matches: true,
+                      advertisements: { where: { status: 'active' } },
+                    },
+                  },
                 }),
               }),
             }),
           }),
         }),
       }),
+    );
+  });
+
+  it('exposes current advertisements without mixing in publication history', async () => {
+    const { prisma, service } = createService();
+    const activeAdvertisement = {
+      id: 'ad-active',
+      channel: 'naver',
+      status: 'active',
+    };
+    prisma.listing.findMany.mockResolvedValue([
+      {
+        id: 'listing-1',
+        advertisements: [activeAdvertisement],
+        _count: { matches: 3, advertisements: 1 },
+        property: {
+          listings: [
+            {
+              id: 'listing-1',
+              advertisements: [activeAdvertisement],
+              _count: { matches: 3, advertisements: 1 },
+            },
+          ],
+        },
+      },
+    ]);
+    prisma.listing.count.mockResolvedValue(1);
+
+    const result = await service.findAll('office-1');
+    const listing = result.items[0] as Record<string, unknown>;
+    const sibling = (listing.property as { listings: Record<string, unknown>[] })
+      .listings[0];
+
+    expect(listing).toMatchObject({
+      activeAdvertisementCount: 1,
+      activeAdvertisements: [activeAdvertisement],
+      _count: { matches: 3 },
+    });
+    expect(listing).not.toHaveProperty('advertisements');
+    expect(sibling).toMatchObject({
+      activeAdvertisementCount: 1,
+      activeAdvertisements: [activeAdvertisement],
+      _count: { matches: 3 },
+    });
+    expect(sibling).not.toHaveProperty('advertisements');
+  });
+
+  it('keeps the full advertisement publication history in detail responses', async () => {
+    const { prisma, service } = createService();
+    prisma.listing.findFirst.mockResolvedValue({ id: 'listing-1' });
+
+    await service.findOne('listing-1', 'office-1');
+
+    const args = prisma.listing.findFirst.mock.calls[0][0];
+    expect(args.include.advertisements).toEqual({
+      orderBy: { createdAt: 'desc' },
+    });
+    expect(args.include.property.include.listings.include.advertisements).toEqual(
+      { orderBy: { createdAt: 'desc' } },
     );
   });
 });

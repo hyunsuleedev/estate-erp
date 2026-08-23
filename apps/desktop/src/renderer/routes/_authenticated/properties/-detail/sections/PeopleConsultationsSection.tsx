@@ -1,4 +1,4 @@
-import { useMemo, type ReactNode } from 'react';
+import { useMemo } from 'react';
 import type {
   Consultation,
   Match,
@@ -22,8 +22,9 @@ interface Props {
   tenants: Tenant[];
   matches: Match[];
   consultations: Consultation[];
-  /** 카드의 "+ 상담 추가" 클릭 시 호출. contactId 자동 채워짐. */
   onAddConsultationFor: (contactId: string) => void;
+  onAddPropertyContact: () => void;
+  onAddTenant: () => void;
 }
 
 interface PersonGroup {
@@ -65,6 +66,8 @@ export function PeopleConsultationsSection({
   matches,
   consultations,
   onAddConsultationFor,
+  onAddPropertyContact,
+  onAddTenant,
 }: Props) {
   const people = useMemo<PersonGroup[]>(() => {
     const seen = new Set<string>();
@@ -166,14 +169,32 @@ export function PeopleConsultationsSection({
       title="인물 · 상담"
       count={people.length}
       action={
-        <Button
-          size="sm"
-          className="h-7 gap-1 px-2 text-[11px]"
-          onClick={() => onAddConsultationFor('')}
-        >
-          <Plus className="size-3" />
-          상담 추가
-        </Button>
+        <div className="flex flex-wrap items-center justify-end gap-1">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 px-2 text-[11px] text-muted-foreground"
+            onClick={onAddPropertyContact}
+          >
+            관련인 추가
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 px-2 text-[11px] text-muted-foreground"
+            onClick={onAddTenant}
+          >
+            임차인 추가
+          </Button>
+          <Button
+            size="sm"
+            className="h-7 gap-1 px-2 text-[11px]"
+            onClick={() => onAddConsultationFor('')}
+          >
+            <Plus className="size-3" />
+            상담 추가
+          </Button>
+        </div>
       }
     >
       {people.length === 0 ? (
@@ -261,14 +282,13 @@ function PersonCard({
           </div>
         </div>
         {person.phone && (
-          <button
-            type="button"
+          <a
+            href={`tel:${person.phone}`}
             className="grid size-7 shrink-0 place-items-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
-            aria-label="전화"
-            disabled
+            aria-label={`${person.name}에게 전화`}
           >
             <Phone className="size-3.5" />
-          </button>
+          </a>
         )}
       </div>
 
@@ -325,6 +345,3 @@ function ConsultationRow({ consultation }: { consultation: Consultation }) {
     </li>
   );
 }
-
-// satisfies-style noop to keep ReactNode import used (Section header takes ReactNode)
-export type _PeopleConsultationsSectionAction = ReactNode;

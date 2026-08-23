@@ -1,8 +1,8 @@
 import { createFileRoute, Link } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Dispatch, RefObject, SetStateAction } from 'react';
-import { ChevronLeft, ChevronRight, FileText, LayoutGrid, List } from 'lucide-react';
+import { ChevronLeft, ChevronRight, FileText, LayoutGrid, List, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import type {
   Contract,
@@ -54,7 +54,7 @@ import {
   transactionReportStatusMeta,
 } from './-contract-shared';
 import {
-  DocumentEditorSheet,
+  DocumentEditorWorkspace,
   emptyDocumentEditorForm,
   toDocumentEditorForm,
   type DocumentEditorForm,
@@ -62,6 +62,8 @@ import {
 import type { ContractDocumentEngineFields } from './-document-engine';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
+import { tabResourceKeys } from '@/features/tabs/lib/tabResource';
+import { useTabStore } from '@/features/tabs/store/useTabStore';
 import { sanitizeContractRichTextForSave } from '@/lib/contract-rich-text';
 import { formatDate, formatDateTime, formatMoney } from '@/lib/format';
 import {
@@ -216,12 +218,32 @@ function useDebouncedValue<T>(value: T, delayMs = 350): T {
   return debounced;
 }
 
+type ContractsSearch = {
+  editorContractId?: string;
+  editorDocumentId?: string;
+};
+
 export const Route = createFileRoute('/_authenticated/contracts/')({
+  validateSearch: (search: Record<string, unknown>): ContractsSearch => ({
+    editorContractId:
+      typeof search.editorContractId === 'string' && search.editorContractId
+        ? search.editorContractId
+        : undefined,
+    editorDocumentId:
+      typeof search.editorDocumentId === 'string' && search.editorDocumentId
+        ? search.editorDocumentId
+        : undefined,
+  }),
   component: ContractsPage,
 });
 
 function ContractsPage() {
   const queryClient = useQueryClient();
+  const { editorContractId, editorDocumentId } = Route.useSearch();
+  const isEditorTab = Boolean(editorContractId);
+  const activeTabId = useTabStore((state) => state.activeTabId);
+  const openOrRevealResource = useTabStore((state) => state.openOrRevealResource);
+  const closeTab = useTabStore((state) => state.closeTab);
   const searchWrapRef = useRef<HTMLDivElement>(null);
   const appliedDealIdRef = useRef<string | null>(null);
   const editorOpenRequestRef = useRef(0);
@@ -494,10 +516,14 @@ function ContractsPage() {
       nextForm.title = spec.title;
 
       setDocumentFormError(null);
-      setDocumentEditorForm(nextForm);
-      setDocumentEditorBaseline(JSON.stringify(nextForm));
       setSelectedContractId(contractId);
-      setIsDocumentEditorOpen(true);
+      if (isEditorTab) {
+        setDocumentEditorForm(nextForm);
+        setDocumentEditorBaseline(JSON.stringify(nextForm));
+        setIsDocumentEditorOpen(true);
+      } else {
+        openContractEditorTab(contractId, refreshedDocument.id, spec.title);
+      }
       toast.success(
         reused
           ? `기존 「${spec.title}」 서식을 열었습니다.`
@@ -532,7 +558,7 @@ function ContractsPage() {
       if (formSpec) {
         applyFormMutation.mutate({ contractId: created.id, spec: formSpec });
       } else {
-        void openContractEditor(created.id);
+        openContractEditorTab(created.id);
       }
       setIsCreateOpen(false);
       setPendingFormSpec(null);
@@ -659,7 +685,7 @@ function ContractsPage() {
       queryClient.invalidateQueries({ queryKey: ['contracts'] });
       queryClient.invalidateQueries({ queryKey: ['contract', copied.id] });
       setSelectedContractId(copied.id);
-      void openContractEditor(copied.id);
+      openContractEditorTab(copied.id);
     },
     onError: (error) => {
       toast.error(error instanceof Error ? error.message : '사본을 만들지 못했습니다.');
@@ -710,21 +736,31 @@ function ContractsPage() {
     documentEditorBaseline !== null &&
     JSON.stringify(documentEditorForm) !== documentEditorBaseline;
 
-  /** 목록에서 계약을 열면 중간 허브 없이 대표 문서 편집기로 바로 진입한다. */
-  async function openContractEditor(contractId: string) {
+  /** 편집 탭 route가 지정한 계약/문서를 실제 편집 상태로 불러온다. */
+  const loadDocumentEditor = useCallback(async (
+    contractId: string,
+    preferredDocumentId?: string,
+  ) => {
     const requestId = ++editorOpenRequestRef.current;
     setSelectedContractId(contractId);
     setDocumentFormError(null);
 
     try {
-      const contract = await queryClient.fetchQuery({
-        queryKey: ['contract', contractId],
-        queryFn: () => api.contracts.findOne(contractId),
-      });
+      const [contract, templates] = await Promise.all([
+        queryClient.fetchQuery({
+          queryKey: ['contract', contractId],
+          queryFn: () => api.contracts.findOne(contractId),
+        }),
+        queryClient.fetchQuery({
+          queryKey: ['contract-document-templates', 'all'],
+          queryFn: () => api.contracts.documentTemplates(),
+        }),
+      ]);
       if (requestId !== editorOpenRequestRef.current) return;
 
       const documents = sortContractDocuments(contract.documents ?? []);
       const document =
+        documents.find((item) => item.id === preferredDocumentId) ??
         documents.find(
           (item) => item.status !== 'cancelled' && item.category === 'contract',
         ) ??
@@ -733,9 +769,9 @@ function ContractsPage() {
 
       let template: ContractDocumentTemplate;
       if (document) {
-        template = resolveDocumentTemplate(document, allDocumentTemplates);
+        template = resolveDocumentTemplate(document, templates);
       } else {
-        const templates = await queryClient.fetchQuery({
+        const applicableTemplates = await queryClient.fetchQuery({
           queryKey: ['contract-document-templates', contract.transactionType],
           queryFn: () =>
             api.contracts.documentTemplates({
@@ -745,10 +781,12 @@ function ContractsPage() {
         if (requestId !== editorOpenRequestRef.current) return;
 
         const primaryTemplate =
-          templates.find((item) => item.category === 'contract' && item.isRequired) ??
-          templates.find((item) => item.category === 'contract') ??
-          templates.find((item) => item.isRequired) ??
-          templates[0];
+          applicableTemplates.find(
+            (item) => item.category === 'contract' && item.isRequired,
+          ) ??
+          applicableTemplates.find((item) => item.category === 'contract') ??
+          applicableTemplates.find((item) => item.isRequired) ??
+          applicableTemplates[0];
 
         if (!primaryTemplate) {
           throw new Error('이 계약에 적용할 수 있는 작성 서식이 없습니다.');
@@ -762,8 +800,49 @@ function ContractsPage() {
       setIsDocumentEditorOpen(true);
     } catch (error) {
       if (requestId !== editorOpenRequestRef.current) return;
-      toast.error(error instanceof Error ? error.message : '문서 편집기를 열지 못했습니다.');
+      const message =
+        error instanceof Error ? error.message : '문서 편집기를 열지 못했습니다.';
+      setDocumentFormError(message);
+      toast.error(message);
     }
+  }, [queryClient]);
+
+  useEffect(() => {
+    if (!editorContractId) return;
+    void loadDocumentEditor(editorContractId, editorDocumentId);
+
+    return () => {
+      editorOpenRequestRef.current += 1;
+    };
+  }, [editorContractId, editorDocumentId, loadDocumentEditor]);
+
+  /** 목록 탭을 유지한 채 계약 문서 편집 전용 탭을 열거나 기존 탭을 앞으로 가져온다. */
+  function openContractEditorTab(
+    contractId: string,
+    documentId?: string,
+    requestedTitle?: string,
+  ) {
+    const contract =
+      contractDetail?.id === contractId
+        ? contractDetail
+        : allContracts.find((item) => item.id === contractId);
+    const propertyLabel = getContractPropertyLabel(contract?.deal);
+    const title =
+      requestedTitle?.trim() ||
+      [propertyLabel, '계약 문서'].filter(Boolean).join(' · ') ||
+      '계약 문서';
+    const search = new URLSearchParams({ editorContractId: contractId });
+    if (documentId) search.set('editorDocumentId', documentId);
+
+    openOrRevealResource({
+      route: `/contracts?${search.toString()}`,
+      kind: 'contract',
+      title,
+      resourceKey: tabResourceKeys.entity(
+        documentId ? 'contract-document' : 'contract',
+        documentId ?? contractId,
+      ),
+    });
   }
 
   /** 편집기 상단 문서 탭 전환 — 미저장 변경은 확인한 뒤에만 폐기한다. */
@@ -833,19 +912,23 @@ function ContractsPage() {
     setIsCreateOpen(true);
   }
 
-  /** 문서 편집기 닫기 — 미저장 변경을 확인한 뒤 문서 목록으로 복귀 */
-  function handleDocumentEditorOpenChange(nextOpen: boolean) {
-    if (!nextOpen && isDocumentEditorDirty && !saveDocumentMutation.isPending) {
+  /** 문서 편집 탭 닫기 — 미저장 변경을 확인한 뒤 목록 탭으로 복귀한다. */
+  function handleDocumentEditorClose() {
+    if (isDocumentEditorDirty && !saveDocumentMutation.isPending) {
       const confirmed = window.confirm('저장하지 않은 변경사항이 있습니다. 저장 없이 닫을까요?');
       if (!confirmed) return;
     }
-    setIsDocumentEditorOpen(nextOpen);
-    if (!nextOpen) {
-      editorOpenRequestRef.current += 1;
-      setDocumentEditorForm(emptyDocumentEditorForm());
-      setDocumentEditorBaseline(null);
-      setDocumentFormError(null);
+
+    editorOpenRequestRef.current += 1;
+    if (isEditorTab && activeTabId) {
+      closeTab(activeTabId);
+      return;
     }
+
+    setIsDocumentEditorOpen(false);
+    setDocumentEditorForm(emptyDocumentEditorForm());
+    setDocumentEditorBaseline(null);
+    setDocumentFormError(null);
   }
 
   /**
@@ -865,7 +948,7 @@ function ContractsPage() {
     };
 
     // 조항 임베디드 에디터 서식(base_contract × sale)은 표기/인쇄 옵션
-    // (금액단위·한글/漢字·공란인쇄·행 토글)을 printOptions 로 함께 저장한다.
+    // (금액단위·한글 금액 병기·공란인쇄·행 토글)을 printOptions 로 함께 저장한다.
     // 그 외 서식은 인자를 생략 — merge 가 기존 저장값을 보존한다.
     const clauseLayout = documentEditorForm.kind
       ? getContractClauseLayout(
@@ -939,6 +1022,49 @@ function ContractsPage() {
   const isFiltered =
     JSON.stringify(filters) !== JSON.stringify(defaultListFilters()) || !!docFilter;
   const totalCount = pagination?.total ?? visibleContracts.length;
+
+  if (isEditorTab) {
+    if (!isDocumentEditorOpen) {
+      return (
+        <div className="-m-4 flex min-h-0 flex-1 items-center justify-center bg-muted/30 p-8">
+          <div className="flex max-w-md flex-col items-center gap-3 text-center">
+            {documentFormError ? (
+              <>
+                <FileText className="size-8 text-muted-foreground" />
+                <p className="text-sm font-medium">문서 편집기를 열지 못했습니다.</p>
+                <p className="text-sm text-muted-foreground">{documentFormError}</p>
+                <Button variant="outline" onClick={handleDocumentEditorClose}>
+                  탭 닫기
+                </Button>
+              </>
+            ) : (
+              <>
+                <Loader2 className="size-6 animate-spin text-muted-foreground" />
+                <p className="text-sm text-muted-foreground">계약 문서를 불러오는 중...</p>
+              </>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <DocumentEditorWorkspace
+        form={documentEditorForm}
+        documents={contractDetail?.documents ?? []}
+        error={documentFormError}
+        isSaving={saveDocumentMutation.isPending}
+        isAddingForm={applyFormMutation.isPending}
+        isDirty={isDocumentEditorDirty}
+        onClose={handleDocumentEditorClose}
+        onFormChange={setDocumentEditorForm}
+        onSelectDocument={switchDocumentEditor}
+        onAddForm={handleEditorAddForm}
+        onSave={() => saveDocument(false)}
+        onSaveAsNew={() => saveDocument(true)}
+      />
+    );
+  }
 
   return (
     <div className="flex flex-col">
@@ -1014,7 +1140,7 @@ function ContractsPage() {
               showPhones={showPhones}
               focusedId={focusedContractId}
               onFocus={setFocusedContractId}
-              onOpen={(contractId) => void openContractEditor(contractId)}
+              onOpen={openContractEditorTab}
               onCopy={(contract) => copyContractMutation.mutate(contract.id)}
               isCopying={copyContractMutation.isPending}
               onDelete={setDeleteContractTarget}
@@ -1024,7 +1150,7 @@ function ContractsPage() {
             <ContractsDocGrid
               contracts={visibleContracts}
               isFiltered={isFiltered}
-              onOpen={(contractId) => void openContractEditor(contractId)}
+              onOpen={openContractEditorTab}
             />
           )}
 
@@ -1241,22 +1367,6 @@ function ContractsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      <DocumentEditorSheet
-        open={isDocumentEditorOpen}
-        form={documentEditorForm}
-        documents={contractDetail?.documents ?? []}
-        error={documentFormError}
-        isSaving={saveDocumentMutation.isPending}
-        isAddingForm={applyFormMutation.isPending}
-        isDirty={isDocumentEditorDirty}
-        onOpenChange={handleDocumentEditorOpenChange}
-        onFormChange={setDocumentEditorForm}
-        onSelectDocument={switchDocumentEditor}
-        onAddForm={handleEditorAddForm}
-        onSave={() => saveDocument(false)}
-        onSaveAsNew={() => saveDocument(true)}
-      />
 
       <ConfirmDialog
         open={!!deleteContractTarget}

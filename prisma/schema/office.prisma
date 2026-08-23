@@ -42,6 +42,7 @@ model Office {
   listingIntakes                       ListingIntake[]
   listings                             Listing[]
   listingAdvertisements                ListingAdvertisement[]
+  listingAdvertisementPriceHistories   ListingAdvertisementPriceHistory[]
   listingAdvertisementSnapshotSessions ListingAdvertisementSnapshotSession[]
   listingAdvertisementSnapshotItems    ListingAdvertisementSnapshotItem[]
   officeAdvertisementGroups            OfficeAdvertisementGroup[]

@@ -97,16 +97,11 @@ export async function request<T>(
     if (qs) url += `?${qs}`;
   }
 
-  let res = await executeRequest(
-    config,
-    url,
-    method,
-    body,
-    (await config.getToken?.()) ?? null,
-  );
+  const token = (await config.getToken?.()) ?? null;
+  const res = await executeRequest(config, url, method, body, token);
 
   if (res.status === 401) {
-    config.onAuthFailure?.();
+    config.onAuthFailure?.({ hadBearer: Boolean(token) });
   }
 
   if (!res.ok) {

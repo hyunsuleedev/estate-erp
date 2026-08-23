@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>WebContentsView reparent fixture</title>
+    <style>
+      :root {
+        color-scheme: light;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      body {
+        margin: 0;
+        min-height: 2400px;
+        overflow-anchor: none;
+        background: linear-gradient(#eef6ff, #ffffff 45%, #e8fff2);
+      }
+
+      main {
+        padding: 24px;
+      }
+
+      input {
+        width: 320px;
+        padding: 8px;
+      }
+
+      #scroll-marker {
+        margin-top: 720px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>WebContentsView reparent fixture</h1>
+      <label>
+        Stateful input
+        <input id="stateful-input" autocomplete="off" />
+      </label>
+      <p id="scroll-marker">scroll marker</p>
+    </main>
+    <script>
+      window.__fixtureIdentity = {
+        nonce: crypto.randomUUID(),
+        startedAt: performance.now(),
+      };
+      window.__fixtureTick = 0;
+      window.setInterval(() => {
+        window.__fixtureTick += 1;
+      }, 10);
+    </script>
+  </body>
+</html>

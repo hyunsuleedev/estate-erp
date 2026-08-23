@@ -112,7 +112,12 @@ been freshly verified against the visible headers.
 - Prefer a normal browser click. If the visible numbered link does not advance,
   verify its `data-value` and use a narrowly scoped DOM `.click()` on that exact
   link; never call an unverified provider function directly.
-- Stop when the control is absent or visibly disabled.
+- Stop when the control is absent or visibly disabled. AIPartner may keep the
+  `next` and `last` anchors visible on the final page while setting both
+  `data-value` targets to the current maximum numbered page. Treat that exact
+  combination as terminal only when the active page, maximum numbered page,
+  next target, and last target are all equal and the row identity is stable.
+  Do not click the no-op final-page anchor.
 - Track the ordered page numbers and a hash or sorted set of row IDs per page.
 - Treat every pagination click as a possible document or CDP target replacement.
   Discard stale element references, reattach, and take a fresh snapshot.
@@ -139,6 +144,12 @@ Stop without collecting further data when the page shows:
 - a table with missing or ambiguous advertisement identity.
 
 Never dismiss or accept these states automatically.
+
+An unrelated marketing popup, banner, or overlay is not automatically a human
+input state. If it obstructs the canonical runner, return the Skill-owned
+browser session to the calling agent. The agent must inspect the live UI,
+close the unrelated obstruction with agent-browser, confirm it disappeared,
+and resume the same session. Do not encode a permanent text-based popup list.
 
 ## Prohibited controls
 

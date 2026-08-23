@@ -5,6 +5,7 @@ import {
   LogOut,
   Sparkles,
 } from "lucide-react"
+import { Link } from "@tanstack/react-router"
 
 import {
   Avatar,
@@ -87,9 +88,19 @@ export function NavUser({
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
-              <DropdownMenuItem>
-                <BadgeCheck />
-                계정 설정
+              <DropdownMenuItem asChild>
+                <Link
+                  to="/settings"
+                  onClick={() =>
+                    localStorage.setItem(
+                      "estate-erp:settings:v1:last-section",
+                      "account",
+                    )
+                  }
+                >
+                  <BadgeCheck />
+                  계정 설정
+                </Link>
               </DropdownMenuItem>
               <DropdownMenuItem>
                 <Bell />

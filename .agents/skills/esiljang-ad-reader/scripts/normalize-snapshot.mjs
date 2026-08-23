@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { readFile } from 'node:fs/promises';
+import { pathToFileURL } from 'node:url';
 
 function cleanText(value) {
   if (value === null || value === undefined) return null;
@@ -259,8 +260,7 @@ async function readInput() {
   return JSON.parse(text);
 }
 
-async function main() {
-  const input = await readInput();
+export function normalizeSnapshot(input) {
   const envelopeErrors = [];
   if (input?.provider !== 'esiljang') {
     envelopeErrors.push({ message: 'provider must be esiljang' });
@@ -351,13 +351,23 @@ async function main() {
     warnings: normalizedItems.flatMap((entry) => entry.warnings),
   };
 
-  process.stdout.write(`${JSON.stringify(output, null, 2)}\n`);
-  if (errors.length > 0) process.exitCode = 1;
+  return output;
 }
 
-main().catch((error) => {
-  process.stderr.write(
-    `${JSON.stringify({ error: error instanceof Error ? error.message : String(error) })}\n`,
-  );
-  process.exitCode = 1;
-});
+async function main() {
+  const output = normalizeSnapshot(await readInput());
+  process.stdout.write(`${JSON.stringify(output, null, 2)}\n`);
+  if (output.errors.length > 0) process.exitCode = 1;
+}
+
+if (
+  process.argv[1] &&
+  import.meta.url === pathToFileURL(process.argv[1]).href
+) {
+  main().catch((error) => {
+    process.stderr.write(
+      `${JSON.stringify({ error: error instanceof Error ? error.message : String(error) })}\n`,
+    );
+    process.exitCode = 1;
+  });
+}

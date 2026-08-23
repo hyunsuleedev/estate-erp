@@ -40,9 +40,13 @@ export class CtiClient {
 
   private readonly url: string;
 
-  constructor(port?: number) {
+  constructor(
+    port?: number,
+    private readonly onOverlayVisibilityChange?: (visible: boolean) => void,
+  ) {
     const resolvedPort =
-      port ?? (Number(process.env.ESTATE_CTI_BRIDGE_PORT ?? '') || DEFAULT_BRIDGE_PORT);
+      port ??
+      (Number(process.env.ESTATE_CTI_BRIDGE_PORT ?? '') || DEFAULT_BRIDGE_PORT);
     this.url = `ws://127.0.0.1:${resolvedPort}/`;
   }
 
@@ -62,7 +66,10 @@ export class CtiClient {
   }
 
   getStatus(): CtiClientStatus {
-    return { bridgeConnected: this.bridgeConnected, bridge: this.lastBridgeStatus };
+    return {
+      bridgeConnected: this.bridgeConnected,
+      bridge: this.lastBridgeStatus,
+    };
   }
 
   private registerIpcHandlers() {
@@ -118,6 +125,7 @@ export class CtiClient {
         return;
       }
       // ring / terminate / ctc_result → renderer가 팝업 + 서버 POST /cti/call-events 처리
+      if (message.type === 'ring') this.onOverlayVisibilityChange?.(true);
       this.broadcast('cti:event', message);
     };
 
@@ -142,7 +150,10 @@ export class CtiClient {
       this.reconnectTimer = null;
       this.connect();
     }, this.reconnectDelayMs);
-    this.reconnectDelayMs = Math.min(this.reconnectDelayMs * 2, MAX_RECONNECT_DELAY_MS);
+    this.reconnectDelayMs = Math.min(
+      this.reconnectDelayMs * 2,
+      MAX_RECONNECT_DELAY_MS,
+    );
   }
 
   private broadcast(channel: string, payload: unknown) {

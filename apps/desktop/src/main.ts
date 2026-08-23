@@ -1,10 +1,4 @@
-import {
-  app,
-  BrowserWindow,
-  ipcMain,
-  net,
-  protocol,
-} from 'electron';
+import { app, ipcMain, net, protocol } from 'electron';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { rm } from 'node:fs/promises';
 import path from 'node:path';
@@ -47,7 +41,9 @@ if (!app.isPackaged) {
 
 const windowManager = new WindowManager();
 const updaterService = new UpdaterService();
-const ctiClient = new CtiClient();
+const ctiClient = new CtiClient(undefined, (visible) => {
+  windowManager.setMainOverlayVisible('cti', visible);
+});
 let packagedRendererProtocolRegistered = false;
 
 function registerPackagedRendererProtocol() {
@@ -64,7 +60,8 @@ function registerPackagedRendererProtocol() {
   protocol.handle(APP_PROTOCOL, (request) => {
     const requestUrl = new URL(request.url);
     const decodedPath = decodeURIComponent(requestUrl.pathname || '/');
-    const relativePath = decodedPath === '/' ? 'index.html' : decodedPath.slice(1);
+    const relativePath =
+      decodedPath === '/' ? 'index.html' : decodedPath.slice(1);
     const requestedPath = path.normalize(path.join(rendererRoot, relativePath));
     const pathFromRendererRoot = path.relative(rendererRoot, requestedPath);
 
@@ -75,10 +72,15 @@ function registerPackagedRendererProtocol() {
       return new Response('Forbidden', { status: 403 });
     }
 
-    return net.fetch(pathToFileURL(requestedPath).toString())
-      .then((response) => (response.ok
-        ? response
-        : net.fetch(pathToFileURL(path.join(rendererRoot, 'index.html')).toString())));
+    return net
+      .fetch(pathToFileURL(requestedPath).toString())
+      .then((response) =>
+        response.ok
+          ? response
+          : net.fetch(
+              pathToFileURL(path.join(rendererRoot, 'index.html')).toString(),
+            ),
+      );
   });
   packagedRendererProtocolRegistered = true;
 
@@ -96,7 +98,10 @@ ipcMain.on('toggle-sidebar', () => {
 });
 
 ipcMain.handle('get-platform', () => process.platform);
-ipcMain.handle('is-fullscreen', () => windowManager.getMainWindow()?.isFullScreen() ?? false);
+ipcMain.handle(
+  'is-fullscreen',
+  () => windowManager.getMainWindow()?.isFullScreen() ?? false,
+);
 
 registerTabIpcHandlers(windowManager);
 updaterService.initialize();
@@ -198,7 +203,9 @@ type CodexRun = {
 const codexRuns = new Map<string, CodexRun>();
 
 function sendCodex(runId: string, payload: unknown) {
-  windowManager.getMainWindow()?.webContents.send('codex:event', { runId, ...(payload as object) });
+  windowManager
+    .getMainWindow()
+    ?.webContents.send('codex:event', { runId, ...(payload as object) });
 }
 
 function flushLines(buf: string, emit: (line: string) => void): string {
@@ -250,8 +257,10 @@ function buildCodexArgs(args: CodexStartArgs): string[] {
   if (args.authToken) {
     const mcpUrl = `${args.apiBaseUrl ?? 'http://localhost:3000'}/mcp`;
     cliArgs.push(
-      '-c', `mcp_servers.estate_erp.url="${mcpUrl}"`,
-      '-c', `mcp_servers.estate_erp.bearer_token_env_var="${ESTATE_ERP_MCP_ENV_VAR}"`,
+      '-c',
+      `mcp_servers.estate_erp.url="${mcpUrl}"`,
+      '-c',
+      `mcp_servers.estate_erp.bearer_token_env_var="${ESTATE_ERP_MCP_ENV_VAR}"`,
     );
   }
 
@@ -291,7 +300,10 @@ ipcMain.handle('codex:start', (_e, args: CodexStartArgs) => {
     proc.stdin.write(prompt);
     proc.stdin.end();
   } catch (err) {
-    sendCodex(runId, { kind: 'error', message: `stdin write failed: ${(err as Error).message}` });
+    sendCodex(runId, {
+      kind: 'error',
+      message: `stdin write failed: ${(err as Error).message}`,
+    });
   }
 
   const run: CodexRun = {
@@ -320,7 +332,11 @@ ipcMain.handle('codex:start', (_e, args: CodexStartArgs) => {
       if (!trimmed) return;
       try {
         const event = JSON.parse(trimmed);
-        if (event && typeof event === 'object' && event.type === 'thread.started') {
+        if (
+          event &&
+          typeof event === 'object' &&
+          event.type === 'thread.started'
+        ) {
           const threadId = (event as { thread_id?: unknown }).thread_id;
           if (typeof threadId === 'string' && threadId.length > 0) {
             run.sessionIdFromThread = threadId;
@@ -415,7 +431,8 @@ app.on('window-all-closed', () => {
 });
 
 app.on('activate', () => {
-  if (BrowserWindow.getAllWindows().length === 0) {
+  // focused detail/detached 창만 남아 있어도 Dock 재활성화는 메인 창을 복원한다.
+  if (!windowManager.getMainWindow()) {
     createWindow();
   }
 });

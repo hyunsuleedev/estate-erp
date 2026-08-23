@@ -106,6 +106,7 @@ export class BuyerRequirementsController {
     dto: {
       buyerIntakeId?: string;
       contactId?: string;
+      createNewIntake?: boolean;
       priorityRank?: number;
       transactionType?: string;
       siteTypes?: string[];

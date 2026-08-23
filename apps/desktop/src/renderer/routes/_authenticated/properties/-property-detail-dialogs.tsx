@@ -19,7 +19,6 @@ import {
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { formatMoney, formatPhone, formatRent } from '@/lib/format';
-import { getStatusMeta } from '@/lib/status-config';
 import { StatusBadge } from '@/components/domain';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -54,8 +53,6 @@ function parseManwon(value: string): number | null {
 function getErrorMessage(err: unknown, fallback: string): string {
   return err instanceof Error && err.message ? err.message : fallback;
 }
-
-const CHECK_STATUS_VALUES = ['unverified', 'verified', 'in_contract', 'hold', 'done'] as const;
 
 const ROLE_OPTIONS = [
   { value: 'owner', label: '소유자' },
@@ -259,7 +256,6 @@ interface ListingFormState {
   price: string;
   deposit: string;
   monthlyRent: string;
-  checkStatus: string;
   maintenanceFee: string;
   maintenanceFeeIncludes: string[];
   loanAmount: string;
@@ -274,7 +270,6 @@ function initListingForm(listing: Listing | null): ListingFormState {
     price: listing?.price != null ? String(listing.price) : '',
     deposit: listing?.deposit != null ? String(listing.deposit) : '',
     monthlyRent: listing?.monthlyRent != null ? String(listing.monthlyRent) : '',
-    checkStatus: listing?.checkStatus ?? 'unverified',
     maintenanceFee: listing?.maintenanceFee != null ? String(listing.maintenanceFee) : '',
     maintenanceFeeIncludes: listing?.maintenanceFeeIncludes ?? [],
     loanAmount: listing?.loanAmount != null ? String(listing.loanAmount) : '',
@@ -326,7 +321,6 @@ export function ListingFormDialog({
       if (isEdit) {
         return api.listings.update(listing.id, {
           ...common,
-          checkStatus: form.checkStatus,
           memo: form.memo.trim() || undefined,
         });
       }
@@ -356,7 +350,7 @@ export function ListingFormDialog({
           <DialogTitle>{isEdit ? '매물 수정' : '매물 추가'}</DialogTitle>
         </DialogHeader>
         <div className="max-h-[65vh] space-y-3 overflow-y-auto pr-1">
-          <div className="grid grid-cols-2 gap-3">
+          <div>
             <div>
               <Label className="text-xs">거래유형 {isEdit ? '' : '*'}</Label>
               {isEdit ? (
@@ -381,23 +375,6 @@ export function ListingFormDialog({
                 </Select>
               )}
             </div>
-            {isEdit && (
-              <div>
-                <Label className="text-xs">확인 상태</Label>
-                <Select value={form.checkStatus} onValueChange={(v) => set({ checkStatus: v })}>
-                  <SelectTrigger className="mt-1 h-8 w-full text-sm">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {CHECK_STATUS_VALUES.map((value) => (
-                      <SelectItem key={value} value={value}>
-                        {getStatusMeta('checkStatus', value).label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
           </div>
 
           {isMonthly ? (

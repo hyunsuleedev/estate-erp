@@ -136,6 +136,8 @@ export class UnitsService {
       lineNo?: number;
       exclusiveAreaM2?: number | null;
       supplyAreaM2?: number | null;
+      roomCount?: number | null;
+      bathRoomCount?: number | null;
       isPiloti?: boolean;
       cellType?: string;
     },
@@ -158,6 +160,7 @@ export class UnitsService {
       await this.findOwnedSiteUnitType(dto.siteUnitTypeId, site.id, officeId);
     }
 
+    this.assertValidLayoutCounts(dto);
     const data = this.normalizeUnitCell(dto);
 
     return this.prisma.unit.create({
@@ -177,6 +180,8 @@ export class UnitsService {
       lineNo?: number | null;
       exclusiveAreaM2?: number | null;
       supplyAreaM2?: number | null;
+      roomCount?: number | null;
+      bathRoomCount?: number | null;
       isPiloti?: boolean;
       cellType?: string;
     },
@@ -199,6 +204,7 @@ export class UnitsService {
       await this.findOwnedSiteUnitType(nextSiteUnitTypeId, site.id, officeId);
     }
 
+    this.assertValidLayoutCounts(dto);
     const data = this.normalizeUnitCell(dto);
 
     return this.prisma.unit.update({
@@ -258,6 +264,24 @@ export class UnitsService {
     }
 
     return dto;
+  }
+
+  private assertValidLayoutCounts(dto: {
+    roomCount?: number | null;
+    bathRoomCount?: number | null;
+  }) {
+    for (const [field, value] of [
+      ['roomCount', dto.roomCount],
+      ['bathRoomCount', dto.bathRoomCount],
+    ] as const) {
+      if (
+        value !== undefined &&
+        value !== null &&
+        (!Number.isInteger(value) || value < 0)
+      ) {
+        throw new BadRequestException(`${field} must be a non-negative integer or null`);
+      }
+    }
   }
 
   private withContactPhones<T extends Array<{ properties?: Array<{

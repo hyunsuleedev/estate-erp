@@ -1866,7 +1866,11 @@ function PropertyGridRow({
     0,
   );
   const adCount = listings.reduce(
-    (total, listing) => total + (listing.advertisements?.length ?? 0),
+    (total, listing) =>
+      total +
+      (listing.activeAdvertisementCount ??
+        listing.activeAdvertisements?.length ??
+        0),
     0,
   );
   const unitTypeName = getUnitTypeName(property);
@@ -3391,10 +3395,18 @@ function PropertyAdPanel({
   width: number;
 }) {
   const adRows = group.listings.flatMap((listing) =>
-    (listing.advertisements ?? []).map((advertisement) => ({
+    (listing.activeAdvertisements ?? []).map((advertisement) => ({
       listing,
       advertisement,
     })),
+  );
+  const activeAdvertisementCount = group.listings.reduce(
+    (total, listing) =>
+      total +
+      (listing.activeAdvertisementCount ??
+        listing.activeAdvertisements?.length ??
+        0),
+    0,
   );
 
   return (
@@ -3405,7 +3417,7 @@ function PropertyAdPanel({
       <div className="mb-2 flex items-center gap-1.5">
         <Megaphone className="size-3.5 text-info" />
         <span className="text-xs font-semibold text-info">
-          광고 노출 {adRows.length}개
+          광고 노출 {activeAdvertisementCount}개
         </span>
         <span className="text-[11.5px] text-info/60">· CP사별 현황</span>
       </div>
@@ -4074,6 +4086,8 @@ function toListingSummary(listing: ListingSummary): ListingSummary {
     memo: listing.memo,
     createdAt: listing.createdAt,
     updatedAt: listing.updatedAt,
+    activeAdvertisements: listing.activeAdvertisements,
+    activeAdvertisementCount: listing.activeAdvertisementCount,
     advertisements: listing.advertisements,
     priceHistories: listing.priceHistories,
     _count: listing._count,

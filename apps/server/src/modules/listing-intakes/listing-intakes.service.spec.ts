@@ -104,8 +104,17 @@ describe('ListingIntakesService', () => {
     );
     expect(args.select.property.select.site.select).not.toHaveProperty('metadata');
     expect(args.select.listings.select._count).toEqual({
-      select: { matches: true },
+      select: {
+        matches: true,
+        advertisements: { where: { status: 'active' } },
+      },
     });
+    expect(args.select.listings.select.advertisements.where).toEqual({
+      status: 'active',
+    });
+    expect(args.select.listings.select.advertisements).not.toHaveProperty(
+      'take',
+    );
     expect(args.select.listings.select.advertisements.select).toEqual({
       id: true,
       channel: true,
@@ -119,6 +128,39 @@ describe('ListingIntakesService', () => {
     });
   });
 
+  it('exposes active advertisements separately from advertisement history', async () => {
+    const { prisma, service } = createService();
+    const activeAdvertisement = {
+      id: 'ad-active',
+      channel: 'naver',
+      status: 'active',
+    };
+    prisma.listingIntake.findMany.mockResolvedValue([
+      {
+        id: 'intake-1',
+        listings: [
+          {
+            id: 'listing-1',
+            advertisements: [activeAdvertisement],
+            _count: { matches: 2, advertisements: 1 },
+          },
+        ],
+      },
+    ]);
+
+    const result = await service.findAll('office-1');
+    const listing = (
+      result.items[0] as { listings: Array<Record<string, unknown>> }
+    ).listings[0];
+
+    expect(listing).toMatchObject({
+      activeAdvertisementCount: 1,
+      activeAdvertisements: [activeAdvertisement],
+      _count: { matches: 2 },
+    });
+    expect(listing).not.toHaveProperty('advertisements');
+  });
+
   it('includes ordered price histories for listings in the detail view', () => {
     const { service } = createService();
     const detailInclude = (
@@ -126,6 +168,9 @@ describe('ListingIntakesService', () => {
         buildDetailInclude: () => {
           listings: {
             include: {
+              advertisements: {
+                orderBy: { createdAt: 'desc' };
+              };
               priceHistories: {
                 orderBy: { createdAt: 'desc' };
               };
@@ -136,6 +181,9 @@ describe('ListingIntakesService', () => {
     ).buildDetailInclude();
 
     expect(detailInclude.listings.include.priceHistories).toEqual({
+      orderBy: { createdAt: 'desc' },
+    });
+    expect(detailInclude.listings.include.advertisements).toEqual({
       orderBy: { createdAt: 'desc' },
     });
   });
@@ -223,6 +271,123 @@ describe('ListingIntakesService', () => {
     );
   });
 
+  it('sorts by the displayed supply area with the unit-type fallback', async () => {
+    const { prisma, service } = createService();
+    const candidate = (
+      id: string,
+      supplyAreaM2: number | null,
+      unitTypeSupplyAreaM2: number,
+    ) => ({
+      id,
+      lifecycleStatus: 'open',
+      receivedAt: new Date('2026-08-01T00:00:00.000Z'),
+      lastCheckedAt: null,
+      lastVerifiedAt: null,
+      memo: null,
+      createdAt: new Date('2026-08-01T00:00:00.000Z'),
+      updatedAt: new Date('2026-08-01T00:00:00.000Z'),
+      property: {
+        site: { name: '고덕그라시움' },
+        unit: {
+          name: '101호',
+          exclusiveAreaM2: null,
+          supplyAreaM2,
+          dong: { name: '101동' },
+          siteUnitType: {
+            name: '84A',
+            exclusiveAreaM2: null,
+            supplyAreaM2: unitTypeSupplyAreaM2,
+          },
+        },
+      },
+      listings: [],
+    });
+
+    prisma.listingIntake.findMany
+      .mockResolvedValueOnce([
+        candidate('fallback', null, 112.4),
+        candidate('unit-value', 99.2, 130),
+      ])
+      .mockResolvedValueOnce([{ id: 'unit-value' }, { id: 'fallback' }]);
+
+    const result = await service.findAll('office-1', {
+      sortBy: 'supplyArea',
+      sortOrder: 'asc',
+      limit: 2,
+    });
+
+    expect(result.items.map((item) => item.id)).toEqual([
+      'unit-value',
+      'fallback',
+    ]);
+    expect(prisma.listingIntake.findMany).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        where: { id: { in: ['unit-value', 'fallback'] } },
+      }),
+    );
+  });
+
+  it('sorts by active advertisement count instead of stored publication rows', async () => {
+    const { prisma, service } = createService();
+    const candidate = (
+      id: string,
+      activeAdvertisementCount: number,
+      advertisements: Array<{ status: string }>,
+    ) => ({
+      id,
+      lifecycleStatus: 'open',
+      receivedAt: new Date('2026-08-01T00:00:00.000Z'),
+      lastCheckedAt: null,
+      lastVerifiedAt: null,
+      memo: null,
+      createdAt: new Date('2026-08-01T00:00:00.000Z'),
+      updatedAt: new Date('2026-08-01T00:00:00.000Z'),
+      property: { site: { name: '고덕그라시움' }, unit: null },
+      listings: [
+        {
+          transactionType: 'sale',
+          price: 150000,
+          deposit: null,
+          monthlyRent: null,
+          loanAmount: null,
+          moveInAvailableType: 'immediate',
+          moveInAvailableFrom: null,
+          moveInAvailableTo: null,
+          isPaused: false,
+          updatedAt: new Date('2026-08-01T00:00:00.000Z'),
+          deals: [],
+          _count: {
+            matches: 0,
+            advertisements: activeAdvertisementCount,
+          },
+          advertisements,
+        },
+      ],
+    });
+
+    prisma.listingIntake.findMany
+      .mockResolvedValueOnce([
+        candidate('a-ended-only', 0, [{ status: 'ended' }]),
+        candidate('z-currently-active', 1, [{ status: 'active' }]),
+      ])
+      .mockResolvedValueOnce([
+        { id: 'z-currently-active' },
+        { id: 'a-ended-only' },
+      ]);
+
+    const result = await service.findAll('office-1', {
+      sortBy: 'advertisement',
+      sortOrder: 'desc',
+      limit: 2,
+    });
+
+    expect(result.items.map((item) => item.id)).toEqual([
+      'z-currently-active',
+      'a-ended-only',
+    ]);
+  });
+
   it('filters by advertisement presence', async () => {
     const { prisma, service } = createService();
 
@@ -232,7 +397,13 @@ describe('ListingIntakesService', () => {
       expect.objectContaining({
         where: expect.objectContaining({
           AND: expect.arrayContaining([
-            { listings: { some: expect.objectContaining({ advertisements: { some: {} } }) } },
+            {
+              listings: {
+                some: {
+                  advertisements: { some: { status: "active" } },
+                },
+              },
+            },
           ]),
         }),
       }),
@@ -248,7 +419,13 @@ describe('ListingIntakesService', () => {
       expect.objectContaining({
         where: expect.objectContaining({
           AND: expect.arrayContaining([
-            { listings: { some: expect.objectContaining({ advertisements: { none: {} } }) } },
+            {
+              listings: {
+                none: {
+                  advertisements: { some: { status: "active" } },
+                },
+              },
+            },
           ]),
         }),
       }),
@@ -463,6 +640,105 @@ describe('ListingIntakesService', () => {
     );
   });
 
+  it('filters exact room and bathroom counts with Unit-first fallback semantics', async () => {
+    const { prisma, service } = createService();
+
+    await service.findAll('office-1', {
+      roomCount: 2,
+      bathRoomCount: 1,
+    });
+
+    expect(prisma.listingIntake.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          AND: expect.arrayContaining([
+            {
+              property: {
+                unit: {
+                  OR: [
+                    { roomCount: 2 },
+                    {
+                      roomCount: null,
+                      siteUnitType: { roomCount: 2 },
+                    },
+                  ],
+                },
+              },
+            },
+            {
+              property: {
+                unit: {
+                  OR: [
+                    { bathRoomCount: 1 },
+                    {
+                      bathRoomCount: null,
+                      siteUnitType: { bathRoomCount: 1 },
+                    },
+                  ],
+                },
+              },
+            },
+          ]),
+        }),
+      }),
+    );
+  });
+
+  it('filters minimum room and bathroom counts without bypassing a Unit override', async () => {
+    const { prisma, service } = createService();
+
+    await service.findAll('office-1', {
+      roomCountMin: 4,
+      bathRoomCountMin: 3,
+    });
+
+    const args = prisma.listingIntake.findMany.mock.calls[0][0];
+    expect(args.where.AND).toEqual(
+      expect.arrayContaining([
+        {
+          property: {
+            unit: {
+              OR: [
+                { roomCount: { gte: 4 } },
+                {
+                  roomCount: null,
+                  siteUnitType: { roomCount: { gte: 4 } },
+                },
+              ],
+            },
+          },
+        },
+        {
+          property: {
+            unit: {
+              OR: [
+                { bathRoomCount: { gte: 3 } },
+                {
+                  bathRoomCount: null,
+                  siteUnitType: { bathRoomCount: { gte: 3 } },
+                },
+              ],
+            },
+          },
+        },
+      ]),
+    );
+  });
+
+  it('rejects invalid or ambiguous room and bathroom count filters', async () => {
+    const { service } = createService();
+
+    await expect(
+      service.findAll('office-1', { roomCount: -1 }),
+    ).rejects.toThrow('roomCount must be a non-negative integer');
+    await expect(
+      service.findAll('office-1', { bathRoomCount: 1.5 }),
+    ).rejects.toThrow('bathRoomCount must be a non-negative integer');
+    await expect(
+      service.findAll('office-1', { roomCount: 3, roomCountMin: 4 }),
+    ).rejects.toThrow('Use either roomCount or roomCountMin');
+  });
+
   it('uses ward code as the most specific region filter', async () => {
     const { prisma, service } = createService();
 
@@ -576,6 +852,7 @@ describe('ListingIntakesService', () => {
     await service.closeWithActiveDeals(
       'intake-1',
       'office-1',
+      'external_deal_completed',
       '2026-05-20T00:00:00.000Z',
     );
 
@@ -589,7 +866,7 @@ describe('ListingIntakesService', () => {
         lifecycleStatus: 'closed',
         lifecycleChangedAt: expect.any(Date),
         lifecycleChangedBy: 'user',
-        closedReason: 'withdrawn',
+        closedReason: 'external_deal_completed',
       },
     });
     expect(tx.deal.updateMany).toHaveBeenCalledWith({
@@ -605,7 +882,8 @@ describe('ListingIntakesService', () => {
         isCancelled: true,
         cancelledAt: expect.any(Date),
         cancelledBy: 'office',
-        cancelReason: '매물 종료와 함께 취소 처리',
+        cancelReason:
+          '매물 종료와 함께 취소 처리 (external_deal_completed)',
       },
     });
   });
@@ -623,6 +901,7 @@ describe('ListingIntakesService', () => {
       service.closeWithActiveDeals(
         'intake-1',
         'office-1',
+        'withdrawn',
         '2026-05-20T00:00:00.000Z',
       ),
     ).rejects.toThrow('다른 사용자가 먼저 수정했습니다.');
@@ -791,7 +1070,70 @@ describe('ListingIntakesService', () => {
     );
   });
 
-  it('creates new intakes as open with no implied verification', async () => {
+  it('records an external contract separately from an internal Deal completion', async () => {
+    const { prisma, service, tx } = createService();
+    prisma.listingIntake.findFirst.mockResolvedValue({
+      id: 'intake-1',
+      officeId: 'office-1',
+      propertyId: 'property-1',
+      lifecycleStatus: 'open',
+      lifecycleChangedBy: 'user',
+      closedReason: null,
+      lastVerifiedAt: null,
+      property: { propertyContacts: [] },
+    });
+
+    await service.confirm('intake-1', 'office-1', 'user-1', {
+      result: 'unavailable',
+      closedReason: 'external_deal_completed',
+      channel: 'phone',
+    });
+
+    expect(tx.listingIntake.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          lifecycleStatus: 'closed',
+          lifecycleChangedBy: 'user',
+          closedReason: 'external_deal_completed',
+          lastCheckResult: 'unavailable',
+        }),
+      }),
+    );
+  });
+
+  it('records a generic close reason without describing the listing as unavailable', async () => {
+    const { prisma, service, tx } = createService();
+    prisma.listingIntake.findFirst.mockResolvedValue({
+      id: 'intake-1',
+      officeId: 'office-1',
+      propertyId: 'property-1',
+      lifecycleStatus: 'open',
+      lifecycleChangedBy: 'user',
+      closedReason: null,
+      lastVerifiedAt: null,
+      property: {
+        propertyContacts: [
+          { contactId: 'owner-1', isPrimary: true, role: 'owner' },
+        ],
+      },
+    });
+
+    await service.confirm('intake-1', 'office-1', 'user-1', {
+      result: 'unavailable',
+      closedReason: 'other',
+      channel: 'phone',
+    });
+
+    expect(tx.consultation.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          content: '[매물확인] 기타 사유로 의뢰 종료',
+        }),
+      }),
+    );
+  });
+
+  it('creates a new open intake even when the property has no contacts', async () => {
     const { prisma, service } = createService();
     prisma.listingIntake.findFirst.mockResolvedValue(null);
     prisma.listingIntake.update.mockResolvedValue({ id: 'intake-1' });
@@ -812,13 +1154,7 @@ describe('ListingIntakesService', () => {
         create: jest.fn(),
       },
       propertyContact: {
-        findMany: jest.fn().mockResolvedValue([
-          {
-            contactId: 'owner-1',
-            role: 'owner',
-            isPrimary: true,
-          },
-        ]),
+        findMany: jest.fn().mockResolvedValue([]),
       },
       brokerageCase: {
         findFirst: jest.fn(),
@@ -850,6 +1186,7 @@ describe('ListingIntakesService', () => {
         }),
       }),
     );
+    expect(tx.brokerageCaseParticipant.create).not.toHaveBeenCalled();
   });
 
   it('emits a realtime intake update after creating an intake', async () => {

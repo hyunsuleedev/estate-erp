@@ -132,7 +132,9 @@ export function CtiProvider({
           queryClient.invalidateQueries({ queryKey: ['cti', 'call-logs'] });
           if (!result.callLog) return;
           mutateActiveCall((prev) =>
-            prev && prev.key === key ? { ...prev, callLog: result.callLog ?? null } : prev,
+            prev && prev.key === key
+              ? { ...prev, callLog: result.callLog ?? null }
+              : prev,
           );
         })
         .catch((error) => {
@@ -144,7 +146,9 @@ export function CtiProvider({
         .lookup(event.caller)
         .then((lookup) => {
           mutateActiveCall((prev) =>
-            prev && prev.key === key ? { ...prev, lookup, lookupLoading: false } : prev,
+            prev && prev.key === key
+              ? { ...prev, lookup, lookupLoading: false }
+              : prev,
           );
         })
         .catch((error) => {
@@ -165,16 +169,21 @@ export function CtiProvider({
       // 화면의 팝업이 이 terminate와 같은 통화일 때만 상태를 바꾼다.
       // (다른 회선/이전 통화의 늦은 종료 이벤트가 지금 울리는 팝업을 덮으면 안 됨)
       const current = activeCallRef.current;
-      const matchesPopup = current !== null && current.phoneNumber === event.caller;
+      const matchesPopup =
+        current !== null && current.phoneNumber === event.caller;
       const patchedKey = matchesPopup ? current.key : null;
 
       if (matchesPopup) {
         mutateActiveCall((prev) =>
-          prev && prev.key === patchedKey ? { ...prev, phase, durationSec } : prev,
+          prev && prev.key === patchedKey
+            ? { ...prev, phase, durationSec }
+            : prev,
         );
         clearDismissTimer();
         dismissTimerRef.current = setTimeout(() => {
-          mutateActiveCall((prev) => (prev && prev.key === patchedKey ? null : prev));
+          mutateActiveCall((prev) =>
+            prev && prev.key === patchedKey ? null : prev,
+          );
           dismissTimerRef.current = null;
         }, AUTO_DISMISS_AFTER_END_MS);
       }
@@ -247,20 +256,35 @@ export function CtiProvider({
     const call = activeCallRef.current;
     if (!call) return;
     const lookup = await api.cti.lookup(call.phoneNumber);
-    mutateActiveCall((prev) => (prev && prev.key === call.key ? { ...prev, lookup } : prev));
+    mutateActiveCall((prev) =>
+      prev && prev.key === call.key ? { ...prev, lookup } : prev,
+    );
   }, [mutateActiveCall]);
 
   const patchCallLog = useCallback(
     (patch: Partial<CallLog>) => {
       mutateActiveCall((prev) =>
-        prev && prev.callLog ? { ...prev, callLog: { ...prev.callLog, ...patch } } : prev,
+        prev && prev.callLog
+          ? { ...prev, callLog: { ...prev.callLog, ...patch } }
+          : prev,
       );
     },
     [mutateActiveCall],
   );
 
+  const isOverlayVisible = enabled && activeCall !== null;
+  useEffect(() => {
+    const setOverlayVisible =
+      window.electronBridge?.tabs.setGlobalOverlayVisible;
+    if (!enabled || !setOverlayVisible) return;
+    setOverlayVisible('cti', isOverlayVisible);
+    return () => setOverlayVisible('cti', false);
+  }, [enabled, isOverlayVisible]);
+
   return (
-    <CtiContext.Provider value={{ activeCall, dismiss, refreshLookup, patchCallLog }}>
+    <CtiContext.Provider
+      value={{ activeCall, dismiss, refreshLookup, patchCallLog }}
+    >
       {children}
     </CtiContext.Provider>
   );

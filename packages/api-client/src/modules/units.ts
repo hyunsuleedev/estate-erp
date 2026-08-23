@@ -90,6 +90,10 @@ export interface Unit {
   lineNo: number | null;
   exclusiveAreaM2: number | null;
   supplyAreaM2: number | null;
+  /** 호실별 구조 override. null이면 SiteUnitType 값을 사용한다. */
+  roomCount: number | null;
+  /** 호실별 구조 override. null이면 SiteUnitType 값을 사용한다. */
+  bathRoomCount: number | null;
   isPiloti: boolean;
   createdAt: string;
   updatedAt: string;
@@ -106,6 +110,8 @@ export interface CreateUnitDto {
   lineNo?: number;
   exclusiveAreaM2?: number;
   supplyAreaM2?: number;
+  roomCount?: number | null;
+  bathRoomCount?: number | null;
 }
 
 export interface UpdateUnitDto {
@@ -116,6 +122,8 @@ export interface UpdateUnitDto {
   lineNo?: number | null;
   exclusiveAreaM2?: number;
   supplyAreaM2?: number;
+  roomCount?: number | null;
+  bathRoomCount?: number | null;
 }
 
 export function createUnitsApi(request: RequestFn) {

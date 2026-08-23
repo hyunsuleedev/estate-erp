@@ -1,10 +1,18 @@
 import { Link, createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import type { Dispatch, ReactNode, SetStateAction } from 'react';
 import {
   Activity,
   AlertTriangle,
+  ArrowLeft,
   BriefcaseBusiness,
   CalendarClock,
   ChevronRight,
@@ -16,12 +24,18 @@ import {
   Mail,
   Phone,
   RotateCw,
+  ShieldCheck,
   Users,
+  X,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import { ApiError } from '@estate-erp/api-client';
-import type { CreateEmployeeDto, EmployeeDetail } from '@estate-erp/api-client';
+import type {
+  CreateEmployeeDto,
+  Employee,
+  EmployeeDetail,
+} from '@estate-erp/api-client';
 import { USER_LICENSE_TYPE_LABELS } from '@estate-erp/shared';
 import { api } from '@/lib/api';
 import { useAuth } from '@/providers/auth-provider';
@@ -34,12 +48,7 @@ import {
 } from '@/lib/format';
 import { timeAgo } from '@/lib/time-ago';
 import { getStatusMeta } from '@/lib/status-config';
-import {
-  ConfirmDialog,
-  EmptyState,
-  FilterSearch,
-  FilterSelect,
-} from '@/components/domain';
+import { ConfirmDialog, FilterSearch, FilterSelect } from '@/components/domain';
 import { Avatar, AvatarBadge, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -163,6 +172,20 @@ function getErrorMessage(error: unknown): string {
   return '요청 처리에 실패했습니다.';
 }
 
+function toDetailForm(employee: EmployeeDetail): DetailFormState {
+  return {
+    name: employee.name ?? '',
+    phone: employee.phone ?? '',
+    email: employee.email ?? '',
+    licenseType: employee.licenseType ?? '',
+    licenseNo: employee.licenseNo ?? '',
+    payType: employee.payType ?? 'mixed',
+    baseSalary: employee.baseSalary != null ? String(employee.baseSalary) : '',
+    commissionRate:
+      employee.commissionRate != null ? String(employee.commissionRate) : '',
+  };
+}
+
 export const Route = createFileRoute('/_authenticated/employees/')({
   component: EmployeesPage,
 });
@@ -198,6 +221,7 @@ function EmployeesPage() {
     commissionRate: '',
   });
   const searchWrapRef = useRef<HTMLDivElement>(null);
+  const rosterRef = useRef<HTMLDivElement>(null);
 
   const {
     data: employees = [],
@@ -269,20 +293,6 @@ function EmployeesPage() {
     );
   }, [visibleEmployees, roleFilter, search, statusFilter, workloadFilter]);
 
-  useEffect(() => {
-    if (!selectedEmployeeId && filteredEmployees.length > 0) {
-      setSelectedEmployeeId(filteredEmployees[0].id);
-    }
-
-    if (
-      selectedEmployeeId &&
-      filteredEmployees.length > 0 &&
-      !filteredEmployees.some((employee) => employee.id === selectedEmployeeId)
-    ) {
-      setSelectedEmployeeId(filteredEmployees[0].id);
-    }
-  }, [filteredEmployees, selectedEmployeeId]);
-
   const {
     data: employeeDetail,
     isLoading: isDetailLoading,
@@ -297,22 +307,7 @@ function EmployeesPage() {
   useEffect(() => {
     if (!employeeDetail) return;
 
-    setDetailForm({
-      name: employeeDetail.name ?? '',
-      phone: employeeDetail.phone ?? '',
-      email: employeeDetail.email ?? '',
-      licenseType: employeeDetail.licenseType ?? '',
-      licenseNo: employeeDetail.licenseNo ?? '',
-      payType: employeeDetail.payType ?? 'mixed',
-      baseSalary:
-        employeeDetail.baseSalary != null
-          ? String(employeeDetail.baseSalary)
-          : '',
-      commissionRate:
-        employeeDetail.commissionRate != null
-          ? String(employeeDetail.commissionRate)
-          : '',
-    });
+    setDetailForm(toDetailForm(employeeDetail));
   }, [employeeDetail]);
 
   // 키보드 단축키: '/' 검색 포커스, Cmd/Ctrl+N 직원 추가
@@ -342,6 +337,53 @@ function EmployeesPage() {
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, [canManage]);
+
+  const closeEmployeeWorkspace = useCallback(() => {
+    if (employeeDetail) setDetailForm(toDetailForm(employeeDetail));
+    setResetPassword('');
+    const employeeId = selectedEmployeeId;
+    setSelectedEmployeeId(null);
+    window.setTimeout(() => {
+      const employeeRows = Array.from(
+        rosterRef.current?.querySelectorAll<HTMLElement>(
+          '[data-employee-row]',
+        ) ?? [],
+      );
+      const target =
+        employeeRows.find(
+          (employeeRow) => employeeRow.dataset.employeeId === employeeId,
+        ) ?? employeeRows[0];
+      target?.focus();
+    }, 0);
+  }, [employeeDetail, selectedEmployeeId]);
+
+  useEffect(() => {
+    if (!selectedEmployeeId) return;
+
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (
+        event.key !== 'Escape' ||
+        event.defaultPrevented ||
+        isCreateOpen ||
+        isStatusConfirmOpen ||
+        pendingRole !== null
+      ) {
+        return;
+      }
+
+      event.preventDefault();
+      closeEmployeeWorkspace();
+    };
+
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [
+    closeEmployeeWorkspace,
+    isCreateOpen,
+    isStatusConfirmOpen,
+    pendingRole,
+    selectedEmployeeId,
+  ]);
 
   const invalidateEmployee = () => {
     queryClient.invalidateQueries({ queryKey: ['employees'] });
@@ -462,6 +504,11 @@ function EmployeesPage() {
     });
   };
 
+  const closeCreateDialog = () => {
+    setIsCreateOpen(false);
+    setCreateForm(EMPTY_CREATE_FORM);
+  };
+
   // 생성: manager는 agent만, owner는 agent/manager. 역할 변경: owner는 owner 승계까지 가능.
   const createRoleOptions =
     user?.role === 'owner' ? ['agent', 'manager'] : ['agent'];
@@ -491,120 +538,110 @@ function EmployeesPage() {
     return warnings;
   }, [employeeDetail]);
 
+  const activeFilterCount = [roleFilter, statusFilter, workloadFilter].filter(
+    Boolean,
+  ).length;
+  const slotUsage =
+    maxUsers && maxUsers > 0
+      ? Math.min(100, Math.round((activeUserCount / maxUsers) * 100))
+      : null;
+  const activeFilteredEmployees = filteredEmployees.filter(
+    (employee) => employee.isActive,
+  );
+  const inactiveFilteredEmployees = filteredEmployees.filter(
+    (employee) => !employee.isActive,
+  );
+  const teamTotals = visibleEmployees.reduce(
+    (totals, employee) => ({
+      tasks: totals.tasks + employee.counts.activeTaskCount,
+      customers: totals.customers + employee.counts.activeBuyerRequirementCount,
+      deals: totals.deals + employee.counts.activeDealCount,
+      unsettled: totals.unsettled + employee.counts.unsettledDealCount,
+    }),
+    { tasks: 0, customers: 0, deals: 0, unsettled: 0 },
+  );
+
   return (
     <div
       data-employees-page
-      className="-m-4 flex min-h-0 min-w-0 flex-1 flex-col bg-white"
+      className="-m-4 flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[#f7f6f3]"
     >
-      <section
-        data-employee-toolbar
-        className="shrink-0 border-b border-border bg-white px-3 py-2.5"
-      >
-        <div className="flex min-w-0 items-center gap-2">
-          {canManage ? (
-            <>
-              <div
-                ref={searchWrapRef}
-                className="min-w-[240px] max-w-[380px] flex-1"
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter' && filteredEmployees.length > 0) {
-                    setSelectedEmployeeId(filteredEmployees[0].id);
-                  }
-                }}
-              >
-                <FilterSearch
-                  value={search}
-                  onChange={setSearch}
-                  placeholder="이름, 로그인 ID, 연락처 검색 ( / )"
-                  className="w-full"
-                />
-              </div>
-              <FilterSelect
-                label="역할"
-                value={roleFilter}
-                onChange={setRoleFilter}
-                options={[
-                  { value: 'owner', label: '대표' },
-                  { value: 'manager', label: '매니저' },
-                  { value: 'agent', label: '중개사' },
-                ]}
-              />
-              <FilterSelect
-                label="상태"
-                value={statusFilter}
-                onChange={setStatusFilter}
-                options={[
-                  { value: 'active', label: '활성' },
-                  { value: 'inactive', label: '비활성' },
-                ]}
-              />
-              <FilterSelect
-                label="담당"
-                value={workloadFilter}
-                onChange={setWorkloadFilter}
-                options={[
-                  { value: 'hasTasks', label: '진행 업무 있음' },
-                  { value: 'hasDeals', label: '진행 거래 있음' },
-                  { value: 'hasUnsettled', label: '미정산 있음' },
-                ]}
-              />
-            </>
-          ) : (
-            <div className="flex min-w-0 items-center gap-2 px-1">
-              <Users
-                className="size-4 text-muted-foreground"
-                aria-hidden="true"
-              />
-              <span className="text-[13px] font-semibold">내 직원 정보</span>
-            </div>
-          )}
-
-          <div className="ml-auto flex shrink-0 items-center gap-2">
-            <div className="hidden items-center gap-2 text-[11.5px] text-muted-foreground 2xl:flex">
-              <span>
-                활성{' '}
-                <strong className="font-semibold tabular-nums text-foreground">
-                  {activeUserCount}
-                </strong>
+      {!selectedEmployeeId ? (
+        <header
+          data-employee-header
+          className="flex min-h-[80px] shrink-0 items-center gap-5 border-b border-border bg-white px-6 py-4"
+        >
+          <div className="min-w-0">
+            <div className="flex items-center gap-2.5">
+              <h1 className="truncate text-[20px] font-semibold tracking-[-0.02em]">
+                {isSelfOnly ? '내 직원 정보' : '직원 관리'}
+              </h1>
+              <span className="rounded bg-[#ecebe8] px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-muted-foreground">
+                {visibleEmployees.length}
               </span>
-              {maxUsers != null ? (
-                <>
-                  <span className="h-3.5 w-px bg-border" aria-hidden="true" />
-                  <span>
-                    계정 슬롯{' '}
-                    <strong className="font-semibold tabular-nums text-foreground">
-                      {activeUserCount}/{maxUsers}
-                    </strong>
-                  </span>
-                </>
+            </div>
+            <p className="mt-1 truncate text-[12px] text-muted-foreground">
+              {isSelfOnly
+                ? '내 계정과 업무 현황을 확인합니다.'
+                : '팀의 계정, 자격, 담당 업무와 정산 상태를 한곳에서 관리합니다.'}
+            </p>
+          </div>
+
+          <div className="ml-auto flex shrink-0 items-center gap-2.5">
+            <div className="hidden min-w-[154px] 2xl:block">
+              <div className="flex items-center justify-between gap-3 text-[10.5px] text-muted-foreground">
+                <span>활성 계정</span>
+                <strong className="font-semibold tabular-nums text-foreground">
+                  {maxUsers != null
+                    ? `${activeUserCount} / ${maxUsers}`
+                    : `${activeUserCount}명`}
+                </strong>
+              </div>
+              {slotUsage != null ? (
+                <div
+                  className="mt-1.5 h-1 overflow-hidden rounded-full bg-[#e9e8e4]"
+                  role="progressbar"
+                  aria-label="직원 계정 슬롯 사용량"
+                  aria-valuemin={0}
+                  aria-valuemax={maxUsers ?? undefined}
+                  aria-valuenow={activeUserCount}
+                >
+                  <div
+                    className={cn(
+                      'h-full rounded-full',
+                      slotUsage >= 90 ? 'bg-warning' : 'bg-foreground/65',
+                    )}
+                    style={{ width: `${slotUsage}%` }}
+                  />
+                </div>
               ) : null}
             </div>
             <Button
-              variant="ghost"
+              variant="outline"
               size="sm"
               asChild
               className="h-8 px-2.5 text-xs"
             >
               <Link to="/cashflow/employee-settlements">
-                <CircleDollarSign className="size-3.5" />
+                <CircleDollarSign className="size-3.5" aria-hidden="true" />
                 정산 현황
               </Link>
             </Button>
             {canManage ? (
               <Button
                 size="sm"
-                className="h-8 px-3"
+                className="h-8 px-3 active:scale-[0.97]"
                 onClick={() => setIsCreateOpen(true)}
               >
-                <CirclePlus className="size-3.5" />
+                <CirclePlus className="size-3.5" aria-hidden="true" />
                 직원 추가
               </Button>
             ) : null}
           </div>
-        </div>
-      </section>
+        </header>
+      ) : null}
 
-      {isSelfOnly ? (
+      {!selectedEmployeeId && isSelfOnly ? (
         <Alert className="shrink-0 rounded-none border-x-0 border-t-0 bg-[#faf9f6] px-4 py-2.5">
           <Info className="size-3.5" />
           <AlertDescription className="text-xs">
@@ -614,197 +651,322 @@ function EmployeesPage() {
         </Alert>
       ) : null}
 
-      <div className="grid min-h-0 flex-1 grid-cols-[316px_minmax(0,1fr)] overflow-hidden bg-white 2xl:grid-cols-[336px_minmax(0,1fr)]">
-        <aside
-          data-employee-directory
-          className="flex min-h-0 flex-col border-r border-border bg-[#fbfbfa]"
+      {!selectedEmployeeId && canManage ? (
+        <section
+          data-employee-toolbar
+          className="flex min-h-14 shrink-0 flex-wrap items-center gap-2 border-b border-border bg-white px-6 py-3"
+          aria-label="직원 명부 필터"
         >
-          <div className="flex h-[53px] shrink-0 items-center justify-between border-b border-border bg-[#faf9f6] px-4">
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <h2 className="truncate text-[13px] font-semibold">
-                  {isSelfOnly ? '내 정보' : '직원 디렉터리'}
-                </h2>
-                <span className="rounded bg-[#ecebe8] px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-muted-foreground">
-                  {filteredEmployees.length}
-                </span>
-              </div>
-              <p className="mt-0.5 truncate text-[10.5px] text-muted-foreground">
-                {isSelfOnly
-                  ? '본인 계정만 표시됩니다'
-                  : `활성 ${activeUserCount}명${
-                      maxUsers != null
-                        ? ` · 계정 슬롯 ${activeUserCount}/${maxUsers}`
-                        : ''
-                    }`}
-              </p>
-            </div>
-            <Users
-              className="size-3.5 text-muted-foreground"
-              aria-hidden="true"
+          <div
+            ref={searchWrapRef}
+            className="min-w-[260px] max-w-[480px] flex-1"
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' && filteredEmployees.length > 0) {
+                setSelectedEmployeeId(filteredEmployees[0].id);
+              }
+            }}
+          >
+            <FilterSearch
+              value={search}
+              onChange={setSearch}
+              placeholder="이름, 로그인 ID, 연락처 검색 ( / )"
+              className="w-full"
             />
           </div>
 
-          <ScrollArea className="min-h-0 flex-1">
-            <div>
-              {isLoading ? (
-                Array.from({ length: 5 }).map((_, index) => (
-                  <div
-                    key={index}
-                    className="border-b border-border/70 px-4 py-3.5"
-                  >
-                    <div className="flex items-center gap-3">
-                      <Skeleton className="size-9 rounded-full" />
-                      <div className="flex-1 space-y-1.5">
-                        <Skeleton className="h-3.5 w-24" />
-                        <Skeleton className="h-3 w-36" />
-                      </div>
-                    </div>
-                  </div>
-                ))
-              ) : isError ? (
-                <div className="flex flex-col items-center gap-3 px-3 py-12 text-center">
-                  <p className="text-sm text-muted-foreground">
-                    직원 목록을 불러오지 못했습니다.
-                  </p>
-                  <Button variant="outline" size="sm" onClick={() => refetch()}>
-                    <RotateCw className="size-4" />
-                    다시 시도
-                  </Button>
-                </div>
-              ) : visibleEmployees.length === 0 ? (
-                <EmptyState
-                  icon={Users}
-                  title="등록된 직원이 없습니다"
-                  description="직원 계정을 만들어 업무와 거래를 배분하세요."
-                  action={
-                    canManage ? (
-                      <Button size="sm" onClick={() => setIsCreateOpen(true)}>
-                        <CirclePlus className="size-4" />
-                        직원 추가
-                      </Button>
-                    ) : undefined
-                  }
-                  className="py-12"
-                />
-              ) : (
-                <>
-                  {filteredEmployees.map((employee) => (
-                    <button
-                      key={employee.id}
-                      type="button"
-                      onClick={() => setSelectedEmployeeId(employee.id)}
-                      className={cn(
-                        'group relative flex w-full gap-3 border-b border-border/70 px-4 py-3.5 text-left transition-colors',
-                        selectedEmployeeId === employee.id
-                          ? 'bg-[#f1f0ed] before:absolute before:inset-y-2.5 before:left-0 before:w-0.5 before:rounded-r before:bg-foreground/75'
-                          : 'hover:bg-[#f6f5f2]',
-                        !employee.isActive && 'opacity-55',
-                      )}
-                    >
-                      <Avatar className="size-9 border border-border/70 bg-white">
-                        <AvatarFallback className="bg-white text-[12px] font-semibold text-slate-600">
-                          {employee.name.charAt(0)}
-                        </AvatarFallback>
-                        <AvatarBadge
-                          className={cn(
-                            employee.isActive
-                              ? 'bg-emerald-500'
-                              : 'bg-slate-300',
-                          )}
-                        />
-                      </Avatar>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <p className="min-w-0 flex-1 truncate text-[12.5px] font-semibold">
-                            {employee.name.charAt(0)}
-                            {employee.name.slice(1)}
-                          </p>
-                          <span className="shrink-0 text-[10.5px] font-medium text-muted-foreground">
-                            {roleMeta[employee.role]?.label ?? employee.role}
-                          </span>
-                        </div>
-                        <p className="mt-0.5 truncate text-[10.5px] text-muted-foreground">
-                          {employee.loginId}
-                          {employee.licenseType
-                            ? ` · ${LICENSE_TYPE_LABELS[employee.licenseType] ?? employee.licenseType}`
-                            : ''}
-                        </p>
-                        <p className="mt-1.5 truncate text-[10.5px] tabular-nums text-muted-foreground">
-                          업무 {employee.counts.activeTaskCount} · 거래{' '}
-                          {employee.counts.activeDealCount} ·{' '}
-                          {employee.latestActivityAt
-                            ? `활동 ${timeAgo(employee.latestActivityAt)}`
-                            : '최근 활동 없음'}
-                        </p>
-                      </div>
-                    </button>
-                  ))}
-                  {filteredEmployees.length === 0 ? (
-                    <div className="px-3 py-12 text-center text-sm text-muted-foreground">
-                      조건에 맞는 직원이 없습니다.
-                    </div>
-                  ) : null}
-                </>
-              )}
-            </div>
-          </ScrollArea>
-        </aside>
+          <div
+            className="flex h-8 items-center rounded-md border border-border bg-white p-0.5"
+            role="group"
+            aria-label="계정 상태"
+          >
+            {[
+              { value: '', label: '전체' },
+              { value: 'active', label: '활성' },
+              { value: 'inactive', label: '비활성' },
+            ].map((option) => (
+              <button
+                key={option.value || 'all'}
+                type="button"
+                aria-pressed={statusFilter === option.value}
+                onClick={() => setStatusFilter(option.value)}
+                className={cn(
+                  'h-6 rounded-[4px] px-2 text-[11px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45',
+                  statusFilter === option.value
+                    ? 'bg-[#ecebe8] text-foreground'
+                    : 'text-muted-foreground hover:text-foreground',
+                )}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
 
-        {selectedEmployeeId && isDetailLoading ? (
-          <main className="min-w-0 space-y-4 p-5">
-            <div className="flex items-center gap-4">
-              <Skeleton className="size-12 rounded-md" />
-              <div className="space-y-2">
-                <Skeleton className="h-5 w-40" />
-                <Skeleton className="h-3.5 w-64" />
+          <FilterSelect
+            label="역할"
+            value={roleFilter}
+            onChange={setRoleFilter}
+            options={[
+              { value: 'owner', label: '대표' },
+              { value: 'manager', label: '매니저' },
+              { value: 'agent', label: '중개사' },
+            ]}
+          />
+          <FilterSelect
+            label="담당"
+            value={workloadFilter}
+            onChange={setWorkloadFilter}
+            options={[
+              { value: 'hasTasks', label: '진행 업무 있음' },
+              { value: 'hasDeals', label: '진행 거래 있음' },
+              { value: 'hasUnsettled', label: '미정산 있음' },
+            ]}
+          />
+
+          {activeFilterCount > 0 ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 px-2 text-[11px] text-muted-foreground"
+              onClick={() => {
+                setRoleFilter('');
+                setStatusFilter('');
+                setWorkloadFilter('');
+              }}
+            >
+              <X className="size-3.5" aria-hidden="true" />
+              필터 {activeFilterCount}개 해제
+            </Button>
+          ) : null}
+
+          <span
+            className="ml-auto pr-1 text-[10.5px] tabular-nums text-muted-foreground"
+            role="status"
+            aria-live="polite"
+          >
+            {filteredEmployees.length}명 표시
+          </span>
+        </section>
+      ) : null}
+
+      <section className="relative min-h-0 flex-1 overflow-hidden">
+        {selectedEmployeeId ? (
+          isDetailLoading ? (
+            <div
+              data-employee-workspace-loading
+              className="flex h-full min-h-0 flex-col bg-[#f7f6f3]"
+            >
+              <div className="border-b border-border bg-white px-6 py-4">
+                <Skeleton className="mb-5 h-8 w-24 rounded-md" />
+                <div className="flex items-center gap-4">
+                  <Skeleton className="size-12 rounded-full" />
+                  <div className="flex-1 space-y-2">
+                    <Skeleton className="h-5 w-36" />
+                    <Skeleton className="h-3 w-64" />
+                  </div>
+                  <Skeleton className="h-8 w-28 rounded-md" />
+                </div>
+              </div>
+              <div className="mx-auto grid w-full max-w-[1180px] flex-1 gap-5 p-6 min-[1180px]:grid-cols-[minmax(0,1fr)_320px]">
+                <Skeleton className="min-h-80 rounded-lg" />
+                <Skeleton className="min-h-64 rounded-lg" />
               </div>
             </div>
-            <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-4">
-              {Array.from({ length: 4 }).map((_, index) => (
-                <Skeleton key={index} className="h-20 rounded-md" />
-              ))}
+          ) : isDetailError ? (
+            <div className="flex h-full flex-col items-center justify-center gap-4 bg-[#f7f6f3] px-6 text-center">
+              <div className="flex size-10 items-center justify-center rounded-lg border border-border bg-white">
+                <AlertTriangle
+                  className="size-5 text-warning-strong"
+                  aria-hidden="true"
+                />
+              </div>
+              <div>
+                <h2 className="text-sm font-semibold">
+                  직원 정보를 불러오지 못했습니다
+                </h2>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  목록으로 돌아가거나 다시 불러와 주세요.
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={closeEmployeeWorkspace}
+                >
+                  <ArrowLeft className="size-4" aria-hidden="true" />
+                  직원 목록
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => refetchDetail()}
+                >
+                  <RotateCw className="size-4" aria-hidden="true" />
+                  다시 시도
+                </Button>
+              </div>
             </div>
-            <Skeleton className="h-56 rounded-lg" />
-            <Skeleton className="h-40 rounded-lg" />
-          </main>
-        ) : selectedEmployeeId && isDetailError ? (
-          <main className="flex min-h-[540px] flex-col items-center justify-center gap-3">
-            <p className="text-sm text-muted-foreground">
-              직원 상세 정보를 불러오지 못했습니다.
-            </p>
-            <Button variant="outline" size="sm" onClick={() => refetchDetail()}>
-              <RotateCw className="size-4" />
-              다시 시도
-            </Button>
-          </main>
+          ) : (
+            <EmployeeWorkspace
+              employee={employeeDetail}
+              performance={performance}
+              isPerformanceLoading={isPerformanceLoading}
+              detailForm={detailForm}
+              onDetailChange={setDetailForm}
+              canManage={canManage}
+              actorRole={user?.role ?? 'agent'}
+              roleOptions={detailRoleOptions}
+              onBack={closeEmployeeWorkspace}
+              onSave={handleSave}
+              onRoleSelect={(role) => setPendingRole(role)}
+              onStatusToggle={() => setIsStatusConfirmOpen(true)}
+              resetPassword={resetPassword}
+              onResetPasswordChange={setResetPassword}
+              onResetPassword={() => passwordMutation.mutate(resetPassword)}
+              isSaving={
+                updateMutation.isPending ||
+                roleMutation.isPending ||
+                statusMutation.isPending ||
+                passwordMutation.isPending
+              }
+            />
+          )
         ) : (
-          <EmployeeDetailCard
-            employee={employeeDetail}
-            performance={performance}
-            isPerformanceLoading={isPerformanceLoading}
-            detailForm={detailForm}
-            onDetailChange={setDetailForm}
-            canManage={canManage}
-            actorRole={user?.role ?? 'agent'}
-            roleOptions={detailRoleOptions}
-            onSave={handleSave}
-            onRoleSelect={(role) => setPendingRole(role)}
-            onStatusToggle={() => setIsStatusConfirmOpen(true)}
-            resetPassword={resetPassword}
-            onResetPasswordChange={setResetPassword}
-            onResetPassword={() => passwordMutation.mutate(resetPassword)}
-            isSaving={
-              updateMutation.isPending ||
-              roleMutation.isPending ||
-              statusMutation.isPending ||
-              passwordMutation.isPending
-            }
-          />
-        )}
-      </div>
+          <ScrollArea data-team-overview className="h-full">
+            <div className="mx-auto grid w-full max-w-[1200px] items-start gap-5 px-6 py-6 min-[1180px]:grid-cols-[minmax(0,1fr)_300px]">
+              <section
+                ref={rosterRef}
+                data-employee-roster
+                className="min-w-0 overflow-hidden rounded-lg border border-border bg-white"
+                aria-labelledby="employee-roster-title"
+              >
+                <div className="flex min-h-14 items-center justify-between gap-4 border-b border-border px-5 py-3.5">
+                  <div>
+                    <h2
+                      id="employee-roster-title"
+                      className="text-[14px] font-semibold"
+                    >
+                      팀 멤버
+                    </h2>
+                    <p className="mt-0.5 text-[11.5px] text-muted-foreground">
+                      직원을 선택하면 계정과 담당 현황을 관리할 수 있습니다.
+                    </p>
+                  </div>
+                  <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
+                    활성 {activeFilteredEmployees.length}명
+                  </span>
+                </div>
 
-      <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
+                {isLoading ? (
+                  <div className="divide-y divide-border/70">
+                    {[0, 1, 2].map((item) => (
+                      <div
+                        key={item}
+                        className="flex h-[84px] items-center gap-4 px-5"
+                      >
+                        <Skeleton className="size-10 rounded-full" />
+                        <div className="flex-1 space-y-2">
+                          <Skeleton className="h-3.5 w-28" />
+                          <Skeleton className="h-3 w-48" />
+                        </div>
+                        <Skeleton className="h-8 w-40 rounded-md" />
+                      </div>
+                    ))}
+                  </div>
+                ) : isError ? (
+                  <RosterMessage
+                    icon={AlertTriangle}
+                    title="직원 목록을 불러오지 못했습니다"
+                    description="잠시 후 다시 시도해 주세요."
+                    action={
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => refetch()}
+                      >
+                        <RotateCw className="size-4" aria-hidden="true" />
+                        다시 시도
+                      </Button>
+                    }
+                  />
+                ) : filteredEmployees.length === 0 ? (
+                  <RosterMessage
+                    icon={Users}
+                    title={
+                      visibleEmployees.length === 0
+                        ? '아직 등록된 직원이 없습니다'
+                        : '조건에 맞는 직원이 없습니다'
+                    }
+                    description={
+                      visibleEmployees.length === 0
+                        ? '첫 직원을 추가해 계정과 업무를 함께 관리하세요.'
+                        : '검색어나 필터를 바꾸면 다른 직원을 찾을 수 있습니다.'
+                    }
+                    action={
+                      visibleEmployees.length === 0 && canManage ? (
+                        <Button size="sm" onClick={() => setIsCreateOpen(true)}>
+                          <CirclePlus className="size-4" aria-hidden="true" />
+                          직원 추가
+                        </Button>
+                      ) : activeFilterCount > 0 || search ? (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setSearch('');
+                            setRoleFilter('');
+                            setStatusFilter('');
+                            setWorkloadFilter('');
+                          }}
+                        >
+                          검색과 필터 초기화
+                        </Button>
+                      ) : undefined
+                    }
+                  />
+                ) : (
+                  <div>
+                    {activeFilteredEmployees.length > 0 ? (
+                      <EmployeeGroup
+                        label="활성 직원"
+                        employees={activeFilteredEmployees}
+                        onSelect={(employee) =>
+                          setSelectedEmployeeId(employee.id)
+                        }
+                      />
+                    ) : null}
+                    {inactiveFilteredEmployees.length > 0 ? (
+                      <EmployeeGroup
+                        label="비활성 직원"
+                        employees={inactiveFilteredEmployees}
+                        onSelect={(employee) =>
+                          setSelectedEmployeeId(employee.id)
+                        }
+                      />
+                    ) : null}
+                  </div>
+                )}
+              </section>
+
+              <TeamOperationsSummary
+                employees={visibleEmployees}
+                activeUserCount={activeUserCount}
+                maxUsers={maxUsers}
+                slotUsage={slotUsage}
+                totals={teamTotals}
+              />
+            </div>
+          </ScrollArea>
+        )}
+      </section>
+
+      <Dialog
+        open={isCreateOpen}
+        onOpenChange={(open) => {
+          if (open) setIsCreateOpen(true);
+          else closeCreateDialog();
+        }}
+      >
         <DialogContent className="sm:max-w-xl">
           <DialogHeader>
             <DialogTitle>새 직원 추가</DialogTitle>
@@ -830,6 +992,7 @@ function EmployeesPage() {
             <Field
               label="이름 *"
               value={createForm.name}
+              autoComplete="name"
               onChange={(value) =>
                 setCreateForm((prev) => ({ ...prev, name: value }))
               }
@@ -837,6 +1000,7 @@ function EmployeesPage() {
             <Field
               label="로그인 ID *"
               value={createForm.loginId}
+              autoComplete="username"
               onChange={(value) =>
                 setCreateForm((prev) => ({ ...prev, loginId: value }))
               }
@@ -844,6 +1008,8 @@ function EmployeesPage() {
             <Field
               label="휴대폰"
               value={createForm.phone}
+              type="tel"
+              autoComplete="tel"
               onChange={(value) =>
                 setCreateForm((prev) => ({ ...prev, phone: value }))
               }
@@ -851,6 +1017,8 @@ function EmployeesPage() {
             <Field
               label="이메일"
               value={createForm.email}
+              type="email"
+              autoComplete="email"
               onChange={(value) =>
                 setCreateForm((prev) => ({ ...prev, email: value }))
               }
@@ -863,7 +1031,7 @@ function EmployeesPage() {
                   setCreateForm((prev) => ({ ...prev, role: value }))
                 }
               >
-                <SelectTrigger className="w-full">
+                <SelectTrigger className="w-full" aria-label="새 직원 역할">
                   <SelectValue placeholder="역할 선택" />
                 </SelectTrigger>
                 <SelectContent>
@@ -879,6 +1047,7 @@ function EmployeesPage() {
               label="초기 비밀번호 *"
               value={createForm.password}
               type="password"
+              autoComplete="new-password"
               onChange={(value) =>
                 setCreateForm((prev) => ({ ...prev, password: value }))
               }
@@ -894,7 +1063,10 @@ function EmployeesPage() {
                   }))
                 }
               >
-                <SelectTrigger className="w-full">
+                <SelectTrigger
+                  className="w-full"
+                  aria-label="새 직원 자격 구분"
+                >
                   <SelectValue placeholder="자격 구분" />
                 </SelectTrigger>
                 <SelectContent>
@@ -924,7 +1096,7 @@ function EmployeesPage() {
           <DialogFooter>
             <Button
               variant="outline"
-              onClick={() => setIsCreateOpen(false)}
+              onClick={closeCreateDialog}
               disabled={createMutation.isPending}
             >
               닫기
@@ -999,7 +1171,299 @@ function EmployeesPage() {
   );
 }
 
-function EmployeeDetailCard({
+function EmployeeGroup({
+  label,
+  employees,
+  onSelect,
+}: {
+  label: string;
+  employees: Employee[];
+  onSelect: (employee: Employee) => void;
+}) {
+  return (
+    <section data-employee-group aria-label={label}>
+      <div className="flex h-8 items-center justify-between border-b border-border/70 bg-[#faf9f6] px-5">
+        <h3 className="text-[10.5px] font-semibold text-muted-foreground">
+          {label}
+        </h3>
+        <span className="text-[10.5px] tabular-nums text-muted-foreground">
+          {employees.length}명
+        </span>
+      </div>
+      <div className="divide-y divide-border/70">
+        {employees.map((employee) => (
+          <button
+            key={employee.id}
+            type="button"
+            data-employee-row
+            data-employee-id={employee.id}
+            className="group flex min-h-[88px] w-full items-center gap-4 px-5 py-3 text-left transition-colors duration-150 hover:bg-[#faf9f6] focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/45 motion-reduce:transition-none"
+            onClick={() => onSelect(employee)}
+            aria-label={`${employee.name} 직원 상세 열기`}
+          >
+            <Avatar className="size-10 shrink-0 border border-border bg-[#f5f4f1]">
+              <AvatarFallback className="bg-[#f5f4f1] text-[13px] font-semibold text-slate-600">
+                {employee.name.charAt(0)}
+              </AvatarFallback>
+              <AvatarBadge
+                className={cn(
+                  'size-2.5 ring-2 ring-white',
+                  employee.isActive ? 'bg-emerald-500' : 'bg-slate-300',
+                )}
+              />
+            </Avatar>
+
+            <span className="min-w-0 flex-1">
+              <span className="flex min-w-0 flex-wrap items-center gap-1.5">
+                <span className="truncate text-[13.5px] font-semibold text-foreground">
+                  {employee.name}
+                </span>
+                <Badge
+                  variant="outline"
+                  className={cn(
+                    'h-5 rounded px-1.5 text-[10px] font-medium',
+                    roleMeta[employee.role]?.className,
+                  )}
+                >
+                  {roleMeta[employee.role]?.label ?? employee.role}
+                </Badge>
+                {employee.counts.unsettledDealCount > 0 ? (
+                  <span className="inline-flex h-5 items-center rounded bg-warning-soft px-1.5 text-[10px] font-semibold tabular-nums text-warning-strong">
+                    미정산 {employee.counts.unsettledDealCount}
+                  </span>
+                ) : null}
+              </span>
+              <span className="mt-1 block truncate text-[11.5px] text-muted-foreground">
+                {employee.loginId}
+                <span className="mx-1.5" aria-hidden="true">
+                  ·
+                </span>
+                {employee.licenseType
+                  ? (LICENSE_TYPE_LABELS[employee.licenseType] ??
+                    employee.licenseType)
+                  : '자격 미지정'}
+              </span>
+              <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">
+                {employee.phone
+                  ? formatPhone(employee.phone)
+                  : employee.email || '연락처 미등록'}
+              </span>
+            </span>
+
+            <span className="hidden w-[174px] shrink-0 grid-cols-3 gap-2 md:grid">
+              <RosterMetric
+                label="업무"
+                value={employee.counts.activeTaskCount}
+              />
+              <RosterMetric
+                label="고객"
+                value={employee.counts.activeBuyerRequirementCount}
+              />
+              <RosterMetric
+                label="거래"
+                value={employee.counts.activeDealCount}
+              />
+            </span>
+
+            <span className="hidden w-16 shrink-0 text-right min-[1380px]:block">
+              <span className="block text-[10.5px] text-muted-foreground">
+                최근 활동
+              </span>
+              <span className="mt-1 block text-[11px] text-foreground">
+                {employee.latestActivityAt
+                  ? timeAgo(employee.latestActivityAt)
+                  : '기록 없음'}
+              </span>
+            </span>
+
+            <ChevronRight
+              className="size-4 shrink-0 text-muted-foreground/55 transition-transform duration-150 group-hover:translate-x-0.5 group-hover:text-foreground motion-reduce:transition-none"
+              aria-hidden="true"
+            />
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function RosterMetric({ label, value }: { label: string; value: number }) {
+  return (
+    <span className="text-center">
+      <span className="block text-[10.5px] text-muted-foreground">{label}</span>
+      <strong className="mt-1 block text-[13px] font-semibold tabular-nums text-foreground">
+        {value}
+      </strong>
+    </span>
+  );
+}
+
+function RosterMessage({
+  icon: Icon,
+  title,
+  description,
+  action,
+}: {
+  icon: LucideIcon;
+  title: string;
+  description: string;
+  action?: ReactNode;
+}) {
+  return (
+    <div className="flex min-h-[280px] flex-col items-center justify-center px-6 py-10 text-center">
+      <div className="flex size-10 items-center justify-center rounded-lg border border-border bg-[#faf9f6]">
+        <Icon className="size-5 text-muted-foreground" aria-hidden="true" />
+      </div>
+      <h3 className="mt-4 text-[13px] font-semibold">{title}</h3>
+      <p className="mt-1 max-w-sm text-[11.5px] leading-5 text-muted-foreground">
+        {description}
+      </p>
+      {action ? <div className="mt-4">{action}</div> : null}
+    </div>
+  );
+}
+
+function TeamOperationsSummary({
+  employees,
+  activeUserCount,
+  maxUsers,
+  slotUsage,
+  totals,
+}: {
+  employees: Employee[];
+  activeUserCount: number;
+  maxUsers: number | null;
+  slotUsage: number | null;
+  totals: {
+    tasks: number;
+    customers: number;
+    deals: number;
+    unsettled: number;
+  };
+}) {
+  const inactiveCount = employees.filter(
+    (employee) => !employee.isActive,
+  ).length;
+
+  return (
+    <aside
+      data-team-operations
+      className="overflow-hidden rounded-lg border border-border bg-white"
+      aria-label="팀 운영 요약"
+    >
+      <section className="p-5">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h2 className="text-[14px] font-semibold">운영 요약</h2>
+            <p className="mt-0.5 text-[11.5px] text-muted-foreground">
+              계정과 현재 담당량을 확인합니다.
+            </p>
+          </div>
+          <Users
+            className="mt-0.5 size-4 text-muted-foreground"
+            aria-hidden="true"
+          />
+        </div>
+
+        <div className="mt-5">
+          <div className="flex items-end justify-between gap-3">
+            <span className="text-[11.5px] text-muted-foreground">
+              활성 계정
+            </span>
+            <strong className="text-[14px] font-semibold tabular-nums">
+              {maxUsers != null
+                ? `${activeUserCount} / ${maxUsers}`
+                : `${activeUserCount}명`}
+            </strong>
+          </div>
+          {slotUsage != null ? (
+            <div
+              className="mt-2 h-1.5 overflow-hidden rounded-full bg-[#e9e8e4]"
+              role="progressbar"
+              aria-label="직원 계정 슬롯 사용량"
+              aria-valuemin={0}
+              aria-valuemax={maxUsers ?? undefined}
+              aria-valuenow={activeUserCount}
+            >
+              <div
+                className={cn(
+                  'h-full rounded-full',
+                  slotUsage >= 90 ? 'bg-warning' : 'bg-foreground/70',
+                )}
+                style={{ width: `${slotUsage}%` }}
+              />
+            </div>
+          ) : null}
+          <p className="mt-2 text-[10.5px] text-muted-foreground">
+            비활성 계정 {inactiveCount}명
+          </p>
+        </div>
+      </section>
+
+      <section className="border-t border-border px-5 py-4">
+        <h3 className="text-[12px] font-semibold">현재 업무</h3>
+        <dl className="mt-2 divide-y divide-border/70">
+          <OperationRow label="진행 업무" value={`${totals.tasks}건`} />
+          <OperationRow label="담당 고객" value={`${totals.customers}명`} />
+          <OperationRow label="진행 거래" value={`${totals.deals}건`} />
+        </dl>
+      </section>
+
+      <Link
+        to="/cashflow/employee-settlements"
+        className="group flex min-h-14 items-center gap-3 border-t border-border px-5 py-3.5 outline-none transition-colors duration-150 hover:bg-[#faf9f6] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/45 motion-reduce:transition-none"
+      >
+        <span
+          className={cn(
+            'flex size-8 shrink-0 items-center justify-center rounded-md',
+            totals.unsettled > 0
+              ? 'bg-warning-soft text-warning-strong'
+              : 'bg-[#f1f1ef] text-muted-foreground',
+          )}
+        >
+          <CircleDollarSign className="size-4" aria-hidden="true" />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-[12px] font-semibold">직원 정산</span>
+          <span className="mt-0.5 block text-[10.5px] text-muted-foreground">
+            미정산 참여 {totals.unsettled}건
+          </span>
+        </span>
+        <ChevronRight
+          className="size-4 text-muted-foreground transition-transform duration-150 group-hover:translate-x-0.5 motion-reduce:transition-none"
+          aria-hidden="true"
+        />
+      </Link>
+
+      <section className="border-t border-border bg-[#faf9f6] px-5 py-4">
+        <div className="flex gap-3">
+          <ShieldCheck
+            className="mt-0.5 size-4 shrink-0 text-muted-foreground"
+            aria-hidden="true"
+          />
+          <div>
+            <h3 className="text-[11.5px] font-semibold">권한 안내</h3>
+            <p className="mt-1 text-[10.5px] leading-4 text-muted-foreground">
+              대표는 전체 설정, 매니저는 직원 운영, 중개사는 본인 정보만 관리할
+              수 있습니다.
+            </p>
+          </div>
+        </div>
+      </section>
+    </aside>
+  );
+}
+
+function OperationRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between gap-4 py-2.5">
+      <dt className="text-[11.5px] text-muted-foreground">{label}</dt>
+      <dd className="text-[12px] font-semibold tabular-nums">{value}</dd>
+    </div>
+  );
+}
+
+function EmployeeWorkspace({
   employee,
   performance,
   isPerformanceLoading,
@@ -1008,6 +1472,7 @@ function EmployeeDetailCard({
   canManage,
   actorRole,
   roleOptions,
+  onBack,
   onSave,
   onRoleSelect,
   onStatusToggle,
@@ -1031,6 +1496,7 @@ function EmployeeDetailCard({
   canManage: boolean;
   actorRole: string;
   roleOptions: string[];
+  onBack: () => void;
   onSave: () => void;
   onRoleSelect: (role: string) => void;
   onStatusToggle: () => void;
@@ -1044,8 +1510,8 @@ function EmployeeDetailCard({
   if (!employee) {
     return (
       <main
-        data-employee-detail
-        className="flex min-h-0 min-w-0 items-center justify-center bg-white text-[12px] text-muted-foreground"
+        data-employee-workspace
+        className="flex min-h-0 min-w-0 items-center justify-center bg-[#f7f6f3] text-[12px] text-muted-foreground"
       >
         직원을 선택하면 상세 정보가 표시됩니다.
       </main>
@@ -1061,140 +1527,163 @@ function EmployeeDetailCard({
 
   return (
     <main
-      data-employee-detail
-      className="flex min-h-0 min-w-0 flex-col bg-white"
+      data-employee-workspace
+      className="flex h-full min-h-0 min-w-0 flex-1 flex-col bg-[#f7f6f3]"
     >
-      <header className="flex shrink-0 items-center justify-between gap-5 border-b border-border px-7 py-4">
-        <div className="flex min-w-0 items-center gap-3.5">
-          <Avatar className="size-11 border border-border bg-[#f5f4f1]">
-            <AvatarFallback className="bg-[#f5f4f1] text-[15px] font-semibold text-slate-600">
-              {employee.name.charAt(0)}
-            </AvatarFallback>
-            <AvatarBadge
-              className={cn(
-                employee.isActive ? 'bg-emerald-500' : 'bg-slate-300',
-              )}
-            />
-          </Avatar>
-          <div className="min-w-0">
-            <div className="flex min-w-0 flex-wrap items-center gap-2">
-              <h1 className="truncate text-[18px] font-semibold tracking-[-0.015em]">
-                {employee.name}
-              </h1>
-              <Badge
-                variant="outline"
+      <header className="shrink-0 border-b border-border bg-white">
+        <div className="mx-auto w-full max-w-[1180px] px-6 py-4">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="-ml-2 h-8 px-2 text-[11.5px] text-muted-foreground hover:text-foreground"
+            onClick={onBack}
+          >
+            <ArrowLeft className="size-4" aria-hidden="true" />
+            직원 목록
+          </Button>
+
+          <div className="mt-3 flex min-w-0 flex-wrap items-center gap-4">
+            <Avatar className="size-12 shrink-0 border border-border bg-[#f5f4f1]">
+              <AvatarFallback className="bg-[#f5f4f1] text-[16px] font-semibold text-slate-600">
+                {employee.name.charAt(0)}
+              </AvatarFallback>
+              <AvatarBadge
                 className={cn(
-                  'h-5 rounded px-1.5 text-[10px] font-medium',
-                  roleMeta[employee.role]?.className,
+                  'ring-2 ring-white',
+                  employee.isActive ? 'bg-emerald-500' : 'bg-slate-300',
                 )}
-              >
-                {roleMeta[employee.role]?.label ?? employee.role}
-              </Badge>
-              <ActiveBadge isActive={employee.isActive} />
-              {employee.licenseType ? (
-                <span className="text-[10.5px] text-muted-foreground">
-                  {LICENSE_TYPE_LABELS[employee.licenseType] ??
-                    employee.licenseType}
+              />
+            </Avatar>
+            <div className="min-w-[220px] flex-1">
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
+                <h2 className="truncate text-[20px] font-semibold tracking-[-0.02em]">
+                  {employee.name}
+                </h2>
+                <Badge
+                  variant="outline"
+                  className={cn(
+                    'h-5 rounded px-1.5 text-[10px] font-medium',
+                    roleMeta[employee.role]?.className,
+                  )}
+                >
+                  {roleMeta[employee.role]?.label ?? employee.role}
+                </Badge>
+                <ActiveBadge isActive={employee.isActive} />
+              </div>
+              <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1 text-[11.5px] text-muted-foreground">
+                <span>{employee.loginId}</span>
+                <span aria-hidden="true">·</span>
+                <span>
+                  {employee.licenseType
+                    ? (LICENSE_TYPE_LABELS[employee.licenseType] ??
+                      employee.licenseType)
+                    : '자격 미지정'}
                 </span>
-              ) : null}
+                <span aria-hidden="true">·</span>
+                <span>
+                  최근 활동{' '}
+                  {latestActivityAt ? timeAgo(latestActivityAt) : '없음'}
+                </span>
+              </div>
+              <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+                {employee.phone ? (
+                  <span className="inline-flex items-center gap-1">
+                    <Phone className="size-3" aria-hidden="true" />
+                    {formatPhone(employee.phone)}
+                  </span>
+                ) : null}
+                {employee.email ? (
+                  <span className="inline-flex min-w-0 items-center gap-1">
+                    <Mail className="size-3 shrink-0" aria-hidden="true" />
+                    <span className="truncate">{employee.email}</span>
+                  </span>
+                ) : null}
+              </div>
             </div>
-            <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-[10.5px] text-muted-foreground">
-              <span>{employee.loginId}</span>
-              {employee.phone ? (
-                <span className="inline-flex items-center gap-1">
-                  <Phone className="size-3" aria-hidden="true" />
-                  {formatPhone(employee.phone)}
-                </span>
-              ) : null}
-              {employee.email ? (
-                <span className="inline-flex min-w-0 items-center gap-1">
-                  <Mail className="size-3 shrink-0" aria-hidden="true" />
-                  <span className="truncate">{employee.email}</span>
-                </span>
-              ) : null}
+
+            <div className="ml-auto flex shrink-0 items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 px-2.5 text-[11.5px]"
+                disabled={!canManage || isSaving}
+                onClick={onStatusToggle}
+              >
+                {employee.isActive ? '계정 비활성화' : '계정 재활성화'}
+              </Button>
+              <Button
+                size="sm"
+                className="h-8 min-w-20 px-3 active:scale-[0.97]"
+                disabled={!canManage || isSaving}
+                onClick={onSave}
+              >
+                {isSaving ? '저장 중' : '변경 저장'}
+              </Button>
             </div>
           </div>
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-8 px-2.5 text-xs"
-            disabled={!canManage || isSaving}
-            onClick={onStatusToggle}
-          >
-            {employee.isActive ? '비활성화' : '재활성화'}
-          </Button>
-          <Button
-            size="sm"
-            className="h-8 min-w-16 px-3"
-            disabled={!canManage || isSaving}
-            onClick={onSave}
-          >
-            저장
-          </Button>
+
+          <div className="mt-4 grid grid-cols-2 overflow-hidden rounded-md border border-border bg-[#faf9f6] sm:grid-cols-4 sm:divide-x sm:divide-border">
+            <DetailStat
+              icon={ClipboardList}
+              label="진행 업무"
+              value={employee.counts.activeTaskCount + '건'}
+            />
+            <DetailStat
+              icon={Users}
+              label="담당 고객"
+              value={employee.counts.activeBuyerRequirementCount + '건'}
+            />
+            <DetailStat
+              icon={BriefcaseBusiness}
+              label="진행 거래"
+              value={employee.counts.activeDealCount + '건'}
+            />
+            <DetailStat
+              icon={CircleDollarSign}
+              label="미정산 참여"
+              value={employee.counts.unsettledDealCount + '건'}
+            />
+          </div>
         </div>
       </header>
-
-      <div className="grid shrink-0 grid-cols-5 divide-x divide-border border-b border-border bg-[#faf9f6]">
-        <DetailStat
-          icon={ClipboardList}
-          label="진행 업무"
-          value={employee.counts.activeTaskCount + '건'}
-        />
-        <DetailStat
-          icon={BriefcaseBusiness}
-          label="진행 거래"
-          value={employee.counts.activeDealCount + '건'}
-        />
-        <DetailStat
-          icon={Users}
-          label="담당 고객"
-          value={employee.counts.activeBuyerRequirementCount + '건'}
-        />
-        <DetailStat
-          icon={CircleDollarSign}
-          label="미정산 참여"
-          value={employee.counts.unsettledDealCount + '건'}
-        />
-        <DetailStat
-          icon={Activity}
-          label="최근 활동"
-          value={latestActivityAt ? timeAgo(latestActivityAt) : '없음'}
-        />
-      </div>
 
       <Tabs
         defaultValue="profile"
         className="min-h-0 flex-1 gap-0 overflow-hidden"
       >
-        <TabsList
-          variant="line"
-          className="h-10 w-full shrink-0 justify-start gap-1 rounded-none border-b border-border px-6"
-        >
-          <TabsTrigger value="profile" className="flex-none px-3 text-[12px]">
-            프로필
-          </TabsTrigger>
-          <TabsTrigger value="work" className="flex-none px-3 text-[12px]">
-            업무·거래
-            <span className="rounded bg-muted px-1 text-[9.5px] tabular-nums text-muted-foreground">
-              {employee.counts.activeTaskCount +
-                employee.counts.activeDealCount}
-            </span>
-          </TabsTrigger>
-          <TabsTrigger value="activity" className="flex-none px-3 text-[12px]">
-            상담·활동
-          </TabsTrigger>
-        </TabsList>
+        <div className="shrink-0 border-b border-border bg-white">
+          <TabsList
+            variant="line"
+            className="mx-auto h-11 w-full max-w-[1180px] justify-start gap-1 rounded-none px-6"
+            aria-label="직원 상세 구역"
+          >
+            <TabsTrigger value="profile" className="flex-none px-3 text-[12px]">
+              계정 정보
+            </TabsTrigger>
+            <TabsTrigger value="work" className="flex-none px-3 text-[12px]">
+              업무 현황
+              <span className="rounded bg-muted px-1 text-[9.5px] tabular-nums text-muted-foreground">
+                {employee.counts.activeTaskCount +
+                  employee.counts.activeDealCount}
+              </span>
+            </TabsTrigger>
+            <TabsTrigger
+              value="activity"
+              className="flex-none px-3 text-[12px]"
+            >
+              활동 기록
+            </TabsTrigger>
+          </TabsList>
+        </div>
 
         <TabsContent
           value="profile"
           className="min-h-0 data-[state=active]:flex data-[state=active]:flex-1 data-[state=active]:flex-col"
         >
           <ScrollArea className="min-h-0 flex-1">
-            <div className="mx-auto w-full max-w-[1040px] px-8 pb-16">
+            <div className="mx-auto w-full max-w-[1180px] px-6 pb-16 pt-6">
               {employee.licenseType === 'assistant' ? (
-                <Alert className="mt-6 border-amber-200 bg-amber-50/70">
+                <Alert className="mb-5 border-amber-200 bg-amber-50/70">
                   <Info className="size-3.5 text-amber-700" />
                   <AlertDescription className="text-[11.5px] text-amber-900">
                     중개보조원 계정은 계약서에 서명할 수 없습니다.
@@ -1202,132 +1691,69 @@ function EmployeeDetailCard({
                 </Alert>
               ) : null}
 
-              <DocumentSection
-                title="기본 정보"
-                description={
-                  employee.role === 'owner'
-                    ? '대표 계정과 중개 자격 정보를 관리합니다.'
-                    : '직원의 계정과 중개 자격 정보를 관리합니다.'
-                }
-              >
-                <div className="grid gap-x-5 gap-y-4 md:grid-cols-2">
-                  <Field
-                    label="이름 *"
-                    value={detailForm.name}
-                    onChange={(value) =>
-                      onDetailChange((prev) => ({ ...prev, name: value }))
-                    }
-                    disabled={!canManage}
-                  />
-                  <StaticField label="로그인 ID" value={employee.loginId} />
-                  <Field
-                    label="휴대폰"
-                    value={detailForm.phone}
-                    onChange={(value) =>
-                      onDetailChange((prev) => ({ ...prev, phone: value }))
-                    }
-                    disabled={!canManage}
-                  />
-                  <Field
-                    label="이메일"
-                    value={detailForm.email}
-                    onChange={(value) =>
-                      onDetailChange((prev) => ({ ...prev, email: value }))
-                    }
-                    disabled={!canManage}
-                  />
-                  <div className="space-y-1.5">
-                    <Label className="text-[11px] font-medium text-muted-foreground">
-                      자격 구분
-                    </Label>
-                    <Select
-                      value={detailForm.licenseType || NONE_VALUE}
-                      onValueChange={(value) =>
-                        onDetailChange((prev) => ({
-                          ...prev,
-                          licenseType: value === NONE_VALUE ? '' : value,
-                        }))
+              <div className="rounded-lg border border-border bg-white px-6">
+                <DocumentSection
+                  title="기본 정보"
+                  description={
+                    employee.role === 'owner'
+                      ? '대표 계정과 중개 자격 정보를 관리합니다.'
+                      : '직원의 계정과 중개 자격 정보를 관리합니다.'
+                  }
+                >
+                  <div className="grid gap-x-5 gap-y-4 md:grid-cols-2">
+                    <Field
+                      label="이름 *"
+                      value={detailForm.name}
+                      autoComplete="name"
+                      onChange={(value) =>
+                        onDetailChange((prev) => ({ ...prev, name: value }))
                       }
                       disabled={!canManage}
-                    >
-                      <SelectTrigger className="h-8 w-full text-[12px]">
-                        <SelectValue placeholder="자격 구분" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value={NONE_VALUE}>미지정</SelectItem>
-                        {Object.entries(LICENSE_TYPE_LABELS).map(
-                          ([value, label]) => (
-                            <SelectItem key={value} value={value}>
-                              {label}
-                            </SelectItem>
-                          ),
-                        )}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <Field
-                    label="자격증/등록 번호"
-                    value={detailForm.licenseNo}
-                    onChange={(value) =>
-                      onDetailChange((prev) => ({ ...prev, licenseNo: value }))
-                    }
-                    disabled={!canManage}
-                  />
-                  <div className="space-y-1.5">
-                    <Label className="text-[11px] font-medium text-muted-foreground">
-                      역할
-                    </Label>
-                    <Select
-                      value={employee.role}
-                      onValueChange={(value) => {
-                        if (value !== employee.role) onRoleSelect(value);
-                      }}
-                      disabled={roleSelectDisabled}
-                    >
-                      <SelectTrigger className="h-8 w-full text-[12px]">
-                        <SelectValue placeholder="역할 선택" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {selectableRoles.map((role) => (
-                          <SelectItem key={role} value={role}>
-                            {roleMeta[role]?.label ?? role}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <StaticField
-                    label="계정 생성일"
-                    value={formatDate(employee.createdAt)}
-                  />
-                </div>
-              </DocumentSection>
-
-              {employee.role !== 'owner' ? (
-                <DocumentSection
-                  title="급여와 배분"
-                  description="개인 배분율을 비우면 사무소 기본 정책이 적용됩니다."
-                >
-                  <div className="grid gap-5 md:grid-cols-3">
+                    />
+                    <StaticField label="로그인 ID" value={employee.loginId} />
+                    <Field
+                      label="휴대폰"
+                      value={detailForm.phone}
+                      type="tel"
+                      autoComplete="tel"
+                      onChange={(value) =>
+                        onDetailChange((prev) => ({ ...prev, phone: value }))
+                      }
+                      disabled={!canManage}
+                    />
+                    <Field
+                      label="이메일"
+                      value={detailForm.email}
+                      type="email"
+                      autoComplete="email"
+                      onChange={(value) =>
+                        onDetailChange((prev) => ({ ...prev, email: value }))
+                      }
+                      disabled={!canManage}
+                    />
                     <div className="space-y-1.5">
                       <Label className="text-[11px] font-medium text-muted-foreground">
-                        급여 유형
+                        자격 구분
                       </Label>
                       <Select
-                        value={detailForm.payType}
+                        value={detailForm.licenseType || NONE_VALUE}
                         onValueChange={(value) =>
                           onDetailChange((prev) => ({
                             ...prev,
-                            payType: value,
+                            licenseType: value === NONE_VALUE ? '' : value,
                           }))
                         }
                         disabled={!canManage}
                       >
-                        <SelectTrigger className="h-8 w-full text-[12px]">
-                          <SelectValue placeholder="급여 유형" />
+                        <SelectTrigger
+                          className="h-8 w-full text-[12px]"
+                          aria-label="자격 구분"
+                        >
+                          <SelectValue placeholder="자격 구분" />
                         </SelectTrigger>
                         <SelectContent>
-                          {Object.entries(payTypeLabels).map(
+                          <SelectItem value={NONE_VALUE}>미지정</SelectItem>
+                          {Object.entries(LICENSE_TYPE_LABELS).map(
                             ([value, label]) => (
                               <SelectItem key={value} value={value}>
                                 {label}
@@ -1337,164 +1763,252 @@ function EmployeeDetailCard({
                         </SelectContent>
                       </Select>
                     </div>
-                    <div className="space-y-1.5">
-                      <Label className="text-[11px] font-medium text-muted-foreground">
-                        월 기본급 (만원)
-                      </Label>
-                      <Input
-                        className="h-8 text-[12px]"
-                        type="number"
-                        min={0}
-                        value={detailForm.baseSalary}
-                        onChange={(event) =>
-                          onDetailChange((prev) => ({
-                            ...prev,
-                            baseSalary: event.target.value,
-                          }))
-                        }
-                        placeholder={
-                          detailForm.payType === 'commission_only'
-                            ? '수수료제'
-                            : '예: 250'
-                        }
-                        disabled={
-                          !canManage || detailForm.payType === 'commission_only'
-                        }
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label className="text-[11px] font-medium text-muted-foreground">
-                        개인 배분율 (%)
-                      </Label>
-                      <Input
-                        className="h-8 text-[12px]"
-                        type="number"
-                        min={0}
-                        max={100}
-                        value={detailForm.commissionRate}
-                        onChange={(event) =>
-                          onDetailChange((prev) => ({
-                            ...prev,
-                            commissionRate: event.target.value,
-                          }))
-                        }
-                        placeholder={
-                          detailForm.payType === 'fixed'
-                            ? '고정급'
-                            : '비우면 사무소 기본'
-                        }
-                        disabled={!canManage || detailForm.payType === 'fixed'}
-                      />
-                    </div>
-                  </div>
-                </DocumentSection>
-              ) : null}
-
-              <DocumentSection
-                title="계정 보안"
-                description={
-                  employee.role === 'owner'
-                    ? '대표 계정의 비밀번호를 새로 발급합니다.'
-                    : '직원이 잊어버린 비밀번호를 새로 발급합니다.'
-                }
-              >
-                <div className="flex max-w-xl items-end gap-2">
-                  <div className="min-w-0 flex-1 space-y-1.5">
-                    <Label className="text-[11px] font-medium text-muted-foreground">
-                      새 비밀번호
-                    </Label>
-                    <Input
-                      className="h-8 text-[12px]"
-                      type="password"
-                      value={resetPassword}
-                      onChange={(event) =>
-                        onResetPasswordChange(event.target.value)
+                    <Field
+                      label="자격증/등록 번호"
+                      value={detailForm.licenseNo}
+                      onChange={(value) =>
+                        onDetailChange((prev) => ({
+                          ...prev,
+                          licenseNo: value,
+                        }))
                       }
-                      placeholder="새 비밀번호 입력"
                       disabled={!canManage}
                     />
+                    <div className="space-y-1.5">
+                      <Label className="text-[11px] font-medium text-muted-foreground">
+                        역할
+                      </Label>
+                      <Select
+                        value={employee.role}
+                        onValueChange={(value) => {
+                          if (value !== employee.role) onRoleSelect(value);
+                        }}
+                        disabled={roleSelectDisabled}
+                      >
+                        <SelectTrigger
+                          className="h-8 w-full text-[12px]"
+                          aria-label="직원 역할"
+                        >
+                          <SelectValue placeholder="역할 선택" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {selectableRoles.map((role) => (
+                            <SelectItem key={role} value={role}>
+                              {roleMeta[role]?.label ?? role}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <StaticField
+                      label="계정 생성일"
+                      value={formatDate(employee.createdAt)}
+                    />
                   </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-8 shrink-0 px-2.5 text-xs"
-                    onClick={onResetPassword}
-                    disabled={!canManage || !resetPassword.trim() || isSaving}
-                  >
-                    <KeyRound className="size-3.5" />
-                    재설정
-                  </Button>
-                </div>
-              </DocumentSection>
+                </DocumentSection>
 
-              <DocumentSection
-                title="사무소 배분 기준"
-                description="직원 개인 배분율이 없을 때 적용하는 사무소 공통 기준입니다."
-                last
-              >
-                <div className="grid overflow-hidden rounded-md border border-border md:grid-cols-2">
-                  <SummaryRow
-                    label="기본 직원 배분"
-                    value={
-                      getCommissionNumber(
-                        employee.office.commissionConfig,
-                        'defaultAgentRate',
-                        50,
-                      ) + '%'
-                    }
-                  />
-                  <SummaryRow
-                    label="매도측 담당"
-                    value={
-                      getCommissionNumber(
-                        employee.office.commissionConfig,
-                        'listingAgentRate',
-                        50,
-                      ) + '%'
-                    }
-                  />
-                  <SummaryRow
-                    label="매수측 담당"
-                    value={
-                      getCommissionNumber(
-                        employee.office.commissionConfig,
-                        'buyingAgentRate',
-                        50,
-                      ) + '%'
-                    }
-                  />
-                  <SummaryRow
-                    label="단독중개"
-                    value={
-                      getCommissionNumber(
-                        employee.office.commissionConfig,
-                        'dualAgentRate',
-                        70,
-                      ) + '%'
-                    }
-                  />
-                  <SummaryRow
-                    label="관리자 배분"
-                    value={
-                      getCommissionNumber(
-                        employee.office.commissionConfig,
-                        'managerRate',
-                        10,
-                      ) + '%'
-                    }
-                  />
-                  <SummaryRow
-                    label="마감 보너스"
-                    value={
-                      getCommissionNumber(
-                        employee.office.commissionConfig,
-                        'closerBonus',
-                        0,
-                      ) + '만원'
-                    }
-                  />
-                </div>
-              </DocumentSection>
+                {employee.role !== 'owner' ? (
+                  <DocumentSection
+                    title="급여와 배분"
+                    description="개인 배분율을 비우면 사무소 기본 정책이 적용됩니다."
+                  >
+                    <div className="grid gap-5 md:grid-cols-3">
+                      <div className="space-y-1.5">
+                        <Label className="text-[11px] font-medium text-muted-foreground">
+                          급여 유형
+                        </Label>
+                        <Select
+                          value={detailForm.payType}
+                          onValueChange={(value) =>
+                            onDetailChange((prev) => ({
+                              ...prev,
+                              payType: value,
+                            }))
+                          }
+                          disabled={!canManage}
+                        >
+                          <SelectTrigger
+                            className="h-8 w-full text-[12px]"
+                            aria-label="급여 유형"
+                          >
+                            <SelectValue placeholder="급여 유형" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {Object.entries(payTypeLabels).map(
+                              ([value, label]) => (
+                                <SelectItem key={value} value={value}>
+                                  {label}
+                                </SelectItem>
+                              ),
+                            )}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-[11px] font-medium text-muted-foreground">
+                          월 기본급 (만원)
+                        </Label>
+                        <Input
+                          className="h-8 text-[12px]"
+                          aria-label="월 기본급 만원"
+                          type="number"
+                          min={0}
+                          value={detailForm.baseSalary}
+                          onChange={(event) =>
+                            onDetailChange((prev) => ({
+                              ...prev,
+                              baseSalary: event.target.value,
+                            }))
+                          }
+                          placeholder={
+                            detailForm.payType === 'commission_only'
+                              ? '수수료제'
+                              : '예: 250'
+                          }
+                          disabled={
+                            !canManage ||
+                            detailForm.payType === 'commission_only'
+                          }
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-[11px] font-medium text-muted-foreground">
+                          개인 배분율 (%)
+                        </Label>
+                        <Input
+                          className="h-8 text-[12px]"
+                          aria-label="개인 수수료 배분율"
+                          type="number"
+                          min={0}
+                          max={100}
+                          value={detailForm.commissionRate}
+                          onChange={(event) =>
+                            onDetailChange((prev) => ({
+                              ...prev,
+                              commissionRate: event.target.value,
+                            }))
+                          }
+                          placeholder={
+                            detailForm.payType === 'fixed'
+                              ? '고정급'
+                              : '비우면 사무소 기본'
+                          }
+                          disabled={
+                            !canManage || detailForm.payType === 'fixed'
+                          }
+                        />
+                      </div>
+                    </div>
+                  </DocumentSection>
+                ) : null}
+
+                <DocumentSection
+                  title="계정 보안"
+                  description={
+                    employee.role === 'owner'
+                      ? '대표 계정의 비밀번호를 새로 발급합니다.'
+                      : '직원이 잊어버린 비밀번호를 새로 발급합니다.'
+                  }
+                >
+                  <div className="flex max-w-xl items-end gap-2">
+                    <div className="min-w-0 flex-1 space-y-1.5">
+                      <Label className="text-[11px] font-medium text-muted-foreground">
+                        새 비밀번호
+                      </Label>
+                      <Input
+                        className="h-8 text-[12px]"
+                        aria-label="새 비밀번호"
+                        type="password"
+                        value={resetPassword}
+                        onChange={(event) =>
+                          onResetPasswordChange(event.target.value)
+                        }
+                        placeholder="새 비밀번호 입력"
+                        disabled={!canManage}
+                      />
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8 shrink-0 px-2.5 text-xs"
+                      onClick={onResetPassword}
+                      disabled={!canManage || !resetPassword.trim() || isSaving}
+                    >
+                      <KeyRound className="size-3.5" />
+                      재설정
+                    </Button>
+                  </div>
+                </DocumentSection>
+
+                <DocumentSection
+                  title="사무소 배분 기준"
+                  description="직원 개인 배분율이 없을 때 적용하는 사무소 공통 기준입니다."
+                  last
+                >
+                  <div className="grid overflow-hidden rounded-md border border-border md:grid-cols-2">
+                    <SummaryRow
+                      label="기본 직원 배분"
+                      value={
+                        getCommissionNumber(
+                          employee.office.commissionConfig,
+                          'defaultAgentRate',
+                          50,
+                        ) + '%'
+                      }
+                    />
+                    <SummaryRow
+                      label="매도측 담당"
+                      value={
+                        getCommissionNumber(
+                          employee.office.commissionConfig,
+                          'listingAgentRate',
+                          50,
+                        ) + '%'
+                      }
+                    />
+                    <SummaryRow
+                      label="매수측 담당"
+                      value={
+                        getCommissionNumber(
+                          employee.office.commissionConfig,
+                          'buyingAgentRate',
+                          50,
+                        ) + '%'
+                      }
+                    />
+                    <SummaryRow
+                      label="단독중개"
+                      value={
+                        getCommissionNumber(
+                          employee.office.commissionConfig,
+                          'dualAgentRate',
+                          70,
+                        ) + '%'
+                      }
+                    />
+                    <SummaryRow
+                      label="관리자 배분"
+                      value={
+                        getCommissionNumber(
+                          employee.office.commissionConfig,
+                          'managerRate',
+                          10,
+                        ) + '%'
+                      }
+                    />
+                    <SummaryRow
+                      label="마감 보너스"
+                      value={
+                        getCommissionNumber(
+                          employee.office.commissionConfig,
+                          'closerBonus',
+                          0,
+                        ) + '만원'
+                      }
+                    />
+                  </div>
+                </DocumentSection>
+              </div>
             </div>
           </ScrollArea>
         </TabsContent>
@@ -1504,8 +2018,8 @@ function EmployeeDetailCard({
           className="min-h-0 data-[state=active]:flex data-[state=active]:flex-1 data-[state=active]:flex-col"
         >
           <ScrollArea className="min-h-0 flex-1">
-            <div className="mx-auto w-full max-w-[1100px] space-y-9 px-8 py-7 pb-16">
-              <section>
+            <div className="mx-auto w-full max-w-[1180px] space-y-6 px-6 py-6 pb-16">
+              <section className="rounded-lg border border-border bg-white p-5">
                 <div className="mb-3 flex items-center justify-between gap-3">
                   <div>
                     <h3 className="text-[13px] font-semibold">누적 실적</h3>
@@ -1550,7 +2064,7 @@ function EmployeeDetailCard({
                 </div>
               </section>
 
-              <div className="grid items-start gap-8 xl:grid-cols-2">
+              <div className="grid items-start gap-6 min-[1180px]:grid-cols-2">
                 <ListSection
                   title="담당 업무"
                   icon={ClipboardList}
@@ -1626,7 +2140,7 @@ function EmployeeDetailCard({
           className="min-h-0 data-[state=active]:flex data-[state=active]:flex-1 data-[state=active]:flex-col"
         >
           <ScrollArea className="min-h-0 flex-1">
-            <div className="mx-auto grid w-full max-w-[1100px] items-start gap-8 px-8 py-7 pb-16 xl:grid-cols-2">
+            <div className="mx-auto grid w-full max-w-[1180px] items-start gap-6 px-6 py-6 pb-16 min-[1180px]:grid-cols-2">
               <ListSection
                 title="최근 상담"
                 icon={CalendarClock}
@@ -1744,7 +2258,7 @@ function DetailStat({
   value: string;
 }) {
   return (
-    <div className="min-w-0 px-4 py-2.5 first:pl-7">
+    <div className="min-w-0 px-3 py-2.5">
       <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
         <Icon className="size-3" aria-hidden="true" />
         <span>{label}</span>
@@ -1781,14 +2295,16 @@ function DocumentSection({
   return (
     <section
       className={cn(
-        'grid gap-6 border-b border-border/80 py-7 lg:grid-cols-[168px_minmax(0,1fr)]',
+        'space-y-4 border-b border-border/70 py-6',
         last && 'border-b-0',
       )}
     >
       <div>
-        <h3 className="text-[12.5px] font-semibold">{title}</h3>
+        <h3 className="text-[12.5px] font-semibold tracking-[-0.005em]">
+          {title}
+        </h3>
         {description ? (
-          <p className="mt-1.5 text-[10.5px] leading-4 text-muted-foreground">
+          <p className="mt-1 text-[10.5px] leading-4 text-muted-foreground">
             {description}
           </p>
         ) : null}
@@ -1820,21 +2336,30 @@ function Field({
   onChange,
   disabled,
   type = 'text',
+  autoComplete,
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
   disabled?: boolean;
   type?: string;
+  autoComplete?: string;
 }) {
+  const inputId = useId();
+
   return (
     <div className="space-y-1.5">
-      <Label className="text-[11px] font-medium text-muted-foreground">
+      <Label
+        htmlFor={inputId}
+        className="text-[11px] font-medium text-muted-foreground"
+      >
         {label}
       </Label>
       <Input
+        id={inputId}
         className="h-8 text-[12px]"
         type={type}
+        autoComplete={autoComplete}
         value={value}
         onChange={(event) => onChange(event.target.value)}
         disabled={disabled}
@@ -1846,9 +2371,7 @@ function Field({
 function StaticField({ label, value }: { label: string; value: string }) {
   return (
     <div className="space-y-1.5">
-      <Label className="text-[11px] font-medium text-muted-foreground">
-        {label}
-      </Label>
+      <p className="text-[11px] font-medium text-muted-foreground">{label}</p>
       <div className="flex h-8 items-center rounded-md border border-border/70 bg-[#faf9f6] px-3 text-[12px] text-muted-foreground">
         {value}
       </div>

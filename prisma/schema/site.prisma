@@ -180,6 +180,10 @@ model Unit {
   exclusiveAreaM2 Decimal? @map("exclusive_area_m2") @db.Decimal
   supplyAreaM2    Decimal? @map("supply_area_m2") @db.Decimal
 
+  // 구조 — 호실별 값이 있으면 SiteUnitType의 기본값보다 우선하는 nullable override
+  roomCount     Int? @map("room_count")
+  bathRoomCount Int? @map("bath_room_count")
+
   isPiloti Boolean @default(false) @map("is_piloti") // 필로티 여부
   cellType String  @default("unit") @map("cell_type") // unit/empty/piloti/common_facility/commercial_facility/safety_area
 

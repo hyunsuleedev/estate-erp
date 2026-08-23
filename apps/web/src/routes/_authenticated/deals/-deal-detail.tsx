@@ -94,7 +94,7 @@ export function DealDetailSheet({
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         side="right"
-        className="w-[calc(100vw-40px)] max-w-none gap-0 overflow-y-auto p-0 sm:w-[740px] sm:max-w-[740px]"
+        className="w-[calc(100vw-40px)] max-w-none gap-0 overflow-hidden p-0 sm:w-[740px] sm:max-w-[740px]"
       >
         <SheetHeader className="sr-only">
           <SheetTitle>거래 상세</SheetTitle>
@@ -147,7 +147,7 @@ function DealDetailPanel({
         : '합의 가격';
 
   return (
-    <section className="min-h-full overflow-hidden bg-background">
+    <section className="min-h-0 flex-1 overflow-y-auto bg-background">
       <div className="border-b bg-muted/50 px-6 py-5 pr-12">
         <div className="flex flex-wrap items-center gap-1.5">
           <StatusBadge kind="dealStage" status={currentStage} />

@@ -31,6 +31,10 @@ import {
   listingCaseParticipants,
   resolveBrokerageCaseForIntake,
 } from '../brokerage-cases/brokerage-case.resolver';
+import {
+  ACTIVE_LISTING_ADVERTISEMENT_WHERE,
+  withActiveAdvertisementSummary,
+} from './listing-advertisement-summary';
 
 const VALID_TRANSACTION_TYPES: ReadonlySet<string> = new Set(
   Object.values(TransactionType),
@@ -448,25 +452,39 @@ export class ListingsService {
                   updatedAt: true,
                   deals: OCCUPYING_DEALS_SELECT,
                   // 매물 목록 매칭 칩 카운트용
-                  _count: { select: { matches: true } },
+                  _count: {
+                    select: {
+                      matches: true,
+                      advertisements: {
+                        where: ACTIVE_LISTING_ADVERTISEMENT_WHERE,
+                      },
+                    },
+                  },
                   advertisements: {
+                    where: ACTIVE_LISTING_ADVERTISEMENT_WHERE,
                     orderBy: { createdAt: 'desc' },
-                    take: 5,
                   },
                 },
               },
             },
           },
           advertisements: {
+            where: ACTIVE_LISTING_ADVERTISEMENT_WHERE,
             orderBy: { createdAt: 'desc' },
-            take: 5,
           },
           priceHistories: {
             orderBy: { createdAt: 'desc' },
             take: 5,
           },
           // 매물 목록 매칭 칩 카운트용
-          _count: { select: { matches: true } },
+          _count: {
+            select: {
+              matches: true,
+              advertisements: {
+                where: ACTIVE_LISTING_ADVERTISEMENT_WHERE,
+              },
+            },
+          },
         },
         orderBy: { [sortBy]: sortOrder },
         skip,
@@ -476,7 +494,7 @@ export class ListingsService {
     ]);
 
     return {
-      items: items.map((listing) => this.withContactPhones(listing)),
+      items: items.map((listing) => this.toListResponse(listing)),
       pagination: {
         page,
         limit,
@@ -591,7 +609,6 @@ export class ListingsService {
                 deals: OCCUPYING_DEALS_SELECT,
                 advertisements: {
                   orderBy: { createdAt: 'desc' },
-                  take: 5,
                 },
               },
             },
@@ -599,7 +616,6 @@ export class ListingsService {
         },
         advertisements: {
           orderBy: { createdAt: 'desc' },
-          take: 5,
         },
         matches: true,
         deals: true,
@@ -802,6 +818,19 @@ export class ListingsService {
       }));
     }
     return listing;
+  }
+
+  private toListResponse<T>(listing: T) {
+    const response = this.withContactPhones(listing) as Record<string, unknown>;
+    const property = response.property as
+      | { listings?: Array<Record<string, unknown>> }
+      | undefined;
+    if (property?.listings) {
+      property.listings = property.listings.map((propertyListing) =>
+        withActiveAdvertisementSummary(propertyListing),
+      );
+    }
+    return withActiveAdvertisementSummary(response);
   }
 
   private assertValidTransactionType(transactionType: string) {

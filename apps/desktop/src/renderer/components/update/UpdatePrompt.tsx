@@ -8,7 +8,11 @@ import {
   type UpdatePromptAction,
 } from './update-prompt-utils';
 
-type DesktopUpdateStatus = Awaited<ReturnType<NonNullable<typeof window.electronBridge>['updater']['getStatus']>>;
+type DesktopUpdateStatus = Awaited<
+  ReturnType<
+    NonNullable<NonNullable<typeof window.electronBridge>['updater']>['getStatus']
+  >
+>;
 
 export function UpdatePrompt() {
   const [status, setStatus] = useState<DesktopUpdateStatus | null>(null);
@@ -38,9 +42,22 @@ export function UpdatePrompt() {
     () => (status ? getUpdatePromptModel(status) : null),
     [status],
   );
+  const isVisible = Boolean(
+    status &&
+      model &&
+      shouldShowUpdatePrompt(model) &&
+      dismissedStartedAt !== status.startedAt,
+  );
 
-  if (!status || !model || !shouldShowUpdatePrompt(model)) return null;
-  if (dismissedStartedAt === status.startedAt) return null;
+  useEffect(() => {
+    const setOverlayVisible =
+      window.electronBridge?.tabs.setGlobalOverlayVisible;
+    if (!setOverlayVisible) return;
+    setOverlayVisible('updater', isVisible);
+    return () => setOverlayVisible('updater', false);
+  }, [isVisible]);
+
+  if (!status || !model || !isVisible) return null;
 
   const handleAction = (action: UpdatePromptAction) => {
     if (action === 'dismiss') {
@@ -49,12 +66,12 @@ export function UpdatePrompt() {
     }
 
     if (action === 'check') {
-      void window.electronBridge?.updater.check();
+      void window.electronBridge?.updater?.check();
       return;
     }
 
     if (action === 'restart') {
-      void window.electronBridge?.updater.install();
+      void window.electronBridge?.updater?.install();
     }
   };
 

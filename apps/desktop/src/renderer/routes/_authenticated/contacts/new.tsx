@@ -1,6 +1,6 @@
-import { createFileRoute, Link, useNavigate } from '@tanstack/react-router';
+import { createFileRoute, Link } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useDeferredValue, useMemo, useState, type ComponentType, type ReactNode } from 'react';
+import { useDeferredValue, useMemo, useRef, useState, type ComponentType, type ReactNode } from 'react';
 import { toast } from 'sonner';
 import { AlertTriangle, ArrowLeft, CheckCircle2, Phone } from 'lucide-react';
 import { api } from '@/lib/api';
@@ -21,6 +21,10 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
+import { getRouteMeta } from '@/features/tabs/lib/routeMeta';
+import { tabResourceKeys } from '@/features/tabs/lib/tabResource';
+import { useTabStore } from '@/features/tabs/store/useTabStore';
+import { useTabScopedState } from '@/features/tabs/hooks/useTabScopedState';
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -29,19 +33,33 @@ export const Route = createFileRoute('/_authenticated/contacts/new')({
 });
 
 function NewContactPage() {
-  const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const [form, setForm] = useState({
+  const activeTabId = useTabStore((state) => state.activeTabId);
+  const replaceTabResource = useTabStore((state) => state.replaceTabResource);
+  const openOrRevealResource = useTabStore((state) => state.openOrRevealResource);
+  const openModule = useTabStore((state) => state.openModule);
+  const closeTab = useTabStore((state) => state.closeTab);
+  const ownerTabIdRef = useRef(activeTabId);
+  const [form, setForm] = useTabScopedState('contact-new:form:v1', {
     name: '',
     email: '',
     customTagsInput: '',
     memo: '',
   });
-  const [phones, setPhones] = useState<EditablePhone[]>(() => [createEmptyPhone(true)]);
-  const [selectedGroupTags, setSelectedGroupTags] = useState<string[]>([]);
+  const [phones, setPhones] = useTabScopedState<EditablePhone[]>(
+    'contact-new:phones:v1',
+    () => [createEmptyPhone(true)],
+  );
+  const [selectedGroupTags, setSelectedGroupTags] = useTabScopedState<string[]>(
+    'contact-new:group-tags:v1',
+    [],
+  );
   const [error, setError] = useState('');
   /** 중복 후보가 있어도 생성은 가능하지만, 사용자가 명시적으로 확인해야 한다 (PRD 9장) */
-  const [duplicateAcknowledged, setDuplicateAcknowledged] = useState(false);
+  const [duplicateAcknowledged, setDuplicateAcknowledged] = useTabScopedState(
+    'contact-new:duplicate-acknowledged:v1',
+    false,
+  );
 
   const primaryPhoneValue = firstPhoneValue(phones);
   const deferredPhone = useDeferredValue(primaryPhoneValue);
@@ -72,10 +90,24 @@ function NewContactPage() {
     onSuccess: async (created) => {
       await queryClient.invalidateQueries({ queryKey: ['contacts'] });
       toast.success('연락처가 등록되었습니다.');
-      void navigate({
-        to: '/contacts/$id',
-        params: { id: created.id },
-      });
+      const route = `/contacts/${created.id}`;
+      const meta = getRouteMeta(route);
+      const resourceKey = tabResourceKeys.entity('contact', created.id);
+      if (ownerTabIdRef.current) {
+        replaceTabResource(ownerTabIdRef.current, {
+          route,
+          kind: meta.kind,
+          title: created.name || meta.title,
+          resourceKey,
+        });
+      } else {
+        openOrRevealResource({
+          route,
+          kind: meta.kind,
+          title: created.name || meta.title,
+          resourceKey,
+        });
+      }
     },
     onError: () => {
       setError('연락처 등록에 실패했습니다.');
@@ -83,13 +115,27 @@ function NewContactPage() {
     },
   });
 
+  const handleCancel = () => {
+    if (ownerTabIdRef.current) {
+      closeTab(ownerTabIdRef.current);
+      return;
+    }
+    const meta = getRouteMeta('/contacts');
+    openModule({ route: '/contacts', kind: meta.kind, title: meta.title });
+  };
+
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center gap-3">
-        <Button variant="ghost" size="icon" className="size-7" asChild>
-          <Link to="/contacts">
-            <ArrowLeft className="size-4" />
-          </Link>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="size-7"
+          onClick={handleCancel}
+          aria-label="연락처 목록으로 돌아가기"
+        >
+          <ArrowLeft className="size-4" />
         </Button>
       </div>
 
@@ -226,8 +272,8 @@ function NewContactPage() {
               )}
 
               <div className="flex items-center justify-end gap-2">
-                <Button type="button" variant="outline" asChild>
-                  <Link to="/contacts">취소</Link>
+                <Button type="button" variant="outline" onClick={handleCancel}>
+                  취소
                 </Button>
                 <Button
                   type="submit"

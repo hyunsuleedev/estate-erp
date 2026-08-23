@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "complexNo": "113907",
+  "complexName": "고덕그라시움",
+  "source": {
+    "provider": "naver_real_estate",
+    "url": "https://new.land.naver.com/complexes/113907",
+    "section": "단지정보 > 단지 내 면적별 정보",
+    "capturedAt": "2026-08-22",
+    "collectionMethod": "Aside CLI visible browser"
+  },
+  "items": [
+    { "name": "82A", "naverPyeongNo": 3, "roomCount": 3, "bathRoomCount": 2, "evidenceText": "24A평; 방수/욕실수 3개/2개" },
+    { "name": "82C", "naverPyeongNo": 2, "roomCount": 3, "bathRoomCount": 2, "evidenceText": "24C평; 방수/욕실수 3개/2개" },
+    { "name": "82D", "naverPyeongNo": 1, "roomCount": 3, "bathRoomCount": 2, "evidenceText": "24D평; 방수/욕실수 3개/2개" },
+    { "name": "82B", "naverPyeongNo": 4, "roomCount": 3, "bathRoomCount": 2, "evidenceText": "24B평; 방수/욕실수 3개/2개" },
+    { "name": "100A", "naverPyeongNo": 5, "roomCount": 3, "bathRoomCount": 2, "evidenceText": "30A평; 방수/욕실수 3개/2개" },
+    { "name": "101B", "naverPyeongNo": 6, "roomCount": 3, "bathRoomCount": 2, "evidenceText": "30B평; 방수/욕실수 3개/2개" },
+    { "name": "114A", "naverPyeongNo": 7, "roomCount": 3, "bathRoomCount": 2, "evidenceText": "34A평; 방수/욕실수 3개/2개" },
+    { "name": "115D", "naverPyeongNo": 9, "roomCount": 3, "bathRoomCount": 2, "evidenceText": "34D평; 방수/욕실수 3개/2개" },
+    { "name": "115C", "naverPyeongNo": 10, "roomCount": 3, "bathRoomCount": 2, "evidenceText": "34C평; 방수/욕실수 3개/2개" },
+    { "name": "115B", "naverPyeongNo": 8, "roomCount": 3, "bathRoomCount": 2, "evidenceText": "34B평; 방수/욕실수 3개/2개" },
+    { "name": "132B", "naverPyeongNo": 11, "roomCount": 4, "bathRoomCount": 2, "evidenceText": "40B평; 방수/욕실수 4개/2개" },
+    { "name": "133A", "naverPyeongNo": 12, "roomCount": 3, "bathRoomCount": 2, "evidenceText": "40A평; 방수/욕실수 3개/2개" },
+    { "name": "153A", "naverPyeongNo": 13, "roomCount": 4, "bathRoomCount": 2, "evidenceText": "46A평; 방수/욕실수 4개/2개" },
+    { "name": "154C", "naverPyeongNo": 14, "roomCount": 4, "bathRoomCount": 3, "evidenceText": "46C평; 방수/욕실수 4개/3개" },
+    { "name": "155B", "naverPyeongNo": 15, "roomCount": 4, "bathRoomCount": 2, "evidenceText": "46B평; 방수/욕실수 4개/2개" },
+    { "name": "172", "naverPyeongNo": 16, "roomCount": 4, "bathRoomCount": 2, "evidenceText": "52평; 방수/욕실수 4개/2개" },
+    { "name": "184A", "naverPyeongNo": 17, "roomCount": 3, "bathRoomCount": 2, "evidenceText": "55A평; 방수/욕실수 3개/2개" },
+    { "name": "184B", "naverPyeongNo": 18, "roomCount": 4, "bathRoomCount": 2, "evidenceText": "55B평; 방수/욕실수 4개/2개" },
+    { "name": "200", "naverPyeongNo": 19, "roomCount": 4, "bathRoomCount": 3, "evidenceText": "60평; 방수/욕실수 4개/3개" },
+    { "name": "242B", "naverPyeongNo": 21, "roomCount": 4, "bathRoomCount": 3, "evidenceText": "73B평; 방수/욕실수 4개/3개" },
+    { "name": "243C", "naverPyeongNo": 22, "roomCount": 4, "bathRoomCount": 3, "evidenceText": "73C평; 방수/욕실수 4개/3개" },
+    { "name": "243A", "naverPyeongNo": 20, "roomCount": 4, "bathRoomCount": 3, "evidenceText": "73A평; 방수/욕실수 4개/3개" }
+  ]
+}

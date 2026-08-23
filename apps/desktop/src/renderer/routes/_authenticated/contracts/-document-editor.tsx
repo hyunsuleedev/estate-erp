@@ -20,7 +20,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, BookMarked, FileText, Printer } from 'lucide-react';
+import { BookMarked, Printer } from 'lucide-react';
 import { toast } from 'sonner';
 import type {
   Contract,
@@ -65,8 +65,6 @@ import {
   ResidentialSaleAgreementPreview,
 } from './-residential-sale-editor';
 import {
-  SummaryRow,
-  documentCategoryLabels,
   documentStatusMeta,
   findPrimaryContractDocument,
   sortContractDocuments,
@@ -95,19 +93,10 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   Select,
   SelectContent,
-  SelectGroup,
   SelectItem,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetFooter,
-  SheetHeader,
-  SheetTitle,
-} from '@/components/ui/sheet';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 
@@ -127,7 +116,7 @@ export type DocumentEditorForm = {
   engineFields: ContractDocumentEngineFields;
   /**
    * 문서 단위 표기/인쇄 옵션 (metadata.documentEngine.printOptions) —
-   * 금액단위(만원/천원/원)·금액인쇄형식(한글/漢字)·공란인쇄·행 토글.
+   * 금액단위(만원/천원/원)·공란인쇄·행 토글. 금액 병기는 한글로 고정한다.
    * 조항 에디터 서식에서만 저장 페이로드에 포함한다.
    */
   printOptions: ContractDocumentEnginePrintOptions;
@@ -225,8 +214,11 @@ export function toDocumentEditorForm(
     metadata: document?.metadata ?? template.metadata ?? {},
     workflow: draft.workflow,
     engineFields,
-    // 표기 옵션은 문서 metadata 에서만 읽는다 (신규 문서는 기본값 만원/한글)
-    printOptions: getContractDocumentEnginePrintOptions(document?.metadata),
+    // 과거 한자 문서도 편집·미리보기·다음 저장부터 한글 표기로 정규화한다.
+    printOptions: {
+      ...getContractDocumentEnginePrintOptions(document?.metadata),
+      amountNotation: 'hangul',
+    },
     // 조항 에디터 서식은 engineFields 가 단일 진실 — 매매초안 전용 폼은 dormant.
     saleAgreement: clauseLayout
       ? null
@@ -365,7 +357,7 @@ function applyLeasePeriodDerivation(
 }
 
 // ---------------------------------------------------------------------------
-// 편집 시트
+// 독립 창 편집기
 // ---------------------------------------------------------------------------
 
 function documentTabStatusClass(status: string) {
@@ -375,29 +367,27 @@ function documentTabStatusClass(status: string) {
   return 'bg-muted-foreground/45';
 }
 
-export function DocumentEditorSheet({
-  open,
+export function DocumentEditorWorkspace({
   form,
   documents,
   error,
   isSaving,
   isAddingForm,
   isDirty,
-  onOpenChange,
+  onClose,
   onFormChange,
   onSelectDocument,
   onAddForm,
   onSave,
   onSaveAsNew,
 }: {
-  open: boolean;
   form: DocumentEditorForm;
   documents: ContractDocument[];
   error: string | null;
   isSaving: boolean;
   isAddingForm: boolean;
   isDirty: boolean;
-  onOpenChange: (open: boolean) => void;
+  onClose: () => void;
   onFormChange: Dispatch<SetStateAction<DocumentEditorForm>>;
   onSelectDocument: (document: ContractDocument) => void;
   onAddForm: (spec: FormRegistrationSpec) => void;
@@ -416,7 +406,7 @@ export function DocumentEditorSheet({
     form.fieldGroups.length > 0
       ? form.fieldGroups
       : getContractDocumentEngineFieldGroups(form.category);
-  // 문서 제목은 에디터 셸(사이드바)에 고정 배치하므로 그룹에서는 제외
+  // 문서 제목은 문서 탭에서 표시하므로 본문 입력 그룹에서는 제외한다.
   const visibleFieldGroups = fieldGroups
     .map((group) => ({
       ...group,
@@ -477,8 +467,6 @@ export function DocumentEditorSheet({
 
   // Ctrl/Cmd+S 저장, Ctrl/Cmd+P 미리보기 (PRD 키보드 단축키)
   useEffect(() => {
-    if (!open) return;
-
     function handleKeyDown(event: KeyboardEvent) {
       if (!(event.metaKey || event.ctrlKey)) return;
       if (event.key === 's') {
@@ -494,7 +482,7 @@ export function DocumentEditorSheet({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [open, onSave, isSaveDisabled]);
+  }, [onSave, isSaveDisabled]);
 
   function updateEngineField(
     key: string,
@@ -548,38 +536,21 @@ export function DocumentEditorSheet({
     }));
   }
 
-  /** 표기/인쇄 옵션 갱신 (AmountNotationBar·공란인쇄·행 토글 → printOptions) */
+  /** 입력/인쇄 옵션 갱신 (금액단위·공란인쇄·행 토글 → printOptions) */
   function updatePrintOptions(partial: Partial<ContractDocumentEnginePrintOptions>) {
     onFormChange((prev) => ({
       ...prev,
-      printOptions: { ...prev.printOptions, ...partial },
+      printOptions: { ...prev.printOptions, ...partial, amountNotation: 'hangul' },
     }));
   }
 
   return (
     <>
-      <Sheet open={open} onOpenChange={onOpenChange}>
-        <SheetContent
-          side="right"
-          className="w-[calc(100vw-24px)] gap-0 overflow-hidden p-0 sm:max-w-none xl:w-[calc(100vw-64px)]"
-        >
-          <SheetHeader className="border-b px-6 py-4">
-            <div className="flex items-start justify-between gap-6 pr-8">
-              <div className="space-y-1">
-                <p className="text-xs font-medium text-muted-foreground">문서 편집</p>
-                <SheetTitle>{documentTitle}</SheetTitle>
-                <SheetDescription>
-                  {form.workflow.formTitle} · {form.workflow.inputFormName} ·{' '}
-                  {form.workflow.reportName}
-                </SheetDescription>
-              </div>
-              <Badge className={cn('border-0', documentStatusMeta[form.status]?.className)}>
-                {documentStatusMeta[form.status]?.label ?? form.status}
-              </Badge>
-            </div>
-          </SheetHeader>
-
-          <Tabs
+      <section
+        aria-label="계약 문서 편집기"
+        className="-m-4 flex min-h-0 flex-1 flex-col overflow-hidden bg-background"
+      >
+        <Tabs
             value={activeTabValue}
             onValueChange={(value) => {
               if (value === activeTabValue) return;
@@ -589,17 +560,6 @@ export function DocumentEditorSheet({
             className="min-h-0 flex-1 gap-0"
           >
             <div className="flex items-center gap-2 border-b bg-background px-3">
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="h-9 shrink-0 px-2.5 text-xs"
-                onClick={() => onOpenChange(false)}
-              >
-                <ArrowLeft className="size-3.5" />
-                문서 목록
-              </Button>
-              <div className="h-5 w-px shrink-0 bg-border" />
               <div className="min-w-0 flex-1 overflow-x-auto overflow-y-hidden">
                 <TabsList
                   variant="line"
@@ -666,18 +626,6 @@ export function DocumentEditorSheet({
               <ScrollArea className="min-h-0 flex-1">
                 <div className="grid min-h-full gap-5 bg-muted/40 p-5 lg:grid-cols-[minmax(0,1fr)_340px] xl:grid-cols-[minmax(0,1fr)_380px]">
                   <main className="min-w-0 space-y-4">
-                    <section className="rounded-md border border-border/60 bg-background p-5">
-                      <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div>
-                          <p className="text-base font-semibold tracking-tight">문서별 입력폼</p>
-                          <p className="mt-1 text-sm text-muted-foreground">
-                            값을 입력한 뒤 출력 미리보기에서 리포트 형태를 확인합니다.
-                          </p>
-                        </div>
-                        <Badge variant="outline">{form.workflow.inputFormName}</Badge>
-                      </div>
-                    </section>
-
                     {clauseArticles ? (
                       <BaseContractClauseEditor
                         // 문서 전환 시 인라인 컨트롤(금액 draft/날짜 칸)의 로컬 상태 리셋
@@ -711,30 +659,6 @@ export function DocumentEditorSheet({
                   </main>
 
                   <aside className="space-y-4">
-                    <section className="rounded-md border border-border/60 bg-background p-4">
-                      <p className="text-sm font-medium">출력 리포트</p>
-                      <div className="mt-3 space-y-2">
-                        <SummaryRow label="입력폼" value={form.workflow.inputFormName} />
-                        <SummaryRow label="리포트" value={form.workflow.reportName} />
-                        <SummaryRow
-                          label="분류"
-                          value={documentCategoryLabels[form.category] ?? form.category}
-                        />
-                        <SummaryRow
-                          label="상태"
-                          value={documentStatusMeta[form.status]?.label ?? form.status}
-                        />
-                      </div>
-                      <Button
-                        type="button"
-                        className="mt-4 w-full"
-                        onClick={() => setIsPreviewOpen(true)}
-                      >
-                        <FileText data-icon="inline-start" />
-                        출력 미리보기
-                      </Button>
-                    </section>
-
                     {editorValidation ? (
                       <section className="rounded-md border border-border/60 bg-background p-4">
                         <div className="flex items-center justify-between gap-3">
@@ -765,97 +689,6 @@ export function DocumentEditorSheet({
                         </div>
                       </section>
                     ) : null}
-
-                    <section className="rounded-md border border-border/60 bg-background p-4">
-                      <p className="text-sm font-medium">문서 설정</p>
-                      <div className="mt-4 grid gap-4">
-                        <div className="space-y-2">
-                          <Label>문서 제목</Label>
-                          <Input
-                            value={form.engineFields.documentTitle ?? ''}
-                            onChange={(event) =>
-                              updateEngineField('documentTitle', event.target.value)
-                            }
-                            placeholder="비우면 서식명이 사용됩니다"
-                          />
-                        </div>
-
-                        <div className="space-y-2">
-                          <Label>문서 상태</Label>
-                          <Select
-                            value={form.status}
-                            onValueChange={(value) =>
-                              onFormChange((prev) => ({
-                                ...prev,
-                                status: value,
-                              }))
-                            }
-                          >
-                            <SelectTrigger className="w-full">
-                              <SelectValue placeholder="상태 선택" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectGroup>
-                                {Object.entries(documentStatusMeta).map(([key, meta]) => (
-                                  <SelectItem key={key} value={key}>
-                                    {meta.label}
-                                  </SelectItem>
-                                ))}
-                              </SelectGroup>
-                            </SelectContent>
-                          </Select>
-                        </div>
-
-                        <div className="space-y-2">
-                          <Label>작업 유형</Label>
-                          <Select
-                            value={form.type}
-                            onValueChange={(value) =>
-                              onFormChange((prev) => ({ ...prev, type: value }))
-                            }
-                          >
-                            <SelectTrigger className="w-full">
-                              <SelectValue placeholder="유형 선택" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectGroup>
-                                <SelectItem value="generated">작성</SelectItem>
-                                <SelectItem value="uploaded">첨부</SelectItem>
-                                <SelectItem value="external">외부 제출</SelectItem>
-                              </SelectGroup>
-                            </SelectContent>
-                          </Select>
-                        </div>
-
-                        <div className="space-y-2">
-                          <Label>파일 URL</Label>
-                          <Input
-                            value={form.fileUrl}
-                            onChange={(event) =>
-                              onFormChange((prev) => ({
-                                ...prev,
-                                fileUrl: event.target.value,
-                              }))
-                            }
-                            placeholder="https://...pdf"
-                          />
-                        </div>
-
-                        <div className="space-y-2">
-                          <Label>내부 메모</Label>
-                          <Textarea
-                            rows={4}
-                            value={form.memo}
-                            onChange={(event) =>
-                              onFormChange((prev) => ({
-                                ...prev,
-                                memo: event.target.value,
-                              }))
-                            }
-                          />
-                        </div>
-                      </div>
-                    </section>
 
                     {!form.saleAgreement ? (
                       <>
@@ -892,7 +725,7 @@ export function DocumentEditorSheet({
                 </div>
               </ScrollArea>
 
-              <SheetFooter className="border-t px-6 py-3">
+              <footer className="mt-auto flex flex-col gap-2 border-t px-6 py-3">
                 <div className="flex w-full flex-row items-center justify-between gap-4">
                   <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
                     <span
@@ -911,7 +744,7 @@ export function DocumentEditorSheet({
                     </span>
                   </div>
                   <div className="flex shrink-0 flex-row justify-end gap-2">
-                    <Button variant="outline" onClick={() => onOpenChange(false)}>
+                    <Button variant="outline" onClick={onClose}>
                       닫기
                     </Button>
                     <Button variant="outline" onClick={() => setIsPreviewOpen(true)}>
@@ -931,11 +764,10 @@ export function DocumentEditorSheet({
                     </Button>
                   </div>
                 </div>
-              </SheetFooter>
+              </footer>
             </TabsContent>
-          </Tabs>
-        </SheetContent>
-      </Sheet>
+        </Tabs>
+      </section>
 
       <Dialog open={isPreviewOpen} onOpenChange={setIsPreviewOpen}>
         <DialogContent className="h-[calc(100vh-32px)] w-[calc(100vw-32px)] max-w-none gap-0 overflow-hidden p-0 sm:max-w-none xl:w-[1040px]">

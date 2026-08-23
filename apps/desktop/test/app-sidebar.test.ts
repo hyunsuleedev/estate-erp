@@ -91,6 +91,8 @@ describe("desktop app sidebar", () => {
     assert.doesNotMatch(navItemsSource, /label: "협력업체 찾기"/);
     assert.doesNotMatch(navItemsSource, /path: "\/calls"/);
     assert.doesNotMatch(navItemsSource, /label: "통화 관리"/);
+    assert.doesNotMatch(navItemsSource, /path: "\/buyer-requirements"/);
+    assert.doesNotMatch(navItemsSource, /label: "구매고객"/);
     assert.equal(navMainSource.includes("<NavItemWithChildren"), true);
     assert.equal(navMainSource.includes("SidebarMenuAction"), true);
     assert.equal(navMainSource.includes('className="py-1"'), true);
@@ -113,6 +115,10 @@ describe("desktop app sidebar", () => {
       resolve(testDir, "../src/renderer/routes/_authenticated.tsx"),
       "utf8",
     );
+    const appCssSource = readFileSync(
+      resolve(testDir, "../src/renderer/app.css"),
+      "utf8",
+    );
 
     const brandIndex = layoutSource.indexOf('data-slot="desktop-brand"');
     const spacerIndex = layoutSource.indexOf(
@@ -131,6 +137,26 @@ describe("desktop app sidebar", () => {
       layoutSource,
       /w-\(--sidebar-width\)/,
       "titlebar controls should end at the expanded sidebar boundary",
+    );
+    assert.doesNotMatch(
+      layoutSource,
+      /w-\(--sidebar-width\)[^>]*WebkitAppRegion:\s*['"]no-drag['"]/,
+      "the titlebar brand area should remain draggable",
+    );
+    assert.match(
+      layoutSource,
+      /app-titlebar-drag-region flex h-full w-\(--sidebar-width\)/,
+      "the titlebar brand area should opt into native window dragging",
+    );
+    assert.match(
+      appCssSource,
+      /\.app-titlebar-drag-region\s*\{[\s\S]*?-webkit-app-region:\s*drag/,
+      "the titlebar brand area should be a native drag region",
+    );
+    assert.match(
+      appCssSource,
+      /\.app-titlebar button,[\s\S]*?-webkit-app-region:\s*no-drag/,
+      "interactive titlebar controls should remain clickable",
     );
     assert.match(
       layoutSource,
@@ -188,15 +214,17 @@ describe("desktop app sidebar", () => {
     );
     assert.match(
       detachedSource,
-      /<TabContent autoCreateInitialTab=\{false\}/,
+      /<TabWorkspaceController autoCreateInitialTab=\{false\}/,
+      "detached windows should keep one persistent workspace controller without auto-creating a route tab",
     );
+    assert.match(detachedSource, /<TabContent \/>/);
     assert.doesNotMatch(detachedSource, /<AppSidebar/);
     assert.doesNotMatch(detachedSource, /<SidebarTrigger/);
     assert.doesNotMatch(detachedSource, /data-slot="desktop-brand"/);
     assert.doesNotMatch(detachedSource, /<CallPopup/);
   });
 
-  it("renders titlebar tabs as compact bordered rectangles", () => {
+  it("renders equal-height titlebar tabs with a filled active indicator", () => {
     const tabSource = readFileSync(
       resolve(testDir, "../src/renderer/features/tabs/TabBar/Tab.tsx"),
       "utf8",
@@ -210,12 +238,17 @@ describe("desktop app sidebar", () => {
       "utf8",
     );
 
-    assert.match(tabSource, /h-8[^'\n]*border border-border/);
     assert.match(
       tabSource,
-      /z-10 -mb-px h-9 self-end border-b-background! /,
-      "the active tab should meet the titlebar's bottom edge without a gap",
+      /-ml-px -mb-px flex h-9[^'\n]*self-end[^'\n]*border border-border/,
+      "active and inactive tabs should share the same full-height geometry",
     );
+    assert.match(
+      tabSource,
+      /z-10 bg-background text-foreground after:absolute after:-inset-x-px after:-bottom-px after:h-0\.5 after:bg-foreground/,
+      "the active tab should end with a flush two-pixel dark indicator",
+    );
+    assert.doesNotMatch(tabSource, /after:-bottom-1|after:h-1|border-b-background!/);
     assert.match(tabSource, /first:ml-0/);
     assert.match(tabBarSource, /overflow-x-auto pl-1\.5/);
     assert.match(tabSource, /opacity-0[^'\n]*group-hover:opacity-70/);

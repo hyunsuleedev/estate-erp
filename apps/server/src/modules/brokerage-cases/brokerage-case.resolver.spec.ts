@@ -1,4 +1,5 @@
 import {
+  listingCaseParticipants,
   mergeBuyerIntakeCaseParticipants,
   resolveBrokerageCaseForIntake,
 } from './brokerage-case.resolver';
@@ -22,6 +23,9 @@ function createTransaction() {
       create: jest.fn().mockResolvedValue({}),
       update: jest.fn().mockResolvedValue({}),
     },
+    propertyContact: {
+      findMany: jest.fn().mockResolvedValue([]),
+    },
     buyerIntake: {
       findFirst: jest.fn(),
       aggregate: jest.fn().mockResolvedValue({
@@ -37,6 +41,44 @@ function createTransaction() {
 }
 
 describe('resolveBrokerageCaseForIntake', () => {
+  it('creates an isolated listing case when the property has no contacts', async () => {
+    const tx = createTransaction();
+
+    const participants = await listingCaseParticipants(
+      tx as never,
+      OFFICE_ID,
+      'property-without-contacts',
+    );
+    const result = await resolveBrokerageCaseForIntake(tx as never, {
+      officeId: OFFICE_ID,
+      intakeKind: 'listing',
+      participants,
+    });
+
+    expect(participants).toEqual([]);
+    expect(result).toEqual({
+      brokerageCaseId: 'case-new',
+      casePriorityRank: 1,
+    });
+    expect(tx.$executeRaw).not.toHaveBeenCalled();
+    expect(tx.brokerageCase.findMany).not.toHaveBeenCalled();
+    expect(tx.brokerageCaseParticipant.create).not.toHaveBeenCalled();
+  });
+
+  it('still rejects a buyer intake without any contacts', async () => {
+    const tx = createTransaction();
+
+    await expect(
+      resolveBrokerageCaseForIntake(tx as never, {
+        officeId: OFFICE_ID,
+        intakeKind: 'buyer',
+        participants: [],
+      }),
+    ).rejects.toThrow('중개 케이스에는 연락처가 한 명 이상 필요합니다.');
+
+    expect(tx.brokerageCase.create).not.toHaveBeenCalled();
+  });
+
   it('attaches to an active case only when the principal set matches exactly', async () => {
     const tx = createTransaction();
     tx.brokerageCase.findMany.mockResolvedValue([

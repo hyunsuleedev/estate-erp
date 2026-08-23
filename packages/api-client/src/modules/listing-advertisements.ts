@@ -23,6 +23,27 @@ export interface ListingAdvertisementActionContext {
   monthlyRent: number | null;
 }
 
+export interface ListingAdvertisementPriceHistory {
+  id: string;
+  officeId: string;
+  listingAdvertisementId: string;
+  advertisedPrice: number | null;
+  advertisedDeposit: number | null;
+  advertisedMonthlyRent: number | null;
+  observedAt: string;
+  source: string;
+  createdAt: string;
+  advertisement: Pick<
+    ListingAdvertisement,
+    | "channel"
+    | "externalAdId"
+    | "startedAt"
+    | "firstSeenAt"
+    | "lastSeenAt"
+    | "endedAt"
+  >;
+}
+
 export interface ListingAdvertisementsFilter {
   listingId?: string;
   channel?: string;
@@ -74,6 +95,12 @@ export interface UpdateListingAdvertisementDto {
 
 export function createListingAdvertisementsApi(request: RequestFn) {
   return {
+    findPriceHistory: (listingId: string) =>
+      request<ListingAdvertisementPriceHistory[]>(
+        "/listing-advertisements/price-history",
+        { params: { listingId } },
+      ),
+
     findAll: (filters?: ListingAdvertisementsFilter) =>
       request<PaginatedResponse<ListingAdvertisementWithListing>>(
         "/listing-advertisements",
@@ -97,7 +124,7 @@ export function createListingAdvertisementsApi(request: RequestFn) {
         body: dto,
       }),
 
-    /** 광고 기록 자체를 잘못 등록한 경우 완전 삭제. 정상 내림은 update({status:'ended'}) 사용. */
+    /** 잘못 등록한 행만 완전 삭제한다. 정상 내림은 status=ended와 관측 종료 시각을 보존한다. */
     remove: (id: string) =>
       request<ListingAdvertisement>(`/listing-advertisements/${id}`, {
         method: "DELETE",

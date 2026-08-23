@@ -29,14 +29,13 @@ import { Route as AuthenticatedEmployeesIndexRouteImport } from './routes/_authe
 import { Route as AuthenticatedDocumentsIndexRouteImport } from './routes/_authenticated/documents/index'
 import { Route as AuthenticatedDealsIndexRouteImport } from './routes/_authenticated/deals/index'
 import { Route as AuthenticatedCustomersIndexRouteImport } from './routes/_authenticated/customers/index'
-import { Route as AuthenticatedCustomersNextIndexRouteImport } from './routes/_authenticated/customers-next/index'
+import { Route as AuthenticatedCustomersTableIndexRouteImport } from './routes/_authenticated/customers-table/index'
 import { Route as AuthenticatedContractsIndexRouteImport } from './routes/_authenticated/contracts/index'
 import { Route as AuthenticatedContactsIndexRouteImport } from './routes/_authenticated/contacts/index'
 import { Route as AuthenticatedConsultationsIndexRouteImport } from './routes/_authenticated/consultations/index'
 import { Route as AuthenticatedCashflowIndexRouteImport } from './routes/_authenticated/cashflow/index'
 import { Route as AuthenticatedCallsIndexRouteImport } from './routes/_authenticated/calls/index'
 import { Route as AuthenticatedCalendarIndexRouteImport } from './routes/_authenticated/calendar/index'
-import { Route as AuthenticatedBuyerRequirementsIndexRouteImport } from './routes/_authenticated/buyer-requirements/index'
 import { Route as AuthenticatedPrototypesCustomerManagementRouteImport } from './routes/_authenticated/prototypes/customer-management'
 import { Route as AuthenticatedPrototypesCustomerLedgerRouteImport } from './routes/_authenticated/prototypes/customer-ledger'
 import { Route as AuthenticatedPrototypesBuyerCustomersRouteImport } from './routes/_authenticated/prototypes/buyer-customers'
@@ -165,10 +164,10 @@ const AuthenticatedCustomersIndexRoute =
     path: '/customers/',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
-const AuthenticatedCustomersNextIndexRoute =
-  AuthenticatedCustomersNextIndexRouteImport.update({
-    id: '/customers-next/',
-    path: '/customers-next/',
+const AuthenticatedCustomersTableIndexRoute =
+  AuthenticatedCustomersTableIndexRouteImport.update({
+    id: '/customers-table/',
+    path: '/customers-table/',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
 const AuthenticatedContractsIndexRoute =
@@ -204,12 +203,6 @@ const AuthenticatedCalendarIndexRoute =
   AuthenticatedCalendarIndexRouteImport.update({
     id: '/calendar/',
     path: '/calendar/',
-    getParentRoute: () => AuthenticatedRoute,
-  } as any)
-const AuthenticatedBuyerRequirementsIndexRoute =
-  AuthenticatedBuyerRequirementsIndexRouteImport.update({
-    id: '/buyer-requirements/',
-    path: '/buyer-requirements/',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
 const AuthenticatedPrototypesCustomerManagementRoute =
@@ -357,14 +350,13 @@ export interface FileRoutesByFullPath {
   '/prototypes/buyer-customers': typeof AuthenticatedPrototypesBuyerCustomersRoute
   '/prototypes/customer-ledger': typeof AuthenticatedPrototypesCustomerLedgerRoute
   '/prototypes/customer-management': typeof AuthenticatedPrototypesCustomerManagementRoute
-  '/buyer-requirements/': typeof AuthenticatedBuyerRequirementsIndexRoute
   '/calendar/': typeof AuthenticatedCalendarIndexRoute
   '/calls/': typeof AuthenticatedCallsIndexRoute
   '/cashflow/': typeof AuthenticatedCashflowIndexRoute
   '/consultations/': typeof AuthenticatedConsultationsIndexRoute
   '/contacts/': typeof AuthenticatedContactsIndexRoute
   '/contracts/': typeof AuthenticatedContractsIndexRoute
-  '/customers-next/': typeof AuthenticatedCustomersNextIndexRoute
+  '/customers-table/': typeof AuthenticatedCustomersTableIndexRoute
   '/customers/': typeof AuthenticatedCustomersIndexRoute
   '/deals/': typeof AuthenticatedDealsIndexRoute
   '/documents/': typeof AuthenticatedDocumentsIndexRoute
@@ -405,14 +397,13 @@ export interface FileRoutesByTo {
   '/prototypes/buyer-customers': typeof AuthenticatedPrototypesBuyerCustomersRoute
   '/prototypes/customer-ledger': typeof AuthenticatedPrototypesCustomerLedgerRoute
   '/prototypes/customer-management': typeof AuthenticatedPrototypesCustomerManagementRoute
-  '/buyer-requirements': typeof AuthenticatedBuyerRequirementsIndexRoute
   '/calendar': typeof AuthenticatedCalendarIndexRoute
   '/calls': typeof AuthenticatedCallsIndexRoute
   '/cashflow': typeof AuthenticatedCashflowIndexRoute
   '/consultations': typeof AuthenticatedConsultationsIndexRoute
   '/contacts': typeof AuthenticatedContactsIndexRoute
   '/contracts': typeof AuthenticatedContractsIndexRoute
-  '/customers-next': typeof AuthenticatedCustomersNextIndexRoute
+  '/customers-table': typeof AuthenticatedCustomersTableIndexRoute
   '/customers': typeof AuthenticatedCustomersIndexRoute
   '/deals': typeof AuthenticatedDealsIndexRoute
   '/documents': typeof AuthenticatedDocumentsIndexRoute
@@ -456,14 +447,13 @@ export interface FileRoutesById {
   '/_authenticated/prototypes/buyer-customers': typeof AuthenticatedPrototypesBuyerCustomersRoute
   '/_authenticated/prototypes/customer-ledger': typeof AuthenticatedPrototypesCustomerLedgerRoute
   '/_authenticated/prototypes/customer-management': typeof AuthenticatedPrototypesCustomerManagementRoute
-  '/_authenticated/buyer-requirements/': typeof AuthenticatedBuyerRequirementsIndexRoute
   '/_authenticated/calendar/': typeof AuthenticatedCalendarIndexRoute
   '/_authenticated/calls/': typeof AuthenticatedCallsIndexRoute
   '/_authenticated/cashflow/': typeof AuthenticatedCashflowIndexRoute
   '/_authenticated/consultations/': typeof AuthenticatedConsultationsIndexRoute
   '/_authenticated/contacts/': typeof AuthenticatedContactsIndexRoute
   '/_authenticated/contracts/': typeof AuthenticatedContractsIndexRoute
-  '/_authenticated/customers-next/': typeof AuthenticatedCustomersNextIndexRoute
+  '/_authenticated/customers-table/': typeof AuthenticatedCustomersTableIndexRoute
   '/_authenticated/customers/': typeof AuthenticatedCustomersIndexRoute
   '/_authenticated/deals/': typeof AuthenticatedDealsIndexRoute
   '/_authenticated/documents/': typeof AuthenticatedDocumentsIndexRoute
@@ -506,14 +496,13 @@ export interface FileRouteTypes {
     | '/prototypes/buyer-customers'
     | '/prototypes/customer-ledger'
     | '/prototypes/customer-management'
-    | '/buyer-requirements/'
     | '/calendar/'
     | '/calls/'
     | '/cashflow/'
     | '/consultations/'
     | '/contacts/'
     | '/contracts/'
-    | '/customers-next/'
+    | '/customers-table/'
     | '/customers/'
     | '/deals/'
     | '/documents/'
@@ -554,14 +543,13 @@ export interface FileRouteTypes {
     | '/prototypes/buyer-customers'
     | '/prototypes/customer-ledger'
     | '/prototypes/customer-management'
-    | '/buyer-requirements'
     | '/calendar'
     | '/calls'
     | '/cashflow'
     | '/consultations'
     | '/contacts'
     | '/contracts'
-    | '/customers-next'
+    | '/customers-table'
     | '/customers'
     | '/deals'
     | '/documents'
@@ -604,14 +592,13 @@ export interface FileRouteTypes {
     | '/_authenticated/prototypes/buyer-customers'
     | '/_authenticated/prototypes/customer-ledger'
     | '/_authenticated/prototypes/customer-management'
-    | '/_authenticated/buyer-requirements/'
     | '/_authenticated/calendar/'
     | '/_authenticated/calls/'
     | '/_authenticated/cashflow/'
     | '/_authenticated/consultations/'
     | '/_authenticated/contacts/'
     | '/_authenticated/contracts/'
-    | '/_authenticated/customers-next/'
+    | '/_authenticated/customers-table/'
     | '/_authenticated/customers/'
     | '/_authenticated/deals/'
     | '/_authenticated/documents/'
@@ -777,11 +764,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedCustomersIndexRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
-    '/_authenticated/customers-next/': {
-      id: '/_authenticated/customers-next/'
-      path: '/customers-next'
-      fullPath: '/customers-next/'
-      preLoaderRoute: typeof AuthenticatedCustomersNextIndexRouteImport
+    '/_authenticated/customers-table/': {
+      id: '/_authenticated/customers-table/'
+      path: '/customers-table'
+      fullPath: '/customers-table/'
+      preLoaderRoute: typeof AuthenticatedCustomersTableIndexRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/contracts/': {
@@ -824,13 +811,6 @@ declare module '@tanstack/react-router' {
       path: '/calendar'
       fullPath: '/calendar/'
       preLoaderRoute: typeof AuthenticatedCalendarIndexRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
-    '/_authenticated/buyer-requirements/': {
-      id: '/_authenticated/buyer-requirements/'
-      path: '/buyer-requirements'
-      fullPath: '/buyer-requirements/'
-      preLoaderRoute: typeof AuthenticatedBuyerRequirementsIndexRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/prototypes/customer-management': {
@@ -1009,14 +989,13 @@ interface AuthenticatedRouteChildren {
   AuthenticatedPrototypesBuyerCustomersRoute: typeof AuthenticatedPrototypesBuyerCustomersRoute
   AuthenticatedPrototypesCustomerLedgerRoute: typeof AuthenticatedPrototypesCustomerLedgerRoute
   AuthenticatedPrototypesCustomerManagementRoute: typeof AuthenticatedPrototypesCustomerManagementRoute
-  AuthenticatedBuyerRequirementsIndexRoute: typeof AuthenticatedBuyerRequirementsIndexRoute
   AuthenticatedCalendarIndexRoute: typeof AuthenticatedCalendarIndexRoute
   AuthenticatedCallsIndexRoute: typeof AuthenticatedCallsIndexRoute
   AuthenticatedCashflowIndexRoute: typeof AuthenticatedCashflowIndexRoute
   AuthenticatedConsultationsIndexRoute: typeof AuthenticatedConsultationsIndexRoute
   AuthenticatedContactsIndexRoute: typeof AuthenticatedContactsIndexRoute
   AuthenticatedContractsIndexRoute: typeof AuthenticatedContractsIndexRoute
-  AuthenticatedCustomersNextIndexRoute: typeof AuthenticatedCustomersNextIndexRoute
+  AuthenticatedCustomersTableIndexRoute: typeof AuthenticatedCustomersTableIndexRoute
   AuthenticatedCustomersIndexRoute: typeof AuthenticatedCustomersIndexRoute
   AuthenticatedDealsIndexRoute: typeof AuthenticatedDealsIndexRoute
   AuthenticatedDocumentsIndexRoute: typeof AuthenticatedDocumentsIndexRoute
@@ -1062,15 +1041,13 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
     AuthenticatedPrototypesCustomerLedgerRoute,
   AuthenticatedPrototypesCustomerManagementRoute:
     AuthenticatedPrototypesCustomerManagementRoute,
-  AuthenticatedBuyerRequirementsIndexRoute:
-    AuthenticatedBuyerRequirementsIndexRoute,
   AuthenticatedCalendarIndexRoute: AuthenticatedCalendarIndexRoute,
   AuthenticatedCallsIndexRoute: AuthenticatedCallsIndexRoute,
   AuthenticatedCashflowIndexRoute: AuthenticatedCashflowIndexRoute,
   AuthenticatedConsultationsIndexRoute: AuthenticatedConsultationsIndexRoute,
   AuthenticatedContactsIndexRoute: AuthenticatedContactsIndexRoute,
   AuthenticatedContractsIndexRoute: AuthenticatedContractsIndexRoute,
-  AuthenticatedCustomersNextIndexRoute: AuthenticatedCustomersNextIndexRoute,
+  AuthenticatedCustomersTableIndexRoute: AuthenticatedCustomersTableIndexRoute,
   AuthenticatedCustomersIndexRoute: AuthenticatedCustomersIndexRoute,
   AuthenticatedDealsIndexRoute: AuthenticatedDealsIndexRoute,
   AuthenticatedDocumentsIndexRoute: AuthenticatedDocumentsIndexRoute,

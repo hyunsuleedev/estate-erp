@@ -78,6 +78,10 @@ body {
   -webkit-app-region: drag;
 }
 
+.app-titlebar-drag-region {
+  -webkit-app-region: drag;
+}
+
 /* Buttons, inputs, and interactive elements must not be draggable */
 .app-titlebar button,
 .app-titlebar a,
@@ -174,6 +178,10 @@ body {
   transform-origin: right center;
 }
 
+[data-property-inspector-backdrop] {
+  animation: property-inspector-backdrop-enter 160ms ease-out;
+}
+
 @keyframes property-inspector-enter {
   from {
     opacity: 0;
@@ -183,6 +191,16 @@ body {
   to {
     opacity: 1;
     transform: translateX(0);
+  }
+}
+
+@keyframes property-inspector-backdrop-enter {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
   }
 }
 
@@ -197,7 +215,8 @@ body {
       opacity 120ms ease;
   }
 
-  [data-property-inspector] {
+  [data-property-inspector],
+  [data-property-inspector-backdrop] {
     animation-duration: 1ms;
   }
 }

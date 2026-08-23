@@ -30,6 +30,9 @@ import { formatDate, formatDday, formatMoney, formatPhone, formatRent } from '@/
 import { getListingAvailability } from '@/lib/listing-status';
 import { getStatusMeta } from '@/lib/status-config';
 import { EntityChip } from '@/components/domain';
+import { getPropertyLabel } from './-task-property-label';
+
+export { getPropertyLabel } from './-task-property-label';
 
 // ─── Types ────────────────────────────────────────────────
 
@@ -168,15 +171,6 @@ export function TaskSourceBadge({ source, className }: { source: string; classNa
   return null;
 }
 
-export function getPropertyLabel(task: Task): string {
-  const siteName = task.property?.site?.name;
-  const unitName = task.property?.unit?.name;
-  if (siteName && unitName) return `${siteName} ${unitName}`;
-  if (siteName) return siteName;
-  if (unitName) return unitName;
-  return '매물';
-}
-
 export function getListingLabel(listing: TaskListingSummary | null): string {
   if (!listing) return '매물';
   const typeLabel = getStatusMeta('transactionType', listing.transactionType).label;
@@ -241,6 +235,7 @@ export function TaskContextChips({
 }) {
   const chips: ReactNode[] = [];
   const chipWidth = compact ? 'max-w-[160px]' : 'max-w-[240px]';
+  const propertyChipWidth = compact ? 'max-w-48' : chipWidth;
 
   if (task.contactId || task.contact) {
     chips.push(
@@ -263,7 +258,7 @@ export function TaskContextChips({
           kind="property"
           id={task.propertyId ?? task.property!.id}
           label={getPropertyLabel(task)}
-          className={chipWidth}
+          className={propertyChipWidth}
         />
       </span>,
     );

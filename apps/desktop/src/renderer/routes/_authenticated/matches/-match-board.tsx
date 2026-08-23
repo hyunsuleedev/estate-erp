@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from '@tanstack/react-router';
 import {
   ArrowRight,
   CalendarClock,
   Check,
   CheckCircle2,
+  ChevronsRight,
   Circle,
   CircleAlert,
   CircleDot,
@@ -11,11 +13,14 @@ import {
   MoreVertical,
   Trash2,
 } from 'lucide-react';
-import type { CalendarEvent, Match } from '@estate-erp/api-client';
+import type { CalendarEvent, Match, MatchDealLink } from '@estate-erp/api-client';
 import { MatchStage, normalizeMatchStage } from '@estate-erp/shared';
 import {
   buyerProgressStages,
   getActiveDealLink,
+  getDealProgressNodeState,
+  getDealProgressStages,
+  getDealStageLabel,
   getDefaultViewingStartDate,
   getMatchStageActionCopy,
   getMatchStageBlockReason,
@@ -460,6 +465,14 @@ export function MatchProgressTrack({
   actions: MatchProgressActions;
 }) {
   const isClosed = normalizeMatchStage(match.stage) === MatchStage.CLOSED;
+  const isConverted =
+    normalizeMatchStage(match.stage) === MatchStage.DEAL_CREATED;
+  const activeDeal = getActiveDealLink(match);
+
+  if (isConverted && activeDeal) {
+    return <DealHandoffTrack match={match} deal={activeDeal} actions={actions} />;
+  }
+
   const stages = isClosed
     ? buyerProgressStages.filter((stage) => stage !== MatchStage.DEAL_CREATED)
     : buyerProgressStages;
@@ -481,6 +494,118 @@ export function MatchProgressTrack({
           종료
         </div>
       )}
+    </div>
+  );
+}
+
+// ── 거래 전환 후: 매칭 요약 + 거래관리 파이프라인 이어달리기 ──────────────────
+// 매칭 단계는 "매칭 완료" 칩으로 접고, 연결 Deal의 단계를 읽기 전용으로 이어서
+// 보여준다. 거래 노드를 클릭하면 거래관리(/deals)로 이동해 실제 단계를 관리한다.
+
+function DealHandoffTrack({
+  match,
+  deal,
+  actions,
+}: {
+  match: Match;
+  deal: MatchDealLink;
+  actions: MatchProgressActions;
+}) {
+  const navigate = useNavigate();
+  const dealStages = getDealProgressStages(deal.stage);
+
+  const goToDeal = () => {
+    navigate({ to: '/deals', search: { dealId: deal.id } });
+  };
+
+  return (
+    <div data-deal-handoff-track className="flex min-w-max items-center">
+      <Popover>
+        <PopoverTrigger asChild>
+          <button
+            type="button"
+            title="완료된 매칭 단계 펼쳐보기"
+            className="inline-flex h-7 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-md border border-success/35 bg-success-soft px-2 text-xs font-semibold text-success outline-none hover:bg-success-soft/80 focus-visible:ring-2 focus-visible:ring-ring/50"
+            onClick={(event) => event.stopPropagation()}
+            onDoubleClick={(event) => event.stopPropagation()}
+          >
+            <Check className="size-3.5" />
+            매칭 완료
+          </button>
+        </PopoverTrigger>
+        <PopoverContent
+          align="start"
+          className="w-auto max-w-[min(90vw,640px)] p-3"
+          onClick={(event) => event.stopPropagation()}
+          onDoubleClick={(event) => event.stopPropagation()}
+        >
+          <p className="mb-2 text-xs font-medium text-muted-foreground">
+            완료된 매칭 단계
+          </p>
+          <div className="flex items-center overflow-x-auto">
+            {buyerProgressStages.map((stage, index) => (
+              <ProgressNode
+                key={stage}
+                match={match}
+                stage={stage}
+                isLast={index === buyerProgressStages.length - 1}
+                actions={actions}
+              />
+            ))}
+          </div>
+        </PopoverContent>
+      </Popover>
+
+      <ChevronsRight
+        aria-hidden="true"
+        className="mx-0.5 size-3.5 shrink-0 text-success/60"
+      />
+
+      {dealStages.map((stage, index) => {
+        const state = getDealProgressNodeState(deal.stage, stage);
+        return (
+          <div key={stage} className="flex items-center">
+            <button
+              type="button"
+              title="거래관리에서 진행 · 클릭하여 이동"
+              aria-label={`거래 ${getDealStageLabel(stage)} 단계 — 거래관리로 이동`}
+              className={cn(
+                'inline-flex h-7 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-md border px-2 text-xs font-semibold outline-none focus-visible:ring-2 focus-visible:ring-ring/50',
+                state === 'completed' &&
+                  'border-success/35 bg-success-soft text-success hover:bg-success-soft/80',
+                state === 'current' &&
+                  'border-info/40 bg-info-soft text-info-strong ring-1 ring-info/15 hover:bg-info-soft/80',
+                state === 'pending' &&
+                  'border-border bg-muted text-muted-foreground hover:bg-secondary',
+              )}
+              onClick={(event) => {
+                event.stopPropagation();
+                goToDeal();
+              }}
+              onDoubleClick={(event) => event.stopPropagation()}
+            >
+              {state === 'completed' ? (
+                <Check className="size-3.5" />
+              ) : state === 'current' ? (
+                <CircleDot className="size-3.5" />
+              ) : (
+                <Circle className="size-3.5" />
+              )}
+              {getDealStageLabel(stage)}
+            </button>
+            {index < dealStages.length - 1 && (
+              <div
+                className={cn(
+                  'h-0.5 w-3 rounded-full',
+                  state === 'completed' && 'bg-success/45',
+                  state === 'current' && 'bg-info/45',
+                  state === 'pending' && 'bg-border',
+                )}
+              />
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }

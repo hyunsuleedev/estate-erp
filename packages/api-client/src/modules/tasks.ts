@@ -39,6 +39,11 @@ export interface TaskPropertySummary {
     lineNo?: number | null;
     exclusiveAreaM2: number | null;
     supplyAreaM2: number | null;
+    dong?: {
+      id: string;
+      name: string;
+      isPlaceholder: boolean;
+    } | null;
   } | null;
 }
 

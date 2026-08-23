@@ -12,7 +12,6 @@ import {
   MessageSquare,
   Settings,
   Users,
-  UserSearch,
   Wallet,
   type LucideIcon,
 } from "lucide-react";
@@ -94,12 +93,6 @@ export const NAV_ITEMS: NavItem[] = [
   // ── 고객·상담
   { path: "/customers", label: "고객 원장", icon: Users, group: "customers" },
   { path: "/contacts", label: "연락처", icon: BookUser, group: "customers" },
-  {
-    path: "/buyer-requirements",
-    label: "구매고객",
-    icon: UserSearch,
-    group: "customers",
-  },
   {
     path: "/consultations",
     label: "상담기록",
@@ -217,11 +210,10 @@ export const ROUTE_LABELS: Record<string, string> = {
   "/_authenticated/sites/": "관리단지",
   // 고객
   "/_authenticated/customers/": "고객 원장",
-  "/_authenticated/customers-next/": "고객 원장 새 보기",
+  "/_authenticated/customers-table/": "고객 원장 표 보기",
   "/_authenticated/contacts/": "연락처",
   "/_authenticated/contacts/$id": "연락처 상세",
   "/_authenticated/contacts/new": "연락처 추가",
-  "/_authenticated/buyer-requirements/": "구매고객",
   "/_authenticated/consultations/": "상담기록",
   "/_authenticated/calls/": "통화 관리",
   // 거래

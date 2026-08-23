@@ -26,6 +26,34 @@ export const customerLedgerSortDefinitions: Array<{
   { field: "createdAt", label: "등록일" },
 ];
 
+export type CustomerLedgerSortOrder = "asc" | "desc";
+
+export interface CustomerLedgerSortState {
+  sortBy: BrokerageCaseLedgerSortField | null;
+  sortOrder: CustomerLedgerSortOrder;
+}
+
+export function getNextCustomerLedgerSort(
+  current: CustomerLedgerSortState,
+  field: BrokerageCaseLedgerSortField,
+): CustomerLedgerSortState {
+  const initialOrder: CustomerLedgerSortOrder =
+    field === "customer" ? "asc" : "desc";
+
+  if (current.sortBy !== field) {
+    return { sortBy: field, sortOrder: initialOrder };
+  }
+
+  if (current.sortOrder === initialOrder) {
+    return {
+      sortBy: field,
+      sortOrder: initialOrder === "asc" ? "desc" : "asc",
+    };
+  }
+
+  return { sortBy: null, sortOrder: initialOrder };
+}
+
 function numberBoundary(value: string | undefined) {
   if (!value) return undefined;
   const parsed = Number(value);

@@ -97,7 +97,7 @@ export const staticFilterDefinitions: FilterDefinition[] = [
 ];
 
 // 정렬은 최소/최대 경계 단위로 유지한다 — 병합 표시 컬럼("budget" 등)과 무관하게
-// -buyer-ledger.ts의 groupSortValue가 이 필드명을 해석한다.
+// 고객 원장 API가 이 필드명을 정렬 기준으로 해석한다.
 export const sortDefinitions = [
   { field: "customer", label: "고객명" },
   { field: "intentCount", label: "희망조건 수" },

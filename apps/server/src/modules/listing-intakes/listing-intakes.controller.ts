@@ -48,6 +48,10 @@ export class ListingIntakesController {
     @Query('monthlyRentMax') monthlyRentMax: string,
     @Query('areaMin') areaMin: string,
     @Query('areaMax') areaMax: string,
+    @Query('roomCount') roomCount: string,
+    @Query('roomCountMin') roomCountMin: string,
+    @Query('bathRoomCount') bathRoomCount: string,
+    @Query('bathRoomCountMin') bathRoomCountMin: string,
     @Query('hasAdvertisement') hasAdvertisement: string,
     @Query('isJointBrokerage') isJointBrokerage: string,
     @Query('provinceCode') provinceCode: string,
@@ -86,6 +90,10 @@ export class ListingIntakesController {
       monthlyRentMax: monthlyRentMax ? Number(monthlyRentMax) : undefined,
       areaMin: areaMin ? Number(areaMin) : undefined,
       areaMax: areaMax ? Number(areaMax) : undefined,
+      roomCount: roomCount ? Number(roomCount) : undefined,
+      roomCountMin: roomCountMin ? Number(roomCountMin) : undefined,
+      bathRoomCount: bathRoomCount ? Number(bathRoomCount) : undefined,
+      bathRoomCountMin: bathRoomCountMin ? Number(bathRoomCountMin) : undefined,
       hasAdvertisement: parseBooleanQuery(hasAdvertisement),
       isJointBrokerage: parseBooleanQuery(isJointBrokerage),
       provinceCode: provinceCode || undefined,
@@ -209,12 +217,17 @@ export class ListingIntakesController {
   @Patch(':id/close-with-active-deals')
   closeWithActiveDeals(
     @Param('id') id: string,
-    @Body() dto: { expectedUpdatedAt?: string | null },
+    @Body()
+    dto: {
+      closedReason?: string | null;
+      expectedUpdatedAt?: string | null;
+    },
     @CurrentUser() user: CurrentUserPayload,
   ) {
     return this.listingIntakes.closeWithActiveDeals(
       id,
       user.officeId,
+      dto.closedReason,
       dto.expectedUpdatedAt,
     );
   }
@@ -225,6 +238,7 @@ export class ListingIntakesController {
     @Body()
     dto: {
       result: string;
+      closedReason?: string | null;
       channel?: string;
       memo?: string | null;
       checkedAt?: string | null;
@@ -270,6 +284,12 @@ function parseListingIntakeQuery(query: Record<string, string>) {
     monthlyRentMax: query.monthlyRentMax ? Number(query.monthlyRentMax) : undefined,
     areaMin: query.areaMin ? Number(query.areaMin) : undefined,
     areaMax: query.areaMax ? Number(query.areaMax) : undefined,
+    roomCount: query.roomCount ? Number(query.roomCount) : undefined,
+    roomCountMin: query.roomCountMin ? Number(query.roomCountMin) : undefined,
+    bathRoomCount: query.bathRoomCount ? Number(query.bathRoomCount) : undefined,
+    bathRoomCountMin: query.bathRoomCountMin
+      ? Number(query.bathRoomCountMin)
+      : undefined,
     hasAdvertisement: parseBooleanQuery(query.hasAdvertisement),
     isJointBrokerage: parseBooleanQuery(query.isJointBrokerage),
     provinceCode: query.provinceCode || undefined,

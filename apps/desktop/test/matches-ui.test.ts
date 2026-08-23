@@ -27,13 +27,6 @@ const webMatchDetailSource = readFileSync(
   ),
   'utf8',
 );
-const buyerListPanelsSource = readFileSync(
-  resolve(
-    testDir,
-    '../src/renderer/routes/_authenticated/buyer-requirements/-buyer-list-panels.tsx',
-  ),
-  'utf8',
-);
 const propertiesPageSource = readFileSync(
   resolve(testDir, '../src/renderer/routes/_authenticated/properties/index.tsx'),
   'utf8',
@@ -72,10 +65,10 @@ const statusConfigSource = readFileSync(
 );
 
 describe('desktop matches workbench', () => {
-  it('uses a compact full-bleed workspace without a duplicate page header', () => {
+  it('uses a compact full-bleed workspace without redundant header summaries', () => {
     assert.match(matchesPageSource, /data-matches-page/);
     assert.match(matchesPageSource, /className="-m-4 flex min-h-0/);
-    assert.match(matchesPageSource, /aria-label="매칭 요약"/);
+    assert.doesNotMatch(matchesPageSource, /aria-label="매칭 요약"/);
     assert.doesNotMatch(matchesPageSource, /<PageHeader/);
     assert.doesNotMatch(
       matchesPageSource,
@@ -139,17 +132,35 @@ describe('desktop matches workbench', () => {
     assert.doesNotMatch(matchGroupsSource, /getInitials/);
     assert.match(matchGroupsSource, /data-buyer-summary-row/);
     assert.match(matchGroupsSource, /data-buyer-requirement-summary/);
+    assert.match(matchGroupsSource, /data-buyer-requirement-details/);
     assert.match(matchGroupsSource, /xl:flex-nowrap/);
     assert.doesNotMatch(matchGroupsSource, /md:grid-cols-3/);
-    assert.match(matchGroupsSource, /label="희망 지역"/);
+    assert.doesNotMatch(matchGroupsSource, /label="희망 지역"/);
+    assert.match(
+      matchGroupsSource,
+      />희망 지역<\/dt>[\s\S]*expanded && buyerRequirement\.memo[\s\S]*>고객 메모<\/dt>/,
+    );
     assert.match(matchGroupsSource, /label="매물 유형"/);
+    assert.match(matchGroupsSource, /label="희망 평형"/);
+    assert.match(matchGroupsSource, /value=\{requirementSummary\.areaText\}/);
     assert.match(matchGroupsSource, /label="예산"/);
     assert.doesNotMatch(matchGroupsSource, /label="고객 메모"/);
     assert.match(matchGroupsSource, /expanded && buyerRequirement\.memo/);
     assert.match(matchGroupsSource, /data-buyer-expanded-memo/);
     assert.match(matchGroupsSource, />고객 메모<\/dt>/);
     assert.match(matchGroupsSource, /whitespace-pre-wrap break-words/);
-    assert.match(matchGroupsSource, /buyerRequirement\.urgency === 'urgent'/);
+    assert.doesNotMatch(
+      matchGroupsSource,
+      /buyerRequirement\.urgency === 'urgent'/,
+    );
+    assert.match(matchGroupsSource, /data-buyer-contact-summary/);
+    assert.match(matchGroupsSource, /label="연락처"/);
+    assert.match(matchGroupsSource, /value=\{buyerPhone\}/);
+    assert.match(matchGroupsSource, /formatPhone\(rawBuyerPhone\)/);
+    assert.match(
+      matchGroupsSource,
+      /className="w-20 shrink-0 truncate text-\[13px\] font-semibold"/,
+    );
   });
 
   it('shows both minimum and maximum buyer budgets in match summaries', async () => {
@@ -188,6 +199,32 @@ describe('desktop matches workbench', () => {
       '월세 보증금 1억 ~ 2억 / 월 300만 이하',
     );
     assert.match(matchGroupsSource, /className="min-w-40 shrink-0"/);
+  });
+
+  it('shows the desired supply area in the top buyer summary', async () => {
+    const loaded =
+      (await import('../src/renderer/routes/_authenticated/matches/-match-view-utils.ts')) as unknown as Record<
+        string,
+        unknown
+      >;
+    const matchViewUtils = (loaded.default ?? loaded) as {
+      getBuyerRequirementSummaryParts: (
+        requirement: Record<string, unknown>,
+      ) => { areaText: string };
+    };
+
+    assert.equal(
+      matchViewUtils.getBuyerRequirementSummaryParts({
+        preferredRegions: [],
+        siteTypes: ['apartment'],
+        transactionType: 'sale',
+        priceMin: 230000,
+        priceMax: 260000,
+        areaMin: 99.17,
+        areaMax: 112.4,
+      }).areaText,
+      '30평 ~ 34평',
+    );
   });
 
   it('separates the buyer summary from its property branches without another nested card', () => {
@@ -274,7 +311,6 @@ describe('desktop matches workbench', () => {
     for (const source of [
       matchesPageSource,
       matchDetailSource,
-      buyerListPanelsSource,
       propertiesPageSource,
       webMatchDetailSource,
     ]) {

@@ -40,12 +40,14 @@ export async function resolveBrokerageCaseForIntake(
     ? principalIds
     : participants.map((participant) => participant.contactId).sort();
 
-  if (subjectIds.length === 0) {
+  if (subjectIds.length === 0 && input.intakeKind === 'buyer') {
     throw new BadRequestException('중개 케이스에는 연락처가 한 명 이상 필요합니다.');
   }
 
-  const lockKey = `brokerage-case:${input.officeId}:${subjectIds.join(',')}`;
-  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}::text, 0))`;
+  if (subjectIds.length > 0) {
+    const lockKey = `brokerage-case:${input.officeId}:${subjectIds.join(',')}`;
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}::text, 0))`;
+  }
 
   let brokerageCaseId = input.requestedCaseId;
   if (brokerageCaseId) {
@@ -60,7 +62,7 @@ export async function resolveBrokerageCaseForIntake(
     if (!requestedCase) {
       throw new NotFoundException('활성 중개 케이스를 찾을 수 없습니다.');
     }
-  } else if (input.autoAttach !== false) {
+  } else if (input.autoAttach !== false && subjectIds.length > 0) {
     const candidates = await tx.brokerageCase.findMany({
       where: {
         officeId: input.officeId,
@@ -148,17 +150,7 @@ export async function listingCaseParticipants(
   officeId: string,
   propertyId: string,
 ): Promise<BrokerageCaseParticipantInput[]> {
-  const participants = await readListingCaseParticipants(
-    tx,
-    officeId,
-    propertyId,
-  );
-  if (participants.length === 0) {
-    throw new BadRequestException(
-      '매도 의뢰를 만들려면 부동산에 활성 연락처를 먼저 연결해야 합니다.',
-    );
-  }
-  return participants;
+  return readListingCaseParticipants(tx, officeId, propertyId);
 }
 
 /**

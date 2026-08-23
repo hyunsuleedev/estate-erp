@@ -1736,7 +1736,7 @@ function SitesPage() {
                   onRowClick={handleSelectUnit}
                   layout="full-height"
                   variant="notion"
-                  rowHeight={40}
+                  rowHeight={33}
                   pinnedColumns={unitPinnedColumns}
                   columnGroupControls={[
                     {

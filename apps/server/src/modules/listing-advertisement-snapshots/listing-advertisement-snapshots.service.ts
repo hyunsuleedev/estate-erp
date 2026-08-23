@@ -318,6 +318,25 @@ export class ListingAdvertisementSnapshotsService {
       throw new NotFoundException("advertisement snapshot not found");
     }
 
+    if (session.status === "completed") {
+      const received = session.receivedCount;
+      const resolved = session.resolvedCount;
+      return {
+        session,
+        counts: {
+          received,
+          resolved,
+          failed: Math.max(0, received - resolved),
+          remaining:
+            session.expectedTotal === null
+              ? null
+              : Math.max(0, session.expectedTotal - received),
+        },
+        failedItems: [],
+        submittedItems: [],
+      };
+    }
+
     const items = await this.prisma.listingAdvertisementSnapshotItem.findMany({
       where: { officeId, sessionId },
       select: {
@@ -365,6 +384,9 @@ export class ListingAdvertisementSnapshotsService {
       });
       if (!session) throw new NotFoundException("snapshot session not found");
       if (session.status === "completed") {
+        await tx.listingAdvertisementSnapshotItem.deleteMany({
+          where: { officeId, sessionId },
+        });
         return this.completedSummary(session);
       }
       if (session.status === "cancelled") {
@@ -454,6 +476,7 @@ export class ListingAdvertisementSnapshotsService {
               where: {
                 officeId,
                 channel: session.channel,
+                status: "active",
                 externalAdId: { in: externalAdIds },
               },
             });
@@ -476,14 +499,46 @@ export class ListingAdvertisementSnapshotsService {
         );
         const existing = existingByExternalAdId.get(item.externalAdId);
         if (existing) {
+          const priceChanged = this.advertisedPriceChanged(existing, data);
           await tx.listingAdvertisement.update({
             where: { id: existing.id },
-            data,
+            data: {
+              ...data,
+              ...(priceChanged && {
+                priceHistories: {
+                  create: {
+                    officeId,
+                    snapshotSessionId: session.id,
+                    advertisedPrice: data.advertisedPrice,
+                    advertisedDeposit: data.advertisedDeposit,
+                    advertisedMonthlyRent: data.advertisedMonthlyRent,
+                    observedAt: session.observedAt,
+                    source: "cp_sync",
+                  },
+                },
+              }),
+            },
           });
           updatedAdvertisements += 1;
         } else {
           await tx.listingAdvertisement.create({
-            data: { officeId, channel: session.channel, ...data },
+            data: {
+              officeId,
+              channel: session.channel,
+              firstSeenAt: session.observedAt,
+              ...data,
+              priceHistories: {
+                create: {
+                  officeId,
+                  snapshotSessionId: session.id,
+                  advertisedPrice: data.advertisedPrice,
+                  advertisedDeposit: data.advertisedDeposit,
+                  advertisedMonthlyRent: data.advertisedMonthlyRent,
+                  observedAt: session.observedAt,
+                  source: "cp_sync",
+                },
+              },
+            },
           });
           createdAdvertisements += 1;
         }
@@ -501,6 +556,9 @@ export class ListingAdvertisementSnapshotsService {
           updatedAdvertisements,
           staleAdvertisementsMarked: staleResult.count,
         },
+      });
+      await tx.listingAdvertisementSnapshotItem.deleteMany({
+        where: { officeId, sessionId },
       });
       return this.completedSummary(completed);
     });
@@ -699,8 +757,30 @@ export class ListingAdvertisementSnapshotsService {
       externalAdId,
       naverArticleNo: this.nullableString(raw.naverArticleNo),
       naverUrl: this.nullableString(raw.naverUrl),
+      providerStatus: this.nullableString(raw.providerStatus),
+      providerStatusObservedAt: observedAt,
+      lastSeenAt: observedAt,
       lastSyncedAt: observedAt,
     };
+  }
+
+  private advertisedPriceChanged(
+    existing: {
+      advertisedPrice: number | null;
+      advertisedDeposit: number | null;
+      advertisedMonthlyRent: number | null;
+    },
+    next: {
+      advertisedPrice: number | null;
+      advertisedDeposit: number | null;
+      advertisedMonthlyRent: number | null;
+    },
+  ) {
+    return (
+      existing.advertisedPrice !== next.advertisedPrice ||
+      existing.advertisedDeposit !== next.advertisedDeposit ||
+      existing.advertisedMonthlyRent !== next.advertisedMonthlyRent
+    );
   }
 
   private nullableInteger(value: unknown): number | null {

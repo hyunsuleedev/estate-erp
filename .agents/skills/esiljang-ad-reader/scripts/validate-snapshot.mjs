@@ -2,6 +2,7 @@
 
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
+import { pathToFileURL } from 'node:url';
 
 function canonicalize(value) {
   if (Array.isArray(value)) return value.map(canonicalize);
@@ -84,21 +85,29 @@ function validateNaverIdentity(item, index, errors) {
   }
 }
 
-async function main() {
-  const snapshot = await readInput();
+export function validateSnapshot(snapshot) {
   const errors = [];
   const warnings = Array.isArray(snapshot?.warnings)
     ? [...snapshot.warnings]
     : [];
+  const activeFilter =
+    snapshot?.activeFilter ??
+    (snapshot?.status === 'succeeded' && snapshot?.manifestHash
+      ? {
+          dataValue: 'ad',
+          selected: true,
+          count: snapshot?.expectedTotal ?? null,
+        }
+      : null);
 
   if (snapshot?.provider !== 'esiljang') errors.push('provider must be esiljang');
   if (snapshot?.scope !== 'active_advertisements') {
     errors.push('scope must be active_advertisements');
   }
-  if (snapshot?.activeFilter?.dataValue !== 'ad') {
+  if (activeFilter?.dataValue !== 'ad') {
     errors.push('activeFilter.dataValue must be ad');
   }
-  if (snapshot?.activeFilter?.selected !== true) {
+  if (activeFilter?.selected !== true) {
     errors.push('activeFilter.selected must be true');
   }
   if (!snapshot?.observedAt || Number.isNaN(Date.parse(snapshot.observedAt))) {
@@ -179,14 +188,26 @@ async function main() {
       `expectedTotal ${expectedTotal} does not match ${items.length} collected items`,
     );
   }
-  if (snapshot?.activeFilter?.count !== expectedTotal) {
+  if (activeFilter?.count !== expectedTotal) {
     errors.push('activeFilter.count must match expectedTotal');
+  }
+  if (
+    snapshot?.collectedTotal !== undefined &&
+    snapshot.collectedTotal !== items.length
+  ) {
+    errors.push('collectedTotal must match items.length');
+  }
+  if (
+    snapshot?.pageCount !== undefined &&
+    snapshot.pageCount !== pages.length
+  ) {
+    errors.push('pageCount must match visitedPages.length');
   }
 
   const manifest = canonicalize({
     provider: snapshot?.provider,
     scope: snapshot?.scope,
-    activeFilter: snapshot?.activeFilter,
+    activeFilter,
     observedAt: snapshot?.observedAt,
     expectedTotal: expectedTotal ?? null,
     paginationComplete: snapshot?.paginationComplete,
@@ -200,6 +221,12 @@ async function main() {
   const manifestHash = createHash('sha256')
     .update(JSON.stringify(manifest))
     .digest('hex');
+  if (
+    snapshot?.manifestHash !== undefined &&
+    snapshot.manifestHash !== manifestHash
+  ) {
+    errors.push('manifestHash does not match the canonical snapshot manifest');
+  }
   const valid = errors.length === 0;
   const report = {
     valid,
@@ -213,13 +240,23 @@ async function main() {
     errors,
     warnings,
   };
-  process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
-  if (!valid) process.exitCode = 1;
+  return report;
 }
 
-main().catch((error) => {
-  process.stderr.write(
-    `${JSON.stringify({ error: error instanceof Error ? error.message : String(error) })}\n`,
-  );
-  process.exitCode = 1;
-});
+async function main() {
+  const report = validateSnapshot(await readInput());
+  process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
+  if (!report.valid) process.exitCode = 1;
+}
+
+if (
+  process.argv[1] &&
+  import.meta.url === pathToFileURL(process.argv[1]).href
+) {
+  main().catch((error) => {
+    process.stderr.write(
+      `${JSON.stringify({ error: error instanceof Error ? error.message : String(error) })}\n`,
+    );
+    process.exitCode = 1;
+  });
+}

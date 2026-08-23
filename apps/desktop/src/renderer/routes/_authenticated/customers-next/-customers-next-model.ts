@@ -21,6 +21,60 @@ export interface CustomerCaseSummary {
   listingMatchCount: number;
 }
 
+export type CustomerSelectionState = boolean | "indeterminate";
+
+export function getDemandSelectionKey(requirementId: string): string {
+  return `demand:${requirementId}`;
+}
+
+export function getListingSelectionKey(listingId: string): string {
+  return `listing:${listingId}`;
+}
+
+export function getCustomerCaseSelectionKeys(
+  brokerageCase: BrokerageCase,
+): string[] {
+  return [
+    ...brokerageCase.demandIntents.map((intent) =>
+      getDemandSelectionKey(intent.requirementId),
+    ),
+    ...brokerageCase.listingIntents.map((intent) =>
+      getListingSelectionKey(intent.listingId),
+    ),
+  ];
+}
+
+export function getCustomerSelectionState(
+  selectedKeys: ReadonlySet<string>,
+  keys: readonly string[],
+): CustomerSelectionState {
+  if (keys.length === 0) return false;
+
+  const selectedCount = keys.reduce(
+    (count, key) => count + Number(selectedKeys.has(key)),
+    0,
+  );
+
+  if (selectedCount === 0) return false;
+  if (selectedCount === keys.length) return true;
+  return "indeterminate";
+}
+
+export function updateCustomerSelection(
+  selectedKeys: ReadonlySet<string>,
+  keys: readonly string[],
+  selected: boolean,
+): Set<string> {
+  const next = new Set(selectedKeys);
+
+  for (const key of keys) {
+    if (selected) next.add(key);
+    else next.delete(key);
+  }
+
+  return next;
+}
+
 export function toggleCustomerCaseCollapsed(
   collapsedCaseIds: ReadonlySet<string>,
   caseId: string,
@@ -31,6 +85,21 @@ export function toggleCustomerCaseCollapsed(
     next.delete(caseId);
   } else {
     next.add(caseId);
+  }
+
+  return next;
+}
+
+export function toggleCustomerIntakeCollapsed(
+  collapsedIntakeIds: ReadonlySet<string>,
+  intakeId: string,
+): Set<string> {
+  const next = new Set(collapsedIntakeIds);
+
+  if (next.has(intakeId)) {
+    next.delete(intakeId);
+  } else {
+    next.add(intakeId);
   }
 
   return next;

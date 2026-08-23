@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Check, Plus, Search, X } from "lucide-react";
 import { toast } from "sonner";
@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { useTabScopedState } from "@/features/tabs/hooks/useTabScopedState";
 import {
   Select,
   SelectContent,
@@ -283,13 +284,16 @@ export function BuyerRequirementForm({
   onCancel,
 }: BuyerRequirementFormProps) {
   // ── 고객 선택 ──────────────────────────────────────────────
-  const [contactQuery, setContactQuery] = useState("");
-  const [prefillDismissed, setPrefillDismissed] = useState(false);
-  const [selectedContact, setSelectedContact] = useState<{
+  const [contactQuery, setContactQuery] = useTabScopedState("buyer-form:contact-query:v1", "");
+  const [prefillDismissed, setPrefillDismissed] = useTabScopedState(
+    "buyer-form:prefill-dismissed:v1",
+    false,
+  );
+  const [selectedContact, setSelectedContact] = useTabScopedState<{
     id: string;
     name: string;
     phone: string | null;
-  } | null>(initial?.contact ?? null);
+  } | null>("buyer-form:selected-contact:v1", initial?.contact ?? null);
 
   const { data: contactResults } = useQuery({
     queryKey: ["contacts", "buyer-form-search", contactQuery.trim()],
@@ -319,45 +323,71 @@ export function BuyerRequirementForm({
       : null);
 
   // ── 조건 필드 ──────────────────────────────────────────────
-  const [transactionType, setTransactionType] = useState<string>(
+  const [transactionType, setTransactionType] = useTabScopedState<string>(
+    "buyer-form:transaction-type:v1",
     initial?.transactionType ?? "",
   );
-  const [priceMin, setPriceMin] = useState(initial?.priceMin?.toString() ?? "");
-  const [priceMax, setPriceMax] = useState(initial?.priceMax?.toString() ?? "");
-  const [depositMin, setDepositMin] = useState(
+  const [priceMin, setPriceMin] = useTabScopedState(
+    "buyer-form:price-min:v1",
+    initial?.priceMin?.toString() ?? "",
+  );
+  const [priceMax, setPriceMax] = useTabScopedState(
+    "buyer-form:price-max:v1",
+    initial?.priceMax?.toString() ?? "",
+  );
+  const [depositMin, setDepositMin] = useTabScopedState(
+    "buyer-form:deposit-min:v1",
     initial?.depositMin?.toString() ?? "",
   );
-  const [depositMax, setDepositMax] = useState(
+  const [depositMax, setDepositMax] = useTabScopedState(
+    "buyer-form:deposit-max:v1",
     initial?.depositMax?.toString() ?? "",
   );
-  const [monthlyRentMin, setMonthlyRentMin] = useState(
+  const [monthlyRentMin, setMonthlyRentMin] = useTabScopedState(
+    "buyer-form:monthly-rent-min:v1",
     initial?.monthlyRentMin?.toString() ?? "",
   );
-  const [monthlyRentMax, setMonthlyRentMax] = useState(
+  const [monthlyRentMax, setMonthlyRentMax] = useTabScopedState(
+    "buyer-form:monthly-rent-max:v1",
     initial?.monthlyRentMax?.toString() ?? "",
   );
-  const [areaMinPyeong, setAreaMinPyeong] = useState(
+  const [areaMinPyeong, setAreaMinPyeong] = useTabScopedState(
+    "buyer-form:area-min-pyeong:v1",
     toPyeongInput(initial?.areaMin),
   );
-  const [areaMaxPyeong, setAreaMaxPyeong] = useState(
+  const [areaMaxPyeong, setAreaMaxPyeong] = useTabScopedState(
+    "buyer-form:area-max-pyeong:v1",
     toPyeongInput(initial?.areaMax),
   );
-  const [siteTypes, setSiteTypes] = useState<string[]>(
+  const [siteTypes, setSiteTypes] = useTabScopedState<string[]>(
+    "buyer-form:site-types:v1",
     initial?.siteTypes ?? [],
   );
-  const [moveInDate, setMoveInDate] = useState(
+  const [moveInDate, setMoveInDate] = useTabScopedState(
+    "buyer-form:move-in-date:v1",
     toDateInputValue(initial?.moveInDate),
   );
-  const [urgency, setUrgency] = useState(initial?.urgency ?? "normal");
-  const [assignedToId, setAssignedToId] = useState(initial?.assignedToId ?? "");
-  const [nextContactDate, setNextContactDate] = useState(
+  const [urgency, setUrgency] = useTabScopedState(
+    "buyer-form:urgency:v1",
+    initial?.urgency ?? "normal",
+  );
+  const [assignedToId, setAssignedToId] = useTabScopedState(
+    "buyer-form:assigned-to-id:v1",
+    initial?.assignedToId ?? "",
+  );
+  const [nextContactDate, setNextContactDate] = useTabScopedState(
+    "buyer-form:next-contact-date:v1",
     toDateInputValue(initial?.nextContactDate),
   );
-  const [memo, setMemo] = useState(initial?.memo ?? "");
+  const [memo, setMemo] = useTabScopedState(
+    "buyer-form:memo:v1",
+    initial?.memo ?? "",
+  );
 
   // ── 희망 지역 ──────────────────────────────────────────────
-  const [regionQuery, setRegionQuery] = useState("");
-  const [regions, setRegions] = useState<RegionSelection[]>(
+  const [regionQuery, setRegionQuery] = useTabScopedState("buyer-form:region-query:v1", "");
+  const [regions, setRegions] = useTabScopedState<RegionSelection[]>(
+    "buyer-form:regions:v1",
     initial ? toRegionSelections(initial) : [],
   );
   const { data: regionResults = [] } = useQuery({
@@ -367,9 +397,18 @@ export function BuyerRequirementForm({
   });
 
   // 시/도 → 시군구 → 읍면동 단계별 선택
-  const [cascadeProvince, setCascadeProvince] = useState("");
-  const [cascadeDistrict, setCascadeDistrict] = useState("");
-  const [cascadeWard, setCascadeWard] = useState("");
+  const [cascadeProvince, setCascadeProvince] = useTabScopedState(
+    "buyer-form:cascade-province:v1",
+    "",
+  );
+  const [cascadeDistrict, setCascadeDistrict] = useTabScopedState(
+    "buyer-form:cascade-district:v1",
+    "",
+  );
+  const [cascadeWard, setCascadeWard] = useTabScopedState(
+    "buyer-form:cascade-ward:v1",
+    "",
+  );
   const { data: provinces = [] } = useQuery({
     queryKey: ["regions", "provinces"],
     queryFn: () => api.regions.findProvinces(),
@@ -418,8 +457,9 @@ export function BuyerRequirementForm({
   };
 
   // ── 희망 단지 ──────────────────────────────────────────────
-  const [siteQuery, setSiteQuery] = useState("");
-  const [sites, setSites] = useState<SiteSelection[]>(
+  const [siteQuery, setSiteQuery] = useTabScopedState("buyer-form:site-query:v1", "");
+  const [sites, setSites] = useTabScopedState<SiteSelection[]>(
+    "buyer-form:sites:v1",
     initial ? toSiteSelections(initial) : [],
   );
   const { data: siteResults = [] } = useQuery({
@@ -563,7 +603,7 @@ export function BuyerRequirementForm({
       {/* ── 진행 표시 ── */}
       <div className="space-y-1.5">
         <div className="flex items-center justify-between text-[11px] text-muted-foreground">
-          <span>구매 조건 입력</span>
+          <span>구함 의뢰 입력</span>
           <span className="tabular-nums">{completedCount}/4 섹션 입력됨</span>
         </div>
         <div className="h-1 overflow-hidden rounded-full bg-muted">
@@ -1139,7 +1179,7 @@ export function BuyerRequirementForm({
           {submitting
             ? "저장 중…"
             : mode === "create"
-              ? "구매고객 등록"
+              ? "구함 의뢰 등록"
               : "조건 저장"}
         </Button>
       </div>

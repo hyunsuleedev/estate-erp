@@ -26,6 +26,7 @@ describe('DealsService 상태 토글 Deal 생성', () => {
         update: jest.fn().mockResolvedValue({ id: 'intake-1' }),
       },
       deal: {
+        findFirst: jest.fn().mockResolvedValue(null),
         create: jest.fn().mockResolvedValue({ id: 'deal-1' }),
         findUnique: jest.fn().mockResolvedValue({
           id: 'deal-1',
@@ -33,13 +34,14 @@ describe('DealsService 상태 토글 Deal 생성', () => {
           commissionPayments: [],
         }),
       },
+      $executeRaw: jest.fn().mockResolvedValue(1),
     };
     const prisma = {
       listing: {
         findFirst: jest.fn().mockResolvedValue(pausedListing),
       },
-      $transaction: jest.fn(
-        (callback: (client: typeof tx) => unknown) => callback(tx),
+      $transaction: jest.fn((callback: (client: typeof tx) => unknown) =>
+        callback(tx),
       ),
     } as unknown as PrismaService;
     const service = new DealsService(prisma);
@@ -70,6 +72,60 @@ describe('DealsService 상태 토글 Deal 생성', () => {
         }),
       }),
     );
+    expect(tx.$executeRaw.mock.invocationCallOrder[0]).toBeLessThan(
+      tx.deal.findFirst.mock.invocationCallOrder[0],
+    );
+    expect(tx.deal.findFirst.mock.invocationCallOrder[0]).toBeLessThan(
+      tx.deal.create.mock.invocationCallOrder[0],
+    );
+  });
+
+  it('같은 의뢰의 다른 Listing에 진행 Deal이 있으면 새 Deal 생성을 거부한다', async () => {
+    const listing = {
+      ...pausedListing,
+      isPaused: false,
+      intake: { ...pausedListing.intake, lifecycleStatus: 'open' },
+    };
+    const tx = {
+      deal: {
+        findFirst: jest
+          .fn()
+          .mockResolvedValue({ id: 'deal-2', stage: 'settling' }),
+        create: jest.fn(),
+      },
+      $executeRaw: jest.fn().mockResolvedValue(1),
+    };
+    const prisma = {
+      listing: { findFirst: jest.fn().mockResolvedValue(listing) },
+      $transaction: jest.fn((callback: (client: typeof tx) => unknown) =>
+        callback(tx),
+      ),
+    } as unknown as PrismaService;
+    const service = new DealsService(prisma);
+
+    await expect(
+      service.create('office-1', { listingId: 'listing-1' }),
+    ).rejects.toThrow('이 의뢰에 이미 진행 중인 거래가 있습니다');
+
+    expect(tx.deal.findFirst).toHaveBeenCalledWith({
+      where: {
+        officeId: 'office-1',
+        isCancelled: false,
+        stage: {
+          in: [
+            'preparing',
+            'preContract',
+            'contracted',
+            'settling',
+            'completed',
+            'closed',
+          ],
+        },
+        listing: { intakeId: 'intake-1' },
+      },
+      select: { id: true, stage: true },
+    });
+    expect(tx.deal.create).not.toHaveBeenCalled();
   });
 
   it('종료된 의뢰는 resumeListing으로도 Deal을 시작하지 못한다', async () => {

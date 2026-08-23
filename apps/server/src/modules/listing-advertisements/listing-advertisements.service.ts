@@ -107,6 +107,7 @@ export class ListingAdvertisementsService {
           { source: { contains: query.search, mode: "insensitive" } },
           { memo: { contains: query.search, mode: "insensitive" } },
           { externalAdId: { contains: query.search, mode: "insensitive" } },
+          { providerStatus: { contains: query.search, mode: "insensitive" } },
           { naverArticleNo: { contains: query.search, mode: "insensitive" } },
           { url: { contains: query.search, mode: "insensitive" } },
           { naverUrl: { contains: query.search, mode: "insensitive" } },
@@ -228,6 +229,47 @@ export class ListingAdvertisementsService {
     };
   }
 
+  async findPriceHistory(officeId: string, listingId: string) {
+    if (!listingId) {
+      throw new BadRequestException("listingId is required");
+    }
+    const listing = await this.prisma.listing.findFirst({
+      where: { id: listingId, officeId },
+      select: { id: true },
+    });
+    if (!listing) {
+      throw new NotFoundException("Listing not found");
+    }
+
+    return this.prisma.listingAdvertisementPriceHistory.findMany({
+      where: {
+        officeId,
+        advertisement: { listingId },
+      },
+      select: {
+        id: true,
+        officeId: true,
+        listingAdvertisementId: true,
+        advertisedPrice: true,
+        advertisedDeposit: true,
+        advertisedMonthlyRent: true,
+        observedAt: true,
+        source: true,
+        createdAt: true,
+        advertisement: {
+          select: {
+            channel: true,
+            externalAdId: true,
+            startedAt: true,
+            firstSeenAt: true,
+            lastSeenAt: true,
+            endedAt: true,
+          },
+        },
+      },
+      orderBy: [{ observedAt: "asc" }, { createdAt: "asc" }],
+    });
+  }
 
   async create(officeId: string, dto: CreateDto) {
     if (!dto.listingId) {
@@ -255,6 +297,16 @@ export class ListingAdvertisementsService {
       await this.assertNoActiveDuplicate(officeId, dto.listingId, dto.channel);
     }
 
+    if (status === ListingAdvertisementStatus.ACTIVE && dto.endedAt != null) {
+      throw new BadRequestException("active advertisement cannot have endedAt");
+    }
+
+    const observedAt = dto.lastSyncedAt ?? new Date();
+    const endedAt =
+      status === ListingAdvertisementStatus.ENDED
+        ? dto.endedAt ?? new Date()
+        : null;
+
     return this.prisma.listingAdvertisement.create({
       data: {
         officeId,
@@ -266,7 +318,9 @@ export class ListingAdvertisementsService {
         advertisedDeposit: dto.advertisedDeposit ?? null,
         advertisedMonthlyRent: dto.advertisedMonthlyRent ?? null,
         startedAt: dto.startedAt ?? null,
-        endedAt: dto.endedAt ?? null,
+        endedAt,
+        firstSeenAt: observedAt,
+        lastSeenAt: observedAt,
         url: dto.url ?? null,
         memo: dto.memo ?? null,
         externalAdId: dto.externalAdId ?? null,
@@ -274,6 +328,16 @@ export class ListingAdvertisementsService {
         naverUrl: dto.naverUrl ?? null,
         lastCheckedAt: dto.lastCheckedAt ?? null,
         lastSyncedAt: dto.lastSyncedAt ?? null,
+        priceHistories: {
+          create: {
+            officeId,
+            advertisedPrice: dto.advertisedPrice ?? null,
+            advertisedDeposit: dto.advertisedDeposit ?? null,
+            advertisedMonthlyRent: dto.advertisedMonthlyRent ?? null,
+            observedAt,
+            source,
+          },
+        },
       },
     });
   }
@@ -297,10 +361,32 @@ export class ListingAdvertisementsService {
         throw new BadRequestException("channel cannot be empty");
       }
       this.assertKnownChannelShape(dto.channel);
+      if (dto.channel !== existing.channel) {
+        throw new ConflictException(
+          "광고 채널은 게재 이력의 식별값이라 변경할 수 없습니다. 잘못 등록한 행은 삭제 후 다시 등록하세요.",
+        );
+      }
+    }
+    if (
+      dto.externalAdId !== undefined &&
+      existing.externalAdId != null &&
+      dto.externalAdId !== existing.externalAdId
+    ) {
+      throw new ConflictException(
+        "외부 광고 ID가 달라진 재광고는 새 광고로 등록하세요.",
+      );
     }
 
     const nextStatus = dto.status ?? existing.status;
     const nextChannel = dto.channel ?? existing.channel;
+    if (
+      existing.status === ListingAdvertisementStatus.ENDED &&
+      nextStatus === ListingAdvertisementStatus.ACTIVE
+    ) {
+      throw new ConflictException(
+        "종료된 광고는 재활성화할 수 없습니다. 재광고는 새 광고로 등록하세요.",
+      );
+    }
     const becomesActive =
       nextStatus === ListingAdvertisementStatus.ACTIVE &&
       (existing.status !== ListingAdvertisementStatus.ACTIVE ||
@@ -318,6 +404,16 @@ export class ListingAdvertisementsService {
     const transitioningToEnded =
       dto.status === ListingAdvertisementStatus.ENDED &&
       existing.status !== ListingAdvertisementStatus.ENDED;
+    if (nextStatus === ListingAdvertisementStatus.ACTIVE && dto.endedAt != null) {
+      throw new BadRequestException("active advertisement cannot have endedAt");
+    }
+    if (
+      nextStatus === ListingAdvertisementStatus.ENDED &&
+      dto.endedAt === null
+    ) {
+      throw new BadRequestException("ended advertisement requires endedAt");
+    }
+
     const endedAt = dto.endedAt;
     const resolvedEndedAt =
       endedAt !== undefined
@@ -325,6 +421,24 @@ export class ListingAdvertisementsService {
         : transitioningToEnded
           ? new Date()
           : undefined;
+
+    const nextPrice =
+      dto.advertisedPrice !== undefined
+        ? dto.advertisedPrice
+        : existing.advertisedPrice;
+    const nextDeposit =
+      dto.advertisedDeposit !== undefined
+        ? dto.advertisedDeposit
+        : existing.advertisedDeposit;
+    const nextMonthlyRent =
+      dto.advertisedMonthlyRent !== undefined
+        ? dto.advertisedMonthlyRent
+        : existing.advertisedMonthlyRent;
+    const priceChanged =
+      nextPrice !== existing.advertisedPrice ||
+      nextDeposit !== existing.advertisedDeposit ||
+      nextMonthlyRent !== existing.advertisedMonthlyRent;
+    const priceObservedAt = dto.lastSyncedAt ?? new Date();
 
     return this.prisma.listingAdvertisement.update({
       where: { id },
@@ -357,6 +471,19 @@ export class ListingAdvertisementsService {
         }),
         ...(dto.lastSyncedAt !== undefined && {
           lastSyncedAt: dto.lastSyncedAt,
+        }),
+        ...(priceChanged && {
+          lastSeenAt: priceObservedAt,
+          priceHistories: {
+            create: {
+              officeId,
+              advertisedPrice: nextPrice,
+              advertisedDeposit: nextDeposit,
+              advertisedMonthlyRent: nextMonthlyRent,
+              observedAt: priceObservedAt,
+              source: ListingAdvertisementSource.MANUAL,
+            },
+          },
         }),
       },
     });

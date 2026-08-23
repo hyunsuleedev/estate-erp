@@ -130,7 +130,8 @@ async function main() {
     console.log(
       '7. Deal + Contract + DealParticipant + CommissionPayment insert...',
     );
-    await seedDeals(ctx, listings, contacts);
+    await seedDeals(ctx, listings, contacts, matches);
+    await verifySingleOccupyingDealPerIntake(ctx);
 
     console.log('8. Consultation insert...');
     await seedConsultations(
@@ -1256,6 +1257,11 @@ async function seedBuyerRequirements(
         nextContactDate: def.nextContactDate,
         memo: def.memo,
         preferredRegions: { create: preferredRegions },
+        preferredSites: def.regions.some(
+          (region) => region === '고덕동' || region === '강동구',
+        )
+          ? { create: [{ siteId: ctx.siteId, priority: 1 }] }
+          : undefined,
       },
     });
     nextPriorityByIntakeId.set(intake.id, priorityRank + 1);
@@ -1427,6 +1433,52 @@ async function verifyCustomerLedgerScenarios(ctx: Ctx) {
   );
 }
 
+// ListingIntake의 매매·전세·월세 Listing은 동시 계약 대상이 아니라
+// 서로 대안이다. 시드도 서버와 같은 "의뢰당 미취소 점유 Deal 1건"
+// 규칙을 지키는지 즉시 검증한다.
+async function verifySingleOccupyingDealPerIntake(ctx: Ctx) {
+  const deals = await ctx.prisma.deal.findMany({
+    where: {
+      officeId: ctx.officeId,
+      isCancelled: false,
+      stage: {
+        in: [
+          'preparing',
+          'preContract',
+          'contracted',
+          'settling',
+          'completed',
+          'closed',
+        ],
+      },
+    },
+    select: {
+      id: true,
+      listing: { select: { intakeId: true } },
+    },
+  });
+
+  const dealsByIntake = new Map<string, string[]>();
+  for (const deal of deals) {
+    const intakeId = deal.listing?.intakeId;
+    if (!intakeId) continue;
+    const ids = dealsByIntake.get(intakeId) ?? [];
+    ids.push(deal.id);
+    dealsByIntake.set(intakeId, ids);
+  }
+
+  const duplicates = [...dealsByIntake.entries()].filter(
+    ([, dealIds]) => dealIds.length > 1,
+  );
+  if (duplicates.length > 0) {
+    throw new Error(
+      `의뢰당 미취소 Deal 1건 규칙 위반: ${duplicates
+        .map(([intakeId, dealIds]) => `${intakeId}(${dealIds.join(', ')})`)
+        .join('; ')}`,
+    );
+  }
+}
+
 async function seedBrokerageCase(
   ctx: Ctx,
   contactId: string,
@@ -1553,6 +1605,7 @@ async function seedDeals(
   ctx: Ctx,
   listings: Awaited<ReturnType<typeof seedListings>>,
   contacts: Awaited<ReturnType<typeof seedContacts>>,
+  matches: Awaited<ReturnType<typeof seedMatches>>,
 ) {
   const owners = contacts.slice(0, 4);
   const buyers = contacts.slice(4, 8);
@@ -1578,14 +1631,16 @@ async function seedDeals(
     },
   });
 
-  // Deal 1: preparing 단계 (최종 조건·계약 일정 준비 중)
+  // Deal 1: preparing 단계 (김민준의 두 번째 독립 의뢰)
+  // P0의 매매·전세 Listing은 대안 조건이므로 Deal 4(전세 settling)와
+  // 동시에 Deal을 만들지 않는다. 별도 의뢰 P6에 preparing 예시를 둔다.
   const deal1 = await ctx.prisma.deal.create({
     data: {
       officeId: ctx.officeId,
-      listingId: listings[0].id,
+      listingId: listings[8].id,
       stage: 'preparing',
-      transactionType: 'sale',
-      agreedPrice: 268000,
+      transactionType: 'jeonse',
+      agreedPrice: 108000,
       buyerContactId: buyers[0].id,
       sellerContactId: owners[0].id,
       memo: `${DEMO_TAG} 계약 준비 단계`,
@@ -1600,7 +1655,7 @@ async function seedDeals(
         role: 'listing_agent',
         side: 'seller',
         commissionRate: new Prisma.Decimal(50),
-        commissionAmount: 536,
+        commissionAmount: 216,
       },
       {
         officeId: ctx.officeId,
@@ -1609,16 +1664,18 @@ async function seedDeals(
         role: 'manager',
         side: 'both',
         commissionRate: new Prisma.Decimal(10),
-        commissionAmount: 214,
+        commissionAmount: 86,
       },
     ],
   });
 
   // Deal 2: contracted 단계 — Contract 동반 생성, 계약금 입금 완료
+  // matches[3](dealCreated, 19.8억 × 투자)에서 전환된 거래로 연결한다.
   const deal2 = await ctx.prisma.deal.create({
     data: {
       officeId: ctx.officeId,
       listingId: listings[3].id,
+      matchId: matches[3].id,
       stage: 'contracted',
       stageChangedAt: daysAgo(5),
       transactionType: 'sale',
@@ -1825,9 +1882,9 @@ async function seedDeals(
       clientSide: 'seller',
       collectedByOffice: 'us',
       payerContactId: owners[0].id,
-      baseAmount: 268000,
+      baseAmount: 108000,
       rate: new Prisma.Decimal(0.4),
-      expectedAmount: 1072,
+      expectedAmount: 432,
       dueDate: daysFromNow(60),
       status: 'pending',
       note: `${DEMO_TAG}`,
@@ -1841,9 +1898,9 @@ async function seedDeals(
       clientSide: 'buyer',
       collectedByOffice: 'us',
       payerContactId: buyers[0].id,
-      baseAmount: 268000,
+      baseAmount: 108000,
       rate: new Prisma.Decimal(0.4),
-      expectedAmount: 1072,
+      expectedAmount: 432,
       dueDate: daysFromNow(60),
       status: 'pending',
       note: `${DEMO_TAG}`,
@@ -1856,14 +1913,14 @@ async function seedDeals(
         paymentId: d1seller.id,
         recipientType: 'our_office',
         shareRatio: new Prisma.Decimal(100),
-        shareAmount: 1072,
+        shareAmount: 432,
       },
       {
         officeId: ctx.officeId,
         paymentId: d1buyer.id,
         recipientType: 'our_office',
         shareRatio: new Prisma.Decimal(100),
-        shareAmount: 1072,
+        shareAmount: 432,
       },
     ],
   });

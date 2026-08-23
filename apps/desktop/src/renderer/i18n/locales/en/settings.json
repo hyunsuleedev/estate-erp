@@ -8,8 +8,8 @@
     "officeDescription": "Office basic info and brokerage license number.",
     "commission": "Default Commission Distribution",
     "commissionDescription": "Default distribution rules applied when creating a Deal.",
-    "mcp": "MCP Connection Key",
-    "mcpDescription": "API key used by external AI tools (Claude Desktop, etc.) to access this office."
+    "mcp": "My MCP Connection Key",
+    "mcpDescription": "A personal key that connects external AI tools such as Claude Desktop and Codex with your current account permissions."
   },
   "languageOptions": {
     "ko": "한국어",
@@ -27,7 +27,7 @@
     "buyingAgentRate": "Buying Agent Rate (%)",
     "dualAgentRate": "Dual Agent Rate (%)",
     "managerRate": "Manager Rate (%)",
-    "closerBonus": "Closer Bonus (%)"
+    "closerBonus": "Closer Bonus (KRW 10k)"
   },
   "mcp": {
     "empty": "No key issued yet.",
@@ -45,6 +45,6 @@
     "guideStep1": "Open Claude Desktop → Settings → Developer → \"Edit Config\".",
     "guideStep2": "Add the JSON below under mcpServers and restart Claude Desktop.",
     "endpointLabel": "Endpoint",
-    "ownerOnly": "Only the office owner can issue keys."
+    "ownerOnly": "This account cannot issue a key."
   }
 }

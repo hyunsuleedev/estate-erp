@@ -50,6 +50,10 @@ export function BuyerMatchGroup({
     (match) => normalizeMatchStage(match.stage) === MatchStage.CLOSED,
   ).length;
   const requirementSummary = getBuyerRequirementSummaryParts(buyerRequirement);
+  const rawBuyerPhone = buyerRequirement.contact?.phone;
+  const buyerPhone = rawBuyerPhone
+    ? formatPhone(rawBuyerPhone)
+    : '연락처 없음';
   return (
     <section
       data-buyer-match-group
@@ -95,20 +99,20 @@ export function BuyerMatchGroup({
             data-buyer-summary-row
             className="flex min-w-0 flex-1 flex-wrap items-center gap-x-5 gap-y-1 xl:flex-nowrap"
           >
-            <div className="flex min-w-[170px] max-w-[240px] items-center gap-1.5">
-              <p className="min-w-0 truncate text-[13px] font-semibold">
+            <div className="flex min-w-[240px] max-w-[320px] items-center gap-3">
+              <p
+                title={buyerName}
+                className="w-20 shrink-0 truncate text-[13px] font-semibold"
+              >
                 {buyerName}
               </p>
-              {buyerRequirement.urgency === 'urgent' && (
-                <StatusBadge kind="buyerUrgency" status="urgent" size="sm" />
-              )}
-              <span className="shrink-0 text-border">·</span>
-              <p
-                title={buyerRequirement.contact?.phone ?? '연락처 없음'}
-                className="min-w-0 truncate text-xs text-muted-foreground"
-              >
-                {buyerRequirement.contact?.phone ?? '연락처 없음'}
-              </p>
+              <dl data-buyer-contact-summary className="min-w-0">
+                <BuyerRequirementSummaryItem
+                  label="연락처"
+                  value={buyerPhone}
+                  emphasized
+                />
+              </dl>
             </div>
 
             <dl
@@ -116,14 +120,14 @@ export function BuyerMatchGroup({
               className="flex min-w-0 flex-1 flex-wrap items-center gap-x-5 gap-y-1 xl:flex-nowrap"
             >
               <BuyerRequirementSummaryItem
-                label="희망 지역"
-                value={requirementSummary.regionText}
-                className="min-w-[150px] flex-1 xl:max-w-[220px]"
-              />
-              <BuyerRequirementSummaryItem
                 label="매물 유형"
                 value={requirementSummary.siteTypeText}
                 className="min-w-[100px] shrink-0"
+              />
+              <BuyerRequirementSummaryItem
+                label="희망 평형"
+                value={requirementSummary.areaText}
+                className="min-w-36 shrink-0 tabular-nums"
               />
               <BuyerRequirementSummaryItem
                 label="예산"
@@ -156,17 +160,30 @@ export function BuyerMatchGroup({
           </div>
         </div>
 
-        {expanded && buyerRequirement.memo && (
-          <dl
-            data-buyer-expanded-memo
-            className="ml-14 mt-1.5 grid min-w-0 grid-cols-[64px_minmax(0,1fr)] gap-2 border-t border-border/60 pt-1.5 text-xs leading-5"
+        <dl
+          data-buyer-requirement-details
+          className="ml-14 mt-1.5 grid min-w-0 grid-cols-[64px_minmax(0,1fr)] gap-x-2 gap-y-1 border-t border-border/60 pt-1.5 text-xs leading-5"
+        >
+          <dt className="font-medium text-muted-foreground">희망 지역</dt>
+          <dd
+            title={requirementSummary.regionText}
+            className="min-w-0 break-words font-medium text-foreground"
           >
-            <dt className="font-medium text-muted-foreground">고객 메모</dt>
-            <dd className="min-w-0 whitespace-pre-wrap break-words text-foreground/80">
-              {buyerRequirement.memo}
-            </dd>
-          </dl>
-        )}
+            {requirementSummary.regionText}
+          </dd>
+
+          {expanded && buyerRequirement.memo && (
+            <>
+              <dt className="font-medium text-muted-foreground">고객 메모</dt>
+              <dd
+                data-buyer-expanded-memo
+                className="min-w-0 whitespace-pre-wrap break-words text-foreground/80"
+              >
+                {buyerRequirement.memo}
+              </dd>
+            </>
+          )}
+        </dl>
       </header>
 
       {expanded && <BuyerMatchBranchList matches={matches} actions={actions} />}

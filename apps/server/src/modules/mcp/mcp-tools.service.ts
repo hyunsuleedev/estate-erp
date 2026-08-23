@@ -641,7 +641,7 @@ export class McpToolsService {
     // ═══════════════════════════════════════════════════════════
     this.add(
       'find_listing_advertisements',
-      'CP 광고 원장(ListingAdvertisement)을 검색합니다. 광고 row는 실제 CP 광고만 나타내며 상태는 active/ended입니다. 수집 실패와 세부 단계는 로컬 Skill run에 기록됩니다.',
+      'CP 광고 원장(ListingAdvertisement)을 검색합니다. 각 row는 한 번의 연속된 실제 게재이고, endedAt은 완전한 스냅샷에서 관측 종료된 시각입니다.',
       obj({
         listingId: str('매물 ID'),
         channel: str('CP사 slug (esiljang, budongsanbank 등)'),
@@ -676,6 +676,17 @@ export class McpToolsService {
     );
 
     this.add(
+      'find_listing_advertisement_price_history',
+      '한 Listing에 연결된 모든 CP·재광고 회차의 광고 가격 관측 이력을 시간순으로 조회합니다.',
+      obj({ listingId: str('매물 ID') }, ['listingId']),
+      async (a, c) =>
+        this.listingAdvertisements.findPriceHistory(
+          c.officeId,
+          a.listingId as string,
+        ),
+    );
+
+    this.add(
       'create_listing_advertisement',
       'CP에서 실제로 관측한 광고 원장(ListingAdvertisement)을 생성합니다. 작성·승인 대기 요청이나 동기화 오류 row를 만들지 않습니다.',
       obj(
@@ -688,7 +699,7 @@ export class McpToolsService {
           advertisedDeposit: num('광고 보증금 (만원)'),
           advertisedMonthlyRent: num('광고 월세 (만원)'),
           startedAt: str('광고 시작일 (ISO)'),
-          endedAt: str('광고 종료일 (ISO)'),
+          endedAt: str('광고 관측 종료 시각 (ISO, 예정 종료일 아님)'),
           url: str('CP 광고 관리 URL'),
           memo: str('광고 메모'),
           externalAdId: str('CP사 광고 ID'),
@@ -733,7 +744,7 @@ export class McpToolsService {
           advertisedDeposit: num('광고 보증금 (만원)'),
           advertisedMonthlyRent: num('광고 월세 (만원)'),
           startedAt: str('광고 시작일 (ISO)'),
-          endedAt: str('광고 종료일 (ISO)'),
+          endedAt: str('광고 관측 종료 시각 (ISO, 예정 종료일 아님)'),
           url: str('CP 광고 관리 URL'),
           memo: str('광고 메모'),
           externalAdId: str('CP사 광고 ID'),

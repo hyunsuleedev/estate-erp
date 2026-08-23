@@ -1,4 +1,7 @@
-import { createApiClient } from '@estate-erp/api-client';
+import {
+  createApiClient,
+  type AuthFailureContext,
+} from '@estate-erp/api-client';
 
 const TOKEN_KEY = 'estate-erp-token';
 type TokenProvider = () => Promise<string | null>;
@@ -30,16 +33,18 @@ export function removeToken(): void {
   sessionStorage.removeItem(TOKEN_KEY);
 }
 
-let onAuthFailureHandler: (() => void) | null = null;
+let onAuthFailureHandler: ((context: AuthFailureContext) => void) | null = null;
 
-export function setAuthFailureHandler(handler: (() => void) | null): void {
+export function setAuthFailureHandler(
+  handler: ((context: AuthFailureContext) => void) | null,
+): void {
   onAuthFailureHandler = handler;
 }
 
 export const api = createApiClient({
   baseUrl,
   getToken,
-  onAuthFailure: () => {
-    onAuthFailureHandler?.();
+  onAuthFailure: (context) => {
+    onAuthFailureHandler?.(context);
   },
 });

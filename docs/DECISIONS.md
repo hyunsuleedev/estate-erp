@@ -17,7 +17,7 @@
 | MCP 전략 | CRM MCP Server 우선 | AI 친화적 시스템으로 설계 |
 | agent 업무 단위 | 일반 `Task(category=advertisement)` | 사용자가 시작한 외부 AI가 Task를 읽고 원자적으로 claim하며 별도 요청함·서버 queue를 두지 않음 |
 | 광고 자동화 MVP | 로컬 Skill 실행 + 로컬 SQLite 단계 기록 + 이실장 저장값 검증 | 서버는 결과/업무만 공유하고 provider 실행 세부사항과 재시도는 사용자 PC에 둠 |
-| 내 광고 원장 | `ListingAdvertisement` + 정확한 Listing/Unit 귀속 | CP가 상세 주소를 제공하므로 별도 호실 연결·제외 상태가 불필요 |
+| 내 광고 원장 | 게재 회차별 `ListingAdvertisement` + 광고 가격 이력 | 종료 row를 보존하고 재광고와 같은 회차의 가격 수정을 구분 |
 | CP 광고 상태 | row는 `active/ended`, 수집 실패는 로컬 Skill run | CP 조회는 현재 광고만 반환하며 실행 오류를 개별 광고 상태로 만들지 않음 |
 | 광고 식별자 | channel/externalAdId/url=CP, naverArticleNo/naverUrl=네이버 | CP 제출 원장과 네이버 비교 대상을 혼동하지 않음 |
 | 외부 effect 확인 | 현재 대화에서 exact target/final value 확인 | 외부 쓰기 전 사람이 본 변경 내용과 실제 로컬 실행 계획을 일치시킴 |

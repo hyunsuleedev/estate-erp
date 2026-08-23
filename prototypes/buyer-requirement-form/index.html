@@ -1,0 +1,1669 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>구함 의뢰 추가 — UI 프로토타입</title>
+<style>
+/* ───────────────────────── 디자인 토큰 ───────────────────────── */
+:root {
+  --bg: #ffffff;
+  --fg: #37352f;
+  --muted: #f7f6f3;
+  --muted-fg: #787774;
+  --border: #e9e9e7;
+  --accent: #f1f1ef;
+  --destructive: #e03e3e;
+  --info: #2383e2;
+  --r-sm: 4px;
+  --r-md: 6px;
+  --r-lg: 8px;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body { height: 100%; }
+
+body {
+  font-family: Pretendard, -apple-system, "Apple SD Gothic Neo", "Segoe UI", "Noto Sans KR", sans-serif;
+  font-size: 13px;
+  color: var(--fg);
+  background: var(--muted);
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+button { font-family: inherit; }
+
+/* ───────────────────────── 앱 셸 chrome ───────────────────────── */
+.chrome-titlebar {
+  height: 38px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 0 14px;
+  background: var(--muted);
+  border-bottom: 1px solid var(--border);
+  -webkit-app-region: drag;
+}
+.chrome-dots { display: flex; gap: 6px; }
+.chrome-dots span {
+  width: 11px; height: 11px; border-radius: 50%;
+  background: #dedcd8; border: 1px solid #d4d1cb;
+}
+.chrome-tabs { display: flex; align-items: center; gap: 2px; height: 100%; }
+.chrome-tab {
+  display: flex; align-items: center; gap: 8px;
+  height: 28px; padding: 0 12px;
+  font-size: 12px; color: var(--muted-fg);
+  border-radius: var(--r-md);
+}
+.chrome-tab.active {
+  background: var(--bg); color: var(--fg);
+  box-shadow: 0 0 0 1px var(--border);
+}
+.chrome-tab .tab-x {
+  color: var(--muted-fg); font-size: 11px; line-height: 1;
+  width: 14px; height: 14px; border-radius: 3px;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.chrome-tab .tab-x:hover { background: var(--accent); color: var(--fg); }
+.chrome-titlebar-right {
+  margin-left: auto; font-size: 11px; color: var(--muted-fg);
+  display: flex; align-items: center; gap: 10px;
+}
+.chrome-avatar {
+  width: 20px; height: 20px; border-radius: 50%;
+  background: #d9d6d1; color: #fff;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 10px; font-weight: 600;
+}
+
+.chrome-body { display: flex; height: calc(100vh - 38px); }
+
+.chrome-sidebar {
+  width: 196px; flex-shrink: 0;
+  background: var(--muted);
+  border-right: 1px solid var(--border);
+  padding: 8px 8px 16px;
+  overflow-y: auto;
+}
+.side-group-label {
+  font-size: 11px; color: var(--muted-fg);
+  padding: 10px 8px 4px; letter-spacing: 0.01em;
+}
+.side-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 5px 8px; border-radius: var(--r-md);
+  font-size: 13px; color: #5f5e5a; cursor: default;
+}
+.side-item .side-ic {
+  width: 16px; text-align: center; font-size: 11px; color: #9b9a97;
+}
+.side-item:hover { background: var(--accent); }
+.side-item.active {
+  background: var(--accent); color: var(--fg); font-weight: 500;
+}
+.side-item.active .side-ic { color: var(--fg); }
+
+.chrome-main { flex: 1; overflow-y: auto; background: var(--bg); position: relative; }
+
+#stage { min-height: 100%; }
+
+/* ───────────────────────── 공통 폼 컴포넌트 ───────────────────────── */
+.page { min-height: 100%; display: flex; flex-direction: column; }
+
+.page-head { padding: 20px 28px 0; }
+.page-head-row { display: flex; align-items: flex-start; gap: 12px; }
+.back-btn {
+  width: 28px; height: 28px; border-radius: var(--r-md);
+  border: 1px solid var(--border); background: var(--bg);
+  color: var(--muted-fg); font-size: 14px; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+  flex-shrink: 0; margin-top: 1px;
+}
+.back-btn:hover { background: var(--muted); color: var(--fg); }
+.page-head h1 { font-size: 18px; font-weight: 700; letter-spacing: -0.01em; }
+.page-head .desc { font-size: 12px; color: var(--muted-fg); margin-top: 3px; }
+
+.progress-wrap { min-width: 200px; margin-left: auto; padding-top: 4px; }
+.progress-meta {
+  display: flex; justify-content: space-between;
+  font-size: 11px; color: var(--muted-fg); margin-bottom: 5px;
+}
+.progress-meta .cnt { font-variant-numeric: tabular-nums; }
+.progress-bar {
+  height: 4px; border-radius: 999px; background: var(--muted); overflow: hidden;
+}
+.progress-bar i {
+  display: block; height: 100%; border-radius: 999px; background: var(--fg);
+  transition: width 250ms ease-out;
+}
+
+.section {
+  border: 1px solid var(--border); border-radius: var(--r-lg);
+  padding: 14px 16px; background: var(--bg);
+}
+.section + .section { margin-top: 12px; }
+.section-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.sec-dot {
+  width: 20px; height: 20px; border-radius: 50%;
+  background: var(--muted); color: var(--muted-fg);
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 600; flex-shrink: 0;
+  transition: background 200ms ease-out, color 200ms ease-out;
+}
+.sec-dot.done { background: var(--fg); color: #fff; }
+.section-head h3 { font-size: 14px; font-weight: 600; }
+.section-head h3 .req { color: var(--destructive); }
+.section-head .sec-desc { font-size: 11px; color: var(--muted-fg); }
+
+.field { display: flex; flex-direction: column; gap: 6px; }
+.field > label { font-size: 12px; color: var(--muted-fg); }
+.sub-label { font-size: 11px; font-weight: 500; color: var(--muted-fg); margin-bottom: 8px; }
+
+.input {
+  height: 32px; width: 100%;
+  border: 1px solid var(--border); border-radius: var(--r-md);
+  background: var(--bg); color: var(--fg);
+  font-size: 13px; font-family: inherit;
+  padding: 0 10px; outline: none;
+  transition: border-color 120ms ease-out, box-shadow 120ms ease-out;
+}
+.input::placeholder { color: #b4b2ad; }
+.input:focus {
+  border-color: var(--info);
+  box-shadow: 0 0 0 2px rgba(35, 131, 226, 0.18);
+}
+.input:disabled { background: var(--muted); color: #b4b2ad; cursor: not-allowed; }
+select.input { padding-right: 24px; appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23787774' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 9px center;
+}
+textarea.input {
+  height: auto; min-height: 76px; padding: 8px 10px; resize: vertical; line-height: 1.5;
+}
+input[type="date"].input { padding-right: 6px; }
+input[type="number"].input { font-variant-numeric: tabular-nums; }
+input[type=number]::-webkit-inner-spin-button { opacity: 0; }
+
+.input-wrap { position: relative; }
+.input-wrap .unit {
+  position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+  font-size: 12px; color: var(--muted-fg); pointer-events: none;
+}
+.input-wrap .input { padding-right: 38px; }
+.input-wrap.area .input { padding-right: 28px; }
+
+.hint {
+  height: 14px; font-size: 11px; color: var(--info);
+  font-variant-numeric: tabular-nums; margin-top: 3px;
+}
+.hint:empty { visibility: hidden; }
+
+.money-field, .area-field { flex: 1; min-width: 0; }
+.range-row { display: flex; align-items: flex-start; gap: 6px; }
+.range-row .tilde { margin-top: 8px; font-size: 12px; color: var(--muted-fg); flex-shrink: 0; }
+
+/* 칩 토글 */
+.chip {
+  border: 1px solid var(--border); border-radius: var(--r-md);
+  background: var(--bg); color: var(--muted-fg);
+  font-size: 12px; padding: 4px 10px; cursor: pointer;
+  transition: background 120ms ease-out, color 120ms ease-out, border-color 120ms ease-out;
+}
+.chip:hover { background: var(--muted); }
+.chip.on {
+  border-color: rgba(55, 53, 47, 0.4);
+  background: rgba(55, 53, 47, 0.08);
+  color: var(--fg); font-weight: 500;
+}
+.chip-row { display: flex; flex-wrap: wrap; gap: 6px; }
+
+/* 프리셋 칩 */
+.preset-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 8px; }
+.preset-row .preset-label { font-size: 11px; color: var(--muted-fg); margin-right: 2px; }
+.preset {
+  border: 1px dashed var(--border); border-radius: var(--r-md);
+  background: transparent; color: var(--muted-fg);
+  font-size: 11px; padding: 2px 7px; cursor: pointer;
+  transition: border-color 120ms ease-out, color 120ms ease-out;
+}
+.preset:hover { border-color: rgba(55, 53, 47, 0.4); color: var(--fg); }
+
+/* 서브 패널 (예산/면적) */
+.sub-panel {
+  background: rgba(247, 246, 243, 0.55);
+  border-radius: var(--r-md); padding: 12px;
+}
+.sub-panel + .sub-panel { margin-top: 10px; }
+
+/* 검색 + 드롭다운 */
+.search-wrap { position: relative; }
+.search-wrap .search-ic {
+  position: absolute; left: 10px; top: 9px;
+  font-size: 12px; color: var(--muted-fg); pointer-events: none; z-index: 1;
+}
+.search-wrap > .input { padding-left: 28px; }
+.dropdown {
+  position: absolute; z-index: 30; top: calc(100% + 4px); left: 0; right: 0;
+  background: var(--bg); border: 1px solid var(--border); border-radius: var(--r-md);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.06), 0 1px 3px rgba(0,0,0,0.04);
+  overflow: hidden; max-height: 224px; overflow-y: auto;
+}
+.dropdown:empty { display: none; }
+.dd-item {
+  display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 7px 12px; border: 0; background: none; cursor: pointer;
+  font-size: 13px; color: var(--fg); text-align: left;
+}
+.dd-item:hover { background: var(--muted); }
+.dd-item .dd-meta {
+  font-size: 11px; color: var(--muted-fg); font-variant-numeric: tabular-nums;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 1;
+}
+.dd-item > span:first-child { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dd-empty { padding: 8px 12px; font-size: 12px; color: var(--muted-fg); }
+
+/* 선택된 고객 */
+.contact-selected { display: flex; align-items: center; gap: 8px; }
+.contact-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  border: 1px solid var(--border); border-radius: var(--r-md);
+  background: rgba(247, 246, 243, 0.6);
+  padding: 5px 10px; font-size: 13px;
+}
+.contact-chip b { font-weight: 500; }
+.contact-chip .phone { font-size: 12px; color: var(--muted-fg); font-variant-numeric: tabular-nums; }
+
+/* 선택 칩 (지역/단지) */
+.sel-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  border-radius: var(--r-md); padding: 3px 8px; font-size: 12px;
+}
+.sel-chip.region { border: 1px solid rgba(55,53,47,0.15); background: var(--muted); color: var(--fg); }
+.sel-chip.site { border: 1px solid rgba(55,53,47,0.25); background: rgba(55,53,47,0.08); color: var(--fg); }
+.sel-chip button {
+  border: 0; background: none; cursor: pointer; padding: 0;
+  color: var(--muted-fg); font-size: 13px; line-height: 1;
+  display: inline-flex; align-items: center;
+}
+.sel-chip button:hover { color: var(--fg); }
+
+/* 버튼 */
+.btn {
+  height: 32px; padding: 0 14px; border-radius: var(--r-md);
+  font-size: 13px; font-weight: 500; cursor: pointer;
+  border: 1px solid transparent;
+  transition: background 120ms ease-out, border-color 120ms ease-out, color 120ms ease-out;
+  display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+}
+.btn-primary { background: var(--fg); color: #fff; }
+.btn-primary:hover { background: #2b2a26; }
+.btn-outline { background: var(--bg); border-color: var(--border); color: var(--fg); }
+.btn-outline:hover { background: var(--muted); }
+.btn-outline:disabled { color: #b4b2ad; cursor: not-allowed; background: var(--bg); }
+.btn-ghost {
+  height: 28px; padding: 0 8px; border: 0; background: none;
+  font-size: 12px; color: var(--muted-fg); cursor: pointer; border-radius: var(--r-md);
+}
+.btn-ghost:hover { background: var(--accent); color: var(--fg); }
+
+/* 경고 박스 */
+.alert {
+  border: 1px solid var(--border); border-radius: var(--r-md);
+  background: var(--muted); padding: 8px 12px;
+  font-size: 12px; color: var(--muted-fg); line-height: 1.5;
+  margin-top: 10px;
+}
+</style>
+<style>
+/* ───────────────────────── 변형 1: Workbench ───────────────────────── */
+.v-workbench .wb-body {
+  flex: 1; display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  gap: 16px; padding: 16px 28px 24px;
+  align-items: start;
+}
+.v-workbench .wb-main > * + * { margin-top: 12px; }
+.v-workbench .wb-rail { position: sticky; top: 0; }
+.v-workbench .wb-rail > * + * { margin-top: 12px; }
+.v-workbench .budget-monthly { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.v-workbench .budget-single { max-width: 420px; }
+.v-workbench .area-inner { max-width: 420px; }
+.v-workbench .schedule-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.v-workbench .cascade-row {
+  display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 6px; margin-bottom: 8px;
+}
+
+/* ───────────────────────── 변형 2: Guided ───────────────────────── */
+.v-guided .page-head { padding-bottom: 0; }
+.v-guided .g-shell { flex: 1; display: flex; flex-direction: column; max-width: 680px; width: 100%; margin: 0 auto; padding: 20px 28px 24px; }
+.v-guided .steps { display: flex; align-items: center; margin-bottom: 18px; }
+.v-guided .step { display: flex; align-items: center; gap: 8px; }
+.v-guided .step-circle {
+  width: 24px; height: 24px; border-radius: 50%;
+  border: 1px solid var(--border); background: var(--bg);
+  color: var(--muted-fg); font-size: 11px; font-weight: 600;
+  display: inline-flex; align-items: center; justify-content: center;
+  transition: background 200ms ease-out, color 200ms ease-out, border-color 200ms ease-out;
+}
+.v-guided .step.active .step-circle { background: var(--fg); border-color: var(--fg); color: #fff; }
+.v-guided .step.done .step-circle { background: var(--muted); border-color: var(--border); color: var(--fg); }
+.v-guided .step-label { font-size: 12px; color: var(--muted-fg); }
+.v-guided .step.active .step-label { color: var(--fg); font-weight: 600; }
+.v-guided .step-conn { flex: 1; height: 1px; background: var(--border); margin: 0 10px; min-width: 20px; }
+.v-guided .g-summary { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+.v-guided .g-summary:empty { display: none; }
+.v-guided .sum-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  border: 1px solid var(--border); background: var(--muted);
+  border-radius: 999px; padding: 3px 10px;
+  font-size: 11px; color: var(--muted-fg); cursor: pointer;
+  transition: color 120ms ease-out, border-color 120ms ease-out;
+}
+.v-guided .sum-chip:hover { color: var(--fg); border-color: #d4d1cb; }
+.v-guided .sum-chip .sum-step {
+  font-weight: 600; color: var(--fg);
+}
+.v-guided .g-body { flex: 1; }
+.v-guided .budget-monthly { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.v-guided .cascade-row {
+  display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 6px; margin-bottom: 8px;
+}
+.v-guided .schedule-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.v-guided .g-nav {
+  display: flex; align-items: center; justify-content: space-between;
+  padding-top: 16px; margin-top: 8px; border-top: 1px solid var(--border);
+}
+.v-guided .g-nav .nav-right { display: flex; gap: 8px; }
+.v-guided .g-progress-note { font-size: 11px; color: var(--muted-fg); font-variant-numeric: tabular-nums; }
+
+@keyframes g-enter {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+.v-guided .g-anim { animation: g-enter 240ms ease-out; }
+
+/* ───────────────────────── 변형 3: Compact ───────────────────────── */
+.v-compact .page-head { padding: 14px 20px 0; }
+.v-compact .page-head h1 { font-size: 16px; }
+.v-compact .page-head .desc { display: none; }
+.v-compact .cp-body { flex: 1; padding: 12px 20px 20px; }
+.v-compact .cp-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px 12px; }
+.v-compact .cp-sec {
+  grid-column: 1 / -1;
+  display: flex; align-items: center; gap: 8px;
+  font-size: 12px; font-weight: 600; color: var(--fg);
+  padding-top: 6px; margin-top: 2px;
+  border-top: 1px solid var(--border);
+}
+.v-compact .cp-sec:first-child { border-top: 0; padding-top: 0; margin-top: 0; }
+.v-compact .cp-sec .req { color: var(--destructive); }
+.v-compact .cp-sec .sec-desc { font-size: 11px; font-weight: 400; color: var(--muted-fg); }
+.v-compact .cp-sec .sec-dot {
+  width: 16px; height: 16px; font-size: 10px; border-radius: 50%;
+  background: var(--muted); color: var(--muted-fg);
+  display: inline-flex; align-items: center; justify-content: center; font-weight: 600;
+}
+.v-compact .cp-sec .sec-dot.done { background: var(--fg); color: #fff; }
+.v-compact .span2 { grid-column: span 2; }
+.v-compact .span3 { grid-column: span 3; }
+.v-compact .span4 { grid-column: span 4; }
+.v-compact .span6 { grid-column: 1 / -1; }
+.v-compact .input { height: 30px; font-size: 12.5px; }
+.v-compact .chip { padding: 3px 9px; font-size: 12px; }
+.v-compact .budget-monthly { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.v-compact .cascade-row {
+  display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 6px;
+}
+.v-compact textarea.input { min-height: 52px; }
+.v-compact .hint { margin-top: 2px; }
+.v-compact .sub-panel { background: transparent; padding: 0; border-radius: 0; }
+.v-compact .sub-panel + .sub-panel { margin-top: 0; }
+.v-compact .preset-row { margin-top: 6px; }
+.v-compact .field > label { font-size: 11px; }
+
+/* sticky 액션 바 (Workbench / Compact) */
+.action-bar {
+  position: sticky; bottom: 0; z-index: 20;
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 28px;
+  background: rgba(255, 255, 255, 0.92);
+  -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+  border-top: 1px solid var(--border);
+}
+.action-bar .ab-progress { font-size: 11px; color: var(--muted-fg); font-variant-numeric: tabular-nums; }
+.action-bar .ab-btns { margin-left: auto; display: flex; gap: 8px; }
+.v-compact .action-bar { padding: 8px 20px; }
+
+/* ───────────────────────── 토스트 ───────────────────────── */
+#toast-root {
+  position: fixed; top: 52px; right: 20px; z-index: 2147483646;
+  display: flex; flex-direction: column; gap: 8px; align-items: flex-end;
+  pointer-events: none;
+}
+.toast {
+  background: var(--fg); color: #fff;
+  font-size: 13px; padding: 9px 14px; border-radius: var(--r-md);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.18);
+  opacity: 0; transform: translateY(-6px);
+  transition: opacity 200ms ease-out, transform 200ms ease-out;
+  max-width: 340px;
+}
+.toast.show { opacity: 1; transform: none; }
+.toast.error { background: var(--destructive); }
+.toast.success { background: #2b6a3f; }
+
+@media (prefers-reduced-motion: reduce) {
+  .v-guided .g-anim { animation: none; }
+  .toast { transition: none; }
+  .progress-bar i { transition: none; }
+}
+</style>
+<style>
+/* ───────────────────────── 프로토타입 피커 (spec verbatim) ───────────────────────── */
+.proto-picker {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2147483647;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  border-radius: 999px;
+  background: rgba(10, 10, 10, 0.82);
+  -webkit-backdrop-filter: blur(12px) saturate(1.4);
+  backdrop-filter: blur(12px) saturate(1.4);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.08) inset,
+    0 8px 24px rgba(0, 0, 0, 0.24),
+    0 2px 6px rgba(0, 0, 0, 0.12);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 13px;
+  line-height: 1;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.proto-picker-highlight {
+  position: absolute;
+  top: 4px;
+  left: 0;
+  height: 28px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  will-change: transform;
+}
+
+/* The slide is enabled only after first paint (data-ready), so load doesn't animate. */
+.proto-picker[data-ready] .proto-picker-highlight {
+  transition:
+    transform 250ms cubic-bezier(0.23, 1, 0.32, 1),
+    width 250ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .proto-picker[data-ready] .proto-picker-highlight { transition: none; }
+}
+
+.proto-picker-item {
+  position: relative; /* sits above the highlight */
+  display: flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.55);
+  font: inherit;
+  cursor: pointer;
+  transition: color 150ms ease-out;
+}
+
+.proto-picker-item:hover {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.proto-picker-item:active {
+  transform: scale(0.97);
+}
+
+.proto-picker-item:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.4);
+  outline-offset: 2px;
+}
+
+.proto-picker-item[data-active] {
+  color: #fff;
+}
+
+.proto-picker-divider {
+  width: 1px;
+  height: 16px;
+  margin: 0 4px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.proto-picker-replay {
+  padding: 0 10px;
+  font-size: 14px;
+}
+
+.proto-picker[data-position="top"] {
+  bottom: auto;
+  top: 24px;
+}
+</style>
+</head>
+<body>
+<header class="chrome-titlebar">
+  <div class="chrome-dots"><span></span><span></span><span></span></div>
+  <div class="chrome-tabs">
+    <div class="chrome-tab">고객 원장</div>
+    <div class="chrome-tab active">구함 의뢰 추가 <span class="tab-x">×</span></div>
+  </div>
+  <div class="chrome-titlebar-right">
+    <span>강동고덕공인중개사</span>
+    <span class="chrome-avatar">김</span>
+  </div>
+</header>
+<div class="chrome-body">
+  <aside class="chrome-sidebar">
+    <div class="side-item"><span class="side-ic">◧</span>대시보드</div>
+    <div class="side-group-label">영업</div>
+    <div class="side-item"><span class="side-ic">▤</span>매물관리</div>
+    <div class="side-item"><span class="side-ic">▦</span>관리단지</div>
+    <div class="side-item"><span class="side-ic">◫</span>광고관리</div>
+    <div class="side-item active"><span class="side-ic">◉</span>고객 원장</div>
+    <div class="side-item"><span class="side-ic">◔</span>연락처</div>
+    <div class="side-item"><span class="side-ic">✎</span>상담기록</div>
+    <div class="side-item"><span class="side-ic">⇄</span>매칭</div>
+    <div class="side-group-label">거래</div>
+    <div class="side-item"><span class="side-ic">▣</span>거래관리</div>
+    <div class="side-item"><span class="side-ic">◳</span>계약서 관리</div>
+    <div class="side-item"><span class="side-ic">₩</span>수수료/정산</div>
+    <div class="side-group-label">업무</div>
+    <div class="side-item"><span class="side-ic">☑</span>업무</div>
+    <div class="side-item"><span class="side-ic">◷</span>캘린더</div>
+    <div class="side-item"><span class="side-ic">⚇</span>직원관리</div>
+    <div class="side-item"><span class="side-ic">⚙</span>설정</div>
+  </aside>
+  <main class="chrome-main">
+    <div id="stage"></div>
+  </main>
+</div>
+<nav class="proto-picker" aria-label="Prototype variants">
+  <span class="proto-picker-highlight" aria-hidden="true"></span>
+  <button class="proto-picker-item" data-active aria-current="true">Workbench</button>
+  <button class="proto-picker-item">Guided</button>
+  <button class="proto-picker-item">Compact</button>
+  <span class="proto-picker-divider" aria-hidden="true"></span>
+  <button class="proto-picker-item proto-picker-replay" aria-label="Replay animation (R)">↻</button>
+</nav>
+<div id="toast-root"></div>
+
+<script>
+'use strict';
+
+/* ───────────────────────── 더미 데이터 ───────────────────────── */
+const CONTACTS = [
+  { id: 'c1', name: '강수연', phone: '010-3001-0004' },
+  { id: 'c2', name: '김도현', phone: '010-5521-8876' },
+  { id: 'c3', name: '박서윤', phone: '010-9912-3407' },
+  { id: 'c4', name: '이정민', phone: '010-7445-2210' },
+  { id: 'c5', name: '최하늘', phone: '010-3382-9015' },
+  { id: 'c6', name: '오준석', phone: '010-6120-4478' },
+];
+
+const REGIONS = [
+  { code: '11', name: '서울특별시', districts: [
+    { code: '11740', name: '강동구', wards: [
+      { code: '11740510', name: '고덕동' },
+      { code: '11740520', name: '명일동' },
+      { code: '11740550', name: '천호동' },
+      { code: '11740530', name: '성내동' },
+    ]},
+    { code: '11710', name: '송파구', wards: [
+      { code: '11710510', name: '잠실동' },
+      { code: '11710580', name: '문정동' },
+      { code: '11710570', name: '가락동' },
+    ]},
+    { code: '11440', name: '마포구', wards: [
+      { code: '11440590', name: '합정동' },
+      { code: '11440620', name: '연남동' },
+      { code: '11440600', name: '망원동' },
+    ]},
+  ]},
+  { code: '41', name: '경기도', districts: [
+    { code: '41450', name: '하남시', wards: [
+      { code: '41450510', name: '미사동' },
+      { code: '41450520', name: '신장동' },
+    ]},
+    { code: '41135', name: '성남시 분당구', wards: [
+      { code: '41135530', name: '정자동' },
+      { code: '41135520', name: '수내동' },
+    ]},
+    { code: '41465', name: '용인시 수지구', wards: [
+      { code: '41465510', name: '죽전동' },
+      { code: '41465520', name: '풍덕천동' },
+    ]},
+  ]},
+  { code: '28', name: '인천광역시', districts: [
+    { code: '28185', name: '연수구', wards: [
+      { code: '28185510', name: '송도동' },
+      { code: '28185520', name: '연수동' },
+    ]},
+    { code: '28200', name: '남동구', wards: [
+      { code: '28200510', name: '구월동' },
+    ]},
+  ]},
+];
+
+/* 검색용 평탄 리스트 */
+const REGION_FLAT = [];
+for (const p of REGIONS) {
+  REGION_FLAT.push({ level: 'province', code: p.code, name: p.name, fullName: p.name });
+  for (const d of p.districts) {
+    const dFull = p.name.replace(/(특별시|광역시|도)$/, '') + ' ' + d.name;
+    REGION_FLAT.push({ level: 'district', code: d.code, name: d.name, fullName: dFull });
+    for (const w of d.wards) {
+      REGION_FLAT.push({ level: 'ward', code: w.code, name: w.name, fullName: dFull + ' ' + w.name });
+    }
+  }
+}
+
+const SITES = [
+  { id: 's1', name: '고덕그라시움', address: '서울 강동구 고덕동 477' },
+  { id: 's2', name: '고덕 래미안 힐스테이트', address: '서울 강동구 고덕동 345' },
+  { id: 's3', name: '고덕 아르테스 미소지움', address: '서울 강동구 명일동 342-2' },
+  { id: 's4', name: '고덕숲 아이파크', address: '서울 강동구 명일동 48-4' },
+  { id: 's5', name: '미사강변 센트럴자이', address: '경기 하남시 미사동 512' },
+  { id: 's6', name: '송도 더샵 퍼스트파크', address: '인천 연수구 송도동 8-1' },
+];
+const OFFICE_SITE_IDS = ['s1', 's2', 's4', 's5'];
+
+const EMPLOYEES = [
+  { id: 'e1', name: '김민준 팀장' },
+  { id: 'e2', name: '이서연' },
+  { id: 'e3', name: '박지훈' },
+];
+
+const TX_TYPES = [
+  { value: 'sale', label: '매매' },
+  { value: 'jeonse', label: '전세' },
+  { value: 'monthly', label: '월세' },
+];
+const SITE_TYPES = ['아파트', '오피스텔', '빌라', '단독·다가구', '상가', '토지', '생활숙박시설'];
+const URGENCIES = [
+  { value: 'urgent', label: '급함' },
+  { value: 'normal', label: '보통' },
+  { value: 'relaxed', label: '여유' },
+];
+
+const PRICE_PRESETS = [
+  { label: '~3억', min: '', max: '30000' },
+  { label: '3~5억', min: '30000', max: '50000' },
+  { label: '5~10억', min: '50000', max: '100000' },
+  { label: '10~15억', min: '100000', max: '150000' },
+  { label: '15억~', min: '150000', max: '' },
+];
+const JEONSE_PRESETS = [
+  { label: '~1억', min: '', max: '10000' },
+  { label: '1~2억', min: '10000', max: '20000' },
+  { label: '2~3억', min: '20000', max: '30000' },
+  { label: '3~5억', min: '30000', max: '50000' },
+  { label: '5억~', min: '50000', max: '' },
+];
+const DEPOSIT_PRESETS = [
+  { label: '~3천', min: '', max: '3000' },
+  { label: '3천~5천', min: '3000', max: '5000' },
+  { label: '5천~1억', min: '5000', max: '10000' },
+  { label: '1억~', min: '10000', max: '' },
+];
+const RENT_PRESETS = [
+  { label: '~30', min: '', max: '30' },
+  { label: '30~50', min: '30', max: '50' },
+  { label: '50~100', min: '50', max: '100' },
+  { label: '100~', min: '100', max: '' },
+];
+const AREA_PRESETS = [
+  { label: '~20평', min: '', max: '20' },
+  { label: '20평대', min: '20', max: '29' },
+  { label: '30평대', min: '30', max: '39' },
+  { label: '40평~', min: '40', max: '' },
+];
+
+/* ───────────────────────── 공유 상태 ───────────────────────── */
+const state = {
+  contact: null,
+  transactionType: '',
+  priceMin: '', priceMax: '',
+  depositMin: '', depositMax: '',
+  rentMin: '', rentMax: '',
+  areaMin: '', areaMax: '',
+  siteTypes: [],
+  regions: [],
+  sites: [],
+  moveInDate: '', urgency: 'normal', assignee: '', nextContactDate: '', memo: '',
+  cascade: { p: '', d: '', w: '' },
+  guidedStep: 0,
+};
+
+/* ───────────────────────── 유틸 ───────────────────────── */
+function esc(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+/* 만원 → 한글 금액 힌트 */
+function formatMoney(v) {
+  const n = Number(v);
+  if (String(v).trim() === '' || Number.isNaN(n) || n <= 0) return '';
+  if (n >= 10000) {
+    const eok = Math.floor(n / 10000);
+    const rest = n % 10000;
+    if (rest === 0) return eok + '억';
+    if (rest % 1000 === 0) return eok + '.' + (rest / 1000) + '억';
+    return eok + '억 ' + rest.toLocaleString('ko-KR') + '만';
+  }
+  return n.toLocaleString('ko-KR') + '만';
+}
+
+/* 평 → ㎡ 힌트 */
+function formatArea(v) {
+  const n = Number(v);
+  if (String(v).trim() === '' || Number.isNaN(n) || n <= 0) return '';
+  return (Math.round((n / 0.3025) * 10) / 10) + '㎡';
+}
+
+function toast(msg, type) {
+  const root = document.getElementById('toast-root');
+  const el = document.createElement('div');
+  el.className = 'toast' + (type ? ' ' + type : '');
+  el.textContent = msg;
+  root.appendChild(el);
+  requestAnimationFrame(() => el.classList.add('show'));
+  setTimeout(() => {
+    el.classList.remove('show');
+    setTimeout(() => el.remove(), 250);
+  }, 2600);
+}
+
+/* 섹션 완료 상태 (실구현과 동일한 규칙) */
+function sectionComplete() {
+  const hasBudget = ['priceMin','priceMax','depositMin','depositMax','rentMin','rentMax','areaMin','areaMax']
+    .some((k) => state[k].trim() !== '');
+  return [
+    !!state.contact,
+    state.transactionType !== '' || hasBudget || state.siteTypes.length > 0,
+    state.regions.length > 0 || state.sites.length > 0,
+    state.moveInDate !== '' || state.nextContactDate !== '' || state.assignee !== '' || state.memo.trim() !== '',
+  ];
+}
+function completedCount() { return sectionComplete().filter(Boolean).length; }
+
+function txLabel(v) {
+  const t = TX_TYPES.find((x) => x.value === v);
+  return t ? t.label : '';
+}
+</script>
+<script>
+'use strict';
+
+/* ───────────────────────── 필드 렌더러 (3개 변형 공유) ───────────────────────── */
+function moneyField(field, placeholder) {
+  return `<div class="money-field">
+    <div class="input-wrap">
+      <input class="input" type="number" min="0" inputmode="numeric" data-field="${field}" value="${esc(state[field])}" placeholder="${placeholder}">
+      <span class="unit">만원</span>
+    </div>
+    <p class="hint" data-hint="${field}">${formatMoney(state[field])}</p>
+  </div>`;
+}
+
+function areaField(field, placeholder) {
+  return `<div class="area-field">
+    <div class="input-wrap area">
+      <input class="input" type="number" min="0" inputmode="decimal" data-field="${field}" value="${esc(state[field])}" placeholder="${placeholder}">
+      <span class="unit">평</span>
+    </div>
+    <p class="hint" data-hint="${field}">${formatArea(state[field])}</p>
+  </div>`;
+}
+
+function presetRow(presets, target) {
+  return `<div class="preset-row">
+    <span class="preset-label">빠른 입력:</span>
+    ${presets.map((p) => `<button type="button" class="preset" data-action="preset" data-target="${target}" data-min="${p.min}" data-max="${p.max}">${p.label}</button>`).join('')}
+  </div>`;
+}
+
+function renderContactArea() {
+  if (state.contact) {
+    return `<div class="contact-selected">
+      <span class="contact-chip"><b>${esc(state.contact.name)}</b><span class="phone">${esc(state.contact.phone)}</span></span>
+      <button type="button" class="btn-ghost" data-action="changeContact">변경</button>
+    </div>`;
+  }
+  return `<div class="search-wrap" data-search>
+    <span class="search-ic">⌕</span>
+    <input class="input" data-field="contactQuery" placeholder="고객명 또는 전화번호 검색" autocomplete="off">
+    <div class="dropdown" data-dd="contact"></div>
+  </div>`;
+}
+
+function renderTxChips() {
+  return `<div class="chip-row">${TX_TYPES.map((t) =>
+    `<button type="button" class="chip${state.transactionType === t.value ? ' on' : ''}" data-action="tx" data-value="${t.value}">${t.label}</button>`
+  ).join('')}</div>`;
+}
+
+function renderBudgetBlock() {
+  if (state.transactionType === 'monthly') {
+    return `<p class="sub-label">예산</p>
+    <div class="budget-monthly">
+      <div class="field">
+        <label>보증금 범위</label>
+        <div class="range-row">${moneyField('depositMin', '최소')}<span class="tilde">~</span>${moneyField('depositMax', '최대')}</div>
+        ${presetRow(DEPOSIT_PRESETS, 'deposit')}
+      </div>
+      <div class="field">
+        <label>월세 범위</label>
+        <div class="range-row">${moneyField('rentMin', '최소')}<span class="tilde">~</span>${moneyField('rentMax', '최대')}</div>
+        ${presetRow(RENT_PRESETS, 'rent')}
+      </div>
+    </div>`;
+  }
+  const label = state.transactionType === 'jeonse' ? '전세 보증금 범위' : '매매가 범위';
+  const presets = state.transactionType === 'jeonse' ? JEONSE_PRESETS : PRICE_PRESETS;
+  return `<p class="sub-label">예산</p>
+  <div class="budget-single">
+    <div class="field">
+      <label>${label}</label>
+      <div class="range-row">${moneyField('priceMin', '최소')}<span class="tilde">~</span>${moneyField('priceMax', '최대')}</div>
+      ${presetRow(presets, 'price')}
+    </div>
+  </div>`;
+}
+
+function renderAreaBlock() {
+  return `<p class="sub-label">면적</p>
+  <div class="area-inner">
+    <div class="field">
+      <label>공급평형</label>
+      <div class="range-row">${areaField('areaMin', '최소')}<span class="tilde">~</span>${areaField('areaMax', '최대')}</div>
+      ${presetRow(AREA_PRESETS, 'area')}
+    </div>
+  </div>`;
+}
+
+function renderSiteTypeChips() {
+  return `<div class="chip-row">${SITE_TYPES.map((t) =>
+    `<button type="button" class="chip${state.siteTypes.includes(t) ? ' on' : ''}" data-action="sitetype" data-value="${esc(t)}">${esc(t)}</button>`
+  ).join('')}</div>`;
+}
+
+function cascadeOptions(list, selected, placeholder) {
+  return `<option value="">${placeholder}</option>` + list.map((o) =>
+    `<option value="${o.code}"${selected === o.code ? ' selected' : ''}>${esc(o.name)}</option>`
+  ).join('');
+}
+
+function renderCascadeRow() {
+  const p = REGIONS.find((x) => x.code === state.cascade.p);
+  const dList = p ? p.districts : [];
+  const d = dList.find((x) => x.code === state.cascade.d);
+  const wList = d ? d.wards : [];
+  return `<div class="cascade-row">
+    <select class="input" data-field="cascadeProvince">${cascadeOptions(REGIONS, state.cascade.p, '시/도')}</select>
+    <select class="input" data-field="cascadeDistrict"${p ? '' : ' disabled'}>${cascadeOptions(dList, state.cascade.d, '시/군/구')}</select>
+    <select class="input" data-field="cascadeWard"${d ? '' : ' disabled'}>${cascadeOptions(wList, state.cascade.w, '읍/면/동')}</select>
+    <button type="button" class="btn btn-outline" data-action="addCascade"${p ? '' : ' disabled'}>＋ 추가</button>
+  </div>
+  <div class="search-wrap" data-search>
+    <span class="search-ic">⌕</span>
+    <input class="input" data-field="regionQuery" placeholder="또는 구/동 이름으로 검색 (예: 강동구, 고덕동)" autocomplete="off">
+    <div class="dropdown" data-dd="region"></div>
+  </div>`;
+}
+
+function renderRegionChips() {
+  if (state.regions.length === 0) return '';
+  return `<div class="chip-row" style="margin-top:8px">${state.regions.map((r) =>
+    `<span class="sel-chip region">${esc(r.label)}<button type="button" data-action="rmRegion" data-level="${r.level}" data-code="${r.code}">×</button></span>`
+  ).join('')}</div>`;
+}
+
+function renderSiteSearch() {
+  return `<div class="search-wrap" data-search>
+    <span class="search-ic">⌕</span>
+    <input class="input" data-field="siteQuery" placeholder="단지명 검색 (관리단지가 아니어도 선택 가능)" autocomplete="off">
+    <div class="dropdown" data-dd="site"></div>
+  </div>`;
+}
+
+function renderQuickPicks() {
+  const selected = new Set(state.sites.map((s) => s.id));
+  const picks = SITES.filter((s) => OFFICE_SITE_IDS.includes(s.id) && !selected.has(s.id)).slice(0, 8);
+  if (picks.length === 0) return '';
+  return `<div class="preset-row">
+    <span class="preset-label">관리단지 빠른 선택:</span>
+    ${picks.map((s) => `<button type="button" class="preset" data-action="quickSite" data-id="${s.id}">＋ ${esc(s.name)}</button>`).join('')}
+  </div>`;
+}
+
+function renderSiteChips() {
+  if (state.sites.length === 0) return '';
+  return `<div class="chip-row" style="margin-top:8px">${state.sites.map((s) =>
+    `<span class="sel-chip site">${esc(s.name)}<button type="button" data-action="rmSite" data-id="${s.id}">×</button></span>`
+  ).join('')}</div>`;
+}
+
+function renderNoScopeAlert() {
+  const noScope = state.siteTypes.length === 0 && state.regions.length === 0 && state.sites.length === 0;
+  if (!noScope) return '';
+  return `<div class="alert">지역·단지·매물유형이 모두 비어 있습니다. 저장은 가능하지만 매칭 후보 탐색이 어려워집니다.</div>`;
+}
+
+function renderScheduleGrid() {
+  return `<div class="schedule-grid">
+    <div class="field">
+      <label>입주 희망일</label>
+      <input class="input" type="date" data-field="moveInDate" value="${esc(state.moveInDate)}">
+    </div>
+    <div class="field">
+      <label>긴급도</label>
+      <div class="chip-row" style="padding-top:2px">${URGENCIES.map((u) =>
+        `<button type="button" class="chip${state.urgency === u.value ? ' on' : ''}" data-action="urgency" data-value="${u.value}">${u.label}</button>`
+      ).join('')}</div>
+    </div>
+    <div class="field">
+      <label>담당자</label>
+      <select class="input" data-field="assignee">
+        <option value="">미지정</option>
+        ${EMPLOYEES.map((e) => `<option value="${e.id}"${state.assignee === e.id ? ' selected' : ''}>${esc(e.name)}</option>`).join('')}
+      </select>
+    </div>
+    <div class="field">
+      <label>다음 연락일</label>
+      <input class="input" type="date" data-field="nextContactDate" value="${esc(state.nextContactDate)}">
+    </div>
+  </div>`;
+}
+
+function renderMemoField() {
+  return `<div class="field">
+    <label>요건 메모</label>
+    <textarea class="input" data-field="memo" placeholder="남향 필수, 고층 선호 등 추가 조건과 상담 배경">${esc(state.memo)}</textarea>
+  </div>`;
+}
+
+function renderProgress() {
+  const n = completedCount();
+  return `<div class="progress-meta"><span>구함 의뢰 입력</span><span class="cnt">${n}/4 섹션 입력됨</span></div>
+  <div class="progress-bar"><i style="width:${(n / 4) * 100}%"></i></div>`;
+}
+
+function sectionHead(step, title, opts) {
+  const o = opts || {};
+  const done = sectionComplete()[step];
+  return `<div class="section-head">
+    <span class="sec-dot${done ? ' done' : ''}" data-secdot="${step}">${done ? '✓' : step + 1}</span>
+    <h3>${title}${o.required ? ' <span class="req">*</span>' : ''}</h3>
+    ${o.desc ? `<span class="sec-desc">${o.desc}</span>` : ''}
+  </div>`;
+}
+
+/* ───────────────────────── 섹션 마크업 (공유) ───────────────────────── */
+function secContact() {
+  return `<section class="section">${sectionHead(0, '고객', { required: true })}
+    <div data-area="contact">${renderContactArea()}</div>
+  </section>`;
+}
+
+function secDeal() {
+  return `<section class="section">${sectionHead(1, '거래 조건', { desc: '예산과 면적은 범위로 입력' })}
+    <div class="field" style="margin-bottom:10px">
+      <label>거래유형</label>
+      <div data-area="txchips">${renderTxChips()}</div>
+    </div>
+    <div class="sub-panel" data-area="budget">${renderBudgetBlock()}</div>
+    <div class="sub-panel" style="margin-top:10px">${renderAreaBlock()}</div>
+    <div class="field" style="margin-top:10px">
+      <label>희망 매물유형</label>
+      <div data-area="sitechips">${renderSiteTypeChips()}</div>
+    </div>
+  </section>`;
+}
+
+function secRegion() {
+  return `<section class="section">${sectionHead(2, '희망 지역 · 단지', { desc: '지역은 검색 또는 단계별 선택' })}
+    <div class="field" style="margin-bottom:12px">
+      <label>희망 지역</label>
+      ${renderCascadeRow()}
+      <div data-area="regions">${renderRegionChips()}</div>
+    </div>
+    <div class="field">
+      <label>희망 단지 (전체 단지 검색)</label>
+      ${renderSiteSearch()}
+      <div data-area="quickpicks">${renderQuickPicks()}</div>
+      <div data-area="sites">${renderSiteChips()}</div>
+      <div data-area="noscope">${renderNoScopeAlert()}</div>
+    </div>
+  </section>`;
+}
+
+function secSchedule() {
+  return `<section class="section">${sectionHead(3, '일정 · 담당')}
+    ${renderScheduleGrid()}
+    <div style="margin-top:10px">${renderMemoField()}</div>
+  </section>`;
+}
+</script>
+<style>
+/* Compact 추가 밀도 조정 */
+.v-compact .schedule-grid { grid-template-columns: repeat(4, 1fr); }
+</style>
+<script>
+'use strict';
+
+/* ───────────────────────── 변형 1: Workbench ───────────────────────── */
+function abProgressText() { return completedCount() + '/4 섹션 입력됨'; }
+
+function renderWorkbench() {
+  return `<div class="page v-workbench" data-root="workbench">
+    <header class="page-head">
+      <div class="page-head-row">
+        <button type="button" class="back-btn" data-action="back" title="뒤로가기">←</button>
+        <div>
+          <h1>구함 의뢰 추가</h1>
+          <p class="desc">고객이 찾는 조건을 등록하면 보유 매물과 자동으로 매칭됩니다.</p>
+        </div>
+        <div class="progress-wrap" data-area="progress">${renderProgress()}</div>
+      </div>
+    </header>
+    <div class="wb-body">
+      <div class="wb-main">
+        ${secContact()}
+        ${secDeal()}
+      </div>
+      <aside class="wb-rail">
+        ${secRegion()}
+        ${secSchedule()}
+      </aside>
+    </div>
+    <div class="action-bar">
+      <span class="ab-progress" data-area="abprogress">${abProgressText()}</span>
+      <div class="ab-btns">
+        <button type="button" class="btn btn-outline" data-action="cancel">취소</button>
+        <button type="button" class="btn btn-primary" data-action="submit">구함 의뢰 등록</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+/* ───────────────────────── 변형 2: Guided ───────────────────────── */
+const GUIDED_STEPS = ['고객', '거래 조건', '희망 지역 · 단지', '일정 · 담당'];
+const GUIDED_CONTENT = [secContact, secDeal, secRegion, secSchedule];
+
+function renderSteps() {
+  const done = sectionComplete();
+  return GUIDED_STEPS.map((label, i) => {
+    const cls = i === state.guidedStep ? ' active' : (done[i] ? ' done' : '');
+    const mark = i === state.guidedStep ? String(i + 1) : (done[i] ? '✓' : String(i + 1));
+    return `${i > 0 ? '<span class="step-conn"></span>' : ''}
+    <div class="step${cls}">
+      <span class="step-circle">${mark}</span>
+      <span class="step-label">${label}</span>
+    </div>`;
+  }).join('');
+}
+
+function budgetSummaryText() {
+  const parts = [];
+  if (state.transactionType) parts.push(txLabel(state.transactionType));
+  const range = (a, b) => {
+    const fa = formatMoney(a), fb = formatMoney(b);
+    if (fa && fb) return fa + '~' + fb;
+    if (fa) return fa + '~';
+    if (fb) return '~' + fb;
+    return '';
+  };
+  if (state.transactionType === 'monthly') {
+    const d = range(state.depositMin, state.depositMax);
+    const r = range(state.rentMin, state.rentMax);
+    if (d) parts.push('보증금 ' + d);
+    if (r) parts.push('월세 ' + r);
+  } else {
+    const p = range(state.priceMin, state.priceMax);
+    if (p) parts.push(p);
+  }
+  if (state.areaMin || state.areaMax) {
+    parts.push((state.areaMin || '') + '~' + (state.areaMax || '') + '평');
+  }
+  if (state.siteTypes.length > 0) {
+    parts.push(state.siteTypes.length <= 2 ? state.siteTypes.join('·') : state.siteTypes[0] + ' 외 ' + (state.siteTypes.length - 1));
+  }
+  return parts.join(' · ');
+}
+
+function scopeSummaryText() {
+  const names = [...state.regions.map((r) => r.label), ...state.sites.map((s) => s.name)];
+  if (names.length === 0) return '';
+  return names.length <= 2 ? names.join(' · ') : names[0] + ' 외 ' + (names.length - 1) + '곳';
+}
+
+function renderGuidedSummary() {
+  const chips = [];
+  if (state.guidedStep > 0 && state.contact) {
+    chips.push({ step: 0, text: state.contact.name + ' ' + state.contact.phone });
+  }
+  if (state.guidedStep > 1) {
+    const t = budgetSummaryText();
+    if (t) chips.push({ step: 1, text: t });
+  }
+  if (state.guidedStep > 2) {
+    const t = scopeSummaryText();
+    if (t) chips.push({ step: 2, text: t });
+  }
+  return chips.map((c) =>
+    `<button type="button" class="sum-chip" data-action="goto" data-step="${c.step}"><span class="sum-step">${c.step + 1}</span>${esc(c.text)}</button>`
+  ).join('');
+}
+
+function renderGuidedStep() {
+  return `<div class="g-anim">${GUIDED_CONTENT[state.guidedStep]()}</div>`;
+}
+
+function renderGuidedNav() {
+  const last = state.guidedStep === GUIDED_STEPS.length - 1;
+  return `<span class="g-progress-note" data-area="gnote">${completedCount()}/4 섹션 입력됨</span>
+  <div class="nav-right">
+    <button type="button" class="btn btn-outline" data-action="gPrev"${state.guidedStep === 0 ? ' disabled' : ''}>이전</button>
+    ${last
+      ? '<button type="button" class="btn btn-primary" data-action="submit">구함 의뢰 등록</button>'
+      : '<button type="button" class="btn btn-primary" data-action="gNext">다음</button>'}
+  </div>`;
+}
+
+function renderGuided() {
+  return `<div class="page v-guided" data-root="guided">
+    <header class="page-head">
+      <div class="page-head-row">
+        <button type="button" class="back-btn" data-action="back" title="뒤로가기">←</button>
+        <div>
+          <h1>구함 의뢰 추가</h1>
+          <p class="desc">단계별로 조건을 입력합니다. 순서대로 진행해도, 건너뛰어도 됩니다.</p>
+        </div>
+      </div>
+    </header>
+    <div class="g-shell">
+      <div class="steps" data-area="steps">${renderSteps()}</div>
+      <div class="g-summary" data-area="gsummary">${renderGuidedSummary()}</div>
+      <div class="g-body" data-area="guided">${renderGuidedStep()}</div>
+      <div class="g-nav" data-area="gnav">${renderGuidedNav()}</div>
+    </div>
+  </div>`;
+}
+
+function setGuidedStep(root, i) {
+  state.guidedStep = Math.max(0, Math.min(GUIDED_STEPS.length - 1, i));
+  setArea(root, 'guided', renderGuidedStep());
+  setArea(root, 'steps', renderSteps());
+  setArea(root, 'gsummary', renderGuidedSummary());
+  setArea(root, 'gnav', renderGuidedNav());
+}
+
+/* ───────────────────────── 변형 3: Compact ───────────────────────── */
+function compactSecHead(step, title, opts) {
+  const o = opts || {};
+  const done = sectionComplete()[step];
+  return `<div class="cp-sec">
+    <span class="sec-dot${done ? ' done' : ''}" data-secdot="${step}">${done ? '✓' : step + 1}</span>
+    ${title}${o.required ? ' <span class="req">*</span>' : ''}
+    ${o.desc ? `<span class="sec-desc">${o.desc}</span>` : ''}
+  </div>`;
+}
+
+function renderCompact() {
+  return `<div class="page v-compact" data-root="compact">
+    <header class="page-head">
+      <div class="page-head-row">
+        <button type="button" class="back-btn" data-action="back" title="뒤로가기">←</button>
+        <div><h1>구함 의뢰 추가</h1></div>
+        <div class="progress-wrap" data-area="progress">${renderProgress()}</div>
+      </div>
+    </header>
+    <div class="cp-body"><div class="cp-grid">
+      ${compactSecHead(0, '고객', { required: true })}
+      <div class="span6" data-area="contact">${renderContactArea()}</div>
+
+      ${compactSecHead(1, '거래 조건', { desc: '예산과 면적은 범위로 입력' })}
+      <div class="field span2">
+        <label>거래유형</label>
+        <div data-area="txchips">${renderTxChips()}</div>
+      </div>
+      <div class="field span4">
+        <label>희망 매물유형</label>
+        <div data-area="sitechips">${renderSiteTypeChips()}</div>
+      </div>
+      <div class="sub-panel span6" data-area="budget">${renderBudgetBlock()}</div>
+      <div class="sub-panel span6" data-area="area">${renderAreaBlock()}</div>
+
+      ${compactSecHead(2, '희망 지역 · 단지', { desc: '지역은 검색 또는 단계별 선택' })}
+      <div class="field span6">
+        <label>희망 지역</label>
+        ${renderCascadeRow()}
+        <div data-area="regions">${renderRegionChips()}</div>
+      </div>
+      <div class="field span6">
+        <label>희망 단지 (전체 단지 검색)</label>
+        ${renderSiteSearch()}
+        <div data-area="quickpicks">${renderQuickPicks()}</div>
+        <div data-area="sites">${renderSiteChips()}</div>
+        <div data-area="noscope">${renderNoScopeAlert()}</div>
+      </div>
+
+      ${compactSecHead(3, '일정 · 담당')}
+      <div class="span6">${renderScheduleGrid()}</div>
+      <div class="span6">${renderMemoField()}</div>
+    </div></div>
+    <div class="action-bar">
+      <span class="ab-progress" data-area="abprogress">${abProgressText()}</span>
+      <div class="ab-btns">
+        <button type="button" class="btn btn-outline" data-action="cancel">취소</button>
+        <button type="button" class="btn btn-primary" data-action="submit">구함 의뢰 등록</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+/* ───────────────────────── 동적 갱신 ───────────────────────── */
+function setArea(root, name, html) {
+  root.querySelectorAll('[data-area="' + name + '"]').forEach((el) => { el.innerHTML = html; });
+}
+
+function sectionHeadDone(step) { return sectionComplete()[step]; }
+
+function updateProgressUI(root) {
+  setArea(root, 'progress', renderProgress());
+  setArea(root, 'abprogress', abProgressText());
+  root.querySelectorAll('[data-secdot]').forEach((el) => {
+    const i = Number(el.dataset.secdot);
+    const done = sectionComplete()[i];
+    el.classList.toggle('done', done);
+    el.textContent = done ? '✓' : String(i + 1);
+  });
+  if (root.dataset.root === 'guided') {
+    setArea(root, 'steps', renderSteps());
+    setArea(root, 'gnav', renderGuidedNav());
+    setArea(root, 'gsummary', renderGuidedSummary());
+  }
+}
+
+/* 값이 바뀐 숫자 입력을 DOM에 반영 (프리셋용 — 포커스는 버튼에 있으므로 안전) */
+function syncNumberFields(root, fields, fmt) {
+  for (const f of fields) {
+    root.querySelectorAll('[data-field="' + f + '"]').forEach((el) => { el.value = state[f]; });
+    root.querySelectorAll('[data-hint="' + f + '"]').forEach((el) => { el.textContent = fmt(state[f]); });
+  }
+}
+
+/* 캐스케이드 셀렉트 옵션 채우기 (제자리 갱신) */
+function fillCascadeSelect(sel, list, selected, placeholder) {
+  sel.innerHTML = cascadeOptions(list, selected, placeholder);
+}
+</script>
+<script>
+'use strict';
+
+/* ───────────────────────── 이벤트 위임 (stage는 재마운트돼도 유지되는 요소) ───────────────────────── */
+const stageEl = document.getElementById('stage');
+
+function dropdownFor(input, kind) {
+  const wrap = input.closest('[data-search]');
+  return wrap ? wrap.querySelector('[data-dd="' + kind + '"]') : null;
+}
+
+function renderContactDropdown(input) {
+  const dd = dropdownFor(input, 'contact');
+  if (!dd) return;
+  const q = input.value.trim();
+  if (q.length < 1) { dd.innerHTML = ''; return; }
+  const qDigits = q.replace(/[^0-9]/g, '');
+  const hits = CONTACTS.filter((c) =>
+    c.name.includes(q) || (qDigits.length > 0 && c.phone.replace(/[^0-9]/g, '').includes(qDigits))
+  );
+  dd.innerHTML = hits.length === 0
+    ? '<p class="dd-empty">검색 결과가 없습니다</p>'
+    : hits.map((c) =>
+        `<button type="button" class="dd-item" data-action="pickContact" data-id="${c.id}"><span>${esc(c.name)}</span><span class="dd-meta">${esc(c.phone)}</span></button>`
+      ).join('');
+}
+
+function renderRegionDropdown(input) {
+  const dd = dropdownFor(input, 'region');
+  if (!dd) return;
+  const q = input.value.trim();
+  if (q.length < 1) { dd.innerHTML = ''; return; }
+  const hits = REGION_FLAT.filter((r) => r.name.includes(q) || r.fullName.includes(q)).slice(0, 10);
+  if (hits.length === 0) { dd.innerHTML = '<p class="dd-empty">검색 결과가 없습니다</p>'; return; }
+  const levelLabel = { ward: '읍면동', district: '시군구', province: '시도' };
+  dd.innerHTML = hits.map((r) =>
+    `<button type="button" class="dd-item" data-action="pickRegion" data-level="${r.level}" data-code="${r.code}" data-label="${esc(r.fullName)}"><span>${esc(r.fullName)}</span><span class="dd-meta">${levelLabel[r.level]}</span></button>`
+  ).join('');
+}
+
+function renderSiteDropdown(input) {
+  const dd = dropdownFor(input, 'site');
+  if (!dd) return;
+  const q = input.value.trim();
+  if (q.length < 1) { dd.innerHTML = ''; return; }
+  const hits = SITES.filter((s) => s.name.includes(q)).slice(0, 12);
+  dd.innerHTML = hits.length === 0
+    ? '<p class="dd-empty">검색 결과가 없습니다</p>'
+    : hits.map((s) =>
+        `<button type="button" class="dd-item" data-action="pickSite" data-id="${s.id}"><span>${esc(s.name)}</span><span class="dd-meta">${esc(s.address)}</span></button>`
+      ).join('');
+}
+
+/* 입력 */
+stageEl.addEventListener('input', (e) => {
+  const f = e.target.dataset && e.target.dataset.field;
+  if (!f) return;
+  const root = e.target.closest('[data-root]');
+  const v = e.target.value;
+  switch (f) {
+    case 'contactQuery': renderContactDropdown(e.target); break;
+    case 'regionQuery': renderRegionDropdown(e.target); break;
+    case 'siteQuery': renderSiteDropdown(e.target); break;
+    case 'priceMin': case 'priceMax': case 'depositMin': case 'depositMax': case 'rentMin': case 'rentMax': {
+      state[f] = v;
+      const hint = root.querySelector('[data-hint="' + f + '"]');
+      if (hint) hint.textContent = formatMoney(v);
+      updateProgressUI(root);
+      break;
+    }
+    case 'areaMin': case 'areaMax': {
+      state[f] = v;
+      const hint = root.querySelector('[data-hint="' + f + '"]');
+      if (hint) hint.textContent = formatArea(v);
+      updateProgressUI(root);
+      break;
+    }
+    case 'moveInDate': case 'nextContactDate': case 'memo': {
+      state[f] = v;
+      updateProgressUI(root);
+      break;
+    }
+  }
+});
+
+/* 셀렉트 */
+stageEl.addEventListener('change', (e) => {
+  const f = e.target.dataset && e.target.dataset.field;
+  if (!f || e.target.tagName !== 'SELECT') return;
+  const root = e.target.closest('[data-root]');
+  if (f === 'cascadeProvince') {
+    state.cascade = { p: e.target.value, d: '', w: '' };
+    const p = REGIONS.find((x) => x.code === state.cascade.p);
+    const row = e.target.closest('.cascade-row');
+    const dSel = row.querySelector('[data-field="cascadeDistrict"]');
+    const wSel = row.querySelector('[data-field="cascadeWard"]');
+    fillCascadeSelect(dSel, p ? p.districts : [], '', '시/군/구');
+    dSel.disabled = !p;
+    fillCascadeSelect(wSel, [], '', '읍/면/동');
+    wSel.disabled = true;
+    row.querySelector('[data-action="addCascade"]').disabled = !p;
+  } else if (f === 'cascadeDistrict') {
+    state.cascade.d = e.target.value;
+    state.cascade.w = '';
+    const p = REGIONS.find((x) => x.code === state.cascade.p);
+    const d = p && p.districts.find((x) => x.code === state.cascade.d);
+    const row = e.target.closest('.cascade-row');
+    const wSel = row.querySelector('[data-field="cascadeWard"]');
+    fillCascadeSelect(wSel, d ? d.wards : [], '', '읍/면/동');
+    wSel.disabled = !d;
+  } else if (f === 'cascadeWard') {
+    state.cascade.w = e.target.value;
+  } else if (f === 'assignee') {
+    state.assignee = e.target.value;
+    updateProgressUI(root);
+  }
+});
+
+/* 지역 추가 공통 */
+function addRegion(root, sel) {
+  if (state.regions.some((x) => x.level === sel.level && x.code === sel.code)) return;
+  state.regions.push(sel);
+  setArea(root, 'regions', renderRegionChips());
+  setArea(root, 'noscope', renderNoScopeAlert());
+  updateProgressUI(root);
+}
+
+/* 클릭 액션 */
+stageEl.addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-action]');
+  if (!btn || !stageEl.contains(btn)) return;
+  const root = btn.closest('[data-root]');
+  const action = btn.dataset.action;
+
+  switch (action) {
+    case 'tx': {
+      const v = btn.dataset.value;
+      state.transactionType = state.transactionType === v ? '' : v;
+      setArea(root, 'txchips', renderTxChips());
+      setArea(root, 'budget', renderBudgetBlock());
+      updateProgressUI(root);
+      break;
+    }
+    case 'sitetype': {
+      const v = btn.dataset.value;
+      state.siteTypes = state.siteTypes.includes(v)
+        ? state.siteTypes.filter((t) => t !== v)
+        : [...state.siteTypes, v];
+      btn.classList.toggle('on', state.siteTypes.includes(v));
+      setArea(root, 'noscope', renderNoScopeAlert());
+      updateProgressUI(root);
+      break;
+    }
+    case 'urgency': {
+      state.urgency = btn.dataset.value;
+      btn.closest('.chip-row').querySelectorAll('.chip').forEach((c) => c.classList.toggle('on', c === btn));
+      break;
+    }
+    case 'preset': {
+      const t = btn.dataset.target;
+      const map = {
+        price: ['priceMin', 'priceMax'],
+        deposit: ['depositMin', 'depositMax'],
+        rent: ['rentMin', 'rentMax'],
+        area: ['areaMin', 'areaMax'],
+      };
+      const fields = map[t];
+      state[fields[0]] = btn.dataset.min;
+      state[fields[1]] = btn.dataset.max;
+      syncNumberFields(root, fields, t === 'area' ? formatArea : formatMoney);
+      updateProgressUI(root);
+      break;
+    }
+    case 'pickContact': {
+      state.contact = CONTACTS.find((c) => c.id === btn.dataset.id) || null;
+      setArea(root, 'contact', renderContactArea());
+      updateProgressUI(root);
+      break;
+    }
+    case 'changeContact': {
+      state.contact = null;
+      setArea(root, 'contact', renderContactArea());
+      updateProgressUI(root);
+      const input = root.querySelector('[data-field="contactQuery"]');
+      if (input) input.focus();
+      break;
+    }
+    case 'pickRegion': {
+      addRegion(root, { level: btn.dataset.level, code: btn.dataset.code, label: btn.dataset.label });
+      const wrap = btn.closest('[data-search]');
+      wrap.querySelector('[data-field="regionQuery"]').value = '';
+      wrap.querySelector('[data-dd="region"]').innerHTML = '';
+      break;
+    }
+    case 'rmRegion': {
+      state.regions = state.regions.filter((x) => !(x.level === btn.dataset.level && x.code === btn.dataset.code));
+      setArea(root, 'regions', renderRegionChips());
+      setArea(root, 'noscope', renderNoScopeAlert());
+      updateProgressUI(root);
+      break;
+    }
+    case 'addCascade': {
+      const { p, d, w } = state.cascade;
+      const pv = REGIONS.find((x) => x.code === p);
+      if (!pv) break;
+      const dv = pv.districts.find((x) => x.code === d);
+      const wv = dv && dv.wards.find((x) => x.code === w);
+      if (wv) addRegion(root, { level: 'ward', code: wv.code, label: pv.name.replace(/(특별시|광역시|도)$/, '') + ' ' + dv.name + ' ' + wv.name });
+      else if (dv) addRegion(root, { level: 'district', code: dv.code, label: pv.name.replace(/(특별시|광역시|도)$/, '') + ' ' + dv.name });
+      else addRegion(root, { level: 'province', code: pv.code, label: pv.name });
+      /* 선택 초기화: 하위 단계 리셋 */
+      const row = root.querySelector('.cascade-row');
+      if (row && wv) {
+        state.cascade.w = '';
+        row.querySelector('[data-field="cascadeWard"]').value = '';
+      } else if (row && dv) {
+        state.cascade.d = ''; state.cascade.w = '';
+        row.querySelector('[data-field="cascadeDistrict"]').value = '';
+        const wSel = row.querySelector('[data-field="cascadeWard"]');
+        fillCascadeSelect(wSel, [], '', '읍/면/동');
+        wSel.disabled = true;
+      }
+      break;
+    }
+    case 'pickSite': case 'quickSite': {
+      const s = SITES.find((x) => x.id === btn.dataset.id);
+      if (s && !state.sites.some((x) => x.id === s.id)) {
+        state.sites.push(s);
+        setArea(root, 'sites', renderSiteChips());
+        setArea(root, 'quickpicks', renderQuickPicks());
+        setArea(root, 'noscope', renderNoScopeAlert());
+        updateProgressUI(root);
+      }
+      if (action === 'pickSite') {
+        const wrap = btn.closest('[data-search]');
+        wrap.querySelector('[data-field="siteQuery"]').value = '';
+        wrap.querySelector('[data-dd="site"]').innerHTML = '';
+      }
+      break;
+    }
+    case 'rmSite': {
+      state.sites = state.sites.filter((x) => x.id !== btn.dataset.id);
+      setArea(root, 'sites', renderSiteChips());
+      setArea(root, 'quickpicks', renderQuickPicks());
+      setArea(root, 'noscope', renderNoScopeAlert());
+      updateProgressUI(root);
+      break;
+    }
+    case 'gPrev': setGuidedStep(root, state.guidedStep - 1); break;
+    case 'gNext': setGuidedStep(root, state.guidedStep + 1); break;
+    case 'goto': setGuidedStep(root, Number(btn.dataset.step)); break;
+    case 'submit': handleSubmit(); break;
+    case 'cancel': toast('작성을 취소하고 구함 의뢰 목록으로 돌아갑니다.'); break;
+    case 'back': toast('구함 의뢰 목록으로 돌아갑니다.'); break;
+  }
+});
+
+/* 바깥 클릭 시 드롭다운 닫기 */
+document.addEventListener('click', (e) => {
+  if (e.target.closest('[data-search]')) return;
+  stageEl.querySelectorAll('.dropdown').forEach((d) => { d.innerHTML = ''; });
+});
+
+/* ───────────────────────── 제출 검증 ───────────────────────── */
+function handleSubmit() {
+  if (!state.contact) {
+    toast('고객을 먼저 선택해주세요.', 'error');
+    return;
+  }
+  const num = (s) => {
+    const t = s.trim();
+    if (t === '') return null;
+    const n = Number(t);
+    return Number.isNaN(n) || n < 0 ? null : n;
+  };
+  const pairs = [
+    [num(state.priceMin), num(state.priceMax), '예산'],
+    [num(state.depositMin), num(state.depositMax), '보증금'],
+    [num(state.rentMin), num(state.rentMax), '월세'],
+    [num(state.areaMin), num(state.areaMax), '공급평형'],
+  ];
+  for (const [min, max, label] of pairs) {
+    if (min != null && max != null && min > max) {
+      toast(label + ' 범위가 올바르지 않습니다. (최소값 ≤ 최대값)', 'error');
+      return;
+    }
+  }
+  toast(state.contact.name + ' 고객의 구함 의뢰가 등록되었습니다.', 'success');
+}
+</script>
+<script>
+'use strict';
+/* ───────────────────────── 피커 배선 (spec verbatim) ───────────────────────── */
+// `variants` is an array of render functions, one per variant, in picker order.
+const variants = [renderWorkbench, renderGuided, renderCompact];
+const stage = document.getElementById('stage');
+const picker = document.querySelector('.proto-picker');
+const highlight = picker.querySelector('.proto-picker-highlight');
+const items = [...picker.querySelectorAll('.proto-picker-item:not(.proto-picker-replay)')];
+const replay = picker.querySelector('.proto-picker-replay');
+let current = 0;
+
+function moveHighlight() {
+  const el = items[current];
+  highlight.style.width = el.offsetWidth + 'px';
+  highlight.style.transform = `translateX(${el.offsetLeft}px)`;
+}
+
+function mount(i) {
+  stage.innerHTML = '';
+  // Clear first, render next frame, so entrance animations re-run.
+  requestAnimationFrame(() => { stage.innerHTML = variants[i](); });
+}
+
+function setActive(i) {
+  if (i < 0 || i >= variants.length) return;
+  current = i;
+  items.forEach((el, j) => {
+    el.toggleAttribute('data-active', j === i);
+    if (j === i) el.setAttribute('aria-current', 'true');
+    else el.removeAttribute('aria-current');
+  });
+  moveHighlight();
+  const url = new URL(location);
+  url.searchParams.set('v', i + 1);
+  history.replaceState(null, '', url);
+  mount(i);
+}
+
+items.forEach((el, i) => el.addEventListener('click', () => setActive(i)));
+replay?.addEventListener('click', () => mount(current));
+window.addEventListener('resize', moveHighlight);
+
+document.addEventListener('keydown', (e) => {
+  if (/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName) || e.target.isContentEditable) return;
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  const num = parseInt(e.key, 10);
+  if (num >= 1 && num <= variants.length) setActive(num - 1);
+  else if (e.key === 'ArrowRight') setActive((current + 1) % variants.length);
+  else if (e.key === 'ArrowLeft') setActive((current - 1 + variants.length) % variants.length);
+  else if (e.key === 'r' || e.key === 'R') mount(current);
+});
+
+setActive((parseInt(new URLSearchParams(location.search).get('v'), 10) || 1) - 1);
+// Enable the slide only after first paint, so load doesn't animate.
+requestAnimationFrame(() => requestAnimationFrame(() => picker.setAttribute('data-ready', '')));
+</script>
+</body>
+</html>

@@ -37,10 +37,11 @@ model ListingAdvertisementSnapshotSession {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  office      Office                             @relation(fields: [officeId], references: [id])
-  startedBy   User                               @relation("ListingAdvertisementSnapshotStartedBy", fields: [startedById], references: [id])
-  completedBy User?                              @relation("ListingAdvertisementSnapshotCompletedBy", fields: [completedById], references: [id])
-  items       ListingAdvertisementSnapshotItem[]
+  office         Office                             @relation(fields: [officeId], references: [id])
+  startedBy      User                               @relation("ListingAdvertisementSnapshotStartedBy", fields: [startedById], references: [id])
+  completedBy    User?                              @relation("ListingAdvertisementSnapshotCompletedBy", fields: [completedById], references: [id])
+  items          ListingAdvertisementSnapshotItem[]
+  priceHistories ListingAdvertisementPriceHistory[]
 
   @@unique([officeId, channel, manifestHash], map: "listing_ad_snapshot_session_identity_key")
   @@index([officeId, channel, status], map: "listing_ad_snapshot_session_channel_status_idx")
@@ -49,6 +50,8 @@ model ListingAdvertisementSnapshotSession {
 }
 
 model ListingAdvertisementSnapshotItem {
+  // 업로드·manifest 검증·원장 반영 중에만 존재하는 임시 staging row다.
+  // completed 세션은 Session의 hash/count 영수증만 남기고 Item을 모두 삭제한다.
   id        String @id @default(uuid()) @db.Uuid
   officeId  String @map("office_id") @db.Uuid
   sessionId String @map("session_id") @db.Uuid

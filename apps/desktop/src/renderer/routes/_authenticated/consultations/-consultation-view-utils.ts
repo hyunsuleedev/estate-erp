@@ -35,8 +35,7 @@ export interface ConsultationContextCard {
     | '/properties/$id'
     | '/properties'
     | '/matches'
-    | '/buyer-requirements/$id'
-    | '/buyer-requirements';
+    | '/buyer-requirements/$id';
   params?: { id: string };
   /** 매칭 딥링크 (?matchId=) — /matches 페이지가 자동으로 상세를 연다 */
   search?: { matchId: string };

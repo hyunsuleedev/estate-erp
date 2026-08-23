@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Lock, MoreVertical, PhoneCall, Trash2, XCircle } from 'lucide-react';
+import { Lock, MoreVertical, PhoneCall, Trash2 } from 'lucide-react';
 import type { ListingIntake } from '@estate-erp/api-client';
 import {
   IntakeCheckResult,
@@ -89,10 +89,22 @@ const CONFIRM_RESULTS = [
   },
   {
     value: 'unavailable',
-    label: '거래 불가 / 매물 없어짐',
-    description: '저장하면 의뢰가 자동으로 종결 처리됩니다.',
+    label: '의뢰 종료',
+    description: '종결 사유를 선택하면 의뢰가 자동으로 종료됩니다.',
   },
 ] as const;
+
+const CONFIRM_CLOSED_REASON_OPTIONS = [
+  {
+    value: IntakeClosedReason.EXTERNAL_DEAL_COMPLETED,
+    label: '다른 중개사·직거래로 계약됨',
+  },
+  { value: IntakeClosedReason.WITHDRAWN, label: '의뢰 철회' },
+  { value: IntakeClosedReason.OTHER, label: '기타' },
+] as const;
+
+type ConfirmClosedReason =
+  (typeof CONFIRM_CLOSED_REASON_OPTIONS)[number]['value'];
 
 const CONFIRM_CHANNELS = [
   { value: 'phone', label: '전화' },
@@ -118,11 +130,15 @@ export function IntakeConfirmDialog({
   const [channel, setChannel] = useState<string>('phone');
   const [memo, setMemo] = useState('');
   const [nextConfirmAt, setNextConfirmAt] = useState('');
+  const [closedReason, setClosedReason] =
+    useState<ConfirmClosedReason | null>(null);
 
   const mutation = useMutation({
     mutationFn: () =>
       api.listingIntakes.confirm(intake.id, {
         result,
+        closedReason:
+          result === IntakeCheckResult.UNAVAILABLE ? closedReason : undefined,
         channel,
         memo: memo.trim() || undefined,
         nextConfirmAt: nextConfirmAt || undefined,
@@ -135,6 +151,7 @@ export function IntakeConfirmDialog({
       setChannel('phone');
       setMemo('');
       setNextConfirmAt('');
+      setClosedReason(null);
     },
     onError: (error: Error) => {
       toast.error(error.message || '확인 기록 저장에 실패했습니다.');
@@ -184,6 +201,36 @@ export function IntakeConfirmDialog({
             </RadioGroup>
           </div>
 
+          {result === IntakeCheckResult.UNAVAILABLE && (
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium text-muted-foreground">
+                종결 사유 *
+              </Label>
+              <RadioGroup
+                value={closedReason ?? undefined}
+                onValueChange={(value) =>
+                  setClosedReason(value as ConfirmClosedReason)
+                }
+                className="gap-1.5"
+              >
+                {CONFIRM_CLOSED_REASON_OPTIONS.map((option) => (
+                  <label
+                    key={option.value}
+                    className={cn(
+                      'flex cursor-pointer items-center gap-2.5 rounded-md border px-3 py-2 transition-colors',
+                      closedReason === option.value
+                        ? 'border-destructive/50 bg-destructive/5'
+                        : 'border-border hover:bg-muted/50',
+                    )}
+                  >
+                    <RadioGroupItem value={option.value} />
+                    <span className="text-sm font-medium">{option.label}</span>
+                  </label>
+                ))}
+              </RadioGroup>
+            </div>
+          )}
+
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label className="text-xs font-medium text-muted-foreground">확인 방법</Label>
@@ -230,7 +277,13 @@ export function IntakeConfirmDialog({
           >
             취소
           </Button>
-          <Button disabled={mutation.isPending} onClick={() => mutation.mutate()}>
+          <Button
+            disabled={
+              mutation.isPending ||
+              (result === IntakeCheckResult.UNAVAILABLE && !closedReason)
+            }
+            onClick={() => mutation.mutate()}
+          >
             {mutation.isPending ? '저장 중...' : '확인 기록 저장'}
           </Button>
         </DialogFooter>
@@ -250,25 +303,7 @@ export function PropertyRowActions({
 }) {
   const invalidate = useInvalidatePropertyLists();
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const [closeOpen, setCloseOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<RowActionListing | null>(null);
-
-  const closeMutation = useMutation({
-    mutationFn: (intakeId: string) =>
-      api.listingIntakes.updateLifecycleStatus(
-        intakeId,
-        IntakeLifecycleStatus.CLOSED,
-        { closedReason: IntakeClosedReason.WITHDRAWN },
-      ),
-    onSuccess: () => {
-      toast.success('의뢰를 종결 처리했습니다.');
-      invalidate();
-      setCloseOpen(false);
-    },
-    onError: (error: Error) => {
-      toast.error(error.message || '의뢰 종결 처리에 실패했습니다.');
-    },
-  });
 
   const deleteMutation = useMutation({
     mutationFn: (listingId: string) => api.listings.remove(listingId),
@@ -303,12 +338,6 @@ export function PropertyRowActions({
                 <PhoneCall className="size-3.5" />
                 확인 기록...
               </DropdownMenuItem>
-              {intake.lifecycleStatus !== IntakeLifecycleStatus.CLOSED && (
-                <DropdownMenuItem onSelect={() => setCloseOpen(true)}>
-                  <XCircle className="size-3.5" />
-                  의뢰 종결 처리...
-                </DropdownMenuItem>
-              )}
               <DropdownMenuSeparator />
             </>
           )}
@@ -330,19 +359,6 @@ export function PropertyRowActions({
 
       {intake && (
         <IntakeConfirmDialog intake={intake} open={confirmOpen} onOpenChange={setConfirmOpen} />
-      )}
-
-      {intake && (
-        <ConfirmDialog
-          open={closeOpen}
-          onOpenChange={setCloseOpen}
-          title="의뢰 종결 처리"
-          description="이 호실의 의뢰를 종결 상태로 변경합니다. 연결된 거래 카드는 삭제되지 않습니다."
-          confirmLabel="종결 처리"
-          destructive
-          loading={closeMutation.isPending}
-          onConfirm={() => closeMutation.mutate(intake.id)}
-        />
       )}
 
       <ConfirmDialog
@@ -370,7 +386,6 @@ export function PropertyRowActions({
 const BULK_LIFECYCLE_VALUES = [
   IntakeLifecycleStatus.OPEN,
   IntakeLifecycleStatus.HOLD,
-  IntakeLifecycleStatus.CLOSED,
 ] as const;
 
 export function PropertyBulkActions({ groups }: { groups: BulkActionGroup[] }) {
@@ -396,10 +411,7 @@ export function PropertyBulkActions({ groups }: { groups: BulkActionGroup[] }) {
       const results = await Promise.allSettled(
         intakeIds.map((id) =>
           api.listingIntakes.updateLifecycleStatus(id, status, {
-            closedReason:
-              status === IntakeLifecycleStatus.CLOSED
-                ? IntakeClosedReason.WITHDRAWN
-                : null,
+            closedReason: null,
           }),
         ),
       );

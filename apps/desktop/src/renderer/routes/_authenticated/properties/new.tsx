@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from '@tanstack/react-router';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Building2, Check, ChevronsUpDown, Search } from 'lucide-react';
@@ -28,9 +28,10 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { useTabStore } from '@/features/tabs/store/useTabStore';
+import { useTabScopedState } from '@/features/tabs/hooks/useTabScopedState';
 import { getRouteMeta } from '@/features/tabs/lib/routeMeta';
+import { tabResourceKeys } from '@/features/tabs/lib/tabResource';
 import {
-  getNewPropertySuccessTabAction,
   toggleTransactionType,
   type NewPropertyTransactionType,
 } from './-new-property-view-utils';
@@ -176,12 +177,22 @@ const initialForm: FormState = {
 function NewPropertyPage() {
   const queryClient = useQueryClient();
   const activeTabId = useTabStore((s) => s.activeTabId);
-  const openTab = useTabStore((s) => s.openTab);
+  const replaceTabResource = useTabStore((s) => s.replaceTabResource);
+  const openOrRevealResource = useTabStore((s) => s.openOrRevealResource);
+  const openModule = useTabStore((s) => s.openModule);
   const closeTab = useTabStore((s) => s.closeTab);
+  // 저장 요청 도중 사용자가 다른 탭으로 전환해도 이 draft의 탭만 전환한다.
+  const ownerTabIdRef = useRef(activeTabId);
   const searchParams = Route.useSearch();
-  const [form, setForm] = useState<FormState>(initialForm);
+  const [form, setForm] = useTabScopedState<FormState>(
+    'property-new:form:v1',
+    initialForm,
+  );
   const [error, setError] = useState('');
-  const [prefillApplied, setPrefillApplied] = useState(false);
+  const [prefillApplied, setPrefillApplied] = useTabScopedState(
+    'property-new:prefill-applied:v1',
+    false,
+  );
 
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) =>
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -245,6 +256,10 @@ function NewPropertyPage() {
     () => units?.find((u) => u.id === form.unitId),
     [units, form.unitId],
   );
+  const selectedUnitRoomCount =
+    selectedUnit?.roomCount ?? selectedUnit?.siteUnitType?.roomCount;
+  const selectedUnitBathRoomCount =
+    selectedUnit?.bathRoomCount ?? selectedUnit?.siteUnitType?.bathRoomCount;
   const selectedDong = useMemo(
     () => visibleDongs.find((dong) => dong.id === effectiveDongId) ?? null,
     [effectiveDongId, visibleDongs],
@@ -375,14 +390,23 @@ function NewPropertyPage() {
       queryClient.invalidateQueries({ queryKey: ['listings'] });
       queryClient.invalidateQueries({ queryKey: ['listing-intakes'] });
       toast.success('매물이 등록되었습니다.');
-      const action = getNewPropertySuccessTabAction({
-        propertyId: property.id,
-        registrationTabId: activeTabId,
-      });
-      const meta = getRouteMeta(action.detailRoute);
-      openTab({ route: action.detailRoute, kind: meta.kind, title: meta.title });
-      if (action.closeTabId) {
-        closeTab(action.closeTabId);
+      const detailRoute = `/properties/${property.id}`;
+      const meta = getRouteMeta(detailRoute);
+      const resourceKey = tabResourceKeys.entity('property', property.id);
+      if (ownerTabIdRef.current) {
+        replaceTabResource(ownerTabIdRef.current, {
+          route: detailRoute,
+          kind: meta.kind,
+          title: meta.title,
+          resourceKey,
+        });
+      } else {
+        openOrRevealResource({
+          route: detailRoute,
+          kind: meta.kind,
+          title: meta.title,
+          resourceKey,
+        });
       }
     },
     onError: (e: Error) => {
@@ -393,12 +417,12 @@ function NewPropertyPage() {
 
   const submitLabel = existingProperty ? '기존 매물에 거래 추가' : '매물 등록';
   const handleCancel = () => {
-    if (activeTabId) {
-      closeTab(activeTabId);
+    if (ownerTabIdRef.current) {
+      closeTab(ownerTabIdRef.current);
       return;
     }
     const meta = getRouteMeta('/properties');
-    openTab({ route: '/properties', kind: meta.kind, title: meta.title });
+    openModule({ route: '/properties', kind: meta.kind, title: meta.title });
   };
 
   return (
@@ -525,11 +549,11 @@ function NewPropertyPage() {
                           ({Number(selectedUnit.siteUnitType.exclusiveAreaM2).toFixed(1)}m²)
                         </>
                       )}
-                      {selectedUnit.siteUnitType?.roomCount != null && (
-                        <> · {selectedUnit.siteUnitType.roomCount}룸</>
+                      {selectedUnitRoomCount != null && (
+                        <> · {selectedUnitRoomCount}룸</>
                       )}
-                      {selectedUnit.siteUnitType?.bathRoomCount != null && (
-                        <>/{selectedUnit.siteUnitType.bathRoomCount}욕실</>
+                      {selectedUnitBathRoomCount != null && (
+                        <>/{selectedUnitBathRoomCount}욕실</>
                       )}
                     </p>
                   )}

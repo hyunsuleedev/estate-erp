@@ -61,6 +61,8 @@ export class UnitsController {
       lineNo?: number;
       exclusiveAreaM2?: number | null;
       supplyAreaM2?: number | null;
+      roomCount?: number | null;
+      bathRoomCount?: number | null;
       isPiloti?: boolean;
       cellType?: string;
     },
@@ -81,6 +83,8 @@ export class UnitsController {
       lineNo?: number | null;
       exclusiveAreaM2?: number | null;
       supplyAreaM2?: number | null;
+      roomCount?: number | null;
+      bathRoomCount?: number | null;
       isPiloti?: boolean;
       cellType?: string;
     },

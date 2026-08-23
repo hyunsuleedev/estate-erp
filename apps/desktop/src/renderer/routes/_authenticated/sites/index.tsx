@@ -250,7 +250,13 @@ function SitesPage() {
   const [showAddUnitDialog, setShowAddUnitDialog] = useState(false);
   const [siteSearchQuery, setSiteSearchQuery] = useState('');
   const [newDongName, setNewDongName] = useState('');
-  const [newUnit, setNewUnit] = useState({ name: '', area: '', dongId: '' });
+  const [newUnit, setNewUnit] = useState({
+    name: '',
+    area: '',
+    roomCount: '',
+    bathRoomCount: '',
+    dongId: '',
+  });
 
   // ── Refs (키보드 단축키) ──────────────────────────────────────
   const unitSearchRef = useRef<HTMLInputElement>(null);
@@ -458,7 +464,13 @@ function SitesPage() {
   const allUnits: Unit[] = usesOverviewUnits ? (siteDetail?.units ?? []) : (scopedUnits ?? []);
 
   const addUnitMutation = useMutation({
-    mutationFn: async (dto: { name: string; area: string; dongId: string }) => {
+    mutationFn: async (dto: {
+      name: string;
+      area: string;
+      roomCount: string;
+      bathRoomCount: string;
+      dongId: string;
+    }) => {
       if (!selectedSiteId) throw new Error('단지가 선택되지 않았습니다');
       // 동이 미선택이면 placeholder Dong(단일 동 건물) 또는 첫 번째 Dong으로 자동 할당.
       // Dong이 하나도 없으면 '본동'을 먼저 생성한다 (빌라/단독 클라이언트 경로).
@@ -473,12 +485,20 @@ function SitesPage() {
         dongId,
         name: dto.name.trim(),
         exclusiveAreaM2: dto.area ? Number(dto.area) : undefined,
+        roomCount: dto.roomCount ? Number(dto.roomCount) : null,
+        bathRoomCount: dto.bathRoomCount ? Number(dto.bathRoomCount) : null,
       });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['sites', selectedSiteId] });
       toast.success('호수를 추가했습니다');
-      setNewUnit({ name: '', area: '', dongId: '' });
+      setNewUnit({
+        name: '',
+        area: '',
+        roomCount: '',
+        bathRoomCount: '',
+        dongId: '',
+      });
       setShowAddUnitDialog(false);
     },
     onError: (error) => {
@@ -1736,7 +1756,7 @@ function SitesPage() {
                   onRowClick={handleSelectUnit}
                   layout="full-height"
                   variant="notion"
-                  rowHeight={40}
+                  rowHeight={33}
                   pinnedColumns={unitPinnedColumns}
                   columnGroupControls={[
                     {
@@ -1997,6 +2017,35 @@ function SitesPage() {
                 onChange={(e) => setNewUnit({ ...newUnit, area: e.target.value })}
                 onKeyDown={(e) => e.key === 'Enter' && handleAddUnit()}
               />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-sm">방 수</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  step={1}
+                  placeholder="예: 2"
+                  value={newUnit.roomCount}
+                  onChange={(e) =>
+                    setNewUnit({ ...newUnit, roomCount: e.target.value })
+                  }
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-sm">욕실 수</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  step={1}
+                  placeholder="예: 1"
+                  value={newUnit.bathRoomCount}
+                  onChange={(e) =>
+                    setNewUnit({ ...newUnit, bathRoomCount: e.target.value })
+                  }
+                  onKeyDown={(e) => e.key === 'Enter' && handleAddUnit()}
+                />
+              </div>
             </div>
           </div>
           <DialogFooter>

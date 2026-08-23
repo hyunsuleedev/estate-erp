@@ -13,6 +13,7 @@ import {
   IntakeConfirmationState,
   IntakeLifecycleStatus,
   ListingAvailability,
+  ListingAdvertisementStatus,
   MaintenanceFeeInclude,
   NON_CLOSED_INTAKE_LIFECYCLE_STATUSES,
   OCCUPYING_DEAL_STAGES,
@@ -22,6 +23,10 @@ import {
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ListingsService } from '../listings/listings.service';
+import {
+  ACTIVE_LISTING_ADVERTISEMENT_WHERE,
+  withActiveAdvertisementSummary,
+} from '../listings/listing-advertisement-summary';
 import {
   buildIntakeConfirmationWhere,
   buildListingAvailabilityWhere,
@@ -108,6 +113,7 @@ export type ListingIntakeSortField =
   | 'site'
   | 'dong'
   | 'unit'
+  | 'supplyArea'
   | 'unitType'
   | 'exclusiveArea'
   | 'matching'
@@ -128,6 +134,7 @@ const VALID_LISTING_INTAKE_SORT_FIELDS: ReadonlySet<string> = new Set([
   'site',
   'dong',
   'unit',
+  'supplyArea',
   'unitType',
   'exclusiveArea',
   'matching',
@@ -163,9 +170,14 @@ const LISTING_INTAKE_SORT_CANDIDATE_SELECT = {
         select: {
           name: true,
           exclusiveAreaM2: true,
+          supplyAreaM2: true,
           dong: { select: { name: true } },
           siteUnitType: {
-            select: { name: true, exclusiveAreaM2: true },
+            select: {
+              name: true,
+              exclusiveAreaM2: true,
+              supplyAreaM2: true,
+            },
           },
         },
       },
@@ -185,11 +197,11 @@ const LISTING_INTAKE_SORT_CANDIDATE_SELECT = {
       isPaused: true,
       updatedAt: true,
       deals: OCCUPYING_DEALS_SELECT,
-      _count: { select: { matches: true } },
-      advertisements: {
-        orderBy: { createdAt: 'desc' as const },
-        take: 5,
-        select: { id: true },
+      _count: {
+        select: {
+          matches: true,
+          advertisements: { where: ACTIVE_LISTING_ADVERTISEMENT_WHERE },
+        },
       },
     },
   },
@@ -219,6 +231,14 @@ export interface ListingIntakeSearchQuery {
   areaMin?: number;
   /** 공급면적 상한 (m²) */
   areaMax?: number;
+  /** 유효 방 수 exact (Unit override 우선, SiteUnitType fallback) */
+  roomCount?: number;
+  /** 유효 방 수 하한 */
+  roomCountMin?: number;
+  /** 유효 욕실 수 exact (Unit override 우선, SiteUnitType fallback) */
+  bathRoomCount?: number;
+  /** 유효 욕실 수 하한 */
+  bathRoomCountMin?: number;
   hasAdvertisement?: boolean;
   isJointBrokerage?: boolean;
   siteType?: string;
@@ -288,6 +308,7 @@ interface ListingIntakeUpdateDto {
 
 interface ListingIntakeConfirmDto {
   result: string;
+  closedReason?: string | null;
   channel?: string;
   memo?: string | null;
   checkedAt?: Date | string | null;
@@ -340,7 +361,7 @@ export class ListingIntakesService {
     const items = hasNextPage ? rows.slice(0, limit) : rows;
 
     return {
-      items: items.map((item) => this.toResponse(item)),
+      items: items.map((item) => this.toListResponse(item)),
       pagination: {
         page,
         limit,
@@ -392,7 +413,7 @@ export class ListingIntakesService {
     });
 
     return {
-      items: items.map((item) => this.toResponse(item)),
+      items: items.map((item) => this.toListResponse(item)),
       pagination: {
         page,
         limit,
@@ -700,9 +721,20 @@ export class ListingIntakesService {
   async closeWithActiveDeals(
     id: string,
     officeId: string,
+    closedReason?: string | null,
     expectedUpdatedAt?: Date | string | null,
   ) {
     const changedAt = new Date();
+    const resolvedClosedReason =
+      closedReason ?? IntakeClosedReason.WITHDRAWN;
+    if (
+      !VALID_INTAKE_CLOSED_REASONS.has(resolvedClosedReason) ||
+      resolvedClosedReason === IntakeClosedReason.DEAL_COMPLETED
+    ) {
+      throw new BadRequestException(
+        'Invalid manual ListingIntake closed reason',
+      );
+    }
     const expectedUpdatedAtDate = expectedUpdatedAt
       ? this.parseExpectedUpdatedAt(expectedUpdatedAt)
       : null;
@@ -743,7 +775,7 @@ export class ListingIntakesService {
               ? undefined
               : changedAt,
           lifecycleChangedBy: 'user',
-          closedReason: IntakeClosedReason.WITHDRAWN,
+          closedReason: resolvedClosedReason,
         },
       });
       if (intakeUpdate.count === 0) {
@@ -761,7 +793,7 @@ export class ListingIntakesService {
           isCancelled: true,
           cancelledAt: changedAt,
           cancelledBy: 'office',
-          cancelReason: '매물 종료와 함께 취소 처리',
+          cancelReason: `매물 종료와 함께 취소 처리 (${resolvedClosedReason})`,
         },
       });
 
@@ -834,7 +866,27 @@ export class ListingIntakesService {
     const checkedAt = this.resolveDate(dto.checkedAt) ?? new Date();
     const nextConfirmAt = this.resolveNextConfirmAt(dto.result, checkedAt, dto.nextConfirmAt);
     const contactId = dto.contactId ?? this.resolveDefaultConfirmContactId(intake);
-    const content = this.buildConfirmConsultationContent(dto.result, dto.memo);
+    const confirmedClosedReason =
+      dto.result === 'unavailable'
+        ? (dto.closedReason ?? IntakeClosedReason.UNAVAILABLE)
+        : null;
+    if (
+      confirmedClosedReason &&
+      (!VALID_INTAKE_CLOSED_REASONS.has(confirmedClosedReason) ||
+        confirmedClosedReason === IntakeClosedReason.DEAL_COMPLETED)
+    ) {
+      throw new BadRequestException('Invalid confirmation closed reason');
+    }
+    if (dto.result !== 'unavailable' && dto.closedReason) {
+      throw new BadRequestException(
+        'closedReason is only valid for unavailable confirmations',
+      );
+    }
+    const content = this.buildConfirmConsultationContent(
+      dto.result,
+      dto.memo,
+      confirmedClosedReason,
+    );
     const consultationType = this.resolveConsultationType(dto.channel);
     const shouldUpdateLastVerifiedAt =
       dto.result === 'alive' || dto.result === 'price_changed';
@@ -874,7 +926,7 @@ export class ListingIntakesService {
             : undefined,
         closedReason:
           dto.result === 'unavailable'
-            ? IntakeClosedReason.UNAVAILABLE
+            ? confirmedClosedReason
             : undefined,
         lastCheckedAt: checkedAt,
         lastVerifiedAt: shouldUpdateLastVerifiedAt ? checkedAt : undefined,
@@ -962,6 +1014,19 @@ export class ListingIntakesService {
       filters.push({ listings: { some: listingWhere } });
     }
 
+    if (query.hasAdvertisement !== undefined) {
+      const activeAdvertisement = {
+        advertisements: {
+          some: { status: ListingAdvertisementStatus.ACTIVE },
+        },
+      } satisfies Prisma.ListingWhereInput;
+      filters.push({
+        listings: query.hasAdvertisement
+          ? { some: activeAdvertisement }
+          : { none: activeAdvertisement },
+      });
+    }
+
     if (query.isJointBrokerage !== undefined) {
       // 공동중개는 의뢰(ListingIntake)가 단일 소유 — Listing 쪽 판정 없음
       filters.push({ isJointBrokerageRequired: query.isJointBrokerage });
@@ -982,6 +1047,50 @@ export class ListingIntakesService {
               {
                 supplyAreaM2: null,
                 siteUnitType: { supplyAreaM2: areaRange },
+              },
+            ],
+          },
+        },
+      });
+    }
+
+    const roomCountFilter =
+      query.roomCount !== undefined
+        ? query.roomCount
+        : query.roomCountMin !== undefined
+          ? { gte: query.roomCountMin }
+          : undefined;
+    if (roomCountFilter !== undefined) {
+      filters.push({
+        property: {
+          unit: {
+            OR: [
+              { roomCount: roomCountFilter },
+              {
+                roomCount: null,
+                siteUnitType: { roomCount: roomCountFilter },
+              },
+            ],
+          },
+        },
+      });
+    }
+
+    const bathRoomCountFilter =
+      query.bathRoomCount !== undefined
+        ? query.bathRoomCount
+        : query.bathRoomCountMin !== undefined
+          ? { gte: query.bathRoomCountMin }
+          : undefined;
+    if (bathRoomCountFilter !== undefined) {
+      filters.push({
+        property: {
+          unit: {
+            OR: [
+              { bathRoomCount: bathRoomCountFilter },
+              {
+                bathRoomCount: null,
+                siteUnitType: { bathRoomCount: bathRoomCountFilter },
               },
             ],
           },
@@ -1099,10 +1208,6 @@ export class ListingIntakesService {
           lte: query.monthlyRentMax,
         }),
       };
-    }
-
-    if (query.hasAdvertisement !== undefined) {
-      where.advertisements = query.hasAdvertisement ? { some: {} } : { none: {} };
     }
 
     if (query.moveInFrom || query.moveInTo) {
@@ -1229,6 +1334,19 @@ export class ListingIntakesService {
     return response;
   }
 
+  private toListResponse<T extends Record<string, unknown>>(intake: T) {
+    const response = this.toResponse(intake);
+    const listings = response.listings;
+    if (Array.isArray(listings)) {
+      response.listings = listings.map((listing) =>
+        withActiveAdvertisementSummary(
+          listing as Record<string, unknown>,
+        ),
+      );
+    }
+    return response;
+  }
+
   private buildListSelect(listingWhere: Prisma.ListingWhereInput) {
     return {
       id: true,
@@ -1286,11 +1404,14 @@ export class ListingIntakesService {
           _count: {
             select: {
               matches: true,
+              advertisements: {
+                where: ACTIVE_LISTING_ADVERTISEMENT_WHERE,
+              },
             },
           },
           advertisements: {
+            where: ACTIVE_LISTING_ADVERTISEMENT_WHERE,
             orderBy: { createdAt: 'desc' as const },
-            take: 5,
             select: {
               id: true,
               channel: true,
@@ -1379,7 +1500,6 @@ export class ListingIntakesService {
           deals: OCCUPYING_DEALS_SELECT,
           advertisements: {
             orderBy: { createdAt: 'desc' as const },
-            take: 5,
           },
           priceHistories: {
             orderBy: { createdAt: 'desc' as const },
@@ -1560,6 +1680,32 @@ export class ListingIntakesService {
     ) {
       throw new BadRequestException('Invalid transactionType');
     }
+
+    for (const [field, value] of [
+      ['roomCount', query.roomCount],
+      ['roomCountMin', query.roomCountMin],
+      ['bathRoomCount', query.bathRoomCount],
+      ['bathRoomCountMin', query.bathRoomCountMin],
+    ] as const) {
+      if (
+        value !== undefined &&
+        (!Number.isInteger(value) || value < 0)
+      ) {
+        throw new BadRequestException(`${field} must be a non-negative integer`);
+      }
+    }
+
+    if (query.roomCount !== undefined && query.roomCountMin !== undefined) {
+      throw new BadRequestException('Use either roomCount or roomCountMin');
+    }
+    if (
+      query.bathRoomCount !== undefined &&
+      query.bathRoomCountMin !== undefined
+    ) {
+      throw new BadRequestException(
+        'Use either bathRoomCount or bathRoomCountMin',
+      );
+    }
   }
 
   private assertValidListingInputs(listings: ListingInputDto[]) {
@@ -1706,11 +1852,22 @@ export class ListingIntakesService {
     );
   }
 
-  private buildConfirmConsultationContent(result: string, memo?: string | null) {
+  private buildConfirmConsultationContent(
+    result: string,
+    memo?: string | null,
+    closedReason?: string | null,
+  ) {
     const resultLabel: Record<string, string> = {
       alive: '살아있음',
       price_changed: '가격변경',
-      unavailable: '거래완료/불가',
+      unavailable:
+        closedReason === IntakeClosedReason.EXTERNAL_DEAL_COMPLETED
+          ? '다른 중개사·직거래 계약'
+          : closedReason === IntakeClosedReason.WITHDRAWN
+            ? '의뢰 철회'
+            : closedReason === IntakeClosedReason.OTHER
+              ? '기타 사유로 의뢰 종료'
+              : '거래 불가·매물 없어짐',
       no_answer: '부재중',
       pending: '답변대기',
     };
@@ -1836,6 +1993,10 @@ function getListingIntakeTableSortValue(
       return normalizeSortText(unit?.dong.name);
     case 'unit':
       return normalizeSortText(unit?.name);
+    case 'supplyArea':
+      return readSortNumber(
+        unit?.supplyAreaM2 ?? unit?.siteUnitType?.supplyAreaM2,
+      );
     case 'unitType':
       return normalizeSortText(unit?.siteUnitType?.name);
     case 'exclusiveArea':
@@ -1849,7 +2010,7 @@ function getListingIntakeTableSortValue(
       );
     case 'advertisement':
       return listings.reduce(
-        (total, listing) => total + listing.advertisements.length,
+        (total, listing) => total + listing._count.advertisements,
         0,
       );
     case 'confirmationAt':

@@ -317,6 +317,7 @@ export class BuyerRequirementsService {
     dto: {
       buyerIntakeId?: string;
       contactId?: string;
+      createNewIntake?: boolean;
       priorityRank?: number;
       transactionType?: string;
       siteTypes?: string[];
@@ -344,6 +345,7 @@ export class BuyerRequirementsService {
     const {
       buyerIntakeId,
       contactId,
+      createNewIntake,
       priorityRank,
       moveInDate,
       nextContactDate,
@@ -354,6 +356,11 @@ export class BuyerRequirementsService {
     if (!buyerIntakeId && !contactId) {
       throw new BadRequestException(
         'buyerIntakeId 또는 기존 호환용 contactId가 필요합니다.',
+      );
+    }
+    if (buyerIntakeId && createNewIntake) {
+      throw new BadRequestException(
+        'createNewIntake는 contactId 기반 등록에서만 사용할 수 있습니다.',
       );
     }
     if (priorityRank !== undefined) assertPositivePriorityRank(priorityRank);
@@ -386,22 +393,24 @@ export class BuyerRequirementsService {
         });
         if (!contact) throw new NotFoundException('Contact not found');
 
-        // 구버전 UI의 contactId 기반 등록은 그 연락처가 실제 구매자로 참여한
-        // 가장 최근 열린 Intake를 재사용한다. 새 UI는 buyerIntakeId를 명시한다.
-        intake = await tx.buyerIntake.findFirst({
-          where: {
-            officeId,
-            lifecycleStatus: 'open',
-            contacts: {
-              some: {
-                contactId,
-                role: { in: ['buyer', 'co_buyer'] },
+        // contactId 기반 조건 추가는 가장 최근 열린 Intake를 재사용한다.
+        // 새 의뢰 접수 화면은 createNewIntake로 재사용을 명시적으로 건너뛴다.
+        if (!createNewIntake) {
+          intake = await tx.buyerIntake.findFirst({
+            where: {
+              officeId,
+              lifecycleStatus: 'open',
+              contacts: {
+                some: {
+                  contactId,
+                  role: { in: ['buyer', 'co_buyer'] },
+                },
               },
             },
-          },
-          include: { contacts: true },
-          orderBy: { updatedAt: 'desc' },
-        });
+            include: { contacts: true },
+            orderBy: { updatedAt: 'desc' },
+          });
+        }
 
         if (!intake) {
           const contacts = [

@@ -189,7 +189,8 @@ export function BuyerRequirementCard({ requirement }: { requirement: BuyerRequir
             )}
           </div>
           <Link
-            to="/buyer-requirements"
+            to="/buyer-requirements/$id"
+            params={{ id: requirement.id }}
             className="block text-sm font-medium hover:text-primary hover:underline"
           >
             {formatBudgetSummary(requirement)}

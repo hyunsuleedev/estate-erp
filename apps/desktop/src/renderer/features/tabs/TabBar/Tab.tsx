@@ -44,10 +44,10 @@ export function Tab({ tab, isActive, onActivate, onClose }: Props) {
         }
       }}
       className={cn(
-        'app-tab group relative -ml-px flex h-8 min-w-[112px] max-w-[220px] shrink-0 items-center gap-2 border border-border px-3 text-sm first:ml-0',
+        'app-tab group relative -ml-px -mb-px flex h-9 min-w-[112px] max-w-[220px] shrink-0 self-end items-center gap-2 border border-border px-3 text-sm first:ml-0',
         'cursor-default select-none transition-colors',
         isActive
-          ? 'z-10 -mb-px h-9 self-end border-b-background! bg-background text-foreground'
+          ? 'z-10 bg-background text-foreground after:absolute after:-inset-x-px after:-bottom-px after:h-0.5 after:bg-foreground'
           : 'bg-sidebar text-muted-foreground hover:bg-muted/60 hover:text-foreground',
       )}
       {...attributes}
@@ -57,6 +57,7 @@ export function Tab({ tab, isActive, onActivate, onClose }: Props) {
       <span className="flex-1 truncate">{tab.title}</span>
       <button
         type="button"
+        data-tab-action="close"
         onClick={(e) => {
           e.stopPropagation();
           onClose();

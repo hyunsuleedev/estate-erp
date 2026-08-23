@@ -52,6 +52,7 @@ describe("ListingAdvertisementSnapshotsService", () => {
         findMany: jest.fn(),
         update: jest.fn(),
         create: jest.fn(),
+        deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
       },
       listing: { findFirst: jest.fn() },
       listingAdvertisement: {
@@ -316,6 +317,32 @@ describe("ListingAdvertisementSnapshotsService", () => {
     ]);
   });
 
+  it("returns persisted receipt counts after completed items are purged", async () => {
+    const prisma = createPrisma();
+    prisma.listingAdvertisementSnapshotSession.findFirst.mockResolvedValue({
+      ...activeSession(),
+      status: "completed",
+      receivedCount: 3,
+      resolvedCount: 3,
+      completedAt: new Date(observedAt),
+    });
+    const service = new ListingAdvertisementSnapshotsService(prisma);
+
+    const result = await service.get(officeId, sessionId);
+
+    expect(result.counts).toEqual({
+      received: 3,
+      resolved: 3,
+      failed: 0,
+      remaining: 0,
+    });
+    expect(result.failedItems).toEqual([]);
+    expect(result.submittedItems).toEqual([]);
+    expect(
+      prisma.listingAdvertisementSnapshotItem.findMany,
+    ).not.toHaveBeenCalled();
+  });
+
   it("commits the advertisement ledger only after every submitted item resolves", async () => {
     const prisma = createPrisma();
     const session = {
@@ -362,8 +389,31 @@ describe("ListingAdvertisementSnapshotsService", () => {
         source: "cp_sync",
         advertisedDeposit: 3000,
         advertisedMonthlyRent: 170,
+        providerStatus: "광고중",
+        providerStatusObservedAt: new Date(observedAt),
+        firstSeenAt: new Date(observedAt),
+        lastSeenAt: new Date(observedAt),
         lastSyncedAt: new Date(observedAt),
+        priceHistories: {
+          create: {
+            officeId,
+            snapshotSessionId: sessionId,
+            advertisedPrice: null,
+            advertisedDeposit: 3000,
+            advertisedMonthlyRent: 170,
+            observedAt: new Date(observedAt),
+            source: "cp_sync",
+          },
+        },
       }),
+    });
+    expect(prisma.listingAdvertisement.findMany).toHaveBeenCalledWith({
+      where: {
+        officeId,
+        channel: "esiljang",
+        status: "active",
+        externalAdId: { in: ["64850265"] },
+      },
     });
     expect(result).toEqual(
       expect.objectContaining({
@@ -372,6 +422,95 @@ describe("ListingAdvertisementSnapshotsService", () => {
         staleAdvertisementsMarked: 2,
       }),
     );
+    expect(
+      prisma.listingAdvertisementSnapshotItem.deleteMany,
+    ).toHaveBeenCalledWith({ where: { officeId, sessionId } });
+  });
+
+  it("appends a CP price observation when the active publication price changes", async () => {
+    const prisma = createPrisma();
+    const session = {
+      ...activeSession(),
+      receivedCount: 1,
+      resolvedCount: 1,
+    };
+    prisma.listingAdvertisementSnapshotSession.findFirst.mockResolvedValue(
+      session,
+    );
+    prisma.listingAdvertisementSnapshotItem.findMany.mockResolvedValue([
+      {
+        id: itemId,
+        sessionId,
+        externalAdId: "64850265",
+        status: "resolved",
+        raw: rawItem,
+        listingId,
+        error: null,
+      },
+    ]);
+    prisma.listingAdvertisement.updateMany.mockResolvedValue({ count: 0 });
+    prisma.listingAdvertisement.findMany.mockResolvedValue([
+      {
+        id: "ad-1",
+        externalAdId: "64850265",
+        advertisedPrice: null,
+        advertisedDeposit: 3500,
+        advertisedMonthlyRent: 170,
+      },
+    ]);
+    prisma.listingAdvertisement.update.mockResolvedValue({ id: "ad-1" });
+    prisma.listingAdvertisementSnapshotSession.update.mockResolvedValue({
+      ...session,
+      status: "completed",
+      createdAdvertisements: 0,
+      updatedAdvertisements: 1,
+      staleAdvertisementsMarked: 0,
+      completedAt: new Date(observedAt),
+    });
+    const service = new ListingAdvertisementSnapshotsService(prisma);
+
+    await service.complete(officeId, userId, "agent", sessionId);
+
+    expect(prisma.listingAdvertisement.update).toHaveBeenCalledWith({
+      where: { id: "ad-1" },
+      data: expect.objectContaining({
+        advertisedDeposit: 3000,
+        priceHistories: {
+          create: {
+            officeId,
+            snapshotSessionId: sessionId,
+            advertisedPrice: null,
+            advertisedDeposit: 3000,
+            advertisedMonthlyRent: 170,
+            observedAt: new Date(observedAt),
+            source: "cp_sync",
+          },
+        },
+      }),
+    });
+  });
+
+  it("purges legacy items when completion is retried for a completed session", async () => {
+    const prisma = createPrisma();
+    prisma.listingAdvertisementSnapshotSession.findFirst.mockResolvedValue({
+      ...activeSession(),
+      status: "completed",
+      receivedCount: 1,
+      resolvedCount: 1,
+      createdAdvertisements: 1,
+      updatedAdvertisements: 0,
+      staleAdvertisementsMarked: 0,
+      completedAt: new Date(observedAt),
+    });
+    const service = new ListingAdvertisementSnapshotsService(prisma);
+
+    const result = await service.complete(officeId, userId, "agent", sessionId);
+
+    expect(result.status).toBe("completed");
+    expect(
+      prisma.listingAdvertisementSnapshotItem.deleteMany,
+    ).toHaveBeenCalledWith({ where: { officeId, sessionId } });
+    expect(prisma.listingAdvertisement.updateMany).not.toHaveBeenCalled();
   });
 
   it("does not touch the advertisement ledger while a submitted item failed", async () => {
@@ -394,5 +533,8 @@ describe("ListingAdvertisementSnapshotsService", () => {
     ).rejects.toBeInstanceOf(ConflictException);
     expect(prisma.listingAdvertisement.updateMany).not.toHaveBeenCalled();
     expect(prisma.listingAdvertisement.create).not.toHaveBeenCalled();
+    expect(
+      prisma.listingAdvertisementSnapshotItem.deleteMany,
+    ).not.toHaveBeenCalled();
   });
 });

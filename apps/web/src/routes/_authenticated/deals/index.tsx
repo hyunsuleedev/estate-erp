@@ -1,7 +1,7 @@
 import { invalidateListingDerivedCaches } from '@/lib/listing-cache';
 import { createFileRoute } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useDeferredValue, useEffect, useMemo, useState } from 'react';
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Handshake,
   List,
@@ -88,11 +88,19 @@ function getErrorMessage(error: unknown) {
 }
 
 export const Route = createFileRoute('/_authenticated/deals/')({
+  validateSearch: (search: Record<string, unknown>): { dealId?: string } => ({
+    dealId:
+      typeof search.dealId === 'string' && search.dealId.trim()
+        ? search.dealId
+        : undefined,
+  }),
   component: DealsPage,
 });
 
 function DealsPage() {
   const queryClient = useQueryClient();
+  const navigate = Route.useNavigate();
+  const { dealId: deepLinkDealId } = Route.useSearch();
   const [searchQuery, setSearchQuery] = useState('');
   const [txFilter, setTxFilter] = useState('');
   const [stageFilter, setStageFilter] = useState('');
@@ -275,6 +283,62 @@ function DealsPage() {
       setSelectedDealId(null);
     }
   }, [deals, dealsQuery.isLoading, selectedDealId]);
+
+  // 딥링크 진입 (?dealId=...) → 대상 거래가 목록에서 확인된 뒤에만 소비한다.
+  // stale 캐시 기준으로 판단하면 방금 생성된 거래가 유실되고, staleTime(1분) 안에는
+  // 마운트 refetch도 없어 캐시가 그대로 "최신"으로 통과하므로, 목록에 없으면
+  // 딥링크 도착 이후 완료된 신선한 조회(dataUpdatedAt 기준)를 한 번 보장한 뒤에야
+  // 포기한다. 조회 실패 시에는 ?dealId를 URL에 유지해 재시도를 살린다.
+  const deepLinkConsumedRef = useRef(false);
+  const deepLinkRefetchRef = useRef<string | null>(null);
+  const deepLinkArrivedAtRef = useRef(0);
+  useEffect(() => {
+    if (deepLinkDealId) {
+      deepLinkArrivedAtRef.current = Date.now();
+    }
+  }, [deepLinkDealId]);
+  useEffect(() => {
+    if (!deepLinkDealId) {
+      deepLinkConsumedRef.current = false;
+      deepLinkRefetchRef.current = null;
+      return;
+    }
+    if (deepLinkConsumedRef.current) {
+      return;
+    }
+
+    if (deals.some((deal) => deal.id === deepLinkDealId)) {
+      deepLinkConsumedRef.current = true;
+      setSelectedDealId(deepLinkDealId);
+      navigate({ search: {}, replace: true });
+      return;
+    }
+
+    if (dealsQuery.isFetching || !dealsQuery.isSuccess) {
+      return;
+    }
+
+    if (dealsQuery.dataUpdatedAt < deepLinkArrivedAtRef.current) {
+      // 딥링크 도착 후 완료된 조회가 아직 없음 — 신선한 조회를 직접 트리거한다
+      if (deepLinkRefetchRef.current !== deepLinkDealId) {
+        deepLinkRefetchRef.current = deepLinkDealId;
+        void dealsQuery.refetch();
+      }
+      return;
+    }
+
+    deepLinkConsumedRef.current = true;
+    toast.error('요청한 거래를 찾을 수 없습니다.');
+    navigate({ search: {}, replace: true });
+  }, [
+    deals,
+    dealsQuery.dataUpdatedAt,
+    dealsQuery.isFetching,
+    dealsQuery.isSuccess,
+    dealsQuery.refetch,
+    deepLinkDealId,
+    navigate,
+  ]);
 
   const rowActions: DealRowActions = {
     onSelect: setSelectedDealId,

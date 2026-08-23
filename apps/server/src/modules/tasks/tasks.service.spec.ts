@@ -6,6 +6,7 @@ describe('TasksService', () => {
     const prisma = {
       task: {
         create: jest.fn(),
+        findMany: jest.fn(),
         findFirst: jest.fn(),
         update: jest.fn(),
         updateMany: jest.fn(),
@@ -48,6 +49,32 @@ describe('TasksService', () => {
           matchId: 'match-1',
           dealId: 'deal-1',
           contractId: 'contract-1',
+        }),
+      }),
+    );
+  });
+
+  it('includes the property dong needed by task context labels', async () => {
+    const { prisma, service } = createService();
+    prisma.task.findMany.mockResolvedValue([]);
+
+    await service.findAll('office-1');
+
+    expect(prisma.task.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        include: expect.objectContaining({
+          property: {
+            include: {
+              site: true,
+              unit: {
+                include: {
+                  dong: {
+                    select: { id: true, name: true, isPlaceholder: true },
+                  },
+                },
+              },
+            },
+          },
         }),
       }),
     );

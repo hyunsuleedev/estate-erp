@@ -242,7 +242,8 @@ export const MAINTENANCE_FEE_INCLUDE_LABELS: Record<
  *
  * ListingAdvertisement는 CP에서 실제로 관측한 광고만 저장한다. 사용자가
  * 요청한 광고 작업은 일반 Task가 나타내고, 세부 실행·재시도 상태는 로컬
- * Skill이 소유하므로 광고 row에는 active / ended만 존재한다.
+ * Skill이 소유하므로 광고 row에는 active / ended만 존재한다. ended row도
+ * 실제 게재 이력으로 보존하고 endedAt은 예정일이 아닌 관측 종료 시각이다.
  */
 export const ListingAdvertisementStatus = {
   ACTIVE: 'active',
@@ -338,6 +339,7 @@ export const IntakeClosedReason = {
   WITHDRAWN: 'withdrawn',
   UNAVAILABLE: 'unavailable',
   DEAL_COMPLETED: 'deal_completed',
+  EXTERNAL_DEAL_COMPLETED: 'external_deal_completed',
   SUPERSEDED: 'superseded',
   OTHER: 'other',
 } as const;

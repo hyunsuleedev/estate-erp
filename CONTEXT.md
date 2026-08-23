@@ -18,6 +18,17 @@ _Avoid_: Match, 단순 케이스 소속, 실제 계약 지급내역
 
 ## 광고 업무와 로컬 실행
 
+**광고 게재 회차 (ListingAdvertisement)**:
+하나의 Listing을 한 CP 채널에 끊김 없이 게재한 한 번의 공개 수명이다. 현재
+게재 중이면 active이고 관측에서 사라지면 같은 회차가 ended가 되어 이력으로
+남는다. 내려간 뒤 다시 광고하면 기존 회차를 되살리지 않고 새 회차를 만든다.
+_Avoid_: 현재 광고 슬롯, 광고 가격 변경 한 건, 광고작업 Task
+
+**현재 광고**:
+광고 게재 회차 중 status가 active인 부분집합이다. 매물관리의 광고 개수·현황·
+있음 여부는 현재 광고만 대상으로 하며, 종료된 회차는 광고 이력에서만 함께 본다.
+_Avoid_: Listing에 연결된 전체 ListingAdvertisement 개수
+
 **광고작업 (Task)**:
 사용자가 ERP 업무로 등록하는 광고 확인·수정 요청이다. category는 `advertisement`이며 pending 상태를 외부 AI가 `claim_task`로 선점하면 in_progress가 된다. provider 저장값을 다시 확인한 뒤에만 completed로 끝낸다.
 _Avoid_: 올림작업, AgentActionRequest, 서버 agent queue
