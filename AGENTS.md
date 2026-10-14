@@ -11,7 +11,6 @@
 - **Email**: Resend + React Email
 - **File Storage**: S3 / Cloudflare R2
 - **Desktop**: Electron (React 19 + TanStack + Tailwind v4 + shadcn/ui)
-- **Web**: Vite SPA (React 19 + TanStack + Tailwind v4 + shadcn/ui)
 - **Mobile**: React Native (Android only — 전화 오버레이 + 녹음)
 - **Build**: Vite + electron-builder
 - **Package Manager**: pnpm (monorepo workspaces)
@@ -22,12 +21,11 @@
 apps/
   server/           # NestJS 백엔드 (src/modules/*)
   desktop/          # Electron (main/ preload/ renderer/)
-  web/              # Vite SPA (사장님용 웹 버전, CTI 없음)
   mobile/           # React Native (Android only)
   cti-bridge/       # CTI Bridge (32비트)
 packages/
   shared/           # 공유 타입, 유틸리티, Enum
-  api-client/       # API 클라이언트 (desktop + web + mobile 공유)
+  api-client/       # API 클라이언트 (desktop + mobile 공유)
   mcp-server/       # CRM MCP Server 정의
 prisma/
   schema.prisma     # DB 스키마 (source of truth)
@@ -99,7 +97,6 @@ prisma/
 pnpm install           # Install all dependencies
 pnpm dev:server        # Start NestJS dev server
 pnpm dev:desktop       # Start Electron + Vite HMR
-pnpm dev:web           # Start web app (Vite)
 pnpm build             # Build all packages
 pnpm typecheck         # TypeScript check
 pnpm test              # Run tests

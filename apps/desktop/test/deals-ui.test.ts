@@ -9,10 +9,6 @@ const desktopDetailSource = readFileSync(
   resolve(testDir, '../src/renderer/routes/_authenticated/deals/-deal-detail.tsx'),
   'utf8',
 );
-const webDetailSource = readFileSync(
-  resolve(testDir, '../../web/src/routes/_authenticated/deals/-deal-detail.tsx'),
-  'utf8',
-);
 
 function assertDealDetailSheetScrolls(source: string, label: string) {
   assert.match(
@@ -35,9 +31,5 @@ function assertDealDetailSheetScrolls(source: string, label: string) {
 describe('deal detail sheet scroll', () => {
   it('lets the desktop sheet body scroll when content exceeds the viewport', () => {
     assertDealDetailSheetScrolls(desktopDetailSource, 'desktop');
-  });
-
-  it('lets the web sheet body scroll when content exceeds the viewport', () => {
-    assertDealDetailSheetScrolls(webDetailSource, 'web');
   });
 });

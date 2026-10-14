@@ -293,11 +293,10 @@ function NewPropertyPage() {
   }, [existingProperty, form.transactionTypes]);
 
   const { data: activeIntakes } = useQuery({
-    queryKey: ['listing-intakes', 'active', existingProperty?.id],
+    queryKey: ['listing-intakes', 'non-closed', existingProperty?.id],
     queryFn: () =>
       api.listingIntakes.findAll({
         propertyId: existingProperty!.id,
-        status: 'active',
         limit: 1,
       }),
     enabled: !!existingProperty?.id,

@@ -20,8 +20,6 @@ export type StatusKind =
   | 'confirmationState'
   | 'intakeLifecycle'
   | 'listingAvailability'
-  | 'checkStatus'
-  | 'intakeStatus'
   | 'matchStage'
   | 'dealStage'
   | 'contractStatus'
@@ -75,22 +73,6 @@ export const STATUS_CONFIG: Record<StatusKind, Record<string, StatusMeta>> = {
     paused: { label: '보류', tone: 'warning' },
     in_contract: { label: '거래중', tone: 'info' },
     closed: { label: '종료', tone: 'neutral' },
-  },
-  /** Listing.checkStatus — 매물 확인 상태 */
-  checkStatus: {
-    unverified: { label: '미확인', tone: 'gray' },
-    verified: { label: '확인완료', tone: 'success' },
-    in_contract: { label: '거래중', tone: 'info' },
-    hold: { label: '보류', tone: 'warning' },
-    done: { label: '종료', tone: 'neutral' },
-  },
-  /** ListingIntake.status — 의뢰 상태 */
-  intakeStatus: {
-    unverified: { label: '미확인', tone: 'gray' },
-    active: { label: '진행중', tone: 'success' },
-    in_contract: { label: '거래중', tone: 'info' },
-    hold: { label: '보류', tone: 'warning' },
-    done: { label: '종료', tone: 'neutral' },
   },
   /** Match.stage — 매칭 파이프라인 */
   matchStage: {
@@ -195,8 +177,6 @@ export const PIPELINE_STEPS: Partial<Record<StatusKind, string[]>> = {
   confirmationState: ['unverified', 'no_answer', 'overdue', 'verified'],
   intakeLifecycle: ['open', 'hold', 'closed'],
   listingAvailability: ['available', 'paused', 'in_contract', 'closed'],
-  checkStatus: ['unverified', 'verified', 'in_contract', 'hold', 'done'],
-  intakeStatus: ['unverified', 'active', 'in_contract', 'hold', 'done'],
   matchStage: [
     'suggested',
     'buyerInterested',

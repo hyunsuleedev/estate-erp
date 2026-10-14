@@ -96,33 +96,23 @@ describe('contract document tab', () => {
     const desktopPrimitives = source(
       '../src/renderer/routes/_authenticated/contracts/-clause-primitives.tsx',
     );
-    const webPrimitives = source(
-      '../../web/src/routes/_authenticated/contracts/-clause-primitives.tsx',
-    );
     const desktopEditor = source(
       '../src/renderer/routes/_authenticated/contracts/-document-editor.tsx',
     );
-    const webEditor = source(
-      '../../web/src/routes/_authenticated/contracts/-document-editor.tsx',
-    );
 
-    for (const value of [desktopPrimitives, webPrimitives]) {
-      assert.match(value, /export function AmountUnitBar/);
-      assert.doesNotMatch(
-        value,
-        /금액인쇄형식|AMOUNT_NOTATION_OPTIONS|amount-notation-hanja|漢字/,
-      );
-    }
-    for (const value of [desktopEditor, webEditor]) {
-      assert.match(
-        value,
-        /getContractDocumentEnginePrintOptions\(document\?\.metadata\)[\s\S]*?amountNotation: 'hangul'/,
-      );
-      assert.match(
-        value,
-        /\.\.\.partial, amountNotation: 'hangul'/,
-      );
-    }
+    assert.match(desktopPrimitives, /export function AmountUnitBar/);
+    assert.doesNotMatch(
+      desktopPrimitives,
+      /금액인쇄형식|AMOUNT_NOTATION_OPTIONS|amount-notation-hanja|漢字/,
+    );
+    assert.match(
+      desktopEditor,
+      /getContractDocumentEnginePrintOptions\(document\?\.metadata\)[\s\S]*?amountNotation: 'hangul'/,
+    );
+    assert.match(
+      desktopEditor,
+      /\.\.\.partial, amountNotation: 'hangul'/,
+    );
   });
 
   it('does not expose contract-specific BrowserWindow IPC', () => {

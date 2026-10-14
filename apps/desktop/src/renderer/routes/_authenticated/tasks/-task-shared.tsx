@@ -27,6 +27,7 @@ import {
 import type { Task, TaskListingSummary } from '@estate-erp/api-client';
 import { cn } from '@/lib/utils';
 import { formatDate, formatDday, formatMoney, formatPhone, formatRent } from '@/lib/format';
+import { getListingAvailability } from '@/lib/listing-status';
 import { getStatusMeta } from '@/lib/status-config';
 import { EntityChip } from '@/components/domain';
 import { getPropertyLabel } from './-task-property-label';
@@ -272,8 +273,11 @@ export function TaskContextChips({
         propertyId={task.listing?.propertyId ?? task.propertyId ?? undefined}
         label={getListingLabel(task.listing)}
         sublabel={
-          !compact && task.listing?.checkStatus
-            ? getStatusMeta('checkStatus', task.listing.checkStatus).label
+          !compact && task.listing?.intake
+            ? getStatusMeta(
+                'listingAvailability',
+                getListingAvailability(task.listing),
+              ).label
             : undefined
         }
         className={chipWidth}

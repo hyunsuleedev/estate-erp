@@ -34,7 +34,6 @@ FROM base AS deps
 COPY .npmrc* pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 COPY apps/server/package.json ./apps/server/
 COPY apps/desktop/package.json ./apps/desktop/
-COPY apps/web/package.json ./apps/web/
 COPY packages/shared/package.json ./packages/shared/
 COPY packages/api-client/package.json ./packages/api-client/
 
@@ -61,7 +60,6 @@ FROM base AS prod-deps
 COPY .npmrc* pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 COPY apps/server/package.json ./apps/server/
 COPY apps/desktop/package.json ./apps/desktop/
-COPY apps/web/package.json ./apps/web/
 COPY packages/shared/package.json ./packages/shared/
 COPY packages/api-client/package.json ./packages/api-client/
 

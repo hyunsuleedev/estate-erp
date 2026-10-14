@@ -1,5 +1,7 @@
-import type { Consultation } from '@estate-erp/api-client';
+import type { Consultation, ListingIntakeState } from '@estate-erp/api-client';
 import { formatDate, formatMoney } from '@/lib/format';
+import { getIntakeConfirmationState, getListingAvailability } from '@/lib/listing-status';
+import { getStatusMeta } from '@/lib/status-config';
 
 export type ConsultationListItem = Consultation;
 
@@ -202,13 +204,17 @@ export function getConsultationContextLabels(consultation: ConsultationListItem)
   return labels;
 }
 
-export const intakeStatusLabels: Record<string, string> = {
-  unverified: '미확인',
-  active: '진행중',
-  in_contract: '거래중',
-  hold: '보류',
-  done: '완료',
-};
+export function formatIntakeState(intake: ListingIntakeState) {
+  const lifecycle = getStatusMeta(
+    'intakeLifecycle',
+    intake.lifecycleStatus,
+  ).label;
+  const confirmation = getStatusMeta(
+    'confirmationState',
+    getIntakeConfirmationState(intake),
+  ).label;
+  return `${lifecycle} · ${confirmation}`;
+}
 
 export function getConsultationContextCards(consultation: ConsultationListItem): ConsultationContextCard[] {
   const cards: ConsultationContextCard[] = [];
@@ -235,7 +241,7 @@ export function getConsultationContextCards(consultation: ConsultationListItem):
 
   if (consultation.listingIntakeId) {
     const intake = consultation.listingIntake;
-    const statusLabel = intake?.status ? (intakeStatusLabels[intake.status] ?? intake.status) : null;
+    const statusLabel = intake ? formatIntakeState(intake) : null;
     const targetPropertyId = intake?.propertyId ?? consultation.propertyId;
     cards.push({
       key: 'listingIntake',
@@ -257,8 +263,8 @@ export function getConsultationContextCards(consultation: ConsultationListItem):
       key: 'listing',
       label: '매물(거래)',
       title: listingTitle,
-      description: consultation.listing?.checkStatus
-        ? `확인 상태 ${intakeStatusLabels[consultation.listing.checkStatus] ?? consultation.listing.checkStatus}`
+      description: consultation.listing?.intake
+        ? `가용 ${getStatusMeta('listingAvailability', getListingAvailability(consultation.listing)).label} · 확인 ${getStatusMeta('confirmationState', getIntakeConfirmationState(consultation.listing.intake)).label}`
         : '거래 조건, 가격 협의, 광고 상태 문맥입니다.',
       to: consultation.propertyId ? '/properties/$id' : '/properties',
       params: consultation.propertyId ? { id: consultation.propertyId } : undefined,

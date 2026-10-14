@@ -26,7 +26,6 @@
     "dev": "pnpm --parallel --filter @estate-erp/server --filter @estate-erp/desktop dev",
     "dev:server": "pnpm --filter @estate-erp/server dev",
     "dev:desktop": "pnpm --filter @estate-erp/desktop dev",
-    "dev:web": "pnpm --filter @estate-erp/web dev",
     "build": "pnpm -r build",
     "build:server": "pnpm --filter @estate-erp/server build",
     "typecheck": "pnpm -r typecheck",

@@ -28,8 +28,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { getInitial } from './-consultation-badges';
 import {
   consultationPurposeOptions,
+  formatIntakeState,
   formatListingLabel,
-  intakeStatusLabels,
   matchStageLabels,
   transactionTypeLabels,
 } from './-consultation-view-utils';
@@ -421,11 +421,11 @@ function IntakeSelect({
 }) {
   const { data } = useQuery({
     queryKey: ['consultation-form-intakes', propertyId],
-    queryFn: () => api.listingIntakes.findAll({ propertyId, includeInactive: true, limit: 20 }),
+    queryFn: () => api.listingIntakes.findAll({ propertyId, includeClosed: true, limit: 20 }),
   });
   const options = (data?.items ?? []).map((intake) => ({
     value: intake.id,
-    label: `의뢰 ${intakeStatusLabels[intake.status] ?? intake.status} · 접수 ${formatDate(intake.receivedAt)}`,
+    label: `의뢰 ${formatIntakeState(intake)} · 접수 ${formatDate(intake.receivedAt)}`,
   }));
 
   return <ContextSelect label="의뢰" value={value} onChange={onChange} options={options} emptyText="이 매물에 등록된 의뢰가 없습니다." />;

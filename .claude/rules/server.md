@@ -44,7 +44,6 @@ src/modules/
 ## 클라이언트 앱 구성
 
 - **Desktop (Electron)**: CTI Bridge, 시스템 트레이, 로컬 MCP Host 포함. 풀 기능.
-- **Web (Vite SPA)**: CTI 없음. desktop과 동일한 API 사용, UI 코드는 독립.
 - **Mobile (React Native, Android only)**: 전화 오버레이 + 녹음, 상담 기록 빠른 등록.
 - UI 코드는 각 앱이 독립적으로 보유. `packages/shared` (타입/enum)와 `packages/api-client` (API 호출)만 공유.
 

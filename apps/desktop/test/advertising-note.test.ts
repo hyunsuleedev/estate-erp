@@ -7,25 +7,6 @@ import { fileURLToPath } from 'node:url';
 const testDir = dirname(fileURLToPath(import.meta.url));
 
 describe('desktop advertising note page', () => {
-  it('matches the web implementation', () => {
-    const desktopSource = readFileSync(
-      resolve(
-        testDir,
-        '../src/renderer/routes/_authenticated/properties/external-listings.tsx',
-      ),
-      'utf8',
-    );
-    const webSource = readFileSync(
-      resolve(
-        testDir,
-        '../../web/src/routes/_authenticated/properties/external-listings.tsx',
-      ),
-      'utf8',
-    );
-
-    assert.equal(desktopSource, webSource);
-  });
-
   it('batches nested ad-entry drafts under a chosen site', () => {
     const source = readFileSync(
       resolve(

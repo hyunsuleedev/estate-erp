@@ -9,21 +9,10 @@ const matchesPageSource = readFileSync(
   resolve(testDir, '../src/renderer/routes/_authenticated/matches/index.tsx'),
   'utf8',
 );
-const webMatchesPageSource = readFileSync(
-  resolve(testDir, '../../web/src/routes/_authenticated/matches/index.tsx'),
-  'utf8',
-);
 const matchDetailSource = readFileSync(
   resolve(
     testDir,
     '../src/renderer/routes/_authenticated/matches/-match-detail-dialog.tsx',
-  ),
-  'utf8',
-);
-const webMatchDetailSource = readFileSync(
-  resolve(
-    testDir,
-    '../../web/src/routes/_authenticated/matches/-match-detail-dialog.tsx',
   ),
   'utf8',
 );
@@ -42,13 +31,6 @@ const matchBoardSource = readFileSync(
   resolve(
     testDir,
     '../src/renderer/routes/_authenticated/matches/-match-board.tsx',
-  ),
-  'utf8',
-);
-const webMatchBoardSource = readFileSync(
-  resolve(
-    testDir,
-    '../../web/src/routes/_authenticated/matches/-match-board.tsx',
   ),
   'utf8',
 );
@@ -99,19 +81,18 @@ describe('desktop matches workbench', () => {
     );
   });
 
-  it('removes every kanban entry point from desktop and web matches pages', () => {
-    for (const source of [matchesPageSource, webMatchesPageSource]) {
-      assert.doesNotMatch(source, /\bkanban\b/);
-      assert.doesNotMatch(source, />\s*칸반\s*<\/Button>/);
-      assert.doesNotMatch(source, /MatchColumn|ResultPanel|matchBoardStages/);
-    }
-    for (const source of [matchBoardSource, webMatchBoardSource]) {
-      assert.doesNotMatch(source, /칸반/);
-      assert.doesNotMatch(
-        source,
-        /export function (?:MatchColumn|MatchCard|ResultPanel)/,
-      );
-    }
+  it('removes every kanban entry point from the matches page', () => {
+    assert.doesNotMatch(matchesPageSource, /\bkanban\b/);
+    assert.doesNotMatch(matchesPageSource, />\s*칸반\s*<\/Button>/);
+    assert.doesNotMatch(
+      matchesPageSource,
+      /MatchColumn|ResultPanel|matchBoardStages/,
+    );
+    assert.doesNotMatch(matchBoardSource, /칸반/);
+    assert.doesNotMatch(
+      matchBoardSource,
+      /export function (?:MatchColumn|MatchCard|ResultPanel)/,
+    );
   });
 
   it('uses dense document-like groups with explicit single-click detail links', () => {
@@ -312,7 +293,6 @@ describe('desktop matches workbench', () => {
       matchesPageSource,
       matchDetailSource,
       propertiesPageSource,
-      webMatchDetailSource,
     ]) {
       assert.match(
         source,
@@ -325,10 +305,6 @@ describe('desktop matches workbench', () => {
     }
     assert.doesNotMatch(
       matchesPageSource,
-      /api\.matches\.updateStage\(id, \{ stage, memo \}\)/,
-    );
-    assert.doesNotMatch(
-      webMatchesPageSource,
       /api\.matches\.updateStage\(id, \{ stage, memo \}\)/,
     );
   });

@@ -47,8 +47,7 @@ apps/desktop/release
 apps/desktop/dist
 apps/desktop/out
 
-# Mobile / Web 산출물 (server 이미지에 불필요)
-apps/web/dist
+# Mobile 산출물 (server 이미지에 불필요)
 apps/mobile
 
 # CTI bridge / MCP server 패키지 (Phase 1 server image에 불필요)

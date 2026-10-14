@@ -82,7 +82,7 @@ rounded:
 
 ## Overview
 
-Estate ERP는 40~60대 한국 중개사가 매물·고객·거래를 빠르게 훑고 처리하는 고밀도 업무 도구다. 기본 화면은 흰 종이와 웜 뉴트럴 잉크처럼 조용하게 유지하고, 색은 상태나 주의가 필요한 사실을 전달할 때만 사용한다. 이 문서보다 `apps/web/src/app.css`, `apps/desktop/src/renderer/app.css`, `components/domain/StatusBadge`의 실제 토큰과 공유 구현이 우선한다.
+Estate ERP는 40~60대 한국 중개사가 매물·고객·거래를 빠르게 훑고 처리하는 고밀도 업무 도구다. 기본 화면은 흰 종이와 웜 뉴트럴 잉크처럼 조용하게 유지하고, 색은 상태나 주의가 필요한 사실을 전달할 때만 사용한다. 이 문서보다 `apps/desktop/src/renderer/app.css`, `components/domain/StatusBadge`의 실제 토큰과 공유 구현이 우선한다.
 
 ## Colors
 

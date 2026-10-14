@@ -9,10 +9,6 @@ const desktopPath = resolve(
   testDir,
   "../src/renderer/routes/_authenticated/properties/naver-my-ads.tsx",
 );
-const webPath = resolve(
-  testDir,
-  "../../web/src/routes/_authenticated/properties/naver-my-ads.tsx",
-);
 const apiPath = resolve(
   testDir,
   "../../../packages/api-client/src/modules/listing-advertisements.ts",
@@ -23,11 +19,9 @@ const taskRunnerPath = resolve(
 );
 
 describe("my ads Task-based workflow", () => {
-  it("keeps desktop and web on the same restored dense table page", () => {
+  it("keeps the restored dense table page", () => {
     const desktop = readFileSync(desktopPath, "utf8");
-    const web = readFileSync(webPath, "utf8");
 
-    assert.equal(desktop, web);
     assert.match(
       desktop,
       /data-canonical-advertisement-source="listing-advertisements"/,

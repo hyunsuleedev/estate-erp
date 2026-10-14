@@ -14,22 +14,6 @@ export const transactionTypeColors: Record<string, string> = {
   monthly: 'bg-cyan-50 text-cyan-700',
 };
 
-export const checkStatusLabels: Record<string, string> = {
-  unverified: '미확인',
-  verified: '확인완료',
-  in_contract: '거래중',
-  hold: '보류',
-  done: '종료',
-};
-
-export const checkStatusColors: Record<string, string> = {
-  unverified: 'bg-gray-100 text-gray-600',
-  verified: 'bg-emerald-50 text-emerald-700',
-  in_contract: 'bg-blue-50 text-blue-700',
-  hold: 'bg-amber-50 text-amber-700',
-  done: 'bg-gray-50 text-gray-400',
-};
-
 export const siteTypeLabels: Record<string, string> = {
   apartment: '아파트',
   officetel: '오피스텔',
