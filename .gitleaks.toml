@@ -1,0 +1,26 @@
+title = "Estate ERP secret scanning"
+
+[extend]
+useDefault = true
+
+# Exact, reviewed false positives; paths and secret values must both match.
+[[allowlists]]
+description = "Contract form field identifiers"
+condition = "AND"
+paths = ['''^packages/shared/src/contract-clause-layouts\.ts$''']
+regexTarget = "secret"
+regexes = ['''^directClause2(?:Toggle)?$''']
+
+[[allowlists]]
+description = "Fictional listing grouping identifiers"
+condition = "AND"
+paths = ['''^prisma/seed-external-listings\.ts$''']
+regexTarget = "secret"
+regexes = ['''^g-monthly-(?:102-1802|104-2303)$''']
+
+[[allowlists]]
+description = "Literal placeholder in Clerk documentation"
+condition = "AND"
+paths = ['''^\.agents/skills/clerk-chrome-extension-patterns/(?:SKILL\.md|references/(?:sync-host|headless-extension)\.md)$''']
+regexTarget = "secret"
+regexes = ['''^YOUR_SECRET_KEY$''']
