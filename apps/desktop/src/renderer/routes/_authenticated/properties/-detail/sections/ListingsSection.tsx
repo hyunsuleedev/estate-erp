@@ -1,3 +1,4 @@
+import { PublicListingEditor } from './PublicListingEditor';
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -179,6 +180,7 @@ function ListingCard({
         />
       </dl>
       <ListingAdRow listing={listing} ads={ads} />
+      <PublicListingEditor listingId={listing.id} />
       {listing.privateMemo && (
         <div className="mt-2 flex items-start gap-1.5 rounded bg-amber-50/70 px-2 py-1.5 text-[11px] leading-5 text-amber-950">
           <Lock className="mt-0.5 size-3 shrink-0 text-amber-700" />

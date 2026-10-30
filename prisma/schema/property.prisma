@@ -149,9 +149,11 @@ model Listing {
   priceHistories             PriceHistory[]
   advertisements             ListingAdvertisement[]
   advertisementSnapshotItems ListingAdvertisementSnapshotItem[]
+  publication PublicListing?
   // 공동 중개망
   networkSharedProperties    NetworkSharedProperty[]
 
+  @@unique([officeId, id])
   @@unique([intakeId, transactionType])
   @@index([officeId, transactionType, intakeId])
   @@index([propertyId])

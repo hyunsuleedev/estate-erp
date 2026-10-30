@@ -378,3 +378,5 @@ export type {
   IngestCallEventResult,
   UpdateCallLogDto,
 } from "./modules/cti.js";
+
+export type { PublicListingSettings, SavePublicListing } from './modules/public-listings.js';

@@ -1,3 +1,4 @@
+import { createPublicListingsApi } from './modules/public-listings.js';
 import type { ApiClientConfig } from "./types.js";
 import { ApiError } from "./types.js";
 import { createAuthApi } from "./modules/auth.js";
@@ -126,6 +127,7 @@ export function createApiClient(config: ApiClientConfig) {
     properties: createPropertiesApi(req),
     listingIntakes: createListingIntakesApi(req),
     listings: createListingsApi(req),
+    publicListings: createPublicListingsApi(req),
     listingAdvertisements: createListingAdvertisementsApi(req),
     officeAdvertisements: createOfficeAdvertisementsApi(req),
     contacts: createContactsApi(req),

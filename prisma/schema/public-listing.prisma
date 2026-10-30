@@ -1,0 +1,17 @@
+// Explicitly authored public content. Internal notes and property photos are never copied automatically.
+model PublicListing {
+  id String @id @default(uuid()) @db.Uuid
+  officeId String @map("office_id") @db.Uuid
+  listingId String @unique @map("listing_id") @db.Uuid
+  title String @db.VarChar(100)
+  description String @db.Text
+  photoUrls String[] @default([]) @map("photo_urls")
+  isPublished Boolean @default(false) @map("is_published")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  office Office @relation(fields: [officeId], references: [id])
+  listing Listing @relation(fields: [officeId, listingId], references: [officeId, id], onDelete: Cascade)
+  @@unique([officeId, listingId])
+  @@index([officeId, isPublished, updatedAt])
+  @@map("public_listings")
+}

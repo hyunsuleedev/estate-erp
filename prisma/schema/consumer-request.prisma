@@ -1,0 +1,13 @@
+// Platform-owned consumer request, independent of ERP employee/office membership.
+// Each delivery is an office-scoped Task; never expose these records through ERP CRUD.
+model ConsumerRequest {
+  id String @id @db.Uuid
+  consumerId String @map("consumer_id")
+  wardCode String @map("ward_code") @db.VarChar(10)
+  regionLabel String @map("region_label")
+  recipientCount Int @map("recipient_count")
+  createdAt DateTime @default(now()) @map("created_at")
+  // Contact data remains only in recipient office tasks, not in platform history.
+  @@index([consumerId, createdAt])
+  @@map("consumer_requests")
+}
