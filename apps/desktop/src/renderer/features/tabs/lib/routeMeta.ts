@@ -48,12 +48,8 @@ const STATIC_ROUTES: Record<string, RouteMeta> = {
     icon: Building,
   },
   "/contacts": { title: "연락처", kind: "contact", icon: BookUser },
-  "/customers": { title: "고객 원장", kind: "contact", icon: Users },
-  "/customers-table": {
-    title: "고객 원장 표 보기",
-    kind: "contact",
-    icon: Users,
-  },
+  "/customers": { title: "고객 중심 보기", kind: "contact", icon: Users },
+  "/customers-table": { title: "고객 원장", kind: "contact", icon: Users },
   "/contacts/new": { title: "연락처 추가", kind: "contact", icon: BookUser },
   "/partner-brokers": {
     title: "파트너 중개사",
@@ -62,7 +58,7 @@ const STATIC_ROUTES: Record<string, RouteMeta> = {
   },
   "/service-vendors": { title: "서비스 업체", kind: "contact", icon: Wrench },
   "/deals": { title: "거래관리", kind: "deal", icon: Handshake },
-  "/matches": { title: "매칭", kind: "match", icon: GitBranch },
+  "/wanted-properties": { title: "희망매물", kind: "match", icon: GitBranch },
   "/consultations": {
     title: "상담기록",
     kind: "consultation",

@@ -11,6 +11,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { OfficeSitesService } from './office-sites.service';
+import { RegisterPrivateSiteDto } from './dto/register-private-site.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import {
   CurrentUser,
@@ -30,8 +31,19 @@ export class OfficeSitesController {
   }
 
   @Get('search')
-  searchCentral(@Query('q') query: string) {
-    return this.service.searchCentralSites(query || '');
+  searchCentral(
+    @Query('q') query: string,
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.service.searchCentralSites(query || '', user.officeId);
+  }
+
+  @Post('private-sites')
+  registerPrivateSite(
+    @Body() dto: RegisterPrivateSiteDto,
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.service.registerPrivateSite(user.officeId, dto);
   }
 
   @Get(':id')

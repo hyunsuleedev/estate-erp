@@ -25,8 +25,16 @@ export function formatDuration(sec: number): string {
   return `${m}:${String(s).padStart(2, '0')}`;
 }
 
-/** 부재중 휴리스틱 — 수신 && 5초 미만 (서버에 통화 결과 필드가 없어 추정) */
-export function isMissedCall(direction: string, durationSec: number): boolean {
+/**
+ * 부재중 휴리스틱 — 수신 && 5초 미만 (서버에 통화 결과 필드가 없어 추정).
+ * 녹음 파일이 있으면 통화한 것이다 (직접 올린 녹음은 길이를 모를 수 있다).
+ */
+export function isMissedCall(
+  direction: string,
+  durationSec: number,
+  fileName?: string | null,
+): boolean {
+  if (fileName) return false;
   return direction === 'inbound' && durationSec < 5;
 }
 

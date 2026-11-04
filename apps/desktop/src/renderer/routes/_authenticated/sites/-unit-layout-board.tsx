@@ -6,12 +6,18 @@ import { cn } from '@/lib/utils';
 import {
   formatFloorLabel,
   getUnitOccupancy,
+  isPilotiUnit,
   OCCUPANCY_META,
   OCCUPANCY_ORDER,
   type LayoutSection,
   type OccupancyStatus,
 } from './-site-helpers';
 import { formatArea } from '@/lib/format';
+
+const pilotiHatchStyle = {
+  backgroundImage:
+    'repeating-linear-gradient(135deg, transparent 0 5px, color-mix(in oklab, var(--color-muted-foreground) 12%, transparent) 5px 6px)',
+};
 
 function formatAreaShort(m2: number | string | null | undefined): string {
   if (m2 == null || m2 === '') return '-';
@@ -50,9 +56,11 @@ export function UnitLayoutBoard({
     if (colorMode !== 'occupancy') return counts;
     for (const section of sections) {
       for (const { unit } of section.cellMap.values()) {
+        if (isPilotiUnit(unit)) continue;
         counts[getUnitOccupancy(unit)] += 1;
       }
       for (const unit of section.unpositionedUnits) {
+        if (isPilotiUnit(unit)) continue;
         counts[getUnitOccupancy(unit)] += 1;
       }
     }
@@ -60,7 +68,9 @@ export function UnitLayoutBoard({
   }, [colorMode, sections]);
 
   if (!hasPositionedUnits) {
-    const allUnits = sections.flatMap((section) => section.unpositionedUnits);
+    const allUnits = sections.flatMap((section) =>
+      section.unpositionedUnits.filter((unit) => !isPilotiUnit(unit)),
+    );
 
     return (
       <div className="flex h-full items-center justify-center p-6">
@@ -159,6 +169,9 @@ export function UnitLayoutBoard({
       <div className="space-y-6">
         {sections.map((section) => {
           const showTitle = sections.length > 1 || section.label !== '전체';
+          const unpositionedUnits = section.unpositionedUnits.filter(
+            (unit) => !isPilotiUnit(unit),
+          );
           return (
             <section key={section.key} className="space-y-3">
               {showTitle && (
@@ -207,6 +220,20 @@ export function UnitLayoutBoard({
                           }
 
                           const { unit } = positionedUnit;
+                          if (isPilotiUnit(unit)) {
+                            return (
+                              <div
+                                key={unit.id}
+                                role="img"
+                                aria-label={`${section.label} ${formatFloorLabel(floor)}층 ${lineNo}라인 필로티`}
+                                data-unit-cell-type="piloti"
+                                className="flex min-h-16 items-center justify-center rounded-lg border border-border/40 bg-muted/20 px-2 py-1 text-[11px] font-medium text-muted-foreground"
+                                style={pilotiHatchStyle}
+                              >
+                                필로티
+                              </div>
+                            );
+                          }
                           const hasListing = (unit.properties ?? []).some(
                             (property) => (property.listings?.length ?? 0) > 0,
                           );
@@ -272,13 +299,13 @@ export function UnitLayoutBoard({
                 </div>
               )}
 
-              {section.unpositionedUnits.length > 0 && (
+              {unpositionedUnits.length > 0 && (
                 <div className="space-y-2">
                   <div className="text-[11px] font-medium text-muted-foreground">
                     배치 불가 호수
                   </div>
                   <div className="flex flex-wrap gap-1.5">
-                    {section.unpositionedUnits.map((unit) => {
+                    {unpositionedUnits.map((unit) => {
                       const occupancy =
                         colorMode === 'occupancy' ? getUnitOccupancy(unit) : null;
                       return (

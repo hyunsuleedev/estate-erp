@@ -2,7 +2,7 @@
  * 대시보드 공용 헬퍼 — 날짜 키/디데이 계산과 로딩·에러 상태 컴포넌트.
  * 카드 UI 자체는 dashboard.tsx가 소유한다.
  */
-import { RotateCcw } from 'lucide-react';
+import { RotateCcw, WifiOff } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -40,6 +40,29 @@ export function QueryErrorState({
       <Button variant="outline" size="sm" onClick={onRetry}>
         <RotateCcw /> 다시 시도
       </Button>
+    </div>
+  );
+}
+
+/**
+ * React Query v5는 오프라인이면 요청을 시작하지 않고 `fetchStatus: 'paused'`로 대기한다.
+ * 이때 `isLoading`은 false라서 빈 데이터를 '결과 없음'으로 오인하기 쉽다 —
+ * 분기는 항상 `isPending`으로 하고, paused면 이 안내를 보여준다.
+ */
+export function isQueryPaused(query: { isPending: boolean; fetchStatus: string }): boolean {
+  return query.isPending && query.fetchStatus === 'paused';
+}
+
+export function OfflineState({ className }: { className?: string }) {
+  return (
+    <div
+      className={cn(
+        'flex items-center justify-center gap-2 py-6 text-center text-sm text-muted-foreground',
+        className,
+      )}
+    >
+      <WifiOff className="size-4" aria-hidden="true" />
+      오프라인입니다. 연결되면 자동으로 불러옵니다.
     </div>
   );
 }

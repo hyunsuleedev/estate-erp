@@ -431,7 +431,10 @@ export function PropertyListingsTable({
         {isExpanded && (
           <tr data-expanded-row={row.original.id}>
             <td colSpan={allColumns.length} className="border-0 p-0 align-top">
-              {renderExpandedRow?.(row.original)}
+              {/* Keep expanded content within the visible scroller width as columns scroll. */}
+              <div className="sticky left-0 w-[100cqw]">
+                {renderExpandedRow?.(row.original)}
+              </div>
             </td>
           </tr>
         )}
@@ -444,7 +447,7 @@ export function PropertyListingsTable({
       <div
         ref={scrollerRef}
         data-property-table-scroller
-        className="relative min-h-0 w-full flex-1 overflow-scroll bg-white outline-none focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0"
+        className="relative min-h-0 w-full flex-1 overflow-scroll bg-white outline-none [container-type:inline-size] focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0"
         tabIndex={0}
         onKeyDown={handleKeyDown}
         onScroll={handleScroll}
@@ -452,7 +455,7 @@ export function PropertyListingsTable({
         {columnGroupControl && (
           <div
             data-property-column-guide
-            className="sticky top-0 z-40 h-9 border-b border-[#e7e5df] bg-[#f8f7f4]"
+            className="sticky top-0 z-40 h-9 border-b border-border bg-[#f7f7f5]"
             style={{ width: "100%", minWidth: tableTotalSize }}
           >
             <div

@@ -1,0 +1,139 @@
+.estate-splash {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background: #f6f5f0;
+  color: #333b2f;
+  font-family:
+    Pretendard,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Apple SD Gothic Neo",
+    sans-serif;
+  transition: opacity 180ms ease-out;
+}
+.estate-splash__scene {
+  position: absolute;
+  inset: 0;
+}
+.estate-splash__scene canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  transition: opacity 220ms ease-out;
+}
+.estate-splash__wordmark {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(50% - 15px + min(15svh, 120px));
+  text-align: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 200ms ease-out;
+}
+.estate-splash__wordmark strong {
+  font-size: 19px;
+  letter-spacing: -0.7px;
+  font-weight: 550;
+}
+.estate-splash__logo {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  opacity: 0;
+  transition: opacity 220ms ease-out;
+  pointer-events: none;
+}
+.estate-splash__logo svg {
+  transform: translateY(-15px);
+  fill: #333b2f;
+  width: min(25.7svh, 203px);
+  height: min(25.7svh, 203px);
+}
+.estate-splash--static .estate-splash__logo {
+  opacity: 1;
+}
+.estate-splash--static canvas {
+  opacity: 0;
+}
+.estate-splash--static .estate-splash__wordmark {
+  opacity: 1 !important;
+  transform: none !important;
+}
+.estate-splash__loading {
+  position: absolute;
+  bottom: max(48px, 9svh);
+  width: 64px;
+  height: 2px;
+  background: #e2e4db;
+  border-radius: 2px;
+  overflow: hidden;
+}
+.estate-splash__loading span {
+  display: block;
+  width: 24px;
+  height: 100%;
+  background: #89927d;
+  border-radius: 2px;
+  animation: estate-splash-progress 1500ms cubic-bezier(0.45, 0, 0.55, 1)
+    infinite;
+}
+.estate-splash[data-state="completing"] .estate-splash__loading,
+.estate-splash[data-state="leaving"] .estate-splash__loading {
+  opacity: 0;
+}
+.estate-splash[data-state="leaving"] {
+  opacity: 0;
+  pointer-events: none;
+}
+@keyframes estate-splash-progress {
+  from {
+    transform: translateX(-26px);
+  }
+  to {
+    transform: translateX(66px);
+  }
+}
+.estate-splash__status {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+@media (max-width: 600px) {
+  .estate-splash__wordmark {
+    top: calc(50% - 12.5px + 102px);
+  }
+  .estate-splash__wordmark strong {
+    font-size: 17px;
+  }
+  .estate-splash__logo svg {
+    transform: translateY(-12.5px);
+    width: 21.9svh;
+    height: 21.9svh;
+  }
+  .estate-splash__loading {
+    bottom: 60px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .estate-splash,
+  .estate-splash__scene canvas,
+  .estate-splash__logo,
+  .estate-splash__wordmark {
+    transition: none;
+  }
+  .estate-splash__loading span {
+    animation: none;
+    transform: translateX(20px);
+  }
+}

@@ -19,11 +19,11 @@ import {
 } from "react";
 import { toast } from "sonner";
 import {
+  Building2,
   CalendarDays,
   Check,
   ChevronDown,
   CircleDollarSign,
-  Clock3,
   Columns3,
   DoorOpen,
   ExternalLink,
@@ -34,20 +34,16 @@ import {
   List,
   Loader2,
   Map as MapIcon,
-  MapPin,
   Megaphone,
-  MessageSquare,
   Pencil,
   Phone,
   Plus,
   RefreshCw,
   RotateCcw,
   Ruler,
-  Search,
   Tag,
   Trash2,
   Type,
-  UserPlus,
   X,
 } from "lucide-react";
 import type { ColumnDef, SortingState } from "@tanstack/react-table";
@@ -60,7 +56,6 @@ import type {
   ListingIntakeListing,
   Match,
   Property,
-  PropertyContact,
   PropertyListing,
   Tenant,
   UpdateListingDto,
@@ -86,7 +81,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -101,15 +95,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import {
-  MultiSelect,
-  type MultiSelectOption,
-} from "@/components/ui/multi-select";
+import { type MultiSelectOption } from "@/components/ui/multi-select";
 import { StatusBadge } from "@/components/domain";
 import { cn } from "@/lib/utils";
 import { formatPhoneNumber } from "@/lib/contacts";
@@ -143,6 +129,33 @@ import {
   type PropertyListingGroup,
 } from "./-components/property-listings-table";
 import {
+  AddFilterMenu,
+  ChecklistFilterPanel,
+  ToolbarFilterChip,
+  ToolbarPillTabs,
+  ToolbarPillToggle,
+  ToolbarSearchBar,
+  summarizeSelection,
+  toolbarGhostButtonClassName,
+  type AddFilterItem,
+} from "./-components/property-toolbar";
+import {
+  PropertyInspectorView,
+  type InspectorActivity,
+  type InspectorAdRow,
+  type InspectorChip,
+  type InspectorDealRow,
+  type InspectorMatchRow,
+  type InspectorModel,
+  type InspectorOffer,
+  type InspectorPerson,
+  type InspectorStat,
+  type InspectorStep,
+  type InspectorTodo,
+} from "./-components/property-inspector-view";
+import { PropertyInspectorProgressTab } from "./-components/property-inspector-progress-tab";
+import { getStatusMeta } from "@/lib/status-config";
+import {
   buildPropertyMapClustersFromOffsets,
   removePropertyMapListeners,
   type PropertyMapClusterSource,
@@ -151,12 +164,12 @@ import {
   PropertyBulkActions,
   PropertyRowActions,
 } from "./-property-intake-actions";
-import { MatchCreateDialog } from "../matches/-match-create-dialog";
-import { MatchConvertDialog } from "../matches/-match-convert-dialog";
+import { MatchCreateDialog } from "../wanted-properties/-match-create-dialog";
+import { MatchConvertDialog } from "../wanted-properties/-match-convert-dialog";
 import {
   MatchProgressTrack,
   type MatchProgressActions,
-} from "../matches/-match-board";
+} from "../wanted-properties/-match-board";
 import {
   buildViewingCalendarEventPayload,
   formatViewingEventTime,
@@ -166,7 +179,7 @@ import {
   matchStageOrder,
   shouldMoveToViewingOnSchedule,
   toCalendarEventUpdatePayload,
-} from "../matches/-match-view-utils";
+} from "../wanted-properties/-match-view-utils";
 
 // ── Labels & Colors ─────────────────────────────────────────────
 
@@ -516,14 +529,6 @@ interface PropertyMapCluster {
   listingCount: number;
 }
 
-type PropertySheetNoticeTone = "danger" | "warning" | "neutral";
-
-interface PropertySheetNotice {
-  title: string;
-  detail: string;
-  tone: PropertySheetNoticeTone;
-}
-
 interface StartDealPrompt {
   propertyId: string;
   propertyLabel: string;
@@ -597,6 +602,7 @@ function PropertiesPage() {
   const [isPriceFilterOpen, setIsPriceFilterOpen] = useState(false);
   const [isMonthlyRentFilterOpen, setIsMonthlyRentFilterOpen] = useState(false);
   const [isAreaFilterOpen, setIsAreaFilterOpen] = useState(false);
+  const [isLocationFilterOpen, setIsLocationFilterOpen] = useState(false);
   const [activeSorts, setActiveSorts] = useState<SortDefinition[]>([]);
   const [sorting, setSorting] = useState<SortingState>([]);
   // 선택 표시 컬럼 — 융자금
@@ -1739,6 +1745,162 @@ function PropertiesPage() {
     ],
   );
 
+  // ── 툴바: 위치 · 가격 라벨 · "+ 필터" 항목 ─────────────────────
+  const selectedSiteSummary = summarizeSelection(
+    siteFilterOptions,
+    propertyFilters.siteIds,
+  );
+  const locationFilterLabel =
+    selectedSiteSummary ?? selectedRegionName ?? "지역·단지 전체";
+  const isLocationFilterNamed = Boolean(
+    selectedSiteSummary ?? selectedRegionName,
+  );
+  const isLocationFilterActive = Boolean(
+    propertyFilters.siteIds.length > 0 ||
+    propertyFilters.provinceCode ||
+    propertyFilters.dongSearch.trim() ||
+    propertyFilters.unitSearch.trim(),
+  );
+  const priceFilterLabel = {
+    all: "가격/보증금",
+    sale: "매매가",
+    jeonse: "전세가",
+    monthly: "보증금",
+  }[selectedTransactionType];
+
+  const renderMonthlyRentPanel = (close: () => void) => (
+    <NumericRangeFilterPanel
+      ariaLabel="월세 필터"
+      title="월세"
+      description="월 납부액 기준 · 만원 단위"
+      initialRange={getMonthlyRentRangeFilter(propertyFilters)}
+      min={MONTHLY_RENT_RANGE_MIN}
+      max={MONTHLY_RENT_RANGE_MAX}
+      step={10}
+      presets={MONTHLY_RENT_RANGE_PRESETS}
+      tickLabels={["전체", "200만", "400만", "최대"]}
+      formatLabel={(min, max) =>
+        formatNumericRangeLabel(
+          min,
+          max,
+          MONTHLY_RENT_RANGE_MIN,
+          MONTHLY_RENT_RANGE_MAX,
+          "만원",
+          "전체 월세",
+        )
+      }
+      thumbLabels={["최소 월세", "최대 월세"]}
+      onApply={(range) => {
+        handleMonthlyRentRangeApply(range);
+        close();
+      }}
+      onClear={() => {
+        clearFilterFields(["monthlyRentMin", "monthlyRentMax"]);
+        close();
+      }}
+      onCancel={close}
+    />
+  );
+
+  // 자주 쓰지 않는 필터. 값이 있으면 2행에 칩으로, 없으면 "+ 필터" 메뉴 안에만 있다.
+  const moreFilterItems: (AddFilterItem & { onClear: () => void })[] = [
+    {
+      key: "siteTypes",
+      label: "유형",
+      icon: <Building2 />,
+      summary: summarizeSelection(siteTypeOptions, propertyFilters.siteTypes),
+      onClear: () => clearFilterFields(["siteTypes"]),
+      contentClassName: "w-[240px] p-0",
+      render: () => (
+        <ChecklistFilterPanel
+          options={siteTypeOptions}
+          selected={propertyFilters.siteTypes}
+          onChange={(values) => updatePropertyFilter("siteTypes", values)}
+          searchable={false}
+        />
+      ),
+    },
+    {
+      key: "moveIn",
+      label: "입주일",
+      icon: <CalendarDays />,
+      summary: moveInFilterSummary,
+      onClear: () => clearFilterFields(["moveInFrom", "moveInTo"]),
+      contentClassName: "w-[320px] p-3",
+      render: () => (
+        <div className="space-y-3">
+          <PopoverTitle
+            title="입주일"
+            description="입주가능일 시작 날짜 기준으로 검색합니다."
+          />
+          <DateRangeFilter
+            fromValue={propertyFilters.moveInFrom}
+            toValue={propertyFilters.moveInTo}
+            onFromChange={(value) => updatePropertyFilter("moveInFrom", value)}
+            onToChange={(value) => updatePropertyFilter("moveInTo", value)}
+          />
+        </div>
+      ),
+    },
+    {
+      key: "advertisement",
+      label: "광고",
+      icon: <Megaphone />,
+      summary:
+        propertyFilters.advertisement === "all"
+          ? null
+          : (advertisementFilterOptions
+              .find((option) => option.value === propertyFilters.advertisement)
+              ?.label.replace(/^광고\s*/, "") ?? null),
+      onClear: () => clearFilterFields(["advertisement"]),
+      contentClassName: "w-[200px] p-1",
+      render: (close) => (
+        <div role="radiogroup" aria-label="광고 필터">
+          {advertisementFilterOptions.map((option) => {
+            const isSelected = propertyFilters.advertisement === option.value;
+            return (
+              <button
+                key={option.value}
+                type="button"
+                role="radio"
+                aria-checked={isSelected}
+                onClick={() => {
+                  updatePropertyFilter(
+                    "advertisement",
+                    option.value as PropertyFilterState["advertisement"],
+                  );
+                  close();
+                }}
+                className="flex h-8 w-full items-center justify-between rounded-sm px-2 text-left text-[13px] hover:bg-[rgba(55,53,47,0.06)]"
+              >
+                {option.label}
+                {isSelected && <Check className="size-3.5" />}
+              </button>
+            );
+          })}
+        </div>
+      ),
+    },
+    // 월세: 월세 탭에서는 2행 고정 칩, 전체 탭에서는 메뉴 안,
+    // 매매·전세 탭에서는 값이 남아 있을 때만 보인다.
+    ...(selectedTransactionType === "all" ||
+    (selectedTransactionType !== "monthly" && monthlyRentFilterSummary)
+      ? [
+          {
+            key: "monthlyRent",
+            label: "월세",
+            icon: <CircleDollarSign />,
+            summary: monthlyRentFilterSummary,
+            onClear: () =>
+              clearFilterFields(["monthlyRentMin", "monthlyRentMax"]),
+            contentClassName:
+              "w-[430px] max-w-[calc(100vw-24px)] overflow-hidden p-0",
+            render: renderMonthlyRentPanel,
+          },
+        ]
+      : []),
+  ];
+
   return (
     <CellEditProvider>
       <div
@@ -1746,260 +1908,187 @@ function PropertiesPage() {
         className="relative -m-4 flex min-h-0 flex-1 flex-col bg-white"
       >
         <section className="shrink-0 border-b border-border bg-white px-3 py-2.5">
-          <div className="flex min-w-0 items-center gap-2">
-            <div className="flex min-w-0 flex-1 items-center gap-1.5">
-              <Tabs
-                value={selectedTransactionType}
-                onValueChange={handleTransactionTabChange}
-                className="min-w-0 shrink-0 gap-0"
-              >
-                <TabsList className="max-w-full justify-start border border-border/80 bg-[#f5f4f1] p-0.5">
-                  {transactionTypeOptions.map((tab) => {
-                    return (
-                      <TabsTrigger
-                        key={tab.value}
-                        value={tab.value}
-                        className="flex-none border-0 px-3 text-[13px] text-muted-foreground shadow-none data-[state=active]:border data-[state=active]:border-[#d9d9d6] data-[state=active]:bg-white data-[state=active]:text-slate-950 data-[state=active]:shadow-sm"
-                      >
-                        <span>{tab.label}</span>
-                      </TabsTrigger>
-                    );
-                  })}
-                </TabsList>
-              </Tabs>
+          <div className="@container flex min-w-0 items-center gap-2">
+            <ToolbarPillTabs
+              ariaLabel="거래유형"
+              value={selectedTransactionType}
+              options={transactionTypeOptions}
+              onChange={handleTransactionTabChange}
+            />
 
-              <MultiSelect
+            <ToolbarSearchBar
+              label={locationFilterLabel}
+              isPlaceholder={!isLocationFilterNamed}
+              active={isLocationFilterActive}
+              dong={propertyFilters.dongSearch}
+              unit={propertyFilters.unitSearch}
+              onDongChange={(value) => updatePropertyFilter("dongSearch", value)}
+              onUnitChange={(value) => updatePropertyFilter("unitSearch", value)}
+              onClear={() =>
+                clearFilterFields([
+                  "siteIds",
+                  "provinceCode",
+                  "districtCode",
+                  "wardCode",
+                  "dongSearch",
+                  "unitSearch",
+                ])
+              }
+              open={isLocationFilterOpen}
+              onOpenChange={setIsLocationFilterOpen}
+              search={search}
+              onSearchChange={handleSearchChange}
+              searchPlaceholder="주소, 연락처, 메모"
+            >
+              <div className="space-y-1.5 border-b border-border p-3">
+                <div className="flex h-5 items-center justify-between">
+                  <p className="text-[11px] font-semibold text-muted-foreground">
+                    지역
+                  </p>
+                  {propertyFilters.provinceCode && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        clearFilterFields([
+                          "provinceCode",
+                          "districtCode",
+                          "wardCode",
+                        ])
+                      }
+                      className="inline-flex h-5 items-center gap-1 rounded px-1.5 text-[11.5px] text-muted-foreground transition-colors hover:bg-[rgba(55,53,47,0.08)] hover:text-foreground"
+                    >
+                      <RotateCcw className="size-3" />
+                      지역 초기화
+                    </button>
+                  )}
+                </div>
+                <div className="grid grid-cols-3 gap-1.5">
+                  <SelectFilter
+                    ariaLabel="시도"
+                    value={propertyFilters.provinceCode}
+                    onChange={handleProvinceFilterChange}
+                    options={provinceOptions}
+                  />
+                  <SelectFilter
+                    ariaLabel="시군구"
+                    value={propertyFilters.districtCode}
+                    onChange={handleDistrictFilterChange}
+                    options={districtOptions}
+                  />
+                  <SelectFilter
+                    ariaLabel="법정동"
+                    value={propertyFilters.wardCode}
+                    onChange={(value) => updatePropertyFilter("wardCode", value)}
+                    options={wardOptions}
+                  />
+                </div>
+              </div>
+              <ChecklistFilterPanel
                 options={siteFilterOptions}
                 selected={propertyFilters.siteIds}
                 onChange={(values) => updatePropertyFilter("siteIds", values)}
-                ariaLabel="단지 필터"
-                placeholder="단지 전체"
                 searchPlaceholder="단지명 또는 주소 검색"
                 emptyText="일치하는 단지가 없습니다."
                 isLoading={isFilterSitesLoading}
-                maxCount={1}
-                className={cn(
-                  "h-8 min-w-[150px] max-w-[280px] shrink-0 border-transparent bg-[#f7f6f3] px-2.5 text-[13px] shadow-none hover:border-border",
-                  propertyFilters.siteIds.length > 0 &&
-                    "border-foreground/25 bg-foreground/[0.06]",
-                )}
-                badgeClassName="m-0 h-5 border-border bg-white px-1.5 text-[11px] text-foreground shadow-none"
-                popoverClassName="w-[360px]"
+                listClassName="max-h-[280px]"
               />
-
-              <div className="relative w-20">
-                <Input
-                  value={propertyFilters.dongSearch}
-                  onChange={(event) =>
-                    updatePropertyFilter("dongSearch", event.target.value)
-                  }
-                  placeholder="동"
-                  className="h-8 border-transparent bg-[#f7f6f3] px-2 pr-6 text-[13px] shadow-none hover:border-border focus:border-input focus:bg-white"
-                />
-                {propertyFilters.dongSearch && (
-                  <button
-                    type="button"
-                    aria-label="동 검색 지우기"
-                    onClick={() => updatePropertyFilter("dongSearch", "")}
-                    className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded-sm p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-                  >
-                    <X className="size-3.5" />
-                  </button>
-                )}
+              <div className="flex items-center justify-between gap-3 border-t border-border px-3 py-2">
+                <span className="text-xs text-muted-foreground">
+                  단지를 고르지 않으면 지역 전체에서 찾습니다.
+                </span>
+                <Button
+                  size="sm"
+                  className="h-7 px-3 text-xs"
+                  onClick={() => setIsLocationFilterOpen(false)}
+                >
+                  완료
+                </Button>
               </div>
+            </ToolbarSearchBar>
 
-              <div className="relative w-20">
-                <Input
-                  value={propertyFilters.unitSearch}
-                  onChange={(event) =>
-                    updatePropertyFilter("unitSearch", event.target.value)
-                  }
-                  placeholder="호"
-                  className="h-8 border-transparent bg-[#f7f6f3] px-2 pr-6 text-[13px] shadow-none hover:border-border focus:border-input focus:bg-white"
-                />
-                {propertyFilters.unitSearch && (
-                  <button
-                    type="button"
-                    aria-label="호 검색 지우기"
-                    onClick={() => updatePropertyFilter("unitSearch", "")}
-                    className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded-sm p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-                  >
-                    <X className="size-3.5" />
-                  </button>
-                )}
-              </div>
-
-              <div className="relative ml-1 min-w-[160px] max-w-56 flex-1">
-                <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  value={search}
-                  onChange={(event) => handleSearchChange(event.target.value)}
-                  placeholder="주소, 연락처, 메모"
-                  className="h-8 border-transparent bg-[#f7f6f3] pl-8 pr-8 text-[13px] shadow-none hover:border-border focus:border-input focus:bg-white"
-                />
-                {search && (
-                  <button
-                    type="button"
-                    aria-label="검색어 지우기"
-                    onClick={() => handleSearchChange("")}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 rounded-sm p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-                  >
-                    <X className="size-3.5" />
-                  </button>
-                )}
-              </div>
-            </div>
-
-            <div className="flex shrink-0 items-center gap-2">
-              <ViewModeSwitch value={viewMode} onChange={setViewMode} />
+            <div className="ml-auto flex shrink-0 items-center gap-2">
+              <ToolbarPillToggle
+                ariaLabel="매물 보기 방식"
+                value={viewMode}
+                onChange={setViewMode}
+                options={[
+                  { value: "list", label: "목록", icon: <List /> },
+                  { value: "map", label: "지도", icon: <MapIcon /> },
+                ]}
+              />
               <Button
                 size="sm"
-                className="shrink-0 px-3.5"
+                aria-label="새 매물 등록"
+                className="h-[30px] shrink-0 rounded-full px-3.5"
                 onClick={handleCreateProperty}
               >
-                <Plus className="size-3.5" />새 매물 등록
+                <Plus className="size-3.5" />
+                {/* 툴바 폭이 768px보다 좁으면 아이콘만 */}
+                <span className="@max-3xl:hidden">새 매물 등록</span>
               </Button>
             </div>
           </div>
         </section>
 
-        <section className="shrink-0 overflow-x-auto border-b border-border bg-[#faf9f6] px-3 py-2">
-          <div className="flex w-full min-w-max items-center gap-2">
-            <div className="flex shrink-0 items-center gap-1.5">
-              <FilterPopoverChip
-                label="지역"
-                value={selectedRegionName ?? "전체"}
-                active={Boolean(
-                  propertyFilters.provinceCode ||
-                  propertyFilters.districtCode ||
-                  propertyFilters.wardCode,
-                )}
-                tier={2}
-                onClear={() =>
-                  clearFilterFields([
-                    "provinceCode",
-                    "districtCode",
-                    "wardCode",
-                  ])
-                }
-                contentClassName="w-[360px]"
-              >
-                <div className="space-y-3">
-                  <PopoverTitle
-                    title="지역"
-                    description="시도, 시군구, 법정동을 한 번에 좁힙니다."
-                  />
-                  <div className="grid grid-cols-3 gap-2">
-                    <FilterField label="시도">
-                      <SelectFilter
-                        value={propertyFilters.provinceCode}
-                        onChange={handleProvinceFilterChange}
-                        options={provinceOptions}
-                      />
-                    </FilterField>
-                    <FilterField label="시군구">
-                      <SelectFilter
-                        value={propertyFilters.districtCode}
-                        onChange={handleDistrictFilterChange}
-                        options={districtOptions}
-                      />
-                    </FilterField>
-                    <FilterField label="법정동">
-                      <SelectFilter
-                        value={propertyFilters.wardCode}
-                        onChange={(value) =>
-                          updatePropertyFilter("wardCode", value)
-                        }
-                        options={wardOptions}
-                      />
-                    </FilterField>
-                  </div>
-                </div>
-              </FilterPopoverChip>
-
-              <MultiSelect
-                options={siteTypeOptions}
-                selected={propertyFilters.siteTypes}
-                onChange={(values) => updatePropertyFilter("siteTypes", values)}
-                ariaLabel="유형 필터"
-                placeholder="유형 전체"
-                searchPlaceholder="유형 검색"
-                emptyText="일치하는 유형이 없습니다."
-                maxCount={1}
-                className={cn(
-                  "h-8 min-w-[126px] max-w-[220px] border-border bg-white px-2.5 text-[13px] shadow-none",
-                  propertyFilters.siteTypes.length > 0 &&
-                    "border-foreground/25 bg-foreground/[0.06]",
-                )}
-                badgeClassName="m-0 h-5 border-border bg-white px-1.5 text-[11px] text-foreground shadow-none"
-                popoverClassName="w-[240px]"
-              />
-            </div>
-
-            <div className="h-5 w-px shrink-0 bg-border" aria-hidden="true" />
-
-            <div className="flex shrink-0 items-center gap-1.5">
-              <MultiSelect
+        <section className="flex shrink-0 items-center gap-2 border-b border-border bg-white px-3 py-2">
+          <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            <ToolbarFilterChip
+              label="매물상태"
+              summary={summarizeSelection(
+                listingAvailabilityFilterOptions,
+                propertyFilters.availabilities,
+              )}
+              onClear={() => clearFilterFields(["availabilities"])}
+              contentClassName="w-[180px] p-0"
+            >
+              <ChecklistFilterPanel
                 options={listingAvailabilityFilterOptions}
                 selected={propertyFilters.availabilities}
                 onChange={(values) =>
                   updatePropertyFilter("availabilities", values)
                 }
-                ariaLabel="매물상태 필터"
-                placeholder="매물상태 전체"
-                searchPlaceholder="매물상태 검색"
-                emptyText="일치하는 상태가 없습니다."
-                maxCount={1}
-                className={cn(
-                  "h-8 min-w-[150px] max-w-[240px] border-border bg-white px-2.5 text-[13px] shadow-none",
-                  propertyFilters.availabilities.length > 0 &&
-                    "border-foreground/25 bg-foreground/[0.06]",
-                )}
-                badgeClassName="m-0 h-5 border-border bg-white px-1.5 text-[11px] text-foreground shadow-none"
-                popoverClassName="w-[240px]"
+                searchable={false}
               />
+            </ToolbarFilterChip>
 
-              <FilterPopoverChip
-                label="가격/보증금"
-                value={priceDepositFilterSummary ?? "전체"}
-                active={Boolean(priceDepositFilterSummary)}
-                tier={2}
-                open={isPriceFilterOpen}
-                onOpenChange={setIsPriceFilterOpen}
-                onClear={() =>
+            <ToolbarFilterChip
+              label={priceFilterLabel}
+              summary={priceDepositFilterSummary}
+              open={isPriceFilterOpen}
+              onOpenChange={setIsPriceFilterOpen}
+              onClear={() =>
+                clearFilterFields([
+                  "priceMin",
+                  "priceMax",
+                  "depositMin",
+                  "depositMax",
+                ])
+              }
+              contentClassName="w-[430px] max-w-[calc(100vw-24px)] overflow-hidden p-0"
+            >
+              <PriceRangeFilterPanel
+                initialRange={getPriceRangeFilter(
+                  propertyFilters,
+                  selectedTransactionType,
+                )}
+                onApply={handlePriceRangeApply}
+                onClear={() => {
                   clearFilterFields([
                     "priceMin",
                     "priceMax",
                     "depositMin",
                     "depositMax",
-                  ])
-                }
-                contentClassName="w-[430px] max-w-[calc(100vw-24px)] overflow-hidden p-0"
-              >
-                <PriceRangeFilterPanel
-                  initialRange={getPriceRangeFilter(
-                    propertyFilters,
-                    selectedTransactionType,
-                  )}
-                  onApply={handlePriceRangeApply}
-                  onClear={() => {
-                    clearFilterFields([
-                      "priceMin",
-                      "priceMax",
-                      "depositMin",
-                      "depositMax",
-                    ]);
-                    setIsPriceFilterOpen(false);
-                  }}
-                  onCancel={() => setIsPriceFilterOpen(false)}
-                />
-              </FilterPopoverChip>
+                  ]);
+                  setIsPriceFilterOpen(false);
+                }}
+                onCancel={() => setIsPriceFilterOpen(false)}
+              />
+            </ToolbarFilterChip>
 
-              <FilterPopoverChip
+            {selectedTransactionType === "monthly" && (
+              <ToolbarFilterChip
                 label="월세"
-                value={monthlyRentFilterSummary ?? "전체"}
-                active={Boolean(monthlyRentFilterSummary)}
-                tier={3}
+                summary={monthlyRentFilterSummary}
                 open={isMonthlyRentFilterOpen}
                 onOpenChange={setIsMonthlyRentFilterOpen}
                 onClear={() =>
@@ -2007,227 +2096,141 @@ function PropertiesPage() {
                 }
                 contentClassName="w-[430px] max-w-[calc(100vw-24px)] overflow-hidden p-0"
               >
-                <NumericRangeFilterPanel
-                  ariaLabel="월세 필터"
-                  title="월세"
-                  description="월 납부액 기준 · 만원 단위"
-                  initialRange={getMonthlyRentRangeFilter(propertyFilters)}
-                  min={MONTHLY_RENT_RANGE_MIN}
-                  max={MONTHLY_RENT_RANGE_MAX}
-                  step={10}
-                  presets={MONTHLY_RENT_RANGE_PRESETS}
-                  tickLabels={["전체", "200만", "400만", "최대"]}
-                  formatLabel={(min, max) =>
-                    formatNumericRangeLabel(
-                      min,
-                      max,
-                      MONTHLY_RENT_RANGE_MIN,
-                      MONTHLY_RENT_RANGE_MAX,
-                      "만원",
-                      "전체 월세",
-                    )
-                  }
-                  thumbLabels={["최소 월세", "최대 월세"]}
-                  onApply={handleMonthlyRentRangeApply}
-                  onClear={() => {
-                    clearFilterFields(["monthlyRentMin", "monthlyRentMax"]);
-                    setIsMonthlyRentFilterOpen(false);
-                  }}
-                  onCancel={() => setIsMonthlyRentFilterOpen(false)}
-                />
-              </FilterPopoverChip>
+                {(close) => renderMonthlyRentPanel(close)}
+              </ToolbarFilterChip>
+            )}
 
-              <FilterPopoverChip
-                label="공급평형"
-                value={areaFilterSummary ?? "전체"}
-                active={Boolean(areaFilterSummary)}
-                tier={2}
-                open={isAreaFilterOpen}
-                onOpenChange={setIsAreaFilterOpen}
-                onClear={() => clearFilterFields(["areaMin", "areaMax"])}
-                contentClassName="w-[430px] max-w-[calc(100vw-24px)] overflow-hidden p-0"
-              >
-                <NumericRangeFilterPanel
-                  ariaLabel="공급평형 필터"
-                  title="공급평형"
-                  description="공급면적 기준 · 평 단위"
-                  initialRange={getAreaRangeFilter(propertyFilters)}
-                  min={AREA_RANGE_MIN}
-                  max={AREA_RANGE_MAX}
-                  step={1}
-                  presets={AREA_RANGE_PRESETS}
-                  tickLabels={["전체", "20평", "40평", "60평", "최대"]}
-                  formatLabel={(min, max) =>
-                    formatNumericRangeLabel(
-                      min,
-                      max,
-                      AREA_RANGE_MIN,
-                      AREA_RANGE_MAX,
-                      "평",
-                      "전체 면적",
-                    )
-                  }
-                  thumbLabels={["최소 면적", "최대 면적"]}
-                  onApply={handleAreaRangeApply}
-                  onClear={() => {
-                    clearFilterFields(["areaMin", "areaMax"]);
-                    setIsAreaFilterOpen(false);
-                  }}
-                  onCancel={() => setIsAreaFilterOpen(false)}
-                />
-              </FilterPopoverChip>
-
-              <FilterPopoverChip
-                label="방/욕실"
-                value={roomBathFilterSummary ?? "전체"}
-                active={Boolean(roomBathFilterSummary)}
-                tier={2}
-                onClear={() =>
-                  clearFilterFields(["roomCount", "bathRoomCount"])
-                }
-                contentClassName="w-[280px]"
-              >
-                <div className="space-y-3">
-                  <PopoverTitle
-                    title="방/욕실"
-                    description="개별 호실 값이 있으면 우선하고, 없으면 평형 정보를 사용합니다."
-                  />
-                  <div className="grid grid-cols-2 gap-3">
-                    <FilterField label="방 수">
-                      <SelectFilter
-                        ariaLabel="방 수 필터"
-                        value={propertyFilters.roomCount}
-                        onChange={(value) =>
-                          updatePropertyFilter("roomCount", value)
-                        }
-                        options={ROOM_COUNT_FILTER_OPTIONS}
-                      />
-                    </FilterField>
-                    <FilterField label="욕실 수">
-                      <SelectFilter
-                        ariaLabel="욕실 수 필터"
-                        value={propertyFilters.bathRoomCount}
-                        onChange={(value) =>
-                          updatePropertyFilter("bathRoomCount", value)
-                        }
-                        options={BATH_ROOM_COUNT_FILTER_OPTIONS}
-                      />
-                    </FilterField>
-                  </div>
-                </div>
-              </FilterPopoverChip>
-
-              <FilterPopoverChip
-                label="입주일"
-                value={moveInFilterSummary ?? "전체"}
-                active={Boolean(moveInFilterSummary)}
-                tier={3}
-                onClear={() => clearFilterFields(["moveInFrom", "moveInTo"])}
-                contentClassName="w-[320px]"
-              >
-                <div className="space-y-3">
-                  <PopoverTitle
-                    title="입주일"
-                    description="입주가능일 시작 날짜 기준으로 검색합니다."
-                  />
-                  <DateRangeFilter
-                    fromValue={propertyFilters.moveInFrom}
-                    toValue={propertyFilters.moveInTo}
-                    onFromChange={(value) =>
-                      updatePropertyFilter("moveInFrom", value)
-                    }
-                    onToChange={(value) =>
-                      updatePropertyFilter("moveInTo", value)
-                    }
-                  />
-                </div>
-              </FilterPopoverChip>
-            </div>
-
-            <div className="h-5 w-px shrink-0 bg-border" aria-hidden="true" />
-
-            <div className="flex shrink-0 items-center gap-1.5">
-              <Select
-                value={propertyFilters.advertisement}
-                onValueChange={(value) =>
-                  updatePropertyFilter(
-                    "advertisement",
-                    value as PropertyFilterState["advertisement"],
+            <ToolbarFilterChip
+              label="공급평형"
+              summary={areaFilterSummary}
+              open={isAreaFilterOpen}
+              onOpenChange={setIsAreaFilterOpen}
+              onClear={() => clearFilterFields(["areaMin", "areaMax"])}
+              contentClassName="w-[430px] max-w-[calc(100vw-24px)] overflow-hidden p-0"
+            >
+              <NumericRangeFilterPanel
+                ariaLabel="공급평형 필터"
+                title="공급평형"
+                description="공급면적 기준 · 평 단위"
+                initialRange={getAreaRangeFilter(propertyFilters)}
+                min={AREA_RANGE_MIN}
+                max={AREA_RANGE_MAX}
+                step={1}
+                presets={AREA_RANGE_PRESETS}
+                tickLabels={["전체", "20평", "40평", "60평", "최대"]}
+                formatLabel={(min, max) =>
+                  formatNumericRangeLabel(
+                    min,
+                    max,
+                    AREA_RANGE_MIN,
+                    AREA_RANGE_MAX,
+                    "평",
+                    "전체 면적",
                   )
                 }
-              >
-                <SelectTrigger
-                  size="sm"
-                  aria-label="광고 필터"
-                  className={cn(
-                    "h-8 w-[116px] border-border bg-white px-2.5 text-xs text-muted-foreground shadow-none",
-                    propertyFilters.advertisement !== "all" &&
-                      "border-foreground/25 bg-foreground/[0.06] text-foreground",
-                  )}
+                thumbLabels={["최소 면적", "최대 면적"]}
+                onApply={handleAreaRangeApply}
+                onClear={() => {
+                  clearFilterFields(["areaMin", "areaMax"]);
+                  setIsAreaFilterOpen(false);
+                }}
+                onCancel={() => setIsAreaFilterOpen(false)}
+              />
+            </ToolbarFilterChip>
+
+            <ToolbarFilterChip
+              label="방/욕실"
+              summary={roomBathFilterSummary}
+              onClear={() => clearFilterFields(["roomCount", "bathRoomCount"])}
+              contentClassName="w-[280px]"
+            >
+              <div className="space-y-3">
+                <PopoverTitle
+                  title="방/욕실"
+                  description="개별 호실 값이 있으면 우선하고, 없으면 평형 정보를 사용합니다."
+                />
+                <div className="grid grid-cols-2 gap-3">
+                  <FilterField label="방 수">
+                    <SelectFilter
+                      ariaLabel="방 수 필터"
+                      value={propertyFilters.roomCount}
+                      onChange={(value) =>
+                        updatePropertyFilter("roomCount", value)
+                      }
+                      options={ROOM_COUNT_FILTER_OPTIONS}
+                    />
+                  </FilterField>
+                  <FilterField label="욕실 수">
+                    <SelectFilter
+                      ariaLabel="욕실 수 필터"
+                      value={propertyFilters.bathRoomCount}
+                      onChange={(value) =>
+                        updatePropertyFilter("bathRoomCount", value)
+                      }
+                      options={BATH_ROOM_COUNT_FILTER_OPTIONS}
+                    />
+                  </FilterField>
+                </div>
+              </div>
+            </ToolbarFilterChip>
+
+            {/* "+ 필터"에서 고른 필터는 값이 생긴 뒤에만 칩으로 나타난다 */}
+            {moreFilterItems
+              .filter((item) => item.summary !== null)
+              .map((item) => (
+                <ToolbarFilterChip
+                  key={item.key}
+                  label={item.label}
+                  summary={item.summary}
+                  onClear={item.onClear}
+                  contentClassName={item.contentClassName}
                 >
-                  <Megaphone className="size-3.5" />
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent align="start">
-                  {advertisementFilterOptions.map((option) => (
-                    <SelectItem
-                      key={option.value}
-                      value={option.value}
-                      className="text-[13px]"
-                    >
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+                  {(close) => item.render(close)}
+                </ToolbarFilterChip>
+              ))}
 
-            {/* 표시 설정과 초기화 — 우측 정렬 */}
-            <div className="ml-auto flex items-center gap-1.5">
-              <span className="mr-0.5 hidden text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60 xl:inline">
-                표시
-              </span>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-8 gap-1.5 px-2.5 text-xs text-muted-foreground"
-                  >
-                    <Columns3 className="size-3.5" />
-                    컬럼
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-40">
-                  <DropdownMenuCheckboxItem
-                    checked={optionalColumns.loanAmount}
-                    onCheckedChange={(checked) =>
-                      setOptionalColumns((prev) => ({
-                        ...prev,
-                        loanAmount: Boolean(checked),
-                      }))
-                    }
-                  >
-                    융자금
-                  </DropdownMenuCheckboxItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+            <AddFilterMenu
+              items={moreFilterItems}
+              hint="매물상태 · 가격 · 공급평형 · 방/욕실은 이 줄에 늘 보입니다."
+            />
+          </div>
 
-              {hasActiveFilters && (
-                <>
-                  <div className="mx-0.5 h-4 w-px bg-border" />
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-8 gap-1.5 px-2.5 text-xs text-muted-foreground"
-                    onClick={handleFiltersReset}
-                  >
-                    <RotateCcw className="size-3.5" />
-                    초기화
-                  </Button>
-                </>
-              )}
-            </div>
+          {/* 초기화 · 컬럼 — 필터 줄이 넘쳐도 가려지지 않게 오른쪽에 고정 */}
+          <div className="flex shrink-0 items-center gap-0.5">
+            {hasActiveFilters && (
+              <>
+                <button
+                  type="button"
+                  className={toolbarGhostButtonClassName}
+                  onClick={handleFiltersReset}
+                >
+                  <RotateCcw className="size-3.5" />
+                  초기화
+                </button>
+                <div className="mx-1 h-4 w-px bg-border" aria-hidden="true" />
+              </>
+            )}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button type="button" className={toolbarGhostButtonClassName}>
+                  <Columns3 className="size-3.5" />
+                  컬럼
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-40">
+                <DropdownMenuCheckboxItem
+                  checked={optionalColumns.loanAmount}
+                  onCheckedChange={(checked) =>
+                    setOptionalColumns((prev) => ({
+                      ...prev,
+                      loanAmount: Boolean(checked),
+                    }))
+                  }
+                >
+                  융자금
+                </DropdownMenuCheckboxItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </section>
 
@@ -2244,7 +2247,7 @@ function PropertiesPage() {
                   <span>조건을 줄이거나 초기화해 보세요.</span>
                 ) : (
                   <span>
-                    마커나 우측 매물을 클릭하면 빠른 확인 패널이 열립니다.
+                    마커나 왼쪽 매물을 클릭하면 빠른 확인 패널이 열립니다.
                   </span>
                 )}
               </div>
@@ -2445,55 +2448,6 @@ function TableHeaderLabel({ icon, label }: { icon: ReactNode; label: string }) {
   );
 }
 
-function ViewModeSwitch({
-  value,
-  onChange,
-}: {
-  value: PropertyViewMode;
-  onChange: (value: PropertyViewMode) => void;
-}) {
-  return (
-    <div
-      role="group"
-      aria-label="매물 보기 방식"
-      className="flex h-8 items-center rounded-md border border-border bg-[#f5f4f1] p-0.5"
-    >
-      <Button
-        type="button"
-        variant="ghost"
-        size="sm"
-        className={cn(
-          "h-7 gap-1.5 rounded-[5px] px-2.5 text-xs font-medium",
-          value === "list"
-            ? "border border-border/80 bg-white text-foreground shadow-sm hover:bg-white"
-            : "text-muted-foreground",
-        )}
-        onClick={() => onChange("list")}
-        aria-pressed={value === "list"}
-      >
-        <List className="size-3.5" />
-        목록
-      </Button>
-      <Button
-        type="button"
-        variant="ghost"
-        size="sm"
-        className={cn(
-          "h-7 gap-1.5 rounded-[5px] px-2.5 text-xs font-medium",
-          value === "map"
-            ? "border border-border/80 bg-white text-foreground shadow-sm hover:bg-white"
-            : "text-muted-foreground",
-        )}
-        onClick={() => onChange("map")}
-        aria-pressed={value === "map"}
-      >
-        <MapIcon className="size-3.5" />
-        지도
-      </Button>
-    </div>
-  );
-}
-
 function PropertyMapView({
   points,
   missingGroups,
@@ -2528,16 +2482,8 @@ function PropertyMapView({
   }
 
   return (
-    <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_320px] bg-white">
-      <div className="relative min-h-0 overflow-hidden border-r border-border bg-[#f7f7f5]">
-        <NaverPropertyMap
-          points={points}
-          missingCount={missingGroups.length}
-          onSelectIntake={onSelectIntake}
-        />
-      </div>
-
-      <aside className="flex min-h-0 flex-col bg-white">
+    <div className="grid min-h-0 flex-1 grid-cols-[320px_minmax(0,1fr)] bg-white">
+      <aside className="flex min-h-0 flex-col border-r border-border bg-white">
         <div className="shrink-0 border-b border-border px-3 py-2">
           <div className="text-[12px] font-medium text-foreground">
             지도 매물
@@ -2574,20 +2520,28 @@ function PropertyMapView({
           ))}
         </div>
       </aside>
+
+      <div className="relative min-h-0 overflow-hidden bg-[#f7f7f5]">
+        <NaverPropertyMap
+          points={points}
+          missingCount={missingGroups.length}
+          onSelectIntake={onSelectIntake}
+        />
+      </div>
     </div>
   );
 }
 
 function PropertyMapSkeleton() {
   return (
-    <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_320px] bg-white">
-      <div className="relative border-r border-border bg-muted/30 p-4">
-        <Skeleton className="h-full w-full rounded-none" />
-      </div>
-      <div className="space-y-2 p-3">
+    <div className="grid min-h-0 flex-1 grid-cols-[320px_minmax(0,1fr)] bg-white">
+      <div className="space-y-2 border-r border-border p-3">
         {Array.from({ length: 8 }).map((_, index) => (
           <Skeleton key={index} className="h-16 rounded-md" />
         ))}
+      </div>
+      <div className="relative bg-muted/30 p-4">
+        <Skeleton className="h-full w-full rounded-none" />
       </div>
     </div>
   );
@@ -2645,7 +2599,8 @@ function NaverPropertyMap({
       zoom: points.length > 0 ? 15 : 11,
       mapDataControl: false,
       scaleControl: true,
-      zoomControl: true,
+      // 확대/축소는 휠·트랙패드로 한다 (+/- 버튼 숨김)
+      zoomControl: false,
     });
   }, [mapsApi, points]);
 
@@ -2745,7 +2700,7 @@ function NaverPropertyMap({
   return (
     <div className="relative h-full min-h-0 w-full">
       <div ref={mapElementRef} className="h-full w-full" />
-      <div className="absolute left-4 top-4 z-10 rounded-md border border-border bg-white/95 px-3 py-2 shadow-sm">
+      <div className="absolute right-4 top-4 z-10 rounded-md border border-border bg-white/95 px-3 py-2 shadow-sm">
         <div className="text-[12px] font-medium text-foreground">
           지도 표시 {points.length.toLocaleString()}곳
         </div>
@@ -3019,7 +2974,15 @@ function MapPropertyRow({
             {siteName}
           </div>
           <div className="mt-0.5 truncate text-[12px] text-muted-foreground">
-            {[unitLabel, address].filter(Boolean).join(" · ")}
+            {unitLabel && (
+              <>
+                <span className="font-medium text-foreground/80">
+                  {unitLabel}
+                </span>
+                {" · "}
+              </>
+            )}
+            {address}
           </div>
         </div>
         <span className="shrink-0 text-[11px] text-muted-foreground">
@@ -3089,6 +3052,13 @@ function PropertyInspector({
   useEffect(() => {
     const handleWindowKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
+      // 메모 바로 편집 중의 Esc는 편집 취소이지 패널 닫기가 아니다.
+      if (
+        event.target instanceof Element &&
+        event.target.closest("[data-inspector-inline-editor]")
+      ) {
+        return;
+      }
       if (
         document.querySelector(
           '[role="dialog"], [role="listbox"], [data-slot="popover-content"], [data-slot="dropdown-menu-content"]',
@@ -3110,7 +3080,7 @@ function PropertyInspector({
     const target = event.target instanceof Element ? event.target : null;
     if (
       target?.closest(
-        '[role="dialog"], [role="listbox"], [data-slot="popover-content"], [data-slot="dropdown-menu-content"]',
+        '[role="dialog"], [role="listbox"], [data-slot="popover-content"], [data-slot="dropdown-menu-content"], [data-inspector-inline-editor]',
       )
     ) {
       return;
@@ -3284,7 +3254,7 @@ function PropertyInspectorContent({
   ) => void;
 }) {
   const queryClient = useQueryClient();
-  const [activeTab, setActiveTab] = useState("overview");
+  const createTab = useTabStore((s) => s.createTab);
   const [isOpeningFullPage, setIsOpeningFullPage] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isContactOpen, setIsContactOpen] = useState(false);
@@ -3306,27 +3276,85 @@ function PropertyInspectorContent({
     .sort(comparePropertyListing);
   const propertyWithListings: Property = { ...property, listings };
   const contacts = property.propertyContacts ?? [];
-  const tenants = property.tenants ?? [];
-  const consultations = property.consultations ?? [];
+  // 상세 API는 이 의뢰에 연결된 상담만 의뢰 최상위(intake.consultations)에 담는다.
+  // 전체 페이지·연락처·매칭 등에서 매물이나 거래 조건에만 연결해 남긴 상담은 따로 받아 합친다.
+  // 서버는 거래 조건(listingId)만 준 상담에 propertyId를 채우지 않으므로 거래 조건별로도 받는다.
+  // 다른 의뢰나 다른 의뢰의 거래 조건에 연결된 상담은 이 의뢰 것이 아니므로 뺀다.
+  const inspectorListingIds = (intake.listings ?? []).map(
+    (listing) => listing.id,
+  );
+  const looseConsultationsKey = [
+    "consultations",
+    {
+      propertyId: property.id,
+      listingIds: inspectorListingIds,
+      scope: "inspector",
+    },
+  ] as const;
+  const {
+    data: looseConsultationResult,
+    isError: isConsultationsError,
+    refetch: refetchConsultations,
+  } = useQuery({
+    queryKey: looseConsultationsKey,
+    // 조회 하나(또는 중간 페이지 하나)가 실패해도 정상으로 받은 상담은 버리지 않고
+    // complete=false로 표시한다. 예전 캐시는 섞지 않는다: 삭제되거나 다른 의뢰로 옮겨져
+    // 정상 조회에서 빠진 상담이 되살아나기 때문이다. 빠진 것은 실패 안내로 알린다.
+    queryFn: async () => {
+      const results = await Promise.all([
+        fetchAllConsultations({ propertyId: property.id }),
+        ...inspectorListingIds.map((listingId) =>
+          fetchAllConsultations({ listingId }),
+        ),
+      ]);
+      const complete = results.every((result) => result.complete);
+      const byId = new Map<string, Consultation>();
+      for (const result of results) {
+        for (const item of result.items) byId.set(item.id, item);
+      }
+      return { items: [...byId.values()], complete };
+    },
+    staleTime: 30_000,
+  });
+  const looseConsultations = looseConsultationResult?.items;
+  const intakeConsultations =
+    (intake as ListingIntake & { consultations?: Consultation[] })
+      .consultations ??
+    property.consultations ??
+    [];
+  const intakeListingIdSet = new Set(inspectorListingIds);
+  // 종료된 의뢰에는 종료 뒤에 남긴 매물 상담을 붙이지 않는다 (같은 호실의 새 의뢰 몫).
+  const intakeClosedAt =
+    intake.lifecycleStatus === IntakeLifecycleStatus.CLOSED
+      ? new Date(intake.lifecycleChangedAt).getTime()
+      : null;
+  const consultations = [
+    ...intakeConsultations,
+    ...(looseConsultations ?? []).filter(
+      (item) =>
+        !item.listingIntakeId &&
+        (!item.listingId || intakeListingIdSet.has(item.listingId)) &&
+        (intakeClosedAt === null ||
+          new Date(item.createdAt).getTime() <= intakeClosedAt) &&
+        !intakeConsultations.some((linked) => linked.id === item.id),
+    ),
+  ];
   const owner =
-    contacts.find((contact) => contact.role === "owner") ?? contacts[0];
-  const ownerPhone = owner?.contact?.phone;
+    contacts.find((contact) => contact.role === "owner") ??
+    contacts.find((contact) => contact.role === "co_owner") ??
+    contacts[0];
   const title = property.site?.name ?? "매물 상세";
   const unitLabel = getPropertySheetUnitLabel(property);
-  const address =
-    property.site?.roadAddress ?? property.site?.jibunAddress ?? "주소 미등록";
-  const primaryListing = listings[0];
   const availability = getListingRowAvailability(intake, listings);
-  const moveIn = primaryListing
-    ? getMoveInAvailability(primaryListing)
-    : { label: "-", detail: null };
-  const notices = getPropertySheetNotices(propertyWithListings);
-  const memo =
-    intake.memo?.trim() ||
-    listings.find((listing) => listing.memo?.trim())?.memo?.trim();
-  const activityCount =
-    getPropertySheetAdvertisementCount(listings) +
-    getPropertySheetPriceHistoryCount(listings);
+  const {
+    data: propertyMatches,
+    isError: isMatchesError,
+    refetch: refetchMatches,
+  } = useQuery({
+    queryKey: ["matches", { propertyId: property.id }],
+    queryFn: () => api.matches.findAll({ propertyId: property.id }),
+    staleTime: 30_000,
+  });
   const suggestedContacts = contacts.flatMap((propertyContact) =>
     propertyContact.contact
       ? [
@@ -3378,629 +3406,744 @@ function PropertyInspectorContent({
     }
   };
 
+  const openDeal = (dealId: string) => {
+    const route = `/deals?dealId=${encodeURIComponent(dealId)}`;
+    const meta = getRouteMeta(route);
+    createTab({ route, kind: meta.kind, title: meta.title });
+    onClose();
+  };
+  const openMatch = (matchId: string) => {
+    const route = `/wanted-properties?matchId=${encodeURIComponent(matchId)}`;
+    const meta = getRouteMeta(route);
+    createTab({ route, kind: meta.kind, title: meta.title });
+    onClose();
+  };
+  // 메모 바로 편집: 저장 뒤 패널 데이터를 다시 받아올 때까지 기다려야
+  // 입력한 글이 예전 값으로 잠깐 되돌아가지 않는다.
+  const refreshInspector = () =>
+    queryClient.invalidateQueries({
+      queryKey: ["listing-intakes", "inspector", intake.id],
+    });
+  const intakeMemoMutation = useMutation({
+    mutationFn: (memo: string) =>
+      api.listingIntakes.update(intake.id, {
+        memo: memo || null,
+        expectedUpdatedAt: intake.updatedAt,
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["listing-intakes"] });
+    },
+    onError: handleMutationError,
+  });
+  const saveOfferMemo = async (listingId: string, memo: string) => {
+    const listing = listings.find((item) => item.id === listingId);
+    // 서버는 null도 받지만 클라이언트 DTO가 string이라 빈 문자열로 지운다.
+    await onSaveListing(listingId, {
+      memo,
+      expectedUpdatedAt: listing?.updatedAt,
+    });
+    await refreshInspector();
+  };
+  const saveIntakeMemo = async (memo: string) => {
+    await intakeMemoMutation.mutateAsync(memo);
+    await refreshInspector();
+  };
+  const model = buildPropertyInspectorModel({
+    intake,
+    property,
+    listings,
+    consultations,
+    matches: propertyMatches,
+    matchesStatus: propertyMatches
+      ? "ready"
+      : isMatchesError
+        ? "error"
+        : "loading",
+    // 실패하면 받아 둔 상담(이 의뢰 연결분 + 이전에 받은 것)은 보여주되 일부 누락을 알린다.
+    consultationsStatus:
+      isConsultationsError || looseConsultationResult?.complete === false
+        ? "error"
+        : looseConsultationResult
+          ? "ready"
+          : "loading",
+    actions: {
+      confirm: () => onConfirm(intake.id),
+      addContact: () => setIsContactOpen(true),
+      openDeal,
+    },
+  });
+
   return (
-    <div className="flex h-full min-h-0 flex-col bg-white">
-      <div className="flex h-10 shrink-0 items-center justify-between border-b border-[#e7e5df] px-3 pl-5">
-        <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-          매물 상세
-        </span>
-        <div className="flex items-center gap-0.5">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 gap-1.5 px-2 text-xs text-muted-foreground"
-            aria-label="전체 페이지를 새 창으로 열기"
-            disabled={isOpeningFullPage}
-            onClick={() => void openFullPage()}
-          >
-            {isOpeningFullPage ? (
-              <Loader2 className="size-3.5 animate-spin" />
-            ) : (
-              <ExternalLink className="size-3.5" />
-            )}
-            {isOpeningFullPage ? "여는 중..." : "전체 페이지"}
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label="상세 패널 닫기"
-            onClick={onClose}
-          >
-            <X className="size-4" />
-          </Button>
-        </div>
-      </div>
-
-      <div className="shrink-0 border-b border-[#e7e5df] px-5 pb-4 pt-4">
-        <div className="flex min-w-0 items-start justify-between gap-3">
-          <div className="min-w-0">
-            <h2 className="truncate text-xl font-semibold tracking-[-0.02em] text-foreground">
-              {title}
-              {unitLabel && (
-                <span className="ml-2 text-foreground/80">{unitLabel}</span>
-              )}
-            </h2>
-            <p className="mt-1 flex min-w-0 items-center gap-1.5 truncate text-xs text-muted-foreground">
-              <MapPin className="size-3.5 shrink-0" />
-              <span className="truncate">{address}</span>
-            </p>
-          </div>
-          <div className="shrink-0 text-right">
-            <div className="text-[11px] text-muted-foreground">대표 가격</div>
-            <div className="mt-0.5 text-base font-semibold tabular-nums text-foreground">
-              {primaryListing
-                ? formatInspectorListingPrice(primaryListing)
-                : "-"}
-            </div>
-          </div>
-        </div>
-
-        <div className="mt-3 grid grid-cols-4 gap-x-3 border-y border-[#eeeeec] py-2.5">
-          <PropertyInspectorFact
-            icon={<CircleDollarSign />}
-            label="거래"
-            value={
-              primaryListing
-                ? (transactionTypeMeta[primaryListing.transactionType]?.label ??
-                  primaryListing.transactionType)
-                : "-"
+    <PropertyInspectorView
+      model={model}
+      onClose={onClose}
+      onOpenFullPage={() => void openFullPage()}
+      isOpeningFullPage={isOpeningFullPage}
+      onConfirm={() => onConfirm(intake.id)}
+      isConfirming={isConfirming}
+      onConsult={() => setIsConsultationOpen(true)}
+      onEdit={() => setIsEditOpen(true)}
+      onAddContact={() => setIsContactOpen(true)}
+      progressTab={
+        <PropertyInspectorProgressTab
+          listingIds={inspectorListingIds}
+          matches={(propertyMatches ?? []).filter((match) =>
+            intakeListingIdSet.has(match.listingId),
+          )}
+          matchesStatus={
+            isMatchesError ? "error" : propertyMatches ? "ready" : "loading"
+          }
+          onRetryMatches={() => void refetchMatches()}
+          onOpenMatch={openMatch}
+          onOpenDeal={openDeal}
+          typeMeta={(transactionType) =>
+            transactionTypeMeta[transactionType] ?? {
+              label: transactionType,
+              className: "bg-[#f1f0ec] text-foreground",
+            }
+          }
+        />
+      }
+      onRetryConsultations={() => void refetchConsultations()}
+      onSaveOfferMemo={saveOfferMemo}
+      onSaveIntakeMemo={saveIntakeMemo}
+      dialogs={
+        <>
+          <PropertyInspectorEditDialog
+            open={isEditOpen}
+            onOpenChange={setIsEditOpen}
+            listings={listings}
+            availability={availability}
+            onSaveListing={onSaveListing}
+            onAvailabilityChange={(value) =>
+              onAvailabilityChange(intake, propertyWithListings, value)
             }
           />
-          <PropertyInspectorFact
-            icon={<DoorOpen />}
-            label="입주"
-            value={moveIn.label}
+          <PropertyContactAddDialog
+            open={isContactOpen}
+            onOpenChange={(open) => {
+              setIsContactOpen(open);
+              if (!open) invalidateInspector();
+            }}
+            propertyId={property.id}
           />
-          <PropertyInspectorFact
-            icon={<Ruler />}
-            label="면적"
-            value={formatPropertySheetArea(property)}
+          <ConsultationAddDialog
+            open={isConsultationOpen}
+            onOpenChange={(open) => {
+              setIsConsultationOpen(open);
+              if (!open) invalidateInspector();
+            }}
+            propertyId={property.id}
+            listingIntakeId={intake.id}
+            suggestedContacts={suggestedContacts}
+            defaultContact={owner?.contact ?? null}
           />
-          <PropertyInspectorFact
-            icon={<Clock3 />}
-            label="최근 확인"
-            value={
-              intake.lastCheckedAt
-                ? formatDateShort(intake.lastCheckedAt)
-                : "미확인"
-            }
-          />
-        </div>
-
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <PropertyInspectorState
-            label="의뢰 상태"
-            value={getIntakeLifecycleLabel(intake.lifecycleStatus)}
-            className={getIntakeLifecycleClassName(intake.lifecycleStatus)}
-          />
-          <PropertyInspectorState
-            label="매물 상태"
-            value={listingAvailabilityMeta[availability].label}
-            className={listingAvailabilityMeta[availability].pillClassName}
-          />
-          {listings.length > 1 && (
-            <span className="text-[11px] text-muted-foreground">
-              거래유형 {listings.length}개
-            </span>
-          )}
-        </div>
-
-        <div className="mt-3 grid grid-cols-4 gap-1.5">
-          <Button
-            size="sm"
-            className="h-8 gap-1 px-2 text-xs"
-            disabled={isConfirming}
-            onClick={() => onConfirm(intake.id)}
-          >
-            {isConfirming ? (
-              <Loader2 className="size-3.5 animate-spin" />
-            ) : (
-              <Check className="size-3.5" />
-            )}
-            확인 완료
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-8 gap-1 px-2 text-xs"
-            onClick={() => setIsConsultationOpen(true)}
-          >
-            <MessageSquare className="size-3.5" />
-            상담 기록
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-8 gap-1 px-2 text-xs"
-            onClick={() => setIsEditOpen(true)}
-          >
-            <Pencil className="size-3.5" />
-            가격·상태
-          </Button>
-          {ownerPhone ? (
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-8 gap-1 px-2 text-xs"
-              asChild
-            >
-              <a href={`tel:${ownerPhone}`}>
-                <Phone className="size-3.5" />
-                소유주 전화
-              </a>
-            </Button>
-          ) : (
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-8 gap-1 px-2 text-xs"
-              onClick={() => setIsContactOpen(true)}
-            >
-              <UserPlus className="size-3.5" />
-              소유주 등록
-            </Button>
-          )}
-        </div>
-      </div>
-
-      <Tabs
-        value={activeTab}
-        onValueChange={setActiveTab}
-        className="min-h-0 flex-1 gap-0"
-      >
-        <TabsList
-          variant="line"
-          aria-label="매물 상세 구역"
-          className="h-10 w-full shrink-0 justify-start gap-5 border-b border-[#e7e5df] px-5 py-0"
-        >
-          <TabsTrigger
-            value="overview"
-            className="h-10 flex-none border-0 px-0 text-xs focus-visible:border-0"
-          >
-            요약
-          </TabsTrigger>
-          <TabsTrigger
-            value="contacts"
-            className="h-10 flex-none border-0 px-0 text-xs focus-visible:border-0"
-          >
-            연락·상담
-            {contacts.length + tenants.length + consultations.length > 0 && (
-              <span className="text-[10px] tabular-nums text-muted-foreground">
-                {contacts.length + tenants.length + consultations.length}
-              </span>
-            )}
-          </TabsTrigger>
-          <TabsTrigger
-            value="activity"
-            className="h-10 flex-none border-0 px-0 text-xs focus-visible:border-0"
-          >
-            광고·이력
-            {activityCount > 0 && (
-              <span className="text-[10px] tabular-nums text-muted-foreground">
-                {activityCount}
-              </span>
-            )}
-          </TabsTrigger>
-        </TabsList>
-
-        <TabsContent
-          value="overview"
-          className="min-h-0 overflow-y-auto px-5 py-4"
-        >
-          <div className="space-y-6">
-            {notices.length > 0 && (
-              <PropertyInspectorSection title="지금 확인할 것">
-                <div className="divide-y divide-[#eeeeec] border-y border-[#eeeeec]">
-                  {notices.map((notice) => (
-                    <PropertyInspectorNoticeRow
-                      key={`${notice.title}-${notice.detail}`}
-                      notice={notice}
-                      action={
-                        notice.title === "소유주 연락처 없음" ? (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-7 shrink-0 px-2 text-xs"
-                            onClick={() => setIsContactOpen(true)}
-                          >
-                            등록
-                          </Button>
-                        ) : undefined
-                      }
-                    />
-                  ))}
-                </div>
-              </PropertyInspectorSection>
-            )}
-
-            <PropertyInspectorSection
-              title={`가격·거래 조건 ${listings.length}`}
-            >
-              {listings.length > 0 ? (
-                <div className="divide-y divide-[#eeeeec] border-y border-[#eeeeec]">
-                  {listings.map((listing) => (
-                    <PropertyInspectorListingRow
-                      key={listing.id}
-                      listing={listing}
-                    />
-                  ))}
-                </div>
-              ) : (
-                <PropertyInspectorEmptyText text="등록된 거래 조건이 없습니다." />
-              )}
-            </PropertyInspectorSection>
-
-            {memo && (
-              <PropertyInspectorSection title="의뢰 메모">
-                <p className="whitespace-pre-wrap border-l-2 border-[#d8d6d0] pl-3 text-[13px] leading-6 text-slate-700">
-                  {memo}
-                </p>
-              </PropertyInspectorSection>
-            )}
-          </div>
-        </TabsContent>
-
-        <TabsContent
-          value="contacts"
-          className="min-h-0 overflow-y-auto px-5 py-4"
-        >
-          <div className="space-y-6">
-            <PropertyInspectorSection
-              title={`관련인 ${contacts.length + tenants.length}`}
-              action={
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 gap-1 px-2 text-xs"
-                  onClick={() => setIsContactOpen(true)}
-                >
-                  <UserPlus className="size-3.5" />
-                  관련인 추가
-                </Button>
-              }
-            >
-              {contacts.length > 0 || tenants.length > 0 ? (
-                <div className="divide-y divide-[#eeeeec] border-y border-[#eeeeec]">
-                  {contacts.map((contact) => (
-                    <PropertyInspectorContactRow
-                      key={contact.id}
-                      propertyContact={contact}
-                    />
-                  ))}
-                  {tenants.map((tenant) => (
-                    <PropertyInspectorTenantRow
-                      key={tenant.id}
-                      tenant={tenant}
-                    />
-                  ))}
-                </div>
-              ) : (
-                <PropertyInspectorEmptyText text="등록된 소유주, 대리인, 임차인이 없습니다." />
-              )}
-            </PropertyInspectorSection>
-
-            <PropertyInspectorSection
-              title={`최근 상담 ${consultations.length}`}
-              action={
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 gap-1 px-2 text-xs"
-                  onClick={() => setIsConsultationOpen(true)}
-                >
-                  <Plus className="size-3.5" />
-                  상담 기록
-                </Button>
-              }
-            >
-              {consultations.length > 0 ? (
-                <div className="divide-y divide-[#eeeeec] border-y border-[#eeeeec]">
-                  {consultations.map((consultation) => (
-                    <PropertyInspectorConsultationRow
-                      key={consultation.id}
-                      consultation={consultation}
-                    />
-                  ))}
-                </div>
-              ) : (
-                <PropertyInspectorEmptyText text="상담 기록이 없습니다." />
-              )}
-            </PropertyInspectorSection>
-          </div>
-        </TabsContent>
-
-        <TabsContent
-          value="activity"
-          className="min-h-0 overflow-y-auto px-5 py-4"
-        >
-          <PropertyInspectorSection title="광고·가격 활동">
-            <PropertyInspectorActivityTimeline listings={listings} />
-          </PropertyInspectorSection>
-        </TabsContent>
-      </Tabs>
-
-      <PropertyInspectorEditDialog
-        open={isEditOpen}
-        onOpenChange={setIsEditOpen}
-        listings={listings}
-        availability={availability}
-        onSaveListing={onSaveListing}
-        onAvailabilityChange={(value) =>
-          onAvailabilityChange(intake, propertyWithListings, value)
-        }
-      />
-      <PropertyContactAddDialog
-        open={isContactOpen}
-        onOpenChange={(open) => {
-          setIsContactOpen(open);
-          if (!open) invalidateInspector();
-        }}
-        propertyId={property.id}
-      />
-      <ConsultationAddDialog
-        open={isConsultationOpen}
-        onOpenChange={(open) => {
-          setIsConsultationOpen(open);
-          if (!open) invalidateInspector();
-        }}
-        propertyId={property.id}
-        suggestedContacts={suggestedContacts}
-        defaultContact={owner?.contact ?? null}
-      />
-    </div>
+        </>
+      }
+    />
   );
 }
 
-function PropertyInspectorFact({
-  icon,
-  label,
-  value,
-}: {
-  icon: ReactNode;
-  label: string;
-  value: string;
-}) {
-  return (
-    <div className="min-w-0">
-      <div className="flex items-center gap-1 text-[10px] text-muted-foreground [&>svg]:size-3">
-        {icon}
-        <span>{label}</span>
-      </div>
-      <div
-        className="mt-1 truncate text-[12px] font-medium text-foreground"
-        title={value}
-      >
-        {value}
-      </div>
-    </div>
-  );
+/**
+ * 상담 목록 API의 모든 페이지를 받는다 (서버 페이지당 최대 100건).
+ * 중간에 실패해도 그때까지 받은 상담은 돌려주고 complete=false로 알린다.
+ */
+async function fetchAllConsultations(
+  filters: NonNullable<Parameters<typeof api.consultations.findAll>[0]>,
+): Promise<{ items: Consultation[]; complete: boolean }> {
+  const items: Consultation[] = [];
+  for (let page = 1; ; page += 1) {
+    let result: Awaited<ReturnType<typeof api.consultations.findAll>>;
+    try {
+      result = await api.consultations.findAll({
+        ...filters,
+        limit: 100,
+        page,
+      });
+    } catch {
+      return { items, complete: false };
+    }
+    items.push(...result.items);
+    if (result.items.length === 0 || page >= result.pagination.totalPages) {
+      return { items, complete: true };
+    }
+  }
 }
 
-function PropertyInspectorState({
-  label,
-  value,
-  className,
-}: {
-  label: string;
-  value: string;
-  className: string;
-}) {
-  return (
-    <span className="inline-flex items-center gap-1.5 text-[11px]">
-      <span className="text-muted-foreground">{label}</span>
-      <span
-        className={cn("rounded-[4px] px-1.5 py-0.5 font-medium", className)}
-      >
-        {value}
-      </span>
-    </span>
-  );
+type InspectorListing = PropertyListing &
+  Partial<Pick<ListingIntakeListing, "loanAmount" | "maintenanceFee">>;
+
+const INSPECTOR_DIRECTION_LABELS: Record<string, string> = {
+  E: "동향", EE: "동향", ES: "남동향", SE: "남동향", S: "남향", SS: "남향",
+  SW: "남서향", WS: "남서향", W: "서향", WW: "서향", WN: "북서향", NW: "북서향",
+  N: "북향", NN: "북향", NE: "북동향", EN: "북동향",
+};
+
+/** 패널 표시용: "2026.10.29" */
+function formatInspectorFullDate(value?: string | null) {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "-";
+  return `${date.getFullYear()}.${String(date.getMonth() + 1).padStart(2, "0")}.${String(date.getDate()).padStart(2, "0")}`;
 }
 
-function PropertyInspectorSection({
-  title,
-  action,
-  children,
-}: {
-  title: string;
-  action?: ReactNode;
-  children: ReactNode;
-}) {
-  return (
-    <section>
-      <div className="mb-2 flex h-7 items-center justify-between gap-3">
-        <h3 className="text-[11px] font-semibold uppercase tracking-[0.07em] text-muted-foreground">
-          {title}
-        </h3>
-        {action}
-      </div>
-      {children}
-    </section>
-  );
+/** 패널 표시용: "11/03" */
+function formatInspectorMonthDay(value?: string | null) {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "-";
+  return `${String(date.getMonth() + 1).padStart(2, "0")}/${String(date.getDate()).padStart(2, "0")}`;
 }
 
-function PropertyInspectorNoticeRow({
-  notice,
-  action,
-}: {
-  notice: PropertySheetNotice;
-  action?: ReactNode;
-}) {
-  return (
-    <div className="flex items-start gap-3 py-2.5">
-      <span
-        className={cn(
-          "mt-1.5 size-1.5 shrink-0 rounded-full",
-          notice.tone === "danger" && "bg-[#e03e3e]",
-          notice.tone === "warning" && "bg-[#dfab01]",
-          notice.tone === "neutral" && "bg-[#9b9a97]",
-        )}
-      />
-      <div className="min-w-0 flex-1">
-        <div className="text-[13px] font-medium text-foreground">
-          {notice.title}
-        </div>
-        <p className="mt-0.5 text-[12px] leading-5 text-muted-foreground">
-          {notice.detail}
-        </p>
-      </div>
-      {action}
-    </div>
-  );
+/** 패널의 매물상태 배지 색: 매물관리 표의 StatusIndicator와 같은 색을 쓴다. */
+function getAvailabilityPalette(value: ListingAvailability) {
+  const meta = listingAvailabilityMeta[value];
+  return { pill: meta.pillClassName, dot: meta.dotClassName };
 }
 
-function PropertyInspectorListingRow({
-  listing,
-}: {
-  listing: PropertyListing;
-}) {
-  const moveIn = getMoveInAvailability(listing);
-  const availability = getListingAvailability(listing);
-  return (
-    <div className="py-3">
-      <div className="flex items-start justify-between gap-4">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-1.5">
-            <TransactionBadge transactionType={listing.transactionType} />
-            <StatusIndicator
-              value={availability}
-              label={
-                availability === ListingAvailability.CLOSED
-                  ? getClosedStatusLabel(listing.intake?.closedReason)
-                  : undefined
-              }
-            />
-            <JointBrokerageBadge intake={listing.intake} />
-          </div>
-          <div className="mt-1.5 text-base font-semibold tabular-nums text-foreground">
-            {formatInspectorListingPrice(listing)}
-          </div>
-        </div>
-        <div className="shrink-0 text-right text-[11px] leading-5 text-muted-foreground">
-          <div>입주 {moveIn.label}</div>
-          <div>수정 {formatDaysAgo(listing.updatedAt)}</div>
-        </div>
-      </div>
-      {listing.memo?.trim() && (
-        <p className="mt-2 line-clamp-2 text-[12px] leading-5 text-muted-foreground">
-          {listing.memo.trim()}
-        </p>
-      )}
-    </div>
-  );
+/** 패널 표시용: "14:30" (24시간) */
+function formatInspectorTime(value?: string | null) {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
 }
 
-function PropertyInspectorContactRow({
-  propertyContact,
-}: {
-  propertyContact: PropertyContact;
-}) {
-  const name = propertyContact.contact?.name ?? "이름 없음";
-  const phone = propertyContact.contact?.phone;
-  return (
-    <div className="flex items-center justify-between gap-3 py-3">
-      <div className="min-w-0">
-        <div className="flex items-center gap-2">
-          <span className="truncate text-[13px] font-medium">{name}</span>
-          <span className="rounded-[4px] bg-[#f1f1ef] px-1.5 py-0.5 text-[10px] text-[#5f5e5b]">
-            {getContactRoleLabel(propertyContact.role)}
-          </span>
-          {propertyContact.isPrimary && (
-            <span className="text-[10px] text-[#337ea9]">주 연락처</span>
-          )}
-        </div>
-        <p className="mt-1 truncate text-[12px] text-muted-foreground">
-          {phone ?? "전화번호 없음"}
-          {propertyContact.memo ? ` · ${propertyContact.memo}` : ""}
-        </p>
-      </div>
-      {phone && (
-        <Button variant="ghost" size="icon-sm" asChild>
-          <a href={`tel:${phone}`} aria-label={`${name} 전화`}>
-            <Phone className="size-3.5" />
-          </a>
-        </Button>
-      )}
-    </div>
-  );
+function getInspectorPriceDelta(
+  listing: PropertyListing,
+): InspectorOffer["delta"] {
+  const latest = listing.priceHistories?.[0];
+  if (!latest) return null;
+  const usesPrice = listing.transactionType !== "monthly" && listing.price != null;
+  const before = usesPrice ? latest.priceBefore : latest.depositBefore;
+  const after = usesPrice ? latest.priceAfter : latest.depositAfter;
+  if (before == null || after == null || before === after) return null;
+  const diff = after - before;
+  return {
+    direction: diff < 0 ? "down" : "up",
+    amountText: formatPrice(Math.abs(diff)),
+    dateText: formatInspectorMonthDay(latest.createdAt),
+  };
 }
 
-function PropertyInspectorTenantRow({ tenant }: { tenant: Tenant }) {
-  const name = tenant.contact?.name ?? "이름 없음";
-  const phone = tenant.contact?.phone;
-  return (
-    <div className="flex items-center justify-between gap-3 py-3">
-      <div className="min-w-0">
-        <div className="flex items-center gap-2">
-          <span className="truncate text-[13px] font-medium">{name}</span>
-          <span className="rounded-[4px] bg-[#f1f1ef] px-1.5 py-0.5 text-[10px] text-[#5f5e5b]">
-            임차인
-          </span>
-          <span className="text-[10px] text-[#8f6b1f]">
-            {getTenantStatusLabel(tenant.status)}
-          </span>
-        </div>
-        <p className="mt-1 truncate text-[12px] text-muted-foreground">
-          {phone ?? "전화번호 없음"} · {getTenantPeriodLabel(tenant)}
-        </p>
-      </div>
-      {phone && (
-        <Button variant="ghost" size="icon-sm" asChild>
-          <a href={`tel:${phone}`} aria-label={`${name} 전화`}>
-            <Phone className="size-3.5" />
-          </a>
-        </Button>
-      )}
-    </div>
-  );
-}
-
-function PropertyInspectorConsultationRow({
-  consultation,
-}: {
-  consultation: Consultation;
-}) {
-  return (
-    <div className="py-3">
-      <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
-        <span className="rounded-[4px] bg-[#f1f1ef] px-1.5 py-0.5 text-[#5f5e5b]">
-          {consultation.type}
-        </span>
-        <span>{formatDateTime(consultation.createdAt)}</span>
-        {consultation.contact?.name && (
-          <span>· {consultation.contact.name}</span>
-        )}
-      </div>
-      <p className="mt-1.5 whitespace-pre-wrap text-[13px] leading-6 text-slate-700">
-        {consultation.content}
-      </p>
-    </div>
-  );
-}
-
-interface PropertyInspectorActivityItem {
-  id: string;
-  kind: "price" | "advertisement";
-  occurredAt: string | null;
-  title: string;
-  detail: string;
-  note?: string | null;
-  url?: string | null;
-}
-
-function PropertyInspectorActivityTimeline({
+/**
+ * 매물 상세 패널 표시 모델. 중개 업무 흐름(확인 → 광고 → 매칭 → 거래)에 맞춰
+ * 상태·할 일·활동을 계산한다.
+ */
+function buildPropertyInspectorModel({
+  intake,
+  property,
   listings,
+  consultations,
+  matches,
+  matchesStatus,
+  consultationsStatus,
+  actions,
 }: {
+  intake: ListingIntake;
+  property: Property;
   listings: PropertyListing[];
-}) {
-  const items = listings
-    .flatMap<PropertyInspectorActivityItem>((listing) => [
+  consultations: Consultation[];
+  matches: Match[] | undefined;
+  /** 매칭 조회 상태. 실패하면 "없음"으로 보이지 않게 따로 표시한다. */
+  matchesStatus: "loading" | "error" | "ready";
+  /** 매물·거래 조건에만 연결된 상담 조회 상태. 실패하면 일부 누락을 알린다. */
+  consultationsStatus: "loading" | "error" | "ready";
+  actions: {
+    confirm: () => void;
+    addContact: () => void;
+    openDeal: (dealId: string) => void;
+  };
+}): InspectorModel {
+  const contacts = property.propertyContacts ?? [];
+  const tenants = (property.tenants ?? []).filter(
+    (tenant) => tenant.status !== "moved",
+  );
+  const owner =
+    contacts.find((contact) => contact.role === "owner") ??
+    contacts.find((contact) => contact.role === "co_owner") ??
+    contacts[0];
+  const ownerPhone = owner?.contact?.phone ?? null;
+  const isClosed = intake.lifecycleStatus === IntakeLifecycleStatus.CLOSED;
+  const typeLabelOf = (listing: PropertyListing) =>
+    transactionTypeMeta[listing.transactionType]?.label ??
+    listing.transactionType;
+
+  // ── 호실 ──
+  const siteName = property.site?.name ?? "매물";
+  const siteTypeLabel = getSiteTypeLabel(property.site?.type);
+  const unitTypeName = property.unit?.siteUnitType?.name;
+  const dong =
+    property.unit?.dong && !property.unit.dong.isPlaceholder
+      ? property.unit.dong.name.replace(/\s*동$/, "")
+      : null;
+  const ho = property.unit?.name ? property.unit.name.replace(/\s*호$/, "") : null;
+  const address =
+    property.site?.roadAddress ?? property.site?.jibunAddress ?? null;
+  const subline = [
+    address,
+    siteTypeLabel !== "-" ? siteTypeLabel : null,
+    unitTypeName,
+  ].filter((item): item is string => Boolean(item));
+
+  // 핵심 수치: 공급/전용 · 층 · 방/욕실 · 향 (값이 있을 때만)
+  const unitDetail = property.unit as
+    | (NonNullable<Property["unit"]> & {
+        roomCount?: number | null;
+        bathRoomCount?: number | null;
+      })
+    | null
+    | undefined;
+  const unitTypeDetail = property.unit?.siteUnitType as
+    | {
+        supplyAreaM2: number | null;
+        exclusiveAreaM2: number | null;
+        roomCount?: number | null;
+        bathRoomCount?: number | null;
+        direction?: string | null;
+      }
+    | null
+    | undefined;
+  const supplyAreaM2 =
+    property.unit?.supplyAreaM2 ?? unitTypeDetail?.supplyAreaM2 ?? null;
+  const exclusiveAreaM2 =
+    property.unit?.exclusiveAreaM2 ?? unitTypeDetail?.exclusiveAreaM2 ?? null;
+  const areaText = [
+    supplyAreaM2 ? `공급 ${formatAreaPyeong(supplyAreaM2)}` : null,
+    exclusiveAreaM2 ? `전용 ${formatAreaPyeong(exclusiveAreaM2)}` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  const roomCount = unitDetail?.roomCount ?? unitTypeDetail?.roomCount ?? null;
+  const bathRoomCount =
+    unitDetail?.bathRoomCount ?? unitTypeDetail?.bathRoomCount ?? null;
+  const directionCode = unitTypeDetail?.direction?.trim();
+  const stats = [
+    areaText ? { kind: "area" as const, text: areaText } : null,
+    property.unit?.floor != null
+      ? { kind: "floor" as const, text: `${property.unit.floor}층` }
+      : null,
+    roomCount != null || bathRoomCount != null
+      ? {
+          kind: "room" as const,
+          text: [
+            roomCount != null ? `방 ${roomCount}` : null,
+            bathRoomCount != null ? `욕실 ${bathRoomCount}` : null,
+          ]
+            .filter(Boolean)
+            .join(" · "),
+        }
+      : null,
+    directionCode
+      ? {
+          kind: "direction" as const,
+          text:
+            INSPECTOR_DIRECTION_LABELS[directionCode.toUpperCase()] ??
+            directionCode,
+        }
+      : null,
+  ].filter((stat): stat is InspectorStat => Boolean(stat));
+
+  // ── 상태 칩 ──
+  // 의뢰 생명주기와 매물 상태를 따로 띄우지 않고, 목록 표의 "매물상태"와
+  // 같은 이름(활성 · 거래중 · 보류 · 종료 · 사유) 하나로 보여 준다.
+  const availability = getListingRowAvailability(intake, listings);
+  const chips: InspectorChip[] = [
+    {
+      label:
+        availability === ListingAvailability.CLOSED
+          ? getClosedStatusLabel(intake.closedReason)
+          : listingAvailabilityMeta[availability].label,
+      tone:
+        availability === ListingAvailability.AVAILABLE
+          ? "ok"
+          : availability === ListingAvailability.IN_CONTRACT
+            ? "deal"
+            : availability === ListingAvailability.PAUSED
+              ? "warn"
+              : "neutral",
+      palette: getAvailabilityPalette(availability),
+    },
+  ];
+  if (intake.isJointBrokerageRequired) {
+    chips.push({
+      label: intake.jointBrokeragePartner?.name
+        ? `공동중개 · ${intake.jointBrokeragePartner.name}`
+        : "공동중개 필수",
+      tone: "neutral",
+    });
+  }
+
+  // ── 거래 조건 ──
+  const offers: InspectorOffer[] = listings.map((rawListing) => {
+    const listing = rawListing as InspectorListing;
+    const meta = transactionTypeMeta[listing.transactionType];
+    const listingAvailability = getListingAvailability(listing);
+    const terms = [
+      { label: "입주", value: getMoveInAvailability(listing).label },
+      listing.loanAmount != null
+        ? {
+            label: "융자",
+            value: listing.loanAmount === 0 ? "없음" : formatPrice(listing.loanAmount),
+          }
+        : null,
+      listing.maintenanceFee != null
+        ? {
+            label: "관리비",
+            value:
+              listing.maintenanceFee === 0
+                ? "없음"
+                : formatPrice(listing.maintenanceFee),
+          }
+        : null,
+      { label: "수정", value: formatDaysAgo(listing.updatedAt) },
+    ].filter((term): term is { label: string; value: string } => Boolean(term));
+    return {
+      id: listing.id,
+      typeLabel: meta?.label ?? listing.transactionType,
+      typeClassName: meta?.className ?? "bg-[#f1f0ec] text-foreground",
+      priceText: formatInspectorListingPrice(listing),
+      status:
+        listings.length > 1 &&
+        listingAvailability !== ListingAvailability.AVAILABLE
+          ? {
+              label:
+                listingAvailability === ListingAvailability.CLOSED
+                  ? "종료"
+                  : listingAvailabilityMeta[listingAvailability].label,
+              tone:
+                listingAvailability === ListingAvailability.IN_CONTRACT
+                  ? "deal"
+                  : "neutral",
+              palette: getAvailabilityPalette(listingAvailability),
+            }
+          : null,
+      delta: getInspectorPriceDelta(listing),
+      terms,
+      memo: listing.memo?.trim() || null,
+    };
+  });
+
+  // ── 업무 흐름: 확인 → 광고 → 매칭 → 거래 ──
+  const confirmState = getIntakeConfirmationState(intake);
+  // 다음 확인 예정일은 확인 줄이 유일한 표시 위치라 상태마다 빠뜨리지 않는다.
+  const nextConfirmText = intake.nextConfirmAt
+    ? `다음 ${formatInspectorMonthDay(intake.nextConfirmAt)}`
+    : null;
+  const confirmStep: InspectorStep = isClosed
+    ? {
+        key: "confirm",
+        label: "확인",
+        value: "종료된 의뢰",
+        detail: intake.lastVerifiedAt
+          ? `마지막 확인 ${formatInspectorMonthDay(intake.lastVerifiedAt)}`
+          : "확인 기록 없음",
+        tone: "idle",
+      }
+    : confirmState === IntakeConfirmationState.VERIFIED
+      ? {
+          key: "confirm",
+          label: "확인",
+          value: "확인됨",
+          detail: [formatDaysAgo(intake.lastVerifiedAt), nextConfirmText]
+            .filter(Boolean)
+            .join(" · "),
+          tone: "done",
+        }
+      : confirmState === IntakeConfirmationState.OVERDUE
+        ? {
+            key: "confirm",
+            label: "확인",
+            value: "재확인 필요",
+            detail: `${formatInspectorMonthDay(intake.nextConfirmAt)} 확인 예정이었음`,
+            tone: "attention",
+          }
+        : confirmState === IntakeConfirmationState.NO_ANSWER
+          ? {
+              key: "confirm",
+              label: "확인",
+              value: "부재중",
+              detail: [
+                `${formatDaysAgo(intake.lastCheckedAt)} 연락 시도`,
+                nextConfirmText,
+              ]
+                .filter(Boolean)
+                .join(" · "),
+              tone: "attention",
+            }
+          : {
+              key: "confirm",
+              label: "확인",
+              value: "미확인",
+              detail: [
+                `접수 ${getDaysSince(intake.receivedAt) ?? 0}일째`,
+                nextConfirmText,
+              ]
+                .filter(Boolean)
+                .join(" · "),
+              tone: "attention",
+            };
+
+  if (!isClosed) {
+    chips.push(
+      confirmState === IntakeConfirmationState.VERIFIED
+        ? { label: `확인 ${formatDaysAgo(intake.lastVerifiedAt)}`, tone: "ok" }
+        : {
+            label:
+              confirmState === IntakeConfirmationState.UNVERIFIED
+                ? `미확인 · 접수 ${getDaysSince(intake.receivedAt) ?? 0}일째`
+                : confirmStep.value,
+            tone: "warn",
+          },
+    );
+  }
+
+  const ads = listings.flatMap((listing) =>
+    (listing.advertisements ?? []).map((advertisement) => ({
+      advertisement,
+      listing,
+    })),
+  );
+  const activeAds = ads.filter(
+    ({ advertisement }) => advertisement.status === "active",
+  );
+  const adStep: InspectorStep =
+    activeAds.length > 0
+      ? {
+          key: "ad",
+          label: "광고",
+          value: `${getAdChannelLabel(activeAds[0].advertisement.channel)} 게재중`,
+          detail: [
+            formatAdvertisementPrice(
+              activeAds[0].listing,
+              activeAds[0].advertisement,
+            ),
+            activeAds.length > 1 ? `외 ${activeAds.length - 1}건` : null,
+          ]
+            .filter(Boolean)
+            .join(" · "),
+          tone: "done",
+        }
+      : {
+          key: "ad",
+          label: "광고",
+          value: ads.length > 0 ? "게재 종료" : "미게재",
+          detail:
+            ads.length > 0
+              ? `${getAdChannelLabel(ads[0].advertisement.channel)} 종료`
+              : "",
+          tone: "idle",
+        };
+
+  // 매칭 조회는 매물(Property) 단위라, 이 의뢰의 거래 조건에 걸린 것만 남긴다.
+  const intakeListingIds = new Set(listings.map((listing) => listing.id));
+  const activeMatches = (matches ?? [])
+    .filter(
+      (match) =>
+        intakeListingIds.has(match.listingId) &&
+        normalizeMatchStage(match.stage) !== MatchStage.CLOSED,
+    )
+    .sort((a, b) => getMatchStageIndex(b.stage) - getMatchStageIndex(a.stage));
+  // 같은 고객이 매매·전세에 각각 매칭될 수 있으므로 고객 단위로 센다.
+  const buyerKeys = new Set(
+    activeMatches.map(
+      (match) => match.buyerRequirement?.contact?.id ?? match.buyerReqId,
+    ),
+  );
+  const buyerCount = buyerKeys.size;
+  const topMatch = activeMatches[0];
+  const buyerStep: InspectorStep =
+    matchesStatus === "error"
+      ? {
+          key: "buyer",
+          label: "매칭",
+          value: "확인 불가",
+          detail: "매칭을 불러오지 못했습니다",
+          tone: "attention",
+        }
+      : matchesStatus === "loading" || !matches
+        ? {
+            key: "buyer",
+            label: "매칭",
+            value: "…",
+            detail: "매칭을 불러오는 중",
+            tone: "idle",
+          }
+        : buyerCount > 0 && topMatch
+      ? {
+          key: "buyer",
+          label: "매칭",
+          value: `${buyerCount}명`,
+          detail: `${topMatch.buyerRequirement?.contact?.name ?? "매수 고객"} ${getStatusMeta("matchStage", normalizeMatchStage(topMatch.stage)).label}${buyerCount > 1 ? ` 외 ${buyerCount - 1}명` : ""}`,
+          tone: "active",
+        }
+      : {
+          key: "buyer",
+          label: "매칭",
+          value: "없음",
+          detail: "",
+          tone: "idle",
+        };
+
+  const deals = listings
+    .flatMap((listing) =>
+      (listing.deals ?? []).map((deal) => ({ ...deal, listing })),
+    )
+    .sort(
+      (a, b) =>
+        new Date(b.stageChangedAt ?? 0).getTime() -
+        new Date(a.stageChangedAt ?? 0).getTime(),
+    );
+  const latestDeal = deals[0];
+  const isDealDone =
+    latestDeal && ["completed", "closed"].includes(latestDeal.stage);
+  const dealStep: InspectorStep = latestDeal
+    ? {
+        key: "deal",
+        label: "거래",
+        value: getStatusMeta("dealStage", latestDeal.stage).label,
+        detail: [
+          typeLabelOf(latestDeal.listing),
+          latestDeal.stageChangedAt
+            ? `${formatInspectorMonthDay(latestDeal.stageChangedAt)} 변경`
+            : null,
+        ]
+          .filter(Boolean)
+          .join(" · "),
+        tone: isDealDone ? "done" : "active",
+        action: {
+          label: "거래 보기",
+          onClick: () => actions.openDeal(latestDeal.id),
+        },
+      }
+    : {
+        key: "deal",
+        label: "거래",
+        value: "없음",
+        detail: "",
+        tone: "idle",
+      };
+
+  // ── 지금 할 일 ──
+  const todos: InspectorTodo[] = [];
+  if (listings.length === 0) {
+    todos.push({
+      id: "no-listing",
+      title: "거래 조건 없음",
+      detail: "매매·전세·월세 조건을 먼저 등록해야 합니다.",
+      tone: "danger",
+    });
+  }
+  if (!isClosed && confirmState !== IntakeConfirmationState.VERIFIED) {
+    todos.push({
+      id: "confirm",
+      title:
+        confirmState === IntakeConfirmationState.OVERDUE
+          ? "재확인 기한이 지났습니다"
+          : confirmState === IntakeConfirmationState.NO_ANSWER
+            ? "소유주가 부재중이었습니다"
+            : "한 번도 확인하지 않은 매물",
+      detail: "광고 유지 전에 소유주에게 가격·거래 가능 여부를 확인하세요.",
+      tone: "warning",
+      action: { label: "확인 완료", onClick: actions.confirm },
+    });
+  }
+  if (!ownerPhone) {
+    todos.push({
+      id: "owner",
+      title: "소유주 연락처 없음",
+      detail: "확인 전화를 하려면 소유주 또는 대리인 번호가 필요합니다.",
+      tone: "danger",
+      action: { label: "등록", onClick: actions.addContact },
+    });
+  }
+  const expiringTenant = tenants.find((tenant) => {
+    if (!tenant.contractEnd) return false;
+    const daysUntilEnd = getDaysUntil(tenant.contractEnd);
+    return daysUntilEnd >= 0 && daysUntilEnd <= 45;
+  });
+  if (expiringTenant?.contractEnd) {
+    todos.push({
+      id: "tenant",
+      title: "세입자 계약 만기 임박",
+      detail: `${expiringTenant.contact?.name ?? "세입자"} ${formatInspectorMonthDay(expiringTenant.contractEnd)} 만기 · 집 보여주기 일정 조율`,
+      tone: "warning",
+    });
+  }
+
+  // ── 사람 ──
+  const people: InspectorPerson[] = [
+    ...contacts.map((propertyContact) => ({
+      id: propertyContact.id,
+      name: propertyContact.contact?.name ?? "이름 없음",
+      roleLabel: getContactRoleLabel(propertyContact.role),
+      isPrimary: propertyContact.isPrimary,
+      phone: propertyContact.contact?.phone ?? null,
+      phoneLabel: propertyContact.contact?.phone
+        ? formatPhoneNumber(propertyContact.contact.phone)
+        : null,
+      detail:
+        [propertyContact.isResident ? "실거주" : null, propertyContact.memo]
+          .filter(Boolean)
+          .join(" · ") || null,
+    })),
+    ...tenants.map((tenant) => ({
+      id: `tenant-${tenant.id}`,
+      name: tenant.contact?.name ?? "이름 없음",
+      roleLabel: "세입자",
+      isPrimary: false,
+      phone: tenant.contact?.phone ?? null,
+      phoneLabel: tenant.contact?.phone
+        ? formatPhoneNumber(tenant.contact.phone)
+        : null,
+      detail: `${getTenantStatusLabel(tenant.status)} · ${getTenantPeriodLabel(tenant)}`,
+    })),
+  ];
+
+  // ── 최근 활동: 상담 · 가격 · 광고 · 거래 · 접수 ──
+  const consultationTitles: Record<string, string> = {
+    phone: "전화 상담",
+    visit: "방문 상담",
+    online: "온라인 상담",
+  };
+  // "매물 확인 완료" 버튼이 남기는 확인 기록. 종류(type)는 전화·방문이 아니면 online으로
+  // 저장돼 "온라인 상담"처럼 보였다. 판별은 수정할 수 없는 purpose로 한다(본문은 수정 가능).
+  // 본문 앞의 "[매물확인]" 머리말은 서버가 붙인 그대로일 때만 표시에서 뗀다.
+  const CONFIRM_RECORD_PREFIX = "[매물확인]";
+  const activities = [
+    ...consultations.map((consultation) => {
+      const content = consultation.content ?? "";
+      const isConfirmRecord = consultation.purpose === "listing_confirm";
+      return {
+        id: `consultation-${consultation.id}`,
+        kind: (isConfirmRecord
+          ? "confirm"
+          : consultation.type === "visit"
+            ? "visit"
+            : "consultation") as InspectorActivity["kind"],
+        at: consultation.createdAt,
+        // 상담은 하루에도 여러 번 오가므로 시각까지 보여준다.
+        timeText: formatInspectorTime(consultation.createdAt),
+        title: isConfirmRecord
+          ? "매물 확인"
+          : (consultationTitles[consultation.type] ?? "상담"),
+        who: consultation.contact?.name ?? null,
+        text:
+          isConfirmRecord && content.startsWith(CONFIRM_RECORD_PREFIX)
+            ? content.slice(CONFIRM_RECORD_PREFIX.length).trim()
+            : content,
+        quote: true,
+        url: null,
+      };
+    }),
+    ...listings.flatMap((listing) => [
       ...(listing.priceHistories ?? []).map((history) => ({
         id: `price-${history.id}`,
         kind: "price" as const,
-        occurredAt: history.createdAt,
-        title: `${transactionTypeMeta[listing.transactionType]?.label ?? listing.transactionType} 가격 변경`,
-        detail: `${formatPriceHistorySnapshot(listing.transactionType, {
+        at: history.createdAt,
+        title: "가격 변경",
+        who: typeLabelOf(listing),
+        text: `${formatPriceHistorySnapshot(listing.transactionType, {
           price: history.priceBefore,
           deposit: history.depositBefore,
           monthlyRent: history.monthlyRentBefore,
@@ -4008,95 +4151,149 @@ function PropertyInspectorActivityTimeline({
           price: history.priceAfter,
           deposit: history.depositAfter,
           monthlyRent: history.monthlyRentAfter,
-        })}`,
-        note: history.reason,
+        })}${history.reason ? ` · ${history.reason}` : ""}`,
+        quote: false,
+        url: null,
       })),
-      ...(listing.advertisements ?? []).map((advertisement) => ({
-        id: `advertisement-${advertisement.id}`,
-        kind: "advertisement" as const,
-        occurredAt:
-          advertisement.lastSyncedAt ??
-          advertisement.lastCheckedAt ??
-          advertisement.startedAt ??
-          advertisement.endedAt ??
-          advertisement.updatedAt,
-        title: `${getAdChannelLabel(advertisement.channel)} · ${adStatusMeta[advertisement.status]?.label ?? advertisement.status}`,
-        detail: `${transactionTypeMeta[listing.transactionType]?.label ?? listing.transactionType} ${formatAdvertisementPrice(listing, advertisement)}`,
-        note: advertisement.memo,
-        url: advertisement.url,
+      ...(listing.advertisements ?? []).flatMap((advertisement) => [
+        {
+          id: `ad-start-${advertisement.id}`,
+          kind: "ad" as const,
+          at: advertisement.startedAt ?? advertisement.firstSeenAt,
+          title: "광고 시작",
+          who: getAdChannelLabel(advertisement.channel),
+          text: [
+            `${typeLabelOf(listing)} ${formatAdvertisementPrice(listing, advertisement)}`,
+            advertisement.memo?.trim() || null,
+          ]
+            .filter(Boolean)
+            .join(" · "),
+          quote: false,
+          url: advertisement.url ?? null,
+        },
+        ...(advertisement.status === "ended" && advertisement.endedAt
+          ? [
+              {
+                id: `ad-end-${advertisement.id}`,
+                kind: "ad" as const,
+                at: advertisement.endedAt,
+                title: "광고 종료",
+                who: getAdChannelLabel(advertisement.channel),
+                text: null,
+                quote: false,
+                url: null,
+              },
+            ]
+          : []),
+      ]),
+      ...(listing.deals ?? []).map((deal) => ({
+        id: `deal-${deal.id}`,
+        kind: "deal" as const,
+        at: deal.stageChangedAt,
+        title: `거래 ${getStatusMeta("dealStage", deal.stage).label}`,
+        who: typeLabelOf(listing),
+        text: null,
+        quote: false,
+        url: null,
       })),
-    ])
-    .sort(
-      (a, b) =>
-        new Date(b.occurredAt ?? 0).getTime() -
-        new Date(a.occurredAt ?? 0).getTime(),
-    );
+    ]),
+    {
+      id: "intake",
+      kind: "intake" as const,
+      at: intake.receivedAt,
+      title: "의뢰 접수",
+      who: owner?.contact?.name ?? null,
+      text: null,
+      quote: false,
+      url: null,
+    },
+  ]
+    .filter((item) => Boolean(item.at))
+    .sort((a, b) => new Date(b.at ?? 0).getTime() - new Date(a.at ?? 0).getTime())
+    .map(({ at, ...item }) => ({ ...item, dateText: formatInspectorMonthDay(at) }));
 
-  if (items.length === 0) {
-    return (
-      <PropertyInspectorEmptyText text="광고 또는 가격 변경 이력이 없습니다." />
-    );
-  }
+  // ── 광고 탭 · 매칭·거래 탭 ──
+  const matchRows: InspectorMatchRow[] = (matches ?? [])
+    .filter((match) => intakeListingIds.has(match.listingId))
+    .sort((a, b) => getMatchStageIndex(b.stage) - getMatchStageIndex(a.stage))
+    .map((match) => {
+      const stage = normalizeMatchStage(match.stage);
+      const listing = listings.find((item) => item.id === match.listingId);
+      return {
+        id: match.id,
+        buyerName: match.buyerRequirement?.contact?.name ?? "매수 고객",
+        stageLabel: getStatusMeta("matchStage", stage).label,
+        typeLabel: listing ? typeLabelOf(listing) : "",
+        dateText: formatInspectorMonthDay(
+          (match as Match & { updatedAt?: string }).updatedAt ?? null,
+        ),
+        closed: stage === MatchStage.CLOSED,
+      };
+    });
+  const adRows: InspectorAdRow[] = ads
+    .map(({ advertisement, listing }) => ({
+      id: advertisement.id,
+      channelLabel: getAdChannelLabel(advertisement.channel),
+      active: advertisement.status === "active",
+      priceText: `${typeLabelOf(listing)} ${formatAdvertisementPrice(listing, advertisement)}`,
+      periodText: `${formatInspectorMonthDay(advertisement.startedAt ?? advertisement.firstSeenAt)} ~ ${
+        advertisement.status === "active"
+          ? "게재중"
+          : formatInspectorMonthDay(advertisement.endedAt)
+      }`,
+      url: advertisement.url ?? null,
+      memo: advertisement.memo?.trim() || null,
+    }))
+    .sort((a, b) => Number(b.active) - Number(a.active));
+  const dealRows: InspectorDealRow[] = deals.map((deal) => ({
+    id: deal.id,
+    stageLabel: getStatusMeta("dealStage", deal.stage).label,
+    typeLabel: typeLabelOf(deal.listing),
+    dateText: deal.stageChangedAt
+      ? formatInspectorMonthDay(deal.stageChangedAt)
+      : "-",
+    done: ["completed", "closed"].includes(deal.stage),
+  }));
 
-  return (
-    <ol className="border-y border-[#eeeeec]">
-      {items.map((item, index) => (
-        <li
-          key={item.id}
-          className={cn(
-            "relative flex gap-3 py-3",
-            index < items.length - 1 && "border-b border-[#eeeeec]",
-          )}
-        >
-          <span className="mt-0.5 grid size-7 shrink-0 place-items-center rounded-full bg-[#f3f3f1] text-muted-foreground">
-            {item.kind === "price" ? (
-              <CircleDollarSign className="size-3.5" />
-            ) : (
-              <Megaphone className="size-3.5" />
-            )}
-          </span>
-          <div className="min-w-0 flex-1">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0 text-[13px] font-medium text-foreground">
-                {item.url ? (
-                  <a
-                    href={item.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex max-w-full items-center gap-1 hover:underline"
-                  >
-                    <span className="truncate">{item.title}</span>
-                    <ExternalLink className="size-3 shrink-0" />
-                  </a>
-                ) : (
-                  item.title
-                )}
-              </div>
-              <span className="shrink-0 text-[10px] text-muted-foreground">
-                {formatDateTime(item.occurredAt)}
-              </span>
-            </div>
-            <p className="mt-1 text-[12px] font-medium tabular-nums text-slate-700">
-              {item.detail}
-            </p>
-            {item.note?.trim() && (
-              <p className="mt-1 line-clamp-2 text-[12px] leading-5 text-muted-foreground">
-                {item.note.trim()}
-              </p>
-            )}
-          </div>
-        </li>
-      ))}
-    </ol>
-  );
-}
+  // 요약 탭 "매물 정보" 칸.
+  // 거래 조건별 값(입주·융자·관리비·수정)은 조건이 하나일 때만 여기에 둔다.
+  // 여러 개면 "거래 조건" 목록에 조건마다 따로 나오므로 섞지 않는다.
+  const singleListing =
+    listings.length === 1 ? (listings[0] as InspectorListing) : null;
+  const formatOptionalAmount = (value: number | null | undefined) =>
+    value == null ? "-" : value === 0 ? "없음" : formatPrice(value);
+  const infoFacts = [
+    ...(singleListing
+      ? [
+          { label: "입주", value: getMoveInAvailability(singleListing).label },
+          { label: "융자", value: formatOptionalAmount(singleListing.loanAmount) },
+          { label: "관리비", value: formatOptionalAmount(singleListing.maintenanceFee) },
+          { label: "최근 수정", value: formatDaysAgo(singleListing.updatedAt) },
+        ]
+      : []),
+    { label: "접수", value: formatInspectorFullDate(intake.receivedAt) },
+  ];
 
-function PropertyInspectorEmptyText({ text }: { text: string }) {
-  return (
-    <p className="border-y border-[#eeeeec] py-3 text-[12px] text-muted-foreground">
-      {text}
-    </p>
-  );
+  return {
+    siteName,
+    dong,
+    ho,
+    subline,
+    stats,
+    infoFacts,
+    chips,
+    offers,
+    steps: [confirmStep, adStep, buyerStep, dealStep],
+    todos: todos.slice(0, 4),
+    people,
+    activities,
+    matches: matchRows,
+    matchesStatus,
+    consultationsStatus,
+    ads: adRows,
+    deals: dealRows,
+    memo: intake.memo?.trim() || null,
+  };
 }
 
 interface PropertyInspectorListingDraft {
@@ -4342,20 +4539,6 @@ function formatInspectorListingPrice(
   }
   const price = listing.price ?? listing.deposit;
   return price ? formatPrice(price) : "-";
-}
-
-function getIntakeLifecycleLabel(value: IntakeLifecycleStatus) {
-  if (value === IntakeLifecycleStatus.OPEN) return "진행";
-  if (value === IntakeLifecycleStatus.HOLD) return "보류";
-  return "종료";
-}
-
-function getIntakeLifecycleClassName(value: IntakeLifecycleStatus) {
-  if (value === IntakeLifecycleStatus.OPEN)
-    return "bg-[#eef3ed] text-[#44745a]";
-  if (value === IntakeLifecycleStatus.HOLD)
-    return "bg-[#fbf3db] text-[#9f6b00]";
-  return "bg-[#f1f1ef] text-[#787774]";
 }
 
 function StatusIndicator({ value, label }: { value: string; label?: string }) {
@@ -5888,71 +6071,104 @@ function PropertyBuyerMatchLane({
       </div>
 
       <div className="min-w-0 overflow-x-auto">
-        <MatchProgressTrack match={match} actions={actions} />
-        <div className="mt-1.5 flex min-w-0 items-center justify-between gap-3 text-xs text-muted-foreground">
-          {isEditingMemo ? (
-            <Input
-              autoFocus
-              aria-label={`${buyerName} 매칭 메모`}
-              value={memoDraft}
-              placeholder="메모 입력"
-              title="Enter 저장 · Esc 취소"
-              className="h-7 min-w-0 flex-1 px-2 py-0 text-xs shadow-none"
-              disabled={isSavingMemo}
-              onChange={(event) => setMemoDraft(event.target.value)}
-              onBlur={() => {
-                if (skipBlurSaveRef.current) {
-                  skipBlurSaveRef.current = false;
-                  return;
-                }
-                void saveMemo();
-              }}
-              onKeyDown={(event) => {
-                if (event.key === "Escape") {
-                  event.preventDefault();
-                  cancelMemoEdit();
-                  return;
-                }
-                if (event.key === "Enter" && !event.nativeEvent.isComposing) {
-                  event.preventDefault();
+        {/* 메모 줄은 진행 트랙(마지막 '거래 전환' 노드)까지만 차지한다.
+            w-0 + min-w-full 은 메모 길이가 트랙 폭을 늘리지 않게 한다. */}
+        <div data-property-match-progress className="w-max">
+          <MatchProgressTrack match={match} actions={actions} />
+          <div className="mt-1.5 flex w-0 min-w-full items-center justify-between gap-3 text-xs text-muted-foreground">
+            {isEditingMemo ? (
+              <div
+                data-property-match-memo-editor
+                className="flex h-6 min-w-0 flex-1 items-center gap-0.5 rounded-md bg-white pl-2 pr-0.5 ring-1 ring-inset ring-foreground/25"
+                onBlur={(event) => {
+                  if (event.currentTarget.contains(event.relatedTarget)) return;
+                  if (skipBlurSaveRef.current) {
+                    skipBlurSaveRef.current = false;
+                    return;
+                  }
                   void saveMemo();
-                }
-              }}
-            />
-          ) : (
-            <button
-              type="button"
-              data-property-match-memo-trigger
-              aria-label={`${buyerName} 매칭 메모 편집`}
-              title="클릭하여 메모 편집"
-              className="group/memo flex min-h-6 min-w-0 flex-1 items-center gap-1 rounded-sm px-1 text-left hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
-              onClick={startMemoEdit}
-            >
-              <span
-                className={cn(
-                  "line-clamp-1",
-                  !match.memo?.trim() && "italic text-muted-foreground/70",
-                )}
+                }}
               >
-                {match.memo?.trim() || "메모 추가"}
-              </span>
-              <Pencil
-                aria-hidden="true"
-                className="size-3 shrink-0 opacity-0 group-hover/memo:opacity-100 group-focus-visible/memo:opacity-100"
-              />
-            </button>
-          )}
-          <span
-            role="status"
-            aria-live="polite"
-            className="shrink-0 tabular-nums"
-          >
-            {isSavingMemo
-              ? "저장 중…"
-              : upcomingViewingEvent
-                ? `방문 ${formatViewingEventTime(upcomingViewingEvent)}`
-                : `${formatDateShort(match.updatedAt)} 수정`}
-          </span>
+                <input
+                  autoFocus
+                  aria-label={`${buyerName} 매칭 메모`}
+                  aria-busy={isSavingMemo}
+                  value={memoDraft}
+                  placeholder="매칭 메모"
+                  readOnly={isSavingMemo}
+                  className="h-full min-w-0 flex-1 bg-transparent text-xs text-foreground outline-none placeholder:text-muted-foreground/60"
+                  onChange={(event) => setMemoDraft(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Escape") {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      cancelMemoEdit();
+                      return;
+                    }
+                    if (event.key === "Enter" && !event.nativeEvent.isComposing) {
+                      event.preventDefault();
+                      void saveMemo();
+                    }
+                  }}
+                />
+                <button
+                  type="button"
+                  aria-label="메모 저장"
+                  title="저장 (Enter)"
+                  disabled={isSavingMemo}
+                  className="flex size-5 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40"
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => void saveMemo()}
+                >
+                  <Check className="size-3" />
+                </button>
+                <button
+                  type="button"
+                  aria-label="메모 편집 취소"
+                  title="취소 (Esc)"
+                  disabled={isSavingMemo}
+                  className="flex size-5 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40"
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={cancelMemoEdit}
+                >
+                  <X className="size-3" />
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                data-property-match-memo-trigger
+                aria-label={`${buyerName} 매칭 메모 편집`}
+                title="클릭하여 메모 편집"
+                className="group/memo flex h-6 min-w-0 flex-1 items-center gap-1 rounded-md pl-2 pr-1.5 text-left hover:bg-white hover:text-foreground hover:ring-1 hover:ring-inset hover:ring-border focus-visible:bg-white focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-foreground/25"
+                onClick={startMemoEdit}
+              >
+                <span
+                  className={cn(
+                    "min-w-0 truncate",
+                    !match.memo?.trim() && "text-muted-foreground/60",
+                  )}
+                >
+                  {match.memo?.trim() || "메모 추가"}
+                </span>
+                <Pencil
+                  aria-hidden="true"
+                  className="ml-auto size-3 shrink-0 opacity-0 group-hover/memo:opacity-100 group-focus-visible/memo:opacity-100"
+                />
+              </button>
+            )}
+            <span
+              role="status"
+              aria-live="polite"
+              className="shrink-0 tabular-nums"
+            >
+              {isSavingMemo
+                ? "저장 중…"
+                : upcomingViewingEvent
+                  ? `방문 ${formatViewingEventTime(upcomingViewingEvent)}`
+                  : `${formatDateShort(match.updatedAt)} 수정`}
+            </span>
+          </div>
         </div>
       </div>
 
@@ -6369,127 +6585,6 @@ function TransactionMiniLabel({
     >
       {transactionMeta?.label ?? transactionType}
     </span>
-  );
-}
-
-function JointBrokerageBadge({
-  intake,
-  compact = false,
-}: {
-  intake?: {
-    isJointBrokerageRequired: boolean;
-    jointBrokeragePartner?: { name: string } | null;
-  } | null;
-  compact?: boolean;
-}) {
-  if (!intake?.isJointBrokerageRequired) return null;
-
-  const label = compact
-    ? "공동"
-    : `공동필수${intake.jointBrokeragePartner?.name ? ` · ${intake.jointBrokeragePartner.name}` : ""}`;
-
-  return (
-    <span className="inline-flex max-w-full rounded-[4px] bg-[#fbf3db] px-1.5 py-0.5 text-[11px] font-medium leading-5 text-[#8f6b1f]">
-      <span className="truncate">{label}</span>
-    </span>
-  );
-}
-
-function FilterPopoverChip({
-  label,
-  value,
-  active,
-  tier = 2,
-  open,
-  onOpenChange,
-  onClear,
-  contentClassName,
-  children,
-}: {
-  label: string;
-  value: string;
-  active?: boolean;
-  /** 사용 빈도 기반 시각 계층. 1 = 강조(항상 테두리), 2 = 기본, 3 = 약화(작고 옅게). */
-  tier?: 1 | 2 | 3;
-  open?: boolean;
-  onOpenChange?: (open: boolean) => void;
-  /** 활성 상태에서 X 한 번으로 이 필터만 해제. */
-  onClear?: () => void;
-  contentClassName?: string;
-  children: ReactNode;
-}) {
-  return (
-    <Popover open={open} onOpenChange={onOpenChange}>
-      <PopoverTrigger asChild>
-        <Button
-          variant="ghost"
-          size="sm"
-          className={cn(
-            "h-8 max-w-[240px] gap-1.5 rounded-md border border-border bg-white text-xs shadow-none",
-            onClear && active ? "pl-2.5 pr-1.5" : "px-2.5",
-            // 활성: 강한 inverse (모노톤)
-            active &&
-              "border-foreground/25 bg-foreground/[0.06] text-foreground hover:bg-foreground/[0.09]",
-            // 비활성 + tier별 weight
-            !active &&
-              tier === 1 &&
-              "text-foreground hover:border-foreground/40 hover:bg-white",
-            !active &&
-              tier === 2 &&
-              "text-muted-foreground hover:border-foreground/30 hover:bg-white",
-            !active &&
-              tier === 3 &&
-              "text-muted-foreground/80 hover:border-foreground/30 hover:bg-white",
-          )}
-        >
-          <span
-            className={cn(
-              "shrink-0",
-              active ? "text-muted-foreground" : "text-muted-foreground",
-            )}
-          >
-            {label}
-          </span>
-          <span
-            className={cn(
-              "min-w-0 truncate",
-              active
-                ? "font-semibold text-foreground"
-                : "font-medium text-foreground",
-            )}
-          >
-            {value}
-          </span>
-          {onClear && active ? (
-            <span
-              role="button"
-              tabIndex={-1}
-              aria-label={`${label} 필터 해제`}
-              onPointerDown={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-              }}
-              onClick={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                onClear();
-              }}
-              className="ml-0.5 inline-flex shrink-0 items-center justify-center rounded p-0.5 text-muted-foreground hover:bg-foreground/10 hover:text-foreground"
-            >
-              <X className="size-3" />
-            </span>
-          ) : (
-            <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
-          )}
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent
-        align="start"
-        className={cn("w-80 p-3", contentClassName)}
-      >
-        {children}
-      </PopoverContent>
-    </Popover>
   );
 }
 
@@ -7349,10 +7444,16 @@ function getMapBounds(points: PropertyMapPoint[]) {
   );
 }
 
+/** 지도 목록의 동·호 표시: "101동 3404호" (단일동 건물은 호만) */
 function getPropertyMapUnitLabel(property?: ListingProperty) {
   if (!property?.unit) return "";
-  return [getDongName(property), property.unit.name]
-    .filter((item) => item && item !== "-")
+  const dongName = getDongName(property);
+  const unitName = property.unit.name.replace(/\s*호$/, "");
+  return [
+    dongName && dongName !== "-" ? `${dongName}동` : null,
+    unitName && unitName !== "-" ? `${unitName}호` : null,
+  ]
+    .filter(Boolean)
     .join(" ");
 }
 
@@ -7417,20 +7518,6 @@ function getTransactionTypeOrder(value: string) {
 
 function getAdChannelLabel(channel: string) {
   return adChannelLabels[channel] ?? channel;
-}
-
-function getPropertySheetAdvertisementCount(listings: PropertyListing[]) {
-  return listings.reduce(
-    (total, listing) => total + (listing.advertisements?.length ?? 0),
-    0,
-  );
-}
-
-function getPropertySheetPriceHistoryCount(listings: PropertyListing[]) {
-  return listings.reduce(
-    (total, listing) => total + (listing.priceHistories?.length ?? 0),
-    0,
-  );
 }
 
 function formatPriceHistorySnapshot(
@@ -7501,44 +7588,6 @@ function getPropertySheetUnitLabel(property: Property) {
   return [dongName, property.unit?.name].filter(Boolean).join(" ");
 }
 
-function getPropertySheetExclusiveAreaM2(property: Property) {
-  return (
-    property.unit?.exclusiveAreaM2 ??
-    property.unit?.siteUnitType?.exclusiveAreaM2
-  );
-}
-
-function getPropertySheetSupplyAreaM2(property: Property) {
-  return (
-    property.unit?.supplyAreaM2 ?? property.unit?.siteUnitType?.supplyAreaM2
-  );
-}
-
-function formatPropertySheetArea(property: Property) {
-  const exclusive = getPropertySheetExclusiveAreaM2(property);
-  const supply = getPropertySheetSupplyAreaM2(property);
-
-  if (exclusive && supply) {
-    return `전용 ${formatAreaPyeong(exclusive)} · 공급 ${formatAreaPyeong(supply)}`;
-  }
-  if (exclusive) return `전용 ${formatAreaPyeong(exclusive)}`;
-  if (supply) return `공급 ${formatAreaPyeong(supply)}`;
-  return "-";
-}
-
-function getLatestPropertyListingUpdatedAt(property: Property) {
-  const latestListingUpdatedAt = (property.listings ?? []).reduce<
-    string | null
-  >((latest, listing) => {
-    if (!latest) return listing.updatedAt;
-    return new Date(listing.updatedAt).getTime() > new Date(latest).getTime()
-      ? listing.updatedAt
-      : latest;
-  }, null);
-
-  return latestListingUpdatedAt ?? property.updatedAt;
-}
-
 function comparePropertyListing(a: PropertyListing, b: PropertyListing) {
   const typeOrder =
     getTransactionTypeOrder(a.transactionType) -
@@ -7547,110 +7596,11 @@ function comparePropertyListing(a: PropertyListing, b: PropertyListing) {
   return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
 }
 
-function getPropertySheetNotices(property: Property): PropertySheetNotice[] {
-  const listings = property.listings ?? [];
-  const contacts = property.propertyContacts ?? [];
-  const tenants = property.tenants ?? [];
-  const consultations = property.consultations ?? [];
-  const notices: PropertySheetNotice[] = [];
-  const owner =
-    contacts.find((contact) => contact.role === "owner") ?? contacts[0];
-  const latestUpdatedAt = getLatestPropertyListingUpdatedAt(property);
-  const daysSinceLatestCheck = getDaysSince(latestUpdatedAt);
-  const unverifiedListings = listings.filter(
-    (listing) =>
-      listing.intake &&
-      getIntakeConfirmationState(listing.intake) ===
-        IntakeConfirmationState.UNVERIFIED,
-  );
-  const jointRequiredListings = listings.filter(
-    (listing) => listing.intake?.isJointBrokerageRequired,
-  );
-  const expiringTenant = tenants.find((tenant) => {
-    if (!tenant.contractEnd) return false;
-    const daysUntilEnd = getDaysUntil(tenant.contractEnd);
-    return daysUntilEnd >= 0 && daysUntilEnd <= 45;
-  });
-
-  if (listings.length === 0) {
-    notices.push({
-      title: "거래 정보 없음",
-      detail: "매매, 전세, 월세 중 등록된 거래 카드가 없습니다.",
-      tone: "danger",
-    });
-  }
-
-  if (unverifiedListings.length > 0) {
-    notices.push({
-      title: "확인 필요한 거래",
-      detail: `${formatTransactionTypeList(unverifiedListings)} ${unverifiedListings.length}건이 미확인 상태입니다.`,
-      tone: "warning",
-    });
-  }
-
-  if (jointRequiredListings.length > 0) {
-    notices.push({
-      title: "공동중개 필수",
-      detail: `${formatJointBrokerageRequirementList(jointRequiredListings)} 조건을 확인해야 합니다.`,
-      tone: "warning",
-    });
-  }
-
-  if (!owner?.contact?.phone) {
-    notices.push({
-      title: "소유주 연락처 없음",
-      detail:
-        "목록에서 바로 전화할 수 있도록 소유주 또는 대리인 번호를 등록해야 합니다.",
-      tone: "danger",
-    });
-  }
-
-  if (daysSinceLatestCheck !== null && daysSinceLatestCheck >= 30) {
-    notices.push({
-      title: "확인일 오래됨",
-      detail: `마지막 확인이 ${daysSinceLatestCheck}일 전입니다. 광고 유지 전 소유주 확인이 필요합니다.`,
-      tone: "warning",
-    });
-  }
-
-  if (expiringTenant?.contractEnd) {
-    notices.push({
-      title: "임차 계약 만기 임박",
-      detail: `${expiringTenant.contact?.name ?? "임차인"} 계약 종료가 ${formatDateShort(expiringTenant.contractEnd)}입니다.`,
-      tone: "warning",
-    });
-  }
-
-  const hasAnyListingMemo = listings.some((listing) => listing.memo?.trim());
-  if (!hasAnyListingMemo && consultations.length === 0) {
-    notices.push({
-      title: "상담 기록 없음",
-      detail:
-        "최근 통화나 확인 메모가 없어 매물 히스토리를 판단하기 어렵습니다.",
-      tone: "neutral",
-    });
-  }
-
-  return notices.slice(0, 5);
-}
-
 function formatDateShort(value?: string | null) {
   if (!value) return "-";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "-";
   return date.toLocaleDateString("ko-KR", { month: "numeric", day: "numeric" });
-}
-
-function formatDateTime(value?: string | null) {
-  if (!value) return "-";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "-";
-  return date.toLocaleString("ko-KR", {
-    month: "numeric",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
 }
 
 function getContactRoleLabel(role: string) {
@@ -7689,36 +7639,6 @@ function formatDaysAgo(value?: string | null) {
   if (days === null) return "-";
   if (days === 0) return "오늘";
   return `${days}일 전`;
-}
-
-function formatTransactionTypeList(
-  listings: Pick<PropertyListing, "transactionType">[],
-) {
-  const labels = Array.from(
-    new Set(
-      listings.map(
-        (listing) =>
-          transactionTypeMeta[listing.transactionType]?.label ??
-          listing.transactionType,
-      ),
-    ),
-  );
-  return labels.join(", ");
-}
-
-function formatJointBrokerageRequirementList(
-  listings: Pick<PropertyListing, "transactionType" | "intake">[],
-) {
-  return listings
-    .map((listing) => {
-      const transactionLabel =
-        transactionTypeMeta[listing.transactionType]?.label ??
-        listing.transactionType;
-      return listing.intake?.jointBrokeragePartner?.name
-        ? `${transactionLabel} ${listing.intake.jointBrokeragePartner.name}`
-        : `${transactionLabel} 파트너 미지정`;
-    })
-    .join(", ");
 }
 
 function formatAreaPyeong(value?: number | null, fractionDigits = 1) {

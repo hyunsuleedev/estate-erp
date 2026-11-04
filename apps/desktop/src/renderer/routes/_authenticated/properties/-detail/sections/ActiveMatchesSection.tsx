@@ -55,7 +55,7 @@ function MatchRow({ match }: { match: Match }) {
   return (
     <li>
       <Link
-        to="/matches"
+        to="/wanted-properties"
         className="flex items-center gap-2 px-3 py-2 hover:bg-muted/40"
       >
         <div className="grid size-7 shrink-0 place-items-center rounded-full bg-muted text-[11px] text-muted-foreground">

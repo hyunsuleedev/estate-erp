@@ -149,6 +149,7 @@ interface TabsBridge {
     payload: NativeTabViewportPayload,
   ) => Promise<NativeTabViewportResult>;
   releaseNativeViewport?: (payload: NativeTabViewportReleasePayload) => void;
+  hasUnsavedNativeTabWork?: (tabId: string) => Promise<boolean>;
   onNativeTabState?: (
     callback: (update: NativeTabStateUpdate) => void,
   ) => () => void;

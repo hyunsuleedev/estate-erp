@@ -1,15 +1,10 @@
 import { useIsMutating } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import type { NativeTabRetentionUpdate } from '../../../../common/nativeTabs';
-
-const TRANSIENT_EDITOR_SELECTOR = [
-  '[data-slot="dialog-content"][data-state="open"]',
-  '[data-slot="alert-dialog-content"][data-state="open"]',
-  '[data-slot="sheet-content"][data-state="open"]',
-  '[data-native-tab-discard-blocker="true"]',
-].join(',');
-
-const EXPLICIT_DIRTY_SELECTOR = '[data-native-tab-dirty="true"]';
+import {
+  EXPLICIT_DIRTY_SELECTOR,
+  TRANSIENT_EDITOR_SELECTOR,
+} from '../lib/unsavedWork';
 
 interface RetentionSignals {
   transientEditor: boolean;

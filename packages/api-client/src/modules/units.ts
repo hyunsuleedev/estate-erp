@@ -95,6 +95,7 @@ export interface Unit {
   /** 호실별 구조 override. null이면 SiteUnitType 값을 사용한다. */
   bathRoomCount: number | null;
   isPiloti: boolean;
+  cellType?: string;
   createdAt: string;
   updatedAt: string;
   siteUnitType?: SiteUnitType | null;

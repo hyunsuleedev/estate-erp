@@ -1,6 +1,10 @@
 export { DataTable } from './data-table';
 export { DataTablePagination } from './data-table-pagination';
-export { ViewBar } from './view-bar';
+export {
+  DateRangeFilterBody,
+  NumberRangeFilterBody,
+  ViewBar,
+} from './view-bar';
 export {
   PriceCell,
   AreaCell,

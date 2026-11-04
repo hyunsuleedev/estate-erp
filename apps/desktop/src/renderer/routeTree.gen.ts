@@ -17,6 +17,7 @@ import { Route as DevCtiPreviewRouteImport } from './routes/dev.cti-preview'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
 import { Route as AuthRegisterRouteImport } from './routes/_auth/register'
 import { Route as AuthLoginRouteImport } from './routes/_auth/login'
+import { Route as AuthenticatedWantedPropertiesIndexRouteImport } from './routes/_authenticated/wanted-properties/index'
 import { Route as AuthenticatedTasksIndexRouteImport } from './routes/_authenticated/tasks/index'
 import { Route as AuthenticatedSitesIndexRouteImport } from './routes/_authenticated/sites/index'
 import { Route as AuthenticatedSettingsIndexRouteImport } from './routes/_authenticated/settings/index'
@@ -24,7 +25,6 @@ import { Route as AuthenticatedServiceVendorsIndexRouteImport } from './routes/_
 import { Route as AuthenticatedPropertiesIndexRouteImport } from './routes/_authenticated/properties/index'
 import { Route as AuthenticatedPartnerBrokersIndexRouteImport } from './routes/_authenticated/partner-brokers/index'
 import { Route as AuthenticatedNetworkIndexRouteImport } from './routes/_authenticated/network/index'
-import { Route as AuthenticatedMatchesIndexRouteImport } from './routes/_authenticated/matches/index'
 import { Route as AuthenticatedEmployeesIndexRouteImport } from './routes/_authenticated/employees/index'
 import { Route as AuthenticatedDocumentsIndexRouteImport } from './routes/_authenticated/documents/index'
 import { Route as AuthenticatedDealsIndexRouteImport } from './routes/_authenticated/deals/index'
@@ -95,6 +95,12 @@ const AuthLoginRoute = AuthLoginRouteImport.update({
   path: '/login',
   getParentRoute: () => AuthRoute,
 } as any)
+const AuthenticatedWantedPropertiesIndexRoute =
+  AuthenticatedWantedPropertiesIndexRouteImport.update({
+    id: '/wanted-properties/',
+    path: '/wanted-properties/',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedTasksIndexRoute = AuthenticatedTasksIndexRouteImport.update({
   id: '/tasks/',
   path: '/tasks/',
@@ -133,12 +139,6 @@ const AuthenticatedNetworkIndexRoute =
   AuthenticatedNetworkIndexRouteImport.update({
     id: '/network/',
     path: '/network/',
-    getParentRoute: () => AuthenticatedRoute,
-  } as any)
-const AuthenticatedMatchesIndexRoute =
-  AuthenticatedMatchesIndexRouteImport.update({
-    id: '/matches/',
-    path: '/matches/',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
 const AuthenticatedEmployeesIndexRoute =
@@ -361,7 +361,6 @@ export interface FileRoutesByFullPath {
   '/deals/': typeof AuthenticatedDealsIndexRoute
   '/documents/': typeof AuthenticatedDocumentsIndexRoute
   '/employees/': typeof AuthenticatedEmployeesIndexRoute
-  '/matches/': typeof AuthenticatedMatchesIndexRoute
   '/network/': typeof AuthenticatedNetworkIndexRoute
   '/partner-brokers/': typeof AuthenticatedPartnerBrokersIndexRoute
   '/properties/': typeof AuthenticatedPropertiesIndexRoute
@@ -369,6 +368,7 @@ export interface FileRoutesByFullPath {
   '/settings/': typeof AuthenticatedSettingsIndexRoute
   '/sites/': typeof AuthenticatedSitesIndexRoute
   '/tasks/': typeof AuthenticatedTasksIndexRoute
+  '/wanted-properties/': typeof AuthenticatedWantedPropertiesIndexRoute
   '/buyer-requirements/$id/edit': typeof AuthenticatedBuyerRequirementsIdEditRoute
 }
 export interface FileRoutesByTo {
@@ -408,7 +408,6 @@ export interface FileRoutesByTo {
   '/deals': typeof AuthenticatedDealsIndexRoute
   '/documents': typeof AuthenticatedDocumentsIndexRoute
   '/employees': typeof AuthenticatedEmployeesIndexRoute
-  '/matches': typeof AuthenticatedMatchesIndexRoute
   '/network': typeof AuthenticatedNetworkIndexRoute
   '/partner-brokers': typeof AuthenticatedPartnerBrokersIndexRoute
   '/properties': typeof AuthenticatedPropertiesIndexRoute
@@ -416,6 +415,7 @@ export interface FileRoutesByTo {
   '/settings': typeof AuthenticatedSettingsIndexRoute
   '/sites': typeof AuthenticatedSitesIndexRoute
   '/tasks': typeof AuthenticatedTasksIndexRoute
+  '/wanted-properties': typeof AuthenticatedWantedPropertiesIndexRoute
   '/buyer-requirements/$id/edit': typeof AuthenticatedBuyerRequirementsIdEditRoute
 }
 export interface FileRoutesById {
@@ -458,7 +458,6 @@ export interface FileRoutesById {
   '/_authenticated/deals/': typeof AuthenticatedDealsIndexRoute
   '/_authenticated/documents/': typeof AuthenticatedDocumentsIndexRoute
   '/_authenticated/employees/': typeof AuthenticatedEmployeesIndexRoute
-  '/_authenticated/matches/': typeof AuthenticatedMatchesIndexRoute
   '/_authenticated/network/': typeof AuthenticatedNetworkIndexRoute
   '/_authenticated/partner-brokers/': typeof AuthenticatedPartnerBrokersIndexRoute
   '/_authenticated/properties/': typeof AuthenticatedPropertiesIndexRoute
@@ -466,6 +465,7 @@ export interface FileRoutesById {
   '/_authenticated/settings/': typeof AuthenticatedSettingsIndexRoute
   '/_authenticated/sites/': typeof AuthenticatedSitesIndexRoute
   '/_authenticated/tasks/': typeof AuthenticatedTasksIndexRoute
+  '/_authenticated/wanted-properties/': typeof AuthenticatedWantedPropertiesIndexRoute
   '/_authenticated/buyer-requirements/$id_/edit': typeof AuthenticatedBuyerRequirementsIdEditRoute
 }
 export interface FileRouteTypes {
@@ -507,7 +507,6 @@ export interface FileRouteTypes {
     | '/deals/'
     | '/documents/'
     | '/employees/'
-    | '/matches/'
     | '/network/'
     | '/partner-brokers/'
     | '/properties/'
@@ -515,6 +514,7 @@ export interface FileRouteTypes {
     | '/settings/'
     | '/sites/'
     | '/tasks/'
+    | '/wanted-properties/'
     | '/buyer-requirements/$id/edit'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -554,7 +554,6 @@ export interface FileRouteTypes {
     | '/deals'
     | '/documents'
     | '/employees'
-    | '/matches'
     | '/network'
     | '/partner-brokers'
     | '/properties'
@@ -562,6 +561,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/sites'
     | '/tasks'
+    | '/wanted-properties'
     | '/buyer-requirements/$id/edit'
   id:
     | '__root__'
@@ -603,7 +603,6 @@ export interface FileRouteTypes {
     | '/_authenticated/deals/'
     | '/_authenticated/documents/'
     | '/_authenticated/employees/'
-    | '/_authenticated/matches/'
     | '/_authenticated/network/'
     | '/_authenticated/partner-brokers/'
     | '/_authenticated/properties/'
@@ -611,6 +610,7 @@ export interface FileRouteTypes {
     | '/_authenticated/settings/'
     | '/_authenticated/sites/'
     | '/_authenticated/tasks/'
+    | '/_authenticated/wanted-properties/'
     | '/_authenticated/buyer-requirements/$id_/edit'
   fileRoutesById: FileRoutesById
 }
@@ -680,6 +680,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthLoginRouteImport
       parentRoute: typeof AuthRoute
     }
+    '/_authenticated/wanted-properties/': {
+      id: '/_authenticated/wanted-properties/'
+      path: '/wanted-properties'
+      fullPath: '/wanted-properties/'
+      preLoaderRoute: typeof AuthenticatedWantedPropertiesIndexRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/tasks/': {
       id: '/_authenticated/tasks/'
       path: '/tasks'
@@ -727,13 +734,6 @@ declare module '@tanstack/react-router' {
       path: '/network'
       fullPath: '/network/'
       preLoaderRoute: typeof AuthenticatedNetworkIndexRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
-    '/_authenticated/matches/': {
-      id: '/_authenticated/matches/'
-      path: '/matches'
-      fullPath: '/matches/'
-      preLoaderRoute: typeof AuthenticatedMatchesIndexRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/employees/': {
@@ -1000,7 +1000,6 @@ interface AuthenticatedRouteChildren {
   AuthenticatedDealsIndexRoute: typeof AuthenticatedDealsIndexRoute
   AuthenticatedDocumentsIndexRoute: typeof AuthenticatedDocumentsIndexRoute
   AuthenticatedEmployeesIndexRoute: typeof AuthenticatedEmployeesIndexRoute
-  AuthenticatedMatchesIndexRoute: typeof AuthenticatedMatchesIndexRoute
   AuthenticatedNetworkIndexRoute: typeof AuthenticatedNetworkIndexRoute
   AuthenticatedPartnerBrokersIndexRoute: typeof AuthenticatedPartnerBrokersIndexRoute
   AuthenticatedPropertiesIndexRoute: typeof AuthenticatedPropertiesIndexRoute
@@ -1008,6 +1007,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedSettingsIndexRoute: typeof AuthenticatedSettingsIndexRoute
   AuthenticatedSitesIndexRoute: typeof AuthenticatedSitesIndexRoute
   AuthenticatedTasksIndexRoute: typeof AuthenticatedTasksIndexRoute
+  AuthenticatedWantedPropertiesIndexRoute: typeof AuthenticatedWantedPropertiesIndexRoute
   AuthenticatedBuyerRequirementsIdEditRoute: typeof AuthenticatedBuyerRequirementsIdEditRoute
 }
 
@@ -1052,7 +1052,6 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedDealsIndexRoute: AuthenticatedDealsIndexRoute,
   AuthenticatedDocumentsIndexRoute: AuthenticatedDocumentsIndexRoute,
   AuthenticatedEmployeesIndexRoute: AuthenticatedEmployeesIndexRoute,
-  AuthenticatedMatchesIndexRoute: AuthenticatedMatchesIndexRoute,
   AuthenticatedNetworkIndexRoute: AuthenticatedNetworkIndexRoute,
   AuthenticatedPartnerBrokersIndexRoute: AuthenticatedPartnerBrokersIndexRoute,
   AuthenticatedPropertiesIndexRoute: AuthenticatedPropertiesIndexRoute,
@@ -1060,6 +1059,8 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedSettingsIndexRoute: AuthenticatedSettingsIndexRoute,
   AuthenticatedSitesIndexRoute: AuthenticatedSitesIndexRoute,
   AuthenticatedTasksIndexRoute: AuthenticatedTasksIndexRoute,
+  AuthenticatedWantedPropertiesIndexRoute:
+    AuthenticatedWantedPropertiesIndexRoute,
   AuthenticatedBuyerRequirementsIdEditRoute:
     AuthenticatedBuyerRequirementsIdEditRoute,
 }

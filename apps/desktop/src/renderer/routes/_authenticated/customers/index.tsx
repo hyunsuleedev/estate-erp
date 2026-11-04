@@ -84,7 +84,7 @@ import {
 import { CustomerCaseActionMenu } from "./-customer-case-action-menu";
 import { CustomerDemandIntakeActionMenu } from "./-customer-demand-intake-action-menu";
 import { CustomerDemandIntentActionMenu } from "./-customer-demand-intent-action-menu";
-import { LedgerMatchPanel } from "../matches/-ledger-match-panel";
+import { LedgerMatchPanel } from "../wanted-properties/-ledger-match-panel";
 import {
   getCustomerCaseSelectionKeys,
   getCustomerSelectionState,

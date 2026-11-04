@@ -176,6 +176,8 @@ const windowShellBridge = {
       ipcRenderer.invoke('tabs:syncNativeViewport', payload),
     releaseNativeViewport: (payload: NativeTabViewportReleasePayload) =>
       ipcRenderer.send('tabs:releaseNativeViewport', payload),
+    hasUnsavedNativeTabWork: (tabId: string): Promise<boolean> =>
+      ipcRenderer.invoke('tabs:hasUnsavedNativeTabWork', tabId),
     onNativeTabState: (callback: (update: NativeTabStateUpdate) => void) => {
       const handler = (
         _event: Electron.IpcRendererEvent,

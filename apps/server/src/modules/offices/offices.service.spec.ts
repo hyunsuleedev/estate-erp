@@ -11,12 +11,17 @@ describe('OfficesService', () => {
         findUnique: jest.fn(),
         update: jest.fn(),
       },
-      $transaction: jest.fn(),
+      $transaction: jest
+        .fn()
+        .mockImplementation((callback) => callback(prisma)),
     };
 
     return {
       prisma,
-      service: new OfficesService(prisma as never),
+      service: new OfficesService(
+        prisma as never,
+        { tryRefresh: jest.fn() } as never,
+      ),
     };
   }
 
@@ -36,6 +41,8 @@ describe('OfficesService', () => {
       ceoName: '홍길동',
       phone: null,
       address: null,
+      lat: null,
+      lng: null,
       naverVerificationId: null,
       subscription: 'basic',
       maxUsers: 3,
@@ -101,6 +108,8 @@ describe('OfficesService', () => {
       ceoName: '홍길동',
       phone: null,
       address: null,
+      lat: null,
+      lng: null,
       naverVerificationId: null,
       subscription: 'basic',
       maxUsers: 3,
@@ -121,9 +130,9 @@ describe('OfficesService', () => {
       ],
     };
     prisma.office.findUnique.mockResolvedValue(office);
-    prisma.office.update.mockResolvedValue({
-      ...office,
-      naverVerificationId: 'naver-agent-id',
+    prisma.office.update.mockImplementation(async ({ data }) => {
+      Object.assign(office, data);
+      return office;
     });
 
     await expect(

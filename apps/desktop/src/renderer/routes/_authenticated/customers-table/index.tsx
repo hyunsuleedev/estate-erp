@@ -2,15 +2,18 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import {
   useInfiniteQuery,
   useMutation,
+  useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
 import {
+  useCallback,
   useDeferredValue,
   useEffect,
   useMemo,
   useRef,
   useState,
   type ReactNode,
+  type Ref,
 } from "react";
 import type {
   BuyerIntakeLifecycleStatus,
@@ -31,16 +34,29 @@ import {
 } from "@estate-erp/shared";
 import {
   ArrowDown,
-  ArrowLeftRight,
   ArrowUp,
+  CalendarClock,
   CalendarDays,
+  Check,
   ChevronDown,
+  CircleAlert,
+  CircleDollarSign,
   CircleDot,
+  Columns3,
+  FileText,
   GitBranch,
+  Hash,
+  List,
+  MapPin,
+  MessageSquare,
+  Minus,
+  Phone,
+  Plus,
   RotateCcw,
   Search,
-  StickyNote,
   Tag,
+  Type,
+  UserCheck,
   UserRound,
   UsersRound,
   X,
@@ -49,6 +65,7 @@ import { toast } from "sonner";
 import { api } from "@/lib/api";
 import {
   formatDateShortYear,
+  formatDday,
   formatMoney,
   formatPhone,
   formatPyeong,
@@ -56,21 +73,34 @@ import {
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import {
+  Popover,
+  PopoverAnchor,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
   CellEditProvider,
+  DateRangeFilterBody,
   EditableCell,
-  ViewBar,
+  NumberRangeFilterBody,
   type ActiveFilter,
   type ChipOption,
   type FilterDefinition,
-  type SortDefinition,
 } from "@/components/data-table";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { navigateActiveTab } from "@/features/tabs/lib/navigateActiveTab";
+import { getRouteMeta } from "@/features/tabs/lib/routeMeta";
+import { useTabStore } from "@/features/tabs/store/useTabStore";
 import {
   customerLedgerFilterDefinitions,
   customerLedgerFiltersToApiParams,
-  customerLedgerSortDefinitions,
   getNextCustomerLedgerSort,
 } from "../customers/-customer-list-filters";
 import {
@@ -78,7 +108,20 @@ import {
   mergeLedgerPages,
 } from "../customers/-customer-ledger-pagination";
 import { CustomerCaseActionMenu } from "../customers/-customer-case-action-menu";
-import { LedgerMatchPanel } from "../matches/-ledger-match-panel";
+import {
+  CONSULTATION_TYPE_LABELS,
+  getFollowUpState,
+} from "../buyer-requirements/-buyer-utils";
+import { LedgerMatchPanel } from "../wanted-properties/-ledger-match-panel";
+import {
+  AddFilterMenu,
+  ChecklistFilterPanel,
+  ToolbarFilterChip,
+  ToolbarPillTabs,
+  ToolbarPillToggle,
+  toolbarGhostButtonClassName,
+  type AddFilterItem,
+} from "../properties/-components/property-toolbar";
 import "../customers/-customer-ledger.css";
 
 export const Route = createFileRoute("/_authenticated/customers-table/")({
@@ -89,12 +132,105 @@ type SortOrder = "asc" | "desc";
 type CustomerLedgerMode = Exclude<BrokerageCaseLedgerMode, "both">;
 
 const PAGE_SIZE = 20;
-// intent 행 14열: 선택 / 고객 / 작업 / 구분 / 상태 / 거래유형 / 최소예산 / 최대예산
-// / 최소월세 / 최대월세 / 최소평형 / 최대평형 / 매칭 / 등록일
-// (매물 의뢰의 매매가·보증금은 예산 2열을 colSpan으로 합쳐 표시 — 월세·평형과 같은 패턴)
-const COLUMN_COUNT = 14;
-// context 행은 sticky 선택·고객·작업 열과 등록일 열을 제외한 10열을 span
-const CONTEXT_COL_SPAN = 10;
+type LedgerColumnKey =
+  | "select"
+  | "customer"
+  | "phone"
+  | "actions"
+  | "kind"
+  | "transaction"
+  | "intake"
+  | "status"
+  | "budgetMin"
+  | "budgetMax"
+  | "rentMin"
+  | "rentMax"
+  | "areaMin"
+  | "areaMax"
+  | "match"
+  | "assignee"
+  | "next"
+  | "consult"
+  | "memo"
+  | "created";
+
+// 매물관리 표처럼 식별 열을 왼쪽에 고정하고, 남는 폭은 메모 열이 가져간다.
+// 의뢰 1건은 1행이다. 매물 의뢰의 금액·월세·평형은 최소·최대 2열을 colSpan으로 합쳐 표시한다.
+const LEDGER_COLUMNS: ReadonlyArray<{ key: LedgerColumnKey; width: number }> = [
+  { key: "select", width: 36 },
+  { key: "customer", width: 108 },
+  { key: "phone", width: 128 },
+  { key: "actions", width: 40 },
+  { key: "kind", width: 66 },
+  { key: "transaction", width: 60 },
+  { key: "intake", width: 220 },
+  { key: "status", width: 80 },
+  { key: "budgetMin", width: 112 },
+  { key: "budgetMax", width: 112 },
+  { key: "rentMin", width: 84 },
+  { key: "rentMax", width: 84 },
+  { key: "areaMin", width: 84 },
+  { key: "areaMax", width: 84 },
+  { key: "match", width: 66 },
+  { key: "assignee", width: 72 },
+  { key: "next", width: 104 },
+  { key: "consult", width: 240 },
+  { key: "memo", width: 180 },
+  { key: "created", width: 78 },
+];
+
+// 메모 열은 폭을 지정하지 않아 남는 공간을 가져간다. 위 width는 표의 최소 폭 계산에만 쓴다.
+const LEDGER_GROW_COLUMN: LedgerColumnKey = "memo";
+
+const OPTIONAL_COLUMN_GROUPS: ReadonlyArray<{
+  id: string;
+  label: string;
+  keys: readonly LedgerColumnKey[];
+}> = [
+  { id: "kind", label: "구분", keys: ["kind"] },
+  { id: "transaction", label: "거래", keys: ["transaction"] },
+  { id: "status", label: "상태", keys: ["status"] },
+  { id: "area", label: "최소·최대 평형", keys: ["areaMin", "areaMax"] },
+  { id: "match", label: "매칭", keys: ["match"] },
+  { id: "assignee", label: "담당", keys: ["assignee"] },
+  { id: "next", label: "다음 연락", keys: ["next"] },
+  { id: "consult", label: "최근 상담", keys: ["consult"] },
+  { id: "memo", label: "의뢰 메모", keys: ["memo"] },
+  { id: "created", label: "등록일", keys: ["created"] },
+];
+
+const SORT_FIELD_COLUMN: Partial<
+  Record<BrokerageCaseLedgerSortField, LedgerColumnKey>
+> = {
+  monthlyRentMin: "rentMin",
+  monthlyRentMax: "rentMax",
+  areaMin: "areaMin",
+  areaMax: "areaMax",
+  matchCount: "match",
+  createdAt: "created",
+};
+
+// 선택 + 고객 + 연락처 + 작업. -customer-ledger.css의 sticky left 값과 맞춘다.
+const LEDGER_PINNED_WIDTH = 312;
+const COLUMN_GUIDE_LEAD = 4;
+const COLUMN_GUIDE_TOGGLE_SIZE = 20;
+
+const PRIMARY_FILTER_FIELDS = [
+  "transactionType",
+  "status",
+  "assignedToId",
+  "nextContact",
+];
+const PLACE_FILTER_FIELDS = ["preferredRegions", "preferredSites"];
+const MORE_FILTER_ICONS: Record<string, ReactNode> = {
+  urgency: <CircleAlert />,
+  price: <CircleDollarSign />,
+  deposit: <CircleDollarSign />,
+  monthlyRent: <CircleDollarSign />,
+  area: <Hash />,
+  moveIn: <CalendarDays />,
+};
+
 const MODE_OPTIONS: Array<{
   value: CustomerLedgerMode;
   label: string;
@@ -169,12 +305,30 @@ const TRANSACTION_OPTIONS: ChipOption[] = [
   },
 ];
 
+// 빠르게 고르는 다음 연락 일정. 날짜를 직접 고르는 항목은 아래 옵션에서 따로 붙인다.
+const NEXT_CONTACT_PRESETS = [
+  { label: "오늘", value: "0" },
+  { label: "내일", value: "1" },
+  { label: "3일 뒤", value: "3" },
+  { label: "다음 주", value: "7" },
+] as const;
+
+const NEXT_CONTACT_OPTIONS: ChipOption[] = [
+  ...NEXT_CONTACT_PRESETS,
+  {
+    label: "날짜 선택",
+    value: "pick",
+    picker: "date",
+    fromField: "nextContactDate",
+    getPreselect: (value) =>
+      typeof value === "string" ? new Date(value) : undefined,
+  },
+];
+
 // 케이스 1개를 렌더할 행 단위. sticky 셀 rowSpan 계산이 이 배열 길이로 결정된다.
 type RowDescriptor =
   | { type: "intent"; line: BrokerageCaseDemandIntent }
-  | { type: "context"; line: BrokerageCaseDemandIntent }
-  | { type: "stack"; group: ListingGroup }
-  | { type: "stack-context"; group: ListingGroup };
+  | { type: "stack"; group: ListingGroup };
 
 function groupListingIntents(
   lines: BrokerageCaseListingIntent[],
@@ -211,19 +365,73 @@ function demandPriorityOptions(requirementCount: number): ChipOption[] {
   });
 }
 
-// 구함은 요건당 intent+context 2행, 매물 의뢰는 ListingIntake(같은 호실) 단위로
-// listing을 세로 적층한 stack+context 2행으로 렌더링한다.
+// 구함은 요건당 1행, 매물 의뢰는 ListingIntake(같은 호실)당 1행이다.
+// 매물 의뢰의 listing은 그 행의 셀 안에 세로로 쌓는다.
 function buildRowDescriptors(brokerageCase: BrokerageCase): RowDescriptor[] {
   const rows: RowDescriptor[] = [];
   for (const line of brokerageCase.demandIntents) {
     rows.push({ type: "intent", line });
-    rows.push({ type: "context", line });
   }
   for (const group of groupListingIntents(brokerageCase.listingIntents)) {
     rows.push({ type: "stack", group });
-    rows.push({ type: "stack-context", group });
   }
   return rows;
+}
+
+function localDateString(offsetDays: number) {
+  const date = new Date();
+  date.setDate(date.getDate() + offsetDays);
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${date.getFullYear()}-${month}-${day}`;
+}
+
+// 같은 해의 날짜는 연도를 빼고 "11.06"으로 줄인다.
+function formatLedgerDate(value: string) {
+  const short = formatDateShortYear(value);
+  return new Date(value).getFullYear() === new Date().getFullYear()
+    ? short.slice(3)
+    : short;
+}
+
+// 평형은 좁은 열에 들어가므로 "25.0평"의 군더더기 소수점을 뺀다.
+function formatLedgerPyeong(value: number | null) {
+  return value === null ? "-" : formatPyeong(value).replace(/\.0평$/, "평");
+}
+
+// 월세 열을 접으면 중개사가 흔히 쓰는 "보증금/월세" 표기로 한 칸에 보여 준다.
+function formatLedgerAmount(value: number | null, rent?: number | null) {
+  const amount = value === null ? "-" : formatMoney(value);
+  return rent ? `${amount}/${rent.toLocaleString()}만` : amount;
+}
+
+function summarizeLedgerFilter(
+  def: FilterDefinition,
+  existing: ActiveFilter | undefined,
+): string | null {
+  if (!existing) return null;
+  if (existing.operator === "in" && existing.values?.length) {
+    const labels =
+      existing.displayValues?.length === existing.values.length
+        ? existing.displayValues
+        : existing.values.map(
+            (value) =>
+              def.options?.find((option) => option.value === value)?.label ??
+              value,
+          );
+    return labels.length === 1
+      ? labels[0]
+      : `${labels[0]} 외 ${labels.length - 1}`;
+  }
+  if (existing.operator === "between") {
+    const unit = def.unit ? ` ${def.unit}` : "";
+    const min = existing.valueMin ?? "";
+    const max = existing.valueMax ?? "";
+    if (min && max) return `${min} ~ ${max}${unit}`;
+    if (min) return `${min}${unit} 이상`;
+    if (max) return `${max}${unit} 이하`;
+  }
+  return null;
 }
 
 function CustomersPage() {
@@ -234,6 +442,11 @@ function CustomersPage() {
   const [sortBy, setSortBy] =
     useState<BrokerageCaseLedgerSortField | null>("createdAt");
   const [sortOrder, setSortOrder] = useState<SortOrder>("desc");
+  const [rentColumnsOpen, setRentColumnsOpen] = useState(false);
+  const [hiddenColumnGroups, setHiddenColumnGroups] = useState<
+    ReadonlySet<string>
+  >(() => new Set());
+  const [isPlaceFilterOpen, setIsPlaceFilterOpen] = useState(false);
   const [selectedCaseIds, setSelectedCaseIds] = useState<string[]>([]);
   const [expandedMatchRows, setExpandedMatchRows] = useState<Set<string>>(
     () => new Set(),
@@ -247,6 +460,29 @@ function CustomersPage() {
     canScrollRight: false,
   });
   const queryClient = useQueryClient();
+  const createTab = useTabStore((state) => state.createTab);
+  const handleCreateDemandIntake = useCallback(() => {
+    const route = "/buyer-requirements/new";
+    const meta = getRouteMeta(route);
+    createTab({ route, kind: meta.kind, title: meta.title });
+  }, [createTab]);
+  // 보기 전환이라 새 탭을 열지 않고 지금 탭에서 바꾼다.
+  const handleOpenCaseView = useCallback(() => {
+    const route = "/customers";
+    const meta = getRouteMeta(route);
+    void navigateActiveTab({ route, kind: meta.kind, title: meta.title });
+  }, []);
+  const employeesQuery = useQuery({
+    queryKey: ["employees"],
+    queryFn: () => api.employees.findAll(),
+  });
+  const assigneeOptions = useMemo<ChipOption[]>(
+    () =>
+      (employeesQuery.data ?? [])
+        .filter((employee) => employee.isActive)
+        .map((employee) => ({ label: employee.name, value: employee.id })),
+    [employeesQuery.data],
+  );
 
   const allFilterDefinitions = useMemo<FilterDefinition[]>(
     () => [
@@ -254,21 +490,10 @@ function CustomersPage() {
       {
         id: "assignedToId",
         field: "assignedToId",
-        label: "담당자",
-        type: "asyncMultiSelect",
+        label: "담당",
+        type: "multiSelect",
         operators: ["in"],
-        fetchOptions: async (query) => {
-          const employees = await api.employees.findAll();
-          return employees
-            .filter(
-              (employee) =>
-                employee.isActive && (!query || employee.name.includes(query)),
-            )
-            .map((employee) => ({
-              label: employee.name,
-              value: employee.id,
-            }));
-        },
+        options: assigneeOptions,
       },
       {
         id: "preferredSites",
@@ -299,7 +524,7 @@ function CustomersPage() {
         },
       },
     ],
-    [],
+    [assigneeOptions],
   );
 
   useEffect(() => {
@@ -485,6 +710,15 @@ function CustomersPage() {
   );
   const firstPage = ledgerQuery.data?.pages[0];
   const totalCases = firstPage?.pagination.total ?? 0;
+  const loadedRequestCount = useMemo(
+    () =>
+      ledgerCases.reduce(
+        (total, brokerageCase) =>
+          total + buildRowDescriptors(brokerageCase).length,
+        0,
+      ),
+    [ledgerCases],
+  );
   const ledgerStatusMessage = ledgerQuery.isLoading
     ? "고객 원장을 불러오는 중입니다."
     : ledgerQuery.isFetchNextPageError
@@ -544,23 +778,6 @@ function CustomersPage() {
     setSortOrder(nextSort.sortOrder);
   };
 
-  const activeSorts = useMemo<SortDefinition[]>(
-    () =>
-      sortBy
-        ? [
-            {
-              field: sortBy,
-              label:
-                customerLedgerSortDefinitions.find(
-                  (item) => item.field === sortBy,
-                )?.label ?? sortBy,
-              direction: sortOrder,
-            },
-          ]
-        : [],
-    [sortBy, sortOrder],
-  );
-
   const addFilter = (filter: ActiveFilter) => {
     setActiveFilters((current) => [
       ...current.filter((item) => item.field !== filter.field),
@@ -582,6 +799,81 @@ function CustomersPage() {
     setSortOrder("desc");
   };
 
+  const visibleColumns = useMemo(() => {
+    const hiddenKeys = new Set<LedgerColumnKey>(
+      OPTIONAL_COLUMN_GROUPS.filter((group) =>
+        hiddenColumnGroups.has(group.id),
+      ).flatMap((group) => group.keys),
+    );
+    return LEDGER_COLUMNS.filter(
+      (column) =>
+        !hiddenKeys.has(column.key) &&
+        (rentColumnsOpen ||
+          (column.key !== "rentMin" && column.key !== "rentMax")),
+    );
+  }, [hiddenColumnGroups, rentColumnsOpen]);
+  const visibleColumnKeys = useMemo<ReadonlySet<LedgerColumnKey>>(
+    () => new Set(visibleColumns.map((column) => column.key)),
+    [visibleColumns],
+  );
+  const columnCount = visibleColumns.length;
+  const tableMinWidth = visibleColumns.reduce(
+    (total, column) => total + column.width,
+    0,
+  );
+
+  // 정렬 중인 열을 접거나 숨기면 화살표가 사라지므로 기본 정렬로 되돌린다.
+  useEffect(() => {
+    const column = sortBy ? SORT_FIELD_COLUMN[sortBy] : undefined;
+    if (column && !visibleColumnKeys.has(column)) {
+      setSortBy("createdAt");
+      setSortOrder("desc");
+    }
+  }, [sortBy, visibleColumnKeys]);
+
+  const filterDefinitionByField = useMemo(
+    () =>
+      new Map(allFilterDefinitions.map((def) => [def.field, def] as const)),
+    [allFilterDefinitions],
+  );
+  const activeFilterByField = useMemo(
+    () =>
+      new Map(activeFilters.map((filter) => [filter.field, filter] as const)),
+    [activeFilters],
+  );
+  const placeFilterDefinitions = useMemo(
+    () =>
+      allFilterDefinitions.filter((def) =>
+        PLACE_FILTER_FIELDS.includes(def.field),
+      ),
+    [allFilterDefinitions],
+  );
+  const moreFilterDefinitions = allFilterDefinitions.filter(
+    (def) =>
+      !PRIMARY_FILTER_FIELDS.includes(def.field) &&
+      !PLACE_FILTER_FIELDS.includes(def.field),
+  );
+  const moreFilterItems: AddFilterItem[] = moreFilterDefinitions.map((def) => {
+    const existing = activeFilterByField.get(def.field);
+    return {
+      key: def.field,
+      label: def.label,
+      icon: MORE_FILTER_ICONS[def.field] ?? <Tag />,
+      summary: summarizeLedgerFilter(def, existing),
+      contentClassName:
+        def.type === "multiSelect" ? "w-[180px] p-0" : "w-64 p-3",
+      render: (close) => (
+        <LedgerFilterBody
+          def={def}
+          existing={existing}
+          onApply={addFilter}
+          onClear={() => existing && removeFilter(existing.id)}
+          close={close}
+        />
+      ),
+    };
+  });
+
   const hasActiveControls =
     search.trim() !== "" ||
     mode !== "all" ||
@@ -594,119 +886,136 @@ function CustomersPage() {
       <main className="customer-ledger-page -m-4 flex min-h-0 flex-1 flex-col overflow-hidden bg-background">
         <h1 className="sr-only">고객 원장</h1>
         <section
-          className="shrink-0 border-b border-border bg-white px-3 py-2.5"
+          className="@container shrink-0 bg-white px-3 py-2"
           aria-label="고객 원장 보기 및 검색"
         >
           <div className="flex min-w-0 items-center gap-2">
-            <div className="flex min-w-0 flex-1 items-center gap-1.5">
-              <Tabs
-                value={mode}
-                onValueChange={(value) => setMode(value as CustomerLedgerMode)}
-                className="min-w-0 shrink-0 gap-0"
+            <ToolbarPillTabs
+              ariaLabel="거래 보기 필터"
+              value={mode}
+              onChange={setMode}
+              options={MODE_OPTIONS.map((option) => ({
+                ...option,
+                count: modeCount(option.value),
+              }))}
+            />
+            <LedgerSearchBar
+              ref={searchRef}
+              search={search}
+              onSearchChange={setSearch}
+              open={isPlaceFilterOpen}
+              onOpenChange={setIsPlaceFilterOpen}
+              definitions={placeFilterDefinitions}
+              activeFilterByField={activeFilterByField}
+              onApply={addFilter}
+              onRemove={removeFilter}
+            />
+            <div className="ml-auto flex shrink-0 items-center gap-2">
+              <ToolbarPillToggle
+                ariaLabel="고객 원장 보기 방식"
+                value="table"
+                onChange={(view) => {
+                  if (view === "customers") handleOpenCaseView();
+                }}
+                options={[
+                  { value: "table", label: "표", icon: <List /> },
+                  {
+                    value: "customers",
+                    label: "고객 중심",
+                    icon: <UsersRound />,
+                  },
+                ]}
+              />
+              <Button
+                type="button"
+                size="sm"
+                aria-label="구함 의뢰 추가"
+                className="h-[30px] shrink-0 rounded-full px-3.5"
+                onClick={handleCreateDemandIntake}
               >
-                <TabsList
-                  className="max-w-full justify-start border border-border/80 bg-[#f5f4f1] p-0.5"
-                  aria-label="거래 보기 필터"
-                >
-                  {MODE_OPTIONS.map((option) => (
-                    <TabsTrigger
-                      key={option.value}
-                      value={option.value}
-                      className="flex-none border-0 px-3 text-[13px] text-muted-foreground shadow-none data-[state=active]:border data-[state=active]:border-[#d9d9d6] data-[state=active]:bg-white data-[state=active]:text-slate-950 data-[state=active]:shadow-sm"
-                    >
-                      <span>{option.label}</span>
-                      <span className="ml-1 text-[11px] tabular-nums opacity-60">
-                        {modeCount(option.value)}
-                      </span>
-                    </TabsTrigger>
-                  ))}
-                </TabsList>
-              </Tabs>
-
-              <div className="relative ml-1 min-w-[160px] max-w-72 flex-1">
-                <Search
-                  className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground"
-                  aria-hidden
-                />
-                <Input
-                  ref={searchRef}
-                  value={search}
-                  onChange={(event) => setSearch(event.target.value)}
-                  placeholder="고객, 전화번호, 지역, 매물 (⌘F)"
-                  aria-label="고객 원장 검색"
-                  className="h-8 border-transparent bg-[#f7f6f3] pl-8 pr-8 text-[13px] shadow-none hover:border-border focus:border-input focus:bg-white"
-                />
-                {search ? (
-                  <button
-                    type="button"
-                    aria-label="검색어 지우기"
-                    onClick={() => setSearch("")}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 rounded-sm p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-                  >
-                    <X className="size-3.5" />
-                  </button>
-                ) : null}
-              </div>
+                <Plus className="size-3.5" />
+                <span className="@max-3xl:hidden">구함 의뢰 추가</span>
+              </Button>
             </div>
-
-            <Button
-              asChild
-              type="button"
-              variant="outline"
-              size="sm"
-              className="h-8 shrink-0 bg-background px-2.5 text-xs shadow-none"
-            >
-              <Link to="/customers" aria-label="고객 중심 새 보기 열기">
-                고객 중심 보기
-              </Link>
-            </Button>
           </div>
         </section>
 
         <section
-          className="shrink-0 overflow-x-auto border-b border-border bg-[#faf9f6]"
+          className="flex shrink-0 items-center gap-2 border-b border-border bg-white px-3 pb-2"
           aria-label="고객 원장 상세 필터"
         >
-          <div className="w-full min-w-max">
-            <ViewBar
-              variant="workbench"
-              showSearch={false}
-              showActiveChips={false}
-              filterDefinitions={allFilterDefinitions}
-              activeFilters={activeFilters}
-              onFilterAdd={addFilter}
-              onFilterRemove={removeFilter}
-              onFiltersReset={resetFilters}
-              inlineFilterGroups={[
-                ["preferredRegions", "preferredSites", "transactionType"],
-                ["status", "urgency"],
-                ["price", "area"],
-              ]}
-              sortDefinitions={customerLedgerSortDefinitions}
-              activeSorts={activeSorts}
-              onSortAdd={(sort) => {
-                setSortBy(sort.field as BrokerageCaseLedgerSortField);
-                setSortOrder(sort.direction);
-              }}
-              onSortRemove={() => {
-                setSortBy(null);
-                setSortOrder("desc");
-              }}
-              actions={
-                hasActiveControls ? (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="h-8 gap-1.5 px-2.5 text-xs text-muted-foreground"
-                    onClick={resetFilters}
-                  >
-                    <RotateCcw className="size-3.5" />
-                    초기화
-                  </Button>
-                ) : null
-              }
+          <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            {PRIMARY_FILTER_FIELDS.map((field) => {
+              const def = filterDefinitionByField.get(field);
+              if (!def) return null;
+              return (
+                <LedgerFilterChip
+                  key={field}
+                  def={def}
+                  existing={activeFilterByField.get(field)}
+                  onApply={addFilter}
+                  onRemove={removeFilter}
+                />
+              );
+            })}
+            {moreFilterDefinitions.map((def) =>
+              activeFilterByField.has(def.field) ? (
+                <LedgerFilterChip
+                  key={def.field}
+                  def={def}
+                  existing={activeFilterByField.get(def.field)}
+                  onApply={addFilter}
+                  onRemove={removeFilter}
+                />
+              ) : null,
+            )}
+            <AddFilterMenu
+              items={moreFilterItems}
+              hint="거래유형 · 요건상태 · 담당 · 다음 연락일은 이 줄에 늘 보입니다."
             />
+          </div>
+
+          <div className="flex shrink-0 items-center gap-0.5">
+            {hasActiveControls ? (
+              <>
+                <button
+                  type="button"
+                  className={toolbarGhostButtonClassName}
+                  onClick={resetFilters}
+                >
+                  <RotateCcw className="size-3.5" />
+                  초기화
+                </button>
+                <div className="mx-1 h-4 w-px bg-border" aria-hidden="true" />
+              </>
+            ) : null}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button type="button" className={toolbarGhostButtonClassName}>
+                  <Columns3 className="size-3.5" />
+                  컬럼
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-44">
+                {OPTIONAL_COLUMN_GROUPS.map((group) => (
+                  <DropdownMenuCheckboxItem
+                    key={group.id}
+                    checked={!hiddenColumnGroups.has(group.id)}
+                    onSelect={(event) => event.preventDefault()}
+                    onCheckedChange={(checked) =>
+                      setHiddenColumnGroups((current) => {
+                        const next = new Set(current);
+                        if (checked) next.delete(group.id);
+                        else next.add(group.id);
+                        return next;
+                      })
+                    }
+                  >
+                    {group.label}
+                  </DropdownMenuCheckboxItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </section>
 
@@ -719,8 +1028,15 @@ function CustomersPage() {
             className="customer-ledger-scroll-region h-full overflow-auto"
             aria-busy={ledgerQuery.isLoading || ledgerQuery.isFetchingNextPage}
           >
+            <LedgerColumnGuide
+              columns={visibleColumns}
+              open={rentColumnsOpen}
+              minWidth={tableMinWidth}
+              onToggle={() => setRentColumnsOpen((current) => !current)}
+            />
             <table
               className="customer-ledger-table"
+              style={{ minWidth: tableMinWidth }}
               aria-label="고객 중개 케이스 원장"
               aria-describedby={
                 ledgerScrollState.hasOverflow
@@ -729,16 +1045,13 @@ function CustomersPage() {
               }
             >
               <colgroup>
-                <col className="ledger-select-column" />
-                <col className="ledger-customer-column" />
-                <col className="ledger-action-column" />
-                {Array.from({ length: COLUMN_COUNT - 3 }, (_, index) => (
+                {visibleColumns.map((column) => (
                   <col
-                    key={index}
-                    className={
-                      index === 2
-                        ? "ledger-transaction-column"
-                        : "ledger-fluid-column"
+                    key={column.key}
+                    style={
+                      column.key === LEDGER_GROW_COLUMN
+                        ? undefined
+                        : { width: column.width }
                     }
                   />
                 ))}
@@ -772,17 +1085,25 @@ function CustomersPage() {
                     onSort={changeSort}
                   />
                   <LedgerStaticHeader
-                    className="ledger-sticky-action"
-                    label="작업"
+                    className="ledger-sticky-phone"
+                    icon={<Phone />}
+                    label="연락처"
                   />
-                  <LedgerStaticHeader icon={<Tag />} label="구분" />
-                  <LedgerStaticHeader icon={<CircleDot />} label="상태" />
-                  <LedgerStaticHeader
-                    className="ledger-group-end"
-                    icon={<ArrowLeftRight />}
-                    label="거래"
-                  />
+                  <th scope="col" className="ledger-sticky-action">
+                    <span className="sr-only">작업</span>
+                  </th>
+                  {visibleColumnKeys.has("kind") ? (
+                    <LedgerStaticHeader icon={<Tag />} label="구분" />
+                  ) : null}
+                  {visibleColumnKeys.has("transaction") ? (
+                    <LedgerStaticHeader icon={<Tag />} label="거래" />
+                  ) : null}
+                  <LedgerStaticHeader icon={<Type />} label="의뢰" />
+                  {visibleColumnKeys.has("status") ? (
+                    <LedgerStaticHeader icon={<CircleDot />} label="상태" />
+                  ) : null}
                   <LedgerHeader
+                    icon={<CircleDollarSign />}
                     label="최소예산"
                     field="budgetMin"
                     sortBy={sortBy}
@@ -790,69 +1111,102 @@ function CustomersPage() {
                     onSort={changeSort}
                   />
                   <LedgerHeader
-                    className="ledger-group-end"
+                    icon={<CircleDollarSign />}
                     label="최대예산"
                     field="budgetMax"
                     sortBy={sortBy}
                     sortOrder={sortOrder}
                     onSort={changeSort}
                   />
-                  <LedgerHeader
-                    label="최소월세"
-                    field="monthlyRentMin"
-                    sortBy={sortBy}
-                    sortOrder={sortOrder}
-                    onSort={changeSort}
-                  />
-                  <LedgerHeader
-                    className="ledger-group-end"
-                    label="최대월세"
-                    field="monthlyRentMax"
-                    sortBy={sortBy}
-                    sortOrder={sortOrder}
-                    onSort={changeSort}
-                  />
-                  <LedgerHeader
-                    label="최소평형"
-                    field="areaMin"
-                    sortBy={sortBy}
-                    sortOrder={sortOrder}
-                    onSort={changeSort}
-                  />
-                  <LedgerHeader
-                    className="ledger-group-end"
-                    label="최대평형"
-                    field="areaMax"
-                    sortBy={sortBy}
-                    sortOrder={sortOrder}
-                    onSort={changeSort}
-                  />
-                  <LedgerHeader
-                    className="ledger-group-end"
-                    icon={<GitBranch />}
-                    label="매칭"
-                    field="matchCount"
-                    sortBy={sortBy}
-                    sortOrder={sortOrder}
-                    onSort={changeSort}
-                  />
-                  <LedgerHeader
-                    icon={<CalendarDays />}
-                    label="등록일"
-                    field="createdAt"
-                    sortBy={sortBy}
-                    sortOrder={sortOrder}
-                    onSort={changeSort}
-                  />
+                  {rentColumnsOpen ? (
+                    <>
+                      <LedgerHeader
+                        className="ledger-detail-header"
+                        icon={<CircleDollarSign />}
+                        label="최소월세"
+                        field="monthlyRentMin"
+                        sortBy={sortBy}
+                        sortOrder={sortOrder}
+                        onSort={changeSort}
+                      />
+                      <LedgerHeader
+                        className="ledger-detail-header"
+                        icon={<CircleDollarSign />}
+                        label="최대월세"
+                        field="monthlyRentMax"
+                        sortBy={sortBy}
+                        sortOrder={sortOrder}
+                        onSort={changeSort}
+                      />
+                    </>
+                  ) : null}
+                  {visibleColumnKeys.has("areaMin") ? (
+                    <>
+                      <LedgerHeader
+                        icon={<Hash />}
+                        label="최소평형"
+                        field="areaMin"
+                        sortBy={sortBy}
+                        sortOrder={sortOrder}
+                        onSort={changeSort}
+                      />
+                      <LedgerHeader
+                        icon={<Hash />}
+                        label="최대평형"
+                        field="areaMax"
+                        sortBy={sortBy}
+                        sortOrder={sortOrder}
+                        onSort={changeSort}
+                      />
+                    </>
+                  ) : null}
+                  {visibleColumnKeys.has("match") ? (
+                    <LedgerHeader
+                      icon={<GitBranch />}
+                      label="매칭"
+                      field="matchCount"
+                      sortBy={sortBy}
+                      sortOrder={sortOrder}
+                      onSort={changeSort}
+                    />
+                  ) : null}
+                  {visibleColumnKeys.has("assignee") ? (
+                    <LedgerStaticHeader icon={<UserCheck />} label="담당" />
+                  ) : null}
+                  {visibleColumnKeys.has("next") ? (
+                    <LedgerStaticHeader
+                      icon={<CalendarClock />}
+                      label="다음 연락"
+                    />
+                  ) : null}
+                  {visibleColumnKeys.has("consult") ? (
+                    <LedgerStaticHeader
+                      icon={<MessageSquare />}
+                      label="최근 상담"
+                    />
+                  ) : null}
+                  {visibleColumnKeys.has("memo") ? (
+                    <LedgerStaticHeader icon={<FileText />} label="의뢰 메모" />
+                  ) : null}
+                  {visibleColumnKeys.has("created") ? (
+                    <LedgerHeader
+                      icon={<CalendarDays />}
+                      label="등록일"
+                      field="createdAt"
+                      sortBy={sortBy}
+                      sortOrder={sortOrder}
+                      onSort={changeSort}
+                    />
+                  ) : null}
                 </tr>
               </thead>
               <tbody>
                 {ledgerQuery.isLoading ? (
-                  <LoadingRows />
+                  <LoadingRows columnCount={columnCount} />
                 ) : ledgerQuery.isError && ledgerCases.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={COLUMN_COUNT}
+                      colSpan={columnCount}
                       role="alert"
                       className="h-52 text-center text-sm text-destructive"
                     >
@@ -879,6 +1233,9 @@ function CustomersPage() {
                       }
                       expandedMatchRows={expandedMatchRows}
                       onToggleMatchRow={toggleMatchRow}
+                      assigneeOptions={assigneeOptions}
+                      visibleColumns={visibleColumnKeys}
+                      columnCount={columnCount}
                       onUpdate={(request) =>
                         ledgerUpdateMutation.mutate(request)
                       }
@@ -886,7 +1243,7 @@ function CustomersPage() {
                   ))
                 ) : (
                   <tr>
-                    <td colSpan={COLUMN_COUNT} className="h-56 text-center">
+                    <td colSpan={columnCount} className="h-56 text-center">
                       <div className="mx-auto flex max-w-sm flex-col items-center text-muted-foreground">
                         <UsersRound
                           className="mb-2 size-8 opacity-35"
@@ -916,6 +1273,7 @@ function CustomersPage() {
             <div
               ref={loadMoreRef}
               className="customer-ledger-load-sentinel"
+              style={{ minWidth: tableMinWidth }}
               aria-hidden="true"
             />
           </section>
@@ -927,12 +1285,17 @@ function CustomersPage() {
 
         <footer className="flex min-h-7 shrink-0 items-center justify-between gap-3 border-t border-border/60 bg-[#faf9f6] px-3 text-[11px] text-muted-foreground">
           <span>
+            고객{" "}
             <strong className="font-semibold text-foreground">
               {ledgerCases.length}
             </strong>
             {" / "}
             <strong className="font-semibold text-foreground">
               {totalCases}
+            </strong>
+            명 · 의뢰{" "}
+            <strong className="font-semibold text-foreground">
+              {loadedRequestCount}
             </strong>
             건 표시
             {selectedCaseIds.length > 0 ? (
@@ -970,7 +1333,7 @@ function CustomersPage() {
             ) : ledgerQuery.hasNextPage ? (
               <span>아래로 스크롤하면 더 불러옵니다</span>
             ) : totalCases > 0 ? (
-              <span>전체 {totalCases}건 불러옴</span>
+              <span>전체 {totalCases}명 불러옴</span>
             ) : null}
           </div>
         </footer>
@@ -1001,6 +1364,9 @@ function CaseRows({
   onSelectionChange,
   expandedMatchRows,
   onToggleMatchRow,
+  assigneeOptions,
+  visibleColumns,
+  columnCount,
   onUpdate,
 }: {
   brokerageCase: BrokerageCase;
@@ -1008,22 +1374,22 @@ function CaseRows({
   onSelectionChange: (selected: boolean) => void;
   expandedMatchRows: ReadonlySet<string>;
   onToggleMatchRow: (rowKey: string, siblingRowKeys: readonly string[]) => void;
+  assigneeOptions: ChipOption[];
+  visibleColumns: ReadonlySet<LedgerColumnKey>;
+  columnCount: number;
   onUpdate: (request: LedgerUpdateRequest) => void;
 }) {
   const rows = buildRowDescriptors(brokerageCase);
   if (rows.length === 0) return null;
-  const caseMatchRowKeys = rows.flatMap((row) => {
-    if (row.type === "context") {
-      return [demandMatchRowKey(row.line.requirementId)];
-    }
-    if (row.type === "stack-context") {
-      return [listingMatchRowKey(row.group.intakeId)];
-    }
-    return [];
-  });
+  const caseMatchRowKeys = rows.map((row) =>
+    row.type === "intent"
+      ? demandMatchRowKey(row.line.requirementId)
+      : listingMatchRowKey(row.group.intakeId),
+  );
   const rowSpan = rows.length;
   const primary = brokerageCase.primaryParticipant;
   const customerName = primary?.contact.name ?? "이름 없음";
+  const extraParticipants = brokerageCase.participants.length - 1;
 
   const selectionCell = (
     <td
@@ -1046,51 +1412,60 @@ function CaseRows({
       rowSpan={rowSpan}
       className="ledger-sticky-customer ledger-customer-cell ledger-rowspan-top"
     >
-      <div className="min-w-0">
-        <div className="flex items-center gap-1.5">
-          {primary ? (
-            <EditableCell
-              recordId={primary.contact.id}
-              field="name"
-              value={primary.contact.name}
-              ariaLabel={`${primary.contact.name} 고객명 편집`}
-              onSave={(_recordId, _field, value) => {
-                const name = String(value ?? "").trim();
-                if (!name) {
-                  toast.error("고객명은 비워둘 수 없습니다.");
-                  return false;
-                }
-                if (name === primary.contact.name) return;
-                onUpdate({
-                  target: "contact",
-                  id: primary.contact.id,
-                  patch: { name },
-                });
-              }}
-              editType="text"
-              activation="doubleClick"
-              editorChrome="floating"
-              hoverHighlight={false}
-              className="min-w-0"
-            >
-              <span className="truncate text-[13px] font-semibold text-foreground">
-                {primary.contact.name}
-              </span>
-            </EditableCell>
-          ) : (
-            <span className="text-[13px] font-semibold">이름 없음</span>
-          )}
-          {brokerageCase.participants.length > 1 ? (
-            <span className="shrink-0 rounded-md bg-muted px-1.5 py-px text-[11px] font-medium text-muted-foreground">
-              연결 {brokerageCase.participants.length}명
+      <div className="flex h-8 min-w-0 items-center gap-1">
+        {primary ? (
+          <EditableCell
+            recordId={primary.contact.id}
+            field="name"
+            value={primary.contact.name}
+            ariaLabel={`${primary.contact.name} 고객명 편집`}
+            onSave={(_recordId, _field, value) => {
+              const name = String(value ?? "").trim();
+              if (!name) {
+                toast.error("고객명은 비워둘 수 없습니다.");
+                return false;
+              }
+              if (name === primary.contact.name) return;
+              onUpdate({
+                target: "contact",
+                id: primary.contact.id,
+                patch: { name },
+              });
+            }}
+            editType="text"
+            activation="doubleClick"
+            editorChrome="floating"
+            hoverHighlight={false}
+            className="w-auto min-w-0"
+          >
+            <span className="truncate text-[14px] font-semibold text-slate-900">
+              {primary.contact.name}
             </span>
-          ) : null}
-        </div>
-        <span className="mt-0.5 block truncate text-[12px] font-medium leading-[18px] tabular-nums text-muted-foreground">
-          {formatPhone(primary?.contact.phone)}
-        </span>
+          </EditableCell>
+        ) : (
+          <span className="text-[14px] font-semibold text-slate-900">
+            이름 없음
+          </span>
+        )}
+        {extraParticipants > 0 ? (
+          <span
+            title={`연결 ${brokerageCase.participants.length}명`}
+            className="shrink-0 text-[11px] text-muted-foreground"
+          >
+            +{extraParticipants}
+          </span>
+        ) : null}
       </div>
     </th>
+  );
+
+  const phoneCell = (
+    <td
+      rowSpan={rowSpan}
+      className="ledger-sticky-phone ledger-phone-cell ledger-rowspan-top"
+    >
+      {formatPhone(primary?.contact.phone)}
+    </td>
   );
 
   const actionCell = (
@@ -1107,12 +1482,37 @@ function CaseRows({
     </td>
   );
 
+  const latestConsultation = brokerageCase.latestConsultation;
+  const consultationCell = visibleColumns.has("consult") ? (
+    <td rowSpan={rowSpan} className="ledger-consult-cell ledger-rowspan-top">
+      {latestConsultation ? (
+        <Link
+          to="/consultations"
+          search={{ consultationId: latestConsultation.id }}
+          className="ledger-consult-link"
+          aria-label={`${customerName} 최근 상담 열기`}
+          title={`${formatLedgerDate(latestConsultation.createdAt)} ${
+            CONSULTATION_TYPE_LABELS[latestConsultation.type] ??
+            latestConsultation.type
+          } · ${latestConsultation.content}`}
+        >
+          <span className="ledger-consult-date">
+            {formatLedgerDate(latestConsultation.createdAt)}
+          </span>
+          {latestConsultation.content.replace(/\s+/g, " ")}
+        </Link>
+      ) : (
+        <span className="ledger-empty-value">-</span>
+      )}
+    </td>
+  ) : null;
+
   // 등록일 셀은 반드시 행의 마지막에 렌더링해야 컬럼이 밀리지 않는다
-  const createdAtCell = (
+  const createdAtCell = visibleColumns.has("created") ? (
     <td rowSpan={rowSpan} className="ledger-updated-cell ledger-rowspan-top">
       {formatDateShortYear(brokerageCase.createdAt)}
     </td>
-  );
+  ) : null;
 
   return (
     <>
@@ -1125,15 +1525,17 @@ function CaseRows({
                 key={row.line.requirementId}
                 className={cn(
                   "ledger-intent-row",
-                  first && "ledger-case-start",
+                  rowIndex === rows.length - 1 && "ledger-case-end",
                   selected && "ledger-case-selected",
                 )}
               >
                 {first ? selectionCell : null}
                 {first ? customerCell : null}
+                {first ? phoneCell : null}
                 {first ? actionCell : null}
                 <DemandCells
                   line={row.line}
+                  visibleColumns={visibleColumns}
                   expanded={expandedMatchRows.has(
                     demandMatchRowKey(row.line.requirementId),
                   )}
@@ -1146,23 +1548,11 @@ function CaseRows({
                   priorityOptions={demandPriorityOptions(
                     row.line.intakeRequirementCount,
                   )}
+                  assigneeOptions={assigneeOptions}
+                  consultationCell={first ? consultationCell : null}
+                  createdAtCell={first ? createdAtCell : null}
                   onUpdate={onUpdate}
                 />
-                {first ? createdAtCell : null}
-              </tr>
-            );
-          case "context":
-            return (
-              <tr
-                key={`${row.line.requirementId}-ctx`}
-                className={cn(
-                  "ledger-context-row",
-                  selected && "ledger-case-selected",
-                )}
-              >
-                <td colSpan={CONTEXT_COL_SPAN} className="ledger-group-end">
-                  <IntentContext line={row.line} onUpdate={onUpdate} />
-                </td>
               </tr>
             );
           case "stack":
@@ -1171,15 +1561,17 @@ function CaseRows({
                 key={`${row.group.intakeId}-stack`}
                 className={cn(
                   "ledger-intent-row ledger-stack-row",
-                  first && "ledger-case-start",
+                  rowIndex === rows.length - 1 && "ledger-case-end",
                   selected && "ledger-case-selected",
                 )}
               >
                 {first ? selectionCell : null}
                 {first ? customerCell : null}
+                {first ? phoneCell : null}
                 {first ? actionCell : null}
                 <StackCells
                   group={row.group}
+                  visibleColumns={visibleColumns}
                   expanded={expandedMatchRows.has(
                     listingMatchRowKey(row.group.intakeId),
                   )}
@@ -1189,34 +1581,21 @@ function CaseRows({
                       caseMatchRowKeys,
                     )
                   }
+                  consultationCell={first ? consultationCell : null}
+                  createdAtCell={first ? createdAtCell : null}
                   onUpdate={onUpdate}
                 />
-                {first ? createdAtCell : null}
-              </tr>
-            );
-          case "stack-context":
-            return (
-              <tr
-                key={`${row.group.intakeId}-stack-ctx`}
-                className={cn(
-                  "ledger-context-row",
-                  selected && "ledger-case-selected",
-                )}
-              >
-                <td colSpan={CONTEXT_COL_SPAN} className="ledger-group-end">
-                  <StackContext group={row.group} onUpdate={onUpdate} />
-                </td>
               </tr>
             );
         }
       })}
       {rows.map((row) => {
-        if (row.type === "context") {
+        if (row.type === "intent") {
           const rowKey = demandMatchRowKey(row.line.requirementId);
           if (!expandedMatchRows.has(rowKey)) return null;
           return (
             <tr key={`${rowKey}-panel`} className="ledger-match-panel-row">
-              <td colSpan={COLUMN_COUNT}>
+              <td colSpan={columnCount}>
                 <div className="customer-ledger-match-panel-frame">
                   <LedgerMatchPanel
                     panelId={matchPanelId(rowKey)}
@@ -1232,32 +1611,29 @@ function CaseRows({
             </tr>
           );
         }
-        if (row.type === "stack-context") {
-          const rowKey = listingMatchRowKey(row.group.intakeId);
-          if (!expandedMatchRows.has(rowKey)) return null;
-          return (
-            <tr key={`${rowKey}-panel`} className="ledger-match-panel-row">
-              <td colSpan={COLUMN_COUNT}>
-                <div className="customer-ledger-match-panel-frame">
-                  <LedgerMatchPanel
-                    panelId={matchPanelId(rowKey)}
-                    label={`${row.group.lines[0]?.contextLabel ?? customerName} 매물 매칭`}
-                    initialCount={row.group.lines.reduce(
-                      (sum, line) => sum + line.matchCount,
-                      0,
-                    )}
-                    source={{
-                      kind: "listing",
-                      intakeId: row.group.intakeId,
-                      listingIds: row.group.lines.map((line) => line.listingId),
-                    }}
-                  />
-                </div>
-              </td>
-            </tr>
-          );
-        }
-        return null;
+        const rowKey = listingMatchRowKey(row.group.intakeId);
+        if (!expandedMatchRows.has(rowKey)) return null;
+        return (
+          <tr key={`${rowKey}-panel`} className="ledger-match-panel-row">
+            <td colSpan={columnCount}>
+              <div className="customer-ledger-match-panel-frame">
+                <LedgerMatchPanel
+                  panelId={matchPanelId(rowKey)}
+                  label={`${row.group.lines[0]?.contextLabel ?? customerName} 매물 매칭`}
+                  initialCount={row.group.lines.reduce(
+                    (sum, line) => sum + line.matchCount,
+                    0,
+                  )}
+                  source={{
+                    kind: "listing",
+                    intakeId: row.group.intakeId,
+                    listingIds: row.group.lines.map((line) => line.listingId),
+                  }}
+                />
+              </div>
+            </td>
+          </tr>
+        );
       })}
     </>
   );
@@ -1265,17 +1641,28 @@ function CaseRows({
 
 function DemandCells({
   line,
+  visibleColumns,
   expanded,
   onToggleMatch,
   priorityOptions,
+  assigneeOptions,
+  consultationCell,
+  createdAtCell,
   onUpdate,
 }: {
   line: BrokerageCaseDemandIntent;
+  visibleColumns: ReadonlySet<LedgerColumnKey>;
   expanded: boolean;
   onToggleMatch: () => void;
   priorityOptions: ChipOption[];
+  assigneeOptions: ChipOption[];
+  consultationCell: ReactNode;
+  createdAtCell: ReactNode;
   onUpdate: (request: LedgerUpdateRequest) => void;
 }) {
+  const rentOpen = visibleColumns.has("rentMin");
+  // 거래유형을 바꿔도 이전 월세 값은 지우지 않으므로, 월세 의뢰일 때만 금액 칸에 붙인다.
+  const showRentInAmount = !rentOpen && line.transactionType === "monthly";
   const saveRequirementNumber = (
     screenField:
       | "budgetMin"
@@ -1354,93 +1741,95 @@ function DemandCells({
 
   return (
     <>
-      <td
-        className={cn(
-          "text-center",
-          priorityOptions.length > 1 && "ledger-editable-cell",
-        )}
-      >
-        {priorityOptions.length > 1 ? (
+      {visibleColumns.has("kind") ? (
+        <td className={cn(priorityOptions.length > 1 && "ledger-editable-cell")}>
+          {priorityOptions.length > 1 ? (
+            <EditableCell
+              recordId={line.requirementId}
+              field="priorityRank"
+              value={line.priorityRank}
+              ariaLabel={`구함 ${line.priorityRank} 우선순위 편집`}
+              onSave={(_recordId, _field, value) => {
+                const priorityRank = Number(value);
+                if (priorityRank === line.priorityRank) return;
+                onUpdate({
+                  target: "buyer-requirement-priority",
+                  id: line.requirementId,
+                  priorityRank,
+                });
+              }}
+              editType="select-chip"
+              chipOptions={priorityOptions}
+              chipValueOf={(value) => String(value)}
+              className="cursor-pointer"
+              hoverHighlight={false}
+            >
+              <span data-ledger-cell-value>
+                <KindLabel kind="demand" priorityRank={line.priorityRank} />
+              </span>
+            </EditableCell>
+          ) : (
+            <KindLabel kind="demand" priorityRank={line.priorityRank} />
+          )}
+        </td>
+      ) : null}
+      {visibleColumns.has("transaction") ? (
+        <td className="ledger-editable-cell">
           <EditableCell
             recordId={line.requirementId}
-            field="priorityRank"
-            value={line.priorityRank}
-            ariaLabel={`구함 ${line.priorityRank} 우선순위 편집`}
+            field="transactionType"
+            value={line.transactionType}
+            ariaLabel="구함 거래유형 편집"
             onSave={(_recordId, _field, value) => {
-              const priorityRank = Number(value);
-              if (priorityRank === line.priorityRank) return;
+              const transactionType = String(value);
+              if (transactionType === line.transactionType) return;
               onUpdate({
-                target: "buyer-requirement-priority",
+                target: "buyer-requirement",
                 id: line.requirementId,
-                priorityRank,
+                patch: { transactionType },
               });
             }}
             editType="select-chip"
-            chipOptions={priorityOptions}
-            chipValueOf={(value) => String(value)}
-            className="cursor-pointer justify-center"
-            hoverHighlight={false}
+            chipOptions={TRANSACTION_OPTIONS}
           >
-            <span data-ledger-cell-value className="justify-center">
-              <KindLabel kind="demand" priorityRank={line.priorityRank} />
+            <span data-ledger-cell-value>
+              <TransactionBadge transactionType={line.transactionType} />
             </span>
           </EditableCell>
-        ) : (
-          <KindLabel kind="demand" priorityRank={line.priorityRank} />
-        )}
-      </td>
-      <td className="ledger-editable-cell text-center">
-        <EditableCell
-          recordId={line.buyerIntakeId}
-          field="lifecycleStatus"
-          value={line.lifecycleStatus}
-          ariaLabel="구함 진행 상태 편집"
-          onSave={(_recordId, _field, value) => {
-            const lifecycleStatus = String(value) as BuyerIntakeLifecycleStatus;
-            if (lifecycleStatus === line.lifecycleStatus) return;
-            onUpdate({
-              target: "buyer-intake",
-              id: line.buyerIntakeId,
-              patch: { lifecycleStatus },
-            });
-          }}
-          editType="select-chip"
-          chipOptions={LIFECYCLE_OPTIONS}
-          className="justify-center"
-        >
-          <span data-ledger-cell-value className="justify-center">
-            <LifecyclePill lifecycleStatus={line.lifecycleStatus} />
-          </span>
-        </EditableCell>
-      </td>
-      <td className="ledger-editable-cell ledger-group-end">
-        <EditableCell
-          recordId={line.requirementId}
-          field="transactionType"
-          value={line.transactionType}
-          ariaLabel="구함 거래유형 편집"
-          onSave={(_recordId, _field, value) => {
-            const transactionType = String(value);
-            if (transactionType === line.transactionType) return;
-            onUpdate({
-              target: "buyer-requirement",
-              id: line.requirementId,
-              patch: { transactionType },
-            });
-          }}
-          editType="select-chip"
-          chipOptions={TRANSACTION_OPTIONS}
-          className="justify-center"
-        >
-          <span data-ledger-cell-value className="justify-center">
-            <TransactionBadge transactionType={line.transactionType} />
-          </span>
-        </EditableCell>
-      </td>
+        </td>
+      ) : null}
+      <DemandIntakeCell line={line} />
+      {visibleColumns.has("status") ? (
+        <td className="ledger-editable-cell">
+          {/* 상태는 의뢰 단위지만 조건 행마다 칸이 있어, 편집기는 행 단위로 연다 */}
+          <EditableCell
+            recordId={line.requirementId}
+            field="lifecycleStatus"
+            value={line.lifecycleStatus}
+            ariaLabel="구함 진행 상태 편집"
+            onSave={(_recordId, _field, value) => {
+              const lifecycleStatus = String(value) as BuyerIntakeLifecycleStatus;
+              if (lifecycleStatus === line.lifecycleStatus) return;
+              onUpdate({
+                target: "buyer-intake",
+                id: line.buyerIntakeId,
+                patch: { lifecycleStatus },
+              });
+            }}
+            editType="select-chip"
+            chipOptions={LIFECYCLE_OPTIONS}
+          >
+            <span data-ledger-cell-value>
+              <LifecyclePill lifecycleStatus={line.lifecycleStatus} />
+            </span>
+          </EditableCell>
+        </td>
+      ) : null}
       <MoneyCell
         recordId={line.requirementId}
         field="budgetMin"
         value={line.budgetMin}
+        rent={showRentInAmount ? line.monthlyRentMin : null}
         ariaLabel="최소예산 편집, 만원 단위"
         onSave={saveRequirementNumber}
       />
@@ -1448,69 +1837,113 @@ function DemandCells({
         recordId={line.requirementId}
         field="budgetMax"
         value={line.budgetMax}
+        rent={showRentInAmount ? line.monthlyRentMax : null}
         ariaLabel="최대예산 편집, 만원 단위"
         onSave={saveRequirementNumber}
-        groupEnd
       />
-      <RentCell
-        recordId={line.requirementId}
-        field="monthlyRentMin"
-        value={line.monthlyRentMin}
-        ariaLabel="최소월세 편집, 만원 단위"
-        onSave={
-          line.transactionType === "monthly" ? saveRequirementNumber : undefined
-        }
-      />
-      <RentCell
-        recordId={line.requirementId}
-        field="monthlyRentMax"
-        value={line.monthlyRentMax}
-        ariaLabel="최대월세 편집, 만원 단위"
-        onSave={
-          line.transactionType === "monthly" ? saveRequirementNumber : undefined
-        }
-        groupEnd
-      />
-      <AreaCell
-        recordId={line.requirementId}
-        field="areaMin"
-        value={line.areaMin}
-        ariaLabel="최소평형 편집, 평 단위"
-        onSave={saveRequirementNumber}
-      />
-      <AreaCell
-        recordId={line.requirementId}
-        field="areaMax"
-        value={line.areaMax}
-        ariaLabel="최대평형 편집, 평 단위"
-        onSave={saveRequirementNumber}
-        groupEnd
-      />
-      <MatchCell
-        count={line.matchCount}
-        expanded={expanded}
-        panelId={matchPanelId(demandMatchRowKey(line.requirementId))}
-        label="연결 매물"
-        onToggle={onToggleMatch}
-        groupEnd
-      />
+      {rentOpen ? (
+        <>
+          <RentCell
+            recordId={line.requirementId}
+            field="monthlyRentMin"
+            value={line.monthlyRentMin}
+            ariaLabel="최소월세 편집, 만원 단위"
+            onSave={
+              line.transactionType === "monthly"
+                ? saveRequirementNumber
+                : undefined
+            }
+          />
+          <RentCell
+            recordId={line.requirementId}
+            field="monthlyRentMax"
+            value={line.monthlyRentMax}
+            ariaLabel="최대월세 편집, 만원 단위"
+            onSave={
+              line.transactionType === "monthly"
+                ? saveRequirementNumber
+                : undefined
+            }
+          />
+        </>
+      ) : null}
+      {visibleColumns.has("areaMin") ? (
+        <>
+          <AreaCell
+            recordId={line.requirementId}
+            field="areaMin"
+            value={line.areaMin}
+            ariaLabel="최소평형 편집, 평 단위"
+            onSave={saveRequirementNumber}
+          />
+          <AreaCell
+            recordId={line.requirementId}
+            field="areaMax"
+            value={line.areaMax}
+            ariaLabel="최대평형 편집, 평 단위"
+            onSave={saveRequirementNumber}
+          />
+        </>
+      ) : null}
+      {visibleColumns.has("match") ? (
+        <MatchCell
+          count={line.matchCount}
+          expanded={expanded}
+          panelId={matchPanelId(demandMatchRowKey(line.requirementId))}
+          label="연결 매물"
+          onToggle={onToggleMatch}
+        />
+      ) : null}
+      {visibleColumns.has("assignee") ? (
+        <AssigneeCell
+          line={line}
+          options={assigneeOptions}
+          onUpdate={onUpdate}
+        />
+      ) : null}
+      {visibleColumns.has("next") ? (
+        <NextContactCell line={line} onUpdate={onUpdate} />
+      ) : null}
+      {consultationCell}
+      {visibleColumns.has("memo") ? (
+        <MemoCell
+          recordId={line.requirementId}
+          value={line.memo}
+          ariaLabel={`${demandPlaceLabel(line)} 구함 노트 편집`}
+          onSave={(memo) =>
+            onUpdate({
+              target: "buyer-requirement",
+              id: line.requirementId,
+              patch: { memo },
+            })
+          }
+        />
+      ) : null}
+      {createdAtCell}
     </>
   );
 }
 
-// 매물 의뢰 — ListingIntake(같은 호실)당 1행, listing을 셀 안에 36px 라인으로 세로 적층
+// 매물 의뢰 — ListingIntake(같은 호실)당 1행, listing을 셀 안에 줄로 세로 적층
 function StackCells({
   group,
+  visibleColumns,
   expanded,
   onToggleMatch,
+  consultationCell,
+  createdAtCell,
   onUpdate,
 }: {
   group: ListingGroup;
+  visibleColumns: ReadonlySet<LedgerColumnKey>;
   expanded: boolean;
   onToggleMatch: () => void;
+  consultationCell: ReactNode;
+  createdAtCell: ReactNode;
   onUpdate: (request: LedgerUpdateRequest) => void;
 }) {
   const first = group.lines[0];
+  const rentOpen = visibleColumns.has("rentMin");
   const updateListing = (
     line: BrokerageCaseListingIntent,
     patch: UpdateListingDto,
@@ -1523,46 +1956,62 @@ function StackCells({
 
   return (
     <>
-      <td className="ledger-stack-merged-cell">
-        <KindLabel kind="listing" />
-      </td>
-      <td className="ledger-stack-merged-cell">
-        <LifecyclePill
-          lifecycleStatus={first.lifecycleStatus}
-          paused={group.lines.every((line) => line.isPaused)}
-        />
-      </td>
-      <td className="ledger-group-end">
-        <div className="ledger-stack">
-          {group.lines.map((line) => (
-            <div
-              key={line.listingId}
-              className="ledger-stack-line ledger-editable-stack-line"
-            >
-              <EditableCell
-                recordId={line.listingId}
-                field="transactionType"
-                value={line.transactionType}
-                ariaLabel={`${line.contextLabel} 거래유형 편집`}
-                onSave={(_recordId, _field, value) => {
-                  const transactionType = String(value);
-                  if (transactionType === line.transactionType) return;
-                  updateListing(line, { transactionType });
-                }}
-                editType="select-chip"
-                chipOptions={TRANSACTION_OPTIONS}
-                className="justify-center"
+      {visibleColumns.has("kind") ? (
+        <td className="ledger-stack-merged-cell">
+          <KindLabel kind="listing" />
+        </td>
+      ) : null}
+      {visibleColumns.has("transaction") ? (
+        <td>
+          <div className="ledger-stack">
+            {group.lines.map((line) => (
+              <div
+                key={line.listingId}
+                className="ledger-stack-line ledger-editable-stack-line"
               >
-                <span data-ledger-cell-value className="justify-center">
-                  <TransactionBadge transactionType={line.transactionType} />
-                </span>
-              </EditableCell>
-            </div>
-          ))}
-        </div>
+                <EditableCell
+                  recordId={line.listingId}
+                  field="transactionType"
+                  value={line.transactionType}
+                  ariaLabel={`${line.contextLabel} 거래유형 편집`}
+                  onSave={(_recordId, _field, value) => {
+                    const transactionType = String(value);
+                    if (transactionType === line.transactionType) return;
+                    updateListing(line, { transactionType });
+                  }}
+                  editType="select-chip"
+                  chipOptions={TRANSACTION_OPTIONS}
+                >
+                  <span data-ledger-cell-value>
+                    <TransactionBadge transactionType={line.transactionType} />
+                  </span>
+                </EditableCell>
+              </div>
+            ))}
+          </div>
+        </td>
+      ) : null}
+      <td className="ledger-intake-cell">
+        <Link
+          to="/properties/$id"
+          params={{ id: first.propertyId }}
+          className="ledger-intake-link"
+          aria-label={`${first.contextLabel} 매물 상세 열기`}
+          title={first.contextLabel}
+        >
+          <span className="truncate">{first.contextLabel}</span>
+        </Link>
       </td>
-      <td colSpan={2} className="ledger-group-end">
-        <div className="ledger-stack ledger-stack-right">
+      {visibleColumns.has("status") ? (
+        <td className="ledger-stack-merged-cell">
+          <LifecyclePill
+            lifecycleStatus={first.lifecycleStatus}
+            paused={group.lines.every((line) => line.isPaused)}
+          />
+        </td>
+      ) : null}
+      <td colSpan={2} className="ledger-number-cell">
+        <div className="ledger-stack ledger-stack-rules">
           {group.lines.map((line) => (
             <div
               key={line.listingId}
@@ -1592,105 +2041,99 @@ function StackCells({
               >
                 <span
                   data-ledger-cell-value
-                  className="justify-end font-medium tabular-nums"
+                  className={cn(line.isPaused && "ledger-paused-value")}
                 >
-                  {formatMoney(line.askingPrice)}
+                  {formatLedgerAmount(
+                    line.askingPrice,
+                    !rentOpen && line.transactionType === "monthly"
+                      ? line.monthlyRent
+                      : null,
+                  )}
+                  {line.isPaused ? (
+                    <span className="ml-1 text-[11px] font-normal text-muted-foreground">
+                      중단
+                    </span>
+                  ) : null}
                 </span>
               </EditableCell>
             </div>
           ))}
         </div>
       </td>
-      <td colSpan={2} className="ledger-group-end">
-        <div className="ledger-stack ledger-stack-center">
-          {group.lines.map((line) => (
-            <div
-              key={line.listingId}
-              className="ledger-stack-line ledger-editable-stack-line"
-            >
-              {line.transactionType === "monthly" ? (
-                <EditableCell
-                  recordId={line.listingId}
-                  field="monthlyRent"
-                  value={line.monthlyRent}
-                  ariaLabel={`${line.contextLabel} 월세 편집, 만원 단위`}
-                  onSave={(_recordId, _field, rawValue) => {
-                    const parsed = parseLedgerNumber(rawValue, {
-                      label: "월세",
-                      integer: true,
-                    });
-                    if (!parsed.valid) return false;
-                    if (parsed.value === line.monthlyRent) return;
-                    updateListing(line, { monthlyRent: parsed.value });
-                  }}
-                  editType="number"
-                  activation="doubleClick"
-                  portalAnchor={group.lines.length > 1 ? "self" : "tableCell"}
-                  editorChrome="floating"
-                  hoverHighlight={false}
-                >
-                  <span
-                    data-ledger-cell-value
-                    className="justify-center font-medium tabular-nums"
+      {rentOpen ? (
+        <td colSpan={2} className="ledger-number-cell">
+          <div className="ledger-stack ledger-stack-rules">
+            {group.lines.map((line) => (
+              <div
+                key={line.listingId}
+                className="ledger-stack-line ledger-editable-stack-line"
+              >
+                {line.transactionType === "monthly" ? (
+                  <EditableCell
+                    recordId={line.listingId}
+                    field="monthlyRent"
+                    value={line.monthlyRent}
+                    ariaLabel={`${line.contextLabel} 월세 편집, 만원 단위`}
+                    onSave={(_recordId, _field, rawValue) => {
+                      const parsed = parseLedgerNumber(rawValue, {
+                        label: "월세",
+                        integer: true,
+                      });
+                      if (!parsed.valid) return false;
+                      if (parsed.value === line.monthlyRent) return;
+                      updateListing(line, { monthlyRent: parsed.value });
+                    }}
+                    editType="number"
+                    activation="doubleClick"
+                    portalAnchor={group.lines.length > 1 ? "self" : "tableCell"}
+                    editorChrome="floating"
+                    hoverHighlight={false}
                   >
-                    {line.monthlyRent
-                      ? `${line.monthlyRent.toLocaleString()}만`
-                      : "—"}
-                  </span>
-                </EditableCell>
-              ) : (
-                <span className="flex h-full w-full items-center justify-center text-muted-foreground">
-                  —
-                </span>
-              )}
-            </div>
-          ))}
-        </div>
-      </td>
-      <td
-        colSpan={2}
-        className="ledger-stack-merged-cell ledger-exact-cell ledger-group-end"
-      >
-        {formatPyeong(first.area)}
-      </td>
-      <td className="ledger-stack-merged-cell ledger-group-end">
-        <MatchBadge
-          count={group.lines.reduce((sum, line) => sum + line.matchCount, 0)}
-          expanded={expanded}
-          panelId={matchPanelId(listingMatchRowKey(group.intakeId))}
-          label="연결 구매고객"
-          onToggle={onToggleMatch}
-        />
-      </td>
-    </>
-  );
-}
-
-// 매물 의뢰 context — 매물 identity와 intake 공유 노트(묶음 전체가 같은 의뢰 메모를 공유)
-function StackContext({
-  group,
-  onUpdate,
-}: {
-  group: ListingGroup;
-  onUpdate: (request: LedgerUpdateRequest) => void;
-}) {
-  const first = group.lines[0];
-  return (
-    <div className="ledger-context-layout">
-      <Link
-        to="/properties/$id"
-        params={{ id: first.propertyId }}
-        className="ledger-context-link"
-        aria-label={`${first.contextLabel} 매물 상세 열기`}
-        title={first.contextLabel}
-      >
-        <span className="truncate">{first.contextLabel}</span>
-      </Link>
-      <div className="ledger-context-memo">
-        <StickyNote
-          className="size-3 shrink-0 text-muted-foreground/70"
-          aria-hidden
-        />
+                    <span
+                      data-ledger-cell-value
+                      className={cn(
+                        !line.monthlyRent && "ledger-empty-value",
+                        line.isPaused && "ledger-paused-value",
+                      )}
+                    >
+                      {line.monthlyRent
+                        ? `${line.monthlyRent.toLocaleString()}만`
+                        : "-"}
+                    </span>
+                  </EditableCell>
+                ) : (
+                  <span className="ledger-empty-value px-2.5">-</span>
+                )}
+              </div>
+            ))}
+          </div>
+        </td>
+      ) : null}
+      {visibleColumns.has("areaMin") ? (
+        <td colSpan={2} className="ledger-stack-merged-cell">
+          {formatLedgerPyeong(first.area)}
+        </td>
+      ) : null}
+      {visibleColumns.has("match") ? (
+        <td className="ledger-stack-merged-cell ledger-match-cell">
+          <MatchBadge
+            count={group.lines.reduce((sum, line) => sum + line.matchCount, 0)}
+            expanded={expanded}
+            panelId={matchPanelId(listingMatchRowKey(group.intakeId))}
+            label="연결 구매고객"
+            onToggle={onToggleMatch}
+          />
+        </td>
+      ) : null}
+      {/* 매물 의뢰에는 아직 담당·다음 연락 값이 없다 */}
+      {visibleColumns.has("assignee") ? (
+        <td className="ledger-stack-merged-cell ledger-empty-value">-</td>
+      ) : null}
+      {visibleColumns.has("next") ? (
+        <td className="ledger-stack-merged-cell ledger-empty-value">-</td>
+      ) : null}
+      {consultationCell}
+      {visibleColumns.has("memo") ? (
         <MemoCell
           recordId={first.listingIntakeId}
           value={first.intakeMemo}
@@ -1706,8 +2149,9 @@ function StackContext({
             })
           }
         />
-      </div>
-    </div>
+      ) : null}
+      {createdAtCell}
+    </>
   );
 }
 
@@ -1723,7 +2167,7 @@ function KindLabel({
   return (
     <span
       className={cn(
-        "inline-flex whitespace-nowrap rounded-[4px] px-1.5 py-0.5 text-[11px] font-medium leading-5",
+        "inline-flex whitespace-nowrap rounded-[4px] px-1.5 py-0.5 text-[12px] font-medium leading-5",
         isDemand
           ? "bg-info-soft text-info-strong"
           : "bg-success-soft text-success",
@@ -1734,14 +2178,26 @@ function KindLabel({
   );
 }
 
-// 상태 컬럼 — 의뢰 생명주기 pill. 매물관리 Notion 팔레트와 동일한 색상 체계
+// 상태 컬럼 — 의뢰 생명주기 pill. 매물관리 매물상태와 같은 점과 색을 쓴다
 const LIFECYCLE_PILL_STYLES: Record<
   string,
-  { label: string; className: string }
+  { label: string; className: string; dotClassName: string }
 > = {
-  open: { label: "진행중", className: "bg-[#eef3ed] text-[#44745a]" },
-  hold: { label: "보류", className: "bg-[#fbf3db] text-[#9f6b00]" },
-  closed: { label: "종료", className: "bg-[#f1f1ef] text-[#787774]" },
+  open: {
+    label: "진행중",
+    className: "bg-[#eef3ed] text-[#44745a]",
+    dotClassName: "bg-[#6c9b7a]",
+  },
+  hold: {
+    label: "보류",
+    className: "bg-[#fbf3db] text-[#9f6b00]",
+    dotClassName: "bg-[#dfab01]",
+  },
+  closed: {
+    label: "종료",
+    className: "bg-[#f1f1ef] text-[#787774]",
+    dotClassName: "bg-[#b4b4b1]",
+  },
 };
 
 function LifecyclePill({
@@ -1759,14 +2215,16 @@ function LifecyclePill({
     ({
       label: lifecycleStatus,
       className: "bg-[#f1f1ef] text-[#787774]",
+      dotClassName: "bg-[#b4b4b1]",
     } as const);
   return (
     <span
       className={cn(
-        "inline-flex rounded-[4px] px-1.5 py-0.5 text-[11px] font-medium leading-5",
+        "inline-flex max-w-full items-center gap-1 whitespace-nowrap rounded-[4px] px-1.5 py-0.5 text-[12px] font-medium leading-5",
         meta.className,
       )}
     >
+      <span className={cn("size-1.5 rounded-full", meta.dotClassName)} />
       {meta.label}
     </span>
   );
@@ -1787,7 +2245,7 @@ function TransactionBadge({
   return (
     <span
       className={cn(
-        "inline-flex rounded-[4px] px-1.5 py-0.5 text-[11px] font-medium leading-5",
+        "inline-flex whitespace-nowrap rounded-[4px] px-1.5 py-0.5 text-[12px] font-medium leading-5",
         (transactionType && TRANSACTION_PILL_STYLES[transactionType]) ??
           "bg-[#f1f1ef] text-[#787774]",
       )}
@@ -1822,57 +2280,166 @@ function demandPlaceLabel(line: BrokerageCaseDemandIntent) {
   );
 }
 
-// 구함 context — 희망 지역과 희망 단지를 한 줄에서 읽고, 노트는 구분선 뒤에 둔다.
-function IntentContext({
+// 구함 의뢰 셀 — 희망 지역과 희망 단지를 한 줄에서 읽는다.
+function DemandIntakeCell({ line }: { line: BrokerageCaseDemandIntent }) {
+  const regionLabel = demandRegionLabel(line);
+  const siteLabel = demandSiteLabel(line);
+  const placeLabel = demandPlaceLabel(line);
+
+  return (
+    <td className="ledger-intake-cell">
+      <div className="flex min-w-0 items-center gap-1.5">
+        <Link
+          to="/buyer-requirements/$id"
+          params={{ id: line.requirementId }}
+          className="ledger-intake-link"
+          aria-label={`${placeLabel} 구함 상세 열기`}
+          title={placeLabel}
+        >
+          <span className="truncate">
+            {regionLabel || (!siteLabel ? "선호 지역 미등록" : null)}
+            {regionLabel && siteLabel ? (
+              <span className="font-normal text-muted-foreground"> · </span>
+            ) : null}
+            {siteLabel ? <span>{siteLabel}</span> : null}
+          </span>
+        </Link>
+        {line.urgency === "urgent" ? (
+          <span className="shrink-0 rounded-[4px] bg-destructive-soft px-1 text-[10.5px] font-medium leading-4 text-destructive-strong">
+            급함
+          </span>
+        ) : null}
+      </div>
+    </td>
+  );
+}
+
+// 담당 컬럼 — 구함 조건마다 담당이 따로 있다. 직원 목록을 못 불러오면 읽기 전용으로 둔다.
+function AssigneeCell({
+  line,
+  options,
+  onUpdate,
+}: {
+  line: BrokerageCaseDemandIntent;
+  options: ChipOption[];
+  onUpdate: (request: LedgerUpdateRequest) => void;
+}) {
+  const name = (
+    <span
+      data-ledger-cell-value
+      className={cn(!line.assignedTo && "ledger-empty-value")}
+    >
+      <span className="truncate" title={line.assignedTo?.name}>
+        {line.assignedTo?.name ?? "미배정"}
+      </span>
+    </span>
+  );
+  if (options.length === 0) return <td className="ledger-editable-cell">{name}</td>;
+  return (
+    <td className="ledger-editable-cell">
+      <EditableCell
+        recordId={line.requirementId}
+        field="assignedToId"
+        value={line.assignedTo?.id ?? ""}
+        ariaLabel={`${demandPlaceLabel(line)} 담당 편집`}
+        onSave={(_recordId, _field, value) => {
+          const assignedToId = String(value);
+          if (assignedToId === line.assignedTo?.id) return;
+          onUpdate({
+            target: "buyer-requirement",
+            id: line.requirementId,
+            patch: { assignedToId },
+          });
+        }}
+        editType="select-chip"
+        chipOptions={options}
+        chipValueOf={(value) => String(value)}
+      >
+        {name}
+      </EditableCell>
+    </td>
+  );
+}
+
+const NEXT_CONTACT_PILL_CLASS =
+  "inline-flex items-center rounded-[4px] px-1.5 py-0.5 text-[12px] font-medium leading-5 tabular-nums whitespace-nowrap";
+
+function NextContactLabel({ value }: { value: string | null }) {
+  const state = getFollowUpState(value);
+  if (!value || state === "none") {
+    return (
+      <>
+        <span className="ledger-next-empty ledger-empty-value">-</span>
+        <span className="ledger-next-add">+ 일정</span>
+      </>
+    );
+  }
+  if (state === "today") {
+    return (
+      <span
+        className={cn(
+          NEXT_CONTACT_PILL_CLASS,
+          "bg-warning-soft text-warning-strong",
+        )}
+      >
+        오늘
+      </span>
+    );
+  }
+  return (
+    <span
+      className={cn(
+        NEXT_CONTACT_PILL_CLASS,
+        state === "overdue"
+          ? "bg-destructive-soft text-destructive-strong"
+          : "bg-[#f1f1ef] text-[#5f5e5a]",
+      )}
+    >
+      {formatLedgerDate(value)} {formatDday(value)}
+    </span>
+  );
+}
+
+// 다음 연락 컬럼 — 매물관리 입주가능일과 같은 pill. 지난 일정과 오늘만 색으로 드러낸다.
+function NextContactCell({
   line,
   onUpdate,
 }: {
   line: BrokerageCaseDemandIntent;
   onUpdate: (request: LedgerUpdateRequest) => void;
 }) {
-  const regionLabel = demandRegionLabel(line);
-  const siteLabel = demandSiteLabel(line);
-  const placeLabel = demandPlaceLabel(line);
-
+  const save = (nextContactDate: string) =>
+    onUpdate({
+      target: "buyer-requirement",
+      id: line.requirementId,
+      patch: { nextContactDate },
+    });
   return (
-    <div className="ledger-context-layout">
-      <Link
-        to="/buyer-requirements/$id"
-        params={{ id: line.requirementId }}
-        className="ledger-context-link"
-        aria-label={`${placeLabel} 구함 상세 열기`}
-        title={placeLabel}
+    <td className="ledger-editable-cell">
+      <EditableCell
+        recordId={line.requirementId}
+        field="nextContactDate"
+        value={line.nextContactDate}
+        ariaLabel={`${demandPlaceLabel(line)} 다음 연락일 편집`}
+        onSave={(_recordId, _field, value) =>
+          save(localDateString(Number(value)))
+        }
+        onChipSave={(_recordId, payload) => {
+          const picked = payload.dateWrites?.[0]?.value;
+          if (picked) save(picked);
+        }}
+        editType="select-chip"
+        chipOptions={NEXT_CONTACT_OPTIONS}
       >
-        <span className="truncate">
-          {regionLabel || (!siteLabel ? "선호 지역 미등록" : null)}
-          {regionLabel && siteLabel ? (
-            <span className="font-medium text-muted-foreground"> · </span>
-          ) : null}
-          {siteLabel ? <span>{siteLabel}</span> : null}
+        <span data-ledger-cell-value>
+          <NextContactLabel value={line.nextContactDate} />
         </span>
-      </Link>
-      <div className="ledger-context-memo">
-        <StickyNote
-          className="size-3 shrink-0 text-muted-foreground/70"
-          aria-hidden
-        />
-        <MemoCell
-          recordId={line.requirementId}
-          value={line.memo}
-          ariaLabel={`${placeLabel} 구함 노트 편집`}
-          onSave={(memo) =>
-            onUpdate({
-              target: "buyer-requirement",
-              id: line.requirementId,
-              patch: { memo },
-            })
-          }
-        />
-      </div>
-    </div>
+      </EditableCell>
+    </td>
   );
 }
 
+// 의뢰 메모 컬럼 — 매물관리처럼 별도 열로 두고 남는 폭을 차지한다.
 function MemoCell({
   recordId,
   value,
@@ -1884,32 +2451,35 @@ function MemoCell({
   ariaLabel: string;
   onSave: (memo: string) => void;
 }) {
+  // 한 줄 입력칸은 줄바꿈을 지우므로, 고치지 않고 닫아도 저장되지 않게 표시값과 비교한다.
+  const text = value?.replace(/\s*\n\s*/g, " ") ?? null;
   return (
-    <EditableCell
-      recordId={recordId}
-      field="memo"
-      value={value}
-      ariaLabel={ariaLabel}
-      onSave={(_recordId, _field, nextValue) => {
-        const next = String(nextValue ?? "").trim();
-        if (next !== (value ?? "")) onSave(next);
-      }}
-      editType="text"
-      activation="doubleClick"
-      editorChrome="floating"
-      hoverHighlight={false}
-      className="min-w-0 px-1.5 text-[11px]"
-    >
-      <span
-        title={value ? value.replace(/\n/g, " ") : undefined}
-        className={cn(
-          "min-w-0 truncate",
-          value ? "text-muted-foreground" : "italic text-muted-foreground/70",
-        )}
+    <td className="ledger-editable-cell">
+      <EditableCell
+        recordId={recordId}
+        field="memo"
+        value={text}
+        ariaLabel={ariaLabel}
+        onSave={(_recordId, _field, nextValue) => {
+          const next = String(nextValue ?? "").trim();
+          if (next !== (text ?? "").trim()) onSave(next);
+        }}
+        editType="text"
+        activation="doubleClick"
+        editorChrome="floating"
+        hoverHighlight={false}
       >
-        {value ? value.replace(/\n/g, " ") : "+ 노트"}
-      </span>
-    </EditableCell>
+        <span data-ledger-cell-value>
+          {text ? (
+            <span title={text} className="min-w-0 truncate text-slate-700">
+              {text}
+            </span>
+          ) : (
+            <span className="ledger-memo-add">+ 노트</span>
+          )}
+        </span>
+      </EditableCell>
+    </td>
   );
 }
 
@@ -1946,24 +2516,20 @@ function MoneyCell({
   recordId,
   field,
   value,
+  rent,
   ariaLabel,
   onSave,
-  groupEnd = false,
 }: {
   recordId: string;
   field: Extract<LedgerNumberField, "budgetMin" | "budgetMax">;
   value: number | null;
+  /** 월세 열을 접었을 때 함께 보여 줄 월세 */
+  rent: number | null;
   ariaLabel: string;
   onSave: (field: LedgerNumberField, value: unknown) => boolean | void;
-  groupEnd?: boolean;
 }) {
   return (
-    <td
-      className={cn(
-        "ledger-editable-cell ledger-number-cell",
-        groupEnd && "ledger-group-end",
-      )}
-    >
+    <td className="ledger-editable-cell ledger-number-cell">
       <EditableCell
         recordId={recordId}
         field={field}
@@ -1978,8 +2544,13 @@ function MoneyCell({
         editorChrome="floating"
         hoverHighlight={false}
       >
-        <span data-ledger-cell-value className="justify-end">
-          {formatMoney(value)}
+        <span
+          data-ledger-cell-value
+          className={cn(value === null && !rent && "ledger-empty-value")}
+        >
+          <span className="truncate" title={formatLedgerAmount(value, rent)}>
+            {formatLedgerAmount(value, rent)}
+          </span>
         </span>
       </EditableCell>
     </td>
@@ -1992,23 +2563,15 @@ function RentCell({
   value,
   ariaLabel,
   onSave,
-  groupEnd = false,
 }: {
   recordId: string;
   field: Extract<LedgerNumberField, "monthlyRentMin" | "monthlyRentMax">;
   value: number | null;
   ariaLabel: string;
   onSave?: (field: LedgerNumberField, value: unknown) => boolean | void;
-  groupEnd?: boolean;
 }) {
   return (
-    <td
-      className={cn(
-        onSave && "ledger-editable-cell",
-        "ledger-number-cell",
-        groupEnd && "ledger-group-end",
-      )}
-    >
+    <td className={cn(onSave && "ledger-editable-cell", "ledger-number-cell")}>
       {onSave ? (
         <EditableCell
           recordId={recordId}
@@ -2024,12 +2587,15 @@ function RentCell({
           editorChrome="floating"
           hoverHighlight={false}
         >
-          <span data-ledger-cell-value className="justify-end">
-            {value ? `${value.toLocaleString()}만` : "—"}
+          <span
+            data-ledger-cell-value
+            className={cn(!value && "ledger-empty-value")}
+          >
+            {value ? `${value.toLocaleString()}만` : "-"}
           </span>
         </EditableCell>
       ) : (
-        "—"
+        <span className="ledger-empty-value">-</span>
       )}
     </td>
   );
@@ -2041,22 +2607,15 @@ function AreaCell({
   value,
   ariaLabel,
   onSave,
-  groupEnd = false,
 }: {
   recordId: string;
   field: Extract<LedgerNumberField, "areaMin" | "areaMax">;
   value: number | null;
   ariaLabel: string;
   onSave: (field: LedgerNumberField, value: unknown) => boolean | void;
-  groupEnd?: boolean;
 }) {
   return (
-    <td
-      className={cn(
-        "ledger-editable-cell ledger-number-cell",
-        groupEnd && "ledger-group-end",
-      )}
-    >
+    <td className="ledger-editable-cell ledger-number-cell ledger-area-cell">
       <EditableCell
         recordId={recordId}
         field={field}
@@ -2071,8 +2630,11 @@ function AreaCell({
         editorChrome="floating"
         hoverHighlight={false}
       >
-        <span data-ledger-cell-value className="justify-end">
-          {formatPyeong(value)}
+        <span
+          data-ledger-cell-value
+          className={cn(value === null && "ledger-empty-value")}
+        >
+          {formatLedgerPyeong(value)}
         </span>
       </EditableCell>
     </td>
@@ -2125,17 +2687,15 @@ function MatchCell({
   panelId,
   label,
   onToggle,
-  groupEnd = false,
 }: {
   count: number;
   expanded: boolean;
   panelId: string;
   label: string;
   onToggle: () => void;
-  groupEnd?: boolean;
 }) {
   return (
-    <td className={cn("text-center", groupEnd && "ledger-group-end")}>
+    <td className="ledger-match-cell">
       <MatchBadge
         count={count}
         expanded={expanded}
@@ -2179,7 +2739,8 @@ function LedgerHeader({
         className="ledger-sort-button"
         onClick={() => onSort(field)}
       >
-        <LedgerHeaderLabel icon={icon} label={label} />
+        {/* 좁은 열에서 이름이 잘리지 않도록 정렬 중에는 아이콘을 화살표로 대신한다 */}
+        <LedgerHeaderLabel icon={active ? undefined : icon} label={label} />
         {active ? <SortIcon className="size-3 shrink-0" aria-hidden /> : null}
       </button>
     </th>
@@ -2202,6 +2763,444 @@ function LedgerStaticHeader({
   );
 }
 
+// 머리글 위 안내 줄 — 매물관리의 "타입–확인 컬럼 접기"와 같은 방식으로 월세 열을 접고 펼친다.
+// 버튼은 가로 스크롤 중에도 고정 열 오른쪽과 화면 끝 사이에 남아, 좁은 창에서도 누를 수 있다.
+function LedgerColumnGuide({
+  columns,
+  open,
+  minWidth,
+  onToggle,
+}: {
+  columns: ReadonlyArray<{ key: LedgerColumnKey; width: number }>;
+  open: boolean;
+  minWidth: number;
+  onToggle: () => void;
+}) {
+  let offset = 0;
+  let groupStart = 0;
+  let groupEnd = 0;
+  for (const column of columns) {
+    if (column.key === "rentMin") groupStart = offset;
+    if (column.key === "rentMax") groupEnd = offset + column.width;
+    if (!open && column.key === "budgetMax") {
+      groupStart = offset + column.width;
+      groupEnd = groupStart;
+    }
+    offset += column.width;
+  }
+  const guideLeft = groupStart - COLUMN_GUIDE_LEAD;
+  const toggleLeft = open
+    ? guideLeft - COLUMN_GUIDE_TOGGLE_SIZE
+    : groupStart - COLUMN_GUIDE_TOGGLE_SIZE / 2;
+  const label = open ? "월세 컬럼 접기" : "월세 컬럼 펼치기";
+  return (
+    <div
+      data-ledger-column-guide
+      className="sticky top-0 z-40 h-9 border-b border-border bg-[#f7f7f5]"
+      style={{ width: "100%", minWidth }}
+    >
+      <div className="relative flex h-full items-start pt-2" style={{ minWidth }}>
+        {open ? (
+          <>
+            <span
+              aria-hidden="true"
+              className="pointer-events-none absolute top-[18px] z-40 h-px bg-slate-400"
+              style={{ left: guideLeft, width: groupEnd - guideLeft }}
+            />
+            <span
+              aria-hidden="true"
+              className="pointer-events-none absolute top-[18px] z-40 h-2 w-px bg-slate-400"
+              style={{ left: groupEnd - 1 }}
+            />
+          </>
+        ) : null}
+        <span aria-hidden="true" className="shrink-0" style={{ width: toggleLeft }} />
+        <button
+          type="button"
+          aria-label={label}
+          aria-expanded={open}
+          title={label}
+          className="sticky z-50 inline-flex size-5 shrink-0 items-center justify-center rounded-[3px] border border-[#9ba7a3] bg-white p-0 text-[#536b64] shadow-[0_1px_1px_rgba(42,51,47,0.05)] outline-none transition-colors hover:border-[#738b83] hover:bg-[#f4f8f6] hover:text-[#315d50] focus-visible:ring-2 focus-visible:ring-[#4c8c7c]/35"
+          style={{ left: LEDGER_PINNED_WIDTH + 4, right: 8 }}
+          onClick={onToggle}
+        >
+          {open ? <Minus className="size-3" /> : <Plus className="size-3" />}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// 필터 패널 — 여러 개 고르는 필터는 바로 적용하고, 범위 필터는 적용 버튼으로 닫는다.
+function LedgerFilterBody({
+  def,
+  existing,
+  onApply,
+  onClear,
+  close,
+}: {
+  def: FilterDefinition;
+  existing: ActiveFilter | undefined;
+  onApply: (filter: ActiveFilter) => void;
+  onClear: () => void;
+  close: () => void;
+}) {
+  const id = existing?.id ?? `${def.field}-${Date.now()}`;
+  if (def.type === "multiSelect") {
+    return (
+      <ChecklistFilterPanel
+        options={def.options ?? []}
+        selected={existing?.values ?? []}
+        searchable={false}
+        onChange={(values) => {
+          if (values.length === 0) {
+            onClear();
+            return;
+          }
+          onApply({
+            id,
+            field: def.field,
+            operator: "in",
+            value: values.join(","),
+            values,
+          });
+        }}
+      />
+    );
+  }
+  const applyRange = (min: string, max: string) => {
+    if (!min && !max) onClear();
+    else {
+      onApply({
+        id,
+        field: def.field,
+        operator: "between",
+        value: `${min}~${max}`,
+        valueMin: min,
+        valueMax: max,
+      });
+    }
+    close();
+  };
+  return def.type === "dateRange" ? (
+    <DateRangeFilterBody def={def} existing={existing} onApply={applyRange} />
+  ) : (
+    <NumberRangeFilterBody def={def} existing={existing} onApply={applyRange} />
+  );
+}
+
+function LedgerFilterChip({
+  def,
+  existing,
+  onApply,
+  onRemove,
+}: {
+  def: FilterDefinition;
+  existing: ActiveFilter | undefined;
+  onApply: (filter: ActiveFilter) => void;
+  onRemove: (filterId: string) => void;
+}) {
+  const clear = () => {
+    if (existing) onRemove(existing.id);
+  };
+  return (
+    <ToolbarFilterChip
+      label={def.label}
+      summary={summarizeLedgerFilter(def, existing)}
+      onClear={clear}
+      contentClassName={def.type === "multiSelect" ? "w-[180px] p-0" : "w-64 p-3"}
+    >
+      {(close) => (
+        <LedgerFilterBody
+          def={def}
+          existing={existing}
+          onApply={onApply}
+          onClear={clear}
+          close={close}
+        />
+      )}
+    </ToolbarFilterChip>
+  );
+}
+
+// 한 줄 검색바 — 희망 지역·단지 선택과 키워드 검색을 둥근 막대 하나에 모은다.
+function LedgerSearchBar({
+  ref,
+  search,
+  onSearchChange,
+  open,
+  onOpenChange,
+  definitions,
+  activeFilterByField,
+  onApply,
+  onRemove,
+}: {
+  ref: Ref<HTMLInputElement>;
+  search: string;
+  onSearchChange: (value: string) => void;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  definitions: readonly FilterDefinition[];
+  activeFilterByField: ReadonlyMap<string, ActiveFilter>;
+  onApply: (filter: ActiveFilter) => void;
+  onRemove: (filterId: string) => void;
+}) {
+  const selectedLabels = definitions.flatMap(
+    (def) => activeFilterByField.get(def.field)?.displayValues ?? [],
+  );
+  const placeLabel =
+    selectedLabels.length === 0
+      ? "지역·단지 전체"
+      : selectedLabels.length === 1
+        ? selectedLabels[0]
+        : `${selectedLabels[0]} 외 ${selectedLabels.length - 1}`;
+
+  return (
+    <Popover open={open} onOpenChange={onOpenChange}>
+      <PopoverAnchor asChild>
+        <div className="flex h-[30px] min-w-[300px] max-w-[720px] flex-1 items-center rounded-full bg-[#f1f0ec]">
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              aria-label={`지역·단지 필터: ${placeLabel}`}
+              className="flex h-full min-w-[110px] shrink basis-[170px] items-center gap-1.5 rounded-l-full pl-3.5 pr-3 text-[13px] transition-colors hover:bg-[rgba(55,53,47,0.05)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-foreground/20 data-[state=open]:bg-[rgba(55,53,47,0.05)]"
+            >
+              <MapPin className="size-3.5 shrink-0 text-muted-foreground" />
+              <span
+                className={cn(
+                  "min-w-0 flex-1 truncate text-left",
+                  selectedLabels.length === 0
+                    ? "text-muted-foreground"
+                    : "font-semibold text-foreground",
+                )}
+              >
+                {placeLabel}
+              </span>
+              <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
+            </button>
+          </PopoverTrigger>
+          <span
+            className="h-4 w-px shrink-0 bg-[rgba(55,53,47,0.14)]"
+            aria-hidden="true"
+          />
+          <label
+            title="⌘F로 바로 검색"
+            className="flex h-full min-w-[140px] flex-1 cursor-text items-center gap-2 rounded-r-full pl-3 pr-1.5 transition-colors hover:bg-[rgba(55,53,47,0.05)] focus-within:bg-white focus-within:shadow-[inset_0_0_0_1px_rgba(55,53,47,0.3)]"
+          >
+            <Search className="size-3.5 shrink-0 text-muted-foreground" />
+            <input
+              ref={ref}
+              value={search}
+              onChange={(event) => onSearchChange(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") {
+                  if (search) onSearchChange("");
+                  else event.currentTarget.blur();
+                }
+              }}
+              placeholder="고객, 전화번호, 지역, 매물"
+              aria-label="고객 원장 검색"
+              className="min-w-0 flex-1 bg-transparent text-[13px] text-foreground outline-none placeholder:text-muted-foreground"
+            />
+            {search ? (
+              <button
+                type="button"
+                aria-label="검색어 지우기"
+                onClick={() => onSearchChange("")}
+                className="inline-flex size-5 shrink-0 items-center justify-center rounded-full text-[#a5a39f] hover:bg-[rgba(55,53,47,0.1)] hover:text-foreground"
+              >
+                <X className="size-3" />
+              </button>
+            ) : null}
+          </label>
+        </div>
+      </PopoverAnchor>
+      <PopoverContent align="start" className="w-[340px] p-3">
+        {open ? (
+          <LedgerPlacePanel
+            definitions={definitions}
+            activeFilterByField={activeFilterByField}
+            onApply={onApply}
+            onRemove={onRemove}
+          />
+        ) : null}
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+// 희망 지역·단지 패널 — 검색어 하나로 두 목록을 함께 찾고, 고르면 바로 적용한다.
+function LedgerPlacePanel({
+  definitions,
+  activeFilterByField,
+  onApply,
+  onRemove,
+}: {
+  definitions: readonly FilterDefinition[];
+  activeFilterByField: ReadonlyMap<string, ActiveFilter>;
+  onApply: (filter: ActiveFilter) => void;
+  onRemove: (filterId: string) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<
+    ReadonlyArray<{
+      def: FilterDefinition;
+      options: ReadonlyArray<{ label: string; value: string }>;
+    }>
+  >([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const term = query.trim();
+    if (!term) {
+      setResults([]);
+      setLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setLoading(true);
+    const timer = setTimeout(async () => {
+      try {
+        const next = await Promise.all(
+          definitions.map(async (def) => ({
+            def,
+            options: (await def.fetchOptions?.(term)) ?? [],
+          })),
+        );
+        if (!cancelled) setResults(next);
+      } catch {
+        if (!cancelled) {
+          setResults([]);
+          toast.error("지역·단지를 찾지 못했습니다.");
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }, 250);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [definitions, query]);
+
+  const toggle = (def: FilterDefinition, value: string, label: string) => {
+    const existing = activeFilterByField.get(def.field);
+    const values = existing?.values ?? [];
+    const labels = existing?.displayValues ?? [];
+    const index = values.indexOf(value);
+    const nextValues =
+      index >= 0 ? values.filter((_, i) => i !== index) : [...values, value];
+    const nextLabels =
+      index >= 0 ? labels.filter((_, i) => i !== index) : [...labels, label];
+    if (nextValues.length === 0) {
+      if (existing) onRemove(existing.id);
+      return;
+    }
+    onApply({
+      id: existing?.id ?? `${def.field}-${Date.now()}`,
+      field: def.field,
+      operator: "in",
+      value: nextValues.join(","),
+      values: nextValues,
+      displayValues: nextLabels,
+    });
+  };
+
+  const selected = definitions.flatMap((def) => {
+    const existing = activeFilterByField.get(def.field);
+    return (existing?.values ?? []).map((value, index) => ({
+      def,
+      value,
+      label: existing?.displayValues?.[index] ?? value,
+    }));
+  });
+  const hasResults = results.some((result) => result.options.length > 0);
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="relative">
+        <Search className="absolute left-2 top-1/2 size-3 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          autoFocus
+          placeholder="희망 지역이나 단지 검색"
+          aria-label="희망 지역이나 단지 검색"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          className="h-7 pl-6 text-xs"
+        />
+      </div>
+      {selected.length > 0 ? (
+        <div className="flex flex-wrap gap-1">
+          {selected.map((item) => (
+            <button
+              key={`${item.def.field}:${item.value}`}
+              type="button"
+              aria-label={`${item.label} 선택 해제`}
+              onClick={() => toggle(item.def, item.value, item.label)}
+              className="inline-flex items-center gap-1 rounded-full bg-[#ebeae6] px-2 py-0.5 text-[11.5px] text-foreground hover:bg-[#e2e1dc]"
+            >
+              {item.label}
+              <X className="size-3 text-muted-foreground" />
+            </button>
+          ))}
+        </div>
+      ) : null}
+      <div className="max-h-64 overflow-y-auto">
+        {loading ? (
+          <p className="px-2 py-2 text-[12px] text-muted-foreground">
+            검색 중...
+          </p>
+        ) : !hasResults ? (
+          <p className="px-2 py-2 text-[12px] text-muted-foreground">
+            {query.trim() ? "검색 결과 없음" : "검색어를 입력하세요"}
+          </p>
+        ) : (
+          results.map(({ def, options }) =>
+            options.length > 0 ? (
+              <div key={def.field} className="mb-1">
+                <p className="px-2 pb-0.5 pt-1.5 text-[11.5px] font-medium text-muted-foreground">
+                  {def.label}
+                </p>
+                {options.map((option) => {
+                  const checked =
+                    activeFilterByField
+                      .get(def.field)
+                      ?.values?.includes(option.value) ?? false;
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      aria-pressed={checked}
+                      onClick={() => toggle(def, option.value, option.label)}
+                      className="flex w-full items-center gap-2.5 rounded-sm px-2 py-1.5 text-left text-[13px] hover:bg-[rgba(55,53,47,0.06)]"
+                    >
+                      <span
+                        className={cn(
+                          "flex size-4 shrink-0 items-center justify-center rounded-[4px] border",
+                          checked
+                            ? "border-foreground bg-foreground text-white"
+                            : "border-[#d6d5d0] bg-white",
+                        )}
+                      >
+                        {checked ? (
+                          <Check className="size-3" strokeWidth={2.5} />
+                        ) : null}
+                      </span>
+                      <span className="min-w-0 flex-1 truncate">
+                        {option.label}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : null,
+          )
+        )}
+      </div>
+    </div>
+  );
+}
+
 function LedgerHeaderLabel({
   icon,
   label,
@@ -2221,13 +3220,13 @@ function LedgerHeaderLabel({
   );
 }
 
-function LoadingRows() {
+function LoadingRows({ columnCount }: { columnCount: number }) {
   return (
     <>
-      {Array.from({ length: 6 }, (_, index) => (
+      {Array.from({ length: 8 }, (_, index) => (
         <tr key={index}>
-          <td colSpan={COLUMN_COUNT} className="h-[68px] px-4">
-            <div className="h-7 animate-pulse rounded bg-muted/70 motion-reduce:animate-none" />
+          <td colSpan={columnCount} className="h-10 px-4">
+            <div className="h-5 animate-pulse rounded bg-muted/70 motion-reduce:animate-none" />
           </td>
         </tr>
       ))}

@@ -8,6 +8,7 @@ import {
   CurrentUserPayload,
 } from '../../common/decorators/current-user.decorator';
 import { OfficesService } from './offices.service';
+import { CreateOfficeDto, UpdateOfficeDto } from './offices.dto';
 
 @ApiTags('사무소')
 @ApiBearerAuth()
@@ -19,13 +20,7 @@ export class OfficesController {
   @Post('me')
   createForCurrentUser(
     @Body()
-    dto: {
-      name: string;
-      licenseNo?: string | null;
-      ceoName?: string | null;
-      phone?: string | null;
-      address?: string | null;
-    },
+    dto: CreateOfficeDto,
     @CurrentUser() user: CurrentUserPayload,
   ) {
     return this.officesService.createForCurrentUser(user.userId, dto);
@@ -41,17 +36,17 @@ export class OfficesController {
   @UseGuards(RolesGuard)
   updateMe(
     @Body()
-    dto: {
-      name?: string;
-      licenseNo?: string | null;
-      ceoName?: string | null;
-      phone?: string | null;
-      address?: string | null;
-      naverVerificationId?: string | null;
-    },
+    dto: UpdateOfficeDto,
     @CurrentUser() user: CurrentUserPayload,
   ) {
     return this.officesService.updateMe(user.officeId, dto);
+  }
+
+  @Post('me/geocode')
+  @Roles('owner', 'manager')
+  @UseGuards(RolesGuard)
+  retryGeocoding(@CurrentUser() user: CurrentUserPayload) {
+    return this.officesService.retryGeocoding(user.officeId);
   }
 
   @Patch('me/commission-config')
@@ -72,5 +67,4 @@ export class OfficesController {
   ) {
     return this.officesService.updateCommissionConfig(user.officeId, dto);
   }
-
 }

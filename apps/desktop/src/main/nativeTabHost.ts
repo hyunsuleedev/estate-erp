@@ -706,6 +706,24 @@ export class NativeTabHost {
     return this.tabs.get(tabId)?.hostId ?? null;
   }
 
+  /**
+   * 셸 내비게이션이 이 탭의 renderer를 버려도 되는지 판단한다.
+   * 열린 편집기/다이얼로그, 저장 전 변경, 진행 중인 저장이 있으면 true.
+   * 아직 첫 상태 보고 전(`unreported`)인 renderer도 LRU와 같은 fail-safe로
+   * 미저장 작업이 있다고 본다.
+   */
+  hasUnsavedWork(hostId: number, tabId: string): boolean {
+    const record = this.tabs.get(tabId);
+    if (!record || record.hostId !== hostId || record.view.isDestroyed()) {
+      return false;
+    }
+    return (
+      record.protectionReasons.has('unreported') ||
+      record.protectionReasons.has('dirty') ||
+      record.protectionReasons.has('mutation')
+    );
+  }
+
   getTabSnapshot(tabId: string): Tab | null {
     const record = this.tabs.get(tabId);
     return record && !record.view.isDestroyed() ? cloneTab(record.tab) : null;

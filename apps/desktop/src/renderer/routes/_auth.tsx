@@ -1,5 +1,6 @@
 import { createFileRoute, Outlet, Navigate } from '@tanstack/react-router';
 import { SplashScreen } from '@/components/layout/splash-screen';
+import { AuthWindowFrame } from '@/components/layout/auth-window-frame';
 import { useAuth } from '@/providers/auth-provider';
 
 export const Route = createFileRoute('/_auth')({
@@ -21,8 +22,10 @@ function AuthLayout() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-muted/40">
-      <Outlet />
-    </div>
+    <AuthWindowFrame>
+      <div className="flex min-h-[var(--auth-content-height,100svh)] items-center justify-center bg-muted/40">
+        <Outlet />
+      </div>
+    </AuthWindowFrame>
   );
 }

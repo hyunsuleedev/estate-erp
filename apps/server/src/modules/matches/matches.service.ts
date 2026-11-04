@@ -8,6 +8,7 @@ import {
   IntakeConfirmationState,
   IntakeLifecycleStatus,
   MATCH_STAGE_ORDER,
+  MatchClosedReason,
   MatchStage,
   normalizeMatchStage,
 } from '@estate-erp/shared';
@@ -139,6 +140,8 @@ export class MatchesService {
       buyerReqId: string;
       memo?: string;
     },
+    /** id: 같은 요청을 다시 보내도 한 건만 생기게 할 때 (통화 분석 제안 반영) */
+    options: { id?: string } = {},
   ) {
     // 동일 매물 + 동일 구매조건 조합 중복 방지 (종료된 매칭은 재생성 허용)
     const duplicate = await this.prisma.match.findFirst({
@@ -157,7 +160,7 @@ export class MatchesService {
     }
 
     const match = await this.prisma.match.create({
-      data: { officeId, ...dto },
+      data: { ...(options.id ? { id: options.id } : {}), officeId, ...dto },
       include: this.matchInclude,
     });
 
@@ -262,6 +265,11 @@ export class MatchesService {
               ? currentMatch.closedFromStage
               : currentStage
             : null,
+        // 사용자가 직접 종료하면 "직접 종료"로 바꿔 거래 취소 시 되살리기 대상에서 뺀다.
+        // 다시 열면 종료 이유를 지운다.
+        closedReason:
+          targetStage === MatchStage.CLOSED ? MatchClosedReason.MANUAL : null,
+        closedByDealId: null,
         // null = 메모 비우기, undefined = 변경 없음
         memo: dto.memo === undefined ? undefined : dto.memo,
       },

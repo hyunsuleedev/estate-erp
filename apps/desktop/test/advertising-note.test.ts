@@ -75,12 +75,12 @@ describe('desktop advertising note page', () => {
     assert.match(dialogSource, /disabled=\{drafts\.length > 0\}/);
     assert.match(source, /const MAX_MANUAL_ENTRY_DRAFTS = 3_000/);
     assert.match(source, /const EXTERNAL_LISTING_BATCH_SIZE = 100/);
-    assert.match(dialogSource, /const listings = drafts\.map\(\(draft\) =>/);
+    assert.match(dialogSource, /const groups = drafts\.map\(\(draft\) =>/);
     assert.match(dialogSource, /useVirtualizer\(\{/);
     assert.match(dialogSource, /count: drafts\.length/);
     assert.match(
       dialogSource,
-      /offset \+= EXTERNAL_LISTING_BATCH_SIZE[\s\S]*?listings\.slice\([\s\S]*?offset \+ EXTERNAL_LISTING_BATCH_SIZE[\s\S]*?batchUpsert\(/,
+      /offset \+= EXTERNAL_LISTING_BATCH_SIZE[\s\S]*?groups\.slice\([\s\S]*?offset \+ EXTERNAL_LISTING_BATCH_SIZE[\s\S]*?createManualListings\(/,
     );
     assert.match(dialogSource, /setSubmittedCount\(/);
     assert.match(
@@ -89,17 +89,21 @@ describe('desktop advertising note page', () => {
     );
     assert.doesNotMatch(dialogSource, /한 번에 최대 100건/);
     assert.match(dialogSource, /drafts\.length === 0/);
-    assert.match(
-      dialogSource,
-      /getActiveSession\(form\.siteId, form\.transactionType\)/,
+    // 수동 입력은 스냅샷으로 비활성화되지 않으므로 직접 내리는 경로가 있어야 한다.
+    const panelSource = source.slice(
+      source.indexOf('function ExternalListingRankPanel'),
+      source.indexOf('function ConfirmDialog'),
     );
+    assert.match(panelSource, /listing\.source === 'manual'/);
+    assert.match(panelSource, /api\.externalListings\.endManualListing\(listingId\)/);
+    assert.match(panelSource, /<ConfirmDialog/);
+
+    // 수동 입력은 스냅샷을 열지 않고 저장한다.
+    assert.doesNotMatch(dialogSource, /getActiveSession|createSession|batchUpsert/);
+    assert.match(dialogSource, /createManualListings\(\{[\s\S]*?siteId: form\.siteId/);
     assert.match(
       dialogSource,
-      /if \(!entrySession\) \{[\s\S]*?createSession\(\{[\s\S]*?siteId: form\.siteId/,
-    );
-    assert.match(
-      dialogSource,
-      /`\$\{drafts\.length\.toLocaleString\('ko-KR'\)\}건 시작하고 등록`/,
+      /`\$\{drafts\.length\.toLocaleString\('ko-KR'\)\}건 등록`/,
     );
   });
 
@@ -163,7 +167,7 @@ describe('desktop advertising note page', () => {
     }
     assert.match(
       discoveryStatusColumnSource,
-      /ariaLabel=\{`수집 상태 \$\{meta\.label\}\. \$\{meta\.description\}`\}/,
+      /ariaLabel=\{`입력 상태 \$\{meta\.label\}\. \$\{meta\.description\}`\}/,
     );
     assert.match(myAdColumnSource, /label="광고"/);
     assert.doesNotMatch(myAdColumnSource, /label="내광고"/);
@@ -429,7 +433,7 @@ describe('desktop advertising note page', () => {
       /aria-controls=\{`external-listing-rank-panel-\$\{g\.id\}`\}/,
     );
     assert.match(pageSource, /function ExternalListingRankPanel/);
-    assert.match(pageSource, /네이버 노출 순서 비교/);
+    assert.match(pageSource, /노출 순서 비교/);
     assert.doesNotMatch(pageSource, /function GroupListingsDialog/);
     assert.match(rankPanelSource, /min-w-\[620px\] max-w-\[720px\]/);
     assert.doesNotMatch(

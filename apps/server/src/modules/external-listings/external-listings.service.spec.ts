@@ -11,13 +11,16 @@ describe('ExternalListingsService', () => {
         update: jest.fn(),
       },
       externalListing: {
+        findFirst: jest.fn(),
         findMany: jest.fn(),
         create: jest.fn(),
         update: jest.fn(),
+        updateMany: jest.fn(),
       },
       externalListingSnapshotSession: {
         findFirst: jest.fn(),
         findMany: jest.fn().mockResolvedValue([]),
+        update: jest.fn(),
       },
       site: {
         findFirst: jest.fn(),
@@ -25,7 +28,12 @@ describe('ExternalListingsService', () => {
       officeAdvertisement: {
         findMany: jest.fn(),
       },
+      $transaction: jest.fn(),
+      $queryRaw: jest.fn().mockResolvedValue([]),
     };
+    prisma.$transaction.mockImplementation((run: (tx: unknown) => unknown) =>
+      run(prisma),
+    );
 
     return {
       prisma,
@@ -270,43 +278,744 @@ describe('ExternalListingsService', () => {
     });
   });
 
-  it('creates text-only ho groups as verified and rejects the removed matched status', async () => {
+  it('rejects the removed matched status', async () => {
     const { prisma, service } = createService();
-    prisma.site.findFirst.mockResolvedValue({ id: 'site-1' });
-    prisma.externalListingSnapshotSession.findFirst.mockResolvedValue(null);
-    prisma.externalListing.findMany.mockResolvedValue([]);
-    prisma.externalListingGroup.create.mockResolvedValue({ id: 'group-1' });
-    prisma.externalListing.create.mockResolvedValue({ id: 'listing-1' });
-    prisma.externalListingGroup.findUnique.mockResolvedValue({
-      mainExternalListingId: null,
-    });
-    prisma.externalListingGroup.update.mockResolvedValue({});
-
-    const result = await service.batchUpsert('office-1', {
-      source: 'manual',
-      siteId: 'site-1',
-      transactionType: 'sale',
-      listings: [{ articleNo: 'manual-1', ho: ' 1503호 ' }],
-    });
-
-    expect(result).toMatchObject({
-      created: 1,
-      groupsCreated: 1,
-      errors: [],
-    });
-    expect(prisma.externalListingGroup.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({
-        ho: '1503호',
-        status: 'verified',
-      }),
-    });
-
     prisma.externalListingGroup.findFirst.mockResolvedValue({
       id: 'group-1',
       siteId: 'site-1',
     });
+
     await expect(
       service.updateGroup('group-1', 'office-1', { status: 'matched' }),
     ).rejects.toThrow('Invalid status');
+  });
+
+  describe('batchUpsert', () => {
+    const startedAt = new Date('2026-11-03T00:00:00.000Z');
+    const earlier = new Date('2026-11-01T00:00:00.000Z');
+    const previousCompletedAt = new Date('2026-11-02T00:00:00.000Z');
+    const session = {
+      id: 'session-1',
+      siteId: 'site-1',
+      transactionType: 'sale',
+      startedAt,
+    };
+
+    function existing(
+      articleNo: string,
+      groupId: string,
+      overrides: {
+        price?: number | null;
+        previousPrice?: number | null;
+        priceChangedAt?: Date | null;
+        siteId?: string;
+        lastSeenAt?: Date;
+        mainArticleNo?: string;
+      } = {},
+    ) {
+      return {
+        id: `listing-${articleNo}`,
+        articleNo,
+        groupId,
+        price: overrides.price ?? 100000,
+        deposit: null,
+        monthlyRent: null,
+        previousPrice: overrides.previousPrice ?? null,
+        previousDeposit: null,
+        previousMonthlyRent: null,
+        priceChangedAt: overrides.priceChangedAt ?? null,
+        group: {
+          siteId: overrides.siteId ?? 'site-1',
+          transactionType: 'sale',
+          lastSeenAt: overrides.lastSeenAt ?? earlier,
+          mainExternalListing: { articleNo: overrides.mainArticleNo ?? '100' },
+        },
+      };
+    }
+
+    function setup(existingListings: ReturnType<typeof existing>[] = []) {
+      const context = createService();
+      const { prisma } = context;
+      // id로 찾으면 잠근 세션, 아니면 직전 완료 스냅샷 조회다.
+      prisma.externalListingSnapshotSession.findFirst.mockImplementation(
+        async ({ where }: { where: { id?: string } }) =>
+          where.id ? session : { completedAt: previousCompletedAt },
+      );
+      prisma.externalListing.findMany.mockResolvedValue(existingListings);
+      prisma.externalListing.create.mockImplementation(
+        async ({ data }: { data: { articleNo: string } }) => ({
+          id: `listing-${data.articleNo}`,
+        }),
+      );
+      prisma.externalListing.update.mockResolvedValue({});
+      prisma.externalListingGroup.create.mockResolvedValue({ id: 'group-new' });
+      prisma.externalListingGroup.update.mockResolvedValue({});
+      return context;
+    }
+
+    const group = (representativeArticleNo: string, ...articleNos: string[]) => ({
+      representativeArticleNo,
+      listings: articleNos.map((articleNo) => ({ articleNo, price: 100000 })),
+    });
+
+    it('keeps the same group and follows the new representative when it changes', async () => {
+      const { prisma, service } = setup([
+        existing('101', 'group-1'),
+        existing('102', 'group-1'),
+      ]);
+
+      const result = await service.batchUpsert('office-1', {
+        sessionId: 'session-1',
+        source: 'agent',
+        groups: [group('103', '103', '101', '102')],
+      });
+
+      expect(prisma.externalListingGroup.create).not.toHaveBeenCalled();
+      expect(prisma.externalListing.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          articleNo: '103',
+          groupId: 'group-1',
+          representativeArticleNo: '103',
+        }),
+      });
+      expect(prisma.externalListingGroup.update).toHaveBeenCalledWith({
+        where: { id: 'group-1' },
+        data: expect.objectContaining({
+          mainExternalListingId: 'listing-103',
+        }),
+      });
+      expect(result).toMatchObject({
+        received: 3,
+        created: 1,
+        updated: 2,
+        groupsCreated: 0,
+        groupsReused: 1,
+      });
+    });
+
+    it('creates a group with hints from the representative when nothing overlaps', async () => {
+      const { prisma, service } = setup();
+
+      await service.batchUpsert('office-1', {
+        sessionId: 'session-1',
+        source: 'agent',
+        groups: [
+          {
+            representativeArticleNo: 'ad-1',
+            listings: [{ articleNo: 'ad-1', ho: ' 1503호 ' }],
+          },
+        ],
+      });
+
+      expect(prisma.externalListingGroup.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          siteId: 'site-1',
+          transactionType: 'sale',
+          ho: '1503호',
+          status: 'verified',
+        }),
+      });
+    });
+
+    it('records the previous price only when the price changes', async () => {
+      const { prisma, service } = setup([
+        existing('101', 'group-1', { price: 90000 }),
+        existing('102', 'group-1', { price: 100000 }),
+      ]);
+
+      await service.batchUpsert('office-1', {
+        sessionId: 'session-1',
+        source: 'agent',
+        groups: [group('101', '101', '102')],
+      });
+
+      const updates = prisma.externalListing.update.mock.calls.map(
+        ([call]: [{ data: Record<string, unknown> }]) => call,
+      );
+      expect(updates[0].data).toMatchObject({
+        price: 100000,
+        previousPrice: 90000,
+        priceChangedAt: expect.any(Date),
+      });
+      expect(updates[1].data).not.toHaveProperty('priceChangedAt');
+    });
+
+    it('keeps the last completed price when a cancelled input already changed it', async () => {
+      const { prisma, service } = setup([
+        existing('101', 'group-1', {
+          price: 110000,
+          previousPrice: 100000,
+          priceChangedAt: new Date('2026-11-02T12:00:00.000Z'),
+        }),
+      ]);
+
+      await service.batchUpsert('office-1', {
+        sessionId: 'session-1',
+        source: 'agent',
+        groups: [
+          {
+            representativeArticleNo: '101',
+            listings: [{ articleNo: '101', price: 120000 }],
+          },
+        ],
+      });
+
+      expect(prisma.externalListing.update.mock.calls[0][0].data).toMatchObject({
+        price: 120000,
+        previousPrice: 100000,
+        priceChangedAt: expect.any(Date),
+      });
+    });
+
+    it('clears the price change when the price returns to the last completed value', async () => {
+      const { prisma, service } = setup([
+        existing('101', 'group-1', {
+          price: 110000,
+          previousPrice: 100000,
+          priceChangedAt: new Date('2026-11-02T12:00:00.000Z'),
+        }),
+      ]);
+
+      await service.batchUpsert('office-1', {
+        sessionId: 'session-1',
+        source: 'agent',
+        groups: [group('101', '101')],
+      });
+
+      expect(prisma.externalListing.update.mock.calls[0][0].data).toMatchObject({
+        price: 100000,
+        previousPrice: null,
+        priceChangedAt: null,
+      });
+    });
+
+    it('overwrites a price change recorded before the last completed snapshot', async () => {
+      const { prisma, service } = setup([
+        existing('101', 'group-1', {
+          price: 90000,
+          previousPrice: 80000,
+          priceChangedAt: earlier,
+        }),
+      ]);
+
+      await service.batchUpsert('office-1', {
+        sessionId: 'session-1',
+        source: 'agent',
+        groups: [group('101', '101')],
+      });
+
+      expect(prisma.externalListing.update.mock.calls[0][0].data).toMatchObject({
+        price: 100000,
+        previousPrice: 90000,
+      });
+    });
+
+    it('locks the session before reading existing listings', async () => {
+      const { prisma, service } = setup();
+
+      await service.batchUpsert('office-1', {
+        sessionId: 'session-1',
+        source: 'agent',
+        groups: [group('101', '101')],
+      });
+
+      expect(prisma.$queryRaw.mock.invocationCallOrder[0]).toBeLessThan(
+        prisma.externalListing.findMany.mock.invocationCallOrder[0],
+      );
+    });
+
+    it.each([
+      ['대표가 listings에 없음', [group('999', '101')], [], '대표 999'],
+      ['같은 번호가 두 묶음에 있음', [group('101', '101'), group('102', '102', '101')], [], '두 번'],
+      [
+        '묶음 하나가 기존 그룹 둘과 겹침',
+        [group('101', '101', '201')],
+        [existing('101', 'group-1'), existing('201', 'group-2')],
+        '둘 이상',
+      ],
+      [
+        '묶음 둘이 기존 그룹 하나와 겹침',
+        [group('101', '101'), group('102', '102')],
+        [existing('101', 'group-1'), existing('102', 'group-1')],
+        '기존 그룹 하나',
+      ],
+      [
+        '다른 단지의 광고와 겹침',
+        [group('101', '101')],
+        [existing('101', 'group-1', { siteId: 'site-2' })],
+        '다른 단지',
+      ],
+      [
+        '같은 스냅샷에서 다른 대표로 이미 입력됨',
+        [group('101', '101')],
+        [existing('101', 'group-1', { lastSeenAt: startedAt, mainArticleNo: '102' })],
+        '기존 그룹 하나',
+      ],
+    ])('rejects without writing: %s', async (_name, groups, listings, message) => {
+      const { prisma, service } = setup(listings);
+
+      await expect(
+        service.batchUpsert('office-1', {
+          sessionId: 'session-1',
+          source: 'agent',
+          groups,
+        }),
+      ).rejects.toThrow(message);
+
+      expect(prisma.externalListing.create).not.toHaveBeenCalled();
+      expect(prisma.externalListing.update).not.toHaveBeenCalled();
+      expect(prisma.externalListingGroup.create).not.toHaveBeenCalled();
+    });
+
+    it('accepts a retry of the same group in the same snapshot', async () => {
+      const { prisma, service } = setup([
+        existing('101', 'group-1', { lastSeenAt: startedAt, mainArticleNo: '101' }),
+      ]);
+
+      await service.batchUpsert('office-1', {
+        sessionId: 'session-1',
+        source: 'agent',
+        groups: [group('101', '101')],
+      });
+
+      expect(prisma.externalListing.update).toHaveBeenCalledTimes(1);
+    });
+
+    it('reserves the manual source for manual input', async () => {
+      const { service } = setup();
+
+      await expect(
+        service.batchUpsert('office-1', {
+          sessionId: 'session-1',
+          source: 'manual',
+          groups: [group('101', '101')],
+        }),
+      ).rejects.toThrow('수동 입력 전용');
+    });
+
+    it('requires an active session', async () => {
+      const { prisma, service } = setup();
+      prisma.externalListingSnapshotSession.findFirst.mockReset();
+      prisma.externalListingSnapshotSession.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.batchUpsert('office-1', {
+          sessionId: 'closed',
+          source: 'agent',
+          groups: [group('101', '101')],
+        }),
+      ).rejects.toThrow('active session not found');
+    });
+  });
+
+  describe('createManualListings', () => {
+    it('saves without a snapshot and without locking one', async () => {
+      const { prisma, service } = createService();
+      prisma.site.findFirst.mockResolvedValue({ id: 'site-1' });
+      prisma.externalListingSnapshotSession.findFirst.mockResolvedValue(null);
+      prisma.externalListing.findMany.mockResolvedValue([]);
+      prisma.externalListing.create.mockResolvedValue({ id: 'listing-1' });
+      prisma.externalListingGroup.create.mockResolvedValue({ id: 'group-1' });
+      prisma.externalListingGroup.update.mockResolvedValue({});
+
+      const result = await service.createManualListings('office-1', {
+        siteId: 'site-1',
+        transactionType: 'sale',
+        groups: [
+          {
+            representativeArticleNo: 'manual-1',
+            listings: [{ articleNo: 'manual-1', ho: '1503호' }],
+          },
+        ],
+      });
+
+      expect(result).toMatchObject({ created: 1, groupsCreated: 1 });
+      expect(prisma.$queryRaw).not.toHaveBeenCalled();
+      expect(prisma.externalListing.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          source: 'manual',
+          articleNo: 'manual-1',
+          groupId: 'group-1',
+        }),
+      });
+    });
+
+    it('rejects an inaccessible site', async () => {
+      const { prisma, service } = createService();
+      prisma.site.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.createManualListings('office-1', {
+          siteId: 'site-2',
+          transactionType: 'sale',
+          groups: [
+            {
+              representativeArticleNo: 'manual-1',
+              listings: [{ articleNo: 'manual-1' }],
+            },
+          ],
+        }),
+      ).rejects.toThrow('siteId not accessible');
+    });
+  });
+
+  describe('endManualListing', () => {
+    function setup(
+      current: { isActive: boolean; mainExternalListingId: string },
+      next: { id: string } | null = null,
+    ) {
+      const context = createService();
+      context.prisma.externalListing.findFirst
+        .mockResolvedValueOnce({
+          id: 'listing-1',
+          groupId: 'group-1',
+          source: 'manual',
+        })
+        .mockResolvedValueOnce({
+          isActive: current.isActive,
+          group: { mainExternalListingId: current.mainExternalListingId },
+        })
+        .mockResolvedValueOnce(next);
+      return context;
+    }
+
+    it('deactivates a manual listing of the office', async () => {
+      const { prisma, service } = setup({
+        isActive: true,
+        mainExternalListingId: 'listing-2',
+      });
+
+      await expect(
+        service.endManualListing('office-1', 'listing-1'),
+      ).resolves.toEqual({ id: 'listing-1', isActive: false });
+
+      expect(prisma.externalListing.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'listing-1', officeId: 'office-1' },
+        }),
+      );
+      expect(prisma.externalListing.update).toHaveBeenCalledWith({
+        where: { id: 'listing-1' },
+        data: { isActive: false },
+      });
+      expect(prisma.externalListingGroup.update).not.toHaveBeenCalled();
+    });
+
+    it('reads the listing state only after locking its group', async () => {
+      const { prisma, service } = setup({
+        isActive: true,
+        mainExternalListingId: 'listing-2',
+      });
+
+      await service.endManualListing('office-1', 'listing-1');
+
+      const [firstRead, stateRead] =
+        prisma.externalListing.findFirst.mock.invocationCallOrder;
+      const lock = prisma.$queryRaw.mock.invocationCallOrder[0];
+      expect(firstRead).toBeLessThan(lock);
+      expect(lock).toBeLessThan(stateRead);
+    });
+
+    it('moves the representative to a remaining active listing', async () => {
+      const { prisma, service } = setup(
+        { isActive: true, mainExternalListingId: 'listing-1' },
+        { id: 'listing-3' },
+      );
+
+      await service.endManualListing('office-1', 'listing-1');
+
+      expect(prisma.externalListingGroup.update).toHaveBeenCalledWith({
+        where: { id: 'group-1' },
+        data: { mainExternalListingId: 'listing-3' },
+      });
+    });
+
+    it('keeps the representative when no active listing remains', async () => {
+      const { prisma, service } = setup({
+        isActive: true,
+        mainExternalListingId: 'listing-1',
+      });
+
+      await service.endManualListing('office-1', 'listing-1');
+
+      expect(prisma.externalListingGroup.update).not.toHaveBeenCalled();
+    });
+
+    it('repeats safely once the listing is already ended', async () => {
+      const { prisma, service } = setup({
+        isActive: false,
+        mainExternalListingId: 'listing-1',
+      });
+
+      await expect(
+        service.endManualListing('office-1', 'listing-1'),
+      ).resolves.toEqual({ id: 'listing-1', isActive: false });
+      expect(prisma.externalListing.update).not.toHaveBeenCalled();
+    });
+
+    it('rejects a listing managed by snapshots', async () => {
+      const { prisma, service } = createService();
+      prisma.externalListing.findFirst.mockResolvedValue({
+        id: 'listing-1',
+        groupId: 'group-1',
+        source: 'agent',
+      });
+
+      await expect(
+        service.endManualListing('office-1', 'listing-1'),
+      ).rejects.toThrow('수동으로 입력한 광고만');
+      expect(prisma.externalListing.update).not.toHaveBeenCalled();
+    });
+
+    it('rejects a listing of another office', async () => {
+      const { prisma, service } = createService();
+      prisma.externalListing.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.endManualListing('office-1', 'other'),
+      ).rejects.toThrow('ExternalListing not found');
+    });
+  });
+
+  describe('findAllGroups snapshot buckets', () => {
+    function setup() {
+      const context = createService();
+      context.prisma.externalListingSnapshotSession.findFirst.mockResolvedValue({
+        startedAt: new Date('2026-11-03T00:00:00.000Z'),
+        transactionType: 'sale',
+      });
+      context.prisma.externalListingGroup.findMany.mockResolvedValue([]);
+      context.prisma.officeAdvertisement.findMany.mockResolvedValue([]);
+      return context;
+    }
+
+    it.each([
+      ['new', { some: expect.objectContaining({ isActive: true }) }],
+      [
+        'old',
+        {
+          none: expect.objectContaining({ isActive: true }),
+          some: { isActive: true },
+        },
+      ],
+    ] as const)('hides groups without an active listing: %s', async (bucket, listings) => {
+      const { prisma, service } = setup();
+
+      await service.findAllGroups('office-1', {
+        siteId: 'site-1',
+        transactionType: 'sale',
+        bucket,
+      });
+
+      expect(prisma.externalListingGroup.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ listings }),
+        }),
+      );
+    });
+  });
+
+  describe('completeSession', () => {
+    const startedAt = new Date('2026-11-03T00:00:00.000Z');
+    const previousCompletedAt = new Date('2026-11-02T00:00:00.000Z');
+    const earlier = new Date('2026-11-01T00:00:00.000Z');
+
+    function receivedListing(
+      articleNo: string,
+      groupId: string,
+      overrides: Record<string, unknown> = {},
+    ) {
+      return {
+        groupId,
+        articleNo,
+        firstSeenAt: earlier,
+        priceChangedAt: null,
+        price: 100000,
+        deposit: null,
+        monthlyRent: null,
+        previousPrice: null,
+        previousDeposit: null,
+        previousMonthlyRent: null,
+        group: {
+          firstSeenAt: earlier,
+          mainExternalListing: { articleNo },
+        },
+        ...overrides,
+      };
+    }
+
+    function setup(options: {
+      received: ReturnType<typeof receivedListing>[];
+      stale?: Array<{ id: string; groupId: string; articleNo: string }>;
+      stillActive?: Array<{ groupId: string }>;
+      hasPrevious?: boolean;
+    }) {
+      const context = createService();
+      const { prisma } = context;
+      prisma.externalListingSnapshotSession.findFirst
+        .mockResolvedValueOnce({
+          id: 'session-1',
+          siteId: 'site-1',
+          transactionType: 'sale',
+          startedAt,
+          startedById: 'user-1',
+        })
+        .mockResolvedValueOnce(
+          options.hasPrevious === false
+            ? null
+            : { completedAt: previousCompletedAt },
+        );
+      prisma.externalListing.findMany
+        .mockResolvedValueOnce(options.received)
+        .mockResolvedValueOnce(options.stale ?? [])
+        .mockResolvedValueOnce(options.stillActive ?? []);
+      prisma.externalListingSnapshotSession.update.mockImplementation(
+        async ({ data }: { data: unknown }) => data,
+      );
+      return context;
+    }
+
+    it('summarizes the differences from the previous completed snapshot', async () => {
+      const newAt = new Date('2026-11-03T00:05:00.000Z');
+      const { prisma, service } = setup({
+        received: [
+          receivedListing('new-1', 'group-new', {
+            firstSeenAt: newAt,
+            group: {
+              firstSeenAt: newAt,
+              mainExternalListing: { articleNo: 'new-1' },
+            },
+          }),
+          receivedListing('added-1', 'group-1', { firstSeenAt: newAt }),
+          receivedListing('changed-1', 'group-1', {
+            priceChangedAt: newAt,
+            previousPrice: 90000,
+          }),
+        ],
+        stale: [
+          { id: 'l1', groupId: 'group-1', articleNo: 'gone-1' },
+          { id: 'l2', groupId: 'group-2', articleNo: 'gone-2' },
+          { id: 'l3', groupId: 'group-2', articleNo: 'gone-3' },
+        ],
+        stillActive: [{ groupId: 'group-1' }],
+      });
+
+      const result = await service.completeSession(
+        'office-1',
+        'user-1',
+        'agent',
+        'session-1',
+        { expectedListingCount: 3 },
+      );
+
+      expect(prisma.externalListing.updateMany).toHaveBeenCalledWith({
+        where: { id: { in: ['l1', 'l2', 'l3'] } },
+        data: { isActive: false },
+      });
+      expect(result.staleListingsMarked).toBe(3);
+      expect(result.receivedListingCount).toBe(3);
+      expect(result.comparison).toEqual({
+        isBaseline: false,
+        newGroups: [
+          {
+            groupId: 'group-new',
+            representativeArticleNo: 'new-1',
+            articleNos: ['new-1'],
+          },
+        ],
+        addedListings: [{ groupId: 'group-1', articleNo: 'added-1' }],
+        removedGroups: [
+          { groupId: 'group-2', articleNos: ['gone-2', 'gone-3'] },
+        ],
+        removedListings: [{ groupId: 'group-1', articleNo: 'gone-1' }],
+        priceChanges: [
+          {
+            groupId: 'group-1',
+            articleNo: 'changed-1',
+            before: { price: 90000, deposit: null, monthlyRent: null },
+            after: { price: 100000, deposit: null, monthlyRent: null },
+          },
+        ],
+      });
+    });
+
+    it('reports a listing first seen in a cancelled attempt only as new', async () => {
+      const newAt = new Date('2026-11-02T12:00:00.000Z');
+      const { service } = setup({
+        received: [
+          receivedListing('101', 'group-1', {
+            firstSeenAt: newAt,
+            priceChangedAt: newAt,
+            previousPrice: 90000,
+          }),
+        ],
+      });
+
+      const result = await service.completeSession(
+        'office-1',
+        'user-1',
+        'agent',
+        'session-1',
+      );
+
+      expect(result.comparison.addedListings).toEqual([
+        { groupId: 'group-1', articleNo: '101' },
+      ]);
+      expect(result.comparison.priceChanges).toEqual([]);
+    });
+
+    it('leaves manual listings out of the count and deactivation', async () => {
+      const { prisma, service } = setup({
+        received: [receivedListing('101', 'group-1')],
+      });
+
+      await service.completeSession('office-1', 'user-1', 'agent', 'session-1');
+
+      const [receivedQuery, staleQuery] = prisma.externalListing.findMany.mock.calls;
+      expect(receivedQuery[0].where.source).toEqual({ not: 'manual' });
+      expect(staleQuery[0].where.source).toEqual({ not: 'manual' });
+    });
+
+    it('marks the first snapshot of a scope as the baseline', async () => {
+      const { service } = setup({
+        received: [receivedListing('101', 'group-1')],
+        hasPrevious: false,
+      });
+
+      const result = await service.completeSession(
+        'office-1',
+        'user-1',
+        'agent',
+        'session-1',
+      );
+
+      expect(result.comparison.isBaseline).toBe(true);
+      expect(result.comparison.newGroups).toHaveLength(1);
+    });
+
+    it('keeps the snapshot open when the declared count differs', async () => {
+      const { prisma, service } = setup({
+        received: [receivedListing('101', 'group-1')],
+      });
+
+      await expect(
+        service.completeSession('office-1', 'user-1', 'agent', 'session-1', {
+          expectedListingCount: 2,
+        }),
+      ).rejects.toThrow('선언 2건, 실제 1건');
+
+      expect(prisma.externalListing.updateMany).not.toHaveBeenCalled();
+      expect(prisma.externalListingSnapshotSession.update).not.toHaveBeenCalled();
+    });
+
+    it('refuses to deactivate everything when nothing was entered', async () => {
+      const { prisma, service } = setup({ received: [] });
+
+      await expect(
+        service.completeSession('office-1', 'user-1', 'agent', 'session-1'),
+      ).rejects.toThrow('입력된 광고가 없는');
+
+      expect(prisma.externalListing.updateMany).not.toHaveBeenCalled();
+    });
   });
 });

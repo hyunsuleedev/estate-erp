@@ -361,6 +361,8 @@ export function UnitConsultDialog({
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['sites', site.id] });
       queryClient.invalidateQueries({ queryKey: ['properties'] });
+      // 관리단지 사이드바의 단지별 관리호수 수(office-sites 집계)도 함께 갱신
+      queryClient.invalidateQueries({ queryKey: ['office-sites'] });
       toast.success('관리호수로 등록했습니다');
     },
     onError: (error) => {

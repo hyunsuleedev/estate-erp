@@ -199,7 +199,7 @@ export function LedgerMatchPanel({
       await memoMutation.mutateAsync({ match, memo });
     },
     onRequestDelete: setDeleteMatchId,
-    onOpenDetail: (id) => navigate({ to: "/matches", search: { matchId: id } }),
+    onOpenDetail: (id) => navigate({ to: "/wanted-properties", search: { matchId: id } }),
     onScheduleViewing: (match, startLocalValue) =>
       viewingScheduleMutation.mutate({ match, startLocalValue }),
   };

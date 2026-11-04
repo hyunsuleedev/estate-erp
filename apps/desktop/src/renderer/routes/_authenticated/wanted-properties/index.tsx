@@ -23,21 +23,30 @@ import {
   toCalendarEventUpdatePayload,
   type MatchRowActions,
 } from './-match-view-utils';
-import { BuyerMatchGroup, StageMatchView } from './-match-groups';
+import {
+  BUYER_TABLE_MIN_WIDTH_CLASS,
+  BuyerMatchGroup,
+  BuyerMatchTableHeader,
+  StageMatchView,
+} from './-match-groups';
 import { MatchDetailDialog } from './-match-detail-dialog';
 import { MatchCreateDialog } from './-match-create-dialog';
 import { MatchConvertDialog } from './-match-convert-dialog';
-import { api } from '@/lib/api';
-import { getStatusMeta } from '@/lib/status-config';
 import {
-  ConfirmDialog,
-  EmptyState,
-  FilterSearch,
-  FilterSelect,
-} from '@/components/domain';
+  ChecklistFilterPanel,
+  summarizeSelection,
+  toolbarGhostButtonClassName,
+  ToolbarFilterChip,
+  ToolbarPillSearch,
+  ToolbarPillTabs,
+  ToolbarPillToggle,
+} from '../properties/-components/property-toolbar';
+import { api } from '@/lib/api';
+import { cn } from '@/lib/utils';
+import { getStatusMeta } from '@/lib/status-config';
+import { ConfirmDialog, EmptyState } from '@/components/domain';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
-import { MultiSelect } from '@/components/ui/multi-select';
 import { Skeleton } from '@/components/ui/skeleton';
 
 type MatchViewMode = 'buyer' | 'stage';
@@ -48,19 +57,27 @@ interface BuyerMatchGroupData {
   matches: Match[];
 }
 
-const TRANSACTION_TYPE_OPTIONS = ['sale', 'jeonse', 'monthly'].map((value) => ({
-  value,
-  label: getStatusMeta('transactionType', value).label,
+const TRANSACTION_TYPE_TABS = [
+  { value: '', label: '전체' },
+  ...['sale', 'jeonse', 'monthly'].map((value) => ({
+    value,
+    label: getStatusMeta('transactionType', value).label,
+  })),
+];
+
+const MATCH_STAGE_OPTIONS = matchStageOrder.map((stage) => ({
+  value: stage as string,
+  label: getMatchStageLabel(stage),
 }));
 
-export const Route = createFileRoute('/_authenticated/matches/')({
+export const Route = createFileRoute('/_authenticated/wanted-properties/')({
   validateSearch: (search: Record<string, unknown>): { matchId?: string } => ({
     matchId: typeof search.matchId === 'string' ? search.matchId : undefined,
   }),
-  component: MatchesPage,
+  component: WantedPropertiesPage,
 });
 
-function MatchesPage() {
+function WantedPropertiesPage() {
   const queryClient = useQueryClient();
   const navigate = useNavigate({ from: Route.fullPath });
   const { matchId: deepLinkMatchId } = Route.useSearch();
@@ -395,6 +412,14 @@ function MatchesPage() {
     });
   };
 
+  // 고객별 목록은 매물관리처럼 여백 없는 표로 그린다. 로딩·오류·빈 화면은 기존 여백을 쓴다.
+  const showBuyerTable =
+    viewMode === 'buyer' &&
+    !isLoading &&
+    !isError &&
+    filteredMatches.length > 0 &&
+    groupedBuyerMatches.length > 0;
+
   const hasActiveFilters =
     searchQuery.trim().length > 0 ||
     stageFilters.length > 0 ||
@@ -411,94 +436,82 @@ function MatchesPage() {
       data-matches-page
       className="-m-4 flex min-h-0 min-w-0 flex-1 flex-col bg-background"
     >
+      {/* 매물관리 1행 툴바와 같은 구성: 거래유형 탭 · 검색 · 보기 전환 · 등록 */}
       <section
         aria-label="매칭 보기 및 필터"
-        className="shrink-0 border-b border-border bg-background"
+        className="shrink-0 border-b border-border bg-white px-3 py-2.5"
       >
-        <div className="flex flex-wrap items-center gap-2 bg-muted/30 px-3 py-2">
-          <div ref={searchWrapRef}>
-            <FilterSearch
+        <div className="flex min-w-0 items-center gap-2">
+          <ToolbarPillTabs
+            ariaLabel="거래유형"
+            value={transactionTypeFilter}
+            options={TRANSACTION_TYPE_TABS}
+            onChange={setTransactionTypeFilter}
+          />
+
+          <div ref={searchWrapRef} className="flex min-w-[200px] max-w-[520px] flex-1">
+            <ToolbarPillSearch
               value={searchQuery}
               onChange={setSearchQuery}
               placeholder="고객, 연락처, 매물, 주소 검색"
-              className="w-72 max-w-full"
+              ariaLabel="희망매물 검색"
             />
           </div>
 
-          <MultiSelect
-            options={matchStageOrder.map((stage) => ({
-              value: stage,
-              label: getMatchStageLabel(stage),
-            }))}
-            selected={stageFilters}
-            onChange={setStageFilters}
-            ariaLabel="매칭 단계 필터"
-            placeholder="단계"
-            className="h-8 max-w-80 shadow-none"
-            maxCount={3}
-          />
-
-          <FilterSelect
-            label="거래유형"
-            value={transactionTypeFilter}
-            onChange={setTransactionTypeFilter}
-            options={TRANSACTION_TYPE_OPTIONS}
-            className="h-8 shadow-none"
-          />
+          <ToolbarFilterChip
+            label="단계"
+            summary={summarizeSelection(MATCH_STAGE_OPTIONS, stageFilters)}
+            onClear={() => setStageFilters([])}
+            contentClassName="w-[180px] p-0"
+          >
+            <ChecklistFilterPanel
+              options={MATCH_STAGE_OPTIONS}
+              selected={stageFilters}
+              onChange={setStageFilters}
+              searchable={false}
+            />
+          </ToolbarFilterChip>
 
           {hasActiveFilters && (
-            <Button
+            <button
               type="button"
-              variant="ghost"
-              size="sm"
-              className="h-8 text-xs text-muted-foreground"
+              className={toolbarGhostButtonClassName}
               onClick={resetFilters}
             >
               <RotateCcw className="size-3.5" />
               초기화
-            </Button>
+            </button>
           )}
 
-          <p className="ml-auto text-xs text-muted-foreground tabular-nums">
-            {filteredMatches.length.toLocaleString()}건
-          </p>
-
-          <div className="flex items-center gap-1 rounded-md border bg-background p-1">
+          <div className="ml-auto flex shrink-0 items-center gap-2">
+            <ToolbarPillToggle
+              ariaLabel="희망매물 보기 방식"
+              value={viewMode}
+              onChange={setViewMode}
+              options={[
+                { value: 'buyer', label: '고객별', icon: <GitBranch /> },
+                { value: 'stage', label: '단계별', icon: <ListOrdered /> },
+              ]}
+            />
             <Button
-              variant={viewMode === 'buyer' ? 'secondary' : 'ghost'}
+              type="button"
               size="sm"
-              onClick={() => setViewMode('buyer')}
-              className="gap-1.5 text-xs"
-              title="단축키 1"
+              className="h-[30px] shrink-0 rounded-full px-3.5"
+              onClick={() => setCreateOpen(true)}
             >
-              <GitBranch className="size-3.5" />
-              고객별
-            </Button>
-            <Button
-              variant={viewMode === 'stage' ? 'secondary' : 'ghost'}
-              size="sm"
-              onClick={() => setViewMode('stage')}
-              className="gap-1.5 text-xs"
-              title="단축키 2"
-            >
-              <ListOrdered className="size-3.5" />
-              단계별
+              <Plus className="size-3.5" />
+              매칭 생성
             </Button>
           </div>
-
-          <Button
-            type="button"
-            size="sm"
-            className="h-8"
-            onClick={() => setCreateOpen(true)}
-          >
-            <Plus className="size-4" />
-            매칭 생성
-          </Button>
         </div>
       </section>
 
-      <main className="min-h-0 min-w-0 flex-1 overflow-auto bg-muted/20 p-3">
+      <main
+        className={cn(
+          'min-h-0 min-w-0 flex-1 overflow-auto',
+          showBuyerTable ? 'bg-white' : 'bg-muted/20 p-3',
+        )}
+      >
         {isLoading ? (
           <div className="space-y-2">
             {Array.from({ length: 5 }).map((_, index) => (
@@ -537,16 +550,33 @@ function MatchesPage() {
             message="현재 검색과 필터에 맞는 매칭이 없습니다."
             onReset={resetFilters}
           />
+        ) : showBuyerTable ? (
+          <div data-buyer-match-table className={BUYER_TABLE_MIN_WIDTH_CLASS}>
+            <BuyerMatchTableHeader
+              checked={visibleSelectionState}
+              onToggleAll={(selected) =>
+                updateItemSelection(visibleItemIds, selected)
+              }
+            />
+            {groupedBuyerMatches.map((group) => (
+              <BuyerMatchGroup
+                key={group.buyerReqId}
+                buyerRequirement={group.buyerRequirement}
+                matches={group.matches}
+                actions={actions}
+                selected={selectedItemIds.has(group.buyerReqId)}
+                onSelectedChange={(selected) =>
+                  updateItemSelection([group.buyerReqId], selected)
+                }
+              />
+            ))}
+          </div>
         ) : (
           <div className="min-h-0">
             <MatchListStickyHeader
               checked={visibleSelectionState}
               selectedCount={selectedVisibleItemCount}
-              summary={
-                viewMode === 'buyer'
-                  ? `고객 ${groupedBuyerMatches.length.toLocaleString()}명 · 매칭 ${filteredMatches.length.toLocaleString()}건`
-                  : `매칭 ${filteredMatches.length.toLocaleString()}건`
-              }
+              summary={`매칭 ${filteredMatches.length.toLocaleString()}건`}
               onToggleAll={(selected) =>
                 updateItemSelection(visibleItemIds, selected)
               }
@@ -554,24 +584,7 @@ function MatchesPage() {
             />
 
             {viewMode === 'buyer' && (
-              <div className="space-y-2">
-                {groupedBuyerMatches.length === 0 ? (
-                  <ViewEmpty message="고객별로 묶어 보여줄 매칭이 없습니다." />
-                ) : (
-                  groupedBuyerMatches.map((group) => (
-                    <BuyerMatchGroup
-                      key={group.buyerReqId}
-                      buyerRequirement={group.buyerRequirement}
-                      matches={group.matches}
-                      actions={actions}
-                      selected={selectedItemIds.has(group.buyerReqId)}
-                      onSelectedChange={(selected) =>
-                        updateItemSelection([group.buyerReqId], selected)
-                      }
-                    />
-                  ))
-                )}
-              </div>
+              <ViewEmpty message="고객별로 묶어 보여줄 매칭이 없습니다." />
             )}
 
             {viewMode === 'stage' && (
@@ -585,6 +598,31 @@ function MatchesPage() {
           </div>
         )}
       </main>
+
+      {/* 매물관리 표의 하단 줄과 같다: 선택 작업 줄 + 건수 상태줄 */}
+      {showBuyerTable && selectedVisibleItemCount > 0 && (
+        <div className="flex min-h-9 shrink-0 items-center gap-2 border-t border-border bg-white px-3 py-1.5 text-xs">
+          <span className="font-medium text-foreground">
+            고객 {selectedVisibleItemCount.toLocaleString()}명 선택
+          </span>
+          <button
+            type="button"
+            className="ml-auto text-[11px] text-muted-foreground underline-offset-2 hover:underline"
+            onClick={() => setSelectedItemIds(new Set())}
+          >
+            선택 해제
+          </button>
+        </div>
+      )}
+      {showBuyerTable && (
+        <div
+          data-buyer-table-status
+          className="flex min-h-7 shrink-0 items-center gap-2 border-t border-border bg-[#faf9f6] px-3 text-[11px] text-muted-foreground tabular-nums"
+        >
+          고객 {groupedBuyerMatches.length.toLocaleString()}명 · 매칭{' '}
+          {filteredMatches.length.toLocaleString()}건
+        </div>
+      )}
 
       <MatchDetailDialog
         match={selectedMatch}

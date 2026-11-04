@@ -17,7 +17,7 @@ import {
   X,
   type LucideIcon,
 } from 'lucide-react';
-import type { CreateTaskDto, Employee, Task, UpdateTaskDto } from '@estate-erp/api-client';
+import type { CreateTaskDto, Employee, Task, TaskContact, UpdateTaskDto } from '@estate-erp/api-client';
 import { api } from '@/lib/api';
 import { formatPhone } from '@/lib/format';
 import { getIntakeConfirmationState } from '@/lib/listing-status';
@@ -246,6 +246,7 @@ export function TaskFormModal({
   onClose,
   task,
   presetStatus,
+  presetCategory,
   employeeOptions,
   onSubmit,
   isLoading,
@@ -256,8 +257,11 @@ export function TaskFormModal({
   task: Task | null;
   /** 칸반 컬럼에서 추가 시 status 프리셋 (생성 모드 전용) */
   presetStatus?: string | null;
+  /** 작업별 그룹에서 추가 시 카테고리 프리셋 (생성 모드 전용) */
+  presetCategory?: string | null;
   employeeOptions: Employee[];
-  onSubmit: (data: CreateTaskDto | UpdateTaskDto) => void;
+  /** meta.contact: 새로 연결한 연락처 (화면 즉시 반영용) */
+  onSubmit: (data: CreateTaskDto | UpdateTaskDto, meta?: { contact?: TaskContact | null }) => void;
   isLoading: boolean;
 }) {
   const [title, setTitle] = useState('');
@@ -275,13 +279,13 @@ export function TaskFormModal({
     if (!isOpen) return;
     setTitle(task?.title ?? '');
     setContent(task?.content ?? '');
-    setCategory(task?.category ?? 'other');
+    setCategory(task?.category ?? presetCategory ?? 'other');
     setPriority(task?.priority ?? 'medium');
     setDueDate(task?.dueDate ? task.dueDate.substring(0, 10) : '');
     setAssignedToId(task?.assignedToId ?? ASSIGNEE_UNASSIGNED);
     setUnlinked(new Set());
     setContactLink(undefined);
-  }, [task, isOpen]);
+  }, [task, isOpen, presetCategory]);
 
   const contexts = task ? buildModalContexts(task).filter((c) => !unlinked.has(c.key)) : [];
   const effectiveContact: ContactLink | null =
@@ -303,7 +307,7 @@ export function TaskFormModal({
       };
       for (const key of unlinked) dto[key] = null;
       if (contactLink !== undefined) dto.contactId = contactLink ? contactLink.id : null;
-      onSubmit(dto);
+      onSubmit(dto, contactLink !== undefined ? { contact: contactLink } : undefined);
     } else {
       const dto: CreateTaskDto = {
         title: title.trim(),
@@ -408,7 +412,7 @@ export function TaskFormModal({
                     {Object.entries(categoryConfig).map(([key, { label, icon }]) => (
                       <SelectItem key={key} value={key}>
                         <span className="flex items-center gap-2">
-                          {icon}
+                          <span className="flex text-muted-foreground [&_svg]:size-3.5">{icon}</span>
                           {label}
                         </span>
                       </SelectItem>
@@ -423,9 +427,12 @@ export function TaskFormModal({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {Object.entries(priorityConfig).map(([key, { label }]) => (
+                    {Object.entries(priorityConfig).map(([key, { label, icon }]) => (
                       <SelectItem key={key} value={key}>
-                        {label}
+                        <span className="flex items-center gap-2">
+                          {icon}
+                          {label}
+                        </span>
                       </SelectItem>
                     ))}
                   </SelectContent>

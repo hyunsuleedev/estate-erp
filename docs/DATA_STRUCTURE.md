@@ -121,6 +121,7 @@ officeId = UUID, isPublic = false  →  사무소가 등록한 비공개 단지 
 ```
 
 - 가시성 쿼리: `WHERE is_public = true OR office_id = ?`
+- 사무소가 직접 등록한 단지는 절대 공개되지 않는다. `POST /office-sites/private-sites`는 공개 여부를 입력받지 않고 항상 `isPublic = false`로 저장하며, DB도 CHECK 제약 `sites_office_owned_never_public`으로 사무소 소유 단지의 공개를 막는다.
 - 공공데이터는 `isLocked = true`로 수정/삭제 보호
 - 공공데이터 소스: 국토부 공공데이터, 네이버 부동산 (Phase 3)
 - `OfficeSite`로 관리단지 구독 (공공이든 내가 만든 거든 통합 관리)
@@ -940,10 +941,10 @@ draft → signed → depositPaid → balancePaid → registered → cancelled
 1. **사무소별 귀속**: 모든 외부 매물은 `officeId` NOT NULL. 다른 사무소와 공유하지 않음 (법적 책임 격리).
 2. **2단 구조**: `ExternalListingGroup`(동일주소 그룹) → `ExternalListing`(개별 매물). electron-estate의 `HouseProperty` / `Offer`에 1:1 대응.
 3. **기억 보존**: 사용자가 확인한 `ho`, `memo`는 Group에 저장되며 **크롤러가 절대 덮어쓰지 않는다**.
-4. **매칭 규칙** (electron-estate 방식):
-   - 새 `articleNo`가 DB에 있으면 기존 그룹 재사용
-   - 없으면 네이버 `sameAddr` 그룹 내 다른 `articleNo` 중 DB에 있는 것 찾아 그룹 병합
-   - 둘 다 없으면 새 그룹 생성
+4. **매칭 규칙**: 입력은 동일 매물의 광고 묶음 단위이며 대표(`representativeArticleNo`)는 항상 지정한다.
+   - 묶음의 `articleNo`가 기존 데이터와 하나라도 겹치면 그 그룹에 합류하고, 대표는 새 묶음의 대표로 바꾼다
+   - 겹치지 않으면 새 그룹을 만든다
+   - 재광고는 항상 새 번호를 받고 동일 매물은 항상 한 묶음이므로, 같은 번호가 두 묶음에 있거나 묶음과 기존 그룹이 1:1이 아닌 입력은 오류로 거부한다
 5. **호수는 텍스트**: 호수는 내부 Unit과 연결하지 않고 사용자가 `ho`에 일반 문자열로 기록한다.
 6. **ActivityLog 추적 대상 아님**: 매일 크롤러 upsert가 감사 로그를 오염시키지 않도록 분리.
 
@@ -980,7 +981,7 @@ draft → signed → depositPaid → balancePaid → registered → cancelled
 | cpName                          | String?  | 등록 채널명 (네이버/직방/부동산114)      |
 | cpid                            | String?  | 채널 ID                                  |
 | cpPcArticleUrl                  | String?  | PC 상세 URL                              |
-| representativeArticleNo         | String?  | 네이버 sameAddr 대표 articleNo (매칭 키) |
+| representativeArticleNo         | String?  | 입력 당시 묶음의 대표 articleNo          |
 | sameAddrCnt                     | Int?     | 같은 주소 매물 수                        |
 | sameAddrDirectCnt               | Int?     | 같은 주소 직접거래 수                    |
 | sameAddrMaxPrc / sameAddrMinPrc | String?  | 같은 주소 최고/최저가                    |
@@ -1002,7 +1003,6 @@ draft → signed → depositPaid → balancePaid → registered → cancelled
 | realtorName                     | String?  | 등록 중개사명                            |
 | originalRealtorName             | String?  | 원 등록 중개사명                         |
 | representativeTelNo             | String?  | 대표 번호                                |
-| cellPhoneNo                     | String?  | 휴대폰                                   |
 | ranking                         | Int?     | 노출 순위                                |
 | isSharedRank                    | Boolean  | 공유 순위 여부                           |
 | sharedRank                      | Int?     | 공유 순위                                |
@@ -1012,84 +1012,34 @@ draft → signed → depositPaid → balancePaid → registered → cancelled
 | exposeStartYmd / exposeEndYmd   | Int?     | 노출 기간                                |
 | priceChangeState                | String?  | 가격 변동 상태                           |
 | isPriceModification             | Boolean  | 가격 수정 여부                           |
-| raw                             | JSONB?   | 원본 응답 전체 보존                      |
+| previousPrice / Deposit / MonthlyRent | Int? | 직전 완료 스냅샷의 가격 (만원)      |
+| priceChangedAt                  | DateTime? | 마지막 가격 변경 시각                   |
 | firstSeenAt / lastSeenAt        | DateTime | 관측 메타                                |
 | isActive                        | Boolean  | 최근 크롤링에서 살아있는지               |
 
 > **unique**: `[officeId, source, articleNo]` — 같은 사무소가 같은 플랫폼의 같은 매물을 중복 등록 못 함.
-> **매칭 키로 쓰이는 컬럼**: `articleNo`, `representativeArticleNo`. 새 매물을 upsert할 때 이 두 값으로 기존 그룹을 찾음.
+> **매칭 키로 쓰이는 컬럼**: `articleNo`. 묶음의 번호가 하나라도 겹치면 같은 그룹이다.
 
-### Upsert 로직 (의사 코드)
+### 스냅샷 입력 흐름
 
-```typescript
-async function upsertExternalListing(officeId, naverArticle, sameAddrSiblings) {
-  // 1. 같은 articleNo가 있나?
-  let existing = await db.externalListing.findUnique({
-    where: {
-      officeId_source_articleNo: {
-        officeId,
-        source: "naver",
-        articleNo: naverArticle.articleNo,
-      },
-    },
-    include: { group: true },
-  });
-  let group = existing?.group;
-
-  // 2. 없으면 sameAddr 그룹의 다른 형제 매물이 DB에 있는지 확인
-  if (!group) {
-    for (const sibling of sameAddrSiblings) {
-      const siblingExisting = await db.externalListing.findUnique({
-        where: {
-          officeId_source_articleNo: {
-            officeId,
-            source: "naver",
-            articleNo: sibling.articleNo,
-          },
-        },
-        include: { group: true },
-      });
-      if (siblingExisting?.group) {
-        group = siblingExisting.group;
-        break;
-      }
-    }
-  }
-
-  // 3. 그래도 없으면 새 그룹 생성
-  if (!group) {
-    group = await db.externalListingGroup.create({
-      data: {
-        officeId,
-        siteId: resolvedSiteId,
-        buildingName: naverArticle.buildingName,
-        areaName: naverArticle.areaName,
-        exclusiveAreaM2: naverArticle.area2,
-        transactionType: mapTradeType(naverArticle.tradeTypeCode),
-      },
-    });
-  }
-
-  // 4. Listing upsert (group의 ho·memo는 절대 건드리지 않음)
-  await db.externalListing.upsert({
-    where: {
-      officeId_source_articleNo: {
-        officeId,
-        source: "naver",
-        articleNo: naverArticle.articleNo,
-      },
-    },
-    create: { groupId: group.id, officeId, ...fieldsFromArticle },
-    update: { price, ranking, lastSeenAt, ...updatableFields },
-  });
-
-  // 5. Group의 lastSeenAt만 갱신
-  await db.externalListingGroup.update({
-    where: { id: group.id },
-    data: { lastSeenAt: new Date() },
-  });
-}
 ```
+create_external_listing_snapshot_session   단지+거래유형 단위로 스냅샷을 연다
+batch_upsert_external_listings             sessionId + 묶음 목록 입력 (요청당 최대 100건, 전부 저장 또는 전부 거부)
+complete_external_listing_snapshot_session expectedListingCount를 확인하고 닫으며 비교 결과를 돌려준다
+cancel_external_listing_snapshot_session   중단 시 취소. 입력되지 않은 기존 광고를 비활성화하지 않는다
+```
+
+닫기 결과의 `comparison`은 직전 완료 스냅샷과 비교한 값이다.
+
+| 필드 | 의미 |
+|---|---|
+| newGroups | 겹치는 번호가 없던 신규 매물 |
+| addedListings | 기존 매물에 추가된 광고 |
+| removedGroups | 광고가 모두 사라진 매물 |
+| removedListings | 매물은 남아 있고 내려간 광고 |
+| priceChanges | 가격이 바뀐 광고 (직전 값 포함) |
+
+같은 스냅샷의 입력·닫기·취소는 세션 행 잠금으로 순서대로 처리한다. 선언한 건수와 실제 입력 건수가 다르면 닫기를 거부한다. 일부만 입력하고 닫으면 나머지가 사라진 매물로 처리되기 때문이다. 수동 입력(`POST /external-listings/manual`, source `manual`)은 광고 한 건을 자기 자신이 대표인 묶음으로 보내고 스냅샷을 열지 않는다. 수동 입력 광고는 스냅샷 건수 확인과 비활성 처리에서 제외하고, 사용자가 `POST /external-listings/listings/:id/end`로 직접 내린다. 같은 번호를 다시 입력하면 활성 상태로 돌아온다.
 
 ---
 

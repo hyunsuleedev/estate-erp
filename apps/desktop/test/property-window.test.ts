@@ -25,8 +25,15 @@ describe('property full-page window', () => {
     assert.match(handler, /if \(!result\.ok\)/);
     assert.match(handler, /onClose\(\)/);
     assert.doesNotMatch(handler, /openOrRevealResource|createTab/);
-    assert.match(pageSource, /disabled=\{isOpeningFullPage\}/);
-    assert.match(pageSource, /aria-label="전체 페이지를 새 창으로 열기"/);
+    const inspectorViewSource = source(
+      '../src/renderer/routes/_authenticated/properties/-components/property-inspector-view.tsx',
+    );
+    assert.match(pageSource, /isOpeningFullPage=\{isOpeningFullPage\}/);
+    assert.match(inspectorViewSource, /disabled=\{isOpeningFullPage\}/);
+    assert.match(
+      inspectorViewSource,
+      /aria-label="전체 페이지를 새 창으로 열기"/,
+    );
   });
 
   it('bootstraps an independent sidebarless window without transfer ownership', () => {

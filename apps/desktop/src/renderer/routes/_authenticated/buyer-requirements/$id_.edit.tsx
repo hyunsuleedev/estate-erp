@@ -76,7 +76,7 @@ function EditBuyerRequirementPage() {
   };
   const handleBackToList = () => {
     if (ownerTabIdRef.current) clearTabFormDraft(ownerTabIdRef.current);
-    navigate({ to: '/customers' });
+    navigate({ to: '/customers-table' });
   };
 
   if (isLoading) {

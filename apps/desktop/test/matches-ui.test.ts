@@ -1,18 +1,18 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { describe, it } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 const testDir = dirname(fileURLToPath(import.meta.url));
 const matchesPageSource = readFileSync(
-  resolve(testDir, '../src/renderer/routes/_authenticated/matches/index.tsx'),
+  resolve(testDir, '../src/renderer/routes/_authenticated/wanted-properties/index.tsx'),
   'utf8',
 );
 const matchDetailSource = readFileSync(
   resolve(
     testDir,
-    '../src/renderer/routes/_authenticated/matches/-match-detail-dialog.tsx',
+    '../src/renderer/routes/_authenticated/wanted-properties/-match-detail-dialog.tsx',
   ),
   'utf8',
 );
@@ -23,21 +23,21 @@ const propertiesPageSource = readFileSync(
 const matchGroupsSource = readFileSync(
   resolve(
     testDir,
-    '../src/renderer/routes/_authenticated/matches/-match-groups.tsx',
+    '../src/renderer/routes/_authenticated/wanted-properties/-match-groups.tsx',
   ),
   'utf8',
 );
 const matchBoardSource = readFileSync(
   resolve(
     testDir,
-    '../src/renderer/routes/_authenticated/matches/-match-board.tsx',
+    '../src/renderer/routes/_authenticated/wanted-properties/-match-board.tsx',
   ),
   'utf8',
 );
 const matchViewUtilsSource = readFileSync(
   resolve(
     testDir,
-    '../src/renderer/routes/_authenticated/matches/-match-view-utils.ts',
+    '../src/renderer/routes/_authenticated/wanted-properties/-match-view-utils.ts',
   ),
   'utf8',
 );
@@ -45,6 +45,29 @@ const statusConfigSource = readFileSync(
   resolve(testDir, '../src/renderer/lib/status-config.ts'),
   'utf8',
 );
+
+describe('wanted properties page identity', () => {
+  it('is named 희망매물 at /wanted-properties and keeps no legacy /matches route', () => {
+    const rendererDir = resolve(testDir, '../src/renderer');
+    assert.match(
+      matchesPageSource,
+      /createFileRoute\('\/_authenticated\/wanted-properties\/'\)/,
+    );
+    assert.match(
+      readFileSync(resolve(rendererDir, 'components/layout/nav-config.ts'), 'utf8'),
+      /path: "\/wanted-properties", label: "희망매물"/,
+    );
+    assert.match(
+      readFileSync(resolve(rendererDir, 'features/tabs/lib/routeMeta.ts'), 'utf8'),
+      /"\/wanted-properties": \{ title: "희망매물"/,
+    );
+    assert.equal(existsSync(resolve(rendererDir, 'routes/_authenticated/matches')), false);
+    assert.doesNotMatch(
+      readFileSync(resolve(rendererDir, 'routeTree.gen.ts'), 'utf8'),
+      /_authenticated\/matches/,
+    );
+  });
+});
 
 describe('desktop matches workbench', () => {
   it('uses a compact full-bleed workspace without redundant header summaries', () => {
@@ -59,16 +82,9 @@ describe('desktop matches workbench', () => {
   });
 
   it('keeps only customer and stage views beside the desktop filters', () => {
-    assert.match(
-      matchesPageSource,
-      /variant=\{viewMode === 'buyer' \? 'secondary' : 'ghost'\}/,
-    );
-    assert.match(
-      matchesPageSource,
-      /variant=\{viewMode === 'stage' \? 'secondary' : 'ghost'\}/,
-    );
-    assert.match(matchesPageSource, />\s*고객별\s*<\/Button>/);
-    assert.match(matchesPageSource, />\s*단계별\s*<\/Button>/);
+    assert.match(matchesPageSource, /<ToolbarPillToggle/);
+    assert.match(matchesPageSource, /value: 'buyer', label: '고객별'/);
+    assert.match(matchesPageSource, /value: 'stage', label: '단계별'/);
     assert.doesNotMatch(matchesPageSource, /viewMode === 'property'/);
     assert.doesNotMatch(matchesPageSource, /viewMode === 'list'/);
     assert.doesNotMatch(matchesPageSource, />\s*매물별\s*<\/Button>/);
@@ -114,12 +130,10 @@ describe('desktop matches workbench', () => {
     assert.match(matchGroupsSource, /data-buyer-summary-row/);
     assert.match(matchGroupsSource, /data-buyer-requirement-summary/);
     assert.match(matchGroupsSource, /data-buyer-requirement-details/);
-    assert.match(matchGroupsSource, /xl:flex-nowrap/);
     assert.doesNotMatch(matchGroupsSource, /md:grid-cols-3/);
-    assert.doesNotMatch(matchGroupsSource, /label="희망 지역"/);
     assert.match(
       matchGroupsSource,
-      />희망 지역<\/dt>[\s\S]*expanded && buyerRequirement\.memo[\s\S]*>고객 메모<\/dt>/,
+      /label="희망 지역"[\s\S]*expanded && buyerRequirement\.memo[\s\S]*>고객 메모<\/dt>/,
     );
     assert.match(matchGroupsSource, /label="매물 유형"/);
     assert.match(matchGroupsSource, /label="희망 평형"/);
@@ -140,13 +154,50 @@ describe('desktop matches workbench', () => {
     assert.match(matchGroupsSource, /formatPhone\(rawBuyerPhone\)/);
     assert.match(
       matchGroupsSource,
-      /className="w-20 shrink-0 truncate text-\[13px\] font-semibold"/,
+      /className="min-w-0 truncate text-\[13px\] font-semibold"/,
     );
+  });
+
+  it('shares the property page header on the buyer view', () => {
+    // 툴바: 매물관리 부품을 그대로 쓰고, 건수는 툴바에 다시 보여주지 않는다
+    for (const part of [
+      'ToolbarPillTabs',
+      'ToolbarPillSearch',
+      'ToolbarFilterChip',
+      'ToolbarPillToggle',
+    ]) {
+      assert.match(matchesPageSource, new RegExp(`<${part}`));
+    }
+    assert.match(matchesPageSource, /\.\.\/properties\/-components\/property-toolbar/);
+    assert.doesNotMatch(matchesPageSource, /FilterSearch|FilterSelect|MultiSelect/);
+    assert.doesNotMatch(
+      matchesPageSource,
+      /\{filteredMatches\.length\.toLocaleString\(\)\}건\s*<\/p>/,
+    );
+
+    // 표: 맨 위 헤더가 칸 이름을 맡고, 헤더와 고객 행이 같은 칸 너비를 쓴다
+    assert.match(matchesPageSource, /<BuyerMatchTableHeader/);
+    assert.match(
+      matchGroupsSource,
+      /BUYER_TABLE_COLUMNS,\s*'sticky top-0 z-20 h-9 border-b border-border bg-\[#f7f7f5\]'/,
+    );
+    assert.match(
+      matchGroupsSource,
+      /data-buyer-summary-row\s*className=\{cn\(BUYER_TABLE_COLUMNS, 'min-h-10'\)\}/,
+    );
+    for (const label of ['고객', '연락처', '매물 유형', '희망 평형', '예산', '희망 지역', '매칭']) {
+      assert.match(matchGroupsSource, new RegExp(`\\{ label: '${label}', icon:`));
+    }
+    assert.match(matchGroupsSource, /<dt className="sr-only">\{label\}<\/dt>/);
+
+    // 하단: 건수·선택은 매물관리 표처럼 아래 줄에 둔다
+    assert.match(matchesPageSource, /data-buyer-table-status/);
+    assert.match(matchesPageSource, /고객 \{selectedVisibleItemCount\.toLocaleString\(\)\}명 선택/);
   });
 
   it('shows both minimum and maximum buyer budgets in match summaries', async () => {
     const loaded =
-      (await import('../src/renderer/routes/_authenticated/matches/-match-view-utils.ts')) as unknown as Record<
+      (await import('../src/renderer/routes/_authenticated/wanted-properties/-match-view-utils.ts')) as unknown as Record<
         string,
         unknown
       >;
@@ -179,12 +230,12 @@ describe('desktop matches workbench', () => {
       }),
       '월세 보증금 1억 ~ 2억 / 월 300만 이하',
     );
-    assert.match(matchGroupsSource, /className="min-w-40 shrink-0"/);
+    assert.match(matchGroupsSource, /minmax\(140px,200px\)/);
   });
 
   it('shows the desired supply area in the top buyer summary', async () => {
     const loaded =
-      (await import('../src/renderer/routes/_authenticated/matches/-match-view-utils.ts')) as unknown as Record<
+      (await import('../src/renderer/routes/_authenticated/wanted-properties/-match-view-utils.ts')) as unknown as Record<
         string,
         unknown
       >;
@@ -210,9 +261,9 @@ describe('desktop matches workbench', () => {
 
   it('separates the buyer summary from its property branches without another nested card', () => {
     assert.match(matchGroupsSource, /data-buyer-summary-header/);
-    assert.match(matchGroupsSource, /bg-muted\/30 px-3 py-2\.5/);
-    assert.match(matchGroupsSource, /expanded && 'border-b border-border\/70'/);
-    assert.match(
+    assert.match(matchGroupsSource, /expanded && 'border-b border-border'/);
+    assert.match(matchGroupsSource, /className="border-b border-border bg-white"/);
+    assert.doesNotMatch(
       matchGroupsSource,
       /overflow-hidden rounded-lg border border-border bg-background/,
     );
@@ -220,6 +271,7 @@ describe('desktop matches workbench', () => {
       matchGroupsSource,
       /mb-3 ml-\[68px\] mr-3 mt-2 space-y-1 pl-12/,
     );
+    assert.match(matchGroupsSource, /className="ml-\[78px\]"/);
   });
 
   it('nests property matches under each buyer with curved terminal-aware branches', () => {

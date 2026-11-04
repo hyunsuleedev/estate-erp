@@ -6,11 +6,11 @@
 // 서버는 직접 크롤링하지 않고 사무소의 로컬 크롤러·MCP·수동 입력만 수신한다.
 // 법적 책임은 입력 주체(사무소) 측에 있으며, Estate ERP는 입력 API만 제공.
 //
-// 매칭 모델 — electron-estate 방식:
-//   - ExternalListingGroup = 동일주소 경쟁 매물 묶음 (= HouseProperty 대응)
-//   - ExternalListing      = 개별 매물 1건 (= Offer 대응, articleNo 고유)
-//   - 같은 articleNo 재등장 또는 네이버 sameAddr 그룹 내 다른 articleNo가
-//     DB에 있으면 기존 그룹에 자동 합류 → memo·ho 승계.
+// 매칭 모델:
+//   - ExternalListingGroup = 동일 매물의 광고 묶음
+//   - ExternalListing      = 개별 광고 1건 (articleNo 고유)
+//   - 입력은 묶음 단위이며, 묶음의 articleNo가 기존 데이터와 하나라도 겹치면
+//     기존 그룹에 합류해 memo·ho를 유지하고 대표는 새 묶음의 대표로 바꾼다.
 //   - 호수는 Unit과 연결하지 않고 사용자가 기록한 텍스트로만 보존한다.
 //   - ActivityLog 추적 대상 아님. 크롤러 upsert가 감사 로그를 오염시키지 않도록
 //     분리.
@@ -65,7 +65,7 @@ model ExternalListing {
   groupId  String @map("group_id") @db.Uuid
 
   // 원본 식별
-  source         String  @default("naver") // naver / kb / manual 등
+  source         String // 입력자가 지정한 출처 식별자 (수동 입력은 manual)
   articleNo      String  @map("article_no") // 네이버 매물번호
   sourceUrl      String? @map("source_url")
   cpName         String? @map("cp_name") // 네이버/직방/부동산114 등
@@ -104,7 +104,6 @@ model ExternalListing {
   realtorName         String? @map("realtor_name")
   originalRealtorName String? @map("original_realtor_name")
   representativeTelNo String? @map("representative_tel_no")
-  cellPhoneNo         String? @map("cell_phone_no")
 
   // 광고 운영 지표 (광고노트의 본질)
   ranking        Int?
@@ -120,8 +119,11 @@ model ExternalListing {
   priceChangeState    String? @map("price_change_state")
   isPriceModification Boolean @default(false) @map("is_price_modification")
 
-  // 원본 보존
-  raw Json? @db.JsonB
+  // 직전 완료 스냅샷의 가격과 그 뒤 처음 달라진 시각. 스냅샷 비교의 가격 변경 판단에 사용한다.
+  previousPrice       Int?      @map("previous_price")
+  previousDeposit     Int?      @map("previous_deposit")
+  previousMonthlyRent Int?      @map("previous_monthly_rent")
+  priceChangedAt      DateTime? @map("price_changed_at")
 
   // 관측 메타
   firstSeenAt DateTime @default(now()) @map("first_seen_at")
@@ -144,12 +146,11 @@ model ExternalListing {
   @@map("external_listings")
 }
 
-/// 외부 매물 스냅샷 세션. "이번 수집분"과 "이전 수집분"을 구분하기 위한 lightweight
-/// 락. 사용자가 "수동 입력 → 새 스냅샷" 또는 크롤러 스크립트가 세션을 열고, 해당
-/// (office, site, transactionType) 스코프에 대한 batchUpsert들을 마친 뒤 완료를
-/// 호출하면, 세션 시작 이후 한 번도 touch되지 않은 external_listings 행이
-/// is_active=false로 소프트 삭제된다. Group 행은 절대 삭제하지 않는다 (사용자가
-/// 기록한 ho·memo 보존).
+/// 외부 매물 스냅샷 세션. "이번 입력분"과 "이전 입력분"을 구분하기 위한 lightweight
+/// 락. 사용자 또는 사용자의 agent가 세션을 열고, 해당 (office, site, transactionType)
+/// 스코프에 대한 묶음 입력을 마친 뒤 완료를 호출하면, 세션 시작 이후 한 번도 입력되지
+/// 않은 external_listings 행이 is_active=false로 소프트 삭제되고 이전 자료와의 비교
+/// 결과가 반환된다. Group 행은 절대 삭제하지 않는다 (사용자가 기록한 ho·memo 보존).
 ///
 /// 동시성: 같은 스코프에 active 세션이 하나만 존재할 수 있도록 부분 유니크 인덱스로
 /// 강제한다 (migration SQL에서 직접 추가 — Prisma는 부분 인덱스를 표현 못 함).

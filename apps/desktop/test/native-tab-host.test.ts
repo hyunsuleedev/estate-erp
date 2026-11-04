@@ -940,4 +940,35 @@ describe('NativeTabHost', () => {
       /finite and non-negative/,
     );
   });
+
+  it('reports unsaved editor work only for the owning host', async () => {
+    const { nativeTabs, first, second } = setup();
+    const opened = await nativeTabs.openOrUpdateTab(first.id, makeTab('memo'));
+    assert.ok(opened);
+
+    // 첫 보고 전에는 renderer가 입력을 갖고 있을 수 있으므로 보존한다.
+    assert.equal(nativeTabs.hasUnsavedWork(first.id, 'memo'), true);
+
+    reportClean(nativeTabs, opened.senderId);
+    assert.equal(nativeTabs.hasUnsavedWork(first.id, 'memo'), false);
+
+    nativeTabs.reportTabRetention(opened.senderId, {
+      mutating: false,
+      transientEditor: true,
+      explicitDirty: true,
+    });
+    assert.equal(nativeTabs.hasUnsavedWork(first.id, 'memo'), true);
+    assert.equal(nativeTabs.hasUnsavedWork(second.id, 'memo'), false);
+    assert.equal(nativeTabs.hasUnsavedWork(first.id, 'missing'), false);
+
+    nativeTabs.reportTabRetention(opened.senderId, {
+      mutating: true,
+      transientEditor: false,
+      explicitDirty: false,
+    });
+    assert.equal(nativeTabs.hasUnsavedWork(first.id, 'memo'), true);
+
+    reportClean(nativeTabs, opened.senderId);
+    assert.equal(nativeTabs.hasUnsavedWork(first.id, 'memo'), false);
+  });
 });

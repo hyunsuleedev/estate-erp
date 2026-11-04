@@ -305,6 +305,9 @@ export class SitesService {
   ) {
     const data: Prisma.SiteUncheckedCreateInput = {
       officeId,
+      // 사무소가 만드는 단지는 언제나 비공개 — 기본값에 맡기지 않고 명시한다
+      isPublic: false,
+      isLocked: false,
       type: dto.type,
       name: dto.name,
       wardCode: dto.wardCode,

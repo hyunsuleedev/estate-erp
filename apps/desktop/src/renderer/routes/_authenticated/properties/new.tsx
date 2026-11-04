@@ -388,6 +388,8 @@ function NewPropertyPage() {
       queryClient.invalidateQueries({ queryKey: ['properties'] });
       queryClient.invalidateQueries({ queryKey: ['listings'] });
       queryClient.invalidateQueries({ queryKey: ['listing-intakes'] });
+      // 새 관리호수가 생겼으니 관리단지 사이드바의 단지별 관리호수 수도 갱신
+      queryClient.invalidateQueries({ queryKey: ['office-sites'] });
       toast.success('매물이 등록되었습니다.');
       const detailRoute = `/properties/${property.id}`;
       const meta = getRouteMeta(detailRoute);

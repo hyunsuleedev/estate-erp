@@ -168,7 +168,8 @@ body {
   top: 7px;
   width: 100vw;
   height: 11px;
-  background: #f8f7f4;
+  /* 컬럼 안내 띠(data-property-column-guide)와 같은 색이어야 가림막이 안 보인다 */
+  background: #f7f7f5;
   content: "";
   pointer-events: none;
 }

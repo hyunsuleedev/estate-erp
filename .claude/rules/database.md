@@ -69,15 +69,17 @@ paths:
 - `notifications` — 인앱 알림 (WebSocket push + DB 저장)
 
 ### 외부 시장 매물 (광고노트)
-- `external_listing_groups` — 호실 단위 외부 매물 그룹 (electron-estate HouseProperty 대응). 사용자가 확인한 unitId·memo·inferredHo를 기억. 크롤러가 덮어쓰지 못함.
+- `external_listing_groups` — 호실 단위 외부 매물 그룹 (electron-estate HouseProperty 대응). 사용자가 확인한 ho(텍스트)·memo를 기억. 크롤러가 덮어쓰지 못함.
 - `external_listings` — 개별 외부 매물 1건 (electron-estate Offer 대응). 네이버 articleNo 기준 unique `[officeId, source, articleNo]`.
 - **멀티테넌시**: 모든 외부 매물은 `office_id` NOT NULL. 사무소가 자기 책임으로 수집·입력한 데이터를 자기 네임스페이스에만 저장.
 - **법적 회피**: 서버는 크롤링하지 않음. 입력 경로는 (a) Electron 로컬 크롤러, (b) MCP 도구 `external_listing.create`, (c) 수동 UI — 모두 동일 API 엔드포인트.
-- **매칭 로직 (electron-estate 방식)**:
-  1. 새 `articleNo`가 DB에 있으면 해당 그룹에 병합
-  2. 없으면 네이버 `sameAddr` 그룹(`representativeArticleNo` + 묶인 매물들) 내 다른 articleNo 중 DB에 있는 것 찾아 그룹 병합
-  3. 둘 다 없으면 새 그룹 생성 (`unitId = null`, 사용자가 UI에서 수동 링크)
-- **호수 추정**: Phase 1에서는 자동 추정 없음. 사용자가 UI에서 `inferredHo` 텍스트 입력 또는 `unitId` 수동 링크.
+- **매칭 로직**: 입력은 sessionId + 묶음(대표 필수) 단위.
+  1. 묶음의 `articleNo`가 기존 데이터와 하나라도 겹치면 그 그룹에 합류하고 대표를 새 묶음의 대표로 변경
+  2. 겹치지 않으면 새 그룹 생성
+  3. 같은 번호가 두 묶음에 있거나 묶음과 기존 그룹이 1:1이 아니면 입력 거부
+- **스냅샷 닫기**: `expectedListingCount`를 실제 입력 건수와 대조하고, 이번에 입력되지 않은 광고를 비활성화하며, 직전 완료 스냅샷과의 비교 결과를 반환.
+- **수동 입력**: 스냅샷 없이 저장(source `manual`). 스냅샷 건수 확인과 비활성 처리에서 제외하고, 사용자가 직접 내린다.
+- **호수**: 자동 추정 없음. 사용자가 UI에서 `ho` 텍스트 입력.
 - **ActivityLog 제외**: 외부 매물은 감사 추적 대상 아님 (크롤러 upsert로 activity_logs 오염 방지).
 - Group → Listing 1:N, Group의 `main_external_listing_id`로 대표 매물 지정 (네이버 representative 대응).
 

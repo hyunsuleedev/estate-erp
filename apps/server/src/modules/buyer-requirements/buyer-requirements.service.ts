@@ -341,6 +341,8 @@ export class BuyerRequirementsService {
         wardCode?: string;
       }[];
     },
+    /** id: 같은 요청을 다시 보내도 한 건만 생기게 할 때 (통화 분석 제안 반영) */
+    options: { id?: string } = {},
   ) {
     const {
       buyerIntakeId,
@@ -474,6 +476,7 @@ export class BuyerRequirementsService {
 
       const requirement = await tx.buyerRequirement.create({
         data: {
+          ...(options.id ? { id: options.id } : {}),
           officeId,
           buyerIntakeId: intake.id,
           priorityRank: resolvedPriorityRank,

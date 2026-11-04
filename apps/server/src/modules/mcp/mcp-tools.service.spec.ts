@@ -79,7 +79,6 @@ describe('McpToolsService', () => {
         updated: 0,
         groupsCreated: 1,
         groupsReused: 0,
-        errors: [],
       }),
     };
     const listingAdvertisementSnapshots = {
@@ -501,27 +500,76 @@ describe('McpToolsService', () => {
       { siteId: 'site-1', transactionType: 'sale' },
       ctx,
     );
+    const input = await service.executeTool(
+      'batch_upsert_external_listings',
+      {
+        sessionId: 'snapshot-1',
+        source: 'agent-file',
+        groups: [
+          {
+            representativeArticleNo: 'A-1',
+            listings: [{ articleNo: 'A-1' }, { articleNo: 'A-2' }],
+          },
+        ],
+      },
+      ctx,
+    );
     const completed = await service.executeTool(
       'complete_external_listing_snapshot_session',
-      { id: 'snapshot-1' },
+      { id: 'snapshot-1', expectedListingCount: 2 },
       ctx,
     );
 
     expect(created.isError).toBe(false);
+    expect(input.isError).toBe(false);
     expect(completed.isError).toBe(false);
     expect(externalListings.createSession).toHaveBeenCalledWith(
       'office-1',
       'user-1',
       { siteId: 'site-1', transactionType: 'sale' },
     );
+    expect(externalListings.batchUpsert).toHaveBeenCalledWith('office-1', {
+      sessionId: 'snapshot-1',
+      source: 'agent-file',
+      batchId: undefined,
+      groups: [
+        {
+          representativeArticleNo: 'A-1',
+          listings: [{ articleNo: 'A-1' }, { articleNo: 'A-2' }],
+        },
+      ],
+    });
     expect(externalListings.completeSession).toHaveBeenCalledWith(
       'office-1',
       'user-1',
       'agent',
       'snapshot-1',
+      { expectedListingCount: 2 },
     );
   });
 
+  it('refuses to close an advertising-note snapshot without a declared count', async () => {
+    const { service, externalListings } = createService();
+
+    const result = await service.executeTool(
+      'complete_external_listing_snapshot_session',
+      { id: 'snapshot-1' },
+      ctx,
+    );
+
+    expect(result.isError).toBe(true);
+    expect(externalListings.completeSession).not.toHaveBeenCalled();
+  });
+
+  it('does not describe advertising-note tools around a specific provider', () => {
+    const { service } = createService();
+    const tools = service
+      .getToolDefinitions(ctx)
+      .filter((tool) => tool.name.includes('external_listing'));
+
+    expect(tools.length).toBeGreaterThan(0);
+    expect(JSON.stringify(tools)).not.toMatch(/네이버|크롤|수집|naver|seango|epju/i);
+  });
 
   it('delegates sale contract draft validation as a read-only tool', async () => {
     const { service, contracts } = createService();

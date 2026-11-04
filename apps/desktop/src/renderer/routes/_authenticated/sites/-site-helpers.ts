@@ -3,6 +3,7 @@
  */
 import type { OfficeSite, Unit } from '@estate-erp/api-client';
 import { formatMoney, formatRent } from '@/lib/format';
+import type { PostcodeResult } from '@/lib/kakao-postcode';
 
 // ── Labels ──────────────────────────────────────────────────────
 
@@ -159,6 +160,36 @@ export function filterUnitsByRecordPresence(
   });
 }
 
+/**
+ * 우리 사무소가 관리호수로 등록한 호실인지.
+ * 호수 API는 요청한 사무소의 Property만 내려주므로 Property가 하나라도 있으면 우리 기록이다.
+ */
+export function isManagedUnit(unit: Unit): boolean {
+  return (unit.properties ?? []).length > 0;
+}
+
+/** 기존 필로티 플래그와 배치 셀 유형을 모두 지원한다. */
+export function isPilotiUnit(unit: Unit): boolean {
+  return unit.isPiloti || unit.cellType === 'piloti';
+}
+
+/** 호수 목록 표시 범위 — 기본은 관리호수만, 필요할 때 전체 호실. */
+export type UnitTableScope = 'managed' | 'all';
+
+/**
+ * 표에 실제로 보여줄 호실.
+ * 검색 중에는 범위와 상관없이 전체 호실에서 찾는다 — 처음 연락 온 호실도 바로 찾아 등록할 수 있어야 한다.
+ */
+export function selectUnitTableRows(
+  units: Unit[],
+  scope: UnitTableScope,
+  isSearching: boolean,
+): Unit[] {
+  return units.filter(
+    (unit) => !isPilotiUnit(unit) && (scope === 'all' || isSearching || isManagedUnit(unit)),
+  );
+}
+
 /** 즐겨찾기를 먼저 보여주되 서버가 내려준 최신 구독 순서는 그대로 유지한다. */
 export function prioritizeFavoriteOfficeSites(officeSites: OfficeSite[]): OfficeSite[] {
   return [...officeSites].sort(
@@ -185,6 +216,64 @@ export function groupOfficeSites(
   }
 
   return Object.entries(groups).sort((a, b) => a[0].localeCompare(b[0], 'ko'));
+}
+
+/**
+ * 동·호수 구조를 바꿀 수 있는 단지인지 — 사무소가 직접 등록한 비공개 단지만 가능하다.
+ * 공공 단지의 구조는 어떤 사무소도 바꿀 수 없고 서버도 거부한다. 토지는 호수가 없다.
+ */
+export function canEditSiteStructure(
+  site: Pick<NonNullable<OfficeSite['site']>, 'isPublic' | 'type'>,
+): boolean {
+  return site.isPublic === false && site.type !== 'land';
+}
+
+/** 유형 · 동수 · 세대수 · 준공년도 — 이름이 비슷한 단지를 구분할 때 쓴다. 단일 동 건물은 동수를 생략한다. */
+export function formatSiteSummary(
+  site: Pick<NonNullable<OfficeSite['site']>, 'type' | 'totalDongs' | 'totalUnits' | 'builtYear' | '_count'>,
+): string {
+  // 호실을 아직 가져오지 않은 단지는 집계가 0이므로 공공데이터의 총수로 대신한다
+  const dongCount = site._count?.dongs || site.totalDongs;
+  const unitCount = site._count?.units || site.totalUnits;
+  return [
+    siteTypeLabels[site.type] ?? site.type,
+    dongCount && dongCount > 1 ? `${dongCount.toLocaleString()}개동` : null,
+    unitCount ? `${unitCount.toLocaleString()}세대` : null,
+    site.builtYear ? `${site.builtYear}년 준공` : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+}
+
+export interface SiteAddress {
+  wardCode: string;
+  roadAddress: string | null;
+  jibunAddress: string | null;
+  zipCode: string | null;
+  buildingName: string | null;
+  isApartment: boolean;
+}
+
+/** 주소 검색 결과에서 단지 등록에 쓸 값을 고른다. 단지는 법정동 코드를 참조하므로 코드가 없으면 null이다. */
+export function toSiteAddress(result: PostcodeResult): SiteAddress | null {
+  const wardCode = result.bcode?.trim() ?? '';
+  if (!/^\d{10}$/.test(wardCode)) return null;
+
+  // autoRoadAddress·autoJibunAddress는 추측한 매핑일 수 있어 쓰지 않는다
+  const roadAddress =
+    result.roadAddress?.trim() || (result.userSelectedType === 'R' ? result.address?.trim() : '') || null;
+  const jibunAddress =
+    result.jibunAddress?.trim() || (result.userSelectedType === 'J' ? result.address?.trim() : '') || null;
+  if (!roadAddress && !jibunAddress) return null;
+
+  return {
+    wardCode,
+    roadAddress,
+    jibunAddress,
+    zipCode: result.zonecode?.trim() || null,
+    buildingName: result.buildingName?.trim() || null,
+    isApartment: result.apartment === 'Y',
+  };
 }
 
 export function getSiteGroupKeys(officeSites: OfficeSite[], groupBy: SiteGroupMode): string[] {
@@ -323,4 +412,74 @@ export interface LayoutSection {
   lineNos: number[];
   cellMap: Map<string, PositionedUnit>;
   unpositionedUnits: Unit[];
+}
+
+// ── 관리단지 사이드바 ───────────────────────────────────────────
+
+export const SITES_PANEL_WIDTH = { min: 220, max: 380, default: 280 } as const;
+/** 사이드바를 열어도 본문에 남겨 둘 최소 폭 — 이보다 좁으면 도구줄이 화면 밖으로 밀린다 */
+export const SITES_MAIN_MIN_WIDTH = 700;
+
+/** 페이지 폭에서 본문 최소 폭을 뺀 만큼까지만 사이드바를 넓힌다. 폭을 아직 모르면 최대치까지 허용. */
+export function clampPanelWidth(width: number, containerWidth: number): number {
+  const roomForPanel =
+    containerWidth > 0 ? containerWidth - SITES_MAIN_MIN_WIDTH : SITES_PANEL_WIDTH.max;
+  const max = Math.max(SITES_PANEL_WIDTH.min, Math.min(SITES_PANEL_WIDTH.max, roomForPanel));
+  return Math.max(SITES_PANEL_WIDTH.min, Math.min(width, max));
+}
+
+/** 이 단지에서 우리 사무소가 관리호수로 등록한 호실 수 (목록 API의 사무소 범위 집계) */
+export function getManagedUnitCount(officeSite: OfficeSite): number {
+  return officeSite.site?._count?.properties ?? 0;
+}
+
+/** 동 선택 요약: 전체 동 / 101동 / 101동 외 2 */
+export function summarizeDongScope(
+  options: ReadonlyArray<MultiSelectOption>,
+  selectedIds: ReadonlyArray<string>,
+): string | null {
+  if (selectedIds.length === 0) return null;
+  const first = options.find((option) => option.value === selectedIds[0])?.label ?? '';
+  const firstLabel = /동$/.test(first) ? first : `${first}동`;
+  return selectedIds.length > 1 ? `${firstLabel} 외 ${selectedIds.length - 1}` : firstLabel;
+}
+
+export interface SitePanelSection {
+  key: string;
+  /** null이면 제목 없이 바로 단지를 보여준다 */
+  label: string | null;
+  /** pinned·all은 늘 펼침, group·idle은 접고 펼 수 있다 */
+  kind: 'pinned' | 'all' | 'idle' | 'group';
+  items: OfficeSite[];
+}
+
+/**
+ * 관리단지 사이드바의 묶음을 만든다. officeSites는 검색이 끝나고 고정한 단지가 앞에 온 순서여야 한다.
+ *
+ * - 목록: 고정 → 단지(관리호수 있음) → 기록 없는 단지. 검색 중에는 기록 없는 단지를 따로 모으지 않는다.
+ * - 지역별·유형별: 고정한 단지도 자기 묶음 안에 둔다(각 묶음 안에서 맨 앞). 따로 빼면 어느 묶음인지 알 수 없다.
+ */
+export function buildSitePanelSections(
+  officeSites: OfficeSite[],
+  { groupBy, searching }: { groupBy: SiteGroupMode; searching: boolean },
+): SitePanelSection[] {
+  if (groupBy !== 'none') {
+    return (groupOfficeSites(officeSites, groupBy) ?? []).map(([groupKey, items]) => ({
+      key: `group:${groupKey}`,
+      label: groupKey,
+      kind: 'group' as const,
+      items,
+    }));
+  }
+
+  const pinned = officeSites.filter((officeSite) => officeSite.isFavorite);
+  const rest = officeSites.filter((officeSite) => !officeSite.isFavorite);
+  const active = searching ? rest : rest.filter((officeSite) => getManagedUnitCount(officeSite) > 0);
+  const idle = searching ? [] : rest.filter((officeSite) => getManagedUnitCount(officeSite) === 0);
+  const sections: SitePanelSection[] = [
+    { key: 'pinned', label: '고정', kind: 'pinned', items: pinned },
+    { key: 'all', label: pinned.length > 0 ? '단지' : null, kind: 'all', items: active },
+    { key: 'idle', label: '기록 없는 단지', kind: 'idle', items: idle },
+  ];
+  return sections.filter((section) => section.items.length > 0);
 }

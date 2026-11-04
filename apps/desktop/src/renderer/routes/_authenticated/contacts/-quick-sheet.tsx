@@ -381,7 +381,7 @@ function ContactSheetContent({
                 <ContactSheetBuyerReqCard key={requirement.id} requirement={requirement} />
               ))}
               <Link
-                to="/customers"
+                to="/customers-table"
                 className="inline-flex items-center gap-1 text-[12px] text-slate-500 hover:text-slate-800 hover:underline"
               >
                 고객 원장에서 보기

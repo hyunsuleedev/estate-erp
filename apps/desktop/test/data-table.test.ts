@@ -260,7 +260,7 @@ describe('desktop data table', () => {
     );
   });
 
-  it('overlays a full-page resizable three-tab inspector above the filters', () => {
+  it('overlays a full-page resizable workflow inspector above the filters', () => {
     const pageSource = readFileSync(
       resolve(
         testDir,
@@ -302,18 +302,318 @@ describe('desktop data table', () => {
     );
     assert.match(pageSource, /role="separator"/);
     assert.match(pageSource, /aria-label="상세 패널 너비 조절"/);
-    assert.match(pageSource, /요약/);
-    assert.match(pageSource, /연락·상담/);
-    assert.match(pageSource, /광고·이력/);
-    assert.equal(
-      pageSource.match(
-        /className="h-10 flex-none border-0 px-0 text-xs focus-visible:border-0"/g,
-      )?.length,
-      3,
-      'inspector tabs should use only the line indicator without button borders',
+    const inspectorViewSource = readFileSync(
+      resolve(
+        testDir,
+        '../src/renderer/routes/_authenticated/properties/-components/property-inspector-view.tsx',
+      ),
+      'utf8',
     );
-    assert.match(pageSource, /의뢰 상태/);
-    assert.match(pageSource, /매물 상태/);
+    const progressTabSource = readFileSync(
+      resolve(
+        testDir,
+        '../src/renderer/routes/_authenticated/properties/-components/property-inspector-progress-tab.tsx',
+      ),
+      'utf8',
+    );
+    assert.match(pageSource, /<PropertyInspectorView/);
+    assert.match(
+      pageSource,
+      /steps: \[confirmStep, adStep, buyerStep, dealStep\]/,
+      'the inspector should read in brokerage order: 확인 → 광고 → 매칭 → 거래',
+    );
+    assert.match(
+      pageSource,
+      /intake as ListingIntake & \{ consultations\?: Consultation\[\] \}/,
+      'the inspector should read consultations from the intake detail root',
+    );
+    assert.match(inspectorViewSource, /aria-label="업무 흐름"/);
+    assert.match(inspectorViewSource, /지금 할 일/);
+    assert.match(
+      inspectorViewSource,
+      /<h2[\s\S]*?\{model\.siteName\}[\s\S]*?<\/h2>/,
+      'the inspector title should lead with the site name',
+    );
+    assert.doesNotMatch(
+      inspectorViewSource,
+      /label: "광고·손님·계약"/,
+      'advertisements get their own tab instead of sharing one with buyers and deals',
+    );
+    for (const label of ['요약', '사람·상담', '광고', '매칭·거래', '이력']) {
+      assert.match(
+        inspectorViewSource,
+        new RegExp(`label: "${label}"`),
+        `the inspector should keep secondary info behind the ${label} tab`,
+      );
+    }
+    assert.match(inspectorViewSource, /role="tablist"/);
+    for (const label of ['상담 남기기', '가격·상태 수정', '매물 확인 완료']) {
+      assert.match(
+        inspectorViewSource,
+        new RegExp(label),
+        `the bottom action bar should name the action: ${label}`,
+      );
+    }
+    assert.doesNotMatch(
+      inspectorViewSource,
+      /ownerPhone/,
+      'the owner call button was removed from the inspector actions',
+    );
+    assert.match(
+      pageSource,
+      /matchesStatus === "error"[\s\S]*?value: "확인 불가"/,
+      'a failed match query must not read as "no buyers"',
+    );
+    assert.match(
+      progressTabSource,
+      /status === "error" && <RetryNote onRetry=\{onRetry\}>매칭을 불러오지 못했습니다\./,
+      'the buyer list should offer a retry when the match query fails',
+    );
+    assert.match(
+      inspectorViewSource,
+      /\{tab === "progress" && progressTab\}/,
+      'the 매칭·거래 tab is rendered from the dedicated progress tab component',
+    );
+    assert.match(
+      progressTabSource,
+      /<MatchProgressTrack match=\{match\} actions=\{actions\} \/>/,
+      'matches reuse the 희망매물 page progress track so stages can be changed from the panel',
+    );
+    assert.match(
+      progressTabSource,
+      /if \(stage === MatchStage\.DEAL_CREATED\) \{\s*setConvertMatchId\(id\);/,
+      'converting a match to a deal goes through the deal creation dialog',
+    );
+    assert.match(
+      progressTabSource,
+      /queryKey: \["deals"\],\s*queryFn: \(\) => api\.deals\.findAll\(\)/,
+      'deals share the 거래관리 query cache (with payment schedules)',
+    );
+    assert.match(
+      progressTabSource,
+      /<ol aria-label="거래 흐름"/,
+      'each deal shows its stage flow',
+    );
+    assert.match(
+      progressTabSource,
+      /if \(kind === "pre_contract"\) return DealStage\.PRE_CONTRACT;\s*if \(kind === "contract"\) return DealStage\.CONTRACTED;\s*return DealStage\.SETTLING;/,
+      'payments are placed on the deal stage where the money changes hands',
+    );
+    assert.match(
+      progressTabSource,
+      /onSuccess: \(\) => refreshRelated\(\),[\s\S]*?onError: async[\s\S]*?await refreshRelated\(\);/,
+      'a match memo save must wait for the refetch so the next edit uses the fresh updatedAt',
+    );
+    assert.match(
+      progressTabSource,
+      /onSettled: async \(\) => \{[\s\S]*?await refreshRelated\(\);/,
+      'a viewing schedule must refetch even when the stage change fails, so a retry updates the saved event',
+    );
+    assert.match(
+      progressTabSource,
+      /savedEventIds: savedViewingEventIds\.current,/,
+      'the panel remembers saved viewing events so a retry never creates a duplicate',
+    );
+    assert.match(
+      progressTabSource,
+      /await queryClient\.cancelQueries\(\{ queryKey: \["matches"\] \}\);\s*queryClient\.setQueriesData/,
+      'an in-flight match query must not overwrite the saved viewing event',
+    );
+    assert.match(
+      progressTabSource,
+      /stage === DealStage\.PREPARING \|\| stage === DealStage\.PRE_CONTRACT[\s\S]*?님과 거래 진행 중 · 본계약하면 이 매칭은 자동 종료됩니다/,
+      'other buyers on a listing with a pre-contract deal are told the match will close at 본계약',
+    );
+    assert.match(
+      progressTabSource,
+      /MATCH_CLOSED_REASON_LABELS\[match\.closedReason as MatchClosedReason\][\s\S]*?종료 · \{closedReasonLabel\}/,
+      'closed matches show why they were closed',
+    );
+    assert.doesNotMatch(
+      progressTabSource,
+      /api\.deals\.updateStage/,
+      'deal stages stay owned by 거래관리; the panel only mirrors them',
+    );
+    assert.match(
+      pageSource,
+      /intakeListingIds\.has\(match\.listingId\)/,
+      'the buyer step should only count matches on this intake\'s listings',
+    );
+    assert.match(
+      pageSource,
+      /const buyerKeys = new Set\(/,
+      'the buyer step should count distinct buyers, not match rows',
+    );
+    assert.match(
+      inspectorViewSource,
+      /tab === "history"[\s\S]*?<Timeline activities=\{model\.activities\} \/>/,
+      'past consultation, ad and price history should stay reachable inside the panel',
+    );
+    assert.match(
+      inspectorViewSource,
+      /\.\.\.model\.offers\.map\(\(offer\) => \(\{[\s\S]*?label: memoLabelOf\(offer\),[\s\S]*?\{ key: "intake", label: "의뢰"/,
+      'every listing memo is labelled by its transaction type, followed by the intake memo',
+    );
+    assert.doesNotMatch(
+      inspectorViewSource,
+      /label: "거래", text/,
+      '"거래" reads as a deal, so listing memos must not use it as a label',
+    );
+    assert.match(
+      inspectorViewSource,
+      /<InlineMemoField label=\{memo\.label\} value=\{memo\.text\} onSave=\{memo\.onSave\} \/>/,
+      'both memos should be editable in place from the summary tab',
+    );
+    assert.match(
+      pageSource,
+      /onSaveOfferMemo=\{saveOfferMemo\}[\s\S]*?onSaveIntakeMemo=\{saveIntakeMemo\}/,
+    );
+    assert.match(
+      inspectorViewSource,
+      /onSave\(next\)\.then\([\s\S]*?\(\) => \{[\s\S]*?setDraft\(typed\);/,
+      'a failed memo save must reopen the editor with what was typed',
+    );
+    assert.match(
+      pageSource,
+      /const isConfirmRecord = consultation\.purpose === "listing_confirm";[\s\S]*?title: isConfirmRecord\s*\? "매물 확인"/,
+      'confirm-button records are stored as online consultations but must read as 매물 확인',
+    );
+    assert.match(
+      pageSource,
+      /<ConsultationAddDialog[\s\S]*?propertyId=\{property\.id\}\s*listingIntakeId=\{intake\.id\}/,
+      'a consultation left from the panel must be linked to this intake so the panel shows it',
+    );
+    assert.match(
+      pageSource,
+      /fetchAllConsultations\(\{ propertyId: property\.id \}\),\s*\.\.\.inspectorListingIds\.map\(\(listingId\) =>\s*fetchAllConsultations\(\{ listingId \}\)/,
+      'loose consultations are fetched by property and by each listing (the server does not fill propertyId from listingId)',
+    );
+    assert.match(
+      pageSource,
+      /page >= result\.pagination\.totalPages/,
+      'every page of consultations must be read, not just the first 100',
+    );
+    assert.match(
+      pageSource,
+      /catch \{\s*return \{ items, complete: false \};\s*\}/,
+      'a failed page or request must keep the consultations already received',
+    );
+    assert.doesNotMatch(
+      pageSource,
+      /isConsultationsError\s*\?\s*"error"\s*:\s*looseConsultations\b/,
+      'a partial consultation result must still be reported as an error',
+    );
+    assert.match(
+      pageSource,
+      /at: consultation\.createdAt,[\s\S]{0,120}?timeText: formatInspectorTime\(consultation\.createdAt\)/,
+      'consultations in the panel timeline should show the time as well as the date',
+    );
+    assert.match(
+      inspectorViewSource,
+      /\{activity\.dateText\}\s*\{activity\.timeText && /,
+    );
+    assert.doesNotMatch(
+      pageSource,
+      /getQueryData<\{\s*items: Consultation\[\];/,
+      'a partial refetch must not merge the old cache back in (it would revive deleted consultations)',
+    );
+    assert.match(
+      pageSource,
+      /!item\.listingIntakeId &&\s*\(!item\.listingId \|\| intakeListingIdSet\.has\(item\.listingId\)\)/,
+      'property-level consultations not tied to another intake should also appear in the panel',
+    );
+    assert.match(
+      inspectorViewSource,
+      /model\.consultationsStatus === "error" && \(\s*<RetryNote onRetry=\{onRetryConsultations\}>/,
+      'a failed consultation load must be shown with a retry, not as an empty list',
+    );
+    assert.doesNotMatch(
+      pageSource,
+      /isConfirmRecord = content\.startsWith/,
+      'the editable consultation body must not decide whether a record is a confirmation',
+    );
+    assert.match(
+      inspectorViewSource,
+      /focusOnOpenRef\.current =\s*!active \|\| active === document\.body \|\| active === buttonRef\.current;/,
+      'a failed save must not steal focus from another memo editor (blur-save retry loop)',
+    );
+    assert.match(
+      inspectorViewSource,
+      /const startEditing = \(\) => \{[\s\S]*?if \(saving !== null\) return;/,
+      'a memo must not reopen from the stale value while its save is in flight',
+    );
+    assert.match(
+      pageSource,
+      /event\.target\.closest\("\[data-inspector-inline-editor\]"\)/,
+      'Escape inside a memo editor cancels the edit instead of closing the panel',
+    );
+    assert.doesNotMatch(
+      pageSource,
+      /label: "가격 수정"/,
+      'updatedAt is any edit, so it must not be labelled as a price change',
+    );
+    assert.match(
+      pageSource,
+      /value == null \? "-" : value === 0 \? "없음"/,
+      'an unset loan must not be shown as "없음"',
+    );
+    assert.match(
+      pageSource,
+      /listings\.length === 1 \? \(listings\[0\] as InspectorListing\) : null/,
+      'per-listing facts should only show when there is one listing',
+    );
+    assert.doesNotMatch(
+      inspectorViewSource,
+      /text-\[0\.62em\]|text-\[#a9a7a1\]">(동|호)</,
+      '억·만·동·호 should render at the same size and colour as the digits',
+    );
+    assert.doesNotMatch(
+      pageSource,
+      /label: `의뢰 \$\{/,
+      'the panel should not show a separate "의뢰 진행" chip next to the listing status',
+    );
+    assert.match(
+      pageSource,
+      /const chips: InspectorChip\[\] = \[\s*\{\s*label:\s*availability === ListingAvailability\.CLOSED\s*\? getClosedStatusLabel\(intake\.closedReason\)\s*: listingAvailabilityMeta\[availability\]\.label/,
+      'the panel status chip should reuse the table status labels',
+    );
+    assert.match(
+      pageSource,
+      /palette: getAvailabilityPalette\(availability\)[\s\S]*?palette: getAvailabilityPalette\(listingAvailability\)/,
+      'listing status badges in the panel must use the table status colours',
+    );
+    assert.match(
+      inspectorViewSource,
+      /function StatusChip[\s\S]*?rounded-\[4px\] px-1\.5 py-0\.5 text-\[12px\] font-medium leading-5/,
+      'panel badges should share the table StatusIndicator shape',
+    );
+    assert.match(
+      pageSource,
+      /key: "deal",[\s\S]*?action: \{\s*label: "거래 보기",/,
+      'the deal row in 진행 상황 should link to the deal',
+    );
+    assert.doesNotMatch(
+      pageSource,
+      /id: "deal",/,
+      'an ongoing deal is shown once in 진행 상황, not repeated as a to-do',
+    );
+    assert.doesNotMatch(
+      pageSource,
+      /label: "최근 확인"|label: "다음 확인"|label: "공동중개"/,
+      'confirmation dates and joint brokerage already appear in 진행 상황 and the header chips',
+    );
+    for (const value of ['확인됨', '부재중', '미확인']) {
+      assert.match(
+        pageSource,
+        new RegExp(`value: "${value}",\\s*detail: \\[[^\\]]*?nextConfirmText,?\\s*\\]`),
+        `the ${value} confirm row should keep the next confirm date`,
+      );
+    }
+    assert.doesNotMatch(
+      inspectorViewSource,
+      /shadow-\[inset_0_0_0_1px_#ecebe8\]">\s*\{model\.infoFacts|grid grid-cols-4 overflow-hidden rounded-xl/,
+      'the summary tab should use plain lists instead of boxed cards',
+    );
     assert.match(pageSource, /onRequestClose=/);
     assert.doesNotMatch(pageSource, /aria-label="빠른 보기"/);
     assert.match(
@@ -517,8 +817,13 @@ describe('desktop data table', () => {
     );
     assert.match(
       cssSource,
-      /\[data-column-group-toggle="property-details"\]\[aria-expanded="true"\]::before[\s\S]*?right: calc\(100% \+ 1px\);[\s\S]*?top: 7px;[\s\S]*?width: 100vw;[\s\S]*?height: 11px;[\s\S]*?background: #f8f7f4;/,
+      /\[data-column-group-toggle="property-details"\]\[aria-expanded="true"\]::before[\s\S]*?right: calc\(100% \+ 1px\);[\s\S]*?top: 7px;[\s\S]*?width: 100vw;[\s\S]*?height: 11px;[\s\S]*?background: #f7f7f5;/,
       'the sticky toggle should mask guide segments without covering its border',
+    );
+    assert.match(
+      tableSource,
+      /data-property-column-guide[\s\S]*?bg-\[#f7f7f5\]/,
+      'the guide band and its mask should share the header color',
     );
     assert.doesNotMatch(
       cssSource,
@@ -868,7 +1173,7 @@ describe('desktop data table', () => {
     );
   });
 
-  it('combines province district and ward filters into a single region popover', () => {
+  it('combines province district and ward filters into the location search bar popover', () => {
     const source = readFileSync(
       resolve(
         testDir,
@@ -877,7 +1182,10 @@ describe('desktop data table', () => {
       'utf8',
     );
 
-    assert.match(source, /label="지역"/);
+    assert.match(
+      source,
+      /<ToolbarSearchBar[\s\S]*?ariaLabel="시도"[\s\S]*?ariaLabel="시군구"[\s\S]*?ariaLabel="법정동"[\s\S]*?<\/ToolbarSearchBar>/,
+    );
     assert.doesNotMatch(source, /<FilterPopoverChip\s+label="시도"/);
     assert.doesNotMatch(source, /<FilterPopoverChip\s+label="시군구"/);
     assert.doesNotMatch(source, /<FilterPopoverChip\s+label="법정동"/);

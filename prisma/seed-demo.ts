@@ -77,6 +77,13 @@ async function main() {
       throw new Error('고덕그라시움 Site 가 없습니다.');
     }
 
+    // 데모 매물이 놓인 단지를 관리단지로 구독해 둔다 (이미 있으면 그대로 둠).
+    await prisma.officeSite.upsert({
+      where: { officeId_siteId: { officeId: office.id, siteId: site.id } },
+      create: { officeId: office.id, siteId: site.id, isFavorite: true },
+      update: {},
+    });
+
     console.log('1. 기존 [DEMO] 데이터 정리...');
     await wipe({ prisma, officeId: office.id });
 
@@ -2606,6 +2613,41 @@ async function seedTasks(
       propertyId: properties[2].id,
       listingId: listings[2].id,
     },
+    // 대시보드 '기한 지남'·'진행 중'·'기한 없음' 묶음이 비지 않도록 둔 업무
+    {
+      title: `${DEMO_TAG} 김민준 매도인 확인 전화 회신`,
+      category: 'call',
+      priority: 'high',
+      dueDate: daysFromNow(-2),
+      assignedToId: ctx.agentUserId,
+      contactId: contacts[0].id,
+      propertyId: properties[0].id,
+    },
+    {
+      title: `${DEMO_TAG} 전세 매물 등기부 열람`,
+      category: 'verify',
+      priority: 'medium',
+      dueDate: daysFromNow(-1),
+      assignedToId: ctx.managerUserId,
+      propertyId: properties[1].id,
+    },
+    {
+      title: `${DEMO_TAG} 19.8억 계약서 특약 검토`,
+      category: 'contract',
+      priority: 'urgent',
+      dueDate: daysFromNow(0),
+      status: 'in_progress',
+      assignedToId: ctx.managerUserId,
+      propertyId: properties[3].id,
+      listingId: listings[3].id,
+    },
+    {
+      title: `${DEMO_TAG} 단지 내 상가 공실 현황 정리`,
+      category: 'admin',
+      priority: 'low',
+      dueDate: null,
+      assignedToId: ctx.ownerUserId,
+    },
   ];
 
   for (const def of defs) {
@@ -2661,6 +2703,46 @@ async function seedCalendarEvents(
     description?: string;
     allDay?: boolean;
   }> = [
+    // 오늘 일정 — 대시보드 '오늘' 타임라인용 (오전 1건은 이미 지난 일정)
+    {
+      title: `${DEMO_TAG} 한지우 고객 내방 상담`,
+      type: 'meeting',
+      start: at(0, 10),
+      end: at(0, 11),
+      userId: ctx.agentUserId,
+      contactId: contacts[4].id,
+      color: '#a855f7',
+    },
+    {
+      title: `${DEMO_TAG} 강수연 고객 전세 매물 임장`,
+      type: 'viewing',
+      start: at(0, 15),
+      end: at(0, 16),
+      userId: ctx.agentUserId,
+      contactId: contacts[7].id,
+      propertyId: properties[1].id,
+      listingId: listings[1].id,
+      color: '#3b82f6',
+    },
+    {
+      title: `${DEMO_TAG} 19.8억 매매 계약 전 서류 점검`,
+      type: 'contract',
+      start: at(0, 16, 30),
+      end: at(0, 17, 30),
+      userId: ctx.managerUserId,
+      propertyId: properties[3].id,
+      listingId: listings[3].id,
+      color: '#ef4444',
+    },
+    {
+      title: `${DEMO_TAG} 최도윤 고객 저녁 통화`,
+      type: 'general',
+      start: at(0, 19),
+      end: at(0, 19, 30),
+      userId: ctx.ownerUserId,
+      contactId: contacts[5].id,
+      color: '#10b981',
+    },
     {
       title: `${DEMO_TAG} 고덕그라시움 급매 임장`,
       type: 'viewing',

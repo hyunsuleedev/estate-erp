@@ -47,6 +47,7 @@ import {
   RENDERER_SURFACE_ARGUMENT,
   RENDERER_TAB_ID_ARGUMENT,
 } from '../common/rendererSurface';
+import { isPostcodeFrameRedirect } from './embeddedAddressNavigation';
 import { AuthBroker } from './authBroker';
 import {
   ElectronNativeTabViewFactory,
@@ -863,7 +864,9 @@ export class WindowManager {
             publishNavigation(url);
           });
           view.webContents.on('will-navigate', guardNavigation);
-          view.webContents.on('will-redirect', guardNavigation);
+          view.webContents.on('will-redirect', (event, url, _isInPlace, isMainFrame) => {
+            if (!isPostcodeFrameRedirect(url, isMainFrame)) guardNavigation(event, url);
+          });
           view.webContents.on(
             'did-fail-load',
             (_event, code, _description, _url, isMainFrame) => {
@@ -963,7 +966,9 @@ export class WindowManager {
       if (/^(https?:|tel:)/i.test(url)) void shell.openExternal(url);
     };
     win.webContents.on('will-navigate', guardShellNavigation);
-    win.webContents.on('will-redirect', guardShellNavigation);
+    win.webContents.on('will-redirect', (event, url, _isInPlace, isMainFrame) => {
+      if (!isPostcodeFrameRedirect(url, isMainFrame)) guardShellNavigation(event, url);
+    });
     win.webContents.setWindowOpenHandler(({ url }) => {
       if (/^(https?:|tel:)/i.test(url)) void shell.openExternal(url);
       return { action: 'deny' };
@@ -2132,6 +2137,10 @@ export class WindowManager {
     return this.windows.has(windowId);
   }
 
+  hasUnsavedNativeTabWork(windowId: number, tabId: string): boolean {
+    return this.nativeTabs.hasUnsavedWork(windowId, tabId);
+  }
+
   getKind(windowId: number): WindowKind | null {
     return this.windows.get(windowId)?.kind ?? null;
   }
@@ -2830,6 +2839,25 @@ export function registerTabIpcHandlers(manager: WindowManager) {
     }
     return manager.syncNativeViewport(source.id, payload);
   });
+
+  ipcMain.handle(
+    'tabs:hasUnsavedNativeTabWork',
+    (event, tabId: unknown): boolean => {
+      const source = BrowserWindow.fromWebContents(event.sender);
+      if (
+        !source ||
+        !manager.hasWindow(source.id) ||
+        !isCurrentMainFrame(event) ||
+        !manager.isRegisteredShellSender(event.sender.id) ||
+        typeof tabId !== 'string' ||
+        tabId.length === 0 ||
+        tabId.length > 200
+      ) {
+        return false;
+      }
+      return manager.hasUnsavedNativeTabWork(source.id, tabId);
+    },
+  );
 
   ipcMain.on('tabs:releaseNativeViewport', (event, payload: unknown) => {
     const source = BrowserWindow.fromWebContents(event.sender);

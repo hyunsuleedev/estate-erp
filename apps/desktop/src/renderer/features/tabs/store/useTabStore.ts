@@ -33,6 +33,13 @@ export interface ReplaceTabResourceInput extends Omit<CreateTabInput, 'activate'
   resourceKey: string;
 }
 
+export type NavigateTabInput = Omit<CreateTabInput, 'activate' | 'resourceKey'>;
+
+export interface NavigateTabOptions {
+  /** 화면이 저장 전 편집 상태를 보고했으면 원본 탭을 덮어쓰지 않는다. */
+  preserveSource?: boolean;
+}
+
 export type InsertTransferredTabResult =
   | { status: 'inserted' | 'existing'; tabId: TabId }
   | { status: 'conflict'; tabId: TabId; error: string };
@@ -62,6 +69,17 @@ interface TabStore {
   restoreTransferredWorkspace(
     workspace: TabWorkspaceSnapshot,
   ): RestoreTransferredWorkspaceResult;
+  /**
+   * 사이드바 같은 셸 내비게이션: 새 탭을 만들지 않고 현재 탭이 목적지로 이동한다.
+   * 같은 업무가 다른 탭에 이미 열려 있으면 그 탭을 상태 그대로 reveal하고,
+   * 저장 전 입력(formDraft 또는 preserveSource)이 있는 탭은 덮어쓰지 않도록
+   * 목적지를 새 탭으로 연다.
+   */
+  navigateTab(
+    id: TabId | null,
+    input: NavigateTabInput,
+    options?: NavigateTabOptions,
+  ): TabId;
   /** 일반 Link/navigation 결과를 같은 resource 안에서는 갱신하고, 다른 resource는 새로 열거나 reveal한다. */
   adoptTabLocation(
     id: TabId,
@@ -114,6 +132,11 @@ function buildTab(id: TabId, input: CreateTabInput): Tab {
     routeParams: input.routeParams,
     createdAt: Date.now(),
   };
+}
+
+function hasUnsavedFormDraft(tab: Tab): boolean {
+  const formDraft = tab.uiState?.formDraft;
+  return Boolean(formDraft && Object.keys(formDraft).length > 0);
 }
 
 function sameTransferredTab(left: Tab, right: Tab): boolean {
@@ -279,6 +302,65 @@ export const useTabStore = create<TabStore>((set, get) => ({
       transferLockedTabIds: new Set<TabId>(),
     });
     return { status: 'restored', activeTabId };
+  },
+
+  navigateTab(id, input, options) {
+    const state = get();
+    const source = id ? state.tabs.find((tab) => tab.id === id) : undefined;
+    if (!source) return get().createTab(input);
+    if (state.transferLockedTabIds.has(source.id)) return source.id;
+
+    const kind = input.kind ?? 'generic';
+    const resourceKey = resolveTabResourceKey(input.route, source.id);
+
+    if (source.resourceKey === resourceKey) {
+      set({
+        tabs: state.tabs.map((tab) =>
+          tab.id === source.id
+            ? {
+                ...tab,
+                kind,
+                title: input.title,
+                route: input.route,
+                routeParams: input.routeParams,
+              }
+            : tab,
+        ),
+        activeTabId: source.id,
+      });
+      return source.id;
+    }
+
+    const existing = state.tabs.find(
+      (tab) => tab.id !== source.id && tab.resourceKey === resourceKey,
+    );
+    if (existing) {
+      set({ activeTabId: existing.id });
+      return existing.id;
+    }
+
+    if (options?.preserveSource || hasUnsavedFormDraft(source)) {
+      return get().createTab(input);
+    }
+
+    set({
+      tabs: state.tabs.map((tab) =>
+        tab.id === source.id
+          ? {
+              ...tab,
+              resourceKey,
+              kind,
+              title: input.title,
+              route: input.route,
+              routeParams: input.routeParams,
+              // 이전 화면의 scroll/form 상태는 새 화면에 이어지지 않는다.
+              uiState: undefined,
+            }
+          : tab,
+      ),
+      activeTabId: source.id,
+    });
+    return source.id;
   },
 
   adoptTabLocation(id, route, kind, title, routeParams) {

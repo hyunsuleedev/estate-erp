@@ -36,10 +36,10 @@ export interface ConsultationContextCard {
     | '/contacts/$id'
     | '/properties/$id'
     | '/properties'
-    | '/matches'
+    | '/wanted-properties'
     | '/buyer-requirements/$id';
   params?: { id: string };
-  /** 매칭 딥링크 (?matchId=) — /matches 페이지가 자동으로 상세를 연다 */
+  /** 매칭 딥링크 (?matchId=) — /wanted-properties 페이지가 자동으로 상세를 연다 */
   search?: { matchId: string };
 }
 
@@ -278,8 +278,8 @@ export function getConsultationContextCards(consultation: ConsultationListItem):
       title: consultation.match?.stage
         ? `매칭 · ${matchStageLabels[consultation.match.stage] ?? consultation.match.stage}`
         : '매칭 연결',
-      description: '매칭 파이프라인에서 이 매칭의 상세를 엽니다.',
-      to: '/matches',
+      description: '희망매물에서 이 매칭의 상세를 엽니다.',
+      to: '/wanted-properties',
       search: { matchId: consultation.matchId },
     });
   }

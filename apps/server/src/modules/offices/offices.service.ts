@@ -5,21 +5,19 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import type { Office } from '@prisma/client';
+import { CreateOfficeDto, UpdateOfficeDto } from './offices.dto';
+import { prepareOfficeAddress } from './office-address';
+import { OfficeGeocodingService } from './office-geocoding.service';
 
 @Injectable()
 export class OfficesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly geocoding: OfficeGeocodingService,
+  ) {}
 
-  async createForCurrentUser(
-    userId: string,
-    dto: {
-      name: string;
-      licenseNo?: string | null;
-      ceoName?: string | null;
-      phone?: string | null;
-      address?: string | null;
-    },
-  ) {
+  async createForCurrentUser(userId: string, dto: CreateOfficeDto) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: { id: true, officeId: true, role: true },
@@ -35,6 +33,7 @@ export class OfficesService {
       throw new ForbiddenException('사무소 생성 권한이 없습니다.');
     }
 
+    const addressChange = prepareOfficeAddress(dto);
     const office = await this.prisma.$transaction(async (tx) => {
       const created = await tx.office.create({
         data: {
@@ -42,7 +41,7 @@ export class OfficesService {
           licenseNo: dto.licenseNo ?? null,
           ceoName: dto.ceoName ?? null,
           phone: dto.phone ?? null,
-          address: dto.address ?? null,
+          ...addressChange.data,
         },
         select: { id: true },
       });
@@ -74,6 +73,10 @@ export class OfficesService {
       throw new NotFoundException('Office not found');
     }
 
+    if (addressChange.geocode) {
+      await this.geocoding.tryRefresh(office.id);
+      return this.getMe(office.id);
+    }
     return this.toOfficeProfile(office);
   }
 
@@ -103,39 +106,27 @@ export class OfficesService {
     return this.toOfficeProfile(office);
   }
 
-  async updateMe(
-    officeId: string,
-    dto: {
-      name?: string;
-      licenseNo?: string | null;
-      ceoName?: string | null;
-      phone?: string | null;
-      address?: string | null;
-      naverVerificationId?: string | null;
-    },
-  ) {
-    await this.getMe(officeId);
-
-    const office = await this.prisma.office.update({
+  async updateMe(officeId: string, dto: UpdateOfficeDto) {
+    const current = await this.prisma.office.findUnique({
       where: { id: officeId },
-      data: dto,
-      include: {
-        users: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            phone: true,
-            role: true,
-            licenseType: true,
-            isActive: true,
-          },
-          orderBy: [{ role: 'asc' }, { createdAt: 'asc' }],
-        },
-      },
     });
+    if (!current) throw new NotFoundException('Office not found');
+    const change = prepareOfficeAddress(dto, current);
+    // Clear old geometry atomically with the new address, before external geocoding.
+    await this.prisma.$transaction(async (tx) => {
+      await tx.office.update({ where: { id: officeId }, data: change.data });
+      if (change.resetLocation) {
+        await tx.$executeRaw`UPDATE offices SET location = NULL WHERE id = ${officeId}::uuid`;
+      }
+    });
+    if (change.geocode) await this.geocoding.tryRefresh(officeId);
+    return this.getMe(officeId);
+  }
 
-    return this.toOfficeProfile(office);
+  async retryGeocoding(officeId: string) {
+    await this.getMe(officeId);
+    await this.geocoding.tryRefresh(officeId);
+    return this.getMe(officeId);
   }
 
   async updateCommissionConfig(
@@ -194,30 +185,19 @@ export class OfficesService {
     return this.toOfficeProfile(updated);
   }
 
-  private toOfficeProfile(office: {
-    id: string;
-    name: string;
-    licenseNo: string | null;
-    ceoName: string | null;
-    phone: string | null;
-    address: string | null;
-    naverVerificationId: string | null;
-    subscription: string;
-    maxUsers: number;
-    isActive: boolean;
-    commissionConfig: unknown;
-    createdAt: Date;
-    updatedAt: Date;
-    users: Array<{
-      id: string;
-      name: string;
-      email: string | null;
-      phone: string | null;
-      role: string;
-      licenseType?: string | null;
-      isActive: boolean;
-    }>;
-  }) {
+  private toOfficeProfile(
+    office: Office & {
+      users: Array<{
+        id: string;
+        name: string;
+        email: string | null;
+        phone: string | null;
+        role: string;
+        licenseType?: string | null;
+        isActive: boolean;
+      }>;
+    },
+  ) {
     const owner = office.users.find((user) => user.role === 'owner') ?? null;
     const activeUsers = office.users.filter((user) => user.isActive);
 
@@ -228,6 +208,20 @@ export class OfficesService {
       ceoName: office.ceoName,
       phone: office.phone,
       address: office.address,
+      postalAddress:
+        office.roadAddress || office.jibunAddress
+          ? {
+              roadAddress: office.roadAddress,
+              jibunAddress: office.jibunAddress,
+              detailAddress: office.detailAddress,
+              zipCode: office.zipCode,
+              buildingCode: office.buildingCode,
+            }
+          : null,
+      geocodingStatus: office.geocodingStatus,
+      geocodedAt: office.geocodedAt,
+      latitude: office.lat === null ? null : Number(office.lat),
+      longitude: office.lng === null ? null : Number(office.lng),
       naverVerificationId: office.naverVerificationId,
       subscription: office.subscription,
       maxUsers: office.maxUsers,

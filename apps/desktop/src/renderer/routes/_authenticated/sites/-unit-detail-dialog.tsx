@@ -46,6 +46,7 @@ import { ConfirmDialog, EmptyState, EntityChip, StatusBadge } from '@/components
 import { cn } from '@/lib/utils';
 import { formatArea, formatDate, formatDateTime, formatDday, formatPhone } from '@/lib/format';
 import {
+  canEditSiteStructure,
   consultationTypeLabels,
   formatListingPrice,
   getUnitOccupancy,
@@ -263,6 +264,8 @@ function UnitDetailBody({
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['sites', site.id] });
       queryClient.invalidateQueries({ queryKey: ['properties'] });
+      // 관리단지 사이드바의 단지별 관리호수 수(office-sites 집계)도 함께 갱신
+      queryClient.invalidateQueries({ queryKey: ['office-sites'] });
       toast.success('관리호수로 등록했습니다');
     },
     onError: (error) => {
@@ -341,23 +344,26 @@ function UnitDetailBody({
             <ScrollText className="mr-1.5 size-3.5" />
             {issueMutation.isPending ? '요청 중...' : `등기 열람 요청 (${REGISTRY_COST}원)`}
           </Button>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="sm" className="h-8">
-                <MoreHorizontal className="size-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={onEdit}>
-                <Pencil className="size-3.5" />
-                호실 수정
-              </DropdownMenuItem>
-              <DropdownMenuItem className="text-destructive" onClick={onDelete}>
-                <Trash2 className="size-3.5" />
-                호실 삭제
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          {/* 공공 단지의 호실은 바꿀 수 없다 — 직접 등록한 단지에만 보인다 */}
+          {canEditSiteStructure(site) && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" className="h-8" aria-label="호실 메뉴">
+                  <MoreHorizontal className="size-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={onEdit}>
+                  <Pencil className="size-3.5" />
+                  호실 수정
+                </DropdownMenuItem>
+                <DropdownMenuItem className="text-destructive" onClick={onDelete}>
+                  <Trash2 className="size-3.5" />
+                  호실 삭제
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
           <div className="ml-auto flex items-center gap-2 text-[11px] text-muted-foreground">
             <span>매물 {listingsWithProperty.length}건</span>
             <span>·</span>

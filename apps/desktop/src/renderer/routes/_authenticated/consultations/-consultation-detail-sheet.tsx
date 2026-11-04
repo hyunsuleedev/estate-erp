@@ -397,10 +397,10 @@ export function ConsultationContextLinkCard({ card }: { card: ConsultationContex
     );
   }
 
-  if (card.to === '/matches') {
+  if (card.to === '/wanted-properties') {
     return (
       <Link
-        to="/matches"
+        to="/wanted-properties"
         search={card.search}
         className="block rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"
       >

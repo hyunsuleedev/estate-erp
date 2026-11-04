@@ -2,91 +2,60 @@ import { createFileRoute } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDeferredValue, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
-  DndContext,
-  DragOverlay,
-  PointerSensor,
-  useDraggable,
-  useDroppable,
-  useSensor,
-  useSensors,
-  type DragEndEvent,
-  type DragStartEvent,
-} from '@dnd-kit/core';
-import {
   AlertCircle,
-  ArrowRight,
   CheckCircle2,
-  Circle,
   ClipboardList,
   Clock,
-  Edit,
-  LayoutGrid,
-  Layers,
-  List,
-  ListOrdered,
-  MoreHorizontal,
   Plus,
   SearchX,
   Trash2,
-  User,
   X,
   XCircle,
-  type LucideIcon,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   ApiError,
   type CreateTaskDto,
   type Task,
+  type TaskContact,
   type UpdateTaskDto,
 } from '@estate-erp/api-client';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/providers/auth-provider';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { ConfirmDialog, EmptyState } from '@/components/domain';
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { Switch } from '@/components/ui/switch';
-import {
-  ConfirmDialog,
-  EmptyState,
-  FilterBar,
-  FilterCount,
-  FilterSearch,
-  FilterSelect,
-  PageHeader,
-} from '@/components/domain';
-import {
-  ASSIGNEE_UNASSIGNED,
-  DueDateText,
-  TASK_STATUSES,
-  TaskContextChips,
-  TaskSourceBadge,
-  boardColumns,
-  categoryConfig,
-  getPropertyLabel,
-  isOverdue,
-  priorityConfig,
   taskStatusLabel,
-  type DueDateFilter,
-  type TaskCategory,
-  type TaskPriority,
-  type ViewMode,
+  type StatusChangeOptions,
+  type TaskUpdatePatch,
 } from './-task-shared';
 import {
-  CategoryTaskTable,
-  LoadingSkeleton,
-  NotionTableHeader,
-  NotionTableRow,
-  StatusView,
-} from './-task-table';
+  countByCategory,
+  countByDueFacet,
+  countByPriority,
+  countByScope,
+  countByStatus,
+  applyTaskUpdate,
+  filterTasks,
+  isTaskOverdue,
+  listStatusColumns,
+  matchesTaskFilters,
+  nextCheckStatus,
+  type DueDateFilter,
+  type HeldTaskState,
+  type TaskFilterState,
+} from './-task-filters';
+import {
+  effectiveGroupBy,
+  parseTaskDisplay,
+  parseTaskScope,
+  type TaskDisplay,
+  type TaskScope,
+} from './-task-display';
+import { LoadingSkeleton, StatusView, TaskGroupedList, type TaskCreatePreset } from './-task-table';
+import { BoardView } from './-task-board';
+import { TaskToolbar } from './-task-toolbar';
 import { TaskFormModal } from './-task-form';
 
 export const Route = createFileRoute('/_authenticated/tasks/')({
@@ -95,25 +64,53 @@ export const Route = createFileRoute('/_authenticated/tasks/')({
 
 // ─── Config ───────────────────────────────────────────────
 
-const VIEW_OPTIONS: { mode: ViewMode; label: string; icon: LucideIcon }[] = [
-  { mode: 'category', label: '작업별', icon: Layers },
-  { mode: 'status', label: '상태별', icon: ListOrdered },
-  { mode: 'board', label: '보드', icon: LayoutGrid },
-  { mode: 'list', label: '전체', icon: List },
-];
 
-const DUE_DATE_OPTIONS = [
-  { value: 'overdue', label: '지연됨' },
-  { value: 'today', label: '오늘' },
-  { value: 'week', label: '이번 주' },
-  { value: 'none', label: '마감일 없음' },
-];
+const DISPLAY_STORAGE_KEY = 'estate-erp.tasks.display';
+const SCOPE_STORAGE_KEY = 'estate-erp.tasks.scope';
+/** 예전 보기 설정(작업별·상태별·보드·전체) — 처음 한 번 새 표시 설정으로 옮긴다 */
+const LEGACY_VIEW_MODE_STORAGE_KEY = 'estate-erp.tasks.viewMode';
+
+function readStorage(key: string): string | null {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null; // 저장소 접근 불가(프라이빗 모드 등) — 기본값
+  }
+}
+
+function writeStorage(key: string, value: string) {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    // 무시 — 다음 진입 때 기본값
+  }
+}
+
+const readStoredDisplay = (): TaskDisplay =>
+  parseTaskDisplay(readStorage(DISPLAY_STORAGE_KEY), readStorage(LEGACY_VIEW_MODE_STORAGE_KEY));
 
 function getErrorMessage(error: unknown): string {
   if (error instanceof ApiError && error.message) return error.message;
   if (error instanceof Error && error.message) return error.message;
   return '요청을 처리하지 못했습니다';
 }
+
+type CreatePreset = TaskCreatePreset;
+type StatusChangeVars = {
+  id: string;
+  status: string;
+  prevStatus?: string;
+  isUndo?: boolean;
+  /** 낙관적 반영 직전 캐시 — 실패 시 복원용 */
+  snapshot?: Task[];
+};
+type InlineUpdateVars = { id: string; dto: TaskUpdatePatch; snapshot?: Task[] };
+type ModalUpdateVars = { id: string; dto: UpdateTaskDto; snapshot?: Task[] };
+type BulkStatusVars = { ids: string[]; status: string; snapshot?: Task[] };
+
+/** 업무 쓰기는 모두 한 줄로 세워 누른 순서대로 보낸다 (생성·수정·상태·순서·삭제·일괄) */
+const TASK_WRITE_KEY = ['tasks', 'write'];
+const TASK_WRITE_SCOPE = { id: 'tasks-write' };
 
 // ─── Main Page ────────────────────────────────────────────
 
@@ -123,9 +120,13 @@ function TasksPage() {
   const role = user?.role ?? 'agent';
   const canBulkDelete = role === 'owner' || role === 'manager';
 
-  const [viewMode, setViewMode] = useState<ViewMode>('category');
+  const [display, setDisplay] = useState<TaskDisplay>(readStoredDisplay);
+  const [scope, setScope] = useState<TaskScope>(() => parseTaskScope(readStorage(SCOPE_STORAGE_KEY)));
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const isBoard = display.layout === 'board';
+  const groupBy = effectiveGroupBy(display.groupBy, scope);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-  const [createPresetStatus, setCreatePresetStatus] = useState<string | null>(null);
+  const [createPreset, setCreatePreset] = useState<CreatePreset | null>(null);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Task | null>(null);
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
@@ -139,11 +140,16 @@ function TasksPage() {
   const [dueDateFilter, setDueDateFilter] = useState<DueDateFilter>('');
   const [categoryFilter, setCategoryFilter] = useState('');
   const [assigneeFilter, setAssigneeFilter] = useState('');
-  const [showOnlyMyTasks, setShowOnlyMyTasks] = useState(false);
-  const searchWrapRef = useRef<HTMLDivElement>(null);
+  const [priorityFilter, setPriorityFilter] = useState<string[]>([]);
+  const searchWrapRef = useRef<HTMLLabelElement>(null);
 
-  // 선택 (전체 뷰)
+  // 선택 (목록 보기)
   const [selectedTasks, setSelectedTasks] = useState<Set<string>>(new Set());
+  /**
+   * 방금 체크·선택·메뉴로 상태를 바꾼 업무의 "바꾸기 전" 상태 — 필터·뷰를 바꾸기 전까지 행/카드를 제자리에 둔다.
+   * (완료 체크 직후 행이 빠지거나 다른 그룹으로 이동하면 다음 행이 커서 밑으로 올라와 연속 클릭 시 잘못 완료됨)
+   */
+  const [heldTasks, setHeldTasks] = useState<Map<string, HeldTaskState>>(new Map());
 
   const {
     data: tasks = [],
@@ -166,165 +172,275 @@ function TasksPage() {
     [employees],
   );
 
-  // ─── Mutations (성공 toast + 실패 toast + invalidate) ────
+  // ─── Mutations ───────────────────────────────────────────
+
+  // ─── 업무 쓰기 공통 규칙 — 연속·혼합 조작에도 마지막 의도가 남도록 ──────
+  //  모든 업무 쓰기(생성·모달 수정·상태·인라인·순서·삭제·일괄)는 같은 scope 하나로 한 줄로 세운다.
+  //  1) 낙관적 반영을 클릭 순간 동기로 캐시에 쓴다 → 다음 클릭은 항상 최신 값에서 계산
+  //  2) 같은 scope → 서버에 누른 순서대로 도착 (나중에 누른 일괄 변경이 앞서 쌓인 개별 변경에 덮이지 않음)
+  //  3) 마지막 쓰기가 끝났을 때만 재조회 → 앞 요청의 응답이 뒤 클릭의 낙관적 상태를 덮지 않음
+  //  4) 실패 시 스냅샷 복원은 혼자 진행 중일 때만 (뒤에 쌓인 변경을 지우지 않도록), 그 외엔 마지막 재조회가 정답을 가져온다
+
+  const readCachedTask = (id: string) =>
+    queryClient.getQueryData<Task[]>(['tasks'])?.find((t) => t.id === id);
+
+  /** 진행 중인 재조회를 취소(즉시 되돌림)한 뒤 그 위에 낙관적 변경을 쓴다. 쓰기 전 스냅샷을 돌려준다. */
+  const applyOptimisticTask = (id: string, patch: (task: Task) => Task) => {
+    void queryClient.cancelQueries({ queryKey: ['tasks'] });
+    const snapshot = queryClient.getQueryData<Task[]>(['tasks']);
+    queryClient.setQueryData<Task[]>(['tasks'], (old) => old?.map((t) => (t.id === id ? patch(t) : t)));
+    return snapshot;
+  };
+
+  const isLastTaskWrite = () => queryClient.isMutating({ mutationKey: TASK_WRITE_KEY }) <= 1;
+
+  const settleTaskWrite = () => {
+    if (isLastTaskWrite()) void queryClient.invalidateQueries({ queryKey: ['tasks'] });
+  };
+
+  const rollbackTaskWrite = (snapshot: Task[] | undefined) => {
+    if (snapshot && isLastTaskWrite()) queryClient.setQueryData(['tasks'], snapshot);
+  };
 
   const createMutation = useMutation({
+    mutationKey: TASK_WRITE_KEY,
+    scope: TASK_WRITE_SCOPE,
     mutationFn: (dto: CreateTaskDto) => api.tasks.create(dto),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['tasks'] });
       toast.success('업무가 등록되었습니다');
       setIsCreateModalOpen(false);
-      setCreatePresetStatus(null);
+      setCreatePreset(null);
     },
     onError: (e) => toast.error(getErrorMessage(e)),
+    onSettled: settleTaskWrite,
   });
 
+  // 모달 저장 (전체 필드)
   const updateMutation = useMutation({
-    mutationFn: ({ id, dto }: { id: string; dto: UpdateTaskDto }) => api.tasks.update(id, dto),
+    mutationKey: TASK_WRITE_KEY,
+    scope: TASK_WRITE_SCOPE,
+    mutationFn: ({ id, dto }: ModalUpdateVars) => api.tasks.update(id, dto),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['tasks'] });
       toast.success('업무가 수정되었습니다');
       setEditingTask(null);
     },
-    onError: (e) => toast.error(getErrorMessage(e)),
-  });
-
-  // 상태 변경 (DnD/퀵액션) — 낙관적 캐시 업데이트 + 실패 시 롤백
-  const updateStatusMutation = useMutation({
-    mutationFn: ({ id, status }: { id: string; status: string }) =>
-      api.tasks.update(id, { status }),
-    onMutate: async ({ id, status }) => {
-      await queryClient.cancelQueries({ queryKey: ['tasks'] });
-      const previous = queryClient.getQueryData<Task[]>(['tasks']);
-      queryClient.setQueryData<Task[]>(['tasks'], (old) =>
-        old?.map((t) => (t.id === id ? { ...t, status } : t)),
-      );
-      return { previous };
-    },
-    onSuccess: (_data, { status }) => {
-      toast.success(`'${taskStatusLabel(status)}' 상태로 변경되었습니다`);
-    },
-    onError: (e, _vars, context) => {
-      if (context?.previous) queryClient.setQueryData(['tasks'], context.previous);
+    onError: (e, { snapshot }) => {
+      rollbackTaskWrite(snapshot);
       toast.error(getErrorMessage(e));
     },
-    onSettled: () => queryClient.invalidateQueries({ queryKey: ['tasks'] }),
+    onSettled: settleTaskWrite,
   });
 
+  // 인라인 수정 (우선순위·마감일·담당자) — 성공 토스트는 생략(화면이 곧 피드백)
+  const inlineUpdateMutation = useMutation({
+    mutationKey: TASK_WRITE_KEY,
+    scope: TASK_WRITE_SCOPE,
+    mutationFn: ({ id, dto }: InlineUpdateVars) => api.tasks.update(id, dto),
+    onError: (e, { snapshot }) => {
+      rollbackTaskWrite(snapshot);
+      toast.error(getErrorMessage(e));
+    },
+    onSettled: settleTaskWrite,
+  });
+
+  // 상태 변경 (체크/DnD/퀵액션) — 되돌리기 토스트
+  const updateStatusMutation = useMutation({
+    mutationKey: TASK_WRITE_KEY,
+    scope: TASK_WRITE_SCOPE,
+    mutationFn: ({ id, status }: StatusChangeVars) => api.tasks.update(id, { status }),
+    onSuccess: (_data, { id, status, prevStatus, isUndo }) => {
+      if (isUndo) {
+        toast.success('변경을 되돌렸습니다');
+        return;
+      }
+      const message =
+        status === 'completed' ? '업무를 완료했습니다' : `'${taskStatusLabel(status)}' 상태로 변경되었습니다`;
+      toast.success(
+        message,
+        prevStatus && prevStatus !== status
+          ? {
+              action: {
+                label: '되돌리기',
+                onClick: () => changeStatus(id, prevStatus, { isUndo: true }),
+              },
+            }
+          : undefined,
+      );
+    },
+    onError: (e, { snapshot }) => {
+      rollbackTaskWrite(snapshot);
+      toast.error(getErrorMessage(e));
+    },
+    onSettled: settleTaskWrite,
+  });
+
+  function changeStatus(
+    id: string,
+    status: string,
+    options: { isUndo?: boolean; fromDrag?: boolean } = {},
+  ) {
+    const current = readCachedTask(id); // 렌더 시점이 아니라 캐시의 최신 상태
+    if (!current) return;
+    if (options.fromDrag) {
+      // 드래그는 사용자가 위치를 직접 정한 것 — 붙잡아 둔 위치를 풀고 놓은 곳으로 보낸다
+      setHeldTasks((prev) => {
+        if (!prev.has(id)) return prev;
+        const next = new Map(prev);
+        next.delete(id);
+        return next;
+      });
+      if (current.status === status) return; // 실제 상태는 이미 같음 — 위치만 갱신
+    } else {
+      // 처음 바꾸기 전 상태만 기억 (연속 클릭 중간 상태로 덮어쓰지 않음)
+      setHeldTasks((prev) => (prev.has(id) ? prev : new Map(prev).set(id, { status: current.status })));
+    }
+    if (current.status === status) return;
+    const snapshot = applyOptimisticTask(id, (t) => ({ ...t, status }));
+    updateStatusMutation.mutate({ id, status, prevStatus: current.status, isUndo: options.isUndo, snapshot });
+  }
+
+  /** 행 앞 체크: 대기 → 진행중 → 완료 → 대기. 캐시의 최신 상태에서 다음 단계를 계산한다. */
+  const handleCycleCheck = (id: string) => {
+    const current = readCachedTask(id);
+    if (!current || current.status === 'cancelled') return;
+    changeStatus(id, nextCheckStatus(current.status));
+  };
+
+  const handleInlineUpdate = (id: string, dto: TaskUpdatePatch) => {
+    const snapshot = applyOptimisticTask(id, (t) => applyTaskUpdate(t, dto, { employees: activeEmployees }));
+    inlineUpdateMutation.mutate({ id, dto, snapshot });
+  };
+
+  /** 수정 창 저장 — 즉시 캐시에 반영해 이어지는 편집(재열기 포함)이 저장한 값에서 시작하게 한다 */
+  const submitTaskEdit = (id: string, dto: UpdateTaskDto, contact?: TaskContact | null) => {
+    const snapshot = applyOptimisticTask(id, (t) =>
+      applyTaskUpdate(t, dto, { employees: activeEmployees, contact }),
+    );
+    updateMutation.mutate({ id, dto, snapshot });
+  };
+
+  /** 수정 창은 렌더 시점 객체가 아니라 캐시의 최신 업무로 연다 */
+  const openEdit = (task: Task) => setEditingTask(readCachedTask(task.id) ?? task);
+
   const reorderMutation = useMutation({
+    mutationKey: TASK_WRITE_KEY,
+    scope: TASK_WRITE_SCOPE,
     mutationFn: (orderedIds: string[]) => api.tasks.reorder(orderedIds),
-    onSuccess: () => toast.success('순서가 저장되었습니다'),
     onError: (e) => {
       toast.error(getErrorMessage(e));
       setDndResetKey((k) => k + 1);
     },
-    onSettled: () => queryClient.invalidateQueries({ queryKey: ['tasks'] }),
+    onSettled: settleTaskWrite,
   });
 
   const deleteMutation = useMutation({
+    mutationKey: TASK_WRITE_KEY,
+    scope: TASK_WRITE_SCOPE,
     mutationFn: (id: string) => api.tasks.remove(id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['tasks'] });
       toast.success('업무가 삭제되었습니다');
       setDeleteTarget(null);
     },
     onError: (e) => toast.error(getErrorMessage(e)),
+    onSettled: settleTaskWrite,
   });
 
   const bulkStatusMutation = useMutation({
-    mutationFn: ({ ids, status }: { ids: string[]; status: string }) =>
-      api.tasks.bulkUpdateStatus(ids, status),
+    mutationKey: TASK_WRITE_KEY,
+    scope: TASK_WRITE_SCOPE,
+    mutationFn: ({ ids, status }: BulkStatusVars) => api.tasks.bulkUpdateStatus(ids, status),
     onSuccess: (_data, { ids, status }) => {
-      queryClient.invalidateQueries({ queryKey: ['tasks'] });
       toast.success(`${ids.length}개 업무가 '${taskStatusLabel(status)}' 상태로 변경되었습니다`);
-      setSelectedTasks(new Set());
     },
-    onError: (e) => toast.error(getErrorMessage(e)),
+    onError: (e, { snapshot }) => {
+      rollbackTaskWrite(snapshot);
+      toast.error(getErrorMessage(e));
+    },
+    onSettled: settleTaskWrite,
   });
 
+  /** 일괄 상태 변경 — 다른 쓰기와 같은 순서 규칙 + 즉시 화면 반영 */
+  const runBulkStatus = (status: string) => {
+    const ids = [...selectedTasks];
+    if (ids.length === 0) return;
+    const idSet = new Set(ids);
+    void queryClient.cancelQueries({ queryKey: ['tasks'] });
+    const snapshot = queryClient.getQueryData<Task[]>(['tasks']);
+    queryClient.setQueryData<Task[]>(['tasks'], (old) =>
+      old?.map((t) => (idSet.has(t.id) ? { ...t, status } : t)),
+    );
+    setSelectedTasks(new Set());
+    bulkStatusMutation.mutate({ ids, status, snapshot });
+  };
+
   const bulkDeleteMutation = useMutation({
+    mutationKey: TASK_WRITE_KEY,
+    scope: TASK_WRITE_SCOPE,
     mutationFn: (ids: string[]) => api.tasks.bulkDelete(ids),
     onSuccess: (_data, ids) => {
-      queryClient.invalidateQueries({ queryKey: ['tasks'] });
       toast.success(`${ids.length}개 업무가 삭제되었습니다`);
       setSelectedTasks(new Set());
       setBulkDeleteOpen(false);
     },
     onError: (e) => toast.error(getErrorMessage(e)),
+    onSettled: settleTaskWrite,
   });
 
-  // ─── 필터링 ──────────────────────────────────────────────
+  // ─── 필터링 / 집계 ───────────────────────────────────────
 
-  const matchesDueDateFilter = (task: Task) => {
-    if (!dueDateFilter) return true;
-    if (dueDateFilter === 'none') return !task.dueDate;
-    if (!task.dueDate) return false;
-    const d = new Date(task.dueDate);
-    const today = new Date(new Date().toDateString());
-    if (dueDateFilter === 'overdue') {
-      return d < today && task.status !== 'completed' && task.status !== 'cancelled';
-    }
-    if (dueDateFilter === 'today') return d.toDateString() === today.toDateString();
-    if (dueDateFilter === 'week') {
-      const weekEnd = new Date(today);
-      weekEnd.setDate(today.getDate() + 7);
-      return d >= today && d <= weekEnd;
-    }
-    return true;
-  };
+  const userId = user?.id ?? null;
+  const filters = useMemo<TaskFilterState>(
+    () => ({
+      status: statusFilter,
+      due: dueDateFilter,
+      category: categoryFilter,
+      // 내 담당 탭에서는 담당자 필터가 의미 없다 (탭이 이미 나로 좁힘)
+      assignee: scope === 'mine' ? '' : assigneeFilter,
+      scope,
+      currentUserId: userId,
+      hideCompleted: !display.showCompleted,
+      priorities: priorityFilter,
+      search: deferredSearch,
+    }),
+    [
+      statusFilter,
+      dueDateFilter,
+      categoryFilter,
+      assigneeFilter,
+      scope,
+      userId,
+      display.showCompleted,
+      priorityFilter,
+      deferredSearch,
+    ],
+  );
 
-  const filteredTasks = useMemo(() => {
-    const q = deferredSearch.trim().toLowerCase();
-    return tasks
-      .filter((task) => {
-        // 취소 업무는 기본 숨김 — 상태 필터로 '취소'를 선택했을 때만 조회 (아카이브)
-        if (statusFilter === 'cancelled') {
-          if (task.status !== 'cancelled') return false;
-        } else {
-          if (task.status === 'cancelled') return false;
-          if (statusFilter && task.status !== statusFilter) return false;
-        }
-        if (categoryFilter && task.category !== categoryFilter) return false;
-        if (!matchesDueDateFilter(task)) return false;
-        if (showOnlyMyTasks && user && task.assignedToId !== user.id) return false;
-        if (assigneeFilter === ASSIGNEE_UNASSIGNED && task.assignedToId) return false;
-        if (
-          assigneeFilter &&
-          assigneeFilter !== ASSIGNEE_UNASSIGNED &&
-          task.assignedToId !== assigneeFilter
-        ) {
-          return false;
-        }
-        if (q) {
-          const haystack = [
-            task.title,
-            task.content,
-            task.contact?.name,
-            task.contact?.phone,
-            task.property?.site?.name,
-            task.property?.unit?.name,
-            task.property?.unit?.dong?.name,
-            task.property ? getPropertyLabel(task) : null,
-            task.assignedTo?.name,
-          ]
-            .filter(Boolean)
-            .join(' ')
-            .toLowerCase();
-          if (!haystack.includes(q)) return false;
-        }
-        return true;
-      })
-      .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tasks, statusFilter, categoryFilter, dueDateFilter, showOnlyMyTasks, user, assigneeFilter, deferredSearch]);
+  const filteredTasks = useMemo(
+    () => filterTasks(tasks, filters, heldTasks),
+    [tasks, filters, heldTasks],
+  );
+  // 필터·보기·묶기·정렬을 바꾸면 붙잡아 둔 업무를 놓아 실제 상태대로 다시 배치
+  useEffect(() => {
+    setHeldTasks((prev) => (prev.size === 0 ? prev : new Map()));
+  }, [filters, display.layout, groupBy, display.sortBy]);
+  const dueCounts = useMemo(() => countByDueFacet(tasks, filters), [tasks, filters]);
+  const categoryCounts = useMemo(() => countByCategory(tasks, filters), [tasks, filters]);
+  const statusCounts = useMemo(() => countByStatus(tasks, filters), [tasks, filters]);
+  const priorityCounts = useMemo(() => countByPriority(tasks, filters), [tasks, filters]);
+  const scopeCounts = useMemo(() => countByScope(tasks, filters), [tasks, filters]);
+  /** 툴바 "기한 지남 N" — 마감 필터를 뺀 지금 탭·필터 기준 */
+  const overdueInScope = useMemo(
+    () => tasks.filter((task) => isTaskOverdue(task) && matchesTaskFilters(task, { ...filters, due: '' })).length,
+    [tasks, filters],
+  );
 
-  const hasActiveFilters =
-    !!statusFilter ||
-    !!dueDateFilter ||
-    !!categoryFilter ||
-    !!assigneeFilter ||
-    showOnlyMyTasks ||
-    !!searchText.trim();
+  const activeFilterCount =
+    (statusFilter ? 1 : 0) +
+    (dueDateFilter ? 1 : 0) +
+    (categoryFilter ? 1 : 0) +
+    (scope !== 'mine' && assigneeFilter ? 1 : 0) +
+    (priorityFilter.length > 0 ? 1 : 0);
+  const hasActiveFilters = activeFilterCount > 0 || !!searchText.trim();
 
   const resetFilters = () => {
     setSearchText('');
@@ -332,48 +448,27 @@ function TasksPage() {
     setDueDateFilter('');
     setCategoryFilter('');
     setAssigneeFilter('');
-    setShowOnlyMyTasks(false);
+    setPriorityFilter([]);
   };
 
-  const handleMyTasksChange = (checked: boolean) => {
-    setShowOnlyMyTasks(checked);
-    if (checked) setAssigneeFilter('');
+  const changeDisplay = (patch: Partial<TaskDisplay>) => {
+    setDisplay((prev) => {
+      const next = { ...prev, ...patch };
+      writeStorage(DISPLAY_STORAGE_KEY, JSON.stringify(next));
+      return next;
+    });
   };
 
-  const handleAssigneeFilterChange = (value: string) => {
-    setAssigneeFilter(value);
-    if (value) setShowOnlyMyTasks(false);
+  const changeScope = (next: TaskScope) => {
+    setScope(next);
+    writeStorage(SCOPE_STORAGE_KEY, next);
   };
-
-  // ─── 키보드 단축키: N 새 업무 / "/" 검색 포커스 ──────────
-
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.metaKey || e.ctrlKey || e.altKey) return;
-      const target = e.target as HTMLElement | null;
-      if (
-        target?.closest('input, textarea, select, [contenteditable="true"], [role="dialog"], [role="alertdialog"]')
-      ) {
-        return;
-      }
-      if (e.key === 'n' || e.key === 'N') {
-        e.preventDefault();
-        setEditingTask(null);
-        setIsCreateModalOpen(true);
-      } else if (e.key === '/') {
-        e.preventDefault();
-        searchWrapRef.current?.querySelector('input')?.focus();
-      }
-    };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, []);
 
   // ─── 핸들러 ──────────────────────────────────────────────
 
-  const openCreate = (presetStatus?: string) => {
+  const openCreate = (preset?: CreatePreset) => {
     setEditingTask(null);
-    setCreatePresetStatus(presetStatus ?? null);
+    setCreatePreset(preset ?? null);
     setIsCreateModalOpen(true);
   };
 
@@ -386,13 +481,10 @@ function TasksPage() {
     setDeleteTarget(task);
   };
 
-  const handleStatusChange = (id: string, status: string) =>
-    updateStatusMutation.mutate({ id, status });
+  const handleStatusChange = (id: string, status: string, options?: StatusChangeOptions) =>
+    changeStatus(id, status, { fromDrag: options?.fromDrag });
 
-  const handleInlineUpdate = (id: string, dto: UpdateTaskDto) =>
-    updateMutation.mutate({ id, dto });
 
-  // 선택 관련
   const toggleTaskSelection = (taskId: string) => {
     setSelectedTasks((prev) => {
       const next = new Set(prev);
@@ -400,11 +492,6 @@ function TasksPage() {
       else next.add(taskId);
       return next;
     });
-  };
-
-  const toggleAllSelection = () => {
-    if (selectedTasks.size === filteredTasks.length) setSelectedTasks(new Set());
-    else setSelectedTasks(new Set(filteredTasks.map((t) => t.id)));
   };
 
   // 필터/데이터 변경으로 목록에서 사라진 업무는 선택에서 제거 (숨은 업무 일괄 처리 방지)
@@ -417,307 +504,274 @@ function TasksPage() {
     });
   }, [filteredTasks]);
 
-  const hasSelection = selectedTasks.size > 0;
-  const isAllSelected = filteredTasks.length > 0 && selectedTasks.size === filteredTasks.length;
+  // 보드로 바꾸면 선택 해제 (보드에는 선택 칸이 없다)
+  useEffect(() => {
+    if (isBoard) setSelectedTasks(new Set());
+  }, [isBoard]);
+
+  const hasSelection = !isBoard && selectedTasks.size > 0;
+
+  // ─── 키보드 단축키: N 새 업무 / "/" 검색 / Esc 선택 해제 ──
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      const target = e.target as HTMLElement | null;
+      if (
+        target?.closest(
+          'input, textarea, select, [contenteditable="true"], [role="dialog"], [role="alertdialog"], [role="menu"]',
+        )
+      ) {
+        return;
+      }
+      if (e.key === 'n' || e.key === 'N') {
+        e.preventDefault();
+        openCreate();
+      } else if (e.key === '/') {
+        e.preventDefault();
+        searchWrapRef.current?.querySelector('input')?.focus();
+      } else if (e.key === 'Escape') {
+        setSelectedTasks((prev) => (prev.size === 0 ? prev : new Set()));
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ─── 본문 콘텐츠 ─────────────────────────────────────────
 
-  const showCancelledHint =
-    statusFilter === 'cancelled' && (viewMode === 'board' || viewMode === 'status');
+  const rowHandlers = {
+    onRowClick: openEdit,
+    onStatusChange: handleStatusChange,
+    onCycleCheck: handleCycleCheck,
+    onDelete: requestDelete,
+    onUpdate: handleInlineUpdate,
+    employeeOptions: activeEmployees,
+  };
+
+  const showCancelledHint = statusFilter === 'cancelled' && isBoard;
+  /** 상태별 + 직접 정렬일 때만 끌어서 순서·상태를 바꾼다 */
+  const dragEnabled = groupBy === 'status' && display.sortBy === 'manual' && statusFilter !== 'cancelled';
+  const listProps = {
+    visible: display.visible,
+    selectedIds: selectedTasks,
+    onToggleSelect: toggleTaskSelection,
+    onAddTask: (preset: CreatePreset) => openCreate(preset),
+    ...rowHandlers,
+  };
 
   let content: ReactNode;
   if (isError) {
     content = (
-      <EmptyState
-        icon={AlertCircle}
-        title="업무 목록을 불러오지 못했습니다"
-        description={getErrorMessage(error)}
-        action={
-          <Button variant="outline" size="sm" onClick={() => void refetch()}>
-            다시 시도
-          </Button>
-        }
-      />
+      <CenteredState>
+        <EmptyState
+          icon={AlertCircle}
+          title="업무 목록을 불러오지 못했습니다"
+          description={getErrorMessage(error)}
+          action={
+            <Button variant="outline" size="sm" onClick={() => void refetch()}>
+              다시 시도
+            </Button>
+          }
+        />
+      </CenteredState>
     );
   } else if (isLoading) {
     content = <LoadingSkeleton />;
   } else if (tasks.length === 0) {
     content = (
-      <EmptyState
-        icon={ClipboardList}
-        title="등록된 업무가 없습니다"
-        description="첫 업무를 추가해 후속 작업 누락을 방지하세요"
-        action={
-          <Button size="sm" onClick={() => openCreate()}>
-            <Plus className="size-4" />
-            업무 추가
-          </Button>
-        }
-      />
+      <CenteredState>
+        <EmptyState
+          icon={ClipboardList}
+          title="등록된 업무가 없습니다"
+          description="첫 업무를 추가해 후속 작업 누락을 방지하세요"
+          action={
+            <Button size="sm" onClick={() => openCreate()}>
+              <Plus className="size-4" />
+              업무 추가
+            </Button>
+          }
+        />
+      </CenteredState>
     );
   } else if (filteredTasks.length === 0) {
     content = (
-      <EmptyState
-        icon={SearchX}
-        title="조건에 맞는 업무가 없습니다"
-        description="검색어 또는 필터를 조정해 보세요"
-        action={
-          hasActiveFilters ? (
-            <Button variant="outline" size="sm" onClick={resetFilters}>
-              <X className="size-4" />
-              필터 초기화
-            </Button>
-          ) : undefined
-        }
-      />
+      <CenteredState>
+        <EmptyState
+          icon={SearchX}
+          title="조건에 맞는 업무가 없습니다"
+          description="검색어 또는 필터를 조정해 보세요"
+          action={
+            hasActiveFilters ? (
+              <Button variant="outline" size="sm" onClick={resetFilters}>
+                <X className="size-4" />
+                필터 초기화
+              </Button>
+            ) : undefined
+          }
+        />
+      </CenteredState>
     );
   } else if (showCancelledHint) {
     content = (
-      <EmptyState
-        icon={XCircle}
-        title="취소된 업무는 보드/상태별 뷰에 표시되지 않습니다"
-        description="취소 업무는 전체 또는 작업별 뷰에서 확인하세요"
-        action={
-          <Button variant="outline" size="sm" onClick={() => setViewMode('list')}>
-            전체 뷰로 보기
-          </Button>
-        }
-      />
+      <CenteredState>
+        <EmptyState
+          icon={XCircle}
+          title="취소된 업무는 보드에 표시되지 않습니다"
+          description="취소 업무는 목록 보기에서 확인하세요"
+          action={
+            <Button variant="outline" size="sm" onClick={() => changeDisplay({ layout: 'list' })}>
+              목록으로 보기
+            </Button>
+          }
+        />
+      </CenteredState>
     );
-  } else if (viewMode === 'board') {
+  } else if (isBoard) {
     content = (
       <BoardView
         tasks={filteredTasks}
-        onEdit={setEditingTask}
+        heldTasks={heldTasks}
+        onEdit={openEdit}
         onStatusChange={handleStatusChange}
+        onCycleCheck={handleCycleCheck}
         onDelete={requestDelete}
-        onAddTask={(status) => openCreate(status)}
+        onAddTask={(status) => openCreate({ status })}
       />
     );
-  } else if (viewMode === 'status') {
+  } else if (dragEnabled) {
     content = (
       <StatusView
         key={dndResetKey}
         filteredTasks={filteredTasks}
-        onRowClick={setEditingTask}
-        onStatusChange={handleStatusChange}
-        onDelete={requestDelete}
-        onUpdate={handleInlineUpdate}
+        heldTasks={heldTasks}
+        columns={listStatusColumns(statusFilter, display.showCompleted)}
         onReorder={(orderedIds) => reorderMutation.mutate(orderedIds)}
-        employeeOptions={activeEmployees}
+        {...listProps}
       />
-    );
-  } else if (viewMode === 'category') {
-    content = (
-      <div>
-        {Object.entries(categoryConfig).map(([catKey, catData]) => {
-          const catTasks = filteredTasks.filter((t) => t.category === catKey);
-          if (catTasks.length === 0) return null;
-          return (
-            <CategoryTaskTable
-              key={catKey}
-              categoryData={catData}
-              tasks={catTasks}
-              onRowClick={setEditingTask}
-              onStatusChange={handleStatusChange}
-              onDelete={requestDelete}
-              onUpdate={handleInlineUpdate}
-              employeeOptions={activeEmployees}
-            />
-          );
-        })}
-      </div>
     );
   } else {
     content = (
-      <div>
-        {/* 일괄 작업 바 */}
-        {hasSelection && (
-          <div className="mb-3 flex flex-wrap items-center gap-2 rounded-md border border-info/30 bg-info-soft/50 p-2">
-            <span className="text-sm font-medium text-info">{selectedTasks.size}개 선택됨</span>
-            <div className="ml-auto flex items-center gap-1">
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-7 text-xs"
-                disabled={bulkStatusMutation.isPending}
-                onClick={() =>
-                  bulkStatusMutation.mutate({ ids: [...selectedTasks], status: 'in_progress' })
-                }
-              >
-                <Clock className="size-3" /> 진행중
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-7 text-xs"
-                disabled={bulkStatusMutation.isPending}
-                onClick={() =>
-                  bulkStatusMutation.mutate({ ids: [...selectedTasks], status: 'completed' })
-                }
-              >
-                <CheckCircle2 className="size-3" /> 완료
-              </Button>
-              {canBulkDelete && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 text-xs text-destructive hover:bg-destructive-soft hover:text-destructive"
-                  onClick={() => setBulkDeleteOpen(true)}
-                >
-                  <Trash2 className="size-3" /> 삭제
-                </Button>
-              )}
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-7 text-xs"
-                onClick={() => setSelectedTasks(new Set())}
-              >
-                <X className="size-3" /> 선택 취소
-              </Button>
-            </div>
-          </div>
-        )}
-
-        <table className="w-full">
-          <thead>
-            <NotionTableHeader
-              showCategory
-              showCheckbox
-              isAllSelected={isAllSelected}
-              onToggleAll={toggleAllSelection}
-            />
-          </thead>
-          <tbody>
-            {filteredTasks.map((task, idx) => (
-              <NotionTableRow
-                key={task.id}
-                task={task}
-                index={idx + 1}
-                onRowClick={setEditingTask}
-                onStatusChange={handleStatusChange}
-                onDelete={requestDelete}
-                onUpdate={handleInlineUpdate}
-                employeeOptions={activeEmployees}
-                showCategory
-                showCheckbox
-                isSelected={selectedTasks.has(task.id)}
-                onToggleSelect={toggleTaskSelection}
-              />
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <TaskGroupedList
+        tasks={filteredTasks}
+        groupBy={groupBy}
+        sortBy={display.sortBy}
+        heldTasks={heldTasks}
+        currentUserId={userId}
+        {...listProps}
+      />
     );
   }
 
   return (
-    <div className="flex flex-col pt-4">
-      <PageHeader
-        title="업무"
-        description="사무소 전체의 후속 작업을 만들고 상태·담당·마감일로 관리합니다"
-        actions={
-          <>
-            <div className="flex items-center gap-0.5 rounded-md border p-0.5">
-              {VIEW_OPTIONS.map(({ mode, label, icon: Icon }) => (
-                <Button
-                  key={mode}
-                  variant={viewMode === mode ? 'secondary' : 'ghost'}
-                  size="sm"
-                  onClick={() => setViewMode(mode)}
-                  className="h-7 gap-1.5 text-xs"
-                >
-                  <Icon className="size-3.5" />
-                  {label}
-                </Button>
-              ))}
-            </div>
-            <Button onClick={() => openCreate()}>
-              <Plus className="size-4" />
-              업무 추가
-            </Button>
-          </>
-        }
+    <div data-tasks-page className="relative -m-4 flex min-h-0 flex-1 flex-col overflow-hidden bg-background">
+      <TaskToolbar
+        scope={scope}
+        scopeCounts={scopeCounts}
+        onScopeChange={changeScope}
+        search={searchText}
+        onSearchChange={setSearchText}
+        searchWrapRef={searchWrapRef}
+        overdueCount={overdueInScope}
+        overdueActive={dueDateFilter === 'overdue'}
+        onToggleOverdue={() => setDueDateFilter((prev) => (prev === 'overdue' ? '' : 'overdue'))}
+        filtersOpen={filtersOpen}
+        onFiltersOpenChange={setFiltersOpen}
+        activeFilterCount={activeFilterCount}
+        display={display}
+        onDisplayChange={changeDisplay}
+        onCreate={() => openCreate()}
+        status={statusFilter}
+        statusCounts={statusCounts}
+        onStatusChange={setStatusFilter}
+        due={dueDateFilter}
+        dueCounts={dueCounts}
+        onDueChange={setDueDateFilter}
+        category={categoryFilter}
+        categoryCounts={categoryCounts}
+        onCategoryChange={setCategoryFilter}
+        priorities={priorityFilter}
+        priorityCounts={priorityCounts}
+        onPrioritiesChange={setPriorityFilter}
+        assignee={assigneeFilter}
+        employees={activeEmployees}
+        onAssigneeChange={setAssigneeFilter}
+        resultCount={isLoading ? null : filteredTasks.length}
+        hasActiveFilters={hasActiveFilters}
+        onReset={resetFilters}
       />
 
-      {/* 필터 바 (sticky) */}
-      <div className="sticky top-0 z-10 bg-background pb-3">
-        <FilterBar>
-          <div ref={searchWrapRef}>
-            <FilterSearch
-              value={searchText}
-              onChange={setSearchText}
-              placeholder="제목·내용·연락처 검색 ( / )"
-            />
-          </div>
-          <div className="flex h-8 items-center gap-2 rounded-md border border-dashed bg-background px-3">
-            <Switch size="sm" checked={showOnlyMyTasks} onCheckedChange={handleMyTasksChange} />
-            <label
-              className="cursor-pointer text-xs font-medium text-muted-foreground select-none"
-              onClick={() => handleMyTasksChange(!showOnlyMyTasks)}
-            >
-              <User className="mr-1 inline size-3" />내 업무
-            </label>
-          </div>
-          <FilterSelect
-            label="상태"
-            value={statusFilter}
-            onChange={setStatusFilter}
-            options={TASK_STATUSES.map((s) => ({ value: s, label: taskStatusLabel(s) }))}
-          />
-          <FilterSelect
-            label="마감일"
-            value={dueDateFilter}
-            onChange={(v) => setDueDateFilter(v as DueDateFilter)}
-            options={DUE_DATE_OPTIONS}
-          />
-          <FilterSelect
-            label="카테고리"
-            value={categoryFilter}
-            onChange={setCategoryFilter}
-            options={Object.entries(categoryConfig).map(([value, { label }]) => ({ value, label }))}
-          />
-          <FilterSelect
-            label="담당자"
-            value={assigneeFilter}
-            onChange={handleAssigneeFilterChange}
-            options={[
-              { value: ASSIGNEE_UNASSIGNED, label: '미배정' },
-              ...activeEmployees.map((e) => ({ value: e.id, label: e.name })),
-            ]}
-          />
-          {hasActiveFilters && (
+        <main className={cn('min-h-0 flex-1 overflow-auto', isBoard ? 'px-3 pb-4' : 'pb-20')}>
+          {content}
+        </main>
+
+      {/* 일괄 작업 바 (목록 보기) — 목록 위에 끼워 넣지 않고 하단에 띄운다: 선택 순간 행이 밀려 다음 클릭이 다른 행에 떨어지지 않도록 */}
+      {hasSelection && (
+        <div
+          role="toolbar"
+          aria-label="선택한 업무 일괄 작업"
+          className="absolute bottom-5 left-1/2 z-30 flex -translate-x-1/2 items-center gap-1 rounded-xl bg-[#37352f] py-1.5 pr-1.5 pl-3.5 text-white shadow-[0_8px_24px_rgba(15,15,15,0.18)]"
+        >
+          <span className="mr-1.5 text-[12.5px] font-medium tabular-nums">{selectedTasks.size}개 선택됨</span>
+          <span className="mx-1 h-4 w-px bg-white/20" aria-hidden="true" />
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 text-xs text-white/85 hover:bg-white/10 hover:text-white"
+            disabled={bulkStatusMutation.isPending}
+            onClick={() => runBulkStatus('in_progress')}
+          >
+            <Clock className="size-3" /> 진행중
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 text-xs text-white/85 hover:bg-white/10 hover:text-white"
+            disabled={bulkStatusMutation.isPending}
+            onClick={() => runBulkStatus('completed')}
+          >
+            <CheckCircle2 className="size-3" /> 완료
+          </Button>
+          {canBulkDelete && (
             <Button
               variant="ghost"
               size="sm"
-              onClick={resetFilters}
-              className="h-8 gap-1.5 text-xs text-muted-foreground"
+              className="h-7 text-xs text-[#ff9b8f] hover:bg-white/10 hover:text-[#ffb3aa]"
+              onClick={() => setBulkDeleteOpen(true)}
             >
-              <X className="size-3" />
-              필터 초기화
+              <Trash2 className="size-3" /> 삭제
             </Button>
           )}
-          <FilterCount n={filteredTasks.length} />
-        </FilterBar>
-      </div>
-
-      {content}
+          <span className="mx-1 h-4 w-px bg-white/20" aria-hidden="true" />
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            className="text-white/70 hover:bg-white/10 hover:text-white"
+            onClick={() => setSelectedTasks(new Set())}
+            aria-label="선택 해제 (Esc)"
+            title="선택 해제 (Esc)"
+          >
+            <X />
+          </Button>
+        </div>
+      )}
 
       {/* 생성/수정 다이얼로그 */}
       <TaskFormModal
         isOpen={isCreateModalOpen || !!editingTask}
         onClose={() => {
           setIsCreateModalOpen(false);
-          setCreatePresetStatus(null);
+          setCreatePreset(null);
           setEditingTask(null);
         }}
         task={editingTask}
-        presetStatus={createPresetStatus}
+        presetStatus={createPreset?.status ?? null}
+        presetCategory={createPreset?.category ?? null}
         employeeOptions={activeEmployees}
-        onSubmit={(data) => {
+        onSubmit={(data, meta) => {
           if (editingTask) {
-            updateMutation.mutate({ id: editingTask.id, dto: data as UpdateTaskDto });
+            submitTaskEdit(editingTask.id, data as UpdateTaskDto, meta?.contact);
           } else {
             createMutation.mutate(data as CreateTaskDto);
           }
@@ -764,279 +818,6 @@ function TasksPage() {
   );
 }
 
-// ─── Board View (칸반 + drag-and-drop 상태 변경) ──────────
-
-type BoardHandlers = {
-  onEdit: (task: Task) => void;
-  onStatusChange: (id: string, status: string) => void;
-  onDelete: (task: Task) => void;
-  onAddTask: (status: string) => void;
-};
-
-function BoardView({ tasks, ...handlers }: BoardHandlers & { tasks: Task[] }) {
-  const [activeTask, setActiveTask] = useState<Task | null>(null);
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
-
-  const handleDragStart = (event: DragStartEvent) => {
-    setActiveTask(tasks.find((t) => t.id === event.active.id) ?? null);
-  };
-
-  const handleDragEnd = (event: DragEndEvent) => {
-    const task = activeTask;
-    setActiveTask(null);
-    const { over } = event;
-    if (!over || !task) return;
-    const newStatus = over.id as string;
-    if (boardColumns.some((c) => c.status === newStatus) && newStatus !== task.status) {
-      handlers.onStatusChange(task.id, newStatus);
-    }
-  };
-
-  return (
-    <DndContext
-      sensors={sensors}
-      onDragStart={handleDragStart}
-      onDragCancel={() => setActiveTask(null)}
-      onDragEnd={handleDragEnd}
-    >
-      <div className="grid grid-cols-3 gap-4">
-        {boardColumns.map((column) => (
-          <BoardColumn
-            key={column.status}
-            column={column}
-            tasks={tasks.filter((t) => t.status === column.status)}
-            {...handlers}
-          />
-        ))}
-      </div>
-      <DragOverlay>
-        {activeTask ? (
-          <div className="pointer-events-none w-64 rotate-2 opacity-95">
-            <KanbanCard
-              task={activeTask}
-              onEdit={() => {}}
-              onStatusChange={() => {}}
-              onDelete={() => {}}
-              currentStatus={activeTask.status}
-            />
-          </div>
-        ) : null}
-      </DragOverlay>
-    </DndContext>
-  );
-}
-
-function BoardColumn({
-  column,
-  tasks,
-  onEdit,
-  onStatusChange,
-  onDelete,
-  onAddTask,
-}: BoardHandlers & { column: (typeof boardColumns)[number]; tasks: Task[] }) {
-  const { setNodeRef, isOver } = useDroppable({ id: column.status });
-
-  return (
-    <div className="flex min-w-0 flex-col">
-      <div className="mb-3 flex items-center justify-between">
-        <div
-          className={cn(
-            'inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-sm font-medium',
-            column.bgColor,
-          )}
-        >
-          <span className={cn('size-2 rounded-full', column.dotColor)} />
-          {column.title}
-          <span className="text-xs opacity-70 tabular-nums">{tasks.length}</span>
-        </div>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="size-6 p-0 text-muted-foreground"
-          onClick={() => onAddTask(column.status)}
-        >
-          <Plus className="size-4" />
-        </Button>
-      </div>
-      <div
-        ref={setNodeRef}
-        className={cn(
-          'min-h-[200px] flex-1 rounded-lg p-2 transition-shadow',
-          column.columnBg,
-          isOver && 'ring-2 ring-info/40',
-        )}
-      >
-        <div className="space-y-2">
-          {tasks.map((task) => (
-            <DraggableBoardCard
-              key={task.id}
-              task={task}
-              onEdit={onEdit}
-              onStatusChange={onStatusChange}
-              onDelete={onDelete}
-              currentStatus={column.status}
-            />
-          ))}
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-auto w-full justify-start py-2 text-muted-foreground hover:bg-background/60"
-            onClick={() => onAddTask(column.status)}
-          >
-            <Plus className="size-4" />새 업무
-          </Button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function DraggableBoardCard(props: {
-  task: Task;
-  onEdit: (task: Task) => void;
-  onStatusChange: (id: string, status: string) => void;
-  onDelete: (task: Task) => void;
-  currentStatus: string;
-}) {
-  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: props.task.id });
-  return (
-    <div
-      ref={setNodeRef}
-      {...attributes}
-      {...listeners}
-      className={cn('touch-none', isDragging && 'opacity-40')}
-    >
-      <KanbanCard {...props} />
-    </div>
-  );
-}
-
-// ─── Kanban Card ──────────────────────────────────────────
-
-function KanbanCard({
-  task,
-  onEdit,
-  onStatusChange,
-  onDelete,
-  currentStatus,
-}: {
-  task: Task;
-  onEdit: (task: Task) => void;
-  onStatusChange: (id: string, status: string) => void;
-  onDelete: (task: Task) => void;
-  currentStatus: string;
-}) {
-  const overdue = isOverdue(task);
-  const pCfg = priorityConfig[task.priority as TaskPriority];
-  const cCfg = categoryConfig[task.category as TaskCategory] ?? categoryConfig.other;
-
-  return (
-    <div
-      className={cn(
-        'group cursor-pointer rounded-md border bg-background p-3 transition-shadow hover:shadow-sm',
-        overdue && 'border-destructive/40 bg-destructive-soft/20',
-      )}
-      onClick={() => onEdit(task)}
-    >
-      <div className="mb-2 flex items-start gap-1.5">
-        <h4
-          className={cn(
-            'flex-1 text-sm leading-tight font-medium',
-            task.status === 'completed' && 'text-muted-foreground line-through',
-          )}
-        >
-          {task.title}
-        </h4>
-        <TaskSourceBadge source={task.source} className="mt-px" />
-        <div className="flex items-center opacity-0 transition-opacity group-hover:opacity-100">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="size-6 p-0"
-            onClick={(e) => {
-              e.stopPropagation();
-              onEdit(task);
-            }}
-          >
-            <Edit className="size-3" />
-          </Button>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-              <Button variant="ghost" size="sm" className="size-6 p-0">
-                <MoreHorizontal className="size-3" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              {currentStatus !== 'pending' && (
-                <DropdownMenuItem
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onStatusChange(task.id, 'pending');
-                  }}
-                >
-                  <Circle className="mr-2 size-4" />
-                  대기로 변경
-                </DropdownMenuItem>
-              )}
-              {currentStatus !== 'in_progress' && (
-                <DropdownMenuItem
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onStatusChange(task.id, 'in_progress');
-                  }}
-                >
-                  <ArrowRight className="mr-2 size-4" />
-                  진행중으로 변경
-                </DropdownMenuItem>
-              )}
-              {currentStatus !== 'completed' && (
-                <DropdownMenuItem
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onStatusChange(task.id, 'completed');
-                  }}
-                >
-                  <CheckCircle2 className="mr-2 size-4" />
-                  완료로 변경
-                </DropdownMenuItem>
-              )}
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                className="text-destructive"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onDelete(task);
-                }}
-              >
-                <Trash2 className="mr-2 size-4" />
-                삭제
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      </div>
-
-      <div className="mb-2 flex flex-wrap items-center gap-1.5">
-        <Badge className={cn(pCfg?.color, 'text-xs')}>{pCfg?.label}</Badge>
-        <Badge className={cn(cCfg.color, 'gap-1 text-xs')}>
-          {cCfg.icon}
-          {cCfg.label}
-        </Badge>
-        <DueDateText task={task} />
-      </div>
-
-      <TaskContextChips task={task} compact />
-
-      {task.assignedTo && (
-        <div className="mt-2 flex items-center gap-1.5">
-          <Avatar className="size-5">
-            <AvatarFallback className="text-[10px]">
-              {task.assignedTo.name.charAt(0)}
-            </AvatarFallback>
-          </Avatar>
-          <span className="truncate text-xs text-muted-foreground">{task.assignedTo.name}</span>
-        </div>
-      )}
-    </div>
-  );
+function CenteredState({ children }: { children: ReactNode }) {
+  return <div className="flex min-h-full items-center justify-center py-8">{children}</div>;
 }

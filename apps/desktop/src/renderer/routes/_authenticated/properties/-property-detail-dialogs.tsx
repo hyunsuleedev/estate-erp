@@ -667,12 +667,15 @@ export function ConsultationAddDialog({
   open,
   onOpenChange,
   propertyId,
+  listingIntakeId,
   suggestedContacts = [],
   defaultContact = null,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   propertyId: string;
+  /** 의뢰 화면(매물 상세 패널)에서 남기면 그 의뢰에 연결한다. */
+  listingIntakeId?: string;
   suggestedContacts?: Array<{ id: string; name: string; phone: string | null; label?: string }>;
   defaultContact?: { id: string; name: string; phone: string | null } | null;
 }) {
@@ -698,6 +701,7 @@ export function ConsultationAddDialog({
         type,
         content: content.trim(),
         propertyId,
+        listingIntakeId,
       });
     },
     onSuccess: () => {

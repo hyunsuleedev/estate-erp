@@ -38,6 +38,10 @@ describe('ListingIntakesService', () => {
       consultation: {
         create: jest.fn().mockResolvedValue({ id: 'consultation-1' }),
       },
+      match: {
+        findMany: jest.fn().mockResolvedValue([]),
+        update: jest.fn().mockResolvedValue({}),
+      },
       $executeRaw: jest.fn().mockResolvedValue(0),
     };
     const prisma = {

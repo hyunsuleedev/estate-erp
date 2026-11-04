@@ -49,6 +49,8 @@ export interface NavItem {
   /** 지정 시 해당 role만 노출. 미지정 = 전체 노출 */
   roles?: NavRole[];
   children?: NavChildItem[];
+  /** 이 메뉴를 함께 강조할 다른 화면 경로 (예: 고객 원장의 고객 중심 보기) */
+  alsoActivePaths?: string[];
 }
 
 export const NAV_GROUPS: {
@@ -91,7 +93,13 @@ export const NAV_ITEMS: NavItem[] = [
   },
 
   // ── 고객·상담
-  { path: "/customers", label: "고객 원장", icon: Users, group: "customers" },
+  {
+    path: "/customers-table",
+    label: "고객 원장",
+    icon: Users,
+    group: "customers",
+    alsoActivePaths: ["/customers"],
+  },
   { path: "/contacts", label: "연락처", icon: BookUser, group: "customers" },
   {
     path: "/consultations",
@@ -102,7 +110,7 @@ export const NAV_ITEMS: NavItem[] = [
   // 통화 관리는 현재 사이드바에서 제외 — 기존 라우트와 데이터는 유지한다.
 
   // ── 거래·계약
-  { path: "/matches", label: "매칭", icon: GitBranch, group: "transactions" },
+  { path: "/wanted-properties", label: "희망매물", icon: GitBranch, group: "transactions" },
   { path: "/deals", label: "거래관리", icon: Handshake, group: "transactions" },
   {
     path: "/contracts",
@@ -209,15 +217,15 @@ export const ROUTE_LABELS: Record<string, string> = {
   "/_authenticated/properties/naver-my-ads": "내광고관리",
   "/_authenticated/sites/": "관리단지",
   // 고객
-  "/_authenticated/customers/": "고객 원장",
-  "/_authenticated/customers-table/": "고객 원장 표 보기",
+  "/_authenticated/customers/": "고객 중심 보기",
+  "/_authenticated/customers-table/": "고객 원장",
   "/_authenticated/contacts/": "연락처",
   "/_authenticated/contacts/$id": "연락처 상세",
   "/_authenticated/contacts/new": "연락처 추가",
   "/_authenticated/consultations/": "상담기록",
   "/_authenticated/calls/": "통화 관리",
   // 거래
-  "/_authenticated/matches/": "매칭",
+  "/_authenticated/wanted-properties/": "희망매물",
   "/_authenticated/deals/": "거래관리",
   "/_authenticated/contracts/": "계약서 관리",
   "/_authenticated/cashflow/": "수수료/정산",

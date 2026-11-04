@@ -13,8 +13,6 @@ import { Prisma, PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
 const DEMO_TAG = "[DEMO:MY_ADS]";
-const DEMO_AGENT_KEY = "my-advertisements-sync";
-const DEMO_AGENT_TASK_KEY = "full-cp-and-naver-refresh";
 
 type Scenario = {
   key: string;
@@ -56,7 +54,8 @@ const scenarios: Scenario[] = [
     preferredListingId: "ce00ffc1-a7cb-4914-b418-10afe7f78d1a",
     transactionType: "sale",
     channel: "budongsanbank",
-    ranking: 12,
+    // 순위는 같은 매물 묶음 안의 위치라 광고 수(4건)를 넘지 않는다.
+    ranking: 4,
     analysis: "exposure_review",
     title: "대형 평형·로열층",
   },
@@ -83,7 +82,7 @@ const scenarios: Scenario[] = [
     preferredListingId: "d4200000-0000-4000-8000-000000000003",
     transactionType: "monthly",
     channel: "budongsanbank",
-    ranking: 15,
+    ranking: 4,
     analysis: "exposure_review",
     title: "남향·역세권 월세",
   },
@@ -93,7 +92,7 @@ const scenarios: Scenario[] = [
     preferredListingId: "d4200000-0000-4000-8000-000000000001",
     transactionType: "sale",
     channel: "esiljang",
-    ranking: 6,
+    ranking: 3,
     analysis: "complete",
     title: "채광 우수·입주일 협의",
   },
@@ -305,12 +304,8 @@ async function main() {
     );
   }
 
-  const [office, users, listings] = await Promise.all([
+  const [office, listings] = await Promise.all([
     prisma.office.findUnique({ where: { id: officeId } }),
-    prisma.user.findMany({
-      where: { officeId, isActive: true },
-      orderBy: [{ role: "asc" }, { createdAt: "asc" }],
-    }),
     prisma.listing.findMany({
       where: { officeId },
       include: {
@@ -336,14 +331,6 @@ async function main() {
   if (!office) {
     throw new Error(`Office ${officeId}를 찾을 수 없습니다.`);
   }
-  const reviewer =
-    users.find((user) => user.role === "owner") ??
-    users.find((user) => user.role === "manager") ??
-    users[0];
-  if (!reviewer) {
-    throw new Error(`${office.name} 사무소에 활성 사용자가 없습니다.`);
-  }
-
   const eligibleListings = listings.filter(
     (listing) =>
       listing.property.unit &&
@@ -386,10 +373,12 @@ async function main() {
           !usedListingIds.has(candidate.id),
       );
 
+    // 사무소의 Listing을 새로 만들지 않으므로 부족한 시나리오는 건너뛴다.
     if (!listing) {
-      throw new Error(
-        `${scenario.transactionType} 데모 광고에 연결할 미사용 Listing이 부족합니다.`,
+      console.warn(
+        `${scenario.key}: 연결할 ${transactionLabel(scenario.transactionType)} Listing이 없어 건너뜁니다.`,
       );
+      continue;
     }
     usedListingIds.add(listing.id);
     assignedListings.set(scenario.key, listing);
@@ -436,38 +425,6 @@ async function main() {
     expectedOfficeAdvertisementIds,
   );
 
-  const existingSyncSession = await prisma.agentSession.findUnique({
-    where: {
-      officeId_agentKey_adapter_taskKey: {
-        officeId,
-        agentKey: DEMO_AGENT_KEY,
-        adapter: "mcp",
-        taskKey: DEMO_AGENT_TASK_KEY,
-      },
-    },
-    select: { context: true },
-  });
-  const shouldSeedSyncStatus =
-    !existingSyncSession ||
-    (typeof existingSyncSession.context === "object" &&
-      existingSyncSession.context !== null &&
-      !Array.isArray(existingSyncSession.context) &&
-      (existingSyncSession.context as Prisma.JsonObject).demo === true);
-  const existingSyncRun = await prisma.advertisementSyncRun.findFirst({
-    where: {
-      officeId,
-      workflowKey: DEMO_AGENT_TASK_KEY,
-    },
-    orderBy: { createdAt: "desc" },
-    select: { context: true },
-  });
-  const shouldSeedWorkflowRun =
-    !existingSyncRun ||
-    (typeof existingSyncRun.context === "object" &&
-      existingSyncRun.context !== null &&
-      !Array.isArray(existingSyncRun.context) &&
-      (existingSyncRun.context as Prisma.JsonObject).demo === true);
-
   const now = new Date();
   const comparisonRows: Array<{
     scenario: Scenario;
@@ -484,7 +441,8 @@ async function main() {
       ) {
         const scenario = scenarios[scenarioIndex];
         const listing = assignedListings.get(scenario.key);
-        if (!listing || !listing.property.unit) {
+        if (!listing) continue;
+        if (!listing.property.unit) {
           throw new Error(`${scenario.key} Listing 배정에 실패했습니다.`);
         }
 
@@ -552,6 +510,38 @@ async function main() {
           },
         });
 
+        // 최초 관측 1건. 가격 검토 시나리오는 인하 전 가격을 앞에 둔다.
+        const priceObservations =
+          scenario.analysis === "price_review"
+            ? [
+                { key: "initial", raise: 3_000, observedAt: startedAt },
+                { key: "current", raise: 0, observedAt: daysAgo(now, 3) },
+              ]
+            : [{ key: "initial", raise: 0, observedAt: startedAt }];
+        for (const observation of priceObservations) {
+          const raised = (amount: number | null) =>
+            amount == null ? null : amount + observation.raise;
+          const data = {
+            officeId,
+            listingAdvertisementId,
+            advertisedPrice: raised(amounts.advertisedPrice),
+            advertisedDeposit: raised(amounts.advertisedDeposit),
+            advertisedMonthlyRent: amounts.advertisedMonthlyRent,
+            observedAt: observation.observedAt,
+            source: "cp_sync",
+          };
+          const id = deterministicUuid(
+            officeId,
+            "listing-advertisement-price-history",
+            `${scenario.key}:${observation.key}`,
+          );
+          await tx.listingAdvertisementPriceHistory.upsert({
+            where: { id },
+            create: { id, ...data },
+            update: data,
+          });
+        }
+
         comparisonRows.push({
           scenario,
           listingAdvertisementId,
@@ -588,7 +578,7 @@ async function main() {
             exclusiveAreaM2:
               listing.property.unit.siteUnitType?.exclusiveAreaM2 ?? null,
             transactionType: scenario.transactionType,
-            memo: `${DEMO_TAG} 네이버 비교 Skill 관측 그룹`,
+            memo: null,
             favorite: false,
             status: "verified",
             firstSeenAt: startedAt,
@@ -603,7 +593,7 @@ async function main() {
             exclusiveAreaM2:
               listing.property.unit.siteUnitType?.exclusiveAreaM2 ?? null,
             transactionType: scenario.transactionType,
-            memo: `${DEMO_TAG} 네이버 비교 Skill 관측 그룹`,
+            memo: null,
             favorite: false,
             status: "verified",
             firstSeenAt: startedAt,
@@ -634,7 +624,7 @@ async function main() {
             id: officeGroupId,
             officeId,
             listingAdvertisementId,
-            memo: `${DEMO_TAG} 네이버 비교 Skill 분석 결과`,
+            memo: null,
             ownPrice: ownObservedAmounts.price,
             ownDeposit: ownObservedAmounts.deposit,
             ownMonthlyRent: ownObservedAmounts.monthlyRent,
@@ -647,7 +637,7 @@ async function main() {
           },
           update: {
             officeId,
-            memo: `${DEMO_TAG} 네이버 비교 Skill 분석 결과`,
+            memo: null,
             ownPrice: ownObservedAmounts.price,
             ownDeposit: ownObservedAmounts.deposit,
             ownMonthlyRent: ownObservedAmounts.monthlyRent,
@@ -666,9 +656,9 @@ async function main() {
             ? [1, 4, 2, 3]
             : [
                 scenario.ranking ?? 1,
-                1,
-                scenario.ranking === 1 ? 3 : 5,
-                scenario.ranking === 2 ? 6 : 10,
+                ...[1, 2, 3, 4].filter(
+                  (rank) => rank !== (scenario.ranking ?? 1),
+                ),
               ];
 
         for (
@@ -760,11 +750,6 @@ async function main() {
               epju: isMine && scenario.ranking === 1,
               exposeStartYmd: Number(formatYmd(startedAt)),
               exposeEndYmd: null,
-              raw: {
-                demo: true,
-                tag: DEMO_TAG,
-                workflow: "naver-real-estate-reader",
-              } satisfies Prisma.InputJsonValue,
               firstSeenAt: startedAt,
               lastSeenAt: observedAt,
               isActive: true,
@@ -815,11 +800,6 @@ async function main() {
               epju: isMine && scenario.ranking === 1,
               exposeStartYmd: Number(formatYmd(startedAt)),
               exposeEndYmd: null,
-              raw: {
-                demo: true,
-                tag: DEMO_TAG,
-                workflow: "naver-real-estate-reader",
-              } satisfies Prisma.InputJsonValue,
               firstSeenAt: startedAt,
               lastSeenAt: observedAt,
               isActive: true,
@@ -915,318 +895,6 @@ async function main() {
         await tx.officeAdvertisementGroup.update({
           where: { id: officeGroup.id },
           data: { mainAdvertisementId: mainOfficeAdvertisementId },
-        });
-      }
-
-      if (shouldSeedWorkflowRun) {
-        const workflowRunId = deterministicUuid(
-          officeId,
-          "advertisement-sync-run",
-          DEMO_AGENT_TASK_KEY,
-        );
-        const workflowCompletedAt = minutesAgo(now, 7);
-        await tx.advertisementSyncRun.upsert({
-          where: { id: workflowRunId },
-          create: {
-            id: workflowRunId,
-            officeId,
-            workflowKey: DEMO_AGENT_TASK_KEY,
-            schemaVersion: 1,
-            status: "completed",
-            requestedBy: reviewer.id,
-            channels: ["esiljang", "budongsanbank"],
-            context: {
-              schemaVersion: 1,
-              workflow: "my_advertisements_full_refresh",
-              scope: "all_cp_advertisements",
-              compareEveryImportedAdvertisement: true,
-              demo: true,
-            },
-            startedAt: minutesAgo(now, 12),
-            completedAt: workflowCompletedAt,
-            createdAt: minutesAgo(now, 12),
-          },
-          update: {
-            status: "completed",
-            requestedBy: reviewer.id,
-            channels: ["esiljang", "budongsanbank"],
-            context: {
-              schemaVersion: 1,
-              workflow: "my_advertisements_full_refresh",
-              scope: "all_cp_advertisements",
-              compareEveryImportedAdvertisement: true,
-              demo: true,
-            },
-            startedAt: minutesAgo(now, 12),
-            completedAt: workflowCompletedAt,
-          },
-        });
-
-        const demoStepDefinitions = [
-          {
-            stepKey: "cp_import_esiljang",
-            position: 1,
-            kind: "cp_full_import",
-            title: "이실장 광고 가져오기",
-            channel: "esiljang",
-            skillKey: "esiljang-ad-reader",
-            skillVersion: "computer-use-v1",
-            dependsOnKeys: [] as string[],
-            progressTotal: scenarios.filter(
-              (scenario) => scenario.channel === "esiljang",
-            ).length,
-          },
-          {
-            stepKey: "cp_import_budongsanbank",
-            position: 2,
-            kind: "cp_full_import",
-            title: "부동산뱅크 광고 가져오기",
-            channel: "budongsanbank",
-            skillKey: "budongsanbank-ad-reader",
-            skillVersion: "computer-use-v1",
-            dependsOnKeys: [] as string[],
-            progressTotal: scenarios.filter(
-              (scenario) => scenario.channel === "budongsanbank",
-            ).length,
-          },
-          {
-            stepKey: "resolve_exact_listing_and_unit",
-            position: 3,
-            kind: "resolve_exact_listing_and_unit",
-            title: "매물·호실 확정",
-            channel: null,
-            skillKey: DEMO_AGENT_KEY,
-            skillVersion: "1",
-            dependsOnKeys: [
-              "cp_import_esiljang",
-              "cp_import_budongsanbank",
-            ],
-            progressTotal: scenarios.length,
-          },
-          {
-            stepKey: "naver_compare_all",
-            position: 4,
-            kind: "naver_compare",
-            title: "전체 네이버 비교",
-            channel: null,
-            skillKey: "naver-real-estate-reader",
-            skillVersion: "0.3.0",
-            dependsOnKeys: ["resolve_exact_listing_and_unit"],
-            progressTotal: comparisonRows.filter(
-              (row) =>
-                row.scenario.analysis !== "comparison_pending" &&
-                row.scenario.analysis !== "naver_link_pending",
-            ).length,
-          },
-          {
-            stepKey: "persist_analysis_and_recommendations",
-            position: 5,
-            kind: "persist_analysis_and_recommendations",
-            title: "분석·추천 저장",
-            channel: null,
-            skillKey: DEMO_AGENT_KEY,
-            skillVersion: "1",
-            dependsOnKeys: ["naver_compare_all"],
-            progressTotal: comparisonRows.filter(
-              (row) =>
-                row.scenario.analysis !== "comparison_pending" &&
-                row.scenario.analysis !== "naver_link_pending",
-            ).length,
-          },
-        ];
-
-        for (const definition of demoStepDefinitions) {
-          const stepId = deterministicUuid(
-            officeId,
-            "advertisement-sync-step",
-            definition.stepKey,
-          );
-          await tx.advertisementSyncStep.upsert({
-            where: { id: stepId },
-            create: {
-              id: stepId,
-              officeId,
-              runId: workflowRunId,
-              stepKey: definition.stepKey,
-              position: definition.position,
-              kind: definition.kind,
-              title: definition.title,
-              status: "succeeded",
-              channel: definition.channel,
-              skillKey: definition.skillKey,
-              skillVersion: definition.skillVersion,
-              dependsOnKeys: definition.dependsOnKeys,
-              input: {
-                scope:
-                  definition.kind === "naver_compare"
-                    ? "every_imported_advertisement"
-                    : "demo",
-                demo: true,
-              },
-              output: {
-                processedCount: definition.progressTotal,
-                totalCount: definition.progressTotal,
-                failedCount: 0,
-                demo: true,
-              },
-              attemptCount: 1,
-              progressTotal: definition.progressTotal,
-              progressComplete: definition.progressTotal,
-              progressFailed: 0,
-              startedAt: minutesAgo(
-                now,
-                12 - (definition.position - 1),
-              ),
-              finishedAt: minutesAgo(
-                now,
-                11 - (definition.position - 1),
-              ),
-            },
-            update: {
-              runId: workflowRunId,
-              position: definition.position,
-              kind: definition.kind,
-              title: definition.title,
-              status: "succeeded",
-              channel: definition.channel,
-              skillKey: definition.skillKey,
-              skillVersion: definition.skillVersion,
-              dependsOnKeys: definition.dependsOnKeys,
-              input: {
-                scope:
-                  definition.kind === "naver_compare"
-                    ? "every_imported_advertisement"
-                    : "demo",
-                demo: true,
-              },
-              output: {
-                processedCount: definition.progressTotal,
-                totalCount: definition.progressTotal,
-                failedCount: 0,
-                demo: true,
-              },
-              attemptCount: 1,
-              progressTotal: definition.progressTotal,
-              progressComplete: definition.progressTotal,
-              progressFailed: 0,
-              error: null,
-              waitingReason: null,
-              startedAt: minutesAgo(
-                now,
-                12 - (definition.position - 1),
-              ),
-              finishedAt: minutesAgo(
-                now,
-                11 - (definition.position - 1),
-              ),
-            },
-          });
-        }
-      }
-
-      if (shouldSeedSyncStatus) {
-        const session = await tx.agentSession.upsert({
-          where: {
-            officeId_agentKey_adapter_taskKey: {
-              officeId,
-              agentKey: DEMO_AGENT_KEY,
-              adapter: "mcp",
-              taskKey: DEMO_AGENT_TASK_KEY,
-            },
-          },
-          create: {
-            id: deterministicUuid(
-              officeId,
-              "agent-session",
-              DEMO_AGENT_TASK_KEY,
-            ),
-            officeId,
-            agentKey: DEMO_AGENT_KEY,
-            adapter: "mcp",
-            taskKey: DEMO_AGENT_TASK_KEY,
-            status: "complete",
-            context: {
-              schemaVersion: 1,
-              workflow: "my_advertisements_full_refresh",
-              scope: "all_cp_advertisements",
-              demo: true,
-            },
-            plan: {
-              steps: [
-                "이실장·부동산뱅크 전체 광고 가져오기",
-                "가져온 광고 전체 네이버 비교",
-                "현황 분석과 추천안 생성",
-              ],
-            },
-            lastRunAt: minutesAgo(now, 8),
-            completedAt: minutesAgo(now, 7),
-          },
-          update: {
-            status: "complete",
-            waitingReason: null,
-            context: {
-              schemaVersion: 1,
-              workflow: "my_advertisements_full_refresh",
-              scope: "all_cp_advertisements",
-              demo: true,
-            },
-            plan: {
-              steps: [
-                "이실장·부동산뱅크 전체 광고 가져오기",
-                "가져온 광고 전체 네이버 비교",
-                "현황 분석과 추천안 생성",
-              ],
-            },
-            lastRunAt: minutesAgo(now, 8),
-            completedAt: minutesAgo(now, 7),
-            error: null,
-          },
-        });
-
-        const wakeupId = deterministicUuid(
-          officeId,
-          "agent-wakeup",
-          DEMO_AGENT_TASK_KEY,
-        );
-        await tx.agentWakeupRequest.upsert({
-          where: { id: wakeupId },
-          create: {
-            id: wakeupId,
-            officeId,
-            sessionId: session.id,
-            source: "api",
-            reason: `${DEMO_TAG} 전체 CP 광고 동기화와 네이버 비교`,
-            payload: {
-              workflow: "my_advertisements_full_refresh",
-              compareEveryImportedAdvertisement: true,
-              demo: true,
-            },
-            status: "completed",
-            requestedBy: reviewer.id,
-            requestedAt: minutesAgo(now, 12),
-            claimedBy: "demo-skill-worker",
-            claimedAt: minutesAgo(now, 11),
-            finishedAt: minutesAgo(now, 7),
-          },
-          update: {
-            officeId,
-            sessionId: session.id,
-            source: "api",
-            reason: `${DEMO_TAG} 전체 CP 광고 동기화와 네이버 비교`,
-            payload: {
-              workflow: "my_advertisements_full_refresh",
-              compareEveryImportedAdvertisement: true,
-              demo: true,
-            },
-            status: "completed",
-            requestedBy: reviewer.id,
-            requestedAt: minutesAgo(now, 12),
-            claimedBy: "demo-skill-worker",
-            claimedAt: minutesAgo(now, 11),
-            leaseExpiresAt: null,
-            finishedAt: minutesAgo(now, 7),
-            error: null,
-          },
         });
       }
     },

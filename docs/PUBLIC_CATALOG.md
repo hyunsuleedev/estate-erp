@@ -96,7 +96,7 @@ lint와 production build 통과. 실제 390px 브라우저에서 검색 2건, �
 
 ## Consumer redesign and housing requests (2026-10-15)
 
-- Consumer UI: compact white masthead, map-first layout with a 400px single-column listing sidebar and small thumbnails. Card borders and spacing style each listing row; mobile defaults to the map. Existing saved/filter/detail flows are retained. Request form uses a Radix dialog and shared shadcn controls.
+- Consumer UI: compact white masthead, two-column photo cards beside the map, mobile list-first layout, existing saved/filter/detail flows retained. Request form uses a Radix dialog and shared shadcn controls.
 - Clerk React provider uses `VITE_CLERK_PUBLISHABLE_KEY` (same instance as server). Korean login/sign-up and account menu. Consumer guard verifies session tokens and `CATALOG_AUTH_ORIGINS`; it never provisions ERP employee accounts. The current Clerk dashboard controls which sign-in methods are offered.
 - `GET /public/request-regions?q=고덕` searches legal wards; `POST /public/requests` accepts a UUID idempotency key, ward, type, transaction, max budget in 만원, requirements, name, phone, and explicit consent. `GET /public/requests` returns only the authenticated consumer's latest 50 receipts.
 - Routing means **offices with an OfficeSite in the selected ward**, not physical radius. Only active offices with active owners/managers qualify. A transaction creates one buyer Task per office, persisted notifications per owner/manager, and a consumer receipt. WebSocket notifications emit after commit. No recipient yields an error; duplicate retries do not resend. Five new requests per consumer per rolling day.

@@ -227,7 +227,7 @@ export type {
   CreateTenantDto,
   UpdateTenantDto,
 } from "./modules/tenants.js";
-export type { OfficeSite } from "./modules/office-sites.js";
+export type { OfficeSite, RegisterPrivateSiteDto } from "./modules/office-sites.js";
 export type {
   Employee,
   EmployeeDetail,
@@ -238,6 +238,7 @@ export type {
 } from "./modules/employees.js";
 export type {
   OfficeProfile,
+  OfficePostalAddress,
   OfficeUserSummary,
   UpdateOfficeDto,
   CommissionConfigDto,
@@ -284,6 +285,18 @@ export type {
   CallRecordingsListStats,
   CallRecordingsListParams,
   UpdateCallRecordingDto,
+  CallActionSuggestion,
+  CallSuggestionTypeValue,
+  CallSuggestionStatusValue,
+  CallSuggestionPayloadByType,
+  TaskSuggestionPayload,
+  CalendarEventSuggestionPayload,
+  BuyerRequirementSuggestionFields,
+  BuyerRequirementCreateSuggestionPayload,
+  BuyerRequirementUpdateSuggestionPayload,
+  MatchCreateSuggestionPayload,
+  MatchStageSuggestionPayload,
+  ListingConfirmSuggestionPayload,
 } from "./modules/call-recordings.js";
 export type {
   McpApiKeyStatus,

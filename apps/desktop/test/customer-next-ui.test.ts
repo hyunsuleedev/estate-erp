@@ -82,11 +82,11 @@ const legacyPageSource = readFileSync(
   "utf8",
 );
 const ledgerMatchPanelSource = readFileSync(
-  resolve(supportRouteDir, "../matches/-ledger-match-panel.tsx"),
+  resolve(supportRouteDir, "../wanted-properties/-ledger-match-panel.tsx"),
   "utf8",
 );
 const matchCreateDialogSource = readFileSync(
-  resolve(supportRouteDir, "../matches/-match-create-dialog.tsx"),
+  resolve(supportRouteDir, "../wanted-properties/-match-create-dialog.tsx"),
   "utf8",
 );
 
@@ -119,7 +119,7 @@ function demandIntent(
 }
 
 describe("customer next workspace", () => {
-  it("promotes the new ledger to customers and keeps the table on customers-table", () => {
+  it("keeps the case view on customers and the table on customers-table", () => {
     assert.match(
       pageSource,
       /createFileRoute\("\/_authenticated\/customers\/"\)/,
@@ -132,7 +132,7 @@ describe("customer next workspace", () => {
     );
     assert.match(
       legacyPageSource,
-      /<Link to="\/customers" aria-label="고객 중심 새 보기 열기">/,
+      /const route = "\/customers";[\s\S]*?navigateActiveTab\(/,
     );
     assert.match(pageSource, /data-customers-next-page/);
     assert.doesNotMatch(pageSource, /<table/);
@@ -159,7 +159,7 @@ describe("customer next workspace", () => {
     assert.match(newDemandIntakePageSource, /title="구함 의뢰 추가"/);
     assert.match(
       newDemandIntakePageSource,
-      /closeTab\(ownerTabIdRef\.current\)[\s\S]*?getRouteMeta\('\/customers'\)[\s\S]*?openModule/,
+      /closeTab\(ownerTabIdRef\.current\)[\s\S]*?getRouteMeta\('\/customers-table'\)[\s\S]*?openModule/,
     );
     assert.match(buyerRequirementFormSource, /구함 의뢰 등록/);
   });

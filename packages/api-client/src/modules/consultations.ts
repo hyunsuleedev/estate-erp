@@ -142,11 +142,14 @@ export interface ConsultationWithRecordingResponse {
 }
 
 export interface CreateConsultationWithRecordingDto {
-  contactId: string;
+  /** 없으면 전화번호(또는 녹음 파일 이름의 번호)로 서버가 찾는다 */
+  contactId?: string;
   type?: string;
   direction?: 'inbound' | 'outbound';
   phoneNumber?: string;
   durationSec?: number;
+  /** 통화 시각 (ISO). 없으면 녹음 파일 이름에서 읽는다 */
+  calledAt?: string;
   /** 녹음 파일 (audio) */
   file: Blob | File;
   fileName?: string;
@@ -178,11 +181,12 @@ export function createConsultationsApi(request: RequestFn) {
     createWithRecording: (dto: CreateConsultationWithRecordingDto) => {
       const form = new FormData();
       form.append('file', dto.file, dto.fileName ?? (dto.file instanceof File ? dto.file.name : 'recording'));
-      form.append('contactId', dto.contactId);
+      if (dto.contactId) form.append('contactId', dto.contactId);
       if (dto.type) form.append('type', dto.type);
       if (dto.direction) form.append('direction', dto.direction);
       if (dto.phoneNumber) form.append('phoneNumber', dto.phoneNumber);
       if (dto.durationSec != null) form.append('durationSec', String(dto.durationSec));
+      if (dto.calledAt) form.append('calledAt', dto.calledAt);
       return request<ConsultationWithRecordingResponse>('/consultations/with-recording', {
         method: 'POST',
         body: form,

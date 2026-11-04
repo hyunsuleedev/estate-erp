@@ -154,17 +154,19 @@ export class ConsultationsController {
     @Body('direction') direction: string,
     @Body('phoneNumber') phoneNumber: string,
     @Body('durationSec') durationSec: string,
+    @Body('calledAt') calledAt: string,
     @CurrentUser() user: CurrentUserPayload,
   ) {
     return this.service.createWithRecording(
       user.officeId,
       user.userId,
       {
-        contactId,
+        contactId: contactId || undefined,
         type: type || 'phone',
         direction: direction || 'inbound',
         phoneNumber: phoneNumber || '',
         durationSec: durationSec ? Number(durationSec) : 0,
+        calledAt: calledAt || undefined,
       },
       file,
     );
@@ -188,6 +190,15 @@ export class ConsultationsController {
       file,
       contactId || undefined,
     );
+  }
+
+  /** 받아쓰기는 그대로 두고 통화 분석(요약·업무 제안)만 다시 한다 */
+  @Post('recordings/:id/reanalyze')
+  reanalyzeRecording(
+    @Param('id') id: string,
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.service.reanalyzeRecording(id, user.officeId);
   }
 
   @Get(':id/stt-status')

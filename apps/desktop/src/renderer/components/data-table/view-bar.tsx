@@ -617,7 +617,7 @@ function MultiSelectFilterBody({
   );
 }
 
-function NumberRangeFilterBody({
+export function NumberRangeFilterBody({
   def,
   existing,
   onApply,
@@ -671,7 +671,7 @@ function NumberRangeFilterBody({
   );
 }
 
-function DateRangeFilterBody({
+export function DateRangeFilterBody({
   def,
   existing,
   onApply,

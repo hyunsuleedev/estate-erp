@@ -11,6 +11,7 @@ import {
   DealStage,
   IntakeClosedReason,
   IntakeLifecycleStatus,
+  MatchClosedReason,
   NON_CLOSED_INTAKE_LIFECYCLE_STATUSES,
   normalizeDealStage,
   OCCUPYING_DEAL_STAGES,
@@ -19,6 +20,15 @@ import {
   type CommissionTransactionType,
 } from '@estate-erp/shared';
 import { PrismaService } from '../../prisma/prisma.service';
+import {
+  closeCompetingMatchesForDeal,
+  closeOpenMatchesForIntake,
+  closeSourceMatchForCancelledDeal,
+  findRestorableMatchIds,
+  restoreAutoClosedMatches,
+  restoreMatchesClosedByDeal,
+  settleMatchesForCancelledDeal,
+} from '../matches/match-lifecycle-sync';
 
 const dealInclude = {
   listing: {
@@ -67,6 +77,14 @@ type DealWithRelations = Prisma.DealGetPayload<{ include: typeof dealInclude }>;
 /// ListingIntake 생명주기를 closed로 확정하는 Deal 단계.
 const DONE_STAGES: ReadonlySet<string> = new Set(['completed', 'closed']);
 
+/// 본계약 이후 단계. 진입하면 같은 거래 조건의 다른 손님 매칭을 자동 종료한다.
+const CONTRACTED_OR_LATER_STAGES: ReadonlySet<string> = new Set([
+  'contracted',
+  'settling',
+  'completed',
+  'closed',
+]);
+
 /// 본계약(contracted) 단계에서 Contract를 작성한다.
 /// 따라서 Contract는 대금 이행(settling) 단계로 넘어갈 때부터 필수다.
 const CONTRACT_REQUIRED_STAGES: ReadonlySet<string> = new Set([
@@ -113,7 +131,7 @@ export class DealsService {
   private async reopenAutoClosedIntakeIfBasisBroken(
     tx: Prisma.TransactionClient,
     intakeId: string,
-  ) {
+  ): Promise<boolean> {
     const remainingDoneDeals = await tx.deal.count({
       where: {
         isCancelled: false,
@@ -121,13 +139,13 @@ export class DealsService {
         listing: { intakeId },
       },
     });
-    if (remainingDoneDeals > 0) return; // 여전히 종결 거래가 있음 — closed 유지
+    if (remainingDoneDeals > 0) return false; // 여전히 종결 거래가 있음 — closed 유지
 
     const intakeRow = await tx.listingIntake.findFirst({
       where: { id: intakeId },
       select: { propertyId: true, officeId: true },
     });
-    if (!intakeRow) return;
+    if (!intakeRow) return false;
 
     const otherNonClosedIntake = await tx.listingIntake.findFirst({
       where: {
@@ -140,10 +158,10 @@ export class DealsService {
       },
       select: { id: true },
     });
-    if (otherNonClosedIntake) return;
+    if (otherNonClosedIntake) return false;
 
     // Deal 자동화가 closed 처리한 의뢰만 되살린다. 사용자의 수동 종결은 유지한다.
-    await tx.listingIntake.updateMany({
+    const reopened = await tx.listingIntake.updateMany({
       where: {
         id: intakeId,
         lifecycleStatus: IntakeLifecycleStatus.CLOSED,
@@ -157,6 +175,7 @@ export class DealsService {
         closedReason: null,
       },
     });
+    return reopened.count > 0;
   }
 
   /**
@@ -170,6 +189,22 @@ export class DealsService {
   ) {
     const lockKey = `listing-intake:${intakeId}`;
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}::text, 0))`;
+  }
+
+  /**
+   * 의뢰가 지금 닫혀 있지 않은지 트랜잭션 안에서 다시 읽는다. 의뢰 잠금을 잡은 뒤 호출한다.
+   * 트랜잭션 전에 읽은 값은 그 사이 의뢰 종료와 겹치면 낡아, 닫힌 의뢰의 매칭을 되살릴 수 있다.
+   */
+  private async isIntakeOpen(
+    tx: Prisma.TransactionClient,
+    intakeId: string | null | undefined,
+  ) {
+    if (!intakeId) return true;
+    const intake = await tx.listingIntake.findUnique({
+      where: { id: intakeId },
+      select: { lifecycleStatus: true },
+    });
+    return Boolean(intake) && intake!.lifecycleStatus !== IntakeLifecycleStatus.CLOSED;
   }
 
   /** 거래유형은 sale/jeonse/monthly 3종만 허용 (연세 등 폐기 유형 저장 차단) */
@@ -509,6 +544,19 @@ export class DealsService {
       !DONE_STAGES.has(requestedStage) &&
       DONE_STAGES.has(existingStage);
 
+    // 본계약 진입: 같은 거래 조건의 다른 손님 매칭을 자동 종료한다.
+    // 본계약 전으로 되돌아가면 이 거래가 닫은 매칭을 되살린다.
+    const enteringContractedOrLater =
+      stageChanged &&
+      !existing.isCancelled &&
+      CONTRACTED_OR_LATER_STAGES.has(requestedStage) &&
+      !CONTRACTED_OR_LATER_STAGES.has(existingStage);
+    const leavingContractedOrLater =
+      stageChanged &&
+      !existing.isCancelled &&
+      !CONTRACTED_OR_LATER_STAGES.has(requestedStage) &&
+      CONTRACTED_OR_LATER_STAGES.has(existingStage);
+
     const deal = await this.prisma.$transaction(async (tx) => {
       if (shouldCheckIntakeDealUniqueness && existing.listing?.intakeId) {
         await this.lockIntakeForLifecycleSync(tx, existing.listing.intakeId);
@@ -558,6 +606,18 @@ export class DealsService {
       // "이 의뢰가 거래중/종료" 는 비취소 Deal 에서 파생하므로
       // Listing/Intake에 별도의 거래 상태를 저장하지 않는다.
       //
+      // 본계약 진입: 같은 거래 조건의 다른 손님 매칭을 먼저 "다른 손님과 본계약"으로 닫는다.
+      // (의뢰 종료보다 먼저 해야 가계약 → 완료처럼 건너뛰어도 이유가 맞고, 완료에서 본계약으로
+      // 되돌아갈 때 의뢰 종료 매칭만 되살아난다.)
+      if (enteringContractedOrLater && existing.listingId) {
+        await closeCompetingMatchesForDeal(tx, {
+          id,
+          officeId,
+          listingId: existing.listingId,
+          matchId: existing.matchId ?? null,
+        });
+      }
+
       // completed/closed 진입: 해당 Deal이 성사된 거래이므로 의뢰 전체를 종료.
       if (enteringDone && existing.listing?.intakeId) {
         await tx.listingIntake.updateMany({
@@ -571,6 +631,12 @@ export class DealsService {
             lifecycleChangedBy: 'system:deal',
             closedReason: IntakeClosedReason.DEAL_COMPLETED,
           },
+        });
+        // 의뢰가 끝났으니 남은 진행 중 매칭도 닫는다. 이 거래를 남겨 거래가 되돌려지면 되살린다.
+        await closeOpenMatchesForIntake(tx, {
+          officeId,
+          intakeId: existing.listing.intakeId,
+          dealId: id,
         });
       }
 
@@ -588,11 +654,44 @@ export class DealsService {
       });
 
       // 종결 근거가 사라졌으면 (이 Deal 이 done 단계에서 빠져나감) 의뢰 재평가
+      let intakeReopened = false;
       if (leavingDone && existing.listing?.intakeId) {
-        await this.reopenAutoClosedIntakeIfBasisBroken(
+        intakeReopened = await this.reopenAutoClosedIntakeIfBasisBroken(
           tx,
           existing.listing.intakeId,
         );
+        // 의뢰가 다시 열렸으면 의뢰 종료로 닫았던 매칭을 되살린다.
+        // 거래가 아직 본계약 이후면 그 거래 조건의 매칭은 닫아 둔다.
+        if (intakeReopened) {
+          await restoreMatchesClosedByDeal(tx, {
+            officeId,
+            dealId: id,
+            reasons: [MatchClosedReason.INTAKE_CLOSED],
+            excludeListingId: CONTRACTED_OR_LATER_STAGES.has(requestedStage)
+              ? existing.listingId
+              : null,
+          });
+        }
+      }
+
+      if (leavingContractedOrLater) {
+        // 의뢰가 닫힌 채면(매물이 끝남) 되살리지 않는다. 잠금 안에서 최신 상태로 판단한다.
+        const intakeOpen = await this.isIntakeOpen(
+          tx,
+          existing.listing?.intakeId,
+        );
+        // 본계약 전으로 내려왔고 의뢰가 열려 있으면 이 거래가 닫은 매칭의 근거가 모두 사라졌다.
+        // "의뢰 종료"로 닫혔다가 본계약 중이라 남겨 둔 같은 거래 조건 매칭도 여기서 되살린다.
+        if (intakeOpen) {
+          await restoreMatchesClosedByDeal(tx, {
+            officeId,
+            dealId: id,
+            reasons: [
+              MatchClosedReason.OTHER_BUYER_CONTRACTED,
+              MatchClosedReason.INTAKE_CLOSED,
+            ],
+          });
+        }
       }
 
       return updated;
@@ -613,7 +712,8 @@ export class DealsService {
         DONE_STAGES.has(existing.stage) &&
         !existing.isCancelled &&
         Boolean(existing.listing?.intakeId);
-      if (shouldReevaluateIntake && existing.listing?.intakeId) {
+      // 매칭을 되살릴지 의뢰 상태로 판단하므로, 의뢰 종료와 겹치지 않게 항상 잠근다.
+      if (!existing.isCancelled && existing.listing?.intakeId) {
         await this.lockIntakeForLifecycleSync(
           tx,
           existing.listing.intakeId,
@@ -636,11 +736,22 @@ export class DealsService {
       //
       // 단, 종결 단계(completed/closed) Deal 취소는 의뢰 자동 done 의 근거를
       // 무너뜨릴 수 있다 (거래 무산 후 재판매 경로) — 커밋된 취소 상태 기준으로 재평가.
+      let intakeReopened = false;
       if (shouldReevaluateIntake && existing.listing?.intakeId) {
-        await this.reopenAutoClosedIntakeIfBasisBroken(
+        intakeReopened = await this.reopenAutoClosedIntakeIfBasisBroken(
           tx,
           existing.listing.intakeId,
         );
+      }
+
+      // 매칭 정리: 거래를 만든 매칭은 종료, 이 거래가 자동 종료한 매칭은 되살린다.
+      if (!existing.isCancelled) {
+        await settleMatchesForCancelledDeal(tx, {
+          officeId,
+          dealId: id,
+          matchId: existing.matchId ?? null,
+          intakeOpen: await this.isIntakeOpen(tx, existing.listing?.intakeId),
+        });
       }
 
       return cancelled;
@@ -657,11 +768,31 @@ export class DealsService {
         DONE_STAGES.has(existing.stage) &&
         !existing.isCancelled &&
         Boolean(existing.listing?.intakeId);
-      if (shouldReevaluateIntake && existing.listing?.intakeId) {
+      if (!existing.isCancelled && existing.listing?.intakeId) {
         await this.lockIntakeForLifecycleSync(
           tx,
           existing.listing.intakeId,
         );
+      }
+
+      // 삭제하면 FK가 closedByDealId를 비우므로 되살릴 매칭을 먼저 찾아 둔다.
+      // 거래를 만든 매칭은 취소와 같이 종료한다.
+      const restorableMatchIds = existing.isCancelled
+        ? []
+        : await findRestorableMatchIds(tx, {
+            officeId,
+            dealId: id,
+            reasons: [
+              MatchClosedReason.OTHER_BUYER_CONTRACTED,
+              MatchClosedReason.INTAKE_CLOSED,
+            ],
+          });
+      if (!existing.isCancelled) {
+        await closeSourceMatchForCancelledDeal(tx, {
+          officeId,
+          dealId: id,
+          matchId: existing.matchId ?? null,
+        });
       }
 
       const deleted = await tx.deal.delete({ where: { id } });
@@ -671,6 +802,16 @@ export class DealsService {
           tx,
           existing.listing.intakeId,
         );
+      }
+
+      if (
+        !existing.isCancelled &&
+        (await this.isIntakeOpen(tx, existing.listing?.intakeId))
+      ) {
+        await restoreAutoClosedMatches(tx, {
+          officeId,
+          matchIds: restorableMatchIds,
+        });
       }
 
       return deleted;

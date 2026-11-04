@@ -3,6 +3,7 @@ export * from './utils.js';
 export * from './commission.js';
 export * from './oauth.js';
 export * from './cti.js';
+export * from './call-recording-file.js';
 export * from './contract-agreement.js';
 export * from './contract-amount.js';
 export * from './contract-clause-layouts.js';

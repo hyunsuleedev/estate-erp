@@ -1,6 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type MouseEvent } from 'react'
 import { Link, useMatchRoute } from '@tanstack/react-router'
 import { ChevronRight } from 'lucide-react'
+
+import { navigateActiveTab } from '@/features/tabs/lib/navigateActiveTab'
+import { getRouteMeta } from '@/features/tabs/lib/routeMeta'
+import { useTabStore } from '@/features/tabs/store/useTabStore'
 
 import {
   Collapsible,
@@ -19,6 +23,36 @@ import {
   SidebarMenuSubItem,
 } from '@/components/ui/sidebar'
 import { ALL_NAV_PATHS, type NavItem } from '@/components/layout/nav-config'
+
+/**
+ * 사이드바 메뉴는 현재 탭에서 이동한다(새 탭을 만들지 않음).
+ * 현재 화면에 저장 전 편집이 있으면 그 탭을 보존하고 새 탭으로 연다.
+ * Cmd/Ctrl+클릭과 휠 클릭은 브라우저 관례대로 백그라운드 새 탭을 연다.
+ */
+function sidebarTabLinkHandlers(path: string) {
+  const openTab = (inNewTab: boolean) => {
+    const meta = getRouteMeta(path)
+    const input = { route: path, kind: meta.kind, title: meta.title }
+    if (inNewTab) {
+      useTabStore.getState().createTab({ ...input, activate: false })
+    } else {
+      void navigateActiveTab(input)
+    }
+  }
+
+  return {
+    onClick: (event: MouseEvent<HTMLAnchorElement>) => {
+      if (event.defaultPrevented || event.button !== 0) return
+      event.preventDefault()
+      openTab(event.metaKey || event.ctrlKey)
+    },
+    onAuxClick: (event: MouseEvent<HTMLAnchorElement>) => {
+      if (event.defaultPrevented || event.button !== 1) return
+      event.preventDefault()
+      openTab(true)
+    },
+  }
+}
 
 /**
  * nav-config의 그룹 1개를 렌더링.
@@ -74,10 +108,13 @@ export function NavMain({
             <SidebarMenuItem key={item.path}>
               <SidebarMenuButton
                 asChild
-                isActive={isActivePath(item.path)}
+                isActive={
+                  isActivePath(item.path) ||
+                  !!item.alsoActivePaths?.some(isActivePath)
+                }
                 tooltip={item.label}
               >
-                <Link to={item.path}>
+                <Link to={item.path} {...sidebarTabLinkHandlers(item.path)}>
                   <item.icon />
                   <span>{item.label}</span>
                 </Link>
@@ -121,7 +158,7 @@ function NavItemWithChildren({
           isActive={isParentActive}
           tooltip={item.label}
         >
-          <Link to={item.path}>
+          <Link to={item.path} {...sidebarTabLinkHandlers(item.path)}>
             <item.icon />
             <span>{item.label}</span>
           </Link>
@@ -143,6 +180,7 @@ function NavItemWithChildren({
                   <Link
                     to={child.path}
                     search={child.resetSearch ? {} : undefined}
+                    {...sidebarTabLinkHandlers(child.path)}
                   >
                     <span>{child.label}</span>
                   </Link>

@@ -1,5 +1,13 @@
 import type { RequestFn } from '../client.js';
 
+export interface OfficePostalAddress {
+  roadAddress: string | null;
+  jibunAddress: string | null;
+  detailAddress: string | null;
+  zipCode: string | null;
+  buildingCode: string | null;
+}
+
 export interface OfficeUserSummary {
   id: string;
   name: string;
@@ -18,6 +26,11 @@ export interface OfficeProfile {
   ceoName: string | null;
   phone: string | null;
   address: string | null;
+  postalAddress: OfficePostalAddress | null;
+  geocodingStatus: 'pending' | 'ready' | 'failed' | 'unconfigured' | null;
+  geocodedAt: string | null;
+  latitude: number | null;
+  longitude: number | null;
   naverVerificationId: string | null;
   subscription: string;
   maxUsers: number;
@@ -40,6 +53,7 @@ export interface UpdateOfficeDto {
   ceoName?: string | null;
   phone?: string | null;
   address?: string | null;
+  postalAddress?: OfficePostalAddress | null;
   naverVerificationId?: string | null;
 }
 
@@ -49,6 +63,7 @@ export interface CreateOfficeDto {
   ceoName?: string | null;
   phone?: string | null;
   address?: string | null;
+  postalAddress?: OfficePostalAddress | null;
 }
 
 export interface CommissionConfigDto {
@@ -68,6 +83,7 @@ export function createOfficesApi(request: RequestFn) {
     getMe: () => request<OfficeProfile>('/offices/me'),
     updateMe: (dto: UpdateOfficeDto) =>
       request<OfficeProfile>('/offices/me', { method: 'PATCH', body: dto }),
+    retryGeocoding: () => request<OfficeProfile>('/offices/me/geocode', { method: 'POST' }),
     updateCommissionConfig: (dto: CommissionConfigDto) =>
       request<OfficeProfile>('/offices/me/commission-config', {
         method: 'PATCH',

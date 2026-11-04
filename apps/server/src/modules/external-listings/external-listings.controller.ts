@@ -16,8 +16,10 @@ import {
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import {
   BatchUpsertDto,
+  CompleteSessionOptions,
   CreateSessionDto,
   ExternalListingsService,
+  ManualListingsDto,
   UpdateGroupDto,
 } from './external-listings.service';
 
@@ -79,6 +81,7 @@ export class ExternalListingsController {
   @Post('sessions/:id/complete')
   completeSession(
     @Param('id') id: string,
+    @Body() options: CompleteSessionOptions | undefined,
     @CurrentUser() user: CurrentUserPayload,
   ) {
     return this.service.completeSession(
@@ -86,6 +89,7 @@ export class ExternalListingsController {
       user.userId,
       user.role,
       id,
+      { expectedListingCount: options?.expectedListingCount },
     );
   }
 
@@ -119,9 +123,27 @@ export class ExternalListingsController {
     return this.service.updateGroup(id, user.officeId, dto);
   }
 
+  /** 수동 입력. 스냅샷 없이 저장하며 다른 광고를 비활성화하지 않는다. */
+  @Post('manual')
+  createManualListings(
+    @Body() dto: ManualListingsDto,
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.service.createManualListings(user.officeId, dto);
+  }
+
+  /** 수동 입력 광고 내리기. */
+  @Post('listings/:id/end')
+  endManualListing(
+    @Param('id') id: string,
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.service.endManualListing(user.officeId, id);
+  }
+
   /**
-   * 배치 업서트 — 크롤러/MCP/수동 입력의 단일 진입점.
-   * 최대 100건/요청, lenient 모드(부분 실패 허용).
+   * 열린 스냅샷에 묶음 입력.
+   * 최대 100건/요청, 요청 하나는 전부 저장되거나 전부 거부된다.
    */
   @Post('batch')
   batchUpsert(

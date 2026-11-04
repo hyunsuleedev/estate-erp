@@ -104,7 +104,7 @@ export function NotificationBell() {
         void navigate({ to: "/tasks" });
         return true;
       case "match":
-        void navigate({ to: "/matches" });
+        void navigate({ to: "/wanted-properties" });
         return true;
       default:
         return false;

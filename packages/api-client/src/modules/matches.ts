@@ -19,6 +19,10 @@ export interface Match {
   buyerReqId: string;
   stage: string;
   closedFromStage: string | null;
+  /** 종료 이유 (MatchClosedReason): manual / other_buyer_contracted / intake_closed / deal_cancelled */
+  closedReason: string | null;
+  /** 자동 종료를 일으킨 거래 */
+  closedByDealId: string | null;
   memo: string | null;
   createdAt: string;
   updatedAt: string;

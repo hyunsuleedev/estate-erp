@@ -1,5 +1,16 @@
 import { useRef, useState } from 'react';
-import { ChevronDown, ChevronRight, Pencil } from 'lucide-react';
+import {
+  ChevronDown,
+  ChevronRight,
+  CircleDollarSign,
+  GitBranch,
+  MapPin,
+  Pencil,
+  Phone,
+  Ruler,
+  Tag,
+  User,
+} from 'lucide-react';
 import type { Match } from '@estate-erp/api-client';
 import { MatchStage, normalizeMatchStage } from '@estate-erp/shared';
 import {
@@ -23,6 +34,67 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 
 // ── 고객별 뷰: Contact → BuyerRequirement → Match ───────────────────────────
+// 매물관리 표처럼 맨 위 헤더 한 줄이 칸 이름을 맡고, 고객 행은 값만 보여준다.
+
+/**
+ * 헤더와 고객 행이 같은 값을 써서 칸이 세로로 맞는다 (선택 · 펼침 · 값 7칸).
+ * 넓은 창에서 값끼리 멀어지지 않게 예산은 상한을 두고, 남는 폭은 희망 지역이 받는다.
+ */
+const BUYER_TABLE_COLUMNS =
+  'grid grid-cols-[40px_28px_88px_128px_96px_112px_minmax(140px,200px)_minmax(110px,1fr)_132px]';
+/** 위 칸 너비의 합. 창이 이보다 좁으면 줄바꿈 대신 표 전체가 가로로 스크롤된다. */
+export const BUYER_TABLE_MIN_WIDTH_CLASS = 'min-w-[874px]';
+const BUYER_TABLE_CELL = 'flex min-w-0 items-center border-r border-border px-2.5';
+
+const BUYER_TABLE_HEADERS = [
+  { label: '고객', icon: <User /> },
+  { label: '연락처', icon: <Phone /> },
+  { label: '매물 유형', icon: <Tag /> },
+  { label: '희망 평형', icon: <Ruler /> },
+  { label: '예산', icon: <CircleDollarSign /> },
+  { label: '희망 지역', icon: <MapPin /> },
+  { label: '매칭', icon: <GitBranch /> },
+];
+
+export function BuyerMatchTableHeader({
+  checked,
+  onToggleAll,
+}: {
+  checked: boolean | 'indeterminate';
+  onToggleAll: (selected: boolean) => void;
+}) {
+  return (
+    <div
+      data-buyer-table-header
+      className={cn(
+        BUYER_TABLE_COLUMNS,
+        'sticky top-0 z-20 h-9 border-b border-border bg-[#f7f7f5]',
+      )}
+    >
+      <div className="flex items-center justify-center">
+        <Checkbox
+          checked={checked}
+          onCheckedChange={(value) => onToggleAll(value === true)}
+          aria-label="현재 매칭 목록 전체 선택"
+        />
+      </div>
+      <div aria-hidden="true" className="border-r border-border" />
+      {BUYER_TABLE_HEADERS.map(({ label, icon }) => (
+        <div key={label} className={cn(BUYER_TABLE_CELL, 'last:border-r-0')}>
+          <span className="inline-flex min-w-0 items-center gap-1 text-[12px] font-normal text-muted-foreground">
+            <span
+              aria-hidden="true"
+              className="shrink-0 [&>svg]:size-3 [&>svg]:text-muted-foreground/70"
+            >
+              {icon}
+            </span>
+            <span className="truncate">{label}</span>
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 export function BuyerMatchGroup({
   buyerRequirement,
@@ -59,134 +131,133 @@ export function BuyerMatchGroup({
       data-buyer-match-group
       data-match-selected={selected ? 'true' : undefined}
       aria-label={`${buyerName} 매칭 그룹`}
-      className={cn(
-        'overflow-hidden rounded-lg border border-border bg-background shadow-xs',
-        selected && 'border-foreground/25',
-      )}
+      className="border-b border-border bg-white"
     >
       <header
         data-buyer-summary-header
         className={cn(
-          'bg-muted/30 px-3 py-2.5',
-          expanded && 'border-b border-border/70',
+          selected && 'bg-muted/50',
+          expanded && 'border-b border-border',
         )}
       >
-        <div className="flex min-w-0 items-start gap-2">
-          <Checkbox
-            checked={selected}
-            onCheckedChange={(value) => onSelectedChange(value === true)}
-            aria-label={`${buyerName} 선택`}
-            className="mt-1"
-          />
+        <div
+          data-buyer-summary-row
+          className={cn(BUYER_TABLE_COLUMNS, 'min-h-10')}
+        >
+          <div className="flex items-center justify-center">
+            <Checkbox
+              checked={selected}
+              onCheckedChange={(value) => onSelectedChange(value === true)}
+              aria-label={`${buyerName} 선택`}
+            />
+          </div>
 
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-xs"
-            aria-label={`${buyerName} 매칭 ${expanded ? '접기' : '펼치기'}`}
-            aria-expanded={expanded}
-            className="shrink-0 text-muted-foreground"
-            onClick={() => setExpanded((prev) => !prev)}
-          >
-            {expanded ? (
-              <ChevronDown className="size-4" />
-            ) : (
-              <ChevronRight className="size-4" />
-            )}
-          </Button>
+          <div className="flex items-center justify-center border-r border-border">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-xs"
+              aria-label={`${buyerName} 매칭 ${expanded ? '접기' : '펼치기'}`}
+              aria-expanded={expanded}
+              className="shrink-0 text-muted-foreground"
+              onClick={() => setExpanded((prev) => !prev)}
+            >
+              {expanded ? (
+                <ChevronDown className="size-4" />
+              ) : (
+                <ChevronRight className="size-4" />
+              )}
+            </Button>
+          </div>
+
+          <div className={BUYER_TABLE_CELL}>
+            <p
+              title={buyerName}
+              className="min-w-0 truncate text-[13px] font-semibold"
+            >
+              {buyerName}
+            </p>
+          </div>
+
+          <dl data-buyer-contact-summary className="contents">
+            <BuyerRequirementSummaryItem
+              label="연락처"
+              value={buyerPhone}
+              className="tabular-nums"
+            />
+          </dl>
+
+          <dl data-buyer-requirement-summary className="contents">
+            <BuyerRequirementSummaryItem
+              label="매물 유형"
+              value={requirementSummary.siteTypeText}
+            />
+            <BuyerRequirementSummaryItem
+              label="희망 평형"
+              value={requirementSummary.areaText}
+              className="tabular-nums"
+            />
+            <BuyerRequirementSummaryItem
+              label="예산"
+              value={requirementSummary.budgetText}
+              emphasized
+            />
+            {/* 희망 지역은 매칭 판단의 핵심이라 자르지 않고 줄을 바꾼다 */}
+            <BuyerRequirementSummaryItem
+              label="희망 지역"
+              value={requirementSummary.regionText}
+              wrap
+            />
+          </dl>
 
           <div
-            data-buyer-summary-row
-            className="flex min-w-0 flex-1 flex-wrap items-center gap-x-5 gap-y-1 xl:flex-nowrap"
+            className={cn(
+              BUYER_TABLE_CELL,
+              'flex-wrap gap-1 border-r-0 py-1 text-[11.5px] tabular-nums',
+            )}
           >
-            <div className="flex min-w-[240px] max-w-[320px] items-center gap-3">
-              <p
-                title={buyerName}
-                className="w-20 shrink-0 truncate text-[13px] font-semibold"
-              >
-                {buyerName}
-              </p>
-              <dl data-buyer-contact-summary className="min-w-0">
-                <BuyerRequirementSummaryItem
-                  label="연락처"
-                  value={buyerPhone}
-                  emphasized
-                />
-              </dl>
-            </div>
-
-            <dl
-              data-buyer-requirement-summary
-              className="flex min-w-0 flex-1 flex-wrap items-center gap-x-5 gap-y-1 xl:flex-nowrap"
-            >
-              <BuyerRequirementSummaryItem
-                label="매물 유형"
-                value={requirementSummary.siteTypeText}
-                className="min-w-[100px] shrink-0"
-              />
-              <BuyerRequirementSummaryItem
-                label="희망 평형"
-                value={requirementSummary.areaText}
-                className="min-w-36 shrink-0 tabular-nums"
-              />
-              <BuyerRequirementSummaryItem
-                label="예산"
-                value={requirementSummary.budgetText}
-                className="min-w-40 shrink-0"
-                emphasized
-              />
-            </dl>
-
-            <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-1.5 text-xs tabular-nums">
-              <span className="text-muted-foreground">
-                매칭 {matches.length}
+            {activeCount > 0 && (
+              <span className="rounded-md bg-info-soft px-1.5 py-0.5 font-medium text-info-strong">
+                진행 {activeCount}
               </span>
-              {activeCount > 0 && (
-                <span className="rounded-md border border-info/25 bg-info-soft px-1.5 py-0.5 font-medium text-info-strong">
-                  진행 {activeCount}
-                </span>
-              )}
-              {convertedCount > 0 && (
-                <span className="rounded-md border border-success/25 bg-success-soft px-1.5 py-0.5 font-medium text-success">
-                  거래 {convertedCount}
-                </span>
-              )}
-              {closedCount > 0 && (
-                <span className="rounded-md border border-destructive/25 bg-destructive-soft px-1.5 py-0.5 font-medium text-destructive-strong">
-                  종료 {closedCount}
-                </span>
-              )}
-            </div>
+            )}
+            {convertedCount > 0 && (
+              <span className="rounded-md bg-success-soft px-1.5 py-0.5 font-medium text-success">
+                거래 {convertedCount}
+              </span>
+            )}
+            {closedCount > 0 && (
+              <span className="rounded-md bg-destructive-soft px-1.5 py-0.5 font-medium text-destructive-strong">
+                종료 {closedCount}
+              </span>
+            )}
           </div>
         </div>
 
-        <dl
-          data-buyer-requirement-details
-          className="ml-14 mt-1.5 grid min-w-0 grid-cols-[64px_minmax(0,1fr)] gap-x-2 gap-y-1 border-t border-border/60 pt-1.5 text-xs leading-5"
-        >
-          <dt className="font-medium text-muted-foreground">희망 지역</dt>
-          <dd
-            title={requirementSummary.regionText}
-            className="min-w-0 break-words font-medium text-foreground"
+        {expanded && buyerRequirement.memo && (
+          // 78px: 고객 이름 칸의 글자 시작 위치. 메모와 아래 매칭 가지를 여기에 맞춘다.
+          <dl
+            data-buyer-requirement-details
+            className="grid grid-cols-[56px_minmax(0,1fr)] gap-x-2 border-t border-border py-1.5 pl-[78px] pr-3 text-xs leading-5"
           >
-            {requirementSummary.regionText}
-          </dd>
-
-          {expanded && buyerRequirement.memo && (
-            <>
-              <dt className="font-medium text-muted-foreground">고객 메모</dt>
-              <dd
-                data-buyer-expanded-memo
-                className="min-w-0 whitespace-pre-wrap break-words text-foreground/80"
-              >
-                {buyerRequirement.memo}
-              </dd>
-            </>
-          )}
-        </dl>
+            <dt className="text-muted-foreground">고객 메모</dt>
+            <dd
+              data-buyer-expanded-memo
+              className="min-w-0 whitespace-pre-wrap break-words text-foreground/80"
+            >
+              {buyerRequirement.memo}
+            </dd>
+          </dl>
+        )}
       </header>
 
-      {expanded && <BuyerMatchBranchList matches={matches} actions={actions} />}
+      {expanded && (
+        <BuyerMatchBranchList
+          matches={matches}
+          actions={actions}
+          className="ml-[78px]"
+        />
+      )}
     </section>
   );
 }
@@ -238,22 +309,25 @@ function BuyerRequirementSummaryItem({
   value,
   className,
   emphasized = false,
+  wrap = false,
 }: {
   label: string;
   value: string;
   className?: string;
   emphasized?: boolean;
+  /** 자르지 않고 줄을 바꾼다. 행 높이가 함께 늘어난다. */
+  wrap?: boolean;
 }) {
   return (
-    <div className={cn('flex min-w-0 items-baseline gap-1.5', className)}>
-      <dt className="shrink-0 text-[10.5px] font-medium text-muted-foreground">
-        {label}
-      </dt>
+    <div className={cn(BUYER_TABLE_CELL, className)}>
+      {/* 칸 이름은 표 헤더가 보여주므로 화면에서는 숨기고 스크린리더에만 남긴다 */}
+      <dt className="sr-only">{label}</dt>
       <dd
         title={value}
         className={cn(
-          'min-w-0 truncate text-[12.5px] font-medium text-foreground',
-          emphasized && 'font-semibold tabular-nums',
+          'min-w-0 text-[13px] text-foreground',
+          wrap ? 'break-words py-2 leading-5' : 'truncate',
+          emphasized && 'font-medium tabular-nums',
         )}
       >
         {value}

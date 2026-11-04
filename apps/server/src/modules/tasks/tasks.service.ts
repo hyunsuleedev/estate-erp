@@ -137,9 +137,12 @@ export class TasksService {
       contractId?: string;
     },
     actorUserId?: string,
+    /** id: 같은 요청을 다시 보내도 한 건만 생기게 할 때 (통화 분석 제안 반영) */
+    options: { id?: string } = {},
   ) {
     const task = await this.prisma.task.create({
       data: {
+        ...(options.id ? { id: options.id } : {}),
         officeId,
         title: dto.title,
         content: dto.content,

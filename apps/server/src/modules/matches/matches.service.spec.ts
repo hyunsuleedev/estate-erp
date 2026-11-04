@@ -83,6 +83,9 @@ describe('MatchesService stage progression', () => {
         data: expect.objectContaining({
           stage: 'closed',
           closedFromStage: 'viewing',
+          // 직접 종료는 거래 취소 시 되살리기 대상이 아니다
+          closedReason: 'manual',
+          closedByDealId: null,
         }),
       }),
     );
@@ -104,6 +107,8 @@ describe('MatchesService stage progression', () => {
         data: expect.objectContaining({
           stage: 'viewing',
           closedFromStage: null,
+          closedReason: null,
+          closedByDealId: null,
         }),
       }),
     );

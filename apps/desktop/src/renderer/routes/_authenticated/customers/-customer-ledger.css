@@ -1,5 +1,5 @@
-/* 고객 원장 — 매물관리(PropertyListingsTable)의 Notion식 플랫 그리드 언어 적용
-   헤어라인 그리드, 13px 셀, tabular-nums, 좌측 선택·고객 열 pinning + 경계 그림자 */
+/* 고객 원장 — 매물관리(PropertyListingsTable)의 Notion식 플랫 그리드를 그대로 따른다.
+   의뢰 1건을 33px 한 줄로 읽고, 머리글 36px·헤어라인 #eeeeec·왼쪽 정렬 값·왼쪽 고정 식별 열을 쓴다. */
 
 .customer-ledger-scroll-shell {
   isolation: isolate;
@@ -13,7 +13,7 @@
 /* 가로로 숨은 열이 있을 때만 우측에 얇은 그림자를 남긴다. */
 .customer-ledger-overflow-cue {
   position: absolute;
-  top: 36px;
+  top: 72px;
   right: 0;
   bottom: 0;
   z-index: 20;
@@ -32,45 +32,23 @@
 /* 가로 스크롤 위치와 무관하게 다음 페이지 감지 면적을 유지한다. */
 .customer-ledger-load-sentinel {
   width: 100%;
-  min-width: 1030px;
   height: 1px;
 }
 
 .customer-ledger-table {
-  --ledger-transaction-column-width: 60px;
+  --ledger-row-height: 33px;
 
   width: 100%;
-  min-width: 1030px;
   table-layout: fixed;
   border-collapse: separate;
   border-spacing: 0;
   color: var(--color-foreground);
 }
 
-/* 선택·고객·작업·거래 열을 고정하고, 나머지 열은 남은 폭을 같은 비율로 나눈다. */
-.customer-ledger-table col.ledger-select-column {
-  width: 38px;
-}
-
-.customer-ledger-table col.ledger-customer-column {
-  width: 190px;
-}
-
-.customer-ledger-table col.ledger-action-column {
-  width: 48px;
-}
-
-.customer-ledger-table col.ledger-transaction-column {
-  width: var(--ledger-transaction-column-width);
-}
-
-.customer-ledger-table col.ledger-fluid-column {
-  width: auto;
-}
-
+/* 머리글은 표 위 안내 줄(36px) 바로 아래에 붙는다. */
 .customer-ledger-table thead {
   position: sticky;
-  top: 0;
+  top: 36px;
   z-index: 30;
 }
 
@@ -94,122 +72,147 @@
   border-right: 0;
 }
 
-.customer-ledger-table thead th:nth-child(6) {
-  padding-right: 8px;
-  padding-left: 8px;
+/* 접었다 펼치는 월세 열은 매물관리 상세 열과 같은 색으로 구분한다. */
+.customer-ledger-table thead th.ledger-detail-header {
+  background: #f2f6f4;
 }
 
-.customer-ledger-table td {
-  height: 36px;
+.ledger-detail-header .ledger-header-label {
+  color: #52645e;
+}
+
+.customer-ledger-table thead .ledger-header-label {
+  display: flex;
+}
+
+.customer-ledger-table tbody td,
+.customer-ledger-table tbody th {
+  height: var(--ledger-row-height);
   padding: 0 10px;
-  border-right: 1px solid
-    color-mix(in srgb, var(--color-border) 55%, transparent);
+  border-right: 1px solid #eeeeec;
+  border-bottom: 1px solid #eeeeec;
+  font-size: 13px;
+  vertical-align: middle;
+}
+
+.customer-ledger-table tbody td {
+  overflow: hidden;
   background: var(--color-background);
-  font-size: 12.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   transition: background-color 120ms ease;
 }
 
-/* 거래·예산·월세·평형·매칭 그룹의 끝만 기존 헤어라인보다 한 단계 진하게. */
-.customer-ledger-table .ledger-group-end {
-  border-right-color: #d8d6d0;
+/* rowSpan 때문에 tr의 마지막 칸이 행마다 달라지므로, 끝 열을 직접 지정한다. */
+.customer-ledger-table tbody td.ledger-updated-cell {
+  border-right: 0;
 }
 
-.customer-ledger-table .ledger-case-start > td,
-.customer-ledger-table .ledger-case-start > th {
-  border-top: 1px solid var(--color-border);
+/* 고객이 바뀌는 곳은 아랫선만 한 단계 진하게 해 행 높이를 유지한다. */
+.customer-ledger-table .ledger-case-end > td,
+.customer-ledger-table .ledger-case-end > th,
+.customer-ledger-table tbody :is(td, th).ledger-rowspan-top {
+  border-bottom-color: #e3e2de;
 }
 
-.customer-ledger-table tbody > .ledger-case-start:first-child > td,
-.customer-ledger-table tbody > .ledger-case-start:first-child > th {
-  border-top: 0;
-}
-
-/* intent 행 hover/focus 시 짝이 되는 context 행까지 함께 하이라이트 */
-.ledger-intent-row:hover > td,
-.ledger-intent-row:focus-within > td,
-.ledger-intent-row:hover + .ledger-context-row > td,
-.ledger-intent-row:focus-within + .ledger-context-row > td {
-  background: color-mix(
-    in srgb,
-    var(--color-muted) 45%,
-    var(--color-background)
-  );
-}
-
-/* sticky 고객 셀은 기본 배경이 !important라 hover/focus 규칙도 !important로 덮는다 */
-.ledger-intent-row:hover > .ledger-customer-cell,
-.ledger-intent-row:focus-within > .ledger-customer-cell {
-  background: color-mix(
-    in srgb,
-    var(--color-muted) 45%,
-    var(--color-background)
-  ) !important;
+/* 여러 행에 걸친 고객 칸은 칠하지 않아, 올린 의뢰 한 줄만 드러나게 한다. */
+.ledger-intent-row:hover > td:not(.ledger-rowspan-top),
+.ledger-intent-row:focus-within > td:not(.ledger-rowspan-top) {
+  background: #f8fafc;
 }
 
 .ledger-case-selected > td,
 .ledger-case-selected > th.ledger-customer-cell {
   background: color-mix(
     in srgb,
-    var(--color-primary) 7%,
+    var(--color-primary) 5%,
     var(--color-background)
   ) !important;
 }
 
-/* context 행: 지역·매물·노트를 전체 폭으로 보여주는 독립 보조 라인.
-   위 intent 행과 border-top으로 경계를 구분하고, 높이는 기본 행과 같은 36px */
-.ledger-context-row td {
-  height: 36px;
-  padding: 0;
-  border-top: 1px solid var(--color-border);
-  border-bottom: 1px solid var(--color-border);
-  background: color-mix(
-    in srgb,
-    var(--color-muted) 40%,
-    var(--color-background)
-  );
+/* 값이 없는 칸은 "-"로 물러나게 한다. */
+.customer-ledger-table .ledger-empty-value {
+  color: var(--color-muted-foreground);
+  font-weight: 400;
 }
 
-/* context 행은 반복 라벨 대신 장소와 노트를 두 개의 의미 그룹으로 읽는다. */
-.ledger-context-layout {
-  display: grid;
-  grid-template-columns:
-    repeat(2, minmax(0, 1fr)) var(--ledger-transaction-column-width)
-    repeat(7, minmax(0, 1fr));
-  min-width: 0;
-  height: 100%;
-  align-items: center;
+.customer-ledger-table .ledger-paused-value {
+  color: #b4b4b1;
+  font-weight: 400;
 }
 
-.ledger-context-link {
+/* 의뢰 셀 */
+.customer-ledger-table td.ledger-intake-cell {
+  text-align: left;
+  vertical-align: middle;
+}
+
+.ledger-intake-link {
   display: flex;
-  grid-column: 1 / span 5;
   min-width: 0;
   align-items: center;
-  gap: 6px;
-  padding: 0 10px;
-  color: var(--color-foreground);
-  font-size: 12px;
-  font-weight: 600;
+  color: #0f172a;
+  font-size: 13px;
+  font-weight: 500;
 }
 
-.ledger-context-link:hover > span {
+.ledger-intake-link:hover > span {
   text-decoration: underline;
   text-underline-offset: 2px;
 }
 
-.ledger-context-memo {
-  display: flex;
-  grid-column: 6 / -1;
-  min-width: 0;
-  height: 24px;
-  align-items: center;
-  gap: 2px;
-  padding: 0 10px;
-  border-left: 1px solid
-    color-mix(in srgb, var(--color-border) 85%, transparent);
+/* 메모가 없는 칸의 추가 안내와 일정 추가 안내는 행에 올리거나 포커스할 때만 보여 준다. */
+.ledger-memo-add {
+  color: var(--color-muted-foreground);
+  font-size: 12px;
+  opacity: 0;
+  transition: opacity 120ms ease;
 }
 
-/* 좌측 pinning — 선택 + 고객 + 작업 열, 마지막 고정 열에 경계 그림자 */
+.ledger-intent-row:hover .ledger-memo-add,
+.ledger-intent-row:focus-within .ledger-memo-add {
+  opacity: 1;
+}
+
+.ledger-next-add {
+  display: none;
+  color: var(--color-muted-foreground);
+  font-size: 12px;
+}
+
+.ledger-intent-row:hover .ledger-next-add,
+.ledger-intent-row:focus-within .ledger-next-add {
+  display: inline;
+}
+
+.ledger-intent-row:hover .ledger-next-empty,
+.ledger-intent-row:focus-within .ledger-next-empty {
+  display: none;
+}
+
+/* 최근 상담 — 고객 단위 값이라 고객의 첫 행에 한 줄로 붙인다. */
+.ledger-consult-link {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  color: #334155;
+  line-height: 32px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ledger-consult-link:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.ledger-consult-date {
+  margin-right: 6px;
+  color: var(--color-muted-foreground);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 좌측 pinning — 선택 + 고객 + 연락처 + 작업 열, 마지막 고정 열에 경계선 */
 .ledger-sticky-select {
   position: sticky;
   left: 0;
@@ -218,26 +221,20 @@
 
 .ledger-sticky-customer {
   position: sticky;
-  left: 38px;
+  left: 36px;
   z-index: 12;
+}
+
+.ledger-sticky-phone {
+  position: sticky;
+  left: 144px;
+  z-index: 11;
 }
 
 .ledger-sticky-action {
   position: sticky;
-  left: 228px;
-  z-index: 11;
-  box-shadow: 1px 0 0 0 var(--color-border);
-}
-
-.customer-ledger-table thead .ledger-sticky-customer {
-  z-index: 40;
-  background: #f5f4f1;
-}
-
-.customer-ledger-table thead .ledger-sticky-action {
-  z-index: 39;
-  padding: 0;
-  background: #f5f4f1;
+  left: 272px;
+  z-index: 10;
   box-shadow: 1px 0 0 0 #d9d9d6;
 }
 
@@ -245,64 +242,78 @@
   z-index: 41;
   padding: 0;
   background: #f5f4f1;
-}
-
-.customer-ledger-table td.ledger-select-cell {
-  padding: 0;
-  padding-top: 11px;
-  border-bottom: 1px solid var(--color-border);
-  background: var(--color-background);
   text-align: center;
-  vertical-align: middle;
 }
 
-.customer-ledger-table td.ledger-action-cell {
+.customer-ledger-table thead .ledger-sticky-customer {
+  z-index: 40;
+  background: #f5f4f1;
+}
+
+.customer-ledger-table thead .ledger-sticky-phone {
+  z-index: 39;
+  background: #f5f4f1;
+}
+
+.customer-ledger-table thead .ledger-sticky-action {
+  z-index: 38;
   padding: 0;
-  padding-top: 6px;
-  border-bottom: 1px solid var(--color-border);
-  background: var(--color-background);
-  text-align: center;
-  vertical-align: middle;
+  background: #f5f4f1;
+  box-shadow: 1px 0 0 0 #d9d9d6;
 }
 
-.customer-ledger-table th.ledger-customer-cell {
-  padding: 8px 10px 4px;
-  border-bottom: 1px solid var(--color-border);
+.customer-ledger-table tbody td.ledger-select-cell {
+  padding: 9px 0 0;
+  text-align: center;
+}
+
+.customer-ledger-table tbody td.ledger-action-cell {
+  padding: 0;
+  text-align: center;
+}
+
+.customer-ledger-table tbody th.ledger-customer-cell {
+  padding: 0 10px;
   background: var(--color-background) !important;
   color: var(--color-foreground);
-  font-size: 12px;
   font-weight: 400;
   text-align: left;
-  vertical-align: middle;
-  white-space: normal;
-  transition: background-color 120ms ease;
+  white-space: nowrap;
 }
 
-.customer-ledger-table td.ledger-updated-cell {
-  padding-top: 10px;
-  border-bottom: 1px solid var(--color-border);
+.customer-ledger-table tbody td.ledger-phone-cell {
+  color: #334155;
+  font-variant-numeric: tabular-nums;
+  line-height: 32px;
+}
+
+.customer-ledger-table tbody td.ledger-updated-cell {
   color: var(--color-muted-foreground);
-  font-size: 11px;
-  text-align: center;
-  vertical-align: middle;
-  white-space: nowrap;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  line-height: 32px;
 }
 
 /* rowSpan 셀은 케이스의 첫 행에 정렬해 고객 블록의 시작점을 고정한다. */
-.customer-ledger-table :is(td, th).ledger-rowspan-top {
+.customer-ledger-table tbody :is(td, th).ledger-rowspan-top {
   vertical-align: top;
 }
 
-.customer-ledger-table td.ledger-number-cell {
-  color: var(--color-foreground);
+.customer-ledger-table tbody td.ledger-number-cell {
+  color: #0f172a;
   font-variant-numeric: tabular-nums;
   font-weight: 500;
-  text-align: right;
+  text-align: left;
   white-space: nowrap;
 }
 
-/* 편집 trigger가 셀 전체 hit-area를 소유하되 기존 36px frame은 유지한다. */
-.customer-ledger-table td.ledger-editable-cell {
+.customer-ledger-table tbody td.ledger-area-cell {
+  color: var(--color-foreground);
+  font-weight: 400;
+}
+
+/* 편집 trigger가 셀 전체 hit-area를 소유하되 행 높이는 유지한다. */
+.customer-ledger-table tbody td.ledger-editable-cell {
   padding: 0;
 }
 
@@ -310,18 +321,27 @@
 .customer-ledger-table .ledger-editable-stack-line [data-ledger-cell-value] {
   display: flex;
   width: 100%;
-  min-height: 36px;
+  min-width: 0;
+  min-height: calc(var(--ledger-row-height) - 1px);
   align-items: center;
   padding: 0 10px;
+}
+
+/* 버튼이 칸을 살짝 넘어도 말줄임표가 붙지 않게 한다. */
+.customer-ledger-table tbody td.ledger-match-cell {
+  padding: 0 6px;
+  text-overflow: clip;
 }
 
 .customer-ledger-table .ledger-match-panel-row > td {
   height: auto;
   padding: 0;
+  overflow: visible;
   border-right: 0;
   border-bottom: 1px solid var(--color-border);
   background: #fbfbfa;
   vertical-align: top;
+  white-space: normal;
 }
 
 /* 케이스 묶음 아래의 패널은 가로 스크롤 위치와 무관하게 가시 폭 전체를 쓴다. */
@@ -331,20 +351,9 @@
   width: min(100%, 100cqw);
 }
 
-/* 매물 의뢰 행의 월세·평형 단일값 셀 (범위 2열을 합쳐 중앙 정렬) */
-.customer-ledger-table td.ledger-exact-cell,
-.customer-ledger-table .ledger-stack-line.ledger-exact-cell {
-  color: var(--color-foreground);
-  font-variant-numeric: tabular-nums;
-  font-weight: 500;
-  text-align: center;
-  white-space: nowrap;
-}
-
 .ledger-sort-button {
-  display: inline-flex;
+  display: flex;
   width: 100%;
-  height: 100%;
   align-items: center;
   justify-content: flex-start;
   gap: 4px;
@@ -369,33 +378,27 @@
   color: var(--color-muted-foreground);
 }
 
-.customer-ledger-table tbody tr:last-child td {
-  border-bottom: 1px solid var(--color-border);
-}
-
 @media (prefers-reduced-motion: reduce) {
-  .customer-ledger-table td,
-  .customer-ledger-table th.ledger-customer-cell,
-  .ledger-sort-button {
+  .customer-ledger-table tbody td,
+  .ledger-sort-button,
+  .ledger-memo-add {
     transition: none;
   }
 }
 
 /* ===== ListingIntake 스택 (같은 호실 묶음) ===== */
 
-/* 스택 행 — 셀 안에 listing을 36px 라인(기본 행과 같은 높이)으로 세로 적층, 행 높이는 내용만큼 */
-.ledger-stack-row > td {
+/* 스택 행 — 셀 안에 listing을 줄로 세로 적층, 행 높이는 내용만큼 */
+.customer-ledger-table .ledger-stack-row > td {
   height: auto;
-  vertical-align: top;
 }
 
-/* negative margin + 라인 padding으로 구분선을 셀 좌우 끝까지 잇는다 */
-/* 매칭 셀 — 같은 ListingIntake 묶음은 가상 분리 없이 하나로 통합해 세로 중앙 정렬 */
-.customer-ledger-table td.ledger-stack-merged-cell {
-  text-align: center;
+/* 같은 ListingIntake 묶음에서 한 값만 있는 칸은 세로 중앙에 둔다. */
+.customer-ledger-table tbody td.ledger-stack-merged-cell {
   vertical-align: middle;
 }
 
+/* negative margin + 라인 padding으로 구분선을 셀 좌우 끝까지 잇는다 */
 .ledger-stack {
   display: flex;
   flex-direction: column;
@@ -405,7 +408,7 @@
 .ledger-stack-line {
   display: flex;
   align-items: center;
-  height: 36px;
+  height: calc(var(--ledger-row-height) - 1px);
   padding: 0 10px;
 }
 
@@ -413,15 +416,7 @@
   padding: 0;
 }
 
-/* 적층 라인 사이 가상 구분선 */
-.ledger-stack-line:not(:last-child) {
-  border-bottom: 1px solid
-    color-mix(in srgb, var(--color-border) 55%, transparent);
-}
-
-.ledger-stack-right .ledger-stack-line {
-  justify-content: flex-end;
-}
-.ledger-stack-center .ledger-stack-line {
-  justify-content: center;
+/* 금액·월세 줄 사이에만 구분선을 넣는다. */
+.ledger-stack-rules .ledger-stack-line:not(:last-child) {
+  border-bottom: 1px solid #eeeeec;
 }

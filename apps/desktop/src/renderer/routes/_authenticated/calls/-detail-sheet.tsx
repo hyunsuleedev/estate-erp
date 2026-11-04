@@ -11,6 +11,7 @@ import {
   MessageSquarePlus,
   PhoneIncoming,
   PhoneOutgoing,
+  RefreshCw,
   Sparkles,
   User as UserIcon,
   UserPlus,
@@ -36,6 +37,7 @@ import {
 } from './-call-utils';
 import { LinkContactDialog, RegisterContactDialog } from './-contact-dialogs';
 import { ConvertConsultationDialog } from './-convert-dialog';
+import { CallSuggestionList } from './-call-suggestions';
 
 const consultationTypeLabel: Record<string, string> = {
   phone: '전화',
@@ -73,6 +75,28 @@ export function CallDetailSheet({ item }: { item: CallRecordingListItem }) {
   const contact = detail?.contact ?? item.contact;
   const fileUrl = detail?.fileUrl ?? item.fileUrl;
   const contactName = contact?.name ?? '미등록 번호';
+  const analysisStatus = detail?.analysisStatus ?? item.analysisStatus;
+  const sttError = detail?.sttError ?? item.sttError ?? null;
+  const suggestions = detail?.suggestions ?? [];
+  const suggestionLabels = detail?.suggestionLabels ?? {};
+  const autoConsultationId = detail?.autoConsultationId ?? null;
+  const canAnalyze =
+    sttStatus === 'completed' && messages.length > 0 && analysisStatus !== 'processing';
+  const keyPoints = Array.isArray(analysis?.keyPoints) ? analysis.keyPoints : [];
+  // 예전 분석(제안 기능 이전)은 "다음 조치" 글로만 있다
+  const legacyNextActions =
+    suggestions.length === 0 && keyPoints.length === 0 ? analysis?.nextActions : undefined;
+
+  // 받아쓰기는 두고 분석만 다시 (연락처를 연결한 뒤 등)
+  const reanalyzeMutation = useMutation({
+    mutationFn: () => api.callRecordings.reanalyze(item.id),
+    onSuccess: () => {
+      toast.success('다시 분석합니다. 끝나면 자동으로 바뀝니다.');
+      void queryClient.invalidateQueries({ queryKey: ['call-recordings'] });
+    },
+    onError: (error) =>
+      toast.error(error instanceof Error && error.message ? error.message : '다시 분석하지 못했습니다'),
+  });
 
   // 화자 전환 (나 ↔ 고객)
   const swapMutation = useMutation({
@@ -197,44 +221,95 @@ export function CallDetailSheet({ item }: { item: CallRecordingListItem }) {
         )}
 
         {/* AI 요약 */}
-        {(analysis?.summary || analysis?.customerNeed || analysis?.nextActions) && (
+        {(analysis?.summary || analysisStatus === 'processing' || analysisStatus === 'failed' || canAnalyze) && (
           <div className="border-b bg-violet-soft/40 px-6 py-5">
-            <h3 className="mb-3 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-violet">
-              <Sparkles className="size-3.5" />
-              AI 요약
-            </h3>
-            <dl className="space-y-3 text-sm">
-              {analysis?.summary && (
+            <div className="mb-3 flex items-center justify-between">
+              <h3 className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-violet">
+                <Sparkles className="size-3.5" />
+                AI 요약
+              </h3>
+              {canAnalyze && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 text-xs text-muted-foreground"
+                  disabled={reanalyzeMutation.isPending}
+                  onClick={() => reanalyzeMutation.mutate()}
+                >
+                  {reanalyzeMutation.isPending ? (
+                    <Loader2 className="size-3.5 animate-spin" />
+                  ) : (
+                    <RefreshCw className="size-3.5" />
+                  )}
+                  {analysis?.summary ? '다시 분석' : '분석하기'}
+                </Button>
+              )}
+            </div>
+            {analysisStatus === 'processing' && (
+              <p className="mb-3 flex items-center gap-2 text-[12px] text-muted-foreground">
+                <Loader2 className="size-3.5 animate-spin" />
+                통화 내용을 분석하고 있습니다. 끝나면 상담 기록과 제안이 생깁니다.
+              </p>
+            )}
+            {analysisStatus === 'failed' && (
+              <p className="mb-3 text-[12px] text-destructive">
+                분석하지 못했습니다{analysis?.error ? `: ${analysis.error}` : ''}
+              </p>
+            )}
+            {!analysis?.summary && analysisStatus !== 'processing' && analysisStatus !== 'failed' && (
+              <p className="text-[12px] text-muted-foreground">아직 분석하지 않은 통화입니다.</p>
+            )}
+            {analysis?.summary && (
+              <dl className="space-y-3 text-sm">
                 <div>
                   <dt className="text-[11px] text-muted-foreground">요약</dt>
                   <dd className="mt-0.5 leading-relaxed">{analysis.summary}</dd>
                 </div>
-              )}
-              {analysis?.customerNeed && (
-                <div>
-                  <dt className="text-[11px] text-muted-foreground">고객 니즈</dt>
-                  <dd className="mt-0.5 leading-relaxed">{analysis.customerNeed}</dd>
-                </div>
-              )}
-              {analysis?.nextActions && (
-                <div>
-                  <dt className="text-[11px] text-muted-foreground">다음 조치</dt>
-                  <dd className="mt-0.5 leading-relaxed">
-                    {Array.isArray(analysis.nextActions) ? (
+                {analysis.customerNeed && (
+                  <div>
+                    <dt className="text-[11px] text-muted-foreground">고객 니즈</dt>
+                    <dd className="mt-0.5 leading-relaxed">{analysis.customerNeed}</dd>
+                  </div>
+                )}
+                {keyPoints.length > 0 && (
+                  <div>
+                    <dt className="text-[11px] text-muted-foreground">핵심 정보</dt>
+                    <dd className="mt-0.5 leading-relaxed">
                       <ul className="list-disc space-y-0.5 pl-4">
-                        {analysis.nextActions.map((action, i) => (
-                          <li key={i}>{String(action)}</li>
+                        {keyPoints.map((point, i) => (
+                          <li key={i}>{point}</li>
                         ))}
                       </ul>
-                    ) : (
-                      String(analysis.nextActions)
-                    )}
-                  </dd>
-                </div>
-              )}
-            </dl>
+                    </dd>
+                  </div>
+                )}
+                {legacyNextActions && (
+                  <div>
+                    <dt className="text-[11px] text-muted-foreground">다음 조치</dt>
+                    <dd className="mt-0.5 leading-relaxed">
+                      {Array.isArray(legacyNextActions) ? (
+                        <ul className="list-disc space-y-0.5 pl-4">
+                          {legacyNextActions.map((action, i) => (
+                            <li key={i}>{String(action)}</li>
+                          ))}
+                        </ul>
+                      ) : (
+                        String(legacyNextActions)
+                      )}
+                    </dd>
+                  </div>
+                )}
+              </dl>
+            )}
           </div>
         )}
+
+        {/* AI 제안 — 확인 후 반영 */}
+        <CallSuggestionList
+          suggestions={suggestions}
+          labels={suggestionLabels}
+          hasContact={Boolean(contact)}
+        />
 
         {/* STT 타임라인 */}
         <div className="px-6 py-5">
@@ -266,7 +341,7 @@ export function CallDetailSheet({ item }: { item: CallRecordingListItem }) {
             </div>
           ) : sttStatus === 'failed' ? (
             <div className="rounded-md border border-destructive/30 bg-destructive-soft px-3 py-4 text-[13px] text-destructive">
-              STT 처리에 실패했습니다.
+              받아쓰기에 실패했습니다{sttError ? `: ${sttError}` : '.'}
             </div>
           ) : messages.length === 0 ? (
             <div className="rounded-md border border-dashed px-3 py-4 text-center text-[13px] text-muted-foreground">
@@ -297,7 +372,10 @@ export function CallDetailSheet({ item }: { item: CallRecordingListItem }) {
                     </div>
                     <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
                       <span>{label}</span>
-                      <span className="font-mono">{formatMs(m.startMs)}</span>
+                      {/* 시각을 받지 못한 받아쓰기(0~0)는 숨긴다 */}
+                      {(m.startMs > 0 || m.endMs > 0) && (
+                        <span className="font-mono">{formatMs(m.startMs)}</span>
+                      )}
                     </div>
                   </li>
                 );
@@ -321,7 +399,10 @@ export function CallDetailSheet({ item }: { item: CallRecordingListItem }) {
                     className="group block rounded-md border bg-muted/20 p-3 text-[13px] transition-colors hover:bg-muted/50"
                   >
                     <div className="mb-1 flex items-center justify-between text-[11px] text-muted-foreground">
-                      <span>{consultationTypeLabel[c.type] ?? c.type}</span>
+                      <span>
+                        {consultationTypeLabel[c.type] ?? c.type}
+                        {c.id === autoConsultationId && ' · AI 통화 요약'}
+                      </span>
                       <span className="inline-flex items-center gap-0.5">
                         {formatDateTime(c.createdAt)}
                         <ChevronRight className="size-3 opacity-0 transition-opacity group-hover:opacity-100" />

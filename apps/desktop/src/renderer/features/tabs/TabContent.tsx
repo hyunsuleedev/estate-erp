@@ -18,7 +18,8 @@ interface TabWorkspaceControllerProps {
  *
  * 핵심 흐름:
  * - 활성 탭이 바뀜(탭 클릭, 새 탭) → 라우터를 그 탭의 route로 navigate.
- * - 사용자가 사이드바/링크로 navigate → 활성 탭의 route를 그 경로로 갱신.
+ * - 활성 탭의 route가 store에서 바뀜(사이드바 navigateTab) → 라우터가 따라감.
+ * - 사용자가 페이지 안 링크로 navigate → 활성 탭의 route를 그 경로로 갱신.
  *
  * 두 흐름을 한 effect 안에서 "어떤 게 먼저 변했는지" 추적해 분기.
  */
@@ -83,19 +84,24 @@ export function TabWorkspaceController({
 
   const activeTab = tabs.find((t) => t.id === activeTabId) ?? null;
 
-  // 직전에 본 활성 탭 id / full href를 기억해 변화 출처를 판별.
+  // 직전에 본 활성 탭 id / route / full href를 기억해 변화 출처를 판별.
   const prevActiveTabIdRef = useRef<string | null>(null);
+  const prevActiveTabRouteRef = useRef<string | null>(null);
   const prevHrefRef = useRef<string>(currentHref);
   useEffect(() => {
     if (!activeTab) {
       prevActiveTabIdRef.current = null;
+      prevActiveTabRouteRef.current = null;
       prevHrefRef.current = currentHref;
       return;
     }
 
     const activeTabChanged = prevActiveTabIdRef.current !== activeTab.id;
+    const activeTabRouteChanged =
+      prevActiveTabRouteRef.current !== activeTab.route;
     const hrefChanged = prevHrefRef.current !== currentHref;
     const inSync = activeTab.route === currentHref;
+    prevActiveTabRouteRef.current = activeTab.route;
 
     if (inSync) {
       prevActiveTabIdRef.current = activeTab.id;
@@ -103,8 +109,9 @@ export function TabWorkspaceController({
       return;
     }
 
-    if (activeTabChanged) {
-      // 탭이 바뀐 게 원인 → 라우터를 활성 탭의 route로 맞춤
+    if (activeTabChanged || (activeTabRouteChanged && !hrefChanged)) {
+      // 탭 전환 또는 같은 탭의 store-side 이동(사이드바)이 원인 →
+      // 라우터를 활성 탭의 route로 맞춤
       void navigate({ href: activeTab.route, replace: true });
       prevActiveTabIdRef.current = activeTab.id;
       // href는 navigate 후 다음 렌더에 동기화됨 — 일단 현재 값을 기록
@@ -113,8 +120,8 @@ export function TabWorkspaceController({
     }
 
     if (hrefChanged) {
-      // 사용자가 사이드바/링크 등으로 navigate 한 것. 같은 업무 리소스가 다른
-      // 탭에 이미 있으면 그 탭을 reveal하고, 아니면 현재 탭의 위치를 갱신한다.
+      // 페이지 안 링크/코드가 router로 navigate 한 것. 같은 업무 리소스면 현재 탭을
+      // 갱신하고, 다른 리소스는 원본 탭을 보존한 채 reveal하거나 새 탭으로 연다.
       const meta = getRouteMeta(currentHref);
       const nextResourceKey = resolveTabResourceKey(currentHref, activeTab.id);
       const keepsCustomTitle =

@@ -2,13 +2,14 @@
 
 ## 메타
 
-- 페이지명: Matches
+- 페이지명: 희망매물 (Wanted Properties)
+- 경로: `/wanted-properties`
 - 문서 상태: draft
 - 우선순위: P0
 - Phase: Phase 2
 - 구현 상태: partial prototype exists
 - 작성일: 2026-04-02
-- 최종 수정일: 2026-04-02
+- 최종 수정일: 2026-11-03
 - 관련 엔터티: Match, BuyerRequirement, Listing, Property, Contact, Consultation, Deal, Task, ActivityLog
 - 관련 API:
   - `GET /matches`
@@ -55,7 +56,7 @@
   - 현재 방문 단계, 협의 단계, 거래 전환 직전 매칭을 훑을 때
   - 특정 Match를 거래로 넘기거나 종료할 때
 - 진입 경로:
-  - 사이드바 `매칭`
+  - 사이드바 `희망매물`
   - Buyer Requirement Detail의 `매칭 찾기` 또는 `매칭 생성`
   - Property/Listing 화면의 `매칭 추가`
   - Deals/Tasks에서 해당 Match 링크 역진입

@@ -122,21 +122,21 @@ describe('desktop tab store', () => {
 
   it('opens a module once per window while preserving search as view state', () => {
     const first = useTabStore.getState().openModule({
-      route: '/matches?matchId=first',
+      route: '/wanted-properties?matchId=first',
       kind: 'match',
-      title: '매칭',
+      title: '희망매물',
     });
     const second = useTabStore.getState().openModule({
-      route: '/matches?matchId=second',
+      route: '/wanted-properties?matchId=second',
       kind: 'match',
-      title: '매칭',
+      title: '희망매물',
     });
 
     assert.equal(second, first);
     assert.equal(useTabStore.getState().tabs.length, 1);
     assert.equal(
       useTabStore.getState().tabs[0].route,
-      '/matches?matchId=second',
+      '/wanted-properties?matchId=second',
     );
   });
 
@@ -363,9 +363,9 @@ describe('desktop tab store', () => {
       .getState()
       .adoptTabLocation(
         tab,
-        '/matches?matchId=match-1#detail',
+        '/wanted-properties?matchId=match-1#detail',
         'match',
-        '매칭',
+        '희망매물',
       );
 
     assert.notEqual(opened, tab);
@@ -376,11 +376,11 @@ describe('desktop tab store', () => {
     );
     assert.equal(
       useTabStore.getState().tabs[1].route,
-      '/matches?matchId=match-1#detail',
+      '/wanted-properties?matchId=match-1#detail',
     );
     assert.equal(
       useTabStore.getState().tabs[1].resourceKey,
-      tabResourceKeys.module('/matches'),
+      tabResourceKeys.module('/wanted-properties'),
     );
   });
 
@@ -543,5 +543,199 @@ describe('desktop tab store', () => {
     assert.deepEqual(reset.tabs, []);
     assert.equal(reset.activeTabId, null);
     assert.equal(reset.transferLockedTabIds.size, 0);
+  });
+
+  describe('navigateTab (sidebar navigation)', () => {
+    it('moves the current tab to another module instead of opening a new tab', () => {
+      const tab = useTabStore.getState().openModule({
+        route: '/dashboard',
+        kind: 'dashboard',
+        title: '대시보드',
+      });
+      useTabStore.setState((state) => ({
+        tabs: state.tabs.map((candidate) => ({
+          ...candidate,
+          uiState: { scrollY: 320 },
+        })),
+      }));
+
+      const result = useTabStore.getState().navigateTab(tab, {
+        route: '/properties',
+        kind: 'property',
+        title: '매물관리',
+      });
+
+      const [moved] = useTabStore.getState().tabs;
+      assert.equal(result, tab);
+      assert.equal(useTabStore.getState().tabs.length, 1);
+      assert.equal(useTabStore.getState().activeTabId, tab);
+      assert.equal(moved.route, '/properties');
+      assert.equal(moved.title, '매물관리');
+      assert.equal(moved.resourceKey, tabResourceKeys.module('/properties'));
+      assert.equal(moved.uiState, undefined);
+    });
+
+    it('turns a fresh launcher tab into the chosen page', () => {
+      const launcher = useTabStore.getState().createTab({
+        route: '/dashboard',
+        kind: 'dashboard',
+        title: '대시보드',
+        resourceKey: null,
+      });
+
+      const result = useTabStore.getState().navigateTab(launcher, {
+        route: '/tasks',
+        kind: 'task',
+        title: '업무',
+      });
+
+      assert.equal(result, launcher);
+      assert.equal(useTabStore.getState().tabs.length, 1);
+      assert.equal(
+        useTabStore.getState().tabs[0].resourceKey,
+        tabResourceKeys.module('/tasks'),
+      );
+    });
+
+    it('replaces an entity tab in place', () => {
+      const property = useTabStore.getState().createTab({
+        route: '/properties/property-1',
+        kind: 'property',
+        title: '매물 1',
+      });
+
+      const result = useTabStore.getState().navigateTab(property, {
+        route: '/contacts',
+        kind: 'contact',
+        title: '연락처',
+      });
+
+      assert.equal(result, property);
+      assert.equal(useTabStore.getState().tabs.length, 1);
+      assert.equal(useTabStore.getState().tabs[0].route, '/contacts');
+    });
+
+    it('reveals a tab that already shows the module and keeps its state', () => {
+      const contacts = useTabStore.getState().openModule({
+        route: '/contacts?group=vip',
+        kind: 'contact',
+        title: '연락처',
+      });
+      const dashboard = useTabStore.getState().openModule({
+        route: '/dashboard',
+        kind: 'dashboard',
+        title: '대시보드',
+      });
+
+      const result = useTabStore.getState().navigateTab(dashboard, {
+        route: '/contacts',
+        kind: 'contact',
+        title: '연락처',
+      });
+
+      assert.equal(result, contacts);
+      assert.equal(useTabStore.getState().activeTabId, contacts);
+      assert.equal(useTabStore.getState().tabs.length, 2);
+      assert.equal(
+        useTabStore.getState().tabs.find((tab) => tab.id === contacts)?.route,
+        '/contacts?group=vip',
+      );
+      assert.equal(
+        useTabStore.getState().tabs.find((tab) => tab.id === dashboard)?.route,
+        '/dashboard',
+      );
+    });
+
+    it('resets the current module to the menu root when clicked again', () => {
+      const tab = useTabStore.getState().openModule({
+        route: '/properties?status=hold',
+        kind: 'property',
+        title: '매물관리',
+      });
+
+      const result = useTabStore.getState().navigateTab(tab, {
+        route: '/properties',
+        kind: 'property',
+        title: '매물관리',
+      });
+
+      assert.equal(result, tab);
+      assert.equal(useTabStore.getState().tabs.length, 1);
+      assert.equal(useTabStore.getState().tabs[0].route, '/properties');
+    });
+
+    it('keeps a tab with unsaved form input and opens the target in a new tab', () => {
+      const draft = useTabStore.getState().createTab({
+        route: '/contacts/new',
+        kind: 'contact',
+        title: '연락처 추가',
+      });
+      useTabStore.getState().updateTabFormDraft(draft, 'name', '김고객');
+
+      const result = useTabStore.getState().navigateTab(draft, {
+        route: '/contacts',
+        kind: 'contact',
+        title: '연락처',
+      });
+
+      const draftTab = useTabStore
+        .getState()
+        .tabs.find((tab) => tab.id === draft);
+      assert.notEqual(result, draft);
+      assert.equal(useTabStore.getState().tabs.length, 2);
+      assert.equal(useTabStore.getState().activeTabId, result);
+      assert.equal(draftTab?.route, '/contacts/new');
+      assert.equal(draftTab?.uiState?.formDraft?.name, '김고객');
+    });
+
+    it('replaces an untouched draft tab in place', () => {
+      const draft = useTabStore.getState().createTab({
+        route: '/contacts/new',
+        kind: 'contact',
+        title: '연락처 추가',
+      });
+
+      const result = useTabStore.getState().navigateTab(draft, {
+        route: '/contacts',
+        kind: 'contact',
+        title: '연락처',
+      });
+
+      assert.equal(result, draft);
+      assert.equal(useTabStore.getState().tabs.length, 1);
+      assert.equal(
+        useTabStore.getState().tabs[0].resourceKey,
+        tabResourceKeys.module('/contacts'),
+      );
+    });
+
+    it('does not move a tab that is being transferred to another window', () => {
+      const tab = useTabStore.getState().createTab({
+        route: '/dashboard',
+        kind: 'dashboard',
+        title: '대시보드',
+      });
+      assert.ok(useTabStore.getState().lockTabForTransfer(tab));
+
+      useTabStore.getState().navigateTab(tab, {
+        route: '/tasks',
+        kind: 'task',
+        title: '업무',
+      });
+
+      assert.equal(useTabStore.getState().tabs.length, 1);
+      assert.equal(useTabStore.getState().tabs[0].route, '/dashboard');
+    });
+
+    it('opens a tab when the workspace is empty', () => {
+      const result = useTabStore.getState().navigateTab(null, {
+        route: '/tasks',
+        kind: 'task',
+        title: '업무',
+      });
+
+      assert.equal(useTabStore.getState().tabs.length, 1);
+      assert.equal(useTabStore.getState().activeTabId, result);
+    });
   });
 });

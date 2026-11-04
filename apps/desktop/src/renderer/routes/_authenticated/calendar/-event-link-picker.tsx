@@ -248,7 +248,7 @@ export function EventLinkRow({
           {kind === "match" ? (
             <button
               type="button"
-              onClick={() => void navigate({ to: "/matches" })}
+              onClick={() => void navigate({ to: "/wanted-properties" })}
               className="inline-flex max-w-full items-center gap-1.5 rounded-full border bg-background py-0.5 pr-2.5 pl-2.5 text-xs transition-colors hover:bg-accent"
             >
               <span className="truncate font-medium text-foreground">

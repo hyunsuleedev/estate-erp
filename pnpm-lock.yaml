@@ -196,6 +196,9 @@ importers:
       tailwind-merge:
         specifier: ^3.0.0
         version: 3.5.0
+      three:
+        specifier: 0.186.0
+        version: 0.186.0
       tw-animate-css:
         specifier: ^1.4.0
         version: 1.4.0
@@ -245,6 +248,9 @@ importers:
       '@types/react-dom':
         specifier: ^19.0.0
         version: 19.2.3(@types/react@19.2.14)
+      '@types/three':
+        specifier: 0.183.1
+        version: 0.183.1
       '@typescript-eslint/eslint-plugin':
         specifier: ^5.62.0
         version: 5.62.0(@typescript-eslint/parser@5.62.0(eslint@8.57.1)(typescript@5.9.3))(eslint@8.57.1)(typescript@5.9.3)

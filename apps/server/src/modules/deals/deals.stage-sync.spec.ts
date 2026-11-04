@@ -18,9 +18,11 @@ interface MockTx {
     delete: jest.Mock;
   };
   listing: { updateMany: jest.Mock; count: jest.Mock };
-  listingIntake: { updateMany: jest.Mock; findFirst: jest.Mock };
+  listingIntake: { updateMany: jest.Mock; findFirst: jest.Mock; findUnique: jest.Mock };
   contract: { findUnique: jest.Mock };
   commissionPayment: { updateMany: jest.Mock };
+  /** 매칭 자동 종료·되살리기 (match-lifecycle-sync) */
+  match: { findMany: jest.Mock; update: jest.Mock };
   /** advisory lock (pg_advisory_xact_lock) 호출 */
   $executeRaw: jest.Mock;
 }
@@ -30,6 +32,8 @@ function buildMocks(options: {
   conflictingDeal?: Record<string, unknown> | null;
   contractExists?: boolean;
   remainingDoneDeals?: number;
+  /** 트랜잭션 안에서 다시 읽는 의뢰 상태 */
+  intakeStatus?: string;
 }) {
   const tx: MockTx = {
     deal: {
@@ -46,6 +50,10 @@ function buildMocks(options: {
     },
     listingIntake: {
       updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      // 잠금 안에서 다시 읽는 의뢰 상태 (매칭 되살리기 판단)
+      findUnique: jest
+        .fn()
+        .mockResolvedValue({ lifecycleStatus: options.intakeStatus ?? 'open' }),
       findFirst: jest
         .fn()
         // 1st: intake row (propertyId/officeId), 2nd: other open intake (없음)
@@ -66,6 +74,10 @@ function buildMocks(options: {
     },
     commissionPayment: {
       updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+    },
+    match: {
+      findMany: jest.fn().mockResolvedValue([]),
+      update: jest.fn().mockResolvedValue({}),
     },
     $executeRaw: jest.fn().mockResolvedValue(1),
   };
@@ -226,6 +238,246 @@ describe('DealsService 의뢰 단위 Deal 가드', () => {
 });
 
 describe('DealsService completed 동기화', () => {
+  it('본계약 진입 시 같은 거래 조건의 다른 손님 매칭을 자동 종료한다', async () => {
+    const { prisma, tx } = buildMocks({
+      existingDeal: { ...baseDeal, matchId: 'match-source' },
+    });
+    tx.match.findMany.mockResolvedValueOnce([
+      { id: 'match-other', stage: 'negotiating' },
+    ]);
+    const service = new DealsService(prisma);
+
+    await service.updateStage('deal-1', 'office-1', { stage: 'contracted' });
+
+    expect(tx.match.findMany).toHaveBeenCalledWith({
+      where: {
+        officeId: 'office-1',
+        listingId: 'listing-1',
+        stage: { notIn: ['closed', 'dealCreated'] },
+        id: { not: 'match-source' },
+      },
+      select: { id: true, stage: true },
+    });
+    expect(tx.match.update).toHaveBeenCalledWith({
+      where: { id: 'match-other' },
+      data: {
+        stage: 'closed',
+        closedFromStage: 'negotiating',
+        closedReason: 'other_buyer_contracted',
+        closedByDealId: 'deal-1',
+      },
+    });
+  });
+
+  it('본계약 전 단계 이동은 다른 손님 매칭을 건드리지 않는다', async () => {
+    const { prisma, tx } = buildMocks({ existingDeal: { ...baseDeal } });
+    const service = new DealsService(prisma);
+
+    await service.updateStage('deal-1', 'office-1', { stage: 'preContract' });
+
+    expect(tx.match.findMany).not.toHaveBeenCalled();
+    expect(tx.match.update).not.toHaveBeenCalled();
+  });
+
+  it('거래 취소 시 거래를 만든 매칭은 종료하고 이 거래가 닫은 매칭은 되살린다', async () => {
+    const { prisma, tx } = buildMocks({
+      existingDeal: {
+        ...baseDeal,
+        stage: 'contracted',
+        matchId: 'match-source',
+        listing: { id: 'listing-1', intakeId: 'intake-1', intake: { lifecycleStatus: 'open' } },
+      },
+    });
+    tx.match.findMany
+      // 1) 거래를 만든 매칭 (거래 전환 상태)
+      .mockResolvedValueOnce([{ id: 'match-source', stage: 'dealCreated' }])
+      // 2) 이 거래가 자동 종료한 매칭 id
+      .mockResolvedValueOnce([{ id: 'match-other' }])
+      // 3) 되살릴 매칭의 종료 직전 단계
+      .mockResolvedValueOnce([{ id: 'match-other', closedFromStage: 'negotiating' }]);
+    const service = new DealsService(prisma);
+
+    await service.cancel('deal-1', 'office-1', { cancelledBy: 'buyer' });
+
+    expect(tx.match.update).toHaveBeenCalledWith({
+      where: { id: 'match-source' },
+      data: {
+        stage: 'closed',
+        closedFromStage: 'dealCreated',
+        closedReason: 'deal_cancelled',
+        closedByDealId: 'deal-1',
+      },
+    });
+    expect(tx.match.findMany).toHaveBeenNthCalledWith(2, {
+      where: expect.objectContaining({
+        closedByDealId: 'deal-1',
+        stage: 'closed',
+        buyerRequirement: { status: 'active' },
+      }),
+      select: { id: true },
+    });
+    expect(tx.match.update).toHaveBeenCalledWith({
+      where: { id: 'match-other' },
+      data: {
+        stage: 'negotiating',
+        closedFromStage: null,
+        closedReason: null,
+        closedByDealId: null,
+      },
+    });
+  });
+
+  it('이미 취소된 거래를 다시 취소해도 매칭을 건드리지 않는다', async () => {
+    const { prisma, tx } = buildMocks({
+      existingDeal: { ...baseDeal, isCancelled: true, matchId: 'match-source' },
+    });
+    const service = new DealsService(prisma);
+
+    await service.cancel('deal-1', 'office-1', {});
+
+    expect(tx.match.findMany).not.toHaveBeenCalled();
+    expect(tx.match.update).not.toHaveBeenCalled();
+  });
+
+  describe('매칭 되살리기 경계', () => {
+    interface StoredMatch {
+      id: string;
+      officeId: string;
+      listingId: string;
+      intakeId: string;
+      stage: string;
+      closedFromStage: string | null;
+      closedReason: string | null;
+      closedByDealId: string | null;
+      buyerStatus: string;
+    }
+
+    /** tx.match 를 메모리 표로 바꿔 실제 where 조건으로 거른다. */
+    function attachMatchStore(tx: MockTx, rows: StoredMatch[]) {
+      const fits = (row: StoredMatch, where: Record<string, unknown>) =>
+        Object.entries(where).every(([key, condition]) => {
+          if (key === 'listing') return (condition as { intakeId: string }).intakeId === row.intakeId;
+          if (key === 'buyerRequirement') return (condition as { status: string }).status === row.buyerStatus;
+          const value = row[key as keyof StoredMatch];
+          if (condition && typeof condition === 'object') {
+            const ops = condition as { in?: unknown[]; notIn?: unknown[]; not?: unknown };
+            if (ops.in && !ops.in.includes(value)) return false;
+            if (ops.notIn && ops.notIn.includes(value)) return false;
+            if ('not' in ops && ops.not === value) return false;
+            return true;
+          }
+          return value === condition;
+        });
+      tx.match.findMany.mockImplementation(async ({ where }: { where: Record<string, unknown> }) =>
+        rows.filter((row) => fits(row, where)).map((row) => ({ ...row })),
+      );
+      tx.match.update.mockImplementation(
+        async ({ where, data }: { where: { id: string }; data: Partial<StoredMatch> }) => {
+          const row = rows.find((candidate) => candidate.id === where.id)!;
+          Object.assign(row, data);
+          return { ...row };
+        },
+      );
+      return (id: string) => rows.find((row) => row.id === id)!;
+    }
+
+    const stored = (overrides: Partial<StoredMatch> & { id: string }): StoredMatch => ({
+      officeId: 'office-1',
+      listingId: 'listing-1',
+      intakeId: 'intake-1',
+      stage: 'viewing',
+      closedFromStage: null,
+      closedReason: null,
+      closedByDealId: null,
+      buyerStatus: 'active',
+      ...overrides,
+    });
+
+    it('가계약 → 완료 → 본계약으로 되돌려도 같은 거래 조건의 경쟁 매칭은 닫혀 있다', async () => {
+      const rows = [
+        stored({ id: 'source', stage: 'dealCreated' }),
+        stored({ id: 'competitor', stage: 'negotiating' }),
+        stored({ id: 'jeonse-buyer', listingId: 'listing-2', stage: 'viewing' }),
+      ];
+      const deal = {
+        ...baseDeal,
+        matchId: 'source',
+        listing: { id: 'listing-1', intakeId: 'intake-1', intake: { lifecycleStatus: 'open' } },
+      };
+
+      // 1) 가계약 → 완료 (건너뛰기)
+      const first = buildMocks({ existingDeal: { ...deal, stage: 'preContract' }, contractExists: true });
+      const get = attachMatchStore(first.tx, rows);
+      await new DealsService(first.prisma).updateStage('deal-1', 'office-1', { stage: 'completed' });
+
+      expect(get('competitor')).toMatchObject({ stage: 'closed', closedReason: 'other_buyer_contracted' });
+      expect(get('jeonse-buyer')).toMatchObject({ stage: 'closed', closedReason: 'intake_closed' });
+
+      // 2) 완료 → 본계약 (의뢰는 다시 열린다)
+      const second = buildMocks({ existingDeal: { ...deal, stage: 'completed' }, contractExists: true });
+      attachMatchStore(second.tx, rows);
+      await new DealsService(second.prisma).updateStage('deal-1', 'office-1', { stage: 'contracted' });
+
+      expect(get('competitor')).toMatchObject({ stage: 'closed', closedReason: 'other_buyer_contracted' });
+      expect(get('jeonse-buyer')).toMatchObject({ stage: 'viewing', closedReason: null });
+      expect(get('source').stage).toBe('dealCreated');
+    });
+
+    it('완료 → 본계약 → 가계약으로 내려오면 본계약 중 남겨 둔 매칭도 되살린다', async () => {
+      // 본계약 이후에 같은 거래 조건에 추가됐다가, 완료 때 "의뢰 종료"로 닫힌 매칭
+      const rows = [
+        stored({ id: 'source', stage: 'dealCreated' }),
+        stored({ id: 'late-buyer', stage: 'closed', closedFromStage: 'buyerInterested', closedReason: 'intake_closed', closedByDealId: 'deal-1' }),
+      ];
+      const deal = {
+        ...baseDeal,
+        matchId: 'source',
+        listing: { id: 'listing-1', intakeId: 'intake-1', intake: { lifecycleStatus: 'closed' } },
+      };
+
+      const toContracted = buildMocks({ existingDeal: { ...deal, stage: 'completed' }, contractExists: true });
+      const get = attachMatchStore(toContracted.tx, rows);
+      await new DealsService(toContracted.prisma).updateStage('deal-1', 'office-1', { stage: 'contracted' });
+      // 본계약 중에는 닫혀 있다
+      expect(get('late-buyer').stage).toBe('closed');
+
+      const toPreContract = buildMocks({
+        existingDeal: { ...deal, stage: 'contracted', listing: { ...deal.listing, intake: { lifecycleStatus: 'open' } } },
+      });
+      attachMatchStore(toPreContract.tx, rows);
+      await new DealsService(toPreContract.prisma).updateStage('deal-1', 'office-1', { stage: 'preContract' });
+
+      expect(get('late-buyer')).toMatchObject({ stage: 'buyerInterested', closedReason: null, closedByDealId: null });
+    });
+
+    it('취소와 의뢰 종료가 겹쳐 의뢰가 닫혔으면 잠금 안의 최신 상태를 보고 되살리지 않는다', async () => {
+      const rows = [
+        stored({ id: 'source', stage: 'dealCreated' }),
+        stored({ id: 'competitor', stage: 'closed', closedFromStage: 'negotiating', closedReason: 'other_buyer_contracted', closedByDealId: 'deal-1' }),
+      ];
+      const { prisma, tx } = buildMocks({
+        existingDeal: {
+          ...baseDeal,
+          stage: 'contracted',
+          matchId: 'source',
+          // 트랜잭션 전에 읽은 값은 열려 있었다
+          listing: { id: 'listing-1', intakeId: 'intake-1', intake: { lifecycleStatus: 'open' } },
+        },
+        // 그 사이 의뢰가 닫혔다
+        intakeStatus: 'closed',
+      });
+      const get = attachMatchStore(tx, rows);
+
+      await new DealsService(prisma).cancel('deal-1', 'office-1', {});
+
+      expect(tx.$executeRaw.mock.invocationCallOrder[0]).toBeLessThan(
+        tx.listingIntake.findUnique.mock.invocationCallOrder[0],
+      );
+      expect(get('source')).toMatchObject({ stage: 'closed', closedReason: 'deal_cancelled' });
+      expect(get('competitor')).toMatchObject({ stage: 'closed', closedReason: 'other_buyer_contracted' });
+    });
+  });
+
   it('completed 진입 시 intake 전체를 closed 처리한다', async () => {
     const { prisma, tx } = buildMocks({
       existingDeal: { ...baseDeal, stage: 'settling' },

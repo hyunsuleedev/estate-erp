@@ -10,6 +10,8 @@ import {
   PhoneIncoming,
   PhoneOutgoing,
   RotateCcw,
+  Sparkles,
+  Upload,
 } from 'lucide-react';
 import type {
   CallRecordingListItem,
@@ -38,6 +40,7 @@ import {
   sttStatusLabel,
 } from './-call-utils';
 import { CallDetailSheet } from './-detail-sheet';
+import { UploadRecordingDialog } from './-upload-recording-dialog';
 
 export const Route = createFileRoute('/_authenticated/calls/')({
   component: CallsPage,
@@ -91,6 +94,7 @@ function CallsPage() {
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<CallRecordingListItem | null>(null);
+  const [uploadOpen, setUploadOpen] = useState(false);
 
   // 검색 디바운스 (서버사이드 q 필터)
   useEffect(() => {
@@ -133,15 +137,27 @@ function CallsPage() {
     <div className="space-y-4">
       <PageHeader
         title="통화 기록"
-        description="통화 녹음과 STT·AI 분석 결과를 확인하고 상담으로 전환합니다."
+        description="통화 녹음을 받아쓰고 AI가 상담 기록과 할 일·일정·고객 요청·매칭을 제안합니다."
         actions={
-          <Button asChild variant="outline" size="sm">
-            <Link to="/calls/logs">
-              <History className="size-3.5" />
-              통화 이력
-            </Link>
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button asChild variant="outline" size="sm">
+              <Link to="/calls/logs">
+                <History className="size-3.5" />
+                통화 이력
+              </Link>
+            </Button>
+            <Button size="sm" onClick={() => setUploadOpen(true)}>
+              <Upload className="size-3.5" />
+              녹음 올리기
+            </Button>
+          </div>
         }
+      />
+
+      <UploadRecordingDialog
+        open={uploadOpen}
+        onOpenChange={setUploadOpen}
+        onUploaded={(recording) => setSelected(recording)}
       />
 
       {/* 필터 바 */}
@@ -340,7 +356,7 @@ function CallRow({
 }) {
   const isInbound = call.direction === 'inbound';
   const contactName = call.contact?.name ?? '미등록 번호';
-  const missed = isMissedCall(call.direction, call.durationSec);
+  const missed = isMissedCall(call.direction, call.durationSec, call.fileName);
 
   return (
     <li>
@@ -397,6 +413,12 @@ function CallRow({
             >
               {sttStatusLabel[call.sttStatus]}
             </span>
+            {(call._count?.suggestions ?? 0) > 0 && (
+              <span className="inline-flex items-center gap-0.5 rounded-full bg-violet-soft px-2 py-0.5 text-[10px] text-violet">
+                <Sparkles className="size-2.5" />
+                제안 {call._count?.suggestions}
+              </span>
+            )}
           </div>
           {call.analysis?.summary && (
             <div className="mt-0.5 truncate text-[12px] text-muted-foreground">

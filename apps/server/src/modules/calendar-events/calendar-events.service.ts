@@ -109,9 +109,12 @@ export class CalendarEventsService {
       matchId?: string;
       dealId?: string;
     },
+    /** id: 같은 요청을 다시 보내도 한 건만 생기게 할 때 (통화 분석 제안 반영) */
+    options: { id?: string } = {},
   ) {
     const event = await this.prisma.calendarEvent.create({
       data: {
+        ...(options.id ? { id: options.id } : {}),
         officeId,
         userId,
         title: dto.title,

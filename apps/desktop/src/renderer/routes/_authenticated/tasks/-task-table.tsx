@@ -1,10 +1,26 @@
 /**
- * tasks 페이지 테이블 뷰 — Notion 스타일 행(전체/카테고리별) + 상태별 DnD 그룹.
+ * tasks 페이지 목록 — 열 제목 없는 한 줄 행 + 회색 띠 묶음 머리.
+ *
+ * 행: [선택] [우선순위] [상태 체크] 제목 ··· [고객·매물 칩] [카테고리] [담당자] [마감일] [메뉴]
+ * 값이 없는 정보는 칩을 그리지 않고, 담당자·마감일은 오른쪽 끝 같은 자리에 정렬한다.
+ * 묶기(상태·마감일·카테고리·담당자·없음)와 정렬은 표시 메뉴에서 고르며,
+ * 상태별 + 직접 정렬일 때만 행을 끌어서 순서·상태를 바꾼다(StatusView).
  */
-import { useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
+import {
+  useMemo,
+  useState,
+  type CSSProperties,
+  type HTMLAttributes,
+  type KeyboardEventHandler,
+  type MouseEvent as ReactMouseEvent,
+  type PointerEventHandler,
+  type ReactNode,
+  type Ref,
+} from 'react';
 import {
   DndContext,
   DragOverlay,
+  KeyboardSensor,
   PointerSensor,
   closestCorners,
   useDroppable,
@@ -16,38 +32,78 @@ import {
 import {
   SortableContext,
   arrayMove,
+  sortableKeyboardCoordinates,
   useSortable,
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { FileText, GripVertical } from 'lucide-react';
+import {
+  AlarmClock,
+  AlignLeft,
+  Calendar,
+  CalendarOff,
+  CalendarRange,
+  ChevronRight,
+  GripVertical,
+  Plus,
+  Sparkles,
+  Sun,
+  Sunrise,
+} from 'lucide-react';
 import type { Task } from '@estate-erp/api-client';
 import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Badge } from '@/components/ui/badge';
 import {
+  TaskCategoryPill,
   TaskContextChips,
   TaskSourceBadge,
-  boardColumns,
   categoryConfig,
-  isOverdue,
+  getCategoryConfig,
   statusIcons,
-  type TaskCategory,
+  taskStatusLabel,
+  type TaskStatus,
 } from './-task-shared';
+import {
+  ASSIGNEE_GROUP_UNASSIGNED,
+  groupTasks,
+  heldStatusOf,
+  isTaskActive,
+  type HeldTaskState,
+  type TaskGroup,
+} from './-task-filters';
+import type { TaskGroupBy, TaskSortBy, TaskVisibleProps } from './-task-display';
 import {
   DueDatePickerPopover,
   PriorityPickerPopover,
-  StatusPickerPopover,
+  TaskAssigneeAvatar,
   TaskAssigneePicker,
+  TaskCompleteToggle,
   TaskRowActionsMenu,
   type TaskRowHandlers,
 } from './-task-pickers';
 
 export type { TaskRowHandlers };
 
+/** 묶음 머리의 + 버튼으로 새 업무를 만들 때 미리 채울 값 */
+export type TaskCreatePreset = { status?: string; category?: string };
+
+export type TaskSelection = {
+  selectedIds: ReadonlySet<string>;
+  onToggleSelect: (taskId: string) => void;
+};
+
+type TaskListCommonProps = TaskRowHandlers &
+  TaskSelection & {
+    visible: TaskVisibleProps;
+    onAddTask?: (preset: TaskCreatePreset) => void;
+  };
+
+const CATEGORY_ORDER = Object.keys(categoryConfig);
+
 const ROW_CONTROL_SELECTOR =
-  'button, a, input, select, textarea, [role="button"], [role="menuitem"], [data-row-control]';
+  'button, a, input, select, textarea, [role="button"], [role="checkbox"], [role="menuitem"], [data-row-control]';
 
 function openTaskFromRow(event: ReactMouseEvent<HTMLElement>, task: Task, onRowClick: (task: Task) => void) {
   const target = event.target;
@@ -58,243 +114,389 @@ function openTaskFromRow(event: ReactMouseEvent<HTMLElement>, task: Task, onRowC
   onRowClick(task);
 }
 
-function TaskTitleCell({ task, onOpen }: { task: Task; onOpen: (task: Task) => void }) {
-  const completed = task.status === 'completed';
+// ─── 행 ───────────────────────────────────────────────────
+
+type TaskLineProps = TaskRowHandlers &
+  TaskSelection & {
+    task: Task;
+    visible: TaskVisibleProps;
+    isDragging?: boolean;
+    rowRef?: Ref<HTMLDivElement>;
+    style?: CSSProperties;
+    /** 끌기 — 행 어디서든 누른 채 움직이면 시작 (클릭은 그대로 동작) */
+    dragProps?: HTMLAttributes<HTMLDivElement>;
+    /** 키보드 끌기용 숨은 손잡이 */
+    dragHandle?: ReactNode;
+  };
+
+function TaskLine({
+  task,
+  visible,
+  selectedIds,
+  onToggleSelect,
+  isDragging = false,
+  rowRef,
+  style,
+  dragProps,
+  dragHandle,
+  onRowClick,
+  onStatusChange,
+  onCycleCheck,
+  onDelete,
+  onUpdate,
+  employeeOptions,
+}: TaskLineProps) {
+  const selected = selectedIds.has(task.id);
+  const selecting = selectedIds.size > 0;
+  const done = !isTaskActive(task);
 
   return (
-    <div className="grid min-w-0 gap-1">
-      <div className="flex min-w-0 items-center gap-2">
-        <FileText className="size-3.5 shrink-0 text-muted-foreground/70" aria-hidden="true" />
+    <div
+      {...dragProps}
+      ref={rowRef}
+      role="row"
+      aria-selected={selected}
+      data-task-row={task.id}
+      style={style}
+      onDoubleClick={(event) => openTaskFromRow(event, task, onRowClick)}
+      className={cn(
+        'group/row flex h-10 items-center pr-2 pl-1 transition-colors hover:bg-muted/40',
+        selected && 'bg-info-soft/40 hover:bg-info-soft/50',
+        isDragging && 'opacity-40',
+      )}
+    >
+      <div role="cell" className="flex w-7 shrink-0 justify-center">
+        {dragHandle}
+        <Checkbox
+          aria-label={`${task.title} 선택`}
+          checked={selected}
+          onCheckedChange={() => onToggleSelect(task.id)}
+          className={cn(
+            'transition-opacity',
+            selected || selecting ? 'opacity-100' : 'opacity-0 group-hover/row:opacity-100 focus-visible:opacity-100',
+          )}
+        />
+      </div>
+      <div role="cell" className="flex w-7 shrink-0 justify-center">
+        <PriorityPickerPopover task={task} onUpdate={onUpdate} iconOnly />
+      </div>
+      <div role="cell" className="flex w-7 shrink-0 justify-center">
+        <TaskCompleteToggle task={task} onCycle={onCycleCheck} />
+      </div>
+
+      <div role="cell" className="flex min-w-0 flex-1 items-center gap-1.5 pr-3 pl-2">
         <button
           type="button"
           className={cn(
-            'min-w-0 flex-1 truncate text-left text-[13px] font-medium leading-5 underline-offset-4 hover:underline focus-visible:outline-none focus-visible:underline',
-            completed && 'text-muted-foreground line-through',
+            'min-w-0 truncate text-left text-[13.5px] font-medium leading-5 tracking-[-0.005em] underline-offset-4 hover:underline focus-visible:underline focus-visible:outline-none',
+            done && 'text-muted-foreground',
           )}
           aria-label={`${task.title} 업무 열기`}
-          onClick={() => onOpen(task)}
+          onClick={() => onRowClick(task)}
         >
           {task.title}
         </button>
-        <TaskSourceBadge source={task.source} />
+        {task.source === 'ai' && (
+          <span className="inline-flex shrink-0 text-violet" title="AI가 만든 업무 (통화 분석·외부 AI)">
+            <Sparkles className="size-3.5" aria-hidden="true" />
+            <span className="sr-only">AI가 만든 업무</span>
+          </span>
+        )}
+        {task.source === 'system' && <TaskSourceBadge source="system" />}
+        {task.content?.trim() && (
+          <span
+            className="inline-flex shrink-0 text-muted-foreground/60"
+            title={task.content.length > 120 ? `${task.content.slice(0, 120)}…` : task.content}
+          >
+            <AlignLeft className="size-3" aria-hidden="true" />
+            <span className="sr-only">설명 있음</span>
+          </span>
+        )}
       </div>
-      <TaskContextChips task={task} compact className="pl-5" />
+
+      <div role="cell" className={cn('flex shrink-0 items-center gap-1.5', done && 'opacity-60')}>
+        {visible.context && <TaskContextChips task={task} variant="pill" limit={2} />}
+        {visible.category && <TaskCategoryPill category={task.category} />}
+      </div>
+      {visible.assignee && (
+        <div role="cell" className="ml-1 flex w-9 shrink-0 justify-center">
+          <TaskAssigneePicker task={task} employeeOptions={employeeOptions} onUpdate={onUpdate} compact />
+        </div>
+      )}
+      {visible.due && (
+        <div role="cell" className="flex w-[84px] shrink-0 justify-end">
+          <DueDatePickerPopover task={task} onUpdate={onUpdate} compact />
+        </div>
+      )}
+      <div role="cell" className="flex w-8 shrink-0 justify-end">
+        <TaskRowActionsMenu
+          task={task}
+          onRowClick={onRowClick}
+          onStatusChange={onStatusChange}
+          onDelete={onDelete}
+          className="opacity-0 group-hover/row:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100"
+        />
+      </div>
     </div>
   );
 }
 
-// ─── Notion Table Header ──────────────────────────────────
+// ─── 묶음 머리 ─────────────────────────────────────────────
 
-export function NotionTableHeader({
-  showCategory = true,
-  showCheckbox = false,
-  showDragHandle = false,
-  isAllSelected = false,
-  onToggleAll,
+function TaskGroupHeader({
+  icon,
+  label,
+  count,
+  collapsed,
+  onToggle,
+  onAdd,
+  highlight = false,
 }: {
-  showCategory?: boolean;
-  showCheckbox?: boolean;
-  showDragHandle?: boolean;
-  isAllSelected?: boolean;
-  onToggleAll?: () => void;
+  icon: ReactNode;
+  label: string;
+  count: number;
+  collapsed: boolean;
+  onToggle: () => void;
+  onAdd?: () => void;
+  /** 접힌 묶음 위로 끌고 왔을 때 */
+  highlight?: boolean;
 }) {
+  const addLabel = `${label} 업무 추가`;
   return (
-    <tr className="border-b border-border/40 text-xs text-muted-foreground">
-      {showDragHandle && <th className="w-[28px]" />}
-      {showCheckbox && (
-        <th className="w-[40px] px-2.5 py-2">
-          <Checkbox checked={isAllSelected} onCheckedChange={onToggleAll} />
-        </th>
-      )}
-      <th className="w-[50px] px-2.5 py-2 text-left font-medium">No</th>
-      <th className="px-2.5 py-2 text-left font-medium">작업</th>
-      <th className="w-[90px] px-2.5 py-2 text-left font-medium">상태</th>
-      <th className="w-[80px] px-2.5 py-2 text-left font-medium">담당자</th>
-      <th className="w-[100px] px-2.5 py-2 text-left font-medium">마감일</th>
-      <th className="w-[70px] px-2.5 py-2 text-left font-medium">우선순위</th>
-      {showCategory && <th className="w-[110px] px-2.5 py-2 text-left font-medium">카테고리</th>}
-      <th className="w-[40px]" />
-    </tr>
-  );
-}
-
-// ─── Notion Table Row ─────────────────────────────────────
-
-type NotionRowProps = TaskRowHandlers & {
-  task: Task;
-  index: number;
-  showCategory?: boolean;
-  showCheckbox?: boolean;
-  isSelected?: boolean;
-  onToggleSelect?: (taskId: string) => void;
-};
-
-export function NotionTableRow({
-  task,
-  index,
-  onRowClick,
-  onStatusChange,
-  onDelete,
-  onUpdate,
-  employeeOptions,
-  showCategory = true,
-  showCheckbox = false,
-  isSelected = false,
-  onToggleSelect,
-}: NotionRowProps) {
-  const overdue = isOverdue(task);
-
-  return (
-    <tr
-      onDoubleClick={(event) => openTaskFromRow(event, task, onRowClick)}
+    <div
+      role="row"
       className={cn(
-        'group/row border-b border-border/40 text-sm transition-colors hover:bg-muted/30',
-        overdue && 'bg-destructive-soft/30',
-        isSelected && 'bg-info-soft/30',
+        'group/header sticky top-0 z-[5] flex h-9 items-center gap-1 border-y border-[#efeeec] bg-[#f7f7f5] pr-3 pl-2 dark:border-border dark:bg-muted',
+        highlight && 'bg-info-soft/70',
       )}
     >
-      {showCheckbox && (
-        <td className="px-2.5 py-1.5">
-          <Checkbox checked={isSelected} onCheckedChange={() => onToggleSelect?.(task.id)} />
-        </td>
-      )}
-      <NotionTableRowCells
-        task={task}
-        index={index}
-        onRowClick={onRowClick}
-        onStatusChange={onStatusChange}
-        onDelete={onDelete}
-        onUpdate={onUpdate}
-        employeeOptions={employeeOptions}
-        showCategory={showCategory}
-      />
-    </tr>
+      <div role="cell" className="flex min-w-0 flex-1 items-center gap-1">
+        <button
+          type="button"
+          aria-expanded={!collapsed}
+          onClick={onToggle}
+          className="flex min-w-0 items-center gap-2 rounded-md px-1.5 py-0.5 text-[13px] font-semibold text-foreground transition-colors hover:bg-[rgba(55,53,47,0.06)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+        >
+          <ChevronRight
+            className={cn('size-3.5 shrink-0 text-muted-foreground transition-transform', !collapsed && 'rotate-90')}
+            aria-hidden="true"
+          />
+          <span className="flex shrink-0 items-center [&>svg]:size-3.5">{icon}</span>
+          <span className="truncate">{label}</span>
+          <span className="text-xs font-normal tabular-nums text-muted-foreground">{count}</span>
+        </button>
+        {onAdd && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-xs"
+            className="ml-auto text-muted-foreground opacity-0 group-hover/header:opacity-100 focus-visible:opacity-100"
+            onClick={onAdd}
+            aria-label={addLabel}
+            title={addLabel}
+          >
+            <Plus />
+          </Button>
+        )}
+      </div>
+    </div>
   );
 }
 
-function NotionTableRowCells({
-  task,
-  index,
-  onRowClick,
-  onStatusChange,
-  onDelete,
-  onUpdate,
-  employeeOptions,
-  showCategory = true,
-}: TaskRowHandlers & {
-  task: Task;
-  index: number;
-  showCategory?: boolean;
+const DUE_GROUP_META: Record<string, { label: string; icon: ReactNode }> = {
+  overdue: { label: '기한 지남', icon: <AlarmClock className="text-destructive" /> },
+  today: { label: '오늘', icon: <Sun className="text-orange" /> },
+  tomorrow: { label: '내일', icon: <Sunrise className="text-muted-foreground" /> },
+  week: { label: '7일 이내', icon: <CalendarRange className="text-muted-foreground" /> },
+  later: { label: '나중', icon: <Calendar className="text-muted-foreground/70" /> },
+  none: { label: '마감일 없음', icon: <CalendarOff className="text-muted-foreground/70" /> },
+};
+
+function CategoryDot({ color }: { color: string }) {
+  return <span className="size-2 shrink-0 rounded-full" style={{ backgroundColor: color }} aria-hidden="true" />;
+}
+
+function groupMeta(
+  groupBy: TaskGroupBy,
+  group: TaskGroup,
+  currentUserId: string | null,
+): { label: string; icon: ReactNode; addPreset?: TaskCreatePreset } {
+  const { key, tasks } = group;
+  const isStatusKey = key in statusIcons;
+  if (groupBy === 'status' || (groupBy === 'due' && isStatusKey)) {
+    return {
+      label: taskStatusLabel(key),
+      icon: statusIcons[key as TaskStatus] ?? null,
+      addPreset: groupBy === 'status' && key !== 'cancelled' ? { status: key } : undefined,
+    };
+  }
+  if (groupBy === 'due') return DUE_GROUP_META[key] ?? { label: key, icon: null };
+  if (groupBy === 'category') {
+    const cfg = getCategoryConfig(key);
+    return { label: cfg.label, icon: <CategoryDot color={cfg.dot} />, addPreset: { category: key } };
+  }
+  if (groupBy === 'assignee') {
+    if (key === ASSIGNEE_GROUP_UNASSIGNED) {
+      return { label: '미배정', icon: <TaskAssigneeAvatar name={null} className="size-[18px]" /> };
+    }
+    const name = tasks[0]?.assignedTo?.name ?? '담당자';
+    return {
+      label: key === currentUserId ? `${name} (나)` : name,
+      icon: <TaskAssigneeAvatar name={name} className="size-[18px] [&_[data-slot=avatar-fallback]]:text-[9.5px]" />,
+    };
+  }
+  return { label: '', icon: null };
+}
+
+/** 완료·취소 묶음은 기본으로 접는다 — 단, 그 묶음 하나뿐이면 펼친다(완료만 걸러 본 경우 등) */
+const DEFAULT_COLLAPSED = new Set(['completed', 'cancelled']);
+
+function useGroupCollapse(groupCount: number) {
+  const [overrides, setOverrides] = useState<ReadonlyMap<string, boolean>>(new Map());
+  const isCollapsed = (key: string) => overrides.get(key) ?? (DEFAULT_COLLAPSED.has(key) && groupCount > 1);
+  const toggle = (key: string) => {
+    const next = !isCollapsed(key);
+    setOverrides((prev) => new Map(prev).set(key, next));
+  };
+  return { isCollapsed, toggle };
+}
+
+// ─── 묶음 목록 (끌기 없음) ─────────────────────────────────
+
+export function TaskGroupedList({
+  tasks,
+  groupBy,
+  sortBy,
+  heldTasks,
+  currentUserId,
+  visible,
+  selectedIds,
+  onToggleSelect,
+  onAddTask,
+  ...handlers
+}: TaskListCommonProps & {
+  tasks: Task[];
+  groupBy: TaskGroupBy;
+  sortBy: TaskSortBy;
+  heldTasks?: ReadonlyMap<string, HeldTaskState>;
+  currentUserId: string | null;
 }) {
-  const cCfg = categoryConfig[task.category as TaskCategory] ?? categoryConfig.other;
+  const groups = useMemo(
+    () => groupTasks(tasks, groupBy, { sortBy, held: heldTasks, currentUserId, categoryOrder: CATEGORY_ORDER }),
+    [tasks, groupBy, sortBy, heldTasks, currentUserId],
+  );
+  const collapse = useGroupCollapse(groups.length);
+
+  const renderRows = (rows: Task[]) =>
+    rows.map((task) => (
+      <TaskLine
+        key={task.id}
+        task={task}
+        visible={visible}
+        selectedIds={selectedIds}
+        onToggleSelect={onToggleSelect}
+        {...handlers}
+      />
+    ));
 
   return (
-    <>
-      <td className="px-2.5 py-1.5 tabular-nums text-muted-foreground">{index}</td>
-      <td className="px-2.5 py-1.5">
-        <TaskTitleCell task={task} onOpen={onRowClick} />
-      </td>
-
-      {/* 상태 — 클릭 시 인라인 선택 */}
-      <td className="px-2.5 py-1.5">
-        <StatusPickerPopover task={task} onUpdate={onUpdate} />
-      </td>
-
-      {/* 담당자 — 클릭 시 인라인 표시 */}
-      <td className="px-2.5 py-1.5">
-        <TaskAssigneePicker task={task} employeeOptions={employeeOptions} onUpdate={onUpdate} />
-      </td>
-
-      {/* 마감일 — 클릭 시 인라인 날짜 선택 */}
-      <td className="px-2.5 py-1.5">
-        <DueDatePickerPopover task={task} onUpdate={onUpdate} />
-      </td>
-
-      {/* 우선순위 — 클릭 시 인라인 선택 */}
-      <td className="px-2.5 py-1.5">
-        <PriorityPickerPopover task={task} onUpdate={onUpdate} />
-      </td>
-
-      {showCategory && (
-        <td className="px-2.5 py-1.5">
-          <Badge className={cn(cCfg.color, 'gap-1 text-xs')}>
-            {cCfg.icon}
-            {cCfg.label}
-          </Badge>
-        </td>
-      )}
-      <td className="px-2 py-1.5">
-        <TaskRowActionsMenu task={task} onRowClick={onRowClick} onStatusChange={onStatusChange} onDelete={onDelete} />
-      </td>
-    </>
+    <div role="table" aria-label="업무 목록" className="@container/tasklist">
+      {groups.map((group) => {
+        if (groupBy === 'none') {
+          return (
+            <div role="rowgroup" key={group.key} className="pt-1">
+              {renderRows(group.tasks)}
+            </div>
+          );
+        }
+        const meta = groupMeta(groupBy, group, currentUserId);
+        const collapsed = collapse.isCollapsed(group.key);
+        const preset = meta.addPreset;
+        return (
+          <div role="rowgroup" key={group.key}>
+            <TaskGroupHeader
+              icon={meta.icon}
+              label={meta.label}
+              count={group.tasks.length}
+              collapsed={collapsed}
+              onToggle={() => collapse.toggle(group.key)}
+              onAdd={preset && onAddTask ? () => onAddTask(preset) : undefined}
+            />
+            {!collapsed && renderRows(group.tasks)}
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
-// ─── Status View (상위 DndContext — 크로스 그룹 이동 지원) ──
+// ─── 상태별 + 직접 정렬 (끌어서 순서·상태 변경) ─────────────────
 
 export function StatusView({
   filteredTasks,
-  onRowClick,
-  onStatusChange,
-  onDelete,
-  onUpdate,
+  heldTasks,
+  columns,
   onReorder,
-  employeeOptions,
-}: TaskRowHandlers & {
+  visible,
+  selectedIds,
+  onToggleSelect,
+  onAddTask,
+  ...handlers
+}: TaskListCommonProps & {
   filteredTasks: Task[];
+  /** 방금 체크·선택으로 상태를 바꾼 업무 — 바꾸기 전 묶음에 그대로 둔다 */
+  heldTasks?: ReadonlyMap<string, HeldTaskState>;
+  /** 보여 줄 상태 묶음 (위에서부터) */
+  columns: readonly TaskStatus[];
   onReorder?: (orderedIds: string[]) => void;
 }) {
+  const { onStatusChange } = handlers;
   const [activeId, setActiveId] = useState<string | null>(null);
 
-  // 로컬 순서 관리 (status별)
-  const [localTaskMap, setLocalTaskMap] = useState<Record<string, Task[]>>(() => {
+  // 로컬에는 상태별 "순서(id)"만 둔다 — 업무 데이터는 항상 props에서 읽어 인라인 수정이 즉시 보인다.
+  const [order, setOrder] = useState<Record<string, string[]>>({});
+  // 묶음 간 드롭 직후 낙관적 캐시가 반영되기 전 한 프레임 동안만 쓰는 상태 덮어쓰기
+  const [statusOverrides, setStatusOverrides] = useState<Record<string, string>>({});
+  const [seenTasks, setSeenTasks] = useState(filteredTasks);
+  if (seenTasks !== filteredTasks) {
+    setSeenTasks(filteredTasks);
+    if (Object.keys(statusOverrides).length > 0) setStatusOverrides({});
+  }
+
+  const localTaskMap = useMemo(() => {
     const map: Record<string, Task[]> = {};
-    for (const col of boardColumns) {
-      map[col.status] = filteredTasks.filter((t) => t.status === col.status);
+    for (const status of columns) {
+      const colTasks = filteredTasks
+        .filter((t) => (statusOverrides[t.id] ?? heldStatusOf(t, heldTasks)) === status)
+        .map((t) => (statusOverrides[t.id] ? { ...t, status: statusOverrides[t.id] } : t));
+      const byId = new Map(colTasks.map((t) => [t.id, t]));
+      const ordered = (order[status] ?? []).flatMap((id) => {
+        const task = byId.get(id);
+        return task ? [task] : [];
+      });
+      const orderedIds = new Set(ordered.map((t) => t.id));
+      map[status] = [...ordered, ...colTasks.filter((t) => !orderedIds.has(t.id))];
     }
     return map;
-  });
+  }, [columns, filteredTasks, heldTasks, order, statusOverrides]);
 
-  // prop sync: task 멤버십 또는 status가 바뀔 때 동기화
-  // (status를 시그니처에 포함 — 인라인 상태 변경/낙관적 캐시 롤백 시 그룹 재배치)
-  const prevIdsRef = useRef('');
-  const propIds = useMemo(
-    () => filteredTasks.map((t) => `${t.id}:${t.status}`).sort().join(','),
-    [filteredTasks],
-  );
-  if (propIds !== prevIdsRef.current) {
-    prevIdsRef.current = propIds;
-    const propMap = new Map(filteredTasks.map((t) => [t.id, t]));
-    const newMap: Record<string, Task[]> = {};
-    for (const col of boardColumns) {
-      const colPropTasks = filteredTasks.filter((t) => t.status === col.status);
-      const prev = localTaskMap[col.status] || [];
-      const prevOrder = prev.map((t) => t.id);
-      // 기존 로컬 순서 유지 + 데이터 업데이트
-      const synced = prevOrder.filter((id) => propMap.has(id) && propMap.get(id)!.status === col.status).map((id) => propMap.get(id)!);
-      // 새로 추가된 task (이 status에 새로 들어온 것)
-      const syncedIds = new Set(synced.map((t) => t.id));
-      const added = colPropTasks.filter((t) => !syncedIds.has(t.id));
-      newMap[col.status] = [...synced, ...added];
-    }
-    setLocalTaskMap(newMap);
-  }
+  const nonEmptyCount = columns.filter((status) => (localTaskMap[status]?.length ?? 0) > 0).length;
+  const collapse = useGroupCollapse(nonEmptyCount);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
 
-  // task ID → status 매핑
-  const findContainer = (taskId: string): string | null => {
+  const findContainer = (id: string): string | null => {
+    if ((columns as readonly string[]).includes(id)) return id;
     for (const [status, tasks] of Object.entries(localTaskMap)) {
-      if (tasks.some((t) => t.id === taskId)) return status;
+      if (tasks.some((t) => t.id === id)) return status;
     }
     return null;
   };
 
-  const handleDragStart = (event: DragStartEvent) => {
-    setActiveId(event.active.id as string);
-  };
+  const handleDragStart = (event: DragStartEvent) => setActiveId(event.active.id as string);
 
   const handleDragEnd = (event: DragEndEvent) => {
     setActiveId(null);
@@ -302,50 +504,30 @@ export function StatusView({
     if (!over) return;
 
     const activeContainer = findContainer(active.id as string);
-    // over가 task ID인지 container ID인지 확인
-    let overContainer = findContainer(over.id as string);
-    if (!overContainer) {
-      // over.id가 status 이름(container)일 수 있음
-      if (boardColumns.some((c) => c.status === over.id)) {
-        overContainer = over.id as string;
-      }
-    }
-
+    const overContainer = findContainer(over.id as string);
     if (!activeContainer || !overContainer) return;
 
     if (activeContainer === overContainer) {
-      // 같은 그룹 내 리오더
       if (active.id === over.id) return;
       const tasks = localTaskMap[activeContainer];
       const oldIndex = tasks.findIndex((t) => t.id === active.id);
       const newIndex = tasks.findIndex((t) => t.id === over.id);
       if (oldIndex === -1 || newIndex === -1) return;
-      const reordered = arrayMove(tasks, oldIndex, newIndex);
-      setLocalTaskMap((prev) => ({ ...prev, [activeContainer]: reordered }));
-      onReorder?.(reordered.map((t) => t.id));
-    } else {
-      // 다른 그룹으로 이동 → status 변경
-      const task = localTaskMap[activeContainer].find((t) => t.id === active.id);
-      if (!task) return;
-      // 로컬 상태 즉시 업데이트
-      const fromTasks = localTaskMap[activeContainer].filter((t) => t.id !== active.id);
-      const toTasks = [...localTaskMap[overContainer]];
-      // over가 task라면 그 위치에 삽입, 아니면 끝에 추가
-      const overIndex = toTasks.findIndex((t) => t.id === over.id);
-      const movedTask = { ...task, status: overContainer };
-      if (overIndex !== -1) {
-        toTasks.splice(overIndex, 0, movedTask);
-      } else {
-        toTasks.push(movedTask);
-      }
-      setLocalTaskMap((prev) => ({
-        ...prev,
-        [activeContainer]: fromTasks,
-        [overContainer]: toTasks,
-      }));
-      // 서버에 status 변경 전송
-      onStatusChange(active.id as string, overContainer);
+      const reorderedIds = arrayMove(tasks, oldIndex, newIndex).map((t) => t.id);
+      setOrder((prev) => ({ ...prev, [activeContainer]: reorderedIds }));
+      onReorder?.(reorderedIds);
+      return;
     }
+
+    // 다른 묶음으로 이동 → status 변경 (드롭한 위치에 삽입)
+    const movedId = active.id as string;
+    const toIds = localTaskMap[overContainer].map((t) => t.id);
+    const overIndex = toIds.indexOf(over.id as string);
+    if (overIndex !== -1) toIds.splice(overIndex, 0, movedId);
+    else toIds.push(movedId);
+    setOrder((prev) => ({ ...prev, [overContainer]: toIds }));
+    setStatusOverrides((prev) => ({ ...prev, [movedId]: overContainer }));
+    onStatusChange(movedId, overContainer, { fromDrag: true });
   };
 
   const activeTask = activeId
@@ -360,27 +542,27 @@ export function StatusView({
       onDragCancel={() => setActiveId(null)}
       onDragEnd={handleDragEnd}
     >
-      <div>
-        {boardColumns.map((column) => (
+      <div role="table" aria-label="상태별 업무" className="@container/tasklist">
+        {columns.map((status) => (
           <StatusGroup
-            key={column.status}
-            column={column}
-            tasks={localTaskMap[column.status] || []}
-            onRowClick={onRowClick}
-            onStatusChange={onStatusChange}
-            onDelete={onDelete}
-            onUpdate={onUpdate}
-            employeeOptions={employeeOptions}
+            key={status}
+            status={status}
+            tasks={localTaskMap[status] ?? []}
+            collapsed={collapse.isCollapsed(status)}
+            onToggle={() => collapse.toggle(status)}
+            visible={visible}
+            selectedIds={selectedIds}
+            onToggleSelect={onToggleSelect}
+            onAddTask={onAddTask}
+            {...handlers}
           />
         ))}
       </div>
       <DragOverlay>
         {activeTask ? (
-          <div className="flex items-center rounded-md border border-border bg-background text-sm opacity-90 shadow-lg">
-            <div className="flex w-[28px] shrink-0 items-center justify-center px-1 py-2">
-              <GripVertical className="size-4 text-muted-foreground" />
-            </div>
-            <div className="flex-1 truncate px-3 py-2">{activeTask.title}</div>
+          <div className="flex items-center gap-2 rounded-md border border-border bg-background px-3 py-2 text-[13px] shadow-lg">
+            <GripVertical className="size-4 text-muted-foreground" />
+            <span className="truncate font-medium">{activeTask.title}</span>
           </div>
         ) : null}
       </DragOverlay>
@@ -388,206 +570,80 @@ export function StatusView({
   );
 }
 
-// ─── Status Group (droppable + sortable) ─────────────────
-
 function StatusGroup({
-  column,
+  status,
   tasks,
-  onRowClick,
-  onStatusChange,
-  onDelete,
-  onUpdate,
-  employeeOptions,
-}: TaskRowHandlers & {
-  column: typeof boardColumns[number];
+  collapsed,
+  onToggle,
+  onAddTask,
+  ...rowProps
+}: TaskListCommonProps & {
+  status: TaskStatus;
   tasks: Task[];
+  collapsed: boolean;
+  onToggle: () => void;
 }) {
-  const [isCollapsed, setIsCollapsed] = useState(false);
-  const { setNodeRef, isOver } = useDroppable({ id: column.status });
-  const completedCount = tasks.filter((t) => t.status === 'completed').length;
+  const { setNodeRef, isOver } = useDroppable({ id: status });
+  const label = taskStatusLabel(status);
 
   return (
-    <div className="mb-6">
-      <div
-        className="flex cursor-pointer items-center gap-2 rounded py-2 hover:bg-muted/30"
-        onClick={() => setIsCollapsed(!isCollapsed)}
-      >
-        <span className={cn('text-xs transition-transform', !isCollapsed && 'rotate-90')}>▶</span>
-        {statusIcons[column.status]}
-        <span className="font-medium">{column.title}</span>
-        <span className="text-sm text-muted-foreground">{tasks.length}</span>
-      </div>
-      {!isCollapsed && (
-        <>
-          {/* Header row */}
-          <div className="flex items-center border-b border-border/40 text-xs text-muted-foreground">
-            <div className="w-[28px] shrink-0" />
-            <div className="w-[50px] shrink-0 px-2.5 py-2 font-medium">No</div>
-            <div className="flex-1 px-2.5 py-2 font-medium">작업</div>
-            <div className="w-[90px] shrink-0 px-2.5 py-2 font-medium">상태</div>
-            <div className="w-[80px] shrink-0 px-2.5 py-2 font-medium">담당자</div>
-            <div className="w-[100px] shrink-0 px-2.5 py-2 font-medium">마감일</div>
-            <div className="w-[70px] shrink-0 px-2.5 py-2 font-medium">우선순위</div>
-            <div className="w-[110px] shrink-0 px-2.5 py-2 font-medium">카테고리</div>
-            <div className="w-[40px] shrink-0" />
-          </div>
-          <div ref={setNodeRef} className={cn('min-h-[40px] rounded transition-colors', isOver && 'bg-accent/50')}>
-            <SortableContext items={tasks.map((t) => t.id)} strategy={verticalListSortingStrategy}>
-              {tasks.map((task, idx) => (
-                <SortableTableRow
-                  key={task.id}
-                  task={task}
-                  index={idx + 1}
-                  onRowClick={onRowClick}
-                  onStatusChange={onStatusChange}
-                  onDelete={onDelete}
-                  onUpdate={onUpdate}
-                  employeeOptions={employeeOptions}
-                />
-              ))}
-              {tasks.length === 0 && (
-                <div className="py-4 text-center text-xs text-muted-foreground">
-                  여기에 드롭하여 상태 변경
-                </div>
-              )}
-            </SortableContext>
-          </div>
-          <div className="py-2 text-center text-xs text-muted-foreground">
-            완료 {completedCount}/{tasks.length}
-          </div>
-        </>
+    <div role="rowgroup" ref={setNodeRef}>
+      <TaskGroupHeader
+        icon={statusIcons[status]}
+        label={label}
+        count={tasks.length}
+        collapsed={collapsed}
+        onToggle={onToggle}
+        onAdd={onAddTask && status !== 'cancelled' ? () => onAddTask({ status }) : undefined}
+        highlight={isOver && collapsed}
+      />
+      {!collapsed && (
+        <div className={cn('transition-colors', isOver && 'bg-accent/40')}>
+          <SortableContext items={tasks.map((t) => t.id)} strategy={verticalListSortingStrategy}>
+            {tasks.map((task) => (
+              <SortableTaskLine key={task.id} task={task} {...rowProps} />
+            ))}
+            {tasks.length === 0 && (
+              <div className="mx-3 my-2 rounded-md border border-dashed border-border py-2.5 text-center text-xs text-muted-foreground">
+                여기로 끌어 놓으면 ‘{label}’ 상태로 바뀝니다
+              </div>
+            )}
+          </SortableContext>
+        </div>
       )}
     </div>
   );
 }
 
-// ─── Sortable Table Row (DnD wrapper) ────────────────────
-
-function SortableTableRow(props: TaskRowHandlers & { task: Task; index: number }) {
-  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({ id: props.task.id });
-  const overdue = isOverdue(props.task);
-  const cCfg = categoryConfig[props.task.category as TaskCategory] ?? categoryConfig.other;
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
-  };
+function SortableTaskLine(props: TaskRowHandlers & TaskSelection & { task: Task; visible: TaskVisibleProps }) {
+  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({
+    id: props.task.id,
+  });
+  // dnd-kit은 리스너를 Function으로 내려주므로 React 이벤트 핸들러로 좁힌다
+  const onPointerDown = listeners?.onPointerDown as PointerEventHandler<HTMLDivElement> | undefined;
+  const onKeyDown = listeners?.onKeyDown as KeyboardEventHandler<HTMLButtonElement> | undefined;
 
   return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      {...attributes}
-      onDoubleClick={(event) => openTaskFromRow(event, props.task, props.onRowClick)}
-      className={cn(
-        'group/row flex items-center border-b border-border/40 text-sm transition-colors hover:bg-muted/30',
-        overdue && 'bg-destructive-soft/30',
-        isDragging && 'z-10 rounded-md bg-muted/50 shadow-md',
-      )}
-    >
-      {/* Drag handle */}
-      <div
-        ref={setActivatorNodeRef}
-        {...listeners}
-        data-row-control
-        className="flex w-[28px] shrink-0 cursor-grab touch-none items-center justify-center px-1 py-1.5 active:cursor-grabbing"
-      >
-        <GripVertical className="size-4 text-muted-foreground/40 hover:text-muted-foreground" />
-      </div>
-      {/* No */}
-      <div className="w-[50px] shrink-0 px-2.5 py-1.5 tabular-nums text-muted-foreground">{props.index}</div>
-      {/* 작업 */}
-      <div className="min-w-0 flex-1 px-2.5 py-1.5">
-        <TaskTitleCell task={props.task} onOpen={props.onRowClick} />
-      </div>
-      {/* 상태 */}
-      <div className="w-[90px] shrink-0 px-2.5 py-1.5">
-        <StatusPickerPopover task={props.task} onUpdate={props.onUpdate} />
-      </div>
-      {/* 담당자 */}
-      <div className="w-[80px] shrink-0 px-2.5 py-1.5">
-        <TaskAssigneePicker task={props.task} employeeOptions={props.employeeOptions} onUpdate={props.onUpdate} />
-      </div>
-      {/* 마감일 */}
-      <div className="w-[100px] shrink-0 px-2.5 py-1.5">
-        <DueDatePickerPopover task={props.task} onUpdate={props.onUpdate} />
-      </div>
-      {/* 우선순위 */}
-      <div className="w-[70px] shrink-0 px-2.5 py-1.5">
-        <PriorityPickerPopover task={props.task} onUpdate={props.onUpdate} />
-      </div>
-      {/* 카테고리 */}
-      <div className="w-[110px] shrink-0 px-2.5 py-1.5">
-        <Badge className={cn(cCfg.color, 'gap-1 text-xs')}>
-          {cCfg.icon}
-          {cCfg.label}
-        </Badge>
-      </div>
-      {/* 액션 */}
-      <div className="w-[40px] shrink-0 px-2 py-1.5">
-        <TaskRowActionsMenu task={props.task} onRowClick={props.onRowClick} onStatusChange={props.onStatusChange} onDelete={props.onDelete} />
-      </div>
-    </div>
-  );
-}
-
-// ─── Category Task Table (카테고리별 그룹) ────────────────
-
-export function CategoryTaskTable({
-  categoryData,
-  tasks,
-  onRowClick,
-  onStatusChange,
-  onDelete,
-  onUpdate,
-  employeeOptions,
-}: TaskRowHandlers & {
-  categoryData: { label: string; icon: React.ReactNode; color: string };
-  tasks: Task[];
-}) {
-  const [isCollapsed, setIsCollapsed] = useState(false);
-  const completedCount = tasks.filter((t) => t.status === 'completed').length;
-
-  return (
-    <div className="mb-6">
-      <div
-        className="flex cursor-pointer items-center gap-2 rounded py-2 hover:bg-muted/30"
-        onClick={() => setIsCollapsed(!isCollapsed)}
-      >
-        <span className={cn('text-xs transition-transform', !isCollapsed && 'rotate-90')}>▶</span>
-        {categoryData.icon}
-        <span className="font-medium">{categoryData.label}</span>
-        <span className="text-sm text-muted-foreground">{tasks.length}</span>
-      </div>
-      {!isCollapsed && (
-        <>
-          <table className="w-full">
-            <thead>
-              <NotionTableHeader showCategory={false} />
-            </thead>
-            <tbody>
-              {tasks.map((task, idx) => (
-                <NotionTableRow
-                  key={task.id}
-                  task={task}
-                  index={idx + 1}
-                  onRowClick={onRowClick}
-                  onStatusChange={onStatusChange}
-                  onDelete={onDelete}
-                  onUpdate={onUpdate}
-                  employeeOptions={employeeOptions}
-                  showCategory={false}
-                />
-              ))}
-            </tbody>
-          </table>
-          <div className="py-2 text-center text-xs text-muted-foreground">
-            완료 {completedCount}/{tasks.length}
-          </div>
-        </>
-      )}
-    </div>
+    <TaskLine
+      {...props}
+      rowRef={setNodeRef}
+      isDragging={isDragging}
+      style={{ transform: CSS.Transform.toString(transform), transition }}
+      // 마우스: 행 어디서든 8px 이상 끌면 시작 — 짧은 클릭은 체크·칩·제목에 그대로 전달
+      dragProps={{ onPointerDown }}
+      // 키보드: 행 안 버튼의 Enter/Space가 끌기를 시작하지 않도록 따로 둔 숨은 손잡이에서만
+      dragHandle={
+        <button
+          type="button"
+          ref={setActivatorNodeRef}
+          {...attributes}
+          onKeyDown={onKeyDown}
+          data-row-control
+          aria-label={`${props.task.title} 끌어서 순서·상태 변경`}
+          className="sr-only"
+        />
+      }
+    />
   );
 }
 
@@ -595,13 +651,21 @@ export function CategoryTaskTable({
 
 export function LoadingSkeleton() {
   return (
-    <div className="space-y-3">
-      {Array.from({ length: 5 }).map((_, i) => (
-        <div key={i} className="flex items-center gap-3 rounded-lg border px-4 py-3">
-          <Skeleton className="size-4 rounded" />
-          <Skeleton className="h-4 flex-1" />
-          <Skeleton className="h-5 w-14 rounded-full" />
-          <Skeleton className="h-5 w-14 rounded-full" />
+    <div aria-busy="true" aria-label="업무 불러오는 중">
+      <div className="flex h-9 items-center border-y border-border/60 bg-muted/40 px-4">
+        <Skeleton className="h-3 w-20" />
+      </div>
+      {Array.from({ length: 8 }).map((_, i) => (
+        <div key={i} className="flex h-10 items-center gap-3 px-4">
+          <Skeleton className="size-3.5 rounded-sm" />
+          <Skeleton className="size-[18px] rounded-full" />
+          <Skeleton className="h-4 flex-1" style={{ maxWidth: `${50 - (i % 3) * 10}%` }} />
+          <div className="ml-auto flex items-center gap-2">
+            <Skeleton className="h-6 w-20 rounded-full" />
+            <Skeleton className="h-6 w-16 rounded-full" />
+            <Skeleton className="size-[22px] rounded-full" />
+            <Skeleton className="h-3.5 w-12" />
+          </div>
         </div>
       ))}
     </div>

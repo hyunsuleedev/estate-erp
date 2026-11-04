@@ -37,6 +37,7 @@ import {
   withPrimaryPhone,
 } from '../contacts/contact-phone.utils';
 import { RealtimeService } from '../../realtime/realtime.service';
+import { closeOpenMatchesForIntake } from '../matches/match-lifecycle-sync';
 import {
   listingCaseParticipants,
   resolveBrokerageCaseForIntake,
@@ -315,6 +316,8 @@ interface ListingIntakeConfirmDto {
   nextConfirmAt?: Date | string | null;
   contactId?: string | null;
   expectedUpdatedAt?: Date | string | null;
+  /** 통화 분석 제안으로 확인한 경우 그 통화 녹음 (확인 상담 기록에 연결) */
+  callRecordingId?: string | null;
 }
 
 @Injectable()
@@ -660,11 +663,12 @@ export class ListingIntakesService {
       memo: patch.memo,
     };
     let intake: { id: string };
-
-    try {
+    const writeIntake = async (
+      client: Pick<Prisma.TransactionClient, 'listingIntake'>,
+    ): Promise<{ id: string }> => {
       if (expectedUpdatedAt) {
         const expectedUpdatedAtDate = this.parseExpectedUpdatedAt(expectedUpdatedAt);
-        const result = await this.prisma.listingIntake.updateMany({
+        const result = await client.listingIntake.updateMany({
           where: { id, officeId, updatedAt: expectedUpdatedAtDate },
           data,
         });
@@ -673,14 +677,28 @@ export class ListingIntakesService {
           throw new ConflictException('다른 사용자가 먼저 수정했습니다.');
         }
 
-        intake = { id };
-      } else {
-        intake = await this.prisma.listingIntake.update({
-          where: { id },
-          data,
-          select: { id: true },
-        });
+        return { id };
       }
+      return client.listingIntake.update({
+        where: { id },
+        data,
+        select: { id: true },
+      });
+    };
+    // 의뢰를 닫으면 남은 진행 중 매칭도 같은 트랜잭션에서 닫는다.
+    const closingNow =
+      lifecycleChanged && nextLifecycleStatus === IntakeLifecycleStatus.CLOSED;
+
+    try {
+      intake = closingNow
+        ? await this.prisma.$transaction(async (tx) => {
+            // 거래 취소의 매칭 되살리기와 겹치지 않게 같은 의뢰 잠금을 잡는다.
+            await this.lockIntakeForLifecycleSync(tx, id);
+            const written = await writeIntake(tx);
+            await closeOpenMatchesForIntake(tx, { officeId, intakeId: id });
+            return written;
+          })
+        : await writeIntake(this.prisma);
     } catch (error) {
       // 재개(closed → open) 경쟁 — 사전 검사 후 다른 요청이 먼저
       // 열린 의뢰를 만들면 partial unique index 가 잡는다. 500 대신 충돌로 응답.
@@ -796,6 +814,12 @@ export class ListingIntakesService {
           cancelReason: `매물 종료와 함께 취소 처리 (${resolvedClosedReason})`,
         },
       });
+      // 진행 거래가 함께 취소됐으므로 거래 전환 매칭까지 포함해 모두 닫는다.
+      await closeOpenMatchesForIntake(tx, {
+        officeId,
+        intakeId: id,
+        includeConverted: true,
+      });
 
       return { propertyId: existing.propertyId };
     });
@@ -899,6 +923,12 @@ export class ListingIntakesService {
       nextLifecycleStatus !== intake.lifecycleStatus;
 
     const updated = await this.prisma.$transaction(async (tx) => {
+      // 거래 불가로 의뢰가 닫히면 남은 진행 중 매칭도 닫는다.
+      // 거래 취소의 매칭 되살리기와 겹치지 않게 같은 의뢰 잠금을 잡는다.
+      if (dto.result === 'unavailable') {
+        await this.lockIntakeForLifecycleSync(tx, id);
+        await closeOpenMatchesForIntake(tx, { officeId, intakeId: id });
+      }
       if (contactId) {
         await tx.consultation.create({
           data: {
@@ -910,6 +940,7 @@ export class ListingIntakesService {
             content,
             propertyId: intake.propertyId,
             listingIntakeId: intake.id,
+            callRecordingId: dto.callRecordingId ?? undefined,
           },
           select: { id: true },
         });

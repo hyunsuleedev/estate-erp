@@ -11,6 +11,19 @@ export interface OfficeSite {
   site?: Site;
 }
 
+/** 직접 등록하는 단지의 입력값. 공개 여부는 서버가 항상 비공개로 정하므로 보내지 않는다. */
+export interface RegisterPrivateSiteDto {
+  name: string;
+  type: string;
+  wardCode: string;
+  roadAddress?: string;
+  jibunAddress?: string;
+  zipCode?: string;
+  builtYear?: number;
+  totalUnits?: number;
+  totalDongs?: number;
+}
+
 export function createOfficeSitesApi(request: RequestFn) {
   return {
     findAll: () =>
@@ -21,6 +34,9 @@ export function createOfficeSitesApi(request: RequestFn) {
 
     add: (dto: { siteId: string; memo?: string; isFavorite?: boolean }) =>
       request<OfficeSite>('/office-sites', { method: 'POST', body: dto }),
+
+    registerPrivateSite: (dto: RegisterPrivateSiteDto) =>
+      request<OfficeSite>('/office-sites/private-sites', { method: 'POST', body: dto }),
 
     update: (id: string, dto: { memo?: string | null; isFavorite?: boolean }) =>
       request<OfficeSite>(`/office-sites/${id}`, { method: 'PATCH', body: dto }),

@@ -22,13 +22,22 @@ model CallRecording {
   fileSize Int?    @map("file_size")
 
   /// STT 상태: none / pending / processing / completed / failed
-  sttStatus String @default("pending") @map("stt_status")
+  sttStatus   String  @default("pending") @map("stt_status")
+  /// 받아쓰기 업체: gemini / vito / dummy
+  sttProvider String? @map("stt_provider")
+  /// 받아쓰기 실패 이유 (화면 표시용)
+  sttError    String? @map("stt_error")
 
   /// LLM 분석 결과 (Gemini)
-  /// { summary, customerNeed, nextActions }
-  analysis       Json?  @db.JsonB
+  /// { summary, keyPoints, callType, sentiment, agentSpeaker, consultationContent, model }
+  analysis           Json?     @db.JsonB
   /// 분석 상태: none / processing / completed / failed
-  analysisStatus String @default("none") @map("analysis_status")
+  analysisStatus     String    @default("none") @map("analysis_status")
+  /// 마지막 분석 요청 id. 분석이 겹치면 가장 나중 요청의 결과만 저장한다.
+  analysisRunId      String?   @map("analysis_run_id") @db.Uuid
+  analyzedAt         DateTime? @map("analyzed_at")
+  /// 분석이 자동으로 만든 상담 기록 (다시 분석할 때 새로 만들지 않고 고친다)
+  autoConsultationId String?   @map("auto_consultation_id") @db.Uuid
 
   /// 통화 시각
   calledAt DateTime @map("called_at")
@@ -42,6 +51,7 @@ model CallRecording {
   messages      CallRecordingMessage[]
   consultations Consultation[]
   callLogs      CallLog[]
+  suggestions   CallActionSuggestion[]
 
   @@index([officeId, calledAt])
   @@index([officeId, phoneNumber])
@@ -74,4 +84,57 @@ model CallRecordingMessage {
 
   @@index([recordingId, seq])
   @@map("call_recording_messages")
+}
+
+// ============================================================
+// 통화 분석이 제안한 업무
+//
+// 통화 내용을 분석해 할 일·일정·고객 요청·매칭·매물 확인을 제안한다.
+// 받아쓰기는 숫자·단지명·화자를 틀릴 수 있으므로 바로 반영하지 않고
+// 사람이 내용을 확인(필요하면 고쳐서)한 뒤 반영한다.
+// ============================================================
+
+model CallActionSuggestion {
+  id             String  @id @default(uuid()) @db.Uuid
+  officeId       String  @map("office_id") @db.Uuid
+  recordingId    String  @map("recording_id") @db.Uuid
+  /// 통화로 자동 생성된 상담 기록 (연락처를 모르면 null)
+  consultationId String? @map("consultation_id") @db.Uuid
+  /// 분석할 때의 통화 상대. 통화 연락처가 바뀌면 이 제안은 반영할 수 없다.
+  contactId      String? @map("contact_id") @db.Uuid
+
+  /// task / calendar_event / buyer_requirement_create / buyer_requirement_update
+  /// / match_create / match_stage / listing_confirm
+  type     String
+  /// pending / applying / accepted / dismissed
+  status   String  @default("pending")
+  /// 한 줄 요약 ("내일 오후 3시 김OO님 임장")
+  title    String
+  /// 근거가 된 통화 원문
+  evidence String?
+  /// 제안 내용. 서버가 검증하고 실제 id로 바꾼 값만 저장한다.
+  payload  Json    @db.JsonB
+  /// 분석 결과 안에서의 순서
+  seq      Int     @default(0)
+
+  /// 반영 결과
+  appliedEntityType String?   @map("applied_entity_type")
+  appliedEntityId   String?   @map("applied_entity_id") @db.Uuid
+  /// 실제로 반영한 내용 (도메인에 쓰기 전에 기록해 다시 시도할 때 무엇이 적용됐는지 안다)
+  appliedPayload    Json?     @map("applied_payload") @db.JsonB
+  resolvedById      String?   @map("resolved_by_id") @db.Uuid
+  resolvedAt        DateTime? @map("resolved_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  office       Office        @relation(fields: [officeId], references: [id])
+  recording    CallRecording @relation(fields: [recordingId], references: [id], onDelete: Cascade)
+  consultation Consultation? @relation(fields: [consultationId], references: [id], onDelete: SetNull)
+  resolvedBy   User?         @relation("CallSuggestionResolver", fields: [resolvedById], references: [id])
+
+  @@index([officeId, status, createdAt])
+  @@index([recordingId, seq])
+  @@index([consultationId])
+  @@map("call_action_suggestions")
 }

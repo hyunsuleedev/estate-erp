@@ -42,6 +42,7 @@ import {
 import { toast } from 'sonner';
 import type { ColumnDef, SortingState } from '@tanstack/react-table';
 import type {
+  ExternalListing,
   ExternalListingDiscoveryStatus,
   ExternalListingGroup,
   ExternalListingTransactionType,
@@ -236,8 +237,9 @@ function ExternalListingsPage() {
       });
       queryClient.invalidateQueries({ queryKey: ['external-listing-groups'] });
       setShowCompleteConfirm(false);
+      const { comparison } = result;
       setSessionError(
-        `스냅샷 완료: 구 데이터 ${result.staleListingsMarked}건 처리`,
+        `스냅샷 완료: 신규 매물 ${comparison.newGroups.length}건, 광고 추가 ${comparison.addedListings.length}건, 사라진 매물 ${comparison.removedGroups.length}건, 내려간 광고 ${comparison.removedListings.length}건, 가격 변경 ${comparison.priceChanges.length}건`,
       );
     },
     onError: (err: unknown) => {
@@ -860,7 +862,7 @@ function ExternalListingsPage() {
         open={showCompleteConfirm}
         onOpenChange={setShowCompleteConfirm}
         title="스냅샷을 완료하시겠습니까?"
-        description="이번 세션 중 다시 입력되지 않은 매물은 비활성 처리됩니다. Group 정보와 호수 매칭은 보존됩니다."
+        description="이번 세션 중 다시 입력되지 않은 매물은 비활성 처리됩니다. 수동으로 입력한 광고와 호수·메모는 유지됩니다."
         confirmLabel="완료"
         onConfirm={() => completeSessionMutation.mutate()}
         pending={completeSessionMutation.isPending}
@@ -1011,7 +1013,32 @@ function ExternalListingRankPanel({ group }: { group: ExternalListingGroup }) {
     queryFn: () => api.externalListings.findGroupById(group.id),
   });
 
-  const listings = data?.listings ?? [];
+  const queryClient = useQueryClient();
+  const [listingToEnd, setListingToEnd] = useState<ExternalListing | null>(
+    null,
+  );
+  const [endError, setEndError] = useState<string | null>(null);
+  const endListingMutation = useMutation({
+    mutationFn: (listingId: string) =>
+      api.externalListings.endManualListing(listingId),
+    onSuccess: () => {
+      setListingToEnd(null);
+      setEndError(null);
+      queryClient.invalidateQueries({ queryKey: ['external-listing-groups'] });
+      queryClient.invalidateQueries({
+        queryKey: ['external-listing-group-detail', group.id],
+      });
+    },
+    onError: (err: unknown) => {
+      setListingToEnd(null);
+      setEndError(
+        err instanceof Error ? err.message : '광고를 내리지 못했습니다.',
+      );
+    },
+  });
+
+  // 상세 응답에는 내려간 광고도 있지만 이 패널은 현재 광고만 비교한다.
+  const listings = (data?.listings ?? []).filter((item) => item.isActive);
   const locationLabel = [group.site?.name, group.buildingName, group.ho]
     .filter(Boolean)
     .join(' · ');
@@ -1030,7 +1057,7 @@ function ExternalListingRankPanel({ group }: { group: ExternalListingGroup }) {
           {data?.listingCount ?? group.listingCount ?? listings.length}건
         </span>
         <span className="shrink-0 text-[11.5px] text-[#6b9fba]">
-          · 네이버 노출 순서 비교
+          · 노출 순서 비교
         </span>
         {locationLabel && (
           <span className="ml-auto truncate text-[11px] text-muted-foreground">
@@ -1038,6 +1065,12 @@ function ExternalListingRankPanel({ group }: { group: ExternalListingGroup }) {
           </span>
         )}
       </div>
+
+      {endError && (
+        <p role="alert" className="mb-2 text-xs text-destructive">
+          {endError}
+        </p>
+      )}
 
       {isLoading ? (
         <div className="max-w-[720px] space-y-1.5">
@@ -1062,7 +1095,7 @@ function ExternalListingRankPanel({ group }: { group: ExternalListingGroup }) {
         </div>
       ) : listings.length === 0 ? (
         <p className="text-xs text-muted-foreground">
-          이 주소에 수집된 광고가 없습니다.
+          이 주소에 입력된 광고가 없습니다.
         </p>
       ) : (
         <div className="overflow-x-auto">
@@ -1145,6 +1178,21 @@ function ExternalListingRankPanel({ group }: { group: ExternalListingGroup }) {
                         {getExternalSourceLabel(listing.source)}
                       </span>
                     )}
+                    {listing.source === 'manual' && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="xs"
+                        aria-label={`${realtorName} 광고 내리기`}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setListingToEnd(listing);
+                        }}
+                        className="shrink-0 px-1.5 text-[11px] shadow-none"
+                      >
+                        내리기
+                      </Button>
+                    )}
                   </div>
                 );
               })}
@@ -1152,6 +1200,20 @@ function ExternalListingRankPanel({ group }: { group: ExternalListingGroup }) {
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        open={listingToEnd != null}
+        onOpenChange={(open) => {
+          if (!open) setListingToEnd(null);
+        }}
+        title="이 광고를 내릴까요?"
+        description="목록에서 사라지고 다음 비교에서도 제외됩니다. 호수와 메모는 유지되며, 같은 번호를 다시 입력하면 되돌릴 수 있습니다."
+        confirmLabel="내리기"
+        onConfirm={() => {
+          if (listingToEnd) endListingMutation.mutate(listingToEnd.id);
+        }}
+        pending={endListingMutation.isPending}
+      />
     </div>
   );
 }
@@ -1207,8 +1269,8 @@ function EmptyState({ hasSiteFilter }: { hasSiteFilter: boolean }) {
       </p>
       <p className="text-xs text-muted-foreground">
         {hasSiteFilter
-          ? '선택한 단지에 수집된 매물이 없습니다. 단지 선택을 조정해보세요.'
-          : '크롤러 또는 MCP로 외부 매물 데이터를 수집하면 여기에 표시됩니다.'}
+          ? '선택한 단지에 입력된 매물이 없습니다. 단지 선택을 조정해보세요.'
+          : '광고를 입력하면 여기에 표시됩니다.'}
       </p>
     </div>
   );
@@ -1495,7 +1557,7 @@ function buildColumns(
 ): ColumnDef<ExternalListingGroup, unknown>[] {
   const columns: ColumnDef<ExternalListingGroup, unknown>[] = [];
 
-  // ── 1. 상태 — 이전 수집과 비교한 신규/추가/기존 구분 ───────────
+  // ── 1. 상태 — 이전 입력과 비교한 신규/추가/기존 구분 ───────────
   columns.push({
     id: 'discoveryStatus',
     header: () => (
@@ -1510,7 +1572,7 @@ function buildColumns(
       return (
         <NotionTag
           title={meta.description}
-          ariaLabel={`수집 상태 ${meta.label}. ${meta.description}`}
+          ariaLabel={`입력 상태 ${meta.label}. ${meta.description}`}
           className={cn('min-w-10 justify-center', meta.className)}
         >
           {meta.label}
@@ -1833,7 +1895,7 @@ function buildColumns(
     ),
   });
 
-  // ── 14. 방향 — 네이버 원본 코드를 사용자 표기로 변환 ────────
+  // ── 14. 방향 — 입력된 원본 코드를 사용자 표기로 변환 ────────
   columns.push({
     id: 'direction',
     header: () => (
@@ -1847,7 +1909,7 @@ function buildColumns(
     ),
   });
 
-  // ── 15. 매물특징 — 외부 광고에서 수집한 원문 요약 ───────────
+  // ── 15. 매물특징 — 입력된 광고 원문 요약 ───────────
   columns.push({
     id: 'features',
     header: () => (
@@ -2132,22 +2194,6 @@ function ManualEntryDialog({
     setErrorMessage(null);
   }, [defaultSiteId, defaultTransactionType, open]);
 
-  const {
-    data: entrySession = null,
-    isLoading: isEntrySessionLoading,
-    isError: isEntrySessionError,
-    refetch: refetchEntrySession,
-  } = useQuery({
-    queryKey: [
-      'external-listing-active-session',
-      form.siteId,
-      form.transactionType,
-    ],
-    queryFn: () =>
-      api.externalListings.getActiveSession(form.siteId, form.transactionType),
-    enabled: open && !!form.siteId,
-  });
-
   const { data: siteDetail } = useQuery({
     queryKey: ['site-detail', form.siteId],
     queryFn: () => api.sites.findOne(form.siteId),
@@ -2270,19 +2316,13 @@ function ManualEntryDialog({
         );
       }
       setSubmittedCount(0);
-      if (!entrySession) {
-        await api.externalListings.createSession({
-          siteId: form.siteId,
-          transactionType: form.transactionType,
-        });
-      }
-
-      const listings = drafts.map((draft) => {
+      // 수동 입력은 광고 한 건이 한 묶음이고 자기 자신이 대표다.
+      const groups = drafts.map((draft) => {
         const dong = dongs.find((item) => item.id === draft.dongId);
         const unitType = siteUnitTypes.find(
           (item) => item.id === draft.siteUnitTypeId,
         );
-        return {
+        const listing = {
           articleNo: draft.articleNo,
           buildingName: dong?.name ?? null,
           ho: draft.ho.trim() || null,
@@ -2304,49 +2344,30 @@ function ManualEntryDialog({
           representativeTelNo: draft.representativeTelNo.trim() || null,
           articleFeatureDesc: draft.articleFeatureDesc.trim() || null,
         };
+        return {
+          representativeArticleNo: listing.articleNo,
+          listings: [listing],
+        };
       });
-      const combinedResult = {
-        received: 0,
-        created: 0,
-        updated: 0,
-        groupsCreated: 0,
-        groupsReused: 0,
-        errors: [] as Array<{ articleNo: string; message: string }>,
-      };
 
       for (
         let offset = 0;
-        offset < listings.length;
+        offset < groups.length;
         offset += EXTERNAL_LISTING_BATCH_SIZE
       ) {
-        const chunk = listings.slice(
+        const chunk = groups.slice(
           offset,
           offset + EXTERNAL_LISTING_BATCH_SIZE,
         );
-        const result = await api.externalListings.batchUpsert({
-          source: 'manual',
+        await api.externalListings.createManualListings({
           siteId: form.siteId,
           transactionType: form.transactionType,
-          listings: chunk,
+          groups: chunk,
         });
-        combinedResult.received += result.received;
-        combinedResult.created += result.created;
-        combinedResult.updated += result.updated;
-        combinedResult.groupsCreated += result.groupsCreated;
-        combinedResult.groupsReused += result.groupsReused;
-        combinedResult.errors.push(...result.errors);
-        setSubmittedCount(Math.min(offset + chunk.length, listings.length));
+        setSubmittedCount(Math.min(offset + chunk.length, groups.length));
       }
-
-      return combinedResult;
     },
-    onSuccess: (result) => {
-      if (result.errors.length > 0) {
-        setErrorMessage(
-          result.errors[0]?.message ?? '등록 중 오류가 발생했습니다.',
-        );
-        return;
-      }
+    onSuccess: () => {
       onSuccess();
       resetForm();
       onOpenChange(false);
@@ -2355,11 +2376,6 @@ function ManualEntryDialog({
       setErrorMessage(
         err instanceof Error ? err.message : '등록에 실패했습니다.',
       );
-    },
-    onSettled: () => {
-      queryClient.invalidateQueries({
-        queryKey: ['external-listing-active-session'],
-      });
     },
   });
 
@@ -2449,53 +2465,6 @@ function ManualEntryDialog({
                 목록에 광고가 있어 단지와 거래유형을 고정했습니다. 목록을 비우면
                 다시 선택할 수 있습니다.
               </p>
-            )}
-
-            {form.siteId && (
-              <div
-                aria-live="polite"
-                className={cn(
-                  'mt-2.5 flex min-h-8 items-center gap-2 rounded-md px-2.5 text-xs',
-                  isEntrySessionError
-                    ? 'bg-destructive-soft text-destructive'
-                    : entrySession
-                      ? 'bg-success-soft text-success'
-                      : 'bg-warning-soft/60 text-foreground',
-                )}
-              >
-                {isEntrySessionLoading ? (
-                  <>
-                    <RefreshCw className="size-3.5 animate-spin text-muted-foreground" />
-                    <span className="text-muted-foreground">
-                      스냅샷 상태를 확인하는 중입니다.
-                    </span>
-                  </>
-                ) : isEntrySessionError ? (
-                  <>
-                    <XCircle className="size-3.5" />
-                    <span>스냅샷 상태를 확인하지 못했습니다.</span>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="xs"
-                      className="ml-auto h-6 px-2"
-                      onClick={() => refetchEntrySession()}
-                    >
-                      다시 확인
-                    </Button>
-                  </>
-                ) : entrySession ? (
-                  <>
-                    <CheckCircle className="size-3.5" />
-                    <span>진행 중인 스냅샷에 입력됩니다.</span>
-                  </>
-                ) : (
-                  <>
-                    <CircleDot className="size-3.5 text-warning" />
-                    <span>등록과 함께 이 단지의 새 스냅샷을 시작합니다.</span>
-                  </>
-                )}
-              </div>
             )}
           </div>
         </div>
@@ -2717,8 +2686,6 @@ function ManualEntryDialog({
             disabled={
               !form.siteId ||
               drafts.length === 0 ||
-              isEntrySessionLoading ||
-              isEntrySessionError ||
               mutation.isPending
             }
             onClick={() => mutation.mutate()}
@@ -2729,11 +2696,7 @@ function ManualEntryDialog({
                 ? '단지를 먼저 선택하세요'
                 : drafts.length === 0
                   ? '광고를 추가하세요'
-                  : isEntrySessionLoading
-                    ? '확인 중...'
-                    : entrySession
-                      ? `${drafts.length.toLocaleString('ko-KR')}건 등록`
-                      : `${drafts.length.toLocaleString('ko-KR')}건 시작하고 등록`}
+                  : `${drafts.length.toLocaleString('ko-KR')}건 등록`}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -290,8 +290,8 @@ export function MatchSection({
             </span>
           </h3>
           <Button variant="ghost" size="sm" className="h-7 text-xs" asChild>
-            <Link to="/matches">
-              매칭 화면으로 이동
+            <Link to="/wanted-properties">
+              희망매물 화면으로 이동
               <ArrowUpRight className="size-3.5" />
             </Link>
           </Button>

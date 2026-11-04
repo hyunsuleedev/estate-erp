@@ -15,6 +15,21 @@ const prisma = new PrismaClient();
 const TEST_OFFICE_LICENSE_NO = '11740-2026-0001';
 const SITE_NAME = '고덕그라시움';
 
+// 더미의 평형을 단지의 실제 평형으로 옮겨 화면의 동·호·타입이 실제 단지와 맞게 한다.
+const REAL_UNIT_TYPE_BY_DUMMY_AREA: Record<string, string> = {
+  '84A': '114A',
+  '84B': '115B',
+  '59A': '82A',
+  '59B': '82B',
+  '115A': '153A',
+};
+
+function floorBand(floor: number, maxFloor: number): string {
+  const ratio = floor / maxFloor;
+  if (ratio <= 0.33) return '저';
+  return ratio <= 0.66 ? '중' : '고';
+}
+
 type Txn = 'sale' | 'jeonse' | 'monthly';
 
 interface DummyItem {
@@ -624,6 +639,9 @@ async function main() {
   const deletedGroups = await prisma.externalListingGroup.deleteMany({
     where: { officeId: office.id },
   });
+  await prisma.externalListingSnapshotSession.deleteMany({
+    where: { officeId: office.id, siteId: site.id },
+  });
   console.log(
     `기존 정리: listings ${deletedListings.count}건 / groups ${deletedGroups.count}건`,
   );
@@ -640,10 +658,83 @@ async function main() {
   let listingCount = 0;
   let articleSeq = 2340000000;
 
-  const now = new Date();
+  // 사무소가 관리하는 호실과 겹치면 같은 호실이 두 그룹으로 보이므로 제외한다.
+  const [realUnits, ownedProperties, floorsByDong] = await Promise.all([
+    prisma.unit.findMany({
+      where: {
+        siteId: site.id,
+        cellType: 'unit',
+        floor: { not: null },
+        siteUnitType: {
+          name: { in: Object.values(REAL_UNIT_TYPE_BY_DUMMY_AREA) },
+        },
+      },
+      select: {
+        id: true,
+        name: true,
+        floor: true,
+        dongId: true,
+        dong: { select: { name: true } },
+        siteUnitType: {
+          select: { name: true, exclusiveAreaM2: true, supplyAreaM2: true },
+        },
+      },
+      orderBy: [{ dongId: 'asc' }, { name: 'asc' }],
+    }),
+    prisma.property.findMany({
+      where: { officeId: office.id, unitId: { not: null } },
+      select: { unitId: true },
+    }),
+    prisma.unit.groupBy({
+      by: ['dongId'],
+      where: { siteId: site.id, cellType: 'unit' },
+      _max: { floor: true },
+    }),
+  ]);
+  const unavailableUnitIds = new Set(ownedProperties.map((p) => p.unitId));
+  const maxFloorByDong = new Map(
+    floorsByDong.map((row) => [row.dongId, row._max.floor ?? 1]),
+  );
+  const pickUnit = (dummyArea: string, position: number) => {
+    const typeName = REAL_UNIT_TYPE_BY_DUMMY_AREA[dummyArea];
+    const candidates = realUnits.filter(
+      (unit) =>
+        unit.siteUnitType?.name === typeName &&
+        !unavailableUnitIds.has(unit.id),
+    );
+    if (candidates.length === 0) {
+      throw new Error(`${typeName} 평형에 사용할 호실이 없습니다.`);
+    }
+    const unit = candidates[(position * 37) % candidates.length];
+    unavailableUnitIds.add(unit.id);
+    return unit;
+  };
+
+  // 비교 화면을 볼 수 있도록 완료된 스냅샷 두 번을 재현한다.
+  const nowMs = Date.now();
+  const hoursAgo = (hours: number) => new Date(nowMs - hours * 3_600_000);
+  const baselineStartedAt = hoursAgo(72);
+  const baselineCompletedAt = hoursAgo(71.5);
+  const latestStartedAt = hoursAgo(1);
+  const latestSeenAt = hoursAgo(0.9);
+  const latestCompletedAt = hoursAgo(0.8);
+  const removedCountByType = new Map<Txn, number>();
+  let groupIndex = 0;
 
   for (const [groupKey, items] of groupedItems) {
     const rep = items.find((x) => x.isRepresentative) ?? items[0];
+    const position = groupIndex++;
+    const isNewGroup = position % 6 === 1;
+    const hasPriceChange = position % 6 === 3;
+    const hasRemovedListing = position % 6 === 4;
+    const groupFirstSeenAt = isNewGroup ? latestSeenAt : baselineStartedAt;
+    let isFirstNonRepresentative = true;
+    const unit = pickUnit(rep.areaName, position);
+    const unitType = unit.siteUnitType!;
+    const unitFloor = unit.floor!;
+    const maxFloor = maxFloorByDong.get(unit.dongId) ?? unitFloor;
+    // 대표가 응답의 첫 줄이므로 순위는 1부터 묶음 안의 위치로 매긴다.
+    let nextRanking = 2;
 
     const status = rep.isVerified ? 'verified' : 'unmatched';
 
@@ -651,15 +742,17 @@ async function main() {
       data: {
         officeId: office.id,
         siteId: site.id,
-        buildingName: rep.dongName,
-        ho: rep.isVerified ? rep.ho : null,
-        areaName: rep.areaName,
-        exclusiveAreaM2: new Prisma.Decimal(rep.exclusiveAreaM2),
+        buildingName: unit.dong.name,
+        ho: rep.isVerified ? unit.name : null,
+        areaName: unitType.name,
+        exclusiveAreaM2: unitType.exclusiveAreaM2,
         transactionType: rep.transactionType,
-        memo: rep.isVerified ? `${rep.dongName} ${rep.ho}호 확인 완료` : null,
+        memo: rep.isVerified
+          ? `${unit.dong.name}동 ${unit.name}호 확인 완료`
+          : null,
         status,
-        firstSeenAt: now,
-        lastSeenAt: now,
+        firstSeenAt: groupFirstSeenAt,
+        lastSeenAt: latestSeenAt,
       },
     });
     groupCount++;
@@ -673,6 +766,21 @@ async function main() {
       const articleNo =
         item === rep ? repArticleNo : String(articleSeq++);
       articleNos.push(articleNo);
+
+      // 하위 광고가 있는 기존 매물은 하위 광고 하나를 이번 스냅샷의 추가 광고로 둔다.
+      const isAddedListing =
+        !isNewGroup && item !== rep && isFirstNonRepresentative;
+      if (item !== rep) isFirstNonRepresentative = false;
+      const priceChange =
+        hasPriceChange && item === rep
+          ? {
+              previousPrice: item.price == null ? null : item.price + 3_000,
+              previousDeposit:
+                item.deposit == null ? null : item.deposit + 2_000,
+              previousMonthlyRent: item.monthlyRent ?? null,
+              priceChangedAt: latestSeenAt,
+            }
+          : {};
 
       const created = await prisma.externalListing.create({
         data: {
@@ -691,20 +799,25 @@ async function main() {
           price: item.price ?? null,
           deposit: item.deposit ?? null,
           monthlyRent: item.monthlyRent ?? null,
-          articleName: `${site.name} ${item.dongName}`,
+          articleName: `${site.name} ${unit.dong.name}동`,
           articleFeatureDesc: item.articleFeatureDesc ?? null,
           articleConfirmYmd: new Date().toISOString().slice(0, 10).replace(/-/g, ''),
-          floorInfo: item.floorInfo,
-          exclusiveAreaM2: new Prisma.Decimal(item.exclusiveAreaM2),
+          floorInfo: /^\d/u.test(item.floorInfo)
+            ? `${unitFloor}/${maxFloor}`
+            : `${floorBand(unitFloor, maxFloor)}/${maxFloor}`,
+          exclusiveAreaM2: unitType.exclusiveAreaM2,
+          supplyAreaM2: unitType.supplyAreaM2,
           direction: 'SS',
           verificationTypeCode: item.verificationTypeCode ?? null,
           realtorName: item.realtorName,
           representativeTelNo: item.realtorPhone,
-          ranking: item.ranking,
+          ranking: item === rep ? 1 : nextRanking++,
           seango: item.seango ?? false,
           epju: item.epju ?? false,
-          firstSeenAt: now,
-          lastSeenAt: now,
+          ...priceChange,
+          firstSeenAt:
+            isNewGroup || isAddedListing ? latestSeenAt : baselineStartedAt,
+          lastSeenAt: latestSeenAt,
           isActive: true,
         },
       });
@@ -719,9 +832,77 @@ async function main() {
       }
     }
 
+    // 이번 스냅샷에서 내려간 광고. 매물 자체는 다른 광고로 남아 있다.
+    if (hasRemovedListing) {
+      const removedArticleNo = String(articleSeq++);
+      await prisma.externalListing.create({
+        data: {
+          officeId: office.id,
+          groupId: group.id,
+          source: 'naver',
+          articleNo: removedArticleNo,
+          representativeArticleNo: repArticleNo,
+          transactionType: rep.transactionType,
+          price: rep.price ?? null,
+          deposit: rep.deposit ?? null,
+          monthlyRent: rep.monthlyRent ?? null,
+          articleName: `${site.name} ${unit.dong.name}동`,
+          floorInfo: `${floorBand(unitFloor, maxFloor)}/${maxFloor}`,
+          exclusiveAreaM2: unitType.exclusiveAreaM2,
+          supplyAreaM2: unitType.supplyAreaM2,
+          realtorName: '고덕중앙공인중개사',
+          firstSeenAt: baselineStartedAt,
+          lastSeenAt: baselineStartedAt,
+          isActive: false,
+        },
+      });
+      listingCount++;
+      removedCountByType.set(
+        rep.transactionType,
+        (removedCountByType.get(rep.transactionType) ?? 0) + 1,
+      );
+    }
+
     console.log(
       `  ${groupKey}: group ${group.status} / ${items.length}건 (${articleNos.join(', ')})`,
     );
+  }
+
+  const startedBy = await prisma.user.findFirst({
+    where: { officeId: office.id, isActive: true },
+    orderBy: { createdAt: 'asc' },
+    select: { id: true },
+  });
+  if (!startedBy) {
+    throw new Error(`${office.name} 사무소에 활성 사용자가 없습니다.`);
+  }
+  for (const transactionType of ['sale', 'jeonse', 'monthly'] as const) {
+    await prisma.externalListingSnapshotSession.createMany({
+      data: [
+        {
+          officeId: office.id,
+          siteId: site.id,
+          transactionType,
+          status: 'completed',
+          startedAt: baselineStartedAt,
+          startedById: startedBy.id,
+          completedAt: baselineCompletedAt,
+          completedById: startedBy.id,
+          staleListingsMarked: 0,
+        },
+        {
+          officeId: office.id,
+          siteId: site.id,
+          transactionType,
+          status: 'completed',
+          startedAt: latestStartedAt,
+          startedById: startedBy.id,
+          completedAt: latestCompletedAt,
+          completedById: startedBy.id,
+          staleListingsMarked: removedCountByType.get(transactionType) ?? 0,
+        },
+      ],
+    });
   }
 
   console.log(`\n=== 더미 External Listing seed 완료 ===`);

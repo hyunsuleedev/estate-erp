@@ -407,6 +407,65 @@ export const MATCH_STAGE_ORDER = [
   MatchStage.CLOSED,
 ] as const;
 
+/**
+ * 매칭 종료 이유. 시스템이 자동 종료한 매칭만 거래 취소 시 되살리기 위해 구분한다.
+ * - manual: 사용자가 직접 종료 (되살리지 않음)
+ * - other_buyer_contracted: 같은 거래 조건에서 다른 손님과 본계약
+ * - intake_closed: 의뢰 종료 (거래 완료·철회 등)
+ * - deal_cancelled: 이 매칭에서 전환한 거래가 취소됨
+ */
+export const MatchClosedReason = {
+  MANUAL: 'manual',
+  OTHER_BUYER_CONTRACTED: 'other_buyer_contracted',
+  INTAKE_CLOSED: 'intake_closed',
+  DEAL_CANCELLED: 'deal_cancelled',
+} as const;
+export type MatchClosedReason =
+  (typeof MatchClosedReason)[keyof typeof MatchClosedReason];
+
+export const MATCH_CLOSED_REASON_LABELS: Record<MatchClosedReason, string> = {
+  manual: '직접 종료',
+  other_buyer_contracted: '다른 손님과 본계약',
+  intake_closed: '의뢰 종료',
+  deal_cancelled: '거래 취소',
+};
+
+/**
+ * 통화 분석이 제안하는 업무 종류.
+ * 받아쓰기 오류가 있을 수 있어 사람이 확인한 뒤 반영한다.
+ */
+export const CallSuggestionType = {
+  TASK: 'task',
+  CALENDAR_EVENT: 'calendar_event',
+  BUYER_REQUIREMENT_CREATE: 'buyer_requirement_create',
+  BUYER_REQUIREMENT_UPDATE: 'buyer_requirement_update',
+  MATCH_CREATE: 'match_create',
+  MATCH_STAGE: 'match_stage',
+  LISTING_CONFIRM: 'listing_confirm',
+} as const;
+export type CallSuggestionType =
+  (typeof CallSuggestionType)[keyof typeof CallSuggestionType];
+
+export const CALL_SUGGESTION_TYPE_LABELS: Record<CallSuggestionType, string> = {
+  task: '할 일',
+  calendar_event: '일정',
+  buyer_requirement_create: '고객 요청 추가',
+  buyer_requirement_update: '고객 요청 변경',
+  match_create: '매칭 추가',
+  match_stage: '매칭 진행',
+  listing_confirm: '매물 확인',
+};
+
+/** pending → (applying) → accepted, 또는 dismissed */
+export const CallSuggestionStatus = {
+  PENDING: 'pending',
+  APPLYING: 'applying',
+  ACCEPTED: 'accepted',
+  DISMISSED: 'dismissed',
+} as const;
+export type CallSuggestionStatus =
+  (typeof CallSuggestionStatus)[keyof typeof CallSuggestionStatus];
+
 /** 2026-08 파이프라인 개편 이전 저장값 — 마이그레이션 중 읽기 호환용 */
 export const LEGACY_MATCH_STAGE_VALUES = [
   'buyerContacted',

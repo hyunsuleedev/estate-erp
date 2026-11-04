@@ -1,3 +1,8 @@
+import type {
+  OfficePostalAddress,
+  OfficeProfile,
+} from '@estate-erp/api-client';
+import { OfficeAddressField } from '@/components/office-address-field';
 import { createFileRoute, Link } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -71,6 +76,7 @@ type OfficeForm = {
   ceoName: string;
   phone: string;
   address: string;
+  postalAddress: OfficePostalAddress | null;
   naverVerificationId: string;
 };
 
@@ -133,7 +139,11 @@ const SETTINGS_SECTIONS: SettingsSection[] = [
   },
 ];
 
-const SETTINGS_GROUPS: SettingsSection['group'][] = ['개인', '사무소 운영', '연결'];
+const SETTINGS_GROUPS: SettingsSection['group'][] = [
+  '개인',
+  '사무소 운영',
+  '연결',
+];
 const LAST_SECTION_KEY = 'estate-erp:settings:v1:last-section';
 
 const ROLE_LABELS: Record<string, string> = {
@@ -155,6 +165,7 @@ const EMPTY_OFFICE_FORM: OfficeForm = {
   ceoName: '',
   phone: '',
   address: '',
+  postalAddress: null,
   naverVerificationId: '',
 };
 
@@ -213,6 +224,7 @@ function SettingsPage() {
       ceoName: office.ceoName ?? '',
       phone: office.phone ?? '',
       address: office.address ?? '',
+      postalAddress: office.postalAddress ?? null,
       naverVerificationId: office.naverVerificationId ?? '',
     });
 
@@ -237,6 +249,7 @@ function SettingsPage() {
             ceoName: office.ceoName ?? '',
             phone: office.phone ?? '',
             address: office.address ?? '',
+            postalAddress: office.postalAddress ?? null,
             naverVerificationId: office.naverVerificationId ?? '',
           }
         : null,
@@ -257,13 +270,20 @@ function SettingsPage() {
     };
   }, [office]);
 
+  const addressDirty = Boolean(
+    officeBaseline &&
+    (officeForm.address !== officeBaseline.address ||
+      JSON.stringify(officeForm.postalAddress) !==
+        JSON.stringify(officeBaseline.postalAddress)),
+  );
+
   const officeInfoDirty = Boolean(
     officeBaseline &&
-      (officeForm.name !== officeBaseline.name ||
-        officeForm.licenseNo !== officeBaseline.licenseNo ||
-        officeForm.ceoName !== officeBaseline.ceoName ||
-        officeForm.phone !== officeBaseline.phone ||
-        officeForm.address !== officeBaseline.address),
+    (officeForm.name !== officeBaseline.name ||
+      officeForm.licenseNo !== officeBaseline.licenseNo ||
+      officeForm.ceoName !== officeBaseline.ceoName ||
+      officeForm.phone !== officeBaseline.phone ||
+      addressDirty),
   );
   const connectionDirty = Boolean(
     officeBaseline &&
@@ -280,7 +300,7 @@ function SettingsPage() {
         licenseNo: emptyToNull(officeForm.licenseNo),
         ceoName: emptyToNull(officeForm.ceoName),
         phone: emptyToNull(officeForm.phone),
-        address: emptyToNull(officeForm.address),
+        ...(addressDirty ? { postalAddress: officeForm.postalAddress } : {}),
         naverVerificationId: emptyToNull(officeForm.naverVerificationId),
       }),
     onSuccess: (updatedOffice) => {
@@ -294,6 +314,20 @@ function SettingsPage() {
           ? error.message
           : '사무소 설정을 저장하지 못했습니다. 다시 시도해 주세요.',
       ),
+  });
+
+  const retryGeocodingMutation = useMutation({
+    mutationFn: () => api.offices.retryGeocoding(),
+    onSuccess: (updatedOffice) => {
+      queryClient.setQueryData(['office-profile'], updatedOffice);
+      if (updatedOffice.geocodingStatus === 'ready')
+        toast.success('사무소 위치를 확인했습니다.');
+      else
+        toast.info(
+          '아직 위치를 확인하지 못했습니다. 저장한 주소는 유지됩니다.',
+        );
+    },
+    onError: () => toast.error('위치 확인을 다시 시도하지 못했습니다.'),
   });
 
   const updateCommissionMutation = useMutation({
@@ -413,7 +447,9 @@ function SettingsPage() {
               <h1 className="text-lg font-semibold tracking-[-0.02em]">설정</h1>
               <p className="text-xs text-muted-foreground">업무 환경을 관리합니다.</p>
             </div>
-            {!canEditOffice ? <Badge variant="secondary">일부 읽기 전용</Badge> : null}
+            {!canEditOffice ? (
+              <Badge variant="secondary">일부 읽기 전용</Badge>
+            ) : null}
           </div>
           <SettingsSearch
             value={searchQuery}
@@ -491,6 +527,8 @@ function SettingsPage() {
                   isLoading={isLoading}
                   isSaving={updateOfficeMutation.isPending}
                   office={office}
+                  isGeocoding={retryGeocodingMutation.isPending}
+                  onRetryGeocoding={() => retryGeocodingMutation.mutate()}
                   onChange={setOfficeForm}
                   onSave={() => updateOfficeMutation.mutate()}
                 />
@@ -575,7 +613,9 @@ function SettingsNavigation({
           </p>
         ) : (
           SETTINGS_GROUPS.map((group) => {
-            const items = filteredSections.filter((section) => section.group === group);
+            const items = filteredSections.filter(
+              (section) => section.group === group,
+            );
             if (items.length === 0) return null;
 
             return (
@@ -736,20 +776,16 @@ function AccountSettings({
 }: {
   isLoading: boolean;
   locale: SupportedLocale;
-  myProfile:
-    | {
-        phone: string | null;
-        licenseType: string | null;
-      }
-    | null;
-  user:
-    | {
-        name: string;
-        loginId: string;
-        email: string | null;
-        role: string;
-      }
-    | null;
+  myProfile: {
+    phone: string | null;
+    licenseType: string | null;
+  } | null;
+  user: {
+    name: string;
+    loginId: string;
+    email: string | null;
+    role: string;
+  } | null;
   languageLabel: (value: SupportedLocale) => string;
   onLocaleChange: (locale: SupportedLocale) => void;
 }) {
@@ -849,25 +885,21 @@ function OfficeSettings({
   isLoading,
   isSaving,
   office,
+  isGeocoding,
   onChange,
   onSave,
+  onRetryGeocoding,
 }: {
   canEdit: boolean;
   form: OfficeForm;
   isDirty: boolean;
   isLoading: boolean;
   isSaving: boolean;
-  office:
-    | {
-        name: string;
-        subscription: string;
-        maxUsers: number;
-        isActive: boolean;
-        counts: { totalUsers: number; activeUsers: number; managers: number };
-      }
-    | undefined;
+  office: OfficeProfile | undefined;
+  isGeocoding: boolean;
   onChange: (form: OfficeForm) => void;
   onSave: () => void;
+  onRetryGeocoding: () => void;
 }) {
   return (
     <div className="space-y-7">
@@ -962,14 +994,46 @@ function OfficeSettings({
               disabled={!canEdit}
             />
             <div className="sm:col-span-2">
-              <Field
-                id="office-address"
-                label="사무소 주소"
-                value={form.address}
-                placeholder="예: 서울특별시 강남구 테헤란로 123, 1층"
-                onChange={(value) => onChange({ ...form, address: value })}
-                disabled={!canEdit}
+              <OfficeAddressField
+                value={form.postalAddress}
+                legacyAddress={form.postalAddress ? null : form.address}
+                onChange={(postalAddress) =>
+                  onChange({
+                    ...form,
+                    postalAddress,
+                    address: postalAddress
+                      ? [
+                          postalAddress.roadAddress ||
+                            postalAddress.jibunAddress,
+                          postalAddress.detailAddress,
+                        ]
+                          .filter(Boolean)
+                          .join(' ')
+                      : '',
+                  })
+                }
+                disabled={!canEdit || isSaving}
               />
+              {office?.postalAddress &&
+                office.geocodingStatus !== 'ready' &&
+                !isDirty && (
+                  <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground-strong">
+                    <p>
+                      주소는 저장됐지만 위치 확인은 아직 완료되지 않았습니다.
+                    </p>
+                    {canEdit && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        disabled={isGeocoding || isSaving}
+                        onClick={onRetryGeocoding}
+                      >
+                        {isGeocoding ? '위치 확인 중…' : '위치 다시 확인'}
+                      </Button>
+                    )}
+                  </div>
+                )}
             </div>
           </div>
         )}
@@ -1461,7 +1525,11 @@ function SaveStrip({
             isDirty ? 'bg-info-soft text-info-strong' : 'bg-success-soft text-success',
           )}
         >
-          {isDirty ? <span className="size-1.5 rounded-full bg-current" /> : <Check className="size-3" />}
+          {isDirty ? (
+            <span className="size-1.5 rounded-full bg-current" />
+          ) : (
+            <Check className="size-3" />
+          )}
         </span>
         <span className={isDirty ? 'text-foreground' : 'text-muted-foreground'}>
           {isSaving

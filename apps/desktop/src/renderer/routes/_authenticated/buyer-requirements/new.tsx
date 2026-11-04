@@ -77,9 +77,9 @@ function NewBuyerRequirementPage() {
     if (ownerTabIdRef.current) {
       closeTab(ownerTabIdRef.current);
     }
-    const meta = getRouteMeta('/customers');
+    const meta = getRouteMeta('/customers-table');
     openModule({
-      route: '/customers',
+      route: '/customers-table',
       kind: meta.kind,
       title: meta.title,
     });

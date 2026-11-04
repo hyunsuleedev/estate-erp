@@ -16,9 +16,15 @@ describe('ConsultationsService', () => {
       callRecording: { findFirst: jest.fn() },
     };
 
+    const callIntelligence = {
+      startTranscription: jest.fn(),
+      requestReanalysis: jest.fn(),
+    };
+
     return {
       prisma,
-      service: new ConsultationsService(prisma as never),
+      callIntelligence,
+      service: new ConsultationsService(prisma as never, callIntelligence as never),
     };
   }
 
@@ -177,4 +183,35 @@ describe('ConsultationsService', () => {
       }),
     ).rejects.toBeInstanceOf(BadRequestException);
   });
+
+  it('통화 연락처를 바꾸면 이전 상대 기준의 처리 전 제안을 바로 없애고 다시 분석한다', async () => {
+    const { prisma, service, callIntelligence } = createService();
+    const update = jest.fn((args: unknown) => ({ op: 'update', args }));
+    const deleteMany = jest.fn((args: unknown) => ({ op: 'deleteMany', args }));
+    Object.assign(prisma.callRecording, {
+      findFirst: jest
+        .fn()
+        .mockResolvedValueOnce({ id: 'rec-1' })
+        .mockResolvedValue({ id: 'rec-1', contact: null, suggestions: [] }),
+      findUnique: jest.fn().mockResolvedValue({ contactId: 'contact-A', sttStatus: 'completed' }),
+      update,
+    });
+    Object.assign(prisma, {
+      callActionSuggestion: { deleteMany },
+      $transaction: jest.fn(async (operations: unknown[]) => operations),
+    });
+    prisma.contact.findFirst.mockResolvedValue({ id: 'contact-B' });
+    callIntelligence.requestReanalysis.mockResolvedValue({});
+    Object.assign(callIntelligence, { describeSuggestionTargets: jest.fn().mockResolvedValue({}) });
+
+    await service.updateRecording('rec-1', 'office-1', { contactId: 'contact-B' });
+
+    // 연락처 변경과 제안 무효화를 함께 저장한다 (다시 분석이 실패해도 이전 고객 제안이 남지 않는다)
+    expect((prisma as unknown as { $transaction: jest.Mock }).$transaction).toHaveBeenCalledWith([
+      { op: 'update', args: { where: { id: 'rec-1' }, data: { contactId: 'contact-B' } } },
+      { op: 'deleteMany', args: { where: { recordingId: 'rec-1', status: 'pending' } } },
+    ]);
+    expect(callIntelligence.requestReanalysis).toHaveBeenCalledWith('rec-1', 'office-1');
+  });
 });
+

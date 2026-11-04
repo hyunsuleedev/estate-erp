@@ -54,8 +54,8 @@ describe('tab resource identity', () => {
 
   it('treats query-driven sheets and filters as module view state', () => {
     assert.equal(
-      resolveTabResourceKey('/matches?matchId=match-1', 'tab-a'),
-      tabResourceKeys.module('/matches'),
+      resolveTabResourceKey('/wanted-properties?matchId=match-1', 'tab-a'),
+      tabResourceKeys.module('/wanted-properties'),
     );
     assert.equal(
       resolveTabResourceKey('/network?roomId=room-1&view=chat', 'tab-b'),

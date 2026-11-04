@@ -1,0 +1,23 @@
+# Run the local API, PostgreSQL, and Redis together:
+# docker compose -f docker-compose.dev.yml -f docker-compose.backend.yml up -d --build
+services:
+  server:
+    build:
+      context: .
+      dockerfile: apps/server/Dockerfile
+    container_name: estate-erp-server
+    restart: unless-stopped
+    env_file:
+      - apps/server/.env
+    environment:
+      DATABASE_URL: postgresql://postgres:password@postgres:5432/estate_erp
+      REDIS_URL: redis://redis:6379
+      PORT: "3000"
+      MCP_AUDIENCE: http://localhost:3001/mcp
+    ports:
+      - "127.0.0.1:3001:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy

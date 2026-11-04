@@ -599,7 +599,7 @@ function SelectedEventInspector({
                     <button
                       key={kind}
                       type="button"
-                      onClick={() => void navigate({ to: "/matches" })}
+                      onClick={() => void navigate({ to: "/wanted-properties" })}
                       className="inline-flex max-w-full items-center gap-1.5 rounded-full border bg-background py-1 pr-2.5 pl-2 text-xs transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
                     >
                       <Link2 className="size-3.5 shrink-0 text-muted-foreground" />
