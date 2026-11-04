@@ -1,0 +1,93 @@
+{
+  "status": "proposal",
+  "note": "Estate ERP comparison candidates; not official product palettes or DTCG interchange format.",
+  "themes": [
+    {
+      "id": "neutral",
+      "name": "Neutral Ink",
+      "description": "추천 출발점 · 흰색과 무채색, 명확한 글자 대비",
+      "colors": {
+        "canvas": "#FAFAFA",
+        "subtle": "#F4F4F5",
+        "hover": "#EDEDEE",
+        "border": "#E4E4E7",
+        "input-border": "#8C8C93",
+        "text": "#18181B",
+        "text-secondary": "#626269",
+        "primary": "#27272A",
+        "primary-hover": "#3F3F46",
+        "selected": "#EEEEF0",
+        "selected-text": "#27272A",
+        "focus": "#2563EB",
+        "surface": "#FFFFFF",
+        "on-primary": "#FFFFFF",
+        "info-bg": "#EFF6FF",
+        "info-text": "#1D4ED8",
+        "success-bg": "#F0FDF4",
+        "success-text": "#166534",
+        "warning-bg": "#FEFCE8",
+        "warning-text": "#854D0E",
+        "danger-bg": "#FEF2F2",
+        "danger-text": "#B91C1C"
+      }
+    },
+    {
+      "id": "warm",
+      "name": "Warm Graphite",
+      "description": "부드러운 회색 바탕 · 종이 원장에 가까운 인상",
+      "colors": {
+        "canvas": "#F8F7F5",
+        "subtle": "#F1EFEB",
+        "hover": "#EAE7E1",
+        "border": "#DEDBD5",
+        "input-border": "#918B82",
+        "text": "#292622",
+        "text-secondary": "#6B655D",
+        "primary": "#403B34",
+        "primary-hover": "#575046",
+        "selected": "#EAE6DF",
+        "selected-text": "#403B34",
+        "focus": "#77654C",
+        "surface": "#FFFFFF",
+        "on-primary": "#FFFFFF",
+        "info-bg": "#EFF6FF",
+        "info-text": "#1D4ED8",
+        "success-bg": "#F0FDF4",
+        "success-text": "#166534",
+        "warning-bg": "#FEFCE8",
+        "warning-text": "#854D0E",
+        "danger-bg": "#FEF2F2",
+        "danger-text": "#B91C1C"
+      }
+    },
+    {
+      "id": "slate",
+      "name": "Cool Slate",
+      "description": "차가운 회색과 네이비 · 도구의 존재감이 조금 더 강함",
+      "colors": {
+        "canvas": "#F8F9FB",
+        "subtle": "#EFF2F6",
+        "hover": "#E7ECF3",
+        "border": "#E0E5ED",
+        "input-border": "#8490A3",
+        "text": "#202A3B",
+        "text-secondary": "#596A81",
+        "primary": "#334E75",
+        "primary-hover": "#294166",
+        "selected": "#E9EFF8",
+        "selected-text": "#2C466A",
+        "focus": "#3F66B5",
+        "surface": "#FFFFFF",
+        "on-primary": "#FFFFFF",
+        "info-bg": "#EFF6FF",
+        "info-text": "#1D4ED8",
+        "success-bg": "#F0FDF4",
+        "success-text": "#166534",
+        "warning-bg": "#FEFCE8",
+        "warning-text": "#854D0E",
+        "danger-bg": "#FEF2F2",
+        "danger-text": "#B91C1C"
+      }
+    }
+  ]
+}

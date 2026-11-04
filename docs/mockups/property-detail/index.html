@@ -1,0 +1,409 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>매물 상세 시안 v1</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
+<script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js"></script>
+<style>
+  :root {
+    --fg: #37352f; --fg2: #787774; --fg3: #a5a39f;
+    --line: #e9e9e7; --line2: #efeeec; --hover: rgba(55,53,47,.04);
+    --surface: #f1f0ec; --set: #ebeae6; --head: #f7f7f5;
+    /* Notion 태그 팔레트 */
+    --gray-bg: #e3e2e0; --gray-fg: #32302c;
+    --green-bg: #dbeddb; --green-fg: #1c3829; --green-dot: #6c9b7d;
+    --yellow-bg: #fdecc8; --yellow-fg: #402c1b; --yellow-dot: #cb912f;
+    --orange-bg: #fadec9; --orange-fg: #49290e;
+    --red-bg: #ffe2dd; --red-fg: #5d1715;
+    --blue-bg: #d3e5ef; --blue-fg: #183347; --blue-dot: #5b97bd;
+    --purple-bg: #e8deee; --purple-fg: #412454;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: #e9e8e4; color: var(--fg);
+    font-family: "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", sans-serif;
+    font-size: 13px; -webkit-font-smoothing: antialiased; }
+  button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+  svg.lucide { width: 14px; height: 14px; stroke-width: 1.75; flex: none; }
+  .page { width: 1320px; margin: 0 auto; padding: 32px 24px 120px; }
+  .page > h1 { font-size: 22px; margin: 0 0 6px; }
+  .lead { margin: 0; color: #5f5e5a; font-size: 14px; line-height: 1.65; max-width: 1100px; }
+  .roles { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 16px; }
+  .roles div { background: #fff; border-radius: 10px; padding: 14px 16px; box-shadow: 0 0 0 1px rgba(0,0,0,.06); line-height: 1.6; }
+  .roles b { display: block; font-size: 14px; margin-bottom: 4px; }
+  .roles span { color: #5f5e5a; }
+  .case { margin-top: 40px; }
+  .case-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 4px; }
+  .tag { display: inline-grid; place-items: center; height: 22px; padding: 0 7px; border-radius: 6px; background: #1f1f1f; color: #fff; font-size: 12px; font-weight: 600; }
+  .case-head h2 { font-size: 17px; margin: 0; }
+  .case-desc { margin: 0 0 12px 0; color: #5f5e5a; font-size: 13.5px; line-height: 1.65; }
+
+  /* ---------- 공통 부품 ---------- */
+  .pill { display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 8px; border-radius: 999px; font-size: 12px; white-space: nowrap; }
+  .pill .d { width: 6px; height: 6px; border-radius: 50%; }
+  .p-green { background: var(--green-bg); color: var(--green-fg); } .p-green .d { background: var(--green-dot); }
+  .p-yellow { background: var(--yellow-bg); color: var(--yellow-fg); } .p-yellow .d { background: var(--yellow-dot); }
+  .p-blue { background: var(--blue-bg); color: var(--blue-fg); } .p-blue .d { background: var(--blue-dot); }
+  .p-gray { background: var(--gray-bg); color: var(--gray-fg); } .p-gray .d { background: #91918e; }
+  .tt { display: inline-flex; align-items: center; height: 20px; padding: 0 6px; border-radius: 3px; font-size: 12px; }
+  .tt-sale { background: var(--red-bg); color: var(--red-fg); }
+  .tt-jeonse { background: var(--blue-bg); color: var(--blue-fg); }
+  .btn { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border-radius: 999px; font-size: 12.5px; white-space: nowrap; }
+  .btn-primary { background: var(--fg); color: #fff; font-weight: 500; }
+  .btn-soft { background: var(--surface); color: var(--fg); }
+  .btn-soft:hover { background: var(--set); }
+  .btn-ghost { color: var(--fg2); } .btn-ghost:hover { background: rgba(55,53,47,.06); color: var(--fg); }
+  .icon-btn { display: inline-grid; place-items: center; width: 28px; height: 28px; border-radius: 6px; color: var(--fg2); }
+  .icon-btn:hover { background: rgba(55,53,47,.06); color: var(--fg); }
+  .sec-title { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; margin: 0 0 8px; }
+  .sec-title .n { color: var(--fg3); font-weight: 500; }
+  .sec-title .more { margin-left: auto; font-weight: 400; color: var(--fg2); font-size: 12px; display: inline-flex; align-items: center; gap: 2px; }
+  .props { display: grid; grid-template-columns: 112px 1fr; }
+  .props .k, .props .v { display: flex; align-items: center; min-height: 32px; padding: 4px 6px; }
+  .props .k { gap: 7px; color: var(--fg2); }
+  .props .k svg { color: var(--fg3); }
+  .props .v { gap: 6px; border-radius: 4px; }
+  .props .v:hover, .props .k:hover + .v { background: var(--hover); }
+  .props .v .sub { color: var(--fg2); }
+  .props .v .call { margin-left: auto; color: var(--fg2); }
+  .muted { color: var(--fg2); }
+  .faint { color: var(--fg3); }
+  .num { font-variant-numeric: tabular-nums; }
+  .todo { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 6px; }
+  .todo:hover { background: var(--hover); }
+  .todo .d { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+  .todo .txt { flex: 1; min-width: 0; }
+  .todo .txt b { font-weight: 500; }
+  .todo .txt .s { display: block; color: var(--fg2); font-size: 12px; margin-top: 1px; }
+  .act { display: grid; grid-template-columns: 52px 22px 1fr; gap: 8px; padding: 8px 6px; border-radius: 6px; align-items: start; }
+  .act:hover { background: var(--hover); }
+  .act .when { color: var(--fg3); font-size: 12px; padding-top: 2px; font-variant-numeric: tabular-nums; }
+  .act .ic { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--surface); color: var(--fg2); }
+  .act .ic svg { width: 12px; height: 12px; }
+  .act .body .t { font-weight: 500; }
+  .act .body .t .muted { font-weight: 400; }
+  .act .body .q { color: var(--fg2); margin-top: 2px; line-height: 1.5; }
+  hr.sep { border: 0; border-top: 1px solid var(--line); margin: 18px 0; }
+  .memo { background: #fbfbfa; border-left: 3px solid var(--set); padding: 8px 12px; border-radius: 2px; line-height: 1.6; }
+
+  /* ---------- A. 패널 ---------- */
+  .stage { position: relative; height: 940px; border-radius: 10px; overflow: hidden; box-shadow: 0 0 0 1px rgba(0,0,0,.06), 0 8px 24px rgba(0,0,0,.05); background: #fff; }
+  .bg-list { position: absolute; inset: 0; padding: 0; }
+  .bg-list .bar { height: 52px; border-bottom: 1px solid var(--line); background: #fff; }
+  .bg-list .bar2 { height: 46px; border-bottom: 1px solid var(--line); background: #fff; }
+  .bg-list .head { height: 36px; background: var(--head); border-bottom: 1px solid var(--line); }
+  .bg-list .row { height: 38px; border-bottom: 1px solid var(--line2); display: flex; align-items: center; gap: 30px; padding: 0 16px; color: var(--fg2); }
+  .bg-list .row.sel { background: #f3f7fb; }
+  .scrim { position: absolute; inset: 0; background: rgba(15,23,42,.08); }
+  .panel { position: absolute; top: 0; right: 0; bottom: 0; width: 584px; background: #fff; border-left: 1px solid #dddcd8; box-shadow: -12px 0 32px rgba(15,23,42,.1); display: flex; flex-direction: column; }
+  .panel-bar { display: flex; align-items: center; gap: 6px; height: 46px; padding: 0 12px 0 20px; border-bottom: 1px solid var(--line); flex: none; }
+  .crumb { display: flex; align-items: center; gap: 4px; color: var(--fg2); font-size: 12.5px; }
+  .crumb svg { width: 12px; height: 12px; color: var(--fg3); }
+  .panel-bar .sp { flex: 1; }
+  .panel-body { flex: 1; overflow: auto; padding: 20px 24px 32px; }
+  .title { font-size: 22px; font-weight: 700; letter-spacing: -0.01em; margin: 0; }
+  .subline { margin-top: 6px; color: var(--fg2); display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; }
+  .subline i.dot { width: 3px; height: 3px; border-radius: 50%; background: var(--fg3); display: inline-block; }
+  .status { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+  .offers { margin-top: 16px; border-radius: 8px; background: #fbfbfa; box-shadow: inset 0 0 0 1px var(--line); }
+  .offer { display: flex; align-items: center; gap: 10px; padding: 12px 14px; }
+  .offer + .offer { border-top: 1px solid var(--line); }
+  .offer .price { font-size: 18px; font-weight: 700; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
+  .offer .chg { font-size: 12px; color: #2f7d4f; display: inline-flex; align-items: center; gap: 1px; }
+  .offer .meta { margin-left: auto; color: var(--fg2); font-size: 12px; text-align: right; line-height: 1.5; }
+  .actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; }
+
+  /* ---------- B. 전체 페이지 ---------- */
+  .window { border-radius: 10px; overflow: hidden; background: #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.08), 0 12px 32px rgba(0,0,0,.08); }
+  .titlebar { height: 38px; background: #f7f7f5; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 8px; padding: 0 14px; }
+  .titlebar .lights { display: flex; gap: 6px; }
+  .titlebar .lights i { width: 11px; height: 11px; border-radius: 50%; background: #dcdbd8; display: inline-block; }
+  .titlebar .crumb { margin-left: 10px; }
+  .full { padding: 26px 40px 40px; }
+  .full .head { display: flex; gap: 24px; align-items: flex-start; }
+  .full .head .l { flex: 1; min-width: 0; }
+  .full .title { font-size: 28px; }
+  .full .head .actions { margin-top: 4px; flex-wrap: nowrap; }
+  .overview { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 20px; }
+  .ov { border-radius: 8px; padding: 12px 14px; background: #fbfbfa; box-shadow: inset 0 0 0 1px var(--line); min-height: 82px; }
+  .ov .k { display: flex; align-items: center; gap: 6px; color: var(--fg2); font-size: 12px; }
+  .ov .k svg { width: 13px; height: 13px; color: var(--fg3); }
+  .ov .v { margin-top: 6px; font-size: 15px; font-weight: 600; display: flex; align-items: center; gap: 6px; }
+  .ov .s { margin-top: 3px; font-size: 12px; color: var(--fg2); }
+  .ov.warn { background: #fffaf0; box-shadow: inset 0 0 0 1px #f3e2bb; }
+  .full .body { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 36px; margin-top: 26px; }
+  .side h3 { font-size: 12px; font-weight: 600; color: var(--fg2); margin: 18px 6px 4px; }
+  .side h3:first-child { margin-top: 0; }
+  .side .props { grid-template-columns: 96px 1fr; }
+  .person { display: flex; align-items: center; gap: 10px; padding: 8px 6px; border-radius: 6px; }
+  .person:hover { background: var(--hover); }
+  .avatar { width: 28px; height: 28px; border-radius: 50%; background: var(--surface); display: grid; place-items: center; font-size: 12px; font-weight: 600; color: var(--fg2); flex: none; }
+  .person .nm { font-weight: 500; }
+  .person .rl { color: var(--fg2); font-size: 12px; }
+  .person .call { margin-left: auto; }
+  .tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--line); }
+  .tabs button { position: relative; height: 36px; padding: 0 10px; color: var(--fg2); font-size: 13.5px; }
+  .tabs button .n { color: var(--fg3); margin-left: 3px; font-size: 12px; }
+  .tabs button.on { color: var(--fg); font-weight: 500; box-shadow: inset 0 -2px 0 var(--fg); }
+  .tabpane { padding-top: 18px; }
+  .lcard { border-radius: 8px; box-shadow: inset 0 0 0 1px var(--line); padding: 14px 16px; }
+  .lcard + .lcard { margin-top: 10px; }
+  .lcard .top { display: flex; align-items: center; gap: 8px; }
+  .lcard .price { font-size: 20px; font-weight: 700; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
+  .lcard .top .sp { flex: 1; }
+  .facts { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; margin-top: 12px; }
+  .facts div { padding: 6px 0; }
+  .facts .k { color: var(--fg2); font-size: 12px; }
+  .facts .v { margin-top: 2px; font-weight: 500; }
+  .adchips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--line); align-items: center; }
+  .adchip { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 9px; border-radius: 999px; background: var(--surface); font-size: 12px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; margin-top: 26px; }
+  .composer { display: flex; gap: 10px; align-items: center; padding: 10px 12px; border-radius: 8px; box-shadow: inset 0 0 0 1px var(--line); color: var(--fg3); margin-bottom: 12px; }
+  .composer .sp { flex: 1; }
+  .stage-track { display: flex; gap: 4px; margin: 6px 0 2px; }
+  .stage-track i { flex: 1; height: 4px; border-radius: 2px; background: var(--line); }
+  .stage-track i.on { background: var(--fg); }
+  .mrow { display: grid; grid-template-columns: 1.2fr 1fr 1fr 90px; gap: 12px; align-items: center; padding: 10px 6px; border-bottom: 1px solid var(--line2); }
+  .mrow.h { color: var(--fg2); font-size: 12px; padding-top: 0; }
+  .note { margin-top: 10px; color: var(--fg2); font-size: 12.5px; line-height: 1.6; }
+  .note b { color: var(--fg); }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>매물 상세 — 시안 v1</h1>
+  <p class="lead">오른쪽 패널과 전체 페이지를 같은 디자인 언어(Notion 톤 · 툴바와 같은 베이지 · 알약 버튼)로 다시 만들고 역할을 나눴습니다. 두 화면 모두 <b>무엇인지 → 지금 상태와 가격 → 바로 할 일 → 사람과 진행 → 기록</b> 순서로 읽힙니다.</p>
+  <div class="roles">
+    <div><b>오른쪽 패널 · 빨리 확인하고 처리</b><span>목록·지도에서 행을 눌렀을 때. 탭 없이 한 번 스크롤로 다 보입니다. 확인 완료·상담 기록·가격·상태·소유주 전화를 여기서 끝내고, 자세한 건 "전체 페이지"로 넘깁니다.</span></div>
+    <div><b>전체 페이지 · 깊게 관리</b><span>의뢰 하나의 작업 공간. 진행 현황 4칸(확인·광고·매칭·거래)으로 상태를 먼저 보여 주고, 왼쪽 속성 열 + 오른쪽 탭(개요·활동·매칭·거래·광고)에서 모든 관리를 합니다.</span></div>
+  </div>
+
+  <!-- ===================== A. 패널 ===================== -->
+  <section class="case">
+    <div class="case-head"><span class="tag">A</span><h2>오른쪽 패널 (빠른 확인)</h2></div>
+    <p class="case-desc">기존 4칸 사실 정보 + 탭 3개를 없애고, 위에서 아래로 한 번에 읽히게 했습니다. "대표 가격" 하나 대신 거래 조건을 모두 보여 주고, 상태(의뢰·매물·확인)는 제목 바로 아래 한 줄로 모았습니다.</p>
+    <div class="stage">
+      <div class="bg-list">
+        <div class="bar"></div><div class="bar2"></div><div class="head"></div>
+        <div class="row sel">매매 · 고덕그라시움 · 102 · 3401</div>
+        <div class="row">전세 · 고덕그라시움 · 101 · 3404</div><div class="row">월세 · 고덕그라시움 · 101 · 3403</div>
+        <div class="row">전세 · 고덕그라시움 · 101 · 3402</div><div class="row">매매 · 고덕그라시움 · 101 · 3501</div>
+        <div class="row">매매 · 고덕그라시움 · 101 · 3503</div><div class="row">매매 · 고덕그라시움 · 101 · 3401</div>
+      </div>
+      <div class="scrim"></div>
+      <aside class="panel">
+        <div class="panel-bar">
+          <div class="crumb">매물관리 <i data-lucide="chevron-right"></i> 고덕그라시움</div>
+          <div class="sp"></div>
+          <button class="btn btn-ghost"><i data-lucide="maximize-2"></i>전체 페이지</button>
+          <button class="icon-btn"><i data-lucide="x"></i></button>
+        </div>
+        <div class="panel-body">
+          <h3 class="title">고덕그라시움 102동 3401호</h3>
+          <div class="subline">아파트 <i class="dot"></i> 공급 73.7평 · 전용 53.0평 <i class="dot"></i> 34층 <i class="dot"></i> 서울 강동구 고덕동</div>
+          <div class="status">
+            <span class="pill p-green"><span class="d"></span>의뢰 진행</span>
+            <span class="pill p-blue"><span class="d"></span>거래중 · 가계약</span>
+            <span class="pill p-yellow"><span class="d"></span>미확인</span>
+          </div>
+
+          <div class="offers">
+            <div class="offer">
+              <span class="tt tt-sale">매매</span>
+              <span class="price">31억 9,000만</span>
+              <span class="chg"><i data-lucide="arrow-down" style="width:12px;height:12px"></i>6,000만</span>
+              <span class="meta">입주 협의 · 융자 3억<br />관리비 45만 · 수정 3일 전</span>
+            </div>
+          </div>
+
+          <div class="actions">
+            <button class="btn btn-primary"><i data-lucide="check"></i>확인 완료</button>
+            <button class="btn btn-soft"><i data-lucide="message-square"></i>상담 기록</button>
+            <button class="btn btn-soft"><i data-lucide="pencil"></i>가격·상태</button>
+            <button class="btn btn-soft"><i data-lucide="phone"></i>소유주 전화</button>
+          </div>
+
+          <hr class="sep" />
+          <div class="sec-title">지금 할 일 <span class="n">2</span></div>
+          <div class="todo"><span class="d" style="background:var(--yellow-dot)"></span><span class="txt"><b>한 번도 확인하지 않은 매물</b><span class="s">접수 50일째 · 다음 확인 예정 11월 3일</span></span><button class="btn btn-ghost">확인 완료</button></div>
+          <div class="todo"><span class="d" style="background:var(--blue-dot)"></span><span class="txt"><b>가계약 진행 중 · 잔금일 미정</b><span class="s">매수인 박서연 · 합의가 31억 5,000만</span></span><button class="btn btn-ghost">거래 보기</button></div>
+
+          <hr class="sep" />
+          <div class="props">
+            <div class="k"><i data-lucide="user-round"></i>소유주</div><div class="v"><b style="font-weight:500">김민준</b><span class="sub num">010-2345-6789</span><span class="call"><i data-lucide="phone"></i></span></div>
+            <div class="k"><i data-lucide="house"></i>거주</div><div class="v">소유주 실거주 <span class="sub">· 세입자 없음</span></div>
+            <div class="k"><i data-lucide="git-branch"></i>매칭</div><div class="v">2명 진행 <span class="sub">· 박서연 협상 · 최지훈 임장 확정</span></div>
+            <div class="k"><i data-lucide="megaphone"></i>광고</div><div class="v">이실장 게재중 <span class="sub">· 네이버 3위 · 31억 9,000만</span></div>
+            <div class="k"><i data-lucide="calendar-check"></i>확인</div><div class="v">미확인 <span class="sub">· 다음 11월 3일</span></div>
+            <div class="k"><i data-lucide="handshake"></i>공동중개</div><div class="v sub">필수 아님</div>
+          </div>
+
+          <hr class="sep" />
+          <div class="sec-title">최근 활동 <span class="more">전체 보기<i data-lucide="chevron-right" style="width:12px;height:12px"></i></span></div>
+          <div class="act"><span class="when">10/28</span><span class="ic"><i data-lucide="phone"></i></span><div class="body"><div class="t">전화 상담 <span class="muted">· 김민준</span></div><div class="q">31억 5천까지 조정 가능. 잔금은 내년 2월 이후 희망.</div></div></div>
+          <div class="act"><span class="when">10/21</span><span class="ic"><i data-lucide="footprints"></i></span><div class="body"><div class="t">방문 상담 <span class="muted">· 박서연</span></div><div class="q">임장 후 긍정적. 가격 협의 요청.</div></div></div>
+          <div class="act"><span class="when">10/15</span><span class="ic"><i data-lucide="trending-down"></i></span><div class="body"><div class="t">가격 변경 <span class="muted">· 매매</span></div><div class="q num">32억 5,000만 → 31억 9,000만 · 시세 조정</div></div></div>
+
+          <hr class="sep" />
+          <div class="sec-title">의뢰 메모</div>
+          <div class="memo">펜트하우스 · 한강뷰. 소유주 해외 체류 중이라 문자 연락 선호.</div>
+        </div>
+      </aside>
+    </div>
+    <p class="note"><b>바뀐 점</b> · 제목에 "102동 3401호"처럼 단위를 붙임 · 상태 3개(의뢰·매물·확인)를 제목 아래 한 줄로 · 거래 조건 전부 + 가격 변동 표시 · "지금 할 일"은 버튼까지 붙여 바로 처리 · 사람·매칭·광고·확인은 Notion식 속성 줄로 요약 · 탭 대신 "최근 활동 3개 + 전체 보기"</p>
+  </section>
+
+  <!-- ===================== B. 전체 페이지 ===================== -->
+  <section class="case">
+    <div class="case-head"><span class="tag">B</span><h2>전체 페이지 (깊게 관리)</h2></div>
+    <p class="case-desc">머리말에 제목·상태·주요 작업을 두고, 바로 아래 진행 현황 4칸으로 "지금 어디까지 왔는지"를 먼저 보여 줍니다. 왼쪽은 변하지 않는 속성(매물·의뢰·사람), 오른쪽은 일이 쌓이는 곳(탭)입니다. 탭은 직접 눌러 볼 수 있습니다.</p>
+    <div class="window">
+      <div class="titlebar"><span class="lights"><i></i><i></i><i></i></span><div class="crumb">매물관리 <i data-lucide="chevron-right"></i> 고덕그라시움 <i data-lucide="chevron-right"></i> 102동 3401호</div></div>
+      <div class="full">
+        <div class="head">
+          <div class="l">
+            <h3 class="title">고덕그라시움 102동 3401호</h3>
+            <div class="subline">아파트 <i class="dot"></i> 서울 강동구 고덕동 <i class="dot"></i> 공급 73.7평 · 전용 53.0평 <i class="dot"></i> 34층 <i class="dot"></i> 남향</div>
+            <div class="status">
+              <span class="pill p-green"><span class="d"></span>의뢰 진행<i data-lucide="chevron-down" style="width:12px;height:12px"></i></span>
+              <span class="pill p-blue"><span class="d"></span>거래중 · 가계약</span>
+              <span class="pill p-yellow"><span class="d"></span>미확인</span>
+            </div>
+          </div>
+          <div class="actions">
+            <button class="btn btn-primary"><i data-lucide="check"></i>확인 완료</button>
+            <button class="btn btn-soft"><i data-lucide="message-square"></i>상담 기록</button>
+            <button class="btn btn-soft"><i data-lucide="pencil"></i>가격·상태</button>
+            <button class="btn btn-soft"><i data-lucide="phone"></i>소유주 전화</button>
+            <button class="icon-btn" style="width:30px;height:30px;border-radius:999px;background:var(--surface)"><i data-lucide="more-horizontal"></i></button>
+          </div>
+        </div>
+
+        <div class="overview">
+          <div class="ov warn"><div class="k"><i data-lucide="calendar-check"></i>확인</div><div class="v">미확인</div><div class="s">접수 50일째 · 다음 11월 3일</div></div>
+          <div class="ov"><div class="k"><i data-lucide="megaphone"></i>광고</div><div class="v">이실장 게재중</div><div class="s">네이버 3위 · 더 싼 광고 없음</div></div>
+          <div class="ov"><div class="k"><i data-lucide="git-branch"></i>매칭</div><div class="v">2명 진행</div><div class="s">박서연 협상 · 최지훈 임장 확정</div></div>
+          <div class="ov"><div class="k"><i data-lucide="handshake"></i>거래</div><div class="v">가계약</div><div class="stage-track"><i class="on"></i><i class="on"></i><i></i><i></i><i></i></div><div class="s">매수인 박서연 · 31억 5,000만</div></div>
+        </div>
+
+        <div class="body">
+          <aside class="side">
+            <h3>매물</h3>
+            <div class="props">
+              <div class="k"><i data-lucide="building-2"></i>유형</div><div class="v">아파트 <span class="sub">· 74A</span></div>
+              <div class="k"><i data-lucide="hash"></i>동 · 호</div><div class="v">102동 3401호</div>
+              <div class="k"><i data-lucide="layers"></i>층</div><div class="v">34층 <span class="sub">/ 35층</span></div>
+              <div class="k"><i data-lucide="ruler"></i>면적</div><div class="v">공급 73.7평 <span class="sub">· 전용 53.0평</span></div>
+              <div class="k"><i data-lucide="bed-double"></i>방 · 욕실</div><div class="v">4 · 2</div>
+              <div class="k"><i data-lucide="compass"></i>향</div><div class="v">남향</div>
+            </div>
+            <h3>의뢰</h3>
+            <div class="props">
+              <div class="k"><i data-lucide="circle-dot"></i>상태</div><div class="v"><span class="pill p-green"><span class="d"></span>진행</span></div>
+              <div class="k"><i data-lucide="calendar"></i>접수</div><div class="v num">2026.09.12</div>
+              <div class="k"><i data-lucide="user-round-check"></i>담당</div><div class="v">이현수</div>
+              <div class="k"><i data-lucide="handshake"></i>공동중개</div><div class="v sub">필수 아님</div>
+            </div>
+            <h3>사람</h3>
+            <div class="person"><span class="avatar">김</span><div><div class="nm">김민준 <span class="pill p-gray" style="height:18px;font-size:11px">주 연락처</span></div><div class="rl">소유주 · 010-2345-6789</div></div><span class="call icon-btn"><i data-lucide="phone"></i></span></div>
+            <div class="person"><span class="avatar">이</span><div><div class="nm">이수진</div><div class="rl">대리인 · 배우자 · 010-9876-5432</div></div><span class="call icon-btn"><i data-lucide="phone"></i></span></div>
+            <button class="btn btn-ghost" style="margin-top:4px"><i data-lucide="plus"></i>관련인 · 세입자 추가</button>
+          </aside>
+
+          <main>
+            <div class="tabs" id="tabs">
+              <button class="on" data-t="overview">개요</button>
+              <button data-t="activity">활동<span class="n">6</span></button>
+              <button data-t="matches">매칭<span class="n">2</span></button>
+              <button data-t="deals">거래<span class="n">1</span></button>
+              <button data-t="ads">광고<span class="n">2</span></button>
+            </div>
+
+            <div class="tabpane" data-p="overview">
+              <div class="sec-title">거래 조건 <span class="n">1</span><span class="more"><i data-lucide="plus" style="width:12px;height:12px"></i>거래 조건 추가</span></div>
+              <div class="lcard">
+                <div class="top">
+                  <span class="tt tt-sale">매매</span>
+                  <span class="price">31억 9,000만</span>
+                  <span class="chg" style="font-size:12px;color:#2f7d4f;display:inline-flex;align-items:center"><i data-lucide="arrow-down" style="width:12px;height:12px"></i>6,000만</span>
+                  <span class="pill p-blue" style="margin-left:4px"><span class="d"></span>거래중</span>
+                  <span class="sp"></span>
+                  <button class="icon-btn"><i data-lucide="pencil"></i></button>
+                  <button class="icon-btn"><i data-lucide="more-horizontal"></i></button>
+                </div>
+                <div class="facts">
+                  <div><div class="k">입주</div><div class="v">협의</div></div>
+                  <div><div class="k">융자</div><div class="v">3억</div></div>
+                  <div><div class="k">관리비</div><div class="v">45만</div></div>
+                  <div><div class="k">수정</div><div class="v">3일 전</div></div>
+                </div>
+                <div class="adchips">
+                  <span class="adchip"><span class="pill p-green" style="height:16px;padding:0 5px;font-size:11px">게재중</span>이실장 · 31억 9,000만</span>
+                  <span class="adchip faint">부동산뱅크 · 종료</span>
+                  <span class="sp" style="flex:1"></span>
+                  <button class="btn btn-ghost"><i data-lucide="globe"></i>공개 매물 설정</button>
+                </div>
+              </div>
+
+              <div class="grid2">
+                <div>
+                  <div class="sec-title">지금 할 일 <span class="n">2</span></div>
+                  <div class="todo"><span class="d" style="background:var(--yellow-dot)"></span><span class="txt"><b>한 번도 확인하지 않은 매물</b><span class="s">다음 확인 예정 11월 3일</span></span><button class="btn btn-ghost">확인 완료</button></div>
+                  <div class="todo"><span class="d" style="background:var(--blue-dot)"></span><span class="txt"><b>잔금일 미정</b><span class="s">가계약 10/30 · 박서연</span></span><button class="btn btn-ghost">거래 보기</button></div>
+                </div>
+                <div>
+                  <div class="sec-title">의뢰 메모</div>
+                  <div class="memo">펜트하우스 · 한강뷰. 소유주 해외 체류 중이라 문자 연락 선호.</div>
+                  <div class="sec-title" style="margin-top:16px">비공개 메모 <i data-lucide="lock" style="width:12px;height:12px;color:var(--fg3)"></i></div>
+                  <div class="memo">최저 31억까지 가능하다고 함 (10/28 통화).</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="tabpane" data-p="activity" hidden>
+              <div class="composer"><i data-lucide="message-square"></i>상담 내용을 기록하세요<span class="sp"></span><span class="btn btn-soft">전화</span><span class="btn btn-soft">방문</span></div>
+              <div class="act"><span class="when">10/30</span><span class="ic"><i data-lucide="handshake"></i></span><div class="body"><div class="t">가계약 <span class="muted">· 박서연 · 31억 5,000만</span></div></div></div>
+              <div class="act"><span class="when">10/28</span><span class="ic"><i data-lucide="phone"></i></span><div class="body"><div class="t">전화 상담 <span class="muted">· 김민준</span></div><div class="q">31억 5천까지 조정 가능. 잔금은 내년 2월 이후 희망.</div></div></div>
+              <div class="act"><span class="when">10/21</span><span class="ic"><i data-lucide="footprints"></i></span><div class="body"><div class="t">방문 상담 <span class="muted">· 박서연</span></div><div class="q">임장 후 긍정적. 가격 협의 요청.</div></div></div>
+              <div class="act"><span class="when">10/18</span><span class="ic"><i data-lucide="git-branch"></i></span><div class="body"><div class="t">매칭 <span class="muted">· 최지훈 · 임장 확정</span></div></div></div>
+              <div class="act"><span class="when">10/15</span><span class="ic"><i data-lucide="trending-down"></i></span><div class="body"><div class="t">가격 변경 <span class="muted">· 매매</span></div><div class="q num">32억 5,000만 → 31억 9,000만 · 시세 조정</div></div></div>
+              <div class="act"><span class="when">09/12</span><span class="ic"><i data-lucide="inbox"></i></span><div class="body"><div class="t">의뢰 접수 <span class="muted">· 김민준 · 매매 32억 5,000만</span></div></div></div>
+            </div>
+
+            <div class="tabpane" data-p="matches" hidden>
+              <div class="mrow h"><span>매수 고객</span><span>단계</span><span>예산</span><span>최근</span></div>
+              <div class="mrow"><span><b style="font-weight:500">박서연</b></span><span><span class="pill p-blue"><span class="d"></span>협상</span></span><span class="num">30억~32억</span><span class="muted">10/28</span></div>
+              <div class="mrow"><span><b style="font-weight:500">최지훈</b></span><span><span class="pill p-gray"><span class="d"></span>임장 확정</span></span><span class="num">~33억</span><span class="muted">10/18</span></div>
+              <button class="btn btn-ghost" style="margin-top:8px"><i data-lucide="plus"></i>매칭 생성</button>
+            </div>
+
+            <div class="tabpane" data-p="deals" hidden>
+              <div class="lcard">
+                <div class="top"><span class="tt tt-sale">매매</span><b style="font-size:15px">가계약</b><span class="sp"></span><span class="muted">10/30 단계 변경</span></div>
+                <div class="stage-track" style="margin-top:12px"><i class="on"></i><i class="on"></i><i></i><i></i><i></i></div>
+                <div class="facts"><div><div class="k">합의가</div><div class="v">31억 5,000만</div></div><div><div class="k">매수인</div><div class="v">박서연</div></div><div><div class="k">매도인</div><div class="v">김민준</div></div><div><div class="k">잔금</div><div class="v">미정</div></div></div>
+              </div>
+            </div>
+
+            <div class="tabpane" data-p="ads" hidden>
+              <div class="lcard"><div class="top"><span class="pill p-green"><span class="d"></span>게재중</span><b>이실장</b><span class="muted">· 31억 9,000만 · 09/15부터</span><span class="sp"></span><span class="muted">네이버 3위</span><button class="icon-btn"><i data-lucide="external-link"></i></button></div></div>
+              <div class="lcard"><div class="top"><span class="pill p-gray"><span class="d"></span>종료</span><b>부동산뱅크</b><span class="muted">· 32억 5,000만 · 09/15~10/14</span></div></div>
+            </div>
+          </main>
+        </div>
+      </div>
+    </div>
+    <p class="note"><b>바뀐 점</b> · 패널에만 있던 확인 완료·의뢰 상태 변경·지금 할 일·광고 이력을 페이지에도 넣음 · 진행 현황 4칸으로 위계를 만듦(주의할 칸은 노란 바탕) · 속성(변하지 않는 것)과 활동(쌓이는 것)을 좌우로 분리 · 상담·확인·가격 변경·매칭·거래 이벤트를 "활동" 한 줄로 합침 · 용어 통일(소유주 · 세입자 · 게재중)</p>
+  </section>
+</div>
+<script>
+  document.getElementById('tabs').addEventListener('click', (e) => {
+    const b = e.target.closest('button'); if (!b) return;
+    document.querySelectorAll('#tabs button').forEach((x) => x.classList.toggle('on', x === b));
+    document.querySelectorAll('.tabpane').forEach((p) => { p.hidden = p.dataset.p !== b.dataset.t; });
+  });
+  lucide.createIcons();
+</script>
+</body>
+</html>

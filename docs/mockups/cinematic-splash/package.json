@@ -1,0 +1,1 @@
+{"name":"estait-cinematic-splash","private":true,"type":"module","scripts":{"start":"python3 -m http.server 8775 --bind 127.0.0.1"},"dependencies":{"three":"0.186.0"}}

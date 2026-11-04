@@ -1,0 +1,30 @@
+/* Proposed Neutral Ink tokens. Preview only; not imported by the app. */
+:root {
+  --canvas: #FAFAFA;
+  --subtle: #F4F4F5;
+  --hover: #EDEDEE;
+  --border: #E4E4E7;
+  --input-border: #8C8C93;
+  --text: #18181B;
+  --text-secondary: #626269;
+  --primary: #27272A;
+  --primary-hover: #3F3F46;
+  --selected: #EEEEF0;
+  --selected-text: #27272A;
+  --focus: #2563EB;
+  --surface: #FFFFFF;
+  --on-primary: #FFFFFF;
+  --info-bg: #EFF6FF;
+  --info-text: #1D4ED8;
+  --success-bg: #F0FDF4;
+  --success-text: #166534;
+  --warning-bg: #FEFCE8;
+  --warning-text: #854D0E;
+  --danger-bg: #FEF2F2;
+  --danger-text: #B91C1C;
+  --row-height: 44px;
+  --control-height: 32px;
+  --radius-control: 6px;
+  --radius-overlay: 8px;
+  --font-body-size: 14px;
+}

@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>에스테잇플로우 · 고풍스러운 시작 화면 3안</title>
+<link rel="stylesheet" href="./style.css">
+<script type="importmap">{"imports":{"three":"./node_modules/three/build/three.module.js","three/addons/":"./node_modules/three/examples/jsm/"}}</script>
+</head>
+<body data-theme="ledger">
+<header class="review-header">
+  <div class="review-name">ESTAIT <span>시작 화면 시안</span></div>
+  <nav class="directions" aria-label="디자인 선택">
+    <button data-design="ledger" aria-pressed="true"><span>01</span> 가죽 장부</button>
+    <button data-design="cards" aria-pressed="false"><span>02</span> 매물 카드</button>
+    <button data-design="plaque" aria-pressed="false"><span>03</span> 황동 문패</button>
+  </nav>
+  <button id="viewMode" class="view-mode" aria-pressed="false">스플래시로 보기 ↗</button>
+</header>
+<main id="experience" class="experience">
+  <section class="visual-panel" aria-label="3D 시작 화면">
+    <header class="product-brand"><svg viewBox="15 15 70 70" aria-hidden="true"><path d="M19.142 32.872 25.370 77.037 65.571 81 63.306 65.995 41.224 63.164 36.977 35.420Z M35.845 19 38.110 34.005 60.758 37.402 64.721 64.580 80.858 66.562 74.347 24.096Z"/></svg><span>에스테잇플로우</span><small>부동산 관리 프로그램</small></header>
+    <div id="scene" class="scene"><div id="fallback" class="fallback">에스테잇플로우<span>부동산 관리 프로그램</span></div></div>
+    <div class="material-label"><span id="materialLabel">가죽 · 종이 · 황동</span><span id="designNumber">STUDY 01</span></div>
+  </section>
+  <section class="login-panel" aria-label="로그인 미리보기">
+    <div class="login-top"><span>사무소 계정</span><span>PREVIEW</span></div>
+    <div class="login-content">
+      <div class="fine-rule"></div><h1>로그인</h1><p class="login-description">사무소 계정으로 업무를 시작하세요.</p>
+      <form id="loginForm">
+        <label for="email">아이디 또는 이메일</label><input id="email" autocomplete="off" placeholder="office@estait.com">
+        <div class="password-label"><label for="password">비밀번호</label><button type="button" class="text-button" id="forgot">비밀번호 찾기</button></div>
+        <input id="password" type="password" autocomplete="off" placeholder="비밀번호 입력">
+        <button type="submit" class="login-button"><span>로그인</span><span aria-hidden="true">↗</span></button>
+        <p class="form-note" id="formNote" role="status">디자인 미리보기 · 입력 내용은 전송되지 않습니다.</p>
+      </form>
+      <div class="signup">처음 이용하시나요? <button type="button" class="text-button" id="signup">사무소 등록</button></div>
+    </div>
+    <footer>© 2026 Estait Inc.</footer>
+  </section>
+</main>
+<aside class="controls" aria-label="시안 재생 컨트롤">
+  <div class="design-caption"><strong id="designTitle">가죽 매물 장부</strong><span id="designDetail">금박 표지와 크림색 매물대장</span></div>
+  <div class="transport"><button id="replay" aria-label="처음부터 다시 재생">↺</button><button id="play" aria-label="일시정지">Ⅱ</button><input id="timeline" type="range" min="0" max="6" step="0.01" value="0" aria-label="애니메이션 구간"><output id="timecode">0.0 / 6.0</output><select id="speed" aria-label="재생 속도"><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="1.5">1.5×</option></select><label class="loop"><input id="loop" type="checkbox">반복</label></div>
+  <div class="frames"><button data-time="0.9">처음</button><button data-time="3.6">전환</button><button data-time="6">정착</button></div>
+</aside>
+<script type="module" src="./scene.js"></script>
+</body>
+</html>

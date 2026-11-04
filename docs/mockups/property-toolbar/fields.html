@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>툴바 입력칸 3안</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
+<script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js"></script>
+<style>
+  :root {
+    --fg: #37352f; --fg2: #787774; --fg3: #a5a39f;
+    --surface: #f1f0ec; --set: #ebeae6; --line: #e9e9e7; --divider: rgba(55,53,47,.14);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: #ecebe7; color: var(--fg);
+    font-family: "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", sans-serif;
+    font-size: 13px; -webkit-font-smoothing: antialiased; }
+  svg.lucide { width: 14px; height: 14px; stroke-width: 1.75; flex: none; }
+  .page { width: 1248px; margin: 0 auto; padding: 32px 24px 100px; }
+  h1 { font-size: 21px; margin: 0 0 6px; }
+  .lead { margin: 0; color: #5f5e5a; font-size: 14px; line-height: 1.6; }
+  .case { margin-top: 34px; }
+  .head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 4px; }
+  .tag { display: inline-grid; place-items: center; min-width: 22px; height: 22px; padding: 0 6px; border-radius: 6px; background: #1f1f1f; color: #fff; font-size: 12px; font-weight: 600; }
+  .tag.ref { background: #8a8984; }
+  .head h2 { font-size: 16px; margin: 0; }
+  .desc { margin: 0 0 10px 32px; color: #5f5e5a; font-size: 13.5px; line-height: 1.6; }
+  .frame { background: #fff; border-radius: 10px; box-shadow: 0 0 0 1px rgba(0,0,0,.06), 0 8px 24px rgba(0,0,0,.05); overflow: hidden; }
+  .state { display: flex; align-items: center; }
+  .state-label { width: 54px; flex: none; padding-left: 12px; font-size: 11px; color: var(--fg3); }
+  .r1 { flex: 1; display: flex; align-items: center; gap: 8px; padding: 10px 12px 10px 0; }
+  .r2 { display: flex; align-items: center; gap: 6px; padding: 8px 12px 8px 66px; border-top: 1px solid var(--line); }
+  .state + .state { border-top: 1px dashed #efeeeb; }
+  .grow { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+
+  /* 공통 부품 */
+  .tabs { display: flex; height: 30px; padding: 2px; gap: 1px; background: var(--surface); flex: none; }
+  .tabs span { display: inline-flex; align-items: center; height: 26px; padding: 0 12px; color: var(--fg2); }
+  .tabs span.on { background: var(--fg); color: #fff; font-weight: 500; }
+  .toggle { display: flex; height: 30px; padding: 2px; gap: 1px; background: var(--surface); flex: none; }
+  .toggle span { display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 10px; font-size: 12px; color: var(--fg2); }
+  .toggle span.on { background: #fff; color: var(--fg); font-weight: 500; }
+  .btn { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 14px; background: var(--fg); color: #fff; font-weight: 500; white-space: nowrap; }
+  .field { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; background: var(--surface); white-space: nowrap; flex: none; }
+  .field svg { color: var(--fg2); }
+  .ph { color: var(--fg2); }
+  .lbl { color: var(--fg2); }
+  .val { font-weight: 600; font-variant-numeric: tabular-nums; }
+  .sfx { color: var(--fg2); margin-left: -4px; }
+  .x { color: var(--fg3); margin-left: auto; }
+  .search { flex: 1 1 auto; min-width: 200px; max-width: 420px; }
+  .search .q { flex: 1; }
+  kbd { display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 4px; border: 1px solid #dcdbd8; background: #fff; color: var(--fg2); font: 11px/1 ui-monospace, Menlo, monospace; margin-left: auto; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px 0 12px; border: 1px solid #e3e2de; color: var(--fg2); font-size: 12.5px; white-space: nowrap; }
+  .chip.set { background: var(--set); border-color: transparent; color: var(--fg); padding-right: 6px; }
+  .chip.set .lbl { color: var(--fg2); }
+  .chip.set b { font-weight: 600; }
+  .chip svg { width: 12px; height: 12px; color: var(--fg3); }
+  .add { display: inline-flex; align-items: center; gap: 4px; height: 28px; padding: 0 10px; color: var(--fg3); font-size: 12.5px; }
+  .ghost { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 9px; color: var(--fg2); font-size: 12.5px; }
+  .sep { width: 1px; height: 16px; background: var(--line); }
+
+  /* ---------- 현재 ---------- */
+  .v-now .tabs, .v-now .toggle, .v-now .tabs span, .v-now .toggle span { border-radius: 999px; }
+  .v-now .btn { border-radius: 6px; }
+  .v-now .group { display: flex; height: 30px; border-radius: 6px; background: var(--surface); overflow: hidden; flex: none; }
+  .v-now .group.set { background: var(--set); }
+  .v-now .group .seg { display: inline-flex; align-items: center; gap: 6px; height: 100%; padding: 0 10px; }
+  .v-now .group .gap { width: 2px; background: #fff; }
+  .v-now .group .unit { width: 88px; justify-content: flex-end; }
+  .v-now .group .unit.ho { width: 100px; }
+  .v-now .group .unit .sfx { margin-left: 0; }
+  .v-now .search { border-radius: 6px; }
+  .v-now .chip, .v-now .add { border-radius: 999px; }
+
+  /* ---------- A. 모두 알약 · 칸마다 "라벨 값" ---------- */
+  .v-a .tabs, .v-a .toggle, .v-a .tabs span, .v-a .toggle span, .v-a .btn, .v-a .field, .v-a .chip, .v-a .add { border-radius: 999px; }
+  .v-a .r1 { gap: 6px; }
+  .v-a .field.site { min-width: 168px; }
+  .v-a .field.dong { width: 96px; }
+  .v-a .field.ho { width: 108px; }
+  .v-a .field.set { background: var(--set); }
+  .v-a .search { padding-left: 14px; }
+
+  /* ---------- B. 한 줄 검색바 ---------- */
+  .v-b .tabs, .v-b .toggle, .v-b .tabs span, .v-b .toggle span, .v-b .btn, .v-b .chip, .v-b .add { border-radius: 999px; }
+  .v-b .bar { display: flex; align-items: center; height: 30px; border-radius: 999px; background: var(--surface); flex: 1 1 auto; max-width: 700px; min-width: 0; }
+  .v-b .bar .seg { display: inline-flex; align-items: center; gap: 6px; height: 100%; padding: 0 12px; white-space: nowrap; }
+  .v-b .bar .seg.site { min-width: 168px; padding-left: 14px; }
+  .v-b .bar .seg.dong { width: 82px; }
+  .v-b .bar .seg.ho { width: 92px; }
+  .v-b .bar .seg.q { flex: 1; min-width: 0; }
+  .v-b .bar .seg.q .text { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+  .v-b .bar .div { width: 1px; height: 16px; background: var(--divider); flex: none; }
+  .v-b .bar .seg .sfx { margin-left: -5px; }
+  .v-b .bar .x { margin: 0 2px 0 -4px; }
+
+  /* ---------- C. 모두 사각 · 정렬만 맞춤 ---------- */
+  .v-c .tabs, .v-c .toggle, .v-c .btn, .v-c .chip, .v-c .add { border-radius: 6px; }
+  .v-c .tabs span, .v-c .toggle span { border-radius: 4px; }
+  .v-c .group { display: flex; align-items: center; height: 30px; border-radius: 6px; background: var(--surface); flex: none; }
+  .v-c .group.set { background: var(--set); }
+  .v-c .group .seg { display: inline-flex; align-items: center; gap: 6px; height: 100%; padding: 0 10px; }
+  .v-c .group .seg.site { min-width: 160px; }
+  .v-c .group .unit { width: 84px; }
+  .v-c .group .unit.ho { width: 96px; }
+  .v-c .group .div { width: 1px; height: 16px; background: var(--divider); }
+  .v-c .search { border-radius: 6px; }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>툴바 입력칸 — 일관성 3안</h1>
+  <p class="lead">색은 그대로(#f1f0ec 바탕, 값이 있으면 #ebeae6)이고, 모서리 · 정렬 · 칸 나눔만 다릅니다. 각 안마다 위는 빈 상태, 아래는 값이 들어간 상태입니다.</p>
+  <div id="cases"></div>
+</div>
+<script>
+const ic = (n) => `<i data-lucide="${n}"></i>`;
+const tabs = (on) => `<div class="tabs">${['전체','매매','전세','월세'].map(t => `<span class="${t === on ? 'on' : ''}">${t}</span>`).join('')}</div>`;
+const right = `<div class="grow"><div class="toggle"><span class="on">${ic('list')}목록</span><span>${ic('map')}지도</span></div><span class="btn">${ic('plus')}새 매물 등록</span></div>`;
+const row2 = (filled) => `<div class="r2">
+  ${filled ? `<span class="chip set"><span class="lbl">매물상태</span><b>거래중</b>${ic('x')}</span>` : `<span class="chip">매물상태${ic('chevron-down')}</span>`}
+  <span class="chip">${filled ? '매매가' : '가격/보증금'}${ic('chevron-down')}</span><span class="chip">공급평형${ic('chevron-down')}</span><span class="chip">방/욕실${ic('chevron-down')}</span>
+  <span class="add">${ic('plus')}필터</span>
+  <div class="grow" style="gap:2px">${filled ? `<span class="ghost">${ic('rotate-ccw')}초기화</span><span class="sep"></span>` : ''}<span class="ghost">${ic('columns-3')}컬럼</span></div></div>`;
+const search = (q) => `<span class="field search">${ic('search')}<span class="q ${q ? '' : 'ph'}">${q || '주소, 연락처, 메모'}</span>${q ? `<span class="x">${ic('x')}</span>` : '<kbd>/</kbd>'}</span>`;
+
+const V = {
+  now(f) {
+    return `${tabs(f ? '매매' : '전체')}
+      <div class="group ${f ? 'set' : ''}">
+        <span class="seg">${ic('map-pin')}<span class="${f ? 'val' : 'ph'}">${f ? '고덕그라시움' : '지역·단지 전체'}</span>${ic('chevron-down')}</span><span class="gap"></span>
+        <span class="seg unit">${f ? '<span class="val">101</span>' : ''}<span class="sfx">동</span></span><span class="gap"></span>
+        <span class="seg unit ho">${f ? '<span class="val">3401</span>' : ''}<span class="sfx">호</span></span>
+        ${f ? `<span class="seg" style="padding:0 8px 0 0;color:var(--fg3)">${ic('x')}</span>` : ''}
+      </div>${search(f ? '급매' : '')}${right}`;
+  },
+  a(f) {
+    return `${tabs(f ? '매매' : '전체')}
+      <span class="field site ${f ? 'set' : ''}">${ic('map-pin')}<span class="${f ? 'val' : 'ph'}">${f ? '고덕그라시움' : '지역·단지 전체'}</span><span class="x">${ic(f ? 'x' : 'chevron-down')}</span></span>
+      <span class="field dong ${f ? 'set' : ''}"><span class="lbl">동</span>${f ? '<span class="val">101</span>' : ''}</span>
+      <span class="field ho ${f ? 'set' : ''}"><span class="lbl">호</span>${f ? '<span class="val">3401</span>' : ''}</span>
+      ${search(f ? '급매' : '')}${right}`;
+  },
+  b(f) {
+    return `${tabs(f ? '매매' : '전체')}
+      <div class="bar">
+        <span class="seg site">${ic('map-pin')}<span class="${f ? 'val' : 'ph'}">${f ? '고덕그라시움' : '지역·단지 전체'}</span>${ic('chevron-down')}</span><span class="div"></span>
+        <span class="seg dong">${f ? '<span class="val">101</span><span class="sfx">동</span>' : '<span class="ph">동</span>'}</span><span class="div"></span>
+        <span class="seg ho">${f ? '<span class="val">3401</span><span class="sfx">호</span>' : '<span class="ph">호</span>'}</span><span class="div"></span>
+        <span class="seg q">${ic('search')}<span class="text ${f ? '' : 'ph'}">${f ? '급매' : '주소, 연락처, 메모'}</span>${f ? `<span style="color:var(--fg3)">${ic('x')}</span>` : '<kbd>/</kbd>'}</span>
+      </div>${right}`;
+  },
+  c(f) {
+    return `${tabs(f ? '매매' : '전체')}
+      <div class="group ${f ? 'set' : ''}">
+        <span class="seg site">${ic('map-pin')}<span class="${f ? 'val' : 'ph'}">${f ? '고덕그라시움' : '지역·단지 전체'}</span><span style="margin-left:auto;display:inline-flex">${ic('chevron-down')}</span></span><span class="div"></span>
+        <span class="seg unit">${f ? '<span class="val">101</span><span class="sfx">동</span>' : '<span class="ph">동</span>'}</span><span class="div"></span>
+        <span class="seg unit ho">${f ? '<span class="val">3401</span><span class="sfx">호</span>' : '<span class="ph">호</span>'}</span>
+        ${f ? `<span class="seg" style="padding:0 8px 0 0;color:var(--fg3)">${ic('x')}</span>` : ''}
+      </div>${search(f ? '급매' : '')}${right}`;
+  },
+};
+const CASES = [
+  { id: 'now', tag: '현재', ref: true, title: '지금 앱', desc: '탭·보기 전환은 둥근 알약, 위치·검색은 6px 사각. 동·호만 오른쪽 정렬이고, 흰 틈 때문에 위치 묶음이 끊겨 보입니다.' },
+  { id: 'a', tag: 'A', title: '모두 알약 · 칸마다 "라벨 값"', desc: '1행과 2행의 모든 요소를 둥근 알약으로 맞추고, 위치·동·호·검색을 각각 따로 떨어진 알약으로 만듭니다. 모든 칸은 왼쪽부터 "라벨 → 값" 순서로 읽힙니다(2행 필터 칩과 같은 읽기 방식).' },
+  { id: 'b', tag: 'B', title: '한 줄 검색바', desc: '위치·동·호·검색을 하나의 둥근 검색바로 합치고 얇은 세로선으로만 나눕니다. 1행이 "거래유형 + 검색바 + 보기·등록" 세 덩어리로 정리되어 가장 단순합니다. 동·호는 비면 "동", 값이 있으면 "101동"으로 왼쪽부터 읽힙니다.' },
+  { id: 'c', tag: 'C', title: '모두 사각 · 정렬만 맞춤', desc: '지금 구조를 유지하고 모서리를 전부 6px 사각으로 통일합니다(탭·보기 전환·필터 칩 포함). 흰 틈은 얇은 세로선으로, 동·호는 왼쪽 정렬로 바꿉니다. 변화가 가장 적습니다.' },
+];
+document.getElementById('cases').innerHTML = CASES.map((c) => `
+  <section class="case">
+    <div class="head"><span class="tag ${c.ref ? 'ref' : ''}">${c.tag}</span><h2>${c.title}</h2></div>
+    <p class="desc">${c.desc}</p>
+    <div class="frame v-${c.id}">
+      <div class="state"><span class="state-label">빈 상태</span><div class="r1">${V[c.id](false)}</div></div>
+      ${row2(false)}
+      <div class="state" style="border-top:1px solid var(--line)"><span class="state-label">값 있음</span><div class="r1">${V[c.id](true)}</div></div>
+      ${row2(true)}
+    </div>
+  </section>`).join('');
+lucide.createIcons();
+</script>
+</body>
+</html>

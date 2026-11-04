@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>D 담당자 보드</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+<link rel="stylesheet" href="shared/base.css">
+<style>
+.summary { display: flex; align-items: stretch; gap: 0; border-bottom: 1px solid var(--border); flex-shrink: 0; overflow-x: auto; }
+.stat { display: flex; flex-direction: column; align-items: flex-start; gap: 0; padding: 10px 22px 9px 16px; border-right: 1px solid var(--border-soft); white-space: nowrap; text-align: left; position: relative; min-width: 104px; }
+.stat:hover { background: var(--surface-3); }
+.stat span { font-size: 11.5px; color: var(--muted-strong); }
+.stat b { font-size: 21px; font-weight: 700; letter-spacing: -0.5px; line-height: 1.25; font-variant-numeric: tabular-nums; }
+.stat.overdue b { color: var(--danger-strong); }
+.stat.today b { color: var(--warning-strong); }
+.stat[aria-pressed="true"] { background: var(--surface); }
+.stat[aria-pressed="true"]::after { content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; background: var(--fg); }
+.summary .tail { margin-left: auto; display: flex; align-items: center; gap: 10px; padding: 0 16px; min-width: 240px; }
+.summary .tail .search { max-width: none; }
+
+.board { flex: 1; min-height: 0; overflow: auto; background: var(--surface); }
+.lanes { display: grid; grid-template-columns: repeat(5, minmax(232px, 1fr)); gap: 10px; padding: 12px; min-height: 100%; min-width: 1224px; align-items: start; }
+.lane { background: var(--surface-2); border-radius: 9px; display: flex; flex-direction: column; min-height: 240px; transition: box-shadow 0.12s ease-out, background-color 0.12s ease-out; }
+.lane.over { background: #e9eef3; box-shadow: inset 0 0 0 2px var(--ring); }
+.lane.unassigned { background: #fbf5e6; }
+.lane.unassigned.over { background: #e9eef3; }
+.lane-head { position: sticky; top: 0; z-index: 2; padding: 10px 11px 9px; background: inherit; border-radius: 9px 9px 0 0; }
+.lane-title { display: flex; align-items: center; gap: 7px; }
+.lane-title b { font-weight: 700; font-size: 13.5px; letter-spacing: -0.2px; }
+.lane-title small { font-size: 11px; color: var(--muted); }
+.lane-total { margin-left: auto; font-size: 12px; color: var(--muted-strong); font-variant-numeric: tabular-nums; }
+.load { display: flex; height: 5px; border-radius: 3px; overflow: hidden; margin-top: 8px; background: rgba(55, 53, 47, 0.07); gap: 1px; }
+.load i { display: block; height: 100%; }
+.l-overdue { background: var(--danger); }
+.l-today { background: var(--warning); }
+.l-soon { background: #a9a7a0; }
+.l-none { background: #d9d8d4; }
+.lane-counts { display: flex; gap: 9px; margin-top: 5px; font-size: 11.5px; color: var(--muted-strong); font-variant-numeric: tabular-nums; }
+.lane-counts .o { color: var(--danger-strong); font-weight: 600; }
+.lane-counts .t { color: var(--warning-strong); font-weight: 600; }
+.cards { padding: 0 7px 8px; display: flex; flex-direction: column; gap: 6px; flex: 1; }
+.lane-sep { font-size: 11px; color: var(--muted-strong); padding: 6px 4px 0; font-weight: 600; }
+.card { background: #fff; border-radius: 7px; padding: 8px 10px 7px; box-shadow: 0 0 0 1px rgba(55, 53, 47, 0.06), 0 1px 2px rgba(55, 53, 47, 0.06); cursor: grab; position: relative; }
+.card:hover { box-shadow: 0 0 0 1px rgba(55, 53, 47, 0.12), 0 3px 8px rgba(55, 53, 47, 0.1); }
+.card[data-bucket="overdue"] { box-shadow: inset 3px 0 0 var(--danger), 0 0 0 1px rgba(55, 53, 47, 0.06), 0 1px 2px rgba(55, 53, 47, 0.06); }
+.card[data-bucket="today"] { box-shadow: inset 3px 0 0 var(--warning), 0 0 0 1px rgba(55, 53, 47, 0.06), 0 1px 2px rgba(55, 53, 47, 0.06); }
+.card.dragging { opacity: 0.4; }
+.c-top { display: flex; align-items: center; gap: 5px; min-width: 0; }
+.c-name { font-weight: 700; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; letter-spacing: -0.15px; }
+.c-name:hover { text-decoration: underline; text-underline-offset: 2px; }
+.c-top .badge { margin-left: auto; height: 17px; font-size: 11px; padding: 0 5px; }
+.c-title { font-size: 12px; color: var(--muted-strong); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.c-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 2px 6px; margin-top: 3px; font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.c-meta b { font-weight: 600; }
+.c-foot { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-top: 5px; min-height: 22px; }
+.c-foot .due { margin-left: 0; }
+.c-foot .due-tomorrow, .c-foot .due-week, .c-foot .due-later { padding-left: 0; }
+.c-foot .assign { opacity: 0; font-size: 11.5px; transition: opacity 0.1s ease-out; text-align: right; }
+.card:hover .assign, .card:focus-within .assign { opacity: 1; }
+.c-note { font-size: 11.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 1px; }
+.c-connect { font-size: 11.5px; font-weight: 600; color: var(--warning-strong); text-decoration: underline; text-underline-offset: 2px; }
+.lane-empty { padding: 24px 8px; text-align: center; color: var(--muted); font-size: 12px; }
+.hintbar { display: flex; justify-content: space-between; gap: 12px; padding: 5px 16px; border-top: 1px solid var(--border); font-size: 11.5px; color: var(--muted); flex-shrink: 0; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script src="shared/data.js"></script>
+<script src="shared/app.js"></script>
+<script>
+(function () {
+  const D = Demo;
+  const { esc, icon } = D;
+  const view = D.mount({ active: "d", crumb: "담당자 보드" });
+  const S = { filter: "all", q: "" };
+
+  view.innerHTML = `
+    <div class="summary" id="summary"></div>
+    <div class="board" id="board"><div class="lanes" id="lanes"></div></div>
+    <div class="hintbar"><span>카드를 다른 담당자 칸으로 끌면 담당이 바뀌고, 다음 일정을 누르면 상담을 남깁니다</span><span>끌기 대신 카드 위에 나타나는 담당 선택도 쓸 수 있습니다</span></div>`;
+  const $ = (id) => document.getElementById(id);
+
+  const digits = (s) => s.replace(/\D/g, "");
+  function matchQ(it) {
+    if (!S.q) return true;
+    if (it.title.includes(S.q)) return true;
+    const qd = digits(S.q);
+    return it.people.some((p) => { const c = D.contact(p.c); return c.name.includes(S.q) || (qd.length >= 3 && digits(c.phone).includes(qd)); });
+  }
+  function inFilter(it, f) {
+    const b = D.bucketOf(it);
+    if (f === "overdue") return b === "overdue";
+    if (f === "today") return b === "today";
+    if (f === "week") return b === "tomorrow" || b === "week";
+    if (f === "none") return b === "none" && it.status !== "hold" && !!it.primary;
+    if (f === "unassigned") return !it.assignee;
+    if (f === "unknown") return !it.primary;
+    return true;
+  }
+
+  function renderSummary() {
+    const all = D.items().filter(matchQ);
+    const stats = [
+      ["all", "전체 의뢰", ""], ["overdue", "지남", "overdue"], ["today", "오늘", "today"],
+      ["week", "이번 주", ""], ["none", "일정 없음", ""], ["unassigned", "미배정", ""], ["unknown", "고객 미확인", ""],
+    ];
+    const q = document.activeElement && document.activeElement.id === "q";
+    const caret = q ? $("q").selectionStart : null;
+    $("summary").innerHTML = stats.map(([k, l, c]) => `<button type="button" class="stat ${c}" data-filter="${k}" aria-pressed="${S.filter === k}"><span>${l}</span><b>${all.filter((i) => inFilter(i, k)).length}</b></button>`).join("") +
+      `<div class="tail"><label class="search">${icon("search")}<input id="q" placeholder="고객, 전화번호, 단지명" aria-label="검색" value="${esc(S.q)}"><kbd>/</kbd></label></div>`;
+    if (q) { $("q").focus(); $("q").setSelectionRange(caret, caret); }
+  }
+  function cardHTML(it) {
+    const lines = D.priceLines(it).filter((l) => !l.paused);
+    const main = lines[0] || D.priceLines(it)[0];
+    const b = D.bucketOf(it);
+    const name = it.primary ? D.contact(it.primary).name : "고객 미확인";
+    return `<article class="card" draggable="true" data-card="${it.id}" data-bucket="${b}" aria-label="${esc(name)} ${D.KIND[it.kind]} ${esc(it.title)}">
+      <div class="c-top">
+        ${it.primary ? `<button type="button" class="c-name" data-open-customer="${it.primary}">${esc(name)}</button>` : `<span class="c-name" style="color:var(--warning-strong)">${esc(name)}</span>`}
+        ${it.status === "hold" ? `<span class="badge b-hold" style="margin-left:0">보류</span>` : ""}
+        <span class="badge b-${it.kind}">${D.KIND[it.kind]}</span>
+      </div>
+      <div class="c-title" title="${esc(it.title)}">${esc(it.title)}</div>
+      <div class="c-meta"><span class="tx">${D.TX[main.tx]}</span><b>${esc(main.price)}${main.rent ? ` / ${esc(main.rent)}` : ""}</b>${it.matches.total ? `<span style="margin-left:auto">${D.stageHTML(it)}</span>` : ""}</div>
+      <div class="c-foot">
+        ${it.primary ? D.dueHTML(it, { note: false }) : `<button type="button" class="c-connect" data-connect="${it.id}">소유자 연결</button>`}
+        ${D.assignHTML(it)}
+      </div>
+      ${it.next && it.next.note ? `<div class="c-note" title="${esc(it.next.note)}">${esc(it.next.note)}</div>` : ""}
+    </article>`;
+  }
+  function laneHTML(uid) {
+    const u = uid ? D.user(uid) : null;
+    const allOf = D.items().filter((i) => (i.assignee || null) === uid);
+    const count = (fn) => allOf.filter(fn).length;
+    const o = count((i) => D.bucketOf(i) === "overdue");
+    const t = count((i) => D.bucketOf(i) === "today");
+    const n = count((i) => D.bucketOf(i) === "none");
+    const s = allOf.length - o - t - n;
+    const w = (x) => (allOf.length ? `${(x / allOf.length) * 100}%` : "0");
+    const shown = allOf.filter((i) => inFilter(i, S.filter) && matchQ(i)).sort(D.compareItems);
+    const active = shown.filter((i) => i.next);
+    const idle = shown.filter((i) => !i.next);
+    return `<section class="lane${uid ? "" : " unassigned"}" data-lane="${uid || ""}" aria-label="${u ? esc(u.name) : "미배정"}">
+      <div class="lane-head">
+        <div class="lane-title">${u ? `<span class="avatar" style="width:22px;height:22px;font-size:10.5px">${esc(u.name[0])}</span>` : ""}<b>${u ? esc(u.name) : "미배정"}</b>${u ? `<small>${esc(u.role)}</small>` : ""}<span class="lane-total">${allOf.length}건</span></div>
+        <div class="load" aria-hidden="true"><i class="l-overdue" style="width:${w(o)}"></i><i class="l-today" style="width:${w(t)}"></i><i class="l-soon" style="width:${w(s)}"></i><i class="l-none" style="width:${w(n)}"></i></div>
+        <div class="lane-counts">${o ? `<span class="o">지남 ${o}</span>` : ""}${t ? `<span class="t">오늘 ${t}</span>` : ""}${n ? `<span>일정 없음 ${n}</span>` : ""}${!o && !t && !n ? `<span>밀린 일 없음</span>` : ""}</div>
+      </div>
+      <div class="cards">
+        ${active.map(cardHTML).join("")}
+        ${idle.length && active.length ? `<div class="lane-sep">일정 없음 ${idle.length}</div>` : ""}
+        ${idle.map(cardHTML).join("")}
+        ${!shown.length ? `<div class="lane-empty">해당하는 일이 없습니다</div>` : ""}
+      </div>
+    </section>`;
+  }
+  function render() {
+    renderSummary();
+    const board = $("board");
+    const top = board.scrollTop, left = board.scrollLeft;
+    $("lanes").innerHTML = [null, ...D.users().map((u) => u.id)].map(laneHTML).join("");
+    board.scrollTop = top; board.scrollLeft = left;
+  }
+
+  view.addEventListener("click", (e) => {
+    const f = e.target.closest("[data-filter]");
+    if (f) { S.filter = S.filter === f.dataset.filter ? "all" : f.dataset.filter; render(); }
+  });
+  view.addEventListener("input", (e) => {
+    if (e.target.id === "q") { S.q = e.target.value.trim(); render(); }
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "/" && !/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) { e.preventDefault(); $("q").focus(); }
+  });
+
+  /* 끌어서 담당 변경 */
+  let dragId = null;
+  view.addEventListener("dragstart", (e) => {
+    const card = e.target.closest && e.target.closest("[data-card]");
+    if (!card) return;
+    dragId = card.dataset.card;
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", dragId);
+    requestAnimationFrame(() => card.classList.add("dragging"));
+  });
+  view.addEventListener("dragend", () => {
+    dragId = null;
+    view.querySelectorAll(".dragging,.over").forEach((el) => el.classList.remove("dragging", "over"));
+  });
+  view.addEventListener("dragover", (e) => {
+    const lane = e.target.closest && e.target.closest("[data-lane]");
+    if (!lane || !dragId) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    view.querySelectorAll(".lane.over").forEach((el) => { if (el !== lane) el.classList.remove("over"); });
+    lane.classList.add("over");
+  });
+  view.addEventListener("drop", (e) => {
+    const lane = e.target.closest && e.target.closest("[data-lane]");
+    if (!lane) return;
+    e.preventDefault();
+    const id = dragId || e.dataTransfer.getData("text/plain");
+    const uid = lane.dataset.lane || null;
+    const it = id && D.item(id);
+    dragId = null;
+    if (it && (it.assignee || null) !== uid) D.setAssignee(id, uid);
+    else render();
+  });
+
+  D.on(render);
+  render();
+})();
+</script>
+</body>
+</html>

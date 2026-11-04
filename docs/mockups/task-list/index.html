@@ -1,0 +1,638 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>업무 목록 시안</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
+<script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { margin: 0; background: #ecebe7; color: #1f1f1f;
+    font-family: "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", sans-serif;
+    -webkit-font-smoothing: antialiased; }
+  button, input { font: inherit; color: inherit; }
+  button { cursor: pointer; background: none; border: 0; padding: 0; }
+  svg.lucide { width: 14px; height: 14px; stroke-width: 1.75; flex: none; }
+
+  /* ---------- 시안 페이지 ---------- */
+  .page { width: 1253px; margin: 0 auto; padding: 36px 24px 120px; }
+  .page h1 { font-size: 22px; margin: 0 0 6px; letter-spacing: -0.01em; }
+  .page > p { margin: 0; color: #6b6a66; font-size: 14px; line-height: 1.6; }
+  .case { margin-top: 40px; }
+  .case-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 4px; }
+  .case-num { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 6px; background: #1f1f1f; color: #fff; font-size: 12px; font-weight: 600; transform: translateY(-1px); }
+  .case-head h2 { font-size: 17px; margin: 0; }
+  .case-desc { margin: 0 0 12px 32px; color: #5f5e5a; font-size: 13.5px; line-height: 1.6; }
+  .case-desc b { color: #37352f; font-weight: 600; }
+
+  /* ---------- 앱 프레임 ---------- */
+  .frame {
+    --fg: #37352f; --fg2: #787774; --fg3: #a5a39f;
+    --line: #e9e9e7; --line2: #dfdedb; --band: #f7f7f5; --hover: #f9f9f8;
+    --red: #d44c47; --orange: #d9730d; --blue: #2383e2; --green: #3c8f62; --violet: #8a5cc2;
+    position: relative; width: 1205px; background: #fff; border-radius: 10px; overflow: clip;
+    box-shadow: 0 0 0 1px rgba(0,0,0,.06), 0 8px 24px rgba(0,0,0,.05);
+    color: var(--fg); font-size: 13px;
+  }
+  .frame.narrow { width: 860px; }
+
+  /* 툴바 */
+  .bar { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+  .scope { display: flex; gap: 6px; flex: none; }
+  .scope button { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 13px; border-radius: 999px;
+    border: 1px solid var(--line); color: var(--fg2); font-weight: 500; transition: background .12s, color .12s; }
+  .scope button:hover { background: var(--hover); color: var(--fg); }
+  .scope button.on { background: #efeeeb; border-color: transparent; color: var(--fg); }
+  .scope .n { font-size: 11.5px; color: var(--fg3); font-variant-numeric: tabular-nums; font-weight: 400; }
+  .scope button.on .n { color: var(--fg2); }
+  .search { display: flex; align-items: center; gap: 7px; width: 250px; height: 30px; padding: 0 8px 0 11px; border-radius: 999px; background: #f7f6f3; color: var(--fg2); margin-left: 4px; }
+  .search input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--fg); }
+  .search input::placeholder { color: var(--fg3); }
+  .search kbd { font: 11px/1 inherit; padding: 3px 5px; border-radius: 4px; border: 1px solid var(--line2); background: #fff; color: var(--fg3); }
+  .bar-right { margin-left: auto; display: flex; align-items: center; gap: 6px; }
+  .overdue-btn { display: inline-flex; align-items: center; gap: 5px; height: 30px; padding: 0 11px; border-radius: 999px; color: var(--red); font-weight: 500; }
+  .overdue-btn:hover { background: #fbeeed; }
+  .overdue-btn .n { font-variant-numeric: tabular-nums; }
+  .ibtn { display: inline-grid; place-items: center; width: 30px; height: 30px; border-radius: 999px; border: 1px solid var(--line); color: var(--fg2); position: relative; }
+  .ibtn:hover, .ibtn.on { background: #f3f2ef; color: var(--fg); }
+  .ibtn .dot { position: absolute; top: 5px; right: 5px; width: 6px; height: 6px; border-radius: 50%; background: var(--blue); box-shadow: 0 0 0 2px #fff; }
+  .seg { display: flex; padding: 2px; gap: 1px; border-radius: 999px; border: 1px solid var(--line); }
+  .seg button { display: inline-grid; place-items: center; width: 26px; height: 24px; border-radius: 999px; color: var(--fg3); }
+  .seg button.on { background: #efeeeb; color: var(--fg); }
+  .primary { display: inline-flex; align-items: center; gap: 5px; height: 30px; padding: 0 14px 0 11px; border-radius: 999px; background: var(--fg); color: #fff; font-weight: 500; margin-left: 2px; }
+  .primary:hover { filter: brightness(1.15); }
+
+  /* 필터 줄 (필터가 있을 때만) */
+  .fbar { display: flex; align-items: center; gap: 6px; padding: 7px 14px; border-bottom: 1px solid var(--line); background: #fcfcfb; }
+  .fchip { display: inline-flex; align-items: center; height: 26px; border-radius: 999px; border: 1px solid var(--line); background: #fff; overflow: hidden; font-size: 12.5px; }
+  .fchip span { padding: 0 9px; display: inline-flex; align-items: center; gap: 5px; height: 100%; }
+  .fchip .k { color: var(--fg2); border-right: 1px solid var(--line); }
+  .fchip .v { font-weight: 500; }
+  .fchip button { display: inline-grid; place-items: center; width: 24px; height: 100%; color: var(--fg3); border-left: 1px solid var(--line); }
+  .fchip button:hover { color: var(--fg); background: var(--hover); }
+  .fadd { display: inline-flex; align-items: center; gap: 4px; height: 26px; padding: 0 9px; border-radius: 999px; color: var(--fg2); font-size: 12.5px; }
+  .fadd:hover { background: var(--hover); color: var(--fg); }
+  .fbar .clear { margin-left: auto; color: var(--fg3); font-size: 12px; }
+  .fbar .clear:hover { color: var(--fg); }
+
+  /* 목록 */
+  .list { container-type: inline-size; height: 560px; overflow: auto; padding-bottom: 72px; }
+  .list.auto { height: auto; overflow: visible; padding-bottom: 8px; }
+  .list.auto .ghead { position: static; }
+  .ghead { display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 14px 0 10px; background: var(--band);
+    border-top: 1px solid #efeeec; border-bottom: 1px solid #efeeec; position: sticky; top: 0; z-index: 2; cursor: pointer; user-select: none; }
+  .ghead + .ghead, .list > .ghead:first-child { border-top-color: transparent; }
+  .ghead .chev { color: var(--fg3); transition: transform .15s; }
+  .ghead.collapsed .chev { transform: rotate(-90deg); }
+  .ghead .gl { font-weight: 600; font-size: 13px; }
+  .ghead .gn { color: var(--fg3); font-variant-numeric: tabular-nums; }
+  .ghead .gsub { color: var(--fg3); font-size: 12px; }
+  .ghead .gadd { margin-left: auto; display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 6px; color: var(--fg3); opacity: 0; }
+  .ghead:hover .gadd { opacity: 1; }
+  .gadd:hover { background: #ebeae6; color: var(--fg); }
+  .gempty { padding: 10px 0 10px 64px; color: var(--fg3); font-size: 12.5px; }
+
+  .row { position: relative; display: flex; align-items: center; height: 40px; padding: 0 10px 0 6px; gap: 0; cursor: default; }
+  .row:hover, .row.hover { background: var(--hover); }
+  .row.sel { background: #eef5fc; }
+  .row.sel:hover { background: #e7f0fa; }
+  .row.done .t { color: var(--fg2); }
+  .gut { display: inline-grid; place-items: center; width: 26px; height: 26px; flex: none; }
+  .cb { width: 14px; height: 14px; border-radius: 4px; border: 1.5px solid #c9c8c4; background: #fff; display: grid; place-items: center; opacity: 0; transition: opacity .1s; }
+  .row:hover .cb, .row.hover .cb, .frame.selecting .cb, .row.sel .cb { opacity: 1; }
+  .row.sel .cb { background: var(--blue); border-color: var(--blue); }
+  .row.sel .cb svg { color: #fff; width: 11px; height: 11px; stroke-width: 3; }
+  .pri, .st { display: inline-grid; place-items: center; width: 24px; height: 26px; flex: none; }
+  .st { border-radius: 6px; }
+  .st:hover { background: #ebeae6; }
+  .ttl { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 6px; padding: 0 12px 0 6px; }
+  .t { font-size: 13.5px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; letter-spacing: -0.005em; }
+  .ai-mark { color: var(--violet); display: inline-flex; }
+  .ai-mark svg { width: 13px; height: 13px; }
+  .desc-mark { color: var(--fg3); display: inline-flex; }
+  .desc-mark svg { width: 12px; height: 12px; }
+
+  .chips { display: flex; align-items: center; gap: 6px; flex: none; }
+  .chip { display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 10px 0 8px; border-radius: 999px; border: 1px solid var(--line);
+    background: #fff; font-size: 12px; color: var(--fg); white-space: nowrap; max-width: 190px; }
+  .chip:hover { border-color: var(--line2); background: var(--hover); }
+  .chip .lbl { overflow: hidden; text-overflow: ellipsis; }
+  .chip svg { width: 12px; height: 12px; color: var(--fg3); }
+  .chip .cdot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+  .chip.extra { display: none; padding: 0 8px; color: var(--fg2); }
+  .chip.agent { color: var(--violet); border-color: #e7dcf4; background: #fbf8fe; gap: 6px; }
+  .chip.agent svg { color: var(--violet); }
+  .chip.agent .lbl { background: linear-gradient(90deg, #8a5cc2 0%, #8a5cc2 35%, #d1b8ee 50%, #8a5cc2 65%, #8a5cc2 100%);
+    background-size: 220% 100%; -webkit-background-clip: text; background-clip: text; color: transparent; animation: shimmer 2.4s linear infinite; }
+  @keyframes shimmer { from { background-position: 110% 0; } to { background-position: -110% 0; } }
+  @media (prefers-reduced-motion: reduce) { .chip.agent .lbl { animation: none; color: var(--violet); background: none; } }
+
+  .who { display: inline-grid; place-items: center; width: 34px; flex: none; }
+  .av { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; font-size: 11px; font-weight: 600; }
+  .av.a { background: #dfeaf6; color: #2c6198; } .av.b { background: #f4e5d7; color: #93531d; }
+  .av.c { background: #ddefe3; color: #2f7448; } .av.d { background: #ece2f5; color: #74489a; }
+  .av.none { border: 1.5px dashed #cfcec9; color: var(--fg3); background: #fff; }
+  .av.none svg { width: 11px; height: 11px; }
+  .due { width: 76px; flex: none; text-align: right; font-size: 12.5px; color: var(--fg2); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .due.over { color: var(--red); font-weight: 500; }
+  .due.today { color: var(--orange); font-weight: 500; }
+  .due.none { color: transparent; }
+  .row:hover .due.none::after { content: "마감 없음"; color: var(--fg3); font-weight: 400; }
+  .more { display: inline-grid; place-items: center; width: 26px; height: 26px; margin-left: 4px; border-radius: 6px; color: var(--fg3); opacity: 0; flex: none; }
+  .row:hover .more, .row.hover .more { opacity: 1; }
+  .more:hover { background: #ebeae6; color: var(--fg); }
+
+  /* 좁은 창: 고객·매물 칩은 첫 번째만, 카테고리는 점만 */
+  @container (max-width: 980px) {
+    .chip.ent ~ .chip.ent { display: none; }
+    .chip.extra { display: inline-flex; }
+    .chip.cat { padding: 0; width: 24px; justify-content: center; }
+    .chip.cat .lbl { display: none; }
+    .chip.ent { max-width: 140px; }
+  }
+
+  /* 선택 시 하단 작업 막대 */
+  .bulk { position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%); display: flex; align-items: center; gap: 2px; padding: 5px; border-radius: 12px;
+    background: #2f2e2b; color: #f3f2ef; box-shadow: 0 10px 30px rgba(0,0,0,.25); font-size: 12.5px; z-index: 5; }
+  .bulk .cnt { padding: 0 10px 0 8px; font-weight: 600; font-variant-numeric: tabular-nums; border-right: 1px solid #4a4945; margin-right: 3px; }
+  .bulk button { display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 10px; border-radius: 8px; color: #e6e5e1; }
+  .bulk button:hover { background: #45443f; }
+  .bulk button svg { color: #b5b4ae; }
+  .bulk .danger { color: #f0a29e; }
+  .bulk .danger svg { color: #f0a29e; }
+  .bulk .x { width: 28px; padding: 0; justify-content: center; }
+
+  /* 팝오버 (표시 설정·마감 고르기) */
+  .pop { position: absolute; z-index: 10; background: #fff; border-radius: 10px; box-shadow: 0 0 0 1px rgba(15,15,15,.07), 0 12px 32px rgba(15,15,15,.14); font-size: 12.5px; }
+  .disp { top: 50px; right: 160px; width: 318px; padding: 6px 0 8px; }
+  .disp .sec { padding: 8px 14px; }
+  .disp .sec + .sec { border-top: 1px solid var(--line); }
+  .disp .lab { color: var(--fg2); font-size: 11.5px; margin-bottom: 7px; display: flex; align-items: center; gap: 6px; }
+  .opts { display: flex; flex-wrap: wrap; gap: 4px; }
+  .opts button { height: 26px; padding: 0 10px; border-radius: 999px; border: 1px solid var(--line); color: var(--fg2); }
+  .opts button:hover { background: var(--hover); color: var(--fg); }
+  .opts button.on { background: var(--fg); border-color: var(--fg); color: #fff; }
+  .opts.props button.on { background: #efeeeb; border-color: transparent; color: var(--fg); font-weight: 500; }
+  .opts button[disabled] { opacity: .4; cursor: not-allowed; }
+  .tg { display: flex; align-items: center; justify-content: space-between; height: 30px; color: var(--fg); }
+  .sw { width: 28px; height: 16px; border-radius: 999px; background: #d6d5d1; position: relative; transition: background .15s; }
+  .sw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%; background: #fff; transition: transform .15s; box-shadow: 0 1px 2px rgba(0,0,0,.2); }
+  .sw.on { background: var(--blue); }
+  .sw.on::after { transform: translateX(12px); }
+
+  .duepop { width: 236px; padding: 6px; }
+  .duepop .q { display: flex; align-items: center; gap: 8px; width: 100%; height: 30px; padding: 0 8px; border-radius: 6px; text-align: left; }
+  .duepop .q:hover, .duepop .q.on { background: #f3f2ef; }
+  .duepop .q .h { margin-left: auto; color: var(--fg3); font-size: 11.5px; }
+  .duepop .q svg { color: var(--fg2); }
+  .duepop hr { border: 0; border-top: 1px solid var(--line); margin: 5px 2px; }
+
+  .callout { position: absolute; font-size: 11.5px; color: #8a5f12; background: #fdf3dd; border: 1px solid #f1dfb6; padding: 3px 8px; border-radius: 6px; white-space: nowrap; z-index: 6; }
+
+  /* 비교 표 */
+  table.cmp { width: 1205px; border-collapse: collapse; background: #fff; border-radius: 10px; overflow: hidden; box-shadow: 0 0 0 1px rgba(0,0,0,.06); font-size: 13.5px; }
+  .cmp th, .cmp td { text-align: left; padding: 11px 16px; border-bottom: 1px solid #efeeec; vertical-align: top; line-height: 1.55; }
+  .cmp th { background: #faf9f7; color: #6b6a66; font-weight: 600; font-size: 12.5px; }
+  .cmp td:first-child { width: 150px; font-weight: 600; color: #37352f; }
+  .cmp td:nth-child(2) { width: 400px; color: #6b6a66; }
+  .cmp tr:last-child td { border-bottom: 0; }
+  .notes { width: 1205px; background: #fff; border-radius: 10px; box-shadow: 0 0 0 1px rgba(0,0,0,.06); padding: 6px 22px; }
+  .notes ol { margin: 12px 0; padding-left: 20px; line-height: 1.7; font-size: 13.5px; color: #3c3b37; }
+  .notes li + li { margin-top: 8px; }
+  .notes b { font-weight: 600; }
+  .notes .q { color: #8a5f12; }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>업무 목록 시안 — 열 없는 한 줄 목록</h1>
+  <p>Linear "My issues"의 구조를 가져와 중개 업무에 맞게 바꿨습니다. 표의 열 제목을 없애고, 왼쪽은 우선순위·상태·제목, 오른쪽은 값이 있는 정보만 칩으로 붙입니다.<br />
+  위쪽 탭은 "누구의 업무인지", 묶는 기준과 보이는 정보는 오른쪽 <b>표시</b> 메뉴로 옮겼습니다. 오늘은 2026년 11월 3일(화)로 가정합니다.</p>
+
+  <!-- 1. 기본 화면 -->
+  <section class="case">
+    <div class="case-head"><span class="case-num">1</span><h2>기본 화면 — 내 담당 · 상태별</h2></div>
+    <p class="case-desc">직접 눌러 보세요. <b>탭</b>, 오른쪽 <b>표시</b>(<i data-lucide="sliders-horizontal" style="width:12px;height:12px;vertical-align:-1px"></i>) 메뉴의 묶기·정렬·보이는 정보, <b>필터</b>, 그룹 머리 <b>접기</b>, 행의 <b>상태 아이콘</b>(누르면 다음 상태로), 행 왼쪽 <b>체크박스</b>가 동작합니다.</p>
+    <div class="frame" id="main">
+      <div class="bar">
+        <div class="scope" id="scope"></div>
+        <label class="search"><i data-lucide="search"></i><input placeholder="업무, 고객, 매물 검색" id="q" /><kbd>⌘F</kbd></label>
+        <div class="bar-right">
+          <button class="overdue-btn" id="overdueBtn" title="기한 지난 업무만 보기"><i data-lucide="alarm-clock"></i>기한 지남 <span class="n" id="overdueN"></span></button>
+          <button class="ibtn" id="filterBtn" title="필터"><i data-lucide="list-filter"></i></button>
+          <button class="ibtn" id="dispBtn" title="표시"><i data-lucide="sliders-horizontal"></i></button>
+          <div class="seg"><button class="on" title="목록"><i data-lucide="list"></i></button><button title="보드"><i data-lucide="columns-3"></i></button></div>
+          <button class="primary"><i data-lucide="plus"></i>업무 추가</button>
+        </div>
+      </div>
+      <div class="fbar" id="fbar" hidden></div>
+      <div class="list" id="mainList"></div>
+      <div class="pop disp" id="disp" hidden></div>
+      <div class="bulk" id="bulk" hidden></div>
+    </div>
+  </section>
+
+  <!-- 2. 행 상태 -->
+  <section class="case">
+    <div class="case-head"><span class="case-num">2</span><h2>행 상태 모음</h2></div>
+    <p class="case-desc">위에서부터 <b>마우스를 올린 행</b>(체크박스·메뉴가 나타남), <b>외부 AI가 처리 중인 광고 업무</b>, <b>통화 분석에서 만든 업무</b>(보라색 별), <b>기한 지난 업무</b>, <b>마감일 칩을 누른 상태</b>, <b>여러 개 선택</b>입니다. 기한이 지나도 행 배경은 칠하지 않고 날짜만 빨갛게 둡니다.</p>
+    <div class="frame" id="states" style="padding-bottom: 22px">
+      <div class="list auto" id="stateList"></div>
+      <div class="pop duepop" id="duePop">
+        <button class="q"><i data-lucide="sun"></i>오늘<span class="h">11.3 (화)</span></button>
+        <button class="q on"><i data-lucide="sunrise"></i>내일<span class="h">11.4 (수)</span></button>
+        <button class="q"><i data-lucide="calendar-range"></i>이번 주 금요일<span class="h">11.6 (금)</span></button>
+        <button class="q"><i data-lucide="calendar-plus"></i>다음 주 월요일<span class="h">11.9 (월)</span></button>
+        <hr />
+        <button class="q"><i data-lucide="calendar"></i>날짜 고르기…</button>
+        <button class="q" style="color:var(--fg2)"><i data-lucide="x"></i>마감 없애기</button>
+      </div>
+      <div class="bulk" style="position:relative; left:auto; bottom:auto; transform:none; margin: 96px 0 0 330px; width: max-content;">
+        <span class="cnt">2개 선택</span>
+        <button><i data-lucide="circle-dot"></i>상태</button>
+        <button><i data-lucide="user"></i>담당자</button>
+        <button><i data-lucide="calendar"></i>마감일</button>
+        <button><i data-lucide="signal"></i>우선순위</button>
+        <button class="danger"><i data-lucide="trash-2"></i>삭제</button>
+        <button class="x"><i data-lucide="x"></i></button>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3. 좁은 창 -->
+  <section class="case">
+    <div class="case-head"><span class="case-num">3</span><h2>좁은 창 (860px) — 팀 전체 · 마감일별</h2></div>
+    <p class="case-desc">폭이 좁아지면 제목을 먼저 지킵니다. 고객·매물 칩은 <b>첫 번째만</b> 남기고 나머지는 <b>+1</b>로 줄이며, 카테고리는 <b>색 점만</b> 남깁니다. 담당자와 마감일은 항상 같은 자리에 정렬됩니다.</p>
+    <div class="frame narrow">
+      <div class="list auto" id="narrowList"></div>
+    </div>
+  </section>
+
+  <!-- 4. 비교 -->
+  <section class="case">
+    <div class="case-head"><span class="case-num">4</span><h2>지금과 달라지는 점</h2></div>
+    <table class="cmp">
+      <thead><tr><th>항목</th><th>지금</th><th>시안</th></tr></thead>
+      <tbody>
+        <tr><td>행 구조</td><td>열 제목이 있는 표. 작업·상태·담당자·마감일·우선순위·카테고리 칸이 늘 자리를 차지</td><td>열 제목 없음. 우선순위·상태·제목은 왼쪽, 값이 있는 정보만 오른쪽 칩. 담당자·마감일은 맨 오른쪽 고정 자리</td></tr>
+        <tr><td>위쪽 탭</td><td>상태(전체·대기·진행중·완료)</td><td>누구의 업무인지(내 담당·내가 요청·팀 전체). 상태는 그룹으로 보여 줌</td></tr>
+        <tr><td>보기 방식</td><td>작업별·상태별·보드·전체 4개 탭</td><td>목록·보드 2개 아이콘 + 표시 메뉴에서 묶기(상태·마감·카테고리·담당자·없음)와 정렬 선택</td></tr>
+        <tr><td>필터</td><td>마감·카테고리·우선순위 칩이 2행에 늘 보임</td><td>필터 아이콘으로 열고, 걸린 필터가 있을 때만 2행에 표시</td></tr>
+        <tr><td>그룹 머리</td><td>글자만 있는 머리 + 진행 막대</td><td>회색 띠(#f7f7f5, 매물 표와 같은 색) + 아이콘·이름·개수, 접기 가능, 완료는 기본 접힘</td></tr>
+        <tr><td>기한 지남</td><td>행 배경을 빨갛게 칠하고 왼쪽 빨간 선</td><td>날짜만 빨간 글씨("3일 지남"), 툴바의 "기한 지남 N"으로 모아 보기</td></tr>
+        <tr><td>AI 관련 표시</td><td>출처 배지</td><td>통화 분석에서 만든 업무는 제목 옆 보라색 별, 외부 AI가 처리 중이면 "AI 처리 중" 칩</td></tr>
+        <tr><td>그대로 유지</td><td colspan="2" style="color:#37352f">완료 체크(상태 아이콘), 담당자·마감일·우선순위 바로 고치기(칩을 누르면 고르기 창), 드래그 정렬(직접 정렬일 때), 여러 개 선택 후 일괄 변경·삭제, 보드 보기</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- 5. 정할 것 -->
+  <section class="case">
+    <div class="case-head"><span class="case-num">5</span><h2>구현 전에 정할 것</h2></div>
+    <div class="notes">
+      <ol>
+        <li><b>"AI 처리 중" 표시의 근거.</b> 지금은 외부 AI가 광고 업무를 맡으면(claim) 상태가 진행중으로 바뀌고 담당자가 API 키 주인으로 채워질 뿐, AI가 맡았다는 기록이 업무에 남지 않습니다. 활동 기록(행위자 mcp)으로 판단하거나 업무에 "맡은 주체" 값을 하나 추가해야 합니다. <span class="q">→ 처음엔 표시를 빼고 시작해도 됩니다.</span></li>
+        <li><b>카테고리 색.</b> 지금 업무 화면은 "행마다 반복되는 값에는 색을 쓰지 않는다"는 원칙입니다. 시안은 칩 안의 작은 점에만 색을 씁니다. 원칙을 이렇게 조금 완화해도 될지 정해 주세요.</li>
+        <li><b>상태 탭을 없애도 되는지.</b> 상태는 그룹 머리로 보이고, 완료는 기본으로 접힌 그룹(표시 메뉴에서 끌 수 있음), 취소된 업무는 필터의 상태 항목에서 골라 봅니다.</li>
+        <li><b>업무 번호는 넣지 않습니다.</b> Linear의 ENG-2498 같은 번호는 중개 업무에서 쓰지 않아 뺐습니다.</li>
+      </ol>
+    </div>
+  </section>
+</div>
+
+<script>
+const TODAY = new Date(2026, 10, 3);
+const ME = 'me';
+const PEOPLE = {
+  me:   { name: '이현수', ini: '현', c: 'a' },
+  kim:  { name: '김실장', ini: '김', c: 'b' },
+  jung: { name: '정대리', ini: '정', c: 'c' },
+  park: { name: '박팀장', ini: '박', c: 'd' },
+};
+const CATS = {
+  advertisement: { label: '광고작업', color: '#d9730d' },
+  call:          { label: '전화작업', color: '#0f7b6c' },
+  viewing:       { label: '방문',     color: '#337ea9' },
+  contract:      { label: '계약',     color: '#9065b0' },
+  deal:          { label: '거래',     color: '#c14c8a' },
+  buyer:         { label: '구매고객', color: '#4f7fd1' },
+  match:         { label: '매칭',     color: '#448361' },
+  property:      { label: '매물',     color: '#9f6b53' },
+  verify:        { label: '확인작업', color: '#6b9b37' },
+  document:      { label: '서류작업', color: '#8c8a84' },
+  consultation:  { label: '상담',     color: '#cb912f' },
+  admin:         { label: '관리',     color: '#b4b2ad' },
+};
+const STATUS = {
+  in_progress: { label: '진행중' },
+  pending:     { label: '대기' },
+  completed:   { label: '완료' },
+};
+const PRI_RANK = { urgent: 0, high: 1, medium: 2, low: 3 };
+
+const TASKS = [
+  { id: 1,  t: '그라시움 101동 3501호 네이버 광고 재등록', s: 'in_progress', p: 'high', c: 'advertisement', due: '2026-11-03', a: 'me', cr: 'me', prop: '그라시움 101-3501', agent: true },
+  { id: 2,  t: '박지민님 매수 계약서 초안 검토', s: 'in_progress', p: 'urgent', c: 'contract', due: '2026-11-04', a: 'me', cr: 'park', contact: '박지민', prop: '솔베뉴 203-1102', desc: true },
+  { id: 3,  t: '202동 1504호 등기부등본 발급', s: 'in_progress', p: 'low', c: 'document', due: '2026-10-31', a: 'me', cr: 'me', prop: '그라시움 202-1504' },
+  { id: 4,  t: '최서연 고객 대출 한도 확인 후 회신', s: 'in_progress', p: 'medium', c: 'buyer', due: '2026-11-06', a: 'jung', cr: 'me', contact: '최서연' },
+  { id: 5,  t: '홍길동님 내일 15시 임장 안내 문자', s: 'pending', p: 'high', c: 'viewing', due: '2026-11-04', a: 'me', cr: 'me', contact: '홍길동', prop: '그라시움 105-802', ai: true },
+  { id: 6,  t: '김영희 소유주 매도가 재확인 전화', s: 'pending', p: 'medium', c: 'call', due: '2026-11-03', a: 'me', cr: 'me', contact: '김영희', prop: '그라시움 110-1203' },
+  { id: 7,  t: '이민호 고객 희망조건 갱신 (84㎡ · 15억 이하)', s: 'pending', p: 'medium', c: 'buyer', due: null, a: 'me', cr: 'me', contact: '이민호', ai: true, desc: true },
+  { id: 8,  t: '잔금일 법무사 일정 확인', s: 'pending', p: 'high', c: 'deal', due: '2026-11-02', a: 'me', cr: 'park', contact: '윤정우 법무사', prop: '그라시움 101-3501' },
+  { id: 9,  t: '고덕아이파크 302동 1701호 신규 의뢰 확인', s: 'pending', p: 'low', c: 'verify', due: '2026-11-10', a: 'kim', cr: 'me', prop: '아이파크 302-1701' },
+  { id: 10, t: '11월 관리비 정산', s: 'pending', p: 'low', c: 'admin', due: '2026-11-10', a: 'park', cr: 'park' },
+  { id: 11, t: '명일동 한빛빌라 301호 매물 사진 촬영', s: 'pending', p: 'medium', c: 'property', due: '2026-11-07', a: 'kim', cr: 'me', prop: '한빛빌라 301' },
+  { id: 12, t: '정수빈 고객 전세 매칭 후보 3곳 정리', s: 'pending', p: 'medium', c: 'match', due: '2026-11-05', a: 'jung', cr: 'jung', contact: '정수빈' },
+  { id: 13, t: '솔베뉴 108동 604호 전세 광고 가격 수정', s: 'pending', p: 'high', c: 'advertisement', due: '2026-11-03', a: null, cr: 'park', prop: '솔베뉴 108-604' },
+  { id: 14, t: '오세훈 고객 방문 상담 기록 정리', s: 'completed', p: 'low', c: 'consultation', due: '2026-11-02', a: 'me', cr: 'me', contact: '오세훈' },
+  { id: 15, t: '그라시움 107동 매물 확인 전화', s: 'completed', p: 'medium', c: 'call', due: '2026-11-01', a: 'me', cr: 'me', prop: '그라시움 107-1102', ai: true },
+  { id: 16, t: '계약금 입금 확인', s: 'completed', p: 'high', c: 'deal', due: '2026-10-30', a: 'kim', cr: 'me', contact: '박지민' },
+];
+
+/* ---------- 아이콘 ---------- */
+function priIcon(p) {
+  // 긴급은 느낌표 없이 막대 3칸을 빨갛게
+  const level = p === 'urgent' || p === 'high' ? 3 : p === 'medium' ? 2 : 1;
+  const color = p === 'urgent' ? '#d44c47' : p === 'high' ? '#d9730d' : p === 'medium' ? '#6f6e69' : '#a5a39f';
+  return `<svg viewBox="0 0 16 16" width="14" height="14">${[0, 1, 2].map(i =>
+    `<rect x="${1.5 + i * 5}" y="${10 - i * 4}" width="3" height="${4.5 + i * 4}" rx="1" fill="${color}" opacity="${i < level ? 1 : 0.22}"/>`).join('')}</svg>`;
+}
+function stIcon(s, size = 15) {
+  if (s === 'pending') return `<svg viewBox="0 0 16 16" width="${size}" height="${size}"><circle cx="8" cy="8" r="6.25" fill="none" stroke="#a5a39f" stroke-width="1.5"/></svg>`;
+  if (s === 'in_progress') return `<svg viewBox="0 0 16 16" width="${size}" height="${size}"><circle cx="8" cy="8" r="6.25" fill="none" stroke="#2383e2" stroke-width="1.5"/><path d="M8 4.25a3.75 3.75 0 0 1 0 7.5z" fill="#2383e2"/></svg>`;
+  return `<svg viewBox="0 0 16 16" width="${size}" height="${size}"><circle cx="8" cy="8" r="7" fill="#3c8f62"/><path d="M5 8.25l2 2 4-4.25" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+}
+const NEXT_STATUS = { pending: 'in_progress', in_progress: 'completed', completed: 'pending' };
+
+/* ---------- 날짜 ---------- */
+function parseDay(d) { const [y, m, dd] = d.split('-').map(Number); return new Date(y, m - 1, dd); }
+function dayDiff(d) { return Math.round((parseDay(d) - TODAY) / 864e5); }
+function dueInfo(d) {
+  if (!d) return { label: '', cls: 'none' };
+  const diff = dayDiff(d);
+  if (diff < 0) return { label: diff === -1 ? '어제' : `${-diff}일 지남`, cls: 'over' };
+  if (diff === 0) return { label: '오늘', cls: 'today' };
+  if (diff === 1) return { label: '내일', cls: '' };
+  const dt = parseDay(d);
+  return { label: `${dt.getMonth() + 1}.${dt.getDate()} (${'일월화수목금토'[dt.getDay()]})`, cls: '' };
+}
+function dueBucket(d) {
+  if (!d) return 'none';
+  const diff = dayDiff(d);
+  if (diff < 0) return 'over';
+  if (diff === 0) return 'today';
+  if (diff === 1) return 'tomorrow';
+  if (diff <= 5) return 'week';
+  return 'later';
+}
+const isOverdue = (t) => t.s !== 'completed' && t.due && dayDiff(t.due) < 0;
+
+/* ---------- 행 ---------- */
+function rowHtml(t, st, flags = {}) {
+  const props = st.props;
+  const due = dueInfo(t.due);
+  const ents = [];
+  if (props.entity && t.contact) ents.push(`<span class="chip ent"><i data-lucide="user"></i><span class="lbl">${t.contact}</span></span>`);
+  if (props.entity && t.prop) ents.push(`<span class="chip ent"><i data-lucide="building-2"></i><span class="lbl">${t.prop}</span></span>`);
+  const extra = ents.length > 1 ? `<span class="chip extra">+${ents.length - 1}</span>` : '';
+  const cat = props.category ? `<span class="chip cat" title="${CATS[t.c].label}"><span class="cdot" style="background:${CATS[t.c].color}"></span><span class="lbl">${CATS[t.c].label}</span></span>` : '';
+  const agent = t.agent && t.s === 'in_progress' ? `<span class="chip agent" title="외부 AI가 이 업무를 맡아 처리하고 있습니다"><i data-lucide="sparkles"></i><span class="lbl">AI 처리 중…</span></span>` : '';
+  const person = t.a ? PEOPLE[t.a] : null;
+  const who = props.assignee
+    ? `<span class="who" title="${person ? person.name : '미배정'}">${person ? `<span class="av ${person.c}">${person.ini}</span>` : `<span class="av none"><i data-lucide="user"></i></span>`}</span>`
+    : '';
+  const cls = ['row', t.s === 'completed' && 'done', st.selected.has(t.id) && 'sel', flags.hover && 'hover'].filter(Boolean).join(' ');
+  return `<div class="${cls}" data-id="${t.id}">
+    <span class="gut"><span class="cb" data-act="sel">${st.selected.has(t.id) ? '<i data-lucide="check"></i>' : ''}</span></span>
+    <span class="pri" title="우선순위">${priIcon(t.p)}</span>
+    <button class="st" data-act="status" title="${STATUS[t.s].label} — 누르면 다음 상태로">${stIcon(t.s)}</button>
+    <span class="ttl"><span class="t">${t.t}</span>${t.ai ? `<span class="ai-mark" title="통화 분석에서 만든 업무"><i data-lucide="sparkles"></i></span>` : ''}${t.desc ? `<span class="desc-mark" title="설명 있음"><i data-lucide="align-left"></i></span>` : ''}</span>
+    <span class="chips">${ents.join('')}${extra}${cat}${agent}</span>
+    ${who}
+    ${props.due ? `<span class="due ${due.cls}">${due.label}</span>` : ''}
+    <button class="more" title="더 보기"><i data-lucide="more-horizontal"></i></button>
+  </div>`;
+}
+
+/* ---------- 묶기 ---------- */
+function groupsFor(tasks, st) {
+  const by = st.groupBy;
+  if (by === 'status') {
+    return ['in_progress', 'pending', 'completed'].map(s => ({
+      key: s, label: STATUS[s].label, icon: stIcon(s, 15), items: tasks.filter(t => t.s === s),
+      sub: s === 'completed' ? '최근 7일' : '',
+    }));
+  }
+  if (by === 'due') {
+    const defs = [
+      ['over', '기한 지남', '<i data-lucide="alarm-clock" style="color:#d44c47"></i>'],
+      ['today', '오늘', '<i data-lucide="sun" style="color:#d9730d"></i>'],
+      ['tomorrow', '내일', '<i data-lucide="sunrise" style="color:#787774"></i>'],
+      ['week', '이번 주', '<i data-lucide="calendar-range" style="color:#787774"></i>'],
+      ['later', '나중', '<i data-lucide="calendar" style="color:#a5a39f"></i>'],
+      ['none', '마감 없음', '<i data-lucide="calendar-off" style="color:#a5a39f"></i>'],
+    ];
+    const active = tasks.filter(t => t.s !== 'completed');
+    const gs = defs.map(([k, label, icon]) => ({ key: k, label, icon, items: active.filter(t => dueBucket(t.due) === k) }));
+    const done = tasks.filter(t => t.s === 'completed');
+    if (done.length) gs.push({ key: 'completed', label: '완료', icon: stIcon('completed', 15), items: done, sub: '최근 7일' });
+    return gs;
+  }
+  if (by === 'category') {
+    return Object.keys(CATS).map(k => ({
+      key: k, label: CATS[k].label, icon: `<span class="cdot" style="width:8px;height:8px;border-radius:50%;background:${CATS[k].color};display:inline-block"></span>`,
+      items: tasks.filter(t => t.c === k),
+    }));
+  }
+  if (by === 'assignee') {
+    const keys = ['me', 'kim', 'jung', 'park', null];
+    return keys.map(k => ({
+      key: String(k), label: k ? (k === ME ? `${PEOPLE[k].name} (나)` : PEOPLE[k].name) : '미배정',
+      icon: k ? `<span class="av ${PEOPLE[k].c}" style="width:18px;height:18px;font-size:10px">${PEOPLE[k].ini}</span>` : `<span class="av none" style="width:18px;height:18px"><i data-lucide="user"></i></span>`,
+      items: tasks.filter(t => t.a === k),
+    }));
+  }
+  return [{ key: 'all', label: null, items: tasks }];
+}
+
+function sortItems(items, sort) {
+  const arr = [...items];
+  if (sort === 'priority') arr.sort((a, b) => PRI_RANK[a.p] - PRI_RANK[b.p] || (a.due || '9').localeCompare(b.due || '9'));
+  if (sort === 'due') arr.sort((a, b) => (a.due || '9').localeCompare(b.due || '9') || PRI_RANK[a.p] - PRI_RANK[b.p]);
+  return arr;
+}
+
+function visibleTasks(st) {
+  let ts = TASKS;
+  if (st.tab === 'mine') ts = ts.filter(t => t.a === ME);
+  if (st.tab === 'requested') ts = ts.filter(t => t.cr === ME && t.a !== ME);
+  if (!st.showDone) ts = ts.filter(t => t.s !== 'completed');
+  if (st.cat) ts = ts.filter(t => t.c === st.cat);
+  if (st.overdueOnly) ts = ts.filter(isOverdue);
+  if (st.q) ts = ts.filter(t => [t.t, t.contact, t.prop].filter(Boolean).join(' ').includes(st.q));
+  return ts;
+}
+
+function renderList(el, st, rowFlags = {}) {
+  const ts = visibleTasks(st);
+  const groups = groupsFor(ts, st).filter(g => g.items.length || (st.groupBy === 'status' && g.key !== 'completed'));
+  let html = '';
+  for (const g of groups) {
+    const collapsed = st.collapsed.has(g.key);
+    if (g.label !== null) {
+      html += `<div class="ghead ${collapsed ? 'collapsed' : ''}" data-group="${g.key}">
+        <i data-lucide="chevron-down" class="chev"></i>
+        <span style="display:inline-flex">${g.icon}</span>
+        <span class="gl">${g.label}</span><span class="gn">${g.items.length}</span>
+        ${g.sub ? `<span class="gsub">· ${g.sub}</span>` : ''}
+        <button class="gadd" title="이 그룹에 업무 추가"><i data-lucide="plus"></i></button>
+      </div>`;
+    }
+    if (collapsed) continue;
+    if (!g.items.length) { html += `<div class="gempty">업무 없음</div>`; continue; }
+    for (const t of sortItems(g.items, st.sort)) html += rowHtml(t, st, rowFlags[t.id] || {});
+  }
+  if (!groups.length) html = `<div class="gempty" style="padding:40px 0;text-align:center">조건에 맞는 업무가 없습니다</div>`;
+  el.innerHTML = html;
+}
+
+/* ---------- 1. 기본 화면 ---------- */
+const S = {
+  tab: 'mine', groupBy: 'status', sort: 'manual', showDone: true, cat: null, overdueOnly: false, q: '',
+  props: { entity: true, category: true, assignee: true, due: true },
+  collapsed: new Set(['completed']), selected: new Set(), dispOpen: false, filterOpen: false,
+};
+const $ = (id) => document.getElementById(id);
+
+function renderScope() {
+  const all = TASKS.filter(t => t.s !== 'completed');
+  const tabs = [
+    ['mine', '내 담당', all.filter(t => t.a === ME).length],
+    ['requested', '내가 요청', all.filter(t => t.cr === ME && t.a !== ME).length],
+    ['team', '팀 전체', all.length],
+  ];
+  $('scope').innerHTML = tabs.map(([k, l, n]) => `<button class="${S.tab === k ? 'on' : ''}" data-tab="${k}">${l} <span class="n">${n}</span></button>`).join('');
+  const scopeForOverdue = S.tab === 'mine' ? all.filter(t => t.a === ME) : S.tab === 'requested' ? all.filter(t => t.cr === ME && t.a !== ME) : all;
+  $('overdueN').textContent = scopeForOverdue.filter(isOverdue).length;
+}
+
+function renderDisp() {
+  const el = $('disp');
+  el.hidden = !S.dispOpen;
+  $('dispBtn').classList.toggle('on', S.dispOpen);
+  if (!S.dispOpen) return;
+  const groupOpts = [['status', '상태'], ['due', '마감일'], ['category', '카테고리'], ['assignee', '담당자'], ['none', '묶지 않음']];
+  const sortOpts = [['manual', '직접 정렬'], ['priority', '우선순위'], ['due', '마감일']];
+  const propOpts = [['entity', '고객·매물'], ['category', '카테고리'], ['assignee', '담당자'], ['due', '마감일']];
+  el.innerHTML = `
+    <div class="sec"><div class="lab"><i data-lucide="rows-3"></i>묶기</div>
+      <div class="opts">${groupOpts.map(([k, l]) => `<button data-group-by="${k}" class="${S.groupBy === k ? 'on' : ''}" ${k === 'assignee' && S.tab === 'mine' ? 'disabled title="내 담당에서는 담당자가 한 명뿐입니다"' : ''}>${l}</button>`).join('')}</div></div>
+    <div class="sec"><div class="lab"><i data-lucide="arrow-up-down"></i>정렬</div>
+      <div class="opts">${sortOpts.map(([k, l]) => `<button data-sort="${k}" class="${S.sort === k ? 'on' : ''}">${l}</button>`).join('')}</div>
+      <div style="margin-top:6px;color:var(--fg3);font-size:11.5px">직접 정렬일 때만 끌어서 순서를 바꿀 수 있습니다.</div></div>
+    <div class="sec"><div class="tg" data-toggle="done"><span>완료 업무 보기</span><span class="sw ${S.showDone ? 'on' : ''}"></span></div></div>
+    <div class="sec"><div class="lab"><i data-lucide="eye"></i>보이는 정보</div>
+      <div class="opts props">${propOpts.map(([k, l]) => `<button data-prop="${k}" class="${S.props[k] ? 'on' : ''}">${l}</button>`).join('')}</div></div>`;
+}
+
+function renderFilterBar() {
+  const el = $('fbar');
+  const has = S.filterOpen || S.cat || S.overdueOnly;
+  el.hidden = !has;
+  $('filterBtn').classList.toggle('on', S.filterOpen);
+  $('filterBtn').innerHTML = `<i data-lucide="list-filter"></i>${S.cat || S.overdueOnly ? '<span class="dot"></span>' : ''}`;
+  if (!has) return;
+  const chips = [];
+  if (S.overdueOnly) chips.push(`<span class="fchip"><span class="k">마감</span><span class="v" style="color:var(--red)">기한 지남</span><button data-clear="overdue"><i data-lucide="x"></i></button></span>`);
+  if (S.cat) chips.push(`<span class="fchip"><span class="k">카테고리</span><span class="v"><span class="cdot" style="width:7px;height:7px;border-radius:50%;background:${CATS[S.cat].color}"></span>${CATS[S.cat].label}</span><button data-clear="cat"><i data-lucide="x"></i></button></span>`);
+  el.innerHTML = `${chips.join('')}
+    <button class="fadd" data-add-filter><i data-lucide="plus"></i>${chips.length ? '필터 추가' : '카테고리: 광고작업으로 걸러 보기 (예시)'}</button>
+    ${chips.length ? '<button class="clear" data-clear="all">모두 지우기</button>' : ''}`;
+}
+
+function renderBulk() {
+  const el = $('bulk');
+  const n = S.selected.size;
+  el.hidden = n === 0;
+  $('main').classList.toggle('selecting', n > 0);
+  if (!n) return;
+  el.innerHTML = `<span class="cnt">${n}개 선택</span>
+    <button><i data-lucide="circle-dot"></i>상태</button><button><i data-lucide="user"></i>담당자</button>
+    <button><i data-lucide="calendar"></i>마감일</button><button><i data-lucide="signal"></i>우선순위</button>
+    <button class="danger"><i data-lucide="trash-2"></i>삭제</button>
+    <button class="x" data-act="unselect" title="선택 해제"><i data-lucide="x"></i></button>`;
+}
+
+function renderMain() {
+  renderScope(); renderDisp(); renderFilterBar(); renderBulk();
+  renderList($('mainList'), S);
+  lucide.createIcons();
+}
+
+$('main').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-tab],[data-group-by],[data-sort],[data-prop],[data-toggle],[data-clear],[data-add-filter],[data-act],.ghead');
+  if (!b) {
+    if (S.dispOpen && !e.target.closest('#disp') && !e.target.closest('#dispBtn')) { S.dispOpen = false; renderMain(); }
+    return;
+  }
+  if (b.dataset.tab) { S.tab = b.dataset.tab; if (S.tab === 'mine' && S.groupBy === 'assignee') S.groupBy = 'status'; S.selected.clear(); }
+  else if (b.dataset.groupBy) { if (b.disabled) return; S.groupBy = b.dataset.groupBy; S.collapsed = new Set(['completed']); }
+  else if (b.dataset.sort) S.sort = b.dataset.sort;
+  else if (b.dataset.prop) S.props[b.dataset.prop] = !S.props[b.dataset.prop];
+  else if (b.dataset.toggle === 'done') S.showDone = !S.showDone;
+  else if (b.dataset.clear) { if (b.dataset.clear !== 'cat') S.overdueOnly = false; if (b.dataset.clear !== 'overdue') S.cat = null; if (b.dataset.clear === 'all') S.filterOpen = false; }
+  else if ('addFilter' in b.dataset) { if (!S.cat) S.cat = 'advertisement'; }
+  else if (b.classList.contains('ghead')) {
+    if (e.target.closest('.gadd')) return;
+    const k = b.dataset.group; S.collapsed.has(k) ? S.collapsed.delete(k) : S.collapsed.add(k);
+  }
+  else if (b.dataset.act === 'status') { const t = TASKS.find(x => x.id === +b.closest('.row').dataset.id); t.s = NEXT_STATUS[t.s]; }
+  else if (b.dataset.act === 'sel') { const id = +b.closest('.row').dataset.id; S.selected.has(id) ? S.selected.delete(id) : S.selected.add(id); }
+  else if (b.dataset.act === 'unselect') S.selected.clear();
+  renderMain();
+});
+$('dispBtn').addEventListener('click', (e) => { e.stopPropagation(); S.dispOpen = !S.dispOpen; renderMain(); });
+$('filterBtn').addEventListener('click', (e) => { e.stopPropagation(); S.filterOpen = !S.filterOpen; if (!S.filterOpen) { S.cat = null; S.overdueOnly = false; } renderMain(); });
+$('overdueBtn').addEventListener('click', (e) => { e.stopPropagation(); S.overdueOnly = !S.overdueOnly; renderMain(); });
+$('q').addEventListener('input', (e) => { S.q = e.target.value.trim(); renderList($('mainList'), S); lucide.createIcons(); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { S.dispOpen = false; S.selected.clear(); renderMain(); } });
+
+/* ---------- 2. 행 상태 ---------- */
+(function renderStates() {
+  const st = { props: { entity: true, category: true, assignee: true, due: true }, selected: new Set([12, 9]) };
+  const pick = (id) => TASKS.find(t => t.id === id);
+  const rows = [
+    [pick(6), { hover: true }],
+    [pick(1), {}],
+    [pick(5), {}],
+    [pick(3), {}],
+    [pick(2), {}],
+    [pick(12), {}],
+    [pick(9), {}],
+  ];
+  $('stateList').innerHTML = rows.map(([t, f]) => rowHtml(t, st, f)).join('');
+  // 마감일 칩을 누른 행 표시 + 고르기 창을 그 아래에 붙인다
+  const target = $('stateList').querySelector('[data-id="2"] .due');
+  target.style.cssText = 'background:#f3f2ef;border-radius:6px;padding:4px 6px;margin-right:-6px;color:var(--fg)';
+  const place = () => {
+    const fr = $('states').getBoundingClientRect(), r = target.getBoundingClientRect(), pop = $('duePop');
+    pop.style.top = `${r.bottom - fr.top + 6}px`;
+    pop.style.right = `${fr.right - r.right - 6}px`;
+  };
+  place();
+  window.addEventListener('load', place);
+  document.fonts && document.fonts.ready.then(place);
+})();
+
+/* ---------- 3. 좁은 창 ---------- */
+renderList($('narrowList'), {
+  tab: 'team', groupBy: 'due', sort: 'priority', showDone: false, cat: null, overdueOnly: false, q: '',
+  props: { entity: true, category: true, assignee: true, due: true }, collapsed: new Set(), selected: new Set(),
+});
+
+renderMain();
+</script>
+</body>
+</html>

@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>에스테잇플로우 · 매물 정보 수렴</title>
+<link rel="stylesheet" href="./style.css"><link rel="stylesheet" href="./information.css">
+<script type="importmap">{"imports":{"three":"./node_modules/three/build/three.module.js"}}</script>
+</head>
+<body>
+<main id="experience" class="experience splash-mode">
+  <section class="brand-panel" aria-label="아파트 매물 정보가 로고로 모이는 3D 스플래시">
+    <header class="brand-header"><div class="wordmark"><svg viewBox="15 15 70 70" aria-hidden="true"><path d="M19.142 32.872 25.370 77.037 65.571 81 63.306 65.995 41.224 63.164 36.977 35.420Z M35.845 19 38.110 34.005 60.758 37.402 64.721 64.580 80.858 66.562 74.347 24.096Z"/></svg><span>에스테잇플로우</span></div><span class="app-purpose">부동산 관리 프로그램</span></header>
+    <div class="scene" id="scene">
+      <div class="model-layer" id="modelLayer"></div>
+      <svg class="connections" id="connections" aria-hidden="true"></svg>
+      <div class="callouts" id="callouts" aria-hidden="true"></div>
+      <div class="compression-guides" id="guides" aria-hidden="true"><span></span><span></span></div>
+      <div class="logo-assembly" id="logoAssembly" aria-hidden="true">
+        <svg class="logo-half" id="leftHalf" viewBox="0 0 100 100"><path d="M19.142 32.872 25.370 77.037 65.571 81 63.306 65.995 41.224 63.164 36.977 35.420Z"/></svg>
+        <svg class="logo-half" id="rightHalf" viewBox="0 0 100 100"><path d="M35.845 19 38.110 34.005 60.758 37.402 64.721 64.580 80.858 66.562 74.347 24.096Z"/></svg>
+      </div>
+      <div class="final-name" id="finalName"><strong>에스테잇플로우</strong><span>부동산 관리 프로그램</span></div>
+      <div class="sample-note" id="sampleNote">시안용 매물 정보</div>
+    </div>
+    <footer class="story-footer"><span class="stage-number" id="stageNumber">01 — 04</span><div class="story-copy"><h2 id="stageTitle">아파트 단지</h2><p id="stageDescription">건물에서 매물 정보를 펼칩니다.</p></div><div class="item-count" id="itemCount"><span id="countValue">0</span><small>정보 항목</small></div></footer>
+  </section>
+  <section class="login-panel" aria-label="로그인 화면 미리보기"><div class="login-top"><span>사무소 계정</span><span class="preview-tag">LOGIN PREVIEW</span></div><div class="login-content"><h1 class="login-title">로그인</h1><p class="login-description">사무소 계정으로 로그인하세요.</p><form id="loginForm"><label for="email">아이디 또는 이메일</label><input id="email" autocomplete="off" placeholder="office@estait.com"><div class="password-label"><label for="password">비밀번호</label><button type="button" class="text-button" id="forgot">비밀번호 찾기</button></div><input id="password" type="password" autocomplete="off" placeholder="비밀번호 입력"><button class="login-button" type="submit"><span>로그인</span><span aria-hidden="true">↗</span></button><p id="formNote" class="form-note" role="status">화면 미리보기 · 입력 내용은 전송되지 않습니다.</p></form></div><footer class="login-footer">© 2026 Estait Inc.</footer></section>
+</main>
+<aside class="studio" aria-label="스플래시 데모 재생 컨트롤">
+  <div class="studio-top"><span class="studio-name"><i></i> 정보 수렴 시안</span><div class="view-tabs" role="group" aria-label="화면 보기"><button id="splashView" aria-pressed="true">스플래시</button><button id="loginView" aria-pressed="false">로그인</button></div><span class="studio-hint">R 다시 재생 · Space 일시정지</span></div>
+  <div class="transport"><button id="replay" class="icon-button" aria-label="처음부터 다시 재생">↺</button><button id="play" class="play-button" aria-label="일시정지">Ⅱ</button><div class="timeline-wrap"><input id="timeline" type="range" min="0" max="10" step="0.01" value="0" aria-label="애니메이션 구간"><div class="chapters"><button data-time="2.4">01 매물 정보</button><button data-time="5.5">02 정보 증가</button><button data-time="7.3">03 모으기</button><button data-time="10">04 로고</button></div></div><output id="timecode">00.0 / 10.0</output><select id="speed" aria-label="재생 속도"><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="1.5">1.5×</option></select><label class="loop-label"><input type="checkbox" id="loop">반복</label></div>
+</aside>
+<script type="module" src="./scene.js"></script>
+</body>
+</html>

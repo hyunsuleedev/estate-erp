@@ -1,0 +1,437 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>EstaitFlow · Splash screen v1 (슬랩)</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.186.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.186.0/examples/jsm/"
+      }
+    }
+  </script>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #fbfaf7;
+      --ink: #37352f;
+      --muted: #787774;
+      --line: #e9e9e7;
+      --accent: #2383e2;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; }
+    body {
+      font-family: "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont,
+        "Apple SD Gothic Neo", "Segoe UI", "Noto Sans KR", sans-serif;
+      background: var(--bg);
+      color: var(--ink);
+      -webkit-font-smoothing: antialiased;
+      overflow: hidden;
+    }
+
+    /* ---------- 스플래시 ---------- */
+    .splash {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100svh;
+      width: 100%;
+    }
+    .splash__body {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      width: 100%;
+      padding-bottom: 9vh;
+      opacity: 0;
+      transition: opacity 500ms ease-out;
+    }
+    .splash__body.is-revealed { opacity: 1; }
+    .splash__scene {
+      position: relative;
+      width: 100%;
+      max-width: 560px;
+      height: clamp(200px, 30vh, 320px);
+    }
+    .splash__scene canvas { display: block; width: 100%; height: 100%; }
+    .splash__text { margin-top: 32px; text-align: center; }
+    .splash__title {
+      margin: 0;
+      font-size: 22px;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+    }
+    .splash__status {
+      margin: 8px 0 0;
+      font-size: 13px;
+      color: var(--muted);
+    }
+    .splash__hint {
+      margin: 4px 0 0;
+      font-size: 12px;
+      color: color-mix(in srgb, var(--muted) 70%, transparent);
+      opacity: 0;
+      transition: opacity 500ms;
+    }
+    .splash__hint.is-visible { opacity: 1; }
+    .splash__footer {
+      position: absolute;
+      bottom: 24px;
+      margin: 0;
+      font-size: 11px;
+      letter-spacing: 0.02em;
+      color: color-mix(in srgb, var(--muted) 60%, transparent);
+    }
+
+    /* ---------- 시안 컨트롤 (제품 UI 아님) ---------- */
+    .panel {
+      position: fixed;
+      right: 16px;
+      bottom: 16px;
+      width: 248px;
+      padding: 12px 14px 14px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.92);
+      backdrop-filter: blur(8px);
+      box-shadow: 0 8px 24px rgba(55, 53, 47, 0.06);
+      font-size: 12px;
+      color: var(--ink);
+      user-select: none;
+    }
+    .panel.is-hidden { display: none; }
+    .panel__head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 10px;
+      font-weight: 600;
+    }
+    .panel__head small { font-weight: 400; color: var(--muted); }
+    .panel__row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      min-height: 28px;
+    }
+    .panel__row + .panel__row { border-top: 1px solid var(--line); }
+    .panel label { color: var(--muted); }
+    .panel input[type="range"] { width: 120px; accent-color: var(--ink); }
+    .panel input[type="checkbox"] { accent-color: var(--ink); }
+    .panel select {
+      font: inherit;
+      padding: 2px 4px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #fff;
+      color: var(--ink);
+    }
+    .panel button {
+      font: inherit;
+      font-size: 12px;
+      padding: 4px 10px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #fff;
+      color: var(--ink);
+      cursor: pointer;
+    }
+    .panel button:hover { background: #f7f6f3; }
+    .panel__foot {
+      margin-top: 10px;
+      font-size: 11px;
+      color: var(--muted);
+    }
+    .panel__foot kbd {
+      font: inherit;
+      padding: 0 4px;
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      background: #fff;
+    }
+  </style>
+</head>
+<body>
+  <main class="splash" aria-busy="true" aria-live="polite">
+    <div class="splash__body" id="body">
+      <div class="splash__scene" id="scene"></div>
+      <div class="splash__text">
+        <p class="splash__title">에스테잇플로우</p>
+        <p class="splash__status" id="status">사무소 데이터를 불러오는 중</p>
+        <p class="splash__hint" id="hint">시간이 오래 걸리고 있습니다. 네트워크 상태를 확인해 주세요.</p>
+      </div>
+    </div>
+    <p class="splash__footer">Estait Inc.</p>
+  </main>
+
+  <aside class="panel" id="panel" aria-label="시안 컨트롤">
+    <div class="panel__head">
+      <span>스플래시 시안 v1</span>
+      <small>슬랩</small>
+    </div>
+    <div class="panel__row">
+      <label>재생</label>
+      <button id="replay" type="button">처음부터</button>
+    </div>
+    <div class="panel__row">
+      <label for="mode">진행률</label>
+      <select id="mode">
+        <option value="auto" selected>자동 (2.4초)</option>
+        <option value="manual">수동</option>
+      </select>
+    </div>
+    <div class="panel__row">
+      <label for="progress">값</label>
+      <input id="progress" type="range" min="0" max="100" value="100" disabled />
+    </div>
+    <div class="panel__row">
+      <label for="slabs">판 개수</label>
+      <select id="slabs">
+        <option value="3">3</option>
+        <option value="4" selected>4</option>
+        <option value="5">5</option>
+      </select>
+    </div>
+    <div class="panel__row">
+      <label for="spin">느린 회전</label>
+      <input id="spin" type="checkbox" checked />
+    </div>
+    <div class="panel__row">
+      <label for="stall">지연 안내 (6초 후)</label>
+      <input id="stall" type="checkbox" />
+    </div>
+    <p class="panel__foot"><kbd>H</kbd> 패널 숨기기 · <kbd>R</kbd> 다시 재생</p>
+  </aside>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+
+    // ---------- 파라미터 (제품 구현과 동일한 값) ----------
+    const SLAB = { w: 2.2, h: 0.15, d: 1.6, gap: 0.085 };
+    const SCATTER = [
+      { x: 0, y: 0, z: 0, rx: 0, ry: 0, rz: 0 },
+      { x: -0.45, y: 0.32, z: 0.3, rx: 0.06, ry: 0.3, rz: -0.04 },
+      { x: 0.42, y: 0.6, z: -0.36, rx: -0.05, ry: -0.42, rz: 0.06 },
+      { x: -0.2, y: 0.85, z: 0.48, rx: 0.04, ry: 0.22, rz: -0.08 },
+      { x: 0.3, y: 1.08, z: -0.2, rx: -0.03, ry: -0.18, rz: 0.05 },
+    ];
+    const TURN_SECONDS = 26;
+    const INTRO_HOLD = 0.35;
+    const INTRO_DURATION = 2.3;
+    const REVEAL_DELAY_MS = 260;
+    const STALL_HINT_MS = 6000;
+
+    const clamp01 = (v) => Math.min(1, Math.max(0, v));
+    const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
+    const lerp = (a, b, t) => a + (b - a) * t;
+    const slabTargetY = (i) => i * (SLAB.h + SLAB.gap) + SLAB.h / 2;
+    const stackHeight = (n) => SLAB.h * n + SLAB.gap * (n - 1);
+
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    // ---------- 렌더러 / 카메라 ----------
+    const container = document.getElementById('scene');
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'low-power' });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.VSMShadowMap;
+    renderer.toneMapping = THREE.NoToneMapping;
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    container.appendChild(renderer.domElement);
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(24, 1, 0.1, 30);
+    camera.position.set(3.0, 2.2, 4.05);
+
+    // ---------- 조명 (외부 HDR 없이 라이트 노드만) ----------
+    scene.add(new THREE.AmbientLight(0xffffff, 1.15));
+    scene.add(new THREE.HemisphereLight(0xffffff, 0xe4e2dd, 0.75));
+
+    const key = new THREE.DirectionalLight(0xffffff, 1.25);
+    key.position.set(4, 7, 3);
+    key.castShadow = true;
+    key.shadow.mapSize.set(1024, 1024);
+    key.shadow.bias = -0.0002;
+    key.shadow.radius = 5;
+    key.shadow.blurSamples = 12;
+    key.shadow.intensity = 0.55;
+    key.shadow.camera.near = 1;
+    key.shadow.camera.far = 20;
+    key.shadow.camera.left = -3;
+    key.shadow.camera.right = 3;
+    key.shadow.camera.top = 3;
+    key.shadow.camera.bottom = -3;
+    scene.add(key);
+
+    const fill = new THREE.DirectionalLight(0xffffff, 0.35);
+    fill.position.set(-5, 3, -2);
+    scene.add(fill);
+
+    // ---------- 슬랩 ----------
+    const group = new THREE.Group();
+    scene.add(group);
+
+    // ---------- 바닥 접촉 그림자 (블러된 라운드 사각형 텍스처, 스택과 함께 회전) ----------
+    function makeContactShadowTexture() {
+      const size = 256;
+      const canvas = document.createElement('canvas');
+      canvas.width = canvas.height = size;
+      const ctx = canvas.getContext('2d');
+      const pad = 56;
+      ctx.filter = 'blur(22px)';
+      ctx.fillStyle = 'rgba(55, 53, 47, 1)';
+      ctx.beginPath();
+      ctx.roundRect(pad, pad, size - pad * 2, size - pad * 2, 18);
+      ctx.fill();
+      const texture = new THREE.CanvasTexture(canvas);
+      texture.colorSpace = THREE.SRGBColorSpace;
+      return texture;
+    }
+    const contactShadow = new THREE.Mesh(
+      new THREE.PlaneGeometry(SLAB.w + 1.1, SLAB.d + 1.1),
+      new THREE.MeshBasicMaterial({
+        map: makeContactShadowTexture(),
+        transparent: true,
+        opacity: 0.32,
+        depthWrite: false,
+      }),
+    );
+    contactShadow.rotation.x = -Math.PI / 2;
+    contactShadow.position.y = -0.002;
+    group.add(contactShadow);
+    const slabGeometry = new RoundedBoxGeometry(SLAB.w, SLAB.h, SLAB.d, 4, 0.035);
+    const slabMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.92, metalness: 0 });
+    let slabs = [];
+
+    function buildSlabs(count) {
+      slabs.forEach((s) => group.remove(s));
+      slabs = Array.from({ length: count }, () => {
+        const mesh = new THREE.Mesh(slabGeometry, slabMaterial);
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        group.add(mesh);
+        return mesh;
+      });
+      camera.lookAt(0, stackHeight(count) / 2, 0);
+    }
+
+    // ---------- 상태 ----------
+    const ui = {
+      body: document.getElementById('body'),
+      hint: document.getElementById('hint'),
+      panel: document.getElementById('panel'),
+      replay: document.getElementById('replay'),
+      mode: document.getElementById('mode'),
+      progress: document.getElementById('progress'),
+      slabs: document.getElementById('slabs'),
+      spin: document.getElementById('spin'),
+      stall: document.getElementById('stall'),
+    };
+
+    const state = {
+      startTime: performance.now(),
+      smooth: reducedMotion ? 1 : 0,
+      manual: false,
+      manualValue: 1,
+      spin: true,
+      stallHint: false,
+      revealTimer: 0,
+      stallTimer: 0,
+    };
+
+    function replay() {
+      state.startTime = performance.now();
+      state.smooth = reducedMotion ? 1 : 0;
+      ui.body.classList.remove('is-revealed');
+      ui.hint.classList.remove('is-visible');
+      clearTimeout(state.revealTimer);
+      clearTimeout(state.stallTimer);
+      state.revealTimer = setTimeout(() => ui.body.classList.add('is-revealed'), REVEAL_DELAY_MS);
+      state.stallTimer = setTimeout(() => {
+        if (state.stallHint) ui.hint.classList.add('is-visible');
+      }, STALL_HINT_MS);
+    }
+
+    ui.replay.addEventListener('click', replay);
+    ui.mode.addEventListener('change', () => {
+      state.manual = ui.mode.value === 'manual';
+      ui.progress.disabled = !state.manual;
+      if (!state.manual) replay();
+    });
+    ui.progress.addEventListener('input', () => {
+      state.manualValue = Number(ui.progress.value) / 100;
+    });
+    ui.slabs.addEventListener('change', () => {
+      buildSlabs(Number(ui.slabs.value));
+      replay();
+    });
+    ui.spin.addEventListener('change', () => { state.spin = ui.spin.checked; });
+    ui.stall.addEventListener('change', () => {
+      state.stallHint = ui.stall.checked;
+      if (!state.stallHint) ui.hint.classList.remove('is-visible');
+    });
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'h' || e.key === 'H') ui.panel.classList.toggle('is-hidden');
+      if (e.key === 'r' || e.key === 'R') replay();
+    });
+
+    // ---------- 리사이즈 ----------
+    function resize() {
+      const { clientWidth: w, clientHeight: h } = container;
+      renderer.setSize(w, h, false);
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+    }
+    new ResizeObserver(resize).observe(container);
+    resize();
+
+    // ---------- 루프 ----------
+    let last = performance.now();
+    function frame(now) {
+      const delta = Math.min(0.1, (now - last) / 1000);
+      last = now;
+      const t = (now - state.startTime) / 1000;
+
+      const target = state.manual
+        ? clamp01(state.manualValue)
+        : reducedMotion
+          ? 1
+          : clamp01((t - INTRO_HOLD) / INTRO_DURATION);
+      state.smooth = lerp(state.smooth, target, Math.min(1, delta * 5));
+      const p = state.smooth;
+
+      slabs.forEach((slab, i) => {
+        const from = SCATTER[i];
+        const local = i === 0 ? 1 : easeOutCubic(clamp01((p - i * 0.16) / 0.52));
+        const hover = reducedMotion ? 0 : Math.sin(t * 1.3 + i * 1.7) * 0.03 * (1 - local);
+        slab.position.set(
+          lerp(from.x, 0, local),
+          lerp(from.y + slabTargetY(i), slabTargetY(i), local) + hover,
+          lerp(from.z, 0, local),
+        );
+        slab.rotation.set(lerp(from.rx, 0, local), lerp(from.ry, 0, local), lerp(from.rz, 0, local));
+      });
+
+      const spinning = state.spin && !reducedMotion;
+      group.rotation.y = spinning ? -0.55 + (t * Math.PI * 2) / TURN_SECONDS : -0.55;
+      group.position.y = reducedMotion ? 0 : Math.sin(t * 0.9) * 0.012 * p;
+
+      renderer.render(scene, camera);
+      requestAnimationFrame(frame);
+    }
+
+    buildSlabs(4);
+    replay();
+    requestAnimationFrame(frame);
+  </script>
+</body>
+</html>

@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#fbfaf7">
+  <title>에스테잇플로우 · 로딩 화면</title>
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <main>
+    <section class="splash" id="splash" aria-label="에스테잇플로우 시작 중" aria-busy="true">
+      <div class="signature">
+        <div class="mark" aria-hidden="true">
+          <svg class="logo-piece" viewBox="15 15 70 70"><path d="M19.142 32.872 25.370 77.037 65.571 81 63.306 65.995 41.224 63.164 36.977 35.420Z"/></svg>
+          <svg class="logo-piece" viewBox="15 15 70 70"><path d="M35.845 19 38.110 34.005 60.758 37.402 64.721 64.580 80.858 66.562 74.347 24.096Z"/></svg>
+        </div>
+        <p class="product-name">에스테잇플로우</p>
+        <div class="loader" aria-hidden="true"><span></span></div>
+        <span class="sr-only" role="status" id="status">에스테잇플로우를 시작하고 있습니다.</span>
+      </div>
+    </section>
+    <section class="login" id="login" aria-label="로그인 미리보기" inert aria-hidden="true">
+      <div class="login-inner">
+        <div class="brand"><svg viewBox="0 0 100 100" aria-hidden="true"><path d="M19.142 32.872 25.370 77.037 65.571 81 63.306 65.995 41.224 63.164 36.977 35.420Z M35.845 19 38.110 34.005 60.758 37.402 64.721 64.580 80.858 66.562 74.347 24.096Z"/></svg><span>에스테잇플로우</span></div>
+        <h1>로그인</h1>
+        <p class="intro">사무소 계정으로 로그인하세요.</p>
+        <form id="loginForm">
+          <label for="email">아이디 또는 이메일</label>
+          <input id="email" autocomplete="username" placeholder="office@estait.com" required>
+          <label for="password">비밀번호</label>
+          <input id="password" type="password" autocomplete="current-password" placeholder="비밀번호 입력" required>
+          <button class="submit" type="submit">로그인 <span aria-hidden="true">↗</span></button>
+          <p class="note" id="formNote" role="status">화면 시안 · 입력 내용은 전송되지 않습니다.</p>
+        </form>
+      </div>
+    </section>
+  </main>
+  <aside class="preview" aria-label="시안 재생 도구">
+    <button id="replay">다시 보기 <span aria-hidden="true">↺</span></button>
+    <button id="hold" aria-pressed="false">로딩 유지</button>
+    <button id="finish">완료 전환</button>
+  </aside>
+  <script src="./scene.js"></script>
+</body>
+</html>

@@ -1,0 +1,795 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>고객 원장 표 시안</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+<style>
+/* 값은 매물관리 표(property-listings-table.tsx, property-toolbar.tsx)에서 그대로 옮겼다. */
+:root {
+  color-scheme: light;
+  --fg: #37352f; --muted: #787774; --muted-2: #6f6d6a; --faint: #b4b4b1;
+  --line: #eeeeec; --line-head: #d8d6d0; --line-pin: #d9d9d6; --line-case: #e3e2de;
+  --head: #f7f7f5; --head-pin: #f5f4f1; --head-detail: #f2f6f4;
+  --surface: #f7f6f3; --tool: #f1f0ec; --border: #e9e9e7;
+  --shadow: 0 1px 2px rgba(55, 53, 47, .06), 0 12px 32px rgba(55, 53, 47, .14);
+  --row: 33px;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body { margin: 0; background: #fff; color: var(--fg); font: 13px/1.5 "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Segoe UI", "Noto Sans KR", sans-serif; -webkit-font-smoothing: antialiased; word-break: keep-all; }
+button, input { font: inherit; color: inherit; }
+button { cursor: pointer; background: none; border: 0; padding: 0; }
+:focus-visible { outline: 2px solid #2383e2; outline-offset: 1px; }
+[hidden] { display: none !important; }
+.i { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
+
+/* 앱 셸 */
+.app { height: 100vh; display: grid; grid-template-columns: 256px minmax(0, 1fr); }
+.app.mini { grid-template-columns: 48px minmax(0, 1fr); }
+.side { background: var(--surface); border-right: 1px solid var(--border); display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+.side-top { height: 40px; display: flex; align-items: center; justify-content: space-between; padding: 0 12px 0 16px; flex-shrink: 0; }
+.brand { font-weight: 700; font-size: 14px; letter-spacing: -.2px; }
+.nav { flex: 1; overflow: auto; padding: 4px 8px; }
+.nav-g { font-size: 11.5px; color: var(--muted); margin: 14px 8px 5px; white-space: nowrap; }
+.nav-g:first-child { margin-top: 4px; }
+.nav-i { display: flex; align-items: center; gap: 9px; padding: 6px 8px; border-radius: 6px; color: #4d4b45; white-space: nowrap; }
+.nav-i.on { background: #ebebea; color: var(--fg); font-weight: 600; }
+.me { display: flex; align-items: center; gap: 9px; padding: 10px 12px 12px; flex-shrink: 0; white-space: nowrap; }
+.av { width: 24px; height: 24px; display: grid; place-items: center; font-size: 11px; color: var(--muted); flex-shrink: 0; }
+.mini .brand, .mini .nav-g, .mini .nav-i span, .mini .me div { display: none; }
+.mini .side-top { justify-content: center; padding: 0; }
+.mini .nav-i { justify-content: center; padding: 7px 0; }
+.mini .me { justify-content: center; padding: 10px 0 12px; }
+.icon-btn { width: 26px; height: 26px; display: grid; place-items: center; border-radius: 5px; color: var(--muted-2); flex-shrink: 0; }
+.icon-btn:hover { background: rgba(55, 53, 47, .08); }
+.main { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.tabbar { height: 40px; flex-shrink: 0; display: flex; align-items: flex-end; gap: 8px; padding: 0 6px; background: var(--surface); border-bottom: 1px solid var(--border); }
+.tab { height: 35px; display: flex; align-items: center; gap: 8px; padding: 0 14px; background: #fff; border: 1px solid var(--border); border-bottom-color: #fff; border-radius: 6px 6px 0 0; margin-bottom: -1px; }
+.tab-add { color: var(--muted); padding-bottom: 8px; }
+
+/* 1행: 보기 · 검색 · 주요 동작 */
+.row1 { display: flex; align-items: center; gap: 8px; padding: 9px 12px; flex-shrink: 0; }
+.seg { display: flex; align-items: center; gap: 1px; height: 30px; padding: 2px; border-radius: 15px; background: var(--tool); flex-shrink: 0; }
+.seg button { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 12px; border-radius: 13px; color: var(--muted); white-space: nowrap; }
+.seg button:hover { color: var(--fg); }
+.seg button[aria-pressed="true"] { background: var(--fg); color: #fff; font-weight: 500; }
+.seg .n { font-size: 11.5px; opacity: .65; font-variant-numeric: tabular-nums; }
+.seg.light button { padding: 0 10px; font-size: 12px; }
+.seg.light button[aria-pressed="true"] { background: #fff; color: var(--fg); }
+.seg.light .i { width: 13px; height: 13px; }
+.searchbox { display: flex; align-items: center; height: 30px; flex: 1 1 auto; min-width: 280px; max-width: 720px; border-radius: 15px; background: var(--tool); }
+.searchbox .area { display: flex; align-items: center; gap: 6px; flex: 0 1 170px; min-width: 110px; height: 100%; padding: 0 10px 0 14px; border-radius: 15px 0 0 15px; color: var(--fg); white-space: nowrap; }
+.searchbox .area:hover { background: rgba(55, 53, 47, .05); }
+.searchbox .area span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; text-align: left; }
+.searchbox .area .i { width: 14px; height: 14px; color: var(--muted); }
+.searchbox .bar { width: 1px; height: 14px; background: #d9d8d3; flex-shrink: 0; }
+.searchbox .q { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; padding: 0 12px; }
+.searchbox .q .i { width: 14px; height: 14px; color: var(--muted); }
+.searchbox input { flex: 1; min-width: 0; border: 0; background: transparent; outline: 0; }
+.searchbox input::placeholder { color: var(--muted); }
+.spacer { flex: 1; }
+.primary { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 14px; border-radius: 15px; background: var(--fg); color: #fff; font-weight: 500; white-space: nowrap; flex-shrink: 0; }
+.primary:hover { background: #2c2a25; }
+.primary .i { width: 14px; height: 14px; }
+
+/* 2행: 좁히기 */
+.row2 { display: flex; align-items: center; gap: 6px; padding: 0 12px 9px; flex-shrink: 0; border-bottom: 1px solid var(--border); }
+.fchip { display: inline-flex; align-items: center; height: 28px; max-width: 260px; border: 1px solid #e3e2de; border-radius: 14px; background: #fff; color: var(--muted); font-size: 12.5px; flex-shrink: 0; }
+.fchip:hover { border-color: #d6d5d0; background: rgba(55, 53, 47, .04); color: var(--fg); }
+.fchip > button:first-child { display: inline-flex; align-items: center; gap: 6px; height: 100%; padding: 0 10px 0 12px; border-radius: 14px; white-space: nowrap; }
+.fchip .i { width: 12px; height: 12px; color: #a5a39f; }
+.fchip.on { border-color: transparent; background: #ebeae6; color: var(--fg); }
+.fchip.on > button:first-child { padding-right: 4px; }
+.fchip.on .lbl { color: var(--muted); }
+.fchip.on b { font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
+.fchip .clear { width: 22px; height: 22px; margin-right: 2px; display: grid; place-items: center; border-radius: 50%; color: var(--muted); }
+.fchip .clear:hover { background: rgba(55, 53, 47, .1); color: var(--fg); }
+.ghost { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 6px; font-size: 12.5px; color: var(--muted); white-space: nowrap; flex-shrink: 0; }
+.ghost:hover { background: rgba(55, 53, 47, .08); color: var(--fg); }
+.ghost .i { width: 14px; height: 14px; }
+
+/* 표 */
+.scroll { flex: 1; min-height: 0; overflow: auto; position: relative; background: #fff; container-type: inline-size; }
+.guide { position: sticky; top: 0; z-index: 9; height: 36px; background: var(--head); border-bottom: 1px solid var(--border); }
+.guide-in { position: relative; height: 100%; }
+.guide-toggle { position: absolute; top: 8px; display: inline-grid; place-items: center; width: 20px; height: 20px; border: 1px solid #9ba7a3; border-radius: 3px; background: #fff; color: #536b64; box-shadow: 0 1px 1px rgba(42, 51, 47, .05); }
+.guide-toggle:hover { border-color: #738b83; background: #f4f8f6; color: #315d50; }
+.guide-toggle .i { width: 12px; height: 12px; }
+.guide-line { position: absolute; top: 18px; height: 1px; background: #94a3b8; pointer-events: none; }
+.guide-cap { position: absolute; top: 18px; width: 1px; height: 8px; background: #94a3b8; pointer-events: none; }
+.t { width: 100%; table-layout: fixed; border-collapse: separate; border-spacing: 0; }
+.t thead { position: sticky; top: 36px; z-index: 6; }
+.t th, .t td { font-weight: 400; text-align: left; padding: 0 10px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.t thead th { height: 36px; background: var(--head); border-right: 1px solid var(--line); border-bottom: 1px solid var(--line-head); }
+.t thead th:last-child { border-right: 0; }
+.t thead th.detail { background: var(--head-detail); }
+.t thead th.detail .h-label { color: #52645e; }
+.t thead th.pin { background: var(--head-pin); }
+.h-label { display: inline-flex; align-items: center; gap: 4px; min-width: 0; max-width: 100%; font-size: 12px; color: var(--muted); }
+.h-label .i { width: 12px; height: 12px; color: rgba(120, 119, 116, .7); }
+.h-sort { display: flex; align-items: center; gap: 3px; width: 100%; height: 36px; }
+.h-sort:hover .h-label { color: var(--fg); }
+.h-sort .arrow { width: 12px; height: 12px; color: var(--muted); }
+.pin { position: sticky; z-index: 3; }
+.t thead .pin { z-index: 7; }
+.pin-end { box-shadow: 1px 0 0 0 var(--line-pin); }
+.t tbody td { height: var(--row); font-size: 13px; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); background: #fff; vertical-align: middle; }
+.t tbody td:last-child { border-right: 0; }
+.t tr.row:hover > td { background: #f8fafc; }
+.t tr.row.sel > td { background: rgba(55, 53, 47, .05); }
+.t tr.row > td.span { vertical-align: top; line-height: 32px; }
+.t tr.row > td.pin { background: #fff; }
+.t tr.row:hover > td.pin:not(.span) { background: #f8fafc; }
+.t tr.row.sel > td.pin { background: #f4f4f3; }
+.t tr.case-end > td, .t td.case-end { border-bottom-color: var(--line-case); }
+.c-sel { text-align: center !important; padding: 0 !important; }
+.c-sel input { margin: 0; width: 14px; height: 14px; accent-color: var(--fg); cursor: pointer; vertical-align: middle; }
+.cust { font-size: 14px; font-weight: 600; color: #0f172a; text-align: left; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block; vertical-align: top; }
+.cust:hover { text-decoration: underline; text-underline-offset: 2px; }
+.phone { font-size: 13px; color: #334155; font-variant-numeric: tabular-nums; }
+.more { margin-left: 5px; font-size: 11px; color: var(--muted); font-weight: 400; }
+.c-act { padding: 0 !important; text-align: center !important; }
+.kebab { width: 26px; height: 26px; display: inline-grid; place-items: center; border-radius: 5px; color: #475569; vertical-align: middle; }
+.kebab:hover { background: var(--surface); }
+.pill { display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 6px; border-radius: 4px; font-size: 12px; font-weight: 500; white-space: nowrap; }
+.pill .d { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+.k-demand { background: #d3e5ef; color: #1b64b1; }
+.k-listing { background: #dbeddb; color: #0f7b6c; }
+.x-sale { background: #fdebec; color: #8f4b46; }
+.x-jeonse { background: #e7f3f8; color: #337ea9; }
+.x-monthly { background: #fbf3db; color: #8f6b1f; }
+.s-open { background: #eef3ed; color: #44745a; }
+.s-open .d { background: #6c9b7a; }
+.s-hold { background: #fbf3db; color: #9f6b00; }
+.s-hold .d { background: #dfab01; }
+.n-over { background: #ffe2dd; color: #bb3430; }
+.n-today { background: #fdecc8; color: #8a5a13; }
+.n-plan { background: #f1f1ef; color: #5f5e5a; }
+.tag-urgent { display: inline-flex; align-items: center; height: 18px; padding: 0 5px; margin-left: 6px; border-radius: 4px; background: #ffe2dd; color: #bb3430; font-size: 11px; font-weight: 500; vertical-align: 1px; }
+.intake { font-size: 13px; font-weight: 500; color: #0f172a; text-align: left; }
+.intake:hover { text-decoration: underline; text-underline-offset: 2px; }
+.money { font-weight: 500; font-variant-numeric: tabular-nums; color: #0f172a; }
+.dash { color: var(--muted); }
+.ln { display: flex; align-items: center; height: 33px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.lines .ln + .ln { box-shadow: 0 -1px 0 0 var(--line); }
+.lines-cell { padding-top: 0 !important; padding-bottom: 0 !important; }
+.money.off { color: var(--faint); font-weight: 400; }
+.stop { font-size: 11px; margin-left: 4px; color: var(--muted); font-weight: 400; }
+.cell-btn { display: block; width: 100%; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.who { color: #334155; }
+.who.none { color: var(--muted); }
+.next-add { color: transparent; }
+tr.row:hover .next-add, .next-btn:focus-visible .next-add { color: var(--muted); }
+.next-dash { color: var(--muted); }
+tr.row:hover .next-dash { display: none; }
+.next-add-wrap { display: none; }
+tr.row:hover .next-add-wrap, .next-btn:focus-visible .next-add-wrap { display: inline; color: var(--muted); }
+.match-btn { display: inline-flex; align-items: center; justify-content: center; gap: 3px; min-width: 44px; height: 24px; padding: 0 6px; border: 1px solid var(--border); border-radius: 6px; background: #fff; font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; vertical-align: middle; }
+.match-btn:hover { background: var(--surface); }
+.match-btn[aria-expanded="true"] { background: #f1f1ef; }
+.match-btn .i { width: 12px; height: 12px; }
+.consult { display: block; width: 100%; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; color: #334155; }
+.consult:hover { text-decoration: underline; text-underline-offset: 2px; }
+.consult .when { color: var(--muted); margin-right: 6px; font-variant-numeric: tabular-nums; }
+.memo { display: block; width: 100%; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #334155; min-height: 20px; }
+.memo-add { color: transparent; font-size: 12px; }
+tr.row:hover .memo-add { color: var(--muted); }
+.created { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.edit-input { width: 100%; height: 26px; border: 1px solid #2383e2; border-radius: 4px; padding: 0 6px; background: #fff; font-size: 13px; outline: 0; }
+.panel-row td { padding: 0 !important; height: auto !important; background: #fbfbfa !important; border-right: 0 !important; white-space: normal; }
+.panel { position: sticky; left: 0; width: min(100%, 100cqw); padding: 12px 14px 14px; }
+.panel b { font-weight: 600; }
+.panel p { margin: 3px 0 0; font-size: 12px; color: var(--muted-2); }
+.empty-row td { height: 200px !important; text-align: center; color: var(--muted); }
+.foot { display: flex; align-items: center; gap: 12px; min-height: 28px; padding: 0 12px; border-top: 1px solid var(--border); background: #faf9f6; font-size: 11.5px; color: var(--muted); flex-shrink: 0; }
+.foot .link { text-decoration: underline; text-underline-offset: 2px; font-size: 11.5px; color: var(--muted-2); }
+
+/* 팝오버 */
+.pop { position: fixed; z-index: 40; min-width: 170px; background: #fff; border: 1px solid var(--border); border-radius: 8px; box-shadow: var(--shadow); padding: 4px; animation: pop .12s cubic-bezier(.2, .8, .2, 1); }
+@keyframes pop { from { transform: translateY(-3px); opacity: 0; } }
+.pop-title { padding: 6px 8px 4px; font-size: 11.5px; font-weight: 500; color: var(--muted); }
+.pop-item { display: flex; align-items: center; justify-content: space-between; gap: 14px; width: 100%; padding: 5px 8px; border-radius: 5px; text-align: left; white-space: nowrap; }
+.pop-item:hover, .pop-item:focus-visible { background: var(--surface); }
+.pop-item .mark { font-size: 11px; color: var(--muted); }
+.pop-item .i { width: 13px; height: 13px; }
+.pop-date { padding: 6px 8px 7px; border-top: 1px solid var(--line); margin-top: 3px; }
+.pop-date input { width: 100%; height: 28px; border: 1px solid var(--border); border-radius: 5px; padding: 0 6px; }
+.pop-check { display: flex; align-items: center; gap: 8px; padding: 5px 8px; border-radius: 5px; cursor: pointer; white-space: nowrap; }
+.pop-check:hover { background: var(--surface); }
+.pop-check input { margin: 0; accent-color: var(--fg); }
+#toast { position: fixed; left: 50%; bottom: 40px; transform: translateX(-50%); z-index: 50; display: flex; align-items: center; gap: 12px; padding: 8px 12px; background: var(--fg); color: #fff; border-radius: 7px; box-shadow: var(--shadow); font-size: 12.5px; max-width: min(560px, calc(100vw - 32px)); }
+#toast button { color: #fff; font-weight: 600; text-decoration: underline; text-underline-offset: 2px; white-space: nowrap; }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; } }
+</style>
+</head>
+<body>
+<div class="app" id="app"></div>
+<div id="popRoot"></div>
+<script src="data.js"></script>
+<script>
+(function () {
+  "use strict";
+  const KEY = "estait-table-property-style-v1";
+  const seed = window.DEMO_SEED;
+  const TODAY = "2026-11-03";
+  const TX = { sale: "매매", jeonse: "전세", monthly: "월세" };
+  const CTYPE = { phone: "전화", visit: "방문", online: "온라인" };
+  const STAGE = { suggested: "제안", buyerInterested: "관심", viewingConfirmed: "임장 확정", viewing: "임장", negotiating: "협상", dealCreated: "거래 전환" };
+  const clone = (o) => JSON.parse(JSON.stringify(o));
+  const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const ICONS = {
+    search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>', panel: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/>',
+    down: '<path d="m6 9 6 6 6-6"/>', up: '<path d="m18 15-6-6-6 6"/>', x: '<path d="M18 6 6 18M6 6l12 12"/>', plus: '<path d="M12 5v14M5 12h14"/>', minus: '<path d="M5 12h14"/>',
+    more: '<circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/>', arrowDown: '<path d="M12 5v14M6 13l6 6 6-6"/>', arrowUp: '<path d="M12 19V5M6 11l6-6 6 6"/>',
+    user: '<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>', users: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8"/>',
+    phone: '<path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8.1 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2z"/>',
+    tag: '<path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z"/><circle cx="7.5" cy="7.5" r="1"/>', type: '<path d="M4 7V4h16v3M9 20h6M12 4v16"/>',
+    won: '<circle cx="12" cy="12" r="9"/><path d="M15 9h-4a2 2 0 0 0 0 4h2a2 2 0 0 1 0 4H9M12 7v10"/>', hash: '<path d="M4 9h16M4 15h16M10 3 8 21M16 3l-2 18"/>', dot: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="1.5"/>',
+    cal: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 11h18"/>', branch: '<circle cx="6" cy="5" r="2"/><circle cx="6" cy="19" r="2"/><circle cx="18" cy="8" r="2"/><path d="M6 7v10M18 10c0 4-6 3-12 7"/>',
+    msg: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>', file: '<path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z"/><path d="M14 3v5h5"/>',
+    pin: '<path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0z"/><circle cx="12" cy="10" r="3"/>', columns: '<rect x="3" y="4" width="18" height="16" rx="1"/><path d="M9 4v16M15 4v16"/>', list: '<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>',
+    grid: '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>', home: '<path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/>', check: '<path d="M20 6 9 17l-5-5"/>',
+  };
+  const icon = (n, cls) => `<svg class="i ${cls || ""}" viewBox="0 0 24 24" aria-hidden="true">${ICONS[n] || ""}</svg>`;
+
+  /* 데이터와 상태 */
+  function loadData() {
+    try {
+      const raw = localStorage.getItem(KEY);
+      if (raw) { const p = JSON.parse(raw); if (p && p.v === seed.v) return p; }
+    } catch (e) { /* 저장소를 못 쓰면 초기 데이터로 동작 */ }
+    return { v: seed.v, items: clone(seed.items) };
+  }
+  let data = loadData();
+  const persist = () => { try { localStorage.setItem(KEY, JSON.stringify(data)); } catch (e) { /* 무시 */ } };
+  const S = {
+    mode: "all", q: "", rentOpen: false, hidden: new Set(),
+    filters: { tx: new Set(), status: new Set(), who: new Set(), due: new Set() },
+    sort: null, selected: new Set(), expanded: null, edit: null, sideMini: false,
+  };
+  const items = () => data.items.filter((i) => i.primary);
+  const item = (id) => data.items.find((i) => i.id === id);
+  const contact = (id) => seed.contacts[id];
+  const user = (id) => seed.users.find((u) => u.id === id);
+
+  /* 표시 규칙 */
+  function won(v) {
+    if (v == null) return "";
+    const e = Math.floor(v / 10000), m = v % 10000;
+    if (e && m) return `${e}억 ${m.toLocaleString("ko-KR")}만`;
+    if (e) return `${e}억`;
+    return `${m.toLocaleString("ko-KR")}만`;
+  }
+  const parseDay = (s) => { const [y, m, d] = s.split("T")[0].split("-").map(Number); return new Date(y, m - 1, d); };
+  const diff = (s) => Math.round((parseDay(s) - parseDay(TODAY)) / 864e5);
+  const mmdd = (s) => { const d = parseDay(s); return `${String(d.getMonth() + 1).padStart(2, "0")}.${String(d.getDate()).padStart(2, "0")}`; };
+  function addDays(n) { const d = parseDay(TODAY); d.setDate(d.getDate() + n); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; }
+  const dueOf = (it) => {
+    if (it.kind !== "demand" || !it.next) return "none";
+    const n = diff(it.next.at);
+    return n < 0 ? "overdue" : n === 0 ? "today" : n <= 5 ? "week" : "later";
+  };
+  const txOf = (it) => (it.kind === "demand" ? [it.tx] : it.options.map((o) => o.tx));
+  const dash = `<span class="dash">-</span>`;
+
+  /* 필터와 묶기 */
+  const FILTERS = {
+    tx: { label: "거래유형", opts: () => Object.entries(TX) },
+    status: { label: "요건상태", opts: () => [["open", "진행중"], ["hold", "보류"]] },
+    who: { label: "담당", opts: () => seed.users.map((u) => [u.id, u.name]) },
+    due: { label: "다음 연락", opts: () => [["overdue", "지남"], ["today", "오늘"], ["week", "이번 주"]] },
+  };
+  function matchesQuery(it) {
+    if (!S.q) return true;
+    if (it.title.includes(S.q) || (it.memo || "").includes(S.q)) return true;
+    const digits = S.q.replace(/\D/g, "");
+    return it.people.some((p) => { const c = contact(p.c); return c.name.includes(S.q) || (digits.length >= 3 && c.phone.replace(/\D/g, "").includes(digits)); });
+  }
+  function passes(it) {
+    const f = S.filters;
+    if (S.mode !== "all" && it.kind !== S.mode) return false;
+    if (!matchesQuery(it)) return false;
+    if (f.tx.size && !txOf(it).some((t) => f.tx.has(t))) return false;
+    if (f.status.size && !f.status.has(it.status)) return false;
+    if (f.who.size && !(it.kind === "demand" && f.who.has(it.assignee))) return false;
+    if (f.due.size && !f.due.has(dueOf(it))) return false;
+    return true;
+  }
+  const DEFAULT_SORT = { key: "created", dir: "desc" };
+  const curSort = () => S.sort || DEFAULT_SORT;
+  function groups() {
+    const map = new Map();
+    items().filter(passes).forEach((i) => { if (!map.has(i.primary)) map.set(i.primary, []); map.get(i.primary).push(i); });
+    const { key, dir } = curSort();
+    const sign = dir === "asc" ? 1 : -1;
+    const val = (g) => {
+      const f = g.items[0];
+      const d = f.kind === "demand";
+      switch (key) {
+        case "customer": return contact(g.id).name;
+        case "match": return g.items.reduce((n, i) => n + i.matches.total, 0);
+        case "created": return g.items.map((i) => i.receivedAt).sort().pop();
+        case "budgetMin": return d ? f.priceMin : f.options[0].price;
+        case "budgetMax": return d ? f.priceMax : f.options[0].price;
+        case "rentMin": return d ? (f.rentMin ?? -1) : (f.options[0].rent ?? -1);
+        case "rentMax": return d ? (f.rentMax ?? -1) : (f.options[0].rent ?? -1);
+        case "areaMin": return d ? f.areaMin : f.area;
+        case "areaMax": return d ? f.areaMax : f.area;
+        default: return 0;
+      }
+    };
+    const list = [...map.entries()].map(([id, its]) => ({ id, items: its }));
+    return list.sort((a, b) => {
+      const x = val(a), y = val(b);
+      if (x === y) return contact(a.id).name < contact(b.id).name ? -1 : 1;
+      return (x < y ? -1 : 1) * sign;
+    });
+  }
+
+  /* 열: 매물관리 표처럼 식별 열을 왼쪽에 고정하고, 메모 열이 남는 폭을 가져간다 */
+  const COLS = [
+    { k: "select", w: 36, pin: true },
+    { k: "customer", w: 108, pin: true, label: "고객", icon: "user", sort: "customer" },
+    { k: "phone", w: 128, pin: true, label: "연락처", icon: "phone" },
+    { k: "actions", w: 40, pin: true, end: true },
+    { k: "kind", w: 66, label: "구분", icon: "tag", opt: "kind" },
+    { k: "tx", w: 60, label: "거래", icon: "tag", opt: "tx" },
+    { k: "intake", w: 220, label: "의뢰", icon: "type" },
+    { k: "status", w: 80, label: "상태", icon: "dot", opt: "status" },
+    { k: "budgetMin", w: 112, label: "최소예산", icon: "won", sort: "budgetMin" },
+    { k: "budgetMax", w: 112, label: "최대예산", icon: "won", sort: "budgetMax" },
+    { k: "rentMin", w: 78, label: "최소월세", icon: "won", sort: "rentMin", rent: true },
+    { k: "rentMax", w: 78, label: "최대월세", icon: "won", sort: "rentMax", rent: true },
+    { k: "areaMin", w: 78, label: "최소평형", icon: "hash", sort: "areaMin", opt: "area" },
+    { k: "areaMax", w: 78, label: "최대평형", icon: "hash", sort: "areaMax", opt: "area" },
+    { k: "match", w: 66, label: "매칭", icon: "branch", sort: "match", opt: "match" },
+    { k: "who", w: 72, label: "담당", icon: "user", opt: "who" },
+    { k: "next", w: 104, label: "다음 연락", icon: "cal", opt: "next" },
+    { k: "consult", w: 240, label: "최근 상담", icon: "msg", opt: "consult" },
+    { k: "memo", grow: true, min: 180, label: "의뢰 메모", icon: "file", opt: "memo" },
+    { k: "created", w: 78, label: "등록일", icon: "cal", sort: "created", opt: "created" },
+  ];
+  const COLUMN_OPTIONS = [["kind", "구분"], ["tx", "거래"], ["status", "상태"], ["area", "최소·최대 평형"], ["match", "매칭"], ["who", "담당"], ["next", "다음 연락"], ["consult", "최근 상담"], ["memo", "의뢰 메모"], ["created", "등록일"]];
+  const visibleCols = () => COLS.filter((c) => (!c.rent || S.rentOpen) && (!c.opt || !S.hidden.has(c.opt)));
+  const leftOf = (k) => { let x = 0; for (const c of COLS) { if (c.k === k) return x; if (c.pin) x += c.w; } return x; };
+
+  function headHTML(cols) {
+    const s = curSort();
+    const ths = cols.map((c) => {
+      if (c.k === "select") {
+        const ids = groups().map((g) => g.id);
+        const all = ids.length > 0 && ids.every((id) => S.selected.has(id));
+        return `<th scope="col" class="c-sel pin" style="left:0"><input type="checkbox" data-act="select-all"${all ? " checked" : ""} aria-label="표시된 고객 전체 선택"></th>`;
+      }
+      const on = c.sort && s.key === c.sort;
+      const cls = [c.pin ? "pin" : "", c.end ? "pin-end" : "", c.rent ? "detail" : ""].filter(Boolean).join(" ");
+      const style = c.pin ? ` style="left:${leftOf(c.k)}px"` : "";
+      const aria = c.sort ? ` aria-sort="${on ? (s.dir === "asc" ? "ascending" : "descending") : "none"}"` : "";
+      const label = c.label ? `<span class="h-label">${c.icon ? icon(c.icon) : ""}<span>${c.label}</span></span>` : "";
+      const inner = c.sort ? `<button type="button" class="h-sort" data-act="sort" data-key="${c.sort}">${label}${on ? icon(s.dir === "asc" ? "arrowUp" : "arrowDown", "arrow") : ""}</button>` : label;
+      return `<th scope="col" class="${cls}"${style}${aria}>${inner}</th>`;
+    }).join("");
+    return `<thead><tr>${ths}</tr></thead>`;
+  }
+
+  /* 칸 */
+  function lines(it, fn) {
+    return it.options.length > 1 ? `<div class="lines">${it.options.map((o) => `<div class="ln">${fn(o)}</div>`).join("")}</div>` : fn(it.options[0]);
+  }
+  function priceText(price, rent) {
+    /* 월세 열을 접으면 중개사가 흔히 쓰는 보증금/월세 표기로 한 칸에 보여 준다 */
+    if (!S.rentOpen && rent != null) return `${won(price)}/${rent}만`;
+    return won(price);
+  }
+  function editableMoney(it, field, value, rent) {
+    if (S.edit && S.edit.id === it.id && S.edit.field === field) {
+      return `<input class="edit-input" data-edit-input value="${value ?? ""}" inputmode="numeric" aria-label="금액 입력, 만원 단위">`;
+    }
+    const text = value == null ? dash : `<span class="money">${esc(priceText(value, rent))}</span>`;
+    return `<button type="button" class="cell-btn" data-dbl="1" data-id="${it.id}" data-field="${field}" title="두 번 눌러 수정">${text}</button>`;
+  }
+  function nextHTML(it) {
+    if (it.kind !== "demand") return dash;
+    const n = it.next;
+    let inner;
+    if (!n) inner = `<span class="next-dash">-</span><span class="next-add-wrap">+ 일정</span>`;
+    else {
+      const d = diff(n.at);
+      if (d === 0) inner = `<span class="pill n-today">오늘</span>`;
+      else inner = `<span class="pill ${d < 0 ? "n-over" : "n-plan"}">${mmdd(n.at)} ${d < 0 ? `D+${-d}` : `D-${d}`}</span>`;
+    }
+    return `<button type="button" class="cell-btn next-btn" data-act="pop-next" data-id="${it.id}" aria-label="${esc(it.title)} 다음 연락 편집">${inner}</button>`;
+  }
+  function cellHTML(k, it, caseEnd) {
+    const d = it.kind === "demand";
+    const stack = !d && it.options.length > 1;
+    const end = caseEnd ? "case-end" : "";
+    const td = (html, cls, extra) => `<td class="${[cls, end].filter(Boolean).join(" ")}"${extra || ""}>${html}</td>`;
+    switch (k) {
+      case "kind": {
+        const label = d ? `구함 ${data.items.filter((i) => i.primary === it.primary && i.kind === "demand").indexOf(it) + 1}` : "내놓음";
+        return td(`<span class="pill k-${it.kind}">${label}</span>`);
+      }
+      case "tx": {
+        const pill = (t) => `<span class="pill x-${t}">${TX[t]}</span>`;
+        return td(d ? pill(it.tx) : lines(it, (o) => pill(o.tx)), stack ? "lines-cell" : "");
+      }
+      case "intake":
+        return td(`<button type="button" class="intake" data-act="fake" data-msg="의뢰 상세로 이동합니다 (시안에서는 이동하지 않습니다)" title="${esc(it.title)} · ${esc(it.sub)}">${esc(it.title)}</button>${it.urgent ? `<span class="tag-urgent">급함</span>` : ""}`);
+      case "status": {
+        const pill = `<span class="pill s-${it.status}"><span class="d"></span>${it.status === "hold" ? "보류" : "진행중"}</span>`;
+        /* 내놓음 상태는 지금 앱처럼 표에서 바꾸지 않는다 */
+        return td(d ? `<button type="button" class="cell-btn" data-act="pop-status" data-id="${it.id}" aria-label="${esc(it.title)} 상태 편집">${pill}</button>` : pill);
+      }
+      case "budgetMin":
+        if (!d) {
+          const html = stack ? lines(it, (o) => `<span class="money${o.paused ? " off" : ""}">${esc(priceText(o.price, o.rent))}</span>${o.paused ? `<span class="stop">중단</span>` : ""}`) : editableMoney(it, "opt0", it.options[0].price, it.options[0].rent);
+          return td(html, stack ? "lines-cell" : "", ' colspan="2"');
+        }
+        return td(editableMoney(it, "priceMin", it.priceMin, it.rentMin));
+      case "budgetMax":
+        return d ? td(editableMoney(it, "priceMax", it.priceMax, it.rentMax)) : "";
+      case "rentMin":
+        if (!d) return td(lines(it, (o) => (o.rent != null ? `<span class="money${o.paused ? " off" : ""}">${o.rent}만</span>` : dash)), stack ? "lines-cell" : "", ' colspan="2"');
+        return td(it.rentMin != null ? `<span class="money">${it.rentMin}만</span>` : dash);
+      case "rentMax":
+        return d ? td(it.rentMax != null ? `<span class="money">${it.rentMax}만</span>` : dash) : "";
+      case "areaMin":
+        if (!d) return td(`${it.area}평`, "", ' colspan="2"');
+        return td(`${it.areaMin}평`);
+      case "areaMax":
+        return d ? td(`${it.areaMax}평`) : "";
+      case "match": {
+        const n = it.matches.total;
+        if (!n) return td("");
+        const open = S.expanded === it.id;
+        return td(`<button type="button" class="match-btn" data-act="match" data-id="${it.id}" aria-expanded="${open}" aria-label="매칭 ${n}건 ${open ? "접기" : "펼치기"}">${icon("branch")}${n}${icon(open ? "up" : "down")}</button>`, "", ' style="padding:0 6px;text-align:center"');
+      }
+      case "who": {
+        if (!d) return td(dash);
+        const u = user(it.assignee);
+        return td(`<button type="button" class="cell-btn who${u ? "" : " none"}" data-act="pop-who" data-id="${it.id}" aria-label="${esc(it.title)} 담당 편집">${u ? esc(u.name) : "미배정"}</button>`);
+      }
+      case "next":
+        return td(nextHTML(it));
+      case "memo": {
+        if (S.edit && S.edit.id === it.id && S.edit.field === "memo") return td(`<input class="edit-input" data-edit-input value="${esc(it.memo || "")}" aria-label="노트 입력">`);
+        return td(`<button type="button" class="memo" data-dbl="1" data-id="${it.id}" data-field="memo" title="${it.memo ? esc(it.memo) + " · " : ""}두 번 눌러 수정">${it.memo ? esc(it.memo) : `<span class="memo-add">+ 노트</span>`}</button>`);
+      }
+      default:
+        return "";
+    }
+  }
+  function spanCellHTML(k, g, span) {
+    const c = contact(g.id);
+    const rs = ` rowspan="${span}"`;
+    switch (k) {
+      case "select":
+        return `<td${rs} class="c-sel span pin case-end" style="left:0"><input type="checkbox" data-act="select" data-id="${g.id}"${S.selected.has(g.id) ? " checked" : ""} aria-label="${esc(c.name)} 선택"></td>`;
+      case "customer": {
+        const people = new Set(data.items.filter((i) => i.primary === g.id).flatMap((i) => i.people.map((p) => p.c)));
+        return `<td${rs} class="span pin case-end" style="left:${leftOf("customer")}px"><button type="button" class="cust" data-act="fake" data-msg="연락처 상세로 이동합니다 (시안에서는 이동하지 않습니다)">${esc(c.name)}</button>${people.size > 1 ? `<span class="more">+${people.size - 1}</span>` : ""}</td>`;
+      }
+      case "phone":
+        return `<td${rs} class="span pin case-end phone" style="left:${leftOf("phone")}px">${esc(c.phone)}</td>`;
+      case "actions":
+        return `<td${rs} class="c-act span pin pin-end case-end" style="left:${leftOf("actions")}px"><button type="button" class="kebab" data-act="fake" data-msg="고객 정보, 구함·매물 상세로 가는 메뉴가 여기에 들어갑니다" aria-label="${esc(c.name)} 작업 메뉴">${icon("more")}</button></td>`;
+      case "consult": {
+        const ids = new Set(data.items.filter((i) => i.primary === g.id).map((i) => i.id));
+        const k2 = seed.consults.filter((x) => ids.has(x.item)).sort((a, b) => (a.at < b.at ? 1 : -1))[0];
+        if (!k2) return `<td${rs} class="span case-end">${dash}</td>`;
+        return `<td${rs} class="span case-end"><button type="button" class="consult" data-act="fake" data-msg="상담 기록으로 이동합니다 (시안에서는 이동하지 않습니다)" title="${mmdd(k2.at)} ${CTYPE[k2.type]} · ${esc(k2.text)}"><span class="when">${mmdd(k2.at)}</span>${esc(k2.text)}</button></td>`;
+      }
+      case "created": {
+        const latest = g.items.map((i) => i.receivedAt).sort().pop();
+        return `<td${rs} class="span created case-end">${latest.slice(2, 10).replace(/-/g, ".")}</td>`;
+      }
+      default:
+        return "";
+    }
+  }
+  const SPAN = new Set(["select", "customer", "phone", "actions", "consult", "created"]);
+
+  /* 머리글 위 안내 줄: 매물관리의 "타입–확인 컬럼 접기"와 같은 방식 */
+  function guideHTML(cols, tableMin) {
+    let x = 0;
+    let start = 0, end = 0;
+    for (const c of cols) {
+      if (c.k === "rentMin") start = x;
+      if (c.k === "rentMax") end = x + c.w;
+      if (!S.rentOpen && c.k === "areaMin") { start = x; end = x; }
+      if (S.rentOpen === false && !cols.some((v) => v.k === "areaMin") && c.k === "budgetMax") { start = x + c.w; end = start; }
+      x += c.w || 0;
+    }
+    const toggleLeft = S.rentOpen ? start - 24 : start - 10;
+    const label = S.rentOpen ? "월세 컬럼 접기" : "월세 컬럼 펼치기";
+    return `<div class="guide" style="min-width:${tableMin}px"><div class="guide-in">
+      ${S.rentOpen ? `<span class="guide-line" style="left:${start - 4}px;width:${end - start + 4}px"></span><span class="guide-cap" style="left:${end - 1}px"></span>` : ""}
+      <button type="button" class="guide-toggle" data-act="rent" style="left:${toggleLeft}px" aria-label="${label}" aria-expanded="${S.rentOpen}" title="${label}">${icon(S.rentOpen ? "minus" : "plus")}</button>
+    </div></div>`;
+  }
+
+  function renderTable() {
+    const cols = visibleCols();
+    const gs = groups();
+    const scroll = document.getElementById("scroll");
+    const top = scroll.scrollTop, left = scroll.scrollLeft;
+    const min = cols.reduce((n, c) => n + (c.w || c.min || 0), 0);
+    let body = "";
+    gs.forEach((g) => {
+      const span = g.items.length;
+      const selected = S.selected.has(g.id);
+      g.items.forEach((it, i) => {
+        const last = i === span - 1;
+        const cells = cols.map((c) => (SPAN.has(c.k) ? (i === 0 ? spanCellHTML(c.k, g, span) : "") : cellHTML(c.k, it, last))).join("");
+        body += `<tr class="row${selected ? " sel" : ""}" data-item="${it.id}">${cells}</tr>`;
+      });
+      g.items.forEach((it) => {
+        if (S.expanded !== it.id) return;
+        body += `<tr class="panel-row"><td colspan="${cols.length}"><div class="panel"><b>${esc(contact(g.id).name)} · ${esc(it.title)}</b><p>매칭 ${it.matches.total}건, 가장 앞선 단계 ${STAGE[it.matches.top] || "없음"}. 실제 앱에서는 이 자리에 지금의 매칭 패널이 그대로 들어갑니다.</p></div></td></tr>`;
+      });
+    });
+    if (!gs.length) body = `<tr class="empty-row"><td colspan="${cols.length}">조건에 맞는 의뢰가 없습니다.</td></tr>`;
+    scroll.innerHTML = `${guideHTML(cols, min)}<table class="t" id="t" aria-label="고객 원장" style="min-width:${min}px"><colgroup>${cols.map((c) => `<col${c.w ? ` style="width:${c.w}px"` : ""}>`).join("")}</colgroup>${headHTML(cols)}<tbody>${body}</tbody></table>`;
+    scroll.scrollTop = top;
+    scroll.scrollLeft = left;
+    const input = scroll.querySelector("[data-edit-input]");
+    if (input) { input.focus(); input.select(); }
+  }
+
+  function countMode(m) { return new Set(items().filter((i) => m === "all" || i.kind === m).map((i) => i.primary)).size; }
+  function renderBars() {
+    document.getElementById("modes").innerHTML = [["all", "전체"], ["demand", "구함"], ["listing", "내놓음"]].map(([k, l]) => `<button type="button" data-act="mode" data-mode="${k}" aria-pressed="${S.mode === k}">${l}<span class="n">${countMode(k)}</span></button>`).join("");
+    const chips = Object.entries(FILTERS).map(([sec, f]) => {
+      const set = S.filters[sec];
+      if (!set.size) return `<div class="fchip"><button type="button" data-act="pop-filter" data-sec="${sec}" aria-label="${f.label} 필터">${f.label}${icon("down")}</button></div>`;
+      const names = f.opts().filter(([v]) => set.has(v)).map(([, l]) => l);
+      const summary = names.length > 1 ? `${names[0]} 외 ${names.length - 1}` : names[0];
+      return `<div class="fchip on"><button type="button" data-act="pop-filter" data-sec="${sec}" aria-label="${f.label} 필터: ${esc(summary)}"><span class="lbl">${f.label}</span><b>${esc(summary)}</b>${icon("down")}</button><button type="button" class="clear" data-act="filter-clear" data-sec="${sec}" aria-label="${f.label} 필터 지우기">${icon("x")}</button></div>`;
+    }).join("");
+    const any = Object.values(S.filters).some((s) => s.size) || S.q;
+    document.getElementById("chips").innerHTML = `${chips}<button type="button" class="ghost" data-act="fake" data-msg="나머지 필터는 지금 앱과 같습니다 (시안에서는 생략했습니다)">${icon("plus")}필터</button>`;
+    document.getElementById("rowRight").innerHTML = `${any ? `<button type="button" class="ghost" data-act="reset-filters">초기화</button>` : ""}<button type="button" class="ghost" data-act="pop-cols">${icon("columns")}컬럼</button>`;
+    const gs = groups();
+    const n = gs.reduce((a, g) => a + g.items.length, 0);
+    document.getElementById("foot").innerHTML = `<span>고객 ${gs.length}명 · 의뢰 ${n}건 표시${S.selected.size ? ` · ${S.selected.size}명 선택` : ""}</span>${S.selected.size ? `<button type="button" class="link" data-act="select-clear">선택 해제</button>` : ""}<span style="margin-left:auto"><button type="button" class="link" data-act="reset-data">시안 데이터 초기화</button></span>`;
+  }
+  function renderAll() {
+    document.getElementById("app").className = `app${S.sideMini ? " mini" : ""}`;
+    renderBars();
+    renderTable();
+  }
+
+  const NAV = [
+    ["시작", [["grid", "대시보드"]]],
+    ["매물·공간", [["home", "매물관리"], ["grid", "관리단지"], ["file", "광고관리"]]],
+    ["고객·상담", [["users", "고객 원장", true], ["user", "연락처"], ["msg", "상담기록"]]],
+    ["거래·계약", [["branch", "매칭"], ["file", "거래관리"], ["file", "계약서 관리"], ["won", "수수료/정산"]]],
+    ["업무·운영", [["check", "업무"], ["cal", "캘린더"], ["users", "직원관리"], ["grid", "설정"]]],
+  ];
+  document.getElementById("app").innerHTML = `
+    <aside class="side">
+      <div class="side-top"><span class="brand">Estaitt</span><button type="button" class="icon-btn" data-act="side" aria-label="사이드바 접기">${icon("panel")}</button></div>
+      <nav class="nav" aria-label="앱 메뉴">${NAV.map(([g, list]) => `<div class="nav-g">${g}</div>${list.map(([ic, l, on]) => `<div class="nav-i${on ? " on" : ""}">${icon(ic)}<span>${l}</span></div>`).join("")}`).join("")}</nav>
+      <div class="me"><span class="av">서</span><div>서지현</div></div>
+    </aside>
+    <div class="main">
+      <div class="tabbar"><div class="tab">${icon("users")}고객 원장</div><div class="tab-add">${icon("plus")}</div></div>
+      <section class="row1" aria-label="고객 원장 보기와 검색">
+        <div class="seg" id="modes" role="group" aria-label="구함 내놓음 보기"></div>
+        <div class="searchbox">
+          <button type="button" class="area" data-act="fake" data-msg="지역·단지 선택은 지금 앱과 같습니다 (시안에서는 생략했습니다)">${icon("pin")}<span>지역·단지 전체</span>${icon("down")}</button>
+          <span class="bar"></span>
+          <label class="q">${icon("search")}<input id="q" placeholder="고객, 전화번호, 매물, 메모" aria-label="고객 원장 검색"></label>
+        </div>
+        <div class="spacer"></div>
+        <div class="seg light" role="group" aria-label="화면 전환">
+          <button type="button" aria-pressed="true">${icon("list")}표</button>
+          <button type="button" aria-pressed="false" data-act="fake" data-msg="고객 중심 보기로 이동합니다 (시안에서는 이동하지 않습니다)">${icon("users")}고객 중심</button>
+        </div>
+        <button type="button" class="primary" data-act="fake" data-msg="의뢰 추가는 시안에 포함하지 않았습니다">${icon("plus")}의뢰 추가</button>
+      </section>
+      <section class="row2" aria-label="좁히기">
+        <div id="chips" style="display:flex;align-items:center;gap:6px;min-width:0;overflow-x:auto"></div>
+        <div class="spacer"></div>
+        <div id="rowRight" style="display:flex;align-items:center;gap:2px"></div>
+      </section>
+      <div class="scroll" id="scroll"></div>
+      <footer class="foot" id="foot"></footer>
+    </div>`;
+
+  /* 변경과 알림 */
+  let toastTimer = null;
+  function toast(msg, undo) {
+    let el = document.getElementById("toast");
+    if (el) el.remove();
+    el = document.createElement("div");
+    el.id = "toast";
+    el.setAttribute("role", "status");
+    el.innerHTML = `<span>${esc(msg)}</span>${undo ? `<button type="button">되돌리기</button>` : ""}`;
+    document.body.appendChild(el);
+    if (undo) el.querySelector("button").addEventListener("click", () => { undo(); el.remove(); });
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => el.remove(), 4500);
+  }
+  function commit(msg, fn) {
+    const snap = clone(data);
+    fn();
+    persist();
+    renderAll();
+    toast(msg, () => { data = snap; persist(); renderAll(); });
+  }
+
+  /* 팝오버 */
+  let popAnchor = null;
+  function closePop(refocus) {
+    document.getElementById("popRoot").innerHTML = "";
+    if (refocus && popAnchor && document.contains(popAnchor)) popAnchor.focus();
+    popAnchor = null;
+  }
+  function openPop(anchor, html) {
+    closePop();
+    popAnchor = anchor;
+    const root = document.getElementById("popRoot");
+    root.innerHTML = `<div class="pop" role="dialog">${html}</div>`;
+    const pop = root.firstChild;
+    const a = anchor.getBoundingClientRect();
+    pop.style.left = `${Math.max(8, Math.min(a.left, innerWidth - pop.offsetWidth - 8))}px`;
+    const below = a.bottom + 4;
+    pop.style.top = `${below + pop.offsetHeight > innerHeight - 8 ? Math.max(8, a.top - pop.offsetHeight - 4) : below}px`;
+    const first = pop.querySelector("button,input");
+    if (first) first.focus();
+  }
+  function filterPop(sec) {
+    const f = FILTERS[sec];
+    return `<div class="pop-title">${f.label}</div>${f.opts().map(([v, l]) => `<button type="button" class="pop-item" data-act="filter" data-sec="${sec}" data-val="${v}" aria-pressed="${S.filters[sec].has(v)}">${esc(l)}${S.filters[sec].has(v) ? icon("check") : ""}</button>`).join("")}`;
+  }
+
+  /* 편집 */
+  function finishEdit(save, input) {
+    if (!S.edit) return;
+    const { id, field } = S.edit;
+    S.edit = null;
+    const it = item(id);
+    if (!save) { renderTable(); return; }
+    const raw = input.value.trim();
+    if (field === "memo") {
+      if (raw === (it.memo || "")) { renderTable(); return; }
+      commit(`노트 저장: ${it.title}`, () => { it.memo = raw; });
+      return;
+    }
+    const num = raw === "" ? null : Number(raw.replace(/,/g, ""));
+    if (num !== null && (!Number.isInteger(num) || num < 0)) { toast("금액은 0 이상의 정수로 입력해 주세요 (만원 단위)"); renderTable(); return; }
+    if (field === "opt0") {
+      if (num === it.options[0].price) { renderTable(); return; }
+      commit(`금액 저장: ${it.title}`, () => { it.options[0].price = num; });
+      return;
+    }
+    const other = field === "priceMin" ? it.priceMax : it.priceMin;
+    if (num !== null && other != null && (field === "priceMin" ? num > other : num < other)) { toast("최소값은 최대값보다 클 수 없습니다"); renderTable(); return; }
+    if (num === it[field]) { renderTable(); return; }
+    commit(`금액 저장: ${it.title}`, () => { it[field] = num; });
+  }
+
+  /* 이벤트 */
+  function setSort(key) {
+    /* 고객명은 오름차순부터, 숫자는 내림차순부터. 세 번째 누르면 기본 정렬로 돌아간다 (지금 앱과 같음) */
+    const first = key === "customer" ? "asc" : "desc";
+    const second = first === "asc" ? "desc" : "asc";
+    const s = S.sort;
+    if (!s || s.key !== key) S.sort = { key, dir: first };
+    else if (s.dir === first) S.sort = { key, dir: second };
+    else S.sort = null;
+  }
+  document.addEventListener("click", (e) => {
+    const t = e.target.closest("[data-act]");
+    if (!e.target.closest(".pop") && !(t && /^pop-/.test(t.dataset.act))) closePop();
+    if (!t) return;
+    const { act } = t.dataset;
+    switch (act) {
+      case "side": S.sideMini = !S.sideMini; renderAll(); break;
+      case "mode": S.mode = t.dataset.mode; renderAll(); document.getElementById("scroll").scrollTop = 0; break;
+      case "sort": setSort(t.dataset.key); renderAll(); break;
+      case "rent": S.rentOpen = !S.rentOpen; S.expanded = null; if (!S.rentOpen && /^rent/.test(curSort().key)) S.sort = null; renderAll(); break;
+      case "pop-filter": openPop(t, filterPop(t.dataset.sec)); break;
+      case "filter": {
+        const set = S.filters[t.dataset.sec];
+        if (set.has(t.dataset.val)) set.delete(t.dataset.val); else set.add(t.dataset.val);
+        const sec = t.dataset.sec;
+        renderAll();
+        const anchor = document.querySelector(`[data-act="pop-filter"][data-sec="${sec}"]`);
+        openPop(anchor, filterPop(sec));
+        break;
+      }
+      case "filter-clear": S.filters[t.dataset.sec].clear(); renderAll(); break;
+      case "reset-filters": Object.values(S.filters).forEach((s) => s.clear()); S.q = ""; document.getElementById("q").value = ""; renderAll(); break;
+      case "pop-cols":
+        openPop(t, `<div class="pop-title">컬럼</div>${COLUMN_OPTIONS.map(([k, l]) => `<label class="pop-check"><input type="checkbox" data-col="${k}"${S.hidden.has(k) ? "" : " checked"}>${l}</label>`).join("")}`);
+        break;
+      case "select": if (e.target.checked) S.selected.add(t.dataset.id); else S.selected.delete(t.dataset.id); renderAll(); break;
+      case "select-all": { const ids = groups().map((g) => g.id); if (e.target.checked) ids.forEach((id) => S.selected.add(id)); else ids.forEach((id) => S.selected.delete(id)); renderAll(); break; }
+      case "select-clear": S.selected.clear(); renderAll(); break;
+      case "match": S.expanded = S.expanded === t.dataset.id ? null : t.dataset.id; renderTable(); break;
+      case "pop-status": {
+        const it = item(t.dataset.id);
+        openPop(t, `<div class="pop-title">상태</div>${[["open", "진행중"], ["hold", "보류"]].map(([v, l]) => `<button type="button" class="pop-item" data-act="set-status" data-id="${it.id}" data-val="${v}"><span class="pill s-${v}"><span class="d"></span>${l}</span>${it.status === v ? `<span class="mark">선택됨</span>` : ""}</button>`).join("")}`);
+        break;
+      }
+      case "set-status": {
+        const it = item(t.dataset.id), v = t.dataset.val;
+        closePop();
+        if (it.status !== v) commit(`상태 변경: ${it.title}`, () => { it.status = v; });
+        break;
+      }
+      case "pop-who": {
+        const it = item(t.dataset.id);
+        openPop(t, `<div class="pop-title">담당</div>${seed.users.map((u) => `<button type="button" class="pop-item" data-act="set-who" data-id="${it.id}" data-user="${u.id}">${esc(u.name)}${it.assignee === u.id ? `<span class="mark">선택됨</span>` : ""}</button>`).join("")}`);
+        break;
+      }
+      case "set-who": {
+        const it = item(t.dataset.id), u = user(t.dataset.user);
+        closePop();
+        if (it.assignee !== u.id) commit(`담당 변경: ${it.title} · ${u.name}`, () => { it.assignee = u.id; });
+        break;
+      }
+      case "pop-next": {
+        const it = item(t.dataset.id);
+        const presets = [["오늘", 0], ["내일", 1], ["3일 뒤", 3], ["다음 주", 7]];
+        openPop(t, `<div class="pop-title">다음 연락</div>${presets.map(([l, n]) => `<button type="button" class="pop-item" data-act="set-next" data-id="${it.id}" data-at="${addDays(n)}">${l}<span class="mark">${mmdd(addDays(n))}</span></button>`).join("")}<div class="pop-date"><input type="date" data-next-date="${it.id}" value="${it.next ? it.next.at.split("T")[0] : ""}" aria-label="날짜 선택"></div>`);
+        break;
+      }
+      case "set-next": {
+        const it = item(t.dataset.id);
+        closePop();
+        commit(`일정 변경: ${it.title} · ${mmdd(t.dataset.at)}`, () => { it.next = { at: t.dataset.at, note: it.next ? it.next.note : "" }; });
+        break;
+      }
+      case "reset-data": {
+        data = { v: seed.v, items: clone(seed.items) };
+        try { localStorage.removeItem(KEY); } catch (err) { /* 무시 */ }
+        S.selected.clear();
+        renderAll();
+        toast("시안 데이터를 처음 상태로 되돌렸습니다");
+        break;
+      }
+      case "fake": e.preventDefault(); toast(t.dataset.msg); break;
+      default: break;
+    }
+  });
+  document.addEventListener("dblclick", (e) => {
+    const t = e.target.closest("[data-dbl]");
+    if (t) { S.edit = { id: t.dataset.id, field: t.dataset.field }; renderTable(); }
+  });
+  document.addEventListener("change", (e) => {
+    if (e.target.matches("[data-col]")) {
+      const k = e.target.dataset.col;
+      if (e.target.checked) S.hidden.delete(k); else S.hidden.add(k);
+      renderTable();
+      return;
+    }
+    if (e.target.matches("[data-next-date]") && e.target.value) {
+      const v = e.target.value, it = item(e.target.dataset.nextDate);
+      closePop();
+      commit(`일정 변경: ${it.title} · ${mmdd(v)}`, () => { it.next = { at: v, note: it.next ? it.next.note : "" }; });
+    }
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.target.matches("[data-edit-input]")) {
+      if (e.key === "Enter") { e.preventDefault(); finishEdit(true, e.target); }
+      else if (e.key === "Escape") { e.preventDefault(); finishEdit(false, e.target); }
+      return;
+    }
+    if (e.key === "Escape") { closePop(true); return; }
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "f") { e.preventDefault(); document.getElementById("q").focus(); }
+  });
+  document.addEventListener("focusout", (e) => {
+    if (e.target.matches("[data-edit-input]") && S.edit) finishEdit(true, e.target);
+  });
+  document.getElementById("q").addEventListener("input", (e) => { S.q = e.target.value.trim(); renderBars(); renderTable(); });
+  renderAll();
+})();
+</script>
+</body>
+</html>

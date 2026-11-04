@@ -1,0 +1,1204 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>고객 원장 · 가구 묶음 시안</title>
+<style>
+:root{
+  color-scheme:light;
+  --bg:#fff;--fg:#37352f;--surface:#f7f6f3;--surface-2:#f1f1ef;--surface-3:#fbfaf8;
+  --border:#e9e9e7;--border-soft:#f1f0ed;--border-strong:#deddd8;
+  --muted:#787774;--muted-strong:#6f6d6a;--ring:#2383e2;
+  --success:#0f7b6c;--success-soft:#dbeddb;
+  --info-soft:#d3e5ef;--info-strong:#1b64b1;
+  --warning:#cb912f;--warning-soft:#fdecc8;--warning-strong:#8a5a13;
+  --violet:#6940a5;--violet-soft:#e8deee;
+  --radius:6px;
+  --cols:30px minmax(300px,1fr) 160px 92px 92px 72px 80px 56px 64px 58px 36px;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--fg);font:13px/1.5 Pretendard,"Pretendard Variable",-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Segoe UI","Noto Sans KR",sans-serif;-webkit-font-smoothing:antialiased}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer;background:none;border:0;padding:0}
+button:disabled{cursor:default;opacity:.45}
+:focus-visible{outline:2px solid var(--ring);outline-offset:2px}
+[hidden]{display:none!important}
+.i{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0}
+.num{font-variant-numeric:tabular-nums}
+.dim{color:#b9b8b4}
+
+/* 앱 셸 */
+.app{height:100vh;display:grid;grid-template-columns:184px minmax(0,1fr);grid-template-rows:39px minmax(0,1fr)}
+.titlebar{grid-column:1/-1;display:flex;align-items:center;gap:10px;padding:0 16px;border-bottom:1px solid var(--border);background:#faf9f7;font-size:12px}
+.brand-mark{width:22px;height:22px;border-radius:5px;background:var(--fg);color:#fff;display:grid;place-items:center;font-size:12px;font-weight:700}
+.brand{font-size:14px;font-weight:700;letter-spacing:-.3px}
+.proto{font-size:10.5px;color:var(--muted);border:1px solid var(--border-strong);border-radius:4px;padding:0 6px}
+.office{margin-left:auto;color:var(--muted)}
+.sidebar{background:var(--surface);border-right:1px solid var(--border);padding:16px 10px 12px;display:flex;flex-direction:column;overflow:auto}
+.nav-label{font-size:11px;color:var(--muted);margin:16px 10px 6px}
+.nav-label:first-child{margin-top:0}
+.nav-item{display:flex;align-items:center;gap:9px;padding:6px 10px;border-radius:5px;color:#5e5c56}
+.nav-item.active{background:#ebebea;color:var(--fg);font-weight:600}
+.me{margin-top:auto;display:flex;gap:9px;align-items:center;padding:16px 8px 0}
+.avatar{width:28px;height:28px;border-radius:50%;background:#e4e2dc;display:grid;place-items:center;font-size:11px;font-weight:600;flex-shrink:0}
+.me small{display:block;font-size:10.5px;color:var(--muted)}
+main{min-width:0;min-height:0;display:flex;flex-direction:column}
+.crumb{height:40px;flex-shrink:0;display:flex;align-items:center;gap:8px;padding:0 18px;border-bottom:1px solid var(--border);font-size:12px;color:var(--muted)}
+.crumb strong{color:var(--fg);font-size:13px}
+
+/* 툴바 */
+.toolbar{display:flex;align-items:center;gap:10px;padding:9px 16px;border-bottom:1px solid var(--border);flex-wrap:wrap;flex-shrink:0}
+.seg{display:inline-flex;padding:2px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface)}
+.seg button{padding:3px 11px;border-radius:4px;color:var(--muted-strong);white-space:nowrap}
+.seg button:hover{color:var(--fg)}
+.seg button[aria-pressed=true]{background:#fff;color:var(--fg);font-weight:600;box-shadow:0 0 0 1px var(--border)}
+.seg .count{margin-left:5px;font-size:11.5px;font-weight:400;color:var(--muted)}
+.search{position:relative;flex:1 1 260px;max-width:420px}
+.search input{width:100%;height:30px;border:1px solid var(--border);border-radius:var(--radius);padding:0 46px 0 30px;background:var(--surface)}
+.search input:focus{background:#fff}
+.search .i{position:absolute;left:9px;top:8px;color:var(--muted)}
+.search kbd{position:absolute;right:7px;top:6px;font:11px/16px inherit;color:var(--muted);border:1px solid var(--border);border-radius:4px;padding:0 5px;background:#fff}
+.btn{height:30px;display:inline-flex;align-items:center;gap:6px;padding:0 11px;border:1px solid var(--border);border-radius:var(--radius);background:#fff;white-space:nowrap}
+.btn:hover{background:var(--surface-2)}
+.btn.primary{background:var(--fg);color:#fff;border-color:var(--fg)}
+.btn.primary:hover{background:#2c2a25}
+.btn.sm{height:24px;padding:0 8px;font-size:12px}
+.spacer{flex:1}
+.field{display:inline-flex;align-items:center;gap:6px;color:var(--muted-strong);font-size:12px}
+.field select{height:28px;border:1px solid var(--border);border-radius:var(--radius);background:#fff;padding:0 6px}
+.field-label{font-size:12px;color:var(--muted)}
+.switch{display:inline-flex;align-items:center;gap:7px;font-size:12px;color:var(--muted-strong)}
+.switch .track{width:28px;height:16px;border-radius:999px;background:#d9d8d4;position:relative;transition:background-color .15s ease-out;flex-shrink:0}
+.switch .track::after{content:"";position:absolute;top:2px;left:2px;width:12px;height:12px;border-radius:50%;background:#fff;box-shadow:0 1px 1px rgba(0,0,0,.15);transition:transform .15s ease-out}
+.switch[aria-checked=true] .track{background:var(--fg)}
+.switch[aria-checked=true] .track::after{transform:translateX(12px)}
+
+/* 안내 · 요약 */
+.note{display:flex;gap:10px;align-items:flex-start;padding:8px 16px;border-bottom:1px solid var(--border);font-size:12px;color:var(--muted-strong);background:var(--surface-3)}
+.note.warn{background:#fffaf0;color:var(--warning-strong)}
+.note b{color:var(--fg);font-weight:600;white-space:nowrap}
+.note.warn b{color:var(--warning-strong)}
+.summary{display:flex;gap:6px;align-items:center;padding:7px 16px;font-size:12px;color:var(--muted);flex-shrink:0}
+.summary b{color:var(--fg);font-weight:600}
+.summary .sep{color:#cfcdc8}
+.summary button{margin-left:auto;color:var(--muted-strong);font-size:12px;padding:2px 6px;border-radius:4px}
+.summary button:hover{background:var(--surface-2)}
+
+/* 원장 */
+.ledger{flex:1;min-height:0;overflow:auto;border-top:1px solid var(--border)}
+.ledger-inner{min-width:1060px}
+.head{position:sticky;top:0;z-index:3;display:grid;grid-template-columns:var(--cols);height:34px;align-items:center;background:#fff;border-bottom:1px solid var(--border);font-size:12px;font-weight:500;color:var(--muted)}
+.head>div{padding:0 10px;white-space:nowrap}
+.r{text-align:right}
+.group{border-bottom:1px solid var(--border)}
+.ghead{display:flex;align-items:center;gap:10px;min-height:44px;padding:6px 14px 6px 4px;background:var(--surface-3)}
+.group.open .ghead{border-bottom:1px solid var(--border-soft)}
+.chev{width:24px;height:24px;display:grid;place-items:center;border-radius:4px;color:var(--muted);flex-shrink:0}
+.chev:hover{background:var(--surface-2);color:var(--fg)}
+.names{display:flex;align-items:center;gap:4px;min-width:0;font-size:13.5px;font-weight:600;white-space:nowrap}
+.name-btn{font-weight:inherit;border-radius:3px;padding:0 1px}
+.name-btn:hover{text-decoration:underline;text-underline-offset:2px}
+.name-btn.hit{background:var(--warning-soft)}
+.dot-sep{color:var(--muted);font-weight:400;padding:0 1px}
+.more-names{font-weight:400;color:var(--muted-strong);font-size:12px}
+.phone{color:var(--muted-strong);font-size:12.5px;white-space:nowrap}
+.badge{display:inline-flex;align-items:center;height:20px;padding:0 6px;border-radius:4px;font-size:11.5px;font-weight:500;white-space:nowrap;flex-shrink:0}
+.b-listing{background:var(--success-soft);color:var(--success)}
+.b-demand{background:var(--info-soft);color:var(--info-strong)}
+.b-hold{background:var(--warning-soft);color:var(--warning-strong)}
+.b-link{background:var(--violet-soft);color:var(--violet)}
+.b-neutral{background:var(--surface-2);color:var(--muted-strong)}
+.b-warn{background:var(--warning-soft);color:var(--warning-strong)}
+.b-hit{background:#fff;border:1px solid var(--border-strong);color:var(--muted-strong)}
+.tx{font-size:11.5px;color:var(--muted-strong);border:1px solid var(--border);border-radius:4px;padding:0 5px;line-height:18px;white-space:nowrap;flex-shrink:0}
+.consult{flex:1;min-width:0;display:flex;gap:6px;align-items:baseline;font-size:12.5px}
+.consult .lbl{color:var(--muted);font-size:11.5px;white-space:nowrap}
+.consult .txt{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.consult .who{color:var(--muted-strong)}
+.next{white-space:nowrap;font-size:12px;color:var(--muted-strong)}
+.next.today{color:var(--warning-strong);font-weight:600}
+.next.today::before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--warning);margin-right:5px;vertical-align:1px}
+.assignee{white-space:nowrap;font-size:12px;color:var(--muted-strong);padding-left:10px;border-left:1px solid var(--border)}
+.ua-title{color:var(--muted-strong)}
+.ua-desc{font-size:12px;color:var(--muted)}
+
+.row{display:grid;grid-template-columns:var(--cols);align-items:center;min-height:52px;border-top:1px solid var(--border-soft);position:relative}
+.gbody>.row:first-child{border-top:0}
+.row:hover{background:#fcfcfb}
+.row>div{padding:6px 10px;min-width:0}
+.row .gut{align-self:stretch;position:relative;padding:0}
+.row .gut::before{content:"";position:absolute;left:15px;top:0;height:50%;width:8px;border-left:1px solid #dddcd8;border-bottom:1px solid #dddcd8;border-bottom-left-radius:3px}
+.flat .row .gut::before{display:none}
+.cell-main{padding-left:16px!important}
+.main-line{display:flex;align-items:center;gap:6px;min-width:0}
+.title{font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sub{margin-top:2px;font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.people{font-size:12.5px;line-height:1.4}
+.people .pnames{display:flex;flex-wrap:wrap;align-items:center;gap:0 2px}
+.people .role{display:block;font-size:11.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.people .glabel{font-weight:600}
+.amt{font-weight:600}
+.who-cell{font-size:12px;color:var(--muted-strong);white-space:nowrap}
+.date-cell{font-size:12px;color:var(--muted)}
+.match-btn{color:var(--info-strong);font-weight:500;border-radius:3px;padding:0 3px}
+.match-btn:hover{background:var(--info-soft)}
+.more{width:26px;height:26px;border-radius:4px;display:grid;place-items:center;color:var(--muted)}
+.more:hover,.more[aria-expanded=true]{background:var(--surface-2);color:var(--fg)}
+
+/* 팔고 사기 연계 */
+.row.lk-top::after,.link-row::after,.row.lk-bottom::after{content:"";position:absolute;left:38px;border-left:2px solid var(--violet);opacity:.5}
+.row.lk-top::after{top:50%;bottom:0}
+.row.lk-bottom::after{top:0;height:50%}
+.link-row{position:relative;display:grid;grid-template-columns:var(--cols);min-height:24px;align-items:center}
+.link-row::after{top:0;bottom:0}
+.link-row .lk{grid-column:2/-1;display:flex;align-items:center;gap:6px;font-size:12px;color:var(--violet);padding:0 10px 0 22px}
+.link-row .lk button{font-size:11.5px;color:var(--muted);text-decoration:underline;text-underline-offset:2px;margin-left:4px}
+.link-row .lk button:hover{color:var(--fg)}
+
+.hist-toggle{display:flex;align-items:center;gap:6px;padding:6px 10px 8px 44px;font-size:12px;color:var(--muted-strong);border-top:1px solid var(--border-soft);width:100%}
+.hist-toggle:hover{color:var(--fg)}
+.row.past{color:var(--muted)}
+.row.past .badge,.row.past .tx{opacity:.7}
+.row.past .amt{font-weight:500}
+
+@keyframes flash{from{background:var(--warning-soft)}to{background:transparent}}
+.row.flash{animation:flash 2s ease-out}
+@media (prefers-reduced-motion:reduce){
+  .row.flash{animation:none;background:#fdf6e6}
+  .switch .track,.switch .track::after{transition:none}
+}
+.empty{padding:48px 16px;text-align:center;color:var(--muted)}
+.empty button{margin-top:10px}
+
+/* 상세 시트 */
+.sheet-backdrop{position:fixed;inset:0;background:rgba(55,53,47,.12);z-index:20}
+.sheet{position:fixed;top:0;right:0;bottom:0;width:min(400px,100vw);background:#fff;border-left:1px solid var(--border);box-shadow:-8px 0 24px rgba(15,15,15,.08);z-index:21;display:flex;flex-direction:column}
+.sheet-head{display:flex;align-items:flex-start;gap:10px;padding:16px 18px 12px;border-bottom:1px solid var(--border)}
+.sheet-head h2{margin:2px 0 0;font-size:16px;font-weight:600}
+.eyebrow{font-size:11.5px;color:var(--muted)}
+.sheet-head .meta{font-size:12px;color:var(--muted-strong);margin-top:2px}
+.sheet-head .close{margin-left:auto;width:28px;height:28px;border-radius:4px;display:grid;place-items:center;color:var(--muted)}
+.sheet-head .close:hover{background:var(--surface-2);color:var(--fg)}
+.sheet-body{overflow:auto;padding:0 18px 24px}
+.sec{padding:14px 0;border-bottom:1px solid var(--border-soft)}
+.sec:last-of-type{border-bottom:0}
+.sec h3{margin:0 0 8px;font-size:12px;font-weight:600;color:var(--muted-strong)}
+.reason{display:flex;gap:8px;font-size:12.5px;padding:3px 0}
+.reason::before{content:"";width:5px;height:5px;border-radius:50%;background:var(--violet);margin-top:7px;flex-shrink:0;opacity:.6}
+.member{display:flex;gap:10px;align-items:flex-start;padding:6px 0}
+.member b{font-weight:600}
+.member .ph{color:var(--muted-strong);font-size:12px;margin-left:6px}
+.member small{display:block;color:var(--muted);font-size:11.5px}
+.rel{display:flex;align-items:center;gap:10px;padding:7px 0}
+.rel .who{flex:1;min-width:0;font-size:12.5px}
+.rel small{display:block;color:var(--muted);font-size:11.5px}
+.mini{display:flex;align-items:center;gap:6px;padding:5px 0;font-size:12.5px;min-width:0}
+.mini .title{flex:1;font-weight:400}
+.mini .amt{white-space:nowrap}
+.consult-item{padding:5px 0;font-size:12.5px}
+.consult-item small{display:block;color:var(--muted);font-size:11.5px}
+.foot{font-size:11.5px;color:var(--muted);padding-top:12px;line-height:1.6}
+
+/* 메뉴 · 대화상자 · 알림 */
+.menu{position:fixed;z-index:30;min-width:250px;max-width:340px;background:#fff;border:1px solid var(--border);border-radius:var(--radius);box-shadow:0 6px 20px rgba(15,15,15,.12);padding:4px}
+.menu button{display:block;width:100%;text-align:left;padding:7px 10px;border-radius:4px;font-size:12.5px}
+.menu button:hover:not(:disabled),.menu button:focus-visible{background:var(--surface-2);outline:none}
+.menu button small{display:block;color:var(--muted);font-size:11.5px}
+.menu .mlabel{font-size:11px;color:var(--muted);padding:6px 10px 2px}
+.menu .mnote{font-size:12px;color:var(--muted-strong);padding:6px 10px 8px;line-height:1.5}
+.menu .msep{height:1px;background:var(--border);margin:4px 0}
+dialog{border:1px solid var(--border);border-radius:8px;padding:0;width:min(460px,calc(100vw - 32px));box-shadow:0 12px 40px rgba(15,15,15,.18);color:var(--fg)}
+dialog::backdrop{background:rgba(55,53,47,.25)}
+.dlg-head{padding:16px 18px 4px}
+.dlg-head h2{margin:0;font-size:15px;font-weight:600}
+.dlg-head p{margin:4px 0 0;font-size:12px;color:var(--muted)}
+.dlg-body{padding:8px 18px}
+.dlg-body input[type=text],.dlg-body input[type=tel]{width:100%;height:30px;border:1px solid var(--border);border-radius:var(--radius);padding:0 9px}
+.pick{max-height:260px;overflow:auto;border:1px solid var(--border);border-radius:var(--radius);margin-top:8px}
+.pick label{display:flex;gap:10px;align-items:center;padding:7px 10px;border-top:1px solid var(--border-soft);cursor:pointer}
+.pick label:first-child{border-top:0}
+.pick label:hover{background:var(--surface)}
+.pick .pn{flex:1;min-width:0}
+.pick small{color:var(--muted);font-size:11.5px;white-space:nowrap}
+.new-fields{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}
+.err{color:#bb3430;font-size:12px;margin-top:6px}
+.dlg-foot{display:flex;justify-content:flex-end;gap:8px;padding:12px 18px 16px}
+.toast{position:fixed;left:50%;bottom:44px;transform:translateX(-50%);background:var(--fg);color:#fff;padding:8px 14px;border-radius:var(--radius);font-size:12.5px;z-index:40;box-shadow:0 6px 20px rgba(0,0,0,.18);max-width:calc(100vw - 32px)}
+.statusbar{height:30px;flex-shrink:0;display:flex;align-items:center;gap:10px;padding:0 16px;border-top:1px solid var(--border);font-size:11.5px;color:var(--muted)}
+.statusbar button{text-decoration:underline;text-underline-offset:2px}
+.statusbar .hint{margin-left:auto}
+@media (max-width:900px){.app{grid-template-columns:minmax(0,1fr)}.sidebar{display:none}}
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="titlebar">
+    <span class="brand-mark">e</span><span class="brand">Estait Flow</span><span class="proto">디자인 시안</span>
+    <span class="office">고덕 부동산</span>
+  </header>
+  <nav class="sidebar" aria-label="주 메뉴">
+    <div class="nav-label">시작</div>
+    <span class="nav-item"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="7" height="7" rx="1"/><rect x="13" y="4" width="7" height="7" rx="1"/><rect x="4" y="13" width="7" height="7" rx="1"/><rect x="13" y="13" width="7" height="7" rx="1"/></svg>대시보드</span>
+    <div class="nav-label">매물·공간</div>
+    <span class="nav-item"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V6l8-3 8 3v14"/><path d="M9 20v-5h6v5"/></svg>매물관리</span>
+    <span class="nav-item"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="7" height="7" rx="1"/><rect x="13" y="4" width="7" height="7" rx="1"/><rect x="4" y="13" width="7" height="7" rx="1"/><rect x="13" y="13" width="7" height="7" rx="1"/></svg>관리단지</span>
+    <span class="nav-item"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h9l4 4v14H6z"/><path d="M9 12h7M9 16h5"/></svg>광고관리</span>
+    <div class="nav-label">고객·상담</div>
+    <span class="nav-item active" aria-current="page"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M21.5 20a6.5 6.5 0 0 0-4-6"/></svg>고객 원장</span>
+    <span class="nav-item"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>연락처</span>
+    <span class="nav-item"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z"/></svg>상담기록</span>
+    <div class="nav-label">거래·계약</div>
+    <span class="nav-item"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4v16M7 20l-3-3M7 20l3-3M17 20V4M17 4l-3 3M17 4l3 3"/></svg>매칭</span>
+    <span class="nav-item"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h9l4 4v14H6z"/></svg>거래관리</span>
+    <span class="nav-item"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h9l4 4v14H6z"/><path d="M9 13l2 2 4-4"/></svg>계약서 관리</span>
+    <div class="nav-label">업무·운영</div>
+    <span class="nav-item"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M9 3v4M15 3v4"/></svg>일정</span>
+    <span class="nav-item"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4 10-10"/></svg>업무</span>
+    <div class="me"><span class="avatar">서</span><span>서지현<small>고덕 부동산</small></span></div>
+  </nav>
+
+  <main>
+    <div class="crumb">고객·상담 <span aria-hidden="true">/</span> <strong>고객 원장</strong></div>
+
+    <div class="toolbar">
+      <div class="seg" role="group" aria-label="의뢰 종류">
+        <button type="button" data-action="tab" data-value="all" aria-pressed="true">전체<span class="count num" data-count="all"></span></button>
+        <button type="button" data-action="tab" data-value="demand" aria-pressed="false">구함<span class="count num" data-count="demand"></span></button>
+        <button type="button" data-action="tab" data-value="listing" aria-pressed="false">내놓음<span class="count num" data-count="listing"></span></button>
+        <button type="button" data-action="tab" data-value="both" aria-pressed="false">팔고 사기<span class="count num" data-count="both"></span></button>
+      </div>
+      <label class="search">
+        <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg>
+        <input id="search" type="search" placeholder="고객, 전화번호, 단지명" aria-label="고객 원장 검색" autocomplete="off">
+        <kbd>/</kbd>
+      </label>
+      <span class="spacer"></span>
+      <button type="button" class="btn primary" data-action="toast" data-msg="시안에서는 새 의뢰를 추가하지 않습니다"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>의뢰 추가</button>
+    </div>
+
+    <div class="toolbar">
+      <span class="field-label" id="modeLabel">묶음 기준</span>
+      <div class="seg" role="group" aria-labelledby="modeLabel">
+        <button type="button" data-action="mode" data-value="current" aria-pressed="false">현재 · 업무철</button>
+        <button type="button" data-action="mode" data-value="household" aria-pressed="true">제안 · 고객 가구</button>
+      </div>
+      <button type="button" class="switch" role="switch" id="groupedSwitch" data-action="grouped" aria-checked="true"><span class="track"></span>고객별 묶기</button>
+      <span class="spacer"></span>
+      <label class="field">담당
+        <select id="assignee">
+          <option value="all">전체</option>
+          <option value="u1">서지현 (나)</option>
+          <option value="u2">이민호</option>
+          <option value="u3">박소라</option>
+        </select>
+      </label>
+      <label class="field">정렬
+        <select id="sort">
+          <option value="recent">최근 등록순</option>
+          <option value="next">다음 연락순</option>
+          <option value="name">이름순</option>
+        </select>
+      </label>
+    </div>
+
+    <div class="note" id="modeNote" role="note"></div>
+    <div class="summary" id="summary"></div>
+
+    <div class="ledger" id="ledger">
+      <div class="ledger-inner" role="table" aria-label="고객 원장">
+        <div class="head" role="row">
+          <div role="columnheader"></div>
+          <div role="columnheader">의뢰</div>
+          <div role="columnheader" id="headPeople">본인</div>
+          <div role="columnheader" class="r">최소예산</div>
+          <div role="columnheader" class="r">최대예산</div>
+          <div role="columnheader" class="r">월세</div>
+          <div role="columnheader" class="r">평형</div>
+          <div role="columnheader" class="r">매칭</div>
+          <div role="columnheader">담당</div>
+          <div role="columnheader" class="r">등록일</div>
+          <div role="columnheader"></div>
+        </div>
+        <div id="ledgerBody"></div>
+      </div>
+    </div>
+
+    <footer class="statusbar">
+      <span>가상 데이터 · 변경 내용은 이 브라우저에만 저장</span>
+      <button type="button" data-action="reset">시안 초기화</button>
+      <span class="hint">/ 검색 · 이름을 누르면 고객 상세</span>
+    </footer>
+  </main>
+</div>
+
+<div class="sheet-backdrop" id="sheetBackdrop" data-action="close-sheet" hidden></div>
+<aside class="sheet" id="sheet" aria-label="고객 상세" hidden></aside>
+<div class="menu" id="rowMenu" role="menu" hidden></div>
+
+<dialog id="ownerDialog" aria-labelledby="ownerTitle">
+  <form id="ownerForm">
+    <div class="dlg-head">
+      <h2 id="ownerTitle">소유자 연결</h2>
+      <p>연결하면 이 의뢰가 해당 고객 묶음으로 옮겨집니다.</p>
+    </div>
+    <div class="dlg-body">
+      <input id="ownerSearch" type="text" placeholder="이름 또는 전화번호" aria-label="연락처 검색" autocomplete="off">
+      <div class="pick" id="ownerList" role="radiogroup" aria-label="연결할 연락처"></div>
+      <div class="new-fields" id="newFields" hidden>
+        <input id="newName" type="text" placeholder="이름" aria-label="새 고객 이름">
+        <input id="newPhone" type="tel" placeholder="010-0000-0000" aria-label="새 고객 전화번호">
+      </div>
+      <div class="err" id="ownerError" role="alert" hidden></div>
+    </div>
+    <div class="dlg-foot">
+      <button type="button" class="btn" data-action="close-owner">취소</button>
+      <button type="submit" class="btn primary">연결</button>
+    </div>
+  </form>
+</dialog>
+
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+<script>
+(() => {
+  const TODAY = '2026-10-15';
+  const TOMORROW = '2026-10-16';
+  const USERS = { u1: '서지현', u2: '이민호', u3: '박소라' };
+  const FAMILY = new Set(['spouse', 'parent', 'child', 'sibling']);
+  const DATA_KEY = 'estait-ledger-household-v1';
+  const PREF_KEY = 'estait-ledger-household-v1-prefs';
+
+  function seed() {
+    return {
+      contacts: [
+        { id: 'c1', name: '김민준', phone: '01000001001', consult: { date: '2026-10-14', text: '토요일 오후 2시 방문 확정. 두 분이 함께 오시기로 했습니다.' }, next: { date: TODAY, time: '14:00' } },
+        { id: 'c2', name: '이서연', phone: '01000001011', consult: { date: '2026-10-12', text: '대출 한도 확인 후 40평대 위주로 보겠다고 함.' }, next: null },
+        { id: 'c3', name: '최유진', phone: '01000001004', consult: { date: '2026-10-13', text: '상일동 2곳 방문 예약. 대출 상담을 먼저 마치고 연락 주시기로.' }, next: { date: TOMORROW, time: '10:00' } },
+        { id: 'c4', name: '박정숙', phone: '01000001021', consult: { date: '2026-10-10', text: '집이 팔리면 이사 시기는 아들 결혼 일정에 맞추고 싶어 함.' }, next: { date: '2026-10-17', time: '11:00' } },
+        { id: 'c5', name: '박지훈', phone: '01000001022', consult: { date: '2026-10-11', text: '12월 결혼, 1월 입주 희망. 예비 신부와 함께 보러 오기로.' }, next: { date: '2026-10-18', time: '15:00' } },
+        { id: 'c6', name: '정하늘', phone: '01000001023', consult: null, next: null },
+        { id: 'c7', name: '윤도현', phone: '01000001008', consult: { date: '2026-10-09', text: '임차인과 조건 합의. 금요일에 계약 시간 안내드릴 예정.' }, next: { date: '2026-10-18', time: '10:30' } },
+        { id: 'c8', name: '한상우', phone: '01000001031', consult: null, next: null },
+        { id: 'c9', name: '오수빈', phone: '01000001007', consult: { date: '2026-10-12', text: '월세 조건 안내. 역 도보 10분 이내 원함.' }, next: { date: '2026-10-17', time: '16:00' } },
+        { id: 'c10', name: '이정호', phone: '01000001003', consult: { date: '2026-10-13', text: '잔금 시기는 협의 가능. 인근 실거래를 정리해 다시 연락드리기로.' }, next: { date: TODAY, time: '17:00' } },
+        { id: 'c11', name: '김하나', phone: '01000001013', consult: { date: '2026-10-08', text: '아이 학교 때문에 고덕동 안에서 전세를 원함.' }, next: null },
+        { id: 'c12', name: '정현우', phone: '01000001005', consult: { date: '2026-10-11', text: '임차인 방문 시간 조율 중.' }, next: { date: TOMORROW, time: '14:00' } },
+        { id: 'c13', name: '한지수', phone: '01000001006', consult: { date: '2026-10-12', text: '명일동 집이 팔리면 고덕동 전세로 옮길 계획.' }, next: { date: '2026-10-17', time: '13:00' } },
+        { id: 'c14', name: '강태오', phone: '01000001041', consult: null, next: null },
+        { id: 'c15', name: '문서영', phone: '01000001042', consult: null, next: null }
+      ],
+      relations: [
+        { id: 'r1', a: 'c1', b: 'c2', type: 'spouse', label: '배우자', together: true },
+        { id: 'r2', a: 'c4', b: 'c5', type: 'child', label: '아들', together: false },
+        { id: 'r3', a: 'c10', b: 'c11', type: 'spouse', label: '배우자', together: true },
+        { id: 'r4', a: 'c7', b: 'c8', type: 'agent', label: '대리인', together: false },
+        { id: 'r5', a: 'c9', b: 'c8', type: 'agent', label: '대리인', together: false }
+      ],
+      intakes: [
+        { id: 'L1', kind: 'listing', status: 'open', principals: ['c1'], reps: [], tx: '매매', title: '고덕그라시움 105동 1203호', sub: '전용 84㎡ · 남향 · 입주 협의', min: 158000, max: 158000, rentMin: null, rentMax: null, areaMin: 34, areaMax: 34, matches: 3, assignee: 'u1', created: '2026-10-08' },
+        { id: 'D1', kind: 'demand', status: 'open', principals: ['c1', 'c2'], reps: [], tx: '매매', title: '고덕·명일동 아파트', sub: '40평대 · 역세권 · 올해 안 입주', min: 150000, max: 180000, rentMin: null, rentMax: null, areaMin: 40, areaMax: 45, matches: 4, assignee: 'u1', created: '2026-10-10' },
+        { id: 'H1', kind: 'demand', status: 'closed', principals: ['c1'], reps: [], tx: '전세', title: '고덕동 아파트 전세', sub: '2024.11 계약 완료 · 고덕아르테온 34평 전세 7억', min: 60000, max: 70000, rentMin: null, rentMax: null, areaMin: 30, areaMax: 34, matches: 0, assignee: 'u1', created: '2024-09-02' },
+        { id: 'D2', kind: 'demand', status: 'open', principals: ['c3'], reps: [], tx: '매매', title: '상일동 아파트', sub: '24평 · 역 도보 10분 · 중층 이상', min: 100000, max: 120000, rentMin: null, rentMax: null, areaMin: 24, areaMax: 29, matches: 3, assignee: 'u2', created: '2026-09-13' },
+        { id: 'D3', kind: 'demand', status: 'open', principals: ['c3'], reps: [], tx: '매매', title: '강일동 오피스텔 투자용', sub: '임대 수익 우선 · 역세권', min: 20000, max: 30000, rentMin: null, rentMax: null, areaMin: 10, areaMax: 15, matches: 1, assignee: 'u2', created: '2026-10-02' },
+        { id: 'L2', kind: 'listing', status: 'open', principals: ['c4'], reps: [], tx: '매매', title: '명일동 삼익그린 2동 402호', sub: '전용 59㎡ · 올수리', min: 105000, max: 105000, rentMin: null, rentMax: null, areaMin: 24, areaMax: 24, matches: 2, assignee: 'u3', created: '2026-09-20' },
+        { id: 'D4', kind: 'demand', status: 'open', principals: ['c5', 'c6'], reps: [], tx: '전세', title: '고덕동 신혼집 전세', sub: '24~34평 · 1월 입주', min: 50000, max: 70000, rentMin: null, rentMax: null, areaMin: 24, areaMax: 34, matches: 2, assignee: 'u3', created: '2026-09-22' },
+        { id: 'L3', kind: 'listing', status: 'open', principals: ['c7'], reps: [{ id: 'c8', role: '대리인' }], tx: '월세', title: '고덕래미안힐스테이트 110동 901호', sub: '전용 84㎡ · 남동향 · 공실', min: 10000, max: 10000, rentMin: 230, rentMax: 230, areaMin: 34, areaMax: 34, matches: 1, assignee: 'u2', created: '2026-09-06' },
+        { id: 'D5', kind: 'demand', status: 'open', principals: ['c9'], reps: [{ id: 'c8', role: '대리인' }], tx: '월세', title: '강일동 오피스텔 월세', sub: '역 도보 10분 · 즉시 입주', min: 3000, max: 5000, rentMin: 80, rentMax: 100, areaMin: 8, areaMax: 12, matches: 2, assignee: 'u2', created: '2026-09-25' },
+        { id: 'L4', kind: 'listing', status: 'open', principals: ['c10'], reps: [], tx: '매매', title: '고덕아르테온 307동 802호', sub: '전용 84㎡ · 남동향 · 집주인 거주', min: 162000, max: 162000, rentMin: null, rentMax: null, areaMin: 34, areaMax: 34, matches: 1, assignee: 'u1', created: '2026-09-10' },
+        { id: 'D6', kind: 'demand', status: 'open', principals: ['c11'], reps: [], tx: '전세', title: '고덕동 아파트 전세', sub: '초등학교 도보권 · 34평', min: 80000, max: 95000, rentMin: null, rentMax: null, areaMin: 34, areaMax: 34, matches: 3, assignee: 'u1', created: '2026-10-01' },
+        { id: 'L5', kind: 'listing', status: 'hold', principals: ['c12'], reps: [], tx: '전세', title: '고덕센트럴아이파크 108동 1102호', sub: '전용 84㎡ · 12월 입주 가능', min: 85000, max: 85000, rentMin: null, rentMax: null, areaMin: 34, areaMax: 34, matches: 2, assignee: 'u3', created: '2026-09-18' },
+        { id: 'L6', kind: 'listing', status: 'open', principals: ['c13'], reps: [], tx: '매매', title: '명일동 삼익그린 5동 1203호', sub: '전용 59㎡ · 확장', min: 99000, max: 99000, rentMin: null, rentMax: null, areaMin: 24, areaMax: 24, matches: 2, assignee: 'u2', created: '2026-09-28' },
+        { id: 'D7', kind: 'demand', status: 'open', principals: ['c13'], reps: [], tx: '전세', title: '고덕동 아파트 전세', sub: '30평대 · 3월 입주', min: 70000, max: 80000, rentMin: null, rentMax: null, areaMin: 30, areaMax: 34, matches: 1, assignee: 'u2', created: '2026-09-28' },
+        { id: 'U1', kind: 'listing', status: 'open', principals: [], reps: [], tx: '매매', title: '고덕아르테온 201동 1502호', sub: '전용 114㎡ · 관리사무소 소개로 접수', min: 210000, max: 210000, rentMin: null, rentMax: null, areaMin: 43, areaMax: 43, matches: 0, assignee: 'u1', created: '2026-10-13' },
+        { id: 'U2', kind: 'listing', status: 'open', principals: [], reps: [], tx: '전세', title: '고덕센트럴아이파크 103동 704호', sub: '전용 59㎡ · 세입자 통해 접수', min: 62000, max: 62000, rentMin: null, rentMax: null, areaMin: 24, areaMax: 24, matches: 1, assignee: 'u3', created: '2026-10-09' },
+        { id: 'U3', kind: 'listing', status: 'open', principals: [], reps: [], tx: '월세', title: '상일동 리버빌 B동 302호', sub: '다세대 · 투룸', min: 2000, max: 2000, rentMin: 90, rentMax: 90, areaMin: 15, areaMax: 15, matches: 0, assignee: 'u2', created: '2026-10-02' }
+      ],
+      links: [
+        { id: 'k1', listingId: 'L1', demandId: 'D1', label: '매도 잔금으로 매수' }
+      ]
+    };
+  }
+
+  // ---------- 저장 ----------
+  function readStore(key) {
+    try { const raw = localStorage.getItem(key); return raw ? JSON.parse(raw) : null; } catch { return null; }
+  }
+  function writeStore(key, value) {
+    try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* 저장 불가 환경에서는 메모리 상태만 사용 */ }
+  }
+  let data = readStore(DATA_KEY) || seed();
+  const prefs = readStore(PREF_KEY) || {};
+  const state = {
+    mode: prefs.mode === 'current' ? 'current' : 'household',
+    grouped: prefs.grouped !== false,
+    sort: ['recent', 'next', 'name'].includes(prefs.sort) ? prefs.sort : 'recent',
+    tab: 'all', search: '', assignee: 'all',
+    collapsed: new Set(), history: new Set(),
+    panel: null, flash: new Set(), ownerTarget: null, menuFor: null
+  };
+  const saveData = () => writeStore(DATA_KEY, data);
+  const savePrefs = () => writeStore(PREF_KEY, { mode: state.mode, grouped: state.grouped, sort: state.sort });
+
+  // ---------- 유틸 ----------
+  const $ = (s) => document.querySelector(s);
+  const esc = (s) => String(s).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+  const C = (id) => data.contacts.find((c) => c.id === id);
+  const I = (id) => data.intakes.find((i) => i.id === id);
+  const linkOf = (intakeId) => data.links.find((l) => l.listingId === intakeId || l.demandId === intakeId) || null;
+  const partnerId = (link, intakeId) => (link.listingId === intakeId ? link.demandId : link.listingId);
+  const byCreated = (a, b) => a.created.localeCompare(b.created) || a.id.localeCompare(b.id);
+  const kindLabel = (it) => (it.kind === 'listing' ? '내놓음' : '구함');
+  const dash = '<span class="dim">—</span>';
+
+  function fmtMan(v) {
+    if (v == null) return dash;
+    if (v >= 10000) {
+      const eok = Math.floor(v / 10000), rest = v % 10000;
+      return rest ? `${eok}억 ${rest.toLocaleString('ko-KR')}` : `${eok}억`;
+    }
+    return v.toLocaleString('ko-KR');
+  }
+  function fmtRange(a, b, unit = '') {
+    if (a == null && b == null) return dash;
+    if (a === b || b == null) return `${a}${unit}`;
+    return `${a}~${b}${unit}`;
+  }
+  const fmtMD = (d) => `${d.slice(5, 7)}.${d.slice(8, 10)}`;
+  const fmtPhone = (p) => (p.length === 11 ? `${p.slice(0, 3)}-${p.slice(3, 7)}-${p.slice(7)}` : p);
+  function fmtNext(n) {
+    if (!n) return '';
+    if (n.date === TODAY) return `<span class="next today">오늘 연락 ${n.time}</span>`;
+    if (n.date === TOMORROW) return `<span class="next">내일 ${n.time}</span>`;
+    return `<span class="next">${fmtMD(n.date)} 연락</span>`;
+  }
+  function amountSummary(it) {
+    if (it.kind === 'listing') return it.rentMin != null ? `${fmtMan(it.min)} / ${it.rentMin}` : fmtMan(it.min);
+    const base = it.min === it.max ? fmtMan(it.min) : `${fmtMan(it.min)} ~ ${fmtMan(it.max)}`;
+    return it.rentMin != null ? `${base} / ${fmtRange(it.rentMin, it.rentMax)}` : base;
+  }
+  function roleLabel(it) {
+    const many = it.principals.length > 1;
+    return it.kind === 'listing' ? (many ? '공동 소유' : '소유자') : (many ? '공동 의뢰' : '의뢰인');
+  }
+  const ICON = {
+    chevR: '<path d="m9 6 6 6-6 6"/>',
+    chevD: '<path d="m6 9 6 6 6-6"/>',
+    more: '<circle cx="5" cy="12" r="1.1"/><circle cx="12" cy="12" r="1.1"/><circle cx="19" cy="12" r="1.1"/>',
+    x: '<path d="M6 6l12 12M18 6 6 18"/>',
+    link: '<path d="M10 14a4 4 0 0 0 5.66 0l3-3a4 4 0 0 0-5.66-5.66l-1 1"/><path d="M14 10a4 4 0 0 0-5.66 0l-3 3a4 4 0 0 0 5.66 5.66l1-1"/>',
+    clock: '<circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/>'
+  };
+  const icon = (n) => `<svg class="i" viewBox="0 0 24 24" aria-hidden="true">${ICON[n]}</svg>`;
+
+  // ---------- 묶음 계산 ----------
+  function computeGroups() {
+    const open = data.intakes.filter((i) => i.status !== 'closed').sort(byCreated);
+    const assigned = open.filter((i) => i.principals.length > 0);
+    const unassigned = open.filter((i) => i.principals.length === 0);
+    let groups;
+
+    if (state.mode === 'current') {
+      // 현재 resolver: 본인 집합이 정확히 같을 때만 같은 업무철에 자동 연결
+      const byKey = new Map();
+      for (const it of assigned) {
+        const key = 'c:' + [...it.principals].sort().join(',');
+        if (!byKey.has(key)) byKey.set(key, { key, members: [...it.principals], intakes: [], history: [] });
+        byKey.get(key).intakes.push(it);
+      }
+      groups = [...byKey.values()];
+    } else {
+      // 제안: 같은 의뢰의 본인 + '함께 보기'를 켠 가족 관계로 연결된 사람을 한 묶음으로 계산
+      const parent = new Map();
+      const add = (x) => { if (!parent.has(x)) parent.set(x, x); };
+      const find = (x) => { while (parent.get(x) !== x) { parent.set(x, parent.get(parent.get(x))); x = parent.get(x); } return x; };
+      const union = (a, b) => { const ra = find(a), rb = find(b); if (ra !== rb) parent.set(rb, ra); };
+      for (const it of assigned) {
+        it.principals.forEach(add);
+        for (let k = 1; k < it.principals.length; k++) union(it.principals[0], it.principals[k]);
+      }
+      for (const r of data.relations) {
+        if (FAMILY.has(r.type) && r.together && parent.has(r.a) && parent.has(r.b)) union(r.a, r.b);
+      }
+      const byRoot = new Map();
+      for (const it of assigned) {
+        const root = find(it.principals[0]);
+        if (!byRoot.has(root)) byRoot.set(root, { members: [], intakes: [], history: [] });
+        const g = byRoot.get(root);
+        g.intakes.push(it);
+        for (const p of it.principals) if (!g.members.includes(p)) g.members.push(p);
+      }
+      const closed = data.intakes.filter((i) => i.status === 'closed');
+      groups = [...byRoot.values()].map((g) => ({
+        ...g,
+        key: 'h:' + [...g.members].sort().join(','),
+        history: closed.filter((i) => i.principals.some((p) => g.members.includes(p))).sort(byCreated).reverse()
+      }));
+    }
+    for (const g of groups) g.meta = groupMeta(g);
+    return { groups, unassigned };
+  }
+
+  function groupMeta(g) {
+    const people = g.members.map(C);
+    const consult = people.filter((c) => c.consult)
+      .map((c) => ({ contact: c, ...c.consult }))
+      .sort((a, b) => b.date.localeCompare(a.date))[0] || null;
+    const next = people.filter((c) => c.next).map((c) => c.next)
+      .sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time))[0] || null;
+    const assignees = [...new Set(g.intakes.map((i) => i.assignee))];
+    const latest = g.intakes.map((i) => i.created).sort().at(-1);
+    return {
+      consult, next, assignees, latest,
+      hasListing: g.intakes.some((i) => i.kind === 'listing'),
+      hasDemand: g.intakes.some((i) => i.kind === 'demand')
+    };
+  }
+
+  function groupLabel(g) {
+    const names = g.members.map((id) => C(id).name);
+    if (state.mode === 'current') return names[0] + (names.length > 1 ? ` +${names.length - 1}` : '');
+    return names.length <= 2 ? names.join(' · ') : `${names[0]} · ${names[1]} 외 ${names.length - 2}`;
+  }
+
+  // ---------- 검색 · 필터 ----------
+  function parseQuery(s) {
+    const t = s.trim().toLowerCase();
+    return t ? { t, d: t.replace(/\D/g, '') } : null;
+  }
+  const phoneHit = (c, q) => q.d.length >= 3 && c.phone.includes(q.d);
+  const contactMatches = (c, q) => c.name.toLowerCase().includes(q.t) || phoneHit(c, q);
+  const intakeText = (it) => `${it.title} ${it.sub}`.toLowerCase();
+
+  function matchGroup(g, rows, q) {
+    if (!q) return { ok: true, contacts: [], reason: null };
+    const contacts = [];
+    let reason = null;
+    g.members.forEach((id, idx) => {
+      const c = C(id);
+      if (contactMatches(c, q)) {
+        contacts.push(id);
+        if (idx > 0 && !reason) reason = `${c.name} ${phoneHit(c, q) ? '번호' : '이름'}로 찾음`;
+      }
+    });
+    for (const it of rows) for (const rep of it.reps) {
+      const c = C(rep.id);
+      if (contactMatches(c, q) && !contacts.includes(rep.id)) {
+        contacts.push(rep.id);
+        if (!reason) reason = `대리인 ${c.name} 연결로 찾음`;
+      }
+    }
+    const textHit = rows.some((it) => intakeText(it).includes(q.t));
+    const firstHit = contacts.includes(g.members[0]);
+    return { ok: contacts.length > 0 || textHit, contacts, reason: firstHit ? null : reason };
+  }
+
+  const sorters = {
+    recent: (a, b) => b.meta.latest.localeCompare(a.meta.latest),
+    next: (a, b) => {
+      const x = a.meta.next ? a.meta.next.date + a.meta.next.time : '9999';
+      const y = b.meta.next ? b.meta.next.date + b.meta.next.time : '9999';
+      return x.localeCompare(y);
+    },
+    name: (a, b) => C(a.members[0]).name.localeCompare(C(b.members[0]).name, 'ko')
+  };
+
+  let model = null;
+  function buildModel() {
+    const { groups, unassigned } = computeGroups();
+    const q = parseQuery(state.search);
+    const groupOf = new Map();
+    for (const g of groups) for (const it of g.intakes) groupOf.set(it.id, g.key);
+
+    const base = [];
+    for (const g of groups) {
+      const rows = g.intakes.filter((i) => state.assignee === 'all' || i.assignee === state.assignee);
+      if (!rows.length) continue;
+      const hit = matchGroup(g, rows, q);
+      if (!hit.ok) continue;
+      base.push({ ...g, rows, hit });
+    }
+    const hasKind = (g, kind) => g.rows.some((i) => i.kind === kind);
+    const counts = {
+      all: base.length,
+      demand: base.filter((g) => hasKind(g, 'demand')).length,
+      listing: base.filter((g) => hasKind(g, 'listing')).length,
+      both: base.filter((g) => hasKind(g, 'demand') && hasKind(g, 'listing')).length
+    };
+    let visible = base;
+    if (state.tab === 'demand') visible = base.filter((g) => hasKind(g, 'demand')).map((g) => ({ ...g, rows: g.rows.filter((i) => i.kind === 'demand') }));
+    if (state.tab === 'listing') visible = base.filter((g) => hasKind(g, 'listing')).map((g) => ({ ...g, rows: g.rows.filter((i) => i.kind === 'listing') }));
+    if (state.tab === 'both') visible = base.filter((g) => hasKind(g, 'demand') && hasKind(g, 'listing'));
+    visible = [...visible].sort(sorters[state.sort]);
+
+    const showUnassigned = state.mode === 'household' && (state.tab === 'all' || state.tab === 'listing');
+    const ua = showUnassigned ? unassigned.filter((i) =>
+      (state.assignee === 'all' || i.assignee === state.assignee) && (!q || intakeText(i).includes(q.t))) : [];
+
+    const memberCount = new Map();
+    for (const g of groups) for (const m of g.members) memberCount.set(m, (memberCount.get(m) || 0) + 1);
+    const duplicated = [...memberCount.entries()].filter(([, n]) => n > 1).map(([id]) => id);
+
+    return { groups: visible, allGroups: groups, unassigned: ua, allUnassigned: unassigned, counts, groupOf, duplicated };
+  }
+
+  // ---------- 렌더 ----------
+  function nameButton(id, hits) {
+    const hit = hits && hits.includes(id) ? ' hit' : '';
+    return `<button type="button" class="name-btn${hit}" data-action="open-person" data-contact="${id}">${esc(C(id).name)}</button>`;
+  }
+
+  function namesHtml(g) {
+    const hits = g.hit ? g.hit.contacts : [];
+    if (state.mode === 'current') {
+      const extra = g.members.length - 1;
+      return nameButton(g.members[0], hits) + (extra > 0 ? `<span class="more-names">+${extra}</span>` : '');
+    }
+    const shown = g.members.slice(0, 2).map((id) => nameButton(id, hits)).join('<span class="dot-sep">·</span>');
+    const extra = g.members.length - 2;
+    return shown + (extra > 0 ? `<span class="more-names">외 ${extra}</span>` : '');
+  }
+
+  function peopleCell(it, opts) {
+    if (!it.principals.length) {
+      return `<button type="button" class="btn sm" data-action="connect-owner" data-intake="${it.id}">소유자 연결</button>`;
+    }
+    const names = it.principals.map((id) => nameButton(id)).join('<span class="dot-sep">·</span>');
+    const reps = it.reps.map((r) => `대리 ${esc(C(r.id).name)}`).join(', ');
+    const role = roleLabel(it) + (reps ? ` · ${reps}` : '');
+    if (opts.flat) {
+      const g = opts.group;
+      const label = g ? `<button type="button" class="name-btn glabel" data-action="open-person" data-contact="${g.members[0]}" data-key="${g.key}">${esc(groupLabel(g))}</button>` : '';
+      const self = it.principals.map((id) => C(id).name).join('·');
+      return `<div class="pnames">${label}</div><span class="role">본인 ${esc(self)} · ${role}</span>`;
+    }
+    return `<div class="pnames">${names}</div><span class="role">${role}</span>`;
+  }
+
+  function rowHtml(it, opts = {}) {
+    const lk = linkOf(it.id);
+    let linkBadge = '';
+    if (lk && !opts.past) {
+      const pid = partnerId(lk, it.id);
+      const outside = model.groupOf.get(pid) !== model.groupOf.get(it.id);
+      if (outside) {
+        linkBadge = `<span class="badge b-warn">연계 대상이 다른 ${state.mode === 'current' ? '업무철' : '고객 묶음'}에 있음</span>`;
+      } else if (opts.flat) {
+        linkBadge = `<span class="badge b-link" title="${esc(lk.label)} · ${esc(I(pid).title)}">연계</span>`;
+      }
+    }
+    const kindBadge = it.kind === 'listing' ? '<span class="badge b-listing">내놓음</span>' : '<span class="badge b-demand">구함</span>';
+    const hold = it.status === 'hold' ? '<span class="badge b-hold">보류</span>' : '';
+    const cls = ['row', opts.top && 'lk-top', opts.bottom && 'lk-bottom', opts.past && 'past', state.flash.has(it.id) && 'flash'].filter(Boolean).join(' ');
+    const matches = it.matches && !opts.past
+      ? `<button type="button" class="match-btn num" data-action="match" data-intake="${it.id}">${it.matches}건</button>`
+      : dash;
+    const menu = opts.past ? '' : `<button type="button" class="more" data-action="row-menu" data-intake="${it.id}" aria-haspopup="menu" aria-expanded="false" aria-label="${esc(it.title)} 의뢰 메뉴">${icon('more')}</button>`;
+    return `<div class="${cls}" role="row" data-intake="${it.id}">
+      <div class="gut" role="cell"></div>
+      <div class="cell-main" role="cell">
+        <div class="main-line">${kindBadge}<span class="tx">${it.tx}</span><span class="title">${esc(it.title)}</span>${hold}${linkBadge}</div>
+        <div class="sub">${esc(it.sub)}</div>
+      </div>
+      <div class="people" role="cell">${peopleCell(it, opts)}</div>
+      <div class="r num amt" role="cell">${fmtMan(it.min)}</div>
+      <div class="r num amt" role="cell">${fmtMan(it.max)}</div>
+      <div class="r num" role="cell">${fmtRange(it.rentMin, it.rentMax)}</div>
+      <div class="r num" role="cell">${fmtRange(it.areaMin, it.areaMax, '평')}</div>
+      <div class="r" role="cell">${matches}</div>
+      <div class="who-cell" role="cell">${USERS[it.assignee]}</div>
+      <div class="r num date-cell" role="cell">${opts.past ? it.created.slice(0, 4) : fmtMD(it.created)}</div>
+      <div role="cell">${menu}</div>
+    </div>`;
+  }
+
+  function orderedRows(g) {
+    const ids = new Set(g.rows.map((r) => r.id));
+    const listings = g.rows.filter((r) => r.kind === 'listing').sort(byCreated);
+    const demands = g.rows.filter((r) => r.kind === 'demand').sort(byCreated);
+    const out = [];
+    const used = new Set();
+    for (const L of listings) {
+      const entry = { it: L };
+      out.push(entry);
+      used.add(L.id);
+      const lk = linkOf(L.id);
+      if (lk && ids.has(lk.demandId) && !used.has(lk.demandId)) {
+        entry.top = true;
+        out.push({ link: lk });
+        out.push({ it: I(lk.demandId), bottom: true });
+        used.add(lk.demandId);
+      }
+    }
+    for (const D of demands) if (!used.has(D.id)) out.push({ it: D });
+    return out;
+  }
+
+  function linkRowHtml(lk) {
+    return `<div class="link-row" role="row">
+      <div role="cell"></div>
+      <div class="lk" role="cell">${icon('link')}<span>연계 · ${esc(lk.label)}</span>
+        <button type="button" data-action="unlink" data-link="${lk.id}">해제</button></div>
+    </div>`;
+  }
+
+  function groupHtml(g, index) {
+    const open = !state.collapsed.has(g.key);
+    const bodyId = `gb-${index}`;
+    const m = g.meta;
+    const label = groupLabel(g);
+    const badges = [];
+    if (m.hasListing && m.hasDemand) badges.push('<span class="badge b-neutral">팔고 사기</span>');
+    if (state.mode === 'current' && model.duplicated.includes(g.members[0])) badges.push('<span class="badge b-warn">다른 업무철에도 있음</span>');
+    if (g.hit.reason) badges.push(`<span class="badge b-hit">${esc(g.hit.reason)}</span>`);
+    let consult = '<span class="lbl">상담 기록 없음</span>';
+    if (m.consult) {
+      const who = m.consult.contact.id !== g.members[0] ? `<span class="who">${esc(m.consult.contact.name)} · </span>` : '';
+      consult = `<span class="lbl">최근 상담</span><span class="txt">${who}${esc(m.consult.text)}</span>`;
+    }
+    const assignees = m.assignees.map((u) => USERS[u]).join(' · ');
+    let body = '';
+    for (const entry of orderedRows(g)) body += entry.link ? linkRowHtml(entry.link) : rowHtml(entry.it, { top: entry.top, bottom: entry.bottom });
+    if (g.history.length) {
+      const histOpen = state.history.has(g.key);
+      body += `<button type="button" class="hist-toggle" data-action="toggle-history" data-key="${g.key}" aria-expanded="${histOpen}">${icon(histOpen ? 'chevD' : 'chevR')}지난 의뢰 ${g.history.length}건</button>`;
+      if (histOpen) for (const it of g.history) body += rowHtml(it, { past: true });
+    }
+    return `<section class="group${open ? ' open' : ''}" role="rowgroup" aria-label="${esc(label)}">
+      <div class="ghead" role="row">
+        <button type="button" class="chev" data-action="toggle-group" data-key="${g.key}" aria-expanded="${open}" aria-controls="${bodyId}" aria-label="${esc(label)} ${open ? '접기' : '펼치기'}">${icon(open ? 'chevD' : 'chevR')}</button>
+        <div class="names">${namesHtml(g)}</div>
+        <span class="phone num">${fmtPhone(C(g.members[0]).phone)}</span>
+        ${badges.join('')}
+        <div class="consult">${consult}</div>
+        ${fmtNext(m.next)}
+        <span class="assignee">${assignees}</span>
+      </div>
+      <div class="gbody" id="${bodyId}"${open ? '' : ' hidden'}>${body}</div>
+    </section>`;
+  }
+
+  function unassignedHtml(list) {
+    const open = !state.collapsed.has('unassigned');
+    const rows = [...list].sort(byCreated).reverse().map((it) => rowHtml(it)).join('');
+    return `<section class="group unassigned${open ? ' open' : ''}" role="rowgroup" aria-label="고객 미지정 의뢰">
+      <div class="ghead" role="row">
+        <button type="button" class="chev" data-action="toggle-group" data-key="unassigned" aria-expanded="${open}" aria-controls="gb-ua" aria-label="고객 미지정 의뢰 ${open ? '접기' : '펼치기'}">${icon(open ? 'chevD' : 'chevR')}</button>
+        <div class="names"><span class="ua-title">고객 미지정 의뢰</span></div>
+        <span class="badge b-neutral num">${list.length}건</span>
+        <span class="ua-desc">소유자를 연결하면 해당 고객 묶음으로 옮겨집니다</span>
+      </div>
+      <div class="gbody" id="gb-ua"${open ? '' : ' hidden'}>${rows}</div>
+    </section>`;
+  }
+
+  function flatHtml() {
+    const items = [];
+    for (const g of model.groups) for (const it of g.rows) items.push({ it, g });
+    for (const it of model.unassigned) items.push({ it, g: null });
+    items.sort((a, b) => byCreated(b.it, a.it));
+    return `<div class="flat">${items.map(({ it, g }) => rowHtml(it, { flat: true, group: g })).join('')}</div>`;
+  }
+
+  function renderNote() {
+    const note = $('#modeNote');
+    if (state.mode === 'current') {
+      note.className = 'note warn';
+      note.innerHTML = '<b>현재 구조 · 업무철</b><span>의뢰의 본인 집합이 정확히 같을 때만 같은 업무철로 자동 연결합니다. 같은 고객이 여러 묶음에 나올 수 있고, 고객이 없는 내놓음 의뢰는 원장에 나오지 않습니다. 연계는 같은 업무철 안에서만 가능합니다.</span>';
+    } else {
+      note.className = 'note';
+      note.innerHTML = '<b>제안 · 고객 가구</b><span>같은 의뢰에 본인으로 함께 오른 사람과 ‘원장에서 함께 보기’를 켠 가족을 한 묶음으로 매번 계산합니다. 저장된 업무철은 쓰지 않고, 대리인·법무사는 묶음을 잇지 않습니다.</span>';
+    }
+  }
+
+  function renderSummary() {
+    const s = $('#summary');
+    const intakeCount = model.groups.reduce((n, g) => n + g.rows.length, 0) + model.unassigned.length;
+    const sep = '<span class="sep">·</span>';
+    const parts = [];
+    if (state.mode === 'current') {
+      parts.push(`업무철 <b class="num">${model.groups.length}</b>`, `의뢰 <b class="num">${intakeCount}</b>`);
+      if (model.duplicated.length) parts.push(`여러 업무철에 나온 고객 <b class="num">${model.duplicated.length}</b>명`);
+      if (model.allUnassigned.length) parts.push(`원장에서 빠진 의뢰 <b class="num">${model.allUnassigned.length}</b>`);
+    } else {
+      parts.push(`고객 묶음 <b class="num">${model.groups.length}</b>`, `의뢰 <b class="num">${intakeCount}</b>`, `팔고 사기 <b class="num">${model.counts.both}</b>`);
+      if (model.allUnassigned.length) parts.push(`고객 미지정 <b class="num">${model.allUnassigned.length}</b>`);
+    }
+    const keys = visibleKeys();
+    const anyOpen = keys.some((k) => !state.collapsed.has(k));
+    const toggle = state.grouped && keys.length ? `<button type="button" data-action="toggle-all">${anyOpen ? '모두 접기' : '모두 펼치기'}</button>` : '';
+    s.innerHTML = parts.join(sep) + toggle;
+  }
+
+  function visibleKeys() {
+    const keys = model.groups.map((g) => g.key);
+    if (model.unassigned.length) keys.push('unassigned');
+    return keys;
+  }
+
+  function render() {
+    model = buildModel();
+    for (const [k, v] of Object.entries(model.counts)) document.querySelector(`[data-count="${k}"]`).textContent = v;
+    document.querySelectorAll('[data-action="tab"]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.value === state.tab)));
+    document.querySelectorAll('[data-action="mode"]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.value === state.mode)));
+    $('#groupedSwitch').setAttribute('aria-checked', String(state.grouped));
+    $('#sort').value = state.sort;
+    $('#assignee').value = state.assignee;
+    $('#headPeople').textContent = state.grouped ? '본인' : '고객 · 본인';
+    renderNote();
+    renderSummary();
+
+    const body = $('#ledgerBody');
+    if (!model.groups.length && !model.unassigned.length) {
+      body.innerHTML = '<div class="empty">조건에 맞는 고객이 없습니다.<br><button type="button" class="btn" data-action="clear-filters">검색·필터 초기화</button></div>';
+    } else if (state.grouped) {
+      body.innerHTML = model.groups.map(groupHtml).join('') + (model.unassigned.length ? unassignedHtml(model.unassigned) : '');
+    } else {
+      body.innerHTML = flatHtml();
+    }
+    renderSheet();
+
+    if (state.flash.size) {
+      const first = document.querySelector('.row.flash');
+      if (first) first.scrollIntoView({ block: 'nearest' });
+      const flashed = new Set(state.flash);
+      setTimeout(() => { flashed.forEach((id) => state.flash.delete(id)); }, 2100);
+    }
+  }
+
+  // ---------- 상세 시트 ----------
+  function findPanelGroup() {
+    if (!state.panel) return null;
+    if (state.panel.key) {
+      const byKey = model.allGroups.find((g) => g.key === state.panel.key);
+      if (byKey) return byKey;
+    }
+    return model.allGroups.find((g) => g.members.includes(state.panel.contactId)) || null;
+  }
+
+  function renderSheet() {
+    const sheet = $('#sheet');
+    const backdrop = $('#sheetBackdrop');
+    const g = findPanelGroup();
+    if (!g) {
+      state.panel = null;
+      sheet.hidden = true;
+      backdrop.hidden = true;
+      return;
+    }
+    state.panel.key = g.key;
+    const household = state.mode === 'household';
+    const allNames = g.members.map((id) => C(id).name).join(' · ');
+    const assignees = g.meta.assignees.map((u) => USERS[u]).join(' · ');
+
+    let reasons = '';
+    if (household) {
+      const list = [];
+      for (const it of g.intakes) {
+        if (it.principals.length > 1) list.push(`${it.principals.map((id) => C(id).name).join(' · ')} — ${it.title} ${kindLabel(it)}에 함께 본인으로 등록`);
+      }
+      for (const r of data.relations) {
+        if (FAMILY.has(r.type) && r.together && g.members.includes(r.a) && g.members.includes(r.b)) {
+          list.push(`${C(r.a).name}의 ${r.label} ${C(r.b).name} — 원장에서 함께 보기 켜짐`);
+        }
+      }
+      if (!list.length) list.push('본인 1명 — 다른 사람과 묶이지 않았습니다');
+      reasons = `<section class="sec"><h3>묶인 이유</h3>${list.map((t) => `<div class="reason">${esc(t)}</div>`).join('')}</section>`;
+    }
+
+    const members = g.members.map((id) => {
+      const c = C(id);
+      const roles = g.intakes.filter((i) => i.principals.includes(id))
+        .map((i) => `<small>${kindLabel(i)} ${esc(i.title)} · ${roleLabel(i)}</small>`).join('');
+      return `<div class="member"><span class="avatar">${esc(c.name[0])}</span><div><b>${esc(c.name)}</b><span class="ph num">${fmtPhone(c.phone)}</span>${roles}</div></div>`;
+    }).join('');
+
+    const rels = data.relations.filter((r) => g.members.includes(r.a) || g.members.includes(r.b));
+    const relHtml = rels.map((r) => {
+      const text = `${esc(C(r.a).name)}의 ${esc(r.label)} <b>${esc(C(r.b).name)}</b>`;
+      if (!FAMILY.has(r.type)) {
+        return `<div class="rel"><div class="who">${text}<small>업무 관계 · 묶음을 잇지 않음</small></div></div>`;
+      }
+      const hint = household ? (r.together ? '한 고객 묶음으로 표시' : '따로 표시') : '현재 구조에서는 묶음에 영향 없음';
+      return `<div class="rel"><div class="who">${text}<small>${hint}</small></div>
+        <button type="button" class="switch" role="switch" aria-checked="${r.together}" data-action="relation" data-rel="${r.id}" aria-label="${esc(C(r.a).name)}·${esc(C(r.b).name)} 원장에서 함께 보기"${household ? '' : ' disabled'}><span class="track"></span>함께 보기</button></div>`;
+    }).join('') || '<div class="rel"><div class="who"><small>등록된 관계가 없습니다</small></div></div>';
+
+    const intakeList = [...g.intakes].sort(byCreated).map((it) => {
+      const badge = it.kind === 'listing' ? '<span class="badge b-listing">내놓음</span>' : '<span class="badge b-demand">구함</span>';
+      return `<div class="mini">${badge}<span class="tx">${it.tx}</span><span class="title">${esc(it.title)}</span><span class="amt num">${amountSummary(it)}</span></div>`;
+    }).join('');
+
+    const consults = g.members.map(C).filter((c) => c.consult)
+      .sort((a, b) => b.consult.date.localeCompare(a.consult.date))
+      .map((c) => `<div class="consult-item">${esc(c.consult.text)}<small>${esc(c.name)} · ${fmtMD(c.consult.date)}</small></div>`).join('')
+      || '<div class="consult-item"><small>상담 기록 없음</small></div>';
+
+    const history = g.history.length
+      ? `<section class="sec"><h3>지난 의뢰</h3>${g.history.map((it) => `<div class="mini"><span class="badge b-neutral">${kindLabel(it)}</span><span class="title">${esc(it.title)}</span></div><div class="consult-item"><small>${esc(it.sub)}</small></div>`).join('')}</section>`
+      : '';
+
+    const foot = household
+      ? '이 묶음은 저장하지 않습니다. 같은 의뢰에 본인으로 함께 오른 사람과 ‘함께 보기’를 켠 가족 관계로 원장을 열 때마다 계산합니다. 대리인·법무사·조언자는 여러 고객을 이어 붙이지 않도록 묶음 계산에서 뺍니다.'
+      : `본인 집합이 {${g.members.map((id) => C(id).name).join(', ')}}와 정확히 같은 의뢰만 이 업무철에 자동 연결됩니다. 같은 사람이라도 공동명의가 다르면 다른 업무철이 됩니다.`;
+
+    sheet.innerHTML = `<div class="sheet-head">
+        <div><div class="eyebrow">${household ? '고객 묶음' : '업무철 · 현재 구조'}</div><h2>${esc(allNames)}</h2><div class="meta">진행 의뢰 ${g.intakes.length}건 · 담당 ${assignees}</div></div>
+        <button type="button" class="close" data-action="close-sheet" aria-label="고객 상세 닫기">${icon('x')}</button>
+      </div>
+      <div class="sheet-body">
+        ${reasons}
+        <section class="sec"><h3>구성원</h3>${members}</section>
+        <section class="sec"><h3>관계 · 원장에서 함께 보기</h3>${relHtml}</section>
+        <section class="sec"><h3>진행 중 의뢰</h3>${intakeList}</section>
+        <section class="sec"><h3>최근 상담</h3>${consults}</section>
+        ${history}
+        <p class="foot">${foot}</p>
+      </div>`;
+    const wasHidden = sheet.hidden;
+    sheet.hidden = false;
+    backdrop.hidden = false;
+    if (wasHidden) sheet.querySelector('.close').focus();
+  }
+
+  // ---------- 행 메뉴 ----------
+  const menu = $('#rowMenu');
+  function closeMenu(restoreFocus) {
+    if (menu.hidden) return;
+    menu.hidden = true;
+    const btn = document.querySelector(`.more[data-intake="${state.menuFor}"]`);
+    if (btn) { btn.setAttribute('aria-expanded', 'false'); if (restoreFocus) btn.focus(); }
+    state.menuFor = null;
+  }
+
+  function openMenu(btn, intakeId) {
+    if (state.menuFor === intakeId) { closeMenu(); return; }
+    closeMenu();
+    const it = I(intakeId);
+    const gk = model.groupOf.get(intakeId);
+    const g = model.allGroups.find((x) => x.key === gk);
+    const lk = linkOf(intakeId);
+    const unit = state.mode === 'current' ? '업무철' : '고객 묶음';
+    let html = '<div class="mlabel">팔고 사기 연계</div>';
+    if (lk) {
+      const p = I(partnerId(lk, intakeId));
+      html += `<button type="button" role="menuitem" data-action="menu-unlink" data-link="${lk.id}">연계 해제<small>${kindLabel(p)} · ${esc(p.title)}</small></button>`;
+    } else if (!g) {
+      html += '<div class="mnote">고객을 연결한 뒤 연계할 수 있습니다.</div>';
+    } else {
+      const want = it.kind === 'listing' ? 'demand' : 'listing';
+      const wantLabel = want === 'demand' ? '구함' : '내놓음';
+      const candidates = g.intakes.filter((x) => x.kind === want && !linkOf(x.id));
+      if (candidates.length) {
+        for (const c of candidates) {
+          html += `<button type="button" role="menuitem" data-action="menu-link" data-a="${it.id}" data-b="${c.id}">${wantLabel} · ${esc(c.title)}<small>${esc(c.principals.map((id) => C(id).name).join(' · '))} · ${amountSummary(c)}</small></button>`;
+        }
+      } else {
+        html += `<div class="mnote">같은 ${unit}에 연계할 ${wantLabel} 의뢰가 없습니다.${state.mode === 'current' ? ' 다른 업무철의 의뢰와는 연계할 수 없습니다.' : ''}</div>`;
+      }
+    }
+    html += '<div class="msep"></div><button type="button" role="menuitem" data-action="toast" data-msg="시안에서는 의뢰 상세를 열지 않습니다">의뢰 상세 열기</button>';
+    menu.innerHTML = html;
+    menu.hidden = false;
+    const r = btn.getBoundingClientRect();
+    const top = Math.min(r.bottom + 4, window.innerHeight - menu.offsetHeight - 8);
+    const left = Math.max(8, Math.min(r.right - menu.offsetWidth, window.innerWidth - menu.offsetWidth - 8));
+    menu.style.top = `${Math.max(8, top)}px`;
+    menu.style.left = `${left}px`;
+    btn.setAttribute('aria-expanded', 'true');
+    state.menuFor = intakeId;
+    const first = menu.querySelector('button');
+    if (first) first.focus();
+  }
+
+  // ---------- 동작 ----------
+  let toastTimer = null;
+  function toast(msg) {
+    const el = $('#toast');
+    el.textContent = msg;
+    el.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { el.hidden = true; }, 2800);
+  }
+
+  function scrollTop() { $('#ledger').scrollTop = 0; }
+
+  function linkLabel(demand) {
+    return demand.tx === '매매' ? '매도 잔금으로 매수' : `매도 후 ${demand.tx} 이사`;
+  }
+
+  function expandGroupOf(intakeId) {
+    model = buildModel();
+    const key = model.groupOf.get(intakeId);
+    if (key) state.collapsed.delete(key);
+  }
+
+  const ownerDlg = $('#ownerDialog');
+  function groupHint(contactId) {
+    const g = model.allGroups.find((x) => x.members.includes(contactId));
+    return g ? `현재 묶음 · ${groupLabel(g)}` : '진행 의뢰 없음';
+  }
+  function renderOwnerList() {
+    const q = parseQuery($('#ownerSearch').value);
+    const list = data.contacts.filter((c) => !q || contactMatches(c, q)).sort((a, b) => a.name.localeCompare(b.name, 'ko'));
+    $('#ownerList').innerHTML = list.map((c) => `<label><input type="radio" name="owner" value="${c.id}"><span class="pn"><b>${esc(c.name)}</b> <span class="num">${fmtPhone(c.phone)}</span></span><small>${esc(groupHint(c.id))}</small></label>`).join('')
+      + '<label><input type="radio" name="owner" value="__new"><span class="pn"><b>새 고객 등록</b></span></label>';
+    $('#newFields').hidden = true;
+  }
+  function openOwner(intakeId) {
+    state.ownerTarget = intakeId;
+    $('#ownerTitle').textContent = `소유자 연결 · ${I(intakeId).title}`;
+    $('#ownerSearch').value = '';
+    $('#newName').value = '';
+    $('#newPhone').value = '';
+    $('#ownerError').hidden = true;
+    renderOwnerList();
+    ownerDlg.showModal();
+    $('#ownerSearch').focus();
+  }
+  $('#ownerSearch').addEventListener('input', renderOwnerList);
+  $('#ownerList').addEventListener('change', (e) => {
+    if (e.target.name === 'owner') $('#newFields').hidden = e.target.value !== '__new';
+    if (e.target.value === '__new') $('#newName').focus();
+  });
+  $('#ownerForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const err = $('#ownerError');
+    const picked = document.querySelector('input[name="owner"]:checked');
+    if (!picked) { err.textContent = '연결할 연락처를 선택하세요.'; err.hidden = false; return; }
+    let contactId = picked.value;
+    if (contactId === '__new') {
+      const name = $('#newName').value.trim();
+      const phone = $('#newPhone').value.replace(/\D/g, '');
+      if (!name || phone.length < 9) { err.textContent = '새 고객의 이름과 전화번호를 입력하세요.'; err.hidden = false; return; }
+      const dup = data.contacts.find((c) => c.phone === phone);
+      if (dup) { err.textContent = `${dup.name} 님이 이미 같은 번호로 등록되어 있습니다. 목록에서 선택하세요.`; err.hidden = false; return; }
+      contactId = `n${Date.now()}`;
+      data.contacts.push({ id: contactId, name, phone, consult: null, next: null });
+    }
+    const it = I(state.ownerTarget);
+    it.principals = [contactId];
+    saveData();
+    ownerDlg.close();
+    state.flash.add(it.id);
+    expandGroupOf(it.id);
+    render();
+    const g = model.allGroups.find((x) => x.key === model.groupOf.get(it.id));
+    toast(`${it.title} → ${g ? groupLabel(g) : C(contactId).name} 고객 묶음으로 옮겼습니다`);
+  });
+
+  document.addEventListener('click', (e) => {
+    const t = e.target.closest('[data-action]');
+    if (!t) { closeMenu(); return; }
+    const a = t.dataset.action;
+    if (a !== 'row-menu' && !t.closest('#rowMenu')) closeMenu();
+    switch (a) {
+      case 'tab': state.tab = t.dataset.value; scrollTop(); render(); break;
+      case 'mode':
+        if (state.mode !== t.dataset.value) { state.mode = t.dataset.value; state.collapsed.clear(); savePrefs(); scrollTop(); render(); }
+        break;
+      case 'grouped': state.grouped = !state.grouped; savePrefs(); scrollTop(); render(); break;
+      case 'toggle-group':
+        if (state.collapsed.has(t.dataset.key)) state.collapsed.delete(t.dataset.key); else state.collapsed.add(t.dataset.key);
+        render();
+        break;
+      case 'toggle-all': {
+        const keys = visibleKeys();
+        const anyOpen = keys.some((k) => !state.collapsed.has(k));
+        keys.forEach((k) => (anyOpen ? state.collapsed.add(k) : state.collapsed.delete(k)));
+        render();
+        break;
+      }
+      case 'toggle-history':
+        if (state.history.has(t.dataset.key)) state.history.delete(t.dataset.key); else state.history.add(t.dataset.key);
+        render();
+        break;
+      case 'open-person': state.panel = { contactId: t.dataset.contact, key: t.dataset.key || null }; render(); break;
+      case 'close-sheet': state.panel = null; render(); break;
+      case 'row-menu': openMenu(t, t.dataset.intake); break;
+      case 'menu-link': {
+        const x = I(t.dataset.a), y = I(t.dataset.b);
+        const listing = x.kind === 'listing' ? x : y;
+        const demand = x.kind === 'listing' ? y : x;
+        const label = linkLabel(demand);
+        data.links.push({ id: `k${Date.now()}`, listingId: listing.id, demandId: demand.id, label });
+        saveData();
+        closeMenu();
+        state.flash.add(listing.id); state.flash.add(demand.id);
+        render();
+        toast(`연계했습니다 · ${label}`);
+        break;
+      }
+      case 'menu-unlink':
+      case 'unlink': {
+        const lk = data.links.find((l) => l.id === t.dataset.link);
+        data.links = data.links.filter((l) => l.id !== t.dataset.link);
+        saveData();
+        closeMenu();
+        if (lk) { state.flash.add(lk.listingId); state.flash.add(lk.demandId); }
+        render();
+        toast('연계를 해제했습니다');
+        break;
+      }
+      case 'connect-owner': openOwner(t.dataset.intake); break;
+      case 'close-owner': ownerDlg.close(); break;
+      case 'relation': {
+        const r = data.relations.find((x) => x.id === t.dataset.rel);
+        r.together = !r.together;
+        saveData();
+        for (const it of data.intakes) if (it.principals.includes(r.a) || it.principals.includes(r.b)) state.flash.add(it.id);
+        if (state.panel) state.panel.key = null;
+        render();
+        toast(`${C(r.a).name} 님과 ${C(r.b).name} 님을 ${r.together ? '한 고객 묶음으로' : '따로'} 보여줍니다`);
+        break;
+      }
+      case 'match': toast(`매칭 후보 ${I(t.dataset.intake).matches}건 · 시안에서는 건수만 보여줍니다`); break;
+      case 'clear-filters':
+        state.search = ''; $('#search').value = ''; state.assignee = 'all'; state.tab = 'all';
+        render();
+        break;
+      case 'reset':
+        try { localStorage.removeItem(DATA_KEY); } catch { /* 무시 */ }
+        data = seed();
+        state.panel = null; state.collapsed.clear(); state.history.clear();
+        render();
+        toast('시안 데이터를 처음 상태로 되돌렸습니다');
+        break;
+      case 'toast': closeMenu(); toast(t.dataset.msg); break;
+    }
+  });
+
+  $('#search').addEventListener('input', (e) => { state.search = e.target.value; scrollTop(); render(); });
+  $('#assignee').addEventListener('change', (e) => { state.assignee = e.target.value; scrollTop(); render(); });
+  $('#sort').addEventListener('change', (e) => { state.sort = e.target.value; savePrefs(); scrollTop(); render(); });
+  $('#ledger').addEventListener('scroll', () => closeMenu());
+  window.addEventListener('resize', () => closeMenu());
+
+  menu.addEventListener('keydown', (e) => {
+    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+    const items = [...menu.querySelectorAll('button')];
+    const idx = items.indexOf(document.activeElement);
+    const next = e.key === 'ArrowDown' ? (idx + 1) % items.length : (idx - 1 + items.length) % items.length;
+    items[next].focus();
+    e.preventDefault();
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (ownerDlg.open) return;
+    if (e.key === 'Escape') {
+      if (!menu.hidden) { closeMenu(true); return; }
+      if (state.panel) { state.panel = null; render(); return; }
+    }
+    const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName);
+    if ((e.key === '/' && !typing) || ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'f')) {
+      e.preventDefault();
+      $('#search').focus();
+    }
+  });
+
+  render();
+})();
+</script>
+</body>
+</html>

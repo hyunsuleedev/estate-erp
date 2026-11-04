@@ -1,0 +1,501 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>매물관리 툴바 3×4 조합</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
+<script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: #ecebe7; color: #1f1f1f;
+    font-family: "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", sans-serif;
+    -webkit-font-smoothing: antialiased; }
+  button, input { font: inherit; color: inherit; }
+  button { cursor: pointer; background: none; border: 0; padding: 0; }
+  svg.lucide { width: 14px; height: 14px; stroke-width: 1.75; flex: none; }
+
+  /* ---------- page ---------- */
+  .page { width: 1253px; margin: 0 auto; padding: 36px 24px 120px; }
+  .page h1 { font-size: 22px; margin: 0 0 6px; letter-spacing: -0.01em; }
+  .page > p { margin: 0; color: #6b6a66; font-size: 14px; line-height: 1.6; }
+  .jump { display: flex; gap: 6px; margin-top: 14px; }
+  .jump a { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border-radius: 6px; background: #fff; border: 1px solid #dddcd7; color: #1f1f1f; text-decoration: none; font-size: 13px; }
+  .jump a b { font-variant-numeric: tabular-nums; color: #8a8984; font-weight: 500; }
+  .case { margin-top: 40px; scroll-margin-top: 20px; }
+  .case-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 4px; }
+  .case-num { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 6px; background: #1f1f1f; color: #fff; font-size: 12px; font-weight: 600; transform: translateY(-1px); }
+  .case-head h2 { font-size: 17px; margin: 0; }
+  .case-head .ref { color: #8a8984; font-size: 13px; }
+  .case-desc { margin: 0 0 12px 32px; color: #5f5e5a; font-size: 13.5px; line-height: 1.6; }
+
+  /* ---------- frame (공통 구조, 변수로 스타일) ---------- */
+  .frame {
+    --fs: 13px; --ctl-h: 32px; --r: 6px; --chip-r: 6px; --pop-r: 8px;
+    --fg: #37352f; --fg2: #787774; --fg3: #a5a39f;
+    --line: #e9e9e7; --line-strong: #d9d9d6;
+    --r1-bg: #fff; --r2-bg: #faf9f6;
+    --ctl-bg: #f7f6f3; --ctl-border: transparent; --ctl-hover: #efeee9;
+    --tint: rgba(55,53,47,.06); --tint-border: rgba(55,53,47,.25); --tint-fg: #37352f;
+    --primary: #37352f; --primary-fg: #fff; --focus: #2383e2;
+    --th-bg: #fff; --row-h: 38px; --vgrid: transparent;
+    position: relative; width: 1205px; background: #fff; border-radius: 10px; overflow: clip;
+    box-shadow: 0 0 0 1px rgba(0,0,0,.06), 0 8px 24px rgba(0,0,0,.05);
+    color: var(--fg); font-size: var(--fs);
+  }
+  .r1 { display: flex; align-items: center; gap: 8px; padding: 10px 12px; background: var(--r1-bg); border-bottom: 1px solid var(--line); }
+  .r2 { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: var(--r2-bg); border-bottom: 1px solid var(--line); }
+
+  .tabs { display: flex; align-items: center; height: var(--ctl-h); padding: 2px; gap: 1px; border-radius: var(--r); background: var(--ctl-bg); flex: none; }
+  .tabs button { position: relative; display: inline-flex; align-items: center; gap: 5px; height: calc(var(--ctl-h) - 4px); padding: 0 10px; border-radius: calc(var(--r) - 1px); color: var(--fg2); white-space: nowrap; }
+  .tabs button:hover { color: var(--fg); }
+  .tabs button.on { background: #fff; color: var(--fg); font-weight: 500; box-shadow: 0 1px 2px rgba(15,15,15,.06), 0 0 0 1px rgba(15,15,15,.06); }
+  .tabs .n { font-size: 11.5px; color: var(--fg3); font-variant-numeric: tabular-nums; font-weight: 400; }
+  .tabs button.on .n { color: var(--fg2); }
+
+  .loc { position: relative; display: flex; align-items: center; height: var(--ctl-h); border-radius: var(--r); background: var(--ctl-bg); box-shadow: inset 0 0 0 1px var(--ctl-border); flex: none; }
+  .loc.is-set { box-shadow: inset 0 0 0 1px var(--tint-border); }
+  .loc-site { display: inline-flex; align-items: center; gap: 6px; height: 100%; padding: 0 8px 0 10px; min-width: 150px; max-width: 220px; border-radius: var(--r) 0 0 var(--r); }
+  .loc-site:hover, .uf:hover { background: var(--ctl-hover); }
+  .loc-site .txt { flex: 1; min-width: 0; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .loc-site .txt.ph { color: var(--fg2); }
+  .loc-site .txt.set { font-weight: 600; }
+  .loc-site svg { color: var(--fg2); }
+  .loc-div { width: 1px; height: 16px; background: var(--line-strong); opacity: .7; flex: none; }
+  .uf { display: inline-flex; align-items: center; height: 100%; padding: 0 12px; cursor: text; }
+  .uf input { min-width: 1ch; border: 0; outline: 0; background: transparent; padding: 0; font-variant-numeric: tabular-nums; font-weight: 600; text-align: right; }
+  .uf input:placeholder-shown:not(:focus) { width: 0 !important; min-width: 0; }
+  .uf .sfx { color: var(--fg2); margin-left: 1px; }
+  .uf:focus-within { background: #fff; box-shadow: inset 0 0 0 1px var(--focus); }
+  .loc-x { display: inline-grid; place-items: center; width: 22px; height: 22px; margin: 0 5px 0 -2px; border-radius: 4px; color: var(--fg3); }
+  .loc-x:hover { background: var(--ctl-hover); color: var(--fg); }
+
+  .search { flex: 1 1 260px; min-width: 160px; max-width: 420px; display: flex; align-items: center; gap: 8px; height: var(--ctl-h); padding: 0 8px 0 10px; border-radius: var(--r); background: var(--ctl-bg); box-shadow: inset 0 0 0 1px var(--ctl-border); }
+  .search svg { color: var(--fg2); }
+  .search input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; }
+  .search input::placeholder { color: var(--fg2); }
+  .search:focus-within { background: #fff; box-shadow: 0 0 0 1px var(--focus), 0 0 0 3px color-mix(in srgb, var(--focus) 18%, transparent); }
+  .search kbd { display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 4px; border: 1px solid var(--line-strong); background: #fff; color: var(--fg2); font: 11px/1 ui-monospace, Menlo, monospace; }
+  .search:focus-within kbd, .search.has-q kbd { display: none; }
+
+  .r1-right { margin-left: auto; display: flex; align-items: center; gap: 8px; flex: none; }
+  .view { display: flex; align-items: center; height: var(--ctl-h); padding: 2px; gap: 1px; border-radius: var(--r); background: var(--ctl-bg); }
+  .view button { display: inline-flex; align-items: center; gap: 5px; height: calc(var(--ctl-h) - 4px); padding: 0 9px; border-radius: calc(var(--r) - 1px); color: var(--fg2); font-size: 12px; }
+  .view button.on { background: #fff; color: var(--fg); box-shadow: 0 1px 2px rgba(15,15,15,.06), 0 0 0 1px rgba(15,15,15,.06); }
+  .primary { display: inline-flex; align-items: center; gap: 6px; height: var(--ctl-h); padding: 0 14px; border-radius: var(--r); background: var(--primary); color: var(--primary-fg); font-weight: 500; white-space: nowrap; }
+  .primary:hover { filter: brightness(1.12); }
+
+  .r2-scroll { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 6px; overflow-x: auto; scrollbar-width: none; }
+  .r2-fixed { flex: none; display: flex; align-items: center; gap: 2px; }
+  .chip { display: inline-flex; align-items: center; gap: 5px; height: calc(var(--ctl-h) - 2px); padding: 0 9px 0 10px; border-radius: var(--chip-r); border: 1px solid var(--line); background: #fff; font-size: 12.5px; color: var(--fg); white-space: nowrap; flex: none; }
+  .chip:hover { border-color: var(--line-strong); }
+  .chip .pre { display: none; color: var(--fg3); }
+  .chip .chev { color: var(--fg3); width: 13px; height: 13px; }
+  .chip.is-set { padding: 0 3px 0 0; gap: 0; border-color: var(--tint-border); background: var(--tint); color: var(--tint-fg); }
+  .chip-main { display: inline-flex; align-items: center; gap: 6px; height: 100%; padding: 0 6px 0 10px; }
+  .chip-l { opacity: .72; }
+  .chip-sep, .chip-colon { display: none; }
+  .chip-v { font-weight: 600; }
+  .chip-x { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 4px; color: inherit; opacity: .7; }
+  .chip-x:hover { opacity: 1; background: rgba(0,0,0,.07); }
+  .chip-x svg { width: 13px; height: 13px; }
+  .add-filter { display: inline-flex; align-items: center; gap: 5px; height: calc(var(--ctl-h) - 2px); padding: 0 9px; border-radius: var(--chip-r); color: var(--fg2); font-size: 12.5px; white-space: nowrap; flex: none; }
+  .add-filter:hover, .ghost:hover { background: rgba(0,0,0,.05); color: var(--fg); }
+  .ghost { display: inline-flex; align-items: center; gap: 6px; height: calc(var(--ctl-h) - 2px); padding: 0 9px; border-radius: var(--r); color: var(--fg2); font-size: 12.5px; white-space: nowrap; }
+  .r2-sep { width: 1px; height: 16px; background: var(--line); margin: 0 4px; }
+
+  .pop { position: absolute; z-index: 30; background: #fff; border: 1px solid var(--line); border-radius: var(--pop-r); box-shadow: 0 12px 32px rgba(15,15,15,.12), 0 2px 6px rgba(15,15,15,.06); }
+  .pop-loc { top: calc(var(--ctl-h) + 6px); left: 0; width: 380px; padding: 12px; }
+  .pop-more { width: 240px; padding: 6px; }
+  .pop-label { font-size: 11px; font-weight: 600; color: var(--fg2); margin: 2px 2px 6px; }
+  .sel-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .sel { display: flex; align-items: center; justify-content: space-between; height: 30px; padding: 0 8px 0 10px; border: 1px solid var(--line); border-radius: var(--r); font-size: 12.5px; }
+  .sel svg { color: var(--fg3); width: 13px; height: 13px; }
+  .pop hr { border: 0; border-top: 1px solid var(--line); margin: 12px -12px; }
+  .pop-search { display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 10px; border-radius: var(--r); background: var(--ctl-bg); color: var(--fg2); margin-bottom: 8px; }
+  .site-row { display: flex; align-items: center; gap: 10px; width: 100%; padding: 7px 8px; border-radius: var(--r); text-align: left; }
+  .site-row:hover { background: var(--ctl-bg); }
+  .cbx { display: inline-grid; place-items: center; width: 16px; height: 16px; border-radius: 4px; border: 1px solid var(--line-strong); flex: none; }
+  .cbx.on { background: var(--primary); border-color: var(--primary); color: #fff; }
+  .cbx svg { width: 11px; height: 11px; stroke-width: 2.5; }
+  .site-row .nm { font-weight: 500; }
+  .site-row .sub { display: block; font-size: 11.5px; color: var(--fg2); margin-top: 1px; }
+  .site-row .cnt { margin-left: auto; font-size: 12px; color: var(--fg2); }
+  .site-row .cnt.zero { color: var(--fg3); }
+  .pop-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .pop-foot span { font-size: 12px; color: var(--fg2); }
+  .btn-sm { height: 28px; padding: 0 12px; border-radius: var(--r); background: var(--primary); color: var(--primary-fg); font-size: 12.5px; font-weight: 500; }
+  .menu-item { display: flex; align-items: center; gap: 9px; width: 100%; height: 32px; padding: 0 8px; border-radius: calc(var(--r) - 1px); text-align: left; }
+  .menu-item:hover { background: var(--ctl-bg); }
+  .menu-item svg { color: var(--fg2); }
+  .menu-item .val { margin-left: auto; font-size: 12px; color: var(--fg2); }
+  .menu-item .val.set { color: var(--fg); font-weight: 600; }
+
+  .tbl { width: 100%; border-collapse: collapse; table-layout: fixed; }
+  .tbl th { height: 36px; text-align: left; font-weight: 500; color: var(--fg2); font-size: 12.5px; background: var(--th-bg); border-bottom: 1px solid var(--line); border-right: 1px solid var(--vgrid); padding: 0 10px; white-space: nowrap; }
+  .tbl td { height: var(--row-h); border-bottom: 1px solid var(--line); border-right: 1px solid var(--vgrid); padding: 0 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tbl td.site { font-weight: 600; }
+  .tbl .num { font-variant-numeric: tabular-nums; }
+  .cb { width: 14px; height: 14px; border: 1px solid var(--line-strong); border-radius: 3px; display: inline-block; vertical-align: middle; }
+  .bdg { display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 7px; border-radius: 4px; font-size: 12px; }
+  .t-sale { background: #fbe4e4; color: #b4423a; } .t-jeonse { background: #e1eef8; color: #2f6f9b; } .t-monthly { background: #fbf3db; color: #8f6b1f; }
+  .s-live { background: #e7f3f8; color: #2f6f9b; } .s-done { background: #f1f1ef; color: #787774; }
+  .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; opacity: .8; }
+  .m-check { background: #fbf3db; color: #8a5a13; } .m-now { background: #f1f1ef; color: #37352f; }
+  .memo { color: var(--fg2); }
+  .tbl-empty { height: 100px; text-align: center; color: var(--fg2); }
+  .tfoot { height: 32px; display: flex; align-items: center; padding: 0 12px; font-size: 12px; color: var(--fg2); background: var(--r2-bg); }
+
+  /* ================= 1. 선명 — 흰 바탕 + 테두리, 점선 제안 칩 ================= */
+  .t-crisp {
+    --fg: #18181b; --fg2: #71717a; --fg3: #a1a1aa; --line: #e4e4e7; --line-strong: #d4d4d8;
+    --r1-bg: #fff; --r2-bg: #fff; --ctl-bg: #fff; --ctl-border: #e4e4e7; --ctl-hover: #f4f4f5;
+    --tint: #fff; --tint-border: #a1a1aa; --tint-fg: #18181b;
+    --primary: #18181b; --focus: #2563eb; --ctl-h: 32px;
+  }
+  .t-crisp .r1 { border-bottom-color: transparent; padding-bottom: 6px; }
+  .t-crisp .loc, .t-crisp .search { box-shadow: inset 0 0 0 1px var(--ctl-border), 0 1px 2px rgba(0,0,0,.04); }
+  .t-crisp .loc.is-set { box-shadow: inset 0 0 0 1px #a1a1aa, 0 1px 2px rgba(0,0,0,.04); }
+  .t-crisp .tabs, .t-crisp .view { background: #f4f4f5; }
+  .t-crisp .chip:not(.is-set) { border-style: dashed; border-color: #d4d4d8; color: var(--fg2); padding: 0 10px 0 8px; }
+  .t-crisp .chip:not(.is-set):hover { border-style: solid; color: var(--fg); }
+  .t-crisp .chip .pre { display: block; }
+  .t-crisp .chip:not(.is-set) .chev { display: none; }
+  .t-crisp .chip.is-set { box-shadow: 0 1px 2px rgba(0,0,0,.04); }
+  .t-crisp .chip-sep { display: block; width: 1px; height: 14px; background: #e4e4e7; }
+  .t-crisp .chip-l { opacity: 1; color: var(--fg2); }
+  .t-crisp .add-filter { color: var(--fg); font-weight: 500; }
+
+  /* ================= 2. 브랜드 — 밑줄 탭 + 올리브 포인트 ================= */
+  .t-brand {
+    --fg: #22261f; --fg2: #6b7066; --fg3: #a3a79c; --line: #e5e6e0; --line-strong: #cfd2c7;
+    --r1-bg: #fff; --r2-bg: #fbfbf8; --ctl-bg: #f3f4ef; --ctl-border: transparent; --ctl-hover: #eaece4;
+    --tint: #e9ece3; --tint-border: #c3c9b6; --tint-fg: #333b2f;
+    --primary: #333b2f; --focus: #5d6b52;
+  }
+  .t-brand .r1 { padding-top: 0; padding-bottom: 0; height: 54px; }
+  .t-brand .tabs { background: none; padding: 0; gap: 2px; height: 54px; align-self: stretch; margin-right: 6px; }
+  .t-brand .tabs button { height: 100%; padding: 0 10px; border-radius: 0; font-size: 14px; color: var(--fg2); box-shadow: none; background: none; }
+  .t-brand .tabs button.on { color: #333b2f; font-weight: 600; box-shadow: inset 0 -2px 0 #333b2f; }
+  .t-brand .tabs .n { display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: #eef0ea; color: var(--fg2); font-size: 11px; font-weight: 600; }
+  .t-brand .tabs button.on .n { background: #333b2f; color: #fff; }
+  .t-brand .loc.is-set { box-shadow: inset 0 0 0 1px #c3c9b6; background: #eef1e9; }
+  .t-brand .loc-site .txt.set, .t-brand .uf input { color: #333b2f; }
+  .t-brand .view button.on { color: #333b2f; }
+  .t-brand .chip { border-color: var(--line); }
+  .t-brand .chip.is-set .chip-l { opacity: .8; }
+  .t-brand .add-filter { color: #333b2f; font-weight: 500; }
+  .t-brand .s-live { background: #e9ece3; color: #3e4a37; }
+
+  /* ================= 3. 원장 — 각진 형태, 진한 테두리, 촘촘한 격자 ================= */
+  .t-ledger {
+    --fs: 12.5px; --ctl-h: 28px; --r: 3px; --chip-r: 3px; --pop-r: 4px;
+    --fg: #202020; --fg2: #626262; --fg3: #9a9a9a; --line: #dcdcd8; --line-strong: #bdbdb8;
+    --r1-bg: #f1f1ee; --r2-bg: #f7f7f5; --ctl-bg: #fff; --ctl-border: #bdbdb8; --ctl-hover: #f3f3f1;
+    --tint: #fff; --tint-border: #202020; --tint-fg: #202020;
+    --primary: #202020; --focus: #1f5fbf;
+    --th-bg: #ededea; --row-h: 32px; --vgrid: #e6e6e3;
+  }
+  .t-ledger .r1 { border-bottom-color: #cfcfca; padding: 8px 10px; }
+  .t-ledger .r2 { padding: 6px 10px; }
+  .t-ledger .tabs { padding: 0; gap: 0; background: #fff; box-shadow: inset 0 0 0 1px #bdbdb8; }
+  .t-ledger .tabs button { height: 100%; border-radius: 0; padding: 0 12px; border-left: 1px solid #d6d6d2; color: #444; }
+  .t-ledger .tabs button:first-child { border-left: 0; border-radius: 3px 0 0 3px; }
+  .t-ledger .tabs button:last-child { border-radius: 0 3px 3px 0; }
+  .t-ledger .tabs button.on { background: #202020; color: #fff; box-shadow: none; font-weight: 600; border-left-color: #202020; }
+  .t-ledger .tabs button.on + button { border-left-color: #202020; }
+  .t-ledger .tabs .n { color: #9a9a9a; }
+  .t-ledger .tabs button.on .n { color: #bdbdbd; }
+  .t-ledger .loc.is-set { box-shadow: inset 0 0 0 1px #202020; }
+  .t-ledger .loc-div { background: #d6d6d2; opacity: 1; height: 100%; }
+  .t-ledger .view { padding: 0; gap: 0; background: #fff; box-shadow: inset 0 0 0 1px #bdbdb8; }
+  .t-ledger .view button { height: 100%; border-radius: 0; }
+  .t-ledger .view button + button { border-left: 1px solid #d6d6d2; }
+  .t-ledger .view button.on { background: #e7e7e3; box-shadow: none; font-weight: 600; }
+  .t-ledger .chip { border-color: #c9c9c4; height: 26px; font-size: 12px; }
+  .t-ledger .chip.is-set { border-width: 1px; }
+  .t-ledger .chip-colon { display: inline; margin-left: -6px; }
+  .t-ledger .chip-l { opacity: 1; color: #555; }
+  .t-ledger .add-filter { border: 1px dashed #bdbdb8; height: 26px; font-size: 12px; color: #444; }
+  .t-ledger .ghost { height: 26px; font-size: 12px; }
+  .t-ledger .tbl th { font-size: 12px; height: 30px; color: #444; font-weight: 600; }
+  .t-ledger .bdg { border-radius: 2px; height: 20px; font-size: 11.5px; }
+
+  /* ================= 4. 라운드 — 알약 모양, 넉넉한 여백, 파란 포인트 ================= */
+  .t-soft {
+    --ctl-h: 34px; --r: 10px; --chip-r: 999px; --pop-r: 14px;
+    --fg: #1d1d1f; --fg2: #6e6e73; --fg3: #a1a1a6; --line: #ececee; --line-strong: #d8d8dc;
+    --r1-bg: #fff; --r2-bg: #fff; --ctl-bg: #f3f3f5; --ctl-border: transparent; --ctl-hover: #ebebee;
+    --tint: #e9f0ff; --tint-border: transparent; --tint-fg: #1d4ed8;
+    --primary: #1d1d1f; --focus: #2563eb; --row-h: 42px;
+  }
+  .t-soft .r1 { border-bottom: 0; padding: 14px 16px 6px; }
+  .t-soft .r2 { padding: 6px 16px 12px; }
+  .t-soft .tabs { background: none; padding: 0; gap: 4px; }
+  .t-soft .tabs button { height: 34px; padding: 0 14px; border-radius: 999px; font-size: 13.5px; }
+  .t-soft .tabs button:hover { background: #f3f3f5; }
+  .t-soft .tabs button.on { background: #1d1d1f; color: #fff; box-shadow: none; }
+  .t-soft .tabs button.on .n { color: rgba(255,255,255,.6); }
+  .t-soft .search { border-radius: 999px; padding-left: 14px; }
+  .t-soft .loc.is-set { box-shadow: none; background: #e9f0ff; }
+  .t-soft .loc.is-set .loc-site .txt.set, .t-soft .loc.is-set .uf input, .t-soft .loc.is-set svg { color: #1d4ed8; }
+  .t-soft .loc-site { border-radius: 10px 0 0 10px; }
+  .t-soft .view { border-radius: 999px; }
+  .t-soft .view button { border-radius: 999px; }
+  .t-soft .primary { border-radius: 999px; padding: 0 16px; }
+  .t-soft .chip { border: 0; background: #f3f3f5; color: var(--fg); height: 32px; padding: 0 12px 0 14px; }
+  .t-soft .chip:hover { background: #ebebee; }
+  .t-soft .chip.is-set { padding: 0 6px 0 0; background: var(--tint); color: var(--tint-fg); }
+  .t-soft .chip-main { padding-left: 14px; }
+  .t-soft .chip-x:hover { background: rgba(29,78,216,.12); }
+  .t-soft .add-filter { border-radius: 999px; height: 32px; padding: 0 12px; }
+  .t-soft .tbl th { border-bottom-color: #ececee; }
+  .t-soft .tbl td { border-bottom-color: #f2f2f4; }
+  .t-soft .bdg { border-radius: 999px; padding: 0 9px; }
+  .t-soft .tfoot { background: #fff; border-top: 1px solid #f2f2f4; }
+
+  /* ================= A. 원장 뼈대 + 라운드 표정 ================= */
+  .mixA { --ctl-h: 30px; --r: 6px; --chip-r: 999px; --pop-r: 10px; --tint: #e9f0ff; --tint-border: transparent; --tint-fg: #1d4ed8; --focus: #2563eb; --row-h: 34px; }
+  .mixA .tabs button:first-child { border-radius: 5px 0 0 5px; }
+  .mixA .tabs button:last-child { border-radius: 0 5px 5px 0; }
+  .mixA .view button:first-child { border-radius: 5px 0 0 5px; }
+  .mixA .view button:last-child { border-radius: 0 5px 5px 0; }
+  .mixA .loc.is-set { background: #f3f7ff; box-shadow: inset 0 0 0 1px #bcd0fb; }
+  .mixA .loc.is-set .txt.set, .mixA .loc.is-set .uf input, .mixA .loc.is-set .loc-site svg { color: #1d4ed8; }
+  .mixA .chip { height: 28px; border-radius: 999px; padding: 0 10px 0 12px; font-size: 12.5px; }
+  .mixA .chip.is-set { padding: 0 4px 0 0; }
+  .mixA .chip-main { padding-left: 12px; }
+  .mixA .chip-colon { display: none; }
+  .mixA .chip-l { color: inherit; opacity: .75; }
+  .mixA .add-filter { height: 28px; border-radius: 999px; font-size: 12.5px; }
+  .mixA .ghost { height: 28px; }
+  .mixA .bdg { border-radius: 999px; padding: 0 8px; height: 21px; }
+
+  /* ================= B. 라운드 툴바 + 원장 표 ================= */
+  .mixB { --ctl-h: 32px; --row-h: 34px; --th-bg: #f4f4f5; --vgrid: #ececee; }
+  .mixB .r1 { padding: 12px 14px 5px; }
+  .mixB .r2 { padding: 5px 14px 10px; border-bottom: 1px solid #e4e4e7; }
+  .mixB .tabs button { height: 32px; }
+  .mixB .chip { height: 30px; }
+  .mixB .add-filter { height: 30px; }
+  .mixB .tbl th { height: 32px; font-size: 12px; font-weight: 600; color: #52525b; border-bottom: 1px solid #e4e4e7; }
+  .mixB .tbl td { border-bottom-color: #ececee; }
+  .mixB .bdg { border-radius: 4px; padding: 0 7px; height: 21px; }
+  .mixB .tfoot { background: #fafafa; border-top: 0; }
+
+  /* ================= C. 반반 ================= */
+  .t-mixC {
+    --fs: 13px; --ctl-h: 30px; --r: 8px; --chip-r: 999px; --pop-r: 10px;
+    --fg: #1d1d1f; --fg2: #66666b; --fg3: #a1a1a6; --line: #e3e3e0; --line-strong: #c9c9c5;
+    --r1-bg: #fff; --r2-bg: #f6f6f4; --ctl-bg: #fff; --ctl-border: #cfcfcb; --ctl-hover: #f4f4f2;
+    --tint: #e9f0ff; --tint-border: transparent; --tint-fg: #1d4ed8;
+    --primary: #1d1d1f; --focus: #2563eb; --th-bg: #f6f6f4; --row-h: 36px; --vgrid: #ececea;
+  }
+  .t-mixC .tabs, .t-mixC .view { background: #ebebe8; border-radius: 999px; padding: 2px; }
+  .t-mixC .tabs button, .t-mixC .view button { height: 26px; border-radius: 999px; padding: 0 12px; }
+  .t-mixC .tabs button.on { background: #1d1d1f; color: #fff; box-shadow: none; }
+  .t-mixC .tabs button.on .n { color: rgba(255,255,255,.6); }
+  .t-mixC .view button.on { box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+  .t-mixC .loc.is-set { background: #f3f7ff; box-shadow: inset 0 0 0 1px #bcd0fb; }
+  .t-mixC .loc.is-set .txt.set, .t-mixC .loc.is-set .uf input, .t-mixC .loc.is-set .loc-site svg { color: #1d4ed8; }
+  .t-mixC .chip { height: 28px; border-color: #cfcfcb; padding: 0 10px 0 12px; }
+  .t-mixC .chip.is-set { padding: 0 4px 0 0; }
+  .t-mixC .chip-main { padding-left: 12px; }
+  .t-mixC .add-filter { height: 28px; border-radius: 999px; border: 1px dashed #c9c9c5; }
+  .t-mixC .ghost { height: 28px; }
+  .t-mixC .tbl th { height: 32px; font-size: 12px; font-weight: 600; color: #52525b; }
+  .t-mixC .bdg { border-radius: 999px; padding: 0 8px; height: 21px; }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>매물관리 툴바 — 3번 × 4번 조합</h1>
+  <p>3번(원장)의 단단함과 4번(라운드)의 부드러움을 섞는 방법 3가지입니다. 맨 아래에 원본 3·4번을 같이 두었습니다. 모두 직접 눌러 볼 수 있습니다.</p>
+  <nav class="jump">
+    <a href="#a"><b>A</b>원장 + 라운드 표정</a><a href="#b"><b>B</b>라운드 툴바 + 원장 표</a><a href="#c"><b>C</b>반반</a><a href="#o3"><b>3</b>원본</a><a href="#o4"><b>4</b>원본</a>
+  </nav>
+
+  <section class="case" id="a">
+    <div class="case-head"><span class="case-num">A</span><h2>원장 뼈대 + 라운드 표정</h2><span class="ref">3번 70 : 4번 30</span></div>
+    <p class="case-desc"><b>3번에서</b> 회색 툴바 띠, 흰 입력칸과 진한 테두리, 붙은 거래유형 버튼, 세로 격자 표, 촘촘한 높이를 가져왔습니다. <b>4번에서</b> 알약 모양 필터 칩, 파란 활성 표시, 둥근 배지를 가져왔습니다.</p>
+    <div class="frame t-ledger mixA" data-frame></div>
+  </section>
+
+  <section class="case" id="b">
+    <div class="case-head"><span class="case-num">B</span><h2>라운드 툴바 + 원장 표</h2><span class="ref">툴바는 4번, 표는 3번</span></div>
+    <p class="case-desc">툴바는 4번 그대로(알약 탭·칩, 흰 바탕, 파란 강조)이고 높이만 조금 줄였습니다. 표는 3번처럼 회색 머리줄, 세로 격자, 낮은 행 높이로 촘촘하게 했습니다. 위는 부드럽고 아래 데이터는 단단합니다.</p>
+    <div class="frame t-soft mixB" data-frame></div>
+  </section>
+
+  <section class="case" id="c">
+    <div class="case-head"><span class="case-num">C</span><h2>반반</h2><span class="ref">축마다 하나씩</span></div>
+    <p class="case-desc">높이와 밀도는 3번에 가깝게(30px), 거래유형·보기 전환은 4번의 알약을 3번처럼 한 묶음 안에 넣었습니다. 입력칸은 3번(흰 바탕 + 테두리), 강조색은 4번 파랑, 표는 옅은 격자입니다.</p>
+    <div class="frame t-mixC" data-frame></div>
+  </section>
+
+  <section class="case" id="o3">
+    <div class="case-head"><span class="case-num" style="background:#8a8984">3</span><h2>원본 · 원장</h2></div>
+    <div class="frame t-ledger" data-frame></div>
+  </section>
+
+  <section class="case" id="o4">
+    <div class="case-head"><span class="case-num" style="background:#8a8984">4</span><h2>원본 · 라운드</h2></div>
+    <div class="frame t-soft" data-frame></div>
+  </section>
+</div>
+
+<script>
+const ROWS = [
+  { t: 'sale',    dong: '102', ho: '3401', area: '74평', st: '거래중', price: 319000, rent: null, move: '확인 필요', memo: '[DEMO] 펜트하우스 급매 문의 다수' },
+  { t: 'jeonse',  dong: '101', ho: '3404', area: '47평', st: '거래중', price: 108000, rent: null, move: '즉시',     memo: '[DEMO] 김○○ 세입자 퇴거 예정' },
+  { t: 'monthly', dong: '101', ho: '3403', area: '47평', st: '거래중', price: 5000,   rent: 180,  move: '확인 필요', memo: '[DEMO] 월세 조정 가능' },
+  { t: 'jeonse',  dong: '101', ho: '3402', area: '52평', st: '종료',   price: 95000,  rent: null, move: '즉시',     memo: '[DEMO] 전세 계약 완료' },
+  { t: 'sale',    dong: '101', ho: '3501', area: '74평', st: '거래중', price: 268000, rent: null, move: '즉시',     memo: '[DEMO] 매매·전세 동시 의뢰' },
+  { t: 'jeonse',  dong: '101', ho: '3501', area: '74평', st: '거래중', price: 130000, rent: null, move: '확인 필요', memo: '[DEMO] 매매·전세 동시 의뢰' },
+  { t: 'sale',    dong: '101', ho: '3503', area: '74평', st: '종료',   price: 242000, rent: null, move: '즉시',     memo: '[DEMO] 매매 완료' },
+  { t: 'sale',    dong: '101', ho: '3401', area: '47평', st: '거래중', price: 198000, rent: null, move: '확인 필요', memo: '[DEMO] 계약 일정 조율 중' },
+  { t: 'sale',    dong: '102', ho: '3401', area: '74평', st: '종료 · 의뢰 대체', price: 315000, rent: null, move: '확인 필요', memo: '[DEMO] 종전 의뢰' },
+];
+const TAB_LABEL = { all: '전체', sale: '매매', jeonse: '전세', monthly: '월세' };
+const T_CLASS = { sale: 't-sale', jeonse: 't-jeonse', monthly: 't-monthly' };
+const COUNTS = ROWS.reduce((m, r) => (m[r.t] = (m[r.t] || 0) + 1, m), {});
+const SITES = {
+  managed: [{ name: '고덕그라시움', sub: '아파트 · 강동구 고덕동', count: 9 }],
+  others: [
+    { name: '고덕아르테온', sub: '아파트 · 강동구', count: 0 },
+    { name: '고덕센트럴아이파크', sub: '아파트 · 강동구', count: 0 },
+    { name: '고덕래미안힐스테이트', sub: '아파트 · 강동구', count: 0 },
+  ],
+};
+const F = {
+  status:  { label: '매물상태', icon: 'circle-dot', demo: '거래중' },
+  price:   { label: (tab) => ({ all: '가격/보증금', sale: '매매가', jeonse: '전세가' }[tab]), icon: 'banknote', demo: (tab) => ({ all: '10억~30억', sale: '15억~25억', jeonse: '8억~12억' }[tab]) },
+  deposit: { label: '보증금', icon: 'banknote', demo: '1억 이하' },
+  rent:    { label: '월세', icon: 'coins', demo: '200만 이하' },
+  area:    { label: '공급평형', icon: 'ruler', demo: '40평대' },
+  rooms:   { label: '방/욕실', icon: 'bed-double', demo: '방 3개+' },
+  type:    { label: '유형', icon: 'building-2', demo: '아파트' },
+  movein:  { label: '입주일', icon: 'calendar', demo: '3개월 내' },
+  ad:      { label: '광고', icon: 'megaphone', demo: '광고 중' },
+};
+const QUICK = { all: ['status', 'price', 'area', 'rooms'], sale: ['status', 'price', 'area', 'rooms'], jeonse: ['status', 'price', 'area', 'rooms'], monthly: ['status', 'deposit', 'rent', 'area', 'rooms'] };
+const MORE  = { all: ['type', 'movein', 'ad', 'rent'], sale: ['type', 'movein', 'ad'], jeonse: ['type', 'movein', 'ad'], monthly: ['type', 'movein', 'ad'] };
+
+const val = (v, tab) => (typeof v === 'function' ? v(tab) : v);
+const ic = (name, cls = '') => `<i data-lucide="${name}" class="${cls}"></i>`;
+const won = (v) => { if (v == null) return '-'; const e = Math.floor(v / 10000), m = v % 10000; return [e ? `${e}억` : '', m ? `${m.toLocaleString()}만` : ''].filter(Boolean).join(' '); };
+const locSet = (s) => !!(s.region || s.sites.length || s.dong || s.ho);
+function locLabel(s) {
+  if (s.sites.length) return { text: s.sites[0] + (s.sites.length > 1 ? ` 외 ${s.sites.length - 1}` : ''), cls: 'set' };
+  if (s.region) return { text: s.region, cls: 'set' };
+  return { text: '지역·단지 전체', cls: 'ph' };
+}
+
+function chipHTML(key, s) {
+  const d = F[key], label = val(d.label, s.tab), v = s.f[key];
+  if (!v) return `<button class="chip" data-act="chip" data-key="${key}">${ic('circle-plus', 'pre')}${label}${ic('chevron-down', 'chev')}</button>`;
+  return `<span class="chip is-set"><button class="chip-main" data-act="chip" data-key="${key}"><span class="chip-l">${label}</span><span class="chip-colon">:</span><span class="chip-sep"></span><span class="chip-v">${v}</span></button><button class="chip-x" data-act="clear" data-key="${key}" aria-label="${label} 해제">${ic('x')}</button></span>`;
+}
+function locPopHTML(s) {
+  const row = (x) => { const on = s.sites.includes(x.name); return `<button class="site-row" data-act="site" data-name="${x.name}"><span class="cbx ${on ? 'on' : ''}">${on ? ic('check') : ''}</span><span><span class="nm">${x.name}</span><span class="sub">${x.sub}</span></span><span class="cnt ${x.count ? '' : 'zero'}">${x.count ? `매물 ${x.count}` : '매물 없음'}</span></button>`; };
+  return `<div class="pop pop-loc" data-pop>
+    <div class="pop-label">지역</div>
+    <div class="sel-grid"><div class="sel">서울특별시${ic('chevron-down')}</div><div class="sel">강동구${ic('chevron-down')}</div><div class="sel">법정동 전체${ic('chevron-down')}</div></div>
+    <hr /><div class="pop-search">${ic('search')}<span>단지명 또는 주소 검색</span></div>
+    <div class="pop-label">관리단지</div>${SITES.managed.map(row).join('')}
+    <div class="pop-label" style="margin-top:8px">강동구의 다른 단지</div>${SITES.others.map(row).join('')}
+    <hr /><div class="pop-foot"><span>단지를 고르지 않으면 지역 전체에서 찾습니다.</span><button class="btn-sm" data-act="close">완료</button></div></div>`;
+}
+function morePopHTML(s, left, top) {
+  const items = MORE[s.tab].map((k) => { const d = F[k], v = s.f[k]; return `<button class="menu-item" data-act="more-pick" data-key="${k}">${ic(d.icon)}<span>${val(d.label, s.tab)}</span><span class="val ${v ? 'set' : ''}">${v || ''}</span></button>`; }).join('');
+  return `<div class="pop pop-more" data-pop style="top:${top}px;left:${left}px">${items}</div>`;
+}
+function rowsFor(s) {
+  return ROWS.filter((r) => {
+    if (s.tab !== 'all' && r.t !== s.tab) return false;
+    if (s.dong && !r.dong.startsWith(s.dong)) return false;
+    if (s.ho && !r.ho.startsWith(s.ho)) return false;
+    if (s.q && !(r.memo + r.dong + r.ho).includes(s.q)) return false;
+    if (s.f.status && r.st !== s.f.status) return false;
+    if (s.f.area && !r.area.startsWith('4')) return false;
+    if (s.f.price) { const range = { all: [100000, 300000], sale: [150000, 250000], jeonse: [80000, 120000] }[s.tab]; if (range && (r.t === 'monthly' || r.price < range[0] || r.price > range[1])) return false; }
+    if (s.f.deposit && r.price > 10000) return false;
+    if (s.f.rent && (r.rent == null || r.rent > 200)) return false;
+    return true;
+  });
+}
+function tableHTML(s) {
+  const rows = rowsFor(s);
+  const body = rows.length ? rows.map((r) => `<tr><td><span class="cb"></span></td><td><span class="bdg ${T_CLASS[r.t]}">${TAB_LABEL[r.t]}</span></td><td class="site">고덕그라시움</td><td class="num">${r.dong}</td><td class="num">${r.ho}</td><td>${r.area}</td><td><span class="bdg ${r.st === '거래중' ? 's-live' : 's-done'}"><span class="dot"></span>${r.st}</span></td><td class="num">${won(r.price)}</td><td class="num">${r.rent ? r.rent + '만' : '-'}</td><td><span class="bdg ${r.move === '즉시' ? 'm-now' : 'm-check'}">${r.move}</span></td><td class="memo">${r.memo}</td></tr>`).join('')
+    : `<tr><td colspan="11" class="tbl-empty">조건에 맞는 매물이 없습니다.</td></tr>`;
+  return `<table class="tbl"><colgroup><col style="width:40px"><col style="width:66px"><col style="width:150px"><col style="width:62px"><col style="width:66px"><col style="width:66px"><col style="width:150px"><col style="width:130px"><col style="width:70px"><col style="width:100px"><col></colgroup><thead><tr><th><span class="cb"></span></th><th>거래</th><th>단지</th><th>동</th><th>호</th><th>공급</th><th>매물상태</th><th>가격/보증금</th><th>월세</th><th>입주가능일</th><th>의뢰 메모</th></tr></thead><tbody>${body}</tbody></table>`;
+}
+function frameHTML(s) {
+  const loc = locLabel(s), anySet = locSet(s);
+  const extra = MORE[s.tab].filter((k) => s.f[k]);
+  const active = Object.keys(s.f).filter((k) => s.f[k]).length + (anySet ? 1 : 0);
+  const tabs = ['all', 'sale', 'jeonse', 'monthly'].map((t) => `<button class="${s.tab === t ? 'on' : ''}" data-act="tab" data-tab="${t}">${TAB_LABEL[t]}${t !== 'all' ? `<span class="n">${COUNTS[t] || 0}</span>` : ''}</button>`).join('');
+  return `<div class="r1">
+    <div class="tabs">${tabs}</div>
+    <div class="loc ${anySet ? 'is-set' : ''}">
+      <button class="loc-site" data-act="loc">${ic('map-pin')}<span class="txt ${loc.cls}">${loc.text}</span>${ic('chevron-down')}</button>
+      <span class="loc-div"></span>
+      <label class="uf"><input data-in="dong" inputmode="numeric" placeholder=" " value="${s.dong}" style="width:${Math.max(s.dong.length, 1)}ch" /><span class="sfx">동</span></label>
+      <span class="loc-div"></span>
+      <label class="uf"><input data-in="ho" inputmode="numeric" placeholder=" " value="${s.ho}" style="width:${Math.max(s.ho.length, 1)}ch" /><span class="sfx">호</span></label>
+      ${anySet ? `<button class="loc-x" data-act="loc-clear" aria-label="위치 해제">${ic('x')}</button>` : ''}
+      ${s.pop === 'loc' ? locPopHTML(s) : ''}
+    </div>
+    <label class="search ${s.q ? 'has-q' : ''}">${ic('search')}<input data-in="q" placeholder="주소, 연락처, 메모" value="${s.q}" /><kbd>/</kbd></label>
+    <div class="r1-right"><div class="view"><button class="on">${ic('list')}목록</button><button>${ic('map')}지도</button></div><button class="primary">${ic('plus')}새 매물 등록</button></div>
+  </div>
+  <div class="r2">
+    <div class="r2-scroll">${QUICK[s.tab].map((k) => chipHTML(k, s)).join('')}${extra.map((k) => chipHTML(k, s)).join('')}<button class="add-filter" data-act="more">${ic('plus')}필터</button></div>
+    <div class="r2-fixed">${active ? `<button class="ghost" data-act="reset">${ic('rotate-ccw')}초기화</button><span class="r2-sep"></span>` : ''}<button class="ghost">${ic('columns-3')}컬럼</button></div>
+  </div>
+  ${s.pop === 'more' && s.moreAt ? morePopHTML(s, s.moreAt[0], s.moreAt[1]) : ''}
+  <div class="tbl-wrap">${tableHTML(s)}</div>
+  <div class="tfoot" data-foot>의뢰 ${rowsFor(s).length}건 표시</div>`;
+}
+
+function mount(el) {
+  const s = { tab: 'all', region: null, sites: ['고덕그라시움'], dong: '101', ho: '', q: '', f: { status: '거래중' }, pop: null, moreAt: null };
+  const paint = () => {
+    const focus = el.contains(document.activeElement) ? document.activeElement?.dataset?.in : null;
+    el.innerHTML = frameHTML(s);
+    lucide.createIcons();
+    if (s.pop === 'more' && !s.moreAt) {
+      const b = el.querySelector('[data-act="more"]').getBoundingClientRect(), f = el.getBoundingClientRect();
+      s.moreAt = [Math.round(b.left - f.left), Math.round(b.bottom - f.top + 6)];
+      return paint();
+    }
+    if (focus) { const i = el.querySelector(`[data-in="${focus}"]`); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }
+  };
+  el.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-act]');
+    if (!b) { if (!e.target.closest('[data-pop]') && s.pop) { s.pop = null; paint(); } return; }
+    const act = b.dataset.act, key = b.dataset.key;
+    if (act === 'tab') { s.tab = b.dataset.tab; s.pop = null; for (const k of ['price', 'deposit', 'rent']) if (![...QUICK[s.tab], ...MORE[s.tab]].includes(k)) delete s.f[k]; }
+    else if (act === 'chip') { s.f[key] = s.f[key] ? null : val(F[key].demo, s.tab); s.pop = null; }
+    else if (act === 'clear') s.f[key] = null;
+    else if (act === 'loc') { s.pop = s.pop === 'loc' ? null : 'loc'; if (s.pop) s.region = s.region || '강동구'; }
+    else if (act === 'site') { const n = b.dataset.name; s.sites = s.sites.includes(n) ? s.sites.filter((x) => x !== n) : [...s.sites, n]; }
+    else if (act === 'close') s.pop = null;
+    else if (act === 'loc-clear') Object.assign(s, { region: null, sites: [], dong: '', ho: '', pop: null });
+    else if (act === 'more') { s.pop = s.pop === 'more' ? null : 'more'; s.moreAt = null; }
+    else if (act === 'more-pick') { s.f[key] = s.f[key] ? null : val(F[key].demo, s.tab); s.pop = null; }
+    else if (act === 'reset') Object.assign(s, { region: null, sites: [], dong: '', ho: '', q: '', f: {}, pop: null });
+    paint();
+  });
+  el.addEventListener('input', (e) => {
+    const k = e.target.dataset.in; if (!k) return;
+    if (k === 'q') { s.q = e.target.value; e.target.closest('.search').classList.toggle('has-q', !!s.q); el.querySelector('.tbl-wrap').innerHTML = tableHTML(s); el.querySelector('[data-foot]').textContent = `의뢰 ${rowsFor(s).length}건 표시`; return; }
+    s[k] = e.target.value.replace(/\D/g, ''); paint();
+  });
+  el.addEventListener('keydown', (e) => { if (e.key === 'Escape' && s.pop) { s.pop = null; paint(); } });
+  paint();
+}
+document.querySelectorAll('[data-frame]').forEach(mount);
+</script>
+</body>
+</html>

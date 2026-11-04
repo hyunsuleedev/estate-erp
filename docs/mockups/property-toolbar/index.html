@@ -1,0 +1,459 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>매물관리 툴바 시안 v1</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
+<script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js"></script>
+<style>
+  /* apps/desktop/src/renderer/app.css 토큰 그대로 */
+  :root {
+    color-scheme: light;
+    --bg: #ffffff;
+    --fg: #37352f;
+    --fg-muted: #787774;
+    --fg-muted-strong: #6f6d6a;
+    --fg-faint: #a5a39f;
+    --muted: #f7f6f3;
+    --muted-hover: #efeee9;
+    --secondary: #f1f1ef;
+    --border: #e9e9e7;
+    --border-strong: #d9d9d6;
+    --row2-bg: #faf9f6;
+    --set-border: rgba(55, 53, 47, 0.25);
+    --set-bg: rgba(55, 53, 47, 0.06);
+    --ring: #2383e2;
+    --page: #efeeea;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--page); color: var(--fg);
+    font-family: "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", sans-serif;
+    font-size: 13px; -webkit-font-smoothing: antialiased; }
+  button, input { font: inherit; color: inherit; }
+  button { cursor: pointer; background: none; border: 0; padding: 0; }
+  svg.lucide { width: 14px; height: 14px; stroke-width: 1.75; flex: none; }
+
+  /* ---------- page ---------- */
+  .page { width: 1253px; margin: 0 auto; padding: 40px 24px 120px; }
+  .page-head h1 { font-size: 22px; margin: 0 0 6px; letter-spacing: -0.01em; }
+  .page-head p { margin: 0; color: var(--fg-muted); font-size: 14px; line-height: 1.6; }
+  .page-head a { color: var(--ring); }
+  .principles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 20px 0 8px; }
+  .principles div { background: #fff; border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; line-height: 1.55; font-size: 13px; }
+  .principles b { display: block; font-size: 13.5px; margin-bottom: 2px; }
+  .principles span { color: var(--fg-muted); }
+
+  .case { margin-top: 44px; }
+  .case-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px; }
+  .tag { display: inline-grid; place-items: center; min-width: 22px; height: 22px; padding: 0 6px; border-radius: 6px; background: var(--fg); color: #fff; font-size: 12px; font-weight: 600; }
+  .tag.ghost { background: #fff; color: var(--fg-muted); border: 1px solid var(--border-strong); }
+  .case-head h2 { font-size: 16px; margin: 0; }
+  .case-head p { margin: 0; color: var(--fg-muted); font-size: 13px; }
+  .notes { margin: 12px 0 0; padding-left: 18px; color: var(--fg-muted-strong); line-height: 1.7; font-size: 13px; }
+  .notes b { color: var(--fg); font-weight: 600; }
+  .current-img { display: block; width: 1205px; height: auto; border-radius: 10px; border: 1px solid var(--border); box-shadow: 0 1px 2px rgba(0,0,0,.04), 0 8px 24px rgba(0,0,0,.05); }
+
+  /* ---------- app frame ---------- */
+  .frame { position: relative; width: 1205px; background: var(--bg); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 1px 2px rgba(0,0,0,.04), 0 8px 24px rgba(0,0,0,.05); overflow: clip; }
+
+  /* row 1: 찾기 */
+  .r1 { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--border); }
+  .seg { display: flex; align-items: center; height: 32px; padding: 2px; gap: 1px; border-radius: 6px; background: var(--muted); flex: none; }
+  .seg button { display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 10px; border-radius: 5px; color: var(--fg-muted); font-size: 13px; white-space: nowrap; }
+  .seg button:hover { color: var(--fg); }
+  .seg button.on { background: #fff; color: var(--fg); box-shadow: 0 1px 2px rgba(15,15,15,.06), 0 0 0 1px rgba(15,15,15,.06); font-weight: 500; }
+  .seg .n { font-size: 11.5px; color: var(--fg-faint); font-variant-numeric: tabular-nums; font-weight: 400; }
+  .seg button.on .n { color: var(--fg-muted); }
+  .seg.view button { font-size: 12px; padding: 0 9px; }
+  .compact .seg.view .lbl { display: none; }
+
+  .loc { position: relative; display: flex; align-items: center; height: 32px; border-radius: 6px; background: var(--muted); flex: none; }
+  .loc.is-set { box-shadow: inset 0 0 0 1px var(--set-border); }
+  .loc-site { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 8px 0 10px; min-width: 148px; max-width: 220px; border-radius: 6px 0 0 6px; }
+  .loc-site:hover, .uf:hover { background: var(--muted-hover); }
+  .loc-site .txt { flex: 1; min-width: 0; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .loc-site .txt.ph { color: var(--fg-muted); }
+  .loc-site .txt.set { font-weight: 600; }
+  .loc-site svg { color: var(--fg-muted); }
+  .loc-div { width: 1px; height: 16px; background: #e2e0db; flex: none; }
+  .uf { display: inline-flex; align-items: center; height: 32px; padding: 0 12px; cursor: text; }
+  .uf input { width: 3ch; min-width: 1ch; border: 0; outline: 0; background: transparent; padding: 0; font-variant-numeric: tabular-nums; font-weight: 600; text-align: right; }
+  .uf input:placeholder-shown:not(:focus) { width: 0 !important; min-width: 0; }
+  .uf .sfx { color: var(--fg-muted); margin-left: 1px; }
+  .uf:focus-within { background: #fff; box-shadow: inset 0 0 0 1px var(--border-strong); }
+  .loc-x { display: inline-grid; place-items: center; width: 24px; height: 24px; margin: 0 4px 0 -2px; border-radius: 4px; color: var(--fg-faint); }
+  .loc-x:hover { background: var(--muted-hover); color: var(--fg); }
+
+  .search { flex: 1 1 260px; min-width: 160px; max-width: 420px; display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 8px 0 10px; border-radius: 6px; background: var(--muted); }
+  .search svg { color: var(--fg-muted); }
+  .search input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; }
+  .search input::placeholder { color: var(--fg-muted); }
+  .search:focus-within { background: #fff; box-shadow: inset 0 0 0 1px var(--border-strong); }
+  .search kbd { display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 4px; border: 1px solid var(--border-strong); background: #fff; color: var(--fg-muted); font: 11px/1 ui-monospace, Menlo, monospace; }
+  .search:focus-within kbd, .search.has-q kbd { display: none; }
+
+  .r1-right { margin-left: auto; display: flex; align-items: center; gap: 8px; flex: none; }
+  .primary { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 14px; border-radius: 6px; background: var(--fg); color: #fff; font-weight: 500; white-space: nowrap; }
+  .primary:hover { background: #24231f; }
+
+  /* row 2: 좁히기 */
+  .r2 { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: var(--row2-bg); border-bottom: 1px solid var(--border); }
+  .r2-scroll { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 6px; overflow-x: auto; scrollbar-width: none; }
+  .r2-scroll::-webkit-scrollbar { display: none; }
+  .r2-scroll.is-overflow { mask-image: linear-gradient(to right, #000 calc(100% - 40px), transparent); }
+  .r2-fixed { flex: none; display: flex; align-items: center; gap: 2px; }
+  .chip { display: inline-flex; align-items: center; gap: 5px; height: 30px; padding: 0 9px 0 10px; border-radius: 6px; border: 1px solid var(--border); background: #fff; font-size: 12.5px; color: var(--fg-muted-strong); white-space: nowrap; flex: none; }
+  .chip:hover { border-color: rgba(55,53,47,.3); color: var(--fg); }
+  .chip .chev { color: var(--fg-faint); width: 13px; height: 13px; }
+  .chip.is-set { padding: 0 3px 0 0; gap: 0; border-color: var(--set-border); background: var(--set-bg); color: var(--fg); }
+  .chip.is-set .chip-main { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 6px 0 10px; }
+  .chip.is-set .chip-l { color: var(--fg-muted); }
+  .chip.is-set .chip-v { font-weight: 600; }
+  .chip-x { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 4px; color: var(--fg-muted); }
+  .chip-x:hover { background: rgba(55,53,47,.1); color: var(--fg); }
+  .chip-x svg { width: 13px; height: 13px; }
+  .add-filter { display: inline-flex; align-items: center; gap: 5px; height: 30px; padding: 0 9px; border-radius: 6px; color: var(--fg-muted); font-size: 12.5px; white-space: nowrap; flex: none; }
+  .add-filter:hover, .ghost:hover { background: rgba(55,53,47,.06); color: var(--fg); }
+  .ghost { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 9px; border-radius: 6px; color: var(--fg-muted); font-size: 12.5px; white-space: nowrap; }
+  .r2-sep { width: 1px; height: 16px; background: var(--border); margin: 0 4px; }
+
+  /* popovers */
+  .pop { position: absolute; z-index: 30; background: #fff; border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 12px 32px rgba(15,15,15,.12), 0 2px 6px rgba(15,15,15,.06); }
+  .pop-loc { top: 38px; left: 0; width: 400px; padding: 12px; }
+  .pop-more { width: 240px; padding: 6px; }
+  .pop-label { font-size: 11px; font-weight: 600; color: var(--fg-muted); letter-spacing: .02em; margin: 2px 2px 6px; }
+  .sel-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .sel { display: flex; align-items: center; justify-content: space-between; height: 30px; padding: 0 8px 0 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 12.5px; }
+  .sel.ph { color: var(--fg-muted); }
+  .sel svg { color: var(--fg-faint); width: 13px; height: 13px; }
+  .pop hr { border: 0; border-top: 1px solid var(--border); margin: 12px -12px; }
+  .pop-search { display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 10px; border-radius: 6px; background: var(--muted); color: var(--fg-muted); margin-bottom: 8px; }
+  .site-row { display: flex; align-items: center; gap: 10px; width: 100%; padding: 7px 8px; border-radius: 6px; text-align: left; }
+  .site-row:hover { background: var(--muted); }
+  .cbx { display: inline-grid; place-items: center; width: 16px; height: 16px; border-radius: 4px; border: 1px solid var(--border-strong); flex: none; }
+  .cbx.on { background: var(--fg); border-color: var(--fg); color: #fff; }
+  .cbx svg { width: 11px; height: 11px; stroke-width: 2.5; }
+  .site-row .nm { font-weight: 500; }
+  .site-row .sub { display: block; font-size: 11.5px; color: var(--fg-muted); margin-top: 1px; }
+  .site-row .cnt { margin-left: auto; font-size: 12px; color: var(--fg-muted); font-variant-numeric: tabular-nums; }
+  .site-row .cnt.zero { color: var(--fg-faint); }
+  .site-row .star { color: #cb912f; width: 12px; height: 12px; fill: #cb912f; }
+  .pop-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .pop-foot span { font-size: 12px; color: var(--fg-muted); }
+  .btn-sm { height: 28px; padding: 0 12px; border-radius: 6px; background: var(--fg); color: #fff; font-size: 12.5px; font-weight: 500; }
+  .menu-item { display: flex; align-items: center; gap: 9px; width: 100%; height: 32px; padding: 0 8px; border-radius: 5px; text-align: left; }
+  .menu-item:hover { background: var(--muted); }
+  .menu-item svg { color: var(--fg-muted); }
+  .menu-item .val { margin-left: auto; font-size: 12px; color: var(--fg-muted); }
+  .menu-item .val.set { color: var(--fg); font-weight: 600; }
+  .menu-hint { font-size: 11.5px; color: var(--fg-muted); padding: 8px 8px 4px; border-top: 1px solid var(--border); margin-top: 4px; line-height: 1.5; }
+
+  /* table (맥락용, 변경 없음) */
+  .tbl { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 13px; }
+  .tbl th { height: 36px; text-align: left; font-weight: 500; color: var(--fg-muted); font-size: 12.5px; border-bottom: 1px solid var(--border); padding: 0 10px; white-space: nowrap; }
+  .tbl td { height: 38px; border-bottom: 1px solid var(--border); padding: 0 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tbl td.site { font-weight: 600; }
+  .tbl .cb { width: 14px; height: 14px; border: 1px solid var(--border-strong); border-radius: 3px; display: inline-block; vertical-align: middle; }
+  .bdg { display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 7px; border-radius: 4px; font-size: 12px; }
+  .t-sale { background: #fbe4e4; color: #b4423a; }
+  .t-jeonse { background: #e1eef8; color: #2f6f9b; }
+  .t-monthly { background: #fbf3db; color: #8f6b1f; }
+  .s-live { background: #e7f3f8; color: #2f6f9b; }
+  .s-done { background: var(--secondary); color: var(--fg-muted); }
+  .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; opacity: .8; }
+  .m-check { background: #fbf3db; color: #8a5a13; }
+  .m-now { background: var(--secondary); color: var(--fg); }
+  .memo { color: var(--fg-muted-strong); }
+  .tbl-empty { height: 120px; text-align: center; color: var(--fg-muted); }
+  .tfoot { height: 32px; display: flex; align-items: center; padding: 0 12px; font-size: 12px; color: var(--fg-muted); background: var(--row2-bg); }
+  .tbl-wrap { min-height: var(--min-h, 0px); }
+</style>
+</head>
+<body>
+<div class="page">
+  <header class="page-head">
+    <h1>매물관리 상단 툴바 — 시안 v1</h1>
+    <p>1행은 <b>찾기</b>(거래유형 · 위치 · 키워드), 2행은 <b>좁히기</b>(조건 필터 + 표 설정)로 역할을 나눴습니다. 표 영역은 맥락을 보여 주려고 넣은 것이고 바뀌지 않습니다.<br />
+      근거 자료: <a href="../../../.lazyweb/design-research/crm-list-toolbar-2026-11-01/report.html">CRM 툴바 리서치 보고서</a> (HubSpot · Linear · Stripe · Attio · Airtable · Notion)</p>
+    <div class="principles">
+      <div><b>필터는 4개만 늘 보이게</b><span>매물상태 · 가격 · 공급평형 · 방/욕실. 나머지는 "+ 필터"로 넣고, 값을 고르면 칩으로 나타납니다. (HubSpot 빠른 필터)</span></div>
+      <div><b>"전체"를 쓰지 않음</b><span>설정 전 칩은 라벨만, 설정된 칩만 값과 ×를 보여서 걸린 필터가 바로 보입니다. (Stripe 필터 칩)</span></div>
+      <div><b>컨트롤 모양은 한 가지</b><span>1행은 회색 채움(<code>muted</code>) 하나로 맞추고, 진한 색은 "새 매물 등록"에만 씁니다. 초기화 · 컬럼은 오른쪽에 고정합니다.</span></div>
+    </div>
+  </header>
+
+  <section class="case">
+    <div class="case-head"><span class="tag ghost">현재</span><h2>지금 화면</h2><p>1,500px 창에서 캡처</p></div>
+    <img class="current-img" src="current.png" alt="현재 툴바" />
+    <ul class="notes">
+      <li>2행 칩 9개가 모두 "전체"를 표시해서 어떤 필터가 걸렸는지 구분하기 어렵고, 오른쪽 끝 <b>컬럼 · 초기화</b>가 화면 밖으로 밀려나 있습니다.</li>
+      <li>동 · 호는 placeholder만 있어서 값을 입력하면 라벨이 사라집니다. 1행 컨트롤 모양이 4가지 섞여 있습니다.</li>
+    </ul>
+  </section>
+
+  <section class="case">
+    <div class="case-head"><span class="tag">A</span><h2>기본 상태</h2><p>직접 눌러 보세요: 탭 전환, 동·호 입력, 위치 선택, 칩 클릭(예시 값이 들어감), "+ 필터", <kbd>/</kbd> 키</p></div>
+    <div class="frame" id="frame-a"></div>
+    <ul class="notes">
+      <li><b>거래유형 탭에 건수</b>를 붙이고, 탭을 바꾸면 2행 가격 칩이 바뀝니다: 매매 → "매매가", 전세 → "전세가", 월세 → "보증금" + "월세".</li>
+      <li><b>위치는 한 덩어리</b>로 묶었습니다: [지역·단지 ▾ │ 동 │ 호]. 동·호는 입력값 뒤에 단위가 붙어 <b>101동 3401호</b>처럼 주소로 읽힙니다. 2행에 있던 지역은 위치 팝오버로 옮겼습니다.</li>
+      <li>검색창은 남는 폭을 채우고(최대 420px), <kbd>/</kbd>로 바로 포커스합니다.</li>
+    </ul>
+  </section>
+
+  <section class="case">
+    <div class="case-head"><span class="tag">B</span><h2>필터를 건 상태</h2><p>매매 탭 · 고덕그라시움 101동 3401호 · 거래중 · 15억~25억 · 광고 중</p></div>
+    <div class="frame" id="frame-b"></div>
+    <ul class="notes">
+      <li>매매 탭이라 "월세" 칩이 없고, 가격 칩 이름이 <b>매매가</b>입니다.</li>
+      <li>"+ 필터"에서 고른 <b>광고</b>는 값이 생긴 뒤에만 칩으로 나타납니다. 위치 그룹의 × 하나로 지역·단지·동·호를 한 번에 지웁니다.</li>
+      <li><b>초기화</b>는 필터가 하나라도 있을 때만 나타나고, 오른쪽에 고정되어 2행이 넘쳐도 가려지지 않습니다.</li>
+    </ul>
+  </section>
+
+  <section class="case">
+    <div class="case-head"><span class="tag">C</span><h2>위치 팝오버</h2><p>지역으로 좁힌 뒤 단지를 고르는 일을 한곳에서</p></div>
+    <div class="frame" id="frame-c"></div>
+    <ul class="notes">
+      <li>위에서 시도 · 시군구 · 법정동을 고르면 아래 단지 목록이 그 지역으로 좁혀집니다. <b>관리단지가 먼저</b> 나오고 단지별 매물 수가 보입니다.</li>
+      <li>단지를 고르지 않고 닫으면 지역만 적용되고, 트리거에 "강동구"처럼 지역 이름이 표시됩니다.</li>
+    </ul>
+  </section>
+
+  <section class="case">
+    <div class="case-head"><span class="tag">D</span><h2>"+ 필터" 메뉴 · 월세 탭</h2><p>자주 쓰지 않는 필터는 메뉴 안으로</p></div>
+    <div class="frame" id="frame-d"></div>
+    <ul class="notes">
+      <li>월세 탭에서는 <b>보증금 · 월세</b>가 빠른 필터가 됩니다. 유형 · 입주일 · 광고는 메뉴 안에 있고, 이미 설정된 값은 메뉴 오른쪽에 표시됩니다.</li>
+      <li>어떤 필터를 늘 보이게 할지는 실제 사용 빈도로 정해야 합니다. 지금은 코드의 <code>tier</code> 값(월세 · 입주일 = 3)을 기준으로 골랐습니다.</li>
+    </ul>
+  </section>
+</div>
+
+<script>
+const ROWS = [
+  { t: 'sale',    dong: '102', ho: '3401', area: '74평', st: '거래중', price: 319000, rent: null, move: '확인 필요', memo: '[DEMO] 펜트하우스 급매 문의 다수' },
+  { t: 'jeonse',  dong: '101', ho: '3404', area: '47평', st: '거래중', price: 108000, rent: null, move: '즉시',     memo: '[DEMO] 김○○ 세입자 퇴거 예정' },
+  { t: 'monthly', dong: '101', ho: '3403', area: '47평', st: '거래중', price: 5000,   rent: 180,  move: '확인 필요', memo: '[DEMO] 월세 조정 가능' },
+  { t: 'jeonse',  dong: '101', ho: '3402', area: '52평', st: '종료',   price: 95000,  rent: null, move: '즉시',     memo: '[DEMO] 전세 계약 완료' },
+  { t: 'sale',    dong: '101', ho: '3501', area: '74평', st: '거래중', price: 268000, rent: null, move: '즉시',     memo: '[DEMO] 매매·전세 동시 의뢰' },
+  { t: 'jeonse',  dong: '101', ho: '3501', area: '74평', st: '거래중', price: 130000, rent: null, move: '확인 필요', memo: '[DEMO] 매매·전세 동시 의뢰' },
+  { t: 'sale',    dong: '101', ho: '3503', area: '74평', st: '종료',   price: 242000, rent: null, move: '즉시',     memo: '[DEMO] 매매 완료' },
+  { t: 'sale',    dong: '101', ho: '3401', area: '47평', st: '거래중', price: 198000, rent: null, move: '확인 필요', memo: '[DEMO] 계약 일정 조율 중' },
+  { t: 'sale',    dong: '102', ho: '3401', area: '74평', st: '종료 · 의뢰 대체', price: 315000, rent: null, move: '확인 필요', memo: '[DEMO] 종전 의뢰' },
+];
+const TAB_LABEL = { all: '전체', sale: '매매', jeonse: '전세', monthly: '월세' };
+const T_CLASS = { sale: 't-sale', jeonse: 't-jeonse', monthly: 't-monthly' };
+const COUNTS = ROWS.reduce((m, r) => (m[r.t] = (m[r.t] || 0) + 1, m), {});
+const SITES = {
+  managed: [{ name: '고덕그라시움', sub: '아파트 · 강동구 고덕동', count: 9, fav: true }],
+  others: [
+    { name: '고덕아르테온', sub: '아파트 · 강동구', count: 0 },
+    { name: '고덕센트럴아이파크', sub: '아파트 · 강동구', count: 0 },
+    { name: '고덕래미안힐스테이트', sub: '아파트 · 강동구', count: 0 },
+    { name: '래미안명일역솔베뉴', sub: '아파트 · 강동구', count: 0 },
+  ],
+};
+// 필터 정의: 예시 값은 칩을 눌렀을 때 들어가는 값
+const F = {
+  status:  { label: '매물상태', icon: 'circle-dot', demo: '거래중' },
+  price:   { label: (tab) => ({ all: '가격/보증금', sale: '매매가', jeonse: '전세가' }[tab]), icon: 'banknote', demo: (tab) => ({ all: '10억~30억', sale: '15억~25억', jeonse: '8억~12억' }[tab]) },
+  deposit: { label: '보증금', icon: 'banknote', demo: '1억 이하' },
+  rent:    { label: '월세', icon: 'coins', demo: '200만 이하' },
+  area:    { label: '공급평형', icon: 'ruler', demo: '40평대' },
+  rooms:   { label: '방/욕실', icon: 'bed-double', demo: '방 3개+' },
+  type:    { label: '유형', icon: 'building-2', demo: '아파트' },
+  movein:  { label: '입주일', icon: 'calendar', demo: '3개월 내' },
+  ad:      { label: '광고', icon: 'megaphone', demo: '광고 중' },
+};
+const QUICK = { all: ['status', 'price', 'area', 'rooms'], sale: ['status', 'price', 'area', 'rooms'], jeonse: ['status', 'price', 'area', 'rooms'], monthly: ['status', 'deposit', 'rent', 'area', 'rooms'] };
+const MORE  = { all: ['type', 'movein', 'ad', 'rent'], sale: ['type', 'movein', 'ad'], jeonse: ['type', 'movein', 'ad'], monthly: ['type', 'movein', 'ad'] };
+
+const val = (v, tab) => (typeof v === 'function' ? v(tab) : v);
+const ic = (name, cls = '') => `<i data-lucide="${name}" class="${cls}"></i>`;
+const won = (v) => { if (v == null) return '-'; const e = Math.floor(v / 10000), m = v % 10000; return [e ? `${e}억` : '', m ? `${m.toLocaleString()}만` : ''].filter(Boolean).join(' '); };
+
+function locLabel(s) {
+  if (s.sites.length) return { text: s.sites[0] + (s.sites.length > 1 ? ` 외 ${s.sites.length - 1}` : ''), cls: 'set' };
+  if (s.region) return { text: s.region, cls: 'set' };
+  return { text: '지역·단지 전체', cls: 'ph' };
+}
+const locSet = (s) => !!(s.region || s.sites.length || s.dong || s.ho);
+
+function chipHTML(key, s) {
+  const d = F[key], label = val(d.label, s.tab), v = s.f[key];
+  if (!v) return `<button class="chip" data-act="chip" data-key="${key}">${label}${ic('chevron-down', 'chev')}</button>`;
+  return `<span class="chip is-set"><button class="chip-main" data-act="chip" data-key="${key}"><span class="chip-l">${label}</span><span class="chip-v">${v}</span></button><button class="chip-x" data-act="clear" data-key="${key}" aria-label="${label} 해제">${ic('x')}</button></span>`;
+}
+
+function locPopHTML(s) {
+  const row = (x) => {
+    const on = s.sites.includes(x.name);
+    return `<button class="site-row" data-act="site" data-name="${x.name}"><span class="cbx ${on ? 'on' : ''}">${on ? ic('check') : ''}</span><span><span class="nm">${x.name}</span> ${x.fav ? ic('star', 'star') : ''}<span class="sub">${x.sub}</span></span><span class="cnt ${x.count ? '' : 'zero'}">${x.count ? `매물 ${x.count}` : '매물 없음'}</span></button>`;
+  };
+  return `<div class="pop pop-loc" data-pop>
+    <div class="pop-label">지역</div>
+    <div class="sel-grid"><div class="sel">서울특별시${ic('chevron-down')}</div><div class="sel">${s.region ? '강동구' : '시군구'}${ic('chevron-down')}</div><div class="sel ph">법정동 전체${ic('chevron-down')}</div></div>
+    <hr />
+    <div class="pop-search">${ic('search')}<span>단지명 또는 주소 검색</span></div>
+    <div class="pop-label">관리단지</div>
+    ${SITES.managed.map(row).join('')}
+    <div class="pop-label" style="margin-top:8px">강동구의 다른 단지</div>
+    ${SITES.others.map(row).join('')}
+    <hr />
+    <div class="pop-foot"><span>단지를 고르지 않으면 지역 전체에서 찾습니다.</span><button class="btn-sm" data-act="close">완료</button></div>
+  </div>`;
+}
+
+function morePopHTML(s, left) {
+  const items = MORE[s.tab].map((k) => {
+    const d = F[k], v = s.f[k];
+    return `<button class="menu-item" data-act="more-pick" data-key="${k}">${ic(d.icon)}<span>${val(d.label, s.tab)}</span><span class="val ${v ? 'set' : ''}">${v || ''}</span></button>`;
+  }).join('');
+  return `<div class="pop pop-more" data-pop style="top:98px;left:${left}px">
+    <div class="pop-search" style="margin:2px 2px 6px">${ic('search')}<span>필터 검색</span></div>
+    ${items}
+    <div class="menu-hint">자주 쓰는 필터(${QUICK[s.tab].map((k) => val(F[k].label, s.tab)).join(' · ')})는 2행에 늘 보입니다.</div>
+  </div>`;
+}
+
+function rowsFor(s) {
+  return ROWS.filter((r) => {
+    if (s.tab !== 'all' && r.t !== s.tab) return false;
+    if (s.dong && !r.dong.startsWith(s.dong)) return false;
+    if (s.ho && !r.ho.startsWith(s.ho)) return false;
+    if (s.q && !(r.memo + r.dong + r.ho).includes(s.q)) return false;
+    if (s.f.status && r.st !== s.f.status) return false;
+    if (s.f.area && !r.area.startsWith('4')) return false;
+    if (s.f.price) {
+      const range = { all: [100000, 300000], sale: [150000, 250000], jeonse: [80000, 120000] }[s.tab];
+      if (range && (r.t === 'monthly' || r.price < range[0] || r.price > range[1])) return false;
+    }
+    if (s.f.deposit && r.price > 10000) return false;
+    if (s.f.rent && (r.rent == null || r.rent > 200)) return false;
+    return true;
+  });
+}
+
+function tableHTML(s) {
+  const rows = rowsFor(s);
+  const body = rows.length ? rows.map((r) => `<tr>
+      <td><span class="cb"></span></td>
+      <td><span class="bdg ${T_CLASS[r.t]}">${TAB_LABEL[r.t]}</span></td>
+      <td class="site">고덕그라시움</td><td>${r.dong}</td><td>${r.ho}</td><td>${r.area}</td>
+      <td><span class="bdg ${r.st === '거래중' ? 's-live' : 's-done'}"><span class="dot"></span>${r.st}</span></td>
+      <td>${won(r.price)}</td><td>${r.rent ? r.rent + '만' : '-'}</td>
+      <td><span class="bdg ${r.move === '즉시' ? 'm-now' : 'm-check'}">${r.move}</span></td>
+      <td class="memo">${r.memo}</td></tr>`).join('')
+    : `<tr><td colspan="11" class="tbl-empty">조건에 맞는 매물이 없습니다.</td></tr>`;
+  return `<table class="tbl"><colgroup><col style="width:40px"><col style="width:66px"><col style="width:150px"><col style="width:62px"><col style="width:66px"><col style="width:66px"><col style="width:150px"><col style="width:130px"><col style="width:70px"><col style="width:100px"><col></colgroup>
+    <thead><tr><th><span class="cb"></span></th><th>거래</th><th>단지</th><th>동</th><th>호</th><th>공급</th><th>매물상태</th><th>가격/보증금</th><th>월세</th><th>입주가능일</th><th>의뢰 메모</th></tr></thead>
+    <tbody>${body}</tbody></table>`;
+}
+
+function frameHTML(s) {
+  const loc = locLabel(s), anySet = locSet(s);
+  const extra = MORE[s.tab].filter((k) => s.f[k]);
+  const activeCount = Object.keys(s.f).filter((k) => s.f[k]).length + (anySet ? 1 : 0);
+  const tabs = ['all', 'sale', 'jeonse', 'monthly'].map((t) => `<button class="${s.tab === t ? 'on' : ''}" data-act="tab" data-tab="${t}">${TAB_LABEL[t]}${t !== 'all' ? `<span class="n">${COUNTS[t] || 0}</span>` : ''}</button>`).join('');
+  return `
+  <div class="r1">
+    <div class="seg" role="tablist" aria-label="거래유형">${tabs}</div>
+    <div class="loc ${anySet ? 'is-set' : ''}">
+      <button class="loc-site" data-act="loc">${ic('map-pin')}<span class="txt ${loc.cls}">${loc.text}</span>${ic('chevron-down')}</button>
+      <span class="loc-div"></span>
+      <label class="uf"><input data-in="dong" inputmode="numeric" placeholder=" " value="${s.dong}" style="width:${Math.max(s.dong.length, 1)}ch" /><span class="sfx">동</span></label>
+      <span class="loc-div"></span>
+      <label class="uf"><input data-in="ho" inputmode="numeric" placeholder=" " value="${s.ho}" style="width:${Math.max(s.ho.length, 1)}ch" /><span class="sfx">호</span></label>
+      ${anySet ? `<button class="loc-x" data-act="loc-clear" aria-label="위치 해제">${ic('x')}</button>` : ''}
+      ${s.pop === 'loc' ? locPopHTML(s) : ''}
+    </div>
+    <label class="search ${s.q ? 'has-q' : ''}">${ic('search')}<input data-in="q" placeholder="주소, 연락처, 메모" value="${s.q}" /><kbd>/</kbd></label>
+    <div class="r1-right">
+      <div class="seg view" aria-label="보기 방식"><button class="on">${ic('list')}<span class="lbl">목록</span></button><button>${ic('map')}<span class="lbl">지도</span></button></div>
+      <button class="primary">${ic('plus')}새 매물 등록</button>
+    </div>
+  </div>
+  <div class="r2">
+    <div class="r2-scroll">
+      ${QUICK[s.tab].map((k) => chipHTML(k, s)).join('')}
+      ${extra.map((k) => chipHTML(k, s)).join('')}
+      <button class="add-filter" data-act="more">${ic('plus')}필터</button>
+    </div>
+    <div class="r2-fixed">
+      ${activeCount ? `<button class="ghost" data-act="reset">${ic('rotate-ccw')}초기화</button><span class="r2-sep"></span>` : ''}
+      <button class="ghost">${ic('columns-3')}컬럼</button>
+    </div>
+  </div>
+  ${s.pop === 'more' ? morePopHTML(s, s.moreLeft ?? 380) : ''}
+  <div class="tbl-wrap" style="--min-h:${s.minH || 0}px">${tableHTML(s)}</div>
+  <div class="tfoot" data-foot>의뢰 ${rowsFor(s).length}건 표시</div>`;
+}
+
+function paint(el, s) {
+  el.innerHTML = frameHTML(s);
+  el.classList.toggle('compact', (s.width || 1205) < 1100);
+  lucide.createIcons();
+  const sc = el.querySelector('.r2-scroll');
+  sc.classList.toggle('is-overflow', sc.scrollWidth > sc.clientWidth + 1);
+  if (s.pop === 'more' && s.moreLeft == null) {
+    const btn = el.querySelector('[data-act="more"]');
+    const left = btn.getBoundingClientRect().left - el.getBoundingClientRect().left;
+    s.moreLeft = Math.round(left);
+    paint(el, s);
+  }
+}
+
+const blank = (o = {}) => ({ tab: 'all', region: null, sites: [], dong: '', ho: '', q: '', f: {}, pop: null, ...o });
+
+// 정적 프레임
+paint(document.getElementById('frame-b'), blank({ tab: 'sale', sites: ['고덕그라시움'], dong: '101', ho: '3401', f: { status: '거래중', price: '15억~25억', ad: '광고 중' } }));
+paint(document.getElementById('frame-c'), blank({ region: '강동구', pop: 'loc', minH: 380 }));
+paint(document.getElementById('frame-d'), blank({ tab: 'monthly', f: { movein: '3개월 내' }, pop: 'more', minH: 250 }));
+['frame-b', 'frame-c', 'frame-d'].forEach((id) => document.getElementById(id).setAttribute('inert', ''));
+
+// 인터랙티브 프레임 A
+const A = document.getElementById('frame-a');
+const sA = blank({ minH: 0 });
+const repaintA = () => { const focus = document.activeElement?.dataset?.in; paint(A, sA); if (focus) { const el = A.querySelector(`[data-in="${focus}"]`); el.focus(); el.setSelectionRange(el.value.length, el.value.length); } };
+repaintA();
+
+A.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-act]');
+  if (!b) { if (!e.target.closest('[data-pop]') && sA.pop) { sA.pop = null; repaintA(); } return; }
+  const act = b.dataset.act, key = b.dataset.key;
+  if (act === 'tab') {
+    sA.tab = b.dataset.tab; sA.pop = null; sA.moreLeft = null;
+    for (const k of ['price', 'deposit', 'rent']) if (![...QUICK[sA.tab], ...MORE[sA.tab]].includes(k)) delete sA.f[k];
+  } else if (act === 'chip') { sA.f[key] = sA.f[key] ? null : val(F[key].demo, sA.tab); sA.pop = null; }
+  else if (act === 'clear') { sA.f[key] = null; }
+  else if (act === 'loc') { sA.pop = sA.pop === 'loc' ? null : 'loc'; if (sA.pop) sA.region = sA.region || '강동구'; }
+  else if (act === 'site') { const n = b.dataset.name; sA.sites = sA.sites.includes(n) ? sA.sites.filter((x) => x !== n) : [...sA.sites, n]; }
+  else if (act === 'close') { sA.pop = null; }
+  else if (act === 'loc-clear') { Object.assign(sA, { region: null, sites: [], dong: '', ho: '', pop: null }); }
+  else if (act === 'more') { sA.pop = sA.pop === 'more' ? null : 'more'; sA.moreLeft = null; }
+  else if (act === 'more-pick') { sA.f[key] = sA.f[key] ? null : val(F[key].demo, sA.tab); sA.pop = null; sA.moreLeft = null; }
+  else if (act === 'reset') { Object.assign(sA, { region: null, sites: [], dong: '', ho: '', q: '', f: {}, pop: null }); }
+  repaintA();
+});
+A.addEventListener('input', (e) => {
+  const k = e.target.dataset.in; if (!k) return;
+  if (k === 'q') {
+    // 한글 조합이 끊기지 않도록 검색어는 표와 건수만 다시 그림
+    sA.q = e.target.value;
+    e.target.closest('.search').classList.toggle('has-q', !!sA.q);
+    A.querySelector('.tbl-wrap').innerHTML = tableHTML(sA);
+    A.querySelector('[data-foot]').textContent = `의뢰 ${rowsFor(sA).length}건 표시`;
+    return;
+  }
+  sA[k] = e.target.value.replace(/\D/g, '');
+  repaintA();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === '/' && !['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName)) { e.preventDefault(); A.querySelector('[data-in="q"]').focus(); }
+  if (e.key === 'Escape' && sA.pop) { sA.pop = null; repaintA(); }
+});
+</script>
+</body>
+</html>

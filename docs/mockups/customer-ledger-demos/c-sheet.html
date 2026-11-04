@@ -1,0 +1,442 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>C 스프레드시트</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+<link rel="stylesheet" href="shared/base.css">
+<style>
+.tb { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-bottom: 1px solid var(--border); flex-wrap: wrap; flex-shrink: 0; }
+.spacer { flex: 1; }
+.pop-wrap { position: relative; }
+.pop { position: absolute; right: 0; top: 34px; z-index: 12; width: 180px; padding: 6px; background: #fff; border: 1px solid var(--border); border-radius: 7px; box-shadow: var(--shadow); max-height: 340px; overflow: auto; }
+.pop label { display: flex; align-items: center; gap: 7px; padding: 3px 6px; border-radius: 4px; cursor: pointer; }
+.pop label:hover { background: var(--surface-2); }
+
+.grid-wrap { flex: 1; min-height: 0; overflow: auto; outline: none; background: var(--surface-3); }
+table { border-collapse: separate; border-spacing: 0; table-layout: fixed; background: #fff; }
+th, td { border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); padding: 0; height: 29px; font-size: 12.5px; font-weight: 400; text-align: left; }
+thead th { position: sticky; z-index: 3; background: var(--surface); color: var(--muted-strong); font-size: 12px; font-weight: 500; white-space: nowrap; }
+thead tr.band th { top: 0; height: 21px; font-size: 10.5px; font-weight: 600; color: var(--muted); letter-spacing: 0.02em; padding: 0 7px; background: #f3f2ee; }
+thead tr.cols th { top: 21px; height: 28px; }
+.hbtn { display: flex; align-items: center; gap: 2px; width: 100%; height: 100%; padding: 0 7px; font-weight: inherit; }
+.hbtn:hover { background: var(--surface-2); color: var(--fg); }
+.hbtn.r { justify-content: flex-end; }
+.hbtn .i { width: 11px; height: 11px; }
+.hbtn.asc .i { transform: rotate(180deg); }
+.hbtn.on { color: var(--fg); font-weight: 600; }
+.sticky-a { position: sticky; left: 0; z-index: 2; background: inherit; }
+.sticky-b { position: sticky; left: 34px; z-index: 2; background: inherit; box-shadow: 1px 0 0 var(--border-strong); }
+thead .sticky-a, thead .sticky-b { z-index: 5; background: var(--surface); }
+thead tr.band .sticky-a, thead tr.band .sticky-b { background: #f3f2ee; }
+tbody tr { background: #fff; }
+tbody tr:hover { background: #fafaf8; }
+tbody tr.sel { background: #eef5fb; }
+.cell { display: flex; align-items: center; height: 28px; padding: 0 7px; gap: 4px; overflow: hidden; white-space: nowrap; }
+.cell.r { justify-content: flex-end; font-variant-numeric: tabular-nums; }
+.cell > .t { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+td.editable { cursor: cell; }
+td.editable:hover .cell { background: rgba(35, 131, 226, 0.05); }
+td.cur { box-shadow: inset 0 0 0 2px var(--ring); }
+td.cur.editing { box-shadow: inset 0 0 0 2px var(--ring); background: #fff; }
+.edit { width: 100%; height: 28px; border: 0; padding: 0 6px; background: transparent; outline: none; font-size: 12.5px; }
+.chk { display: grid; place-items: center; height: 28px; }
+.chk input { margin: 0; width: 13px; height: 13px; accent-color: var(--fg); cursor: pointer; }
+.cname { font-weight: 600; }
+.cname:hover { text-decoration: underline; text-underline-offset: 2px; }
+.kind-d { color: var(--info-strong); font-weight: 500; }
+.kind-l { color: var(--success); font-weight: 500; }
+.paused { color: var(--faint); }
+.sdot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.sd-open { background: var(--success); }
+.sd-hold { background: var(--warning); }
+.next-cell { font-variant-numeric: tabular-nums; }
+td.bk-overdue { background: #fff3f1; color: var(--danger-strong); font-weight: 600; }
+td.bk-today { background: #fff8e7; color: var(--warning-strong); font-weight: 600; }
+td.bk-none .cell { color: var(--faint); }
+tr.grp td { background: var(--surface-2); font-weight: 600; height: 27px; border-right: 0; }
+tr.grp button { display: inline-flex; align-items: center; gap: 4px; padding: 0 8px; height: 26px; font-weight: 600; position: sticky; left: 0; }
+tr.grp small { font-weight: 400; color: var(--muted); margin-left: 4px; }
+.connect-mini { font-size: 11.5px; color: var(--warning-strong); text-decoration: underline; text-underline-offset: 2px; font-weight: 600; white-space: nowrap; }
+
+.foot { display: flex; align-items: center; gap: 14px; padding: 5px 12px; border-top: 1px solid var(--border); font-size: 11.5px; color: var(--muted); flex-shrink: 0; background: var(--surface); }
+.foot b { color: var(--fg); font-weight: 600; }
+.foot .over { color: var(--danger-strong); font-weight: 600; }
+.foot .tod { color: var(--warning-strong); font-weight: 600; }
+.foot .hint { margin-left: auto; }
+.foot kbd { font: inherit; border: 1px solid var(--border-strong); border-radius: 3px; padding: 0 4px; background: #fff; }
+
+.bulk { position: fixed; left: 50%; bottom: 40px; transform: translateX(-50%); z-index: 20; display: flex; align-items: center; gap: 10px; padding: 7px 10px 7px 14px; background: var(--fg); color: #fff; border-radius: 8px; box-shadow: var(--shadow); font-size: 12.5px; white-space: nowrap; animation: bulk-in 0.16s var(--ease); }
+@keyframes bulk-in { from { transform: translate(-50%, 8px); opacity: 0; } }
+.bulk select, .bulk input { height: 26px; border: 1px solid rgba(255, 255, 255, 0.28); border-radius: 5px; background: rgba(255, 255, 255, 0.1); color: #fff; padding: 0 6px; color-scheme: dark; }
+.bulk select option { color: var(--fg); background: #fff; }
+.bulk .sep { width: 1px; height: 16px; background: rgba(255, 255, 255, 0.24); }
+.bulk button { color: #fff; }
+.bulk button.x { opacity: 0.72; }
+.bulk button.x:hover { opacity: 1; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script src="shared/data.js"></script>
+<script src="shared/app.js"></script>
+<script>
+(function () {
+  const D = Demo;
+  const { esc, icon } = D;
+  const view = D.mount({ active: "c", crumb: "고객 원장 표" });
+
+  const STATUS = { open: "진행중", hold: "보류" };
+  const nameOf = (it) => (it.primary ? D.contact(it.primary).name : "");
+  const phoneOf = (it) => (it.primary ? D.contact(it.primary).phone : "");
+  const dateOnly = (at) => at.split("T")[0];
+
+  /* 편집 가능한 열은 edit를 가진다 */
+  const COLS = [
+    { k: "customer", band: "고객", label: "고객", w: 92, sticky: true, sort: nameOf },
+    { k: "phone", band: "고객", label: "연락처", w: 124, sort: phoneOf },
+    { k: "kind", band: "의뢰", label: "구분", w: 56, sort: (i) => i.kind },
+    { k: "title", band: "의뢰", label: "의뢰 대상", w: 232, sort: (i) => i.title },
+    { k: "tx", band: "의뢰", label: "거래", w: 66 },
+    { k: "price", band: "조건", label: "가격", w: 138, right: true, sort: D.priceKey },
+    { k: "rent", band: "조건", label: "월세", w: 86, right: true },
+    { k: "area", band: "조건", label: "평형", w: 66, right: true, sort: D.areaKey },
+    { k: "match", band: "진행", label: "매칭", w: 48, right: true, sort: (i) => i.matches.total },
+    { k: "stage", band: "진행", label: "단계", w: 72, sort: (i) => D.stageInfo(i.matches.top) },
+    { k: "status", band: "진행", label: "상태", w: 70, edit: "status", sort: (i) => i.status },
+    { k: "assignee", band: "업무", label: "담당", w: 76, edit: "assignee", sort: (i) => (i.assignee ? D.user(i.assignee).name : "힣") },
+    { k: "nextAt", band: "업무", label: "다음 일정", w: 124, edit: "date", sort: D.nextTime },
+    { k: "nextNote", band: "업무", label: "할 일", w: 196, edit: "note" },
+    { k: "last", band: "기록", label: "최근 연락", w: 72, right: true, sort: (i) => i.lastContact || "" },
+    { k: "received", band: "기록", label: "등록일", w: 66, right: true, sort: (i) => i.receivedAt },
+    { k: "memo", band: "기록", label: "메모", w: 220, edit: "memo" },
+  ];
+  const S = {
+    view: "all", q: "", groupBy: "none", sort: "nextAt", dir: "asc",
+    hidden: new Set(), selected: new Set(), folded: new Set(),
+    cur: null, editing: false, popOpen: false,
+  };
+  const visibleCols = () => COLS.filter((c) => !S.hidden.has(c.k));
+
+  view.innerHTML = `
+    <div class="tb">
+      <div class="seg" id="views"></div>
+      <label class="search">${icon("search")}<input id="q" placeholder="고객, 전화번호, 단지명" aria-label="검색"><kbd>/</kbd></label>
+      <div class="spacer"></div>
+      <label class="field">묶기 <select id="groupBy">
+        <option value="none">없음</option><option value="customer">고객</option><option value="assignee">담당</option><option value="bucket">다음 일정</option><option value="kind">구분</option>
+      </select></label>
+      <div class="pop-wrap"><button type="button" class="btn" id="colsBtn" aria-expanded="false">${icon("columns")}열</button><div class="pop" id="pop" hidden></div></div>
+    </div>
+    <div class="grid-wrap" id="wrap" tabindex="0" aria-label="고객 원장 표. 화살표로 이동하고 Enter로 편집합니다."><table id="table"></table></div>
+    <div class="foot" id="foot"></div>
+    <div class="bulk" id="bulk" hidden></div>`;
+  const $ = (id) => document.getElementById(id);
+
+  const digits = (s) => s.replace(/\D/g, "");
+  function matchQ(it) {
+    if (!S.q) return true;
+    if (it.title.includes(S.q) || it.memo.includes(S.q)) return true;
+    const qd = digits(S.q);
+    return it.people.some((p) => { const c = D.contact(p.c); return c.name.includes(S.q) || (qd.length >= 3 && digits(c.phone).includes(qd)); });
+  }
+  function inView(it, v) {
+    const b = D.bucketOf(it);
+    if (v === "overdue") return b === "overdue";
+    if (v === "today") return b === "today";
+    if (v === "none") return b === "none" && it.status !== "hold" && !!it.primary;
+    if (v === "unknown") return !it.primary;
+    return true;
+  }
+  function rows() {
+    const col = COLS.find((c) => c.k === S.sort);
+    const dir = S.dir === "asc" ? 1 : -1;
+    const list = D.items().filter((i) => matchQ(i) && inView(i, S.view));
+    if (!col || !col.sort) return list.sort(D.compareItems);
+    return list.sort((a, b) => {
+      const x = col.sort(a), y = col.sort(b);
+      if (x === y) return D.compareItems(a, b);
+      return (x < y ? -1 : 1) * dir;
+    });
+  }
+  function groupKey(it) {
+    switch (S.groupBy) {
+      case "customer": return it.primary || "unknown";
+      case "assignee": return it.assignee || "none";
+      case "bucket": return D.bucketOf(it);
+      case "kind": return it.kind;
+      default: return "";
+    }
+  }
+  function groupLabel(key) {
+    switch (S.groupBy) {
+      case "customer": return key === "unknown" ? "고객 미확인" : D.contact(key).name;
+      case "assignee": return key === "none" ? "미배정" : D.user(key).name;
+      case "bucket": return D.BUCKETS[key].label;
+      case "kind": return D.KIND[key];
+      default: return "";
+    }
+  }
+
+  function cellText(col, it) {
+    const lines = D.priceLines(it);
+    switch (col.k) {
+      case "customer":
+        return it.primary
+          ? `<button type="button" class="cname t" data-open-customer="${it.primary}">${esc(nameOf(it))}</button>`
+          : `<button type="button" class="connect-mini" data-connect="${it.id}">소유자 연결</button>`;
+      case "phone": return `<span class="t num">${esc(phoneOf(it))}</span>`;
+      case "kind": return `<span class="${it.kind === "demand" ? "kind-d" : "kind-l"}">${D.KIND[it.kind]}</span>`;
+      case "title": return `<span class="t" title="${esc(it.title)} · ${esc(it.sub)}">${esc(it.title)}</span>${D.linksOf(it.id).length ? `<span class="badge b-link" style="height:16px;font-size:10.5px;padding:0 4px" title="${esc(D.linksOf(it.id).map((l) => l.label).join(", "))}">연계</span>` : ""}`;
+      case "tx": return `<span class="t">${lines.map((l) => D.TX[l.tx]).join("·")}</span>`;
+      case "price": return `<span class="t">${lines.map((l) => `<span class="${l.paused ? "paused" : ""}" title="${D.TX[l.tx]}${l.paused ? " 중단" : ""}">${esc(l.price)}</span>`).join(" · ")}</span>`;
+      case "rent": { const r = lines.filter((l) => l.rent); return r.length ? `<span class="t ${r[0].paused ? "paused" : ""}">${esc(r[0].rent)}</span>` : `<span class="dim">—</span>`; }
+      case "area": return esc(D.areaText(it));
+      case "match": return it.matches.total ? String(it.matches.total) : `<span class="dim">—</span>`;
+      case "stage": {
+        if (!it.matches.total) return `<span class="dim">—</span>`;
+        const s = D.STAGES[D.stageInfo(it.matches.top)];
+        return `<span class="stage st-${s[2]}">${s[1]}</span>`;
+      }
+      case "status": return `<span class="sdot sd-${it.status}"></span>${STATUS[it.status]}`;
+      case "assignee": return it.assignee ? esc(D.user(it.assignee).name) : `<span style="color:var(--danger-strong)">미배정</span>`;
+      case "nextAt": return it.next ? `<span class="next-cell t">${esc(`${D.whenText(it.next.at)} ${D.VERB[it.kind]}`)}</span>` : "일정 없음";
+      case "nextNote": return `<span class="t" title="${esc(it.next ? it.next.note : "")}">${esc(it.next ? it.next.note : "")}</span>`;
+      case "last": return it.lastContact ? D.fmtDate(it.lastContact) : `<span class="dim">—</span>`;
+      case "received": return D.fmtDate(it.receivedAt);
+      case "memo": return `<span class="t" title="${esc(it.memo)}">${esc(it.memo)}</span>`;
+      default: return "";
+    }
+  }
+  function editorHTML(col, it) {
+    switch (col.edit) {
+      case "status": return `<select class="edit" data-ed>${Object.entries(STATUS).map(([k, v]) => `<option value="${k}"${it.status === k ? " selected" : ""}>${v}</option>`).join("")}</select>`;
+      case "assignee": return `<select class="edit" data-ed><option value="">미배정</option>${D.users().map((u) => `<option value="${u.id}"${it.assignee === u.id ? " selected" : ""}>${esc(u.name)}</option>`).join("")}</select>`;
+      case "date": return `<input class="edit" data-ed type="date" value="${it.next ? dateOnly(it.next.at) : ""}">`;
+      case "note": return `<input class="edit" data-ed value="${esc(it.next ? it.next.note : "")}"${it.next ? "" : ' placeholder="일정을 먼저 잡아 주세요" disabled'}>`;
+      case "memo": return `<input class="edit" data-ed value="${esc(it.memo)}">`;
+      default: return "";
+    }
+  }
+  function commitEdit(col, it, value) {
+    switch (col.edit) {
+      case "status":
+        if (value !== it.status) D.setField(it.id, { status: value }, `상태 변경: ${it.title} → ${STATUS[value]}`);
+        break;
+      case "assignee":
+        if ((value || null) !== it.assignee) D.setAssignee(it.id, value);
+        break;
+      case "date": {
+        const old = it.next ? dateOnly(it.next.at) : "";
+        if (value !== old) D.setField(it.id, { next: value ? { at: value, note: it.next ? it.next.note : "" } : null }, value ? `일정 변경: ${it.title} → ${D.fmtDate(value)}` : `일정 삭제: ${it.title}`);
+        break;
+      }
+      case "note":
+        if (it.next && value !== it.next.note) D.setField(it.id, { next: { ...it.next, note: value } }, `할 일 변경: ${it.title}`);
+        break;
+      case "memo":
+        if (value !== it.memo) D.setField(it.id, { memo: value }, `메모 변경: ${it.title}`);
+        break;
+    }
+  }
+
+  function tdHTML(col, it, sticky) {
+    const b = D.bucketOf(it);
+    const isCur = S.cur && S.cur.id === it.id && S.cur.k === col.k;
+    const editing = isCur && S.editing && col.edit;
+    const cls = [
+      sticky ? "sticky-b" : "",
+      col.edit ? "editable" : "",
+      isCur ? "cur" : "",
+      editing ? "editing" : "",
+      col.k === "nextAt" ? `bk-${b === "overdue" || b === "today" || b === "none" ? b : ""}` : "",
+    ].filter(Boolean).join(" ");
+    return `<td class="${cls}" data-id="${it.id}" data-k="${col.k}">${editing ? editorHTML(col, it) : `<div class="cell${col.right ? " r" : ""}">${cellText(col, it)}</div>`}</td>`;
+  }
+  function render() {
+    const cols = visibleCols();
+    const wrap = $("wrap");
+    const top = wrap.scrollTop, left = wrap.scrollLeft;
+    const list = rows();
+    const bands = [];
+    cols.forEach((c) => { const last = bands[bands.length - 1]; if (last && last.band === c.band) last.n++; else bands.push({ band: c.band, n: 1 }); });
+
+    let body = "";
+    const rowHTML = (it) => {
+      const sel = S.selected.has(it.id);
+      return `<tr class="${sel ? "sel" : ""}"><td class="sticky-a"><label class="chk"><input type="checkbox" data-pick="${it.id}"${sel ? " checked" : ""} aria-label="${esc(it.title)} 선택"></label></td>${cols.map((c) => tdHTML(c, it, c.sticky)).join("")}</tr>`;
+    };
+    if (S.groupBy === "none") {
+      body = list.map(rowHTML).join("");
+    } else {
+      const groups = new Map();
+      list.forEach((it) => { const k = groupKey(it); if (!groups.has(k)) groups.set(k, []); groups.get(k).push(it); });
+      const keys = S.groupBy === "bucket" ? D.BUCKET_ORDER.filter((k) => groups.has(k)) : [...groups.keys()];
+      keys.forEach((k) => {
+        const its = groups.get(k);
+        const open = !S.folded.has(k);
+        body += `<tr class="grp"><td colspan="${cols.length + 1}"><button type="button" data-grp="${k}" aria-expanded="${open}">${icon(open ? "down" : "right")}${esc(groupLabel(k))}<small class="num">${its.length}건</small></button></td></tr>`;
+        if (open) body += its.map(rowHTML).join("");
+      });
+    }
+    const allOn = list.length > 0 && list.every((i) => S.selected.has(i.id));
+    const total = 34 + cols.reduce((n, c) => n + c.w, 0);
+    $("table").style.width = `${total}px`;
+    $("table").innerHTML = `
+      <colgroup><col style="width:34px">${cols.map((c) => `<col style="width:${c.w}px">`).join("")}</colgroup>
+      <thead>
+        <tr class="band"><th class="sticky-a"></th>${bands.map((b, i) => `<th colspan="${b.n}"${i === 0 && cols[0].sticky && b.n === 1 ? ' class="sticky-b"' : ""}>${esc(b.band)}</th>`).join("")}</tr>
+        <tr class="cols"><th class="sticky-a"><label class="chk"><input type="checkbox" data-pick-all${allOn ? " checked" : ""} aria-label="보이는 행 전체 선택"></label></th>${cols.map((c) => {
+          const on = S.sort === c.k;
+          return `<th class="${c.sticky ? "sticky-b" : ""}"${on ? ` aria-sort="${S.dir === "asc" ? "ascending" : "descending"}"` : ""}>${c.sort ? `<button type="button" class="hbtn${c.right ? " r" : ""}${on ? " on" : ""}${on && S.dir === "asc" ? " asc" : ""}" data-sort="${c.k}">${esc(c.label)}${on ? icon("down") : ""}</button>` : `<div class="hbtn${c.right ? " r" : ""}">${esc(c.label)}</div>`}</th>`;
+        }).join("")}</tr>
+      </thead>
+      <tbody>${body || `<tr><td colspan="${cols.length + 1}" style="padding:40px;text-align:center;color:var(--muted)">조건에 맞는 행이 없습니다.</td></tr>`}</tbody>`;
+    wrap.scrollTop = top; wrap.scrollLeft = left;
+
+    const all = D.items().filter(matchQ);
+    $("views").innerHTML = [["all", "전체"], ["overdue", "지남"], ["today", "오늘"], ["none", "일정 없음"], ["unknown", "고객 미확인"]].map(([k, l]) => `<button type="button" data-view="${k}" aria-pressed="${S.view === k}">${l} <span class="num" style="font-weight:400;color:var(--muted)">${all.filter((i) => inView(i, k)).length}</span></button>`).join("");
+    $("groupBy").value = S.groupBy;
+    const over = list.filter((i) => D.bucketOf(i) === "overdue").length;
+    const tod = list.filter((i) => D.bucketOf(i) === "today").length;
+    const sum = list.reduce((n, i) => n + i.matches.total, 0);
+    $("foot").innerHTML = `<span><b class="num">${list.length}</b>행</span><span class="over num">지남 ${over}</span><span class="tod num">오늘 ${tod}</span><span class="num">매칭 합계 ${sum}</span><span class="hint"><kbd>↑↓←→</kbd> 이동 <kbd>Enter</kbd> 편집 <kbd>Esc</kbd> 취소</span>`;
+    renderBulk();
+    $("pop").innerHTML = COLS.filter((c) => !c.sticky).map((c) => `<label><input type="checkbox" data-col="${c.k}"${S.hidden.has(c.k) ? "" : " checked"}>${esc(c.label)}</label>`).join("");
+    if (S.editing) {
+      const ed = $("table").querySelector("[data-ed]");
+      if (ed) { ed.focus(); if (ed.select && ed.type !== "date") ed.select(); }
+    }
+  }
+  function renderBulk() {
+    const n = S.selected.size;
+    const bulk = $("bulk");
+    bulk.hidden = n === 0;
+    if (!n) return;
+    bulk.innerHTML = `<b class="num">${n}건 선택</b><span class="sep"></span>
+      <label>담당 <select id="bulkWho"><option value="-">변경 안 함</option><option value="">미배정</option>${D.users().map((u) => `<option value="${u.id}">${esc(u.name)}</option>`).join("")}</select></label>
+      <label>다음 일정 <input type="date" id="bulkDate"></label>
+      <span class="sep"></span><button type="button" class="x" id="bulkClear">선택 해제</button>`;
+  }
+
+  /* 편집 커서 */
+  function flatIds() {
+    return [...$("table").querySelectorAll("tbody td[data-k]")].reduce((acc, td) => {
+      if (!acc.includes(td.dataset.id)) acc.push(td.dataset.id);
+      return acc;
+    }, []);
+  }
+  function moveCur(dr, dc) {
+    const cols = visibleCols();
+    const ids = flatIds();
+    if (!ids.length) return;
+    if (!S.cur) { S.cur = { id: ids[0], k: cols[0].k }; render(); return; }
+    const r = Math.max(0, Math.min(ids.length - 1, ids.indexOf(S.cur.id) + dr));
+    const c = Math.max(0, Math.min(cols.length - 1, cols.findIndex((x) => x.k === S.cur.k) + dc));
+    S.cur = { id: ids[r], k: cols[c].k };
+    render();
+    const td = $("table").querySelector("td.cur");
+    if (td) td.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }
+  function finishEdit(save) {
+    if (!S.editing || !S.cur) return;
+    const ed = $("table").querySelector("[data-ed]");
+    const col = COLS.find((c) => c.k === S.cur.k);
+    const it = D.item(S.cur.id);
+    const value = ed ? ed.value : null;
+    S.editing = false;
+    if (save && ed && !ed.disabled) commitEdit(col, it, value);
+    render();
+    $("wrap").focus({ preventScroll: true });
+  }
+
+  view.addEventListener("click", (e) => {
+    const t = e.target;
+    if (t.closest("[data-open-customer],[data-connect]")) return;
+    const so = t.closest("[data-sort]");
+    if (so) {
+      const k = so.dataset.sort;
+      if (S.sort === k) S.dir = S.dir === "asc" ? "desc" : "asc";
+      else { S.sort = k; S.dir = "asc"; }
+      render();
+      return;
+    }
+    const v = t.closest("[data-view]");
+    if (v) { S.view = v.dataset.view; S.cur = null; render(); return; }
+    const g = t.closest("[data-grp]");
+    if (g) { const k = g.dataset.grp; if (S.folded.has(k)) S.folded.delete(k); else S.folded.add(k); render(); return; }
+    if (t.closest("#colsBtn")) { const p = $("pop"); p.hidden = !p.hidden; $("colsBtn").setAttribute("aria-expanded", String(!p.hidden)); return; }
+    if (t.closest("#bulkClear")) { S.selected.clear(); render(); return; }
+    if (!t.closest(".pop-wrap")) $("pop").hidden = true;
+  });
+  /* 편집 중 다른 칸을 누르면 저장과 칸 이동이 한 번에 일어나도록, 클릭이 아니라 누르는 순간에 처리한다 */
+  view.addEventListener("mousedown", (e) => {
+    const t = e.target;
+    const td = t.closest("td[data-k]");
+    if (!td || t.closest("[data-ed],[data-open-customer],[data-connect]")) return;
+    e.preventDefault();
+    const same = S.cur && S.cur.id === td.dataset.id && S.cur.k === td.dataset.k;
+    if (S.editing) finishEdit(true);
+    const col = COLS.find((c) => c.k === td.dataset.k);
+    S.cur = { id: td.dataset.id, k: td.dataset.k };
+    S.editing = same && !!col.edit;
+    render();
+    if (!S.editing) $("wrap").focus({ preventScroll: true });
+  });
+  view.addEventListener("change", (e) => {
+    const t = e.target;
+    if (t.matches("[data-pick]")) {
+      if (t.checked) S.selected.add(t.dataset.pick); else S.selected.delete(t.dataset.pick);
+      render();
+    } else if (t.matches("[data-pick-all]")) {
+      rows().forEach((i) => { if (t.checked) S.selected.add(i.id); else S.selected.delete(i.id); });
+      render();
+    } else if (t.matches("[data-col]")) {
+      if (t.checked) S.hidden.delete(t.dataset.col); else S.hidden.add(t.dataset.col);
+      render();
+    } else if (t.id === "groupBy") {
+      S.groupBy = t.value; S.folded.clear(); render();
+    } else if (t.id === "bulkWho" && t.value !== "-") {
+      const ids = [...S.selected];
+      const name = t.value ? D.user(t.value).name : "미배정";
+      D.setMany(ids, { assignee: t.value || null }, `담당 일괄 변경: ${ids.length}건 → ${name}`);
+    } else if (t.id === "bulkDate" && t.value) {
+      const ids = [...S.selected];
+      const at = t.value;
+      D.setMany(ids, (it) => ({ next: { at, note: it.next ? it.next.note : "" } }), `일정 일괄 변경: ${ids.length}건 → ${D.fmtDate(at)}`);
+    } else if (t.matches("[data-ed]") && t.tagName === "SELECT") {
+      finishEdit(true);
+    }
+  });
+  view.addEventListener("focusout", (e) => {
+    if (e.target.matches("[data-ed]") && S.editing) finishEdit(true);
+  });
+  $("q").addEventListener("input", (e) => { S.q = e.target.value.trim(); S.cur = null; render(); });
+  document.addEventListener("keydown", (e) => {
+    const inEd = e.target.matches && e.target.matches("[data-ed]");
+    if (inEd) {
+      if (e.key === "Enter") { e.preventDefault(); finishEdit(true); moveCur(1, 0); }
+      else if (e.key === "Escape") { e.stopPropagation(); finishEdit(false); }
+      else if (e.key === "Tab") { e.preventDefault(); finishEdit(true); moveCur(0, e.shiftKey ? -1 : 1); }
+      return;
+    }
+    const typing = /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName);
+    if (typing) return;
+    if (e.key === "/") { e.preventDefault(); $("q").focus(); return; }
+    const inGrid = document.activeElement === $("wrap") || document.activeElement === document.body;
+    if (!inGrid) return;
+    const nav = { ArrowDown: [1, 0], ArrowUp: [-1, 0], ArrowLeft: [0, -1], ArrowRight: [0, 1] }[e.key];
+    if (nav) { e.preventDefault(); moveCur(nav[0], nav[1]); return; }
+    if (e.key === "Tab" && S.cur) { e.preventDefault(); moveCur(0, e.shiftKey ? -1 : 1); return; }
+    if (e.key === "Enter" && S.cur) {
+      const col = COLS.find((c) => c.k === S.cur.k);
+      if (col.edit) { e.preventDefault(); S.editing = true; render(); }
+    }
+  });
+  D.on(render);
+  render();
+})();
+</script>
+</body>
+</html>

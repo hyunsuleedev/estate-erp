@@ -1,0 +1,7 @@
+{
+  "name": "estait-heritage-splash-study",
+  "private": true,
+  "type": "module",
+  "scripts": { "start": "python3 -m http.server 8771 --bind 127.0.0.1" },
+  "dependencies": { "three": "0.186.0" }
+}
