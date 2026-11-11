@@ -406,7 +406,8 @@ export class ConsultationsService {
         officeId,
         userId,
         contactId,
-        direction: dto.direction === 'outbound' ? 'outbound' : 'inbound',
+        // 방문 상담 녹음은 통화가 아니므로 수신·발신 대신 visit으로 둔다 (자동 상담 기록도 방문 상담이 된다)
+        direction: recordingDirection(dto.type, dto.direction),
         phoneNumber,
         durationSec: dto.durationSec || 0,
         fileName: file.originalname,
@@ -581,6 +582,8 @@ export class ConsultationsService {
       dateFrom?: string;
       dateTo?: string;
       q?: string;
+      /** 녹음은 있는데 아직 상담 기록이 없는 것만 (미등록 번호, 받아쓰기·분석 중, 실패) */
+      unlinked?: boolean;
       page?: number;
       limit?: number;
     } = {},
@@ -598,6 +601,7 @@ export class ConsultationsService {
     if (query.direction) filters.push({ direction: query.direction });
     if (query.sttStatus) filters.push({ sttStatus: query.sttStatus });
     if (calledAtFilter) filters.push({ calledAt: calledAtFilter });
+    if (query.unlinked) filters.push({ fileName: { not: null }, consultations: { none: {} } });
 
     const q = query.q?.trim();
     if (q) {
@@ -840,4 +844,10 @@ function parseOptionalDate(value?: string): Date | null {
   if (!value) return null;
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? null : date;
+}
+
+/** 녹음 방향: 방문 상담이면 visit, 아니면 수신·발신 */
+export function recordingDirection(type: string | undefined, direction: string | undefined) {
+  if (type === 'visit') return 'visit';
+  return direction === 'outbound' ? 'outbound' : 'inbound';
 }

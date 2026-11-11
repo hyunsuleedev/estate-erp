@@ -29,7 +29,9 @@ import { EmployeesService } from '../employees/employees.service';
 import { OfficesService } from '../offices/offices.service';
 import {
   ExternalListingsService,
+  type BatchListingItem,
   type ListingGroupInput,
+  type SnapshotListingPatch,
 } from '../external-listings/external-listings.service';
 import { CommissionPaymentService } from '../finance/commission-payment.service';
 import { CashflowService } from '../finance/cashflow.service';
@@ -1879,7 +1881,7 @@ export class McpToolsService {
 
     this.add(
       'get_active_external_listing_snapshot_session',
-      '광고노트 단지·거래유형의 열린 스냅샷을 조회합니다.',
+      '광고노트 단지·거래유형의 열린 스냅샷을 조회합니다. 이번에 입력된 광고 수(receivedListingCount)와 닫으면 내려갈 광고 수(pendingRemovalCount)를 함께 돌려줍니다.',
       obj(
         {
           siteId: str('단지 ID'),
@@ -1916,7 +1918,7 @@ export class McpToolsService {
 
     this.add(
       'complete_external_listing_snapshot_session',
-      '입력을 마친 스냅샷을 닫고 이전 자료와 비교한 결과(신규 매물, 광고 추가, 사라진 매물, 가격 변경)를 돌려줍니다. 이번에 입력되지 않은 기존 광고는 비활성화합니다. expectedListingCount가 실제 입력 건수와 다르면 거부하고 스냅샷을 열어 둡니다.',
+      '입력을 마친 스냅샷을 닫고 이전 자료와 비교한 결과(신규 매물, 광고 추가, 사라진 매물, 가격 변경)를 돌려줍니다. 이번에 입력되지 않은 기존 광고는 비활성화합니다. expectedListingCount가 실제 입력 건수와 다르면 거부하고 스냅샷을 열어 둡니다. 입력이 0건이면 expectedListingCount 0으로 닫아 모든 광고를 내립니다.',
       obj(
         {
           id: str('ExternalListingSnapshotSession ID'),
@@ -2015,6 +2017,102 @@ export class McpToolsService {
           batchId: a.batchId as string | undefined,
           groups: a.groups as ListingGroupInput[],
         }),
+      ['advertisements:observe'],
+    );
+
+    this.add(
+      'add_external_listing_to_snapshot_group',
+      '열린 스냅샷에 입력한 매물에 동일 광고를 한 건 추가합니다. 대표는 바뀌지 않습니다.',
+      obj(
+        {
+          sessionId: str('열린 ExternalListingSnapshotSession ID'),
+          groupId: str('이번 스냅샷에 입력한 그룹 ID'),
+          source: str('입력자가 지정하는 데이터 출처 식별자'),
+          listing: {
+            type: 'object',
+            description: '추가할 광고',
+            properties: {
+              articleNo: str('광고 번호 (필수, 출처 안에서 유일)'),
+              price: num('가격 (만원)'),
+              deposit: num('보증금 (만원)'),
+              monthlyRent: num('월세 (만원)'),
+              articleFeatureDesc: str('특징 설명'),
+              floorInfo: str('층 정보'),
+              direction: str('향'),
+              realtorName: str('중개사명'),
+              representativeTelNo: str('대표번호'),
+              ranking: num('광고 노출 순위'),
+              sourceUrl: str('원본 URL'),
+            },
+            required: ['articleNo'],
+          },
+        },
+        ['sessionId', 'groupId', 'source', 'listing'],
+      ),
+      async (a, c) =>
+        this.externalListings.addSnapshotListing(
+          c.officeId,
+          a.sessionId as string,
+          a.groupId as string,
+          {
+            source: a.source as string,
+            listing: a.listing as BatchListingItem,
+          },
+        ),
+      ['advertisements:observe'],
+    );
+
+    this.add(
+      'update_external_listing_in_snapshot',
+      '열린 스냅샷에서 광고를 수정합니다. 수정한 광고는 이번 스냅샷에 입력된 것으로 처리됩니다. 스냅샷을 닫은 뒤에는 수정할 수 없습니다.',
+      obj(
+        {
+          sessionId: str('열린 ExternalListingSnapshotSession ID'),
+          listingId: str('광고 ID'),
+          price: num('가격 (만원)'),
+          deposit: num('보증금 (만원)'),
+          monthlyRent: num('월세 (만원)'),
+          articleName: str('광고명'),
+          articleFeatureDesc: str('특징 설명'),
+          detailDescription: str('상세 설명'),
+          articleConfirmYmd: str('광고 확인일 YYYYMMDD'),
+          floorInfo: str('층 정보'),
+          direction: str('향'),
+          realtorName: str('중개사명'),
+          representativeTelNo: str('대표번호'),
+          ranking: num('광고 노출 순위'),
+          sourceUrl: str('원본 URL'),
+        },
+        ['sessionId', 'listingId'],
+      ),
+      async (a, c) => {
+        const { sessionId, listingId, ...patch } = a;
+        return this.externalListings.updateSnapshotListing(
+          c.officeId,
+          sessionId as string,
+          listingId as string,
+          patch as SnapshotListingPatch,
+        );
+      },
+      ['advertisements:observe'],
+    );
+
+    this.add(
+      'remove_external_listing_from_snapshot',
+      '열린 스냅샷에서 광고를 뺍니다. 이번에 처음 입력한 광고는 지우고, 기존 광고는 닫을 때 비활성화되도록 이번 입력에서 제외합니다. 스냅샷을 닫은 뒤에는 뺄 수 없습니다.',
+      obj(
+        {
+          sessionId: str('열린 ExternalListingSnapshotSession ID'),
+          listingId: str('광고 ID'),
+        },
+        ['sessionId', 'listingId'],
+      ),
+      async (a, c) =>
+        this.externalListings.removeSnapshotListing(
+          c.officeId,
+          a.sessionId as string,
+          a.listingId as string,
+        ),
       ['advertisements:observe'],
     );
 

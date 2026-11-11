@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Controller,
   Get,
   Post,
@@ -10,6 +11,10 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
+import {
+  CONTACT_CATEGORY_KEYS,
+  type ContactCategoryKey,
+} from '@estate-erp/shared';
 import { ContactPhoneInput, ContactsService } from './contacts.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import {
@@ -28,6 +33,7 @@ export class ContactsController {
   findAll(
     @Query('search') search: string,
     @Query('tags') tags: string,
+    @Query('category') category: string,
     @Query('hasPropertyContact') hasPropertyContact: string,
     @Query('hasBuyerReq') hasBuyerReq: string,
     @Query('sortBy') sortBy: string,
@@ -36,9 +42,16 @@ export class ContactsController {
     @Query('limit') limit: string,
     @CurrentUser() user: CurrentUserPayload,
   ) {
+    if (
+      category &&
+      !CONTACT_CATEGORY_KEYS.includes(category as ContactCategoryKey)
+    ) {
+      throw new BadRequestException('알 수 없는 연락처 분류입니다.');
+    }
     return this.contactsService.findAll(user.officeId, {
       search: search || undefined,
       tags: tags ? tags.split(',') : undefined,
+      category: (category as ContactCategoryKey) || undefined,
       hasPropertyContact: hasPropertyContact === 'true' || undefined,
       hasBuyerReq: hasBuyerReq === 'true' || undefined,
       sortBy: (sortBy as 'name' | 'createdAt' | 'updatedAt') || undefined,
@@ -46,6 +59,11 @@ export class ContactsController {
       page: page ? Number(page) : undefined,
       limit: limit ? Number(limit) : undefined,
     });
+  }
+
+  @Get('categories')
+  getCategorySummary(@CurrentUser() user: CurrentUserPayload) {
+    return this.contactsService.getCategorySummary(user.officeId);
   }
 
   @Get('phone-index')

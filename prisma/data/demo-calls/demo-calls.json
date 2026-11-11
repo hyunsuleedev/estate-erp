@@ -1,0 +1,890 @@
+{
+ "scenarios": [
+  {
+   "key": "visit-couple",
+   "fileName": "[DEMO-CALL] 방문상담_그라시움84_부부.m4a",
+   "audio": "consult-visit.m4a",
+   "direction": "visit",
+   "calledAt": "2026-11-08T05:02:00.000Z",
+   "contact": {
+    "name": "박준혁",
+    "phone": "01000000077"
+   },
+   "purpose": "buyer_consult",
+   "messages": [
+    {
+     "seq": 0,
+     "speaker": 0,
+     "speakerLabel": "나",
+     "text": "네, 어서 오세요. 이쪽으로 앉으세요. 어제 전화 주셨던 분 맞으시죠?",
+     "startMs": 0,
+     "endMs": 4969
+    },
+    {
+     "seq": 1,
+     "speaker": 1,
+     "speakerLabel": "고객",
+     "text": "네, 어제 전화드렸던 박준혁입니다. 이쪽은 와이프고요.",
+     "startMs": 5349,
+     "endMs": 9389
+    },
+    {
+     "seq": 2,
+     "speaker": 2,
+     "speakerLabel": "고객",
+     "text": "안녕하세요, 이서연이에요.",
+     "startMs": 9699,
+     "endMs": 13043
+    },
+    {
+     "seq": 3,
+     "speaker": 0,
+     "speakerLabel": "나",
+     "text": "반갑습니다. 연락처는 어제 주신 공일공, 공공공공, 공공칠칠 번호로 드리면 될까요?",
+     "startMs": 13553,
+     "endMs": 20380
+    },
+    {
+     "seq": 4,
+     "speaker": 1,
+     "speakerLabel": "고객",
+     "text": "네, 그 번호로 주시면 돼요.",
+     "startMs": 20660,
+     "endMs": 22099
+    },
+    {
+     "seq": 5,
+     "speaker": 0,
+     "speakerLabel": "나",
+     "text": "고덕그라시움 보신다고 하셨죠? 평형은 어느 쪽 생각하세요?",
+     "startMs": 22559,
+     "endMs": 26971
+    },
+    {
+     "seq": 6,
+     "speaker": 1,
+     "speakerLabel": "고객",
+     "text": "국평이요. 전용 팔십사요. 방 세 개는 꼭 있어야 해서요.",
+     "startMs": 27371,
+     "endMs": 33548
+    },
+    {
+     "seq": 7,
+     "speaker": 2,
+     "speakerLabel": "고객",
+     "text": "아이가 이제 십오 개월이라서요, 단지 안에 어린이집 가까운 동이면 좋겠어요.",
+     "startMs": 33818,
+     "endMs": 40969
+    },
+    {
+     "seq": 8,
+     "speaker": 0,
+     "speakerLabel": "나",
+     "text": "아, 그러면 백이십 번대 동 쪽이 어린이집이 가까워요. 지금은 어디 사세요?",
+     "startMs": 41419,
+     "endMs": 46760
+    },
+    {
+     "seq": 9,
+     "speaker": 1,
+     "speakerLabel": "고객",
+     "text": "명일동에 전세로 살고 있어요. 만기가 내년 이월... 아, 아니다. 삼월 말이에요. 삼월 삼십일일.",
+     "startMs": 47020,
+     "endMs": 55333
+    },
+    {
+     "seq": 10,
+     "speaker": 0,
+     "speakerLabel": "나",
+     "text": "보증금은 어느 정도세요?",
+     "startMs": 55753,
+     "endMs": 57425
+    },
+    {
+     "seq": 11,
+     "speaker": 1,
+     "speakerLabel": "고객",
+     "text": "삼억 팔천이요.",
+     "startMs": 57705,
+     "endMs": 58587
+    },
+    {
+     "seq": 12,
+     "speaker": 0,
+     "speakerLabel": "나",
+     "text": "그럼 자금 계획은 대략 어떻게 되세요?",
+     "startMs": 58877,
+     "endMs": 61338
+    },
+    {
+     "seq": 13,
+     "speaker": 1,
+     "speakerLabel": "고객",
+     "text": "현금은 한 사억 이천 정도 있어요.",
+     "startMs": 61758,
+     "endMs": 64359
+    },
+    {
+     "seq": 14,
+     "speaker": 2,
+     "speakerLabel": "고객",
+     "text": "사억 이천 아니고 사억 오천이지. 지난달에 적금 깬 거 있잖아.",
+     "startMs": 64939,
+     "endMs": 70883
+    },
+    {
+     "seq": 15,
+     "speaker": 1,
+     "speakerLabel": "고객",
+     "text": "아, 맞다. 사억 오천이요. 보증금 삼억 팔천 포함해서요.",
+     "startMs": 71183,
+     "endMs": 76570
+    },
+    {
+     "seq": 16,
+     "speaker": 0,
+     "speakerLabel": "나",
+     "text": "네, 사억 오천이요. 나머지는 대출로 생각하세요?",
+     "startMs": 76910,
+     "endMs": 80022
+    },
+    {
+     "seq": 17,
+     "speaker": 1,
+     "speakerLabel": "고객",
+     "text": "네. 그리고 부모님이 이억 정도 도와주신다고는 하셨는데, 아직 확정은 아니에요.",
+     "startMs": 80522,
+     "endMs": 87441
+    },
+    {
+     "seq": 18,
+     "speaker": 0,
+     "speakerLabel": "나",
+     "text": "그 부분은 자금조달계획서 쓰실 때 증여인지 차용인지 소명이 필요해서요, 확정되면 꼭 말씀해 주세요.",
+     "startMs": 88071,
+     "endMs": 96616
+    },
+    {
+     "seq": 19,
+     "speaker": 1,
+     "speakerLabel": "고객",
+     "text": "네, 알겠습니다.",
+     "startMs": 97096,
+     "endMs": 98489
+    },
+    {
+     "seq": 20,
+     "speaker": 0,
+     "speakerLabel": "나",
+     "text": "예산 상한은 어디까지 보세요?",
+     "startMs": 98899,
+     "endMs": 100989
+    },
+    {
+     "seq": 21,
+     "speaker": 1,
+     "speakerLabel": "고객",
+     "text": "저는 십일억 넘어가면 좀 부담스러워요.",
+     "startMs": 101629,
+     "endMs": 104787
+    },
+    {
+     "seq": 22,
+     "speaker": 2,
+     "speakerLabel": "고객",
+     "text": "나는 고층에 남향이면 십일억 오천까지는 괜찮다고 봐. 어차피 오래 살 집이잖아.",
+     "startMs": 105057,
+     "endMs": 113602
+    },
+    {
+     "seq": 23,
+     "speaker": 1,
+     "speakerLabel": "고객",
+     "text": "음, 근데 대출 이자가... 월 상환이 이백팔십만 원 넘어가면 솔직히 힘들어요.",
+     "startMs": 114192,
+     "endMs": 122412
+    },
+    {
+     "seq": 24,
+     "speaker": 0,
+     "speakerLabel": "나",
+     "text": "아기가 있으시니까 신생아 특례대출 되는지 먼저 확인해 보시면 좋을 것 같아요. 부부 합산 소득이 어느 정도세요?",
+     "startMs": 122782,
+     "endMs": 130770
+    },
+    {
+     "seq": 25,
+     "speaker": 1,
+     "speakerLabel": "고객",
+     "text": "둘이 합쳐서 일억 삼천 정도요.",
+     "startMs": 131080,
+     "endMs": 133634
+    },
+    {
+     "seq": 26,
+     "speaker": 0,
+     "speakerLabel": "나",
+     "text": "그러면 조건이 될 가능성이 있어요. 제가 아는 대출상담사분 연결해 드릴게요.",
+     "startMs": 133934,
+     "endMs": 141039
+    },
+    {
+     "seq": 27,
+     "speaker": 2,
+     "speakerLabel": "고객",
+     "text": "층은 꼭 십 층 이상이었으면 좋겠어요. 저층은 좀 어둡더라고요.",
+     "startMs": 141409,
+     "endMs": 148189
+    },
+    {
+     "seq": 28,
+     "speaker": 0,
+     "speakerLabel": "나",
+     "text": "출퇴근은 어디로 하세요?",
+     "startMs": 148769,
+     "endMs": 150255
+    },
+    {
+     "seq": 29,
+     "speaker": 1,
+     "speakerLabel": "고객",
+     "text": "저는 상일동 고덕비즈밸리 쪽이라 가까워요.",
+     "startMs": 150575,
+     "endMs": 154198
+    },
+    {
+     "seq": 30,
+     "speaker": 2,
+     "speakerLabel": "고객",
+     "text": "저는 잠실로 다녀요. 지하철로 한 사십 분 정도요.",
+     "startMs": 154678,
+     "endMs": 160993
+    },
+    {
+     "seq": 31,
+     "speaker": 0,
+     "speakerLabel": "나",
+     "text": "그럼 지금 나와 있는 것 중에 세 개 정도 추천드릴게요. 첫 번째는 백이 동 십오 층, 십일억 이천이에요. 남향이고요.",
+     "startMs": 161503,
+     "endMs": 170188
+    },
+    {
+     "seq": 32,
+     "speaker": 2,
+     "speakerLabel": "고객",
+     "text": "오, 괜찮네요.",
+     "startMs": 170588,
+     "endMs": 172167
+    },
+    {
+     "seq": 33,
+     "speaker": 0,
+     "speakerLabel": "나",
+     "text": "두 번째는 백십팔 동 이십이 층인데요, 십일억 육천에 나와 있어요. 집주인분이 조금은 조정해 줄 수도 있다고 하셨어요.",
+     "startMs": 172637,
+     "endMs": 182621
+    },
+    {
+     "seq": 34,
+     "speaker": 1,
+     "speakerLabel": "고객",
+     "text": "십일억 육천이면 예산 넘는데요.",
+     "startMs": 182901,
+     "endMs": 185827
+    },
+    {
+     "seq": 35,
+     "speaker": 0,
+     "speakerLabel": "나",
+     "text": "네, 그래서 조정 가능한지 미리 여쭤볼게요. 세 번째는 백삼십오 동 칠 층, 십억 육천이에요.",
+     "startMs": 186097,
+     "endMs": 193295
+    },
+    {
+     "seq": 36,
+     "speaker": 2,
+     "speakerLabel": "고객",
+     "text": "칠 층은 저는 좀... 저층은 싫어요.",
+     "startMs": 193625,
+     "endMs": 198223
+    },
+    {
+     "seq": 37,
+     "speaker": 1,
+     "speakerLabel": "고객",
+     "text": "근데 가격은 제일 괜찮네.",
+     "startMs": 198743,
+     "endMs": 200740
+    },
+    {
+     "seq": 38,
+     "speaker": 0,
+     "speakerLabel": "나",
+     "text": "직접 보시고 판단하시는 게 좋을 것 같아요. 이번 주 토요일, 십일월 십사 일 오후 두 시에 세 군데 다 보실 수 있게 잡아 볼게요.",
+     "startMs": 201160,
+     "endMs": 212398
+    },
+    {
+     "seq": 39,
+     "speaker": 1,
+     "speakerLabel": "고객",
+     "text": "네, 토요일 두 시 좋아요.",
+     "startMs": 212778,
+     "endMs": 214218
+    },
+    {
+     "seq": 40,
+     "speaker": 2,
+     "speakerLabel": "고객",
+     "text": "아기는 어머님한테 맡기고 둘이 갈게요.",
+     "startMs": 214698,
+     "endMs": 219156
+    },
+    {
+     "seq": 41,
+     "speaker": 0,
+     "speakerLabel": "나",
+     "text": "좋습니다. 내일 오전에 매물 리스트랑 대출상담사 연락처 문자로 보내드릴게요.",
+     "startMs": 219586,
+     "endMs": 225252
+    },
+    {
+     "seq": 42,
+     "speaker": 1,
+     "speakerLabel": "고객",
+     "text": "네, 감사합니다. 아, 그리고 백십팔 동은 가격 조정 안 되면 굳이 안 봐도 될 것 같아요.",
+     "startMs": 225622,
+     "endMs": 233470
+    },
+    {
+     "seq": 43,
+     "speaker": 0,
+     "speakerLabel": "나",
+     "text": "네, 그건 금요일까지 확인해서 말씀드릴게요.",
+     "startMs": 234040,
+     "endMs": 236687
+    },
+    {
+     "seq": 44,
+     "speaker": 2,
+     "speakerLabel": "고객",
+     "text": "감사합니다.",
+     "startMs": 237217,
+     "endMs": 238657
+    }
+   ],
+   "analysis": {
+    "summary": "부부(박준혁·이서연)가 고덕그라시움 84㎡ 매수 상담 차 방문. 102동 15층(11.2억, 남향)이 부부 조건의 접점이고 11/14(토) 14시에 세 곳을 임장하기로 함. 부모 지원 2억 확정과 신생아 특례대출 가능 여부가 자금의 관건.",
+    "customerNeed": "아이 키우며 오래 살 10층 이상 남향 84㎡, 월 상환 280만 원 이내",
+    "keyPoints": [
+     {
+      "text": "고덕그라시움 전용 84㎡, 방 3개 필수",
+      "lines": [
+       6
+      ]
+     },
+     {
+      "text": "15개월 아이 — 단지 내 어린이집 가까운 120번대 동 선호",
+      "lines": [
+       7,
+       8
+      ]
+     },
+     {
+      "text": "아내는 10층 이상 남향을 원하고 7층은 거부",
+      "lines": [
+       22,
+       27,
+       36
+      ]
+     },
+     {
+      "text": "부모 지원 2억은 미확정 — 자금조달계획서에 증여·차용 소명 필요",
+      "lines": [
+       17,
+       18
+      ]
+     },
+     {
+      "text": "신생아 특례대출 확인 — 대출상담사 연결 예정",
+      "lines": [
+       24,
+       26
+      ]
+     },
+     {
+      "text": "118동은 가격 조정이 안 되면 임장 제외",
+      "lines": [
+       42,
+       43
+      ]
+     }
+    ],
+    "facts": [
+     {
+      "label": "보유 현금",
+      "value": "4억 5천만 원 (보증금 포함)",
+      "previous": "4억 2천만 원",
+      "lines": [
+       13,
+       14,
+       15
+      ]
+     },
+     {
+      "label": "전세 보증금",
+      "value": "3억 8천만 원",
+      "previous": null,
+      "lines": [
+       11
+      ]
+     },
+     {
+      "label": "전세 만기",
+      "value": "내년 3월 31일",
+      "previous": "내년 2월",
+      "lines": [
+       9
+      ]
+     },
+     {
+      "label": "예산 상한 (남편)",
+      "value": "11억",
+      "previous": null,
+      "lines": [
+       21
+      ]
+     },
+     {
+      "label": "예산 상한 (아내)",
+      "value": "11억 5천만 원",
+      "previous": null,
+      "lines": [
+       22
+      ]
+     },
+     {
+      "label": "월 상환 한계",
+      "value": "280만 원",
+      "previous": null,
+      "lines": [
+       23
+      ]
+     },
+     {
+      "label": "부부 합산 소득",
+      "value": "1억 3천만 원",
+      "previous": null,
+      "lines": [
+       25
+      ]
+     },
+     {
+      "label": "추천 ① 102동 15층",
+      "value": "11억 2천만 원",
+      "previous": null,
+      "lines": [
+       31
+      ]
+     },
+     {
+      "label": "추천 ② 118동 22층",
+      "value": "11억 6천만 원 (조정 여지)",
+      "previous": null,
+      "lines": [
+       33
+      ]
+     },
+     {
+      "label": "추천 ③ 135동 7층",
+      "value": "10억 6천만 원",
+      "previous": null,
+      "lines": [
+       35
+      ]
+     }
+    ],
+    "checks": [
+     {
+      "text": "아내 이름을 말로만 들음 — 연락처에 넣기 전에 '이서연' 철자 확인",
+      "lines": [
+       2
+      ]
+     },
+     {
+      "text": "연락처를 숫자로 불러 줌 — 받아쓴 번호가 맞는지 확인",
+      "lines": [
+       3
+      ]
+     }
+    ],
+    "callType": "매물문의",
+    "sentiment": "positive",
+    "agentSpeaker": 0,
+    "suggestions": [
+     {
+      "type": "calendar_event",
+      "title": "고덕그라시움 3곳 임장 (박준혁·이서연)",
+      "evidence": "이번 주 토요일, 십일월 십사 일 오후 두 시에 세 군데 다 보실 수 있게",
+      "data": {
+       "title": "고덕그라시움 3곳 임장 (박준혁·이서연)",
+       "start": "2026-11-14T14:00",
+       "end": "2026-11-14T15:30",
+       "eventType": "viewing"
+      }
+     },
+     {
+      "type": "task",
+      "title": "매물 리스트·대출상담사 연락처 문자 보내기",
+      "evidence": "내일 오전에 매물 리스트랑 대출상담사 연락처 문자로 보내드릴게요",
+      "data": {
+       "title": "매물 리스트·대출상담사 연락처 문자 보내기",
+       "dueDate": "2026-11-09T10:00",
+       "priority": "high"
+      }
+     },
+     {
+      "type": "task",
+      "title": "118동 집주인에게 가격 조정 가능 여부 확인",
+      "evidence": "그건 금요일까지 확인해서 말씀드릴게요",
+      "data": {
+       "title": "118동 집주인에게 가격 조정 가능 여부 확인",
+       "dueDate": "2026-11-13",
+       "priority": "medium"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "key": "landlord-price",
+   "fileName": "[DEMO-CALL] 집주인_1503호_가격조정.m4a",
+   "audio": null,
+   "direction": "outbound",
+   "calledAt": "2026-11-07T06:30:00.000Z",
+   "contact": {
+    "name": "정민호",
+    "phone": "01000000079"
+   },
+   "purpose": "listing_confirm",
+   "messages": [
+    {
+     "seq": 0,
+     "speaker": 0,
+     "speakerLabel": "나",
+     "text": "사장님 안녕하세요, 그라시움 부동산입니다. 1503호 건으로 연락드렸어요.",
+     "startMs": 1200,
+     "endMs": 6495
+    },
+    {
+     "seq": 1,
+     "speaker": 1,
+     "speakerLabel": "고객",
+     "text": "네, 안녕하세요.",
+     "startMs": 6945,
+     "endMs": 9200
+    },
+    {
+     "seq": 2,
+     "speaker": 0,
+     "speakerLabel": "나",
+     "text": "지난주에 보신 손님이 15억 5천이면 조금 부담스럽다고 하셔서요. 조정 여지가 있으실까 해서요.",
+     "startMs": 9650,
+     "endMs": 16085
+    },
+    {
+     "seq": 3,
+     "speaker": 1,
+     "speakerLabel": "고객",
+     "text": "음… 15억 2천까지는 생각해 볼게요. 그 아래는 어렵고요.",
+     "startMs": 16535,
+     "endMs": 21070
+    },
+    {
+     "seq": 4,
+     "speaker": 0,
+     "speakerLabel": "나",
+     "text": "15억 2천이요. 잔금은 언제쯤 가능하세요?",
+     "startMs": 21520,
+     "endMs": 25200
+    },
+    {
+     "seq": 5,
+     "speaker": 1,
+     "speakerLabel": "고객",
+     "text": "저희가 이사 갈 집이 내년 2월 말 입주라서, 잔금은 2월 28일 이후면 좋겠어요.",
+     "startMs": 25650,
+     "endMs": 31420
+    },
+    {
+     "seq": 6,
+     "speaker": 0,
+     "speakerLabel": "나",
+     "text": "2월 28일 이후요. 세입자는 없으시죠?",
+     "startMs": 31870,
+     "endMs": 35360
+    },
+    {
+     "seq": 7,
+     "speaker": 1,
+     "speakerLabel": "고객",
+     "text": "네, 저희가 직접 살고 있어요. 아 그리고 1504호도 저희 형님 집인데, 그쪽도 내놓을 수 있다고 하더라고요.",
+     "startMs": 35810,
+     "endMs": 43100
+    },
+    {
+     "seq": 8,
+     "speaker": 0,
+     "speakerLabel": "나",
+     "text": "1504호도요? 그럼 형님 연락처를 받을 수 있을까요?",
+     "startMs": 43550,
+     "endMs": 47800
+    },
+    {
+     "seq": 9,
+     "speaker": 1,
+     "speakerLabel": "고객",
+     "text": "제가 오늘 저녁에 문자로 보내 드릴게요.",
+     "startMs": 48250,
+     "endMs": 51740
+    },
+    {
+     "seq": 10,
+     "speaker": 0,
+     "speakerLabel": "나",
+     "text": "네, 그럼 15억 2천으로 광고 가격 바꿔 두고 손님한테도 바로 전달하겠습니다.",
+     "startMs": 52190,
+     "endMs": 57770
+    },
+    {
+     "seq": 11,
+     "speaker": 1,
+     "speakerLabel": "고객",
+     "text": "네, 부탁드려요.",
+     "startMs": 58220,
+     "endMs": 60475
+    }
+   ],
+   "analysis": {
+    "summary": "1503호 집주인 정민호 님이 매매가를 15억 5천에서 15억 2천까지 낮출 수 있다고 함. 잔금은 내년 2월 28일 이후 희망하고 실거주 중이라 세입자는 없음. 1504호(형님 소유)도 매물로 나올 수 있어 오늘 저녁 연락처를 받기로 함.",
+    "customerNeed": "15억 2천 이상, 잔금 내년 2월 28일 이후",
+    "keyPoints": [
+     {
+      "text": "매매가 15억 5천 → 15억 2천까지 조정 가능 (그 아래는 어려움)",
+      "lines": [
+       3
+      ]
+     },
+     {
+      "text": "잔금은 내년 2월 28일 이후 희망 — 이사 갈 집 입주 일정",
+      "lines": [
+       5
+      ]
+     },
+     {
+      "text": "실거주 중, 세입자 없음",
+      "lines": [
+       7
+      ]
+     },
+     {
+      "text": "1504호(형님 소유)도 매물 가능 — 오늘 저녁 연락처 문자",
+      "lines": [
+       7,
+       9
+      ]
+     }
+    ],
+    "facts": [
+     {
+      "label": "희망 매매가",
+      "value": "15억 2천",
+      "previous": "15억 5천",
+      "lines": [
+       2,
+       3
+      ]
+     },
+     {
+      "label": "잔금 가능일",
+      "value": "내년 2월 28일 이후",
+      "previous": null,
+      "lines": [
+       5
+      ]
+     }
+    ],
+    "checks": [
+     {
+      "text": "'1504호'가 형님 집이라고 들림 — 동·호수를 집주인 문자로 다시 확인",
+      "lines": [
+       7
+      ]
+     }
+    ],
+    "callType": "가격협상",
+    "sentiment": "neutral",
+    "agentSpeaker": 0,
+    "suggestions": [
+     {
+      "type": "task",
+      "title": "1503호 광고 가격 15억 2천으로 수정",
+      "evidence": "15억 2천으로 광고 가격 바꿔 두고 손님한테도 바로 전달하겠습니다",
+      "data": {
+       "title": "1503호 광고 가격 15억 2천으로 수정",
+       "dueDate": "2026-11-07T18:00",
+       "priority": "high"
+      }
+     },
+     {
+      "type": "task",
+      "title": "정민호 님 문자로 1504호 형님 연락처 받기",
+      "evidence": "제가 오늘 저녁에 문자로 보내 드릴게요",
+      "data": {
+       "title": "정민호 님 문자로 1504호 형님 연락처 받기",
+       "dueDate": "2026-11-07T20:00",
+       "priority": "medium"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "key": "unknown-jeonse",
+   "fileName": "[DEMO-CALL] 미등록번호_전세문의.m4a",
+   "audio": null,
+   "direction": "inbound",
+   "calledAt": "2026-11-08T01:40:00.000Z",
+   "contact": null,
+   "phoneNumber": "01000000081",
+   "purpose": "general",
+   "messages": [
+    {
+     "seq": 0,
+     "speaker": 1,
+     "speakerLabel": "고객",
+     "text": "여보세요, 거기 부동산이죠? 그라시움 전세 있나 해서요.",
+     "startMs": 800,
+     "endMs": 5145
+    },
+    {
+     "seq": 1,
+     "speaker": 0,
+     "speakerLabel": "나",
+     "text": "네, 어떤 평형 찾으세요?",
+     "startMs": 5595,
+     "endMs": 8325
+    },
+    {
+     "seq": 2,
+     "speaker": 1,
+     "speakerLabel": "고객",
+     "text": "59요. 방 세 개짜리요. 보증금은 6억 정도 생각하고 있어요.",
+     "startMs": 8775,
+     "endMs": 13500
+    },
+    {
+     "seq": 3,
+     "speaker": 0,
+     "speakerLabel": "나",
+     "text": "입주는 언제 하셔야 해요?",
+     "startMs": 13950,
+     "endMs": 16680
+    },
+    {
+     "seq": 4,
+     "speaker": 1,
+     "speakerLabel": "고객",
+     "text": "내년 1월 중순이요. 아이 학교 때문에 초등학교 가까운 동이면 좋겠어요.",
+     "startMs": 17130,
+     "endMs": 22330
+    },
+    {
+     "seq": 5,
+     "speaker": 0,
+     "speakerLabel": "나",
+     "text": "네, 나와 있는 것 정리해서 문자로 보내 드릴게요. 성함이 어떻게 되세요?",
+     "startMs": 22780,
+     "endMs": 28075
+    },
+    {
+     "seq": 6,
+     "speaker": 1,
+     "speakerLabel": "고객",
+     "text": "김 서윤이요.",
+     "startMs": 28525,
+     "endMs": 30590
+    },
+    {
+     "seq": 7,
+     "speaker": 0,
+     "speakerLabel": "나",
+     "text": "김서윤 님, 이 번호로 보내 드릴게요.",
+     "startMs": 31040,
+     "endMs": 34435
+    }
+   ],
+   "analysis": {
+    "summary": "미등록 번호의 고객(김서윤으로 들림)이 그라시움 59㎡ 전세를 문의. 보증금 6억 안팎, 내년 1월 중순 입주, 초등학교 가까운 동 희망. 나와 있는 매물을 문자로 보내기로 함.",
+    "customerNeed": "그라시움 59㎡(방 3) 전세, 보증금 6억 안팎, 내년 1월 중순 입주",
+    "keyPoints": [
+     {
+      "text": "그라시움 59㎡ 방 3개 전세 찾음",
+      "lines": [
+       0,
+       2
+      ]
+     },
+     {
+      "text": "초등학교 가까운 동 선호 (아이 학교)",
+      "lines": [
+       4
+      ]
+     }
+    ],
+    "facts": [
+     {
+      "label": "희망 보증금",
+      "value": "6억 정도",
+      "previous": null,
+      "lines": [
+       2
+      ]
+     },
+     {
+      "label": "입주 희망",
+      "value": "내년 1월 중순",
+      "previous": null,
+      "lines": [
+       4
+      ]
+     }
+    ],
+    "checks": [
+     {
+      "text": "이름을 '김서윤'으로 받아씀 — 연락처로 등록하기 전에 확인",
+      "lines": [
+       6,
+       7
+      ]
+     }
+    ],
+    "callType": "매물문의",
+    "sentiment": "positive",
+    "agentSpeaker": 0,
+    "suggestions": [
+     {
+      "type": "task",
+      "title": "김서윤 님께 그라시움 59 전세 매물 목록 문자 보내기",
+      "evidence": "나와 있는 것 정리해서 문자로 보내 드릴게요",
+      "data": {
+       "title": "김서윤 님께 그라시움 59 전세 매물 목록 문자 보내기",
+       "dueDate": "2026-11-08T17:00",
+       "priority": "high"
+      }
+     }
+    ]
+   }
+  }
+ ]
+}

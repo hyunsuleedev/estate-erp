@@ -1,3 +1,4 @@
+import type { ContactCategoryKey, ContactRoleKey } from '@estate-erp/shared';
 import type { RequestFn } from '../client.js';
 import type { PaginatedResponse } from '../types.js';
 import type { BuyerRequirement } from './buyer-requirements.js';
@@ -46,7 +47,20 @@ export interface Contact {
   createdAt: string;
   updatedAt: string;
   _count?: ContactCounts;
+  /** 희망조건·매물·세입·거래 데이터에서 계산한 역할. 목록 조회에만 포함된다. */
+  roles?: ContactRoleKey[];
   latestConsultation?: ContactLatestConsultation | null;
+}
+
+export interface ContactGroupSummary {
+  name: string;
+  count: number;
+}
+
+export interface ContactCategorySummary {
+  total: number;
+  counts: Record<ContactCategoryKey, number>;
+  groups: ContactGroupSummary[];
 }
 
 export interface ContactDetail extends Contact {
@@ -60,6 +74,7 @@ export interface ContactDetail extends Contact {
 export interface ContactsFilter {
   search?: string;
   tags?: string;
+  category?: ContactCategoryKey;
   hasPropertyContact?: boolean;
   hasBuyerReq?: boolean;
   sortBy?: 'name' | 'createdAt' | 'updatedAt';
@@ -93,6 +108,40 @@ export function createContactsApi(request: RequestFn) {
     findAll: (filters?: ContactsFilter) =>
       request<PaginatedResponse<Contact>>('/contacts', {
         params: filters as Record<string, string | number | boolean | undefined>,
+      }),
+
+    getCategorySummary: () =>
+      request<ContactCategorySummary>('/contacts/categories'),
+
+    /** contactIds를 주면 만들기와 넣기를 서버가 한 번에 처리한다. 저장된 이름은 응답의 name을 쓴다. */
+    createGroup: (name: string, contactIds?: string[]) =>
+      request<{ name: string; updated: number }>('/contact-groups', {
+        method: 'POST',
+        body: { name, contactIds },
+      }),
+
+    renameGroup: (name: string, newName: string) =>
+      request<{ name: string }>('/contact-groups', {
+        method: 'PATCH',
+        body: { name, newName },
+      }),
+
+    deleteGroup: (name: string) =>
+      request<{ removedFrom: number }>('/contact-groups', {
+        method: 'DELETE',
+        params: { name },
+      }),
+
+    addGroupMembers: (name: string, contactIds: string[]) =>
+      request<{ updated: number }>('/contact-groups/members', {
+        method: 'POST',
+        body: { name, contactIds },
+      }),
+
+    removeGroupMembers: (name: string, contactIds: string[]) =>
+      request<{ updated: number }>('/contact-groups/members/remove', {
+        method: 'POST',
+        body: { name, contactIds },
       }),
 
     findByPhone: (phone: string) =>

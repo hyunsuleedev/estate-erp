@@ -5,6 +5,7 @@ import type { ClerkClient } from '@clerk/backend';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { UserRole } from './auth.types';
+import { Auth0AuthService } from './auth0-auth.service';
 
 type ClerkUserForProvisioning = Awaited<
   ReturnType<ClerkClient['users']['getUser']>
@@ -12,7 +13,10 @@ type ClerkUserForProvisioning = Awaited<
 
 type AuthenticatedBearerUser = {
   userId: string;
-  clerkUserId: string;
+  /** Clerk 세션 토큰으로 들어온 경우 */
+  clerkUserId?: string;
+  /** 데스크톱 Auth0 시험 모드 토큰으로 들어온 경우 */
+  auth0UserId?: string;
   officeId: string;
   role: UserRole;
 };
@@ -37,13 +41,31 @@ export class ClerkAuthService {
   constructor(
     private readonly config: ConfigService,
     private readonly prisma: PrismaService,
+    private readonly auth0: Auth0AuthService,
   ) {}
 
-  async authenticateBearerToken(token: string, timings?: BearerAuthTimings) {
+  /**
+   * REST guard와 실시간 연결이 함께 쓰는 bearer 확인 입구.
+   * 데스크톱 Auth0 시험 모드 토큰(발급자가 AUTH0_DOMAIN)은 Auth0 검증으로 보내고,
+   * 나머지는 지금처럼 Clerk 세션 토큰으로 확인한다.
+   */
+  async authenticateBearerToken(
+    token: string,
+    timings?: BearerAuthTimings,
+  ): Promise<AuthenticatedBearerUser> {
     const cached = this.getCachedBearerAuth(token);
     if (cached) {
       if (timings) timings.cacheHit = true;
       return cached;
+    }
+
+    if (this.auth0.isAuth0Token(token)) {
+      const startedAt = Date.now();
+      const { user, expiresAtSeconds } =
+        await this.auth0.authenticateAccessToken(token);
+      if (timings) timings.verifyTokenMs = Date.now() - startedAt;
+      this.cacheBearerAuth(token, user, expiresAtSeconds);
+      return user;
     }
 
     const secretKey = this.getSecretKey();

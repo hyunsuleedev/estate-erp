@@ -41,6 +41,25 @@ model Contact {
 }
 
 // ============================================================
+// 연락처 그룹 (사무소가 직접 만드는 분류)
+// 소속은 Contact.tags에 같은 이름으로 저장한다. 이 표는 연락처가 아직 없는
+// 그룹도 사이드바에 남도록 이름을 기억한다.
+// ============================================================
+
+model ContactGroup {
+  id        String   @id @default(uuid()) @db.Uuid
+  officeId  String   @map("office_id") @db.Uuid
+  name      String
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  office Office @relation(fields: [officeId], references: [id])
+
+  @@unique([officeId, name])
+  @@map("contact_groups")
+}
+
+// ============================================================
 // 연락처 전화번호 (한 사람 ↔ 여러 번호)
 // ============================================================
 

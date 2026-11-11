@@ -5,6 +5,8 @@ export interface CurrentUserPayload {
   userId: string;
   /** Clerk user.id */
   clerkUserId?: string;
+  /** Auth0 user_id (데스크톱 Auth0 시험 모드) */
+  auth0UserId?: string;
   officeId: string;
   role: string;
 }

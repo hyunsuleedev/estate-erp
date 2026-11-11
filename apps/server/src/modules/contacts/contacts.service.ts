@@ -22,10 +22,21 @@ import {
   buyerIntakeContactsInclude,
   withBuyerRequirementContact,
 } from '../buyer-requirements/buyer-requirement.presenter';
+import {
+  CONTACT_CATEGORY_KEYS,
+  type ContactCategoryKey,
+} from '@estate-erp/shared';
+import {
+  CONTACT_ROLE_INCLUDE,
+  CONTACT_ROLE_INTAKE_SELECT,
+  contactCategoryWhere,
+  deriveContactRoles,
+} from './contact-categories';
 
 export interface ContactSearchQuery {
   search?: string;
   tags?: string[];
+  category?: ContactCategoryKey;
   hasPropertyContact?: boolean;
   hasBuyerReq?: boolean;
   sortBy?: 'name' | 'createdAt' | 'updatedAt';
@@ -72,6 +83,11 @@ export class ContactsService {
       where.tags = { hasEvery: query.tags };
     }
 
+    if (query.category) {
+      // 검색의 OR와 섞이지 않도록 AND로 묶는다.
+      where.AND = [contactCategoryWhere(query.category)];
+    }
+
     if (query.hasPropertyContact) {
       where.propertyContacts = { some: {} };
     }
@@ -95,10 +111,14 @@ export class ContactsService {
           _count: {
             select: { propertyContacts: true, consultations: true },
           },
+          ...CONTACT_ROLE_INCLUDE,
           buyerIntakeContacts: {
             select: {
               buyerIntake: {
-                select: { _count: { select: { requirements: true } } },
+                select: {
+                  ...CONTACT_ROLE_INTAKE_SELECT,
+                  _count: { select: { requirements: true } },
+                },
               },
             },
           },
@@ -122,7 +142,16 @@ export class ContactsService {
 
     return {
       items: items.map(
-        ({ consultations, buyerIntakeContacts, _count, ...contact }) => ({
+        ({
+          consultations,
+          buyerIntakeContacts,
+          propertyContacts,
+          tenants,
+          dealsAsBuyer,
+          dealsAsSeller,
+          _count,
+          ...contact
+        }) => ({
           ...withPrimaryPhone(contact),
           _count: {
             ..._count,
@@ -132,10 +161,59 @@ export class ContactsService {
               0,
             ),
           },
+          roles: deriveContactRoles({
+            buyerIntakeContacts,
+            propertyContacts,
+            tenants,
+            dealsAsBuyer,
+            dealsAsSeller,
+          }),
           latestConsultation: this.formatLatestConsultation(consultations[0]),
         }),
       ),
       pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+    };
+  }
+
+  /** 사이드바의 분류별 건수와 그룹 목록. 그룹은 만들어 둔 이름과 실제 쓰는 태그를 합친다. */
+  async getCategorySummary(officeId: string) {
+    const now = new Date();
+    const [total, categoryCounts, tagRows, registeredGroups] = await Promise.all(
+      [
+        this.prisma.contact.count({ where: { officeId } }),
+        Promise.all(
+          CONTACT_CATEGORY_KEYS.map((key) =>
+            this.prisma.contact.count({
+              where: { officeId, AND: [contactCategoryWhere(key, now)] },
+            }),
+          ),
+        ),
+        this.prisma.$queryRaw<Array<{ tag: string; count: number }>>`
+          SELECT tag, COUNT(*)::int AS count
+          FROM "contacts", unnest("tags") AS tag
+          WHERE "office_id" = ${officeId}::uuid
+          GROUP BY tag
+        `,
+        this.prisma.contactGroup.findMany({
+          where: { officeId },
+          select: { name: true },
+        }),
+      ],
+    );
+
+    const groupCounts = new Map<string, number>(
+      registeredGroups.map(({ name }) => [name, 0]),
+    );
+    for (const { tag, count } of tagRows) groupCounts.set(tag, count);
+
+    return {
+      total,
+      counts: Object.fromEntries(
+        CONTACT_CATEGORY_KEYS.map((key, index) => [key, categoryCounts[index]]),
+      ) as Record<ContactCategoryKey, number>,
+      groups: [...groupCounts]
+        .map(([name, count]) => ({ name, count }))
+        .sort((left, right) => left.name.localeCompare(right.name, 'ko')),
     };
   }
 

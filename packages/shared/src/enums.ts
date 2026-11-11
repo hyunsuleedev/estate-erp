@@ -45,6 +45,47 @@ export type ContactRelationType =
 
 export const CONTACT_RELATION_TYPES = Object.values(ContactRelationType);
 
+/** 그룹 넣기·빼기 한 번에 처리할 수 있는 연락처 수 */
+export const CONTACT_GROUP_MEMBERS_MAX = 500;
+
+/** 연락처 행에 표시하는 구분. 태그와 달리 희망조건·매물·세입·거래 데이터에서 자동으로 계산한다. */
+export const CONTACT_ROLE_KEYS = [
+  'buyer_sale',
+  'buyer_rent',
+  'owner',
+  'tenant',
+  'representative',
+  'in_deal',
+] as const;
+export type ContactRoleKey = (typeof CONTACT_ROLE_KEYS)[number];
+
+/** 연락처 목록의 자동 분류. 역할에 연락 상태와 정리 필요 항목을 더한다. */
+export const CONTACT_CATEGORY_KEYS = [
+  ...CONTACT_ROLE_KEYS,
+  'follow_up',
+  'recent_consult',
+  'stale_consult',
+  'no_consult',
+  'uncategorized',
+  'no_phone',
+] as const;
+export type ContactCategoryKey = (typeof CONTACT_CATEGORY_KEYS)[number];
+
+export const CONTACT_CATEGORY_LABELS: Record<ContactCategoryKey, string> = {
+  buyer_sale: '매수 희망',
+  buyer_rent: '임차 희망',
+  owner: '소유자',
+  tenant: '세입자',
+  representative: '대리인·법무·세무',
+  in_deal: '거래 중',
+  follow_up: '연락할 사람',
+  recent_consult: '최근 30일 상담',
+  stale_consult: '30일 넘게 연락 없음',
+  no_consult: '상담 없음',
+  uncategorized: '분류 없음',
+  no_phone: '전화번호 없음',
+};
+
 /** 구매 의뢰 안에서 Contact가 맡는 업무상 역할. 가족관계와는 별개다. */
 export const BuyerIntakeContactRole = {
   BUYER: 'buyer',

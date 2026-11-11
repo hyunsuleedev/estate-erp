@@ -1,5 +1,3 @@
-import type { TranscriptUtterance } from '../stt/stt.types';
-
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
 
 /** Date → "2026-11-02(월) 14:30" (한국 시간) */
@@ -9,12 +7,19 @@ export function formatKstDateTime(date: Date) {
   return `${kst.getUTCFullYear()}-${pad(kst.getUTCMonth() + 1)}-${pad(kst.getUTCDate())}(${WEEKDAYS[kst.getUTCDay()]}) ${pad(kst.getUTCHours())}:${pad(kst.getUTCMinutes())}`;
 }
 
+/** 통화 시작부터의 시각 ms → "1:05" */
+function formatOffset(ms: number) {
+  const totalSec = Number.isFinite(ms) ? Math.max(0, Math.floor(ms / 1000)) : 0;
+  return `${Math.floor(totalSec / 60)}:${String(totalSec % 60).padStart(2, '0')}`;
+}
+
 export interface AnalysisPromptInput {
   calledAt: Date;
   direction: string;
   durationSec: number;
   contactName: string | null;
-  utterances: Pick<TranscriptUtterance, 'speaker' | 'text'>[];
+  /** seq는 받아쓰기 줄 번호다. 분석의 근거 줄(lines)이 이 번호를 가리킨다. */
+  utterances: Array<{ seq: number; speaker: number; text: string; startMs: number }>;
   contextText: string;
   /** 이미 반영·무시한 제안 (다시 제안하지 않게) */
   resolvedSuggestions: Array<{ type: string; title: string; status: string }>;
@@ -24,7 +29,9 @@ export const SYSTEM_INSTRUCTION = `당신은 한국 부동산 중개사무소의
 통화 받아쓰기와 사무소 데이터를 보고, 상담 기록에 남길 요약과 중개사가 확인 후 반영할 업무 제안을 JSON 하나로만 답합니다.
 
 원칙
-- 받아쓰기는 숫자·단지명·동호수·화자를 틀릴 수 있습니다. 사무소 데이터의 단지명과 비슷하게 들리면 그 단지로 보정하되, 확신이 없으면 제안하지 말고 keyPoints에 "확인 필요"로 남기세요.
+- 받아쓰기는 숫자·단지명·동호수·이름·화자를 틀릴 수 있습니다. 사무소 데이터의 단지명과 비슷하게 들리면 그 단지로 보정하되, 확신이 없으면 제안하지 말고 checks에 남기세요.
+- 받아쓰기 각 줄 앞의 [번호]가 줄 번호입니다. keyPoints·facts·checks의 lines에는 근거가 된 줄 번호를 1~3개 넣습니다. 받아쓰기에 없는 번호는 넣지 마세요.
+- facts에는 통화에서 말한 값을 그대로 옮깁니다. 여러 값을 더하거나 계산하지 마세요.
 - 통화에서 실제로 요청·약속·합의된 것만 제안합니다. 추측으로 제안하지 마세요.
 - 매물·고객·매칭은 사무소 데이터에 있는 참조(P1, I1, L1, B1, R1, M1, S1 형식)로만 가리킵니다. 목록에 없으면 참조를 지어내지 말고 그 제안을 하지 마세요.
 - 금액은 만원 단위 정수입니다. 15억 8천만 원 → 158000, 3억 → 30000, 월세 150만 원 → 150.
@@ -37,7 +44,9 @@ export const SYSTEM_INSTRUCTION = `당신은 한국 부동산 중개사무소의
 export const OUTPUT_FORMAT = `응답 JSON 형식
 {
   "summary": "누가 왜 전화했고 무엇이 정해졌는지 2~3문장",
-  "keyPoints": ["통화에서 나온 핵심 정보 (단지·호수·가격·조건·일정 등 언급된 것만)"],
+  "keyPoints": [{ "text": "통화에서 나온 핵심 정보 한 줄 (단지·호수·가격·조건·일정 등 언급된 것만)", "lines": [근거 줄 번호] }],
+  "facts": [{ "label": "무엇의 값인지 (예: 보유 현금, 예산 상한, 전세 만기)", "value": "통화에서 말한 값", "previous": "말하다 고쳤으면 고치기 전 값, 아니면 null", "lines": [근거 줄 번호] }],
+  "checks": [{ "text": "중개사가 원문을 듣고 확인할 점 (잘못 들렸을 수 있는 이름·단지명·숫자, 등록된 연락처 이름과 다르게 들린 이름 등)", "lines": [근거 줄 번호] }],
   "customerNeed": "고객이 원하는 것 한 줄 (없으면 빈 문자열)",
   "callType": "매물문의 | 소유주연락 | 매물확인 | 세입자문의 | 가격협상 | 일정조율 | 계약관련 | 하자수리 | 업체통화 | 공동중개 | 기타",
   "sentiment": "positive | neutral | negative",
@@ -48,6 +57,8 @@ export const OUTPUT_FORMAT = `응답 JSON 형식
   ]
 }
 
+facts: 금액·면적·층·동호수·날짜·기한처럼 숫자로 된 중요한 값만, 최대 10개. 없으면 []
+checks: 확인할 점이 없으면 []
 links: 이 통화가 주로 다룬 대상의 참조 (없으면 null)
 
 제안 종류와 data
@@ -69,12 +80,19 @@ links: 이 통화가 주로 다룬 대상의 참조 (없으면 null)
 
 export function buildAnalysisPrompt(input: AnalysisPromptInput) {
   const directionText =
-    input.direction === 'outbound' ? '발신 (사무소가 상대방에게 건 전화)' : '수신 (상대방이 사무소로 건 전화)';
+    input.direction === 'visit'
+      ? '방문 상담 (사무소에서 고객과 마주 보고 나눈 대화 녹음)'
+      : input.direction === 'outbound'
+        ? '발신 (사무소가 상대방에게 건 전화)'
+        : '수신 (상대방이 사무소로 건 전화)';
   const counterpart = input.contactName
     ? `${input.contactName} (등록된 연락처)`
     : '미등록 번호 — 연락처가 없으므로 buyer_requirement_*, match_*, listing_confirm은 제안하지 마세요';
   const transcript = input.utterances
-    .map((utterance) => `화자${utterance.speaker}: ${utterance.text}`)
+    .map(
+      (utterance) =>
+        `[${utterance.seq}] ${formatOffset(utterance.startMs)} 화자${utterance.speaker}: ${utterance.text}`,
+    )
     .join('\n');
   const resolved =
     input.resolvedSuggestions.length > 0

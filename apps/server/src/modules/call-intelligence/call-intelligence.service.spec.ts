@@ -132,6 +132,17 @@ describe('CallIntelligenceService.analyze', () => {
     });
   });
 
+  it('records a visit recording as a visit consultation', async () => {
+    const { service, tx } = setup(recording({ direction: 'visit' }));
+
+    await service.analyze('recording-1');
+
+    expect(tx.consultation.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ type: 'visit', callRecordingId: 'recording-1' }),
+      select: { id: true },
+    });
+  });
+
   it('discards the result when a newer analysis started meanwhile', async () => {
     const { service, tx } = setup(recording());
     tx.callRecording.updateMany.mockResolvedValue({ count: 0 });
@@ -195,5 +206,82 @@ describe('CallIntelligenceService.analyze', () => {
     expect(update.where).toEqual({ id: 'consultation-1' });
     expect(update.data).toMatchObject({ contactId: 'contact-B' });
     expect(update.data).not.toHaveProperty('content');
+  });
+});
+
+describe('CallIntelligenceService.transcribe', () => {
+  const originalProvider = process.env.STT_PROVIDER;
+  const originalKey = process.env.GEMINI_API_KEY;
+
+  afterEach(() => {
+    process.env.STT_PROVIDER = originalProvider;
+    process.env.GEMINI_API_KEY = originalKey;
+  });
+
+  it('clears evidence lines of the latest analysis under the row lock when a new transcript replaces the old one', async () => {
+    // 개발용 받아쓰기 + 분석 키 없음: 새 분석은 돌지 않고 예전 분석이 남는 상황
+    process.env.STT_PROVIDER = 'dummy';
+    delete process.env.GEMINI_API_KEY;
+    // 받아쓰기 도중 다른 분석(B)이 상담 기록까지 갱신하고 끝났다.
+    // 잠금 아래에서 읽은 최신 분석 B를 기준으로 줄 번호만 지워야 한다 —
+    // 예전 값으로 되돌리면 B가 쓴 상담 기록을 사람이 고친 것으로 오인해 다음 분석이 갱신하지 못한다.
+    const latestAnalysis = {
+      summary: '분석 B 요약',
+      keyPoints: ['15억 5천으로 인하'],
+      points: [{ text: '15억 5천으로 인하', lines: [4] }],
+      facts: [{ label: '희망가', value: '15억 5천', previous: null, lines: [4, 5] }],
+      checks: [{ text: '단지명 확인', lines: [2] }],
+      consultationContent: '분석 B 요약\n· 15억 5천으로 인하',
+    };
+    const order: string[] = [];
+    const tx = {
+      callRecording: {
+        update: jest.fn(async (args: { data: Record<string, unknown> }) => {
+          order.push(args.data.analysisRunId ? 'lock' : 'complete');
+          return { analysis: latestAnalysis };
+        }),
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+      },
+      callRecordingMessage: {
+        deleteMany: jest.fn(async () => order.push('delete-messages')),
+        createMany: jest.fn(async () => order.push('create-messages')),
+      },
+    };
+    const prisma = {
+      callRecording: {
+        update: jest.fn().mockResolvedValue({ ...recording(), messages: [] }),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
+      $transaction: jest.fn(async (fn: (client: typeof tx) => Promise<unknown>) => fn(tx)),
+    };
+    const service = new CallIntelligenceService(prisma as never);
+
+    await service.transcribe('recording-1', {
+      originalname: 'call.m4a',
+      size: 2048,
+      buffer: Buffer.from(''),
+      mimetype: 'audio/mp4',
+    } as Express.Multer.File);
+
+    // runId를 먼저 바꿔 행을 잠그고(예전 받아쓰기로 돌던 분석은 이후 저장 불가) 최신 분석을 돌려받는다
+    expect(order).toEqual(['lock', 'delete-messages', 'create-messages', 'complete']);
+    expect(tx.callRecording.update.mock.calls[0][0]).toEqual({
+      where: { id: 'recording-1' },
+      data: { analysisRunId: expect.any(String) },
+      select: { analysis: true },
+    });
+    expect(tx.callRecording.update.mock.calls[1][0]).toEqual({
+      where: { id: 'recording-1' },
+      data: {
+        sttStatus: 'completed',
+        sttError: null,
+        analysis: {
+          ...latestAnalysis,
+          points: [{ text: '15억 5천으로 인하', lines: [] }],
+          facts: [{ label: '희망가', value: '15억 5천', previous: null, lines: [] }],
+          checks: [{ text: '단지명 확인', lines: [] }],
+        },
+      },
+    });
   });
 });

@@ -36,7 +36,11 @@ function createService() {
   };
 
   return {
-    service: new ClerkAuthService(config as never, prisma as never),
+    service: new ClerkAuthService(
+      config as never,
+      prisma as never,
+      { isAuth0Token: () => false } as never,
+    ),
     prisma,
   };
 }

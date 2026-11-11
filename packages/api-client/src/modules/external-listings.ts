@@ -90,6 +90,8 @@ export interface ExternalListingGroup {
   ownerVerified?: boolean;
   /** 마지막 수집 세션과 비교한 동일주소 그룹의 발견 상태. */
   discoveryStatus?: ExternalListingDiscoveryStatus;
+  /** 가격 변경 표시의 기준 시각. 스냅샷 닫기 결과의 비교 기준과 같다. */
+  priceChangeSince?: string | null;
   /** 같은 그룹에서 확인된 우리 사무소 광고의 게시일 (YYYYMMDD). */
   ownAdvertisementYmd?: string | null;
   offerRanking?: number | null;
@@ -127,6 +129,12 @@ export interface SnapshotSession {
   staleListingsMarked: number | null;
   createdAt: string;
   updatedAt: string;
+}
+
+/** 열린 스냅샷. 닫으면 남을 광고와 내려갈 광고 수를 함께 준다. */
+export interface ActiveSnapshotSession extends SnapshotSession {
+  receivedListingCount: number;
+  pendingRemovalCount: number;
 }
 
 export interface ExternalListingPriceTerms {
@@ -228,11 +236,29 @@ export interface BatchUpsertDto {
   groups: ListingGroupInput[];
 }
 
-export interface ManualListingsDto {
-  siteId: string;
-  transactionType: ExternalListingTransactionType;
-  groups: ListingGroupInput[];
+export interface AddSnapshotListingDto {
+  source: string;
+  listing: BatchListingItem;
 }
+
+export type SnapshotListingPatch = Partial<
+  Pick<
+    BatchListingItem,
+    | 'price'
+    | 'deposit'
+    | 'monthlyRent'
+    | 'articleName'
+    | 'articleFeatureDesc'
+    | 'detailDescription'
+    | 'articleConfirmYmd'
+    | 'floorInfo'
+    | 'direction'
+    | 'realtorName'
+    | 'representativeTelNo'
+    | 'ranking'
+    | 'sourceUrl'
+  >
+>;
 
 export interface BatchUpsertResult {
   batchId?: string;
@@ -281,30 +307,13 @@ export function createExternalListingsApi(request: RequestFn) {
         body: dto,
       }),
 
-    /**
-     * 수동 입력. 스냅샷 없이 저장하며 다른 광고를 비활성화하지 않는다.
-     * 최대 100건/요청.
-     */
-    createManualListings: (dto: ManualListingsDto) =>
-      request<BatchUpsertResult>('/external-listings/manual', {
-        method: 'POST',
-        body: dto,
-      }),
-
-    /** 수동 입력 광고 내리기. 같은 번호를 다시 입력하면 활성 상태로 돌아온다. */
-    endManualListing: (listingId: string) =>
-      request<{ id: string; isActive: boolean }>(
-        `/external-listings/listings/${listingId}/end`,
-        { method: 'POST' },
-      ),
-
     // ─── 스냅샷 세션 ───────────────────────────────────────────
 
     getActiveSession: async (
       siteId: string,
       transactionType: ExternalListingTransactionType,
     ) =>
-      (await request<SnapshotSession | null | undefined>(
+      (await request<ActiveSnapshotSession | null | undefined>(
         '/external-listings/sessions/active',
         {
           params: { siteId, transactionType },
@@ -330,5 +339,39 @@ export function createExternalListingsApi(request: RequestFn) {
       request<SnapshotSession>(`/external-listings/sessions/${id}/cancel`, {
         method: 'POST',
       }),
+
+    // ─── 열린 스냅샷 안의 유지·추가·수정·삭제 ──────────────────
+
+    keepSnapshotListings: (sessionId: string, groupIds: string[]) =>
+      request<{ keptGroupCount: number; keptListingCount: number }>(
+        `/external-listings/sessions/${sessionId}/keep`,
+        { method: 'POST', body: { groupIds } },
+      ),
+
+    addSnapshotListing: (
+      sessionId: string,
+      groupId: string,
+      dto: AddSnapshotListingDto,
+    ) =>
+      request<ExternalListing>(
+        `/external-listings/sessions/${sessionId}/groups/${groupId}/listings`,
+        { method: 'POST', body: dto },
+      ),
+
+    updateSnapshotListing: (
+      sessionId: string,
+      listingId: string,
+      patch: SnapshotListingPatch,
+    ) =>
+      request<ExternalListing>(
+        `/external-listings/sessions/${sessionId}/listings/${listingId}`,
+        { method: 'PATCH', body: patch },
+      ),
+
+    removeSnapshotListing: (sessionId: string, listingId: string) =>
+      request<{ id: string; result: 'deleted' | 'excluded' | 'unchanged' }>(
+        `/external-listings/sessions/${sessionId}/listings/${listingId}`,
+        { method: 'DELETE' },
+      ),
   };
 }

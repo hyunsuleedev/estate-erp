@@ -1,6 +1,6 @@
 import type { CallContext, RefEntry } from './call-context';
 import { allowedNextMatchStages, formatManwon } from './call-context';
-import { buildConsultationContent, parseCallAnalysis } from './call-analysis.parser';
+import { buildConsultationContent, parseCallAnalysis, stripEvidenceLines } from './call-analysis.parser';
 
 const ids = {
   property: '10000000-0000-4000-8000-000000000001',
@@ -70,6 +70,7 @@ describe('call analysis parser', () => {
       },
       context(),
       [0, 1],
+      [],
     );
 
     expect(parsed.suggestions).toEqual([
@@ -109,6 +110,7 @@ describe('call analysis parser', () => {
       },
       context({ contactId: null, contactName: null }),
       [0, 1],
+      [],
     );
     expect(parsed.suggestions.map((item) => item.type)).toEqual(['task']);
     expect(parsed.dropped).toEqual([{ type: 'buyer_requirement_create', reason: '연락처가 필요한 제안' }]);
@@ -127,6 +129,7 @@ describe('call analysis parser', () => {
       },
       context(),
       [0, 1],
+      [],
     );
     expect(parsed.suggestions.map((item) => item.title)).toEqual(['새 매칭', '임장 가능 확인']);
     expect(parsed.dropped.map((item) => item.reason)).toEqual([
@@ -150,6 +153,7 @@ describe('call analysis parser', () => {
       },
       context(),
       [0],
+      [],
     );
     expect(parsed.suggestions[0].payload).toEqual({
       buyerReqId: ids.requirement,
@@ -161,17 +165,73 @@ describe('call analysis parser', () => {
   });
 
   it('fails without a summary and ignores an unknown agent speaker', () => {
-    expect(() => parseCallAnalysis({ suggestions: [] }, context(), [0])).toThrow('분석 결과에 요약이 없습니다');
-    expect(parseCallAnalysis({ summary: '요약', agentSpeaker: 5 }, context(), [0, 1]).agentSpeaker).toBeNull();
+    expect(() => parseCallAnalysis({ suggestions: [] }, context(), [0], [])).toThrow('분석 결과에 요약이 없습니다');
+    expect(parseCallAnalysis({ summary: '요약', agentSpeaker: 5 }, context(), [0, 1], []).agentSpeaker).toBeNull();
+  });
+
+  it('keeps evidence lines that exist in the transcript and accepts the old string format', () => {
+    const parsed = parseCallAnalysis(
+      {
+        summary: '부부가 그라시움 84 매수 상담',
+        keyPoints: [
+          { text: '84㎡ 방 3개, 10층 이상', lines: [3, 3, 99, '4', 1.5, 7, 8] },
+          '예전 형식 글',
+          { text: '   ', lines: [1] },
+        ],
+        facts: [
+          { label: '보유 현금', value: '4억 5천만 원', previous: '4억 2천만 원', lines: [12] },
+          { label: '전세 만기', value: '2027-03-31', previous: 'null', lines: [] },
+          { label: '예산', value: '11억', previous: '11억' },
+          { label: '', value: '값만 있음' },
+        ],
+        checks: [{ text: "아내 이름이 '이서현'으로 들림 — 연락처 확인", lines: [20] }],
+      },
+      context(),
+      [0, 1],
+      [1, 3, 4, 7, 8, 12, 20],
+    );
+
+    expect(parsed.points).toEqual([
+      { text: '84㎡ 방 3개, 10층 이상', lines: [3, 4, 7] },
+      { text: '예전 형식 글', lines: [] },
+    ]);
+    expect(parsed.keyPoints).toEqual(['84㎡ 방 3개, 10층 이상', '예전 형식 글']);
+    expect(parsed.facts).toEqual([
+      { label: '보유 현금', value: '4억 5천만 원', previous: '4억 2천만 원', lines: [12] },
+      { label: '전세 만기', value: '2027-03-31', previous: null, lines: [] },
+      { label: '예산', value: '11억', previous: null, lines: [] },
+    ]);
+    expect(parsed.checks).toEqual([{ text: "아내 이름이 '이서현'으로 들림 — 연락처 확인", lines: [20] }]);
   });
 
   it('formats consultation content and helpers', () => {
     expect(buildConsultationContent({ summary: '요약', keyPoints: ['가', '나'] })).toBe('요약\n· 가\n· 나');
+    expect(
+      buildConsultationContent({ summary: '요약', keyPoints: ['가'], checks: [{ text: '이름 확인' }] }),
+    ).toBe('요약\n· 가\n· 확인 필요: 이름 확인');
     expect(formatManwon(158000)).toBe('15억 8,000만');
     expect(formatManwon(30000)).toBe('3억');
     expect(formatManwon(150)).toBe('150만');
     expect(allowedNextMatchStages('buyerInterested')).toEqual(['viewingConfirmed', 'closed']);
     expect(allowedNextMatchStages('negotiating')).toEqual(['closed']);
     expect(allowedNextMatchStages('dealCreated')).toEqual([]);
+  });
+
+  it('strips evidence lines without touching the rest of a stored analysis', () => {
+    expect(
+      stripEvidenceLines({
+        summary: '요약',
+        keyPoints: ['가'],
+        points: [{ text: '가', lines: [1] }, '예전 글'],
+        facts: [{ label: '예산', value: '11억', previous: null, lines: [3] }],
+      }),
+    ).toEqual({
+      summary: '요약',
+      keyPoints: ['가'],
+      points: [{ text: '가', lines: [] }, '예전 글'],
+      facts: [{ label: '예산', value: '11억', previous: null, lines: [] }],
+    });
+    expect(stripEvidenceLines(null)).toBeNull();
+    expect(stripEvidenceLines({ summary: '예전 분석' })).toEqual({ summary: '예전 분석' });
   });
 });

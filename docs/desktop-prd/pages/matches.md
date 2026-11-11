@@ -219,7 +219,7 @@
 | 항목 | 설명 | 필수 여부 | 출처 |
 | --- | --- | --- | --- |
 | matchList | 전체 Match 목록 | 필수 | `GET /matches` |
-| groupedBuyerMatches | 구매고객별 그룹 뷰 데이터 | 필수 | `GET /matches` 후 `Contact -> BuyerRequirement -> Match` 그룹화 |
+| groupedBuyerMatches | 희망 조건별 그룹 뷰 데이터. 매칭이 없는 조건도 포함 | 필수 | `GET /buyer-requirements?status=active,hold` 전체 + `GET /matches`를 조건별로 묶음 |
 | kanbanColumns | 단계별 Match 묶음 | 필수 | `GET /matches` 후 클라이언트 분류 |
 | convertedMatches | 거래 전환된 Match | 필수 | `GET /matches` 후 `stage=dealCreated` |
 | closedMatches | 종료된 Match | 필수 | `GET /matches` 후 `stage=closed` |

@@ -240,11 +240,13 @@ export class ConsultationsController {
     @Query('dateFrom') dateFrom: string,
     @Query('dateTo') dateTo: string,
     @Query('q') q: string,
+    @Query('unlinked') unlinked: string,
     @Query('page') page: string,
     @Query('limit') limit: string,
     @CurrentUser() user: CurrentUserPayload,
   ) {
     return this.service.findRecordings(user.officeId, {
+      unlinked: unlinked === 'true',
       contactId: contactId || undefined,
       direction: direction || undefined,
       sttStatus: sttStatus || undefined,

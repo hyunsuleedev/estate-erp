@@ -73,6 +73,11 @@ describe('McpToolsService', () => {
         id: 'snapshot-1',
         status: 'cancelled',
       }),
+      addSnapshotListing: jest.fn().mockResolvedValue({ id: 'listing-1' }),
+      updateSnapshotListing: jest.fn().mockResolvedValue({ id: 'listing-1' }),
+      removeSnapshotListing: jest
+        .fn()
+        .mockResolvedValue({ id: 'listing-1', result: 'deleted' }),
       batchUpsert: jest.fn().mockResolvedValue({
         received: 1,
         created: 1,
@@ -545,6 +550,54 @@ describe('McpToolsService', () => {
       'agent',
       'snapshot-1',
       { expectedListingCount: 2 },
+    );
+  });
+
+  it('edits listings inside an open advertising-note snapshot', async () => {
+    const { service, externalListings } = createService();
+
+    const added = await service.executeTool(
+      'add_external_listing_to_snapshot_group',
+      {
+        sessionId: 'snapshot-1',
+        groupId: 'group-1',
+        source: 'agent-file',
+        listing: { articleNo: 'A-3' },
+      },
+      ctx,
+    );
+    const updated = await service.executeTool(
+      'update_external_listing_in_snapshot',
+      { sessionId: 'snapshot-1', listingId: 'listing-1', price: 90000 },
+      ctx,
+    );
+    const removed = await service.executeTool(
+      'remove_external_listing_from_snapshot',
+      { sessionId: 'snapshot-1', listingId: 'listing-1' },
+      ctx,
+    );
+
+    expect([added, updated, removed].map((r) => r.isError)).toEqual([
+      false,
+      false,
+      false,
+    ]);
+    expect(externalListings.addSnapshotListing).toHaveBeenCalledWith(
+      'office-1',
+      'snapshot-1',
+      'group-1',
+      { source: 'agent-file', listing: { articleNo: 'A-3' } },
+    );
+    expect(externalListings.updateSnapshotListing).toHaveBeenCalledWith(
+      'office-1',
+      'snapshot-1',
+      'listing-1',
+      { price: 90000 },
+    );
+    expect(externalListings.removeSnapshotListing).toHaveBeenCalledWith(
+      'office-1',
+      'snapshot-1',
+      'listing-1',
     );
   });
 

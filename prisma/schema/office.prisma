@@ -48,6 +48,7 @@ model Office {
   units                                Unit[]
   contacts                             Contact[]
   contactPhones                        ContactPhone[]
+  contactGroups                        ContactGroup[]
   contactRelations                     ContactRelation[]
   propertyContacts                     PropertyContact[]
   tenants                              Tenant[]

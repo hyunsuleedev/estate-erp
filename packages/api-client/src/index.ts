@@ -70,8 +70,10 @@ export type {
 } from "./modules/office-advertisement-analysis.js";
 export type {
   Contact,
+  ContactCategorySummary,
   ContactCounts,
   ContactDetail,
+  ContactGroupSummary,
   ContactsFilter,
   ContactPhone,
   ContactPhoneInput,
@@ -254,9 +256,14 @@ export type {
   BatchListingItem,
   BatchUpsertDto,
   BatchUpsertResult,
+  ActiveSnapshotSession,
   SnapshotSession,
   SnapshotSessionUserRef,
   CompleteSessionResult,
+  ListingGroupInput,
+  AddSnapshotListingDto,
+  SnapshotListingPatch,
+  SnapshotComparison,
 } from "./modules/external-listings.js";
 export type {
   PublicDocument,
@@ -279,6 +286,8 @@ export type {
   CallDirection,
   CallRecordingMessage,
   CallRecordingAnalysis,
+  CallAnalysisPoint,
+  CallAnalysisFact,
   CallRecordingListItem,
   CallRecordingDetail,
   CallRecordingsListResponse,

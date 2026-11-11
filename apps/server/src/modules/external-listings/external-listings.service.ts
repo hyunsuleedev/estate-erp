@@ -14,8 +14,22 @@ const VALID_STATUSES = new Set(['unmatched', 'verified', 'on_hold']);
 
 const MAX_BATCH_SIZE = 100;
 const SNAPSHOT_TRANSACTION_TIMEOUT_MS = 30_000;
-/** 사람이 화면에서 입력한 광고의 출처. 스냅샷 비교와 비활성 처리 대상이 아니다. */
-const MANUAL_SOURCE = 'manual';
+/** 열린 스냅샷에서 수정할 수 있는 광고 항목. 번호와 그룹 정보는 바꾸지 않는다. */
+const SNAPSHOT_EDITABLE_FIELDS = [
+  'price',
+  'deposit',
+  'monthlyRent',
+  'articleName',
+  'articleFeatureDesc',
+  'detailDescription',
+  'articleConfirmYmd',
+  'floorInfo',
+  'direction',
+  'realtorName',
+  'representativeTelNo',
+  'ranking',
+  'sourceUrl',
+] as const;
 
 type DiscoveryStatus = 'new' | 'added' | 'existing';
 
@@ -101,11 +115,14 @@ export interface BatchUpsertDto {
   groups: ListingGroupInput[];
 }
 
-export interface ManualListingsDto {
-  siteId: string;
-  transactionType: string;
-  groups: ListingGroupInput[];
+export interface AddSnapshotListingDto {
+  source: string;
+  listing: BatchListingItem;
 }
+
+export type SnapshotListingPatch = Partial<
+  Pick<BatchListingItem, (typeof SNAPSHOT_EDITABLE_FIELDS)[number]>
+>;
 
 export interface BatchUpsertResult {
   batchId?: string;
@@ -119,6 +136,10 @@ export interface BatchUpsertResult {
 export interface CompleteSessionOptions {
   /** 입력한 광고 수. 실제 입력 건수와 다르면 스냅샷을 닫지 않는다. */
   expectedListingCount?: number;
+}
+
+export interface KeepSnapshotListingsDto {
+  groupIds: string[];
 }
 
 interface PriceTerms {
@@ -205,13 +226,16 @@ export class ExternalListingsService {
     }
 
     // 버킷 필터 — 스냅샷 세션 모드
+    let bucketSession: { startedAt: Date; transactionType: string } | null =
+      null;
     if (query.bucket && query.bucket !== 'all') {
       if (!query.siteId || !query.transactionType) {
         throw new BadRequestException(
           'bucket requires siteId and transactionType',
         );
       }
-      const session =
+      // 스냅샷이 방금 닫혔으면 탭 구분이 없으므로 일반 목록을 돌려준다.
+      bucketSession =
         await this.prisma.externalListingSnapshotSession.findFirst({
           where: {
             officeId,
@@ -220,18 +244,15 @@ export class ExternalListingsService {
             status: 'active',
           },
         });
-      if (!session) {
-        throw new BadRequestException(
-          'bucket specified but no active snapshot session for scope',
-        );
-      }
-      const listingFilter: Prisma.ExternalListingWhereInput = {
-        lastSeenAt: { gte: session.startedAt },
-        transactionType: session.transactionType,
-      };
+    }
+    if (bucketSession) {
       // 활성 광고가 있는 그룹을 두 탭이 빠짐없이 나눈다. 이번에 입력했다가 내린 광고는
       // 어느 쪽 판단에도 쓰지 않는다.
-      const enteredActive = { ...listingFilter, isActive: true };
+      const enteredActive: Prisma.ExternalListingWhereInput = {
+        lastSeenAt: { gte: bucketSession.startedAt },
+        transactionType: bucketSession.transactionType,
+        isActive: true,
+      };
       if (query.bucket === 'new') {
         where.listings = { some: enteredActive };
       } else {
@@ -299,14 +320,20 @@ export class ExternalListingsService {
               siteId: true,
               transactionType: true,
               startedAt: true,
+              completedAt: true,
             },
             orderBy: { startedAt: 'desc' },
           });
     const comparisonStartedAtByScope = new Map<string, Date>();
+    // 가격 변경 표시는 스냅샷 닫기 결과와 같은 기준을 쓴다. 마지막 스냅샷 직전의 완료
+    // 시각이라, 그사이 취소된 시도에서 바뀐 가격도 함께 잡힌다.
+    const priceChangeSinceByScope = new Map<string, Date>();
     for (const session of comparisonSessions) {
       const scopeKey = `${session.siteId}:${session.transactionType}`;
       if (!comparisonStartedAtByScope.has(scopeKey)) {
         comparisonStartedAtByScope.set(scopeKey, session.startedAt);
+      } else if (!priceChangeSinceByScope.has(scopeKey) && session.completedAt) {
+        priceChangeSinceByScope.set(scopeKey, session.completedAt);
       }
     }
 
@@ -342,9 +369,8 @@ export class ExternalListingsService {
 
     return groups.map((group) => {
       const listings = group.listings ?? [];
-      const comparisonStartedAt = comparisonStartedAtByScope.get(
-        `${group.siteId}:${group.transactionType}`,
-      );
+      const scopeKey = `${group.siteId}:${group.transactionType}`;
+      const comparisonStartedAt = comparisonStartedAtByScope.get(scopeKey);
       const discoveryStatus = this.getDiscoveryStatus(
         group.firstSeenAt,
         listings,
@@ -411,6 +437,7 @@ export class ExternalListingsService {
         confirmDateDiff,
         ownerVerified,
         discoveryStatus,
+        priceChangeSince: priceChangeSinceByScope.get(scopeKey) ?? null,
         ownAdvertisementYmd: ownAdvertisement?.articleConfirmYmd ?? null,
         offerRanking: ownAdvertisement?.ranking ?? main?.ranking ?? null,
       };
@@ -512,10 +539,31 @@ export class ExternalListingsService {
     if (!VALID_TRANSACTION_TYPES.has(transactionType)) {
       throw new BadRequestException('Invalid transactionType');
     }
-    return this.prisma.externalListingSnapshotSession.findFirst({
+    const session = await this.prisma.externalListingSnapshotSession.findFirst({
       where: { officeId, siteId, transactionType, status: 'active' },
       include: { startedBy: { select: { id: true, name: true } } },
     });
+    if (!session) return null;
+
+    // 닫기 전에 결과를 보여줄 수 있도록 남는 광고와 내려갈 광고 수를 함께 준다.
+    const scope = {
+      officeId,
+      transactionType: session.transactionType,
+      group: { siteId: session.siteId },
+    };
+    const [receivedListingCount, pendingRemovalCount] = await Promise.all([
+      this.prisma.externalListing.count({
+        where: { ...scope, lastSeenAt: { gte: session.startedAt } },
+      }),
+      this.prisma.externalListing.count({
+        where: {
+          ...scope,
+          lastSeenAt: { lt: session.startedAt },
+          isActive: true,
+        },
+      }),
+    ]);
+    return { ...session, receivedListingCount, pendingRemovalCount };
   }
 
   /**
@@ -545,10 +593,8 @@ export class ExternalListingsService {
         const session = await this.lockActiveSession(tx, officeId, sessionId);
         this.ensureCanManageSession(session, userId, userRole);
 
-        // 수동 입력은 스냅샷에 속하지 않으므로 건수 확인과 비활성 처리에서 제외한다.
         const scope = {
           officeId,
-          source: { not: MANUAL_SOURCE },
           transactionType: session.transactionType,
           group: { siteId: session.siteId },
         };
@@ -586,7 +632,7 @@ export class ExternalListingsService {
         }
         if (received.length === 0 && expectedListingCount !== 0) {
           throw new BadRequestException(
-            '입력된 광고가 없는 스냅샷은 닫을 수 없습니다. 입력을 마치거나 스냅샷을 취소하세요.',
+            '입력된 광고가 없습니다. 모두 내리려면 입력 건수 0건을 확인해 주세요.',
           );
         }
 
@@ -885,7 +931,7 @@ export class ExternalListingsService {
   }
 
   /**
-   * 열린 스냅샷에 광고 묶음을 입력한다. 외부 agent의 입력 경로.
+   * 열린 스냅샷에 광고 묶음을 입력한다. 화면 입력과 외부 agent가 거치는 단일 경로.
    * 매칭 규칙:
    *   1. 묶음의 articleNo가 기존 데이터와 하나라도 겹치면 그 Group에 합류한다.
    *   2. 겹치지 않으면 새 Group을 만든다.
@@ -903,11 +949,6 @@ export class ExternalListingsService {
     if (!source) {
       throw new BadRequestException('source는 필수입니다.');
     }
-    if (source === MANUAL_SOURCE) {
-      throw new BadRequestException(
-        `출처 '${MANUAL_SOURCE}'는 수동 입력 전용입니다.`,
-      );
-    }
     const articleNos = this.validateGroupInputs(dto.groups);
 
     return this.runInputTransaction(async (tx) => {
@@ -917,125 +958,385 @@ export class ExternalListingsService {
         batchId: dto.batchId,
         groups: dto.groups,
         articleNos,
-        scope: session,
-        snapshotStartedAt: session.startedAt,
+        session,
       });
     });
   }
 
   /**
-   * 사람이 화면에서 입력한 광고를 저장한다. 스냅샷을 열지 않으며, 입력하지 않은
-   * 다른 광고를 비활성화하지 않는다.
+   * 이번 스냅샷에 입력한 매물에 동일 광고를 한 건 붙인다. 대표는 바꾸지 않는다.
    */
-  async createManualListings(
+  async addSnapshotListing(
     officeId: string,
-    dto: ManualListingsDto,
-  ): Promise<BatchUpsertResult> {
-    if (!VALID_TRANSACTION_TYPES.has(dto.transactionType)) {
-      throw new BadRequestException('Invalid transactionType');
+    sessionId: string,
+    groupId: string,
+    dto: AddSnapshotListingDto,
+  ) {
+    const source = dto.source?.trim();
+    if (!source) {
+      throw new BadRequestException('source는 필수입니다.');
     }
-    const articleNos = this.validateGroupInputs(dto.groups);
-    const site = await this.prisma.site.findFirst({
-      where: {
-        id: dto.siteId,
-        OR: [{ officeId }, { isPublic: true }],
-      },
-      select: { id: true },
-    });
-    if (!site) {
-      throw new BadRequestException('siteId not accessible');
+    const item = dto.listing;
+    if (!item?.articleNo) {
+      throw new BadRequestException('articleNo는 필수입니다.');
     }
 
-    return this.runInputTransaction((tx) =>
-      this.writeGroups(tx, officeId, {
-        source: MANUAL_SOURCE,
-        groups: dto.groups,
-        articleNos,
-        scope: { siteId: dto.siteId, transactionType: dto.transactionType },
-        snapshotStartedAt: null,
-      }),
-    );
-  }
-
-  /**
-   * 수동 입력 광고를 내린다. 수동 광고는 스냅샷으로 비활성화되지 않으므로 이 경로로
-   * 끝낸다. 호수와 메모는 그룹에 남고, 같은 번호를 다시 입력하면 활성 상태로 돌아온다.
-   */
-  async endManualListing(officeId: string, listingId: string) {
-    return this.prisma.$transaction(async (tx) => {
-      const found = await tx.externalListing.findFirst({
-        where: { id: listingId, officeId },
-        select: { id: true, groupId: true, source: true },
+    return this.runInputTransaction(async (tx) => {
+      const session = await this.lockActiveSession(tx, officeId, sessionId);
+      const group = await tx.externalListingGroup.findFirst({
+        where: { id: groupId, officeId },
+        select: {
+          id: true,
+          siteId: true,
+          transactionType: true,
+          lastSeenAt: true,
+          mainExternalListing: { select: { articleNo: true } },
+        },
       });
-      if (!found) {
-        throw new NotFoundException('ExternalListing not found');
+      if (!group) {
+        throw new NotFoundException('ExternalListingGroup not found');
       }
-      if (found.source !== MANUAL_SOURCE) {
+      this.assertInSnapshotScope(group, session);
+      if (group.lastSeenAt < session.startedAt) {
         throw new BadRequestException(
-          '수동으로 입력한 광고만 직접 내릴 수 있습니다.',
+          '이번 스냅샷에 입력한 매물에만 동일 광고를 추가할 수 있습니다.',
         );
       }
 
-      // 같은 그룹의 광고를 동시에 내려도 대표가 내려간 광고를 가리키지 않도록
-      // 그룹을 잠근 뒤의 상태로 판단한다.
-      await this.lockGroups(tx, officeId, [found.groupId]);
-      const current = await tx.externalListing.findFirst({
-        where: { id: found.id, officeId },
+      const { since, now } = await this.resolveSnapshotClock(
+        tx,
+        officeId,
+        session,
+      );
+      const data = this.buildListingData(
+        item,
+        session.transactionType,
+        group.mainExternalListing?.articleNo ?? item.articleNo,
+      );
+      const existing = await tx.externalListing.findUnique({
+        where: {
+          officeId_source_articleNo: {
+            officeId,
+            source,
+            articleNo: item.articleNo,
+          },
+        },
         select: {
-          isActive: true,
-          group: { select: { mainExternalListingId: true } },
+          id: true,
+          groupId: true,
+          price: true,
+          deposit: true,
+          monthlyRent: true,
+          previousPrice: true,
+          previousDeposit: true,
+          previousMonthlyRent: true,
+          priceChangedAt: true,
         },
       });
-      if (!current?.isActive) {
-        return { id: found.id, isActive: false };
+      if (existing && existing.groupId !== group.id) {
+        throw new BadRequestException(
+          `광고 ${item.articleNo}는 다른 매물에 이미 있습니다.`,
+        );
       }
 
-      await tx.externalListing.update({
-        where: { id: found.id },
-        data: { isActive: false },
-      });
-
-      // 그룹 화면은 대표의 값을 읽으므로 대표가 내려가면 남은 광고로 바꾼다.
-      if (current.group.mainExternalListingId === found.id) {
-        const nextRepresentative = await tx.externalListing.findFirst({
-          where: { officeId, groupId: found.groupId, isActive: true },
-          orderBy: [
-            { ranking: { sort: 'asc', nulls: 'last' } },
-            { lastSeenAt: 'desc' },
-          ],
-          select: { id: true },
-        });
-        if (nextRepresentative) {
-          await tx.externalListingGroup.update({
-            where: { id: found.groupId },
-            data: { mainExternalListingId: nextRepresentative.id },
+      const listing = existing
+        ? await tx.externalListing.update({
+            where: { id: existing.id },
+            data: {
+              ...data,
+              ...this.buildPriceChange(existing, data, since, now),
+              isActive: true,
+              lastSeenAt: now,
+            },
+          })
+        : await tx.externalListing.create({
+            data: {
+              ...data,
+              officeId,
+              source,
+              articleNo: item.articleNo,
+              groupId: group.id,
+              firstSeenAt: now,
+              lastSeenAt: now,
+              isActive: true,
+            } satisfies Prisma.ExternalListingUncheckedCreateInput,
           });
-        }
-      }
-
-      return { id: found.id, isActive: false };
+      await tx.externalListingGroup.update({
+        where: { id: group.id },
+        data: { lastSeenAt: now },
+      });
+      return listing;
     });
   }
 
-  /** 수동 입력과 내리기가 같은 순서로 그룹을 잠가 서로의 결과를 보고 판단하게 한다. */
-  private async lockGroups(
-    tx: Prisma.TransactionClient,
+  /**
+   * 열린 스냅샷에서 광고를 수정한다. 수정한 광고는 이번 스냅샷에 입력된 것으로 친다.
+   */
+  async updateSnapshotListing(
     officeId: string,
-    groupIds: string[],
+    sessionId: string,
+    listingId: string,
+    patch: SnapshotListingPatch,
   ) {
-    if (groupIds.length === 0) return;
-    await tx.$queryRaw(Prisma.sql`
-      SELECT "id"
-      FROM "external_listing_groups"
-      WHERE "id" = ANY(${groupIds}::uuid[]) AND "office_id" = ${officeId}::uuid
-      ORDER BY "id"
-      FOR UPDATE
-    `);
+    return this.prisma.$transaction(async (tx) => {
+      const session = await this.lockActiveSession(tx, officeId, sessionId);
+      const listing = await this.findSnapshotListing(
+        tx,
+        officeId,
+        session,
+        listingId,
+      );
+      if (!listing.isActive) {
+        throw new BadRequestException('내려간 광고는 수정할 수 없습니다.');
+      }
+
+      const data: Record<string, unknown> = {};
+      for (const field of SNAPSHOT_EDITABLE_FIELDS) {
+        if (patch?.[field] !== undefined) data[field] = patch[field];
+      }
+      const { since, now } = await this.resolveSnapshotClock(
+        tx,
+        officeId,
+        session,
+      );
+      const nextPrice: PriceTerms = {
+        price: patch?.price !== undefined ? patch.price : listing.price,
+        deposit: patch?.deposit !== undefined ? patch.deposit : listing.deposit,
+        monthlyRent:
+          patch?.monthlyRent !== undefined
+            ? patch.monthlyRent
+            : listing.monthlyRent,
+      };
+      const updated = await tx.externalListing.update({
+        where: { id: listing.id },
+        data: {
+          ...data,
+          ...this.buildPriceChange(listing, nextPrice, since, now),
+          lastSeenAt: now,
+        },
+      });
+
+      // 대표가 이번에 입력되지 않았으면 닫을 때 내려가므로 입력된 광고로 옮긴다.
+      const main = listing.group.mainExternalListing;
+      await tx.externalListingGroup.update({
+        where: { id: listing.groupId },
+        data: {
+          lastSeenAt: now,
+          ...(main && main.lastSeenAt >= session.startedAt
+            ? {}
+            : { mainExternalListingId: listing.id }),
+        },
+      });
+      return updated;
+    });
   }
 
-  private async runInputTransaction(
-    run: (tx: Prisma.TransactionClient) => Promise<BatchUpsertResult>,
-  ): Promise<BatchUpsertResult> {
+  /**
+   * 열린 스냅샷에서 광고를 뺀다. 이번에 처음 입력한 광고는 지우고, 기존 광고는
+   * 이번 입력에서 제외해 닫을 때 내려가게 한다.
+   */
+  async removeSnapshotListing(
+    officeId: string,
+    sessionId: string,
+    listingId: string,
+  ): Promise<{ id: string; result: 'deleted' | 'excluded' | 'unchanged' }> {
+    return this.prisma.$transaction(async (tx) => {
+      const session = await this.lockActiveSession(tx, officeId, sessionId);
+      const listing = await this.findSnapshotListing(
+        tx,
+        officeId,
+        session,
+        listingId,
+      );
+
+      const beforeSnapshot = new Date(session.startedAt.getTime() - 1);
+      const isNewInSnapshot = listing.firstSeenAt >= session.startedAt;
+      if (!isNewInSnapshot && listing.lastSeenAt < session.startedAt) {
+        return { id: listing.id, result: 'unchanged' };
+      }
+
+      if (isNewInSnapshot) {
+        await tx.externalListing.delete({ where: { id: listing.id } });
+      } else {
+        await tx.externalListing.update({
+          where: { id: listing.id },
+          data: { lastSeenAt: beforeSnapshot },
+        });
+      }
+
+      const others = await tx.externalListing.findMany({
+        where: {
+          officeId,
+          groupId: listing.groupId,
+          id: { not: listing.id },
+        },
+        orderBy: [
+          { ranking: { sort: 'asc', nulls: 'last' } },
+          { lastSeenAt: 'desc' },
+        ],
+        select: { id: true, lastSeenAt: true, isActive: true },
+      });
+      const entered = others.filter(
+        (other) => other.lastSeenAt >= session.startedAt,
+      );
+
+      if (isNewInSnapshot && others.length === 0) {
+        await tx.externalListingGroup.delete({
+          where: { id: listing.groupId },
+        });
+      } else {
+        const wasMain = listing.group.mainExternalListing?.id === listing.id;
+        const nextMain = entered[0] ?? others.find((other) => other.isActive);
+        await tx.externalListingGroup.update({
+          where: { id: listing.groupId },
+          data: {
+            ...(entered.length === 0 ? { lastSeenAt: beforeSnapshot } : {}),
+            ...(wasMain && nextMain
+              ? { mainExternalListingId: nextMain.id }
+              : {}),
+          },
+        });
+      }
+
+      return {
+        id: listing.id,
+        result: isNewInSnapshot ? 'deleted' : 'excluded',
+      };
+    });
+  }
+
+  /**
+   * 미입력 매물의 광고를 다시 입력하지 않고 이번 스냅샷에 남긴다. 일부가 이미 입력된
+   * 매물은 건너뛰어, 사용자가 이번 스냅샷에서 뺀 광고가 되살아나지 않게 한다.
+   */
+  async keepSnapshotListings(
+    officeId: string,
+    sessionId: string,
+    dto: KeepSnapshotListingsDto,
+  ) {
+    const groupIds = dto?.groupIds;
+    if (
+      !Array.isArray(groupIds) ||
+      groupIds.length === 0 ||
+      groupIds.some((id) => typeof id !== 'string')
+    ) {
+      throw new BadRequestException('유지할 매물을 선택해 주세요.');
+    }
+
+    return this.prisma.$transaction(
+      async (tx) => {
+        const session = await this.lockActiveSession(tx, officeId, sessionId);
+        const { now } = await this.resolveSnapshotClock(tx, officeId, session);
+        const targets = await tx.externalListing.findMany({
+          where: {
+            officeId,
+            groupId: { in: groupIds },
+            transactionType: session.transactionType,
+            isActive: true,
+            lastSeenAt: { lt: session.startedAt },
+            group: {
+              siteId: session.siteId,
+              listings: {
+                none: {
+                  isActive: true,
+                  lastSeenAt: { gte: session.startedAt },
+                },
+              },
+            },
+          },
+          select: { id: true, groupId: true },
+        });
+        if (targets.length === 0) {
+          return { keptGroupCount: 0, keptListingCount: 0 };
+        }
+
+        const keptGroupIds = [...new Set(targets.map((l) => l.groupId))];
+        await tx.externalListing.updateMany({
+          where: { id: { in: targets.map((l) => l.id) } },
+          data: { lastSeenAt: now },
+        });
+        await tx.externalListingGroup.updateMany({
+          where: { id: { in: keptGroupIds } },
+          data: { lastSeenAt: now },
+        });
+        return {
+          keptGroupCount: keptGroupIds.length,
+          keptListingCount: targets.length,
+        };
+      },
+      { timeout: SNAPSHOT_TRANSACTION_TIMEOUT_MS },
+    );
+  }
+
+  private async findSnapshotListing(
+    tx: Prisma.TransactionClient,
+    officeId: string,
+    session: { siteId: string; transactionType: string },
+    listingId: string,
+  ) {
+    const listing = await tx.externalListing.findFirst({
+      where: { id: listingId, officeId },
+      select: {
+        id: true,
+        groupId: true,
+        isActive: true,
+        firstSeenAt: true,
+        lastSeenAt: true,
+        price: true,
+        deposit: true,
+        monthlyRent: true,
+        previousPrice: true,
+        previousDeposit: true,
+        previousMonthlyRent: true,
+        priceChangedAt: true,
+        group: {
+          select: {
+            siteId: true,
+            transactionType: true,
+            mainExternalListing: { select: { id: true, lastSeenAt: true } },
+          },
+        },
+      },
+    });
+    if (!listing) {
+      throw new NotFoundException('ExternalListing not found');
+    }
+    this.assertInSnapshotScope(listing.group, session);
+    return listing;
+  }
+
+  private assertInSnapshotScope(
+    group: { siteId: string; transactionType: string },
+    session: { siteId: string; transactionType: string },
+  ) {
+    if (
+      group.siteId !== session.siteId ||
+      group.transactionType !== session.transactionType
+    ) {
+      throw new BadRequestException(
+        '이 스냅샷의 단지·거래유형에 속한 광고가 아닙니다.',
+      );
+    }
+  }
+
+  /** 비교가 시각에 의존하므로 서버와 DB의 시계 차이로 기준 시각보다 앞서지 않게 한다. */
+  private async resolveSnapshotClock(
+    tx: Prisma.TransactionClient,
+    officeId: string,
+    session: { siteId: string; transactionType: string; startedAt: Date },
+  ) {
+    const since =
+      (await this.findPreviousCompletedAt(tx, officeId, session)) ??
+      new Date(0);
+    const now = new Date(
+      Math.max(Date.now(), session.startedAt.getTime(), since.getTime()),
+    );
+    return { since, now };
+  }
+
+  private async runInputTransaction<T>(
+    run: (tx: Prisma.TransactionClient) => Promise<T>,
+  ): Promise<T> {
     try {
       return await this.prisma.$transaction(run, {
         timeout: SNAPSHOT_TRANSACTION_TIMEOUT_MS,
@@ -1061,35 +1362,15 @@ export class ExternalListingsService {
       batchId?: string;
       groups: ListingGroupInput[];
       articleNos: string[];
-      scope: { siteId: string; transactionType: string };
-      snapshotStartedAt: Date | null;
+      session: { siteId: string; transactionType: string; startedAt: Date };
     },
   ): Promise<BatchUpsertResult> {
-    const { source, groups, articleNos, scope, snapshotStartedAt } = input;
-    const since =
-      (await this.findPreviousCompletedAt(tx, officeId, scope)) ?? new Date(0);
-    // 비교가 시각에 의존하므로 서버와 DB의 시계 차이로 기준 시각보다 앞서지 않게 한다.
-    const now = new Date(
-      Math.max(
-        Date.now(),
-        snapshotStartedAt?.getTime() ?? 0,
-        since.getTime(),
-      ),
+    const { source, groups, articleNos, session } = input;
+    const { since, now } = await this.resolveSnapshotClock(
+      tx,
+      officeId,
+      session,
     );
-
-    // 스냅샷 입력은 세션 잠금으로 직렬화된다. 세션이 없는 수동 입력은 내리기와 겹칠 수 있다.
-    if (!snapshotStartedAt) {
-      const touchedGroups = await tx.externalListing.findMany({
-        where: { officeId, source, articleNo: { in: articleNos } },
-        select: { groupId: true },
-        distinct: ['groupId'],
-      });
-      await this.lockGroups(
-        tx,
-        officeId,
-        touchedGroups.map((row) => row.groupId),
-      );
-    }
 
     const existingListings = await tx.externalListing.findMany({
       where: { officeId, source, articleNo: { in: articleNos } },
@@ -1121,8 +1402,7 @@ export class ExternalListingsService {
     const targetGroupIds = this.resolveTargetGroups(
       groups,
       existingByArticleNo,
-      scope,
-      snapshotStartedAt,
+      session,
     );
 
     const result: BatchUpsertResult = {
@@ -1146,12 +1426,12 @@ export class ExternalListingsService {
         const created = await tx.externalListingGroup.create({
           data: {
             officeId,
-            siteId: scope.siteId,
+            siteId: session.siteId,
             buildingName: representative.buildingName ?? null,
             ho,
             areaName: representative.areaName ?? null,
             exclusiveAreaM2: representative.exclusiveAreaM2 ?? null,
-            transactionType: scope.transactionType,
+            transactionType: session.transactionType,
             status: ho ? 'verified' : 'unmatched',
             firstSeenAt: now,
             lastSeenAt: now,
@@ -1165,7 +1445,7 @@ export class ExternalListingsService {
       for (const item of bundle.listings) {
         const data = this.buildListingData(
           item,
-          scope.transactionType,
+          session.transactionType,
           bundle.representativeArticleNo,
         );
         const existing = existingByArticleNo.get(item.articleNo);
@@ -1279,8 +1559,7 @@ export class ExternalListingsService {
         };
       }
     >,
-    scope: { siteId: string; transactionType: string },
-    snapshotStartedAt: Date | null,
+    session: { siteId: string; transactionType: string; startedAt: Date },
   ): Array<string | null> {
     const claimedBy = new Map<string, string>();
 
@@ -1300,8 +1579,8 @@ export class ExternalListingsService {
       if (!match) return null;
 
       if (
-        match.group.siteId !== scope.siteId ||
-        match.group.transactionType !== scope.transactionType
+        match.group.siteId !== session.siteId ||
+        match.group.transactionType !== session.transactionType
       ) {
         throw new BadRequestException(
           `묶음(대표 ${representativeNo})의 광고가 다른 단지 또는 거래유형에 이미 있습니다.`,
@@ -1321,8 +1600,7 @@ export class ExternalListingsService {
       const currentRepresentative =
         match.group.mainExternalListing?.articleNo;
       if (
-        snapshotStartedAt &&
-        match.group.lastSeenAt >= snapshotStartedAt &&
+        match.group.lastSeenAt >= session.startedAt &&
         currentRepresentative !== representativeNo
       ) {
         throw new BadRequestException(

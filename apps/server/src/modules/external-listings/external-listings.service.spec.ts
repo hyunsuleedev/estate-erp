@@ -9,13 +9,18 @@ describe('ExternalListingsService', () => {
         findUnique: jest.fn(),
         create: jest.fn(),
         update: jest.fn(),
+        updateMany: jest.fn(),
+        delete: jest.fn(),
       },
       externalListing: {
         findFirst: jest.fn(),
+        findUnique: jest.fn(),
         findMany: jest.fn(),
+        delete: jest.fn(),
         create: jest.fn(),
         update: jest.fn(),
         updateMany: jest.fn(),
+        count: jest.fn(),
       },
       externalListingSnapshotSession: {
         findFirst: jest.fn(),
@@ -250,9 +255,60 @@ describe('ExternalListingsService', () => {
         siteId: true,
         transactionType: true,
         startedAt: true,
+        completedAt: true,
       },
       orderBy: { startedAt: 'desc' },
     });
+  });
+
+  it('bases price change display on the completion before the latest snapshot', async () => {
+    const { prisma, service } = createService();
+    const group = {
+      id: 'group-1',
+      siteId: 'site-1',
+      transactionType: 'sale',
+      firstSeenAt: new Date('2026-10-01T00:00:00.000Z'),
+      mainExternalListing: null,
+      listings: [],
+      _count: { listings: 0 },
+    };
+    prisma.externalListingGroup.findMany.mockResolvedValue([group]);
+    const previousCompletedAt = new Date('2026-11-02T00:10:00.000Z');
+    const session = {
+      siteId: 'site-1',
+      transactionType: 'sale',
+    };
+
+    prisma.externalListingSnapshotSession.findMany.mockResolvedValueOnce([
+      {
+        ...session,
+        startedAt: new Date('2026-11-03T00:00:00.000Z'),
+        completedAt: null,
+      },
+      {
+        ...session,
+        startedAt: new Date('2026-11-02T00:00:00.000Z'),
+        completedAt: previousCompletedAt,
+      },
+      {
+        ...session,
+        startedAt: new Date('2026-11-01T00:00:00.000Z'),
+        completedAt: new Date('2026-11-01T00:10:00.000Z'),
+      },
+    ]);
+    const [withHistory] = await service.findAllGroups('office-1', {});
+    expect(withHistory.priceChangeSince).toEqual(previousCompletedAt);
+
+    // 비교할 이전 완료 스냅샷이 없으면 닫기 결과처럼 변경으로 보지 않는다.
+    prisma.externalListingSnapshotSession.findMany.mockResolvedValueOnce([
+      {
+        ...session,
+        startedAt: new Date('2026-11-02T00:00:00.000Z'),
+        completedAt: previousCompletedAt,
+      },
+    ]);
+    const [baseline] = await service.findAllGroups('office-1', {});
+    expect(baseline.priceChangeSince).toBeNull();
   });
 
   it('stores a trimmed ho string without resolving a Unit', async () => {
@@ -398,7 +454,7 @@ describe('ExternalListingsService', () => {
 
       await service.batchUpsert('office-1', {
         sessionId: 'session-1',
-        source: 'agent',
+        source: 'manual',
         groups: [
           {
             representativeArticleNo: 'ad-1',
@@ -581,18 +637,6 @@ describe('ExternalListingsService', () => {
       expect(prisma.externalListing.update).toHaveBeenCalledTimes(1);
     });
 
-    it('reserves the manual source for manual input', async () => {
-      const { service } = setup();
-
-      await expect(
-        service.batchUpsert('office-1', {
-          sessionId: 'session-1',
-          source: 'manual',
-          groups: [group('101', '101')],
-        }),
-      ).rejects.toThrow('수동 입력 전용');
-    });
-
     it('requires an active session', async () => {
       const { prisma, service } = setup();
       prisma.externalListingSnapshotSession.findFirst.mockReset();
@@ -608,172 +652,421 @@ describe('ExternalListingsService', () => {
     });
   });
 
-  describe('createManualListings', () => {
-    it('saves without a snapshot and without locking one', async () => {
-      const { prisma, service } = createService();
-      prisma.site.findFirst.mockResolvedValue({ id: 'site-1' });
-      prisma.externalListingSnapshotSession.findFirst.mockResolvedValue(null);
-      prisma.externalListing.findMany.mockResolvedValue([]);
-      prisma.externalListing.create.mockResolvedValue({ id: 'listing-1' });
-      prisma.externalListingGroup.create.mockResolvedValue({ id: 'group-1' });
-      prisma.externalListingGroup.update.mockResolvedValue({});
+  describe('open snapshot edits', () => {
+    const startedAt = new Date('2026-11-03T00:00:00.000Z');
+    const earlier = new Date('2026-11-01T00:00:00.000Z');
+    const entered = new Date('2026-11-03T00:05:00.000Z');
+    const session = {
+      id: 'session-1',
+      siteId: 'site-1',
+      transactionType: 'sale',
+      startedAt,
+    };
 
-      const result = await service.createManualListings('office-1', {
-        siteId: 'site-1',
-        transactionType: 'sale',
-        groups: [
-          {
-            representativeArticleNo: 'manual-1',
-            listings: [{ articleNo: 'manual-1', ho: '1503호' }],
-          },
-        ],
-      });
-
-      expect(result).toMatchObject({ created: 1, groupsCreated: 1 });
-      expect(prisma.$queryRaw).not.toHaveBeenCalled();
-      expect(prisma.externalListing.create).toHaveBeenCalledWith({
-        data: expect.objectContaining({
-          source: 'manual',
-          articleNo: 'manual-1',
-          groupId: 'group-1',
-        }),
-      });
-    });
-
-    it('rejects an inaccessible site', async () => {
-      const { prisma, service } = createService();
-      prisma.site.findFirst.mockResolvedValue(null);
-
-      await expect(
-        service.createManualListings('office-1', {
-          siteId: 'site-2',
-          transactionType: 'sale',
-          groups: [
-            {
-              representativeArticleNo: 'manual-1',
-              listings: [{ articleNo: 'manual-1' }],
-            },
-          ],
-        }),
-      ).rejects.toThrow('siteId not accessible');
-    });
-  });
-
-  describe('endManualListing', () => {
-    function setup(
-      current: { isActive: boolean; mainExternalListingId: string },
-      next: { id: string } | null = null,
-    ) {
+    function setup() {
       const context = createService();
-      context.prisma.externalListing.findFirst
-        .mockResolvedValueOnce({
-          id: 'listing-1',
-          groupId: 'group-1',
-          source: 'manual',
-        })
-        .mockResolvedValueOnce({
-          isActive: current.isActive,
-          group: { mainExternalListingId: current.mainExternalListingId },
-        })
-        .mockResolvedValueOnce(next);
+      context.prisma.externalListingSnapshotSession.findFirst.mockImplementation(
+        async ({ where }: { where: { id?: string } }) =>
+          where.id ? session : { completedAt: earlier },
+      );
+      context.prisma.externalListing.update.mockImplementation(
+        async ({ where }: { where: { id: string } }) => ({ id: where.id }),
+      );
       return context;
     }
 
-    it('deactivates a manual listing of the office', async () => {
-      const { prisma, service } = setup({
-        isActive: true,
-        mainExternalListingId: 'listing-2',
-      });
-
-      await expect(
-        service.endManualListing('office-1', 'listing-1'),
-      ).resolves.toEqual({ id: 'listing-1', isActive: false });
-
-      expect(prisma.externalListing.findFirst).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: { id: 'listing-1', officeId: 'office-1' },
-        }),
-      );
-      expect(prisma.externalListing.update).toHaveBeenCalledWith({
-        where: { id: 'listing-1' },
-        data: { isActive: false },
-      });
-      expect(prisma.externalListingGroup.update).not.toHaveBeenCalled();
-    });
-
-    it('reads the listing state only after locking its group', async () => {
-      const { prisma, service } = setup({
-        isActive: true,
-        mainExternalListingId: 'listing-2',
-      });
-
-      await service.endManualListing('office-1', 'listing-1');
-
-      const [firstRead, stateRead] =
-        prisma.externalListing.findFirst.mock.invocationCallOrder;
-      const lock = prisma.$queryRaw.mock.invocationCallOrder[0];
-      expect(firstRead).toBeLessThan(lock);
-      expect(lock).toBeLessThan(stateRead);
-    });
-
-    it('moves the representative to a remaining active listing', async () => {
-      const { prisma, service } = setup(
-        { isActive: true, mainExternalListingId: 'listing-1' },
-        { id: 'listing-3' },
-      );
-
-      await service.endManualListing('office-1', 'listing-1');
-
-      expect(prisma.externalListingGroup.update).toHaveBeenCalledWith({
-        where: { id: 'group-1' },
-        data: { mainExternalListingId: 'listing-3' },
-      });
-    });
-
-    it('keeps the representative when no active listing remains', async () => {
-      const { prisma, service } = setup({
-        isActive: true,
-        mainExternalListingId: 'listing-1',
-      });
-
-      await service.endManualListing('office-1', 'listing-1');
-
-      expect(prisma.externalListingGroup.update).not.toHaveBeenCalled();
-    });
-
-    it('repeats safely once the listing is already ended', async () => {
-      const { prisma, service } = setup({
-        isActive: false,
-        mainExternalListingId: 'listing-1',
-      });
-
-      await expect(
-        service.endManualListing('office-1', 'listing-1'),
-      ).resolves.toEqual({ id: 'listing-1', isActive: false });
-      expect(prisma.externalListing.update).not.toHaveBeenCalled();
-    });
-
-    it('rejects a listing managed by snapshots', async () => {
-      const { prisma, service } = createService();
-      prisma.externalListing.findFirst.mockResolvedValue({
+    function storedListing(overrides: Record<string, unknown> = {}) {
+      return {
         id: 'listing-1',
         groupId: 'group-1',
-        source: 'agent',
+        isActive: true,
+        firstSeenAt: earlier,
+        lastSeenAt: entered,
+        price: 100000,
+        deposit: null,
+        monthlyRent: null,
+        previousPrice: null,
+        previousDeposit: null,
+        previousMonthlyRent: null,
+        priceChangedAt: null,
+        group: {
+          siteId: 'site-1',
+          transactionType: 'sale',
+          mainExternalListing: { id: 'listing-2', lastSeenAt: entered },
+        },
+        ...overrides,
+      };
+    }
+
+    describe('addSnapshotListing', () => {
+      function setupGroup(lastSeenAt = entered) {
+        const context = setup();
+        context.prisma.externalListingGroup.findFirst.mockResolvedValue({
+          id: 'group-1',
+          siteId: 'site-1',
+          transactionType: 'sale',
+          lastSeenAt,
+          mainExternalListing: { articleNo: 'rep-1' },
+        });
+        context.prisma.externalListing.findUnique.mockResolvedValue(null);
+        context.prisma.externalListing.create.mockResolvedValue({ id: 'new-1' });
+        return context;
+      }
+
+      it('adds a listing to a group entered in this snapshot, keeping the representative', async () => {
+        const { prisma, service } = setupGroup();
+
+        await service.addSnapshotListing('office-1', 'session-1', 'group-1', {
+          source: 'manual',
+          listing: { articleNo: 'dup-1', price: 90000 },
+        });
+
+        expect(prisma.$queryRaw).toHaveBeenCalledTimes(1);
+        expect(prisma.externalListing.create).toHaveBeenCalledWith({
+          data: expect.objectContaining({
+            articleNo: 'dup-1',
+            groupId: 'group-1',
+            representativeArticleNo: 'rep-1',
+          }),
+        });
+        const groupUpdate =
+          prisma.externalListingGroup.update.mock.calls[0][0].data;
+        expect(groupUpdate).not.toHaveProperty('mainExternalListingId');
       });
 
-      await expect(
-        service.endManualListing('office-1', 'listing-1'),
-      ).rejects.toThrow('수동으로 입력한 광고만');
-      expect(prisma.externalListing.update).not.toHaveBeenCalled();
+      it('rejects a group not entered in this snapshot', async () => {
+        const { prisma, service } = setupGroup(earlier);
+
+        await expect(
+          service.addSnapshotListing('office-1', 'session-1', 'group-1', {
+            source: 'manual',
+            listing: { articleNo: 'dup-1' },
+          }),
+        ).rejects.toThrow('이번 스냅샷에 입력한 매물에만');
+        expect(prisma.externalListing.create).not.toHaveBeenCalled();
+      });
+
+      it('rejects a number already in another group', async () => {
+        const { prisma, service } = setupGroup();
+        prisma.externalListing.findUnique.mockResolvedValue({
+          id: 'other',
+          groupId: 'group-2',
+        });
+
+        await expect(
+          service.addSnapshotListing('office-1', 'session-1', 'group-1', {
+            source: 'manual',
+            listing: { articleNo: 'dup-1' },
+          }),
+        ).rejects.toThrow('다른 매물에 이미');
+      });
+
+      it('rejects once the snapshot is closed', async () => {
+        const { prisma, service } = setupGroup();
+        prisma.externalListingSnapshotSession.findFirst.mockReset();
+        prisma.externalListingSnapshotSession.findFirst.mockResolvedValue(null);
+
+        await expect(
+          service.addSnapshotListing('office-1', 'closed', 'group-1', {
+            source: 'manual',
+            listing: { articleNo: 'dup-1' },
+          }),
+        ).rejects.toThrow('active session not found');
+      });
     });
 
-    it('rejects a listing of another office', async () => {
+    describe('updateSnapshotListing', () => {
+      it('keeps only editable fields and records the price change', async () => {
+        const { prisma, service } = setup();
+        prisma.externalListing.findFirst.mockResolvedValue(storedListing());
+
+        await service.updateSnapshotListing(
+          'office-1',
+          'session-1',
+          'listing-1',
+          { price: 95000, realtorName: '새 중개사', isActive: false } as never,
+        );
+
+        const data = prisma.externalListing.update.mock.calls[0][0].data;
+        expect(data).toMatchObject({
+          price: 95000,
+          realtorName: '새 중개사',
+          previousPrice: 100000,
+          lastSeenAt: expect.any(Date),
+        });
+        expect(data).not.toHaveProperty('isActive');
+      });
+
+      it('moves the representative when the current one is not entered yet', async () => {
+        const { prisma, service } = setup();
+        prisma.externalListing.findFirst.mockResolvedValue(
+          storedListing({
+            lastSeenAt: earlier,
+            group: {
+              siteId: 'site-1',
+              transactionType: 'sale',
+              mainExternalListing: { id: 'listing-2', lastSeenAt: earlier },
+            },
+          }),
+        );
+
+        await service.updateSnapshotListing(
+          'office-1',
+          'session-1',
+          'listing-1',
+          {},
+        );
+
+        expect(prisma.externalListingGroup.update).toHaveBeenCalledWith({
+          where: { id: 'group-1' },
+          data: expect.objectContaining({
+            mainExternalListingId: 'listing-1',
+          }),
+        });
+      });
+
+      it('rejects an ended listing and one outside the snapshot scope', async () => {
+        const { prisma, service } = setup();
+        prisma.externalListing.findFirst.mockResolvedValueOnce(
+          storedListing({ isActive: false }),
+        );
+        await expect(
+          service.updateSnapshotListing('office-1', 'session-1', 'listing-1', {}),
+        ).rejects.toThrow('내려간 광고는');
+
+        prisma.externalListing.findFirst.mockResolvedValueOnce(
+          storedListing({
+            group: {
+              siteId: 'site-2',
+              transactionType: 'sale',
+              mainExternalListing: null,
+            },
+          }),
+        );
+        await expect(
+          service.updateSnapshotListing('office-1', 'session-1', 'listing-1', {}),
+        ).rejects.toThrow('이 스냅샷의 단지');
+      });
+    });
+
+    describe('keepSnapshotListings', () => {
+      it('marks every not-entered listing of the kept groups as entered', async () => {
+        const { prisma, service } = setup();
+        prisma.externalListing.findMany.mockResolvedValue([
+          { id: 'listing-1', groupId: 'group-1' },
+          { id: 'listing-2', groupId: 'group-1' },
+          { id: 'listing-3', groupId: 'group-2' },
+        ]);
+
+        await expect(
+          service.keepSnapshotListings('office-1', 'session-1', {
+            groupIds: ['group-1', 'group-2'],
+          }),
+        ).resolves.toEqual({ keptGroupCount: 2, keptListingCount: 3 });
+
+        const { where } = prisma.externalListing.findMany.mock.calls[0][0];
+        expect(where).toMatchObject({
+          officeId: 'office-1',
+          groupId: { in: ['group-1', 'group-2'] },
+          transactionType: 'sale',
+          isActive: true,
+          lastSeenAt: { lt: startedAt },
+          group: { siteId: 'site-1' },
+        });
+        const { data } = prisma.externalListing.updateMany.mock.calls[0][0];
+        expect(data.lastSeenAt.getTime()).toBeGreaterThanOrEqual(
+          startedAt.getTime(),
+        );
+        expect(prisma.externalListingGroup.updateMany).toHaveBeenCalledWith({
+          where: { id: { in: ['group-1', 'group-2'] } },
+          data: { lastSeenAt: data.lastSeenAt },
+        });
+      });
+
+      it('skips groups that already have an entered listing', async () => {
+        const { prisma, service } = setup();
+        prisma.externalListing.findMany.mockResolvedValue([]);
+
+        await expect(
+          service.keepSnapshotListings('office-1', 'session-1', {
+            groupIds: ['group-1'],
+          }),
+        ).resolves.toEqual({ keptGroupCount: 0, keptListingCount: 0 });
+
+        const { where } = prisma.externalListing.findMany.mock.calls[0][0];
+        expect(where.group.listings).toEqual({
+          none: { isActive: true, lastSeenAt: { gte: startedAt } },
+        });
+        expect(prisma.externalListing.updateMany).not.toHaveBeenCalled();
+      });
+
+      it.each([[undefined], [[]], [[1]]])(
+        'rejects invalid group ids %j',
+        async (groupIds) => {
+          const { prisma, service } = setup();
+
+          await expect(
+            service.keepSnapshotListings('office-1', 'session-1', {
+              groupIds: groupIds as unknown as string[],
+            }),
+          ).rejects.toThrow('유지할 매물을 선택해 주세요.');
+          expect(prisma.$transaction).not.toHaveBeenCalled();
+        },
+      );
+    });
+
+    describe('removeSnapshotListing', () => {
+      it('deletes a listing first entered in this snapshot and its empty group', async () => {
+        const { prisma, service } = setup();
+        prisma.externalListing.findFirst.mockResolvedValue(
+          storedListing({ firstSeenAt: entered }),
+        );
+        prisma.externalListing.findMany.mockResolvedValue([]);
+
+        await expect(
+          service.removeSnapshotListing('office-1', 'session-1', 'listing-1'),
+        ).resolves.toEqual({ id: 'listing-1', result: 'deleted' });
+
+        expect(prisma.externalListing.delete).toHaveBeenCalledWith({
+          where: { id: 'listing-1' },
+        });
+        expect(prisma.externalListingGroup.delete).toHaveBeenCalledWith({
+          where: { id: 'group-1' },
+        });
+      });
+
+      it('excludes an existing listing so it ends when the snapshot closes', async () => {
+        const { prisma, service } = setup();
+        prisma.externalListing.findFirst.mockResolvedValue(storedListing());
+        prisma.externalListing.findMany.mockResolvedValue([]);
+
+        await expect(
+          service.removeSnapshotListing('office-1', 'session-1', 'listing-1'),
+        ).resolves.toEqual({ id: 'listing-1', result: 'excluded' });
+
+        expect(prisma.externalListing.delete).not.toHaveBeenCalled();
+        const before = new Date(startedAt.getTime() - 1);
+        expect(prisma.externalListing.update).toHaveBeenCalledWith({
+          where: { id: 'listing-1' },
+          data: { lastSeenAt: before },
+        });
+        expect(prisma.externalListingGroup.update).toHaveBeenCalledWith({
+          where: { id: 'group-1' },
+          data: { lastSeenAt: before },
+        });
+      });
+
+      it('moves the representative to another entered listing', async () => {
+        const { prisma, service } = setup();
+        prisma.externalListing.findFirst.mockResolvedValue(
+          storedListing({
+            group: {
+              siteId: 'site-1',
+              transactionType: 'sale',
+              mainExternalListing: { id: 'listing-1', lastSeenAt: entered },
+            },
+          }),
+        );
+        prisma.externalListing.findMany.mockResolvedValue([
+          { id: 'listing-3', lastSeenAt: entered, isActive: true },
+        ]);
+
+        await service.removeSnapshotListing(
+          'office-1',
+          'session-1',
+          'listing-1',
+        );
+
+        expect(prisma.externalListingGroup.update).toHaveBeenCalledWith({
+          where: { id: 'group-1' },
+          data: { mainExternalListingId: 'listing-3' },
+        });
+      });
+
+      it('leaves a listing that was not entered as it is', async () => {
+        const { prisma, service } = setup();
+        prisma.externalListing.findFirst.mockResolvedValue(
+          storedListing({ lastSeenAt: earlier }),
+        );
+
+        await expect(
+          service.removeSnapshotListing('office-1', 'session-1', 'listing-1'),
+        ).resolves.toEqual({ id: 'listing-1', result: 'unchanged' });
+        expect(prisma.externalListing.update).not.toHaveBeenCalled();
+      });
+
+      it('rejects a listing of another office', async () => {
+        const { prisma, service } = setup();
+        prisma.externalListing.findFirst.mockResolvedValue(null);
+
+        await expect(
+          service.removeSnapshotListing('office-1', 'session-1', 'other'),
+        ).rejects.toThrow('ExternalListing not found');
+      });
+    });
+  });
+
+  describe('findAllGroups after a snapshot closes', () => {
+    it('returns the plain active list instead of failing on a stale bucket', async () => {
       const { prisma, service } = createService();
-      prisma.externalListing.findFirst.mockResolvedValue(null);
+      prisma.externalListingSnapshotSession.findFirst.mockResolvedValue(null);
+      prisma.externalListingGroup.findMany.mockResolvedValue([]);
 
       await expect(
-        service.endManualListing('office-1', 'other'),
-      ).rejects.toThrow('ExternalListing not found');
+        service.findAllGroups('office-1', {
+          siteId: 'site-1',
+          transactionType: 'sale',
+          bucket: 'new',
+        }),
+      ).resolves.toEqual([]);
+
+      expect(prisma.externalListingGroup.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            listings: { some: { isActive: true } },
+          }),
+        }),
+      );
+    });
+  });
+
+  describe('getActiveSession', () => {
+    it('reports how many listings stay and how many will end', async () => {
+      const { prisma, service } = createService();
+      const startedAt = new Date('2026-11-03T00:00:00.000Z');
+      prisma.externalListingSnapshotSession.findFirst.mockResolvedValue({
+        id: 'session-1',
+        siteId: 'site-1',
+        transactionType: 'sale',
+        startedAt,
+      });
+      prisma.externalListing.count
+        .mockResolvedValueOnce(2)
+        .mockResolvedValueOnce(5);
+
+      await expect(
+        service.getActiveSession('office-1', 'site-1', 'sale'),
+      ).resolves.toMatchObject({
+        id: 'session-1',
+        receivedListingCount: 2,
+        pendingRemovalCount: 5,
+      });
+      const [received, pending] = prisma.externalListing.count.mock.calls;
+      expect(received[0].where.lastSeenAt).toEqual({ gte: startedAt });
+      expect(pending[0].where).toMatchObject({
+        lastSeenAt: { lt: startedAt },
+        isActive: true,
+      });
+    });
+
+    it('returns null without an open snapshot', async () => {
+      const { prisma, service } = createService();
+      prisma.externalListingSnapshotSession.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.getActiveSession('office-1', 'site-1', 'sale'),
+      ).resolves.toBeNull();
+      expect(prisma.externalListing.count).not.toHaveBeenCalled();
     });
   });
 
@@ -964,16 +1257,17 @@ describe('ExternalListingsService', () => {
       expect(result.comparison.priceChanges).toEqual([]);
     });
 
-    it('leaves manual listings out of the count and deactivation', async () => {
+    it('counts and deactivates listings regardless of their source', async () => {
       const { prisma, service } = setup({
         received: [receivedListing('101', 'group-1')],
       });
 
       await service.completeSession('office-1', 'user-1', 'agent', 'session-1');
 
-      const [receivedQuery, staleQuery] = prisma.externalListing.findMany.mock.calls;
-      expect(receivedQuery[0].where.source).toEqual({ not: 'manual' });
-      expect(staleQuery[0].where.source).toEqual({ not: 'manual' });
+      const [receivedQuery, staleQuery] =
+        prisma.externalListing.findMany.mock.calls;
+      expect(receivedQuery[0].where).not.toHaveProperty('source');
+      expect(staleQuery[0].where).not.toHaveProperty('source');
     });
 
     it('marks the first snapshot of a scope as the baseline', async () => {
@@ -1008,14 +1302,37 @@ describe('ExternalListingsService', () => {
       expect(prisma.externalListingSnapshotSession.update).not.toHaveBeenCalled();
     });
 
-    it('refuses to deactivate everything when nothing was entered', async () => {
+    it('refuses to deactivate everything unless zero is declared', async () => {
       const { prisma, service } = setup({ received: [] });
 
       await expect(
         service.completeSession('office-1', 'user-1', 'agent', 'session-1'),
-      ).rejects.toThrow('입력된 광고가 없는');
+      ).rejects.toThrow('입력된 광고가 없습니다');
 
       expect(prisma.externalListing.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('ends every listing when zero is declared', async () => {
+      const { prisma, service } = setup({
+        received: [],
+        stale: [{ id: 'l1', groupId: 'group-1', articleNo: 'gone-1' }],
+      });
+
+      const result = await service.completeSession(
+        'office-1',
+        'user-1',
+        'agent',
+        'session-1',
+        { expectedListingCount: 0 },
+      );
+
+      expect(prisma.externalListing.updateMany).toHaveBeenCalledWith({
+        where: { id: { in: ['l1'] } },
+        data: { isActive: false },
+      });
+      expect(result.comparison.removedGroups).toEqual([
+        { groupId: 'group-1', articleNos: ['gone-1'] },
+      ]);
     });
   });
 });

@@ -7,7 +7,8 @@ export type SttStatus =
   | 'completed'
   | 'failed';
 export type AnalysisStatus = 'none' | 'processing' | 'completed' | 'failed';
-export type CallDirection = 'inbound' | 'outbound';
+/** visit: 방문 상담 녹음 (통화가 아님) */
+export type CallDirection = 'inbound' | 'outbound' | 'visit';
 
 export interface CallRecordingMessage {
   speaker: number;
@@ -18,9 +19,29 @@ export interface CallRecordingMessage {
   seq: number;
 }
 
+/** 근거가 붙은 분석 항목. lines는 근거가 된 받아쓰기 줄 번호(CallRecordingMessage.seq) */
+export interface CallAnalysisPoint {
+  text: string;
+  lines: number[];
+}
+
+/** 통화에서 말한 값. previous는 말하다 고친 경우 고치기 전 값 */
+export interface CallAnalysisFact {
+  label: string;
+  value: string;
+  previous: string | null;
+  lines: number[];
+}
+
 export interface CallRecordingAnalysis {
   summary?: string;
   keyPoints?: string[];
+  /** 근거 줄이 붙은 핵심 정보 (2026-11-08 이후 분석). 없으면 keyPoints를 쓴다. */
+  points?: CallAnalysisPoint[];
+  /** 통화에서 말한 숫자·날짜 값 */
+  facts?: CallAnalysisFact[];
+  /** 중개사가 원문을 듣고 확인할 점 */
+  checks?: CallAnalysisPoint[];
   customerNeed?: string | null;
   callType?: string;
   sentiment?: 'positive' | 'neutral' | 'negative' | string;
@@ -228,6 +249,8 @@ export interface CallRecordingsListParams {
   dateTo?: string;
   /** 이름·번호·대화내용 통합 검색 */
   q?: string;
+  /** 녹음은 있는데 아직 상담 기록이 없는 것만 (연결 대기) */
+  unlinked?: boolean;
   page?: number;
   limit?: number;
 }

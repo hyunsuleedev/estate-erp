@@ -1,5 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
-import { ConsultationsService } from './consultations.service';
+import { ConsultationsService, recordingDirection } from './consultations.service';
 
 describe('ConsultationsService', () => {
   function createService() {
@@ -13,7 +13,7 @@ describe('ConsultationsService', () => {
       buyerRequirement: { findFirst: jest.fn() },
       buyerIntake: { findFirst: jest.fn() },
       buyerIntakeContact: { findFirst: jest.fn() },
-      callRecording: { findFirst: jest.fn() },
+      callRecording: { findFirst: jest.fn(), findMany: jest.fn(), count: jest.fn(), create: jest.fn() },
     };
 
     const callIntelligence = {
@@ -213,5 +213,39 @@ describe('ConsultationsService', () => {
     ]);
     expect(callIntelligence.requestReanalysis).toHaveBeenCalledWith('rec-1', 'office-1');
   });
-});
 
+  it('방문 상담 녹음은 visit으로 저장한다 (자동 상담 기록이 방문 상담이 된다)', async () => {
+    expect(recordingDirection('visit', 'outbound')).toBe('visit');
+    expect(recordingDirection('phone', 'outbound')).toBe('outbound');
+    expect(recordingDirection(undefined, undefined)).toBe('inbound');
+
+    const { prisma, callIntelligence, service } = createService();
+    prisma.callRecording.create.mockResolvedValue({ id: 'recording-1', sttStatus: 'processing', fileName: 'visit.m4a', fileSize: 10 });
+    await service.createWithRecording(
+      'office-1',
+      'user-1',
+      { type: 'visit', direction: 'inbound', phoneNumber: '' },
+      { originalname: 'visit.m4a', size: 10, buffer: Buffer.from('') } as Express.Multer.File,
+    );
+    expect(prisma.callRecording.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ direction: 'visit', sttStatus: 'processing' }),
+    });
+    expect(callIntelligence.startTranscription).toHaveBeenCalledWith('recording-1', expect.anything());
+  });
+
+  it('연결 대기: 녹음이 있는데 상담 기록이 없는 것만 고른다', async () => {
+    const { prisma, service } = createService();
+    prisma.callRecording.findMany.mockResolvedValue([]);
+    prisma.callRecording.count.mockResolvedValue(0);
+
+    await service.findRecordings('office-1', { unlinked: true });
+
+    expect(prisma.callRecording.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          AND: [{ officeId: 'office-1' }, { fileName: { not: null }, consultations: { none: {} } }],
+        },
+      }),
+    );
+  });
+});

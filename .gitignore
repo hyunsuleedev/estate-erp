@@ -75,3 +75,6 @@ docs/ui-demo-report/assets/
 docs/ui-reference-assets/
 /*.pdf
 docs/**/*.pdf
+
+# 통화 분석 데모 녹음 (prisma/seed-demo-calls.ts가 쓰는 개발용 파일, 커밋하지 않음)
+apps/desktop/public/demo-audio/

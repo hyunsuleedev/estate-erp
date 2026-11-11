@@ -17,6 +17,7 @@ import {
   buildConsultationContent,
   type ParsedCallAnalysis,
   parseCallAnalysis,
+  stripEvidenceLines,
 } from './analysis/call-analysis.parser';
 import {
   DEFAULT_GEMINI_ANALYSIS_MODEL,
@@ -92,9 +93,20 @@ export class CallIntelligenceService {
       return;
     }
 
-    await this.prisma.$transaction([
-      this.prisma.callRecordingMessage.deleteMany({ where: { recordingId } }),
-      this.prisma.callRecordingMessage.createMany({
+    await this.prisma.$transaction(async (tx) => {
+      // 예전 분석의 근거 줄은 예전 받아쓰기의 줄 번호라 새 받아쓰기에서는 엉뚱한 줄을 가리킨다.
+      // 먼저 runId를 바꿔 행을 잠근다: 예전 받아쓰기로 돌던 분석은 이후 저장하지 못하고,
+      // 이미 저장을 끝낸 분석은 잠금이 풀린 뒤의 최신 값으로 돌려받는다.
+      // 그 최신 분석에서 줄 번호만 지워 저장한다 (상담 기록 비교용 consultationContent 등은 그대로 둔다).
+      // 새 분석이 실패해도 예전 요약은 남지만 잘못된 원문으로 안내하지는 않는다.
+      const locked = await tx.callRecording.update({
+        where: { id: recordingId },
+        data: { analysisRunId: randomUUID() },
+        select: { analysis: true },
+      });
+
+      await tx.callRecordingMessage.deleteMany({ where: { recordingId } });
+      await tx.callRecordingMessage.createMany({
         data: utterances.map((utterance, index) => ({
           recordingId,
           speaker: utterance.speaker,
@@ -103,19 +115,25 @@ export class CallIntelligenceService {
           endMs: utterance.endMs,
           seq: index,
         })),
-      }),
-      this.prisma.callRecording.update({
+      });
+      await tx.callRecording.update({
         where: { id: recordingId },
-        data: { sttStatus: 'completed', sttError: null },
-      }),
+        data: {
+          sttStatus: 'completed',
+          sttError: null,
+          ...(locked.analysis
+            ? { analysis: stripEvidenceLines(locked.analysis) as Prisma.InputJsonValue }
+            : {}),
+        },
+      });
       // 통화 길이를 모르고 올린 녹음은 받아쓰기 시각으로 채운다
-      this.prisma.callRecording.updateMany({
+      await tx.callRecording.updateMany({
         where: { id: recordingId, durationSec: 0 },
         data: {
           durationSec: Math.ceil(Math.max(0, ...utterances.map((utterance) => utterance.endMs)) / 1000),
         },
-      }),
-    ]);
+      });
+    });
     this.logger.log(`STT completed: ${recordingId} (${provider}, ${utterances.length} utterances)`);
 
     if (utterances.length > 0) await this.analyze(recordingId);
@@ -223,7 +241,12 @@ export class CallIntelligenceService {
         }),
       });
       const speakers = [...new Set(recording.messages.map((message) => message.speaker))];
-      const parsed = parseCallAnalysis(raw, context, speakers);
+      const parsed = parseCallAnalysis(
+        raw,
+        context,
+        speakers,
+        recording.messages.map((message) => message.seq),
+      );
       if (parsed.dropped.length > 0) {
         this.logger.log(
           `Dropped ${parsed.dropped.length} suggestion(s) for ${recordingId}: ${parsed.dropped
@@ -269,6 +292,10 @@ export class CallIntelligenceService {
           analysis: {
             summary: parsed.summary,
             keyPoints: parsed.keyPoints,
+            // 근거 줄(받아쓰기 seq)이 붙은 항목 — 화면에서 원문으로 이동한다
+            points: parsed.points,
+            facts: parsed.facts,
+            checks: parsed.checks,
             customerNeed: parsed.customerNeed,
             callType: parsed.callType,
             sentiment: parsed.sentiment,
@@ -370,7 +397,8 @@ export class CallIntelligenceService {
         ...data,
         officeId: recording.officeId,
         createdById: recording.userId,
-        type: 'phone',
+        // 방문 상담 녹음은 방문 상담으로 남긴다
+        type: recording.direction === 'visit' ? 'visit' : 'phone',
         callRecordingId: recording.id,
         // 상담 흐름에서 통화한 시각에 보이도록
         createdAt: recording.calledAt,

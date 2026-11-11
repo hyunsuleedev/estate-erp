@@ -1,5 +1,6 @@
 import type { RequestFn } from '../client.js';
 import type { Contact } from './contacts.js';
+import type { CommissionPayment } from './finance.js';
 import type { Listing } from './listings.js';
 import type { Property } from './properties.js';
 
@@ -72,9 +73,16 @@ export interface Deal {
     userId: string;
     role: string;
     side: string;
+    commissionAmount?: number | null;
+    /// Prisma Decimal이라 응답에서는 문자열로 온다.
+    commissionRate?: number | string | null;
+    settlementStatus?: string;
+    settlementDate?: string | null;
     user: { id: string; name: string };
   }>;
   payments?: DealPayment[];
+  /// 수수료 청구. 목록·상세 응답에 분배와 함께 포함된다.
+  commissionPayments?: CommissionPayment[];
 }
 
 export interface CreateDealDto {

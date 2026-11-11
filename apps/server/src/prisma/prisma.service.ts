@@ -6,6 +6,7 @@ const TENANT_SCOPED_MODELS = new Set([
   "User",
   "OfficeSite",
   "Contact",
+  "ContactGroup",
   "ContactRelation",
   "PropertyContact",
   "Tenant",

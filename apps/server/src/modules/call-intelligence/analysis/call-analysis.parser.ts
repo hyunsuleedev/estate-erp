@@ -30,9 +30,30 @@ export interface ConsultationLinks {
   matchId: string | null;
 }
 
+// 분석 JSON 칸에 그대로 저장하므로 interface가 아닌 type으로 둔다 (Prisma JSON 타입과 호환)
+
+/** 근거가 붙은 분석 항목. lines는 근거가 된 받아쓰기 줄 번호(CallRecordingMessage.seq)다. */
+export type AnalysisPoint = {
+  text: string;
+  lines: number[];
+};
+
+/** 통화에서 말한 값. previous는 말하다 고친 경우 고치기 전 값이다. */
+export type AnalysisFact = {
+  label: string;
+  value: string;
+  previous: string | null;
+  lines: number[];
+};
+
 export interface ParsedCallAnalysis {
   summary: string;
+  /** 상담 기록·예전 화면용 글 목록 (points의 text와 같다) */
   keyPoints: string[];
+  points: AnalysisPoint[];
+  facts: AnalysisFact[];
+  /** 중개사가 원문을 듣고 확인할 점 */
+  checks: AnalysisPoint[];
   customerNeed: string | null;
   callType: string;
   sentiment: string;
@@ -43,6 +64,10 @@ export interface ParsedCallAnalysis {
 }
 
 const MAX_SUGGESTIONS = 8;
+const MAX_POINTS = 12;
+const MAX_FACTS = 10;
+const MAX_CHECKS = 6;
+const MAX_LINES_PER_ITEM = 3;
 
 const CONTACT_REQUIRED_TYPES: CallSuggestionType[] = [
   CallSuggestionType.BUYER_REQUIREMENT_CREATE,
@@ -65,6 +90,58 @@ function record(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : {};
+}
+
+/** 근거 줄 번호: 받아쓰기에 있는 번호만, 중복 없이 순서대로 */
+function lineRefs(value: unknown, validLines: Set<number>): number[] {
+  if (!Array.isArray(value)) return [];
+  const lines: number[] = [];
+  for (const item of value) {
+    const line = typeof item === 'string' ? Number(item) : item;
+    if (typeof line !== 'number' || !Number.isInteger(line) || !validLines.has(line)) continue;
+    if (!lines.includes(line)) lines.push(line);
+    if (lines.length >= MAX_LINES_PER_ITEM) break;
+  }
+  return lines.sort((a, b) => a - b);
+}
+
+/** 글 항목 목록. 예전 형식(글만 있는 배열)도 받는다. */
+function parsePoints(
+  value: unknown,
+  validLines: Set<number>,
+  max: number,
+  maxLength: number,
+): AnalysisPoint[] {
+  if (!Array.isArray(value)) return [];
+  const points: AnalysisPoint[] = [];
+  for (const raw of value) {
+    const item = typeof raw === 'string' ? { text: raw } : record(raw);
+    const pointText = text(item.text, maxLength);
+    if (!pointText) continue;
+    points.push({ text: pointText, lines: lineRefs(item.lines, validLines) });
+    if (points.length >= max) break;
+  }
+  return points;
+}
+
+function parseFacts(value: unknown, validLines: Set<number>): AnalysisFact[] {
+  if (!Array.isArray(value)) return [];
+  const facts: AnalysisFact[] = [];
+  for (const raw of value) {
+    const item = record(raw);
+    const label = text(item.label, 40);
+    const factValue = text(item.value, 80);
+    if (!label || !factValue) continue;
+    const previous = text(item.previous, 80);
+    facts.push({
+      label,
+      value: factValue,
+      previous: previous && previous !== factValue && previous.toLowerCase() !== 'null' ? previous : null,
+      lines: lineRefs(item.lines, validLines),
+    });
+    if (facts.length >= MAX_FACTS) break;
+  }
+  return facts;
 }
 
 function lookup(context: CallContext, value: unknown, kind: RefKind): RefEntry | null {
@@ -252,18 +329,23 @@ function parseLinks(context: CallContext, raw: unknown): ConsultationLinks {
   return links;
 }
 
+/**
+ * @param transcriptLines 받아쓰기 줄 번호(seq) 목록. 근거 줄은 이 안의 번호만 남긴다.
+ */
 export function parseCallAnalysis(
   raw: unknown,
   context: CallContext,
   speakers: number[],
+  transcriptLines: number[],
 ): ParsedCallAnalysis {
   const data = record(raw);
   const summary = text(data.summary, 1000);
   if (!summary) throw new Error('분석 결과에 요약이 없습니다');
 
-  const keyPoints = Array.isArray(data.keyPoints)
-    ? data.keyPoints.map((point) => text(point, 300)).filter((point): point is string => !!point).slice(0, 12)
-    : [];
+  const validLines = new Set(transcriptLines);
+  const points = parsePoints(data.keyPoints, validLines, MAX_POINTS, 300);
+  const facts = parseFacts(data.facts, validLines);
+  const checks = parsePoints(data.checks, validLines, MAX_CHECKS, 200);
   const agentSpeaker =
     typeof data.agentSpeaker === 'number' && speakers.includes(data.agentSpeaker)
       ? data.agentSpeaker
@@ -314,7 +396,10 @@ export function parseCallAnalysis(
 
   return {
     summary,
-    keyPoints,
+    keyPoints: points.map((point) => point.text),
+    points,
+    facts,
+    checks,
     customerNeed: text(data.customerNeed, 300),
     callType: text(data.callType, 30) ?? '기타',
     sentiment: ['positive', 'neutral', 'negative'].includes(String(data.sentiment))
@@ -327,7 +412,30 @@ export function parseCallAnalysis(
   };
 }
 
-/** 상담 기록 본문: 요약 + 핵심 정보 */
-export function buildConsultationContent(analysis: Pick<ParsedCallAnalysis, 'summary' | 'keyPoints'>) {
-  return [analysis.summary, ...analysis.keyPoints.map((point) => `· ${point}`)].join('\n');
+/**
+ * 저장된 분석에서 근거 줄 번호만 지운다.
+ * 받아쓰기를 새로 만들면 예전 분석의 줄 번호는 새 받아쓰기의 다른 줄을 가리키게 된다.
+ */
+export function stripEvidenceLines(analysis: unknown): unknown {
+  if (!analysis || typeof analysis !== 'object' || Array.isArray(analysis)) return analysis;
+  const stripped: Record<string, unknown> = { ...(analysis as Record<string, unknown>) };
+  for (const key of ['points', 'facts', 'checks']) {
+    const items = stripped[key];
+    if (!Array.isArray(items)) continue;
+    stripped[key] = items.map((item) =>
+      item && typeof item === 'object' && !Array.isArray(item) ? { ...item, lines: [] } : item,
+    );
+  }
+  return stripped;
+}
+
+/** 상담 기록 본문: 요약 + 핵심 정보 + 확인할 점 */
+export function buildConsultationContent(
+  analysis: Pick<ParsedCallAnalysis, 'summary' | 'keyPoints'> & { checks?: Array<{ text: string }> },
+) {
+  return [
+    analysis.summary,
+    ...analysis.keyPoints.map((point) => `· ${point}`),
+    ...(analysis.checks ?? []).map((check) => `· 확인 필요: ${check.text}`),
+  ].join('\n');
 }

@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
@@ -15,11 +16,13 @@ import {
 } from '../../common/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import {
+  AddSnapshotListingDto,
   BatchUpsertDto,
   CompleteSessionOptions,
   CreateSessionDto,
   ExternalListingsService,
-  ManualListingsDto,
+  KeepSnapshotListingsDto,
+  SnapshotListingPatch,
   UpdateGroupDto,
 } from './external-listings.service';
 
@@ -106,6 +109,53 @@ export class ExternalListingsController {
     );
   }
 
+  /** 열린 스냅샷에서 미입력 매물을 다시 입력하지 않고 유지. */
+  @Post('sessions/:id/keep')
+  keepSnapshotListings(
+    @Param('id') id: string,
+    @Body() dto: KeepSnapshotListingsDto,
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.service.keepSnapshotListings(user.officeId, id, dto);
+  }
+
+  /** 열린 스냅샷에서 매물에 동일 광고 한 건 추가. */
+  @Post('sessions/:id/groups/:groupId/listings')
+  addSnapshotListing(
+    @Param('id') id: string,
+    @Param('groupId') groupId: string,
+    @Body() dto: AddSnapshotListingDto,
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.service.addSnapshotListing(user.officeId, id, groupId, dto);
+  }
+
+  /** 열린 스냅샷에서 광고 수정. */
+  @Patch('sessions/:id/listings/:listingId')
+  updateSnapshotListing(
+    @Param('id') id: string,
+    @Param('listingId') listingId: string,
+    @Body() patch: SnapshotListingPatch,
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.service.updateSnapshotListing(
+      user.officeId,
+      id,
+      listingId,
+      patch,
+    );
+  }
+
+  /** 열린 스냅샷에서 광고 삭제. */
+  @Delete('sessions/:id/listings/:listingId')
+  removeSnapshotListing(
+    @Param('id') id: string,
+    @Param('listingId') listingId: string,
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.service.removeSnapshotListing(user.officeId, id, listingId);
+  }
+
   @Get('groups/:id')
   findGroupById(
     @Param('id') id: string,
@@ -123,26 +173,8 @@ export class ExternalListingsController {
     return this.service.updateGroup(id, user.officeId, dto);
   }
 
-  /** 수동 입력. 스냅샷 없이 저장하며 다른 광고를 비활성화하지 않는다. */
-  @Post('manual')
-  createManualListings(
-    @Body() dto: ManualListingsDto,
-    @CurrentUser() user: CurrentUserPayload,
-  ) {
-    return this.service.createManualListings(user.officeId, dto);
-  }
-
-  /** 수동 입력 광고 내리기. */
-  @Post('listings/:id/end')
-  endManualListing(
-    @Param('id') id: string,
-    @CurrentUser() user: CurrentUserPayload,
-  ) {
-    return this.service.endManualListing(user.officeId, id);
-  }
-
   /**
-   * 열린 스냅샷에 묶음 입력.
+   * 열린 스냅샷에 묶음 입력 — 화면 입력과 외부 agent의 단일 진입점.
    * 최대 100건/요청, 요청 하나는 전부 저장되거나 전부 거부된다.
    */
   @Post('batch')
