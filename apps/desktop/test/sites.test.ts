@@ -24,8 +24,16 @@ describe('desktop managed sites page', () => {
     assert.match(source, /open=\{isSitesPanelOpen\}/);
     assert.match(panelSource, /aria-expanded=\{open\}/);
     assert.match(panelSource, /inert=\{!open\}/);
-    // 너비는 본문 최소 폭을 지키도록 페이지 폭에 맞춰 제한한다
-    assert.match(source, /clampPanelWidth\(sitesPanelWidth, pageWidth\)/);
+    // 너비는 본문 최소 폭을 지키도록 페이지 폭에 맞춰 CSS로 제한한다
+    assert.match(source, /@container\/sites-page/);
+    assert.equal(panelSource.match(/maxWidth: SITES_PANEL_MAX_WIDTH_CSS/g)?.length, 2);
+    // 앱 메뉴가 접히는 동안 페이지가 렌더링되지 않도록 페이지 폭을 재거나 state에 넣지 않는다
+    assert.doesNotMatch(source, /ResizeObserver|setPageWidth|sitesPanelWidthCap/);
+    // 끌기·키보드·더블클릭은 그 순간의 페이지 폭과 실제 너비를 DOM에서 읽는다
+    assert.match(panelSource, /clampPanelWidth\(next, frameRef\.current\?\.parentElement\?\.clientWidth \?\? 0\)/);
+    assert.match(panelSource, /const startWidth = readRenderedWidth\(\)/);
+    assert.match(panelSource, /clampToPage\(readRenderedWidth\(\) \+/);
+    assert.match(panelSource, /handle\.setAttribute\('aria-valuenow', String\(aside\.offsetWidth\)\)/);
 
     // 고정(즐겨찾기)은 낙관적으로 바꾸고 고정 묶음으로 보여준다 — 고정한 단지만 걸러 보는 필터는 두지 않는다
     assert.match(source, /api\.officeSites\.update\(id, \{ isFavorite: !isFavorite \}\)/);

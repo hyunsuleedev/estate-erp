@@ -6,7 +6,13 @@ import { CONTACT_RELATION_TYPES, type ContactRelationType } from '@estate-erp/sh
 import { Check, Search, UserRound } from 'lucide-react';
 import { api } from '@/lib/api';
 import { formatPhone } from '@/lib/format';
-import { mergeContactTags, normalizePhone, splitContactTags, stringifyContactTags } from '@/lib/contacts';
+import {
+  hasContactTagsChanged,
+  mergeContactTags,
+  normalizePhone,
+  splitContactTags,
+  stringifyContactTags,
+} from '@/lib/contacts';
 import { cn } from '@/lib/utils';
 import { ContactGroupSelector } from '@/components/contacts/contact-group-selector';
 import {
@@ -93,7 +99,10 @@ export function ContactEditDialog({
         phones: phoneInputs,
         // 빈 입력은 null로 보내 기존 값을 지운다 (undefined는 "변경 없음"으로 처리됨)
         email: email.trim() || null,
-        tags: mergeContactTags(groupTags, customTagsInput),
+        // 그룹 소속이 태그에 있으므로 바꾼 때만 보낸다. 폼을 연 사이 들어간 그룹을 덮어쓰지 않는다.
+        ...(hasContactTagsChanged(contact.tags, groupTags, customTagsInput) && {
+          tags: mergeContactTags(groupTags, customTagsInput),
+        }),
         memo: memo.trim() || null,
       });
     },

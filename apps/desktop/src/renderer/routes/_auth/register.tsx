@@ -6,10 +6,30 @@ import { AlertCircle, GalleryVerticalEnd, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { getDesktopAuthProvider } from '@/lib/desktop-auth-provider';
 
 export const Route = createFileRoute('/_auth/register')({
   component: RegisterPage,
 });
+
+function RegisterPage() {
+  return getDesktopAuthProvider() === 'auth0' ? <Auth0RegisterNotice /> : <ClerkRegisterPage />;
+}
+
+/** Auth0 시험 모드는 사장님 가입(사무소 생성)을 아직 연결하지 않았다. */
+function Auth0RegisterNotice() {
+  return (
+    <div className="w-full max-w-sm space-y-4 px-6 text-center">
+      <h1 className="text-xl font-semibold tracking-tight">회원가입</h1>
+      <p className="text-sm text-muted-foreground">
+        Auth0 시험 모드에서는 앱에서 회원가입을 할 수 없습니다. 관리자가 만든 계정으로 로그인해 주세요.
+      </p>
+      <Link to="/login" className="text-sm font-medium text-primary hover:underline">
+        로그인으로 돌아가기
+      </Link>
+    </div>
+  );
+}
 
 function getErrorMessage(error: unknown, fallback: string) {
   if (isClerkAPIResponseError(error)) {
@@ -18,7 +38,7 @@ function getErrorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
 }
 
-function RegisterPage() {
+function ClerkRegisterPage() {
   const navigate = useNavigate();
   const { isLoaded, signUp, setActive } = useSignUp();
   const [username, setUsername] = useState('');

@@ -1,5 +1,10 @@
-import { useEffect, useState } from 'react';
-import { Link } from '@tanstack/react-router';
+import {
+  useEffect,
+  useState,
+  type AnchorHTMLAttributes,
+  type MouseEvent,
+} from 'react';
+import { defaultStringifySearch, Link } from '@tanstack/react-router';
 import {
   Building2,
   CalendarClock,
@@ -14,7 +19,7 @@ import {
   Wrench,
   X,
 } from 'lucide-react';
-import { toast } from 'sonner';
+import { notify } from '@/lib/notify';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
@@ -23,6 +28,46 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
 import { useCti, type ActiveCall } from './cti-provider';
+
+type PopupRoute = '/contacts' | '/calls/logs';
+
+/**
+ * 팝업 안 링크. 셸 안에서는 라우터 링크이고, 탭 화면 위의 팝업 층에서는
+ * 라우터가 없으므로 셸 창에 그 화면을 열어 달라고 보낸다.
+ */
+function PopupRouteLink({
+  to,
+  search,
+  onClick,
+  children,
+  ...anchorProps
+}: Omit<AnchorHTMLAttributes<HTMLAnchorElement>, 'href'> & {
+  to: PopupRoute;
+  search?: Record<string, unknown>;
+}) {
+  const { openRoute } = useCti();
+  if (openRoute) {
+    const href = `${to}${search ? defaultStringifySearch(search) : ''}`;
+    return (
+      <a
+        {...anchorProps}
+        href={href}
+        onClick={(event: MouseEvent<HTMLAnchorElement>) => {
+          event.preventDefault();
+          onClick?.(event);
+          openRoute(href);
+        }}
+      >
+        {children}
+      </a>
+    );
+  }
+  return (
+    <Link {...anchorProps} to={to} search={search as never} onClick={onClick}>
+      {children}
+    </Link>
+  );
+}
 
 function formatPhone(phone: string): string {
   if (/^01\d{9}$/.test(phone)) {
@@ -129,11 +174,11 @@ function ConsultationForm({
         });
         patchCallLog({ consultationId: consultation.id });
       }
-      toast.success('상담이 기록되었습니다');
+      notify('success', '상담이 기록되었습니다');
       onDone();
     } catch (error) {
       console.error('[cti] 상담 기록 실패:', error);
-      toast.error('상담 기록에 실패했습니다');
+      notify('error', '상담 기록에 실패했습니다');
     } finally {
       setSaving(false);
     }
@@ -185,12 +230,12 @@ function QuickContactForm({
         await api.cti.updateCallLog(call.callLog.id, { contactId: contact.id });
         patchCallLog({ contactId: contact.id, contact: { id: contact.id, name: contact.name } });
       }
-      toast.success(`연락처 "${contact.name}" 등록됨`);
+      notify('success', `연락처 "${contact.name}" 등록됨`);
       await refreshLookup();
       onDone();
     } catch (error) {
       console.error('[cti] 연락처 등록 실패:', error);
-      toast.error('연락처 등록에 실패했습니다');
+      notify('error', '연락처 등록에 실패했습니다');
     } finally {
       setSaving(false);
     }
@@ -321,13 +366,13 @@ function LookupBody({ call }: { call: ActiveCall }) {
       {lookup.recentCalls.length > 1 && (
         <p className="text-xs text-muted-foreground/70">
           최근 통화 {lookup.recentCalls.length}건 —{' '}
-          <Link
+          <PopupRouteLink
             to="/calls/logs"
             search={{ phone: lookup.phone }}
             className="underline underline-offset-2 hover:text-foreground"
           >
             이력 보기
-          </Link>
+          </PopupRouteLink>
         </p>
       )}
     </div>
@@ -427,9 +472,9 @@ export function CallPopup() {
                   상담 기록
                 </Button>
                 <Button asChild variant="outline" size="sm" className="flex-1">
-                  <Link to="/contacts" onClick={dismiss}>
+                  <PopupRouteLink to="/contacts" onClick={dismiss}>
                     고객 상세
-                  </Link>
+                  </PopupRouteLink>
                 </Button>
               </>
             ) : (

@@ -27,40 +27,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { speakerLabelOf } from './-call-utils';
-
-/** AI 분석 + STT 대화로 상담 내용 프리필 문안 구성 */
-function buildPrefillContent(
-  analysis: CallRecordingAnalysis | null,
-  messages: CallRecordingMessage[],
-): string {
-  const parts: string[] = [];
-
-  if (analysis?.summary) parts.push(String(analysis.summary));
-
-  const keyPoints = analysis?.['keyPoints'];
-  if (Array.isArray(keyPoints) && keyPoints.length > 0) {
-    parts.push(`핵심 정보:\n${keyPoints.map((k) => `- ${String(k)}`).join('\n')}`);
-  }
-
-  const nextActions = analysis?.nextActions;
-  if (Array.isArray(nextActions) && nextActions.length > 0) {
-    parts.push(`다음 조치:\n${nextActions.map((a) => `- ${String(a)}`).join('\n')}`);
-  } else if (typeof nextActions === 'string' && nextActions.trim()) {
-    parts.push(`다음 조치:\n- ${nextActions}`);
-  }
-
-  // 분석이 없으면 대화 앞부분으로 대체
-  if (parts.length === 0 && messages.length > 0) {
-    const lines = messages
-      .slice(0, 12)
-      .map((m) => `${speakerLabelOf(m.speaker, m.speakerLabel)}: ${m.text}`);
-    if (messages.length > 12) lines.push('… (이하 생략)');
-    parts.push(lines.join('\n'));
-  }
-
-  return parts.join('\n\n');
-}
+import { buildPrefillContent } from './-call-utils';
 
 /** 통화 기록 → 상담 기록 전환 (AI 요약/대화 프리필 + callRecordingId 연결) */
 export function ConvertConsultationDialog({

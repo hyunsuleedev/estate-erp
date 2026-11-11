@@ -1,3 +1,7 @@
+/**
+ * 수금 칸반. 청구를 수금 상태별로 놓는다. 업무 보드와 같은 열 모양을 쓴다.
+ * 상태 변경은 금액 입력이 필요하므로 끌어서 옮기지 않고, 카드를 눌러 거래 상세에서 처리한다.
+ */
 import { useMemo } from 'react';
 import { Handshake, Wallet } from 'lucide-react';
 import type {
@@ -6,32 +10,46 @@ import type {
   LedgerPayment,
 } from '@estate-erp/api-client';
 import { cn } from '@/lib/utils';
-import { formatDate, formatMoney } from '@/lib/format';
+import { formatMoney } from '@/lib/format';
 import { EmptyState, StatusBadge } from '@/components/domain';
+import {
+  clientSideLabel,
+  dealLocation,
+  displayStatus,
+  effectiveDueDate,
+  isClosedPayment,
+  payerName,
+  paymentRemaining,
+  receivedAmount,
+  relativeDueLabel,
+  shortDate,
+  toDayKey,
+} from './-cashflow-utils';
 
-// ─────────────────────────────────────────────────────────────
-// 수금 칸반 뷰 — 청구(payment) 단위를 수금 상태 컬럼으로 배치
-// 컬럼: 초안* → 수금예정 → 일부수금 → 연체 → 수금완료 → 면제* (*: 항목 있을 때만)
-// 카드 클릭 → 거래 상세 Sheet (수금 처리/조정 액션은 Sheet 안에서)
-// ─────────────────────────────────────────────────────────────
-
-interface KanbanCard {
-  payment: LedgerPayment;
-  dealId: string;
-  location: string;
-  partnerName: string | null;
+/** 수금완료는 받은 돈, 면제·취소는 받지 않기로 한 돈, 그 외는 남은 돈을 보여 준다. */
+function cardAmount(payment: LedgerPayment, status: CommissionPaymentStatus) {
+  if (status === 'collected') {
+    return receivedAmount(payment);
+  }
+  if (isClosedPayment(payment)) {
+    return Math.max(0, payment.expectedAmount - (payment.actualAmount ?? 0));
+  }
+  return paymentRemaining(payment);
 }
 
-/** 항상 노출하는 핵심 4단계 */
+interface KanbanCard {
+  group: LedgerDealGroup;
+  payment: LedgerPayment;
+  due: string | null;
+}
+
+/** 항상 보이는 4단계 */
 const CORE_COLUMNS: CommissionPaymentStatus[] = [
   'pending',
   'partial',
   'overdue',
   'collected',
 ];
-
-/** 항목이 있을 때만 노출하는 보조 컬럼 */
-const OPTIONAL_COLUMNS: CommissionPaymentStatus[] = ['draft', 'waived', 'cancelled'];
 
 const COLUMN_ORDER: CommissionPaymentStatus[] = [
   'draft',
@@ -53,47 +71,30 @@ export function LedgerKanban({
   const byStatus = useMemo(() => {
     const map = new Map<CommissionPaymentStatus, KanbanCard[]>();
     for (const status of COLUMN_ORDER) map.set(status, []);
-    for (const g of groups) {
-      const location =
-        [g.deal.siteName, g.deal.dongName, g.deal.unitName]
-          .filter(Boolean)
-          .join(' ') || '매물 미지정';
-      for (const p of g.payments) {
-        const list = map.get(p.status);
-        if (!list) continue;
-        list.push({
-          payment: p,
-          dealId: g.deal.id,
-          location,
-          partnerName: g.deal.partnerBroker?.name ?? null,
+    for (const group of groups) {
+      const balance = group.deal.balanceDueDate;
+      for (const payment of group.payments) {
+        map.get(displayStatus(payment, balance))?.push({
+          group,
+          payment,
+          due: effectiveDueDate(payment, balance),
         });
       }
     }
-    // 컬럼 내부 정렬: 예정일 임박순 (없으면 뒤로)
     for (const list of map.values()) {
-      list.sort((a, b) => {
-        const at = a.payment.dueDate
-          ? new Date(a.payment.dueDate).getTime()
-          : Number.POSITIVE_INFINITY;
-        const bt = b.payment.dueDate
-          ? new Date(b.payment.dueDate).getTime()
-          : Number.POSITIVE_INFINITY;
-        return at - bt;
-      });
+      list.sort((a, b) =>
+        (toDayKey(a.due) ?? '9999').localeCompare(toDayKey(b.due) ?? '9999'),
+      );
     }
     return map;
   }, [groups]);
 
-  const columns = COLUMN_ORDER.filter((status) => {
-    if (CORE_COLUMNS.includes(status)) return true;
-    if (OPTIONAL_COLUMNS.includes(status)) {
-      return (byStatus.get(status)?.length ?? 0) > 0;
-    }
-    return false;
-  });
-
+  const columns = COLUMN_ORDER.filter(
+    (status) =>
+      CORE_COLUMNS.includes(status) || (byStatus.get(status)?.length ?? 0) > 0,
+  );
   const totalCards = columns.reduce(
-    (acc, status) => acc + (byStatus.get(status)?.length ?? 0),
+    (sum, status) => sum + (byStatus.get(status)?.length ?? 0),
     0,
   );
 
@@ -101,125 +102,110 @@ export function LedgerKanban({
     return (
       <EmptyState
         icon={Wallet}
-        title="조건에 맞는 청구 내역이 없습니다"
-        description="기간이나 필터를 조정해보세요."
+        title="조건에 맞는 청구가 없습니다"
+        description="기간이나 필터를 바꿔 보세요."
       />
     );
   }
 
   return (
-    <div className="overflow-x-auto pb-2">
-      <div
-        className="grid min-w-[860px] gap-3"
-        style={{
-          gridTemplateColumns: `repeat(${columns.length}, minmax(200px, 1fr))`,
-        }}
-      >
-        {columns.map((status) => {
-          const cards = byStatus.get(status) ?? [];
-          const sum = cards.reduce((acc, c) => {
-            // 수금완료 컬럼은 실수금액, 나머지는 잔여 예정액 기준 합계
-            if (status === 'collected') {
-              return acc + (c.payment.actualAmount ?? c.payment.expectedAmount);
-            }
-            return (
-              acc +
-              (c.payment.expectedAmount - (c.payment.actualAmount ?? 0))
-            );
-          }, 0);
-          return (
-            <div
-              key={status}
-              className="flex flex-col rounded-lg border bg-muted/30"
-            >
-              <div className="flex items-center gap-2 border-b px-3 py-2.5">
-                <StatusBadge kind="commissionStatus" status={status} size="sm" />
-                <span className="text-xs text-muted-foreground">
-                  {cards.length}건
-                </span>
-                <span className="ml-auto text-xs font-semibold tabular-nums">
-                  {formatMoney(sum)}
-                </span>
-              </div>
-              <div className="flex flex-col gap-2 p-2">
-                {cards.length === 0 ? (
-                  <div className="rounded-md border border-dashed py-6 text-center text-[11px] text-muted-foreground">
-                    없음
-                  </div>
-                ) : (
-                  cards.map((card) => (
-                    <KanbanCardItem
-                      key={card.payment.id}
-                      card={card}
-                      onClick={() => onOpenDeal(card.dealId, card.payment.id)}
-                    />
-                  ))
-                )}
-              </div>
+    <div
+      className="grid h-full min-w-min auto-cols-[minmax(216px,1fr)] grid-flow-col gap-3 p-3"
+    >
+      {columns.map((status) => {
+        const cards = byStatus.get(status) ?? [];
+        const sum = cards.reduce(
+          (acc, { payment }) => acc + cardAmount(payment, status),
+          0,
+        );
+        return (
+          <section key={status} className="flex min-h-0 min-w-0 flex-col">
+            <div className="mb-1.5 flex h-7 shrink-0 items-center gap-1.5 px-1 text-[13px]">
+              <StatusBadge kind="commissionStatus" status={status} size="sm" />
+              <span className="text-xs text-muted-foreground tabular-nums">
+                {cards.length}
+              </span>
+              <span className="ml-auto text-[12.5px] font-semibold tabular-nums">
+                {formatMoney(sum)}
+              </span>
             </div>
-          );
-        })}
-      </div>
+            <div className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto rounded-lg bg-muted p-1.5">
+              {cards.length === 0 ? (
+                <p className="py-5 text-center text-[12.5px] text-[#a5a39f]">
+                  없음
+                </p>
+              ) : (
+                cards.map((card) => (
+                  <CardItem
+                    key={card.payment.id}
+                    card={card}
+                    status={status}
+                    onClick={() =>
+                      onOpenDeal(card.group.deal.id, card.payment.id)
+                    }
+                  />
+                ))
+              )}
+            </div>
+          </section>
+        );
+      })}
     </div>
   );
 }
 
-function KanbanCardItem({
+function CardItem({
   card,
+  status,
   onClick,
 }: {
   card: KanbanCard;
+  status: CommissionPaymentStatus;
   onClick: () => void;
 }) {
-  const p = card.payment;
-  const sideLabel = p.clientSide === 'seller' ? '매도측' : '매수측';
-  const isOverdue = p.status === 'overdue';
-  const collectedPart =
-    p.status === 'partial' && p.actualAmount != null ? p.actualAmount : null;
-
+  const { group, payment, due } = card;
+  const collected = status === 'collected';
   return (
     <button
       type="button"
       onClick={onClick}
-      className={cn(
-        'w-full rounded-md border bg-card p-2.5 text-left text-sm shadow-xs transition-colors hover:bg-accent/50',
-        isOverdue && 'border-destructive/40',
-      )}
+      className="w-full rounded-md border border-border bg-card p-2.5 text-left text-[13px] transition-colors hover:border-[#cfcdc7]"
     >
       <div className="flex items-start justify-between gap-2">
-        <span className="min-w-0 truncate text-xs font-medium">
-          {card.location}
+        <span className="min-w-0 leading-snug font-medium break-keep">
+          {dealLocation(group.deal)}
         </span>
-        <span className="shrink-0 text-xs font-semibold tabular-nums">
-          {formatMoney(p.expectedAmount)}
+        <span className="shrink-0 font-semibold tabular-nums">
+          {formatMoney(cardAmount(payment, status))}
         </span>
       </div>
-      <div className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px] text-muted-foreground">
-        <span>{sideLabel}</span>
-        {p.code && <span className="font-mono text-[10px]">{p.code}</span>}
-        {p.dueDate && (
-          <span className={cn(isOverdue && 'font-medium text-destructive')}>
-            {formatDate(p.dueDate)}
+      <div className="mt-1.5 flex flex-wrap gap-x-2 gap-y-0.5 text-xs text-muted-foreground tabular-nums">
+        <span>
+          {[clientSideLabel(payment.clientSide), payerName(group.deal, payment)]
+            .filter(Boolean)
+            .join(' · ')}
+        </span>
+        {collected ? (
+          <span>{shortDate(payment.paidAt)} 입금</span>
+        ) : (
+          due && (
+            <span className={cn(status === 'overdue' && 'text-destructive-strong')}>
+              {shortDate(due)} · {relativeDueLabel(due)}
+            </span>
+          )
+        )}
+        {(status === 'partial' || status === 'waived') && receivedAmount(payment) > 0 && (
+          <span className="text-warning-strong">
+            수금 {formatMoney(receivedAmount(payment))}
           </span>
         )}
-        {card.partnerName && (
+        {group.deal.partnerBroker && (
           <span className="inline-flex items-center gap-0.5">
             <Handshake className="size-3" />
-            {card.partnerName}
+            {group.deal.partnerBroker.name}
           </span>
         )}
       </div>
-      {collectedPart !== null && (
-        <div className="mt-1 text-[11px] text-warning">
-          수금 {formatMoney(collectedPart)} · 잔여{' '}
-          {formatMoney(p.expectedAmount - collectedPart)}
-        </div>
-      )}
-      {p.status === 'collected' && p.paidAt && (
-        <div className="mt-1 text-[11px] text-success">
-          {formatDate(p.paidAt)} 수금 완료
-        </div>
-      )}
     </button>
   );
 }

@@ -47,6 +47,7 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { EmptyState } from '@/components/domain';
 import {
+  SITES_PANEL_MAX_WIDTH_CSS,
   SITES_PANEL_WIDTH,
   buildSitePanelSections,
   canEditSiteStructure,
@@ -174,8 +175,8 @@ export function SitesPanelToggle({
 
 interface SitesPanelProps {
   open: boolean;
+  /** 사용자가 정한 너비. 실제 너비는 페이지가 좁으면 CSS가 이보다 줄인다. */
   width: number;
-  containerWidth: number;
   onWidthChange: (width: number) => void;
   onWidthCommit: (width: number) => void;
   onClose: () => void;
@@ -197,7 +198,6 @@ interface SitesPanelProps {
 export function SitesPanel({
   open,
   width,
-  containerWidth,
   onWidthChange,
   onWidthCommit,
   onClose,
@@ -221,6 +221,21 @@ export function SitesPanel({
   const [isIdleOpen, setIsIdleOpen] = useState(false);
   const [isResizing, setIsResizing] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
+  const frameRef = useRef<HTMLDivElement>(null);
+  const asideRef = useRef<HTMLElement>(null);
+  const resizeHandleRef = useRef<HTMLDivElement>(null);
+
+  // 실제 너비는 CSS가 정하므로 손잡이의 현재값은 렌더링 없이 DOM에 바로 적는다
+  useEffect(() => {
+    const aside = asideRef.current;
+    const handle = resizeHandleRef.current;
+    if (!aside || !handle) return;
+    const observer = new ResizeObserver(() => {
+      handle.setAttribute('aria-valuenow', String(aside.offsetWidth));
+    });
+    observer.observe(aside);
+    return () => observer.disconnect();
+  }, []);
 
   const showSearch = officeSites.length > SEARCH_MIN_SITES;
   const query = showSearch ? siteQuery.trim() : '';
@@ -400,16 +415,21 @@ export function SitesPanel({
   };
 
   // ── 너비 조절 ──
+  // 페이지 폭과 실제 너비는 조작하는 순간에만 DOM에서 읽는다
+  const clampToPage = (next: number) =>
+    clampPanelWidth(next, frameRef.current?.parentElement?.clientWidth ?? 0);
+  const readRenderedWidth = () => asideRef.current?.offsetWidth ?? width;
+
   const startResize = (event: ReactPointerEvent<HTMLDivElement>) => {
     event.preventDefault();
     const handle = event.currentTarget;
     handle.setPointerCapture(event.pointerId);
     const startX = event.clientX;
-    const startWidth = width;
-    let latest = width;
+    const startWidth = readRenderedWidth();
+    let latest = startWidth;
     setIsResizing(true);
     const onMove = (moveEvent: PointerEvent) => {
-      latest = clampPanelWidth(startWidth + moveEvent.clientX - startX, containerWidth);
+      latest = clampToPage(startWidth + moveEvent.clientX - startX);
       onWidthChange(latest);
     };
     const onUp = () => {
@@ -427,20 +447,22 @@ export function SitesPanel({
   const resizeByKeyboard = (event: ReactKeyboardEvent<HTMLDivElement>) => {
     if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
     event.preventDefault();
-    const next = clampPanelWidth(width + (event.key === 'ArrowRight' ? 16 : -16), containerWidth);
+    const next = clampToPage(readRenderedWidth() + (event.key === 'ArrowRight' ? 16 : -16));
     onWidthChange(next);
     onWidthCommit(next);
   };
 
   return (
     <div
+      ref={frameRef}
       className={cn(
         'relative shrink-0 overflow-hidden',
         !isResizing && 'motion-safe:transition-[width] motion-safe:duration-200 motion-safe:ease-out',
       )}
-      style={{ width: open ? width : 0 }}
+      style={{ width: open ? width : 0, maxWidth: SITES_PANEL_MAX_WIDTH_CSS }}
     >
       <aside
+        ref={asideRef}
         id={SITES_PANEL_ID}
         aria-label="관리단지 목록"
         inert={!open}
@@ -456,7 +478,7 @@ export function SitesPanel({
           'motion-safe:transition-[opacity,translate] motion-safe:duration-200 motion-safe:ease-out',
           open ? 'translate-x-0 opacity-100' : '-translate-x-3 opacity-0',
         )}
-        style={{ width }}
+        style={{ width, maxWidth: SITES_PANEL_MAX_WIDTH_CSS }}
       >
         {/* 검색줄 — 본문 첫 도구줄과 높이를 맞춰 가로선이 이어진다 */}
         {showSearch && (
@@ -572,17 +594,17 @@ export function SitesPanel({
 
         {/* 너비 조절 손잡이 */}
         <div
+          ref={resizeHandleRef}
           role="separator"
           aria-orientation="vertical"
           aria-label="단지 목록 너비 조절"
-          aria-valuenow={Math.round(width)}
           aria-valuemin={SITES_PANEL_WIDTH.min}
           aria-valuemax={SITES_PANEL_WIDTH.max}
           tabIndex={0}
           title="끌어서 너비 조절 · 두 번 눌러 원래대로"
           onPointerDown={startResize}
           onDoubleClick={() => {
-            const next = clampPanelWidth(SITES_PANEL_WIDTH.default, containerWidth);
+            const next = clampToPage(SITES_PANEL_WIDTH.default);
             onWidthChange(next);
             onWidthCommit(next);
           }}

@@ -215,6 +215,8 @@ export function ToolbarSearchBar({
   search,
   onSearchChange,
   searchPlaceholder,
+  locationAriaLabel = "지역·단지 필터",
+  searchAriaLabel = "매물 검색",
 }: {
   /** 위치 칸에 보일 이름: 선택 단지 → 지역 → "지역·단지 전체" */
   label: string;
@@ -234,6 +236,8 @@ export function ToolbarSearchBar({
   search: string;
   onSearchChange: (value: string) => void;
   searchPlaceholder: string;
+  locationAriaLabel?: string;
+  searchAriaLabel?: string;
 }) {
   const searchInputRef = useRef<HTMLInputElement>(null);
 
@@ -268,7 +272,7 @@ export function ToolbarSearchBar({
           <PopoverTrigger asChild>
             <button
               type="button"
-              aria-label={`지역·단지 필터: ${label}`}
+              aria-label={`${locationAriaLabel}: ${label}`}
               className="flex h-full min-w-[102px] shrink basis-[184px] items-center gap-1.5 rounded-l-full pl-3.5 pr-3 text-[13px] transition-colors hover:bg-[rgba(55,53,47,0.05)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-foreground/20 data-[state=open]:bg-[rgba(55,53,47,0.05)]"
             >
               <MapPin className="size-3.5 shrink-0 text-muted-foreground" />
@@ -333,7 +337,7 @@ export function ToolbarSearchBar({
                 }
               }}
               placeholder={searchPlaceholder}
-              aria-label="매물 검색"
+              aria-label={searchAriaLabel}
               className="min-w-0 flex-1 bg-transparent text-[13px] text-foreground outline-none placeholder:text-muted-foreground"
             />
             {search && (
@@ -494,6 +498,100 @@ export function ToolbarFilterChip({
           : children}
       </PopoverContent>
     </Popover>
+  );
+}
+
+/** 켜고 끄기만 하는 필터. 켜지면 값이 있는 칩과 같은 채움으로 보인다. */
+export function ToolbarToggleChip({
+  label,
+  active,
+  onToggle,
+}: {
+  label: string;
+  active: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      onClick={onToggle}
+      className={cn(
+        "inline-flex h-7 shrink-0 items-center rounded-full border px-3 text-[12.5px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/20",
+        active
+          ? "border-transparent bg-[#ebeae6] font-semibold text-foreground"
+          : "border-[#e3e2de] bg-white text-muted-foreground hover:border-[#d6d5d0] hover:bg-[rgba(55,53,47,0.04)] hover:text-foreground",
+      )}
+    >
+      {label}
+    </button>
+  );
+}
+
+/** 하나만 고르는 필터의 선택 목록. 고르면 닫히고, 다시 누르면 해제된다. */
+export function ToolbarSelectPanel({
+  options,
+  value,
+  allValue = "all",
+  onChange,
+  onClose,
+}: {
+  /** allValue 항목은 '선택 해제'와 같으므로 목록에 보이지 않는다 */
+  options: ReadonlyArray<MultiSelectOption>;
+  value: string;
+  allValue?: string;
+  onChange: (value: string) => void;
+  onClose: () => void;
+}) {
+  return (
+    <ChecklistFilterPanel
+      options={options.filter((option) => option.value !== allValue)}
+      selected={value === allValue ? [] : [value]}
+      onChange={(values) => {
+        onChange(values.find((item) => item !== value) ?? allValue);
+        onClose();
+      }}
+      searchable={false}
+    />
+  );
+}
+
+export function ToolbarSelectChip({
+  label,
+  options,
+  value,
+  allValue = "all",
+  onChange,
+  contentClassName = "w-[200px] p-0",
+}: {
+  label: string;
+  options: ReadonlyArray<MultiSelectOption>;
+  value: string;
+  allValue?: string;
+  onChange: (value: string) => void;
+  contentClassName?: string;
+}) {
+  return (
+    <ToolbarFilterChip
+      label={label}
+      summary={
+        value === allValue
+          ? null
+          : (options.find((option) => option.value === value)?.label ?? value)
+      }
+      onClear={() => onChange(allValue)}
+      contentClassName={contentClassName}
+    >
+      {(close) => (
+        <ToolbarSelectPanel
+          options={options}
+          value={value}
+          allValue={allValue}
+          onChange={onChange}
+          onClose={close}
+        />
+      )}
+    </ToolbarFilterChip>
   );
 }
 

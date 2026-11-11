@@ -1,0 +1,10 @@
+/* 연락처는 칸을 따져 읽는 장부가 아니라 사람을 찾는 목록이다.
+   세로선과 고정 열 그림자를 빼고 사람 사이의 가로선만 남긴다. */
+[data-contacts-page] tr > :is(th, td) {
+  border-right: 0;
+  box-shadow: none;
+}
+
+[data-contacts-page] thead th {
+  background: #fbfbfa;
+}

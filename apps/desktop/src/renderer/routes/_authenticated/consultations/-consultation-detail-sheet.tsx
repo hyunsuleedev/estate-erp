@@ -37,6 +37,7 @@ import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { ConfirmDialog, EntityChip } from '@/components/domain';
 import { PurposeBadge, TypeBadge, getInitial } from './-consultation-badges';
@@ -49,6 +50,9 @@ import {
   type ConsultationContextCard,
   type ConsultationListItem,
 } from './-consultation-view-utils';
+import { CallAnalysisPanel } from '../calls/-call-analysis-panel';
+
+type DetailTab = 'analysis' | 'consultation';
 
 export function ConsultationDetailSheet({
   consultation,
@@ -66,6 +70,9 @@ export function ConsultationDetailSheet({
 
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [taskOpen, setTaskOpen] = useState(false);
+  // 녹음이 있는 상담은 통화 분석을 먼저 보여 준다
+  const recordingId = consultation.callRecordingId ?? null;
+  const [tab, setTab] = useState<DetailTab>(recordingId ? 'analysis' : 'consultation');
 
   const deleteMutation = useMutation({
     mutationFn: () => api.consultations.remove(consultation.id),
@@ -112,91 +119,103 @@ export function ConsultationDetailSheet({
             <Trash2 className="size-3.5" />삭제
           </Button>
         </div>
+        {recordingId && (
+          <Tabs value={tab} onValueChange={(value) => setTab(value as DetailTab)} className="mt-2">
+            <TabsList>
+              <TabsTrigger value="analysis">통화 분석</TabsTrigger>
+              <TabsTrigger value="consultation">상담 내용</TabsTrigger>
+            </TabsList>
+          </Tabs>
+        )}
       </SheetHeader>
 
-      <ScrollArea className="min-h-0 flex-1">
-        <div data-testid="consultation-detail-sheet" className="space-y-5 px-5 py-4">
-          <PanelSection title="상담 결과">
-            <div className="grid grid-cols-2 gap-2">
-              <InfoTile label="업무 신호" value={signal.label} icon={MessageSquareText} className={signal.className} />
-              <InfoTile label="결과" value={getConsultationOutcomeLabel(consultation)} icon={ListChecks} />
-            </div>
-          </PanelSection>
-
-          {consultation.callRecordingId && (
-            <PanelSection title="통화 녹음">
-              <RecordingPanel recordingId={consultation.callRecordingId} />
+      {recordingId && tab === 'analysis' ? (
+        <CallAnalysisPanel recordingId={recordingId} showConsultations={false} />
+      ) : (
+        <ScrollArea className="min-h-0 flex-1">
+          <div data-testid="consultation-detail-sheet" className="mx-auto max-w-3xl space-y-5 px-5 py-4">
+            <PanelSection title="상담 결과">
+              <div className="grid grid-cols-2 gap-2">
+                <InfoTile label="업무 신호" value={signal.label} icon={MessageSquareText} className={signal.className} />
+                <InfoTile label="결과" value={getConsultationOutcomeLabel(consultation)} icon={ListChecks} />
+              </div>
             </PanelSection>
-          )}
 
-          <PanelSection title="연결 맥락">
-            {contextCards.length > 0 ? (
-              <div className="space-y-2">
-                {contextCards.map((card) => (
-                  <ConsultationContextLinkCard key={`${card.key}-${card.title}`} card={card} />
-                ))}
-              </div>
-            ) : (
-              <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-3 py-5 text-sm text-muted-foreground">
-                연결된 매물, 의뢰, 매칭, 구매요건이 없습니다.
-              </div>
+            {recordingId && (
+              <PanelSection title="통화 녹음">
+                <RecordingPanel recordingId={recordingId} onOpenAnalysis={() => setTab('analysis')} />
+              </PanelSection>
             )}
-          </PanelSection>
 
-          <PanelSection title="후속 액션 후보">
-            <div className="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-3">
-              <div className="flex items-start gap-2">
-                <ListChecks className="mt-0.5 size-4 text-indigo-600" />
-                <div>
-                  <p className="text-sm font-medium text-indigo-950">{actionLabel}</p>
-                  <p className="mt-1 text-xs leading-5 text-indigo-900/80">
-                    이 상담에 연결된 할 일을 만들어 후속 업무로 이어갑니다.
-                  </p>
-                  <Button
-                    variant="outline"
-                    size="xs"
-                    className="mt-3 gap-1 border-indigo-200 bg-white text-indigo-700 hover:bg-indigo-100"
-                    onClick={() => setTaskOpen(true)}
-                  >
-                    <ClipboardList className="size-3.5" />이 상담으로 할 일 만들기
-                  </Button>
+            <PanelSection title="연결 맥락">
+              {contextCards.length > 0 ? (
+                <div className="space-y-2">
+                  {contextCards.map((card) => (
+                    <ConsultationContextLinkCard key={`${card.key}-${card.title}`} card={card} />
+                  ))}
+                </div>
+              ) : (
+                <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-3 py-5 text-sm text-muted-foreground">
+                  연결된 매물, 의뢰, 매칭, 구매요건이 없습니다.
+                </div>
+              )}
+            </PanelSection>
+
+            <PanelSection title="후속 액션 후보">
+              <div className="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-3">
+                <div className="flex items-start gap-2">
+                  <ListChecks className="mt-0.5 size-4 text-indigo-600" />
+                  <div>
+                    <p className="text-sm font-medium text-indigo-950">{actionLabel}</p>
+                    <p className="mt-1 text-xs leading-5 text-indigo-900/80">
+                      이 상담에 연결된 할 일을 만들어 후속 업무로 이어갑니다.
+                    </p>
+                    <Button
+                      variant="outline"
+                      size="xs"
+                      className="mt-3 gap-1 border-indigo-200 bg-white text-indigo-700 hover:bg-indigo-100"
+                      onClick={() => setTaskOpen(true)}
+                    >
+                      <ClipboardList className="size-3.5" />이 상담으로 할 일 만들기
+                    </Button>
+                  </div>
                 </div>
               </div>
-            </div>
-          </PanelSection>
+            </PanelSection>
 
-          <PanelSection title="상담 전문">
-            <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3">
-              <p className="whitespace-pre-wrap text-sm leading-6 text-slate-800">{consultation.content}</p>
-            </div>
-          </PanelSection>
+            <PanelSection title="상담 전문">
+              <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3">
+                <p className="whitespace-pre-wrap text-sm leading-6 text-slate-800">{consultation.content}</p>
+              </div>
+            </PanelSection>
 
-          <div className="space-y-3 border-t border-slate-100 pt-4">
-            <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
-              <MetaLine icon={CalendarClock} label={formatDateTime(consultation.createdAt)} />
-              <MetaLine icon={UserRound} label={consultation.createdBy?.name ?? '담당자 미지정'} />
-              <MetaLine icon={Phone} label={formatPhone(consultation.contact?.phone)} />
-              <MetaLine icon={Building2} label={consultation.property?.site?.name ?? '매물 미연결'} />
-            </div>
-            <div className="flex flex-wrap gap-1.5">
-              <EntityChip
-                kind="contact"
-                id={consultation.contact?.id ?? consultation.contactId}
-                label={consultation.contact?.name ?? '미지정 고객'}
-                sublabel={consultation.contact?.phone ? formatPhone(consultation.contact.phone) : undefined}
-              />
-              {consultation.propertyId && (
+            <div className="space-y-3 border-t border-slate-100 pt-4">
+              <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
+                <MetaLine icon={CalendarClock} label={formatDateTime(consultation.createdAt)} />
+                <MetaLine icon={UserRound} label={consultation.createdBy?.name ?? '담당자 미지정'} />
+                <MetaLine icon={Phone} label={formatPhone(consultation.contact?.phone)} />
+                <MetaLine icon={Building2} label={consultation.property?.site?.name ?? '매물 미연결'} />
+              </div>
+              <div className="flex flex-wrap gap-1.5">
                 <EntityChip
-                  kind="property"
-                  id={consultation.propertyId}
-                  label={consultation.property?.site?.name ?? '매물'}
-                  sublabel={consultation.property?.unit?.name ?? undefined}
+                  kind="contact"
+                  id={consultation.contact?.id ?? consultation.contactId}
+                  label={consultation.contact?.name ?? '미지정 고객'}
+                  sublabel={consultation.contact?.phone ? formatPhone(consultation.contact.phone) : undefined}
                 />
-              )}
+                {consultation.propertyId && (
+                  <EntityChip
+                    kind="property"
+                    id={consultation.propertyId}
+                    label={consultation.property?.site?.name ?? '매물'}
+                    sublabel={consultation.property?.unit?.name ?? undefined}
+                  />
+                )}
+              </div>
             </div>
           </div>
-        </div>
-      </ScrollArea>
+        </ScrollArea>
+      )}
 
       <ConfirmDialog
         open={deleteOpen}
@@ -226,7 +245,13 @@ const sttStatusLabels: Record<string, string> = {
   failed: '변환 실패',
 };
 
-function RecordingPanel({ recordingId }: { recordingId: string }) {
+function RecordingPanel({
+  recordingId,
+  onOpenAnalysis,
+}: {
+  recordingId: string;
+  onOpenAnalysis: () => void;
+}) {
   const { data: recording, isLoading, isError } = useQuery({
     queryKey: ['call-recording', recordingId],
     queryFn: () => api.callRecordings.findOne(recordingId),
@@ -240,8 +265,12 @@ function RecordingPanel({ recordingId }: { recordingId: string }) {
     return (
       <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-3 py-3 text-xs text-muted-foreground">
         녹음 정보를 불러오지 못했습니다.{' '}
-        <Link to="/calls" className="font-medium text-foreground underline underline-offset-2">
-          통화기록에서 확인
+        <Link
+          to="/consultations"
+          search={{ callId: recordingId }}
+          className="font-medium text-foreground underline underline-offset-2"
+        >
+          녹음 상세에서 확인
         </Link>
       </div>
     );
@@ -259,7 +288,9 @@ function RecordingPanel({ recordingId }: { recordingId: string }) {
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-1.5">
             <span className="text-sm font-medium text-slate-950">
-              {recording.direction === 'outbound' ? '발신' : '수신'} 통화
+              {recording.direction === 'visit'
+                ? '방문 상담 녹음'
+                : `${recording.direction === 'outbound' ? '발신' : '수신'} 통화`}
             </span>
             <Badge variant="outline" className="rounded-md px-1.5 text-[10px] text-slate-500">
               {sttStatusLabels[recording.sttStatus] ?? recording.sttStatus}
@@ -273,11 +304,9 @@ function RecordingPanel({ recordingId }: { recordingId: string }) {
           {recording.messages.length > 0 && (
             <div className="mt-1 text-[11px] text-muted-foreground">대화 {recording.messages.length}건 변환됨</div>
           )}
-          <Button asChild variant="outline" size="xs" className="mt-2 gap-1">
-            <Link to="/calls">
-              <ExternalLink className="size-3" />
-              통화기록 페이지에서 보기
-            </Link>
+          <Button variant="outline" size="xs" className="mt-2 gap-1" onClick={onOpenAnalysis}>
+            <ArrowRight className="size-3" />
+            통화 분석 보기
           </Button>
         </div>
       </div>

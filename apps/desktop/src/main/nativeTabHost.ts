@@ -20,6 +20,10 @@ export interface NativeTabViewPort {
   send(channel: string, payload: unknown): void;
   focus(): void;
   destroy(): void;
+  /** 탭 화면이 사이드바와 화면 틀을 처음 그릴 때까지 기다린다(없으면 바로 끝). */
+  whenReady?(): Promise<void>;
+  /** 미리 띄워 둔 탭 화면에 실제 탭을 맡긴다. */
+  assign?(tab: Readonly<Tab>): void;
 }
 
 export interface NativeTabHostPort {
@@ -65,6 +69,20 @@ export interface NativeTabHostOptions {
   maxLiveTabs?: number;
   /** Minimum inactive time before a clean renderer becomes evictable. */
   inactiveGraceMs?: number;
+  /**
+   * 새 탭이 앱을 처음부터 띄우지 않도록 탭 화면 하나를 미리 띄워 둔다(Notion의
+   * prewarmed tab). `createTab`은 미리 띄울 때 쓸 자리표시 탭을 만든다.
+   */
+  spare?: {
+    createTab: () => Tab;
+    /** 하나를 쓰고 다음 것을 띄우기까지 기다리는 시간. 방금 연 탭과 경쟁하지 않게 한다. */
+    replenishDelayMs?: number;
+  };
+}
+
+interface SpareRecord {
+  view: NativeTabViewPort;
+  loaded: boolean;
 }
 
 export type NativeTabProtectionReason =
@@ -157,6 +175,9 @@ export class NativeTabHost {
   private accessClock = 0;
   private operationClock = 0;
   private reconcileTimer: ReturnType<typeof setTimeout> | null = null;
+  private readonly spareOptions: NativeTabHostOptions['spare'];
+  private spare: SpareRecord | null = null;
+  private spareTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
     private readonly viewFactory: NativeTabViewFactory,
@@ -176,6 +197,7 @@ export class NativeTabHost {
       throw new RangeError('inactiveGraceMs must be finite and non-negative');
     }
     this.inactiveGraceMs = inactiveGraceMs;
+    this.spareOptions = options.spare;
   }
 
   registerHost(
@@ -283,7 +305,8 @@ export class NativeTabHost {
     }
 
     const nextTab = cloneTab(tab);
-    const view = this.viewFactory.create(nextTab);
+    const spareView = this.takeSpare();
+    const view = spareView ?? this.viewFactory.create(nextTab);
     if (view.isDestroyed()) {
       throw new Error(`native tab view for ${tab.id} was created destroyed`);
     }
@@ -319,10 +342,18 @@ export class NativeTabHost {
       view.setVisible(false);
       host.port.attach(view);
       view.setBounds(host.bounds);
-      await this.navigateRecord(record, nextTab.route);
+      if (spareView) {
+        // 앱은 이미 떠 있다. 탭을 맡기면 화면 안에서 그 주소로 옮겨 그린다.
+        spareView.assign?.(nextTab);
+        record.loadedRoute = nextTab.route;
+      } else {
+        await this.navigateRecord(record, nextTab.route);
+      }
+      await view.whenReady?.();
       this.requireCurrentOpening(record, operation);
       if (shouldActivate) this.activate(hostId, tab.id);
       else if (options.retainUntilActivation) retainOperation = true;
+      this.scheduleSparePreparation();
       return {
         created: true,
         senderId: view.senderId,
@@ -698,6 +729,31 @@ export class NativeTabHost {
     return delivered;
   }
 
+  /** 한 창(host)에 붙은 탭 화면에만 보낸다. 사이드바처럼 창 단위 상태에 쓴다. */
+  sendToHost(hostId: number, channel: string, payload: unknown): number {
+    let delivered = 0;
+    for (const tabId of [...(this.hosts.get(hostId)?.tabIds ?? [])]) {
+      if (this.sendToTab(tabId, channel, payload)) delivered += 1;
+    }
+    return delivered;
+  }
+
+  sendToTab(tabId: string, channel: string, payload: unknown): boolean {
+    const record = this.tabs.get(tabId);
+    if (!record) return false;
+    if (record.view.isDestroyed()) {
+      this.close(tabId);
+      return false;
+    }
+    try {
+      record.view.send(channel, payload);
+      return true;
+    } catch (error) {
+      this.onCleanupError(error);
+      return false;
+    }
+  }
+
   hasTab(tabId: string): boolean {
     return this.tabs.has(tabId);
   }
@@ -751,12 +807,62 @@ export class NativeTabHost {
 
   dispose(): void {
     this.clearReconcileTimer();
+    this.discardSpare();
     for (const hostId of [...this.hosts.keys()]) this.unregisterHost(hostId);
   }
 
+  /** 로그인한 사람이 바뀌면 미리 띄운 탭 화면도 버린다(이전 사람의 세션으로 떠 있다). */
   clearTabs(): void {
     this.clearReconcileTimer();
+    this.discardSpare();
     for (const tabId of [...this.tabs.keys()]) this.close(tabId);
+  }
+
+  /** 미리 띄워 둔 탭 화면의 WebContents인지. 로그인 정보 요청을 허용할 때 쓴다. */
+  isSpareSender(senderId: number): boolean {
+    const spare = this.spare;
+    return Boolean(spare && !spare.view.isDestroyed() && spare.view.senderId === senderId);
+  }
+
+  hasSpare(): boolean {
+    return this.spare !== null;
+  }
+
+  /** 지금 바로 탭 화면 하나를 미리 띄운다. 이미 있거나 설정이 없으면 아무것도 하지 않는다. */
+  prepareSpare(): void {
+    this.clearSpareTimer();
+    if (!this.spareOptions || this.spare) return;
+    let view: NativeTabViewPort;
+    const tab = this.spareOptions.createTab();
+    try {
+      view = this.viewFactory.create(cloneTab(tab));
+    } catch (error) {
+      this.onCleanupError(error);
+      return;
+    }
+    if (typeof view.assign !== 'function') {
+      this.safeCleanup(() => view.destroy());
+      return;
+    }
+    const record: SpareRecord = { view, loaded: false };
+    this.spare = record;
+    this.safeCleanup(() => view.setVisible(false));
+    view.navigate(tab.route).then(
+      () => {
+        if (this.spare === record) record.loaded = true;
+      },
+      (error: unknown) => {
+        this.onCleanupError(error);
+        if (this.spare === record) this.discardSpare();
+      },
+    );
+  }
+
+  discardSpare(): void {
+    this.clearSpareTimer();
+    const spare = this.spare;
+    this.spare = null;
+    if (spare) this.safeCleanup(() => spare.view.destroy());
   }
 
   private nextAccessTime(): number {
@@ -824,6 +930,34 @@ export class NativeTabHost {
     ) {
       throw new Error(`native tab ${operation.tabId} opening was superseded`);
     }
+  }
+
+  /** 다 뜬 예비 탭 화면을 꺼낸다. 아직 뜨는 중이면 새로 만드는 쪽이 낫다. */
+  private takeSpare(): NativeTabViewPort | null {
+    const spare = this.spare;
+    if (!spare) return null;
+    if (spare.view.isDestroyed()) {
+      this.spare = null;
+      return null;
+    }
+    if (!spare.loaded || this.senderToTabId.has(spare.view.senderId)) return null;
+    this.spare = null;
+    return spare.view;
+  }
+
+  private scheduleSparePreparation(): void {
+    if (!this.spareOptions || this.spare || this.spareTimer) return;
+    this.spareTimer = setTimeout(() => {
+      this.spareTimer = null;
+      this.prepareSpare();
+    }, Math.max(0, this.spareOptions.replenishDelayMs ?? 1_500));
+    this.spareTimer.unref?.();
+  }
+
+  private clearSpareTimer(): void {
+    if (!this.spareTimer) return;
+    clearTimeout(this.spareTimer);
+    this.spareTimer = null;
   }
 
   private navigateRecord(record: TabRecord, route: string): Promise<void> {

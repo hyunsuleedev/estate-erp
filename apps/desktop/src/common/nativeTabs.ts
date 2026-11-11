@@ -7,12 +7,30 @@ const PROPERTY_STATIC_SEGMENTS = new Set([
   'naver-my-ads',
 ]);
 
-export interface NativeTabRouteDescriptor {
-  kind: 'property-detail';
-  entityId: string;
-  pathname: string;
-  href: string;
-}
+/**
+ * 어떤 화면을 탭별 웹 화면(native WebContentsView)으로 띄울지 정한다.
+ * - 'all': 로그인 뒤의 앱 화면 전부. 탭을 옮기거나 분리해도 다시 로드하지 않는다.
+ * - 'property-detail': 첫 파일럿 범위(매물 상세만). 문제가 생기면 이 값으로 되돌린다.
+ */
+export type NativeTabScope = 'all' | 'property-detail';
+export const NATIVE_TAB_SCOPE: NativeTabScope = 'all';
+
+/** 로그인 전·온보딩·개발용 화면은 셸 창이 직접 그린다. */
+const NON_APP_PATHNAMES = new Set(['/', '/login', '/register']);
+const NON_APP_PATH_PREFIXES = ['/onboarding/', '/dev/'];
+
+export type NativeTabRouteDescriptor =
+  | {
+      kind: 'property-detail';
+      entityId: string;
+      pathname: string;
+      href: string;
+    }
+  | {
+      kind: 'app-route';
+      pathname: string;
+      href: string;
+    };
 
 export interface NativeTabViewportBounds {
   x: number;
@@ -53,6 +71,24 @@ export interface NativeTabLifecycleUpdate {
   status: 'renderer-failed';
 }
 
+/** 미리 띄워 둔 예비 탭 화면의 자리표시 탭 id. 실제 탭은 나중에 맡긴다. */
+export const NATIVE_SPARE_TAB_ID_PREFIX = 'spare-';
+
+/** 예비 탭 화면에 맡기는 실제 탭. */
+export interface NativeTabAssignment {
+  tab: Tab;
+}
+
+/** 셸(탭바)이 바꾼 탭 주소를 이미 떠 있는 탭 화면 안에서 다시 로드하지 않고 이동시킨다. */
+export interface NativeTabNavigateCommand {
+  route: string;
+}
+
+/** 창 단위 사이드바 펼침 상태. 셸이 정하고 그 창의 모든 탭 화면이 따른다. */
+export interface NativeSidebarState {
+  open: boolean;
+}
+
 /**
  * Native renderer가 main-process LRU에 전달하는 보존 신호다.
  * 활성 탭과 이동 중인 탭은 main이 자체적으로 보호하고, renderer만 알 수 있는
@@ -90,14 +126,10 @@ function decodeRoutePart(value: string): string {
   }
 }
 
-/**
- * 첫 파일럿은 읽기 중심의 매물 상세 한 종류만 native WebContents 탭으로 승격한다.
- * 목록/신규/광고 하위 화면은 기존 SPA 렌더러에 남겨 회귀 범위를 제한한다.
- */
-export function resolveNativeTabRoute(
+function resolvePropertyDetailRoute(
   href: string,
+  pathname: string,
 ): NativeTabRouteDescriptor | null {
-  const pathname = getPathname(href);
   const match = pathname.match(/^\/properties\/([^/]+)$/);
   if (!match) return null;
 
@@ -110,6 +142,29 @@ export function resolveNativeTabRoute(
     pathname,
     href,
   };
+}
+
+function isAppPathname(pathname: string): boolean {
+  if (!pathname.startsWith('/') || NON_APP_PATHNAMES.has(pathname)) return false;
+  return !NON_APP_PATH_PREFIXES.some(
+    (prefix) => pathname === prefix.slice(0, -1) || pathname.startsWith(prefix),
+  );
+}
+
+/**
+ * 탭별 웹 화면으로 띄울 route인지 판별한다.
+ * 'all' 범위에서는 로그인 뒤의 앱 화면 전부, 파일럿 범위에서는 매물 상세만이다.
+ */
+export function resolveNativeTabRoute(
+  href: string,
+  scope: NativeTabScope = NATIVE_TAB_SCOPE,
+): NativeTabRouteDescriptor | null {
+  if (!href.startsWith('/') || href.startsWith('//')) return null;
+  const pathname = getPathname(href);
+  const propertyDetail = resolvePropertyDetailRoute(href, pathname);
+  if (propertyDetail || scope === 'property-detail') return propertyDetail;
+  if (!isAppPathname(pathname)) return null;
+  return { kind: 'app-route', pathname, href };
 }
 
 export function isNativeTabRoute(href: string): boolean {

@@ -133,6 +133,9 @@ export class AuthBroker {
       authenticated: snapshot.authenticated,
       user: snapshot.authenticated ? snapshot.user : null,
       revision: this.session.revision + 1,
+      ...(snapshot.authenticated && typeof snapshot.providerSessionId === 'number'
+        ? { providerSessionId: snapshot.providerSessionId }
+        : {}),
     };
     this.retryPendingTokenRequest();
     return structuredClone(this.session);

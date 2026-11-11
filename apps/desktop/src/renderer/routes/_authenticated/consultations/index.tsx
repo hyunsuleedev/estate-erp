@@ -1,7 +1,17 @@
-import { createFileRoute, useNavigate } from '@tanstack/react-router';
+import { createFileRoute, Link, useNavigate } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
-import { AlertCircle, ArrowRight, CalendarDays, Clock3, MessageSquareText, Plus, Users } from 'lucide-react';
+import {
+  AlertCircle,
+  ArrowRight,
+  CalendarDays,
+  Clock3,
+  History,
+  MessageSquareText,
+  Plus,
+  Upload,
+  Users,
+} from 'lucide-react';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import type { Consultation } from '@estate-erp/api-client';
@@ -15,6 +25,9 @@ import { PurposeBadge, TypeBadge, getInitial } from './-consultation-badges';
 import { ConsultationFilterBar } from './-consultation-filter-bar';
 import { ConsultationFormDialog } from './-consultation-form-dialog';
 import { ConsultationDetailSheet } from './-consultation-detail-sheet';
+import { CallDetailSheet } from '../calls/-detail-sheet';
+import { PendingRecordingsStrip } from '../calls/-pending-recordings';
+import { UploadRecordingDialog } from '../calls/-upload-recording-dialog';
 import {
   buildConsultationApiParams,
   getConsultationContextLabels,
@@ -40,13 +53,20 @@ const initialFilters: ConsultationEntityFilters = {
   dateTo: null,
 };
 
+/** 녹음이 있는 상담·통화는 넓은 시트에서 왼쪽 브리프 · 오른쪽 녹음과 대화 기록으로 연다 */
+const WIDE_SHEET = 'w-full gap-0 overflow-hidden p-0 sm:max-w-[min(1120px,calc(100vw-48px))]';
+const NARROW_SHEET = 'w-full gap-0 overflow-hidden p-0 sm:max-w-[560px]';
+
 interface ConsultationsSearch {
   consultationId?: string;
+  /** 연결 대기 녹음(아직 상담이 아닌 통화) 상세 */
+  callId?: string;
 }
 
 export const Route = createFileRoute('/_authenticated/consultations/')({
   validateSearch: (search: Record<string, unknown>): ConsultationsSearch => ({
     consultationId: typeof search.consultationId === 'string' ? search.consultationId : undefined,
+    callId: typeof search.callId === 'string' ? search.callId : undefined,
   }),
   component: ConsultationsPage,
 });
@@ -55,7 +75,8 @@ type ViewMode = 'date' | 'contact';
 
 function ConsultationsPage() {
   const navigate = useNavigate({ from: Route.fullPath });
-  const { consultationId } = Route.useSearch();
+  const { consultationId, callId } = Route.useSearch();
+  const [uploadOpen, setUploadOpen] = useState(false);
 
   const [page, setPage] = useState(1);
   const [filters, setFilters] = useState<ConsultationEntityFilters>(initialFilters);
@@ -94,6 +115,20 @@ function ConsultationsPage() {
     selectedFromList ??
     (consultationId != null && selectedFetched?.id === consultationId ? (selectedFetched ?? null) : null);
 
+  const selectCall = (id: string | null) => {
+    void navigate({
+      search: (current) => ({ ...current, consultationId: undefined, callId: id ?? undefined }),
+      replace: false,
+    });
+  };
+
+  // 연결 대기 녹음 상세 (목록에 없는 녹음도 주소로 열 수 있게 단건 조회)
+  const { data: selectedCall } = useQuery({
+    queryKey: ['call-recordings', 'detail', callId],
+    queryFn: () => api.callRecordings.findOne(callId!),
+    enabled: Boolean(callId),
+  });
+
   const selectConsultation = (id: string | null) => {
     void navigate({
       search: (current) => ({ ...current, consultationId: id ?? undefined }),
@@ -119,15 +154,33 @@ function ConsultationsPage() {
   return (
     <div className="space-y-4 pb-4">
       <PageHeader
-        title="상담기록"
-        description="고객과 나눈 대화를 기록하고 매물·거래 맥락에 연결합니다."
+        title="상담분석"
+        description="상담과 통화를 한곳에 기록합니다. 녹음을 올리면 AI가 받아쓰고 분석해 확인할 점과 할 일을 제안합니다."
         actions={
-          <Button size="sm" className="gap-1" onClick={openCreate}>
-            <Plus className="size-4" />새 상담
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button asChild variant="outline" size="sm" className="gap-1">
+              <Link to="/calls/logs">
+                <History className="size-3.5" />통화 이력
+              </Link>
+            </Button>
+            <Button variant="outline" size="sm" className="gap-1" onClick={() => setUploadOpen(true)}>
+              <Upload className="size-3.5" />녹음 올리기
+            </Button>
+            <Button size="sm" className="gap-1" onClick={openCreate}>
+              <Plus className="size-4" />새 상담
+            </Button>
+          </div>
         }
         className="mb-0"
       />
+
+      <UploadRecordingDialog
+        open={uploadOpen}
+        onOpenChange={setUploadOpen}
+        onUploaded={(recording) => selectCall(recording.id)}
+      />
+
+      <PendingRecordingsStrip onOpen={selectCall} />
 
       <section className="rounded-[10px] border border-slate-200 bg-background">
         <ConsultationFilterBar
@@ -212,8 +265,12 @@ function ConsultationsPage() {
         />
       </section>
 
+
       <Sheet open={selectedConsultation !== null} onOpenChange={(open) => !open && selectConsultation(null)}>
-        <SheetContent side="right" className="w-full gap-0 overflow-hidden p-0 sm:max-w-[560px]">
+        <SheetContent
+          side="right"
+          className={selectedConsultation?.callRecordingId ? WIDE_SHEET : NARROW_SHEET}
+        >
           {selectedConsultation && (
             <ConsultationDetailSheet
               key={selectedConsultation.id}
@@ -221,6 +278,18 @@ function ConsultationsPage() {
               onEdit={() => openEdit(selectedConsultation)}
               onDeleted={() => selectConsultation(null)}
             />
+          )}
+        </SheetContent>
+      </Sheet>
+
+      {/* 녹음을 불러온 뒤에 연다 (빈 시트가 먼저 뜨지 않게) */}
+      <Sheet
+        open={Boolean(callId) && selectedCall?.id === callId}
+        onOpenChange={(open) => !open && selectCall(null)}
+      >
+        <SheetContent side="right" className={WIDE_SHEET}>
+          {selectedCall && selectedCall.id === callId && (
+            <CallDetailSheet key={selectedCall.id} item={selectedCall} />
           )}
         </SheetContent>
       </Sheet>

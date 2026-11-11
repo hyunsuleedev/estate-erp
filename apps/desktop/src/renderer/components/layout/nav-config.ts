@@ -3,7 +3,7 @@ import {
   Building2,
   CalendarDays,
   FileText,
-  GitBranch,
+  UserSearch,
   Handshake,
   LayoutDashboard,
   ListTodo,
@@ -103,14 +103,14 @@ export const NAV_ITEMS: NavItem[] = [
   { path: "/contacts", label: "연락처", icon: BookUser, group: "customers" },
   {
     path: "/consultations",
-    label: "상담기록",
+    label: "상담분석",
     icon: MessageSquare,
     group: "customers",
   },
-  // 통화 관리는 현재 사이드바에서 제외 — 기존 라우트와 데이터는 유지한다.
+  // 통화는 상담분석의 통화 탭으로 합쳤다 (/calls는 그 탭으로 이동).
 
   // ── 거래·계약
-  { path: "/wanted-properties", label: "희망매물", icon: GitBranch, group: "transactions" },
+  { path: "/wanted-properties", label: "희망매물", icon: UserSearch, group: "transactions" },
   { path: "/deals", label: "거래관리", icon: Handshake, group: "transactions" },
   {
     path: "/contracts",
@@ -222,8 +222,8 @@ export const ROUTE_LABELS: Record<string, string> = {
   "/_authenticated/contacts/": "연락처",
   "/_authenticated/contacts/$id": "연락처 상세",
   "/_authenticated/contacts/new": "연락처 추가",
-  "/_authenticated/consultations/": "상담기록",
-  "/_authenticated/calls/": "통화 관리",
+  "/_authenticated/consultations/": "상담분석",
+  "/_authenticated/calls/": "상담분석",
   // 거래
   "/_authenticated/wanted-properties/": "희망매물",
   "/_authenticated/deals/": "거래관리",

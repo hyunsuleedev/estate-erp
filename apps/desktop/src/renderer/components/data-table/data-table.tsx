@@ -448,6 +448,19 @@ export function DataTable<TData extends { id: string }>({
                         <Minus className="size-3" />
                       )}
                     </button>
+                    {control.showLabel && control.collapsed && (
+                      <button
+                        type="button"
+                        tabIndex={-1}
+                        aria-hidden="true"
+                        data-data-table-column-group-label={control.label}
+                        className="pointer-events-auto absolute z-50 mt-2 flex h-5 items-center whitespace-nowrap text-[12px] text-muted-foreground transition-colors hover:text-foreground"
+                        style={{ left: toggleOffset + 26 }}
+                        onClick={control.onToggle}
+                      >
+                        {control.label} 열 보기
+                      </button>
+                    )}
                   </div>
                 ),
               )}
@@ -675,7 +688,7 @@ export function DataTable<TData extends { id: string }>({
                                 : 'cursor-pointer'),
                             isPinned &&
                               (isNotion
-                                ? 'bg-white group-hover:bg-slate-50/70 group-data-[state=selected]:bg-primary/5'
+                                ? 'bg-white group-hover:bg-[#fbfcfd] group-data-[state=selected]:bg-primary/5'
                                 : 'bg-background group-hover:bg-muted/40 group-data-[state=selected]:bg-primary/5'),
                             isLastPinned && 'shadow-[1px_0_0_0_#d9d9d6]',
                             cell.column.columnDef.meta?.cellClassName,

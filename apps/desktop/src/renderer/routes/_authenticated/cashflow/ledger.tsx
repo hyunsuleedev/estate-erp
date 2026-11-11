@@ -1,5 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { LedgerView, type LedgerViewMode } from './-ledger';
+import { ManagerOnly } from './-cashflow-ui';
 
 export interface LedgerSearch {
   /** 상세 Sheet를 열 거래 id */
@@ -25,10 +26,12 @@ export const Route = createFileRoute('/_authenticated/cashflow/ledger')({
 function LedgerPage() {
   const { deal, payment, view } = Route.useSearch();
   return (
-    <LedgerView
-      defaultViewMode={view ?? 'table'}
-      initialDealId={deal}
-      initialPaymentId={payment}
-    />
+    <ManagerOnly title="수금 원장">
+      <LedgerView
+        defaultViewMode={view ?? 'table'}
+        initialDealId={deal}
+        initialPaymentId={payment}
+      />
+    </ManagerOnly>
   );
 }

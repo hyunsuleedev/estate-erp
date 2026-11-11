@@ -7,6 +7,7 @@ import {
   MapPin,
   Pencil,
   Phone,
+  Plus,
   Ruler,
   Tag,
   User,
@@ -52,7 +53,7 @@ const BUYER_TABLE_HEADERS = [
   { label: '매물 유형', icon: <Tag /> },
   { label: '희망 평형', icon: <Ruler /> },
   { label: '예산', icon: <CircleDollarSign /> },
-  { label: '희망 지역', icon: <MapPin /> },
+  { label: '희망 지역·단지', icon: <MapPin /> },
   { label: '매칭', icon: <GitBranch /> },
 ];
 
@@ -102,15 +103,20 @@ export function BuyerMatchGroup({
   actions,
   selected,
   onSelectedChange,
+  onCreateMatch,
 }: {
   buyerRequirement: NonNullable<Match['buyerRequirement']>;
   matches: Match[];
   actions: MatchRowActions;
   selected: boolean;
   onSelectedChange: (selected: boolean) => void;
+  /** 이 조건으로 고정해 매칭 생성 창을 연다 */
+  onCreateMatch: () => void;
 }) {
   const [expanded, setExpanded] = useState(true);
   const buyerName = buyerRequirement.contact?.name ?? '미지정';
+  // 매칭도 메모도 없으면 펼칠 내용이 없다
+  const hasDetails = matches.length > 0 || Boolean(buyerRequirement.memo);
   const activeCount = matches.filter((match) => {
     const stage = normalizeMatchStage(match.stage);
     return stage !== MatchStage.DEAL_CREATED && stage !== MatchStage.CLOSED;
@@ -137,7 +143,7 @@ export function BuyerMatchGroup({
         data-buyer-summary-header
         className={cn(
           selected && 'bg-muted/50',
-          expanded && 'border-b border-border',
+          expanded && matches.length > 0 && 'border-b border-border',
         )}
       >
         <div
@@ -153,30 +159,37 @@ export function BuyerMatchGroup({
           </div>
 
           <div className="flex items-center justify-center border-r border-border">
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-xs"
-              aria-label={`${buyerName} 매칭 ${expanded ? '접기' : '펼치기'}`}
-              aria-expanded={expanded}
-              className="shrink-0 text-muted-foreground"
-              onClick={() => setExpanded((prev) => !prev)}
-            >
-              {expanded ? (
-                <ChevronDown className="size-4" />
-              ) : (
-                <ChevronRight className="size-4" />
-              )}
-            </Button>
+            {hasDetails && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-xs"
+                aria-label={`${buyerName} 매칭 ${expanded ? '접기' : '펼치기'}`}
+                aria-expanded={expanded}
+                className="shrink-0 text-muted-foreground"
+                onClick={() => setExpanded((prev) => !prev)}
+              >
+                {expanded ? (
+                  <ChevronDown className="size-4" />
+                ) : (
+                  <ChevronRight className="size-4" />
+                )}
+              </Button>
+            )}
           </div>
 
-          <div className={BUYER_TABLE_CELL}>
+          <div className={cn(BUYER_TABLE_CELL, 'gap-1.5')}>
             <p
               title={buyerName}
               className="min-w-0 truncate text-[13px] font-semibold"
             >
               {buyerName}
             </p>
+            {buyerRequirement.status === 'hold' && (
+              <span className="shrink-0 rounded-md bg-muted px-1 py-0.5 text-[11px] text-muted-foreground">
+                보류
+              </span>
+            )}
           </div>
 
           <dl data-buyer-contact-summary className="contents">
@@ -202,10 +215,10 @@ export function BuyerMatchGroup({
               value={requirementSummary.budgetText}
               emphasized
             />
-            {/* 희망 지역은 매칭 판단의 핵심이라 자르지 않고 줄을 바꾼다 */}
+            {/* 지역과 단지는 매칭 판단의 핵심이라 자르지 않고 줄을 바꾼다 */}
             <BuyerRequirementSummaryItem
-              label="희망 지역"
-              value={requirementSummary.regionText}
+              label="희망 지역·단지"
+              value={requirementSummary.placeText}
               wrap
             />
           </dl>
@@ -216,6 +229,22 @@ export function BuyerMatchGroup({
               'flex-wrap gap-1 border-r-0 py-1 text-[11.5px] tabular-nums',
             )}
           >
+            {matches.length === 0 && (
+              <>
+                <span className="text-muted-foreground">매칭 없음</span>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-xs"
+                  aria-label={`${buyerName} 매칭 생성`}
+                  title="매칭 생성"
+                  className="text-muted-foreground"
+                  onClick={onCreateMatch}
+                >
+                  <Plus className="size-3.5" />
+                </Button>
+              </>
+            )}
             {activeCount > 0 && (
               <span className="rounded-md bg-info-soft px-1.5 py-0.5 font-medium text-info-strong">
                 진행 {activeCount}
@@ -251,7 +280,7 @@ export function BuyerMatchGroup({
         )}
       </header>
 
-      {expanded && (
+      {expanded && matches.length > 0 && (
         <BuyerMatchBranchList
           matches={matches}
           actions={actions}
@@ -326,7 +355,8 @@ function BuyerRequirementSummaryItem({
         title={value}
         className={cn(
           'min-w-0 text-[13px] text-foreground',
-          wrap ? 'break-words py-2 leading-5' : 'truncate',
+          // 단지 이름이 글자 중간에서 끊기지 않게 띄어쓰기에서만 줄을 바꾼다
+          wrap ? 'break-words break-keep py-2 leading-5' : 'truncate',
           emphasized && 'font-medium tabular-nums',
         )}
       >

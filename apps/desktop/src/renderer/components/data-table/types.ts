@@ -171,6 +171,8 @@ export interface DataTableProps<TData> {
     anchorColumnId: string;
     columnIds: readonly string[];
     label: string;
+    /** 접혀 있을 때 버튼 옆에 묶음 이름을 보여준다. */
+    showLabel?: boolean;
   }[];
   // Bulk-action toolbar rendered above the table when rows are selected.
   // Receives the selected row objects (not just ids).

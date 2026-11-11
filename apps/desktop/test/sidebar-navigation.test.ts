@@ -87,19 +87,23 @@ describe('sidebar navigation of the active tab', () => {
     assert.equal(useTabStore.getState().tabs.length, 2);
   });
 
-  it('does not ask main about tabs rendered by the shell', async () => {
-    useTabStore.getState().openModule({
+  it('asks main about every app screen now that each tab has its own renderer', async () => {
+    const dashboard = useTabStore.getState().openModule({
       route: '/dashboard',
       kind: 'dashboard',
       title: '대시보드',
     });
     const asked = stubNativeUnsavedWork(async () => true);
 
-    await navigateActiveTab(CONTACTS);
+    const result = await navigateActiveTab(CONTACTS);
 
-    assert.deepEqual(asked, []);
-    assert.equal(useTabStore.getState().tabs.length, 1);
-    assert.equal(useTabStore.getState().tabs[0].route, '/contacts');
+    assert.deepEqual(asked, [dashboard]);
+    assert.notEqual(result, dashboard);
+    assert.equal(useTabStore.getState().tabs.length, 2);
+    assert.equal(
+      useTabStore.getState().tabs.find((tab) => tab.id === dashboard)?.route,
+      '/dashboard',
+    );
   });
 
   it('drops a stale click when the user switched tabs during the check', async () => {

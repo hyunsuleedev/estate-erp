@@ -107,6 +107,49 @@ describe("my ads Task-based workflow", () => {
     assert.match(source, /가격 수정안 작성/);
   });
 
+  it("uses the property page's two-row toolbar and filter chips", () => {
+    const source = readFileSync(desktopPath, "utf8");
+
+    assert.match(source, /className="-m-4 flex min-h-0 min-w-0 flex-1 flex-col bg-white"/);
+    for (const part of [
+      "ToolbarPillTabs",
+      "ToolbarSearchBar",
+      "ToolbarSelectChip",
+      "NumericRangeFilterPanel",
+      "AddFilterMenu",
+    ]) {
+      assert.match(source, new RegExp(`<${part}`));
+    }
+    // 좁은 창에서 필터가 잘리지 않게 자주 쓰는 것만 줄에 두고 나머지는 "+ 필터"로 옮긴다
+    for (const key of ["verification", "floorExposure", "exposurePeriod"]) {
+      assert.match(source, new RegExp(`"${key}",\\s*"[^"]+",\\s*<`));
+    }
+    assert.doesNotMatch(source, /MyAdsFilterSelect|MyAdsFilterTextInput|MyAdsAmountRangeFilter/);
+    assert.doesNotMatch(source, /min-w-max items-center gap-1\.5/);
+    // 눈금 사이 값(보증금 3,000만, 월세 55만)도 만원 단위로 직접 넣을 수 있어야 한다
+    assert.match(source, /unit: "만원",\s*scale: 10000,\s*initialMin: filters\.primaryAmountMin/);
+    assert.match(source, /unit: "만원",\s*scale: 1,\s*initialMin: filters\.monthlyRentMin/);
+    assert.match(source, /updateMyAdsRangeFilter\("primary", minValue, maxValue\)/);
+    assert.match(source, /updateMyAdsRangeFilter\("monthlyRent", minValue, maxValue\)/);
+    const panel = readFileSync(
+      fileURLToPath(
+        new URL(
+          "../src/renderer/routes/_authenticated/properties/-components/numeric-range-filter.tsx",
+          import.meta.url,
+        ),
+      ),
+      "utf8",
+    );
+    assert.match(panel, /disabled=\{hasInvalidExactRange\}/);
+    // 슬라이더는 움직인 쪽 입력칸만 바꾼다. 반대쪽에 직접 넣은 금액 제한을 지우면 안 된다
+    assert.match(
+      panel,
+      /if \(nextRange\[0\] !== draftRange\[0\]\) setExactMin\(toExactMin\(nextRange\[0\]\)\);\s*if \(nextRange\[1\] !== draftRange\[1\]\) setExactMax\(toExactMax\(nextRange\[1\]\)\);/,
+    );
+    assert.match(panel, /최대값은 최소값보다 크거나 같아야 합니다\./);
+    assert.match(panel, /exactInput\.onApply\(exactMin\.trim\(\), exactMax\.trim\(\)\)/);
+  });
+
   it("creates an ordinary advertisement Task with stable advertisement identifiers", () => {
     const source = readFileSync(desktopPath, "utf8");
 

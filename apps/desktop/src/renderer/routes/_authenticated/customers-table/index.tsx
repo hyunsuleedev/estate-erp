@@ -39,6 +39,7 @@ import {
   CalendarDays,
   Check,
   ChevronDown,
+  ChevronRight,
   CircleAlert,
   CircleDollarSign,
   CircleDot,
@@ -158,6 +159,8 @@ type LedgerColumnKey =
 // 의뢰 1건은 1행이다. 매물 의뢰의 금액·월세·평형은 최소·최대 2열을 colSpan으로 합쳐 표시한다.
 const LEDGER_COLUMNS: ReadonlyArray<{ key: LedgerColumnKey; width: number }> = [
   { key: "select", width: 36 },
+  // 최근 상담 펼침 버튼 열. 상담 내용은 희망매물의 고객 메모처럼 의뢰 행 아래에 펼친다.
+  { key: "consult", width: 28 },
   { key: "customer", width: 108 },
   { key: "phone", width: 128 },
   { key: "actions", width: 40 },
@@ -174,7 +177,6 @@ const LEDGER_COLUMNS: ReadonlyArray<{ key: LedgerColumnKey; width: number }> = [
   { key: "match", width: 66 },
   { key: "assignee", width: 72 },
   { key: "next", width: 104 },
-  { key: "consult", width: 240 },
   { key: "memo", width: 180 },
   { key: "created", width: 78 },
 ];
@@ -211,7 +213,10 @@ const SORT_FIELD_COLUMN: Partial<
 };
 
 // 선택 + 고객 + 연락처 + 작업. -customer-ledger.css의 sticky left 값과 맞춘다.
+// 최근 상담 펼침 버튼 열은 숨길 수 있어 표시 중일 때만 더한다.
 const LEDGER_PINNED_WIDTH = 312;
+// 상담 줄은 고정 칸(선택 + 펼침 + 고객 + 연락처 + 작업) 오른쪽에서 시작한다.
+const LEDGER_PINNED_COLUMN_COUNT = 5;
 const COLUMN_GUIDE_LEAD = 4;
 const COLUMN_GUIDE_TOGGLE_SIZE = 20;
 
@@ -325,7 +330,7 @@ const NEXT_CONTACT_OPTIONS: ChipOption[] = [
   },
 ];
 
-// 케이스 1개를 렌더할 행 단위. sticky 셀 rowSpan 계산이 이 배열 길이로 결정된다.
+// 케이스 1개를 렌더할 행 단위. sticky 셀 rowSpan은 이 배열 길이에 펼친 상담 줄을 더한 값이다.
 type RowDescriptor =
   | { type: "intent"; line: BrokerageCaseDemandIntent }
   | { type: "stack"; group: ListingGroup };
@@ -1037,6 +1042,9 @@ function CustomersPage() {
             <table
               className="customer-ledger-table"
               style={{ minWidth: tableMinWidth }}
+              data-consult-hidden={
+                visibleColumnKeys.has("consult") ? undefined : true
+              }
               aria-label="고객 중개 케이스 원장"
               aria-describedby={
                 ledgerScrollState.hasOverflow
@@ -1075,6 +1083,11 @@ function CustomersPage() {
                       className="size-3.5"
                     />
                   </th>
+                  {visibleColumnKeys.has("consult") ? (
+                    <th scope="col" className="ledger-sticky-expand">
+                      <span className="sr-only">최근 상담 펼침</span>
+                    </th>
+                  ) : null}
                   <LedgerHeader
                     className="ledger-sticky-customer"
                     icon={<UserRound />}
@@ -1177,12 +1190,6 @@ function CustomersPage() {
                     <LedgerStaticHeader
                       icon={<CalendarClock />}
                       label="다음 연락"
-                    />
-                  ) : null}
-                  {visibleColumnKeys.has("consult") ? (
-                    <LedgerStaticHeader
-                      icon={<MessageSquare />}
-                      label="최근 상담"
                     />
                   ) : null}
                   {visibleColumnKeys.has("memo") ? (
@@ -1379,6 +1386,7 @@ function CaseRows({
   columnCount: number;
   onUpdate: (request: LedgerUpdateRequest) => void;
 }) {
+  const [consultExpanded, setConsultExpanded] = useState(true);
   const rows = buildRowDescriptors(brokerageCase);
   if (rows.length === 0) return null;
   const caseMatchRowKeys = rows.map((row) =>
@@ -1386,7 +1394,12 @@ function CaseRows({
       ? demandMatchRowKey(row.line.requirementId)
       : listingMatchRowKey(row.group.intakeId),
   );
-  const rowSpan = rows.length;
+  const latestConsultation = brokerageCase.latestConsultation;
+  const consultVisible = visibleColumns.has("consult");
+  const showConsultRow =
+    consultVisible && consultExpanded && latestConsultation !== null;
+  // 고정 칸을 상담 줄까지 이어, 의뢰와 상담이 한 고객의 덩어리로 보이게 한다.
+  const rowSpan = rows.length + (showConsultRow ? 1 : 0);
   const primary = brokerageCase.primaryParticipant;
   const customerName = primary?.contact.name ?? "이름 없음";
   const extraParticipants = brokerageCase.participants.length - 1;
@@ -1482,34 +1495,43 @@ function CaseRows({
     </td>
   );
 
-  const latestConsultation = brokerageCase.latestConsultation;
-  const consultationCell = visibleColumns.has("consult") ? (
-    <td rowSpan={rowSpan} className="ledger-consult-cell ledger-rowspan-top">
+  const consultPanelId = `customer-ledger-consult-${brokerageCase.id}`;
+  // 상담이 없으면 펼칠 내용이 없으므로 버튼을 두지 않는다.
+  const consultToggleCell = consultVisible ? (
+    <td
+      rowSpan={rowSpan}
+      className="ledger-sticky-expand ledger-expand-cell ledger-rowspan-top"
+    >
       {latestConsultation ? (
-        <Link
-          to="/consultations"
-          search={{ consultationId: latestConsultation.id }}
-          className="ledger-consult-link"
-          aria-label={`${customerName} 최근 상담 열기`}
-          title={`${formatLedgerDate(latestConsultation.createdAt)} ${
-            CONSULTATION_TYPE_LABELS[latestConsultation.type] ??
-            latestConsultation.type
-          } · ${latestConsultation.content}`}
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-xs"
+          aria-label={`${customerName} 최근 상담 ${consultExpanded ? "접기" : "펼치기"}`}
+          aria-expanded={consultExpanded}
+          aria-controls={consultPanelId}
+          className="text-muted-foreground"
+          onClick={() => setConsultExpanded((current) => !current)}
         >
-          <span className="ledger-consult-date">
-            {formatLedgerDate(latestConsultation.createdAt)}
-          </span>
-          {latestConsultation.content.replace(/\s+/g, " ")}
-        </Link>
-      ) : (
-        <span className="ledger-empty-value">-</span>
-      )}
+          {consultExpanded ? (
+            <ChevronDown className="size-4" />
+          ) : (
+            <ChevronRight className="size-4" />
+          )}
+        </Button>
+      ) : null}
     </td>
   ) : null;
 
   // 등록일 셀은 반드시 행의 마지막에 렌더링해야 컬럼이 밀리지 않는다
   const createdAtCell = visibleColumns.has("created") ? (
-    <td rowSpan={rowSpan} className="ledger-updated-cell ledger-rowspan-top">
+    <td
+      rowSpan={rows.length}
+      className={cn(
+        "ledger-updated-cell ledger-rowspan-top",
+        showConsultRow && "ledger-rowspan-inner",
+      )}
+    >
       {formatDateShortYear(brokerageCase.createdAt)}
     </td>
   ) : null;
@@ -1525,11 +1547,14 @@ function CaseRows({
                 key={row.line.requirementId}
                 className={cn(
                   "ledger-intent-row",
-                  rowIndex === rows.length - 1 && "ledger-case-end",
+                  rowIndex === rows.length - 1 &&
+                    !showConsultRow &&
+                    "ledger-case-end",
                   selected && "ledger-case-selected",
                 )}
               >
                 {first ? selectionCell : null}
+                {first ? consultToggleCell : null}
                 {first ? customerCell : null}
                 {first ? phoneCell : null}
                 {first ? actionCell : null}
@@ -1549,7 +1574,6 @@ function CaseRows({
                     row.line.intakeRequirementCount,
                   )}
                   assigneeOptions={assigneeOptions}
-                  consultationCell={first ? consultationCell : null}
                   createdAtCell={first ? createdAtCell : null}
                   onUpdate={onUpdate}
                 />
@@ -1561,11 +1585,14 @@ function CaseRows({
                 key={`${row.group.intakeId}-stack`}
                 className={cn(
                   "ledger-intent-row ledger-stack-row",
-                  rowIndex === rows.length - 1 && "ledger-case-end",
+                  rowIndex === rows.length - 1 &&
+                    !showConsultRow &&
+                    "ledger-case-end",
                   selected && "ledger-case-selected",
                 )}
               >
                 {first ? selectionCell : null}
+                {first ? consultToggleCell : null}
                 {first ? customerCell : null}
                 {first ? phoneCell : null}
                 {first ? actionCell : null}
@@ -1581,7 +1608,6 @@ function CaseRows({
                       caseMatchRowKeys,
                     )
                   }
-                  consultationCell={first ? consultationCell : null}
                   createdAtCell={first ? createdAtCell : null}
                   onUpdate={onUpdate}
                 />
@@ -1589,6 +1615,34 @@ function CaseRows({
             );
         }
       })}
+      {showConsultRow && latestConsultation ? (
+        <tr
+          className={cn(
+            "ledger-consult-row ledger-case-end",
+            selected && "ledger-case-selected",
+          )}
+        >
+          <td colSpan={columnCount - LEDGER_PINNED_COLUMN_COUNT}>
+            <div id={consultPanelId} className="ledger-consult-line">
+              <MessageSquare aria-hidden className="size-3 shrink-0" />
+              <Link
+                to="/consultations"
+                search={{ consultationId: latestConsultation.id }}
+                className="ledger-consult-link"
+                aria-label={`${customerName} 최근 상담 열기`}
+                title={latestConsultation.content}
+              >
+                <span className="ledger-consult-date">
+                  {formatLedgerDate(latestConsultation.createdAt)}{" "}
+                  {CONSULTATION_TYPE_LABELS[latestConsultation.type] ??
+                    latestConsultation.type}
+                </span>
+                {latestConsultation.content.replace(/\s+/g, " ")}
+              </Link>
+            </div>
+          </td>
+        </tr>
+      ) : null}
       {rows.map((row) => {
         if (row.type === "intent") {
           const rowKey = demandMatchRowKey(row.line.requirementId);
@@ -1646,7 +1700,6 @@ function DemandCells({
   onToggleMatch,
   priorityOptions,
   assigneeOptions,
-  consultationCell,
   createdAtCell,
   onUpdate,
 }: {
@@ -1656,7 +1709,6 @@ function DemandCells({
   onToggleMatch: () => void;
   priorityOptions: ChipOption[];
   assigneeOptions: ChipOption[];
-  consultationCell: ReactNode;
   createdAtCell: ReactNode;
   onUpdate: (request: LedgerUpdateRequest) => void;
 }) {
@@ -1904,7 +1956,6 @@ function DemandCells({
       {visibleColumns.has("next") ? (
         <NextContactCell line={line} onUpdate={onUpdate} />
       ) : null}
-      {consultationCell}
       {visibleColumns.has("memo") ? (
         <MemoCell
           recordId={line.requirementId}
@@ -1930,7 +1981,6 @@ function StackCells({
   visibleColumns,
   expanded,
   onToggleMatch,
-  consultationCell,
   createdAtCell,
   onUpdate,
 }: {
@@ -1938,7 +1988,6 @@ function StackCells({
   visibleColumns: ReadonlySet<LedgerColumnKey>;
   expanded: boolean;
   onToggleMatch: () => void;
-  consultationCell: ReactNode;
   createdAtCell: ReactNode;
   onUpdate: (request: LedgerUpdateRequest) => void;
 }) {
@@ -2132,7 +2181,6 @@ function StackCells({
       {visibleColumns.has("next") ? (
         <td className="ledger-stack-merged-cell ledger-empty-value">-</td>
       ) : null}
-      {consultationCell}
       {visibleColumns.has("memo") ? (
         <MemoCell
           recordId={first.listingIntakeId}
@@ -2792,6 +2840,9 @@ function LedgerColumnGuide({
   const toggleLeft = open
     ? guideLeft - COLUMN_GUIDE_TOGGLE_SIZE
     : groupStart - COLUMN_GUIDE_TOGGLE_SIZE / 2;
+  const pinnedWidth =
+    LEDGER_PINNED_WIDTH +
+    (columns.find((column) => column.key === "consult")?.width ?? 0);
   const label = open ? "월세 컬럼 접기" : "월세 컬럼 펼치기";
   return (
     <div
@@ -2821,7 +2872,7 @@ function LedgerColumnGuide({
           aria-expanded={open}
           title={label}
           className="sticky z-50 inline-flex size-5 shrink-0 items-center justify-center rounded-[3px] border border-[#9ba7a3] bg-white p-0 text-[#536b64] shadow-[0_1px_1px_rgba(42,51,47,0.05)] outline-none transition-colors hover:border-[#738b83] hover:bg-[#f4f8f6] hover:text-[#315d50] focus-visible:ring-2 focus-visible:ring-[#4c8c7c]/35"
-          style={{ left: LEDGER_PINNED_WIDTH + 4, right: 8 }}
+          style={{ left: pinnedWidth + 4, right: 8 }}
           onClick={onToggle}
         >
           {open ? <Minus className="size-3" /> : <Plus className="size-3" />}

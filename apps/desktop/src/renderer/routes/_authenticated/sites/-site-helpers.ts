@@ -428,6 +428,13 @@ export function clampPanelWidth(width: number, containerWidth: number): number {
   return Math.max(SITES_PANEL_WIDTH.min, Math.min(width, max));
 }
 
+/**
+ * clampPanelWidth의 CSS 버전. 100cqi는 페이지 폭(@container/sites-page)이다.
+ * 앱 메뉴가 접히는 동안 페이지 폭이 프레임마다 바뀌어도 브라우저가 레이아웃에서 계산하므로
+ * 페이지를 다시 렌더링하지 않는다. 폭을 JS로 재서 state에 넣으면 그 200ms 동안 렌더링이 겹쳐 버벅인다.
+ */
+export const SITES_PANEL_MAX_WIDTH_CSS = `max(${SITES_PANEL_WIDTH.min}px, min(${SITES_PANEL_WIDTH.max}px, calc(100cqi - ${SITES_MAIN_MIN_WIDTH}px)))`;
+
 /** 이 단지에서 우리 사무소가 관리호수로 등록한 호실 수 (목록 API의 사무소 범위 집계) */
 export function getManagedUnitCount(officeSite: OfficeSite): number {
   return officeSite.site?._count?.properties ?? 0;

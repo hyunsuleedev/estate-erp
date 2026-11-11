@@ -102,6 +102,11 @@ interface NativeTabViewportProps {
   adapter?: NativeTabViewportAdapter | null;
   /** 이미 live WCV가 이동해 오는 detached shell은 첫 attach 동안 중복 Outlet을 띄우지 않는다. */
   deferNativeFallback?: boolean;
+  /**
+   * 탭 화면이 뜨는 동안 보여줄 셸 쪽 자리표시(예: 사이드바만). 주면 그동안
+   * `children`(셸이 직접 그리는 화면)을 그리지 않아 같은 화면을 두 번 불러오지 않는다.
+   */
+  mountingFallback?: ReactNode;
   suspended?: boolean;
 }
 
@@ -110,6 +115,7 @@ export function NativeTabViewport({
   children,
   className,
   deferNativeFallback = false,
+  mountingFallback,
   suspended = false,
 }: NativeTabViewportProps) {
   const latestLeaseIdRef = useRef<string | null>(null);
@@ -308,17 +314,24 @@ export function NativeTabViewport({
         ? 'native'
         : 'mounting';
 
+  // 전화 팝업처럼 OS 수준 오버레이가 떠서 탭 화면을 숨긴 동안에는 셸이 같은
+  // 화면을 직접 그린다. 모든 화면이 탭 화면이 된 뒤로 이 동안 비워 두면 통화 중에
+  // 보던 화면이 사라지기 때문이다.
+  const fallback =
+    nativeOverlaySuspended || state === 'legacy'
+      ? children
+      : state === 'mounting'
+        ? (mountingFallback ?? (deferNativeFallback ? null : children))
+        : null;
+
   return (
     <NativeTabViewportFrame
       ref={viewportRef}
       className={className}
       state={state}
-      renderFallback={
-        !nativeOverlaySuspended &&
-        (state === 'legacy' || (state === 'mounting' && !deferNativeFallback))
-      }
+      renderFallback={fallback !== null}
     >
-      {children}
+      {fallback}
     </NativeTabViewportFrame>
   );
 }

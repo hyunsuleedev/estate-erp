@@ -48,11 +48,46 @@ export type RestoreTransferredWorkspaceResult =
   | { status: 'restored'; activeTabId: TabId | null }
   | { status: 'conflict'; error: string };
 
+/** 탭 하나가 보여주는 화면. 뒤로/앞으로 기록의 한 칸이다. */
+export interface TabLocation {
+  route: string;
+  title: string;
+  kind: TabKind;
+  resourceKey: string;
+  routeParams?: Record<string, JsonValue>;
+}
+
+export type RestoreTabLocationResult =
+  | { status: 'navigated'; tabId: TabId }
+  /** 같은 업무가 다른 탭에 이미 열려 있어 그 탭을 보여줬다. */
+  | { status: 'revealed'; tabId: TabId }
+  /** 저장 전 입력 초안이 있어 다른 업무로 옮기지 않았다. 초안은 그대로다. */
+  | { status: 'blocked'; tabId: TabId }
+  | { status: 'ignored'; tabId: TabId };
+
+/** 한 번의 닫기 동작으로 닫힌 탭들. "다른 탭 닫기"는 여러 탭이 한 묶음이다. */
+export interface ClosedTabGroup {
+  tabs: Array<{ tab: Tab; index: number }>;
+  closedAt: number;
+}
+
+export const RECENTLY_CLOSED_TAB_LIMIT = 20;
+
+export interface ReopenedTab {
+  /** 닫히기 전 id. 방문 기록을 이어 붙일 때 쓴다. */
+  previousTabId: TabId;
+  tabId: TabId;
+  /** 이미 다른 탭에 같은 업무가 열려 있어 새로 만들지 않고 그 탭을 보여줬다. */
+  revealed: boolean;
+}
+
 interface TabStore {
   tabs: Tab[];
   activeTabId: TabId | null;
   /** ownership commit 중인 source 탭에는 더 이상 직렬화 상태를 쓰지 않는다. */
   transferLockedTabIds: ReadonlySet<TabId>;
+  /** 최근에 닫은 탭 묶음. 앞쪽이 가장 최근이다. */
+  recentlyClosedTabs: ClosedTabGroup[];
 
   /** Chrome식 명시적 생성: 같은 route/resource여도 항상 새 탭이다. */
   createTab(input: CreateTabInput): TabId;
@@ -101,8 +136,18 @@ interface TabStore {
   ): boolean;
   /** Main-owned native scroll projection for LRU restore. */
   updateNativeTabSnapshot(tab: Tab): boolean;
+  /**
+   * 뒤로/앞으로: 같은 탭을 기록된 화면으로 되돌린다. 같은 업무가 다른 탭에
+   * 이미 열려 있으면 탭 하나에 한 업무 규칙을 지키려고 그 탭을 보여준다.
+   */
+  restoreTabLocation(id: TabId, location: TabLocation): RestoreTabLocationResult;
   closeTab(id: TabId): void;
   closeOtherTabs(id: TabId): void;
+  closeTabsToRight(id: TabId): void;
+  closeTabsToLeft(id: TabId): void;
+  closeTabsOnSide(id: TabId, side: 'left' | 'right'): void;
+  /** 가장 최근에 닫은 묶음을 원래 자리에 다시 연다. */
+  reopenClosedTabs(): ReopenedTab[];
   closeAllTabs(): void;
   /** Authentication principal changed: discard every tenant-bound tab/draft. */
   resetWorkspaceForAuthChange(): void;
@@ -114,6 +159,17 @@ interface TabStore {
   lockTabForTransfer(id: TabId): Tab | null;
   unlockTabForTransfer(id: TabId): void;
   removeTabById(id: TabId): void;
+}
+
+/** 탭 화면이 보고한 스크롤만 셸 탭 상태에 합친다. 입력 초안은 셸 쪽 값을 지킨다. */
+function mergeNativeScroll(
+  current: Tab['uiState'],
+  reported: Tab['uiState'],
+): Tab['uiState'] {
+  const merged: NonNullable<Tab['uiState']> = { ...current };
+  delete merged.scrollY;
+  if (reported?.scrollY !== undefined) merged.scrollY = reported.scrollY;
+  return Object.keys(merged).length > 0 ? merged : undefined;
 }
 
 function buildTab(id: TabId, input: CreateTabInput): Tab {
@@ -134,7 +190,27 @@ function buildTab(id: TabId, input: CreateTabInput): Tab {
   };
 }
 
-function hasUnsavedFormDraft(tab: Tab): boolean {
+function withClosedGroup(
+  groups: ClosedTabGroup[],
+  closed: Array<{ tab: Tab; index: number }>,
+): ClosedTabGroup[] {
+  if (closed.length === 0) return groups;
+  return [{ tabs: closed, closedAt: Date.now() }, ...groups].slice(
+    0,
+    RECENTLY_CLOSED_TAB_LIMIT,
+  );
+}
+
+/** 탭 id에 묶인 identity(launcher, draft)는 새 id 기준으로 다시 만든다. */
+function reopenedResourceKey(tab: Tab, tabId: TabId): string {
+  const key = tab.resourceKey;
+  if (!key) return resolveTabResourceKey(tab.route, tabId);
+  if (key.startsWith('launcher:')) return tabResourceKeys.launcher(tabId);
+  if (key.startsWith('draft:')) return resolveTabResourceKey(tab.route, tabId);
+  return key;
+}
+
+export function hasUnsavedFormDraft(tab: Tab): boolean {
   const formDraft = tab.uiState?.formDraft;
   return Boolean(formDraft && Object.keys(formDraft).length > 0);
 }
@@ -157,6 +233,7 @@ export const useTabStore = create<TabStore>((set, get) => ({
   tabs: [],
   activeTabId: null,
   transferLockedTabIds: new Set<TabId>(),
+  recentlyClosedTabs: [],
 
   createTab(input) {
     const id = genId();
@@ -449,13 +526,55 @@ export const useTabStore = create<TabStore>((set, get) => ({
     set({
       tabs: state.tabs.map((candidate) =>
         // Native view-state reports must not roll back newer shell-owned
-        // title/route metadata that may have changed concurrently.
+        // title/route metadata or form drafts that may have changed
+        // concurrently. The native renderer only owns its scroll position.
         candidate.id === tab.id
-          ? { ...candidate, uiState: tab.uiState }
+          ? { ...candidate, uiState: mergeNativeScroll(candidate.uiState, tab.uiState) }
           : candidate,
       ),
     });
     return true;
+  },
+
+  restoreTabLocation(id, location) {
+    const state = get();
+    const source = state.tabs.find((tab) => tab.id === id);
+    if (!source || state.transferLockedTabIds.has(id)) {
+      return { status: 'ignored', tabId: id };
+    }
+
+    const existing = state.tabs.find(
+      (tab) => tab.id !== id && tab.resourceKey === location.resourceKey,
+    );
+    if (existing) {
+      set({ activeTabId: existing.id });
+      return { status: 'revealed', tabId: existing.id };
+    }
+
+    const changesResource = source.resourceKey !== location.resourceKey;
+    // 다른 업무로 옮기면 uiState를 비우므로, 저장 전 초안이 있으면 절대 옮기지 않는다.
+    if (changesResource && hasUnsavedFormDraft(source)) {
+      return { status: 'blocked', tabId: id };
+    }
+
+    set({
+      tabs: state.tabs.map((tab) =>
+        tab.id === id
+          ? {
+              ...tab,
+              resourceKey: location.resourceKey,
+              kind: location.kind,
+              title: location.title,
+              route: location.route,
+              routeParams: location.routeParams,
+              // 다른 업무로 돌아가면 지금 화면의 scroll 상태는 이어지지 않는다.
+              uiState: changesResource ? undefined : tab.uiState,
+            }
+          : tab,
+      ),
+      activeTabId: id,
+    });
+    return { status: 'navigated', tabId: id };
   },
 
   closeTab(id) {
@@ -469,7 +588,13 @@ export const useTabStore = create<TabStore>((set, get) => ({
       const fallback = next[idx] ?? next[idx - 1] ?? next[0] ?? null;
       nextActive = fallback?.id ?? null;
     }
-    set({ tabs: next, activeTabId: nextActive });
+    set({
+      tabs: next,
+      activeTabId: nextActive,
+      recentlyClosedTabs: withClosedGroup(state.recentlyClosedTabs, [
+        { tab: state.tabs[idx], index: idx },
+      ]),
+    });
   },
 
   closeOtherTabs(id) {
@@ -481,7 +606,76 @@ export const useTabStore = create<TabStore>((set, get) => ({
     ) {
       return;
     }
-    set({ tabs: [tab], activeTabId: id });
+    const closed = state.tabs
+      .map((candidate, index) => ({ tab: candidate, index }))
+      .filter((entry) => entry.tab.id !== id);
+    set({
+      tabs: [tab],
+      activeTabId: id,
+      recentlyClosedTabs: withClosedGroup(state.recentlyClosedTabs, closed),
+    });
+  },
+
+  closeTabsToRight(id) {
+    get().closeTabsOnSide(id, 'right');
+  },
+
+  closeTabsToLeft(id) {
+    get().closeTabsOnSide(id, 'left');
+  },
+
+  closeTabsOnSide(id, side) {
+    const state = get();
+    const idx = state.tabs.findIndex((tab) => tab.id === id);
+    if (idx < 0) return;
+    const closed = state.tabs
+      .map((tab, index) => ({ tab, index }))
+      .filter((entry) => (side === 'right' ? entry.index > idx : entry.index < idx));
+    if (closed.length === 0) return;
+    if (closed.some((entry) => state.transferLockedTabIds.has(entry.tab.id))) {
+      return;
+    }
+    const closedIds = new Set(closed.map((entry) => entry.tab.id));
+    const tabs = state.tabs.filter((tab) => !closedIds.has(tab.id));
+    const activeStillOpen = tabs.some((tab) => tab.id === state.activeTabId);
+    set({
+      tabs,
+      activeTabId: activeStillOpen ? state.activeTabId : id,
+      recentlyClosedTabs: withClosedGroup(state.recentlyClosedTabs, closed),
+    });
+  },
+
+  reopenClosedTabs() {
+    const state = get();
+    const [group, ...rest] = state.recentlyClosedTabs;
+    if (!group) return [];
+
+    const tabs = [...state.tabs];
+    const reopened: ReopenedTab[] = [];
+    const ordered = [...group.tabs].sort((left, right) => left.index - right.index);
+    for (const { tab, index } of ordered) {
+      const tabId = genId();
+      const resourceKey = reopenedResourceKey(tab, tabId);
+      const existing = tabs.find((candidate) => candidate.resourceKey === resourceKey);
+      if (existing) {
+        reopened.push({ previousTabId: tab.id, tabId: existing.id, revealed: true });
+        continue;
+      }
+      tabs.splice(Math.min(index, tabs.length), 0, {
+        ...tab,
+        id: tabId,
+        resourceKey,
+        createdAt: Date.now(),
+      });
+      reopened.push({ previousTabId: tab.id, tabId, revealed: false });
+    }
+
+    set({
+      tabs,
+      activeTabId: reopened[0]?.tabId ?? state.activeTabId,
+      recentlyClosedTabs: rest,
+    });
+    return reopened;
   },
 
   closeAllTabs() {
@@ -494,6 +688,8 @@ export const useTabStore = create<TabStore>((set, get) => ({
       tabs: [],
       activeTabId: null,
       transferLockedTabIds: new Set<TabId>(),
+      // 닫은 탭도 이전 사무소 데이터다.
+      recentlyClosedTabs: [],
     });
   },
 

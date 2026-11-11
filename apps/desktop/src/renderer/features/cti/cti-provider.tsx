@@ -45,9 +45,28 @@ interface CtiContextValue {
   refreshLookup: () => Promise<void>;
   /** CallLog에 상담 연결 등 로컬 상태 갱신 */
   patchCallLog: (patch: Partial<CallLog>) => void;
+  /**
+   * 전화 팝업 층(탭 화면 위의 별도 view)에서는 라우터가 없으므로 팝업 안 링크를
+   * 셸 창에서 연다. 셸 안에서 그릴 때는 비워 두고 라우터 링크를 쓴다.
+   */
+  openRoute?: (route: string) => void;
 }
 
 const CtiContext = createContext<CtiContextValue | null>(null);
+
+/** 전화 팝업 층: 셸에서 받은 통화 상태로 팝업을 그릴 때 쓴다. */
+export const CtiContextProvider = CtiContext.Provider;
+
+/**
+ * Electron에서는 팝업을 탭 화면 위의 별도 층에서 그린다. 셸이 그리면 탭 화면에
+ * 가려지고, 통화 중에 탭 화면을 숨기면 보던 화면의 입력이 사라지기 때문이다.
+ */
+export function callPopupUsesOverlayLayer(): boolean {
+  return (
+    typeof window !== 'undefined' &&
+    Boolean(window.electronBridge?.cti?.setOverlayState)
+  );
+}
 
 export function useCti(): CtiContextValue {
   const context = useContext(CtiContext);
@@ -227,7 +246,7 @@ export function CtiProvider({
 
   useEffect(() => {
     if (!enabled) return;
-    const cleanup = window.electronBridge?.cti?.onEvent((payload) => {
+    const cleanup = window.electronBridge?.cti?.onEvent?.((payload) => {
       handleEvent(payload as unknown as CtiEvent);
     });
     return cleanup;
@@ -272,14 +291,51 @@ export function CtiProvider({
     [mutateActiveCall],
   );
 
-  const isOverlayVisible = enabled && activeCall !== null;
+  const usesOverlayLayer = enabled && callPopupUsesOverlayLayer();
+
+  // 통화 상태의 주인은 이 셸이다. 팝업 층에는 상태만 보내고, 층에서 누른
+  // 버튼은 여기로 돌아와 처리한다.
+  useEffect(() => {
+    if (!usesOverlayLayer) return;
+    window.electronBridge?.cti?.setOverlayState?.(activeCall);
+  }, [activeCall, usesOverlayLayer]);
+
+  useEffect(() => {
+    if (!usesOverlayLayer) return;
+    return () => window.electronBridge?.cti?.setOverlayState?.(null);
+  }, [usesOverlayLayer]);
+
+  useEffect(() => {
+    if (!usesOverlayLayer) return;
+    return window.electronBridge?.cti?.onOverlayAction?.((action) => {
+      switch (action.type) {
+        case 'dismiss':
+          dismiss();
+          return;
+        case 'refresh-lookup':
+          void refreshLookup().catch((error: unknown) => {
+            console.error('[cti] lookup 갱신 실패:', error);
+          });
+          return;
+        case 'patch-call-log':
+          patchCallLog(action.patch as Partial<CallLog>);
+          return;
+        case 'open-route':
+          // main이 셸 창의 탭으로 직접 연다.
+          return;
+      }
+    });
+  }, [dismiss, patchCallLog, refreshLookup, usesOverlayLayer]);
+
+  // 팝업 층이 없는 환경(브라우저 미리보기)에서만 셸 안에 팝업을 그린다.
+  const isOverlayVisible = enabled && !usesOverlayLayer && activeCall !== null;
   useEffect(() => {
     const setOverlayVisible =
       window.electronBridge?.tabs.setGlobalOverlayVisible;
-    if (!enabled || !setOverlayVisible) return;
+    if (!enabled || usesOverlayLayer || !setOverlayVisible) return;
     setOverlayVisible('cti', isOverlayVisible);
     return () => setOverlayVisible('cti', false);
-  }, [enabled, isOverlayVisible]);
+  }, [enabled, isOverlayVisible, usesOverlayLayer]);
 
   return (
     <CtiContext.Provider

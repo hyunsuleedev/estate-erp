@@ -69,10 +69,13 @@ export function CallSuggestionList({
   suggestions,
   labels,
   hasContact,
+  renderEvidenceLink,
 }: {
   suggestions: CallActionSuggestion[];
   labels: Record<string, string>;
   hasContact: boolean;
+  /** 근거 인용문 옆에 원문으로 가는 링크 (받아쓰기에서 찾지 못하면 null) */
+  renderEvidenceLink?: (evidence: string) => ReactNode;
 }) {
   const [showResolved, setShowResolved] = useState(false);
   const open = suggestions.filter((s) => s.status === 'pending' || s.status === 'applying');
@@ -98,7 +101,12 @@ export function CallSuggestionList({
         <ul className="space-y-2">
           {open.map((suggestion) => (
             <li key={suggestion.id}>
-              <SuggestionCard suggestion={suggestion} labels={labels} hasContact={hasContact} />
+              <SuggestionCard
+                suggestion={suggestion}
+                labels={labels}
+                hasContact={hasContact}
+                renderEvidenceLink={renderEvidenceLink}
+              />
             </li>
           ))}
         </ul>
@@ -165,10 +173,12 @@ function SuggestionCard({
   suggestion,
   labels,
   hasContact,
+  renderEvidenceLink,
 }: {
   suggestion: CallActionSuggestion;
   labels: Record<string, string>;
   hasContact: boolean;
+  renderEvidenceLink?: (evidence: string) => ReactNode;
 }) {
   const [editing, setEditing] = useState(false);
   const { accept, dismiss } = useSuggestionMutations(suggestion);
@@ -196,9 +206,12 @@ function SuggestionCard({
         </ul>
       )}
       {suggestion.evidence && (
-        <blockquote className="mt-2 border-l-2 border-violet/30 pl-2 text-[12px] leading-relaxed text-muted-foreground">
-          “{suggestion.evidence}”
-        </blockquote>
+        <div className="mt-2 flex items-start justify-between gap-2">
+          <blockquote className="min-w-0 border-l-2 border-violet/30 pl-2 text-[12px] leading-relaxed text-muted-foreground">
+            “{suggestion.evidence}”
+          </blockquote>
+          {renderEvidenceLink?.(suggestion.evidence)}
+        </div>
       )}
 
       {editing ? (

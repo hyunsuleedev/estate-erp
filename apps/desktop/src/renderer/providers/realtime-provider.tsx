@@ -51,7 +51,9 @@ function invalidateListingIntake(event: ListingIntakeUpdatedEvent) {
 
 export function RealtimeProvider({ children }: { children: ReactNode }) {
   const { isAuthenticated, user } = useAuth();
-  const isNativeTab = window.electronBridge?.surface.kind === 'native-tab';
+  // 탭 화면과 전화 팝업 층은 실시간 연결을 갖지 않고 셸이 보낸 갱신 신호만 받는다.
+  const surfaceKind = window.electronBridge?.surface.kind;
+  const isNativeTab = surfaceKind === 'native-tab' || surfaceKind === 'call-overlay';
   const principalKey = `${user?.id ?? ''}:${user?.office?.id ?? ''}`;
 
   useEffect(() => {

@@ -73,6 +73,19 @@ export function buildPropertyMapClustersFromOffsets<TPoint extends PropertyMapCl
   return clusters.map(({ offsetX, offsetY, ...cluster }) => cluster);
 }
 
+/**
+ * 네이버 지도 SDK는 https·file 페이지에서는 pstatic.net에서, 그 밖의 페이지(개발 서버,
+ * 패키징 앱의 커스텀 프로토콜)에서는 http 호스트에서 스타일과 타일을 받는다.
+ */
+export function getNaverMapsPreconnectOrigins(pageProtocol: string): string[] {
+  const usesSecureHosts = pageProtocol === 'https:' || pageProtocol === 'file:';
+
+  return [
+    'https://oapi.map.naver.com',
+    usesSecureHosts ? 'https://nrbe.pstatic.net' : 'http://nrbe.map.naver.net',
+  ];
+}
+
 export function removePropertyMapListeners(
   listeners: readonly unknown[],
   removeListener?: (listener: unknown) => void,

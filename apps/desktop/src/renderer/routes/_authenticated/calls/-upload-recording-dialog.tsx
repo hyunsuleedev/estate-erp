@@ -5,6 +5,7 @@ import { FileAudio, Loader2, Upload } from 'lucide-react';
 import { parseCallRecordingFileName } from '@estate-erp/shared';
 import type { CallRecordingDetail } from '@estate-erp/api-client';
 import { api } from '@/lib/api';
+import { cn } from '@/lib/utils';
 import { formatPhone } from '@/lib/format';
 import { Button } from '@/components/ui/button';
 import {
@@ -60,6 +61,8 @@ export function UploadRecordingDialog({
   const [file, setFile] = useState<File | null>(null);
   const [phone, setPhone] = useState('');
   const [calledAt, setCalledAt] = useState('');
+  // 전화 녹음 또는 사무소에서 나눈 방문 상담 녹음 (방문이면 방문 상담으로 남는다)
+  const [kind, setKind] = useState<'phone' | 'visit'>('phone');
   const [direction, setDirection] = useState<'inbound' | 'outbound'>('inbound');
   const [durationSec, setDurationSec] = useState<number | null>(null);
 
@@ -68,6 +71,7 @@ export function UploadRecordingDialog({
     setFile(null);
     setPhone('');
     setCalledAt('');
+    setKind('phone');
     setDirection('inbound');
     setDurationSec(null);
   }, [open]);
@@ -87,8 +91,8 @@ export function UploadRecordingDialog({
       if (!file) throw new Error('녹음 파일을 골라 주세요');
       const created = await api.consultations.createWithRecording({
         file,
-        type: 'phone',
-        direction,
+        type: kind,
+        direction: kind === 'visit' ? undefined : direction,
         phoneNumber: phone.replace(/\D/g, '') || undefined,
         calledAt: calledAt ? new Date(calledAt).toISOString() : undefined,
         durationSec: durationSec ?? undefined,
@@ -110,13 +114,35 @@ export function UploadRecordingDialog({
     <Dialog open={open} onOpenChange={(next) => !mutation.isPending && onOpenChange(next)}>
       <DialogContent className="sm:max-w-[440px]">
         <DialogHeader>
-          <DialogTitle className="text-base">통화 녹음 올리기</DialogTitle>
+          <DialogTitle className="text-base">녹음 올리기</DialogTitle>
           <DialogDescription className="text-xs">
             받아쓰기와 분석이 끝나면 상담 기록이 남고, 할 일·일정 같은 업무를 제안합니다.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 py-1">
+          <div role="radiogroup" aria-label="녹음 종류" className="grid grid-cols-2 gap-1 rounded-md bg-muted p-1">
+            {(
+              [
+                { value: 'phone', label: '전화 통화' },
+                { value: 'visit', label: '방문 상담' },
+              ] as const
+            ).map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                role="radio"
+                aria-checked={kind === option.value}
+                onClick={() => setKind(option.value)}
+                className={cn(
+                  'rounded px-2 py-1.5 text-[13px] transition-colors',
+                  kind === option.value ? 'bg-background font-medium shadow-sm' : 'text-muted-foreground hover:text-foreground',
+                )}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
           <input
             ref={inputRef}
             type="file"
@@ -143,9 +169,9 @@ export function UploadRecordingDialog({
             )}
           </button>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className={cn('grid gap-3', kind === 'phone' && 'grid-cols-2')}>
             <div className="space-y-1.5">
-              <Label className="text-xs font-semibold">상대 번호</Label>
+              <Label className="text-xs font-semibold">{kind === 'visit' ? '고객 번호 (선택)' : '상대 번호'}</Label>
               <Input
                 value={phone}
                 onChange={(event) => setPhone(event.target.value)}
@@ -153,20 +179,22 @@ export function UploadRecordingDialog({
                 className="h-9 text-[13px]"
               />
             </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs font-semibold">방향</Label>
-              <select
-                value={direction}
-                onChange={(event) => setDirection(event.target.value as 'inbound' | 'outbound')}
-                className="h-9 w-full rounded-md border border-input bg-background px-2 text-[13px]"
-              >
-                <option value="inbound">수신</option>
-                <option value="outbound">발신</option>
-              </select>
-            </div>
+            {kind === 'phone' && (
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold">방향</Label>
+                <select
+                  value={direction}
+                  onChange={(event) => setDirection(event.target.value as 'inbound' | 'outbound')}
+                  className="h-9 w-full rounded-md border border-input bg-background px-2 text-[13px]"
+                >
+                  <option value="inbound">수신</option>
+                  <option value="outbound">발신</option>
+                </select>
+              </div>
+            )}
           </div>
           <div className="space-y-1.5">
-            <Label className="text-xs font-semibold">통화 시각</Label>
+            <Label className="text-xs font-semibold">{kind === 'visit' ? '상담 시각' : '통화 시각'}</Label>
             <Input
               type="datetime-local"
               value={calledAt}
@@ -175,7 +203,9 @@ export function UploadRecordingDialog({
             />
           </div>
           <p className="text-[11px] text-muted-foreground">
-            등록된 번호면 그 연락처에 자동으로 연결됩니다. 갤럭시 기본 녹음 파일은 번호와 시각을 파일 이름에서 채웁니다.
+            {kind === 'visit'
+              ? '고객 번호를 넣으면 그 연락처의 방문 상담으로 남습니다. 비워 두면 연결 대기에서 연락처를 이어 주세요.'
+              : '등록된 번호면 그 연락처에 자동으로 연결됩니다. 갤럭시 기본 녹음 파일은 번호와 시각을 파일 이름에서 채웁니다.'}
           </p>
         </div>
 

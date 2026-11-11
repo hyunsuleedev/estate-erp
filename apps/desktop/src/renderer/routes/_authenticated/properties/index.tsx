@@ -42,7 +42,6 @@ import {
   RotateCcw,
   Ruler,
   Tag,
-  Trash2,
   Type,
   X,
 } from "lucide-react";
@@ -94,7 +93,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Slider } from "@/components/ui/slider";
 import { type MultiSelectOption } from "@/components/ui/multi-select";
 import { StatusBadge } from "@/components/domain";
 import { cn } from "@/lib/utils";
@@ -140,6 +138,24 @@ import {
   type AddFilterItem,
 } from "./-components/property-toolbar";
 import {
+  AREA_RANGE_MAX,
+  AREA_RANGE_MIN,
+  AREA_RANGE_PRESETS,
+  DateRangeFilter,
+  FilterField,
+  formatNumericRangeLabel,
+  formatPriceRangeLabel,
+  formatRangeNumber,
+  MONTHLY_RENT_RANGE_MAX,
+  MONTHLY_RENT_RANGE_MIN,
+  MONTHLY_RENT_RANGE_PRESETS,
+  NumericRangeFilterPanel,
+  PopoverTitle,
+  PRICE_RANGE_MAX,
+  PRICE_RANGE_MIN,
+  PRICE_RANGE_PRESETS,
+} from "./-components/numeric-range-filter";
+import {
   PropertyInspectorView,
   type InspectorActivity,
   type InspectorAdRow,
@@ -157,6 +173,7 @@ import { PropertyInspectorProgressTab } from "./-components/property-inspector-p
 import { getStatusMeta } from "@/lib/status-config";
 import {
   buildPropertyMapClustersFromOffsets,
+  getNaverMapsPreconnectOrigins,
   removePropertyMapListeners,
   type PropertyMapClusterSource,
 } from "./-property-map-utils";
@@ -397,52 +414,6 @@ const advertisementFilterOptions = [
   { value: "with", label: "광고 있음" },
   { value: "without", label: "광고 없음" },
 ] as const;
-
-const PRICE_RANGE_MIN = 0;
-const PRICE_RANGE_MAX = 30;
-interface NumericRangePreset {
-  label: string;
-  min: number;
-  max: number;
-  isAll?: boolean;
-}
-
-const PRICE_RANGE_PRESETS: NumericRangePreset[] = [
-  { label: "~5억", min: 0, max: 5 },
-  { label: "5억대", min: 5, max: 10 },
-  { label: "10억대", min: 10, max: 15 },
-  { label: "15억대", min: 15, max: 20 },
-  { label: "20억대", min: 20, max: 25 },
-  { label: "25억대", min: 25, max: 30 },
-  { label: "30억~", min: 30, max: 30 },
-  { label: "전체", min: 0, max: 30, isAll: true },
-];
-
-const MONTHLY_RENT_RANGE_MIN = 0;
-const MONTHLY_RENT_RANGE_MAX = 600;
-const MONTHLY_RENT_RANGE_PRESETS: NumericRangePreset[] = [
-  { label: "~100만", min: 0, max: 100 },
-  { label: "100만대", min: 100, max: 200 },
-  { label: "200만대", min: 200, max: 300 },
-  { label: "300만대", min: 300, max: 400 },
-  { label: "400만대", min: 400, max: 500 },
-  { label: "500만대", min: 500, max: 600 },
-  { label: "600만~", min: 600, max: 600 },
-  { label: "전체", min: 0, max: 600, isAll: true },
-];
-
-const AREA_RANGE_MIN = 0;
-const AREA_RANGE_MAX = 80;
-const AREA_RANGE_PRESETS: NumericRangePreset[] = [
-  { label: "~10평", min: 0, max: 10 },
-  { label: "10평대", min: 10, max: 20 },
-  { label: "20평대", min: 20, max: 30 },
-  { label: "30평대", min: 30, max: 40 },
-  { label: "40평대", min: 40, max: 50 },
-  { label: "50평대", min: 50, max: 60 },
-  { label: "60평대", min: 60, max: 70 },
-  { label: "70평~", min: 70, max: 80 },
-];
 
 const ROOM_COUNT_FILTER_OPTIONS = [
   { value: "", label: "전체" },
@@ -792,6 +763,12 @@ function PropertiesPage() {
     () => buildPropertyMapPoints(mapGroups),
     [mapGroups],
   );
+  useEffect(() => {
+    const idleId = window.requestIdleCallback(preloadNaverMaps, {
+      timeout: 2000,
+    });
+    return () => window.cancelIdleCallback(idleId);
+  }, []);
   const selectedProvince = propertyFilters.provinceCode
     ? provinces.find(
         (province) => province.code === propertyFilters.provinceCode,
@@ -2834,7 +2811,7 @@ function loadNaverMaps(ncpKeyId: string) {
     return window.__estateErpNaverMapsPromise;
   }
 
-  window.__estateErpNaverMapsPromise = new Promise<NaverMapsApi>(
+  const loading = new Promise<NaverMapsApi>(
     (resolve, reject) => {
       const existingScript = document.getElementById(
         "naver-maps-js-sdk",
@@ -2891,7 +2868,32 @@ function loadNaverMaps(ncpKeyId: string) {
     },
   );
 
-  return window.__estateErpNaverMapsPromise;
+  window.__estateErpNaverMapsPromise = loading;
+  // 실패한 로드를 남겨 두면 앱을 다시 켤 때까지 지도를 열 수 없으므로 재시도할 수 있게 지운다.
+  loading.catch(() => {
+    delete window.__estateErpNaverMapsPromise;
+    document.getElementById("naver-maps-js-sdk")?.remove();
+  });
+
+  return loading;
+}
+
+/** 지도 화면을 열 때 기다리지 않도록 SDK를 받아 둔다. 지도를 만들지 않으므로 타일은 받지 않는다. */
+function preloadNaverMaps() {
+  if (!NAVER_MAPS_NCP_KEY_ID || getReadyNaverMapsApi()) return;
+
+  for (const origin of getNaverMapsPreconnectOrigins(window.location.protocol)) {
+    if (document.head.querySelector(`link[rel="preconnect"][href="${origin}"]`)) {
+      continue;
+    }
+    const link = document.createElement("link");
+    link.rel = "preconnect";
+    link.href = origin;
+    document.head.appendChild(link);
+  }
+
+  // 실패해도 지도 화면을 열 때 다시 시도하고 그 결과를 보여 준다.
+  loadNaverMaps(NAVER_MAPS_NCP_KEY_ID).catch(() => undefined);
 }
 
 function getNaverMarkerHtml(point: PropertyMapPoint) {
@@ -6588,40 +6590,6 @@ function TransactionMiniLabel({
   );
 }
 
-function PopoverTitle({
-  title,
-  description,
-}: {
-  title: string;
-  description: string;
-}) {
-  return (
-    <div>
-      <h3 className="text-[13px] font-semibold text-foreground">{title}</h3>
-      <p className="mt-0.5 text-[11px] leading-4 text-muted-foreground">
-        {description}
-      </p>
-    </div>
-  );
-}
-
-function FilterField({
-  label,
-  className,
-  children,
-}: {
-  label: string;
-  className?: string;
-  children: ReactNode;
-}) {
-  return (
-    <div className={cn("flex min-w-0 flex-col gap-1", className)}>
-      <span className="text-[11px] font-medium text-slate-500">{label}</span>
-      {children}
-    </div>
-  );
-}
-
 function SelectFilter({
   value,
   onChange,
@@ -6689,291 +6657,6 @@ function PriceRangeFilterPanel({
       onClear={onClear}
       onCancel={onCancel}
     />
-  );
-}
-
-function NumericRangeFilterPanel({
-  ariaLabel,
-  title,
-  description,
-  initialRange,
-  min,
-  max,
-  step,
-  presets,
-  tickLabels,
-  formatLabel,
-  thumbLabels,
-  onApply,
-  onClear,
-  onCancel,
-}: {
-  ariaLabel: string;
-  title: string;
-  description: string;
-  initialRange: [number, number];
-  min: number;
-  max: number;
-  step: number;
-  presets: NumericRangePreset[];
-  tickLabels: string[];
-  formatLabel: (min: number, max: number) => string;
-  thumbLabels: [string, string];
-  onApply: (range: [number, number]) => void;
-  onClear: () => void;
-  onCancel: () => void;
-}) {
-  const segments = presets.filter((preset) => !preset.isAll);
-  const [draftRange, setDraftRange] = useState<[number, number]>(initialRange);
-  const [rangeAnchor, setRangeAnchor] = useState<number | null>(null);
-  const [selectedPresetSpan, setSelectedPresetSpan] = useState<
-    [number, number] | null
-  >(() => getNumericPresetSpan(initialRange, segments));
-  const isFullRange = draftRange[0] === min && draftRange[1] === max;
-
-  const handleSliderChange = (value: number[]) => {
-    const nextRange: [number, number] = [value[0] ?? min, value[1] ?? max];
-    setDraftRange(nextRange);
-    setRangeAnchor(null);
-    setSelectedPresetSpan(getNumericPresetSpan(nextRange, segments));
-  };
-
-  const handlePresetClick = (preset: NumericRangePreset) => {
-    if (preset.isAll) {
-      setDraftRange([min, max]);
-      setRangeAnchor(null);
-      setSelectedPresetSpan(null);
-      return;
-    }
-
-    const presetIndex = segments.indexOf(preset);
-    if (presetIndex < 0) return;
-
-    if (rangeAnchor === null) {
-      setDraftRange([preset.min, preset.max]);
-      setRangeAnchor(presetIndex);
-      setSelectedPresetSpan([presetIndex, presetIndex]);
-      return;
-    }
-
-    const spanStart = Math.min(rangeAnchor, presetIndex);
-    const spanEnd = Math.max(rangeAnchor, presetIndex);
-    const startPreset = segments[spanStart];
-    const endPreset = segments[spanEnd];
-    if (!startPreset || !endPreset) return;
-
-    setDraftRange([startPreset.min, endPreset.max]);
-    setRangeAnchor(null);
-    setSelectedPresetSpan([spanStart, spanEnd]);
-  };
-
-  return (
-    <div aria-label={ariaLabel}>
-      <div className="flex items-start justify-between gap-3 border-b px-4 py-3">
-        <div>
-          <h3 className="text-[13px] font-semibold text-foreground">{title}</h3>
-          <p className="mt-0.5 text-[11px] leading-4 text-muted-foreground">
-            {description}
-          </p>
-        </div>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-xs"
-          aria-label={`${title} 필터 닫기`}
-          onClick={onCancel}
-          className="-mr-1 text-muted-foreground"
-        >
-          <X className="size-3.5" />
-        </Button>
-      </div>
-
-      <div className="px-[18px] pb-[14px] pt-[18px]">
-        <div className="mb-[18px] text-center text-[21px] font-bold tracking-[-0.025em] text-foreground">
-          {formatLabel(draftRange[0], draftRange[1])}
-        </div>
-
-        <div className="mb-2 px-2">
-          <Slider
-            min={min}
-            max={max}
-            step={step}
-            minStepsBetweenThumbs={0}
-            value={draftRange}
-            onValueChange={handleSliderChange}
-            aria-label={`${title} 범위`}
-            thumbLabels={thumbLabels}
-            className="[&_[data-slot=slider-range]]:bg-foreground [&_[data-slot=slider-thumb]]:size-6 [&_[data-slot=slider-thumb]]:border-[1.5px] [&_[data-slot=slider-thumb]]:border-foreground [&_[data-slot=slider-thumb]]:bg-background [&_[data-slot=slider-thumb]]:shadow-md [&_[data-slot=slider-thumb]]:hover:ring-0 [&_[data-slot=slider-track]]:h-1"
-          />
-          <div className="mt-3 flex justify-between text-[10px] tabular-nums text-muted-foreground/70">
-            {tickLabels.map((label) => (
-              <span key={label}>{label}</span>
-            ))}
-          </div>
-        </div>
-
-        <div
-          className="mt-3 grid grid-cols-4 border-l border-t"
-          role="group"
-          aria-label={`${title} 빠른 선택`}
-        >
-          {presets.map((preset) => {
-            const segmentIndex = preset.isAll ? -1 : segments.indexOf(preset);
-            const isAllPreset = Boolean(preset.isAll);
-            const isInSelectedSpan =
-              !isAllPreset &&
-              selectedPresetSpan !== null &&
-              segmentIndex >= selectedPresetSpan[0] &&
-              segmentIndex <= selectedPresetSpan[1];
-            const isSpanEdge =
-              isInSelectedSpan &&
-              selectedPresetSpan !== null &&
-              (segmentIndex === selectedPresetSpan[0] ||
-                segmentIndex === selectedPresetSpan[1]);
-            const isAllSelected =
-              isAllPreset && selectedPresetSpan === null && isFullRange;
-            const isSelected = isInSelectedSpan || isAllSelected;
-            return (
-              <Button
-                key={preset.label}
-                type="button"
-                variant={isSpanEdge || isAllSelected ? "default" : "ghost"}
-                size="sm"
-                aria-pressed={isSelected}
-                data-range-state={
-                  isSelected
-                    ? isSpanEdge || isAllSelected
-                      ? "edge"
-                      : "inside"
-                    : "off"
-                }
-                onClick={() => handlePresetClick(preset)}
-                className={cn(
-                  "h-8 rounded-none border-b border-r px-1 text-[11px] shadow-none",
-                  isInSelectedSpan &&
-                    !isSpanEdge &&
-                    "bg-muted text-foreground hover:bg-muted hover:text-foreground",
-                  !isSelected &&
-                    "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
-                )}
-              >
-                {preset.label}
-              </Button>
-            );
-          })}
-        </div>
-
-        <div className="mt-[13px] flex items-center justify-between gap-3">
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={onClear}
-            className="-ml-2 px-2 text-[11px] font-normal text-muted-foreground"
-          >
-            <Trash2 className="size-3.5" />
-            조건 삭제
-          </Button>
-          <div className="flex gap-1.5">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={onCancel}
-              className="text-[11px]"
-            >
-              취소
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              onClick={() => onApply(draftRange)}
-              className="text-[11px]"
-            >
-              적용
-            </Button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function toISODate(date: Date) {
-  return date.toISOString().slice(0, 10);
-}
-
-function addMonths(base: Date, months: number) {
-  const next = new Date(base);
-  next.setMonth(next.getMonth() + months);
-  return next;
-}
-
-function DateRangeFilter({
-  fromValue,
-  toValue,
-  onFromChange,
-  onToChange,
-}: {
-  fromValue: string;
-  toValue: string;
-  onFromChange: (value: string) => void;
-  onToChange: (value: string) => void;
-}) {
-  // 입주 가능 시작일이 "지금부터 N개월 내"인 매물로 좁히는 빠른 옵션.
-  const applyWithin = (months: number) => {
-    const today = new Date();
-    onFromChange(toISODate(today));
-    onToChange(toISODate(addMonths(today, months)));
-  };
-  const withinOptions = [
-    { label: "1개월 내", months: 1 },
-    { label: "3개월 내", months: 3 },
-    { label: "6개월 내", months: 6 },
-  ];
-
-  return (
-    <FilterField label="입주가능일">
-      <div className="mb-2 flex flex-wrap gap-1.5">
-        {withinOptions.map((option) => (
-          <button
-            key={option.label}
-            type="button"
-            onClick={() => applyWithin(option.months)}
-            className="h-7 rounded-full border border-border bg-white px-2.5 text-[12px] text-foreground transition-colors hover:bg-muted"
-          >
-            {option.label}
-          </button>
-        ))}
-        {(fromValue || toValue) && (
-          <button
-            type="button"
-            onClick={() => {
-              onFromChange("");
-              onToChange("");
-            }}
-            className="h-7 rounded-full px-2.5 text-[12px] text-muted-foreground transition-colors hover:text-foreground"
-          >
-            지우기
-          </button>
-        )}
-      </div>
-      <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-1.5">
-        <Input
-          type="date"
-          value={fromValue}
-          onChange={(event) => onFromChange(event.target.value)}
-          className="h-8 bg-white px-2 text-[13px]"
-        />
-        <span className="text-xs text-slate-400">~</span>
-        <Input
-          type="date"
-          value={toValue}
-          onChange={(event) => onToChange(event.target.value)}
-          className="h-8 bg-white px-2 text-[13px]"
-        />
-      </div>
-    </FilterField>
   );
 }
 
@@ -7276,64 +6959,12 @@ function movePriceRangeForTransaction(
   };
 }
 
-function getNumericPresetSpan(
-  range: [number, number],
-  segments: NumericRangePreset[],
-): [number, number] | null {
-  if (segments.length === 0) return null;
-  if (
-    range[0] === segments[0]?.min &&
-    range[1] === segments[segments.length - 1]?.max
-  ) {
-    return null;
-  }
-
-  for (let startIndex = 0; startIndex < segments.length; startIndex += 1) {
-    if (segments[startIndex]?.min !== range[0]) continue;
-
-    for (let endIndex = startIndex; endIndex < segments.length; endIndex += 1) {
-      if (segments[endIndex]?.max === range[1]) return [startIndex, endIndex];
-    }
-  }
-
-  return null;
-}
-
-function formatPriceRangeLabel(min: number, max: number) {
-  if (min <= PRICE_RANGE_MIN && max >= PRICE_RANGE_MAX) return "전체 가격";
-  if (min <= PRICE_RANGE_MIN) return `${formatRangeNumber(max)}억 이하`;
-  if (max >= PRICE_RANGE_MAX) return `${formatRangeNumber(min)}억 이상`;
-  if (min === max) return `${formatRangeNumber(min)}억`;
-  return `${formatRangeNumber(min)}억–${formatRangeNumber(max)}억`;
-}
-
-function formatNumericRangeLabel(
-  min: number,
-  max: number,
-  rangeMin: number,
-  rangeMax: number,
-  unit: string,
-  fullRangeLabel: string,
-) {
-  if (min <= rangeMin && max >= rangeMax) return fullRangeLabel;
-  if (min <= rangeMin) return `${formatRangeNumber(max)}${unit} 이하`;
-  if (max >= rangeMax) return `${formatRangeNumber(min)}${unit} 이상`;
-  if (min === max) return `${formatRangeNumber(min)}${unit}`;
-  return `${formatRangeNumber(min)}${unit}–${formatRangeNumber(max)}${unit}`;
-}
-
 function clampPriceRange(value: number) {
   return Math.min(PRICE_RANGE_MAX, Math.max(PRICE_RANGE_MIN, value));
 }
 
 function clampNumericRange(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
-}
-
-function formatRangeNumber(value: number) {
-  return Number.isInteger(value)
-    ? String(value)
-    : String(Number(value.toFixed(2)));
 }
 
 function eokToManwon(value: string) {

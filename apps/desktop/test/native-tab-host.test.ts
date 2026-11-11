@@ -972,3 +972,127 @@ describe('NativeTabHost', () => {
     assert.equal(nativeTabs.hasUnsavedWork(first.id, 'memo'), false);
   });
 });
+
+describe('NativeTabHost window-scoped messages', () => {
+  it('sends window state only to the tab views attached to that window', async () => {
+    const { factory, nativeTabs } = setup();
+    await nativeTabs.openOrUpdateTab(1, makeTab('a'));
+    await nativeTabs.openOrUpdateTab(1, makeTab('b'), { activate: false });
+    await nativeTabs.openOrUpdateTab(2, makeTab('c'));
+
+    const delivered = nativeTabs.sendToHost(1, 'tabs:sidebarState', { open: false });
+
+    assert.equal(delivered, 2);
+    const [a, b, c] = factory.views;
+    assert.deepEqual(a.messages, [{ channel: 'tabs:sidebarState', payload: { open: false } }]);
+    assert.deepEqual(b.messages, [{ channel: 'tabs:sidebarState', payload: { open: false } }]);
+    assert.deepEqual(c.messages, []);
+  });
+
+  it('follows a moved tab to its new window and skips destroyed views', async () => {
+    const { factory, nativeTabs } = setup();
+    await nativeTabs.openOrUpdateTab(1, makeTab('a'));
+    nativeTabs.reparent('a', 2);
+
+    assert.equal(nativeTabs.sendToHost(1, 'x', 1), 0);
+    assert.equal(nativeTabs.sendToHost(2, 'x', 2), 1);
+
+    factory.views[0].destroyed = true;
+    assert.equal(nativeTabs.sendToTab('a', 'x', 3), false);
+    assert.equal(nativeTabs.hasTab('a'), false);
+  });
+});
+
+describe('NativeTabHost prewarmed spare view', () => {
+  class AssignableView extends FakeView {
+    assigned: Tab[] = [];
+    assign(tab: Readonly<Tab>): void {
+      this.assigned.push(structuredClone(tab) as Tab);
+    }
+  }
+
+  class AssignableFactory extends FakeFactory {
+    create(): FakeView {
+      const view = new AssignableView(this.nextSenderId++);
+      this.views.push(view);
+      return view;
+    }
+  }
+
+  function setupWithSpare() {
+    const factory = new AssignableFactory();
+    let spareSequence = 0;
+    const nativeTabs = new NativeTabHost(factory, {
+      spare: {
+        replenishDelayMs: 0,
+        createTab: () => makeTab(`spare-${(spareSequence += 1)}`, { route: '/dashboard' }),
+      },
+    });
+    const host = new FakeWindowHost(1);
+    nativeTabs.registerHost(host, { x: 0, y: 40, width: 1200, height: 800 });
+    return { factory, nativeTabs, host };
+  }
+
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 5));
+
+  it('hands the preloaded view to the next new tab instead of booting another app', async () => {
+    const { factory, nativeTabs } = setupWithSpare();
+    await nativeTabs.openOrUpdateTab(1, makeTab('first', { route: '/properties' }));
+    await settle();
+
+    assert.equal(nativeTabs.hasSpare(), true);
+    const spare = factory.views[1] as AssignableView;
+    assert.equal(nativeTabs.isSpareSender(spare.senderId), true);
+    assert.deepEqual(spare.navigations, ['/dashboard']);
+
+    const second = makeTab('second', { route: '/contacts/contact-1' });
+    const opened = await nativeTabs.openOrUpdateTab(1, second);
+
+    assert.equal(opened.senderId, spare.senderId);
+    assert.deepEqual(spare.assigned.map((tab) => tab.id), ['second']);
+    // 이미 떠 있는 앱에 맡기므로 문서를 다시 불러오지 않는다.
+    assert.deepEqual(spare.navigations, ['/dashboard']);
+    assert.equal(nativeTabs.lookupSender(spare.senderId)?.tabId, 'second');
+    assert.equal(nativeTabs.getActiveTabId(1), 'second');
+    assert.equal(nativeTabs.isSpareSender(spare.senderId), false);
+
+    await settle();
+    assert.equal(nativeTabs.hasSpare(), true, 'a new spare is prepared after one is used');
+    assert.equal(factory.views.length, 3);
+  });
+
+  it('discards the spare when the signed-in workspace is cleared', async () => {
+    const { factory, nativeTabs } = setupWithSpare();
+    await nativeTabs.openOrUpdateTab(1, makeTab('first'));
+    await settle();
+    const spare = factory.views[1];
+
+    nativeTabs.clearTabs();
+
+    assert.equal(nativeTabs.hasSpare(), false);
+    assert.equal(spare.destroyed, true);
+  });
+
+  it('creates a fresh view while the spare is still loading', async () => {
+    const { factory, nativeTabs } = setupWithSpare();
+    let releaseSpare!: () => void;
+    factory.nextNavigationHandler = null;
+    await nativeTabs.openOrUpdateTab(1, makeTab('first'));
+    // 다음 예비 화면은 로드가 끝나지 않게 막아 둔다.
+    const originalCreate = factory.create.bind(factory);
+    factory.create = () => {
+      const view = originalCreate();
+      view.navigationBlocker = new Promise<void>((resolve) => {
+        releaseSpare = resolve;
+      });
+      factory.create = originalCreate;
+      return view;
+    };
+    await settle();
+    assert.equal(nativeTabs.hasSpare(), true);
+
+    const opened = await nativeTabs.openOrUpdateTab(1, makeTab('second'));
+    assert.notEqual(opened.senderId, factory.views[1].senderId);
+    releaseSpare();
+  });
+});

@@ -406,7 +406,7 @@ function ContactSheetContent({
                 to="/consultations"
                 className="inline-flex items-center gap-1 text-[12px] text-slate-500 hover:text-slate-800 hover:underline"
               >
-                상담기록 전체 보기
+                상담분석에서 전체 보기
                 <ExternalLink className="size-3" />
               </Link>
             </div>

@@ -12,10 +12,16 @@ import {
   getSignInCodeFactor,
   type SignInCodeFactor,
 } from '@/lib/sign-in-verification';
+import { getDesktopAuthProvider } from '@/lib/desktop-auth-provider';
+import { useAuth } from '@/providers/auth-provider';
 
 export const Route = createFileRoute('/_auth/login')({
   component: LoginPage,
 });
+
+function LoginPage() {
+  return getDesktopAuthProvider() === 'auth0' ? <Auth0LoginPage /> : <ClerkLoginPage />;
+}
 
 function getErrorMessage(error: unknown, fallback: string) {
   if (isClerkAPIResponseError(error)) {
@@ -24,7 +30,7 @@ function getErrorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
 }
 
-function LoginPage() {
+function ClerkLoginPage() {
   const navigate = useNavigate();
   const { isLoaded, signIn, setActive } = useSignIn();
   const [identifier, setIdentifier] = useState('');
@@ -272,6 +278,99 @@ function LoginPage() {
                 </Button>
               </form>
             )}
+          </div>
+        </div>
+
+        <footer className="text-center text-[11px] text-muted-foreground sm:text-left">
+          <span>© 2026 Estait Inc.</span>
+        </footer>
+      </section>
+    </main>
+  );
+}
+
+/**
+ * Auth0 모드 로그인. 아이디·비밀번호를 이 화면에서 받아 main에 넘기고, main이
+ * Auth0에서 토큰을 받는다. 로그인되면 인증 레이아웃이 업무 화면으로 넘긴다.
+ */
+function Auth0LoginPage() {
+  const { login, authError } = useAuth();
+  const [loginId, setLoginId] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const message = error || authError || '';
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError('');
+    setIsSubmitting(true);
+    try {
+      await login(loginId.trim(), password);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '로그인에 실패했습니다.');
+      setPassword('');
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  return (
+    <main className="min-h-[var(--auth-content-height,100svh)] w-full bg-[#f6f5f0] text-foreground">
+      <section className="flex min-h-[var(--auth-content-height,100svh)] flex-col px-6 py-6 sm:px-10 lg:px-12">
+        <div className="flex flex-1 items-center justify-center py-10">
+          <div className="w-full max-w-sm">
+            <div className="mb-8 text-center">
+              <svg viewBox="15 15 70 70" fill="currentColor" className="mx-auto mb-4 size-12 text-[#333b2f]" aria-hidden="true">
+                <path d="M19.142 32.872 25.370 77.037 65.571 81 63.306 65.995 41.224 63.164 36.977 35.420Z" />
+                <path d="M35.845 19 38.110 34.005 60.758 37.402 64.721 64.580 80.858 66.562 74.347 24.096Z" />
+              </svg>
+              <p className="mb-8 text-sm font-medium tracking-tight text-[#333b2f]">에스테잇플로우</p>
+              <h1 className="text-xl font-semibold tracking-tight">로그인</h1>
+              <p className="mt-2 text-sm text-muted-foreground">
+                사무소 계정으로 업무를 계속합니다.
+              </p>
+            </div>
+
+            <form className="space-y-4" onSubmit={handleSubmit} aria-busy={isSubmitting}>
+              <div className="space-y-2">
+                <Label htmlFor="login-id">아이디</Label>
+                <Input
+                  id="login-id"
+                  autoComplete="username"
+                  autoFocus
+                  value={loginId}
+                  onChange={(event) => setLoginId(event.target.value)}
+                  disabled={isSubmitting}
+                  aria-invalid={Boolean(message)}
+                  aria-describedby={message ? 'auth-error' : undefined}
+                  placeholder="아이디"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="password">비밀번호</Label>
+                <Input
+                  id="password"
+                  type="password"
+                  autoComplete="current-password"
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  disabled={isSubmitting}
+                  aria-invalid={Boolean(message)}
+                  aria-describedby={message ? 'auth-error' : undefined}
+                  placeholder="비밀번호"
+                />
+              </div>
+              <AuthError message={message} />
+              <Button
+                type="submit"
+                className="w-full"
+                disabled={isSubmitting || !loginId.trim() || !password}
+              >
+                {isSubmitting && <Loader2 className="size-4 animate-spin" />}
+                로그인
+              </Button>
+            </form>
           </div>
         </div>
 

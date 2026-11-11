@@ -116,9 +116,9 @@ function CallLogsPage() {
           </p>
         </div>
         <Button asChild variant="outline" size="sm">
-          <Link to="/calls">
+          <Link to="/consultations">
             <AudioLines className="size-3.5" />
-            통화 녹음
+            상담분석
           </Link>
         </Button>
       </div>

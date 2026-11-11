@@ -105,3 +105,22 @@ export function mergeContactTags(groupTags: string[], customTagsInput: string) {
     ]),
   );
 }
+
+/**
+ * 수정 폼에서 그룹 선택이나 태그 입력칸을 건드렸는지 판단한다. 그룹 선택의 순서는 따지지 않는다.
+ * 안 건드렸으면 태그를 보내지 않아야, 폼을 연 사이 다른 직원이 넣은 그룹이 지워지지 않는다.
+ */
+export function hasContactTagsChanged(
+  currentTags: string[],
+  groupTags: string[],
+  customTagsInput: string,
+) {
+  // 정리한 태그끼리 비교하지 않고, 폼이 처음 채운 값과 지금 값을 그대로 비교한다.
+  // 정리해서 비교하면 '거래처 ' 태그가 있는 사람에게 '거래처' 그룹을 골라도 같은 값이 되어 저장되지 않고,
+  // 원본 태그와 비교하면 공백·쉼표가 든 옛 태그는 건드리지 않아도 바뀐 것으로 보여 전체를 다시 쓰게 된다.
+  const { groupTags: initialGroups, customTags } = splitContactTags(currentTags);
+  const groupsChanged =
+    initialGroups.length !== groupTags.length ||
+    groupTags.some((tag) => !initialGroups.includes(tag));
+  return groupsChanged || customTagsInput !== stringifyContactTags(customTags);
+}

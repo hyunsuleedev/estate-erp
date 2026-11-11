@@ -1,29 +1,19 @@
 import { Plus } from 'lucide-react';
-import { useTabStore } from '../store/useTabStore';
-import { getRouteMeta } from '../lib/routeMeta';
+import { openNewTab, rendererPlatform } from '../lib/tabCommands';
 
 export function NewTabButton() {
-  const createTab = useTabStore((s) => s.createTab);
-
-  const handleClick = () => {
-    const meta = getRouteMeta('/dashboard');
-    createTab({
-      route: '/dashboard',
-      kind: meta.kind,
-      title: meta.title,
-      resourceKey: null,
-    });
-  };
-
+  const shortcut = rendererPlatform() === 'darwin' ? '⌘T' : 'Ctrl+T';
   return (
     <button
       type="button"
-      onClick={handleClick}
+      onClick={() => openNewTab()}
       style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
-      className="ml-1.5 grid size-8 shrink-0 place-items-center self-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+      className="grid size-6 shrink-0 place-items-center rounded-md text-sidebar-icon transition-colors hover:bg-sidebar-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
       aria-label="새 탭"
+      title={`새 탭 (${shortcut})`}
     >
-      <Plus className="size-4" />
+      {/* Notion + 아이콘은 20px 칸에 약 12.8px. 같은 비율로 맞춘다. */}
+      <Plus className="size-5" strokeWidth={1.5} />
     </button>
   );
 }

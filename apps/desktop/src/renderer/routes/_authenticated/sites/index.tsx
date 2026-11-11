@@ -62,7 +62,6 @@ import {
   formatListingPrice,
   getInitialDongScope,
   isDefaultDongScope,
-  clampPanelWidth,
   isManagedUnit,
   isPilotiUnit,
   parseUnitPlacement,
@@ -212,7 +211,6 @@ function SitesPage() {
   // ── 관리단지 사이드바 (단지 버튼으로 열고 닫음) ───────────────
   const [isSitesPanelOpen, setIsSitesPanelOpen] = useState(readStoredPanelOpen);
   const [sitesPanelWidth, setSitesPanelWidth] = useState(readStoredPanelWidth);
-  const [pageWidth, setPageWidth] = useState(0);
   const [removeTarget, setRemoveTarget] = useState<OfficeSite | null>(null);
 
   // ── Selection state ───────────────────────────────────────────
@@ -245,7 +243,6 @@ function SitesPage() {
   const unitSearchRef = useRef<HTMLInputElement>(null);
   const buildingSearchRef = useRef<HTMLInputElement>(null);
   const sitesPanelToggleRef = useRef<HTMLButtonElement>(null);
-  const pageRef = useRef<HTMLDivElement>(null);
   const didAutoSelectOfficeSite = useRef(false);
 
   const setSitesPanelOpen = useCallback((open: boolean) => {
@@ -285,18 +282,6 @@ function SitesPage() {
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, []);
-
-  // 사이드바 너비 한도는 앱 메뉴 접힘 여부와 창 크기에 따라 달라지므로 페이지 폭을 직접 잰다
-  useEffect(() => {
-    const element = pageRef.current;
-    if (!element) return;
-    const observer = new ResizeObserver(([entry]) => {
-      setPageWidth(entry.contentRect.width);
-    });
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, []);
-  const effectiveSitesPanelWidth = clampPanelWidth(sitesPanelWidth, pageWidth);
 
   // ── Queries ───────────────────────────────────────────────────
 
@@ -1201,12 +1186,11 @@ function SitesPage() {
   // ── JSX ───────────────────────────────────────────────────────
 
   return (
-    <div ref={pageRef} className="relative -m-4 flex min-h-0 flex-1">
+    <div className="@container/sites-page relative -m-4 flex min-h-0 flex-1">
       {/* ─── 관리단지 사이드바 (단지 버튼으로 연다) ─────────────── */}
       <SitesPanel
         open={isSitesPanelOpen}
-        width={effectiveSitesPanelWidth}
-        containerWidth={pageWidth}
+        width={sitesPanelWidth}
         onWidthChange={setSitesPanelWidth}
         onWidthCommit={storePanelWidth}
         onClose={closeSitesPanel}

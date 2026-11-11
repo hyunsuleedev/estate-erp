@@ -13,6 +13,7 @@ import {
   BarChart3,
   Building2,
   CalendarCheck,
+  CalendarDays,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -22,9 +23,8 @@ import {
   CircleDollarSign,
   ClipboardCheck,
   DoorOpen,
-  Eye,
-  EyeOff,
   ExternalLink,
+  Eye,
   Hash,
   Layers3,
   Loader2,
@@ -33,12 +33,10 @@ import {
   RefreshCw,
   RotateCcw,
   Ruler,
-  Search,
   Send,
   ServerCog,
   ShieldCheck,
   Sparkles,
-  X,
 } from "lucide-react";
 import { toast } from "sonner";
 import type {
@@ -72,23 +70,33 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  MultiSelect,
   type MultiSelectOption,
 } from "@/components/ui/multi-select";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  AddFilterMenu,
+  ChecklistFilterPanel,
+  summarizeSelection,
+  toolbarGhostButtonClassName,
+  ToolbarFilterChip,
+  ToolbarPillTabs,
+  ToolbarSearchBar,
+  ToolbarSelectChip,
+  ToolbarSelectPanel,
+  type AddFilterItem,
+} from "./-components/property-toolbar";
+import {
+  formatNumericRangeLabel,
+  formatPriceRangeLabel,
+  MONTHLY_RENT_RANGE_MAX,
+  MONTHLY_RENT_RANGE_MIN,
+  MONTHLY_RENT_RANGE_PRESETS,
+  NumericRangeFilterPanel,
+  PRICE_RANGE_MAX,
+  PRICE_RANGE_MIN,
+  PRICE_RANGE_PRESETS,
+} from "./-components/numeric-range-filter";
 
 const PAGE_SIZE = 30;
 const LOAD_LIMIT = 100;
@@ -285,6 +293,7 @@ function NaverMyAdsPage() {
     Record<string, InlinePriceEdit>
   >({});
   const [selectedRowIds, setSelectedRowIds] = useState<string[]>([]);
+  const [isSiteFilterOpen, setIsSiteFilterOpen] = useState(false);
 
   const { data, isLoading, isFetching, isError, refetch } = useQuery({
     queryKey: ["listing-advertisements", "my-ads", search],
@@ -660,100 +669,186 @@ function NaverMyAdsPage() {
     actionMutation.mutate({ drafts, rationale: "" });
   };
 
+  const primaryAmountRange = amountFilterToEokRange(
+    filters.primaryAmountMin,
+    filters.primaryAmountMax,
+  );
+  const monthlyRentRange = monthlyRentFilterToRange(
+    filters.monthlyRentMin,
+    filters.monthlyRentMax,
+  );
+  const isMonthlyTransaction = filters.transactionType === "monthly";
+  const monthlyRentSummary =
+    filters.monthlyRentMin || filters.monthlyRentMax
+      ? myAdsAmountRangeSummary(filters.monthlyRentMin, filters.monthlyRentMax)
+      : null;
+
+  const renderMonthlyRentPanel = (close: () => void) => (
+    <NumericRangeFilterPanel
+      ariaLabel="월세 필터"
+      title="월세"
+      description="CP 광고가 기준 · 만원 단위"
+      initialRange={monthlyRentRange}
+      min={MONTHLY_RENT_RANGE_MIN}
+      max={MONTHLY_RENT_RANGE_MAX}
+      step={10}
+      presets={MONTHLY_RENT_RANGE_PRESETS}
+      tickLabels={["전체", "200만", "400만", "최대"]}
+      formatLabel={formatMonthlyRentFilterLabel}
+      thumbLabels={["최소 월세", "최대 월세"]}
+      exactInput={{
+        unit: "만원",
+        scale: 1,
+        initialMin: filters.monthlyRentMin,
+        initialMax: filters.monthlyRentMax,
+        formatLabel: myAdsAmountRangeSummary,
+        onApply: (minValue, maxValue) => {
+          updateMyAdsRangeFilter("monthlyRent", minValue, maxValue);
+          close();
+        },
+      }}
+      onClear={() => {
+        updateMyAdsRangeFilter("monthlyRent", "", "");
+        close();
+      }}
+      onCancel={close}
+    />
+  );
+
+  const selectFilterItem = (
+    key: string,
+    label: string,
+    icon: ReactNode,
+    options: MyAdsFilterOption[],
+    value: string,
+    onChange: (value: string) => void,
+  ): AddFilterItem & { onClear: () => void } => ({
+    key,
+    label,
+    icon,
+    summary:
+      value === "all"
+        ? null
+        : (options.find((option) => option.value === value)?.label ?? value),
+    onClear: () => onChange("all"),
+    contentClassName: "w-[200px] p-0",
+    render: (close) => (
+      <ToolbarSelectPanel
+        options={options}
+        value={value}
+        onChange={onChange}
+        onClose={close}
+      />
+    ),
+  });
+
+  // 자주 쓰지 않는 필터. 값이 있으면 칩으로, 없으면 "+ 필터" 메뉴 안에만 있다.
+  const moreFilterItems: (AddFilterItem & { onClear: () => void })[] = [
+    // 월세 거래를 고르면 월세 칩이 줄에 바로 나오므로 메뉴에서는 뺀다
+    ...(isMonthlyTransaction
+      ? []
+      : [
+          {
+            key: "monthlyRent",
+            label: "월세",
+            icon: <CircleDollarSign />,
+            summary: monthlyRentSummary,
+            onClear: () => updateMyAdsRangeFilter("monthlyRent", "", ""),
+            contentClassName:
+              "w-[430px] max-w-[calc(100vw-24px)] overflow-hidden p-0",
+            render: renderMonthlyRentPanel,
+          },
+        ]),
+    selectFilterItem(
+      "verification",
+      "검증방식",
+      <ShieldCheck />,
+      verificationFilterOptions,
+      filters.verification,
+      (value) =>
+        updateMyAdsFilter("verification", value as MyAdsVerificationFilter),
+    ),
+    selectFilterItem(
+      "floorExposure",
+      "층수노출",
+      <Layers3 />,
+      floorExposureFilterOptions,
+      filters.floorExposure,
+      (value) =>
+        updateMyAdsFilter("floorExposure", value as MyAdsFloorExposureFilter),
+    ),
+    selectFilterItem(
+      "exposurePeriod",
+      "노출기간",
+      <CalendarDays />,
+      exposurePeriodFilterOptions,
+      filters.exposurePeriod,
+      (value) =>
+        updateMyAdsFilter("exposurePeriod", value as MyAdsExposurePeriodFilter),
+    ),
+  ];
+
   return (
     <div
       data-canonical-advertisement-source="listing-advertisements"
-      className="-mx-4 -mb-4 flex min-h-0 min-w-0 flex-1 flex-col bg-white"
+      className="-m-4 flex min-h-0 min-w-0 flex-1 flex-col bg-white"
     >
       <>
+        {/* 매물관리와 같은 2줄 툴바: 1행 찾기, 2행 좁히기. 건수는 표 아래 상태줄이 맡는다. */}
         <section
           data-my-ads-results-toolbar
-          className="shrink-0 overflow-x-auto border-b border-border bg-white px-6 py-2"
+          className="shrink-0 border-b border-border bg-white px-3 py-2.5"
         >
-          <div className="flex w-full min-w-max items-center gap-2">
-            <div className="flex shrink-0 items-center gap-1 rounded-md border border-border/80 bg-[#f5f4f1] p-0.5">
-              {viewTabs.map((tab) => {
-                const active = view === tab.value;
-                return (
-                  <button
-                    key={tab.value}
-                    type="button"
-                    onClick={() => handleViewChange(tab.value)}
-                    className={cn(
-                      "inline-flex h-7 items-center gap-1.5 rounded px-2.5 text-[13px] font-medium",
-                      active
-                        ? "border border-[#d9d9d6] bg-white text-slate-950 shadow-sm"
-                        : "border border-transparent text-muted-foreground hover:bg-white/70 hover:text-foreground",
-                    )}
-                  >
-                    {tab.label}
-                    <span className="tabular-nums text-muted-foreground/70">
-                      {counts[tab.value]}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-
-            <div className="h-5 w-px shrink-0 bg-border" aria-hidden="true" />
-
-            <MultiSelect
-              options={siteFilterOptions}
-              selected={filters.siteIds}
-              onChange={(values) => updateMyAdsFilter("siteIds", values)}
-              ariaLabel="내 광고 단지 필터"
-              placeholder="단지 전체"
-              searchPlaceholder="단지명 또는 주소 검색"
-              emptyText="일치하는 단지가 없습니다."
-              maxCount={1}
-              className={cn(
-                "h-8 min-w-[150px] max-w-[280px] shrink-0 border-transparent bg-[#f7f6f3] px-2.5 text-[13px] shadow-none hover:border-border",
-                filters.siteIds.length > 0 &&
-                  "border-foreground/25 bg-foreground/[0.06]",
-              )}
-              badgeClassName="m-0 h-5 border-border bg-white px-1.5 text-[11px] text-foreground shadow-none"
-              popoverClassName="w-[360px]"
+          <div className="flex min-w-0 items-center gap-2">
+            <ToolbarPillTabs
+              ariaLabel="내 광고 보기"
+              value={view}
+              options={viewTabs.map((tab) => ({
+                ...tab,
+                count: counts[tab.value],
+              }))}
+              onChange={handleViewChange}
             />
 
-            <MyAdsFilterTextInput
-              value={filters.dongSearch}
-              onChange={(value) => updateMyAdsFilter("dongSearch", value)}
-              placeholder="동"
-              ariaLabel="내 광고 동 필터"
-              clearAriaLabel="동 필터 지우기"
-              className="w-20"
-            />
-            <MyAdsFilterTextInput
-              value={filters.unitSearch}
-              onChange={(value) => updateMyAdsFilter("unitSearch", value)}
-              placeholder="호"
-              ariaLabel="내 광고 호 필터"
-              clearAriaLabel="호 필터 지우기"
-              className="w-20"
-            />
-
-            <div className="relative min-w-[240px] max-w-[420px] flex-1">
-              <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                value={search}
-                onChange={(event) => handleSearch(event.target.value)}
-                placeholder="CP·네이버 광고번호, 메모 검색"
-                aria-label="내 광고 검색"
-                className="h-8 border-transparent bg-[#f7f6f3] pl-8 pr-8 text-[13px] shadow-none hover:border-border focus:border-input focus:bg-white"
+            <ToolbarSearchBar
+              label={
+                summarizeSelection(siteFilterOptions, filters.siteIds) ??
+                "단지 전체"
+              }
+              isPlaceholder={filters.siteIds.length === 0}
+              active={
+                filters.siteIds.length > 0 ||
+                filters.dongSearch.trim() !== "" ||
+                filters.unitSearch.trim() !== ""
+              }
+              dong={filters.dongSearch}
+              unit={filters.unitSearch}
+              onDongChange={(value) => updateMyAdsFilter("dongSearch", value)}
+              onUnitChange={(value) => updateMyAdsFilter("unitSearch", value)}
+              onClear={() => {
+                updateMyAdsFilter("siteIds", []);
+                updateMyAdsFilter("dongSearch", "");
+                updateMyAdsFilter("unitSearch", "");
+              }}
+              open={isSiteFilterOpen}
+              onOpenChange={setIsSiteFilterOpen}
+              search={search}
+              onSearchChange={handleSearch}
+              searchPlaceholder="CP·네이버 광고번호, 메모 검색"
+              locationAriaLabel="내 광고 단지 필터"
+              searchAriaLabel="내 광고 검색"
+            >
+              <ChecklistFilterPanel
+                options={siteFilterOptions}
+                selected={filters.siteIds}
+                onChange={(values) => updateMyAdsFilter("siteIds", values)}
+                searchPlaceholder="단지명 또는 주소 검색"
+                emptyText="일치하는 단지가 없습니다."
+                listClassName="max-h-[280px]"
               />
-              {search && (
-                <button
-                  type="button"
-                  aria-label="내 광고 검색어 지우기"
-                  onClick={() => handleSearch("")}
-                  className="absolute right-2 top-1/2 inline-flex size-5 -translate-y-1/2 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
-                >
-                  <X className="size-3.5" />
-                </button>
-              )}
-            </div>
+            </ToolbarSearchBar>
 
-            <p className="ml-auto hidden text-[11px] text-muted-foreground 2xl:block">
+            <p className="ml-auto hidden shrink-0 text-[11px] text-muted-foreground 2xl:block">
               행에는 마지막으로 확인된 CP 광고와 네이버 비교 결과를 보여줍니다.
             </p>
           </div>
@@ -762,11 +857,12 @@ function NaverMyAdsPage() {
         <section
           data-my-ads-filter-rail
           aria-label="내 광고 상세 필터"
-          className="shrink-0 overflow-x-auto border-b border-border bg-[#faf9f6] px-6 py-2"
+          className="flex shrink-0 items-center gap-2 border-b border-border bg-white px-3 py-2"
         >
-          <div className="flex w-full min-w-max items-center gap-1.5">
-            <MyAdsFilterSelect
-              ariaLabel="거래 필터"
+          <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            <ToolbarSelectChip
+              label="거래"
+              options={transactionFilterOptions}
               value={filters.transactionType}
               onChange={(value) =>
                 updateMyAdsFilter(
@@ -774,125 +870,120 @@ function NaverMyAdsPage() {
                   value as MyAdsTransactionFilter,
                 )
               }
-              options={transactionFilterOptions}
-              active={filters.transactionType !== "all"}
-              className="w-[116px]"
             />
-            <MyAdsFilterSelect
-              ariaLabel="CP사 필터"
+            <ToolbarSelectChip
+              label="CP사"
+              options={channelFilterOptions}
               value={filters.channel}
               onChange={(value) =>
                 updateMyAdsFilter("channel", value as MyAdsChannelFilter)
               }
-              options={channelFilterOptions}
-              active={filters.channel !== "all"}
-              className="w-[138px]"
             />
 
-            <MyAdsAmountRangeFilter
+            <ToolbarFilterChip
               label="가격/보증금"
-              minValue={filters.primaryAmountMin}
-              maxValue={filters.primaryAmountMax}
-              onApply={(minValue, maxValue) =>
-                updateMyAdsRangeFilter("primary", minValue, maxValue)
+              summary={
+                filters.primaryAmountMin || filters.primaryAmountMax
+                  ? myAdsAmountRangeSummary(
+                      filters.primaryAmountMin,
+                      filters.primaryAmountMax,
+                    )
+                  : null
               }
               onClear={() => updateMyAdsRangeFilter("primary", "", "")}
-            />
-            <MyAdsAmountRangeFilter
-              label="월세"
-              minValue={filters.monthlyRentMin}
-              maxValue={filters.monthlyRentMax}
-              onApply={(minValue, maxValue) =>
-                updateMyAdsRangeFilter("monthlyRent", minValue, maxValue)
-              }
-              onClear={() => updateMyAdsRangeFilter("monthlyRent", "", "")}
-              compact
-            />
+              contentClassName="w-[430px] max-w-[calc(100vw-24px)] overflow-hidden p-0"
+            >
+              {(close) => (
+                <NumericRangeFilterPanel
+                  ariaLabel="가격/보증금 필터"
+                  title="가격/보증금"
+                  description="CP 광고가 기준"
+                  initialRange={primaryAmountRange}
+                  min={PRICE_RANGE_MIN}
+                  max={PRICE_RANGE_MAX}
+                  step={0.5}
+                  presets={PRICE_RANGE_PRESETS}
+                  tickLabels={["전체", "10억", "20억", "최대"]}
+                  formatLabel={formatPriceRangeLabel}
+                  thumbLabels={["최소 금액", "최대 금액"]}
+                  exactInput={{
+                    unit: "만원",
+                    scale: 10000,
+                    initialMin: filters.primaryAmountMin,
+                    initialMax: filters.primaryAmountMax,
+                    formatLabel: myAdsAmountRangeSummary,
+                    onApply: (minValue, maxValue) => {
+                      updateMyAdsRangeFilter("primary", minValue, maxValue);
+                      close();
+                    },
+                  }}
+                  onClear={() => {
+                    updateMyAdsRangeFilter("primary", "", "");
+                    close();
+                  }}
+                  onCancel={close}
+                />
+              )}
+            </ToolbarFilterChip>
 
-            <div
-              className="mx-0.5 h-5 w-px shrink-0 bg-border"
-              aria-hidden="true"
-            />
+            {isMonthlyTransaction && (
+              <ToolbarFilterChip
+                label="월세"
+                summary={monthlyRentSummary}
+                onClear={() => updateMyAdsRangeFilter("monthlyRent", "", "")}
+                contentClassName="w-[430px] max-w-[calc(100vw-24px)] overflow-hidden p-0"
+              >
+                {(close) => renderMonthlyRentPanel(close)}
+              </ToolbarFilterChip>
+            )}
 
-            <MyAdsFilterSelect
-              ariaLabel="검증방식 필터"
-              value={filters.verification}
-              onChange={(value) =>
-                updateMyAdsFilter(
-                  "verification",
-                  value as MyAdsVerificationFilter,
-                )
-              }
-              options={verificationFilterOptions}
-              active={filters.verification !== "all"}
-              className="w-[144px]"
-            />
-            <MyAdsFilterSelect
-              ariaLabel="층수노출 필터"
-              value={filters.floorExposure}
-              onChange={(value) =>
-                updateMyAdsFilter(
-                  "floorExposure",
-                  value as MyAdsFloorExposureFilter,
-                )
-              }
-              options={floorExposureFilterOptions}
-              active={filters.floorExposure !== "all"}
-              className="w-[140px]"
-            />
-            <MyAdsFilterSelect
-              ariaLabel="노출기간 필터"
-              value={filters.exposurePeriod}
-              onChange={(value) =>
-                updateMyAdsFilter(
-                  "exposurePeriod",
-                  value as MyAdsExposurePeriodFilter,
-                )
-              }
-              options={exposurePeriodFilterOptions}
-              active={filters.exposurePeriod !== "all"}
-              className="w-[140px]"
-            />
-            <MyAdsFilterSelect
-              ariaLabel="경쟁 대비 필터"
+            <ToolbarSelectChip
+              label="경쟁 대비"
+              options={comparisonFilterOptions}
               value={filters.comparison}
               onChange={(value) =>
                 updateMyAdsFilter("comparison", value as MyAdsComparisonFilter)
               }
-              options={comparisonFilterOptions}
-              active={filters.comparison !== "all"}
-              className="w-[164px]"
             />
 
-            <div className="ml-auto flex items-center gap-1.5 pl-3">
-              <span className="inline-flex items-center gap-1 text-[11.5px] text-muted-foreground">
-                {isFetching && <Loader2 className="size-3 animate-spin" />}
-                필터 결과
-                <span className="font-medium tabular-nums text-foreground">
-                  {sortedAdvertisements.length.toLocaleString()}
-                </span>
-                /{" "}
-                {(
-                  data?.pagination.total ?? advertisements.length
-                ).toLocaleString()}
-                건
-              </span>
-              {hasActiveFilters && (
-                <>
-                  <div className="mx-0.5 h-4 w-px bg-border" />
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    aria-label="내 광고 필터 초기화"
-                    className="h-8 gap-1.5 px-2.5 text-xs text-muted-foreground"
-                    onClick={handleFiltersReset}
-                  >
-                    <RotateCcw className="size-3.5" />
-                    초기화
-                  </Button>
-                </>
-              )}
-            </div>
+            {moreFilterItems
+              .filter((item) => item.summary !== null)
+              .map((item) => (
+                <ToolbarFilterChip
+                  key={item.key}
+                  label={item.label}
+                  summary={item.summary}
+                  onClear={item.onClear}
+                  contentClassName={item.contentClassName}
+                >
+                  {(close) => item.render(close)}
+                </ToolbarFilterChip>
+              ))}
+
+            <AddFilterMenu
+              items={moreFilterItems}
+              hint="거래 · CP사 · 가격/보증금 · 경쟁 대비는 이 줄에 늘 보입니다."
+            />
+          </div>
+
+          <div className="flex shrink-0 items-center gap-1">
+            {isFetching && (
+              <Loader2
+                aria-label="불러오는 중"
+                className="size-3.5 animate-spin text-muted-foreground"
+              />
+            )}
+            {hasActiveFilters && (
+              <button
+                type="button"
+                aria-label="내 광고 필터 초기화"
+                className={toolbarGhostButtonClassName}
+                onClick={handleFiltersReset}
+              >
+                <RotateCcw className="size-3.5" />
+                초기화
+              </button>
+            )}
           </div>
         </section>
 
@@ -1346,223 +1437,33 @@ function MoneyDraftField({
   );
 }
 
-function MyAdsFilterTextInput({
-  value,
-  onChange,
-  placeholder,
-  ariaLabel,
-  clearAriaLabel,
-  className,
-}: {
-  value: string;
-  onChange: (value: string) => void;
-  placeholder: string;
-  ariaLabel: string;
-  clearAriaLabel: string;
-  className?: string;
-}) {
-  return (
-    <div className={cn("relative shrink-0", className)}>
-      <Input
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        placeholder={placeholder}
-        aria-label={ariaLabel}
-        className="h-8 border-transparent bg-[#f7f6f3] px-2 pr-7 text-[13px] shadow-none hover:border-border focus:border-input focus:bg-white"
-      />
-      {value && (
-        <button
-          type="button"
-          aria-label={clearAriaLabel}
-          onClick={() => onChange("")}
-          className="absolute right-1.5 top-1/2 inline-flex size-5 -translate-y-1/2 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
-        >
-          <X className="size-3.5" />
-        </button>
-      )}
-    </div>
-  );
-}
-
-function MyAdsFilterSelect({
-  ariaLabel,
-  value,
-  onChange,
-  options,
-  active,
-  className,
-}: {
-  ariaLabel: string;
-  value: string;
-  onChange: (value: string) => void;
-  options: MyAdsFilterOption[];
-  active: boolean;
-  className?: string;
-}) {
-  return (
-    <Select value={value} onValueChange={onChange}>
-      <SelectTrigger
-        size="sm"
-        aria-label={ariaLabel}
-        className={cn(
-          "h-8 shrink-0 border-border bg-white px-2.5 text-xs text-muted-foreground shadow-none",
-          active && "border-foreground/25 bg-foreground/[0.06] text-foreground",
-          className,
-        )}
-      >
-        <SelectValue />
-      </SelectTrigger>
-      <SelectContent align="start">
-        {options.map((option) => (
-          <SelectItem
-            key={option.value}
-            value={option.value}
-            className="text-[13px]"
-          >
-            {option.label}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
-  );
-}
-
-function MyAdsAmountRangeFilter({
-  label,
-  minValue,
-  maxValue,
-  onApply,
-  onClear,
-  compact = false,
-}: {
-  label: string;
-  minValue: string;
-  maxValue: string;
-  onApply: (minValue: string, maxValue: string) => void;
-  onClear: () => void;
-  compact?: boolean;
-}) {
-  const [open, setOpen] = useState(false);
-  const [draftMin, setDraftMin] = useState(minValue);
-  const [draftMax, setDraftMax] = useState(maxValue);
-  const active = minValue !== "" || maxValue !== "";
-  const parsedMin = parseAmountFilterValue(draftMin);
-  const parsedMax = parseAmountFilterValue(draftMax);
-  const hasInvalidRange =
-    parsedMin != null && parsedMax != null && parsedMin > parsedMax;
-
-  const handleOpenChange = (nextOpen: boolean) => {
-    if (nextOpen) {
-      setDraftMin(minValue);
-      setDraftMax(maxValue);
-    }
-    setOpen(nextOpen);
-  };
-
-  return (
-    <Popover open={open} onOpenChange={handleOpenChange}>
-      <PopoverTrigger asChild>
-        <Button
-          variant="ghost"
-          size="sm"
-          aria-label={`${label} 필터`}
-          className={cn(
-            "h-8 shrink-0 justify-between gap-1.5 border border-border bg-white px-2.5 text-xs font-normal text-muted-foreground shadow-none hover:bg-white",
-            active &&
-              "border-foreground/25 bg-foreground/[0.06] text-foreground hover:bg-foreground/[0.09]",
-            compact ? "w-[118px]" : "w-[158px]",
-          )}
-        >
-          <span className="min-w-0 truncate">
-            {active
-              ? myAdsAmountRangeSummary(minValue, maxValue)
-              : `${label} 전체`}
-          </span>
-          <ChevronDown className="size-3.5 shrink-0" />
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent align="start" className="w-[320px] p-3">
-        <div className="space-y-3">
-          <div>
-            <p className="text-sm font-semibold text-foreground">{label}</p>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              CP 광고가 기준 · 만원 단위
-            </p>
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            <div className="space-y-1.5">
-              <Label htmlFor={`${label}-min`} className="text-xs">
-                최소
-              </Label>
-              <Input
-                id={`${label}-min`}
-                type="number"
-                inputMode="numeric"
-                min={0}
-                value={draftMin}
-                onChange={(event) => setDraftMin(event.target.value)}
-                placeholder="제한 없음"
-                className="h-8 text-xs tabular-nums"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor={`${label}-max`} className="text-xs">
-                최대
-              </Label>
-              <Input
-                id={`${label}-max`}
-                type="number"
-                inputMode="numeric"
-                min={0}
-                value={draftMax}
-                onChange={(event) => setDraftMax(event.target.value)}
-                placeholder="제한 없음"
-                className="h-8 text-xs tabular-nums"
-              />
-            </div>
-          </div>
-          {hasInvalidRange && (
-            <p className="text-xs text-destructive">
-              최대값은 최소값보다 크거나 같아야 합니다.
-            </p>
-          )}
-          <div className="flex items-center justify-between border-t border-border pt-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 px-2 text-xs text-muted-foreground"
-              disabled={!active && draftMin === "" && draftMax === ""}
-              onClick={() => {
-                setDraftMin("");
-                setDraftMax("");
-                onClear();
-                setOpen(false);
-              }}
-            >
-              초기화
-            </Button>
-            <Button
-              size="sm"
-              className="h-7 px-3 text-xs"
-              disabled={hasInvalidRange}
-              onClick={() => {
-                onApply(draftMin.trim(), draftMax.trim());
-                setOpen(false);
-              }}
-            >
-              적용
-            </Button>
-          </div>
-        </div>
-      </PopoverContent>
-    </Popover>
-  );
-}
-
 function parseAmountFilterValue(value: string): number | null {
   if (!value.trim()) return null;
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+}
+
+/** 저장값은 만원 문자열, 범위 패널은 억 단위다. 비어 있으면 그쪽은 제한이 없다. */
+function amountFilterToEokRange(
+  minValue: string,
+  maxValue: string,
+): [number, number] {
+  const min = parseAmountFilterValue(minValue);
+  const max = parseAmountFilterValue(maxValue);
+  return [
+    min == null ? PRICE_RANGE_MIN : min / 10000,
+    max == null ? PRICE_RANGE_MAX : max / 10000,
+  ];
+}
+
+function monthlyRentFilterToRange(
+  minValue: string,
+  maxValue: string,
+): [number, number] {
+  return [
+    parseAmountFilterValue(minValue) ?? MONTHLY_RENT_RANGE_MIN,
+    parseAmountFilterValue(maxValue) ?? MONTHLY_RENT_RANGE_MAX,
+  ];
 }
 
 function myAdsAmountRangeSummary(minValue: string, maxValue: string): string {
@@ -1578,6 +1479,17 @@ function myAdsAmountRangeSummary(minValue: string, maxValue: string): string {
 
 function formatMyAdsFilterAmount(value: number): string {
   return value === 0 ? "0" : formatMoney(value);
+}
+
+function formatMonthlyRentFilterLabel(min: number, max: number) {
+  return formatNumericRangeLabel(
+    min,
+    max,
+    MONTHLY_RENT_RANGE_MIN,
+    MONTHLY_RENT_RANGE_MAX,
+    "만원",
+    "전체 월세",
+  );
 }
 
 function buildColumns({

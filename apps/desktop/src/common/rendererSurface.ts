@@ -3,7 +3,9 @@ export const RENDERER_TAB_ID_ARGUMENT = '--estate-tab-id=';
 
 export type RendererSurfaceInfo =
   | { kind: 'window-shell'; tabId: null }
-  | { kind: 'native-tab'; tabId: string };
+  | { kind: 'native-tab'; tabId: string }
+  /** 탭 화면 위에 뜨는 전화 수신 팝업 층. 창마다 하나다. */
+  | { kind: 'call-overlay'; tabId: null };
 
 function windowShellSurface(): RendererSurfaceInfo {
   return { kind: 'window-shell', tabId: null };
@@ -21,6 +23,9 @@ export function normalizeRendererSurface(value: unknown): RendererSurfaceInfo {
   if (!value || typeof value !== 'object') return windowShellSurface();
 
   const candidate = value as { kind?: unknown; tabId?: unknown };
+  if (candidate.kind === 'call-overlay') {
+    return { kind: 'call-overlay', tabId: null };
+  }
   if (candidate.kind !== 'native-tab' || !nonEmptyString(candidate.tabId)) {
     return windowShellSurface();
   }

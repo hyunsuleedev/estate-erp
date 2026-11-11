@@ -33,7 +33,7 @@ describe('native tab pilot route', () => {
     assert.equal(isNativeTabRoute('/properties/property-1/'), true);
   });
 
-  it('keeps list, draft, and advertising routes on the legacy renderer', () => {
+  it('keeps list, draft, and advertising routes on the legacy renderer in pilot scope', () => {
     for (const route of [
       '/properties',
       '/properties/new',
@@ -43,7 +43,43 @@ describe('native tab pilot route', () => {
       '/properties/naver-my-ads',
       '/contacts/contact-1',
     ]) {
-      assert.equal(resolveNativeTabRoute(route), null, route);
+      assert.equal(resolveNativeTabRoute(route, 'property-detail'), null, route);
+    }
+  });
+
+  it('gives every signed-in app screen its own renderer in full scope', () => {
+    for (const route of [
+      '/dashboard',
+      '/properties',
+      '/properties/new',
+      '/properties/external-listings?tab=1',
+      '/contacts/contact-1',
+      '/settings/office',
+    ]) {
+      assert.deepEqual(
+        resolveNativeTabRoute(route, 'all'),
+        {
+          kind: 'app-route',
+          pathname: route.split('?')[0],
+          href: route,
+        },
+        route,
+      );
+    }
+  });
+
+  it('leaves sign-in, onboarding, dev, and external routes to the window shell', () => {
+    for (const route of [
+      '/',
+      '/login',
+      '/register',
+      '/onboarding/office',
+      '/onboarding',
+      '/dev/cti-preview',
+      '//evil.example/path',
+      'https://example.com/dashboard',
+    ]) {
+      assert.equal(resolveNativeTabRoute(route, 'all'), null, route);
     }
   });
 });

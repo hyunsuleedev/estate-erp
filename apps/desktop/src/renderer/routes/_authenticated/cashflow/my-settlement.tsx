@@ -1,269 +1,370 @@
-import { createFileRoute } from '@tanstack/react-router';
+/**
+ * 내 수수료. "내 돈이 어디까지 왔나"에 답하도록 정산 받을 수 있음, 고객 수금 대기, 정산 완료로 묶는다.
+ */
+import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
-import { useMemo } from 'react';
-import {
-  AlertCircle,
-  CircleCheck,
-  Handshake,
-  RotateCw,
-  TrendingUp,
-} from 'lucide-react';
-import type { EmployeeDealParticipant } from '@estate-erp/api-client';
-import { useAuth } from '@/providers/auth-provider';
+import { Fragment, useMemo, useState } from 'react';
+import { ChevronDown, ChevronRight, Handshake } from 'lucide-react';
+import type { Deal } from '@estate-erp/api-client';
 import { api } from '@/lib/api';
 import { formatDate, formatMoney } from '@/lib/format';
-import { EmptyState, PageHeader } from '@/components/domain';
-import { Button } from '@/components/ui/button';
+import { useAuth } from '@/providers/auth-provider';
+import { EmptyState, StatusBadge } from '@/components/domain';
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+  ToolbarPillSearch,
+  ToolbarPillTabs,
+} from '@/routes/_authenticated/properties/-components/property-toolbar';
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import { Badge } from '@/components/ui/badge';
-import { Skeleton } from '@/components/ui/skeleton';
+  CashflowError,
+  CashflowFooter,
+  CashflowLoading,
+  CashflowPage,
+  CashflowToolbar,
+  CollectMeter,
+  SummaryStat,
+  SummaryStrip,
+} from './-cashflow-ui';
+import {
+  participantSettlement,
+  type SettlementState,
+} from './-cashflow-utils';
+import {
+  PARTICIPANT_ROLE_LABEL,
+  dealLocationOf,
+} from './-settlement-labels';
 
 export const Route = createFileRoute('/_authenticated/cashflow/my-settlement')({
   component: MySettlementPage,
 });
 
-const roleLabel: Record<string, string> = {
-  listing_agent: '매도측',
-  buying_agent: '매수측',
-  dual_agent: '단독중개',
-  manager: '관리',
-  assistant: '보조',
-  closer: '마감',
+const PAY_TYPE_LABEL: Record<string, string> = {
+  fixed: '고정급',
+  mixed: '혼합',
+  commission_only: '수수료제',
 };
 
-const stageLabel: Record<string, string> = {
-  preparing: '계약 준비',
-  preContract: '가계약',
-  contracted: '본계약',
-  settling: '중도금/잔금',
-  completed: '잔금완료',
-  closed: '정산종료',
-  selection: '계약 준비',
-  negotiating: '계약 준비',
-};
+const GROUPS: Array<{
+  state: SettlementState;
+  label: string;
+  hint?: string;
+}> = [
+  {
+    state: 'ready',
+    label: '정산 받을 수 있음',
+    hint: '대표 정산을 기다리는 중입니다',
+  },
+  {
+    state: 'waiting',
+    label: '고객 수금 대기',
+    hint: '고객이 수수료를 내면 정산할 수 있습니다',
+  },
+  { state: 'settled', label: '정산 완료' },
+];
+
+type Tab = 'all' | 'unsettled' | 'settled';
+
+interface MyRow {
+  id: string;
+  deal: Deal;
+  location: string;
+  role: string;
+  rate: number | null;
+  amount: number;
+  settlementDate: string | null;
+  state: SettlementState;
+  billed: number;
+  collected: number;
+  percent: number;
+}
 
 function MySettlementPage() {
+  const navigate = useNavigate();
   const { user } = useAuth();
   const myId = user?.id;
 
-  const { data: me, isLoading, isError, refetch } = useQuery({
-    queryKey: ['employees', myId],
-    queryFn: () => api.employees.findOne(myId!),
+  const dealsQuery = useQuery({
+    queryKey: ['deals'],
+    queryFn: () => api.deals.findAll(),
+    enabled: !!myId,
+  });
+  const employeesQuery = useQuery({
+    queryKey: ['employees'],
+    queryFn: () => api.employees.findAll(),
     enabled: !!myId,
   });
 
-  const participants = useMemo<EmployeeDealParticipant[]>(
-    () => me?.dealParticipants ?? [],
-    [me],
-  );
+  const [tab, setTab] = useState<Tab>('all');
+  const [search, setSearch] = useState('');
+  const [closed, setClosed] = useState<Set<SettlementState>>(new Set());
 
-  const sorted = useMemo(
-    () =>
-      [...participants].sort(
-        (a, b) =>
-          new Date(b.deal.stageChangedAt).getTime() -
-          new Date(a.deal.stageChangedAt).getTime(),
-      ),
-    [participants],
-  );
+  const me = employeesQuery.data?.find((e) => e.id === myId);
 
-  const totals = useMemo(() => {
-    return participants.reduce(
-      (acc, p) => {
-        const isSettled = p.settlementStatus === 'settled';
-        const amount = p.commissionAmount ?? 0;
-        return {
-          total: acc.total + amount,
-          settled: acc.settled + (isSettled ? amount : 0),
-          unsettled: acc.unsettled + (isSettled ? 0 : amount),
-          unsettledCount: acc.unsettledCount + (isSettled ? 0 : 1),
-        };
-      },
-      { total: 0, settled: 0, unsettled: 0, unsettledCount: 0 },
+  const rows = useMemo<MyRow[]>(() => {
+    const out: MyRow[] = [];
+    for (const deal of dealsQuery.data ?? []) {
+      if (deal.isCancelled) continue;
+      for (const p of deal.participants ?? []) {
+        if (p.userId !== myId) continue;
+        const { state, billed, collected, percent } = participantSettlement(
+          p,
+          deal.commissionPayments ?? [],
+        );
+        out.push({
+          id: p.id,
+          deal,
+          location: dealLocationOf(deal),
+          role: p.role,
+          rate: p.commissionRate != null ? Number(p.commissionRate) : null,
+          amount: p.commissionAmount ?? 0,
+          settlementDate: p.settlementDate ?? null,
+          state,
+          billed,
+          collected,
+          percent,
+        });
+      }
+    }
+    return out.sort(
+      (a, b) =>
+        new Date(b.deal.stageChangedAt).getTime() -
+        new Date(a.deal.stageChangedAt).getTime(),
     );
-  }, [participants]);
+  }, [dealsQuery.data, myId]);
+
+  const visible = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    return rows.filter((row) => {
+      if (tab === 'unsettled' && row.state === 'settled') return false;
+      if (tab === 'settled' && row.state !== 'settled') return false;
+      return !query || row.location.toLowerCase().includes(query);
+    });
+  }, [rows, tab, search]);
+
+  const sumOf = (state: SettlementState, list = rows) =>
+    list
+      .filter((row) => row.state === state)
+      .reduce((sum, row) => sum + row.amount, 0);
+  const countOf = (state: SettlementState) =>
+    rows.filter((row) => row.state === state).length;
+
+  const toggle = (state: SettlementState) =>
+    setClosed((prev) => {
+      const next = new Set(prev);
+      if (next.has(state)) next.delete(state);
+      else next.add(state);
+      return next;
+    });
 
   return (
-    <div className="flex flex-col gap-4">
-      <PageHeader
-        title="내 수수료"
-        description="내가 참여한 거래와 배분 수수료, 정산 상태를 확인합니다. 정산 처리는 사무소 정책에 따라 대표가 진행합니다."
-      />
-
-      <div className="grid gap-3 md:grid-cols-4">
-        <SummaryCard
-          icon={<Handshake className="size-4" />}
-          label="참여 거래"
-          value={`${participants.length}건`}
+    <CashflowPage title="내 수수료">
+      <CashflowToolbar label="내 수수료 범위와 검색" withLine>
+        <ToolbarPillTabs
+          ariaLabel="정산 범위"
+          value={tab}
+          onChange={setTab}
+          options={[
+            { value: 'all', label: '전체', count: rows.length },
+            {
+              value: 'unsettled',
+              label: '미정산',
+              count: rows.filter((r) => r.state !== 'settled').length,
+            },
+            { value: 'settled', label: '정산 완료', count: countOf('settled') },
+          ]}
         />
-        <SummaryCard
-          icon={<TrendingUp className="size-4" />}
-          label="누적 배분 수수료"
-          value={formatMoney(totals.total)}
-          highlight
-        />
-        <SummaryCard
-          icon={<CircleCheck className="size-4" />}
-          label="정산 완료"
-          value={formatMoney(totals.settled)}
-        />
-        <SummaryCard
-          icon={<AlertCircle className="size-4" />}
-          label="미정산"
-          value={`${formatMoney(totals.unsettled)} (${totals.unsettledCount}건)`}
-          warn={totals.unsettledCount > 0}
-        />
-      </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">내 거래 내역</CardTitle>
-          <CardDescription>최근 거래 순으로 표시됩니다.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {isLoading ? (
-            <div className="space-y-2">
-              {Array.from({ length: 5 }).map((_, i) => (
-                <Skeleton key={i} className="h-10 rounded-md" />
-              ))}
-            </div>
-          ) : isError ? (
-            <EmptyState
-              icon={Handshake}
-              title="정산 내역을 불러오지 못했습니다"
-              description="네트워크 상태를 확인한 뒤 다시 시도해주세요."
-              action={
-                <Button variant="outline" onClick={() => refetch()}>
-                  <RotateCw className="size-4" />
-                  다시 시도
-                </Button>
-              }
-            />
-          ) : sorted.length === 0 ? (
-            <EmptyState
-              icon={Handshake}
-              title="아직 참여한 거래가 없습니다"
-              description="거래에 참여하면 이 화면에 내 배분 수수료가 집계됩니다."
-            />
-          ) : (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>거래</TableHead>
-                    <TableHead>단계</TableHead>
-                    <TableHead>역할</TableHead>
-                    <TableHead className="text-right">배분률</TableHead>
-                    <TableHead className="text-right">배분액</TableHead>
-                    <TableHead>정산 상태</TableHead>
-                    <TableHead>정산일</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {sorted.map((p) => {
-                    const settled = p.settlementStatus === 'settled';
-                    const site = p.deal.property?.site;
-                    const title = site
-                      ? [site.name, p.deal.property?.unit?.name]
-                          .filter(Boolean)
-                          .join(' · ')
-                      : '(매물 정보 없음)';
-                    return (
-                      <TableRow key={p.id}>
-                        <TableCell>
-                          <div className="flex flex-col">
-                            <span className="font-medium">{title}</span>
-                            <span className="text-xs text-muted-foreground">
-                              {formatDate(p.deal.stageChangedAt)}
-                            </span>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="outline">
-                            {stageLabel[p.deal.stage] ?? p.deal.stage}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="outline">
-                            {roleLabel[p.role] ?? p.role}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums text-muted-foreground">
-                          {p.commissionRate != null
-                            ? `${Number(p.commissionRate).toFixed(0)}%`
-                            : '-'}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums font-medium text-emerald-600 dark:text-emerald-400">
-                          {formatMoney(p.commissionAmount ?? 0)}
-                        </TableCell>
-                        <TableCell>
-                          {settled ? (
-                            <Badge className="border-0 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
-                              정산 완료
-                            </Badge>
-                          ) : (
-                            <Badge className="border-0 bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
-                              미정산
-                            </Badge>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-xs text-muted-foreground">
-                          {formatDate(p.settlementDate)}
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
-
-function SummaryCard({
-  icon,
-  label,
-  value,
-  highlight,
-  warn,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: string;
-  highlight?: boolean;
-  warn?: boolean;
-}) {
-  const valueClass = highlight
-    ? 'mt-1 text-lg font-semibold text-emerald-600 dark:text-emerald-400'
-    : warn
-      ? 'mt-1 text-lg font-semibold text-amber-600 dark:text-amber-400'
-      : 'mt-1 text-lg font-semibold';
-  return (
-    <Card className="py-4">
-      <CardContent className="flex items-center justify-between gap-3 px-4">
-        <div>
-          <p className="text-xs text-muted-foreground">{label}</p>
-          <p className={valueClass}>{value}</p>
+        <div className="max-w-[460px] min-w-[150px] flex-1">
+          <ToolbarPillSearch
+            value={search}
+            onChange={setSearch}
+            placeholder="단지, 호수"
+            ariaLabel="내 수수료 검색"
+          />
         </div>
-        <div className="rounded-md bg-muted/60 p-2 text-muted-foreground">{icon}</div>
-      </CardContent>
-    </Card>
+        <span className="ml-auto text-[12.5px] whitespace-nowrap text-muted-foreground">
+          정산은 대표가 처리합니다
+        </span>
+      </CashflowToolbar>
+
+      <SummaryStrip>
+        <SummaryStat
+          label="정산 받을 수 있는 돈"
+          value={formatMoney(sumOf('ready'))}
+          hint={`고객 수금 끝난 ${countOf('ready')}건`}
+        />
+        <SummaryStat
+          label="고객 수금 대기"
+          value={formatMoney(sumOf('waiting'))}
+          hint={`${countOf('waiting')}건`}
+        />
+        <SummaryStat
+          label="정산 완료"
+          value={formatMoney(sumOf('settled'))}
+          hint={`${countOf('settled')}건`}
+        />
+        <SummaryStat
+          label="내 배분 조건"
+          value={me?.commissionRate != null ? `${me.commissionRate}%` : '—'}
+          hint={
+            me
+              ? [
+                  me.baseSalary ? `기본급 ${formatMoney(me.baseSalary)}` : null,
+                  PAY_TYPE_LABEL[me.payType] ?? me.payType,
+                ]
+                  .filter(Boolean)
+                  .join(' · ')
+              : '—'
+          }
+        />
+      </SummaryStrip>
+
+      {dealsQuery.isLoading ? (
+        <CashflowLoading />
+      ) : dealsQuery.isError ? (
+        <CashflowError
+          icon={Handshake}
+          title="정산 내역을 불러오지 못했습니다"
+          onRetry={() => dealsQuery.refetch()}
+        />
+      ) : visible.length === 0 ? (
+        <EmptyState
+          icon={Handshake}
+          className="flex-1"
+          title={
+            rows.length === 0
+              ? '아직 참여한 거래가 없습니다'
+              : '조건에 맞는 거래가 없습니다'
+          }
+          description={
+            rows.length === 0
+              ? '거래에 참여하면 이 화면에 내 배분 수수료가 모입니다.'
+              : '범위나 검색어를 바꿔 보세요.'
+          }
+        />
+      ) : (
+        <>
+          <div className="min-h-0 flex-1 overflow-auto">
+            <table
+              className="cf-table"
+              style={{ '--cf-table-min': '860px' } as React.CSSProperties}
+            >
+              <colgroup>
+                <col />
+                <col style={{ width: 104 }} />
+                <col style={{ width: 84 }} />
+                <col style={{ width: 72 }} />
+                <col style={{ width: 150 }} />
+                <col style={{ width: 104 }} />
+                <col style={{ width: 108 }} />
+              </colgroup>
+              <thead>
+                <tr>
+                  <th>거래</th>
+                  <th>거래 단계</th>
+                  <th>내 역할</th>
+                  <th className="cf-num">배분률</th>
+                  <th>고객 수금</th>
+                  <th>정산일</th>
+                  <th className="cf-num">배분액</th>
+                </tr>
+              </thead>
+              <tbody>
+                {GROUPS.map(({ state, label, hint }) => {
+                  const items = visible.filter((row) => row.state === state);
+                  if (items.length === 0) return null;
+                  const isClosed = closed.has(state);
+                  return (
+                    <Fragment key={state}>
+                      <tr
+                        data-row="group"
+                        data-clickable
+                        aria-expanded={!isClosed}
+                        onClick={() => toggle(state)}
+                      >
+                        <td colSpan={6}>
+                          <div className="flex items-center gap-2">
+                            <span className="inline-flex text-muted-foreground">
+                              {isClosed ? (
+                                <ChevronRight className="size-3.5" />
+                              ) : (
+                                <ChevronDown className="size-3.5" />
+                              )}
+                            </span>
+                            {label}
+                            <span className="cf-plain text-[#a5a39f] tabular-nums">
+                              {items.length}
+                            </span>
+                            {hint && (
+                              <span className="cf-plain text-xs text-muted-foreground">
+                                {hint}
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="cf-num">{formatMoney(sumOf(state, items))}</td>
+                      </tr>
+                      {!isClosed &&
+                        items.map((row) => (
+                          <tr
+                            key={row.id}
+                            data-clickable
+                            onClick={() =>
+                              navigate({
+                                to: '/deals',
+                                search: { dealId: row.deal.id },
+                              })
+                            }
+                          >
+                            <td>
+                              <div className="flex min-w-0 items-center gap-1.5 pl-[22px]">
+                                <span className="min-w-0 truncate" title={row.location}>
+                                  {row.location}
+                                </span>
+                                <StatusBadge
+                                  kind="transactionType"
+                                  status={row.deal.transactionType}
+                                  size="sm"
+                                />
+                              </div>
+                            </td>
+                            <td>
+                              <StatusBadge kind="dealStage" status={row.deal.stage} size="sm" />
+                            </td>
+                            <td>{PARTICIPANT_ROLE_LABEL[row.role] ?? row.role}</td>
+                            <td className="cf-num text-muted-foreground">
+                              {row.rate != null ? `${row.rate}%` : '—'}
+                            </td>
+                            <td>
+                              <div
+                                className="grid grid-cols-[46px_minmax(0,1fr)] items-center gap-2 text-[12.5px] text-muted-foreground tabular-nums"
+                                title={`고객 수금 ${formatMoney(row.collected)} / ${formatMoney(row.billed)}`}
+                              >
+                                <span>{row.percent}%</span>
+                                <CollectMeter percent={row.percent} />
+                              </div>
+                            </td>
+                            <td className="tabular-nums">
+                              {row.settlementDate ? (
+                                formatDate(row.settlementDate)
+                              ) : (
+                                <span className="text-[#a5a39f]">—</span>
+                              )}
+                            </td>
+                            <td className="cf-num font-semibold">
+                              {formatMoney(row.amount)}
+                            </td>
+                          </tr>
+                        ))}
+                    </Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <CashflowFooter>
+            {user?.name ? `${user.name} · ` : ''}참여 거래 {visible.length}건 표시
+          </CashflowFooter>
+        </>
+      )}
+    </CashflowPage>
   );
 }

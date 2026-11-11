@@ -2,12 +2,22 @@ import {
   app,
   BrowserWindow,
   ipcMain,
+  Menu,
   nativeTheme,
   screen,
   shell,
   webContents,
+  WebContentsView,
+  type MenuItemConstructorOptions,
 } from 'electron';
 import path from 'node:path';
+import {
+  isTabCommand,
+  isTabMenuItems,
+  tabCommandForInput,
+  type TabCommand,
+  type TabMenuItem,
+} from '../common/tabCommands';
 import { randomUUID } from 'node:crypto';
 import type {
   BeginDragPayload,
@@ -35,7 +45,14 @@ import type {
   RealtimeAuthoritySnapshot,
 } from '../common/desktopRealtime';
 import {
+  parseNativeTabAction,
+  type NativeTabAction,
+  type NativeTabActionEnvelope,
+} from '../common/nativeTabActions';
+import {
+  NATIVE_SPARE_TAB_ID_PREFIX,
   resolveNativeTabRoute,
+  type NativeSidebarState,
   type NativeTabLifecycleUpdate,
   type NativeTabRetentionUpdate,
   type NativeTabStateUpdate,
@@ -54,11 +71,40 @@ import {
   ElectronNativeTabWindowHost,
 } from './electronNativeTabAdapter';
 import { NativeTabHost, type NativeTabMove } from './nativeTabHost';
+import { CallOverlayHost } from './callOverlayHost';
+import {
+  isCallOverlayState,
+  parseCallOverlayAction,
+  parseCallOverlaySize,
+  parseWindowToast,
+  type CallOverlayAction,
+  type CallOverlayInset,
+  type WindowToast,
+} from '../common/callOverlay';
 import { RealtimeLeaseBroker } from './realtimeLeaseBroker';
 import {
   windowWorkspaceOwnerKey,
   type WindowWorkspaceOwner,
 } from '../common/windowWorkspace';
+import {
+  AUTH_PROVIDER_ARGUMENT,
+  parseDesktopAuthProvider,
+  parseProviderCredentials,
+  resolveAuth0DesktopConfig,
+  type DesktopAuthProviderKind,
+  type DesktopProviderAuthState,
+  type DesktopProviderCredentials,
+  type DesktopProviderLoginResult,
+} from '../common/desktopAuthProvider';
+import {
+  Auth0DesktopSession,
+  toLoginError,
+} from './auth0/auth0DesktopSession';
+import { SafeStorageAuth0TokenStore } from './auth0/auth0TokenStore';
+import {
+  expectedTokenSessionId,
+  mayReceiveToken,
+} from './auth0/tokenSessionScope';
 
 declare const MAIN_WINDOW_VITE_DEV_SERVER_URL: string | undefined;
 declare const MAIN_WINDOW_VITE_NAME: string;
@@ -87,6 +133,8 @@ interface WindowEntry {
   acceptedTransferId?: string;
   transferCommitted?: boolean;
   nativeViewportLeaseId?: string;
+  /** 창 단위 사이드바 펼침. 셸이 정하고 그 창의 탭 화면이 따른다. */
+  sidebarOpen?: boolean;
 }
 
 type GlobalOverlaySource = 'cti' | 'updater';
@@ -150,6 +198,14 @@ type BeginDragResult =
 
 const DETACHED_TITLEBAR_HEIGHT = 40;
 
+/**
+ * 로그인 서비스. 기본은 Clerk이고, `ESTATE_AUTH_PROVIDER=auth0`이면 main이
+ * Auth0 로그인과 토큰을 맡는다. 셸 창에는 실행 인자로 같은 값을 알려 준다.
+ */
+const AUTH_PROVIDER: DesktopAuthProviderKind = parseDesktopAuthProvider(
+  process.env.ESTATE_AUTH_PROVIDER,
+);
+
 function getBaseWindowOptions(): Electron.BrowserWindowConstructorOptions {
   const isMac = process.platform === 'darwin';
   const isWin = process.platform === 'win32';
@@ -179,6 +235,7 @@ function getBaseWindowOptions(): Electron.BrowserWindowConstructorOptions {
     backgroundColor: '#f8f9fa',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
+      additionalArguments: [`${AUTH_PROVIDER_ARGUMENT}${AUTH_PROVIDER}`],
     },
     ...platformOptions,
   };
@@ -656,8 +713,21 @@ function isValidAuthSessionPublish(
   return (
     isRecord(payload) &&
     typeof payload.authenticated === 'boolean' &&
-    (payload.user === null || isJsonValue(payload.user))
+    (payload.user === null || isJsonValue(payload.user)) &&
+    (payload.providerSessionId === undefined ||
+      payload.providerSessionId === null ||
+      (typeof payload.providerSessionId === 'number' &&
+        Number.isSafeInteger(payload.providerSessionId)))
   );
+}
+
+/** Auth0 모드의 셸이 토큰을 받을 때 함께 보내는 세션 번호. */
+function parseTokenScopeSessionId(payload: unknown): number | null {
+  return isRecord(payload) &&
+    typeof payload.sessionId === 'number' &&
+    Number.isSafeInteger(payload.sessionId)
+    ? payload.sessionId
+    : null;
 }
 
 function isValidAuthTokenResponse(
@@ -741,8 +811,49 @@ export class WindowManager {
   private readonly nativeTransferMoves = new Map<string, NativeTabMove>();
   private readonly nativeTabs: NativeTabHost;
   private readonly authBroker: AuthBroker;
+  /**
+   * Auth0 모드에서 main이 가진 로그인 세션. 접근 토큰은 여기서 셸·탭 화면·
+   * 팝업 층으로 나간다. Clerk 모드면 null이고 토큰은 셸이 가진다.
+   */
+  private readonly providerAuth: Auth0DesktopSession | null;
   private readonly realtimeBroker = new RealtimeLeaseBroker();
   private pendingSignOut: PendingSignOut | null = null;
+  /** 새 창은 마지막으로 고른 사이드바 상태로 연다. */
+  private lastSidebarOpen = true;
+  /** 탭 화면 위에 뜨는 전화 수신 팝업 층. 통화 중에도 탭 화면을 숨기지 않는다. */
+  private readonly callOverlays = new CallOverlayHost({
+    titlebarHeight: DETACHED_TITLEBAR_HEIGHT,
+    onInsetChange: (windowId) => this.publishCallOverlayInset(windowId),
+    createView: () => {
+      const view = new WebContentsView({
+        webPreferences: {
+          preload: path.join(__dirname, 'preload.js'),
+          contextIsolation: true,
+          sandbox: true,
+          additionalArguments: [`${RENDERER_SURFACE_ARGUMENT}call-overlay`],
+        },
+      });
+      view.setBackgroundColor('#00000000');
+      view.webContents.setWindowOpenHandler(({ url }) => {
+        if (/^(https?:|tel:)/i.test(url)) void shell.openExternal(url);
+        return { action: 'deny' };
+      });
+      // 팝업 층은 다른 문서로 옮겨 가지 않는다. 링크는 셸 창에서 연다.
+      view.webContents.on('will-navigate', (event, url) => {
+        event.preventDefault();
+        if (/^(https?:|tel:)/i.test(url)) void shell.openExternal(url);
+      });
+      const destination = nativeTabDestinationFor('/call-overlay');
+      const load =
+        'url' in destination
+          ? view.webContents.loadURL(destination.url)
+          : view.webContents.loadFile(destination.filePath, destination.options);
+      void load.catch((error: unknown) => {
+        console.warn('[call-overlay] failed to load', error);
+      });
+      return view;
+    },
+  });
 
   constructor() {
     this.authBroker = new AuthBroker({
@@ -753,6 +864,8 @@ export class WindowManager {
         return true;
       },
     });
+    this.providerAuth =
+      AUTH_PROVIDER === 'auth0' ? this.createAuth0Session() : null;
     this.nativeTabs = new NativeTabHost(
       new ElectronNativeTabViewFactory({
         backgroundColor: '#f8f9fa',
@@ -829,14 +942,19 @@ export class WindowManager {
               }
               return;
             }
+            // 종류·제목·resourceKey는 셸이 route로 다시 계산한다. main은 주소만 기록한다.
             const identity = this.nativeTabs.updateRendererState(
               view.webContents.id,
               {
                 route,
-                kind: 'property',
-                resourceKey: `entity:property:${encodeURIComponent(
-                  descriptor.entityId,
-                )}`,
+                ...(descriptor.kind === 'property-detail'
+                  ? {
+                      kind: 'property' as const,
+                      resourceKey: `entity:property:${encodeURIComponent(
+                        descriptor.entityId,
+                      )}`,
+                    }
+                  : {}),
               },
             );
             if (!identity) return;
@@ -874,6 +992,16 @@ export class WindowManager {
             },
           );
           view.webContents.on('render-process-gone', publishFailure);
+          // 매물 상세처럼 native view에 focus가 있어도 탭 단축키는 셸 탭바가 처리한다.
+          view.webContents.on('before-input-event', (event, input) => {
+            const command = tabCommandForInput(input, process.platform);
+            if (!command) return;
+            const identity = this.nativeTabs.peekSender(view.webContents.id);
+            const host = identity ? BrowserWindow.fromId(identity.hostId) : null;
+            if (!host || host.isDestroyed()) return;
+            event.preventDefault();
+            this.sendTabCommand(host, command);
+          });
           view.webContents.setWindowOpenHandler(({ url }) => {
             if (/^(https?:|tel:)/i.test(url)) void shell.openExternal(url);
             return { action: 'deny' };
@@ -886,6 +1014,17 @@ export class WindowManager {
         // temporarily take the global count above this soft cap.
         maxLiveTabs: 5,
         inactiveGraceMs: 30_000,
+        // 새 탭이 앱을 처음부터 띄우지 않게 하나를 미리 띄워 둔다.
+        spare: {
+          createTab: () => ({
+            schemaVersion: 1,
+            id: `${NATIVE_SPARE_TAB_ID_PREFIX}${randomUUID()}`,
+            kind: 'dashboard',
+            title: '',
+            route: '/dashboard',
+            createdAt: Date.now(),
+          }),
+        },
         onCleanupError: (error) => {
           console.warn('[native-tabs] cleanup failed', error);
         },
@@ -894,7 +1033,13 @@ export class WindowManager {
   }
 
   private registerNativeHost(win: BrowserWindow): void {
-    this.nativeTabs.registerHost(new ElectronNativeTabWindowHost(win));
+    this.nativeTabs.registerHost(
+      new ElectronNativeTabWindowHost(win, () => {
+        this.callOverlays.raise(win.id);
+        // 통화 중에 붙은 탭 화면도 알림을 팝업 위로 올리게 한다.
+        this.publishCallOverlayInset(win.id);
+      }),
+    );
     this.authBroker.registerShell(win.webContents.id);
     // BrowserWindow 자체는 살아 있어도 renderer process만 죽고 다시 로드될 수 있다.
     // 죽은 webContents를 token authority로 남기지 않고, reload가 끝난 shell은 다시
@@ -973,6 +1118,45 @@ export class WindowManager {
       if (/^(https?:|tel:)/i.test(url)) void shell.openExternal(url);
       return { action: 'deny' };
     });
+    // 기본 메뉴의 Cmd+W(창 닫기)보다 먼저 받아 탭 단위로 처리한다.
+    win.webContents.on('before-input-event', (event, input) => {
+      const command = tabCommandForInput(input, process.platform);
+      if (!command) return;
+      event.preventDefault();
+      this.sendTabCommand(win, command);
+    });
+    // Windows 마우스 사이드 버튼. macOS는 renderer가 mouseup 버튼 3/4로 받는다.
+    win.on('app-command', (_event, command) => {
+      if (command === 'browser-backward') {
+        this.sendTabCommand(win, { type: 'history', direction: 'back' });
+      } else if (command === 'browser-forward') {
+        this.sendTabCommand(win, { type: 'history', direction: 'forward' });
+      }
+    });
+  }
+
+  sendTabCommand(win: BrowserWindow, command: TabCommand): void {
+    if (win.isDestroyed() || !this.isRegisteredShellSender(win.webContents.id)) {
+      return;
+    }
+    win.webContents.send('tabs:command', command);
+  }
+
+  /** native 탭 renderer가 보낸 명령은 그 탭을 가진 셸 창으로 보낸다. */
+  forwardTabCommandFromSender(
+    senderWebContentsId: number,
+    command: TabCommand,
+  ): void {
+    if (this.isRegisteredShellSender(senderWebContentsId)) {
+      const contents = webContents.fromId(senderWebContentsId);
+      const win = contents ? BrowserWindow.fromWebContents(contents) : null;
+      if (win) this.sendTabCommand(win, command);
+      return;
+    }
+    if (!this.isAuthorizedNativeSender(senderWebContentsId)) return;
+    const identity = this.nativeTabs.lookupSender(senderWebContentsId);
+    const host = identity ? BrowserWindow.fromId(identity.hostId) : null;
+    if (host) this.sendTabCommand(host, command);
   }
 
   createMainWindow(): BrowserWindow {
@@ -1207,6 +1391,7 @@ export class WindowManager {
         });
         const move = this.nativeTabs.reparent(tab.id, win.id);
         this.nativeTransferMoves.set(transferId, move);
+        this.pushWindowStateToTab(tab.id);
         const transfer = this.transfers.get(transferId);
         if (transfer) transfer.mode = 'native';
 
@@ -1726,6 +1911,7 @@ export class WindowManager {
     if (!move) return false;
     try {
       const rolledBack = this.nativeTabs.rollback(move);
+      if (rolledBack) this.pushWindowStateToTab(move.tabId);
       if (
         rolledBack &&
         this.rendererSuspendedNativeHosts.has(move.sourceHostId)
@@ -2353,6 +2539,7 @@ export class WindowManager {
       // A live view owns DOM/query state. Never carry it across tenants or a
       // logout boundary; shell stores will be recreated by the auth layout.
       this.nativeTabs.clearTabs();
+      this.callOverlays.destroyAll();
       for (const entry of this.windows.values()) {
         entry.workspace = undefined;
         entry.workspacePrincipal = undefined;
@@ -2429,8 +2616,123 @@ export class WindowManager {
     return this.authBroker.getSession();
   }
 
-  requestAuthToken(): Promise<string | null> {
-    return this.authBroker.requestToken();
+  /**
+   * Auth0 모드: 토큰 주인은 main이다. 다만 토큰은 "화면에 보이는 계정의 세션"에만
+   * 준다. 다른 창의 로그아웃·로그인으로 main 세션이 바뀐 뒤에 예전 계정을 보여
+   * 주는 화면이 새 계정 토큰으로 요청하지 않게 하기 위해서다.
+   * - 셸: 자기가 확인한 세션 번호를 보내고, 현재 번호와 같을 때만 받는다.
+   *   (/auth/me 전에도 이 번호로 받을 수 있어 broker 세션을 기다리지 않는다.)
+   * - 탭 화면·팝업 층: broker에 알려진 세션 번호가 현재 번호와 같을 때만 받는다.
+   */
+  async requestAuthToken(
+    senderWebContentsId: number,
+    scopeSessionId: number | null,
+  ): Promise<string | null> {
+    const providerAuth = this.providerAuth;
+    if (!providerAuth) return this.authBroker.requestToken();
+
+    const expected = expectedTokenSessionId({
+      fromShell: this.isWindowShellSender(senderWebContentsId),
+      shellScopeSessionId: scopeSessionId,
+      brokerSessionId: this.brokerProviderSessionId(),
+    });
+    if (!mayReceiveToken(expected, providerAuth.sessionId())) return null;
+    const token = await providerAuth.getAccessToken();
+    // 갱신을 기다리는 사이 로그아웃·재로그인했으면 주지 않는다.
+    return mayReceiveToken(expected, providerAuth.sessionId()) ? token : null;
+  }
+
+  private brokerProviderSessionId(): number | null {
+    const session = this.authBroker.getSession();
+    return session.authenticated && typeof session.providerSessionId === 'number'
+      ? session.providerSessionId
+      : null;
+  }
+
+  getAuthProvider(): DesktopAuthProviderKind {
+    return AUTH_PROVIDER;
+  }
+
+  async getProviderAuthState(): Promise<DesktopProviderAuthState> {
+    if (!this.providerAuth) {
+      return { provider: AUTH_PROVIDER, hasSession: false, sessionId: null };
+    }
+    const hasSession = await this.providerAuth.hasSession();
+    return {
+      provider: AUTH_PROVIDER,
+      hasSession,
+      sessionId: this.providerAuth.sessionId(),
+    };
+  }
+
+  /**
+   * 셸의 로그인 화면이 받은 아이디·비밀번호로 Auth0 로그인한다. 비밀번호는
+   * 이 호출 안에서만 쓰고 남기지 않는다. 성공하면 셸이 /auth/me로 이어 간다.
+   */
+  async loginWithProvider(
+    credentials: DesktopProviderCredentials,
+  ): Promise<DesktopProviderLoginResult> {
+    if (!this.providerAuth) {
+      return { ok: false, error: 'Auth0 로그인이 꺼져 있습니다.' };
+    }
+    try {
+      await this.providerAuth.loginWithPassword(
+        credentials.username,
+        credentials.password,
+      );
+      return { ok: true };
+    } catch (error) {
+      const loginError = toLoginError(error);
+      if (loginError.reason === 'already-signed-in') {
+        return { ok: false, error: loginError.message, alreadySignedIn: true };
+      }
+      if (loginError.reason !== 'invalid-credentials') {
+        console.warn('[auth0] login failed', loginError.reason, error);
+      }
+      return { ok: false, error: loginError.message };
+    }
+  }
+
+  /**
+   * 셸의 로그아웃 처리 중에 부른다. 셸이 보여 주는 계정의 세션(sessionId)이 지금
+   * 세션일 때만 main의 refresh token을 지우고 Auth0에서도 폐기한다.
+   */
+  async logoutProvider(sessionId: number | null): Promise<void> {
+    if (sessionId === null) return;
+    await this.providerAuth?.logout(sessionId);
+  }
+
+  private createAuth0Session(): Auth0DesktopSession {
+    return new Auth0DesktopSession({
+      config: resolveAuth0DesktopConfig(process.env),
+      store: new SafeStorageAuth0TokenStore(),
+      onSessionEnded: () => this.handleProviderSessionEnded(),
+      onSessionChanged: (sessionId) => this.broadcastToShells(
+        'auth:providerSessionChanged',
+        { sessionId },
+      ),
+    });
+  }
+
+  /**
+   * refresh token이 거절됐다(만료·폐기·직원 차단). 셸들이 화면을 로그아웃 상태로
+   * 바꾸고 broker에도 로그아웃을 알리게 한다.
+   */
+  private handleProviderSessionEnded(): void {
+    this.broadcastToShells('auth:providerSessionEnded');
+  }
+
+  private broadcastToShells(channel: string, payload?: unknown): void {
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (win.isDestroyed() || !this.isWindowShellSender(win.webContents.id)) {
+        continue;
+      }
+      try {
+        win.webContents.send(channel, payload);
+      } catch {
+        // 닫히는 중인 셸은 다시 열릴 때 main 세션을 새로 확인한다.
+      }
+    }
   }
 
   acceptAuthToken(
@@ -2451,6 +2753,18 @@ export class WindowManager {
     );
   }
 
+  /**
+   * 창 자체의 화면(셸)인지. 창에 붙은 탭 화면(WebContentsView)도
+   * BrowserWindow.fromWebContents로는 그 창을 돌려주므로 isRegisteredShellSender만으로는
+   * 셸과 구별되지 않는다. Auth0 로그인·로그아웃·세션 번호 토큰은 셸만 쓰게 한다.
+   */
+  isWindowShellSender(senderWebContentsId: number): boolean {
+    if (!this.isRegisteredShellSender(senderWebContentsId)) return false;
+    const contents = webContents.fromId(senderWebContentsId);
+    const win = contents ? BrowserWindow.fromWebContents(contents) : null;
+    return win?.webContents.id === senderWebContentsId;
+  }
+
   isRegisteredSender(senderWebContentsId: number): boolean {
     return (
       this.isRegisteredShellSender(senderWebContentsId) ||
@@ -2458,16 +2772,229 @@ export class WindowManager {
     );
   }
 
+  /** 전화 수신 팝업 층의 WebContents. 로그인 정보와 데이터 갱신 신호만 쓴다. */
+  isCallOverlaySender(senderWebContentsId: number): boolean {
+    const contents = webContents.fromId(senderWebContentsId);
+    return Boolean(
+      contents &&
+        !contents.isDestroyed() &&
+        this.callOverlays.isOverlaySender(senderWebContentsId) &&
+        isTrustedRendererDocumentUrl(contents.getURL()),
+    );
+  }
+
   isAuthorizedNativeSender(senderWebContentsId: number): boolean {
+    if (this.isCallOverlaySender(senderWebContentsId)) return true;
     const contents = webContents.fromId(senderWebContentsId);
     const identity = this.nativeTabs.lookupSender(senderWebContentsId);
-    if (!contents || contents.isDestroyed() || !identity) return false;
+    if (
+      !contents ||
+      contents.isDestroyed() ||
+      (!identity && !this.nativeTabs.isSpareSender(senderWebContentsId))
+    ) {
+      return false;
+    }
     const route = internalHrefFromRendererUrl(contents.getURL());
     return Boolean(route && resolveNativeTabRoute(route));
   }
 
   getNativeTabSnapshot(senderWebContentsId: number): Tab | null {
     return this.nativeTabs.lookupSender(senderWebContentsId)?.tab ?? null;
+  }
+
+  /**
+   * 탭 화면이 요청한 탭 작업을 그 탭을 가진 셸 창으로 보낸다.
+   * 대상 탭은 보낸 쪽 WebContents로 정해지므로 다른 탭을 건드릴 수 없다.
+   * 입력 초안은 main 사본에도 반영해 창 이동·화면 내리기 뒤에도 남게 한다.
+   */
+  forwardNativeTabAction(
+    senderWebContentsId: number,
+    action: NativeTabAction,
+  ): boolean {
+    const identity = this.nativeTabs.lookupSender(senderWebContentsId);
+    if (!identity) return false;
+    if (
+      action.type === 'update-form-draft' ||
+      action.type === 'clear-form-draft'
+    ) {
+      const { formDraft: currentDraft, ...restUiState } =
+        identity.tab.uiState ?? {};
+      const formDraft =
+        action.type === 'update-form-draft'
+          ? { ...currentDraft, [action.key]: action.value }
+          : undefined;
+      const uiState = formDraft ? { ...restUiState, formDraft } : restUiState;
+      const updated = this.nativeTabs.updateTabSnapshot(senderWebContentsId, {
+        ...identity.tab,
+        uiState: Object.keys(uiState).length > 0 ? uiState : undefined,
+      });
+      const entry = this.windows.get(identity.hostId);
+      if (updated && entry?.workspace) {
+        entry.workspace = {
+          ...entry.workspace,
+          tabs: entry.workspace.tabs.map((tab) =>
+            tab.id === updated.tabId ? { ...tab, uiState: updated.tab.uiState } : tab,
+          ),
+        };
+      }
+    }
+    const host = BrowserWindow.fromId(identity.hostId);
+    if (
+      !host ||
+      host.isDestroyed() ||
+      !this.isRegisteredShellSender(host.webContents.id)
+    ) {
+      return false;
+    }
+    const envelope: NativeTabActionEnvelope = { tabId: identity.tabId, action };
+    host.webContents.send('tabs:nativeTabAction', envelope);
+    return true;
+  }
+
+  /** 셸 또는 탭 화면이 속한 창의 사이드바 상태. 처음 여는 창은 마지막 선택을 따른다. */
+  getSidebarStateForSender(senderWebContentsId: number): NativeSidebarState {
+    const windowId = this.isRegisteredShellSender(senderWebContentsId)
+      ? this.windowIdForShellSender(senderWebContentsId)
+      : (this.nativeTabs.lookupSender(senderWebContentsId)?.hostId ?? null);
+    return { open: this.sidebarOpenFor(windowId) };
+  }
+
+  setWindowSidebarOpen(windowId: number, open: boolean): void {
+    const entry = this.windows.get(windowId);
+    if (!entry) return;
+    entry.sidebarOpen = open;
+    this.lastSidebarOpen = open;
+    const state: NativeSidebarState = { open };
+    this.nativeTabs.sendToHost(windowId, 'tabs:sidebarState', state);
+  }
+
+  /** 탭 화면 안에서 사이드바를 접거나 편 요청. 창 상태의 주인인 셸이 정한다. */
+  requestSidebarOpenFromNative(senderWebContentsId: number, open: boolean): void {
+    const identity = this.nativeTabs.lookupSender(senderWebContentsId);
+    const host = identity ? BrowserWindow.fromId(identity.hostId) : null;
+    if (
+      !host ||
+      host.isDestroyed() ||
+      !this.isRegisteredShellSender(host.webContents.id)
+    ) {
+      return;
+    }
+    const state: NativeSidebarState = { open };
+    host.webContents.send('tabs:sidebarOpenRequested', state);
+  }
+
+  /**
+   * 다른 창으로 옮겨 간(또는 되돌아온) 탭 화면이 그 창의 사이드바 상태와 전화
+   * 팝업 여백을 따르게 한다. 옮기는 순간에는 아직 새 창 소속으로 기록되기 전이라
+   * 창 단위로 보내는 알림이 이 탭에 닿지 않으므로, 소속이 바뀐 뒤 직접 보낸다.
+   */
+  private pushWindowStateToTab(tabId: string): void {
+    const hostId = this.nativeTabs.getHostId(tabId);
+    if (hostId === null) return;
+    const state: NativeSidebarState = { open: this.sidebarOpenFor(hostId) };
+    this.nativeTabs.sendToTab(tabId, 'tabs:sidebarState', state);
+    this.nativeTabs.sendToTab(
+      tabId,
+      'tabs:overlayInset',
+      this.callOverlays.getInset(hostId),
+    );
+  }
+
+  private sidebarOpenFor(windowId: number | null): boolean {
+    if (windowId === null) return this.lastSidebarOpen;
+    return this.windows.get(windowId)?.sidebarOpen ?? this.lastSidebarOpen;
+  }
+
+  private windowIdForShellSender(senderWebContentsId: number): number | null {
+    const contents = webContents.fromId(senderWebContentsId);
+    const win = contents ? BrowserWindow.fromWebContents(contents) : null;
+    return win && this.windows.has(win.id) ? win.id : null;
+  }
+
+  setCallOverlayState(windowId: number, state: unknown): void {
+    const win = BrowserWindow.fromId(windowId);
+    if (win && !win.isDestroyed()) this.callOverlays.setState(win, state);
+  }
+
+  getCallOverlayState(senderWebContentsId: number): unknown {
+    return this.callOverlays.getStateForSender(senderWebContentsId);
+  }
+
+  setCallOverlaySize(
+    senderWebContentsId: number,
+    size: { width: number; height: number },
+  ): void {
+    this.callOverlays.setSizeFromSender(senderWebContentsId, size);
+  }
+
+  /** 팝업 층에서 누른 버튼(닫기, 다시 조회, 링크)은 통화 상태의 주인인 셸이 처리한다. */
+  forwardCallOverlayAction(
+    senderWebContentsId: number,
+    action: CallOverlayAction,
+  ): void {
+    const windowId = this.callOverlays.windowIdForSender(senderWebContentsId);
+    const win = windowId === null ? null : BrowserWindow.fromId(windowId);
+    if (
+      !win ||
+      win.isDestroyed() ||
+      !this.isRegisteredShellSender(win.webContents.id)
+    ) {
+      return;
+    }
+    if (action.type === 'open-route') {
+      win.focus();
+      win.webContents.send('tabs:openRoute', action.route);
+      return;
+    }
+    win.webContents.send('cti:overlayAction', action);
+  }
+
+  /**
+   * 팝업 층이 창 아래쪽을 차지한 높이를 그 창의 셸과 탭 화면에 알린다.
+   * 알림(toast)이 같은 오른쪽 아래에 뜨므로 그동안 팝업 위로 올린다.
+   */
+  publishCallOverlayInset(windowId: number): void {
+    const inset = this.callOverlays.getInset(windowId);
+    this.nativeTabs.sendToHost(windowId, 'tabs:overlayInset', inset);
+    const win = BrowserWindow.fromId(windowId);
+    if (win && !win.isDestroyed()) win.webContents.send('tabs:overlayInset', inset);
+  }
+
+  getCallOverlayInsetForSender(senderWebContentsId: number): CallOverlayInset {
+    const windowId = this.isRegisteredShellSender(senderWebContentsId)
+      ? this.windowIdForShellSender(senderWebContentsId)
+      : (this.nativeTabs.lookupSender(senderWebContentsId)?.hostId ?? null);
+    return windowId === null ? { bottom: 0 } : this.callOverlays.getInset(windowId);
+  }
+
+  /** 알림을 보낸 셸·팝업 층이 속한 창. */
+  windowIdForToastSender(senderWebContentsId: number): number | null {
+    if (this.isRegisteredShellSender(senderWebContentsId)) {
+      return this.windowIdForShellSender(senderWebContentsId);
+    }
+    return this.isCallOverlaySender(senderWebContentsId)
+      ? this.callOverlays.windowIdForSender(senderWebContentsId)
+      : null;
+  }
+
+  /**
+   * 셸 창의 알림은 탭 화면 아래에 가려지므로 지금 보이는 탭 화면에서 띄운다.
+   * 보이는 탭 화면이 없으면 셸이 직접 띄운다.
+   */
+  deliverWindowToast(windowId: number, toast: WindowToast): void {
+    const activeTabId = this.nativeTabs.getActiveTabId(windowId);
+    if (activeTabId && this.nativeTabs.sendToTab(activeTabId, 'tabs:toast', toast)) {
+      return;
+    }
+    const win = BrowserWindow.fromId(windowId);
+    if (win && !win.isDestroyed()) win.webContents.send('tabs:toast', toast);
+  }
+
+  /** 탭 화면이 속한 창. 매물 상세 새 창 열기처럼 창을 기준으로 하는 요청에 쓴다. */
+  getNativeTabHostWindow(senderWebContentsId: number): BrowserWindow | null {
+    const hostId = this.nativeTabs.lookupSender(senderWebContentsId)?.hostId;
+    const host = hostId === undefined ? null : BrowserWindow.fromId(hostId);
+    return host && !host.isDestroyed() && this.windows.has(host.id) ? host : null;
   }
 
   reportNativeTabRetention(
@@ -2554,7 +3081,11 @@ export class WindowManager {
       return false;
     }
     let committed = response.ok;
-    if (response.ok) {
+    if (response.ok && this.providerAuth?.isSignedInNow()) {
+      // Auth0 모드: 셸은 자기 세션을 지웠지만, 이 확인이 오기 전에 새로 로그인했다.
+      // 로그아웃 자체는 끝났으므로 성공으로 끝내되, 새 세션의 broker 상태와 다른
+      // 창은 건드리지 않는다(다른 창은 세션 변경 알림으로 새 계정을 따라간다).
+    } else if (response.ok) {
       const signedOut = this.publishAuthSession(shellWebContentsId, {
         authenticated: false,
         user: null,
@@ -2709,6 +3240,44 @@ export class WindowManager {
   }
 }
 
+/**
+ * 탭 메뉴와 방문 기록 메뉴는 native 메뉴로 띄운다. 매물 상세 WebContentsView가
+ * 콘텐츠 영역을 덮고 있어도 메뉴가 그 아래에 가려지지 않는다.
+ */
+function popupTabMenu(
+  win: BrowserWindow,
+  items: TabMenuItem[],
+): Promise<string | null> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (id: string | null) => {
+      if (settled) return;
+      settled = true;
+      resolve(id);
+    };
+    const template: MenuItemConstructorOptions[] = items.map((item) =>
+      item.type === 'separator'
+        ? { type: 'separator' }
+        : {
+            // Windows 메뉴는 &를 단축 글자 표시로 해석한다.
+            label:
+              process.platform === 'win32'
+                ? item.label.replace(/&/g, '&&')
+                : item.label,
+            enabled: item.enabled ?? true,
+            accelerator: item.accelerator,
+            registerAccelerator: false,
+            click: () => finish(item.id),
+          },
+    );
+    Menu.buildFromTemplate(template).popup({
+      window: win,
+      // 메뉴를 닫는 콜백이 click보다 먼저 올 수 있어 한 턴 늦게 취소로 정한다.
+      callback: () => setTimeout(() => finish(null), 0),
+    });
+  });
+}
+
 export function registerTabIpcHandlers(manager: WindowManager) {
   const isCurrentMainFrame = (
     event: Electron.IpcMainInvokeEvent | Electron.IpcMainEvent,
@@ -2743,7 +3312,7 @@ export function registerTabIpcHandlers(manager: WindowManager) {
       : { authenticated: false, user: null, revision: 0 };
   });
 
-  ipcMain.handle('auth:getToken', (event) => {
+  ipcMain.handle('auth:getToken', (event, payload: unknown) => {
     if (
       !isCurrentRegisteredEvent(event) ||
       (!manager.isRegisteredShellSender(event.sender.id) &&
@@ -2751,7 +3320,10 @@ export function registerTabIpcHandlers(manager: WindowManager) {
     ) {
       return null;
     }
-    return manager.requestAuthToken();
+    return manager.requestAuthToken(
+      event.sender.id,
+      parseTokenScopeSessionId(payload),
+    );
   });
 
   ipcMain.handle('auth:resolveToken', (event, payload: unknown) => {
@@ -2774,6 +3346,36 @@ export function registerTabIpcHandlers(manager: WindowManager) {
     return (await manager.requestShellSignOut())
       ? { ok: true }
       : { ok: false, error: 'authentication shell did not confirm sign-out' };
+  });
+
+  // Auth0 모드: 로그인·로그아웃은 main이 하고, 셸은 요청만 한다. 창에 붙은 탭
+  // 화면은 같은 창으로 보이므로, 창 자체의 화면에서 온 요청만 받는다.
+  const isCurrentWindowShellEvent = (event: Electron.IpcMainInvokeEvent) =>
+    isCurrentMainFrame(event) && manager.isWindowShellSender(event.sender.id);
+  ipcMain.handle('auth:providerState', async (event) => {
+    if (!isCurrentWindowShellEvent(event)) {
+      return { provider: manager.getAuthProvider(), hasSession: false, sessionId: null };
+    }
+    return manager.getProviderAuthState();
+  });
+
+  ipcMain.handle('auth:providerLogin', async (event, payload: unknown) => {
+    if (!isCurrentWindowShellEvent(event)) {
+      return { ok: false, error: 'invalid login requester' };
+    }
+    const credentials = parseProviderCredentials(payload);
+    if (!credentials) {
+      return { ok: false, error: '아이디와 비밀번호를 입력해 주세요.' };
+    }
+    return manager.loginWithProvider(credentials);
+  });
+
+  ipcMain.handle('auth:providerLogout', async (event, payload: unknown) => {
+    if (!isCurrentWindowShellEvent(event)) {
+      return { ok: false, error: 'invalid logout requester' };
+    }
+    await manager.logoutProvider(parseTokenScopeSessionId(payload));
+    return { ok: true };
   });
 
   ipcMain.handle('auth:resolveSignOut', (event, payload: unknown) => {
@@ -2894,9 +3496,105 @@ export function registerTabIpcHandlers(manager: WindowManager) {
     return manager.getNativeTabSnapshot(event.sender.id);
   });
 
-  ipcMain.handle('tabs:openPropertyWindow', async (event, payload: unknown) => {
+  ipcMain.on('cti:setOverlayState', (event, payload: unknown) => {
     const source = BrowserWindow.fromWebContents(event.sender);
-    if (!source || !manager.hasWindow(source.id) || !isCurrentTrustedShellEvent(event)) {
+    if (
+      !isCurrentTrustedShellEvent(event) ||
+      !source ||
+      !manager.hasWindow(source.id) ||
+      !isCallOverlayState(payload)
+    ) {
+      return;
+    }
+    manager.setCallOverlayState(source.id, payload);
+  });
+
+  ipcMain.handle('cti:getOverlayState', (event) =>
+    isCurrentMainFrame(event) && manager.isCallOverlaySender(event.sender.id)
+      ? manager.getCallOverlayState(event.sender.id)
+      : null,
+  );
+
+  ipcMain.on('cti:overlayAction', (event, payload: unknown) => {
+    if (!isCurrentMainFrame(event) || !manager.isCallOverlaySender(event.sender.id)) {
+      return;
+    }
+    const action = parseCallOverlayAction(payload);
+    if (action) manager.forwardCallOverlayAction(event.sender.id, action);
+  });
+
+  ipcMain.on('cti:overlaySize', (event, payload: unknown) => {
+    if (!isCurrentMainFrame(event) || !manager.isCallOverlaySender(event.sender.id)) {
+      return;
+    }
+    const size = parseCallOverlaySize(payload);
+    if (size) manager.setCallOverlaySize(event.sender.id, size);
+  });
+
+  ipcMain.handle('tabs:getOverlayInset', (event): CallOverlayInset =>
+    isCurrentRegisteredEvent(event)
+      ? manager.getCallOverlayInsetForSender(event.sender.id)
+      : { bottom: 0 },
+  );
+
+  ipcMain.on('tabs:showToast', (event, payload: unknown) => {
+    if (!isCurrentMainFrame(event)) return;
+    const toast = parseWindowToast(payload);
+    if (!toast) return;
+    const windowId = manager.windowIdForToastSender(event.sender.id);
+    if (windowId !== null) manager.deliverWindowToast(windowId, toast);
+  });
+
+  ipcMain.on('tabs:nativeTabAction', (event, payload: unknown) => {
+    if (
+      !isCurrentMainFrame(event) ||
+      !manager.isAuthorizedNativeSender(event.sender.id)
+    ) {
+      return;
+    }
+    const action = parseNativeTabAction(payload);
+    if (!action) return;
+    manager.forwardNativeTabAction(event.sender.id, action);
+  });
+
+  ipcMain.handle('tabs:getSidebarState', (event): NativeSidebarState => {
+    if (!isCurrentRegisteredEvent(event)) return { open: true };
+    return manager.getSidebarStateForSender(event.sender.id);
+  });
+
+  ipcMain.on('tabs:setSidebarOpen', (event, open: unknown) => {
+    const source = BrowserWindow.fromWebContents(event.sender);
+    if (
+      !isCurrentTrustedShellEvent(event) ||
+      typeof open !== 'boolean' ||
+      !source ||
+      !manager.hasWindow(source.id)
+    ) {
+      return;
+    }
+    manager.setWindowSidebarOpen(source.id, open);
+  });
+
+  ipcMain.on('tabs:requestSidebarOpen', (event, open: unknown) => {
+    if (
+      !isCurrentMainFrame(event) ||
+      !manager.isAuthorizedNativeSender(event.sender.id) ||
+      typeof open !== 'boolean'
+    ) {
+      return;
+    }
+    manager.requestSidebarOpenFromNative(event.sender.id, open);
+  });
+
+  ipcMain.handle('tabs:openPropertyWindow', async (event, payload: unknown) => {
+    // 셸과 탭 화면(native 탭) 양쪽에서 열 수 있다. 탭 화면이면 그 탭을 가진 창이 기준이다.
+    const source = isCurrentTrustedShellEvent(event)
+      ? BrowserWindow.fromWebContents(event.sender)
+      : isCurrentMainFrame(event) &&
+          manager.isAuthorizedNativeSender(event.sender.id)
+        ? manager.getNativeTabHostWindow(event.sender.id)
+        : null;
+    if (!source || !manager.hasWindow(source.id)) {
       return { ok: false, error: 'unregistered source window' };
     }
     if (!isValidOpenPropertyWindowPayload(payload)) {
@@ -3146,6 +3844,20 @@ export function registerTabIpcHandlers(manager: WindowManager) {
     ) {
       win.close();
     }
+  });
+
+  ipcMain.on('tabs:requestCommand', (event, payload: unknown) => {
+    if (!isCurrentMainFrame(event) || !isTabCommand(payload)) return;
+    manager.forwardTabCommandFromSender(event.sender.id, payload);
+  });
+
+  ipcMain.handle('tabs:showMenu', (event, items: unknown) => {
+    if (!isCurrentTrustedShellEvent(event) || !isTabMenuItems(items)) {
+      return null;
+    }
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win || win.isDestroyed()) return null;
+    return popupTabMenu(win, items);
   });
 
   ipcMain.handle('tabs:openInMainWindow', (event, route: string) => {

@@ -23,13 +23,62 @@ export interface ElectronNativeTabViewFactoryOptions {
   onCreated?: (view: WebContentsView, tab: Readonly<Tab>) => void;
 }
 
+/** 이미 앱이 떠 있는 탭 화면에 보내는 화면 안 이동 명령. preload가 받는다. */
+export const NATIVE_TAB_NAVIGATE_CHANNEL = 'tabs:nativeNavigate';
+/** 탭 화면이 사이드바와 화면 틀을 처음 그렸다는 신호. */
+export const NATIVE_TAB_READY_CHANNEL = 'tabs:nativeTabReady';
+/** 미리 띄워 둔 탭 화면에 실제 탭을 맡기는 명령. preload가 받는다. */
+export const NATIVE_TAB_ASSIGN_CHANNEL = 'tabs:nativeAssign';
+/** 신호가 오지 않아도 이 시간이 지나면 보여준다(로그인 대기 등). */
+const NATIVE_TAB_READY_TIMEOUT_MS = 8_000;
+
 class ElectronNativeTabView implements NativeTabViewPort {
+  /** 앱 문서를 한 번 다 불러왔으면 이후 이동은 다시 로드하지 않는다. */
+  private appDocumentLoaded = false;
+  /** 탭 화면이 사이드바와 화면 틀을 그렸다. */
+  private rendererReady = false;
+  private readonly readyWaiters = new Set<() => void>();
+
   constructor(
     readonly rawView: WebContentsView,
     private readonly resolveDestination: (
       route: string,
     ) => ElectronNativeTabDestination,
-  ) {}
+  ) {
+    const contents = rawView.webContents;
+    const release = () => {
+      for (const waiter of [...this.readyWaiters]) waiter();
+    };
+    contents.ipc.on(NATIVE_TAB_READY_CHANNEL, () => {
+      this.rendererReady = true;
+      release();
+    });
+    contents.once('destroyed', release);
+  }
+
+  /**
+   * 첫 로드가 끝나도 앱은 아직 로딩 화면일 수 있다. 그때 보여주면 셸이 그려 둔
+   * 사이드바가 로딩 화면에 가려져 깜빡이므로, 탭 화면이 틀을 그릴 때까지 기다린다.
+   */
+  whenReady(): Promise<void> {
+    if (this.rendererReady || this.rawView.webContents.isDestroyed()) {
+      return Promise.resolve();
+    }
+    return new Promise<void>((resolve) => {
+      const done = () => {
+        clearTimeout(timer);
+        this.readyWaiters.delete(done);
+        resolve();
+      };
+      const timer = setTimeout(done, NATIVE_TAB_READY_TIMEOUT_MS);
+      timer.unref?.();
+      this.readyWaiters.add(done);
+    });
+  }
+
+  assign(tab: Readonly<Tab>): void {
+    this.rawView.webContents.send(NATIVE_TAB_ASSIGN_CHANNEL, { tab });
+  }
 
   get senderId(): number {
     return this.rawView.webContents.id;
@@ -40,15 +89,25 @@ class ElectronNativeTabView implements NativeTabViewPort {
   }
 
   async navigate(route: string): Promise<void> {
-    const destination = this.resolveDestination(route);
-    if ('url' in destination) {
-      await this.rawView.webContents.loadURL(destination.url);
+    const contents = this.rawView.webContents;
+    if (
+      this.appDocumentLoaded &&
+      !contents.isDestroyed() &&
+      !contents.isCrashed() &&
+      !contents.isLoadingMainFrame()
+    ) {
+      // 뒤로/앞으로·사이드바처럼 셸이 바꾼 주소도 화면 안 라우터로 옮긴다.
+      // 다시 로드하면 스크롤·입력·열린 창이 사라지기 때문이다.
+      contents.send(NATIVE_TAB_NAVIGATE_CHANNEL, { route });
       return;
     }
-    await this.rawView.webContents.loadFile(
-      destination.filePath,
-      destination.options,
-    );
+    const destination = this.resolveDestination(route);
+    if ('url' in destination) {
+      await contents.loadURL(destination.url);
+    } else {
+      await contents.loadFile(destination.filePath, destination.options);
+    }
+    this.appDocumentLoaded = true;
   }
 
   setBounds(bounds: NativeTabBounds): void {
@@ -99,7 +158,14 @@ export class ElectronNativeTabViewFactory implements NativeTabViewFactory {
 }
 
 export class ElectronNativeTabWindowHost implements NativeTabHostPort {
-  constructor(readonly window: BrowserWindow) {}
+  /**
+   * @param afterReorder 탭 화면을 붙이거나 앞으로 가져온 뒤 부른다. 전화 팝업 층처럼
+   *   항상 탭 화면 위에 있어야 하는 view를 다시 맨 위로 올릴 때 쓴다.
+   */
+  constructor(
+    readonly window: BrowserWindow,
+    private readonly afterReorder?: () => void,
+  ) {}
 
   get id(): number {
     return this.window.id;
@@ -111,6 +177,7 @@ export class ElectronNativeTabWindowHost implements NativeTabHostPort {
 
   attach(view: NativeTabViewPort): void {
     this.window.contentView.addChildView(electronView(view));
+    this.afterReorder?.();
   }
 
   detach(view: NativeTabViewPort): void {
@@ -122,5 +189,6 @@ export class ElectronNativeTabWindowHost implements NativeTabHostPort {
   bringToFront(view: NativeTabViewPort): void {
     // Electron documents that adding an existing child again only reorders it.
     this.window.contentView.addChildView(electronView(view));
+    this.afterReorder?.();
   }
 }

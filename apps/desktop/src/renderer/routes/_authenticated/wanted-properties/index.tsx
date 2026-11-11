@@ -7,18 +7,20 @@ import {
   Plus,
   RefreshCw,
   RotateCcw,
+  UserSearch,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import type { Match } from '@estate-erp/api-client';
+import type { BuyerRequirement, Match } from '@estate-erp/api-client';
 import { MatchStage, normalizeMatchStage } from '@estate-erp/shared';
 import {
   buildViewingCalendarEventPayload,
+  getMatchSearchText,
   getMatchStageBlockReason,
   getMatchStageGroups,
   getMatchStageLabel,
   getMatchTitle,
   getUpcomingViewingEvent,
-  matchStageOrder,
+  groupMatchesByRequirement,
   shouldMoveToViewingOnSchedule,
   toCalendarEventUpdatePayload,
   type MatchRowActions,
@@ -32,11 +34,16 @@ import {
 import { MatchDetailDialog } from './-match-detail-dialog';
 import { MatchCreateDialog } from './-match-create-dialog';
 import { MatchConvertDialog } from './-match-convert-dialog';
+import { WantedFilterBar } from './-wanted-filter-bar';
 import {
-  ChecklistFilterPanel,
-  summarizeSelection,
-  toolbarGhostButtonClassName,
-  ToolbarFilterChip,
+  EMPTY_REQUIREMENT_FILTERS,
+  hasRequirementFilters,
+  matchesRequirementFilters,
+  NO_MATCH_STAGE,
+  scopeRequirementFilters,
+  type RequirementFilters,
+} from './-wanted-filters';
+import {
   ToolbarPillSearch,
   ToolbarPillTabs,
   ToolbarPillToggle,
@@ -51,10 +58,20 @@ import { Skeleton } from '@/components/ui/skeleton';
 
 type MatchViewMode = 'buyer' | 'stage';
 
-interface BuyerMatchGroupData {
-  buyerReqId: string;
-  buyerRequirement: NonNullable<Match['buyerRequirement']>;
-  matches: Match[];
+/** 해당 상태의 희망 조건 전체. 서버가 페이지당 100건으로 끊으므로 끝까지 이어 받는다. */
+async function fetchBuyerRequirements(
+  status: string,
+): Promise<BuyerRequirement[]> {
+  const items: BuyerRequirement[] = [];
+  for (let page = 1; ; page += 1) {
+    const result = await api.buyerRequirements.findAll({
+      status,
+      limit: 100,
+      page,
+    });
+    items.push(...result.items);
+    if (page >= result.pagination.totalPages) return items;
+  }
 }
 
 const TRANSACTION_TYPE_TABS = [
@@ -65,10 +82,7 @@ const TRANSACTION_TYPE_TABS = [
   })),
 ];
 
-const MATCH_STAGE_OPTIONS = matchStageOrder.map((stage) => ({
-  value: stage as string,
-  label: getMatchStageLabel(stage),
-}));
+const NO_MATCH_STAGE_OPTIONS = [{ value: NO_MATCH_STAGE, label: '매칭 없음' }];
 
 export const Route = createFileRoute('/_authenticated/wanted-properties/')({
   validateSearch: (search: Record<string, unknown>): { matchId?: string } => ({
@@ -85,6 +99,8 @@ function WantedPropertiesPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [stageFilters, setStageFilters] = useState<string[]>([]);
   const [transactionTypeFilter, setTransactionTypeFilter] = useState('');
+  const [requirementFilters, setRequirementFilters] =
+    useState<RequirementFilters>(EMPTY_REQUIREMENT_FILTERS);
   const [viewMode, setViewMode] = useState<MatchViewMode>('buyer');
   const [selectedItemIds, setSelectedItemIds] = useState<Set<string>>(
     () => new Set(),
@@ -93,6 +109,10 @@ function WantedPropertiesPage() {
   const [convertMatchId, setConvertMatchId] = useState<string | null>(null);
   const [deleteMatchId, setDeleteMatchId] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
+  /** 고객 행에서 열면 그 조건으로 고정한다. 툴바에서 열면 null. */
+  const [createRequirementId, setCreateRequirementId] = useState<string | null>(
+    null,
+  );
   const deferredSearch = useDeferredValue(searchQuery);
   const searchWrapRef = useRef<HTMLDivElement>(null);
 
@@ -137,13 +157,55 @@ function WantedPropertiesPage() {
 
   const {
     data: matches = [],
-    isLoading,
-    isError,
-    refetch,
+    isLoading: isMatchesLoading,
+    isError: isMatchesError,
+    refetch: refetchMatches,
   } = useQuery({
     queryKey: ['matches'],
     queryFn: () => api.matches.findAll(),
   });
+  const {
+    data: requirements = [],
+    isLoading: isRequirementsLoading,
+    isError: isRequirementsError,
+    refetch: refetchRequirements,
+  } = useQuery({
+    queryKey: ['buyer-requirements', 'wanted-properties', 'open'],
+    queryFn: () => fetchBuyerRequirements('active,hold'),
+  });
+  // 단계별 보기는 완료된 조건의 매칭도 보여준다. 매칭 응답에는 희망 단지가 없어
+  // 필터 판정에 쓸 수 없으므로 조건을 따로 받는다. 고객별 보기에서는 필요 없다.
+  const {
+    data: completedRequirements = [],
+    isLoading: isCompletedLoading,
+    isError: isCompletedError,
+    refetch: refetchCompleted,
+  } = useQuery({
+    queryKey: ['buyer-requirements', 'wanted-properties', 'completed'],
+    queryFn: () => fetchBuyerRequirements('completed'),
+    enabled: viewMode === 'stage',
+  });
+
+  // 매칭과 조건이 모두 있어야 한다. 하나만 실패한 채 그리면 매칭이 있는 조건을
+  // '매칭 없음'으로 보여주거나, 조건 필터로 매칭을 잘못 걸러내게 된다.
+  const isLoading =
+    isMatchesLoading ||
+    isRequirementsLoading ||
+    (viewMode === 'stage' && isCompletedLoading);
+  const isError =
+    isMatchesError ||
+    isRequirementsError ||
+    (viewMode === 'stage' && isCompletedError);
+  const refetch = () => {
+    void refetchMatches();
+    void refetchRequirements();
+    if (viewMode === 'stage') void refetchCompleted();
+  };
+
+  const openMatchCreate = (requirementId: string | null = null) => {
+    setCreateRequirementId(requirementId);
+    setCreateOpen(true);
+  };
 
   // 딥링크 진입 (?matchId=...) → 상세 자동 오픈 후 URL 정리
   useEffect(() => {
@@ -292,15 +354,51 @@ function WantedPropertiesPage() {
     [matches, deleteMatchId],
   );
 
+  // '매칭 없음'은 매칭이 없는 조건을 뜻하므로 매칭만 보여주는 단계별 보기에는 해당하지 않는다.
+  const activeStageFilters = useMemo(
+    () =>
+      viewMode === 'stage'
+        ? stageFilters.filter((stage) => stage !== NO_MATCH_STAGE)
+        : stageFilters,
+    [stageFilters, viewMode],
+  );
+
+  const filterableRequirements = useMemo(
+    () =>
+      viewMode === 'stage'
+        ? [...requirements, ...completedRequirements]
+        : requirements,
+    [completedRequirements, requirements, viewMode],
+  );
+  const requirementById = useMemo(
+    () => new Map(filterableRequirements.map((item) => [item.id, item])),
+    [filterableRequirements],
+  );
+  const activeRequirementFilters = useMemo(
+    () => scopeRequirementFilters(requirementFilters, filterableRequirements),
+    [filterableRequirements, requirementFilters],
+  );
+
   const filteredMatches = useMemo(() => {
     const query = deferredSearch.trim().toLowerCase();
+    const filtersActive = hasRequirementFilters(activeRequirementFilters);
 
     return matches.filter((match) => {
       if (
-        stageFilters.length > 0 &&
-        !stageFilters.includes(normalizeMatchStage(match.stage))
+        activeStageFilters.length > 0 &&
+        !activeStageFilters.includes(normalizeMatchStage(match.stage))
       ) {
         return false;
+      }
+
+      if (filtersActive) {
+        const requirement = requirementById.get(match.buyerReqId);
+        if (
+          !requirement ||
+          !matchesRequirementFilters(requirement, activeRequirementFilters)
+        ) {
+          return false;
+        }
       }
 
       if (
@@ -310,54 +408,40 @@ function WantedPropertiesPage() {
         return false;
       }
 
-      if (!query) {
-        return true;
-      }
-
-      return [
-        getMatchTitle(match),
-        match.listing?.property?.site?.roadAddress,
-        match.listing?.property?.site?.jibunAddress,
-        match.buyerRequirement?.contact?.name,
-        match.buyerRequirement?.contact?.phone,
-        match.memo,
-      ]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase()
-        .includes(query);
+      return !query || getMatchSearchText(match).includes(query);
     });
-  }, [deferredSearch, matches, stageFilters, transactionTypeFilter]);
+  }, [
+    activeRequirementFilters,
+    activeStageFilters,
+    deferredSearch,
+    matches,
+    requirementById,
+    transactionTypeFilter,
+  ]);
 
-  const groupedBuyerMatches = useMemo<BuyerMatchGroupData[]>(() => {
-    const grouped = new Map<string, BuyerMatchGroupData>();
-
-    for (const match of filteredMatches) {
-      const buyerRequirement = match.buyerRequirement;
-      if (!buyerRequirement) {
-        continue;
-      }
-
-      const existing = grouped.get(match.buyerReqId);
-      if (existing) {
-        existing.matches.push(match);
-        continue;
-      }
-
-      grouped.set(match.buyerReqId, {
-        buyerReqId: match.buyerReqId,
-        buyerRequirement,
-        matches: [match],
-      });
-    }
-
-    return Array.from(grouped.values()).sort((left, right) =>
-      (left.buyerRequirement.contact?.name ?? '').localeCompare(
-        right.buyerRequirement.contact?.name ?? '',
-        'ko',
-      ),
-    );
-  }, [filteredMatches]);
+  const groupedBuyerMatches = useMemo(
+    () =>
+      groupMatchesByRequirement({
+        requirements,
+        matches,
+        search: deferredSearch,
+        stageFilters: activeStageFilters,
+        transactionType: transactionTypeFilter,
+        requirementFilters: activeRequirementFilters,
+      }),
+    [
+      activeRequirementFilters,
+      activeStageFilters,
+      deferredSearch,
+      matches,
+      requirements,
+      transactionTypeFilter,
+    ],
+  );
+  const groupedMatchCount = groupedBuyerMatches.reduce(
+    (count, group) => count + group.matches.length,
+    0,
+  );
 
   const stageGroupedMatches = useMemo(
     () => getMatchStageGroups(filteredMatches),
@@ -417,18 +501,27 @@ function WantedPropertiesPage() {
     viewMode === 'buyer' &&
     !isLoading &&
     !isError &&
-    filteredMatches.length > 0 &&
     groupedBuyerMatches.length > 0;
 
   const hasActiveFilters =
     searchQuery.trim().length > 0 ||
-    stageFilters.length > 0 ||
-    transactionTypeFilter.length > 0;
+    activeStageFilters.length > 0 ||
+    transactionTypeFilter.length > 0 ||
+    hasRequirementFilters(activeRequirementFilters);
 
   const resetFilters = () => {
     setSearchQuery('');
     setStageFilters([]);
     setTransactionTypeFilter('');
+    setRequirementFilters(EMPTY_REQUIREMENT_FILTERS);
+  };
+
+  const handleTransactionTypeChange = (value: string) => {
+    setTransactionTypeFilter(value);
+    // 월세 칩은 월세 탭에만 있으므로, 탭을 떠나면 보이지 않는 조건이 남지 않게 지운다
+    if (value !== 'monthly') {
+      setRequirementFilters((current) => ({ ...current, monthlyRent: null }));
+    }
   };
 
   return (
@@ -446,7 +539,7 @@ function WantedPropertiesPage() {
             ariaLabel="거래유형"
             value={transactionTypeFilter}
             options={TRANSACTION_TYPE_TABS}
-            onChange={setTransactionTypeFilter}
+            onChange={handleTransactionTypeChange}
           />
 
           <div ref={searchWrapRef} className="flex min-w-[200px] max-w-[520px] flex-1">
@@ -457,31 +550,6 @@ function WantedPropertiesPage() {
               ariaLabel="희망매물 검색"
             />
           </div>
-
-          <ToolbarFilterChip
-            label="단계"
-            summary={summarizeSelection(MATCH_STAGE_OPTIONS, stageFilters)}
-            onClear={() => setStageFilters([])}
-            contentClassName="w-[180px] p-0"
-          >
-            <ChecklistFilterPanel
-              options={MATCH_STAGE_OPTIONS}
-              selected={stageFilters}
-              onChange={setStageFilters}
-              searchable={false}
-            />
-          </ToolbarFilterChip>
-
-          {hasActiveFilters && (
-            <button
-              type="button"
-              className={toolbarGhostButtonClassName}
-              onClick={resetFilters}
-            >
-              <RotateCcw className="size-3.5" />
-              초기화
-            </button>
-          )}
 
           <div className="ml-auto flex shrink-0 items-center gap-2">
             <ToolbarPillToggle
@@ -497,7 +565,7 @@ function WantedPropertiesPage() {
               type="button"
               size="sm"
               className="h-[30px] shrink-0 rounded-full px-3.5"
-              onClick={() => setCreateOpen(true)}
+              onClick={() => openMatchCreate()}
             >
               <Plus className="size-3.5" />
               매칭 생성
@@ -505,6 +573,18 @@ function WantedPropertiesPage() {
           </div>
         </div>
       </section>
+
+      <WantedFilterBar
+        filters={activeRequirementFilters}
+        onFiltersChange={setRequirementFilters}
+        requirements={filterableRequirements}
+        stageOptionsPrefix={viewMode === 'buyer' ? NO_MATCH_STAGE_OPTIONS : []}
+        stageFilters={activeStageFilters}
+        onStageFiltersChange={setStageFilters}
+        transactionType={transactionTypeFilter}
+        hasActiveFilters={hasActiveFilters}
+        onReset={resetFilters}
+      />
 
       <main
         className={cn(
@@ -521,7 +601,7 @@ function WantedPropertiesPage() {
         ) : isError ? (
           <div className="flex flex-col items-center gap-3 rounded-md border border-dashed border-border/80 bg-background px-4 py-14 text-center">
             <p className="text-sm text-muted-foreground">
-              매칭 목록을 불러오지 못했습니다.
+              희망매물 목록을 불러오지 못했습니다.
             </p>
             <Button
               type="button"
@@ -533,21 +613,38 @@ function WantedPropertiesPage() {
               재시도
             </Button>
           </div>
-        ) : matches.length === 0 ? (
+        ) : viewMode === 'buyer' && requirements.length === 0 ? (
+          <EmptyState
+            icon={UserSearch}
+            title="진행 중인 희망 조건이 없습니다"
+            description="고객의 구함 의뢰를 등록하면 여기에서 조건에 맞는 매물을 연결할 수 있습니다."
+            action={
+              <Button
+                type="button"
+                onClick={() => void navigate({ to: '/buyer-requirements/new' })}
+              >
+                <Plus className="size-4" />
+                구함 의뢰 추가
+              </Button>
+            }
+          />
+        ) : viewMode === 'stage' && matches.length === 0 ? (
           <EmptyState
             icon={GitBranch}
             title="등록된 매칭이 없습니다"
             description="구매고객 조건에 맞는 매물을 연결해 매칭 파이프라인을 시작하세요."
             action={
-              <Button type="button" onClick={() => setCreateOpen(true)}>
+              <Button type="button" onClick={() => openMatchCreate()}>
                 <Plus className="size-4" />
                 매칭 생성
               </Button>
             }
           />
-        ) : filteredMatches.length === 0 ? (
+        ) : (viewMode === 'buyer'
+            ? groupedBuyerMatches.length
+            : filteredMatches.length) === 0 ? (
           <ViewEmpty
-            message="현재 검색과 필터에 맞는 매칭이 없습니다."
+            message="현재 검색과 필터에 맞는 항목이 없습니다."
             onReset={resetFilters}
           />
         ) : showBuyerTable ? (
@@ -568,6 +665,7 @@ function WantedPropertiesPage() {
                 onSelectedChange={(selected) =>
                   updateItemSelection([group.buyerReqId], selected)
                 }
+                onCreateMatch={() => openMatchCreate(group.buyerReqId)}
               />
             ))}
           </div>
@@ -583,18 +681,12 @@ function WantedPropertiesPage() {
               onClear={() => setSelectedItemIds(new Set())}
             />
 
-            {viewMode === 'buyer' && (
-              <ViewEmpty message="고객별로 묶어 보여줄 매칭이 없습니다." />
-            )}
-
-            {viewMode === 'stage' && (
-              <StageMatchView
-                groups={stageGroupedMatches}
-                actions={actions}
-                selectedItemIds={selectedItemIds}
-                onSelectionChange={updateItemSelection}
-              />
-            )}
+            <StageMatchView
+              groups={stageGroupedMatches}
+              actions={actions}
+              selectedItemIds={selectedItemIds}
+              onSelectionChange={updateItemSelection}
+            />
           </div>
         )}
       </main>
@@ -603,7 +695,7 @@ function WantedPropertiesPage() {
       {showBuyerTable && selectedVisibleItemCount > 0 && (
         <div className="flex min-h-9 shrink-0 items-center gap-2 border-t border-border bg-white px-3 py-1.5 text-xs">
           <span className="font-medium text-foreground">
-            고객 {selectedVisibleItemCount.toLocaleString()}명 선택
+            희망 조건 {selectedVisibleItemCount.toLocaleString()}건 선택
           </span>
           <button
             type="button"
@@ -619,8 +711,8 @@ function WantedPropertiesPage() {
           data-buyer-table-status
           className="flex min-h-7 shrink-0 items-center gap-2 border-t border-border bg-[#faf9f6] px-3 text-[11px] text-muted-foreground tabular-nums"
         >
-          고객 {groupedBuyerMatches.length.toLocaleString()}명 · 매칭{' '}
-          {filteredMatches.length.toLocaleString()}건
+          희망 조건 {groupedBuyerMatches.length.toLocaleString()}건 · 매칭{' '}
+          {groupedMatchCount.toLocaleString()}건
         </div>
       )}
 
@@ -639,6 +731,11 @@ function WantedPropertiesPage() {
         open={createOpen}
         onOpenChange={setCreateOpen}
         matches={matches}
+        scope={
+          createRequirementId
+            ? { kind: 'demand', requirementId: createRequirementId }
+            : undefined
+        }
       />
 
       <MatchConvertDialog

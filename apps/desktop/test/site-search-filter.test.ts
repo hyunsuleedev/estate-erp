@@ -12,6 +12,7 @@ import {
   canEditSiteStructure,
   formatSiteSummary,
   toSiteAddress,
+  SITES_PANEL_MAX_WIDTH_CSS,
   SITES_PANEL_WIDTH,
   clampPanelWidth,
   getManagedUnitCount,
@@ -229,6 +230,24 @@ describe('managed sites sidebar', () => {
     assert.equal(clampPanelWidth(280, 600), SITES_PANEL_WIDTH.min);
     // 폭을 아직 모르면(첫 렌더) 최대치까지 허용한다
     assert.equal(clampPanelWidth(320, 0), 320);
+  });
+
+  it('limits the sidebar in CSS by the same rule as clampPanelWidth', () => {
+    const match = SITES_PANEL_MAX_WIDTH_CSS.match(
+      /^max\((\d+)px, min\((\d+)px, calc\(100cqi - (\d+)px\)\)\)$/,
+    );
+    assert.ok(match, SITES_PANEL_MAX_WIDTH_CSS);
+    const [low, high, reserved] = match.slice(1).map(Number);
+    // 화면에 보이는 너비 = min(width, max-width). 끌 때 쓰는 JS 계산과 어긋나면 손잡이가 튄다
+    for (let width = SITES_PANEL_WIDTH.min; width <= SITES_PANEL_WIDTH.max; width += 20) {
+      for (let pageWidth = 40; pageWidth <= 1600; pageWidth += 40) {
+        assert.equal(
+          Math.min(width, Math.max(low, Math.min(high, pageWidth - reserved))),
+          clampPanelWidth(width, pageWidth),
+          `width=${width} pageWidth=${pageWidth}`,
+        );
+      }
+    }
   });
 
   it('reads the office-scoped managed unit count from the list payload', () => {

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
   buildPropertyMapClustersFromOffsets,
+  getNaverMapsPreconnectOrigins,
   removePropertyMapListeners,
 } from '../src/renderer/routes/_authenticated/properties/-property-map-utils';
 
@@ -74,5 +75,25 @@ describe('property map clustering', () => {
     );
 
     assert.deepEqual(removed, ['marker-listener', 'map-listener']);
+  });
+});
+
+describe('naver maps preconnect origins', () => {
+  it('uses the http tile host on dev server and custom protocol pages', () => {
+    for (const protocol of ['http:', 'estate-erp:']) {
+      assert.deepEqual(getNaverMapsPreconnectOrigins(protocol), [
+        'https://oapi.map.naver.com',
+        'http://nrbe.map.naver.net',
+      ]);
+    }
+  });
+
+  it('uses the secure tile host on https and file pages', () => {
+    for (const protocol of ['https:', 'file:']) {
+      assert.deepEqual(getNaverMapsPreconnectOrigins(protocol), [
+        'https://oapi.map.naver.com',
+        'https://nrbe.pstatic.net',
+      ]);
+    }
   });
 });

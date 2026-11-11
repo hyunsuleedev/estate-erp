@@ -316,22 +316,31 @@ describe("desktop customer ledger", () => {
     assert.doesNotMatch(customerPageSource, /page: pageParam/);
   });
 
-  it("pins selection, customer, phone, and case actions in that order", () => {
+  it("pins selection, consultation toggle, customer, phone, and case actions in that order", () => {
     assert.match(
       customerLedgerStyles,
       /\.ledger-sticky-select\s*\{[\s\S]*?left: 0;/,
     );
     assert.match(
       customerLedgerStyles,
-      /\.ledger-sticky-customer\s*\{[\s\S]*?left: 36px;/,
+      /\.ledger-sticky-expand\s*\{[\s\S]*?left: 36px;/,
     );
     assert.match(
       customerLedgerStyles,
-      /\.ledger-sticky-phone\s*\{[\s\S]*?left: 144px;/,
+      /\.ledger-sticky-customer\s*\{[\s\S]*?left: calc\(36px \+ var\(--ledger-expand-width\)\);/,
     );
     assert.match(
       customerLedgerStyles,
-      /\.ledger-sticky-action\s*\{[\s\S]*?left: 272px;/,
+      /\.ledger-sticky-phone\s*\{[\s\S]*?left: calc\(144px \+ var\(--ledger-expand-width\)\);/,
+    );
+    assert.match(
+      customerLedgerStyles,
+      /\.ledger-sticky-action\s*\{[\s\S]*?left: calc\(272px \+ var\(--ledger-expand-width\)\);/,
+    );
+    // 열 설정에서 최근 상담을 끄면 펼침 버튼 열이 빠지고 고정 열이 당겨진다.
+    assert.match(
+      customerLedgerStyles,
+      /\[data-consult-hidden\]\s*\{\s*--ledger-expand-width: 0px;/,
     );
     assert.match(customerPageSource, /const LEDGER_PINNED_WIDTH = 312;/);
     assert.match(customerLedgerStyles, /\.ledger-case-selected > td/);
@@ -341,6 +350,7 @@ describe("desktop customer ledger", () => {
     assert.match(customerPageSource, /const LEDGER_COLUMNS: ReadonlyArray/);
     for (const [key, width] of [
       ["select", 36],
+      ["consult", 28],
       ["customer", 108],
       ["phone", 128],
       ["actions", 40],
@@ -350,7 +360,6 @@ describe("desktop customer ledger", () => {
       ["rentMin", 84],
       ["areaMax", 84],
       ["next", 104],
-      ["consult", 240],
     ]) {
       assert.match(
         customerPageSource,
@@ -418,7 +427,6 @@ describe("desktop customer ledger", () => {
     assert.match(customerPageSource, /icon=\{<GitBranch \/>\}/);
     assert.match(customerPageSource, /icon=\{<CalendarClock \/>\}/);
     assert.match(customerPageSource, /icon=\{<UserCheck \/>\}/);
-    assert.match(customerPageSource, /icon=\{<MessageSquare \/>\}/);
     assert.match(
       customerPageSource,
       /\{active \? <SortIcon className="size-3 shrink-0" aria-hidden \/> : null\}/,
@@ -437,7 +445,7 @@ describe("desktop customer ledger", () => {
     // 좁은 창에서도 버튼이 화면 안에 남아야 한다.
     assert.match(
       customerPageSource,
-      /style=\{\{ left: LEDGER_PINNED_WIDTH \+ 4, right: 8 \}\}/,
+      /style=\{\{ left: pinnedWidth \+ 4, right: 8 \}\}/,
     );
     // 거래유형을 바꿔도 이전 월세 값이 남으므로, 월세 의뢰에만 붙여 보여 준다.
     assert.match(
@@ -532,7 +540,68 @@ describe("desktop customer ledger", () => {
     );
     // 고객 경계는 아랫선 색으로만 나눠 행 높이를 늘리지 않는다.
     assert.doesNotMatch(customerLedgerStyles, /border-top/);
-    assert.match(customerPageSource, /rowIndex === rows\.length - 1 && "ledger-case-end"/);
+    // 최근 상담 줄이 펼쳐져 있으면 그 줄이 고객의 마지막 행이다.
+    assert.match(
+      customerPageSource,
+      /rowIndex === rows\.length - 1 &&\s*!showConsultRow &&\s*"ledger-case-end"/,
+    );
+    assert.match(customerPageSource, /"ledger-consult-row ledger-case-end"/);
+  });
+
+  it("expands the latest consultation under each customer like the wanted-properties memo", () => {
+    // 희망매물처럼 처음부터 펼쳐져 있고, 고객마다 접을 수 있다.
+    assert.match(
+      customerPageSource,
+      /const \[consultExpanded, setConsultExpanded\] = useState\(true\);/,
+    );
+    assert.match(
+      customerPageSource,
+      /aria-label=\{`\$\{customerName\} 최근 상담 \$\{consultExpanded \? "접기" : "펼치기"\}`\}/,
+    );
+    assert.match(customerPageSource, /aria-expanded=\{consultExpanded\}/);
+    // 상담이 없으면 버튼도 줄도 없다.
+    assert.match(
+      customerPageSource,
+      /consultVisible && consultExpanded && latestConsultation !== null/,
+    );
+    assert.match(
+      customerPageSource,
+      /\{latestConsultation \? \(\s*<Button[\s\S]*?setConsultExpanded/,
+    );
+    // 줄은 의뢰 행과 매칭 패널 사이에 놓여, 매칭을 펼쳐도 자리가 바뀌지 않는다.
+    const baseRowsIndex = customerPageSource.indexOf(
+      "{rows.map((row, rowIndex) =>",
+    );
+    const consultRowIndex = customerPageSource.indexOf("ledger-consult-row");
+    const panelRowsIndex = customerPageSource.indexOf("{rows.map((row) =>");
+    assert.ok(baseRowsIndex < consultRowIndex && consultRowIndex < panelRowsIndex);
+    // 같은 내용을 열로 두 번 보여 주지 않는다.
+    assert.doesNotMatch(customerPageSource, /label="최근 상담"/);
+    assert.doesNotMatch(customerPageSource, /consultationCell/);
+    // 고정 칸을 상담 줄까지 이어 고객 한 명이 한 덩어리로 보이게 한다.
+    assert.match(
+      customerPageSource,
+      /const rowSpan = rows\.length \+ \(showConsultRow \? 1 : 0\);/,
+    );
+    assert.match(customerPageSource, /const LEDGER_PINNED_COLUMN_COUNT = 5;/);
+    // 상담 줄이 표 끝까지 이어져야 끝까지 스크롤해도 고정 칸 밑으로 들어가지 않는다.
+    assert.match(
+      customerPageSource,
+      /<td colSpan=\{columnCount - LEDGER_PINNED_COLUMN_COUNT\}>/,
+    );
+    assert.match(
+      customerPageSource,
+      /showConsultRow && "ledger-rowspan-inner"/,
+    );
+    // 가로로 스크롤해도 고정 칸 옆에 남고, 행 높이가 고르도록 한 줄만 보여 준다.
+    assert.match(
+      customerLedgerStyles,
+      /\.ledger-consult-line\s*\{[\s\S]*?position: sticky;[\s\S]*?left: 340px;[\s\S]*?100cqw - 340px/,
+    );
+    assert.match(
+      customerLedgerStyles,
+      /\.ledger-consult-link\s*\{[\s\S]*?text-overflow: ellipsis;[\s\S]*?white-space: nowrap;/,
+    );
   });
 
   it("labels min and max headers in one tier with their sort fields", () => {
@@ -660,7 +729,6 @@ describe("desktop customer ledger", () => {
     assert.match(customerPageSource, /aria-expanded=\{expanded\}/);
     assert.match(customerPageSource, /aria-controls=\{panelId\}/);
     assert.match(customerPageSource, /<LedgerMatchPanel/);
-    assert.match(customerPageSource, /const rowSpan = rows\.length;/);
     assert.doesNotMatch(customerPageSource, /expandedPanelCount/);
     const baseRowsIndex = customerPageSource.indexOf(
       "{rows.map((row, rowIndex) =>",

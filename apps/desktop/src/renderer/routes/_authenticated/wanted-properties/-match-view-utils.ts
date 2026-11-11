@@ -16,6 +16,12 @@ import { getStatusMeta, type Tone } from '@/lib/status-config';
 import { formatDateTime, formatMoney, formatPhone } from '@/lib/format';
 import { getIntakeConfirmationState } from '@/lib/listing-status';
 import { formatAreaRange } from '../buyer-requirements/-buyer-utils';
+import {
+  EMPTY_REQUIREMENT_FILTERS,
+  matchesRequirementFilters,
+  NO_MATCH_STAGE,
+  type RequirementFilters,
+} from './-wanted-filters';
 
 export type MatchViewListItem = Match;
 
@@ -601,6 +607,14 @@ export function getBuyerRequirementSummaryParts(
     .map((region) => region.ward?.name ?? region.district?.name ?? region.province?.name ?? '')
     .filter(Boolean);
   const regionText = regionLabels.length > 0 ? regionLabels.join(', ') : '지역 협의';
+  const siteNames = (requirement.preferredSites ?? [])
+    .map((preferred) => preferred.site?.name ?? '')
+    .filter(Boolean);
+  // 고객 원장과 같이 지역과 단지를 한 줄에서 읽는다
+  const placeText =
+    [regionLabels.join(', '), siteNames.join(', ')]
+      .filter(Boolean)
+      .join(' · ') || '지역 협의';
   const siteTypes = requirement.siteTypes ?? [];
   const siteTypeText = siteTypes.length > 0
     ? siteTypes.map((type) => siteTypeLabel[type] ?? type).join(', ')
@@ -608,10 +622,131 @@ export function getBuyerRequirementSummaryParts(
 
   return {
     regionText,
+    placeText,
     siteTypeText,
     areaText: formatAreaRange(requirement.areaMin, requirement.areaMax),
     budgetText: formatBudgetSummary(requirement),
   };
+}
+
+export function getMatchSearchText(match: MatchViewListItem): string {
+  return [
+    getMatchTitle(match),
+    match.listing?.property?.site?.roadAddress,
+    match.listing?.property?.site?.jibunAddress,
+    match.buyerRequirement?.contact?.name,
+    match.buyerRequirement?.contact?.phone,
+    match.memo,
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+}
+
+function getRequirementSearchText(
+  requirement: NonNullable<MatchViewListItem['buyerRequirement']>,
+): string {
+  return [
+    requirement.contact?.name,
+    requirement.contact?.phone,
+    getBuyerRequirementSummaryParts(requirement).placeText,
+    requirement.memo,
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+}
+
+export interface BuyerRequirementGroup {
+  buyerReqId: string;
+  buyerRequirement: NonNullable<MatchViewListItem['buyerRequirement']>;
+  matches: MatchViewListItem[];
+}
+
+/**
+ * 고객별 목록은 희망 조건 한 건이 한 줄이다. 매칭이 아직 없는 조건도 포함한다.
+ * - 거래유형: 매칭 없는 조건에는 매물이 없으므로 조건의 거래유형으로 거른다.
+ * - 단계: 매칭에 붙은 값이므로, 걸면 해당 단계 매칭이 없는 조건은 숨긴다.
+ *   '매칭 없음'을 함께 고르면 매칭이 하나도 없는 조건도 남는다.
+ * - 검색: 조건(고객·연락처·지역·단지·메모)에 걸리면 그 조건의 매칭을 모두 보여주고,
+ *   매물에만 걸리면 걸린 매칭만 보여준다.
+ * - 그 밖의 조건 필터: matchesRequirementFilters
+ */
+export function groupMatchesByRequirement({
+  requirements,
+  matches,
+  search,
+  stageFilters,
+  transactionType,
+  requirementFilters = EMPTY_REQUIREMENT_FILTERS,
+}: {
+  requirements: BuyerRequirementGroup['buyerRequirement'][];
+  matches: MatchViewListItem[];
+  search: string;
+  stageFilters: string[];
+  transactionType: string;
+  requirementFilters?: RequirementFilters;
+}): BuyerRequirementGroup[] {
+  const query = search.trim().toLowerCase();
+  const matchesByRequirement = new Map<string, MatchViewListItem[]>();
+  for (const match of matches) {
+    const siblings = matchesByRequirement.get(match.buyerReqId);
+    if (siblings) siblings.push(match);
+    else matchesByRequirement.set(match.buyerReqId, [match]);
+  }
+
+  return requirements
+    .flatMap((requirement) => {
+      if (
+        (transactionType && requirement.transactionType !== transactionType) ||
+        !matchesRequirementFilters(requirement, requirementFilters)
+      ) {
+        return [];
+      }
+
+      const requirementMatches = matchesByRequirement.get(requirement.id) ?? [];
+      const stageMatches = requirementMatches.filter(
+        (match) =>
+          stageFilters.length === 0 ||
+          stageFilters.includes(normalizeMatchStage(match.stage)),
+      );
+      const keptAsUnmatched =
+        requirementMatches.length === 0 && stageFilters.includes(NO_MATCH_STAGE);
+      if (
+        stageFilters.length > 0 &&
+        stageMatches.length === 0 &&
+        !keptAsUnmatched
+      ) {
+        return [];
+      }
+
+      const requirementHit =
+        !query || getRequirementSearchText(requirement).includes(query);
+      const visibleMatches = requirementHit
+        ? stageMatches
+        : stageMatches.filter((match) =>
+            getMatchSearchText(match).includes(query),
+          );
+      if (!requirementHit && visibleMatches.length === 0) {
+        return [];
+      }
+
+      return [
+        {
+          buyerReqId: requirement.id,
+          buyerRequirement: requirement,
+          matches: visibleMatches,
+        },
+      ];
+    })
+    .sort(
+      (left, right) =>
+        (left.buyerRequirement.contact?.name ?? '').localeCompare(
+          right.buyerRequirement.contact?.name ?? '',
+          'ko',
+        ) ||
+        left.buyerRequirement.priorityRank - right.buyerRequirement.priorityRank,
+    );
 }
 
 export const siteTypeLabel: Record<string, string> = {

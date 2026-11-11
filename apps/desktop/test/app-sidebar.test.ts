@@ -190,7 +190,7 @@ describe("desktop app sidebar", () => {
     assert.equal(layoutSource.includes("QuickCreate"), false);
   });
 
-  it("renders detached windows as a focused tab shell without sidebar navigation", () => {
+  it("renders detached windows with a focused titlebar and the shared sidebar below it", () => {
     const layoutSource = readFileSync(
       resolve(testDir, "../src/renderer/routes/_authenticated.tsx"),
       "utf8",
@@ -199,7 +199,7 @@ describe("desktop app sidebar", () => {
       "function DetachedAuthenticatedShell",
     );
     const detachedEnd = layoutSource.indexOf(
-      "function AuthenticatedLayout",
+      "function ShellSidebarFrame",
       detachedStart,
     );
     const detachedSource = layoutSource.slice(detachedStart, detachedEnd);
@@ -218,13 +218,14 @@ describe("desktop app sidebar", () => {
       "detached windows should keep one persistent workspace controller without auto-creating a route tab",
     );
     assert.match(detachedSource, /<TabContent \/>/);
-    assert.doesNotMatch(detachedSource, /<AppSidebar/);
+    // 탭바 아래(사이드바 + 화면)는 탭 화면이 그리므로 분리 창도 메인 창과 같은 사이드바를 갖는다.
+    assert.match(detachedSource, /<ShellSidebarFrame/);
     assert.doesNotMatch(detachedSource, /<SidebarTrigger/);
     assert.doesNotMatch(detachedSource, /data-slot="desktop-brand"/);
     assert.doesNotMatch(detachedSource, /<CallPopup/);
   });
 
-  it("renders equal-height titlebar tabs with a filled active indicator", () => {
+  it("lays out titlebar tabs the Notion way: shared width, active tab joined to the content", () => {
     const tabSource = readFileSync(
       resolve(testDir, "../src/renderer/features/tabs/TabBar/Tab.tsx"),
       "utf8",
@@ -238,20 +239,18 @@ describe("desktop app sidebar", () => {
       "utf8",
     );
 
-    assert.match(
-      tabSource,
-      /-ml-px -mb-px flex h-9[^'\n]*self-end[^'\n]*border border-border/,
-      "active and inactive tabs should share the same full-height geometry",
-    );
-    assert.match(
-      tabSource,
-      /z-10 bg-background text-foreground after:absolute after:-inset-x-px after:-bottom-px after:h-0\.5 after:bg-foreground/,
-      "the active tab should end with a flush two-pixel dark indicator",
-    );
-    assert.doesNotMatch(tabSource, /after:-bottom-1|after:h-1|border-b-background!/);
-    assert.match(tabSource, /first:ml-0/);
-    assert.match(tabBarSource, /overflow-x-auto pl-1\.5/);
-    assert.match(tabSource, /opacity-0[^'\n]*group-hover:opacity-70/);
+    // 탭은 남는 폭을 균등하게 나누되 36~200px 사이에 머문다.
+    assert.match(tabSource, /TAB_MIN_WIDTH = 36/);
+    assert.match(tabSource, /TAB_MAX_WIDTH = 200/);
+    assert.match(tabSource, /flex: '1 1 0%'/);
+    assert.match(tabBarSource, /maxWidth: tabs\.length \* TAB_MAX_WIDTH \+ slot/);
+    assert.match(tabBarSource, /overflow-x-auto/);
+    // 비활성 탭만 아래 선을 그려, 활성 탭이 콘텐츠와 한 면으로 이어진다.
+    assert.match(tabSource, /if \(!isActive\) separators\.push\('inset 0 -1px 0 var\(--color-border\)'\)/);
+    assert.match(tabBarSource, /h-\[calc\(100%_\+_1px\)\]/, "the tab bar must cover the header's bottom border");
+    assert.doesNotMatch(tabSource, /after:bg-foreground/, "no dark underline indicator");
+    // 닫기 버튼은 마우스를 올리거나 focus했을 때만 보인다.
+    assert.match(tabSource, /opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100/);
     assert.equal(
       appCssSource.includes("Chrome-style active tab shoulders"),
       false,

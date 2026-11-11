@@ -75,13 +75,9 @@ describe('desktop advertising note page', () => {
     assert.match(dialogSource, /disabled=\{drafts\.length > 0\}/);
     assert.match(source, /const MAX_MANUAL_ENTRY_DRAFTS = 3_000/);
     assert.match(source, /const EXTERNAL_LISTING_BATCH_SIZE = 100/);
-    assert.match(dialogSource, /const groups = drafts\.map\(\(draft\) =>/);
+    assert.match(dialogSource, /for \(const draft of drafts\)/);
     assert.match(dialogSource, /useVirtualizer\(\{/);
     assert.match(dialogSource, /count: drafts\.length/);
-    assert.match(
-      dialogSource,
-      /offset \+= EXTERNAL_LISTING_BATCH_SIZE[\s\S]*?groups\.slice\([\s\S]*?offset \+ EXTERNAL_LISTING_BATCH_SIZE[\s\S]*?createManualListings\(/,
-    );
     assert.match(dialogSource, /setSubmittedCount\(/);
     assert.match(
       dialogSource,
@@ -89,22 +85,130 @@ describe('desktop advertising note page', () => {
     );
     assert.doesNotMatch(dialogSource, /한 번에 최대 100건/);
     assert.match(dialogSource, /drafts\.length === 0/);
-    // 수동 입력은 스냅샷으로 비활성화되지 않으므로 직접 내리는 경로가 있어야 한다.
+    // 수동 입력도 스냅샷 안에서 저장한다.
+    assert.match(
+      dialogSource,
+      /getActiveSession\(form\.siteId, form\.transactionType\)/,
+    );
+    assert.match(
+      dialogSource,
+      /entrySession \?\?[\s\S]*?createSession\(\{[\s\S]*?siteId: form\.siteId/,
+    );
+    assert.match(
+      dialogSource,
+      /batchUpsert\(\{[\s\S]*?sessionId: session\.id,[\s\S]*?source: 'manual'/,
+    );
+    assert.match(
+      dialogSource,
+      /`\$\{drafts\.length\.toLocaleString\('ko-KR'\)\}건 시작하고 등록`/,
+    );
+
+    // 중복매물은 첫 광고를 대표로 한 묶음에 넣고, 나눠 보낼 때 묶음을 쪼개지 않는다.
+    assert.match(
+      dialogSource,
+      /duplicateOfClientId: draft\.duplicateOfClientId \?\? draft\.clientId/,
+    );
+    assert.match(dialogSource, /draft\.duplicateOfClientId \?\? draft\.clientId;/);
+    assert.match(dialogSource, /bundle\.listings\.push\(listing\)/);
+    assert.match(
+      dialogSource,
+      /chunkCount \+ bundle\.listings\.length > EXTERNAL_LISTING_BATCH_SIZE/,
+    );
+
+    // 열린 스냅샷에서만 펼침 패널에 추가·수정·삭제가 보인다.
     const panelSource = source.slice(
       source.indexOf('function ExternalListingRankPanel'),
       source.indexOf('function ConfirmDialog'),
     );
-    assert.match(panelSource, /listing\.source === 'manual'/);
-    assert.match(panelSource, /api\.externalListings\.endManualListing\(listingId\)/);
-    assert.match(panelSource, /<ConfirmDialog/);
+    assert.match(panelSource, /getActiveSession\(\s*group\.siteId,/);
+    assert.match(panelSource, /\{session && \(/);
+    assert.match(panelSource, /동일 광고 추가/);
+    assert.match(panelSource, /addSnapshotListing\(session\.id, group\.id/);
+    assert.match(panelSource, /updateSnapshotListing\(/);
+    assert.match(panelSource, /removeSnapshotListing\(session\.id, listingId\)/);
+    assert.doesNotMatch(source, /endManualListing|createManualListings/);
 
-    // 수동 입력은 스냅샷을 열지 않고 저장한다.
-    assert.doesNotMatch(dialogSource, /getActiveSession|createSession|batchUpsert/);
-    assert.match(dialogSource, /createManualListings\(\{[\s\S]*?siteId: form\.siteId/);
+    // 입력이 0건이어도 확인을 거쳐 닫을 수 있고, 입력 없이 스냅샷을 시작할 수 있다.
+    assert.match(source, /aria-label="스냅샷 시작"/);
+    assert.match(source, /모두 내리기/);
     assert.match(
-      dialogSource,
-      /`\$\{drafts\.length\.toLocaleString\('ko-KR'\)\}건 등록`/,
+      source,
+      /completeSessionMutation\.mutate\(activeSession\.receivedListingCount\)/,
     );
+    assert.match(source, /await refetchActiveSession\(\)/);
+  });
+
+  it('keeps not-entered listings only from the open snapshot and only what is shown', () => {
+    const source = readFileSync(
+      resolve(
+        testDir,
+        '../src/renderer/routes/_authenticated/properties/external-listings.tsx',
+      ),
+      'utf8',
+    );
+
+    assert.match(
+      source,
+      /const isKeepMode = !!activeSession && innerTab === 'old'/,
+    );
+    assert.match(
+      source,
+      /onKeepGroup: isKeepMode\s*\? \(groupId\) => keepGroupsMutation\.mutate\(\[groupId\]\)\s*: undefined/,
+    );
+    assert.match(source, /keepSnapshotListings\(activeSession!\.id, groupIds\)/);
+    // 전체 유지는 확인을 거치고, 필터로 가려진 매물은 건드리지 않는다.
+    assert.match(source, /\{isKeepMode && \(/);
+    assert.match(
+      source,
+      /setKeepTarget\(\{\s*groupIds: filteredGroups\.map\(\(group\) => group\.id\),[\s\S]*?\}\);\s*setShowKeepConfirm\(true\)/,
+    );
+    assert.match(source, /keepGroupsMutation\.mutate\(keepTarget\.groupIds\)/);
+    assert.match(source, /표시된 \$\{filteredGroups\.length/);
+
+    // 유지·완료·취소 뒤에는 펼침 패널의 상태도 새로 읽는다.
+    const invalidateSource = source.slice(
+      source.indexOf('const invalidateSnapshotQueries'),
+      source.indexOf('const [transactionType, setTransactionType]'),
+    );
+    for (const key of [
+      'external-listing-groups',
+      'external-listing-active-session',
+      'external-listing-group-detail',
+    ]) {
+      assert.match(invalidateSource, new RegExp(`'${key}'`));
+    }
+    assert.equal(
+      (source.match(/invalidateSnapshotQueries\(\);/g) ?? []).length,
+      5,
+      'start, complete, cancel, keep and entry should all refresh snapshot state',
+    );
+
+    // 겹친 유지 요청은 마지막 하나가 끝날 때 반드시 한 번 새로고침한다.
+    const keepMutationSource = source.slice(
+      source.indexOf('const keepGroupsMutation'),
+      source.indexOf('const isKeepMode'),
+    );
+    assert.match(
+      keepMutationSource,
+      /onMutate: async \(groupIds\) => \{\s*keepRequestsInFlight\.current \+= 1;/,
+    );
+    assert.match(
+      keepMutationSource,
+      /onSettled: \(\) => \{\s*keepRequestsInFlight\.current -= 1;\s*if \(keepRequestsInFlight\.current === 0\) invalidateSnapshotQueries\(\);/,
+    );
+    assert.doesNotMatch(source, /queryClient\.isMutating/);
+
+    // 스냅샷 상태와 조작은 표 위 한 줄에 모은다.
+    assert.match(source, /data-advertising-note-snapshot-bar/);
+    const snapshotBar = source.slice(
+      source.indexOf('data-advertising-note-snapshot-bar'),
+      source.indexOf('{transactionTypes.map((t) => ('),
+    );
+    for (const label of ['입력됨', '미입력', '스냅샷 취소', '스냅샷 완료']) {
+      assert.match(snapshotBar, new RegExp(label));
+    }
+    assert.match(snapshotBar, /count: activeSession\.receivedListingCount/);
+    assert.match(snapshotBar, /count: activeSession\.pendingRemovalCount/);
   });
 
   it('uses the agreed sortable column order and own-ad publication date', () => {
@@ -128,6 +232,7 @@ describe('desktop advertising note page', () => {
       columnSource.indexOf("id: 'owner'"),
     );
     const orderedColumnIds = [
+      'keep',
       'discoveryStatus',
       'myAd',
       'owner',
@@ -157,7 +262,7 @@ describe('desktop advertising note page', () => {
     }
 
     assert.match(discoveryStatusColumnSource, /label="상태"/);
-    assert.match(discoveryStatusColumnSource, /size: 58/);
+    assert.match(discoveryStatusColumnSource, /size: 60/);
     assert.match(
       discoveryStatusColumnSource,
       /DISCOVERY_STATUS_META\[status\]/,
@@ -172,7 +277,7 @@ describe('desktop advertising note page', () => {
     assert.match(myAdColumnSource, /label="광고"/);
     assert.doesNotMatch(myAdColumnSource, /label="내광고"/);
     assert.match(columnSource, /group\.ownAdvertisementYmd/);
-    assert.match(columnSource, /id: 'myAd',[\s\S]*?size: 68/);
+    assert.match(columnSource, /id: 'myAd',[\s\S]*?size: 76/);
     assert.match(
       source,
       /function formatMonthDay[\s\S]*const month = Number\(dateStr\.slice\(4, 6\)\)[\s\S]*const day = Number\(dateStr\.slice\(6, 8\)\)[\s\S]*return `\$\{month\}\/\$\{day\}`/,
@@ -183,17 +288,17 @@ describe('desktop advertising note page', () => {
     );
     assert.match(
       myAdColumnSource,
-      /rounded-\[4px\] bg-\[#e7f3f8\][\s\S]*?tabular-nums text-\[#337ea9\]/,
+      /rounded-\[4px\] bg-info-soft[\s\S]*?tabular-nums text-info-strong/,
     );
     assert.match(
       myAdColumnSource,
-      /size-1\.5 shrink-0 rounded-full bg-\[#529cca\]/,
+      /size-1\.5 shrink-0 rounded-full bg-info/,
     );
     assert.doesNotMatch(myAdColumnSource, /<NotionTag/);
     assert.doesNotMatch(myAdColumnSource, /title=/);
     assert.match(
       myAdColumnSource,
-      /aria-label="내 광고 없음"[\s\S]*?rounded-\[4px\] bg-\[#f1f1ef\][\s\S]*?text-\[#787774\][\s\S]*?size-1\.5 shrink-0 rounded-full bg-\[#b4b4b1\][\s\S]*?없음/,
+      /aria-label="내 광고 없음"[\s\S]*?<EmptyValue \/>/,
     );
     assert.doesNotMatch(
       columnSource,
@@ -205,15 +310,16 @@ describe('desktop advertising note page', () => {
     );
     assert.match(
       columnSource,
-      /id: 'owner',[\s\S]*?label="주인"[\s\S]*?size: 62[\s\S]*?ownerVerified \? '집주인' : '중개사'/,
+      /id: 'owner',[\s\S]*?label="주인"[\s\S]*?size: 62[\s\S]*?<OwnerLabel isOwner=\{!!row\.original\.ownerVerified\} \/>/,
     );
+    assert.match(source, /\{isOwner \? '집주인' : '중개사'\}/);
     assert.match(
       columnSource,
       /id: 'type',[\s\S]*?label="타입"[\s\S]*?size: 64[\s\S]*?row\.original\.areaName/,
     );
     assert.match(
       columnSource,
-      /id: 'area',[\s\S]*?label="면적"[\s\S]*?size: 72[\s\S]*?exclusiveAreaM2[\s\S]*?supplyAreaM2[\s\S]*?areaLabel/,
+      /id: 'area',[\s\S]*?label="면적"[\s\S]*?size: 78[\s\S]*?exclusiveAreaM2[\s\S]*?supplyAreaM2[\s\S]*?areaLabel/,
     );
     assert.match(columnSource, /id: 'direction',[\s\S]*?label="방향"/);
     assert.doesNotMatch(columnSource, /id: 'registrationDate'/);
@@ -232,7 +338,7 @@ describe('desktop advertising note page', () => {
     );
     assert.match(
       source,
-      /pinnedColumns=\{\[\s*'discoveryStatus',\s*'myAd',\s*'owner',\s*'site',\s*'dong',\s*'ho',\s*\]\}/,
+      /pinnedColumns=\{\[\s*'keep',\s*'discoveryStatus',\s*'myAd',\s*'owner',\s*'site',\s*'dong',\s*'ho',\s*\]\}/,
     );
     assert.match(source, /sorting=\{sorting\}/);
     assert.match(source, /onSortingChange=\{setSorting\}/);
@@ -264,6 +370,7 @@ describe('desktop advertising note page', () => {
       source.indexOf('// ── Property-table style text editors'),
     );
     const iconNames = [
+      'Check',
       'Building2',
       'Hash',
       'Layers3',
@@ -284,7 +391,7 @@ describe('desktop advertising note page', () => {
     assert.match(source, /data-advertising-note-header-label/);
     assert.equal(
       (columnSource.match(/<TableHeaderLabel/g) ?? []).length,
-      16,
+      17,
       'every data column should use an icon-labeled header',
     );
     for (const iconName of iconNames) {
@@ -294,11 +401,17 @@ describe('desktop advertising note page', () => {
       );
     }
 
-    assert.match(columnSource, /text-\[14px\] font-semibold text-slate-900/);
+    // 반복되는 단지명보다 동·호와 가격이 먼저 읽힌다.
+    assert.match(columnSource, /block truncate text-\[13px\] text-foreground/);
     assert.match(
       columnSource,
-      /whitespace-nowrap text-\[13px\] font-semibold tabular-nums text-slate-950/,
+      /block truncate text-\[13px\] font-medium tabular-nums text-foreground/,
     );
+    assert.match(
+      columnSource,
+      /flex min-w-0 items-center gap-1\.5 text-\[13px\] font-semibold text-foreground/,
+    );
+    assert.doesNotMatch(columnSource, /text-slate-/);
     const editableCellSource = source.slice(
       source.indexOf('// ── Property-table style text editors'),
       source.indexOf('function formatListingPrice'),
@@ -306,11 +419,11 @@ describe('desktop advertising note page', () => {
     assert.match(source, /<CellEditProvider>/);
     assert.match(
       editableCellSource,
-      /text-\[13px\] font-medium tabular-nums text-slate-800/,
+      /text-\[13px\] font-medium tabular-nums text-foreground/,
     );
     assert.match(
       editableCellSource,
-      /w-full truncate text-\[13px\] text-slate-700/,
+      /w-full truncate text-\[13px\] text-foreground/,
     );
     assert.equal(
       (editableCellSource.match(/<EditableCell/g) ?? []).length,
@@ -349,7 +462,8 @@ describe('desktop advertising note page', () => {
       /className="-m-4 flex min-h-0 min-w-0 flex-1 flex-col bg-white"/,
       'advertising note filters should start at the same top edge as the property list',
     );
-    assert.match(pageSource, /enableRowSelection/);
+    // 선택해도 할 수 있는 일이 없어 체크박스를 두지 않는다.
+    assert.doesNotMatch(pageSource, /enableRowSelection/);
     assert.match(pageSource, /rowHeight=\{40\}/);
     assert.doesNotMatch(pageSource, /rowHeight="auto"/);
     assert.doesNotMatch(
@@ -357,18 +471,30 @@ describe('desktop advertising note page', () => {
       /onlyFavorite|FavoriteToggle|label="즐겨찾기"|renderSelectionAccessory/,
     );
 
-    const tabsIndex = pageSource.indexOf('<TabsList');
-    const siteIndex = pageSource.indexOf('placeholder="단지 전체"');
-    const dongIndex = pageSource.indexOf('ariaLabel="동 필터"');
-    const unitIndex = pageSource.indexOf('ariaLabel="호 필터"');
-    const searchIndex = pageSource.indexOf('ariaLabel="광고노트 통합 검색"');
-
+    // 매물관리와 같은 2줄 툴바: 거래유형 탭 → 단지·동·호·검색 막대 → 필터 칩
+    const tabsIndex = pageSource.indexOf('<ToolbarPillTabs');
+    const searchBarIndex = pageSource.indexOf('<ToolbarSearchBar');
+    const chipsIndex = pageSource.indexOf('<ToolbarToggleChip');
     assert.ok(
-      tabsIndex < siteIndex &&
-        siteIndex < dongIndex &&
-        dongIndex < unitIndex &&
-        unitIndex < searchIndex,
+      tabsIndex > 0 && tabsIndex < searchBarIndex && searchBarIndex < chipsIndex,
       'quick filters should follow the property-list priority order',
+    );
+    assert.match(pageSource, /dong=\{buildingQuery\}/);
+    assert.match(pageSource, /unit=\{hoQuery\}/);
+    assert.match(pageSource, /searchAriaLabel="광고노트 통합 검색"/);
+    assert.match(pageSource, /<NumericRangeFilterPanel/);
+    assert.match(pageSource, /<AddFilterMenu items=\{moreFilterItems\} \/>/);
+    // 눈금이 다른 월세 탭을 오갈 때 금액 필터가 남아 칩과 결과가 어긋나지 않는다
+    assert.match(
+      pageSource,
+      /\(next === 'monthly'\) !== \(transactionType === 'monthly'\)[\s\S]*?setPriceMin\(''\);\s*setPriceMax\(''\);/,
+    );
+    for (const label of ['집주인', '내광고만', '세안고']) {
+      assert.match(pageSource, new RegExp(`label="${label}"`));
+    }
+    assert.doesNotMatch(
+      pageSource,
+      /QuickFilterInput|FilterToggleChip|AdRangeFilterPopover|RangeFilterCard|<TabsList/,
     );
 
     assert.match(
@@ -382,7 +508,7 @@ describe('desktop advertising note page', () => {
     assert.doesNotMatch(pageSource, /isMemoColumnCollapsed|MEMO_COLUMN_IDS/);
     assert.match(pageSource, /columnGroupControls=\{\[/);
     assert.match(pageSource, /anchorColumnId: 'price'/);
-    assert.match(pageSource, /label: '최소가–매물특징'/);
+    assert.match(pageSource, /label: '가격 범위·특징',\s*showLabel: true/);
     assert.match(
       pageSource,
       /setSorting\(\(previous\) =>\s*previous\.some\(\(\{ id \}\) =>\s*MARKET_DETAIL_COLUMN_ID_SET\.has\(id\)/,
@@ -435,7 +561,12 @@ describe('desktop advertising note page', () => {
     assert.match(pageSource, /function ExternalListingRankPanel/);
     assert.match(pageSource, /노출 순서 비교/);
     assert.doesNotMatch(pageSource, /function GroupListingsDialog/);
-    assert.match(rankPanelSource, /min-w-\[620px\] max-w-\[720px\]/);
+    assert.match(
+      rankPanelSource,
+      /grid-cols-\[40px_56px_244px_216px_72px_64px\]/,
+    );
+    assert.match(rankPanelSource, /sticky left-3 w-fit max-w-full/);
+    assert.doesNotMatch(rankPanelSource, /#[0-9a-f]{6}/i);
     assert.doesNotMatch(
       rankPanelSource,
       /listing\.isActive|광고 O|광고 X|listing\.articleNo|매물번호/,
