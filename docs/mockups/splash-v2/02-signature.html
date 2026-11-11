@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>2 · 시그니처 — 스플래시 시안</title>
+<link rel="stylesheet" href="stage.css">
+<style>
+  .d2 { background: #fff; }
+  .d2 .col { display: grid; justify-items: center; margin-top: -36px; }
+  .d2 .mark { width: 112px; height: 112px; position: relative; }
+  .d2 .mark svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+  /* 가는 선으로 먼저 그리고, 면을 채운다 */
+  .d2 .mark path { fill: var(--ink); fill-opacity: 0; stroke: var(--ink); stroke-width: 0.55; stroke-linejoin: round; stroke-dasharray: 100; stroke-dashoffset: 100;
+    animation: d2-draw 0.9s var(--inout) both, d2-fill 0.5s ease-out 0.75s both; }
+  .d2 .mark .pb { animation-delay: 0.12s, 0.87s; }
+  @keyframes d2-draw { to { stroke-dashoffset: 0; } }
+  @keyframes d2-fill { to { fill-opacity: 1; } }
+  /* 로고 면을 한 번 훑는 빛 */
+  .d2 .sheen { position: absolute; inset: 0; overflow: hidden; -webkit-mask: var(--m) center / 100% 100% no-repeat; mask: var(--m) center / 100% 100% no-repeat; }
+  .d2 .sheen::after { content: ""; position: absolute; inset: -20%; background: linear-gradient(105deg, transparent 42%, rgb(255 255 255 / 0.35) 50%, transparent 58%); transform: translateX(-70%); animation: d2-sheen 2.4s var(--inout) 1.3s infinite; }
+  @keyframes d2-sheen { 45%, 100% { transform: translateX(70%); } }
+  .d2 .word { margin-top: 30px; font-size: 20px; font-weight: 600; letter-spacing: -0.6px; animation: d2-word 0.8s var(--out) 0.7s both; }
+  @keyframes d2-word { from { opacity: 0; letter-spacing: 0.28em; filter: blur(6px); } }
+  .d2 .en { margin-top: 8px; font-size: 10.5px; font-weight: 500; letter-spacing: 0.34em; text-indent: 0.34em; color: var(--muted); animation: d2-up 0.6s var(--out) 0.95s both; }
+  @keyframes d2-up { from { opacity: 0; transform: translateY(6px); } }
+  .d2 .bar { margin-top: 34px; width: 168px; height: 1px; background: #e6e5e3; overflow: hidden; animation: d2-up 0.6s var(--out) 1.05s both; }
+  .d2 .bar i { display: block; height: 100%; background: var(--ink); transform-origin: 0 50%; transform: scaleX(var(--p)); }
+  .d2[data-state="exit"] .col { transform: scale(1.04); opacity: 0; transition: transform 0.5s var(--out), opacity 0.3s; }
+  /* 가운데에서 다음 화면이 열린다 */
+  .win[data-state="exit"] .dest { z-index: 3; animation: d2-iris 0.62s var(--inout) both; }
+  @keyframes d2-iris { from { clip-path: circle(0 at 50% 46%); } to { clip-path: circle(75vmax at 50% 46%); } }
+  .win[data-state="exit"] .dest-in { animation: d2-settle 0.62s var(--out) both; }
+  @keyframes d2-settle { from { transform: scale(1.04); } }
+</style>
+</head>
+<body>
+<template id="tpl">
+  <main class="splash d2">
+    <div class="col">
+      <div class="mark"><span data-logo></span><i class="sheen"></i></div>
+      <div class="word">에스테잇플로우</div>
+      <div class="en">ESTAIT FLOW</div>
+      <div class="bar"><i></i></div>
+    </div>
+    <div class="foot"><span>© 2026 Estait Inc.</span><span class="mono">v1.0.0</span></div>
+  </main>
+</template>
+<script>
+  window.Demo = {
+    min: 1900, readyMs: 240, exitMs: 620,
+    mount(root) {
+      root.querySelectorAll(".mark path").forEach((p) => p.setAttribute("pathLength", 100));
+      const svg = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='15 15 70 70'><path d='${Stage.PA}'/><path d='${Stage.PB}'/></svg>`;
+      root.querySelector(".sheen").style.setProperty("--m", `url("data:image/svg+xml,${encodeURIComponent(svg)}")`);
+    },
+  };
+</script>
+<script src="stage.js"></script>
+</body>
+</html>

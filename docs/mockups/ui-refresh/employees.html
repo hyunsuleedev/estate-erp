@@ -1,0 +1,499 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>직원관리 · UI 개선 데모</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="ui.css">
+<style>
+  .fbar { gap: 6px; padding: 10px var(--gutter) 10px; flex-wrap: wrap; }
+  .fsel {
+    height: 30px; border: 0; border-radius: 8px; background: var(--paper);
+    box-shadow: inset 0 0 0 1px var(--line-2), 0 1px 2px rgba(16, 24, 40, 0.04);
+    font: inherit; font-size: 13px; color: var(--text); letter-spacing: inherit;
+    display: inline-flex; align-items: center; gap: 6px; padding: 0 8px 0 10px; cursor: pointer; white-space: nowrap;
+    transition: box-shadow 0.12s, background-color 0.12s;
+  }
+  .fsel:hover { box-shadow: inset 0 0 0 1px var(--line-3), 0 1px 2px rgba(16, 24, 40, 0.04); }
+  .fsel .k { color: var(--text-2); }
+  .fsel .v { font-weight: 500; }
+  .fsel > .i { width: 12px; height: 12px; color: var(--text-3); }
+  .fsel.on { background: var(--accent-soft); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent); }
+  .fsel.on .k { color: var(--accent-ink); opacity: 0.75; }
+  .fsel.on .v { color: var(--accent-ink); }
+  .fsel .clr { width: 16px; height: 16px; display: grid; place-items: center; border-radius: 4px; color: var(--accent-ink); }
+  .fsel .clr:hover { background: color-mix(in srgb, var(--accent) 18%, transparent); }
+  .fsel .clr .i { width: 11px; height: 11px; }
+  .fbar .res { margin-left: auto; font-size: 13px; color: var(--text-2); font-variant-numeric: tabular-nums; }
+
+  /* 계정 슬롯 사용량 */
+  .slots { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-2); }
+  .slots b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .slotbar { width: 72px; height: 6px; border-radius: 3px; background: var(--line-2); overflow: hidden; }
+  .slotbar i { display: block; height: 100%; border-radius: 3px; background: var(--accent); transition: width 0.2s; }
+  .slotbar.full i { background: var(--warn); }
+
+  /* 직원 표 */
+  #tbl th[data-sort] { cursor: pointer; }
+  #tbl tbody tr[data-id] { cursor: pointer; }
+  #tbl td.nm { font-weight: 500; }
+  #tbl td.nm .who { display: inline-flex; align-items: center; gap: 9px; }
+  #tbl tr.off td.nm, #tbl tr.off td.num { color: var(--text-2); }
+  #tbl td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  #tbl td.num.zero { color: var(--text-3); }
+  #tbl tr.grp td { height: 34px; background: var(--soft); font-size: 13px; font-weight: 600; border-bottom: 1px solid var(--line-2); cursor: pointer; }
+  #tbl tr.grp:hover td { background: var(--soft); }
+  .gh { display: flex; align-items: center; gap: 8px; }
+  .gh .chev { width: 14px; height: 14px; color: var(--text-3); transition: transform 0.15s; }
+  .gh.shut .chev { transform: rotate(-90deg); }
+  .gh .n { font-weight: 500; color: var(--text-3); }
+  #tbl td.c-act, #tbl th.c-act { width: 40px; padding: 0 8px 0 0; }
+  #tbl td.c-act .ib { width: 26px; height: 26px; opacity: 0; }
+  #tbl tr:hover td.c-act .ib, #tbl td.c-act .ib:focus-visible { opacity: 1; }
+  .cellb { height: 26px; display: inline-flex; align-items: center; gap: 6px; padding: 0 4px; margin: 0 -4px; border: 0; border-radius: 6px; background: transparent; font: inherit; cursor: pointer; }
+  .cellb:hover { background: var(--press); }
+  .cellb > .i { width: 11px; height: 11px; color: var(--text-3); opacity: 0; }
+  tr:hover .cellb > .i, .cellb:focus-visible > .i { opacity: 1; }
+  .split.peeking .opt { display: none; }
+  .split.peeking #tbl th, .split.peeking #tbl td { padding-left: 8px; padding-right: 8px; }
+  .split.peeking #tbl th:first-child, .split.peeking #tbl td:first-child { padding-left: 20px; }
+  .split.peeking #tbl th .hi { display: none; }
+  .split.peeking .sumbar { height: auto; min-height: 38px; padding: 8px 20px; flex-wrap: wrap; gap: 4px 14px; }
+  .split.peeking .sumbar > span:first-child, .split.peeking .sumbar .grow { display: none; }
+  .split.peeking .note-line { padding-left: 20px; }
+  .note-line { padding: 10px var(--gutter) 0; font-size: 12px; color: var(--text-3); }
+
+  /* 옆 상세 */
+  .peek { width: 548px; }
+  .peek-bar .sp { flex: 1; }
+  .peek-bar .btn + .btn { margin-left: 6px; }
+  .peek-body { padding: 4px 28px 80px; }
+  .peek h2 { font-size: 22px; display: flex; align-items: center; gap: 10px; }
+  .peek .lead { flex-wrap: wrap; font-size: 13px; margin-top: 4px; }
+  .peek .lead .sep { color: var(--text-3); }
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); margin: 16px 0 14px; border-radius: 10px; box-shadow: inset 0 0 0 1px var(--line-2); }
+  .stats div { padding: 9px 12px; border-left: 1px solid var(--line); font-size: 12px; color: var(--text-2); }
+  .stats div:first-child { border-left: 0; }
+  .stats b { display: block; font-size: 16px; font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; margin-top: 1px; }
+  .stats .warnv b { color: var(--warn); }
+  .sec { margin-top: 22px; }
+  .sec-h small { font-weight: 400; color: var(--text-2); font-size: 12px; }
+  .sec-h a { margin-left: auto; font-size: 12px; font-weight: 500; color: var(--accent-ink); text-decoration: none; }
+  .sec-h a:hover { text-decoration: underline; }
+  .fg { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 14px; }
+  .fg .full { grid-column: 1 / -1; }
+  .fg label, .mdl label { display: block; font-size: 12px; color: var(--text-2); margin-bottom: 5px; }
+  .inp { width: 100%; height: 34px; padding: 0 10px; border: 0; border-radius: 8px; background: var(--paper); box-shadow: inset 0 0 0 1px var(--line-2); font: inherit; font-size: 14px; color: var(--text); outline: 0; }
+  .inp:focus { box-shadow: inset 0 0 0 1px var(--accent), 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+  .inp[disabled], .inp[readonly] { background: var(--soft); color: var(--text-2); }
+  .hint { margin: 6px 0 0; font-size: 12px; color: var(--text-2); }
+  .hint.warn { color: var(--warn); }
+  .row2 { display: flex; gap: 8px; align-items: flex-end; }
+  .row2 > div { flex: 1; }
+  .kv { display: grid; grid-template-columns: repeat(3, 1fr); border-radius: 10px; box-shadow: inset 0 0 0 1px var(--line-2); }
+  .kv div { padding: 8px 12px; font-size: 12px; color: var(--text-2); border-top: 1px solid var(--line); border-left: 1px solid var(--line); }
+  .kv div:nth-child(-n+3) { border-top: 0; }
+  .kv div:nth-child(3n+1) { border-left: 0; }
+  .kv b { display: block; font-size: 14px; font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; }
+  .mini { text-decoration: none; color: inherit; height: 36px; cursor: pointer; }
+  .mini .d { color: var(--text-2); font-size: 12px; white-space: nowrap; flex: none; }
+  .mini > .i { width: 14px; height: 14px; color: var(--text-3); flex: none; }
+  .mini b { font-weight: 500; }
+  .none { font-size: 13px; color: var(--text-3); padding: 8px 0; }
+
+  /* 입력 창 */
+  .mback { position: fixed; inset: 0; z-index: 60; background: rgba(20, 18, 12, 0.32); display: grid; place-items: center; }
+  .mdl { width: 520px; max-width: calc(100vw - 32px); max-height: calc(100vh - 48px); overflow: auto; border-radius: 14px; background: var(--paper); box-shadow: 0 24px 60px rgba(20, 18, 12, 0.3); }
+  .mdl.sm { width: 420px; }
+  .mdl h3 { margin: 0; padding: 18px 22px 4px; font-size: 16px; font-weight: 600; }
+  .mdl .desc { margin: 0; padding: 2px 22px 0; font-size: 13px; line-height: 1.6; color: var(--text-2); }
+  .mdl .mb { padding: 12px 22px 6px; }
+  .mdl .mf { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 22px 18px; }
+  .btn.dangerb { color: var(--danger); }
+  a.btn { text-decoration: none; }
+</style>
+</head>
+<body data-active="employees">
+<main id="page">
+  <div class="ph">
+    <h1>직원관리</h1>
+    <span class="count" id="total"></span>
+    <div class="meta">
+      <span class="slots" title="직원 계정 슬롯 사용량">활성 계정 <b id="slotN"></b><span class="slotbar" id="slotBar"><i></i></span></span>
+    </div>
+    <div class="actions">
+      <a class="btn" href="cashflow-settlements.html" id="settleBtn"></a>
+      <button class="btn primary" id="newBtn"></button>
+    </div>
+  </div>
+
+  <div class="fbar show" id="fbar">
+    <label class="field" data-icon="search" style="width:260px"><input id="q" placeholder="이름, 로그인 ID, 연락처 검색" aria-label="직원 검색"><kbd>/</kbd></label>
+    <span class="vsep"></span>
+    <span id="fsels" style="display:contents"></span>
+  </div>
+
+  <div class="split" id="split">
+    <div class="scroll" id="scroll">
+      <div id="body"></div>
+      <p class="note-line">권한 안내 — 대표는 전체 설정, 매니저는 직원 운영, 중개사는 본인 정보만 관리할 수 있습니다.</p>
+      <div class="sumbar" id="foot"></div>
+    </div>
+    <aside class="peek" id="peek" hidden></aside>
+  </div>
+</main>
+
+<script src="shell.js"></script>
+<script>
+const { icon, av } = UI;
+const esc = (v) => String(v == null ? '' : v).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+const man = (v) => (v == null ? '-' : `${UI.won(v)}만`);
+const ROLE = { owner: ['대표', 'purple'], manager: ['매니저', 'blue'], agent: ['중개사', 'green'] };
+const ROLE_RANK = { owner: 0, manager: 1, agent: 2 };
+const LICENSE = { broker_owner: '개업공인중개사', broker_associate: '소속공인중개사', assistant: '중개보조원' };
+const PAY = { fixed: '고정급', mixed: '고정급+수수료', commission_only: '수수료제' };
+const P_ROLE = { listing_agent: '매도측 담당', buying_agent: '매수측 담당', dual_agent: '단독중개', manager: '관리자', assistant: '보조', closer: '마감 담당' };
+const P_SIDE = { seller: '매도측', buyer: '매수측', both: '양측' };
+const MAX_USERS = 5;
+// 사무소 공통 배분 기준 (설정 › 수수료 배분)
+const OFFICE = { defaultAgentRate: 50, listingAgentRate: 50, buyingAgentRate: 50, dualAgentRate: 70, managerRate: 10, closerBonus: 0 };
+const phone = (p) => (p ? p.replace(/^(\d{3})(\d{4})(\d{4})$/, '$1-$2-$3') : '');
+const ago = (m) => (m == null ? '기록 없음' : m < 60 ? `${m}분 전` : m < 1440 ? `${Math.floor(m / 60)}시간 전` : `${Math.floor(m / 1440)}일 전`);
+
+let SEQ = 0;
+const EMP = [
+  { name: '이현수', loginId: 'hyunsu', phone: '01052417788', email: 'hyunsu@estait.example', role: 'owner', active: true, licenseType: 'broker_owner', licenseNo: '11740-2021-00187', payType: 'commission_only', baseSalary: null, commissionRate: null, created: '2024.03.04', last: 12,
+    tasks: [['본계약 서류 준비', '진행중 · 긴급 · 2026.11.11'], ['주말 임장 동선 정리', '대기 · 높음 · 2026.11.11'], ['대출 한도 회신 확인', '대기 · 보통 · 2026.11.11'], ['확인설명서 초안 검토', '대기 · 보통 · 2026.11.10'], ['잔금일 등기 서류 체크', '대기 · 보통 · 2026.11.13'], ['공동중개 수수료 정산 요청서 보내기', '대기 · 보통 · 2026.11.14'], ['연말 안부 문자', '대기 · 낮음 · 2026.12.20']],
+    buyers: [['김지현', '활성 · 다음 연락 2026.11.11'], ['박준호', '활성 · 다음 연락 2026.11.13'], ['윤태경', '보류']],
+    deals: [['고덕아르테온 312동 1704호', 'dual_agent', 'both', false, 1090], ['래미안힐스테이트고덕 120동 801호', 'listing_agent', 'seller', false, 330], ['고덕그라시움 103동 3401호', 'manager', 'both', true, 150]],
+    consults: [['김지현', '전화 · 2026.11.07 14:20', '토요일 오전 임장 희망, 84㎡ 남향 위주'], ['박준호', '방문 · 2026.11.06 11:00', '대출 한도 확인 후 재연락']],
+    acts: [['Deal update', 'web · 2026.11.11 09:42'], ['Task create', 'web · 2026.11.11 09:15'], ['Listing update', 'mcp · 2026.11.10 18:03 · 광고 가격 동기화']], consultCount: 214 },
+  { name: '박서연', loginId: 'seoyeon.park', phone: '01033829914', email: 'seoyeon@estait.example', role: 'manager', active: true, licenseType: 'broker_associate', licenseNo: '11740-2022-00412', payType: 'mixed', baseSalary: 280, commissionRate: 55, created: '2024.06.17', last: 48,
+    tasks: [['신규 매물 사진 촬영', '대기 · 낮음 · 2026.11.12'], ['토요일 임장 안내 문자', '대기 · 보통 · 2026.11.14'], ['전세 갱신 특약 문구 검토', '대기 · 낮음 · 2026.11.16']],
+    buyers: [['정유나', '활성 · 다음 연락 2026.11.12'], ['최동훈', '활성'], ['서민아', '활성 · 다음 연락 2026.11.18'], ['강태오', '완료']],
+    deals: [['고덕센트럴아이파크 104동 2203호', 'buying_agent', 'buyer', false, 180], ['고덕그라시움 117동 1203호', 'dual_agent', 'both', true, 240]],
+    consults: [['정유나', '전화 · 2026.11.10 16:40', '전세 6억대, 초등학교 도보권'], ['서민아', '온라인 · 2026.11.09 10:12', '월세 전환 문의']],
+    acts: [['Consultation create', 'web · 2026.11.11 09:06'], ['Property update', 'web · 2026.11.10 15:30']], consultCount: 167 },
+  { name: '최민준', loginId: 'minjun', phone: '01077156203', email: '', role: 'agent', active: true, licenseType: 'broker_associate', licenseNo: '11740-2023-00098', payType: 'mixed', baseSalary: 220, commissionRate: null, created: '2025.01.06', last: 190,
+    tasks: [['세입자 계약 만기 안내', '대기 · 보통 · 2026.11.09'], ['네이버 광고 순위 확인', '대기 · 낮음 · 2026.11.12'], ['매수 조건 재상담', '진행중 · 보통 · 2026.11.17'], ['12월 재오픈 가격 협의', '대기 · 낮음 · 2026.12.01']],
+    buyers: [['오세훈', '활성 · 다음 연락 2026.11.17'], ['한승우', '활성']],
+    deals: [['고덕자이 104동 703호', 'listing_agent', 'seller', false, 96]],
+    consults: [['오세훈', '전화 · 2026.11.10 13:05', '예산 상향 가능 여부 확인 예정']],
+    acts: [['BuyerRequirement update', 'web · 2026.11.11 06:50'], ['Match update', 'web · 2026.11.10 17:22']], consultCount: 88 },
+  { name: '정다은', loginId: 'daeun.j', phone: '01090457731', email: 'daeun@estait.example', role: 'agent', active: true, licenseType: 'assistant', licenseNo: '', payType: 'fixed', baseSalary: 240, commissionRate: null, created: '2025.09.01', last: 1500,
+    tasks: [['이실장 광고 재등록', '진행중 · 높음 · 2026.11.11'], ['집주인 가격 재확인', '대기 · 높음 · 2026.11.08']],
+    buyers: [],
+    deals: [],
+    consults: [['이정숙', '전화 · 2026.11.08 10:30', '해외 체류 중, 카톡으로 가격 회신 예정']],
+    acts: [['Task update', 'mcp · 2026.11.10 08:55 · 광고 작업 선점'], ['Listing update', 'web · 2026.11.09 14:12']], consultCount: 31 },
+  { name: '김도윤', loginId: 'doyun.kim', phone: '01026680045', email: '', role: 'agent', active: false, licenseType: '', licenseNo: '', payType: 'mixed', baseSalary: 200, commissionRate: 45, created: '2024.11.11', last: 60480,
+    tasks: [], buyers: [], deals: [['고덕자이 108동 1902호', 'buying_agent', 'buyer', false, 120]], consults: [], acts: [['User update', 'web · 2026.09.30 18:00 · 퇴사 처리']], consultCount: 54 },
+].map((e) => ({ id: ++SEQ, ...e }));
+
+const cntOf = (e) => ({ task: e.tasks.length, buyer: e.buyers.filter((b) => /^활성/.test(b[1])).length, deal: e.deals.length, unsettled: e.deals.filter((d) => !d[3]).length });
+const F = { q: '', status: '', role: '', load: '' };
+const state = { sel: null, tab: 'account', sort: null, shut: new Set() };
+const drafts = new Map();
+const FIELDS = ['name', 'phone', 'email', 'licenseType', 'licenseNo', 'payType', 'baseSalary', 'commissionRate'];
+const toDraft = (e) => ({ name: e.name, phone: e.phone || '', email: e.email || '', licenseType: e.licenseType || '', licenseNo: e.licenseNo || '', payType: e.payType, baseSalary: e.baseSalary != null ? String(e.baseSalary) : '', commissionRate: e.commissionRate != null ? String(e.commissionRate) : '' });
+const draftOf = (e) => drafts.get(e.id) || toDraft(e);
+const isDirty = (e) => { const d = drafts.get(e.id); if (!d) return false; const b = toDraft(e); return FIELDS.some((k) => d[k] !== b[k]); };
+
+const LOAD = { hasTasks: ['진행 업무 있음', (e) => cntOf(e).task > 0], hasDeals: ['진행 거래 있음', (e) => cntOf(e).deal > 0], hasUnsettled: ['미정산 있음', (e) => cntOf(e).unsettled > 0] };
+function match(e) {
+  if (F.status && (F.status === 'active') !== e.active) return false;
+  if (F.role && e.role !== F.role) return false;
+  if (F.load && !LOAD[F.load][1](e)) return false;
+  const q = F.q.trim().toLowerCase();
+  return !q || [e.name, e.loginId, e.phone, phone(e.phone), e.email].join(' ').toLowerCase().includes(q);
+}
+const SORT = { name: (e) => e.name, role: (e) => ROLE_RANK[e.role], task: (e) => cntOf(e).task, buyer: (e) => cntOf(e).buyer, deal: (e) => cntOf(e).deal, unsettled: (e) => cntOf(e).unsettled, last: (e) => (e.last == null ? Infinity : e.last) };
+function sorted(list) {
+  if (!state.sort) return list;
+  const f = SORT[state.sort.key];
+  return [...list].sort((a, b) => { const x = f(a), y = f(b); return (typeof x === 'string' ? x.localeCompare(y, 'ko') : x - y) * state.sort.dir; });
+}
+const activeCount = () => EMP.filter((e) => e.active).length;
+
+const COLS = [
+  ['user', '이름', 'name', ''], ['tag', '역할', 'role', ''], ['info', '계정 상태', '', ''], ['bookUser', '로그인 ID', '', 'opt'], ['file', '자격 구분', '', 'opt'], ['phone', '연락처', '', 'opt'],
+  ['todo', '업무', 'task', 'r'], ['users', '고객', 'buyer', 'r'], ['handshake', '거래', 'deal', 'r'], ['wallet', '미정산', 'unsettled', 'r'], ['clock', '최근 활동', 'last', 'r opt'],
+];
+function rowHtml(e) {
+  const c = cntOf(e);
+  const num = (v, cls = '') => `<td class="num ${v ? cls : 'zero'}">${v}</td>`;
+  return `<tr data-id="${e.id}" class="${state.sel === e.id ? 'picked' : ''} ${e.active ? '' : 'off'}">
+    <td class="nm"><span class="who">${av(e.name)}${esc(e.name)}${e.name === '이현수' ? ' <span class="t3" style="font-weight:400">(나)</span>' : ''}</span></td>
+    <td><button class="cellb" data-role aria-label="역할: ${ROLE[e.role][0]}"><span class="tag ${ROLE[e.role][1]}">${ROLE[e.role][0]}</span>${icon('chevDown')}</button></td>
+    <td><button class="cellb" data-act aria-label="계정 상태: ${e.active ? '활성' : '비활성'}"><span class="st ${e.active ? 'ok' : 'hold'}">${e.active ? '활성' : '비활성'}</span>${icon('chevDown')}</button></td>
+    <td class="opt t2">${esc(e.loginId)}</td>
+    <td class="opt ${e.licenseType ? '' : 't3'}">${LICENSE[e.licenseType] || '자격 미지정'}</td>
+    <td class="opt ${e.phone || e.email ? 't2' : 't3'}" style="font-variant-numeric:tabular-nums">${e.phone ? phone(e.phone) : esc(e.email) || '연락처 미등록'}</td>
+    ${num(c.task)}${num(c.buyer)}${num(c.deal)}${num(c.unsettled, 'warn-t')}
+    <td class="r opt t2">${ago(e.last)}</td>
+    <td class="c-act"><button class="ib" data-more aria-label="${esc(e.name)} 작업 메뉴">${icon('more')}</button></td>
+  </tr>`;
+}
+function tableHtml(list) {
+  if (!list.length) {
+    return EMP.length ? `<div class="empty"><b>조건에 맞는 직원이 없습니다</b>검색어나 필터를 바꾸면 다른 직원을 찾을 수 있습니다.<div style="margin-top:12px"><button class="btn sm" data-reset>검색과 필터 초기화</button></div></div>`
+      : '<div class="empty"><b>아직 등록된 직원이 없습니다</b>첫 직원을 추가해 계정과 업무를 함께 관리하세요.</div>';
+  }
+  const head = COLS.map(([ic, l, s, cls]) => { const on = state.sort && state.sort.key === s; return `<th class="${cls} ${on ? 'sorted' : ''}" ${s ? `data-sort="${s}"` : ''}>${icon(ic, 'hi')}${l}${on ? `<svg class="i caret" style="${state.sort.dir > 0 ? 'transform:rotate(180deg)' : ''}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>` : ''}</th>`; }).join('');
+  const grp = (key, label, items) => {
+    if (!items.length) return '';
+    const s = state.shut.has(key);
+    return `<tr class="grp" data-g="${key}"><td colspan="12"><div class="gh ${s ? 'shut' : ''}" role="button" tabindex="0" aria-expanded="${!s}">${icon('chevDown', 'chev')}${label}<span class="n">${items.length}명</span></div></td></tr>${s ? '' : sorted(items).map(rowHtml).join('')}`;
+  };
+  return `<table class="tbl" id="tbl"><thead><tr>${head}<th class="c-act"></th></tr></thead><tbody>${grp('active', '활성 직원', list.filter((e) => e.active))}${grp('inactive', '비활성 직원', list.filter((e) => !e.active))}</tbody></table>`;
+}
+function fselHtml() {
+  const fs = (id, k, v) => `<button class="fsel ${v ? 'on' : ''}" data-fs="${id}"><span class="k">${k}</span><span class="v">${v || '전체'}</span>${v ? `<span class="clr" data-fclr="${id}" title="지우기">${icon('x')}</span>` : icon('chevDown')}</button>`;
+  const n = [F.status, F.role, F.load].filter(Boolean).length;
+  return fs('status', '계정 상태', F.status && (F.status === 'active' ? '활성' : '비활성')) + fs('role', '역할', F.role && ROLE[F.role][0]) + fs('load', '담당', F.load && LOAD[F.load][0])
+    + `<span class="res">${EMP.filter(match).length}명 표시</span>${n || F.q ? `<button class="btn quiet sm" data-reset>${n ? `필터 ${n}개 해제` : '초기화'}</button>` : ''}`;
+}
+
+// ── 옆 상세 ──
+function miniList(items, emptyMsg) { return items.length ? items.join('') : `<div class="none">${emptyMsg}</div>`; }
+function peekHtml(e) {
+  const d = draftOf(e), c = cntOf(e);
+  const opt = (v, l, cur) => `<option value="${v}" ${v === cur ? 'selected' : ''}>${l}</option>`;
+  const fld = (k, label, attrs = '') => `<div><label for="d-${k}">${label}</label><input class="inp" id="d-${k}" data-k="${k}" value="${esc(d[k])}" ${attrs}></div>`;
+  const tabs = [['account', '계정 정보'], ['work', '업무 현황'], ['activity', '활동 기록']];
+  let body = '';
+  if (state.tab === 'account') {
+    body = `${d.licenseType === 'assistant' ? '<p class="hint warn">중개보조원 계정은 계약서에 서명할 수 없습니다.</p>' : ''}
+    <div class="sec"><div class="sec-h">기본 정보<small>${e.role === 'owner' ? '대표 계정과 중개 자격 정보를 관리합니다.' : '직원의 계정과 중개 자격 정보를 관리합니다.'}</small></div><div class="fg">
+      ${fld('name', '이름 *')}<div><label>로그인 ID</label><input class="inp" value="${esc(e.loginId)}" readonly></div>
+      ${fld('phone', '휴대폰', 'inputmode="numeric" placeholder="01012345678"')}${fld('email', '이메일', 'type="email"')}
+      <div><label for="d-licenseType">자격 구분</label><select class="inp" id="d-licenseType" data-k="licenseType">${opt('', '미지정', d.licenseType)}${Object.entries(LICENSE).map(([v, l]) => opt(v, l, d.licenseType)).join('')}</select></div>
+      ${fld('licenseNo', '자격증/등록 번호')}
+      <div><label for="d-role">역할</label><select class="inp" id="d-role" data-rolesel>${Object.entries(ROLE).map(([v, [l]]) => opt(v, l, e.role)).join('')}</select></div>
+      <div><label>계정 생성일</label><input class="inp" value="${e.created}" readonly></div>
+    </div></div>
+    <div class="sec"><div class="sec-h">급여와 배분<small>개인 배분율을 비우면 사무소 기본 정책이 적용됩니다.</small></div><div class="fg" style="grid-template-columns:1fr 1fr 1fr">
+      <div><label for="d-payType">급여 유형</label><select class="inp" id="d-payType" data-k="payType" data-redraw>${Object.entries(PAY).map(([v, l]) => opt(v, l, d.payType)).join('')}</select></div>
+      ${fld('baseSalary', '월 기본급 (만원)', d.payType === 'commission_only' ? 'disabled placeholder="수수료제"' : 'inputmode="numeric" placeholder="예: 250"')}
+      ${fld('commissionRate', '개인 배분율 (%)', d.payType === 'fixed' ? 'disabled placeholder="고정급"' : 'inputmode="decimal" placeholder="비우면 사무소 기본"')}
+    </div></div>
+    <div class="sec"><div class="sec-h">계정 보안<small>${e.role === 'owner' ? '대표 계정의 비밀번호를 새로 발급합니다.' : '직원이 잊어버린 비밀번호를 새로 발급합니다.'}</small></div>
+      <div class="row2"><div><label for="pw">새 비밀번호</label><input class="inp" id="pw" type="password" placeholder="새 비밀번호 입력" autocomplete="new-password"></div><button class="btn" data-pw disabled>${icon('refresh')}재설정</button></div></div>
+    <div class="sec"><div class="sec-h">사무소 배분 기준<small>직원 개인 배분율이 없을 때 적용하는 사무소 공통 기준입니다.</small><a href="settings.html#commission">설정에서 바꾸기</a></div>
+      <div class="kv"><div>기본 직원 배분<b>${OFFICE.defaultAgentRate}%</b></div><div>매도측 담당<b>${OFFICE.listingAgentRate}%</b></div><div>매수측 담당<b>${OFFICE.buyingAgentRate}%</b></div><div>단독중개<b>${OFFICE.dualAgentRate}%</b></div><div>관리자 배분<b>${OFFICE.managerRate}%</b></div><div>마감 보너스<b>${OFFICE.closerBonus.toLocaleString('ko-KR')}만원</b></div></div></div>`;
+  } else if (state.tab === 'work') {
+    const total = e.deals.reduce((s, x) => s + (x[4] || 0), 0);
+    body = `<div class="sec"><div class="sec-h">누적 실적<small>상담과 거래 참여 기준으로 집계됩니다.</small><a href="cashflow-settlements.html">정산 현황</a></div>
+      <div class="kv" style="grid-template-columns:1fr 1fr"><div>누적 상담<b>${e.consultCount}건</b></div><div>참여 수수료 합계<b>${man(total)}</b></div></div></div>
+    <div class="sec"><div class="sec-h">${icon('todo')}담당 업무<span class="n">${e.tasks.length}</span></div>${miniList(e.tasks.map(([t, m]) => `<a class="mini" href="tasks.html"><span class="grow"><b>${esc(t)}</b></span><span class="d">${m}</span>${icon('chevRight')}</a>`), '담당 업무가 없습니다.')}</div>
+    <div class="sec"><div class="sec-h">${icon('users')}담당 고객<span class="n">${e.buyers.length}</span></div>${miniList(e.buyers.map(([n, m]) => `<a class="mini" href="customers.html"><span class="grow"><b>${esc(n)}</b></span><span class="d">${m}</span>${icon('chevRight')}</a>`), '담당 고객이 없습니다.')}</div>
+    <div class="sec"><div class="sec-h">${icon('handshake')}거래 참여와 배분<span class="n">${e.deals.length}</span></div>${miniList(e.deals.map(([s, r, side, settled, amt]) => `<a class="mini" href="deals.html"><span class="grow"><b>${esc(s)}</b></span><span class="d">${P_ROLE[r]} · ${P_SIDE[side]}</span><span class="st ${settled ? 'ok' : 'warn'}">${settled ? '정산완료' : '미정산'}</span><span class="d" style="width:64px;text-align:right;color:var(--text)">${man(amt)}</span>${icon('chevRight')}</a>`), '참여 중인 거래가 없습니다.')}</div>`;
+  } else {
+    body = `<div class="sec"><div class="sec-h">${icon('msg')}최근 상담<span class="n">${e.consults.length}</span></div>${miniList(e.consults.map(([n, m, t]) => `<a class="mini" href="consultations.html" title="${esc(t)}"><b>${esc(n)}</b><span class="grow t2">${esc(t)}</span><span class="d">${m}</span></a>`), '최근 상담이 없습니다.')}</div>
+    <div class="sec"><div class="sec-h">${icon('clock')}최근 활동<span class="n">${e.acts.length}</span></div>${miniList(e.acts.map(([t, m]) => `<div class="mini" style="cursor:default"><span class="grow"><b>${esc(t)}</b></span><span class="d">${esc(m)}</span></div>`), '최근 활동 로그가 없습니다.')}</div>`;
+  }
+  return `<div class="peek-bar"><button class="ib" data-close aria-label="직원 목록으로">${icon('chevsRight')}</button><span class="crumb">직원 목록 › 상세</span><span class="sp"></span>
+      <button class="btn sm ${e.active ? 'dangerb' : ''}" data-toggle>${e.active ? '계정 비활성화' : '계정 재활성화'}</button><button class="btn primary sm" data-save ${isDirty(e) ? '' : 'disabled'}>변경 저장</button></div>
+    <div class="peek-body">
+      <h2>${av(e.name, 'md')}${esc(e.name)}</h2>
+      <div class="lead"><span class="tag ${ROLE[e.role][1]}">${ROLE[e.role][0]}</span><span class="st ${e.active ? 'ok' : 'hold'}">${e.active ? '활성' : '비활성'}</span><span class="sep">·</span>${LICENSE[e.licenseType] || '자격 미지정'}<span class="sep">·</span>최근 활동 ${e.last == null ? '없음' : ago(e.last)}</div>
+      <div class="stats"><div>진행 업무<b>${c.task}건</b></div><div>담당 고객<b>${c.buyer}건</b></div><div>진행 거래<b>${c.deal}건</b></div><div class="${c.unsettled ? 'warnv' : ''}">미정산 참여<b>${c.unsettled}건</b></div></div>
+      <div class="seg" role="tablist" aria-label="직원 상세 구역">${tabs.map(([k, l]) => `<button role="tab" data-tab="${k}" class="${state.tab === k ? 'on' : ''}">${l}</button>`).join('')}</div>
+      ${body}
+    </div>`;
+}
+function renderPeek() {
+  const e = EMP.find((x) => x.id === state.sel);
+  const peek = document.getElementById('peek');
+  document.getElementById('split').classList.toggle('peeking', !!e);
+  peek.hidden = !e;
+  if (e) peek.innerHTML = peekHtml(e);
+}
+function renderList() {
+  const list = EMP.filter(match);
+  document.getElementById('body').innerHTML = tableHtml(list);
+  document.getElementById('fsels').innerHTML = fselHtml();
+  const a = activeCount();
+  document.getElementById('total').textContent = `${EMP.length}명`;
+  document.getElementById('slotN').textContent = `${a}/${MAX_USERS}명`;
+  const bar = document.getElementById('slotBar');
+  bar.classList.toggle('full', a >= MAX_USERS);
+  bar.firstElementChild.style.width = `${Math.min(100, (a / MAX_USERS) * 100)}%`;
+  const act = EMP.filter((e) => e.active).map(cntOf);
+  const sum = (k) => act.reduce((s, c) => s + c[k], 0);
+  document.getElementById('foot').innerHTML = `<span>운영 요약</span><span>활성 계정<b>${a}/${MAX_USERS}명</b></span><span>비활성 계정<b>${EMP.length - a}명</b></span><span>진행 업무<b>${sum('task')}건</b></span><span>담당 고객<b>${sum('buyer')}명</b></span><span>진행 거래<b>${sum('deal')}건</b></span><span class="grow"></span><a href="cashflow-settlements.html" style="color:inherit;text-decoration:none">직원 정산 · 미정산 참여<b class="${EMP.reduce((s, e) => s + cntOf(e).unsettled, 0) ? 'warn-t' : ''}">${EMP.reduce((s, e) => s + cntOf(e).unsettled, 0)}건</b></a>`;
+}
+function render() { renderList(); renderPeek(); }
+
+// ── 창 ──
+function dialog(html, onSubmit, cls = '', onCancel) {
+  const back = document.createElement('div');
+  back.className = 'mback';
+  back.innerHTML = `<form class="mdl ${cls}" role="dialog">${html}</form>`;
+  document.body.append(back);
+  const close = (cancelled) => { back.remove(); document.removeEventListener('keydown', onKey, true); if (cancelled && onCancel) onCancel(); };
+  const onKey = (e) => { if (e.isComposing || e.keyCode === 229) return; if (e.key === 'Escape') { e.stopPropagation(); close(true); } };
+  document.addEventListener('keydown', onKey, true);
+  back.addEventListener('mousedown', (e) => { if (e.target === back) close(true); });
+  back.addEventListener('click', (e) => { if (e.target.closest('[data-x]')) close(true); });
+  back.querySelector('form').addEventListener('submit', (e) => { e.preventDefault(); if (onSubmit(back) !== false) close(false); });
+  const first = back.querySelector('input, select, button.primary');
+  if (first) first.focus();
+  return back;
+}
+const confirmDlg = (title, desc, ok, run, danger, onCancel) => dialog(`<h3>${title}</h3><p class="desc">${desc}</p><div class="mf"><button type="button" class="btn" data-x>닫기</button><button class="btn ${danger ? 'dangerb' : 'primary'}">${ok}</button></div>`, run, 'sm', onCancel);
+
+const bump = (e, k) => ((e._rev = e._rev || {})[k] = (e._rev[k] || 0) + 1);
+function fresh(e, k, v) { if (EMP.includes(e) && e._rev && e._rev[k] === v) return true; UI.toast('그 뒤에 다시 바뀌어서 되돌리지 않았습니다'); return false; }
+const owners = () => EMP.filter((x) => x.role === 'owner' && x.active);
+function changeRole(e, role) {
+  if (e.role === role) return;
+  if (e.role === 'owner' && e.active && owners().length === 1) { UI.toast('사무소의 마지막 대표 계정은 역할을 바꿀 수 없습니다'); return renderPeek(); }
+  confirmDlg('역할 변경', `${esc(e.name)}님의 역할을 '${ROLE[role][0]}'(으)로 변경합니다. 접근 권한이 즉시 변경됩니다.${role === 'owner' ? ' 대표 권한을 부여하면 사무소 핵심 설정까지 변경할 수 있습니다.' : ''}`, '변경', () => {
+    const prev = e.role; e.role = role; const v = bump(e, 'role'); render();
+    UI.toast(`역할이 '${ROLE[role][0]}'(으)로 변경되었습니다.`, () => { if (!fresh(e, 'role', v)) return; e.role = prev; bump(e, 'role'); render(); });
+  }, false, renderPeek); // 취소하면 상세의 역할 선택을 원래 값으로 되돌린다
+}
+function toggleActive(e) {
+  if (e.active && e.role === 'owner' && owners().length === 1) return UI.toast('대표(owner) 계정입니다. 사무소의 마지막 대표 계정은 비활성화할 수 없습니다.');
+  if (!e.active && activeCount() >= MAX_USERS) return UI.toast(`최대 사용자 수(${MAX_USERS}명)에 도달했습니다. 직원을 비활성화하거나 플랜을 업그레이드한 후 재활성화하세요.`);
+  const c = cntOf(e);
+  const apply = () => {
+    e.active = !e.active; const v = bump(e, 'active'); render();
+    UI.toast(e.active ? '계정이 재활성화되었습니다.' : '계정이 비활성화되었습니다.', () => { if (!fresh(e, 'active', v)) return; e.active = !e.active; bump(e, 'active'); render(); });
+  };
+  if (e.active) confirmDlg('계정 비활성화', `${esc(e.name)}님 계정을 비활성화하면 더 이상 로그인할 수 없습니다.${c.task || c.deal ? `<br><span class="warn-t">진행 중 업무 ${c.task}건 · 거래 ${c.deal}건이 있습니다. 비활성화 전에 다른 직원에게 인계하세요.</span>` : ''}`, '비활성화', apply, true);
+  else confirmDlg('계정 재활성화', `${esc(e.name)}님 계정을 재활성화하면 즉시 로그인과 업무 배정이 가능해집니다.`, '재활성화', apply);
+}
+function saveDetail(e) {
+  const d = draftOf(e);
+  if (!d.name.trim()) return UI.toast('이름을 입력하세요.');
+  if (d.payType !== 'commission_only' && d.baseSalary !== '' && !/^\d+$/.test(d.baseSalary.trim())) return UI.toast('기본급은 0 이상의 정수(만원)로 입력하세요.');
+  if (d.payType !== 'fixed' && d.commissionRate !== '') { const r = Number(d.commissionRate); if (!Number.isFinite(r) || r < 0 || r > 100) return UI.toast('수수료 배분율은 0~100 사이로 입력하세요.'); }
+  Object.assign(e, { name: d.name.trim(), phone: d.phone.replace(/\D/g, ''), email: d.email.trim(), licenseType: d.licenseType, licenseNo: d.licenseNo.trim(), payType: d.payType,
+    baseSalary: d.payType === 'commission_only' || d.baseSalary === '' ? null : Number(d.baseSalary), commissionRate: d.payType === 'fixed' || d.commissionRate === '' ? null : Number(d.commissionRate) });
+  drafts.delete(e.id);
+  render();
+  UI.toast('직원 정보가 저장되었습니다.');
+}
+function openCreate() {
+  const full = activeCount() >= MAX_USERS;
+  const opt = (v, l, cur) => `<option value="${v}" ${v === cur ? 'selected' : ''}>${l}</option>`;
+  const back = dialog(`<h3>새 직원 추가</h3><p class="desc">직원이 사용할 로그인 ID와 초기 비밀번호를 입력합니다. 직원 슬롯 ${activeCount()}/${MAX_USERS} 사용 중입니다.</p>
+    ${full ? `<p class="desc warn-t">최대 사용자 수(${MAX_USERS}명)에 도달했습니다. 직원을 비활성화하거나 플랜을 업그레이드한 후 추가하세요.</p>` : ''}
+    <div class="mb"><div class="fg">
+      <div><label for="c-name">이름 *</label><input class="inp" id="c-name"></div><div><label for="c-login">로그인 ID *</label><input class="inp" id="c-login" autocomplete="off"></div>
+      <div><label for="c-phone">휴대폰</label><input class="inp" id="c-phone" inputmode="numeric" placeholder="01012345678"></div><div><label for="c-email">이메일</label><input class="inp" id="c-email" type="email"></div>
+      <div><label for="c-role">역할</label><select class="inp" id="c-role">${Object.entries(ROLE).map(([v, [l]]) => opt(v, l, 'agent')).join('')}</select></div><div><label for="c-pw">초기 비밀번호 *</label><input class="inp" id="c-pw" type="password" autocomplete="new-password"></div>
+      <div><label for="c-lt">자격 구분</label><select class="inp" id="c-lt">${opt('', '미지정', '')}${Object.entries(LICENSE).map(([v, l]) => opt(v, l, '')).join('')}</select><p class="hint warn" id="c-warn" hidden>중개보조원은 계약서에 서명할 수 없습니다.</p></div><div><label for="c-ln">자격증/등록 번호</label><input class="inp" id="c-ln"></div>
+    </div></div><div class="mf"><button type="button" class="btn" data-x>닫기</button><button class="btn primary" id="c-ok" disabled>생성</button></div>`, (b) => {
+    const g = (id) => b.querySelector('#' + id).value.trim();
+    if (EMP.some((x) => x.loginId === g('c-login'))) { UI.toast('이미 사용 중인 로그인 ID입니다.'); return false; }
+    const e = { id: ++SEQ, name: g('c-name'), loginId: g('c-login'), phone: g('c-phone').replace(/\D/g, ''), email: g('c-email'), role: g('c-role'), active: true, licenseType: g('c-lt'), licenseNo: g('c-ln'), payType: 'mixed', baseSalary: null, commissionRate: null, created: '2026.11.11', last: null, tasks: [], buyers: [], deals: [], consults: [], acts: [], consultCount: 0 };
+    EMP.push(e); state.sel = e.id; state.tab = 'account'; render();
+    UI.toast(`${esc(e.name)}님 계정이 생성되었습니다.`);
+  });
+  const sync = () => { back.querySelector('#c-ok').disabled = full || !['c-name', 'c-login', 'c-pw'].every((id) => back.querySelector('#' + id).value.trim()); back.querySelector('#c-warn').hidden = back.querySelector('#c-lt').value !== 'assistant'; };
+  back.addEventListener('input', sync);
+  back.addEventListener('change', sync);
+}
+
+// ── 이벤트 ──
+document.querySelectorAll('[data-icon]').forEach((el) => el.insertAdjacentHTML('afterbegin', icon(el.dataset.icon)));
+document.getElementById('newBtn').innerHTML = `${icon('plus')}직원 추가`;
+document.getElementById('settleBtn').innerHTML = `${icon('wallet')}정산 현황`;
+const qEl = document.getElementById('q');
+qEl.addEventListener('input', () => { F.q = qEl.value; renderList(); });
+const setF = (k, v) => { F[k] = v; renderList(); };
+const empOf = (el) => { const r = el.closest('tr[data-id]'); return r && EMP.find((x) => x.id === +r.dataset.id); };
+function roleMenu(btn, e) { UI.menu(btn, [{ head: '역할 변경' }, ...Object.entries(ROLE).map(([v, [l, c]]) => ({ label: l, icon: 'user', on: e.role === v, run: () => changeRole(e, v) }))]); }
+
+document.addEventListener('click', (ev) => {
+  const t = ev.target;
+  if (t.closest('.mback')) return;
+  if (t.closest('#newBtn')) return openCreate();
+  if (t.closest('[data-reset]')) { Object.assign(F, { q: '', status: '', role: '', load: '' }); qEl.value = ''; return renderList(); }
+  const clr = t.closest('[data-fclr]');
+  if (clr) return setF(clr.dataset.fclr, '');
+  const fs = t.closest('[data-fs]');
+  if (fs) {
+    const id = fs.dataset.fs;
+    const opts = id === 'status' ? [['active', '활성'], ['inactive', '비활성']] : id === 'role' ? Object.entries(ROLE).map(([v, [l]]) => [v, l]) : Object.entries(LOAD).map(([v, [l]]) => [v, l]);
+    const n = (v) => String(EMP.filter((e) => { const keep = F[id]; F[id] = v; const ok = match(e); F[id] = keep; return ok; }).length);
+    return UI.menu(fs, [{ label: '전체', hint: n(''), on: !F[id], run: () => setF(id, '') }, '-', ...opts.map(([v, l]) => ({ label: l, hint: n(v), on: F[id] === v, run: () => setF(id, v) }))]);
+  }
+  const th = t.closest('th[data-sort]');
+  if (th) {
+    const k = th.dataset.sort, num = !['name', 'role'].includes(k);
+    const set = (dir) => { state.sort = dir ? { key: k, dir } : null; renderList(); };
+    const cur = state.sort && state.sort.key === k ? state.sort.dir : 0;
+    return UI.menu(th, [{ label: k === 'last' ? '최근 활동순' : num ? '적은 순' : k === 'role' ? '대표 → 중개사' : '가나다순', icon: 'sort', on: cur === 1, run: () => set(1) }, { label: k === 'last' ? '오래된 활동순' : num ? '많은 순' : k === 'role' ? '중개사 → 대표' : '가나다 역순', icon: 'sort', on: cur === -1, run: () => set(-1) }, '-', { label: '정렬 해제', icon: 'x', run: () => set(0) }]);
+  }
+  const g = t.closest('tr.grp');
+  if (g) { const k = g.dataset.g; state.shut.has(k) ? state.shut.delete(k) : state.shut.add(k); return renderList(); }
+  // 옆 상세
+  const peek = t.closest('#peek');
+  if (peek) {
+    const e = EMP.find((x) => x.id === state.sel);
+    if (t.closest('[data-close]')) { state.sel = null; return render(); }
+    const tab = t.closest('[data-tab]');
+    if (tab) { state.tab = tab.dataset.tab; return renderPeek(); }
+    if (t.closest('[data-toggle]')) return toggleActive(e);
+    if (t.closest('[data-save]')) return saveDetail(e);
+    if (t.closest('[data-pw]')) { document.getElementById('pw').value = ''; t.closest('[data-pw]').disabled = true; return UI.toast('비밀번호가 재설정되었습니다. 직원에게 전달하세요.'); }
+    return;
+  }
+  const e = empOf(t);
+  if (!e) return;
+  const rb = t.closest('[data-role]');
+  if (rb) return roleMenu(rb, e);
+  if (t.closest('[data-act]')) return toggleActive(e);
+  const more = t.closest('[data-more]');
+  if (more) return UI.menu(more, [{ label: '상세 열기', icon: 'expand', run: () => { state.sel = e.id; render(); } }, { label: '역할 변경', icon: 'tag', run: () => roleMenu(document.querySelector(`tr[data-id="${e.id}"] [data-role]`), e) }, { label: '담당 업무 보기', icon: 'todo', run: () => { location.href = 'tasks.html'; } }, '-',
+    { label: e.active ? '계정 비활성화' : '계정 재활성화', icon: e.active ? 'x' : 'check', danger: e.active, run: () => toggleActive(e) }], { right: true });
+  state.sel = state.sel === e.id ? null : e.id;
+  render();
+});
+// 상세 입력: 다시 그리지 않고 초안만 갱신한다 (입력 중 포커스 유지)
+const peekEl = document.getElementById('peek');
+function onDraft(ev) {
+  const e = EMP.find((x) => x.id === state.sel);
+  if (!e) return;
+  const el = ev.target;
+  if (el.id === 'pw') { peekEl.querySelector('[data-pw]').disabled = !el.value; return; }
+  if (el.matches('[data-rolesel]')) { if (ev.type === 'change') changeRole(e, el.value); return; }
+  if (!el.dataset.k) return;
+  const d = { ...draftOf(e), [el.dataset.k]: el.value };
+  drafts.set(e.id, d);
+  if (el.hasAttribute('data-redraw') || el.dataset.k === 'licenseType') { if (ev.type === 'change') renderPeek(); return; }
+  peekEl.querySelector('[data-save]').disabled = !isDirty(e);
+}
+peekEl.addEventListener('input', onDraft);
+peekEl.addEventListener('change', onDraft);
+document.addEventListener('keydown', (e) => {
+  if (e.isComposing || e.keyCode === 229) return;
+  const a = document.activeElement;
+  if ((e.key === 'Enter' || e.key === ' ') && a && a.matches('.gh')) { e.preventDefault(); a.click(); return; }
+  if (e.metaKey || e.ctrlKey || e.altKey || document.querySelector('.mback, .cmdk-back')) return;
+  if (a && a.matches('input, textarea, select')) { if (e.key === 'Escape' && a === qEl) { if (F.q) { qEl.value = ''; F.q = ''; renderList(); } else qEl.blur(); } return; }
+  if (e.key === '/') { e.preventDefault(); qEl.focus(); }
+  else if (e.key === 'Escape' && state.sel) { state.sel = null; render(); }
+});
+
+render();
+
+UI.notes(
+  [
+    '<b>직원 명부를 표로</b> 바꿨습니다. 이름·역할·계정 상태·로그인 ID·자격·연락처·업무·고객·거래·미정산·최근 활동을 열로 나눠 한눈에 훑고, 머리를 눌러 정렬합니다. 원본은 직원마다 세 줄짜리 묶음이었습니다.',
+    '<b>필터가 늘 보입니다.</b> 계정 상태·역할·담당(진행 업무·진행 거래·미정산 있음)을 선택 상자로 두었고, 항목마다 몇 명인지 함께 보여 줍니다.',
+    '<b>표에서 바로 바꿉니다.</b> 역할 칸을 누르면 역할 메뉴가, 계정 상태 칸을 누르면 비활성화·재활성화 확인이 열립니다. 마지막 대표 계정과 계정 슬롯 한도는 원본처럼 막습니다.',
+    '<b>상세는 옆에서</b> 엽니다. 원본은 명부가 통째로 상세 화면으로 바뀌었지만, 여기서는 명부를 둔 채 계정 정보·업무 현황·활동 기록을 오갑니다. 저장하지 않은 입력은 직원별로 남아 있습니다.',
+    '<b>운영 요약</b>(활성·비활성 계정, 진행 업무·담당 고객·진행 거래 합계, 미정산 참여)은 표 아래 한 줄로 옮겼습니다. 오른쪽 상자 하나를 차지하던 내용입니다.',
+    '<b>직원 추가 창</b>이 실제로 열리고, 필수 항목을 채워야 생성됩니다. 슬롯이 다 차면 원본처럼 안내하고 막습니다.',
+  ],
+  '원본의 검색·필터·계정 관리·급여와 배분·비밀번호 재설정·업무 현황·활동 기록을 모두 살렸습니다.',
+);
+</script>
+</body>
+</html>

@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>4 · 흐름 한 줄 — 스플래시 시안</title>
+<link rel="stylesheet" href="stage.css">
+<style>
+  .d5 { transition: clip-path 0.6s var(--inout); clip-path: inset(0 0 0 0); }
+  .d5 .wrap { position: relative; width: min(720px, 88vw); margin-top: -30px; }
+  .d5 svg.flow { width: 100%; height: auto; display: block; }
+  .d5 .track, .d5 .line { fill: none; stroke-width: 3; stroke-linecap: round; transition: opacity 0.25s; }
+  .d5 .track { stroke: var(--moss-soft); stroke-dasharray: 0.1 10; animation: d5-fade 0.5s both; }
+  .d5 .line { stroke: var(--ink); }
+  .d5 .head { fill: var(--paper); stroke: var(--ink); stroke-width: 3; transition: opacity 0.2s; }
+  .d5 .node { transition: transform 0.42s var(--inout); }
+  .d5 .node > g { transform-box: fill-box; transform-origin: center; animation: d5-node 0.6s var(--spring) calc(var(--i) * 70ms) both; }
+  @keyframes d5-node { from { transform: scale(0); } }
+  @keyframes d5-fade { from { opacity: 0; } }
+  .d5 .node circle { fill: #fff; stroke: var(--moss-soft); stroke-width: 1.5; transition: fill 0.25s, stroke 0.25s; }
+  .d5 .node .ic { fill: none; stroke: var(--muted); stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; transition: stroke 0.25s; }
+  .d5 .node text { font-size: 13px; font-weight: 500; fill: var(--muted); text-anchor: middle; letter-spacing: -0.3px; transition: fill 0.25s, opacity 0.2s; }
+  .d5 .node.on circle { fill: var(--ink); stroke: var(--ink); }
+  .d5 .node.on .ic { stroke: #fff; }
+  .d5 .node.on text { fill: var(--ink); }
+  .d5 .node.on > g { animation: d5-pop 0.5s var(--spring); }
+  @keyframes d5-pop { from { transform: scale(0.7); } }
+  .d5 .core { position: absolute; left: 50%; top: 50%; width: 96px; height: 96px; margin: -48px; transform: scale(0); }
+  .d5 .core svg { width: 100%; height: 100%; fill: var(--ink); }
+  .d5 .word { text-align: center; font-size: 19px; font-weight: 620; letter-spacing: -0.7px; margin-top: 26px; }
+  .d5 .word span { animation: d3-char 0.5s var(--pop) calc(0.4s + var(--i) * 30ms) both; }
+  @keyframes d3-char { from { transform: translateY(10px); opacity: 0; } }
+
+  .d5[data-state="ready"] .node > g, .d5[data-state="exit"] .node > g { animation: d5-hop 0.4s var(--out) calc(var(--i) * 60ms); }
+  @keyframes d5-hop { 40% { transform: translateY(-5px); } }
+  .d5.merge .head, .d5.merge .track, .d5.merge .line, .d5.merge .node text { opacity: 0; }
+  .d5.merge .node > g { transform: scale(0.2); opacity: 0; transition: transform 0.4s var(--inout), opacity 0.1s 0.3s; }
+  .d5.merge .core { transform: none; transition: transform 0.6s var(--spring) 0.26s; }
+  /* 흐름이 진행하던 방향으로 화면이 넘어간다 */
+  .d5[data-state="exit"] { clip-path: inset(0 0 0 100%); }
+  .win[data-state="exit"] .dest-in { animation: d5-slide 0.6s var(--out) both; }
+  @keyframes d5-slide { from { transform: translateX(-36px); } }
+</style>
+</head>
+<body>
+<template id="tpl">
+  <main class="splash d5">
+    <div>
+      <div class="wrap">
+        <svg class="flow" viewBox="0 0 720 230">
+          <path class="track" d="M50 110 C 120 30, 190 30, 250 100 S 380 180, 440 100 S 600 30, 670 100"/>
+          <path class="line" d="M50 110 C 120 30, 190 30, 250 100 S 380 180, 440 100 S 600 30, 670 100"/>
+          <g class="nodes"></g>
+          <circle class="head" r="6"/>
+        </svg>
+        <div class="core"><span data-logo></span></div>
+      </div>
+      <div class="word chars">에스테잇플로우</div>
+    </div>
+  </main>
+</template>
+<script>
+  const NODES = [
+    [0.0, "매물", '<path d="M12 21s-6-5.3-6-10a6 6 0 1 1 12 0c0 4.700-6 10-6 10z"/><circle cx="12" cy="11" r="2"/>'],
+    [0.345, "고객", '<circle cx="12" cy="8" r="3.500"/><path d="M5 20c0-3.600 3.100-6 7-6s7 2.400 7 6"/>'],
+    [0.67, "매칭", '<path d="M6 9h12l-3-3"/><path d="M18 15H6l3 3"/>'],
+    [1.0, "계약", '<path d="M7 3h7l4 4v14H7z"/><path d="M9.500 14l2 2 3.500-4"/>'],
+  ];
+  let line, head, len, nodes;
+  window.Demo = {
+    min: 1500, readyMs: 900, exitMs: 600,
+    mount(root) {
+      line = root.querySelector(".line");
+      head = root.querySelector(".head");
+      len = line.getTotalLength();
+      line.style.strokeDasharray = len;
+      const host = root.querySelector(".nodes");
+      nodes = NODES.map(([at, label, icon], i) => {
+        const pt = line.getPointAtLength(len * at);
+        host.insertAdjacentHTML(
+          "beforeend",
+          `<g class="node" style="--i:${i}" transform="translate(${pt.x} ${pt.y})"><g><circle r="24"/><g class="ic" transform="translate(-12 -12)">${icon}</g></g><text y="50">${label}</text></g>`,
+        );
+        return { at, el: host.lastElementChild };
+      });
+    },
+    progress(p) {
+      line.style.strokeDashoffset = len * (1 - p);
+      const pt = line.getPointAtLength(len * p);
+      head.setAttribute("cx", pt.x);
+      head.setAttribute("cy", pt.y);
+      nodes.forEach((n) => n.el.classList.toggle("on", p >= n.at - 0.015));
+    },
+    state(name, root) {
+      if (name !== "ready") return;
+      // 다시 재생하면 nodes가 새 화면 것으로 바뀌므로, 이 재생의 노드만 잡아 둔다.
+      const mine = nodes;
+      setTimeout(() => {
+        if (!root.isConnected) return;
+        root.classList.add("merge");
+        mine.forEach((n) => n.el.setAttribute("style", `${n.el.getAttribute("style")};transform:translate(360px,105px)`));
+      }, 320);
+    },
+  };
+</script>
+<script src="stage.js"></script>
+</body>
+</html>

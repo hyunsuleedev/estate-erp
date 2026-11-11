@@ -1,0 +1,805 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>광고노트 · UI 개선 데모</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="ui.css">
+<style>
+  [hidden] { display: none !important; }
+  #tbl { --row: 36px; font-size: 13px; }
+  #tbl th, #tbl td { padding-left: 6px; padding-right: 6px; }
+  #tbl th .hi { margin-right: 4px; }
+  #tbl th:first-child, #tbl td:first-child { padding-left: 20px; }
+  #tbl th:last-child, #tbl td:last-child { padding-right: 14px; }
+  #tbl td.site { max-width: 104px; overflow: hidden; text-overflow: ellipsis; }
+  #tbl td.feat { max-width: 132px; min-width: 76px; overflow: hidden; text-overflow: ellipsis; }
+  #tbl td.memo { width: 100%; max-width: 0; min-width: 96px; overflow: hidden; text-overflow: ellipsis; }
+  #tbl td.hoc { min-width: 68px; }
+  #tbl tr.gone td { color: var(--text-3); }
+  #tbl tr.gone .pr { text-decoration: line-through; text-decoration-color: var(--line-3); }
+  #tbl tr.row-open > td { background: color-mix(in srgb, var(--accent) 4%, var(--paper)); border-bottom-color: transparent; }
+  /* 바로 고치는 칸 */
+  .edit { display: inline-block; min-width: 44px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; outline: none; border-radius: 4px; padding: 2px 4px; margin: 0 -4px; cursor: text; }
+  .edit:hover { background: var(--hover); }
+  .edit:focus { background: var(--paper); box-shadow: 0 0 0 1.5px var(--accent); text-overflow: clip; }
+  .edit:empty::before { content: attr(data-ph); color: var(--text-3); opacity: 0; }
+  tr:hover .edit:empty::before, .edit:empty:focus::before { opacity: 1; }
+  /* 변동: 하락 파랑, 상승 빨강 */
+  .chg { display: inline-flex; flex-direction: column; margin-left: 6px; font-size: 12px; font-weight: 500; line-height: 1.25; font-variant-numeric: tabular-nums; vertical-align: middle; text-align: left; }
+  .pcell { display: inline-flex; align-items: center; font-weight: 600; }
+  .myad { display: inline-flex; align-items: center; gap: 5px; height: 20px; padding: 0 6px; border-radius: 4px; background: var(--tg-blue-bg); color: var(--tg-blue); font-size: 12px; font-weight: 500; font-variant-numeric: tabular-nums; }
+  .myad::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  .own { font-size: 12px; font-weight: 500; color: var(--ok); }
+  /* 랭킹 버튼 */
+  .rkb { height: 24px; display: inline-flex; align-items: center; gap: 2px; padding: 0 4px 0 6px; margin-left: -6px; border: 0; border-radius: 6px; background: transparent; font: inherit; font-size: 13px; color: var(--text-2); font-variant-numeric: tabular-nums; cursor: pointer; }
+  .rkb:hover { background: var(--hover); }
+  .rkb b { font-weight: 600; color: var(--text); }
+  .rkb.behind b { color: var(--warn); }
+  .rkb.solo b { color: var(--text-2); }
+  .rkb .i { width: 12px; height: 12px; color: var(--text-3); transition: transform 0.15s; }
+  .rkb.on { background: var(--accent-soft); }
+  .rkb.on .i { transform: rotate(180deg); }
+  /* 묶음 열 접기 */
+  .gtog { width: 18px; height: 18px; padding: 0; margin-left: 6px; border: 0; border-radius: 4px; display: inline-grid; place-items: center; vertical-align: -4px; background: var(--paper); box-shadow: inset 0 0 0 1px var(--line-3); color: var(--text-2); cursor: pointer; }
+  .gtog:hover { box-shadow: inset 0 0 0 1px var(--accent); color: var(--accent-ink); }
+  #tbl th .gtog .i { width: 12px; height: 12px; margin: 0; vertical-align: 0; color: inherit; }
+  #tbl th.gcol { background: var(--soft); }
+  #tbl td.gcol { background: color-mix(in srgb, var(--soft) 55%, var(--paper)); }
+  #tbl tbody tr:hover td.gcol { background: var(--soft); }
+  /* 필터 줄 */
+  .fbar { gap: 6px; padding: 10px var(--gutter) 10px; flex-wrap: wrap; }
+  .fsel, .fin, .ftog {
+    height: 30px; border: 0; border-radius: 8px; background: var(--paper);
+    box-shadow: inset 0 0 0 1px var(--line-2), 0 1px 2px rgba(16, 24, 40, 0.04);
+    font: inherit; font-size: 13px; color: var(--text); letter-spacing: inherit;
+    transition: box-shadow 0.12s, background-color 0.12s;
+  }
+  .fsel, .ftog { display: inline-flex; align-items: center; gap: 6px; padding: 0 8px 0 10px; cursor: pointer; white-space: nowrap; }
+  .ftog { padding: 0 10px; color: var(--text-2); }
+  .ftog .i { width: 12px; height: 12px; }
+  .fsel:hover, .fin:hover, .ftog:hover { box-shadow: inset 0 0 0 1px var(--line-3), 0 1px 2px rgba(16, 24, 40, 0.04); }
+  .fsel .k { color: var(--text-2); }
+  .fsel .v { font-weight: 500; }
+  .fsel > .i { width: 12px; height: 12px; color: var(--text-3); }
+  .fsel.on, .fin.on, .ftog.on { background: var(--accent-soft); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent); }
+  .fsel.on .k { color: var(--accent-ink); opacity: 0.75; }
+  .fsel.on .v, .fin.on, .ftog.on { color: var(--accent-ink); font-weight: 500; }
+  .fsel .clr { width: 16px; height: 16px; display: grid; place-items: center; border-radius: 4px; color: var(--accent-ink); }
+  .fsel .clr:hover { background: color-mix(in srgb, var(--accent) 18%, transparent); }
+  .fsel .clr .i { width: 11px; height: 11px; }
+  .fin { width: 58px; padding: 0 10px; outline: 0; font-variant-numeric: tabular-nums; }
+  .fin.wide { width: 150px; }
+  .fin::placeholder { color: var(--text-2); }
+  .fin:focus { box-shadow: inset 0 0 0 1px var(--accent), 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+  #fbar [data-clear] { margin-left: auto; }
+  .ph .meta .lnk.on { background: var(--accent-soft); color: var(--accent-ink); }
+  .ph .meta .lnk.on b { color: var(--accent-ink); }
+  /* 스냅샷 진행 줄 · 비교 결과 줄 */
+  .snapbar { flex: none; display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 6px var(--gutter); background: color-mix(in srgb, var(--dot-warn) 9%, var(--paper)); border-top: 1px solid var(--line-2); font-size: 13px; white-space: nowrap; }
+  .snapbar .ttl { display: inline-flex; align-items: center; gap: 7px; font-weight: 600; }
+  .snapbar .hint { color: var(--text-2); font-size: 12px; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  .snapbar .sp { flex: 1; }
+  .snapbar.res { background: color-mix(in srgb, var(--accent) 6%, var(--paper)); gap: 16px; }
+  .snapbar.res b { font-weight: 600; font-variant-numeric: tabular-nums; margin-left: 4px; }
+  /* 랭킹 상세: 행에 붙은 표 */
+  #tbl tr.exp > td { padding: 0 !important; height: auto; white-space: normal; border-right: 0; background: color-mix(in srgb, var(--accent) 4%, var(--paper)) !important; }
+  .exp-in { position: sticky; left: 0; width: min(1040px, calc(100vw - 268px)); padding: 4px 20px 16px 34px; }
+  .xcard { border-radius: 12px; background: var(--paper); box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 22%, var(--line-2)), 0 10px 24px -14px rgba(16, 24, 40, 0.2); overflow: hidden; }
+  .xhead { display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 10px 0 16px; border-bottom: 1px solid var(--line); font-size: 13px; }
+  .xhead b { font-weight: 600; }
+  .xhead .sp { flex: 1; }
+  #tbl .xt { width: 100%; border-collapse: collapse; font-size: 13px; }
+  #tbl .xt th { position: static; height: 30px; padding: 0 12px; background: transparent; border: 0; border-bottom: 1px solid var(--line); cursor: default; font-size: 12px; }
+  #tbl .xt th:hover { background: transparent; }
+  #tbl .xt td { height: 40px; padding: 0 12px; background: transparent !important; border: 0; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  #tbl .xt tbody tr:hover td { background: var(--row-hover) !important; }
+  #tbl .xt tr:last-child td { border-bottom: 0; }
+  #tbl .xt th:first-child, #tbl .xt td:first-child { padding-left: 16px; }
+  #tbl .xt td.rl { max-width: 300px; }
+  #tbl .xt .rl .l2 { font-size: 12px; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; }
+  #tbl .xt tr.off td { color: var(--text-3); }
+  #tbl .xt .xa { text-align: right; padding-right: 10px; }
+  #tbl .xt .xa .btn { display: inline-flex; vertical-align: middle; margin-left: 4px; }
+  /* 창 */
+  .dlg-back { position: fixed; inset: 0; z-index: 240; background: rgba(16, 24, 40, 0.28); display: grid; place-items: center; animation: fade 0.12s; }
+  .dlg { width: min(var(--w, 440px), calc(100vw - 32px)); max-height: calc(100vh - 64px); display: flex; flex-direction: column; border-radius: 14px; background: var(--paper); box-shadow: 0 24px 64px rgba(16, 24, 40, 0.3); }
+  .dlg h3 { margin: 0; padding: 18px 20px 6px; font-size: 16px; font-weight: 600; }
+  .dlg .dd { margin: 0; padding: 0 20px; font-size: 13px; color: var(--text-2); line-height: 1.6; }
+  .dlg .db { padding: 14px 20px 2px; overflow: auto; }
+  .dlg .df { display: flex; justify-content: flex-end; gap: 6px; padding: 16px 20px 18px; }
+  .frm { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 12px; }
+  .frm label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--text-2); }
+  .frm .w2 { grid-column: 1 / -1; }
+  .inp { height: 32px; border: 0; border-radius: 8px; padding: 0 10px; background: var(--paper); box-shadow: inset 0 0 0 1px var(--line-2); font: inherit; font-size: 13px; color: var(--text); outline: 0; min-width: 0; }
+  .inp:focus { box-shadow: inset 0 0 0 1px var(--accent), 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+  .inp.bad { box-shadow: inset 0 0 0 1px var(--danger); }
+</style>
+</head>
+<body data-active="ad-note">
+<main id="page">
+  <div class="ph">
+    <h1>광고노트</h1>
+    <div class="meta" id="cmp"></div>
+    <div class="actions" id="acts"></div>
+  </div>
+
+  <div class="vbar">
+    <div class="vtab" data-kind="sale">매매 <span class="n"></span></div>
+    <div class="vtab" data-kind="jeonse">전세 <span class="n"></span></div>
+    <div class="vtab" data-kind="monthly">월세 <span class="n"></span></div>
+    <div class="vtools">
+      <label class="field" data-icon="search" style="width:240px"><input id="q" placeholder="단지, 특징, 메모, 부동산" aria-label="광고노트 통합 검색"><kbd>⌘F</kbd></label>
+      <button class="btn quiet sm" id="sortBtn"></button>
+    </div>
+  </div>
+
+  <div class="fbar show" id="fbar">
+    <span id="fSite"></span>
+    <input class="fin" id="fDong" placeholder="동" inputmode="numeric" aria-label="동">
+    <input class="fin" id="fHo" placeholder="호" inputmode="numeric" aria-label="호">
+    <span class="vsep"></span>
+    <span id="fTog" style="display:contents"></span>
+    <span id="fRange" style="display:contents"></span>
+    <input class="fin wide" id="fFeat" placeholder="특징·메모 검색" aria-label="특징·메모 필터">
+    <button class="btn quiet sm" data-clear hidden>초기화</button>
+  </div>
+
+  <div id="snap"></div>
+
+  <div class="scroll" id="scroll">
+    <table class="tbl" id="tbl"><thead id="head"></thead><tbody id="rows"></tbody></table>
+    <div class="sumbar" id="foot"></div>
+  </div>
+</main>
+
+<script src="shell.js"></script>
+<script>
+const { icon, won } = UI;
+const ME = '에스테잇공인중개';
+const SITES = { G: '고덕그라시움', A: '고덕아르테온', R: '래미안힐스테이트고덕' };
+const KIND = { sale: '매매', jeonse: '전세', monthly: '월세' };
+const STATUS = {
+  new: ['신규', 'green', '이전 자료에 같은 매물과 광고가 없습니다.'],
+  added: ['추가', 'orange', '기존 매물에 새로운 광고가 추가됐습니다.'],
+  existing: ['기존', 'ghost', '이전 자료에도 동일한 광고가 있습니다.'],
+};
+
+// 매물: [단지, 거래, 동, 호(내가 적은 값), 타입, 전용㎡, 공급㎡, 상태, 내 메모, 광고[]]
+// 광고(네이버 노출 순서대로): [부동산, 가격·보증금, 월세, 직전 가격, 층, 방향, 특징, 확인일, 표시]
+//   표시: m 내 광고 · o 집주인 확인 · e 이번 스냅샷에 입력됨 · x 지난 비교에서 내려감
+const RAW = [
+  ['G', 'sale', '103', '3401호', '84A', 84.97, 112.4, 'existing', '', [
+    ['그라시움스타공인', 167000, 0, null, '34/35', '남향', '고층 남향, 올수리', '11.10', 'e'],
+    [ME, 168000, 0, null, '34/35', '남향', '고층 남향, 2023년 올수리', '11.10', 'moe'],
+    ['고덕탑부동산', 169000, 0, null, '고/35', '남향', '로열층, 입주 협의', '11.08', 'e']]],
+  ['G', 'sale', '109', '', '84A', 84.97, 112.4, 'existing', '', [
+    ['그라시움스타공인', 165000, 0, 170000, '고/35', '남향', '고층, 한강 일부 조망', '11.10', 'e'],
+    ['명일역공인', 166000, 0, null, '고/35', '남향', '', '11.09', 'e']]],
+  ['G', 'sale', '117', '1801호', '84B', 84.94, 113.1, 'added', '1801 확정, 동생 명의', [
+    ['고덕탑부동산', 159000, 0, null, '18/30', '남동향', '확장, 중문 설치', '11.09', 'oe'],
+    ['그라시움공인', 159000, 0, null, '중/30', '남동향', '', '11.08', 'e'],
+    ['고덕하나공인', 160000, 0, null, '중/30', '남동향', '세안고, 27.3 만기', '11.10', 'e'],
+    ['명일역공인', 161000, 0, null, '18/30', '남동향', '', '11.10', '']]],
+  ['G', 'sale', '121', '', '84A', 84.97, 112.4, 'new', '', [
+    ['명일역공인', 161000, 0, null, '중/35', '남서향', '', '11.10', 'e']]],
+  ['G', 'sale', '112', '', '84C', 84.92, 113.6, 'existing', '', [
+    ['고덕하나공인', 157000, 0, null, '중/30', '남향', '세 안고, 27.3 만기', '11.08', 'e'],
+    ['그라시움공인', 158000, 0, null, '중/30', '남향', '', '11.07', 'e']]],
+  ['G', 'sale', '109', '1101호', '84A', 84.97, 112.4, 'existing', '', [
+    ['그라시움공인', 160000, 0, null, '11/35', '남향', '확장', '11.09', 'e'],
+    [ME, 161000, 0, null, '11/35', '남향', '확장, 시스템에어컨 4대', '11.10', 'me']]],
+  ['G', 'sale', '102', '', '84B', 84.94, 113.1, 'existing', '가격 더 빠질 듯', [
+    ['그라시움공인', 151000, 0, 155000, '저/30', '동향', '저층 급매', '11.09', 'e'],
+    ['고덕탑부동산', 153000, 0, null, '저/30', '동향', '', '11.08', 'e'],
+    ['명일역공인', 155000, 0, null, '2/30', '동향', '', '11.06', '']]],
+  ['G', 'sale', '205', '', '59A', 59.78, 81.2, 'existing', '', [
+    ['그라시움스타공인', 129000, 0, null, '고/25', '남향', '올수리, 즉시 입주', '11.09', 'e'],
+    ['고덕하나공인', 130000, 0, null, '고/25', '남향', '', '11.09', 'e']]],
+  ['G', 'sale', '211', '1102호', '59A', 59.78, 81.2, 'existing', '집주인 직접 통화함', [
+    ['고덕탑부동산', 125000, 0, 128000, '11/25', '남동향', '급매, 세입자 만기 27.1', '11.10', 'oe'],
+    ['그라시움공인', 126000, 0, null, '중/25', '남동향', '', '11.10', 'e'],
+    ['명일역공인', 127000, 0, null, '중/25', '남동향', '', '11.08', 'e'],
+    ['고덕하나공인', 128000, 0, null, '11/25', '남동향', '', '11.07', 'e']]],
+  ['G', 'sale', '203', '', '59B', 59.91, 82.0, 'new', '', [
+    ['명일역공인', 127000, 0, null, '중/25', '남향', '확장, 시스템에어컨', '11.10', 'e']]],
+  ['G', 'sale', '208', '703호', '59B', 59.91, 82.0, 'existing', '실제 7층 맞음', [
+    ['그라시움공인', 122000, 0, null, '7/25', '동향', '저층 정원 조망', '11.08', ''],
+    ['고덕탑부동산', 123000, 0, null, '저/25', '동향', '', '11.08', ''],
+    ['고덕하나공인', 123500, 0, null, '저/25', '동향', '', '11.05', '']]],
+  ['G', 'sale', '206', '', '59A', 59.78, 81.2, 'existing', '', [
+    ['고덕탑부동산', 131000, 0, 129000, '고/25', '남향', '고층, 채광 좋음', '11.09', ''],
+    ['그라시움스타공인', 131500, 0, null, '고/25', '남향', '', '11.08', '']]],
+  ['G', 'sale', '121', '2502호', '99A', 99.86, 131.8, 'existing', '', [
+    [ME, 175000, 0, null, '25/35', '남향', '한강 일부 조망', '11.10', 'mo'],
+    ['그라시움스타공인', 176000, 0, null, '고/35', '남향', '', '11.09', '']]],
+  ['G', 'sale', '118', '', '99A', 99.86, 131.8, 'existing', '', [
+    ['명일역공인', 178000, 0, 175000, '고/35', '남동향', '', '11.09', '']]],
+  ['G', 'sale', '120', '', '99B', 99.91, 132.3, 'new', '', [
+    ['그라시움스타공인', 171000, 0, null, '중/35', '남향', '올수리', '11.10', ''],
+    ['고덕하나공인', 172000, 0, null, '중/35', '남향', '', '11.10', '']]],
+  ['G', 'sale', '214', '', '59A', 59.78, 81.2, 'existing', '', [
+    ['고덕하나공인', 119000, 0, null, '저/25', '서향', '', '11.05', 'x']]],
+  ['G', 'sale', '115', '', '84A', 84.97, 112.4, 'existing', '집주인 매도 보류', [
+    ['고덕탑부동산', 172000, 0, null, '고/35', '남향', '', '11.03', 'x'],
+    ['그라시움공인', 173000, 0, null, '고/35', '남향', '', '11.03', 'x']]],
+  ['A', 'sale', '312', '1704호', '84A', 84.96, 111.9, 'existing', '', [
+    [ME, 152000, 0, null, '17/29', '남향', '확장, 27.3 입주', '11.09', 'mo'],
+    ['아르테온탑공인', 152500, 0, null, '고/29', '남향', '', '11.08', '']]],
+  ['A', 'sale', '309', '', '84B', 84.93, 112.6, 'existing', '', [
+    ['아르테온탑공인', 158000, 0, 156000, '고/29', '남동향', '고층 남동향', '11.09', ''],
+    [ME, 158000, 0, null, '21/29', '남동향', '고층 남동향', '11.08', 'm'],
+    ['상일공인', 159000, 0, null, '고/29', '남동향', '', '11.07', '']]],
+  ['A', 'sale', '305', '', '59A', 59.92, 80.8, 'added', '', [
+    ['상일공인', 118000, 0, null, '저/27', '남향', '세안고, 전세 6.4억', '11.08', ''],
+    ['아르테온탑공인', 119000, 0, null, '5/27', '남향', '', '11.10', '']]],
+  ['A', 'sale', '301', '', '84A', 84.96, 111.9, 'new', '', [
+    ['고덕역공인', 155000, 0, null, '중/29', '남향', '', '11.10', 'o']]],
+  ['R', 'sale', '112', '1502호', '84C', 84.74, 108.6, 'existing', '집주인 해외 체류', [
+    ['래미안힐공인', 138000, 0, null, '15/20', '남향', '', '11.09', ''],
+    [ME, 139000, 0, null, '15/20', '남향', '공원 조망', '11.08', 'mo']]],
+  ['R', 'sale', '105', '', '84B', 84.83, 109.2, 'existing', '', [
+    ['래미안힐공인', 146000, 0, 148000, '고/20', '남향', '', '11.10', ''],
+    ['고덕역공인', 147000, 0, null, '고/20', '남향', '', '11.09', '']]],
+  ['R', 'sale', '120', '', '59A', 59.72, 78.4, 'existing', '', [
+    ['고덕역공인', 112000, 0, null, '중/20', '동향', '', '11.06', 'x']]],
+  ['G', 'jeonse', '117', '1203호', '84B', 84.94, 113.1, 'existing', '1월 말 퇴거', [
+    [ME, 78000, 0, null, '12/30', '남동향', '27.1 입주, 도배 예정', '11.10', 'mo'],
+    ['고덕탑부동산', 79000, 0, 80000, '중/30', '남동향', '', '11.09', '']]],
+  ['G', 'jeonse', '102', '', '84A', 84.97, 112.4, 'new', '', [
+    ['그라시움공인', 80000, 0, null, '고/30', '남향', '융자 없음', '11.10', '']]],
+  ['G', 'jeonse', '207', '', '59A', 59.78, 81.2, 'existing', '', [
+    ['명일역공인', 62000, 0, null, '중/25', '남향', '즉시 입주', '11.08', 'o'],
+    ['고덕하나공인', 63000, 0, null, '중/25', '남향', '', '11.08', '']]],
+  ['A', 'jeonse', '301', '1203호', '84A', 84.96, 111.9, 'existing', '', [
+    ['아르테온탑공인', 74000, 0, 75000, '12/29', '남향', '', '11.10', ''],
+    [ME, 75000, 0, null, '12/29', '남향', '27.2 입주', '11.09', 'm']]],
+  ['R', 'jeonse', '120', '801호', '84A', 84.91, 108.9, 'added', '계약일 11/14', [
+    [ME, 72000, 0, null, '8/20', '남향', '', '11.07', 'm'],
+    ['래미안힐공인', 72000, 0, null, '저/20', '남향', '', '11.10', '']]],
+  ['G', 'monthly', '205', '902호', '59A', 59.78, 81.2, 'existing', '반려동물 가능', [
+    ['그라시움공인', 10000, 180, 190, '9/25', '남향', '즉시 입주', '11.10', ''],
+    [ME, 10000, 190, null, '9/25', '남향', '반려동물 가능', '11.09', 'mo']]],
+  ['G', 'monthly', '211', '', '84B', 84.94, 113.1, 'existing', '', [
+    ['고덕탑부동산', 30000, 150, null, '저/30', '남동향', '법인 임차 가능', '11.08', ''],
+    [ME, 30000, 150, null, '3/30', '남동향', '법인 임차 선호', '11.08', 'm'],
+    ['명일역공인', 20000, 185, null, '저/30', '남동향', '', '11.06', '']]],
+  ['A', 'monthly', '305', '', '59A', 59.92, 80.8, 'new', '', [
+    ['상일공인', 20000, 130, null, '5/27', '남향', '', '11.10', '']]],
+  ['R', 'monthly', '104', '703호', '59A', 59.72, 78.4, 'existing', '12월 재오픈', [
+    ['래미안힐공인', 20000, 120, null, '7/20', '동향', '', '11.05', 'o']]],
+];
+let seq = 0;
+const GROUPS = RAW.map((g, id) => ({
+  id, site: SITES[g[0]], kind: g[1], dong: g[2], ho: g[3], type: g[4], ex: g[5], sup: g[6], status: g[7], memo: g[8], rev: 0,
+  ads: g[9].map((a) => ({
+    id: seq++, realtor: a[0], price: a[1], rent: a[2] || 0, prev: g[1] === 'monthly' ? null : a[3], prevRent: g[1] === 'monthly' ? a[3] : null,
+    floor: a[4], dir: a[5], feat: a[6], ymd: a[7], mine: a[8].includes('m'), owner: a[8].includes('o'), entered: a[8].includes('e'), active: !a[8].includes('x'), source: '네이버',
+  })),
+}));
+
+let gseq = GROUPS.length;
+const esc = (v) => String(v == null ? '' : v).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+const man = (v) => (v == null ? '' : v % 10000 ? `${won(v)}만` : won(v));
+const py = (m2) => Math.round(m2 * 0.3025);
+const SEANGO = /세\s*안고/;
+
+// ── 매물에서 뽑는 값 ──
+const act = (g) => g.ads.filter((a) => a.active);
+const mainAd = (g) => act(g)[0] || g.ads[0];
+const ownAd = (g) => act(g).find((a) => a.mine);
+const isGone = (g) => act(g).length === 0;
+const rankOf = (g, a) => act(g).indexOf(a) + 1;
+const priceMin = (g) => (act(g).length ? Math.min(...act(g).map((a) => a.price)) : null);
+const priceMax = (g) => (act(g).length ? Math.max(...act(g).map((a) => a.price)) : null);
+const adChanged = (a) => (a.prev != null && a.prev !== a.price) || (a.prevRent != null && a.prevRent !== a.rent);
+const priceChanged = (g) => act(g).some(adChanged);
+const seango = (g) => SEANGO.test(mainAd(g).feat) || SEANGO.test(g.memo);
+const floorNum = (f) => { const n = parseInt(f, 10); return Number.isNaN(n) ? { 저: -3, 중: -2, 고: -1 }[f[0]] ?? -4 : n; };
+const SORTV = {
+  myAd: (g) => (ownAd(g) ? ownAd(g).ymd : ''), owner: (g) => (mainAd(g).owner ? 1 : 0), site: (g) => g.site, dong: (g) => +g.dong || 0,
+  ho: (g) => parseInt(g.ho, 10) || 0, floor: (g) => floorNum(mainAd(g).floor), type: (g) => g.type, area: (g) => g.ex,
+  duplicate: (g) => (ownAd(g) ? rankOf(g, ownAd(g)) : 1) * 100 + act(g).length, price: (g) => mainAd(g).price * 1000 + mainAd(g).rent,
+  priceMin: (g) => priceMin(g) ?? 0, priceMax: (g) => priceMax(g) ?? 0, direction: (g) => mainAd(g).dir,
+};
+const GCOLS = ['priceMin', 'priceMax', 'direction', 'features'];
+
+// ── 범위 필터: 경계값은 이름대로 포함한다 ──
+const RANGES = {
+  price: [['5억 이하', 0, 50000], ['5억~10억', 50000, 100000], ['10억~15억', 100000, 150000], ['15억 이상', 150000, Infinity]],
+  deposit: [['1천만 이하', 0, 1000], ['1천만~3천만', 1000, 3000], ['3천만~5천만', 3000, 5000], ['5천만~1억', 5000, 10000], ['1억~3억', 10000, 30000], ['3억~5억', 30000, 50000], ['5억 이상', 50000, Infinity]],
+  rent: [['100만 이하', 0, 100], ['100만~200만', 100, 200], ['200만 이상', 200, Infinity]],
+};
+const inRange = (list, label, v) => { const r = list.find((x) => x[0] === label); return !!r && v >= r[1] && v <= r[2]; };
+
+const state = {
+  kind: 'sale', sites: ['고덕그라시움'], dong: '', ho: '', q: '', feat: '', onlyOwner: false, onlyAd: false, onlySeango: false,
+  price: null, rent: null, only: null, sort: null, collapsed: false, tab: 'new', open: new Set(), result: null,
+  // 열린 스냅샷: 단지 + 거래유형 하나에 하나
+  session: { site: '고덕그라시움', kind: 'sale', by: '박서연', at: '11. 11. 오전 9:12' },
+};
+const scopeSite = () => (state.sites.length === 1 ? state.sites[0] : null);
+const inSession = () => !!state.session && state.session.site === scopeSite() && state.session.kind === state.kind;
+const sessGroups = () => (state.session ? GROUPS.filter((g) => g.site === state.session.site && g.kind === state.session.kind) : []);
+const received = () => sessGroups().flatMap(act).filter((a) => a.entered).length;
+const pending = () => sessGroups().flatMap(act).filter((a) => !a.entered).length;
+const activeFilters = () => state.sites.length + [state.dong, state.ho, state.feat, state.price, state.rent].filter(Boolean).length + [state.onlyOwner, state.onlyAd, state.onlySeango].filter(Boolean).length;
+
+// 거래유형·단지·동·호·토글·범위·특징·검색까지 건 뒤의 매물 (비교 숫자는 이 범위에서 센다)
+function scoped() {
+  const priceList = state.kind === 'monthly' ? RANGES.deposit : RANGES.price;
+  const q = state.q.trim();
+  const feat = state.feat.trim();
+  return GROUPS.filter((g) => {
+    if (g.kind !== state.kind) return false;
+    if (state.sites.length && !state.sites.includes(g.site)) return false;
+    if (state.dong && !g.dong.startsWith(state.dong)) return false;
+    if (state.ho && !g.ho.includes(state.ho)) return false;
+    const m = mainAd(g);
+    if (state.onlyOwner && !m.owner) return false;
+    if (state.onlyAd && !ownAd(g)) return false;
+    if (state.onlySeango && !seango(g)) return false;
+    if (state.price && !inRange(priceList, state.price, m.price)) return false;
+    if (state.rent && !inRange(RANGES.rent, state.rent, m.rent)) return false;
+    if (feat && !`${m.feat} ${g.memo}`.includes(feat)) return false;
+    if (q && !`${g.site} ${g.dong}동 ${g.ho} ${g.memo} ${g.ads.map((a) => `${a.realtor} ${a.feat}`).join(' ')}`.includes(q)) return false;
+    return true;
+  });
+}
+const ONLY = {
+  new: (g) => !isGone(g) && g.status === 'new', added: (g) => !isGone(g) && g.status === 'added',
+  price: (g) => priceChanged(g), gone: isGone, mine: (g) => !!ownAd(g),
+};
+function visibleRows() {
+  let rows = scoped();
+  if (inSession()) {
+    rows = rows.filter((g) => !isGone(g) && (state.tab === 'new' ? act(g).some((a) => a.entered) : !act(g).some((a) => a.entered)));
+  }
+  if (state.only) rows = rows.filter(ONLY[state.only]);
+  if (state.sort) {
+    const { key, dir } = state.sort;
+    const f = SORTV[key];
+    rows = [...rows].sort((a, b) => { const x = f(a), y = f(b); return (typeof x === 'number' ? x - y : String(x).localeCompare(String(y), 'ko', { numeric: true })) * dir; });
+  }
+  return rows;
+}
+
+// ── 그리기 ──
+function priceHtml(a, kind) {
+  const main = kind === 'monthly' ? `${man(a.price)}<span class="t3">&nbsp;/&nbsp;</span>${a.rent || '—'}` : man(a.price);
+  const parts = [];
+  if (a.prev != null && a.prev !== a.price) parts.push(['', a.price - a.prev]);
+  if (a.prevRent != null && a.prevRent !== a.rent) parts.push(['월 ', a.rent - a.prevRent]);
+  const prevLabel = kind === 'monthly' ? `${man(a.price)} / ${a.prevRent ?? a.rent}` : man(a.prev);
+  const hint = parts.length ? `<span class="chg" title="이전 ${prevLabel}">${parts.map(([p, d]) => `<span class="${d < 0 ? 'down' : 'up'}">${p}${d < 0 ? '▼' : '▲'}${man(Math.abs(d))}</span>`).join('')}</span>` : '';
+  return `<span class="pcell"><span class="pr num">${main}</span>${hint}</span>`;
+}
+const priceLabel = () => (state.kind === 'sale' ? '매매가' : state.kind === 'jeonse' ? '전세가' : '보증금/월세');
+function columns() {
+  const keep = inSession() && state.tab === 'old';
+  const cols = [
+    ...(keep ? [{ id: 'keep', l: '유지', h: 'check' }] : []),
+    { id: 'discoveryStatus', l: '상태', h: 'info' },
+    { id: 'myAd', l: '광고', h: 'megaphone', sort: 1 },
+    { id: 'owner', l: '주인', h: 'user', sort: 1 },
+    { id: 'site', l: '단지', h: 'building', sort: 1 },
+    { id: 'dong', l: '동', h: 'list', sort: 1, r: 1 },
+    { id: 'ho', l: '호', h: 'note', sort: 1 },
+    { id: 'floor', l: '층', h: 'table', sort: 1 },
+    { id: 'type', l: '타입', h: 'tag', sort: 1 },
+    { id: 'area', l: '면적', h: 'ruler', sort: 1 },
+    { id: 'duplicate', l: '랭킹', h: 'sort', sort: 1 },
+    { id: 'price', l: priceLabel(), h: 'won', sort: 1, r: 1, anchor: 1 },
+    { id: 'priceMin', l: state.kind === 'monthly' ? '최소보증금' : '최소가', h: 'won', sort: 1, r: 1 },
+    { id: 'priceMax', l: state.kind === 'monthly' ? '최대보증금' : '최대가', h: 'won', sort: 1, r: 1 },
+    { id: 'direction', l: '방향', h: 'pin', sort: 1 },
+    { id: 'features', l: '매물특징', h: 'file' },
+    { id: 'memo', l: '내 메모', h: 'note' },
+  ];
+  return cols.filter((c) => !(state.collapsed && GCOLS.includes(c.id)));
+}
+function cell(c, g) {
+  const m = mainAd(g);
+  const own = ownAd(g);
+  const loc = `${g.dong}동 ${g.ho}`.trim();
+  switch (c.id) {
+    case 'keep': return `<td><button class="btn sm" data-keep aria-label="${esc(loc)} 매물 유지">유지</button></td>`;
+    case 'discoveryStatus': { if (isGone(g)) return '<td><span class="t3">내려감</span></td>'; const [l, cls, d] = STATUS[g.status]; return `<td><span class="tag ${cls}" title="${d}">${l}</span></td>`; }
+    case 'myAd': return `<td>${own ? `<span class="myad" title="내 광고 게시일 2026.${own.ymd}">${own.ymd}</span>` : ''}</td>`;
+    case 'owner': return `<td>${m.owner ? '<span class="own" title="집주인 확인 광고">집주인</span>' : ''}</td>`;
+    case 'site': return `<td class="site" title="${g.site}">${g.site}</td>`;
+    case 'dong': return `<td class="r num">${g.dong}</td>`;
+    case 'ho': return `<td class="hoc"><span class="edit num" contenteditable="plaintext-only" data-field="ho" data-ph="호 입력" aria-label="${g.dong}동 호수">${esc(g.ho)}</span></td>`;
+    case 'floor': return `<td class="t2 num">${m.floor}</td>`;
+    case 'type': return `<td class="t2">${g.type}</td>`;
+    case 'area': return `<td class="t2 num" title="전용 ${py(g.ex)}평 · 공급 ${py(g.sup)}평">${py(g.ex)}/${py(g.sup)}평</td>`;
+    case 'duplicate': {
+      const n = act(g).length;
+      if (!n) return '<td class="t3">—</td>';
+      const rank = own ? rankOf(g, own) : 1;
+      const on = state.open.has(g.id);
+      return `<td><button class="rkb ${on ? 'on' : ''} ${own && rank > 1 ? 'behind' : n > 1 ? '' : 'solo'}" data-rank aria-expanded="${on}" title="${own ? '내 광고' : '대표 광고'} ${rank}위, 동일주소 ${n}개 · ${on ? '접기' : '펼치기'}"><b>${rank}</b>/${n}${icon('chevDown')}</button></td>`;
+    }
+    case 'price': return `<td class="r">${priceHtml(m, g.kind)}</td>`;
+    case 'priceMin': return `<td class="r t2 num gcol">${man(priceMin(g)) || '—'}</td>`;
+    case 'priceMax': return `<td class="r t2 num gcol">${man(priceMax(g)) || '—'}</td>`;
+    case 'direction': return `<td class="t2 gcol">${m.dir}</td>`;
+    case 'features': return `<td class="feat gcol" title="${esc(m.feat)}">${seango(g) ? '<span class="tag">세안고</span> ' : ''}${esc(m.feat)}</td>`;
+    case 'memo': return `<td class="memo"><span class="edit" contenteditable="plaintext-only" data-field="memo" data-ph="메모" aria-label="${esc(loc)} 내 메모">${esc(g.memo)}</span></td>`;
+  }
+  return '<td></td>';
+}
+function rankPanel(g, span) {
+  const ins = inSession();
+  const list = ins ? g.ads.filter((a) => a.active) : act(g);
+  const low = priceMin(g);
+  const hasEntered = list.some((a) => a.entered);
+  return `<tr class="exp" data-exp="${g.id}"><td colspan="${span}"><div class="exp-in"><div class="xcard">
+    <div class="xhead"><b>동일주소 광고 ${list.length}건</b><span class="t2">· 노출 순서 비교</span><span class="sp"></span>
+      ${ins && hasEntered ? `<button class="btn sm" data-addad>${icon('plus')}동일 광고 추가</button>` : ''}
+      <button class="ib" data-rank aria-label="접기">${icon('x')}</button></div>
+    <table class="xt"><thead><tr><th>순위</th><th>주인</th><th>부동산</th><th>가격</th><th>확인일</th><th>출처</th>${ins ? '<th style="text-align:right">이번 스냅샷</th>' : ''}</tr></thead><tbody>
+    ${list.map((a, i) => `<tr data-ad="${a.id}">
+      <td class="num"><b>${i + 1}위</b></td>
+      <td>${a.owner ? '<span class="own">집주인</span>' : ''}</td>
+      <td class="rl"><div>${esc(a.realtor)}${i === 0 ? ' <span class="tag" title="표에 표시되는 대표 광고">대표</span>' : ''}${a.mine ? ' <span class="tag blue">내 광고</span>' : ''}</div>${a.feat ? `<div class="l2">${esc(a.feat)}</div>` : ''}</td>
+      <td>${priceHtml(a, g.kind)}${a.price === low ? ' <span class="tag green">최저</span>' : ''}</td>
+      <td class="t2 num">2026.${a.ymd}</td>
+      <td><a class="tr-link t2" data-src>${a.source} ${icon('arrowUpRight')}</a></td>
+      ${ins ? `<td class="xa"><span class="tag ${a.entered ? 'green' : ''}">${a.entered ? '입력됨' : '미입력'}</span><button class="btn sm" data-adedit aria-label="${esc(a.realtor)} 광고 ${a.entered ? '수정' : '다시 입력'}">${a.entered ? '수정' : '다시 입력'}</button>${a.entered ? `<button class="btn sm" data-addel aria-label="${esc(a.realtor)} 광고 삭제">삭제</button>` : ''}</td>` : ''}
+    </tr>`).join('') || `<tr><td colspan="7" class="t3">이 주소에 입력된 광고가 없습니다.</td></tr>`}
+    </tbody></table></div></div></td></tr>`;
+}
+
+function render() {
+  const ins = inSession();
+  const cols = columns();
+  if (state.sort && !cols.some((c) => c.id === state.sort.key)) state.sort = null;
+  const base = scoped();
+  const rows = visibleRows();
+
+  // 제목 줄: 비교 숫자(누르면 그 행만) + 스냅샷 시작 · 광고 입력
+  const stats = [['new', '신규', 'ok'], ['added', '추가', 'warn'], ['price', '가격 변경', 'danger'], ['gone', '내려감', ''], ['mine', '내 광고', 'accent']];
+  const pool = ins ? base.filter((g) => !isGone(g)) : base;
+  document.getElementById('cmp').innerHTML = stats.filter(([k]) => !(ins && k === 'gone'))
+    .map(([k, l, c]) => `<span class="lnk ${state.only === k ? 'on' : ''}" data-only="${k}" role="button" tabindex="0"><span class="dot ${c}"></span>${l} <b>${pool.filter(ONLY[k]).length}</b></span>`).join('');
+  const canStart = scopeSite() && !ins && !(state.session && state.session.site === scopeSite() && state.session.kind === state.kind);
+  document.getElementById('acts').innerHTML = `${canStart ? `<button class="btn" id="startBtn" title="${scopeSite()} · ${KIND[state.kind]} 스냅샷을 엽니다">${icon('clock')}스냅샷 시작</button>` : ''}<button class="btn primary" id="manualBtn">${icon('plus')}광고 입력</button>`;
+
+  document.querySelectorAll('.vtab[data-kind]').forEach((t) => {
+    t.classList.toggle('on', t.dataset.kind === state.kind);
+    t.querySelector('.n').textContent = GROUPS.filter((g) => g.kind === t.dataset.kind && !isGone(g) && (!state.sites.length || state.sites.includes(g.site))).length;
+  });
+  const sb = document.getElementById('sortBtn');
+  sb.classList.toggle('active', !!state.sort);
+  sb.innerHTML = `${icon('sort')}정렬${state.sort ? '<span class="cnt">1</span>' : ''}`;
+
+  // 필터 줄
+  const siteV = state.sites.length ? (state.sites.length > 1 ? `${state.sites[0]} 외 ${state.sites.length - 1}` : state.sites[0]) : '';
+  const fsel = (id, k, v) => `<button class="fsel ${v ? 'on' : ''}" data-fs="${id}"><span class="k">${k}</span><span class="v">${v || '전체'}</span>${v ? `<span class="clr" data-fclr="${id}" title="지우기">${icon('x')}</span>` : icon('chevDown')}</button>`;
+  document.getElementById('fSite').innerHTML = fsel('site', '단지', siteV);
+  const tog = (id, l) => `<button class="ftog ${state[id] ? 'on' : ''}" data-tog="${id}" aria-pressed="${state[id]}">${state[id] ? icon('check') : ''}${l}</button>`;
+  document.getElementById('fTog').innerHTML = tog('onlyOwner', '집주인') + tog('onlyAd', '내광고만') + tog('onlySeango', '세안고');
+  document.getElementById('fRange').innerHTML = fsel('price', state.kind === 'sale' ? '매매가' : state.kind === 'jeonse' ? '전세가' : '보증금', state.price) + (state.kind === 'monthly' ? fsel('rent', '월세', state.rent) : '');
+  [['fDong', 'dong'], ['fHo', 'ho'], ['fFeat', 'feat']].forEach(([id, k]) => document.getElementById(id).classList.toggle('on', !!state[k]));
+  document.querySelector('#fbar [data-clear]').hidden = activeFilters() === 0;
+
+  // 스냅샷 진행 줄 · 지난 비교 결과
+  const filtered = activeFilters() - (ins ? 1 : 0) > 0 || state.q.trim() || state.only; // 스냅샷 범위를 정하는 단지 하나는 필터로 치지 않는다
+  let snap = '';
+  if (ins) {
+    const s = state.session;
+    snap = `<div class="snapbar"><span class="ttl"><span class="dot warn"></span>스냅샷 진행 중</span>
+      <div class="seg" role="tablist" aria-label="스냅샷 입력 구분"><button class="${state.tab === 'new' ? 'on' : ''}" data-tab="new">입력됨 <span class="t3 num">${received()}</span></button><button class="${state.tab === 'old' ? 'on' : ''}" data-tab="old">미입력 <span class="t3 num">${pending()}</span></button></div>
+      <span class="hint">완료하면 입력되지 않은 광고가 내려갑니다</span><span class="sp"></span>
+      <span class="hint">${s.by} · ${s.at} 시작</span>
+      ${state.tab === 'old' ? `<button class="btn sm" id="keepAll" ${rows.length ? '' : 'disabled'}>${icon('check')}${filtered ? `표시된 ${rows.length}건 유지` : '전체 유지'}</button>` : ''}
+      <button class="btn sm" id="cancelBtn">${icon('x')}취소</button><button class="btn primary sm" id="doneBtn">${icon('check')}완료</button></div>`;
+  } else if (state.result) {
+    const r = state.result;
+    snap = `<div class="snapbar res"><span class="ttl">${icon('check')}${r.site} · ${KIND[r.kind]} 비교 결과</span><span>신규 매물<b>${r.newGroups}</b></span><span>추가된 광고<b>${r.addedListings}</b></span><span>내려간 매물<b>${r.removedGroups}</b></span><span>내려간 광고<b>${r.removedListings}</b></span><span>가격 변경<b>${r.priceChanges}</b></span><span class="sp"></span><button class="btn quiet sm" id="resClose">닫기</button></div>`;
+  }
+  document.getElementById('snap').innerHTML = snap;
+
+  // 표
+  document.getElementById('head').innerHTML = `<tr>${cols.map((c) => {
+    const s = state.sort && state.sort.key === c.id ? state.sort : null;
+    return `<th class="${c.r ? 'r' : ''} ${s ? 'sorted' : ''} ${GCOLS.includes(c.id) ? 'gcol' : ''}" ${c.sort ? `data-sort="${c.id}"` : ''} data-col="${c.id}">${icon(c.h, 'hi')}${c.l}${s ? `<svg class="i caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" style="${s.dir > 0 ? 'transform:rotate(180deg)' : ''}"><path d="m6 9 6 6 6-6"/></svg>` : ''}${c.anchor ? `<button class="gtog" data-gtog aria-label="가격 범위·특징 ${state.collapsed ? '펼치기' : '접기'}" title="최소·최대가, 방향, 매물특징 ${state.collapsed ? '펼치기' : '접기'}">${icon(state.collapsed ? 'chevRight' : 'chevLeft')}</button>` : ''}<span class="rz"></span></th>`;
+  }).join('')}</tr>`;
+  document.getElementById('rows').innerHTML = rows.length
+    ? rows.map((g) => `<tr data-id="${g.id}" class="${isGone(g) ? 'gone' : ''} ${state.open.has(g.id) ? 'row-open' : ''}">${cols.map((c) => cell(c, g)).join('')}</tr>${state.open.has(g.id) ? rankPanel(g, cols.length) : ''}`).join('')
+    : `<tr><td colspan="${cols.length}" style="border:0"><div class="empty">${emptyText(filtered)}</div></td></tr>`;
+
+  const liveRows = rows.filter((g) => !isGone(g));
+  const total = (ins ? base.filter((g) => !isGone(g)) : base).length;
+  document.getElementById('foot').innerHTML = `<span>매물<b>${liveRows.length}</b>건</span><span>광고<b>${liveRows.reduce((n, g) => n + act(g).length, 0)}</b>건</span>${total !== rows.length ? `<span>전체 매물<b>${total}</b>건</span>` : ''}
+    <span class="grow"></span><span>${state.only ? '제목 옆 숫자를 다시 누르면 전체로 돌아갑니다' : ins ? `${state.session.site} · ${KIND[state.session.kind]} 스냅샷 입력 중` : '마지막 완료 스냅샷 기준'}</span>`;
+}
+function emptyText(filtered) {
+  if (filtered) return '<b>필터에 맞는 매물이 없습니다</b>검색어나 필터를 바꿔 보세요';
+  if (!inSession()) return `<b>표시할 광고가 없습니다</b>${state.sites.length ? '선택한 단지에 입력된 광고가 없습니다. 단지 선택을 조정해 보세요.' : '광고를 입력하면 여기에 표시됩니다.'}`;
+  if (state.tab === 'new') return '<b>아직 입력한 광고가 없습니다</b>광고 입력으로 추가하거나, 미입력 탭에서 기존 광고를 유지하세요.';
+  return `<b>미입력 매물이 없습니다</b>${pending() ? `입력된 매물에 미입력 광고 ${pending()}건이 남아 있습니다. 입력됨 탭에서 펼쳐 확인하세요.` : '이 탭의 매물은 모두 입력됐습니다.'}`;
+}
+
+// ── 창 ──
+function dlg({ title, desc = '', body = '', okLabel = '확인', cancelLabel = '취소', width = 440, ok }) {
+  const back = document.createElement('div');
+  back.className = 'dlg-back';
+  back.innerHTML = `<div class="dlg" role="dialog" aria-modal="true" style="--w:${width}px"><h3>${title}</h3>${desc ? `<p class="dd">${desc}</p>` : ''}${body ? `<div class="db">${body}</div>` : ''}<div class="df"><button class="btn" data-x>${cancelLabel}</button><button class="btn primary" data-ok>${okLabel}</button></div></div>`;
+  document.body.append(back);
+  const close = () => back.remove();
+  const submit = () => {
+    const v = {};
+    back.querySelectorAll('[data-f]').forEach((el) => { v[el.dataset.f] = el.value.trim(); el.classList.remove('bad'); });
+    const bad = ok ? ok(v) : null;
+    if (bad) { const el = back.querySelector(`[data-f="${bad}"]`); if (el) { el.classList.add('bad'); el.focus(); } return; }
+    close();
+  };
+  back.addEventListener('mousedown', (e) => { if (e.target === back) close(); });
+  back.addEventListener('click', (e) => { if (e.target.closest('[data-x]')) close(); else if (e.target.closest('[data-ok]')) submit(); });
+  back.addEventListener('keydown', (e) => {
+    if (e.isComposing || e.keyCode === 229) return;
+    if (e.key === 'Escape') { e.stopPropagation(); close(); } else if (e.key === 'Enter' && e.target.matches('input')) { e.preventDefault(); submit(); }
+  });
+  (back.querySelector('[data-f]') || back.querySelector('[data-ok]')).focus();
+}
+const num = (s) => (/^\d+$/.test(s) ? +s : null);
+const priceFields = (kind, a) => (kind === 'monthly'
+  ? `<label>보증금 (만원)<input class="inp num" data-f="price" inputmode="numeric" placeholder="예: 5000" value="${a ? a.price : ''}"></label><label>월세 (만원)<input class="inp num" data-f="rent" inputmode="numeric" placeholder="예: 150" value="${a ? a.rent : ''}"></label>`
+  : `<label class="w2">${kind === 'sale' ? '매매가' : '전세가'} (만원)<input class="inp num" data-f="price" inputmode="numeric" placeholder="${kind === 'sale' ? '예: 158000' : '예: 80000'}" value="${a ? a.price : ''}"></label>`);
+function startSession(site, kind, by = '이현수') {
+  state.session = { site, kind, by, at: '11. 11. 오후 2:05' };
+  GROUPS.forEach((g) => { if (g.site === site && g.kind === kind) g.ads.forEach((a) => { a.entered = false; }); });
+  state.result = null;
+}
+function adDialog(g, a) {
+  dlg({
+    title: a ? (a.entered ? '광고 수정' : '광고 다시 입력') : '동일 광고 추가', width: 460,
+    desc: `${g.site} ${esc(`${g.dong}동 ${g.ho}`.trim())} · ${KIND[g.kind]}${a ? ` · ${esc(a.realtor)}` : ''}`,
+    body: `<div class="frm">${a ? '' : '<label class="w2">부동산<input class="inp" data-f="realtor" placeholder="예: 강동부동산"></label>'}${priceFields(g.kind, a)}<label class="w2">매물 특징<input class="inp" data-f="feat" placeholder="매물 특징, 확인 사항 등" value="${a ? esc(a.feat) : ''}"></label></div>`,
+    okLabel: a ? '저장' : '추가',
+    ok: (v) => {
+      if (!a && !v.realtor) return 'realtor';
+      const p = num(v.price);
+      if (p == null) return 'price';
+      const rent = g.kind === 'monthly' ? num(v.rent) : 0;
+      if (rent == null) return 'rent';
+      if (a) {
+        if (a.price !== p && a.prev == null && g.kind !== 'monthly') a.prev = a.price;
+        if (a.rent !== rent && a.prevRent == null) a.prevRent = a.rent;
+        a.price = p; a.rent = rent; a.feat = v.feat; a.entered = true; a.ymd = '11.11';
+        UI.toast(`${a.realtor} 광고를 입력했습니다`);
+      } else {
+        g.ads.push({ id: seq++, realtor: v.realtor, price: p, rent, prev: null, prevRent: null, floor: mainAd(g).floor, dir: mainAd(g).dir, feat: v.feat, ymd: '11.11', mine: v.realtor === ME, owner: false, entered: true, active: true, fresh: true, source: '직접 입력' });
+        if (g.status === 'existing') g.status = 'added';
+        UI.toast('동일 광고를 추가했습니다. 대표 광고는 바뀌지 않습니다');
+      }
+      g.rev += 1;
+      render();
+    },
+  });
+}
+function manualDialog() {
+  const site = scopeSite() || Object.values(SITES)[0];
+  dlg({
+    title: '광고 입력', width: 520,
+    desc: '직접 본 광고를 적습니다. 열린 스냅샷이 없으면 이 단지·거래유형의 스냅샷을 새로 엽니다.',
+    body: `<div class="frm">
+      <label>단지<select class="inp" data-f="site">${Object.values(SITES).map((s) => `<option ${s === site ? 'selected' : ''}>${s}</option>`).join('')}</select></label>
+      <label>거래유형<select class="inp" data-f="kind">${Object.entries(KIND).map(([k, l]) => `<option value="${k}" ${k === state.kind ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+      <label>동<input class="inp num" data-f="dong" inputmode="numeric" placeholder="예: 103"></label>
+      <label>호수<input class="inp num" data-f="ho" placeholder="예: 1503호"></label>
+      <label>층<input class="inp num" data-f="floor" placeholder="예: 15/35 또는 고/35"></label>
+      <label>방향<input class="inp" data-f="dir" placeholder="예: 남향"></label>
+      <label>가격·보증금 (만원)<input class="inp num" data-f="price" inputmode="numeric" placeholder="예: 158000"></label>
+      <label>월세 (만원, 월세일 때)<input class="inp num" data-f="rent" inputmode="numeric" placeholder="예: 150"></label>
+      <label>부동산<input class="inp" data-f="realtor" placeholder="예: 강동부동산"></label>
+      <label>타입<input class="inp" data-f="type" placeholder="예: 84A"></label>
+      <label class="w2">특징<input class="inp" data-f="feat" placeholder="매물 특징, 확인 사항 등"></label></div>`,
+    okLabel: '입력',
+    ok: (v) => {
+      if (!/^\d+$/.test(v.dong)) return 'dong';
+      const p = num(v.price);
+      if (p == null) return 'price';
+      const rent = v.kind === 'monthly' ? num(v.rent) : 0;
+      if (rent == null) return 'rent';
+      const opened = !(state.session && state.session.site === v.site && state.session.kind === v.kind);
+      if (opened && state.session) { UI.toast(`${state.session.site} · ${KIND[state.session.kind]} 스냅샷이 열려 있습니다. 먼저 완료하거나 취소해 주세요`); return 'site'; }
+      if (opened) startSession(v.site, v.kind);
+      const like = GROUPS.find((g) => g.site === v.site && g.type === v.type) || GROUPS.find((g) => g.site === v.site);
+      const realtor = v.realtor || ME;
+      GROUPS.push({ id: gseq++, site: v.site, kind: v.kind, dong: v.dong, ho: v.ho, type: v.type || like.type, ex: like.ex, sup: like.sup, status: 'new', memo: '', rev: 0, fresh: true,
+        ads: [{ id: seq++, realtor, price: p, rent, prev: null, prevRent: null, floor: v.floor || '—', dir: v.dir || '—', feat: v.feat, ymd: '11.11', mine: realtor === ME, owner: false, entered: true, active: true, fresh: true, source: '직접 입력' }] });
+      // 스냅샷 완료·취소 버튼은 단지 하나를 고른 범위에서 보인다
+      state.sites = [v.site];
+      if ((v.kind === 'monthly') !== (state.kind === 'monthly')) { state.price = null; state.rent = null; }
+      state.kind = v.kind; state.tab = 'new'; state.only = null;
+      render();
+      UI.toast(opened ? '스냅샷을 열고 광고를 입력했습니다' : '광고를 입력했습니다');
+    },
+  });
+}
+function completeSession() {
+  const s = state.session;
+  const res = { site: s.site, kind: s.kind, newGroups: 0, addedListings: 0, removedGroups: 0, removedListings: 0, priceChanges: 0 };
+  sessGroups().forEach((g) => {
+    const before = act(g);
+    if (!before.length) return;
+    const drop = before.filter((a) => !a.entered);
+    drop.forEach((a) => { a.active = false; });
+    if (drop.length === before.length) { res.removedGroups += 1; return; }
+    res.removedListings += drop.length;
+    if (g.status === 'new') res.newGroups += 1;
+    else if (g.status === 'added') res.addedListings += act(g).filter((a) => a.fresh).length || 1;
+    res.priceChanges += act(g).filter(adChanged).length;
+    g.ads.forEach((a) => { a.entered = false; a.fresh = false; });
+    g.fresh = false;
+  });
+  state.session = null; state.result = res; state.open.clear(); state.only = null;
+  render();
+  UI.toast('스냅샷을 완료했습니다. 광고는 더 바꿀 수 없고 호수와 메모는 고칠 수 있습니다');
+}
+function keepGroups(list) {
+  const touched = [];
+  // 일부가 이미 입력된 매물은 건너뛴다 (이번 스냅샷에서 뺀 광고가 되살아나지 않게)
+  list.filter((g) => !act(g).some((a) => a.entered)).forEach((g) => { const ads = act(g); ads.forEach((a) => { a.entered = true; }); g.rev += 1; touched.push([g, ads, g.rev]); });
+  render();
+  if (!touched.length) return;
+  UI.toast(`매물 ${touched.length}건을 유지했습니다`, () => {
+    if (touched.some(([g, , v]) => g.rev !== v) || !state.session) { UI.toast('그 뒤에 다시 바뀌어서 되돌리지 않았습니다'); return; }
+    touched.forEach(([g, ads]) => { ads.forEach((a) => { a.entered = false; }); g.rev += 1; });
+    render();
+  });
+}
+function openFsel(id) {
+  const anchor = document.querySelector(`[data-fs="${id}"]`);
+  const pool = GROUPS.filter((g) => g.kind === state.kind && !isGone(g));
+  if (id === 'site') {
+    const names = [...new Set([...Object.values(SITES), ...state.sites])];
+    UI.menu(anchor, [
+      { label: '단지 전체', on: !state.sites.length, run: () => { state.sites = []; render(); } }, '-',
+      ...names.map((s) => ({ label: s, icon: 'building', hint: String(pool.filter((g) => g.site === s).length), on: state.sites.includes(s), run: () => { state.sites = state.sites.includes(s) ? state.sites.filter((x) => x !== s) : [...state.sites, s]; state.open.clear(); render(); openFsel('site'); } })),
+    ]);
+    return;
+  }
+  const list = id === 'rent' ? RANGES.rent : state.kind === 'monthly' ? RANGES.deposit : RANGES.price;
+  const val = (g) => (id === 'rent' ? mainAd(g).rent : mainAd(g).price);
+  UI.menu(anchor, [
+    { head: id === 'rent' ? '월 납부액 기준 · 만원 단위' : '대표 광고 금액 기준' },
+    { label: '전체', on: !state[id], run: () => { state[id] = null; render(); } }, '-',
+    ...list.map(([l]) => ({ label: l, hint: String(pool.filter((g) => inRange(list, l, val(g))).length), on: state[id] === l, run: () => { state[id] = l; render(); } })),
+  ]);
+}
+
+// ── 상호작용 ──
+document.querySelectorAll('[data-icon]').forEach((el) => el.insertAdjacentHTML('afterbegin', icon(el.dataset.icon)));
+const groupOf = (el) => GROUPS.find((g) => g.id === +(el.closest('tr[data-exp]') || el.closest('tr[data-id]')).dataset[el.closest('tr[data-exp]') ? 'exp' : 'id']);
+
+document.addEventListener('click', (e) => {
+  const t = e.target;
+  if (t.closest('.dlg-back')) return;
+  const only = t.closest('[data-only]');
+  if (only) { state.only = state.only === only.dataset.only ? null : only.dataset.only; render(); return; }
+  const vt = t.closest('.vtab[data-kind]');
+  if (vt) {
+    const next = vt.dataset.kind;
+    // 월세 보증금과 매매·전세가는 눈금이 달라 값을 그대로 옮기지 않는다
+    if ((next === 'monthly') !== (state.kind === 'monthly')) { state.price = null; state.rent = null; }
+    state.kind = next; state.open.clear(); render(); return;
+  }
+  if (t.closest('[data-gtog]')) { state.collapsed = !state.collapsed; render(); return; }
+  if (t.closest('[data-clear]')) {
+    Object.assign(state, { sites: [], dong: '', ho: '', feat: '', onlyOwner: false, onlyAd: false, onlySeango: false, price: null, rent: null });
+    ['fDong', 'fHo', 'fFeat'].forEach((id) => { document.getElementById(id).value = ''; });
+    render(); return;
+  }
+  const fclr = t.closest('[data-fclr]');
+  if (fclr) { if (fclr.dataset.fclr === 'site') state.sites = []; else state[fclr.dataset.fclr] = null; render(); return; }
+  const fs = t.closest('[data-fs]');
+  if (fs) { openFsel(fs.dataset.fs); return; }
+  const tg = t.closest('[data-tog]');
+  if (tg) { state[tg.dataset.tog] = !state[tg.dataset.tog]; render(); return; }
+  const tab = t.closest('[data-tab]');
+  if (tab) { state.tab = tab.dataset.tab; state.open.clear(); render(); return; }
+  if (t.closest('#resClose')) { state.result = null; render(); return; }
+  if (t.closest('#startBtn')) { startSession(scopeSite(), state.kind); state.tab = 'old'; render(); UI.toast(`${scopeSite()} · ${KIND[state.kind]} 스냅샷을 열었습니다. 기존 광고는 미입력 탭에 있습니다`); return; }
+  if (t.closest('#manualBtn')) { manualDialog(); return; }
+  if (t.closest('#keepAll')) {
+    const list = visibleRows();
+    const n = list.reduce((s, g) => s + act(g).length, 0);
+    dlg({ title: `표시된 매물 ${list.length}건을 유지할까요?`, desc: `광고 ${n}건이 다시 입력하지 않아도 완료 후 남습니다. 실제로 내려간 광고까지 남을 수 있으니 확인한 뒤 유지하세요.`, okLabel: '유지', ok: () => { keepGroups(list); } });
+    return;
+  }
+  if (t.closest('#cancelBtn')) {
+    dlg({ title: '작업을 취소하시겠습니까?', desc: '세션 락이 해제됩니다. 세션 중 입력한 신규 매물은 그대로 유지됩니다.', okLabel: '세션 취소', cancelLabel: '계속 입력', ok: () => { sessGroups().forEach((g) => g.ads.forEach((a) => { a.entered = false; })); state.session = null; state.open.clear(); render(); UI.toast('스냅샷을 취소했습니다. 기존 광고는 내려가지 않습니다'); } });
+    return;
+  }
+  if (t.closest('#doneBtn')) {
+    const r = received(), p = pending();
+    dlg({
+      title: r === 0 ? '입력된 광고가 없습니다. 모두 내릴까요?' : '스냅샷을 완료하시겠습니까?',
+      desc: r === 0
+        ? `이 단지·거래유형의 광고 ${p}건이 모두 내려갑니다. 닫은 뒤에는 광고를 수정하거나 지울 수 없고, 호수와 메모는 유지됩니다.`
+        : `${p === 0 ? `입력한 광고 ${r}건이 모두 남습니다.` : `입력한 광고 ${r}건이 남고, 입력되지 않은 광고 ${p}건은 입력 방식과 관계없이 내려갑니다.`} 닫은 뒤에는 광고를 수정하거나 지울 수 없고, 호수와 메모는 유지됩니다.`,
+      okLabel: r === 0 ? '모두 내리기' : '완료', ok: () => { completeSession(); },
+    });
+    return;
+  }
+  if (t.closest('[data-keep]')) { keepGroups([groupOf(t)]); return; }
+  if (t.closest('[data-rank]')) { const g = groupOf(t); state.open.has(g.id) ? state.open.delete(g.id) : state.open.add(g.id); render(); return; }
+  if (t.closest('[data-src]')) { UI.toast('네이버 부동산 원문을 새 창으로 엽니다'); return; }
+  if (t.closest('[data-addad]')) { adDialog(groupOf(t), null); return; }
+  const adRow = t.closest('tr[data-ad]');
+  if (adRow && t.closest('[data-adedit]')) { const g = groupOf(t); adDialog(g, g.ads.find((a) => a.id === +adRow.dataset.ad)); return; }
+  if (adRow && t.closest('[data-addel]')) {
+    const g = groupOf(t);
+    const a = g.ads.find((x) => x.id === +adRow.dataset.ad);
+    dlg({
+      title: '이 광고를 이번 스냅샷에서 뺄까요?',
+      desc: a.fresh ? `${esc(a.realtor)} 광고는 이번에 처음 입력한 광고라 바로 지워집니다.` : `${esc(a.realtor)} 광고는 기존 광고라 이번 입력에서만 빠지고, 스냅샷을 완료하면 내려갑니다.`,
+      okLabel: '빼기', ok: () => {
+        if (a.fresh) g.ads.splice(g.ads.indexOf(a), 1); else a.entered = false;
+        if (!g.ads.length) GROUPS.splice(GROUPS.indexOf(g), 1);
+        g.rev += 1; render(); UI.toast(`${a.realtor} 광고를 이번 스냅샷에서 뺐습니다`);
+      },
+    });
+    return;
+  }
+  if (t.closest('#sortBtn')) {
+    const cols = columns().filter((c) => c.sort);
+    UI.menu(t.closest('#sortBtn'), [{ head: '정렬 기준' }, ...cols.map((c) => ({ label: c.l, on: state.sort && state.sort.key === c.id, hint: state.sort && state.sort.key === c.id ? (state.sort.dir > 0 ? '오름차순' : '내림차순') : '', run: () => { state.sort = state.sort && state.sort.key === c.id ? { key: c.id, dir: -state.sort.dir } : { key: c.id, dir: 1 }; render(); } })), ...(state.sort ? ['-', { label: '정렬 해제', icon: 'x', run: () => { state.sort = null; render(); } }] : [])], { right: true });
+    return;
+  }
+  const th = t.closest('th[data-col]');
+  if (th && !t.closest('.rz')) {
+    const key = th.dataset.sort;
+    if (!key) { UI.toast(`${th.textContent.trim()} 열은 정렬하지 않는 열입니다`); return; }
+    const cur = state.sort && state.sort.key === key ? state.sort.dir : 0;
+    UI.menu(th, [
+      { label: '오름차순 정렬', icon: 'sort', on: cur === 1, run: () => { state.sort = { key, dir: 1 }; render(); } },
+      { label: '내림차순 정렬', icon: 'sort', on: cur === -1, run: () => { state.sort = { key, dir: -1 }; render(); } },
+      ...(cur ? [{ label: '정렬 해제', icon: 'x', run: () => { state.sort = null; render(); } }] : []),
+      '-', { label: '열 숨기기', icon: 'x', run: () => UI.toast('열 숨기기는 데모에 들어 있지 않습니다') },
+    ]);
+  }
+});
+// 호수·메모: 입력하는 대로 저장해 두고(다시 그려도 남음), 칸을 벗어나면 알린다
+document.addEventListener('input', (e) => {
+  const el = e.target.closest && e.target.closest('.edit[data-field]');
+  if (!el) return;
+  groupOf(el)[el.dataset.field] = el.textContent.replace(/\n/g, ' ').trim();
+  el.dataset.dirty = '1';
+});
+document.addEventListener('focusout', (e) => {
+  const el = e.target.closest && e.target.closest('.edit[data-field]');
+  if (!el) return;
+  if (!el.textContent.trim()) el.textContent = '';
+  if (el.dataset.dirty) { delete el.dataset.dirty; UI.toast(el.dataset.field === 'ho' ? '호수를 저장했습니다' : '메모를 저장했습니다'); }
+});
+document.addEventListener('keydown', (e) => {
+  if (e.isComposing || e.keyCode === 229) return; // 한글 조합 확정용 Enter는 저장으로 치지 않는다
+  if (e.key === 'Enter' && e.target.classList && e.target.classList.contains('edit')) { e.preventDefault(); e.target.blur(); return; }
+  if ((e.key === 'Enter' || e.key === ' ') && e.target.matches && e.target.matches('[data-only]')) { e.preventDefault(); e.target.click(); return; }
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'f') { e.preventDefault(); document.getElementById('q').focus(); }
+});
+[['q', 'q'], ['fDong', 'dong'], ['fHo', 'ho'], ['fFeat', 'feat']].forEach(([id, k]) => document.getElementById(id).addEventListener('input', (e) => { state[k] = e.target.value.trim(); render(); }));
+
+render();
+
+UI.notes(
+  [
+    '<b>열은 원본과 같은 순서</b>입니다: (유지) · 상태 · 광고 · 주인 · 단지 · 동 · 호 · 층 · 타입 · 면적 · 랭킹 · 가격 · 최소가 · 최대가 · 방향 · 매물특징 · 내 메모. 평형별 묶음 제목 대신 타입·면적 열을 되살렸고, 표 머리를 누르면 정렬 메뉴가 열립니다.',
+    '<b>필터는 늘 보입니다.</b> 단지(여러 개) · 동 · 호, 집주인 · 내광고만 · 세안고, 가격 범위(월세 탭에서는 보증금과 월세), 특징·메모가 표 위에 나와 있고 고른 값이 그 자리에 파랗게 남습니다.',
+    '<b>스냅샷 진행 줄</b>을 되살렸습니다. 입력됨/미입력 전환, 행마다 유지, 전체 유지(필터를 걸면 표시된 N건 유지), 취소, 완료가 있고 완료 확인창이 남는 광고와 내려가는 광고 수를 알려 줍니다. 완료하면 <b>비교 결과 줄</b>이 나옵니다.',
+    '<b>랭킹 숫자를 누르면</b> 행 아래로 동일주소 광고가 노출 순서대로 열립니다. 스냅샷이 열려 있으면 광고마다 수정 · 다시 입력 · 삭제와 동일 광고 추가를 할 수 있습니다.',
+    '<b>지난 비교는 제목 옆 숫자</b>(신규 · 추가 · 가격 변경 · 내려감 · 내 광고)로 보여 주고, 누르면 그 행만 남습니다. 숫자는 지금 건 필터 범위에서 다시 셉니다.',
+    '<b>변동은 가격 옆 글자색과 화살표만</b>: 하락 파랑, 상승 빨강. 월세는 보증금과 월세 변동을 따로 적습니다. 가격 범위·특징 묶음은 가격 열 머리의 작은 버튼으로 접습니다.',
+    '<b>호수와 메모는 칸을 눌러 바로 입력</b>합니다. 한글 조합 중 Enter는 저장으로 치지 않습니다.',
+  ],
+  '숫자를 나란히 비교하는 화면이라 가장 촘촘한 36px 표를 씁니다. 열과 조작은 원본 그대로 두고 모양만 바꿨습니다.',
+);
+</script>
+</body>
+</html>

@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="icon" href="data:," />
+<title>고정비 설정 시안</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
+<link rel="stylesheet" href="shared.css" />
+<style>
+  .split { display: grid; flex: 1; grid-template-columns: minmax(0, 1fr) 296px; min-height: 0; }
+  .side-pane { overflow-y: auto; border-left: 1px solid var(--border); }
+  #tbl { --min: 716px; }
+  /* 앱 최소 창(1200px)에서는 표를 먼저 보여 주고 요약은 접는다 */
+  @media (max-width: 1279px) { .split { grid-template-columns: minmax(0, 1fr); } .side-pane { display: none; } }
+  .tbl tr.off td { color: var(--faint); }
+  .tbl tr.off .muted { color: var(--faint); }
+  .tbl tfoot td { position: sticky; bottom: 0; z-index: 4; height: 36px; border-top: 1px solid var(--head-line); border-bottom: 0; background: var(--band); font-weight: 600; }
+  .switch { position: relative; display: inline-block; width: 28px; height: 16px; border-radius: 999px; background: #d6d5d0; vertical-align: middle; transition: background-color 120ms ease; }
+  .switch::after { position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%; background: #fff; content: ""; transition: transform 140ms var(--ease); }
+  .switch[aria-checked="true"] { background: var(--fg); }
+  .switch[aria-checked="true"]::after { transform: translateX(12px); }
+
+  .sp-head { display: flex; align-items: center; height: 36px; padding: 0 12px; border-bottom: 1px solid var(--head-line); background: var(--band); color: var(--muted-fg); font-size: 13px; font-weight: 500; }
+  .sp-head small { margin-left: auto; color: var(--faint); font-size: 12px; font-weight: 400; }
+  .cat { padding: 10px 12px 12px; }
+  .cat li { display: grid; grid-template-columns: 62px minmax(0, 1fr) 54px; align-items: center; gap: 8px; height: 26px; font-size: 13px; }
+  .cat .amt { font-variant-numeric: tabular-nums; text-align: right; }
+  .cat .meter i { background: #787774; }
+  .sch li { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; align-items: center; gap: 8px; min-height: 34px; padding: 0 12px; border-bottom: 1px solid var(--hair); font-size: 13px; }
+  .sch .d { color: var(--muted-fg); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+  .sch .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sch .a { font-variant-numeric: tabular-nums; }
+  .sch li.past { color: var(--faint); }
+  .sch li.past .d { color: var(--faint); }
+  .sch li.next .d { color: var(--fg); font-weight: 600; }
+</style>
+</head>
+<body>
+<script src="icons.js"></script>
+<script src="data.js"></script>
+<script src="shared.js"></script>
+<script>
+(function () {
+  const { esc, icon, money, TODAY } = CF;
+  const main = CF.shell({ page: 'expenses', title: '고정비 설정', restricted: true });
+  if (!main) return;
+
+  const CATS = { rent: '임대료', ad: '광고비', telecom: '통신비', insurance: '보험료', association: '협회비', supplies: '소모품', vehicle: '차량/교통', other: '기타' };
+  const FREQ = { monthly: '매월', quarterly: '분기', yearly: '연간' };
+  const state = { tab: 'all', search: '', sort: 'amount', dir: 'desc' };
+
+  main.innerHTML = `<div class="page">
+    <div class="tb line" id="tb"></div>
+    <div class="strip" id="strip"></div>
+    <div class="split">
+      <div class="scroll" id="body"></div>
+      <aside class="side-pane" id="side" aria-label="고정비 요약"></aside>
+    </div>
+    ${CF.statusbar('')}
+  </div>`;
+  CF.wireReset(main);
+  const $ = (id) => document.getElementById(id);
+
+  function visible() {
+    const q = state.search.trim().toLowerCase();
+    const list = CF.db.expenses.filter((e) => {
+      if (state.tab === 'on' && !e.isActive) return false;
+      if (state.tab === 'off' && e.isActive) return false;
+      if (q && ![e.title, CATS[e.category], e.note].join(' ').toLowerCase().includes(q)) return false;
+      return true;
+    });
+    const dir = state.dir === 'asc' ? 1 : -1;
+    return list.sort((a, b) => (state.sort === 'day'
+      ? ((a.dayOfMonth == null ? 99 : a.dayOfMonth) - (b.dayOfMonth == null ? 99 : b.dayOfMonth)) * dir
+      : (CF.monthlyAmount(a) - CF.monthlyAmount(b)) * dir));
+  }
+
+  function renderTb() {
+    const all = CF.db.expenses;
+    const tabs = [['all', '전체', all.length], ['on', '사용 중', all.filter((e) => e.isActive).length], ['off', '꺼짐', all.filter((e) => !e.isActive).length]];
+    const tb = $('tb');
+    tb.innerHTML = `<div class="pills" role="tablist" aria-label="사용 여부">${tabs.map(([k, l, n]) => `<button type="button" role="tab" aria-selected="${state.tab === k}" class="${state.tab === k ? 'on' : ''}" data-tab="${k}">${l}<span class="n">${n}</span></button>`).join('')}</div>
+      <label class="search">${icon('search')}<span class="sr">검색</span><input id="q" type="search" placeholder="항목, 분류, 메모" value="${esc(state.search)}" /></label>
+      <span class="spacer"></span>
+      <button type="button" class="primary" id="add">${icon('plus')} 고정비 등록</button>`;
+    tb.querySelector('#q').addEventListener('input', (e) => { state.search = e.target.value; renderBody(); });
+    tb.querySelector('#add').addEventListener('click', () => formDialog(null));
+    tb.querySelectorAll('[data-tab]').forEach((b) => b.addEventListener('click', () => { state.tab = b.dataset.tab; renderTb(); renderBody(); }));
+  }
+
+  function renderStrip() {
+    const on = CF.db.expenses.filter((e) => e.isActive);
+    const total = on.reduce((a, e) => a + CF.monthlyAmount(e), 0);
+    const monthly = on.filter((e) => e.frequency === 'monthly');
+    const rest = on.filter((e) => e.frequency !== 'monthly');
+    const deductible = on.filter((e) => e.taxDeductible);
+    const s = CF.monthStats(2026, 11);
+    $('strip').innerHTML = `
+      <div class="stat"><div class="l">월 고정비</div><div class="v">${money(total)}</div><div class="h">사용 중 ${on.length}건을 월로 환산</div></div>
+      <div class="stat"><div class="l">매월 나가는 돈</div><div class="v">${money(monthly.reduce((a, e) => a + e.amount, 0))}</div><div class="h">${monthly.length}건</div></div>
+      <div class="stat"><div class="l">분기·연간 월 환산</div><div class="v">${money(rest.reduce((a, e) => a + CF.monthlyAmount(e), 0))}</div><div class="h">${rest.length}건</div></div>
+      <div class="stat"><div class="l">세금 공제 가능</div><div class="v">${money(deductible.reduce((a, e) => a + CF.monthlyAmount(e), 0))}</div><div class="h">월 환산 ${deductible.length}건</div></div>
+      <div class="stat"><div class="l">11월 순이익 반영</div><div class="v ${s.net < 0 ? 'red' : ''}">${money(s.net)}</div><div class="h"><a class="link" href="index.html">수금 ${money(s.collected)} − 수당 ${money(s.staff)} − 고정비</a></div></div>`;
+  }
+
+  const sortHead = (k, label, cls) => {
+    const on = state.sort === k;
+    return `<th class="sort ${cls || ''}" aria-sort="${on ? (state.dir === 'asc' ? 'ascending' : 'descending') : 'none'}"><button type="button" data-sort="${k}">${label}${on ? icon(state.dir === 'asc' ? 'arrow-up' : 'arrow-down') : ''}</button></th>`;
+  };
+
+  function renderBody() {
+    const list = visible();
+    $('status-text').textContent = `고정비 ${list.length}건 표시`;
+    if (!list.length) {
+      const none = CF.db.expenses.length === 0;
+      $('body').innerHTML = `<div class="empty">${icon('banknote')}<b>${none ? '등록된 고정비가 없습니다' : '조건에 맞는 고정비가 없습니다'}</b><p>${none ? '임대료, 광고비 같은 고정비를 등록하면 순이익이 자동으로 계산됩니다.' : '범위나 검색어를 바꿔 보세요.'}</p>${none ? `<button type="button" class="primary" id="add2">${icon('plus')} 고정비 등록</button>` : ''}</div>`;
+      const add2 = $('add2');
+      if (add2) add2.addEventListener('click', () => formDialog(null));
+      return;
+    }
+    const totalMonthly = list.reduce((a, e) => (e.isActive ? a + CF.monthlyAmount(e) : a), 0);
+    const rows = list.map((e) => `<tr class="click ${e.isActive ? '' : 'off'}" data-edit="${e.id}">
+      <td class="strong" style="font-weight:500" title="${esc(e.title)}">${esc(e.title)}</td>
+      <td class="muted">${CATS[e.category] || esc(e.category)}</td>
+      <td class="muted">${FREQ[e.frequency]}</td>
+      <td class="num">${money(e.amount)}</td>
+      <td class="num ${e.frequency === 'monthly' ? 'muted' : ''}">${money(CF.monthlyAmount(e))}</td>
+      <td class="tnum">${e.dayOfMonth ? `${e.dayOfMonth}일` : '<span class="empty-val">—</span>'}</td>
+      <td>${e.taxDeductible ? '가능' : '<span class="empty-val">—</span>'}</td>
+      <td class="muted" title="${esc(e.note || '')}">${esc(e.note || '')}</td>
+      <td style="text-align:center"><button type="button" class="switch" role="switch" aria-checked="${e.isActive}" aria-label="${esc(e.title)} 사용" data-toggle="${e.id}"></button></td>
+      <td style="padding:0 2px"><button type="button" class="icon-btn" data-more="${e.id}" aria-label="${esc(e.title)} 더보기">${icon('ellipsis-vertical')}</button></td>
+    </tr>`).join('');
+    $('body').innerHTML = `<table class="tbl" id="tbl"><colgroup><col style="min-width:150px"><col style="width:80px"><col style="width:56px"><col style="width:76px"><col style="width:72px"><col style="width:66px"><col style="width:48px"><col style="min-width:80px"><col style="width:54px"><col style="width:34px"></colgroup>
+      <thead><tr><th>항목</th><th>분류</th><th>주기</th>${sortHead('amount', '금액', 'num')}<th class="num">월 환산</th>${sortHead('day', '결제일')}<th>공제</th><th>메모</th><th style="text-align:center">사용</th><th><span class="sr">작업</span></th></tr></thead>
+      <tbody>${rows}</tbody>
+      <tfoot><tr><td colspan="4">월 고정비 합계 <span class="muted" style="font-weight:400">사용 중만</span></td><td class="num">${money(totalMonthly)}</td><td colspan="5"></td></tr></tfoot></table>`;
+  }
+
+  function renderSide() {
+    const on = CF.db.expenses.filter((e) => e.isActive);
+    const total = on.reduce((a, e) => a + CF.monthlyAmount(e), 0);
+    const byCat = {};
+    on.forEach((e) => { byCat[e.category] = (byCat[e.category] || 0) + CF.monthlyAmount(e); });
+    const cats = Object.entries(byCat).sort((a, b) => b[1] - a[1]);
+    const top = cats.length ? cats[0][1] : 1;
+    const today = Number(TODAY.slice(8, 10));
+    const sch = on.filter((e) => e.frequency === 'monthly' && e.dayOfMonth).sort((a, b) => a.dayOfMonth - b.dayOfMonth);
+    const nextId = (sch.find((e) => e.dayOfMonth >= today) || {}).id;
+    const noDay = on.filter((e) => e.frequency === 'monthly' && !e.dayOfMonth).length;
+    const other = on.filter((e) => e.frequency !== 'monthly').length;
+    const skipped = [noDay ? `결제일 없는 ${noDay}건` : '', other ? `분기·연간 ${other}건` : ''].filter(Boolean).join(', ');
+    $('side').innerHTML = `<div class="sp-head">분류별 월 고정비</div>
+      ${cats.length ? `<ul class="cat">${cats.map(([k, v]) => `<li title="${Math.round((v / total) * 100)}%"><span>${CATS[k] || esc(k)}</span><span class="meter"><i style="width:${Math.max(3, Math.round((v / top) * 100))}%"></i></span><span class="amt">${money(v)}</span></li>`).join('')}</ul>` : '<div class="empty" style="padding:24px"><p>사용 중인 고정비가 없습니다.</p></div>'}
+      <div class="sp-head">11월 결제 일정</div>
+      <ul class="sch">${sch.map((e) => `<li class="${e.dayOfMonth < today ? 'past' : ''} ${e.id === nextId ? 'next' : ''}"><span class="d">${e.dayOfMonth}일</span><span class="t" title="${esc(e.title)}">${esc(e.title)}</span><span class="a">${money(e.amount)}</span></li>`).join('')}</ul>
+      ${skipped ? `<p class="muted" style="padding:10px 12px;font-size:12px;line-height:1.5">${skipped}은 일정에서 뺐습니다.</p>` : ''}`;
+  }
+
+  function formDialog(item) {
+    const e = item || {};
+    CF.dialog({
+      title: item ? '고정비 수정' : '고정비 등록',
+      desc: '분기·연간 항목은 월로 환산해 순이익 계산에 넣습니다.',
+      submit: item ? '수정 저장' : '등록',
+      body: `<div class="field"><label for="x-t">항목명</label><input id="x-t" class="input" name="title" value="${esc(e.title || '')}" placeholder="예) 사무실 임대료"></div>
+        <div class="row2"><div class="field"><label for="x-c">분류</label><select id="x-c" class="input" name="category">${Object.entries(CATS).map(([k, v]) => `<option value="${k}" ${e.category === k ? 'selected' : ''}>${v}</option>`).join('')}</select></div>
+        <div class="field"><label for="x-f">주기</label><select id="x-f" class="input" name="frequency">${Object.entries(FREQ).map(([k, v]) => `<option value="${k}" ${e.frequency === k ? 'selected' : ''}>${v}</option>`).join('')}</select></div></div>
+        <div class="row2"><div class="field"><label for="x-a">금액 (만원)</label><input id="x-a" class="input tnum" name="amount" type="number" min="1" value="${e.amount || ''}" placeholder="예) 250"><small id="x-a-h"></small></div>
+        <div class="field"><label for="x-d">결제일 (선택)</label><input id="x-d" class="input tnum" name="day" type="number" min="1" max="31" value="${e.dayOfMonth || ''}" placeholder="예) 25"></div></div>
+        <label class="check-line"><input type="checkbox" name="tax" ${e.taxDeductible ? 'checked' : ''}> 세금 공제 가능 항목</label>
+        <div class="field"><label for="x-n">메모 (선택)</label><input id="x-n" class="input" name="note" value="${esc(e.note || '')}" placeholder="예) 2층 사무실, 보증금 별도"></div>`,
+      onOpen: (d) => {
+        const freq = d.querySelector('[name="frequency"]');
+        const amt = d.querySelector('[name="amount"]');
+        CF.moneyPreview(d, 'amount', 'x-a-h', (v) => {
+          if (!(v > 0) || freq.value === 'monthly') return '';
+          return ` · 월 ${money(freq.value === 'quarterly' ? Math.round(v / 3) : Math.round(v / 12))}`;
+        });
+        freq.addEventListener('change', () => amt.dispatchEvent(new Event('input')));
+        if (!item) d.querySelector('[name="title"]').focus();
+      },
+      onSubmit: (fd) => {
+        const title = String(fd.get('title')).trim();
+        const amount = Number(fd.get('amount'));
+        const day = fd.get('day') ? Number(fd.get('day')) : null;
+        if (!title) return '항목명을 입력해 주세요.';
+        if (!(amount > 0)) return '금액을 입력해 주세요.';
+        if (day !== null && !(day >= 1 && day <= 31)) return '결제일은 1일에서 31일 사이로 입력해 주세요.';
+        const next = { title, category: fd.get('category'), frequency: fd.get('frequency'), amount, dayOfMonth: day, taxDeductible: !!fd.get('tax'), note: String(fd.get('note')).trim() || null };
+        if (item) Object.assign(item, next);
+        else CF.db.expenses.push(Object.assign({ id: `e${Date.now()}`, isActive: true }, next));
+        CF.commit();
+        CF.toast(item ? '고정비를 수정했습니다.' : '고정비를 등록했습니다.');
+        return undefined;
+      },
+    });
+  }
+
+  function removeDialog(item) {
+    CF.dialog({
+      title: '고정비 삭제',
+      desc: `"${item.title}" 항목을 삭제합니다. 삭제하면 순이익 계산에서 빠집니다. 잠시 빼려면 사용 스위치를 끄세요.`,
+      submit: '삭제',
+      danger: true,
+      onSubmit: () => {
+        CF.db.expenses = CF.db.expenses.filter((e) => e.id !== item.id);
+        CF.commit();
+        CF.toast('고정비를 삭제했습니다.');
+        return undefined;
+      },
+    });
+  }
+
+  main.addEventListener('click', (ev) => {
+    const t = ev.target;
+    const sort = t.closest('[data-sort]');
+    if (sort) {
+      const k = sort.dataset.sort;
+      if (state.sort === k) state.dir = state.dir === 'asc' ? 'desc' : 'asc';
+      else { state.sort = k; state.dir = k === 'amount' ? 'desc' : 'asc'; }
+      renderBody();
+      return;
+    }
+    const tog = t.closest('[data-toggle]');
+    if (tog) {
+      const e = CF.db.expenses.find((x) => x.id === tog.dataset.toggle);
+      e.isActive = !e.isActive;
+      CF.commit();
+      CF.toast(e.isActive ? `${e.title}을 사용합니다.` : `${e.title}을 껐습니다. 순이익 계산에서 빠집니다.`);
+      return;
+    }
+    const more = t.closest('[data-more]');
+    if (more) {
+      const e = CF.db.expenses.find((x) => x.id === more.dataset.more);
+      CF.menu(more, [
+        { label: '수정', icon: 'pencil', onClick: () => formDialog(e) },
+        { label: '삭제', icon: 'trash-2', danger: true, onClick: () => removeDialog(e) },
+      ], { align: 'right' });
+      return;
+    }
+    const row = t.closest('[data-edit]');
+    if (row) formDialog(CF.db.expenses.find((x) => x.id === row.dataset.edit));
+  });
+
+  CF.onChange(() => { renderTb(); renderStrip(); renderBody(); renderSide(); });
+  renderTb(); renderStrip(); renderBody(); renderSide();
+})();
+</script>
+</body>
+</html>

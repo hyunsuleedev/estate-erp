@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>공동중개 수수료 · UI 개선 데모</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="ui.css">
+<link rel="stylesheet" href="cashflow-shared.css">
+</head>
+<body data-active="cash-partner">
+<main id="page">
+  <div class="ph">
+    <h1>공동중개 수수료</h1>
+    <span class="count" id="total"></span>
+    <div class="meta"><span class="lnk" id="balLink" role="button" tabindex="0"><span class="dot accent"></span>주고받을 돈 있는 곳 <b id="nBal"></b></span></div>
+  </div>
+
+  <div class="vbar">
+    <span id="years" style="display:contents"></span>
+    <div class="vtools">
+      <label class="field" style="width:260px" data-icon="search"><input id="q" placeholder="사무소, 전화번호, 호수" aria-label="공동중개 수수료 검색"><kbd>⌘F</kbd></label>
+    </div>
+  </div>
+
+  <div class="fbar show" id="fbar"></div>
+  <div class="kpis" id="kpis"></div>
+
+  <div class="scroll">
+    <table class="tbl cf" id="tbl">
+      <thead><tr>
+        <th data-h="handshake" data-sort="name">파트너 사무소 · 거래</th>
+        <th data-h="tag" data-sort="count">건수 · 단계</th>
+        <th class="r" data-h="won" data-sort="billed">청구액</th>
+        <th class="r" data-h="won" data-sort="our">우리 몫</th>
+        <th class="r" data-h="won" data-sort="partner">파트너 몫</th>
+        <th class="r" data-h="won" data-sort="collected">수금</th>
+        <th class="r" data-h="won" data-sort="receivable" title="파트너가 받은 돈 중 우리 몫">받을 몫</th>
+        <th class="r" data-h="won" data-sort="payable" title="우리가 받은 돈 중 파트너 몫">줄 몫</th>
+        <th data-h="cal" data-sort="last">최근 거래</th>
+      </tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+    <div class="sumbar" id="foot"></div>
+  </div>
+</main>
+
+<script src="shell.js"></script>
+<script src="cashflow-shared.js"></script>
+<script>
+const C = CF;
+const { man, esc } = C;
+const $ = (id) => document.getElementById(id);
+
+const state = { year: 'all', q: '', balanceOnly: false, toggled: new Set(), sort: null };
+
+function dealRow(d) {
+  const r = C.rollup(d.pays);
+  const b = C.partnerBalance(d.pays);
+  const s = C.shareTotals(d.pays);
+  return { d, name: C.loc(d), count: 1, billed: r.billed, collected: r.collected, our: s.our, partner: s.partner, receivable: b.receivable, payable: b.payable, last: d.changed };
+}
+// 파트너별로 모은다. 합계는 딸린 거래 행을 더한 값이다
+function aggregate(deals) {
+  const map = new Map();
+  deals.filter((d) => d.partner).forEach((d) => {
+    const row = dealRow(d);
+    const p = map.get(d.partner) || { key: d.partner, name: C.PARTNERS[d.partner].name, phone: C.PARTNERS[d.partner].phone, deals: [], count: 0, billed: 0, collected: 0, our: 0, partner: 0, receivable: 0, payable: 0, last: d.changed };
+    p.deals.push(row);
+    ['count', 'billed', 'collected', 'our', 'partner', 'receivable', 'payable'].forEach((k) => { p[k] += row[k]; });
+    if (d.changed > p.last) p.last = d.changed;
+    map.set(d.partner, p);
+  });
+  // 기본 순서: 주고받을 돈이 많은 곳부터
+  return [...map.values()].sort((a, b) => b.receivable + b.payable - (a.receivable + a.payable) || b.our - a.our);
+}
+const cmp = (key, dir) => (a, b) => (typeof a[key] === 'string' ? a[key].localeCompare(b[key], 'ko') : a[key] - b[key]) * dir;
+const inYear = (d) => state.year === 'all' || d.changed.startsWith(state.year);
+
+function render() {
+  const years = [...new Set(C.DEALS.filter((d) => d.partner).map((d) => d.changed.slice(0, 4)))].sort().reverse();
+  const scoped = aggregate(C.DEALS.filter(inYear));
+  const q = state.q.trim().toLowerCase();
+  let partners = scoped.filter((p) => {
+    if (state.balanceOnly && p.receivable + p.payable === 0) return false;
+    return !q || [p.name, p.phone, p.phone.replace(/-/g, ''), ...p.deals.map((x) => x.name)].join(' ').toLowerCase().includes(q);
+  });
+  if (state.sort) {
+    partners = [...partners].sort(cmp(state.sort.key, state.sort.dir));
+    if (state.sort.key !== 'count') partners.forEach((p) => { p.deals.sort(cmp(state.sort.key, state.sort.dir)); });
+  }
+  const t = partners.reduce((a, p) => { ['count', 'our', 'partner', 'receivable', 'payable', 'billed', 'collected'].forEach((k) => { a[k] += p[k]; }); return a; }, { count: 0, our: 0, partner: 0, receivable: 0, payable: 0, billed: 0, collected: 0 });
+
+  $('total').textContent = partners.length;
+  $('nBal').textContent = scoped.filter((p) => p.receivable + p.payable > 0).length;
+  $('years').innerHTML = [['all', '전체 기간'], ...years.map((y) => [y, `${y}년`])].map(([v, l]) => `<div class="vtab ${state.year === v ? 'on' : ''}" data-year="${v}" role="button" tabindex="0">${l} <span class="n">${C.DEALS.filter((d) => d.partner && (v === 'all' || d.changed.startsWith(v))).length}</span></div>`).join('');
+  $('fbar').innerHTML = `<button class="fsel ${state.balanceOnly ? 'on' : ''}" id="balBtn" aria-pressed="${state.balanceOnly}"><span class="box">${UI.icon('check')}</span><span class="v">주고받을 돈 있는 곳만</span></button>${state.balanceOnly || state.q ? '<button class="btn quiet sm" data-clear>초기화</button>' : ''}<span class="sp"></span><span class="hint">받을 몫·줄 몫은 들어온 돈 기준입니다. 정산을 기록하는 기능이 아직 없어 금액이 줄지 않습니다.</span>`;
+  $('kpis').innerHTML = C.kpi('파트너가 받은 우리 몫', man(t.receivable), '수금액 기준') + C.kpi('우리가 받은 파트너 몫', man(t.payable), '수금액 기준') + C.kpi('우리 몫 누적', man(t.our), `거래 ${t.count}건`) + C.kpi('파트너 몫 누적', man(t.partner), `사무소 ${partners.length}곳`);
+
+  $('rows').innerHTML = partners.length ? partners.map((p) => {
+    // 주고받을 돈이 있는 파트너는 펼쳐서 시작한다
+    const open = (p.receivable + p.payable > 0 || !!q) !== state.toggled.has(p.key);
+    return `<tr class="grp" data-partner="${p.key}">
+      <td><div class="cell">${C.foldBtn(open, p.name)}<span class="nm">${esc(p.name)}</span><small class="plain">${p.phone}</small></div></td>
+      <td class="num">${p.count}건</td><td class="r num">${man(p.billed)}</td><td class="r num">${man(p.our)}</td><td class="r num">${man(p.partner)}</td><td class="r num">${man(p.collected)}</td>
+      <td class="r num">${man(p.receivable)}</td><td class="r num">${man(p.payable)}</td><td class="plain num">${C.full(p.last)}</td></tr>`
+      + (open ? p.deals.map((x) => `<tr data-go="${x.d.id}" tabindex="0">
+      <td><div class="cell child"><span class="nm tr-link" title="${esc(x.name)}">${esc(x.name)}</span>${C.typeTag(x.d.type)}</div></td>
+      <td>${C.stageTag(x.d.stage)}</td><td class="r num">${man(x.billed)}</td><td class="r num">${man(x.our)}</td><td class="r num">${man(x.partner)}</td><td class="r num">${man(x.collected)}</td>
+      <td class="r num">${man(x.receivable)}</td><td class="r num">${man(x.payable)}</td><td class="t2 num">${C.full(x.d.changed)}</td></tr>`).join('') : '');
+  }).join('') : `<tr><td colspan="9" style="border:0"><div class="empty"><b>${q || state.balanceOnly ? '조건에 맞는 파트너가 없습니다' : '공동중개 거래가 아직 없습니다'}</b>${q || state.balanceOnly ? '검색어나 필터를 바꿔 보세요.' : '거래를 만들 때 공동중개로 표시하면 파트너별로 모입니다.'}</div></td></tr>`;
+  $('foot').innerHTML = `<span>파트너<b>${partners.length}곳</b></span><span>청구액<b>${man(t.billed)}</b></span><span>수금<b>${man(t.collected)}</b></span><span>받을 몫<b>${man(t.receivable)}</b></span><span>줄 몫<b>${man(t.payable)}</b></span><span class="grow"></span><span>파트너 ${partners.length}곳 · 공동중개 거래 ${t.count}건 표시</span>`;
+  C.paintHeads($('tbl'), state.sort);
+}
+C.onChange = render;
+C.fillIcons();
+
+document.addEventListener('click', (e) => {
+  const t = e.target;
+  const y = t.closest('[data-year]');
+  if (y) { state.year = y.dataset.year; render(); return; }
+  if (t.closest('#balBtn') || t.closest('#balLink')) { state.balanceOnly = !state.balanceOnly; render(); return; }
+  if (t.closest('[data-clear]')) { state.balanceOnly = false; state.q = ''; $('q').value = ''; render(); return; }
+  const th = t.closest('th[data-sort]');
+  if (th && !t.closest('.rz')) { C.sortMenu(th, () => state.sort, (s) => { state.sort = s; render(); }); return; }
+  const g = t.closest('tr[data-partner]');
+  if (g) { const k = g.dataset.partner; state.toggled.has(k) ? state.toggled.delete(k) : state.toggled.add(k); render(); return; }
+  const go = t.closest('tr[data-go]');
+  if (go) location.href = `cashflow-ledger.html?deal=${go.dataset.go}`; // 수금 원장에서 그 거래 상세를 연다
+});
+$('q').addEventListener('input', (e) => { state.q = e.target.value; render(); });
+document.addEventListener('keydown', (e) => {
+  if (e.isComposing || e.keyCode === 229) return;
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'f') { e.preventDefault(); $('q').focus(); return; }
+  if (e.key === 'Enter' && e.target.matches('[role=button], tr[data-go]')) e.target.click();
+});
+
+render();
+
+UI.notes(
+  [
+    '<b>열은 원본 그대로</b>입니다: 파트너 사무소 · 거래, 건수 · 단계, 청구액, 우리 몫, 파트너 몫, 수금, 받을 몫, 줄 몫, 최근 거래. 파트너가 머리 행이고 거래가 그 아래에 딸립니다.',
+    '<b>기간 탭과 필터가 늘 보입니다.</b> 전체 기간·연도 탭에 거래 건수가 붙어 있고, "주고받을 돈 있는 곳만"은 표 위 선택 상자로 켜고 끕니다.',
+    '<b>요약 숫자</b>는 상자 없이 한 줄로 두었습니다. 정산을 기록할 수 없는 동안에는 "받을 돈/줄 돈" 대신 <b>파트너가 받은 우리 몫 / 우리가 받은 파트너 몫</b>이라고 씁니다.',
+    '<b>표 머리를 누르면 정렬 메뉴</b>가 열립니다. 파트너 순서와 그 아래 거래 순서가 함께 바뀝니다. 기본은 주고받을 돈이 많은 곳부터입니다.',
+    '<b>거래 줄을 누르면</b> 수금 원장으로 넘어가 그 거래의 상세가 바로 열립니다. 분배 비율은 거기서 바꿉니다.',
+    '위 숫자와 아래 요약 줄은 <b>지금 보이는 파트너의 거래를 더한 값</b>이라 검색·기간·필터에 따라 함께 바뀝니다.',
+  ],
+  '파트너 사무소별로 나눈 몫과 서로 들고 있는 돈을 한 표에서 봅니다.',
+);
+</script>
+</body>
+</html>

@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>스플래시 시안 2판</title>
+<link rel="stylesheet" href="stage.css">
+<style>
+  body { overflow: auto; background: #f9f8f7; }
+  .page { max-width: 1240px; margin: 0 auto; padding: 56px 32px 80px; }
+  h1 { margin: 0; font-size: 28px; font-weight: 680; letter-spacing: -0.9px; }
+  .lead { margin: 12px 0 0; max-width: 720px; font-size: 15px; line-height: 1.65; color: #5d6455; }
+  .now { margin: 28px 0 0; padding: 0; list-style: none; display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 12px; }
+  .now li { background: #fff; border: 1px solid #e3e3db; border-radius: 12px; padding: 14px 16px; font-size: 13.5px; line-height: 1.55; color: #5d6455; }
+  .now b { display: block; color: var(--ink); font-weight: 620; margin-bottom: 3px; }
+  h2 { margin: 48px 0 16px; font-size: 13px; font-weight: 600; color: var(--muted); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 20px; }
+  .card { display: block; color: inherit; text-decoration: none; background: #fff; border: 1px solid #e3e3db; border-radius: 16px; overflow: hidden;
+    transition: transform 0.25s var(--out), box-shadow 0.25s, border-color 0.25s; }
+  .card:hover { transform: translateY(-3px); box-shadow: 0 18px 40px rgb(42 51 35 / 0.12); border-color: #cfd3c6; }
+  .card:active { transform: translateY(-1px) scale(0.995); }
+  .shot { position: relative; aspect-ratio: 16 / 10; overflow: hidden; background: var(--paper); border-bottom: 1px solid #ecece5; container-type: inline-size; }
+  .shot iframe { position: absolute; left: 0; top: 0; width: 1200px; height: 750px; border: 0; transform-origin: 0 0; transform: scale(calc(100cqw / 1200px)); pointer-events: none; }
+  .meta { padding: 16px 18px 18px; }
+  .meta h3 { margin: 0; font-size: 16px; font-weight: 650; letter-spacing: -0.4px; display: flex; align-items: baseline; gap: 8px; }
+  .meta h3 i { font-style: normal; font-size: 12px; font-weight: 600; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .meta p { margin: 7px 0 0; font-size: 13.5px; line-height: 1.6; color: #5d6455; }
+  .meta small { display: block; margin-top: 10px; font-size: 12px; color: var(--muted); }
+  .hint { margin-top: 28px; font-size: 13px; color: var(--muted); }
+  kbd { font: inherit; font-size: 12px; padding: 1px 6px; border-radius: 5px; border: 1px solid #d6d6ce; background: #fff; }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>스플래시 시안 2판</h1>
+  <p class="lead">절제된 움직임과 정밀한 선으로 전문적인 인상을 주는 아홉 가지 방향입니다. 바탕은 모두 흰색입니다. 모두 앱이 준비되는 즉시 끝나고, 준비 과정을 글자로 알려 줍니다. 카드를 누르면 로딩 시간과 도착 화면을 바꿔 가며 볼 수 있습니다.</p>
+  <ul class="now">
+    <li><b>지금은 매번 9초를 봅니다</b>앱이 먼저 준비돼도 아파트 → 도면 → 로고 재생이 끝날 때까지 기다립니다.</li>
+    <li><b>3D 장면이 미완성 모형처럼 보입니다</b>재질 없는 옅은 덩어리라 대비가 낮습니다.</li>
+    <li><b>무엇을 하는 중인지 알 수 없습니다</b>64px 막대 하나뿐이고 진행 단계나 지연 안내가 없습니다.</li>
+  </ul>
+  <h2>새로 추가한 시안</h2>
+  <div class="grid">
+    <a class="card" href="09-complex-3d.html"><div class="shot"><iframe loading="lazy" src="09-complex-3d.html?embed=1&load=4200"></iframe></div>
+      <div class="meta"><h3><i>9</i>신축 단지 3D</h3><p>실제 주동 구조(2세대 1코어 판상형, Y자형 탑상형)와 배치도를 따른 3D 단지입니다. 타워크레인과 함께 층이 올라가고 완공되면 옥상이 얹힙니다.</p><small>최소 3초 · Three.js 사용(지금 앱에 이미 있음)</small></div></a>
+    <a class="card" href="08-complex.html"><div class="shot"><iframe loading="lazy" src="08-complex.html?embed=1&load=3200"></iframe></div>
+      <div class="meta"><h3><i>8</i>신축 단지</h3><p>타워형과 판상형이 섞인 신축 단지가 입체로 한 층씩 올라가고, 카메라가 천천히 돕니다. 완공되면 옥상 구조물이 붙습니다.</p><small>최소 2.6초 · 화면 교체만으로 적용</small></div></a>
+    <a class="card" href="06-rise.html"><div class="shot"><iframe loading="lazy" src="06-rise.html?embed=1&load=2400"></iframe></div>
+      <div class="meta"><h3><i>6</i>올라가는 로고</h3><p>로고가 지붕이 되어 진행률만큼 층이 쌓여 올라가고, 준비되면 다시 로고로 내려앉아 가운데 창으로 앱에 들어갑니다.</p><small>최소 1.9초 · 화면 교체만으로 적용</small></div></a>
+    <a class="card" href="07-handoff.html"><div class="shot"><iframe loading="lazy" src="07-handoff.html?embed=1&load=1800&dest=login"></iframe></div>
+      <div class="meta"><h3><i>7</i>제자리로</h3><p>선으로 그려진 로고가 다음 화면의 로고 자리로 옮겨 앉고, 화면이 그 주위로 채워집니다.</p><small>최소 1.6초 · 화면 교체만으로 적용</small></div></a>
+  </div>
+  <h2>앞서 만든 시안</h2>
+  <div class="grid">
+    <a class="card" href="01-logo-window.html"><div class="shot"><iframe loading="lazy" src="01-logo-window.html?embed=1&load=1600"></iframe></div>
+      <div class="meta"><h3><i>1</i>로고 창</h3><p>로고 두 조각이 맞물리고, 가운데 창이 커지면서 그 안으로 앱이 드러납니다.</p><small>최소 1.1초 · 화면 교체만으로 적용</small></div></a>
+    <a class="card" href="02-signature.html"><div class="shot"><iframe loading="lazy" src="02-signature.html?embed=1&load=1900"></iframe></div>
+      <div class="meta"><h3><i>2</i>시그니처</h3><p>로고를 가는 선으로 그린 뒤 면을 채웁니다. 실선 진행 표시와 버전 표기가 있습니다.</p><small>최소 1.9초 · 화면 교체만으로 적용</small></div></a>
+    <a class="card" href="03-elevation.html"><div class="shot"><iframe loading="lazy" src="03-elevation.html?embed=1&load=2200"></iframe></div>
+      <div class="meta"><h3><i>3</i>입면도</h3><p>모눈 위에 단지 입면이 한 층씩 올라가고 층수 눈금이 따라 올라갑니다. 진행률이 곧 그림입니다.</p><small>최소 1.7초 · 화면 교체만으로 적용</small></div></a>
+    <a class="card" href="04-flow.html"><div class="shot"><iframe loading="lazy" src="04-flow.html?embed=1&load=2200"></iframe></div>
+      <div class="meta"><h3><i>4</i>흐름 한 줄</h3><p>매물 → 고객 → 매칭 → 계약을 선 하나가 이어 가고, 끝나면 로고로 모입니다.</p><small>최소 1.5초 · 화면 교체만으로 적용</small></div></a>
+    <a class="card" href="05-briefing.html"><div class="shot"><iframe loading="lazy" src="05-briefing.html?embed=1&load=2200"></iframe></div>
+      <div class="meta"><h3><i>5</i>오늘의 브리핑</h3><p>기다리는 동안 오늘 일정, 확인 필요 매물, 이번 주 잔금을 먼저 보여 줍니다.</p><small>최소 1.7초 · 요약 값을 주는 서버 응답이 필요</small></div></a>
+  </div>
+  <p class="hint">시안 화면에서 <kbd>R</kbd>을 누르면 다시 재생합니다. 숫자와 사무소 이름은 예시입니다.</p>
+</div>
+</body>
+</html>

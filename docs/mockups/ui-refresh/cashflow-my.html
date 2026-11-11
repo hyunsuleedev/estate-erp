@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>내 수수료 · UI 개선 데모</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="ui.css">
+<link rel="stylesheet" href="cashflow-shared.css">
+<style>
+  .vbar .note { align-self: center; margin-left: 12px; font-size: 12px; color: var(--text-2); white-space: nowrap; }
+  .tbl.cf tr.grp td .gh { display: flex; align-items: center; gap: 8px; }
+  .tbl.cf tr.grp td .gh .n { color: var(--text-3); font-weight: 500; font-variant-numeric: tabular-nums; }
+  .tbl.cf tr.grp td .gh small { font-size: 12px; font-weight: 400; color: var(--text-2); }
+</style>
+</head>
+<body data-active="cash-my">
+<main id="page">
+  <div class="ph">
+    <h1>내 수수료</h1>
+    <span class="count" id="total"></span>
+  </div>
+
+  <div class="vbar">
+    <span id="tabs" style="display:contents"></span>
+    <div class="vtools">
+      <label class="field" style="width:240px" data-icon="search"><input id="q" placeholder="단지, 호수" aria-label="내 수수료 검색"><kbd>⌘F</kbd></label>
+      <span class="note">정산은 대표가 처리합니다</span>
+    </div>
+  </div>
+
+  <div class="kpis" id="kpis"></div>
+
+  <div class="scroll">
+    <table class="tbl cf" id="tbl">
+      <thead><tr>
+        <th data-h="building" data-sort="name">거래</th>
+        <th data-h="tag">거래 단계</th>
+        <th data-h="user">내 역할</th>
+        <th class="r" data-h="ruler" data-sort="rate">배분률</th>
+        <th data-h="won" data-sort="percent">고객 수금</th>
+        <th data-h="cal" data-sort="settledAt">정산일</th>
+        <th class="r" data-h="won" data-sort="amount">배분액</th>
+      </tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+    <div class="sumbar" id="foot"></div>
+  </div>
+</main>
+
+<script src="shell.js"></script>
+<script src="cashflow-shared.js"></script>
+<script>
+const C = CF;
+const { man, esc } = C;
+const $ = (id) => document.getElementById(id);
+
+const GROUPS = [
+  ['ready', '정산 받을 수 있음', '대표 정산을 기다리는 중입니다'],
+  ['waiting', '고객 수금 대기', '고객이 수수료를 내면 정산할 수 있습니다'],
+  ['settled', '정산 완료', ''],
+];
+const state = { tab: 'all', q: '', shut: new Set(), sort: null };
+const me = C.EMPLOYEES.find((x) => x.id === C.ME);
+
+// 내가 참여한 거래. 기본 순서는 최근에 단계가 바뀐 거래부터
+const myRows = () => C.DEALS.flatMap((d) => d.people.filter((x) => x.userId === C.ME).map((x) => ({ pt: x, d, name: C.loc(d), rate: x.rate ?? -1, amount: x.amount, settledAt: x.settledAt || '', ...C.settlement(x, d) })))
+  .sort((a, b) => b.d.changed.localeCompare(a.d.changed));
+
+function render() {
+  const all = myRows();
+  const q = state.q.trim().toLowerCase();
+  let visible = all.filter((r) => {
+    if (state.tab === 'unsettled' && r.state === 'settled') return false;
+    if (state.tab === 'settled' && r.state !== 'settled') return false;
+    return !q || r.name.toLowerCase().includes(q);
+  });
+  if (state.sort) {
+    const { key, dir } = state.sort;
+    visible = [...visible].sort((a, b) => (typeof a[key] === 'string' ? a[key].localeCompare(b[key], 'ko') : a[key] - b[key]) * dir);
+  }
+  const of = (s) => visible.filter((r) => r.state === s);
+  const sum = (list) => list.reduce((a, r) => a + r.amount, 0);
+
+  $('total').textContent = visible.length;
+  $('tabs').innerHTML = [['all', '전체', all.length], ['unsettled', '미정산', all.filter((r) => r.state !== 'settled').length], ['settled', '정산 완료', all.filter((r) => r.state === 'settled').length]]
+    .map(([v, l, n]) => `<div class="vtab ${state.tab === v ? 'on' : ''}" data-tab="${v}" role="button" tabindex="0">${l} <span class="n">${n}</span></div>`).join('');
+  // 위 숫자는 아래 묶음 머리의 합계와 같은 줄을 센다
+  $('kpis').innerHTML = C.kpi('정산 받을 수 있는 돈', man(sum(of('ready'))), `고객 수금 끝난 ${of('ready').length}건`) + C.kpi('고객 수금 대기', man(sum(of('waiting'))), `${of('waiting').length}건`)
+    + C.kpi('정산 완료', man(sum(of('settled'))), `${of('settled').length}건`)
+    + C.kpi('내 배분 조건', me.rate != null ? `${me.rate}%` : '—', [me.base ? `기본급 ${man(me.base)}` : null, C.PAYTYPE[me.payType]].filter(Boolean).join(' · '));
+
+  $('rows').innerHTML = visible.length ? GROUPS.map(([s, label, hint]) => {
+    const items = of(s);
+    if (!items.length) return '';
+    const shut = state.shut.has(s);
+    return `<tr class="grp" data-grp="${s}"><td colspan="6"><div class="gh">${C.foldBtn(!shut, label)}${label}<span class="n">${items.length}</span>${hint ? `<small>${hint}</small>` : ''}</div></td><td class="r num">${man(sum(items))}</td></tr>`
+      + (shut ? '' : items.map((r) => `<tr data-go="${r.d.id}" tabindex="0">
+      <td><div class="cell child"><span class="nm tr-link" title="${esc(r.name)}">${esc(r.name)}</span>${C.typeTag(r.d.type)}</div></td>
+      <td>${C.stageTag(r.d.stage)}</td><td>${C.PART_ROLE[r.pt.role]}</td><td class="r num t2">${r.pt.rate != null ? `${r.pt.rate}%` : '—'}</td>
+      <td><div class="pct" title="고객 수금 ${man(r.collected)} / ${man(r.billed)}"><span>${r.percent}%</span><span class="meter"><i style="width:${r.percent}%"></i></span></div></td>
+      <td class="num">${r.pt.settledAt ? C.full(r.pt.settledAt) : '<span class="t3">—</span>'}</td><td class="r num" style="font-weight:600">${man(r.amount)}</td></tr>`).join(''));
+  }).join('') : `<tr><td colspan="7" style="border:0"><div class="empty"><b>${all.length ? '조건에 맞는 거래가 없습니다' : '아직 참여한 거래가 없습니다'}</b>${all.length ? '범위나 검색어를 바꿔 보세요.' : '거래에 참여하면 이 화면에 내 배분 수수료가 모입니다.'}</div></td></tr>`;
+  $('foot').innerHTML = `<span>배분액 합계<b>${man(sum(visible))}</b></span><span>미정산<b>${man(sum(visible.filter((r) => r.state !== 'settled')))}</b></span><span class="grow"></span><span>${esc(me.name)} · 참여 거래 ${visible.length}건 표시</span>`;
+  C.paintHeads($('tbl'), state.sort);
+}
+C.onChange = render;
+C.fillIcons();
+
+document.addEventListener('click', (e) => {
+  const t = e.target;
+  const tab = t.closest('[data-tab]');
+  if (tab) { state.tab = tab.dataset.tab; render(); return; }
+  const th = t.closest('th[data-sort]');
+  if (th && !t.closest('.rz')) { C.sortMenu(th, () => state.sort, (s) => { state.sort = s; render(); }); return; }
+  const g = t.closest('tr[data-grp]');
+  if (g) { const k = g.dataset.grp; state.shut.has(k) ? state.shut.delete(k) : state.shut.add(k); render(); return; }
+  const go = t.closest('tr[data-go]');
+  if (go) UI.toast(`거래관리에서 ${C.loc(C.dealById(go.dataset.go))} 거래를 엽니다`);
+});
+$('q').addEventListener('input', (e) => { state.q = e.target.value; render(); });
+document.addEventListener('keydown', (e) => {
+  if (e.isComposing || e.keyCode === 229) return;
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'f') { e.preventDefault(); $('q').focus(); return; }
+  if (e.key === 'Enter' && e.target.matches('[role=button], tr[data-go]')) e.target.click();
+});
+
+render();
+
+UI.notes(
+  [
+    '<b>열은 원본 그대로</b>입니다: 거래, 거래 단계, 내 역할, 배분률, 고객 수금, 정산일, 배분액. 정산 받을 수 있음 · 고객 수금 대기 · 정산 완료 세 묶음으로 나뉘고, 묶음 머리에 건수와 합계가 붙습니다.',
+    '<b>범위 탭</b>(전체 · 미정산 · 정산 완료)과 검색이 늘 보입니다. "정산은 대표가 처리합니다" 안내도 같은 줄에 있습니다.',
+    '<b>요약 숫자</b>는 상자 없이 한 줄로 두었고, 아래 묶음 머리의 합계와 같은 줄을 셉니다. 내 배분 조건(배분률·기본급·급여 유형)도 함께 보입니다.',
+    '<b>고객 수금</b>은 진행률 숫자와 얇은 막대로 보여 주어, 왜 아직 정산을 못 받는지 바로 알 수 있습니다. 올리면 받은 금액과 청구액이 나옵니다.',
+    '<b>표 머리를 누르면 정렬 메뉴</b>가 열립니다. 묶음 안에서 순서가 바뀝니다. 기본은 최근 거래부터입니다.',
+  ],
+  '내가 참여한 거래의 배분 수수료를 정산 상태별로 봅니다.',
+);
+</script>
+</body>
+</html>

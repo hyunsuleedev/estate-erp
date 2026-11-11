@@ -1,0 +1,830 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>희망매물 · UI 개선 데모</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="ui.css">
+<style>
+  [hidden] { display: none !important; }
+  #tbl th, #tbl td { padding-left: 10px; padding-right: 10px; }
+  #tbl th:last-child, #tbl td.act { padding: 0 12px 0 0; width: 38px; }
+  #tbl td.exp { width: 28px; padding: 0; }
+  #tbl td.place { white-space: normal; min-width: 180px; line-height: 1.35; }
+  .tw { width: 24px; height: 24px; display: inline-grid; place-items: center; border: 0; border-radius: 6px; background: transparent; color: var(--text-3); cursor: pointer; }
+  .tw:hover { background: var(--hover); color: var(--text); }
+  .tw .i { width: 14px; height: 14px; transition: transform 0.15s; }
+  .tw.on .i { transform: rotate(90deg); }
+  .cb { display: inline-flex; align-items: center; height: 21px; padding: 0 6px; border-radius: 4px; font-size: 12px; font-weight: 500; font-variant-numeric: tabular-nums; }
+  .cb + .cb { margin-left: 4px; }
+  .cb.act { background: var(--accent-soft); color: var(--accent-ink); }
+  .cb.deal { background: var(--tg-green-bg); color: var(--tg-green); }
+  .cb.end { background: var(--tg-sale-bg); color: var(--tg-sale); }
+  /* 펼친 줄: 조건에 묶인 매칭을 한 줄씩 */
+  #tbl tr.lane-tr > td { padding: 0; height: auto; white-space: normal; border-right: 0; background: color-mix(in srgb, var(--soft) 55%, var(--paper)); }
+  #tbl tbody tr.lane-tr:hover > td { background: color-mix(in srgb, var(--soft) 55%, var(--paper)); }
+  .lanes { padding: 4px var(--gutter) 8px 74px; }
+  .rmemo { display: flex; gap: 8px; align-items: baseline; padding: 6px 10px; font-size: 12px; color: var(--text-2); }
+  .rmemo b { font-weight: 600; color: var(--text); flex: none; }
+  .lane { position: relative; display: grid; grid-template-columns: minmax(190px, 240px) 500px minmax(120px, 1fr) 28px; align-items: center; gap: 14px; min-height: 48px; padding: 4px 4px 4px 12px; border-radius: 8px; font-size: 13px; transition: background-color 0.1s; }
+  .lane::before { content: ""; position: absolute; left: -14px; top: -6px; width: 16px; height: 30px; border-left: 1.5px solid var(--line-3); border-bottom: 1.5px solid var(--line-3); border-radius: 0 0 0 8px; }
+  .lane:hover, .lane:focus-within { background: var(--paper); box-shadow: inset 0 0 0 1px var(--line-2); }
+  .lane.closed .lc { opacity: 0.55; }
+  .lc { min-width: 0; }
+  .l1 { display: flex; align-items: center; gap: 6px; min-width: 0; white-space: nowrap; }
+  .l1 .nm { font-weight: 600; cursor: pointer; overflow: hidden; text-overflow: ellipsis; }
+  .l2 { margin-top: 1px; font-size: 12px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #tbl tr.lane-tr .lane:not(:hover):not(:focus-within) .rowact { opacity: 0; }
+  .lmeta { margin-top: 1px; min-height: 18px; font-size: 12px; color: var(--text-2); white-space: nowrap; display: flex; align-items: center; gap: 4px; font-variant-numeric: tabular-nums; }
+  .lmeta .i { width: 12px; height: 12px; color: var(--text-3); }
+  .mmemo { display: block; min-width: 60px; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; outline: 0; border-radius: 5px; padding: 2px 5px; margin: 0 -5px; cursor: text; }
+  .mmemo:hover { background: var(--hover); }
+  .mmemo:focus { background: var(--paper); box-shadow: 0 0 0 1.5px var(--accent); text-overflow: clip; }
+  .mmemo:empty::before { content: attr(data-ph); color: var(--text-3); }
+  /* 단계 트랙: 이름 붙은 단계를 선으로 잇는다. 누르면 그 단계에서 할 수 있는 일이 열린다 */
+  .trk { display: flex; align-items: center; }
+  .sc { height: 24px; display: inline-flex; align-items: center; gap: 5px; padding: 0 7px; border: 0; border-radius: 6px; background: transparent; font-size: 12px; color: var(--text-3); cursor: pointer; white-space: nowrap; transition: background-color 0.12s; }
+  .sc::before { content: ""; width: 7px; height: 7px; border-radius: 50%; box-shadow: inset 0 0 0 1.5px var(--line-3); flex: none; }
+  .sc:hover { background: var(--hover); }
+  .sc.done { color: var(--ok); }
+  .sc.done::before { background: var(--dot-ok); box-shadow: none; }
+  .sc.cur { background: var(--accent-soft); color: var(--accent-ink); font-weight: 600; }
+  .sc.cur::before { background: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent); }
+  .sc.fail { color: var(--danger); }
+  .sc.fail::before { background: var(--danger); box-shadow: none; }
+  .sc .i { width: 11px; height: 11px; }
+  .trk .ln { width: 8px; height: 1.5px; background: var(--line-2); flex: none; }
+  .trk .ln.done { background: var(--dot-ok); }
+  .trk .sep { margin: 0 4px; color: var(--text-3); display: inline-grid; }
+  .trk .sep .i { width: 12px; height: 12px; }
+  /* 단계별 보기 */
+  #tbl tr.grp td { height: 36px; background: var(--paper); font-size: 13px; font-weight: 600; cursor: pointer; }
+  #tbl tr.grp .chev { width: 14px; height: 14px; color: var(--text-3); vertical-align: -2px; margin-right: 6px; transition: transform 0.15s; }
+  #tbl tr.grp.shut .chev { transform: rotate(-90deg); }
+  #tbl tr.grp .n { font-weight: 500; color: var(--text-3); margin-left: 6px; }
+  #tbl td.two { height: 48px; }
+  #tbl td.memo { max-width: 220px; white-space: normal; color: var(--text-2); font-size: 13px; line-height: 1.4; }
+  #tbl td.memo > div { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  /* 필터 줄 */
+  .fbar { gap: 6px; padding: 10px var(--gutter) 10px; flex-wrap: wrap; }
+  .fsel, .fin { height: 30px; border: 0; border-radius: 8px; background: var(--paper); box-shadow: inset 0 0 0 1px var(--line-2), 0 1px 2px rgba(16, 24, 40, 0.04); font: inherit; font-size: 13px; color: var(--text); letter-spacing: inherit; transition: box-shadow 0.12s, background-color 0.12s; }
+  .fsel { display: inline-flex; align-items: center; gap: 6px; padding: 0 8px 0 10px; cursor: pointer; white-space: nowrap; }
+  .fsel:hover, .fin:hover { box-shadow: inset 0 0 0 1px var(--line-3), 0 1px 2px rgba(16, 24, 40, 0.04); }
+  .fsel .k { color: var(--text-2); }
+  .fsel .v { font-weight: 500; }
+  .fsel > .i { width: 12px; height: 12px; color: var(--text-3); }
+  .fsel.on, .fin.on { background: var(--accent-soft); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent); }
+  .fsel.on .k { color: var(--accent-ink); opacity: 0.75; }
+  .fsel.on .v, .fin.on { color: var(--accent-ink); }
+  .fsel .clr { width: 16px; height: 16px; display: grid; place-items: center; border-radius: 4px; color: var(--accent-ink); }
+  .fsel .clr:hover { background: color-mix(in srgb, var(--accent) 18%, transparent); }
+  .fsel .clr .i { width: 11px; height: 11px; }
+  .fin { width: 54px; padding: 0 8px; outline: 0; font-variant-numeric: tabular-nums; }
+  .fin::placeholder { color: var(--text-3); }
+  .fin:focus { box-shadow: inset 0 0 0 1px var(--accent), 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+  .frange { display: inline-flex; align-items: center; gap: 3px; }
+  .frange .t3 { font-size: 12px; }
+  #fbar [data-clear] { margin-left: auto; }
+  /* 옆 상세: 표 위에 겹쳐 연다 */
+  .split { position: relative; }
+  .peek.over { position: absolute; right: 0; top: 0; bottom: 0; width: 500px; z-index: 8; box-shadow: -18px 0 40px -18px rgba(16, 24, 40, 0.22); }
+  .peek h2 { font-size: 22px; }
+  .peek .sec { margin-top: 20px; }
+  .peek .sec-h small { font-weight: 400; color: var(--text-3); font-size: 12px; }
+  .peek .trk { flex-wrap: wrap; row-gap: 4px; }
+  .peek .props { margin: 4px 0 0; grid-template-columns: 84px minmax(0, 1fr); }
+  .peek .pk, .peek .pv { height: 30px; min-height: 30px; }
+  .peek .pv { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; line-height: 30px; }
+  .addrow { display: flex; gap: 6px; margin-top: 6px; }
+  .addrow .inp { flex: 1; min-width: 0; }
+  .alert { display: flex; gap: 8px; padding: 9px 12px; border-radius: 8px; font-size: 13px; line-height: 1.5; background: color-mix(in srgb, var(--dot-warn) 16%, transparent); color: var(--warn); }
+  .alert.info { background: var(--accent-soft); color: var(--accent-ink); }
+  .alert .i { margin-top: 2px; }
+  .note-edit { min-height: 56px; padding: 8px 10px; border-radius: 8px; box-shadow: inset 0 0 0 1px var(--line-2); font-size: 14px; line-height: 1.6; outline: 0; white-space: pre-wrap; }
+  .note-edit:focus { box-shadow: inset 0 0 0 1px var(--accent), 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+  .note-edit:empty::before { content: attr(data-ph); color: var(--text-3); }
+  /* 창 */
+  .mback { position: fixed; inset: 0; z-index: 150; background: rgba(16, 24, 40, 0.28); display: grid; place-items: center; animation: fade 0.12s; }
+  .modal { width: 520px; max-width: calc(100vw - 32px); max-height: calc(100vh - 64px); display: flex; flex-direction: column; border-radius: 14px; background: var(--paper); box-shadow: 0 24px 64px rgba(16, 24, 40, 0.3); animation: pop-in 0.15s ease-out; }
+  .modal.wide { width: 760px; }
+  .m-h { padding: 18px 20px 4px; }
+  .m-h h3 { margin: 0; font-size: 16px; font-weight: 650; }
+  .m-h p { margin: 4px 0 0; font-size: 13px; color: var(--text-2); }
+  .m-b { padding: 12px 20px; overflow: auto; }
+  .m-f { display: flex; justify-content: flex-end; gap: 6px; padding: 12px 20px 16px; }
+  .frm { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 12px; }
+  .frm label, .frm .fl { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--text-2); min-width: 0; }
+  .frm .full { grid-column: 1 / -1; }
+  .inp { height: 32px; padding: 0 10px; border: 0; border-radius: 8px; background: var(--paper); box-shadow: inset 0 0 0 1px var(--line-2); font: inherit; font-size: 13px; color: var(--text); outline: 0; }
+  .inp:focus { box-shadow: inset 0 0 0 1px var(--accent), 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+  textarea.inp { height: auto; padding: 8px 10px; resize: vertical; line-height: 1.5; }
+  .btn.primary.dng { background: var(--danger); }
+  .kv { display: grid; grid-template-columns: 84px 1fr; gap: 4px 10px; padding: 10px 12px; border-radius: 8px; background: var(--soft); font-size: 13px; margin-bottom: 12px; }
+  .kv span { color: var(--text-2); }
+  .pick { max-height: 208px; overflow: auto; border-radius: 8px; box-shadow: inset 0 0 0 1px var(--line-2); }
+  .pick > div { display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 4px 10px; font-size: 13px; cursor: pointer; border-bottom: 1px solid var(--line); }
+  .pick > div:last-child { border-bottom: 0; }
+  .pick > div:hover { background: var(--row-hover); }
+  .pick > div.on { background: var(--accent-soft); }
+  .pick .g { flex: 1; min-width: 0; }
+  .pick .g small { display: block; font-size: 12px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pick .i { color: var(--accent); }
+  .pick .none { justify-content: center; color: var(--text-3); cursor: default; }
+</style>
+</head>
+<body data-active="wanted">
+<main id="page">
+  <div class="ph">
+    <h1>희망매물</h1>
+    <span class="count" id="total"></span>
+    <div class="meta">
+      <span class="lnk" data-jump="act"><span class="dot accent"></span>진행 매칭 <b id="nAct"></b></span>
+      <span class="lnk" data-jump="deal"><span class="dot ok"></span>거래전환 <b id="nDeal"></b></span>
+      <span class="lnk" data-jump="none"><span class="dot warn"></span>매칭 없음 <b id="nNone"></b></span>
+    </div>
+    <div class="actions">
+      <button class="btn" id="reqBtn"></button>
+      <button class="btn primary" id="newBtn"></button>
+    </div>
+  </div>
+
+  <div class="vbar">
+    <div class="vtab on" data-kind="all">전체 <span class="n"></span></div>
+    <div class="vtab" data-kind="sale">매매 <span class="n"></span></div>
+    <div class="vtab" data-kind="jeonse">전세 <span class="n"></span></div>
+    <div class="vtab" data-kind="monthly">월세 <span class="n"></span></div>
+    <div class="vtools">
+      <label class="field" style="width:250px" data-icon="search"><input id="q" placeholder="고객, 연락처, 매물, 주소 검색" aria-label="검색"><kbd>⌘F</kbd></label>
+      <button class="btn quiet sm" id="foldBtn"></button>
+      <span class="vsep"></span>
+      <div class="seg" id="viewSeg"><button data-view="buyer" data-icon="users">고객별<kbd class="k" style="margin-left:4px">1</kbd></button><button data-view="stage" data-icon="list">단계별<kbd class="k" style="margin-left:4px">2</kbd></button></div>
+    </div>
+  </div>
+
+  <div class="fbar show" id="fbar">
+    <span data-slot="stage" style="display:contents"></span>
+    <span data-slot="place" style="display:contents"></span>
+    <span data-slot="type" style="display:contents"></span>
+    <span class="vsep"></span>
+    <span class="frange"><span data-slot="budget" style="display:contents"></span><input class="fin" data-rng="budget" data-side="lo" inputmode="decimal" placeholder="최소 억" aria-label="예산 최소(억)"><span class="t3">~</span><input class="fin" data-rng="budget" data-side="hi" inputmode="decimal" placeholder="최대 억" aria-label="예산 최대(억)"></span>
+    <span class="frange" id="rentRange" hidden><span data-slot="rent" style="display:contents"></span><input class="fin" data-rng="rent" data-side="lo" inputmode="numeric" placeholder="최소 만" aria-label="월세 최소(만원)"><span class="t3">~</span><input class="fin" data-rng="rent" data-side="hi" inputmode="numeric" placeholder="최대 만" aria-label="월세 최대(만원)"></span>
+    <span class="frange"><span data-slot="area" style="display:contents"></span><input class="fin" data-rng="area" data-side="lo" inputmode="numeric" placeholder="최소 평" aria-label="희망 평형 최소"><span class="t3">~</span><input class="fin" data-rng="area" data-side="hi" inputmode="numeric" placeholder="최대 평" aria-label="희망 평형 최대"></span>
+    <span class="vsep"></span>
+    <span data-slot="status" style="display:contents"></span>
+    <span data-slot="agent" style="display:contents"></span>
+    <span data-slot="urgency" style="display:contents"></span>
+    <span data-slot="move" style="display:contents"></span>
+    <button class="btn quiet sm" data-clear hidden>초기화</button>
+  </div>
+
+  <div class="split">
+    <div class="scroll" id="scroll">
+      <table class="tbl" id="tbl"><thead id="thead"></thead><tbody id="rows"></tbody></table>
+      <div class="sumbar" id="foot"></div>
+    </div>
+    <aside class="peek over" id="peek" hidden></aside>
+  </div>
+
+  <div class="selbar" id="selbar">
+    <span class="cnt" id="selCnt"></span>
+    <button id="selClear" data-icon="x">선택 해제</button>
+  </div>
+</main>
+
+<script src="shell.js"></script>
+<script>
+const { icon, av, won } = UI;
+const esc = (v) => String(v == null ? '' : v).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+const man = (v) => (v == null ? '—' : v % 10000 || v < 10000 ? `${won(v)}만` : won(v));
+const TODAY = '2026.11.11';
+const KIND = { sale: '매매', jeonse: '전세', monthly: '월세' };
+const TYPES = { apartment: '아파트', officetel: '오피스텔', villa: '빌라', house: '주택', commercial: '상가', land: '토지', living_accommodation: '생활숙박' };
+const URG = { urgent: '급함', normal: '보통', flexible: '여유' };
+const RSTAT = { active: '활성', hold: '보류', completed: '완료' };
+// 원본 MatchStage 순서와 이름. 종료(closed)는 단계 번호가 아니라 따로 표시한다
+const STG = ['내부 후보', '고객 관심', '임장 가능 확인', '임장', '협상', '거래전환'];
+const PROG = ['고객에게 제안', '관심 있음 · 임장 가능 확인으로', '임장 가능 · 임장으로', '임장 후 관심 있음 · 협상으로', '조건 합의 · 거래로 전환'];
+const SHUT = ['후보에서 제외 · 종료', '관심 없음 · 종료', '임장 불가 · 종료', '임장 후 관심 없음 · 종료', '협상 결렬 · 종료'];
+const DSTG = ['계약 준비', '가계약', '본계약', '중도금/잔금', '잔금완료', '정산종료'];
+const VERIFY = {
+  ok: ['확인완료', ''],
+  none: ['미확인', '매물 확인 정보가 없습니다. 매물관리에서 집주인·의뢰인 확인을 먼저 완료해 주세요.'],
+  overdue: ['재확인 필요', '매물 확인 기한이 지났습니다. 다시 확인한 뒤 고객에게 제안해 주세요.'],
+  no_answer: ['부재중', '집주인·의뢰인 확인이 되지 않았습니다. 다시 확인한 뒤 진행해 주세요.'],
+  hold: ['보류', '보류된 매물입니다. 매물을 재개한 뒤 고객에게 제안해 주세요.'],
+};
+
+// 매물: [단지, 동, 호, 거래, 가격·보증금, 월세, 주소, 확인상태, 소유자, 등록일]
+const LIST = [
+  ['고덕그라시움', '103', '3401', 'sale', 168000, null, '서울 강동구 고덕로 333', 'ok', '한정수 · 010-3320-1187', '2026.10.02'],
+  ['고덕그라시움', '109', '1101', 'sale', 161000, null, '서울 강동구 고덕로 333', 'ok', '오세라 · 010-8841-2206', '2026.10.11'],
+  ['고덕그라시움', '121', '2502', 'sale', 175000, null, '서울 강동구 고덕로 333', 'ok', '문태호 · 010-2755-9034', '2026.09.28'],
+  ['고덕아르테온', '309', '2101', 'sale', 158000, null, '서울 강동구 고덕로 360', 'ok', '서유나 · 010-6617-4402', '2026.10.19'],
+  ['고덕아르테온', '312', '1704', 'sale', 152000, null, '서울 강동구 고덕로 360', 'ok', '곽동현 · 010-4409-7715', '2026.09.14'],
+  ['래미안힐스테이트고덕', '112', '1502', 'sale', 139000, null, '서울 강동구 아리수로 50길 50', 'overdue', '임채원 · 010-9902-5581', '2026.08.30'],
+  ['래미안힐스테이트고덕', '105', '2304', 'sale', 146000, null, '서울 강동구 아리수로 50길 50', 'ok', '남기훈 · 010-5123-8890', '2026.10.25'],
+  ['고덕센트럴아이파크', '101', '1501', 'sale', 148000, null, '서울 강동구 고덕로 285', 'ok', '진소영 · 010-7730-1164', '2026.10.08'],
+  ['고덕자이', '108', '1902', 'sale', 129000, null, '서울 강동구 상일로 55', 'no_answer', '황보람 · 010-2086-3349', '2026.09.21'],
+  ['고덕그라시움', '117', '1203', 'jeonse', 78000, null, '서울 강동구 고덕로 333', 'ok', '염지수 · 010-3391-6620', '2026.10.30'],
+  ['고덕아르테온', '301', '1203', 'jeonse', 75000, null, '서울 강동구 고덕로 360', 'ok', '표민규 · 010-8452-0917', '2026.11.01'],
+  ['고덕센트럴아이파크', '104', '2203', 'jeonse', 69000, null, '서울 강동구 고덕로 285', 'ok', '설하린 · 010-6204-7753', '2026.10.27'],
+  ['고덕자이', '102', '1101', 'jeonse', 61000, null, '서울 강동구 상일로 55', 'none', '', '2026.10.16'],
+  ['고덕그라시움', '205', '902', 'monthly', 10000, 190, '서울 강동구 고덕로 333', 'ok', '채은호 · 010-5578-2241', '2026.11.03'],
+  ['고덕센트럴아이파크', '110', '902', 'monthly', 15000, 160, '서울 강동구 고덕로 285', 'ok', '변서진 · 010-9917-3305', '2026.10.22'],
+  ['고덕자이', '104', '703', 'monthly', 20000, 120, '서울 강동구 상일로 55', 'hold', '국승우 · 010-4460-8812', '2026.09.05'],
+  ['상일동 하늘빌라', '', '302', 'monthly', 3000, 75, '서울 강동구 상일로 12길 8', 'ok', '탁미정 · 010-7289-5516', '2026.10.29'],
+].map((l, id) => ({ id, site: l[0], dong: l[1], ho: l[2], kind: l[3], price: l[4], rent: l[5], addr: l[6], verify: l[7], owner: l[8], reg: l[9], title: `${l[0]} ${l[1] ? l[1] + '동 ' : ''}${l[2]}호` }));
+
+// 희망 조건: [고객, 연락처, 상태, 긴급도, 담당, 거래, 유형, 평형 최소·최대, 예산 최소·최대(만원), 월세 최대, 지역, 단지, 입주 희망일, 메모]
+const REQS = [
+  ['김지현', '010-4821-3307', 'active', 'urgent', '이현수', 'sale', ['apartment'], 30, 34, 150000, 170000, null, ['고덕동'], ['고덕그라시움', '고덕아르테온'], '2027-02-15', '초등 배정 때문에 2월 전 입주 희망. 남향 고층 선호'],
+  ['박준호', '010-2290-1184', 'active', 'normal', '이현수', 'sale', ['apartment'], 34, 39, 160000, 180000, null, ['고덕동'], ['고덕그라시움'], null, '대출 한도 회신 대기 중'],
+  ['배유진', '010-7753-0921', 'active', 'flexible', '박서연', 'sale', ['apartment'], 39, null, 170000, 190000, null, ['고덕동', '상일동'], [], null, ''],
+  ['장하은', '010-3318-6642', 'active', 'normal', '최민준', 'sale', ['apartment'], 32, 34, 140000, 150000, null, ['고덕동'], ['래미안힐스테이트고덕', '고덕센트럴아이파크'], '2027-03-20', '5천 조정되면 바로 계약 의사'],
+  ['조성민', '010-9045-2276', 'hold', 'flexible', '박서연', 'sale', ['apartment', 'officetel'], 25, 32, null, 130000, null, ['상일동'], ['고덕자이'], '2027-06-30', '기존 집 매도 후 진행'],
+  ['이나래', '010-5567-8830', 'active', 'urgent', '정다은', 'jeonse', ['apartment'], 30, 34, 70000, 80000, null, ['고덕동'], ['고덕그라시움', '고덕아르테온'], '2026-12-20', '12월 말 현 전세 만기'],
+  ['윤태경', '010-6634-1029', 'active', 'normal', '정다은', 'jeonse', ['apartment'], 25, 25, 60000, 70000, null, ['고덕동', '상일동'], [], '2027-01-25', ''],
+  ['신가영', '010-8812-4470', 'active', 'normal', '최민준', 'monthly', ['apartment', 'officetel'], 20, 25, 10000, 20000, 200, ['고덕동'], ['고덕그라시움', '고덕센트럴아이파크'], '2026-12-01', '반려묘 1마리, 법인 계약'],
+  ['허민재', '010-3907-5518', 'active', 'urgent', '최민준', 'monthly', ['villa', 'officetel'], 15, 20, 1000, 5000, 80, ['상일동', '강일동'], [], '2026-11-25', '직장이 상일역 근처, 주차 필수'],
+  ['권소희', '010-7140-2263', 'active', 'flexible', '박서연', 'sale', ['apartment'], 25, 34, 120000, 135000, null, ['상일동'], ['고덕자이'], null, '실거주 겸 투자, 급하지 않음'],
+  ['마동욱', '010-2468-9031', 'active', 'normal', '이현수', 'jeonse', ['apartment'], 34, 34, 72000, 78000, null, ['고덕동'], ['고덕아르테온'], '2027-02-01', ''],
+  ['송예린', '010-5093-7742', 'completed', 'normal', '이현수', 'jeonse', ['apartment'], 34, 34, 75000, 82000, null, ['고덕동'], ['고덕그라시움'], '2026-11-30', '11/2 계약 완료'],
+].map((r, id) => ({ id, name: r[0], phone: r[1], status: r[2], urgency: r[3], agent: r[4], kind: r[5], types: r[6], aMin: r[7], aMax: r[8], pMin: r[9], pMax: r[10], rentMax: r[11], regions: r[12], sites: r[13], moveIn: r[14], memo: r[15] }));
+
+// 매칭: [조건, 매물, 단계, 종료 여부, 메모, 방문, 최근 수정, 거래 단계]
+let MID = 0;
+const mk = (rid, lid, stage, o = {}) => ({ id: MID++, rid, lid, stage, closed: false, closedFrom: null, memo: '', visit: '', upd: '2026.11.05', dealStage: null, consults: [], tasks: [], rev: 0, ...o });
+let MATCHES = [
+  mk(0, 0, 3, { memo: '배우자와 주말에 같이 보기로 함', visit: '11.14 (토) 14:00', upd: '2026.11.10', consults: [['전화', '이현수', '2026.11.10 16:20', '토요일 오후 방문 가능하다고 함. 주차 2대 가능한지 확인 요청']] }),
+  mk(0, 3, 1, { memo: '고층 남동향, 사진 먼저 보냄', upd: '2026.11.09' }),
+  mk(0, 1, 0, { upd: '2026.11.08' }),
+  mk(0, 4, 0, { closed: true, closedFrom: 1, memo: '저층이라 제외', upd: '2026.10.29' }),
+  mk(1, 2, 2, { memo: '집주인에게 방문 가능 시간 문의 중', upd: '2026.11.10' }),
+  mk(1, 0, 1, { upd: '2026.11.06' }),
+  mk(3, 6, 4, { memo: '14억 2천까지 조정 요청', upd: '2026.11.11' }),
+  mk(3, 7, 3, { visit: '11.12 (목) 11:00', upd: '2026.11.09' }),
+  mk(3, 5, 0, { memo: '집주인 해외 체류, 확인 지연', upd: '2026.11.03' }),
+  mk(5, 9, 5, { memo: '보증금 7억 7,000 합의', upd: '2026.11.07', dealStage: 0 }),
+  mk(5, 10, 2, { upd: '2026.11.08' }),
+  mk(6, 11, 1, { memo: '즉시 입주 가능 여부 문의', upd: '2026.11.09' }),
+  mk(6, 12, 0, { upd: '2026.11.04' }),
+  mk(7, 13, 3, { visit: '11.13 (금) 19:00', memo: '퇴근 후 방문', upd: '2026.11.10' }),
+  mk(7, 14, 1, { upd: '2026.11.07' }),
+  mk(7, 15, 0, { memo: '12월 재오픈 예정 매물', upd: '2026.11.02' }),
+  mk(8, 16, 2, { memo: '주차 1대 확인됨', upd: '2026.11.10' }),
+  mk(9, 8, 0, { memo: '집주인 부재중 2회', upd: '2026.11.06' }),
+  mk(10, 10, 4, { memo: '입주일 2월 초로 조율 중', upd: '2026.11.10' }),
+  mk(11, 9, 5, { memo: '11/2 계약', upd: '2026.11.02', dealStage: 2 }),
+  mk(4, 8, 0, { closed: true, closedFrom: 0, memo: '고객 보류로 종료', upd: '2026.10.20' }),
+];
+
+const state = { kind: 'all', view: 'buyer', q: '', f: {}, rng: {}, sort: null, picked: new Set(), shut: new Set(), gshut: new Set([5, 6]), detail: null };
+const L = (m) => LIST[m.lid];
+const R = (m) => REQS[m.rid];
+const reqMatches = (r) => MATCHES.filter((m) => m.rid === r.id).sort((a, b) => a.id - b.id);
+const mState = (m) => (m.closed ? 'end' : m.stage === 5 ? 'deal' : 'act');
+const priceOf = (l) => (l.kind === 'monthly' ? `${man(l.price)} / ${l.rent}만` : man(l.price));
+const rangeTxt = (a, b, f) => (a != null && b != null ? (a === b ? f(a) : `${f(a)} ~ ${f(b)}`) : a != null ? `${f(a)} 이상` : b != null ? `${f(b)} 이하` : '');
+const areaTxt = (r) => rangeTxt(r.aMin, r.aMax, (v) => `${v}평`) || '—';
+function budgetTxt(r) {
+  const p = rangeTxt(r.pMin, r.pMax, man);
+  if (r.kind === 'monthly') return `월세 보증금 ${p || '협의'}${r.rentMax ? ` / 월 ${r.rentMax}만 이하` : ''}`;
+  return p ? `${KIND[r.kind]} ${p}` : '예산 협의';
+}
+const placeTxt = (r) => [...r.regions, ...r.sites].join(' · ') || '지역 협의';
+const typeTxt = (r) => r.types.map((t) => TYPES[t]).join(', ') || '유형 협의';
+const reqTxt = (r) => (r.kind === 'monthly' ? `월세 · 보증금 ${rangeTxt(r.pMin, r.pMax, man) || '협의'}${r.rentMax ? ` / 월세 ${r.rentMax}만 이하` : ''}` : `${KIND[r.kind]} · ${rangeTxt(r.pMin, r.pMax, man) || '협의'}`);
+
+// ── 필터 ──
+// 범위는 '고객이 원하는 범위와 겹치면' 통과한다. 고객이 비워 둔 쪽은 걸러내지 않는다(원본 규칙)
+const overlap = (a, b, lo, hi) => (hi == null || a == null || a <= hi) && (lo == null || b == null || b >= lo);
+const RNG = {
+  budget: { k: () => ({ all: '예산', sale: '매매가', jeonse: '전세가', monthly: '보증금' })[state.kind], unit: '억', mul: 10000, get: (r) => [r.pMin, r.pMax], presets: [['~5억', null, 5], ['5억대', 5, 10], ['10억대', 10, 15], ['15억대', 15, 20], ['20억대', 20, 25], ['25억대', 25, 30], ['30억~', 30, null]] },
+  rent: { k: () => '월세', unit: '만', mul: 1, get: (r) => [null, r.rentMax], presets: [['~100만', null, 100], ['100만대', 100, 200], ['200만대', 200, 300], ['300만대', 300, 400], ['400만대', 400, 500], ['500만대', 500, 600], ['600만~', 600, null]] },
+  area: { k: () => '희망 평형', unit: '평', mul: 1, get: (r) => [r.aMin, r.aMax], presets: [['~10평', null, 10], ['10평대', 10, 20], ['20평대', 20, 30], ['30평대', 30, 40], ['40평대', 40, 50], ['50평대', 50, 60], ['60평대', 60, 70], ['70평~', 70, null]] },
+};
+const rngLabel = (id) => {
+  const g = state.rng[id]; const u = RNG[id].unit;
+  if (!g || (g.lo == null && g.hi == null)) return '';
+  const p = RNG[id].presets.find((x) => x[1] === g.lo && x[2] === g.hi);
+  if (p) return p[0];
+  return g.lo != null && g.hi != null ? `${g.lo}${u}–${g.hi}${u}` : g.lo != null ? `${g.lo}${u} 이상` : `${g.hi}${u} 이하`;
+};
+const rngTest = (id, r) => { const g = state.rng[id]; if (!g) return true; const [a, b] = RNG[id].get(r); const m = RNG[id].mul; return overlap(a, b, g.lo == null ? null : g.lo * m, g.hi == null ? null : g.hi * m); };
+const addMonths = (n) => { const d = new Date(2026, 10 + n, 11); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+// 여러 개 고르는 필터: [값, 이름]
+const MULTI = {
+  stage: { k: '단계', opts: () => [...(state.view === 'buyer' ? [['none', '매칭 없음']] : []), ...STG.map((l, i) => [String(i), l]), ['end', '종료']] },
+  place: { k: '지역·단지', opts: () => [...[...new Set(REQS.flatMap((r) => r.regions))].sort().map((v) => [v, v, '지역']), ...[...new Set(REQS.flatMap((r) => r.sites))].sort((a, b) => a.localeCompare(b, 'ko')).map((v) => [v, v, '단지'])], test: (r, s) => [...r.regions, ...r.sites].some((v) => s.has(v)) },
+  type: { k: '매물 유형', opts: () => Object.entries(TYPES), test: (r, s) => r.types.some((t) => s.has(t)) },
+  status: { k: '상태', opts: () => Object.entries(RSTAT).filter(([k]) => k !== 'completed' || state.view === 'stage'), test: (r, s) => s.has(r.status) },
+  agent: { k: '담당자', opts: () => [...new Set(REQS.map((r) => r.agent))].sort().map((v) => [v, v]), test: (r, s) => s.has(r.agent) },
+  urgency: { k: '긴급도', opts: () => Object.entries(URG), test: (r, s) => s.has(r.urgency) },
+};
+const MOVE = [['1개월 내', 1], ['3개월 내', 3], ['6개월 내', 6]];
+const stageKey = (m) => (m.closed ? 'end' : String(m.stage));
+const reqPass = (r) => {
+  if (state.kind !== 'all' && r.kind !== state.kind) return false;
+  for (const id of ['place', 'type', 'status', 'agent', 'urgency']) { const s = state.f[id]; if (s && s.size && !MULTI[id].test(r, s)) return false; }
+  for (const id of ['budget', 'area']) if (!rngTest(id, r)) return false;
+  if (state.kind === 'monthly' && !rngTest('rent', r)) return false;
+  if (state.move) { const n = MOVE.find((x) => x[0] === state.move)[1]; if (!r.moveIn || r.moveIn < '2026-11-11' || r.moveIn > addMonths(n)) return false; }
+  return true;
+};
+const qHitReq = (r, q) => `${r.name} ${r.phone} ${placeTxt(r)} ${r.memo}`.includes(q);
+const qHitMatch = (m, q) => { const l = L(m); const r = R(m); return `${l.title} ${l.addr} ${r.name} ${r.phone} ${m.memo}`.includes(q); };
+const nFilters = () => Object.values(state.f).filter((s) => s.size).length + Object.keys(RNG).filter((id) => rngLabel(id) && (id !== 'rent' || state.kind === 'monthly')).length + (state.move ? 1 : 0);
+
+// ── 단계 트랙 ──
+function track(m) {
+  const r = R(m);
+  if (m.closed) {
+    return `<div class="trk" data-m="${m.id}">${STG.slice(0, 5).filter((_, k) => k <= m.closedFrom).map((l, k) => `${k ? '<i class="ln"></i>' : ''}<button class="sc ${k < m.closedFrom ? 'done' : 'fail'}" data-sc="${k}" title="${k === m.closedFrom ? '이 단계에서 종료' : ''}">${l}</button>`).join('')}<i class="ln"></i><button class="sc fail" data-sc="end">종료</button></div>`;
+  }
+  if (m.stage === 5 && m.dealStage != null) {
+    const ds = DSTG.map((l, k) => [l, k]).filter(([, k]) => k !== 1 || m.dealStage === 1);
+    return `<div class="trk" data-m="${m.id}"><button class="sc done" data-sc="done" title="완료된 매칭 단계 보기">매칭 완료</button><span class="sep">${icon('chevsRight')}</span>${ds.map(([l, k], i) => `${i ? `<i class="ln ${k <= m.dealStage ? 'done' : ''}"></i>` : ''}<button class="sc ${k < m.dealStage ? 'done' : k === m.dealStage ? 'cur' : ''}" data-deal title="거래관리에서 진행 · 클릭하여 이동">${l}</button>`).join('')}</div>`;
+  }
+  return `<div class="trk" data-m="${m.id}">${STG.map((l, k) => `${k ? `<i class="ln ${k <= m.stage ? 'done' : ''}"></i>` : ''}<button class="sc ${k < m.stage ? 'done' : k === m.stage ? 'cur' : ''}" data-sc="${k}" aria-label="${r.name} ${l} 단계">${l}${k === 3 && m.visit ? icon('cal') : ''}</button>`).join('')}</div>`;
+}
+// 원본의 단계 이동 규칙: 매물 확인이 끝나야 고객에게 제안하고, 임장 가능 확인을 거쳐야 임장으로, 단계는 건너뛰지 않는다
+function blocked(m, to) {
+  const l = L(m);
+  if (to >= 1 && l.verify !== 'ok') return VERIFY[l.verify][1];
+  if (to === 3 && m.stage < 2) return '집주인·점유자의 임장 가능 확인을 먼저 완료해 주세요.';
+  if (to > m.stage + 1) return `${STG[m.stage + 1]} 단계를 먼저 완료해 주세요.`;
+  return '';
+}
+const alive = (m) => MATCHES.includes(m);
+function change(m, apply, msg) {
+  const before = { stage: m.stage, closed: m.closed, closedFrom: m.closedFrom, visit: m.visit, dealStage: m.dealStage, upd: m.upd };
+  apply();
+  m.upd = TODAY;
+  const v = ++m.rev;
+  render();
+  UI.toast(msg, () => {
+    if (!alive(m) || m.rev !== v) { UI.toast('그 뒤에 다시 바뀌어서 되돌리지 않았습니다'); return; }
+    m.rev += 1; Object.assign(m, before); render();
+  });
+}
+function go(m, to) {
+  if (to === m.stage) return;
+  if (to === 5) return convertDialog(m);
+  const why = to > m.stage ? blocked(m, to) : '';
+  if (why) { UI.toast(`단계 이동 전 확인이 필요합니다 · ${why}`); return; }
+  change(m, () => { m.stage = to; }, `${R(m).name} · ${L(m).title} 매칭을 '${STG[to]}' 단계로 변경했습니다`);
+}
+const closeMatch = (m) => change(m, () => { m.closed = true; m.closedFrom = m.stage; }, `${R(m).name} · ${L(m).title} 매칭을 종료했습니다`);
+const reopen = (m, to) => change(m, () => { m.closed = false; m.stage = to; m.closedFrom = null; }, `${R(m).name} · ${L(m).title} 매칭을 '${STG[to]}'에서 다시 시작했습니다`);
+const VISITS = ['11.12 (목) 15:00', '11.14 (토) 11:00', '11.15 (일) 14:00'];
+function visitItems(m) {
+  return VISITS.filter((v) => v !== m.visit).map((v) => ({ label: `${m.visit ? '방문 일정 변경' : m.stage === 2 ? '일정 잡고 방문 단계로 이동' : '방문 일정 잡기'} · ${v}`, icon: 'cal', run: () => {
+    if (m.stage < 2) { UI.toast(`단계 이동 전 확인이 필요합니다 · ${blocked(m, 3)}`); return; }
+    change(m, () => { m.visit = v; if (m.stage === 2) m.stage = 3; }, `방문 일정을 저장했습니다 · ${R(m).name} ${L(m).site} 방문 ${v}`);
+  } }));
+}
+function stageMenu(anchor, m, k) {
+  const items = [];
+  if (m.closed) {
+    items.push({ head: '종료된 매칭 · 단계는 읽기 전용입니다' }, { label: `${STG[m.closedFrom]}에서 다시 시작`, icon: 'refresh', run: () => reopen(m, m.closedFrom) });
+    if (m.closedFrom !== 0) items.push({ label: '내부 후보에서 다시 시작', icon: 'refresh', run: () => reopen(m, 0) });
+    return UI.menu(anchor, items, { wide: true });
+  }
+  const why = k > m.stage ? blocked(m, k) : '';
+  if (k === 3) {
+    items.push({ head: '방문 작업 · 방문 일정을 캘린더에 남기고, 방문 완료 시 협상 단계로 이동합니다.' });
+    if (m.visit) items.push({ head: `예정된 방문: ${m.visit}` });
+    if (why && m.stage < 2) items.push({ head: why });
+    items.push(...visitItems(m));
+    if (m.stage === 2) items.push({ label: '방문 단계로 이동', icon: 'chevRight', run: () => go(m, 3) });
+    if (m.stage === 3) items.push('-', { label: PROG[3], icon: 'check', run: () => go(m, 4) }, { label: SHUT[3], icon: 'x', danger: true, run: () => closeMatch(m) });
+    if (m.stage > 3) items.push('-', { label: '이 단계로 되돌리기', icon: 'chevLeft', run: () => go(m, 3) });
+  } else if (k === m.stage) {
+    items.push({ head: `${STG[k]} · ${k === 2 ? '집주인·점유자에게 임장 가능 여부를 확인한 뒤 다음 단계로 진행합니다.' : '업무 결과를 선택해 다음 단계로 진행하거나 이 단계에서 종료합니다.'}` });
+    const w = blocked(m, k + 1);
+    if (w) items.push({ head: w });
+    items.push({ label: PROG[k], icon: 'check', run: () => go(m, k + 1) }, { label: SHUT[k], icon: 'x', danger: true, run: () => closeMatch(m) });
+  } else if (k < m.stage) {
+    items.push({ head: `${STG[k]} · 이미 지난 단계입니다. 필요하면 이 단계로 되돌립니다.` }, { label: '이 단계로 되돌리기', icon: 'chevLeft', run: () => go(m, k) });
+  } else {
+    items.push({ head: `${STG[k]} · 아직 도달하지 않은 단계입니다. 앞 단계를 완료한 뒤 진행합니다.` });
+    if (why) items.push({ head: why });
+    if (k === m.stage + 1) items.push({ label: k === 5 ? '거래 전환…' : '이 단계로 이동', icon: 'chevRight', run: () => go(m, k) });
+    else items.push({ label: `지금 할 일: ${PROG[m.stage]}`, icon: 'check', run: () => go(m, m.stage + 1) });
+  }
+  UI.menu(anchor, items, { wide: true });
+}
+function rowMenu(anchor, m) {
+  const hasDeal = m.dealStage != null;
+  const items = [{ label: '상세 보기', icon: 'expand', run: () => openDetail(m.id) }];
+  if (m.closed) items.push({ head: '종료된 매칭' }, { label: `${STG[m.closedFrom]}에서 다시 시작`, icon: 'refresh', run: () => reopen(m, m.closedFrom) }, ...(m.closedFrom ? [{ label: '내부 후보에서 다시 시작', icon: 'refresh', run: () => reopen(m, 0) }] : []));
+  else if (m.stage < 5) items.push({ head: `${STG[m.stage]} 결과` }, { label: PROG[m.stage], icon: 'check', run: () => go(m, m.stage + 1) }, { label: SHUT[m.stage], icon: 'x', run: () => closeMatch(m) });
+  else items.push({ label: '거래 보기', icon: 'handshake', run: () => { location.href = 'deals.html'; } });
+  items.push('-', { label: '삭제', icon: 'x', danger: true, hint: hasDeal ? '거래 연결됨' : '', run: () => {
+    if (hasDeal) { UI.toast('거래와 연결된 매칭은 삭제 대신 종료를 권장합니다'); return; }
+    const at = MATCHES.indexOf(m); MATCHES.splice(at, 1); if (state.detail === m.id) state.detail = null; render();
+    UI.toast(`${R(m).name} · ${L(m).title} 매칭을 삭제했습니다`, () => { if (alive(m)) return; MATCHES.push(m); render(); });
+  } });
+  UI.menu(anchor, items, { right: true, wide: true });
+}
+
+// ── 창 ──
+function modal({ title, desc, body, ok = '확인', danger, wide, onOpen, onOk }) {
+  const back = document.createElement('div');
+  back.className = 'mback';
+  back.innerHTML = `<div class="modal ${wide ? 'wide' : ''}" role="dialog" aria-modal="true"><div class="m-h"><h3>${title}</h3>${desc ? `<p>${desc}</p>` : ''}</div><div class="m-b">${body}</div><div class="m-f"><button class="btn" data-mx>취소</button><button class="btn primary ${danger ? 'dng' : ''}" data-mok>${ok}</button></div></div>`;
+  document.body.append(back);
+  const close = () => back.remove();
+  back.addEventListener('mousedown', (e) => { if (e.target === back) close(); });
+  back.addEventListener('click', (e) => { if (e.target.closest('[data-mx]')) close(); else if (e.target.closest('[data-mok]') && onOk(back) !== false) close(); });
+  back.addEventListener('keydown', (e) => { if (e.isComposing || e.keyCode === 229) return; if (e.key === 'Escape') { e.stopPropagation(); close(); } });
+  if (onOpen) onOpen(back);
+  const f = back.querySelector('input, textarea, select');
+  if (f) f.focus();
+  return back;
+}
+function convertDialog(m) {
+  const l = L(m); const r = R(m);
+  const why = blocked(m, 5);
+  if (m.stage < 4 && why) { UI.toast(`단계 이동 전 확인이 필요합니다 · ${why}`); return; }
+  const lab = KIND[l.kind];
+  modal({
+    title: '거래 전환',
+    desc: '매칭을 거래 전환하면 계약 준비 단계의 거래가 생성되어 계약·대금·수수료 관리로 이어집니다.',
+    body: `<div class="kv"><span>고객</span><b>${r.name}</b><span>매물</span><b>${l.title}</b><span>거래유형</span><b>${lab}</b><span>매물 가격</span><b class="num">${priceOf(l)}</b></div>
+      <div class="frm">${l.kind === 'monthly'
+        ? `<label>합의 보증금 (만원)<input class="inp num" id="cvP" inputmode="numeric" placeholder="예: 10000" value="${l.price}"></label><label>합의 월세 (만원)<input class="inp num" id="cvR" inputmode="numeric" placeholder="예: 120" value="${l.rent}"></label>`
+        : `<label class="full">합의 ${lab}가 (만원)<input class="inp num" id="cvP" inputmode="numeric" placeholder="예: 158000" value="${l.price}"></label>`}
+        <div class="full t2" id="cvEcho" style="font-size:12px"></div>
+        <div class="full alert info">${icon('info')}<span>매수인은 매칭 고객, 매도인은 매물 소유자로 자동 연결됩니다. 합의 금액 기준으로 수수료 수금 항목이 자동 생성됩니다.</span></div></div>`,
+    ok: '거래 생성하고 전환',
+    onOpen: (b) => { const p = b.querySelector('#cvP'); const echo = () => { const v = +p.value; b.querySelector('#cvEcho').textContent = v > 0 ? `= ${man(v)}` : ''; }; p.addEventListener('input', echo); echo(); },
+    onOk: (b) => {
+      const v = +b.querySelector('#cvP').value;
+      if (!(v > 0)) { UI.toast('합의 금액을 만원 단위 숫자로 입력해 주세요'); return false; }
+      change(m, () => { m.stage = 5; m.dealStage = 0; }, `계약 준비 거래가 생성되었습니다 · ${r.name} ${l.title} ${man(v)}`);
+    },
+  });
+}
+function createDialog(fixRid) {
+  const pick = { lid: null, rid: fixRid == null ? null : fixRid, lq: '', rq: '' };
+  const draw = (b) => {
+    const ls = LIST.filter((l) => `${l.title} ${l.addr}`.includes(pick.lq)).slice(0, 8);
+    b.querySelector('#pkL').innerHTML = ls.length ? ls.map((l) => `<div class="${pick.lid === l.id ? 'on' : ''}" data-pl="${l.id}"><span class="tag ${l.kind}">${KIND[l.kind]}</span><span class="g"><b>${l.title}</b><small>${l.addr} · ${priceOf(l)}</small></span>${pick.lid === l.id ? icon('check') : ''}</div>`).join('') : '<div class="none">검색 결과가 없습니다.</div>';
+    const rs = REQS.filter((r) => r.status === 'active' && (fixRid == null || r.id === fixRid) && `${r.name} ${r.phone}`.includes(pick.rq)).slice(0, 8);
+    b.querySelector('#pkR').innerHTML = rs.length ? rs.map((r) => `<div class="${pick.rid === r.id ? 'on' : ''}" data-pr="${r.id}"><span class="g"><b>${r.name}</b> <span class="t2 num">${r.phone}</span><small>${budgetTxt(r)} · ${areaTxt(r)} · ${placeTxt(r)}</small></span>${pick.rid === r.id ? icon('check') : ''}</div>`).join('') : '<div class="none">검색 결과가 없습니다.</div>';
+    const dup = pick.lid != null && pick.rid != null && MATCHES.some((m) => m.lid === pick.lid && m.rid === pick.rid && !m.closed);
+    b.querySelector('#pkDup').hidden = !dup;
+    b.querySelector('[data-mok]').disabled = dup || pick.lid == null || pick.rid == null;
+  };
+  modal({
+    title: '매칭 생성', wide: true,
+    desc: '매물과 구매조건을 연결해 매칭 파이프라인에 올립니다. 생성 후에는 ‘내부 후보’로 시작합니다.',
+    body: `<div class="frm">
+      <div class="fl">매물 선택 *<input class="inp" id="pkLq" placeholder="단지명, 주소로 검색"><div class="pick" id="pkL"></div></div>
+      <div class="fl">구매조건 선택 *${fixRid == null ? '<input class="inp" id="pkRq" placeholder="고객명, 연락처로 검색">' : '<span class="t2" style="height:32px;display:flex;align-items:center">현재 구함 조건의 고객으로 고정됩니다.</span>'}<div class="pick" id="pkR"></div></div>
+      <label class="full">초기 메모<textarea class="inp" id="pkMemo" rows="2" placeholder="추천 사유 등 초기 메모 (선택)"></textarea></label>
+      <div class="full alert" id="pkDup" hidden>${icon('info')}<span>이미 같은 매물과 구매조건으로 진행 중인 매칭이 있습니다.</span></div></div>`,
+    ok: '매칭 생성',
+    onOpen: (b) => {
+      draw(b);
+      b.addEventListener('input', (e) => { if (e.target.id === 'pkLq') { pick.lq = e.target.value.trim(); draw(b); } if (e.target.id === 'pkRq') { pick.rq = e.target.value.trim(); draw(b); } });
+      b.addEventListener('click', (e) => { const pl = e.target.closest('[data-pl]'); const pr = e.target.closest('[data-pr]'); if (pl) { pick.lid = +pl.dataset.pl; draw(b); } if (pr) { pick.rid = +pr.dataset.pr; draw(b); } });
+    },
+    onOk: (b) => {
+      const m = mk(pick.rid, pick.lid, 0, { memo: b.querySelector('#pkMemo').value.trim(), upd: TODAY });
+      MATCHES.push(m); state.shut.delete(pick.rid); render();
+      UI.toast(`${R(m).name} · ${L(m).title} 매칭을 '내부 후보'로 만들었습니다`, () => { const at = MATCHES.indexOf(m); if (at < 0) return; MATCHES.splice(at, 1); render(); });
+    },
+  });
+}
+
+// ── 그리기 ──
+const TH = (h, label, cls = '', sort = '') => `<th class="${cls}" data-h="${h}" ${sort ? `data-sort="${sort}"` : ''}>${icon(h, 'hi')}${label}${state.sort && state.sort.key === sort && sort ? icon('chevDown', 'caret') : ''}<span class="rz"></span></th>`;
+function lane(m) {
+  const l = L(m);
+  const meta = m.visit && !m.closed && m.stage <= 3 ? `${icon('cal')}방문 ${m.visit}` : `${m.upd} 수정`;
+  return `<div class="lane ${m.closed ? 'closed' : ''}" data-m="${m.id}" title="더블클릭하여 상세보기">
+    <div class="lc"><div class="l1"><a class="tr-link nm" data-detail>${l.title}</a><span class="tag ${l.kind}">${KIND[l.kind]}</span>${l.verify !== 'ok' && !m.closed ? `<span class="warn-t" style="font-size:12px" title="${VERIFY[l.verify][1]}">${VERIFY[l.verify][0]}</span>` : ''}</div><div class="l2 num">${priceOf(l)} · ${l.addr}</div></div>
+    ${track(m)}
+    <div class="lc"><div class="l1"><span class="mmemo" contenteditable="plaintext-only" data-ph="메모 추가" title="클릭하여 메모 편집" aria-label="${R(m).name} ${l.title} 매칭 메모">${esc(m.memo)}</span></div><div class="lmeta">${meta}</div></div>
+    <button class="ib rowact" data-more aria-label="더보기">${icon('more')}</button>
+  </div>`;
+}
+function buyerView(q) {
+  let reqs = REQS.filter((r) => r.status !== 'completed' && reqPass(r));
+  const st = state.f.stage;
+  const out = [];
+  for (const r of reqs) {
+    let ms = reqMatches(r);
+    const all = ms;
+    if (st && st.size) { ms = ms.filter((m) => st.has(stageKey(m))); if (!ms.length && !(st.has('none') && !all.length)) continue; }
+    if (q && !qHitReq(r, q)) { ms = ms.filter((m) => qHitMatch(m, q)); if (!ms.length) continue; }
+    out.push({ r, ms, all });
+  }
+  const s = state.sort;
+  out.sort((a, b) => (s ? ((s.key === 'name' ? a.r.name.localeCompare(b.r.name, 'ko') : s.key === 'n' ? a.all.length - b.all.length : (a.r[s.key] || 0) - (b.r[s.key] || 0)) * s.dir) : 0) || a.r.name.localeCompare(b.r.name, 'ko'));
+  document.getElementById('thead').innerHTML = `<tr><th class="selh"><span class="ck" id="ckAll" role="checkbox" aria-label="모두 선택">${icon('check')}</span></th><th style="width:28px;padding:0"></th>${TH('user', '고객', '', 'name')}${TH('phone', '연락처')}${TH('building', '매물 유형')}${TH('ruler', '희망 평형', '', 'aMin')}${TH('won', '예산', '', 'pMax')}${TH('pin', '희망 지역·단지')}${TH('userSearch', '매칭', '', 'n')}<th></th></tr>`;
+  document.getElementById('rows').innerHTML = out.map(({ r, ms, all }) => {
+    const can = ms.length || r.memo;
+    const isOpen = can && !state.shut.has(r.id);
+    const c = { act: 0, deal: 0, end: 0 };
+    all.forEach((m) => c[mState(m)]++);
+    return `<tr data-r="${r.id}" class="${state.picked.has('r' + r.id) ? 'picked' : ''}">
+      <td class="sel"><span class="ck ${state.picked.has('r' + r.id) ? 'on' : ''}" role="checkbox" data-pick="r${r.id}">${icon('check')}</span></td>
+      <td class="exp">${can ? `<button class="tw ${isOpen ? 'on' : ''}" data-tw aria-expanded="${!!isOpen}" aria-label="${r.name} 매칭 ${isOpen ? '접기' : '펼치기'}">${icon('chevRight')}</button>` : ''}</td>
+      <td class="prim"><span class="nm">${r.name}</span>${r.status === 'hold' ? ' <span class="st hold">보류</span>' : ''}${r.urgency === 'urgent' ? ' <span class="danger-t" style="font-size:12px;font-weight:500">급함</span>' : ''}</td>
+      <td class="num t2">${r.phone || '연락처 없음'}</td>
+      <td>${typeTxt(r)}</td>
+      <td class="num">${areaTxt(r)}</td>
+      <td class="num" style="font-weight:500">${budgetTxt(r)}</td>
+      <td class="place t2">${placeTxt(r)}</td>
+      <td>${all.length ? `${c.act ? `<span class="cb act">진행 ${c.act}</span>` : ''}${c.deal ? `<span class="cb deal">거래 ${c.deal}</span>` : ''}${c.end ? `<span class="cb end">종료 ${c.end}</span>` : ''}` : '<span class="t3">매칭 없음</span>'}</td>
+      <td class="act"><button class="ib rowact" data-add="${r.id}" aria-label="${r.name} 조건으로 매칭 생성">${icon('plus')}</button></td>
+    </tr>${isOpen ? `<tr class="lane-tr"><td colspan="10"><div class="lanes">${r.memo ? `<div class="rmemo"><b>고객 메모</b><span>${esc(r.memo)}</span></div>` : ''}${ms.map(lane).join('')}</div></td></tr>` : ''}`;
+  }).join('');
+  state.visible = out.map((x) => 'r' + x.r.id);
+  const nm = out.reduce((a, x) => a + x.ms.length, 0);
+  document.getElementById('foot').innerHTML = out.length ? `<span>희망 조건<b>${out.length}</b>건</span><span>매칭<b>${nm}</b>건</span><span>진행<b>${out.reduce((a, x) => a + x.ms.filter((m) => mState(m) === 'act').length, 0)}</b></span><span>방문 예정<b>${out.reduce((a, x) => a + x.ms.filter((m) => m.visit && !m.closed && m.stage <= 3).length, 0)}</b></span><span class="grow"></span><span>단계를 누르면 그 단계에서 할 일이 열립니다</span>` : '';
+  return out.length;
+}
+function stageView(q) {
+  const st = state.f.stage;
+  const ms = MATCHES.filter((m) => reqPass(R(m)) && (!st || !st.size || st.has(stageKey(m))) && (!q || qHitMatch(m, q) || qHitReq(R(m), q)));
+  document.getElementById('thead').innerHTML = `<tr><th class="selh"><span class="ck" id="ckAll" role="checkbox" aria-label="전체 선택">${icon('check')}</span></th>${TH('list', 'No', 'r')}${TH('user', '고객')}${TH('building', '매물')}${TH('won', '거래/가격')}${TH('userSearch', '구매조건')}${TH('note', '메모')}${TH('clock', '최근 수정')}<th></th></tr>`;
+  const groups = [...STG.map((l, i) => [i, l, ms.filter((m) => !m.closed && m.stage === i)]), [6, '종료', ms.filter((m) => m.closed)]].filter((g) => g[2].length);
+  const dots = ['', 'accent', 'accent', 'warn', 'warn', 'ok', 'danger'];
+  document.getElementById('rows').innerHTML = groups.map(([k, label, list]) => {
+    list.sort((a, b) => b.upd.localeCompare(a.upd));
+    const shut = state.gshut.has(k);
+    const ids = list.map((m) => 'm' + m.id);
+    const nSel = ids.filter((id) => state.picked.has(id)).length;
+    return `<tr class="grp ${shut ? 'shut' : ''}" data-g="${k}"><td class="sel"><span class="ck ${nSel === ids.length ? 'on' : nSel ? 'some' : ''}" role="checkbox" data-pickg="${k}">${icon('check')}</span></td><td colspan="8">${icon('chevDown', 'chev')}<span class="dot ${dots[k]}" style="margin-right:8px;vertical-align:2px"></span>${label}<span class="n">${list.length}건</span></td></tr>` + (shut ? '' : list.map((m, i) => {
+      const l = L(m); const r = R(m);
+      return `<tr data-m="${m.id}" class="${state.picked.has('m' + m.id) ? 'picked' : ''}" title="더블클릭하여 상세보기">
+        <td class="sel"><span class="ck ${state.picked.has('m' + m.id) ? 'on' : ''}" role="checkbox" data-pick="m${m.id}">${icon('check')}</span></td>
+        <td class="r num t3">${i + 1}</td>
+        <td class="two"><div class="l1"><a class="tr-link nm" data-detail>${r.name}</a></div><div class="l2 num">${r.phone}</div></td>
+        <td class="two"><div class="l1"><a class="tr-link nm" data-detail>${l.title}</a></div><div class="l2">${l.addr}</div></td>
+        <td class="num"><span class="tag ${l.kind}">${KIND[l.kind]}</span> ${priceOf(l)}</td>
+        <td class="num t2">${reqTxt(r)}</td>
+        <td class="memo"><div>${m.memo ? esc(m.memo) : '—'}</div></td>
+        <td class="num t2">${m.upd}</td>
+        <td class="act"><button class="ib rowact" data-more aria-label="더보기">${icon('more')}</button></td>
+      </tr>`;
+    }).join(''));
+  }).join('');
+  state.visible = ms.map((m) => 'm' + m.id);
+  state.groupIds = Object.fromEntries(groups.map(([k, , list]) => [k, list.map((m) => 'm' + m.id)]));
+  document.getElementById('foot').innerHTML = ms.length ? `<span>매칭<b>${ms.length}</b>건</span>${groups.map(([, l, list]) => `<span>${l}<b>${list.length}</b></span>`).join('')}<span class="grow"></span><span>⋯ 메뉴에서 단계 결과를 고릅니다</span>` : '';
+  return ms.length;
+}
+function fsel(id, k, v, n) {
+  return `<button class="fsel ${v ? 'on' : ''}" data-fs="${id}"><span class="k">${k}</span><span class="v">${v || '전체'}</span>${v ? `<span class="clr" data-fclr="${id}" title="지우기">${icon('x')}</span>` : icon('chevDown')}</button>`;
+}
+function render() {
+  const q = state.q.trim();
+  // 머리 숫자는 그릴 때마다 다시 센다
+  const live = REQS.filter((r) => r.status !== 'completed');
+  const liveM = MATCHES.filter((m) => R(m).status !== 'completed');
+  document.getElementById('total').textContent = live.length;
+  document.getElementById('nAct').textContent = liveM.filter((m) => mState(m) === 'act').length;
+  document.getElementById('nDeal').textContent = liveM.filter((m) => mState(m) === 'deal').length;
+  document.getElementById('nNone').textContent = live.filter((r) => !MATCHES.some((m) => m.rid === r.id)).length;
+  document.querySelectorAll('.vtab[data-kind]').forEach((t) => { const k = t.dataset.kind; t.classList.toggle('on', k === state.kind); t.querySelector('.n').textContent = live.filter((r) => k === 'all' || r.kind === k).length; });
+  document.querySelectorAll('#viewSeg button').forEach((b) => b.classList.toggle('on', b.dataset.view === state.view));
+  document.getElementById('foldBtn').hidden = state.view !== 'buyer';
+  const anyOpen = live.some((r) => !state.shut.has(r.id));
+  document.getElementById('foldBtn').innerHTML = `${icon('list')}${anyOpen ? '모두 접기' : '모두 펼치기'}`;
+
+  const n = state.view === 'buyer' ? buyerView(q) : stageView(q);
+  for (const id of [...state.picked]) if (!state.visible.includes(id)) state.picked.delete(id);
+  if (!n) {
+    const none = state.view === 'buyer' ? ['진행 중인 희망 조건이 없습니다', '고객의 구함 의뢰를 등록하면 여기에서 조건에 맞는 매물을 연결할 수 있습니다.'] : ['등록된 매칭이 없습니다', '구매고객 조건에 맞는 매물을 연결해 매칭 파이프라인을 시작하세요.'];
+    const filtered = q || nFilters() || state.kind !== 'all';
+    document.getElementById('rows').innerHTML = `<tr><td colspan="10" style="border:0"><div class="empty"><b>${filtered ? '현재 검색과 필터에 맞는 항목이 없습니다.' : none[0]}</b>${filtered ? '<button class="btn sm" data-clear style="margin-top:8px">검색·필터 초기화</button>' : none[1]}</div></td></tr>`;
+    document.getElementById('foot').innerHTML = '<span>조건에 맞는 항목이 없습니다</span>';
+  }
+  const all = document.getElementById('ckAll');
+  const nSel = state.visible.filter((id) => state.picked.has(id)).length;
+  all.className = 'ck' + (state.visible.length && nSel === state.visible.length ? ' on' : nSel ? ' some' : '');
+  document.querySelectorAll('#thead th[data-sort]').forEach((th) => { const s = state.sort && state.sort.key === th.dataset.sort ? state.sort : null; th.classList.toggle('sorted', !!s); if (s && s.dir > 0) th.querySelector('.caret').style.transform = 'rotate(180deg)'; });
+
+  // 필터 줄
+  const slot = (id, html) => { document.querySelector(`[data-slot="${id}"]`).innerHTML = html; };
+  for (const id of Object.keys(MULTI)) {
+    const s = state.f[id]; const opts = MULTI[id].opts();
+    const names = s ? [...s].map((v) => (opts.find((o) => o[0] === v) || [v, id === 'stage' && v === 'none' ? '매칭 없음' : v])[1]) : [];
+    slot(id, fsel(id, MULTI[id].k, names.length ? (names.length > 1 ? `${names[0]} 외 ${names.length - 1}` : names[0]) : ''));
+  }
+  for (const id of Object.keys(RNG)) {
+    slot(id, fsel(id, RNG[id].k(), rngLabel(id)));
+    const g = state.rng[id] || {};
+    document.querySelectorAll(`.fin[data-rng="${id}"]`).forEach((el) => { const v = g[el.dataset.side]; if (document.activeElement !== el) el.value = v == null ? '' : v; el.classList.toggle('on', v != null); });
+  }
+  document.getElementById('rentRange').hidden = state.kind !== 'monthly';
+  slot('move', fsel('move', '입주 희망일', state.move || ''));
+  document.querySelector('#fbar [data-clear]').hidden = !(nFilters() || q);
+
+  const sb = document.getElementById('selbar');
+  sb.classList.toggle('show', state.picked.size > 0);
+  document.getElementById('selCnt').textContent = state.view === 'buyer' ? `희망 조건 ${state.picked.size}건 선택` : `${state.picked.size}개 선택됨`;
+  renderDetail();
+}
+
+// ── 옆 상세 (원본의 '매칭 상세' 창) ──
+function openDetail(id) { state.detail = id; renderDetail(true); }
+function renderDetail(focus) {
+  const peek = document.getElementById('peek');
+  const m = MATCHES.find((x) => x.id === state.detail);
+  if (!m) { peek.hidden = true; state.detail = null; return; }
+  const keep = peek.querySelector('.peek-body');
+  const top = keep ? keep.scrollTop : 0;
+  const l = L(m); const r = R(m);
+  const badge = m.closed ? '<span class="st hold">종료</span>' : `<span class="st ${m.stage === 5 ? 'ok' : 'accent'}">${STG[m.stage]}</span>`;
+  peek.hidden = false;
+  peek.innerHTML = `<div class="peek-bar"><button class="ib" data-pclose aria-label="닫기">${icon('chevsRight')}</button><span class="crumb">매칭 상세</span><span style="flex:1"></span>${badge}<button class="ib" data-pmore aria-label="더보기">${icon('more')}</button></div>
+  <div class="peek-body">
+    <h2>${r.name} · ${l.title}</h2>
+    <div class="lead num"><span class="tag ${l.kind}">${KIND[l.kind]}</span>${priceOf(l)} · 담당 ${r.agent}</div>
+    ${m.stage === 5 && m.dealStage == null && !m.closed ? `<div class="alert" style="margin-top:12px">${icon('info')}<span><b>거래 전환 상태이지만 연결된 거래가 없습니다</b><br>거래를 생성해 매칭과 연결하세요. <button class="btn sm" data-mkdeal>거래 생성</button></span></div>` : ''}
+    <div class="sec"><div class="sec-h">진행 단계 <small>현재 단계에서 다음 단계 이동 또는 종료를 처리할 수 있습니다.</small></div>${track(m)}${!m.closed && m.stage < 5 && blocked(m, m.stage + 1) ? `<div class="alert" style="margin-top:8px">${icon('info')}<span>${blocked(m, m.stage + 1)}</span></div>` : ''}</div>
+    <div class="sec"><div class="sec-h">구매자 정보</div><div class="props">
+      <div class="pk">${icon('user')}이름</div><div class="pv">${r.name}</div>
+      <div class="pk">${icon('phone')}연락처</div><div class="pv num">${r.phone}</div>
+      <div class="pk">${icon('userSearch')}희망 조건</div><div class="pv" title="${placeTxt(r)} · ${typeTxt(r)} · ${budgetTxt(r)}">${placeTxt(r)} · ${typeTxt(r)} · ${budgetTxt(r)}</div>
+      <div class="pk">${icon('note')}요건 메모</div><div class="pv" title="${esc(r.memo)}">${r.memo ? esc(r.memo) : '<span class="t3">—</span>'}</div></div></div>
+    <div class="sec"><div class="sec-h">매물 정보</div><div class="props">
+      <div class="pk">${icon('pin')}주소</div><div class="pv">${l.addr}</div>
+      <div class="pk">${icon('won')}가격</div><div class="pv num">${priceOf(l)}</div>
+      <div class="pk">${icon('tag')}거래유형</div><div class="pv">${KIND[l.kind]}</div>
+      <div class="pk">${icon('check')}확인상태</div><div class="pv ${l.verify === 'ok' ? '' : 'warn-t'}">${VERIFY[l.verify][0]}</div>
+      <div class="pk">${icon('home')}소유자</div><div class="pv num">${l.owner || '소유자 정보 없음'}</div>
+      <div class="pk">${icon('cal')}등록일</div><div class="pv num">${l.reg}</div></div></div>
+    ${m.dealStage != null ? `<div class="sec"><div class="sec-h">연결된 거래 <small>이 매칭에서 전환된 거래입니다. 계약/수수료는 거래 화면에서 관리합니다.</small></div><a class="mini" href="deals.html">${icon('handshake')}<span class="grow">${l.title} · ${r.name}</span><span class="st accent">${DSTG[m.dealStage]}</span><span class="t2">거래 보기</span>${icon('arrowUpRight')}</a></div>` : ''}
+    <div class="sec"><div class="sec-h">상담 기록 <span class="n">${m.consults.length}</span></div>
+      <div class="tl">${m.consults.length ? m.consults.slice(0, 5).map((c) => `<div class="tl-item"><div class="when">${c[0]} · ${c[1]} · ${c[2]}</div><p>${esc(c[3])}</p></div>`).join('') : '<div class="t3" style="font-size:13px">연결된 상담 기록이 없습니다.</div>'}</div>
+      <div class="addrow"><select class="inp" id="csType" aria-label="상담 유형"><option>전화</option><option>방문</option><option>온라인</option></select><input class="inp" id="csText" placeholder="상담 내용을 입력하세요 · ${r.name} 고객과의 상담으로 기록됩니다"><button class="btn sm" data-addcs>등록</button></div></div>
+    <div class="sec"><div class="sec-h">후속 태스크 <span class="n">${m.tasks.length}</span> <small>방문 확인, 서류 준비 등 후속 업무를 태스크로 남깁니다.</small></div>
+      ${m.tasks.map((t) => `<div class="mini">${icon('todo')}<span class="grow">${esc(t[0])}</span><span class="t2 num">${t[1] ? '마감 ' + t[1] : ''}</span></div>`).join('')}
+      <div class="addrow"><input class="inp" id="tkText" placeholder="할 일 제목 (예: 등기부 확인 후 고객 연락)"><input class="inp num" id="tkDue" type="date" style="flex:none;width:140px" aria-label="마감일"><button class="btn sm" data-addtk>생성</button></div></div>
+    <div class="sec"><div class="sec-h">매칭 메모 <small>현재 모델에서는 공용 메모 한 개만 저장됩니다.</small></div>
+      <div class="note-edit" id="dMemo" contenteditable="plaintext-only" data-ph="등록된 메모가 없습니다. 눌러서 입력하세요">${esc(m.memo)}</div></div>
+  </div>`;
+  peek.querySelector('.peek-body').scrollTop = top;
+  if (focus) peek.querySelector('[data-pclose]').focus();
+}
+
+// 정적 아이콘
+document.querySelectorAll('[data-icon]').forEach((el) => el.insertAdjacentHTML('afterbegin', icon(el.dataset.icon)));
+document.getElementById('newBtn').innerHTML = `${icon('plus')}매칭 생성`;
+document.getElementById('reqBtn').innerHTML = `${icon('userSearch')}구함 의뢰 추가`;
+
+const matchOf = (el) => { const h = el.closest('[data-m]'); return h ? MATCHES.find((m) => m.id === +h.dataset.m) : MATCHES.find((m) => m.id === state.detail); };
+function multiMenu(id) {
+  const anchor = document.querySelector(`[data-fs="${id}"]`);
+  const d = MULTI[id]; const s = state.f[id] || new Set();
+  const count = (v) => (id === 'stage' ? (v === 'none' ? REQS.filter((r) => r.status !== 'completed' && !MATCHES.some((m) => m.rid === r.id)).length : MATCHES.filter((m) => stageKey(m) === v && (state.view === 'stage' || R(m).status !== 'completed')).length) : REQS.filter((r) => (state.view === 'stage' || r.status !== 'completed') && d.test(r, new Set([v]))).length);
+  const opts = d.opts();
+  // 고른 값의 항목이 모두 사라져 선택지에서 빠져도 조건은 남겨 보여 준다
+  for (const v of s) if (!opts.some((o) => o[0] === v)) opts.push([v, v === 'none' ? '매칭 없음' : v]);
+  UI.menu(anchor, [
+    { label: '전체', on: !s.size, run: () => { delete state.f[id]; render(); } }, '-',
+    ...opts.flatMap(([v, label, meta], i) => [...(meta && (i === 0 || opts[i - 1][2] !== meta) ? [{ head: meta }] : []), { label, hint: String(count(v)), on: s.has(v), run: () => { const n = new Set(s); n.has(v) ? n.delete(v) : n.add(v); if (n.size) state.f[id] = n; else delete state.f[id]; render(); multiMenu(id); } }]),
+  ]);
+}
+document.addEventListener('click', (e) => {
+  const t = e.target;
+  if (t.closest('.mback')) return;
+  const kt = t.closest('.vtab[data-kind]');
+  if (kt) { state.kind = kt.dataset.kind; if (state.kind !== 'monthly') delete state.rng.rent; render(); return; }
+  const vb = t.closest('#viewSeg button');
+  if (vb) { setView(vb.dataset.view); return; }
+  const jump = t.closest('[data-jump]');
+  if (jump) { const j = jump.dataset.jump; state.view = j === 'none' ? 'buyer' : state.view; state.f.stage = new Set(j === 'act' ? ['0', '1', '2', '3', '4'] : j === 'deal' ? ['5'] : ['none']); render(); return; }
+  if (t.closest('#foldBtn')) { const live = REQS.filter((r) => r.status !== 'completed'); const anyOpen = live.some((r) => !state.shut.has(r.id)); state.shut = new Set(anyOpen ? live.map((r) => r.id) : []); render(); return; }
+  if (t.closest('#newBtn')) { createDialog(); return; }
+  if (t.closest('#reqBtn')) { UI.toast('구함 의뢰 등록 창을 엽니다'); return; }
+  if (t.closest('[data-clear]')) { state.f = {}; state.rng = {}; state.move = ''; state.q = ''; document.getElementById('q').value = ''; render(); return; }
+  const fclr = t.closest('[data-fclr]');
+  if (fclr) { const id = fclr.dataset.fclr; if (MULTI[id]) delete state.f[id]; else if (RNG[id]) delete state.rng[id]; else state.move = ''; render(); return; }
+  const fs = t.closest('[data-fs]');
+  if (fs) {
+    const id = fs.dataset.fs;
+    if (MULTI[id]) return multiMenu(id);
+    if (RNG[id]) {
+      const cur = rngLabel(id);
+      return UI.menu(fs, [{ head: `${id === 'area' ? '공급면적 기준 · ' : ''}고객이 원하는 ${id === 'area' ? '평형' : id === 'rent' ? '월세' : '금액'} 범위와 겹치면 표시합니다.` }, { label: id === 'budget' ? '전체 가격' : '전체', on: !cur, run: () => { delete state.rng[id]; render(); } }, '-',
+        ...RNG[id].presets.map(([label, lo, hi]) => ({ label, on: cur === label, hint: String(REQS.filter((r) => r.status !== 'completed' && (state.kind === 'all' || r.kind === state.kind) && overlap(...RNG[id].get(r), lo == null ? null : lo * RNG[id].mul, hi == null ? null : hi * RNG[id].mul)).length), run: () => { state.rng[id] = { lo, hi }; render(); } }))], { wide: true });
+    }
+    return UI.menu(fs, [{ head: '입주 희망일이 기간 안에 있는 조건만 표시합니다.' }, { label: '전체', on: !state.move, run: () => { state.move = ''; render(); } }, '-', ...MOVE.map(([label, n]) => ({ label, hint: `~ ${addMonths(n).replace(/-/g, '.')}`, on: state.move === label, run: () => { state.move = label; render(); } }))], { wide: true });
+  }
+  const th = t.closest('th[data-sort]');
+  if (th && !t.closest('.rz')) {
+    const key = th.dataset.sort; const cur = state.sort && state.sort.key === key ? state.sort.dir : 0;
+    return UI.menu(th, [{ label: '오름차순 정렬', icon: 'sort', on: cur === 1, run: () => { state.sort = { key, dir: 1 }; render(); } }, { label: '내림차순 정렬', icon: 'sort', on: cur === -1, run: () => { state.sort = { key, dir: -1 }; render(); } }, ...(cur ? [{ label: '정렬 해제 (이름순)', icon: 'x', run: () => { state.sort = null; render(); } }] : [])]);
+  }
+  if (t.closest('#ckAll')) { const ids = state.visible; const allOn = ids.length && ids.every((id) => state.picked.has(id)); ids.forEach((id) => (allOn ? state.picked.delete(id) : state.picked.add(id))); render(); return; }
+  const pg = t.closest('[data-pickg]');
+  if (pg) { const ids = state.groupIds[pg.dataset.pickg] || []; const allOn = ids.every((id) => state.picked.has(id)); ids.forEach((id) => (allOn ? state.picked.delete(id) : state.picked.add(id))); render(); return; }
+  const pk = t.closest('[data-pick]');
+  if (pk) { const id = pk.dataset.pick; state.picked.has(id) ? state.picked.delete(id) : state.picked.add(id); render(); return; }
+  if (t.closest('#selClear')) { state.picked.clear(); render(); return; }
+  const grp = t.closest('tr.grp');
+  if (grp) { const k = +grp.dataset.g; state.gshut.has(k) ? state.gshut.delete(k) : state.gshut.add(k); render(); return; }
+  const tw = t.closest('[data-tw]');
+  if (tw) { const id = +tw.closest('tr').dataset.r; state.shut.has(id) ? state.shut.delete(id) : state.shut.add(id); render(); return; }
+  const add = t.closest('[data-add]');
+  if (add) { const r = REQS[+add.dataset.add]; if (r.status !== 'active') { UI.toast('보류 중인 조건입니다. 조건을 다시 활성으로 바꾼 뒤 매칭을 만들어 주세요'); return; } createDialog(r.id); return; }
+  // 매칭 한 줄·상세 안의 조작
+  if (t.closest('[data-pclose]')) { state.detail = null; renderDetail(); return; }
+  const m = matchOf(t);
+  if (!m) return;
+  const sc = t.closest('.sc');
+  if (sc) {
+    if (sc.dataset.deal != null) { location.href = 'deals.html'; return; }
+    if (sc.dataset.sc === 'done') return UI.menu(sc, [{ head: '완료된 매칭 단계' }, ...STG.map((l) => ({ label: l, icon: 'check' }))]);
+    return stageMenu(sc, m, sc.dataset.sc === 'end' ? m.closedFrom : +sc.dataset.sc);
+  }
+  if (t.closest('[data-more]') || t.closest('[data-pmore]')) return rowMenu(t.closest('.ib'), m);
+  if (t.closest('[data-detail]')) return openDetail(m.id);
+  if (t.closest('[data-mkdeal]')) return convertDialog(m);
+  if (t.closest('[data-addcs]')) { addConsult(m); return; }
+  if (t.closest('[data-addtk]')) { addTask(m); return; }
+});
+function addConsult(m) {
+  const el = document.getElementById('csText'); const v = el.value.trim();
+  if (!v) { el.focus(); return; }
+  const c = [document.getElementById('csType').value, '이현수', `${TODAY} 방금`, v];
+  m.consults.unshift(c); renderDetail();
+  UI.toast('상담 기록을 등록했습니다', () => { const i = m.consults.indexOf(c); if (i >= 0) { m.consults.splice(i, 1); renderDetail(); } });
+}
+function addTask(m) {
+  const el = document.getElementById('tkText'); const v = el.value.trim();
+  if (!v) { el.focus(); return; }
+  const tk = [v, document.getElementById('tkDue').value.replace(/-/g, '.')];
+  m.tasks.push(tk); renderDetail();
+  UI.toast('후속 태스크를 만들었습니다', () => { const i = m.tasks.indexOf(tk); if (i >= 0) { m.tasks.splice(i, 1); renderDetail(); } });
+}
+function setView(v) {
+  if (state.view === v) return;
+  state.view = v; state.picked.clear(); state.sort = null;
+  // 보기마다 없는 선택지(매칭 없음·완료)는 걸려 있어도 결과가 0이 될 뿐 지우지 않는다
+  render();
+}
+document.addEventListener('dblclick', (e) => {
+  if (e.target.closest('.mmemo, .sc, .ib, .ck, .mback')) return;
+  const h = e.target.closest('.lane, #rows tr[data-m]');
+  if (h) openDetail(+h.dataset.m);
+});
+document.getElementById('q').addEventListener('input', (e) => { state.q = e.target.value; render(); });
+document.addEventListener('input', (e) => {
+  const fin = e.target.closest('.fin[data-rng]');
+  if (fin) {
+    const id = fin.dataset.rng; const v = fin.value.trim() === '' ? null : parseFloat(fin.value);
+    const g = { lo: null, hi: null, ...(state.rng[id] || {}) };
+    g[fin.dataset.side] = v == null || Number.isNaN(v) ? null : v;
+    if (g.lo == null && g.hi == null) delete state.rng[id]; else state.rng[id] = g;
+    render(); return;
+  }
+  const memo = e.target.closest('.mmemo, #dMemo');
+  if (memo) { const m = matchOf(memo); if (m) { m.memo = memo.textContent.replace(/\n/g, ' ').trim(); memo.dataset.dirty = '1'; } }
+});
+document.addEventListener('focusout', (e) => {
+  const el = e.target.closest && e.target.closest('.mmemo, #dMemo');
+  if (!el) return;
+  if (!el.textContent.trim()) el.textContent = '';
+  if (el.dataset.dirty) { delete el.dataset.dirty; const m = matchOf(el); if (m) m.upd = TODAY; UI.toast('메모를 저장했습니다'); }
+});
+document.addEventListener('keydown', (e) => {
+  if (e.isComposing || e.keyCode === 229) return; // 한글 조합 확정용 Enter는 저장으로 치지 않는다
+  if (document.querySelector('.mback')) return;
+  const typing = e.target.matches('input, textarea, select, [contenteditable]');
+  if (e.key === 'Enter' && e.target.matches('.mmemo')) { e.preventDefault(); e.target.blur(); return; }
+  if (e.key === 'Enter' && e.target.id === 'csText') { const m = matchOf(e.target); if (m) addConsult(m); return; }
+  if (e.key === 'Enter' && e.target.id === 'tkText') { const m = matchOf(e.target); if (m) addTask(m); return; }
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'f') { e.preventDefault(); document.getElementById('q').focus(); return; }
+  if (e.key === 'Escape') { if (typing) { e.target.blur(); return; } if (state.detail != null) { state.detail = null; renderDetail(); } else if (state.picked.size) { state.picked.clear(); render(); } return; }
+  if (typing || e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.key === '1') setView('buyer');
+  if (e.key === '2') setView('stage');
+});
+
+render();
+
+UI.notes(
+  [
+    '<b>보기는 원본 그대로 둘</b>입니다. <b>고객별</b>은 희망 조건 한 줄 아래에 연결된 매칭이 한 줄씩 붙고, <b>단계별</b>은 단계 묶음 표입니다. 숫자 키 1·2로 오가고 ⌘F로 검색합니다. 열 이름과 순서는 원본과 같습니다.',
+    '<b>필터가 늘 보입니다.</b> 원본에서 "+ 필터" 뒤에 있던 상태·담당자·긴급도·입주 희망일까지 표 위에 나와 있습니다. 단계·지역·단지·매물 유형은 여러 개를 고를 수 있고, 예산·월세·희망 평형은 구간을 고르거나 최소·최대를 직접 적습니다. 범위는 원본처럼 고객이 원하는 범위와 <b>겹치면</b> 통과합니다.',
+    '<b>단계 트랙</b>은 이름 붙은 단계를 선으로 이었습니다. 단계를 누르면 원본과 같은 선택지(고객에게 제안, 관심 없음 · 종료, 이 단계로 되돌리기 등)가 열리고, 옮긴 뒤에는 <b>실행 취소</b>가 붙은 알림이 뜹니다. 매물 확인이 안 됐거나 단계를 건너뛰려 하면 이유를 알려 줍니다.',
+    '<b>임장</b> 단계를 누르면 방문 일정을 잡습니다. 일정을 잡으면 임장 단계로 옮겨지고 줄 오른쪽에 방문 일시가 표시됩니다.',
+    '<b>거래전환</b>은 합의 금액을 확인하는 창을 거칩니다. 전환한 매칭은 트랙이 <b>매칭 완료 » 거래 단계</b>로 바뀌고, 누르면 거래관리로 갑니다.',
+    '<b>메모는 줄에서 바로</b> 고칩니다. 줄을 두 번 누르거나 매물 이름을 누르면 오른쪽에 <b>매칭 상세</b>가 열려 구매자·매물 정보, 상담 기록, 후속 태스크를 그 자리에서 추가합니다.',
+    '머리의 <b>진행 매칭·거래전환·매칭 없음</b> 숫자는 눌러서 바로 거를 수 있고, 표 아래 요약 줄은 걸러진 결과를 다시 셉니다.',
+  ],
+  '희망 조건과 매칭 단계를 한 화면에서 훑고 그 자리에서 옮깁니다.',
+);
+</script>
+</body>
+</html>

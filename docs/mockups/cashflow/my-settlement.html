@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="icon" href="data:," />
+<title>내 수수료 시안</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
+<link rel="stylesheet" href="shared.css" />
+<style>
+  #tbl { --min: 860px; }
+  .tbl tr.gh td { height: 34px; background: #fbfbfa; font-weight: 600; }
+  .tbl tr.gh:hover td { background: #f7f7f5; }
+  .gh-in { display: flex; align-items: center; gap: 8px; }
+  .gh-in .n { color: var(--faint); font-weight: 400; font-variant-numeric: tabular-nums; }
+  .gh-in .hint { color: var(--muted-fg); font-size: 12px; font-weight: 400; }
+  .collect { display: grid; grid-template-columns: 46px minmax(0, 1fr); align-items: center; gap: 8px; color: var(--muted-fg); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body>
+<script src="icons.js"></script>
+<script src="data.js"></script>
+<script src="shared.js"></script>
+<script>
+(function () {
+  const { esc, icon, money, ymd, badge, loc, participantState, TODAY } = CF;
+  const main = CF.shell({ page: 'my', title: '내 수수료' });
+  if (!main) return;
+
+  const state = { tab: 'all', search: '', closed: new Set() };
+  const me = CF.me();
+
+  main.innerHTML = `<div class="page">
+    <div class="tb line" id="tb"></div>
+    <div class="strip" id="strip"></div>
+    <div class="scroll" id="body"></div>
+    ${CF.statusbar('')}
+  </div>`;
+  CF.wireReset(main);
+  const $ = (id) => document.getElementById(id);
+
+  function parts() {
+    return CF.db.deals.flatMap((deal) => deal.participants.filter((w) => w.userId === me.id).map((w) => ({ deal, w, st: participantState(deal, w), amt: CF.partAmount(deal, w) })));
+  }
+  const groupOf = (x) => (x.st.key === 'settled' ? 'settled' : x.st.key === 'ready' ? 'ready' : 'wait');
+  const sum = (l) => l.reduce((a, x) => a + x.amt, 0);
+  const withheld = (l) => CF.round1(l.reduce((a, x) => a + (x.w.withheld || 0), 0));
+
+  function visible() {
+    const q = state.search.trim().toLowerCase();
+    return parts().filter((x) => {
+      if (state.tab === 'unsettled' && groupOf(x) === 'settled') return false;
+      if (state.tab === 'settled' && groupOf(x) !== 'settled') return false;
+      if (q && !loc(x.deal).toLowerCase().includes(q)) return false;
+      return true;
+    });
+  }
+
+  function renderTb() {
+    const all = parts();
+    const tabs = [['all', '전체', all.length], ['unsettled', '미정산', all.filter((x) => groupOf(x) !== 'settled').length], ['settled', '정산 완료', all.filter((x) => groupOf(x) === 'settled').length]];
+    $('tb').innerHTML = `<div class="pills" role="tablist" aria-label="정산 범위">${tabs.map(([k, l, n]) => `<button type="button" role="tab" aria-selected="${state.tab === k}" class="${state.tab === k ? 'on' : ''}" data-tab="${k}">${l}<span class="n">${n}</span></button>`).join('')}</div>
+      <label class="search">${icon('search')}<span class="sr">검색</span><input id="q" type="search" placeholder="단지, 호수" value="${esc(state.search)}" /></label>
+      <span class="spacer"></span>
+      <span class="muted" style="font-size:12.5px;white-space:nowrap">정산은 대표가 처리합니다</span>`;
+    $('q').addEventListener('input', (e) => { state.search = e.target.value; renderBody(); });
+    $('tb').querySelectorAll('[data-tab]').forEach((b) => b.addEventListener('click', () => { state.tab = b.dataset.tab; renderTb(); renderBody(); }));
+  }
+
+  function renderStrip() {
+    const all = parts();
+    const ready = all.filter((x) => groupOf(x) === 'ready');
+    const wait = all.filter((x) => groupOf(x) === 'wait');
+    const done = all.filter((x) => groupOf(x) === 'settled');
+    const payInfo = me.baseSalary ? `기본급 ${money(me.baseSalary)} · ` : '';
+    $('strip').innerHTML = `
+      <div class="stat"><div class="l">정산 받을 수 있는 돈</div><div class="v">${money(sum(ready))}</div><div class="h">고객 수금 끝난 ${ready.length}건</div></div>
+      <div class="stat"><div class="l">고객 수금 대기</div><div class="v">${money(sum(wait))}</div><div class="h">${wait.length}건</div></div>
+      <div class="stat"><div class="l">정산 완료</div><div class="v">${money(sum(done))}</div><div class="h">${done.length}건${withheld(done) ? ` · 원천징수 ${money(withheld(done))} · 실수령 ${money(CF.round1(sum(done) - withheld(done)))}` : ''}</div></div>
+      <div class="stat"><div class="l">내 배분 조건</div><div class="v">${me.commissionRate != null ? `${me.commissionRate}%` : '—'}</div><div class="h">${payInfo}${CF.PAY_TYPE[me.payType]} · ${CF.TAX_TYPE[me.taxType]}</div></div>`;
+  }
+
+  function renderBody() {
+    const list = visible();
+    $('status-text').textContent = `${me.name} · 참여 거래 ${list.length}건 표시`;
+    if (!list.length) {
+      const none = parts().length === 0;
+      $('body').innerHTML = `<div class="empty">${icon('handshake')}<b>${none ? '아직 참여한 거래가 없습니다' : '조건에 맞는 거래가 없습니다'}</b><p>${none ? '거래에 참여하면 이 화면에 내 배분 수수료가 모입니다.' : '범위나 검색어를 바꿔 보세요.'}</p></div>`;
+      return;
+    }
+    const groups = [
+      ['ready', '정산 받을 수 있음', '대표 정산을 기다리는 중입니다'],
+      ['wait', '고객 수금 대기', '고객이 수수료를 내면 정산할 수 있습니다'],
+      ['settled', '정산 완료', ''],
+    ];
+    const rows = groups.map(([key, label, hint]) => {
+      const items = list.filter((x) => groupOf(x) === key);
+      if (!items.length) return '';
+      const isClosed = state.closed.has(key);
+      const head = `<tr class="gh" data-toggle="${key}" style="cursor:pointer"><td colspan="6"><div class="gh-in"><span class="muted" style="display:inline-flex">${icon(isClosed ? 'chevron-right' : 'chevron-down')}</span><span>${label}</span><span class="n">${items.length}</span>${hint ? `<span class="hint">${hint}</span>` : ''}</div></td><td class="num">${money(sum(items))}</td></tr>`;
+      if (isClosed) return head;
+      return head + items.map(({ deal, w, st, amt }) => {
+        const { pct } = st;
+        return `<tr class="click" data-open="${deal.id}">
+          <td><div class="name-cell" style="padding-left:18px"><span class="nm" title="${esc(loc(deal))}">${esc(loc(deal))}</span>${badge('tx', deal.transactionType)}</div></td>
+          <td>${badge('stage', deal.stage)}</td>
+          <td>${CF.PART_ROLE[w.role] || w.role}</td>
+          <td class="num muted">${w.commissionRate}%</td>
+          <td><div class="collect" title="고객 수금 ${money(st.got)} / ${money(st.billed)}"><span>${pct}%</span><span class="meter"><i style="width:${pct}%"></i></span></div></td>
+          <td class="tnum ${w.settlementDate ? '' : 'empty-val'}">${w.settlementDate ? ymd(w.settlementDate) : '—'}</td>
+          <td class="num strong" title="${w.withheld ? `원천징수 ${money(w.withheld)} · 실수령 ${money(CF.round1(amt - w.withheld))}` : '파트너 몫과 할인을 뺀 우리 몫 × 배분률'}">${money(amt)}</td>
+        </tr>`;
+      }).join('');
+    }).join('');
+    $('body').innerHTML = `<table class="tbl" id="tbl"><colgroup><col style="min-width:300px"><col style="width:104px"><col style="width:84px"><col style="width:72px"><col style="width:150px"><col style="width:104px"><col style="width:108px"></colgroup>
+      <thead><tr><th>거래</th><th>거래 단계</th><th>내 역할</th><th class="num">배분률</th><th>고객 수금</th><th>정산일</th><th class="num">배분액</th></tr></thead>
+      <tbody>${rows}</tbody></table>`;
+  }
+
+  main.addEventListener('click', (e) => {
+    const toggle = e.target.closest('[data-toggle]');
+    if (toggle) {
+      const k = toggle.dataset.toggle;
+      if (state.closed.has(k)) state.closed.delete(k); else state.closed.add(k);
+      renderBody();
+      return;
+    }
+    const row = e.target.closest('[data-open]');
+    if (row) CF.openDeal(row.dataset.open, { readonly: true });
+  });
+
+  CF.onChange(() => { renderStrip(); renderBody(); });
+  renderTb(); renderStrip(); renderBody();
+})();
+</script>
+</body>
+</html>

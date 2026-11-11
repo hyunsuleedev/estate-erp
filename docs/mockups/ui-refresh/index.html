@@ -1,0 +1,368 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UI 톤 개선 데모</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="ui.css">
+<style>
+  body.doc { overflow: auto; background: var(--paper); }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 56px 40px 120px; }
+  .crumb { font-size: 13px; color: var(--text-3); }
+  h1.title { margin: 10px 0 12px; font-size: 36px; line-height: 1.25; font-weight: 700; letter-spacing: -0.03em; }
+  .lede { margin: 0; max-width: 720px; font-size: 16px; line-height: 1.75; color: #3a3936; }
+  .byline { margin-top: 14px; font-size: 13px; color: var(--text-3); }
+  h2.h { margin: 64px 0 6px; font-size: 22px; font-weight: 650; letter-spacing: -0.022em; }
+  .hsub { margin: 0 0 24px; font-size: 14px; color: var(--text-2); }
+
+  /* 화면 카드 */
+  .cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+  .card { display: block; border-radius: 12px; box-shadow: 0 0 0 1px var(--line-2); overflow: hidden; transition: box-shadow 0.18s, transform 0.18s; }
+  .card:hover { box-shadow: 0 0 0 1px var(--line-2), 0 10px 28px rgba(40, 35, 25, 0.1); transform: translateY(-2px); }
+  .card .shot { aspect-ratio: 16 / 10; background: var(--win); overflow: hidden; border-bottom: 1px solid var(--line); }
+  .card img { width: 100%; display: block; }
+  .card .body { padding: 14px 16px 16px; }
+  .card .t { display: flex; align-items: center; gap: 8px; font-size: 16px; font-weight: 600; }
+  .card .t .kind { font-size: 12px; font-weight: 500; color: var(--text-2); background: var(--soft); padding: 2px 6px; border-radius: 4px; }
+  .card .t .i { margin-left: auto; color: var(--text-3); }
+  .card p { margin: 6px 0 0; font-size: 14px; color: var(--text-2); line-height: 1.6; }
+
+  /* 규칙 */
+  .rule { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 32px; padding: 28px 0; border-top: 1px solid var(--line); }
+  .rule:first-of-type { border-top: 0; }
+  .rule .no { font-size: 13px; color: var(--accent-ink); font-weight: 600; }
+  .rule h3 { margin: 4px 0 8px; font-size: 18px; font-weight: 650; letter-spacing: -0.02em; line-height: 1.4; }
+  .rule p { margin: 0; font-size: 14px; line-height: 1.7; color: #4a4844; }
+  .rule p + p { margin-top: 8px; }
+  .rule code { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12px; background: var(--soft); padding: 1px 5px; border-radius: 4px; color: #55534e; }
+  .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-content: start; }
+  .pair.one { grid-template-columns: 1fr; }
+  .spec { border-radius: 10px; box-shadow: 0 0 0 1px var(--line-2); overflow: hidden; background: var(--paper); }
+  .spec .lab { display: flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; font-size: 12px; color: var(--text-2); border-bottom: 1px solid var(--line); background: #fcfcfb; }
+  .spec .lab .dot { width: 6px; height: 6px; }
+  .spec .in { padding: 14px; }
+
+  /* 띠 도식 */
+  .bands { display: flex; flex-direction: column; gap: 3px; }
+  .band { display: flex; align-items: center; justify-content: space-between; padding: 0 10px; border-radius: 4px; font-size: 12px; color: #55534e; }
+  .band b { font-weight: 500; color: var(--text-3); font-variant-numeric: tabular-nums; }
+  .band.now { background: #efeeeb; }
+  .band.new { background: #eef4fb; color: var(--accent-ink); }
+  .band.data { background: transparent; border: 1px dashed var(--line-2); color: var(--text-3); }
+  .measure { margin-top: 10px; font-size: 12px; color: var(--text-2); }
+  .measure b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+  /* 지금 표 머리 재현 (data-table.tsx notion 변형) */
+  .old-tbl, .new-tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .old-tbl th { height: 36px; padding: 0 10px; background: #f7f7f5; border-bottom: 1px solid #d8d6d0; border-right: 1px solid #eeeeec; font-weight: 500; text-align: left; color: #37352f; }
+  .old-tbl td { height: 32px; padding: 0 10px; border-bottom: 1px solid #eeeeec; border-right: 1px solid #eeeeec; font-weight: 600; white-space: nowrap; }
+  .old-tbl td.r, .new-tbl td.r { text-align: right; }
+  .new-tbl th { height: 34px; padding: 0 10px; border-bottom: 1px solid var(--line-2); font-weight: 400; color: var(--text-2); text-align: left; }
+  .new-tbl td { height: 40px; padding: 0 10px; border-bottom: 1px solid var(--line); font-size: 14px; white-space: nowrap; }
+  .new-tbl td .sub { color: var(--text-2); margin-left: 5px; }
+
+  /* 지금 셀 재현 */
+  .old-badge { display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 8px; border: 1px solid #d3e5ef; background: #eef6fb; color: #1b64b1; border-radius: 999px; font-size: 12px; font-weight: 600; }
+  .old-warn { display: inline-flex; align-items: center; height: 22px; padding: 0 7px; border: 1px solid #f3dfb0; background: #fdf3dc; color: #8a5a13; border-radius: 6px; font-size: 12px; font-weight: 600; }
+  .old-sel { display: inline-flex; align-items: center; gap: 4px; height: 26px; padding: 0 8px; border: 1px solid #e3e2de; border-radius: 6px; font-size: 12px; color: #37352f; background: #fff; }
+  .old-sel .i { width: 12px; height: 12px; color: #9b9a97; }
+  .cells { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; min-height: 30px; }
+
+  .scale { display: flex; flex-direction: column; gap: 6px; }
+  .scale div { display: flex; align-items: baseline; gap: 14px; }
+  .scale span:first-child { width: 44px; flex: none; font-size: 12px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+
+  .shapes { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  .shape { display: flex; flex-direction: column; align-items: center; gap: 6px; font-size: 12px; color: var(--text-2); }
+  .shape i { display: block; background: var(--soft); box-shadow: inset 0 0 0 1px var(--line-2); }
+
+  .kinds { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+  .kinds .spec .in { font-size: 13px; line-height: 1.7; color: #4a4844; }
+  .kinds .spec .in b { display: block; font-size: 14px; color: var(--text); margin-bottom: 4px; }
+
+  /* 적용 순서 */
+  .steps { margin: 0; padding: 0; list-style: none; counter-reset: s; }
+  .steps li { counter-increment: s; display: grid; grid-template-columns: 32px minmax(0, 1fr); gap: 12px; padding: 16px 0; border-top: 1px solid var(--line); }
+  .steps li::before { content: counter(s); width: 24px; height: 24px; border-radius: 6px; background: var(--soft); display: grid; place-items: center; font-size: 13px; font-weight: 600; color: var(--text-2); }
+  .steps b { font-size: 15px; font-weight: 600; }
+  .steps p { margin: 4px 0 0; font-size: 14px; color: #4a4844; line-height: 1.7; }
+  .steps code { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12px; background: var(--soft); padding: 1px 5px; border-radius: 4px; color: #55534e; }
+  .q { padding: 14px 16px; border-radius: 10px; background: #fbfaf8; box-shadow: inset 0 0 0 1px var(--line); font-size: 14px; line-height: 1.7; color: #3a3936; }
+  .q + .q { margin-top: 10px; }
+  .q b { font-weight: 600; }
+
+  @media (max-width: 760px) {
+    .wrap { padding: 32px 16px 80px; }
+    .cards, .pair, .kinds { grid-template-columns: 1fr; }
+    .rule { grid-template-columns: 1fr; gap: 16px; }
+  }
+
+  /* 색 방향 */
+  .pal { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
+  .pcard { border-radius: 12px; overflow: hidden; box-shadow: 0 0 0 1px #e3e3e3; background: var(--win); cursor: pointer; transition: transform 0.18s, box-shadow 0.18s; }
+  .pcard:hover { transform: translateY(-2px); box-shadow: 0 0 0 1px #d0d0d0, 0 10px 24px rgba(0, 0, 0, 0.08); }
+  .pcard.on { box-shadow: 0 0 0 2px var(--accent); }
+  .pcard .pv2 { display: grid; grid-template-columns: 78px 1fr; gap: 8px; padding: 10px 10px 0 10px; height: 148px; }
+  .pcard .ps { display: flex; flex-direction: column; gap: 4px; padding-top: 4px; }
+  .pcard .ps span { height: 16px; border-radius: 4px; font-size: 10px; display: flex; align-items: center; padding: 0 6px; color: var(--nav-text); }
+  .pcard .ps span.on { background: var(--nav-on-bg); color: var(--nav-on-text); font-weight: 600; }
+  .pcard .pp { background: var(--paper); border-radius: 8px 8px 0 0; box-shadow: 0 0 0 1px var(--line-2); padding: 10px 12px; display: flex; flex-direction: column; gap: 7px; }
+  .pcard .pp .r1 { display: flex; align-items: center; justify-content: space-between; font-size: 13px; font-weight: 650; }
+  .pcard .pp .r1 b { background: var(--primary); color: var(--on-primary); font-size: 10px; font-weight: 500; padding: 3px 7px; border-radius: 5px; }
+  .pcard .pp .r2 { display: flex; gap: 10px; font-size: 10px; color: var(--text-2); border-bottom: 1px solid var(--line-2); padding-bottom: 5px; }
+  .pcard .pp .r2 u { text-decoration: none; color: var(--text); font-weight: 600; box-shadow: 0 6px 0 -4px var(--tabline); }
+  .pcard .pp .row { display: flex; align-items: center; gap: 6px; font-size: 11px; border-bottom: 1px solid var(--line); padding-bottom: 6px; }
+  .pcard .pp .row .tag { height: 16px; font-size: 10px; padding: 0 5px; }
+  .pcard .pp .row em { font-style: normal; color: var(--text-2); margin-left: auto; }
+  .pcard .pinfo { background: #fff; padding: 12px 14px 14px; border-top: 1px solid #ececec; color: #2c2c2b; }
+  .pcard .pinfo b { font-size: 15px; font-weight: 600; display: block; }
+  .pcard .pinfo p { margin: 4px 0 8px; font-size: 13px; line-height: 1.6; color: #5f5d58; }
+  .pcard .sw { display: flex; gap: 4px; }
+  .pcard .sw i { flex: 1; height: 18px; border-radius: 4px; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.06); }
+  .allpages { border-radius: 12px; box-shadow: 0 0 0 1px var(--line-2); overflow: hidden; }
+  .allrow { display: grid; grid-template-columns: 120px 1fr; align-items: center; min-height: 48px; padding: 6px 16px; border-bottom: 1px solid var(--line); }
+  .allrow:last-child { border-bottom: 0; }
+  .allrow .g { font-size: 12px; color: var(--text-2); font-weight: 500; }
+  .allrow .ls { display: flex; flex-wrap: wrap; gap: 6px; }
+  .allrow a { height: 30px; display: inline-flex; align-items: center; padding: 0 11px; border-radius: 8px; font-size: 13px; font-weight: 500; box-shadow: inset 0 0 0 1px var(--line-2); transition: background-color 0.12s, box-shadow 0.12s; }
+  .allrow a:hover { background: var(--accent-soft); color: var(--accent-ink); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent); }
+</style>
+</head>
+<body class="doc">
+<div class="wrap">
+  <div class="crumb">docs / mockups / ui-refresh</div>
+  <h1 class="title">UI 톤 개선 데모</h1>
+  <p class="lede">
+    앱이 딱딱하고 답답해 보이는 이유는 색보다 <b>겹겹의 띠, 배경 깔린 표 머리, 셀 안의 상자, 작고 굵은 글자</b>였습니다.
+    색 토큰은 이미 Notion 값에 가깝게 바뀌어 있어서, 이 데모는 색을 그대로 두고 구조와 글자만 바꿨습니다.
+    네 화면은 모두 같은 규칙에서 나왔고, 화면 성격에 따라 표·목록·문서 중 하나를 고릅니다.
+  </p>
+  <div class="byline">2026년 11월 10일 · 참고: Notion 공개 페이지 실측, Granola 앱 화면, Linear·Attio</div>
+
+  <h2 class="h">색 방향 5가지</h2>
+  <p class="hsub">구조와 글자는 그대로 두고 색 역할만 바꿨습니다. 카드를 누르면 모든 데모 화면에 적용되고, 각 화면 위쪽 버튼으로도 바꿀 수 있습니다.</p>
+  <div class="pal" id="pal"></div>
+
+  <section class="rule" style="margin-top:32px;border-top:1px solid var(--line)">
+    <div>
+      <div class="no">왜 제품처럼 안 보였나</div>
+      <h3>회색 한 가지뿐이고 제품의 색이 없었다</h3>
+      <p>웜그레이 안은 주 버튼이 검정이고 선택·강조·바탕이 모두 같은 회색 계열입니다. Notion에서는 문서가 주인공이라 맞지만, 업무 앱에서는 뼈대 그림처럼 보입니다.</p>
+    </div>
+    <div class="pair one"><div class="spec"><div class="lab"><span class="dot accent"></span>가이드라인과 실제 제품이 공통으로 하는 것</div><div class="in" style="font-size:14px;line-height:1.8;color:#3a3936">
+      <b>1. 제품 색 하나에 역할을 준다.</b> 주 버튼, 선택된 메뉴, 선택 탭, 링크가 같은 색에서 나옵니다(Material 3의 primary / primary container, monday의 primary / primary-selected).<br>
+      <b>2. 회색에 그 색 기운을 섞는다.</b> Google은 파랑 기운 바탕(#f0f4f9), Radix는 slate, 토스·monday도 푸른 회색입니다. 누런 회색과 파란 강조가 섞이면 서로 겉돕니다.<br>
+      <b>3. 면을 단계로 나눈다.</b> 창 바탕 → 작업 면 → 옅은 채움 순서를 정해 두고 그림자 대신 면 색으로 높낮이를 냅니다(Material 3 surface container, Carbon layer).<br>
+      <b>4. 눈금에서 고른다.</b> Radix는 12단계 중 1~2는 바탕, 3~5는 채움, 6~8은 선, 9~10은 채운 버튼, 11~12는 글자로 씁니다. 임의의 hex를 만들지 않습니다.<br>
+      <b>5. 상태 색의 세기를 정한다.</b> monday는 진한 단색으로 채우고, Notion·Radix는 옅은 바탕에 진한 글자를 씁니다. 한 제품 안에서는 한 가지 방식만 씁니다.
+    </div></div></div>
+  </section>
+
+  <h2 class="h">화면 데모</h2>
+  <p class="hsub">버튼·입력칸·표를 한곳에 모은 <a href="components.html" style="color:var(--accent-ink);font-weight:500">부품 견본</a>도 있습니다. 눌러서 열어 보세요. 각 화면 오른쪽 위 파란 버튼에 그 화면에서 바뀐 점이 정리돼 있습니다.</p>
+  <div class="cards">
+    <a class="card" href="properties.html">
+      <div class="shot"><img src="shot-properties.png" alt="매물관리 데모 화면"></div>
+      <div class="body"><div class="t">매물관리<span class="kind">표</span><span data-ic="arrowUpRight"></span></div>
+      <p>표는 유지하고 띠·머리 배경·셀 상자를 걷어냈습니다. 필터는 버튼 하나로 모으고 적용한 것만 칩으로 보입니다.</p></div>
+    </a>
+    <a class="card" href="customers.html">
+      <div class="shot"><img src="shot-customers.png" alt="고객 원장 데모 화면"></div>
+      <div class="body"><div class="t">고객 원장<span class="kind">목록 + 상세</span><span data-ic="arrowUpRight"></span></div>
+      <p>다음 연락 날짜로 묶은 두 줄 목록입니다. 행을 누르면 오른쪽에 문서처럼 읽히는 상세가 열립니다.</p></div>
+    </a>
+    <a class="card" href="tasks.html">
+      <div class="shot"><img src="shot-tasks.png" alt="업무 데모 화면"></div>
+      <div class="body"><div class="t">업무<span class="kind">목록</span><span data-ic="arrowUpRight"></span></div>
+      <p>마감일로 묶은 한 줄 목록입니다. 상태는 원, 우선순위는 막대, 통화에서 제안된 업무는 맨 위에 따로 모읍니다.</p></div>
+    </a>
+    <a class="card" href="ad-note.html">
+      <div class="shot"><img src="shot-ad-note.png" alt="광고노트 데모 화면"></div>
+      <div class="body"><div class="t">광고노트<span class="kind">촘촘한 표</span><span data-ic="arrowUpRight"></span></div>
+      <p>평형별로 묶고 묶음 제목에 시세 폭을 붙였습니다. 가격 변동은 글자색과 화살표만으로 보여 줍니다.</p></div>
+    </a>
+  </div>
+
+  <h2 class="h">전체 화면 21개</h2>
+  <p class="hsub">앱의 모든 메뉴를 재디자인한 데모입니다. 원본의 열·필터·조작을 유지하고 모양과 반응만 바꿨습니다. 어느 화면에서든 사이드바로 서로 오갈 수 있습니다.</p>
+  <div class="allpages"><div class="allrow"><span class="g">시작</span><span class="ls"><a href="dashboard.html">대시보드</a></span></div><div class="allrow"><span class="g">매물·공간</span><span class="ls"><a href="properties.html">매물관리</a><a href="sites.html">관리단지</a><a href="ad-note.html">광고노트</a><a href="my-ads.html">내광고관리</a></span></div><div class="allrow"><span class="g">고객·상담</span><span class="ls"><a href="customers.html">고객 원장</a><a href="contacts.html">연락처</a><a href="consultations.html">상담분석</a></span></div><div class="allrow"><span class="g">거래·계약</span><span class="ls"><a href="wanted.html">희망매물</a><a href="deals.html">거래관리</a><a href="contracts.html">계약서 관리</a></span></div><div class="allrow"><span class="g">수수료/정산</span><span class="ls"><a href="cashflow.html">캐시플로우</a><a href="cashflow-ledger.html">수금 원장</a><a href="cashflow-partner.html">공동중개 수수료</a><a href="cashflow-settlements.html">직원 정산</a><a href="cashflow-my.html">내 수수료</a><a href="cashflow-expenses.html">고정비 설정</a></span></div><div class="allrow"><span class="g">업무·운영</span><span class="ls"><a href="tasks.html">업무</a><a href="calendar.html">캘린더</a><a href="employees.html">직원관리</a><a href="settings.html">설정</a></span></div></div>
+
+  <h2 class="h">바꾸는 규칙</h2>
+  <p class="hsub">왼쪽은 지금 코드의 값을 그대로 옮긴 것이고, 오른쪽이 데모에서 쓴 값입니다.</p>
+
+  <section class="rule">
+    <div>
+      <div class="no">규칙 1</div>
+      <h3>표 위의 띠를 두 줄로 줄인다</h3>
+      <p>제목 줄 하나, 보기 탭과 도구 줄 하나만 둡니다. 필터 드롭다운 열 개는 거름 버튼 하나로 모으고, 적용한 필터만 칩으로 나타납니다.</p>
+      <p>줄어든 높이보다 <b>상자가 사라진 것</b>이 더 큽니다. 띠 사이 여백은 남지만 테두리와 배경이 없어서 한 장의 종이로 읽힙니다.</p>
+    </div>
+    <div class="pair">
+      <div class="spec"><div class="lab"><span class="dot"></span>지금 · 매물관리</div><div class="in">
+        <div class="bands">
+          <div class="band now" style="height:26px">타이틀바·탭 <b>40</b></div>
+          <div class="band now" style="height:34px">거래·단지·동·호·검색·보기·등록 <b>48</b></div>
+          <div class="band now" style="height:34px">필터 드롭다운 9개 <b>48</b></div>
+          <div class="band now" style="height:24px">열 안내 띠 <b>36</b></div>
+          <div class="band now" style="height:22px">표 머리 <b>36</b></div>
+          <div class="band data" style="height:22px">첫 데이터 행</div>
+        </div>
+        <div class="measure">첫 행까지 약 <b>208px</b>, 테두리 있는 띠 5개</div>
+      </div></div>
+      <div class="spec"><div class="lab"><span class="dot accent"></span>개선</div><div class="in">
+        <div class="bands">
+          <div class="band new" style="height:26px">타이틀바·탭 <b>44</b></div>
+          <div class="band new" style="height:36px">제목 · 확인 필요 4 · 새 매물 <b>56</b></div>
+          <div class="band new" style="height:26px">보기 탭 · 도구 아이콘 <b>40</b></div>
+          <div class="band new" style="height:22px">표 머리 <b>36</b></div>
+          <div class="band data" style="height:22px">첫 데이터 행</div>
+        </div>
+        <div class="measure">첫 행까지 <b>176px</b>, 선은 탭 아래 하나와 머리 아래 하나</div>
+      </div></div>
+    </div>
+  </section>
+
+  <section class="rule">
+    <div>
+      <div class="no">규칙 2</div>
+      <h3>표 머리에 배경을 깔지 않는다</h3>
+      <p>머리는 회색 13px 보통 굵기 글자와 아래선 하나로 충분합니다. 칸 세로선도 없앱니다. Notion도 세로선이 있어서 세로선 자체가 주원인은 아니지만, 머리 배경·진한 선과 겹치면 격자가 무거워집니다.</p>
+      <p>바꿀 곳: <code>data-table.tsx</code> notion 변형의 머리 <code>bg-[#f7f7f5]</code>, <code>border-[#d8d6d0]</code>, 셀 <code>border-r</code>.</p>
+    </div>
+    <div class="pair">
+      <div class="spec"><div class="lab"><span class="dot"></span>지금</div><div class="in" style="padding:0">
+        <table class="old-tbl"><tr><th>단지</th><th>동</th><th>호</th><th>가격/보증금</th></tr>
+        <tr><td>고덕그라시움</td><td>103</td><td>3401</td><td class="r">16억 8,000만</td></tr>
+        <tr><td>고덕아르테온</td><td>312</td><td>1704</td><td class="r">15억 2,000만</td></tr></table>
+      </div></div>
+      <div class="spec"><div class="lab"><span class="dot accent"></span>개선</div><div class="in" style="padding:0">
+        <table class="new-tbl"><tr><th>매물</th><th style="text-align:right">가격</th></tr>
+        <tr><td><b style="font-weight:500">고덕그라시움</b><span class="sub">103동 3401호</span></td><td class="r num">16억 8,000</td></tr>
+        <tr><td><b style="font-weight:500">고덕아르테온</b><span class="sub">312동 1704호</span></td><td class="r num">15억 2,000</td></tr></table>
+      </div></div>
+    </div>
+  </section>
+
+  <section class="rule">
+    <div>
+      <div class="no">규칙 3</div>
+      <h3>본문은 14px 보통 굵기, 굵게는 행마다 하나</h3>
+      <p>지금은 12px 이하 클래스가 14px 이상보다 약 2.6배 많고, 임의 px 크기가 20종입니다. 데모는 아래 일곱 단계만 씁니다. 굵은 글자는 행의 이름 한 곳(500)과 제목에만 둡니다.</p>
+    </div>
+    <div class="pair one">
+      <div class="spec"><div class="lab"><span class="dot accent"></span>글자 크기 단계</div><div class="in">
+        <div class="scale">
+          <div><span>26</span><span style="font-size:26px;font-weight:700;letter-spacing:-0.028em">김지현</span><span class="t3" style="font-size:13px">옆 상세 제목</span></div>
+          <div><span>22</span><span style="font-size:22px;font-weight:650;letter-spacing:-0.022em">매물관리</span><span class="t3" style="font-size:13px">페이지 제목</span></div>
+          <div><span>16</span><span style="font-size:16px;color:var(--text-3);font-weight:500">128</span><span class="t3" style="font-size:13px">제목 옆 개수</span></div>
+          <div><span>14</span><span style="font-size:14px">고덕그라시움 103동 3401호 · 16억 8,000</span><span class="t3" style="font-size:13px">본문·셀·보기 탭</span></div>
+          <div><span>13</span><span style="font-size:13px;color:var(--text-2)">마지막 확인 · 담당 · 버튼 · 태그</span><span class="t3" style="font-size:13px">보조</span></div>
+          <div><span>12</span><span style="font-size:12px;color:var(--text-3)">사이드바 묶음 이름 · 개수 · 단축키</span></div>
+          <div><span>11</span><span style="font-size:11px;color:var(--text-3)">아바타 이니셜만</span></div>
+        </div>
+      </div></div>
+    </div>
+  </section>
+
+  <section class="rule">
+    <div>
+      <div class="no">규칙 4</div>
+      <h3>셀 안에 상자를 두지 않는다</h3>
+      <p>상태는 점과 글자, 경고는 글자색, 분류만 테두리 없는 옅은 태그로 둡니다. 드롭다운·버튼은 마우스를 올리거나 선택했을 때만 나타납니다.</p>
+      <p>바꿀 곳: <code>data-table/cells.tsx</code>의 배지와 행마다 그려지는 선택 상자.</p>
+    </div>
+    <div class="pair">
+      <div class="spec"><div class="lab"><span class="dot"></span>지금</div><div class="in"><div class="cells">
+        <span class="old-badge">● 거래중</span><span class="old-warn">확인 필요</span><span class="old-sel">담당 선택<span data-ic="chevDown"></span></span><span class="old-badge" style="border-color:#f3c9c4;background:#fdeeec;color:#bb3430">매매</span>
+      </div></div></div>
+      <div class="spec"><div class="lab"><span class="dot accent"></span>개선</div><div class="in"><div class="cells" style="font-size:14px">
+        <span class="st ok">거래 가능</span><span class="warn-t">확인 필요 · 16일</span><span class="who"><span class="av" style="background:#5d6f91">이</span>이현수</span><span class="tag sale">매매</span>
+      </div></div></div>
+    </div>
+  </section>
+
+  <section class="rule">
+    <div>
+      <div class="no">규칙 5</div>
+      <h3>화면 성격에 따라 모양을 고른다</h3>
+      <p>지금은 모든 목록 화면이 같은 표라서 사람·일 화면까지 엑셀처럼 보입니다. 숫자를 나란히 비교하는 화면만 표를 쓰고, 사람과 일은 목록, 하나를 깊게 보는 곳은 문서로 둡니다.</p>
+    </div>
+    <div class="kinds">
+      <div class="spec"><div class="lab">표 · Attio·Notion</div><div class="in"><b>숫자 비교</b>매물관리, 광고노트, 내광고관리, 수금 원장, 관리단지</div></div>
+      <div class="spec"><div class="lab">목록 · Granola·Linear</div><div class="in"><b>사람·일</b>고객 원장, 업무, 상담기록, 희망매물, 통화</div></div>
+      <div class="spec"><div class="lab">문서 · Notion 페이지</div><div class="in"><b>하나를 깊게</b>고객·매물·거래 상세, 계약서</div></div>
+    </div>
+  </section>
+
+  <section class="rule">
+    <div>
+      <div class="no">규칙 6</div>
+      <h3>모서리와 면을 정한다</h3>
+      <p>지금은 둥근 알약 툴바와 직각 격자가 섞여 있습니다. 모서리는 세 값만 쓰고 알약 모양은 쓰지 않습니다.</p>
+      <p>작업 면은 회색 창 위에 놓인 흰 종이처럼 둡니다. 사이드바와 본문이 선 없이 나뉘고, 요즘 데스크톱 앱(Linear, Granola, Arc)에서 흔한 구성입니다.</p>
+    </div>
+    <div class="pair one">
+      <div class="spec"><div class="lab"><span class="dot accent"></span>모서리 세 값</div><div class="in"><div class="shapes">
+        <div class="shape"><i style="width:120px;height:64px;border-radius:10px;background:#fff;box-shadow:0 0 0 1px rgba(40,35,25,.08),0 1px 3px rgba(40,35,25,.05)"></i>작업 면·카드 10</div>
+        <div class="shape"><i style="width:84px;height:30px;border-radius:6px"></i>버튼·입력·칩 6</div>
+        <div class="shape"><i style="width:40px;height:21px;border-radius:4px;background:#fbe9e8;box-shadow:none"></i>태그 4</div>
+        <div class="shape"><i style="width:20px;height:20px;border-radius:50%;background:#5d6f91;box-shadow:none"></i>사람만 원</div>
+      </div></div></div>
+    </div>
+  </section>
+
+  <h2 class="h">실제 앱에 넣는 순서</h2>
+  <p class="hsub">공용 부품부터 고치면 표를 쓰는 화면 전체가 한 번에 바뀝니다.</p>
+  <ol class="steps">
+    <li><div><b>공용 표 머리·선·글자</b><p><code>components/data-table/data-table.tsx</code>: notion 변형의 머리 배경과 진한 아래선, 셀 세로선, 열 안내 띠를 걷고 셀 글자를 14px 보통 굵기로 바꿉니다. 표를 쓰는 모든 화면에 반영됩니다.</p></div></li>
+    <li><div><b>셀 표시</b><p><code>components/data-table/cells.tsx</code>: 테두리 배지를 평평한 태그와 점 상태로 바꾸고, 행마다 그리는 선택 상자를 마우스를 올렸을 때만 보이게 합니다.</p></div></li>
+    <li><div><b>페이지 머리와 보기 줄</b><p>제목 줄과 보기·도구 줄을 공용 컴포넌트로 만들고 매물관리부터 툴바 두 줄을 대체합니다. 필터 드롭다운은 거름 버튼 하나와 적용 칩으로 바꿉니다.</p></div></li>
+    <li><div><b>묶음 목록</b><p>두 줄 행과 묶음 제목을 가진 목록 컴포넌트를 만들어 업무, 고객 원장 순으로 옮깁니다. 표 보기는 전환 버튼으로 남깁니다.</p></div></li>
+    <li><div><b>창 틀</b><p><code>routes/_authenticated.tsx</code>: 작업 면을 띄우고 사이드바를 정리합니다. 탭이 네이티브 뷰라서 뷰 영역 계산을 같이 고쳐야 하므로 마지막에 합니다.</p></div></li>
+  </ol>
+
+  <h2 class="h">정해 주실 것</h2>
+  <p class="hsub">데모에서는 아래처럼 골라 두었습니다.</p>
+  <div class="q"><b>고객 원장을 목록으로 바꿀지.</b> 데모는 목록을 기본으로 하고 표 보기를 전환 버튼으로 남겼습니다. 열 단위 정렬·필터를 자주 쓰신다면 표를 기본으로 두고 목록을 보기 옵션으로 둘 수 있습니다.</div>
+  <div class="q"><b>기본 행 높이.</b> 매물관리는 40px, 광고노트는 36px로 했습니다. 지금 기본은 32px입니다.</div>
+  <div class="q"><b>떠 있는 작업 면.</b> 가장 "요즘 앱"처럼 보이게 하는 부분이지만 네이티브 탭 구조 때문에 손이 가장 많이 갑니다. 1~4단계만으로도 답답함은 대부분 풀립니다.</div>
+</div>
+
+<script src="shell.js"></script>
+<script>
+const PAL = [
+  ['notion', '웜그레이 (지금 데모)', 'Notion 값. 주 버튼이 검정이고 제품 색이 없습니다.'],
+  ['m3', 'Google Material 3', '파랑 하나에서 뽑은 역할 색. 선택 메뉴는 옅은 파랑 면, 바탕도 파랑 기운.'],
+  ['radix', 'Radix (Linear 계열)', '차가운 회색 12단계에 남색 강조. 가장 차분하고 개발 도구 같은 인상.'],
+  ['toss', '토스 공개 색상', '푸른 회색에 선명한 파랑. 국내 사용자에게 가장 익숙한 톤.'],
+  ['monday', 'monday.com Vibe', '선명한 파랑과 꽉 찬 상태 색. 가장 활기차고 업무 도구다운 인상.'],
+];
+const KEYS = ['--win', '--paper', '--soft', '--line-2', '--text-3', '--text-2', '--text', '--primary', '--nav-on-bg'];
+document.getElementById('pal').innerHTML = PAL.map(([id, name, desc]) => `
+  <div class="pcard" data-theme="${id}" data-pick="${id}">
+    <div class="pv2">
+      <div class="ps"><span>대시보드</span><span class="on">매물관리</span><span>고객 원장</span><span>업무</span></div>
+      <div class="pp">
+        <div class="r1">매물관리<b>+ 새 매물</b></div>
+        <div class="r2"><u>전체</u><span>매매</span><span>전세</span><span>월세</span></div>
+        <div class="row">고덕그라시움<span class="tag sale">매매</span><em>16억 8,000</em></div>
+        <div class="row">고덕아르테온<span class="tag jeonse">전세</span><em>6억 4,000</em></div>
+      </div>
+    </div>
+    <div class="pinfo"><b>${name}</b><p>${desc}</p><div class="sw">${KEYS.map((k) => `<i style="background:var(${k})"></i>`).join('')}</div></div>
+  </div>`).join('');
+// 카드 안의 견본 띠는 카드 테마 값을 써야 하므로 pinfo에도 변수가 내려온다
+function mark() {
+  const cur = document.documentElement.dataset.theme || 'notion';
+  document.querySelectorAll('.pcard').forEach((c) => c.classList.toggle('on', c.dataset.pick === cur));
+}
+document.getElementById('pal').addEventListener('click', (e) => {
+  const c = e.target.closest('.pcard');
+  if (c) { UI.setTheme(c.dataset.pick); mark(); }
+});
+document.querySelector('.theme-sw').addEventListener('click', () => setTimeout(mark));
+mark();
+</script>
+</body>
+</html>

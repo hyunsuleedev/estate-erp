@@ -1,0 +1,779 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>계약서 관리 · UI 개선 데모</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="ui.css">
+<style>
+  [hidden] { display: none !important; }
+  .wrap { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  /* 필터 줄 */
+  .fbar { gap: 6px; padding: 10px var(--gutter) 10px; flex-wrap: wrap; }
+  .fsel, .fin { height: 30px; border: 0; border-radius: 8px; background: var(--paper); box-shadow: inset 0 0 0 1px var(--line-2), 0 1px 2px rgba(16, 24, 40, 0.04); font: inherit; font-size: 13px; color: var(--text); letter-spacing: inherit; transition: box-shadow 0.12s, background-color 0.12s; }
+  .fsel { display: inline-flex; align-items: center; gap: 6px; padding: 0 8px 0 10px; cursor: pointer; white-space: nowrap; }
+  .fsel:hover, .fin:hover { box-shadow: inset 0 0 0 1px var(--line-3), 0 1px 2px rgba(16, 24, 40, 0.04); }
+  .fsel .k { color: var(--text-2); }
+  .fsel .v { font-weight: 500; }
+  .fsel > .i { width: 12px; height: 12px; color: var(--text-3); }
+  .fsel.on, .fin.on { background: var(--accent-soft); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent); }
+  .fsel.on .k { color: var(--accent-ink); opacity: 0.75; }
+  .fsel.on .v, .fin.on { color: var(--accent-ink); }
+  .fsel .clr { width: 16px; height: 16px; display: grid; place-items: center; border-radius: 4px; color: var(--accent-ink); }
+  .fsel .clr:hover { background: color-mix(in srgb, var(--accent) 18%, transparent); }
+  .fsel .clr .i { width: 11px; height: 11px; }
+  .fin { width: 76px; padding: 0 8px; outline: 0; font-variant-numeric: tabular-nums; }
+  .fin[type="date"] { width: 126px; }
+  .fin::placeholder { color: var(--text-3); }
+  .fin:focus { box-shadow: inset 0 0 0 1px var(--accent), 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+  .frange { display: inline-flex; align-items: center; gap: 3px; }
+  .frange .t3 { font-size: 12px; }
+  .fck { height: 30px; display: inline-flex; align-items: center; gap: 6px; padding: 0 9px 0 7px; border: 0; border-radius: 8px; background: transparent; font-size: 13px; color: var(--text-2); cursor: pointer; }
+  .fck:hover { background: var(--hover); color: var(--text); }
+  .fck i { width: 15px; height: 15px; border-radius: 4px; box-shadow: inset 0 0 0 1.5px var(--line-3); display: grid; place-items: center; }
+  .fck i .i { width: 11px; height: 11px; color: #fff; stroke-width: 2.6; opacity: 0; }
+  .fck.on { color: var(--accent-ink); }
+  .fck.on i { background: var(--accent); box-shadow: none; }
+  .fck.on i .i { opacity: 1; }
+  #fbar [data-clear] { margin-left: auto; }
+  /* 표: 열이 14개라 조금 촘촘하게 */
+  #tbl { font-size: 13px; }
+  #tbl th, #tbl td { padding-left: 7px; padding-right: 7px; }
+  #tbl th:first-child, #tbl td:first-child { padding-left: var(--gutter); }
+  #tbl td { height: 44px; }
+  #tbl th:last-child, #tbl td.act { padding: 0 14px 0 2px; width: 1%; white-space: nowrap; }
+  #tbl tbody tr[data-c] { cursor: pointer; }
+  #tbl tr.sel td { background: var(--picked); }
+  #tbl tr.sel td:first-child { box-shadow: inset 2px 0 0 var(--accent); }
+  #tbl tr.joint:not(.sel) td { background: color-mix(in srgb, var(--tg-blue-bg) 28%, var(--paper)); }
+  #tbl td.loc { max-width: 0; width: 30%; overflow: hidden; text-overflow: ellipsis; font-weight: 500; }
+  #tbl td.act .ib { width: 24px; height: 24px; }
+  #tbl td.act .ib .i { width: 14px; height: 14px; }
+  .dc { display: inline-flex; align-items: center; height: 21px; padding: 0 6px; border-radius: 4px; font-size: 12px; font-variant-numeric: tabular-nums; background: var(--tg-yellow-bg); color: var(--tg-yellow); }
+  .dc.today { background: var(--tg-sale-bg); color: var(--tg-sale); font-weight: 600; }
+  .dc.tomorrow { background: var(--tg-green-bg); color: var(--tg-green); }
+  .dc.past { background: color-mix(in srgb, var(--text) 6%, transparent); color: var(--text-2); }
+  .dc.late { background: transparent; color: var(--danger); font-weight: 700; padding: 0; }
+  .sub { display: block; font-size: 11px; color: var(--text-2); line-height: 1.2; margin-top: 1px; font-variant-numeric: tabular-nums; }
+  .who2 small { color: var(--text-3); font-size: 11px; margin-right: 4px; }
+  .memo-b { display: inline-flex; align-items: center; gap: 3px; height: 20px; padding: 0 5px; border-radius: 4px; background: var(--tg-orange-bg); color: var(--tg-orange); font-size: 11px; font-weight: 600; cursor: help; }
+  .memo-b .i { width: 11px; height: 11px; }
+  .miss { display: inline-flex; align-items: center; height: 20px; padding: 0 6px; border-radius: 4px; font-size: 12px; font-weight: 500; color: var(--danger); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--danger) 45%, transparent); }
+  .sumbar .pg { display: inline-flex; align-items: center; gap: 4px; }
+  .sumbar .sv b { margin-left: 4px; }
+  /* 편집기 */
+  .ed-top { display: flex; align-items: center; gap: 8px; height: 48px; padding: 0 16px 0 12px; flex: none; }
+  .ed-top h2 { margin: 0; font-size: 16px; font-weight: 650; letter-spacing: -0.015em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ed-tabs { display: flex; align-items: stretch; gap: 2px; height: 38px; padding: 0 12px; border-bottom: 1px solid var(--line-2); flex: none; }
+  .dtab { position: relative; display: inline-flex; align-items: center; gap: 7px; padding: 0 10px; border: 0; background: transparent; font-size: 13px; color: var(--text-2); cursor: pointer; white-space: nowrap; }
+  .dtab:hover { color: var(--text); }
+  .dtab.on { color: var(--text); font-weight: 500; }
+  .dtab.on::after { content: ""; position: absolute; left: 10px; right: 10px; bottom: -1px; height: 2px; border-radius: 2px; background: var(--tabline); }
+  .dtab .unsaved { width: 6px; height: 6px; border-radius: 50%; background: var(--dot-warn); }
+  .ed-tabs .sp { flex: 1; }
+  .ed-tabs .cnt { align-self: center; font-size: 12px; color: var(--text-3); margin-right: 6px; }
+  .ed-tabs .btn { align-self: center; }
+  .ed-body { flex: 1; min-height: 0; display: flex; }
+  .ed-main { flex: 1; min-width: 0; overflow: auto; padding: 4px 28px 40px; }
+  .ed-side { width: 348px; flex: none; overflow: auto; border-left: 1px solid var(--line-2); background: color-mix(in srgb, var(--soft) 60%, var(--paper)); padding: 4px 16px 24px; }
+  .ed-foot { display: flex; align-items: center; gap: 6px; height: 52px; padding: 0 16px; border-top: 1px solid var(--line-2); flex: none; font-size: 13px; color: var(--text-2); }
+  .ed-foot .sp { flex: 1; }
+  .esec { margin-top: 18px; }
+  .esec > h3 { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; font-size: 14px; font-weight: 650; }
+  .esec > h3 small { font-weight: 400; font-size: 12px; color: var(--text-2); }
+  .esec > h3 .btn { margin-left: auto; }
+  .box { border-radius: 10px; box-shadow: inset 0 0 0 1px var(--line-2); overflow: hidden; }
+  .crow { display: grid; grid-template-columns: 104px minmax(0, 1fr); border-bottom: 1px solid var(--line); min-height: 40px; }
+  .crow:last-child { border-bottom: 0; }
+  .crow > b { display: flex; align-items: center; padding: 0 12px; background: var(--soft); font-size: 13px; font-weight: 500; color: var(--text-2); }
+  .crow > div { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; padding: 5px 10px; font-size: 13px; }
+  .pgrid { display: grid; grid-template-columns: 1fr 1fr; }
+  .pgrid .crow { border-right: 1px solid var(--line); }
+  .pgrid .crow.full { grid-column: 1 / -1; border-right: 0; }
+  .pgrid .crow:nth-child(odd):not(.full) { border-right: 0; }
+  .chead { display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: var(--soft); border-bottom: 1px solid var(--line); font-size: 13px; }
+  .chead b { font-weight: 650; white-space: nowrap; }
+  .c2body { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 8px 12px; font-size: 13px; border-bottom: 1px solid var(--line); }
+  .chead .sp { flex: 1; }
+  .ci { height: 28px; padding: 0 8px; border: 0; border-radius: 6px; background: var(--paper); box-shadow: inset 0 0 0 1px var(--line-2); font: inherit; font-size: 13px; color: var(--text); outline: 0; min-width: 0; }
+  .ci:focus { box-shadow: inset 0 0 0 1px var(--accent), 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+  .ci.amt { width: 104px; text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
+  .ci.bad { box-shadow: inset 0 0 0 1.5px var(--danger); }
+  .ci.grow { flex: 1; }
+  .ci.w60 { width: 60px; }
+  textarea.ci { height: auto; width: 100%; padding: 8px 10px; line-height: 1.65; resize: vertical; }
+  .rd { font-size: 12px; color: var(--text-3); }
+  .lck { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--text-2); cursor: pointer; }
+  .rcpt { margin-left: auto; }
+  .g3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px 12px; padding: 10px 12px; }
+  .g3 label, .gl { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--text-2); min-width: 0; }
+  .g3 .ci { width: 100%; }
+  /* 당사자 표 */
+  .pt { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .pt th { height: 30px; padding: 0 8px; text-align: left; font-size: 12px; font-weight: 500; color: var(--text-2); background: var(--soft); border-bottom: 1px solid var(--line); white-space: nowrap; }
+  .pt td { height: 38px; padding: 0 6px; border-bottom: 1px solid var(--line); }
+  .pt tr:last-child td { border-bottom: 0; }
+  .pt .ci { width: 100%; box-shadow: none; background: transparent; }
+  .pt .ci:hover { background: var(--hover); }
+  .pt .ci:focus { background: var(--paper); }
+  .pt td:first-child { padding-left: 12px; white-space: nowrap; }
+  .pt .ib { width: 24px; height: 24px; opacity: 0; }
+  .pt tr:hover .ib, .pt tr:focus-within .ib { opacity: 1; }
+  /* 옆 칸 */
+  .scard { margin-top: 14px; padding: 12px; border-radius: 10px; background: var(--paper); box-shadow: 0 0 0 1px var(--line-2); }
+  .scard h4 { display: flex; align-items: center; gap: 6px; margin: 0 0 4px; font-size: 13px; font-weight: 650; }
+  .scard h4 .st { margin-left: auto; }
+  .scard p { margin: 0 0 8px; font-size: 12px; color: var(--text-2); line-height: 1.5; }
+  .scard .row { display: flex; gap: 6px; margin-top: 6px; }
+  .scard .row .ci { flex: 1; }
+  .vmsg { display: flex; gap: 6px; padding: 6px 8px; border-radius: 6px; font-size: 12px; line-height: 1.5; margin-top: 4px; }
+  .vmsg.err { background: color-mix(in srgb, var(--danger) 9%, transparent); color: var(--danger); }
+  .vmsg.warn { background: color-mix(in srgb, var(--dot-warn) 16%, transparent); color: var(--warn); }
+  .vmsg.fine { background: color-mix(in srgb, var(--dot-ok) 12%, transparent); color: var(--ok); }
+  .pbar { display: flex; height: 8px; border-radius: 4px; overflow: hidden; background: var(--line-2); margin: 8px 0 10px; gap: 2px; }
+  .pbar i { display: block; height: 100%; }
+  .pt-item { position: relative; display: grid; grid-template-columns: 14px minmax(0, 1fr) auto; gap: 8px; padding-bottom: 12px; font-size: 13px; }
+  .pt-item::before { content: ""; width: 9px; height: 9px; border-radius: 50%; margin-top: 5px; background: var(--c, var(--line-3)); }
+  .pt-item::after { content: ""; position: absolute; left: 4px; top: 17px; bottom: 0; width: 1px; background: var(--line-2); }
+  .pt-item:last-child { padding-bottom: 0; }
+  .pt-item:last-child::after { display: none; }
+  .pt-item small { display: block; font-size: 12px; color: var(--text-2); font-variant-numeric: tabular-nums; }
+  .pt-item .a { text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .pt-item .a small { font-weight: 400; }
+  /* 창 */
+  .mback { position: fixed; inset: 0; z-index: 150; background: rgba(16, 24, 40, 0.28); display: grid; place-items: center; animation: fade 0.12s; }
+  .modal { width: 520px; max-width: calc(100vw - 32px); max-height: calc(100vh - 64px); display: flex; flex-direction: column; border-radius: 14px; background: var(--paper); box-shadow: 0 24px 64px rgba(16, 24, 40, 0.3); animation: pop-in 0.15s ease-out; }
+  .modal.wide { width: 780px; }
+  .m-h { padding: 18px 20px 4px; }
+  .m-h h3 { margin: 0; font-size: 16px; font-weight: 650; }
+  .m-h p { margin: 4px 0 0; font-size: 13px; color: var(--text-2); }
+  .m-b { padding: 12px 20px; overflow: auto; }
+  .m-f { display: flex; justify-content: flex-end; gap: 6px; padding: 12px 20px 16px; }
+  .frm { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 12px; }
+  .frm label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--text-2); min-width: 0; }
+  .frm .full { grid-column: 1 / -1; }
+  .inp { height: 32px; padding: 0 10px; border: 0; border-radius: 8px; background: var(--paper); box-shadow: inset 0 0 0 1px var(--line-2); font: inherit; font-size: 13px; color: var(--text); outline: 0; }
+  .inp:focus { box-shadow: inset 0 0 0 1px var(--accent), 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+  .inp[disabled] { background: var(--soft); color: var(--text-2); }
+  .btn.primary.dng { background: var(--danger); }
+  .ibox { padding: 10px 12px; border-radius: 8px; background: var(--soft); font-size: 13px; line-height: 1.6; }
+  .ibox small { display: block; font-size: 12px; color: var(--text-2); }
+  .a4 { padding: 36px 44px; border-radius: 4px; background: var(--paper); box-shadow: 0 0 0 1px var(--line-2), 0 8px 24px rgba(16, 24, 40, 0.12); font-size: 13px; line-height: 1.8; }
+  .a4 h1 { margin: 0 0 16px; font-size: 22px; text-align: center; letter-spacing: 0.3em; }
+  .a4 h5 { margin: 14px 0 4px; font-size: 13px; }
+  .a4 table { width: 100%; border-collapse: collapse; }
+  .a4 td { border: 1px solid var(--line-3); padding: 3px 8px; }
+  .a4 td:first-child { width: 96px; background: var(--soft); }
+  .a4 pre { margin: 0; font: inherit; white-space: pre-wrap; }
+</style>
+</head>
+<body data-active="contracts">
+<main id="page">
+<div class="wrap" id="listWrap">
+  <div class="ph">
+    <h1>계약서 관리</h1>
+    <span class="count" id="total"></span>
+    <div class="meta" id="metrics"></div>
+    <div class="actions">
+      <button class="btn" id="formBtn"></button>
+      <button class="btn primary" id="newBtn"></button>
+    </div>
+  </div>
+
+  <div class="vbar">
+    <div class="vtab on" data-preset="all">전체 <span class="n"></span></div>
+    <div class="vtab" data-preset="open">진행중 <span class="n"></span></div>
+    <div class="vtab" data-preset="done">완료 <span class="n"></span></div>
+    <div class="vtools">
+      <label class="field" style="width:260px" data-icon="search"><input id="q" placeholder="고객명, 연락처, 소재지 검색" aria-label="검색"><kbd>/</kbd></label>
+      <button class="fck" id="showContact" role="checkbox"><i></i>고객정보(연락처) 표시</button>
+      <span class="vsep"></span>
+      <div class="seg" id="viewSeg"><button data-view="list" data-icon="list">목록</button><button data-view="docs" data-icon="file">자료 중심</button></div>
+    </div>
+  </div>
+
+  <div class="fbar show" id="fbar">
+    <span id="fselA" style="display:contents"></span>
+    <span class="vsep"></span>
+    <span class="frange"><span id="fselDate" style="display:contents"></span><input class="fin" type="date" id="dFrom" aria-label="날짜 시작"><span class="t3">~</span><input class="fin" type="date" id="dTo" aria-label="날짜 끝"></span>
+    <span class="frange"><span id="fselAmt" style="display:contents"></span><input class="fin" id="aMin" inputmode="numeric" placeholder="최소 만원" aria-label="금액 최소(만원)"><span class="t3">~</span><input class="fin" id="aMax" inputmode="numeric" placeholder="최대 만원" aria-label="금액 최대(만원)"></span>
+    <button class="fck" id="fJoint" role="checkbox"><i></i>공동중개</button>
+    <button class="fck" id="fKeep" role="checkbox"><i></i>보존기간 경과</button>
+    <button class="btn quiet sm" data-clear>필터 초기화</button>
+  </div>
+
+  <div class="scroll" id="scroll">
+    <table class="tbl" id="tbl"><thead id="thead"></thead><tbody id="rows"></tbody></table>
+    <div class="sumbar" id="foot"></div>
+  </div>
+</div>
+<div class="wrap" id="edWrap" hidden></div>
+</main>
+
+<script src="shell.js"></script>
+<script>
+const { icon, av, won } = UI;
+const esc = (v) => String(v == null ? '' : v).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+const man = (v) => (!v ? '—' : v % 10000 || v < 10000 ? `${won(v)}만` : won(v));
+const num = (v) => (v == null ? '' : Number(v).toLocaleString('ko-KR'));
+const TODAY = '2026-11-11';
+const dnum = (s) => { const [y, m, d] = s.split('-').map(Number); return Math.round(Date.UTC(y, m - 1, d) / 864e5); };
+const diff = (a, b = TODAY) => dnum(a) - dnum(b);
+const dot = (s) => (s ? s.replace(/-/g, '.') : '');
+const short = (s) => (s ? (s.startsWith(TODAY.slice(0, 4)) ? s.slice(5) : s.slice(2)).replace(/-/g, '.') : '');
+const addMonths = (s, n) => { const [y, m, d] = s.split('-').map(Number); const t = new Date(Date.UTC(y, m - 1 + n, d)); return t.toISOString().slice(0, 10); };
+const KIND = { sale: '매매', jeonse: '전세', monthly: '월세', yearly: '연세', exchange: '교환', sublease: '전대', transfer: '권리양도', succession: '권리승계' };
+const isLease = (k) => k === 'jeonse' || k === 'monthly' || k === 'yearly' || k === 'sublease';
+// 원본 ContractStatus: draft → signed → depositPaid → balancePaid → registered → cancelled
+const STAT = { draft: ['작성중', ''], signed: ['서명완료', 'accent'], depositPaid: ['계약금 완료', 'accent'], balancePaid: ['잔금 완료', 'ok'], registered: ['등기 완료', 'done'], cancelled: ['취소', 'hold'] };
+const SORD = Object.keys(STAT);
+const REPORT = { none: ['신고없음', 't3'], draft: ['신고예정', 'warn-t'], submitted: ['신고완료', ''], archived: ['신고보관', 't2'], cancelled: ['신고취소', 'danger-t'] };
+const DSTAT = { draft: ['초안', ''], generated: ['작성됨', 'accent'], signed: ['서명완료', 'ok'], submitted: ['제출완료', 'ok'], archived: ['보관', ''], cancelled: ['취소', 'danger'] };
+
+// 계약: [계약일, 공동중개 사무소, 거래, 단지, 동, 호, 총액, 월세, 중도금일, 잔금일, 메모, 매도, 매수, 상태, 신고, 문서, 필수 문서 수, 누락 자료, 수정, 파일, 임대만기]
+let CID = 0;
+const mkC = (r) => ({ id: CID++, date: r[0], joint: r[1], kind: r[2], site: r[3], dong: r[4], ho: r[5], total: r[6], rent: r[7], mid: r[8], bal: r[9], memo: r[10], seller: r[11], buyer: r[12], status: r[13], report: r[14], docs: r[15].map((t, i) => ({ title: t, status: i === 0 && r[13] !== 'draft' ? 'signed' : i === 0 ? 'draft' : 'generated' })), required: r[16], missing: r[17], updated: r[18], file: r[19], leaseEnd: r[20] || null, created: r[0], rev: 0, form: null });
+let CONTRACTS = [
+  ['2026-11-11', '', 'sale', '고덕그라시움', '109', '1101', 161000, null, '2026-12-22', '2027-02-10', '초등 배정 때문에 2월 초 입주. 잔금일 앞당길 수 있는지 매도인 확인 중', ['오세라', '010-8841-2206'], ['김지현', '010-4821-3307'], 'draft', 'none', ['아파트 매매 계약서'], 4, ['중개대상물 확인·설명서', '개인정보 수집·이용 동의서', '부동산거래계약 신고서'], '2026.11.11 10:42', false],
+  ['2026-11-12', '상일 한빛공인중개', 'sale', '고덕아르테온', '312', '1704', 152000, null, '2026-12-28', '2027-03-20', '', ['곽동현', '010-4409-7715'], ['장하은', '010-3318-6642'], 'draft', 'none', ['아파트 매매 계약서', '중개대상물 확인·설명서 [Ⅰ] 주거용'], 4, ['개인정보 수집·이용 동의서', '부동산거래계약 신고서'], '2026.11.10 17:05', false],
+  ['2026-11-08', '', 'monthly', '고덕그라시움', '205', '902', 10000, 190, null, null, '법인 계약, 잔금일 협의 중', ['채은호', '010-5578-2241'], ['신가영', '010-8812-4470'], 'draft', 'none', ['아파트 월세 계약서'], 3, ['중개대상물 확인·설명서', '주택임대차계약 신고서'], '2026.11.08 15:20', false, '2028-11-30'],
+  ['2026-11-03', '고덕 믿음부동산', 'sale', '고덕센트럴아이파크', '101', '1501', 148000, null, '2026-12-15', '2027-01-29', '잔금일 이전 근저당 말소 조건', ['진소영', '010-7730-1164'], ['박준호', '010-2290-1184'], 'signed', 'draft', ['아파트 매매 계약서', '중개대상물 확인·설명서 [Ⅰ] 주거용', '개인정보 수집·이용 동의서'], 4, ['부동산거래계약 신고서'], '2026.11.05 09:12', true],
+  ['2026-10-28', '', 'sale', '고덕자이', '108', '1902', 129000, null, '2026-11-09', '2026-12-22', '중도금 대출 실행 지연 중', ['황보람', '010-2086-3349'], ['권소희', '010-7140-2263'], 'signed', 'submitted', ['아파트 매매 계약서', '중개대상물 확인·설명서 [Ⅰ] 주거용', '개인정보 수집·이용 동의서', '부동산거래계약 신고서'], 4, [], '2026.11.09 18:30', true],
+  ['2026-10-20', '', 'jeonse', '래미안힐스테이트고덕', '120', '801', 72000, null, null, '2026-12-18', '', ['임채원', '010-9902-5581'], ['마동욱', '010-2468-9031'], 'signed', 'draft', ['아파트 전세 계약서', '중개대상물 확인·설명서 [Ⅰ] 주거용'], 3, ['주택임대차계약 신고서'], '2026.10.21 11:00', true, '2028-12-17'],
+  ['2026-11-02', '', 'jeonse', '고덕그라시움', '102', '1802', 80000, null, null, '2026-11-12', '잔금일 오전 10시 은행 동행', ['설하린', '010-6204-7753'], ['송예린', '010-5093-7742'], 'depositPaid', 'submitted', ['아파트 전세 계약서', '중개대상물 확인·설명서 [Ⅰ] 주거용', '주택임대차계약 신고서'], 3, [], '2026.11.02 16:44', true, '2028-11-11'],
+  ['2026-10-16', '강일 새봄공인중개', 'jeonse', '고덕아르테온', '305', '503', 64000, null, null, '2026-11-28', '', ['표민규', '010-8452-0917'], ['윤태경', '010-6634-1029'], 'depositPaid', 'submitted', ['아파트 전세 계약서', '중개대상물 확인·설명서 [Ⅰ] 주거용', '주택임대차계약 신고서'], 3, [], '2026.10.17 10:08', true, '2028-11-27'],
+  ['2026-10-05', '', 'monthly', '상일동 하늘빌라', '', '201', 2000, 80, null, '2026-11-05', '잔금 미입금, 임차인 연락 두절 2일', ['탁미정', '010-7289-5516'], ['홍석진', '010-4175-6630'], 'depositPaid', 'draft', ['주택임대차계약서 (월세)'], 3, ['중개대상물 확인·설명서', '주택임대차계약 신고서'], '2026.11.06 09:31', false, '2028-11-04'],
+  ['2026-08-20', '', 'sale', '고덕그라시움', '121', '2502', 175000, null, '2026-09-30', '2026-11-04', '수수료 세금계산서 발행 요청', ['문태호', '010-2755-9034'], ['배유진', '010-7753-0921'], 'balancePaid', 'submitted', ['아파트 매매 계약서', '중개대상물 확인·설명서 [Ⅰ] 주거용', '개인정보 수집·이용 동의서', '부동산거래계약 신고서'], 4, [], '2026.11.04 14:22', true],
+  ['2026-07-10', '', 'sale', '래미안힐스테이트고덕', '105', '2304', 146000, null, null, '2026-10-10', '', ['남기훈', '010-5123-8890'], ['조성민', '010-9045-2276'], 'registered', 'archived', ['아파트 매매 계약서', '중개대상물 확인·설명서 [Ⅰ] 주거용', '개인정보 수집·이용 동의서', '부동산거래계약 신고서'], 4, [], '2026.10.25 13:10', true],
+  ['2026-06-18', '', 'yearly', '고덕 리버오피스텔', '', '704', 1000, 1560, null, '2026-07-01', '연세 선납', ['강유진', '010-6642-3381'], ['(주)한강물류', '02-428-1190'], 'registered', 'none', ['오피스텔 연세 계약서', '중개대상물 확인·설명서 [Ⅱ] 비주거용'], 2, [], '2026.07.02 10:00', true, '2027-06-30'],
+  ['2026-10-22', '', 'monthly', '고덕센트럴아이파크', '110', '902', 15000, 160, null, '2026-11-20', '매수인 자금 사정으로 계약 포기', ['변서진', '010-9917-3305'], ['정우성', '010-3040-7719'], 'cancelled', 'cancelled', ['아파트 월세 계약서'], 3, ['중개대상물 확인·설명서', '주택임대차계약 신고서'], '2026.10.27 17:48', false],
+  ['2021-05-14', '', 'sale', '고덕아르테온', '301', '902', 119000, null, '2021-06-30', '2021-08-20', '', ['백승호', '010-3398-1127'], ['유경아', '010-8870-4416'], 'registered', 'archived', ['아파트 매매 계약서', '중개대상물 확인·설명서 [Ⅰ] 주거용', '부동산거래계약 신고서'], 4, [], '2021.08.23 11:15', true],
+].map(mkC);
+// 아직 계약서가 없는 거래 (계약서 등록 때 연결)
+let FREE = [
+  { label: '고덕그라시움 117동 1203호', site: '고덕그라시움', dong: '117', ho: '1203', buyer: ['이나래', '010-5567-8830'], seller: ['염지수', '010-3391-6620'], kind: 'jeonse', total: 77000, rent: null },
+  { label: '상일동 하늘빌라 302호', site: '상일동 하늘빌라', dong: '', ho: '302', buyer: ['허민재', '010-3907-5518'], seller: ['탁미정', '010-7289-5516'], kind: 'monthly', total: 3000, rent: 75 },
+  { label: '고덕아르테온 309동 2101호', site: '고덕아르테온', dong: '309', ho: '2101', buyer: ['', ''], seller: ['서유나', '010-6617-4402'], kind: 'sale', total: 158000, rent: null },
+];
+const T4 = [['매매', 'sale'], ['전세', 'jeonse'], ['월세', 'monthly'], ['연세', 'yearly']];
+const FORMS = [
+  ['아파트', T4], ['오피스텔', T4], ['상가', T4], ['부동산', [...T4, ['교환', 'exchange'], ['전대', 'sublease']]],
+  ['분양권', [['분양권 매매 계약서', 'sale']]], ['권리', [['권리 양도 계약서', 'transfer'], ['권리 의무 승계 계약서', 'succession']]],
+  ['상가 권리금', [['전세', 'jeonse'], ['월세', 'monthly']]], ['상가 표준', [['전세', 'jeonse'], ['월세', 'monthly']]], ['민간임대 표준', [['전세', 'jeonse'], ['월세', 'monthly']]], ['주택 표준', [['전세', 'jeonse'], ['월세', 'monthly']]],
+  ['조합원 입주권', [['조합원 입주권 매매 계약서', 'sale']]],
+];
+const formTitle = (g, t) => (t.includes('계약서') ? t : g === '주택 표준' ? `주택임대차계약서 (${t})` : `${g} ${t} 계약서`);
+const SUBFORMS = [
+  ['확인·설명서', [['중개대상물 확인·설명서 [Ⅰ] 주거용'], ['중개대상물 확인·설명서 [Ⅱ] 비주거용'], ['중개대상물 확인·설명서 [Ⅲ] 토지'], ['중개대상물 확인·설명서 [Ⅳ] 입목·광업재단·공장재단']]],
+  ['전용 계약서', [['주택임대차 표준계약서'], ['상가건물 임대차 표준계약서'], ['민간임대주택 표준임대차계약서'], ['상가건물 임대차 권리금계약서'], ['부동산 공급(분양)계약서']]],
+  ['거래 신고·확인', [['부동산 거래위임장', 1], ['주택거래계약 신고서'], ['주택취득자금 조달 및 입주계획서'], ['부동산거래계약 신고서'], ['부동산거래계약 해제등 신고서'], ['거래사실확인원'], ['부동산 매매약정서'], ['전대차 동의서'], ['임대차계약 신고·변경신고서 (통합)']]],
+  ['증빙·동의', [['현금보관증'], ['전속중개계약서'], ['개인정보 수집·이용 동의서'], ['계약갱신요구권 행사 여부 확인서'], ['주택임대차계약 신고서'], ['임대보증 미가입 임차인 동의서'], ['임대보증 일부가입 임차인 동의서'], ['전세권설정 미요청 확인서']]],
+];
+const loc = (c) => (c.site ? `${c.site} ${c.dong ? c.dong + '동 ' : ''}${c.ho ? c.ho + '호' : ''}`.trim() : c.docs[0] ? c.docs[0].title : '독립 문서 묶음');
+const amt = (c) => (!c.total ? '—' : c.kind === 'monthly' ? `${num(c.total)}/${num(c.rent)}` : c.kind === 'yearly' ? `${num(c.total)}/연 ${num(c.rent)}` : num(c.total));
+const deposit = (c) => (c.form ? c.form.dep : Math.round((c.total || 0) * 0.1));
+const balLate = (c) => c.bal && diff(c.bal) < 0 && !['balancePaid', 'registered', 'cancelled'].includes(c.status);
+
+const state = { preset: 'all', view: 'list', q: '', f: {}, dateKey: '계약일자', amtKey: '거래금액', dFrom: '', dTo: '', aMin: '', aMax: '', joint: false, keep: false, contact: true, sel: null, sort: null, ed: null };
+const PRESET = { all: () => true, open: (c) => ['draft', 'signed', 'depositPaid', 'balancePaid'].includes(c.status), done: (c) => c.status === 'registered' };
+const FDEFS = [
+  { id: 'by', k: '검색기준', opts: () => ['고객명', '연락처', '소재지', '공동중개사무소'].map((l) => [l, null]) },
+  { id: 'form', k: '서식', opts: () => [...new Set(CONTRACTS.flatMap((c) => c.docs.slice(0, 1).map((d) => d.title)))].sort((a, b) => a.localeCompare(b, 'ko')).map((l) => [l, (c) => c.docs.some((d) => d.title === l)]) },
+  { id: 'kind', k: '거래유형', opts: () => T4.map(([l, k]) => [l, (c) => c.kind === k]) },
+  { id: 'status', k: '상태', opts: () => Object.entries(STAT).map(([k, [l]]) => [l, (c) => c.status === k]) },
+  { id: 'ready', k: '문서 준비', opts: () => [['자료 누락', (c) => c.missing.length > 0], ['준비 완료', (c) => !c.missing.length], ['PDF/파일 있음', (c) => c.file], ['PDF/파일 없음', (c) => !c.file]] },
+];
+const DATEKEYS = { 계약일자: (c) => c.date, 중도금일자: (c) => c.mid, 잔금일자: (c) => c.bal, 임대만기일: (c) => c.leaseEnd, 등록일자: (c) => c.created };
+const AMTKEYS = { 거래금액: (c) => c.total, 계약금: (c) => deposit(c), 월차임: (c) => (c.kind === 'monthly' ? c.rent : null) };
+const QFIELD = { 고객명: (c) => `${c.seller[0]} ${c.buyer[0]}`, 연락처: (c) => `${c.seller[1]} ${c.buyer[1]}`, 소재지: (c) => loc(c), 공동중개사무소: (c) => c.joint };
+// 보존기간(5년)이 지난 계약
+const keepOver = (c) => diff(addMonths(c.date, 60)) < 0;
+function filtered(skipPreset) {
+  let rows = CONTRACTS.filter((c) => skipPreset || PRESET[state.preset](c));
+  for (const d of FDEFS.slice(1)) { const v = state.f[d.id]; if (!v) continue; const o = d.opts().find((x) => x[0] === v); rows = rows.filter(o ? o[1] : () => false); }
+  const q = state.q.trim();
+  if (q) { const by = state.f.by; rows = rows.filter((c) => (by ? QFIELD[by](c) : Object.values(QFIELD).map((f) => f(c)).join(' ')).includes(q)); }
+  // 범위 경계는 포함한다(시작일·끝일 당일, 최소·최대 금액 그대로)
+  if (state.dFrom || state.dTo) { const g = DATEKEYS[state.dateKey]; rows = rows.filter((c) => { const v = g(c); return v && (!state.dFrom || v >= state.dFrom) && (!state.dTo || v <= state.dTo); }); }
+  if (state.aMin !== '' || state.aMax !== '') { const g = AMTKEYS[state.amtKey]; rows = rows.filter((c) => { const v = g(c); return v != null && (state.aMin === '' || v >= +state.aMin) && (state.aMax === '' || v <= +state.aMax); }); }
+  if (state.joint) rows = rows.filter((c) => c.joint);
+  if (state.keep) rows = rows.filter(keepOver);
+  const s = state.sort || { key: 'date', dir: -1 };
+  return rows.sort((a, b) => { const x = a[s.key]; const y = b[s.key]; if (x == null || y == null) return (x == null) - (y == null); return (typeof x === 'number' ? x - y : String(x).localeCompare(String(y))) * s.dir || b.id - a.id; });
+}
+const nFilters = () => Object.keys(state.f).length + (state.dFrom || state.dTo ? 1 : 0) + (state.aMin !== '' || state.aMax !== '' ? 1 : 0) + (state.joint ? 1 : 0) + (state.keep ? 1 : 0) + (state.q.trim() ? 1 : 0);
+
+function chip(d, late) {
+  if (!d) return '<span class="t3">—</span>';
+  const n = diff(d);
+  return `<span class="dc ${late ? 'late' : n === 0 ? 'today' : n === 1 ? 'tomorrow' : n < 0 ? 'past' : ''}">${short(d)}</span>`;
+}
+const dday = (d) => { const n = diff(d); return n > 0 ? `D-${n}` : n === 0 ? 'D-Day' : `D+${-n}`; };
+const TH = (h, label, cls = '', sort = '') => `<th class="${cls} ${state.sort && sort && state.sort.key === sort ? 'sorted' : ''}" data-h="${h}" ${sort ? `data-sort="${sort}"` : ''}>${h ? icon(h, 'hi') : ''}${label}${state.sort && sort && state.sort.key === sort ? `<svg class="i caret" style="${state.sort.dir > 0 ? 'transform:rotate(180deg)' : ''}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>` : ''}<span class="rz"></span></th>`;
+const kindTag = (c) => `<span class="tag ${['sale', 'jeonse', 'monthly'].includes(c.kind) ? c.kind : ''}">${KIND[c.kind]}</span>`;
+const person = (lab, p) => `<span class="who2"><small>${lab}</small>${esc(p[0]) || '<span class="t3">미지정</span>'}</span>${state.contact && p[1] ? `<span class="sub">${p[1]}</span>` : ''}`;
+const statBtn = (c) => `<button class="st ${STAT[c.status][1]}" data-st ${c.status === 'cancelled' ? 'style="color:var(--danger)"' : ''}>${STAT[c.status][0]}${icon('chevDown', 'stc')}</button>`;
+const reportB = (c) => `<span class="${REPORT[c.report][1]}" ${c.report === 'submitted' ? 'style="color:var(--ok)"' : ''}>${REPORT[c.report][0]}</span>`;
+function render() {
+  // 숫자는 그릴 때마다 다시 센다. 머리의 네 숫자는 원본처럼 필터와 무관하게 전체 계약 기준
+  document.getElementById('total').textContent = CONTRACTS.length;
+  const M = [['진행 계약', 'accent', (c) => !['registered', 'cancelled'].includes(c.status), 'open'], ['서명 완료', 'ok', (c) => ['signed', 'depositPaid', 'balancePaid', 'registered'].includes(c.status), 'signed'], ['잔금 대기', 'warn', (c) => ['signed', 'depositPaid'].includes(c.status), 'wait'], ['자료 누락 계약', 'danger', (c) => c.missing.length > 0 && c.status !== 'cancelled', 'miss']];
+  document.getElementById('metrics').innerHTML = M.map(([l, d, t, j]) => `<span class="lnk" data-jump="${j}"><span class="dot ${d}"></span>${l} <b>${CONTRACTS.filter(t).length}건</b></span>`).join('');
+  const base = filtered(true);
+  document.querySelectorAll('.vtab[data-preset]').forEach((t) => { const k = t.dataset.preset; t.classList.toggle('on', k === state.preset); t.querySelector('.n').textContent = base.filter(PRESET[k]).length; });
+  document.querySelectorAll('#viewSeg button').forEach((b) => b.classList.toggle('on', b.dataset.view === state.view));
+  const fsel = (id, k, v, always) => `<button class="fsel ${v && !always ? 'on' : ''}" data-fs="${id}"><span class="k">${k}</span><span class="v">${v || '전체'}</span>${v && !always ? `<span class="clr" data-fclr="${id}" title="지우기">${icon('x')}</span>` : icon('chevDown')}</button>`;
+  document.getElementById('fselA').innerHTML = FDEFS.map((d) => fsel(d.id, d.k, state.f[d.id])).join('');
+  document.getElementById('fselDate').innerHTML = fsel('dateKey', '날짜', state.dateKey, true);
+  document.getElementById('fselAmt').innerHTML = fsel('amtKey', '금액', state.amtKey, true);
+  for (const [id, key] of [['dFrom', 'dFrom'], ['dTo', 'dTo'], ['aMin', 'aMin'], ['aMax', 'aMax']]) { const el = document.getElementById(id); if (document.activeElement !== el) el.value = state[key]; el.classList.toggle('on', state[key] !== ''); }
+  const ck = (id, on) => { const el = document.getElementById(id); el.classList.toggle('on', on); el.setAttribute('aria-checked', on); el.querySelector('i').innerHTML = icon('check'); };
+  ck('fJoint', state.joint); ck('fKeep', state.keep); ck('showContact', state.contact);
+  document.querySelector('#fbar [data-clear]').disabled = !nFilters();
+
+  const rows = filtered();
+  if (!rows.some((c) => c.id === state.sel)) state.sel = null;
+  if (state.view === 'list') {
+    document.getElementById('thead').innerHTML = `<tr>${TH('cal', '계약일', '', 'date')}${TH('', '중개')}${TH('', '거래')}${TH('building', '소재지 / 매물')}${TH('won', '금액(만원)', 'r', 'total')}${TH('cal', '중도금일', '', 'mid')}${TH('cal', '잔금일', '', 'bal')}${TH('', '메모')}${TH('user', '매도(임)인')}${TH('user', '매수(임)인')}${TH('info', '상태')}${TH('', '신고')}${TH('', '문서')}<th>작업</th></tr>`;
+    document.getElementById('rows').innerHTML = rows.map((c) => `<tr data-c="${c.id}" tabindex="0" class="${state.sel === c.id ? 'sel' : ''} ${c.joint ? 'joint' : ''} ${c.status === 'cancelled' ? 'muted' : ''}">
+      <td>${chip(c.date, balLate(c))}</td>
+      <td>${c.joint ? `<span class="tag blue" title="${esc(c.joint)}">공동</span>` : '<span class="t3">단독</span>'}</td>
+      <td>${kindTag(c)}</td>
+      <td class="loc" title="${esc(loc(c))}">${c.site ? esc(loc(c)) : `<span class="t2">${esc(loc(c))}</span>`}</td>
+      <td class="r num">${amt(c)}</td>
+      <td>${chip(c.mid)}</td>
+      <td>${chip(c.bal)}${c.bal && !['balancePaid', 'registered', 'cancelled'].includes(c.status) ? `<span class="sub ${balLate(c) ? 'danger-t' : ''}">${dday(c.bal)}</span>` : ''}</td>
+      <td>${c.memo ? `<span class="memo-b" title="${esc(c.memo)}">${icon('note')}MEMO</span>` : '<span class="t3">—</span>'}</td>
+      <td>${person('매도', c.seller)}</td>
+      <td>${person('매수', c.buyer)}</td>
+      <td>${statBtn(c)}</td>
+      <td>${reportB(c)}</td>
+      <td>${c.missing.length ? `<span class="miss" title="${esc(c.missing.join(', '))}">누락 ${c.missing.length}</span>` : `<span class="t2 num">${c.docs.length}건</span>`}</td>
+      <td class="act"><button class="ib" data-copy aria-label="사본 만들기">${icon('copy')}</button><button class="ib" data-del aria-label="계약 삭제">${icon('x')}</button></td>
+    </tr>`).join('');
+  } else {
+    // 자료 중심: 원본의 카드 격자를 한눈에 훑는 표로 바꿨다(항목은 같다)
+    document.getElementById('thead').innerHTML = `<tr>${TH('building', '소재지')}${TH('user', '매수인 / 매도인')}${TH('info', '상태')}${TH('tag', '거래')}${TH('won', '금액(만원)', 'r', 'total')}${TH('file', '신고')}${TH('file', '작성 문서', 'r')}${TH('file', '필수', 'r')}${TH('info', '자료 누락')}${TH('cal', '계약일', '', 'date')}${TH('clock', '수정')}</tr>`;
+    document.getElementById('rows').innerHTML = rows.map((c) => `<tr data-c="${c.id}" tabindex="0" class="${state.sel === c.id ? 'sel' : ''} ${c.status === 'cancelled' ? 'muted' : ''}">
+      <td class="loc" style="width:20%">${esc(loc(c))}</td>
+      <td>${esc(c.buyer[0]) || '미지정'} <span class="t3">/</span> ${esc(c.seller[0]) || '미지정'}</td>
+      <td>${statBtn(c)}</td><td>${kindTag(c)}</td><td class="r num">${amt(c)}</td><td>${reportB(c)}</td>
+      <td class="r num">${c.docs.length}건</td><td class="r num t2">${c.required}건</td>
+      <td style="max-width:0;width:26%;overflow:hidden;text-overflow:ellipsis" title="${esc(c.missing.join(', '))}">${c.missing.length ? `<span class="miss">누락 ${c.missing.length}</span> <span class="t2">${esc(c.missing.join(', '))}</span>` : '<span style="color:var(--ok)">없음</span>'}</td>
+      <td class="num t2">${short(c.date)}</td><td class="num t2">${c.updated.slice(0, 10)}</td>
+    </tr>`).join('');
+  }
+  if (!rows.length) document.getElementById('rows').innerHTML = `<tr><td colspan="14" style="border:0"><div class="empty"><b>${nFilters() || state.preset !== 'all' ? '조건에 맞는 계약이 없습니다.' : '등록된 계약이 없습니다'}</b>${nFilters() || state.preset !== 'all' ? '검색어나 필터를 바꿔 보세요' : '계약서 등록 메뉴에서 아파트·오피스텔 등 양식을 고른 뒤, 거래를 연결하세요.'}</div></td></tr>`;
+  const c = CONTRACTS.find((x) => x.id === state.sel);
+  const pages = Math.max(1, Math.ceil(rows.length / 40));
+  document.getElementById('foot').innerHTML = (c
+    ? `<span class="sv">소재지<b>${esc(loc(c))}</b></span><span class="sv">매도(임)<b>${esc(c.seller[0])}</b> ${state.contact ? c.seller[1] : ''}</span><span class="sv">매수(임)<b>${esc(c.buyer[0])}</b> ${state.contact ? c.buyer[1] : ''}</span><span class="sv">수정<b>${c.updated}</b></span><button class="btn sm" data-openrow>${icon('expand')}열기 (더블클릭)</button>`
+    : '<span>행을 선택하면 소재지·당사자가 표시됩니다. 더블클릭으로 문서를 엽니다.</span>')
+    + `<span class="grow"></span><span ${c ? 'hidden' : ''}>거래금액 합계<b>${man(rows.filter((x) => x.status !== 'cancelled').reduce((a, x) => a + (x.total || 0), 0))}</b></span><span class="pg">1 / ${pages} 페이지 · 총 <b style="margin:0 2px 0 4px">${rows.length}</b>건<button class="btn quiet sm" disabled>${icon('chevLeft')}이전</button><button class="btn quiet sm" ${pages > 1 ? '' : 'disabled'}>다음${icon('chevRight')}</button></span>`;
+}
+
+// ── 바꾸기 + 실행 취소 ──
+const alive = (c) => CONTRACTS.includes(c);
+function setStatus(c, k) {
+  if (c.status === k) return;
+  const prev = c.status; c.status = k; const v = ++c.rev;
+  if (state.ed) renderEditor(); else render();
+  UI.toast(`${loc(c)} 계약 상태를 '${STAT[k][0]}'(으)로 바꿨습니다`, () => {
+    if (!alive(c) || c.rev !== v) { UI.toast('그 뒤에 다시 바뀌어서 되돌리지 않았습니다'); return; }
+    c.rev += 1; c.status = prev; if (state.ed) renderEditor(); else render();
+  });
+}
+const statMenu = (anchor, c) => UI.menu(anchor, [{ head: '계약 상태' }, ...SORD.map((k) => ({ label: STAT[k][0], html: `<span class="dot ${STAT[k][1] === 'done' || STAT[k][1] === 'hold' ? '' : STAT[k][1]}"></span>`, on: c.status === k, danger: k === 'cancelled', run: () => setStatus(c, k) }))]);
+function removeC(c) {
+  const at = CONTRACTS.indexOf(c); CONTRACTS.splice(at, 1); render();
+  UI.toast(`${loc(c)} 계약과 문서 ${c.docs.length}건을 삭제했습니다`, () => { if (alive(c)) return; CONTRACTS.splice(Math.min(at, CONTRACTS.length), 0, c); render(); });
+}
+function copyC(c) {
+  const n = JSON.parse(JSON.stringify(c));
+  Object.assign(n, { id: CID++, status: 'draft', report: 'none', updated: `${dot(TODAY)} 방금`, created: TODAY, rev: 0, memo: c.memo ? `[사본] ${c.memo}` : '' });
+  n.docs.forEach((d) => { d.status = 'draft'; });
+  CONTRACTS.push(n);
+  UI.toast('계약 문서 사본을 추가했습니다.', () => { const at = CONTRACTS.indexOf(n); if (at < 0) return; CONTRACTS.splice(at, 1); if (state.ed && state.ed.c === n) closeEditor(true); else render(); });
+  openEditor(n.id);
+}
+
+// ── 창 ──
+function modal({ title: tt, desc, body, ok = '확인', cancel = '닫기', danger, wide, onOpen, onOk }) {
+  const back = document.createElement('div');
+  back.className = 'mback';
+  back.innerHTML = `<div class="modal ${wide ? 'wide' : ''}" role="dialog" aria-modal="true"><div class="m-h"><h3>${tt}</h3>${desc ? `<p>${desc}</p>` : ''}</div>${body ? `<div class="m-b">${body}</div>` : ''}<div class="m-f"><button class="btn" data-mx>${cancel}</button><button class="btn primary ${danger ? 'dng' : ''}" data-mok>${ok}</button></div></div>`;
+  document.body.append(back);
+  const close = () => back.remove();
+  back.addEventListener('mousedown', (e) => { if (e.target === back) close(); });
+  back.addEventListener('click', (e) => { if (e.target.closest('[data-mx]')) close(); else if (e.target.closest('[data-mok]') && onOk(back) !== false) close(); });
+  back.addEventListener('keydown', (e) => { if (e.isComposing || e.keyCode === 229) return; if (e.key === 'Escape') { e.stopPropagation(); close(); } });
+  if (onOpen) onOpen(back);
+  const f = back.querySelector('input:not([disabled]), textarea, select:not([disabled]), [data-mok]');
+  if (f) f.focus();
+  return back;
+}
+function createDialog(group, trade, kind) {
+  const ft = formTitle(group, trade);
+  const sync = (b) => {
+    const dv = b.querySelector('#nD').value;
+    const d = dv === '' ? null : FREE[+dv];
+    const k = b.querySelector('#nK').value;
+    b.querySelector('#nR').disabled = !(k === 'monthly' || k === 'yearly');
+    b.querySelector('#nRl').firstChild.textContent = k === 'yearly' ? '연세 (만원)' : '월세 (만원)';
+    const ok = d && d.buyer[0] && d.seller[0];
+    b.querySelector('#nBase').innerHTML = d ? `<b>${esc(d.buyer[0]) || '매수인 미지정'} / ${esc(d.seller[0]) || '매도인 미지정'}</b> · ${d.label}${ok ? '' : '<small class="danger-t" style="color:var(--danger)">거래에 매수인/매도인이 모두 연결돼 있어야 계약을 생성할 수 있습니다.</small>'}` : '<span class="t2">거래를 선택하면 당사자와 매물 정보를 미리 확인할 수 있습니다.</span>';
+    b.querySelector('[data-mok]').disabled = !ok || !(+b.querySelector('#nT').value > 0);
+  };
+  modal({ title: ft, ok: '생성 후 양식 열기', desc: `선택한 양식 「${group} · ${trade}」을 거래에 연결한 뒤 바로 적용합니다.`,
+    body: `<div class="ibox" style="margin-bottom:12px"><b>${ft}</b><small>종별 ${group} · 거래 ${KIND[kind]}</small></div>
+      ${FREE.length ? '' : `<div class="vmsg warn" style="margin-bottom:12px">${icon('info')}<span><b>연결할 수 있는 거래가 없습니다</b><br>서식은 선택되었습니다. 먼저 거래를 만든 뒤 다시 연결해주세요. <a href="deals.html" style="text-decoration:underline">거래 만들기</a></span></div>`}
+      <div class="frm"><label class="full">대상 거래 *<select class="inp" id="nD"><option value="">${FREE.length ? '거래 선택' : '연결 가능한 거래 없음'}</option>${FREE.map((d, i) => `<option value="${i}">${d.label} · ${esc(d.buyer[0]) || '미지정'} / ${esc(d.seller[0])}</option>`).join('')}</select></label>
+      <label>거래 유형 *<select class="inp" id="nK" disabled>${Object.entries(KIND).map(([k, l]) => `<option value="${k}" ${k === kind ? 'selected' : ''}>${l}</option>`).join('')}</select><span class="t3">메뉴에서 고른 양식의 거래유형이 고정됩니다.</span></label>
+      <label>계약일<input class="inp num" id="nDt" type="date" value="${TODAY}"></label>
+      <label>총 거래금액 * (만원)<input class="inp num" id="nT" inputmode="numeric"></label>
+      <label id="nRl">월세 (만원)<input class="inp num" id="nR" inputmode="numeric"></label>
+      <div class="full"><div style="font-size:12px;color:var(--text-2);margin-bottom:4px">생성 기준</div><div class="ibox" id="nBase"></div></div></div>`,
+    onOpen: (b) => { sync(b); b.addEventListener('input', (e) => { if (e.target.id === 'nD') { const d = e.target.value === '' ? null : FREE[+e.target.value]; if (d) { b.querySelector('#nT').value = d.total || ''; b.querySelector('#nR').value = d.rent || ''; } } sync(b); }); },
+    onOk: (b) => {
+      const i = +b.querySelector('#nD').value; const d = FREE[i];
+      const c = mkC([b.querySelector('#nDt').value || TODAY, '', kind, d.site, d.dong, d.ho, +b.querySelector('#nT').value, +b.querySelector('#nR').value || null, null, null, '', d.seller, d.buyer, 'draft', 'none', [ft], 3, ['중개대상물 확인·설명서', isLease(kind) ? '주택임대차계약 신고서' : '부동산거래계약 신고서'], `${dot(TODAY)} 방금`, false]);
+      CONTRACTS.push(c); FREE.splice(i, 1);
+      UI.toast('계약을 생성했습니다.', () => { const at = CONTRACTS.indexOf(c); if (at < 0) return; CONTRACTS.splice(at, 1); FREE.splice(i, 0, d); if (state.ed && state.ed.c === c) closeEditor(true); else render(); });
+      openEditor(c.id);
+    } });
+}
+function formMenu(anchor) {
+  UI.menu(anchor, [{ head: '종별 · 거래유형을 고르면 해당 양식이 적용됩니다' }, ...FORMS.map(([g, list]) => (list.length === 1
+    ? { label: list[0][0], icon: 'file', run: () => createDialog(g, list[0][0], list[0][1]) }
+    : { label: g, icon: 'building', hint: `${list.length}종 ›`, run: () => UI.menu(anchor, [{ head: `${g} · 거래유형` }, ...list.map(([t, k]) => ({ label: t, hint: formTitle(g, t), run: () => createDialog(g, t, k) })), '-', { label: '종별 다시 고르기', icon: 'chevLeft', run: () => formMenu(anchor) }], { right: true, wide: true }) }))], { right: true, wide: true });
+}
+function addSubform(title, multi) {
+  const c = state.ed ? state.ed.c : CONTRACTS.find((x) => x.id === state.sel);
+  if (!c) {
+    const n = mkC([TODAY, '', 'sale', '', '', '', null, null, null, null, '', ['', ''], ['', ''], 'draft', 'none', [title], 1, [], `${dot(TODAY)} 방금`, false]);
+    CONTRACTS.push(n); state.sel = n.id; render();
+    UI.toast(`「${title}」 양식을 추가했습니다. 계약을 고르지 않아 독립 문서 묶음으로 만들었습니다`, () => { const at = CONTRACTS.indexOf(n); if (at >= 0) { CONTRACTS.splice(at, 1); render(); } });
+    return;
+  }
+  const has = c.docs.findIndex((d) => d.title === title);
+  if (has >= 0 && !multi) { UI.toast(`기존 「${title}」 서식을 열었습니다.`); if (state.ed) { state.ed.doc = has; renderEditor(); } else openEditor(c.id, has); return; }
+  const doc = { title, status: 'draft', isNew: true };
+  c.docs.push(doc);
+  const mi = c.missing.findIndex((m) => title.startsWith(m));
+  const gone = mi >= 0 ? c.missing.splice(mi, 1)[0] : null;
+  if (state.ed) { state.ed.doc = c.docs.length - 1; renderEditor(); } else render();
+  UI.toast(`「${title}」 양식을 추가했습니다.${state.ed ? '' : ` (${loc(c)})`}`, () => { const at = c.docs.indexOf(doc); if (at < 0) return; c.docs.splice(at, 1); if (gone) c.missing.splice(mi, 0, gone); if (state.ed) { state.ed.doc = 0; renderEditor(); } else render(); });
+}
+function subformMenu(anchor) {
+  UI.menu(anchor, [{ head: '확인설명서 · 신고 · 동의 등 부속 서식' }, ...SUBFORMS.map(([g, list], gi) => ({ label: g, icon: 'file', hint: `${list.length}종 ›`, run: () => UI.menu(anchor, [{ head: g }, ...list.map(([t, multi], i) => ({ label: t, html: `<small class="num" style="width:18px">${String(gi * 10 + i + 1).padStart(2, '0')}</small>`, hint: multi ? '여러 장' : '', run: () => addSubform(t, multi) })), '-', { label: '분류 다시 고르기', icon: 'chevLeft', run: () => subformMenu(anchor) }], { right: true, wide: true }) }))], { right: true, wide: true });
+}
+
+// ── 편집기 ──
+const ko4 = (n) => { const D = '일이삼사오육칠팔구'; const U = ['', '십', '백', '천']; let s = ''; String(n).split('').reverse().forEach((ch, i) => { if (ch !== '0') s = D[ch - 1] + U[i] + s; }); return s; };
+// 금액(만원) → 한글 병기. 1억 5,200만 → 금 일억오천이백만원정
+const numKo = (v) => { if (!v || v < 0 || !Number.isInteger(v)) return ''; const eok = Math.floor(v / 10000); const m = v % 10000; return `금 ${eok ? ko4(eok) + '억' : ''}${m ? ko4(m) + '만' : ''}원정`; };
+const UNIT = { 만원: 1, 천원: 10, 원: 10000 };
+function defaultForm(c) {
+  const lease = isLease(c.kind);
+  const dep = Math.round((c.total || 0) * 0.1);
+  const mid = c.mid ? Math.round((c.total || 0) * 0.4) : 0;
+  return {
+    unit: '만원', total: c.total || 0, loan: 0, loanOpt: 0, loanBlank: false, showLease: false, leaseDep: 0, leaseOpt: 0,
+    dep, depOpt: 0, mid, midDate: c.mid || '', midBlank: !c.mid, mid2: 0, mid2Date: '', bal: (c.total || 0) - dep - mid, balDate: c.bal || '',
+    direct2: false, handover: c.bal || '', rent: c.rent || 0, leaseFrom: lease ? c.bal || '' : '', leaseTo: c.leaseEnd || (lease && c.bal ? addMonths(c.bal, 24) : ''), months: lease ? 24 : '',
+    payDay: lease ? 1 : '', prepaid: '후불', vat: '별도', vatAmt: 0, signDate: c.date, giveDate: c.date,
+    body3: lease ? '제3조 (용도변경 및 전대 등) 임차인은 임대인의 동의 없이 위 부동산의 용도나 구조를 변경하거나 전대·임차권 양도 또는 담보제공을 하지 못하며 임대차 목적 이외의 용도로 사용할 수 없다.\n제4조 (계약의 해지) 임차인의 차임 연체액이 2기의 차임액에 달하거나 제3조를 위반하였을 때 임대인은 즉시 본 계약을 해지할 수 있다.\n제5조 (계약의 종료) 임대차계약이 종료된 경우 임차인은 위 부동산을 원상으로 회복하여 임대인에게 반환한다.' : '제3조 (제한물권 등의 소멸) 매도인은 위 부동산에 설정된 저당권, 지상권, 임차권 등 소유권의 행사를 제한하는 사유가 있거나 제세공과금 기타 부담금의 미납이 있을 때에는 잔금 수수일까지 그 권리의 하자 및 부담 등을 제거하여 완전한 소유권을 매수인에게 이전한다.\n제4조 (지방세 등) 위 부동산에 관하여 발생한 수익의 귀속과 제세공과금 등의 부담은 위 부동산의 인도일을 기준으로 한다.\n제5조 (계약의 해제) 매수인이 매도인에게 중도금(중도금이 없을 때에는 잔금)을 지불하기 전까지 매도인은 계약금의 배액을 상환하고, 매수인은 계약금을 포기하고 본 계약을 해제할 수 있다.',
+    special: c.kind === 'sale' ? '1. 현 시설 상태에서의 매매 계약이며, 등기사항증명서를 확인하고 계약을 체결함.\n2. 잔금일 이전 근저당 등 제한물권은 매도인이 말소한다.' : '1. 현 시설 상태에서의 임대차 계약이며, 임차인은 등기사항증명서와 건축물대장을 확인하고 계약을 체결함.\n2. 임대인은 잔금일 다음 날까지 현 등기 상태를 유지한다.', privacy: true, specialSep: false,
+    prop: { addr: `서울특별시 강동구 ${c.site.includes('상일') ? '상일동' : '고덕동'} ${c.site} ${c.dong ? '제' + c.dong + '동 ' : ''}${c.ho ? '제' + c.ho + '호' : ''}`.trim(), jimok: '대', share: '54321분의 41.27', land: '54321', struct: '철근콘크리트구조', use: c.site.includes('오피스텔') ? '업무시설(오피스텔)' : '공동주택(아파트)', area: '84.92', part: `${c.dong ? c.dong + '동 ' : ''}${c.ho}호 전부`, leaseArea: '84.92' },
+    parties: [{ side: 0, role: '', name: c.seller[0], idno: '', addr: '', phone: c.seller[1], share: '' }, { side: 1, role: '', name: c.buyer[0], idno: '', addr: '', phone: c.buyer[1], share: '' }],
+    office: { name: '고덕 에스테잇 공인중개사사무소', addr: '서울특별시 강동구 고덕로 262, 1층', regNo: '11740-2023-00117', ceo: '이현수', agent: '박서연', joint: !!c.joint, jointName: c.joint || '', sep: false },
+  };
+}
+const sideName = (c, s) => (isLease(c.kind) ? ['임대인', '임차인'] : c.kind === 'exchange' ? ['갑', '을'] : ['매도인', '매수인'])[s];
+function openEditor(id, doc = 0) {
+  const c = CONTRACTS.find((x) => x.id === id);
+  if (!c) return;
+  if (!c.form) c.form = defaultForm(c);
+  state.ed = { c, doc, f: JSON.parse(JSON.stringify(c.form)), dirty: false, bad: new Set() };
+  document.getElementById('listWrap').hidden = true;
+  document.getElementById('edWrap').hidden = false;
+  renderEditor();
+}
+function closeEditor(force) {
+  const done = () => { state.ed = null; document.getElementById('edWrap').hidden = true; document.getElementById('listWrap').hidden = false; render(); };
+  if (state.ed && state.ed.dirty && !force) return modal({ title: '저장하지 않은 변경사항이 있습니다.', desc: '저장 없이 닫을까요?', ok: '저장 없이 닫기', cancel: '계속 편집', danger: true, onOk: done });
+  done();
+}
+const pays = (f, c) => [['계약금', f.dep, c.date, 'var(--accent)'], ['중도금', f.mid, f.midDate, 'var(--dot-warn)'], ['중도금(2차)', f.mid2, f.mid2Date, 'var(--tg-orange)'], ['잔금', f.bal, f.balDate, 'var(--dot-ok)']].filter((p) => p[1] > 0 || p[0] === '계약금' || p[0] === '잔금');
+// 작성 점검: 합계·날짜 순서·빠진 값
+function validate(f, c) {
+  const err = []; const warn = [];
+  const sum = f.dep + f.mid + f.mid2 + f.bal;
+  if (!f.total) err.push(`${isLease(c.kind) ? '보증금' : '매매대금'}을 입력해 주세요.`);
+  else if (sum !== f.total) err.push(`계약금·중도금·잔금 합계(${man(sum)})가 ${isLease(c.kind) ? '보증금' : '매매대금'}(${man(f.total)})과 ${man(Math.abs(f.total - sum))} 차이 납니다.`);
+  if (state.ed.bad.size) err.push('만원 단위 정수로 환산되는 금액을 입력해주세요.');
+  if (f.mid > 0 && !f.midDate && !f.midBlank) err.push('중도금 지급일을 입력하거나 공란인쇄를 선택해 주세요.');
+  if (!f.balDate) err.push('잔금 지급일을 입력해 주세요.');
+  if (f.midDate && f.balDate && f.midDate > f.balDate) err.push('중도금 지급일이 잔금 지급일보다 늦습니다.');
+  if (f.midDate && f.midDate < c.date) warn.push('중도금 지급일이 계약일보다 빠릅니다.');
+  if (isLease(c.kind) && f.leaseFrom && f.leaseTo && f.leaseFrom >= f.leaseTo) err.push('임대차 기간의 끝이 시작보다 빠릅니다.');
+  [0, 1].forEach((s) => { if (!f.parties.some((p) => p.side === s && !p.role && p.name.trim())) err.push(`${sideName(c, s)} 성명이 비어 있습니다.`); });
+  if (f.parties.some((p) => !p.role && !p.idno.trim())) warn.push('당사자 주민(법인)등록번호가 비어 있습니다.');
+  if (f.parties.some((p) => !p.role && !p.addr.trim())) warn.push('당사자 주소가 비어 있습니다.');
+  if (f.dep && f.total && f.dep / f.total < 0.05) warn.push('계약금이 총액의 5%보다 적습니다.');
+  if (f.office.joint && !f.office.jointName.trim()) warn.push('공동중개 사무소 명칭이 비어 있습니다.');
+  return { err, warn };
+}
+const CLAUSE_T = [['기본 계약사항 (사무소 표준)', null], ['대출 승계 조건 포함', '제3조 (융자금 승계) 매수인은 잔금일에 위 융자금 채무를 승계하며, 승계가 불가능한 경우 매도인은 잔금 수령과 동시에 이를 상환·말소한다.\n제4조 (하자담보) 매도인은 잔금일로부터 6개월간 중대한 누수 등 하자에 대하여 책임을 진다.'], ['세입자 승계(갭) 조건', '제3조 (임대차 승계) 매수인은 현 임대차계약의 임대인 지위를 승계하며, 임대보증금은 매매대금에서 공제한다.']];
+const SPECIAL_T = [['반려동물 특약', '반려동물 사육으로 인한 훼손은 임차인이 원상복구한다.'], ['전세자금대출 협조', '임대인은 임차인의 전세자금대출 및 전세보증금 반환보증 가입에 적극 협조한다.'], ['옵션 포함 목록', '시스템에어컨 4대, 빌트인 식기세척기, 중문은 매매대금에 포함한다.'], ['관리비 정산', '잔금일 기준으로 관리비와 공과금을 정산한다.']];
+function sideHtml() {
+  const { c, f } = state.ed;
+  const { err, warn } = validate(f, c);
+  const P = pays(f, c);
+  const tot = f.total || 1;
+  return `<div class="scard"><h4>${icon('wallet')}대금 타임라인<span class="t2 num" style="margin-left:auto;font-weight:500">${man(f.total)}</span></h4>
+      <div class="pbar">${P.map((p) => `<i style="width:${Math.max(0, p[1] / tot * 100)}%;background:${p[3]}" title="${p[0]} ${man(p[1])}"></i>`).join('')}</div>
+      ${P.map((p) => `<div class="pt-item" style="--c:${p[3]}"><div><b style="font-weight:600">${p[0]}</b><small>${p[2] ? `${dot(p[2])} · ${dday(p[2])}` : '지급일 미정'}</small></div><div class="a">${man(p[1])}<small>${f.total ? Math.round(p[1] / f.total * 100) : 0}%</small></div></div>`).join('')}
+      ${isLease(c.kind) && f.rent ? `<div class="vmsg fine" style="margin-top:10px">${icon('cal')}<span>${c.kind === 'yearly' ? '연 차임' : '차임'} ${man(f.rent)} · ${f.payDay ? `매월 ${f.payDay}일 ` : ''}${f.prepaid}</span></div>` : ''}</div>
+    <div class="scard"><h4>${icon('check')}작성 점검<span class="st ${err.length ? '' : 'ok'}" ${err.length ? 'style="color:var(--danger);background:color-mix(in srgb, var(--danger) 10%, transparent)"' : ''}>${err.length ? `오류 ${err.length}건` : '출력 준비'}</span></h4>
+      ${err.map((m) => `<div class="vmsg err">${icon('x')}<span>${m}</span></div>`).join('')}${warn.map((m) => `<div class="vmsg warn">${icon('info')}<span>확인: ${m}</span></div>`).join('')}${!err.length && !warn.length ? `<div class="vmsg fine">${icon('check')}<span>금액 합계와 날짜가 모두 맞습니다.</span></div>` : ''}</div>
+    <div class="scard"><h4>${icon('file')}계약사항</h4><p>이 서식·거래유형의 제3조 이후 본문을 불러오거나 사무소 템플릿으로 저장합니다.</p>
+      <button class="btn sm" data-clauseload>${icon('refresh')}계약사항 가져오기</button><div class="row"><input class="ci" id="clName" placeholder="템플릿 이름"><button class="btn sm" data-clausesave>계약사항 저장</button></div></div>
+    <div class="scard"><h4>${icon('note')}특약 문구</h4><p>사무소 특약 템플릿을 특약사항에 삽입하거나, 현재 특약을 템플릿으로 등록합니다.</p>
+      <button class="btn sm" data-specload>${icon('plus')}특약 가져오기</button><div class="row"><input class="ci" id="spName" placeholder="템플릿 이름"><button class="btn sm" data-specsave>등록</button></div></div>`;
+}
+function footHtml() {
+  const { c, doc, dirty } = state.ed;
+  const d = c.docs[doc];
+  return `<span class="dot ${dirty ? 'warn' : d.isNew ? 'accent' : 'ok'}"></span><span>${d.isNew && !dirty ? '새 문서 · 저장하면 문서 탭에 추가됩니다.' : dirty ? '저장되지 않은 변경사항이 있습니다.' : '모든 변경사항이 저장되었습니다.'}</span><span class="sp"></span>
+    <button class="btn" data-edclose>닫기</button><button class="btn" data-preview>${icon('file')}출력 미리보기<kbd class="k">⌘P</kbd></button>${d.isNew ? '' : `<button class="btn" data-saveas>${icon('copy')}다른 이름으로 저장</button>`}<button class="btn primary" data-save ${dirty || d.isNew ? '' : 'disabled'}>${icon('check')}저장<kbd class="k" style="background:transparent;box-shadow:none;color:inherit;opacity:.7">⌘S</kbd></button>`;
+}
+function refresh() {
+  const { f } = state.ed;
+  document.querySelectorAll('#edWrap [data-read]').forEach((el) => { el.textContent = numKo(f[el.dataset.read]); });
+  document.getElementById('edSide').innerHTML = sideHtml();
+  document.getElementById('edFoot').innerHTML = footHtml();
+  const t = document.querySelector('.dtab.on'); if (t && state.ed.dirty && !t.querySelector('.unsaved')) t.insertAdjacentHTML('beforeend', '<span class="unsaved" title="저장하지 않은 변경"></span>');
+}
+function renderEditor() {
+  const { c, doc, f, dirty } = state.ed;
+  const lease = isLease(c.kind);
+  const mul = UNIT[f.unit];
+  const A = (key) => `金 <input class="ci amt ${state.ed.bad.has(key) ? 'bad' : ''}" data-f="${key}" data-amt inputmode="numeric" value="${f[key] ? num(f[key] * mul) : ''}" aria-label="${key}" title="${state.ed.bad.has(key) ? '만원 단위 정수로 환산되는 금액을 입력해주세요.' : ''}"><span>${f.unit}정</span>`;
+  const RD = (key) => `<span class="rd" data-read="${key}">${numKo(f[key])}</span>`;
+  const D = (key) => `<input class="ci num" type="date" data-f="${key}" value="${f[key] || ''}">`;
+  const SEL = (key, opts) => `<select class="ci" data-f="${key}" data-int>${opts.map((o, i) => `<option value="${i}" ${f[key] === i ? 'selected' : ''}>${o}</option>`).join('')}</select>`;
+  const CK = (key, label) => `<label class="lck"><input type="checkbox" data-f="${key}" data-ck ${key.split('.').reduce((o, k) => o[k], f) ? 'checked' : ''}>${label}</label>`;
+  const RC = (l) => `<button class="btn quiet sm rcpt" disabled title="영수증 발행은 추후 지원됩니다.">${l}영수증</button>`;
+  const PR = (key, label, full) => `<div class="crow ${full ? 'full' : ''}"><b>${label}</b><div><input class="ci grow" data-f="prop.${key}" value="${esc(f.prop[key])}"></div></div>`;
+  const isMain = doc === 0 && c.site;
+  const d = c.docs[doc];
+  const main = isMain ? `
+    <div class="esec"><h3>1. 부동산의 표시</h3><div class="box pgrid">${PR('addr', '소재지', true)}${PR('jimok', '토지 지목')}${PR('share', '대지권 비율')}${PR('land', '토지 면적 (m²)')}${PR('struct', '건물 구조')}${PR('use', '건물 용도')}${PR('area', '건물 면적 (m²)')}${lease ? PR('part', '임대할 부분') + PR('leaseArea', '임대 면적 (m²)') : ''}</div></div>
+    <div class="esec"><h3>2. 계약내용<small>금액단위 :</small>${Object.keys(UNIT).map((u) => `<label class="lck"><input type="radio" name="unit" data-unit="${u}" ${f.unit === u ? 'checked' : ''}>${u}</label>`).join('')}<small class="danger-t" style="color:var(--danger)">[금액은 숫자로 입력]</small></h3>
+      <div class="box"><div class="chead"><b>제1조</b><span>${lease ? '위 부동산의 임대차에 있어 임차인은 보증금과 차임을 아래와 같이 지불하기로 한다.' : '위 부동산의 매매에 있어 매수인은 매매대금을 아래와 같이 지불하기로 한다.'}</span><span class="sp"></span>${lease ? '' : CK('showLease', '현 임차보증금 입력란 추가')}</div>
+        <div class="crow"><b>${lease ? '보증금' : '매매대금'}</b><div>${A('total')}${RD('total')}</div></div>
+        ${lease ? '' : `<div class="crow"><b>융자금</b><div>${A('loan')}<span>은</span>${SEL('loanOpt', ['현 상태에서 매수인이 승계한다.', '매도인이 잔금일까지 말소한다.', '특약사항에 별도 명시한다.'])}${CK('loanBlank', '공란인쇄')}</div></div>`}
+        ${!lease && f.showLease ? `<div class="crow"><b>현 임대보증금</b><div>${A('leaseDep')}<span>은</span>${SEL('leaseOpt', ['현 상태에서 매수인이 승계한다.', '특약사항에 별도 명시한다.', '매수인이 인수하지 아니한다.'])}</div></div>` : ''}
+        <div class="crow"><b>계약금</b><div>${A('dep')}<span>은</span>${SEL('depOpt', ['계약시에 지불', '특약사항에 준'])}<span>하고 영수함. 영수자 ( 자필서명 ) (인)</span>${RC('계약금')}</div></div>
+        <div class="crow"><b>중도금</b><div>${A('mid')}<span>은</span>${D('midDate')}<span>에 지불하며,</span>${CK('midBlank', '공란인쇄')}${RC('중도금')}</div></div>
+        ${lease ? '' : `<div class="crow"><b>중도금(2차)</b><div>${A('mid2')}<span>은</span>${D('mid2Date')}<span>에 지불하며,</span>${RC('중도금')}</div></div>`}
+        <div class="crow"><b>잔금</b><div>${A('bal')}<span>은</span>${D('balDate')}<span>에 지불하기로 함.</span><button class="btn quiet sm" data-autobal title="총액에서 계약금·중도금을 뺀 값으로 채웁니다">${icon('refresh')}잔금 맞추기</button>${RC('잔금')}</div></div>
+        ${c.kind === 'monthly' || c.kind === 'yearly' ? `<div class="crow"><b>${c.kind === 'yearly' ? '연 차임' : '차임(월세)'}</b><div>${A('rent')}<span>은 ${c.kind === 'yearly' ? '매년' : '매월'}</span><input class="ci w60 num" data-f="payDay" data-num value="${f.payDay}" aria-label="차임 지급일"><span>일에 (</span><select class="ci" data-f="prepaid"><option ${f.prepaid === '선불' ? 'selected' : ''}>선불</option><option ${f.prepaid === '후불' ? 'selected' : ''}>후불</option></select><span>) 지불한다.</span>${RD('rent')}</div></div>` : ''}
+        <div class="chead" style="border-top:1px solid var(--line)"><b>제2조</b><span class="sp"></span>${CK('direct2', '계약사항2조 직접입력')}</div>
+        <div class="c2body">${f.direct2 ? '<span class="t2">직접입력 모드 — 이 조 내용은 본문 조항(제3조~)에 직접 기재합니다.</span>' : lease ? `<span>임대인은 위 부동산을 임대차 목적대로 사용·수익할 수 있는 상태로 하여 인도일은</span>${D('handover')}<span>로 하고 임대차기간은</span>${D('leaseFrom')}<span>부터</span>${D('leaseTo')}<span>까지로 한다.</span>` : `<span>매도인은 매수인으로부터 매매대금의 잔금을 수령함과 동시에 소유권 이전등기에 필요한 모든 서류를 교부하고, 위 부동산의 인도는</span>${D('handover')}<span>로 한다.</span>`}</div>
+        <div style="padding:10px 12px"><div style="font-size:12px;color:var(--text-2);margin-bottom:4px">제3조~ 본문 조항</div><textarea class="ci" rows="9" data-f="body3">${esc(f.body3)}</textarea></div></div></div>
+    <div class="esec"><h3>${lease ? '계약내용 (금액 스케줄) · 인도 및 기간' : '인도 및 기간'}</h3><div class="box"><div class="g3">
+      ${lease ? `<label>부가세 구분 (상가ㆍ오피스텔)<select class="ci" data-f="vat">${['포함', '별도', '포괄양도양수'].map((o) => `<option ${f.vat === o ? 'selected' : ''}>${o}</option>`).join('')}</select></label><label>부가세 금액 (만원)<input class="ci num" data-f="vatAmt" data-num value="${f.vatAmt || ''}"></label><label>임대차 기간(개월)<input class="ci num" data-f="months" data-num value="${f.months}" title="개월을 적으면 만기일이 맞춰집니다"></label>` : ''}
+      <label>계약 체결일<input class="ci num" type="date" data-f="signDate" value="${f.signDate}"></label><label>계약서 교부일<input class="ci num" type="date" data-f="giveDate" value="${f.giveDate}"></label></div></div></div>
+    <div class="esec"><h3>특약사항</h3><textarea class="ci" rows="5" data-f="special">${esc(f.special)}</textarea><div style="display:flex;gap:16px;margin-top:6px">${CK('privacy', '개인정보 수집ㆍ이용 동의 문구 삽입')}${CK('specialSep', '특약사항 별지 출력')}</div></div>
+    <div class="esec"><h3>당사자<small>성명·주소·연락처를 칸에서 바로 고칩니다. 인쇄 표시값으로 쓰입니다.</small><button class="btn sm" data-addparty="0">${icon('plus')}공동 ${sideName(c, 0)}</button><button class="btn sm" data-addparty="1" style="margin-left:0">${icon('plus')}공동 ${sideName(c, 1)}</button></h3>
+      <div class="box"><table class="pt"><thead><tr><th>구분</th><th style="width:15%">성명</th><th style="width:19%">주민(법인)등록번호</th><th>주소</th><th style="width:17%">전화</th><th style="width:11%">거래지분</th><th></th></tr></thead><tbody>
+      ${f.parties.map((p, i) => [p, i]).sort((a, b) => a[0].side - b[0].side).map(([p, i]) => { const first = f.parties.findIndex((x) => x.side === p.side && !x.role) === i; return `<tr data-p="${i}"><td>${p.role ? `<span class="t2">↳ ${sideName(c, p.side)} ${p.role}</span>` : `<span class="tag ${p.side ? 'blue' : 'orange'}">${first ? '' : '공동 '}${sideName(c, p.side)}</span>`}</td>${['name', 'idno', 'addr', 'phone', 'share'].map((k) => `<td><input class="ci ${k === 'idno' || k === 'phone' ? 'num' : ''}" data-f="parties.${i}.${k}" value="${esc(p[k])}" placeholder="${{ name: '성명', idno: '000000-0000000', addr: '주소', phone: '연락처', share: k === 'share' ? '2분의 1' : '' }[k]}" aria-label="${k}"></td>`).join('')}<td style="white-space:nowrap">${p.role ? '' : `<button class="ib" data-addagent aria-label="대리인 추가">${icon('user')}</button>`}${first ? '' : `<button class="ib" data-delparty aria-label="삭제">${icon('x')}</button>`}</td></tr>`; }).join('')}</tbody></table></div></div>
+    <div class="esec"><h3>개업공인중개사</h3><div class="box"><div class="g3">
+      <label>사무소 명칭<input class="ci" data-f="office.name" value="${esc(f.office.name)}"></label><label style="grid-column:span 2">사무소 소재지<input class="ci" data-f="office.addr" value="${esc(f.office.addr)}"></label>
+      <label>개설등록번호<input class="ci num" data-f="office.regNo" value="${esc(f.office.regNo)}"></label><label>대표 성명<input class="ci" data-f="office.ceo" value="${esc(f.office.ceo)}"></label><label>소속공인중개사 성명<input class="ci" data-f="office.agent" value="${esc(f.office.agent)}"></label>
+      <div class="gl" style="justify-content:flex-end">${CK('office.joint', '공동중개 여부')}</div><label>공동중개 사무소 명칭<input class="ci" data-f="office.jointName" value="${esc(f.office.jointName)}" ${f.office.joint ? '' : 'disabled'}></label><div class="gl" style="justify-content:flex-end">${CK('office.sep', '중개사무소 별지 출력')}</div></div></div></div>`
+    : `<div class="esec"><h3>${esc(d.title)}<small>계약 정보와 문서별 입력값을 기준으로 작성합니다</small></h3><div class="box"><div class="g3">
+      <label>작성일<input class="ci num" type="date" value="${TODAY}" data-gen></label><label>거래유형<input class="ci" value="${KIND[c.kind]}" disabled></label><label>대상물<input class="ci" value="${esc(loc(c))}" data-gen></label>
+      <label>${isLease(c.kind) ? '임대인' : '매도인'}<input class="ci" value="${esc(c.seller[0])}" data-gen></label><label>${isLease(c.kind) ? '임차인' : '매수인'}<input class="ci" value="${esc(c.buyer[0])}" data-gen></label><label>제출·교부일<span style="display:flex;gap:4px"><input class="ci num" type="date" id="genDue" style="flex:1" data-gen>${[1, 2, 3].map((n) => `<button class="btn quiet sm" data-plus="${n}">+${n}개월</button>`).join('')}</span></label>
+      <label style="grid-column:1 / -1">기재 내용<textarea class="ci" rows="8" data-gen placeholder="이 서식에 들어갈 내용을 적습니다"></textarea></label></div></div></div>`;
+  document.getElementById('edWrap').innerHTML = `
+    <div class="ed-top"><button class="btn quiet sm" data-edclose>${icon('chevLeft')}목록</button><span class="vsep"></span><h2>${esc(loc(c))} · 계약 문서</h2>${kindTag(c)}${c.joint ? '<span class="tag blue">공동</span>' : ''}<span style="flex:1"></span><span class="t2" style="font-size:12px">계약일 ${dot(c.date)} · 수정 ${c.updated}</span>${statBtn(c)}</div>
+    <div class="ed-tabs">${c.docs.map((x, i) => { const same = c.docs.filter((y) => y.title === x.title).length; return `<button class="dtab ${i === doc ? 'on' : ''}" data-doc="${i}" title="${DSTAT[x.status][0]}"><span class="dot ${DSTAT[x.status][1]}"></span>${esc(x.title)}${same > 1 ? ` (${same}부)` : ''}${x.isNew ? '<span class="tag">새 문서</span>' : ''}${i === doc && dirty ? '<span class="unsaved" title="저장하지 않은 변경"></span>' : ''}</button>`; }).join('')}<span class="sp"></span><span class="cnt">${c.docs.length}개</span><button class="btn sm" data-subform>${icon('plus')}서식 등록${icon('chevDown')}</button></div>
+    <div class="ed-body"><div class="ed-main" id="edMain">${main}</div><aside class="ed-side" id="edSide">${isMain ? sideHtml() : `<div class="scard"><h4>${icon('info')}부속 서식</h4><p>이 서식은 계약서의 당사자·대상물·금액을 그대로 가져와 채웁니다. 계약서를 고치면 여기에도 반영됩니다.</p></div>`}</aside></div>
+    <div class="ed-foot" id="edFoot">${footHtml()}</div>`;
+}
+function saveEditor() {
+  const ed = state.ed; const { c, f } = ed; const d = c.docs[ed.doc];
+  if (!ed.dirty && !d.isNew) return;
+  if (ed.doc === 0) {
+    c.form = JSON.parse(JSON.stringify(f));
+    const p0 = f.parties.find((p) => p.side === 0 && !p.role); const p1 = f.parties.find((p) => p.side === 1 && !p.role);
+    Object.assign(c, { total: f.total, rent: f.rent || c.rent, mid: f.midDate || null, bal: f.balDate || null, leaseEnd: f.leaseTo || c.leaseEnd, seller: [p0.name, p0.phone], buyer: [p1.name, p1.phone], joint: f.office.joint ? f.office.jointName : '' });
+  }
+  delete d.isNew; if (d.status === 'draft') d.status = 'generated';
+  c.updated = `${dot(TODAY)} 방금`; ed.dirty = false;
+  renderEditor();
+  UI.toast('문서를 저장했습니다.');
+}
+function preview() {
+  const { c, f } = state.ed; const lease = isLease(c.kind); const d = c.docs[state.ed.doc];
+  const row = (k, v) => `<tr><td>${k}</td><td>${v}</td></tr>`;
+  const m = (v) => (v ? `${numKo(v)} (₩${num(v * 10000)})` : '');
+  modal({ title: '계약 문서 출력 미리보기', desc: esc(d.title), wide: true, ok: '인쇄', onOk: () => { UI.toast('인쇄 창을 엽니다'); return false; },
+    body: `<div class="a4"><h1>${esc(d.title.replace(/\s*\(.*\)/, ''))}</h1>
+      <h5>1. 부동산의 표시</h5><table>${row('소재지', esc(f.prop.addr))}${row('토지', `지목 ${esc(f.prop.jimok)} · 대지권 비율 ${esc(f.prop.share)} · 면적 ${esc(f.prop.land)}㎡`)}${row('건물', `${esc(f.prop.struct)} · ${esc(f.prop.use)} · ${esc(f.prop.area)}㎡`)}</table>
+      <h5>2. 계약내용</h5><table>${row(lease ? '보증금' : '매매대금', m(f.total))}${!lease && f.loan && !f.loanBlank ? row('융자금', m(f.loan)) : ''}${row('계약금', `${m(f.dep)} 은 계약시에 지불하고 영수함.`)}${f.mid ? row('중도금', `${m(f.mid)} 은 ${f.midBlank ? '　　년　　월　　일' : dot(f.midDate)}에 지불하며,`) : ''}${f.mid2 ? row('중도금(2차)', `${m(f.mid2)} 은 ${dot(f.mid2Date)}에 지불하며,`) : ''}${row('잔금', `${m(f.bal)} 은 ${dot(f.balDate)}에 지불하기로 함.`)}${f.rent && lease ? row('차임', `${m(f.rent)} 은 매월 ${f.payDay}일 (${f.prepaid}) 지불`) : ''}</table>
+      <pre style="margin-top:8px">${esc(f.body3)}</pre>
+      <h5>특약사항</h5><pre>${f.specialSep ? '별지 참조' : esc(f.special)}${f.privacy ? '\n※ 계약 당사자는 개인정보 수집·이용에 동의한다.' : ''}</pre>
+      <h5>당사자</h5><table>${f.parties.map((p) => row(`${sideName(c, p.side)}${p.role ? ' ' + p.role : ''}`, `${esc(p.name)} ${esc(p.idno)} · ${esc(p.addr)} · ${esc(p.phone)}${p.share ? ` · 지분 ${esc(p.share)}` : ''} (인)`)).join('')}</table>
+      <h5>개업공인중개사</h5><table>${row('사무소', `${esc(f.office.name)} · ${esc(f.office.addr)}`)}${row('등록번호', `${esc(f.office.regNo)} · 대표 ${esc(f.office.ceo)} (인) · 소속공인중개사 ${esc(f.office.agent)} (인)`)}${f.office.joint ? row('공동중개', esc(f.office.jointName)) : ''}</table>
+      <p style="text-align:center;margin:18px 0 0">계약 체결일 ${f.signDate.replace(/(\d+)-(\d+)-(\d+)/, '$1년 $2월 $3일')}</p></div>` });
+}
+// 값 쓰기: "office.name", "parties.1.addr" 같은 경로
+function setPath(obj, path, v) { const ks = path.split('.'); const last = ks.pop(); ks.reduce((o, k) => o[k], obj)[last] = v; }
+
+// 정적 아이콘
+document.querySelectorAll('[data-icon]').forEach((el) => el.insertAdjacentHTML('afterbegin', icon(el.dataset.icon)));
+document.getElementById('newBtn').innerHTML = `${icon('plus')}계약서 등록${icon('chevDown')}`;
+document.getElementById('formBtn').innerHTML = `${icon('file')}서식 등록${icon('chevDown')}`;
+
+document.addEventListener('click', (e) => {
+  const t = e.target;
+  if (t.closest('.mback')) return;
+  const st = t.closest('[data-st]');
+  if (st) { const h = st.closest('[data-c]'); return statMenu(st, h ? CONTRACTS.find((c) => c.id === +h.dataset.c) : state.ed.c); }
+  if (state.ed) return edClick(t, e);
+  const pt = t.closest('.vtab[data-preset]');
+  if (pt) { state.preset = pt.dataset.preset; render(); return; }
+  const vb = t.closest('#viewSeg button');
+  if (vb) { state.view = vb.dataset.view; render(); return; }
+  const jump = t.closest('[data-jump]');
+  if (jump) { const j = jump.dataset.jump; state.f = {}; state.preset = j === 'open' ? 'open' : 'all'; if (j === 'miss') state.f.ready = '자료 누락'; if (j === 'signed') state.f.status = '서명완료'; if (j === 'wait') { state.dateKey = '잔금일자'; state.sort = { key: 'bal', dir: 1 }; state.preset = 'open'; UI.toast('잔금일이 가까운 순으로 정렬했습니다'); } render(); return; }
+  if (t.closest('#newBtn')) return formMenu(t.closest('#newBtn'));
+  if (t.closest('#formBtn')) return subformMenu(t.closest('#formBtn'));
+  if (t.closest('#showContact')) { state.contact = !state.contact; render(); return; }
+  if (t.closest('#fJoint')) { state.joint = !state.joint; render(); return; }
+  if (t.closest('#fKeep')) { state.keep = !state.keep; render(); return; }
+  if (t.closest('[data-clear]')) { Object.assign(state, { f: {}, dFrom: '', dTo: '', aMin: '', aMax: '', joint: false, keep: false, q: '', dateKey: '계약일자', amtKey: '거래금액' }); document.getElementById('q').value = ''; render(); return; }
+  const fclr = t.closest('[data-fclr]');
+  if (fclr) { delete state.f[fclr.dataset.fclr]; render(); return; }
+  const fs = t.closest('[data-fs]');
+  if (fs) {
+    const id = fs.dataset.fs;
+    if (id === 'dateKey' || id === 'amtKey') return UI.menu(fs, Object.keys(id === 'dateKey' ? DATEKEYS : AMTKEYS).map((l) => ({ label: l, on: state[id] === l, run: () => { state[id] = l; render(); } })));
+    const d = FDEFS.find((x) => x.id === id); const cur = state.f[id];
+    const opts = d.opts();
+    return UI.menu(fs, [{ label: '전체', on: !cur, run: () => { delete state.f[id]; render(); } }, '-', ...opts.map(([label, test]) => ({ label, hint: test ? String(CONTRACTS.filter(test).length) : '', on: cur === label, run: () => { state.f[id] = label; if (id === 'status') state.preset = 'all'; render(); } })), ...(cur && !opts.some((o) => o[0] === cur) ? [{ label: cur, hint: '0', on: true }] : [])]);
+  }
+  const th = t.closest('th[data-sort]');
+  if (th && !t.closest('.rz')) {
+    const key = th.dataset.sort; const cur = state.sort && state.sort.key === key ? state.sort.dir : 0;
+    return UI.menu(th, [{ label: '오름차순 정렬', icon: 'sort', on: cur === 1, run: () => { state.sort = { key, dir: 1 }; render(); } }, { label: '내림차순 정렬', icon: 'sort', on: cur === -1, run: () => { state.sort = { key, dir: -1 }; render(); } }, ...(cur ? [{ label: '정렬 해제 (최근 계약일순)', icon: 'x', run: () => { state.sort = null; render(); } }] : [])]);
+  }
+  if (t.closest('[data-openrow]')) return openEditor(state.sel);
+  const tr = t.closest('tr[data-c]');
+  if (!tr) return;
+  const c = CONTRACTS.find((x) => x.id === +tr.dataset.c);
+  if (t.closest('[data-copy]')) return copyC(c);
+  if (t.closest('[data-del]')) return modal({ title: '계약 삭제', desc: `${esc(loc(c))} · 계약과 소속 문서·당사자·리비전 정보가 모두 영구 삭제되며 복구할 수 없습니다. (데모에서는 알림에서 되돌릴 수 있습니다)`, ok: '삭제', danger: true, onOk: () => removeC(c) });
+  state.sel = c.id; render();
+  const again = document.querySelector(`tr[data-c="${c.id}"]`); if (again) again.focus({ preventScroll: true });
+});
+function edClick(t, e) {
+  const ed = state.ed; const { c, f } = ed;
+  const touch = () => { ed.dirty = true; };
+  if (t.closest('[data-edclose]')) return closeEditor();
+  if (t.closest('[data-save]')) return saveEditor();
+  if (t.closest('[data-preview]')) return preview();
+  if (t.closest('[data-saveas]')) { const src = c.docs[ed.doc]; const doc = { title: src.title, status: 'draft' }; c.docs.push(doc); ed.doc = c.docs.length - 1; renderEditor(); UI.toast('문서 사본을 새 탭으로 저장했습니다.', () => { const at = c.docs.indexOf(doc); if (at < 0) return; c.docs.splice(at, 1); ed.doc = 0; renderEditor(); }); return; }
+  if (t.closest('[data-subform]')) return subformMenu(t.closest('[data-subform]'));
+  const dt = t.closest('[data-doc]');
+  if (dt) {
+    const i = +dt.dataset.doc; if (i === ed.doc) return;
+    const go = () => { ed.f = JSON.parse(JSON.stringify(c.form)); ed.dirty = false; ed.bad.clear(); ed.doc = i; renderEditor(); };
+    if (ed.dirty) return modal({ title: '문서 이동', desc: '현재 문서에 저장하지 않은 변경사항이 있습니다. 변경을 버리고 다른 문서로 이동할까요?', ok: '변경 버리고 이동', cancel: '계속 편집', danger: true, onOk: go });
+    return go();
+  }
+  const unit = t.closest('[data-unit]');
+  if (unit) { f.unit = unit.dataset.unit; ed.bad.clear(); touch(); renderEditor(); return; }
+  if (t.closest('[data-autobal]')) { f.bal = Math.max(0, f.total - f.dep - f.mid - f.mid2); ed.bad.delete('bal'); touch(); renderEditor(); UI.toast(`잔금을 ${man(f.bal)}(으)로 맞췄습니다`); return; }
+  const ap = t.closest('[data-addparty]');
+  if (ap) { f.parties.push({ side: +ap.dataset.addparty, role: '', name: '', idno: '', addr: '', phone: '', share: '2분의 1' }); touch(); renderEditor(); return; }
+  if (t.closest('[data-addagent]')) { const p = f.parties[+t.closest('tr').dataset.p]; const n = f.parties.filter((x) => x.side === p.side && x.role).length; if (n >= 2) { UI.toast('대리인은 두 명까지 추가할 수 있습니다'); return; } f.parties.push({ side: p.side, role: n ? '공동대리인' : '대리인', name: '', idno: '', addr: '', phone: '', share: '' }); touch(); renderEditor(); return; }
+  if (t.closest('[data-delparty]')) { const i = +t.closest('tr').dataset.p; const [p] = f.parties.splice(i, 1); touch(); renderEditor(); UI.toast(`${sideName(c, p.side)} ${p.role || ''} ${esc(p.name) || '(이름 없음)'} 줄을 지웠습니다`, () => { if (state.ed !== ed) return; f.parties.splice(Math.min(i, f.parties.length), 0, p); renderEditor(); }); return; }
+  if (t.closest('[data-clauseload]')) return UI.menu(t.closest('[data-clauseload]'), CLAUSE_T.map(([l, body]) => ({ label: l, icon: 'file', run: () => { const prev = f.body3; f.body3 = body || defaultForm(c).body3; touch(); renderEditor(); UI.toast(`「${l}」 계약사항을 적용했습니다.`, () => { if (state.ed !== ed) return; f.body3 = prev; renderEditor(); }); } })), { wide: true });
+  if (t.closest('[data-specload]')) return UI.menu(t.closest('[data-specload]'), SPECIAL_T.map(([l, body]) => ({ label: l, icon: 'note', hint: '끝에 덧붙임', run: () => { const prev = f.special; const n = f.special.split('\n').filter((x) => x.trim()).length + 1; f.special = `${f.special.trim()}\n${n}. ${body}`.trim(); touch(); renderEditor(); UI.toast(`「${l}」 특약을 넣었습니다`, () => { if (state.ed !== ed) return; f.special = prev; renderEditor(); }); } })), { wide: true });
+  if (t.closest('[data-clausesave]') || t.closest('[data-specsave]')) { const isC = !!t.closest('[data-clausesave]'); const el = document.getElementById(isC ? 'clName' : 'spName'); const v = el.value.trim(); if (!v) { el.focus(); return; } (isC ? CLAUSE_T : SPECIAL_T).push([v, isC ? f.body3 : f.special]); el.value = ''; UI.toast(isC ? '계약사항 템플릿을 저장했습니다.' : '특약 템플릿을 등록했습니다.'); return; }
+  const plus = t.closest('[data-plus]');
+  if (plus) { document.getElementById('genDue').value = addMonths(TODAY, +plus.dataset.plus); touch(); refreshFoot(); return; }
+}
+const refreshFoot = () => { document.getElementById('edFoot').innerHTML = footHtml(); const t = document.querySelector('.dtab.on'); if (t && !t.querySelector('.unsaved')) t.insertAdjacentHTML('beforeend', '<span class="unsaved"></span>'); };
+document.addEventListener('dblclick', (e) => { if (state.ed || e.target.closest('.ib, [data-st], .mback')) return; const tr = e.target.closest('tr[data-c]'); if (tr) openEditor(+tr.dataset.c); });
+let qTimer = 0;
+document.getElementById('q').addEventListener('input', (e) => { clearTimeout(qTimer); const v = e.target.value; qTimer = setTimeout(() => { state.q = v; render(); }, 150); });
+for (const id of ['dFrom', 'dTo', 'aMin', 'aMax']) document.getElementById(id).addEventListener('input', (e) => { const v = e.target.value.trim(); state[id] = id[0] === 'a' && v !== '' && Number.isNaN(+v) ? '' : v; render(); });
+function onField(el) {
+  const ed = state.ed; if (!ed) return;
+  if (el.dataset.gen != null) { ed.dirty = true; return refreshFoot(); }
+  const key = el.dataset.f; if (!key) return;
+  const f = ed.f; let structural = false;
+  if (el.dataset.amt != null) {
+    const raw = +el.value.replace(/[,\s]/g, '') || 0; const v = raw / UNIT[f.unit];
+    const bad = !Number.isInteger(v);
+    bad ? ed.bad.add(key) : ed.bad.delete(key);
+    el.classList.toggle('bad', bad); el.title = bad ? '만원 단위 정수로 환산되는 금액을 입력해주세요.' : '';
+    if (!bad) f[key] = v;
+  } else if (el.dataset.ck != null) { setPath(f, key, el.checked); structural = ['showLease', 'direct2', 'office.joint'].includes(key); }
+  else if (el.dataset.int != null) f[key] = +el.value;
+  else if (el.dataset.num != null) { f[key] = el.value.trim() === '' ? '' : +el.value || 0; }
+  else setPath(f, key, el.value);
+  // 임대차 개월 ↔ 만기일은 서로 맞춘다
+  if (key === 'months' && f.leaseFrom && f.months) { f.leaseTo = addMonths(f.leaseFrom, f.months); const to = document.querySelector('[data-f="leaseTo"]'); if (to) to.value = f.leaseTo; }
+  if ((key === 'leaseTo' || key === 'leaseFrom') && f.leaseFrom && f.leaseTo) { const [y1, m1] = f.leaseFrom.split('-').map(Number); const [y2, m2] = f.leaseTo.split('-').map(Number); f.months = (y2 - y1) * 12 + (m2 - m1); const mo = document.querySelector('[data-f="months"]'); if (mo) mo.value = f.months; }
+  ed.dirty = true;
+  if (structural) renderEditor(); else refresh();
+}
+document.getElementById('edWrap').addEventListener('input', (e) => { if (e.target.matches('[data-f], [data-gen]') && !e.target.matches('[type="checkbox"], select')) onField(e.target); });
+document.getElementById('edWrap').addEventListener('change', (e) => { if (e.target.matches('[data-f][type="checkbox"], select[data-f]')) onField(e.target); });
+// 금액 칸을 벗어나면 천 단위 쉼표를 다시 넣는다
+document.getElementById('edWrap').addEventListener('focusout', (e) => { const el = e.target; if (el.matches && el.matches('[data-amt]') && state.ed && !state.ed.bad.has(el.dataset.f)) { const v = state.ed.f[el.dataset.f]; el.value = v ? num(v * UNIT[state.ed.f.unit]) : ''; } });
+document.addEventListener('keydown', (e) => {
+  if (e.isComposing || e.keyCode === 229) return;
+  if (document.querySelector('.mback')) return;
+  const typing = e.target.matches('input, textarea, select');
+  if (state.ed) {
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') { e.preventDefault(); saveEditor(); }
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'p') { e.preventDefault(); preview(); }
+    if (e.key === 'Escape' && !typing) closeEditor();
+    return;
+  }
+  if (e.key === '/' && !typing) { e.preventDefault(); document.getElementById('q').focus(); return; }
+  if (e.key === 'Escape' && typing) { e.target.blur(); return; }
+  const tr = e.target.closest && e.target.closest('tr[data-c]');
+  if (tr && e.key === 'Enter' && !typing && !e.target.closest('button')) { openEditor(+tr.dataset.c); return; }
+  if (tr && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) { const n = e.key === 'ArrowDown' ? tr.nextElementSibling : tr.previousElementSibling; if (n && n.dataset.c) { e.preventDefault(); state.sel = +n.dataset.c; render(); document.querySelector(`tr[data-c="${state.sel}"]`).focus(); } }
+});
+
+// 원본처럼 주소의 ?editorContractId= 로 편집기를 바로 연다
+render();
+const want = new URLSearchParams(location.search).get('editorContractId');
+if (want != null && CONTRACTS.some((c) => String(c.id) === want)) openEditor(+want);
+
+UI.notes(
+  [
+    '<b>목록 열은 원본 그대로</b>입니다: 계약일, 중개, 거래, 소재지 / 매물, 금액(만원), 중도금일, 잔금일, 메모, 매도(임)인, 매수(임)인, 상태, 신고, 문서, 작업. 날짜 칩은 오늘·내일·지난 날을 색으로 구분하고, 잔금일 아래에 D-day가 붙습니다.',
+    '<b>필터가 한 줄에 늘 보입니다.</b> 검색기준·서식·거래유형·상태·문서 준비, 날짜와 금액 범위(기준을 골라 시작~끝을 적음), 공동중개·보존기간 경과가 표 위에 있고 고른 값이 그 자리에 표시됩니다.',
+    '<b>상태 배지를 누르면</b> 작성중 → 서명완료 → 계약금 완료 → 잔금 완료 → 등기 완료 → 취소를 그 자리에서 바꿉니다. 실행 취소가 붙은 알림이 뜹니다. 원본에는 상태를 바꾸는 곳이 없어 새로 넣은 조작입니다.',
+    '<b>자료 중심 보기</b>는 카드 격자 대신 표입니다. 작성 문서·필수 문서 수와 빠진 자료 이름이 한 줄에 보여 여러 계약을 한눈에 훑습니다.',
+    '행을 두 번 누르거나 Enter를 누르면 <b>편집기</b>가 열립니다. 위쪽은 문서 탭, 가운데는 부동산의 표시·제1조 금액·제2조·본문·특약·당사자·개업공인중개사, 오른쪽은 점검 칸입니다. ⌘S로 저장하고 ⌘P로 출력 미리보기를 엽니다.',
+    '<b>대금 타임라인</b>이 오른쪽에 붙어 계약금·중도금·잔금의 비율, 지급일, D-day를 입력하는 대로 다시 그립니다. <b>작성 점검</b>은 합계가 총액과 다르거나 날짜 순서가 틀리면 바로 알려 주고, 금액 옆에는 한글 금액이 병기됩니다.',
+    '<b>당사자</b>는 표에서 바로 고치고 공동 매도인·매수인, 대리인을 줄로 추가합니다. <b>계약서 등록</b>은 종별 → 거래유형 순으로, <b>서식 등록</b>은 분류 → 서식 순으로 고릅니다.',
+  ],
+  '계약 문서 목록을 촘촘하게 훑고, 편집기에서는 금액과 일정을 점검하며 작성합니다.',
+);
+</script>
+</body>
+</html>

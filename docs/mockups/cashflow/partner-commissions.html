@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="icon" href="data:," />
+<title>공동중개 수수료 시안</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
+<link rel="stylesheet" href="shared.css" />
+<style>
+  #tbl { --min: 1040px; }
+  .pin-1 { left: 0; border-right: 1px solid var(--head-line) !important; }
+  .sub-name { padding-left: 22px; }
+  .net-note { color: var(--muted-fg); font-size: 12px; }
+  .pick-kind { color: var(--muted-fg); font-size: 12px; }
+</style>
+</head>
+<body>
+<script src="icons.js"></script>
+<script src="data.js"></script>
+<script src="shared.js"></script>
+<script>
+(function () {
+  const { esc, icon, money, ymd, md, badge, loc, sideLabel, dealSum, partnerItems, TODAY } = CF;
+  const main = CF.shell({ page: 'partner', title: '공동중개 수수료', restricted: true });
+  if (!main) return;
+
+  const state = { year: 'all', search: '', open: false, expanded: new Set() };
+
+  main.innerHTML = `<div class="page">
+    <div class="tb line" id="tb"></div>
+    <div class="strip" id="strip"></div>
+    <div class="scroll" id="body"></div>
+    ${CF.statusbar('')}
+  </div>`;
+  CF.wireReset(main);
+  const $ = (id) => document.getElementById(id);
+
+  function aggregate() {
+    const map = new Map();
+    CF.db.deals.forEach((d) => {
+      if (!d.partnerBrokerId) return;
+      if (state.year !== 'all' && !d.stageChangedAt.startsWith(state.year)) return;
+      const b = CF.partnerOf(d);
+      if (!map.has(b.id)) map.set(b.id, { partner: b, deals: [], billed: 0, our: 0, par: 0, got: 0, receive: 0, pay: 0, last: '' });
+      const a = map.get(b.id);
+      const s = dealSum(d);
+      a.deals.push(d); a.billed += s.billed; a.our += s.ourShare; a.par += s.partnerShare; a.got += s.collected;
+      if (d.stageChangedAt > a.last) a.last = d.stageChangedAt;
+      partnerItems(d).forEach((it) => {
+        if (it.settled) return;
+        if (it.kind === 'receive') a.receive += it.amount; else a.pay += it.amount;
+      });
+    });
+    let list = [...map.values()].sort((x, y) => (y.receive + y.pay) - (x.receive + x.pay) || y.our - x.our);
+    const q = state.search.trim().toLowerCase();
+    if (q) list = list.filter((a) => [a.partner.name, a.partner.phone, ...a.deals.map(loc)].join(' ').toLowerCase().includes(q));
+    if (state.open) list = list.filter((a) => a.receive + a.pay > 0);
+    return list;
+  }
+
+  function renderTb() {
+    const tb = $('tb');
+    tb.innerHTML = `<div class="pills" role="tablist" aria-label="기간">${[['all', '전체 기간'], ['2026', '2026년']].map(([k, l]) => `<button type="button" role="tab" aria-selected="${state.year === k}" class="${state.year === k ? 'on' : ''}" data-year="${k}">${l}</button>`).join('')}</div>
+      <label class="search">${icon('search')}<span class="sr">검색</span><input id="q" type="search" placeholder="사무소, 전화번호, 호수" value="${esc(state.search)}" /></label>
+      <button type="button" class="chip ${state.open ? 'on' : ''}" id="only-open" aria-pressed="${state.open}" style="padding:0 12px">정산 남은 곳만</button>
+      <span class="spacer"></span>
+      <button type="button" class="ghost" id="go-partners">${icon('handshake')} 파트너 사무소 관리</button>`;
+    tb.querySelector('#q').addEventListener('input', (e) => { state.search = e.target.value; renderStrip(); renderBody(); });
+    tb.querySelector('#only-open').addEventListener('click', () => { state.open = !state.open; renderTb(); renderStrip(); renderBody(); });
+    tb.querySelector('#go-partners').addEventListener('click', () => CF.toast('시안에서는 파트너 사무소 화면으로 이동하지 않습니다.'));
+    tb.querySelectorAll('[data-year]').forEach((b) => b.addEventListener('click', () => { state.year = b.dataset.year; renderTb(); renderStrip(); renderBody(); }));
+  }
+
+  function renderStrip() {
+    const list = aggregate();
+    const t = list.reduce((a, x) => { a.receive += x.receive; a.pay += x.pay; a.our += x.our; a.par += x.par; a.n += x.deals.length; return a; }, { receive: 0, pay: 0, our: 0, par: 0, n: 0 });
+    $('strip').innerHTML = `
+      <div class="stat"><div class="l">받을 돈</div><div class="v">${money(t.receive)}</div><div class="h">파트너가 받아 둔 우리 몫</div></div>
+      <div class="stat"><div class="l">줄 돈</div><div class="v">${money(t.pay)}</div><div class="h">우리가 받아 둔 파트너 몫</div></div>
+      <div class="stat"><div class="l">우리 몫 누적</div><div class="v">${money(t.our)}</div><div class="h">거래 ${t.n}건</div></div>
+      <div class="stat"><div class="l">파트너 몫 누적</div><div class="v">${money(t.par)}</div><div class="h">사무소 ${list.length}곳</div></div>`;
+    $('status-text').textContent = `파트너 ${list.length}곳 · 공동중개 거래 ${t.n}건 표시`;
+  }
+
+  function renderBody() {
+    const list = aggregate();
+    if (!list.length) {
+      $('body').innerHTML = `<div class="empty">${icon('handshake')}<b>${state.search || state.open ? '조건에 맞는 파트너가 없습니다' : '공동중개 거래가 아직 없습니다'}</b><p>${state.search || state.open ? '검색어나 필터를 바꿔 보세요.' : '거래를 만들 때 공동중개로 표시하면 파트너별로 모입니다.'}</p></div>`;
+      return;
+    }
+    const rows = list.map((a) => {
+      const isOpen = state.expanded.has(a.partner.id) || state.search;
+      const hasOpen = a.receive + a.pay > 0;
+      const head = `<tr class="grp" data-fold="${a.partner.id}" style="cursor:pointer">
+        <td class="pin-l pin-1"><div class="name-cell"><button type="button" class="chev-btn" aria-expanded="${!!isOpen}" aria-label="${isOpen ? '접기' : '펼치기'}">${icon(isOpen ? 'chevron-down' : 'chevron-right')}</button><span class="nm">${esc(a.partner.name)}</span><span class="muted tnum" style="font-size:12px">${esc(a.partner.phone)}</span></div></td>
+        <td class="tnum">${a.deals.length}건</td><td class="num">${money(a.billed)}</td><td class="num">${money(a.our)}</td><td class="num">${money(a.par)}</td><td class="num">${money(a.got)}</td>
+        <td class="num">${money(a.receive)}</td><td class="num">${money(a.pay)}</td>
+        <td class="tnum" style="font-weight:400">${ymd(a.last)}</td>
+        <td class="pin-r" style="padding:0 6px"><div class="act-cell">${hasOpen ? `<button type="button" class="btn" data-settle="${a.partner.id}">정산 처리</button>` : `<span class="tail">${a.got >= a.billed ? '정산 끝' : '수금 대기'}</span>`}</div></td>
+      </tr>`;
+      if (!isOpen) return head;
+      const subs = a.deals.map((d) => {
+        const s = dealSum(d);
+        const items = partnerItems(d).filter((x) => !x.settled);
+        const r = items.filter((x) => x.kind === 'receive').reduce((v, x) => v + x.amount, 0);
+        const p = items.filter((x) => x.kind === 'pay').reduce((v, x) => v + x.amount, 0);
+        return `<tr class="sub click" data-open="${d.id}">
+          <td class="pin-l pin-1"><div class="name-cell sub-name"><span class="nm" title="${esc(loc(d))}">${esc(loc(d))}</span>${badge('tx', d.transactionType)}</div></td>
+          <td>${badge('stage', d.stage)}</td><td class="num">${money(s.billed)}</td><td class="num">${money(s.ourShare)}</td><td class="num">${money(s.partnerShare)}</td><td class="num">${money(s.collected)}</td>
+          <td class="num">${money(r)}</td><td class="num">${money(p)}</td>
+          <td class="tnum muted">${ymd(d.stageChangedAt)}</td><td class="pin-r"></td>
+        </tr>`;
+      }).join('');
+      return head + subs;
+    }).join('');
+    $('body').innerHTML = `<table class="tbl" id="tbl"><colgroup><col style="min-width:280px"><col style="width:92px"><col style="width:88px"><col style="width:88px"><col style="width:88px"><col style="width:88px"><col style="width:88px"><col style="width:88px"><col style="width:96px"><col style="width:92px"></colgroup>
+      <thead><tr><th class="pin-l pin-1">파트너 사무소 · 거래</th><th>건수 · 단계</th><th class="num">청구액</th><th class="num">우리 몫</th><th class="num">파트너 몫</th><th class="num">수금</th><th class="num">받을 돈</th><th class="num">줄 돈</th><th>최근 거래</th><th class="pin-r"><span class="sr">작업</span></th></tr></thead>
+      <tbody>${rows}</tbody></table>`;
+  }
+
+  function settleDialog(partnerId) {
+    const partner = CF.SEED.partners.find((b) => b.id === partnerId);
+    const items = CF.db.deals.filter((d) => d.partnerBrokerId === partnerId).flatMap(partnerItems).filter((x) => !x.settled);
+    const line = (it, i) => `<label><input type="checkbox" name="i${i}" checked data-kind="${it.kind}" data-amt="${it.amount}"><span class="t" title="${esc(loc(it.deal))}"><span class="pick-kind">${it.kind === 'pay' ? '줄 돈' : '받을 돈'}</span> ${esc(loc(it.deal))} ${sideLabel(it.payment)}${it.payment.status === 'partial' ? ' <span class="pick-kind">부분수금분</span>' : ''}</span><span class="tnum">${money(it.amount)}</span></label>`;
+    CF.dialog({
+      title: `${partner.name} 정산`,
+      desc: '실제로 돈을 주고받은 건만 체크하세요. 부분수금분을 정산해도 나머지가 들어오면 차액이 다시 이 목록에 나옵니다.',
+      submit: '정산 완료 처리',
+      width: 480,
+      body: `<div class="pick-list">${items.map(line).join('')}</div><div class="net-note" id="net"></div>
+        <div class="row2"><div class="field"><label for="s-d">정산일</label><input id="s-d" class="input tnum" name="date" type="date" value="${TODAY}"></div>
+        <div class="field"><label for="s-m">메모 (선택)</label><input id="s-m" class="input" name="memo" placeholder="예) 계좌이체 완료"></div></div>`,
+      onOpen: (d) => {
+        const up = () => {
+          let r = 0; let p = 0;
+          d.querySelectorAll('.pick-list input:checked').forEach((c) => { if (c.dataset.kind === 'pay') p += Number(c.dataset.amt); else r += Number(c.dataset.amt); });
+          const diff = r - p;
+          d.querySelector('#net').textContent = `받을 돈 ${money(r)} · 줄 돈 ${money(p)}${r || p ? ` → ${diff === 0 ? '서로 같습니다' : diff > 0 ? `차액 ${money(diff)} 받음` : `차액 ${money(-diff)} 줌`}` : ''}`;
+        };
+        d.querySelector('.pick-list').addEventListener('change', up);
+        up();
+      },
+      onSubmit: (fd) => {
+        const picked = items.filter((_, i) => fd.get(`i${i}`));
+        if (!picked.length) return '정산할 항목을 하나 이상 골라 주세요.';
+        picked.forEach((it) => CF.settlePartnerItem(it, fd.get('date') || TODAY, fd.get('memo')));
+        CF.commit();
+        CF.toast(`${partner.name} 정산 ${picked.length}건을 기록했습니다.`);
+        return undefined;
+      },
+    });
+  }
+
+  main.addEventListener('click', (e) => {
+    const settle = e.target.closest('[data-settle]');
+    if (settle) { settleDialog(settle.dataset.settle); return; }
+    const row = e.target.closest('[data-open]');
+    if (row) { CF.openDeal(row.dataset.open); return; }
+    const fold = e.target.closest('[data-fold]');
+    if (fold) {
+      const id = fold.dataset.fold;
+      if (state.expanded.has(id)) state.expanded.delete(id); else state.expanded.add(id);
+      renderBody();
+    }
+  });
+
+  /* 정산이 남은 파트너는 펼쳐서 시작한다 */
+  aggregate().forEach((a) => { if (a.receive + a.pay > 0) state.expanded.add(a.partner.id); });
+  CF.onChange(() => { renderStrip(); renderBody(); });
+  renderTb(); renderStrip(); renderBody();
+})();
+</script>
+</body>
+</html>

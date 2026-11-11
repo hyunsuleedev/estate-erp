@@ -1,0 +1,743 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>업무 · UI 개선 데모</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="ui.css">
+<style>
+  /* 필터 줄: 늘 보이는 선택 상자 (매물관리와 같은 부품) */
+  .fbar { gap: 6px; padding: 10px var(--gutter) 10px; flex-wrap: wrap; }
+  .fsel {
+    height: 30px; border: 0; border-radius: 8px; background: var(--paper);
+    box-shadow: inset 0 0 0 1px var(--line-2), 0 1px 2px rgba(16, 24, 40, 0.04);
+    font: inherit; font-size: 13px; color: var(--text); letter-spacing: inherit;
+    display: inline-flex; align-items: center; gap: 6px; padding: 0 8px 0 10px; cursor: pointer; white-space: nowrap;
+    transition: box-shadow 0.12s, background-color 0.12s;
+  }
+  .fsel:hover { box-shadow: inset 0 0 0 1px var(--line-3), 0 1px 2px rgba(16, 24, 40, 0.04); }
+  .fsel .k { color: var(--text-2); }
+  .fsel .v { font-weight: 500; }
+  .fsel > .i { width: 12px; height: 12px; color: var(--text-3); }
+  .fsel.on { background: var(--accent-soft); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent); }
+  .fsel.on .k { color: var(--accent-ink); opacity: 0.75; }
+  .fsel.on .v { color: var(--accent-ink); }
+  .fsel .clr { width: 16px; height: 16px; display: grid; place-items: center; border-radius: 4px; color: var(--accent-ink); }
+  .fsel .clr:hover { background: color-mix(in srgb, var(--accent) 18%, transparent); }
+  .fsel .clr .i { width: 11px; height: 11px; }
+  .fsel[disabled] { opacity: 0.5; cursor: default; }
+  .fbar .res { margin-left: auto; font-size: 13px; color: var(--text-2); font-variant-numeric: tabular-nums; }
+  .ph .meta .lnk.on { background: var(--accent-soft); color: var(--accent-ink); }
+
+  /* 아이콘 */
+  .sv { width: 14px; height: 14px; flex: none; display: block; }
+  .p-urgent { color: var(--danger); } .p-high { color: var(--warn); } .p-medium { color: var(--text-2); } .p-low { color: var(--text-3); }
+  .s-pending { color: var(--text-3); } .s-in_progress { color: var(--accent); } .s-completed { color: var(--ok); } .s-cancelled { color: var(--text-3); } .s-suggested { color: var(--text-3); }
+  .cdot { width: 8px; height: 8px; border-radius: 50%; flex: none; display: inline-block; }
+
+  /* 통화에서 제안 */
+  .sugg-box { margin: 10px var(--gutter) 0; border-radius: 10px; box-shadow: inset 0 0 0 1px var(--line-2); padding: 2px 0 4px; }
+  .sugg-box .ghead { position: static; padding: 0 14px; height: 34px; background: transparent; cursor: default; }
+  .sugg-box .ghead .ai { color: var(--accent); width: 14px; height: 14px; }
+  .sugg-box .ghead small { font-weight: 400; color: var(--text-2); font-size: 12px; }
+  .sugg-box .trow { margin: 0 4px; height: 36px; }
+  .trow.sugg .title > span:first-child { color: var(--text-2); }
+  .sugg-act { display: flex; gap: 4px; flex: none; }
+  .sugg-act .btn { height: 26px; }
+  .sugg-act .btn.ok { color: var(--accent-ink); }
+
+  /* 목록 표 */
+  #tbl th { cursor: default; }
+  #tbl th[data-sort] { cursor: pointer; }
+  #tbl td { height: 38px; }
+  #tbl th.c-pri, #tbl td.c-pri { width: 58px; padding: 0 4px; text-align: center; }
+  #tbl td.c-st { width: 98px; padding: 0 6px; }
+  #tbl td.c-title { width: 100%; max-width: 0; min-width: 220px; }
+  #tbl td.c-ctx { max-width: 330px; }
+  #tbl td.c-act, #tbl th.c-act { width: 40px; padding: 0 8px 0 0; }
+  #tbl tr.done .tt { color: var(--text-3); text-decoration: line-through; text-decoration-color: var(--line-3); }
+  #tbl tr.done .c-ctx, #tbl tr.done .c-cat { opacity: 0.6; }
+  #tbl tr.grp td { height: 36px; background: var(--soft); font-size: 13px; font-weight: 600; border-bottom: 1px solid var(--line-2); }
+  #tbl tr.grp:hover td { background: var(--soft); }
+  .gh { display: flex; align-items: center; gap: 8px; }
+  .gh .chev { width: 14px; height: 14px; color: var(--text-3); transition: transform 0.15s; }
+  .gh.shut .chev { transform: rotate(-90deg); }
+  .gh .n { font-weight: 500; color: var(--text-3); font-variant-numeric: tabular-nums; }
+  .gh .gi { display: inline-flex; align-items: center; }
+  .gh .gi .i { width: 14px; height: 14px; }
+  .gh .ib { margin-left: auto; opacity: 0; width: 24px; height: 24px; }
+  tr.grp:hover .gh .ib, .gh:focus-within .ib { opacity: 1; }
+  .cellb {
+    height: 26px; display: inline-flex; align-items: center; gap: 6px; padding: 0 6px; margin: 0 -2px; border: 0; border-radius: 6px;
+    background: transparent; font: inherit; font-size: 13px; color: var(--text); cursor: pointer; white-space: nowrap; max-width: 100%;
+  }
+  .cellb:hover { background: var(--press); }
+  .cellb.muted { color: var(--text-3); }
+  .cyc { width: 24px; height: 24px; padding: 0; border: 0; border-radius: 6px; background: transparent; display: inline-grid; place-items: center; cursor: pointer; vertical-align: middle; }
+  .cyc:hover { background: var(--press); }
+  .cyc .sv { width: 16px; height: 16px; }
+  .tcell { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .tt { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border: 0; background: transparent; padding: 0; font: inherit; font-size: 14px; font-weight: 500; color: var(--text); cursor: pointer; text-align: left; }
+  .tt:hover { text-decoration: underline; text-underline-offset: 3px; }
+  .tcell .i { width: 13px; height: 13px; color: var(--text-3); flex: none; }
+  .tcell .ai { color: var(--accent); }
+  .srcb { flex: none; height: 18px; padding: 0 5px; border-radius: 4px; font-size: 11px; font-weight: 500; display: inline-flex; align-items: center; background: color-mix(in srgb, var(--text) 7%, transparent); color: var(--text-2); }
+  .run { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--accent-ink); white-space: nowrap; flex: none; }
+  .run .i { width: 12px; height: 12px; color: var(--accent-ink); animation: spin 2.4s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .run .i { animation: none; } }
+  .cx { display: inline-flex; align-items: center; gap: 5px; height: 24px; max-width: 230px; padding: 0 7px; border-radius: 6px; box-shadow: inset 0 0 0 1px var(--line-2); font-size: 12px; color: var(--text-2); text-decoration: none; vertical-align: middle; }
+  .cx span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cx .i { width: 12px; height: 12px; color: var(--text-3); flex: none; }
+  .cx:hover { background: var(--soft); color: var(--text); box-shadow: inset 0 0 0 1px var(--line-3); }
+  .cx + .cx { margin-left: 4px; }
+  .cx.more { padding: 0 6px; cursor: default; }
+  .catl { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; color: var(--text-2); }
+  .due-overdue { color: var(--danger); font-weight: 500; } .due-today { color: var(--warn); font-weight: 500; } .due-normal { color: var(--text-2); } .due-muted { color: var(--text-3); }
+  .cellb .av { width: 20px; height: 20px; font-size: 11px; }
+  .noav { width: 20px; height: 20px; border-radius: 50%; border: 1.5px dashed var(--line-3); display: inline-grid; place-items: center; font-size: 11px; color: var(--text-3); flex: none; }
+  #tbl td.c-act .ib { width: 26px; height: 26px; opacity: 0; }
+  #tbl tr:hover td.c-act .ib, #tbl td.c-act .ib:focus-visible { opacity: 1; }
+
+  /* 보드: 카드는 칸 안에서만 쓴다 */
+  .board { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; padding: 12px var(--gutter) 80px; min-height: 100%; align-items: start; }
+  .bcol-h { display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 4px; font-size: 13px; font-weight: 600; }
+  .bcol-h .n { font-weight: 500; color: var(--text-3); font-variant-numeric: tabular-nums; }
+  .bcol-h .ib { margin-left: auto; width: 24px; height: 24px; }
+  .bcol-b { border-radius: 10px; padding: 6px; background: var(--soft); min-height: 120px; display: flex; flex-direction: column; gap: 6px; transition: box-shadow 0.12s; }
+  .bcol-b.over { box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent); }
+  .kc { border-radius: 8px; background: var(--paper); box-shadow: 0 0 0 1px var(--line-2), 0 1px 2px rgba(16, 24, 40, 0.04); padding: 9px 8px 9px 9px; cursor: pointer; }
+  .kc:hover { box-shadow: 0 0 0 1px var(--line-3), 0 3px 8px rgba(16, 24, 40, 0.07); }
+  .kc.late { box-shadow: inset 2px 0 0 var(--danger), 0 0 0 1px var(--line-2), 0 1px 2px rgba(16, 24, 40, 0.04); }
+  .kc.drag { opacity: 0.4; }
+  .kc-top { display: flex; align-items: flex-start; gap: 6px; }
+  .kc-top h4 { flex: 1; min-width: 0; margin: 2px 0 0; font-size: 13px; line-height: 20px; font-weight: 500; }
+  .kc.done h4 { color: var(--text-3); text-decoration: line-through; text-decoration-color: var(--line-3); }
+  .kc-top .ib { width: 24px; height: 24px; opacity: 0; }
+  .kc:hover .kc-top .ib, .kc:focus-within .kc-top .ib { opacity: 1; }
+  .kc-ctx { margin: 4px 0 0 30px; display: flex; flex-wrap: wrap; gap: 2px 10px; font-size: 12px; }
+  .kc-ctx a { display: inline-flex; align-items: center; gap: 4px; color: var(--text-2); text-decoration: none; max-width: 100%; }
+  .kc-ctx a span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .kc-ctx a:hover { color: var(--text); text-decoration: underline; }
+  .kc-ctx .i { width: 12px; height: 12px; color: var(--text-3); flex: none; }
+  .kc-meta { margin: 9px 0 0 30px; display: flex; align-items: center; gap: 12px; font-size: 12px; }
+  .kc-meta .pl { display: inline-flex; align-items: center; gap: 5px; }
+  .kc-meta .catl { font-size: 12px; min-width: 0; }
+  .kc-meta .rt { margin-left: auto; display: flex; align-items: center; gap: 8px; flex: none; }
+  .kc-meta .av, .kc-meta .noav { width: 20px; height: 20px; font-size: 11px; }
+  .badd { height: 30px; border: 0; border-radius: 6px; background: transparent; font: inherit; font-size: 13px; color: var(--text-2); display: flex; align-items: center; gap: 6px; padding: 0 8px; cursor: pointer; }
+  .badd:hover { background: var(--press); color: var(--text); }
+  .badd .i { width: 14px; height: 14px; }
+
+  /* 입력 창 */
+  .mback { position: fixed; inset: 0; z-index: 60; background: rgba(20, 18, 12, 0.32); display: grid; place-items: center; }
+  .mdl { width: 520px; max-width: calc(100vw - 32px); max-height: calc(100vh - 48px); overflow: auto; border-radius: 14px; background: var(--paper); box-shadow: 0 24px 60px rgba(20, 18, 12, 0.3); }
+  .mdl h3 { margin: 0; padding: 18px 22px 4px; font-size: 16px; font-weight: 600; }
+  .mdl .mb { padding: 10px 22px 6px; display: grid; grid-template-columns: 1fr 1fr; gap: 12px 14px; }
+  .mdl .mb .full { grid-column: 1 / -1; }
+  .mdl label { display: block; font-size: 12px; color: var(--text-2); margin-bottom: 5px; }
+  .inp { width: 100%; height: 34px; padding: 0 10px; border: 0; border-radius: 8px; background: var(--paper); box-shadow: inset 0 0 0 1px var(--line-2); font: inherit; font-size: 14px; color: var(--text); outline: 0; }
+  textarea.inp { height: 76px; padding: 8px 10px; resize: vertical; }
+  .inp:focus { box-shadow: inset 0 0 0 1px var(--accent), 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+  .mdl .mf { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 22px 18px; }
+  .mdl .links { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; min-height: 26px; }
+  .mdl .links .cx button { border: 0; background: transparent; padding: 0; margin-left: 2px; display: grid; place-items: center; cursor: pointer; color: var(--text-3); }
+  .mdl .links .cx button:hover { color: var(--danger); }
+</style>
+</head>
+<body data-active="tasks">
+<main id="page">
+  <div class="ph">
+    <h1>업무</h1>
+    <span class="count" id="total"></span>
+    <div class="meta">
+      <span class="lnk" id="lateLnk" title="기한 지난 업무만 보기"><span class="dot danger"></span>기한 지남 <b id="lateN"></b></span>
+      <span class="lnk" id="todayLnk" title="오늘 마감 업무만 보기"><span class="dot accent"></span>오늘 <b id="todayN"></b></span>
+    </div>
+    <div class="actions">
+      <button class="btn primary" id="newBtn" title="업무 추가 (N)"></button>
+    </div>
+  </div>
+
+  <div class="vbar">
+    <div class="vtab" data-scope="mine">내 담당 <span class="n"></span></div>
+    <div class="vtab" data-scope="requested">내가 요청 <span class="n"></span></div>
+    <div class="vtab" data-scope="team">팀 전체 <span class="n"></span></div>
+    <div class="vtools">
+      <label class="field" data-icon="search"><input id="q" placeholder="업무, 고객, 매물 검색" aria-label="업무 검색"><kbd>/</kbd></label>
+      <button class="btn quiet sm" id="groupBtn"></button>
+      <button class="btn quiet sm" id="sortBtn"></button>
+      <button class="btn quiet sm" id="dispBtn"></button>
+      <span class="vsep"></span>
+      <div class="seg" id="layoutSeg"><button data-layout="list" data-icon="list">목록</button><button data-layout="board" data-icon="board">보드</button></div>
+    </div>
+  </div>
+
+  <div class="fbar show" id="fbar"></div>
+
+  <div class="scroll" id="scroll">
+    <div id="sugg"></div>
+    <div id="body"></div>
+  </div>
+
+  <div class="selbar" id="selbar">
+    <span class="cnt" id="selCnt"></span>
+    <span class="sep"></span>
+    <button data-bulk="in_progress" data-icon="clock">진행중</button>
+    <button data-bulk="completed" data-icon="check">완료</button>
+    <button data-bulk="delete" data-icon="x">삭제</button>
+    <span class="sep"></span>
+    <button id="selClear" aria-label="선택 해제 (Esc)" title="선택 해제 (Esc)" data-icon="x"></button>
+  </div>
+</main>
+
+<script src="shell.js"></script>
+<script>
+const { icon, av } = UI;
+const esc = (v) => String(v == null ? '' : v).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+const ME = '이현수';
+const STAFF = ['이현수', '박서연', '최민준', '정다은'];
+const TODAY = new Date(2026, 10, 11);
+const WD = ['일', '월', '화', '수', '목', '금', '토'];
+const D = (s) => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); };
+const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const addDays = (n) => { const d = new Date(TODAY); d.setDate(d.getDate() + n); return d; };
+const dayDiff = (s) => Math.round((D(s) - TODAY) / 864e5);
+const fmtDay = (s) => { const d = D(s); return d.getFullYear() !== TODAY.getFullYear() ? s.replace(/-/g, '.') : `${d.getMonth() + 1}.${d.getDate()} (${WD[d.getDay()]})`; };
+
+// ── 아이콘 (원본과 같은 모양 언어: 빈 원 → 반원 → 체크 / 3단 막대) ──
+const stSvg = (s) => `<svg class="sv s-${s}" viewBox="0 0 16 16" aria-hidden="true">${
+  s === 'pending' ? '<circle cx="8" cy="8" r="6.25" fill="none" stroke="currentColor" stroke-width="1.5"/>'
+  : s === 'suggested' ? '<circle cx="8" cy="8" r="6.25" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="2.4 2.4"/>'
+  : s === 'in_progress' ? '<circle cx="8" cy="8" r="6.25" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 4.25a3.75 3.75 0 0 1 0 7.5z" fill="currentColor"/>'
+  : s === 'completed' ? '<circle cx="8" cy="8" r="7" fill="currentColor"/><path d="M5 8.25l2 2 4-4.25" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>'
+  : '<circle cx="8" cy="8" r="7" fill="currentColor"/><path d="M5.75 5.75l4.5 4.5M10.25 5.75l-4.5 4.5" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/>'}</svg>`;
+const priSvg = (p) => {
+  const lv = p === 'urgent' || p === 'high' ? 3 : p === 'medium' ? 2 : 1;
+  return `<svg class="sv p-${p}" viewBox="0 0 16 16" aria-hidden="true">${[0, 1, 2].map((i) => `<rect x="${1.5 + i * 5}" y="${10 - i * 4}" width="3" height="${4.5 + i * 4}" rx="1" fill="currentColor" opacity="${i < lv ? 1 : 0.22}"/>`).join('')}</svg>`;
+};
+
+const STATUS = { pending: '대기', in_progress: '진행중', completed: '완료', cancelled: '취소' };
+const PRI = { urgent: '긴급', high: '높음', medium: '중간', low: '낮음' };
+const PRI_RANK = { urgent: 0, high: 1, medium: 2, low: 3 };
+// 카테고리 점 색은 원본 값 그대로(장식)
+const CAT = {
+  property: ['매물', '#9f6b53'], buyer: ['구매고객', '#4f7fd1'], match: ['매칭', '#448361'], deal: ['거래', '#c14c8a'],
+  contract: ['계약', '#9065b0'], consultation: ['상담', '#cb912f'], viewing: ['방문', '#337ea9'], admin: ['관리', '#b4b2ad'],
+  other: ['기타', '#d3d1cb'], advertisement: ['광고작업', '#d9730d'], call: ['전화작업', '#0f7b6c'], document: ['서류작업', '#8c8a84'], verify: ['확인작업', '#6b9b37'],
+};
+const CAT_ORDER = Object.keys(CAT);
+const catDot = (c) => `<span class="cdot" style="background:${(CAT[c] || CAT.other)[1]}"></span>`;
+const catHtml = (c) => `<span class="catl">${catDot(c)}${(CAT[c] || CAT.other)[0]}</span>`;
+// 연결 대상: 종류 → [아이콘, 이동할 화면]
+const CTX = {
+  contact: ['user', 'contacts.html'], property: ['building', 'properties.html'], listing: ['tag', 'properties.html'], buyer: ['userSearch', 'customers.html'],
+  match: ['userSearch', 'wanted.html'], deal: ['handshake', 'deals.html'], contract: ['file', 'contracts.html'], consult: ['msg', 'consultations.html'],
+};
+const DUE_OPTS = [['overdue', '기한 지남'], ['today', '오늘 마감'], ['week', '7일 이내'], ['none', '마감일 없음']];
+const DUE_GROUP = { overdue: ['기한 지남', 'clock', 'danger-t'], today: ['오늘', 'cal', 'warn-t'], tomorrow: ['내일', 'cal', ''], week: ['7일 이내', 'cal', ''], later: ['나중', 'cal', ''], none: ['마감일 없음', 'cal', ''] };
+const GROUP_OPTS = [['status', '상태'], ['due', '마감일'], ['category', '카테고리'], ['assignee', '담당자'], ['none', '묶지 않음']];
+const SORT_OPTS = [['manual', '직접 정렬'], ['priority', '우선순위'], ['due', '마감일']];
+const VIS_OPTS = [['context', '고객·매물'], ['category', '카테고리'], ['assignee', '담당자'], ['due', '마감일']];
+
+// [제목, 설명, 카테고리, 우선순위, 상태, 마감, 담당, 만든 사람, 출처, 연결[[종류, 이름]], 진행 표시]
+let SEQ = 0;
+const mk = (r) => ({ id: ++SEQ, order: SEQ, title: r[0], content: r[1], cat: r[2], pri: r[3], status: r[4], due: r[5], asg: r[6], by: r[7], src: r[8] || 'manual', ctx: (r[9] || []).map(([k, l]) => ({ k, l })), run: r[10] || '' });
+const TASKS = [
+  ['본계약 서류 준비', '등기부등본, 신분증 사본, 인감 확인', 'contract', 'urgent', 'in_progress', '2026-11-11', '이현수', '이현수', '', [['property', '고덕아르테온 312동 1704호'], ['deal', '거래 계약 준비']]],
+  ['이실장 광고 재등록', '', 'advertisement', 'high', 'in_progress', '2026-11-11', '정다은', '이현수', '', [['property', '고덕센트럴아이파크 101동 1501호'], ['listing', '매매 14억 8,000만']], '에이전트 진행 중'],
+  ['주말 임장 동선 정리', '토요일 오전 3곳, 오후 2곳', 'viewing', 'high', 'pending', '2026-11-11', '이현수', '이현수', '', [['contact', '김지현'], ['match', '매칭 임장 확정']]],
+  ['대출 한도 회신 확인', '', 'call', 'medium', 'pending', '2026-11-11', '이현수', '이현수', '', [['contact', '박준호']]],
+  ['집주인 가격 재확인', '확인한 지 16일 지남', 'verify', 'high', 'pending', '2026-11-08', '정다은', '이현수', 'system', [['property', '래미안힐스테이트고덕 112동 1502호'], ['contact', '이정숙']]],
+  ['세입자 계약 만기 안내', '', 'call', 'medium', 'pending', '2026-11-09', '최민준', '박서연', '', [['property', '고덕자이 104동 703호'], ['contact', '한승우']]],
+  ['확인설명서 초안 검토', '', 'document', 'medium', 'pending', '2026-11-10', '이현수', '이현수', '', [['contract', '계약 작성중']]],
+  ['신규 매물 사진 촬영', '오후 2시 이후 방문 가능', 'property', 'low', 'pending', '2026-11-12', '박서연', '이현수', '', [['property', '고덕그라시움 121동 2502호']]],
+  ['네이버 광고 순위 확인', '', 'advertisement', 'low', 'pending', '2026-11-12', '최민준', '최민준', 'ai', [['property', '고덕그라시움 109동 1101호']]],
+  ['잔금일 등기 서류 체크', '', 'contract', 'medium', 'pending', '2026-11-13', '이현수', '이현수', '', [['property', '래미안힐스테이트고덕 120동 801호'], ['contract', '계약 계약금 입금']]],
+  ['부동산뱅크 광고 내리기', '', 'advertisement', 'medium', 'pending', '2026-11-13', null, '정다은', '', [['property', '고덕자이 108동 1902호']]],
+  ['공동중개 수수료 정산 요청서 보내기', '상대 사무소: 상일 한빛공인', 'deal', 'medium', 'pending', '2026-11-14', '이현수', '이현수', '', [['deal', '거래 잔금 진행'], ['property', '고덕아르테온 312동 1704호'], ['contact', '윤태경']]],
+  ['토요일 임장 안내 문자', '', 'viewing', 'medium', 'pending', '2026-11-14', '박서연', '이현수', '', [['contact', '김지현']]],
+  ['전세 갱신 특약 문구 검토', '', 'contract', 'low', 'pending', '2026-11-16', '박서연', '이현수', '', [['property', '고덕센트럴아이파크 104동 2203호']]],
+  ['매수 조건 재상담', '예산 상향 가능 여부 확인', 'buyer', 'medium', 'in_progress', '2026-11-17', '최민준', '최민준', '', [['buyer', '오세훈'], ['consult', '상담 전화']]],
+  ['12월 재오픈 가격 협의', '', 'verify', 'low', 'pending', '2026-12-01', '최민준', '최민준', '', [['property', '고덕자이 104동 703호']]],
+  ['연말 안부 문자', '매수 고객 8명', 'call', 'low', 'pending', '2026-12-20', '이현수', '이현수', '', []],
+  ['관리단지 추가 검토', '고덕롯데캐슬베네루체', 'admin', 'low', 'pending', null, null, '이현수', '', []],
+  ['계약서 날인 일정 확정', '', 'contract', 'medium', 'completed', '2026-11-07', '이현수', '이현수', '', [['property', '래미안힐스테이트고덕 120동 801호']]],
+  ['세입자 퇴거일 확인', '', 'call', 'low', 'completed', '2026-11-08', '박서연', '박서연', '', [['property', '고덕그라시움 117동 1203호']]],
+  ['부동산뱅크 광고 등록', '', 'advertisement', 'medium', 'completed', '2026-11-09', '정다은', '이현수', 'ai', [['property', '고덕아르테온 301동 1203호']]],
+  ['집주인 가격 재확인', '', 'verify', 'high', 'completed', '2026-11-10', '이현수', '이현수', 'system', [['property', '고덕그라시움 103동 3401호']]],
+  ['오피스텔 매물 답사', '고객 요청으로 취소', 'viewing', 'low', 'cancelled', '2026-11-06', '최민준', '최민준', '', []],
+].map(mk);
+// 통화 분석이 제안한 업무 — 사람이 받아들여야 업무가 된다
+const SUGG = [
+  { id: 's1', title: '토요일 임장 일정 잡기', from: '김지현 · 11월 7일 통화', cat: 'viewing', due: '2026-11-14', ctx: [{ k: 'contact', l: '김지현' }] },
+  { id: 's2', title: '관리비 내역 받기', from: '고덕그라시움 103동 3401호 소유주 통화', cat: 'verify', due: null, ctx: [{ k: 'property', l: '고덕그라시움 103동 3401호' }] },
+];
+
+const F = { scope: 'mine', status: '', due: '', category: '', priorities: [], assignee: '', q: '' };
+const DISP = { layout: 'list', groupBy: 'due', sortBy: 'manual', showCompleted: true, visible: { context: true, category: true, assignee: true, due: true } };
+const picked = new Set();
+const held = new Map(); // 방금 상태를 바꾼 업무의 바꾸기 전 상태 — 필터·보기를 바꾸기 전까지 제자리에 둔다
+const shut = new Map(); // 묶음 접힘 (사용자가 바꾼 것만)
+const touch = () => held.clear();
+
+// ── 순수 로직 (원본 -task-filters.ts와 같은 규칙) ──
+const isActive = (s) => s !== 'completed' && s !== 'cancelled';
+const heldSt = (t) => (held.has(t.id) ? held.get(t.id) : t.status);
+const isOverdue = (t) => !!t.due && isActive(t.status) && dayDiff(t.due) < 0;
+function matchDue(t, f) {
+  if (!f) return true;
+  if (f === 'none') return !t.due;
+  if (!t.due) return false;
+  if (f === 'overdue') return isOverdue(t);
+  const d = dayDiff(t.due);
+  if (f === 'today') return d === 0;
+  return d >= 0 && d <= 7; // 오늘부터 7일 뒤(포함)까지
+}
+const matchScope = (t, s) => (s === 'mine' ? t.asg === ME : s === 'requested' ? t.by === ME && t.asg !== ME : true);
+function matches(t, f, skip, status = t.status) {
+  if (skip !== 'status') {
+    if (f.status === 'cancelled') { if (status !== 'cancelled') return false; }
+    else {
+      if (status === 'cancelled') return false;
+      if (f.status && status !== f.status) return false;
+      if (!f.status && !DISP.showCompleted && status === 'completed') return false;
+    }
+  }
+  if (skip !== 'scope' && !matchScope(t, f.scope)) return false;
+  if (skip !== 'category' && f.category && t.cat !== f.category) return false;
+  if (skip !== 'priority' && f.priorities.length && !f.priorities.includes(t.pri)) return false;
+  if (skip !== 'due' && !matchDue({ ...t, status }, f.due)) return false;
+  if (f.scope !== 'mine') {
+    if (f.assignee === 'unassigned') { if (t.asg) return false; }
+    else if (f.assignee && t.asg !== f.assignee) return false;
+  }
+  const q = f.q.trim().toLowerCase();
+  if (!q) return true;
+  return [t.title, t.content, t.asg, ...t.ctx.map((c) => c.l)].filter(Boolean).join(' ').toLowerCase().includes(q);
+}
+const cnt = (skip, test) => TASKS.filter((t) => matches(t, F, skip) && test(t)).length;
+function describeDue(t) {
+  if (!t.due) return null;
+  if (!isActive(t.status)) return { text: fmtDay(t.due), tone: 'muted' };
+  const d = dayDiff(t.due);
+  if (d < 0) return { text: d === -1 ? '어제' : `${-d}일 지남`, tone: 'overdue' };
+  if (d === 0) return { text: '오늘', tone: 'today' };
+  if (d === 1) return { text: '내일', tone: 'normal' };
+  return { text: fmtDay(t.due), tone: 'normal' };
+}
+function dueBucket(t) {
+  if (!t.due) return 'none';
+  const d = dayDiff(t.due);
+  return d < 0 ? 'overdue' : d === 0 ? 'today' : d === 1 ? 'tomorrow' : d <= 7 ? 'week' : 'later';
+}
+const dueKey = (t) => (t.due ? D(t.due).getTime() : Infinity);
+function sortTasks(list) {
+  const done = (t) => (isActive(heldSt(t)) ? 0 : 1);
+  return [...list].sort((a, b) => done(a) - done(b)
+    || (DISP.sortBy === 'priority' ? PRI_RANK[a.pri] - PRI_RANK[b.pri] || dueKey(a) - dueKey(b)
+      : DISP.sortBy === 'due' ? dueKey(a) - dueKey(b) || PRI_RANK[a.pri] - PRI_RANK[b.pri] : 0)
+    || a.order - b.order);
+}
+const effGroup = () => (DISP.groupBy === 'assignee' && F.scope === 'mine' ? 'status' : DISP.groupBy);
+function groupTasks(list, gb) {
+  const m = new Map();
+  const put = (k, t) => (m.get(k) || m.set(k, []).get(k)).push(t);
+  let order;
+  if (gb === 'status') { list.forEach((t) => put(heldSt(t), t)); order = ['in_progress', 'pending', 'completed', 'cancelled']; }
+  else if (gb === 'due') { list.forEach((t) => { const s = heldSt(t); put(isActive(s) ? dueBucket(t) : s, t); }); order = ['overdue', 'today', 'tomorrow', 'week', 'later', 'none', 'completed', 'cancelled']; }
+  else if (gb === 'category') { list.forEach((t) => put(CAT[t.cat] ? t.cat : 'other', t)); order = CAT_ORDER; }
+  else if (gb === 'assignee') { list.forEach((t) => put(t.asg || 'unassigned', t)); order = [ME, ...STAFF.filter((s) => s !== ME).sort((a, b) => a.localeCompare(b, 'ko')), 'unassigned']; }
+  else { if (list.length) m.set('all', list); order = ['all']; }
+  return order.filter((k) => m.has(k)).map((k) => ({ key: k, tasks: sortTasks(m.get(k)) }));
+}
+function groupMeta(gb, key) {
+  if (STATUS[key] && (gb === 'status' || gb === 'due')) return { label: STATUS[key], ic: stSvg(key), preset: gb === 'status' && key !== 'cancelled' ? { status: key } : null };
+  if (gb === 'due') { const [l, ic, c] = DUE_GROUP[key]; return { label: l, ic: icon(ic, c) }; }
+  if (gb === 'category') return { label: CAT[key][0], ic: catDot(key), preset: { cat: key } };
+  if (key === 'unassigned') return { label: '미배정', ic: '<span class="noav">?</span>' };
+  return { label: key === ME ? `${key} (나)` : key, ic: av(key) };
+}
+
+// ── 그리기 ──
+const asgHtml = (t, withName) => (t.asg ? av(t.asg) + (withName ? esc(t.asg) : '') : `<span class="noav">?</span>${withName ? '미배정' : ''}`);
+const chip = (c) => `<a class="cx" href="${CTX[c.k][1]}" title="${esc(c.l)}">${icon(CTX[c.k][0])}<span>${esc(c.l)}</span></a>`;
+function ctxHtml(t, limit = 2) {
+  const more = t.ctx.slice(limit);
+  return t.ctx.slice(0, limit).map(chip).join('') + (more.length ? `<span class="cx more" title="${esc(more.map((c) => c.l).join(', '))}">+${more.length}</span>` : '');
+}
+function dueHtml(t) { const d = describeDue(t); return d ? `<span class="due-${d.tone}" title="마감 ${t.due.replace(/-/g, '.')} (${WD[D(t.due).getDay()]})">${d.text}</span>` : ''; }
+const srcHtml = (t) => (t.src === 'ai' ? `<span title="AI가 만든 업무 (통화 분석·외부 AI)">${icon('sparkle', 'ai')}</span>` : t.src === 'system' ? '<span class="srcb">시스템</span>' : '');
+const cycTitle = { pending: '진행중으로', in_progress: '완료하기', completed: '완료 취소 (대기로 되돌리기)', cancelled: '취소된 업무' };
+
+function rowHtml(t) {
+  const V = DISP.visible;
+  const d = describeDue(t);
+  return `<tr data-id="${t.id}" class="${picked.has(t.id) ? 'picked' : ''} ${isActive(t.status) ? '' : 'done'}">
+    <td class="sel"><span class="ck ${picked.has(t.id) ? 'on' : ''}" role="checkbox" tabindex="0" aria-checked="${picked.has(t.id)}" aria-label="${esc(t.title)} 선택">${icon('check')}</span></td>
+    <td class="c-pri"><button class="cellb" data-pick="pri" title="우선순위: ${PRI[t.pri]}" aria-label="우선순위: ${PRI[t.pri]}">${priSvg(t.pri)}</button></td>
+    <td class="c-st"><button class="cyc" data-cycle title="${cycTitle[t.status]}" aria-label="${esc(t.title)} ${cycTitle[t.status]}">${stSvg(t.status)}</button><button class="cellb" data-pick="status" aria-label="상태: ${STATUS[t.status]}">${STATUS[t.status]}</button></td>
+    <td class="c-title"><div class="tcell"><button class="tt" data-edit aria-label="${esc(t.title)} 업무 열기">${esc(t.title)}</button>${srcHtml(t)}${t.content ? `<span title="${esc(t.content)}">${icon('list')}</span>` : ''}${t.run ? `<span class="run">${icon('refresh')}${t.run}</span>` : ''}</div></td>
+    ${V.context ? `<td class="c-ctx">${ctxHtml(t)}</td>` : ''}
+    ${V.category ? `<td class="c-cat">${catHtml(t.cat)}</td>` : ''}
+    ${V.assignee ? `<td><button class="cellb ${t.asg ? '' : 'muted'}" data-pick="asg" aria-label="담당자: ${esc(t.asg || '미배정')}">${asgHtml(t, true)}</button></td>` : ''}
+    ${V.due ? `<td><button class="cellb ${d ? '' : 'muted'}" data-pick="due" aria-label="마감일 변경">${d ? dueHtml(t) : '없음'}</button></td>` : ''}
+    <td class="c-act"><button class="ib" data-more aria-label="${esc(t.title)} 업무 작업 메뉴">${icon('more')}</button></td>
+  </tr>`;
+}
+function headHtml() {
+  const V = DISP.visible;
+  const th = (ic, label, sort, cls = '') => `<th class="${cls} ${sort && DISP.sortBy === sort ? 'sorted' : ''}" ${sort ? `data-sort="${sort}"` : ''}>${ic ? icon(ic, 'hi') : ''}${label}${sort && DISP.sortBy === sort ? icon('chevDown', 'caret') : ''}</th>`;
+  const shown = shownRows();
+  const all = shown.length > 0 && shown.every((t) => picked.has(t.id));
+  return `<thead><tr><th class="selh"><span class="ck ${all ? 'on' : picked.size ? 'some' : ''}" id="ckAll" role="checkbox" tabindex="0" aria-label="모두 선택">${icon('check')}</span></th>
+    ${th('', '순위', 'priority', 'c-pri')}${th('info', '상태')}${th('todo', '업무')}
+    ${V.context ? th('building', '고객·매물') : ''}${V.category ? th('tag', '카테고리') : ''}${V.assignee ? th('user', '담당자') : ''}${V.due ? th('cal', '마감일', 'due') : ''}<th class="c-act"></th></tr></thead>`;
+}
+const colCount = () => 5 + Object.values(DISP.visible).filter(Boolean).length;
+let lastGroups = [];
+const isShut = (key) => (shut.has(key) ? shut.get(key) : (key === 'completed' || key === 'cancelled') && lastGroups.length > 1);
+const filtered = () => TASKS.filter((t) => matches(t, F, null, heldSt(t)));
+function shownRows() { return lastGroups.flatMap((g) => (effGroup() !== 'none' && isShut(g.key) ? [] : g.tasks)); }
+
+function emptyHtml() {
+  if (!TASKS.length) return '<div class="empty"><b>등록된 업무가 없습니다</b>업무를 추가해 보세요.</div>';
+  return `<div class="empty"><b>조건에 맞는 업무가 없습니다</b>검색어나 필터를 바꿔 보세요.${activeFilters() || F.q ? '<div style="margin-top:12px"><button class="btn sm" data-reset>필터 초기화</button></div>' : ''}</div>`;
+}
+function listHtml(rows) {
+  const gb = effGroup();
+  lastGroups = groupTasks(rows, gb);
+  if (!lastGroups.length) return emptyHtml();
+  const n = colCount();
+  return `<table class="tbl" id="tbl">${headHtml()}<tbody>${lastGroups.map((g) => {
+    if (gb === 'none') return g.tasks.map(rowHtml).join('');
+    const m = groupMeta(gb, g.key);
+    const s = isShut(g.key);
+    return `<tr class="grp" data-g="${g.key}"><td colspan="${n}"><div class="gh ${s ? 'shut' : ''}" role="button" tabindex="0" aria-expanded="${!s}">${icon('chevDown', 'chev')}<span class="gi">${m.ic}</span>${esc(m.label)}<span class="n">${g.tasks.length}</span>${m.preset ? `<button class="ib" data-gadd aria-label="${esc(m.label)} 업무 추가" title="${esc(m.label)} 업무 추가">${icon('plus')}</button>` : ''}</div></td></tr>${s ? '' : g.tasks.map(rowHtml).join('')}`;
+  }).join('')}</tbody></table>`;
+}
+function cardHtml(t) {
+  return `<div class="kc ${isOverdue(t) ? 'late' : ''} ${t.status === 'completed' ? 'done' : ''}" data-id="${t.id}" draggable="true" aria-label="${esc(t.title)} 카드 — 끌어서 상태 변경">
+    <div class="kc-top"><button class="cyc" data-cycle title="${cycTitle[t.status]}">${stSvg(t.status)}</button><h4>${esc(t.title)}</h4>${t.src === 'ai' ? '<span class="srcb">AI</span>' : srcHtml(t)}<button class="ib" data-more aria-label="${esc(t.title)} 업무 작업 메뉴">${icon('more')}</button></div>
+    ${t.ctx.length ? `<div class="kc-ctx">${t.ctx.map((c) => `<a href="${CTX[c.k][1]}">${icon(CTX[c.k][0])}<span>${esc(c.l)}</span></a>`).join('')}</div>` : ''}
+    <div class="kc-meta"><span class="pl p-${t.pri}">${priSvg(t.pri)}${PRI[t.pri]}</span>${catHtml(t.cat)}<span class="rt">${dueHtml(t)}${asgHtml(t)}</span></div>
+  </div>`;
+}
+function boardHtml(rows) {
+  lastGroups = [];
+  if (F.status === 'cancelled') return '<div class="empty"><b>취소된 업무는 보드에 표시되지 않습니다</b>목록 보기에서 확인하세요.<div style="margin-top:12px"><button class="btn sm" data-tolist>목록으로 보기</button></div></div>';
+  return `<div class="board">${[['pending', '대기'], ['in_progress', '진행 중'], ['completed', '완료']].map(([s, l]) => {
+    const items = rows.filter((t) => heldSt(t) === s).sort((a, b) => a.order - b.order);
+    return `<section aria-label="${l} ${items.length}건"><div class="bcol-h">${stSvg(s)}${l}<span class="n">${items.length}</span><button class="ib" data-badd="${s}" aria-label="${l} 상태로 업무 추가" title="${l} 상태로 업무 추가">${icon('plus')}</button></div>
+      <div class="bcol-b" data-col="${s}">${items.map(cardHtml).join('')}<button class="badd" data-badd="${s}">${icon('plus')}새 업무</button></div></section>`;
+  }).join('')}</div>`;
+}
+function suggHtml() {
+  if (!SUGG.length) return '';
+  return `<div class="sugg-box"><div class="ghead">${icon('sparkle', 'ai')}통화에서 제안<span class="n">${SUGG.length}</span><small>사람이 받아들여야 업무가 됩니다</small></div>${SUGG.map((s) =>
+    `<div class="trow sugg" data-sid="${s.id}"><span>${stSvg('suggested')}</span><div class="title"><span>${esc(s.title)}</span><span class="ref">${icon('phone')}${esc(s.from)}</span></div>${catHtml(s.cat)}<span class="due">${s.due ? fmtDay(s.due) : ''}</span><div class="sugg-act"><button class="btn quiet sm" data-dismiss>무시</button><button class="btn sm ok" data-accept>업무로 추가</button></div></div>`).join('')}</div>`;
+}
+const activeFilters = () => [F.status, F.due, F.category, F.priorities.length, F.scope !== 'mine' && F.assignee].filter(Boolean).length;
+function fbarHtml(n) {
+  const fs = (id, k, v, dis) => `<button class="fsel ${v ? 'on' : ''}" data-fs="${id}" ${dis ? 'disabled title="내 담당에서는 담당자가 한 명뿐입니다"' : ''}><span class="k">${k}</span><span class="v">${esc(v || '전체')}</span>${v ? `<span class="clr" data-fclr="${id}" title="지우기">${icon('x')}</span>` : icon('chevDown')}</button>`;
+  const due = (DUE_OPTS.find((o) => o[0] === F.due) || [])[1];
+  const pri = F.priorities.length ? Object.keys(PRI).filter((p) => F.priorities.includes(p)).map((p) => PRI[p]).join(', ') : '';
+  const mine = F.scope === 'mine';
+  return fs('status', '상태', STATUS[F.status]) + fs('due', '마감', due) + fs('category', '카테고리', F.category && CAT[F.category][0]) + fs('priority', '우선순위', pri)
+    + fs('assignee', '담당자', mine ? '' : F.assignee === 'unassigned' ? '미배정' : F.assignee, mine)
+    + `<span class="res">${n}건</span>${activeFilters() || F.q ? `<button class="btn quiet sm" data-reset>${icon('refresh')}초기화</button>` : ''}`;
+}
+
+function render() {
+  // 걸러져 사라진 업무는 선택에서 뺀다 (숨은 업무 일괄 처리 방지)
+  const rows = filtered();
+  const ids = new Set(rows.map((t) => t.id));
+  [...picked].forEach((id) => { if (!ids.has(id)) picked.delete(id); });
+  const board = DISP.layout === 'board';
+  if (board) picked.clear();
+  document.getElementById('sugg').innerHTML = suggHtml();
+  document.getElementById('body').innerHTML = board ? boardHtml(rows) : listHtml(rows);
+  document.getElementById('fbar').innerHTML = fbarHtml(rows.length);
+
+  // 개수는 매번 다시 센다
+  document.getElementById('total').textContent = TASKS.filter((t) => isActive(t.status)).length;
+  document.getElementById('lateN').textContent = cnt('due', isOverdue);
+  document.getElementById('todayN').textContent = cnt('due', (t) => isActive(t.status) && matchDue(t, 'today'));
+  document.getElementById('lateLnk').classList.toggle('on', F.due === 'overdue');
+  document.getElementById('todayLnk').classList.toggle('on', F.due === 'today');
+  document.querySelectorAll('.vtab[data-scope]').forEach((el) => {
+    el.classList.toggle('on', el.dataset.scope === F.scope);
+    el.querySelector('.n').textContent = TASKS.filter((t) => isActive(t.status) && matches(t, { ...F, status: '', scope: el.dataset.scope })).length;
+  });
+  const badge = document.querySelector('.nav-item.on .badge');
+  if (badge) badge.textContent = TASKS.filter((t) => isActive(t.status) && t.due && dayDiff(t.due) === 0).length;
+  document.querySelectorAll('#layoutSeg button').forEach((b) => b.classList.toggle('on', b.dataset.layout === DISP.layout));
+  document.getElementById('groupBtn').innerHTML = `${icon('table')}묶기: ${board ? '상태' : GROUP_OPTS.find((o) => o[0] === effGroup())[1]}`;
+  document.getElementById('sortBtn').innerHTML = `${icon('sort')}정렬: ${board ? '직접 정렬' : SORT_OPTS.find((o) => o[0] === DISP.sortBy)[1]}`;
+  document.getElementById('dispBtn').innerHTML = `${icon('sliders')}표시`;
+  document.getElementById('selbar').classList.toggle('show', picked.size > 0);
+  document.getElementById('selCnt').textContent = `${picked.size}개 선택됨`;
+}
+
+// ── 바꾸기 + 실행 취소 (그 뒤에 다시 바뀌었으면 되돌리지 않는다) ──
+const bump = (t, k) => ((t._rev = t._rev || {})[k] = (t._rev[k] || 0) + 1);
+const isFresh = (t, k, v) => TASKS.includes(t) && t._rev && t._rev[k] === v;
+function fresh(t, k, v) { if (isFresh(t, k, v)) return true; UI.toast('그 뒤에 다시 바뀌어서 되돌리지 않았습니다'); return false; }
+function applyStatus(t, s, hold) {
+  const prev = t.status;
+  t.status = s;
+  if (hold && !held.has(t.id)) held.set(t.id, prev); else if (!hold) held.delete(t.id);
+  if (s !== 'in_progress') t.run = '';
+  return prev;
+}
+function setStatus(t, s, { fromDrag } = {}) {
+  if (t.status === s) return;
+  const hadHeld = held.has(t.id), heldPrev = held.get(t.id), run = t.run;
+  const prev = applyStatus(t, s, !fromDrag);
+  const v = bump(t, 'status');
+  render();
+  UI.toast(s === 'completed' ? `'${esc(t.title)}' 업무를 완료했습니다` : `'${STATUS[s]}' 상태로 변경되었습니다`, () => {
+    if (!fresh(t, 'status', v)) return;
+    t.status = prev; t.run = run;
+    if (hadHeld) held.set(t.id, heldPrev); else held.delete(t.id);
+    bump(t, 'status'); render(); UI.toast('변경을 되돌렸습니다');
+  });
+}
+const nextCheck = (s) => (s === 'pending' ? 'in_progress' : s === 'in_progress' ? 'completed' : 'pending');
+function setField(t, k, val, msg) {
+  if (t[k] === val) return;
+  const prev = t[k];
+  t[k] = val;
+  const v = bump(t, k);
+  render();
+  UI.toast(msg, () => { if (!fresh(t, k, v)) return; t[k] = prev; bump(t, k); render(); });
+}
+function removeTasks(list, msg) {
+  const at = list.map((t) => [t, TASKS.indexOf(t)]).sort((a, b) => a[1] - b[1]);
+  list.forEach((t) => { TASKS.splice(TASKS.indexOf(t), 1); picked.delete(t.id); });
+  render();
+  UI.toast(msg, () => { at.forEach(([t, i]) => { if (!TASKS.includes(t)) TASKS.splice(Math.min(i, TASKS.length), 0, t); }); render(); });
+}
+
+// ── 그 자리에서 고르는 메뉴 ──
+const fmtDue = (v) => (v ? `마감일을 ${fmtDay(v)}로 바꿨습니다` : '마감일을 지웠습니다');
+function pickDate(anchor, t) {
+  const r = anchor.getBoundingClientRect();
+  const i = document.createElement('input');
+  i.type = 'date'; i.value = t.due || '';
+  i.style.cssText = `position:fixed;left:${r.left}px;top:${r.bottom}px;width:1px;height:1px;opacity:0;pointer-events:none`;
+  document.body.append(i);
+  i.addEventListener('change', () => { setField(t, 'due', i.value || null, fmtDue(i.value)); i.remove(); });
+  i.addEventListener('blur', () => setTimeout(() => i.remove(), 300));
+  try { i.showPicker(); } catch (e) { i.focus(); }
+}
+function openPicker(btn, t) {
+  const kind = btn.dataset.pick;
+  if (kind === 'status') return UI.menu(btn, [{ head: '상태' }, ...Object.keys(STATUS).map((s) => ({ label: STATUS[s], html: stSvg(s), on: t.status === s, run: () => setStatus(t, s) }))]);
+  if (kind === 'pri') return UI.menu(btn, [{ head: '우선순위' }, ...Object.keys(PRI).map((p) => ({ label: PRI[p], html: priSvg(p), on: t.pri === p, run: () => setField(t, 'pri', p, `우선순위를 '${PRI[p]}'(으)로 바꿨습니다`) }))]);
+  if (kind === 'asg') return UI.menu(btn, [{ head: '담당자' }, { label: '미배정', html: '<span class="noav">?</span>', on: !t.asg, run: () => setField(t, 'asg', null, '담당자를 비웠습니다') }, '-',
+    ...STAFF.map((s) => ({ label: s === ME ? `${s} (나)` : s, html: av(s), on: t.asg === s, run: () => setField(t, 'asg', s, `담당자를 ${s}님으로 바꿨습니다`) }))], { right: true });
+  const nextMon = addDays(((8 - TODAY.getDay()) % 7) || 7);
+  const quick = [['오늘', addDays(0)], ['내일', addDays(1)], ['다음 주', nextMon]].map(([l, d]) => ({ label: l, icon: 'cal', hint: fmtDay(iso(d)), on: t.due === iso(d), run: () => setField(t, 'due', iso(d), fmtDue(iso(d))) }));
+  return UI.menu(btn, [{ head: '마감일' }, ...quick, { label: '날짜 고르기…', icon: 'cal', run: () => pickDate(btn, t) }, '-', { label: '마감일 없음', icon: 'x', on: !t.due, run: () => setField(t, 'due', null, fmtDue(null)) }], { right: true });
+}
+function openMore(btn, t) {
+  const to = (s, l) => (t.status === s ? [] : [{ label: l, html: stSvg(s), run: () => setStatus(t, s) }]);
+  UI.menu(btn, [{ label: '열기·수정', icon: 'note', run: () => openForm(t) }, '-', ...to('pending', '대기로'), ...to('in_progress', '진행중으로'), ...to('completed', '완료로'), '-',
+    { label: '삭제', icon: 'x', danger: true, run: () => removeTasks([t], '업무가 삭제되었습니다') }], { right: true });
+}
+function setF(k, v) { F[k] = v; touch(); render(); }
+function openFilter(id) {
+  const btn = document.querySelector(`[data-fs="${id}"]`);
+  if (!btn || btn.disabled) return;
+  const one = (k, all, allN, opts) => UI.menu(btn, [{ label: all, hint: String(allN), on: !F[k], run: () => setF(k, '') }, '-', ...opts.map(([v, l, n, html]) => ({ label: l, html, hint: String(n), on: F[k] === v, run: () => setF(k, v) }))]);
+  if (id === 'status') return one('status', '취소 빼고 전체', cnt('status', (t) => t.status !== 'cancelled'), ['in_progress', 'pending', 'completed', 'cancelled'].map((s) => [s, STATUS[s], cnt('status', (t) => t.status === s), stSvg(s)]));
+  if (id === 'due') return one('due', '전체', cnt('due', () => true), DUE_OPTS.map(([v, l]) => [v, l, cnt('due', (t) => matchDue(t, v))]));
+  if (id === 'category') return one('category', '모든 카테고리', cnt('category', () => true), CAT_ORDER.map((c) => [c, CAT[c][0], cnt('category', (t) => t.cat === c), catDot(c)]).filter((o) => o[2] > 0 || F.category === o[0]));
+  if (id === 'assignee') return UI.menu(btn, [{ label: '모든 담당자', on: !F.assignee, run: () => setF('assignee', '') }, { label: '미배정', html: '<span class="noav">?</span>', on: F.assignee === 'unassigned', run: () => setF('assignee', 'unassigned') }, '-',
+    ...STAFF.map((s) => ({ label: s, html: av(s), on: F.assignee === s, run: () => setF('assignee', s) }))]);
+  // 우선순위는 여러 개 — 고를 때마다 메뉴를 다시 열어 둔다
+  UI.menu(btn, [{ head: '우선순위 (여러 개)' }, ...Object.keys(PRI).map((p) => ({ label: PRI[p], html: priSvg(p), hint: String(cnt('priority', (t) => t.pri === p)), on: F.priorities.includes(p),
+    run: () => { F.priorities = F.priorities.includes(p) ? F.priorities.filter((x) => x !== p) : [...F.priorities, p]; touch(); render(); openFilter('priority'); } }))]);
+}
+function resetFilters() { Object.assign(F, { status: '', due: '', category: '', priorities: [], assignee: '', q: '' }); document.getElementById('q').value = ''; touch(); render(); }
+function openDisp(btn) {
+  const board = DISP.layout === 'board';
+  UI.menu(btn, [{ label: '완료 업무 보기', icon: 'check', on: DISP.showCompleted, run: () => { DISP.showCompleted = !DISP.showCompleted; touch(); render(); openDisp(document.getElementById('dispBtn')); } },
+    ...(board ? [] : ['-', { head: '보이는 정보' }, ...VIS_OPTS.map(([k, l]) => ({ label: l, on: DISP.visible[k], run: () => { DISP.visible[k] = !DISP.visible[k]; render(); openDisp(document.getElementById('dispBtn')); } }))])], { right: true });
+}
+
+// ── 업무 추가·수정 창 ──
+function openForm(t, preset = {}) {
+  const v = t || { title: '', content: '', cat: preset.cat || 'other', pri: 'medium', status: preset.status || 'pending', due: null, asg: ME, ctx: [] };
+  let ctx = v.ctx.slice();
+  const opt = (val, label, cur) => `<option value="${val}" ${val === cur ? 'selected' : ''}>${label}</option>`;
+  const back = document.createElement('div');
+  back.className = 'mback';
+  back.innerHTML = `<form class="mdl" role="dialog" aria-label="${t ? '업무 수정' : '업무 추가'}"><h3>${t ? '업무 수정' : '업무 추가'}</h3><div class="mb">
+    <div class="full"><label for="fT">제목 *</label><input class="inp" id="fT" placeholder="업무 제목을 입력하세요" value="${esc(v.title)}"></div>
+    <div class="full"><label for="fC">설명</label><textarea class="inp" id="fC" placeholder="상세 설명을 입력하세요">${esc(v.content)}</textarea></div>
+    <div class="full"><label>연결</label><div class="links" id="fL"></div></div>
+    <div><label for="fCat">카테고리</label><select class="inp" id="fCat">${CAT_ORDER.map((c) => opt(c, CAT[c][0], v.cat)).join('')}</select></div>
+    <div><label for="fP">우선순위</label><select class="inp" id="fP">${Object.keys(PRI).map((p) => opt(p, PRI[p], v.pri)).join('')}</select></div>
+    <div><label for="fA">담당자</label><select class="inp" id="fA">${opt('', '미배정', v.asg || '')}${STAFF.map((s) => opt(s, s, v.asg)).join('')}</select></div>
+    <div><label for="fD">마감일</label><input class="inp" id="fD" type="date" value="${v.due || ''}"></div>
+  </div><div class="mf"><button type="button" class="btn" data-x>취소</button><button class="btn primary" id="fOk">${t ? '저장' : '등록'}</button></div></form>`;
+  document.body.append(back);
+  const $ = (id) => back.querySelector('#' + id);
+  const drawLinks = () => {
+    const hasContact = ctx.some((c) => c.k === 'contact');
+    $('fL').innerHTML = ctx.map((c, i) => `<span class="cx">${icon(CTX[c.k][0])}<span>${esc(c.l)}</span><button type="button" data-unlink="${i}" aria-label="연결 해제">${icon('x')}</button></span>`).join('')
+      + (hasContact ? '' : `<button type="button" class="btn sm" data-addc>${icon('user')}연락처 연결</button>`) + (ctx.length ? '' : '<span class="t3" style="font-size:12px">연결된 고객·매물이 없습니다</span>');
+  };
+  drawLinks();
+  const sync = () => { $('fOk').disabled = !$('fT').value.trim(); };
+  sync();
+  $('fT').addEventListener('input', sync);
+  const close = () => { back.remove(); document.removeEventListener('keydown', onKey, true); };
+  const onKey = (e) => { if (e.isComposing || e.keyCode === 229) return; if (e.key === 'Escape') { e.stopPropagation(); close(); } };
+  document.addEventListener('keydown', onKey, true);
+  back.addEventListener('mousedown', (e) => { if (e.target === back) close(); });
+  back.addEventListener('click', (e) => {
+    if (e.target.closest('[data-x]')) return close();
+    const u = e.target.closest('[data-unlink]');
+    if (u) { ctx.splice(+u.dataset.unlink, 1); drawLinks(); return; }
+    const a = e.target.closest('[data-addc]');
+    if (a) UI.menu(a, [{ head: '연락처' }, ...['김지현', '박준호', '이정숙', '한승우', '오세훈', '윤태경'].map((n) => ({ label: n, icon: 'user', run: () => { ctx.unshift({ k: 'contact', l: n }); drawLinks(); } }))]);
+  });
+  back.querySelector('form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const title = $('fT').value.trim();
+    if (!title) return;
+    const vals = { title, content: $('fC').value.trim(), cat: $('fCat').value, pri: $('fP').value, asg: $('fA').value || null, due: $('fD').value || null, ctx };
+    if (t) { Object.keys(vals).forEach((k) => { if (k !== 'ctx' && t[k] !== vals[k]) bump(t, k); }); Object.assign(t, vals); UI.toast('업무가 수정되었습니다'); }
+    else { const nt = mk([title, vals.content, vals.cat, vals.pri, v.status, vals.due, vals.asg, ME, '', []]); nt.ctx = ctx; nt.order = -nt.id; TASKS.unshift(nt); UI.toast('업무가 등록되었습니다'); }
+    close(); render();
+  });
+  $('fT').focus();
+}
+
+// ── 이벤트 ──
+document.querySelectorAll('[data-icon]').forEach((el) => el.insertAdjacentHTML('afterbegin', icon(el.dataset.icon)));
+document.getElementById('newBtn').innerHTML = `${icon('plus')}업무 추가`;
+const qEl = document.getElementById('q');
+qEl.addEventListener('input', (e) => { F.q = e.target.value; touch(); render(); });
+qEl.addEventListener('keydown', (e) => { if (e.isComposing || e.keyCode === 229) return; if (e.key === 'Escape') { if (F.q) { qEl.value = ''; F.q = ''; touch(); render(); } else qEl.blur(); } });
+
+const taskOf = (el) => { const r = el.closest('[data-id]'); return r && TASKS.find((x) => x.id === +r.dataset.id); };
+function toggleGroup(key) { shut.set(key, !isShut(key)); render(); }
+document.addEventListener('click', (e) => {
+  const t = e.target;
+  if (t.closest('.mback')) return;
+  const sc = t.closest('.vtab[data-scope]');
+  if (sc) return setF('scope', sc.dataset.scope);
+  if (t.closest('#newBtn')) return openForm(null);
+  if (t.closest('#lateLnk')) return setF('due', F.due === 'overdue' ? '' : 'overdue');
+  if (t.closest('#todayLnk')) return setF('due', F.due === 'today' ? '' : 'today');
+  const lay = t.closest('[data-layout]');
+  if (lay) { DISP.layout = lay.dataset.layout; touch(); return render(); }
+  if (t.closest('[data-tolist]')) { DISP.layout = 'list'; touch(); return render(); }
+  if (t.closest('[data-reset]')) return resetFilters();
+  const clr = t.closest('[data-fclr]');
+  if (clr) { const id = clr.dataset.fclr; return setF(id === 'priority' ? 'priorities' : id, id === 'priority' ? [] : ''); }
+  const fs = t.closest('[data-fs]');
+  if (fs) return openFilter(fs.dataset.fs);
+  const gbtn = t.closest('#groupBtn');
+  if (gbtn) {
+    if (DISP.layout === 'board') return UI.toast('보드는 상태별 칸으로 고정됩니다');
+    return UI.menu(gbtn, [{ head: '묶기' }, ...GROUP_OPTS.map(([v, l]) => (v === 'assignee' && F.scope === 'mine'
+      ? { label: l, hint: '내 담당에서는 한 명', run: () => UI.toast('내 담당에서는 담당자가 한 명뿐입니다') }
+      : { label: l, on: effGroup() === v, run: () => { DISP.groupBy = v; shut.clear(); touch(); render(); } }))]);
+  }
+  const sbtn = t.closest('#sortBtn');
+  if (sbtn) {
+    if (DISP.layout === 'board') return UI.toast('보드는 직접 정렬로 고정됩니다');
+    return UI.menu(sbtn, [{ head: '정렬' }, ...SORT_OPTS.map(([v, l]) => ({ label: l, on: DISP.sortBy === v, run: () => { DISP.sortBy = v; touch(); render(); } }))]);
+  }
+  const dbtn = t.closest('#dispBtn');
+  if (dbtn) return openDisp(dbtn);
+  const th = t.closest('th[data-sort]');
+  if (th) {
+    const k = th.dataset.sort;
+    return UI.menu(th, [{ label: k === 'priority' ? '우선순위 높은 순' : '마감일 빠른 순', icon: 'sort', on: DISP.sortBy === k, run: () => { DISP.sortBy = k; touch(); render(); } }, { label: '직접 정렬로', icon: 'list', on: DISP.sortBy === 'manual', run: () => { DISP.sortBy = 'manual'; touch(); render(); } }]);
+  }
+  // 통화 제안
+  const sr = t.closest('[data-sid]');
+  if (sr) {
+    const s = SUGG.find((x) => x.id === sr.dataset.sid);
+    const i = SUGG.indexOf(s);
+    if (t.closest('[data-accept]')) {
+      SUGG.splice(i, 1);
+      const nt = mk([s.title, `${s.from}에서 제안`, s.cat, 'medium', 'pending', s.due, ME, ME, 'ai', []]);
+      nt.ctx = s.ctx.slice(); nt.order = -nt.id; TASKS.unshift(nt); render();
+      return UI.toast(`'${esc(s.title)}' 업무로 추가했습니다 (내 담당)`, () => { if (!TASKS.includes(nt) || nt._rev) return UI.toast('그 뒤에 다시 바뀌어서 되돌리지 않았습니다'); TASKS.splice(TASKS.indexOf(nt), 1); SUGG.splice(Math.min(i, SUGG.length), 0, s); render(); });
+    }
+    if (t.closest('[data-dismiss]')) { SUGG.splice(i, 1); render(); return UI.toast('제안을 무시했습니다', () => { if (!SUGG.includes(s)) SUGG.splice(Math.min(i, SUGG.length), 0, s); render(); }); }
+    return;
+  }
+  const add = t.closest('[data-badd]');
+  if (add) return openForm(null, { status: add.dataset.badd });
+  const gadd = t.closest('[data-gadd]');
+  if (gadd) { const key = gadd.closest('tr').dataset.g; return openForm(null, groupMeta(effGroup(), key).preset || {}); }
+  const gh = t.closest('tr.grp');
+  if (gh) return toggleGroup(gh.dataset.g);
+  if (t.closest('#ckAll')) { const rows = shownRows(); const all = rows.length && rows.every((x) => picked.has(x.id)); rows.forEach((x) => (all ? picked.delete(x.id) : picked.add(x.id))); return render(); }
+  if (t.closest('#selClear')) { picked.clear(); return render(); }
+  const bulk = t.closest('[data-bulk]');
+  if (bulk) {
+    const list = TASKS.filter((x) => picked.has(x.id));
+    if (bulk.dataset.bulk === 'delete') return removeTasks(list, `${list.length}개 업무가 삭제되었습니다`);
+    const s = bulk.dataset.bulk;
+    const changed = list.filter((x) => x.status !== s).map((x) => { const prev = applyStatus(x, s, true); return [x, prev, bump(x, 'status')]; });
+    picked.clear(); render();
+    return UI.toast(`${list.length}개 업무가 '${STATUS[s]}' 상태로 변경되었습니다`, () => { changed.forEach(([x, prev, v]) => { if (isFresh(x, 'status', v)) { x.status = prev; held.delete(x.id); bump(x, 'status'); } }); render(); });
+  }
+  const task = taskOf(t);
+  if (!task) return;
+  if (t.closest('a')) return;
+  if (t.closest('.sel')) { picked.has(task.id) ? picked.delete(task.id) : picked.add(task.id); return render(); }
+  if (t.closest('[data-cycle]')) { if (task.status === 'cancelled') return UI.toast('취소된 업무입니다. 상태 메뉴에서 되돌릴 수 있습니다'); return setStatus(task, nextCheck(task.status)); }
+  const pk = t.closest('[data-pick]');
+  if (pk) return openPicker(pk, task);
+  const more = t.closest('[data-more]');
+  if (more) return openMore(more, task);
+  if (t.closest('[data-edit]') || t.closest('.kc')) return openForm(task);
+});
+document.addEventListener('dblclick', (e) => { if (e.target.closest('#tbl tr[data-id]') && !e.target.closest('button, a, .ck')) openForm(taskOf(e.target)); });
+
+// 보드: 카드를 끌어 상태 변경
+let dragId = null;
+document.addEventListener('dragstart', (e) => { const c = e.target.closest && e.target.closest('.kc'); if (!c) return; dragId = +c.dataset.id; c.classList.add('drag'); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', String(dragId)); });
+document.addEventListener('dragend', () => { dragId = null; document.querySelectorAll('.kc.drag, .bcol-b.over').forEach((el) => el.classList.remove('drag', 'over')); });
+document.addEventListener('dragover', (e) => { const col = e.target.closest && e.target.closest('.bcol-b'); if (!col || dragId == null) return; e.preventDefault(); document.querySelectorAll('.bcol-b.over').forEach((el) => el !== col && el.classList.remove('over')); col.classList.add('over'); });
+document.addEventListener('drop', (e) => { const col = e.target.closest && e.target.closest('.bcol-b'); if (!col || dragId == null) return; e.preventDefault(); const t = TASKS.find((x) => x.id === dragId); dragId = null; if (!t) return render(); if (t.status === col.dataset.col) { held.delete(t.id); return render(); } /* 제자리에 남겨 둔 카드를 실제 상태 칸으로 옮긴 경우 */ setStatus(t, col.dataset.col, { fromDrag: true }); });
+
+// 단축키: N 새 업무 · / 검색 · Esc 선택 해제 · Enter/Space로 체크칸·묶음 머리
+document.addEventListener('keydown', (e) => {
+  if (e.isComposing || e.keyCode === 229) return;
+  const a = document.activeElement;
+  if ((e.key === 'Enter' || e.key === ' ') && a && a.matches('.ck, .gh')) { e.preventDefault(); a.click(); return; }
+  if (e.metaKey || e.ctrlKey || e.altKey || (a && a.matches('input, textarea, select, [contenteditable]')) || document.querySelector('.mback, .cmdk-back')) return;
+  if (e.key === 'n' || e.key === 'N') { e.preventDefault(); openForm(null); }
+  else if (e.key === '/') { e.preventDefault(); qEl.focus(); }
+  else if (e.key === 'Escape' && picked.size) { picked.clear(); render(); }
+});
+
+render();
+
+UI.notes(
+  [
+    '<b>필터가 늘 보입니다.</b> 상태·마감·카테고리·우선순위·담당자를 표 위에 선택 상자로 늘어놓았고, 고른 값과 건수가 그 자리에 보입니다. 원본은 필터 버튼을 눌러야 둘째 줄이 나왔습니다.',
+    '<b>목록에 열 머리</b>를 붙였습니다. 순위·상태·업무·고객·매물·카테고리·담당자·마감일이 열로 정렬되고, 순위·마감일 머리를 누르면 정렬 메뉴가 열립니다. 원본의 정보는 그대로입니다.',
+    '<b>그 자리에서 바꿉니다.</b> 우선순위·상태·담당자·마감일 칸을 누르면 메뉴가 열리고, 원을 누르면 대기 → 진행중 → 완료로 넘어갑니다. 바꾼 줄은 필터를 바꾸기 전까지 제자리에 남고, 알림에서 되돌릴 수 있습니다.',
+    '<b>보드</b>는 대기·진행 중·완료 세 칸입니다. 카드를 끌어 상태를 바꾸고, 칸마다 새 업무를 추가합니다. 카드는 이 보드 칸 안에서만 씁니다.',
+    '<b>묶기·정렬·표시</b>를 버튼 셋으로 나눠 이름을 붙였습니다(원본은 아이콘 하나 안에 모여 있었습니다). 완료 업무 보기와 보이는 정보는 "표시"에 있습니다.',
+    '<b>통화에서 제안된 업무</b>는 점선 원으로 맨 위에 모아, 사람이 "업무로 추가"를 눌러야 내 담당 업무가 됩니다.',
+    '<b>업무 추가·수정 창</b>이 실제로 열립니다(N 키, 제목 누르기, 묶음 머리의 +). 여러 줄을 골라 진행중·완료·삭제를 한 번에 처리합니다.',
+  ],
+  '원본의 탭(내 담당·내가 요청·팀 전체), 필터, 묶기, 보드, 일괄 작업을 모두 살리고 모양만 바꿨습니다.',
+);
+</script>
+</body>
+</html>

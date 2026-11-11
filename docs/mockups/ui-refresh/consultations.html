@@ -1,0 +1,844 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>상담분석 · UI 개선 데모</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="ui.css">
+<style>
+  .fbar { gap: 6px; padding: 10px var(--gutter) 10px; flex-wrap: wrap; }
+  .fsel, .fin {
+    height: 30px; border: 0; border-radius: 8px; background: var(--paper);
+    box-shadow: inset 0 0 0 1px var(--line-2), 0 1px 2px rgba(16, 24, 40, 0.04);
+    font: inherit; font-size: 13px; color: var(--text); letter-spacing: inherit;
+    transition: box-shadow 0.12s, background-color 0.12s;
+  }
+  .fsel { display: inline-flex; align-items: center; gap: 6px; padding: 0 8px 0 10px; cursor: pointer; white-space: nowrap; }
+  .fsel:hover, .fin:hover { box-shadow: inset 0 0 0 1px var(--line-3), 0 1px 2px rgba(16, 24, 40, 0.04); }
+  .fsel .k { color: var(--text-2); }
+  .fsel .v { font-weight: 500; }
+  .fsel > .i { width: 12px; height: 12px; color: var(--text-3); }
+  .fsel.on, .fin.on { background: var(--accent-soft); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent); }
+  .fsel.on .k { color: var(--accent-ink); opacity: 0.75; }
+  .fsel.on .v, .fin.on { color: var(--accent-ink); }
+  .fsel .clr { width: 16px; height: 16px; display: grid; place-items: center; border-radius: 4px; color: var(--accent-ink); }
+  .fsel .clr:hover { background: color-mix(in srgb, var(--accent) 18%, transparent); }
+  .fsel .clr .i { width: 11px; height: 11px; }
+  .fin { width: 58px; padding: 0 10px; outline: 0; font-variant-numeric: tabular-nums; }
+  .fin::placeholder { color: var(--text-2); }
+  .fin:focus { box-shadow: inset 0 0 0 1px var(--accent), 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+  .fin:disabled { opacity: 0.5; }
+  .fbar .seg button .n { margin-left: 2px; color: var(--text-3); font-variant-numeric: tabular-nums; font-size: 12px; }
+  .fbar .right { margin-left: auto; }
+  .vtab .n.alert { color: var(--danger); font-weight: 600; }
+
+  /* 연결 대기 녹음 안내 줄 */
+  .band { display: flex; align-items: center; gap: 12px; margin: 0 var(--gutter) 8px; padding: 0 6px 0 12px; height: 36px; border-radius: 8px; background: color-mix(in srgb, var(--dot-warn) 12%, var(--paper)); font-size: 13px; cursor: pointer; white-space: nowrap; overflow: hidden; }
+  .band b { font-weight: 600; }
+  .band .it { color: var(--text-2); overflow: hidden; text-overflow: ellipsis; }
+  .band .sp { flex: 1; }
+  .band .i { width: 14px; height: 14px; color: var(--warn); }
+
+  #split { position: relative; }
+  #tbl { font-size: 13px; }
+  #tbl th, #tbl td { padding: 0 9px; }
+  #scroll { display: flex; flex-direction: column; }
+  #tbl { flex: none; }
+  #foot { margin-top: auto; flex: none; }
+  .fbar:empty { display: none; }
+  #tbl th:last-child .rz { display: none; }
+  #tbl th:first-child, #tbl td:first-child { padding-left: var(--gutter); }
+  #tbl td { height: 40px; }
+  #tbl tbody tr { cursor: pointer; }
+  #tbl tr.focus td { background: var(--accent-soft); }
+  #tbl td.c-text { width: 100%; max-width: 0; min-width: 180px; overflow: hidden; text-overflow: ellipsis; }
+  #tbl td.c-text .ai { color: var(--accent-ink); display: inline-flex; align-items: center; gap: 3px; margin-right: 7px; font-size: 12px; font-weight: 500; vertical-align: -1px; }
+  #tbl td.c-text .ai .i { width: 12px; height: 12px; }
+  #tbl td.c-link { color: var(--text-2); font-size: 12px; }
+  #tbl td .nm { font-weight: 600; }
+  #tbl tr.grp > td { height: 34px; padding: 0 var(--gutter) !important; background: color-mix(in srgb, var(--soft) 60%, var(--paper)); font-weight: 600; cursor: pointer; border-bottom: 1px solid var(--line-2); }
+  #tbl tr.grp .gh { display: inline-flex; align-items: center; gap: 8px; }
+  #tbl tr.grp .gh .i { width: 14px; height: 14px; color: var(--text-3); transition: transform 0.15s; }
+  #tbl tr.grp.shut .gh .i { transform: rotate(-90deg); }
+  #tbl tr.grp .n { font-weight: 500; color: var(--text-3); }
+  #tbl td.acts { text-align: right; white-space: nowrap; }
+  .busy::before { animation: blink 1s ease-in-out infinite; }
+  @keyframes blink { 50% { opacity: 0.25; } }
+  @media (prefers-reduced-motion: reduce) { .busy::before { animation: none; } }
+  .pager { display: inline-flex; align-items: center; gap: 4px; }
+
+  /* 옆 상세: 원본 시트처럼 표 위에 겹쳐 연다 */
+  .peek { position: absolute; right: 0; top: 0; bottom: 0; z-index: 8; width: 470px; box-shadow: -16px 0 32px -18px rgba(16, 24, 40, 0.22); }
+  .peek.wide { width: 560px; }
+  .peek-body { padding: 4px 26px 40px; }
+  .peek h2 { font-size: 22px; margin-top: 6px; }
+  .ptabs { display: flex; gap: 2px; margin: 12px 0 0; border-bottom: 1px solid var(--line-2); }
+  .ptab { height: 34px; padding: 0 10px; border: 0; background: transparent; font: inherit; font-size: 13px; font-weight: 500; color: var(--text-2); cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+  .ptab:hover { color: var(--text); }
+  .ptab.on { color: var(--text); border-bottom-color: var(--tabline); font-weight: 600; }
+  .peek .sec { margin-top: 20px; }
+  .kv { display: grid; grid-template-columns: 76px minmax(0, 1fr); gap: 5px 10px; font-size: 13px; line-height: 1.6; }
+  .kv dt { color: var(--text-2); font-size: 12px; padding-top: 1px; }
+  .kv dd { margin: 0; }
+  .kv ul { margin: 0; padding-left: 16px; }
+  .chk { color: var(--warn); }
+  .chk small { display: block; color: var(--text-3); font-size: 11px; }
+  .tchip { display: inline-flex; align-items: center; height: 19px; padding: 0 5px; border: 0; border-radius: 4px; background: var(--soft); color: var(--text-2); font: inherit; font-size: 11px; font-variant-numeric: tabular-nums; cursor: pointer; flex: none; }
+  .tchip:hover { background: var(--accent-soft); color: var(--accent-ink); }
+  .dl { font-size: 13px; }
+  .dr { display: flex; align-items: center; gap: 10px; min-height: 34px; padding: 3px 4px 3px 8px; margin: 0 -8px; border-radius: 6px; }
+  .dr:hover, .dr:focus-within { background: var(--row-hover); }
+  .dr .g { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dr .m { color: var(--text-2); font-size: 12px; white-space: nowrap; }
+  .dr .w { width: 76px; flex: none; color: var(--text-2); font-size: 12px; }
+  .dr s { color: var(--text-3); }
+  a.dr { cursor: pointer; }
+  /* AI 제안: 한 줄씩, 그 자리에서 반영·무시 */
+  .sg { display: flex; align-items: flex-start; gap: 10px; padding: 8px 4px 8px 8px; margin: 0 -8px; border-radius: 8px; border-bottom: 1px solid var(--line); }
+  .sg:last-child { border-bottom: 0; }
+  .sg:hover, .sg:focus-within { background: var(--row-hover); }
+  .sg .tag { margin-top: 1px; flex: none; }
+  .sg .bd { flex: 1; min-width: 0; font-size: 13px; line-height: 1.5; }
+  .sg .bd b { font-weight: 600; display: block; }
+  .sg .bd span { display: block; color: var(--text-2); font-size: 12px; }
+  .sg .ac { display: flex; gap: 2px; flex: none; }
+  .sg.done { opacity: 0.75; }
+  .sg.done .bd b { font-weight: 500; }
+  .sg input { width: 100%; height: 28px; border: 0; outline: 0; border-radius: 6px; padding: 0 7px; margin: 0 0 4px -7px; font: inherit; font-size: 13px; background: var(--paper); box-shadow: inset 0 0 0 1.5px var(--accent); }
+  .hint { font-size: 12px; color: var(--text-3); margin: -2px 0 6px; }
+  /* 녹음 재생 줄과 대화 기록 */
+  .player { display: flex; align-items: center; gap: 10px; height: 40px; padding: 0 10px 0 6px; border-radius: 8px; background: var(--soft); font-size: 12px; color: var(--text-2); font-variant-numeric: tabular-nums; }
+  .player .bar { flex: 1; height: 4px; border-radius: 2px; background: var(--line-3); overflow: hidden; cursor: pointer; }
+  .player .bar i { display: block; height: 100%; width: 0; background: var(--accent); }
+  .tfind { display: flex; align-items: center; gap: 4px; margin: 10px 0 6px; }
+  .tfind .field { flex: 1; width: auto; }
+  .tfind .cnt { font-size: 12px; color: var(--text-2); min-width: 40px; text-align: center; font-variant-numeric: tabular-nums; }
+  .msg { display: flex; align-items: baseline; gap: 8px; padding: 5px 6px; margin: 0 -6px; border-radius: 6px; font-size: 13px; line-height: 1.6; }
+  .msg .sp { width: 30px; flex: none; font-size: 12px; font-weight: 600; color: var(--text-2); }
+  .msg.me .sp { color: var(--accent-ink); }
+  .msg.cur { background: var(--accent-soft); }
+  .msg.hit { box-shadow: inset 2px 0 0 var(--accent); }
+  .msg mark { background: color-mix(in srgb, var(--dot-warn) 45%, transparent); color: inherit; border-radius: 2px; padding: 0 1px; }
+  .none-t { font-size: 13px; color: var(--text-3); padding: 4px 0; }
+  .prose { white-space: pre-wrap; }
+  /* 대화창 */
+  .dlg-back { position: fixed; inset: 0; z-index: 150; display: grid; place-items: center; background: rgba(20, 18, 12, 0.3); animation: fade 0.14s ease-out; }
+  @keyframes fade { from { opacity: 0; } }
+  .dlg { width: 470px; max-height: calc(100vh - 80px); overflow: auto; padding: 20px 22px 18px; border-radius: 14px; background: var(--paper); box-shadow: 0 0 0 1px rgba(16, 24, 40, 0.08), 0 24px 60px rgba(16, 24, 40, 0.28); }
+  .dlg h3 { margin: 0; font-size: 16px; font-weight: 650; }
+  .dlg .desc { margin: 4px 0 14px; font-size: 13px; color: var(--text-2); line-height: 1.5; }
+  .dlg label.f { display: block; margin-top: 10px; font-size: 12px; font-weight: 600; color: var(--text-2); }
+  .dlg .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .minp { display: block; width: 100%; height: 34px; margin-top: 5px; border: 0; outline: 0; border-radius: 8px; padding: 0 10px; font: inherit; font-size: 13px; font-weight: 400; color: var(--text); background: var(--paper); box-shadow: inset 0 0 0 1px var(--line-2); }
+  textarea.minp { height: 110px; padding: 8px 10px; line-height: 1.6; resize: vertical; }
+  .minp:focus { box-shadow: inset 0 0 0 1px var(--accent), 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+  .dlg .seg { margin-top: 5px; display: inline-flex; }
+  .dlg .foot { display: flex; justify-content: flex-end; gap: 6px; margin-top: 18px; }
+  .dlg .err { margin-top: 8px; font-size: 12px; color: var(--danger); min-height: 18px; }
+  .dlg .pickf { display: flex; align-items: center; gap: 8px; width: 100%; height: 44px; margin-top: 5px; padding: 0 12px; border: 0; border-radius: 8px; background: var(--soft); box-shadow: inset 0 0 0 1px var(--line-2); font: inherit; font-size: 13px; color: var(--text-2); cursor: pointer; text-align: left; }
+  .dlg .pickf.has { color: var(--text); background: var(--accent-soft); }
+</style>
+</head>
+<body data-active="consult">
+<main id="page">
+  <div class="ph">
+    <h1>상담분석</h1>
+    <span class="count" id="total"></span>
+    <div class="meta">
+      <span class="lnk" data-jump="follow"><span class="dot warn"></span>후속 필요 <b id="followN"></b></span>
+      <span class="lnk" data-jump="pend"><span class="dot danger"></span>연결 대기 녹음 <b id="pendN"></b></span>
+    </div>
+    <div class="actions">
+      <button class="btn" id="uploadBtn"></button>
+      <button class="btn primary" id="newBtn"></button>
+    </div>
+  </div>
+
+  <div class="vbar">
+    <div class="vtab on" data-tab="cons">대화 원장 <span class="n"></span></div>
+    <div class="vtab" data-tab="pend">연결 대기 녹음 <span class="n"></span></div>
+    <div class="vtab" data-tab="calls">통화 이력 <span class="n"></span></div>
+    <div class="vtools" id="vtools"></div>
+  </div>
+
+  <div class="fbar show" id="fbar"></div>
+  <div id="bandWrap"></div>
+
+  <div class="split" id="split">
+    <div class="scroll" id="scroll">
+      <table class="tbl" id="tbl"></table>
+      <div class="sumbar" id="foot"></div>
+    </div>
+    <aside class="peek" id="peek" hidden></aside>
+  </div>
+</main>
+
+<script src="shell.js"></script>
+<script>
+const { icon, av, who } = UI;
+const esc = (v) => String(v == null ? '' : v).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+const TODAY = new Date(2026, 10, 11);
+const dayOf = (n) => { const d = new Date(TODAY); d.setDate(d.getDate() + n); return d; };
+const p2 = (n) => String(n).padStart(2, '0');
+const md = (n) => { const d = dayOf(n); return `${d.getMonth() + 1}.${p2(d.getDate())}`; };
+const dateLabel = (off) => { const d = dayOf(off); const s = `${d.getMonth() + 1}월 ${d.getDate()}일 (${'일월화수목금토'[d.getDay()]})`; return off === 0 ? `오늘 · ${s}` : off === -1 ? `어제 · ${s}` : s; };
+const ts = (x) => x.off * 1440 + +x.hm.slice(0, 2) * 60 + +x.hm.slice(3);
+const digits = (s) => String(s || '').replace(/\D/g, '');
+const mmss = (s) => `${Math.floor(s / 60)}:${p2(s % 60)}`;
+const secOf = (t) => +t.split(':')[0] * 60 + +t.split(':')[1];
+
+const STAFF = ['이현수', '박서연', '최민준', '정다은'];
+const PEOPLE = [['김지현', '010-4821-3307'], ['박준호', '010-2290-1184'], ['정태훈', '010-6612-9043'], ['한서윤', '010-3377-5120'], ['오민석', '010-9120-4456'], ['윤재경', '010-5503-7782'], ['장하은', '010-3318-6642'], ['임채원', '010-7741-2059'], ['송현우', '010-4459-3310'], ['배유진', '010-7753-0921'], ['조성민', '010-9045-2276'], ['강도윤', '010-2864-7715'], ['최영숙', '010-3920-6671'], ['노상철', '010-7218-0394'], ['한미경', '010-2670-4418'], ['권태식', '010-9982-3105'], ['유민아', '010-6604-1873'], ['정명호', '02-441-9000']].map(([name, phone]) => ({ name, phone }));
+const phoneOf = (name) => (PEOPLE.find((p) => p.name === name) || {}).phone || '';
+const personByPhone = (ph) => PEOPLE.find((p) => digits(p.phone) === digits(ph) && digits(ph));
+
+const TYPE = { phone: ['전화', 'blue'], visit: ['방문', 'green'], online: ['온라인', 'purple'] };
+const PURPOSE = { general: '일반 상담', listing_confirm: '매물 확인', buyer_consult: '매수 상담', deal_followup: '거래 후속' };
+// 업무 신호·결과·후속 후보는 원본과 같은 규칙으로 내용에서 뽑는다
+const SIG = { price: ['가격·조건', 'orange'], schedule: ['일정·방문', 'blue'], contract: ['계약·입금', 'purple'], requirement: ['요청·요건', 'yellow'], note: ['상담 메모', ''] };
+const SIG_RX = [['contract', /계약|입금|잔금|중도금|가계약|서명|날인/], ['schedule', /일정|임장|방문|내방|예약|토요일|일요일|오전|오후|확정/], ['price', /가격|급매|인하|조정|수락|억|만원|조건/], ['requirement', /요청|필수|원함|희망|찾|추가|즉시입주|요건/]];
+function signal(c) {
+  if (c.purpose === 'listing_confirm') return { key: 'price', label: '매물 확인', cls: 'blue' };
+  if (c.purpose === 'buyer_consult') return { key: 'requirement', label: '매수 상담', cls: 'yellow' };
+  if (c.purpose === 'deal_followup') return { key: 'contract', label: '거래 후속', cls: 'purple' };
+  const hit = SIG_RX.find(([, rx]) => rx.test(c.text));
+  const key = hit ? hit[0] : 'note';
+  return { key, label: SIG[key][0], cls: SIG[key][1] };
+}
+function outcome(c) {
+  if (/확정|수락|입금 확인|완료|결정/.test(c.text)) return '확정 기록';
+  if (/필요|요청|확인|문의|어떻게|여부/.test(c.text)) return '후속 필요';
+  if (/거절|취소|보류|불가/.test(c.text)) return '보류';
+  return '정보 기록';
+}
+const OUT_CLS = { '확정 기록': 'ok', '후속 필요': 'warn', 보류: 'hold', '정보 기록': '' };
+function nextAction(c) {
+  if (c.purpose === 'listing_confirm') return '매물 확인 상태 업데이트';
+  if (c.purpose === 'buyer_consult') return '구매요건 업데이트';
+  if (c.purpose === 'deal_followup') return '거래 단계·입금 상태 확인';
+  const s = signal(c).key;
+  if (outcome(c) === '후속 필요' && c.type === 'phone') return '후속 통화 업무 만들기';
+  return { schedule: '캘린더 일정 확인', price: '매칭·거래 조건 업데이트', contract: '거래 단계·입금 상태 확인', requirement: '구매요건 업데이트' }[s] || '고객 타임라인 확인';
+}
+const linkLabels = (c) => [c.links.intake ? '의뢰 연결' : c.links.prop ? '매물 연결' : '', c.links.match ? '매칭 연결' : '', c.links.req ? '구매요건 연결' : ''].filter(Boolean);
+
+// ── 녹음과 분석 ──
+// 제안 종류는 원본 라벨 그대로
+const SG = { task: ['할 일', 'blue'], calendar_event: ['일정', 'green'], buyer_requirement_create: ['고객 요청 추가', 'yellow'], buyer_requirement_update: ['고객 요청 변경', 'yellow'], match_create: ['매칭 추가', 'purple'], match_stage: ['매칭 진행', 'purple'], listing_confirm: ['매물 확인', 'orange'] };
+let sgSeq = 0;
+const R = (dir, dur, summary, needs, checks, next, keys, facts, msgs, sugg) => ({ dir, dur, summary, needs, checks, next, keys, facts: facts.map(([k, v, prev, t]) => ({ k, v, prev, t })), msgs: msgs.map(([t, sp, text]) => ({ t, sp, text })), sugg: sugg.map(([type, title, sub]) => ({ id: ++sgSeq, type, title, sub, state: 'open', rev: 0 })), swapped: false, busy: false });
+const RECS = {
+  r1: R('inbound', 402, '고덕그라시움 34평 고층 매매 두 곳을 소개했고, 103동 3401호에 관심을 보였습니다. 토요일 오후 2시에 배우자와 함께 임장하기로 했습니다.', '27년 2월 전 입주, 고층·남향, 예산 15억~17억 5,000만(대출 6억 예정)',
+    ['예산 상한을 "17억"이라고 했다가 "17억 5천까지"로 고쳐 말했습니다.', '임장 시간을 2시와 2시 반으로 한 번씩 말했습니다.'], ['토요일 14:00 임장 일정 등록', '집주인에게 토요일 방문 가능 여부 확인', '대출 상담사 연락처 전달'], ['103동 3401호(16억 8,000만)에 관심', '121동 2502호는 예산 초과로 보류', '결정은 배우자와 함께'],
+    [['입주 희망', '27년 2월', null, '1:12'], ['예산 상한', '17억 5,000만', '17억', '2:14'], ['대출 예정', '6억', null, '2:40'], ['임장', '11.14 (토) 14:00', '14:30', '4:51']],
+    [['0:04', 0, '안녕하세요 김지현 님, 고덕 에스테잇 이현수입니다. 지난번에 말씀하신 그라시움 34평 고층 매물이 두 곳 나와서 연락드렸어요.'], ['0:18', 1, '아 네, 안녕하세요. 어디 어디예요?'], ['0:24', 0, '103동 3401호가 16억 8천, 121동 2502호가 17억 5천입니다. 둘 다 남향이고요.'], ['1:12', 1, '저희가 내년 2월 전에는 꼭 들어가야 해서요. 아이 입학 때문에.'], ['1:30', 0, '103동은 협의 가능하고, 121동은 2월 입주 가능합니다.'], ['2:14', 1, '예산은 17억, 아니 17억 5천까지는 볼 수 있을 것 같아요. 그 이상은 어렵고요.'], ['2:40', 1, '대출은 6억 정도 생각하고 있어요.'], ['3:05', 0, '그러면 103동 3401호가 조건에 더 맞습니다. 한번 보시겠어요?'], ['4:20', 1, '네, 남편이랑 같이 봐야 해서 토요일이 좋아요.'], ['4:51', 0, '토요일 오후 2시 반, 아니 2시로 잡아 둘게요. 집주인 확인하고 문자 드리겠습니다.'], ['5:30', 1, '그리고 대출 상담해 주실 분 있으면 소개 좀 부탁드려요.'], ['6:20', 0, '네, 연락처 정리해서 같이 보내 드릴게요. 감사합니다.']],
+    [['calendar_event', '그라시움 103동 3401호 임장', '임장 · 11.14 (토) 오후 2:00 ~ 3:00'], ['task', '집주인에게 토요일 방문 가능 여부 확인', '마감 11.12 (목) · 우선순위 높음'], ['buyer_requirement_update', '매매 15억 ~ 17억 5,000만', '메모 추가: 대출 6억 예정, 상한 17억 5천까지'], ['match_stage', '고덕그라시움 103동 3401호', '고객 관심 → 임장 가능 확인']]),
+  r2: R('outbound', 185, '고덕자이 59B 저층 매물은 원하지 않는다고 했습니다. 10층 이상 매물이 나오면 바로 알려 달라고 요청했습니다.', '고덕자이·센트럴아이파크 25평, 10층 이상, 12억~13억',
+    ['"10층 이상"인지 "12층 이상"인지 발음이 불분명합니다.'], ['10층 이상 매물이 나오면 바로 연락'], ['저층(5층 이하) 제외', '센트럴아이파크도 같은 조건으로 확인'],
+    [['층 조건', '10층 이상', null, '0:52'], ['예산', '12억 ~ 13억', null, '1:40']],
+    [['0:03', 0, '오민석 님, 자이 104동 3층 매물이 12억 2천에 나왔는데 어떠세요?'], ['0:20', 1, '3층이요? 저층은 좀 그래요. 해가 잘 안 들어서.'], ['0:52', 1, '10층 이상으로만 봐 주세요.'], ['1:10', 0, '알겠습니다. 센트럴아이파크도 같은 조건으로 볼까요?'], ['1:40', 1, '네, 12억에서 13억 사이면 둘 다 괜찮아요.'], ['2:30', 0, '나오는 대로 바로 연락드리겠습니다.']],
+    [['buyer_requirement_update', '매매 12억 ~ 13억', '메모 추가: 10층 이상만, 저층 제외'], ['task', '자이·센트럴아이파크 10층 이상 매물 나오면 오민석 님께 연락', '마감 11.18 (수)']]),
+  r3: R('inbound', 260, '12월 중순까지 이사해야 해서 서두르고 있습니다. 그라시움 117동 1203호 전세를 금요일 저녁에 보기로 했습니다.', '전세 7억 이하, 25~32평, 12월 중순 입주',
+    ['임장 시간을 "7시쯤"이라고만 했습니다.'], ['금요일 19:00 임장 일정 등록', '세입자에게 방문 가능 시간 확인'], ['12월 중순 입주 필수', '그라시움·자이 순으로 선호'],
+    [['입주', '12월 중순', null, '0:40'], ['보증금 상한', '7억', null, '1:20'], ['임장', '11.13 (금) 19:00', null, '3:10']],
+    [['0:05', 1, '안녕하세요, 저 임채원인데요. 전세 구하는 거 진행이 어떻게 되고 있나요?'], ['0:40', 1, '12월 중순까지는 꼭 이사해야 하거든요.'], ['1:20', 1, '보증금은 7억까지예요. 그 위로는 안 돼요.'], ['2:00', 0, '그라시움 117동 1203호가 7억 8천인데 조정 여지가 있습니다. 한번 보시죠.'], ['3:10', 1, '금요일 저녁 7시쯤 괜찮아요.'], ['4:00', 0, '세입자분께 확인하고 문자 드릴게요.']],
+    [['calendar_event', '그라시움 117동 1203호 임장', '임장 · 11.13 (금) 오후 7:00'], ['match_create', '고덕그라시움 117동 1203호', '고객: 임채원 · 전세 7억 이하'], ['task', '세입자 한미경 님께 금요일 저녁 방문 가능 여부 확인', '마감 11.12 (목)']]),
+  r4: R('inbound', 310, '세입자가 1월 말에 나가고, 전세가 안 나가면 매매도 받겠다고 했습니다. 전세가를 7억 6천으로 낮추기로 했습니다.', '',
+    ['낮춘 전세가를 "7억 6천"으로 들었지만 한 번만 말했습니다.'], ['전세가 변경을 광고에 반영', '세입자와 집 보기 일정 조율'], ['세입자 1월 28일 퇴거', '매매는 15억 9천 유지'],
+    [['전세가', '7억 6,000만', '7억 8,000만', '2:05'], ['퇴거일', '1월 28일', null, '0:48']],
+    [['0:06', 1, '세입자가 1월 28일에 나간대요.'], ['0:48', 0, '그러면 2월 초 입주로 광고를 고쳐 둘게요.'], ['1:30', 1, '전세가 잘 안 나가네요. 보러 오는 사람은 있어요?'], ['2:05', 1, '7억 6천으로 내려 주세요. 안 되면 매매도 받을게요.'], ['3:20', 0, '매매는 15억 9천 그대로 둘까요?'], ['3:40', 1, '네, 그건 그대로요.']],
+    [['listing_confirm', '고덕그라시움 117동 1203호 · 확인 결과: 가격 변경', '전세 7억 8,000만 → 7억 6,000만'], ['task', '세입자 한미경 님과 집 보기 일정 조율', '마감 11.13 (금)']]),
+  r5: R('inbound', 228, '아르테온 312동 1704호 가계약금을 보냈고, 본계약은 11월 20일 오후 3시로 정했습니다. 중도금 대출 상담을 원합니다.', '',
+    [], ['본계약 일정 등록', '중도금 대출 상담사 연결'], ['가계약금 3,000만 입금', '본계약 11.20 (금) 15:00'],
+    [['가계약금', '3,000만', null, '0:30'], ['본계약', '11.20 (금) 15:00', null, '1:50']],
+    [['0:05', 1, '가계약금 3천만 원 방금 보냈어요.'], ['0:30', 0, '네, 입금 확인했습니다. 감사합니다.'], ['1:50', 0, '본계약은 20일 금요일 오후 3시에 사무실에서 하시죠.'], ['2:20', 1, '네. 그리고 중도금 대출은 어떻게 알아봐야 하나요?'], ['3:00', 0, '상담해 주실 분 연결해 드릴게요.']],
+    [['calendar_event', '아르테온 312동 1704호 본계약', '계약 · 11.20 (금) 오후 3:00'], ['task', '유민아 님께 중도금 대출 상담사 연결', '마감 11.13 (금) · 우선순위 높음']]),
+};
+// 새로 올린 녹음에 붙일 예시 분석
+let recSeq = 5;
+function sampleRec(dir) {
+  const id = `r${++recSeq}`;
+  RECS[id] = R(dir, 196, '고덕아르테온 34평 전세를 찾고 있고 12월 말 입주를 원합니다. 보증금은 7억 5천까지 가능하다고 했습니다.', '전세 7억 ~ 7억 5,000만, 34평, 12월 말 입주',
+    ['보증금 상한을 "7억 5천"으로 들었습니다. 원문을 확인하세요.'], ['아르테온 34평 전세 매물 세 곳 추려서 문자 보내기'], ['아르테온 선호, 그라시움도 가능', '주말 임장 가능'],
+    [['보증금 상한', '7억 5,000만', null, '0:50'], ['입주', '12월 말', null, '1:15']],
+    [['0:04', 1, '안녕하세요, 네이버에서 보고 전화드렸어요. 아르테온 34평 전세 있나요?'], ['0:20', 0, '네, 지금 두세 곳 있습니다. 예산이 어느 정도세요?'], ['0:50', 1, '7억에서 7억 5천 사이로 보고 있어요.'], ['1:15', 1, '입주는 12월 말이면 좋겠어요.'], ['2:10', 0, '조건 맞는 매물 정리해서 문자로 보내 드릴게요.'], ['2:50', 1, '네, 주말에는 보러 갈 수 있어요.']],
+    [['buyer_requirement_create', '전세 7억 ~ 7억 5,000만', '희망 단지 고덕아르테온 · 34평 · 입주 12월 말'], ['task', '아르테온 34평 전세 매물 세 곳 추려서 문자 보내기', '마감 11.12 (목)']]);
+  return id;
+}
+
+// ── 상담 ──
+let cSeq = 0;
+const K = (name, off, hm, type, purpose, by, text, links = {}, rec = null) => ({ id: ++cSeq, name, off, hm, type, purpose, by, text, links, rec, auto: !!rec });
+const G = (site, dong, ho) => ({ prop: `${site} ${dong}동 ${ho}호`, site, dong, ho });
+let CONS = [
+  K('유민아', 0, '10:05', 'phone', 'deal_followup', '이현수', RECS.r5.summary, { ...G('고덕아르테온', '312', '1704'), listing: '매매 15억 2,000만', match: '거래전환' }, 'r5'),
+  K('임채원', -1, '17:40', 'phone', 'general', '정다은', RECS.r3.summary, { req: '전세 · 활성' }, 'r3'),
+  K('오민석', -1, '15:12', 'phone', 'buyer_consult', '정다은', RECS.r2.summary, { req: '매매 · 활성' }, 'r2'),
+  K('권태식', -1, '11:30', 'online', 'deal_followup', '이현수', '가계약금 입금 확인. 본계약은 11월 20일로 정했습니다. 대리인 신동혁 님이 서명합니다.', { ...G('고덕아르테온', '312', '1704'), intake: true, listing: '매매 15억 2,000만' }),
+  K('최영숙', -2, '10:20', 'phone', 'listing_confirm', '박서연', RECS.r4.summary, { ...G('고덕그라시움', '117', '1203'), intake: true, listing: '전세 7억 8,000만' }, 'r4'),
+  K('박준호', -2, '14:00', 'visit', 'general', '이현수', '대출 한도가 나오면 그라시움 39평까지 보겠다고 합니다. 자이 매도 잔금일을 매수 계약과 맞춰야 합니다.', { ...G('고덕자이', '108', '1902'), req: '매매 · 활성' }),
+  K('한미경', -3, '18:30', 'phone', 'general', '박서연', '1월 28일 이사 확정. 집 보여 주기는 평일 저녁과 주말에 가능합니다.', G('고덕그라시움', '117', '1203')),
+  K('송현우', -3, '13:10', 'phone', 'general', '최민준', '법인 명의 계약 가능 여부를 물었습니다. 집주인에게 확인 후 회신 예정.', { ...G('고덕센트럴아이파크', '110', '902'), match: '고객 관심', req: '월세 · 활성' }),
+  K('김지현', -4, '16:20', 'phone', 'buyer_consult', '이현수', RECS.r1.summary, { ...G('고덕그라시움', '103', '3401'), listing: '매매 16억 8,000만', match: '임장 가능 확인', req: '매매 · 활성' }, 'r1'),
+  K('장하은', -4, '11:45', 'phone', 'general', '최민준', '아이파크 101동 1501호, 5천만 원 조정되면 계약 의사가 있습니다. 집주인에게 가격 조정 문의 필요.', { ...G('고덕센트럴아이파크', '101', '1501'), listing: '매매 14억 8,000만', match: '협상', req: '매매 · 활성' }),
+  K('윤재경', -5, '15:00', 'visit', 'buyer_consult', '박서연', '아르테온 59A 두 곳 임장. 전세가 안 구해지면 반전세도 보겠다고 했습니다.', { ...G('고덕아르테온', '305', '503'), match: '임장', req: '전세 · 활성' }),
+  K('한서윤', -6, '09:40', 'online', 'general', '최민준', '카카오톡으로 조건 접수. 반려묘 한 마리, 주차 1대 필요. 월세 150 이하 희망.', { req: '월세 · 활성' }),
+  K('배유진', -7, '14:30', 'visit', 'general', '이현수', '그라시움 99A 한강 조망 세대만 보고 싶어 합니다.', { req: '매매 · 활성' }),
+  K('노상철', -8, '11:00', 'visit', 'listing_confirm', '정다은', '월세는 당분간 내리고 전세만 받기로 했습니다. 전세 6억 4천 그대로 진행.', { ...G('고덕아르테온', '305', '503'), intake: true }),
+  K('조성민', -9, '10:15', 'phone', 'general', '박서연', '27년 상반기 안에만 입주하면 됩니다. 급하지 않습니다.', { req: '매매 · 활성' }),
+  K('김지현', -10, '13:00', 'visit', 'buyer_consult', '이현수', '예산을 15~17억으로 다시 확인했습니다. 대출 6억 예정, 27년 2월 전에 입주해야 합니다.', { req: '매매 · 활성' }),
+  K('정태훈', -12, '16:50', 'phone', 'general', '박서연', '래미안힐스테이트 32평 전세 두 곳 안내. 회신이 없어 다시 연락하기로 했습니다.', { req: '전세 · 활성' }),
+  K('강도윤', -14, '09:20', 'phone', 'general', '정다은', '해외 출장으로 12월 초에 다시 보기로 했습니다. 그때까지 보류.', { req: '전세 · 보류' }),
+  K('최영숙', -16, '15:30', 'visit', 'listing_confirm', '박서연', '전세 7억 8,000으로 내놓기로 했습니다. 아들 최동훈 님과 공동 명의.', { ...G('고덕그라시움', '117', '1203'), intake: true }),
+  K('정명호', -35, '10:00', 'phone', 'general', '이현수', '11월 잔금 건 두 개의 등기 일정을 잡았습니다.', {}),
+];
+// ── 연결 대기 녹음 ── 상태: stt 받아쓰는 중 · sttfail 받아쓰기 실패 · analysis 분석 중 · need 연락처 연결 필요
+const PSTAT = { stt: ['받아쓰는 중', 'accent', 1], sttfail: ['받아쓰기 실패', 'warn', 0], analysis: ['분석 중', 'accent', 1], need: ['연락처 연결 필요', 'warn', 0] };
+let pSeq = 0;
+let PEND = [
+  { id: ++pSeq, phone: '010-2290-1184', name: '박준호', dir: 'outbound', off: 0, hm: '11:15', dur: 214, status: 'analysis', rec: null },
+  { id: ++pSeq, phone: '010-5582-7719', name: null, dir: 'inbound', off: 0, hm: '10:42', dur: 196, status: 'need', rec: sampleRec('inbound') },
+  { id: ++pSeq, phone: '', name: null, dir: 'visit', off: 0, hm: '09:30', dur: 1260, status: 'need', rec: sampleRec('visit') },
+  { id: ++pSeq, phone: '010-7730-4402', name: null, dir: 'inbound', off: -1, hm: '17:20', dur: 88, status: 'sttfail', rec: null },
+];
+const DIR = { inbound: '수신', outbound: '발신', visit: '방문' };
+// ── 통화 이력 (CTI로 수집, 녹음과 별개) ──
+const CSTAT = { ended: ['통화 완료', 'ok'], missed: ['부재중', 'warn'], ringing: ['수신 중', 'accent'], answered: ['통화 중', 'accent'] };
+let callSeq = 0;
+const CL = (off, hm, dir, phone, status, dur, by, memo = '') => ({ id: ++callSeq, off, hm, dir, phone, status, dur, by, memo });
+const CALLS = [
+  CL(0, '11:32', 'inbound', '010-6604-1873', 'ringing', 0, ''), CL(0, '11:15', 'outbound', '010-2290-1184', 'ended', 214, '이현수', '자이 매도 잔금일 조율'), CL(0, '10:42', 'inbound', '010-5582-7719', 'ended', 196, '이현수'),
+  CL(0, '10:05', 'inbound', '010-6604-1873', 'ended', 228, '이현수', '가계약금 입금'), CL(0, '09:48', 'inbound', '010-3377-5120', 'missed', 0, ''), CL(0, '09:12', 'outbound', '02-441-9000', 'ended', 95, '이현수', '등기 일정'),
+  CL(-1, '17:40', 'inbound', '010-7741-2059', 'ended', 260, '정다은'), CL(-1, '17:20', 'inbound', '010-7730-4402', 'ended', 88, '최민준'), CL(-1, '15:12', 'outbound', '010-9120-4456', 'ended', 185, '정다은'),
+  CL(-1, '13:05', 'inbound', '010-8112-0934', 'missed', 0, ''), CL(-1, '10:30', 'outbound', '010-6612-9043', 'missed', 0, '박서연', '회신 없음, 내일 다시'), CL(-2, '16:44', 'inbound', '010-2670-4418', 'ended', 142, '박서연'),
+  CL(-2, '10:20', 'inbound', '010-3920-6671', 'ended', 310, '박서연', '전세가 조정'), CL(-3, '13:10', 'inbound', '010-4459-3310', 'ended', 174, '최민준'), CL(-4, '16:20', 'inbound', '010-4821-3307', 'ended', 402, '이현수'), CL(-4, '11:45', 'outbound', '010-3318-6642', 'ended', 156, '최민준'),
+];
+const callName = (c) => (personByPhone(c.phone) || {}).name || null;
+
+const state = { tab: 'cons', view: 'date', quick: 'all', f: {}, dong: '', ho: '', q: '', order: -1, page: 1, shut: new Set(), peek: null, ptab: 'analysis', tq: '', tcur: -1, play: null, cq: '', cf: {}, csort: { key: 'ts', dir: -1 }, editSg: null };
+const PAGE = 12;
+
+// ── 대화 원장 필터 ──
+const QUICK = [['all', '전체', () => true], ['follow', '후속 필요', (c) => outcome(c) === '후속 필요'], ['prop', '매물 연결', (c) => !!c.links.prop], ['intake', '의뢰 연결', (c) => !!c.links.intake], ['req', '구매요건', (c) => !!c.links.req], ['unlinked', '미연결', (c) => !linkLabels(c).length]];
+const uniq = (a) => [...new Set(a)].sort((x, y) => x.localeCompare(y, 'ko'));
+const FDEFS = [
+  { id: 'contact', k: '고객', opts: () => uniq(CONS.map((c) => c.name)).map((v) => [v, (c) => c.name === v]), fallback: (v) => (c) => c.name === v },
+  { id: 'site', k: '매물', opts: () => uniq(CONS.map((c) => c.links.site).filter(Boolean)).map((v) => [v, (c) => c.links.site === v]), fallback: (v) => (c) => c.links.site === v },
+  { id: 'type', k: '상담유형', opts: () => Object.entries(TYPE).map(([k, [l]]) => [l, (c) => c.type === k]) },
+  { id: 'range', k: '기간', opts: () => [['오늘', (c) => c.off === 0], ['최근 7일', (c) => c.off >= -6], ['최근 30일', (c) => c.off >= -29], ['11월', (c) => c.off >= -10], ['10월', (c) => c.off < -10 && c.off >= -41]] },
+  { id: 'by', k: '기록자', opts: () => STAFF.map((s) => [s, (c) => c.by === s]) },
+];
+const CFDEFS = [
+  { id: 'dir', k: '방향', opts: () => [['수신', (c) => c.dir === 'inbound'], ['발신', (c) => c.dir === 'outbound']] },
+  { id: 'status', k: '상태', opts: () => [['통화 완료', (c) => c.status === 'ended'], ['부재중', (c) => c.status === 'missed'], ['수신 중', (c) => c.status === 'ringing']] },
+];
+const testOf = (defs, bag, id) => { const d = defs.find((x) => x.id === id); const v = bag[id]; if (!v) return null; const o = d.opts().find((x) => x[0] === v); return o ? o[1] : d.fallback ? d.fallback(v) : () => false; };
+function consFiltered(skipQuick) {
+  const q = state.q.trim();
+  let rows = CONS.filter((c) => FDEFS.every((d) => { const t = testOf(FDEFS, state.f, d.id); return !t || t(c); }));
+  if (state.f.site && state.dong) rows = rows.filter((c) => String(c.links.dong || '').startsWith(state.dong));
+  if (state.f.site && state.ho) rows = rows.filter((c) => String(c.links.ho || '').startsWith(state.ho));
+  if (q) rows = rows.filter((c) => c.text.includes(q) || c.name.includes(q));
+  if (!skipQuick) rows = rows.filter(QUICK.find((x) => x[0] === state.quick)[2]);
+  return rows.sort((a, b) => (ts(a) - ts(b)) * state.order);
+}
+function callsFiltered() {
+  const q = digits(state.cq);
+  let rows = CALLS.filter((c) => CFDEFS.every((d) => { const t = testOf(CFDEFS, state.cf, d.id); return !t || t(c); }));
+  if (state.cq.trim()) rows = rows.filter((c) => (q && digits(c.phone).includes(q)) || (callName(c) || '').includes(state.cq.trim()));
+  const { key, dir } = state.csort;
+  return rows.sort((a, b) => (key === 'ts' ? ts(a) - ts(b) : key === 'dur' ? a.dur - b.dur : (callName(a) || a.phone).localeCompare(callName(b) || b.phone, 'ko')) * dir || b.id - a.id);
+}
+const fselHtml = (d, bag, attr) => { const v = bag[d.id]; return `<button class="fsel ${v ? 'on' : ''}" ${attr}="${d.id}"><span class="k">${d.k}</span><span class="v">${esc(v || '전체')}</span>${v ? `<span class="clr" data-fclr="${attr}:${d.id}" title="지우기">${icon('x')}</span>` : icon('chevDown')}</button>`; };
+const th = (ic, label, sort, cls = '') => { const s = sort && state.tab === 'calls' && state.csort.key === sort ? state.csort : sort === 'ts' && state.tab === 'cons' ? { dir: state.order } : null; return `<th class="${cls} ${s ? 'sorted' : ''}" ${sort ? `data-sort="${sort}"` : ''}>${icon(ic, 'hi')}${label}${s ? `<svg class="i caret" style="${s.dir > 0 ? 'transform:rotate(180deg)' : ''}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>` : ''}<span class="rz"></span></th>`; };
+const pstat = (p) => { const [l, cls, busy] = PSTAT[p.status]; return `<span class="st ${cls} ${busy ? 'busy' : ''}">${l}</span>`; };
+const isPeek = (kind, id) => state.peek && state.peek.kind === kind && state.peek.id === id;
+
+// 입력 중인 칸이 들어 있는 줄은 다시 그리지 않는다. 다시 그리면 한글 조합이 끊긴다
+const setHtml = (id, html) => { const el = document.getElementById(id); const a = document.activeElement; if (a && a.tagName === 'INPUT' && el.contains(a)) return; el.innerHTML = html; };
+function renderCons() {
+  const all = consFiltered(false);
+  const pages = Math.max(1, Math.ceil(all.length / PAGE));
+  state.page = Math.min(state.page, pages);
+  const rows = all.slice((state.page - 1) * PAGE, state.page * PAGE);
+  const byDate = state.view === 'date';
+  const groups = [];
+  rows.forEach((c) => { const key = byDate ? `d${c.off}` : `n${c.name}`; let g = groups.find((x) => x.key === key); if (!g) groups.push((g = { key, label: byDate ? dateLabel(c.off) : c.name, items: [] })); g.items.push(c); });
+  const head = `<thead><tr>${th('clock', '시간', 'ts')}${th('user', '고객')}${th('tag', '유형')}${th('tag', '목적')}${th('sparkle', '업무 신호')}${th('info', '결과')}${th('note', '상담 내용')}${th('building', '연결')}${th('user', '기록자')}</tr></thead>`;
+  const body = groups.map((g) => {
+    const shut = state.shut.has(g.key);
+    return `<tr class="grp ${shut ? 'shut' : ''}" data-g="${esc(g.key)}"><td colspan="9"><span class="gh">${icon('chevDown')}${esc(g.label)}<span class="n num">${g.items.length}</span></span></td></tr>` + (shut ? '' : g.items.map((c) => {
+      const s = signal(c), o = outcome(c);
+      return `<tr data-c="${c.id}" class="${isPeek('cons', c.id) ? 'focus' : ''}">
+        <td class="num t2">${byDate ? c.hm : `${md(c.off)} ${c.hm}`}</td><td><span class="nm">${esc(c.name)}</span></td>
+        <td><span class="tag ${TYPE[c.type][1]}">${TYPE[c.type][0]}</span></td><td class="${c.purpose === 'general' ? 't3' : ''}">${PURPOSE[c.purpose]}</td>
+        <td><span class="tag ${s.cls}">${s.label}</span></td><td><span class="st ${OUT_CLS[o]}">${o}</span></td>
+        <td class="c-text" title="${esc(c.text)}">${c.rec ? `<span class="ai">${icon('sparkle')}통화 요약</span>` : ''}${esc(c.text)}</td>
+        <td class="c-link">${linkLabels(c).join(' · ') || '<span class="t3">미연결</span>'}</td><td>${who(c.by)}</td></tr>`;
+    }).join(''));
+  }).join('');
+  const dirty = Object.keys(state.f).length || state.q.trim() || state.quick !== 'all' || state.order !== -1;
+  document.getElementById('tbl').innerHTML = head + `<tbody>${body || `<tr><td colspan="9" style="border:0;cursor:default"><div class="empty"><b>${dirty ? '조건에 맞는 상담 기록이 없습니다' : '상담 기록이 없습니다'}</b>${dirty ? '검색어나 필터를 바꿔 보세요' : '고객과 나눈 첫 상담을 기록해 보세요. 매물·구매조건과 연결하면 후속 업무로 이어집니다.'}</div></td></tr>`}</tbody>`;
+  document.getElementById('foot').innerHTML = `<span>전체<b>${all.length}</b>건${all.length ? ` · ${(state.page - 1) * PAGE + 1}~${Math.min(all.length, state.page * PAGE)}번째 표시` : ''}</span><span>후속 필요<b>${all.filter((c) => outcome(c) === '후속 필요').length}</b></span><span>녹음 분석<b>${all.filter((c) => c.rec).length}</b></span><span class="grow"></span><span class="pager"><button class="btn quiet sm" data-page="-1" ${state.page <= 1 ? 'disabled' : ''}>${icon('chevLeft')}이전</button><span class="num">${state.page} / ${pages}</span><button class="btn quiet sm" data-page="1" ${state.page >= pages ? 'disabled' : ''}>다음${icon('chevRight')}</button></span>`;
+  const base = consFiltered(true);
+  setHtml('fbar', `<div class="seg" role="tablist" aria-label="빠른 필터">${QUICK.map(([id, l, t]) => `<button class="${state.quick === id ? 'on' : ''}" data-quick="${id}">${l}<span class="n">${base.filter(t).length}</span></button>`).join('')}</div><span class="vsep"></span>`
+    + fselHtml(FDEFS[0], state.f, 'data-fs') + fselHtml(FDEFS[1], state.f, 'data-fs')
+    + `<input class="fin ${state.dong ? 'on' : ''}" id="fDong" placeholder="동" inputmode="numeric" aria-label="동" value="${esc(state.dong)}" ${state.f.site ? '' : 'disabled title="매물(단지)을 먼저 고르세요"'}><input class="fin ${state.ho ? 'on' : ''}" id="fHo" placeholder="호" inputmode="numeric" aria-label="호" value="${esc(state.ho)}" ${state.f.site ? '' : 'disabled title="매물(단지)을 먼저 고르세요"'}>`
+    + FDEFS.slice(2).map((d) => fselHtml(d, state.f, 'data-fs')).join('') + (dirty ? `<button class="btn quiet sm right" data-clear>${icon('refresh')}초기화</button>` : ''));
+  setHtml('vtools', `<label class="field" data-icon="search">${icon('search')}<input id="q" placeholder="상담 내용 검색" aria-label="상담 내용 검색" value="${esc(state.q)}"><kbd>⌘F</kbd></label><button class="btn quiet sm" id="orderBtn">${icon('sort')}${state.order < 0 ? '최신순' : '오래된순'}</button><span class="vsep"></span><div class="seg"><button class="${byDate ? 'on' : ''}" data-view="date">${icon('cal')}날짜별</button><button class="${byDate ? '' : 'on'}" data-view="contact">${icon('users')}고객별</button></div>`);
+  const wait = PEND.length;
+  document.getElementById('bandWrap').innerHTML = wait ? `<div class="band" data-jump="pend" role="button" tabindex="0">${icon('info')}<span><b>연결 대기 녹음 ${wait}건</b></span><span class="it">${PEND.slice(0, 3).map((p) => `${esc(p.name || (p.phone || '방문 상담 녹음'))} ${PSTAT[p.status][0]}`).join(' · ')}</span><span class="sp"></span><span class="t2">아직 상담 기록이 되지 않은 녹음입니다</span><button class="btn quiet sm">모두 보기${icon('chevRight')}</button></div>` : '';
+}
+function renderPend() {
+  const rows = [...PEND].sort((a, b) => ts(b) - ts(a));
+  document.getElementById('tbl').innerHTML = `<thead><tr>${th('clock', '시간')}${th('phone', '방향')}${th('user', '상대방')}${th('phone', '번호')}${th('info', '상태')}${th('clock', '길이', '', 'r')}<th></th></tr></thead><tbody>${rows.map((p) => `<tr data-p="${p.id}" class="${isPeek('pend', p.id) ? 'focus' : ''}">
+    <td class="num t2">${md(p.off)} ${p.hm}</td><td><span class="tag ${p.dir === 'visit' ? 'green' : p.dir === 'outbound' ? 'purple' : 'blue'}">${p.dir === 'visit' ? '방문 상담 녹음' : `${DIR[p.dir]} 통화`}</span></td>
+    <td>${p.name ? `<span class="nm">${esc(p.name)}</span>` : '<span class="t2">미등록 번호</span>'}</td><td class="num">${p.phone || '<span class="t3">번호 없음</span>'}</td><td>${pstat(p)}</td><td class="r num t2">${mmss(p.dur)}</td>
+    <td class="acts">${p.status === 'need' ? `<button class="btn sm" data-pact="register">${icon('plus')}연락처로 등록</button> <button class="btn sm" data-pact="link">${icon('bookUser')}기존 연락처 연결</button>` : p.status === 'sttfail' ? `<button class="btn sm" data-pact="retry">${icon('refresh')}다시 받아쓰기</button>` : '<span class="t3">끝나면 자동으로 바뀝니다</span>'}</td></tr>`).join('') || '<tr><td colspan="7" style="border:0;cursor:default"><div class="empty"><b>연결 대기 녹음이 없습니다</b>올린 녹음은 받아쓰기와 분석이 끝나면 대화 원장으로 들어갑니다</div></td></tr>'}</tbody>`;
+  document.getElementById('foot').innerHTML = `<span>연결 대기<b>${rows.length}</b>건</span><span>연락처 연결 필요<b>${rows.filter((p) => p.status === 'need').length}</b></span><span class="grow"></span><span>아직 상담 기록이 되지 않은 녹음입니다. 연락처를 연결하거나 분석이 끝나면 대화 원장으로 들어갑니다.</span>`;
+  setHtml('fbar', '');
+  setHtml('vtools', '');
+  document.getElementById('bandWrap').innerHTML = '';
+}
+function renderCalls() {
+  const rows = callsFiltered();
+  document.getElementById('tbl').innerHTML = `<thead><tr>${th('clock', '시간', 'ts')}${th('phone', '방향')}${th('user', '상대방', 'name')}${th('info', '상태')}${th('clock', '통화시간', 'dur', 'r')}${th('user', '담당')}${th('note', '메모')}</tr></thead><tbody>${rows.map((c) => { const n = callName(c); return `<tr data-call="${c.id}" class="${isPeek('call', c.id) ? 'focus' : ''}">
+    <td class="num t2">${md(c.off)} ${c.hm}</td><td><span class="tag ${c.dir === 'outbound' ? 'purple' : 'blue'}">${DIR[c.dir]}</span></td>
+    <td>${n ? `<span class="nm">${esc(n)}</span> <span class="t2 num">${c.phone}</span>` : `<span class="num">${c.phone}</span> <span class="t3">미등록 번호</span>`}</td>
+    <td><span class="st ${CSTAT[c.status][1]} ${c.status === 'ringing' ? 'busy' : ''}">${CSTAT[c.status][0]}</span></td><td class="r num t2">${c.dur ? mmss(c.dur) : '-'}</td><td>${c.by ? who(c.by) : '<span class="t3">-</span>'}</td><td class="c-text t2">${esc(c.memo)}</td></tr>`; }).join('') || '<tr><td colspan="7" style="border:0;cursor:default"><div class="empty"><b>통화 기록이 없습니다</b>검색어나 필터를 바꿔 보세요</div></td></tr>'}</tbody>`;
+  document.getElementById('foot').innerHTML = `<span>총<b>${rows.length}</b>건</span><span>부재중<b>${rows.filter((c) => c.status === 'missed').length}</b></span><span class="grow"></span><span>CTI로 수집된 수신/발신 통화 기록 (녹음과 별개)</span>`;
+  const dirty = Object.keys(state.cf).length || state.cq.trim();
+  setHtml('fbar', CFDEFS.map((d) => fselHtml(d, state.cf, 'data-cfs')).join('') + (dirty ? `<button class="btn quiet sm right" data-clear>${icon('refresh')}초기화</button>` : ''));
+  setHtml('vtools', `<label class="field">${icon('search')}<input id="cq" placeholder="전화번호 검색" aria-label="전화번호 검색" value="${esc(state.cq)}"><kbd>⌘F</kbd></label>`);
+  document.getElementById('bandWrap').innerHTML = '';
+}
+
+function render() {
+  document.getElementById('total').textContent = CONS.length;
+  document.getElementById('followN').textContent = CONS.filter((c) => outcome(c) === '후속 필요').length;
+  document.getElementById('pendN').textContent = PEND.length;
+  document.querySelectorAll('.vtab[data-tab]').forEach((t) => {
+    const k = t.dataset.tab;
+    t.classList.toggle('on', k === state.tab);
+    const n = t.querySelector('.n');
+    n.textContent = k === 'cons' ? CONS.length : k === 'pend' ? PEND.length : CALLS.length;
+    n.classList.toggle('alert', k === 'pend' && PEND.some((p) => p.status === 'need' || p.status === 'sttfail'));
+  });
+  ({ cons: renderCons, pend: renderPend, calls: renderCalls })[state.tab]();
+  renderPeek();
+}
+
+// ── 옆 상세 ──
+function sgHtml(rec, linked) {
+  const open = rec.sugg.filter((s) => s.state === 'open');
+  const done = rec.sugg.filter((s) => s.state !== 'open');
+  const one = (s) => {
+    const [l, cls] = SG[s.type];
+    if (s.state !== 'open') return `<div class="sg done" data-sg="${s.id}"><span class="tag ${cls}">${l}</span><div class="bd"><b>${esc(s.title)}</b></div><div class="ac"><span class="st ${s.state === 'accepted' ? 'ok' : ''}">${s.state === 'accepted' ? '반영함' : '무시함'}</span><button class="btn quiet sm" data-sga="undo">되돌리기</button></div></div>`;
+    if (state.editSg === s.id) return `<div class="sg" data-sg="${s.id}"><span class="tag ${cls}">${l}</span><div class="bd"><input data-sgin="title" value="${esc(s.title)}" aria-label="제목"><input data-sgin="sub" value="${esc(s.sub)}" aria-label="세부 내용"></div><div class="ac"><button class="btn quiet sm" data-sga="cancel">취소</button><button class="btn sm primary" data-sga="save">이대로 반영</button></div></div>`;
+    return `<div class="sg" data-sg="${s.id}"><span class="tag ${cls}">${l}</span><div class="bd"><b>${esc(s.title)}</b><span>${esc(s.sub)}</span></div><div class="ac">${linked ? `<button class="btn sm" data-sga="accept">${icon('check')}반영</button><button class="btn quiet sm" data-sga="edit">고쳐서 반영</button><button class="btn quiet sm" data-sga="ignore">무시</button>` : ''}</div></div>`;
+  };
+  return `<div class="sec"><div class="sec-h">${icon('sparkle')}AI 제안${open.length ? ` <span class="n">${open.length}건</span>` : ''}</div>
+    <div class="hint">받아쓰기는 숫자·이름을 틀릴 수 있어요. 내용을 확인하고 반영하세요.${linked ? '' : ' <b class="warn-t" style="font-weight:500">통화 상대 연락처를 연결하면 반영할 수 있어요.</b>'}</div>
+    ${open.length ? open.map(one).join('') : '<div class="none-t">처리할 제안이 없습니다.</div>'}
+    ${done.length ? `<div class="hint" style="margin:10px 0 2px">처리한 제안 ${done.length}건</div>${done.map(one).join('')}` : ''}</div>`;
+}
+const spk = (rec, sp) => ((sp === 0) !== rec.swapped ? '나' : '고객');
+function transcriptHtml(rec) {
+  const q = state.tq.trim();
+  const hits = q ? rec.msgs.map((m, i) => (m.text.includes(q) ? i : -1)).filter((i) => i >= 0) : [];
+  const cur = hits.length && state.tcur >= 0 ? hits[state.tcur % hits.length] : -1;
+  const pos = state.play ? state.play.pos : -1;
+  let playing = -1;
+  rec.msgs.forEach((m, i) => { if (pos >= 0 && secOf(m.t) <= pos) playing = i; });
+  const mark = (t) => (q ? esc(t).split(esc(q)).join(`<mark>${esc(q)}</mark>`) : esc(t));
+  return { n: hits.length, cur: state.tcur >= 0 && hits.length ? (state.tcur % hits.length) + 1 : 0, html: rec.msgs.map((m, i) => `<div class="msg ${spk(rec, m.sp) === '나' ? 'me' : ''} ${i === playing ? 'cur' : ''} ${i === cur ? 'hit' : ''}" data-mi="${i}"><button class="tchip" data-seek="${secOf(m.t)}" title="이 부분부터 듣기">${m.t}</button><span class="sp">${spk(rec, m.sp)}</span><span>${mark(m.text)}</span></div>`).join('') };
+}
+function drawTranscript(rec, scroll) {
+  const box = document.getElementById('trs');
+  if (!box) return;
+  const t = transcriptHtml(rec);
+  box.innerHTML = t.html;
+  const cnt = document.getElementById('tcnt');
+  if (cnt) cnt.textContent = !state.tq.trim() ? '' : t.n === 0 ? '없음' : t.cur ? `${t.cur}/${t.n}` : `${t.n}건`;
+  if (scroll) { const el = box.querySelector(scroll); if (el) el.scrollIntoView({ block: 'center', behavior: 'smooth' }); }
+}
+function drawPlayer(rec) {
+  const p = state.play;
+  const bar = document.getElementById('pbar'), tm = document.getElementById('ptime'), btn = document.getElementById('pbtn');
+  if (!bar) return;
+  const pos = p ? p.pos : 0;
+  bar.style.width = `${Math.min(100, (pos / rec.dur) * 100)}%`;
+  tm.textContent = `${mmss(pos)} / ${mmss(rec.dur)}`;
+  btn.innerHTML = p && p.on ? '<svg class="i" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>' : '<svg class="i" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>';
+  btn.setAttribute('aria-label', p && p.on ? '일시 정지' : '재생');
+}
+let playTimer = null;
+function setPlay(recId, pos, on) {
+  clearInterval(playTimer);
+  state.play = { rec: recId, pos, on };
+  const rec = RECS[recId];
+  // 데모: 실제 소리 없이 8배속으로 재생 위치만 움직인다
+  if (on) playTimer = setInterval(() => { const p = state.play; if (!p || !p.on) return clearInterval(playTimer); p.pos = Math.min(rec.dur, p.pos + 2); if (p.pos >= rec.dur) { p.on = false; clearInterval(playTimer); } drawPlayer(rec); drawTranscript(rec); }, 250);
+  drawPlayer(rec); drawTranscript(rec);
+}
+function analysisHtml(rec, linked, cons) {
+  const others = cons ? CONS.filter((c) => c.name === cons.name && c.id !== cons.id).slice(0, 3) : [];
+  return `<div class="sec"><div class="sec-h">${icon('sparkle')}AI 요약<button class="btn quiet" data-reanalyze>${icon('refresh')}다시 분석</button></div>
+      ${rec.busy ? '<div class="none-t"><span class="st accent busy">분석 중</span> 통화 내용을 분석하고 있습니다. 끝나면 상담 기록과 제안이 생깁니다.</div>' : `<dl class="kv"><dt>요약</dt><dd>${esc(rec.summary)}</dd>${rec.needs ? `<dt>고객 니즈</dt><dd>${esc(rec.needs)}</dd>` : ''}
+        ${rec.checks.length ? `<dt>확인 필요</dt><dd class="chk"><ul>${rec.checks.map((c) => `<li>${esc(c)}</li>`).join('')}</ul><small>원문을 듣고 확인하세요</small></dd>` : ''}
+        ${rec.next.length ? `<dt>다음 조치</dt><dd><ul>${rec.next.map((c) => `<li>${esc(c)}</li>`).join('')}</ul></dd>` : ''}</dl>`}</div>
+    <div class="sec"><div class="sec-h">핵심 정보</div><dl class="kv"><dt>요점</dt><dd><ul>${rec.keys.map((k) => `<li>${esc(k)}</li>`).join('')}</ul></dd></dl></div>
+    <div class="sec"><div class="sec-h">통화에서 말한 숫자 <span class="n">${rec.facts.length}</span></div><div class="dl">${rec.facts.map((f) => `<div class="dr"><span class="w">${esc(f.k)}</span><span class="g num"><b style="font-weight:600">${esc(f.v)}</b>${f.prev ? ` <span class="m">정정 전 <s>${esc(f.prev)}</s></span>` : ''}</span><button class="tchip" data-seek="${secOf(f.t)}" title="원문 보기" aria-label="원문 ${f.t}로 이동">원문 ${f.t}</button></div>`).join('')}</div></div>
+    ${sgHtml(rec, linked)}
+    ${cons ? `<div class="sec"><div class="sec-h">연결된 상담 기록 <span class="n">${others.length + 1}건</span></div><div class="dl"><div class="dr"><span class="w num">${md(cons.off)} ${cons.hm}</span><span class="g">${esc(cons.text)}</span><span class="m">${cons.auto ? 'AI 통화 요약' : ''}</span></div>${others.map((c) => `<a class="dr" data-opencons="${c.id}"><span class="w num">${md(c.off)} ${c.hm}</span><span class="g">${esc(c.text)}</span><span class="m">${TYPE[c.type][0]}</span></a>`).join('')}</div></div>` : ''}
+    <div class="sec"><div class="sec-h">${rec.dir === 'visit' ? '방문 상담 녹음' : `${DIR[rec.dir]} 통화`} 녹음</div>
+      <div class="player"><button class="ib" id="pbtn" data-play aria-label="재생"></button><div class="bar" data-bar><i id="pbar"></i></div><span id="ptime"></span><span class="st ok">변환 완료</span></div></div>
+    <div class="sec"><div class="sec-h">대화 기록 <span class="n">${rec.msgs.length}건</span><button class="btn quiet" data-swap>${icon('users')}화자 전환</button></div>
+      <div class="tfind"><label class="field">${icon('search')}<input id="tq" placeholder="대화에서 찾기 (예: 억, 토요일)" aria-label="대화에서 찾기" value="${esc(state.tq)}"></label><span class="cnt" id="tcnt"></span><button class="ib" data-tnav="-1" aria-label="이전 찾기">${icon('chevLeft')}</button><button class="ib" data-tnav="1" aria-label="다음 찾기">${icon('chevRight')}</button></div>
+      <div id="trs"></div></div>`;
+}
+function contentHtml(c) {
+  const s = signal(c), o = outcome(c);
+  const ctx = [['고객', c.name, phoneOf(c.name) || '연락처 없음', 'contacts.html'], c.links.prop && ['매물', c.links.prop, '매물 상세에서 소유주·임차인·상담 이력을 확인합니다.', 'properties.html'], c.links.intake && ['의뢰', '의뢰 (진행중)', '매물 확인·권리·현장 메모 맥락입니다.', 'properties.html'], c.links.listing && ['매물(거래)', c.links.listing, '거래 조건, 가격 협의, 광고 상태 문맥입니다.', 'properties.html'], c.links.match && ['매칭', `매칭 · ${c.links.match}`, '희망매물에서 이 매칭의 상세를 엽니다.', 'wanted.html'], c.links.req && ['구매요건', c.links.req, '고객 원장에서 조건을 확인합니다.', 'customers.html']].filter(Boolean);
+  return `<div class="sec"><div class="sec-h">상담 결과</div><dl class="kv"><dt>업무 신호</dt><dd><span class="tag ${s.cls}">${s.label}</span></dd><dt>결과</dt><dd><span class="st ${OUT_CLS[o]}">${o}</span></dd></dl></div>
+    <div class="sec"><div class="sec-h">연결 맥락 <span class="n">${ctx.length}</span></div><div class="dl">${ctx.map(([k, t, d, href]) => `<a class="dr" href="${href}" title="${esc(d)}"><span class="w">${k}</span><span class="g" style="font-weight:500">${esc(t)}</span><span class="m">${icon('arrowUpRight')}</span></a>`).join('')}</div>${ctx.length === 1 ? '<div class="none-t">연결된 매물, 의뢰, 매칭, 구매요건이 없습니다.</div>' : ''}</div>
+    <div class="sec"><div class="sec-h">후속 액션 후보</div><div class="dl"><div class="dr"><span class="g"><b style="font-weight:600">${nextAction(c)}</b> <span class="m">이 상담에 연결된 할 일을 만들어 후속 업무로 이어갑니다.</span></span><button class="btn sm" data-task>${icon('todo')}이 상담으로 할 일 만들기</button></div></div></div>
+    <div class="sec"><div class="sec-h">상담 전문</div><p class="prose">${esc(c.text)}</p></div>
+    <div class="sec"><dl class="kv"><dt>기록자</dt><dd>${who(c.by)}</dd><dt>시각</dt><dd class="num">${dateLabel(c.off)} ${c.hm}</dd><dt>매물</dt><dd>${c.links.prop ? esc(c.links.prop) : '<span class="t3">매물 미연결</span>'}</dd></dl></div>`;
+}
+function renderPeek() {
+  const peek = document.getElementById('peek');
+  const pk = state.peek;
+  const item = pk && (pk.kind === 'cons' ? CONS.find((c) => c.id === pk.id) : pk.kind === 'pend' ? PEND.find((p) => p.id === pk.id) : CALLS.find((c) => c.id === pk.id));
+  peek.hidden = !item;
+  if (!item) { if (pk) state.peek = null; return; }
+  const sc = peek.querySelector('.peek-body');
+  const keepScroll = sc && peek.dataset.key === `${pk.kind}:${pk.id}:${state.ptab}` ? sc.scrollTop : 0;
+  peek.dataset.key = `${pk.kind}:${pk.id}:${state.ptab}`;
+  const bar = (crumb, extra = '') => `<div class="peek-bar"><button class="ib" data-pclose aria-label="닫기">${icon('chevsRight')}</button><span class="crumb">${crumb}</span><span style="margin-left:auto"></span>${extra}</div>`;
+  let rec = null;
+  if (pk.kind === 'cons') {
+    const c = item;
+    rec = c.rec ? RECS[c.rec] : null;
+    if (!rec) state.ptab = 'content';
+    peek.classList.toggle('wide', !!rec);
+    peek.innerHTML = bar('대화 원장', `<button class="btn quiet sm" data-task>${icon('todo')}할 일 만들기</button><button class="btn quiet sm" data-edit>${icon('note')}수정</button><button class="btn quiet sm" data-del>${icon('x')}삭제</button>`)
+      + `<div class="peek-body"><h2>${esc(c.name)}</h2><div class="lead"><span class="tag ${TYPE[c.type][1]}">${TYPE[c.type][0]}</span>${c.purpose !== 'general' ? `<span class="tag">${PURPOSE[c.purpose]}</span>` : ''}<span style="font-size:13px" class="num">${dateLabel(c.off)} ${c.hm}</span><span class="t3">·</span><span style="font-size:13px">${esc(c.by)}</span></div>
+        ${rec ? `<div class="ptabs" role="tablist"><button class="ptab ${state.ptab === 'analysis' ? 'on' : ''}" data-ptab="analysis">통화 분석</button><button class="ptab ${state.ptab === 'content' ? 'on' : ''}" data-ptab="content">상담 내용</button></div>` : ''}
+        ${rec && state.ptab === 'analysis' ? analysisHtml(rec, true, c) : contentHtml(c)}</div>`;
+    if (!(rec && state.ptab === 'analysis')) rec = null;
+  } else if (pk.kind === 'pend') {
+    const p = item;
+    rec = p.rec ? RECS[p.rec] : null;
+    peek.classList.toggle('wide', !!rec);
+    peek.innerHTML = bar('연결 대기 녹음') + `<div class="peek-body"><h2>${esc(p.name || '미등록 번호')}</h2><div class="lead"><span class="num" style="font-size:13px">${p.phone || '번호 없음'}</span><span class="t3">·</span><span style="font-size:13px" class="num">${dateLabel(p.off)} ${p.hm}</span>${pstat(p)}</div>
+      <div class="sec" style="margin-top:14px">${p.status === 'need' ? `<div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn sm" data-pact="register">${icon('plus')}연락처로 등록</button><button class="btn sm" data-pact="link">${icon('bookUser')}기존 연락처 연결</button><button class="btn sm" disabled>${icon('msg')}상담으로 전환</button></div><div class="hint" style="margin-top:8px">연락처를 등록하거나 연결하면 상담으로 전환할 수 있습니다.</div>` : p.status === 'sttfail' ? `<div class="none-t">받아쓰기에 실패했습니다: 음질이 낮아 말소리를 구분하지 못했습니다.</div><button class="btn sm" data-pact="retry">${icon('refresh')}다시 받아쓰기</button>` : '<div class="none-t">음성 분석 중입니다. 완료되면 자동으로 업데이트됩니다.</div>'}</div>
+      ${rec ? analysisHtml(rec, false, null) : ''}</div>`;
+  } else {
+    const c = item, n = callName(c);
+    peek.classList.remove('wide');
+    const linked = CONS.find((x) => x.name === n && x.off === c.off && x.hm === c.hm);
+    peek.innerHTML = bar('통화 이력') + `<div class="peek-body"><h2>${esc(n || '미등록 번호')}</h2><div class="lead"><span class="num" style="font-size:13px">${c.phone}</span><span class="st ${CSTAT[c.status][1]}">${CSTAT[c.status][0]}</span></div>
+      <div class="props"><div class="pk">${icon('clock')}시간</div><div class="pv num">${dateLabel(c.off)} ${c.hm}</div><div class="pk">${icon('phone')}방향</div><div class="pv">${DIR[c.dir]}</div><div class="pk">${icon('clock')}통화시간</div><div class="pv num">${c.dur ? mmss(c.dur) : '-'}</div><div class="pk">${icon('user')}담당</div><div class="pv">${c.by ? who(c.by) : '<span class="t3">-</span>'}</div><div class="pk">${icon('note')}메모</div><div class="pv">${c.memo ? esc(c.memo) : '<span class="t3">없음</span>'}</div></div>
+      <div class="sec"><div style="display:flex;gap:6px;flex-wrap:wrap">${n ? '' : `<button class="btn sm" data-cact="register">${icon('plus')}연락처로 등록</button><button class="btn sm" data-cact="link">${icon('bookUser')}기존 연락처 연결</button>`}${linked ? `<button class="btn sm" data-opencons="${linked.id}">${icon('msg')}연결된 상담 기록 보기</button>` : `<button class="btn sm ${n ? 'primary' : ''}" data-cact="convert" ${n && c.status === 'ended' ? '' : 'disabled'}>${icon('msg')}상담으로 전환</button>`}</div>
+      ${n ? '' : '<div class="hint" style="margin-top:8px">연락처를 등록하거나 연결하면 상담으로 전환할 수 있습니다.</div>'}</div></div>`;
+  }
+  const nsc = peek.querySelector('.peek-body');
+  if (rec) { if (!state.play || RECS[state.play.rec] !== rec) state.play = null; drawTranscript(rec); drawPlayer(rec); }
+  if (nsc) nsc.scrollTop = keepScroll;
+  const sgin = peek.querySelector('[data-sgin="title"]');
+  if (sgin) sgin.focus();
+}
+const peekRec = () => { const pk = state.peek; if (!pk) return null; const it = pk.kind === 'cons' ? CONS.find((c) => c.id === pk.id) : pk.kind === 'pend' ? PEND.find((p) => p.id === pk.id) : null; return it && it.rec ? [it.rec, RECS[it.rec]] : null; };
+function openPeek(kind, id) { clearInterval(playTimer); state.play = null; state.tq = ''; state.tcur = -1; state.editSg = null; state.ptab = 'analysis'; state.peek = isPeek(kind, id) ? null : { kind, id }; render(); }
+
+// ── 대화창 ──
+function dialog({ title, desc, body, ok, onOk, init }) {
+  const back = document.createElement('div');
+  back.className = 'dlg-back';
+  back.innerHTML = `<div class="dlg" role="dialog" aria-modal="true" aria-label="${esc(title)}"><h3>${esc(title)}</h3><p class="desc">${desc}</p>${body}<div class="err" role="alert"></div><div class="foot"><button class="btn" data-dcancel>취소</button><button class="btn primary" data-dok>${ok}</button></div></div>`;
+  document.body.append(back);
+  const close = () => back.remove();
+  const submit = () => { const err = onOk(back); if (err) back.querySelector('.err').textContent = err; else close(); };
+  back.addEventListener('mousedown', (e) => { if (e.target === back) close(); });
+  back.addEventListener('click', (e) => { if (e.target.closest('[data-dcancel]')) close(); else if (e.target.closest('[data-dok]')) submit(); });
+  back.addEventListener('keydown', (e) => { if (e.isComposing || e.keyCode === 229) return; if (e.key === 'Escape') { e.stopPropagation(); close(); } else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey || e.target.tagName === 'INPUT')) { e.preventDefault(); submit(); } });
+  if (init) init(back);
+  const first = back.querySelector('[data-first]') || back.querySelector('input, textarea, select');
+  if (first) first.focus();
+  return back;
+}
+const segHtml = (name, opts, cur) => `<div class="seg" data-seg="${name}" data-val="${cur}">${opts.map(([v, l]) => `<button type="button" class="${v === cur ? 'on' : ''}" data-v="${v}">${l}</button>`).join('')}</div>`;
+const wireSeg = (root, cb) => root.addEventListener('click', (e) => { const b = e.target.closest('[data-seg] button'); if (!b) return; const seg = b.parentElement; seg.dataset.val = b.dataset.v; seg.querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b)); if (cb) cb(seg.dataset.seg, b.dataset.v); });
+const peopleList = () => `<datalist id="people">${PEOPLE.map((p) => `<option value="${esc(p.name)}">${p.phone}</option>`).join('')}</datalist>`;
+function consultDialog({ edit, name = '', type = 'phone', text = '', title, ok, desc, after }) {
+  const props = uniq(CONS.map((c) => c.links.prop).filter(Boolean));
+  dialog({
+    title: title || (edit ? '상담 수정' : '새 상담 기록'), ok: ok || (edit ? '수정 저장' : '상담 등록'),
+    desc: desc || (edit ? '상담유형과 내용을 수정합니다. 목적·연결 항목 변경은 아직 지원되지 않습니다.' : '고객과 나눈 대화를 기록하고 매물·의뢰·매칭·구매조건에 연결합니다.'),
+    body: `${peopleList()}<label class="f">고객 ${edit ? '' : '*'}<input class="minp" name="name" list="people" placeholder="이름, 전화번호로 고객 검색" value="${esc(edit ? edit.name : name)}" ${edit ? 'disabled' : 'data-first'}></label>
+      <div class="row2"><label class="f">상담유형 *<br>${segHtml('type', [['phone', '전화'], ['visit', '방문'], ['online', '온라인']], edit ? edit.type : type)}</label>
+      <label class="f">목적<select class="minp" name="purpose" ${edit ? 'disabled' : ''}>${Object.entries(PURPOSE).map(([k, l]) => `<option value="${k}" ${edit && edit.purpose === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label></div>
+      <label class="f">상담 내용 *<textarea class="minp" name="text" placeholder="누구와 어떤 이야기를 했는지 기록합니다. (가격 협의, 방문 일정, 요청 사항 등)" ${edit ? 'data-first' : ''}>${esc(edit ? edit.text : text)}</textarea></label>
+      ${edit ? '' : `<label class="f">컨텍스트 연결 (선택) · 매물 (호실/장소)<select class="minp" name="prop"><option value="">연결 안 함</option>${props.map((p) => `<option>${esc(p)}</option>`).join('')}</select></label>`}`,
+    init: (root) => wireSeg(root),
+    onOk: (root) => {
+      const v = (n) => root.querySelector(`[name="${n}"]`);
+      const ty = root.querySelector('[data-seg="type"]').dataset.val;
+      const txt = v('text').value.trim();
+      if (edit) {
+        if (!txt) return '상담 내용을 입력하세요.';
+        const before = { type: edit.type, text: edit.text };
+        edit.type = ty; edit.text = txt; edit._rev = (edit._rev || 0) + 1;
+        const rv = edit._rev;
+        render();
+        UI.toast('상담이 수정되었습니다', () => { if (edit._rev !== rv) { UI.toast('그 뒤에 다시 바뀌어서 되돌리지 않았습니다'); return; } Object.assign(edit, before); edit._rev += 1; render(); });
+        return '';
+      }
+      const nm = v('name').value.trim();
+      if (!nm) return '고객을 선택하세요.';
+      if (!PEOPLE.some((p) => p.name === nm)) return '등록된 연락처에서 고객을 골라 주세요.';
+      if (!txt) return '상담 내용을 입력하세요.';
+      const prop = v('prop').value;
+      const m = prop && prop.match(/^(.+) (\d+)동 (\d+)호$/);
+      const c = K(nm, 0, '11:40', ty, v('purpose').value, '이현수', txt, m ? G(m[1], m[2], m[3]) : {});
+      CONS.unshift(c);
+      if (after) after(c);
+      state.tab = 'cons'; state.page = 1; state.peek = { kind: 'cons', id: c.id }; state.ptab = 'content';
+      render();
+      UI.toast(title ? '상담 기록이 생성되었습니다' : '상담이 등록되었습니다', () => { CONS = CONS.filter((x) => x !== c); render(); });
+      return '';
+    },
+  });
+}
+function taskDialog(c) {
+  dialog({ title: '상담으로 할 일 만들기', desc: '이 상담과 연결된 고객·매물 정보가 할 일에 자동으로 연결됩니다.', ok: '할 일 생성',
+    body: `<label class="f">제목 *<input class="minp" name="title" data-first value="${esc(`상담 후속: ${c.name}`)}"></label><label class="f">내용<textarea class="minp" name="body" style="height:72px">${esc(nextAction(c))}</textarea></label><label class="f">마감일<input class="minp" name="due" type="date" value="2026-11-13"></label>`,
+    onOk: (root) => { const t = root.querySelector('[name="title"]').value.trim(); if (!t) return '제목을 입력하세요.'; UI.toast(`할 일이 생성되었습니다: ${esc(t)}`); return ''; } });
+}
+function uploadDialog() {
+  const SAMPLE = { phone: ['통화 녹음 01033775120_261111_114502.m4a', '010-3377-5120', '11:45'], visit: ['방문상담_261111_1130.m4a', '', '11:30'] };
+  dialog({ title: '녹음 올리기', desc: '받아쓰기와 분석이 끝나면 상담 기록이 남고, 할 일·일정 같은 업무를 제안합니다.', ok: `${icon('arrowUpRight')}올리기`,
+    body: `<label class="f">녹음 종류<br>${segHtml('kind', [['phone', '전화 통화'], ['visit', '방문 상담']], 'phone')}</label>
+      <label class="f">녹음 파일<button type="button" class="pickf" data-pick>${icon('file')}<span>녹음 파일 고르기 (m4a, mp3, wav 등)</span></button></label>
+      <div class="row2"><label class="f"><span data-l="phone">상대 번호</span><input class="minp" name="phone" placeholder="010-0000-0000" inputmode="tel"></label><label class="f" data-dirwrap>방향<select class="minp" name="dir"><option value="inbound">수신</option><option value="outbound">발신</option></select></label></div>
+      <label class="f"><span data-l="time">통화 시각</span><input class="minp" name="time" value="11:40" placeholder="HH:MM"></label>
+      <p class="desc" data-l="help" style="margin:10px 0 0">등록된 번호면 그 연락처에 자동으로 연결됩니다. 갤럭시 기본 녹음 파일은 번호와 시각을 파일 이름에서 채웁니다.</p>`,
+    init: (root) => {
+      const kind = () => root.querySelector('[data-seg="kind"]').dataset.val;
+      wireSeg(root, () => {
+        const v = kind() === 'visit';
+        root.querySelector('[data-l="phone"]').textContent = v ? '고객 번호 (선택)' : '상대 번호';
+        root.querySelector('[data-l="time"]').textContent = v ? '상담 시각' : '통화 시각';
+        root.querySelector('[data-dirwrap]').style.visibility = v ? 'hidden' : '';
+        root.querySelector('[data-l="help"]').textContent = v ? '고객 번호를 넣으면 그 연락처의 방문 상담으로 남습니다. 비워 두면 연결 대기에서 연락처를 이어 주세요.' : '등록된 번호면 그 연락처에 자동으로 연결됩니다. 갤럭시 기본 녹음 파일은 번호와 시각을 파일 이름에서 채웁니다.';
+      });
+      root.querySelector('[data-pick]').addEventListener('click', (e) => {
+        const b = e.currentTarget, s = SAMPLE[kind()];
+        b.classList.add('has'); b.dataset.file = s[0]; b.querySelector('span').textContent = s[0];
+        if (s[1] && !root.querySelector('[name="phone"]').value) root.querySelector('[name="phone"]').value = s[1];
+        root.querySelector('[name="time"]').value = s[2];
+      });
+    },
+    onOk: (root) => {
+      const v = (n) => root.querySelector(`[name="${n}"]`).value.trim();
+      const kind = root.querySelector('[data-seg="kind"]').dataset.val;
+      if (!root.querySelector('[data-pick]').dataset.file) return '녹음 파일을 골라 주세요';
+      if (kind === 'phone' && digits(v('phone')).length < 8) return '상대 번호를 입력하세요.';
+      if (!/^\d{1,2}:\d{2}$/.test(v('time'))) return '시각은 14:30처럼 입력하세요.';
+      const person = personByPhone(v('phone'));
+      const p = { id: ++pSeq, phone: v('phone'), name: person ? person.name : null, dir: kind === 'visit' ? 'visit' : v('dir'), off: 0, hm: v('time').padStart(5, '0'), dur: 196, status: 'stt', rec: null };
+      PEND.unshift(p);
+      state.tab = 'pend'; state.peek = { kind: 'pend', id: p.id };
+      render();
+      UI.toast('녹음을 올렸습니다. 받아쓰기와 분석이 끝나면 상담 기록과 제안이 생깁니다.');
+      pipeline(p);
+      return '';
+    } });
+}
+// 받아쓰기 → 분석 → (연락처가 있으면) 상담 기록. 데모에서는 몇 초 만에 지나간다
+function pipeline(p, from = 'stt') {
+  const step = (status, ms, next) => setTimeout(() => { if (!PEND.includes(p) || p.status !== status) return; next(); }, ms);
+  const finish = () => {
+    p.rec = p.rec || sampleRec(p.dir);
+    const person = p.name ? { name: p.name } : personByPhone(p.phone);
+    if (person) return toConsult(p, person.name, true);
+    p.status = 'need'; render();
+    UI.toast('분석이 끝났습니다. 연락처를 연결하면 상담 기록이 됩니다.');
+  };
+  if (from === 'stt') { p.status = 'stt'; render(); step('stt', 2600, () => { p.status = 'analysis'; render(); step('analysis', 2600, finish); }); }
+  else step('analysis', 3200, finish);
+}
+function toConsult(p, name, auto) {
+  const rec = RECS[p.rec];
+  const c = K(name, p.off, p.hm, p.dir === 'visit' ? 'visit' : 'phone', 'general', '이현수', rec.summary, {}, p.rec);
+  CONS.push(c);
+  PEND = PEND.filter((x) => x !== p);
+  const watching = isPeek('pend', p.id);
+  if (watching || !auto) { state.tab = 'cons'; state.page = 1; state.peek = { kind: 'cons', id: c.id }; state.ptab = 'analysis'; }
+  render();
+  UI.toast(`${esc(name)} 님 ${p.dir === 'visit' ? '방문 상담' : '통화'} 분석이 끝나 상담 기록과 제안 ${rec.sugg.length}건이 생겼습니다.`);
+}
+function linkContact(anchor, phone, done) {
+  UI.menu(anchor, [{ head: '기존 연락처 연결' }, ...PEOPLE.slice(0, 9).map((x) => ({ label: x.name, hint: x.phone, icon: 'user', run: () => done(x.name) }))], { wide: false });
+}
+function registerDialog(phone, done) {
+  dialog({ title: '연락처로 등록', desc: '이 번호를 새 연락처로 등록하고 통화 기록에 연결합니다.', ok: '등록하고 연결',
+    body: `<label class="f">이름 *<input class="minp" name="name" data-first placeholder="예: 김매수 / 고덕동 집주인"></label><label class="f">전화번호<input class="minp" name="phone" value="${esc(phone)}" placeholder="010-0000-0000"></label>`,
+    onOk: (root) => { const n = root.querySelector('[name="name"]').value.trim(); const ph = root.querySelector('[name="phone"]').value.trim(); if (!n) return '이름을 입력하세요.'; if (PEOPLE.some((x) => x.name === n)) return '같은 이름의 연락처가 이미 있습니다. 기존 연락처 연결을 써 주세요.'; PEOPLE.push({ name: n, phone: ph }); done(n, ph); return ''; } });
+}
+
+// ── 이벤트 ──
+document.getElementById('newBtn').innerHTML = `${icon('plus')}새 상담`;
+document.getElementById('uploadBtn').innerHTML = `${icon('arrowUpRight')}녹음 올리기`;
+
+function openFs(defs, bag, id, anchor, count) {
+  const d = defs.find((x) => x.id === id);
+  const cur = bag[id];
+  const opts = d.opts();
+  UI.menu(anchor, [{ label: '전체', on: !cur, run: () => { delete bag[id]; if (id === 'site') state.dong = state.ho = ''; state.page = 1; render(); } }, '-',
+    ...opts.map(([label, t]) => ({ label, hint: String(count(t)), on: cur === label, run: () => { bag[id] = label; state.page = 1; render(); } })),
+    ...(cur && !opts.some((o) => o[0] === cur) ? [{ label: cur, hint: '0', on: true }] : [])]);
+}
+document.addEventListener('click', (e) => {
+  const t = e.target;
+  if (t.closest('.dlg-back')) return;
+  const vt = t.closest('.vtab[data-tab]');
+  if (vt) { state.tab = vt.dataset.tab; if (state.peek && state.peek.kind !== { cons: 'cons', pend: 'pend', calls: 'call' }[state.tab]) state.peek = null; render(); return; }
+  const jump = t.closest('[data-jump]');
+  if (jump) { if (jump.dataset.jump === 'pend') state.tab = 'pend'; else { state.tab = 'cons'; state.quick = 'follow'; state.page = 1; } state.peek = null; render(); return; }
+  if (t.closest('#newBtn')) { consultDialog({}); return; }
+  if (t.closest('#uploadBtn')) { uploadDialog(); return; }
+  const qk = t.closest('[data-quick]');
+  if (qk) { state.quick = qk.dataset.quick; state.page = 1; render(); return; }
+  const fclr = t.closest('[data-fclr]');
+  if (fclr) { const [a, id] = fclr.dataset.fclr.split(':'); delete (a === 'data-fs' ? state.f : state.cf)[id]; if (id === 'site') state.dong = state.ho = ''; state.page = 1; render(); return; }
+  const fs = t.closest('[data-fs]');
+  if (fs) { const others = (id) => CONS.filter((c) => FDEFS.every((d) => d.id === id || !testOf(FDEFS, state.f, d.id) || testOf(FDEFS, state.f, d.id)(c))); openFs(FDEFS, state.f, fs.dataset.fs, fs, (tst) => others(fs.dataset.fs).filter(tst).length); return; }
+  const cfs = t.closest('[data-cfs]');
+  if (cfs) { openFs(CFDEFS, state.cf, cfs.dataset.cfs, cfs, (tst) => CALLS.filter(tst).length); return; }
+  if (t.closest('[data-clear]')) { if (state.tab === 'cons') { state.f = {}; state.q = ''; state.quick = 'all'; state.order = -1; state.dong = state.ho = ''; state.page = 1; } else { state.cf = {}; state.cq = ''; } render(); return; }
+  if (t.closest('#orderBtn')) { UI.menu(t.closest('#orderBtn'), [{ label: '최신순', on: state.order < 0, run: () => { state.order = -1; render(); } }, { label: '오래된순', on: state.order > 0, run: () => { state.order = 1; render(); } }], { right: true }); return; }
+  const vw = t.closest('[data-view]');
+  if (vw) { state.view = vw.dataset.view; state.shut.clear(); render(); return; }
+  const pg = t.closest('[data-page]');
+  if (pg) { state.page += +pg.dataset.page; render(); document.getElementById('scroll').scrollTop = 0; return; }
+  const thS = t.closest('th[data-sort]');
+  if (thS && !t.closest('.rz')) {
+    const key = thS.dataset.sort;
+    if (state.tab === 'cons') UI.menu(thS, [{ label: '최신순', icon: 'sort', on: state.order < 0, run: () => { state.order = -1; render(); } }, { label: '오래된순', icon: 'sort', on: state.order > 0, run: () => { state.order = 1; render(); } }]);
+    else { const cur = state.csort.key === key ? state.csort.dir : 0; UI.menu(thS, [{ label: '오름차순 정렬', icon: 'sort', on: cur === 1, run: () => { state.csort = { key, dir: 1 }; render(); } }, { label: '내림차순 정렬', icon: 'sort', on: cur === -1, run: () => { state.csort = { key, dir: -1 }; render(); } }, ...(key !== 'ts' && cur ? [{ label: '정렬 해제', icon: 'x', run: () => { state.csort = { key: 'ts', dir: -1 }; render(); } }] : [])]); }
+    return;
+  }
+
+  // 옆 상세
+  if (t.closest('[data-pclose]')) { clearInterval(playTimer); state.play = null; state.peek = null; render(); return; }
+  const pt = t.closest('[data-ptab]');
+  if (pt) { state.ptab = pt.dataset.ptab; render(); return; }
+  const oc = t.closest('[data-opencons]');
+  if (oc) { state.tab = 'cons'; state.peek = null; openPeek('cons', +oc.dataset.opencons); return; }
+  const pr = peekRec();
+  if (pr) {
+    const [rid, rec] = pr;
+    const seek = t.closest('[data-seek]');
+    if (seek) { setPlay(rid, +seek.dataset.seek, true); drawTranscript(rec, '.msg.cur'); return; }
+    if (t.closest('[data-play]')) { const p = state.play; setPlay(rid, p && p.pos < rec.dur ? p.pos : 0, !(p && p.on)); return; }
+    const bar = t.closest('[data-bar]');
+    if (bar) { const r = bar.getBoundingClientRect(); setPlay(rid, Math.round(((e.clientX - r.left) / r.width) * rec.dur), true); return; }
+    if (t.closest('[data-swap]')) { rec.swapped = !rec.swapped; drawTranscript(rec); UI.toast('화자 라벨을 변경했습니다', () => { rec.swapped = !rec.swapped; drawTranscript(rec); }); return; }
+    const nav = t.closest('[data-tnav]');
+    if (nav) { const n = transcriptHtml(rec).n; if (n) { state.tcur = ((state.tcur < 0 ? (+nav.dataset.tnav > 0 ? -1 : 0) : state.tcur) + +nav.dataset.tnav + n) % n; drawTranscript(rec, '.msg.hit'); } return; }
+    if (t.closest('[data-reanalyze]')) { rec.busy = true; render(); UI.toast('다시 분석합니다. 끝나면 자동으로 바뀝니다.'); setTimeout(() => { rec.busy = false; render(); }, 2400); return; }
+    const sga = t.closest('[data-sga]');
+    if (sga) {
+      const s = rec.sugg.find((x) => x.id === +sga.closest('[data-sg]').dataset.sg);
+      const a = sga.dataset.sga, label = SG[s.type][0];
+      const set = (st, msg) => { const prev = s.state; s.state = st; const v = ++s.rev; state.editSg = null; render(); UI.toast(msg, () => { if (s.rev !== v) { UI.toast('그 뒤에 다시 바뀌어서 되돌리지 않았습니다'); return; } s.state = prev; s.rev += 1; render(); }); };
+      if (a === 'accept') set('accepted', `${label} 반영했습니다`);
+      else if (a === 'ignore') set('ignored', '제안을 무시했습니다');
+      else if (a === 'undo') { s.state = 'open'; s.rev += 1; render(); }
+      else if (a === 'edit') { state.editSg = s.id; render(); }
+      else if (a === 'cancel') { state.editSg = null; render(); }
+      else if (a === 'save') { const row = sga.closest('[data-sg]'); const title = row.querySelector('[data-sgin="title"]').value.trim(); if (!title) { UI.toast('제목을 입력하세요.'); return; } s.title = title; s.sub = row.querySelector('[data-sgin="sub"]').value.trim(); set('accepted', `${label} 고쳐서 반영했습니다`); }
+      return;
+    }
+  }
+  const pk = state.peek;
+  if (pk && pk.kind === 'cons' && t.closest('#peek')) {
+    const c = CONS.find((x) => x.id === pk.id);
+    if (t.closest('[data-task]')) { taskDialog(c); return; }
+    if (t.closest('[data-edit]')) { consultDialog({ edit: c }); return; }
+    if (t.closest('[data-del]')) { const i = CONS.indexOf(c); CONS.splice(i, 1); state.peek = null; render(); UI.toast('상담 기록이 삭제되었습니다', () => { if (CONS.includes(c)) return; CONS.splice(Math.min(i, CONS.length), 0, c); render(); }); return; }
+  }
+  const pact = t.closest('[data-pact]');
+  if (pact) {
+    const row = pact.closest('tr[data-p]');
+    const p = PEND.find((x) => x.id === (row ? +row.dataset.p : pk && pk.id));
+    if (!p) return;
+    const a = pact.dataset.pact;
+    if (a === 'retry') { UI.toast('다시 받아씁니다. 끝나면 자동으로 바뀝니다.'); pipeline(p); }
+    else if (a === 'link') linkContact(pact, p.phone, (name) => { UI.toast('통화 기록을 연락처에 연결했습니다'); toConsult(p, name, false); });
+    else registerDialog(p.phone, (name) => { UI.toast('연락처를 등록하고 통화 기록에 연결했습니다'); toConsult(p, name, false); });
+    return;
+  }
+  const cact = t.closest('[data-cact]');
+  if (cact && pk && pk.kind === 'call') {
+    const c = CALLS.find((x) => x.id === pk.id);
+    const a = cact.dataset.cact;
+    if (a === 'link') linkContact(cact, c.phone, (name) => { const person = PEOPLE.find((x) => x.name === name); const prev = c.phone; c.phone = person.phone; render(); UI.toast('통화 기록을 연락처에 연결했습니다', () => { c.phone = prev; render(); }); });
+    else if (a === 'register') registerDialog(c.phone, () => { render(); UI.toast('연락처를 등록하고 통화 기록에 연결했습니다'); });
+    else consultDialog({ name: callName(c), type: 'phone', text: c.memo, title: '상담으로 전환', ok: '상담 기록 저장', desc: '통화 내용을 상담 기록으로 저장합니다. 저장 후 대화 원장에서 매물·매칭에 연결할 수 있습니다.', after: (k) => { k.off = c.off; k.hm = c.hm; k.by = c.by || '이현수'; } });
+    return;
+  }
+  if (t.closest('#peek')) return;
+
+  // 표
+  const grp = t.closest('tr.grp');
+  if (grp) { const g = grp.dataset.g; state.shut.has(g) ? state.shut.delete(g) : state.shut.add(g); render(); return; }
+  const rc = t.closest('tr[data-c]');
+  if (rc) { openPeek('cons', +rc.dataset.c); return; }
+  const rp = t.closest('tr[data-p]');
+  if (rp) { openPeek('pend', +rp.dataset.p); return; }
+  const rl = t.closest('tr[data-call]');
+  if (rl) { openPeek('call', +rl.dataset.call); return; }
+});
+document.addEventListener('input', (e) => {
+  const el = e.target;
+  if (el.id === 'q') { state.q = el.value; state.page = 1; render(); }
+  else if (el.id === 'cq') { state.cq = el.value; render(); }
+  else if (el.id === 'fDong') { state.dong = el.value.trim(); state.page = 1; render(); }
+  else if (el.id === 'fHo') { state.ho = el.value.trim(); state.page = 1; render(); }
+  else if (el.id === 'tq') { state.tq = el.value; state.tcur = el.value.trim() ? 0 : -1; const pr = peekRec(); if (pr) drawTranscript(pr[1], '.msg.hit'); }
+});
+document.addEventListener('keydown', (e) => {
+  if (e.isComposing || e.keyCode === 229) return; // 한글 조합 확정용 Enter는 건너뛴다
+  if (e.target.closest('.dlg-back')) return;
+  const el = e.target;
+  if (el.id === 'tq' && e.key === 'Enter') { e.preventDefault(); const b = document.querySelector(`[data-tnav="${e.shiftKey ? -1 : 1}"]`); if (b) b.click(); return; }
+  if (el.matches('[data-sgin]')) { if (e.key === 'Enter') { e.preventDefault(); el.closest('[data-sg]').querySelector('[data-sga="save"]').click(); } else if (e.key === 'Escape') { e.stopPropagation(); state.editSg = null; render(); } return; }
+  if ((e.key === 'Enter' || e.key === ' ') && el.matches('.band')) { e.preventDefault(); el.click(); return; }
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'f') { const s = document.getElementById(state.tab === 'calls' ? 'cq' : 'q'); if (s) { e.preventDefault(); s.focus(); } return; }
+  if (e.key === 'Escape' && state.peek) { clearInterval(playTimer); state.play = null; state.peek = null; render(); }
+});
+
+render();
+// 처음부터 '분석 중'인 녹음은 잠시 뒤 상담 기록으로 넘어간다
+PEND.filter((p) => p.status === 'analysis').forEach((p) => pipeline(p, 'analysis'));
+
+UI.notes(
+  [
+    '<b>상담·대기 녹음·통화 이력을 한 화면의 탭</b>으로 모았습니다. 원본에서 따로 떨어져 있던 통화 이력(/calls/logs)이 세 번째 탭이고, 연결 대기 녹음은 탭과 표 위 안내 줄에 건수가 늘 보입니다.',
+    '<b>대화 원장은 표</b>입니다. 원본 타임라인 카드에 있던 것을 열로 폈습니다: 시간, 고객, 유형, 목적, 업무 신호, 결과, 상담 내용, 연결, 기록자. 날짜별·고객별 묶음과 최신순·오래된순, 쪽 넘김은 그대로입니다.',
+    '<b>필터는 늘 보입니다.</b> 빠른 필터(전체·후속 필요·매물 연결·의뢰 연결·구매요건·미연결)는 건수와 함께 줄로, 원본에서 "필터" 버튼 안에 있던 고객·매물(단지→동·호)·상담유형·기간·기록자는 선택 상자로 꺼냈습니다.',
+    '<b>행을 누르면 옆에 상세</b>가 열립니다. 녹음이 있으면 "통화 분석 / 상담 내용" 탭이 생기고, 통화 분석에는 AI 요약(요약·고객 니즈·확인 필요·다음 조치), 핵심 정보, 통화에서 말한 숫자(정정 전 값과 원문 시각), 녹음, 대화 기록이 줄 목록으로 이어집니다.',
+    '<b>AI 제안은 사람이 확인해 반영합니다.</b> 할 일·일정·고객 요청·매칭·매물 확인 제안마다 반영 / 고쳐서 반영 / 무시를 누르고, 처리한 제안은 아래로 내려가 되돌릴 수 있습니다. 연락처가 연결되지 않은 녹음은 반영 버튼이 나오지 않습니다.',
+    '<b>대화 기록</b>에서 낱말을 찾으면 노랗게 표시되고 앞뒤로 넘깁니다. 시각을 누르면 그 부분부터 듣고(데모는 소리 없이 위치만 움직입니다), 화자 전환도 됩니다.',
+    '<b>녹음 올리기</b>를 하면 받아쓰는 중 → 분석 중 → 상담 기록으로 넘어가는 과정이 실제로 진행됩니다. 모르는 번호는 "연락처 연결 필요"로 남고, 연락처로 등록하거나 기존 연락처에 연결하면 상담 기록이 됩니다. 새 상담·수정·할 일 만들기·상담으로 전환도 대화창에서 실제로 저장됩니다.',
+  ],
+  '상담과 통화의 기능을 모두 남기고, 카드 더미를 표와 줄 목록으로 바꿨습니다.',
+);
+</script>
+</body>
+</html>

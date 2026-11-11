@@ -1,0 +1,416 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>수금 원장 · UI 개선 데모</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="ui.css">
+<link rel="stylesheet" href="cashflow-shared.css">
+<style>
+  #selbar { bottom: 56px; }
+  /* 칸반은 열마다 따로 스크롤하므로 본문이 남은 높이를 채운다 */
+  #scroll.fill { display: flex; flex-direction: column; }
+  #scroll.fill #body { flex: 1; min-height: 0; overflow: auto; }
+  #scroll.fill .sumbar { flex: none; position: static; }
+  .selbar .cnt b { color: #fff; font-weight: 600; margin-left: 8px; }
+  .tbl.cf.fixed { table-layout: fixed; }
+  .tbl.cf.fixed th, .tbl.cf.fixed td { padding-left: 8px; padding-right: 8px; overflow: hidden; text-overflow: ellipsis; }
+  .tbl.cf.fixed th:last-child, .tbl.cf.fixed td.act { padding: 0 14px 0 0; overflow: visible; }
+  .tbl.cf.fixed td.act .btn.sm { height: 26px; padding: 0 8px; }
+  .adjw { display: inline-grid; vertical-align: middle; margin-left: 5px; color: var(--warn); }
+  .adjw .i { width: 14px; height: 14px; }
+</style>
+</head>
+<body data-active="cash-ledger">
+<main id="page">
+  <div class="ph">
+    <h1>수금 원장</h1>
+    <span class="count" id="total"></span>
+    <div class="meta">
+      <span class="lnk" data-quick="overdue" role="button" tabindex="0"><span class="dot danger"></span>연체 <b id="nOver"></b></span>
+      <span class="lnk" data-quick="partial" role="button" tabindex="0"><span class="dot warn"></span>부분수금 <b id="nPart"></b></span>
+    </div>
+    <div class="actions">
+      <button class="btn" id="exportBtn" data-icon="arrowUpRight">내보내기</button>
+    </div>
+  </div>
+
+  <div class="vbar">
+    <span id="presets" style="display:contents"></span>
+    <span id="mstepBox" style="display:contents"></span>
+    <div class="vtools">
+      <label class="field" style="width:270px" data-icon="search"><input id="q" placeholder="호수, 고객, 청구번호, 공동중개 사무소" aria-label="수금 원장 검색"><kbd>⌘F</kbd></label>
+      <button class="btn quiet sm" id="colBtn" data-icon="sliders">컬럼</button>
+      <span class="vsep"></span>
+      <div class="seg" id="views" role="group" aria-label="보기 방식">
+        <button data-view="table" data-icon="list">표</button><button data-view="kanban" data-icon="board">칸반</button><button data-view="calendar" data-icon="cal">캘린더</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="fbar show" id="fbar"></div>
+  <div class="band" id="adjBand" hidden></div>
+
+  <div class="scroll" id="scroll">
+    <div id="body"></div>
+    <div class="sumbar" id="foot"></div>
+  </div>
+
+  <div class="selbar" id="selbar">
+    <span class="cnt" id="selCnt"></span>
+    <button id="selDun" data-icon="msg">독촉 업무 만들기</button>
+    <button id="selExport" data-icon="arrowUpRight">내보내기</button>
+    <span class="sep"></span>
+    <button data-icon="x" id="selClear" aria-label="선택 해제"></button>
+  </div>
+</main>
+
+<script src="shell.js"></script>
+<script src="cashflow-shared.js"></script>
+<script>
+const { icon } = UI;
+const C = CF;
+const { man, esc } = C;
+const $ = (id) => document.getElementById(id);
+
+const PRESETS = [['upcoming', '다가오는'], ['this-month', '이번 달'], ['month', '월별'], ['all', '전체']];
+const COLS = [['stage', '거래 단계'], ['assignee', '담당'], ['partner', '공동중개'], ['tax', '세금계산서']];
+const KB_CORE = ['pending', 'partial', 'overdue', 'collected'];
+const KB_ORDER = ['draft', 'pending', 'partial', 'overdue', 'collected', 'waived', 'cancelled'];
+const EV = { due: ['수금 예정', 'clock'], paid: ['입금', 'check'], agreed: ['잔여 약정', 'cal'], overdue: ['연체', 'info'] };
+const DEFAULT_SORT = { key: 'due', dir: 1 };
+
+const params = new URLSearchParams(location.search);
+const state = {
+  preset: params.get('deal') ? 'all' : 'upcoming',
+  month: { ...C.THIS },
+  view: ['table', 'kanban', 'calendar'].includes(params.get('view')) ? params.get('view') : 'table',
+  q: '', f: {}, sort: DEFAULT_SORT, picked: new Set(), fold: new Set(), hl: params.get('payment'),
+  cols: { stage: true, assignee: true, partner: true, tax: true },
+};
+try { Object.assign(state.cols, JSON.parse(localStorage.getItem('ui-refresh-ledger-cols') || '{}')); } catch (e) {}
+
+// ── 범위와 필터 ──
+// 기간은 거래 단위로 거른다(서버가 거래 묶음으로 내려 준다). 캘린더는 잔여 약정일까지 보여야 해서 기간을 좁히지 않는다.
+function inPreset(d, preset = state.view === 'calendar' ? 'all' : state.preset) {
+  if (preset === 'all') return true;
+  if (preset === 'upcoming') return d.pays.some((p) => p.status === 'draft' || C.isOpen(p) || (p.paid && C.daysFrom(p.paid) >= -14));
+  const m = preset === 'this-month' ? C.THIS : state.month;
+  const key = C.monthKey(m.year, m.month);
+  return d.pays.some((p) => [C.effDue(p, d), p.paid].some((x) => x && x.startsWith(key)));
+}
+const FILTERS = {
+  status: { k: '상태', label: (v) => C.PSTATUS[v][1], options: () => ['pending', 'partial', 'overdue', 'collected', 'waived', 'cancelled'].map((v) => [v, C.PSTATUS[v][1]]), test: (d, v) => d.pays.some((p) => C.disp(p, d) === v) },
+  type: { k: '유형', label: (v) => C.TYPE[v], options: () => Object.entries(C.TYPE), test: (d, v) => d.type === v },
+  assignee: { k: '담당자', label: (v) => v, options: () => [...new Set(C.DEALS.flatMap((d) => d.people.map((x) => x.userId)))].map((v) => [v, v]), test: (d, v) => d.people.some((x) => x.userId === v) },
+  partner: { k: '공동중개', label: (v) => (v === 'none' ? '단독중개만' : C.PARTNERS[v].name), options: () => [['none', '단독중개만'], ...Object.values(C.PARTNERS).map((b) => [b.id, b.name])], test: (d, v) => (v === 'none' ? !d.partner : d.partner === v) },
+};
+// 상태 필터는 청구 단위다: 고른 상태의 청구만 남기고, 남는 청구가 없는 거래는 숨긴다
+const paysOf = (d) => (state.f.status ? d.pays.filter((p) => C.disp(p, d) === state.f.status) : d.pays);
+function matchDeal(d, skipStatus) {
+  for (const id of Object.keys(FILTERS)) {
+    const v = state.f[id];
+    if (!v || (id === 'status' && skipStatus)) continue;
+    if (!FILTERS[id].test(d, v)) return false;
+  }
+  const q = state.q.trim().toLowerCase();
+  if (!q) return true;
+  return [C.loc(d), d.partner && C.PARTNERS[d.partner].name, d.buyer, d.seller, ...d.pays.map((p) => `${p.code} ${p.note}`)].filter(Boolean).join(' ').toLowerCase().includes(q);
+}
+const firstDue = (d) => d.pays.map((p) => C.effDue(p, d)).filter(Boolean).sort()[0] ?? '9999';
+function visibleDeals() {
+  const list = C.DEALS.filter((d) => inPreset(d) && matchDeal(d));
+  const dir = state.sort.dir;
+  return [...list].sort((a, b) => {
+    if (state.sort.key === 'amount') return (C.rollup(a.pays).billed - C.rollup(b.pays).billed) * dir;
+    // 다 받은 거래는 처리할 게 없으니 예정일과 상관없이 아래로 보낸다
+    return (Number(C.fullyCollected(a)) - Number(C.fullyCollected(b))) || firstDue(a).localeCompare(firstDue(b)) * dir;
+  });
+}
+// 다 받은 거래는 접어서 시작한다. 강조할 청구가 있으면 펼친다
+const isOpenGroup = (d) => (C.fullyCollected(d) && !d.pays.some((p) => p.id === state.hl)) === state.fold.has(d.id);
+
+// ── 표 ──
+const due = (date, relText, cls = '') => `<span class="due ${cls}"><span>${C.short(date)}</span><small>${relText}</small></span>`;
+const ck = (cls, label) => `<span class="ck ${cls}" role="checkbox" aria-label="${esc(label)}">${icon('check')}</span>`;
+function dealRow(d, pays) {
+  const t = C.rollup(d.pays);
+  const w = C.worst(d);
+  const late = w === 'overdue';
+  const n = pays.filter((p) => state.picked.has(p.id)).length;
+  const names = d.people.map((x) => x.userId);
+  const dueDate = d.balance ?? d.pays.map((p) => C.effDue(p, d)).filter(Boolean).sort()[0] ?? null;
+  const c = state.cols;
+  return `<tr class="grp" data-deal="${d.id}">
+    <td class="sel">${ck(n && n === pays.length ? 'on' : n ? 'some' : '', `${C.loc(d)} 전체 선택`)}</td>
+    <td><div class="cell">${C.foldBtn(isOpenGroup(d), C.loc(d))}<span class="nm" title="${esc(C.loc(d))}">${esc(C.loc(d))}</span>${C.typeTag(d.type)}</div></td>
+    ${c.stage ? `<td>${C.stageTag(d.stage)}</td>` : ''}
+    <td>${C.badge(w)}</td>
+    <td class="r num">${man(t.billed)}</td><td class="r num">${man(t.collected)}</td><td class="r num ${late ? 'danger-t' : ''}">${man(t.remaining)}</td>
+    <td>${due(dueDate, w === 'collected' || w === 'waived' ? '' : C.rel(dueDate), late ? 'late' : '')}</td>
+    ${c.assignee ? `<td class="plain" title="${esc(names.join(', '))}">${names[0] ? esc(names[0]) : '<span class="t3">—</span>'}${names.length > 1 ? `<span class="t2"> +${names.length - 1}</span>` : ''}</td>` : ''}
+    ${c.partner ? `<td class="plain" title="${d.partner ? esc(C.PARTNERS[d.partner].name) : ''}">${d.partner ? esc(C.PARTNERS[d.partner].name) : '<span class="t3">—</span>'}</td>` : ''}
+    ${c.tax ? '<td></td>' : ''}
+    <td class="act"></td></tr>`;
+}
+function payRow(d, p) {
+  const s = C.disp(p, d);
+  const late = s === 'overdue';
+  const dd = C.effDue(p, d);
+  const c = state.cols;
+  const on = state.picked.has(p.id);
+  const act = p.status === 'draft' ? ['confirmDraft', '청구 확정'] : C.isOpen(p) ? ['collect', '수금 처리'] : C.taxPending(p) ? ['tax', '계산서'] : null;
+  return `<tr data-pay="${p.id}" class="${on ? 'picked' : ''} ${p.id === state.hl ? 'hl' : ''}">
+    <td class="sel">${ck(on ? 'on' : '', `${p.code} 선택`)}</td>
+    <td><div class="cell child"><span>${C.sideLabel(p.side)}</span><span class="t2 nm">${esc(C.payer(d, p))}</span><small>${p.code}</small>${p.by === 'partner' ? '<small class="t2">상대 수금</small>' : ''}${p.note ? `<span title="${esc(p.note)}">${icon('note', 'sm')}</span>` : ''}</div></td>
+    ${c.stage ? '<td></td>' : ''}
+    <td>${C.badge(s)}${C.pendingAdjOf(p) ? `<span class="adjw" title="조정 승인 대기" aria-label="조정 승인 대기">${icon('clock')}</span>` : ''}</td>
+    <td class="r num">${man(p.exp)}</td><td class="r num">${man(C.received(p))}</td><td class="r num ${late ? 'danger-t' : ''}">${man(C.remaining(p))}</td>
+    <td>${C.isDone(p) ? due(p.paid, '입금', 'paid') : due(dd, C.isClosed(p) ? '' : C.rel(dd), late ? 'late' : '')}</td>
+    ${c.assignee ? '<td></td>' : ''}
+    ${c.partner ? `<td class="t2">${p.pr > 0 ? `우리 몫 ${C.ourRatio(p.pr)}%` : ''}</td>` : ''}
+    ${c.tax ? `<td>${p.tax !== 'none' ? `<span class="t2" title="${esc(p.taxNo || '')}">기록함</span>` : C.taxPending(p) ? '<span class="warn-t">미기록</span>' : ''}</td>` : ''}
+    <td class="act">${act ? `<button class="btn sm" data-act="${act[0]}">${act[1]}</button>` : ''}<button class="ib rowact" aria-label="${p.code} 더보기">${icon('more')}</button></td></tr>`;
+}
+function tableHtml(deals) {
+  if (!deals.length) return '<div class="empty"><b>조건에 맞는 청구가 없습니다</b>기간이나 필터를 바꿔 보세요.</div>';
+  const c = state.cols;
+  const ids = deals.flatMap((d) => paysOf(d).map((p) => p.id));
+  const n = ids.filter((id) => state.picked.has(id)).length;
+  // 열 너비를 정해 두어 1440 창에서 가로로 넘치지 않게 한다. 남는 너비는 거래 · 청구 열이 가져간다
+  const col = (w) => `<col style="width:${w}px">`;
+  return `<table class="tbl cf fixed" id="tbl"><colgroup>${col(44)}<col>${c.stage ? col(88) : ''}${col(104)}${col(68)}${col(66)}${col(68)}${col(114)}${c.assignee ? col(76) : ''}${c.partner ? col(100) : ''}${c.tax ? col(72) : ''}${col(106)}</colgroup><thead><tr>
+    <th class="selh"><span class="ck ${n && n === ids.length ? 'on' : n ? 'some' : ''}" id="ckAll" role="checkbox" aria-label="전체 선택">${icon('check')}</span></th>
+    <th data-h="building">거래 · 청구</th>${c.stage ? '<th data-h="tag">거래 단계</th>' : ''}<th data-h="info">수금 상태</th>
+    <th class="r" data-h="won" data-sort="amount">청구</th><th class="r" data-h="won">수금</th><th class="r" data-h="won">잔여</th><th data-h="cal" data-sort="due">예정일</th>
+    ${c.assignee ? '<th data-h="user">담당</th>' : ''}${c.partner ? '<th data-h="handshake">공동중개</th>' : ''}${c.tax ? '<th data-h="file">계산서</th>' : ''}<th></th>
+  </tr></thead><tbody>${deals.map((d) => dealRow(d, paysOf(d)) + (isOpenGroup(d) ? paysOf(d).map((p) => payRow(d, p)).join('') : '')).join('')}</tbody></table>`;
+}
+
+// ── 칸반: 청구를 수금 상태별로 놓는다. 금액 입력이 필요해 끌어 옮기지 않고 카드를 눌러 상세에서 처리한다 ──
+const cardAmount = (p, s) => (s === 'collected' ? C.received(p) : C.isClosed(p) ? Math.max(0, p.exp - (p.act ?? 0)) : C.remaining(p));
+function kanbanHtml(items) {
+  if (!items.length) return '<div class="empty"><b>조건에 맞는 청구가 없습니다</b>기간이나 필터를 바꿔 보세요.</div>';
+  const by = Object.fromEntries(KB_ORDER.map((s) => [s, []]));
+  items.forEach(({ d, p }) => by[C.disp(p, d)].push({ d, p, due: C.effDue(p, d) }));
+  Object.values(by).forEach((l) => l.sort((a, b) => (a.due ?? '9999').localeCompare(b.due ?? '9999')));
+  return `<div class="kb">${KB_ORDER.filter((s) => KB_CORE.includes(s) || by[s].length).map((s) => {
+    const cards = by[s];
+    return `<section class="kb-col"><div class="kb-h">${C.badge(s)}<span class="n">${cards.length}</span><b>${man(cards.reduce((a, x) => a + cardAmount(x.p, s), 0))}</b></div>
+      <div class="kb-list">${cards.length ? cards.map(({ d, p, due: dd }) => `<button class="kb-card" data-card="${p.id}">
+        <div class="t"><span>${esc(C.loc(d))}</span><b>${man(cardAmount(p, s))}</b></div>
+        <div class="m"><span>${C.sideLabel(p.side)} · ${esc(C.payer(d, p))}</span>${s === 'collected' ? `<span>${C.short(p.paid)} 입금</span>` : dd ? `<span class="${s === 'overdue' ? 'danger-t' : ''}">${C.short(dd)}${C.isClosed(p) ? '' : ` · ${C.rel(dd)}`}</span>` : ''}
+          ${(s === 'partial' || s === 'waived') && C.received(p) > 0 ? `<span class="warn-t">수금 ${man(C.received(p))}</span>` : ''}${d.partner ? `<span>${icon('handshake')}${esc(C.PARTNERS[d.partner].name)}</span>` : ''}</div></button>`).join('') : '<div class="kb-none">없음</div>'}</div></section>`;
+  }).join('')}</div>`;
+}
+
+// ── 캘린더: 예정·입금·잔여 약정·연체 ──
+function buildEvents(items) {
+  const prefix = C.monthKey(state.month.year, state.month.month);
+  const byDay = {};
+  const add = (date, type, d, p, amount) => { if (date && date.startsWith(prefix)) (byDay[date] = byDay[date] || []).push({ type, d, p, amount }); };
+  items.forEach(({ d, p }) => {
+    const got = C.received(p);
+    if (p.paid && got > 0) add(p.paid, 'paid', d, p, got);
+    if (C.isOpen(p)) add(C.effDue(p, d), C.isOverdue(p, d) ? 'overdue' : p.status === 'partial' && p.agreed ? 'agreed' : 'due', d, p, C.remaining(p));
+  });
+  return byDay;
+}
+const evBtn = (e) => {
+  const title = `${EV[e.type][0]} · ${C.loc(e.d)} ${C.sideLabel(e.p.side)} ${man(e.amount)}`;
+  return `<button class="cal-ev" data-card="${e.p.id}" title="${esc(title)}" aria-label="${esc(title)}">${icon(EV[e.type][1], `ev-i ev-${e.type}`)}<span class="nm">${esc(e.d.site)}</span><span class="am">${C.sideLabel(e.p.side).slice(0, 2)} ${man(e.amount).replace(/만$/, '')}</span></button>`;
+};
+let calEvents = {};
+function calendarHtml(items) {
+  const { year, month } = state.month;
+  calEvents = buildEvents(items);
+  const lead = new Date(year, month - 1, 1).getDay();
+  const days = new Date(year, month, 0).getDate();
+  const total = Math.ceil((lead + days) / 7) * 7;
+  let html = C.WEEK.map((w) => `<div class="cal-h">${w}</div>`).join('');
+  for (let i = 0; i < total; i += 1) {
+    const date = new Date(year, month - 1, i - lead + 1);
+    const key = C.dayKey(date);
+    const out = date.getMonth() !== month - 1;
+    const evs = out ? [] : (calEvents[key] || []);
+    const sum = evs.reduce((a, e) => a + e.amount, 0);
+    html += `<div class="cal-d ${out ? 'out' : ''} ${key === C.TODAY ? 'today' : ''}"><div class="top"><span class="cdn">${date.getDate()}</span>${sum ? `<span class="sum">${man(sum)}</span>` : ''}</div>
+      ${evs.slice(0, 3).map(evBtn).join('')}${evs.length > 3 ? `<button class="cal-more" data-more="${key}">+${evs.length - 3}건 더</button>` : ''}</div>`;
+  }
+  return `<div class="cal">${html}</div>`;
+}
+
+function exportRows(items) {
+  C.csv(`수금원장_${C.TODAY}.csv`, [
+    ['청구번호', '거래', '유형', '측', '상태', '청구액(만원)', '수금액(만원)', '잔여(만원)', '예정일', '입금일', '공동중개', '세금계산서'],
+    ...items.map(({ d, p }) => [p.code, C.loc(d), C.TYPE[d.type], C.sideLabel(p.side), C.PSTATUS[C.disp(p, d)][1], p.exp, C.received(p), C.remaining(p), p.due, p.paid, d.partner ? C.PARTNERS[d.partner].name : '', p.taxNo]),
+  ]);
+}
+
+let shown = { deals: [], items: [] };
+function render() {
+  const deals = visibleDeals();
+  const items = deals.flatMap((d) => paysOf(d).map((p) => ({ d, p })));
+  shown = { deals, items };
+  // 필터로 숨겨진 청구는 선택에서 뺀다
+  const ids = new Set(items.map((x) => x.p.id));
+  [...state.picked].forEach((id) => { if (!ids.has(id) || state.view !== 'table') state.picked.delete(id); });
+
+  // 제목 줄: 빠른 상태 버튼은 누르면 걸러질 건수를 보여 준다(상태 필터를 빼고 센다)
+  const pre = C.DEALS.filter((d) => inPreset(d) && matchDeal(d, true)).flatMap((d) => d.pays.map((p) => C.disp(p, d)));
+  $('total').textContent = `청구 ${items.length}`;
+  $('nOver').textContent = pre.filter((s) => s === 'overdue').length;
+  $('nPart').textContent = pre.filter((s) => s === 'partial').length;
+  document.querySelectorAll('[data-quick]').forEach((el) => { el.style.background = state.f.status === el.dataset.quick ? 'var(--press)' : ''; el.setAttribute('aria-pressed', state.f.status === el.dataset.quick); });
+  $('exportBtn').disabled = !items.length;
+
+  // 보기 줄
+  const cal = state.view === 'calendar';
+  $('presets').innerHTML = cal ? '<div class="vtab on">캘린더</div>' : PRESETS.map(([v, l]) => `<div class="vtab ${state.preset === v ? 'on' : ''}" data-preset="${v}" role="button" tabindex="0">${l} <span class="n">${C.DEALS.filter((d) => inPreset(d, v)).length}</span></div>`).join('');
+  $('mstepBox').innerHTML = cal || state.preset === 'month' ? C.mstep(state.month) : '';
+  $('colBtn').hidden = state.view !== 'table';
+  document.querySelectorAll('#views button').forEach((b) => { b.classList.toggle('on', b.dataset.view === state.view); b.setAttribute('aria-pressed', b.dataset.view === state.view); });
+
+  // 필터 줄
+  const nf = Object.values(state.f).filter(Boolean).length + (state.q ? 1 : 0);
+  $('fbar').innerHTML = Object.entries(FILTERS).map(([id, f]) => C.fsel(id, f.k, state.f[id] ? f.label(state.f[id]) : '')).join('') + (nf ? '<button class="btn quiet sm" data-clear style="margin-left:auto">초기화</button>' : '');
+
+  // 승인 대기 조정
+  const adj = C.pendingAdj();
+  $('adjBand').hidden = !adj.length;
+  $('adjBand').innerHTML = `<span class="st warn">승인 대기 ${adj.length}건</span><span>수수료 조정 합계 <b>${man(adj.reduce((a, x) => a + x.amount, 0))}</b></span><span class="list">${adj.slice(0, 6).map((a) => `<button class="btn sm" data-adj="${a.id}" title="${esc(a.reason)}">${esc(C.loc(C.dealOf(C.PAY[a.payId])))} · ${C.ADJ_LABEL[a.type]} ${man(a.amount)}</button>`).join('')}</span>`;
+
+  // 본문
+  $('scroll').classList.toggle('fill', state.view === 'kanban');
+  $('body').innerHTML = state.view === 'table' ? tableHtml(deals) : state.view === 'kanban' ? kanbanHtml(items) : calendarHtml(items);
+  if (state.view === 'table') C.paintHeads($('body'), state.sort);
+
+  // 요약 줄: 화면에 보이는 청구로 매번 다시 센다
+  const shownText = `<span>거래 ${deals.length}건 · 청구 ${items.length}건 표시</span>`;
+  if (cal) {
+    let dueSum = 0; let paidSum = 0;
+    Object.values(calEvents).flat().forEach((e) => { if (e.type === 'paid') paidSum += e.amount; else dueSum += e.amount; });
+    $('foot').innerHTML = `${Object.entries(EV).map(([t, [l, ic]]) => `<span class="lg">${icon(ic, `ev-i ev-${t}`)}${l}</span>`).join('')}<span class="grow"></span><span>${state.month.month}월 예정<b>${man(dueSum)}</b></span><span>입금<b>${man(paidSum)}</b></span>${shownText}`;
+  } else {
+    const t = C.rollup(items.map((x) => x.p));
+    $('foot').innerHTML = `<span>청구<b>${items.filter((x) => C.countsAsBilled(x.p)).length}건</b></span><span>합계<b>${man(t.billed)}</b></span><span>수금<b>${man(t.collected)}</b></span><span>미수<b>${man(t.remaining)}</b></span><span class="grow"></span>${shownText}`;
+  }
+
+  // 선택 작업 막대
+  const picked = items.filter((x) => state.picked.has(x.p.id));
+  $('selbar').classList.toggle('show', picked.length > 0);
+  $('selCnt').innerHTML = `${picked.length}건 선택<b>잔여 합계 ${man(picked.reduce((a, x) => a + C.remaining(x.p), 0))}</b>`;
+}
+C.onChange = render;
+C.fillIcons();
+
+document.addEventListener('click', (e) => {
+  const t = e.target;
+  const pv = t.closest('[data-preset]');
+  if (pv) { state.preset = pv.dataset.preset; state.picked.clear(); render(); return; }
+  const ms = t.closest('[data-mstep]');
+  if (ms) { state.month = C.stepMonth(state.month, +ms.dataset.mstep); render(); return; }
+  const vw = t.closest('#views button');
+  if (vw) { state.view = vw.dataset.view; render(); return; }
+  const quick = t.closest('[data-quick]');
+  if (quick) { state.f.status = state.f.status === quick.dataset.quick ? '' : quick.dataset.quick; render(); return; }
+  if (t.closest('[data-clear]')) { state.f = {}; state.q = ''; $('q').value = ''; render(); return; }
+  const fclr = t.closest('[data-fclr]');
+  if (fclr) { state.f[fclr.dataset.fclr] = ''; render(); return; }
+  const fs = t.closest('[data-fs]');
+  if (fs) {
+    const id = fs.dataset.fs;
+    const f = FILTERS[id];
+    const scope = C.DEALS.filter((d) => inPreset(d));
+    C.fmenu(fs, f.options().map(([v, l]) => [v, l, scope.filter((d) => f.test(d, v)).length]), state.f[id], (v) => { state.f[id] = v; render(); });
+    return;
+  }
+  if (t.closest('#colBtn')) {
+    UI.menu($('colBtn'), [{ head: '표시할 열' }, ...COLS.map(([k, l]) => ({ label: l, on: state.cols[k], run: () => { state.cols[k] = !state.cols[k]; try { localStorage.setItem('ui-refresh-ledger-cols', JSON.stringify(state.cols)); } catch (err) {} render(); } }))], { right: true });
+    return;
+  }
+  if (t.closest('#exportBtn')) { exportRows(shown.items); return; }
+  const adj = t.closest('[data-adj]');
+  if (adj) { C.decideDlg(C.ADJ.find((a) => a.id === adj.dataset.adj)); return; }
+  if (t.closest('#selClear')) { state.picked.clear(); render(); return; }
+  if (t.closest('#selExport')) { exportRows(shown.items.filter((x) => state.picked.has(x.p.id))); return; }
+  if (t.closest('#selDun')) { if (C.dunning(shown.items.filter((x) => state.picked.has(x.p.id)).map((x) => x.p))) { state.picked.clear(); render(); } return; }
+
+  const th = t.closest('th[data-sort]');
+  if (th && !t.closest('.rz')) { C.sortMenu(th, () => state.sort, (s) => { state.sort = s; render(); }, DEFAULT_SORT); return; }
+  if (t.closest('#ckAll')) {
+    const ids = shown.items.map((x) => x.p.id);
+    const all = ids.length && ids.every((id) => state.picked.has(id));
+    ids.forEach((id) => (all ? state.picked.delete(id) : state.picked.add(id)));
+    render();
+    return;
+  }
+  const card = t.closest('[data-card]');
+  if (card) { const p = C.PAY[card.dataset.card]; C.openDeal(p.dealId, p.id); return; }
+  const more = t.closest('[data-more]');
+  if (more) { UI.menu(more, [{ head: `${C.short(more.dataset.more)} 일정` }, ...calEvents[more.dataset.more].map((ev) => ({ label: `${ev.d.site} · ${C.sideLabel(ev.p.side)} ${man(ev.amount)}`, icon: EV[ev.type][1], hint: EV[ev.type][0], run: () => C.openDeal(ev.d.id, ev.p.id) }))], { wide: true }); return; }
+
+  const gr = t.closest('tr[data-deal]');
+  if (gr) {
+    const d = C.dealById(gr.dataset.deal);
+    if (t.closest('.fold')) { state.fold.has(d.id) ? state.fold.delete(d.id) : state.fold.add(d.id); render(); return; }
+    if (t.closest('.sel')) {
+      const ids = paysOf(d).map((p) => p.id);
+      const all = ids.every((id) => state.picked.has(id));
+      ids.forEach((id) => (all ? state.picked.delete(id) : state.picked.add(id)));
+      render();
+      return;
+    }
+    C.openDeal(d.id);
+    return;
+  }
+  const pr = t.closest('tr[data-pay]');
+  if (pr) {
+    const p = C.PAY[pr.dataset.pay];
+    const d = C.dealOf(p);
+    if (t.closest('.sel')) { state.picked.has(p.id) ? state.picked.delete(p.id) : state.picked.add(p.id); render(); return; }
+    const act = t.closest('[data-act]');
+    if (act) { C.payAction(act.dataset.act, p); return; }
+    const m = t.closest('.rowact');
+    if (m) {
+      const open = C.isOpen(p);
+      const taxable = (p.status === 'collected' || p.status === 'partial') && p.tax === 'none';
+      UI.menu(m, [
+        { label: '거래 상세', icon: 'expand', run: () => C.openDeal(d.id, p.id) },
+        { label: '독촉 업무 만들기', icon: 'msg', hint: open ? '' : '미수 없음', run: () => (open ? C.dunning([p]) : UI.toast('수금이 끝났거나 확정 전인 청구는 독촉하지 않습니다')) },
+        { label: '세금계산서 기록', icon: 'file', hint: taxable ? '' : p.tax !== 'none' ? '기록함' : '수금 전', run: () => (taxable ? C.payAction('tax', p) : UI.toast(p.tax !== 'none' ? '이미 세금계산서를 기록했습니다' : '수금한 뒤에 기록할 수 있습니다')) },
+        { label: '조정 요청', icon: 'sliders', hint: open ? '' : '미수 없음', run: () => (open ? C.payAction('adjust', p) : UI.toast('남은 금액이 있는 청구만 조정을 요청할 수 있습니다')) },
+      ], { right: true });
+      return;
+    }
+    C.openDeal(d.id, p.id);
+  }
+});
+$('q').addEventListener('input', (e) => { state.q = e.target.value; render(); });
+document.addEventListener('keydown', (e) => {
+  if (e.isComposing || e.keyCode === 229) return;
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'f') { e.preventDefault(); $('q').focus(); return; }
+  if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('[role=button]')) { e.preventDefault(); e.target.click(); return; }
+  if (e.key === 'Escape' && !C.peek.dealId && !document.querySelector('.dlg-back, .menu') && state.picked.size) { state.picked.clear(); render(); }
+});
+
+render();
+// 다른 화면에서 ?deal= 로 들어오면 거래 상세를 바로 연다
+if (params.get('deal') && C.dealById(params.get('deal'))) C.openDeal(params.get('deal'), params.get('payment'));
+
+UI.notes(
+  [
+    '<b>열은 원본 그대로</b>입니다: 선택, 거래 · 청구, 거래 단계, 수금 상태, 청구, 수금, 잔여, 예정일, 담당, 공동중개, 계산서, 작업. 거래가 머리 행이고 청구가 그 아래에 딸립니다. 다 받은 거래는 접혀서 시작합니다.',
+    '<b>필터는 늘 보입니다.</b> 상태·유형·담당자·공동중개가 표 위에 선택 상자로 나와 있고, 고른 값이 그 자리에 파랗게 표시됩니다. 제목 옆 <b>연체·부분수금</b>은 누르면 바로 그 상태만 남깁니다.',
+    '<b>표 · 칸반 · 캘린더</b> 세 보기를 같은 자리에서 바꿉니다. 필터와 검색은 세 보기에 똑같이 걸리고, 아래 요약 줄의 건수와 합계는 지금 보이는 청구로 다시 셉니다.',
+    '<b>수금 처리</b>는 행에서 바로 엽니다. 남은 금액보다 적게 넣으면 부분수금으로 기록되고, 알림에서 실행 취소할 수 있습니다. 청구 확정, 세금계산서 기록, 조정 요청, 독촉 업무도 그대로 있습니다.',
+    '<b>행을 누르면 거래 상세</b>가 오른쪽에서 열립니다. 청구별 처리, 공동중개 분배 막대(미리보기 → 적용), 거래 정보가 들어 있습니다.',
+    '<b>청구를 고르면</b> 아래에 작업 막대가 떠서 잔여 합계를 보여 주고, 독촉 업무 만들기와 내보내기를 한 번에 합니다. 내보내기는 실제 CSV 파일을 내려받습니다.',
+    '<b>승인 대기 조정</b>은 표 위 띠에 모아 두었습니다. 누르면 검토 창에서 승인하거나 반려합니다.',
+  ],
+  '거래별 청구를 한 표에서 훑고, 수금·조정·계산서를 그 자리에서 처리합니다.',
+);
+</script>
+</body>
+</html>

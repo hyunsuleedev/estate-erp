@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>고정비 설정 · UI 개선 데모</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="ui.css">
+<link rel="stylesheet" href="cashflow-shared.css">
+<style>
+  .tbl.cf td.title { font-weight: 500; }
+  .tbl.cf td.c { text-align: center; }
+</style>
+</head>
+<body data-active="cash-expenses">
+<main id="page">
+  <div class="ph">
+    <h1>고정비 설정</h1>
+    <span class="count" id="total"></span>
+    <div class="actions"><button class="btn primary" id="newBtn" data-icon="plus">고정비 등록</button></div>
+  </div>
+
+  <div class="vbar">
+    <span id="tabs" style="display:contents"></span>
+    <div class="vtools">
+      <label class="field" style="width:240px" data-icon="search"><input id="q" placeholder="항목, 분류, 메모" aria-label="고정비 검색"><kbd>⌘F</kbd></label>
+    </div>
+  </div>
+
+  <div class="kpis" id="kpis"></div>
+
+  <div class="exp-two">
+    <div class="scroll">
+      <table class="tbl cf" id="tbl">
+        <thead><tr>
+          <th data-h="note">항목</th>
+          <th data-h="tag">분류</th>
+          <th data-h="refresh">주기</th>
+          <th class="r" data-h="won">금액</th>
+          <th class="r" data-h="won" data-sort="amount">월 환산</th>
+          <th data-h="cal" data-sort="day">결제일</th>
+          <th data-h="check">공제</th>
+          <th data-h="note">메모</th>
+          <th data-h="sliders">사용</th>
+          <th></th>
+        </tr></thead>
+        <tbody id="rows"></tbody>
+        <tfoot id="tfoot"></tfoot>
+      </table>
+    </div>
+    <aside class="exp-side" aria-label="고정비 요약" id="side"></aside>
+  </div>
+  <div class="sumbar" id="foot" style="position:static;flex:none"></div>
+</main>
+
+<script src="shell.js"></script>
+<script src="cashflow-shared.js"></script>
+<script>
+const { icon } = UI;
+const C = CF;
+const { man, esc } = C;
+const $ = (id) => document.getElementById(id);
+
+const CATEGORY = { rent: '임대료', ad: '광고비', telecom: '통신비', insurance: '보험료', association: '협회비', supplies: '소모품', vehicle: '차량/교통', other: '기타' };
+const FREQUENCY = { monthly: '매월', quarterly: '분기', yearly: '연간' };
+const DEFAULT_SORT = { key: 'amount', dir: -1 };
+const state = { tab: 'all', q: '', sort: DEFAULT_SORT };
+const E = C.EXPENSES;
+const monthly = C.monthlyExpense;
+const monthlyOf = (list) => list.reduce((a, e) => a + monthly(e), 0);
+
+function sideHtml(active) {
+  // 분류별 월 고정비: 사용 중인 항목만
+  const total = monthlyOf(active);
+  const cats = Object.entries(active.reduce((a, e) => { a[e.category] = (a[e.category] || 0) + monthly(e); return a; }, {})).sort((a, b) => b[1] - a[1]);
+  const top = cats[0] ? cats[0][1] : 1;
+  // 이번 달 결제 일정: 매월 결제일이 있는 항목
+  const today = C.NOW.getDate();
+  const sched = active.filter((e) => e.frequency === 'monthly' && e.day).sort((a, b) => a.day - b.day);
+  const next = sched.find((e) => e.day >= today);
+  const noDay = active.filter((e) => e.frequency === 'monthly' && !e.day).length;
+  const periodic = active.filter((e) => e.frequency !== 'monthly').length;
+  const skipped = [noDay ? `결제일 없는 ${noDay}건` : null, periodic ? `분기·연간 ${periodic}건` : null].filter(Boolean).join(', ');
+  return `<section aria-label="분류별 월 고정비"><div class="pane-h">분류별 월 고정비<span class="r">${man(total)}</span></div>
+    ${cats.length ? `<ul class="cat">${cats.map(([c, amt]) => `<li title="${Math.round((amt / total) * 100)}%"><span>${CATEGORY[c]}</span><span class="meter"><i style="width:${Math.max(3, (amt / top) * 100)}%"></i></span><span>${man(amt)}</span></li>`).join('')}</ul>` : '<p class="pane-empty">사용 중인 고정비가 없습니다.</p>'}</section>
+    <section aria-label="${C.THIS.month}월 결제 일정"><div class="pane-h" style="border-top:1px solid var(--line-2)">${C.THIS.month}월 결제 일정<span class="r">${sched.length}건 · ${man(sched.reduce((a, e) => a + e.amount, 0))}</span></div>
+    <ul class="sched">${sched.map((e) => `<li class="${e.day < today ? 'past' : ''} ${e === next ? 'next' : ''}"><span>${e.day}일</span><span title="${esc(e.title)}">${esc(e.title)}</span><span>${man(e.amount)}</span></li>`).join('')}</ul>
+    ${skipped ? `<p class="skip">${skipped}은 일정에서 뺐습니다.</p>` : ''}</section>`;
+}
+
+function render() {
+  const active = E.filter((e) => e.active);
+  const q = state.q.trim().toLowerCase();
+  const { key, dir } = state.sort;
+  const visible = E.filter((e) => {
+    if (state.tab === 'on' && !e.active) return false;
+    if (state.tab === 'off' && e.active) return false;
+    return !q || [e.title, CATEGORY[e.category], e.note].filter(Boolean).join(' ').toLowerCase().includes(q);
+  }).sort((a, b) => (key === 'day' ? (a.day ?? 99) - (b.day ?? 99) : monthly(a) - monthly(b)) * dir);
+
+  const everyMonth = active.filter((e) => e.frequency === 'monthly');
+  const periodic = active.filter((e) => e.frequency !== 'monthly');
+  const deductible = active.filter((e) => e.deductible);
+  const net = C.collectedIn(C.monthKey(C.THIS.year, C.THIS.month)) - monthlyOf(active);
+
+  $('total').textContent = visible.length;
+  $('tabs').innerHTML = [['all', '전체', E.length], ['on', '사용 중', active.length], ['off', '꺼짐', E.length - active.length]]
+    .map(([v, l, n]) => `<div class="vtab ${state.tab === v ? 'on' : ''}" data-tab="${v}" role="button" tabindex="0">${l} <span class="n">${n}</span></div>`).join('');
+  $('kpis').innerHTML = C.kpi('월 고정비', man(monthlyOf(active)), `사용 중 ${active.length}건을 월로 환산`) + C.kpi('매월 나가는 돈', man(monthlyOf(everyMonth)), `${everyMonth.length}건`)
+    + C.kpi('분기·연간 월 환산', man(monthlyOf(periodic)), `${periodic.length}건`) + C.kpi('세금 공제 가능', man(monthlyOf(deductible)), `월 환산 ${deductible.length}건`)
+    + C.kpi(`${C.THIS.month}월 순이익`, `<span class="${net < 0 ? 'danger-t' : ''}">${man(net)}</span>`, '<a href="cashflow.html">수금 − 월 고정비</a>');
+
+  $('rows').innerHTML = visible.length ? visible.map((e) => `<tr data-exp="${e.id}" class="${e.active ? '' : 'off'}" data-go tabindex="0">
+    <td class="title" title="${esc(e.title)}">${esc(e.title)}</td><td class="${e.active ? 't2' : ''}">${CATEGORY[e.category]}</td><td class="${e.active ? 't2' : ''}">${FREQUENCY[e.frequency]}</td>
+    <td class="r num">${man(e.amount)}</td><td class="r num ${e.active && e.frequency === 'monthly' ? 't2' : ''}">${man(monthly(e))}</td>
+    <td class="num">${e.day ? `${e.day}일` : '<span class="t3">—</span>'}</td><td>${e.deductible ? '가능' : '<span class="t3">—</span>'}</td>
+    <td class="memo" title="${esc(e.note)}">${esc(e.note)}</td>
+    <td class="c"><button class="sw ${e.active ? 'on' : ''}" role="switch" aria-checked="${e.active}" aria-label="${esc(e.title)} 사용"></button></td>
+    <td class="act"><button class="ib rowact" aria-label="${esc(e.title)} 더보기">${icon('more')}</button></td></tr>`).join('')
+    : `<tr><td colspan="10" style="border:0"><div class="empty"><b>${E.length ? '조건에 맞는 고정비가 없습니다' : '등록된 고정비가 없습니다'}</b>${E.length ? '범위나 검색어를 바꿔 보세요.' : '임대료, 광고비 같은 고정비를 등록하면 순이익이 자동으로 계산됩니다.'}</div></td></tr>`;
+  // 합계는 지금 보이는 줄 가운데 사용 중인 것만 더한다
+  const visActive = visible.filter((e) => e.active);
+  $('tfoot').innerHTML = visible.length ? `<tr><td colspan="4">월 고정비 합계<small>사용 중 ${visActive.length}건만</small></td><td class="r num">${man(monthlyOf(visActive))}</td><td colspan="5"></td></tr>` : '';
+  $('side').innerHTML = sideHtml(active);
+  $('foot').innerHTML = `<span>사용 중<b>${visActive.length}건</b></span><span>꺼짐<b>${visible.length - visActive.length}건</b></span><span class="grow"></span><span>고정비 ${visible.length}건 표시</span>`;
+  C.paintHeads($('tbl'), state.sort);
+}
+C.onChange = render;
+C.fillIcons();
+
+// ── 등록·수정 창 ──
+function formDlg(editing) {
+  const v = editing || { title: '', category: 'rent', frequency: 'monthly', amount: '', day: '', deductible: false, note: '' };
+  C.dialog({
+    title: editing ? '고정비 수정' : '고정비 등록', desc: '분기·연간 항목은 월로 환산해 순이익 계산에 넣습니다.', ok: editing ? '수정 저장' : '등록',
+    body: `${C.fld('항목명', `<input class="inp" id="xTitle" value="${esc(v.title)}" placeholder="예) 사무실 임대료">`)}
+      <div class="twoc">${C.fld('분류', `<select class="inp" id="xCat">${C.opts(CATEGORY, v.category)}</select>`)}${C.fld('주기', `<select class="inp" id="xFreq">${C.opts(FREQUENCY, v.frequency)}</select>`)}</div>
+      <div class="twoc">${C.fld('금액 (만원)', `<input class="inp" id="xAmt" type="number" min="1" value="${v.amount}" placeholder="예) 250"><p class="help" id="xAmtHelp"></p>`)}${C.fld('결제일 (선택)', `<input class="inp" id="xDay" type="number" min="1" max="31" value="${v.day ?? ''}" placeholder="예) 25"><p class="help bad" id="xDayHelp"></p>`)}</div>
+      <label class="chk"><input type="checkbox" id="xDed" ${v.deductible ? 'checked' : ''}>세금 공제 가능 항목</label>
+      ${C.fld('메모 (선택)', `<input class="inp" id="xNote" value="${esc(v.note)}" placeholder="예) 2층 사무실, 보증금 별도">`)}`,
+    onOpen(api) {
+      const upd = () => {
+        const amt = Number(api.val('#xAmt'));
+        const freq = api.val('#xFreq');
+        const dayText = api.val('#xDay');
+        const day = dayText ? Number(dayText) : null;
+        const dayOk = day === null || (Number.isInteger(day) && day >= 1 && day <= 31);
+        api.q('#xAmtHelp').textContent = amt > 0 ? `= ${man(amt)}원${freq !== 'monthly' ? ` · 월 ${man(monthly({ amount: amt, frequency: freq }))}` : ''}` : '';
+        api.q('#xDayHelp').textContent = dayOk ? '' : '1일에서 31일 사이로 입력해 주세요.';
+        api.setOk(api.val('#xTitle').trim().length > 0 && amt > 0 && Number.isInteger(amt) && dayOk);
+      };
+      ['#xTitle', '#xFreq', '#xAmt', '#xDay'].forEach((s) => { api.q(s).oninput = upd; });
+      upd();
+    },
+    onOk(api) {
+      const data = { title: api.val('#xTitle').trim(), category: api.val('#xCat'), frequency: api.val('#xFreq'), amount: Number(api.val('#xAmt')), day: api.val('#xDay') ? Number(api.val('#xDay')) : null, deductible: api.q('#xDed').checked, note: api.val('#xNote').trim() };
+      if (editing) { C.mutate(editing, () => Object.assign(editing, data), '고정비를 수정했습니다.'); return; }
+      const e = { id: `e${Date.now()}`, ...data, active: true };
+      E.push(e);
+      render();
+      UI.toast('고정비를 등록했습니다.', () => { if (E.includes(e)) { E.splice(E.indexOf(e), 1); render(); } });
+    },
+  });
+}
+function removeDlg(e) {
+  C.dialog({
+    title: '고정비 삭제', ok: '삭제', okClass: 'danger',
+    desc: `"${esc(e.title)}" 항목을 삭제합니다. 삭제하면 순이익 계산에서 빠집니다. 잠시 빼려면 사용 스위치를 끄세요.`,
+    onOk() {
+      const at = E.indexOf(e);
+      if (at < 0) return;
+      E.splice(at, 1);
+      render();
+      UI.toast('고정비를 삭제했습니다.', () => { if (!E.includes(e)) { E.splice(Math.min(at, E.length), 0, e); render(); } });
+    },
+  });
+}
+
+document.addEventListener('click', (ev) => {
+  const t = ev.target;
+  if (t.closest('.dlg-back')) return;
+  const tab = t.closest('[data-tab]');
+  if (tab) { state.tab = tab.dataset.tab; render(); return; }
+  if (t.closest('#newBtn')) { formDlg(null); return; }
+  const th = t.closest('th[data-sort]');
+  if (th && !t.closest('.rz')) { C.sortMenu(th, () => state.sort, (s) => { state.sort = s; render(); }, DEFAULT_SORT); return; }
+  const tr = t.closest('tr[data-exp]');
+  if (!tr) return;
+  const e = E.find((x) => x.id === tr.dataset.exp);
+  if (t.closest('.sw')) {
+    C.mutate(e, () => { e.active = !e.active; }, e.active ? `${esc(e.title)}을(를) 껐습니다. 순이익 계산에서 빠집니다.` : `${esc(e.title)}을(를) 사용합니다.`);
+    return;
+  }
+  const m = t.closest('.rowact');
+  if (m) { UI.menu(m, [{ label: '수정', icon: 'note', run: () => formDlg(e) }, { label: '삭제', icon: 'x', danger: true, run: () => removeDlg(e) }], { right: true }); return; }
+  formDlg(e);
+});
+$('q').addEventListener('input', (e) => { state.q = e.target.value; render(); });
+document.addEventListener('keydown', (e) => {
+  if (e.isComposing || e.keyCode === 229) return;
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'f') { e.preventDefault(); $('q').focus(); return; }
+  if (e.key === 'Enter' && e.target.matches('[role=button], tr[data-exp]')) { e.preventDefault(); e.target.click(); }
+});
+
+render();
+
+UI.notes(
+  [
+    '<b>열은 원본 그대로</b>입니다: 항목, 분류, 주기, 금액, 월 환산, 결제일, 공제, 메모, 사용, 작업. 꺼 둔 항목은 흐리게 보이고, 표 아래 합계 줄은 지금 보이는 줄 가운데 사용 중인 것만 더합니다.',
+    '<b>사용 스위치</b>를 누르면 그 자리에서 켜고 꺼지며, 위 숫자·분류별 막대·결제 일정·순이익이 함께 바뀝니다. 알림에서 실행 취소할 수 있습니다.',
+    '<b>줄을 누르면 수정 창</b>이 열립니다. 등록·수정·삭제가 실제로 되고, 금액을 넣으면 월 환산액을 바로 보여 줍니다. 결제일은 1~31일만 받습니다.',
+    '<b>범위 탭</b>(전체 · 사용 중 · 꺼짐)과 검색이 늘 보입니다. 표 머리의 월 환산·결제일을 누르면 정렬 메뉴가 열립니다.',
+    '<b>요약 숫자</b>는 상자 없이 한 줄로 두었습니다. 월 고정비, 매월 나가는 돈, 분기·연간 월 환산, 세금 공제 가능, 이번 달 순이익입니다.',
+    '<b>오른쪽</b>에는 분류별 월 고정비와 이번 달 결제 일정이 촘촘한 줄로 있습니다. 지난 결제일은 흐리게, 다음 결제일은 굵게 보입니다.',
+  ],
+  '한 번 등록한 고정비가 매달 순이익 계산에 들어갑니다.',
+);
+</script>
+</body>
+</html>

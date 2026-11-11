@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>6 · 올라가는 로고 — 스플래시 시안</title>
+<link rel="stylesheet" href="stage.css">
+<style>
+  /* 로고 한 단위의 픽셀 크기. 건물 그림과 창 모양 가림막이 같은 값을 쓴다. */
+  .win { --u: 2.1px; }
+  .d6 .model { position: absolute; left: 50%; top: 50%; width: calc(140 * var(--u)); height: calc(140 * var(--u)); margin: calc(-70 * var(--u)); animation: d6-in 0.5s var(--out) both; }
+  @keyframes d6-in { from { opacity: 0; transform: scale(0.94); } }
+  .d6 .model polygon { vector-effect: non-scaling-stroke; stroke-linejoin: round; }
+  .d6 .plate { fill: #fff; stroke: var(--ink); stroke-width: 1; }
+  .d6 .roof { fill: var(--ink); stroke: var(--ink); stroke-width: 1; }
+  .d6 .shade { fill: rgb(42 51 35 / 0.07); }
+  .d6 .word { position: absolute; left: 0; right: 0; top: calc(50% + 62 * var(--u)); text-align: center; font-size: 19px; font-weight: 620; letter-spacing: -0.7px; animation: d6-word 0.6s var(--out) 0.25s both; transition: opacity 0.18s, transform 0.3s var(--out); }
+  @keyframes d6-word { from { opacity: 0; transform: translateY(8px); } }
+  .d6 .floors { position: absolute; left: calc(50% + 46 * var(--u)); top: calc(50% - 44 * var(--u)); font-size: 11px; color: var(--muted); opacity: 0; transition: opacity 0.3s; }
+  .d6.up .floors { opacity: 1; }
+  .d6[data-state="ready"] .floors, .d6[data-state="exit"] .floors { opacity: 0; }
+  .d6[data-state="exit"] .word { opacity: 0; transform: translateY(10px); }
+  /* 납작해진 로고가 창틀이 되어 커지고, 같은 모양의 구멍으로 앱이 드러난다 */
+  .d6[data-state="exit"] .model { animation: d6-zoom 0.72s var(--inout) both; }
+  @keyframes d6-zoom { to { transform: scale(80); } }
+  .win[data-state="exit"] .dest { z-index: 3; animation: d6-open 0.72s var(--inout) both; }
+  @keyframes d6-open {
+    from { clip-path: polygon(calc(50% - 12.6 * var(--u)) calc(50% - 15.4 * var(--u)), calc(50% + 10.8 * var(--u)) calc(50% - 12.6 * var(--u)), calc(50% + 14.1 * var(--u)) calc(50% + 15.3 * var(--u)), calc(50% - 8.8 * var(--u)) calc(50% + 13.2 * var(--u))); }
+    to { clip-path: polygon(calc(50% - 1008 * var(--u)) calc(50% - 1232 * var(--u)), calc(50% + 864 * var(--u)) calc(50% - 1008 * var(--u)), calc(50% + 1128 * var(--u)) calc(50% + 1224 * var(--u)), calc(50% - 704 * var(--u)) calc(50% + 1056 * var(--u))); }
+  }
+  .win[data-state="exit"] .dest-in { animation: d6-settle 0.72s var(--out) both; }
+  @keyframes d6-settle { from { transform: scale(1.12); } }
+</style>
+</head>
+<body>
+<template id="tpl">
+  <main class="splash d6">
+    <svg class="model" viewBox="-20 -20 140 140"></svg>
+    <div class="floors mono"></div>
+    <div class="word">에스테잇플로우</div>
+  </main>
+</template>
+<script>
+  const pts = (d) => d.replace(/[MZ]/g, "").trim().split(/\s+/).reduce((a, v, i, all) => (i % 2 ? a : [...a, [+v, +all[i + 1]]]), []);
+  const clamp = (v) => Math.min(Math.max(v, 0), 1);
+  const ease = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
+  const DH = 2.7; // 한 층 높이(로고 단위)
+  let model, label, wings, tilt = 0, grow = 0, raf = 0;
+  // tilt 0 = 위에서 본 로고, 1 = 비스듬히 내려다본 건물. grow 0~1 = 올라간 정도.
+  function render() {
+    const squash = 1 - 0.4 * tilt;
+    const drop = 15 * tilt * grow;
+    const at = (h) => ([x, y]) => `${x.toFixed(2)},${(50 + (y - 50) * squash + drop - h).toFixed(2)}`;
+    const plates = [];
+    wings.forEach((w) => {
+      const f = w.floors * grow * tilt;
+      for (let k = 0; k < Math.floor(f); k++) plates.push([k * DH, "plate", w.p]);
+      plates.push([f * DH, "roof", w.p]);
+    });
+    plates.sort((a, b) => a[0] - b[0] || (a[1] === "roof") - (b[1] === "roof"));
+    const shade = wings.map((w) => `<polygon class="shade" points="${w.p.map(([x, y]) => at(0)([x + 5 * tilt * grow, y + 4 * tilt * grow])).join(" ")}"/>`).join("");
+    model.innerHTML = shade + plates.map(([h, cls, p]) => `<polygon class="${cls}" points="${p.map(at(h)).join(" ")}"/>`).join("");
+    label.textContent = Math.round(wings[1].floors * grow * tilt) + "F";
+  }
+  window.Demo = {
+    min: 1900, readyMs: 520, exitMs: 720,
+    mount(root) {
+      cancelAnimationFrame(raf);
+      model = root.querySelector(".model");
+      label = root.querySelector(".floors");
+      wings = [{ p: pts(Stage.PA), floors: 9 }, { p: pts(Stage.PB), floors: 14 }];
+      tilt = grow = 0;
+      render();
+    },
+    progress(p, root, t) {
+      tilt = ease(clamp((t - 420) / 560));
+      grow = clamp(p / 0.96);
+      root.classList.toggle("up", tilt > 0.5);
+      render();
+    },
+    state(name, root) {
+      if (name !== "ready") return;
+      // 건물이 내려앉아 다시 납작한 로고가 된다
+      const t0 = performance.now(), g0 = grow, k0 = tilt;
+      const step = (now) => {
+        if (!root.isConnected) return;
+        const k = ease(clamp((now - t0) / 440));
+        grow = g0 * (1 - k);
+        tilt = k0 * (1 - k);
+        render();
+        if (k < 1) raf = requestAnimationFrame(step);
+      };
+      raf = requestAnimationFrame(step);
+    },
+  };
+</script>
+<script src="stage.js"></script>
+</body>
+</html>

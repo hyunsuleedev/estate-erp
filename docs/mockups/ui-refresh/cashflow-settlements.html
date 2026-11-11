@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>직원 정산 · UI 개선 데모</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="ui.css">
+<link rel="stylesheet" href="cashflow-shared.css">
+</head>
+<body data-active="cash-settle">
+<main id="page">
+  <div class="ph">
+    <h1>직원 정산</h1>
+    <span class="count" id="total"></span>
+    <div class="actions"><button class="btn" id="exportBtn" data-icon="arrowUpRight">내보내기</button></div>
+  </div>
+
+  <div class="vbar">
+    <span id="tabs" style="display:contents"></span>
+    <div class="vtools">
+      <label class="field" style="width:260px" data-icon="search"><input id="q" placeholder="직원, 전화번호, 호수" aria-label="직원 정산 검색"><kbd>⌘F</kbd></label>
+    </div>
+  </div>
+
+  <div class="kpis" id="kpis"></div>
+
+  <div class="scroll">
+    <table class="tbl cf" id="tbl">
+      <thead><tr>
+        <th data-h="user" data-sort="name">직원 · 거래</th>
+        <th data-h="tag">급여 · 역할</th>
+        <th class="r" data-h="ruler" data-sort="rate">배분률</th>
+        <th class="r" data-h="won" data-sort="ready">정산 가능</th>
+        <th class="r" data-h="won" data-sort="waiting">수금 대기</th>
+        <th class="r" data-h="won" data-sort="settled">정산 완료</th>
+        <th class="r" data-h="won" data-sort="total">누적 · 상태</th>
+      </tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+    <div class="sumbar" id="foot"></div>
+  </div>
+</main>
+
+<script src="shell.js"></script>
+<script src="cashflow-shared.js"></script>
+<script>
+const C = CF;
+const { man, esc } = C;
+const $ = (id) => document.getElementById(id);
+
+const STATE_ORDER = { ready: 0, waiting: 1, settled: 2 };
+const STATE_LABEL = { settled: '정산 완료', ready: '정산 가능', waiting: '수금 대기' };
+const state = { tab: 'all', q: '', toggled: new Set(), sort: null };
+
+// 직원마다 참여한 거래를 모은다. 그 직원 쪽 청구가 다 들어와야 정산 가능이다
+function buildRows() {
+  const thisMonth = C.monthKey(C.THIS.year, C.THIS.month);
+  return C.EMPLOYEES.map((emp) => {
+    const rows = C.DEALS.flatMap((d) => d.people.filter((x) => x.userId === emp.id).map((x) => ({ pt: x, d, name: C.loc(d), ...C.settlement(x, d) })))
+      .sort((a, b) => STATE_ORDER[a.state] - STATE_ORDER[b.state]);
+    const sum = (test) => rows.filter(test).reduce((a, r) => a + r.pt.amount, 0);
+    return {
+      emp, rows, name: emp.name, rate: emp.rate ?? -1,
+      ready: sum((r) => r.state === 'ready'), readyCount: rows.filter((r) => r.state === 'ready').length,
+      waiting: sum((r) => r.state === 'waiting'), settled: sum((r) => r.state === 'settled'),
+      settledThisMonth: sum((r) => r.state === 'settled' && (r.pt.settledAt || '').startsWith(thisMonth)),
+      total: sum(() => true), unsettledCount: rows.filter((r) => r.state !== 'settled').length,
+    };
+  }).filter((r) => r.emp.active || r.rows.length).sort((a, b) => b.ready - a.ready || b.waiting - a.waiting || b.total - a.total);
+}
+
+let shown = [];
+function render() {
+  const all = buildRows();
+  const q = state.q.trim().toLowerCase();
+  let visible = all.filter((r) => {
+    if (state.tab === 'ready' && r.ready === 0) return false;
+    if (state.tab === 'unsettled' && r.unsettledCount === 0) return false;
+    return !q || [r.emp.name, r.emp.phone, r.emp.phone.replace(/-/g, ''), ...r.rows.map((x) => x.name)].join(' ').toLowerCase().includes(q);
+  });
+  if (state.sort) {
+    const { key, dir } = state.sort;
+    visible = [...visible].sort((a, b) => (key === 'name' ? a.name.localeCompare(b.name, 'ko') : a[key] - b[key]) * dir);
+  }
+  shown = visible;
+  // 위 숫자는 지금 보이는 직원의 거래를 더한 값이다
+  const t = visible.reduce((a, r) => {
+    a.ready += r.ready; a.readyCount += r.readyCount; a.waiting += r.waiting; a.waitingCount += r.unsettledCount - r.readyCount;
+    a.settledThisMonth += r.settledThisMonth; a.settled += r.settled; a.total += r.total; a.parts += r.rows.length; a.unsettled += r.unsettledCount;
+    return a;
+  }, { ready: 0, readyCount: 0, waiting: 0, waitingCount: 0, settledThisMonth: 0, settled: 0, total: 0, parts: 0, unsettled: 0 });
+
+  $('total').textContent = visible.length;
+  $('exportBtn').disabled = t.parts === 0;
+  $('tabs').innerHTML = [['all', '전체', all.length], ['ready', '정산 가능', all.filter((r) => r.ready > 0).length], ['unsettled', '미정산', all.filter((r) => r.unsettledCount > 0).length]]
+    .map(([v, l, n]) => `<div class="vtab ${state.tab === v ? 'on' : ''}" data-tab="${v}" role="button" tabindex="0">${l} <span class="n">${n}</span></div>`).join('');
+  $('kpis').innerHTML = C.kpi('정산 가능', man(t.ready), `고객 수금 끝난 ${t.readyCount}건`) + C.kpi('고객 수금 대기', man(t.waiting), `${t.waitingCount}건`)
+    + C.kpi('이번 달 정산 완료', man(t.settledThisMonth), `${C.THIS.month}월 기준`) + C.kpi('누적 배분', man(t.total), `정산 완료 ${man(t.settled)}`);
+
+  $('rows').innerHTML = visible.length ? visible.map((r) => {
+    const { emp } = r;
+    // 정산 가능한 건이 있는 직원은 펼쳐서 시작한다
+    const open = (r.ready > 0 || !!q) !== state.toggled.has(emp.id);
+    const pay = [C.PAYTYPE[emp.payType], emp.base ? `기본급 ${man(emp.base)}` : null].filter(Boolean).join(' · ');
+    return `<tr class="grp" data-emp="${emp.id}">
+      <td><div class="cell">${C.foldBtn(open, emp.name)}${UI.av(emp.name)}<span class="nm">${esc(emp.name)}</span><small class="plain">${C.ROLE[emp.role]}</small>${emp.active ? '' : '<span class="tag plain">비활성</span>'}</div></td>
+      <td class="plain">${pay}</td><td class="r num plain">${emp.rate != null ? `${emp.rate}%` : '—'}</td>
+      <td class="r num">${man(r.ready)}</td><td class="r num">${man(r.waiting)}</td><td class="r num">${man(r.settled)}</td><td class="r num">${man(r.total)}</td></tr>`
+      + (open ? r.rows.map((x) => `<tr data-go="${x.d.id}" tabindex="0">
+      <td><div class="cell child"><span class="nm tr-link" title="${esc(x.name)}">${esc(x.name)}</span>${C.typeTag(x.d.type)}</div></td>
+      <td class="t2">${C.PART_ROLE[x.pt.role]} · ${C.STAGE[x.d.stage][1]}</td><td class="r num t2">${x.pt.rate != null ? `${x.pt.rate}%` : '—'}</td>
+      <td class="r num">${x.state === 'ready' ? man(x.pt.amount) : ''}</td><td class="r num">${x.state === 'waiting' ? man(x.pt.amount) : ''}</td>
+      <td class="r num" title="${x.pt.settledAt ? `${C.full(x.pt.settledAt)} 정산` : ''}">${x.state === 'settled' ? man(x.pt.amount) : ''}</td>
+      <td class="r num t2">${x.state === 'settled' ? `${C.short(x.pt.settledAt)} 정산` : `수금 ${x.percent}%`}</td></tr>`).join('') : '');
+  }).join('') : `<tr><td colspan="7" style="border:0"><div class="empty"><b>조건에 맞는 직원이 없습니다</b>범위나 검색어를 바꿔 보세요.</div></td></tr>`;
+  $('foot').innerHTML = `<span>활성 직원<b>${visible.filter((r) => r.emp.active).length}명</b></span><span>미정산<b>${t.unsettled}건</b></span><span>정산 가능<b>${man(t.ready)}</b></span><span>수금 대기<b>${man(t.waiting)}</b></span><span class="grow"></span><span>직원 ${visible.length}명 · 거래 참여 ${t.parts}건 표시</span>`;
+  C.paintHeads($('tbl'), state.sort);
+}
+C.onChange = render;
+C.fillIcons();
+
+document.addEventListener('click', (e) => {
+  const t = e.target;
+  const tab = t.closest('[data-tab]');
+  if (tab) { state.tab = tab.dataset.tab; render(); return; }
+  if (t.closest('#exportBtn')) {
+    C.csv(`직원정산_${C.TODAY}.csv`, [['직원', '거래', '역할', '배분률(%)', '배분액(만원)', '상태', '정산일'], ...shown.flatMap((r) => r.rows.map((x) => [r.emp.name, x.name, C.PART_ROLE[x.pt.role], x.pt.rate, x.pt.amount, STATE_LABEL[x.state], x.pt.settledAt]))]);
+    return;
+  }
+  const th = t.closest('th[data-sort]');
+  if (th && !t.closest('.rz')) { C.sortMenu(th, () => state.sort, (s) => { state.sort = s; render(); }); return; }
+  const g = t.closest('tr[data-emp]');
+  if (g) { const k = g.dataset.emp; state.toggled.has(k) ? state.toggled.delete(k) : state.toggled.add(k); render(); return; }
+  const go = t.closest('tr[data-go]');
+  if (go) location.href = `cashflow-ledger.html?deal=${go.dataset.go}`; // 수금 원장에서 그 거래 상세를 연다
+});
+$('q').addEventListener('input', (e) => { state.q = e.target.value; render(); });
+document.addEventListener('keydown', (e) => {
+  if (e.isComposing || e.keyCode === 229) return;
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'f') { e.preventDefault(); $('q').focus(); return; }
+  if (e.key === 'Enter' && e.target.matches('[role=button], tr[data-go]')) e.target.click();
+});
+
+render();
+
+UI.notes(
+  [
+    '<b>열은 원본 그대로</b>입니다: 직원 · 거래, 급여 · 역할, 배분률, 정산 가능, 수금 대기, 정산 완료, 누적 · 상태. 직원이 머리 행이고 참여한 거래가 그 아래에 딸립니다.',
+    '<b>범위 탭</b>(전체 · 정산 가능 · 미정산)에 직원 수가 붙어 있고, 검색은 직원·전화번호·호수로 바로 걸러집니다.',
+    '<b>금액이 상태별 열에 나뉘어</b> 있어 정산 가능·수금 대기·정산 완료를 세로로 훑으며 자릿수를 맞춰 읽습니다. 마지막 열은 거래마다 고객 수금 진행률이나 정산일을 보여 줍니다.',
+    '<b>정산 가능한 건이 있는 직원은 펼쳐서</b> 시작합니다. 표 머리를 누르면 정렬 메뉴가 열립니다.',
+    '<b>요약 숫자와 아래 요약 줄</b>은 지금 보이는 직원의 거래를 더한 값입니다. 탭이나 검색을 바꾸면 함께 바뀝니다.',
+    '<b>거래 줄을 누르면</b> 수금 원장의 그 거래 상세로 넘어갑니다. 내보내기는 보이는 줄을 실제 CSV 파일로 내려받습니다.',
+  ],
+  '직원별 배분 수수료를 정산 가능 · 수금 대기 · 정산 완료로 나눠 봅니다.',
+);
+</script>
+</body>
+</html>

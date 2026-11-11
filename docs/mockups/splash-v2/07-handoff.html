@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>7 · 제자리로 — 스플래시 시안</title>
+<link rel="stylesheet" href="stage.css">
+<style>
+  .d7 { background: transparent; }
+  .d7 .bg { position: absolute; inset: 0; background: #fff; transition: opacity 0.42s ease-out 0.16s; }
+  .d7 .mark { position: absolute; left: 50%; top: 50%; width: 120px; height: 120px; margin: -74px -60px; transform-origin: 0 0; }
+  .d7 .mark svg { width: 100%; height: 100%; }
+  .d7 .mark path { fill: var(--ink); fill-opacity: 0; stroke: var(--ink); stroke-width: 0.55; stroke-linejoin: round; stroke-dasharray: 100; stroke-dashoffset: 100;
+    animation: d7-draw 0.8s var(--inout) both, d7-fill 0.45s ease-out 0.65s both; }
+  .d7 .mark .pb { animation-delay: 0.1s, 0.75s; }
+  @keyframes d7-draw { to { stroke-dashoffset: 0; } }
+  @keyframes d7-fill { to { fill-opacity: 1; } }
+  .d7 .under { position: absolute; left: 0; right: 0; top: calc(50% + 70px); display: grid; justify-items: center; gap: 22px; transition: opacity 0.2s, transform 0.3s var(--out); }
+  .d7 .word { font-size: 19px; font-weight: 620; letter-spacing: -0.7px; animation: d7-up 0.6s var(--out) 0.6s both; }
+  .d7 .bar { width: 148px; height: 2px; border-radius: 1px; background: #e6e5e3; overflow: hidden; animation: d7-up 0.6s var(--out) 0.75s both; }
+  .d7 .bar i { display: block; height: 100%; background: var(--ink); transform-origin: 0 50%; transform: scaleX(var(--p)); }
+  @keyframes d7-up { from { opacity: 0; transform: translateY(6px); } }
+  /* 로고가 다음 화면의 로고 자리로 옮겨 앉고, 화면이 그 주위로 채워진다 */
+  .d7[data-state="exit"] .mark { transition: transform 0.62s var(--inout); transform: var(--to); }
+  .d7[data-state="exit"] .under, .d7[data-state="exit"] .st { opacity: 0; transform: translateY(8px); }
+  .d7[data-state="exit"] .bg { opacity: 0; }
+  /* 날아오는 로고와 겹쳐 보이지 않게, 도착할 때까지 로그인 화면의 로고는 숨긴다 */
+  .win[data-state="exit"] .dest .login svg { visibility: hidden; }
+  .win[data-state="exit"] .dest .login > :not(svg) { animation: d7-rise 0.55s var(--out) 0.14s both; }
+  @keyframes d7-rise { from { opacity: 0; transform: translateY(10px); } }
+</style>
+</head>
+<body>
+<template id="tpl">
+  <main class="splash d7">
+    <div class="bg"></div>
+    <div class="mark"><span data-logo></span></div>
+    <div class="under"><div class="word">에스테잇플로우</div><div class="bar"><i></i></div></div>
+  </main>
+</template>
+<script>
+  window.Demo = {
+    min: 1600, readyMs: 220, exitMs: 700,
+    mount(root) {
+      root.querySelectorAll(".mark path").forEach((p) => p.setAttribute("pathLength", 100));
+    },
+    state(name, root) {
+      if (name !== "exit") return;
+      const mark = root.querySelector(".mark");
+      const from = mark.getBoundingClientRect();
+      const target = document.querySelector(".dest .login svg");
+      let to;
+      if (target) {
+        to = target.getBoundingClientRect();
+      } else {
+        // 앱 화면 그림에서 사무소 배지가 놓인 자리(1440×900 기준 18,51 크기 22)
+        const s = Math.max(innerWidth / 1440, innerHeight / 900);
+        to = { left: 18 * s, top: 51 * s, width: 22 * s };
+      }
+      mark.style.setProperty("--to", `translate(${to.left - from.left}px, ${to.top - from.top}px) scale(${to.width / from.width})`);
+    },
+  };
+</script>
+<script src="stage.js"></script>
+</body>
+</html>

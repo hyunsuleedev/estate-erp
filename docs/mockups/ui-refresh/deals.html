@@ -1,0 +1,692 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>거래관리 · UI 개선 데모</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="ui.css">
+<style>
+  [hidden] { display: none !important; }
+  /* 필터 줄 */
+  .fbar { gap: 6px; padding: 10px var(--gutter) 10px; flex-wrap: wrap; }
+  .fsel { height: 30px; border: 0; border-radius: 8px; background: var(--paper); box-shadow: inset 0 0 0 1px var(--line-2), 0 1px 2px rgba(16, 24, 40, 0.04); font: inherit; font-size: 13px; color: var(--text); letter-spacing: inherit; transition: box-shadow 0.12s, background-color 0.12s; display: inline-flex; align-items: center; gap: 6px; padding: 0 8px 0 10px; cursor: pointer; white-space: nowrap; }
+  .fsel:hover { box-shadow: inset 0 0 0 1px var(--line-3), 0 1px 2px rgba(16, 24, 40, 0.04); }
+  .fsel .k { color: var(--text-2); }
+  .fsel .v { font-weight: 500; }
+  .fsel > .i { width: 12px; height: 12px; color: var(--text-3); }
+  .fsel.on { background: var(--accent-soft); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent); }
+  .fsel.on .k { color: var(--accent-ink); opacity: 0.75; }
+  .fsel.on .v { color: var(--accent-ink); }
+  .fsel .clr { width: 16px; height: 16px; display: grid; place-items: center; border-radius: 4px; color: var(--accent-ink); }
+  .fsel .clr:hover { background: color-mix(in srgb, var(--accent) 18%, transparent); }
+  .fsel .clr .i { width: 11px; height: 11px; }
+  .fbar .res { margin-left: auto; font-size: 13px; color: var(--text-2); font-variant-numeric: tabular-nums; }
+  .fbar .res b { color: var(--text); font-weight: 600; }
+  /* 보드 */
+  .board { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; padding: 4px var(--gutter) 12px; align-items: start; }
+  .col { border-radius: 12px; background: var(--soft); padding: 4px 6px 8px; min-height: 180px; transition: box-shadow 0.12s, background-color 0.12s; }
+  .col.over { background: var(--accent-soft); box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--accent) 55%, transparent); }
+  .col-h { display: flex; align-items: center; gap: 7px; height: 36px; padding: 0 6px; font-size: 13px; font-weight: 600; }
+  .col-h .n { color: var(--text-3); font-weight: 500; font-variant-numeric: tabular-nums; }
+  .col-h .fee { margin-left: auto; font-size: 12px; font-weight: 500; color: var(--text-2); font-variant-numeric: tabular-nums; }
+  .col-e { padding: 26px 8px; text-align: center; font-size: 12px; color: var(--text-3); }
+  .card { position: relative; padding: 9px 10px 9px 12px; border-radius: 10px; background: var(--paper); box-shadow: 0 0 0 1px var(--line-2), 0 1px 2px rgba(16, 24, 40, 0.05); cursor: grab; transition: box-shadow 0.14s, transform 0.14s, opacity 0.14s; }
+  .card + .card { margin-top: 6px; }
+  .card:hover { box-shadow: 0 0 0 1px var(--line-3), 0 6px 16px -8px rgba(16, 24, 40, 0.22); }
+  .card.drag { opacity: 0.4; }
+  .card.sel { box-shadow: 0 0 0 1.5px var(--accent), 0 6px 16px -8px rgba(16, 24, 40, 0.22); }
+  .card.h-overdue { box-shadow: inset 3px 0 0 var(--danger), 0 0 0 1px color-mix(in srgb, var(--danger) 35%, var(--line-2)); }
+  .card.h-stale { box-shadow: inset 3px 0 0 var(--dot-warn), 0 0 0 1px color-mix(in srgb, var(--dot-warn) 45%, var(--line-2)); }
+  .c1 { display: flex; align-items: flex-start; gap: 4px; }
+  .c1 .nm { flex: 1; min-width: 0; font-size: 13px; font-weight: 600; line-height: 1.4; cursor: pointer; }
+  .c1 .ib { width: 22px; height: 22px; margin: -2px -4px 0 0; flex: none; }
+  .c2 { margin-top: 1px; font-size: 12px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .c3 { display: flex; align-items: center; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+  .c3 b { font-size: 16px; font-weight: 650; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; margin-right: 2px; }
+  .c3 .tag { height: 19px; font-size: 12px; margin: 0; }
+  .c4 { display: flex; align-items: center; gap: 5px; margin-top: 6px; font-size: 12px; color: var(--text-2); font-variant-numeric: tabular-nums; flex-wrap: wrap; }
+  .c4 .i { width: 12px; height: 12px; color: var(--text-3); }
+  .c4 .st { height: 19px; margin-left: auto; }
+  .board.compact .c2, .board.compact .c4 .stay { display: none; }
+  .board.compact .c3 b { font-size: 14px; }
+  /* 리스트 */
+  #tbl th, #tbl td { padding-left: 10px; padding-right: 10px; }
+  #tbl th:first-child, #tbl td:first-child { padding-left: var(--gutter); }
+  #tbl th:last-child, #tbl td.act { padding: 0 12px 0 0; width: 38px; }
+  #tbl td.two { height: 48px; }
+  #tbl tr.grp td { height: 36px; font-size: 13px; font-weight: 600; cursor: pointer; background: var(--paper); }
+  #tbl tr.grp .chev { width: 14px; height: 14px; color: var(--text-3); vertical-align: -2px; margin-right: 6px; transition: transform 0.15s; }
+  #tbl tr.grp.shut .chev { transform: rotate(-90deg); }
+  #tbl tr.grp .n { font-weight: 500; color: var(--text-3); margin-left: 6px; }
+  #tbl tr.grp .sum { float: right; font-weight: 500; color: var(--text-2); font-variant-numeric: tabular-nums; }
+  #tbl tr.gempty td { height: 34px; color: var(--text-3); font-size: 12px; }
+  #tbl tr.urgent td:first-child { box-shadow: inset 3px 0 0 var(--danger); }
+  #tbl tr.sel td { background: var(--picked); }
+  #tbl tbody tr[data-d] { cursor: pointer; }
+  .l1 { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+  .l1 .nm { font-weight: 600; }
+  .l2 { margin-top: 1px; font-size: 12px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .dd { display: inline-flex; align-items: center; height: 20px; padding: 0 6px; border-radius: 4px; margin-left: 6px; font-size: 12px; font-weight: 500; background: color-mix(in srgb, var(--text) 6%, transparent); color: var(--text-2); font-variant-numeric: tabular-nums; }
+  .dd.hot { background: color-mix(in srgb, var(--danger) 12%, transparent); color: var(--danger); }
+  .code { font-size: 12px; color: var(--text-3); font-variant-numeric: tabular-nums; letter-spacing: 0.02em; margin: 0 4px; }
+  /* 보관 묶음 */
+  .arch { margin: 0 var(--gutter) 6px; border-top: 1px solid var(--line-2); }
+  .arch-h { display: flex; align-items: center; gap: 8px; height: 38px; font-size: 13px; font-weight: 600; cursor: pointer; }
+  .arch-h .chev { width: 14px; height: 14px; color: var(--text-3); transition: transform 0.15s; }
+  .arch.shut .chev { transform: rotate(-90deg); }
+  .arch.shut .arch-b { display: none; }
+  .arch-h .n { font-weight: 500; color: var(--text-3); }
+  .arow { display: grid; grid-template-columns: minmax(0, 1fr) 130px 130px 28px; gap: 12px; align-items: center; min-height: 46px; padding: 4px 4px 4px 22px; border-top: 1px solid var(--line); font-size: 13px; cursor: pointer; }
+  .arow:hover { background: var(--row-hover); }
+  .arow .r { text-align: right; font-variant-numeric: tabular-nums; }
+  /* 단계 트랙 */
+  .trk { display: flex; align-items: center; flex-wrap: wrap; row-gap: 4px; }
+  .sc { height: 26px; display: inline-flex; align-items: center; gap: 5px; padding: 0 8px; border: 0; border-radius: 6px; background: transparent; font-size: 12px; color: var(--text-3); cursor: pointer; white-space: nowrap; transition: background-color 0.12s; }
+  .sc::before { content: ""; width: 7px; height: 7px; border-radius: 50%; box-shadow: inset 0 0 0 1.5px var(--line-3); flex: none; }
+  .sc:hover { background: var(--hover); }
+  .sc.done { color: var(--ok); }
+  .sc.done::before { background: var(--dot-ok); box-shadow: none; }
+  .sc.cur { background: var(--accent-soft); color: var(--accent-ink); font-weight: 600; }
+  .sc.cur::before { background: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent); }
+  .trk .ln { width: 10px; height: 1.5px; background: var(--line-2); flex: none; }
+  .trk .ln.done { background: var(--dot-ok); }
+  .trk.dim { opacity: 0.45; pointer-events: none; }
+  /* 옆 상세 */
+  .split { position: relative; }
+  .peek.over { position: absolute; right: 0; top: 0; bottom: 0; width: 780px; max-width: calc(100% - 40px); z-index: 8; box-shadow: -18px 0 40px -18px rgba(16, 24, 40, 0.24); }
+  .peek .peek-body { padding: 0 24px 24px; }
+  .peek h2 { font-size: 22px; margin: 8px 0 0; }
+  .peek .amt { display: flex; align-items: baseline; gap: 12px; margin: 8px 0 10px; }
+  .peek .amt b { font-size: 26px; font-weight: 700; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
+  .hbar { display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 12px; margin-top: 10px; border-radius: 8px; background: var(--soft); font-size: 13px; color: var(--text-2); }
+  .hbar b { color: var(--text); font-weight: 600; }
+  .hbar.overdue { background: color-mix(in srgb, var(--danger) 9%, transparent); }
+  .hbar.overdue b { color: var(--danger); }
+  .hbar.stale, .hbar.unscheduled { background: color-mix(in srgb, var(--dot-warn) 16%, transparent); }
+  .hbar.stale b, .hbar.unscheduled b { color: var(--warn); }
+  .hbar .sp { margin-left: auto; font-variant-numeric: tabular-nums; }
+  .dgrid { display: grid; grid-template-columns: minmax(0, 0.82fr) minmax(0, 1.18fr); gap: 0 28px; margin-top: 4px; }
+  .peek .sec { margin-top: 20px; }
+  .peek .sec-h { margin-bottom: 6px; }
+  .peek .sec-h small { font-weight: 400; color: var(--text-3); font-size: 12px; }
+  .chk { display: flex; align-items: center; gap: 8px; min-height: 28px; padding: 0 6px; margin: 0 -6px; border-radius: 6px; font-size: 13px; cursor: pointer; }
+  .chk:hover { background: var(--hover); }
+  .chk i { width: 15px; height: 15px; border-radius: 4px; box-shadow: inset 0 0 0 1.5px var(--line-3); display: grid; place-items: center; flex: none; }
+  .chk i .i { width: 11px; height: 11px; color: #fff; stroke-width: 2.6; opacity: 0; }
+  .chk.on i { background: var(--accent); box-shadow: none; }
+  .chk.on i .i { opacity: 1; }
+  .chk.on span { color: var(--text-3); text-decoration: line-through; text-decoration-color: var(--line-3); }
+  .kvl { display: grid; grid-template-columns: 76px minmax(0, 1fr); font-size: 13px; }
+  .kvl > span { color: var(--text-2); min-height: 28px; display: flex; align-items: center; }
+  .kvl > div { min-height: 28px; display: flex; align-items: center; gap: 6px; min-width: 0; font-variant-numeric: tabular-nums; }
+  .kvl .ib { width: 24px; height: 24px; }
+  .prow { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto 24px; gap: 8px; align-items: center; min-height: 44px; padding: 4px 4px 4px 6px; border-bottom: 1px solid var(--line); font-size: 13px; border-radius: 6px; }
+  .prow:hover, .prow:focus-within { background: var(--row-hover); }
+  .prow.paid { background: color-mix(in srgb, var(--dot-ok) 7%, transparent); }
+  .prow.hot { background: color-mix(in srgb, var(--dot-warn) 10%, transparent); }
+  .pcheck { width: 20px; height: 20px; padding: 0; border: 0; border-radius: 50%; background: transparent; box-shadow: inset 0 0 0 1.5px var(--line-3); display: grid; place-items: center; cursor: pointer; }
+  .pcheck .i { width: 12px; height: 12px; color: #fff; stroke-width: 2.6; opacity: 0; }
+  .prow.paid .pcheck { background: var(--dot-ok); box-shadow: none; }
+  .prow.paid .pcheck .i { opacity: 1; }
+  .pcheck:hover { box-shadow: inset 0 0 0 1.5px var(--accent); }
+  .prow .a { text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .prow .ib { width: 24px; height: 24px; opacity: 0; }
+  .prow:hover .ib, .prow:focus-within .ib { opacity: 1; }
+  .fee-top { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; border-radius: 10px; background: var(--inverse); color: #fff; font-size: 13px; margin-top: 8px; }
+  .fee-top b { font-size: 16px; font-weight: 650; font-variant-numeric: tabular-nums; }
+  .fee-top small { display: block; font-size: 12px; opacity: 0.7; }
+  .two-c { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 6px; }
+  .tile { padding: 8px 12px; border-radius: 10px; box-shadow: inset 0 0 0 1px var(--line-2); font-size: 12px; color: var(--text-2); }
+  .tile b { display: block; font-size: 14px; color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .tile.dimmed { opacity: 0.5; }
+  .three-c { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 6px; }
+  .brow { display: flex; align-items: center; gap: 8px; min-height: 40px; border-bottom: 1px solid var(--line); font-size: 13px; }
+  .brow .g { flex: 1; min-width: 0; }
+  .brow small { display: block; font-size: 12px; color: var(--text-2); }
+  .alert { display: flex; gap: 8px; padding: 9px 12px; border-radius: 8px; font-size: 13px; line-height: 1.5; background: color-mix(in srgb, var(--dot-warn) 16%, transparent); color: var(--warn); }
+  .alert.red { background: color-mix(in srgb, var(--danger) 9%, transparent); color: var(--danger); }
+  .alert.info { background: var(--accent-soft); color: var(--accent-ink); }
+  .alert .i { margin-top: 2px; }
+  .pfoot { display: flex; align-items: center; gap: 6px; padding: 10px 16px; border-top: 1px solid var(--line-2); flex: none; }
+  .btn.dl { color: var(--danger); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--danger) 40%, transparent); }
+  /* 창 */
+  .mback { position: fixed; inset: 0; z-index: 150; background: rgba(16, 24, 40, 0.28); display: grid; place-items: center; animation: fade 0.12s; }
+  .modal { width: 520px; max-width: calc(100vw - 32px); max-height: calc(100vh - 64px); display: flex; flex-direction: column; border-radius: 14px; background: var(--paper); box-shadow: 0 24px 64px rgba(16, 24, 40, 0.3); animation: pop-in 0.15s ease-out; }
+  .m-h { padding: 18px 20px 4px; }
+  .m-h h3 { margin: 0; font-size: 16px; font-weight: 650; }
+  .m-h p { margin: 4px 0 0; font-size: 13px; color: var(--text-2); }
+  .m-b { padding: 12px 20px; overflow: auto; }
+  .m-f { display: flex; justify-content: flex-end; gap: 6px; padding: 12px 20px 16px; }
+  .frm { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 12px; }
+  .frm label, .frm .fl { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--text-2); min-width: 0; }
+  .frm .full { grid-column: 1 / -1; }
+  .frm .row { flex-direction: row; align-items: center; gap: 8px; font-size: 13px; color: var(--text); }
+  .inp { height: 32px; padding: 0 10px; border: 0; border-radius: 8px; background: var(--paper); box-shadow: inset 0 0 0 1px var(--line-2); font: inherit; font-size: 13px; color: var(--text); outline: 0; }
+  .inp:focus { box-shadow: inset 0 0 0 1px var(--accent), 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+  textarea.inp { height: auto; padding: 8px 10px; resize: vertical; line-height: 1.5; }
+  .btn.primary.dng { background: var(--danger); }
+  .echo { font-size: 12px; color: var(--text-2); min-height: 18px; }
+  .pick { max-height: 168px; overflow: auto; border-radius: 8px; box-shadow: inset 0 0 0 1px var(--line-2); }
+  .pick > div { display: flex; align-items: center; gap: 8px; min-height: 36px; padding: 2px 10px; font-size: 13px; cursor: pointer; border-bottom: 1px solid var(--line); }
+  .pick > div:last-child { border-bottom: 0; }
+  .pick > div:hover { background: var(--row-hover); }
+  .pick > div.on { background: var(--accent-soft); }
+  .pick .g { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pick .none { justify-content: center; color: var(--text-3); cursor: default; }
+</style>
+</head>
+<body data-active="deals">
+<main id="page">
+  <div class="ph">
+    <h1>거래관리</h1>
+    <span class="count" id="total"></span>
+    <div class="meta">
+      <span class="lnk" data-jump="live"><span class="dot accent"></span>진행 <b id="nLive"></b></span>
+      <span class="lnk" data-jump="risk"><span class="dot warn"></span>일정 주의 <b id="nRisk"></b></span>
+    </div>
+    <div class="actions">
+      <button class="btn primary" id="newBtn"></button>
+    </div>
+  </div>
+
+  <div class="vbar">
+    <div class="vtab on" data-kind="all">전체 <span class="n"></span></div>
+    <div class="vtab" data-kind="sale">매매 <span class="n"></span></div>
+    <div class="vtab" data-kind="jeonse">전세 <span class="n"></span></div>
+    <div class="vtab" data-kind="monthly">월세 <span class="n"></span></div>
+    <div class="vtools">
+      <label class="field" data-icon="search"><input id="q" placeholder="매물, 고객, 주소 검색" aria-label="검색"><kbd>⌘F</kbd></label>
+      <span class="vsep"></span>
+      <div class="seg" id="denSeg"><button data-den="full" data-icon="list" title="카드 자세히">자세히</button><button data-den="compact" data-icon="sliders" title="카드 간결하게">간결하게</button></div>
+      <div class="seg" id="viewSeg"><button data-view="board" data-icon="board">보드</button><button data-view="list" data-icon="table">리스트</button></div>
+    </div>
+  </div>
+
+  <div class="fbar show" id="fbar">
+    <span id="fsels" style="display:contents"></span>
+    <button class="btn quiet sm" data-clear hidden>초기화</button>
+    <span class="res" id="res"></span>
+  </div>
+
+  <div class="split">
+    <div class="scroll" id="scroll">
+      <div id="main"></div>
+      <div id="archive"></div>
+      <div class="sumbar" id="foot"></div>
+    </div>
+    <aside class="peek over" id="peek" hidden></aside>
+  </div>
+</main>
+
+<script src="shell.js"></script>
+<script>
+const { icon, av, won } = UI;
+const esc = (v) => String(v == null ? '' : v).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+// 원본 formatMoney: 158000 → 15억 8,000만, 5000 → 5,000만, 없으면 —
+const man = (v) => (!v ? '—' : v % 10000 || v < 10000 ? `${won(v)}만` : won(v));
+const TODAY = '2026-11-11';
+const dnum = (s) => { const [y, m, d] = s.split('-').map(Number); return Math.round(Date.UTC(y, m - 1, d) / 864e5); };
+const diff = (a, b = TODAY) => dnum(a) - dnum(b);
+const dot = (s) => (s ? s.replace(/-/g, '.') : '');
+const md = (s) => { const [, m, d] = s.split('-').map(Number); return `${m}/${d}`; };
+const dlabel = (due) => { if (!due) return '미정'; const n = diff(due); return n > 0 ? `D-${n}` : n === 0 ? 'D-Day' : `D+${-n}`; };
+const KIND = { sale: '매매', jeonse: '전세', monthly: '월세' };
+// 원본 DealStage: preparing → preContract(선택) → contracted → settling → completed → closed
+const STG = ['계약 준비', '가계약', '본계약', '중도금/잔금', '잔금완료', '정산종료'];
+const GRP = ['계약 준비', '가계약', '본계약', '중도금·잔금', '잔금 완료'];
+const SDOT = ['', 'accent', 'accent', 'warn', 'ok', ''];
+const TARGET = [7, 5, 14, 7, 10];
+const CSTAT = { draft: ['작성중', ''], signed: ['서명완료', 'accent'], depositPaid: ['계약금 완료', 'accent'], balancePaid: ['잔금 완료', 'ok'], registered: ['등기 완료', 'done'], cancelled: ['취소', 'hold'] };
+const SIDE = { seller: '매도측', buyer: '매수측', both: '양측' };
+const PARTNERS = [['상일 한빛공인중개', '02-442-7781'], ['고덕 믿음부동산', '02-481-3360'], ['강일 새봄공인중개', '02-427-9054']];
+const TODO = [
+  ['최종 합의 조건 확인', '계약 당사자·필요 서류 확인', '가계약 여부와 본계약 일정 결정'],
+  ['가계약금 입금 확인', '본계약 일정 확정', '계약 필요 서류 안내'],
+  ['계약서 서명·날인', '계약금 입금 확인', '중도금 일정 캘린더 등록', '확인설명서 교부'],
+  ['잔금 일정 재확인', '등기·인도 준비 상태 점검', '수수료 청구 상태 확인'],
+  ['수수료 수금 확인', '직원 배분 정산', '거래 자료 보관'],
+  ['거래 상태 확인', '후속 업무 정리'],
+];
+const TODO_CANCEL = ['취소 사유 기록 확인', '수수료 청구 취소/조정 확인', '관련 일정 정리'];
+
+const P = (kind, amount, due, paid = 0, paidDate = '') => ({ kind, amount, due, paid, paidDate, off: false });
+let DID = 0;
+const mkDeal = (o) => ({ id: DID++, code: (0xd3fa + DID * 7919).toString(16).toUpperCase().slice(-4), rent: null, joint: null, memo: '', special: '', pays: [], contract: null, cancel: null, prop: 'house', staff: ['이현수'], checks: {}, rev: 0, ...o });
+let DEALS = [
+  mkDeal({ site: '고덕그라시움', dong: '109', ho: '1101', addr: '서울 강동구 고덕로 333', m2: 84.92, kind: 'sale', price: 161000, ask: 161000, stage: 0, since: '2026-11-09', seller: ['오세라', '010-8841-2206'], buyer: ['김지현', '010-4821-3307'], staff: ['이현수'], moveIn: '2027-02-10', memo: '초등 배정 때문에 2월 초 입주 조건' }),
+  mkDeal({ site: '고덕그라시움', dong: '117', ho: '1203', addr: '서울 강동구 고덕로 333', m2: 84.83, kind: 'jeonse', price: 77000, ask: 78000, stage: 0, since: '2026-11-07', seller: ['염지수', '010-3391-6620'], buyer: ['이나래', '010-5567-8830'], staff: ['정다은'], moveIn: '2026-12-20' }),
+  mkDeal({ site: '상일동 하늘빌라', dong: '', ho: '302', addr: '서울 강동구 상일로 12길 8', m2: 59.4, kind: 'monthly', price: 3000, rent: 75, ask: 3000, stage: 0, since: '2026-10-30', seller: ['탁미정', '010-7289-5516'], buyer: ['허민재', '010-3907-5518'], staff: ['최민준'], moveIn: '2026-11-25', memo: '주차 1대 확인, 계약일 미정' }),
+  mkDeal({ site: '고덕아르테온', dong: '312', ho: '1704', addr: '서울 강동구 고덕로 360', m2: 84.97, kind: 'sale', price: 152000, ask: 152000, stage: 1, since: '2026-11-05', seller: ['곽동현', '010-4409-7715'], buyer: ['장하은', '010-3318-6642'], staff: ['이현수', '최민준'], joint: { partner: '상일 한빛공인중개', phone: '02-442-7781', side: 'buyer' }, moveIn: '2027-03-20', pays: [P('가계약금', 1000, '2026-11-05', 1000, '2026-11-05'), P('계약금', 14200, '2026-11-20')], memo: '11/20 본계약 예정', special: '가계약금은 계약금의 일부로 승계한다.' }),
+  mkDeal({ site: '고덕센트럴아이파크', dong: '101', ho: '1501', addr: '서울 강동구 고덕로 285', m2: 84.9, kind: 'sale', price: 148000, ask: 148000, stage: 2, since: '2026-11-03', seller: ['진소영', '010-7730-1164'], buyer: ['박준호', '010-2290-1184'], staff: ['정다은'], joint: { partner: '고덕 믿음부동산', phone: '02-481-3360', side: 'seller' }, moveIn: '2027-01-29', pays: [P('계약금', 14800, '2026-11-03', 14800, '2026-11-03'), P('중도금', 59200, '2026-12-15'), P('잔금', 74000, '2027-01-29')], contract: { status: 'signed', date: '2026-11-03', total: 148000, balance: '2027-01-29' }, special: '현 시설 상태에서의 매매 계약이며, 잔금일 이전 근저당은 매도인이 말소한다.' }),
+  mkDeal({ site: '고덕자이', dong: '108', ho: '1902', addr: '서울 강동구 상일로 55', m2: 59.96, kind: 'sale', price: 129000, ask: 129000, stage: 2, since: '2026-10-28', seller: ['황보람', '010-2086-3349'], buyer: ['권소희', '010-7140-2263'], staff: ['박서연'], moveIn: '2026-12-22', pays: [P('계약금', 12900, '2026-10-28', 12900, '2026-10-28'), P('중도금', 51600, '2026-11-09'), P('잔금', 64500, '2026-12-22')], contract: { status: 'signed', date: '2026-10-28', total: 129000, balance: '2026-12-22' }, memo: '중도금 대출 실행 지연 중' }),
+  mkDeal({ site: '래미안힐스테이트고덕', dong: '120', ho: '801', addr: '서울 강동구 아리수로 50길 50', m2: 84.75, kind: 'jeonse', price: 72000, ask: 72000, stage: 2, since: '2026-10-20', seller: ['임채원', '010-9902-5581'], buyer: ['마동욱', '010-2468-9031'], staff: ['이현수'], moveIn: '2026-12-18', pays: [P('계약금', 7200, '2026-10-20', 7200, '2026-10-20'), P('잔금', 64800, '2026-12-18')], contract: { status: 'signed', date: '2026-10-20', total: 72000, balance: '2026-12-18', lease: ['2026-12-18', '2028-12-17'] } }),
+  mkDeal({ site: '고덕그라시움', dong: '205', ho: '902', addr: '서울 강동구 고덕로 333', m2: 59.78, kind: 'monthly', price: 10000, rent: 190, ask: 10000, stage: 2, since: '2026-11-08', seller: ['채은호', '010-5578-2241'], buyer: ['신가영', '010-8812-4470'], staff: ['최민준'], moveIn: '2026-12-01', pays: [P('계약금', 1000, '2026-11-08', 1000, '2026-11-08'), P('잔금', 9000, null)], contract: { status: 'draft', date: '2026-11-08', total: 10000, balance: null }, memo: '법인 계약, 잔금일 협의 중' }),
+  mkDeal({ site: '고덕그라시움', dong: '102', ho: '1802', addr: '서울 강동구 고덕로 333', m2: 84.92, kind: 'jeonse', price: 80000, ask: 80000, stage: 3, since: '2026-11-06', seller: ['설하린', '010-6204-7753'], buyer: ['송예린', '010-5093-7742'], staff: ['정다은'], moveIn: '2026-11-13', pays: [P('계약금', 8000, '2026-11-02', 8000, '2026-11-02'), P('잔금', 72000, '2026-11-13')], contract: { status: 'depositPaid', date: '2026-11-02', total: 80000, balance: '2026-11-13', lease: ['2026-11-13', '2028-11-12'] } }),
+  mkDeal({ site: '고덕아르테온', dong: '305', ho: '503', addr: '서울 강동구 고덕로 360', m2: 59.91, kind: 'jeonse', price: 64000, ask: 64000, stage: 3, since: '2026-10-30', seller: ['표민규', '010-8452-0917'], buyer: ['윤태경', '010-6634-1029'], staff: ['정다은', '박서연'], joint: { partner: '강일 새봄공인중개', phone: '02-427-9054', side: 'seller' }, moveIn: '2026-11-28', pays: [P('계약금', 6400, '2026-10-16', 6400, '2026-10-16'), P('잔금', 57600, '2026-11-28')], contract: { status: 'depositPaid', date: '2026-10-16', total: 64000, balance: '2026-11-28', lease: ['2026-11-28', '2028-11-27'] } }),
+  mkDeal({ site: '고덕그라시움', dong: '121', ho: '2502', addr: '서울 강동구 고덕로 333', m2: 99.63, kind: 'sale', price: 175000, ask: 176000, stage: 4, since: '2026-11-04', seller: ['문태호', '010-2755-9034'], buyer: ['배유진', '010-7753-0921'], staff: ['이현수', '박서연'], moveIn: '2026-11-04', pays: [P('계약금', 17500, '2026-08-20', 17500, '2026-08-20'), P('중도금', 70000, '2026-09-30', 70000, '2026-09-30'), P('잔금', 87500, '2026-11-04', 87500, '2026-11-04')], contract: { status: 'balancePaid', date: '2026-08-20', total: 175000, balance: '2026-11-04' }, memo: '수수료 세금계산서 발행 요청 받음' }),
+  mkDeal({ site: '래미안힐스테이트고덕', dong: '105', ho: '2304', addr: '서울 강동구 아리수로 50길 50', m2: 84.75, kind: 'sale', price: 146000, ask: 146000, stage: 5, since: '2026-10-25', seller: ['남기훈', '010-5123-8890'], buyer: ['조성민', '010-9045-2276'], staff: ['최민준'], pays: [P('계약금', 14600, '2026-07-10', 14600, '2026-07-10'), P('잔금', 131400, '2026-10-10', 131400, '2026-10-10')], contract: { status: 'registered', date: '2026-07-10', total: 146000, balance: '2026-10-10' } }),
+  mkDeal({ site: '고덕센트럴아이파크', dong: '110', ho: '902', addr: '서울 강동구 고덕로 285', m2: 59.84, kind: 'monthly', price: 15000, rent: 160, ask: 15000, stage: 1, since: '2026-10-22', seller: ['변서진', '010-9917-3305'], buyer: ['정우성', '010-3040-7719'], staff: ['박서연'], pays: [P('가계약금', 500, '2026-10-22', 500, '2026-10-22')], cancel: { date: '2026-10-27', by: '매수인', reason: '자금 사정으로 계약 포기' } }),
+];
+const title = (d) => (d.site ? `${d.site} ${d.dong ? d.dong + '동 ' : ''}${d.ho}호` : '매물 정보 없음');
+const amount = (d) => (d.kind === 'monthly' ? `${man(d.price)} / ${d.rent}` : man(d.price));
+const payState = (p) => (p.off ? ['취소', 'hold'] : p.paid >= p.amount ? ['완납', 'ok'] : p.paid > 0 ? ['부분입금', 'warn'] : p.due && diff(p.due) < 0 ? ['연체', 'warn'] : ['예정', '']);
+const payName = (d, p) => { if (p.kind !== '중도금') return p.kind; const all = d.pays.filter((x) => x.kind === '중도금'); return all.length > 1 ? `중도금 ${all.indexOf(p) + 1}차` : '중도금'; };
+function nextPay(d) {
+  const open = d.pays.filter((p) => !p.off && p.paid < p.amount);
+  const dated = open.filter((p) => p.due).sort((a, b) => a.due.localeCompare(b.due));
+  return dated[0] || open[0] || null;
+}
+const stay = (d) => Math.max(0, diff(TODAY, d.since));
+// 진행 상태(원본 규칙): 지급일이 지났으면 지연, 목표 일수를 넘기면 정체, 본계약·중도금 단계에 다음 지급일이 없으면 미정
+function health(d) {
+  const n = nextPay(d); const days = stay(d); const tgt = TARGET[d.stage];
+  if (n && n.due && diff(n.due) < 0) return ['overdue', '일정 지연', `${payName(d, n)} ${-diff(n.due)}일 지연`];
+  if (tgt != null && days > tgt) return ['stale', '단계 정체', `목표 ${tgt}일 · 현재 ${days}일`];
+  if ((d.stage === 2 || d.stage === 3) && !(n && n.due)) return ['unscheduled', '일정 미정', '다음 지급일을 등록해 주세요'];
+  return ['healthy', '정상', n && n.due && diff(n.due) === 0 ? '오늘 지급 일정' : '진행 상태 양호'];
+}
+const HRANK = { overdue: 0, stale: 1, unscheduled: 2, healthy: 3 };
+const live = (d) => !d.cancel && d.stage < 5;
+// 법정 상한 수수료(한쪽 기준, 만원). 월세는 보증금 + 월세 × 100, 5천만 미만이면 × 70으로 환산
+function legal(kind, prop, price, rent) {
+  let base = price || 0;
+  if (kind === 'monthly') base = price + rent * 100 < 5000 ? price + rent * 70 : price + rent * 100;
+  if (prop === 'etc') return { base, rate: 0.9, cap: null, fee: Math.round(base * 0.009) };
+  if (prop === 'officetel') { const rate = kind === 'sale' ? 0.5 : 0.4; return { base, rate, cap: null, fee: Math.round(base * rate / 100) }; }
+  const T = kind === 'sale' ? [[5000, 0.6, 25], [20000, 0.5, 80], [90000, 0.4], [120000, 0.5], [150000, 0.6], [Infinity, 0.7]] : [[5000, 0.5, 20], [10000, 0.4, 30], [60000, 0.3], [120000, 0.4], [150000, 0.5], [Infinity, 0.6]];
+  const [, rate, cap] = T.find((t) => base < t[0]);
+  const fee = Math.round(base * rate / 100);
+  return { base, rate, cap: cap || null, fee: cap ? Math.min(fee, cap) : fee };
+}
+const ourSides = (d) => (!d.joint ? ['seller', 'buyer'] : d.joint.side === 'both' ? ['seller', 'buyer'] : [d.joint.side]);
+const ourFee = (d) => legal(d.kind, d.prop, d.price, d.rent).fee * ourSides(d).length;
+const billState = (d) => (d.cancel ? ['취소', 'hold'] : d.stage < 2 ? ['작성중', ''] : d.stage < 4 ? ['수금대기', 'accent'] : d.stage === 4 ? ['부분수금', 'warn'] : ['수금완료', 'ok']);
+
+const state = { kind: 'all', view: 'board', den: 'full', q: '', f: {}, sort: null, gshut: new Set(), ashut: { closed: true, cancel: true }, detail: null, drag: null };
+const FDEFS = [
+  { id: 'stage', k: '단계', opts: () => STG.map((l, i) => [l, (d) => d.stage === i]) },
+  { id: 'joint', k: '공동중개', opts: () => [['공동중개만', (d) => !!d.joint], ['단독중개만', (d) => !d.joint]] },
+  { id: 'contract', k: '계약서', opts: () => [['계약서 있음', (d) => !!d.contract], ['계약서 없음', (d) => !d.contract]] },
+  { id: 'health', k: '진행 상태', opts: () => [['일정 지연', 'overdue'], ['단계 정체', 'stale'], ['다음 일정 미정', 'unscheduled'], ['정상 진행', 'healthy']].map(([l, h]) => [l, (d) => live(d) && health(d)[0] === h]) },
+];
+function filtered() {
+  let rows = DEALS.filter((d) => state.kind === 'all' || d.kind === state.kind);
+  for (const f of FDEFS) { const v = state.f[f.id]; if (!v) continue; const o = f.opts().find((x) => x[0] === v); rows = rows.filter(o ? o[1] : () => false); }
+  const q = state.q.trim().toLowerCase();
+  if (q) rows = rows.filter((d) => `${title(d)} ${d.addr} ${d.seller.join(' ')} ${d.buyer.join(' ')} ${d.joint ? d.joint.partner + ' ' + d.joint.phone : ''} ${d.memo} ${d.special}`.toLowerCase().includes(q));
+  return rows;
+}
+// 원본 정렬: 주의가 필요한 것 먼저, 다음 지급일이 가까운 순, 오래 머문 순
+function order(a, b) {
+  const s = state.sort;
+  if (s && state.view === 'list') {
+    const v = (d) => (s.key === 'price' ? d.price : s.key === 'next' ? ((nextPay(d) || {}).due || '9999') : s.key === 'seller' ? d.seller[0] : d.buyer[0]);
+    const x = v(a); const y = v(b);
+    const c = typeof x === 'number' ? x - y : String(x).localeCompare(String(y), 'ko');
+    if (c) return c * s.dir;
+  }
+  const na = (nextPay(a) || {}).due || '9999'; const nb = (nextPay(b) || {}).due || '9999';
+  return HRANK[health(a)[0]] - HRANK[health(b)[0]] || na.localeCompare(nb) || stay(b) - stay(a);
+}
+function nextTxt(d) {
+  const n = nextPay(d);
+  if (!n) return [d.pays.length && d.pays.every((p) => p.off || p.paid >= p.amount) ? '지급 완료' : '일정 미정', '미정', false];
+  if (!n.due) return [`${payName(d, n)} · 일정 미정`, '미정', false];
+  return [`${payName(d, n)} ${md(n.due)}`, dlabel(n.due), diff(n.due) <= 3];
+}
+const kindTags = (d) => `<span class="tag ${d.kind}">${KIND[d.kind]}</span>${d.joint ? '<span class="tag blue">공동</span>' : ''}`;
+
+function card(d) {
+  const [h, hl, hd] = health(d);
+  const [nt, dl, hot] = nextTxt(d);
+  return `<div class="card h-${h} ${state.detail === d.id ? 'sel' : ''}" draggable="true" data-d="${d.id}" title="${hl} · ${hd}">
+    <div class="c1"><a class="nm tr-link" data-open tabindex="0">${title(d)}</a><button class="ib" data-more aria-label="${title(d)} 더보기">${icon('more')}</button></div>
+    <div class="c2">매도 ${d.seller[0] || '미지정'} · 매수 ${d.buyer[0] || '미지정'}</div>
+    <div class="c3"><b>${amount(d)}</b>${kindTags(d)}</div>
+    <div class="c4">${icon('cal')}<span class="${hot ? 'danger-t' : ''}">${nt}${dl !== '미정' ? ` · ${dl}` : ''}</span><span class="stay t3">· ${stay(d)}일 체류</span>${h !== 'healthy' ? `<span class="st warn" ${h === 'overdue' ? 'style="background:color-mix(in srgb, var(--danger) 12%, transparent);color:var(--danger)"' : ''}>${hl}</span>` : ''}</div>
+  </div>`;
+}
+function boardView(rows) {
+  document.getElementById('main').innerHTML = `<div class="board ${state.den === 'compact' ? 'compact' : ''}">${GRP.map((label, k) => {
+    const list = rows.filter((d) => live(d) && d.stage === k).sort(order);
+    const fee = list.reduce((a, d) => a + ourFee(d), 0);
+    return `<div class="col" data-col="${k}"><div class="col-h"><span class="dot ${SDOT[k]}"></span>${label}<span class="n">${list.length}</span>${fee > 0 ? `<span class="fee" title="예상 수수료 합계">${man(fee)}</span>` : ''}</div>${list.length ? list.map(card).join('') : '<div class="col-e">해당 단계의 거래가 없습니다<br>카드를 끌어다 놓으면 이 단계로 옮깁니다</div>'}</div>`;
+  }).join('')}</div>`;
+}
+const TH = (h, label, cls = '', sort = '') => `<th class="${cls} ${state.sort && state.sort.key === sort && sort ? 'sorted' : ''}" data-h="${h}" ${sort ? `data-sort="${sort}"` : ''}>${icon(h, 'hi')}${label}${state.sort && sort && state.sort.key === sort ? `<svg class="i caret" style="${state.sort.dir > 0 ? 'transform:rotate(180deg)' : ''}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>` : ''}<span class="rz"></span></th>`;
+function listView(rows) {
+  const body = GRP.map((label, k) => {
+    const list = rows.filter((d) => live(d) && d.stage === k).sort(order);
+    const shut = state.gshut.has(k);
+    const sum = list.reduce((a, d) => a + (d.price || d.ask || 0), 0);
+    return `<tr class="grp ${shut ? 'shut' : ''}" data-g="${k}"><td colspan="10">${icon('chevDown', 'chev')}<span class="dot ${SDOT[k]}" style="margin-right:8px;vertical-align:2px"></span>${label}<span class="n">${list.length}</span><span class="sum">합계 ${sum ? man(sum) : '—'}</span></td></tr>` + (shut ? '' : list.length ? list.map((d, i) => {
+      const [nt, dl, hot] = nextTxt(d);
+      const c = d.contract ? CSTAT[d.contract.status] : null;
+      return `<tr data-d="${d.id}" class="${hot ? 'urgent' : ''} ${state.detail === d.id ? 'sel' : ''}">
+        <td class="r num t3" style="width:56px">${i + 1}</td>
+        <td class="two"><div class="l1"><span class="nm tr-link">${title(d)}</span></div><div class="l2">${d.addr || '주소 정보 없음'}${d.m2 ? ` · 전용 ${d.m2}㎡` : ''}</div></td>
+        <td><button class="st ${SDOT[d.stage] || ''}" data-st>${STG[d.stage]}${icon('chevDown', 'stc')}</button></td>
+        <td>${d.seller[0] || '<span class="t3">미지정</span>'}</td>
+        <td>${d.buyer[0] || '<span class="t3">미지정</span>'}</td>
+        <td class="r num" style="font-weight:500">${amount(d)}</td>
+        <td class="num"><span class="${hot ? 'danger-t' : nt.includes('미정') ? 't3' : ''}">${nt}</span>${nt === '지급 완료' ? '' : `<span class="dd ${hot ? 'hot' : ''}">${dl}</span>`}</td>
+        <td>${c ? `<span class="st ${c[1]}">${c[0]}</span>` : '<span class="t3">없음</span>'}</td>
+        <td>${kindTags(d)}<span class="code">${d.code}</span></td>
+        <td class="act"><button class="ib rowact" data-more aria-label="${title(d)} 더보기">${icon('more')}</button></td>
+      </tr>`;
+    }).join('') : '<tr class="gempty"><td colspan="10" style="padding-left:56px">이 단계로 거래를 이동하면 여기에 표시됩니다</td></tr>');
+  }).join('');
+  document.getElementById('main').innerHTML = `<table class="tbl" id="tbl"><thead><tr>${TH('list', 'No', 'r')}${TH('building', '매물')}${TH('info', '단계')}${TH('user', '매도', '', 'seller')}${TH('user', '매수', '', 'buyer')}${TH('won', '금액', 'r', 'price')}${TH('cal', '다음 일정', '', 'next')}${TH('file', '계약')}${TH('tag', '태그')}<th></th></tr></thead><tbody>${body}</tbody></table>`;
+}
+function archive(rows) {
+  const sect = (key, label, dotc, list, line) => (list.length ? `<div class="arch ${state.ashut[key] ? 'shut' : ''}" data-arch="${key}"><div class="arch-h">${icon('chevDown', 'chev')}<span class="dot ${dotc}"></span>${label}<span class="n">${list.length}건</span></div><div class="arch-b">${list.map((d) => `<div class="arow" data-d="${d.id}"><div><div class="l1"><span class="nm tr-link">${title(d)}</span>${d.cancel ? '<span class="st hold" style="color:var(--danger)">취소</span>' : `<span class="st">${STG[5]}</span>`}${kindTags(d)}</div><div class="l2">${line(d)}</div></div><div class="r">${amount(d)}</div><div class="r t2">수수료 ${man(ourFee(d))}</div><button class="ib" data-more aria-label="${title(d)} 더보기">${icon('more')}</button></div>`).join('')}</div></div>` : '');
+  document.getElementById('archive').innerHTML =
+    sect('closed', '정산종료', '', rows.filter((d) => !d.cancel && d.stage === 5), (d) => `${dot(d.since)} 정산종료 · 매도 ${d.seller[0]} · 매수 ${d.buyer[0]}`) +
+    sect('cancel', '취소 거래', 'danger', rows.filter((d) => d.cancel), (d) => `${dot(d.cancel.date)} · ${d.cancel.by || '미기록'} · ${d.cancel.reason ? esc(d.cancel.reason) : '사유 미기록'}`);
+}
+function render() {
+  // 숫자는 그릴 때마다 다시 센다
+  const rows = filtered();
+  const liveRows = rows.filter(live);
+  const risk = liveRows.filter((d) => health(d)[0] !== 'healthy').length;
+  document.getElementById('total').textContent = DEALS.length;
+  document.getElementById('nLive').textContent = liveRows.length;
+  const nr = document.getElementById('nRisk'); nr.textContent = risk; nr.className = risk ? 'warn-t' : '';
+  document.querySelectorAll('.vtab[data-kind]').forEach((t) => { const k = t.dataset.kind; t.classList.toggle('on', k === state.kind); t.querySelector('.n').textContent = DEALS.filter((d) => k === 'all' || d.kind === k).length; });
+  document.querySelectorAll('#viewSeg button').forEach((b) => b.classList.toggle('on', b.dataset.view === state.view));
+  document.querySelectorAll('#denSeg button').forEach((b) => b.classList.toggle('on', b.dataset.den === state.den));
+  document.getElementById('denSeg').hidden = state.view !== 'board';
+  document.getElementById('fsels').innerHTML = FDEFS.map((f) => { const v = state.f[f.id]; return `<button class="fsel ${v ? 'on' : ''}" data-fs="${f.id}"><span class="k">${f.k}</span><span class="v">${v || '전체'}</span>${v ? `<span class="clr" data-fclr="${f.id}" title="지우기">${icon('x')}</span>` : icon('chevDown')}</button>`; }).join('');
+  const any = Object.keys(state.f).length || state.q.trim() || state.kind !== 'all';
+  document.querySelector('#fbar [data-clear]').hidden = !any;
+  document.getElementById('res').innerHTML = `<b>${rows.length}</b>건`;
+  if (!DEALS.length) document.getElementById('main').innerHTML = '<div class="empty"><b>등록된 거래가 없습니다</b>매칭에서 거래로 전환하거나, 새 거래를 직접 생성하세요.</div>';
+  else if (!liveRows.length && state.view === 'list') document.getElementById('main').innerHTML = '<div class="empty"><b>조건에 맞는 진행 거래가 없습니다.</b>검색어나 필터를 바꿔 보세요</div>';
+  else (state.view === 'board' ? boardView : listView)(rows);
+  archive(rows);
+  const fee = liveRows.reduce((a, d) => a + ourFee(d), 0);
+  const tot = liveRows.reduce((a, d) => a + (d.price || 0), 0);
+  const soon = liveRows.filter((d) => { const n = nextPay(d); return n && n.due && diff(n.due) >= 0 && diff(n.due) <= 7; }).length;
+  document.getElementById('foot').innerHTML = `<span>진행 거래<b>${liveRows.length}</b></span><span>거래금액 합계<b>${man(tot)}</b></span><span>예상 수수료(우리 몫)<b>${man(fee)}</b></span><span>7일 안 지급 일정<b>${soon}</b></span><span>일정 주의<b>${risk}</b></span><span class="grow"></span><span>${state.view === 'board' ? '카드를 끌어 단계를 옮깁니다' : '단계 배지를 눌러 옮깁니다'}</span>`;
+  renderDetail();
+}
+
+// ── 바꾸기 + 실행 취소 ──
+const alive = (d) => DEALS.includes(d);
+function mutate(d, apply, msg, keys) {
+  const before = JSON.parse(JSON.stringify(Object.fromEntries(keys.map((k) => [k, d[k]]))));
+  apply();
+  const v = ++d.rev;
+  render();
+  UI.toast(msg, () => {
+    if (!alive(d) || d.rev !== v) { UI.toast('그 뒤에 다시 바뀌어서 되돌리지 않았습니다'); return; }
+    d.rev += 1; Object.assign(d, before); render();
+  });
+}
+function moveStage(d, to) {
+  if (to === d.stage || d.cancel) return;
+  // 서버 규칙: 계약서 없이는 중도금/잔금 이후로 못 간다
+  if (to >= 3 && !d.contract) { UI.toast('계약서를 작성해야 중도금/잔금 이후 단계로 변경할 수 있습니다. 거래 상세의 계약 요약에서 계약서를 먼저 작성하세요.'); openDetail(d.id); return; }
+  mutate(d, () => { d.stage = to; d.since = TODAY; }, `'${title(d)}' 거래를 '${STG[to]}' 단계로 변경했습니다${to === 5 ? ' · 진행 보드에서 제외됩니다' : ''}`, ['stage', 'since']);
+}
+function dealMenu(anchor, d) {
+  UI.menu(anchor, [
+    { label: '상세 열기', icon: 'expand', run: () => openDetail(d.id) },
+    { head: '단계 변경' },
+    ...STG.slice(0, 5).map((l, k) => ({ label: l, html: `<span class="dot ${SDOT[k]}"></span>`, on: !d.cancel && d.stage === k, run: () => moveStage(d, k) })),
+    '-',
+    { label: '정산종료 처리', icon: 'check', on: d.stage === 5, run: () => moveStage(d, 5) },
+    ...(d.cancel ? [{ label: '취소 되돌리기', icon: 'refresh', run: () => mutate(d, () => { d.cancel = null; }, `'${title(d)}' 거래의 취소를 되돌렸습니다`, ['cancel']) }] : [{ label: '거래 취소', icon: 'x', danger: true, run: () => cancelDialog(d) }]),
+    { label: '삭제', icon: 'x', danger: true, run: () => {
+      const at = DEALS.indexOf(d); DEALS.splice(at, 1); if (state.detail === d.id) state.detail = null; render();
+      UI.toast(`'${title(d)}' 거래를 삭제했습니다 · 지급 스케줄과 수수료 청구도 함께 지워집니다`, () => { if (alive(d)) return; DEALS.splice(Math.min(at, DEALS.length), 0, d); render(); });
+    } },
+  ], { right: true });
+}
+
+// ── 창 ──
+function modal({ title: tt, desc, body, ok = '확인', danger, onOpen, onOk }) {
+  const back = document.createElement('div');
+  back.className = 'mback';
+  back.innerHTML = `<div class="modal" role="dialog" aria-modal="true"><div class="m-h"><h3>${tt}</h3>${desc ? `<p>${desc}</p>` : ''}</div><div class="m-b">${body}</div><div class="m-f"><button class="btn" data-mx>닫기</button><button class="btn primary ${danger ? 'dng' : ''}" data-mok>${ok}</button></div></div>`;
+  document.body.append(back);
+  const close = () => back.remove();
+  back.addEventListener('mousedown', (e) => { if (e.target === back) close(); });
+  back.addEventListener('click', (e) => { if (e.target.closest('[data-mx]')) close(); else if (e.target.closest('[data-mok]') && onOk(back) !== false) close(); });
+  back.addEventListener('keydown', (e) => { if (e.isComposing || e.keyCode === 229) return; if (e.key === 'Escape') { e.stopPropagation(); close(); } });
+  if (onOpen) onOpen(back);
+  const f = back.querySelector('input, textarea, select');
+  if (f) f.focus();
+  return back;
+}
+const val = (b, id) => b.querySelector('#' + id).value.trim();
+const echo = (b, inId, outId) => { const i = b.querySelector('#' + inId); const f = () => { const v = +i.value; b.querySelector('#' + outId).textContent = v > 0 ? `= ${man(v)}` : ''; }; i.addEventListener('input', f); f(); };
+function cancelDialog(d) {
+  modal({ title: '거래 취소', danger: true, ok: '취소 처리', desc: `'${title(d)}' 거래를 취소 처리합니다. 단계는 유지되고 취소 플래그로 기록됩니다.`,
+    body: `<div class="frm"><label class="full">취소 주체 *<select class="inp" id="cBy">${['매수인', '매도인', '상호 합의', '우리 사무소', '공동중개사', '기타'].map((x) => `<option ${x === '상호 합의' ? 'selected' : ''}>${x}</option>`).join('')}</select></label><label class="full">취소 사유<input class="inp" id="cWhy" placeholder="예: 매수인 자금 사정으로 계약 포기"></label></div>`,
+    onOk: (b) => mutate(d, () => { d.cancel = { date: TODAY, by: val(b, 'cBy'), reason: val(b, 'cWhy') }; }, `'${title(d)}' 거래를 취소 처리했습니다`, ['cancel']) });
+}
+function termsDialog(d) {
+  const lab = d.kind === 'sale' ? '매매가' : d.kind === 'jeonse' ? '전세금' : '보증금';
+  modal({ title: '합의 조건 수정', ok: '저장', desc: '금액은 만원 단위입니다. 당사자·특약 변경은 거래 수정 API가 준비되면 지원됩니다.',
+    body: `<div class="frm"><label class="${d.kind === 'monthly' ? '' : 'full'}">${lab} (만원)<input class="inp num" id="tP" inputmode="numeric" value="${d.price || ''}"><span class="echo" id="tPe"></span></label>${d.kind === 'monthly' ? `<label>월세 (만원)<input class="inp num" id="tR" inputmode="numeric" value="${d.rent || ''}"><span class="echo" id="tRe"></span></label>` : ''}<label class="full">메모<textarea class="inp" id="tM" rows="3">${esc(d.memo)}</textarea></label></div>`,
+    onOpen: (b) => { echo(b, 'tP', 'tPe'); if (d.kind === 'monthly') echo(b, 'tR', 'tRe'); },
+    onOk: (b) => { const p = +val(b, 'tP'); if (!(p > 0)) { UI.toast('금액을 만원 단위 숫자로 입력해 주세요'); return false; } mutate(d, () => { d.price = p; if (d.kind === 'monthly') d.rent = +val(b, 'tR') || 0; d.memo = val(b, 'tM'); }, '합의 조건을 저장했습니다 · 수수료를 다시 계산했습니다', ['price', 'rent', 'memo']); } });
+}
+function payAddDialog(d, p) {
+  modal({ title: p ? `${payName(d, p)} 수정` : '지급 항목 추가', ok: p ? '저장' : '추가',
+    body: `<div class="frm">${p ? '' : `<label class="full">종류 *<select class="inp" id="pK">${[['가계약금', '가계약금'], ['계약금', '계약금'], ['중도금', '중도금 (차수 자동)'], ['잔금', '잔금'], ['환불', '환불']].map(([v, l]) => `<option value="${v}" ${v === '계약금' ? 'selected' : ''}>${l}</option>`).join('')}</select></label>`}<label>예정 금액 (만원) *<input class="inp num" id="pA" inputmode="numeric" placeholder="예: 5000" value="${p ? p.amount : ''}"><span class="echo" id="pAe"></span></label><label>예정일<input class="inp num" id="pD" type="date" value="${p && p.due ? p.due : ''}"></label></div>`,
+    onOpen: (b) => echo(b, 'pA', 'pAe'),
+    onOk: (b) => { const a = +val(b, 'pA'); if (!(a > 0)) { UI.toast('예정 금액은 0보다 커야 합니다'); return false; }
+      mutate(d, () => { if (p) { p.amount = a; p.due = val(b, 'pD') || null; } else d.pays.push(P(val(b, 'pK'), a, val(b, 'pD') || null)); }, p ? `${payName(d, p)} 일정을 수정했습니다` : '지급 항목을 추가했습니다', ['pays']); } });
+}
+function payConfirmDialog(d, p) {
+  modal({ title: `입금 확인 · ${payName(d, p)}`, ok: '입금 확인',
+    body: `<div class="frm"><label>실입금액 (만원) *<input class="inp num" id="cA" inputmode="numeric" value="${p.amount - p.paid}"><span class="echo warn-t" id="cW"></span></label><label>입금일 *<input class="inp num" id="cD" type="date" value="${TODAY}"></label><label>입금 방법<select class="inp" id="cM"><option>계좌이체</option><option>현금</option><option>수표</option><option>기타</option></select></label><label>입금자명<input class="inp" id="cN" placeholder="예: 김매수" value="${esc(d.buyer[0])}"></label></div>`,
+    onOpen: (b) => { const i = b.querySelector('#cA'); const f = () => { const v = +i.value; b.querySelector('#cW').textContent = v > 0 && p.paid + v < p.amount ? '예정액보다 적어 부분입금으로 처리됩니다.' : v > 0 ? `= ${man(v)}` : ''; }; i.addEventListener('input', f); f(); },
+    onOk: (b) => { const a = +val(b, 'cA'); if (!(a > 0) || !val(b, 'cD')) { UI.toast('실입금액과 입금일을 입력해 주세요'); return false; }
+      mutate(d, () => { p.paid = Math.min(p.amount, p.paid + a); p.paidDate = val(b, 'cD'); }, `${payName(d, p)} ${man(a)} 입금을 확인했습니다`, ['pays']); } });
+}
+function contractDialog(d) {
+  modal({ title: '계약서 작성', ok: '계약서 생성',
+    body: `<div class="frm"><label>매도인 (임대인) *<input class="inp" id="kS" value="${esc(d.seller[0])}" placeholder="이름·전화번호 검색"></label><label>매수인 (임차인) *<input class="inp" id="kB" value="${esc(d.buyer[0])}" placeholder="이름·전화번호 검색"></label><label>총 거래금액 (만원) *<input class="inp num" id="kT" inputmode="numeric" value="${d.price || ''}"><span class="echo" id="kTe"></span></label><label>계약일<input class="inp num" id="kD" type="date" value="${TODAY}"></label></div>`,
+    onOpen: (b) => echo(b, 'kT', 'kTe'),
+    onOk: (b) => { if (!val(b, 'kS') || !val(b, 'kB') || !(+val(b, 'kT') > 0)) { UI.toast('매도인·매수인과 총 거래금액을 입력해 주세요'); return false; }
+      const bal = d.pays.find((p) => p.kind === '잔금');
+      mutate(d, () => { d.contract = { status: 'draft', date: val(b, 'kD') || TODAY, total: +val(b, 'kT'), balance: bal ? bal.due : null }; }, '계약서를 만들었습니다 · 계약서 관리에서 이어서 작성합니다', ['contract']); } });
+}
+const LISTINGS = [['고덕아르테온', '309', '2101', 'sale', 158000, null, '서울 강동구 고덕로 360', '서유나'], ['고덕그라시움', '103', '3401', 'sale', 168000, null, '서울 강동구 고덕로 333', '한정수'], ['고덕아르테온', '301', '1203', 'jeonse', 75000, null, '서울 강동구 고덕로 360', '표민규'], ['고덕센트럴아이파크', '104', '2203', 'jeonse', 69000, null, '서울 강동구 고덕로 285', '설하린'], ['고덕자이', '104', '703', 'monthly', 20000, 120, '서울 강동구 상일로 55', '국승우']];
+function newDialog() {
+  let pick = null;
+  const draw = (b) => {
+    const q = val(b, 'nQ');
+    const ls = LISTINGS.map((l, i) => [l, i]).filter(([l]) => `${l[0]} ${l[1]}동 ${l[2]}호 ${l[6]}`.includes(q)).slice(0, 8);
+    b.querySelector('#nL').innerHTML = ls.length ? ls.map(([l, i]) => `<div class="${pick === i ? 'on' : ''}" data-nl="${i}"><span class="tag ${l[3]}">${KIND[l[3]]}</span><span class="g">${l[0]} ${l[1]}동 ${l[2]}호</span><span class="t2 num">호가 ${l[3] === 'monthly' ? `${man(l[4])} / ${l[5]}` : man(l[4])}</span>${pick === i ? icon('check') : ''}</div>`).join('') : '<div class="none">검색 결과가 없습니다. 매물 없이도 거래를 생성할 수 있습니다.</div>';
+    const k = val(b, 'nK');
+    b.querySelector('#nPl').firstChild.textContent = `${k === 'sale' ? '매매가' : k === 'jeonse' ? '전세금' : '보증금'} (만원)`;
+    b.querySelector('#nRl').hidden = k !== 'monthly';
+    b.querySelector('#nJ2').hidden = !b.querySelector('#nJ').checked;
+  };
+  modal({ title: '새 거래 생성', ok: '거래 생성', desc: '계약 준비 단계에서 시작합니다. 매물을 연결하거나, 매물 없이 거래유형만으로 생성할 수 있습니다. 금액은 만원 단위입니다.',
+    body: `<div class="frm">
+      <div class="fl full">매물 연결 (선택)<input class="inp" id="nQ" placeholder="단지명·주소로 매물 검색"><div class="pick" id="nL"></div></div>
+      <label>거래유형 *<select class="inp" id="nK"><option value="sale">매매</option><option value="jeonse">전세</option><option value="monthly">월세</option></select></label>
+      <label id="nPl">매매가 (만원)<input class="inp num" id="nP" inputmode="numeric"></label>
+      <label id="nRl" class="full" hidden>월세 (만원)<input class="inp num" id="nR" inputmode="numeric"></label>
+      <label>매도인 (임대인)<input class="inp" id="nS" placeholder="이름·전화번호 검색"></label>
+      <label>매수인 (임차인)<input class="inp" id="nB" placeholder="이름·전화번호 검색"></label>
+      <label class="full row"><input type="checkbox" id="nJ"> 공동중개 거래</label>
+      <div class="frm full" id="nJ2" hidden><label>우리 담당 측<select class="inp" id="nJs"><option value="seller">매도측</option><option value="buyer">매수측</option><option value="both" selected>양측</option></select></label><label>파트너 중개사<select class="inp" id="nJp"><option value="">파트너 선택</option>${PARTNERS.map((p) => `<option>${p[0]}</option>`).join('')}</select></label></div>
+      <label class="full">메모<textarea class="inp" id="nM" rows="2" placeholder="예: 급매, 잔금 협의 필요"></textarea></label></div>`,
+    onOpen: (b) => {
+      draw(b);
+      b.addEventListener('input', () => draw(b));
+      b.addEventListener('click', (e) => { const el = e.target.closest('[data-nl]'); if (!el) return; const i = +el.dataset.nl; pick = pick === i ? null : i; if (pick != null) { const l = LISTINGS[i]; b.querySelector('#nK').value = l[3]; b.querySelector('#nP').value = l[4]; b.querySelector('#nR').value = l[5] || ''; if (!val(b, 'nS')) b.querySelector('#nS').value = l[7]; } draw(b); });
+    },
+    onOk: (b) => {
+      const l = pick == null ? null : LISTINGS[pick]; const k = val(b, 'nK'); const j = b.querySelector('#nJ').checked;
+      const pn = PARTNERS.find((p) => p[0] === val(b, 'nJp'));
+      const d = mkDeal({ site: l ? l[0] : '', dong: l ? l[1] : '', ho: l ? l[2] : '', addr: l ? l[6] : '', m2: null, kind: k, price: +val(b, 'nP') || 0, rent: k === 'monthly' ? +val(b, 'nR') || 0 : null, ask: l ? l[4] : 0, stage: 0, since: TODAY, seller: [val(b, 'nS'), ''], buyer: [val(b, 'nB'), ''], joint: j ? { partner: pn ? pn[0] : '', phone: pn ? pn[1] : '', side: val(b, 'nJs') } : null, memo: val(b, 'nM') });
+      DEALS.unshift(d); state.detail = d.id; render();
+      UI.toast('계약 준비 거래가 생성되었습니다. 합의가가 있으면 수수료 청구가 자동 생성됩니다.', () => { const at = DEALS.indexOf(d); if (at < 0) return; DEALS.splice(at, 1); if (state.detail === d.id) state.detail = null; render(); });
+    } });
+}
+
+// ── 옆 상세 (원본의 거래 상세 시트) ──
+function openDetail(id) { state.detail = id; render(); }
+function renderDetail() {
+  const peek = document.getElementById('peek');
+  const d = DEALS.find((x) => x.id === state.detail);
+  if (!d) { peek.hidden = true; state.detail = null; return; }
+  const keep = peek.querySelector('.peek-body'); const top = keep ? keep.scrollTop : 0;
+  const [h, hl, hd] = health(d);
+  const lg = legal(d.kind, d.prop, d.price, d.rent);
+  const sides = ourSides(d);
+  const fee = ourFee(d);
+  const [bs, bc] = billState(d);
+  const todos = d.cancel ? TODO_CANCEL : TODO[d.stage];
+  const tk = d.cancel ? 'c' : d.stage;
+  const done = d.checks[tk] || [];
+  const next = nextPay(d);
+  const c = d.contract;
+  const priceLab = d.kind === 'sale' ? '매매가' : d.kind === 'jeonse' ? '전세금' : '합의 가격';
+  const party = (lab, p) => `<span>${lab}</span><div>${p[0] ? `<a class="tr-link" style="font-weight:500" data-x="${esc(p[0])} 연락처">${esc(p[0])}</a><span class="t2">${p[1]}</span>${p[1] ? `<button class="ib" aria-label="${esc(p[0])} 전화" data-x="${esc(p[0])} 전화 연결">${icon('phone')}</button>` : ''}` : '<span class="t3">미지정</span>'}</div>`;
+  peek.hidden = false;
+  peek.innerHTML = `<div class="peek-bar"><button class="ib" data-pclose aria-label="닫기">${icon('chevsRight')}</button><span class="crumb">거래 상세</span><span style="flex:1"></span><span class="code">${d.code}</span></div>
+  <div class="peek-body">
+    <div class="l1"><span class="st ${SDOT[d.stage]}">${STG[d.stage]}</span>${kindTags(d).replace('공동', '공동중개')}${d.cancel ? '<span class="st hold" style="color:var(--danger)">취소됨</span>' : ''}</div>
+    <h2>${title(d)}</h2>
+    <div class="t2" style="font-size:13px">${d.addr || '주소 정보 없음'}${d.m2 ? ` · 전용 ${d.m2}㎡ (${(d.m2 * 0.3025).toFixed(1)}평)` : ''}</div>
+    <div class="amt"><b>${amount(d)}</b>${fee ? `<span class="t2" style="font-size:13px">예상 수수료 ${man(fee)}</span>` : ''}</div>
+    <div class="trk ${d.cancel ? 'dim' : ''}">${STG.map((l, k) => `${k ? `<i class="ln ${k <= d.stage ? 'done' : ''}"></i>` : ''}<button class="sc ${k < d.stage ? 'done' : k === d.stage ? 'cur' : ''}" data-stage="${k}" aria-label="${l} 단계로 옮기기">${l}</button>`).join('')}${d.cancel ? '<span class="t2" style="margin-left:8px;font-size:12px">취소됨</span>' : ''}</div>
+    ${d.cancel ? `<div class="alert red" style="margin-top:10px">${icon('info')}<span><b>취소된 거래입니다</b><br>${dot(d.cancel.date)} · 취소 주체: ${esc(d.cancel.by)} · ${d.cancel.reason ? '사유: ' + esc(d.cancel.reason) : '사유 미기록'}</span></div>` : `<div class="hbar ${h}">${icon(h === 'healthy' ? 'check' : 'clock')}<b>${hl}</b><span>${hd}</span><span class="sp">현 단계 ${stay(d)}일${TARGET[d.stage] != null ? ` / 목표 ${TARGET[d.stage]}일` : ''}</span></div>`}
+    <div class="dgrid"><div>
+      <div class="sec"><div class="sec-h">다음 액션 · ${d.cancel ? '취소' : STG[d.stage]} <span class="n">${done.length}/${todos.length}</span></div>${todos.map((t, i) => `<div class="chk ${done.includes(i) ? 'on' : ''}" data-todo="${i}" role="checkbox" aria-checked="${done.includes(i)}" tabindex="0"><i>${icon('check')}</i><span>${t}</span></div>`).join('')}</div>
+      <div class="sec"><div class="sec-h">매물</div>${d.site ? `<a class="mini" href="properties.html">${icon('building')}<span class="grow">${title(d)}</span>${icon('arrowUpRight')}</a><div class="t2 num" style="font-size:13px">호가 ${d.kind === 'monthly' ? `${man(d.ask)} / ${d.rent}` : man(d.ask)} · <span class="st ${d.cancel ? 'ok' : d.stage >= 4 ? 'done' : 'warn'}">${d.cancel ? '활성' : d.stage >= 4 ? '종료' : '거래중'}</span></div>` : '<div class="t3" style="font-size:13px">연결된 매물이 없습니다. (매물 없이 생성된 거래)</div>'}</div>
+      <div class="sec"><div class="sec-h">당사자</div><div class="kvl">${party('매도', d.seller)}${party('매수', d.buyer)}</div></div>
+      <div class="sec"><div class="sec-h">담당 직원</div>${d.staff.length ? `<div style="display:flex;gap:10px;flex-wrap:wrap">${d.staff.map((s) => UI.who(s)).join('')}</div>` : '<div class="t3" style="font-size:13px">배정된 담당 직원이 없습니다.</div>'}</div>
+      <div class="sec"><div class="sec-h">공동중개</div>${d.joint ? `<div class="kvl"><span><span class="tag blue">파트너</span></span><div><b style="font-weight:500">${esc(d.joint.partner) || '파트너 미지정'}</b><span class="t2">${d.joint.phone}</span>${d.joint.phone ? `<button class="ib" aria-label="파트너 전화" data-x="${esc(d.joint.partner)} 전화 연결">${icon('phone')}</button>` : ''}</div><span>우리 담당</span><div><button class="st accent" data-jside>${SIDE[d.joint.side]}${icon('chevDown', 'stc')}</button></div></div>` : '<div class="t2" style="font-size:13px">단독중개 거래입니다.</div>'}</div>
+      <div class="sec"><div class="sec-h">메모</div><p class="prose" style="font-size:13px">${d.memo ? esc(d.memo) : '<span class="t3">등록된 메모가 없습니다.</span>'}</p></div>
+    </div><div>
+      <div class="sec"><div class="sec-h">합의 조건<button class="btn sm" data-terms>${icon('note')}조건 수정</button></div><div class="kvl"><span>${priceLab}</span><div><b style="font-weight:600">${man(d.price)}</b></div>${d.kind === 'monthly' ? `<span>보증금</span><div>${man(d.price)}</div><span>월세</span><div>${man(d.rent)}</div>` : ''}<span>입주 예정</span><div>${d.moveIn ? dot(d.moveIn) : '<span class="t3">—</span>'}</div><span>단계 변경일</span><div>${dot(d.since)}</div></div></div>
+      <div class="sec"><div class="sec-h">특약사항</div><p class="prose" style="font-size:13px">${d.special ? esc(d.special) : '<span class="t3">등록된 특약사항이 없습니다.</span>'}</p></div>
+      <div class="sec"><div class="sec-h">지급 스케줄 <span class="n">${d.pays.length}</span>${next ? `<span class="st accent">다음: ${payName(d, next)}${next.due ? ' ' + md(next.due) : ''}</span>` : ''}${d.pays.some((p) => p.kind === '가계약금') && d.pays.some((p) => p.kind === '계약금') ? '<span class="tag">가계약금 → 계약금 승계</span>' : ''}<button class="btn sm" data-payadd>${icon('plus')}행 추가</button></div>
+        ${d.pays.length ? d.pays.map((p, i) => { const [sl, scl] = payState(p); const paid = p.paid >= p.amount; const hot = !paid && !p.off && p.due && diff(p.due) <= 3; return `<div class="prow ${paid ? 'paid' : hot ? 'hot' : ''}" data-pay="${i}" ${p.off ? 'style="opacity:.5"' : ''}><button class="pcheck" data-payok aria-label="${payName(d, p)} ${paid ? '입금 확인 취소' : '입금 확인'}">${icon('check')}</button><div><div class="l1"><b style="font-weight:600">${payName(d, p)}</b><span class="st ${scl}">${sl}</span>${!paid && !p.off ? `<span class="dd ${hot ? 'hot' : ''}" style="margin:0">${dlabel(p.due)}</span>` : ''}</div><div class="l2 num">${p.due ? dot(p.due) : '일정 미정'}${p.paid ? ` · 입금 ${man(p.paid)} (${dot(p.paidDate)})` : ''}</div></div><div class="a">${man(p.amount)}</div><button class="ib" data-paymore aria-label="${payName(d, p)} 더보기">${icon('more')}</button></div>`; }).join('') : '<div class="t3" style="font-size:13px">등록된 지급 스케줄이 없습니다. 행 추가로 가계약금/계약금/중도금/잔금을 등록하세요.</div>'}</div>
+      <div class="sec"><div class="sec-h">계약 요약${c ? `<a class="btn sm" href="contracts.html">${icon('arrowUpRight')}계약 관리에서 열기</a>` : d.stage >= 2 && !d.cancel ? `<button class="btn sm" data-mkcontract>${icon('file')}계약서 작성</button>` : ''}</div>
+        ${c ? `<div class="kvl"><span>계약서</span><div>계약서 연결됨 <span class="st ${CSTAT[c.status][1]}">${CSTAT[c.status][0]}</span></div><span>계약일</span><div>${c.date ? dot(c.date) : '미정'}</div><span>총 거래금액</span><div>${man(c.total)}</div><span>잔금일</span><div>${c.balance ? dot(c.balance) : '<span class="t3">미정</span>'}</div>${c.lease ? `<span>임대기간</span><div>${dot(c.lease[0])} ~ ${dot(c.lease[1])}</div>` : ''}</div>` : `<div class="t2" style="font-size:13px">아직 계약서가 없습니다. ${d.stage >= 2 ? '중도금/잔금 단계로 진행하기 전에 계약서를 작성해 주세요.' : '본계약 단계로 이동한 뒤 계약서를 작성할 수 있습니다.'}</div>`}</div>
+      <div class="sec"><div class="sec-h">수수료 · 정산<a class="btn sm" href="cashflow.html">${icon('wallet')}수수료/정산 관리</a></div>
+        <div style="display:flex;align-items:center;gap:8px"><div class="seg" id="propSeg">${[['house', '주택'], ['officetel', '오피스텔(주거)'], ['etc', '주택외 0.9%']].map(([k, l]) => `<button data-prop="${k}" class="${d.prop === k ? 'on' : ''}">${l}</button>`).join('')}</div></div>
+        <div class="t2 num" style="font-size:12px;margin-top:8px;line-height:1.6">기준금액 <b style="color:var(--text)">${man(lg.base)}</b>${d.kind === 'monthly' ? ' · 월세 환산: 보증금 + 월세 × 100 (5천만 미만이면 × 70)' : ''}<br>${d.prop === 'etc' ? '법정 상한 0.9% 이내 협의 (주택외)' : `법정 상한 ${lg.rate}% ${lg.cap ? `(상한 ${man(lg.cap)})` : '(상한액 없음)'}`} · 한쪽 기준</div>
+        <div class="fee-top"><div>법정 상한 수수료<small>${d.joint ? `우리 담당 ${SIDE[d.joint.side]}` : '단독중개 (양측)'}</small></div><b>${man(fee)}</b></div>
+        <div class="two-c">${[['seller', '매도측'], ['buyer', '매수측']].map(([k, l]) => `<div class="tile ${sides.includes(k) ? '' : 'dimmed'}">${l}${d.joint ? ` <span class="tag ${sides.includes(k) ? 'green' : ''}" style="height:18px;font-size:11px">${sides.includes(k) ? '우리' : '파트너'}</span>` : ''}<b>${man(lg.fee)}</b>상한 ${lg.rate}% 기준</div>`).join('')}</div>
+        ${fee ? `<div class="three-c"><div class="tile">청구 확정<b>${d.stage >= 2 ? man(fee) : '—'}</b></div><div class="tile">우리 몫<b>${man(fee)}</b></div><div class="tile">수금 완료<b>${d.stage === 5 ? man(fee) : d.stage === 4 ? man(lg.fee * (sides.length > 1 ? 1 : 0)) : '—'}</b></div></div>` : ''}
+        <div class="sec-h" style="margin-top:12px;font-weight:500;color:var(--text-2)">수수료 청구 (자동 생성)</div>
+        ${fee ? sides.map((k, i) => `<div class="brow"><span class="tag ${k === 'seller' ? 'orange' : 'blue'}">${SIDE[k]}</span><span class="g num">${d.code}-${i + 1} · 예상 ${man(lg.fee)}<small>요율 ${lg.rate}%${d.joint ? ' · 우리 배분 100%' : ''}</small></span><span class="st ${bc}">${bs}</span></div>`).join('') : '<div class="t3" style="font-size:13px">생성된 수수료 청구가 없습니다. 합의 금액을 입력하면 거래 생성 시 자동 생성됩니다.</div>'}</div>
+    </div></div>
+  </div>
+  <div class="pfoot">${!d.cancel && d.stage < 5 ? `<button class="btn primary" data-next="${d.stage === 0 ? 1 : d.stage + 1}">다음: ${STG[d.stage === 0 ? 1 : d.stage + 1]}${icon('chevRight')}</button>` : ''}${!d.cancel && d.stage === 0 ? `<button class="btn" data-next="2">가계약 없이 본계약${icon('chevRight')}</button>` : ''}<span style="flex:1"></span>${d.cancel ? '' : '<button class="btn dl" data-cancel>거래 취소</button>'}<button class="ib" data-pmore aria-label="더보기">${icon('more')}</button></div>`;
+  peek.querySelector('.peek-body').scrollTop = top;
+}
+
+// 정적 아이콘
+document.querySelectorAll('[data-icon]').forEach((el) => el.insertAdjacentHTML('afterbegin', icon(el.dataset.icon)));
+document.getElementById('newBtn').innerHTML = `${icon('plus')}새 거래`;
+
+const dealOf = (el) => { const h = el.closest('[data-d]'); return h ? DEALS.find((d) => d.id === +h.dataset.d) : el.closest('#peek') ? DEALS.find((d) => d.id === state.detail) : null; };
+document.addEventListener('click', (e) => {
+  const t = e.target;
+  if (t.closest('.mback')) return;
+  const kt = t.closest('.vtab[data-kind]');
+  if (kt) { state.kind = kt.dataset.kind; render(); return; }
+  const vb = t.closest('#viewSeg button');
+  if (vb) { state.view = vb.dataset.view; render(); return; }
+  const db = t.closest('#denSeg button');
+  if (db) { state.den = db.dataset.den; render(); return; }
+  const jump = t.closest('[data-jump]');
+  if (jump) { if (jump.dataset.jump === 'risk') { state.view = 'list'; state.sort = null; UI.toast('리스트 보기에서 주의가 필요한 거래가 각 단계 맨 위에 옵니다'); } else state.f = {}; render(); return; }
+  if (t.closest('#newBtn')) return newDialog();
+  if (t.closest('[data-clear]')) { state.f = {}; state.q = ''; state.kind = 'all'; document.getElementById('q').value = ''; render(); return; }
+  const fclr = t.closest('[data-fclr]');
+  if (fclr) { delete state.f[fclr.dataset.fclr]; render(); return; }
+  const fs = t.closest('[data-fs]');
+  if (fs) {
+    const f = FDEFS.find((x) => x.id === fs.dataset.fs); const cur = state.f[f.id];
+    const base = DEALS.filter((d) => state.kind === 'all' || d.kind === state.kind);
+    return UI.menu(fs, [{ label: '전체', on: !cur, run: () => { delete state.f[f.id]; render(); } }, '-', ...f.opts().map(([label, test]) => ({ label, hint: String(base.filter(test).length), on: cur === label, run: () => { state.f[f.id] = label; render(); } }))]);
+  }
+  const th = t.closest('th[data-sort]');
+  if (th && !t.closest('.rz')) {
+    const key = th.dataset.sort; const cur = state.sort && state.sort.key === key ? state.sort.dir : 0;
+    return UI.menu(th, [{ label: '오름차순 정렬', icon: 'sort', on: cur === 1, run: () => { state.sort = { key, dir: 1 }; render(); } }, { label: '내림차순 정렬', icon: 'sort', on: cur === -1, run: () => { state.sort = { key, dir: -1 }; render(); } }, ...(cur ? [{ label: '정렬 해제 (주의 우선)', icon: 'x', run: () => { state.sort = null; render(); } }] : [])]);
+  }
+  const grp = t.closest('tr.grp');
+  if (grp) { const k = +grp.dataset.g; state.gshut.has(k) ? state.gshut.delete(k) : state.gshut.add(k); render(); return; }
+  const ah = t.closest('.arch-h');
+  if (ah) { const k = ah.parentNode.dataset.arch; state.ashut[k] = !state.ashut[k]; render(); return; }
+  if (t.closest('[data-pclose]')) { state.detail = null; render(); return; }
+  const x = t.closest('[data-x]');
+  if (x) { UI.toast(`${x.dataset.x} 창을 엽니다`); return; }
+  const d = dealOf(t);
+  if (!d) return;
+  if (t.closest('[data-more]') || t.closest('[data-pmore]')) return dealMenu(t.closest('.ib'), d);
+  const st = t.closest('[data-st]');
+  if (st) return UI.menu(st, [{ head: '단계 변경' }, ...STG.map((l, k) => ({ label: l, html: `<span class="dot ${SDOT[k]}"></span>`, on: d.stage === k, run: () => moveStage(d, k) }))]);
+  const sc = t.closest('.sc[data-stage]');
+  if (sc) return moveStage(d, +sc.dataset.stage);
+  const nx = t.closest('[data-next]');
+  if (nx) return moveStage(d, +nx.dataset.next);
+  if (t.closest('[data-cancel]')) return cancelDialog(d);
+  if (t.closest('[data-terms]')) return termsDialog(d);
+  if (t.closest('[data-payadd]')) return payAddDialog(d);
+  if (t.closest('[data-mkcontract]')) return contractDialog(d);
+  const todo = t.closest('[data-todo]');
+  if (todo) { const k = d.cancel ? 'c' : d.stage; const i = +todo.dataset.todo; const s = d.checks[k] || (d.checks[k] = []); s.includes(i) ? s.splice(s.indexOf(i), 1) : s.push(i); renderDetail(); return; }
+  const pb = t.closest('[data-prop]');
+  if (pb) { if (d.prop !== pb.dataset.prop) mutate(d, () => { d.prop = pb.dataset.prop; }, `수수료 기준을 '${pb.textContent}'(으)로 바꿨습니다`, ['prop']); return; }
+  const js = t.closest('[data-jside]');
+  if (js) return UI.menu(js, Object.entries(SIDE).map(([k, l]) => ({ label: l, on: d.joint.side === k, run: () => { if (d.joint.side !== k) mutate(d, () => { d.joint.side = k; }, `우리 담당을 '${l}'(으)로 바꿨습니다`, ['joint']); } })));
+  const pr = t.closest('[data-pay]');
+  if (pr) {
+    const p = d.pays[+pr.dataset.pay]; const nm = payName(d, p);
+    if (t.closest('[data-payok]')) { if (p.paid >= p.amount) mutate(d, () => { p.paid = 0; p.paidDate = ''; }, `${nm} 입금 확인을 취소했습니다`, ['pays']); else payConfirmDialog(d, p); return; }
+    if (t.closest('[data-paymore]')) return UI.menu(t.closest('.ib'), [...(p.paid < p.amount && !p.off ? [{ label: '입금 확인', icon: 'check', run: () => payConfirmDialog(d, p) }] : []), { label: '수정', icon: 'note', run: () => payAddDialog(d, p) }, { label: '삭제', icon: 'x', danger: true, run: () => mutate(d, () => { d.pays.splice(d.pays.indexOf(p), 1); }, `${nm} 지급 항목을 삭제했습니다`, ['pays']) }], { right: true });
+    return;
+  }
+  if (t.closest('#peek')) return;
+  if (t.closest('[data-open]') || t.closest('tr[data-d]') || t.closest('.arow')) openDetail(d.id);
+});
+// 카드 끌어 놓기 (원본도 놓는 즉시 옮긴다)
+document.addEventListener('dragstart', (e) => { const c = e.target.closest && e.target.closest('.card'); if (!c) return; state.drag = +c.dataset.d; c.classList.add('drag'); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', c.dataset.d); });
+document.addEventListener('dragover', (e) => { const col = e.target.closest && e.target.closest('.col'); if (!col || state.drag == null) return; e.preventDefault(); document.querySelectorAll('.col.over').forEach((c) => c !== col && c.classList.remove('over')); col.classList.add('over'); });
+document.addEventListener('dragend', () => { state.drag = null; document.querySelectorAll('.col.over, .card.drag').forEach((c) => c.classList.remove('over', 'drag')); });
+document.addEventListener('drop', (e) => { const col = e.target.closest && e.target.closest('.col'); const d = DEALS.find((x) => x.id === state.drag); state.drag = null; if (!col || !d) return; e.preventDefault(); col.classList.remove('over'); moveStage(d, +col.dataset.col); });
+document.getElementById('q').addEventListener('input', (e) => { state.q = e.target.value; render(); });
+document.addEventListener('keydown', (e) => {
+  if (e.isComposing || e.keyCode === 229) return;
+  if (document.querySelector('.mback')) return;
+  if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('[data-open], [data-todo]')) { e.preventDefault(); e.target.click(); return; }
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'f') { e.preventDefault(); document.getElementById('q').focus(); return; }
+  if (e.key === 'Escape') { if (e.target.matches('input')) { e.target.blur(); return; } if (state.detail != null) { state.detail = null; render(); } }
+});
+
+// ?dealId= 로 들어오면 그 거래 상세를 연다(원본과 같음)
+const want = new URLSearchParams(location.search).get('dealId');
+if (want != null && DEALS.some((d) => String(d.id) === want)) state.detail = +want;
+render();
+
+UI.notes(
+  [
+    '<b>보드와 리스트 두 보기</b>를 그대로 두었습니다. 보드는 계약 준비·가계약·본계약·중도금·잔금·잔금 완료 다섯 칸이고, 카드를 <b>끌어다 놓으면</b> 그 단계로 옮겨집니다. 옮긴 뒤에는 실행 취소가 붙은 알림이 뜹니다.',
+    '<b>리스트</b>는 원본 열(No, 매물, 단계, 매도, 매수, 금액, 다음 일정, 계약, 태그) 그대로 단계별로 묶었습니다. <b>단계 배지를 누르면</b> 그 자리에서 단계를 바꿉니다. 지급일이 3일 안인 줄은 왼쪽에 빨간 띠가 붙습니다.',
+    '<b>필터가 늘 보입니다.</b> 거래유형 탭, 단계·공동중개·계약서·진행 상태 선택 상자가 표 위에 있고 고른 값이 그 자리에 표시됩니다. 오른쪽에 걸러진 건수가 나옵니다.',
+    '<b>진행 상태</b>(일정 지연·단계 정체·일정 미정)는 원본 규칙대로 지급일과 단계 체류 일수로 계산해 카드 왼쪽 띠와 배지로 보여 줍니다. 주의가 필요한 거래가 각 칸 맨 위에 옵니다.',
+    '거래를 누르면 오른쪽에 <b>거래 상세</b>가 열립니다. 단계 트랙을 눌러 옮기고, 지급 스케줄의 동그라미를 눌러 <b>입금 확인</b>을 하고, 행 추가·수정·삭제를 합니다. 중도금/잔금 이후 단계는 원본처럼 계약서가 있어야 갈 수 있습니다.',
+    '<b>수수료 · 정산</b>은 매도측과 매수측을 나눠 보여 줍니다. 주택·오피스텔·주택외를 바꾸면 법정 상한이 다시 계산되고, 공동중개는 우리 담당 측만 우리 몫으로 셉니다.',
+    '원본에서는 보이지 않던 <b>정산종료 거래</b>를 취소 거래와 함께 아래 접힌 묶음으로 두어, 정산종료 처리 뒤에도 다시 찾을 수 있습니다.',
+  ],
+  '거래 단계와 지급 일정을 한눈에 보고 그 자리에서 옮깁니다.',
+);
+</script>
+</body>
+</html>

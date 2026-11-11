@@ -1,0 +1,414 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>대시보드 · UI 개선 데모</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="ui.css">
+<style>
+  /* 일정 유형 색: 태그 색 변수 한 쌍을 그대로 쓴다 (캘린더와 같은 규칙) */
+  .t-general { --c-bg: color-mix(in srgb, var(--text) 8%, var(--paper)); --c-fg: color-mix(in srgb, var(--text) 78%, var(--paper)); }
+  .t-viewing { --c-bg: var(--tg-teal-bg); --c-fg: var(--tg-teal); }
+  .t-contract { --c-bg: var(--tg-yellow-bg); --c-fg: var(--tg-yellow); }
+  .t-meeting { --c-bg: var(--tg-blue-bg); --c-fg: var(--tg-blue); }
+  .t-task { --c-bg: var(--tg-purple-bg); --c-fg: var(--tg-purple); }
+  .sw { position: relative; z-index: 1; width: 12px; height: 12px; border-radius: 3px; background: var(--c-bg); display: inline-grid; place-items: center; flex: none; box-shadow: 0 0 0 3px var(--paper); }
+  .sw::after { content: ""; width: 6px; height: 6px; border-radius: 2px; background: var(--c-fg); }
+
+  .ph { padding-bottom: 0; }
+  .brief { margin: 0; padding: 2px var(--gutter) 14px; min-height: 24px; font-size: 14px; color: var(--text-2); flex: none; }
+  .brief b { font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; }
+  .brief b.danger-t { color: var(--danger); }
+
+  .scroll { display: flex; flex-direction: column; }
+  .dash { flex: 1 1 0; min-height: 560px; max-width: 1344px; width: 100%; display: flex; flex-direction: column; gap: 22px; padding: 0 var(--gutter) 14px; }
+
+  /* 핵심 숫자 띠 */
+  .kpis { flex: none; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-radius: 12px; background: var(--soft); overflow: hidden; }
+  .kpi { display: flex; flex-direction: column; min-width: 0; padding: 13px 18px 12px; cursor: pointer; transition: background-color 0.12s; }
+  .kpi + .kpi { box-shadow: inset 1px 0 0 var(--line-2); }
+  .kpi:hover, .kpi:focus-visible { background: var(--hover); }
+  .kpi:focus-visible { outline-offset: -2px; }
+  .kpi .lb { display: flex; align-items: center; justify-content: space-between; font-size: 12px; font-weight: 500; color: var(--text-2); }
+  .kpi .lb .i { width: 14px; height: 14px; opacity: 0; transform: translateX(-3px); transition: opacity 0.14s, transform 0.14s; }
+  .kpi:hover .lb .i, .kpi:focus-visible .lb .i { opacity: 0.7; transform: none; }
+  .kpi .v { margin-top: 3px; font-size: 22px; line-height: 30px; font-weight: 650; letter-spacing: -0.022em; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .kpi .v small { margin-left: 2px; font-size: 14px; font-weight: 500; color: var(--text-2); letter-spacing: 0; }
+  .kpi .ft { margin-top: 1px; font-size: 12px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+  .kpi .ft b { font-weight: 500; }
+
+  /* 아래 영역: 남은 높이를 채운다 */
+  .dgrid { flex: 1 1 0; min-height: 320px; display: grid; grid-template-columns: minmax(0, 2fr) minmax(300px, 1fr); grid-template-rows: minmax(0, 1fr); gap: 0 40px; }
+  .dsec { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+  .dsec-h { display: flex; align-items: center; gap: 8px; height: 34px; padding-bottom: 6px; flex: none; }
+  .dsec-h h2 { margin: 0; font-size: 16px; font-weight: 650; letter-spacing: -0.015em; }
+  .dsec-h .n { font-size: 14px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+  .dsec-h .seg { margin-left: auto; }
+  .dside { display: flex; flex-direction: column; gap: 22px; min-height: 0; min-width: 0; }
+  .today2 { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); gap: 0 32px; }
+  .tcol { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+  .sublab { display: flex; align-items: center; gap: 6px; height: 28px; flex: none; font-size: 12px; font-weight: 600; color: var(--text-2); font-variant-numeric: tabular-nums; border-bottom: 1px solid var(--line-2); }
+  .fit { flex: 1 1 0; min-height: 0; overflow: hidden; margin: 0 -8px; padding: 0 8px; }
+  .dfoot { height: 36px; flex: none; display: flex; align-items: center; border-top: 1px solid var(--line-2); margin-top: -1px; }
+  .more { display: inline-flex; align-items: center; gap: 3px; padding: 3px 6px; margin-left: -6px; border-radius: 6px; font-size: 12px; color: var(--text-2); cursor: pointer; transition: background-color 0.12s, color 0.12s; }
+  .more:hover { background: var(--hover); color: var(--text); }
+  .more .i { width: 12px; height: 12px; transition: transform 0.14s; }
+  .more:hover .i { transform: translateX(2px); }
+  .quiet-p { margin: 0; padding: 12px 0; font-size: 13px; color: var(--text-2); }
+
+  /* 줄: 모두 44px 두 줄 */
+  .row { position: relative; display: flex; align-items: center; gap: 10px; height: 44px; margin: 0 -8px; padding: 0 8px; border-radius: 8px; min-width: 0; transition: background-color 0.1s, opacity 0.25s; }
+  .row::after { content: ""; position: absolute; left: 8px; right: 8px; bottom: 0; height: 1px; background: var(--line); }
+  a.row { cursor: pointer; }
+  .row:hover, .row:focus-within { background: var(--hover); }
+  .row .mn { flex: 1; min-width: 0; }
+  .row .l1 { display: block; font-size: 14px; line-height: 20px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  a.l1:hover { text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--text-3); }
+  .row .l2 { display: block; font-size: 12px; line-height: 16px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .row .rt { flex: none; font-size: 12px; color: var(--text-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .row .rt b { font-weight: 600; color: var(--text); margin-left: 5px; }
+  .row .rt b.warn-t { color: var(--warn); }
+  .row .rt.late { color: var(--danger); font-weight: 600; }
+  .row .rt.today { color: var(--text); font-weight: 500; }
+  .row .rt.stale { color: var(--warn); font-weight: 600; }
+
+  /* 일정 타임라인 */
+  .erow .tm { width: 40px; flex: none; font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .erow .ax { position: relative; width: 12px; height: 44px; flex: none; display: grid; place-items: center; }
+  .erow .ax::before { content: ""; position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; margin-left: -0.5px; background: var(--line-2); }
+  .erow.first .ax::before { top: 50%; }
+  .erow.last .ax::before { bottom: 50%; }
+  .erow.first.last .ax::before { display: none; }
+  .erow:hover .sw, .erow:focus-within .sw { box-shadow: none; }
+  .erow.past .tm, .erow.past .l1 { color: var(--text-3); }
+  .erow .st { height: 20px; }
+
+  /* 업무 */
+  .tk { width: 18px; height: 18px; padding: 0; flex: none; border: 0; border-radius: 50%; background: transparent; box-shadow: inset 0 0 0 1.5px var(--line-3); display: grid; place-items: center; cursor: pointer; transition: background-color 0.12s, box-shadow 0.12s; }
+  .tk .i { width: 11px; height: 11px; stroke-width: 3; color: var(--on-primary); opacity: 0; }
+  .tk:hover, .tk:focus-visible, .row.going .tk { background: var(--dot-ok); box-shadow: none; }
+  .tk:hover .i, .tk:focus-visible .i, .row.going .tk .i { opacity: 1; }
+  .row.going { opacity: 0.4; }
+  .row.going .l1 { text-decoration: line-through; text-decoration-color: var(--line-3); }
+
+  /* 확인할 것 */
+  .arow { height: 38px; }
+  .arow .bar { width: 3px; height: 16px; border-radius: 2px; flex: none; background: var(--dot-warn); }
+  .arow.danger .bar { background: var(--danger); }
+  .arow .lbl { flex: 1; min-width: 0; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .arow .val { font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .arow.danger .val { color: var(--danger); }
+  .arow > .i { width: 14px; height: 14px; color: var(--text-3); transition: transform 0.14s; }
+  .arow:hover > .i { transform: translateX(2px); color: var(--text-2); }
+  .allclear { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-radius: 8px; background: color-mix(in srgb, var(--dot-ok) 12%, transparent); color: var(--ok); font-size: 13px; }
+
+  /* 거래 진행 */
+  .pbar { display: flex; gap: 3px; height: 8px; border-radius: 3px; background: var(--soft); overflow: hidden; flex: none; }
+  .pbar i { display: block; height: 100%; border-radius: 2px; transition: flex-grow 0.3s, opacity 0.15s; }
+  .pleg { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; margin: 8px -6px 4px; flex: none; }
+  .pleg button { min-width: 0; padding: 4px 6px; border: 0; border-radius: 7px; background: transparent; font: inherit; color: var(--text); text-align: left; cursor: pointer; transition: background-color 0.12s, box-shadow 0.12s; }
+  .pleg button:hover { background: var(--hover); }
+  .pleg button.on { background: var(--accent-soft); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent); }
+  .pleg .k { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--text-2); white-space: nowrap; overflow: hidden; }
+  .pleg .k span { overflow: hidden; text-overflow: ellipsis; }
+  .pleg .k i { width: 6px; height: 6px; border-radius: 50%; flex: none; }
+  .pleg b { display: block; font-size: 16px; line-height: 24px; font-weight: 650; font-variant-numeric: tabular-nums; }
+  .pleg b.zero { color: var(--text-3); font-weight: 500; }
+  .drow .l1 { font-weight: 500; }
+
+  .dsec, .kpis, .brief { animation: rise 0.45s cubic-bezier(0.2, 0.8, 0.2, 1) backwards; }
+  .kpis { animation-delay: 0.05s; }
+  .dgrid > .dsec { animation-delay: 0.1s; }
+  .dside .dsec:first-child { animation-delay: 0.15s; }
+  .dside .dsec:last-child { animation-delay: 0.2s; }
+  @keyframes rise { from { opacity: 0; transform: translateY(8px); } }
+  @media (prefers-reduced-motion: reduce) { .dsec, .kpis, .brief { animation: none; } }
+</style>
+</head>
+<body data-active="dashboard">
+<main id="page">
+  <div class="ph">
+    <h1 id="greet"></h1>
+    <div class="meta"><span id="dmeta"></span></div>
+  </div>
+  <p class="brief" id="brief"></p>
+
+  <div class="scroll">
+    <div class="dash">
+      <div class="kpis" id="kpis"></div>
+
+      <div class="dgrid">
+        <section class="dsec" aria-label="오늘">
+          <div class="dsec-h">
+            <h2>오늘</h2>
+            <div class="seg" role="group" aria-label="표시 범위" id="scope">
+              <button data-scope="mine">내 담당</button><button data-scope="all">사무소 전체</button>
+            </div>
+          </div>
+          <div class="today2">
+            <div class="tcol">
+              <div class="sublab" id="evLab"></div>
+              <div class="fit" id="evFit"></div>
+              <div class="dfoot" id="evFoot"></div>
+            </div>
+            <div class="tcol">
+              <div class="sublab" id="taskLab"></div>
+              <div class="fit" id="taskFit"></div>
+              <div class="dfoot" id="taskFoot"></div>
+            </div>
+          </div>
+        </section>
+
+        <aside class="dside">
+          <section class="dsec" style="flex:none" aria-label="확인할 것">
+            <div class="dsec-h"><h2>확인할 것</h2><span class="n" id="attN"></span></div>
+            <div id="att"></div>
+          </section>
+          <section class="dsec" style="flex:1" aria-label="거래 진행">
+            <div class="dsec-h"><h2>거래 진행</h2><span class="n" id="dealN"></span></div>
+            <div class="pbar" id="pbar" role="img"></div>
+            <div class="pleg" id="pleg"></div>
+            <div class="fit" id="dealFit"></div>
+            <div class="dfoot" id="dealFoot"></div>
+          </section>
+        </aside>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script src="shell.js"></script>
+<script>
+const { icon, av } = UI;
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const $ = (id) => document.getElementById(id);
+const won = (v) => `${v ? `${UI.won(v)}만` : '0'}<small>원</small>`; // 만원 단위. 0도 "0원"으로 보여 준다
+
+const NOW = new Date(2026, 10, 11, 10, 20); // 데모 기준 시각: 2026-11-11(수) 10:20
+const TODAY = new Date(2026, 10, 11);
+const ME = '이현수';
+const OFFICE = '고덕 에스테잇 공인중개';
+const WD = ['일', '월', '화', '수', '목', '금', '토'];
+const D = (s) => { const a = s.split('-').map(Number); return new Date(a[0], a[1] - 1, a[2]); };
+const daysUntil = (due, today = TODAY) => (due ? Math.round((D(due) - today) / 86400000) : null);
+const ROW = 44;
+
+/* 서버 요약(이번달 수금·매물 수 등)은 이 화면에서 다시 셀 수 없는 값이다 */
+const SUMMARY = { collected: 2480, overdue: 250, expected: 1936, contractCount: 3, activeMatches: 14, activeListings: 42, unverified: 5, newIntake: 7, expiringTenants: 3 };
+
+/* 오늘 일정: [제목, 유형, 시작, 종료, 담당, 단지] — 시작이 없으면 종일 */
+const EVENTS = [
+  ['부가세 예정신고 자료 정리', 'general', '', '', '이현수', ''],
+  ['아침 매물 브리핑', 'meeting', '09:30', '10:00', '이현수', ''],
+  ['박준호 대출 상담 동행', 'meeting', '10:00', '11:00', '박서연', ''],
+  ['고덕그라시움 103동 3401호 임장', 'viewing', '11:30', '12:30', '이현수', '고덕그라시움'],
+  ['고덕아르테온 312동 1704호 본계약 서류 확인', 'contract', '14:00', '15:00', '이현수', '고덕아르테온'],
+  ['고덕자이 108동 1902호 임장', 'viewing', '16:30', '17:30', '최민준', '고덕자이'],
+  ['김지현 고객 저녁 통화', 'general', '19:30', '20:00', '이현수', ''],
+].map((r, i) => ({ id: i, title: r[0], type: r[1], start: r[2], end: r[3], allDay: !r[2], user: r[4], site: r[5] }));
+
+/* 업무: [제목, 연결 매물, 마감, 담당] */
+const TASKS = [
+  ['등기부등본 재발급', '고덕그라시움 109동 1101호', '2026-11-06', '박서연'],
+  ['집주인 가격 재확인', '래미안힐스테이트고덕 112동 1502호', '2026-11-08', '정다은'],
+  ['세입자 계약 만기 안내', '고덕자이 104동 703호', '2026-11-09', '최민준'],
+  ['공동중개 수수료 입금 확인', '', '2026-11-10', '이현수'],
+  ['본계약 서류 준비', '고덕아르테온 312동 1704호', '2026-11-11', '이현수'],
+  ['이실장 광고 재등록', '고덕센트럴아이파크 101동 1501호', '2026-11-11', '정다은'],
+  ['주말 임장 동선 정리', '', '2026-11-11', '이현수'],
+  ['대출 한도 회신 받기', '', '2026-11-11', '이현수'],
+  ['신규 문의 고객 배정', '', '2026-11-12', ''],
+  ['네이버 광고 순위 확인', '고덕그라시움', '2026-11-12', '최민준'],
+  ['신규 매물 사진 보정', '고덕그라시움 121동 2502호', '2026-11-13', '박서연'],
+  ['전세 갱신 특약 문구 검토', '고덕센트럴아이파크 104동 2203호', '2026-11-15', '박서연'],
+  ['관리단지 추가 검토', '', '', ''],
+].map((r, i) => ({ id: i, title: r[0], prop: r[1], due: r[2], agent: r[3], status: 'pending', rev: 0 }));
+
+/* 거래: [제목, 단계, 금액, 건강 상태, 다음 대금 이름, 다음 대금일] */
+const STAGES = [['preparing', '계약 준비'], ['preContract', '가계약'], ['contracted', '본계약'], ['settling', '중도금·잔금'], ['completed', '잔금 완료']];
+const SHADE = [28, 46, 64, 82, 100]; // 단계가 나아갈수록 짙어지는 한 가지 색
+const stageColor = (i) => `color-mix(in srgb, var(--ok) ${SHADE[i]}%, var(--paper))`;
+const HEALTH = { overdue: ['일정 지연', 'late'], stale: ['단계 정체', 'stale'], unscheduled: ['일정 미정', ''] };
+const DEALS = [
+  ['고덕그라시움 109동 1101호', 'settling', '매매 16억 1,000만', 'healthy', '중도금', '2026-11-11'],
+  ['고덕센트럴아이파크 104동 2203호', 'settling', '전세 6억 9,000만', 'healthy', '잔금', '2026-11-11'],
+  ['래미안힐스테이트고덕 120동 801호', 'preContract', '전세 7억 2,000만', 'healthy', '계약금', '2026-11-14'],
+  ['고덕아르테온 312동 1704호', 'preContract', '매매 15억 2,000만', 'healthy', '계약금', '2026-11-20'],
+  ['래미안힐스테이트고덕 105동 2304호', 'contracted', '매매 14억 6,000만', 'overdue', '중도금', '2026-11-06'],
+  ['고덕자이 108동 1902호', 'preparing', '매매 12억 9,000만', 'stale', '', ''],
+  ['고덕아르테온 305동 503호', 'contracted', '전세 6억 4,000만', 'healthy', '잔금', '2026-12-05'],
+  ['고덕그라시움 211동 304호', 'preparing', '월세 3억/150만', 'unscheduled', '', ''],
+  ['고덕그라시움 205동 902호', 'preparing', '월세 1억/190만', 'healthy', '계약금', '2026-11-18'],
+  ['고덕그라시움 117동 1203호', 'completed', '전세 7억 8,000만', 'healthy', '', ''],
+].map((r, i) => ({ id: i, title: r[0], stage: r[1], amount: r[2], health: r[3], pay: r[4], payDate: r[5] }));
+const dLabel = (n) => (n == null ? '미정' : n < 0 ? `D+${-n}` : n === 0 ? 'D-Day' : `D-${n}`);
+/** 위험한 거래가 먼저, 그다음 대금일이 가까운 순 */
+function dealOrder(d) {
+  if (d.health === 'overdue') return -2e6;
+  if (d.health === 'stale') return -1e6;
+  if (d.health === 'unscheduled') return 1e6;
+  const n = daysUntil(d.payDate);
+  return n == null ? 2e6 : n;
+}
+
+const state = { scope: 'all', stage: null }; // 대표(owner)는 사무소 전체가 기본
+const caps = { ev: 99, task: 99, deal: 99 };
+
+const isOpen = (t) => t.status !== 'completed' && t.status !== 'cancelled';
+const bucket = (t) => { const n = daysUntil(t.due); return n == null ? 'none' : n < 0 ? 'overdue' : n === 0 ? 'today' : 'upcoming'; };
+const byDue = (a, b) => (!a.due && !b.due ? 0 : !a.due ? 1 : !b.due ? -1 : a.due.localeCompare(b.due));
+const person = (name) => (name === ME ? '나' : name || '미배정');
+const shortDate = (due) => { const d = D(due); return `${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')} (${WD[d.getDay()]})`; };
+const greeting = (h) => (h < 5 ? '늦은 시간까지 수고 많으세요' : h < 12 ? '좋은 아침이에요' : h < 18 ? '좋은 오후예요' : '오늘도 수고 많으셨어요');
+const at = (hhmm) => { const [h, m] = hhmm.split(':').map(Number); return new Date(2026, 10, 11, h, m); };
+function evStatus(e, now = NOW) {
+  if (e.allDay) return { state: 'active', label: '' };
+  const s = at(e.start), en = e.end ? at(e.end) : s;
+  if (en < now) return { state: 'done', label: '' };
+  if (s <= now && now <= en) return { state: 'active', label: '진행중', cls: 'accent' };
+  const diff = Math.round((s - now) / 60000);
+  if (diff > 0 && diff <= 120) return { state: 'soon', label: `${Math.ceil(diff / 60)}시간 후`, cls: 'warn' };
+  return { state: 'upcoming', label: '' };
+}
+const more = (href, label) => `<a class="more" href="${href}">${label}${icon('chevRight')}</a>`;
+
+function render() {
+  const mine = state.scope === 'mine';
+  const openTasks = TASKS.filter(isOpen).filter((t) => !mine || t.agent === ME).sort(byDue);
+  const events = EVENTS.filter((e) => !mine || e.user === ME).sort((a, b) => a.start.localeCompare(b.start));
+  const scopedOverdue = openTasks.filter((t) => bucket(t) === 'overdue').length;
+
+  /* 인사 */
+  $('greet').textContent = `${greeting(NOW.getHours())}, ${ME}님`;
+  $('dmeta').textContent = `${NOW.getMonth() + 1}월 ${NOW.getDate()}일 ${WD[NOW.getDay()]}요일 · ${OFFICE}`;
+  $('brief').innerHTML = !events.length && !openTasks.length
+    ? '오늘은 예정된 일정과 남은 업무가 없어요.'
+    : `오늘 일정 <b>${events.length}건</b>, 남은 업무 <b>${openTasks.length}건</b>이 있어요.${scopedOverdue ? ` 그중 <b class="danger-t">${scopedOverdue}건</b>은 기한이 지났어요.` : ''}`;
+
+  /* 핵심 숫자 — 금액 셋은 기준이 서로 달라 비율로 합치지 않는다 */
+  const active = DEALS; // 취소·종결 거래는 이 목록에 없다
+  const countBy = {};
+  active.forEach((d) => { countBy[d.stage] = (countBy[d.stage] || 0) + 1; });
+  const inProgress = active.length - (countBy.completed || 0);
+  const S = SUMMARY;
+  const kpi = (href, label, hint, value, foot) => `<a class="kpi" href="${href}"${hint ? ` title="${hint}"` : ''}><span class="lb">${label}${icon('chevRight')}</span><span class="v">${value}</span><span class="ft">${foot}</span></a>`;
+  $('kpis').innerHTML = [
+    kpi('cashflow.html', '이번달 수금', '이번달에 입금 확인된 수수료', won(S.collected), S.overdue > 0 ? `<b class="danger-t">연체 ${UI.won(S.overdue)}만원</b>` : '연체 없음'),
+    kpi('cashflow.html', '이번달 만기 미수', '이번달이 만기인 미수금 — 연체와 겹칠 수 있음', won(S.expected), '이번달이 만기인 미수금'),
+    kpi('deals.html', '진행 거래', '', `${inProgress}<small>건</small>`, `이번달 계약 ${S.contractCount}건 · 매칭 ${S.activeMatches}건`),
+    kpi('properties.html', '거래 가능 매물', '', `${S.activeListings}<small>건</small>`, S.unverified > 0 ? `<b class="warn-t">미확인 ${S.unverified}건</b> · 신규 접수 ${S.newIntake}건` : `미확인 매물 없음 · 신규 접수 ${S.newIntake}건`),
+  ].join('');
+
+  /* 오늘 · 일정 */
+  document.querySelectorAll('#scope button').forEach((b) => { const on = b.dataset.scope === state.scope; b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); });
+  const shownEv = events.slice(0, caps.ev);
+  $('evLab').textContent = `일정 ${events.length}`;
+  $('evFit').innerHTML = events.length ? shownEv.map((e, i) => {
+    const st = evStatus(e);
+    const meta = [e.site, !mine && e.user ? person(e.user) : null].filter(Boolean).join(' · ');
+    return `<div class="row erow ${i === 0 ? 'first' : ''} ${i === shownEv.length - 1 ? 'last' : ''} ${st.state === 'done' ? 'past' : ''}">
+      <span class="tm">${e.allDay ? '종일' : e.start}</span><span class="ax"><span class="sw t-${e.type}"></span></span>
+      <span class="mn"><a class="l1" href="calendar.html" style="font-weight:500">${esc(e.title)}</a>${meta ? `<span class="l2">${esc(meta)}</span>` : ''}</span>
+      ${st.label ? `<span class="st ${st.cls}">${st.label}</span>` : ''}</div>`;
+  }).join('') : '<p class="quiet-p">오늘 잡힌 일정이 없습니다.</p>';
+  const hidEv = events.length - shownEv.length;
+  $('evFoot').innerHTML = more('calendar.html', events.length && hidEv > 0 ? `일정 ${hidEv}건 더 보기` : '캘린더로');
+
+  /* 오늘 · 업무 — 기한 빠른 순 */
+  const shownTk = openTasks.slice(0, caps.task);
+  $('taskLab').innerHTML = `업무 ${openTasks.length}${scopedOverdue ? `<span class="danger-t">· 기한 지남 ${scopedOverdue}</span>` : ''}`;
+  $('taskFit').innerHTML = openTasks.length ? shownTk.map((t) => {
+    const b = bucket(t);
+    const n = daysUntil(t.due);
+    const meta = [t.prop, !mine ? person(t.agent) : null].filter(Boolean).join(' · ');
+    const due = !t.due ? '' : `<span class="rt ${b === 'overdue' ? 'late' : b === 'today' ? 'today' : ''}" title="${t.due.replace(/-/g, '.')}">${b === 'overdue' ? `${-n}일 지남` : b === 'today' ? '오늘' : shortDate(t.due)}</span>`;
+    return `<div class="row" data-task="${t.id}"><button class="tk" data-done aria-label="${esc(t.title)} 완료 처리">${icon('check')}</button>
+      <span class="mn"><a class="l1" href="tasks.html">${esc(t.title)}</a>${meta ? `<span class="l2">${esc(meta)}</span>` : ''}</span>${due}${!mine && t.agent ? av(t.agent) : ''}</div>`;
+  }).join('') : `<p class="quiet-p">${mine ? '내게 배정된 남은 업무가 없습니다.' : '남은 업무가 없습니다.'}</p>`;
+  const hidTk = openTasks.length - shownTk.length;
+  $('taskFoot').innerHTML = more('tasks.html', openTasks.length && hidTk > 0 ? `업무 ${hidTk}건 더 보기` : '업무 화면으로');
+
+  /* 확인할 것 — 범위와 무관하게 사무소 전체 기준 */
+  const overdueTasks = TASKS.filter((t) => isOpen(t) && bucket(t) === 'overdue').length;
+  const delayed = active.filter((d) => d.health === 'overdue' || d.health === 'stale').length; // '일정 미정'은 지연·정체가 아니다
+  const att = [];
+  if (overdueTasks) att.push(['danger', '기한 지난 업무', `${overdueTasks}건`, 'tasks.html']);
+  if (S.overdue > 0) att.push(['danger', '연체 수수료', `${UI.won(S.overdue)}만원`, 'cashflow.html']);
+  if (delayed) att.push(['warning', '지연·정체 거래', `${delayed}건`, 'deals.html']);
+  if (S.unverified) att.push(['warning', '미확인 매물', `${S.unverified}건`, 'properties.html']);
+  if (S.expiringTenants) att.push(['warning', '60일 내 계약만료 세입자', `${S.expiringTenants}명`, 'sites.html']);
+  $('attN').textContent = att.length || '';
+  $('att').innerHTML = att.length
+    ? att.map((a) => `<a class="row arow ${a[0]}" href="${a[3]}"><span class="bar"></span><span class="lbl">${a[1]}</span><span class="val">${a[2]}</span>${icon('chevRight')}</a>`).join('')
+    : `<p class="allclear">${icon('check')}지금 확인할 항목이 없습니다.</p>`;
+
+  /* 거래 진행 — 머리 숫자는 '진행 거래'와 같은 기준(잔금 완료 제외) */
+  $('dealN').textContent = inProgress;
+  $('pbar').setAttribute('aria-label', STAGES.map(([k, l]) => `${l} ${countBy[k] || 0}건`).join(', '));
+  $('pbar').innerHTML = STAGES.map(([k], i) => (countBy[k] ? `<i style="flex-grow:${countBy[k]};background:${stageColor(i)};opacity:${state.stage && state.stage !== k ? 0.35 : 1}"></i>` : '')).join('');
+  $('pleg').innerHTML = STAGES.map(([k, l], i) => `<button class="${state.stage === k ? 'on' : ''}" data-stage="${k}" aria-pressed="${state.stage === k}" title="${l} 단계만 보기"><span class="k"><i style="background:${stageColor(i)}"></i><span>${l}</span></span><b class="${countBy[k] ? '' : 'zero'}">${countBy[k] || 0}</b></button>`).join('');
+  const sorted = active.filter((d) => !state.stage || d.stage === state.stage).sort((a, b) => dealOrder(a) - dealOrder(b));
+  const shownD = sorted.slice(0, caps.deal);
+  $('dealFit').innerHTML = sorted.length ? shownD.map((d) => {
+    const stage = STAGES.find((s) => s[0] === d.stage)[1];
+    let rt = '';
+    if (d.health !== 'healthy') rt = `<span class="rt ${HEALTH[d.health][1]}">${HEALTH[d.health][0]}</span>`;
+    else if (d.payDate) { const n = daysUntil(d.payDate); const x = D(d.payDate); rt = `<span class="rt">${d.pay} ${x.getMonth() + 1}/${x.getDate()}<b class="${n <= 3 ? 'warn-t' : ''}">${dLabel(n)}</b></span>`; }
+    return `<a class="row drow" href="deals.html"><span class="mn"><span class="l1">${esc(d.title)}</span><span class="l2">${stage} · ${d.amount}</span></span>${rt}</a>`;
+  }).join('') : `<p class="quiet-p">${state.stage ? '이 단계의 거래가 없습니다.' : '진행 중인 거래가 없습니다.'}</p>`;
+  const hidD = sorted.length - shownD.length;
+  $('dealFoot').innerHTML = more('deals.html', sorted.length && hidD > 0 ? `거래 ${hidD}건 더 보기` : '거래관리로') + (state.stage ? '<button class="btn quiet sm" data-stage-clear style="margin-left:auto">단계 필터 해제</button>' : '');
+}
+
+/** 남은 높이에 44px 줄이 몇 개 들어가는지 세고, 넘치는 줄은 '더 보기'로 넘긴다 */
+function measure() {
+  let changed = false;
+  [['ev', 'evFit'], ['task', 'taskFit'], ['deal', 'dealFit']].forEach(([k, id]) => {
+    const c = Math.max(1, Math.floor($(id).clientHeight / ROW));
+    if (c !== caps[k]) { caps[k] = c; changed = true; }
+  });
+  if (changed) render();
+}
+
+document.addEventListener('click', (ev) => {
+  const t = ev.target;
+  let el;
+  if ((el = t.closest('[data-scope]'))) { state.scope = el.dataset.scope; return render(); }
+  if ((el = t.closest('[data-stage]'))) { state.stage = state.stage === el.dataset.stage ? null : el.dataset.stage; return render(); }
+  if (t.closest('[data-stage-clear]')) { state.stage = null; return render(); }
+  if (t.closest('[data-done]')) {
+    const row = t.closest('[data-task]');
+    const task = TASKS.find((x) => x.id === +row.dataset.task);
+    if (!isOpen(task)) return;
+    task.status = 'completed'; task.rev += 1;
+    const v = task.rev;
+    row.classList.add('going');
+    setTimeout(render, 280);
+    UI.toast(`'${esc(task.title)}' 완료`, () => {
+      if (task.rev !== v) return UI.toast('그 뒤에 다시 바뀌어서 되돌리지 않았습니다');
+      task.rev += 1; task.status = 'pending'; render();
+    });
+  }
+});
+
+render();
+measure();
+if (window.ResizeObserver) { const ro = new ResizeObserver(measure); ['evFit', 'taskFit', 'dealFit'].forEach((id) => ro.observe($(id))); }
+else window.addEventListener('resize', measure);
+
+UI.notes(
+  [
+    '<b>인사·핵심 숫자 넷·오늘(일정·업무)·확인할 것·거래 진행</b> 다섯 구획을 그대로 두고, 상자 테두리 없이 여백과 얇은 선으로만 나눴습니다.',
+    '<b>핵심 숫자 띠</b>는 칸 전체가 링크입니다. 수금·만기 미수는 수수료/정산으로, 진행 거래는 거래관리로, 거래 가능 매물은 매물관리로 갑니다.',
+    '<b>오늘 일정</b>은 시각·유형 색·제목이 한 줄로 이어지는 타임라인입니다. 지난 일정은 옅게, 진행 중·곧 시작하는 일정에는 배지가 붙습니다.',
+    '<b>업무</b>는 기한 빠른 순 한 줄 목록입니다. 동그라미를 누르면 바로 완료되고(실행 취소 가능), 머리말·확인할 것의 건수가 같이 바뀝니다.',
+    '<b>내 담당 / 사무소 전체</b>를 바꾸면 인사말의 건수와 두 목록이 함께 바뀝니다. 확인할 것은 늘 사무소 전체 기준입니다.',
+    '<b>거래 진행</b>의 단계 숫자를 누르면 그 단계 거래만 추려 봅니다. 지연·정체 거래가 맨 위, 그다음은 대금일이 가까운 순입니다.',
+    '<b>한 화면 원칙</b>은 유지했습니다. 목록은 창 높이에 들어가는 줄만 보여 주고 나머지는 "더 보기"로 해당 화면에 넘깁니다.',
+  ],
+  '아침에 한 번 훑고 바로 일을 시작하는 브리핑 화면입니다.',
+);
+</script>
+</body>
+</html>

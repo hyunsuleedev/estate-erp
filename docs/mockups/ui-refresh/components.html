@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>부품 견본 · UI 개선 데모</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="ui.css">
+<style>
+  body.doc { overflow: auto; background: var(--win); }
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 56px 32px 120px; }
+  h1 { margin: 0 0 6px; font-size: 26px; font-weight: 700; letter-spacing: -0.025em; }
+  .lede { margin: 0 0 28px; color: var(--text-2); font-size: 14px; }
+  .lede a { color: var(--accent-ink); }
+  .blk { background: var(--paper); border-radius: 12px; box-shadow: 0 0 0 1px var(--line-2), 0 1px 3px rgba(16, 24, 40, 0.04); margin-bottom: 20px; overflow: hidden; }
+  .blk > h2 { margin: 0; padding: 14px 20px; font-size: 14px; font-weight: 600; border-bottom: 1px solid var(--line); display: flex; gap: 10px; align-items: baseline; }
+  .blk > h2 small { font-size: 12px; font-weight: 400; color: var(--text-2); }
+  .rowx { display: grid; grid-template-columns: 150px 1fr; align-items: center; padding: 14px 20px; border-bottom: 1px solid var(--line); }
+  .rowx:last-child { border-bottom: 0; }
+  .rowx > span:first-child { font-size: 12px; color: var(--text-2); }
+  .set { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  .hov { background: var(--soft) !important; }
+  .btn.primary.hov { background: var(--primary-hover) !important; }
+  .foc { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .field.foc { outline: 0; box-shadow: inset 0 0 0 1px var(--accent), 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+  .old { font-size: 12px; font-weight: 500; }
+  .old.b1 { height: 36px; padding: 0 16px; border: 0; border-radius: 999px; background: #2c2c2b; color: #fff; }
+  .old.b2 { height: 34px; padding: 0 12px; border: 1px solid #e3e2de; border-radius: 999px; background: #f7f6f3; color: #37352f; }
+  .old.b3 { height: 22px; padding: 0 8px; border: 1px solid #d3e5ef; border-radius: 999px; background: #eef6fb; color: #1b64b1; font-weight: 600; display: inline-flex; align-items: center; }
+  .demo-tbl { --row: 38px; }
+  .demo-tbl th:first-child, .demo-tbl td:first-child { padding-left: 20px; }
+</style>
+</head>
+<body class="doc">
+<div class="wrap">
+  <h1>부품 견본</h1>
+  <p class="lede">버튼·입력칸·배지·표를 한곳에 모았습니다. 올려 보고 눌러 보세요. 위쪽 버튼으로 색 방향을 바꿔도 모양은 같습니다. <a href="index.html">← 데모 목록</a></p>
+
+  <div class="blk">
+    <h2>버튼 <small>높이 32 · 모서리 8 · 13px 중간 굵기. 채움 → 테두리 → 조용함의 세 단계</small></h2>
+    <div class="rowx"><span>주 버튼</span><div class="set">
+      <button class="btn primary" data-icon="plus">새 매물</button>
+      <button class="btn primary hov" data-icon="plus">올렸을 때</button>
+      <button class="btn primary foc">포커스</button>
+      <button class="btn primary" disabled>쓸 수 없음</button>
+      <span class="btn-split"><button class="btn primary" data-icon="plus">새 매물</button><button class="btn primary" data-icon="chevDown" aria-label="더보기"></button></span>
+    </div></div>
+    <div class="rowx"><span>보조 버튼</span><div class="set">
+      <button class="btn" data-icon="refresh">CP에서 가져오기</button>
+      <button class="btn hov">올렸을 때</button>
+      <button class="btn foc">포커스</button>
+      <button class="btn" disabled>쓸 수 없음</button>
+      <button class="btn sm">작은 크기</button>
+    </div></div>
+    <div class="rowx"><span>도구 버튼</span><div class="set">
+      <button class="btn quiet sm" data-icon="filter">필터</button>
+      <button class="btn quiet sm active" data-icon="filter">필터<span class="cnt">2</span></button>
+      <button class="btn quiet sm" data-icon="sort">정렬</button>
+      <button class="btn quiet sm" data-icon="sliders">열</button>
+      <button class="ib" data-icon="more" aria-label="더보기"></button>
+      <div class="seg"><button class="on" data-icon="list">목록</button><button data-icon="map">지도</button></div>
+    </div></div>
+    <div class="rowx"><span>지금 앱</span><div class="set">
+      <button class="old b1">+ 새 매물 등록</button><button class="old b2">단지 전체 ⌄</button><span class="old b3">● 거래중</span>
+      <span class="t3" style="font-size:12px">알약 모양 하나로 버튼·선택·배지를 모두 그려 서로 구분되지 않습니다</span>
+    </div></div>
+  </div>
+
+  <div class="blk">
+    <h2>입력칸·배지·선택 <small>테두리 1px + 옅은 그림자, 포커스는 바깥 링 3px</small></h2>
+    <div class="rowx"><span>검색·입력</span><div class="set">
+      <label class="field" data-icon="search"><input placeholder="단지, 동·호, 연락처"><kbd>⌘F</kbd></label>
+      <label class="field foc" data-icon="search"><input value="고덕그라시움"></label>
+    </div></div>
+    <div class="rowx"><span>상태 배지</span><div class="set">
+      <span class="st ok">거래 가능</span><span class="st warn">계약 진행</span><span class="st accent">협상</span><span class="st hold">보류</span><span class="st done">종료</span>
+    </div></div>
+    <div class="rowx"><span>분류 태그</span><div class="set">
+      <span class="tag sale">매매</span><span class="tag jeonse">전세</span><span class="tag monthly">월세</span><span class="tag purple">광고</span><span class="tag orange">확인</span><span class="tag green">계약</span><span class="tag">정산</span>
+    </div></div>
+    <div class="rowx"><span>선택 칸·필터 칩</span><div class="set">
+      <span class="ck" style="position:static;opacity:1;margin:0;display:inline-grid" data-icon="check"></span>
+      <span class="ck on" style="position:static;margin:0;display:inline-grid" data-icon="check"></span>
+      <span class="ck some" style="position:static;opacity:1;margin:0;display:inline-grid"></span>
+      <span class="chip"><span class="k">상태</span>거래 가능<button class="x" data-icon="x" aria-label="지우기"></button></span>
+      <span class="chip"><span class="k">단지</span>고덕그라시움<button class="x" data-icon="x" aria-label="지우기"></button></span>
+    </div></div>
+  </div>
+
+  <div class="blk">
+    <h2>표 <small>열 종류 아이콘 · 정렬 표시 · 너비 손잡이 · 선택 행 · 칸 포커스 · 요약 줄</small></h2>
+    <table class="tbl demo-tbl">
+      <thead><tr>
+        <th class="selh"><span class="ck some"></span></th>
+        <th><i data-ic="building" class="hi"></i>매물<span class="rz"></span></th>
+        <th><i data-ic="tag" class="hi"></i>거래<span class="rz"></span></th>
+        <th class="r sorted"><i data-ic="won" class="hi"></i>가격<i data-ic="chevDown" class="caret"></i><span class="rz"></span></th>
+        <th><i data-ic="info" class="hi"></i>상태<span class="rz"></span></th>
+        <th><i data-ic="clock" class="hi"></i>마지막 확인<span class="rz"></span></th>
+        <th><i data-ic="note" class="hi"></i>메모</th>
+      </tr></thead>
+      <tbody>
+        <tr><td class="sel"><span class="ck" data-icon="check"></span></td><td><span style="font-weight:500">고덕그라시움</span> <span class="t2">121동 2502호</span></td><td><span class="tag sale">매매</span></td><td class="r num">17억 5,000</td><td><span class="st ok">거래 가능</span></td><td>오늘</td><td class="t2">한강 일부 조망</td></tr>
+        <tr class="picked"><td class="sel"><span class="ck on" data-icon="check"></span></td><td><span style="font-weight:500">고덕그라시움</span> <span class="t2">103동 3401호</span></td><td><span class="tag sale">매매</span></td><td class="r num">16억 8,000</td><td><span class="st ok">거래 가능</span></td><td>오늘</td><td class="t2">선택한 행: 옅은 바탕 + 왼쪽 띠</td></tr>
+        <tr><td class="sel"><span class="ck" data-icon="check"></span></td><td><span style="font-weight:500">고덕아르테온</span> <span class="t2">312동 1704호</span></td><td><span class="tag sale">매매</span></td><td class="r num cell-on">15억 2,000</td><td><span class="st warn">계약 진행</span></td><td class="t2">1일 전</td><td class="t2">누른 칸: 파란 테두리</td></tr>
+        <tr><td class="sel"><span class="ck" data-icon="check"></span></td><td><span style="font-weight:500">고덕자이</span> <span class="t2">108동 1902호</span></td><td><span class="tag sale">매매</span></td><td class="r num">12억 9,000</td><td><span class="st ok">거래 가능</span></td><td><span class="warn-t">확인 필요 · 18일</span></td><td class="t2">갈아타기 매도</td></tr>
+      </tbody>
+    </table>
+    <div class="sumbar" style="position:static;padding:0 20px"><span>매물<b>4</b></span><span>매매 평균<b>15억 6,500</b></span><span>확인 필요<b>1</b></span></div>
+  </div>
+</div>
+<script src="shell.js"></script>
+<script>
+document.querySelectorAll('[data-icon]').forEach((el) => el.insertAdjacentHTML('afterbegin', UI.icon(el.dataset.icon)));
+document.querySelectorAll('.hi, .caret').forEach((el) => {});
+</script>
+</body>
+</html>

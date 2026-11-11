@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>8 · 신축 단지 — 스플래시 시안</title>
+<link rel="stylesheet" href="stage.css">
+<style>
+  .d8 { transition: opacity 0.5s ease-out; }
+  .d8 .col { display: grid; justify-items: center; gap: 6px; margin-top: -34px; transition: transform 0.6s var(--out); }
+  .d8 canvas { width: min(760px, 94vw); aspect-ratio: 760 / 470; display: block; animation: d8-in 0.6s var(--out) both; }
+  @keyframes d8-in { from { opacity: 0; transform: translateY(10px); } }
+  .d8 .brand { animation: d8-in 0.6s var(--out) 0.2s both; }
+  .d8[data-state="exit"] { opacity: 0; }
+  .d8[data-state="exit"] .col { transform: scale(1.06); }
+  .win[data-state="exit"] .dest-in { animation: d8-rise 0.55s var(--out) both; }
+  @keyframes d8-rise { from { transform: translateY(14px); } }
+</style>
+</head>
+<body>
+<template id="tpl">
+  <main class="splash d8">
+    <div class="col">
+      <canvas width="760" height="470"></canvas>
+      <div class="brand"><span data-logo></span>에스테잇플로우</div>
+    </div>
+  </main>
+</template>
+<script>
+  // 신축 단지 모형. 좌표는 미터에 가깝게 잡았다(층고 3, 필로티 5).
+  // 타워형 2동 + 판상형 2동(계단식 스카이라인) + 유리 커뮤니티 동 + 문주.
+  const INK = "42,51,35";
+  const BLDS = [
+    { id: "A1", x0: -46, y0: -42, x1: -12, y1: -30, n: 24, start: 0.04, house: true },
+    { id: "A2", x0: -54, y0: -42, x1: -46, y1: -30, n: 20, start: 0.04 },
+    { id: "T1", x0: 2, y0: -44, x1: 24, y1: -22, n: 30, start: 0, crown: true, house: true },
+    { id: "T2", x0: 24, y0: -40, x1: 34, y1: -26, n: 27, start: 0.02 },
+    { id: "C1", x0: 38, y0: -12, x1: 54, y1: 8, n: 26, start: 0.08, crown: true, house: true },
+    { id: "D1", x0: -54, y0: -14, x1: -42, y1: 26, n: 18, start: 0.1, house: true },
+    { id: "P", x0: -16, y0: 16, x1: 16, y1: 32, n: 2, fh: 4.5, pil: 0, start: 0.22, glass: true },
+  ];
+  const TREES = [[-30, -18, 3], [-22, -8, 2.4], [-8, -10, 2.8], [26, -14, 2.6], [22, 4, 3], [-30, 6, 2.6], [-28, 36, 3], [-6, 40, 2.4],
+    [28, 22, 2.8], [34, 36, 2.4], [46, 22, 3], [50, 38, 2.6], [-50, 38, 2.6], [-36, -24, 2.2], [0, -14, 2.2], [30, -18, 2]];
+  const CRANE = { x: -1.5, y: -20.5 };
+  const clamp = (v) => Math.min(Math.max(v, 0), 1);
+
+  let ctx, root, raf = 0, p = 0, t0 = 0, doneAt = {};
+  let cs = 1, sn = 0;
+  const S = 2.7, CX = 372, CY = 292;
+  const pr = (x, y, z) => {
+    const xr = x * cs - y * sn, yr = x * sn + y * cs;
+    return [CX + xr * S, CY + (yr * 0.5 - z * 0.866) * S];
+  };
+  const poly = (pts) => { ctx.beginPath(); pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y))); ctx.closePath(); };
+  const fill = (pts, color, stroke) => { poly(pts); ctx.fillStyle = color; ctx.fill(); if (stroke) { ctx.strokeStyle = stroke; ctx.stroke(); } };
+  const hull = (pts) => {
+    pts = pts.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+    const cross = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+    const half = (list) => list.reduce((h, q) => { while (h.length > 1 && cross(h[h.length - 2], h[h.length - 1], q) <= 0) h.pop(); h.push(q); return h; }, []);
+    const lo = half(pts), up = half(pts.slice().reverse());
+    return lo.slice(0, -1).concat(up.slice(0, -1));
+  };
+
+  // 한 면: P(u, z)는 면 위의 점. 창 배열은 실제 평면처럼 거실(넓은 창)·침실(작은 창)·코어(세로 유리띠)를 반복한다.
+  function face(P, W, b, hCur, lit, side, fin) {
+    const base = lit ? "#fbfaf8" : "#eceae6";
+    const glass = `rgba(${INK},${lit ? 0.2 : 0.3})`;
+    const pil = b.pil ?? 5, fh = b.fh ?? 3;
+    fill([P(0, 0), P(W, 0), P(W, hCur), P(0, hCur)], base);
+    const quads = [];
+    const rect = (u0, u1, z0, z1) => quads.push([P(u0, z0), P(u1, z0), P(u1, z1), P(u0, z1)]);
+    const floors = Math.floor((hCur - pil) / fh + 0.001);
+    if (b.glass) {
+      const nb = Math.round(W / 4);
+      for (let k = 0; k < floors; k++) for (let i = 0; i < nb; i++) rect((i + 0.08) * (W / nb), (i + 0.92) * (W / nb), pil + k * fh + 0.5, pil + k * fh + fh - 0.5);
+    } else if (W < 16) {
+      // 측벽: 세로 포인트 띠 + 작은 창 한 줄
+      fill([P(W * 0.6, pil), P(W * 0.82, pil), P(W * 0.82, hCur), P(W * 0.6, hCur)], lit ? "#eeece8" : "#dfddd8");
+      for (let k = 0; k < floors; k++) rect(W * 0.2, W * 0.4, pil + k * fh + 1, pil + k * fh + 2.3);
+    } else {
+      const nb = Math.round(W / 3.4), bw = W / nb, group = ["L", "B", "B", "L", "G"];
+      for (let i = 1; i < nb - 1; i++) {
+        const type = group[(i - 1) % group.length], u = i * bw;
+        if (type === "G") { if (floors > 0) rect(u + bw * 0.22, u + bw * 0.78, pil + 0.3, pil + floors * fh); continue; }
+        const [a, c, z0, z1] = type === "L" ? [0.1, 0.9, 0.7, 2.5] : [0.28, 0.72, 1, 2.4];
+        for (let k = 0; k < floors; k++) rect(u + bw * a, u + bw * c, pil + k * fh + z0, pil + k * fh + z1);
+      }
+    }
+    ctx.beginPath();
+    quads.forEach((q) => { q.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y))); ctx.closePath(); });
+    ctx.fillStyle = glass;
+    ctx.fill();
+    // 층 구분선
+    ctx.beginPath();
+    for (let k = 0; k <= floors; k++) { const z = pil + k * fh, a = P(0, z), c = P(W, z); ctx.moveTo(a[0], a[1]); ctx.lineTo(c[0], c[1]); }
+    ctx.strokeStyle = `rgba(${INK},0.1)`;
+    ctx.stroke();
+    // 필로티: 어두운 개구부와 기둥
+    if (pil) {
+      fill([P(0, 0), P(W, 0), P(W, pil - 0.6), P(0, pil - 0.6)], `rgba(${INK},${lit ? 0.42 : 0.52})`);
+      const nc = Math.max(2, Math.round(W / 6));
+      for (let i = 0; i <= nc; i++) { const u = Math.min(W - 0.9, (i * W) / nc); fill([P(u, 0), P(u + 0.9, 0), P(u + 0.9, pil), P(u, pil)], base); }
+    }
+    poly([P(0, 0), P(W, 0), P(W, hCur), P(0, hCur)]);
+    ctx.strokeStyle = `rgba(${INK},0.6)`;
+    ctx.stroke();
+  }
+
+  function box(x0, y0, x1, y1, z0, z1, alpha = 1) {
+    ctx.globalAlpha = alpha;
+    fill([pr(x1, y0, z0), pr(x1, y1, z0), pr(x1, y1, z1), pr(x1, y0, z1)], "#f7f6f3", `rgba(${INK},0.55)`);
+    fill([pr(x0, y1, z0), pr(x1, y1, z0), pr(x1, y1, z1), pr(x0, y1, z1)], "#e6e4df", `rgba(${INK},0.55)`);
+    fill([pr(x0, y0, z1), pr(x1, y0, z1), pr(x1, y1, z1), pr(x0, y1, z1)], "#fff", `rgba(${INK},0.55)`);
+    ctx.globalAlpha = 1;
+  }
+
+  function building(b, g, fin) {
+    const pil = b.pil ?? 5, fh = b.fh ?? 3;
+    const h = pil + g * b.n * fh;
+    const { x0, y0, x1, y1 } = b;
+    face((u, z) => pr(x1, y0 + u, z), y1 - y0, b, h, true, "x", fin);
+    face((u, z) => pr(x0 + u, y1, z), x1 - x0, b, h, false, "y", fin);
+    fill([pr(x0, y0, h), pr(x1, y0, h), pr(x1, y1, h), pr(x0, y1, h)], "#fff", `rgba(${INK},0.6)`);
+    if (fin <= 0) return;
+    // 옥탑과 옥상 구조물(프레임)
+    if (b.house) box(x0 + 4, y0 + 3, x1 - 4, y1 - 3, h, h + 3.2 * fin, fin);
+    if (b.crown) {
+      const zt = h + 7.5 * fin, i = 0.8;
+      ctx.globalAlpha = fin;
+      ctx.beginPath();
+      [[x0 + i, y0 + i], [x1 - i, y0 + i], [x1 - i, y1 - i], [x0 + i, y1 - i]].forEach(([x, y]) => { const a = pr(x, y, h), c = pr(x, y, zt); ctx.moveTo(a[0], a[1]); ctx.lineTo(c[0], c[1]); });
+      ctx.strokeStyle = `rgba(${INK},0.7)`;
+      ctx.stroke();
+      const ring = (z, inset) => [pr(x0 + inset, y0 + inset, z), pr(x1 - inset, y0 + inset, z), pr(x1 - inset, y1 - inset, z), pr(x0 + inset, y1 - inset, z)];
+      fill([pr(x1, y0, zt), pr(x1, y1, zt), pr(x1, y1, zt + 1), pr(x1, y0, zt + 1)], "#f7f6f3", `rgba(${INK},0.6)`);
+      fill([pr(x0, y1, zt), pr(x1, y1, zt), pr(x1, y1, zt + 1), pr(x0, y1, zt + 1)], "#e6e4df", `rgba(${INK},0.6)`);
+      ctx.beginPath();
+      [ring(zt + 1, 0), ring(zt + 1, 3.2)].forEach((pts) => { pts.forEach(([x, y], k) => (k ? ctx.lineTo(x, y) : ctx.moveTo(x, y))); ctx.closePath(); });
+      ctx.fillStyle = "#fff";
+      ctx.fill("evenodd");
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  function crane(h, alpha, t) {
+    if (alpha <= 0) return;
+    const { x, y } = CRANE, top = h + 9, a = t * 0.00035 + 0.6;
+    const line = (pts) => { ctx.beginPath(); pts.forEach(([px, py], i) => (i ? ctx.lineTo(px, py) : ctx.moveTo(px, py))); ctx.stroke(); };
+    ctx.globalAlpha = alpha;
+    ctx.strokeStyle = `rgba(${INK},0.75)`;
+    line([pr(x, y, 0), pr(x, y, top + 4)]);
+    line([pr(x + 1.2, y, 0), pr(x + 1.2, y, top)]);
+    const zig = [];
+    for (let z = 0; z <= top; z += 3) zig.push(pr(x + ((z / 3) % 2 ? 1.2 : 0), y, z));
+    ctx.strokeStyle = `rgba(${INK},0.35)`;
+    line(zig);
+    ctx.strokeStyle = `rgba(${INK},0.75)`;
+    const tip = [x + Math.cos(a) * 22, y + Math.sin(a) * 22], back = [x - Math.cos(a) * 7, y - Math.sin(a) * 7];
+    line([pr(back[0], back[1], top), pr(tip[0], tip[1], top)]);
+    line([pr(back[0], back[1], top), pr(x, y, top + 4), pr(tip[0], tip[1], top)]);
+    const hook = [x + Math.cos(a) * 14, y + Math.sin(a) * 14];
+    line([pr(hook[0], hook[1], top), pr(hook[0], hook[1], top - 7)]);
+    ctx.globalAlpha = 1;
+  }
+
+  function tree([x, y, r], g) {
+    if (g <= 0) return;
+    const a = pr(x, y, 0), c = pr(x, y, r * 1.5 * g);
+    ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(c[0], c[1]); ctx.strokeStyle = `rgba(${INK},0.5)`; ctx.stroke();
+    ctx.beginPath(); ctx.arc(c[0], c[1] - r * S * 0.5 * g, r * S * g, 0, Math.PI * 2);
+    ctx.fillStyle = "#e9ede2"; ctx.fill(); ctx.strokeStyle = `rgba(${INK},0.4)`; ctx.stroke();
+  }
+
+  function ground(a) {
+    ctx.globalAlpha = a;
+    fill([pr(-62, -50, 0), pr(62, -50, 0), pr(62, 50, 0), pr(-62, 50, 0)], "#fafaf8", `rgba(${INK},0.22)`);
+    // 중앙 잔디 마당과 산책로
+    const lawn = [];
+    for (let i = 0; i < 40; i++) lawn.push(pr(4 + Math.cos((i / 40) * 6.283) * 20, -2 + Math.sin((i / 40) * 6.283) * 11, 0));
+    fill(lawn, "#f1f4ea", `rgba(${INK},0.18)`);
+    ctx.beginPath();
+    [[[-62, 10], [-16, 10]], [[24, 44], [24, 9]], [[-16, 12], [-34, -24]], [[30, -4], [38, -4]], [[14, 44], [14, 50]], [[34, 44], [34, 50]]].forEach(([s, e]) => {
+      const q = pr(s[0], s[1], 0), w = pr(e[0], e[1], 0); ctx.moveTo(q[0], q[1]); ctx.lineTo(w[0], w[1]);
+    });
+    ctx.strokeStyle = `rgba(${INK},0.14)`;
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+
+  function frame(now) {
+    if (!root.isConnected) return;
+    raf = requestAnimationFrame(frame);
+    const t = now - t0;
+    const deg = 28 + 11 * (1 - Math.exp(-t / 2600)) + t * 0.0007;
+    cs = Math.cos((deg * Math.PI) / 180);
+    sn = Math.sin((deg * Math.PI) / 180);
+    const dpr = Math.min(devicePixelRatio || 1, 2), cv = ctx.canvas;
+    const w = Math.round(760 * dpr), hgt = Math.round(470 * dpr);
+    if (cv.width !== w) { cv.width = w; cv.height = hgt; }
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, 760, 470);
+    ctx.lineWidth = 1;
+    ctx.lineJoin = "round";
+    ground(clamp(t / 400));
+
+    const items = BLDS.map((b) => {
+      const g = clamp((p - b.start) / (0.5 + 0.38 * (b.n / 30) - b.start));
+      if (g >= 1 && doneAt[b.id] == null) doneAt[b.id] = t;
+      return { ...b, g, fin: doneAt[b.id] == null ? 0 : clamp((t - doneAt[b.id]) / 450), kind: "b" };
+    });
+    const t1 = items.find((b) => b.id === "T1");
+    // 그림자
+    items.forEach((b) => {
+      if (b.g <= 0) return;
+      const h = (b.pil ?? 5) + b.g * b.n * (b.fh ?? 3);
+      const c = [[b.x0, b.y0], [b.x1, b.y0], [b.x1, b.y1], [b.x0, b.y1]];
+      fill(hull(c.concat(c.map(([x, y]) => [x - h * 0.42, y + h * 0.1])).map(([x, y]) => pr(x, y, 0))), `rgba(${INK},0.055)`);
+    });
+    TREES.forEach((tr, i) => items.push({ kind: "t", tr, x0: tr[0] - 1, x1: tr[0] + 1, y0: tr[1] - 1, y1: tr[1] + 1, g: clamp((t - 250 - i * 45) / 500) }));
+    items.push({ kind: "c", x0: CRANE.x - 1, x1: CRANE.x + 2, y0: CRANE.y - 1, y1: CRANE.y + 1 });
+    // 문주
+    items.push({ kind: "g", x0: 13, x1: 35, y0: 45, y1: 47, g: clamp((p - 0.3) / 0.3) });
+    // 뒤에 있는 것부터 그린다. 보는 방향이 +x, +y 쪽이므로 x나 y가 작은 쪽이 뒤다.
+    const behind = (a, b) => a.x1 <= b.x0 + 0.01 || a.y1 <= b.y0 + 0.01;
+    const depth = (a) => ((a.x0 + a.x1) / 2) * sn + ((a.y0 + a.y1) / 2) * cs;
+    items.sort((a, b) => { const ab = behind(a, b), ba = behind(b, a); return ab && !ba ? -1 : ba && !ab ? 1 : depth(a) - depth(b); });
+    items.forEach((it) => {
+      if (it.kind === "t") tree(it.tr, 1 - Math.pow(1 - it.g, 3));
+      else if (it.kind === "c") crane(5 + t1.g * 90, t1.g > 0 ? 1 - t1.fin : 0, t);
+      else if (it.kind === "g") {
+        if (it.g <= 0) return;
+        const z = 9 * (1 - Math.pow(1 - it.g, 3));
+        box(13, 45, 15, 47, 0, z); box(33, 45, 35, 47, 0, z);
+        if (it.g >= 1) box(12, 44.6, 36, 47.4, 9, 10.4);
+      } else if (it.g > 0) building(it, it.g, it.fin);
+    });
+  }
+
+  window.Demo = {
+    min: 2600, readyMs: 700, exitMs: 560,
+    mount(r) {
+      cancelAnimationFrame(raf);
+      root = r;
+      ctx = r.querySelector("canvas").getContext("2d");
+      p = 0;
+      doneAt = {};
+      t0 = performance.now();
+      raf = requestAnimationFrame(frame);
+    },
+    progress(v) { p = v; },
+    state(name) { if (name === "ready") p = 1; },
+  };
+</script>
+<script src="stage.js"></script>
+</body>
+</html>

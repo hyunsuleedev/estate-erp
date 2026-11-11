@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>1 · 로고 창 — 스플래시 시안</title>
+<link rel="stylesheet" href="stage.css">
+<style>
+  /* 로고 한 단위(70칸 중 1칸)의 픽셀 크기. 창 모양 가림막과 로고가 같은 값을 쓴다. */
+  .win { --u: 1.9px; }
+  .d1 .mark { position: absolute; left: 50%; top: 50%; width: calc(70 * var(--u)); height: calc(70 * var(--u)); margin: calc(-35 * var(--u)); }
+  .d1 .mark svg { width: 100%; height: 100%; fill: var(--ink); }
+  .d1 .mark path { transform-box: fill-box; transform-origin: center; }
+  .d1 .pa { animation: d1-a 0.72s var(--spring) both, d1-breathe-a 1.7s ease-in-out 0.9s infinite alternate; }
+  .d1 .pb { animation: d1-b 0.72s var(--spring) 0.07s both, d1-breathe-b 1.7s ease-in-out 0.97s infinite alternate; }
+  @keyframes d1-a { from { transform: translate(-22px, -26px) rotate(-8deg) scale(0.86); opacity: 0; } 30% { opacity: 1; } }
+  @keyframes d1-b { from { transform: translate(22px, 26px) rotate(8deg) scale(0.86); opacity: 0; } 30% { opacity: 1; } }
+  @keyframes d1-breathe-a { to { transform: translate(-2.5px, 2px); } }
+  @keyframes d1-breathe-b { to { transform: translate(2.5px, -2px); } }
+  .d1 .ring { position: absolute; inset: -18px; border-radius: 50%; border: 2px solid var(--moss); opacity: 0; animation: d1-ring 0.7s var(--out) 0.3s; }
+  @keyframes d1-ring { from { transform: scale(0.55); opacity: 0.7; } to { transform: scale(1.25); opacity: 0; } }
+  /* 창 안쪽에서 새어 나오는 빛 */
+  .d1 .glow { position: absolute; inset: 24%; background: var(--lamp); filter: blur(14px); opacity: 0; border-radius: 30%; animation: d1-glow 1.7s ease-in-out 0.9s infinite alternate; }
+  @keyframes d1-glow { to { opacity: 0.3; } }
+  .d1 .word { position: absolute; left: 0; right: 0; top: calc(50% + 46 * var(--u)); text-align: center; font-size: 19px; font-weight: 620; letter-spacing: -0.7px; }
+  .d1 .word span { animation: d1-char 0.55s var(--pop) calc(0.34s + var(--i) * 32ms) both; }
+  @keyframes d1-char { from { transform: translateY(8px); opacity: 0; } }
+
+  .d1[data-state="ready"] .mark svg { animation: d1-press 0.26s var(--out); }
+  @keyframes d1-press { 50% { transform: scale(0.9); } }
+  .d1[data-state="ready"] .pa, .d1[data-state="ready"] .pb,
+  .d1[data-state="exit"] .pa, .d1[data-state="exit"] .pb { animation: none; }
+  .d1[data-state="exit"] .glow { animation: none; opacity: 0.3; }
+  .d1[data-state="exit"] .word { opacity: 0; transform: translateY(10px); transition: 0.18s; }
+  /* 로고가 창틀이 되어 화면 밖으로 커지고, 같은 모양의 구멍으로 앱이 드러난다 */
+  .d1[data-state="exit"] .mark svg { animation: d1-zoom 0.72s var(--inout) both; }
+  @keyframes d1-zoom { to { transform: scale(80); } }
+  .win[data-state="exit"] .dest { z-index: 3; animation: d1-open 0.72s var(--inout) both; }
+  @keyframes d1-open {
+    from { clip-path: polygon(calc(50% - 12.6 * var(--u)) calc(50% - 15.4 * var(--u)), calc(50% + 10.8 * var(--u)) calc(50% - 12.6 * var(--u)), calc(50% + 14.1 * var(--u)) calc(50% + 15.3 * var(--u)), calc(50% - 8.8 * var(--u)) calc(50% + 13.2 * var(--u))); }
+    to { clip-path: polygon(calc(50% - 1008 * var(--u)) calc(50% - 1232 * var(--u)), calc(50% + 864 * var(--u)) calc(50% - 1008 * var(--u)), calc(50% + 1128 * var(--u)) calc(50% + 1224 * var(--u)), calc(50% - 704 * var(--u)) calc(50% + 1056 * var(--u))); }
+  }
+  .win[data-state="exit"] .dest-in { animation: d1-settle 0.72s var(--out) both; }
+  @keyframes d1-settle { from { transform: scale(1.12); } }
+</style>
+</head>
+<body>
+<template id="tpl">
+  <main class="splash d1">
+    <div class="mark"><i class="glow"></i><i class="ring"></i><span data-logo></span></div>
+    <div class="word chars">에스테잇플로우</div>
+  </main>
+</template>
+<script>
+  window.Demo = { min: 1100, readyMs: 260, exitMs: 720 };
+</script>
+<script src="stage.js"></script>
+</body>
+</html>

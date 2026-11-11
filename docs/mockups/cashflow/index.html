@@ -1,0 +1,354 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="icon" href="data:," />
+<title>캐시플로우 시안</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
+<link rel="stylesheet" href="shared.css" />
+<style>
+  /* 돈 흐름 줄: 수금 − 고정비 = 순이익을 식으로 읽는다 */
+  .eq { align-items: stretch; }
+  .eq .stat { flex: 0 1 auto; min-width: 118px; padding-right: 8px; border-right: 0; }
+  .eq-op { display: flex; flex: none; align-items: center; padding: 16px 8px 0 0; color: var(--faint); font-size: 18px; }
+  .eq-gap { flex: 1 0 12px; }
+  .eq .right { flex: 0 1 auto; min-width: 136px; padding-right: 20px; border-left: 1px solid var(--hair); }
+
+  .split { display: grid; flex: 1; grid-template-columns: minmax(0, 1.45fr) minmax(372px, 1fr); min-height: 0; }
+  .pane { min-width: 0; overflow-y: auto; }
+  .pane + .pane { border-left: 1px solid var(--border); }
+  .pane-head { position: sticky; top: 0; z-index: 3; display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 12px; border-bottom: 1px solid var(--head-line); background: var(--band); color: var(--muted-fg); font-size: 13px; font-weight: 500; }
+  .pane-head .n { color: var(--faint); font-weight: 400; font-variant-numeric: tabular-nums; }
+  .pane-head .sum { margin-left: auto; font-size: 12.5px; font-weight: 400; font-variant-numeric: tabular-nums; }
+
+  /* 오늘 처리할 것 */
+  .pane-today .ghead { top: 36px; }
+  .ghead .gico { width: 14px; }
+  .a-row { display: grid; grid-template-columns: minmax(0, 1fr) 68px 72px 122px; align-items: center; gap: 8px; min-height: 40px; padding: 0 12px 0 30px; border-bottom: 1px solid var(--hair); font-size: 13px; }
+  .a-row:hover { background: #fafaf9; }
+  .a-main { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+  .a-main .nm { flex: none; max-width: 100%; overflow: hidden; border-radius: 3px; font-weight: 500; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
+  .a-main button.nm:hover { text-decoration: underline; text-underline-offset: 2px; text-decoration-color: var(--head-line); }
+  .a-main .meta { flex: 1 1 0; min-width: 0; overflow: hidden; color: var(--muted-fg); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+  .a-when { color: var(--muted-fg); font-size: 12.5px; font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+  .a-amt { font-weight: 600; font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+  .a-act { display: flex; justify-content: flex-end; gap: 4px; }
+  .a-act .btn { height: 26px; padding: 0 8px; font-size: 12px; }
+
+  /* 차트 */
+  .chart-wrap { padding: 10px 12px 12px; }
+  .legend { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 6px; color: var(--muted-fg); font-size: 12px; }
+  .legend i { display: inline-block; width: 10px; height: 10px; margin-right: 5px; border-radius: 2px; vertical-align: -1px; }
+  .legend i.line { width: 12px; height: 0; border-top: 1.5px solid var(--muted-fg); border-radius: 0; vertical-align: 3px; }
+  .legend .unit { margin-left: auto; color: var(--faint); }
+  .mode { display: flex; gap: 1px; margin-left: auto; padding: 1px; border-radius: 6px; background: var(--surface); }
+  .mode button { height: 22px; padding: 0 8px; border-radius: 5px; color: var(--muted-fg); font-size: 12px; font-weight: 400; }
+  .mode .on { background: #fff; color: var(--fg); font-weight: 500; }
+  svg.chart { display: block; width: 100%; overflow: visible; }
+  svg.chart text { font-family: inherit; font-size: 11.5px; fill: var(--muted-fg); font-variant-numeric: tabular-nums; }
+  svg.chart .bar { cursor: pointer; outline: none; }
+  svg.chart .bar:hover .hit, svg.chart .bar:focus-visible .hit { fill: var(--band); }
+  svg.chart .lab { fill: var(--fg); font-weight: 600; paint-order: stroke; stroke: #fff; stroke-width: 3px; stroke-linejoin: round; }
+  svg.chart .x.sel { fill: var(--fg); font-weight: 600; }
+  .trend-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .trend-table th { height: 30px; padding: 0 12px; border-bottom: 1px solid var(--head-line); color: var(--muted-fg); font-weight: 500; text-align: right; }
+  .trend-table th:first-child, .trend-table td:first-child { text-align: left; }
+  .trend-table td { height: 32px; padding: 0 12px; border-bottom: 1px solid var(--hair); font-variant-numeric: tabular-nums; text-align: right; }
+  .trend-table tr.sel td { font-weight: 600; }
+
+  /* 계약 수수료 */
+  .c-row { display: grid; grid-template-columns: minmax(0, 1fr) 76px 58px; align-items: center; gap: 10px; width: 100%; min-height: 40px; padding: 0 12px; border-bottom: 1px solid var(--hair); font-size: 13px; text-align: left; }
+  .c-row:hover { background: #fafaf9; }
+  .c-name { display: flex; align-items: center; gap: 6px; min-width: 0; }
+  .c-name span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .c-pct { display: grid; gap: 3px; color: var(--muted-fg); font-size: 11.5px; font-variant-numeric: tabular-nums; text-align: right; }
+</style>
+</head>
+<body>
+<script src="icons.js"></script>
+<script src="data.js"></script>
+<script src="shared.js"></script>
+<script>
+(function () {
+  const { esc, icon, money, md, mdw, rel, badge, loc, sideLabel, payerName, remaining, isOverdue, effectiveDue, dealSum, daysFrom, TODAY } = CF;
+  const main = CF.shell({ page: 'cashflow', title: '캐시플로우', restricted: true });
+  if (!main) return;
+
+  const now = { y: 2026, m: 11 };
+  const state = { y: now.y, m: now.m, chart: 'chart' };
+  const closed = new Set();
+
+  main.innerHTML = `<div class="page">
+    <div class="tb line" id="tb"></div>
+    <div class="strip eq" id="strip"></div>
+    <div class="split">
+      <section class="pane pane-today" id="today" aria-label="오늘 처리할 것"></section>
+      <section class="pane"><div id="trend"></div><div id="contracts"></div></section>
+    </div>
+    ${CF.statusbar('2026년 11월 4일 (수) 기준 · 가상 데이터')}
+  </div>`;
+  CF.wireReset(main);
+
+  const step = (d) => {
+    let { y, m } = state;
+    m += d;
+    if (m < 1) { m = 12; y -= 1; }
+    if (m > 12) { m = 1; y += 1; }
+    state.y = y; state.m = m;
+    render();
+  };
+  const isNow = () => state.y === now.y && state.m === now.m;
+
+  function renderToolbar() {
+    const tb = document.getElementById('tb');
+    tb.innerHTML = `<div class="stepper" role="group" aria-label="월 선택"><button type="button" id="prev" aria-label="이전 달">${icon('chevron-left')}</button><b aria-live="polite">${state.y}년 ${state.m}월</b><button type="button" id="next" aria-label="다음 달">${icon('chevron-right')}</button></div>
+      ${isNow() ? '' : '<button type="button" class="ghost" id="go-now">이번 달로</button>'}
+      <span class="spacer"></span>
+      <a class="ghost" href="ledger.html?view=kanban">${icon('square-kanban')} 칸반</a>
+      <a class="ghost" href="ledger.html?view=calendar">${icon('calendar-days')} 캘린더</a>
+      <a class="primary" style="padding:0 14px" href="ledger.html">수금 원장 ${icon('arrow-right')}</a>`;
+    tb.querySelector('#prev').addEventListener('click', () => step(-1));
+    tb.querySelector('#next').addEventListener('click', () => step(1));
+    const g = tb.querySelector('#go-now');
+    if (g) g.addEventListener('click', () => { state.y = now.y; state.m = now.m; render(); });
+  }
+
+  /* 그달에 본계약으로 넘어간 거래 */
+  function monthContracts() {
+    const key = CF.monthKey(state.y, state.m);
+    return CF.db.deals.filter((d) => d.stageChangedAt.startsWith(key)).sort((a, b) => (a.stageChangedAt < b.stageChangedAt ? 1 : -1));
+  }
+
+  function renderStrip() {
+    const s = CF.monthStats(state.y, state.m);
+    const prevM = state.m === 1 ? { y: state.y - 1, m: 12 } : { y: state.y, m: state.m - 1 };
+    const prevT = CF.trend().find((x) => x.y === prevM.y && x.m === prevM.m);
+    const prevVal = prevT ? prevT.collected : 0;
+    const activeN = CF.db.expenses.filter((e) => e.isActive).length;
+    const weekDue = CF.allPayments().filter(({ p }) => {
+      if (p.status !== 'pending' && p.status !== 'partial') return false;
+      const due = effectiveDue(p);
+      if (!due) return false;
+      const n = daysFrom(due);
+      return n >= 0 && n <= 7;
+    }).reduce((a, { p }) => a + CF.ourPart(p, remaining(p)), 0);
+    const owed = s.pending + s.overdue;
+    const t = CF.trend().find((x) => x.y === state.y && x.m === state.m);
+    const staff = t ? t.staff : s.staff;
+    const net = t ? t.net : s.net;
+    document.getElementById('strip').innerHTML = `
+      <div class="stat"><div class="l">수금 (우리 몫)</div><div class="v">${money(t ? t.collected : s.collected)}</div><div class="h">${prevM.m}월 ${money(prevVal)}</div></div>
+      <div class="eq-op" aria-hidden="true">−</div>
+      <div class="stat"><div class="l">직원 수당</div><div class="v">${money(staff)}</div><div class="h"><a class="link" href="employee-settlements.html">배분률 기준</a></div></div>
+      <div class="eq-op" aria-hidden="true">−</div>
+      <div class="stat"><div class="l">고정비</div><div class="v">${money(s.expense)}</div><div class="h"><a class="link" href="expenses.html">항목 ${activeN}건</a></div></div>
+      <div class="eq-op" aria-hidden="true">=</div>
+      <div class="stat"><div class="l">순이익</div><div class="v ${net < 0 ? 'red' : ''}">${money(net)}</div><div class="h">부가세 제외</div></div>
+      <div class="eq-gap"></div>
+      <div class="stat right"><div class="l">받을 돈 (우리 몫)</div><div class="v">${money(owed)}</div><div class="h">${s.overdue > 0 ? `<span class="red">연체 ${money(s.overdue)}</span>` : '연체 없음'}${isNow() && weekDue ? ` · 7일 내 ${money(weekDue)}` : ''}</div></div>
+      <div class="stat right"><div class="l">부가세 예수금</div><div class="v">${money(s.vat)}</div><div class="h">신고 때 낼 돈</div></div>`;
+  }
+
+  /* 오늘 할 일은 고른 달과 상관없이 항상 지금 기준이다 */
+  function buildGroups() {
+    const pays = CF.allPayments();
+    const overdue = pays.filter(({ p }) => isOverdue(p)).sort((a, b) => (effectiveDue(a.p) < effectiveDue(b.p) ? -1 : 1));
+    const adj = CF.db.adjustments.filter((a) => a.status === 'requested');
+    const week = pays.filter(({ p }) => {
+      if (!CF.isOpenPay(p) || isOverdue(p)) return false;
+      const due = effectiveDue(p);
+      if (!due) return false;
+      const n = daysFrom(due);
+      return n >= 0 && n <= 7;
+    }).sort((a, b) => (effectiveDue(a.p) < effectiveDue(b.p) ? -1 : 1));
+    const evidence = pays.flatMap(({ deal, p }) => CF.pendingEvidence(p).map((r) => ({ deal, p, r }))).sort((a, b) => (CF.evidenceDue(a.r) < CF.evidenceDue(b.r) ? -1 : 1));
+    const drafts = pays.filter(({ p }) => p.status === 'draft');
+    const overCap = pays.filter(({ deal, p }) => CF.overCap(deal, p) > 0);
+    const unassigned = CF.db.deals.filter((d) => !d.isCancelled && !d.participants.length);
+    return { overdue, adj, week, evidence, drafts, overCap, unassigned };
+  }
+
+  function rowHTML(deal, p, when, whenCls, action) {
+    return `<div class="a-row"><div class="a-main"><button type="button" class="nm" data-open="${deal.id}" data-p="${p.id}">${esc(loc(deal))}</button><span class="meta">${sideLabel(p)} · ${esc(payerName(deal, p))}</span></div>
+      <div class="a-when ${whenCls || ''}">${when}</div><div class="a-amt">${money(remaining(p) || p.expectedAmount)}</div><div class="a-act">${action}</div></div>`;
+  }
+
+  function renderToday() {
+    const g = buildGroups();
+    const total = g.overdue.length + g.adj.length + g.week.length + g.evidence.length + g.drafts.length + g.overCap.length + g.unassigned.length;
+    const sum = (list) => list.reduce((a, x) => a + (remaining(x.p) || x.p.expectedAmount), 0);
+    const section = (key, ic, label, n, sumText, rows) => {
+      if (!n) return '';
+      const isClosed = closed.has(key);
+      return `<button type="button" class="ghead ${isClosed ? 'closed' : ''}" data-toggle="${key}" aria-expanded="${!isClosed}">${icon('chevron-down', 'ch')}${ic}<b>${label}</b><span class="n">${n}</span><span class="sum">${sumText}</span></button>${isClosed ? '' : rows}`;
+    };
+    const overdueRows = g.overdue.map(({ deal, p }) => rowHTML(deal, p, rel(effectiveDue(p)), 'red',
+      `<button type="button" class="btn" data-dun="${p.id}" ${CF.db.dunned[p.id] ? 'disabled' : ''}>${CF.db.dunned[p.id] ? '독촉함' : '독촉'}</button><button type="button" class="btn" data-collect="${p.id}">수금 처리</button>`)).join('');
+    const adjRows = g.adj.map((a) => {
+      const hit = CF.findPay(a.paymentId);
+      const action = CF.canDecide()
+        ? `<button type="button" class="btn" data-reject="${a.id}">반려</button>${hit && CF.adjustmentProblem(a, hit.p) ? `<button type="button" class="btn dark" data-decide="${a.id}">검토</button>` : `<button type="button" class="btn dark" data-approve="${a.id}">승인</button>`}`
+        : '<span class="muted" style="font-size:12px">대표 승인 대기</span>';
+      return `<div class="a-row"><div class="a-main"><button type="button" class="nm" data-decide="${a.id}">${esc(hit ? loc(hit.deal) : a.code)}</button><span class="meta" title="${esc(a.reason)}">${CF.ADJ[a.type]} · ${esc(a.reason)}</span></div><div class="a-when">${esc(a.requestedBy)}</div><div class="a-amt">${money(a.amount)}</div><div class="a-act">${action}</div></div>`;
+    }).join('');
+    const weekRows = g.week.map(({ deal, p }) => rowHTML(deal, p, rel(effectiveDue(p)), '', `<button type="button" class="btn" data-collect="${p.id}">수금 처리</button>`)).join('');
+    const evRows = g.evidence.map(({ deal, p, r }) => {
+      const due = CF.evidenceDue(r);
+      return `<div class="a-row"><div class="a-main"><button type="button" class="nm" data-open="${deal.id}" data-p="${p.id}">${esc(loc(deal))}</button><span class="meta">${CF.EVIDENCE[r.evidenceType]} · ${esc(payerName(deal, p))} · ${md(r.date)} ${esc(CF.METHOD[r.method])}</span></div><div class="a-when ${due < TODAY ? 'red' : ''}" title="발행 기한 ${CF.ymd(due)}">${due < TODAY ? `${-daysFrom(due)}일 지남` : `기한 ${rel(due)}`}</div><div class="a-amt">${money(CF.round1(r.amount + r.vat))}</div><div class="a-act"><button type="button" class="btn" data-evidence="${p.id}" data-r="${r.id}">증빙 기록</button></div></div>`;
+    }).join('');
+    const draftRows = g.drafts.map(({ deal, p }) => rowHTML(deal, p, '작성중', '', `<button type="button" class="btn" data-confirm="${p.id}">청구 확정</button>`)).join('');
+    const capRows = g.overCap.map(({ deal, p }) => {
+      const over = CF.overCap(deal, p);
+      const got = CF.received(p) > CF.legalCap(deal).amount;
+      return `<div class="a-row"><div class="a-main"><button type="button" class="nm" data-open="${deal.id}" data-p="${p.id}">${esc(loc(deal))}</button><span class="meta">${sideLabel(p)} · 청구 ${money(p.expectedAmount)} · 상한 ${money(CF.legalCap(deal).amount)}</span></div><div class="a-when red">${got ? '더 받음' : '초과 청구'}</div><div class="a-amt red">${money(over)}</div><div class="a-act">${CF.isOpenPay(p) ? `<button type="button" class="btn" data-cap="${p.id}">상한으로 낮추기</button>` : `<button type="button" class="btn" data-open="${deal.id}" data-p="${p.id}">확인</button>`}</div></div>`;
+    }).join('');
+    const unRows = g.unassigned.map((d) => `<div class="a-row"><div class="a-main"><button type="button" class="nm" data-open="${d.id}">${esc(loc(d))}</button><span class="meta">${CF.statusLabel('stage', d.stage)} · 직원 정산에 잡히지 않습니다</span></div><div class="a-when">${CF.md(d.stageChangedAt)} 계약</div><div class="a-amt">${money(dealSum(d).billed)}</div><div class="a-act"><button type="button" class="btn" data-parts="${d.id}">담당자 배정</button></div></div>`).join('');
+
+    document.getElementById('today').innerHTML = `<div class="pane-head">오늘 처리할 것 <span class="n">${total}</span></div>
+      ${total === 0 ? `<div class="empty">${icon('circle-check')}<b>지금 처리할 일이 없습니다</b><p>연체, 승인 대기, 7일 내 수금 예정이 모두 없습니다.</p></div>` : ''}
+      ${section('overdue', `<span class="red gico">${icon('triangle-alert')}</span>`, '연체', g.overdue.length, money(sum(g.overdue)), overdueRows)}
+      ${section('cap', `<span class="red gico">${icon('triangle-alert')}</span>`, '법정 상한 초과', g.overCap.length, money(g.overCap.reduce((a, x) => a + CF.overCap(x.deal, x.p), 0)), capRows)}
+      ${section('adj', `<span class="muted gico">${icon('circle-pause')}</span>`, '조정 승인 대기', g.adj.length, money(g.adj.reduce((a, x) => a + x.amount, 0)), adjRows)}
+      ${section('evidence', `<span class="muted gico">${icon('receipt-text')}</span>`, '증빙 미발행', g.evidence.length, money(CF.round1(g.evidence.reduce((a, x) => a + x.r.amount + x.r.vat, 0))), evRows)}
+      ${section('week', `<span class="muted gico">${icon('clock')}</span>`, '7일 내 수금 예정', g.week.length, money(sum(g.week)), weekRows)}
+      ${section('draft', `<span class="muted gico">${icon('pencil')}</span>`, '확정 안 된 청구', g.drafts.length, money(sum(g.drafts)), draftRows)}
+      ${section('unassigned', `<span class="muted gico">${icon('users')}</span>`, '담당자 없는 거래', g.unassigned.length, '', unRows)}`;
+  }
+
+  /* 차트: 색 #0f7b6c/#79b8ac는 dataviz 검증기 ordinal 모드 통과값 */
+  const COL_DONE = '#0f7b6c';
+  const COL_PLAN = '#79b8ac';
+  function renderTrend() {
+    const data = CF.trend();
+    const host = document.getElementById('trend');
+    const expense = CF.monthlyExpense();
+    host.innerHTML = `<div class="pane-head">월별 수금 (우리 몫)<div class="mode" role="group" aria-label="보기 방식"><button type="button" data-mode="chart" class="${state.chart === 'chart' ? 'on' : ''}">차트</button><button type="button" data-mode="table" class="${state.chart === 'table' ? 'on' : ''}">표</button></div></div>
+      <div class="${state.chart === 'chart' ? 'chart-wrap' : ''}" id="trend-body"></div>`;
+    const body = host.querySelector('#trend-body');
+    if (state.chart === 'table') {
+      body.innerHTML = `<table class="trend-table"><thead><tr><th>월</th><th>수금</th><th>예정</th><th>직원 수당</th><th>고정비</th><th>순이익</th></tr></thead><tbody>${data.map((d) => `<tr class="${d.y === state.y && d.m === state.m ? 'sel' : ''}"><td>${d.y === 2027 ? "'27." : ''}${d.m}월</td><td>${money(d.collected)}</td><td>${money(d.forecast)}</td><td>${money(d.staff)}</td><td>${money(d.expense)}</td><td class="${d.net < 0 ? 'red' : ''}">${money(d.net)}</td></tr>`).join('')}</tbody></table>`;
+      return;
+    }
+    body.innerHTML = `<div class="legend"><span><i style="background:${COL_DONE}"></i>수금</span><span><i style="background:${COL_PLAN}"></i>예정</span><span><i class="line"></i>월 고정비 ${money(expense)}</span><span class="unit">단위 만원</span></div><div id="plot"></div>`;
+    const plot = body.querySelector('#plot');
+    const W = Math.max(280, plot.clientWidth);
+    const H = 172; const ml = 40; const mr = 4; const mt = 18; const mb = 24;
+    const peak = Math.max(...data.map((d) => d.collected + d.forecast), expense, 1);
+    const stepV = peak > 6000 ? 2000 : 1000;
+    const max = Math.ceil(peak / stepV) * stepV;
+    const y = (v) => mt + (H - mt - mb) * (1 - v / max);
+    const band = (W - ml - mr) / data.length;
+    const bw = Math.min(24, Math.round(band * 0.5));
+    let grid = '';
+    for (let v = 0; v <= max; v += stepV) {
+      grid += `<line x1="${ml}" x2="${W - mr}" y1="${y(v)}" y2="${y(v)}" stroke="${v === 0 ? '#d8d6d0' : '#eeeeec'}" /><text x="${ml - 8}" y="${y(v) + 4}" text-anchor="end">${v.toLocaleString()}</text>`;
+    }
+    const roundTop = (x, top, w, h) => {
+      const r = Math.min(4, h);
+      return `M${x} ${top + h}V${top + r}Q${x} ${top} ${x + r} ${top}H${x + w - r}Q${x + w} ${top} ${x + w} ${top + r}V${top + h}Z`;
+    };
+    const bars = data.map((d, i) => {
+      const x = ml + band * i + (band - bw) / 2;
+      const base = y(0);
+      const hDone = base - y(d.collected);
+      const hPlan = base - y(d.forecast);
+      const sel = d.y === state.y && d.m === state.m;
+      let marks = '';
+      const hasDone = d.collected > 0; const hasPlan = d.forecast > 0;
+      if (hasDone) marks += hasPlan
+        ? `<rect x="${x}" y="${base - hDone}" width="${bw}" height="${hDone}" fill="${COL_DONE}" />`
+        : `<path d="${roundTop(x, base - hDone, bw, hDone)}" fill="${COL_DONE}" />`;
+      if (hasPlan) {
+        const top = base - hDone - hPlan;
+        const h = Math.max(1, hPlan - (hasDone ? 2 : 0));
+        marks += `<path d="${roundTop(x, top, bw, h)}" fill="${COL_PLAN}" />`;
+      }
+      const total = d.collected + d.forecast;
+      const label = sel && total ? `<text class="lab" x="${x + bw / 2}" y="${y(total) - 5}" text-anchor="middle">${money(total).replace('만', '')}</text>` : '';
+      const name = `${d.y === 2027 ? "'27." : ''}${d.m}월`;
+      const aria = `${name} 수금 ${money(d.collected)}, 예정 ${money(d.forecast)}, 고정비 ${money(d.expense)}`;
+      return `<g class="bar" tabindex="0" role="button" aria-label="${aria}" data-i="${i}"><rect class="hit" x="${ml + band * i + 1}" y="${mt - 14}" width="${band - 2}" height="${H - mt - mb + 14}" fill="transparent" rx="4" />${marks}${label}<text class="x ${sel ? 'sel' : ''}" x="${x + bw / 2}" y="${H - 6}" text-anchor="middle">${name}</text></g>`;
+    }).join('');
+    const line = `<line x1="${ml}" x2="${W - mr}" y1="${y(expense)}" y2="${y(expense)}" stroke="#787774" stroke-width="1.5" pointer-events="none" />`;
+    plot.innerHTML = `<svg class="chart" viewBox="0 0 ${W} ${H}" height="${H}" role="group" aria-label="월별 수금 막대 차트">${grid}${bars}${line}</svg>`;
+
+    const tip = () => {
+      let t = document.getElementById('tt');
+      if (!t) { t = CF.el('<div class="tooltip" id="tt" role="tooltip"></div>'); document.body.append(t); }
+      return t;
+    };
+    const show = (i, cx, cy) => {
+      const d = data[i]; const t = tip();
+      t.innerHTML = '';
+      const head = document.createElement('div'); head.className = 'tt-h'; head.textContent = `${d.y}년 ${d.m}월`; t.append(head);
+      const rows = [['수금', d.collected, COL_DONE], ['예정', d.forecast, COL_PLAN], ['직원 수당', d.staff, null], ['고정비', d.expense, '#787774'], ['순이익', d.net, null]];
+      rows.forEach(([k, v, c]) => {
+        if (k === '예정' && !v) return;
+        const r = document.createElement('div'); r.className = 'tt-r';
+        if (c) { const key = document.createElement('i'); key.className = 'key'; key.style.background = c; r.append(key); }
+        const l = document.createElement('span'); l.textContent = k; r.append(l);
+        const b = document.createElement('b'); b.textContent = money(v); r.append(b);
+        t.append(r);
+      });
+      if (d.overdue) { const n = document.createElement('div'); n.className = 'tt-h'; n.style.margin = '4px 0 0'; n.textContent = `예정에 연체 ${money(d.overdue)} 포함`; t.append(n); }
+      t.hidden = false;
+      const w = t.offsetWidth;
+      t.style.left = `${Math.min(innerWidth - w - 8, cx + 12)}px`;
+      t.style.top = `${cy - 20}px`;
+    };
+    const hide = () => { const t = document.getElementById('tt'); if (t) t.hidden = true; };
+    plot.querySelectorAll('.bar').forEach((g) => {
+      const i = Number(g.dataset.i);
+      g.addEventListener('pointermove', (e) => show(i, e.clientX, e.clientY));
+      g.addEventListener('pointerleave', hide);
+      g.addEventListener('focus', () => { const r = g.getBoundingClientRect(); show(i, r.right, r.top + 40); });
+      g.addEventListener('blur', hide);
+      const pick = () => { state.y = data[i].y; state.m = data[i].m; hide(); render(); };
+      g.addEventListener('click', pick);
+      g.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick(); } });
+    });
+  }
+
+  function renderContracts() {
+    const cs = monthContracts();
+    const totals = cs.reduce((a, d) => { const s = dealSum(d); a.billed += s.billed; a.got += s.collected; return a; }, { billed: 0, got: 0 });
+    const pct = totals.billed ? Math.round((totals.got / totals.billed) * 100) : 0;
+    document.getElementById('contracts').innerHTML = `<div class="pane-head" style="top:0">${state.m}월 계약 수수료 <span class="n">${cs.length}</span>${cs.length ? `<span class="sum">${money(totals.billed)} · 수금 ${pct}%</span>` : ''}</div>
+      ${cs.length === 0 ? '<div class="empty" style="padding:28px 24px"><p>이 달에 새로 계약된 거래가 없습니다.</p></div>' : cs.map((d) => {
+        const s = dealSum(d);
+        const p = s.billed ? Math.round((s.collected / s.billed) * 100) : 0;
+        return `<button type="button" class="c-row" data-open="${d.id}"><span class="c-name"><span>${esc(loc(d))}</span>${badge('tx', d.transactionType)}</span><span class="tnum" style="text-align:right">${money(s.billed)}</span><span class="c-pct"><span>${p}%</span><span class="meter"><i style="width:${p}%"></i></span></span></button>`;
+      }).join('')}`;
+  }
+
+  function render() {
+    renderToolbar(); renderStrip(); renderToday(); renderTrend(); renderContracts();
+  }
+
+  main.addEventListener('click', (e) => {
+    const t = e.target.closest('button,[data-mode]');
+    if (!t) return;
+    const ds = t.dataset;
+    if (ds.toggle) { if (closed.has(ds.toggle)) closed.delete(ds.toggle); else closed.add(ds.toggle); renderToday(); }
+    else if (ds.mode) { state.chart = ds.mode; renderTrend(); }
+    else if (ds.open) CF.openDeal(ds.open, { paymentId: ds.p });
+    else if (ds.collect) CF.collectDialog(ds.collect);
+    else if (ds.dun) CF.dun(ds.dun);
+    else if (ds.evidence) CF.evidenceDialog(ds.evidence, ds.r);
+    else if (ds.cap) CF.lowerToCap(ds.cap);
+    else if (ds.parts) CF.partsDialog(ds.parts);
+    else if (ds.confirm) CF.confirmDraftDialog(ds.confirm);
+    else if (ds.approve) CF.decideAdjustment(ds.approve, true);
+    else if (ds.reject) CF.decideAdjustment(ds.reject, false);
+    else if (ds.decide) { if (CF.canDecide()) CF.decideDialog(ds.decide); else { const a = CF.db.adjustments.find((x) => x.id === ds.decide); CF.openDeal(a.dealId, { paymentId: a.paymentId }); } }
+  });
+
+  CF.onChange(render);
+  let rt;
+  window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(renderTrend, 80); });
+  render();
+})();
+</script>
+</body>
+</html>

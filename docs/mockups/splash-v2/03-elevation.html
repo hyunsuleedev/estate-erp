@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>3 · 입면도 — 스플래시 시안</title>
+<link rel="stylesheet" href="stage.css">
+<style>
+  .d3 { transition: opacity 0.45s ease-out;
+    background: linear-gradient(rgb(55 53 47 / 0.045) 1px, transparent 1px) 0 0 / 100% 24px, linear-gradient(90deg, rgb(55 53 47 / 0.045) 1px, transparent 1px) 0 0 / 24px 100%, var(--paper); }
+  .d3 .col { display: grid; justify-items: center; gap: 26px; margin-top: -30px; transition: transform 0.5s var(--out); }
+  .d3 .scene { width: min(520px, 78vw); height: auto; }
+  .d3 .scene * { vector-effect: non-scaling-stroke; }
+  .d3 .ground { stroke: var(--ink); stroke-width: 1.5; stroke-dasharray: 100; stroke-dashoffset: 100; animation: d3-draw 0.7s var(--inout) both; }
+  @keyframes d3-draw { to { stroke-dashoffset: 0; } }
+  .d3 .floor { opacity: 0; }
+  .d3 .floor.in { animation: d3-in 0.32s var(--out) both; }
+  @keyframes d3-in { from { opacity: 0; transform: translateY(-7px); } to { opacity: 1; } }
+  .d3 .floor rect.slab { fill: var(--paper); stroke: var(--ink); stroke-width: 1.2; }
+  .d3 .wd { fill: none; stroke: rgb(42 51 35 / 0.45); stroke-width: 0.9; transition: fill 0.3s, stroke 0.3s; }
+  .d3 .wd.lit { fill: var(--ink); stroke: var(--ink); }
+  .d3 .roof { opacity: 0; stroke: var(--ink); stroke-width: 1.2; fill: var(--paper); }
+  .d3 .roof.in { animation: d3-in 0.32s var(--out) both; }
+  .d3 .dim { stroke: var(--muted); stroke-width: 1; animation: d3-fade 0.5s 0.3s both; }
+  .d3 .lbl { font-size: 10.5px; fill: var(--muted); animation: d3-fade 0.5s 0.4s both; }
+  .d3 .marker { transition: transform 0.3s var(--out); animation: d3-fade 0.5s 0.4s both; }
+  .d3 .marker text { font-size: 11px; fill: var(--ink); font-weight: 600; }
+  @keyframes d3-fade { from { opacity: 0; } }
+  .d3 .brand { animation: d3-brand 0.5s var(--out) 0.2s both; }
+  @keyframes d3-brand { from { opacity: 0; transform: translateY(6px); } }
+  .d3[data-state="exit"] { opacity: 0; }
+  .d3[data-state="exit"] .col { transform: translateY(-14px); }
+  .win[data-state="exit"] .dest-in { animation: d3-rise 0.5s var(--out) both; }
+  @keyframes d3-rise { from { transform: translateY(14px); } }
+</style>
+</head>
+<body>
+<template id="tpl">
+  <main class="splash d3">
+    <div class="col">
+      <svg class="scene" viewBox="0 0 520 250">
+        <g class="blds"></g>
+        <line class="ground" pathLength="100" x1="40" y1="214" x2="490" y2="214"/>
+        <line class="dim" x1="64" y1="214" x2="64" y2="22"/>
+        <g class="ticks"></g>
+        <g class="marker"><path d="M70 0l8-4v8z" fill="#2a3323"/><text class="mono" x="46" y="4" text-anchor="end">0F</text></g>
+      </svg>
+      <div class="brand"><span data-logo></span>에스테잇플로우</div>
+    </div>
+  </main>
+</template>
+<script>
+  const NS = "http://www.w3.org/2000/svg";
+  const el = (tag, attrs, parent, text) => {
+    const n = document.createElementNS(NS, tag);
+    for (const k in attrs) n.setAttribute(k, attrs[k]);
+    if (text) n.textContent = text;
+    parent?.append(n);
+    return n;
+  };
+  const BLDS = [
+    { x: 118, w: 92, n: 9, cols: 5, name: "101동" },
+    { x: 232, w: 110, n: 12, cols: 6, name: "102동" },
+    { x: 364, w: 80, n: 7, cols: 4, name: "103동" },
+  ];
+  const H = 15, BASE = 214, MAX = 12;
+  let order = [], roofs = [], windows = [], shown = 0, lastLit = 0, marker, markerText;
+  window.Demo = {
+    min: 1700, readyMs: 520, exitMs: 480,
+    mount(root) {
+      const host = root.querySelector(".blds");
+      const ticks = root.querySelector(".ticks");
+      marker = root.querySelector(".marker");
+      markerText = marker.querySelector("text");
+      marker.style.transform = `translateY(${BASE}px)`;
+      order = []; roofs = []; windows = []; shown = 0;
+      for (let f = 0; f <= MAX; f++) el("line", { class: "dim", x1: f % 4 ? 61 : 58, x2: 64, y1: BASE - f * H, y2: BASE - f * H }, ticks);
+      const stacks = BLDS.map((b) => {
+        const g = el("g", {}, host);
+        el("text", { class: "lbl mono", x: b.x + b.w / 2, y: BASE + 18, "text-anchor": "middle" }, g, b.name);
+        const floors = [];
+        for (let f = 0; f < b.n; f++) {
+          const y = BASE - (f + 1) * H;
+          const fg = el("g", { class: "floor", "data-f": f + 1 }, g);
+          el("rect", { class: "slab", x: b.x, y, width: b.w, height: H }, fg);
+          const gap = b.w / b.cols;
+          for (let c = 0; c < b.cols; c++) windows.push(el("rect", { class: "wd", x: b.x + gap * c + gap / 2 - 4.5, y: y + 4, width: 9, height: 7 }, fg));
+          floors.push(fg);
+        }
+        const top = BASE - b.n * H;
+        roofs.push(el("rect", { class: "roof", x: b.x + b.w / 2 - 12, y: top - 7, width: 24, height: 7 }, g));
+        return floors;
+      });
+      for (let f = 0; f < MAX; f++) stacks.forEach((s) => s[f] && order.push(s[f]));
+    },
+    progress(p, root, t) {
+      const want = Math.round(Math.min(p / 0.95, 1) * order.length);
+      while (shown < want) {
+        const f = order[shown++];
+        f.classList.add("in");
+        const n = +f.dataset.f;
+        marker.style.transform = `translateY(${BASE - n * H}px)`;
+        markerText.textContent = n + "F";
+      }
+      if (t - lastLit > 110 || t < lastLit) {
+        lastLit = t;
+        const visible = windows.filter((w) => w.parentNode.classList.contains("in") && !w.classList.contains("lit"));
+        visible[Math.floor(Math.random() * visible.length)]?.classList.add("lit");
+      }
+    },
+    state(name) {
+      if (name === "ready") roofs.forEach((r) => r.classList.add("in"));
+    },
+  };
+</script>
+<script src="stage.js"></script>
+</body>
+</html>

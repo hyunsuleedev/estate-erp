@@ -1,0 +1,469 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>설정 · UI 개선 데모</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="ui.css">
+<style>
+  .ph .sub { font-size: 13px; color: var(--text-2); margin-left: 4px; }
+  .setwrap { flex: 1; min-height: 0; display: flex; border-top: 1px solid var(--line-2); }
+  /* 설정 범주 */
+  .snav { width: 248px; flex: none; display: flex; flex-direction: column; border-right: 1px solid var(--line-2); padding: 12px 10px 0 calc(var(--gutter) - 10px); min-height: 0; }
+  .snav .field { width: auto; margin: 0 2px 4px; }
+  .snav .cntl { font-size: 12px; color: var(--text-3); padding: 2px 10px 0; }
+  .snav nav { flex: 1; overflow: auto; padding-bottom: 8px; }
+  .snav .gl { font-size: 12px; color: var(--text-3); padding: 12px 10px 4px; }
+  .sitem { width: 100%; display: flex; align-items: center; gap: 10px; padding: 7px 10px; border: 0; border-radius: 8px; background: transparent; font: inherit; text-align: left; cursor: pointer; color: var(--text); }
+  .sitem:hover { background: var(--hover); }
+  .sitem.on { background: var(--press); }
+  .sitem > .i { width: 16px; height: 16px; color: var(--text-2); flex: none; }
+  .sitem .tx { flex: 1; min-width: 0; }
+  .sitem b { display: block; font-size: 13px; font-weight: 500; }
+  .sitem.on b { font-weight: 600; }
+  .sitem small { display: block; font-size: 12px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sitem .dirty { width: 7px; height: 7px; border-radius: 50%; background: var(--warn); flex: none; }
+  .snav .nf { border-top: 1px solid var(--line); padding: 10px 10px 12px; font-size: 12px; color: var(--text-2); }
+  .snav .nf b { display: block; font-size: 13px; font-weight: 500; color: var(--text); }
+  .snav .none { padding: 16px 10px; font-size: 13px; color: var(--text-3); }
+  /* 설정 본문 */
+  .spane { flex: 1; min-width: 0; display: flex; flex-direction: column; min-height: 0; }
+  .spane .scroll { flex: 1; }
+  .sbody { max-width: 860px; padding: 18px var(--gutter) 40px 28px; }
+  .sbody.wide { max-width: none; }
+  .pt { font-size: 12px; color: var(--text-3); }
+  .sbody > h2 { margin: 2px 0 2px; font-size: 16px; font-weight: 600; }
+  .sbody > .pd { margin: 0 0 6px; font-size: 13px; color: var(--text-2); }
+  .sh { margin: 22px 0 2px; padding-bottom: 8px; border-bottom: 1px solid var(--line-2); display: flex; align-items: baseline; gap: 10px; }
+  .sh b { font-size: 14px; font-weight: 600; }
+  .sh small { font-size: 12px; color: var(--text-2); }
+  .sh .btn { margin-left: auto; align-self: center; }
+  .srow { display: grid; grid-template-columns: 250px minmax(0, 1fr); gap: 24px; align-items: center; min-height: 52px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+  .srow .lb { font-size: 13px; font-weight: 500; }
+  .srow .lb small { display: block; font-weight: 400; font-size: 12px; color: var(--text-2); margin-top: 1px; line-height: 1.5; }
+  .srow .ct { display: flex; align-items: center; gap: 8px; min-width: 0; flex-wrap: wrap; }
+  .srow .val { font-size: 14px; }
+  .inp { width: 100%; max-width: 380px; height: 34px; padding: 0 10px; border: 0; border-radius: 8px; background: var(--paper); box-shadow: inset 0 0 0 1px var(--line-2); font: inherit; font-size: 14px; color: var(--text); outline: 0; }
+  textarea.inp { height: 110px; max-width: none; padding: 8px 10px; resize: vertical; line-height: 1.6; }
+  .inp:focus { box-shadow: inset 0 0 0 1px var(--accent), 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+  .inp[readonly] { background: var(--soft); color: var(--text-2); }
+  .inp.bad { box-shadow: inset 0 0 0 1px var(--danger); }
+  .num { display: inline-flex; align-items: center; gap: 8px; }
+  .num .inp { width: 96px; text-align: right; font-variant-numeric: tabular-nums; }
+  .num span { font-size: 13px; color: var(--text-2); width: 28px; }
+  .err { font-size: 12px; color: var(--danger); }
+  .hintw { font-size: 12px; color: var(--warn); margin: 8px 0 0; line-height: 1.6; }
+  .note { font-size: 12px; color: var(--text-2); line-height: 1.6; margin: 12px 0 0; padding: 10px 12px; border-radius: 8px; background: var(--soft); }
+  .savestrip { flex: none; display: flex; align-items: center; gap: 12px; height: 52px; padding: 0 var(--gutter) 0 28px; border-top: 1px solid var(--line-2); background: var(--paper); font-size: 13px; color: var(--text-2); }
+  .savestrip[hidden] { display: none; }
+  .srow.ro { min-height: 38px; padding: 4px 0; }
+  .kvline { display: flex; gap: 0; padding: 10px 0; border-bottom: 1px solid var(--line); }
+  .kvline div { flex: 1; font-size: 12px; color: var(--text-2); padding-left: 14px; border-left: 1px solid var(--line); }
+  .kvline div:first-child { padding-left: 0; border-left: 0; }
+  .kvline b { display: block; margin-top: 3px; font-size: 14px; font-weight: 500; color: var(--text); font-variant-numeric: tabular-nums; }
+  .savestrip .dotw { width: 7px; height: 7px; border-radius: 50%; background: var(--dot-ok); }
+  .savestrip.dirty .dotw { background: var(--warn); }
+  .savestrip .btn { margin-left: auto; }
+  .lrowlink { display: grid; grid-template-columns: 250px minmax(0, 1fr) auto; gap: 24px; align-items: center; min-height: 52px; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
+  .lrowlink b { font-weight: 500; }
+  .lrowlink span { color: var(--text-2); }
+  a.btn { text-decoration: none; }
+  /* 켜고 끄기 */
+  .sw { position: relative; width: 34px; height: 20px; border: 0; padding: 0; border-radius: 7px; background: var(--line-3); cursor: pointer; transition: background-color 0.15s; flex: none; vertical-align: middle; }
+  .sw::after { content: ""; position: absolute; left: 2px; top: 2px; width: 16px; height: 16px; border-radius: 5px; background: #fff; box-shadow: 0 1px 2px rgba(16, 24, 40, 0.25); transition: transform 0.15s; }
+  .sw[aria-checked="true"] { background: var(--accent); }
+  .sw[aria-checked="true"]::after { transform: translateX(14px); }
+  /* 서식 표 */
+  .ttbl { margin-top: 8px; }
+  .ttbl.tbl th:first-child, .ttbl.tbl td:first-child { padding-left: 4px; }
+  .ttbl.tbl th { position: static; }
+  .ttbl td.nm { font-weight: 500; }
+  .ttbl td.body { width: 100%; max-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--text-2); font-size: 13px; }
+  .ttbl td.c-act { width: 68px; padding: 0 4px 0 0 !important; text-align: right; }
+  .ttbl td.c-act .ib { width: 26px; height: 26px; opacity: 0; }
+  .ttbl tr:hover td.c-act .ib, .ttbl td.c-act .ib:focus-visible { opacity: 1; }
+  .ttbl tr.off td.nm, .ttbl tr.off td.body { color: var(--text-3); }
+  .defb { border: 0; background: transparent; padding: 0; font: inherit; cursor: pointer; }
+  .defb .t3:hover { color: var(--text); text-decoration: underline; }
+  /* MCP */
+  .keybox { border-radius: 10px; padding: 12px 14px; background: color-mix(in srgb, var(--dot-warn) 10%, var(--paper)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--dot-warn) 40%, transparent); font-size: 13px; width: 100%; }
+  .keybox p { margin: 0 0 8px; color: var(--warn); }
+  .keybox code, .kcode { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+  .keyline { display: flex; gap: 8px; align-items: center; }
+  .keyline code { flex: 1; min-width: 0; overflow: auto; padding: 7px 10px; border-radius: 6px; background: var(--paper); box-shadow: inset 0 0 0 1px var(--line-2); white-space: nowrap; }
+  .guide { margin-top: 10px; padding: 10px 12px; border-radius: 8px; background: var(--paper); font-size: 12px; color: var(--text-2); }
+  .guide b { color: var(--text); }
+  .guide ol { margin: 6px 0; padding-left: 18px; line-height: 1.7; }
+  .guide pre { margin: 6px 0; padding: 8px 10px; border-radius: 6px; background: var(--soft); overflow: auto; font-size: 11px; line-height: 1.5; }
+  .kcode { padding: 4px 8px; border-radius: 6px; background: var(--soft); }
+  /* 창 */
+  .mback { position: fixed; inset: 0; z-index: 60; background: rgba(20, 18, 12, 0.32); display: grid; place-items: center; }
+  .mdl { width: 540px; max-width: calc(100vw - 32px); max-height: calc(100vh - 48px); overflow: auto; border-radius: 14px; background: var(--paper); box-shadow: 0 24px 60px rgba(20, 18, 12, 0.3); }
+  .mdl.sm { width: 420px; }
+  .mdl h3 { margin: 0; padding: 18px 22px 4px; font-size: 16px; font-weight: 600; }
+  .mdl .desc { margin: 0; padding: 2px 22px 0; font-size: 13px; line-height: 1.6; color: var(--text-2); }
+  .mdl .mb { padding: 12px 22px 6px; display: grid; grid-template-columns: 1fr 1fr; gap: 12px 14px; }
+  .mdl .mb .full { grid-column: 1 / -1; }
+  .mdl .mb .inp { max-width: none; }
+  .mdl label.l { display: block; font-size: 12px; color: var(--text-2); margin-bottom: 5px; }
+  .mdl .mf { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 22px 18px; }
+  .tx3 { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .tgl { height: 28px; padding: 0 10px; border: 0; border-radius: 7px; background: var(--paper); box-shadow: inset 0 0 0 1px var(--line-2); font: inherit; font-size: 13px; color: var(--text-2); cursor: pointer; }
+  .tgl[aria-pressed="true"] { background: var(--accent-soft); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent); color: var(--accent-ink); font-weight: 500; }
+  .swl { display: flex; align-items: center; gap: 10px; font-size: 13px; cursor: pointer; }
+  .btn.dangerb { color: var(--danger); }
+</style>
+</head>
+<body data-active="settings">
+<main id="page">
+  <div class="ph">
+    <h1>설정</h1>
+    <span class="sub">업무 환경을 관리합니다.</span>
+  </div>
+  <div class="setwrap">
+    <aside class="snav">
+      <label class="field" data-icon="search"><input id="q" placeholder="설정 검색" aria-label="설정 검색"></label>
+      <div class="cntl" id="qcnt" hidden></div>
+      <nav id="snav" aria-label="설정 범주"></nav>
+      <div class="nf" id="nf"></div>
+    </aside>
+    <section class="spane">
+      <div class="scroll"><div class="sbody" id="pane"></div></div>
+      <div class="savestrip" id="strip" hidden></div>
+    </section>
+  </div>
+</main>
+
+<script src="shell.js"></script>
+<script>
+const { icon, av } = UI;
+const esc = (v) => String(v == null ? '' : v).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+const SECTIONS = [
+  { id: 'account', group: '개인', label: '계정 및 언어', desc: '내 프로필과 표시 언어', icon: 'user', kw: '내 계정 프로필 이름 로그인 아이디 이메일 전화 역할 자격 언어 한국어 영어', pane: '내 로그인 정보와 이 기기에서 사용할 표시 언어를 확인합니다.' },
+  { id: 'office', group: '사무소 운영', label: '사무소 정보', desc: '대표 정보와 팀 관리', icon: 'building', kw: '사무소 상호 대표 등록번호 전화 주소 직원 권한 플랜 구독 고정비', pane: '사무소의 공식 정보와 팀 운영 현황을 관리합니다.' },
+  { id: 'commission', group: '사무소 운영', label: '수수료 배분', desc: '거래 참여자 기본 배분', icon: 'won', kw: '수수료 배분 비율 매도 매수 단독중개 관리자 마감 보너스 정산', pane: '거래 생성 시 적용할 직원 수수료 배분의 기본값을 정합니다.' },
+  { id: 'templates', group: '사무소 운영', label: '계약서 서식', desc: '특약 문구와 인쇄 서식', icon: 'file', kw: '계약서 템플릿 특약 조항 확인설명 인쇄 표지 영수증 정산서', pane: '계약서 작성과 출력에 반복해서 사용하는 문구와 서식을 관리합니다.' },
+  { id: 'connections', group: '연결', label: '외부 연결', desc: '네이버와 MCP 접근 키', icon: 'sliders', kw: '네이버 광고 실명 인증 아이디 MCP API 키 Claude Desktop Codex AI 외부 연결 CP', pane: '광고 플랫폼 식별 정보와 외부 AI 도구의 접근 권한을 관리합니다.' },
+];
+const GROUPS = ['개인', '사무소 운영', '연결'];
+const LOCALES = { ko: '한국어', en: 'English' };
+const TX = [['sale', '매매'], ['jeonse', '전세'], ['monthly', '월세']];
+const CLAUSE_TYPE = { special_terms_clause: '특약사항', contract_clause: '계약 조항', confirmation_clause: '확인설명 문구', office_notice: '사무소 안내' };
+const PRINT_TYPE = { contract_cover: '계약서 표지', receipt: '영수증', ledger_print: '거래장부 출력', settlement: '정산서', office_notice: '사무소 안내문' };
+
+// 저장된 값
+const ME = { name: '이현수', role: '대표', loginId: 'hyunsu', email: 'hyunsu@estait.example', phone: '010-5241-7788', license: '개업공인중개사', locale: 'ko' };
+const TEAM = { active: 4, max: 5, managers: 1, total: 5, plan: '기본' };
+const SAVED = {
+  office: { name: '고덕 에스테잇 공인중개', ceoName: '이현수', licenseNo: '11740-2021-00187', phone: '02-442-7788', address: '서울 강동구 고덕로 333', detail: '고덕그라시움 상가 1층 112호' },
+  commission: { distributionType: 'percentage', defaultAgentRate: '50', listingAgentRate: '50', buyingAgentRate: '50', dualAgentRate: '70', managerRate: '10', closerBonus: '0' },
+  connections: { naverVerificationId: 'estait_godeok' },
+};
+const DRAFT = JSON.parse(JSON.stringify(SAVED));
+const SAVE_LABEL = { office: '사무소 정보 저장', commission: '배분 기준 저장', connections: '광고 연결 정보 저장' };
+let geo = 'ready';
+let SEQ = 0;
+const CLAUSES = [
+  ['반려동물 금지 특약', 'special_terms_clause', ['jeonse', 'monthly'], '임차인은 임대인의 서면 동의 없이 반려동물을 사육할 수 없으며, 위반 시 원상복구 비용을 부담한다.'],
+  ['잔금일 이전 근저당 말소', 'special_terms_clause', ['sale'], '매도인은 잔금 지급일까지 등기부상 근저당권 등 제한물권을 모두 말소하고 완전한 소유권을 이전한다.'],
+  ['전세보증보험 가입 협조', 'special_terms_clause', ['jeonse'], '임대인은 임차인의 전세보증금 반환보증 가입에 필요한 절차에 협조한다.'],
+  ['현 시설 상태 계약', 'contract_clause', [], '본 계약은 현 시설 상태에서의 계약이며, 계약 당사자는 현장을 확인하고 계약을 체결한다.'],
+  ['중개대상물 확인설명 고지', 'confirmation_clause', [], '개업공인중개사는 중개대상물 확인·설명서를 작성하여 거래 당사자에게 교부하고 설명하였다.'],
+  ['관리비 정산 안내', 'office_notice', ['jeonse', 'monthly'], '관리비와 공과금은 잔금일(입주일) 기준으로 정산한다.'],
+].map(([title, type, tx, body]) => ({ id: ++SEQ, title, type, tx, body }));
+const PRINTS = [
+  ['기본 계약서 표지', 'contract_cover', [], true, true], ['매매 계약 영수증', 'receipt', ['sale'], true, true], ['임대차 영수증', 'receipt', ['jeonse', 'monthly'], false, true],
+  ['월별 거래장부', 'ledger_print', [], true, true], ['직원 정산서', 'settlement', [], true, true], ['입주 안내문 (구버전)', 'office_notice', ['jeonse', 'monthly'], false, false],
+].map(([title, type, tx, isDefault, active]) => ({ id: ++SEQ, title, type, tx, isDefault, active }));
+const MCP = { prefix: 'esk_7f3a', fresh: null, copied: false };
+const state = { sec: 'account', q: '', ttab: 'clause' };
+try { const h = location.hash.slice(1) || localStorage.getItem('ui-refresh-settings-section'); if (SECTIONS.some((s) => s.id === h)) state.sec = h; } catch (e) {}
+
+const isDirty = (id) => !!SAVED[id] && Object.keys(SAVED[id]).some((k) => SAVED[id][k] !== DRAFT[id][k]);
+const txLabel = (tx) => (tx.length ? TX.filter(([v]) => tx.includes(v)).map(([v, l]) => `<span class="tag ${v}">${l}</span>`).join('') : '<span class="t2">전체 거래유형</span>');
+
+// 수수료 검증 (원본과 같은 문구)
+const RATE_FIELDS = [['defaultAgentRate', '기본 직원 배분율'], ['listingAgentRate', '매도측 담당 배분율'], ['buyingAgentRate', '매수측 담당 배분율'], ['dualAgentRate', '단독중개 담당 배분율'], ['managerRate', '관리자 배분율']];
+function rateError(v, kind) {
+  const s = String(v).trim();
+  const n = Number(s);
+  if (kind === 'rate') return s === '' || !Number.isFinite(n) || n < 0 || n > 100 ? '0~100 사이 숫자를 입력하세요.' : '';
+  return s === '' || !Number.isFinite(n) || n < 0 ? '0 이상의 금액을 입력하세요.' : '';
+}
+function validateCommission(f) {
+  for (const [k, label] of RATE_FIELDS) {
+    const s = String(f[k]).trim(), n = Number(s);
+    if (s === '' || !Number.isFinite(n)) return `${label}을 숫자로 입력하세요.`;
+    if (n < 0 || n > 100) return `${label}은 0~100 사이로 입력하세요.`;
+  }
+  return rateError(f.closerBonus, 'amount') ? '마감 담당 보너스는 0 이상의 금액으로 입력하세요.' : null;
+}
+
+// ── 그리기 ──
+function renderNav() {
+  const q = state.q.trim().toLowerCase();
+  const shown = SECTIONS.filter((s) => !q || `${s.label} ${s.desc} ${s.kw} ${s.group}`.toLowerCase().includes(q));
+  const cnt = document.getElementById('qcnt');
+  cnt.hidden = !q;
+  cnt.textContent = `${shown.length}개의 설정 범주`;
+  document.getElementById('snav').innerHTML = shown.length
+    ? GROUPS.map((g) => { const items = shown.filter((s) => s.group === g); return items.length ? `<div class="gl">${g}</div>${items.map((s) => `<button class="sitem ${s.id === state.sec ? 'on' : ''}" data-sec="${s.id}" aria-current="${s.id === state.sec}">${icon(s.icon)}<span class="tx"><b>${s.label}</b><small>${s.desc}</small></span>${isDirty(s.id) ? '<span class="dirty" title="저장하지 않은 변경사항" aria-label="저장하지 않은 변경사항"></span>' : ''}</button>`).join('')}` : ''; }).join('')
+    : `<div class="none"><b style="color:var(--text);display:block;margin-bottom:4px">‘${esc(state.q)}’과 일치하는 설정이 없습니다</b>사무소명, 수수료, 계약서, MCP처럼 설정 이름이나 관련 단어로 검색해 보세요.<div style="margin-top:10px"><button class="btn sm" data-qclear>검색 지우기</button></div></div>`;
+  document.getElementById('nf').innerHTML = `<b>${esc(SAVED.office.name)}</b>${TEAM.plan} 플랜 · ${TEAM.active}/${TEAM.max}명 사용 중`;
+}
+const row = (label, desc, ctl, cls = '') => `<div class="srow ${cls}"><div class="lb">${label}${desc ? `<small>${desc}</small>` : ''}</div><div class="ct">${ctl}</div></div>`;
+const sh = (t, d, extra = '') => `<div class="sh"><b>${t}</b><small>${d}</small>${extra}</div>`;
+const inp = (sec, k, attrs = '') => `<input class="inp" data-sec="${sec}" data-k="${k}" value="${esc(DRAFT[sec][k])}" ${attrs}>`;
+
+const PANES = {
+  account: () => sh('프로필', '현재 로그인한 계정의 식별 정보입니다.')
+    + row('이름', '', `${av(ME.name, 'md')}<span class="val" style="font-weight:500">${ME.name}</span><span class="tag purple">${ME.role}</span>`)
+    + row('로그인 ID', '', `<span class="val">${ME.loginId}</span>`, 'ro') + row('이메일', '', `<span class="val">${ME.email || '등록되지 않음'}</span>`, 'ro')
+    + row('전화번호', '', `<span class="val">${ME.phone || '등록되지 않음'}</span>`, 'ro') + row('자격 구분', '', `<span class="val">${ME.license}</span>`, 'ro')
+    + `<p class="note">프로필 정보는 <a href="employees.html" style="color:var(--accent-ink)">직원관리</a>에서 바꿉니다. 중개보조원 계정은 계약서에 서명할 수 없으며, 계약 체결은 개업·소속 공인중개사가 진행해야 합니다.</p>`
+    + sh('인터페이스', '이 기기에서 사용할 표시 방식을 선택합니다.')
+    + row('표시 언어', '메뉴와 지원되는 화면의 언어를 바로 변경합니다.', `<select class="inp" id="locale" style="width:180px">${Object.entries(LOCALES).map(([v, l]) => `<option value="${v}" ${ME.locale === v ? 'selected' : ''}>${l}</option>`).join('')}</select>`),
+
+  office: () => sh('운영 상태', '현재 플랜과 팀 사용 현황을 한눈에 확인합니다.')
+    + `<div class="kvline"><div>상태<b><span class="st ok">정상 운영 중</span></b></div><div>플랜<b>${TEAM.plan}</b></div><div>활성 계정<b>${TEAM.active}/${TEAM.max}명</b></div><div>매니저<b>${TEAM.managers}명</b></div></div>`
+    + sh('기본 정보', '계약서와 사무소 안내에 사용하는 공식 정보입니다.')
+    + row('사무소명', '', inp('office', 'name', 'placeholder="예: 강남공인중개사사무소"')) + row('대표자명', '', inp('office', 'ceoName', 'placeholder="예: 홍길동"'))
+    + row('중개업 등록번호', '', inp('office', 'licenseNo', 'placeholder="예: 11680-2026-00001"')) + row('대표 전화번호', '', inp('office', 'phone', 'placeholder="예: 02-1234-5678"'))
+    + row('주소', '우편번호 검색으로 도로명 주소를 고릅니다.', `<input class="inp" id="addr" value="${esc(DRAFT.office.address)}" readonly placeholder="주소 검색"><button class="btn" data-addr>${icon('search')}주소 검색</button>`)
+    + row('상세 주소', '', inp('office', 'detail', 'placeholder="동·층·호"'))
+    + (geo !== 'ready' && !isDirty('office') ? `<p class="hintw">주소는 저장됐지만 위치 확인은 아직 완료되지 않았습니다. <button class="btn sm" data-geo>${icon('pin')}위치 다시 확인</button></p>` : '')
+    + sh('관련 관리 화면', '자주 바뀌는 운영 정보는 해당 업무 화면에서 관리합니다.')
+    + `<div class="lrowlink"><b>직원 및 권한</b><span>전체 ${TEAM.total}명 · 활성 ${TEAM.active}명</span><a class="btn sm" href="employees.html">직원 관리 열기${icon('chevRight')}</a></div>`
+    + `<div class="lrowlink"><b>사무소 고정비</b><span>임대료·관리비 등 반복 비용은 캐시플로우에서 관리합니다.</span><a class="btn sm" href="cashflow-expenses.html">고정비 관리 열기${icon('chevRight')}</a></div>`,
+
+  commission: () => {
+    const num = (k, label, desc, kind) => { const err = rateError(DRAFT.commission[k], kind); return row(label, desc, `<span class="num"><input class="inp ${err ? 'bad' : ''}" data-sec="commission" data-k="${k}" data-kind="${kind}" value="${esc(DRAFT.commission[k])}" inputmode="decimal" aria-label="${label}"><span>${kind === 'rate' ? '%' : '만원'}</span></span><span class="err" data-err="${k}">${err}</span>`); };
+    return sh('배분 방식', '거래를 만들 때 직원 배분의 기본값으로 적용됩니다.')
+      + row('기본 계산 방식', '개별 거래나 직원에게 별도 비율이 있으면 그 값을 우선합니다.', `<select class="inp" data-sec="commission" data-k="distributionType" style="width:200px">${[['percentage', '비율 기준'], ['fixed', '고정액 기준'], ['custom', '거래별 직접 설정']].map(([v, l]) => `<option value="${v}" ${DRAFT.commission.distributionType === v ? 'selected' : ''}>${l}</option>`).join('')}</select>`)
+      + sh('담당자 기본 비율', '각 수수료에서 담당 직원에게 배분할 몫을 0~100%로 입력합니다.')
+      + num('defaultAgentRate', '기본 직원', '역할별 기준이 없을 때 적용하는 기본 배분율', 'rate') + num('listingAgentRate', '매도측 담당', '매도인 또는 임대인 측을 맡은 직원의 배분율', 'rate')
+      + num('buyingAgentRate', '매수측 담당', '매수인 또는 임차인 측을 맡은 직원의 배분율', 'rate') + num('dualAgentRate', '단독중개 담당', '한 직원이 양측을 모두 담당한 거래의 배분율', 'rate')
+      + num('managerRate', '관리자', '거래에 참여한 매니저의 기본 배분율', 'rate')
+      + sh('추가 지급', '비율 배분과 별도로 더하는 고정 금액입니다.') + num('closerBonus', '마감 담당 보너스', '잔금·등기 등 거래 마감을 담당한 직원에게 지급하는 금액', 'amount');
+  },
+
+  templates: () => {
+    const clause = state.ttab === 'clause';
+    const tabs = `<div class="seg" role="tablist" style="margin-top:14px"><button role="tab" data-ttab="clause" class="${clause ? 'on' : ''}">특약 템플릿 ${CLAUSES.length}</button><button role="tab" data-ttab="print" class="${clause ? '' : 'on'}">인쇄 서식 ${PRINTS.length}</button></div>`;
+    const act = (id, what) => `<td class="c-act"><button class="ib" data-edit="${id}" aria-label="${what} 수정">${icon('note')}</button><button class="ib" data-del="${id}" aria-label="${what} 삭제">${icon('x')}</button></td>`;
+    if (clause) {
+      return `<div class="pt" style="margin-top:6px">사무소 계약서 라이브러리 — 계약서 작성 시 불러오는 특약 문구와 인쇄 서식을 사무소 단위로 관리합니다.</div>${tabs}`
+        + sh('특약 템플릿', '계약서 작성 화면의 특약 입력에서 바로 불러올 수 있습니다.', `<button class="btn sm" data-add>${icon('plus')}특약 추가</button>`)
+        + (CLAUSES.length ? `<table class="tbl ttbl"><thead><tr><th>${icon('note', 'hi')}제목</th><th>${icon('tag', 'hi')}구분</th><th>${icon('handshake', 'hi')}적용 거래유형</th><th>${icon('list', 'hi')}내용</th><th></th></tr></thead><tbody>${CLAUSES.map((c) =>
+          `<tr data-id="${c.id}"><td class="nm">${esc(c.title)}</td><td>${CLAUSE_TYPE[c.type]}</td><td>${txLabel(c.tx)}</td><td class="body" title="${esc(c.body)}">${esc(c.body)}</td>${act(c.id, '특약')}</tr>`).join('')}</tbody></table>`
+          : `<div class="empty"><b>등록된 특약 템플릿이 없습니다</b>자주 쓰는 특약 문구를 등록하면 계약서 작성 시 한 번에 삽입할 수 있습니다.</div>`);
+    }
+    return `<div class="pt" style="margin-top:6px">사무소 계약서 라이브러리 — 계약서 작성 시 불러오는 특약 문구와 인쇄 서식을 사무소 단위로 관리합니다.</div>${tabs}`
+      + sh('인쇄 서식', '계약서 표지·영수증·정산서 등 인쇄물의 기본 서식을 지정합니다.', `<button class="btn sm" data-add>${icon('plus')}서식 추가</button>`)
+      + (PRINTS.length ? `<table class="tbl ttbl"><thead><tr><th>${icon('file', 'hi')}서식 이름</th><th>${icon('tag', 'hi')}서식 종류</th><th>${icon('handshake', 'hi')}적용 거래유형</th><th>${icon('check', 'hi')}기본 서식</th><th>${icon('info', 'hi')}활성</th><th></th></tr></thead><tbody>${PRINTS.map((p) =>
+        `<tr data-id="${p.id}" class="${p.active ? '' : 'off'}"><td class="nm">${esc(p.title)}</td><td>${PRINT_TYPE[p.type]}</td><td>${txLabel(p.tx)}</td><td><button class="defb" data-def="${p.id}" aria-label="기본 서식으로 사용">${p.isDefault ? '<span class="st accent">기본 서식</span>' : '<span class="t3">기본으로 지정</span>'}</button></td><td><button class="sw" role="switch" aria-checked="${p.active}" data-pact="${p.id}" aria-label="${esc(p.title)} 활성"></button>${p.active ? '' : ' <span class="t3" style="font-size:12px;margin-left:6px">비활성</span>'}</td>${act(p.id, '서식')}</tr>`).join('')}</tbody></table>`
+        : `<div class="empty"><b>등록된 인쇄 서식이 없습니다</b>서식을 등록하면 계약서 출력 시 기본값으로 사용됩니다.</div>`);
+  },
+
+  connections: () => {
+    const endpoint = 'https://api.estaitt.com/mcp';
+    let mcp;
+    if (MCP.fresh) {
+      const cfg = JSON.stringify({ mcpServers: { 'estate-erp': { url: endpoint, headers: { Authorization: `Bearer ${MCP.fresh}` } } } }, null, 2);
+      mcp = `<div class="keybox"><p>새 키가 발급되었습니다. 지금 복사해 안전한 곳에 보관하세요. 이 화면을 닫으면 다시 볼 수 없습니다.</p>
+        <div class="keyline"><code>${MCP.fresh}</code><button class="btn sm" data-copy>${icon(MCP.copied ? 'check' : 'copy')}${MCP.copied ? '복사됨' : '복사'}</button></div>
+        <div class="guide"><b>Claude Desktop 연결 방법</b><ol><li>Claude Desktop 의 설정 → Developer 탭에서 "Edit Config" 를 엽니다.</li><li>아래 JSON 을 mcpServers 에 추가하고 Claude Desktop 을 재시작합니다.</li></ol><pre>${esc(cfg)}</pre><b>엔드포인트:</b> <code>${endpoint}</code></div>
+        <div style="margin-top:10px"><button class="btn quiet sm" data-dismiss>확인했어요</button></div></div>`;
+    } else if (MCP.prefix) mcp = `<span class="t2" style="font-size:12px">현재 키</span><code class="kcode">${MCP.prefix}···</code><button class="btn sm dangerb" data-revoke style="margin-left:auto">${icon('x')}키 폐기</button>`;
+    else mcp = `<span class="t2" style="font-size:13px">아직 발급된 키가 없습니다.</span><button class="btn primary sm" data-gen style="margin-left:auto">${icon('plus')}새 키 발급</button>`;
+    return sh('광고 등록', '사무소 공통으로 사용하는 외부 플랫폼 식별 정보입니다.')
+      + row('네이버 매물등록 인증 아이디', '네이버 부동산 광고 등록 시 실명 인증에 사용하는 사무소 공통 아이디입니다.', inp('connections', 'naverVerificationId', 'placeholder="인증 아이디 입력" autocomplete="off"'))
+      + sh('AI 도구', '외부 AI가 현재 계정 권한으로 Estate ERP에 연결되도록 설정합니다.')
+      + (MCP.fresh ? `<div style="padding:12px 0">${mcp}</div>` : row('내 MCP 연결 키', 'Claude Desktop·Codex 등 외부 AI 도구를 현재 계정 권한으로 연결하는 개인 키입니다.', mcp))
+      + `<p class="note">광고 플랫폼 로그인 정보는 이 앱에 저장하지 않습니다. 이실장 등 CP 계정은 로컬 자동화 도구의 전용 설정에서 관리됩니다.</p>`;
+  },
+};
+function renderStrip() {
+  const id = state.sec, strip = document.getElementById('strip');
+  strip.hidden = !SAVED[id];
+  if (!SAVED[id]) return;
+  const d = isDirty(id);
+  strip.classList.toggle('dirty', d);
+  strip.innerHTML = `<span class="dotw"></span>${d ? '저장하지 않은 변경사항이 있습니다.' : '모든 변경사항이 저장되었습니다.'}${d ? '<button class="btn quiet sm" data-revert style="margin-left:auto">되돌리기</button>' : ''}<button class="btn primary" data-save ${d ? 'style="margin-left:0"' : ''} ${d ? '' : 'disabled'}>${SAVE_LABEL[id]}</button>`;
+}
+function renderPane() {
+  const s = SECTIONS.find((x) => x.id === state.sec);
+  const pane = document.getElementById('pane');
+  pane.classList.toggle('wide', s.id === 'templates');
+  pane.innerHTML = `<div class="pt">설정 · ${s.group}</div><h2>${s.label}</h2><p class="pd">${s.pane}</p>${PANES[s.id]()}`;
+  renderStrip();
+}
+function render() { renderNav(); renderPane(); }
+function go(id) { state.sec = id; try { localStorage.setItem('ui-refresh-settings-section', id); history.replaceState(null, '', '#' + id); } catch (e) {} render(); document.querySelector('.spane .scroll').scrollTop = 0; }
+
+// ── 창 ──
+function dialog(html, onSubmit, cls = '') {
+  const back = document.createElement('div');
+  back.className = 'mback';
+  back.innerHTML = `<form class="mdl ${cls}" role="dialog">${html}</form>`;
+  document.body.append(back);
+  const close = () => { back.remove(); document.removeEventListener('keydown', onKey, true); };
+  const onKey = (e) => { if (e.isComposing || e.keyCode === 229) return; if (e.key === 'Escape') { e.stopPropagation(); close(); } };
+  document.addEventListener('keydown', onKey, true);
+  back.addEventListener('mousedown', (e) => { if (e.target === back) close(); });
+  back.addEventListener('click', (e) => {
+    if (e.target.closest('[data-x]')) return close();
+    const tg = e.target.closest('.tgl'); if (tg) tg.setAttribute('aria-pressed', tg.getAttribute('aria-pressed') !== 'true');
+    const sw = e.target.closest('.sw'); if (sw) sw.setAttribute('aria-checked', sw.getAttribute('aria-checked') !== 'true');
+  });
+  back.querySelector('form').addEventListener('submit', (e) => { e.preventDefault(); if (onSubmit(back) !== false) close(); });
+  const first = back.querySelector('input, select, button.primary');
+  if (first) first.focus();
+  return back;
+}
+const confirmDlg = (title, desc, ok, run) => dialog(`<h3>${title}</h3><p class="desc">${desc}</p><div class="mf"><button type="button" class="btn" data-x>취소</button><button class="btn dangerb">${ok}</button></div>`, run, 'sm');
+const txPick = (tx) => `<div class="full"><label class="l">적용 거래유형</label><div class="tx3">${TX.map(([v, l]) => `<button type="button" class="tgl" data-tx="${v}" aria-pressed="${tx.includes(v)}">${l}</button>`).join('')}<span class="t3" style="font-size:12px">미선택 시 전체 거래유형에 적용</span></div></div>`;
+const readTx = (b) => [...b.querySelectorAll('.tgl[aria-pressed="true"]')].map((x) => x.dataset.tx);
+const opts = (map, cur) => Object.entries(map).map(([v, l]) => `<option value="${v}" ${v === cur ? 'selected' : ''}>${l}</option>`).join('');
+function clauseForm(c) {
+  const v = c || { title: '', type: 'special_terms_clause', tx: [], body: '' };
+  const back = dialog(`<h3>${c ? '특약 템플릿 수정' : '특약 템플릿 추가'}</h3><div class="mb">
+    <div><label class="l" for="t-title">제목 *</label><input class="inp" id="t-title" value="${esc(v.title)}" placeholder="예: 반려동물 금지 특약"></div>
+    <div><label class="l" for="t-type">구분</label><select class="inp" id="t-type">${opts(CLAUSE_TYPE, v.type)}</select></div>
+    <div class="full"><label class="l" for="t-body">내용 *</label><textarea class="inp" id="t-body" placeholder="계약서에 삽입할 특약 문구를 입력하세요.">${esc(v.body)}</textarea></div>${txPick(v.tx)}
+  </div><div class="mf"><button type="button" class="btn" data-x>취소</button><button class="btn primary" id="t-ok">저장</button></div>`, (b) => {
+    const vals = { title: b.querySelector('#t-title').value.trim(), type: b.querySelector('#t-type').value, body: b.querySelector('#t-body').value.trim(), tx: readTx(b) };
+    if (!vals.title || !vals.body) return false;
+    if (c) Object.assign(c, vals); else CLAUSES.unshift({ id: ++SEQ, ...vals });
+    renderPane(); UI.toast(c ? '특약 템플릿을 수정했습니다.' : '특약 템플릿을 등록했습니다.');
+  });
+  const sync = () => { back.querySelector('#t-ok').disabled = !back.querySelector('#t-title').value.trim() || !back.querySelector('#t-body').value.trim(); };
+  back.addEventListener('input', sync); sync();
+}
+function setDefault(p) { PRINTS.forEach((x) => { if (x.type === p.type) x.isDefault = false; }); p.isDefault = true; }
+function printForm(p) {
+  const v = p || { title: '', type: 'contract_cover', tx: [], isDefault: false, active: true };
+  const back = dialog(`<h3>${p ? '인쇄 서식 수정' : '인쇄 서식 추가'}</h3><div class="mb">
+    <div><label class="l" for="p-title">서식 이름 *</label><input class="inp" id="p-title" value="${esc(v.title)}" placeholder="예: 기본 계약서 표지"></div>
+    <div><label class="l" for="p-type">서식 종류</label><select class="inp" id="p-type">${opts(PRINT_TYPE, v.type)}</select></div>${txPick(v.tx)}
+    <label class="swl"><button type="button" class="sw" role="switch" id="p-def" aria-checked="${v.isDefault}"></button>기본 서식으로 사용</label>
+    <label class="swl"><button type="button" class="sw" role="switch" id="p-act" aria-checked="${v.active}"></button>활성</label>
+  </div><div class="mf"><button type="button" class="btn" data-x>취소</button><button class="btn primary" id="p-ok">저장</button></div>`, (b) => {
+    const title = b.querySelector('#p-title').value.trim();
+    if (!title) return false;
+    const on = (id) => b.querySelector(id).getAttribute('aria-checked') === 'true';
+    const t = p || { id: ++SEQ };
+    Object.assign(t, { title, type: b.querySelector('#p-type').value, tx: readTx(b), active: on('#p-act') });
+    if (!p) PRINTS.unshift(t);
+    if (on('#p-def')) setDefault(t); else t.isDefault = false;
+    renderPane(); UI.toast(p ? '인쇄 서식을 수정했습니다.' : '인쇄 서식을 등록했습니다.');
+  });
+  const sync = () => { back.querySelector('#p-ok').disabled = !back.querySelector('#p-title').value.trim(); };
+  back.addEventListener('input', sync); sync();
+}
+function removeFrom(list, item, confirmTitle, confirmDesc, doneMsg) {
+  confirmDlg(confirmTitle, confirmDesc, '삭제', () => {
+    const i = list.indexOf(item);
+    list.splice(i, 1); renderPane();
+    UI.toast(doneMsg, () => { if (!list.includes(item)) list.splice(Math.min(i, list.length), 0, item); renderPane(); });
+  });
+}
+
+// ── 저장 ──
+function save(id) {
+  const d = DRAFT[id];
+  if (id === 'office' && !d.name.trim()) return UI.toast('사무소명을 입력하세요.');
+  if (id === 'commission') { const err = validateCommission(d); if (err) return UI.toast(err); }
+  const addrChanged = id === 'office' && (SAVED.office.address !== d.address || SAVED.office.detail !== d.detail);
+  Object.keys(d).forEach((k) => { d[k] = String(d[k]).trim(); });
+  SAVED[id] = { ...d };
+  if (addrChanged) geo = 'pending';
+  render();
+  UI.toast(id === 'commission' ? '수수료 배분 기준을 저장했습니다.' : '사무소 설정을 저장했습니다.');
+}
+
+// ── 이벤트 ──
+document.querySelectorAll('[data-icon]').forEach((el) => el.insertAdjacentHTML('afterbegin', icon(el.dataset.icon)));
+const qEl = document.getElementById('q');
+qEl.addEventListener('input', () => { state.q = qEl.value; renderNav(); });
+qEl.addEventListener('keydown', (e) => {
+  if (e.isComposing || e.keyCode === 229) return;
+  if (e.key === 'Escape' && state.q) { qEl.value = ''; state.q = ''; renderNav(); }
+  if (e.key === 'Enter') { const first = document.querySelector('#snav .sitem'); if (first) go(first.dataset.sec); }
+});
+const paneEl = document.getElementById('pane');
+function onInput(e) {
+  const el = e.target;
+  if (el.id === 'locale') {
+    if (e.type !== 'change') return;
+    const prev = ME.locale; ME.locale = el.value; ME._rev = (ME._rev || 0) + 1; const v = ME._rev;
+    return UI.toast(`표시 언어를 ${LOCALES[ME.locale]}(으)로 바꿨습니다`, () => { if (ME._rev !== v) return UI.toast('그 뒤에 다시 바뀌어서 되돌리지 않았습니다'); ME.locale = prev; ME._rev += 1; renderPane(); });
+  }
+  const sec = el.dataset.sec, k = el.dataset.k;
+  if (!sec || !k || !DRAFT[sec]) return;
+  DRAFT[sec][k] = el.value;
+  if (el.dataset.kind) { const err = rateError(el.value, el.dataset.kind); el.classList.toggle('bad', !!err); paneEl.querySelector(`[data-err="${k}"]`).textContent = err; }
+  renderNav(); renderStrip(); // 입력칸은 다시 그리지 않는다 (포커스 유지)
+}
+paneEl.addEventListener('input', onInput);
+paneEl.addEventListener('change', onInput);
+// 입력칸에서 Enter로 저장
+paneEl.addEventListener('keydown', (e) => { if (e.isComposing || e.keyCode === 229) return; if (e.key === 'Enter' && e.target.matches('input.inp[data-k]') && isDirty(state.sec)) save(state.sec); });
+
+document.addEventListener('click', (e) => {
+  const t = e.target;
+  if (t.closest('.mback')) return;
+  const sec = t.closest('.sitem[data-sec]');
+  if (sec) return go(sec.dataset.sec);
+  if (t.closest('[data-qclear]')) { qEl.value = ''; state.q = ''; return renderNav(); }
+  if (t.closest('[data-save]')) return save(state.sec);
+  if (t.closest('[data-revert]')) { DRAFT[state.sec] = { ...SAVED[state.sec] }; return render(); }
+  const addr = t.closest('[data-addr]');
+  if (addr) return UI.menu(addr, [{ head: '우편번호 검색 (예시 결과)' }, ...['서울 강동구 고덕로 333', '서울 강동구 아리수로 419', '서울 강동구 상일로 55', '서울 강동구 고덕로 210'].map((a) => ({ label: a, icon: 'pin', on: DRAFT.office.address === a, run: () => { DRAFT.office.address = a; render(); } }))], { wide: true });
+  if (t.closest('[data-geo]')) { geo = 'ready'; renderPane(); return UI.toast('사무소 위치를 확인했습니다.'); }
+  // 계약서 서식
+  const tt = t.closest('[data-ttab]');
+  if (tt) { state.ttab = tt.dataset.ttab; return renderPane(); }
+  const clause = state.ttab === 'clause';
+  if (t.closest('[data-add]')) return clause ? clauseForm(null) : printForm(null);
+  const ed = t.closest('[data-edit]');
+  if (ed) return clause ? clauseForm(CLAUSES.find((x) => x.id === +ed.dataset.edit)) : printForm(PRINTS.find((x) => x.id === +ed.dataset.edit));
+  const del = t.closest('[data-del]');
+  if (del) {
+    if (clause) { const c = CLAUSES.find((x) => x.id === +del.dataset.del); return removeFrom(CLAUSES, c, '특약 템플릿 삭제', `'${esc(c.title)}' 템플릿을 삭제합니다. 이미 작성된 계약서에는 영향이 없습니다.`, '특약 템플릿을 삭제했습니다.'); }
+    const p = PRINTS.find((x) => x.id === +del.dataset.del);
+    return removeFrom(PRINTS, p, '인쇄 서식 삭제', `'${esc(p.title)}' 서식을 삭제합니다.`, '인쇄 서식을 삭제했습니다.');
+  }
+  const pa = t.closest('[data-pact]');
+  if (pa) { const p = PRINTS.find((x) => x.id === +pa.dataset.pact); p.active = !p.active; renderPane(); return UI.toast(`'${esc(p.title)}' 서식을 ${p.active ? '활성으로' : '비활성으로'} 바꿨습니다`); }
+  const df = t.closest('[data-def]');
+  if (df) { const p = PRINTS.find((x) => x.id === +df.dataset.def); if (p.isDefault) return UI.toast('이미 기본 서식입니다'); setDefault(p); renderPane(); return UI.toast(`'${esc(p.title)}'을(를) ${PRINT_TYPE[p.type]} 기본 서식으로 지정했습니다`); }
+  const trow = t.closest('.ttbl tr[data-id]');
+  if (trow && e.detail === 2) return clause ? clauseForm(CLAUSES.find((x) => x.id === +trow.dataset.id)) : printForm(PRINTS.find((x) => x.id === +trow.dataset.id));
+  // MCP
+  if (t.closest('[data-gen]')) { MCP.fresh = 'esk_' + Array.from({ length: 32 }, () => '0123456789abcdef'[Math.floor(Math.random() * 16)]).join(''); MCP.prefix = MCP.fresh.slice(0, 8); MCP.copied = false; renderPane(); return UI.toast('새 MCP 키를 발급했습니다. 지금 복사해 보관하세요.'); }
+  if (t.closest('[data-copy]')) { const done = () => { MCP.copied = true; renderPane(); }; try { navigator.clipboard.writeText(MCP.fresh).then(done, () => UI.toast('클립보드 복사에 실패했습니다.')); } catch (err) { UI.toast('클립보드 복사에 실패했습니다.'); } return; }
+  if (t.closest('[data-dismiss]')) { MCP.fresh = null; MCP.copied = false; return renderPane(); }
+  if (t.closest('[data-revoke]')) return confirmDlg('MCP 키 폐기', '키를 폐기하면 연결된 모든 AI 도구가 접근 권한을 잃습니다. 진행하시겠습니까?', '키 폐기', () => { MCP.prefix = null; MCP.fresh = null; renderPane(); UI.toast('MCP 키를 폐기했습니다.'); });
+});
+window.addEventListener('hashchange', () => { const h = location.hash.slice(1); if (SECTIONS.some((s) => s.id === h) && h !== state.sec) go(h); });
+// 저장하지 않은 변경이 있으면 창을 닫기 전에 묻는다
+window.addEventListener('beforeunload', (e) => { if (Object.keys(SAVED).some(isDirty)) { e.preventDefault(); e.returnValue = ''; } });
+
+render();
+
+UI.notes(
+  [
+    '<b>범주는 원본 그대로 다섯 개</b>입니다: 계정 및 언어 · 사무소 정보 · 수수료 배분 · 계약서 서식 · 외부 연결. 설정 검색과 사무소·플랜 표시도 그대로 두었습니다.',
+    '<b>상자를 없애고 줄로</b> 바꿨습니다. 항목 이름과 설명은 왼쪽, 입력은 오른쪽에 두고 가는 선으로만 나눠 한 화면에 더 많이 보입니다.',
+    '<b>저장 줄이 아래에 붙어</b> 있습니다. 값을 바꾸면 "저장하지 않은 변경사항"으로 바뀌고 범주 옆에 점이 찍히며, 다른 범주에 다녀와도 입력이 남아 있습니다. 되돌리기도 그 줄에 있습니다.',
+    '<b>수수료 배분</b>은 입력하는 즉시 0~100 범위를 확인해 그 칸 옆에 알려 주고, 저장할 때 원본과 같은 문구로 한 번 더 막습니다.',
+    '<b>계약서 서식은 표</b>로 바꿨습니다. 특약은 제목·구분·적용 거래유형·내용, 인쇄 서식은 종류·기본 서식·활성 열이 있고, 활성은 표에서 바로 켜고 끕니다. 추가·수정·삭제 창이 실제로 열립니다.',
+    '<b>MCP 연결 키</b>는 발급 → 한 번만 보이는 키와 연결 안내 → 확인 → 폐기까지 원본 흐름 그대로 눌러 볼 수 있습니다.',
+  ],
+  '설정의 모든 범주와 항목을 살리고, 카드 대신 촘촘한 줄과 표로 정리했습니다.',
+);
+</script>
+</body>
+</html>
