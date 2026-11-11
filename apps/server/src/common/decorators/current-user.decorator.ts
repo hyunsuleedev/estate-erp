@@ -3,9 +3,7 @@ import { createParamDecorator, ExecutionContext } from '@nestjs/common';
 export interface CurrentUserPayload {
   /** 자체 DB User.id (모든 비즈니스 로직에서 userId로 사용) */
   userId: string;
-  /** Clerk user.id */
-  clerkUserId?: string;
-  /** Auth0 user_id (데스크톱 Auth0 시험 모드) */
+  /** Auth0 user_id. API 키로 들어온 요청에는 없다. */
   auth0UserId?: string;
   officeId: string;
   role: string;

@@ -63,7 +63,7 @@ Estate ERP는 대한민국 부동산 중개사무소를 위한 통합 ERP다. �
 웹앱은 보조 접근 채널이고, 메인 사용 환경은 Electron 데스크톱 앱이다. 이유는 다음과 같다.
 
 - 한국 시장에서 설치형 프로그램에 대한 신뢰가 여전히 강하다.
-- CTI Bridge, 내장 Codex 실행, 시스템 트레이, OS 알림 등 로컬 기능이 필요하다.
+- CTI Bridge, 시스템 트레이, OS 알림 등 로컬 기능이 필요하다.
 - 장기적으로 모바일/웹보다 데스크톱 중심의 업무 흐름이 더 자연스럽다.
 
 ### 3.2 CRM이 먼저고 AI는 두 계층으로 연결한다
@@ -100,7 +100,7 @@ Estate ERP는 대한민국 부동산 중개사무소를 위한 통합 ERP다. �
 - 고정비 관리: OfficeExpenseTemplate
 - 공적장부 발급 UI 스캐폴딩 (유료 API 업체 연동 포함)
 - 매물 사진 관리 스캐폴딩 (S3 업로드는 Phase 2)
-- 리모트 MCP Server 엔드포인트 (`/mcp`, Streamable HTTP, JWT/API key/OAuth 인증)
+- 리모트 MCP Server 엔드포인트 (`/mcp`, Streamable HTTP, OAuth(Auth0)/API key 인증)
 - 일반 `Task(category=advertisement)` 기반 광고 업무
   - 사용자가 내광고관리 또는 업무 화면에서 요청을 만들고, 사용자가 시작한 외부 AI가 MCP `claim_task`로 원자적으로 선점
   - 서버는 agent를 기다리거나 깨우는 queue/wakeup/run을 두지 않으며 Task에는 pending / in_progress / completed / cancelled만 표시
@@ -226,7 +226,7 @@ Estate ERP는 대한민국 부동산 중개사무소를 위한 통합 ERP다. �
 - **리모트 MCP (Estate ERP)**: NestJS Streamable HTTP 엔드포인트 (`/mcp`). Codex/ChatGPT 등 외부 AI가 직접 연결.
 - **크롤러 MCP (별도 패키지)**: 네이버 부동산 HTML 파싱 전용. `packages/mcp-crawler`로 분리, `npx @estate-erp/mcp-crawler`로 실행. 사용자 PC에서 로컬 실행 (IP 자연스러움 + 법적 분리).
 - **로컬 자동화 Skill** (Phase 3): Electron과 독립 실행. 일반 광고 Task를 claim하고, CP 자격증명 설정·Skill 소유 브라우저 제어·외부 데이터 수집·세부 SQLite 실행 상태를 담당하며 ERP에는 검증된 결과와 Task 상태만 기록.
-- 인증: JWT 또는 API Key (`X-API-Key` 헤더). API Key는 만료 없이 자동화 전용.
+- 인증: 외부 AI 클라이언트는 OAuth(Auth0 로그인, 클라이언트가 CIMD·DCR로 스스로 등록, MCP 전용 토큰)로 연결한다. 자동화는 API Key(`Authorization: Bearer esk_…`, 만료 없음)를 쓴다. 데스크톱 앱의 로그인 토큰은 `/mcp`에서 받지 않는다. 상세는 [ARCHITECTURE.md](./ARCHITECTURE.md) 6.2.
 - 도구 목록: search_listings, get_property, find_tasks, claim_task, update_task, create_consultation, search_buyers, get_deal, upsert_external_listings 등
 
 **크롤러 연동 흐름**:

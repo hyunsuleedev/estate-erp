@@ -47,4 +47,30 @@ describe('RealtimeService', () => {
     ).not.toThrow();
   });
 
+
+  describe('disconnectUser', () => {
+    it('disconnects every connection of that user through the per-user room', async () => {
+      const disconnectSockets = jest.fn();
+      const fetchSockets = jest.fn();
+      const server = {
+        in: jest.fn().mockReturnValue({ disconnectSockets, fetchSockets }),
+      };
+      const service = new RealtimeService();
+      service.bindServer(server as never);
+
+      await service.disconnectUser('user-1');
+
+      expect(server.in).toHaveBeenCalledWith('user:user-1');
+      // 연결을 닫기까지 한다(네임스페이스에서만 빼는 것이 아니다).
+      expect(disconnectSockets).toHaveBeenCalledWith(true);
+      // 다른 서버에 물어 목록을 받아 오는 왕복이 없다.
+      expect(fetchSockets).not.toHaveBeenCalled();
+    });
+
+    it('does nothing before a socket server is bound', async () => {
+      await expect(
+        new RealtimeService().disconnectUser('user-1'),
+      ).resolves.toBeUndefined();
+    });
+  });
 });

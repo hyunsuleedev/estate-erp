@@ -1,8 +1,10 @@
 import { Global, Module } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
-import { ClerkAuthService } from './clerk-auth.service';
-import { Auth0AuthService } from './auth0-auth.service';
+import { Auth0TokenVerifier } from './auth0-token-verifier';
+import { Auth0ManagementService } from './auth0-management.service';
+import { Auth0AccountSyncService } from './auth0-account-sync.service';
+import { StaffAuthService } from './staff-auth.service';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 
@@ -11,11 +13,20 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
   controllers: [AuthController],
   providers: [
     AuthService,
-    ClerkAuthService,
-    Auth0AuthService,
+    Auth0TokenVerifier,
+    Auth0ManagementService,
+    Auth0AccountSyncService,
+    StaffAuthService,
     JwtAuthGuard,
     RolesGuard,
   ],
-  exports: [AuthService, ClerkAuthService, JwtAuthGuard],
+  exports: [
+    AuthService,
+    Auth0TokenVerifier,
+    Auth0ManagementService,
+    Auth0AccountSyncService,
+    StaffAuthService,
+    JwtAuthGuard,
+  ],
 })
 export class AuthModule {}

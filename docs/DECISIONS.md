@@ -15,6 +15,8 @@
 | 모바일 | React Native Android only | 전화 감지/녹음 제약 대응 |
 | AI 전략 | 내장 안 함 | MCP로 외부 AI 연결 |
 | MCP 전략 | CRM MCP Server 우선 | AI 친화적 시스템으로 설계 |
+| 직원 로그인 | Auth0 (아이디·비밀번호), 연결 키는 `User.auth0Id` | 데스크톱 main이 토큰을 맡는 구조와 MCP OAuth를 한 서비스로 처리. 사무소·역할·활성 여부는 자체 DB가 정함 |
+| MCP 인증 | Auth0 OAuth(MCP 전용 대상, CIMD·DCR 등록) + `esk_` API 키 | 외부 AI는 MCP 토큰으로 `/mcp`만 쓰고 직원 REST API 토큰과 섞이지 않음. MCP 로그인으로 사용자를 만들지 않음 |
 | agent 업무 단위 | 일반 `Task(category=advertisement)` | 사용자가 시작한 외부 AI가 Task를 읽고 원자적으로 claim하며 별도 요청함·서버 queue를 두지 않음 |
 | 광고 자동화 MVP | 로컬 Skill 실행 + 로컬 SQLite 단계 기록 + 이실장 저장값 검증 | 서버는 결과/업무만 공유하고 provider 실행 세부사항과 재시도는 사용자 PC에 둠 |
 | 내 광고 원장 | 게재 회차별 `ListingAdvertisement` + 광고 가격 이력 | 종료 row를 보존하고 재광고와 같은 회차의 가격 수정을 구분 |
@@ -51,7 +53,6 @@
 
 - 프로젝트명/브랜딩
 - 배포 인프라 최종 선택
-- MCP 인증/보안 상세
 - 사무소 초대 및 권한 관리 UX 상세
 - CTI Bridge 구현 언어와 배포 방식
 - 모바일 MVP 범위

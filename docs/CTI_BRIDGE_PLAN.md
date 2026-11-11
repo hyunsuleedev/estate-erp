@@ -90,7 +90,7 @@ EventSMS / EventMMS                               // 문자 수신
 | `CallRecording` 모델 (`prisma/schema/call-recording.prisma`) | 존재. 녹음 파일 + STT + LLM 분석 중심. `direction`, `phoneNumber`, `durationSec`, `contactId`, `userId`, `calledAt` 있음 |
 | **`CallLog` 모델** | **없음** — 마이스파이더 §4가 지적한 "녹음 없는 통화 이벤트" 모델 부재 |
 | 실시간 인프라 | `apps/server/src/realtime/realtime.gateway.ts` — Socket.io `/realtime` 네임스페이스, `officeRoom(officeId)` 방 구조, Redis 어댑터 |
-| 소켓 인증 | `ClerkAuthService.authenticateBearerToken` (Bearer JWT) |
+| 소켓 인증 | `StaffAuthService.authenticateBearerToken` (Auth0 접근 토큰, Bearer JWT) |
 | API Key 인프라 | `apps/server/src/modules/mcp/api-key.service.ts` — User별 `apiKeyHash`/`apiKeyPrefix`, `X-API-Key` 검증. **Bridge 인증에 재사용 가능** |
 | 데스크톱 | `apps/desktop` = Electron Forge. `src/main/`(windowManager, updaterService), `src/preload.ts`(contextBridge), `src/renderer/` |
 | 연락처 통합검색 | `all_contacts_view`(Contact + VendorContact) 설계는 DATA_STRUCTURE에 있음 (구현 확인 필요) |
@@ -233,25 +233,36 @@ export interface CtiCallEvent {
 - ❌ 팝업 렌더 (Electron renderer가)
 - ❌ 녹음 파일 처리 (별도, 마이스파이더는 070 자체 녹취 → CallRecording으로)
 
-### 4.2 Electron 측 — 로컬 WS 클라이언트 + IPC
+### 4.2 Electron 측 — 통화 흐름의 주인은 main 프로세스
 
-**main process (`apps/desktop/src/main/ctiClient.ts` 신규):**
-- 앱 시작 시 `ws://127.0.0.1:{port}` 로 Bridge에 연결 (재연결 백오프).
-- Bridge 미실행이면 조용히 대기(에러 토스트 X). 상태를 `cti:status` IPC로 노출.
-- `CtiCallEvent` 수신 → `mainWindow.webContents.send('cti:event', event)`.
+2026-11-11부터 통화 흐름 전체를 main이 갖는다. 셸 화면은 통화 상태의 주인도, Bridge와
+팝업 사이의 중계자도 아니다.
+
+**main process (`apps/desktop/src/main/cti/`):**
+- `ctiBridgeClient.ts`: 앱 시작 시 `ws://127.0.0.1:{port}` 로 Bridge에 연결 (재연결 백오프).
+  Bridge 미실행이면 조용히 대기(에러 토스트 X).
+- `callController.ts`: Bridge의 `CtiCallEvent`(ring → terminate)로 통화 상태를 만들고,
+  `GET /cti/lookup`으로 고객 카드를 조회하고, `POST /cti/call-events`로 통화 기록을 남긴다.
+  팝업의 버튼(닫기·다시 조회·통화 기록 갱신)과 화면의 발신 요청도 여기서 처리한다.
+  사무소가 있는 로그인 세션이 있을 때만 통화를 받고, 세션이 바뀌면 통화 상태를 버린다.
+- 서버 호출은 `main/api/sessionApiClient.ts`로 한다(로그인 세션의 토큰, 401은 세션 확인으로).
+- 팝업은 탭 화면 위의 팝업 층(`callOverlayHost.ts`)에 main이 직접 띄운다. 메인 창이 있으면
+  메인 창에, 다른 앱 창만 있으면 가장 최근에 쓰던 창에 띄운다.
 - (배포 옵션) Bridge exe 생명주기 관리: Electron이 Bridge를 child_process로 spawn할지, 독립 설치/자동시작으로 둘지 결정 필요. **초기엔 독립 프로세스 + 수동/윈도우 시작프로그램 등록** 권장(권한/충돌 단순).
 
-**preload (`apps/desktop/src/preload.ts` 확장):**
+**preload (`apps/desktop/src/preload.ts`):**
 ```ts
+// 셸·탭 화면: 읽기와 발신 요청만
 cti: {
-  onEvent: (cb) => { ipcRenderer.on('cti:event', h); return () => ...; },
-  getStatus: () => ipcRenderer.invoke('cti:getStatus'),
-  // 발신(클릭투콜)은 renderer → main → Bridge WS로 역방향 전송
-  dial: (payload) => ipcRenderer.invoke('cti:dial', payload),
+  getStatus: () => ipcRenderer.invoke('cti:getStatus'),   // + onStatus ('cti:status')
+  getCall: () => ipcRenderer.invoke('cti:getCall'),       // + onCall ('cti:call')
+  // 발신(클릭투콜)은 화면 → main → Bridge WS로 역방향 전송
+  dial: (request) => ipcRenderer.invoke('cti:dial', request),
 }
+// 팝업 층: 통화 상태 구독('cti:overlayState')과 팝업 버튼('cti:overlayAction')
 ```
 
-> `contextBridge` 패턴은 이미 `electronBridge`(updater, tabs)로 확립돼 있으니 그 컨벤션 그대로 따른다.
+계약 타입은 `apps/desktop/src/common/desktopCti.ts`, `common/callOverlay.ts`에 있다.
 
 ### 4.3 서버 측 — `apps/server/src/modules/cti/` 신규 모듈
 
@@ -371,6 +382,8 @@ Phase 1은 **첫 번째(Electron 경유)** 로 시작. 무인 수신 요구가 �
 ### Step 2 — Electron 연결 ✅ 완료 (2026-07-06, renderer 팝업 제외)
 - [x] `main/ctiClient.ts` 로컬 WS 클라이언트 + 지수 backoff 재연결 (Bridge 미실행은 조용히 대기).
 - [x] `preload` `cti` 브릿지 (getStatus/dial/onEvent/onStatus) + `cti:event`/`cti:status` IPC.
+- [x] (2026-11-11) 통화 흐름을 main으로 옮김: `main/ctiClient.ts` → `main/cti/ctiBridgeClient.ts` + `callController.ts`,
+      `cti:event` 중계와 셸의 통화 상태 소유를 없앰 (§4.2).
 - [ ] renderer: mock 이벤트로 팝업 뜨는 것까지 E2E. (Step 4 팝업 UI와 함께)
 
 ### Step 3 — 서버 CTI 모듈 ✅ 완료 (2026-07-06)

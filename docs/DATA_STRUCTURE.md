@@ -66,11 +66,19 @@
 | officeId | UUID    | FK → Office                                               |
 | loginId  | String  | 로그인 ID (unique, owner/직원 모두 별도 아이디 사용 가능) |
 | email    | String? | 이메일 (nullable, owner 필수, 직원 선택)                  |
-| password | String  | 해시된 비밀번호                                           |
+| auth0Id  | String? | Auth0 user_id (unique). 직원 인증의 유일한 연결 키        |
+| tokensValidAfter | DateTime? | 이 시각 이전에 발급된 접근 토큰은 받지 않음 (비밀번호 재설정·비활성화 때 설정) |
+| clerkId  | String? | 이전 로그인 서비스(Clerk) user.id. 인증에는 쓰지 않음     |
 | name     | String  | 이름                                                      |
 | phone    | String? | 전화번호                                                  |
 | role     | String  | owner / manager / agent                                   |
 | isActive | Boolean | 활성 여부                                                 |
+
+> **인증**: 비밀번호는 우리 DB에 저장하지 않는다. 로그인 서비스(Auth0)가 아이디·비밀번호를 확인하고, 서버는 접근 토큰의 `sub`(Auth0 user_id)로 `auth0Id`를 찾는다. 아이디(`loginId`) 문자열이 같다는 이유로는 연결하지 않는다(공개 가입으로 남의 아이디를 선점해 계정을 가져가는 일을 막기 위해서다).
+> **계정 생성**: 직원은 owner/manager가 만들 때 서버가 Auth0 계정과 User를 함께 만들고 `auth0Id`를 저장한다. 직접 가입한 사람은 처음 로그인할 때 사무소 없는 owner User가 만들어지고, 온보딩에서 사무소를 만든다. 가입한 아이디가 이미 있는 `loginId`와 같으면 거절한다.
+> **비활성화**: 접근을 끊는 기준은 이 표다. `isActive = false`와 `tokensValidAfter = 지금`을 먼저 저장하므로 로그인 서비스(Auth0)가 응답하지 않아도 즉시 끊긴다. Auth0 계정 차단과 refresh token 폐기는 그 뒤에 하고, 실패하면 서버가 다시 시도한다. 사무소·역할·활성 여부는 토큰에 넣지 않고 요청마다 이 표에서 읽는다(서버가 기억해 두지 않는다).
+> **비밀번호 재설정**: `tokensValidAfter = 지금`으로 바꿔 이미 발급된 접근 토큰을 즉시 거절하고, 실시간 연결을 끊고, refresh token을 폐기한다. API 키(`esk_`)는 그대로 둔다.
+> `clerkId`는 운영 사용자를 Auth0로 옮길 때 대응 관계를 찾기 위해 남겨 둔 값이다.
 
 ---
 

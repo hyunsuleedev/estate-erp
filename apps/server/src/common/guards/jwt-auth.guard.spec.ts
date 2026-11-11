@@ -116,11 +116,34 @@ describe('JwtAuthGuard', () => {
     );
     expect(context.response.setHeader).toHaveBeenCalledWith(
       'Server-Timing',
-      expect.stringContaining('clerk_verify;dur=7'),
+      expect.stringContaining('token_verify;dur=7'),
     );
     expect(context.response.setHeader).toHaveBeenCalledWith(
       'Server-Timing',
       expect.stringContaining('auth_user;dur=3'),
     );
+  });
+
+  it('reports the per-request user lookup even when the signature check was remembered', async () => {
+    const authenticateBearerToken = jest
+      .fn()
+      .mockImplementation(async (_token: string, timings: { cacheHit?: boolean; userLookupMs?: number }) => {
+        timings.cacheHit = true;
+        timings.userLookupMs = 2;
+        return { userId: 'user-1', officeId: 'office-1', role: 'owner' };
+      });
+    const guard = new JwtAuthGuard({ authenticateBearerToken } as never);
+    const context = createContext({
+      headers: { authorization: 'Bearer token' },
+      method: 'GET',
+      route: { path: '/contacts' },
+      url: '/contacts',
+    });
+
+    await expect(guard.canActivate(context)).resolves.toBe(true);
+    const header = context.response.setHeader.mock.calls[0]?.[1] as string;
+    expect(header).toContain('auth_cache;desc="hit"');
+    expect(header).toContain('auth_user;dur=2');
+    expect(header).not.toContain('token_verify');
   });
 });

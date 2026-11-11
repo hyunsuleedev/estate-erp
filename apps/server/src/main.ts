@@ -29,8 +29,10 @@ async function bootstrap() {
   );
 
   app.enableCors({
-    allowedHeaders: ['Authorization', 'Content-Type'],
-    exposedHeaders: ['Server-Timing'],
+    // Mcp-Protocol-Version: 브라우저에서 도는 MCP 클라이언트가 /mcp 요청에 붙인다.
+    allowedHeaders: ['Authorization', 'Content-Type', 'Mcp-Protocol-Version'],
+    // WWW-Authenticate: 브라우저 MCP 클라이언트가 401에서 인가 서버 위치를 읽는다.
+    exposedHeaders: ['Server-Timing', 'WWW-Authenticate'],
     maxAge: 600,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   });

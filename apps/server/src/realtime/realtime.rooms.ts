@@ -1,5 +1,8 @@
 export const officeRoom = (officeId: string) => `office:${officeId}`;
 
+/** 한 사용자의 모든 연결. 비활성화·비밀번호 재설정 때 이 방으로 한꺼번에 끊는다. */
+export const userRoom = (userId: string) => `user:${userId}`;
+
 export const listingRoom = (officeId: string, listingId: string) =>
   `listing:${officeId}:${listingId}`;
 

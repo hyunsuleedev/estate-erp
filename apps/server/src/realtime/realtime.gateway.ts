@@ -11,7 +11,7 @@ import {
 } from '@nestjs/websockets';
 import type { Server, Socket } from 'socket.io';
 import { PrismaService } from '../prisma/prisma.service';
-import { ClerkAuthService } from '../modules/auth/clerk-auth.service';
+import { StaffAuthService } from '../modules/auth/staff-auth.service';
 import { RealtimeService } from './realtime.service';
 import {
   listingIntakeRoom,
@@ -19,6 +19,7 @@ import {
   networkRoom,
   officeRoom,
   propertyRoom,
+  userRoom,
 } from './realtime.rooms';
 
 interface AuthenticatedSocketData {
@@ -27,10 +28,19 @@ interface AuthenticatedSocketData {
   role: string;
 }
 
+/**
+ * 클라이언트가 보내는 것은 토큰이 든 연결 요청과 작은 구독 메시지뿐이다.
+ * socket.io 기본값(1MB)을 그대로 두면 인증 전에 큰 입력을 받아 주게 된다.
+ */
+export const REALTIME_MAX_MESSAGE_BYTES = 32_768;
+/** setTimeout이 받는 최대 지연(약 24.8일). */
+const MAX_TIMER_DELAY_MS = 2_147_483_647;
+
 @WebSocketGateway({
   namespace: '/realtime',
   cors: true,
   transports: ['websocket'],
+  maxHttpBufferSize: REALTIME_MAX_MESSAGE_BYTES,
 })
 export class RealtimeGateway
   implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect
@@ -39,10 +49,12 @@ export class RealtimeGateway
   private server!: Server;
 
   private readonly logger = new Logger(RealtimeGateway.name);
+  /** 연결별 "토큰 만료 시 끊기" 타이머. socket.data에는 넣지 않는다(서버 간에 복사된다). */
+  private readonly expiryTimers = new Map<string, NodeJS.Timeout>();
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly clerkAuth: ClerkAuthService,
+    private readonly staffAuth: StaffAuthService,
     private readonly realtime: RealtimeService,
   ) {}
 
@@ -52,9 +64,17 @@ export class RealtimeGateway
 
   async handleConnection(socket: Socket) {
     try {
-      const user = await this.authenticate(socket);
+      const { user, expiresAtSeconds } = await this.authenticate(socket);
+      // REST guard와 같은 기준: 사무소가 없는 계정은 업무 데이터에 접근하지 못한다.
+      if (!user.officeId) {
+        throw new Error('office is required');
+      }
       socket.data.user = user;
       socket.join(officeRoom(user.officeId));
+      socket.join(userRoom(user.userId));
+      // 연결은 한 번 인증하면 계속 열려 있다. 토큰이 만료되는 순간 끊어서, 다시 연결할 때
+      // 인증(활성 여부·사무소·토큰 유효성)을 처음부터 다시 거치게 한다.
+      this.scheduleExpiryDisconnect(socket, expiresAtSeconds);
       socket.emit('realtime.ready', {
         userId: user.userId,
         officeId: user.officeId,
@@ -70,6 +90,11 @@ export class RealtimeGateway
   }
 
   handleDisconnect(socket: Socket) {
+    const timer = this.expiryTimers.get(socket.id);
+    if (timer) {
+      clearTimeout(timer);
+      this.expiryTimers.delete(socket.id);
+    }
     const user = this.getSocketUser(socket);
     if (!user) return;
     this.logger.debug(`Realtime socket disconnected: ${socket.id}`);
@@ -187,19 +212,38 @@ export class RealtimeGateway
     return { ok: true };
   }
 
-  private async authenticate(socket: Socket): Promise<AuthenticatedSocketData> {
+  private async authenticate(
+    socket: Socket,
+  ): Promise<{ user: AuthenticatedSocketData; expiresAtSeconds: number }> {
     const token = this.extractToken(socket);
     if (!token) {
       throw new Error('missing token');
     }
 
-    const user = await this.clerkAuth.authenticateBearerToken(token);
+    const { user, expiresAtSeconds } =
+      await this.staffAuth.authenticateBearer(token);
 
     return {
-      userId: user.userId,
-      officeId: user.officeId,
-      role: user.role,
+      user: {
+        userId: user.userId,
+        officeId: user.officeId,
+        role: user.role,
+      },
+      expiresAtSeconds,
     };
+  }
+
+  private scheduleExpiryDisconnect(socket: Socket, expiresAtSeconds: number) {
+    const delayMs = Math.min(
+      Math.max(expiresAtSeconds * 1000 - Date.now(), 0),
+      MAX_TIMER_DELAY_MS,
+    );
+    const timer = setTimeout(() => {
+      this.expiryTimers.delete(socket.id);
+      socket.disconnect(true);
+    }, delayMs);
+    timer.unref?.();
+    this.expiryTimers.set(socket.id, timer);
   }
 
   private extractToken(socket: Socket) {

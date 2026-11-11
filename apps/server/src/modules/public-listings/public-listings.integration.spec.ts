@@ -13,7 +13,7 @@ import {
   PublicCatalogController,
   PublicListingsController,
 } from "./public-listings.controller";
-import { ClerkAuthService } from "../auth/clerk-auth.service";
+import { StaffAuthService } from "../auth/staff-auth.service";
 
 // Run only against an explicitly supplied disposable local database.
 const url = process.env.PUBLIC_CATALOG_TEST_DATABASE_URL;
@@ -38,7 +38,7 @@ suite("public catalog PostgreSQL integration", () => {
       providers: [
         { provide: PublicListingsService, useValue: service },
         {
-          provide: ClerkAuthService,
+          provide: StaffAuthService,
           useValue: {
             authenticateBearerToken: async (token: string) => {
               const officeId = identities.get(token);

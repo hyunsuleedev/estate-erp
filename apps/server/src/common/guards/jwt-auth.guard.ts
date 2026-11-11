@@ -9,8 +9,8 @@ import { setRequestContext } from '../request-context/request-context';
 import { CurrentUserPayload } from '../decorators/current-user.decorator';
 import {
   BearerAuthTimings,
-  ClerkAuthService,
-} from '../../modules/auth/clerk-auth.service';
+  StaffAuthService,
+} from '../../modules/auth/staff-auth.service';
 
 type AuthenticatedRequest = {
   headers: { authorization?: string };
@@ -26,7 +26,7 @@ type TimingResponse = {
 
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
-  constructor(private readonly clerkAuth: ClerkAuthService) {}
+  constructor(private readonly staffAuth: StaffAuthService) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
@@ -39,7 +39,7 @@ export class JwtAuthGuard implements CanActivate {
 
     const authStartedAt = Date.now();
     const authTimings: BearerAuthTimings = {};
-    const currentUser = await this.clerkAuth.authenticateBearerToken(
+    const currentUser = await this.staffAuth.authenticateBearerToken(
       authHeader.slice(7),
       authTimings,
     );
@@ -80,12 +80,13 @@ export class JwtAuthGuard implements CanActivate {
     timings: BearerAuthTimings,
   ) {
     const parts = [`auth;dur=${authMs}`];
+    // 토큰 서명 확인은 잠깐 기억하지만, 사용자는 요청마다 DB에서 읽는다.
     if (timings.cacheHit) {
       parts.push('auth_cache;desc="hit"');
     } else {
-      parts.push(`clerk_verify;dur=${timings.verifyTokenMs ?? 0}`);
-      parts.push(`auth_user;dur=${timings.userLookupMs ?? 0}`);
+      parts.push(`token_verify;dur=${timings.verifyTokenMs ?? 0}`);
     }
+    parts.push(`auth_user;dur=${timings.userLookupMs ?? 0}`);
     response.setHeader?.('Server-Timing', parts.join(', '));
   }
 }

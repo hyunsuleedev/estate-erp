@@ -71,10 +71,16 @@ export class ApiKeyService {
         apiKeyHash: hash,
         isActive: true,
       },
-      select: { id: true, officeId: true, role: true },
+      select: {
+        id: true,
+        officeId: true,
+        role: true,
+        office: { select: { isActive: true } },
+      },
     });
 
-    if (!user?.officeId) return null;
+    // 사무소가 없거나 비활성화된 사무소의 키는 받지 않는다(로그인 토큰과 같은 기준).
+    if (!user?.officeId || user.office?.isActive === false) return null;
 
     return { userId: user.id, officeId: user.officeId, role: user.role };
   }

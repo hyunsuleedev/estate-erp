@@ -6,6 +6,7 @@ import {
   networkRoom,
   officeRoom,
   propertyRoom,
+  userRoom,
 } from './realtime.rooms';
 
 interface ListingUpdatedEvent {
@@ -82,6 +83,17 @@ export class RealtimeService {
 
   bindServer(server: Server) {
     this.server = server;
+  }
+
+  /**
+   * 그 사용자의 실시간 연결을 모두 끊는다. 비활성화·비밀번호 재설정 직후에 불러,
+   * 이미 연결된 화면이 사무소 이벤트를 계속 받지 않게 한다. 연결할 때 사용자별 방에
+   * 넣어 두므로, 여러 서버에 흩어진 연결도 한 번의 방송으로 끊긴다. 다시 연결하면
+   * 인증을 처음부터 다시 거친다.
+   */
+  async disconnectUser(userId: string): Promise<void> {
+    if (!this.server) return;
+    this.server.in(userRoom(userId)).disconnectSockets(true);
   }
 
   emitListingUpdated(event: ListingUpdatedEvent) {

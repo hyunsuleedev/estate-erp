@@ -7,7 +7,7 @@
 - **Backend**: NestJS + TypeScript, Prisma, PostgreSQL + PostGIS
 - **Cache/Queue**: Redis + BullMQ
 - **Realtime**: Socket.io
-- **Auth**: Passport.js + JWT
+- **Auth**: Auth0 (직원 로그인·MCP). 서버는 Auth0 접근 토큰을 검증하고 `User.auth0Id`로 연결. 소비자 사이트(apps/catalog)만 Clerk
 - **Email**: Resend + React Email
 - **File Storage**: S3 / Cloudflare R2
 - **Desktop**: Electron (React 19 + TanStack + Tailwind v4 + shadcn/ui)

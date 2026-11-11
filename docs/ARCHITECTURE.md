@@ -57,7 +57,7 @@ CTI Bridge와 독립 자동화 Skills는 서버 밖에서 추가로 연결된다
 | DB | PostgreSQL + PostGIS |
 | Cache / Queue | Redis + BullMQ |
 | Realtime | Socket.io |
-| Auth | Passport.js + JWT |
+| Auth | Auth0 (직원 로그인, MCP OAuth) + 자체 DB의 사용자·사무소·역할 |
 | Email | Resend + React Email |
 | File Storage | S3 / Cloudflare R2 |
 | Desktop | Electron + React 19 + Vite |
@@ -118,7 +118,6 @@ mcp
 - 설치형 신뢰감
 - 로컬 CTI 연동
 - 시스템 트레이 / OS 알림
-- 내장 Codex 실행과 업무 화면 연결
 - 장시간 상주 실행
 
 ### 4.2 웹 앱
@@ -184,6 +183,32 @@ CRM 자체를 MCP 서버처럼 설계한다. 즉, NestJS API를 잘 만드는 �
 - 태스크 생성/완료
 - 매칭/거래 조회 및 업데이트
 - 인사이트/알림 검토
+
+#### 인증과 연결
+
+`/mcp`가 받는 자격은 두 가지뿐이다.
+
+| 자격 | 쓰는 곳 | 확인 방법 |
+|------|---------|-----------|
+| OAuth 접근 토큰 | Claude, ChatGPT, Codex CLI 같은 외부 AI 클라이언트 | Auth0가 MCP 전용으로 발급한 토큰. 대상(`aud`)이 이 서버의 MCP 주소이고 `mcp:tools` scope가 있어야 한다 |
+| `esk_` API 키 | 스크립트·자동화 | `Authorization: Bearer esk_…`. 직원별 1개, 우리 DB에서 확인 |
+
+- **대상 분리**: MCP에는 직원 REST API와 별개의 Auth0 API(resource server)를 둔다. 식별자는 서버가 광고하는 MCP 주소(`MCP_RESOURCE_URL`, 운영 `https://api.estaitt.com/mcp`)와 글자 그대로 같다. MCP 토큰은 REST API에서 거절되고, 데스크톱 앱의 REST 토큰은 `/mcp`에서 거절된다. REST API는 토큰을 받은 앱(`azp`)이 데스크톱 앱인지도 확인한다(`AUTH0_STAFF_CLIENT_IDS`).
+- **찾기(discovery)**: 인증 없는 요청에는 `401`과 `WWW-Authenticate: Bearer resource_metadata="…/.well-known/oauth-protected-resource/mcp", scope="mcp:tools"`로 답한다. 그 문서(RFC 9728)가 인가 서버로 Auth0 테넌트를 가리키고, 클라이언트는 Auth0의 `/.well-known/oauth-authorization-server`에서 나머지를 찾는다.
+- **클라이언트 등록**: 클라이언트가 스스로 한다. Client ID Metadata Document(CIMD, 권장)와 Dynamic Client Registration(DCR)을 둘 다 켜 둔다. 이렇게 등록된 앱은 Auth0에서 "외부 앱"이라 MCP API의 토큰만 받을 수 있고, 사용자는 처음 연결할 때 Auth0 동의 화면에서 수락해야 한다.
+- **로그인**: Auth0 로그인 페이지에서 아이디·비밀번호로 한다. 클라이언트는 `resource`(MCP 주소)와 PKCE를 반드시 보낸다. refresh token이 필요하면 `offline_access`를 함께 요청한다.
+- **사용자**: 토큰의 `sub`(Auth0 user_id)로 기존 직원을 찾는다. MCP 로그인으로는 ERP 사용자를 만들지 않는다. 비활성 직원, 사무소 없는 계정은 거절한다. 도구별 권한은 OAuth scope가 아니라 직원의 역할이 정한다.
+- 구현: `apps/server/src/modules/mcp/mcp-auth.guard.ts`, `oauth-discovery.controller.ts`, `mcp-oauth.config.ts`.
+
+Auth0 테넌트에 필요한 설정(환경마다 한 번):
+
+1. API 생성: 식별자 = 그 환경의 MCP 주소(끝에 `/` 없음), RS256, Allow Offline Access 켬, 권한 `mcp:tools`. 접근 정책은 사용자 `require_client_grant`, 앱(M2M) `deny_all`.
+2. 외부 앱 기본 권한: `client-grants`에 `default_for: third_party_clients`, 그 API, `mcp:tools`, `subject_type: user`. 다른 API에는 만들지 않는다(외부 앱이 REST API 토큰을 받지 못하게).
+3. 테넌트 설정: Dynamic Client Registration, Client ID Metadata Document Registration + Dynamic CIMD Registration, Resource Parameter Compatibility Profile, Include Issuer in Authorization Responses, 동의 화면에 권한 설명 사용(`use_scope_descriptions_for_consent`).
+4. 아이디·비밀번호 연결을 도메인 수준으로 올린다(`is_domain_connection`). 외부 앱은 도메인 수준 연결만 쓸 수 있다.
+5. 서버 환경 변수: `MCP_RESOURCE_URL`, `AUTH0_STAFF_CLIENT_IDS`(그 테넌트의 데스크톱 앱 client ID).
+
+DCR을 켜면 누구나 테넌트에 앱을 등록할 수 있다(초당 5회 제한). 등록 주소를 IP 등으로 제한하는 기능은 Auth0 Enterprise 요금제에만 있다. 등록된 외부 앱은 MCP API 말고는 접근할 수 없다.
 
 ### 6.3 독립 로컬 Skills
 
