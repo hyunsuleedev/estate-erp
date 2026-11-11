@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
-import { useSortable } from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
 import { X } from 'lucide-react';
-import type { Tab as TabType } from '@estate-erp/shared';
+import type { TabBarTab } from '../../../../common/tabs/tabBarContract';
+import type { TabDragBindings } from '../hooks/useTabDrag';
 import { cn } from '@/lib/utils';
 import { getRouteMeta } from '../lib/routeMeta';
 
@@ -13,12 +12,21 @@ export const TAB_MAX_WIDTH = 200;
 const CLOSE_BUTTON_MIN_WIDTH = TAB_MIN_WIDTH + 16;
 
 interface Props {
-  tab: TabType;
+  /** 탭바가 그리는 데 필요한 것만(제목, 주소). */
+  tab: Pick<TabBarTab, 'id' | 'title' | 'route' | 'failed'>;
   isActive: boolean;
   isLast: boolean;
+  /**
+   * 끌고 있는 탭이다: 자리를 차지하지 않게 접는다. 그 자리는 탭 줄의 빈 칸이 대신하고,
+   * 탭의 그림은 마우스를 따라간다. 끌기가 끝날 때까지 문서에서 빼지는 않는다(빼면
+   * 끌기가 끝났다는 이벤트를 받지 못한다).
+   */
+  collapsed?: boolean;
   onActivate: () => void;
   onClose: () => void;
   onContextMenu: () => void;
+  /** 탭을 끌어 옮기기(순서 바꾸기, 다른 창으로). 탭 줄이 정해 준다. */
+  drag?: ReturnType<TabDragBindings['tabProps']>;
 }
 
 function useElementWidth<T extends HTMLElement>() {
@@ -40,18 +48,12 @@ export function Tab({
   tab,
   isActive,
   isLast,
+  collapsed = false,
   onActivate,
   onClose,
   onContextMenu,
+  drag,
 }: Props) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id: tab.id });
   const { ref: widthRef, width } = useElementWidth<HTMLDivElement>();
 
   const meta = getRouteMeta(tab.route);
@@ -62,36 +64,38 @@ export function Tab({
   const separators = ['inset 1px 0 0 var(--color-border)'];
   if (isLast) separators.push('inset -1px 0 0 var(--color-border)');
   if (!isActive) separators.push('inset 0 -1px 0 var(--color-border)');
+  const layout: CSSProperties = collapsed
+    ? { flex: '0 0 0px', minWidth: 0, maxWidth: 0, paddingInline: 0, opacity: 0 }
+    : {
+        flex: '1 1 0%',
+        minWidth: TAB_MIN_WIDTH,
+        maxWidth: TAB_MAX_WIDTH,
+        paddingInline: 'clamp(9px, 25%, 16px)',
+        boxShadow: separators.join(', '),
+      };
 
   return (
     <div
-      ref={(node) => {
-        widthRef.current = node;
-        setNodeRef(node);
-      }}
+      ref={widthRef}
+      role="tab"
+      aria-selected={isActive}
+      aria-hidden={collapsed || undefined}
+      tabIndex={0}
       data-tab-id={tab.id}
       data-tab-active={isActive ? 'true' : 'false'}
-      title={tab.title}
-      style={
-        {
-          transform: CSS.Transform.toString(transform),
-          transition,
-          opacity: isDragging ? 0.5 : 1,
-          WebkitAppRegion: 'no-drag',
-          flex: '1 1 0%',
-          minWidth: TAB_MIN_WIDTH,
-          maxWidth: TAB_MAX_WIDTH,
-          paddingInline: 'clamp(9px, 25%, 16px)',
-          boxShadow: separators.join(', '),
-        } as CSSProperties
+      data-tab-failed={tab.failed ? 'true' : undefined}
+      data-tab-dragging={collapsed ? 'true' : undefined}
+      title={
+        tab.failed
+          ? `${tab.title} — 화면을 불러오지 못했습니다. 탭을 오른쪽 클릭해 다시 불러오세요.`
+          : tab.title
       }
-      {...attributes}
-      {...listeners}
+      style={{ WebkitAppRegion: 'no-drag', ...layout } as CSSProperties}
+      {...drag}
       onPointerDown={(event) => {
-        // Notion처럼 누르는 순간 활성화한다. 드래그 시작은 dnd-kit이 이어서 판단한다.
+        // Notion처럼 누르는 순간 활성화한다. 끌기는 브라우저가 이어서 판단한다.
         const fromAction = (event.target as Element).closest('[data-tab-action]');
         if (event.button === 0 && !fromAction) onActivate();
-        listeners?.onPointerDown?.(event);
       }}
       onKeyDown={(event) => {
         if (event.key === 'Enter' || event.key === ' ') {

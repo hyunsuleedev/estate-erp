@@ -13,7 +13,7 @@ export async function navigateActiveTab(
 ): Promise<string | null> {
   const { activeTabId, tabs } = useTabStore.getState();
   const source = tabs.find((tab) => tab.id === activeTabId);
-  const preserveSource = source ? await activeTabHasUnsavedWork(source) : false;
+  const preserveSource = source ? await activeTabHasUnsavedWork() : false;
 
   // 확인하는 사이 사용자가 다른 탭으로 옮겼다면 오래된 클릭은 적용하지 않는다.
   if (useTabStore.getState().activeTabId !== activeTabId) return null;

@@ -121,6 +121,17 @@ export function isTabCommand(value: unknown): value is TabCommand {
   }
 }
 
+/**
+ * 탭 화면이 직접 요청할 수 있는 명령. 탭 화면이 보내야 하는 것은 마우스 사이드 버튼의
+ * 뒤로/앞으로뿐이다. 단축키는 main이 입력을 직접 받아 처리하므로 탭 화면이 "탭 닫기"나
+ * "새 탭"을 보낼 이유가 없다.
+ */
+export function isTabScreenCommand(
+  command: TabCommand,
+): command is Extract<TabCommand, { type: 'history' }> {
+  return command.type === 'history';
+}
+
 /** native 메뉴 한 줄. id는 선택 결과로 그대로 돌아온다. */
 export type TabMenuItem =
   | { type: 'item'; id: string; label: string; enabled?: boolean; accelerator?: string }

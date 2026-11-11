@@ -1,22 +1,21 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
 import { describe, it } from 'node:test';
-import { createElement } from 'react';
-import { renderToStaticMarkup } from 'react-dom/server';
+import { fileURLToPath } from 'node:url';
 import {
   isNativeTabRoute,
-  normalizeNativeTabViewportBounds,
   resolveNativeTabRoute,
 } from '../src/common/nativeTabs';
 import {
-  hasDetachedWindowMarker,
   parseRendererSurfaceArguments,
   RENDERER_SURFACE_ARGUMENT,
   RENDERER_TAB_ID_ARGUMENT,
 } from '../src/common/rendererSurface';
-import { NativeTabViewportFrame } from '../src/renderer/features/tabs/native/NativeTabViewport';
 import { resolveRendererSurface } from '../src/renderer/features/tabs/native/rendererSurface';
-import { windowWorkspaceOwnerKey } from '../src/common/windowWorkspace';
 import { createNativeTabRetentionUpdate } from '../src/renderer/features/tabs/native/NativeTabRetentionReporter';
+
+const testDir = dirname(fileURLToPath(import.meta.url));
 
 describe('native tab pilot route', () => {
   it('selects only property detail routes and preserves full href', () => {
@@ -78,6 +77,12 @@ describe('native tab pilot route', () => {
       '/dev/cti-preview',
       '//evil.example/path',
       'https://example.com/dashboard',
+      // URL 해석에서 역슬래시는 슬래시와 같고 탭·줄바꿈은 지워진다: 다른 호스트가 된다.
+      '/\\evil.example/dashboard',
+      '/\\/evil.example/contacts',
+      '/contacts/../\\evil.example',
+      '/\t/evil.example/dashboard',
+      '/\n/evil.example/dashboard',
     ]) {
       assert.equal(resolveNativeTabRoute(route, 'all'), null, route);
     }
@@ -93,9 +98,34 @@ describe('renderer surface role', () => {
       ]),
       { kind: 'native-tab', tabId: 'tab-1' },
     );
-    assert.deepEqual(
+    // 역할은 main이 정해 준 것만 따른다. 빠졌거나 모르는 값이면 어떤 역할도 아니다:
+    // 가장 많은 것을 할 수 있는 창의 화면으로 떨어지지 않는다.
+    assert.equal(
       parseRendererSurfaceArguments([`${RENDERER_SURFACE_ARGUMENT}native-tab`]),
+      null,
+    );
+    assert.equal(parseRendererSurfaceArguments([]), null);
+    assert.equal(
+      parseRendererSurfaceArguments([`${RENDERER_SURFACE_ARGUMENT}admin`]),
+      null,
+    );
+    assert.deepEqual(
+      parseRendererSurfaceArguments([`${RENDERER_SURFACE_ARGUMENT}window-shell`]),
       { kind: 'window-shell', tabId: null },
+    );
+    assert.deepEqual(
+      parseRendererSurfaceArguments([`${RENDERER_SURFACE_ARGUMENT}call-overlay`]),
+      { kind: 'call-overlay', tabId: null },
+    );
+  });
+
+  it('gives a document a bridge only for the role main granted it', () => {
+    const preload = readFileSync(resolve(testDir, '../src/preload.ts'), 'utf8');
+    const main = readFileSync(resolve(testDir, '../src/main/windowManager.ts'), 'utf8');
+    assert.match(preload, /if \(surface\.kind !== 'none'\) \{\s*contextBridge\.exposeInMainWorld\(/);
+    assert.match(
+      main,
+      /additionalArguments: \[`\$\{RENDERER_SURFACE_ARGUMENT\}window-shell`\]/,
     );
   });
 
@@ -114,62 +144,6 @@ describe('renderer surface role', () => {
       ),
       { kind: 'native-tab', tabId: 'url-tab' },
     );
-  });
-
-  it('detects detached shells in both packaged search and dev/file hash URLs', () => {
-    assert.equal(hasDetachedWindowMarker('?window=detached&tabId=1', ''), true);
-    assert.equal(
-      hasDetachedWindowMarker('', '#?window=detached&tabId=1'),
-      true,
-    );
-    assert.equal(hasDetachedWindowMarker('?view=history', '#price'), false);
-  });
-});
-
-describe('native tab viewport', () => {
-  it('rounds CSS bounds without producing negative Electron View bounds', () => {
-    assert.deepEqual(
-      normalizeNativeTabViewportBounds({
-        left: -0.4,
-        top: 39.6,
-        width: 900.5,
-        height: -0.1,
-      }),
-      { x: 0, y: 40, width: 901, height: 0 },
-    );
-  });
-
-  it('keeps legacy content visible until the native host confirms attachment', () => {
-    const mounting = renderToStaticMarkup(
-      createElement(
-        NativeTabViewportFrame,
-        { state: 'mounting' },
-        createElement('span', null, 'legacy detail'),
-      ),
-    );
-    const native = renderToStaticMarkup(
-      createElement(
-        NativeTabViewportFrame,
-        { state: 'native' },
-        createElement('span', null, 'legacy detail'),
-      ),
-    );
-
-    assert.match(mounting, /data-native-tab-state="mounting"/);
-    assert.doesNotMatch(mounting, /aria-hidden="true"/);
-    assert.match(native, /data-native-tab-state="native"/);
-    assert.match(native, /aria-hidden="true"/);
-    assert.match(native, /invisible pointer-events-none/);
-    assert.doesNotMatch(native, /legacy detail/);
-
-    const deferred = renderToStaticMarkup(
-      createElement(
-        NativeTabViewportFrame,
-        { state: 'mounting', renderFallback: false },
-        createElement('span', null, 'must not bootstrap twice'),
-      ),
-    );
-    assert.doesNotMatch(deferred, /must not bootstrap twice/);
   });
 });
 
@@ -222,19 +196,6 @@ describe('native tab retention', () => {
           explicitDirty: false,
         },
       },
-    );
-  });
-});
-
-describe('main window workspace identity', () => {
-  it('binds reload snapshots to both user and office', () => {
-    assert.notEqual(
-      windowWorkspaceOwnerKey({ userId: 'user-a', officeId: 'office-a' }),
-      windowWorkspaceOwnerKey({ userId: 'user-a', officeId: 'office-b' }),
-    );
-    assert.notEqual(
-      windowWorkspaceOwnerKey({ userId: 'user-a', officeId: 'office-a' }),
-      windowWorkspaceOwnerKey({ userId: 'user-b', officeId: 'office-a' }),
     );
   });
 });

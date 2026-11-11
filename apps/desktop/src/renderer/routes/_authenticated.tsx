@@ -4,13 +4,7 @@ import {
   Outlet,
   useRouter,
 } from '@tanstack/react-router';
-import {
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-} from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import type { Tab } from '@estate-erp/shared';
 import { SplashScreen } from '@/components/layout/splash-screen';
 import { useAuth } from '@/providers/auth-provider';
@@ -19,7 +13,6 @@ import {
   SidebarInset,
   SidebarProvider,
   SidebarTrigger,
-  useSidebar,
 } from '@/components/ui/sidebar';
 import { Separator } from '@/components/ui/separator';
 import { TabBar } from '@/features/tabs/TabBar/TabBar';
@@ -32,25 +25,14 @@ import {
   TabContent,
   TabWorkspaceController,
 } from '@/features/tabs/TabContent';
-import { useDetachedInitialTab } from '@/features/tabs/hooks/useDetachedInitialTab';
-import { useWindowWorkspace } from '@/features/tabs/hooks/useWindowWorkspace';
-import { useTabStore } from '@/features/tabs/store/useTabStore';
-import {
-  callPopupUsesOverlayLayer,
-  CtiProvider,
-  useCti,
-} from '@/features/cti/cti-provider';
-import { CallPopup } from '@/features/cti/call-popup';
-import { NativeTabViewport } from '@/features/tabs/native/NativeTabViewport';
+import { getPreviewTabBarPort } from '@/features/tabs/previewTabBarPort';
+import { TabBarProvider } from '@/features/tabs/TabBar/tabBarContext';
+import { CtiProvider } from '@/features/cti/cti-provider';
 import { NativeTabRetentionReporter } from '@/features/tabs/native/NativeTabRetentionReporter';
 import { getRendererSurface } from '@/features/tabs/native/rendererSurface';
 import { installNativeTabStoreBridge } from '@/features/tabs/native/nativeTabStoreBridge';
 import { NativeTabRouterBridge } from '@/features/tabs/native/NativeTabRouterBridge';
-import { useNativeTabActions } from '@/features/tabs/native/useNativeTabActions';
-import {
-  useNativeSidebarState,
-  useShellSidebarState,
-} from '@/features/tabs/native/useWindowSidebarState';
+import { useNativeSidebarState } from '@/features/tabs/native/useWindowSidebarState';
 import { getRouteMeta } from '@/features/tabs/lib/routeMeta';
 import { resolveTabResourceKey } from '@/features/tabs/lib/tabResource';
 import {
@@ -58,110 +40,41 @@ import {
   resolveNativeTabRoute,
 } from '../../common/nativeTabs';
 
-const isMac = window.electronBridge?.platform === 'darwin';
-const isWin = window.electronBridge?.platform === 'win32';
-
 export const Route = createFileRoute('/_authenticated')({
   component: AuthenticatedLayout,
 });
 
-/** Listens for toggle-sidebar IPC from main process menu (Cmd+B) */
-function ElectronSidebarBridge() {
-  const { toggleSidebar } = useSidebar();
-
-  useEffect(() => {
-    const cleanup = window.electronBridge?.onToggleSidebar?.(() => {
-      toggleSidebar();
-    });
-    return cleanup;
-  }, [toggleSidebar]);
-
-  return null;
-}
-
-/** Tracks macOS fullscreen state — traffic lights disappear in fullscreen */
-function useFullscreen() {
-  const [isFullscreen, setIsFullscreen] = useState(false);
-
-  useEffect(() => {
-    void window.electronBridge?.isFullscreen?.().then(setIsFullscreen);
-    const cleanup =
-      window.electronBridge?.onFullscreenChanged?.(setIsFullscreen);
-    return cleanup;
-  }, []);
-
-  return isFullscreen;
-}
-
-function useWindowKind(): 'main' | 'detached' | null {
-  const [kind, setKind] = useState<'main' | 'detached' | null>(null);
-  useEffect(() => {
-    if (!window.electronBridge?.tabs) {
-      setKind('main');
-      return;
-    }
-    void window.electronBridge.tabs.getWindowKind().then(setKind);
-  }, []);
-  return kind;
-}
-
-/** Detached 창은 마지막 탭을 닫으면 빈 앱 셸을 남기지 않고 창 자체를 닫는다. */
-function useCloseDetachedWindowWhenEmpty(
-  enabled: boolean,
-  initialTabReady: boolean,
-) {
-  const tabCount = useTabStore((state) => state.tabs.length);
-  const closeRequestedRef = useRef(false);
-
-  useEffect(() => {
-    if (!enabled || !initialTabReady || tabCount > 0) return;
-    if (closeRequestedRef.current) return;
-
-    const closeWindow = window.electronBridge?.tabs.closeWindow;
-    if (!closeWindow) return;
-
-    closeRequestedRef.current = true;
-    closeWindow();
-  }, [enabled, initialTabReady, tabCount]);
-}
-
-function MainAuthenticatedShell({ isFullscreen }: { isFullscreen: boolean }) {
-  // macOS windowed: 80px for traffic lights + 12px breathing room, fullscreen/other platforms: 16px
-  const titlebarLeftPadding = isMac && !isFullscreen ? 'pl-[92px]' : 'pl-4';
-
+/**
+ * 셸이 직접 그리는 사이드바 + 화면 칸. p-4는 TabContent 래퍼가 소유한다 — 페이지의
+ * -mx-4 풀블리드가 직접 부모의 패딩을 상쇄할 수 있어야 한다.
+ */
+function ShellSidebarFrame({ children }: { children?: ReactNode }) {
   return (
-    <CtiProvider enabled>
-      <MainAuthenticatedShellContent
-        isFullscreen={isFullscreen}
-        titlebarLeftPadding={titlebarLeftPadding}
-      />
-    </CtiProvider>
+    <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
+      <AppSidebar />
+      <SidebarInset className="flex-1 min-h-0 min-w-0">
+        <div className="flex flex-1 flex-col gap-4 min-h-0 min-w-0 overflow-auto">
+          {children}
+        </div>
+      </SidebarInset>
+    </div>
   );
 }
 
-function MainAuthenticatedShellContent({
-  titlebarLeftPadding,
-}: {
-  isFullscreen: boolean;
-  titlebarLeftPadding: string;
-}) {
-  const { activeCall } = useCti();
-  // Electron에서는 전화 팝업을 탭 화면 위의 별도 층에 그리므로 통화 중에도
-  // 탭 화면을 숨기지 않는다. 숨기면 보던 화면과 입력 중인 내용이 사라진다.
-  const popupOnOverlayLayer = callPopupUsesOverlayLayer();
-  const [sidebarOpen, setSidebarOpen] = useShellSidebarState();
+/**
+ * 브라우저 단독 미리보기(main이 없다): 탭 목록과 화면을 이 문서가 직접 갖고 그린다.
+ * 창이 하나뿐이라 탭을 다른 창으로 옮기는 기능은 없다.
+ */
+function BrowserPreviewShell() {
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   useTabCommands({ canCreateTabs: true });
-  useNativeTabActions();
   return (
+    <TabBarProvider port={getPreviewTabBarPort()}>
     <SidebarProvider open={sidebarOpen} onOpenChange={setSidebarOpen}>
       <TabWorkspaceController />
-      <ElectronSidebarBridge />
       <div data-window-shell="main" className="flex h-screen w-full flex-col">
-        {/* Titlebar: SidebarTrigger + TabBar inline (no breadcrumb) */}
         <header className="app-titlebar flex h-10 shrink-0 items-center gap-0 border-b border-border bg-sidebar pr-2">
-          <div
-            className={`app-titlebar-drag-region flex h-full w-(--sidebar-width) shrink-0 items-center gap-1 ${titlebarLeftPadding}`}
-          >
+          <div className="app-titlebar-drag-region flex h-full w-(--sidebar-width) shrink-0 items-center gap-1 pl-4">
             <span
               data-slot="desktop-brand"
               className="mr-2 select-none text-sm font-semibold tracking-[-0.02em] text-sidebar-foreground"
@@ -181,123 +94,25 @@ function MainAuthenticatedShellContent({
           </div>
           <TabNavigationButtons className="px-2" />
           <TabBar className="min-w-0" />
-          {/* Windows: titleBarOverlay 자리 확보 */}
-          {isWin ? <div className="w-[140px] shrink-0" aria-hidden /> : null}
         </header>
-
-        {/* 탭바 아래(사이드바 + 화면)는 탭 화면(native 탭)이 그린다(Notion 방식).
-            셸은 탭 화면이 뜨는 동안 사이드바만, 탭 화면을 못 띄울 때만 화면까지 그린다. */}
-        <NativeTabViewport
-          className="overflow-hidden"
-          suspended={!popupOnOverlayLayer && activeCall !== null}
-          mountingFallback={<ShellSidebarFrame />}
+        <div
+          className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
+          data-native-tab-legacy-fallback=""
         >
           <ShellSidebarFrame>
             <TabContent />
           </ShellSidebarFrame>
-        </NativeTabViewport>
+        </div>
       </div>
-      {/* CTI 전화 수신 팝업 — 메인 창에서만. Electron에서는 탭 화면 위 별도 층에 그린다. */}
-      {popupOnOverlayLayer ? null : <CallPopup />}
     </SidebarProvider>
-  );
-}
-
-function DetachedAuthenticatedShell({
-  isFullscreen,
-}: {
-  isFullscreen: boolean;
-}) {
-  const titlebarSpacerWidth = isMac && !isFullscreen ? 'w-[92px]' : 'w-4';
-  const [sidebarOpen, setSidebarOpen] = useShellSidebarState();
-  // 분리된 창은 옮겨 온 탭만 다룬다. 새 탭은 메인 창에서 연다.
-  useTabCommands({ canCreateTabs: false });
-  useNativeTabActions();
-
-  return (
-    <CtiProvider enabled={false}>
-      <SidebarProvider open={sidebarOpen} onOpenChange={setSidebarOpen}>
-        <TabWorkspaceController autoCreateInitialTab={false} />
-        <div
-          data-window-shell="detached"
-          className="flex h-screen w-full flex-col bg-background"
-        >
-          <header className="app-titlebar flex h-10 shrink-0 items-center border-b border-border bg-sidebar pr-2">
-            <div
-              data-slot="detached-titlebar-spacer"
-              className={`${titlebarSpacerWidth} h-full shrink-0`}
-              aria-hidden
-            />
-            <TabNavigationButtons className="pr-2" />
-            <TabBar className="min-w-0" showNewTabButton={false} />
-            {isWin ? <div className="w-[140px] shrink-0" aria-hidden /> : null}
-          </header>
-          <NativeTabViewport
-            className="overflow-hidden"
-            deferNativeFallback
-            mountingFallback={<ShellSidebarFrame />}
-          >
-            <ShellSidebarFrame>
-              <TabContent />
-            </ShellSidebarFrame>
-          </NativeTabViewport>
-        </div>
-      </SidebarProvider>
-    </CtiProvider>
-  );
-}
-
-/**
- * 셸이 직접 그리는 사이드바 + 화면 칸. 탭 화면이 붙으면 그 아래에 가려지고
- * 그리지 않는다. p-4는 TabContent 래퍼가 소유한다 — 페이지의 -mx-4 풀블리드가
- * 직접 부모의 패딩을 상쇄할 수 있어야 한다.
- */
-function ShellSidebarFrame({ children }: { children?: ReactNode }) {
-  return (
-    <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
-      <AppSidebar />
-      <SidebarInset className="flex-1 min-h-0 min-w-0">
-        <div className="flex flex-1 flex-col gap-4 min-h-0 min-w-0 overflow-auto">
-          {children}
-        </div>
-      </SidebarInset>
-    </div>
+    </TabBarProvider>
   );
 }
 
 function WindowAuthenticatedLayout() {
   const { user, isAuthenticated, isLoading } = useAuth();
-  const isFullscreen = useFullscreen();
-  const windowKind = useWindowKind();
-  const isDetached = windowKind === 'detached';
-  const userId = user?.id;
-  const officeId = user?.office?.id;
-  const workspaceOwner = useMemo(
-    () =>
-      typeof userId === 'string' && typeof officeId === 'string'
-        ? { userId, officeId }
-        : null,
-    [officeId, userId],
-  );
 
-  const detachedInitialTabReady = useDetachedInitialTab(
-    isDetached,
-    workspaceOwner,
-  );
-  const mainWorkspaceReady = useWindowWorkspace(
-    windowKind === 'main' && Boolean(workspaceOwner),
-    workspaceOwner,
-  );
-  useCloseDetachedWindowWhenEmpty(isDetached, detachedInitialTabReady);
-
-  if (
-    isLoading ||
-    windowKind === null ||
-    (windowKind === 'main' && !mainWorkspaceReady) ||
-    (isDetached && !detachedInitialTabReady)
-  ) {
-    return <SplashScreen />;
-  }
+  if (isLoading) return <SplashScreen />;
 
   if (!isAuthenticated) {
     return <Navigate to="/login" />;
@@ -307,11 +122,11 @@ function WindowAuthenticatedLayout() {
     return <Navigate to="/onboarding/office" />;
   }
 
-  if (isDetached) {
-    return <DetachedAuthenticatedShell isFullscreen={isFullscreen} />;
-  }
+  // Electron에서는 로그인 뒤의 창 화면이 이 문서가 아니다: main이 곧바로 탭바 문서로
+  // 바꾸고, 화면은 탭마다의 탭 화면이 그린다. 바뀌기 전의 짧은 순간만 시작 화면을 보인다.
+  if (window.electronBridge) return <SplashScreen />;
 
-  return <MainAuthenticatedShell isFullscreen={isFullscreen} />;
+  return <BrowserPreviewShell />;
 }
 
 interface NativeTabBootstrap {
@@ -339,6 +154,14 @@ function useNativeTabBootstrap(): NativeTabBootstrap | null {
     const ownTab: Promise<Tab | null> = isSpare
       ? new Promise((resolve) => {
           unsubscribeAssign = bridge.onAssign?.(({ tab }) => resolve(tab));
+          // 이미 탭을 맡은 뒤에 이 문서가 다시 떴다면(새로 고침) 맡기는 신호는 다시 오지
+          // 않는다. main이 이 화면에 맡긴 탭이 있는지 물어본다. 아직 예비 화면이면 없다.
+          void bridge
+            .getNativeTabSnapshot?.()
+            .then((tab) => {
+              if (tab) resolve(tab);
+            })
+            .catch(() => undefined);
         })
       : (bridge.getNativeTabSnapshot?.() ?? Promise.resolve(null));
 
@@ -455,9 +278,14 @@ function NativeTabNavigationBridge() {
 }
 
 function AuthenticatedLayout() {
-  return getRendererSurface().kind === 'native-tab' ? (
-    <NativeTabAuthenticatedLayout />
-  ) : (
-    <WindowAuthenticatedLayout />
+  // 통화 상태의 주인은 main이다. 셸과 탭 화면은 같은 얇은 구독자를 쓴다.
+  return (
+    <CtiProvider>
+      {getRendererSurface().kind === 'native-tab' ? (
+        <NativeTabAuthenticatedLayout />
+      ) : (
+        <WindowAuthenticatedLayout />
+      )}
+    </CtiProvider>
   );
 }

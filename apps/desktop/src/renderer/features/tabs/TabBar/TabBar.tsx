@@ -1,60 +1,65 @@
-import { useEffect, useRef, type WheelEvent } from 'react';
-import {
-  DndContext,
-  PointerSensor,
-  closestCenter,
-  useSensor,
-  useSensors,
-  type DragEndEvent,
-} from '@dnd-kit/core';
-import {
-  SortableContext,
-  horizontalListSortingStrategy,
-} from '@dnd-kit/sortable';
-import type { Tab as TabType } from '@estate-erp/shared';
-import type { TabMenuItem } from '../../../../common/tabCommands';
-import { useTabStore } from '../store/useTabStore';
-import { reopenLastClosedTabs } from '../store/useTabHistoryStore';
+import { Fragment, useEffect, useRef, type CSSProperties, type WheelEvent } from 'react';
+import { useTabBar } from './tabBarContext';
 import { Tab, TAB_MAX_WIDTH, TAB_MIN_WIDTH } from './Tab';
 import { NewTabButton } from './NewTabButton';
-import { useDetachDrag } from '../hooks/useDetachDrag';
+import { useTabDrag } from '../hooks/useTabDrag';
 import { cn } from '@/lib/utils';
 
 /** 새 탭 버튼 칸. 버튼은 마지막 탭 바로 뒤에 붙는다(Notion). */
 const NEW_TAB_SLOT_WIDTH = 40;
+const TAB_SLOT_LIMITS = { min: TAB_MIN_WIDTH, max: TAB_MAX_WIDTH };
+/** 끄는 동안 다른 탭이 자리를 비켜 주는 움직임(Notion의 slide와 같은 200ms). */
+const GAP_TRANSITION =
+  'flex-grow 200ms ease, min-width 200ms ease, max-width 200ms ease';
+
+/**
+ * 탭 사이의 빈 칸. 평소에는 폭이 0이고, 탭을 끄는 동안 그 탭이 들어갈 자리에서 탭 한 칸만큼
+ * 열린다. 탭과 같은 규칙으로 폭을 나눠 가지므로, 열리면 다른 탭들이 밀려나 자리를 비킨다.
+ */
+function TabGap({
+  open,
+  animate,
+  isLast,
+}: {
+  open: boolean;
+  animate: boolean;
+  isLast: boolean;
+}) {
+  const separators = [
+    'inset 1px 0 0 var(--color-border)',
+    'inset 0 -1px 0 var(--color-border)',
+  ];
+  if (isLast) separators.push('inset -1px 0 0 var(--color-border)');
+  return (
+    <div
+      data-slot="tab-gap"
+      data-open={open ? 'true' : undefined}
+      aria-hidden
+      className="h-9 self-end overflow-hidden bg-sidebar-accent/60"
+      style={
+        {
+          WebkitAppRegion: 'no-drag',
+          flexGrow: open ? 1 : 0,
+          flexShrink: 1,
+          flexBasis: '0%',
+          minWidth: open ? TAB_MIN_WIDTH : 0,
+          maxWidth: open ? TAB_MAX_WIDTH : 0,
+          boxShadow: separators.join(', '),
+          transition: animate ? GAP_TRANSITION : 'none',
+        } as CSSProperties
+      }
+    />
+  );
+}
 
 interface Props {
   className?: string;
   showNewTabButton?: boolean;
-}
-
-type TabMenuAction =
-  | 'reopen'
-  | 'close'
-  | 'close-others'
-  | 'close-left'
-  | 'close-right';
-
-function tabMenuItems(index: number, count: number, canReopen: boolean): TabMenuItem[] {
-  return [
-    {
-      type: 'item',
-      id: 'reopen',
-      label: '닫은 탭 다시 열기',
-      enabled: canReopen,
-      accelerator: 'CmdOrCtrl+Shift+T',
-    },
-    { type: 'separator' },
-    { type: 'item', id: 'close', label: '탭 닫기', accelerator: 'CmdOrCtrl+W' },
-    { type: 'item', id: 'close-others', label: '다른 탭 닫기', enabled: count > 1 },
-    { type: 'item', id: 'close-left', label: '왼쪽 탭 닫기', enabled: index > 0 },
-    {
-      type: 'item',
-      id: 'close-right',
-      label: '오른쪽 탭 닫기',
-      enabled: index < count - 1,
-    },
-  ];
+  /**
+   * 탭을 다른 창으로 옮길 수 있는지(창이 여럿인 Electron에서만): 탭 줄 밖에 놓아 새 창으로,
+   * 다른 창의 탭 줄에 놓아 그 창으로. 끌어서 순서를 바꾸는 것은 늘 된다.
+   */
+  detachable?: boolean;
 }
 
 /**
@@ -62,22 +67,31 @@ function tabMenuItems(index: number, count: number, canReopen: boolean): TabMenu
  * 헤더의 아래 선(border-b)까지 덮도록 1px 더 길게 그린다. 그래야 활성 탭이 그 선을
  * 가리고 아래 콘텐츠와 한 면으로 이어진다.
  */
-export function TabBar({ className, showNewTabButton = true }: Props) {
-  const tabs = useTabStore((s) => s.tabs);
-  const activeTabId = useTabStore((s) => s.activeTabId);
-  const activateTab = useTabStore((s) => s.activateTab);
-  const closeTab = useTabStore((s) => s.closeTab);
-  const reorderTabs = useTabStore((s) => s.reorderTabs);
+export function TabBar({
+  className,
+  showNewTabButton = true,
+  detachable = false,
+}: Props) {
+  // 탭 목록의 주인은 따로 있다(Electron에서는 main). 여기서는 받은 것을 그리고
+  // 사용자가 한 동작을 보내기만 한다.
+  const { view, dispatch } = useTabBar();
+  const { tabs, activeTabId } = view;
 
-  const tabBarRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
-  useDetachDrag(tabBarRef);
-
-  const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: { distance: 4 },
-    }),
-  );
+  const listRef = useRef<HTMLDivElement>(null);
+  const slot = showNewTabButton ? NEW_TAB_SLOT_WIDTH : 0;
+  const drag = useTabDrag({
+    tabIds: tabs.map((tab) => tab.id),
+    windowId: view.windowId,
+    reservedSlot: view.reservedSlot,
+    detachable,
+    dispatch,
+    listRef,
+    viewportRef: scrollRef,
+    trailingWidth: slot,
+    slotLimits: TAB_SLOT_LIMITS,
+  });
+  const { openGap, collapsedTabId, slotCount } = drag.slots;
 
   // 탭이 넘쳐 스크롤될 때 활성 탭이 보이는 자리로 옮긴다.
   useEffect(() => {
@@ -88,14 +102,6 @@ export function TabBar({ className, showNewTabButton = true }: Props) {
     node?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   }, [activeTabId, tabs.length]);
 
-  const handleDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event;
-    if (!over) return;
-    if (active.id !== over.id) {
-      reorderTabs(String(active.id), String(over.id));
-    }
-  };
-
   // 세로 휠로도 탭 줄을 가로로 넘긴다.
   const handleWheel = (event: WheelEvent<HTMLDivElement>) => {
     const element = scrollRef.current;
@@ -104,91 +110,63 @@ export function TabBar({ className, showNewTabButton = true }: Props) {
     element.scrollLeft += event.deltaY;
   };
 
-  const showTabMenu = async (tab: TabType, index: number) => {
-    const showMenu = window.electronBridge?.tabs?.showMenu;
-    if (!showMenu) return;
-    const state = useTabStore.getState();
-    const chosen = (await showMenu(
-      tabMenuItems(index, state.tabs.length, state.recentlyClosedTabs.length > 0),
-    )) as TabMenuAction | null;
-    const store = useTabStore.getState();
-    switch (chosen) {
-      case 'reopen':
-        reopenLastClosedTabs();
-        break;
-      case 'close':
-        store.closeTab(tab.id);
-        break;
-      case 'close-others':
-        store.closeOtherTabs(tab.id);
-        break;
-      case 'close-left':
-        store.closeTabsToLeft(tab.id);
-        break;
-      case 'close-right':
-        store.closeTabsToRight(tab.id);
-        break;
-      default:
-        break;
-    }
-  };
-
-  const slot = showNewTabButton ? NEW_TAB_SLOT_WIDTH : 0;
-
   return (
     <div
-      ref={tabBarRef}
+      // 탭 줄 전체(탭 오른쪽의 빈 자리 포함)가 탭을 놓는 자리다.
+      {...drag.stripProps}
       className={cn(
         'flex h-[calc(100%_+_1px)] min-w-0 flex-1 self-start items-end',
         className,
       )}
     >
-      <DndContext
-        sensors={sensors}
-        collisionDetection={closestCenter}
-        onDragEnd={handleDragEnd}
+      <div
+        ref={scrollRef}
+        onWheel={handleWheel}
+        className="flex h-full min-w-0 flex-1 items-end overflow-x-auto overflow-y-hidden [&::-webkit-scrollbar]:hidden"
       >
-        <SortableContext
-          items={tabs.map((t) => t.id)}
-          strategy={horizontalListSortingStrategy}
+        <div
+          ref={listRef}
+          role="tablist"
+          data-slot="tab-list"
+          className="flex h-full items-end"
+          style={{
+            flex: '1 1 0%',
+            // 끄는 동안 다른 창의 탭이 들어올 빈 칸까지 센다.
+            minWidth: slotCount * TAB_MIN_WIDTH + slot,
+            maxWidth: slotCount * TAB_MAX_WIDTH + slot,
+          }}
         >
-          <div
-            ref={scrollRef}
-            onWheel={handleWheel}
-            className="flex h-full min-w-0 flex-1 items-end overflow-x-auto overflow-y-hidden [&::-webkit-scrollbar]:hidden"
-          >
+          {tabs.map((tab, index) => (
+            <Fragment key={tab.id}>
+              <TabGap open={openGap === index} animate={drag.animate} isLast={false} />
+              <Tab
+                tab={tab}
+                isActive={tab.id === activeTabId}
+                // 맨 끝에 빈 칸이 열려 있으면 끝 선은 그 칸이 그린다.
+                isLast={index === tabs.length - 1 && openGap !== tabs.length}
+                collapsed={tab.id === collapsedTabId}
+                onActivate={() => dispatch({ type: 'activate', tabId: tab.id })}
+                onClose={() => dispatch({ type: 'close', tabId: tab.id })}
+                // 탭 메뉴는 main이 native 메뉴로 띄우고 고른 것을 직접 적용한다.
+                onContextMenu={() => dispatch({ type: 'tab-menu', tabId: tab.id })}
+                drag={drag.tabProps(tab.id)}
+              />
+            </Fragment>
+          ))}
+          <TabGap open={openGap === tabs.length} animate={drag.animate} isLast />
+          {showNewTabButton ? (
             <div
-              data-slot="tab-list"
-              className="flex h-full items-end"
-              style={{
-                flex: '1 1 0%',
-                minWidth: tabs.length * TAB_MIN_WIDTH + slot,
-                maxWidth: tabs.length * TAB_MAX_WIDTH + slot,
-              }}
+              className="flex h-9 shrink-0 items-center justify-center"
+              style={{ width: NEW_TAB_SLOT_WIDTH }}
             >
-              {tabs.map((tab, index) => (
-                <Tab
-                  key={tab.id}
-                  tab={tab}
-                  isActive={tab.id === activeTabId}
-                  isLast={index === tabs.length - 1}
-                  onActivate={() => activateTab(tab.id)}
-                  onClose={() => closeTab(tab.id)}
-                  onContextMenu={() => void showTabMenu(tab, index)}
-                />
-              ))}
-              {showNewTabButton ? (
-                <div
-                  className="flex h-9 shrink-0 items-center justify-center"
-                  style={{ width: NEW_TAB_SLOT_WIDTH }}
-                >
-                  <NewTabButton />
-                </div>
-              ) : null}
+              <NewTabButton
+                shortcut={view.platform === 'darwin' ? '⌘T' : 'Ctrl+T'}
+                onClick={() => dispatch({ type: 'new-tab' })}
+              />
             </div>
-          </div>
-        </SortableContext>
-      </DndContext>
+          ) : null}
+        </div>
+      </div>
     </div>
   );
 }

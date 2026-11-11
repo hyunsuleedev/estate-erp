@@ -1,5 +1,3 @@
-import type { Tab } from '@estate-erp/shared';
-import { resolveNativeTabRoute } from '../../../../common/nativeTabs';
 
 /** 열린 다이얼로그/시트/인라인 편집기: 화면을 버리면 입력 중인 내용이 사라진다. */
 export const TRANSIENT_EDITOR_SELECTOR = [
@@ -26,23 +24,10 @@ function shellContentHasUnsavedEditor(): boolean {
 }
 
 /**
- * 활성 탭 화면을 다른 화면으로 교체해도 되는지 판단한다.
- * - 셸 renderer에 그려진 화면: DOM의 편집기/dirty 표식을 본다.
- * - native WebContents 탭(매물 상세): main이 가진 retention 상태를 묻는다.
- *   물어볼 수 없거나 실패하면 보존 쪽으로 판단한다.
+ * 브라우저 단독 미리보기에서, 활성 탭의 화면을 다른 화면으로 바꿔도 되는지 판단한다.
+ * 이 문서가 직접 그린 화면의 편집기/dirty 표식을 본다. Electron에서는 탭 화면이
+ * main에 알린 상태로 main이 판단한다.
  */
-export async function activeTabHasUnsavedWork(tab: Tab): Promise<boolean> {
-  if (shellContentHasUnsavedEditor()) return true;
-  if (!resolveNativeTabRoute(tab.route)) return false;
-
-  const query =
-    typeof window === 'undefined'
-      ? undefined
-      : window.electronBridge?.tabs?.hasUnsavedNativeTabWork;
-  if (!query) return false;
-  try {
-    return await query(tab.id);
-  } catch {
-    return true;
-  }
+export async function activeTabHasUnsavedWork(): Promise<boolean> {
+  return shellContentHasUnsavedEditor();
 }

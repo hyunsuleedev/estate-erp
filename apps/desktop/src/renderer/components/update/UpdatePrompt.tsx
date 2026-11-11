@@ -26,15 +26,22 @@ export function UpdatePrompt() {
     void bridge.getStatus().then((nextStatus) => {
       if (mounted) setStatus(nextStatus);
     });
+    // 안내는 탭 화면마다 따로 그려진다. 한 화면에서 닫으면 main이 기억하고 모든 화면이
+    // 같이 닫는다(탭을 바꿀 때마다 다시 뜨지 않게).
+    void bridge.getDismissed?.().then((startedAt) => {
+      if (mounted) setDismissedStartedAt(startedAt);
+    });
 
     const cleanup = bridge.onStatus((nextStatus) => {
       setStatus(nextStatus);
       setDismissedStartedAt(null);
     });
+    const cleanupDismissed = bridge.onDismissed?.(setDismissedStartedAt);
 
     return () => {
       mounted = false;
       cleanup();
+      cleanupDismissed?.();
     };
   }, []);
 
@@ -49,19 +56,12 @@ export function UpdatePrompt() {
       dismissedStartedAt !== status.startedAt,
   );
 
-  useEffect(() => {
-    const setOverlayVisible =
-      window.electronBridge?.tabs.setGlobalOverlayVisible;
-    if (!setOverlayVisible) return;
-    setOverlayVisible('updater', isVisible);
-    return () => setOverlayVisible('updater', false);
-  }, [isVisible]);
-
   if (!status || !model || !isVisible) return null;
 
   const handleAction = (action: UpdatePromptAction) => {
     if (action === 'dismiss') {
       setDismissedStartedAt(status.startedAt);
+      window.electronBridge?.updater?.dismiss?.(status.startedAt);
       return;
     }
 

@@ -111,12 +111,13 @@ describe("desktop app sidebar", () => {
   });
 
   it("places the Estaitt brand before the titlebar sidebar trigger", () => {
+    // 로그인 뒤의 창 화면은 탭바 문서다(src/tabbar). 타이틀바는 거기서 그린다.
     const layoutSource = readFileSync(
-      resolve(testDir, "../src/renderer/routes/_authenticated.tsx"),
+      resolve(testDir, "../src/tabbar/TabBarWindow.tsx"),
       "utf8",
     );
-    const appCssSource = readFileSync(
-      resolve(testDir, "../src/renderer/app.css"),
+    const titlebarCss = readFileSync(
+      resolve(testDir, "../src/tabbar/tabbar.css"),
       "utf8",
     );
 
@@ -124,7 +125,7 @@ describe("desktop app sidebar", () => {
     const spacerIndex = layoutSource.indexOf(
       'data-slot="titlebar-brand-spacer"',
     );
-    const triggerIndex = layoutSource.indexOf("<SidebarTrigger");
+    const triggerIndex = layoutSource.indexOf('data-slot="sidebar-trigger"');
 
     assert.ok(brandIndex !== -1, "titlebar brand should exist");
     assert.ok(spacerIndex !== -1, "titlebar brand spacer should exist");
@@ -138,6 +139,11 @@ describe("desktop app sidebar", () => {
       /w-\(--sidebar-width\)/,
       "titlebar controls should end at the expanded sidebar boundary",
     );
+    assert.match(
+      titlebarCss,
+      /--sidebar-width: 16rem;/,
+      "the tab bar document should use the same sidebar width as the app",
+    );
     assert.doesNotMatch(
       layoutSource,
       /w-\(--sidebar-width\)[^>]*WebkitAppRegion:\s*['"]no-drag['"]/,
@@ -149,33 +155,34 @@ describe("desktop app sidebar", () => {
       "the titlebar brand area should opt into native window dragging",
     );
     assert.match(
-      appCssSource,
+      titlebarCss,
       /\.app-titlebar-drag-region\s*\{[\s\S]*?-webkit-app-region:\s*drag/,
       "the titlebar brand area should be a native drag region",
     );
     assert.match(
-      appCssSource,
+      titlebarCss,
       /\.app-titlebar button,[\s\S]*?-webkit-app-region:\s*no-drag/,
       "interactive titlebar controls should remain clickable",
     );
+    // 전체 화면 여부와 플랫폼은 main이 보내 준 그 창의 탭바 상태에서 읽는다.
     assert.match(
       layoutSource,
-      /isMac && !isFullscreen \? 'pl-\[92px\]' : 'pl-4'/,
+      /const \{ reserveTrafficLights, reserveWindowControls \} = tabBarChrome\(view\);/,
+    );
+    assert.match(
+      layoutSource,
+      /reserveTrafficLights \? 'pl-\[92px\]' : 'pl-4'/,
       "macOS titlebar should leave breathing room after the 80px traffic-light area",
     );
     assert.match(
       layoutSource,
-      /data-slot="titlebar-brand-spacer"[^>]*className="min-w-0 flex-1"/,
+      /data-slot="titlebar-brand-spacer"[\s\S]{0,40}className="min-w-0 flex-1"/,
       "remaining titlebar space should be placed to the right of Estaitt",
     );
     assert.match(
       layoutSource,
-      /<Separator[^>]*className="ml-1 mr-0 self-stretch"/,
+      /data-slot="titlebar-separator"[\s\S]{0,40}className="ml-1 mr-0 w-px self-stretch bg-border"/,
       "the titlebar separator should fill the boundary from top to bottom",
-    );
-    assert.equal(
-      layoutSource.includes("data-[orientation=vertical]:h-4"),
-      false,
     );
   });
 
@@ -190,39 +197,50 @@ describe("desktop app sidebar", () => {
     assert.equal(layoutSource.includes("QuickCreate"), false);
   });
 
-  it("renders detached windows with a focused titlebar and the shared sidebar below it", () => {
+  it("renders detached windows with a focused titlebar and nothing of the app below it", () => {
+    const shellSource = readFileSync(
+      resolve(testDir, "../src/tabbar/TabBarWindow.tsx"),
+      "utf8",
+    );
+    // 창의 종류는 main이 보내 준 탭바 상태가 말해 준다. 한 문서가 두 종류를 그린다.
+    assert.match(
+      shellSource,
+      /const isDetached = view\.windowKind === 'detached';/,
+    );
+    assert.match(
+      shellSource,
+      /data-window-shell=\{isDetached \? 'detached' : 'main'\}/,
+    );
+
+    const detachedStart = shellSource.indexOf("{isDetached ? (");
+    const detachedEnd = shellSource.indexOf(") : (", detachedStart);
+    const detachedSource = shellSource.slice(detachedStart, detachedEnd);
+    assert.ok(detachedStart !== -1 && detachedEnd > detachedStart);
+    assert.match(detachedSource, /data-slot="detached-titlebar-spacer"/);
+    assert.doesNotMatch(detachedSource, /data-slot="sidebar-trigger"/);
+    assert.doesNotMatch(detachedSource, /data-slot="desktop-brand"/);
+
+    assert.match(
+      shellSource,
+      /showNewTabButton=\{view\.canCreateTabs\}/,
+      "detached windows should keep the tab strip without exposing the global new-tab action",
+    );
+    // 탭바 아래(사이드바 + 화면)는 탭 화면이 그린다. 창의 화면은 그 자리에 바탕색만 둔다.
+    assert.match(shellSource, /data-slot="tab-view-backdrop"/);
+    assert.doesNotMatch(
+      shellSource,
+      /AppSidebar|SidebarProvider|TabWorkspaceController|<TabContent|useTabStore|<CallPopup/,
+    );
+
+    // 앱 문서는 Electron에서 로그인 뒤의 창 화면을 그리지 않는다(main이 탭바 문서로 바꾼다).
     const layoutSource = readFileSync(
       resolve(testDir, "../src/renderer/routes/_authenticated.tsx"),
       "utf8",
     );
-    const detachedStart = layoutSource.indexOf(
-      "function DetachedAuthenticatedShell",
-    );
-    const detachedEnd = layoutSource.indexOf(
-      "function ShellSidebarFrame",
-      detachedStart,
-    );
-    const detachedSource = layoutSource.slice(detachedStart, detachedEnd);
-
-    assert.ok(detachedStart !== -1, "detached shell should exist");
-    assert.ok(detachedEnd > detachedStart, "detached shell should be isolated");
-    assert.match(detachedSource, /data-window-shell="detached"/);
     assert.match(
-      detachedSource,
-      /<TabBar[^>]*showNewTabButton=\{false\}/,
-      "detached windows should keep the tab strip without exposing the global new-tab action",
+      layoutSource,
+      /if \(window\.electronBridge\) return <SplashScreen \/>;\s*return <BrowserPreviewShell \/>;/,
     );
-    assert.match(
-      detachedSource,
-      /<TabWorkspaceController autoCreateInitialTab=\{false\}/,
-      "detached windows should keep one persistent workspace controller without auto-creating a route tab",
-    );
-    assert.match(detachedSource, /<TabContent \/>/);
-    // 탭바 아래(사이드바 + 화면)는 탭 화면이 그리므로 분리 창도 메인 창과 같은 사이드바를 갖는다.
-    assert.match(detachedSource, /<ShellSidebarFrame/);
-    assert.doesNotMatch(detachedSource, /<SidebarTrigger/);
-    assert.doesNotMatch(detachedSource, /data-slot="desktop-brand"/);
-    assert.doesNotMatch(detachedSource, /<CallPopup/);
   });
 
   it("lays out titlebar tabs the Notion way: shared width, active tab joined to the content", () => {
@@ -243,7 +261,8 @@ describe("desktop app sidebar", () => {
     assert.match(tabSource, /TAB_MIN_WIDTH = 36/);
     assert.match(tabSource, /TAB_MAX_WIDTH = 200/);
     assert.match(tabSource, /flex: '1 1 0%'/);
-    assert.match(tabBarSource, /maxWidth: tabs\.length \* TAB_MAX_WIDTH \+ slot/);
+    // 칸의 수는 탭의 수다. 탭을 끄는 동안에는 다른 창의 탭이 들어올 빈 칸까지 센다.
+    assert.match(tabBarSource, /maxWidth: slotCount \* TAB_MAX_WIDTH \+ slot/);
     assert.match(tabBarSource, /overflow-x-auto/);
     // 비활성 탭만 아래 선을 그려, 활성 탭이 콘텐츠와 한 면으로 이어진다.
     assert.match(tabSource, /if \(!isActive\) separators\.push\('inset 0 -1px 0 var\(--color-border\)'\)/);

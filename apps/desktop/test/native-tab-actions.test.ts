@@ -7,14 +7,12 @@ import {
 } from '../src/common/nativeTabActions';
 import { installNativeTabStoreBridge } from '../src/renderer/features/tabs/native/nativeTabStoreBridge';
 import { shouldOpenNavigationInOtherTab } from '../src/renderer/features/tabs/native/NativeTabRouterBridge';
-import { applyNativeTabAction } from '../src/renderer/features/tabs/native/useNativeTabActions';
 import { useTabStore } from '../src/renderer/features/tabs/store/useTabStore';
 
 function resetStore() {
   useTabStore.setState({
     tabs: [],
     activeTabId: null,
-    transferLockedTabIds: new Set(),
     recentlyClosedTabs: [],
   });
 }
@@ -177,86 +175,5 @@ describe('native tab store mirror', () => {
   });
 });
 
-describe('window shell applying native tab actions', () => {
-  beforeEach(resetStore);
-  afterEach(resetStore);
-
-  function openNativeOwner(): string {
-    return useTabStore.getState().createTab({
-      route: '/properties/property-1',
-      kind: 'property',
-      title: '매물',
-    });
-  }
-
-  it('opens a different resource from a link in another tab and keeps the source', () => {
-    const owner = openNativeOwner();
-    applyNativeTabAction(owner, { type: 'adopt-location', route: '/contacts/contact-1' });
-
-    const { tabs, activeTabId } = useTabStore.getState();
-    assert.equal(tabs.length, 2);
-    assert.equal(tabs.find((tab) => tab.id === owner)?.route, '/properties/property-1');
-    assert.equal(tabs.find((tab) => tab.id === activeTabId)?.route, '/contacts/contact-1');
-  });
-
-  it('keeps drafts and closes only the tab that asked', () => {
-    const owner = openNativeOwner();
-    const other = useTabStore.getState().createTab({ route: '/tasks', title: '업무' });
-
-    applyNativeTabAction(owner, { type: 'update-form-draft', key: 'memo', value: '메모' });
-    assert.equal(
-      useTabStore.getState().tabs.find((tab) => tab.id === owner)?.uiState?.formDraft?.memo,
-      '메모',
-    );
-
-    applyNativeTabAction(owner, { type: 'close' });
-    assert.deepEqual(
-      useTabStore.getState().tabs.map((tab) => tab.id),
-      [other],
-    );
-  });
-
-  it('ignores own-tab actions after the tab left this window', () => {
-    applyNativeTabAction('moved-away', { type: 'close' });
-    applyNativeTabAction('moved-away', { type: 'update-title', title: 'x' });
-    assert.equal(useTabStore.getState().tabs.length, 0);
-  });
-
-  it('moves the tab from the sidebar and opens a new tab when unsaved work exists', async () => {
-    const owner = openNativeOwner();
-    const globalWithWindow = globalThis as { window?: unknown };
-    const previousWindow = globalWithWindow.window;
-    globalWithWindow.window = {
-      electronBridge: { tabs: { hasUnsavedNativeTabWork: async () => true } },
-    };
-    try {
-      applyNativeTabAction(owner, {
-        type: 'navigate',
-        input: { route: '/contacts', kind: 'contact', title: '고객' },
-      });
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    } finally {
-      globalWithWindow.window = previousWindow;
-    }
-
-    const tabs = useTabStore.getState().tabs;
-    assert.equal(tabs.length, 2);
-    assert.equal(tabs.find((tab) => tab.id === owner)?.route, '/properties/property-1');
-  });
-
-  it('keeps the shell form draft when a native scroll snapshot arrives', () => {
-    const owner = openNativeOwner();
-    useTabStore.getState().updateTabFormDraft(owner, 'memo', '셸 초안');
-    const tab = useTabStore.getState().tabs.find((candidate) => candidate.id === owner);
-    assert.ok(tab);
-
-    useTabStore.getState().updateNativeTabSnapshot({
-      ...tab,
-      uiState: { scrollY: 320, formDraft: { memo: '오래된 초안' } },
-    });
-
-    const updated = useTabStore.getState().tabs.find((candidate) => candidate.id === owner);
-    assert.equal(updated?.uiState?.scrollY, 320);
-    assert.equal(updated?.uiState?.formDraft?.memo, '셸 초안');
-  });
-});
+// 탭 화면이 보낸 탭 작업을 탭 목록에 적용하는 규칙은 main의 것이다:
+// test/tab-registry.test.ts 'requests from a page inside a tab view'.

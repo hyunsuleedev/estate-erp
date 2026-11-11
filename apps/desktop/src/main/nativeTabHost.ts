@@ -24,6 +24,11 @@ export interface NativeTabViewPort {
   whenReady?(): Promise<void>;
   /** 미리 띄워 둔 탭 화면에 실제 탭을 맡긴다. */
   assign?(tab: Readonly<Tab>): void;
+  /**
+   * 화면의 프로세스가 죽었는지. 죽은 화면은 없어지지 않고 남아 있지만 아무것도 그리지
+   * 못하고 메시지도 받지 못한다.
+   */
+  isCrashed?(): boolean;
 }
 
 export interface NativeTabHostPort {
@@ -32,6 +37,11 @@ export interface NativeTabHostPort {
   attach(view: NativeTabViewPort): void;
   detach(view: NativeTabViewPort): void;
   bringToFront(view: NativeTabViewPort): void;
+  /**
+   * 이 창에서 보여 주는 탭 화면에 키보드 입력을 줘도 되는지. 탭 화면에 입력을 주면 그 창도
+   * 앞으로 나오므로, 앱의 다른 창을 쓰고 있는 동안에는 아니다. 없으면 늘 준다.
+   */
+  canTakeFocus?(): boolean;
 }
 
 export interface NativeTabViewFactory {
@@ -415,7 +425,9 @@ export class NativeTabHost {
       selected.view.setBounds(host.bounds);
       host.port.bringToFront(selected.view);
       selected.view.setVisible(true);
-      selected.view.focus();
+      // 뒤에 있는 창의 탭이 바뀐 것(탭을 다른 창으로 옮긴 뒤 남은 탭을 보여 줄 때 등)으로
+      // 그 창이 쓰고 있는 창 앞으로 튀어나오면 안 된다.
+      if (host.port.canTakeFocus?.() ?? true) selected.view.focus();
     }
     host.activeTabId = tabId;
     host.epoch += 1;
@@ -486,69 +498,6 @@ export class NativeTabHost {
       previousSourceActiveTabId,
       previousTargetActiveTabId,
     };
-  }
-
-  rollback(move: NativeTabMove): boolean {
-    const record = this.tabs.get(move.tabId);
-    const source = this.hosts.get(move.sourceHostId);
-    const target = this.hosts.get(move.targetHostId);
-    if (
-      !record ||
-      !source ||
-      !target ||
-      record.hostId !== move.targetHostId ||
-      record.revision !== move.revision ||
-      source.port.isDestroyed() ||
-      record.view.isDestroyed()
-    ) {
-      this.settleMove(move);
-      return false;
-    }
-
-    try {
-      this.moveView(record.view, target, source, source.bounds, false, () => {
-        record.view.setVisible(true);
-      });
-    } catch (error) {
-      // Window close/crash handlers must never let a failed rollback escape to
-      // Electron's main event loop. Ownership remains at the current host.
-      this.onCleanupError(error);
-      this.settleMove(move);
-      return false;
-    }
-
-    target.tabIds.delete(move.tabId);
-    source.tabIds.add(move.tabId);
-    record.hostId = move.sourceHostId;
-    record.revision += 1;
-
-    const currentSourceActive = this.validActiveTabForHost(
-      source.activeTabId,
-      source.port.id,
-    );
-    source.activeTabId =
-      currentSourceActive ??
-      this.validActiveTabForHost(
-        move.previousSourceActiveTabId,
-        source.port.id,
-      );
-    const currentTargetActive = this.validActiveTabForHost(
-      target.activeTabId === move.tabId ? null : target.activeTabId,
-      target.port.id,
-    );
-    target.activeTabId =
-      currentTargetActive ??
-      this.validActiveTabForHost(
-        move.previousTargetActiveTabId,
-        target.port.id,
-      );
-    this.applyHostVisibility(source);
-    if (!target.port.isDestroyed()) this.applyHostVisibility(target);
-    source.epoch += 1;
-    target.epoch += 1;
-    this.touch(record);
-    this.settleMove(move);
-    return true;
   }
 
   /**
@@ -658,7 +607,11 @@ export class NativeTabHost {
   removeFailedSender(senderId: number): NativeTabSenderIdentity | null {
     const tabId = this.senderToTabId.get(senderId);
     const record = tabId ? this.tabs.get(tabId) : undefined;
-    if (!tabId || !record) return null;
+    if (!tabId || !record) {
+      // 탭을 맡기 전의 예비 화면이 죽었다. 그대로 두면 다음 새 탭이 죽은 화면을 받는다.
+      this.replaceSpareIfSender(senderId);
+      return null;
+    }
     const identity: NativeTabSenderIdentity = {
       tabId,
       hostId: record.hostId,
@@ -691,26 +644,10 @@ export class NativeTabHost {
     };
   }
 
-  updateTabSnapshot(senderId: number, tab: Tab): NativeTabSenderIdentity | null {
-    const tabId = this.senderToTabId.get(senderId);
-    const record = tabId ? this.tabs.get(tabId) : undefined;
-    if (
-      !tabId ||
-      !record ||
-      record.view.isDestroyed() ||
-      tab.id !== tabId ||
-      tab.schemaVersion !== 1
-    ) {
-      return null;
-    }
-    record.tab = cloneTab(tab);
-    return { tabId, hostId: record.hostId, tab: cloneTab(record.tab) };
-  }
-
   broadcast(
     channel: string,
     payload: unknown,
-    options: { exceptSenderId?: number } = {},
+    options: { exceptSenderId?: number; includeSpare?: boolean } = {},
   ): number {
     let delivered = 0;
     for (const record of [...this.tabs.values()]) {
@@ -721,6 +658,21 @@ export class NativeTabHost {
       }
       try {
         record.view.send(channel, payload);
+        delivered += 1;
+      } catch (error) {
+        this.onCleanupError(error);
+      }
+    }
+    // 미리 띄워 둔 여분 화면도 앱 전체 상태(로그인 세션)는 같이 받아야, 탭으로
+    // 배정되는 순간 지난 값을 보여 주지 않는다.
+    const spare = options.includeSpare ? this.spare : null;
+    if (
+      spare &&
+      spare.view.senderId !== options.exceptSenderId &&
+      !spare.view.isDestroyed()
+    ) {
+      try {
+        spare.view.send(channel, payload);
         delivered += 1;
       } catch (error) {
         this.onCleanupError(error);
@@ -787,10 +739,6 @@ export class NativeTabHost {
 
   getActiveTabId(hostId: number): string | null {
     return this.hosts.get(hostId)?.activeTabId ?? null;
-  }
-
-  getTabIds(hostId: number): readonly string[] {
-    return [...(this.hosts.get(hostId)?.tabIds ?? [])];
   }
 
   focus(tabId: string): boolean {
@@ -863,6 +811,18 @@ export class NativeTabHost {
     const spare = this.spare;
     this.spare = null;
     if (spare) this.safeCleanup(() => spare.view.destroy());
+  }
+
+  /**
+   * 그 WebContents가 예비 화면이면 버리고 새 예비 화면을 준비한다(예비 화면의 프로세스가
+   * 죽었거나 문서를 불러오지 못했을 때). 예비 화면이었으면 true.
+   */
+  replaceSpareIfSender(senderId: number): boolean {
+    const spare = this.spare;
+    if (!spare || spare.view.senderId !== senderId) return false;
+    this.discardSpare();
+    this.scheduleSparePreparation();
+    return true;
   }
 
   private nextAccessTime(): number {
@@ -938,6 +898,12 @@ export class NativeTabHost {
     if (!spare) return null;
     if (spare.view.isDestroyed()) {
       this.spare = null;
+      return null;
+    }
+    if (spare.view.isCrashed?.()) {
+      // 죽은 예비 화면에 탭을 맡기면 빈 화면이 뜬다. 버리고 새로 만든다(연 뒤에 다음
+      // 예비 화면을 다시 준비한다).
+      this.discardSpare();
       return null;
     }
     if (!spare.loaded || this.senderToTabId.has(spare.view.senderId)) return null;

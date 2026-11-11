@@ -18,6 +18,7 @@ import type {
 import { TRANSACTION_TYPE_LABELS } from '@estate-erp/shared';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
+import { useRealtimeRoom } from '@/providers/realtime-provider';
 import {
   formatArea,
   formatDate,
@@ -68,6 +69,8 @@ interface ContactRef {
 function PropertyDetailPage() {
   const { id } = Route.useParams();
   const queryClient = useQueryClient();
+  // 이 매물의 변경을 main의 실시간 연결로 받는다. 탭을 닫으면 구독도 놓인다.
+  useRealtimeRoom('property', id);
   const [listingDialog, setListingDialog] = useState<{
     open: boolean;
     listing: Listing | null;

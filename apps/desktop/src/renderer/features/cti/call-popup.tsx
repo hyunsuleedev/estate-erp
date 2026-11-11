@@ -4,7 +4,7 @@ import {
   type AnchorHTMLAttributes,
   type MouseEvent,
 } from 'react';
-import { defaultStringifySearch, Link } from '@tanstack/react-router';
+import { defaultStringifySearch } from '@tanstack/react-router';
 import {
   Building2,
   CalendarClock,
@@ -27,13 +27,12 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
-import { useCti, type ActiveCall } from './cti-provider';
+import { useCallPopup, type ActiveCall } from './cti-provider';
 
 type PopupRoute = '/contacts' | '/calls/logs';
 
 /**
- * 팝업 안 링크. 셸 안에서는 라우터 링크이고, 탭 화면 위의 팝업 층에서는
- * 라우터가 없으므로 셸 창에 그 화면을 열어 달라고 보낸다.
+ * 팝업 안 링크. 팝업 층에는 라우터가 없으므로 메인 창에 그 화면을 열어 달라고 보낸다.
  */
 function PopupRouteLink({
   to,
@@ -45,27 +44,20 @@ function PopupRouteLink({
   to: PopupRoute;
   search?: Record<string, unknown>;
 }) {
-  const { openRoute } = useCti();
-  if (openRoute) {
-    const href = `${to}${search ? defaultStringifySearch(search) : ''}`;
-    return (
-      <a
-        {...anchorProps}
-        href={href}
-        onClick={(event: MouseEvent<HTMLAnchorElement>) => {
-          event.preventDefault();
-          onClick?.(event);
-          openRoute(href);
-        }}
-      >
-        {children}
-      </a>
-    );
-  }
+  const { openRoute } = useCallPopup();
+  const href = `${to}${search ? defaultStringifySearch(search) : ''}`;
   return (
-    <Link {...anchorProps} to={to} search={search as never} onClick={onClick}>
+    <a
+      {...anchorProps}
+      href={href}
+      onClick={(event: MouseEvent<HTMLAnchorElement>) => {
+        event.preventDefault();
+        onClick?.(event);
+        openRoute(href);
+      }}
+    >
       {children}
-    </Link>
+    </a>
   );
 }
 
@@ -155,7 +147,7 @@ function ConsultationForm({
   contactId: string;
   onDone: () => void;
 }) {
-  const { patchCallLog } = useCti();
+  const { patchCallLog } = useCallPopup();
   const [content, setContent] = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -214,7 +206,7 @@ function QuickContactForm({
   call: ActiveCall;
   onDone: () => void;
 }) {
-  const { refreshLookup, patchCallLog } = useCti();
+  const { refreshLookup, patchCallLog } = useCallPopup();
   const [name, setName] = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -380,7 +372,7 @@ function LookupBody({ call }: { call: ActiveCall }) {
 }
 
 export function CallPopup() {
-  const { activeCall, dismiss } = useCti();
+  const { activeCall, dismiss } = useCallPopup();
   const [mode, setMode] = useState<'view' | 'consultation' | 'contact'>('view');
 
   // 새 통화가 오면 편집 모드 초기화

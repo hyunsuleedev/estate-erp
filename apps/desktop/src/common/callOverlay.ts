@@ -1,17 +1,23 @@
+import { isTabScreenRoute } from './nativeTabs';
+
 /**
  * 전화 수신 팝업 층(call overlay)과 창 알림 전달 계약.
  *
  * 모든 화면이 탭 화면(WebContentsView)이 된 뒤로 셸 창이 그리는 것은 탭 화면
  * 아래에 가려진다. 그래서 전화 팝업은 탭 화면 위의 작은 층에서 그리고, 셸이
- * 띄우던 알림(toast)은 보이는 탭 화면에서 대신 띄운다. 통화 상태의 주인은
- * 지금처럼 셸의 CtiProvider다.
+ * 띄우던 알림(toast)은 보이는 탭 화면에서 대신 띄운다. 통화 상태의 주인은 main
+ * 프로세스다(common/desktopCti.ts). 팝업 층은 받은 상태를 그리고 버튼만 보낸다.
  */
 
+/**
+ * 팝업에서 누른 버튼. callKey는 그 버튼이 가리키는 통화다. 저장이 끝나기 전에 다음
+ * 전화가 와서 팝업이 바뀌었으면 main이 옛 통화의 요청을 버린다.
+ */
 export type CallOverlayAction =
-  | { type: 'dismiss' }
-  | { type: 'refresh-lookup' }
-  | { type: 'patch-call-log'; patch: Record<string, unknown> }
-  /** 팝업 안 링크: 셸 창에서 그 화면을 연다. */
+  | { type: 'dismiss'; callKey?: number }
+  | { type: 'refresh-lookup'; callKey?: number }
+  | { type: 'patch-call-log'; patch: Record<string, unknown>; callKey?: number }
+  /** 팝업 안 링크: 메인 창에서 그 화면을 연다. */
   | { type: 'open-route'; route: string };
 
 export interface CallOverlaySize {
@@ -27,9 +33,8 @@ export interface WindowToast {
   description?: string;
 }
 
-const MAX_ROUTE_LENGTH = 4_096;
 const MAX_TEXT_LENGTH = 1_000;
-const MAX_STATE_JSON_LENGTH = 512_000;
+const MAX_PATCH_JSON_LENGTH = 512_000;
 const TOAST_LEVELS = new Set<WindowToastLevel>(['success', 'info', 'warning', 'error']);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -40,38 +45,28 @@ function isText(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0 && value.length <= MAX_TEXT_LENGTH;
 }
 
-/** 통화 상태는 API 응답(JSON)으로 만든 값이다. 크기와 JSON 직렬화 가능 여부만 본다. */
-export function isCallOverlayState(value: unknown): boolean {
-  if (value === null) return true;
-  if (!isRecord(value)) return false;
-  try {
-    return JSON.stringify(value).length <= MAX_STATE_JSON_LENGTH;
-  } catch {
-    return false;
-  }
-}
-
 export function parseCallOverlayAction(value: unknown): CallOverlayAction | null {
   if (!isRecord(value) || typeof value.type !== 'string') return null;
+  if (value.callKey !== undefined && !Number.isSafeInteger(value.callKey)) return null;
+  const key =
+    typeof value.callKey === 'number' ? { callKey: value.callKey } : {};
   switch (value.type) {
     case 'dismiss':
-      return { type: 'dismiss' };
+      return { type: 'dismiss', ...key };
     case 'refresh-lookup':
-      return { type: 'refresh-lookup' };
+      return { type: 'refresh-lookup', ...key };
     case 'patch-call-log': {
       if (!isRecord(value.patch)) return null;
       try {
-        if (JSON.stringify(value.patch).length > MAX_STATE_JSON_LENGTH) return null;
+        if (JSON.stringify(value.patch).length > MAX_PATCH_JSON_LENGTH) return null;
       } catch {
         return null;
       }
-      return { type: 'patch-call-log', patch: value.patch };
+      return { type: 'patch-call-log', patch: value.patch, ...key };
     }
     case 'open-route':
-      return typeof value.route === 'string' &&
-        value.route.startsWith('/') &&
-        !value.route.startsWith('//') &&
-        value.route.length <= MAX_ROUTE_LENGTH
+      // 팝업의 링크는 메인 창의 탭으로 열린다. 탭으로 열 수 있는 앱 화면만 받는다.
+      return isTabScreenRoute(value.route)
         ? { type: 'open-route', route: value.route }
         : null;
     default:

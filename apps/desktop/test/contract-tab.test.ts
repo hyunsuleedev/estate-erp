@@ -17,7 +17,6 @@ describe('contract document tab', () => {
     useTabStore.setState({
       tabs: [],
       activeTabId: null,
-      transferLockedTabIds: new Set(),
     });
   });
 

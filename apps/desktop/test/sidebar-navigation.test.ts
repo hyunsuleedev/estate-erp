@@ -3,25 +3,20 @@ import { afterEach, beforeEach, describe, it } from 'node:test';
 import { navigateActiveTab } from '../src/renderer/features/tabs/lib/navigateActiveTab';
 import { useTabStore } from '../src/renderer/features/tabs/store/useTabStore';
 
-const globalWithWindow = globalThis as { window?: unknown };
+const globalWithDocument = globalThis as { document?: unknown };
 
-function stubNativeUnsavedWork(
-  query: ((tabId: string) => Promise<boolean>) | undefined,
-): string[] {
-  const asked: string[] = [];
-  globalWithWindow.window = {
-    electronBridge: {
-      tabs: query
-        ? {
-            hasUnsavedNativeTabWork: (tabId: string) => {
-              asked.push(tabId);
-              return query(tabId);
-            },
-          }
-        : {},
-    },
+/**
+ * 브라우저 단독 미리보기의 화면: 이 문서가 직접 그린 탭 화면에 열린 편집기가 있는지를
+ * DOM에서 본다. (Electron에서는 탭 화면이 main에 알린 상태로 main이 판단한다.
+ * 그 규칙은 test/tab-registry.test.ts 에 있다.)
+ */
+function stubShellContent(hasOpenEditor: () => boolean): void {
+  globalWithDocument.document = {
+    querySelector: (selector: string) =>
+      selector === '[data-native-tab-legacy-fallback]'
+        ? { querySelector: () => (hasOpenEditor() ? {} : null) }
+        : null,
   };
-  return asked;
 }
 
 function openPropertyDetailTab(): string {
@@ -39,22 +34,20 @@ describe('sidebar navigation of the active tab', () => {
     useTabStore.setState({
       tabs: [],
       activeTabId: null,
-      transferLockedTabIds: new Set(),
     });
   });
 
   afterEach(() => {
-    delete globalWithWindow.window;
+    delete globalWithDocument.document;
   });
 
-  it('keeps a property detail with an unsaved memo and opens the menu in a new tab', async () => {
+  it('keeps a screen with an open editor and opens the menu in a new tab', async () => {
     const property = openPropertyDetailTab();
-    const asked = stubNativeUnsavedWork(async () => true);
+    stubShellContent(() => true);
 
     const result = await navigateActiveTab(CONTACTS);
 
     const state = useTabStore.getState();
-    assert.deepEqual(asked, [property]);
     assert.notEqual(result, property);
     assert.equal(state.tabs.length, 2);
     assert.equal(state.activeTabId, result);
@@ -66,7 +59,7 @@ describe('sidebar navigation of the active tab', () => {
 
   it('replaces a clean property detail in place', async () => {
     const property = openPropertyDetailTab();
-    stubNativeUnsavedWork(async () => false);
+    stubShellContent(() => false);
 
     const result = await navigateActiveTab(CONTACTS);
 
@@ -75,35 +68,13 @@ describe('sidebar navigation of the active tab', () => {
     assert.equal(useTabStore.getState().tabs[0].route, '/contacts');
   });
 
-  it('preserves the native tab when its unsaved state cannot be read', async () => {
+  it('moves in place when there is no screen to ask (node, tab views)', async () => {
     const property = openPropertyDetailTab();
-    stubNativeUnsavedWork(async () => {
-      throw new Error('ipc failed');
-    });
 
     const result = await navigateActiveTab(CONTACTS);
 
-    assert.notEqual(result, property);
-    assert.equal(useTabStore.getState().tabs.length, 2);
-  });
-
-  it('asks main about every app screen now that each tab has its own renderer', async () => {
-    const dashboard = useTabStore.getState().openModule({
-      route: '/dashboard',
-      kind: 'dashboard',
-      title: '대시보드',
-    });
-    const asked = stubNativeUnsavedWork(async () => true);
-
-    const result = await navigateActiveTab(CONTACTS);
-
-    assert.deepEqual(asked, [dashboard]);
-    assert.notEqual(result, dashboard);
-    assert.equal(useTabStore.getState().tabs.length, 2);
-    assert.equal(
-      useTabStore.getState().tabs.find((tab) => tab.id === dashboard)?.route,
-      '/dashboard',
-    );
+    assert.equal(result, property);
+    assert.equal(useTabStore.getState().tabs[0].route, '/contacts');
   });
 
   it('drops a stale click when the user switched tabs during the check', async () => {
@@ -114,7 +85,7 @@ describe('sidebar navigation of the active tab', () => {
       title: '업무',
       activate: false,
     });
-    stubNativeUnsavedWork(async () => {
+    stubShellContent(() => {
       useTabStore.getState().activateTab(other);
       return false;
     });

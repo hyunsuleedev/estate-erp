@@ -5,16 +5,13 @@ import { getRouteMeta } from './lib/routeMeta';
 import { resolveTabResourceKey } from './lib/tabResource';
 
 interface TabWorkspaceControllerProps {
-  /**
-   * 빈 상태(탭 0개)일 때 자동으로 대시보드 탭을 만들지 여부.
-   * 메인 윈도우는 true. detached 윈도우는 false (`useDetachedInitialTab`이
-   * IPC로 받은 초기 탭을 비동기 등록하므로 자동 생성과 race 회피).
-   */
+  /** 빈 상태(탭 0개)일 때 자동으로 대시보드 탭을 만들지 여부. */
   autoCreateInitialTab?: boolean;
 }
 
 /**
- * TabContent
+ * TabContent — 브라우저 단독 미리보기에서만 쓴다. Electron에서는 탭 목록의 주인이
+ * main이고 화면은 탭마다의 탭 화면이 그린다.
  *
  * 핵심 흐름:
  * - 활성 탭이 바뀜(탭 클릭, 새 탭) → 라우터를 그 탭의 route로 navigate.
@@ -36,14 +33,6 @@ export function TabWorkspaceController({
 
   const workspaceInitializedRef = useRef(false);
   const emptyWorkspaceHandledRef = useRef(false);
-
-  useEffect(() => {
-    const onOpenRoute = window.electronBridge?.tabs.onOpenRoute;
-    if (!onOpenRoute) return;
-    return onOpenRoute((route) => {
-      void navigate({ href: route });
-    });
-  }, [navigate]);
 
   // 최초 빈 상태는 deep link를 보존한다. 실행 중 마지막 탭을 닫거나 분리한 뒤의
   // 빈 상태는 옛 pathname을 복제하지 않고 새 dashboard launcher로 대체한다.
@@ -160,14 +149,10 @@ export function TabWorkspaceController({
 export function TabContent() {
   const tabs = useTabStore((state) => state.tabs);
   const activeTabId = useTabStore((state) => state.activeTabId);
-  const activeTabTransferLocked = useTabStore((state) =>
-    activeTabId ? state.transferLockedTabIds.has(activeTabId) : false,
-  );
   const location = useLocation();
   const activeTab = tabs.find((tab) => tab.id === activeTabId) ?? null;
   const canRenderActiveRoute = Boolean(
     activeTab &&
-      !activeTabTransferLocked &&
       (activeTab.route === location.href ||
         activeTab.resourceKey ===
           resolveTabResourceKey(location.href, activeTab.id)),

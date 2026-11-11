@@ -4,7 +4,6 @@ import { dirname, resolve } from 'node:path';
 import { afterEach, describe, it } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import {
-  isCallOverlayState,
   parseCallOverlayAction,
   parseCallOverlaySize,
   parseWindowToast,
@@ -56,12 +55,6 @@ describe('call overlay contract', () => {
     assert.equal(parseCallOverlaySize({ width: 0, height: 10 }), null);
     assert.equal(parseCallOverlaySize({ width: 10, height: Number.POSITIVE_INFINITY }), null);
     assert.equal(parseCallOverlaySize({ width: 5000, height: 10 }), null);
-  });
-
-  it('accepts call state JSON and the hidden state', () => {
-    assert.equal(isCallOverlayState(null), true);
-    assert.equal(isCallOverlayState({ key: 1, phase: 'ringing', lookup: null }), true);
-    assert.equal(isCallOverlayState('ringing'), false);
   });
 
   it('pins the popup layer to the bottom-right corner without covering the tab bar', () => {
@@ -129,26 +122,36 @@ describe('window toasts', () => {
       resolve(testDir, '../src/main/windowManager.ts'),
       'utf8',
     );
-    // 옮기는 순간에는 새 창 소속으로 기록되기 전이라 창 단위 알림이 닿지 않는다.
+    // 탭 화면이 창에 붙을 때마다(새로 보여 줬거나 다른 창에서 옮겨 왔을 때) 그 창의
+    // 상태를 그 화면에 직접 보낸다. 옮기는 일은 탭 화면 조정자가 한다.
     assert.match(
       manager,
-      /this\.nativeTabs\.reparent\(tab\.id, win\.id\);[\s\S]{0,120}this\.pushWindowStateToTab\(tab\.id\)/,
+      /onViewAttached: \(tabId, windowId\) => \{[\s\S]{0,200}this\.pushWindowStateToTab\(tabId\);/,
+    );
+    const coordinator = readFileSync(
+      resolve(testDir, '../src/main/tabs/tabViewCoordinator.ts'),
+      'utf8',
     );
     assert.match(
-      manager,
-      /if \(rolledBack\) this\.pushWindowStateToTab\(move\.tabId\)/,
+      coordinator,
+      /const move = this\.host\.reparent\(tabId, toWindowId\);[\s\S]{0,200}this\.callbacks\.onViewAttached\?\.\(tabId, toWindowId\);/,
     );
     const pushStart = manager.indexOf('private pushWindowStateToTab(');
     assert.ok(pushStart > 0);
     assert.match(manager.slice(pushStart, pushStart + 900), /'tabs:overlayInset'/);
   });
 
-  it('keeps the shell from hiding tab screens during a call when the popup layer exists', () => {
+  it('never hides tab screens for a call: the popup is drawn only on the popup layer', () => {
     const layout = readFileSync(
       resolve(testDir, '../src/renderer/routes/_authenticated.tsx'),
       'utf8',
     );
-    assert.match(layout, /suspended=\{!popupOnOverlayLayer && activeCall !== null\}/);
-    assert.match(layout, /popupOnOverlayLayer \? null : <CallPopup \/>/);
+    // 셸은 팝업을 그리지 않고, 통화를 이유로 탭 화면을 멈추지도 않는다.
+    assert.doesNotMatch(layout, /<CallPopup|suspended=/);
+    const overlay = readFileSync(
+      resolve(testDir, '../src/renderer/features/cti/call-overlay.tsx'),
+      'utf8',
+    );
+    assert.match(overlay, /<CallPopup \/>/);
   });
 });

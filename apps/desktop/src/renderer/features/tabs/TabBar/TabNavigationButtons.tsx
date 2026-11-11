@@ -3,22 +3,9 @@ import { ChevronLeft, ChevronRight } from 'lucide-react';
 import {
   shortcutLabel,
   type TabHistoryDirection,
-  type TabMenuItem,
 } from '../../../../common/tabCommands';
 import { cn } from '@/lib/utils';
-import { useTabStore } from '../store/useTabStore';
-import {
-  canTraverse,
-  traversalTargets,
-  useTabHistoryStore,
-} from '../store/useTabHistoryStore';
-import {
-  openLocationInNewTab,
-  rendererPlatform,
-  runHistoryJump,
-  runHistoryNavigation,
-} from '../lib/tabCommands';
-import { getRouteMeta } from '../lib/routeMeta';
+import { useTabBar } from './tabBarContext';
 
 const LABELS: Record<TabHistoryDirection, string> = {
   back: '뒤로',
@@ -32,50 +19,39 @@ const LABELS: Record<TabHistoryDirection, string> = {
  * - Cmd/Ctrl+클릭: 한 칸 전 화면을 새 탭으로 열기
  */
 export function TabNavigationButtons({ className }: { className?: string }) {
-  const activeTabId = useTabStore((state) => state.activeTabId);
-  const history = useTabHistoryStore((state) =>
-    activeTabId ? state.histories[activeTabId] : undefined,
-  );
-  const platform = rendererPlatform();
+  // 방문 기록의 주인은 탭 목록과 같다. 갈 수 있는지만 받아 그리고, 누른 것을 보낸다.
+  const { view, dispatch } = useTabBar();
+  const platform = view.platform;
+  const canGo: Record<TabHistoryDirection, boolean> = {
+    back: view.history.canGoBack,
+    forward: view.history.canGoForward,
+  };
 
   const handleClick = (
     direction: TabHistoryDirection,
     event: ReactMouseEvent<HTMLButtonElement>,
   ) => {
-    if (!history || !canTraverse(history, direction)) return;
-    if (event.metaKey || event.ctrlKey) {
-      const index = direction === 'back' ? history.index - 1 : history.index + 1;
-      const location = history.entries[index];
-      if (location) openLocationInNewTab(location);
-      return;
-    }
-    void runHistoryNavigation(direction);
+    if (!canGo[direction]) return;
+    dispatch({
+      type: 'history',
+      direction,
+      ...(event.metaKey || event.ctrlKey ? { inNewTab: true } : {}),
+    });
   };
 
-  const showHistoryMenu = async (
+  const showHistoryMenu = (
     direction: TabHistoryDirection,
     event: ReactMouseEvent<HTMLButtonElement>,
   ) => {
     event.preventDefault();
-    const showMenu = window.electronBridge?.tabs?.showMenu;
-    const targets = traversalTargets(history, direction);
-    if (!showMenu || !history || !activeTabId || targets.length === 0) return;
-    const items: TabMenuItem[] = targets.map((index) => {
-      const entry = history.entries[index];
-      return {
-        type: 'item',
-        id: String(index),
-        label: entry.title || getRouteMeta(entry.route).title,
-      };
-    });
-    const chosen = await showMenu(items);
-    if (chosen !== null) void runHistoryJump(Number(chosen), activeTabId);
+    // 기록 목록은 main이 native 메뉴로 띄우고 고른 칸으로 직접 옮긴다.
+    if (canGo[direction]) dispatch({ type: 'history-menu', direction });
   };
 
   return (
     <div className={cn('flex shrink-0 items-center gap-1', className)}>
       {(['back', 'forward'] as const).map((direction) => {
-        const enabled = canTraverse(history, direction);
+        const enabled = canGo[direction];
         const Icon = direction === 'back' ? ChevronLeft : ChevronRight;
         const label = `${LABELS[direction]} (${shortcutLabel(direction, platform)})`;
         return (
@@ -89,7 +65,7 @@ export function TabNavigationButtons({ className }: { className?: string }) {
             // OS 툴팁은 매물 상세 native view 위에도 보인다.
             title={label}
             onClick={(event) => handleClick(direction, event)}
-            onContextMenu={(event) => void showHistoryMenu(direction, event)}
+            onContextMenu={(event) => showHistoryMenu(direction, event)}
             className={cn(
               'grid size-6 place-items-center rounded-md text-sidebar-icon transition-colors',
               'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',

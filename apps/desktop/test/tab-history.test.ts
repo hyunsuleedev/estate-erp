@@ -21,7 +21,6 @@ function resetStores() {
   useTabStore.setState({
     tabs: [],
     activeTabId: null,
-    transferLockedTabIds: new Set(),
     recentlyClosedTabs: [],
   });
   useTabHistoryStore.setState({ histories: {}, pending: {}, retired: {} });

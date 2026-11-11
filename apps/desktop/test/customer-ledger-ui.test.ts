@@ -97,8 +97,9 @@ describe("desktop customer ledger", () => {
       resolve(rendererDir, "components/nav-main.tsx"),
       "utf8",
     );
+    // 주소별 제목 표는 main과 같이 쓰는 한 곳에 있다.
     const routeMeta = readFileSync(
-      resolve(rendererDir, "features/tabs/lib/routeMeta.ts"),
+      resolve(rendererDir, "../common/tabs/routeMeta.ts"),
       "utf8",
     );
     assert.match(
@@ -107,8 +108,8 @@ describe("desktop customer ledger", () => {
     );
     assert.doesNotMatch(navConfig, /path: "\/customers",/);
     assert.match(navMain, /!!item\.alsoActivePaths\?\.some\(isActivePath\)/);
-    assert.match(routeMeta, /"\/customers-table": \{ title: "고객 원장"/);
-    assert.match(routeMeta, /"\/customers": \{ title: "고객 중심 보기"/);
+    assert.match(routeMeta, /'\/customers-table': \{ title: '고객 원장'/);
+    assert.match(routeMeta, /'\/customers': \{ title: '고객 중심 보기'/);
   });
 
   it("sends every other customer ledger link to the default table view", () => {

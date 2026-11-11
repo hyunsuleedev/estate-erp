@@ -1,207 +1,104 @@
 import { useEffect, type ReactNode } from 'react';
-import { io } from 'socket.io-client';
-import type { RealtimeAuthoritySnapshot } from '../../common/desktopRealtime';
-import { getToken } from '@/lib/api';
+import type {
+  RealtimeEventMessage,
+  RealtimeRoomKind,
+} from '../../common/desktopRealtime';
 import { useAuth } from '@/providers/auth-provider';
 import { queryClient } from '@/providers/query-provider';
 
-interface ListingUpdatedEvent {
-  listingId: string;
-  propertyId: string;
-  intakeId?: string | null;
+/**
+ * 서버 실시간 연결은 main 프로세스에 하나뿐이다. 화면은 연결을 갖지 않고, main이
+ * 모든 셸·탭 화면에 보내 주는 이벤트를 받아 자기 조회 결과만 새로 고친다.
+ * 브라우저 미리보기(main 없음)에서는 동작하지 않는다.
+ */
+
+/** 연결이 (다시) 섰을 때 끊긴 동안 놓쳤을 수 있는 목록. */
+const RECONNECT_QUERY_KEYS = [
+  ['properties'],
+  ['listings'],
+  ['listing-intakes'],
+  ['contacts'],
+  ['tenants'],
+  ['consultations'],
+  ['matches'],
+  ['deals'],
+] as const;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-interface ListingIntakeUpdatedEvent {
-  intakeId: string;
-  propertyId: string;
+/**
+ * 모든 화면이 main에서 같은 이벤트를 직접 받는다. 그래서 이 화면의 캐시만 고치고
+ * 다른 화면으로 다시 퍼뜨리지 않는다.
+ */
+function invalidate(queryKey: readonly unknown[]) {
+  void queryClient.invalidateQueriesFromRemote(queryKey);
 }
 
-const crossRendererInvalidate = (queryKey: readonly unknown[]) => {
-  void queryClient.invalidateQueries({ queryKey });
-};
+function invalidateProperty(propertyId: unknown) {
+  invalidate(['listings']);
+  invalidate(['listing-intakes']);
+  invalidate(['properties']);
+  if (typeof propertyId === 'string') invalidate(['properties', propertyId]);
+}
 
-function getRealtimeUrl() {
-  const baseUrl = import.meta.env.VITE_API_BASE_URL as string | undefined;
-  if (!baseUrl) {
-    return window.location.protocol === 'file:'
-      ? 'http://localhost:3000/realtime'
-      : `${window.location.origin}/realtime`;
+export function applyRealtimeEvent(event: RealtimeEventMessage): void {
+  switch (event.name) {
+    case 'realtime.connected':
+      for (const key of RECONNECT_QUERY_KEYS) invalidate(key);
+      return;
+    case 'listing.updated':
+    case 'listing-intake.updated': {
+      if (!isRecord(event.payload)) return;
+      invalidateProperty(event.payload.propertyId);
+      if (typeof event.payload.intakeId === 'string') {
+        invalidate(['listing-intakes', 'quick-sheet', event.payload.intakeId]);
+      }
+      return;
+    }
+    default:
+      // 알림·중개방 채팅·전화 이벤트는 아직 화면에서 쓰지 않는다.
+      return;
   }
-  const url = new URL(baseUrl, window.location.origin);
-  return `${url.origin}/realtime`;
-}
-
-function invalidateListing(event: ListingUpdatedEvent) {
-  crossRendererInvalidate(['listings']);
-  crossRendererInvalidate(['listing-intakes']);
-  crossRendererInvalidate(['properties']);
-  crossRendererInvalidate(['properties', event.propertyId]);
-  if (event.intakeId) {
-    crossRendererInvalidate(['listing-intakes', 'quick-sheet', event.intakeId]);
-  }
-}
-
-function invalidateListingIntake(event: ListingIntakeUpdatedEvent) {
-  crossRendererInvalidate(['listings']);
-  crossRendererInvalidate(['listing-intakes']);
-  crossRendererInvalidate(['properties']);
-  crossRendererInvalidate(['properties', event.propertyId]);
-  crossRendererInvalidate(['listing-intakes', 'quick-sheet', event.intakeId]);
 }
 
 export function RealtimeProvider({ children }: { children: ReactNode }) {
-  const { isAuthenticated, user } = useAuth();
-  // 탭 화면과 전화 팝업 층은 실시간 연결을 갖지 않고 셸이 보낸 갱신 신호만 받는다.
-  const surfaceKind = window.electronBridge?.surface.kind;
-  const isNativeTab = surfaceKind === 'native-tab' || surfaceKind === 'call-overlay';
-  const principalKey = `${user?.id ?? ''}:${user?.office?.id ?? ''}`;
+  useEffect(
+    () => window.electronBridge?.realtime?.onEvent(applyRealtimeEvent),
+    [],
+  );
+  return children;
+}
+
+/**
+ * 이 화면이 보는 방(매물 상세 등)의 이벤트를 main의 연결로 받는다. 화면이 닫히면
+ * 구독을 놓는다. 화면이 갑자기 사라져도(탭 닫힘·새로 불러옴) main이 대신 놓는다.
+ */
+export function useRealtimeRoom(
+  kind: RealtimeRoomKind,
+  id: string | null | undefined,
+): void {
+  const { sessionId } = useAuth();
 
   useEffect(() => {
     const bridge = window.electronBridge?.realtime;
-    if (!bridge || !isAuthenticated || isNativeTab || !principalKey) return;
-
-    const claimId =
-      typeof crypto !== 'undefined' && 'randomUUID' in crypto
-        ? crypto.randomUUID()
-        : `realtime_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-    let active = true;
-    let latestGeneration = -1;
-    let current: RealtimeAuthoritySnapshot | null = null;
-    let socket: ReturnType<typeof io> | null = null;
-    let retryTimer: number | null = null;
-
-    const disconnectSocket = () => {
-      socket?.off('connect');
-      socket?.off('connect_error');
-      socket?.off('disconnect');
-      socket?.off('listing.updated', invalidateListing);
-      socket?.off('listing-intake.updated', invalidateListingIntake);
-      socket?.disconnect();
-      socket = null;
-    };
-
-    const release = () => {
-      if (!current) return;
-      const released = current;
-      current = null;
-      bridge.releaseAuthority({
-        schemaVersion: 1,
-        claimId,
-        leaseId: released.leaseId,
-      });
-    };
-
-    const claim = () => {
-      if (!active) return;
-      void bridge
-        .claimAuthority({ schemaVersion: 1, claimId })
-        .then((result) => {
-          if (!active) {
-            if (result.ok && result.snapshot) {
-              bridge.releaseAuthority({
-                schemaVersion: 1,
-                claimId,
-                leaseId: result.snapshot.leaseId,
-              });
-            }
-            return;
-          }
-          if (result.ok && result.snapshot) apply(result.snapshot);
-        })
-        .catch(() => scheduleRetry());
-    };
-
-    const scheduleRetry = () => {
-      if (!active || retryTimer !== null) return;
-      retryTimer = window.setTimeout(() => {
-        retryTimer = null;
-        claim();
-      }, 750 + Math.floor(Math.random() * 500));
-    };
-
-    const loseLeaseAndRetry = () => {
-      // Strict ordering: the old socket is fully disconnected before main can grant
-      // this exact lease to a standby renderer.
-      disconnectSocket();
-      release();
-      scheduleRetry();
-    };
-
-    const connectSocket = async (snapshot: RealtimeAuthoritySnapshot) => {
-      disconnectSocket();
-      let token: string | null = null;
-      try {
-        token = await getToken();
-      } catch {
-        // handled below
-      }
-      if (!active || current?.leaseId !== snapshot.leaseId) return;
-      if (!token) {
-        loseLeaseAndRetry();
-        return;
-      }
-      socket = io(getRealtimeUrl(), {
-        auth: { token },
-        transports: ['websocket'],
-      });
-      socket.on('connect', () => {
-        for (const key of [
-          ['properties'],
-          ['listings'],
-          ['listing-intakes'],
-          ['contacts'],
-          ['tenants'],
-          ['consultations'],
-          ['matches'],
-          ['deals'],
-        ] as const) {
-          crossRendererInvalidate(key);
-        }
-      });
-      socket.on('connect_error', loseLeaseAndRetry);
-      socket.on('disconnect', (reason) => {
-        if (reason === 'io server disconnect') loseLeaseAndRetry();
-      });
-      socket.on('listing.updated', invalidateListing);
-      socket.on('listing-intake.updated', invalidateListingIntake);
-    };
-
-    function apply(snapshot: RealtimeAuthoritySnapshot) {
-      if (
-        !active ||
-        snapshot.claimId !== claimId ||
-        snapshot.generation < latestGeneration
-      ) {
-        return;
-      }
-      latestGeneration = snapshot.generation;
-      if (!snapshot.active) {
-        if (current?.active) disconnectSocket();
-        current = snapshot;
-        if (snapshot.leaseId) {
-          // Main is revoking this exact lease (for example on an office
-          // switch). Complete the disconnect barrier before a standby can be
-          // granted, then re-enter the candidate queue with fresh auth state.
-          release();
-          scheduleRetry();
-        }
-        return;
-      }
-      if (current?.active && current.leaseId === snapshot.leaseId) return;
-      current = snapshot;
-      void connectSocket(snapshot);
-    }
-
-    const cleanupAuthority = bridge.onAuthority(apply);
-    claim();
+    if (!bridge || !id || sessionId === null || sessionId === undefined) return;
+    const request = { room: { kind, id }, sessionId };
+    let subscribed = false;
+    let released = false;
+    void bridge
+      .subscribe(request)
+      .then((result) => {
+        if (!result.ok) return;
+        // 구독이 서기 전에 화면이 닫혔으면 바로 놓는다.
+        if (released) bridge.unsubscribe(request);
+        else subscribed = true;
+      })
+      .catch(() => undefined);
     return () => {
-      active = false;
-      if (retryTimer !== null) window.clearTimeout(retryTimer);
-      cleanupAuthority();
-      disconnectSocket();
-      release();
+      released = true;
+      if (subscribed) bridge.unsubscribe(request);
     };
-  }, [isAuthenticated, isNativeTab, principalKey]);
-
-  return children;
+  }, [id, kind, sessionId]);
 }

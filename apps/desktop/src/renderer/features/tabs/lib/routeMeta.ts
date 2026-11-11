@@ -17,9 +17,15 @@ import {
   Wrench,
   Home,
   type LucideIcon,
-} from "lucide-react";
-import type { TabKind } from "@estate-erp/shared";
-import { getTabPathname } from "./tabResource";
+} from 'lucide-react';
+import type { TabKind } from '@estate-erp/shared';
+import {
+  getRouteMetaCore,
+  type RouteIconKey,
+  type RouteMetaCore,
+} from '../../../../common/tabs/routeMeta';
+
+export { isDetachableRoute } from '../../../../common/tabs/routeMeta';
 
 export interface RouteMeta {
   title: string;
@@ -27,109 +33,45 @@ export interface RouteMeta {
   icon: LucideIcon;
 }
 
-const STATIC_ROUTES: Record<string, RouteMeta> = {
-  "/dashboard": { title: "대시보드", kind: "dashboard", icon: SquareTerminal },
-  "/properties": { title: "매물관리", kind: "property", icon: Building },
-  "/properties/new": { title: "매물 등록", kind: "property", icon: Building },
-  "/properties/external-listings": {
-    title: "광고노트",
-    kind: "property",
-    icon: Building,
-  },
-  "/properties/naver-my-ads": {
-    title: "내광고관리",
-    kind: "property",
-    icon: Building,
-  },
-  "/properties/my-ads": {
-    title: "내광고관리",
-    kind: "property",
-    icon: Building,
-  },
-  "/contacts": { title: "연락처", kind: "contact", icon: BookUser },
-  "/customers": { title: "고객 중심 보기", kind: "contact", icon: Users },
-  "/customers-table": { title: "고객 원장", kind: "contact", icon: Users },
-  "/contacts/new": { title: "연락처 추가", kind: "contact", icon: BookUser },
-  "/partner-brokers": {
-    title: "파트너 중개사",
-    kind: "contact",
-    icon: Handshake,
-  },
-  "/service-vendors": { title: "서비스 업체", kind: "contact", icon: Wrench },
-  "/deals": { title: "거래관리", kind: "deal", icon: Handshake },
-  "/wanted-properties": { title: "희망매물", kind: "match", icon: UserSearch },
-  "/consultations": {
-    title: "상담분석",
-    kind: "consultation",
-    icon: MessageSquare,
-  },
-  "/calls": { title: "상담분석", kind: "consultation", icon: PhoneCall },
-  "/buyer-requirements/new": {
-    title: "구함 의뢰 추가",
-    kind: "contact",
-    icon: UserSearch,
-  },
-  "/tasks": { title: "업무", kind: "task", icon: ListTodo },
-  "/calendar": { title: "캘린더", kind: "calendar", icon: CalendarDays },
-  "/sites": { title: "관리단지", kind: "site", icon: MapIcon },
-  "/contracts": { title: "계약서 관리", kind: "contract", icon: FileText },
-  "/cashflow": { title: "캐시플로우", kind: "cashflow", icon: Wallet },
-  "/cashflow/ledger": { title: "수금 원장", kind: "cashflow", icon: Wallet },
-  "/cashflow/expenses": { title: "고정비 설정", kind: "cashflow", icon: Wallet },
-  "/cashflow/partner-commissions": {
-    title: "공동중개 수수료",
-    kind: "cashflow",
-    icon: Wallet,
-  },
-  "/cashflow/employee-settlements": {
-    title: "직원 정산",
-    kind: "cashflow",
-    icon: Wallet,
-  },
-  "/cashflow/my-settlement": {
-    title: "내 수수료",
-    kind: "cashflow",
-    icon: Wallet,
-  },
-  "/employees": { title: "직원관리", kind: "employee", icon: Users },
-  "/settings": { title: "설정", kind: "settings", icon: SettingsIcon },
-  "/network": { title: "네트워크", kind: "generic", icon: Network },
+/**
+ * 주소별 제목·종류의 표는 `src/common/tabs/routeMeta.ts`에 있다(main의 탭 목록과 같이
+ * 쓴다). 여기서는 그 표가 말하는 아이콘 이름을 실제 아이콘으로 바꾸기만 한다.
+ */
+const ROUTE_ICONS: Record<RouteIconKey, LucideIcon> = {
+  building: Building,
+  'book-user': BookUser,
+  handshake: Handshake,
+  'message-square': MessageSquare,
+  'phone-call': PhoneCall,
+  'user-search': UserSearch,
+  'list-todo': ListTodo,
+  'calendar-days': CalendarDays,
+  map: MapIcon,
+  'file-text': FileText,
+  wallet: Wallet,
+  users: Users,
+  settings: SettingsIcon,
+  'square-terminal': SquareTerminal,
+  network: Network,
+  wrench: Wrench,
+  home: Home,
 };
 
-const DYNAMIC_ROUTE_META: Array<{
-  match: RegExp;
-  meta: (m: RegExpMatchArray) => RouteMeta;
-}> = [
-  {
-    match: /^\/properties\/([^/]+)$/,
-    meta: () => ({ title: "매물 상세", kind: "property", icon: Building }),
-  },
-  {
-    match: /^\/contacts\/([^/]+)$/,
-    meta: () => ({ title: "연락처 상세", kind: "contact", icon: BookUser }),
-  },
-  {
-    match: /^\/buyer-requirements\/([^/]+)(?:\/edit)?$/,
-    meta: (match) => ({
-      title: match[0].endsWith("/edit") ? "구매고객 수정" : "구매고객 상세",
-      kind: "contact",
-      icon: UserSearch,
-    }),
-  },
-];
+/**
+ * 고정 주소는 예전처럼 매번 같은 객체를 돌려준다(받은 쪽이 hook 의존값으로 쓰기도
+ * 한다). id가 들어간 주소는 예전에도 부를 때마다 새 객체였다.
+ */
+const cache = new WeakMap<RouteMetaCore, RouteMeta>();
 
 export function getRouteMeta(route: string): RouteMeta {
-  const pathname = getTabPathname(route);
-  const direct = STATIC_ROUTES[pathname];
-  if (direct) return direct;
-  for (const { match, meta } of DYNAMIC_ROUTE_META) {
-    const result = pathname.match(match);
-    if (result) return meta(result);
-  }
-  return { title: pathname, kind: "generic", icon: Home };
-}
-
-export function isDetachableRoute(route: string): boolean {
-  const pathname = getTabPathname(route);
-  return pathname !== "/login" && !pathname.startsWith("/_");
+  const core = getRouteMetaCore(route);
+  const cached = cache.get(core);
+  if (cached) return cached;
+  const meta: RouteMeta = {
+    title: core.title,
+    kind: core.kind,
+    icon: ROUTE_ICONS[core.iconKey],
+  };
+  cache.set(core, meta);
+  return meta;
 }

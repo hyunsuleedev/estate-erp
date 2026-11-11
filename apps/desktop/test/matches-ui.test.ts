@@ -65,8 +65,8 @@ describe('wanted properties page identity', () => {
       /path: "\/wanted-properties", label: "희망매물"/,
     );
     assert.match(
-      readFileSync(resolve(rendererDir, 'features/tabs/lib/routeMeta.ts'), 'utf8'),
-      /"\/wanted-properties": \{ title: "희망매물"/,
+      readFileSync(resolve(rendererDir, '../common/tabs/routeMeta.ts'), 'utf8'),
+      /'\/wanted-properties': \{ title: '희망매물'/,
     );
     assert.equal(existsSync(resolve(rendererDir, 'routes/_authenticated/matches')), false);
     assert.doesNotMatch(

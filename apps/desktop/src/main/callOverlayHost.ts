@@ -137,6 +137,18 @@ export class CallOverlayHost {
     if (!record.view.webContents.isDestroyed()) record.view.webContents.close();
   }
 
+  /** 모든 창의 팝업 층에 보낸다(로그인 세션처럼 앱 전체가 같이 아는 상태). */
+  broadcast(channel: string, payload: unknown): void {
+    for (const record of this.overlays.values()) {
+      if (record.view.webContents.isDestroyed()) continue;
+      try {
+        record.view.webContents.send(channel, payload);
+      } catch {
+        // 닫히는 중인 팝업 층은 다음에 다시 만들 때 현재 값을 읽는다.
+      }
+    }
+  }
+
   /** 로그인한 사람이 바뀌면 이전 세션으로 뜬 팝업 층을 모두 버린다. */
   destroyAll(): void {
     for (const windowId of [...this.overlays.keys()]) this.destroy(windowId);

@@ -88,6 +88,11 @@ class ElectronNativeTabView implements NativeTabViewPort {
     return this.rawView.webContents.isDestroyed();
   }
 
+  isCrashed(): boolean {
+    const contents = this.rawView.webContents;
+    return !contents.isDestroyed() && contents.isCrashed();
+  }
+
   async navigate(route: string): Promise<void> {
     const contents = this.rawView.webContents;
     if (
@@ -161,10 +166,14 @@ export class ElectronNativeTabWindowHost implements NativeTabHostPort {
   /**
    * @param afterReorder 탭 화면을 붙이거나 앞으로 가져온 뒤 부른다. 전화 팝업 층처럼
    *   항상 탭 화면 위에 있어야 하는 view를 다시 맨 위로 올릴 때 쓴다.
+   * @param isFrontWindow 이 창이 앱의 창들 가운데 지금 쓰고 있는(가장 최근에 앞에 온)
+   *   창인지. 탭 화면에 focus를 주면(webContents.focus) macOS·Linux에서는 그 창도 앞으로
+   *   나오므로, 뒤에 있는 창의 탭 화면에는 focus를 주지 않는다.
    */
   constructor(
     readonly window: BrowserWindow,
     private readonly afterReorder?: () => void,
+    private readonly isFrontWindow?: () => boolean,
   ) {}
 
   get id(): number {
@@ -190,5 +199,9 @@ export class ElectronNativeTabWindowHost implements NativeTabHostPort {
     // Electron documents that adding an existing child again only reorders it.
     this.window.contentView.addChildView(electronView(view));
     this.afterReorder?.();
+  }
+
+  canTakeFocus(): boolean {
+    return this.isFrontWindow?.() ?? true;
   }
 }

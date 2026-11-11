@@ -1,4 +1,6 @@
 import type { JsonValue, TabKind } from '@estate-erp/shared';
+import { MAX_INTERNAL_ROUTE_LENGTH } from './internalRoute';
+import { isTabScreenRoute } from './nativeTabs';
 
 /**
  * 탭별 웹 화면(native 탭)이 자기 창의 탭바(셸 renderer)에 요청하는 탭 작업.
@@ -44,7 +46,7 @@ export interface NativeTabActionEnvelope {
 }
 
 export const NATIVE_TAB_ACTION_LIMITS = {
-  route: 4_096,
+  route: MAX_INTERNAL_ROUTE_LENGTH,
   title: 500,
   resourceKey: 1_024,
   draftKey: 200,
@@ -105,13 +107,9 @@ function isBoundedJson(
   return valid;
 }
 
+/** 탭 화면이 요청할 수 있는 주소는 탭으로 열 수 있는 앱 화면뿐이다(로그인·온보딩·문서 파일 제외). */
 function isAppRoute(value: unknown): value is string {
-  return (
-    typeof value === 'string' &&
-    value.startsWith('/') &&
-    !value.startsWith('//') &&
-    value.length <= NATIVE_TAB_ACTION_LIMITS.route
-  );
+  return isTabScreenRoute(value);
 }
 
 function isTitle(value: unknown): value is string {

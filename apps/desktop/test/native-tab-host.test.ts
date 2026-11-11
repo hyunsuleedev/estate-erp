@@ -100,8 +100,14 @@ class FakeWindowHost implements NativeTabHostPort {
   failAttach = false;
   readonly attached = new Set<NativeTabViewPort>();
   front: NativeTabViewPort | null = null;
+  /** 앱의 다른 창이 앞에 있어 이 창은 입력을 받으면 안 되는 상태. */
+  behindAnotherWindow = false;
 
   constructor(readonly id: number) {}
+
+  canTakeFocus(): boolean {
+    return !this.behindAnotherWindow;
+  }
 
   isDestroyed(): boolean {
     return this.destroyed;
@@ -165,6 +171,27 @@ describe('NativeTabHost', () => {
     );
   });
 
+  it('shows a tab in a window behind another app window without pulling that window forward', async () => {
+    const { factory, nativeTabs, first } = setup();
+    await nativeTabs.openOrUpdateTab(first.id, makeTab('one'));
+    await nativeTabs.openOrUpdateTab(first.id, makeTab('two'), { activate: false });
+    const [one, two] = factory.views;
+    assert.equal(one.focusCount, 1);
+
+    // 사용자가 앱의 다른 창을 쓰고 있다. 이 창의 탭이 바뀌어도(탭을 다른 창으로 옮긴 뒤 남은
+    // 탭을 보여 줄 때 등) 탭 화면은 보이기만 하고 입력을 가져오지 않는다.
+    first.behindAnotherWindow = true;
+    nativeTabs.activate(first.id, 'two');
+    assert.equal(two.visible, true);
+    assert.equal(first.front, two);
+    assert.equal(two.focusCount, 0, 'focusing the view would bring its window to the front');
+
+    // 이 창을 쓰고 있을 때 고른 탭은 입력을 받는다.
+    first.behindAnotherWindow = false;
+    nativeTabs.activate(first.id, 'one');
+    assert.equal(one.focusCount, 2);
+  });
+
   it('creates one view per tab, updates without duplicate navigation, and indexes its sender', async () => {
     const { factory, nativeTabs, first } = setup();
     const tab = makeTab('one');
@@ -202,7 +229,7 @@ describe('NativeTabHost', () => {
     ]);
   });
 
-  it('moves the same live view between windows and can roll it back exactly', async () => {
+  it('moves the same live view between windows without creating another', async () => {
     const { factory, nativeTabs, first, second } = setup();
     await nativeTabs.openOrUpdateTab(first.id, makeTab('moving'));
     await nativeTabs.openOrUpdateTab(second.id, makeTab('resident'));
@@ -225,16 +252,10 @@ describe('NativeTabHost', () => {
     assert.equal(resident.visible, false);
     assert.deepEqual(moving.bounds, { x: 5, y: 40, width: 900, height: 700 });
 
-    assert.equal(nativeTabs.rollback(move), true);
-    assert.equal(first.attached.has(moving), true);
-    assert.equal(second.attached.has(moving), false);
-    assert.equal(nativeTabs.getHostId('moving'), first.id);
-    assert.equal(nativeTabs.getActiveTabId(first.id), 'moving');
-    assert.equal(nativeTabs.getActiveTabId(second.id), 'resident');
-    assert.equal(moving.visible, true);
-    assert.equal(resident.visible, true);
-    assert.deepEqual(moving.bounds, { x: 10, y: 20, width: 800, height: 600 });
-    assert.equal(nativeTabs.rollback(move), false, 'a move token is one-shot');
+    // 탭 목록에서는 이미 옮겨졌다. 옮긴 것을 확정하는 표는 한 번만 쓸 수 있다.
+    assert.equal(nativeTabs.settleMove(move), true);
+    assert.equal(nativeTabs.settleMove(move), false, 'a move token is one-shot');
+    assert.equal(nativeTabs.getHostId('moving'), second.id);
   });
 
   it('restores the source atomically if the target refuses an attachment', async () => {
@@ -278,63 +299,6 @@ describe('NativeTabHost', () => {
     assert.equal(resident.visible, true);
   });
 
-  it('rolls back ownership even if target activation changed meanwhile', async () => {
-    const { nativeTabs, first, second } = setup();
-    await nativeTabs.openOrUpdateTab(first.id, makeTab('moving'));
-
-    const move = nativeTabs.reparent('moving', second.id);
-    nativeTabs.activate(second.id, null);
-
-    assert.equal(nativeTabs.rollback(move), true);
-    assert.equal(nativeTabs.getHostId('moving'), first.id);
-  });
-
-  it('preserves a newly activated source tab when another tab rolls back', async () => {
-    const { factory, nativeTabs, first, second } = setup();
-    await nativeTabs.openOrUpdateTab(first.id, makeTab('moving'));
-    const move = nativeTabs.reparent('moving', second.id);
-    await nativeTabs.openOrUpdateTab(first.id, makeTab('new-active'));
-
-    assert.equal(nativeTabs.rollback(move), true);
-    assert.equal(nativeTabs.getActiveTabId(first.id), 'new-active');
-    assert.equal(factory.views[0]?.visible, false);
-    assert.equal(factory.views[1]?.visible, true);
-  });
-
-  it('returns a live view to the source when the target window is already closing', async () => {
-    const { factory, nativeTabs, first, second } = setup();
-    await nativeTabs.openOrUpdateTab(first.id, makeTab('moving'));
-    const moving = factory.views[0];
-    const move = nativeTabs.reparent('moving', second.id);
-    second.destroyed = true;
-
-    assert.equal(nativeTabs.rollback(move), true);
-    assert.equal(nativeTabs.getHostId('moving'), first.id);
-    assert.equal(first.attached.has(moving), true);
-    assert.equal(moving.destroyed, false);
-  });
-
-  it('contains post-rollback visibility failures after ownership is restored', async () => {
-    const cleanupErrors: unknown[] = [];
-    const factory = new FakeFactory();
-    const nativeTabs = new NativeTabHost(factory, {
-      onCleanupError: (error) => cleanupErrors.push(error),
-    });
-    const first = new FakeWindowHost(1);
-    const second = new FakeWindowHost(2);
-    nativeTabs.registerHost(first);
-    nativeTabs.registerHost(second);
-    await nativeTabs.openOrUpdateTab(first.id, makeTab('moving'));
-    const move = nativeTabs.reparent('moving', second.id);
-    const resident = await nativeTabs.openOrUpdateTab(second.id, makeTab('resident'));
-    assert.equal(resident.created, true);
-    factory.views[1].failBounds = true;
-
-    assert.equal(nativeTabs.rollback(move), true);
-    assert.equal(nativeTabs.getHostId('moving'), first.id);
-    assert.ok(cleanupErrors.some((error) => String(error).includes('bounds')));
-  });
-
   it('updates resource identity together with renderer navigation', async () => {
     const { nativeTabs, first } = setup();
     await nativeTabs.openOrUpdateTab(first.id, makeTab('one'));
@@ -347,26 +311,6 @@ describe('NativeTabHost', () => {
     assert.equal(updated?.tab.route, '/properties/two?panel=history');
     assert.equal(updated?.tab.resourceKey, 'entity:property:two');
     assert.equal(updated?.tab.kind, 'property');
-  });
-
-  it('contains rollback failure when the source host was destroyed', async () => {
-    const cleanupErrors: unknown[] = [];
-    const factory = new FakeFactory();
-    const nativeTabs = new NativeTabHost(factory, {
-      onCleanupError: (error) => cleanupErrors.push(error),
-    });
-    const first = new FakeWindowHost(1);
-    const second = new FakeWindowHost(2);
-    nativeTabs.registerHost(first);
-    nativeTabs.registerHost(second);
-    await nativeTabs.openOrUpdateTab(first.id, makeTab('moving'));
-    const move = nativeTabs.reparent('moving', second.id);
-    first.destroyed = true;
-
-    assert.doesNotThrow(() => nativeTabs.rollback(move));
-    assert.equal(nativeTabs.rollback(move), false);
-    assert.equal(nativeTabs.getHostId('moving'), second.id);
-    assert.deepEqual(cleanupErrors, []);
   });
 
   it('cleans up a failed first navigation without leaving ownership behind', async () => {
@@ -1006,8 +950,13 @@ describe('NativeTabHost window-scoped messages', () => {
 describe('NativeTabHost prewarmed spare view', () => {
   class AssignableView extends FakeView {
     assigned: Tab[] = [];
+    /** 화면의 프로세스가 죽었다(화면은 남아 있지만 아무것도 그리지 못한다). */
+    crashed = false;
     assign(tab: Readonly<Tab>): void {
       this.assigned.push(structuredClone(tab) as Tab);
+    }
+    isCrashed(): boolean {
+      return this.crashed;
     }
   }
 
@@ -1094,5 +1043,61 @@ describe('NativeTabHost prewarmed spare view', () => {
     const opened = await nativeTabs.openOrUpdateTab(1, makeTab('second'));
     assert.notEqual(opened.senderId, factory.views[1].senderId);
     releaseSpare();
+  });
+
+  it('replaces a spare whose process died, so the next new tab does not get a dead view', async () => {
+    const { factory, nativeTabs } = setupWithSpare();
+    await nativeTabs.openOrUpdateTab(1, makeTab('first', { route: '/properties' }));
+    await settle();
+    const dead = factory.views[1] as AssignableView;
+    assert.equal(nativeTabs.isSpareSender(dead.senderId), true);
+
+    // 예비 화면의 프로세스가 죽었다고 알려 왔다(render-process-gone).
+    dead.crashed = true;
+    assert.equal(nativeTabs.removeFailedSender(dead.senderId), null);
+
+    assert.equal(dead.destroyed, true, 'the dead spare is dropped');
+    assert.equal(nativeTabs.isSpareSender(dead.senderId), false);
+    await settle();
+    assert.equal(nativeTabs.hasSpare(), true, 'another spare is prepared');
+    const fresh = factory.views[2] as AssignableView;
+    assert.notEqual(fresh.senderId, dead.senderId);
+
+    const opened = await nativeTabs.openOrUpdateTab(1, makeTab('second'));
+    assert.equal(opened.senderId, fresh.senderId);
+    assert.deepEqual(dead.assigned, []);
+    assert.deepEqual(fresh.assigned.map((tab) => tab.id), ['second']);
+  });
+
+  it('never hands out a dead spare even if nobody reported the crash', async () => {
+    const { factory, nativeTabs } = setupWithSpare();
+    await nativeTabs.openOrUpdateTab(1, makeTab('first', { route: '/properties' }));
+    await settle();
+    const dead = factory.views[1] as AssignableView;
+    dead.crashed = true;
+
+    const opened = await nativeTabs.openOrUpdateTab(1, makeTab('second'));
+
+    assert.notEqual(opened.senderId, dead.senderId);
+    assert.equal(dead.destroyed, true);
+    assert.deepEqual(dead.assigned, []);
+    // 새로 만든 화면은 문서를 직접 불러온다.
+    const created = factory.views[2];
+    assert.equal(opened.senderId, created.senderId);
+    assert.deepEqual(created.navigations, ['/properties/second']);
+    await settle();
+    assert.equal(nativeTabs.hasSpare(), true, 'a spare is prepared again afterwards');
+  });
+
+  it('leaves the spare alone when a failure is reported for a view it does not know', async () => {
+    const { factory, nativeTabs } = setupWithSpare();
+    await nativeTabs.openOrUpdateTab(1, makeTab('first'));
+    await settle();
+    const spare = factory.views[1];
+
+    assert.equal(nativeTabs.removeFailedSender(9_999), null);
+
+    assert.equal(spare.destroyed, false);
+    assert.equal(nativeTabs.isSpareSender(spare.senderId), true);
   });
 });
