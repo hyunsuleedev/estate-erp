@@ -953,6 +953,7 @@ export function ToolbarSelectPanel({
         onClose();
       }}
       searchable={false}
+      autoFocusList
     />
   );
 }
@@ -1019,6 +1020,7 @@ export function ChecklistFilterPanel({
   isLoading = false,
   searchable = true,
   listClassName,
+  autoFocusList = false,
 }: {
   options: ReadonlyArray<MultiSelectOption>;
   selected: ReadonlyArray<string>;
@@ -1028,7 +1030,13 @@ export function ChecklistFilterPanel({
   isLoading?: boolean;
   searchable?: boolean;
   listClassName?: string;
+  /**
+   * 검색 칸 없는 팝오버 목록을 키보드로 고르게 한다. 열리면 목록에 포커스를 두고
+   * 고른 항목(없으면 첫 항목)을 강조한다. ↑↓·Home·End·Enter는 cmdk가, Space는 여기서 처리한다.
+   */
+  autoFocusList?: boolean;
 }) {
+  const listRef = useRef<HTMLDivElement>(null);
   const toggle = (value: string) => {
     onChange(
       selected.includes(value)
@@ -1036,11 +1044,51 @@ export function ChecklistFilterPanel({
         : [...selected, value],
     );
   };
+  const commandValue = (option: MultiSelectOption) =>
+    `${option.label} ${option.description ?? ""}`.trim();
+  const initiallySelected = autoFocusList
+    ? options.find(
+        (option) => !option.disabled && selected.includes(option.value),
+      )
+    : undefined;
+
+  useEffect(() => {
+    const list = listRef.current;
+    if (!autoFocusList || !list) return;
+    list.focus({ preventScroll: true });
+    // cmdk는 처음부터 강조된 항목을 방향키를 누르기 전까지 aria-activedescendant에 넣지 않는다
+    const frame = requestAnimationFrame(() => {
+      const active = list.querySelector<HTMLElement>(
+        '[cmdk-item][aria-selected="true"]',
+      );
+      if (active?.id && !list.hasAttribute("aria-activedescendant")) {
+        list.setAttribute("aria-activedescendant", active.id);
+      }
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [autoFocusList]);
 
   return (
-    <Command className="bg-transparent">
+    <Command
+      className="bg-transparent"
+      defaultValue={initiallySelected && commandValue(initiallySelected)}
+      onKeyDown={
+        autoFocusList
+          ? (event) => {
+              if (event.key !== " " || event.target !== listRef.current) return;
+              event.preventDefault();
+              listRef.current
+                ?.querySelector<HTMLElement>('[cmdk-item][aria-selected="true"]')
+                ?.click();
+            }
+          : undefined
+      }
+    >
       {searchable && <CommandInput placeholder={searchPlaceholder} />}
-      <CommandList className={listClassName}>
+      <CommandList
+        ref={listRef}
+        className={cn(listClassName, autoFocusList && "outline-none")}
+      >
         <CommandEmpty>{isLoading ? "불러오는 중..." : emptyText}</CommandEmpty>
         <CommandGroup>
           {options.map((option) => {
@@ -1048,7 +1096,7 @@ export function ChecklistFilterPanel({
             return (
               <CommandItem
                 key={option.value}
-                value={`${option.label} ${option.description ?? ""}`}
+                value={commandValue(option)}
                 onSelect={() => toggle(option.value)}
                 disabled={option.disabled}
                 className="items-start gap-2.5 py-1.5"
@@ -1088,6 +1136,14 @@ export function ChecklistFilterPanel({
           <button
             type="button"
             onClick={() => onChange([])}
+            // Enter가 cmdk로 올라가면 이 버튼 대신 강조된 항목이 골라진다
+            onKeyDown={
+              autoFocusList
+                ? (event) => {
+                    if (event.key === "Enter") event.stopPropagation();
+                  }
+                : undefined
+            }
             className="w-full rounded-sm py-1.5 text-center text-xs text-muted-foreground hover:bg-[rgba(55,53,47,0.06)] hover:text-foreground"
           >
             선택 해제

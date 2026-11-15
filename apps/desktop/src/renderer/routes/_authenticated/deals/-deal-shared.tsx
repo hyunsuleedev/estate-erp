@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Archive, Ban, ChevronsUpDown, MoreVertical, Trash2, X } from 'lucide-react';
+import { Archive, Ban, ChevronDown, ChevronsUpDown, MoreVertical, Trash2, X } from 'lucide-react';
 import type { Contact, Deal } from '@estate-erp/api-client';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
@@ -23,7 +23,152 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { dealPipelineStages, type DealRowActions } from './-deal-view-utils';
+import {
+  dealPipelineStages,
+  getDealDisplayGroupKey,
+  type DealDisplayGroupKey,
+  type DealRowActions,
+} from './-deal-view-utils';
+
+/**
+ * 단계별 색. Notion 색 체계를 그대로 따른다 (Notion 앱 번들의 색 눈금에서 확인).
+ * 색마다 눈금이 있고 자리마다 쓰는 단계가 정해져 있다:
+ *   열 바탕 = 반투명 10 · 추가 버튼 선 = 반투명 20 · 건수 = 불투명 80
+ * 단계 칩의 색은 여기가 아니라 아래 DEAL_STAGE_CHIP이 정한다.
+ * 열 위에서 버튼에 올렸을 때의 바탕은 열 바탕을 5% 어둡게 한 값이다.
+ */
+export const DEAL_GROUP_TONE: Record<
+  DealDisplayGroupKey,
+  { surface: string; count: string; line: string }
+> = {
+  // 회색
+  preparing: {
+    surface: 'bg-[rgba(66,35,3,0.031)]',
+    line: 'shadow-[0_0_0_1px_rgba(42,28,0,0.07)]',
+    count: 'text-[#5f5e59]',
+  },
+  // 파랑
+  preContract: {
+    surface: 'bg-[rgba(0,128,213,0.047)]',
+    line: 'shadow-[0_0_0_1px_rgba(0,124,215,0.094)]',
+    count: 'text-[#2783de]',
+  },
+  // 보라
+  contracted: {
+    surface: 'bg-[rgba(98,3,161,0.031)]',
+    line: 'shadow-[0_0_0_1px_rgba(102,0,178,0.078)]',
+    count: 'text-[#b577d6]',
+  },
+  // 주황
+  settling: {
+    surface: 'bg-[rgba(186,72,3,0.043)]',
+    line: 'shadow-[0_0_0_1px_rgba(224,101,1,0.129)]',
+    count: 'text-[#d5803b]',
+  },
+  // 초록
+  completed: {
+    surface: 'bg-[rgba(3,87,31,0.035)]',
+    line: 'shadow-[0_0_0_1px_rgba(0,100,45,0.09)]',
+    count: 'text-[#46a171]',
+  },
+  closed: {
+    surface: 'bg-[rgba(66,35,3,0.031)]',
+    line: 'shadow-[0_0_0_1px_rgba(42,28,0,0.07)]',
+    count: 'text-[#5f5e59]',
+  },
+};
+
+/**
+ * 단계 칩 색. 매물관리 표의 매물상태 칩(listingAvailabilityMeta)과 같은 팔레트다:
+ * 옅은 불투명 바탕 + 같은 계열의 글자 + 점. 보라·주황은 그 팔레트에 없어 같은 농도로 맞췄다.
+ */
+const DEAL_STAGE_CHIP: Record<DealDisplayGroupKey, { pill: string; dot: string }> = {
+  preparing: { pill: 'bg-[#f1f1ef] text-[#787774]', dot: 'bg-[#b4b4b1]' },
+  preContract: { pill: 'bg-[#e7f3f8] text-[#337ea9]', dot: 'bg-[#529cca]' },
+  contracted: { pill: 'bg-[#f3eef8] text-[#7a5a9e]', dot: 'bg-[#9a6dd7]' },
+  // 노랑은 매물관리에서 '보류'라 쓰지 않는다. 보드 열 바탕(주황)과도 맞춘다.
+  settling: { pill: 'bg-[#faebdd] text-[#b5621b]', dot: 'bg-[#d9730d]' },
+  completed: { pill: 'bg-[#eef3ed] text-[#44745a]', dot: 'bg-[#6c9b7a]' },
+  closed: { pill: 'bg-[#f1f1ef] text-[#787774]', dot: 'bg-[#b4b4b1]' },
+};
+
+/** 단계 칩: 매물관리의 매물상태 칩과 같은 모양 (점 + 이름, 높이 20px, 둥근 알약). */
+export function DealStagePill({
+  stage,
+  label,
+  className,
+}: {
+  stage: string;
+  /** 생략하면 단계 이름을 쓴다 */
+  label?: string;
+  className?: string;
+}) {
+  const chip = DEAL_STAGE_CHIP[getDealDisplayGroupKey(stage)];
+  return (
+    <span
+      className={cn(
+        'inline-flex h-5 max-w-full shrink-0 items-center gap-[5px] rounded-full pl-[7px] pr-[9px] text-[14px] font-[450] leading-5',
+        chip.pill,
+        className,
+      )}
+    >
+      <span aria-hidden="true" className={cn('size-2 shrink-0 rounded-full', chip.dot)} />
+      <span className="truncate">{label ?? getStatusMeta('dealStage', stage).label}</span>
+    </span>
+  );
+}
+
+/** 목록의 단계 셀에서도 기존 단계 변경 확인 흐름을 사용한다. */
+export function DealStageMenu({ deal, actions, title }: {
+  deal: Deal;
+  actions: DealRowActions;
+  title: string;
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          aria-label={`${title} 단계 변경`}
+          disabled={actions.isUpdating}
+          className="inline-flex h-7 max-w-full items-center gap-1 rounded-md text-muted-foreground hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+          onClick={(event) => event.stopPropagation()}
+        >
+          <DealStagePill stage={deal.stage} />
+          <ChevronDown className="size-3 shrink-0" aria-hidden="true" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-44" onClick={(event) => event.stopPropagation()}>
+        <DealStageMenuItems deal={deal} actions={actions} />
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function DealStageMenuItems({ deal, actions }: { deal: Deal; actions: DealRowActions }) {
+  return (
+    <>
+      <DropdownMenuLabel className="text-xs text-muted-foreground">단계 변경</DropdownMenuLabel>
+      {dealPipelineStages.map((stage) => (
+        <DropdownMenuItem
+          key={stage}
+          disabled={stage === deal.stage || actions.isUpdating}
+          onSelect={() => actions.onRequestStage(deal, stage)}
+        >
+          <DealStagePill stage={stage} />
+        </DropdownMenuItem>
+      ))}
+      <DropdownMenuSeparator />
+      <DropdownMenuItem
+        disabled={deal.stage === 'closed' || actions.isUpdating}
+        onSelect={() => actions.onRequestStage(deal, 'closed')}
+      >
+        <Archive className="size-4" />
+        정산종료 처리
+      </DropdownMenuItem>
+    </>
+  );
+}
 
 /**
  * 거래 행/카드 공용 액션 메뉴 — 단계 변경(확인 다이얼로그는 페이지 레벨에서),
@@ -50,25 +195,8 @@ export function DealActionsMenu({
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-44">
-        <DropdownMenuLabel className="text-xs text-muted-foreground">단계 변경</DropdownMenuLabel>
-        {dealPipelineStages.map((stage) => (
-          <DropdownMenuItem
-            key={stage}
-            disabled={stage === deal.stage}
-            onSelect={() => actions.onRequestStage(deal, stage)}
-            className={cn(stage === deal.stage && 'font-medium text-foreground')}
-          >
-            {getStatusMeta('dealStage', stage).label}
-          </DropdownMenuItem>
-        ))}
+        <DealStageMenuItems deal={deal} actions={actions} />
         <DropdownMenuSeparator />
-        <DropdownMenuItem
-          disabled={deal.stage === 'closed'}
-          onSelect={() => actions.onRequestStage(deal, 'closed')}
-        >
-          <Archive className="size-4" />
-          정산종료 처리
-        </DropdownMenuItem>
         {!deal.isCancelled ? (
           <DropdownMenuItem variant="destructive" onSelect={() => actions.onRequestCancel(deal)}>
             <Ban className="size-4" />
@@ -86,7 +214,8 @@ export function DealActionsMenu({
 
 export function SectionTitle({ children }: { children: ReactNode }) {
   return (
-    <div className="text-[11px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">
+    // 상세 패널의 구역 제목과 같은 모양 (매물 상세 패널의 SectionTitle)
+    <div className="text-[13px] font-semibold text-[#2f2e2a]">
       {children}
     </div>
   );

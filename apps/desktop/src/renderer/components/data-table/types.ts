@@ -186,6 +186,18 @@ export interface DataTableProps<TData> {
   // Bulk-action toolbar rendered above the table when rows are selected.
   // Receives the selected row objects (not just ids).
   renderBulkActions?: (selectedRows: TData[]) => React.ReactNode;
+  /**
+   * 선택 막대 자리. 'bottom'이면 매물관리 표처럼 스크롤 영역 아래·상태 줄 위에 두어
+   * 행을 체크해도 표가 밀려 내려가지 않는다. 기본 'top'(표 위, 지금 모양 그대로).
+   */
+  selectionToolbarPlacement?: 'top' | 'bottom';
+  /** 'bottom' 선택 막대의 선택 수 문구에 붙는 이름. "광고" → "3개 광고 선택". */
+  selectionItemLabel?: string;
+  /**
+   * true면 스크롤 영역을 크기 질의 컨테이너(container-type: inline-size)로 만든다.
+   * 펼친 행 안에서 100cqw로 표의 보이는 폭을 쓸 수 있다. 기본 false.
+   */
+  scrollerContainerQuery?: boolean;
   // Keeps the selection toolbar mounted at zero selections so the table does
   // not jump vertically as selection changes.
   alwaysShowSelectionToolbar?: boolean;
@@ -199,4 +211,27 @@ export interface DataTableProps<TData> {
   // `renderExpandedRow` is rendered as a full-width sub-row directly below it.
   expandedRowIds?: ReadonlySet<string>;
   renderExpandedRow?: (row: TData) => React.ReactNode;
+  /**
+   * 펼친 행이 있어도 가상 스크롤을 유지한다. 값은 펼친 내용의 첫 추정 높이(px)이고
+   * 실제 높이는 그려진 뒤 잰다. 없으면 펼친 행이 하나라도 있을 때 모든 행을 그린다.
+   */
+  estimateExpandedRowHeight?: number;
+  /**
+   * true면 매물관리 메인 표와 같은 머리글·본문을 쓴다(머리 36px 13px/400,
+   * 본문 14px/450, 데이터 칸 옅은 세로선, 줄 hover bg-muted/70, 선택 bg-primary/5).
+   * 묶음 접기 띠는 headerTone="refresh"와 같은 11px 띠다. 기본 false.
+   */
+  propertyListTone?: boolean;
+  /**
+   * 열 너비(px, 열 id별). 넘기면 이 값으로 그리고, 드래그가 끝났을 때와 열 경계를
+   * 더블클릭해 기본 너비로 되돌렸을 때 onColumnSizingChange로 새 값을 알린다.
+   * 끄는 중 Esc를 누르면 끌기 전 너비로 돌아간다.
+   * 없으면 지금처럼 표 안에서만 너비를 기억한다.
+   */
+  columnSizing?: Record<string, number>;
+  onColumnSizingChange?: (sizing: Record<string, number>) => void;
+  /** 값이 바뀌면 스크롤을 맨 위로 올리고 키보드로 고른 칸을 지운다(필터·검색이 바뀔 때). */
+  scrollResetKey?: string | number;
+  /** 행 선택 체크박스의 접근성 이름. 없으면 "N번째 행 선택". */
+  getRowSelectionLabel?: (row: TData) => string;
 }

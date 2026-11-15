@@ -171,6 +171,8 @@ interface EditableCellProps {
   chipValueOf?: (value: unknown) => string | undefined;
   activation?: 'click' | 'doubleClick';
   portalAnchor?: 'self' | 'tableCell';
+  /** Nested scrollable tables can escape their clipped viewport. */
+  portalContainer?: 'scrollParent' | 'body';
   /**
    * `floating` keeps the editor anchored to the cell without replacing its
    * layout, and adds the elevated popup chrome used by dense ledgers.
@@ -216,6 +218,7 @@ export function EditableCell({
   chipValueOf,
   activation = 'click',
   portalAnchor = 'self',
+  portalContainer = 'scrollParent',
   editorChrome = 'cell',
   multiline = false,
   commitOnBlur = false,
@@ -341,6 +344,7 @@ export function EditableCell({
           selectOptions={selectOptions}
           chipOptions={chipOptions}
           editorChrome={editorChrome}
+          portalContainer={portalContainer}
           multiline={multiline}
           commitOnBlur={commitOnBlur}
           numberMinimum={numberMinimum}
@@ -378,6 +382,7 @@ interface CellEditPortalProps {
   selectOptions?: { label: string; value: string }[];
   chipOptions?: ChipOption[];
   editorChrome: 'cell' | 'floating';
+  portalContainer: 'scrollParent' | 'body';
   multiline: boolean;
   commitOnBlur: boolean;
   numberMinimum?: number;
@@ -409,6 +414,7 @@ function CellEditPortal({
   selectOptions,
   chipOptions,
   editorChrome,
+  portalContainer,
   multiline,
   commitOnBlur,
   numberMinimum,
@@ -456,7 +462,29 @@ function CellEditPortal({
   const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
   const composingRef = useRef(false);
   // 스크롤 컨테이너 기준 콘텐츠 좌표 (absolute 배치용)
-  const scrollParent = useMemo(() => getScrollParent(anchorEl), [anchorEl]);
+  const scrollParent = useMemo(() => portalContainer === 'body' ? document.body : getScrollParent(anchorEl), [anchorEl, portalContainer]);
+  const [, reposition] = useState(0);
+  useLayoutEffect(() => {
+    if (portalContainer !== 'body') return;
+    let frame = 0;
+    const update = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => reposition(value => value + 1));
+    };
+    document.addEventListener('scroll', update, true);
+    window.addEventListener('resize', update);
+    return () => {
+      cancelAnimationFrame(frame);
+      document.removeEventListener('scroll', update, true);
+      window.removeEventListener('resize', update);
+    };
+  }, [portalContainer]);
+  const anchorStyle = portalContainer === 'body' ? getComputedStyle(anchorEl) : null;
+  const portalTypography = anchorStyle ? {
+    '--cell-editor-font-size': anchorStyle.fontSize,
+    '--cell-editor-line-height': anchorStyle.lineHeight,
+    '--cell-editor-font-weight': anchorStyle.fontWeight,
+  } : {};
   useLayoutEffect(() => {
     // absolute 의 기준이 되도록 컨테이너에 포지션 컨텍스트 보장
     if (getComputedStyle(scrollParent).position === 'static') {
@@ -479,6 +507,16 @@ function CellEditPortal({
     );
     return Math.max(viewportLeft, Math.min(rect.left, viewportRight));
   };
+  // Long option lists scroll inside the popup and open above cells near the bottom.
+  const longChipMenu = (chipOptions?.length ?? 0) > 8;
+  const chipMenuMaxHeight = Math.min(360, window.innerHeight - 24);
+  const chipMenuTop = (() => {
+    if (!longChipMenu) return rect.top + rect.height + 4;
+    const anchor = anchorEl.getBoundingClientRect();
+    const top = anchor.bottom + 4 + chipMenuMaxHeight <= window.innerHeight - 12
+      ? anchor.bottom + 4 : Math.max(12, anchor.top - chipMenuMaxHeight - 4);
+    return rect.top + top - anchor.top;
+  })();
   const isFloatingEditor =
     editorChrome === 'floating' && editType !== 'select-chip';
   const floatingWidth = Math.max(
@@ -781,6 +819,7 @@ function CellEditPortal({
               : 'rounded-none outline outline-2 -outline-offset-1 outline-info',
           )}
           style={{
+            ...portalTypography,
             top: isFloatingEditor ? floatingTop : rect.top,
             left: isFloatingEditor ? floatingLeft : rect.left,
             width: isFloatingEditor ? floatingWidth : rect.width,
@@ -848,16 +887,18 @@ function CellEditPortal({
           role="dialog"
           aria-label={ariaLabel ?? `${field} 선택`}
           aria-busy={saving}
-          className="absolute z-50 w-[220px] rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md"
+          className="absolute z-50 w-[220px] flex flex-col rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md"
           style={{
-            top: rect.top + rect.height + 4,
+            ...portalTypography,
+            top: chipMenuTop,
             left: clampPopupLeft(220),
+            maxHeight: longChipMenu ? chipMenuMaxHeight : undefined,
           }}
         >
           <div
             role="listbox"
             aria-label={ariaLabel ?? `${field} 선택`}
-            className="flex flex-col gap-0.5"
+            className={cn('flex flex-col gap-0.5', longChipMenu && 'min-h-0 overflow-y-auto overscroll-contain')}
             onKeyDown={handleOptionKeyDown}
           >
             {chipOptions.map((opt, index) => (
@@ -892,7 +933,7 @@ function CellEditPortal({
                   void saveValue(opt.value, 'current');
                 }}
                 className={cn(
-                  'flex items-center justify-between rounded-sm px-2 py-1.5 text-left outline-none hover:bg-muted focus:bg-muted disabled:opacity-60',
+                  'flex shrink-0 items-center justify-between rounded-sm px-2 py-1.5 text-left outline-none hover:bg-muted focus:bg-muted disabled:opacity-60',
                 )}
               >
                 <span
@@ -932,6 +973,7 @@ function CellEditPortal({
           aria-busy={saving}
           className="absolute z-50 w-[280px] rounded-md border border-border bg-popover text-popover-foreground shadow-md"
           style={{
+            ...portalTypography,
             top: rect.top + rect.height + 4,
             left: clampPopupLeft(280),
           }}

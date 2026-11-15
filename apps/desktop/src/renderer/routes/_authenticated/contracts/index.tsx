@@ -1,17 +1,12 @@
 import { createFileRoute, Link } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { Dispatch, RefObject, SetStateAction } from 'react';
-import { ChevronLeft, ChevronRight, FileText, LayoutGrid, List, Loader2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, FileText, Loader2, Plus } from 'lucide-react';
 import { toast } from 'sonner';
 import type {
   Contract,
-  ContractDateField,
   ContractDocument,
   ContractDocumentTemplate,
-  ContractPriceField,
-  ContractSearchField,
-  ContractsPaginatedFilter,
   CreateContractDocumentDto,
   CreateContractDto,
   Deal,
@@ -24,25 +19,32 @@ import {
   getContractClauseLayoutContext,
   mergeContractDocumentEngineMetadata,
 } from './-document-engine';
+import { DocumentGallery } from './-document-gallery';
+import { DocumentListTable, getDealSummaryLabel } from './-document-list-table';
+import { ContractPeek } from './-document-peek';
 import {
-  DocumentListTable,
+  CONTRACTS_PAGE_SIZE,
   DOC_STATE_PRESETS,
-  getDealSummaryLabel,
+  countActiveFilters,
+  defaultListFilters,
+  isPristineList,
+  toContractsFilter,
+  type ContractListFilterState,
   type DocStatePreset,
-} from './-document-list-table';
+} from './-list-model';
+import {
+  ContractsFilterRow,
+  ContractsViewBar,
+  type ContractsLayout,
+} from './-list-toolbar';
 import {
   toFormRegistrationMetadata,
   type FormRegistrationSpec,
 } from './-form-registration-catalog';
 import { FormRegistrationMenu } from './-form-registration-menu';
 import {
-  BASE_CONTRACT_TRANSACTION_TYPES,
-  ContractTransactionTypeBadge,
-  CONTRACT_STATUS_OPTIONS,
   CONTRACT_TRANSACTION_TYPES,
-  MetricTile,
   NumberField,
-  SIGNED_OR_LATER,
   getContractPropertyLabel,
   hasContractFile,
   resolveDocumentTemplate,
@@ -51,7 +53,6 @@ import {
   toContractTransactionType,
   toOptionalNumber,
   todayInput,
-  transactionReportStatusMeta,
 } from './-contract-shared';
 import {
   DocumentEditorWorkspace,
@@ -65,21 +66,8 @@ import { cn } from '@/lib/utils';
 import { tabResourceKeys } from '@/features/tabs/lib/tabResource';
 import { useTabStore } from '@/features/tabs/store/useTabStore';
 import { sanitizeContractRichTextForSave } from '@/lib/contract-rich-text';
-import { formatDate, formatDateTime, formatMoney } from '@/lib/format';
-import {
-  ConfirmDialog,
-  EmptyState,
-  FilterBar,
-  FilterCount,
-  FilterSearch,
-  FilterSelect,
-  PageHeader,
-  StatusBadge,
-} from '@/components/domain';
-import { Badge } from '@/components/ui/badge';
+import { ConfirmDialog, EmptyState } from '@/components/domain';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
-import { Checkbox } from '@/components/ui/checkbox';
 import {
   Dialog,
   DialogContent,
@@ -97,115 +85,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Skeleton } from '@/components/ui/skeleton';
-
-const DOC_FILTER_OPTIONS = [
-  { value: 'missing', label: '자료 누락' },
-  { value: 'ready', label: '준비 완료' },
-  { value: 'hasFile', label: 'PDF/파일 있음' },
-  { value: 'noFile', label: 'PDF/파일 없음' },
-];
-
-const CONTRACT_DATE_FIELD_OPTIONS: Array<{
-  value: ContractDateField;
-  label: string;
-}> = [
-  { value: 'contractDate', label: '계약일자' },
-  { value: 'statedInterimDate', label: '중도금일자' },
-  { value: 'statedBalanceDate', label: '잔금일자' },
-  { value: 'leaseEndDate', label: '임대만기일' },
-  { value: 'createdAt', label: '등록일자' },
-];
-
-const CONTRACT_PRICE_FIELD_OPTIONS: Array<{
-  value: ContractPriceField;
-  label: string;
-}> = [
-  { value: 'totalPrice', label: '거래금액' },
-  { value: 'statedDeposit', label: '계약금' },
-  { value: 'monthlyRent', label: '월차임' },
-];
-
-const CONTRACT_SEARCH_FIELD_OPTIONS: Array<{
-  value: ContractSearchField;
-  label: string;
-}> = [
-  { value: 'party', label: '고객명' },
-  { value: 'phone', label: '연락처' },
-  { value: 'address', label: '소재지' },
-  { value: 'partnerOffice', label: '공동중개사무소' },
-];
-
-/** 레거시 문서관리 고밀도 목록 — 페이지 당 행 수 (DMLS 스크롤 체감) */
-const CONTRACTS_PAGE_SIZE = 40;
-
-/** 목록 필터 상태 (레거시 DMLS001Q01 검색 조건) — '' = 전체 */
-type ContractListFilterState = {
-  kind: string;
-  transactionType: string;
-  status: string;
-  dateField: ContractDateField;
-  dateFrom: string;
-  dateTo: string;
-  priceField: ContractPriceField;
-  priceMin: string;
-  priceMax: string;
-  /** '' = 전체(all) */
-  searchField: string;
-  search: string;
-  isJointBrokerage: boolean;
-  retentionOverdue: boolean;
-};
-
-function defaultListFilters(): ContractListFilterState {
-  return {
-    kind: '',
-    transactionType: '',
-    status: '',
-    dateField: 'contractDate',
-    dateFrom: '',
-    dateTo: '',
-    priceField: 'totalPrice',
-    priceMin: '',
-    priceMax: '',
-    searchField: '',
-    search: '',
-    isJointBrokerage: false,
-    retentionOverdue: false,
-  };
-}
-
-/** '' 는 undefined (기존 toOptionalNumber 는 ''→0 이라 필터에 부적합) */
-function toFilterNumber(value: string): number | undefined {
-  const trimmed = value.trim();
-  if (!trimmed) return undefined;
-  const parsed = Number(trimmed);
-  return Number.isFinite(parsed) ? parsed : undefined;
-}
-
-function toContractsFilter(filters: ContractListFilterState): ContractsPaginatedFilter {
-  const hasDateRange = Boolean(filters.dateFrom || filters.dateTo);
-  const priceMin = toFilterNumber(filters.priceMin);
-  const priceMax = toFilterNumber(filters.priceMax);
-  const hasPriceRange = priceMin !== undefined || priceMax !== undefined;
-  const search = filters.search.trim();
-
-  return {
-    kind: filters.kind || undefined,
-    transactionType: filters.transactionType || undefined,
-    status: filters.status || undefined,
-    dateField: hasDateRange ? filters.dateField : undefined,
-    dateFrom: filters.dateFrom || undefined,
-    dateTo: filters.dateTo || undefined,
-    priceField: hasPriceRange ? filters.priceField : undefined,
-    priceMin,
-    priceMax,
-    searchField: search ? ((filters.searchField || 'all') as ContractSearchField) : undefined,
-    search: search || undefined,
-    isJointBrokerage: filters.isJointBrokerage ? true : undefined,
-    retentionOverdue: filters.retentionOverdue ? true : undefined,
-  };
-}
 
 function useDebouncedValue<T>(value: T, delayMs = 350): T {
   const [debounced, setDebounced] = useState(value);
@@ -244,7 +123,6 @@ function ContractsPage() {
   const activeTabId = useTabStore((state) => state.activeTabId);
   const openOrRevealResource = useTabStore((state) => state.openOrRevealResource);
   const closeTab = useTabStore((state) => state.closeTab);
-  const searchWrapRef = useRef<HTMLDivElement>(null);
   const appliedDealIdRef = useRef<string | null>(null);
   const editorOpenRequestRef = useRef(0);
   const [selectedContractId, setSelectedContractId] = useState<string | null>(null);
@@ -252,13 +130,33 @@ function ContractsPage() {
   /** 클라이언트 보조 필터 (문서 준비 상태 — 서버 필터 없음, 현재 페이지에만 적용) */
   const [docFilter, setDocFilter] = useState('');
   const [page, setPage] = useState(1);
-  const [view, setView] = useState<'list' | 'docs'>('list');
+  /** 보기 방식: 표 / 자료 중심(갤러리) */
+  const [layout, setLayout] = useState<ContractsLayout>('list');
   /** 레거시 showCust — 목록에 연락처 표시 */
   const [showPhones, setShowPhones] = useState(true);
-  /** 레거시 State_Type: 전체 / 진행중 / 완료 */
+  /** 보기 탭 (레거시 State_Type): 전체 / 진행중 / 완료 */
   const [statePreset, setStatePreset] = useState<DocStatePreset>('all');
-  /** 목록 포커스 행 (하단 상태바) */
+  /** 옆 상세 패널에 열린 계약. 부속 서식 등록의 대상이기도 하다 */
   const [focusedContractId, setFocusedContractId] = useState<string | null>(null);
+  // 상세 패널은 매물관리 · 거래관리와 같은 방식으로 열고 닫는다: 닫을 때는 미끄러져 나간 뒤에 선택을 지운다.
+  const [isPeekClosing, setIsPeekClosing] = useState(false);
+  const [peekMotion, setPeekMotion] = useState(true);
+  const openPeek = useCallback((contractId: string) => {
+    setPeekMotion(!document.activeElement?.matches(':focus-visible'));
+    setIsPeekClosing(false);
+    setFocusedContractId(contractId);
+  }, []);
+  const closePeek = useCallback((animate = true) => {
+    setPeekMotion(animate);
+    setIsPeekClosing(true);
+  }, []);
+  const finishClosingPeek = useCallback(() => {
+    setFocusedContractId(null);
+    setIsPeekClosing(false);
+  }, []);
+  const [isFilterRowOpen, setIsFilterRowOpen] = useState(true);
+  /** 값이 바뀌면 검색 칸을 열고 커서를 둔다 */
+  const [searchFocusSignal, setSearchFocusSignal] = useState(0);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   /**
    * MySpider ShowNewContract — 메뉴에서 고른 서식(종별×거래유형).
@@ -355,10 +253,11 @@ function ContractsPage() {
   });
   const contractDetail = detailQuery.data;
 
-  // '/' 키로 검색 포커스 (PRD 키보드 단축키)
+  // '/' = 검색 (Esc로 상세 패널을 닫는 것은 패널이 맡는다)
   useEffect(() => {
+    if (isEditorTab) return;
     function handleKeyDown(event: KeyboardEvent) {
-      if (event.key !== '/' || event.metaKey || event.ctrlKey || event.altKey) return;
+      if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return;
       const target = event.target as HTMLElement | null;
       if (
         target &&
@@ -366,33 +265,16 @@ function ContractsPage() {
       ) {
         return;
       }
-      event.preventDefault();
-      searchWrapRef.current?.querySelector('input')?.focus();
+      if (document.querySelector('[role="dialog"], [role="menu"]')) return;
+      if (event.key === '/') {
+        event.preventDefault();
+        setSearchFocusSignal((value) => value + 1);
+      }
     }
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
-
-  const metrics = useMemo(() => {
-    const active = allContracts.filter(
-      (contract) => !['registered', 'cancelled'].includes(contract.status),
-    );
-    const signed = allContracts.filter((contract) => SIGNED_OR_LATER.has(contract.status));
-    const balancePending = allContracts.filter((contract) =>
-      ['signed', 'depositPaid'].includes(contract.status),
-    );
-    const missingDocs = allContracts.filter(
-      (contract) => (contract.missingDocumentCount ?? 0) > 0 && contract.status !== 'cancelled',
-    );
-
-    return {
-      active: active.length,
-      signed: signed.length,
-      balancePending: balancePending.length,
-      missingDocs: missingDocs.length,
-    };
-  }, [allContracts]);
+  }, [isEditorTab]);
 
   // 문서 준비 + 진행중 프리셋 — 서버 단건 status 한계를 페이지 내 필터로 보완
   const visibleContracts = useMemo(() => {
@@ -665,6 +547,8 @@ function ContractsPage() {
       setDeleteContractTarget(null);
       queryClient.invalidateQueries({ queryKey: ['contracts'] });
       queryClient.removeQueries({ queryKey: ['contract', contractId] });
+      // 지운 계약이 상세 패널에 열려 있었으면 닫는다
+      if (focusedContractId === contractId) finishClosingPeek();
       if (selectedContractId === contractId) {
         setSelectedContractId(null);
         setIsDocumentEditorOpen(false);
@@ -1066,122 +950,203 @@ function ContractsPage() {
     );
   }
 
+  const isFormBusy = createMutation.isPending || applyFormMutation.isPending;
+  const peekContract = visibleContracts.find((contract) => contract.id === focusedContractId) ?? null;
+  // 닫히는 중인 계약은 목록에서 선택 표시를 바로 뺀다
+  const openPeekId = isPeekClosing ? null : (peekContract?.id ?? null);
+  const selectContract = (contractId: string | null) => {
+    if (contractId) openPeek(contractId);
+    else closePeek();
+  };
+  const isEmptyOffice =
+    !contractsQuery.isLoading && !contractsQuery.isError && visibleContracts.length === 0 && !isFiltered;
+
+  const changeStatePreset = (key: DocStatePreset) => {
+    setStatePreset(key);
+    // 완료 탭은 서버의 상태 조건으로 거른다 (진행중은 여러 상태라 이 페이지 안에서 거른다)
+    if (key === 'done') setFilters((prev) => ({ ...prev, status: 'registered' }));
+    else if (filters.status === 'registered') setFilters((prev) => ({ ...prev, status: '' }));
+  };
+
   return (
-    <div className="flex flex-col">
-      <PageHeader
-        title="문서관리"
-        description="아파트·오피스텔 등 종별과 매매·전세 등 거래유형을 고르면 해당 계약 양식이 그대로 적용됩니다."
-        actions={
-          <FormRegistrationMenu
-            contractDisabled={createMutation.isPending || applyFormMutation.isPending}
-            annexDisabled={createMutation.isPending || applyFormMutation.isPending}
-            onSelect={handleFormRegistrationSelect}
-          />
-        }
-      />
-
-      <div className="mb-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        <MetricTile label="진행 계약" value={`${metrics.active}건`} />
-        <MetricTile label="서명 완료" value={`${metrics.signed}건`} />
-        <MetricTile label="잔금 대기" value={`${metrics.balancePending}건`} />
-        <MetricTile label="자료 누락 계약" value={`${metrics.missingDocs}건`} />
-      </div>
-
-      <ContractListFilterBar
-        searchWrapRef={searchWrapRef}
-        filters={filters}
-        docFilter={docFilter}
-        kindOptions={kindOptions}
-        totalCount={totalCount}
-        view={view}
-        statePreset={statePreset}
-        showPhones={showPhones}
-        onChange={setFilters}
-        onDocFilterChange={setDocFilter}
-        onViewChange={setView}
-        onStatePresetChange={setStatePreset}
-        onShowPhonesChange={setShowPhones}
-      />
-
-      {contractsQuery.isLoading ? (
-        <div className="space-y-2">
-          {Array.from({ length: 5 }).map((_, index) => (
-            <Skeleton key={index} className="h-12 w-full" />
-          ))}
-        </div>
-      ) : contractsQuery.isError ? (
-        <div className="flex flex-col items-center gap-3 rounded-md border border-border/60 py-16 text-sm text-muted-foreground">
-          계약 목록을 불러오지 못했습니다.
-          <Button variant="outline" size="sm" onClick={() => contractsQuery.refetch()}>
-            다시 시도
-          </Button>
-        </div>
-      ) : visibleContracts.length === 0 && !isFiltered ? (
-        <EmptyState
-          icon={FileText}
-          title="등록된 계약이 없습니다"
-          description="계약서 등록 메뉴에서 아파트·오피스텔 등 양식을 고른 뒤, 거래를 연결하세요."
-          action={
-            availableDeals.length > 0 ? (
-              <FormRegistrationMenu showAnnex={false} onSelect={handleFormRegistrationSelect} />
-            ) : (
-              <Button asChild variant="outline">
-                <Link to="/deals">거래 만들러 가기</Link>
-              </Button>
-            )
+    <div data-contracts-page className="relative -m-4 flex min-h-0 flex-1 overflow-hidden bg-white">
+      <div className="flex min-w-0 flex-1 flex-col">
+        <ContractsViewBar
+          statePreset={statePreset}
+          onStatePresetChange={changeStatePreset}
+          isFilterRowOpen={isFilterRowOpen}
+          onToggleFilterRow={() => setIsFilterRowOpen((open) => !open)}
+          activeFilterCount={countActiveFilters(filters, docFilter)}
+          search={filters.search}
+          searchField={filters.searchField}
+          onSearchChange={(search) => setFilters((prev) => ({ ...prev, search }))}
+          onSearchFieldChange={(searchField) => setFilters((prev) => ({ ...prev, searchField }))}
+          searchFocusSignal={searchFocusSignal}
+          layout={layout}
+          onLayoutChange={setLayout}
+          showPhones={showPhones}
+          onShowPhonesChange={setShowPhones}
+          actions={
+            <FormRegistrationMenu
+              compact
+              contractDisabled={isFormBusy}
+              annexDisabled={isFormBusy}
+              onSelect={handleFormRegistrationSelect}
+            />
           }
         />
-      ) : (
-        <>
-          {view === 'list' ? (
-            <DocumentListTable
-              contracts={visibleContracts}
-              isFiltered={isFiltered}
-              showPhones={showPhones}
-              focusedId={focusedContractId}
-              onFocus={setFocusedContractId}
-              onOpen={openContractEditorTab}
-              onCopy={(contract) => copyContractMutation.mutate(contract.id)}
-              isCopying={copyContractMutation.isPending}
-              onDelete={setDeleteContractTarget}
-              isDeleting={deleteContractMutation.isPending}
-            />
-          ) : (
-            <ContractsDocGrid
-              contracts={visibleContracts}
-              isFiltered={isFiltered}
-              onOpen={openContractEditorTab}
-            />
-          )}
+        {isFilterRowOpen && (
+          <ContractsFilterRow
+            filters={filters}
+            docFilter={docFilter}
+            kindOptions={kindOptions}
+            canReset={!isPristineList(filters, docFilter, statePreset)}
+            onChange={setFilters}
+            onStatusChange={(status) => {
+              setStatePreset('all');
+              setFilters((prev) => ({ ...prev, status }));
+            }}
+            onDocFilterChange={setDocFilter}
+            onReset={() => {
+              setFilters(defaultListFilters());
+              setDocFilter('');
+              setStatePreset('all');
+            }}
+          />
+        )}
 
-          <div className="mt-3 flex items-center justify-between gap-3">
-            <span className="text-sm text-muted-foreground">
-              {pagination
-                ? `${pagination.page} / ${Math.max(pagination.totalPages, 1)} 페이지 · 총 ${pagination.total}건`
-                : ' '}
-            </span>
-            <div className="flex items-center gap-1">
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={page <= 1}
-                onClick={() => setPage((prev) => Math.max(prev - 1, 1))}
-              >
-                <ChevronLeft className="size-4" />
-                이전
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={!pagination || page >= pagination.totalPages}
-                onClick={() => setPage((prev) => prev + 1)}
-              >
-                다음
-                <ChevronRight className="size-4" />
-              </Button>
-            </div>
+        {contractsQuery.isError ? (
+          <div className="flex flex-1 flex-col items-center justify-center gap-3 text-[14px] text-muted-foreground">
+            계약 목록을 불러오지 못했습니다.
+            <Button variant="outline" size="sm" onClick={() => contractsQuery.refetch()}>
+              다시 시도
+            </Button>
           </div>
-        </>
+        ) : isEmptyOffice ? (
+          <div className="flex flex-1 items-center justify-center px-4 pb-16">
+            <EmptyState
+              icon={FileText}
+              title="등록된 계약이 없습니다"
+              description="계약서 등록 메뉴에서 아파트·오피스텔 등 양식을 고른 뒤, 거래를 연결하세요."
+              action={
+                availableDeals.length > 0 ? (
+                  <FormRegistrationMenu showAnnex={false} onSelect={handleFormRegistrationSelect} />
+                ) : (
+                  <Button asChild variant="outline">
+                    <Link to="/deals">거래 만들러 가기</Link>
+                  </Button>
+                )
+              }
+            />
+          </div>
+        ) : (
+          <>
+            <div
+              data-contracts-body={layout}
+              className={cn(
+                'min-h-0 flex-1 overflow-auto',
+                // 표는 도구 줄과 같은 자리(16px)에서 시작해 오른쪽 끝까지 간다
+                layout === 'list' ? 'ml-4' : 'px-4 pb-6 pt-2',
+              )}
+            >
+              {layout === 'list' ? (
+                <DocumentListTable
+                  contracts={visibleContracts}
+                  isLoading={contractsQuery.isLoading}
+                  isFiltered={isFiltered}
+                  showPhones={showPhones}
+                  selectedId={openPeekId}
+                  onSelect={selectContract}
+                  onCopy={(contract) => copyContractMutation.mutate(contract.id)}
+                  isCopying={copyContractMutation.isPending}
+                  onDelete={setDeleteContractTarget}
+                  isDeleting={deleteContractMutation.isPending}
+                  addRow={
+                    <FormRegistrationMenu
+                      showAnnex={false}
+                      contractAlign="start"
+                      contractDisabled={isFormBusy}
+                      onSelect={handleFormRegistrationSelect}
+                      contractTrigger={
+                        <button
+                          type="button"
+                          className="flex h-9 w-full items-center gap-2 px-2 text-left text-[14px] text-[#a19e99] transition-colors hover:bg-[rgba(33,27,23,0.03)] hover:text-muted-foreground focus-visible:bg-[rgba(33,27,23,0.03)] focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50"
+                        >
+                          <Plus className="size-4" />
+                          새 계약서
+                        </button>
+                      }
+                    />
+                  }
+                />
+              ) : (
+                <DocumentGallery
+                  contracts={visibleContracts}
+                  isLoading={contractsQuery.isLoading}
+                  isFiltered={isFiltered}
+                  selectedId={openPeekId}
+                  onSelect={selectContract}
+                />
+              )}
+            </div>
+
+            <footer
+              data-contracts-footer
+              className="flex h-10 shrink-0 items-center gap-3 border-t border-border px-4 text-[13px] text-muted-foreground"
+            >
+              <span>
+                개수 <span className="font-medium tabular-nums text-foreground">{totalCount.toLocaleString()}</span>
+              </span>
+              {visibleContracts.length !== pageContracts.length && (
+                <span>이 페이지에서 {visibleContracts.length}건 표시</span>
+              )}
+              <span className="flex-1" />
+              {pagination && (
+                <span className="tabular-nums">
+                  {pagination.page} / {Math.max(pagination.totalPages, 1)} 페이지
+                </span>
+              )}
+              <div className="flex items-center gap-0.5">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 gap-1 px-2 text-[13px] text-muted-foreground-strong"
+                  disabled={page <= 1}
+                  onClick={() => setPage((prev) => Math.max(prev - 1, 1))}
+                >
+                  <ChevronLeft className="size-4" />
+                  이전
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 gap-1 px-2 text-[13px] text-muted-foreground-strong"
+                  disabled={!pagination || page >= pagination.totalPages}
+                  onClick={() => setPage((prev) => prev + 1)}
+                >
+                  다음
+                  <ChevronRight className="size-4" />
+                </Button>
+              </div>
+            </footer>
+          </>
+        )}
+      </div>
+
+      {peekContract && (
+        <ContractPeek
+          contract={peekContract}
+          showPhones={showPhones}
+          closing={isPeekClosing}
+          animate={peekMotion}
+          onClose={closePeek}
+          onExited={finishClosingPeek}
+          onOpen={openContractEditorTab}
+          onCopy={(contract) => copyContractMutation.mutate(contract.id)}
+          isCopying={copyContractMutation.isPending}
+          onDelete={setDeleteContractTarget}
+          isDeleting={deleteContractMutation.isPending}
+        />
       )}
 
       <Dialog
@@ -1384,357 +1349,6 @@ function ContractsPage() {
           }
         }}
       />
-    </div>
-  );
-}
-
-/**
- * 목록 필터 바 — 레거시 DMLS001Q01 검색 조건
- * (검색기준+텍스트 / 서식종류 / 거래유형(기본 3종) / 상태 / 문서준비 /
- *  날짜기준+범위 / 금액기준+범위(만원) / 공동중개·보존기간경과 토글).
- */
-function ContractListFilterBar({
-  searchWrapRef,
-  filters,
-  docFilter,
-  kindOptions,
-  totalCount,
-  view,
-  statePreset,
-  showPhones,
-  onChange,
-  onDocFilterChange,
-  onViewChange,
-  onStatePresetChange,
-  onShowPhonesChange,
-}: {
-  searchWrapRef: RefObject<HTMLDivElement | null>;
-  filters: ContractListFilterState;
-  docFilter: string;
-  kindOptions: Array<{ value: string; label: string }>;
-  totalCount: number;
-  view: 'list' | 'docs';
-  statePreset: DocStatePreset;
-  showPhones: boolean;
-  onChange: Dispatch<SetStateAction<ContractListFilterState>>;
-  onDocFilterChange: (value: string) => void;
-  onViewChange: (view: 'list' | 'docs') => void;
-  onStatePresetChange: (value: DocStatePreset) => void;
-  onShowPhonesChange: (value: boolean) => void;
-}) {
-  function patch(partial: Partial<ContractListFilterState>) {
-    onChange((prev) => ({ ...prev, ...partial }));
-  }
-
-  const isDefault =
-    JSON.stringify(filters) === JSON.stringify(defaultListFilters()) &&
-    !docFilter &&
-    statePreset === 'all';
-
-  return (
-    <div className="mb-3 space-y-2">
-      {/* 레거시 State_Type 전체/진행중/완료 */}
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="flex items-center gap-0.5 rounded-md border border-border/60 p-0.5">
-          {(Object.keys(DOC_STATE_PRESETS) as DocStatePreset[]).map((key) => (
-            <Button
-              key={key}
-              variant={statePreset === key ? 'secondary' : 'ghost'}
-              size="sm"
-              className="h-7 px-2.5 text-xs"
-              onClick={() => {
-                onStatePresetChange(key);
-                if (key === 'done') patch({ status: 'registered' });
-                else if (filters.status === 'registered') patch({ status: '' });
-              }}
-            >
-              {DOC_STATE_PRESETS[key].label}
-            </Button>
-          ))}
-        </div>
-        <label className="flex cursor-pointer items-center gap-2 px-1 text-xs text-muted-foreground">
-          <Checkbox
-            checked={showPhones}
-            onCheckedChange={(checked) => onShowPhonesChange(checked === true)}
-          />
-          고객정보(연락처) 표시
-        </label>
-      </div>
-
-      <FilterBar>
-        <div ref={searchWrapRef}>
-          <FilterSearch
-            value={filters.search}
-            onChange={(value) => patch({ search: value })}
-            placeholder="고객명, 연락처, 소재지 검색 (/)"
-          />
-        </div>
-        <FilterSelect
-          label="검색기준"
-          value={filters.searchField}
-          onChange={(value) => patch({ searchField: value })}
-          options={CONTRACT_SEARCH_FIELD_OPTIONS.map((option) => ({
-            value: option.value,
-            label: option.label,
-          }))}
-        />
-        <FilterSelect
-          label="서식"
-          value={filters.kind}
-          onChange={(value) => patch({ kind: value })}
-          options={kindOptions}
-        />
-        <FilterSelect
-          label="거래유형"
-          value={filters.transactionType}
-          onChange={(value) => patch({ transactionType: value })}
-          options={BASE_CONTRACT_TRANSACTION_TYPES}
-        />
-        <FilterSelect
-          label="상태"
-          value={filters.status}
-          onChange={(value) => {
-            onStatePresetChange('all');
-            patch({ status: value });
-          }}
-          options={CONTRACT_STATUS_OPTIONS}
-        />
-        <FilterSelect
-          label="문서 준비"
-          value={docFilter}
-          onChange={onDocFilterChange}
-          options={DOC_FILTER_OPTIONS}
-        />
-        <FilterCount n={totalCount} />
-        <div className="flex items-center gap-1 rounded-md border border-border/60 p-0.5">
-          <Button
-            variant={view === 'list' ? 'secondary' : 'ghost'}
-            size="sm"
-            className="h-7 px-2"
-            onClick={() => onViewChange('list')}
-          >
-            <List className="size-3.5" />
-            목록
-          </Button>
-          <Button
-            variant={view === 'docs' ? 'secondary' : 'ghost'}
-            size="sm"
-            className="h-7 px-2"
-            onClick={() => onViewChange('docs')}
-          >
-            <LayoutGrid className="size-3.5" />
-            자료 중심
-          </Button>
-        </div>
-      </FilterBar>
-
-      <FilterBar>
-        <Select
-          value={filters.dateField}
-          onValueChange={(value) => patch({ dateField: value as ContractDateField })}
-        >
-          <SelectTrigger size="sm" className="gap-1.5 bg-background">
-            <span className="text-muted-foreground">날짜</span>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {CONTRACT_DATE_FIELD_OPTIONS.map((option) => (
-              <SelectItem key={option.value} value={option.value}>
-                {option.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <div className="flex items-center gap-1.5">
-          <Input
-            type="date"
-            value={filters.dateFrom}
-            onChange={(event) => patch({ dateFrom: event.target.value })}
-            className="h-8 w-36 bg-background"
-            aria-label="날짜 시작"
-          />
-          <span className="text-xs text-muted-foreground">~</span>
-          <Input
-            type="date"
-            value={filters.dateTo}
-            onChange={(event) => patch({ dateTo: event.target.value })}
-            className="h-8 w-36 bg-background"
-            aria-label="날짜 종료"
-          />
-        </div>
-        <Select
-          value={filters.priceField}
-          onValueChange={(value) => patch({ priceField: value as ContractPriceField })}
-        >
-          <SelectTrigger size="sm" className="gap-1.5 bg-background">
-            <span className="text-muted-foreground">금액</span>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {CONTRACT_PRICE_FIELD_OPTIONS.map((option) => (
-              <SelectItem key={option.value} value={option.value}>
-                {option.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <div className="flex items-center gap-1.5">
-          <div className="relative">
-            <Input
-              inputMode="numeric"
-              value={filters.priceMin}
-              onChange={(event) => patch({ priceMin: event.target.value })}
-              placeholder="최소"
-              className="h-8 w-28 bg-background pr-11"
-              aria-label="금액 최소"
-            />
-            <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
-              만원
-            </span>
-          </div>
-          <span className="text-xs text-muted-foreground">~</span>
-          <div className="relative">
-            <Input
-              inputMode="numeric"
-              value={filters.priceMax}
-              onChange={(event) => patch({ priceMax: event.target.value })}
-              placeholder="최대"
-              className="h-8 w-28 bg-background pr-11"
-              aria-label="금액 최대"
-            />
-            <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
-              만원
-            </span>
-          </div>
-        </div>
-        <label className="flex cursor-pointer items-center gap-2 px-1 text-sm">
-          <Checkbox
-            checked={filters.isJointBrokerage}
-            onCheckedChange={(checked) => patch({ isJointBrokerage: checked === true })}
-          />
-          공동중개
-        </label>
-        <label className="flex cursor-pointer items-center gap-2 px-1 text-sm">
-          <Checkbox
-            checked={filters.retentionOverdue}
-            onCheckedChange={(checked) => patch({ retentionOverdue: checked === true })}
-          />
-          보존기간 경과
-        </label>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="ml-auto h-7"
-          disabled={isDefault}
-          onClick={() => {
-            onChange(defaultListFilters());
-            onDocFilterChange('');
-            onStatePresetChange('all');
-          }}
-        >
-          필터 초기화
-        </Button>
-      </FilterBar>
-    </div>
-  );
-}
-
-function ContractsDocGrid({
-  contracts,
-  isFiltered,
-  onOpen,
-}: {
-  contracts: Contract[];
-  isFiltered: boolean;
-  onOpen: (contractId: string) => void;
-}) {
-  if (contracts.length === 0) {
-    return (
-      <div className="rounded-md border border-border/60 py-16 text-center text-sm text-muted-foreground">
-        {isFiltered ? '조건에 맞는 계약이 없습니다.' : '계약이 없습니다.'}
-      </div>
-    );
-  }
-
-  return (
-    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-      {contracts.map((contract) => {
-        const missingCount = contract.missingDocumentCount ?? 0;
-        const requiredCount = contract.requiredDocumentTemplates?.length ?? 0;
-        const propertyLabel = getContractPropertyLabel(contract.deal);
-        const reportStatus = contract.transactionReportStatus ?? 'none';
-
-        return (
-          <Card
-            key={contract.id}
-            role="button"
-            tabIndex={0}
-            onClick={() => onOpen(contract.id)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter' || event.key === ' ') {
-                event.preventDefault();
-                onOpen(contract.id);
-              }
-            }}
-            className="cursor-pointer gap-3 py-4 outline-none transition-colors hover:bg-muted/30 focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            <CardContent className="space-y-3 px-4">
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium">{propertyLabel || '매물 미지정'}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {contract.buyerContact?.name ?? '매수인 미지정'} /{' '}
-                    {contract.sellerContact?.name ?? '매도인 미지정'}
-                  </p>
-                </div>
-                <StatusBadge kind="contractStatus" status={contract.status} />
-              </div>
-
-              <div className="flex items-center gap-2">
-                <ContractTransactionTypeBadge type={contract.transactionType} />
-                <span className="text-sm font-medium tabular-nums">
-                  {formatMoney(contract.totalPrice)}
-                </span>
-                <Badge
-                  className={cn(
-                    'ml-auto border-0',
-                    transactionReportStatusMeta[reportStatus]?.className ??
-                      transactionReportStatusMeta.none.className,
-                  )}
-                >
-                  {transactionReportStatusMeta[reportStatus]?.label ?? reportStatus}
-                </Badge>
-              </div>
-
-              <div className="rounded-md border border-border/60 bg-muted/20 px-3 py-2">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">작성 문서</span>
-                  <span className="font-medium tabular-nums">
-                    {contract.documentCount ?? 0}건
-                    {requiredCount > 0 ? ` / 필수 ${requiredCount}건` : ''}
-                  </span>
-                </div>
-                <div className="mt-1 flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">자료 누락</span>
-                  <span
-                    className={cn(
-                      'font-medium tabular-nums',
-                      missingCount > 0 ? 'text-destructive' : 'text-success',
-                    )}
-                  >
-                    {missingCount > 0 ? `${missingCount}건` : '없음'}
-                  </span>
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between text-xs text-muted-foreground">
-                <span>계약일 {formatDate(contract.contractDate)}</span>
-                <span>수정 {formatDateTime(contract.updatedAt)}</span>
-              </div>
-            </CardContent>
-          </Card>
-        );
-      })}
     </div>
   );
 }

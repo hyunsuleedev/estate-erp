@@ -742,7 +742,7 @@ describe('desktop data table', () => {
     // 고정 열 경계선은 머리글과 행이 같은 선 하나를 쓴다 (다른 칸 선보다 조금 굵다).
     assert.match(
       tableSource,
-      /const PINNED_EDGE_LINE_CLASS =\s*"border-r-0 shadow-\[1px_0_0_0_#cfcecb\] [^"]*group-has-\[\[data-column-edge-hit\]:hover\]\/ptable:after:bg-foreground\/10/,
+      /const PINNED_EDGE_LINE_CLASS =\s*"shadow-\[1px_0_0_0_#e3e2df\] [^"]*group-has-\[\[data-column-edge-hit\]:hover\]\/ptable:after:bg-foreground\/10/,
     );
     assert.equal(
       (tableSource.match(/isLastPinned && PINNED_EDGE_LINE_CLASS/g) ?? []).length,
@@ -1097,7 +1097,7 @@ describe('desktop data table', () => {
     // 패널 머리글은 두 탭을 가진다.
     assert.match(panelSource, /label="연결 구매고객"/);
     assert.match(panelSource, /label="광고"/);
-    assert.match(panelSource, /activeTab === 'ad' \? \(\s*adPanel/);
+    assert.match(panelSource, /activeTab === 'ad' \? \(\s*adPanel\(/);
     assert.match(tableSource, /expandedRowIds\?: ReadonlySet<string>/);
     assert.match(tableSource, /data-expanded-row=\{row\.original\.id\}/);
     assert.match(tableSource, /renderExpandedRow\?\.\(row\.original\)/);

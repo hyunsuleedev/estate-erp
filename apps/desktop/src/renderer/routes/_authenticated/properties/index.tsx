@@ -190,6 +190,10 @@ import {
   estimatePropertyMatchPanelHeight,
   getPropertyMatchCount,
 } from "./-components/property-match-panel";
+import { AdTableColumnHeader } from "./-components/property-ad-table-controls";
+import { PropertyPanelSelectionCheckbox } from "./-components/property-panel-selection-checkbox";
+import { PropertyAdEditableCell } from "./-components/property-ad-editable-cell";
+import { adTableColumns, getAdChannelLabel, sortPropertyAdRows, type AdColumnId, type AdTableControls } from "./-components/property-ad-table-state";
 import { matchStageOrder } from "../wanted-properties/-match-view-utils";
 
 // ── Labels & Colors ─────────────────────────────────────────────
@@ -242,11 +246,6 @@ const listingAvailabilityChipOptions: ChipOption[] = Object.entries(
 const adStatusMeta: Record<string, { label: string; className: string }> = {
   active: { label: "광고중", className: "bg-[#eef3ed] text-[#44745a]" },
   ended: { label: "종료", className: "bg-[#f1f1ef] text-[#787774]" },
-};
-
-const adChannelLabels: Record<string, string> = {
-  esiljang: "이실장",
-  budongsanbank: "부동산뱅크",
 };
 
 const contactRoleLabels: Record<string, string> = {
@@ -1406,7 +1405,7 @@ function PropertiesPage() {
           activeTab={tab}
           onTabChange={setPanelTab}
           onHeightChange={handleMatchPanelHeightChange}
-          adPanel={<PropertyAdPanel group={group} />}
+          adPanel={(controls) => <PropertyAdPanel group={group} controls={controls} />}
         />
       );
     },
@@ -5826,10 +5825,9 @@ function ListingPanelToggle({
       title={isOpen ? `${label} 접기` : `${label} 펼치기`}
       onClick={onToggle}
       className={cn(
-        "inline-flex h-6 items-center gap-1 rounded px-1 text-[14px] font-[450] leading-[21px] tabular-nums transition-colors",
-        isOpen
-          ? "text-foreground"
-          : "text-muted-foreground hover:bg-foreground/[0.06] hover:text-foreground",
+        // 숫자는 같은 행의 다른 칸과 같은 글자색. 아이콘과 화살표만 옅게 둔다.
+        "inline-flex h-6 items-center gap-1 rounded px-1 text-[14px] font-[450] leading-[21px] tabular-nums text-foreground transition-colors",
+        !isOpen && "hover:bg-foreground/[0.06]",
       )}
     >
       <span className="text-muted-foreground/70 [&_svg]:size-3">{icon}</span>
@@ -5930,18 +5928,14 @@ function getPropertyActiveAdvertisementCount(group: PropertyListingGroup) {
 
 // 연결 구매고객 패널의 '광고' 탭 내용. 바깥 배경·여백·머리글은 그 패널이
 // 대고, 여기서는 광고 목록만 그린다.
-function PropertyAdPanel({ group }: { group: PropertyListingGroup }) {
-  const adRows = getPropertyAdRows(group);
-  const headers = [
-    { label: "거래", icon: <Tag />, width: 74 },
-    { label: "광고 채널", icon: <Megaphone />, width: 156 },
-    { label: "상태", icon: <Info />, width: 104 },
-    { label: "가격/보증금", icon: <WonCircleIcon />, width: 180 },
-    { label: "월세", icon: <WonCircleIcon />, width: 104 },
-    { label: "등록일", icon: <CalendarDays />, width: 112 },
-    { label: "메모", icon: <PencilLine /> },
-    { label: "원문", icon: <ExternalLink />, width: 108 },
-  ];
+function PropertyAdPanel({ group, controls }: { group: PropertyListingGroup; controls: AdTableControls }) {
+  const { preferences, selection, ...headerControls } = controls;
+  const adRows = sortPropertyAdRows(getPropertyAdRows(group), preferences.sort);
+  const allSelected = adRows.length > 0 && adRows.every(row => selection.selectedIds.has(row.advertisement.id));
+  const icons: Record<AdColumnId, ReactNode> = {
+    trade: <Tag />, channel: <Megaphone />, status: <Info />, price: <WonCircleIcon />,
+    monthlyRent: <WonCircleIcon />, startedAt: <CalendarDays />, memo: <PencilLine />, url: <ExternalLink />,
+  };
 
   return (
     <div
@@ -5949,51 +5943,71 @@ function PropertyAdPanel({ group }: { group: PropertyListingGroup }) {
       role="region"
       aria-label={`${group.property?.site?.name ?? "매물"} 광고 현황`}
     >
-      <table
-        aria-label="광고 현황 표"
-        className="w-full min-w-[1018px] table-fixed border-collapse text-left"
-      >
-        <colgroup>
-          {headers.map(({ label, width }) => <col key={label} style={{ width }} />)}
-        </colgroup>
-        <thead>
-          <tr data-property-ad-header className="h-9 border-b border-border text-[13px] font-normal leading-[1.6154] text-muted-foreground">
-            {headers.map(({ label, icon }) => (
-              <th key={label} scope="col" className="h-9 px-2.5 py-0 font-normal">
-                <TableHeaderLabel icon={icon} label={label} />
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
+      <div role="table" aria-label="광고 현황 표">
+        <div className="relative -ml-9 pl-9">
+          {adRows.length > 0 && (
+            <PropertyPanelSelectionCheckbox
+              kind="ad"
+              label="표시된 광고 모두 선택"
+              checked={allSelected ? true : selection.selectedIds.size > 0 ? 'indeterminate' : false}
+              onCheckedChange={selection.onSelectAll}
+            />
+          )}
+        <div data-property-ad-header role="row" className="grid h-9 grid-cols-[var(--ad-table-columns)] border-b border-border text-[13px] font-normal leading-[1.6154] text-muted-foreground">
+          {adTableColumns.map(column => (
+            <AdTableColumnHeader
+              key={column.id} column={column} icon={icons[column.id]}
+              sort={preferences.sort} {...headerControls}
+            />
+          ))}
+        </div>
+        </div>
+        <div role="rowgroup">
           {adRows.length === 0 ? (
-            <tr>
-              <td colSpan={headers.length} className="h-[37px] border-b border-border px-2.5 text-[13px] text-muted-foreground">
+            <div role="row">
+              <div role="cell" aria-colspan={adTableColumns.length} className="flex h-[37px] items-center border-b border-border px-2.5 text-[13px] text-muted-foreground">
                 등록된 광고가 없습니다.
-              </td>
-            </tr>
+              </div>
+            </div>
           ) : adRows.map(({ listing, advertisement }) => {
             const statusMeta = adStatusMeta[advertisement.status] ?? adStatusMeta.active;
-            const advertisedPrice = advertisement.advertisedPrice ?? advertisement.advertisedDeposit;
+            const priceField = listing.transactionType === "sale" ? "advertisedPrice" : "advertisedDeposit";
+            const advertisedPrice = advertisement[priceField];
             const priceText = advertisedPrice != null ? formatPrice(advertisedPrice) : "—";
             const rentText = advertisement.advertisedMonthlyRent != null
               ? formatPrice(advertisement.advertisedMonthlyRent) : "—";
             const channelLabel = getAdChannelLabel(advertisement.channel);
+            const cellLabel = `${channelLabel} ${transactionTypeMeta[listing.transactionType]?.label ?? listing.transactionType} 광고`;
+            const isSelected = selection.selectedIds.has(advertisement.id);
 
             return (
-              <tr
-                key={advertisement.id}
+              <div key={advertisement.id} className="group/ad-selection relative -ml-9 pl-9">
+                <PropertyPanelSelectionCheckbox
+                  kind="ad"
+                  label={`${channelLabel} ${transactionTypeMeta[listing.transactionType]?.label ?? listing.transactionType} 광고 선택`}
+                  checked={isSelected}
+                  onCheckedChange={selected => selection.onChange(advertisement.id, selected)}
+                />
+              <div
+                role="row"
                 data-property-ad-row={advertisement.id}
-                className="h-[37px] border-b border-border text-[14px] font-[450] leading-[1.5] text-foreground hover:bg-muted [&>td]:h-9 [&>td]:px-2.5 [&>td]:py-0 [&>td]:align-middle [&>td:not(:last-child)]:border-r [&>td:not(:last-child)]:border-border"
+                data-selected={isSelected || undefined}
+                aria-selected={isSelected}
+                className="grid h-[37px] grid-cols-[var(--ad-table-columns)] border-b border-border text-[14px] font-[450] leading-[1.5] text-foreground hover:bg-muted data-[selected=true]:bg-info-soft/40 [&>div]:min-w-0 [&>div]:content-center [&>div]:px-2.5 [&>div:not(:last-child)]:border-r [&>div:not(:last-child)]:border-border"
               >
-                <td>
+                <div role="cell">
                   <TransactionMiniLabel
                     transactionType={listing.transactionType}
                     className="h-5 rounded-[3px] py-0 text-[13px] font-normal leading-none"
                   />
-                </td>
-                <td title={channelLabel}><span className="block truncate">{channelLabel}</span></td>
-                <td>
+                </div>
+                <div role="cell" title={channelLabel} className="px-0!">
+                  <PropertyAdEditableCell advertisement={advertisement} field="channel" label={`${cellLabel} 채널`}>
+                    <span className="block truncate">{channelLabel}</span>
+                  </PropertyAdEditableCell>
+                </div>
+                <div role="cell" className="px-0!">
+                  <PropertyAdEditableCell advertisement={advertisement} field="status" label={`${cellLabel} 상태`}>
                   <span className={cn(
                     "inline-flex h-5 items-center gap-1.5 whitespace-nowrap rounded-full pl-[7px] pr-[9px] text-[13px] font-normal leading-none",
                     statusMeta.className,
@@ -6001,33 +6015,37 @@ function PropertyAdPanel({ group }: { group: PropertyListingGroup }) {
                     <span aria-hidden="true" className="size-1.5 shrink-0 rounded-full bg-current opacity-70" />
                     {statusMeta.label}
                   </span>
-                </td>
-                <td title={priceText} className="tabular-nums"><span className="block truncate">{priceText}</span></td>
-                <td title={rentText} className="tabular-nums"><span className="block truncate">{rentText}</span></td>
-                <td className="tabular-nums">{formatDateShort(advertisement.startedAt)}</td>
-                <td title={advertisement.memo?.trim() || undefined}>
-                  <span className="block truncate">{advertisement.memo?.trim() || "—"}</span>
-                </td>
-                <td>
-                  {advertisement.url ? (
-                    <a
-                      href={advertisement.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      aria-label={`${channelLabel} ${transactionTypeMeta[listing.transactionType]?.label ?? listing.transactionType} 광고 원문 보기`}
-                      onClick={(event) => event.stopPropagation()}
-                      className="-ml-1 inline-flex h-6 items-center gap-1 rounded px-1 text-[13px] text-muted-foreground hover:bg-foreground/[0.06] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    >
-                      원문 보기
-                      <ExternalLink className="size-3.5" aria-hidden="true" />
-                    </a>
-                  ) : <span className="text-muted-foreground">—</span>}
-                </td>
-              </tr>
+                  </PropertyAdEditableCell>
+                </div>
+                <div role="cell" title={priceText} className="px-0! tabular-nums">
+                  <PropertyAdEditableCell advertisement={advertisement} field={priceField} label={`${cellLabel} ${listing.transactionType === "sale" ? "가격" : "보증금"}`}>
+                    <span className="block truncate">{priceText}</span>
+                  </PropertyAdEditableCell>
+                </div>
+                <div role="cell" title={rentText} className={cn("tabular-nums", listing.transactionType === "monthly" && "px-0!")}>
+                  {listing.transactionType === "monthly" ? <PropertyAdEditableCell advertisement={advertisement} field="advertisedMonthlyRent" label={`${cellLabel} 월세`}>
+                    <span className="block truncate">{rentText}</span>
+                  </PropertyAdEditableCell> : <span className="block truncate">{rentText}</span>}
+                </div>
+                <div role="cell" className="px-0! tabular-nums">
+                  <PropertyAdEditableCell advertisement={advertisement} field="startedAt" label={`${cellLabel} 등록일`}>{formatDateShort(advertisement.startedAt)}</PropertyAdEditableCell>
+                </div>
+                <div role="cell" title={advertisement.memo?.trim() || undefined} className="px-0!">
+                  <PropertyAdEditableCell advertisement={advertisement} field="memo" label={`${cellLabel} 메모`}>
+                    <span className="block truncate">{advertisement.memo?.trim() || "—"}</span>
+                  </PropertyAdEditableCell>
+                </div>
+                <div role="cell" className="px-0!">
+                  <PropertyAdEditableCell advertisement={advertisement} field="url" label={`${cellLabel} 원문 주소`}>
+                    <span className="block truncate text-[13px] text-muted-foreground">{advertisement.url ? "원문 주소" : "—"}</span>
+                  </PropertyAdEditableCell>
+                </div>
+              </div>
+              </div>
             );
           })}
-        </tbody>
-      </table>
+        </div>
+      </div>
     </div>
   );
 }
@@ -6227,7 +6245,7 @@ function TransactionMiniLabel({
   return (
     <span
       className={cn(
-        "inline-flex min-w-8 shrink-0 justify-center rounded-[4px] px-1.5 py-0.5 text-[11px] font-medium leading-5",
+        "inline-flex min-w-8 shrink-0 items-center justify-center rounded-[4px] px-1.5 py-0.5 text-[11px] font-medium leading-5",
         transactionMeta?.className ?? "bg-[#f1f1ef] text-[#787774]",
         className,
       )}
@@ -6792,10 +6810,6 @@ function getTransactionTypeOrder(value: string) {
   if (value === "jeonse") return 1;
   if (value === "monthly") return 2;
   return 99;
-}
-
-function getAdChannelLabel(channel: string) {
-  return adChannelLabels[channel] ?? channel;
 }
 
 function formatPriceHistorySnapshot(

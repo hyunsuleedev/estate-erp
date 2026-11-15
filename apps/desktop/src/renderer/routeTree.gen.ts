@@ -45,6 +45,7 @@ import { Route as AuthenticatedPropertiesMyAdsRouteImport } from './routes/_auth
 import { Route as AuthenticatedPropertiesExternalListingsRouteImport } from './routes/_authenticated/properties/external-listings'
 import { Route as AuthenticatedPropertiesIdRouteImport } from './routes/_authenticated/properties/$id'
 import { Route as AuthenticatedDocumentsPhotosRouteImport } from './routes/_authenticated/documents/photos'
+import { Route as AuthenticatedDealsIdRouteImport } from './routes/_authenticated/deals/$id'
 import { Route as AuthenticatedContactsNewRouteImport } from './routes/_authenticated/contacts/new'
 import { Route as AuthenticatedContactsIdRouteImport } from './routes/_authenticated/contacts/$id'
 import { Route as AuthenticatedCashflowPartnerCommissionsRouteImport } from './routes/_authenticated/cashflow/partner-commissions'
@@ -259,6 +260,11 @@ const AuthenticatedDocumentsPhotosRoute =
     path: '/documents/photos',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const AuthenticatedDealsIdRoute = AuthenticatedDealsIdRouteImport.update({
+  id: '/deals/$id',
+  path: '/deals/$id',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
 const AuthenticatedContactsNewRoute =
   AuthenticatedContactsNewRouteImport.update({
     id: '/contacts/new',
@@ -341,6 +347,7 @@ export interface FileRoutesByFullPath {
   '/cashflow/partner-commissions': typeof AuthenticatedCashflowPartnerCommissionsRoute
   '/contacts/$id': typeof AuthenticatedContactsIdRoute
   '/contacts/new': typeof AuthenticatedContactsNewRoute
+  '/deals/$id': typeof AuthenticatedDealsIdRoute
   '/documents/photos': typeof AuthenticatedDocumentsPhotosRoute
   '/properties/$id': typeof AuthenticatedPropertiesIdRoute
   '/properties/external-listings': typeof AuthenticatedPropertiesExternalListingsRoute
@@ -388,6 +395,7 @@ export interface FileRoutesByTo {
   '/cashflow/partner-commissions': typeof AuthenticatedCashflowPartnerCommissionsRoute
   '/contacts/$id': typeof AuthenticatedContactsIdRoute
   '/contacts/new': typeof AuthenticatedContactsNewRoute
+  '/deals/$id': typeof AuthenticatedDealsIdRoute
   '/documents/photos': typeof AuthenticatedDocumentsPhotosRoute
   '/properties/$id': typeof AuthenticatedPropertiesIdRoute
   '/properties/external-listings': typeof AuthenticatedPropertiesExternalListingsRoute
@@ -438,6 +446,7 @@ export interface FileRoutesById {
   '/_authenticated/cashflow/partner-commissions': typeof AuthenticatedCashflowPartnerCommissionsRoute
   '/_authenticated/contacts/$id': typeof AuthenticatedContactsIdRoute
   '/_authenticated/contacts/new': typeof AuthenticatedContactsNewRoute
+  '/_authenticated/deals/$id': typeof AuthenticatedDealsIdRoute
   '/_authenticated/documents/photos': typeof AuthenticatedDocumentsPhotosRoute
   '/_authenticated/properties/$id': typeof AuthenticatedPropertiesIdRoute
   '/_authenticated/properties/external-listings': typeof AuthenticatedPropertiesExternalListingsRoute
@@ -487,6 +496,7 @@ export interface FileRouteTypes {
     | '/cashflow/partner-commissions'
     | '/contacts/$id'
     | '/contacts/new'
+    | '/deals/$id'
     | '/documents/photos'
     | '/properties/$id'
     | '/properties/external-listings'
@@ -534,6 +544,7 @@ export interface FileRouteTypes {
     | '/cashflow/partner-commissions'
     | '/contacts/$id'
     | '/contacts/new'
+    | '/deals/$id'
     | '/documents/photos'
     | '/properties/$id'
     | '/properties/external-listings'
@@ -583,6 +594,7 @@ export interface FileRouteTypes {
     | '/_authenticated/cashflow/partner-commissions'
     | '/_authenticated/contacts/$id'
     | '/_authenticated/contacts/new'
+    | '/_authenticated/deals/$id'
     | '/_authenticated/documents/photos'
     | '/_authenticated/properties/$id'
     | '/_authenticated/properties/external-listings'
@@ -876,6 +888,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedDocumentsPhotosRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/deals/$id': {
+      id: '/_authenticated/deals/$id'
+      path: '/deals/$id'
+      fullPath: '/deals/$id'
+      preLoaderRoute: typeof AuthenticatedDealsIdRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/contacts/new': {
       id: '/_authenticated/contacts/new'
       path: '/contacts/new'
@@ -980,6 +999,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedCashflowPartnerCommissionsRoute: typeof AuthenticatedCashflowPartnerCommissionsRoute
   AuthenticatedContactsIdRoute: typeof AuthenticatedContactsIdRoute
   AuthenticatedContactsNewRoute: typeof AuthenticatedContactsNewRoute
+  AuthenticatedDealsIdRoute: typeof AuthenticatedDealsIdRoute
   AuthenticatedDocumentsPhotosRoute: typeof AuthenticatedDocumentsPhotosRoute
   AuthenticatedPropertiesIdRoute: typeof AuthenticatedPropertiesIdRoute
   AuthenticatedPropertiesExternalListingsRoute: typeof AuthenticatedPropertiesExternalListingsRoute
@@ -1027,6 +1047,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
     AuthenticatedCashflowPartnerCommissionsRoute,
   AuthenticatedContactsIdRoute: AuthenticatedContactsIdRoute,
   AuthenticatedContactsNewRoute: AuthenticatedContactsNewRoute,
+  AuthenticatedDealsIdRoute: AuthenticatedDealsIdRoute,
   AuthenticatedDocumentsPhotosRoute: AuthenticatedDocumentsPhotosRoute,
   AuthenticatedPropertiesIdRoute: AuthenticatedPropertiesIdRoute,
   AuthenticatedPropertiesExternalListingsRoute:

@@ -45,7 +45,7 @@ import { formatPhoneNumber } from '@/lib/contacts';
 import { getStatusMeta } from '@/lib/status-config';
 import { useAuth } from '@/providers/auth-provider';
 import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
+import { PropertyPanelSelectionCheckbox as MatchSelectionCheckbox } from './property-panel-selection-checkbox';
 import { Input } from '@/components/ui/input';
 import { StatusBadge } from '@/components/domain';
 import { EditableCell } from '@/components/data-table';
@@ -97,6 +97,10 @@ import {
   type MatchColumnWidths, type MatchTableSort,
 } from './property-match-table-state';
 import { useMatchTablePreferences } from './use-match-table-preferences';
+import { useAdTablePreferences } from './use-ad-table-preferences';
+import { AdTableSortControl } from './property-ad-table-controls';
+import { PropertyAdActions } from './property-ad-actions';
+import { getAdTableLayout, type AdColumnWidths, type AdTableControls, type AdTableSort } from './property-ad-table-state';
 
 // 매물관리 표에서 한 의뢰를 펼쳤을 때 나오는 "연결 구매고객" 목록.
 // 고객 한 명이 한 줄이고, 줄을 펼치면 단계 경로와 다음 작업이 나온다.
@@ -368,7 +372,7 @@ export function PropertyMatchPanel({
   /** 실제 높이를 표에 알려 가상 스크롤이 아래 행 위치를 맞추게 한다 */
   onHeightChange?: (groupId: string, height: number) => void;
   /** '광고' 탭 내용 (index.tsx가 소유) */
-  adPanel: ReactNode;
+  adPanel: (controls: AdTableControls) => ReactNode;
 }) {
   const queryClient = useQueryClient();
   const rootRef = useRef<HTMLDivElement>(null);
@@ -378,6 +382,17 @@ export function PropertyMatchPanel({
   const [selectedMatchIds, setSelectedMatchIds] = useState<Set<string>>(
     () => new Set(),
   );
+  const [selectedAdIds, setSelectedAdIds] = useState<Set<string>>(() => new Set());
+  const visibleAdIds = useMemo(() => group.listings.flatMap(
+    listing => (listing.activeAdvertisements ?? []).map(ad => ad.id),
+  ), [group.listings]);
+  useEffect(() => {
+    const visibleIds = new Set(activeTab === 'ad' ? visibleAdIds : []);
+    setSelectedAdIds(current => {
+      const next = new Set([...current].filter(id => visibleIds.has(id)));
+      return next.size === current.size ? current : next;
+    });
+  }, [activeTab, visibleAdIds]);
   const [showClosed, setShowClosed] = useState(false);
   const { user } = useAuth();
   const { preferences, updatePreferences } = useMatchTablePreferences(
@@ -387,6 +402,12 @@ export function PropertyMatchPanel({
   const layout = getMatchTableLayout(previewWidths ?? preferences.widths);
   const setSort = (sort: MatchTableSort) =>
     updatePreferences((current) => ({ ...current, sort }));
+  const { preferences: adPreferences, updatePreferences: updateAdPreferences } = useAdTablePreferences(
+    user?.office?.id ?? 'local', user?.id ?? 'guest',
+  );
+  const [adPreviewWidths, setAdPreviewWidths] = useState<AdColumnWidths | null>(null);
+  const adLayout = getAdTableLayout(adPreviewWidths ?? adPreferences.widths);
+  const setAdSort = (sort: AdTableSort) => updateAdPreferences(current => ({ ...current, sort }));
   const listingIds = useMemo(
     () => group.listings.map((listing) => listing.id),
     [group.listings],
@@ -633,13 +654,19 @@ export function PropertyMatchPanel({
       aria-label={`${group.property?.site?.name ?? '매물'} 연결 구매고객`}
       className="border-b border-border bg-background py-3 pl-6 pr-4"
     >
-      <div className="overflow-x-auto">
+      <div className="overflow-x-auto" style={activeTab === 'ad' ? {
+        '--cell-editor-font-size': '14px', '--cell-editor-line-height': '21px', '--cell-editor-font-weight': 450,
+      } as CSSProperties : undefined}>
         {/* 선택 여백도 스크롤 안에 둬 잘림 없이 기존 데이터 열 위치를 유지한다. */}
         <div className="pl-9" style={activeTab === 'match' ? {
           '--match-table-columns': layout.gridTemplateColumns,
           minWidth: layout.minWidth,
           width: layout.width,
-        } as CSSProperties : { minWidth: 1054, width: '100%' }}>
+        } as CSSProperties : {
+          '--ad-table-columns': adLayout.gridTemplateColumns,
+          minWidth: adLayout.minWidth,
+          width: adLayout.width,
+        } as CSSProperties}>
           <div className="mb-1 flex h-7 items-center gap-1 text-[13px]">
             <PanelTab
               icon={<GitBranch />}
@@ -660,21 +687,24 @@ export function PropertyMatchPanel({
                 · 거래 진행 {won.length}
               </span>
             )}
-            {activeTab === 'match' && selectedMatchIds.size > 0 && (
+            {(activeTab === 'match' ? selectedMatchIds.size : selectedAdIds.size) > 0 && (
               <div className="ml-2 flex items-center gap-2 text-xs">
                 <span role="status" className="text-foreground">
-                  {selectedMatchIds.size}명 선택됨
+                  {activeTab === 'match' ? `${selectedMatchIds.size}명 선택됨` : `${selectedAdIds.size}개 선택됨`}
                 </span>
                 <button
                   type="button"
                   className="h-[26px] rounded-[5px] px-1.5 text-muted-foreground hover:bg-foreground/5 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  onClick={() => setSelectedMatchIds(new Set())}
+                  onClick={() => activeTab === 'match' ? setSelectedMatchIds(new Set()) : setSelectedAdIds(new Set())}
                 >
                   선택 해제
                 </button>
               </div>
             )}
             <span className="flex-1" />
+            {activeTab === 'ad' && (
+              <PropertyAdActions group={group} selectedIds={selectedAdIds} onClearSelection={() => setSelectedAdIds(new Set())} />
+            )}
             {activeTab === 'match' && (
               <MatchTableSortControl
                 sort={preferences.sort}
@@ -682,10 +712,37 @@ export function PropertyMatchPanel({
                 onResetWidths={() => updatePreferences((current) => ({ ...current, widths: {} }))}
               />
             )}
+            {activeTab === 'ad' && (
+              <AdTableSortControl
+                sort={adPreferences.sort}
+                onSort={setAdSort}
+                onResetWidths={() => updateAdPreferences(current => ({ ...current, widths: {} }))}
+              />
+            )}
           </div>
 
           {activeTab === 'ad' ? (
-            adPanel
+            adPanel({
+              preferences: adPreferences,
+              selection: {
+                selectedIds: selectedAdIds,
+                onChange: (id, selected) => setSelectedAdIds(current => {
+                  const next = new Set(current);
+                  if (selected) next.add(id);
+                  else next.delete(id);
+                  return next;
+                }),
+                onSelectAll: selected => setSelectedAdIds(new Set(selected ? visibleAdIds : [])),
+              },
+              onSort: setAdSort,
+              onPreviewResize: setAdPreviewWidths,
+              onCommitResize: widths => updateAdPreferences(current => ({ ...current, widths })),
+              onResetWidth: id => updateAdPreferences(current => {
+                const widths = { ...current.widths };
+                delete widths[id];
+                return { ...current, widths };
+              }),
+            })
           ) : isLoading ? (
             <div className="flex h-20 items-center justify-center text-xs text-muted-foreground">
               <Loader2 className="mr-1.5 size-3.5 animate-spin" />
@@ -833,36 +890,6 @@ function WonCircleIcon() {
 
 // ── 고객 한 줄 ──────────────────────────────────────────────────────────────
 
-function MatchSelectionCheckbox({
-  label,
-  checked,
-  onCheckedChange,
-}: {
-  label: string;
-  checked: boolean | 'indeterminate';
-  onCheckedChange: (checked: boolean) => void;
-}) {
-  return (
-    <label
-      data-match-selection-control
-      className={cn(
-        'absolute inset-y-0 left-0 flex w-9 cursor-pointer items-center justify-center transition-opacity duration-200 ease-in-out motion-reduce:transition-none',
-        checked !== false
-          ? 'opacity-100'
-          : 'opacity-0 group-hover/match-selection:opacity-70 hover:!opacity-100 has-[:focus-visible]:!opacity-100 [@media(hover:none)]:opacity-100',
-      )}
-      onClick={(event) => event.stopPropagation()}
-    >
-      <Checkbox
-        aria-label={label}
-        checked={checked}
-        onCheckedChange={(value) => onCheckedChange(value === true)}
-        onClick={(event) => event.stopPropagation()}
-        className="cursor-pointer rounded-[3px] shadow-none data-[state=unchecked]:!border-muted-foreground/50 data-[state=indeterminate]:border-primary data-[state=indeterminate]:bg-primary data-[state=indeterminate]:text-primary-foreground"
-      />
-    </label>
-  );
-}
 
 function MatchRow({
   match,

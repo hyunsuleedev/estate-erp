@@ -108,6 +108,10 @@ const DYNAMIC_ROUTE_META: Array<{
     meta: () => ({ title: '연락처 상세', kind: 'contact', iconKey: 'book-user' }),
   },
   {
+    match: /^\/deals\/([^/]+)$/,
+    meta: () => ({ title: '거래 상세', kind: 'deal', iconKey: 'handshake' }),
+  },
+  {
     match: /^\/buyer-requirements\/([^/]+)(?:\/edit)?$/,
     meta: (match) => ({
       title: match[0].endsWith('/edit') ? '구매고객 수정' : '구매고객 상세',

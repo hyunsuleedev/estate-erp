@@ -1,29 +1,33 @@
 import { getListingAvailability } from '@/lib/listing-status';
-import { useState } from 'react';
+import {
+  useEffect,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+} from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import {
   ArrowRight,
   Ban,
-  Circle,
-  CircleAlert,
   ExternalLink,
   FilePlus2,
   FileText,
   Pencil,
   Phone,
-  TimerReset,
   UserRound,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { Contact, Contract, Deal } from '@estate-erp/api-client';
 import { normalizeDealStage } from '@estate-erp/shared';
 import { api } from '@/lib/api';
+import { getRouteMeta } from '@/features/tabs/lib/routeMeta';
+import { tabResourceKeys } from '@/features/tabs/lib/tabResource';
+import { useTabStore } from '@/features/tabs/store/useTabStore';
 import { cn } from '@/lib/utils';
 import { formatArea, formatDate, formatMoney, formatPhone, formatRent } from '@/lib/format';
 import { getStatusMeta } from '@/lib/status-config';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -35,16 +39,15 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from '@/components/ui/sheet';
 import { Textarea } from '@/components/ui/textarea';
-import { DetailField, EntityChip, PipelineSteps, StatusBadge } from '@/components/domain';
-import { ContactPicker, DealActionsMenu, SectionTitle } from './-deal-shared';
+import { EntityChip, PipelineSteps, StatusBadge } from '@/components/domain';
+import {
+  EmptyText,
+  PropertyInspectorToolbar,
+  SectionTitle as InspectorSectionTitle,
+  TextAction,
+} from '../properties/-components/property-inspector-view';
+import { ContactPicker, DealActionsMenu, DealStagePill } from './-deal-shared';
 import { DealCommissionSection } from './-deal-commission';
 import { DealPaymentsSection } from './-deal-payments';
 import {
@@ -75,55 +78,227 @@ function todayInput() {
   ].join('-');
 }
 
-export function DealDetailSheet({
+const DEAL_INSPECTOR_MIN_WIDTH = 520;
+const DEAL_INSPECTOR_MAX_WIDTH = 640;
+const DEAL_INSPECTOR_DEFAULT_WIDTH = 584;
+
+function clampInspectorWidth(value: number) {
+  return Math.min(DEAL_INSPECTOR_MAX_WIDTH, Math.max(DEAL_INSPECTOR_MIN_WIDTH, value));
+}
+
+/** Esc가 패널이 아니라 떠 있는 대화상자·메뉴를 닫아야 하는 경우 */
+const OVERLAY_SELECTOR =
+  '[role="dialog"], [role="alertdialog"], [role="listbox"], [data-slot="popover-content"], [data-slot="dropdown-menu-content"]';
+
+/**
+ * 거래 상세 패널. 매물관리의 상세 패널(PropertyInspector)과 같은 방식으로 열린다:
+ * 화면을 덮는 시트가 아니라 페이지 오른쪽에 붙는 패널이라, 열어 둔 채로 보드·목록을 계속 쓸 수 있다.
+ * 미끄러져 들어오고 나가는 움직임은 app.css의 [data-property-inspector] 규칙을 그대로 쓴다.
+ */
+export function DealInspector({
   deal,
   contract,
-  open,
+  closing,
+  animate,
   referenceDate,
-  onOpenChange,
+  onClose,
+  onExited,
   actions,
 }: {
-  deal: Deal | null;
+  deal: Deal;
   contract: Contract | null;
-  open: boolean;
+  closing: boolean;
+  animate: boolean;
   referenceDate: Date;
-  onOpenChange: (open: boolean) => void;
+  onClose: (animate?: boolean) => void;
+  onExited: () => void;
   actions: DealRowActions;
 }) {
+  const [width, setWidth] = useState(DEAL_INSPECTOR_DEFAULT_WIDTH);
+  const openOrRevealResource = useTabStore((state) => state.openOrRevealResource);
+  // 매물관리 패널과 같다: 전체 화면을 새 탭으로 열고(이미 열려 있으면 그 탭으로 가고) 패널은 닫는다.
+  const openInNewTab = () => {
+    const route = `/deals/${deal.id}`;
+    const meta = getRouteMeta(route);
+    openOrRevealResource({
+      route,
+      kind: meta.kind,
+      title: getDealTitle(deal) || meta.title,
+      resourceKey: tabResourceKeys.entity('deal', deal.id),
+    });
+    onClose(false);
+  };
+
+  useEffect(() => {
+    if (!closing) return;
+    // 숨은 탭이나 모션 줄이기 설정에서는 transitionend가 오지 않을 수 있다.
+    const timer = window.setTimeout(
+      onExited,
+      !animate || window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 240,
+    );
+    return () => window.clearTimeout(timer);
+  }, [closing, animate, onExited]);
+
+  useEffect(() => {
+    const handleWindowKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      if (document.querySelector(OVERLAY_SELECTOR)) return;
+      event.preventDefault();
+      onClose(false);
+    };
+    window.addEventListener('keydown', handleWindowKeyDown, true);
+    return () => window.removeEventListener('keydown', handleWindowKeyDown, true);
+  }, [onClose]);
+
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent
-        side="right"
-        className="w-[calc(100vw-40px)] max-w-none gap-0 overflow-hidden p-0 sm:w-[740px] sm:max-w-[740px]"
-      >
-        <SheetHeader className="sr-only">
-          <SheetTitle>거래 상세</SheetTitle>
-          <SheetDescription>선택한 거래의 일정, 당사자, 지급 스케줄, 수수료 정보를 확인합니다.</SheetDescription>
-        </SheetHeader>
-        {deal ? (
-          <DealDetailPanel
-            key={deal.id}
-            deal={deal}
-            contract={contract}
-            referenceDate={referenceDate}
-            actions={actions}
-          />
-        ) : null}
-      </SheetContent>
-    </Sheet>
+    <aside
+      id="deal-inspector"
+      data-deal-inspector
+      data-property-inspector
+      data-state={closing ? 'closed' : 'open'}
+      data-motion={animate ? 'slide' : 'none'}
+      inert={closing}
+      aria-hidden={closing || undefined}
+      aria-label="거래 상세 패널"
+      className="absolute inset-y-0 right-0 z-50 flex min-h-0 flex-col border-l border-border bg-white shadow-[-2px_0_8px_rgba(0,0,0,0.03)]"
+      style={{ width, maxWidth: '100%' }}
+      onTransitionEnd={(event) => {
+        if (closing && event.target === event.currentTarget && event.propertyName === 'transform') {
+          onExited();
+        }
+      }}
+    >
+      <DealInspectorResizeHandle width={width} onResize={setWidth} />
+      <DealDetailPanel
+        key={deal.id}
+        deal={deal}
+        contract={contract}
+        referenceDate={referenceDate}
+        actions={actions}
+        onClose={onClose}
+        onOpenNewTab={openInNewTab}
+      />
+    </aside>
   );
 }
 
-function DealDetailPanel({
+function DealInspectorResizeHandle({
+  width,
+  onResize,
+}: {
+  width: number;
+  onResize: (width: number) => void;
+}) {
+  const cleanupRef = useRef<(() => void) | null>(null);
+  useEffect(() => () => cleanupRef.current?.(), []);
+
+  const handlePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = width;
+    const handlePointerMove = (pointerEvent: PointerEvent) => {
+      onResize(clampInspectorWidth(startWidth + startX - pointerEvent.clientX));
+    };
+    const stopResizing = () => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', stopResizing);
+      document.body.style.removeProperty('cursor');
+      document.body.style.removeProperty('user-select');
+      cleanupRef.current = null;
+    };
+    cleanupRef.current?.();
+    cleanupRef.current = stopResizing;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', stopResizing, { once: true });
+  };
+
+  return (
+    <div
+      role="separator"
+      aria-label="상세 패널 너비 조절"
+      aria-orientation="vertical"
+      aria-valuemin={DEAL_INSPECTOR_MIN_WIDTH}
+      aria-valuemax={DEAL_INSPECTOR_MAX_WIDTH}
+      aria-valuenow={width}
+      tabIndex={0}
+      className="group absolute inset-y-0 -left-1 z-20 w-2 cursor-col-resize touch-none outline-none"
+      onPointerDown={handlePointerDown}
+      onKeyDown={(event) => {
+        if (event.key === 'ArrowLeft') {
+          event.preventDefault();
+          onResize(clampInspectorWidth(width + 24));
+        }
+        if (event.key === 'ArrowRight') {
+          event.preventDefault();
+          onResize(clampInspectorWidth(width - 24));
+        }
+      }}
+    >
+      <span className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-transparent transition-colors group-hover:bg-[#6c9b7a] group-focus-visible:bg-[#6c9b7a]" />
+    </div>
+  );
+}
+
+type DealInspectorTab = 'summary' | 'people' | 'payments' | 'commission';
+
+const TRANSACTION_CHIP: Record<string, string> = {
+  sale: 'bg-[#fdebec] text-[#8f4b46]',
+  jeonse: 'bg-[#e7f3f8] text-[#337ea9]',
+  monthly: 'bg-[#fbf3db] text-[#8f6b1f]',
+};
+
+/** 머리 영역의 작은 상태 칩 (매물 상세 패널의 StatusChip과 같은 모양) */
+function HeaderChip({ className, children }: { className: string; children: ReactNode }) {
+  return (
+    <span
+      className={cn(
+        'inline-flex shrink-0 items-center whitespace-nowrap rounded-[4px] px-1.5 py-0.5 text-[12px] font-medium leading-5',
+        className,
+      )}
+    >
+      {children}
+    </span>
+  );
+}
+
+/** 이름 14칸 + 값. 매물 상세 패널의 "매물 정보" 줄과 같은 모양이다. */
+function FactRow({ label, value }: { label: string; value?: string | null }) {
+  return (
+    <div className="flex min-w-0 items-baseline gap-3">
+      <dt className="w-16 shrink-0 text-[12.5px] text-muted-foreground">{label}</dt>
+      <dd
+        className={cn(
+          'min-w-0 truncate text-[13px]',
+          value ? 'font-medium tabular-nums text-[#2f2e2a]' : 'text-[#c9c7c1]',
+        )}
+      >
+        {value || '-'}
+      </dd>
+    </div>
+  );
+}
+
+/**
+ * 거래 상세의 내용. 오른쪽 패널(DealInspector)과 전체 화면(/deals/$id)이 같이 쓴다.
+ * 전체 화면에서는 닫을 패널이 없으므로 onClose를 주지 않고, 위 막대에는 작업 메뉴만 남는다.
+ */
+export function DealDetailPanel({
   deal,
   contract,
   referenceDate,
   actions,
+  onClose,
+  onOpenNewTab,
 }: {
   deal: Deal;
   contract: Contract | null;
   referenceDate: Date;
   actions: DealRowActions;
+  onClose?: (animate?: boolean) => void;
+  /** 전체 화면을 새 탭으로 연다 (패널에서만) */
+  onOpenNewTab?: () => void;
 }) {
   const transactionType = getDealTransactionType(deal);
   const nextPayment = getNextDealPaymentSummary(deal, referenceDate);
@@ -136,6 +311,7 @@ function DealDetailPanel({
   const canSkipPreContract = currentStage === 'preparing';
   const canCreateContract = ['contracted', 'settling', 'completed', 'closed'].includes(currentStage);
   const billed = deal.commissionSummary?.billed ?? 0;
+  const [tab, setTab] = useState<DealInspectorTab>('summary');
   const [termsOpen, setTermsOpen] = useState(false);
   const [contractOpen, setContractOpen] = useState(false);
 
@@ -145,335 +321,432 @@ function DealDetailPanel({
       : transactionType === 'jeonse'
         ? '전세금'
         : '합의 가격';
+  const nextActions = getNextActions(deal.isCancelled ? 'cancelled' : deal.stage);
+  const tabs: Array<{ value: DealInspectorTab; label: string; count?: number }> = [
+    { value: 'summary', label: '요약' },
+    { value: 'people', label: '매물·당사자' },
+    { value: 'payments', label: '대금·계약', count: deal.payments?.length },
+    { value: 'commission', label: '수수료' },
+  ];
 
   return (
-    <section className="min-h-0 flex-1 overflow-y-auto bg-background">
-      <div className="border-b bg-muted/50 px-6 py-5 pr-12">
-        <div className="flex flex-wrap items-center gap-1.5">
-          <StatusBadge kind="dealStage" status={currentStage} />
-          {transactionType ? <StatusBadge kind="transactionType" status={transactionType} /> : null}
-          {deal.isJointBrokerage ? (
-            <Badge className="rounded-md bg-violet-soft px-2 py-1 text-[11px] text-violet">공동중개</Badge>
-          ) : null}
-          {deal.isCancelled ? (
-            <Badge className="rounded-md bg-destructive-soft px-2 py-1 text-[11px] text-destructive">취소됨</Badge>
-          ) : null}
-          <span className="ml-auto font-mono text-[11px] text-muted-foreground/70">{getDealShortCode(deal.id)}</span>
+    <div className="flex h-full min-h-0 flex-col bg-white">
+      {onClose ? (
+        <PropertyInspectorToolbar
+          onClose={onClose}
+          onOpenNewTab={onOpenNewTab}
+          headerActions={<DealActionsMenu deal={deal} actions={actions} />}
+        />
+      ) : (
+        <div className="flex h-11 shrink-0 items-center justify-end px-3">
+          <DealActionsMenu deal={deal} actions={actions} />
+        </div>
+      )}
+
+      {/* 머리 영역: 거래 이름 → 주소 → 금액 → 상태 */}
+      <div className="shrink-0 px-6 pb-4">
+        <h2 className="text-[23px] font-bold leading-[1.25] tracking-[-0.025em] text-[#2f2e2a]">
+          {getDealTitle(deal)}
+        </h2>
+        <div className="mt-1 flex flex-wrap items-center gap-x-1.5 text-[12.5px] text-muted-foreground">
+          <span>{getDealLocationLine(deal)}</span>
+          <span className="text-[#c9c7c1]">·</span>
+          <span className="font-mono text-[11.5px] text-[#a9a7a1]">{getDealShortCode(deal.id)}</span>
         </div>
 
-        <h2 className="mt-3 text-xl font-semibold tracking-tight text-foreground">{getDealTitle(deal)}</h2>
-        <p className="mt-1 text-sm text-muted-foreground">{getDealLocationLine(deal)}</p>
-        <div className="mt-3 flex items-baseline gap-2">
-          <span className="text-2xl font-semibold tracking-tight tabular-nums text-foreground">
+        <div className="mt-4 flex min-w-0 items-center gap-2.5">
+          {transactionType ? (
+            <span
+              className={cn(
+                'inline-flex h-5 shrink-0 items-center rounded px-1.5 text-[11.5px] font-semibold',
+                TRANSACTION_CHIP[transactionType] ?? 'bg-[#f1f1ef] text-[#787774]',
+              )}
+            >
+              {getStatusMeta('transactionType', transactionType).label}
+            </span>
+          ) : null}
+          <span className="min-w-0 truncate text-[20px] font-bold leading-none tracking-[-0.025em] tabular-nums text-[#2f2e2a]">
             {formatDealAmount(deal)}
           </span>
-          {billed ? <span className="text-xs text-muted-foreground">예상 수수료 {formatMoney(billed)}</span> : null}
+          {billed ? (
+            <span className="shrink-0 text-[12.5px] text-muted-foreground">
+              예상 수수료 {formatMoney(billed)}
+            </span>
+          ) : null}
         </div>
 
-        <PipelineSteps kind="dealStage" current={currentStage} cancelled={deal.isCancelled} className="mt-4" />
-
-        {!deal.isCancelled ? (
-          <div
-            className={cn(
-              'mt-4 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-md border px-3 py-2 text-xs',
-              pipelineHealth.state === 'overdue' &&
-                'border-destructive/35 bg-destructive-soft/45 text-destructive',
-              pipelineHealth.state === 'stale' &&
-                'border-warning/40 bg-warning-soft/50 text-warning',
-              pipelineHealth.state === 'unscheduled' &&
-                'border-border bg-background text-muted-foreground',
-              pipelineHealth.state === 'healthy' &&
-                'border-success/30 bg-success-soft/40 text-success',
-            )}
-          >
-            {pipelineHealth.isAtRisk ? (
-              <CircleAlert className="size-3.5 shrink-0" aria-hidden="true" />
-            ) : (
-              <TimerReset className="size-3.5 shrink-0" aria-hidden="true" />
-            )}
-            <strong>{pipelineHealth.label}</strong>
-            <span className="text-current/75">{pipelineHealth.description}</span>
-            <span className="ml-auto font-mono text-[11px] text-current/75">
-              현 단계 {pipelineHealth.stageAgeDays}일
-              {pipelineHealth.targetDays > 0 ? ` / 목표 ${pipelineHealth.targetDays}일` : ''}
-            </span>
-          </div>
-        ) : null}
+        <div className="mt-3.5 flex flex-wrap items-center gap-1.5">
+          <DealStagePill stage={currentStage} />
+          {deal.isJointBrokerage ? (
+            <HeaderChip className="bg-[#f1f1ef] text-[#5f5e5b]">공동중개</HeaderChip>
+          ) : null}
+          {deal.isCancelled ? (
+            <HeaderChip className="bg-[#fdebec] text-[#8f4b46]">취소됨</HeaderChip>
+          ) : pipelineHealth.isAtRisk ? (
+            <HeaderChip
+              className={
+                pipelineHealth.state === 'overdue'
+                  ? 'bg-[#fdebec] text-[#8f4b46]'
+                  : pipelineHealth.state === 'stale'
+                    ? 'bg-[#fbf3db] text-[#9f6b00]'
+                    : 'bg-[#f1f1ef] text-[#5f5e5b]'
+              }
+            >
+              {pipelineHealth.label}
+            </HeaderChip>
+          ) : null}
+        </div>
       </div>
 
-      {deal.isCancelled ? (
-        <div className="px-6 pt-4">
-          <Alert variant="destructive">
-            <Ban className="size-4" />
-            <AlertTitle>취소된 거래입니다</AlertTitle>
-            <AlertDescription>
-              {deal.cancelledAt ? `${formatDate(deal.cancelledAt)} · ` : ''}
-              취소 주체: {formatCancelledBy(deal.cancelledBy)}
-              {deal.cancelReason ? ` · 사유: ${deal.cancelReason}` : ' · 사유 미기록'}
-            </AlertDescription>
-          </Alert>
+      {/* 탭 */}
+      <div
+        role="tablist"
+        aria-label="거래 상세 구역"
+        className="flex shrink-0 gap-5 border-b border-[#ecebe8] px-6"
+      >
+        {tabs.map((item) => {
+          const selected = tab === item.value;
+          return (
+            <button
+              key={item.value}
+              type="button"
+              role="tab"
+              aria-selected={selected}
+              onClick={() => setTab(item.value)}
+              className={cn(
+                'relative h-10 whitespace-nowrap text-[13px] font-medium transition-colors focus-visible:outline-none',
+                selected
+                  ? 'text-[#2f2e2a] after:absolute after:inset-x-0 after:-bottom-px after:h-0.5 after:rounded-full after:bg-foreground'
+                  : 'text-muted-foreground hover:text-foreground',
+              )}
+            >
+              {item.label}
+              {item.count ? (
+                <span className="ml-1 text-[11.5px] font-medium text-[#a9a7a1]">{item.count}</span>
+              ) : null}
+            </button>
+          );
+        })}
+      </div>
+
+      <div role="tabpanel" className="min-h-0 flex-1 overflow-y-auto px-6 pb-10 pt-5">
+        {tab === 'summary' && (
+          <div className="space-y-7">
+            {deal.isCancelled ? (
+              <section>
+                <InspectorSectionTitle>취소된 거래</InspectorSectionTitle>
+                <dl className="space-y-2.5">
+                  <FactRow label="취소일" value={deal.cancelledAt ? formatDate(deal.cancelledAt) : null} />
+                  <FactRow label="취소 주체" value={formatCancelledBy(deal.cancelledBy)} />
+                  <FactRow label="사유" value={deal.cancelReason} />
+                </dl>
+              </section>
+            ) : null}
+
+            <section>
+              <InspectorSectionTitle count={nextActions.length}>지금 할 일</InspectorSectionTitle>
+              <ul className="divide-y divide-[#f1f0ec]">
+                {nextActions.map((action) => (
+                  <li key={action} className="flex min-h-9 items-center gap-2.5 py-1.5 text-[13px] text-[#2f2e2a]">
+                    <span aria-hidden="true" className="size-1.5 shrink-0 rounded-full bg-[#529cca]" />
+                    {action}
+                  </li>
+                ))}
+              </ul>
+            </section>
+
+            <section>
+              <InspectorSectionTitle>진행 상황</InspectorSectionTitle>
+              <PipelineSteps kind="dealStage" current={currentStage} cancelled={deal.isCancelled} />
+              <dl className="mt-3.5 grid grid-cols-2 gap-x-6 gap-y-2.5">
+                <FactRow
+                  label="현 단계"
+                  value={`${pipelineHealth.stageAgeDays}일째${
+                    pipelineHealth.targetDays > 0 ? ` / 목표 ${pipelineHealth.targetDays}일` : ''
+                  }`}
+                />
+                <FactRow label="단계 변경" value={formatDate(deal.stageChangedAt)} />
+                <FactRow label="다음 일정" value={formatNextPaymentLabel(nextPayment)} />
+                <FactRow label="진행 상태" value={pipelineHealth.description} />
+              </dl>
+            </section>
+
+            <section>
+              <InspectorSectionTitle
+                action={
+                  <TextAction icon={<Pencil />} label="조건 수정" onClick={() => setTermsOpen(true)} />
+                }
+              >
+                합의 조건
+              </InspectorSectionTitle>
+              <dl className="grid grid-cols-2 gap-x-6 gap-y-2.5">
+                <FactRow
+                  label={priceLabel}
+                  value={deal.agreedPrice != null ? formatMoney(deal.agreedPrice) : null}
+                />
+                {transactionType === 'monthly' ? (
+                  <FactRow
+                    label="보증금"
+                    value={deal.agreedDeposit != null ? formatMoney(deal.agreedDeposit) : null}
+                  />
+                ) : null}
+                {transactionType === 'monthly' ? (
+                  <FactRow
+                    label="월세"
+                    value={deal.agreedMonthlyRent != null ? formatMoney(deal.agreedMonthlyRent) : null}
+                  />
+                ) : null}
+                <FactRow
+                  label="입주 예정"
+                  value={deal.agreedMoveInDate ? formatDate(deal.agreedMoveInDate) : null}
+                />
+              </dl>
+            </section>
+
+            <section>
+              <InspectorSectionTitle>특약사항</InspectorSectionTitle>
+              {deal.specialTerms ? (
+                <p className="whitespace-pre-line text-[13px] leading-[1.6] text-[#2f2e2a]">
+                  {deal.specialTerms}
+                </p>
+              ) : (
+                <EmptyText>등록된 특약사항이 없습니다.</EmptyText>
+              )}
+            </section>
+
+            <section>
+              <InspectorSectionTitle>메모</InspectorSectionTitle>
+              {deal.memo ? (
+                <p className="whitespace-pre-line text-[13px] leading-[1.6] text-[#2f2e2a]">{deal.memo}</p>
+              ) : (
+                <EmptyText>등록된 메모가 없습니다.</EmptyText>
+              )}
+            </section>
+          </div>
+        )}
+
+        {tab === 'people' && (
+          <div className="space-y-7">
+            <section>
+              <InspectorSectionTitle>매물</InspectorSectionTitle>
+              {deal.propertyId ? (
+                <div className="space-y-2">
+                  <EntityChip
+                    kind="property"
+                    id={deal.propertyId}
+                    label={getDealTitle(deal)}
+                    sublabel={
+                      deal.property?.unit?.exclusiveAreaM2
+                        ? formatArea(deal.property.unit.exclusiveAreaM2)
+                        : undefined
+                    }
+                  />
+                  {deal.listing ? (
+                    <p className="flex items-center gap-1.5 text-[12.5px] text-muted-foreground">
+                      호가{' '}
+                      {deal.listing.transactionType === 'monthly'
+                        ? formatRent(deal.listing.deposit, deal.listing.monthlyRent)
+                        : formatMoney(deal.listing.price ?? deal.listing.deposit)}
+                      <span className="text-[#c9c7c1]">·</span>
+                      <StatusBadge
+                        kind="listingAvailability"
+                        status={getListingAvailability(deal.listing)}
+                        size="sm"
+                      />
+                    </p>
+                  ) : null}
+                </div>
+              ) : (
+                <EmptyText>연결된 매물이 없습니다. (매물 없이 생성된 거래)</EmptyText>
+              )}
+            </section>
+
+            <section>
+              <InspectorSectionTitle>당사자</InspectorSectionTitle>
+              <div className="divide-y divide-[#f1f0ec]">
+                <PartyDetailRow label="매도" contact={deal.sellerContact ?? null} />
+                <PartyDetailRow label="매수" contact={deal.buyerContact ?? null} />
+              </div>
+            </section>
+
+            <section>
+              <InspectorSectionTitle count={participantNames.length || undefined}>
+                담당 직원
+              </InspectorSectionTitle>
+              {participantNames.length ? (
+                <div className="flex flex-wrap gap-x-4 gap-y-1.5 text-[13px] text-[#2f2e2a]">
+                  {participantNames.map((participantName) => (
+                    <span key={participantName} className="inline-flex items-center gap-1.5">
+                      <UserRound className="size-3.5 text-[#a9a7a1]" aria-hidden="true" />
+                      {participantName}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <EmptyText>배정된 담당 직원이 없습니다.</EmptyText>
+              )}
+            </section>
+
+            <section>
+              <InspectorSectionTitle>공동중개</InspectorSectionTitle>
+              {deal.isJointBrokerage ? (
+                <>
+                  <div className="flex min-h-11 items-center gap-3 py-1.5">
+                    <span className="w-16 shrink-0 text-[12.5px] text-muted-foreground">파트너</span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-[13px] font-medium text-[#2f2e2a]">
+                        {deal.partnerBroker?.name ?? '파트너 미지정'}
+                      </p>
+                      {deal.partnerBroker?.phone ? (
+                        <p className="text-[12px] tabular-nums text-[#a9a7a1]">
+                          {formatPhone(deal.partnerBroker.phone)}
+                        </p>
+                      ) : null}
+                    </div>
+                    {deal.partnerBroker?.phone ? (
+                      <a
+                        href={`tel:${deal.partnerBroker.phone}`}
+                        aria-label="파트너 전화"
+                        className="inline-grid size-7 shrink-0 place-items-center rounded-full text-muted-foreground hover:bg-[rgba(55,53,47,0.06)] hover:text-foreground"
+                      >
+                        <Phone className="size-3.5" />
+                      </a>
+                    ) : null}
+                  </div>
+                  <dl className="mt-1">
+                    <FactRow label="우리 담당" value={ourSideLabels[deal.ourSide ?? 'both'] ?? '양측'} />
+                  </dl>
+                </>
+              ) : (
+                <EmptyText>단독중개 거래입니다.</EmptyText>
+              )}
+            </section>
+          </div>
+        )}
+
+        {tab === 'payments' && (
+          <div className="space-y-7">
+            <section>
+              <DealPaymentsSection deal={deal} referenceDate={referenceDate} />
+            </section>
+
+            <section>
+              <InspectorSectionTitle
+                action={
+                  contract ? (
+                    <Link
+                      to="/contracts"
+                      className="inline-flex items-center gap-1 text-[12px] font-normal text-muted-foreground hover:text-foreground"
+                    >
+                      계약 관리에서 열기
+                      <ExternalLink className="size-3" />
+                    </Link>
+                  ) : canCreateContract && !deal.isCancelled ? (
+                    <TextAction
+                      icon={<FilePlus2 />}
+                      label="계약서 작성"
+                      onClick={() => setContractOpen(true)}
+                    />
+                  ) : undefined
+                }
+              >
+                계약 요약
+              </InspectorSectionTitle>
+              {contract ? (
+                <>
+                  <div className="mb-3 flex items-center gap-2 text-[13px] text-[#2f2e2a]">
+                    <FileText className="size-3.5 text-[#a9a7a1]" aria-hidden="true" />
+                    계약서 연결됨
+                    <StatusBadge kind="contractStatus" status={contract.status} size="sm" />
+                  </div>
+                  <dl className="grid grid-cols-2 gap-x-6 gap-y-2.5">
+                    <FactRow
+                      label="계약일"
+                      value={contract.contractDate ? formatDate(contract.contractDate) : null}
+                    />
+                    <FactRow
+                      label="총 거래금액"
+                      value={contract.totalPrice != null ? formatMoney(contract.totalPrice) : null}
+                    />
+                    <FactRow
+                      label="잔금일"
+                      value={contract.statedBalanceDate ? formatDate(contract.statedBalanceDate) : null}
+                    />
+                    {contract.leaseStartDate || contract.leaseEndDate ? (
+                      <FactRow
+                        label="임대기간"
+                        value={`${contract.leaseStartDate ? formatDate(contract.leaseStartDate) : '—'} ~ ${contract.leaseEndDate ? formatDate(contract.leaseEndDate) : '—'}`}
+                      />
+                    ) : null}
+                  </dl>
+                </>
+              ) : (
+                <EmptyText>
+                  아직 계약서가 없습니다.{' '}
+                  {canCreateContract
+                    ? '중도금/잔금 단계로 진행하기 전에 계약서를 작성해 주세요.'
+                    : '본계약 단계로 이동한 뒤 계약서를 작성할 수 있습니다.'}
+                </EmptyText>
+              )}
+            </section>
+          </div>
+        )}
+
+        {/* 수수료 구역은 고른 계산 기준을 자기 안에 들고 있다. 탭을 옮겨도 그 값이
+            남도록 떼어 내지 않고 숨기기만 한다. */}
+        <div className="space-y-4" hidden={tab !== 'commission'}>
+          <DealCommissionSection key={deal.id} deal={deal} />
+        </div>
+      </div>
+
+      {/* 아래 막대: 다음 단계로 넘기는 동작 (매물 상세 패널의 "매물 확인 완료" 자리) */}
+      {!deal.isCancelled ? (
+        <div className="flex shrink-0 items-center gap-2 border-t border-[#ecebe8] px-6 py-3">
+          <button
+            type="button"
+            className="inline-flex h-8 items-center gap-1.5 rounded-full px-3 text-[13px] text-muted-foreground transition-colors hover:bg-[rgba(55,53,47,0.06)] hover:text-foreground"
+            onClick={() => actions.onRequestCancel(deal)}
+          >
+            <Ban className="size-3.5" />
+            거래 취소
+          </button>
+          {canSkipPreContract ? (
+            <button
+              type="button"
+              disabled={actions.isUpdating}
+              className="ml-auto inline-flex h-8 items-center gap-1.5 rounded-full px-3 text-[13px] text-muted-foreground transition-colors hover:bg-[rgba(55,53,47,0.06)] hover:text-foreground disabled:opacity-50"
+              onClick={() => actions.onRequestStage(deal, 'contracted')}
+            >
+              가계약 없이 본계약
+            </button>
+          ) : null}
+          {nextStage ? (
+            <button
+              type="button"
+              disabled={actions.isUpdating}
+              className={cn(
+                'inline-flex h-8 items-center gap-1.5 rounded-full bg-[#2f2e2a] px-4 text-[13px] font-medium text-white transition-colors hover:bg-[#1f1e1b] disabled:opacity-50',
+                !canSkipPreContract && 'ml-auto',
+              )}
+              onClick={() => actions.onRequestStage(deal, nextStage)}
+            >
+              다음: {getStatusMeta('dealStage', nextStage).label}
+              <ArrowRight className="size-3.5" />
+            </button>
+          ) : null}
         </div>
       ) : null}
 
-      <div className="grid gap-x-6 gap-y-5 px-6 py-5 pb-7 md:grid-cols-2">
-        {/* ── 1열: 다음 액션 · 매물 · 당사자 · 공동중개 · 메모 ───────────── */}
-        <div className="min-w-0 space-y-4">
-          <SectionTitle>
-            다음 액션 · {deal.isCancelled ? '취소' : getStatusMeta('dealStage', deal.stage).label}
-          </SectionTitle>
-          <div className="rounded-md border border-info/30 bg-info-soft/60 p-3">
-            <div className="space-y-2">
-              {getNextActions(deal.isCancelled ? 'cancelled' : deal.stage).map((action) => (
-                <div key={action} className="flex items-start gap-2 text-sm text-foreground">
-                  <Circle className="mt-1 size-2.5 fill-info text-info" />
-                  <span>{action}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <SectionTitle>매물</SectionTitle>
-          {deal.propertyId ? (
-            <div className="space-y-2">
-              <EntityChip
-                kind="property"
-                id={deal.propertyId}
-                label={getDealTitle(deal)}
-                sublabel={deal.property?.unit?.exclusiveAreaM2 ? formatArea(deal.property.unit.exclusiveAreaM2) : undefined}
-              />
-              {deal.listing ? (
-                <p className="text-xs text-muted-foreground">
-                  호가{' '}
-                  {deal.listing.transactionType === 'monthly'
-                    ? formatRent(deal.listing.deposit, deal.listing.monthlyRent)
-                    : formatMoney(deal.listing.price ?? deal.listing.deposit)}
-                  {' · '}
-                  <StatusBadge
-                    kind="listingAvailability"
-                    status={getListingAvailability(deal.listing)}
-                    size="sm"
-                  />
-                </p>
-              ) : null}
-            </div>
-          ) : (
-            <div className="rounded-md border border-dashed bg-muted/50 px-3 py-3 text-xs text-muted-foreground">
-              연결된 매물이 없습니다. (매물 없이 생성된 거래)
-            </div>
-          )}
-
-          <SectionTitle>당사자</SectionTitle>
-          <PartyDetailRow label="매도" contact={deal.sellerContact ?? null} />
-          <PartyDetailRow label="매수" contact={deal.buyerContact ?? null} />
-
-          <SectionTitle>담당 직원</SectionTitle>
-          {participantNames.length ? (
-            <div className="flex flex-wrap gap-1.5">
-              {participantNames.map((participantName) => (
-                <Badge
-                  key={participantName}
-                  variant="outline"
-                  className="gap-1.5 rounded-md bg-background px-2 py-1 text-[11px] font-medium"
-                >
-                  <UserRound className="size-3" aria-hidden="true" />
-                  {participantName}
-                </Badge>
-              ))}
-            </div>
-          ) : (
-            <div className="rounded-md border border-dashed bg-muted/50 px-3 py-3 text-xs text-muted-foreground">
-              배정된 담당 직원이 없습니다.
-            </div>
-          )}
-
-          <SectionTitle>공동중개</SectionTitle>
-          {deal.isJointBrokerage ? (
-            <div className="rounded-md border border-violet/30 bg-violet-soft/50 px-3 py-2.5">
-              <div className="flex items-center gap-2">
-                <Badge variant="outline" className="rounded bg-background px-1.5 text-[10px] text-violet">
-                  파트너
-                </Badge>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium text-foreground">
-                    {deal.partnerBroker?.name ?? '파트너 미지정'}
-                  </p>
-                  <p className="font-mono text-xs text-muted-foreground">
-                    {formatPhone(deal.partnerBroker?.phone)}
-                  </p>
-                </div>
-                {deal.partnerBroker?.phone ? (
-                  <Button variant="ghost" size="icon-xs" asChild>
-                    <a href={`tel:${deal.partnerBroker.phone}`} aria-label="파트너 전화">
-                      <Phone className="size-3.5" />
-                    </a>
-                  </Button>
-                ) : null}
-              </div>
-              <p className="mt-1.5 text-xs text-muted-foreground">
-                우리 담당: {ourSideLabels[deal.ourSide ?? 'both'] ?? '양측'}
-              </p>
-            </div>
-          ) : (
-            <div className="rounded-md border border-dashed bg-muted/50 px-3 py-3 text-xs text-muted-foreground">
-              단독중개 거래입니다.
-            </div>
-          )}
-
-          <SectionTitle>메모</SectionTitle>
-          <div className="rounded-md border border-warning/30 bg-warning-soft/50 px-3 py-2.5">
-            <p className="line-clamp-4 whitespace-pre-line text-sm leading-6 text-foreground">
-              {deal.memo || '등록된 메모가 없습니다.'}
-            </p>
-          </div>
-        </div>
-
-        {/* ── 2열: 합의 조건 · 특약 · 지급 스케줄 · 계약 요약 · 수수료 ───────────── */}
-        <div className="min-w-0 space-y-4">
-          <div className="flex items-center justify-between">
-            <SectionTitle>합의 조건</SectionTitle>
-            <Button type="button" variant="outline" size="xs" onClick={() => setTermsOpen(true)}>
-              <Pencil className="size-3" />
-              조건 수정
-            </Button>
-          </div>
-          <div className="space-y-1 rounded-md border bg-muted/40 px-3 py-2.5">
-            <DetailField label={priceLabel} value={formatMoney(deal.agreedPrice)} />
-            {transactionType === 'monthly' ? (
-              <DetailField label="보증금" value={formatMoney(deal.agreedDeposit)} />
-            ) : null}
-            {transactionType === 'monthly' ? (
-              <DetailField label="월세" value={formatMoney(deal.agreedMonthlyRent)} />
-            ) : null}
-            <DetailField label="입주 예정" value={deal.agreedMoveInDate ? formatDate(deal.agreedMoveInDate) : undefined} />
-            <DetailField label="단계 변경일" value={formatDate(deal.stageChangedAt)} />
-          </div>
-
-          <SectionTitle>특약사항</SectionTitle>
-          <div className="rounded-md border bg-muted/40 px-3 py-2.5">
-            <p className="line-clamp-6 whitespace-pre-line text-sm leading-6 text-foreground">
-              {deal.specialTerms || '등록된 특약사항이 없습니다.'}
-            </p>
-          </div>
-
-          <div className="flex items-center justify-between">
-            <span />
-            <Badge
-              className={cn(
-                'rounded-md px-2 py-0.5 text-[10px]',
-                nextPayment?.isUrgent ? 'bg-warning-soft text-warning' : 'bg-muted text-muted-foreground',
-              )}
-            >
-              다음: {formatNextPaymentLabel(nextPayment)}
-            </Badge>
-          </div>
-          <DealPaymentsSection deal={deal} referenceDate={referenceDate} />
-
-          <SectionTitle>계약 요약</SectionTitle>
-          {contract ? (
-            <div className="space-y-2 rounded-md border bg-muted/40 px-3 py-2.5">
-              <div className="flex items-center gap-2">
-                <div className="flex size-8 items-center justify-center rounded-md bg-info-soft text-info">
-                  <FileText className="size-4" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium text-foreground">계약서 연결됨</p>
-                  <p className="text-xs text-muted-foreground">
-                    계약일 {contract.contractDate ? formatDate(contract.contractDate) : '미정'}
-                  </p>
-                </div>
-                <StatusBadge kind="contractStatus" status={contract.status} size="sm" />
-              </div>
-              <div className="space-y-1">
-                <DetailField label="총 거래금액" value={formatMoney(contract.totalPrice)} />
-                <DetailField
-                  label="잔금일"
-                  value={contract.statedBalanceDate ? formatDate(contract.statedBalanceDate) : undefined}
-                />
-                {contract.leaseStartDate || contract.leaseEndDate ? (
-                  <DetailField
-                    label="임대기간"
-                    value={`${contract.leaseStartDate ? formatDate(contract.leaseStartDate) : '—'} ~ ${contract.leaseEndDate ? formatDate(contract.leaseEndDate) : '—'}`}
-                  />
-                ) : null}
-              </div>
-              <Button type="button" variant="outline" size="xs" asChild className="w-full">
-                <Link to="/contracts">
-                  계약 관리에서 열기
-                  <ExternalLink className="size-3" />
-                </Link>
-              </Button>
-            </div>
-          ) : (
-            <div className="space-y-2 rounded-md border border-dashed bg-muted/50 px-3 py-3">
-              <p className="text-sm text-foreground">아직 계약서가 없습니다.</p>
-              <p className="text-xs text-muted-foreground">
-                {canCreateContract
-                  ? '중도금/잔금 단계로 진행하기 전에 계약서를 작성해 주세요.'
-                  : '본계약 단계로 이동한 뒤 계약서를 작성할 수 있습니다.'}
-              </p>
-              {canCreateContract && !deal.isCancelled ? (
-                <Button type="button" size="xs" className="w-full" onClick={() => setContractOpen(true)}>
-                  <FilePlus2 className="size-3" />
-                  계약서 작성
-                </Button>
-              ) : null}
-            </div>
-          )}
-
-          <DealCommissionSection key={deal.id} deal={deal} />
-
-          <div className="flex flex-wrap gap-2 pt-1">
-            {nextStage && !deal.isCancelled ? (
-              <Button
-                type="button"
-                className="min-w-[160px] flex-1"
-                onClick={() => actions.onRequestStage(deal, nextStage)}
-                disabled={actions.isUpdating}
-              >
-                다음: {getStatusMeta('dealStage', nextStage).label}
-                <ArrowRight className="size-4" />
-              </Button>
-            ) : null}
-            {canSkipPreContract && !deal.isCancelled ? (
-              <Button
-                type="button"
-                variant="outline"
-                className="min-w-[160px] flex-1"
-                onClick={() => actions.onRequestStage(deal, 'contracted')}
-                disabled={actions.isUpdating}
-              >
-                가계약 없이 본계약
-                <ArrowRight className="size-4" />
-              </Button>
-            ) : null}
-            {!deal.isCancelled ? (
-              <Button
-                type="button"
-                variant="outline"
-                className="text-destructive hover:text-destructive"
-                onClick={() => actions.onRequestCancel(deal)}
-              >
-                <Ban className="size-4" />
-                취소
-              </Button>
-            ) : null}
-            <DealActionsMenu deal={deal} actions={actions} />
-          </div>
-        </div>
-      </div>
-
       <EditTermsDialog deal={deal} open={termsOpen} onOpenChange={setTermsOpen} />
       <CreateContractDialog deal={deal} open={contractOpen} onOpenChange={setContractOpen} />
-    </section>
+    </div>
   );
 }
 
 function PartyDetailRow({ label, contact }: { label: string; contact: Contact | null }) {
   return (
-    <div className="flex items-center gap-2 rounded-md border bg-muted/40 px-3 py-2.5">
-      <Badge variant="outline" className="rounded bg-background px-1.5 text-[10px]">
-        {label}
-      </Badge>
+    <div className="flex min-h-11 items-center gap-3 py-1.5">
+      <span className="w-16 shrink-0 text-[12.5px] text-muted-foreground">{label}</span>
       <div className="min-w-0 flex-1">
         {contact ? (
           <EntityChip
@@ -483,15 +756,17 @@ function PartyDetailRow({ label, contact }: { label: string; contact: Contact | 
             sublabel={formatPhone(contact.phone)}
           />
         ) : (
-          <p className="text-sm text-muted-foreground">미지정</p>
+          <span className="text-[13px] text-[#c9c7c1]">미지정</span>
         )}
       </div>
       {contact?.phone ? (
-        <Button variant="ghost" size="icon-xs" asChild>
-          <a href={`tel:${contact.phone}`} aria-label={`${contact.name} 전화`}>
-            <Phone className="size-3.5" />
-          </a>
-        </Button>
+        <a
+          href={`tel:${contact.phone}`}
+          aria-label={`${contact.name} 전화`}
+          className="inline-grid size-7 shrink-0 place-items-center rounded-full text-muted-foreground hover:bg-[rgba(55,53,47,0.06)] hover:text-foreground"
+        >
+          <Phone className="size-3.5" />
+        </a>
       ) : null}
     </div>
   );

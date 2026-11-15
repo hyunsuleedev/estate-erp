@@ -18,6 +18,8 @@ import {
   getListingAvailability,
 } from '@/lib/listing-status';
 import { getStatusMeta } from '@/lib/status-config';
+import { getAdChannelLabel } from '@/lib/advertisement-channels';
+export { getAdChannelLabel } from '@/lib/advertisement-channels';
 
 /*
  * 매물 상세 페이지 표시 계산.
@@ -128,15 +130,6 @@ export const contactRoleLabels: Record<string, string> = {
   lawyer: '법무사',
   tax_agent: '세무사',
 };
-
-const adChannelLabels: Record<string, string> = {
-  esiljang: '이실장',
-  budongsanbank: '부동산뱅크',
-};
-
-export function getAdChannelLabel(channel: string) {
-  return adChannelLabels[channel] ?? channel;
-}
 
 const closedReasonLabels: Record<string, string> = {
   deal_completed: '거래 완료',

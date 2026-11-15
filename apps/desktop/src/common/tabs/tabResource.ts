@@ -82,6 +82,11 @@ export function resolveTabResourceKey(href: string, tabId: string): string {
     return tabResourceKeys.entity('contact', decodeRoutePart(contact[1]));
   }
 
+  const deal = pathname.match(/^\/deals\/([^/]+)$/);
+  if (deal) {
+    return tabResourceKeys.entity('deal', decodeRoutePart(deal[1]));
+  }
+
   const buyerRequirement = pathname.match(
     /^\/buyer-requirements\/([^/]+)(?:\/edit)?$/,
   );

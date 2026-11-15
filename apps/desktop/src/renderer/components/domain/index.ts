@@ -16,3 +16,5 @@ export { EmptyState, type EmptyStateProps } from './empty-state';
 export { EntityChip, type EntityChipProps, type EntityChipKind } from './entity-chip';
 export { ConfirmDialog, type ConfirmDialogProps } from './confirm-dialog';
 export { DetailField, type DetailFieldProps } from './detail-field';
+export { RowOpenButton, type RowOpenButtonProps } from './row-open-button';
+export { WonCircleIcon } from './won-circle-icon';

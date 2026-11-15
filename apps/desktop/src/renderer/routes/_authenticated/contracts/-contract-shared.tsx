@@ -487,15 +487,6 @@ export function SummaryRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-export function MetricTile({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-md border border-border/60 bg-muted/20 px-4 py-3">
-      <p className="text-xs text-muted-foreground">{label}</p>
-      <p className="mt-1 text-lg font-semibold tracking-tight tabular-nums">{value}</p>
-    </div>
-  );
-}
-
 /**
  * 특약 rich text 표시 컴포넌트 — HTML 이면 반드시 새니타이즈 후 HTML 렌더,
  * 레거시 plain text 는 기존 whitespace-pre-wrap 표시를 유지한다.

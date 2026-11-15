@@ -265,7 +265,8 @@ describe('desktop managed sites page', () => {
     );
 
     assert.match(source, /variant="notion"/);
-    assert.match(source, /rowHeight=\{40\}/);
+    // 매물관리 표와 같은 행 높이 (36px + 선 1px)
+    assert.match(source, /rowHeight=\{37\}/);
     assert.match(source, /enableRowSelection/);
     assert.match(source, /UnitTableHeaderLabel/);
     assert.match(source, /unitListingTransactionMeta/);
@@ -294,6 +295,39 @@ describe('desktop managed sites page', () => {
   });
 });
 
+describe('managed sites unit table follows the property list table', () => {
+  const read = (path: string) =>
+    readFileSync(new URL(path, import.meta.url), 'utf8');
+  const page = read('../src/renderer/routes/_authenticated/sites/index.tsx');
+  const propertyPage = read('../src/renderer/routes/_authenticated/properties/index.tsx');
+  const columnsSource = page.slice(page.indexOf('const unitColumns'), page.indexOf('const unitPinnedColumns'));
+
+  it('uses the same header label as the property table', () => {
+    const labelClasses = (source: string, name: string) => {
+      const at = source.indexOf(`function ${name}`);
+      assert.ok(at >= 0, `${name} missing`);
+      return [...source.slice(at, at + 700).matchAll(/className="([^"]+)"/g)].map((match) => match[1]);
+    };
+    assert.deepEqual(labelClasses(page, 'UnitTableHeaderLabel'), labelClasses(propertyPage, 'TableHeaderLabel'));
+  });
+
+  it('uses the property table body size instead of 12-13px cells and the old palette', () => {
+    assert.match(page, /const unitCellStrong = 'truncate text-\[14px\] font-medium leading-\[21px\] text-foreground'/);
+    assert.doesNotMatch(columnsSource, /text-\[1[0-3]px\]/);
+    assert.doesNotMatch(columnsSource, /#37352f|#2c2c2b|#6f6c66|#787774|#cfccc6|text-slate-/);
+    // 거래 꼬리표는 매물관리 표의 꼬리표와 같은 크기
+    assert.match(columnsSource, /h-5 shrink-0 items-center rounded-\[4px\] px-1\.5 text-\[14px\] font-\[450\] leading-5/);
+  });
+
+  it('selects on click and opens the unit on double click, Enter or the shared open button', () => {
+    assert.match(page, /onRowClick=\{handleSelectUnit\}[\s\S]{0,260}activateOnDoubleClick/);
+    assert.match(columnsSource, /<RowOpenButton[\s\S]{0,260}onToggle=\{\(\) => handleSelectUnit\(unit\)\}/);
+    assert.match(columnsSource, /openTitle="호실 상세 열기"/);
+    assert.match(page, /getRowSelectionLabel=/);
+    assert.match(page, /scrollResetKey=\{unitTableResetKey\}/);
+  });
+});
+
 describe('managed sites toolbar and table header refresh', () => {
   const read = (path: string) =>
     readFileSync(new URL(path, import.meta.url), 'utf8');
@@ -307,7 +341,9 @@ describe('managed sites toolbar and table header refresh', () => {
     assert.match(page, /<ToolbarPillTabs\s+shape="muted"\s+ariaLabel="호수 목록 범위"/);
     assert.match(page, /<ToolbarFilterChip\s+shape="soft"\s+icon=\{<Type \/>\}\s+label="타입"/);
     assert.match(page, /<AddFilterMenu\s+items=\{moreUnitFilterItems\}\s+shape="soft"/);
-    assert.match(page, /variant="notion"\s+headerTone="refresh"/);
+    // 호수 표는 매물관리 메인 표와 같은 머리 · 본문을 쓴다 (옛 refresh 머리는 쓰지 않는다)
+    assert.match(page, /variant="notion"\s+propertyListTone/);
+    assert.doesNotMatch(page, /headerTone="refresh"/);
     // 동 범위는 필터 칩, 검색은 아이콘에서 펼쳐진다
     assert.match(toolbar, /aria-label="동 범위 해제"/);
     assert.match(toolbar, /const searchExpanded = searchFocused \|\| query\.length > 0;/);

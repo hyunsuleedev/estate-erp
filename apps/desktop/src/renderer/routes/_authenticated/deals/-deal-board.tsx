@@ -14,11 +14,11 @@ import {
   type DragEndEvent,
   type DragStartEvent,
 } from '@dnd-kit/core';
-import { CalendarClock } from 'lucide-react';
+import { CalendarClock, Plus } from 'lucide-react';
 import type { Deal } from '@estate-erp/api-client';
 import { cn } from '@/lib/utils';
 import { formatMoney } from '@/lib/format';
-import { DealActionsMenu } from './-deal-shared';
+import { DEAL_GROUP_TONE, DealActionsMenu, DealStagePill } from './-deal-shared';
 import {
   dealDisplayGroups,
   formatDealAmount,
@@ -34,36 +34,6 @@ import {
   type DealDisplayGroup,
   type DealRowActions,
 } from './-deal-view-utils';
-
-const DEAL_COLUMN_TONE: Record<
-  DealDisplayGroup['key'],
-  { surface: string; label: string }
-> = {
-  preparing: {
-    surface: 'bg-[#f5f5f3]',
-    label: 'bg-[#e8e8e5] text-[#5f5e59]',
-  },
-  preContract: {
-    surface: 'bg-[#f2f7fa]',
-    label: 'bg-[#dceaf3] text-[#38647a]',
-  },
-  contracted: {
-    surface: 'bg-[#f7f3fa]',
-    label: 'bg-[#e8def2] text-[#694c80]',
-  },
-  settling: {
-    surface: 'bg-[#faf7f0]',
-    label: 'bg-[#f2e7cd] text-[#765d2f]',
-  },
-  completed: {
-    surface: 'bg-[#f2f8f4]',
-    label: 'bg-[#dceee2] text-[#35684a]',
-  },
-  closed: {
-    surface: 'bg-[#f5f5f3]',
-    label: 'bg-[#e8e8e5] text-[#5f5e59]',
-  },
-};
 
 const dealBoardCollisionDetection: CollisionDetection = (args) => {
   const pointerCollisions = pointerWithin(args);
@@ -105,6 +75,7 @@ export function DealBoard({
   compact,
   actions,
   onStageDrop,
+  onCreate,
 }: {
   deals: Deal[];
   selectedDealId: string | null;
@@ -112,6 +83,8 @@ export function DealBoard({
   compact: boolean;
   actions: DealRowActions;
   onStageDrop: (deal: Deal, stage: string) => void;
+  /** 새 거래는 첫 단계에서 시작하므로 첫 열 아래에만 추가 버튼을 둔다 */
+  onCreate?: () => void;
 }) {
   const [activeDeal, setActiveDeal] = useState<Deal | null>(null);
   const sensors = useSensors(
@@ -164,6 +137,7 @@ export function DealBoard({
               referenceDate={referenceDate}
               compact={compact}
               actions={actions}
+              onCreate={group.key === dealDisplayGroups[0]?.key ? onCreate : undefined}
             />
           ))}
         </div>
@@ -195,6 +169,7 @@ function DealColumn({
   referenceDate,
   compact,
   actions,
+  onCreate,
 }: {
   group: DealDisplayGroup;
   deals: Deal[];
@@ -202,6 +177,7 @@ function DealColumn({
   referenceDate: Date;
   compact: boolean;
   actions: DealRowActions;
+  onCreate?: () => void;
 }) {
   const summary = summarizeDealGroup(deals, group.key);
   const commissionTotal = deals.reduce(
@@ -209,50 +185,43 @@ function DealColumn({
     0,
   );
   const { setNodeRef, isOver } = useDroppable({ id: group.key });
-  const tone = DEAL_COLUMN_TONE[group.key];
+  const tone = DEAL_GROUP_TONE[group.key];
 
   return (
     <section
       ref={setNodeRef}
       className={cn(
-        'flex min-h-[148px] shrink-0 self-start flex-col overflow-hidden rounded-xl',
-        compact ? 'w-[228px]' : 'w-[272px]',
+        'flex shrink-0 self-start flex-col rounded-[10px]',
+        compact ? 'w-[228px]' : 'w-[260px]',
         tone.surface,
-        isOver && 'ring-2 ring-inset ring-info/30',
+        isOver && 'ring-2 ring-inset ring-[#2783de]/30',
       )}
     >
-      <header className="flex min-h-11 items-center gap-2 px-3 py-2.5">
-        <h2
-          className={cn(
-            'inline-flex h-6 items-center rounded-md px-2 text-[11.5px] font-semibold',
-            tone.label,
-          )}
-        >
-          {group.label}
+      <header className="flex h-10 items-center gap-2 px-2">
+        <h2 className="flex p-[3px]">
+          <DealStagePill stage={group.stages[0] ?? group.key} label={group.label} />
         </h2>
-        <span className="text-[12px] font-medium tabular-nums text-muted-foreground">
+        <span className={cn('text-[13px] tabular-nums', tone.count)}>
           {summary.count}
         </span>
         {commissionTotal > 0 ? (
           <span
             title="예상 수수료 합계"
-            className="ml-auto truncate text-[10px] tabular-nums text-slate-500"
+            className="ml-auto truncate pr-1 text-[11.5px] tabular-nums text-[#7d7a75]"
           >
             {formatMoney(commissionTotal)}
           </span>
         ) : null}
       </header>
 
-      <div className="flex flex-col gap-2 px-2 pb-2">
+      <div className="flex min-h-2 flex-col gap-2 px-2 pb-2">
         {deals.length === 0 ? (
-          <div
-            className={cn(
-              'flex min-h-[88px] items-center justify-center break-keep rounded-lg border border-dashed border-black/10 bg-white/55 px-3 text-center text-[11px] text-slate-500',
-              isOver && 'border-info/45 bg-info-soft/35 text-info-strong',
-            )}
-          >
-            {isOver ? '여기로 이동' : '해당 단계의 거래가 없습니다'}
-          </div>
+          // Notion처럼 빈 열에는 안내 글을 두지 않는다. 끌어 올 때만 놓을 자리를 보여 준다.
+          isOver ? (
+            <div className="flex h-10 items-center justify-center rounded-[10px] bg-white/70 text-[12px] text-[#2783de] shadow-[0_0_0_1px_rgba(39,131,222,0.35)]">
+              여기로 이동
+            </div>
+          ) : null
         ) : (
           deals.map((deal) => (
             <DraggableDealCard
@@ -265,8 +234,50 @@ function DealColumn({
             />
           ))
         )}
+        {onCreate ? (
+          // Notion 보드의 열 아래 추가 버튼: 높이 40, 모서리 10, 열 색의 1px 선과 글자
+          <button
+            type="button"
+            onClick={onCreate}
+            className={cn(
+              'flex h-10 w-full items-center gap-[9px] rounded-[10px] px-2.5 text-[13.5px] transition-colors hover:bg-black/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/20 motion-reduce:transition-none',
+              tone.line,
+              tone.count,
+            )}
+          >
+            <Plus className="ml-0.5 size-3.5" aria-hidden="true" />
+            새 거래
+          </button>
+        ) : null}
       </div>
     </section>
+  );
+}
+
+/**
+ * 보드를 불러오는 동안의 뼈대. Notion 보드와 같은 모양이다:
+ * 열마다 머리 막대(높이 16, 폭 절반) 하나와 카드 자리(모서리 10) 몇 개.
+ */
+export function DealBoardSkeleton({ compact }: { compact: boolean }) {
+  return (
+    <div className="flex items-start gap-3 overflow-hidden" aria-hidden="true">
+      {dealDisplayGroups.map((group, index) => (
+        <div
+          key={group.key}
+          className={cn('shrink-0 px-2 pb-2', compact ? 'w-[228px]' : 'w-[260px]')}
+        >
+          <div className="flex h-10 items-center">
+            <div className="h-4 w-1/2 animate-pulse rounded-[12px] bg-[rgba(66,35,3,0.06)] motion-reduce:animate-none" />
+          </div>
+          {Array.from({ length: 3 - (index % 2) }, (_, card) => (
+            <div
+              key={card}
+              className="mb-2 h-[88px] animate-pulse rounded-[10px] bg-[rgba(66,35,3,0.045)] motion-reduce:animate-none"
+            />
+          ))}
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -294,7 +305,7 @@ function DraggableDealCard({
       {...listeners}
       aria-label={`${getDealTitle(deal)} 거래 카드 단계 이동`}
       className={cn(
-        'touch-none cursor-grab rounded-md outline-none active:cursor-grabbing focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-offset-1',
+        'touch-none cursor-grab rounded-[10px] outline-none active:cursor-grabbing focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-offset-1',
         isDragging && 'opacity-20',
       )}
     >
@@ -310,9 +321,9 @@ function DraggableDealCard({
 }
 
 const TRANSACTION_TONE: Record<string, string> = {
-  sale: 'bg-[#e2eef8] text-[#315f7c]',
-  jeonse: 'bg-[#e2f1e7] text-[#37684b]',
-  monthly: 'bg-[#f8e8dc] text-[#865a35]',
+  sale: 'bg-[rgba(0,118,217,0.16)] text-[#264a72]',
+  jeonse: 'bg-[rgba(0,96,38,0.157)] text-[#2a533c]',
+  monthly: 'bg-[rgba(196,88,0,0.204)] text-[#6a4222]',
 };
 
 const TRANSACTION_LABEL: Record<string, string> = {
@@ -349,19 +360,20 @@ const DealCard = memo(function DealCard({
     <article
       title={health.isAtRisk ? health.description : undefined}
       className={cn(
-        'group relative overflow-hidden rounded-lg border border-black/[0.08] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.05)]',
-        compact ? 'p-2.5' : 'p-3',
-        !dragPreview && 'hover:border-black/[0.14]',
-        dragPreview && 'h-full w-full shadow-[0_12px_32px_rgba(15,23,42,0.16)]',
-        selected && 'border-foreground/35 ring-1 ring-foreground/10',
-        health.state === 'overdue' && !selected && 'border-destructive/35',
-        health.state === 'stale' && !selected && 'border-warning/40',
+        // Notion 보드 카드: 테두리 대신 1px 선 + 옅은 그림자
+        'group relative overflow-hidden rounded-[10px] bg-white shadow-[0_4px_12px_rgba(25,25,25,0.027),0_1px_2px_rgba(25,25,25,0.02),0_0_0_1px_rgba(42,28,0,0.07)] transition-colors',
+        compact ? 'px-2.5 py-2' : 'px-2.5 py-2.5',
+        !dragPreview && 'hover:bg-[#fbfaf9]',
+        dragPreview && 'h-full w-full shadow-[0_12px_32px_rgba(15,23,42,0.16),0_0_0_1px_rgba(42,28,0,0.07)]',
+        selected && 'ring-1 ring-foreground/35',
+        health.state === 'overdue' && !selected && 'ring-1 ring-destructive/35',
+        health.state === 'stale' && !selected && 'ring-1 ring-warning/40',
       )}
     >
       <div className="flex items-start gap-1">
         {dragPreview ? (
           <div className="min-w-0 flex-1 text-left">
-            <p className="truncate text-[13px] font-semibold leading-[1.4] text-foreground">
+            <p className="truncate text-[13.5px] font-medium leading-[1.4] text-foreground">
               {getDealTitle(deal)}
             </p>
           </div>
@@ -372,7 +384,7 @@ const DealCard = memo(function DealCard({
             onClick={() => actions.onSelect(deal.id)}
             onKeyDown={(event) => event.stopPropagation()}
           >
-            <p className="truncate text-[13px] font-semibold leading-[1.4] text-foreground">
+            <p className="truncate text-[13.5px] font-medium leading-[1.4] text-foreground">
               {getDealTitle(deal)}
             </p>
           </button>
@@ -393,7 +405,7 @@ const DealCard = memo(function DealCard({
       {!compact && partyParts.length > 0 ? (
         <p
           title={partyParts.join(' · ')}
-          className="mt-1.5 truncate text-[11px] leading-4 text-muted-foreground"
+          className="mt-1 truncate text-[12px] leading-4 text-[#7d7a75]"
         >
           {partyParts.join(' · ')}
         </p>
@@ -406,7 +418,7 @@ const DealCard = memo(function DealCard({
         {transactionType ? (
           <span
             className={cn(
-              'shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold',
+              'shrink-0 rounded-[3px] px-1.5 py-0.5 text-[11px]',
               TRANSACTION_TONE[transactionType] ??
                 'bg-muted text-muted-foreground',
             )}
@@ -415,7 +427,7 @@ const DealCard = memo(function DealCard({
           </span>
         ) : null}
         {deal.isJointBrokerage ? (
-          <span className="shrink-0 rounded bg-[#efefed] px-1.5 py-0.5 text-[10px] font-medium text-[#66645f]">
+          <span className="shrink-0 rounded-[3px] bg-[rgba(28,19,1,0.11)] px-1.5 py-0.5 text-[11px] text-[#494846]">
             공동
           </span>
         ) : null}
@@ -423,8 +435,8 @@ const DealCard = memo(function DealCard({
 
       <div
         className={cn(
-          'mt-2 flex min-w-0 items-center gap-1.5 text-[10.5px]',
-          urgent ? 'font-medium text-destructive-strong' : 'text-slate-600',
+          'mt-2 flex min-w-0 items-center gap-1.5 text-[11.5px]',
+          urgent ? 'font-medium text-destructive-strong' : 'text-[#7d7a75]',
         )}
       >
         <CalendarClock className="size-3 shrink-0" aria-hidden="true" />

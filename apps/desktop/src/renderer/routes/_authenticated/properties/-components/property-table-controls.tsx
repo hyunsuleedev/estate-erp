@@ -60,7 +60,8 @@ export function PropertyColumnMenu({
         <button
           type="button"
           aria-label={`${label} 열 메뉴`}
-          className="-mx-1 flex h-full min-w-0 flex-1 items-center gap-1 rounded-sm px-1 text-left outline-none hover:bg-[#f0efec] focus-visible:ring-2 focus-visible:ring-[#2383e2]/35 data-[state=open]:bg-[#f0efec]"
+          // 머리글 칸 전체가 버튼이다. 칸(th)이 relative라서 칸을 가득 채운다.
+          className="absolute inset-0 flex min-w-0 items-center gap-1 px-2.5 text-left outline-none transition-colors hover:bg-[#f6f5f3] hover:text-[#2c2c2b] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#2383e2]/50 data-[state=open]:bg-[#f6f5f3] data-[state=open]:text-[#2c2c2b]"
         >
           {children}
           {sorted && (sorted === 'asc' ? <ArrowUp aria-hidden="true" className="size-3 shrink-0 text-[#2383e2]" /> : <ArrowDown aria-hidden="true" className="size-3 shrink-0 text-[#2383e2]" />)}

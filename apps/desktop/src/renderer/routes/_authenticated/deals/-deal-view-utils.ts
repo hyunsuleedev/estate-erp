@@ -458,6 +458,8 @@ export function formatNextPaymentName(summary: ReturnType<typeof getNextDealPaym
 /** 보드/리스트가 공유하는 거래 행 액션 핸들러 묶음 */
 export interface DealRowActions {
   onSelect: (id: string) => void;
+  /** 열려 있는 상세 패널 닫기 (행의 열기 버튼이 닫기로 바뀔 때 쓴다) */
+  onCloseDetail?: () => void;
   onRequestStage: (deal: Deal, stage: string) => void;
   onRequestCancel: (deal: Deal) => void;
   onRequestDelete: (deal: Deal) => void;

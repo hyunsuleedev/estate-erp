@@ -15,6 +15,8 @@ import {
   type RowSelectionState,
   type ColumnResizeMode,
   type ColumnPinningState,
+  type ColumnSizingState,
+  type Table,
 } from '@tanstack/react-table';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { cn } from '@/lib/utils';
@@ -31,6 +33,25 @@ const VIRTUALIZE_THRESHOLD = 50;
 
 /** headerTone="refresh"의 접기 띠 높이(px). 매물관리 표와 같다. */
 const REFRESH_GUIDE_HEIGHT = 11;
+
+/** 열 id별 실제 너비가 같은지 본다. 값이 없는 열은 열 정의의 기본 너비로 친다. */
+function isSameColumnSizing(
+  left: ColumnSizingState,
+  right: ColumnSizingState,
+  defaultWidth: (columnId: string) => number | undefined,
+) {
+  const ids = new Set([...Object.keys(left), ...Object.keys(right)]);
+  for (const id of ids) {
+    const leftWidth = left[id] ?? defaultWidth(id);
+    const rightWidth = right[id] ?? defaultWidth(id);
+    if (leftWidth === undefined || rightWidth === undefined) {
+      if (leftWidth !== rightWidth) return false;
+      continue;
+    }
+    if (Math.round(leftWidth) !== Math.round(rightWidth)) return false;
+  }
+  return true;
+}
 
 export function DataTable<TData extends { id: string }>({
   columns,
@@ -62,10 +83,19 @@ export function DataTable<TData extends { id: string }>({
   pinnedColumns,
   columnGroupControls = [],
   renderBulkActions,
+  selectionToolbarPlacement = 'top',
+  selectionItemLabel,
+  scrollerContainerQuery = false,
   alwaysShowSelectionToolbar = false,
   renderStatusBar,
   expandedRowIds,
   renderExpandedRow,
+  estimateExpandedRowHeight,
+  propertyListTone = false,
+  columnSizing,
+  onColumnSizingChange,
+  scrollResetKey,
+  getRowSelectionLabel,
 }: DataTableProps<TData>) {
   const [internalRowSelection, setInternalRowSelection] =
     useState<RowSelectionState>({});
@@ -76,6 +106,10 @@ export function DataTable<TData extends { id: string }>({
   const [columnResizeMode] = useState<ColumnResizeMode>('onChange');
   const tableRef = useRef<HTMLTableElement>(null);
   const scrollerRef = useRef<HTMLDivElement>(null);
+  // 제어형 열 너비에서 끌기를 Esc로 취소할 때 쓴다(끌기 전 너비, 취소 뒤 마우스를 놓을 때까지).
+  const tableInstanceRef = useRef<Table<TData> | null>(null);
+  const sizingBeforeResizeRef = useRef<ColumnSizingState | null>(null);
+  const resizeCancelledRef = useRef(false);
 
   const resolvedPinning = useMemo<ColumnPinningState>(() => {
     const left: string[] = [];
@@ -120,7 +154,11 @@ export function DataTable<TData extends { id: string }>({
             checked={row.getIsSelected()}
             onCheckedChange={(v) => row.toggleSelected(!!v)}
             onClick={(e) => e.stopPropagation()}
-            aria-label={`${row.index + 1}번째 행 선택`}
+            aria-label={
+              getRowSelectionLabel
+                ? getRowSelectionLabel(row.original)
+                : `${row.index + 1}번째 행 선택`
+            }
             className="size-3.5"
           />
           {renderSelectionAccessory?.(row.original)}
@@ -162,9 +200,138 @@ export function DataTable<TData extends { id: string }>({
     enableColumnPinning: true,
     columnResizeMode,
     getRowId: (row) => row.id,
+    // 제어형 열 너비: 처음 그릴 때부터 저장된 너비를 쓴다. 드래그 중에는 표가 너비를
+    // 들고 있고(TanStack 기본 처리), 드래그가 끝나면 onColumnSizingChange로 알린다.
+    ...(columnSizing !== undefined
+      ? { initialState: { columnSizing } }
+      : {}),
+    // 제어형 열 너비만: 끄는 중 Esc로 취소하면 마우스를 놓을 때까지 표가 보내는 너비 변경을
+    // 버린다(TanStack은 놓을 때 마지막 끌기 너비를 한 번 더 적용한다).
+    ...(columnSizing !== undefined
+      ? {
+          onColumnSizingChange: (
+            updater:
+              | ColumnSizingState
+              | ((old: ColumnSizingState) => ColumnSizingState),
+          ) => {
+            if (resizeCancelledRef.current) return;
+            tableInstanceRef.current?.setState((old) => ({
+              ...old,
+              columnSizing:
+                typeof updater === 'function'
+                  ? updater(old.columnSizing)
+                  : updater,
+            }));
+          },
+        }
+      : {}),
   });
+  useEffect(() => {
+    tableInstanceRef.current = table;
+  }, [table]);
   const tableTotalSize = table.getTotalSize();
   const leafColumns = table.getAllLeafColumns();
+  const isColumnSizingControlled = columnSizing !== undefined;
+  const isResizingColumn = table.getState().columnSizingInfo.isResizingColumn;
+  const getDefaultColumnWidth = useCallback(
+    (columnId: string) =>
+      table.getAllLeafColumns().find((column) => column.id === columnId)
+        ?.columnDef.size,
+    [table],
+  );
+  // 부모가 준 너비가 바뀌면(기본 너비 복원, 다른 창에서 바꾼 저장값) 표에 반영한다.
+  useEffect(() => {
+    if (columnSizing === undefined) return;
+    if (table.getState().columnSizingInfo.isResizingColumn) return;
+    if (
+      isSameColumnSizing(
+        table.getState().columnSizing,
+        columnSizing,
+        getDefaultColumnWidth,
+      )
+    ) {
+      return;
+    }
+    table.setColumnSizing(columnSizing);
+  }, [columnSizing, getDefaultColumnWidth, table]);
+  // 드래그가 끝난 순간에만 알린다. 움직이지 않은 클릭은 알리지 않는다.
+  const wasResizingColumnRef = useRef(false);
+  useEffect(() => {
+    if (columnSizing === undefined) return;
+    if (isResizingColumn) {
+      wasResizingColumnRef.current = true;
+      return;
+    }
+    if (!wasResizingColumnRef.current) return;
+    wasResizingColumnRef.current = false;
+    const next = table.getState().columnSizing;
+    if (!isSameColumnSizing(next, columnSizing, getDefaultColumnWidth)) {
+      onColumnSizingChange?.(next);
+    }
+  }, [
+    columnSizing,
+    getDefaultColumnWidth,
+    isResizingColumn,
+    onColumnSizingChange,
+    table,
+  ]);
+  // 제어형 열 너비: 열 경계를 끄는 중 Esc를 누르면 끌기 전 너비로 돌아간다(펼침 패널 표와 같다).
+  useEffect(() => {
+    if (!isColumnSizingControlled || !isResizingColumn) return;
+    const cancelResize = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      const before = sizingBeforeResizeRef.current;
+      if (!before) return;
+      // 표의 Esc(선택 해제)나 화면의 Esc 처리로 번지지 않게 한다.
+      event.preventDefault();
+      event.stopPropagation();
+      resizeCancelledRef.current = true;
+      table.setState((old) => ({
+        ...old,
+        columnSizing: before,
+        columnSizingInfo: {
+          ...old.columnSizingInfo,
+          isResizingColumn: false,
+          startOffset: null,
+          startSize: null,
+          deltaOffset: null,
+          deltaPercentage: null,
+          columnSizingStart: [],
+        },
+      }));
+      // 마우스를 놓을 때 TanStack이 마지막 끌기 너비를 다시 적용하므로 그때까지 막는다.
+      const release = () => {
+        window.removeEventListener('mouseup', release, true);
+        window.removeEventListener('touchend', release, true);
+        window.setTimeout(() => {
+          resizeCancelledRef.current = false;
+        }, 0);
+      };
+      window.addEventListener('mouseup', release, true);
+      window.addEventListener('touchend', release, true);
+    };
+    window.addEventListener('keydown', cancelResize, true);
+    return () => window.removeEventListener('keydown', cancelResize, true);
+  }, [isColumnSizingControlled, isResizingColumn, table]);
+  const resetColumnWidth = (columnId: string) => {
+    const rest = { ...table.getState().columnSizing };
+    delete rest[columnId];
+    table.setColumnSizing(rest);
+    onColumnSizingChange?.(rest);
+  };
+  // 열 경계를 끌고 놓은 마우스가 머리글 위에서 끝나도 정렬이 바뀌지 않게 한다.
+  const suppressSortClickRef = useRef(false);
+  const suppressNextSortClick = () => {
+    suppressSortClickRef.current = true;
+    window.addEventListener(
+      'mouseup',
+      () =>
+        window.setTimeout(() => {
+          suppressSortClickRef.current = false;
+        }, 0),
+      { once: true, capture: true },
+    );
+  };
   const hasFillColumn = leafColumns.some(
     (column) => column.columnDef.meta?.fill,
   );
@@ -275,21 +442,50 @@ export function DataTable<TData extends { id: string }>({
   const isFullHeight = layout === 'full-height';
   const isNotion = variant === 'notion';
   const isRefreshHeader = headerTone === 'refresh';
+  const isPropertyListTone = propertyListTone;
+  // 접기 띠·정렬 화살표·aria-sort는 refresh 머리와 같은 모양을 쓴다.
+  const usesRefreshGuide = isRefreshHeader || isPropertyListTone;
 
   // Virtualize only for full-height mode with a meaningful row count.
   // Paginated views are small (pageSize ~20) and auto-height rows can't be
   // measured up front, so we skip virtualization there.
   const rows = table.getRowModel().rows;
+  const virtualizesExpandedRows =
+    typeof estimateExpandedRowHeight === 'number' && !!renderExpandedRow;
   const canVirtualize =
     isFullHeight &&
     rows.length >= VIRTUALIZE_THRESHOLD &&
     typeof rowCellHeight === 'number' &&
-    (!expandedRowIds || expandedRowIds.size === 0);
+    (virtualizesExpandedRows ||
+      !expandedRowIds ||
+      expandedRowIds.size === 0);
+  // 펼친 행도 가상 스크롤할 때는 본 행과 펼친 행을 한 줄씩 세운 목록을 쓴다.
+  const virtualItems = useMemo(() => {
+    if (!virtualizesExpandedRows) return null;
+    const items: { rowIndex: number; expanded: boolean }[] = [];
+    rows.forEach((row, rowIndex) => {
+      items.push({ rowIndex, expanded: false });
+      if (expandedRowIds?.has(row.original.id)) {
+        items.push({ rowIndex, expanded: true });
+      }
+    });
+    return items;
+  }, [expandedRowIds, rows, virtualizesExpandedRows]);
 
   const rowVirtualizer = useVirtualizer({
-    count: canVirtualize ? rows.length : 0,
+    count: canVirtualize ? (virtualItems?.length ?? rows.length) : 0,
     getScrollElement: () => scrollerRef.current,
-    estimateSize: () => rowCellHeight ?? DEFAULT_ROW_HEIGHT,
+    estimateSize: (index) =>
+      virtualItems?.[index]?.expanded
+        ? (estimateExpandedRowHeight ?? DEFAULT_ROW_HEIGHT)
+        : (rowCellHeight ?? DEFAULT_ROW_HEIGHT),
+    getItemKey: virtualItems
+      ? (index) => {
+          const item = virtualItems[index];
+          const row = item ? rows[item.rowIndex] : undefined;
+          return row ? `${row.id}${item?.expanded ? ':expanded' : ''}` : index;
+        }
+      : undefined,
     overscan: 10,
   });
 
@@ -306,7 +502,14 @@ export function DataTable<TData extends { id: string }>({
   useEffect(() => {
     if (focusedCell === null) return;
     if (canVirtualize) {
-      rowVirtualizer.scrollToIndex(focusedCell.row, { align: 'auto' });
+      const virtualIndex = virtualItems
+        ? virtualItems.findIndex(
+            (item) => item.rowIndex === focusedCell.row && !item.expanded,
+          )
+        : focusedCell.row;
+      if (virtualIndex >= 0) {
+        rowVirtualizer.scrollToIndex(virtualIndex, { align: 'auto' });
+      }
       return;
     }
     if (!tableRef.current) return;
@@ -315,6 +518,15 @@ export function DataTable<TData extends { id: string }>({
     );
     trs[focusedCell.row]?.scrollIntoView({ block: 'nearest' });
   }, [focusedCell, canVirtualize, rowVirtualizer]);
+
+  // 표를 다시 만들지 않고도 범위가 바뀌면 맨 위에서 다시 보게 한다(열 너비·선택은 유지).
+  const lastScrollResetKeyRef = useRef(scrollResetKey);
+  useEffect(() => {
+    if (Object.is(lastScrollResetKeyRef.current, scrollResetKey)) return;
+    lastScrollResetKeyRef.current = scrollResetKey;
+    scrollerRef.current?.scrollTo({ top: 0 });
+    setFocusedCell(null);
+  }, [scrollResetKey]);
 
   const getPinStyle = (
     column: ReturnType<typeof table.getAllLeafColumns>[number],
@@ -340,8 +552,23 @@ export function DataTable<TData extends { id: string }>({
       ? rows[focusedCell.row].original
       : null;
 
+  // 매물관리 모양: 열 묶음 띠(접기 버튼·선)는 표와 함께 가로로 움직이므로, 고정 열 위로
+  // 지나갈 때는 고정 열 경계에서 잘라 고정 열 머리를 덮지 않게 한다. 가로 스크롤 값은
+  // 다시 그리지 않고 CSS 변수로만 넘긴다.
+  const clipsGuideUnderPinnedColumns =
+    isPropertyListTone && hasColumnGroupGuide;
+  const pinnedLeftWidth = clipsGuideUnderPinnedColumns
+    ? table.getLeftTotalSize()
+    : 0;
+
   const handleScroll = useCallback(
     (event: React.UIEvent<HTMLDivElement>) => {
+      if (clipsGuideUnderPinnedColumns) {
+        event.currentTarget.style.setProperty(
+          '--data-table-scroll-left',
+          `${event.currentTarget.scrollLeft}px`,
+        );
+      }
       if (!onEndReached || isLoading || isLoadingMore) return;
 
       const target = event.currentTarget;
@@ -351,13 +578,27 @@ export function DataTable<TData extends { id: string }>({
         onEndReached();
       }
     },
-    [endReachedThreshold, isLoading, isLoadingMore, onEndReached],
+    [
+      clipsGuideUnderPinnedColumns,
+      endReachedThreshold,
+      isLoading,
+      isLoadingMore,
+      onEndReached,
+    ],
   );
+  const clearSelection = () => {
+    if (selectedRowIds === undefined) setInternalRowSelection({});
+    onRowSelectionChange?.([]);
+  };
+  const showsSelectionToolbar =
+    !!renderBulkActions &&
+    (alwaysShowSelectionToolbar || selectedRows.length > 0);
 
   return (
     <div className={cn('flex flex-col', isFullHeight && 'h-full min-h-0')}>
       {/* Bulk actions toolbar — optionally reserved to prevent layout shift. */}
       {renderBulkActions &&
+        selectionToolbarPlacement === 'top' &&
         (alwaysShowSelectionToolbar || selectedRows.length > 0) && (
           <div
             data-data-table-selection-toolbar
@@ -372,10 +613,7 @@ export function DataTable<TData extends { id: string }>({
               type="button"
               className="ml-auto shrink-0 text-muted-foreground hover:text-foreground disabled:cursor-default disabled:opacity-40"
               disabled={selectedRows.length === 0}
-              onClick={() => {
-                if (selectedRowIds === undefined) setInternalRowSelection({});
-                onRowSelectionChange?.([]);
-              }}
+              onClick={clearSelection}
             >
               선택 해제
             </button>
@@ -389,6 +627,7 @@ export function DataTable<TData extends { id: string }>({
           'relative w-full overflow-auto outline-none focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0',
           isFullHeight && 'flex-1 min-h-0',
           isNotion && 'bg-white',
+          scrollerContainerQuery && '[container-type:inline-size]',
         )}
         tabIndex={0}
         onKeyDown={handleKeyDown}
@@ -399,19 +638,29 @@ export function DataTable<TData extends { id: string }>({
             data-data-table-column-guide
             className={cn(
               'sticky top-0 z-40',
-              isRefreshHeader
+              usesRefreshGuide
                 ? 'bg-white'
                 : 'h-9 border-b border-[#e7e5df] bg-[#f8f7f4]',
             )}
             style={{
               width: '100%',
               minWidth: tableTotalSize,
-              ...(isRefreshHeader ? { height: REFRESH_GUIDE_HEIGHT } : {}),
+              ...(usesRefreshGuide ? { height: REFRESH_GUIDE_HEIGHT } : {}),
             }}
           >
             <div
-              className={cn('relative h-full', !isRefreshHeader && 'pt-2')}
-              style={{ width: tableTotalSize, minWidth: tableTotalSize }}
+              className={cn('relative h-full', !usesRefreshGuide && 'pt-2')}
+              style={{
+                width: tableTotalSize,
+                minWidth: tableTotalSize,
+                // 접기 버튼은 띠 아래 머리글로 8px 걸친다. 위·아래·오른쪽은 넉넉히 두고
+                // 왼쪽만 (고정 열 폭 + 가로 스크롤)에서 자른다.
+                ...(clipsGuideUnderPinnedColumns
+                  ? {
+                      clipPath: `inset(-16px -16px -16px calc(${pinnedLeftWidth}px + var(--data-table-scroll-left, 0px)))`,
+                    }
+                  : {}),
+              }}
             >
               {columnGroupLayouts.map(
                 ({ control, anchorEnd, expandedWidth, toggleOffset }) => (
@@ -419,7 +668,7 @@ export function DataTable<TData extends { id: string }>({
                     key={`${control.anchorColumnId}-${control.label}`}
                     className="pointer-events-none absolute inset-0"
                   >
-                    {!control.collapsed && expandedWidth > 0 && isRefreshHeader && (
+                    {!control.collapsed && expandedWidth > 0 && usesRefreshGuide && (
                       // 매물관리 표처럼 띠 아래쪽에 굵은 선 하나만 긋고 끝 표시는 두지 않는다
                       <span
                         aria-hidden="true"
@@ -431,7 +680,7 @@ export function DataTable<TData extends { id: string }>({
                         }}
                       />
                     )}
-                    {!control.collapsed && expandedWidth > 0 && !isRefreshHeader && (
+                    {!control.collapsed && expandedWidth > 0 && !usesRefreshGuide && (
                       <>
                         <span
                           aria-hidden="true"
@@ -466,7 +715,7 @@ export function DataTable<TData extends { id: string }>({
                       data-data-table-column-group-toggle={control.label}
                       className={cn(
                         'pointer-events-auto absolute z-50 inline-flex items-center justify-center bg-white p-0 outline-none',
-                        isRefreshHeader
+                        usesRefreshGuide
                           ? 'mt-[2px] size-[17px] rounded-[4px] border border-[#a3a09a] text-[#6f6c66] shadow-[0_1px_2px_rgba(16,24,40,0.08)] transition-[border-color,color,box-shadow] hover:border-[#2383e2] hover:text-[#1d6dbf] hover:shadow-[0_0_0_3px_rgba(35,131,226,0.16)] focus-visible:ring-2 focus-visible:ring-[#2383e2]/35'
                           : 'mt-2 size-5 rounded-[3px] border border-border text-muted-foreground shadow-xs transition-colors hover:border-muted-foreground/40 hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/35 active:translate-y-px',
                       )}
@@ -474,12 +723,12 @@ export function DataTable<TData extends { id: string }>({
                       onClick={control.onToggle}
                     >
                       {control.collapsed ? (
-                        isRefreshHeader ? (
+                        usesRefreshGuide ? (
                           <Plus className="size-[11px]" strokeWidth={2.4} />
                         ) : (
                           <Plus className="size-3" />
                         )
-                      ) : isRefreshHeader ? (
+                      ) : usesRefreshGuide ? (
                         <Minus className="size-[11px]" strokeWidth={2.4} />
                       ) : (
                         <Minus className="size-3" />
@@ -493,11 +742,11 @@ export function DataTable<TData extends { id: string }>({
                         data-data-table-column-group-label={control.label}
                         className={cn(
                           'pointer-events-auto absolute z-50 flex items-center whitespace-nowrap text-muted-foreground transition-colors hover:text-foreground',
-                          isRefreshHeader
+                          usesRefreshGuide
                             ? 'mt-0 h-[11px] text-[11px]'
                             : 'mt-2 h-5 text-[12px]',
                         )}
-                        style={{ left: toggleOffset + (isRefreshHeader ? 22 : 26) }}
+                        style={{ left: toggleOffset + (usesRefreshGuide ? 22 : 26) }}
                         onClick={control.onToggle}
                       >
                         {control.label} 열 보기
@@ -526,7 +775,7 @@ export function DataTable<TData extends { id: string }>({
           <thead
             className={cn(
               'sticky z-20 bg-background',
-              isRefreshHeader
+              usesRefreshGuide
                 ? 'bg-white'
                 : cn(
                     hasColumnGroupGuide ? 'top-9' : 'top-0',
@@ -534,7 +783,7 @@ export function DataTable<TData extends { id: string }>({
                   ),
             )}
             style={
-              isRefreshHeader
+              usesRefreshGuide
                 ? { top: hasColumnGroupGuide ? REFRESH_GUIDE_HEIGHT : 0 }
                 : undefined
             }
@@ -568,6 +817,7 @@ export function DataTable<TData extends { id: string }>({
                   );
                   const handleSortToggle = () => {
                     if (!canSort) return;
+                    if (suppressSortClickRef.current) return;
                     const current = sorting ?? [];
                     const active = current[0];
                     let next: SortingState;
@@ -584,7 +834,7 @@ export function DataTable<TData extends { id: string }>({
                     <th
                       key={header.id}
                       aria-sort={
-                        isRefreshHeader
+                        usesRefreshGuide
                           ? sorted === 'asc'
                             ? 'ascending'
                             : sorted === 'desc'
@@ -594,9 +844,32 @@ export function DataTable<TData extends { id: string }>({
                                 : undefined
                           : undefined
                       }
+                      // 매물관리 모양에서는 정렬 가능한 머리글을 Tab으로 고르고 Enter·Space로 정렬한다.
+                      tabIndex={isPropertyListTone && canSort ? 0 : undefined}
+                      onKeyDown={
+                        isPropertyListTone && canSort
+                          ? (event) => {
+                              if (event.key !== 'Enter' && event.key !== ' ') return;
+                              event.preventDefault();
+                              event.stopPropagation();
+                              handleSortToggle();
+                            }
+                          : undefined
+                      }
                       className={cn(
                         'relative text-left align-middle font-medium text-muted-foreground',
-                        isRefreshHeader
+                        isPropertyListTone
+                          ? cn(
+                              // 매물관리 메인 표(property-listings-table) 머리와 같은 규격
+                              'h-9 border-b border-border bg-white px-2.5 text-[13px] font-normal leading-[21px] normal-case tracking-normal text-muted-foreground transition-colors',
+                              hasColumnGroupGuide && 'border-t border-t-border',
+                              !isLast && 'border-r border-r-[#eeeeec]',
+                              canSort &&
+                                'cursor-pointer select-none outline-none hover:bg-[#f6f5f3] hover:text-[#2c2c2b] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#2383e2]/50',
+                              sorted && 'text-[#2c2c2b]',
+                              isLastPinned && 'border-r-0 shadow-[1px_0_0_0_#cfcecb]',
+                            )
+                          : isRefreshHeader
                           ? cn(
                               // 매물관리 표 머리와 같은 모양
                               'h-[34px] border-b border-[#e6e4e0] bg-white px-2.5 text-[12px] normal-case tracking-normal text-[#6f6c66] transition-colors',
@@ -623,7 +896,9 @@ export function DataTable<TData extends { id: string }>({
                               isPinned &&
                                 (isNotion ? 'bg-[#f5f4f1]' : 'bg-background'),
                             ),
-                        isLastPinned && 'shadow-[1px_0_0_0_#d9d9d6]',
+                        isLastPinned &&
+                          !isPropertyListTone &&
+                          'shadow-[1px_0_0_0_#d9d9d6]',
                       )}
                       style={{
                         width: header.column.columnDef.meta?.fill
@@ -643,7 +918,11 @@ export function DataTable<TData extends { id: string }>({
                         className={cn(
                           'flex items-center gap-1',
                           isNotion && 'min-w-0',
-                          isNotion && !isRefreshHeader && 'text-slate-500',
+                          isNotion &&
+                            !isRefreshHeader &&
+                            !isPropertyListTone &&
+                            'text-slate-500',
+                          isPropertyListTone && 'min-w-0',
                         )}
                       >
                         {header.isPlaceholder
@@ -654,14 +933,14 @@ export function DataTable<TData extends { id: string }>({
                             )}
                         {sorted === 'asc' && (
                           <ArrowUp
-                            aria-hidden={isRefreshHeader || undefined}
-                            className={cn('size-3', isRefreshHeader && 'shrink-0 text-[#2383e2]')}
+                            aria-hidden={usesRefreshGuide || undefined}
+                            className={cn('size-3', usesRefreshGuide && 'shrink-0 text-[#2383e2]')}
                           />
                         )}
                         {sorted === 'desc' && (
                           <ArrowDown
-                            aria-hidden={isRefreshHeader || undefined}
-                            className={cn('size-3', isRefreshHeader && 'shrink-0 text-[#2383e2]')}
+                            aria-hidden={usesRefreshGuide || undefined}
+                            className={cn('size-3', usesRefreshGuide && 'shrink-0 text-[#2383e2]')}
                           />
                         )}
                       </div>
@@ -669,8 +948,36 @@ export function DataTable<TData extends { id: string }>({
                       {header.column.getCanResize() &&
                         !header.column.columnDef.meta?.fill && (
                           <div
-                            onMouseDown={header.getResizeHandler()}
+                            onMouseDown={
+                              isColumnSizingControlled
+                                ? (event) => {
+                                    suppressNextSortClick();
+                                    sizingBeforeResizeRef.current = {
+                                      ...table.getState().columnSizing,
+                                    };
+                                    header.getResizeHandler()(event);
+                                  }
+                                : header.getResizeHandler()
+                            }
                             onTouchStart={header.getResizeHandler()}
+                            onClick={
+                              isColumnSizingControlled
+                                ? (event) => event.stopPropagation()
+                                : undefined
+                            }
+                            onDoubleClick={
+                              isColumnSizingControlled
+                                ? (event) => {
+                                    event.stopPropagation();
+                                    resetColumnWidth(header.column.id);
+                                  }
+                                : undefined
+                            }
+                            title={
+                              isColumnSizingControlled
+                                ? '드래그로 너비 조절 · 더블클릭으로 기본 너비'
+                                : undefined
+                            }
                             className={cn(
                               'absolute top-0 right-0 h-full w-1 cursor-col-resize select-none touch-none',
                               header.column.getIsResizing()
@@ -703,6 +1010,7 @@ export function DataTable<TData extends { id: string }>({
                             (isNotion
                               ? 'border-r border-r-[#eeeeec]'
                               : 'border-r border-r-border/30'),
+                          isPropertyListTone && 'border-b-border',
                         )}
                         style={{ height: rowCellHeight }}
                       >
@@ -724,12 +1032,12 @@ export function DataTable<TData extends { id: string }>({
                   </tr>
                 );
               }
-              const renderRow = (
+              const renderMainRow = (
                 row: (typeof rows)[number],
                 rowIndex: number,
               ) => (
-                <Fragment key={row.id}>
                   <tr
+                    key={row.id}
                     data-state={row.getIsSelected() ? 'selected' : undefined}
                     className="group"
                   >
@@ -746,6 +1054,57 @@ export function DataTable<TData extends { id: string }>({
                       const isGroupDetailCell = columnGroupControls.some(
                         (control) => control.columnIds.includes(cell.column.id),
                       );
+                      if (isPropertyListTone) {
+                        // 매물관리 메인 표(property-listings-table)와 같은 본문 칸
+                        return (
+                          <td
+                            key={cell.id}
+                            data-table-col={colIndex}
+                            data-table-row={rowIndex}
+                            className={cn(
+                              'relative select-none border-b border-border px-2.5 align-middle text-[14px] font-[450] leading-[21px] text-foreground',
+                              !isLastCol && 'border-r border-r-[#eeeeec]',
+                              'group-hover:bg-muted/70',
+                              'group-data-[state=selected]:bg-primary/5',
+                              isFocused &&
+                                'bg-blue-50/40 outline outline-2 -outline-offset-2 outline-[#2383e2]',
+                              isRowFocused && !isFocused && 'bg-muted',
+                              onRowClick &&
+                                (activateOnDoubleClick ? 'cursor-default' : 'cursor-pointer'),
+                              isPinned &&
+                                'bg-white group-hover:bg-muted group-data-[state=selected]:bg-secondary',
+                              isLastPinned && 'border-r-0 shadow-[1px_0_0_0_#cfcecb]',
+                              cell.column.columnDef.meta?.cellClassName,
+                            )}
+                            style={{
+                              width: cell.column.columnDef.meta?.fill
+                                ? undefined
+                                : cell.column.getSize(),
+                              height: rowCellHeight,
+                              ...getPinStyle(cell.column),
+                            }}
+                            onClick={() => {
+                              setFocusedCell({ row: rowIndex, col: colIndex });
+                              if (!activateOnDoubleClick) {
+                                onRowClick?.(row.original);
+                              }
+                            }}
+                            onDoubleClick={(event) => {
+                              setFocusedCell({ row: rowIndex, col: colIndex });
+                              const columnMeta = cell.column.columnDef.meta;
+                              if (columnMeta?.onCellDoubleClick) {
+                                columnMeta.onCellDoubleClick(row.original, event);
+                                return;
+                              }
+                              if (activateOnDoubleClick) {
+                                onRowClick?.(row.original);
+                              }
+                            }}
+                          >
+                            {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                          </td>
+                        );
+                      }
                       if (isRefreshHeader) {
                         // 매물관리 표와 같은 본문: 옅은 선, 줄에 올리면 #fafaf8, 접히는 묶음 열은 옅은 바탕,
                         // 키보드로 고른 줄은 옅은 파랑
@@ -870,40 +1229,80 @@ export function DataTable<TData extends { id: string }>({
                       );
                     })}
                   </tr>
-                  {renderExpandedRow &&
-                    expandedRowIds?.has(row.original.id) && (
-                      <tr data-table-expanded-row>
-                        <td
-                          colSpan={allColumns.length}
-                          className={cn(
-                            'p-0 align-top',
-                            isNotion
-                              ? 'border-b border-[#eeeeec] bg-slate-50/40'
-                              : 'border-b border-border/30 bg-muted/20',
-                          )}
-                        >
-                          {renderExpandedRow(row.original)}
-                        </td>
-                      </tr>
-                    )}
+              );
+              // 가상 스크롤 중이면 virtualIndex로 실제 높이를 잰다(펼친 내용은 나중에 자랄 수 있다).
+              const renderExpandedRowElement = (
+                row: (typeof rows)[number],
+                virtualIndex?: number,
+              ) =>
+                renderExpandedRow && (
+                  <tr
+                    key={`${row.id}:expanded`}
+                    data-table-expanded-row
+                    data-index={virtualIndex}
+                    ref={
+                      virtualIndex === undefined
+                        ? undefined
+                        : rowVirtualizer.measureElement
+                    }
+                  >
+                    <td
+                      colSpan={allColumns.length}
+                      className={cn(
+                        'p-0 align-top',
+                        isNotion
+                          ? 'border-b border-[#eeeeec] bg-slate-50/40'
+                          : 'border-b border-border/30 bg-muted/20',
+                        isPropertyListTone && 'border-b-border',
+                      )}
+                    >
+                      {renderExpandedRow(row.original)}
+                    </td>
+                  </tr>
+                );
+              const renderRow = (
+                row: (typeof rows)[number],
+                rowIndex: number,
+              ) => (
+                <Fragment key={row.id}>
+                  {renderMainRow(row, rowIndex)}
+                  {expandedRowIds?.has(row.original.id) &&
+                    renderExpandedRowElement(row)}
                 </Fragment>
               );
+              // 펼친 행을 가상 스크롤할 때만: 여백 줄의 높이가 바뀌면 새 줄로 바꿔 그린다.
+              // Chromium 표 배치는 펼친 행(전체 칸 colSpan)이 있으면 같은 여백 줄의 높이를
+              // 줄여도 몇 프레임 동안 옛 높이를 유지해, 스크롤 중 전체 높이가 줄 몇 개만큼
+              // 늘었다 돌아온다(스크롤바가 튄다). 새 줄은 처음부터 맞는 높이로 배치된다.
+              const spacerKey = (edge: 'top' | 'bottom', height: number) =>
+                virtualizesExpandedRows ? `spacer-${edge}-${height}` : undefined;
               if (canVirtualize) {
                 return (
                   <>
                     {paddingTop > 0 && (
-                      <tr aria-hidden="true">
+                      <tr aria-hidden="true" key={spacerKey('top', paddingTop)}>
                         <td
                           colSpan={allColumns.length}
                           style={{ height: paddingTop, padding: 0, border: 0 }}
                         />
                       </tr>
                     )}
-                    {virtualRows.map((virtualRow) =>
-                      renderRow(rows[virtualRow.index], virtualRow.index),
-                    )}
+                    {virtualRows.map((virtualRow) => {
+                      if (!virtualItems) {
+                        return renderRow(rows[virtualRow.index], virtualRow.index);
+                      }
+                      const item = virtualItems[virtualRow.index];
+                      const row = item ? rows[item.rowIndex] : undefined;
+                      if (!item || !row) return null;
+                      return item.expanded
+                        ? renderExpandedRowElement(row, virtualRow.index)
+                        : renderMainRow(row, item.rowIndex);
+                    })}
                     {paddingBottom > 0 && (
-                      <tr aria-hidden="true">
+                      <tr
+                        aria-hidden="true"
+                        key={spacerKey('bottom', paddingBottom)}
+                      >
                         <td
                           colSpan={allColumns.length}
                           style={{
@@ -946,6 +1345,27 @@ export function DataTable<TData extends { id: string }>({
           </tbody>
         </table>
       </div>
+
+      {/* 매물관리 표와 같은 아래쪽 선택 막대 — 스크롤 영역이 아래에서 줄어들 뿐 행은 제자리다. */}
+      {showsSelectionToolbar && selectionToolbarPlacement === 'bottom' && (
+        <div
+          data-data-table-selection-toolbar="bottom"
+          className="flex min-h-9 flex-wrap items-center gap-2 border-t border-border/60 bg-white px-3 py-1.5 text-xs"
+        >
+          <span className="font-medium text-slate-900">
+            {selectedRows.length}개{selectionItemLabel ? ` ${selectionItemLabel}` : ''} 선택
+          </span>
+          {renderBulkActions?.(selectedRows)}
+          <button
+            type="button"
+            className="ml-auto text-[11px] text-muted-foreground underline-offset-2 hover:underline disabled:cursor-default disabled:opacity-40 disabled:hover:no-underline"
+            disabled={selectedRows.length === 0}
+            onClick={clearSelection}
+          >
+            선택 해제
+          </button>
+        </div>
+      )}
 
       {/* Pagination */}
       {!isFullHeight && pageCount > 1 && (

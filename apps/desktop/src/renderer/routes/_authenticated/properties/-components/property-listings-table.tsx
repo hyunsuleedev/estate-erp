@@ -34,13 +34,14 @@ import { PROPERTY_LISTING_ITEM_HEIGHT } from '../-property-table-metrics';
 const VIRTUALIZE_THRESHOLD = 50;
 const END_REACHED_THRESHOLD = 320;
 const PINNED_BODY_CELL_Z_INDEX = 10;
-// 고정 열 경계선: 평소에는 다른 칸 선과 같은 굵기(1px)에 색만 조금 진한 선 한 줄.
+// 고정 열 경계선: 옅은 칸 테두리(#eeeeec) 바로 옆에 조금 진한 선(#e3e2df)을 붙여
+// 광고노트 등 공용 표와 같은 두 줄 선으로 보이게 한다.
 // 선(또는 접기 버튼)에 마우스를 올리면 선 전체에 5px 폭의 옅은 띠가 나타난다 —
 // 머리글의 열 폭 조절 손잡이와 같은 방식이다. 띠는 ::after 로 그리고 누를 수 없다.
 // 머리글과 행이 같은 클래스를 써서 위에서 아래까지 한 선으로 이어진다.
-// 옅은 칸 테두리는 빼서(border-r-0) 두 줄로 보이지 않게 한다.
+// 칸 테두리 1px만큼 띠 위치를 옮겨(-right-[4px]) 띠가 진한 선을 가운데로 덮게 한다.
 const PINNED_EDGE_LINE_CLASS =
-  "border-r-0 shadow-[1px_0_0_0_#cfcecb] after:pointer-events-none after:absolute after:inset-y-0 after:-right-[3px] after:z-[1] after:w-[5px] after:transition-colors after:content-[''] group-has-[[data-column-edge-hit]:hover]/ptable:after:bg-foreground/10 group-has-[[data-column-group-toggle]:hover]/ptable:after:bg-foreground/10";
+  "shadow-[1px_0_0_0_#e3e2df] after:pointer-events-none after:absolute after:inset-y-0 after:-right-[4px] after:z-[1] after:w-[5px] after:transition-colors after:content-[''] group-has-[[data-column-edge-hit]:hover]/ptable:after:bg-foreground/10 group-has-[[data-column-group-toggle]:hover]/ptable:after:bg-foreground/10";
 // Overlay the 17px +/- control on the header boundary without a spacer row.
 // 접기 버튼(16px)의 절반. 버튼 가운데가 고정 열 경계에 오도록 이만큼 왼쪽에서 시작한다.
 const PROPERTY_DETAIL_GUIDE_TOGGLE_SIZE = 8;
@@ -666,7 +667,8 @@ export function PropertyListingsTable({
                       data-pinned-edge={isLastPinned || undefined}
                       className={cn(
                         "relative h-9 border-b border-t border-border bg-white px-2.5 text-left align-middle text-[13px] font-normal leading-[21px] normal-case tracking-normal text-muted-foreground transition-colors",
-                        canSort && 'select-none hover:bg-[#f6f5f3] hover:text-[#2c2c2b]',
+                        // 호버 색은 칸을 가득 채운 열 메뉴 버튼이 칠한다. 칸에 또 걸면 두 겹으로 보인다.
+                        canSort && 'select-none',
                         sorted && "text-[#2c2c2b]",
                         // 칸 구분선: 아래 행과 같은 옅은 세로선. 고정 열의 끝은 경계선이 대신한다.
                         !isLastHeader && 'border-r border-r-[#eeeeec]',

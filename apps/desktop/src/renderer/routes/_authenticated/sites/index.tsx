@@ -54,7 +54,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { ConfirmDialog, EmptyState } from '@/components/domain';
+import { ConfirmDialog, EmptyState, RowOpenButton } from '@/components/domain';
 import { cn } from '@/lib/utils';
 import { formatDate, formatPhone, formatPyeong } from '@/lib/format';
 import {
@@ -136,15 +136,29 @@ function UnitTableHeaderLabel({
   label: string;
 }) {
   return (
-    // 매물관리 표 머리 글자와 같은 모양
-    <span className="inline-flex min-w-0 items-center gap-1.5 text-[12px] font-medium text-inherit">
-      <span className="shrink-0 [&>svg]:size-3.5 [&>svg]:text-[#a3a09a]">
+    // 매물관리 표 머리(TableHeaderLabel)와 같은 모양: 13px 보통 굵기, 16px 아이콘
+    <span className="inline-flex min-w-0 items-center gap-1.5 text-[13px] font-normal leading-[21px] text-inherit">
+      <span className="shrink-0 [&>svg]:size-4 [&>svg]:text-[#8e8b86]">
         {icon}
       </span>
       <span className="truncate">{label}</span>
     </span>
   );
 }
+
+/*
+ * 호수 표 칸 글자. 매물관리 표와 같은 규격이다 (본문 14px, 줄 높이 21px).
+ * 굵기와 색은 표가 칸에 준 값(450 · 본문색)을 그대로 받고, 달라야 할 때만 적는다.
+ */
+/** 행을 알아보는 값 (동 · 호 · 이름) */
+const unitCellStrong = 'truncate text-[14px] font-medium leading-[21px] text-foreground';
+/** 숫자 · 날짜 */
+const unitCellNumber = 'whitespace-nowrap text-[14px] leading-[21px] tabular-nums text-foreground';
+/** 이름 옆에 붙는 보조 값 (전화번호 · 날짜) */
+const unitCellSub = 'whitespace-nowrap text-[14px] leading-[21px] tabular-nums text-muted-foreground';
+/** "외 2명" · "+1" 같은 개수 꼬리표 */
+const unitCountChip =
+  'inline-flex h-5 shrink-0 items-center rounded-[4px] bg-neutral-soft px-1.5 text-[12px] leading-5 text-muted-foreground';
 
 function UnitTableEmptyCell() {
   return <span className="sr-only">미등록</span>;
@@ -865,10 +879,10 @@ function SitesPage() {
           header: () => (
             <UnitTableHeaderLabel icon={<Building2 />} label="동" />
           ),
-          size: 64,
+          size: 68,
           enableSorting: true,
           cell: ({ row }) => (
-            <span className="truncate text-[13px] font-medium tabular-nums text-[#37352f]">
+            <span className={cn(unitCellStrong, 'block tabular-nums')}>
               {getDongName(row.original.dongId) || ''}
             </span>
           ),
@@ -877,55 +891,59 @@ function SitesPage() {
     {
       id: 'name',
       header: () => <UnitTableHeaderLabel icon={<Hash />} label="호" />,
-      size: 72,
+      // 행에 올리면 뜨는 열기 버튼이 호수를 가리지 않을 만큼
+      size: 116,
       enableSorting: true,
-      cell: ({ row }) => (
-        <span className="truncate text-[13px] font-semibold tabular-nums text-[#2c2c2b]">
-          {row.original.name}
-        </span>
-      ),
+      cell: ({ row }) => {
+        const unit = row.original;
+        const dongName = getDongName(unit.dongId);
+        return (
+          <>
+            <span className={cn(unitCellStrong, 'block tabular-nums')}>{unit.name}</span>
+            {/* 매물관리 표와 같은 열기 버튼. 여기서는 호실 상세 창을 연다 */}
+            <RowOpenButton
+              label={`${dongName ? `${dongName} ` : ''}${unit.name}호`}
+              current={false}
+              openTitle="호실 상세 열기"
+              onToggle={() => handleSelectUnit(unit)}
+            />
+          </>
+        );
+      },
     },
     {
       id: 'supplyArea',
       header: () => <UnitTableHeaderLabel icon={<Ruler />} label="공급" />,
-      size: 70,
+      size: 74,
       enableSorting: true,
       cell: ({ row }) => {
         const unit = row.original;
         const m2 = unit.supplyAreaM2 ?? unit.siteUnitType?.supplyAreaM2;
         if (!m2) return <UnitTableEmptyCell />;
-        return (
-          <span className="whitespace-nowrap text-[13px] tabular-nums text-[#37352f]">
-            {formatPyeong(m2)}
-          </span>
-        );
+        return <span className={unitCellNumber}>{formatPyeong(m2)}</span>;
       },
     },
     {
       id: 'exclusiveArea',
       header: () => <UnitTableHeaderLabel icon={<Ruler />} label="전용" />,
-      size: 70,
+      size: 74,
       enableSorting: true,
       cell: ({ row }) => {
         const unit = row.original;
         const m2 = unit.exclusiveAreaM2 ?? unit.siteUnitType?.exclusiveAreaM2;
         if (!m2) return <UnitTableEmptyCell />;
-        return (
-          <span className="whitespace-nowrap text-[13px] tabular-nums text-[#37352f]">
-            {formatPyeong(m2)}
-          </span>
-        );
+        return <span className={unitCellNumber}>{formatPyeong(m2)}</span>;
       },
     },
     {
       id: 'unitType',
       header: () => <UnitTableHeaderLabel icon={<Type />} label="타입" />,
-      size: 64,
+      size: 74,
       enableSorting: true,
       cell: ({ row }) => {
         const typeName = row.original.siteUnitType?.name;
         return typeName ? (
-          <span className="truncate text-[13px] text-[#37352f]">
+          <span className="block truncate text-[14px] leading-[21px] text-foreground">
             {typeName}
           </span>
         ) : (
@@ -936,7 +954,7 @@ function SitesPage() {
     {
       id: 'ownerName',
       header: () => <UnitTableHeaderLabel icon={<User />} label="소유자명" />,
-      size: 120,
+      size: 128,
       minSize: 112,
       enableSorting: true,
       cell: ({ row }) => {
@@ -946,11 +964,11 @@ function SitesPage() {
         const ownerNames = owners.map(({ contact }) => contact.name).join('\n');
         return (
           <div className="flex min-w-0 items-center gap-1.5" title={ownerNames}>
-            <span className="truncate text-[13px] font-medium text-[#2c2c2b]">
+            <span className={unitCellStrong}>
               {primaryOwner.contact.name}
             </span>
             {owners.length > 1 && (
-              <span className="shrink-0 rounded-[4px] bg-[#f1f1ef] px-1.5 py-0.5 text-[10px] font-medium text-[#787774]">
+              <span className={unitCountChip}>
                 외 {owners.length - 1}명
               </span>
             )}
@@ -963,8 +981,8 @@ function SitesPage() {
       header: () => (
         <UnitTableHeaderLabel icon={<Phone />} label="소유자 전화번호" />
       ),
-      size: 132,
-      minSize: 120,
+      size: 144,
+      minSize: 124,
       enableSorting: true,
       cell: ({ row }) => {
         const owners = getUnitOwnerContacts(row.original);
@@ -978,7 +996,7 @@ function SitesPage() {
           .join('\n');
         return (
           <span
-            className="block min-w-0 truncate whitespace-nowrap text-[12px] tabular-nums text-[#6f6c66]"
+            className={cn(unitCellNumber, 'block min-w-0 truncate')}
             title={phoneSummary}
           >
             {formatPhone(phone)}
@@ -989,7 +1007,7 @@ function SitesPage() {
     {
       id: 'tenant',
       header: () => <UnitTableHeaderLabel icon={<Users />} label="세입자" />,
-      size: 170,
+      size: 196,
       enableSorting: true,
       cell: ({ row }) => {
         const tenants = (row.original.properties ?? []).flatMap(
@@ -1000,11 +1018,11 @@ function SitesPage() {
         const primary = tenants[0];
         return (
           <div className="flex min-w-0 items-center gap-1.5">
-            <span className="truncate text-[13px] font-medium text-[#2c2c2b]">
+            <span className={unitCellStrong}>
               {primary.contact.name}
             </span>
             {primary.contact.phone && (
-              <span className="shrink-0 text-[12px] tabular-nums text-[#6f6c66]">
+              <span className={cn(unitCellSub, 'shrink-0')}>
                 {formatPhone(primary.contact.phone)}
               </span>
             )}
@@ -1015,7 +1033,7 @@ function SitesPage() {
     {
       id: 'listing',
       header: () => <UnitTableHeaderLabel icon={<Tag />} label="등록 매물" />,
-      size: 170,
+      size: 184,
       enableSorting: true,
       cell: ({ row }) => {
         const listings = (row.original.properties ?? []).flatMap(
@@ -1028,26 +1046,27 @@ function SitesPage() {
           primary.transactionType
         ] ?? {
           label: primary.transactionType,
-          className: 'bg-[#f1f1ef] text-[#787774]',
+          className: 'bg-neutral-soft text-muted-foreground',
         };
         return (
           <div className="flex min-w-0 items-center gap-1.5">
+            {/* 매물관리 표의 거래 꼬리표와 같은 크기 */}
             <span
               className={cn(
-                'inline-flex shrink-0 rounded-[4px] px-1.5 py-0.5 text-[12px] font-medium leading-5',
+                'inline-flex h-5 shrink-0 items-center rounded-[4px] px-1.5 text-[14px] font-[450] leading-5',
                 transactionMeta.className,
               )}
             >
               {transactionMeta.label}
             </span>
             <span
-              className="truncate text-[13px] font-medium tabular-nums text-[#2c2c2b]"
+              className={cn(unitCellNumber, 'min-w-0 truncate')}
               title={formatListingPrice(primary)}
             >
               {formatListingPrice(primary)}
             </span>
             {listings.length > 1 && (
-              <span className="shrink-0 rounded-[4px] bg-[#f1f1ef] px-1.5 py-0.5 text-[10px] font-medium text-[#787774]">
+              <span className={unitCountChip}>
                 +{listings.length - 1}
               </span>
             )}
@@ -1060,7 +1079,7 @@ function SitesPage() {
       header: () => (
         <UnitTableHeaderLabel icon={<MessageSquareText />} label="최근 상담" />
       ),
-      size: 280,
+      size: 300,
       minSize: 220,
       enableSorting: true,
       meta: { fill: true },
@@ -1075,11 +1094,10 @@ function SitesPage() {
         if (!latest) return <UnitTableEmptyCell />;
         return (
           <div className="flex min-w-0 items-center gap-1.5" title={latest.content}>
-            <span className="max-w-20 shrink-0 truncate text-[12px] font-medium text-[#37352f]">
+            <span className="max-w-24 shrink-0 truncate text-[14px] leading-[21px] text-muted-foreground">
               {latest.contact.name}
             </span>
-            <span className="text-[#cfccc6]">·</span>
-            <span className="truncate text-[13px] text-[#37352f]">
+            <span className="truncate text-[14px] leading-[21px] text-foreground">
               {latest.content}
             </span>
           </div>
@@ -1091,7 +1109,7 @@ function SitesPage() {
       header: () => (
         <UnitTableHeaderLabel icon={<CalendarDays />} label="상담일" />
       ),
-      size: 88,
+      size: 108,
       enableSorting: true,
       cell: ({ row }) => {
         const latest = (row.original.properties ?? [])
@@ -1102,11 +1120,7 @@ function SitesPage() {
               new Date(a.createdAt).getTime(),
           )[0];
         if (!latest) return <UnitTableEmptyCell />;
-        return (
-          <span className="whitespace-nowrap text-[12px] tabular-nums text-[#6f6c66]">
-            {formatDate(latest.createdAt)}
-          </span>
-        );
+        return <span className={unitCellSub}>{formatDate(latest.createdAt)}</span>;
       },
     },
   ];
@@ -1118,7 +1132,19 @@ function SitesPage() {
         UNIT_RELATIONSHIP_COLUMN_ID_SET.has(columnId)
       );
     });
-  }, [areUnitRelationshipColumnsCollapsed, dongs, getDongName]);
+  }, [areUnitRelationshipColumnsCollapsed, dongs, getDongName, handleSelectUnit]);
+
+  const unitTableResetKey = [
+    selectedSiteId,
+    selectedDongIds.join(','),
+    unitTableScope,
+    selectedUnitTypeIds.join(','),
+    ownerFilter,
+    tenantFilter,
+    listingFilter,
+    consultationFilter,
+    query.trim(),
+  ].join('|');
 
   const unitPinnedColumns = useMemo(
     () => (dongs.some((dong) => !dong.isPlaceholder) ? ['dong', 'name'] : ['name']),
@@ -1480,10 +1506,18 @@ function SitesPage() {
                   sorting={unitSort}
                   onSortingChange={setUnitSort}
                   onRowClick={handleSelectUnit}
+                  // 매물관리 표와 같은 조작: 한 번 누르면 칸을 고르고(아래 줄에 소유자가 보인다),
+                  // 두 번 누르기 · Enter · 열기 버튼으로 호실 상세를 연다.
+                  activateOnDoubleClick
+                  getRowSelectionLabel={(unit) =>
+                    `${getDongName(unit.dongId) ? `${getDongName(unit.dongId)} ` : ''}${unit.name}호 선택`
+                  }
                   layout="full-height"
                   variant="notion"
-                  headerTone="refresh"
-                  rowHeight={33}
+                  propertyListTone
+                  rowHeight={37}
+                  // 범위 · 필터 · 검색이 바뀌면 표를 맨 위로 올린다
+                  scrollResetKey={unitTableResetKey}
                   pinnedColumns={unitPinnedColumns}
                   columnGroupControls={[
                     {
